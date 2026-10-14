@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_exception.dart';
 import '../../features_v2/activity/models/activity_detail.dart';
-import '../../features_v2/activity/models/timeseries_data.dart';
 import '../../features_v2/race/models/race_models.dart';
 import '../models/activity.dart';
 import '../models/health.dart';
