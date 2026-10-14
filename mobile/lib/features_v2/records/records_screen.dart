@@ -29,11 +29,15 @@ class RecordsScreen extends ConsumerStatefulWidget {
 class _RecordsScreenState extends ConsumerState<RecordsScreen> {
   final _scroll = ScrollController();
   final _activities = <Activity>[];
+  final _summaries = <String, MonthlySummary>{};
   bool _loading = false;
   bool _loadingMore = false;
   bool _exhausted = false;
   Object? _error;
+
+  /// 折叠的月份集合（对齐小程序：默认只展开本月，历史月折叠）。
   final _collapsedMonths = <String>{};
+  final _seenMonths = <String>{};
 
   @override
   void initState() {
@@ -66,13 +70,18 @@ class _RecordsScreenState extends ConsumerState<RecordsScreen> {
       final api = ref.read(strideApiProvider);
       final userId = ref.read(currentUserIdProvider);
       if (userId == null) throw Exception('用户未登录');
-      final page = await api.listActivities(userId, limit: _pageSize, offset: 0);
+      final page =
+          await api.listActivitiesPage(userId, limit: _pageSize, offset: 0);
       if (!mounted) return;
       setState(() {
         _activities
           ..clear()
-          ..addAll(page);
-        _exhausted = page.length < _pageSize;
+          ..addAll(page.activities);
+        _summaries
+          ..clear()
+          ..addAll(page.monthlySummaries);
+        _exhausted = page.activities.length < _pageSize;
+        _applyDefaultCollapse();
         _loading = false;
       });
     } catch (e) {
@@ -84,21 +93,35 @@ class _RecordsScreenState extends ConsumerState<RecordsScreen> {
     }
   }
 
+  /// 首屏默认只展开本月（上海）；历史月全部折叠。刷新时保留用户的展开状态。
+  void _applyDefaultCollapse() {
+    final currentMonth = shanghaiToday().substring(0, 7);
+    for (final a in _activities) {
+      final date = shanghaiDateFromIso(a.date);
+      final month = date.isEmpty ? '未知' : date.substring(0, 7);
+      if (_seenMonths.add(month) && month != currentMonth) {
+        _collapsedMonths.add(month);
+      }
+    }
+  }
+
   Future<void> _loadMore() async {
     if (_loadingMore || _loading || _exhausted || _error != null) return;
     setState(() => _loadingMore = true);
     try {
       final api = ref.read(strideApiProvider);
       final userId = ref.read(currentUserIdProvider);
-      final page = await api.listActivities(
+      final page = await api.listActivitiesPage(
         userId!,
         limit: _pageSize,
         offset: _activities.length,
       );
       if (!mounted) return;
       setState(() {
-        _activities.addAll(page);
-        _exhausted = page.length < _pageSize;
+        _activities.addAll(page.activities);
+        _summaries.addAll(page.monthlySummaries);
+        _exhausted = page.activities.length < _pageSize;
+        _applyDefaultCollapse();
         _loadingMore = false;
       });
     } catch (_) {
@@ -215,26 +238,45 @@ class _RecordsScreenState extends ConsumerState<RecordsScreen> {
     }
     return [
       for (final month in order)
-        _MonthGroup(month: month, activities: groups[month]!),
+        _MonthGroup(
+          month: month,
+          activities: groups[month]!,
+          summary: _summaries[month],
+        ),
     ];
   }
 }
 
 class _MonthGroup {
-  const _MonthGroup({required this.month, required this.activities});
+  const _MonthGroup({
+    required this.month,
+    required this.activities,
+    this.summary,
+  });
 
   final String month; // YYYY-MM
   final List<Activity> activities;
+
+  /// 后端整月聚合（monthly_summaries，不只本页）；缺失时回退本页行求和。
+  final MonthlySummary? summary;
 
   String get title {
     if (month == '未知') return month;
     return '${int.parse(month.substring(0, 4))}年${int.parse(month.substring(5))}月';
   }
 
+  int get count => summary?.activityCount ?? activities.length;
+
   num get totalDistanceM =>
-      activities.fold(0, (sum, a) => sum + a.distanceM);
-  int get totalDurationS =>
-      activities.fold(0, (sum, a) => sum + a.durationS);
+      summary != null && summary!.totalRunKm > 0
+          ? summary!.totalRunKm * 1000
+          : activities.fold(0, (sum, a) => sum + a.distanceM);
+
+  int get totalDurationS {
+    final s = summary?.durationS;
+    if (s != null && s > 0) return s.round();
+    return activities.fold(0, (sum, a) => sum + a.durationS);
+  }
 }
 
 class _MonthSection extends StatelessWidget {
@@ -278,7 +320,7 @@ class _MonthSection extends StatelessWidget {
                 ),
                 const SizedBox(width: StrideTokens.spaceMd),
                 Text(
-                  '${section.activities.length}次 · ${km}km · ${min}min',
+                  '${section.count}次 · ${km}km · ${min}min',
                   style: const TextStyle(
                     fontFamily: AppTypography.fontMono,
                     fontSize: StrideTokens.fs11,
@@ -354,21 +396,22 @@ class _ActivityListRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Container(
+            // 缩略图（route_thumbnails pipeline 的 COS 公网 URL），
+            // 加载失败/缺失回退运动图标（容错）。
+            SizedBox(
               width: 36,
               height: 36,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(
-                color: StrideTokens.accentFg,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                a.sportName.toLowerCase().contains('strength')
-                    ? Icons.fitness_center
-                    : Icons.directions_run,
-                size: 18,
-                color: StrideTokens.accent,
-              ),
+              child: (a.thumbUrl?.isNotEmpty ?? false)
+                  ? ClipRRect(
+                      borderRadius:
+                          BorderRadius.circular(StrideTokens.radiusMd),
+                      child: Image.network(
+                        a.thumbUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => _SportIcon(activity: a),
+                      ),
+                    )
+                  : _SportIcon(activity: a),
             ),
             const SizedBox(width: StrideTokens.spaceMd),
             Expanded(
@@ -410,6 +453,30 @@ class _ActivityListRow extends StatelessWidget {
             const Icon(Icons.chevron_right, size: 16, color: StrideTokens.muted),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _SportIcon extends StatelessWidget {
+  const _SportIcon({required this.activity});
+
+  final Activity activity;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      alignment: Alignment.center,
+      decoration: const BoxDecoration(
+        color: StrideTokens.accentFg,
+        shape: BoxShape.circle,
+      ),
+      child: Icon(
+        activity.sportName.toLowerCase().contains('strength')
+            ? Icons.fitness_center
+            : Icons.directions_run,
+        size: 18,
+        color: StrideTokens.accent,
       ),
     );
   }

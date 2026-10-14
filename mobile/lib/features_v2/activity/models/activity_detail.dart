@@ -13,6 +13,10 @@ class LapV2 {
       durationS: (json['duration_s'] as num?) ?? 0,
       durationFmt: (json['duration_fmt'] as String?) ?? '',
       paceFmt: (json['pace_fmt'] as String?) ?? '',
+      segName: (json['seg_name'] as String?) ?? '',
+      mode: (json['mode'] as num?)?.toInt(),
+      distanceM: json['distance_m'] as num? ?? 0,
+      avgPace: json['avg_pace'] as num?,
       avgHr: (json['avg_hr'] as num?)?.toInt(),
       maxHr: (json['max_hr'] as num?)?.toInt(),
       avgCadence: (json['avg_cadence'] as num?)?.toInt(),
@@ -24,6 +28,10 @@ class LapV2 {
     required this.durationS,
     required this.durationFmt,
     required this.paceFmt,
+    this.segName = '',
+    this.mode,
+    this.distanceM = 0,
+    this.avgPace,
     this.avgHr,
     this.maxHr,
     this.avgCadence,
@@ -34,6 +42,18 @@ class LapV2 {
   final num durationS;
   final String durationFmt;
   final String paceFmt;
+
+  /// 段显示名（type2 手表圈/间歇组才有；力量分组与恢复圈判定用）。
+  final String segName;
+
+  /// 原始圈类型（3=恢复圈；15/16/17=力量组间休息）。
+  final int? mode;
+
+  /// 米（圈徽标按累计圈距映射 timeseries 用）。
+  final num distanceM;
+
+  /// 配速 s/km（最快/最慢/趋势判定用，未上报为 null）。
+  final num? avgPace;
   final int? avgHr;
   final int? maxHr;
   final int? avgCadence;
@@ -148,6 +168,7 @@ class ActivityV2 {
     return ActivityV2(
       labelId: (json['label_id'] as String?) ?? '',
       name: json['name'] as String?,
+      sportType: (json['sport_type'] as num?)?.toInt() ?? 0,
       sportName: (json['sport_name'] as String?) ?? '',
       date: (json['date'] as String?) ?? '',
       distanceKm: (json['distance_km'] as num?)?.toDouble() ?? 0.0,
@@ -163,10 +184,15 @@ class ActivityV2 {
       sportNote: json['sport_note'] as String?,
       commentary: json['commentary'] as String?,
       commentaryGeneratedBy: json['commentary_generated_by'] as String?,
+      temperature: json['temperature'] as num?,
+      humidity: json['humidity'] as num?,
+      feelsLike: json['feels_like'] as num?,
+      windSpeed: json['wind_speed'] as num?,
     );
   }
   const ActivityV2({
     required this.labelId,
+    required this.sportType,
     required this.sportName,
     required this.date,
     required this.distanceKm,
@@ -183,10 +209,15 @@ class ActivityV2 {
     this.sportNote,
     this.commentary,
     this.commentaryGeneratedBy,
+    this.temperature,
+    this.humidity,
+    this.feelsLike,
+    this.windSpeed,
   });
 
   final String labelId;
   final String? name;
+  final int sportType;
   final String sportName;
   final String date;
   final double distanceKm;
@@ -202,6 +233,15 @@ class ActivityV2 {
   final String? sportNote;
   final String? commentary;
   final String? commentaryGeneratedBy;
+
+  /// 天气（天气浮层用；缺报为 null）。
+  final num? temperature;
+  final num? humidity;
+  final num? feelsLike;
+  final num? windSpeed;
+
+  /// 力量活动（sport_type 402/800，无轨迹地图，圈表换力量分组）。
+  bool get isStrength => sportType == 402 || sportType == 800;
 }
 
 class ActivityDetailV2 {
@@ -222,6 +262,10 @@ class ActivityDetailV2 {
       trainingDose:
           (json['stride_training_load'] as Map<String, dynamic>?)?['training_dose']
               as num?,
+      timeseries: ((json['timeseries'] as List?) ?? [])
+          .cast<Map<String, dynamic>>()
+          .map(TsPoint.fromJson)
+          .toList(growable: false),
     );
   }
   const ActivityDetailV2({
@@ -229,10 +273,53 @@ class ActivityDetailV2 {
     required this.segments,
     required this.zones,
     this.trainingDose,
+    this.timeseries = const [],
   });
 
   final ActivityV2 activity;
   final List<LapV2> segments;
   final List<ZoneV2> zones;
   final num? trainingDose;
+
+  /// 仅 `?include=timeseries` 时非空（Go 端按 len/1000 步长抽稀，含 GPS）。
+  final List<TsPoint> timeseries;
+}
+
+/// 一条 timeseries 采样点（GET detail 的 timeseries 行）。
+///
+/// 单位（#422 决议按 Go 序列化核实）：distance=米，speed/adjusted_pace=s/km，
+/// timestamp=厘秒，gps_lat/gps_lon=WGS84 原始值。
+class TsPoint {
+  const TsPoint({
+    this.timestamp,
+    this.distance,
+    this.hr,
+    this.speed,
+    this.adjustedPace,
+    this.gpsLat,
+    this.gpsLon,
+  });
+
+  factory TsPoint.fromJson(Map<String, dynamic> json) {
+    return TsPoint(
+      timestamp: json['timestamp'] as num?,
+      distance: json['distance'] as num?,
+      hr: json['heart_rate'] as num?,
+      speed: json['speed'] as num?,
+      adjustedPace: json['adjusted_pace'] as num?,
+      gpsLat: json['gps_lat'] as num?,
+      gpsLon: json['gps_lon'] as num?,
+    );
+  }
+
+  final num? timestamp;
+  final num? distance;
+  final num? hr;
+  final num? speed;
+  final num? adjustedPace;
+  final num? gpsLat;
+  final num? gpsLon;
+
+  /// 配速取值规则（地图/曲线同口径）：adjusted_pace 优先回落 speed。
+  num? get pace => adjustedPace ?? speed;
 }

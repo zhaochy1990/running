@@ -1,10 +1,9 @@
 /// D8 — Activity Detail Screen
 ///
-/// Long-scroll layout (no tabs). Initial fetch: `GET /api/{user}/activities/{id}`
-/// without timeseries. HR/pace charts lazy-load via [timeseriesProvider] once
-/// widgets build.
-///
-/// GPS map is a placeholder — real map integration is TODO for M1.x.
+/// Long-scroll layout (no tabs). Fetch: `GET
+/// /api/{user}/activities/{id}?include=timeseries` — one fetch feeds summary,
+/// charts and the GPS track map (Go API 的 timeseries 只随 detail 下发，子路径
+/// 404)。
 library;
 
 import 'package:flutter/material.dart';
@@ -20,7 +19,9 @@ import 'models/activity_detail.dart';
 import 'providers/activity_detail_provider.dart';
 import 'utils/pace_format.dart';
 import 'widgets/lap_table.dart';
+import 'widgets/strength_groups.dart';
 import 'widgets/timeseries_chart.dart';
+import 'widgets/track_map.dart';
 import 'widgets/zone_distribution.dart';
 
 class ActivityDetailScreen extends ConsumerWidget {
@@ -86,9 +87,8 @@ class _DetailBody extends StatelessWidget {
           vertical: StrideTokens.spaceLg,
         ),
         children: [
-          // 1. GPS map placeholder
-          // TODO(M1.x): replace with AMap widget with WGS84→GCJ02 conversion
-          _GpsMapPlaceholder(),
+          // 1. GPS track map (AMap) — hidden for strength activities.
+          TrackMapCard(detail: detail),
           const SizedBox(height: StrideTokens.spaceLg),
 
           // 2. 8-metric summary grid
@@ -141,11 +141,15 @@ class _DetailBody extends StatelessWidget {
           _CommentaryCard(activity: act, activityId: activityId, ref: ref),
           const SizedBox(height: StrideTokens.spaceLg),
 
-          // 6. Splits table
+          // 6. Splits: 力量活动展示动作分组，其余展示圈速表。
           if (detail.segments.isNotEmpty) ...[
-            const _SectionHeader(title: '分段配速'),
+            _SectionHeader(title: act.isStrength ? '力量分组' : '分段配速'),
             const SizedBox(height: StrideTokens.spaceSm),
-            _Card(child: LapTable(laps: detail.segments)),
+            _Card(
+              child: act.isStrength
+                  ? StrengthGroups(segments: detail.segments)
+                  : LapTable(laps: detail.segments),
+            ),
             const SizedBox(height: StrideTokens.spaceLg),
           ],
 
@@ -410,45 +414,6 @@ class _HeaderStatView extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _GpsMapPlaceholder extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 180,
-      decoration: BoxDecoration(
-        color: StrideTokens.grid,
-        borderRadius: BorderRadius.circular(StrideTokens.radiusLg),
-        border: Border.all(color: StrideTokens.border2),
-      ),
-      child: const Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.map_outlined, size: 36, color: StrideTokens.muted2),
-            SizedBox(height: StrideTokens.spaceSm),
-            Text(
-              'GPS 轨迹',
-              style: TextStyle(
-                fontFamily: AppTypography.fontSans,
-                fontSize: StrideTokens.fs13,
-                color: StrideTokens.muted,
-              ),
-            ),
-            Text(
-              'M1.x 接入高德地图',
-              style: TextStyle(
-                fontFamily: AppTypography.fontSans,
-                fontSize: StrideTokens.fs11,
-                color: StrideTokens.muted2,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

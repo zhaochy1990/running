@@ -29,6 +29,9 @@ dependencies:
   # Charts (HR / pace / altitude / zones)
   fl_chart: ^0.69.0
 
+  # 高德地图（轨迹地图，issue 463）
+  flutter_amap_plus: ^2.0.6
+
   # Routing
   go_router: ^14.6.2
 

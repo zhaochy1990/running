@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/tokens.dart';
 import '../models/activity_detail.dart';
+import '../utils/track.dart';
 
 const List<String> kZoneLabels = [
   'Z1 积极恢复区',
@@ -20,14 +21,8 @@ const List<String> kZoneLabels = [
   'Z6 无氧动力区',
 ];
 
-const List<Color> kZoneColors = [
-  Color(0xFF00C853),
-  Color(0xFF64DD17),
-  Color(0xFFFFAB00),
-  Color(0xFFFF6D00),
-  Color(0xFFFF1744),
-  Color(0xFFC2185B),
-];
+/// zones 档位色带（#422 决议钉死 7 色，按行序取色；与曲线档位色同源）。
+const List<Color> kZoneColors = zoneColors;
 
 enum ZoneKind { hr, pace }
 

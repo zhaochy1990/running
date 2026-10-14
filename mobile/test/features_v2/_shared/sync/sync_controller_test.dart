@@ -10,7 +10,6 @@ import 'package:stride/data/api/stride_api.dart';
 import 'package:stride/data/models/pipeline.dart';
 import 'package:stride/features_v2/_shared/sync/sync_controller.dart';
 import 'package:stride/features_v2/activity/models/activity_detail.dart';
-import 'package:stride/features_v2/activity/models/timeseries_data.dart';
 import 'package:stride/features_v2/activity/providers/activity_detail_provider.dart';
 import 'package:stride/features_v2/activity/providers/timeseries_provider.dart';
 
@@ -20,7 +19,6 @@ class _StubApi extends StrideApi {
   int calls = 0;
   final syncedUsers = <String>[];
   int activityDetailCalls = 0;
-  int timeseriesCalls = 0;
   int pollCalls = 0;
   final pollRunIds = <String>[];
 
@@ -78,17 +76,6 @@ class _StubApi extends StrideApi {
     return ActivityDetailV2.fromJson({
       'activity': {'label_id': labelId},
     });
-  }
-
-  @override
-  Future<TimeseriesData> getActivityTimeseries(
-    String user,
-    String labelId, {
-    int downsample = 300,
-    Set<String>? fields,
-  }) async {
-    timeseriesCalls++;
-    return TimeseriesData.fromJson({'label_id': labelId});
   }
 
 }
@@ -260,7 +247,6 @@ void main() {
     addTearDown(c.dispose);
 
     const activityId = 'activity-001';
-    const seriesParams = (id: activityId, fields: 'hr');
     final subscriptions = [
       c.listen(
         activityDetailProvider(activityId),
@@ -268,7 +254,7 @@ void main() {
         fireImmediately: true,
       ),
       c.listen(
-        timeseriesProvider(seriesParams),
+        timeseriesProvider('activity-001'),
         (_, _) {},
         fireImmediately: true,
       ),
@@ -281,25 +267,19 @@ void main() {
 
     await Future.wait([
       c.read(activityDetailProvider(activityId).future),
-      c.read(timeseriesProvider(seriesParams).future),
+      c.read(timeseriesProvider('activity-001').future),
     ]);
-    expect(
-      (api.activityDetailCalls, api.timeseriesCalls),
-      (1, 1),
-    );
+    expect(api.activityDetailCalls, 1);
 
     final sync = c.read(syncControllerProvider.notifier).triggerSync();
     api.resolveOk();
     await sync;
     await Future.wait([
       c.read(activityDetailProvider(activityId).future),
-      c.read(timeseriesProvider(seriesParams).future),
+      c.read(timeseriesProvider('activity-001').future),
     ]);
 
-    expect(
-      (api.activityDetailCalls, api.timeseriesCalls),
-      (2, 2),
-    );
+    expect(api.activityDetailCalls, 2);
   });
 
   test('failed sync does not refresh active watch-derived views', () async {

@@ -92,6 +92,29 @@ class StrideApi {
   }
 
   // ── Activities ─────────────────────────────────────────────────────────
+  Future<ActivitiesPage> listActivitiesPage(
+    String user, {
+    int? limit,
+    int? offset,
+    String? from,
+    String? to,
+  }) async {
+    // Backend returns {total, offset, limit, activities, monthly_summaries}.
+    final json = await _get<Map<String, dynamic>>(
+      '/api/$user/activities',
+      query: {'limit': ?limit, 'offset': ?offset, 'from': ?from, 'to': ?to},
+    );
+    final list = (json['activities'] as List? ?? const [])
+        .cast<Map<String, dynamic>>();
+    final summaries =
+        (json['monthly_summaries'] as Map<String, dynamic>? ?? const {})
+            .map((k, v) => MapEntry(k, MonthlySummary.fromJson(v as Map<String, dynamic>)));
+    return ActivitiesPage(
+      activities: list.map(Activity.fromJson).toList(growable: false),
+      monthlySummaries: summaries,
+    );
+  }
+
   Future<List<Activity>> listActivities(
     String user, {
     int? limit,
@@ -99,15 +122,13 @@ class StrideApi {
     String? from,
     String? to,
   }) async {
-    // Backend returns {total, offset, limit, activities: [...]} —
-    // unpack the activities field rather than casting the wrapper.
-    final json = await _get<Map<String, dynamic>>(
-      '/api/$user/activities',
-      query: {'limit': ?limit, 'offset': ?offset, 'from': ?from, 'to': ?to},
-    );
-    final list = (json['activities'] as List? ?? const [])
-        .cast<Map<String, dynamic>>();
-    return list.map(Activity.fromJson).toList(growable: false);
+    return listActivitiesPage(
+      user,
+      limit: limit,
+      offset: offset,
+      from: from,
+      to: to,
+    ).then((p) => p.activities);
   }
 
   Future<ActivityDetailResponse> getActivity(
@@ -120,7 +141,9 @@ class StrideApi {
     return ActivityDetailResponse.fromJson(json);
   }
 
-  /// Fetch activity detail without timeseries (mobile default).
+  /// Fetch activity detail; pass `includeTimeseries: true` to inline the
+  /// (downsampled, GPS-bearing) timeseries — the ONLY timeseries source on the
+  /// Go API (`/timeseries` subpath is not mounted there).
   Future<ActivityDetailV2> getActivityDetail(
     String user,
     String labelId, {
@@ -131,23 +154,6 @@ class StrideApi {
       query: includeTimeseries ? {'include': 'timeseries'} : null,
     );
     return ActivityDetailV2.fromJson(json);
-  }
-
-  /// Fetch downsampled timeseries for a single activity (lazy-load).
-  Future<TimeseriesData> getActivityTimeseries(
-    String user,
-    String labelId, {
-    int downsample = 300,
-    Set<String>? fields,
-  }) async {
-    final json = await _get<Map<String, dynamic>>(
-      '/api/$user/activities/$labelId/timeseries',
-      query: {
-        'downsample': downsample,
-        if (fields != null && fields.isNotEmpty) 'fields': fields.join(','),
-      },
-    );
-    return TimeseriesData.fromJson(json);
   }
 
   // ── Plan ───────────────────────────────────────────────────────────────
