@@ -8,12 +8,10 @@ import '../../features_v2/race/my_races_screen.dart';
 import '../../features_v2/race/race_center_screen.dart';
 import '../../features_v2/race/race_detail_screen.dart';
 import '../../features_v2/race/race_strategy_screen.dart';
-import '../../features_v2/health/health_overview_screen.dart';
 import '../../features_v2/health/ability_radar_screen.dart';
 import '../../features_v2/health/pb_records_screen.dart';
-import '../../features_v2/health/pmc_screen.dart';
 import '../../features_v2/health/predictions_screen.dart';
-import '../../features_v2/health/trends_screen.dart';
+import '../../features_v2/health/training_status_screen.dart';
 import '../../features_v2/coach/coach_chat_screen.dart';
 import '../../features_v2/records/records_screen.dart';
 import '../../features_v2/training/training_screen.dart';
@@ -55,6 +53,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       // so the auth gates below see final destinations.
       final remapped = Routes.redirectLegacy(loc);
       if (remapped != null) return remapped;
+      // E1/E2/E3 已删（#465）：旧 /me/data* 入口保底到训练状态页。
+      final deadRemap = Routes.deadDataRoutes[loc];
+      if (deadRemap != null) return deadRemap;
 
       if (authState is AuthLoading) return null;
 
@@ -162,13 +163,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const PrivacyScreen(),
       ),
       GoRoute(
-        path: Routes.meData,
-        builder: (_, _) => const HealthOverviewScreen(),
-      ),
-      GoRoute(path: Routes.meDataPmc, builder: (_, _) => const PmcScreen()),
-      GoRoute(
-        path: Routes.meDataTrends,
-        builder: (_, _) => const TrendsScreen(),
+        path: Routes.meTrainingStatus,
+        builder: (_, _) => const TrainingStatusScreen(),
       ),
       GoRoute(
         path: Routes.meDataAbility,

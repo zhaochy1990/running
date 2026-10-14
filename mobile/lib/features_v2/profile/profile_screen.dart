@@ -53,7 +53,8 @@ class MeScreen extends ConsumerWidget {
           ProfileMenuItem(
             icon: Icons.monitor_heart_outlined,
             label: '训练状态',
-            onTap: () => _comingSoon(context, '训练状态'),
+            key: const Key('menu-training-status'),
+            onTap: () => context.push(Routes.meTrainingStatus),
           ),
           ProfileMenuItem(
             icon: Icons.emoji_events_outlined,
@@ -83,7 +84,7 @@ class MeScreen extends ConsumerWidget {
           ProfileMenuItem(
             icon: Icons.insights_outlined,
             label: '数据与状态',
-            onTap: () => context.push(Routes.meData),
+            onTap: () => context.push(Routes.meTrainingStatus),
           ),
           ProfileMenuItem(
             icon: Icons.person_outline,
@@ -131,14 +132,6 @@ class MeScreen extends ConsumerWidget {
     return at > 0 ? email.substring(0, at) : email;
   }
 
-  static void _comingSoon(BuildContext context, String feature) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$feature — 即将上线'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
 
   static Future<void> _checkForUpdate(
       BuildContext context, WidgetRef ref) async {

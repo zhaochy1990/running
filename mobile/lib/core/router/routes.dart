@@ -53,12 +53,19 @@ class Routes {
   static const meProfileEdit = '/me/profile-edit';
   static const mePrivacy = '/me/privacy';
   static const meData = '/me/data';
-  static const meDataPmc = '/me/data/pmc';
-  static const meDataTrends = '/me/data/trends';
+  // 训练状态域主体（#465：E1 总览 / E2 PMC / E3 趋势已删，深链重定向到本页）。
+  static const meTrainingStatus = '/me/training-status';
   static const meDataAbility = '/me/data/ability';
   static const meDataPredictions = '/me/data/predictions';
   static const meDataPbs = '/me/data/pbs';
   static const meWatch = '/me/watch';
+
+  /// E1/E2/E3 已删除的死路由 → 训练状态页（#465，旧入口深链保底）。
+  static const deadDataRoutes = <String, String>{
+    '/me/data': meTrainingStatus,
+    '/me/data/pmc': meTrainingStatus,
+    '/me/data/trends': meTrainingStatus,
+  };
 
   /// Map a legacy `/v2/*` deep link to its new location (#414 redirect table).
   /// Returns null when [loc] is not legacy. Unmapped legacy domains (deleted
@@ -70,13 +77,13 @@ class Routes {
     // Ordered: longest / most specific prefixes first.
     if (rest.startsWith('/data/')) {
       const dataPages = {
-        '/data/pmc': meDataPmc,
-        '/data/trends': meDataTrends,
+        '/data/pmc': meTrainingStatus,
+        '/data/trends': meTrainingStatus,
         '/data/ability': meDataAbility,
         '/data/predictions': meDataPredictions,
         '/data/pbs': meDataPbs,
       };
-      return dataPages[rest] ?? meData;
+      return dataPages[rest] ?? meTrainingStatus;
     }
     if (rest.startsWith('/activity/')) {
       return '/records/activity${rest.substring('/activity'.length)}';
@@ -98,7 +105,7 @@ class Routes {
       '/train': planWeeks,
       '/me': me,
       '/coach': coach,
-      '/data': meData,
+      '/data': meTrainingStatus,
       '/discover': training, // deleted domain → fallback
     };
     return exact[rest] ?? training;
