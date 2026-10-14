@@ -58,4 +58,16 @@ describe("LandingPage", () => {
     fireEvent.click(loginButtons[0]);
     expect(screen.getByRole("dialog", { name: /登录 STRIDE/ })).toBeInTheDocument();
   });
+
+  it("renders the download section: Android releases link + 即将上线 placeholders", () => {
+    renderLanding(false);
+    const link = screen.getByRole("link", { name: /Android 下载/ });
+    expect(link).toHaveAttribute(
+      "href",
+      "https://github.com/zhaochy1990/running/releases/latest",
+    );
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(screen.getByText(/iOS · 即将上线/)).toBeInTheDocument();
+    expect(screen.getByText(/鸿蒙 · 即将上线/)).toBeInTheDocument();
+  });
 });

@@ -19,6 +19,8 @@ import '../../features_v2/records/records_screen.dart';
 import '../../features_v2/training/training_screen.dart';
 import '../../features_v2/watch/watch_screen.dart';
 import '../../features_v2/profile/profile_screen.dart';
+import '../../features_v2/profile/profile_edit_screen.dart';
+import '../../features_v2/profile/privacy_screen.dart';
 import '../../features_v2/auth/declaration_screen.dart';
 import '../../features_v2/auth/login_screen.dart';
 import '../../features_v2/auth/register_screen.dart';
@@ -151,6 +153,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         ),
       ),
       // Me — second-level pages.
+      GoRoute(
+        path: Routes.meProfileEdit,
+        builder: (_, _) => const ProfileEditScreen(),
+      ),
+      GoRoute(
+        path: Routes.mePrivacy,
+        builder: (_, _) => const PrivacyScreen(),
+      ),
       GoRoute(
         path: Routes.meData,
         builder: (_, _) => const HealthOverviewScreen(),

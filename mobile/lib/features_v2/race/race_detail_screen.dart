@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../core/router/routes.dart';
 import '../../core/theme/app_typography.dart';
@@ -20,6 +21,7 @@ import '../coach/providers/coach_chat_provider.dart'
 import 'models/race_models.dart';
 import 'providers/race_providers.dart';
 import 'utils/race_rows.dart';
+import 'utils/race_share.dart';
 
 class RaceDetailScreen extends ConsumerStatefulWidget {
   const RaceDetailScreen({super.key, required this.raceId});
@@ -168,6 +170,18 @@ class _RaceDetailScreenState extends ConsumerState<RaceDetailScreen> {
     Clipboard.setData(ClipboardData(text: url));
   }
 
+  /// #424 决议 v1：详情页分享 = 文本模板（赛事名/日期/城市/认证 + slogan
+  /// + Landing 链接）经系统分享面板外发。详情未加载完时按钮为 no-op。
+  Future<void> _shareDetail() async {
+    final detail = ref.read(raceDetailProvider(widget.raceId)).valueOrNull;
+    if (detail == null) return;
+    try {
+      await SharePlus.instance.share(ShareParams(text: raceShareText(detail)));
+    } catch (_) {
+      _toast('分享失败，请稍后重试');
+    }
+  }
+
   void _talkToCoach(RaceDetail detail, {String? kickoff}) {
     // #464 SSE 重构后的跨页交接：锚定 race 目标的新会话，label 供上下文条展示。
     ref.read(pendingCoachContextProvider.notifier).state = PendingCoachContext(
@@ -193,6 +207,13 @@ class _RaceDetailScreenState extends ConsumerState<RaceDetailScreen> {
           icon: const Icon(Icons.arrow_back_ios_new, size: 18),
           onPressed: () => context.pop(),
         ),
+        actions: [
+          IconButton(
+            key: const Key('race-detail-share'),
+            icon: const Icon(Icons.ios_share, size: 20),
+            onPressed: _shareDetail,
+          ),
+        ],
       ),
       body: detailAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
