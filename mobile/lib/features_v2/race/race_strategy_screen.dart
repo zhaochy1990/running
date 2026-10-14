@@ -12,7 +12,8 @@ import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
 import '../../data/api/stride_api.dart';
 import '../_shared/widgets/top_bar.dart';
-import '../coach/providers/coach_chat_provider.dart' show pendingCoachMessageProvider;
+import '../../data/coach/coach_api.dart' show CoachTarget;
+import '../coach/providers/coach_chat_provider.dart' show PendingCoachContext, pendingCoachContextProvider;
 import 'models/race_models.dart';
 import 'providers/race_providers.dart';
 import 'utils/race_rows.dart';
@@ -226,8 +227,11 @@ class _RaceStrategyScreenState extends ConsumerState<RaceStrategyScreen> {
   }
 
   void _backToCoach(String raceName, String target) {
-    ref.read(pendingCoachMessageProvider.notifier).state =
-        '我已有一份「$raceName」的比赛策略（目标 $target），想聊聊怎么调整。';
+    // #464 SSE 重构后的跨页交接：锚定 race 目标的新会话，label 供上下文条展示。
+    ref.read(pendingCoachContextProvider.notifier).state = PendingCoachContext(
+      target: CoachTarget(kind: 'race', raceEventId: widget.raceId),
+      label: '我已有一份「$raceName」的比赛策略（目标 $target），想聊聊怎么调整。',
+    );
     context.go(Routes.coach);
   }
 

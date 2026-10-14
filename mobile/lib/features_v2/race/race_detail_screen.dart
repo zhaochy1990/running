@@ -12,10 +12,11 @@ import '../../core/router/routes.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
 import '../../data/api/stride_api.dart';
+import '../../data/coach/coach_api.dart' show CoachTarget;
 import '../../shared/utils/shanghai_date.dart';
 import '../_shared/widgets/top_bar.dart';
 import '../coach/providers/coach_chat_provider.dart'
-    show pendingCoachMessageProvider;
+    show PendingCoachContext, pendingCoachContextProvider;
 import 'models/race_models.dart';
 import 'providers/race_providers.dart';
 import 'utils/race_rows.dart';
@@ -168,8 +169,11 @@ class _RaceDetailScreenState extends ConsumerState<RaceDetailScreen> {
   }
 
   void _talkToCoach(RaceDetail detail, {String? kickoff}) {
-    ref.read(pendingCoachMessageProvider.notifier).state = kickoff ??
-        '我想聊聊「${detail.displayName}」的比赛策略。';
+    // #464 SSE 重构后的跨页交接：锚定 race 目标的新会话，label 供上下文条展示。
+    ref.read(pendingCoachContextProvider.notifier).state = PendingCoachContext(
+      target: CoachTarget(kind: 'race', raceEventId: detail.id),
+      label: kickoff ?? '我想聊聊「${detail.displayName}」的比赛策略。',
+    );
     context.go(Routes.coach);
   }
 

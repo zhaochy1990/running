@@ -313,11 +313,6 @@ class StrideApi {
     return WeeklyPlanDetail.fromJson(json);
   }
 
-  /// Unbind the currently-linked watch. Calls `DELETE /api/users/me/watch`.
-  Future<void> unbindWatch() async {
-    await _delete<Map<String, dynamic>>('/api/users/me/watch');
-  }
-
   // ── Race domain（赛事域四屏，Go 活契约零新增，stride-devops#466）─────────
   /// GET /api/race-calendar —— 已发布赛历分页。scope=all 拉整年。
   Future<RaceCalendarPage> getRaceCalendar({
