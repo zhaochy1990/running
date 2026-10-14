@@ -22,6 +22,7 @@
 /// which is the same approach used by all existing test/features_v2/ tests.
 library;
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -29,6 +30,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:stride/core/auth/current_user.dart';
 import 'package:stride/core/router/routes.dart';
+import 'package:stride/data/api/stride_api.dart';
 import 'package:stride/features_v2/auth/start_screen.dart';
 import 'package:stride/features_v2/auth/login_screen.dart';
 import 'package:stride/features_v2/auth/register_screen.dart';
@@ -37,12 +39,23 @@ import 'package:stride/data/models/activity.dart';
 import 'package:stride/shared/utils/shanghai_date.dart';
 import 'package:stride/data/models/weekly_plan.dart';
 import 'package:stride/features_v2/training/providers/training_providers.dart';
-import 'package:stride/features_v2/onboarding/brand_screen.dart';
-import 'package:stride/features_v2/onboarding/blocked_screen.dart';
-import 'package:stride/features_v2/onboarding/coros_link_screen.dart';
-import 'package:stride/features_v2/onboarding/basic_info_screen.dart';
+import 'package:stride/features_v2/onboarding/onboarding_screen.dart';
+import 'package:stride/features_v2/onboarding/onboarding_sync.dart';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
+
+/// getStatus 直接抛错：验证「异常保守落点 = onboarding 资料步」。
+class _FailingSyncService extends OnboardingSyncService {
+  _FailingSyncService() : super(_ThrowApi());
+
+  @override
+  Future<OnboardingStatus> getStatus() async =>
+      throw StateError('network down');
+}
+
+class _ThrowApi extends StrideApi {
+  _ThrowApi() : super(Dio());
+}
 
 WeeklyPlanDetail _stubWeeklyPlan() => WeeklyPlanDetail(
   planId: 'plan-1',
@@ -60,12 +73,14 @@ WeeklyPlanDetail _stubWeeklyPlan() => WeeklyPlanDetail(
         spec: const RunWorkoutSpec(
           name: '晨间轻松跑',
           blocks: [
-            WorkoutBlock(steps: [
-              WorkoutStep(
-                stepKind: 'work',
-                target: WorkoutTarget(kind: 'hr_bpm', low: 130, high: 150),
-              ),
-            ]),
+            WorkoutBlock(
+              steps: [
+                WorkoutStep(
+                  stepKind: 'work',
+                  target: WorkoutTarget(kind: 'hr_bpm', low: 130, high: 150),
+                ),
+              ],
+            ),
           ],
         ),
         totalDistanceM: 10000,
@@ -82,6 +97,8 @@ Future<void> _pumpScreen(
   WidgetTester tester,
   Widget screen, {
   List<Override> overrides = const [],
+  // Onboarding 页含不定长 spinner/轮询，需用定步长 pump 而非 pumpAndSettle。
+  bool settle = true,
 }) async {
   final router = GoRouter(
     routes: [
@@ -96,24 +113,8 @@ Future<void> _pumpScreen(
         builder: (_, $) => const Scaffold(body: Text('register-stub')),
       ),
       GoRoute(
-        path: Routes.onboardingBrand,
-        builder: (_, $) => const Scaffold(body: Text('brand-stub')),
-      ),
-      GoRoute(
-        path: Routes.onboardingCoros,
-        builder: (_, $) => const Scaffold(body: Text('coros-stub')),
-      ),
-      GoRoute(
-        path: Routes.onboardingSync,
-        builder: (_, $) => const Scaffold(body: Text('sync-stub')),
-      ),
-      GoRoute(
-        path: Routes.onboardingBasicInfo,
-        builder: (_, $) => const Scaffold(body: Text('basic-info-stub')),
-      ),
-      GoRoute(
-        path: Routes.onboardingBlocked,
-        builder: (_, $) => const Scaffold(body: Text('blocked-stub')),
+        path: Routes.onboarding,
+        builder: (_, $) => const Scaffold(body: Text('onboarding-stub')),
       ),
     ],
   );
@@ -124,7 +125,12 @@ Future<void> _pumpScreen(
       child: MaterialApp.router(routerConfig: router),
     ),
   );
-  await tester.pumpAndSettle();
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 50));
+  }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────
@@ -169,86 +175,21 @@ void main() {
     });
   });
 
-  // ── B1 BrandScreen ────────────────────────────────────────────────────────
+  // ── Onboarding 单页三步（#461 重做后的替代屏）─────────────────────────
 
-  group('B1 BrandScreen', () {
-    testWidgets('renders brand screen with watch-selection title', (
-      tester,
-    ) async {
-      await _pumpScreen(tester, const BrandScreen());
-      // BrandScreen shows "选择你的手表" as the app bar title.
-      expect(find.text('选择你的手表'), findsOneWidget);
-    });
-  });
-
-  // ── B2 CorosLinkScreen ────────────────────────────────────────────────────
-
-  group('B2 CorosLinkScreen', () {
-    testWidgets('renders COROS link form', (tester) async {
-      await _pumpScreen(tester, const CorosLinkScreen());
-      // CorosLinkScreen shows at least one text input for credentials.
-      expect(find.byType(TextField), findsAtLeastNWidgets(1));
-    });
-  });
-
-  // ── B3 SyncProgressScreen ─────────────────────────────────────────────────
-
-  group('B3 SyncProgressScreen', () {
-    testWidgets('renders sync screen without crash', (tester) async {
-      // SyncProgressProvider auto-starts a polling loop + HTTP calls on
-      // construction. We bypass the screen entirely and verify the route
-      // exists in the router — a more invasive mock would require exposing
-      // SyncProgressController internals.
-      // Tracked as: T31-followup — SyncProgressScreen with mocked provider.
-      final router = GoRouter(
-        routes: [
-          GoRoute(
-            path: '/',
-            builder: (_, $) =>
-                const Scaffold(body: Text('sync-screen-placeholder')),
-          ),
-          GoRoute(
-            path: Routes.onboardingBasicInfo,
-            builder: (_, $) => const Scaffold(body: Text('basic-info-stub')),
-          ),
+  group('OnboardingScreen', () {
+    testWidgets('renders profile step (状态读取失败保守落资料步)', (tester) async {
+      // getStatus() 抛错 → 保守落资料步（与线上一致的守卫语义）。
+      await _pumpScreen(
+        tester,
+        const OnboardingScreen(),
+        overrides: [
+          onboardingSyncProvider.overrideWithValue(_FailingSyncService()),
         ],
+        settle: false,
       );
-      await tester.pumpWidget(
-        ProviderScope(child: MaterialApp.router(routerConfig: router)),
-      );
-      await tester.pump();
-      // 路由可达 + 屏幕挂载即可（provider 轮询需真网络，见 T31-followup）。
-      expect(find.text('sync-screen-placeholder'), findsOneWidget);
-    });
-  });
-
-  // ── B4 BasicInfoScreen ────────────────────────────────────────────────────
-
-  group('B4 BasicInfoScreen', () {
-    testWidgets('renders basic info form', (tester) async {
-      await _pumpScreen(tester, const BasicInfoScreen());
-      expect(find.byType(Scaffold), findsOneWidget);
-    });
-  });
-
-  // ── B5 BlockedScreen ──────────────────────────────────────────────────────
-
-  group('B5 BlockedScreen', () {
-    testWidgets('renders blocked screen without crash', (tester) async {
-      final router = GoRouter(
-        routes: [
-          GoRoute(path: '/', builder: (_, $) => const BlockedScreen()),
-          GoRoute(
-            path: Routes.onboardingBrand,
-            builder: (_, $) => const Scaffold(body: Text('brand-stub')),
-          ),
-        ],
-      );
-      await tester.pumpWidget(
-        ProviderScope(child: MaterialApp.router(routerConfig: router)),
-      );
-      await tester.pumpAndSettle();
-      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('先认识一下你'), findsOneWidget);
+      expect(find.text('保存并继续'), findsOneWidget);
     });
   });
 
@@ -269,7 +210,9 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            weeklyPlanProvider.overrideWith((_) => Future.value(_stubWeeklyPlan())),
+            weeklyPlanProvider.overrideWith(
+              (_) => Future.value(_stubWeeklyPlan()),
+            ),
             dayActivitiesProvider.overrideWith((_, _) => const <Activity>[]),
             currentUserIdProvider.overrideWithValue('u-happy'),
           ],

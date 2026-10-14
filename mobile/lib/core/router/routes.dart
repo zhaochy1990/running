@@ -17,12 +17,9 @@ class Routes {
   static bool isPublicPath(String loc) =>
       loc.startsWith('/auth') || loc.startsWith('/declaration');
 
-  // Onboarding
-  static const onboardingBrand = '/onboarding/brand';
-  static const onboardingCoros = '/onboarding/coros';
-  static const onboardingSync = '/onboarding/sync';
-  static const onboardingBasicInfo = '/onboarding/basic-info';
-  static const onboardingBlocked = '/onboarding/blocked';
+  // Onboarding — 单页三步状态机（资料→绑表→同步，stride-devops#461）。
+  // 旧的五屏（brand/coros/sync/basic-info/blocked）已整体替换。
+  static const onboarding = '/onboarding';
 
   // Main tabs (inside shell) — 训练 / 记录 / 教练 / 我
   static const training = '/training';
@@ -56,7 +53,8 @@ class Routes {
   /// Map a legacy `/v2/*` deep link to its new location (#414 redirect table).
   /// Returns null when [loc] is not legacy. Unmapped legacy domains (deleted
   /// features) fall back to /training.
-  static String? redirectLegacy(String loc) {    if (!loc.startsWith('/v2/')) return null;
+  static String? redirectLegacy(String loc) {
+    if (!loc.startsWith('/v2/')) return null;
     final rest = loc.substring('/v2'.length); // keeps leading '/'
 
     // Ordered: longest / most specific prefixes first.
@@ -79,8 +77,11 @@ class Routes {
     }
     if (rest.startsWith('/plan')) return training;
     if (rest.startsWith('/train')) return planWeeks;
-    if (rest.startsWith('/auth/')) return '/auth${rest.substring('/auth'.length)}';
-    if (rest.startsWith('/onboarding/')) return '/onboarding${rest.substring('/onboarding'.length)}';
+    if (rest.startsWith('/auth/')) {
+      return '/auth${rest.substring('/auth'.length)}';
+    }
+    // 旧五屏深链整体归到单页 onboarding（页面会重算落点）。
+    if (rest.startsWith('/onboarding')) return onboarding;
 
     const exact = {
       '/home': training,

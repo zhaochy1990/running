@@ -32,6 +32,9 @@ dependencies:
   # Routing
   go_router: ^14.6.2
 
+  # Onboarding sync 指针/幂等键本地持久化（key 名与 Web/小程序同名）
+  shared_preferences: ^2.5.3
+
   # Secure storage (auth refresh tokens)
   flutter_secure_storage: ^9.2.2
 
@@ -60,6 +63,10 @@ dev_dependencies:
   # Codegen
   build_runner: ^2.4.13
   json_serializable: ^6.8.0
+
+  # E2E walkthrough on simulator (真机走查驱动) — 不进生产包
+  integration_test:
+    sdk: flutter
 
   # Launcher icon generator
   flutter_launcher_icons: ^0.14.1

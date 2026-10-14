@@ -138,8 +138,8 @@ class OnboardingScaffold extends StatelessWidget {
                 child: child,
               ),
             ),
-            // ── Bottom-pinned CTA ────────────────────────────────────────
-            if (ctaLabel != null)
+            // ── Bottom-pinned CTA / skip link ────────────────────────────
+            if (ctaLabel != null || skipLabel != null)
               Padding(
                 padding: EdgeInsets.fromLTRB(
                   StrideTokens.spaceLg,
@@ -150,41 +150,42 @@ class OnboardingScaffold extends StatelessWidget {
                 ),
                 child: Column(
                   children: [
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: FilledButton(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: StrideTokens.accent,
-                          foregroundColor: StrideTokens.accentFg,
-                          disabledBackgroundColor: StrideTokens.accent
-                              .withValues(alpha: 0.4),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(
-                              StrideTokens.radiusMd,
+                    if (ctaLabel != null)
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: FilledButton(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: StrideTokens.accent,
+                            foregroundColor: StrideTokens.accentFg,
+                            disabledBackgroundColor: StrideTokens.accent
+                                .withValues(alpha: 0.4),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(
+                                StrideTokens.radiusMd,
+                              ),
                             ),
                           ),
+                          onPressed: ctaLoading ? null : onCta,
+                          child: ctaLoading
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: StrideTokens.accentFg,
+                                  ),
+                                )
+                              : Text(
+                                  ctaLabel!,
+                                  style: const TextStyle(
+                                    fontFamily: AppTypography.fontSans,
+                                    fontSize: StrideTokens.fs15,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                         ),
-                        onPressed: ctaLoading ? null : onCta,
-                        child: ctaLoading
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: StrideTokens.accentFg,
-                                ),
-                              )
-                            : Text(
-                                ctaLabel!,
-                                style: const TextStyle(
-                                  fontFamily: AppTypography.fontSans,
-                                  fontSize: StrideTokens.fs15,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
                       ),
-                    ),
                     if (skipLabel != null)
                       TextButton(
                         onPressed: onSkip,

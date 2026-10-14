@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:stride/core/auth/current_user.dart';
 import 'package:stride/data/api/stride_api.dart';
+import 'package:stride/data/models/pipeline.dart';
 import 'package:stride/features_v2/_shared/sync/sync_controller.dart';
 import 'package:stride/features_v2/activity/models/activity_detail.dart';
 import 'package:stride/features_v2/activity/models/timeseries_data.dart';
@@ -32,10 +33,15 @@ class _StubApi extends StrideApi {
   }
 
   @override
-  Future<void> triggerSync(String user, {bool full = false}) async {
+  Future<TriggerSyncResult> triggerSync(
+    String user, {
+    required bool full,
+    String? idempotencyKey,
+  }) async {
     calls++;
     syncedUsers.add(user);
     await _completer.future;
+    return const TriggerSyncResult(runId: 'stub-run');
   }
 
   @override

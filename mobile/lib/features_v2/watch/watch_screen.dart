@@ -19,7 +19,7 @@ class WatchScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(currentUserProvider).valueOrNull;
-    final bound = profile?.onboarding.corosReady ?? false;
+    final bound = profile?.onboarding.watchReady ?? false;
 
     return Scaffold(
       backgroundColor: StrideTokens.bg,
@@ -72,7 +72,7 @@ class WatchScreen extends ConsumerWidget {
                   width: double.infinity,
                   height: 44,
                   child: FilledButton(
-                    onPressed: () => context.push(Routes.onboardingBrand),
+                    onPressed: () => context.push(Routes.onboarding),
                     style: FilledButton.styleFrom(
                       backgroundColor: StrideTokens.accent,
                       foregroundColor: StrideTokens.surface,
@@ -137,7 +137,7 @@ class WatchScreen extends ConsumerWidget {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await ref.read(strideApiProvider).unbindWatch();
-      // 绑定状态来自 currentUserProfile（onboarding.corosReady）。
+      // 绑定状态来自 currentUserProfile（onboarding.watchReady）。
       ref.invalidate(currentUserProvider);
       messenger.showSnackBar(
         const SnackBar(

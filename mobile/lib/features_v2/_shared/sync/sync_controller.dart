@@ -97,7 +97,7 @@ class SyncController extends Notifier<SyncState> {
   Future<void> _runSync(String userId) async {
     state = state.copyWith(syncing: true, clearError: true);
     try {
-      await ref.read(strideApiProvider).triggerSync(userId);
+      await ref.read(strideApiProvider).triggerSync(userId, full: false);
       if (ref.read(currentUserIdProvider) != userId) {
         throw StateError('账号已切换，同步结果已忽略');
       }
