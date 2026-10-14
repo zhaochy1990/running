@@ -374,26 +374,19 @@ class _Body extends StatelessWidget {
     final min = _minD(0.0, values.whereType<double>().reduce(_minD));
     final max = _maxD(0.0, values.whereType<double>().reduce(_maxD));
     final b = padBounds(min, max, _maxD(0.5, (max - min) * 0.1));
-    return TsLineChart(
+    return TsColumnChart(
       labels: [for (final r in rows) formatDateShort(r.date)],
-      series: [TsLineSeries(name: 'Form', color: _cChronic, values: values)],
+      values: values,
+      colors: [for (final r in rows) formColorOf(r.form, r.chronicLoad)],
       minY: b.min,
       maxY: b.max,
-      tooltipLines: [
-        for (final r in rows)
-          [
-            if (r.isUnknown || r.form == null)
-              '${formatDateShort(r.date)} · Form —'
-            else
-              () {
-                final zone = classifyForm(r.form, r.chronicLoad);
-                final f = r.form!.toDouble();
-                final sign = f > 0 ? '+' : '';
-                return '${formatDateShort(r.date)} · Form $sign${f.toStringAsFixed(1)}'
-                    '${zone == null ? '' : '（${formZoneLabel[zone]}）'}';
-              }(),
-          ],
-      ],
+      tooltip: (i, v) {
+        final r = rows[i];
+        final zone = classifyForm(v, r.chronicLoad);
+        final sign = v > 0 ? '+' : '';
+        return '${formatDateShort(r.date)} · Form $sign${v.toStringAsFixed(1)}'
+            '${zone == null ? '' : '（${formZoneLabel[zone]}）'}';
+      },
     );
   }
 

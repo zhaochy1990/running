@@ -48,6 +48,9 @@ FormZone? classifyForm(num? form, num? chronic) {
   return FormZone.overload;
 }
 
+Color formColorOf(num? form, num? chronic) =>
+    formZoneColor[classifyForm(form, chronic) ?? FormZone.transition]!;
+
 // ---------------------------------------------------------------------------
 // readiness gate（green / yellow / red）
 // ---------------------------------------------------------------------------
