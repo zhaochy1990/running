@@ -34,6 +34,17 @@ abstract final class Env {
     defaultValue: 'prod',
   );
 
+  /// 高德 Android key（issue 463：公开可提交，参照 JPush AppKey 先例，
+  /// 同时写死在 AndroidManifest meta-data com.amap.api.v2.apikey）。
+  static const String amapAndroidKey = String.fromEnvironment(
+    'AMAP_ANDROID_KEY',
+    defaultValue: '03584266ce969aa39973e480b8436861',
+  );
+
+  /// 高德 iOS key —— 尚未申请（stride-devops#422 只备了 Android key）；到位后
+  /// 经 --dart-define=AMAP_IOS_KEY 注入。
+  static const String amapIosKey = String.fromEnvironment('AMAP_IOS_KEY');
+
   static bool get isProd => flavor == 'prod';
   static bool get isDev => flavor == 'dev';
 }

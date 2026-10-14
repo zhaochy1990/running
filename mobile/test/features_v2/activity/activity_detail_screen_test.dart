@@ -9,7 +9,6 @@ import 'package:stride/core/auth/current_user.dart';
 import 'package:stride/data/api/stride_api.dart';
 import 'package:stride/features_v2/activity/activity_detail_screen.dart';
 import 'package:stride/features_v2/activity/models/activity_detail.dart';
-import 'package:stride/features_v2/activity/models/timeseries_data.dart';
 import 'package:stride/features_v2/activity/providers/activity_detail_provider.dart';
 import 'package:stride/features_v2/activity/providers/timeseries_provider.dart';
 
@@ -24,6 +23,7 @@ ActivityDetailV2 _makeDetail({
   return ActivityDetailV2(
     activity: ActivityV2(
       labelId: 'ACT_001',
+      sportType: 1,
       sportName: 'running',
       date: '2026-05-11',
       distanceKm: 10.2,
@@ -58,17 +58,6 @@ ActivityDetailV2 _makeDetail({
 class _StubApi extends StrideApi {
   _StubApi() : super(Dio());
 
-  @override
-  Future<TimeseriesData> getActivityTimeseries(
-    String user,
-    String labelId, {
-    int downsample = 300,
-    Set<String>? fields,
-  }) {
-    // Never resolves — matches the pre-wave-1 "verifies AC7 lazy load"
-    // contract while keeping the FakeAsync timer queue empty.
-    return Completer<TimeseriesData>().future;
-  }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -206,10 +195,12 @@ void main() {
     expect(find.textContaining('v1.x 即将支持'), findsOneWidget);
   });
 
-  testWidgets('GPS map placeholder is shown', (tester) async {
+  testWidgets('track map card is mounted (non-strength activity)', (tester) async {
     await _pump(tester, AsyncData(_makeDetail()));
 
-    expect(find.text('GPS 轨迹'), findsOneWidget);
+    // 小于 20 个有效 GPS 点 → 走占位分支，不出高德视图。
+    expect(find.text('暂无轨迹数据'), findsOneWidget);
+    expect(find.text('配速'), findsOneWidget); // 着色切换条在位
   });
 
   testWidgets('lap table renders lap rows', (tester) async {
@@ -229,14 +220,9 @@ void main() {
           activityDetailProvider(
             'ACT_001',
           ).overrideWith((_) => Completer<ActivityDetailV2>().future),
-          timeseriesProvider((
-            id: 'ACT_001',
-            fields: 'hr',
-          )).overrideWith((_) => Completer<TimeseriesData>().future),
-          timeseriesProvider((
-            id: 'ACT_001',
-            fields: 'pace',
-          )).overrideWith((_) => Completer<TimeseriesData>().future),
+          timeseriesProvider(
+            'ACT_001',
+          ).overrideWith((_) => Completer<List<TsPoint>>().future),
           currentUserIdProvider.overrideWithValue('user-001'),
         ],
         child: const MaterialApp(

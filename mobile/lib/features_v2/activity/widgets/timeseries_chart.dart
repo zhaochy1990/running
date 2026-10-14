@@ -1,7 +1,8 @@
 /// TimeseriesChart — fl_chart line chart wrapper for HR and pace series.
 ///
-/// Lazily triggered once the widget enters the viewport via [VisibilityDetector]
-/// simulation using [_LazyLoader]. Calls [timeseriesProvider] on first build.
+/// 数据来自 detail `?include=timeseries`（timeseriesProvider，与轨迹地图共用
+/// 一份）。HR 线按 zones 档位色分段着色（#422：收掉旧 TODO 的渐变缺口），
+/// 配速线保持单色。X 轴 = timeseries timestamp（厘秒）换算的经过秒。
 library;
 
 import 'package:fl_chart/fl_chart.dart';
@@ -10,9 +11,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/tokens.dart';
-import '../models/timeseries_data.dart';
+import '../models/activity_detail.dart';
+import '../providers/activity_detail_provider.dart';
 import '../providers/timeseries_provider.dart';
 import '../utils/pace_format.dart';
+import '../utils/track.dart';
 
 enum ChartField { hr, pace }
 
@@ -33,58 +36,55 @@ class TimeseriesChart extends ConsumerStatefulWidget {
 }
 
 class _TimeseriesChartState extends ConsumerState<TimeseriesChart> {
-  // Start loading immediately. The provider is autoDispose so resources
-  // are released when the widget leaves the tree.
-  // True viewport-triggered lazy-load is a future enhancement (M1.x).
-  final bool _shouldLoad = true;
-
   @override
   Widget build(BuildContext context) {
-    if (!_shouldLoad) {
-      return const _ChartPlaceholder(message: '加载中...');
-    }
-
-    final fieldStr = widget.field == ChartField.hr ? 'hr' : 'pace';
-    final params = (id: widget.activityId, fields: fieldStr);
-    final async = ref.watch(timeseriesProvider(params));
+    final async = ref.watch(timeseriesProvider(widget.activityId));
+    final zones = ref
+        .watch(activityDetailProvider(widget.activityId))
+        .valueOrNull
+        ?.zones;
 
     return async.when(
       loading: () => const _ChartPlaceholder(message: '加载中...'),
       error: (_, _) => const _ChartPlaceholder(message: '暂无数据'),
-      data: (data) => _buildChart(data),
+      data: (points) => _buildChart(points, zones ?? const []),
     );
   }
 
-  Widget _buildChart(TimeseriesData data) {
-    final List<num?>? rawSeries = widget.field == ChartField.hr
-        ? data.series.hr
-        : data.series.pace;
-
-    if (rawSeries == null || rawSeries.isEmpty) {
-      return const _ChartPlaceholder(message: '暂无数据');
-    }
-
-    // Filter out nulls; build FlSpot list.
-    // For pace charts, negate Y so that fast (low s/km) appears HIGH on the
-    // chart axis and slow (high s/km) appears LOW — matching runner intuition.
-    final isPace = widget.field == ChartField.pace;
-    final spots = <FlSpot>[];
-    for (var i = 0; i < rawSeries.length; i++) {
-      final v = rawSeries[i];
-      if (v != null && v > 0) {
-        final x = i * data.intervalSec;
-        final y = isPace ? -v.toDouble() : v.toDouble();
-        spots.add(FlSpot(x, y));
+  Widget _buildChart(List<TsPoint> points, List<ZoneV2> zones) {
+    final isHr = widget.field == ChartField.hr;
+    final values = <double>[];
+    final elapsed = <double>[];
+    num? t0;
+    for (final p in points) {
+      if (p.timestamp != null) {
+        t0 ??= p.timestamp;
+        break;
       }
     }
+    for (final p in points) {
+      final v = isHr ? p.hr : p.pace;
+      if (v == null || v <= 0) continue;
+      values.add(v.toDouble());
+      elapsed.add(
+        t0 != null && p.timestamp != null
+            ? ((p.timestamp! - t0) / 100).toDouble()
+            : elapsed.isEmpty
+                ? 0
+                : elapsed.last + 1,
+      );
+    }
+    if (values.isEmpty) return const _ChartPlaceholder(message: '暂无数据');
 
-    if (spots.isEmpty) return const _ChartPlaceholder(message: '暂无数据');
+    // 配速轴反转(-v)：快（小 s/km）在上、慢在下，符合跑者直觉。
+    final spots = <FlSpot>[
+      for (var i = 0; i < values.length; i++)
+        FlSpot(elapsed[i], isHr ? values[i] : -values[i]),
+    ];
 
     final color =
         widget.color ??
-        (widget.field == ChartField.hr
-            ? StrideTokens.danger
-            : StrideTokens.accent);
+        (isHr ? StrideTokens.danger : StrideTokens.accent);
     final allY = spots.map((s) => s.y).toList();
     final rawMinY = allY.reduce((a, b) => a < b ? a : b);
     final rawMaxY = allY.reduce((a, b) => a > b ? a : b);
@@ -211,9 +211,9 @@ class _TimeseriesChartState extends ConsumerState<TimeseriesChart> {
               tooltipRoundedRadius: 6,
               getTooltipItems: (touchedSpots) => touchedSpots.map((spot) {
                 final timeSec = spot.x.round();
-                final valueStr = isPace
-                    ? fmtPaceSeconds(-spot.y.round())
-                    : '${spot.y.round()}';
+                final valueStr = isHr
+                    ? '${spot.y.round()}'
+                    : fmtPaceSeconds(-spot.y.round());
                 return LineTooltipItem(
                   '${_fmtElapsed(timeSec)}\n',
                   const TextStyle(
@@ -237,18 +237,18 @@ class _TimeseriesChartState extends ConsumerState<TimeseriesChart> {
               }).toList(),
             ),
           ),
-          // TODO(M1.x): zone-gradient line coloring (out of scope this pass).
           lineBarsData: [
             LineChartBarData(
               spots: spots,
               isCurved: true,
               curveSmoothness: 0.25,
-              color: color,
+              gradient: isHr ? _hrZoneGradient(spots, zones) : null,
+              color: isHr ? null : color,
               barWidth: 1.5,
               dotData: const FlDotData(show: false),
               belowBarData: BarAreaData(
                 show: true,
-                color: color.withValues(alpha: 0.08),
+                color: color.withValues(alpha: 0.06),
               ),
             ),
           ],
@@ -257,53 +257,76 @@ class _TimeseriesChartState extends ConsumerState<TimeseriesChart> {
     );
   }
 
-  /// Choose a sensible minutes tick spacing (returned in seconds) so the X
-  /// axis shows ~4 ticks regardless of run length.
-  double _xTickIntervalSec(double totalMinutes) {
-    if (totalMinutes <= 0) return 60;
-    final rawMin = totalMinutes / 4;
-    const steps = [1, 5, 10, 15, 20, 30, 60];
-    var minutes = steps.last;
-    for (final s in steps) {
-      if (s >= rawMin) {
-        minutes = s;
-        break;
+  /// HR 曲线的 zones 档位色渐变：每个点按心率所在区间取 zoneColors 档位色，
+  /// 颜色切换处在相邻两点中点做硬边界（duplicate stop），整条线一个 bar。
+  LinearGradient? _hrZoneGradient(List<FlSpot> spots, List<ZoneV2> zones) {
+    final hrZones = [
+      ...zones.where((z) => z.zoneType == 'heartRate'),
+    ]..sort((a, b) => a.zoneIndex.compareTo(b.zoneIndex));
+    // 区间缺范围数据时无从分档，退回单色。
+    if (hrZones.isEmpty || hrZones.any((z) => z.rangeMin == null)) return null;
+
+    Color bucket(double v) {
+      // 取 rangeMin <= v 的最大档（最高区开放高边）；低于最小档归最低区。
+      var idx = 0;
+      for (var i = 0; i < hrZones.length; i++) {
+        if (v >= hrZones[i].rangeMin!) idx = i;
+      }
+      return zoneColors[idx.clamp(0, zoneColors.length - 1)];
+    }
+
+    final colors = <Color>[bucket(spots.first.y)];
+    final stops = <double>[0.0];
+    for (var i = 1; i < spots.length; i++) {
+      final c = bucket(spots[i].y);
+      if (c != colors.last) {
+        final span = spots.last.x - spots.first.x;
+        final boundary =
+            span > 0 ? ((spots[i - 1].x + spots[i].x) / 2 - spots.first.x) / span : 0.0;
+        stops..add(boundary)..add(boundary);
+        colors..add(colors.last)..add(c);
       }
     }
-    return minutes * 60.0;
+    stops.add(1.0);
+    colors.add(colors.last);
+    return LinearGradient(colors: colors, stops: stops);
   }
 
-  String _fmtPace(int secPerKm) {
-    final m = secPerKm ~/ 60;
-    final s = secPerKm % 60;
-    return '$m:${s.toString().padLeft(2, '0')}';
+  double _xTickIntervalSec(double totalMinutes) {
+    if (totalMinutes <= 10) return 120;
+    if (totalMinutes <= 30) return 300;
+    if (totalMinutes <= 60) return 600;
+    return 1800;
   }
 
-  // Tooltip: elapsed time as hh:mm:ss or mm:ss
-  String _fmtElapsed(int totalSec) {
-    final h = totalSec ~/ 3600;
-    final m = (totalSec % 3600) ~/ 60;
-    final s = totalSec % 60;
-    final mm = m.toString().padLeft(2, '0');
-    final ss = s.toString().padLeft(2, '0');
-    return h > 0 ? '$h:$mm:$ss' : '$mm:$ss';
+  String _fmtElapsed(int sec) {
+    final m = sec ~/ 60;
+    final s = sec % 60;
+    return "00:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}";
   }
+}
+
+String _fmtPace(int seconds) {
+  final m = seconds ~/ 60;
+  final s = seconds % 60;
+  return "$m'${s.toString().padLeft(2, '0')}\"";
 }
 
 class _ChartPlaceholder extends StatelessWidget {
   const _ChartPlaceholder({required this.message});
+
   final String message;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 80,
+      height: 150,
       child: Center(
         child: Text(
           message,
           style: const TextStyle(
             fontFamily: AppTypography.fontSans,
-            fontSize: StrideTokens.fs13,
+            fontSize: StrideTokens.fs12,
             color: StrideTokens.muted,
           ),
         ),

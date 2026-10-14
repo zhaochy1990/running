@@ -1,29 +1,15 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/auth/current_user.dart';
-import '../../../data/api/stride_api.dart';
-import '../models/timeseries_data.dart';
+import '../models/activity_detail.dart';
+import 'activity_detail_provider.dart';
 
-/// Parameter record for the timeseries provider family.
-/// [fields] is a comma-separated string (not Set) so that record == works
-/// correctly as a Riverpod family key — Set uses identity equality in Dart,
-/// which would create a new provider on every rebuild and cancel the request.
-typedef TimeseriesParams = ({String id, String fields});
-
-/// Lazily fetches downsampled timeseries for an activity.
+/// Lazily exposes the timeseries points for one activity.
 ///
-/// Callers should only watch this provider once the chart area scrolls
-/// into the viewport (lazy-load behaviour per AC7). Marked autoDispose so
-/// series data is freed when the detail screen exits.
+/// Derives from [activityDetailProvider] (`?include=timeseries`) so charts and
+/// the track map share one fetch — the standalone `/timeseries` subpath 404s
+/// on the Go API. Sync invalidates both providers (see sync_controller).
 final timeseriesProvider = FutureProvider.autoDispose
-    .family<TimeseriesData, TimeseriesParams>((ref, params) async {
-      final api = ref.watch(strideApiProvider);
-      final userId = ref.watch(currentUserIdProvider);
-      if (userId == null) throw Exception('用户未登录');
-      return api.getActivityTimeseries(
-        userId,
-        params.id,
-        downsample: 300,
-        fields: params.fields.split(',').toSet(),
-      );
+    .family<List<TsPoint>, String>((ref, id) async {
+      final detail = await ref.watch(activityDetailProvider(id).future);
+      return detail.timeseries;
     });

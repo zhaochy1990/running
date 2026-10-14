@@ -49,7 +49,7 @@ class Activity {
   @JsonKey(name: 'sport_type')
   final int sportType;
   @JsonKey(name: 'sport_name')
-  final String sportName;
+  final String? sportName;
   final String date;
   @JsonKey(name: 'distance_m')
   final num distanceM;
@@ -302,4 +302,35 @@ class ActivityDetailResponse {
   final List<TimeseriesPoint> timeseries;
 
   Map<String, dynamic> toJson() => _$ActivityDetailResponseToJson(this);
+}
+
+/// GET /api/{user}/activities 的整页响应：活动行 + 后端整月聚合
+/// （monthly_summaries，整月统计不只本页；列表页月汇总优先用它）。
+class ActivitiesPage {
+  const ActivitiesPage({required this.activities, required this.monthlySummaries});
+
+  final List<Activity> activities;
+
+  /// key = 上海月份 YYYY-MM（后端 date 已是上海 ISO，取前 7 位即对齐）。
+  final Map<String, MonthlySummary> monthlySummaries;
+}
+
+class MonthlySummary {
+  const MonthlySummary({
+    required this.activityCount,
+    required this.totalRunKm,
+    required this.durationS,
+  });
+
+  factory MonthlySummary.fromJson(Map<String, dynamic> json) {
+    return MonthlySummary(
+      activityCount: (json['activity_count'] as num?)?.toInt() ?? 0,
+      totalRunKm: json['total_run_km'] as num? ?? 0,
+      durationS: json['duration_s'] as num? ?? 0,
+    );
+  }
+
+  final int activityCount;
+  final num totalRunKm;
+  final num durationS;
 }

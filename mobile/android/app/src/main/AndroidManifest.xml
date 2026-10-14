@@ -30,6 +30,11 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- 高德地图 Android key（issue 463：公开可提交，参照 JPush AppKey 先例；
+             绑定包名 cn.striderunning.app + 发布/调试 SHA1，见 stride-devops#422） -->
+        <meta-data
+            android:name="com.amap.api.v2.apikey"
+            android:value="03584266ce969aa39973e480b8436861" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
