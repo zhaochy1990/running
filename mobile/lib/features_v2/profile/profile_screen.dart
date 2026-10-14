@@ -18,6 +18,7 @@ import '../../core/updater/update_checker.dart';
 import '../../features/updater/update_prompt.dart';
 import '../_shared/sync/sync_controller.dart';
 import '../_shared/widgets/top_bar.dart';
+import '../watch/watch_providers.dart';
 import 'widgets/menu_item.dart';
 
 class MeScreen extends ConsumerWidget {
@@ -296,11 +297,13 @@ class _SyncRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final lastSynced = sync.lastSyncedAt;
+    // last_sync 来自 GET /watch（Go watch_sync job 成功后写 sync_meta），
+    // 不再用本地 DateTime.now() 快照；同步成功后由 SyncController invalidate。
+    final lastSync = ref.watch(watchInfoProvider).valueOrNull?.lastSyncText;
     final subtitle = sync.syncing
         ? '正在同步…'
-        : lastSynced != null
-            ? '上次同步 ${lastSynced.month}月${lastSynced.day}日 ${lastSynced.hour.toString().padLeft(2, '0')}:${lastSynced.minute.toString().padLeft(2, '0')}'
+        : lastSync != null
+            ? '上次同步 $lastSync'
             : '从手表拉取最新训练数据';
 
     // Material, not a colored Container: ListTile paints ink on the nearest Material (Flutter 3.47 asserts).
@@ -342,14 +345,14 @@ class _SyncRow extends ConsumerWidget {
                   await ref.read(syncControllerProvider.notifier).triggerSync();
                   messenger.showSnackBar(
                     const SnackBar(
-                      content: Text('同步完成'),
+                      content: Text('同步成功'),
                       backgroundColor: StrideTokens.accent,
                     ),
                   );
                 } catch (e) {
                   messenger.showSnackBar(
                     SnackBar(
-                      content: Text('同步失败：$e'),
+                      content: Text(syncErrorText(e)),
                       backgroundColor: StrideTokens.danger,
                     ),
                   );

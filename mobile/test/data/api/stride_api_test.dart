@@ -194,4 +194,49 @@ void main() {
       expect(runs[1].pipelineName, 'watch_sync');
     });
   });
+
+  group('StrideApi.getWatch — Go watchInfoResponse（#462）', () {
+    test('parses the bound-state payload', () async {
+      late RequestOptions request;
+      final dio = _dioWithResponse({
+        'provider': 'coros',
+        'provider_display_name': '高驰',
+        'logged_in': true,
+        'email': 'runner@example.com',
+        'device': 'COROS PACE 3',
+        'last_sync_at': '2026-10-01T02:00:00Z',
+        'capabilities': ['activity_sync', 'health_sync'],
+      }, inspectRequest: (options) => request = options);
+      final info = await StrideApi(dio).getWatch();
+
+      expect(request.path, '/api/users/me/watch');
+      expect(info.provider, 'coros');
+      expect(info.providerDisplayName, '高驰');
+      expect(info.bound, isTrue);
+      expect(info.email, 'runner@example.com');
+      expect(info.device, 'COROS PACE 3');
+      expect(info.lastSyncAt, '2026-10-01T02:00:00Z');
+      expect(info.capabilities, ['activity_sync', 'health_sync']);
+      expect(info.brandLabel, '高驰');
+    });
+
+    test('unbound: null fields, empty capabilities', () async {
+      final dio = _dioWithResponse({
+        'provider': null,
+        'provider_display_name': null,
+        'logged_in': false,
+        'email': null,
+        'device': null,
+        'last_sync_at': null,
+        'capabilities': <String>[],
+      });
+      final info = await StrideApi(dio).getWatch();
+
+      expect(info.bound, isFalse);
+      expect(info.email, isNull);
+      expect(info.device, isNull);
+      expect(info.lastSyncText, isNull);
+      expect(info.capabilities, isEmpty);
+    });
+  });
 }
