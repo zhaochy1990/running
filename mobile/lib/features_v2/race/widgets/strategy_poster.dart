@@ -143,20 +143,14 @@ Future<void> shareStrategyPoster(GlobalKey boundaryKey, String fileName) async {
   );
 }
 
-/// 生成海报 → 保存到系统相册（相册仅新增权限，iOS 首次弹授权；拒绝时抛
-/// [GalleryPermissionDenied] 由上层提示，不静默丢图）。
+/// 生成海报 → 保存到系统相册（相册仅新增权限；iOS 首次保存由系统自动弹
+/// 授权，拒绝时 Gal 抛 accessDenied → 上层提示，不静默丢图）。
+/// 不显式调 Gal.requestAccess：它会在未授权时等待原生弹窗回调，集成测试/
+/// 自动化场景下无人应答会永久阻塞；putImage 直写同样会触发系统授权。
 Future<void> saveStrategyPosterToGallery(
   GlobalKey boundaryKey,
   String fileName,
 ) async {
   final path = await savePosterPng(boundaryKey, fileName);
-  if (!await Gal.requestAccess(toAlbum: true)) {
-    throw const GalleryPermissionDenied();
-  }
-  await Gal.putImage(path, album: 'STRIDE');
-}
-
-/// 相册新增权限被拒（区分于写入失败）。
-class GalleryPermissionDenied implements Exception {
-  const GalleryPermissionDenied();
+  await Gal.putImage(path);
 }

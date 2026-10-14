@@ -271,8 +271,6 @@ class _RaceStrategyScreenState extends ConsumerState<RaceStrategyScreen> {
         );
         _toast('已保存到相册');
       }
-    } on GalleryPermissionDenied {
-      _toast('未获相册权限，请在系统设置中允许');
     } on GalException catch (e) {
       _toast(e.type == GalExceptionType.accessDenied ? '未获相册权限' : '保存失败');
     } catch (_) {
