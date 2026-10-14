@@ -14,7 +14,9 @@ Future<void> _dwell(int seconds, String milestone) async {
   await Future<void>.delayed(Duration(seconds: seconds));
   try {
     await tester0.pumpAndSettle(const Duration(milliseconds: 300));
-  } on FlutterError {}
+  } on FlutterError {
+    // pumpAndSettle 超时是走查节奏内的预期情况，吞掉继续
+  }
 }
 
 void main() {
