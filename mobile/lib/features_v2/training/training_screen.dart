@@ -20,6 +20,7 @@ import '../../shared/utils/shanghai_date.dart';
 import '../../core/theme/pill_colors.dart';
 import '../_shared/widgets/pill.dart';
 import '../_shared/widgets/top_bar.dart';
+import '../../../data/coach/coach_api.dart';
 import '../coach/providers/coach_chat_provider.dart';
 import 'day_view.dart';
 import 'providers/training_providers.dart';
@@ -179,7 +180,7 @@ class _TrainingScreenState extends ConsumerState<TrainingScreen> {
     }
   }
 
-  /// 「和教练聊一聊」——把当前课节作为预填消息交给教练 tab（带上下文跳转）。
+  /// 「和教练聊一聊」——把当前课节作为会话 target 交给教练 tab（带上下文跳转）。
   void _goCoach(TodayWorkoutView? workout) {
     if (workout == null) {
       _toast('今日暂无训练安排');
@@ -187,8 +188,10 @@ class _TrainingScreenState extends ConsumerState<TrainingScreen> {
     }
     final label =
         '${workout.title} · ${int.parse(workout.date.substring(5, 7))}月${int.parse(workout.date.substring(8))}日';
-    ref.read(pendingCoachMessageProvider.notifier).state =
-        '关于 $label 的训练，帮我看看有什么要注意的？';
+    ref.read(pendingCoachContextProvider.notifier).state = PendingCoachContext(
+      target: CoachTarget(kind: 'session', date: workout.date, sessionIndex: workout.sessionIndex),
+      label: label,
+    );
     context.go(Routes.coach);
   }
 
