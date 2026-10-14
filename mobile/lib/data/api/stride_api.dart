@@ -5,11 +5,11 @@ import '../../core/api/api_client.dart';
 import '../../core/api/api_exception.dart';
 import '../../features_v2/activity/models/activity_detail.dart';
 import '../../features_v2/activity/models/timeseries_data.dart';
-import '../../features_v2/onboarding/models/onboarding_defaults.dart';
 import '../models/activity.dart';
 import '../models/health.dart';
 import '../models/plan.dart';
 import '../models/weekly_plan.dart';
+import '../models/pipeline.dart';
 import '../models/profile.dart';
 
 /// Hand-written API client for STRIDE backend `/api/*`.
@@ -56,19 +56,37 @@ class StrideApi {
     return _patch<Map<String, dynamic>>('/api/users/me/profile', body: body);
   }
 
-  /// Fetch onboarding-default RHR / MaxHR suggestions for B4. Backend
-  /// derives RHR from recent `daily_health` and MaxHR from 220-age formula.
-  Future<OnboardingDefaults> getOnboardingDefaults() async {
-    final json = await _get<Map<String, dynamic>>(
-      '/api/users/me/onboarding/defaults',
+  /// 建立/覆盖数据面 profile（POST /api/users/me/profile，Go `profileInput`
+  /// 的六个必填字段，与小程序 onboarding 资料步一致）。置 profile_ready。
+  /// token 必须与 Go oneof 严格一致：中文标签直接 422，展示文案在 UI 层分离。
+  Future<void> postProfile({
+    required String displayName,
+    required String dob,
+    required String sex,
+    required double heightCm,
+    required double weightKg,
+    required String runningAgeRange,
+  }) async {
+    await _post<Map<String, dynamic>>(
+      '/api/users/me/profile',
+      body: {
+        'display_name': displayName,
+        'dob': dob,
+        'sex': sex,
+        'height_cm': heightCm,
+        'weight_kg': weightKg,
+        'running_age_range': runningAgeRange,
+      },
     );
-    return OnboardingDefaults.fromJson(json);
   }
 
-  /// Mark onboarding complete & kick off a lightweight background sync.
-  /// Returns the raw body (e.g. `{state: "running"|"already-complete"}`).
+  /// Mark onboarding complete (空 body 幂等自愈，ADR 0013：资料步即 complete).
+  /// Returns the raw body (e.g. `{state: "complete"|"already-complete"}`).
   Future<Map<String, dynamic>> completeOnboarding() async {
-    return _post<Map<String, dynamic>>('/api/users/me/onboarding/complete');
+    return _post<Map<String, dynamic>>(
+      '/api/users/me/onboarding/complete',
+      body: <String, dynamic>{},
+    );
   }
 
   // ── Activities ─────────────────────────────────────────────────────────
@@ -197,61 +215,74 @@ class StrideApi {
     return _get<Map<String, dynamic>>('/api/$user/pbs');
   }
 
-  // ── Onboarding ─────────────────────────────────────────────────────────
-  /// Bind a COROS watch by exchanging email/password via the registered
-  /// adapter. `region` is forwarded as a best-effort hint; the current
-  /// backend endpoint may ignore it (auto-detected at login).
-  ///
-  /// Throws [ApiException] on auth/network failure (backend collapses
-  /// auth errors to 400 with a generic message to avoid enumeration).
-  Future<Map<String, dynamic>> linkCoros({
+  // ── Watch ───────────────────────────────────────────────────────────────
+  /// Bind a watch provider (coros | garmin) via the unified multi-provider
+  /// endpoint（替代 legacy /coros/login）。`region` applies to Garmin;
+  /// backend collapses auth/network errors to 400 to avoid enumeration.
+  Future<void> watchLogin({
+    required String provider,
     required String email,
     required String password,
-    String? region,
+    String region = 'cn',
   }) async {
-    return _post<Map<String, dynamic>>(
-      '/api/users/me/coros/login',
-      body: {'email': email, 'password': password, 'region': ?region},
+    await _post<Map<String, dynamic>>(
+      '/api/users/me/watch/login',
+      body: {
+        'provider': provider,
+        'email': email,
+        'password': password,
+        'region': region,
+      },
     );
   }
 
-  /// Kick off the lightweight onboarding sync (health-only). The backend
-  /// returns immediately with `{state: 'running'|'already-complete'}`;
-  /// the client polls [getOnboardingSyncStatus] for progress.
-  Future<Map<String, dynamic>> startOnboardingSync() async {
-    return _post<Map<String, dynamic>>('/api/users/me/onboarding/complete');
+  /// Unbind the currently-linked watch. Calls `DELETE /api/users/me/watch`.
+  Future<void> unbindWatch() async {
+    await _delete<Map<String, dynamic>>('/api/users/me/watch');
   }
 
-  /// Poll the onboarding sync state. Returns the raw payload — fields:
-  ///   state    : 'running'|'done'|'error'|null
-  ///   progress : { phase, percent, message, synced_activities?,
-  ///               synced_health?, started_at, updated_at, ... }
-  ///   error    : optional message when state == 'error'
-  Future<Map<String, dynamic>> getOnboardingSyncStatus() async {
-    return _get<Map<String, dynamic>>('/api/users/me/sync-status');
+  // ── Sync pipelines（Go 活契约，stride-devops#418 端点表）───────────────
+  /// Trigger a full/incremental sync pipeline. Go 只认 body `{mode}`、
+  /// 响应 `{run_id, pipeline_name, deduplicated?}`（202 新建 / 200 deduplicated）；
+  /// 带 [idempotencyKey] 时重复触发会被服务端去重并返回已有 run。
+  Future<TriggerSyncResult> triggerSync(
+    String user, {
+    required bool full,
+    String? idempotencyKey,
+  }) async {
+    final json = await _post<Map<String, dynamic>>(
+      '/api/$user/sync',
+      body: {'mode': full ? 'full' : 'incremental'},
+      options: Options(
+        receiveTimeout: syncReceiveTimeout,
+        headers: {'Idempotency-Key': ?idempotencyKey},
+      ),
+    );
+    final result = TriggerSyncResult.fromJson(json);
+    if (result.runId.isEmpty) {
+      throw ApiException(200, 'Invalid sync response', json);
+    }
+    return result;
+  }
+
+  /// Read one pipeline run（onboarding 轮询，2s 间隔）。
+  Future<PipelineRun> getPipelineRun(String runId) async {
+    final json = await _get<Map<String, dynamic>>('/api/pipelines/$runId');
+    return PipelineRun.fromJson(json);
+  }
+
+  /// List the user's pipeline runs（新的在前），用于认领别端已起过的
+  /// onboarding run（换设备 / 小程序、Web 先起过）。
+  Future<List<PipelineRun>> listUserPipelines(String user) async {
+    final json = await _get<Map<String, dynamic>>('/api/users/$user/pipelines');
+    final list = (json['pipelines'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(PipelineRun.fromJson)
+        .toList(growable: false);
+    return list;
   }
 
   // ── Writes ─────────────────────────────────────────────────────────────
-  Future<void> triggerSync(String user, {bool full = false}) async {
-    final response = await _post<Map<String, dynamic>>(
-      '/api/$user/sync',
-      query: {if (full) 'full': true},
-      options: Options(receiveTimeout: syncReceiveTimeout),
-    );
-    final success = response['success'];
-    if (success is! bool) {
-      throw const ApiException(200, 'Invalid sync response');
-    }
-    if (!success) {
-      final error = response['error'];
-      throw ApiException(
-        200,
-        error is String && error.isNotEmpty ? error : 'Sync failed',
-        response,
-      );
-    }
-  }
-
   Future<Map<String, dynamic>> pushPlannedSession(
     String user,
     String date,
@@ -271,11 +302,6 @@ class StrideApi {
       '/api/$user/plan/weeks/$weekName',
     );
     return WeeklyPlanDetail.fromJson(json);
-  }
-
-  /// Unbind the currently-linked watch. Calls `DELETE /api/users/me/watch`.
-  Future<void> unbindWatch() async {
-    await _delete<Map<String, dynamic>>('/api/users/me/watch');
   }
 
   // ── Coach chat ─────────────────────────────────────────────────────────
@@ -332,7 +358,6 @@ class StrideApi {
     final res = await _dio.delete<T>(path);
     return _unpack<T>(res);
   }
-
 
   Future<T> _patch<T>(String path, {Object? body}) async {
     final res = await _dio.patch<T>(path, data: body);

@@ -43,7 +43,7 @@ interface RaceDetailPageData {
   view: RaceDetailView | null;
   starred: boolean;
   tabIndex: number;
-  /** 报名按钮文案（'未报名' 或 '全马 · 已报名（等抽签）'） */
+  /** 报名按钮文案（'未报名' 或 '全马 · 想报名' / '全马 · 已报名（等抽签）'） */
   signupButton: string;
   /** 无项目可报时整个报名按钮不渲染 */
   signupAvailable: boolean;
@@ -276,7 +276,7 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
     });
   },
 
-  /** 选择状态即提交：none=删计划，四态=PUT（项目用 sheet 内选中项）。 */
+  /** 选择状态即提交：none=删计划，五态=PUT（项目用 sheet 内选中项）。 */
   async onStateTap(e: WechatMiniprogram.TouchEvent) {
     const value = String(e.currentTarget.dataset.value || '') as RacePlanState | 'none';
     if (!value || this._planPending) return;

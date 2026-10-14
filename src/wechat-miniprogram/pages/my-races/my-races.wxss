@@ -277,11 +277,12 @@
   background: rgba(255, 255, 255, 0.06);
 }
 
-/* ---------- 状态条：已报名→已中签→确认参赛 chips ---------- */
+/* ---------- 状态条：想报名→已报名→已中签→确认参赛 chips（四枚在一行放不下，可换行） ---------- */
 
 .steps {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8rpx;
   padding: 16rpx;
   background: var(--color-bg-sunken);

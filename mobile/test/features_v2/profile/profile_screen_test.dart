@@ -12,7 +12,7 @@ const _testProfile = MyProfile(
   id: 'user-123',
   displayName: 'Test Runner',
   onboarding: OnboardingState(
-    corosReady: true,
+    watchReady: true,
     profileReady: true,
     completedAt: '2026-01-01T00:00:00Z',
   ),
@@ -70,7 +70,7 @@ void main() {
     expect(find.text('检查更新'), findsOneWidget);
   });
 
-  testWidgets('watch subtitle shows 已绑定 when corosReady', (tester) async {
+  testWidgets('watch subtitle shows 已绑定 when watchReady', (tester) async {
     await _pump(tester, profile: _testProfile);
     expect(find.text('已绑定'), findsOneWidget);
   });
@@ -81,7 +81,7 @@ void main() {
       profile: const MyProfile(
         id: 'user-123',
         displayName: 'Test Runner',
-        onboarding: OnboardingState(corosReady: false, profileReady: true),
+        onboarding: OnboardingState(watchReady: false, profileReady: true),
         profile: {'email': 'test@stride.cn'},
       ),
     );

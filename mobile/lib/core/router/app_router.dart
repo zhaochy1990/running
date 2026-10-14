@@ -19,11 +19,7 @@ import '../../features_v2/auth/declaration_screen.dart';
 import '../../features_v2/auth/login_screen.dart';
 import '../../features_v2/auth/register_screen.dart';
 import '../../features_v2/auth/start_screen.dart';
-import '../../features_v2/onboarding/basic_info_screen.dart';
-import '../../features_v2/onboarding/blocked_screen.dart';
-import '../../features_v2/onboarding/brand_screen.dart';
-import '../../features_v2/onboarding/coros_link_screen.dart';
-import '../../features_v2/onboarding/sync_progress_screen.dart';
+import '../../features_v2/onboarding/onboarding_screen.dart';
 import '../../features_v2/plan/session_detail_screen.dart';
 import '../../features_v2/plan/week_detail_screen.dart';
 import '../../features_v2/plan/week_list_screen.dart';
@@ -33,15 +29,14 @@ import 'routes.dart';
 
 /// GoRouter — IA mirrors the miniprogram four tabs (训练/记录/教练/我).
 ///
-/// Redirect rules:
+/// Redirect rules (stride-devops#461，blocked 死路已删):
 ///   0. Legacy /v2/* deep link -> remapped location (#414 table)
 ///   1. No token            -> /auth/start
-///   2. Token, !onboardingComplete -> /onboarding/brand
-///   3. Token, !hasWatch    -> /onboarding/blocked
-///   4. else                -> as requested
+///   2. Token, !completedAt -> /onboarding（单页三步，页面自重算落点）
+///   3. else                -> as requested（无表 = 首页空态引导绑表，不再拦）
 ///
 /// User-state probe is wrapped in try/catch — on any failure we conservatively
-/// route to /onboarding/blocked (assume logged in, not bound).
+/// route to /onboarding to recompute the landing (不再 blocked).
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: Routes.training,
@@ -66,7 +61,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         return Routes.authStart;
       }
 
-      // Authed: try to inspect onboarding/watch state.
+      // Authed: try to inspect onboarding state.
       if (loc.startsWith('/declaration')) return null;
       try {
         final userAsync = ref.read(currentUserProvider);
@@ -77,22 +72,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           return null;
         }
         final onboardingComplete = user.onboarding.completedAt != null;
-        final hasWatch = user.onboarding.corosReady;
 
         if (!onboardingComplete) {
           if (inOnboarding) return null;
-          return Routes.onboardingBrand;
-        }
-        if (!hasWatch) {
-          if (loc == Routes.onboardingBlocked) return null;
-          return Routes.onboardingBlocked;
+          return Routes.onboarding;
         }
         if (inAuthFlow) return Routes.training;
         return null;
       } catch (_) {
-        // Conservative fallback: assume not bound.
-        if (loc == Routes.onboardingBlocked) return null;
-        return Routes.onboardingBlocked;
+        // Conservative fallback: recompute the landing on the onboarding page
+        //（页面 refresh() 会再读一次服务端状态）。
+        if (inOnboarding) return null;
+        return Routes.onboarding;
       }
     },
     routes: [
@@ -111,35 +102,17 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       // 法务声明页公开可读（登录前也要能看协议）。
       GoRoute(
         path: Routes.declarationPattern,
-        builder: (_, state) => DeclarationScreen(
-          docType: state.pathParameters['docType']!,
-        ),
+        builder: (_, state) =>
+            DeclarationScreen(docType: state.pathParameters['docType']!),
       ),
       GoRoute(
-        path: Routes.onboardingBrand,
-        builder: (_, _) => const BrandScreen(),
-      ),
-      GoRoute(
-        path: Routes.onboardingCoros,
-        builder: (_, _) => const CorosLinkScreen(),
-      ),
-      GoRoute(
-        path: Routes.onboardingSync,
-        builder: (_, _) => const SyncProgressScreen(),
-      ),
-      GoRoute(
-        path: Routes.onboardingBasicInfo,
-        builder: (_, _) => const BasicInfoScreen(),
-      ),
-      GoRoute(
-        path: Routes.onboardingBlocked,
-        builder: (_, _) => const BlockedScreen(),
+        path: Routes.onboarding,
+        builder: (_, _) => const OnboardingScreen(),
       ),
       GoRoute(
         path: Routes.activityDetailPattern,
-        builder: (_, state) => ActivityDetailScreen(
-          activityId: state.pathParameters['id']!,
-        ),
+        builder: (_, state) =>
+            ActivityDetailScreen(activityId: state.pathParameters['id']!),
       ),
       GoRoute(
         path: Routes.planWeeks,
@@ -147,9 +120,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: Routes.weekDetailPattern,
-        builder: (_, state) => WeekDetailScreen(
-          folder: state.pathParameters['folder']!,
-        ),
+        builder: (_, state) =>
+            WeekDetailScreen(folder: state.pathParameters['folder']!),
       ),
       GoRoute(
         path: Routes.sessionDetailPattern,
@@ -181,10 +153,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: Routes.meDataPbs,
         builder: (_, _) => const PbRecordsScreen(),
       ),
-      GoRoute(
-        path: Routes.meWatch,
-        builder: (_, _) => const WatchScreen(),
-      ),
+      GoRoute(path: Routes.meWatch, builder: (_, _) => const WatchScreen()),
       // 4 flat tabs mirroring the miniprogram: 训练 / 记录 / 教练 / 我.
       ShellRoute(
         builder: (_, _, child) => MainShell(child: child),

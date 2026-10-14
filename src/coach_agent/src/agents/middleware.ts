@@ -107,10 +107,13 @@ export function createLoggingMiddleware(scope = "agent") {
     wrapToolCall: async (request, handler) => {
       const startedAt = Date.now();
       const name = request.toolCall.name;
+      const args = (request.toolCall.args ?? {}) as Record<string, unknown>;
       log.info(
         {
           tool: name,
-          argKeys: Object.keys(request.toolCall.args ?? {}),
+          argKeys: Object.keys(args),
+          // 诊断：确认 read_file 读的是 SKILL.md 还是数据；无此参数的工具该字段被省略
+          filePath: typeof args.file_path === "string" ? args.file_path : undefined,
         },
         "tool call request,",
       );

@@ -32,37 +32,26 @@ const cfg = {
     configurable: { thread_id: thread },
   };
 const startTime = Date.now();
+
+// const question = "我上周日晚上跑的怎么样？";
+const question = "帮我分析一下近期的HRV，RHR";
+
 const input ={ 
   messages: [{ 
     role: "user", 
-    content: JSON.stringify({timestamp:  shanghaiIso(),message: "我今天晚上跑的怎么样？"}), 
+    content: JSON.stringify({timestamp:  shanghaiIso(),message: question}), 
   }] 
 };
 const res = await agent.invoke(input, cfg);
 const endTime = Date.now();
 console.log(`\n===== 耗时 ${endTime - startTime} ms =====`);
+console.log("Intent: ", res.intent?.intent);
 
-console.log(res);
-    // while (res.__interrupt__?.length && guard++ < 6) {
-    //   const intr = res.__interrupt__[0]?.value;
-    //   if (intr?.kind === ASK_USER_QUESTION_KIND) {
-    //     console.log(`\n----- 教练想追问你 -----\n${renderQuestion(intr)}`);
-    //     //     } else {
-    //     //       console.log(`\n----- 教练暂停并请求输入 -----\n${JSON.stringify(intr.value)}`);
-    //   }
-    //   const answer = (await readAnswer()).trim();
-    //   res = (await agent.invoke(new Command({ resume: answer }), cfg)) as typeof res;
-    // }
-// await agent.invoke({
-//   messages: [{ role: "user", content: "帮我生成下周的训练计划" }],
-// }, cfg);
+const messageCnt = res.messages.length;
+console.log(`\n===== 消息数量 ${messageCnt} =====`);
 
-// await agent.invoke({
-//   messages: [{ role: "user", content: "我这周练的怎么样？" }],
-// }, cfg);
+console.log("\n===== Final Response from AI =====");
+console.log(res.messages.at(-1)?.content);
 
-// await agent.invoke({
-//   messages: [{ role: "user", content: "我这周的训练计划是什么？" }],
-// }, cfg);
 
 await store.close();

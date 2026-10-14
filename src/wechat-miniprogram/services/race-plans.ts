@@ -9,8 +9,9 @@
 
 import { http } from './request';
 
-/** 报名状态 token（storage.RacePlanState* 词汇）。 */
-export type RacePlanState = 'registered' | 'won' | 'lost' | 'confirmed';
+/** 报名状态 token（storage.RacePlanState* 词汇）：想报名（报名未开启的意向）→
+ *  已报名（等抽签）→ 已中签 / 未中签 → 确认参赛。 */
+export type RacePlanState = 'want' | 'registered' | 'won' | 'lost' | 'confirmed';
 
 /** 计划卡上的赛事投影（racePlanRaceDTO 镜像）。 */
 export interface RacePlanRace {

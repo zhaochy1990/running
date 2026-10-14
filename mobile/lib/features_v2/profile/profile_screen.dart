@@ -33,7 +33,7 @@ class MeScreen extends ConsumerWidget {
         profile?.profile?['display_name'] as String? ??
         _emailPrefix((profile?.profile?['email'] as String?) ?? '');
     final email = (profile?.profile?['email'] as String?) ?? '';
-    final watchBound = profile?.onboarding.corosReady ?? false;
+    final watchBound = profile?.onboarding.watchReady ?? false;
 
     return Scaffold(
       backgroundColor: StrideTokens.bg,

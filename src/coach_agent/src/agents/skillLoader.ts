@@ -7,6 +7,9 @@ import { fileURLToPath } from "node:url";
 // so `..` resolves to `dist/` and `skills` to `dist/skills/`.
 const SKILLS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "skills");
 
+/** Root dir for deep agent FilesystemBackend / skill paths (dist/skills/). */
+export { SKILLS_DIR };
+
 /** Read a SKILL.md body (YAML frontmatter stripped) for inlining into a prompt. */
 export function loadSkillMarkdown(name: string): string {
   const raw = readFileSync(join(SKILLS_DIR, name, "SKILL.md"), "utf8");
