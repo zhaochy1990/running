@@ -442,9 +442,9 @@ class _ActivityRow extends StatelessWidget {
                     ? Image.network(
                         thumb,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => _sportIcon(a.sportName ?? ''),
+                        errorBuilder: (_, _, _) => _sportIcon(a.sportName),
                       )
-                    : _sportIcon(a.sportName ?? ''),
+                    : _sportIcon(a.sportName),
               ),
             ),
             const SizedBox(width: StrideTokens.spaceMd),
@@ -453,7 +453,7 @@ class _ActivityRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    (a.name?.isNotEmpty ?? false) ? a.name! : (a.sportName ?? ''),
+                    (a.name?.isNotEmpty ?? false) ? a.name! : a.sportName,
                     style: const TextStyle(
                       fontFamily: AppTypography.fontSans,
                       fontSize: StrideTokens.fs14,

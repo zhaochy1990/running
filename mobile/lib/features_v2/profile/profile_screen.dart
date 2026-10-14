@@ -132,14 +132,6 @@ class MeScreen extends ConsumerWidget {
     return at > 0 ? email.substring(0, at) : email;
   }
 
-  static void _comingSoon(BuildContext context, String feature) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$feature — 即将上线'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
 
   static Future<void> _checkForUpdate(
       BuildContext context, WidgetRef ref) async {

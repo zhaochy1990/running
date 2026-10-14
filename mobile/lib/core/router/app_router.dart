@@ -163,10 +163,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const PrivacyScreen(),
       ),
       GoRoute(
-        path: Routes.meData,
-      ),
-      GoRoute(
-        path: Routes.meDataTrends,
         path: Routes.meTrainingStatus,
         builder: (_, _) => const TrainingStatusScreen(),
       ),
