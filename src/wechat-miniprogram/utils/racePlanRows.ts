@@ -10,14 +10,15 @@ import { daysUntil } from './raceDetailRows';
 
 /** 状态全称（卡头徽章用）；chip 上用短名（steps 里去掉「· 等抽签」尾缀）。 */
 const STATE_LABELS: Record<RacePlanState, string> = {
+  want: '想报名',
   registered: '已报名 · 等抽签',
   won: '已中签',
   lost: '未中签',
   confirmed: '确认参赛',
 };
 
-/** 状态条的三态流转序列（未中签是独立旁路状态，不进 chips）。 */
-const STATE_FLOW: RacePlanState[] = ['registered', 'won', 'confirmed'];
+/** 状态条的四态流转序列（未中签是独立旁路状态，不进 chips）。 */
+const STATE_FLOW: RacePlanState[] = ['want', 'registered', 'won', 'confirmed'];
 
 /** 状态切换后卡片的可变部分：徽章文案、chips 点亮、未中签引导行可见性。
  *  页面乐观更新与失败回滚都用它算补丁，与 toPlanCard 同源不漂移。 */
@@ -53,7 +54,7 @@ export interface PlanCardView {
   city: string;
   /** 开赛倒计时文案（N>0「距离比赛还有 N 天」/ 当天「今天开赛」）；已结束或无日期为 ''，wxml 隐藏 */
   countdown: string;
-  /** 状态条 chips：已报名→已中签→确认参赛（短名） */
+  /** 状态条 chips：想报名→已报名→已中签→确认参赛（短名） */
   steps: Array<{ state: RacePlanState; label: string; on: boolean }>;
   /** 未中签旁路：卡上给「去找替代赛事」转化引导 */
   lost: boolean;

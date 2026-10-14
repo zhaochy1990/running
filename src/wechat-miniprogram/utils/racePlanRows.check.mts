@@ -38,20 +38,22 @@ const plan = (over: Partial<RacePlan>): RacePlan => ({
   ...over,
 });
 
-// 状态全称：四态徽章文案（#385 定稿词表，经 toPlanCard 断言同一条代码路径）
+// 状态全称：五态徽章文案（#385 定稿词表 + want 前置态，经 toPlanCard 断言同一条代码路径）
+eq(toPlanCard(plan({ state: 'want' })).stateLabel, '想报名', 'label want');
 eq(toPlanCard(plan({ state: 'registered' })).stateLabel, '已报名 · 等抽签', 'label registered');
 eq(toPlanCard(plan({ state: 'won' })).stateLabel, '已中签', 'label won');
 eq(toPlanCard(plan({ state: 'lost' })).stateLabel, '未中签', 'label lost');
 eq(toPlanCard(plan({ state: 'confirmed' })).stateLabel, '确认参赛', 'label confirmed');
 
-// 状态条 chips：三态短名（registered 去掉「· 等抽签」），当前态点亮
+// 状态条 chips：四态短名（registered 去掉「· 等抽签」），当前态点亮
 const reg = toPlanCard(plan({ state: 'registered' }));
-eq(reg.steps.map((s) => s.label), ['已报名', '已中签', '确认参赛'], 'flow short labels');
-eq(reg.steps.map((s) => s.on), [true, false, false], 'registered on first chip');
-eq(toPlanCard(plan({ state: 'won' })).steps.map((s) => s.on), [false, true, false], 'won on second chip');
-eq(toPlanCard(plan({ state: 'confirmed' })).steps.map((s) => s.on), [false, false, true], 'confirmed on third chip');
+eq(reg.steps.map((s) => s.label), ['想报名', '已报名', '已中签', '确认参赛'], 'flow short labels');
+eq(reg.steps.map((s) => s.on), [false, true, false, false], 'registered on second chip');
+eq(toPlanCard(plan({ state: 'want' })).steps.map((s) => s.on), [true, false, false, false], 'want on first chip');
+eq(toPlanCard(plan({ state: 'won' })).steps.map((s) => s.on), [false, false, true, false], 'won on third chip');
+eq(toPlanCard(plan({ state: 'confirmed' })).steps.map((s) => s.on), [false, false, false, true], 'confirmed on fourth chip');
 const lost = toPlanCard(plan({ state: 'lost' }));
-eq(lost.steps.map((s) => s.on), [false, false, false], 'lost lights no chip');
+eq(lost.steps.map((s) => s.on), [false, false, false, false], 'lost lights no chip');
 eq(lost.lost, true, 'lost card carries CTA row');
 eq(reg.lost, false, 'registered card has no CTA row');
 

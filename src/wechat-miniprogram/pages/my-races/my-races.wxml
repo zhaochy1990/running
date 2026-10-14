@@ -63,7 +63,7 @@
                 <text wx:if="{{item.plan.countdown}}" class="plan__countdown">{{item.plan.countdown}}</text>
               </view>
 
-              <!-- 状态条：已报名→已中签→确认参赛 chips 点击流转 -->
+              <!-- 状态条：想报名→已报名→已中签→确认参赛 chips 点击流转 -->
               <view class="steps">
                 <block wx:for="{{item.plan.steps}}" wx:for-item="s" wx:key="state">
                   <view

@@ -156,8 +156,8 @@ type RacePlanWithRace struct {
 // Offboarded reports whether this plan's race no longer surfaces in the race
 // center (unpublished or deleted). Lost plans never reach the caller —
 // ListRacePlans drops them below — so this is true only for
-// registered/won/confirmed rows the「我的赛事」page renders as 已下架 placeholder
-// cards.
+// want/registered/won/confirmed rows the「我的赛事」page renders as 已下架
+// placeholder cards.
 func (row RacePlanWithRace) Offboarded() bool {
 	return row.Race == nil || !row.Race.Published
 }
@@ -166,7 +166,8 @@ func (row RacePlanWithRace) Offboarded() bool {
 // date ascending (soonest first; plans whose race row is gone sort last). The
 // offboarding layering lives here, not in the handler: a lost plan whose race is
 // unpublished or deleted is silently dropped — it records nothing the runner can
-// act on — while registered/won/confirmed plans survive with Offboarded()=true.
+// act on — while want/registered/won/confirmed plans survive with
+// Offboarded()=true.
 func (s *Store) ListRacePlans(ctx context.Context, userID string) ([]RacePlanWithRace, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {

@@ -131,7 +131,7 @@ func TestRaceFavorite_ListFiltersUnpublished(t *testing.T) {
 	}
 }
 
-func TestRacePlan_FourStateRoundTrip(t *testing.T) {
+func TestRacePlan_FiveStateRoundTrip(t *testing.T) {
 	st := openTestStore(t)
 	migrateRaceEngagement(t, st)
 	ctx := context.Background()
@@ -141,13 +141,13 @@ func TestRacePlan_FourStateRoundTrip(t *testing.T) {
 	hotel, transit := true, true
 	plan, _, err := st.UpsertRacePlan(ctx, RacePlanUpsert{
 		UserID: uid, RaceEventID: raceID,
-		ItemType: "Marathon", State: RacePlanStateRegistered,
+		ItemType: "Marathon", State: RacePlanStateWant,
 		Hotel: &hotel, Transit: &transit,
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if plan.State != RacePlanStateRegistered || !plan.Hotel || !plan.Transit {
+	if plan.State != RacePlanStateWant || !plan.Hotel || !plan.Transit {
 		t.Fatalf("created plan wrong: %+v", plan)
 	}
 	if plan.CreatedAt.IsZero() || plan.UpdatedAt.IsZero() {
@@ -157,9 +157,10 @@ func TestRacePlan_FourStateRoundTrip(t *testing.T) {
 
 	firstCreated := plan.CreatedAt
 
-	// registered -> won: the whole four-state machine is driven by upserts; the
-	// travel booleans ride along and absent keys preserve the stored values.
-	for _, state := range []string{RacePlanStateWon, RacePlanStateLost, RacePlanStateConfirmed} {
+	// want -> registered -> won/lost/confirmed: the whole five-state machine is
+	// driven by upserts; the travel booleans ride along and absent keys preserve
+	// the stored values.
+	for _, state := range []string{RacePlanStateRegistered, RacePlanStateWon, RacePlanStateLost, RacePlanStateConfirmed} {
 		plan, _, err = st.UpsertRacePlan(ctx, RacePlanUpsert{
 			UserID: uid, RaceEventID: raceID,
 			ItemType: "HalfMarathon", State: state,
@@ -243,6 +244,7 @@ func TestRacePlan_ListOffboardingLayering(t *testing.T) {
 	soon := seedEngagementRace(t, st, "分层近程赛", "2032-09-01", true)
 	offboardedLost := seedEngagementRace(t, st, "分层未中签赛", "2032-09-15", true)
 	offboardedRegistered := seedEngagementRace(t, st, "分层已报名赛", "2032-09-20", true)
+	offboardedWant := seedEngagementRace(t, st, "分层想报名赛", "2032-08-05", true)
 
 	seed := func(raceID uint64, state string) {
 		t.Helper()
@@ -253,12 +255,13 @@ func TestRacePlan_ListOffboardingLayering(t *testing.T) {
 		}
 	}
 	// The upsert refuses unpublished races by design, so seed the offboarded
-	// pair while published, then flip published off.
+	// set while published, then flip published off.
 	seed(offboardedLost, RacePlanStateLost)
 	seed(offboardedRegistered, RacePlanStateRegistered)
+	seed(offboardedWant, RacePlanStateWant)
 	seed(soon, RacePlanStateWon)
 	seed(later, RacePlanStateConfirmed)
-	for _, id := range []uint64{offboardedLost, offboardedRegistered} {
+	for _, id := range []uint64{offboardedLost, offboardedRegistered, offboardedWant} {
 		if err := st.db.WithContext(ctx).Model(&RaceCalendarEvent{}).
 			Where("id = ?", id).Update("published", false).Error; err != nil {
 			t.Fatalf("unpublish %d: %v", id, err)
@@ -275,9 +278,9 @@ func TestRacePlan_ListOffboardingLayering(t *testing.T) {
 		got = append(got, row.Plan.RaceEventID)
 		offboardedByID[row.Plan.RaceEventID] = row.Offboarded()
 	}
-	// lost-on-unpublished is silently dropped; the other three survive, ordered
-	// by race date ascending.
-	want := []uint64{soon, offboardedRegistered, later}
+	// lost-on-unpublished is silently dropped; the rest survive — want riding
+	// the registered layer, not the lost one — ordered by race date ascending.
+	want := []uint64{offboardedWant, soon, offboardedRegistered, later}
 	if len(got) != len(want) {
 		t.Fatalf("got %v want %v", got, want)
 	}
@@ -288,6 +291,9 @@ func TestRacePlan_ListOffboardingLayering(t *testing.T) {
 	}
 	if !offboardedByID[offboardedRegistered] {
 		t.Fatalf("registered plan on unpublished race must be offboarded")
+	}
+	if !offboardedByID[offboardedWant] {
+		t.Fatalf("want plan on unpublished race must be offboarded")
 	}
 	if offboardedByID[soon] || offboardedByID[later] {
 		t.Fatalf("published plans must not be offboarded: %v", offboardedByID)

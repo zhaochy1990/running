@@ -266,6 +266,7 @@ eq(
   'chips dedupe fallback name',
 );
 eq(planButtonLabel('Marathon', 'none'), '未报名', 'button none');
+eq(planButtonLabel('Marathon', 'want'), '全马 · 想报名', 'button want');
 eq(planButtonLabel('Marathon', 'registered'), '全马 · 已报名（等抽签）', 'button registered');
 eq(planButtonLabel('HalfMarathon', 'won'), '半马 · 已中签', 'button won');
 eq(planButtonLabel('10Km', 'confirmed'), '10K · 确认参赛', 'button km chip');

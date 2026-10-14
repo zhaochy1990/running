@@ -266,8 +266,9 @@ export function toDetailView(detail: RaceDetail, today: string): RaceDetailView 
 
 /* ───────────────────────── 报名选择器（#393 唯一计划创建入口） ───────────────────────── */
 
-/** 四态报名状态 → 中文标签（storage.RacePlanState* 词汇；选择器选项与按钮共用）。 */
+/** 五态报名状态 → 中文标签（storage.RacePlanState* 词汇；选择器选项与按钮共用）。 */
 const PLAN_STATE_LABELS: Record<RacePlanState, string> = {
+  want: '想报名',
   registered: '已报名（等抽签）',
   won: '已中签',
   lost: '未中签',
@@ -282,6 +283,7 @@ export interface PlanStateOption {
 
 export const PLAN_STATE_OPTIONS: PlanStateOption[] = [
   { value: 'none', label: '未报名 · 取消追踪' },
+  { value: 'want', label: PLAN_STATE_LABELS.want },
   { value: 'registered', label: PLAN_STATE_LABELS.registered },
   { value: 'won', label: PLAN_STATE_LABELS.won },
   { value: 'lost', label: PLAN_STATE_LABELS.lost },
@@ -302,7 +304,7 @@ export function itemChips(items: RaceItem[]): RaceChip[] {
   return [...seen].map(([token, label]) => ({ token, label }));
 }
 
-/** 报名按钮文案：'未报名' 或 '全马 · 已报名（等抽签）'。 */
+/** 报名按钮文案：'未报名' 或 '全马 · 想报名' / '全马 · 已报名（等抽签）'。 */
 export function planButtonLabel(itemType: string, state: RacePlanState | 'none'): string {
   if (state === 'none') return '未报名';
   return `${typeAbbr(itemType) || itemType} · ${PLAN_STATE_LABELS[state]}`;

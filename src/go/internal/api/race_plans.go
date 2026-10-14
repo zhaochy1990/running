@@ -67,7 +67,7 @@ func (p *racePlanRoutes) register(rg *gin.RouterGroup) {
 
 // racePlanDTO is one plan as「我的赛事」renders it: the tracking fields plus the
 // compact race projection (name/date/place/labels) the plan card's header shows.
-// offboarded mirrors the storage-layer layering: true on a registered/won/
+// offboarded mirrors the storage-layer layering: true on a want/registered/won/
 // confirmed plan whose race is unpublished or deleted (灰卡、记录保留), while lost
 // plans never reach the response — they are silently filtered in the store.
 type racePlanDTO struct {
@@ -131,7 +131,7 @@ type racePlanUpsertRequest struct {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // upsert creates or updates the caller's plan for one race. item_type must be
-// a racetypes token and state one of the four signup states; the race must be
+// a racetypes token and state one of the five signup states; the race must be
 // published (404 otherwise). Answers 201 on create, 200 on update.
 //
 //	@Summary		Create or update a race plan
@@ -169,7 +169,7 @@ func (p *racePlanRoutes) upsert(c *gin.Context) {
 		return
 	}
 	if !storage.IsRacePlanState(req.State) {
-		c.JSON(http.StatusUnprocessableEntity, racePlanValidationDetail("state", "state must be one of registered / won / lost / confirmed"))
+		c.JSON(http.StatusUnprocessableEntity, racePlanValidationDetail("state", "state must be one of want / registered / won / lost / confirmed"))
 		return
 	}
 	plan, created, err := p.store.UpsertRacePlan(c.Request.Context(), storage.RacePlanUpsert{

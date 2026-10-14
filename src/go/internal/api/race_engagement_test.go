@@ -359,6 +359,12 @@ func TestRacePlans_UpsertValidation(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("upsert update = %d: %s", w.Code, w.Body.String())
 	}
+	// want — the pre-signup head of the machine — is a first-class state.
+	w = h.do(t, http.MethodPut, "/api/users/me/race-plans/7",
+		map[string]string{"item_type": "HalfMarathon", "state": "want"}, h.userToken(t))
+	if w.Code != http.StatusOK {
+		t.Fatalf("upsert want = %d: %s", w.Code, w.Body.String())
+	}
 
 	cases := []struct {
 		name string
