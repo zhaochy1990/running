@@ -17,17 +17,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'package:stride/features_v2/health/training_status_screen.dart';
 import 'package:stride/main.dart' as app;
 
 late WidgetTester tester0;
 
+/// 真实等待 + 显式 pump 推进帧（integration binding 下 frame 只在 pump 时绘制，
+/// 纯 Future.delayed 会让 push 过渡动画冻结在半程）。
 Future<void> _dwell(int seconds, String milestone) async {
   debugPrint('WALKTHROUGH-MARK: $milestone');
-  await Future<void>.delayed(Duration(seconds: seconds));
-  try {
-    await tester0.pumpAndSettle(const Duration(milliseconds: 300));
-  } on FlutterError {
-    // 大页面/图表动画下 pumpAndSettle 超时是走查节奏内的预期情况，吞掉继续。
+  final end = DateTime.now().add(Duration(seconds: seconds));
+  while (DateTime.now().isBefore(end)) {
+    await tester0.pump(const Duration(milliseconds: 300));
+    await Future<void>.delayed(const Duration(milliseconds: 300));
   }
 }
 
@@ -70,18 +72,25 @@ void main() {
 
     // 生产 5 个接口（含 16 周活动分页）加载可能超过 10s，轮询等待。
     var statusLoaded = false;
-    for (var i = 0; i < 45; i++) {
-      await Future<void>.delayed(const Duration(seconds: 2));
-      try {
-        await tester0.pumpAndSettle(const Duration(milliseconds: 300));
-      } on FlutterError {
-        // 加载 spinner / 图表动画下超时是预期情况。
-      }
+    for (var i = 0; i < 60; i++) {
+      await tester0.pump(const Duration(seconds: 2));
+      await Future<void>.delayed(const Duration(seconds: 1));
       if (find.text('核心指标').evaluate().isNotEmpty) {
         statusLoaded = true;
         break;
       }
       if (find.text('加载失败').evaluate().isNotEmpty) break;
+    }
+    debugPrint(
+        'WALKTHROUGH-MARK: pushed=${find.byType(TrainingStatusScreen).evaluate().length} '
+        'errorPage=${find.text('加载失败').evaluate().length}');
+    for (final t in find
+        .textContaining(RegExp('.+'), findRichText: true)
+        .evaluate()) {
+      final widget = t.widget;
+      if (widget is Text && widget.data != null) {
+        debugPrint('WALKTHROUGH-TEXT: ${widget.data}');
+      }
     }
     debugPrint('WALKTHROUGH-MARK: training-status-loaded=$statusLoaded');
     expect(statusLoaded, isTrue, reason: '训练状态页应在 90s 内完成生产 API 加载');

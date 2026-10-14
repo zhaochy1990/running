@@ -43,13 +43,19 @@ class Activity {
   factory Activity.fromJson(Map<String, dynamic> json) =>
       _$ActivityFromJson(json);
 
+  static String _sportNameFromJson(dynamic value) =>
+      (value as String?) ?? '';
+
   @JsonKey(name: 'label_id')
   final String labelId;
   final String? name;
   @JsonKey(name: 'sport_type')
   final int sportType;
-  @JsonKey(name: 'sport_name')
-  final String? sportName;
+
+  /// Go DTO 的 sport_name 可为 null（如未命名的 COROS 活动，生产实测
+  /// 200/200 为 null），回退空串；展示层用 name ?? sportName 兜底。
+  @JsonKey(name: 'sport_name', fromJson: _sportNameFromJson)
+  final String sportName;
   final String date;
   @JsonKey(name: 'distance_m')
   final num distanceM;
