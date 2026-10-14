@@ -15,6 +15,7 @@ import '../../features_v2/records/records_screen.dart';
 import '../../features_v2/training/training_screen.dart';
 import '../../features_v2/watch/watch_screen.dart';
 import '../../features_v2/profile/profile_screen.dart';
+import '../../features_v2/auth/declaration_screen.dart';
 import '../../features_v2/auth/login_screen.dart';
 import '../../features_v2/auth/register_screen.dart';
 import '../../features_v2/auth/start_screen.dart';
@@ -61,11 +62,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final inOnboarding = loc.startsWith('/onboarding');
 
       if (!isAuthed) {
-        if (inAuthFlow) return null;
+        if (Routes.isPublicPath(loc)) return null;
         return Routes.authStart;
       }
 
       // Authed: try to inspect onboarding/watch state.
+      if (loc.startsWith('/declaration')) return null;
       try {
         final userAsync = ref.read(currentUserProvider);
         final user = userAsync.valueOrNull;
@@ -105,6 +107,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.authRegister,
         builder: (_, _) => const AuthRegisterScreen(),
+      ),
+      // 法务声明页公开可读（登录前也要能看协议）。
+      GoRoute(
+        path: Routes.declarationPattern,
+        builder: (_, state) => DeclarationScreen(
+          docType: state.pathParameters['docType']!,
+        ),
       ),
       GoRoute(
         path: Routes.onboardingBrand,

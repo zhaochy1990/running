@@ -103,7 +103,7 @@ class _AuthRegisterScreenState extends ConsumerState<AuthRegisterScreen> {
           );
       // Router redirect handles navigation post-login.
     } on AuthException catch (e) {
-      setState(() => _error = e.message);
+      setState(() => _error = e.localized);
     } on DioException catch (_) {
       setState(() => _error = '网络异常，请检查连接');
     } catch (_) {

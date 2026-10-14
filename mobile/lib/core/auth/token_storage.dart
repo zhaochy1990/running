@@ -35,4 +35,13 @@ class TokenStorage {
   }
 
   Future<void> clear() => _storage.delete(key: _key);
+
+  /// 最近一次短信登录使用的手机号（#419 决议 4：会话失效回登录页时预填，
+  /// 支持一键重发验证码）。非敏感，但与 token 同存 Keychain 免引入新依赖。
+  static const _lastSmsPhoneKey = 'stride.sms.phone.v1';
+
+  Future<String?> readLastSmsPhone() => _storage.read(key: _lastSmsPhoneKey);
+
+  Future<void> writeLastSmsPhone(String phone) =>
+      _storage.write(key: _lastSmsPhoneKey, value: phone);
 }
