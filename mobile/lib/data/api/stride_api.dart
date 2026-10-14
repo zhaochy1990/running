@@ -313,35 +313,6 @@ class StrideApi {
     return WeeklyPlanDetail.fromJson(json);
   }
 
-  // ── Coach chat ─────────────────────────────────────────────────────────
-  /// Send a message to the orchestrator coach brain.
-  /// `POST /api/users/me/coach/chat` — body
-  /// `{session_id, message, client_turn_id}`. The server
-  /// derives the thread key as `{user}:coach:{session_id}` and maintains
-  /// conversation history per session. Returns one orchestrated turn:
-  /// `reply` (the user-facing answer), an optional `clarification` (when the
-  /// coach needs more info), the echoed `session_id`, and the `thread_id`.
-  Future<CoachChatReply> postCoachChat({
-    required String sessionId,
-    required String message,
-    required String clientTurnId,
-  }) async {
-    final r = await _post<Map<String, dynamic>>(
-      '/api/users/me/coach/chat',
-      body: {
-        'session_id': sessionId,
-        'message': message,
-        'client_turn_id': clientTurnId,
-      },
-    );
-    return CoachChatReply(
-      sessionId: r['session_id'] as String? ?? sessionId,
-      threadId: r['thread_id'] as String? ?? '',
-      reply: r['reply'] as String? ?? '',
-      clarification: r['clarification'] as String?,
-    );
-  }
-
   // ── Race domain（赛事域四屏，Go 活契约零新增，stride-devops#466）─────────
   /// GET /api/race-calendar —— 已发布赛历分页。scope=all 拉整年。
   Future<RaceCalendarPage> getRaceCalendar({
@@ -512,18 +483,3 @@ final strideApiProvider = Provider<StrideApi>((ref) {
   final client = ref.watch(apiClientProvider);
   return StrideApi(client.dio);
 });
-
-/// One orchestrated coach turn — reply text + optional clarification.
-class CoachChatReply {
-  const CoachChatReply({
-    required this.sessionId,
-    required this.threadId,
-    required this.reply,
-    this.clarification,
-  });
-
-  final String sessionId;
-  final String threadId;
-  final String reply;
-  final String? clarification;
-}

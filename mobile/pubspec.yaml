@@ -57,16 +57,16 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
+  # 真机/模拟器 UI 走查（flutter test integration_test -d <device>）
+  integration_test:
+    sdk: flutter
+
   # Lints — flutter_lints (baseline) + extra strict lints can be added later
   flutter_lints: ^6.0.0
 
   # Codegen
   build_runner: ^2.4.13
   json_serializable: ^6.8.0
-
-  # E2E walkthrough on simulator (真机走查驱动) — 不进生产包
-  integration_test:
-    sdk: flutter
 
   # Launcher icon generator
   flutter_launcher_icons: ^0.14.1
