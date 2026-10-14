@@ -53,7 +53,8 @@ class MeScreen extends ConsumerWidget {
           ProfileMenuItem(
             icon: Icons.monitor_heart_outlined,
             label: '训练状态',
-            onTap: () => _comingSoon(context, '训练状态'),
+            key: const Key('menu-training-status'),
+            onTap: () => context.push(Routes.meTrainingStatus),
           ),
           ProfileMenuItem(
             icon: Icons.emoji_events_outlined,
@@ -83,7 +84,7 @@ class MeScreen extends ConsumerWidget {
           ProfileMenuItem(
             icon: Icons.insights_outlined,
             label: '数据与状态',
-            onTap: () => context.push(Routes.meData),
+            onTap: () => context.push(Routes.meTrainingStatus),
           ),
           ProfileMenuItem(
             icon: Icons.person_outline,

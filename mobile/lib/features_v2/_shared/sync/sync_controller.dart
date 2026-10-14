@@ -10,11 +10,9 @@ import '../../../data/api/stride_api.dart';
 import '../../activity/providers/activity_detail_provider.dart';
 import '../../activity/providers/timeseries_provider.dart';
 import '../../health/providers/ability_snapshot_provider.dart';
-import '../../health/providers/health_overview_provider.dart';
 import '../../health/providers/pb_records_provider.dart';
-import '../../health/providers/pmc_provider.dart';
 import '../../health/providers/race_prediction_provider.dart';
-import '../../health/providers/trends_provider.dart';
+import '../../health/providers/training_status_provider.dart';
 import '../../watch/watch_providers.dart';
 
 /// SyncController — process-wide singleton owning the in-flight
@@ -108,13 +106,11 @@ class SyncController extends Notifier<SyncState> {
       if (ref.read(currentUserIdProvider) != userId) {
         throw StateError('账号已切换，同步结果已忽略');
       }
-      ref.invalidate(healthOverviewProvider);
-      ref.invalidate(pmcProvider);
+      ref.invalidate(trainingStatusProvider);
       ref.invalidate(abilitySnapshotProvider);
       ref.invalidate(racePredictionProvider);
       ref.invalidate(racePredictionHistoryProvider);
       ref.invalidate(pbRecordsProvider);
-      ref.invalidate(trendsProvider);
       ref.invalidate(activityDetailProvider);
       ref.invalidate(timeseriesProvider);
       // last_sync_at 由服务端在 run 成功后写 sync_meta，这里回读刷新。

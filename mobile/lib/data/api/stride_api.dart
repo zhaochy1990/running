@@ -8,6 +8,7 @@ import '../../features_v2/race/models/race_models.dart';
 import '../models/activity.dart';
 import '../models/health.dart';
 import '../models/plan.dart';
+import '../models/training_status.dart';
 import '../models/weekly_plan.dart';
 import '../models/pipeline.dart';
 import '../models/profile.dart';
@@ -123,13 +124,21 @@ class StrideApi {
     String? from,
     String? to,
   }) async {
-    return listActivitiesPage(
-      user,
-      limit: limit,
-      offset: offset,
-      from: from,
-      to: to,
-    ).then((p) => p.activities);
+    // Backend returns {total, offset, limit, activities: [...]} —
+    // unpack the activities field rather than casting the wrapper.
+    // Query keys are date_from/date_to（Go activities.go，上海 YYYY-MM-DD 含边界）。
+    final json = await _get<Map<String, dynamic>>(
+      '/api/$user/activities',
+      query: {
+        'limit': ?limit,
+        'offset': ?offset,
+        'date_from': ?from,
+        'date_to': ?to,
+      },
+    );
+    final list = (json['activities'] as List? ?? const [])
+        .cast<Map<String, dynamic>>();
+    return list.map(Activity.fromJson).toList(growable: false);
   }
 
   Future<ActivityDetailResponse> getActivity(
@@ -184,12 +193,31 @@ class StrideApi {
     return HealthResponse.fromJson(json);
   }
 
-  Future<PMCResponse> getPMC(String user, {int days = 90}) async {
+  /// 逐日 HRV —— GET /api/{user}/hrv?days=N（#465 训练状态页）。
+  Future<HrvResponse> getHrv(String user, {int days = 90}) async {
     final json = await _get<Map<String, dynamic>>(
-      '/api/$user/pmc',
+      '/api/$user/hrv',
       query: {'days': days},
     );
-    return PMCResponse.fromJson(json);
+    return HrvResponse.fromJson(json);
+  }
+
+  /// STRIDE 负荷 current + series —— GET /api/{user}/stride/training-load（#465）。
+  Future<TrainingLoadResponse> getStrideTrainingLoad(
+    String user, {
+    int days = 112,
+  }) async {
+    final json = await _get<Map<String, dynamic>>(
+      '/api/$user/stride/training-load',
+      query: {'days': days},
+    );
+    return TrainingLoadResponse.fromJson(json);
+  }
+
+  /// STRIDE 阈值 + 配速/心率区间 —— GET /api/{user}/stride/zones（#465 首次消费）。
+  Future<StrideZonesResponse> getStrideZones(String user) async {
+    final json = await _get<Map<String, dynamic>>('/api/$user/stride/zones');
+    return StrideZonesResponse.fromJson(json);
   }
 
   Future<AbilityCurrent> getAbilityCurrent(String user) async {
