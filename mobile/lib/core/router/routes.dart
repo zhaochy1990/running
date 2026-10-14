@@ -8,6 +8,15 @@ class Routes {
   static const authLogin = '/auth/login';
   static const authRegister = '/auth/register';
 
+  // 法务声明（公开可读，登录页协议链接的落地页）
+  static const declarationPattern = '/declaration/:docType';
+  static String declaration(String docType) => '/declaration/$docType';
+
+  /// 未登录也可访问的页面集合（auth 流程页 + 法务声明页）。
+  /// 集中在这里以便测试钉住，防止 redirect 重构时无声扩大或收回。
+  static bool isPublicPath(String loc) =>
+      loc.startsWith('/auth') || loc.startsWith('/declaration');
+
   // Onboarding
   static const onboardingBrand = '/onboarding/brand';
   static const onboardingCoros = '/onboarding/coros';
@@ -47,8 +56,7 @@ class Routes {
   /// Map a legacy `/v2/*` deep link to its new location (#414 redirect table).
   /// Returns null when [loc] is not legacy. Unmapped legacy domains (deleted
   /// features) fall back to /training.
-  static String? redirectLegacy(String loc) {
-    if (!loc.startsWith('/v2/')) return null;
+  static String? redirectLegacy(String loc) {    if (!loc.startsWith('/v2/')) return null;
     final rest = loc.substring('/v2'.length); // keeps leading '/'
 
     // Ordered: longest / most specific prefixes first.

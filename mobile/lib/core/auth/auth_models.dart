@@ -1,4 +1,8 @@
 /// Auth-service token set (matches /api/auth/login response shape).
+library;
+
+import 'auth_error_messages.dart';
+
 class TokenSet {
   const TokenSet({
     required this.accessToken,
@@ -44,11 +48,23 @@ class TokenSet {
 }
 
 class AuthException implements Exception {
-  const AuthException(this.message, {this.statusCode});
+  const AuthException(
+    this.message, {
+    this.statusCode,
+    this.code,
+  });
 
   final String message;
+
+  /// auth-service 错误体里的 `error` 机器码（如 sms_send_cooldown）。
+  /// 网络层异常等没有服务端错误体的场景为 null。
+  final String? code;
+
   final int? statusCode;
 
+  /// 展示给用户的中文文案（按机器码映射，回落到服务端原文）。
+  String get localized => authErrorMessage(code, server: message);
+
   @override
-  String toString() => 'AuthException($statusCode): $message';
+  String toString() => 'AuthException($statusCode $code): $message';
 }

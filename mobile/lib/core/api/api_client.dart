@@ -21,7 +21,7 @@ class ApiClient {
       baseUrl: Env.apiBaseUrl,
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 30),
-      headers: {'Accept': 'application/json'},
+      headers: {'Accept': 'application/json', 'X-Client-Id': Env.clientId},
       validateStatus: (s) => s != null && s < 500,
     ));
 

@@ -42,7 +42,7 @@ class AuthController extends StateNotifier<AuthState> {
         final refreshed = await _repo.refresh(tokens);
         state = AuthAuthenticated(refreshed);
       } catch (e) {
-        state = AuthUnauthenticated(e is AuthException ? e.message : null);
+        state = AuthUnauthenticated(e is AuthException ? e.localized : null);
       }
       return;
     }
@@ -55,7 +55,31 @@ class AuthController extends StateNotifier<AuthState> {
       final tokens = await _repo.login(email: email, password: password);
       state = AuthAuthenticated(tokens);
     } on AuthException catch (e) {
-      state = AuthUnauthenticated(e.message);
+      state = AuthUnauthenticated(e.localized);
+      rethrow;
+    } catch (_) {
+      state = const AuthUnauthenticated('网络错误，请稍后重试');
+      rethrow;
+    }
+  }
+
+  /// 手机号验证码登录（login-or-register）。发码由 UI 直接走 repository
+  /// （不切换全局 auth 状态）；这里只做验证换 token。
+  Future<void> loginWithSms({
+    required String phone,
+    required String code,
+    String? inviteCode,
+  }) async {
+    state = const AuthLoading();
+    try {
+      final tokens = await _repo.verifySmsCode(
+        phone: phone,
+        code: code,
+        inviteCode: inviteCode,
+      );
+      state = AuthAuthenticated(tokens);
+    } on AuthException catch (e) {
+      state = AuthUnauthenticated(e.localized);
       rethrow;
     } catch (_) {
       state = const AuthUnauthenticated('网络错误，请稍后重试');
@@ -77,7 +101,7 @@ class AuthController extends StateNotifier<AuthState> {
       );
       state = AuthAuthenticated(tokens);
     } on AuthException catch (e) {
-      state = AuthUnauthenticated(e.message);
+      state = AuthUnauthenticated(e.localized);
       rethrow;
     } catch (_) {
       state = const AuthUnauthenticated('网络错误，请稍后重试');
