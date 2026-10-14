@@ -4,6 +4,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../features_v2/_shared/shell/main_shell.dart';
 import '../../features_v2/activity/activity_detail_screen.dart';
+import '../../features_v2/race/my_races_screen.dart';
+import '../../features_v2/race/race_center_screen.dart';
+import '../../features_v2/race/race_detail_screen.dart';
+import '../../features_v2/race/race_strategy_screen.dart';
 import '../../features_v2/health/health_overview_screen.dart';
 import '../../features_v2/health/ability_radar_screen.dart';
 import '../../features_v2/health/pb_records_screen.dart';
@@ -114,6 +118,21 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, state) =>
             ActivityDetailScreen(activityId: state.pathParameters['id']!),
       ),
+      // Race domain（赛事域四屏，stride-devops#466）
+      GoRoute(path: Routes.races, builder: (_, _) => const RaceCenterScreen()),
+      GoRoute(
+        path: Routes.raceDetailPattern,
+        builder: (_, state) => RaceDetailScreen(
+          raceId: int.parse(state.pathParameters['id']!),
+        ),
+      ),
+      GoRoute(
+        path: Routes.raceStrategyPattern,
+        builder: (_, state) => RaceStrategyScreen(
+          raceId: int.parse(state.pathParameters['id']!),
+        ),
+      ),
+      GoRoute(path: Routes.myRaces, builder: (_, _) => const MyRacesScreen()),
       GoRoute(
         path: Routes.planWeeks,
         builder: (_, _) => const WeekListScreen(),

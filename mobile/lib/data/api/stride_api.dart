@@ -5,6 +5,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/api_exception.dart';
 import '../../features_v2/activity/models/activity_detail.dart';
 import '../../features_v2/activity/models/timeseries_data.dart';
+import '../../features_v2/race/models/race_models.dart';
 import '../models/activity.dart';
 import '../models/health.dart';
 import '../models/plan.dart';
@@ -341,6 +342,123 @@ class StrideApi {
     );
   }
 
+  // ── Race domain（赛事域四屏，Go 活契约零新增，stride-devops#466）─────────
+  /// GET /api/race-calendar —— 已发布赛历分页。scope=all 拉整年。
+  Future<RaceCalendarPage> getRaceCalendar({
+    String? year,
+    String? province,
+    String? type,
+    String scope = 'all',
+    int page = 1,
+    int perPage = 100,
+  }) async {
+    final json = await _get<Map<String, dynamic>>(
+      '/api/race-calendar',
+      query: {
+        'year': ?year,
+        'province': ?province,
+        'type': ?type,
+        'scope': scope,
+        'page': page,
+        'per_page': perPage,
+      },
+    );
+    return RaceCalendarPage.fromJson(json);
+  }
+
+  /// GET /api/race-calendar/{id} —— 详情（含 items/channels/city_content）。
+  Future<RaceDetail> getRaceDetail(int raceId) async {
+    final json = await _get<Map<String, dynamic>>('/api/race-calendar/$raceId');
+    return RaceDetail.fromJson(json);
+  }
+
+  /// POST /api/users/me/race-favorites/{id}/toggle —— 返回切换后的收藏态。
+  Future<bool> toggleRaceFavorite(int raceId) async {
+    final json = await _post<Map<String, dynamic>>(
+      '/api/users/me/race-favorites/$raceId/toggle',
+    );
+    return json['favorited'] as bool? ?? false;
+  }
+
+  /// GET /api/users/me/race-plans —— 我的参赛计划（lost 已被后端过滤）。
+  Future<List<RacePlan>> getRacePlans() async {
+    final json = await _get<Map<String, dynamic>>('/api/users/me/race-plans');
+    return (json['plans'] as List? ?? const [])
+        .cast<Map<String, dynamic>>()
+        .map(RacePlan.fromJson)
+        .toList(growable: false);
+  }
+
+  /// PUT /api/users/me/race-plans/{id} —— 报名选择器 upsert。
+  /// hotel/transit 传 null = 缺省（后端保留存储值，勿误清另一项）。
+  Future<void> putRacePlan(
+    int raceId, {
+    required String itemType,
+    required String state,
+    bool? hotel,
+    bool? transit,
+  }) async {
+    await _put<Map<String, dynamic>>(
+      '/api/users/me/race-plans/$raceId',
+      body: {
+        'item_type': itemType,
+        'state': state,
+        'hotel': ?hotel,
+        'transit': ?transit,
+      },
+    );
+  }
+
+  /// DELETE /api/users/me/race-plans/{id} —— 取消追踪；404 按已取消收尾。
+  Future<void> deleteRacePlan(int raceId) async {
+    try {
+      await _delete<Map<String, dynamic>>('/api/users/me/race-plans/$raceId');
+    } on ApiException catch (e) {
+      if (!e.isNotFound) rethrow;
+    }
+  }
+
+  /// GET /api/users/me/race-strategies/{id} —— 该场赛事全部目标版本（最快在前）。
+  Future<List<RaceStrategyVersion>> getRaceStrategies(int raceId) async {
+    final json = await _get<Map<String, dynamic>>(
+      '/api/users/me/race-strategies/$raceId',
+    );
+    return (json['strategies'] as List? ?? const [])
+        .cast<Map<String, dynamic>>()
+        .map(RaceStrategyVersion.fromJson)
+        .toList(growable: false);
+  }
+
+  /// PUT /api/users/me/race-strategies/{id} —— 同 target 覆盖该版。
+  /// content.target_finish_time 是版本键（服务端校验 H:MM:SS）。
+  Future<void> putRaceStrategy(
+    int raceId, {
+    required String itemType,
+    required Map<String, dynamic> content,
+  }) async {
+    await _put<Map<String, dynamic>>(
+      '/api/users/me/race-strategies/$raceId',
+      body: {'item_type': itemType, 'content': content},
+    );
+  }
+
+  /// DELETE /api/users/me/race-strategies/{id}?target=H:MM:SS —— 删一个版本。
+  Future<void> deleteRaceStrategy(int raceId, {required String target}) async {
+    await _delete<Map<String, dynamic>>(
+      '/api/users/me/race-strategies/$raceId',
+      query: {'target': target},
+    );
+  }
+
+  /// GET /api/{user}/races —— race detection 确认的比赛成绩（新→旧）。
+  Future<List<UserRace>> getUserRaces(String user) async {
+    final json = await _get<Map<String, dynamic>>('/api/$user/races');
+    return (json['races'] as List? ?? const [])
+        .cast<Map<String, dynamic>>()
+        .map(UserRace.fromJson)
+        .toList(growable: false);
+  }
+
   // ── Internals ──────────────────────────────────────────────────────────
   Future<T> _get<T>(String path, {Map<String, dynamic>? query}) async {
     final res = await _dio.get<T>(path, queryParameters: query);
@@ -362,8 +480,13 @@ class StrideApi {
     return _unpack<T>(res);
   }
 
-  Future<T> _delete<T>(String path) async {
-    final res = await _dio.delete<T>(path);
+  Future<T> _delete<T>(String path, {Map<String, dynamic>? query}) async {
+    final res = await _dio.delete<T>(path, queryParameters: query);
+    return _unpack<T>(res);
+  }
+
+  Future<T> _put<T>(String path, {Object? body}) async {
+    final res = await _dio.put<T>(path, data: body);
     return _unpack<T>(res);
   }
 
