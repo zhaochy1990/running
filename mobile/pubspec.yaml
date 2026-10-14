@@ -57,6 +57,10 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
+  # 真机/模拟器 UI 走查（flutter test integration_test -d <device>）
+  integration_test:
+    sdk: flutter
+
   # Lints — flutter_lints (baseline) + extra strict lints can be added later
   flutter_lints: ^6.0.0
 
