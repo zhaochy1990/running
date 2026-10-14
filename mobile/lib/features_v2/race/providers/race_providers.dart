@@ -116,7 +116,7 @@ class RaceCenterNotifier extends StateNotifier<RaceCenterState> {
     } catch (e) {
       if (seq != _fetchSeq) return;
       _fetchingKey = '';
-      final msg = '加载失败，请稍后重试';
+      const msg = '加载失败，请稍后重试';
       if (silent) {
         state = state.copyWith(loading: false, error: msg);
       } else {

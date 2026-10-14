@@ -43,7 +43,7 @@ void main() {
 
   group('race center rows', () {
     test('toRaceRowView: name_cn 优先 / 双徽章 / typesLabel', () {
-      final row = toRaceRowView(RaceSummary(
+      final row = toRaceRowView(const RaceSummary(
         id: 74,
         name: '2026 Yellow River Estuary Marathon',
         nameCn: '2026黄河口（东营）马拉松',
@@ -120,20 +120,20 @@ void main() {
     });
 
     test('summary rows：规模求和 / 认证拼接 / 地点拼接', () {
-      final detail = RaceDetail(
+      const detail = RaceDetail(
         id: 1,
         name: 'X',
         nameCn: '某马',
         raceDate: '2026-10-18',
-        raceTypes: const [],
+        raceTypes: [],
         favorited: false,
         province: '山东省',
         city: '东营市',
         label: 'A',
         waLabel: 'Gold',
-        signupChannels: const [],
-        packetPickup: const [],
-        items: const [
+        signupChannels: [],
+        packetPickup: [],
+        items: [
           RaceItem(id: 1, name: '全程', type: 'Marathon', quota: 13000, startTime: '07:30'),
           RaceItem(id: 2, name: '半程', type: 'HalfMarathon', quota: 17000),
         ],

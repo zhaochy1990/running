@@ -25,13 +25,13 @@ void main() {
       Center(
         child: RepaintBoundary(
           key: key,
-          child: StrategyPosterCard(
+          child: const StrategyPosterCard(
             data: StrategyPosterData(
               dateLabel: '2026-12-06',
               itemLabel: '全马',
               raceName: '2026上海马拉松',
               target: '2:55:00',
-              rows: const [
+              rows: [
                 ('0–5km 起跑热身', '4:55/km', '24:35'),
                 ('5–21km 巡航段', '4:43/km', '1:40:52'),
                 ('38–42.195km 冲刺', '4:30/km', '2:55:00'),

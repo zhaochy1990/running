@@ -80,13 +80,13 @@ class _RaceStrategyScreenState extends ConsumerState<RaceStrategyScreen> {
   }
 
   TextEditingController _paceCtrl(int i) =>
-      _ctrl('${_loadedTarget}|pace|$i', _paceRows[i].pace);
+      _ctrl('$_loadedTarget|pace|$i', _paceRows[i].pace);
   TextEditingController _noteCtrl(int i) =>
-      _ctrl('${_loadedTarget}|note|$i', _paceRows[i].note);
+      _ctrl('$_loadedTarget|note|$i', _paceRows[i].note);
   TextEditingController _fuelTimeCtrl(int i) =>
-      _ctrl('${_loadedTarget}|fuel-t|${_fueling[i].seq}', _fueling[i].timePoint);
+      _ctrl('$_loadedTarget|fuel-t|${_fueling[i].seq}', _fueling[i].timePoint);
   TextEditingController _fuelContentCtrl(int i) =>
-      _ctrl('${_loadedTarget}|fuel-c|${_fueling[i].seq}', _fueling[i].content);
+      _ctrl('$_loadedTarget|fuel-c|${_fueling[i].seq}', _fueling[i].content);
 
   void _toast(String msg) {
     if (!mounted) return;

@@ -487,7 +487,7 @@ class _RaceDetailScreenState extends ConsumerState<RaceDetailScreen> {
                         border: Border.all(color: StrideTokens.accent),
                         borderRadius: BorderRadius.circular(3),
                       ),
-                      child: Text('已生成',
+                      child: const Text('已生成',
                           style: TextStyle(
                               fontFamily: AppTypography.fontSans,
                               fontSize: 9,

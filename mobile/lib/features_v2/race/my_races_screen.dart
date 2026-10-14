@@ -127,12 +127,12 @@ class _PlansTab extends ConsumerWidget {
               ? _OffboardedCard(plan: plan)
               : _PlanCard(plan: plan),
         if (plans.isEmpty)
-          Padding(
-            padding: const EdgeInsets.all(StrideTokens.space2xl),
+          const Padding(
+            padding: EdgeInsets.all(StrideTokens.space2xl),
             child: Text(
               '还没有参赛计划 · 去赛事中心逛逛',
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                   fontFamily: AppTypography.fontSans,
                   fontSize: StrideTokens.fs13,
                   color: StrideTokens.muted),
@@ -603,13 +603,13 @@ class _ResultRow extends StatelessWidget {
                       border: Border.all(color: const Color(0xFFC9A25E)),
                       borderRadius: BorderRadius.circular(4),
                     ),
-                    child: Row(
+                    child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(Icons.emoji_events_outlined,
-                            size: 11, color: const Color(0xFF9A7830)),
-                        const SizedBox(width: 2),
-                        const Text('PB',
+                            size: 11, color: Color(0xFF9A7830)),
+                        SizedBox(width: 2),
+                        Text('PB',
                             style: TextStyle(
                                 fontFamily: AppTypography.fontSans,
                                 fontSize: StrideTokens.fs10,
