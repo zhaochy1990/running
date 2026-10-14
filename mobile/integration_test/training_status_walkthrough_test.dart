@@ -66,10 +66,28 @@ void main() {
     expect(find.text('训练状态'), findsOneWidget);
 
     await tester0.tap(find.text('训练状态'));
-    await _dwell(8, 'training-status-loading');
+    await _dwell(3, 'training-status-loading');
+
+    // 生产 5 个接口（含 16 周活动分页）加载可能超过 10s，轮询等待。
+    var statusLoaded = false;
+    for (var i = 0; i < 45; i++) {
+      await Future<void>.delayed(const Duration(seconds: 2));
+      try {
+        await tester0.pumpAndSettle(const Duration(milliseconds: 300));
+      } on FlutterError {
+        // 加载 spinner / 图表动画下超时是预期情况。
+      }
+      if (find.text('核心指标').evaluate().isNotEmpty) {
+        statusLoaded = true;
+        break;
+      }
+      if (find.text('加载失败').evaluate().isNotEmpty) break;
+    }
+    debugPrint('WALKTHROUGH-MARK: training-status-loaded=$statusLoaded');
+    expect(statusLoaded, isTrue, reason: '训练状态页应在 90s 内完成生产 API 加载');
+    await _dwell(4, 'training-status-data');
 
     // 2) 核心指标 4 卡（生产数据渲染）。
-    expect(find.text('核心指标'), findsOneWidget);
     expect(find.text('静息心率'), findsWidgets);
     expect(find.text('心率变异性'), findsWidgets);
     expect(find.text('阈值配速'), findsOneWidget);
