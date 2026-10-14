@@ -5,6 +5,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:gal/gal.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/router/routes.dart';
@@ -232,11 +233,48 @@ class _RaceStrategyScreenState extends ConsumerState<RaceStrategyScreen> {
   }
 
   Future<void> _exportPoster() async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              key: const Key('poster-share'),
+              leading: const Icon(Icons.ios_share),
+              title: const Text('分享海报'),
+              subtitle: const Text('微信 / 朋友圈 / 系统分享面板'),
+              onTap: () => Navigator.of(ctx).pop('share'),
+            ),
+            ListTile(
+              key: const Key('poster-save-album'),
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('保存到相册'),
+              onTap: () => Navigator.of(ctx).pop('album'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == null) return;
     try {
-      await exportStrategyPoster(
-        _posterKey,
-        'stride-strategy-${widget.raceId}-$_sel.png',
-      );
+      if (action == 'share') {
+        await shareStrategyPoster(
+          _posterKey,
+          'stride-strategy-${widget.raceId}-$_sel.png',
+        );
+      } else {
+        await saveStrategyPosterToGallery(
+          _posterKey,
+          'stride-strategy-${widget.raceId}-$_sel.png',
+        );
+        _toast('已保存到相册');
+      }
+    } on GalleryPermissionDenied {
+      _toast('未获相册权限，请在系统设置中允许');
+    } on GalException catch (e) {
+      _toast(e.type == GalExceptionType.accessDenied ? '未获相册权限' : '保存失败');
     } catch (_) {
       _toast('海报生成失败');
     }

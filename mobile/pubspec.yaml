@@ -52,6 +52,9 @@ dependencies:
   # In-app self-updater (GitHub Releases sideload, Android only for v1)
   package_info_plus: ^8.1.0
   open_filex: ^4.5.0
+  share_plus: ^12.0.2
+  image_picker: ^1.2.4
+  gal: ^2.3.3
 
 dev_dependencies:
   flutter_test:

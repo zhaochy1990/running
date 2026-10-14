@@ -50,6 +50,8 @@ class Routes {
   static const myRaces = '/my-races';
 
   // Me — profile tab + second-level pages
+  static const meProfileEdit = '/me/profile-edit';
+  static const mePrivacy = '/me/privacy';
   static const meData = '/me/data';
   static const meDataPmc = '/me/data/pmc';
   static const meDataTrends = '/me/data/trends';

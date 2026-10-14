@@ -88,7 +88,8 @@ class MeScreen extends ConsumerWidget {
           ProfileMenuItem(
             icon: Icons.person_outline,
             label: '个人信息编辑',
-            onTap: () => _comingSoon(context, '个人信息编辑'),
+            key: const Key('menu-profile-edit'),
+            onTap: () => context.push(Routes.meProfileEdit),
           ),
           const _Divider(),
           const SizedBox(height: StrideTokens.spaceSm),
@@ -103,6 +104,12 @@ class MeScreen extends ConsumerWidget {
             icon: Icons.info_outline,
             label: '关于 STRIDE',
             onTap: () => _showAbout(context),
+          ),
+          ProfileMenuItem(
+            icon: Icons.shield_outlined,
+            label: '隐私与权限',
+            key: const Key('menu-privacy'),
+            onTap: () => context.push(Routes.mePrivacy),
           ),
           const _Divider(),
           const SizedBox(height: StrideTokens.spaceSm),

@@ -1,6 +1,7 @@
 /// 策略配速卡海报 —— #420 决议钉死的 canvas 布局：600×(360+rows×56) dpr2、
 /// 深底 #0a0a0b + 顶 6px #d8ff3e、目标 56 bold、行距 44、页脚 STRIDE · 比赛策略。
-/// 保存 = RepaintBoundary 截图 → PNG → 系统预览（长按保存的等价）。
+/// 分享/保存 = RepaintBoundary 截图 → PNG → share_plus 系统分享 / Gal 存相册
+/// （stride-devops#424 决议 v1：海报图片 + 系统分享，免微信 SDK 资质）。
 library;
 
 import 'dart:io';
@@ -8,8 +9,9 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:open_filex/open_filex.dart';
+import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../core/theme/app_typography.dart';
 
@@ -130,8 +132,31 @@ Future<String> savePosterPng(GlobalKey boundaryKey, String fileName) async {
   return file.path;
 }
 
-/// 生成海报 → 系统预览打开（iOS 预览/分享面板里「存储图像」= 长按保存的等价）。
-Future<void> exportStrategyPoster(GlobalKey boundaryKey, String fileName) async {
+/// 生成海报 → 系统分享面板（微信对话/朋友圈/任意渠道通吃）。
+Future<void> shareStrategyPoster(GlobalKey boundaryKey, String fileName) async {
   final path = await savePosterPng(boundaryKey, fileName);
-  await OpenFilex.open(path, type: 'image/png');
+  await SharePlus.instance.share(
+    ShareParams(
+      files: [XFile(path, mimeType: 'image/png')],
+      subject: 'STRIDE 比赛策略',
+    ),
+  );
+}
+
+/// 生成海报 → 保存到系统相册（相册仅新增权限，iOS 首次弹授权；拒绝时抛
+/// [GalleryPermissionDenied] 由上层提示，不静默丢图）。
+Future<void> saveStrategyPosterToGallery(
+  GlobalKey boundaryKey,
+  String fileName,
+) async {
+  final path = await savePosterPng(boundaryKey, fileName);
+  if (!await Gal.requestAccess(toAlbum: true)) {
+    throw const GalleryPermissionDenied();
+  }
+  await Gal.putImage(path, album: 'STRIDE');
+}
+
+/// 相册新增权限被拒（区分于写入失败）。
+class GalleryPermissionDenied implements Exception {
+  const GalleryPermissionDenied();
 }

@@ -1971,3 +1971,72 @@
     background: rgba(0, 0, 0, 0.12);
   }
 }
+
+/* ── download-app — 「下载 App」区（#467）：Android Releases 侧载 +
+   iOS/鸿蒙 即将上线占位 ─────────────────────────────────────────── */
+.landing-root .download-app {
+  text-align: center;
+  padding: 96px 0;
+  border-top: 1px solid var(--border-subtle);
+}
+.landing-root .download-app .eyebrow {
+  display: block;
+}
+.landing-root .download-app h2 {
+  font-family: var(--font-editorial);
+  font-size: clamp(28px, 4vw, 44px);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  margin: 14px auto 0;
+}
+.landing-root .download-app h2 em {
+  font-style: italic;
+  color: var(--green-dim);
+}
+.landing-root .download-app p {
+  font-size: 15px;
+  color: var(--muted);
+  margin: 14px auto 0;
+  max-width: 46ch;
+}
+.landing-root .download-app__actions {
+  margin-top: 28px;
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.landing-root .download-app__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 26px;
+  border-radius: 11px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.landing-root .download-app__btn--primary {
+  background: var(--green);
+  color: #fff;
+  text-decoration: none;
+  transition:
+    transform 0.15s,
+    background 0.15s;
+}
+.landing-root .download-app__btn--primary:hover {
+  background: var(--green-dim);
+  transform: translateY(-1px);
+}
+.landing-root .download-app__btn--soon {
+  background: var(--bg-2);
+  color: var(--faint);
+  border: 1px dashed var(--border);
+  cursor: default;
+}
+.landing-root .download-app__note {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--faint);
+  margin-top: 16px;
+  letter-spacing: 0.04em;
+}

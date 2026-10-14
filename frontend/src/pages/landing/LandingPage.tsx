@@ -7,6 +7,7 @@ import ReversePlan from "./sections/ReversePlan";
 import Pillars from "./sections/Pillars";
 import Features from "./sections/Features";
 import DataShowcase from "./sections/DataShowcase";
+import DownloadApp from "./sections/DownloadApp";
 import Closer from "./sections/Closer";
 import LandingFooter from "./sections/LandingFooter";
 
@@ -32,6 +33,7 @@ export default function LandingPage({ initialLoginOpen = false }: { initialLogin
       <Pillars />
       <Features />
       <DataShowcase />
+      <DownloadApp />
       <Closer onLogin={openLogin} />
       <LandingFooter onLogin={openLogin} />
 

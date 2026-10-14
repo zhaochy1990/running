@@ -47,6 +47,7 @@ class StrideApi {
     double? heightCm,
     double? weightKg,
     String? displayName,
+    String? runningAgeRange,
   }) async {
     final body = <String, dynamic>{
       'sex': ?sex,
@@ -54,6 +55,7 @@ class StrideApi {
       'height_cm': ?heightCm,
       'weight_kg': ?weightKg,
       'display_name': ?displayName,
+      'running_age_range': ?runningAgeRange,
     };
     return _patch<Map<String, dynamic>>('/api/users/me/profile', body: body);
   }
