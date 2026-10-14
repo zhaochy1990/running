@@ -7,6 +7,7 @@ import { createActivityInsightTools } from "../../tools/activityInsights.js";
 import { type ActivityFeelWriter, createActivityFeelTools } from "../../tools/feel.js";
 import { createPlanTools } from "../../tools/plan.js";
 import { createRaceTools } from "../../tools/races.js";
+import { createRecoveryTools } from "../../tools/recovery.js";
 import { createRunningCalibrationTools } from "../../tools/runningCalibration.js";
 import { createTrainingLoadTools } from "../../tools/trainingLoad.js";
 import { CoachContext } from "../context.js";
@@ -35,7 +36,7 @@ const QA_SUBAGENT_PROMPT = `你是 STRIDE 跑步教练的训练问答专家，�
 
 【语言（HARD）】所有输出一律中文，包括工具调用前的进度句。调用工具前可以用一句简短的中文说明你接下来要查什么（例如“我看一下最近几堂专项课的分段”）——这句话只写你要查什么，不写结论，绝不出现英文。
 
-涉及疲劳、负荷、恢复、状态、能否加量的问题，都必须先调用 get_daily_training_load 拿到近期负荷趋势，并结合 chronic/acute/loadRatio/form 分析后再作答；不要只凭单次跑步的感觉下结论。
+涉及疲劳、负荷、恢复、状态、能否加量的问题，都必须先调用 get_daily_training_load 拿到近期负荷趋势，并结合 chronic/acute/loadRatio/form 分析后再作答；不要只凭单次跑步的感觉下结论。状态/恢复/HRV/静息心率类问题先调 get_recovery_status（HRV/RHR 日序列+厂商基线，解读口径见 analyze-activity skill），再与负荷位置交叉验证后下结论。
 
 行动指令：基于数据给出明确的下一步训练指令是你的职责（「明天怎么办」必须有着落）；但结构化训练计划文档的修改和生成不归你——计划工具是只读的，你可以查看和解释计划内容，也不得建议运动员手动改动计划。
 
@@ -53,6 +54,7 @@ export function getQaTools(store: DataProvider, feelWriter?: ActivityFeelWriter)
     ...(feelWriter ? createActivityFeelTools(feelWriter) : []),
     ...createTrainingLoadTools(store),
     ...createRaceTools(store),
+    ...createRecoveryTools(store),
     ...createRunningCalibrationTools(store),
   ];
 }
