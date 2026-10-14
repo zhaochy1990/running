@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- iOS 26+ 模拟器要求数据保护 keychain 有 keychain-access-groups，
+	     否则 flutter_secure_storage 报 -34018（issue 463 走查）。仅模拟器
+	     SDK 生效，真机构建不受影响。 -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)cn.striderunning.stride</string>
+	</array>
+</dict>
+</plist>

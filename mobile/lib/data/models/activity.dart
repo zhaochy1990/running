@@ -49,7 +49,7 @@ class Activity {
   @JsonKey(name: 'sport_type')
   final int sportType;
   @JsonKey(name: 'sport_name')
-  final String sportName;
+  final String? sportName;
   final String date;
   @JsonKey(name: 'distance_m')
   final num distanceM;

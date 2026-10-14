@@ -34,13 +34,33 @@ void main() {
       final pts = toTrackPoints([
         _pt(lat: 37.87, lon: 112.55, pace: 300, dist: 0),
         _pt(hr: 150, pace: 300, dist: 10), // 无 GPS
-        _pt(lat: 37.88, lon: 112.56, pace: 5000, dist: 20), // pace 越界
-        _pt(lat: 37.89, lon: 112.57, hr: 0, dist: 30), // hr=0 无效
+        _pt(lat: 37.8701, lon: 112.55, pace: 5000, dist: 20), // pace 越界
+        _pt(lat: 37.8702, lon: 112.55, hr: 0, dist: 30), // hr=0 无效
       ]);
       expect(pts.length, 3);
       expect(pts[1].pace, isNull);
       expect(pts[2].pace, isNull);
       expect(pts[2].hr, isNull);
+      // 输出统一 GCJ02：与输入 WGS84 不同（境内偏移数百米量级）。
+      expect(pts[0].longitude, isNot(112.55));
+    });
+  });
+
+  group('toTrackPoints GPS 漂移过滤', () {
+    test('drops zero-coordinate outliers and far jumps', () {
+      final pts = toTrackPoints([
+        _pt(lat: 37.87, lon: 112.55, pace: 300, dist: 0),
+        // 漂到 0,0（隧道坏点）。
+        _pt(lat: 0, lon: 0, pace: 300, dist: 10),
+        _pt(lat: 37.8701, lon: 112.55, pace: 300, dist: 20), // ~11m 正常
+        // 远跳坏点（>500m）。
+        _pt(lat: 38.90, lon: 113.55, pace: 300, dist: 30),
+        _pt(lat: 37.8702, lon: 112.55, pace: 300, dist: 40), // 参照仍是上个有效点
+      ]);
+      expect(pts.length, 3);
+      // GCJ 偏移单调一致：相邻点仍按 ~11m 递增。
+      expect(pts[2].latitude, greaterThan(pts[1].latitude));
+      expect(pts[1].latitude, greaterThan(pts[0].latitude));
     });
   });
 
@@ -66,16 +86,22 @@ void main() {
 
     test('decimation keeps the last point（抽稀补末点）', () {
       // 1500 点 → stride=3 → 500 取模点，末点 i=1499 不在取模序列里。
+      final raw = _synthetic(1500);
       final chunks = buildTrackChunks(
-        toTrackPoints(_synthetic(1500)),
+        toTrackPoints(raw),
         MapColoring.none,
       )!;
       final all = chunks
           .expand((c) => c.points)
           .map((p) => p.longitude)
           .toList();
-      const lastLon = 112.55 + 1499 * 0.0001;
-      expect(all.last, closeTo(lastLon, 1e-9));
+      // 点已统一转 GCJ02，末点期望值同样转换。
+      final wgsLast = raw.last;
+      final want = wgs84ToGcj02(
+        wgsLast.gpsLon!.toDouble(),
+        wgsLast.gpsLat!.toDouble(),
+      );
+      expect(all.last, closeTo(want.longitude, 1e-9));
     });
 
     test('<20 valid points renders nothing', () {
@@ -169,11 +195,10 @@ void main() {
       expect(badges.length, 2);
       expect(badges[0].lapNo, 1);
       expect(badges[1].lapNo, 2);
-      // 徽标坐标是 GCJ02 frame，期望值同样转换后比对。
-      final want50 = wgs84ToGcj02(pts[50].longitude, pts[50].latitude);
-      final wantLast = wgs84ToGcj02(pts.last.longitude, pts.last.latitude);
-      expect(badges[0].pos.latitude, closeTo(want50.latitude, 1e-9));
-      expect(badges[1].pos.latitude, closeTo(wantLast.latitude, 1e-9));
+      // 徽标与轨迹同一 GCJ frame：直接等于对应 timeseries 点。
+      expect(badges[0].pos.latitude, closeTo(pts[50].latitude, 1e-9));
+      expect(badges[0].pos.longitude, closeTo(pts[50].longitude, 1e-9));
+      expect(badges[1].pos.latitude, closeTo(pts.last.latitude, 1e-9));
     });
 
     test('rest laps get no badge and occupy no lap number', () {

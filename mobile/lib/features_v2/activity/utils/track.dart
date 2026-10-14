@@ -83,17 +83,38 @@ Color gradient3(double t) {
   return lerpColor(mapAmber, mapRed, (tt - 0.5) * 2);
 }
 
-/// 原始 timeseries 点 → 有效轨迹点（过滤无 GPS；pace=adjusted_pace??speed，
-/// 有效域 0<v<1200 s/km）。坐标保持 WGS84，转换统一在 [buildTrackChunks] 做。
+/// 相邻采样点（约 1 点/秒）最大可信位移。超过视为 GPS 漂移坏点
+/// （隧道/室内漂到 0,0 或远点会把 bbox 撑爆、画出跨城弦线）。
+const maxPlausibleJumpMeters = 500.0;
+
+/// 原始 timeseries 点 → 有效轨迹点（过滤无 GPS 与 GPS 漂移坏点；
+/// pace=adjusted_pace??speed，有效域 0<v<1200 s/km）。
+/// 坐标在此统一转成 GCJ02（#422：全链单坐标 frame——polyline/徽标/起终点/
+/// fit 视角全部用同一份点，禁止混用 WGS84/GCJ）。
 List<TrackPoint> toTrackPoints(List<TsPoint> raw) {
   final out = <TrackPoint>[];
+  double? lastLat;
+  double? lastLon;
   for (final p in raw) {
     if (p.gpsLat == null || p.gpsLon == null) continue;
+    final lat = p.gpsLat!.toDouble();
+    final lon = p.gpsLon!.toDouble();
+    // 坏点：0 坐标 / 境外 / 相对上一有效点跳变超阈值。
+    final isZero = lat == 0 && lon == 0;
+    final jumped = lastLat != null &&
+        _metersBetween(lastLat, lastLon!, lat, lon) > maxPlausibleJumpMeters;
+    if (isZero || jumped) {
+      // 坏点不进轨迹，也不更新参照点（连续坏点都按同一参照判定）。
+      continue;
+    }
+    lastLat = lat;
+    lastLon = lon;
     final paceV = p.adjustedPace ?? p.speed;
+    final g = wgs84ToGcj02(lon, lat);
     out.add(
       TrackPoint(
-        latitude: p.gpsLat!.toDouble(),
-        longitude: p.gpsLon!.toDouble(),
+        latitude: g.latitude,
+        longitude: g.longitude,
         pace: paceV != null && paceV > 0 && paceV < 1200 ? paceV : null,
         hr: p.hr != null && p.hr! > 0 ? p.hr : null,
         distance: p.distance,
@@ -101,6 +122,12 @@ List<TrackPoint> toTrackPoints(List<TsPoint> raw) {
     );
   }
   return out;
+}
+
+double _metersBetween(double lat1, double lon1, double lat2, double lon2) {
+  final dLat = (lat2 - lat1) * 111320.0;
+  final dLon = (lon2 - lon1) * 111320.0 * math.cos(lat1 * math.pi / 180.0);
+  return math.sqrt(dLat * dLat + dLon * dLon);
 }
 
 /// 抽稀（等距取模 + 补末点）并按共享端点切成 ≤[mapChunk] 点的段，逐段着色。
@@ -177,8 +204,7 @@ Color _chunkColor(
   return gradient3(t.toDouble());
 }
 
-/// fit 视野：bbox 四周扩 max(跨度×0.1, 0.0008°)。返回 SW/NE 两角（WGS84，
-/// 调用方与其它显示物一样先转 GCJ02，保持单坐标 frame）。
+/// fit 视野：bbox 四周扩 max(跨度×0.1, 0.0008°)。输入/输出均为 GCJ02。
 ({GcjPoint sw, GcjPoint ne}) trackFitBounds(List<TrackPoint> pts) {
   var minLat = double.infinity, maxLat = -double.infinity;
   var minLng = double.infinity, maxLng = -double.infinity;
@@ -197,7 +223,7 @@ Color _chunkColor(
 
 /// 圈徽标位置：把每圈结束边界按「累计圈距占总圈距的比例」映射到 timeseries
 /// 点（避开 timeseries.distance 与 segment.distance_m 的单位差异）。恢复圈
-/// 不计号不打点。坐标 WGS84，与轨迹同 frame。
+/// 不计号不打点。坐标 GCJ02（[toTrackPoints] 已统一转换）。
 List<({int lapNo, GcjPoint pos})> lapBadgePositions(
   List<LapV2> segments,
   List<TrackPoint> pts,
@@ -220,7 +246,7 @@ List<({int lapNo, GcjPoint pos})> lapBadgePositions(
     while (cursor < pts.length - 1 && (pts[cursor].distance ?? 0) < target) {
       cursor++;
     }
-    out.add((lapNo: lapNo, pos: wgs84ToGcj02(pts[cursor].longitude, pts[cursor].latitude)));
+    out.add((lapNo: lapNo, pos: GcjPoint(latitude: pts[cursor].latitude, longitude: pts[cursor].longitude)));
   }
   return out;
 }

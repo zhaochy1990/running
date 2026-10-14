@@ -419,7 +419,7 @@ class _ActivityListRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    (a.name?.isNotEmpty ?? false) ? a.name! : a.sportName,
+                    (a.name?.isNotEmpty ?? false) ? a.name! : (a.sportName ?? ''),
                     style: const TextStyle(
                       fontFamily: AppTypography.fontSans,
                       fontSize: StrideTokens.fs14,
@@ -472,7 +472,7 @@ class _SportIcon extends StatelessWidget {
         shape: BoxShape.circle,
       ),
       child: Icon(
-        activity.sportName.toLowerCase().contains('strength')
+        (activity.sportName ?? '').toLowerCase().contains('strength')
             ? Icons.fitness_center
             : Icons.directions_run,
         size: 18,

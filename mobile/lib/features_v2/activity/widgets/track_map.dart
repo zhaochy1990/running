@@ -24,12 +24,13 @@ import '../utils/track.dart';
 Future<void>? _sdkInit;
 
 Future<void> _ensureSdkInit() {
+  // 失败不缓存：下次进入地图页重试（如首冷启动无网）。
   return _sdkInit ??= AMapWidget.init(
     // iOS key 未申请（本票只备了 Android key，见 #422）；iOS 端底图鉴权
     // 会失败，key 到位后在 Env.amapIosKey 补上即可。
     apiKey: ApiKey(iosKey: Env.amapIosKey, androidKey: Env.amapAndroidKey),
     agreePrivacy: true,
-  );
+  ).catchError((_) => _sdkInit = null);
 }
 
 class TrackMapCard extends StatefulWidget {
@@ -62,13 +63,13 @@ class _TrackMapCardState extends State<TrackMapCard> {
         // 当前模式无有效 metric（如选配速但全程无配速）→ 回退无色。
         buildTrackChunks(pts, MapColoring.none)!;
 
-    // 起终点与轨迹同一 GCJ frame（此处统一转换）。
+    // pts 已在 toTrackPoints 统一转 GCJ02，polyline/徽标/fit 同 frame。
     final gcjPts = [
-      for (final p in pts) wgs84ToGcj02(p.longitude, p.latitude),
+      for (final p in pts) GcjPoint(latitude: p.latitude, longitude: p.longitude),
     ];
     final bounds = trackFitBounds(pts);
-    final sw = wgs84ToGcj02(bounds.sw.longitude, bounds.sw.latitude);
-    final ne = wgs84ToGcj02(bounds.ne.longitude, bounds.ne.latitude);
+    final sw = bounds.sw;
+    final ne = bounds.ne;
 
     return _MapShell(
       coloring: _coloring,
