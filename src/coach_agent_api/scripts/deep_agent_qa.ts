@@ -32,10 +32,14 @@ const cfg = {
     configurable: { thread_id: thread },
   };
 const startTime = Date.now();
+
+// const question = "我上周日晚上跑的怎么样？";
+const question = "帮我分析一下近期的HRV，RHR";
+
 const input ={ 
   messages: [{ 
     role: "user", 
-    content: JSON.stringify({timestamp:  shanghaiIso(),message: "我周日晚上跑的怎么样？"}), 
+    content: JSON.stringify({timestamp:  shanghaiIso(),message: question}), 
   }] 
 };
 const res = await agent.invoke(input, cfg);
