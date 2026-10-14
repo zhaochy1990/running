@@ -153,7 +153,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: Routes.meDataPbs,
         builder: (_, _) => const PbRecordsScreen(),
       ),
-      GoRoute(path: Routes.meWatch, builder: (_, _) => const WatchScreen()),
+      GoRoute(
+        path: Routes.meWatch,
+        builder: (_, state) => WatchScreen(
+          // ?provider=coros|garmin 直达对应品牌表单（onboarding 品牌卡跳转用）。
+          initialProvider: state.uri.queryParameters['provider'],
+        ),
+      ),
       // 4 flat tabs mirroring the miniprogram: 训练 / 记录 / 教练 / 我.
       ShellRoute(
         builder: (_, _, child) => MainShell(child: child),

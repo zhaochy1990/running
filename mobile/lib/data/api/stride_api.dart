@@ -11,6 +11,7 @@ import '../models/plan.dart';
 import '../models/weekly_plan.dart';
 import '../models/pipeline.dart';
 import '../models/profile.dart';
+import '../models/watch.dart';
 
 /// Hand-written API client for STRIDE backend `/api/*`.
 ///
@@ -234,6 +235,13 @@ class StrideApi {
         'region': region,
       },
     );
+  }
+
+  /// 当前用户手表绑定状态（GET /api/users/me/watch）。未绑定时 200、
+  /// 字符串字段全 null、capabilities 空数组（Go watchInfoResponse）。
+  Future<WatchInfo> getWatch() async {
+    final json = await _get<Map<String, dynamic>>('/api/users/me/watch');
+    return WatchInfo.fromJson(json);
   }
 
   /// Unbind the currently-linked watch. Calls `DELETE /api/users/me/watch`.

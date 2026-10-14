@@ -34,7 +34,9 @@ class SyncIconButton extends ConsumerWidget {
           messenger.showSnackBar(const SnackBar(content: Text('已同步')));
         } catch (e) {
           if (!context.mounted) return;
-          messenger.showSnackBar(SnackBar(content: Text('同步失败：$e')));
+          messenger.showSnackBar(
+            SnackBar(content: Text(syncErrorText(e))),
+          );
         }
       },
       child: const Icon(Icons.sync, size: 20, color: StrideTokens.fgSoft),

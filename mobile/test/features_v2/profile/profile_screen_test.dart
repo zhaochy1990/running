@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:stride/core/auth/current_user.dart';
 import 'package:stride/data/models/profile.dart';
+import 'package:stride/data/models/watch.dart';
 import 'package:stride/features_v2/profile/profile_screen.dart';
+import 'package:stride/features_v2/watch/watch_providers.dart';
 
 // ── Test data ─────────────────────────────────────────────────────────────────
 
@@ -24,11 +26,13 @@ const _testProfile = MyProfile(
 Future<void> _pump(
   WidgetTester tester, {
   required MyProfile? profile,
+  WatchInfo watch = const WatchInfo(),
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         currentUserProvider.overrideWith((_) => Future.value(profile)),
+        watchInfoProvider.overrideWith((_) => Future.value(watch)),
       ],
       child: const MaterialApp(home: MeScreen()),
     ),
@@ -86,6 +90,16 @@ void main() {
       ),
     );
     expect(find.text('未绑定'), findsOneWidget);
+  });
+
+  testWidgets('sync row reads last_sync from GET /watch as relative time',
+      (tester) async {
+    await _pump(
+      tester,
+      profile: _testProfile,
+      watch: const WatchInfo(loggedIn: true, lastSyncAt: '2100-01-01T00:00:00Z'),
+    );
+    expect(find.text('上次同步 刚刚'), findsOneWidget);
   });
 
   testWidgets('退出登录 button is present in list', (tester) async {

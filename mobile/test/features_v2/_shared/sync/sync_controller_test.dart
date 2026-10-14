@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:stride/core/api/api_exception.dart';
 import 'package:stride/core/auth/current_user.dart';
 import 'package:stride/data/api/stride_api.dart';
 import 'package:stride/data/models/pipeline.dart';
@@ -20,6 +21,13 @@ class _StubApi extends StrideApi {
   final syncedUsers = <String>[];
   int activityDetailCalls = 0;
   int timeseriesCalls = 0;
+  int pollCalls = 0;
+  final pollRunIds = <String>[];
+
+  /// 排队的轮询响应；空则默认返回 done（老用例的 happy path）。
+  final queue = <PipelineRun>[];
+  Object? pollError;
+
   Completer<void> _completer = Completer<void>();
 
   void resolveOk() {
@@ -42,6 +50,22 @@ class _StubApi extends StrideApi {
     syncedUsers.add(user);
     await _completer.future;
     return const TriggerSyncResult(runId: 'stub-run');
+  }
+
+  @override
+  Future<PipelineRun> getPipelineRun(String runId) async {
+    pollCalls++;
+    pollRunIds.add(runId);
+    if (pollError != null) throw pollError!;
+    if (queue.isEmpty) {
+      return const PipelineRun(
+        runId: 'stub-run',
+        pipelineName: 'watch_sync',
+        status: 'done',
+        currentStep: 0,
+      );
+    }
+    return queue.removeAt(0);
   }
 
   @override
@@ -139,6 +163,72 @@ void main() {
     expect(state.syncing, isFalse);
     expect(state.lastSyncedAt, isNotNull);
     expect(state.error, isNull);
+  });
+
+  test('incremental sync polls the created run until done', () async {
+    final api = _StubApi();
+    api.queue.addAll([
+      const PipelineRun(
+        runId: 'stub-run',
+        pipelineName: 'watch_sync',
+        status: 'running',
+        currentStep: 1,
+      ),
+      const PipelineRun(
+        runId: 'stub-run',
+        pipelineName: 'watch_sync',
+        status: 'done',
+        currentStep: 0,
+      ),
+    ]);
+    final c = _container(api);
+    addTearDown(c.dispose);
+
+    final fut = c.read(syncControllerProvider.notifier).triggerSync();
+    api.resolveOk();
+    await fut;
+
+    expect(api.pollRunIds, everyElement('stub-run'));
+    expect(api.pollCalls, 2);
+    final state = c.read(syncControllerProvider);
+    expect(state.syncing, isFalse);
+    expect(state.lastSyncedAt, isNotNull);
+  }, timeout: const Timeout(Duration(seconds: 10)));
+
+  test('failed run surfaces its error message and stores state.error',
+      () async {
+    final api = _StubApi();
+    api.queue.add(
+      const PipelineRun(
+        runId: 'stub-run',
+        pipelineName: 'watch_sync',
+        status: 'failed',
+        currentStep: 0,
+        errorMessage: '手表登录已失效',
+      ),
+    );
+    final c = _container(api);
+    addTearDown(c.dispose);
+
+    final fut = c.read(syncControllerProvider.notifier).triggerSync();
+    api.resolveOk();
+    await expectLater(fut, throwsA(predicate((e) => '$e'.contains('手表登录已失效'))));
+
+    final state = c.read(syncControllerProvider);
+    expect(state.syncing, isFalse);
+    expect(state.error, isNotNull);
+  });
+
+  test('poll transport error propagates as sync failure', () async {
+    final api = _StubApi();
+    api.pollError = const ApiException(500, 'boom');
+    final c = _container(api);
+    addTearDown(c.dispose);
+
+    final fut = c.read(syncControllerProvider.notifier).triggerSync();
+    api.resolveOk();
+    await expectLater(fut, throwsA(isA<ApiException>()));
+    expect(c.read(syncControllerProvider).syncing, isFalse);
   });
 
   test('failed sync sets error and preserves prior lastSyncedAt', () async {

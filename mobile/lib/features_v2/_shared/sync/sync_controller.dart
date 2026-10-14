@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/api/api_exception.dart';
 import '../../../core/auth/current_user.dart';
 import '../../../data/api/stride_api.dart';
 import '../../activity/providers/activity_detail_provider.dart';
@@ -14,14 +15,16 @@ import '../../health/providers/pb_records_provider.dart';
 import '../../health/providers/pmc_provider.dart';
 import '../../health/providers/race_prediction_provider.dart';
 import '../../health/providers/trends_provider.dart';
+import '../../watch/watch_providers.dart';
 
 /// SyncController — process-wide singleton owning the in-flight
-/// COROS sync state. Re-entry from the same user joins the active request;
-/// another user cannot reuse or publish the previous account's result.
+/// incremental watch sync. Re-entry from the same user joins the active
+/// request; another user cannot reuse or publish the previous account's result.
 ///
-/// Successful sync invalidates every watch-data provider so any active
-/// screen re-fetches.  The list is hard-coded; future watch-data
-/// providers must be appended here.
+/// Contract (#462): `POST /api/{user}/sync {mode:'incremental'}` (no
+/// idempotency key) → poll `GET /api/pipelines/{run_id}` (2s interval,
+/// 60min deadline, mirroring the miniprogram pollPipeline) → invalidate
+/// every watch-data provider only when the run is done.
 class SyncState {
   const SyncState({this.syncing = false, this.lastSyncedAt, this.error});
 
@@ -56,6 +59,9 @@ class SyncState {
 /// twice.
 class SyncController extends Notifier<SyncState> {
   ({String userId, Future<void> future})? _inFlight;
+
+  static const _pollInterval = Duration(seconds: 2);
+  static const _pollTimeout = Duration(minutes: 60);
 
   @override
   SyncState build() => const SyncState();
@@ -97,7 +103,8 @@ class SyncController extends Notifier<SyncState> {
   Future<void> _runSync(String userId) async {
     state = state.copyWith(syncing: true, clearError: true);
     try {
-      await ref.read(strideApiProvider).triggerSync(userId, full: false);
+      final res = await ref.read(strideApiProvider).triggerSync(userId, full: false);
+      await _awaitRunDone(res.runId);
       if (ref.read(currentUserIdProvider) != userId) {
         throw StateError('账号已切换，同步结果已忽略');
       }
@@ -110,6 +117,8 @@ class SyncController extends Notifier<SyncState> {
       ref.invalidate(trendsProvider);
       ref.invalidate(activityDetailProvider);
       ref.invalidate(timeseriesProvider);
+      // last_sync_at 由服务端在 run 成功后写 sync_meta，这里回读刷新。
+      ref.invalidate(watchInfoProvider);
       state = state.copyWith(
         syncing: false,
         lastSyncedAt: DateTime.now(),
@@ -124,8 +133,34 @@ class SyncController extends Notifier<SyncState> {
       rethrow;
     }
   }
+
+  /// 轮询 run 直到 done / failed / 60min 上限。先查状态后查 deadline：
+  /// 恰在到点时完成的 run 按 done 结算。
+  Future<void> _awaitRunDone(String runId) async {
+    final deadline = DateTime.now().add(_pollTimeout);
+    while (true) {
+      final run = await ref.read(strideApiProvider).getPipelineRun(runId);
+      if (run.isDone) return;
+      if (run.isFailed) {
+        throw Exception(run.errorMessage ?? '同步失败');
+      }
+      if (DateTime.now().isAfter(deadline)) {
+        throw Exception('同步超时');
+      }
+      await Future<void>.delayed(_pollInterval);
+    }
+  }
 }
 
 final syncControllerProvider = NotifierProvider<SyncController, SyncState>(
   SyncController.new,
 );
+
+/// 同步失败 toast 文案（与小程序 profile 页一致）：错误内容 > 15 字
+/// 截断为「同步失败」，短文案（如「同步超时」、服务端 error 体）直接展示。
+String syncErrorText(Object e) {
+  final raw = e is ApiException
+      ? e.message
+      : e.toString().replaceFirst('Exception: ', '');
+  return raw.length > 15 ? '同步失败' : raw;
+}

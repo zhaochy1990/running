@@ -308,6 +308,18 @@ class _WatchView extends ConsumerWidget {
               onChanged: (i) =>
                   controller.setWatchRegion(i == 1 ? 'global' : 'cn'),
             ),
+            const SizedBox(height: StrideTokens.spaceSm),
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '佳明账号需关闭两步验证（暂不支持 MFA）',
+                style: TextStyle(
+                  fontFamily: AppTypography.fontSans,
+                  fontSize: StrideTokens.fs12,
+                  color: StrideTokens.muted,
+                ),
+              ),
+            ),
             const SizedBox(height: StrideTokens.spaceXl),
           ],
           _label('${isGarmin ? 'Garmin' : 'COROS'} 账号'),
@@ -318,7 +330,10 @@ class _WatchView extends ConsumerWidget {
             enableSuggestions: false,
             onChanged: controller.setWatchEmail,
             style: _inputStyle,
-            decoration: _inputDecoration(hint: '登录邮箱'),
+            // 占位文案差异对齐小程序：COROS 支持手机号，Garmin 仅邮箱。
+            decoration: _inputDecoration(
+              hint: isGarmin ? '邮箱' : '邮箱或手机号',
+            ),
           ),
           const SizedBox(height: StrideTokens.spaceXl),
           _label('密码'),
