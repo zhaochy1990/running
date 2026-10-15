@@ -151,15 +151,19 @@ jobs:
       - name: Generate JSON code
         run: dart run build_runner build
 
-      # 包名未迁移（#541 前）时跳过，避免 export 因无匹配 profile 误红
+      # 包名未迁移（#541 前）时跳过后续步骤，避免 export 因无匹配 profile 误红
       - name: Assert bundle identifier migrated
+        id: bundle_check
         run: |
-          if ! grep -q 'PRODUCT_BUNDLE_IDENTIFIER = com.lipaotech.stridewise;' ios/Runner.xcodeproj/project.pbxproj; then
+          if grep -q 'PRODUCT_BUNDLE_IDENTIFIER = com.lipaotech.stridewise;' ios/Runner.xcodeproj/project.pbxproj; then
+            echo "migrated=true" >> "$GITHUB_OUTPUT"
+          else
             echo "::notice::bundle id 尚未迁移到 com.lipaotech.stridewise，跳过 iOS 构建"
-            exit 0
+            echo "migrated=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Install signing certificate
+        if: steps.bundle_check.outputs.migrated == 'true'
         env:
           IOS_P12_BASE64: ${{ secrets.IOS_P12_BASE64 }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
@@ -177,6 +181,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k ciciski123 "$KC"
 
       - name: Install provisioning profile
+        if: steps.bundle_check.outputs.migrated == 'true'
         env:
           IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
         run: |
@@ -186,6 +191,7 @@ jobs:
       # archive 需要指定 distribution 证书与 profile；用 CI 内联补丁强制手动签名，
       # 不入库（个人/发布签名策略与仓库解耦）。
       - name: Force manual signing settings
+        if: steps.bundle_check.outputs.migrated == 'true'
         run: |
           python3 - <<'EOF'
           p = 'ios/Runner.xcodeproj/project.pbxproj'
@@ -202,9 +208,11 @@ jobs:
           EOF
 
       - name: Build IPA
+        if: steps.bundle_check.outputs.migrated == 'true'
         run: flutter build ipa --release --export-options-plist=ios/ExportOptions.plist
 
       - name: Upload IPA as artifact
+        if: steps.bundle_check.outputs.migrated == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: stride-ios-ipa
@@ -212,7 +220,7 @@ jobs:
           if-no-files-found: error
 
       - name: Attach IPA to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/mobile-v')
+        if: startsWith(github.ref, 'refs/tags/mobile-v') && steps.bundle_check.outputs.migrated == 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: mobile/build/ios/ipa/*.ipa
