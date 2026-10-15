@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:stride/core/auth/current_user.dart';
+import 'package:stride/core/auth/auth_user_client.dart';
 import 'package:stride/data/models/profile.dart';
 import 'package:stride/data/models/watch.dart';
 import 'package:stride/features_v2/profile/profile_screen.dart';
@@ -27,12 +28,15 @@ Future<void> _pump(
   WidgetTester tester, {
   required MyProfile? profile,
   WatchInfo watch = const WatchInfo(),
+  String? avatarUrl,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         currentUserProvider.overrideWith((_) => Future.value(profile)),
         watchInfoProvider.overrideWith((_) => Future.value(watch)),
+        if (avatarUrl != null)
+          avatarUrlProvider.overrideWith((_) => Future.value(avatarUrl)),
       ],
       child: const MaterialApp(home: MeScreen()),
     ),
@@ -53,6 +57,33 @@ void main() {
     await _pump(tester, profile: _testProfile);
 
     // CircleAvatar with initial 'T'.
+    expect(find.text('T'), findsOneWidget);
+  });
+
+  testWidgets('avatar uses avatar_url network image when present', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      profile: _testProfile,
+      avatarUrl: 'https://cdn.example.com/avatar.jpg',
+    );
+
+    final avatar = tester.widget<CircleAvatar>(find.byType(CircleAvatar));
+    final image = avatar.foregroundImage;
+    expect(image, isA<NetworkImage>());
+    expect((image as NetworkImage).url, 'https://cdn.example.com/avatar.jpg');
+    // 首字母仍在（加载中/失败回退）。
+    expect(find.text('T'), findsOneWidget);
+  });
+
+  testWidgets('avatar falls back to the initial without avatar_url', (
+    tester,
+  ) async {
+    await _pump(tester, profile: _testProfile);
+
+    final avatar = tester.widget<CircleAvatar>(find.byType(CircleAvatar));
+    expect(avatar.foregroundImage, isNull);
     expect(find.text('T'), findsOneWidget);
   });
 

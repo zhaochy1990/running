@@ -111,3 +111,15 @@ final authUserClientProvider = Provider<AuthUserClient>((ref) {
   ));
   return AuthUserClient(dio);
 });
+
+/// 我 tab 头像 URL（auth-service 身份面 GET /api/users/me，ADR 0013）。
+/// 未登录或请求失败都回 null —— 头像可缺失，UI 回退首字母。
+final avatarUrlProvider = FutureProvider<String?>((ref) async {
+  final auth = ref.watch(authControllerProvider);
+  if (auth is! AuthAuthenticated) return null;
+  try {
+    return (await ref.watch(authUserClientProvider).getMe()).avatarUrl;
+  } catch (_) {
+    return null;
+  }
+});
