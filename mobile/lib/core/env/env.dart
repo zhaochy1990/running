@@ -41,7 +41,7 @@ abstract final class Env {
     defaultValue: '03584266ce969aa39973e480b8436861',
   );
 
-  /// 高德 iOS key（安全码=Bundle ID cn.striderunning.stride；公开可提交，
+  /// 高德 iOS key（安全码=Bundle ID com.lipaotech.stridewise（旧 key 随包名迁移作废，新 key 待重新申请）；公开可提交，
   /// 与 Android key 同口径）。覆盖经 --dart-define=AMAP_IOS_KEY 注入。
   static const String amapIosKey = String.fromEnvironment(
     'AMAP_IOS_KEY',

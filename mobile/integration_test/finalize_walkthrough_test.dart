@@ -4,7 +4,7 @@
 // （in-app 选项 sheet → 保存相册 → 系统分享面板截屏收尾）。
 //
 // 宿主机配合：
-//   xcrun simctl privacy booted grant photos-add cn.striderunning.stride
+//   xcrun simctl privacy booted grant photos-add com.lipaotech.stridewise
 //   （相册仅新增权限预授予，避免原生授权弹窗挡住 Flutter 驱动）
 //   xcrun simctl io booted screenshot <path>
 //

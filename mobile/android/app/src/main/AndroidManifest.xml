@@ -5,7 +5,7 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
 
     <application
-        android:label="STRIDE"
+        android:label="StrideWise"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -31,7 +31,8 @@
             </intent-filter>
         </activity>
         <!-- 高德地图 Android key（issue 463：公开可提交，参照 JPush AppKey 先例；
-             绑定包名 cn.striderunning.app + 发布/调试 SHA1，见 stride-devops#422） -->
+             需绑定包名 com.lipaotech.stridewise + 发布/调试 SHA1，见 stride-devops#422；
+             包名迁移（stride-devops#541）后下方旧 key 已作废，新 key 待重新申请后单独提交填入） -->
         <meta-data
             android:name="com.amap.api.v2.apikey"
             android:value="03584266ce969aa39973e480b8436861" />
