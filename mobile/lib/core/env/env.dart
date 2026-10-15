@@ -41,9 +41,12 @@ abstract final class Env {
     defaultValue: '03584266ce969aa39973e480b8436861',
   );
 
-  /// 高德 iOS key —— 尚未申请（stride-devops#422 只备了 Android key）；到位后
-  /// 经 --dart-define=AMAP_IOS_KEY 注入。
-  static const String amapIosKey = String.fromEnvironment('AMAP_IOS_KEY');
+  /// 高德 iOS key（安全码=Bundle ID cn.striderunning.stride；公开可提交，
+  /// 与 Android key 同口径）。覆盖经 --dart-define=AMAP_IOS_KEY 注入。
+  static const String amapIosKey = String.fromEnvironment(
+    'AMAP_IOS_KEY',
+    defaultValue: 'ccfd86258803529a936a9d316ac8fda6',
+  );
 
   static bool get isProd => flavor == 'prod';
   static bool get isDev => flavor == 'dev';

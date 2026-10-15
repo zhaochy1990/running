@@ -26,8 +26,8 @@ Future<void>? _sdkInit;
 Future<void> _ensureSdkInit() {
   // 失败不缓存：下次进入地图页重试（如首冷启动无网）。
   return _sdkInit ??= AMapWidget.init(
-    // iOS key 未申请（本票只备了 Android key，见 #422）；iOS 端底图鉴权
-    // 会失败，key 到位后在 Env.amapIosKey 补上即可。
+    // iOS key 已配（Env.amapIosKey 默认值）；iOS 模拟器因 SDK 无 arm64-sim
+    // 切片仍无法渲染底图，真机可验（#570 记录）。
     apiKey: ApiKey(iosKey: Env.amapIosKey, androidKey: Env.amapAndroidKey),
     agreePrivacy: true,
   ).catchError((_) => _sdkInit = null);
