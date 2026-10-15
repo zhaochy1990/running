@@ -1,41 +1,48 @@
 # STRIDE Mobile (Flutter)
 
-Cross-platform mobile app for the STRIDE running training project. **Android v1** is the current target; iOS Phase 2 reuses the same `lib/` codebase.
+STRIDE 跑步训练项目的跨端移动 App。信息架构对齐小程序四 tab（训练 / 记录 /
+教练 / 我，stride-devops#414），**Android v1** 为当前发布目标；iOS 复用同一份
+`lib/` 代码，终验以 iOS 模拟器 + 真机走查为准。
 
-> **Status: mobile onboarding is intentionally paused and unsupported.** Do not
-> enable `STRIDE_V2` for production onboarding. The current mobile flow uses the
-> legacy completion/start endpoint and `/sync-status`; it does not start generic
-> full sync, retain and poll its `run_id`, or offer the **Enter STRIDE** explicit
-> finalization handshake. Web is the supported onboarding surface until mobile is
-> redesigned and verified against the Go contract.
+> 迁移已完成（stride-devops#413 地图 + #426 收口决议，实施 PR #563–#572）。
+> Onboarding 为单页三步状态机（资料 → 绑表 → 同步），走通用 full-sync 契约，
+> 无表用户放行进首页（不再有 blocked 死路）。旧的「onboarding 暂停」声明已
+> 随 #418 / #461 决议废止。
 
-This is a client of the STRIDE backend at `https://api.stride-running.cn/api/*`, with auth over the same gateway at `/api/auth/*`. No new backend endpoints required for v1 reads — push notifications (S13a) add a few.
+这是 `https://api.stride-running.cn/api/*` 的客户端，auth 走同网关
+`/api/auth/*`；教练对话走 `/api/users/me/coach/*`（网关分流到 TS coach
+服务，SSE 流式）。
 
 ## Quick reference
 
-- **Plan:** `../.omc/plans/stride-mobile-app-android-v1.md`
-- **Design system:** `mobile/DESIGN.md` (verbatim Vercel) + `mobile/STRIDE_OVERRIDES.md` (accent-green + extended Mono)
-- **Package name / bundle id:** `cn.striderunning.app`
+- **Design system:** `mobile/DESIGN.md`（Vercel 风基底）+ `mobile/STRIDE_OVERRIDES.md`（accent-green + extended Mono）
+- **Package name / bundle id:** Android `cn.striderunning.app` · iOS `cn.striderunning.stride`
 - **Min SDK:** API 26 (Android 8.0)
 - **Domain:** `stride-running.cn`
 
 ## Setup
 
-Requires Flutter SDK (stable channel ≥ 3.40) and Android SDK (cmdline-tools or full Android Studio).
+Requires Flutter SDK (stable channel ≥ 3.47) and Android SDK (cmdline-tools or
+full Android Studio).
 
 ```bash
 # 1. Resolve dependencies
 cd mobile
 flutter pub get
 
-# 2. Generate codegen output (json_serializable)
-dart run build_runner build
-
-# 3. (One-time) Generate launcher icons from assets/branding/icon-1024.png
+# 2. (One-time) Generate launcher icons from assets/branding/icon-1024.png
 dart run flutter_launcher_icons
 
-# 4. Run on connected device or emulator
+# 3. Run on connected device or emulator（默认直连生产 API）
 flutter run
+```
+
+本地后端联调（可选）：
+
+```bash
+flutter run \
+  --dart-define=API_BASE_URL=http://10.0.2.2:8000 \
+  --dart-define=AUTH_URL=http://10.0.2.2:8001
 ```
 
 ## Project layout
@@ -43,102 +50,117 @@ flutter run
 ```
 lib/
 ├── main.dart                # entry point + ProviderScope
-├── app.dart                 # MaterialApp + GoRouter (v1 legacy + v2 gated)
+├── app.dart                 # MaterialApp.router + GoRouter + 自更新检查
 ├── core/                    # Cross-cutting concerns
-│   ├── api/                 # Dio client + interceptors
-│   ├── auth/                # auth-service tokens + secure storage
-│   ├── theme/               # Material theme from DESIGN.md tokens
-│   │   ├── tokens.dart      # Design token constants (color, spacing, radius, font size)
-│   │   ├── pill_colors.dart # Pill variant color resolution
-│   │   └── app_colors.dart  # AppColors (legacy, being replaced by tokens.dart)
-│   ├── router/              # GoRouter routes + auth guards
-│   │   ├── app_router_v2.dart  # M1 v2 router with redirect rules
-│   │   └── routes_v2.dart      # RoutesV2 path constants (/v2/*)
-│   ├── env/                 # API base URL, build flavors
-│   └── notifications/       # JPush integration + permission UX
+│   ├── api/                 # Dio client + interceptors（X-Client-Id、token 刷新）
+│   ├── auth/                # auth-service tokens + secure storage + 当前用户态
+│   ├── env/                 # build-time dart-define 配置（默认全生产值）
+│   ├── router/              # GoRouter：四 tab IA、auth/onboarding 守卫、
+│   │   ├── app_router.dart  #   /v2 深链重定向
+│   │   └── routes.dart      #   路由常量 + 重定向映射表
+│   ├── theme/               # Material3 亮色主题（tokens.dart / app_colors.dart）
+│   └── updater/             # GitHub Releases 自更新检查
 ├── data/
-│   ├── models/              # @JsonSerializable mirrors of stride_core
-│   ├── api/                 # @RestApi() Retrofit-Dart services
-│   ├── db/                  # Drift schema + tables (offline cache)
-│   └── repos/               # Cache + network composition
-├── features/                # Legacy v1 screens (pre-M1)
-│   ├── login/, today/, activity/, health/
-│   ├── teams/, plan/, profile/
-├── features_v2/             # M1 rewrite — gated behind STRIDE_V2=true
-│   ├── _shared/             # Shared widgets + shell
-│   │   ├── shell/           # MainShellV2 (bottom nav scaffold)
-│   │   └── widgets/         # StridePill, StrideStatRow, StrideTopBar,
-│   │                        # StrideNavTab, StrideSegControl, StridePhoneCard
-│   ├── auth/                # A1 AuthStartScreen, A2 AuthLoginScreen, A3 AuthRegisterScreen
-│   ├── onboarding/          # B1 BrandScreen, B2 CorosLinkScreen, B3 SyncProgressScreen,
-│   │                        # B4 BasicInfoScreen, B5 BlockedScreen
-│   ├── home/                # D5 HomeScreen (status rings + activity feed + plan CTA)
-│   ├── activity/            # D8 ActivityDetailScreen (stats, charts, laps)
-│   ├── health/              # E1 HealthOverviewScreen (2×2 metric cards + sleep chart)
-│   └── profile/             # G1 ProfileScreen (user header + menu + logout)
+│   ├── api/                 # 手写 REST 客户端（stride_api / coach_turn_id）
+│   ├── coach/               # 教练 SSE 客户端（sse_parser / coach_api / cards）
+│   └── models/              # @JsonSerializable 契约模型
+├── features/                # 仅剩 updater 提示 UI（v1 legacy 屏已全删）
+├── features_v2/             # 全部页面（四 tab IA）
+│   ├── _shared/             # MainShell（底部导航）+ 通用 widgets
+│   │   ├── shell/           #   main_shell.dart
+│   │   └── widgets/         #   StridePill / TopBar / SegControl / PhoneCard …
+│   ├── auth/                # 登录（SMS/邮箱双 tab）、注册、法务声明页
+│   ├── onboarding/          # 单页三步：资料 → 绑表 → 同步（full-sync 契约）
+│   ├── training/            # 训练 tab（今日课表 + 周日期条 + 营养摘要）
+│   ├── plan/                # 周计划：周列表 / 周详情 / 会话详情
+│   ├── records/             # 记录列表 + 活动详情（含高德轨迹地图 widgets/）
+│   ├── coach/               # 教练 SSE 对话 + 多会话抽屉 + 策略卡片交接
+│   ├── race/                # 赛事中心 / 详情 / 策略 / 我的比赛
+│   ├── health/              # 训练状态页 + 雷达 / 预测 / PB
+│   ├── watch/               # 手表双品牌绑定与手动同步
+│   └── profile/             # 我 tab + 资料编辑 / 隐私
 └── shared/
-    ├── widgets/             # HRChart, PaceChart, primitives
-    └── utils/               # date / pace formatting (mirrors api.ts)
+    ├── utils/               # 日期 / 配速 / 坐标（WGS84→GCJ02）格式化
+    └── widgets/             # 曲线图（HR/Pace）等 primitives
 ```
 
-## features_v2 — M1 Rewrite
+## Router & IA
 
-`features_v2/` contains the full M1 screen set (12 screens). All routes use the `/v2/` prefix and coexist with legacy routes. Its onboarding route map is documentation of the paused implementation, not a supported production workflow.
-
-### Enabling v2 UI for non-onboarding development only
-
-```bash
-# Run with v2 router enabled
-flutter run --dart-define=STRIDE_V2=true
-
-# Build APK with v2 router enabled
-flutter build apk --dart-define=STRIDE_V2=true
-```
-
-Without `STRIDE_V2=true`, the app falls back to the legacy router and v1 screens.
-
-### v2 Router redirect rules
+GoRouter 守卫规则（stride-devops#461）：
 
 ```
-No token            → /v2/auth/start
-Token, !onboardingComplete → /v2/onboarding/brand
-Token, !hasWatch    → /v2/onboarding/blocked
-else                → as requested (home default)
+0. Legacy /v2/* 深链   → 按 #414 映射表重定向到新路由
+   已删 E1/E2/E3 深链   → /me/data* 保底重定向到 /me/training-status
+1. 无 token            → /auth/start（/auth/* 与 /declaration/* 公开）
+2. token, !completedAt → /onboarding（单页三步，页面自重算落点）
+3. else                → 按请求路由（无表不拦，首页空态引导绑表）
 ```
 
-### v2 Route map
+### Route map
 
-| Path | Screen | ID |
-|------|--------|----|
-| `/v2/auth/start` | AuthStartScreen | A1 |
-| `/v2/auth/login` | AuthLoginScreen | A2 |
-| `/v2/auth/register` | AuthRegisterScreen | A3 |
-| `/v2/onboarding/brand` | BrandScreen | B1 |
-| `/v2/onboarding/coros` | CorosLinkScreen | B2 |
-| `/v2/onboarding/sync` | SyncProgressScreen | B3 |
-| `/v2/onboarding/basic-info` | BasicInfoScreen | B4 |
-| `/v2/onboarding/blocked` | BlockedScreen | B5 |
-| `/v2/home` | HomeScreen (shell tab) | D5 |
-| `/v2/train` | TrainPlaceholderScreen (shell tab) | — |
-| `/v2/data` | HealthOverviewScreen (shell tab) | E1 |
-| `/v2/me` | ProfileScreen (shell tab) | G1 |
-| `/v2/activity/:id` | ActivityDetailScreen (full-screen) | D8 |
+| Path | Screen |
+|------|--------|
+| `/auth/start` | 启动页（登录/注册入口 + 法务链接） |
+| `/auth/login` | 登录（SMS 默认 tab / 邮箱密码 tab） |
+| `/auth/register` | 注册（SMS 首登自动注册） |
+| `/declaration/:docType` | 法务声明（公开可读） |
+| `/onboarding` | 单页三步 onboarding |
+| `/training` | 训练 tab（shell） |
+| `/training/plan` | 周计划周列表 |
+| `/training/plan/weeks/:folder` | 周详情 |
+| `/training/plan/weeks/:folder/sessions/:date/:sessionIndex` | 会话详情 |
+| `/records` | 记录 tab（shell，月份折叠 + 分页） |
+| `/records/activity/:id` | 活动详情（指标/曲线/圈表/力量/轨迹地图） |
+| `/coach` | 教练 tab（shell，SSE 流式对话） |
+| `/races` | 赛事中心（全页栈） |
+| `/races/:id` | 赛事详情（概要/项目/出行 + 报名 sheet） |
+| `/races/:id/strategy` | 比赛策略（版本 pills + 海报分享） |
+| `/my-races` | 我的比赛（赛程/成绩双 tab） |
+| `/me` | 我 tab（shell，菜单 + 手动同步 + 退出） |
+| `/me/profile-edit` | 资料编辑（头像直传 COS，双库字段） |
+| `/me/privacy` | 隐私与权限（声明入口） |
+| `/me/training-status` | 训练状态（4 指标卡 + 五图 + 热力图） |
+| `/me/data/ability` · `/me/data/predictions` · `/me/data/pbs` | 雷达 / 预测 / PB |
+| `/me/watch` | 手表管理（Garmin/COROS 双品牌） |
 
 ## Hand-written API client (no codegen)
 
-Per plan §11 O3, all API client code is hand-written `@RestApi()` + `@JsonSerializable()`. When backend models change in `src/stride_core/`, update `mobile/lib/data/models/` in the same PR. No OpenAPI generator, no schema drift detection beyond this discipline.
+All API client code is hand-written `@JsonSerializable()` + Dio. When backend
+models change, update `mobile/lib/data/models/` in the same PR. No OpenAPI
+generator — contract drift is caught by the contract tests and walkthrough
+tests instead.
 
-## Push notifications (JPush)
+## 高德地图（轨迹地图）
 
-- **Provider:** 极光推送 (JPush) — covers MiPush / HMS Push / Honor Push / FCM fallback
-- **Not covered (v1):** OPPO + vivo (require 营业执照 / 软著, deferred to v1.1 after individual entrepreneur registration)
-- **Client AppKey:** `mobile/android/app/jpush.properties` (gitignored, copy from `.example`)
-- **Server Master Secret:** Azure Key Vault `stride-kv-common/jpush-master-secret`
+活动详情 GPS 轨迹用 `flutter_amap_plus`（issue 463）：WGS84→GCJ02 转换、
+共享端点分段、三色着色。Android key 已内置（`Env.amapAndroidKey`，公开 key
+参照行业先例 + AndroidManifest meta-data）；**iOS key 尚未申请**（#422 只备了
+Android key），iOS 端底图鉴权会降级，key 到位后经
+`--dart-define=AMAP_IOS_KEY` 注入即可。
+
+## Self-update (in-app)
+
+App 启动后查 GitHub Releases 最新版（`core/updater/`），有新版弹提示，下载
+APK 安装（Android）。回滚 = 重装上一版 Release APK。
 
 ## Distribution (v1)
 
-Signed APK attached to GitHub Release on tagged push (`mobile-v2026.5.0` style). No Play Store account in v1. Sideload only.
+Signed APK attached to GitHub Release on tagged push (`mobile-v2026.10.0`
+style, CalVer)。No Play Store account in v1. Sideload only；Web Landing 下载
+区链接指向 `github.com/zhaochy1990/running/releases/latest`。
+
+## Testing
+
+- **Unit / widget tests:** `flutter test`（CI 强制，含 router 重定向、契约
+  model、海报分享文本等）
+- **Integration walkthroughs:** `integration_test/*_walkthrough_test.dart`，
+  真实 tap 直连生产 API，凭据经 `--dart-define=TEST_EMAIL/TEST_PASSWORD`
+  注入（不落仓库）；宿主机监听 `WALKTHROUGH-MARK:` 输出配合
+  `xcrun simctl io booted screenshot` 逐页截图
+- **发布门槛**（stride-devops#426 决议）：CI 全绿 + 契约测试 + 18 页
+  checklist 终验三绿，才可打 `mobile-v*` tag
 
 ## Decisions reference
 
-The plan file (`.omc/plans/stride-mobile-app-android-v1.md`) is the source of truth for v1 scope, tech stack rationale, acceptance criteria, and risk register. When adding a feature, check there first.
+- 迁移地图与全部决议：stride-devops#413（含各域决策票）
+- 收口决议 + 18 页终验 checklist：stride-devops#426
