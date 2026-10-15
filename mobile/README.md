@@ -16,7 +16,7 @@ STRIDE 跑步训练项目的跨端移动 App。信息架构对齐小程序四 ta
 ## Quick reference
 
 - **Design system:** `mobile/DESIGN.md`（Vercel 风基底）+ `mobile/STRIDE_OVERRIDES.md`（accent-green + extended Mono）
-- **Package name / bundle id:** Android `cn.striderunning.app` · iOS `cn.striderunning.stride`
+- **Package name / bundle id:** Android `com.lipaotech.stridewise` · iOS `com.lipaotech.stridewise`
 - **Min SDK:** API 26 (Android 8.0)
 - **Domain:** `stride-running.cn`
 

@@ -7,7 +7,7 @@
 	     SDK 生效，真机构建不受影响。 -->
 	<key>keychain-access-groups</key>
 	<array>
-		<string>$(AppIdentifierPrefix)cn.striderunning.stride</string>
+		<string>$(AppIdentifierPrefix)com.lipaotech.stridewise</string>
 	</array>
 </dict>
 </plist>

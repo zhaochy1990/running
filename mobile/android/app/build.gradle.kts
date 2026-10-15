@@ -21,7 +21,7 @@ val keystoreProperties = Properties().apply {
 val hasUploadKey = keystorePropertiesFile.exists()
 
 android {
-    namespace = "cn.striderunning.app"
+    namespace = "com.lipaotech.stridewise"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -35,7 +35,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "cn.striderunning.app"
+        applicationId = "com.lipaotech.stridewise"
         minSdk = 26  // Android 8.0 (Oreo) — Health Connect-eligible, ~98% device coverage. Decided in plan O2.
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
