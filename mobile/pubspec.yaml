@@ -100,14 +100,16 @@ flutter:
           weight: 700
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Launcher icons (Android only for v1; iOS Phase 2)
-# Generates mipmap-* PNGs from the source.
+# Launcher icons (issue stride-devops#542): StrideWise wordmark master.
+# assets/icon/app_icon_foreground.png is derived from app_icon.png
+# (bg #FEFFFE keyed to alpha, content scaled into the adaptive safe zone).
 # Run: dart run flutter_launcher_icons
 # ─────────────────────────────────────────────────────────────────────────────
 flutter_launcher_icons:
   android: true
-  ios: false
-  image_path: "assets/branding/icon-1024.png"
-  adaptive_icon_background: "#0a0a0a"
-  adaptive_icon_foreground: "assets/branding/icon-adaptive-foreground.png"
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  adaptive_icon_background: "#FEFFFE"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
   min_sdk_android: 26
+  remove_alpha_ios: true
