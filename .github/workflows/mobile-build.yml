@@ -126,3 +126,100 @@ jobs:
         uses: zhaochy1990/configurations/notify-wecom@v1
         with:
           webhook_url: ${{ secrets.WECOM_WEBHOOK_URL }}
+
+  ios-release:
+    name: Build iOS IPA (App Store)
+    # 免费的 macOS runner：master push / tag / 手动都可跑；PR 暂不跑（Android job 已把 analyze/test 闸住）。
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/mobile-v') || (github.event_name == 'push' && github.ref == 'refs/heads/master')
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.x'
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Generate JSON code
+        run: dart run build_runner build
+
+      # 包名未迁移（#541 前）时跳过，避免 export 因无匹配 profile 误红
+      - name: Assert bundle identifier migrated
+        run: |
+          if ! grep -q 'PRODUCT_BUNDLE_IDENTIFIER = com.lipaotech.stridewise;' ios/Runner.xcodeproj/project.pbxproj; then
+            echo "::notice::bundle id 尚未迁移到 com.lipaotech.stridewise，跳过 iOS 构建"
+            exit 0
+          fi
+
+      - name: Install signing certificate
+        env:
+          IOS_P12_BASE64: ${{ secrets.IOS_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+        run: |
+          if [ -z "$IOS_P12_BASE64" ]; then
+            echo "::error::IOS_P12_BASE64 secret is not set"
+            exit 1
+          fi
+          KC=$RUNNER_TEMP/build.keychain
+          security create-keychain -p ciciski123 "$KC"
+          security default-keychain -s "$KC"
+          security unlock-keychain -p ciciski123 "$KC"
+          echo "$IOS_P12_BASE64" | base64 -d > "$RUNNER_TEMP/dist.p12"
+          security import "$RUNNER_TEMP/dist.p12" -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ciciski123 "$KC"
+
+      - name: Install provisioning profile
+        env:
+          IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+        run: |
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          echo "$IOS_PROFILE_BASE64" | base64 -d > "$HOME/Library/MobileDevice/Provisioning Profiles/StrideWise-AppStore-Profile.mobileprovision"
+
+      # archive 需要指定 distribution 证书与 profile；用 CI 内联补丁强制手动签名，
+      # 不入库（个人/发布签名策略与仓库解耦）。
+      - name: Force manual signing settings
+        run: |
+          python3 - <<'EOF'
+          p = 'ios/Runner.xcodeproj/project.pbxproj'
+          s = open(p).read()
+          s = s.replace('CODE_SIGN_STYLE = Automatic;', 'CODE_SIGN_STYLE = Manual;')
+          s = s.replace(
+            '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";',
+            '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution: Shanghai Lipao Technology Co., Ltd (M4G5WA6N83)";')
+          s = s.replace(
+            'PRODUCT_BUNDLE_IDENTIFIER = com.lipaotech.stridewise;',
+            'DEVELOPMENT_TEAM = M4G5WA6N83;\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = "StrideWise-AppStore-Profile";\n\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = com.lipaotech.stridewise;')
+          open(p, 'w').write(s)
+          print('manual signing patched:', s.count('PROVISIONING_PROFILE_SPECIFIER'), 'configs')
+          EOF
+
+      - name: Build IPA
+        run: flutter build ipa --release --export-options-plist=ios/ExportOptions.plist
+
+      - name: Upload IPA as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stride-ios-ipa
+          path: mobile/build/ios/ipa/*.ipa
+          if-no-files-found: error
+
+      - name: Attach IPA to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/mobile-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: mobile/build/ios/ipa/*.ipa
+          fail_on_unmatched_files: true
+
+      - name: Notify WeCom
+        if: always()
+        uses: zhaochy1990/configurations/notify-wecom@v1
+        with:
+          webhook_url: ${{ secrets.WECOM_WEBHOOK_URL }}
