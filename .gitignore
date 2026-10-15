@@ -104,3 +104,4 @@ src/wechat-miniprogram/store/*.js
 src/wechat-miniprogram/types/*.js
 src/wechat-miniprogram/utils/*.js
 docs/~$CoachAgent.drawio.dtmp
+.dsa/
