@@ -109,6 +109,30 @@ void main() {
         expect(requests, 0);
       });
 
+  testWidgets('blocks sending SMS until the agreement checkbox is ticked',
+      (tester) async {
+    final storage = FakeSecureStorage();
+    var requests = 0;
+    await _pump(
+      tester,
+      _dioWithResponse(200, {'status': 'ok'}, inspect: (_) => requests++),
+      storage,
+    );
+
+    await tester.enterText(
+        find.byKey(const Key('login-phone')), '13800138000');
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('login-send-code')));
+    await tester.pump();
+
+    expect(
+      find.text('请先阅读并勾选同意《用户协议》和《隐私政策》'),
+      findsOneWidget,
+    );
+    // 未勾选协议时一个短信请求都不该发（#540 合规门槛）
+    expect(requests, 0);
+  });
+
   testWidgets('sends a code for a valid phone and starts the 60s countdown',
       (tester) async {
     final storage = FakeSecureStorage();
@@ -125,6 +149,7 @@ void main() {
 
     await tester.enterText(
         find.byKey(const Key('login-phone')), '13800138000');
+    await tester.tap(find.byKey(const Key('login-agree')));
     await tester.pump();
     await tester.tap(find.byKey(const Key('login-send-code')));
     await tester.pump();
@@ -144,6 +169,7 @@ void main() {
       storage,
     );
 
+    await tester.tap(find.byKey(const Key('login-agree')));
     await tester.enterText(find.byKey(const Key('login-phone')), '12345');
     await tester.pump();
     await tester.tap(find.byKey(const Key('login-send-code')));
@@ -165,6 +191,7 @@ void main() {
       storage,
     );
 
+    await tester.tap(find.byKey(const Key('login-agree')));
     await tester.enterText(
         find.byKey(const Key('login-phone')), '13800138000');
     await tester.pump();

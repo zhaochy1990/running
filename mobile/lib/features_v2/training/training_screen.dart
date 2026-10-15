@@ -714,6 +714,8 @@ class _EmptyWorkoutCard extends StatelessWidget {
     return InkWell(
       onTap: () => context.push(Routes.planWeeks),
       child: Container(
+        // 全宽：仅两个 Text 子节点时 Column 会缩到文本固有宽度，真机上呈半宽。
+        width: double.infinity,
         margin: const EdgeInsets.fromLTRB(
           StrideTokens.spaceLg,
           0,

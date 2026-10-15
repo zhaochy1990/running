@@ -134,6 +134,8 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         _identity = _identity?.copyWith(avatarUrl: url);
         _uploadingAvatar = false;
       });
+      // 我 tab 头像经 avatarUrlProvider 缓存，上传后失效让其重取。
+      ref.invalidate(avatarUrlProvider);
       _toast('头像已更新');
     } catch (_) {
       if (!mounted) return;

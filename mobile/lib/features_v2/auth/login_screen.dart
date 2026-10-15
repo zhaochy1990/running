@@ -102,6 +102,11 @@ class _AuthLoginScreenState extends ConsumerState<AuthLoginScreen> {
 
   Future<void> _sendCode() async {
     if (_sending || _countdown > 0) return;
+    // 未主动勾选协议不允许发短信（同 _submit 的合规门槛，对齐小程序口径）。
+    if (!_agreed) {
+      setState(() => _error = '请先阅读并勾选同意《用户协议》和《隐私政策》');
+      return;
+    }
     final phone = _phoneCtrl.text.trim();
     if (!_phoneRe.hasMatch(phone)) {
       setState(() => _error = '请输入正确的手机号');

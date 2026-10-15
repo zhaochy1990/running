@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../core/auth/auth_controller.dart';
+import '../../core/auth/auth_user_client.dart';
 import '../../core/auth/current_user.dart';
 import '../../core/router/routes.dart';
 import '../../core/theme/app_typography.dart';
@@ -35,13 +36,18 @@ class MeScreen extends ConsumerWidget {
         _emailPrefix((profile?.profile?['email'] as String?) ?? '');
     final email = (profile?.profile?['email'] as String?) ?? '';
     final watchBound = profile?.onboarding.watchReady ?? false;
+    final avatarUrl = ref.watch(avatarUrlProvider).valueOrNull;
 
     return Scaffold(
       backgroundColor: StrideTokens.bg,
       appBar: const StrideTopBar(title: '我'),
       body: ListView(
         children: [
-          _UserHeader(displayName: displayName, email: email),
+          _UserHeader(
+            displayName: displayName,
+            email: email,
+            avatarUrl: avatarUrl,
+          ),
           const SizedBox(height: StrideTokens.spaceSm),
 
           // ── 手动同步 ──
@@ -226,14 +232,20 @@ class MeScreen extends ConsumerWidget {
 // ── User header ───────────────────────────────────────────────────────────────
 
 class _UserHeader extends StatelessWidget {
-  const _UserHeader({required this.displayName, required this.email});
+  const _UserHeader({
+    required this.displayName,
+    required this.email,
+    this.avatarUrl,
+  });
 
   final String displayName;
   final String email;
+  final String? avatarUrl;
 
   @override
   Widget build(BuildContext context) {
     final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U';
+    final hasAvatar = avatarUrl != null && avatarUrl!.isNotEmpty;
 
     return Container(
       color: StrideTokens.surface,
@@ -246,6 +258,10 @@ class _UserHeader extends StatelessWidget {
           CircleAvatar(
             radius: 28,
             backgroundColor: StrideTokens.accent,
+            // foregroundImage 盖在首字母上：加载中先见首字母，失败经
+            // onForegroundImageError 吞掉后回退首字母（#572 avatar_url）。
+            foregroundImage: hasAvatar ? NetworkImage(avatarUrl!) : null,
+            onForegroundImageError: hasAvatar ? (_, _) {} : null,
             child: Text(
               initial,
               style: const TextStyle(
