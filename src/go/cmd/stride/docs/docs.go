@@ -6487,6 +6487,154 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/{user}/races/{labelId}": {
+            "patch": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Writes the athlete's own name for one confirmed race (\"我的成绩\" manual naming). An all-blank value clears the stored name; more than 50 characters is rejected. Only the display_name column is touched — official calendar identity, evidence and PB data are never modified. A user caller may only rename their own races; an internal caller may rename any user's.",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "races"
+                ],
+                "summary": "Set a race's athlete-chosen display name",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Activity label id of the race",
+                        "name": "labelId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Display name (blank to clear)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.renameRaceBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/races/{labelId}/calendar-match": {
+            "delete": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Severs the race_calendar_item link of one confirmed race and records evidence user_cleared, so the rematch path never re-chains it. The race row itself (and its activity) stays confirmed. Clearing an already-unlinked race is a no-op; a missing race row is 404. A user caller may only clear their own races; an internal caller may clear any user's.",
+                "tags": [
+                    "races"
+                ],
+                "summary": "Reject a race's calendar match",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Activity label id of the race",
+                        "name": "labelId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/{user}/stride/training-load": {
             "get": {
                 "security": [
@@ -9590,7 +9738,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "wa_label": {
-                    "description": "WALabel is this race's World Athletics tier (Platinum/Gold/Elite/Label),\nwritten by the race_calendar_wa_label step, or null when the race has none.\nOne meaning regardless of source: a 中国田协 row takes it from its World\nAthletics counterpart, and a 国际田联 row mirrors its own tier.",
+                    "description": "WALabel is this race's World Athletics tier (Platinum/Gold/Elite/Label),\nwritten by the 国际田联 mirror's dedup (devops#443/#533), or null when the\nrace has none. A 中国田协 row takes it from its World Athletics\ncounterpart; a race only the 国际田联 calendar lists carries its tier in\nlabel instead.",
                     "type": "string"
                 }
             }
@@ -9663,7 +9811,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "wa_label": {
-                    "description": "WALabel is this race's World Athletics tier (Platinum/Gold/Elite/Label),\nwritten by the race_calendar_wa_label step, or null when the race has none.\nOne meaning regardless of source: a 中国田协 row takes it from its World\nAthletics counterpart, and a 国际田联 row mirrors its own tier.",
+                    "description": "WALabel is this race's World Athletics tier (Platinum/Gold/Elite/Label),\nwritten by the 国际田联 mirror's dedup (devops#443/#533), or null when the\nrace has none. A 中国田协 row takes it from its World Athletics\ncounterpart; a race only the 国际田联 calendar lists carries its tier in\nlabel instead.",
                     "type": "string"
                 }
             }
@@ -9836,7 +9984,7 @@ const docTemplate = `{
                     }
                 },
                 "wa_label": {
-                    "description": "WALabel is the World Athletics tier written onto this row by the\nrace_calendar_wa_label step. Editable like label so an administrator can\ncorrect a mis-matched tier; declaring \"wa_label\" in Overrides makes the\nlabel run keep the administrator's value.",
+                    "description": "WALabel is the World Athletics tier written onto this row by the\n国际田联 mirror's dedup. Editable like label so an administrator can\ncorrect a mis-matched tier; declaring \"wa_label\" in Overrides makes the\nnext sync keep the administrator's value.",
                     "type": "string"
                 }
             }
@@ -10261,6 +10409,9 @@ const docTemplate = `{
                 "date": {
                     "type": "string"
                 },
+                "display_name": {
+                    "type": "string"
+                },
                 "distance_band": {
                     "type": "string"
                 },
@@ -10276,6 +10427,9 @@ const docTemplate = `{
                 "duration_s": {
                     "type": "number"
                 },
+                "label": {
+                    "type": "string"
+                },
                 "label_id": {
                     "type": "string"
                 },
@@ -10288,10 +10442,16 @@ const docTemplate = `{
                 "pace_fmt": {
                     "type": "string"
                 },
+                "race_name": {
+                    "type": "string"
+                },
                 "sport_name": {
                     "type": "string"
                 },
                 "thumb_url": {
+                    "type": "string"
+                },
+                "wa_label": {
                     "type": "string"
                 }
             }
@@ -10535,6 +10695,17 @@ const docTemplate = `{
                     }
                 },
                 "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.renameRaceBody": {
+            "type": "object",
+            "required": [
+                "display_name"
+            ],
+            "properties": {
+                "display_name": {
                     "type": "string"
                 }
             }

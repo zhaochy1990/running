@@ -42,6 +42,10 @@ const (
 	// RaceEvidenceModelScore marks a race confirmed by the weighted scoring
 	// pipeline (LLM semantic assessment plus Go evidence).
 	RaceEvidenceModelScore = "model_score"
+	// RaceEvidenceUserCleared marks a race whose calendar link the athlete
+	// rejected via DELETE /api/{user}/races/{labelId}/calendar-match ("这不是
+	// 这场比赛"): the link is gone and the rematch paths must not re-chain it.
+	RaceEvidenceUserCleared = "user_cleared"
 )
 
 // CalendarItem is the projection of one race_calendar_item row needed for
