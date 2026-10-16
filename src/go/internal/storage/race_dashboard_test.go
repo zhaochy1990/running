@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"reflect"
 	"testing"
 )
 
@@ -14,39 +15,51 @@ func TestRaceDashboardRows_ScopeAndOrdering(t *testing.T) {
 	migrateRaceContent(t, st)
 	ctx := context.Background()
 
-	seedRaceEvent(t, st, "源A", "B赛事", "2031-05-02")
-	seedRaceEvent(t, st, "源A", "A赛事", "2031-05-02")
-	seedRaceEvent(t, st, "源A", "C赛事", "2031-05-10")
-	seedRaceEvent(t, st, "源A", "早赛事", "2031-04-01")
-	seedRaceEvent(t, st, "源A", "边界赛事", "2031-05-01")
+	ids := []uint64{
+		seedRaceEvent(t, st, "源A", "B赛事", "2031-05-02"),
+		seedRaceEvent(t, st, "源A", "A赛事", "2031-05-02"),
+		seedRaceEvent(t, st, "源A", "C赛事", "2031-05-10"),
+		seedRaceEvent(t, st, "源A", "早赛事", "2031-04-01"),
+		seedRaceEvent(t, st, "源A", "边界赛事", "2031-05-01"),
+	}
 	idOverseas := seedRaceEvent(t, st, "源A", "海外赛事", "2031-05-03")
 	if err := st.db.WithContext(ctx).Model(&RaceCalendarEvent{}).Where("id = ?", idOverseas).
 		Update("country", "JPN").Error; err != nil {
 		t.Fatalf("set country: %v", err)
 	}
 
-	rows, err := st.ListRaceCalendarDashboardRows(ctx, "CHN")
-	if err != nil {
-		t.Fatalf("list: %v", err)
+	// The read is table-wide (the store takes only a country), so on a shared
+	// database the fixture rows are picked out by id; membership and ordering
+	// stay exact (devops#563).
+	fixture := map[uint64]bool{}
+	for _, id := range append(ids, idOverseas) {
+		fixture[id] = true
 	}
-	// 全量按序返回,海外行(JPN)不在;时间域过滤是 handler 的职责。
-	want := []string{"早赛事", "边界赛事", "A赛事", "B赛事", "C赛事"}
-	if len(rows) != len(want) {
-		t.Fatalf("rows = %v, want %v", namesOf(rows), want)
-	}
-	for i, row := range rows {
-		if row.Name != want[i] {
-			t.Fatalf("row[%d] = %s, want %s (ordering must be race_date,name,id)", i, row.Name, want[i])
+	fixtureNames := func(country string) []string {
+		t.Helper()
+		rows, err := st.ListRaceCalendarDashboardRows(ctx, country)
+		if err != nil {
+			t.Fatalf("list %q: %v", country, err)
 		}
+		var names []string
+		for _, row := range rows {
+			if fixture[row.ID] {
+				names = append(names, row.Name)
+			}
+		}
+		return names
+	}
+
+	// 海外行(JPN)不在;时间域过滤是 handler 的职责。
+	want := []string{"早赛事", "边界赛事", "A赛事", "B赛事", "C赛事"}
+	if got := fixtureNames("CHN"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("rows = %v, want %v (ordering must be race_date,name,id)", got, want)
 	}
 
 	// 空国家 = 无过滤,海外行也返回。
-	rows, err = st.ListRaceCalendarDashboardRows(ctx, "")
-	if err != nil {
-		t.Fatalf("list unbounded: %v", err)
-	}
-	if len(rows) != 6 {
-		t.Fatalf("unbounded rows = %d (%v), want 6", len(rows), namesOf(rows))
+	wantAll := []string{"早赛事", "边界赛事", "A赛事", "B赛事", "海外赛事", "C赛事"}
+	if got := fixtureNames(""); !reflect.DeepEqual(got, wantAll) {
+		t.Fatalf("unbounded rows = %v, want %v", got, wantAll)
 	}
 }
 
@@ -91,18 +104,21 @@ func TestRaceDashboardCityContentByCities(t *testing.T) {
 	migrateRaceContent(t, st)
 	ctx := context.Background()
 
-	for _, city := range []string{"厦门市", "杭州市"} {
+	// Fixture cities the shared local database never holds (devops#563).
+	const seededCity = "测试市-甲"
+	addRaceCityContentCleanup(t, st, seededCity, "测试市-乙")
+	for _, city := range []string{seededCity, "测试市-乙"} {
 		if _, err := st.UpsertRaceCityContent(ctx, &RaceCityContent{City: city}); err != nil {
 			t.Fatalf("seed %s: %v", city, err)
 		}
 	}
 
-	rows, err := st.ListRaceCityContentByCities(ctx, []string{"厦门市", "福州市"})
+	rows, err := st.ListRaceCityContentByCities(ctx, []string{seededCity, "福州市"})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if len(rows) != 1 || rows[0].City != "厦门市" {
-		t.Fatalf("rows = %+v, want only 厦门市", rows)
+	if len(rows) != 1 || rows[0].City != seededCity {
+		t.Fatalf("rows = %+v, want only %s", rows, seededCity)
 	}
 	rows, err = st.ListRaceCityContentByCities(ctx, nil)
 	if err != nil {
@@ -111,12 +127,4 @@ func TestRaceDashboardCityContentByCities(t *testing.T) {
 	if len(rows) != 0 {
 		t.Fatalf("empty cities = %d rows, want 0", len(rows))
 	}
-}
-
-func namesOf(rows []RaceCalendarEvent) []string {
-	out := make([]string, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, row.Name)
-	}
-	return out
 }

@@ -9,8 +9,9 @@ import (
 )
 
 // migrateRaceEngagement ensures the two engagement tables exist for the
-// integration test and empties them (plus the calendar they reference, via
-// migrateRaceCalendar) so each test starts isolated.
+// integration test (plus the calendar they reference, via migrateRaceCalendar).
+// Nothing is cleared: tests own their rows via uuid users and fixture-scoped
+// cleanups (devops#563).
 func migrateRaceEngagement(t *testing.T, st *Store) {
 	t.Helper()
 	ctx := context.Background()
@@ -20,11 +21,6 @@ func migrateRaceEngagement(t *testing.T, st *Store) {
 	}
 	if err := st.AutoMigrateRacePlans(ctx); err != nil {
 		t.Fatalf("automigrate race_plan: %v", err)
-	}
-	for _, table := range []string{"race_favorite", "race_plan"} {
-		if err := st.db.WithContext(ctx).Exec("DELETE FROM " + table).Error; err != nil {
-			t.Fatalf("clear %s: %v", table, err)
-		}
 	}
 }
 
@@ -38,6 +34,8 @@ func seedEngagementRace(t *testing.T, st *Store, name, date string, published bo
 	if err := st.CreateRaceCalendarEvent(context.Background(), &row); err != nil {
 		t.Fatalf("seed race %s: %v", name, err)
 	}
+	// The manual source is real shared data, so clean up by id (devops#563).
+	addRaceCalendarEventCleanup(t, st, row.ID)
 	return row.ID
 }
 
@@ -46,6 +44,7 @@ func TestRaceFavorite_ToggleRoundTripAndGuards(t *testing.T) {
 	migrateRaceEngagement(t, st)
 	ctx := context.Background()
 	uid := uuid.NewString()
+	addUserTableCleanup(t, st, "race_favorite", uid)
 
 	pub := seedEngagementRace(t, st, "收藏赛", "2032-04-10", true)
 	unpub := seedEngagementRace(t, st, "未发布赛", "2032-04-11", false)
@@ -74,6 +73,7 @@ func TestRaceFavorite_UniqueConstraint(t *testing.T) {
 	migrateRaceEngagement(t, st)
 	ctx := context.Background()
 	uid := uuid.NewString()
+	addUserTableCleanup(t, st, "race_favorite", uid)
 	raceID := seedEngagementRace(t, st, "唯一约束赛", "2032-05-01", true)
 
 	first := &RaceFavorite{UserID: uid, RaceEventID: raceID, CreatedAt: time.Now().UTC()}
@@ -91,6 +91,7 @@ func TestRaceFavorite_ListFiltersUnpublished(t *testing.T) {
 	migrateRaceEngagement(t, st)
 	ctx := context.Background()
 	uid := uuid.NewString()
+	addUserTableCleanup(t, st, "race_favorite", uid)
 
 	first := seedEngagementRace(t, st, "收藏列表甲", "2032-06-01", true) // lowest id
 	dropped := seedEngagementRace(t, st, "收藏列表乙", "2032-06-02", true)
@@ -136,6 +137,7 @@ func TestRacePlan_FiveStateRoundTrip(t *testing.T) {
 	migrateRaceEngagement(t, st)
 	ctx := context.Background()
 	uid := uuid.NewString()
+	addUserTableCleanup(t, st, "race_plan", uid)
 	raceID := seedEngagementRace(t, st, "状态机赛", "2032-07-01", true)
 
 	hotel, transit := true, true
@@ -212,6 +214,7 @@ func TestRacePlan_UniqueConstraintAndDelete(t *testing.T) {
 	migrateRaceEngagement(t, st)
 	ctx := context.Background()
 	uid := uuid.NewString()
+	addUserTableCleanup(t, st, "race_plan", uid)
 	raceID := seedEngagementRace(t, st, "唯一计划赛", "2032-08-01", true)
 
 	first := &RacePlan{UserID: uid, RaceEventID: raceID, ItemType: "Marathon", State: RacePlanStateRegistered}
@@ -239,6 +242,7 @@ func TestRacePlan_ListOffboardingLayering(t *testing.T) {
 	migrateRaceEngagement(t, st)
 	ctx := context.Background()
 	uid := uuid.NewString()
+	addUserTableCleanup(t, st, "race_plan", uid)
 
 	later := seedEngagementRace(t, st, "分层后程赛", "2032-10-01", true)
 	soon := seedEngagementRace(t, st, "分层近程赛", "2032-09-01", true)
@@ -329,6 +333,7 @@ func TestRaceFavorite_ConcurrentDoubleTap(t *testing.T) {
 	migrateRaceEngagement(t, st)
 	ctx := context.Background()
 	uid := uuid.NewString()
+	addUserTableCleanup(t, st, "race_favorite", uid)
 	raceID := seedEngagementRace(t, st, "并发收藏赛", "2032-11-01", true)
 
 	const n = 2
@@ -370,6 +375,7 @@ func TestRacePlan_ConcurrentUpsert(t *testing.T) {
 	migrateRaceEngagement(t, st)
 	ctx := context.Background()
 	uid := uuid.NewString()
+	addUserTableCleanup(t, st, "race_plan", uid)
 	raceID := seedEngagementRace(t, st, "并发计划赛", "2032-11-02", true)
 
 	const n = 8

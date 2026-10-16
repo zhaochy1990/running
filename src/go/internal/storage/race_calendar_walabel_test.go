@@ -37,6 +37,8 @@ func TestApplyRaceCalendarWALabels_Guards(t *testing.T) {
 	syncRow := seed("同步行", RaceOriginSync, nil, nil)
 	manualRow := seed("人工行", RaceOriginManual, nil, nil)
 	overriddenRow := seed("已接管行", RaceOriginSync, []byte(`["wa_label"]`), strPtr("Elite"))
+	// Real source labels, so the cleanup must be id-scoped (devops#563).
+	addRaceCalendarEventCleanup(t, st, syncRow, manualRow, overriddenRow)
 
 	applied, err := st.ApplyRaceCalendarWALabels(ctx, []RaceCalendarWALabel{
 		{ID: syncRow, WALabel: strPtr("Gold")},
@@ -89,25 +91,29 @@ func TestLoadRaceCalendarDedupScope(t *testing.T) {
 	migrateRaceContent(t, st)
 	ctx := context.Background()
 
+	// A fixture year nothing else uses: the shared local database holds real
+	// mirrored rows for live years and the scope read is year-scoped.
 	rows := []RaceCalendarEvent{
-		{Source: RaceSourceChinaAth, Name: "杭马", RaceDate: "2026-11-01", Country: "CHN", Month: 11, DayOfMonth: 1, City: strPtr("杭州市"), Origin: RaceOriginSync, WALabel: strPtr("Gold")},
-		{Source: RaceSourceManual, Name: "手工建的比赛", RaceDate: "2026-10-18", Country: "CHN", Month: 10, DayOfMonth: 18, City: strPtr("常州市"), Origin: RaceOriginManual},
-		{Source: RaceSourceWorldAth, Name: "2026杭州马拉松", RaceDate: "2026-11-01", Country: "CHN", Month: 11, DayOfMonth: 1, City: strPtr("杭州市"), Origin: RaceOriginManual},
-		{Source: RaceSourceChinaAth, Name: "杭马2027", RaceDate: "2027-11-01", Country: "CHN", Month: 11, DayOfMonth: 1, City: strPtr("杭州市"), Origin: RaceOriginSync},
-		{Source: RaceSourceWorldAth, Name: "Hangzhou Marathon", RaceDate: "2026-11-01", Country: "CHN", Month: 11, DayOfMonth: 1, City: strPtr("杭州市"), Origin: RaceOriginSync},
+		{Source: RaceSourceChinaAth, Name: "杭马", RaceDate: "2099-11-01", Country: "CHN", Month: 11, DayOfMonth: 1, City: strPtr("杭州市"), Origin: RaceOriginSync, WALabel: strPtr("Gold")},
+		{Source: RaceSourceManual, Name: "手工建的比赛", RaceDate: "2099-10-18", Country: "CHN", Month: 10, DayOfMonth: 18, City: strPtr("常州市"), Origin: RaceOriginManual},
+		{Source: RaceSourceWorldAth, Name: "2099杭州马拉松", RaceDate: "2099-11-01", Country: "CHN", Month: 11, DayOfMonth: 1, City: strPtr("杭州市"), Origin: RaceOriginManual},
+		{Source: RaceSourceChinaAth, Name: "杭马2098", RaceDate: "2098-11-01", Country: "CHN", Month: 11, DayOfMonth: 1, City: strPtr("杭州市"), Origin: RaceOriginSync},
+		{Source: RaceSourceWorldAth, Name: "Hangzhou Marathon", RaceDate: "2099-11-01", Country: "CHN", Month: 11, DayOfMonth: 1, City: strPtr("杭州市"), Origin: RaceOriginSync},
 	}
 	for i := range rows {
 		if err := st.db.Create(&rows[i]).Error; err != nil {
 			t.Fatalf("seed %s: %v", rows[i].Name, err)
 		}
 	}
+	// Real source labels, so the cleanup must be id-scoped (devops#563).
+	addRaceCalendarEventCleanup(t, st, rows[0].ID, rows[1].ID, rows[2].ID, rows[3].ID, rows[4].ID)
 
-	got, err := st.LoadRaceCalendarDedupScope(ctx, "2026")
+	got, err := st.LoadRaceCalendarDedupScope(ctx, "2099")
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	if len(got) != 3 {
-		t.Fatalf("rows = %+v, want the 2026 中国田协, manual and detached-WA rows only", got)
+		t.Fatalf("rows = %+v, want the 2099 中国田协, manual and detached-WA rows only", got)
 	}
 	byName := map[string]RaceCalendarEvent{}
 	for _, row := range got {
@@ -119,7 +125,7 @@ func TestLoadRaceCalendarDedupScope(t *testing.T) {
 	if _, ok := byName["手工建的比赛"]; !ok {
 		t.Errorf("manual row missing from scope: %+v", got)
 	}
-	if _, ok := byName["2026杭州马拉松"]; !ok {
+	if _, ok := byName["2099杭州马拉松"]; !ok {
 		t.Errorf("detached 国际田联 row missing from scope (devops#533): %+v", got)
 	}
 	if _, ok := byName["Hangzhou Marathon"]; ok {

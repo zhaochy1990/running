@@ -6,18 +6,16 @@ import (
 	"time"
 )
 
-// migrateRaceCatalog ensures the tables the user-facing catalog reads exist and
-// are empty (race_calendar via the shared migrateRaceCalendar, race_favorite
-// here) so each test starts isolated.
+// migrateRaceCatalog ensures the tables the user-facing catalog reads exist
+// (race_calendar via the shared migrateRaceCalendar, race_favorite here).
+// Nothing is cleared: tests own their rows via unique sources / uuid users and
+// fixture-scoped cleanups (devops#563).
 func migrateRaceCatalog(t *testing.T, st *Store) {
 	t.Helper()
 	migrateRaceCalendar(t, st)
 	ctx := context.Background()
 	if err := st.AutoMigrateRaceFavorites(ctx); err != nil {
 		t.Fatalf("automigrate race_favorite: %v", err)
-	}
-	if err := st.db.WithContext(ctx).Exec("DELETE FROM race_favorite").Error; err != nil {
-		t.Fatalf("clear race_favorite: %v", err)
 	}
 }
 
@@ -37,6 +35,7 @@ func TestPublishedList(t *testing.T) {
 		return row
 	}
 	const src = "测试源-用户目录"
+	addRaceCalendarSourceCleanup(t, st, src)
 	// Year 2031 fixture: three published races (one before the floor, two
 	// after), one unpublished, one published in the neighbouring year.
 	p1 := seed(RaceCalendarEvent{Source: src, Name: "Early Race", RaceDate: "2031-03-10", Country: "CHN", Province: strPtr("福建省"), City: strPtr("厦门市"), Published: true})
@@ -135,11 +134,14 @@ func TestFavoritedRaceEventIDs(t *testing.T) {
 	ctx := context.Background()
 
 	const user = "11111111-1111-4111-8111-111111111111"
-	ev := RaceCalendarEvent{Source: "测试源-收藏", Name: "Fav Race", RaceDate: "2031-05-01", Country: "CHN", Published: true}
+	addUserTableCleanup(t, st, "race_favorite", user)
+	const src = "测试源-收藏"
+	addRaceCalendarSourceCleanup(t, st, src)
+	ev := RaceCalendarEvent{Source: src, Name: "Fav Race", RaceDate: "2031-05-01", Country: "CHN", Published: true}
 	if err := st.CreateRaceCalendarEvent(ctx, &ev); err != nil {
 		t.Fatalf("seed event: %v", err)
 	}
-	other := RaceCalendarEvent{Source: "测试源-收藏", Name: "Other Race", RaceDate: "2031-05-02", Country: "CHN", Published: true}
+	other := RaceCalendarEvent{Source: src, Name: "Other Race", RaceDate: "2031-05-02", Country: "CHN", Published: true}
 	if err := st.CreateRaceCalendarEvent(ctx, &other); err != nil {
 		t.Fatalf("seed other: %v", err)
 	}

@@ -10,21 +10,97 @@ import (
 )
 
 // migrateRaceCalendar ensures the race_calendar tables exist for the
-// integration test (the shared openTestStore only migrates jobs/pipeline_runs)
-// and empties them so each test starts from a clean, isolated state.
+// integration test (the shared openTestStore only migrates jobs/pipeline_runs).
+// It deliberately does NOT clear them: the shared local MySQL also holds the
+// local stack's real calendar data (devops#563), so every test owns its rows
+// via a unique source label or captured ids and registers a fixture-scoped
+// cleanup (addRaceCalendarSourceCleanup / addRaceCalendarEventCleanup) instead.
 func migrateRaceCalendar(t *testing.T, st *Store) {
 	t.Helper()
-	ctx := context.Background()
-	if err := st.AutoMigrateRaceCalendar(ctx); err != nil {
+	if err := st.AutoMigrateRaceCalendar(context.Background()); err != nil {
 		t.Fatalf("automigrate race_calendar: %v", err)
 	}
-	// The table is shared by every test in this package, so clear it (children
-	// first) rather than relying on test ordering.
-	if err := st.db.WithContext(ctx).Exec("DELETE FROM race_calendar_item").Error; err != nil {
-		t.Fatalf("clear race_calendar_item: %v", err)
-	}
-	if err := st.db.WithContext(ctx).Exec("DELETE FROM race_calendar").Error; err != nil {
-		t.Fatalf("clear race_calendar: %v", err)
+}
+
+// addRaceCalendarSourceCleanup registers a t.Cleanup deleting only this test's
+// calendar rows — the events under its own source labels, items first — never
+// touching rows from any other source.
+func addRaceCalendarSourceCleanup(t *testing.T, st *Store, sources ...string) {
+	t.Helper()
+	t.Cleanup(func() {
+		for _, src := range sources {
+			if err := st.db.Exec(
+				"DELETE FROM race_calendar_item WHERE race_event_id IN (SELECT id FROM race_calendar WHERE source = ?)",
+				src,
+			).Error; err != nil {
+				t.Errorf("cleanup race_calendar_item (%s): %v", src, err)
+			}
+			if err := st.db.Exec("DELETE FROM race_calendar WHERE source = ?", src).Error; err != nil {
+				t.Errorf("cleanup race_calendar (%s): %v", src, err)
+			}
+		}
+	})
+}
+
+// addRaceCalendarEventCleanup is the id-scoped variant for fixtures seeding
+// under the real source labels: it deletes exactly the captured event rows and
+// their items.
+func addRaceCalendarEventCleanup(t *testing.T, st *Store, ids ...uint64) {
+	t.Helper()
+	t.Cleanup(func() {
+		for _, id := range ids {
+			if err := st.db.Exec("DELETE FROM race_calendar_item WHERE race_event_id = ?", id).Error; err != nil {
+				t.Errorf("cleanup race_calendar_item (event %d): %v", id, err)
+			}
+			if err := st.db.Exec("DELETE FROM race_calendar WHERE id = ?", id).Error; err != nil {
+				t.Errorf("cleanup race_calendar (event %d): %v", id, err)
+			}
+		}
+	})
+}
+
+// addUserTableCleanup registers a t.Cleanup deleting this test's rows from a
+// user_id-keyed table. Tests only ever write rows for uuid users minted inside
+// the test, so the scoping never touches shared data (devops#563).
+func addUserTableCleanup(t *testing.T, st *Store, table string, users ...string) {
+	t.Helper()
+	t.Cleanup(func() {
+		if err := st.db.Exec("DELETE FROM "+table+" WHERE user_id IN ?", users).Error; err != nil {
+			t.Errorf("cleanup %s: %v", table, err)
+		}
+	})
+}
+
+// stashTable moves a live table aside so a schema-rewind test can own the real
+// table name; the cleanup drops whatever the test left under the name and
+// renames the original (rows included) back. Use for tests that DROP/recreate
+// or ALTER a table the shared local database holds real data in.
+func stashTable(t *testing.T, st *Store, table string) {
+	t.Helper()
+	backup := table + "_devops563_backup"
+	existed := st.db.Migrator().HasTable(table)
+	// ownsName: the name currently refers to a test-owned table, not the live
+	// one; stashed: the live table is parked under the backup name. Registered
+	// before the rename so it also restores on t.Fatalf.
+	ownsName := !existed
+	stashed := false
+	t.Cleanup(func() {
+		if ownsName {
+			if err := st.db.Exec("DROP TABLE IF EXISTS " + table).Error; err != nil {
+				t.Errorf("drop test-owned %s: %v", table, err)
+			}
+		}
+		if stashed {
+			if err := st.db.Exec("RENAME TABLE " + backup + " TO " + table).Error; err != nil {
+				t.Errorf("restore %s: %v", table, err)
+			}
+		}
+	})
+	if existed {
+		if err := st.db.Exec("RENAME TABLE " + table + " TO " + backup).Error; err != nil {
+			t.Fatalf("stash %s: %v", table, err)
+		}
+		ownsName, stashed = true, true
 	}
 }
 
@@ -34,6 +110,7 @@ func TestRaceCalendar_MergePreservesOverriddenFields(t *testing.T) {
 	ctx := context.Background()
 
 	src := "测试源-字段合并"
+	addRaceCalendarSourceCleanup(t, st, src)
 	year := "2031"
 	seed := []RaceCalendarEvent{{
 		Name: "Merge Race", RaceDate: "2031-05-01", Country: "CHN",
@@ -94,6 +171,7 @@ func TestRaceCalendar_StaleDeleteSkipsManualAndOverridden(t *testing.T) {
 	ctx := context.Background()
 
 	src := "测试源-陈旧删除"
+	addRaceCalendarSourceCleanup(t, st, src)
 	year := "2032"
 	seed := []RaceCalendarEvent{
 		{Name: "Dropped Pure Sync", RaceDate: "2032-01-10", Country: "CHN"},
@@ -147,6 +225,7 @@ func TestRaceCalendar_PublishedSurvivesResyncAndStaleDelete(t *testing.T) {
 	ctx := context.Background()
 
 	src := "测试源-发布"
+	addRaceCalendarSourceCleanup(t, st, src)
 	year := "2033"
 	seed := []RaceCalendarEvent{
 		{Name: "Published Race", RaceDate: "2033-01-10", Country: "CHN"},
@@ -201,6 +280,7 @@ func TestRaceCalendar_ManualRowWithSameKeyIsUntouched(t *testing.T) {
 	ctx := context.Background()
 
 	src := "测试源-脱离镜像"
+	addRaceCalendarSourceCleanup(t, st, src)
 	year := "2033"
 	if _, err := st.ReplaceRaceCalendarYear(ctx, src, year, []RaceCalendarEvent{
 		{Name: "Detached", RaceDate: "2033-01-01", Country: "CHN", City: strPtr("原值")},
@@ -239,6 +319,7 @@ func TestRaceCalendar_ReplaceItemsMergesInPlaceAndKeepsManual(t *testing.T) {
 	ctx := context.Background()
 
 	src := "测试源-项目"
+	addRaceCalendarSourceCleanup(t, st, src)
 	year := "2034"
 	if _, err := st.ReplaceRaceCalendarYear(ctx, src, year, []RaceCalendarEvent{
 		{Name: "Item Race", RaceDate: "2034-06-01", Country: "CHN"},
@@ -341,6 +422,7 @@ func TestRaceCalendar_ReplaceItemsStaleKeepsAdminData(t *testing.T) {
 	ctx := context.Background()
 
 	src := "测试源-项目陈旧"
+	addRaceCalendarSourceCleanup(t, st, src)
 	key := "2034-07-01"
 	if _, err := st.ReplaceRaceCalendarYear(ctx, src, "2034", []RaceCalendarEvent{
 		{Name: "Stale Item Race", RaceDate: key, Country: "CHN"},
@@ -440,6 +522,7 @@ func TestRaceCalendar_DeleteCascadesItems(t *testing.T) {
 	if err := st.CreateRaceCalendarEvent(ctx, &row); err != nil {
 		t.Fatalf("create: %v", err)
 	}
+	addRaceCalendarEventCleanup(t, st, row.ID)
 	if err := st.CreateRaceCalendarItem(ctx, &RaceCalendarItem{RaceEventID: row.ID, Name: "全程", Type: "Marathon", Origin: RaceOriginManual}); err != nil {
 		t.Fatalf("create item: %v", err)
 	}
@@ -465,9 +548,8 @@ func TestRaceCalendar_AutoMigrateAddsItemContentColumns(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()
 
-	if err := st.db.Exec("DROP TABLE IF EXISTS race_calendar_item").Error; err != nil {
-		t.Fatalf("drop item table: %v", err)
-	}
+	// Own the real table name without touching the shared local data.
+	stashTable(t, st, "race_calendar_item")
 	legacy := `CREATE TABLE race_calendar_item (
 		id bigint unsigned NOT NULL AUTO_INCREMENT,
 		race_event_id bigint unsigned NOT NULL,
@@ -523,12 +605,9 @@ func TestRaceCalendar_AutoMigrateAddsPublishedKeepingExistingRows(t *testing.T) 
 	st := openTestStore(t)
 	ctx := context.Background()
 
-	if err := st.db.Exec("DROP TABLE IF EXISTS race_calendar_item").Error; err != nil {
-		t.Fatalf("drop item table: %v", err)
-	}
-	if err := st.db.Exec("DROP TABLE IF EXISTS race_calendar").Error; err != nil {
-		t.Fatalf("drop event table: %v", err)
-	}
+	// Own the real table names without touching the shared local data.
+	stashTable(t, st, "race_calendar_item")
+	stashTable(t, st, "race_calendar")
 	// race_calendar as it stood before published existed.
 	legacy := `CREATE TABLE race_calendar (
 		id bigint unsigned NOT NULL AUTO_INCREMENT,
@@ -607,11 +686,9 @@ func TestRaceCalendar_AutoMigrateAddsContentSourceKeepingExistingRows(t *testing
 	st := openTestStore(t)
 	ctx := context.Background()
 
-	for _, table := range []string{"race_calendar_item", "race_calendar"} {
-		if err := st.db.Exec("DROP TABLE IF EXISTS " + table).Error; err != nil {
-			t.Fatalf("drop %s: %v", table, err)
-		}
-	}
+	// Own the real table names without touching the shared local data.
+	stashTable(t, st, "race_calendar_item")
+	stashTable(t, st, "race_calendar")
 	// Both tables as they stood before content_source existed.
 	if err := st.db.Exec(`CREATE TABLE race_calendar (
 		id bigint unsigned NOT NULL AUTO_INCREMENT,
@@ -729,14 +806,11 @@ func TestRaceCalendar_AutoMigrateAddsIDToLegacyTable(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()
 
+	// Own the real table names without touching the shared local data.
+	stashTable(t, st, "race_calendar_item")
+	stashTable(t, st, "race_calendar")
 	// Simulate the pre-feature table: no id, no origin, no admin_overrides, no
 	// item table. AutoMigrate must upgrade it in place without losing the row.
-	if err := st.db.Exec("DROP TABLE IF EXISTS race_calendar_item").Error; err != nil {
-		t.Fatalf("drop item table: %v", err)
-	}
-	if err := st.db.Exec("DROP TABLE IF EXISTS race_calendar").Error; err != nil {
-		t.Fatalf("drop race table: %v", err)
-	}
 	legacy := `CREATE TABLE race_calendar (
 		source varchar(32) NOT NULL,
 		name varchar(255) NOT NULL,
@@ -809,7 +883,8 @@ func TestRaceCalendar_ReplaceMirrorsYearAndDerivesMonthDay(t *testing.T) {
 	migrateRaceCalendar(t, st)
 	ctx := context.Background()
 
-	src := "国际田联"
+	src := "测试源-镜像"
+	addRaceCalendarSourceCleanup(t, st, src)
 	year := "2026"
 
 	// First sync seeds two races. month/dayofmonth derive from race_date.
@@ -866,7 +941,8 @@ func TestRaceCalendar_NameCNIsNotOverwritten(t *testing.T) {
 	migrateRaceCalendar(t, st)
 	ctx := context.Background()
 
-	src := "国际田联"
+	src := "测试源-中文名"
+	addRaceCalendarSourceCleanup(t, st, src)
 	year := "2026"
 
 	// Seed with a curated Chinese name on the first race.
@@ -905,7 +981,8 @@ func TestRaceCalendar_RaceTypesUpsertAndRefresh(t *testing.T) {
 	migrateRaceCalendar(t, st)
 	ctx := context.Background()
 
-	src := "国际田联"
+	src := "测试源-类型"
+	addRaceCalendarSourceCleanup(t, st, src)
 	year := "2026"
 	races := sampleRaces()
 	races[1].RaceTypes = strPtr(`["Marathon"]`)
@@ -950,19 +1027,22 @@ func TestRaceCalendar_SourcesAreIsolated(t *testing.T) {
 	migrateRaceCalendar(t, st)
 	ctx := context.Background()
 
-	if _, err := st.ReplaceRaceCalendarYear(ctx, "国际田联", "2026", sampleRaces()); err != nil {
-		t.Fatalf("replace 国际田联: %v", err)
+	srcA, srcB := "测试源-隔离甲", "测试源-隔离乙"
+	addRaceCalendarSourceCleanup(t, st, srcA, srcB)
+
+	if _, err := st.ReplaceRaceCalendarYear(ctx, srcA, "2026", sampleRaces()); err != nil {
+		t.Fatalf("replace %s: %v", srcA, err)
 	}
-	if _, err := st.ReplaceRaceCalendarYear(ctx, "中国田协", "2026", sampleRaces()); err != nil {
-		t.Fatalf("replace 中国田协: %v", err)
+	if _, err := st.ReplaceRaceCalendarYear(ctx, srcB, "2026", sampleRaces()); err != nil {
+		t.Fatalf("replace %s: %v", srcB, err)
 	}
 
 	var n int64
-	if err := st.db.WithContext(ctx).Model(&RaceCalendarEvent{}).Where("source = ?", "国际田联").Count(&n).Error; err != nil {
+	if err := st.db.WithContext(ctx).Model(&RaceCalendarEvent{}).Where("source = ?", srcA).Count(&n).Error; err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if n != 2 {
-		t.Fatalf("国际田联 rows = %d, want 2", n)
+		t.Fatalf("%s rows = %d, want 2", srcA, n)
 	}
 }
 
@@ -971,7 +1051,8 @@ func TestRaceCalendar_EmptyYearIsNoOp(t *testing.T) {
 	migrateRaceCalendar(t, st)
 	ctx := context.Background()
 
-	src := "国际田联"
+	src := "测试源-空年"
+	addRaceCalendarSourceCleanup(t, st, src)
 	if _, err := st.ReplaceRaceCalendarYear(ctx, src, "2026", sampleRaces()); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -1000,15 +1081,17 @@ func TestRaceCalendar_SameNameDifferentDateAreSeparate(t *testing.T) {
 
 	// The real-world case that motivated race_date in the key: two genuinely
 	// different races share a name in one year (two "Medio Maraton Sevilla").
+	src := "测试源-同名"
+	addRaceCalendarSourceCleanup(t, st, src)
 	races := []RaceCalendarEvent{
 		{Name: "Medio Maraton Sevilla", RaceDate: "2026-01-25", Country: "ESP", City: strPtr("Sevilla")},
 		{Name: "Medio Maraton Sevilla", RaceDate: "2026-11-29", Country: "ESP", City: strPtr("Sevilla")},
 	}
-	if _, err := st.ReplaceRaceCalendarYear(ctx, "国际田联", "2026", races); err != nil {
+	if _, err := st.ReplaceRaceCalendarYear(ctx, src, "2026", races); err != nil {
 		t.Fatalf("replace: %v", err)
 	}
 	var n int64
-	if err := st.db.WithContext(ctx).Model(&RaceCalendarEvent{}).Where("source = ? AND name = ?", "国际田联", "Medio Maraton Sevilla").Count(&n).Error; err != nil {
+	if err := st.db.WithContext(ctx).Model(&RaceCalendarEvent{}).Where("source = ? AND name = ?", src, "Medio Maraton Sevilla").Count(&n).Error; err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if n != 2 {
@@ -1016,10 +1099,10 @@ func TestRaceCalendar_SameNameDifferentDateAreSeparate(t *testing.T) {
 	}
 
 	// A re-sync with only the January race must delete only the November one.
-	if _, err := st.ReplaceRaceCalendarYear(ctx, "国际田联", "2026", races[:1]); err != nil {
+	if _, err := st.ReplaceRaceCalendarYear(ctx, src, "2026", races[:1]); err != nil {
 		t.Fatalf("re-sync: %v", err)
 	}
-	if err := st.db.WithContext(ctx).Model(&RaceCalendarEvent{}).Where("source = ? AND name = ?", "国际田联", "Medio Maraton Sevilla").Count(&n).Error; err != nil {
+	if err := st.db.WithContext(ctx).Model(&RaceCalendarEvent{}).Where("source = ? AND name = ?", src, "Medio Maraton Sevilla").Count(&n).Error; err != nil {
 		t.Fatalf("count after re-sync: %v", err)
 	}
 	if n != 1 {
@@ -1033,12 +1116,14 @@ func TestRaceCalendar_StaleDeleteKeepsOtherYears(t *testing.T) {
 	ctx := context.Background()
 
 	// Seed 2025 and 2026.
+	src := "测试源-跨年"
+	addRaceCalendarSourceCleanup(t, st, src)
 	races25 := []RaceCalendarEvent{{Name: "Tokyo Marathon", RaceDate: "2025-03-02", Country: "JPN"}}
 	races26 := []RaceCalendarEvent{{Name: "Tokyo Marathon", RaceDate: "2026-03-01", Country: "JPN"}}
-	if _, err := st.ReplaceRaceCalendarYear(ctx, "国际田联", "2025", races25); err != nil {
+	if _, err := st.ReplaceRaceCalendarYear(ctx, src, "2025", races25); err != nil {
 		t.Fatalf("seed 2025: %v", err)
 	}
-	if _, err := st.ReplaceRaceCalendarYear(ctx, "国际田联", "2026", races26); err != nil {
+	if _, err := st.ReplaceRaceCalendarYear(ctx, src, "2026", races26); err != nil {
 		t.Fatalf("seed 2026: %v", err)
 	}
 
@@ -1046,7 +1131,7 @@ func TestRaceCalendar_StaleDeleteKeepsOtherYears(t *testing.T) {
 	// stale 2026 Tokyo row is deleted (bounded to 2026 by the BETWEEN year
 	// range), while the 2025 row survives untouched.
 	races26b := []RaceCalendarEvent{{Name: "Osaka Marathon", RaceDate: "2026-02-22", Country: "JPN"}}
-	res, err := st.ReplaceRaceCalendarYear(ctx, "国际田联", "2026", races26b)
+	res, err := st.ReplaceRaceCalendarYear(ctx, src, "2026", races26b)
 	if err != nil {
 		t.Fatalf("re-sync 2026: %v", err)
 	}
@@ -1055,13 +1140,13 @@ func TestRaceCalendar_StaleDeleteKeepsOtherYears(t *testing.T) {
 	}
 
 	var n int64
-	if err := st.db.WithContext(ctx).Model(&RaceCalendarEvent{}).Where("source = ? AND race_date LIKE ?", "国际田联", "2025-%").Count(&n).Error; err != nil {
+	if err := st.db.WithContext(ctx).Model(&RaceCalendarEvent{}).Where("source = ? AND race_date LIKE ?", src, "2025-%").Count(&n).Error; err != nil {
 		t.Fatalf("count 2025: %v", err)
 	}
 	if n != 1 {
 		t.Fatalf("2025 rows = %d, want 1 (stale-delete must not touch other years)", n)
 	}
-	if err := st.db.WithContext(ctx).Model(&RaceCalendarEvent{}).Where("source = ? AND race_date LIKE ?", "国际田联", "2026-%").Count(&n).Error; err != nil {
+	if err := st.db.WithContext(ctx).Model(&RaceCalendarEvent{}).Where("source = ? AND race_date LIKE ?", src, "2026-%").Count(&n).Error; err != nil {
 		t.Fatalf("count 2026: %v", err)
 	}
 	if n != 1 || n == 0 {
@@ -1074,7 +1159,8 @@ func TestRaceCalendar_CreatedAtPreservedOnResync(t *testing.T) {
 	migrateRaceCalendar(t, st)
 	ctx := context.Background()
 
-	src := "国际田联"
+	src := "测试源-时间戳"
+	addRaceCalendarSourceCleanup(t, st, src)
 	year := "2026"
 	if _, err := st.ReplaceRaceCalendarYear(ctx, src, year, sampleRaces()); err != nil {
 		t.Fatalf("seed: %v", err)

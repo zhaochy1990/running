@@ -365,7 +365,7 @@ func TestUserRacesJoinsCalendarIdentity(t *testing.T) {
 func seedCalendarEventWithItems(t *testing.T, st *Store, name string, items []RaceCalendarItem) (*RaceCalendarEvent, func()) {
 	t.Helper()
 	ctx := context.Background()
-	event := &RaceCalendarEvent{Source: "中国田协", Name: name, RaceDate: "2026-03-29", Month: 3, DayOfMonth: 29, Country: "CHN", City: strptr("盐城市")}
+	event := &RaceCalendarEvent{Source: "中国田协", Name: name, RaceDate: "2099-03-29", Month: 3, DayOfMonth: 29, Country: "CHN", City: strptr("盐城市")}
 	if err := st.CreateRaceCalendarEvent(ctx, event); err != nil {
 		t.Fatalf("create event: %v", err)
 	}
@@ -388,13 +388,15 @@ func TestRaceCalendarItemsForDatesProjection(t *testing.T) {
 		t.Fatalf("automigrate race calendar: %v", err)
 	}
 	lat, lng := 33.321, 120.174
-	_, cleanup := seedCalendarEventWithItems(t, st, "Test Marathon 2026", []RaceCalendarItem{
+	// A fixture date the shared local database never holds: real mirrored
+	// calendars have items on live 2026 dates (devops#563).
+	_, cleanup := seedCalendarEventWithItems(t, st, "Test Marathon 2099", []RaceCalendarItem{
 		{Name: "全程", Type: "Marathon", StartTime: strptr("07:30"), StartPoint: &RacePoint{Name: "盐城奥体", Lat: &lat, Lng: &lng}},
 		{Name: "半程", Type: "HalfMarathon", DistanceKm: fptr(21.0975), StartPoint: &RacePoint{Name: "未定位"}},
 	})
 	defer cleanup()
 
-	got, err := st.RaceCalendarItemsForDates(ctx, []string{"2026-03-29"})
+	got, err := st.RaceCalendarItemsForDates(ctx, []string{"2099-03-29"})
 	if err != nil {
 		t.Fatalf("items for dates: %v", err)
 	}
@@ -417,7 +419,7 @@ func TestRaceCalendarItemsForDatesProjection(t *testing.T) {
 		t.Fatalf("half item = %+v, want no coordinates with distance", half)
 	}
 
-	other, err := st.RaceCalendarItemsForDates(ctx, []string{"2026-01-01"})
+	other, err := st.RaceCalendarItemsForDates(ctx, []string{"2099-01-01"})
 	if err != nil || len(other) != 0 {
 		t.Fatalf("items for other date = (%+v, %v), want none", other, err)
 	}
@@ -432,12 +434,15 @@ func TestUpdateRaceCalendarItemStartFromConsensus(t *testing.T) {
 	if err := st.AutoMigrateRaceCalendar(ctx); err != nil {
 		t.Fatalf("automigrate race calendar: %v", err)
 	}
-	_, cleanup := seedCalendarEventWithItems(t, st, "Consensus Marathon 2026", []RaceCalendarItem{
+	event, cleanup := seedCalendarEventWithItems(t, st, "Consensus Marathon 2026", []RaceCalendarItem{
 		{Name: "全程", Type: "Marathon", StartPoint: &RacePoint{Name: "某广场"}},
 	})
 	defer cleanup()
+	// Pick the item by its own event: the table is shared, and a global
+	// "latest Marathon item" read would grab a real row on the local stack
+	// and write test coordinates onto it (devops#563).
 	var item RaceCalendarItem
-	if err := st.db.WithContext(ctx).Order("id DESC").First(&item, "type = ?", "Marathon").Error; err != nil {
+	if err := st.db.WithContext(ctx).First(&item, "race_event_id = ? AND type = ?", event.ID, "Marathon").Error; err != nil {
 		t.Fatalf("load seeded item: %v", err)
 	}
 	userIDs := []string{uuid.NewString(), uuid.NewString(), uuid.NewString()}

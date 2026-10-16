@@ -11,15 +11,12 @@ import (
 	"github.com/zhaochy1990/stride/internal/racetypes"
 )
 
-// migrateUserCustomRace ensures the table exists and is emptied, so each test
-// starts isolated (mirrors migrateRaceEngagement).
+// migrateUserCustomRace ensures the table exists. Nothing is cleared: tests
+// own their rows via uuid users and fixture-scoped cleanups (devops#563).
 func migrateUserCustomRace(t *testing.T, st *Store) {
 	t.Helper()
 	if err := st.AutoMigrateUserCustomRaces(context.Background()); err != nil {
 		t.Fatalf("automigrate user_custom_race: %v", err)
-	}
-	if err := st.db.Exec("DELETE FROM user_custom_race").Error; err != nil {
-		t.Fatalf("clear user_custom_race: %v", err)
 	}
 }
 
@@ -31,6 +28,7 @@ func TestUserCustomRace_CRUDIsolationAndOrder(t *testing.T) {
 	migrateUserCustomRace(t, st)
 	ctx := context.Background()
 	u1, u2 := uuid.NewString(), uuid.NewString()
+	addUserTableCleanup(t, st, "user_custom_race", u1, u2)
 
 	km := 50.0
 	ascent := uint32(2000)
@@ -123,6 +121,7 @@ func TestUserCustomRace_NullableOptionals(t *testing.T) {
 	migrateUserCustomRace(t, st)
 	ctx := context.Background()
 	uid := uuid.NewString()
+	addUserTableCleanup(t, st, "user_custom_race", uid)
 
 	row := UserCustomRace{UserID: uid, Name: "纯类型赛", RaceDate: "2033-01-01",
 		ItemType: racetypes.Trail, State: CustomRaceStateWant}
