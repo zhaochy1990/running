@@ -13,3 +13,8 @@ export function raceDisplayName(
 ): string {
   return race.race_name || race.display_name || race.name || '';
 }
+
+/** PATCH display_name 成功后就地刷新内存行（devops#561）：空名 = 清除（null）。 */
+export function applyRaceRename(raw: RaceItem, name: string): RaceItem {
+  return { ...raw, display_name: name || null };
+}
