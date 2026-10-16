@@ -30,8 +30,11 @@ type goldenTruth struct {
 func TestDeepSeekRaceGoldenRegression(t *testing.T) {
 	apiKey := os.Getenv("DEEPSEEK_API_KEY")
 	dsn := os.Getenv("STRIDE_WORKER_TEST_MYSQL_DSN")
-	if apiKey == "" || dsn == "" {
-		t.Skip("set DEEPSEEK_API_KEY and STRIDE_WORKER_TEST_MYSQL_DSN to run the real golden regression")
+	// DEEPSEEK_API_KEY alone must never trigger a live call (it may be set for
+	// other tooling); require the dedicated opt-in switch like the Luna/configured
+	// regressions below.
+	if os.Getenv("STRIDE_RUN_DEEPSEEK_RACE_GOLDEN") != "1" || apiKey == "" || dsn == "" {
+		t.Skip("live DeepSeek calls are opt-in: set STRIDE_RUN_DEEPSEEK_RACE_GOLDEN=1 plus DEEPSEEK_API_KEY and STRIDE_WORKER_TEST_MYSQL_DSN to run the real golden regression")
 	}
 
 	classifier, err := detector.NewChatCompletionsClassifier(detector.ChatCompletionsConfig{
@@ -100,6 +103,7 @@ func runRaceGoldenRegression(t *testing.T, dsn string, raceDetector *detector.De
 	type result struct {
 		label              string
 		activityTime       string
+		summary            string
 		want               bool
 		got                bool
 		err                error
@@ -150,7 +154,8 @@ func runRaceGoldenRegression(t *testing.T, dsn string, raceDetector *detector.De
 				locationDistance = candidate.Location.CandidateStartDistanceKM
 			}
 			results <- result{
-				label: expected.labelID, activityTime: candidate.Date, want: expected.isRace, got: classification.IsRace, err: detectErr, locationDistanceKM: locationDistance,
+				label: expected.labelID, activityTime: candidate.Date, summary: formatRaceInputSummary(candidate),
+				want: expected.isRace, got: classification.IsRace, err: detectErr, locationDistanceKM: locationDistance,
 				classification: classification, usage: classification.Usage,
 			}
 		}()
@@ -174,14 +179,27 @@ func runRaceGoldenRegression(t *testing.T, dsn string, raceDetector *detector.De
 			got.classification.Route.OutAndBackMatchRatio, formatDimensions(got.classification.Dimensions),
 		)
 		if got.err != nil {
-			mismatches = append(mismatches, fmt.Sprintf("%s: error=%v", got.label, got.err))
+			mismatches = append(mismatches, fmt.Sprintf("%s: error=%v input(%s)", got.label, got.err, got.summary))
 		} else if got.got != got.want {
-			mismatches = append(mismatches, fmt.Sprintf("%s: got=%t want=%t candidate_start_distance_km=%s", got.label, got.got, got.want, formatDistance(got.locationDistanceKM)))
+			mismatches = append(mismatches, fmt.Sprintf("%s: got=%t want=%t candidate_start_distance_km=%s input(%s)", got.label, got.got, got.want, formatDistance(got.locationDistanceKM), got.summary))
 		}
 	}
 	if len(mismatches) > 0 {
 		t.Fatalf("%d/%d golden decisions mismatched:\n%s", len(mismatches), len(truth), strings.Join(mismatches, "\n"))
 	}
+}
+
+// formatRaceInputSummary renders the model input digest for a golden case so a
+// live drift run is self-contained when pasted into the tracker ticket.
+func formatRaceInputSummary(candidate detector.Candidate) string {
+	summary := fmt.Sprintf("name=%q sport=%s date=%s distance_km=%.2f", candidate.Name, candidate.Sport, candidate.Date, candidate.DistanceM/1000)
+	if candidate.DurationS != nil {
+		summary += fmt.Sprintf(" duration_min=%.1f", *candidate.DurationS/60)
+	}
+	if candidate.AvgPaceSKm != nil {
+		summary += fmt.Sprintf(" avg_pace_min_km=%.2f", *candidate.AvgPaceSKm/60)
+	}
+	return summary
 }
 
 func formatDistance(distance *float64) string {
