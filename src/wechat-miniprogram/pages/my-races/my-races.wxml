@@ -169,6 +169,7 @@
           class="race"
           data-id="{{item.labelId}}"
           bindtap="onRaceTap"
+          bindlongpress="onRaceLongPress"
         >
           <view class="race__main">
             <view class="race__head">
@@ -177,6 +178,11 @@
               <view class="race__date">{{item.dateLabel}}</view>
             </view>
             <view class="race__name">{{item.name}}</view>
+            <!-- 等级双徽章（#545）：仅官方识别行，名下一行，样式复刻 race-center -->
+            <view wx:if="{{item.cnBadge || item.waBadge}}" class="race__badges">
+              <text wx:if="{{item.cnBadge}}" class="race__badge race__badge--cn">{{item.cnBadge}}</text>
+              <text wx:if="{{item.waBadge}}" class="race__badge race__badge--wa">{{item.waBadge}}</text>
+            </view>
             <view class="race__meta">
               <text>{{item.distanceKm}} km</text>
               <text wx:if="{{item.pace}}" class="race__meta-dot"> · {{item.pace}}</text>
