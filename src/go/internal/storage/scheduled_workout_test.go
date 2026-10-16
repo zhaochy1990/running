@@ -7,6 +7,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func TestScheduledWorkoutRecordAndSupersede(t *testing.T) {
@@ -15,8 +17,13 @@ func TestScheduledWorkoutRecordAndSupersede(t *testing.T) {
 	if err := st.AutoMigrateScheduledWorkout(ctx); err != nil {
 		t.Fatalf("automigrate scheduled_workout: %v", err)
 	}
-	uid := "d31c2cbc-c3f5-4a10-92d0-73fa3281a001"
+	// Unique user per run: this suite runs against a long-lived shared local
+	// MySQL, so a hardcoded uid would collide with rows left by earlier runs.
+	uid := uuid.NewString()
 	weekFolder := "2026-08-10"
+	t.Cleanup(func() {
+		_ = st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&ScheduledWorkout{}).Error
+	})
 
 	// No prior row yet.
 	prior, err := st.GetLatestScheduledWorkoutForPlanSession(ctx, uid, weekFolder, "2026-08-10", 0)

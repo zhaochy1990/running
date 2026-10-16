@@ -3,6 +3,8 @@ package storage
 import (
 	"context"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 // TestCalibrationZoneTableNames locks in that pace and heart-rate zones map to
@@ -29,8 +31,16 @@ func TestReplaceCalibrationZones_RoundTrip(t *testing.T) {
 		t.Fatalf("automigrate watch: %v", err)
 	}
 
-	const uid = "f10bc353-01ab-4db1-af9f-d9305ea9a532"
+	// Unique user per run: ReconcileZoneRows scans every calibration row for
+	// the uid, so a hardcoded uid breaks on a long-lived shared local MySQL
+	// that still holds rows from earlier runs.
+	uid := uuid.NewString()
 	const asOf = "2026-05-09"
+	t.Cleanup(func() {
+		_ = st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&RunningCalibrationPaceZone{}).Error
+		_ = st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&RunningCalibrationHRZone{}).Error
+		_ = st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&RunningCalibrationSnapshot{}).Error
+	})
 
 	snapID, err := st.UpsertRunningCalibrationSnapshot(ctx, &RunningCalibrationSnapshot{
 		UserID:                   uid,
