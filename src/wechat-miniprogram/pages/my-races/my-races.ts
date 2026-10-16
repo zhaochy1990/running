@@ -20,7 +20,7 @@ import {
   type RaceItem,
 } from '../../services/races';
 import { cnBadgeOf, waBadgeOf } from '../../utils/raceCenterRows';
-import { raceDisplayName } from '../../utils/raceResultRows';
+import { applyRaceRename, raceDisplayName } from '../../utils/raceResultRows';
 import {
   deleteCustomRace,
   fetchMyRaces,
@@ -513,6 +513,8 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
     const name = (res.content || '').trim();
     try {
       await setRaceDisplayName(userId, labelId, name);
+      // 就地同步内存行（devops#561）：否则连续长按时 modal 回显旧手输名
+      this._raceByLabel.set(labelId, applyRaceRename(raw, name));
       this.patchResultRow(labelId, {
         name: name || raw.name || bandLabel(raw.distance_band),
         hasCustom: !!name,
@@ -529,6 +531,7 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
     if (!raw || !userId) return;
     try {
       await setRaceDisplayName(userId, labelId, '');
+      this._raceByLabel.set(labelId, applyRaceRename(raw, ''));
       this.patchResultRow(labelId, {
         name: raw.name || bandLabel(raw.distance_band),
         hasCustom: false,
