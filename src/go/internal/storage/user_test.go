@@ -241,8 +241,12 @@ func TestUserOnboarding_SetWatchReadyRequiresCredential(t *testing.T) {
 	if err := st.SetWatchReady(ctx, uid); !errors.Is(err, ErrNoProviderCredential) {
 		t.Fatalf("set watch_ready without credential = %v, want ErrNoProviderCredential", err)
 	}
+	// The rejected transition returns inside the transaction, so the default
+	// row ensureLockedUserOnboarding just created is rolled back. Absent row
+	// and watch_ready=false are the same all-false state (GetUserOnboarding
+	// contract: nil row means the caller renders the default).
 	o, err := st.GetUserOnboarding(ctx, uid)
-	if err != nil || o == nil || o.WatchReady {
+	if err != nil || (o != nil && o.WatchReady) {
 		t.Fatalf("missing credential must leave readiness false: %+v, err=%v", o, err)
 	}
 

@@ -103,6 +103,11 @@ func TestValidateBodyCompositionSegments(t *testing.T) {
 func TestBodyCompositionUpsertAndRead(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()
+	// openTestStore only migrates jobs/pipeline_runs; the body-composition
+	// tables must exist for this test to pass on a fresh database.
+	if err := st.AutoMigrateBodyComposition(ctx); err != nil {
+		t.Fatalf("automigrate body composition: %v", err)
+	}
 	userID := "11111111-1111-4111-8111-111111111111"
 
 	// Clean up any test rows from previous runs
