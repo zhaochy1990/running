@@ -3,7 +3,9 @@
 // 经历与成绩）。
 //
 // 成绩数据来自 GET /api/{user}/races（services/races）：同步流水线确认的比赛，
-// 明细（名称/距离/用时/配速）join 自 activities，点击一行进活动详情。
+// 明细（名称/距离/用时/配速）join 自 activities，点击一行进活动详情；长按弹
+// 原生菜单（#545）：未识别行手动命名/恢复活动名（PATCH display_name），自动
+// 识别行「这不是这场比赛」二次确认后 DELETE 清除识别，行回落活动名。
 // 赛事数据走聚合端点 GET /api/users/me/my-races（services/custom-races，#474）：
 // official 项复用 toPlanCard 渲染官方计划卡（报名项目徽章 + 状态徽章 + 日期·城市 +
 // 开赛倒计时 + 状态条 chips 流转 + 行程布尔勾选；offboarded 灰卡占位不可交互），
@@ -11,7 +13,14 @@
 // 无详情页，状态 chips 想跑↔已报名点击切换，···菜单 = 编辑/删除；已结束派生 =
 // 灰化 + 隐藏倒计时/状态条）。混排视图变换在 utils/myRaceRows，配套自检。
 
-import { getMyRaces, type RaceItem } from '../../services/races';
+import {
+  clearRaceCalendarMatch,
+  getMyRaces,
+  setRaceDisplayName,
+  type RaceItem,
+} from '../../services/races';
+import { cnBadgeOf, waBadgeOf } from '../../utils/raceCenterRows';
+import { raceDisplayName } from '../../utils/raceResultRows';
 import {
   deleteCustomRace,
   fetchMyRaces,
@@ -54,6 +63,14 @@ interface RaceRow {
   ascent: string;
   /** 同档位（全马 / 半马）当前最快：金 🏆 PB 徽章 */
   isPb: boolean;
+  /** 官方赛名（日历识别）：等级双徽章仅在此类行显示，长按菜单走「这不是这场比赛」 */
+  isAuto: boolean;
+  /** 手输名已在：未识别行长按菜单出现「恢复活动名」 */
+  hasCustom: boolean;
+  /** 田协徽章全称，''=隐藏（仅官方识别行，词表复用 raceCenterRows） */
+  cnBadge: string;
+  /** 世界田联徽章全称，''=隐藏 */
+  waBadge: string;
 }
 
 /** 乐观补丁：官方卡或自定义卡的可变部分（按行 key 挂到 plan / custom 上）。 */
@@ -94,10 +111,22 @@ interface MyRacesPageHandlers {
   onBack(): void;
   /** 物理删除一条自定义比赛（确认弹窗 → DELETE → 就地移除该行）。 */
   deleteCustom(key: string, id: number, name: string): Promise<void>;
+  /** 成绩行长按菜单：未识别行手动命名/恢复活动名，自动识别行清除识别（#545）。 */
+  onRaceLongPress(e: WechatMiniprogram.TouchEvent): void;
+  /** 长按「输入/修改比赛名字」：editable modal 回显，确认后 PATCH（空串=清除）。 */
+  renameRace(labelId: string): Promise<void>;
+  /** 长按「恢复活动名」：PATCH 空串清掉手输名。 */
+  restoreRaceName(labelId: string): Promise<void>;
+  /** 长按「这不是这场比赛」：二次确认后 DELETE 清除识别 + 重新拉列表。 */
+  clearRaceMatch(labelId: string, raceName: string): Promise<void>;
+  /** 就地更新一行成绩行（长按命名 / 清除识别后的本地同步）。 */
+  patchResultRow(labelId: string, patch: Partial<RaceRow>): void;
   /** 在飞的写请求（键=行 key → 乐观补丁）：防连点，并让并发读不打回乐观态 */
   _inflight: Map<string, CardPatch>;
   /** 自定义比赛全字段（id → 聚合下发原行）：状态切换的 PUT 全量更新与编辑回显用 */
   _customById: Map<number, CustomRace>;
+  /** 成绩行原始数据（label_id → 列表下发原行）：长按菜单的回显与本地回落名用 */
+  _raceByLabel: Map<string, RaceItem>;
   /** 赛事请求序号，慢响应回来时发现自己已过期则丢弃（同 race-center._fetchSeq） */
   _fetchSeq: number;
   /** 成绩请求序号：onShow 与下拉刷新并发时丢弃慢的旧响应 */
@@ -141,9 +170,11 @@ function bandClass(band: RaceItem['distance_band']): string {
 }
 
 function toRow(race: RaceItem, isPb: boolean): RaceRow {
+  const isAuto = !!race.race_name;
   return {
     labelId: race.label_id,
-    name: race.name || bandLabel(race.distance_band),
+    // 显示名解析链（#545）：官方赛名 → 手输名 → 活动名 → 距离档文案兜底
+    name: raceDisplayName(race) || bandLabel(race.distance_band),
     bandLabel: bandLabel(race.distance_band),
     bandClass: bandClass(race.distance_band),
     dateLabel: shanghaiDateFromIso(race.date) || race.date,
@@ -153,6 +184,11 @@ function toRow(race: RaceItem, isPb: boolean): RaceRow {
     avgHr: race.avg_hr != null ? String(race.avg_hr) : '',
     ascent: race.ascent_m != null ? String(Math.round(race.ascent_m)) : '',
     isPb,
+    isAuto,
+    hasCustom: !!race.display_name,
+    // 等级双徽章仅官方识别行显示（未关联日历行 label 恒为 null，此处防御）
+    cnBadge: isAuto ? cnBadgeOf(race.label) : '',
+    waBadge: isAuto ? waBadgeOf(race.wa_label) : '',
   };
 }
 
@@ -189,6 +225,7 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
   onShareTimeline: defaultShareTimeline,
   _inflight: new Map(),
   _customById: new Map(),
+  _raceByLabel: new Map(),
   _fetchSeq: 0,
   _resultsSeq: 0,
 
@@ -241,6 +278,9 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
     try {
       const res = await getMyRaces(userId);
       if (seq !== this._resultsSeq) return;
+      // 长按菜单的回显（当前手输名）与本地回落名都要原始行，先存全字段
+      this._raceByLabel.clear();
+      for (const race of res.races) this._raceByLabel.set(race.label_id, race);
       const pbIds = pbLabelIds(res.races);
       const rows = res.races.map((race) => toRow(race, pbIds.has(race.label_id)));
       this.setData({ loading: false, rows, summary: buildSummary(rows) });
@@ -430,6 +470,109 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
     if (!labelId) return;
     wx.navigateTo({
       url: `/pages/activity-detail/activity-detail?labelId=${encodeURIComponent(labelId)}`,
+    });
+  },
+
+  /** 成绩行长按菜单（#545）：点击仍走 onRaceTap 进详情。
+   *  未识别行 = 手动命名（hasCustom 时第一项变「修改」并追加「恢复活动名」）；
+   *  自动识别行 = 「这不是这场比赛」。 */
+  onRaceLongPress(e: WechatMiniprogram.TouchEvent) {
+    const labelId = String(e.currentTarget.dataset.id || '');
+    const row = this.data.rows.find((r) => r.labelId === labelId);
+    if (!row) return;
+    const items = row.isAuto
+      ? ['这不是这场比赛']
+      : row.hasCustom
+        ? ['修改比赛名字', '恢复活动名']
+        : ['输入比赛名字'];
+    wx.showActionSheet({
+      itemList: items,
+      success: (res) => {
+        if (row.isAuto) {
+          if (res.tapIndex === 0) void this.clearRaceMatch(labelId, row.name);
+        } else if (res.tapIndex === 0) {
+          void this.renameRace(labelId);
+        } else if (res.tapIndex === 1) {
+          void this.restoreRaceName(labelId);
+        }
+      },
+    });
+  },
+
+  async renameRace(labelId: string): Promise<void> {
+    const raw = this._raceByLabel.get(labelId);
+    const userId = userStore.getState().user?.id;
+    if (!raw || !userId) return;
+    const res = await wx.showModal({
+      title: '比赛名字',
+      editable: true,
+      placeholderText: '如「2026 厦门马拉松」',
+      content: raw.display_name || '',
+    });
+    if (!res.confirm) return;
+    const name = (res.content || '').trim();
+    try {
+      await setRaceDisplayName(userId, labelId, name);
+      this.patchResultRow(labelId, {
+        name: name || raw.name || bandLabel(raw.distance_band),
+        hasCustom: !!name,
+      });
+      wx.showToast({ title: '已保存', icon: 'none' });
+    } catch {
+      wx.showToast({ title: '保存失败', icon: 'none' });
+    }
+  },
+
+  async restoreRaceName(labelId: string): Promise<void> {
+    const raw = this._raceByLabel.get(labelId);
+    const userId = userStore.getState().user?.id;
+    if (!raw || !userId) return;
+    try {
+      await setRaceDisplayName(userId, labelId, '');
+      this.patchResultRow(labelId, {
+        name: raw.name || bandLabel(raw.distance_band),
+        hasCustom: false,
+      });
+      wx.showToast({ title: '已恢复活动名', icon: 'none' });
+    } catch {
+      wx.showToast({ title: '恢复失败', icon: 'none' });
+    }
+  },
+
+  async clearRaceMatch(labelId: string, raceName: string): Promise<void> {
+    const raw = this._raceByLabel.get(labelId);
+    const userId = userStore.getState().user?.id;
+    if (!userId) return;
+    const res = await wx.showModal({
+      title: '清除比赛识别',
+      content: `不再把这场成绩识别为「${raceName}」？`,
+      confirmText: '清除',
+      confirmColor: '#ff6363',
+    });
+    if (!res.confirm) return;
+    try {
+      await clearRaceCalendarMatch(userId, labelId);
+      // 本地同步回落（手输名保留，仅断开官方识别），再重新拉列表对齐服务端
+      if (raw) {
+        this.patchResultRow(labelId, {
+          name: raw.display_name || raw.name || bandLabel(raw.distance_band),
+          isAuto: false,
+          hasCustom: !!raw.display_name,
+          cnBadge: '',
+          waBadge: '',
+        });
+      }
+      wx.showToast({ title: '已清除识别', icon: 'none' });
+      void this.fetchRaces();
+    } catch {
+      wx.showToast({ title: '操作失败', icon: 'none' });
+    }
+  },
+
+  /** 就地更新一行成绩行（长按命名 / 清除识别后的本地同步）。 */
+  patchResultRow(labelId: string, patch: Partial<RaceRow>): void {
+    this.setData({
+      rows: this.data.rows.map((r) => (r.labelId === labelId ? { ...r, ...patch } : r)),
     });
   },
 

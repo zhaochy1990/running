@@ -485,6 +485,34 @@
   white-space: nowrap;
 }
 
+/* 等级双徽章（#545）：仅官方识别行，名下一行，色值复刻 race-center 的 .badge--cn/--wa */
+
+.race__badges {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 6rpx;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.race__badge {
+  flex-shrink: 0;
+  font-size: 18rpx;
+  line-height: 28rpx;
+  padding: 0 10rpx;
+  border-radius: 6rpx;
+}
+
+.race__badge--cn {
+  color: #e8c07d;
+  background: rgba(232, 192, 125, 0.12);
+}
+
+.race__badge--wa {
+  color: #8fb8e8;
+  background: rgba(143, 184, 232, 0.12);
+}
+
 .race__meta {
   margin-top: 6rpx;
   font-size: 22rpx;
