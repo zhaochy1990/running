@@ -17,8 +17,8 @@ func TestRaceTableStoresOnlyActivityReference(t *testing.T) {
 	if got := (Race{}).TableName(); got != "races" {
 		t.Fatalf("table = %q", got)
 	}
-	if got := reflect.TypeOf(Race{}).NumField(); got != 5 {
-		t.Fatalf("Race has %d fields, want user_id, label_id, race_calendar_item_id, evidence, created_at", got)
+	if got := reflect.TypeOf(Race{}).NumField(); got != 6 {
+		t.Fatalf("Race has %d fields, want user_id, label_id, race_calendar_item_id, display_name, evidence, created_at", got)
 	}
 }
 
@@ -194,6 +194,171 @@ func TestRaceEvidenceAndCalendarLinkLifecycle(t *testing.T) {
 	}
 	if len(unlinked) != 1 || unlinked[0].LabelID != "plain" || unlinked[0].StartGPSLat == nil {
 		t.Fatalf("unlinked races = %+v, want plain with start coords", unlinked)
+	}
+
+	// A user-rejected match (user_cleared) is invisible to both rematch paths:
+	// LinkRaceToCalendarItem refuses to re-chain it and the rematch projection
+	// no longer lists the row.
+	if err := st.db.WithContext(ctx).Model(&Race{}).
+		Where("user_id = ? AND label_id = ?", uid, "plain").
+		Update("evidence", racedetection.RaceEvidenceUserCleared).Error; err != nil {
+		t.Fatalf("stamp user_cleared: %v", err)
+	}
+	linked, err = st.LinkRaceToCalendarItem(ctx, uid, "plain", 42)
+	if err != nil || linked {
+		t.Fatalf("relink after user_cleared must be refused: linked=%v err=%v", linked, err)
+	}
+	var cleared Race
+	if err := st.db.WithContext(ctx).Where("user_id = ? AND label_id = ?", uid, "plain").First(&cleared).Error; err != nil {
+		t.Fatalf("read cleared race: %v", err)
+	}
+	if cleared.RaceCalendarItemID != nil || cleared.Evidence != racedetection.RaceEvidenceUserCleared {
+		t.Fatalf("cleared race = %+v, want still unlinked with user_cleared", cleared)
+	}
+	unlinked, err = st.RacesWithoutCalendarLink(ctx, uid)
+	if err != nil {
+		t.Fatalf("races without calendar link: %v", err)
+	}
+	if len(unlinked) != 0 {
+		t.Fatalf("unlinked races = %+v, want user_cleared row excluded", unlinked)
+	}
+}
+
+func TestUserRacesJoinsCalendarIdentity(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.AutoMigrateWatch(ctx); err != nil {
+		t.Fatalf("automigrate watch: %v", err)
+	}
+	if err := st.AutoMigrateRaceCalendar(ctx); err != nil {
+		t.Fatalf("automigrate race calendar: %v", err)
+	}
+	uid := uuid.NewString()
+	calItems := []RaceCalendarItem{{Name: "无锡马拉松 半马", Type: "half_marathon"}}
+	event, cleanup := seedCalendarEventWithItems(t, st, "无锡马拉松TestUserRaces", calItems)
+	defer cleanup()
+	defer func() {
+		st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&Race{})
+		st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&Activity{})
+	}()
+	// The seed helper does not set the curated Chinese name; fill it so the
+	// name_cn-preferred branch is exercised.
+	if err := st.db.WithContext(ctx).Model(&RaceCalendarEvent{}).
+		Where("id = ?", event.ID).
+		Updates(map[string]any{"name_cn": "无锡马拉松", "label": "A", "wa_label": "Label"}).Error; err != nil {
+		t.Fatalf("curate event: %v", err)
+	}
+
+	activities := []Activity{
+		{UserID: uid, LabelID: "cal-hm", Name: strptr("2026-03-29 晨跑"), SportType: 100, Sport: strptr("run_outdoor"), DistanceM: fptr(21_200), Date: time.Date(2026, 3, 29, 1, 0, 0, 0, time.UTC), Provider: "test", SyncedAt: time.Now().UTC()},
+		{UserID: uid, LabelID: "plain", Name: strptr("Plain HM"), SportType: 100, Sport: strptr("run_outdoor"), DistanceM: fptr(21_400), Date: time.Date(2026, 3, 29, 2, 0, 0, 0, time.UTC), Provider: "test", SyncedAt: time.Now().UTC()},
+	}
+	for i := range activities {
+		if err := st.UpsertActivity(ctx, &activities[i], nil, nil, nil); err != nil {
+			t.Fatalf("upsert %s: %v", activities[i].LabelID, err)
+		}
+	}
+	if _, err := st.InsertRace(ctx, &Race{UserID: uid, LabelID: "cal-hm", RaceCalendarItemID: int64ptr(int64(calItems[0].ID)), Evidence: racedetection.RaceEvidenceCalendarMatch}); err != nil {
+		t.Fatalf("insert linked race: %v", err)
+	}
+	if _, err := st.InsertRace(ctx, &Race{UserID: uid, LabelID: "plain"}); err != nil {
+		t.Fatalf("insert plain race: %v", err)
+	}
+
+	rows, err := st.UserRaces(ctx, uid)
+	if err != nil {
+		t.Fatalf("user races: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %+v, want 2", rows)
+	}
+	byLabel := map[string]UserRaceRow{}
+	for _, row := range rows {
+		byLabel[row.LabelID] = row
+	}
+	linked, plain := byLabel["cal-hm"], byLabel["plain"]
+	// Linked row carries the calendar identity chain: race_name prefers
+	// name_cn, label/wa_label pass through; the activity name stays verbatim.
+	if linked.RaceName == nil || *linked.RaceName != "无锡马拉松" {
+		t.Fatalf("linked race_name = %v, want 无锡马拉松", linked.RaceName)
+	}
+	if linked.Label == nil || *linked.Label != "A" || linked.WALabel == nil || *linked.WALabel != "Label" {
+		t.Fatalf("linked tiers = %v/%v, want A/Label", linked.Label, linked.WALabel)
+	}
+	if linked.DisplayName != nil || linked.Name == nil || *linked.Name != "2026-03-29 晨跑" {
+		t.Fatalf("linked display/name = %v/%v, want nil + activity name", linked.DisplayName, linked.Name)
+	}
+	// Unlinked row: no calendar identity at all.
+	if plain.RaceName != nil || plain.Label != nil || plain.WALabel != nil || plain.DisplayName != nil {
+		t.Fatalf("plain identity = %v/%v/%v/%v, want all nil", plain.RaceName, plain.Label, plain.WALabel, plain.DisplayName)
+	}
+
+	// Empty-string name_cn falls back to the event name.
+	if err := st.db.WithContext(ctx).Model(&RaceCalendarEvent{}).
+		Where("id = ?", event.ID).Update("name_cn", "").Error; err != nil {
+		t.Fatalf("blank name_cn: %v", err)
+	}
+	rows, err = st.UserRaces(ctx, uid)
+	if err != nil {
+		t.Fatalf("user races after blank name_cn: %v", err)
+	}
+	for _, row := range rows {
+		if row.LabelID == "cal-hm" && (row.RaceName == nil || *row.RaceName != event.Name) {
+			t.Fatalf("race_name = %v, want event-name fallback %q", row.RaceName, event.Name)
+		}
+	}
+
+	// Manual naming: set, read back, clear. rows are newest first; plain
+	// started an hour after cal-hm, so it sits at index 0.
+	name := "我的首马"
+	if ok, err := st.SetRaceDisplayName(ctx, uid, "plain", &name); err != nil || !ok {
+		t.Fatalf("set display name: ok=%v err=%v", ok, err)
+	}
+	rows, _ = st.UserRaces(ctx, uid)
+	if rows[0].LabelID != "plain" || rows[0].DisplayName == nil || *rows[0].DisplayName != name {
+		t.Fatalf("plain display_name = %+v, want %q", rows[0].DisplayName, name)
+	}
+	if ok, err := st.SetRaceDisplayName(ctx, uid, "plain", nil); err != nil || !ok {
+		t.Fatalf("clear display name: ok=%v err=%v", ok, err)
+	}
+	rows, _ = st.UserRaces(ctx, uid)
+	if rows[0].DisplayName != nil {
+		t.Fatalf("cleared display_name = %+v, want nil", rows[0].DisplayName)
+	}
+	if ok, err := st.SetRaceDisplayName(ctx, uid, "missing", &name); err != nil || ok {
+		t.Fatalf("unknown race must report false, got ok=%v err=%v", ok, err)
+	}
+
+	// Clearing the calendar link: evidence goes user_cleared, identity nils
+	// out; a second call is a no-op that leaves evidence; unknown is false.
+	if ok, err := st.ClearRaceCalendarLink(ctx, uid, "cal-hm"); err != nil || !ok {
+		t.Fatalf("clear link: ok=%v err=%v", ok, err)
+	}
+	var severed Race
+	if err := st.db.WithContext(ctx).Where("user_id = ? AND label_id = ?", uid, "cal-hm").First(&severed).Error; err != nil {
+		t.Fatalf("read severed race: %v", err)
+	}
+	if severed.RaceCalendarItemID != nil || severed.Evidence != racedetection.RaceEvidenceUserCleared {
+		t.Fatalf("severed race = %+v, want unlinked with user_cleared", severed)
+	}
+	rows, _ = st.UserRaces(ctx, uid)
+	for _, row := range rows {
+		if row.LabelID == "cal-hm" && (row.RaceName != nil || row.Label != nil || row.WALabel != nil) {
+			t.Fatalf("severed identity = %v/%v/%v, want all nil", row.RaceName, row.Label, row.WALabel)
+		}
+	}
+	if ok, err := st.ClearRaceCalendarLink(ctx, uid, "cal-hm"); err != nil || !ok {
+		t.Fatalf("second clear (no-op) must report true, got ok=%v err=%v", ok, err)
+	}
+	var noop Race
+	if err := st.db.WithContext(ctx).Where("user_id = ? AND label_id = ?", uid, "cal-hm").First(&noop).Error; err != nil {
+		t.Fatalf("read no-op race: %v", err)
+	}
+	if noop.Evidence != racedetection.RaceEvidenceUserCleared {
+		t.Fatalf("no-op changed evidence to %q, want user_cleared kept", noop.Evidence)
+	}
+	if ok, err := st.ClearRaceCalendarLink(ctx, uid, "missing"); err != nil || ok {
+		t.Fatalf("unknown race must report false, got ok=%v err=%v", ok, err)
 	}
 }
 

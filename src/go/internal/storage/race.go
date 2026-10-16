@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"time"
 
@@ -15,10 +16,13 @@ import (
 // reference; name, distance, duration and metrics remain canonical in activities.
 // RaceCalendarItemID links the activity to the matched race_calendar_item when
 // the calendar matcher confirmed it; Evidence records the confirmation path.
+// DisplayName is the athlete's own name for the race ("我的成绩" manual
+// naming); it only affects display and never feeds PB bands or detection.
 type Race struct {
 	UserID             string    `gorm:"column:user_id;type:char(36);primaryKey"`
 	LabelID            string    `gorm:"column:label_id;type:varchar(191);primaryKey"`
 	RaceCalendarItemID *int64    `gorm:"column:race_calendar_item_id;type:bigint;index"`
+	DisplayName        *string   `gorm:"column:display_name;type:varchar(191)"`
 	Evidence           string    `gorm:"column:evidence;type:varchar(32);not null;default:model_score"`
 	CreatedAt          time.Time `gorm:"column:created_at;type:datetime(6);not null;autoCreateTime:false"`
 }
@@ -115,17 +119,26 @@ func (s *Store) ActivityStartCoordinates(ctx context.Context, userID string) ([]
 // joined back to its canonical activity columns (races deliberately stores only
 // the reference). Newest first; label_id breaks date ties deterministically.
 type UserRaceRow struct {
-	LabelID    string
-	Name       *string
-	SportName  *string
-	Date       time.Time
-	DistanceM  *float64
-	DurationS  *float64
-	AvgPaceSKm *float64
-	AvgHR      *int
-	MaxHR      *int
-	AscentM    *float64
-	ThumbURL   *string
+	LabelID string
+	Name    *string
+	// Official calendar identity, nil unless the race is linked to a
+	// race_calendar_item: RaceName is the event's Chinese name (name_cn,
+	// falling back to name), Label / WALabel the event's grade tiers.
+	RaceName *string
+	Label    *string
+	WALabel  *string
+	// DisplayName is the athlete's manual name (races.display_name), nil when
+	// unset or cleared.
+	DisplayName *string
+	SportName   *string
+	Date        time.Time
+	DistanceM   *float64
+	DurationS   *float64
+	AvgPaceSKm  *float64
+	AvgHR       *int
+	MaxHR       *int
+	AscentM     *float64
+	ThumbURL    *string
 }
 
 // UserRaces returns the user's confirmed race efforts (half marathons and
@@ -140,8 +153,13 @@ func (s *Store) UserRaces(ctx context.Context, userID string) ([]UserRaceRow, er
 	var rows []UserRaceRow
 	if err := s.db.WithContext(ctx).Table("races AS r").
 		Select(`a.label_id, a.name, a.sport_name, a.date, a.distance_m, a.duration_s,
-			a.avg_pace_s_km, a.avg_hr, a.max_hr, a.ascent_m, a.route_thumb_url`).
+			a.avg_pace_s_km, a.avg_hr, a.max_hr, a.ascent_m, a.route_thumb_url,
+			r.display_name,
+			COALESCE(NULLIF(e.name_cn, ''), e.name) AS race_name,
+			e.label, e.wa_label`).
 		Joins("JOIN activities AS a ON a.user_id = r.user_id AND a.label_id = r.label_id").
+		Joins("LEFT JOIN race_calendar_item AS i ON i.id = r.race_calendar_item_id").
+		Joins("LEFT JOIN race_calendar AS e ON e.id = i.race_event_id").
 		Where("r.user_id = ?", uid).
 		Order("a.date DESC, a.label_id").
 		Scan(&rows).Error; err != nil {
@@ -176,8 +194,10 @@ func (s *Store) LinkRaceToCalendarItem(ctx context.Context, userID, labelID stri
 	if err != nil {
 		return false, err
 	}
+	// evidence <> user_cleared keeps the rematch path from re-chaining a link
+	// the athlete explicitly rejected.
 	tx := s.db.WithContext(ctx).Model(&Race{}).
-		Where("user_id = ? AND label_id = ? AND race_calendar_item_id IS NULL", uid, labelID).
+		Where("user_id = ? AND label_id = ? AND race_calendar_item_id IS NULL AND evidence <> ?", uid, labelID, racedetection.RaceEvidenceUserCleared).
 		Updates(map[string]any{
 			"race_calendar_item_id": itemID,
 			"evidence":              racedetection.RaceEvidenceCalendarMatch,
@@ -188,7 +208,8 @@ func (s *Store) LinkRaceToCalendarItem(ctx context.Context, userID, labelID stri
 // RacesWithoutCalendarLink returns the activity projections of a user's
 // confirmed races that carry no calendar mapping yet. The rematch path uses it
 // to backfill race_calendar_item_id for races confirmed before the matcher
-// existed.
+// existed; rows the athlete rejected (evidence user_cleared) are excluded so
+// a rematch never re-chains them.
 func (s *Store) RacesWithoutCalendarLink(ctx context.Context, userID string) ([]RaceCandidate, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
@@ -203,11 +224,68 @@ func (s *Store) RacesWithoutCalendarLink(ctx context.Context, userID string) ([]
             a.start_gps_lat AS start_gps_lat, a.start_gps_lon AS start_gps_lon`).
 		Where("a.user_id = ?", uid).
 		Where(`EXISTS (SELECT 1 FROM races r
-            WHERE r.user_id = a.user_id AND r.label_id = a.label_id AND r.race_calendar_item_id IS NULL)`).
+            WHERE r.user_id = a.user_id AND r.label_id = a.label_id AND r.race_calendar_item_id IS NULL AND r.evidence <> ?)`, racedetection.RaceEvidenceUserCleared).
 		Order("a.date, a.label_id").Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	return rows, nil
+}
+
+// SetRaceDisplayName writes (or clears, name == nil) the athlete's manual name
+// for one confirmed race. Only the display_name column is touched. Returns
+// false when the (user, label) races row does not exist. The existence probe
+// runs first (same reason as SetActivityFeelNote): MySQL reports rows *changed*
+// by default, so rewriting an identical name would otherwise look like a miss.
+func (s *Store) SetRaceDisplayName(ctx context.Context, userID, labelID string, name *string) (bool, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return false, err
+	}
+	var count int64
+	if err := s.db.WithContext(ctx).Model(&Race{}).
+		Where("user_id = ? AND label_id = ?", uid, labelID).
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("storage: probe race %s: %w", labelID, err)
+	}
+	if count == 0 {
+		return false, nil
+	}
+	if err := s.db.WithContext(ctx).Model(&Race{}).
+		Where("user_id = ? AND label_id = ?", uid, labelID).
+		Update("display_name", name).Error; err != nil {
+		return false, fmt.Errorf("storage: set race display name: %w", err)
+	}
+	return true, nil
+}
+
+// ClearRaceCalendarLink severs the calendar link of one confirmed race after
+// the athlete rejected the match: race_calendar_item_id goes NULL and evidence
+// becomes user_cleared so the rematch paths skip the row. An already-unlinked
+// row is a no-op that leaves evidence untouched. Returns false when the races
+// row does not exist.
+func (s *Store) ClearRaceCalendarLink(ctx context.Context, userID, labelID string) (bool, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return false, err
+	}
+	var count int64
+	if err := s.db.WithContext(ctx).Model(&Race{}).
+		Where("user_id = ? AND label_id = ?", uid, labelID).
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("storage: probe race %s: %w", labelID, err)
+	}
+	if count == 0 {
+		return false, nil
+	}
+	if err := s.db.WithContext(ctx).Model(&Race{}).
+		Where("user_id = ? AND label_id = ? AND race_calendar_item_id IS NOT NULL", uid, labelID).
+		Updates(map[string]any{
+			"race_calendar_item_id": nil,
+			"evidence":              racedetection.RaceEvidenceUserCleared,
+		}).Error; err != nil {
+		return false, fmt.Errorf("storage: clear race calendar link: %w", err)
+	}
+	return true, nil
 }
 
 // RaceCalendarItemsForDates loads marathon and half-marathon calendar items

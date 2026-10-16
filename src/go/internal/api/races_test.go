@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,17 +15,48 @@ import (
 )
 
 // fakeRaceStore returns canned joined race rows. Storage returns them newest
-// first already; the handler must preserve that order verbatim.
+// first already; the handler must preserve that order verbatim. The write side
+// is a minimal in-memory races table: label_id present = row exists, so 404s
+// and the user_cleared lifecycle are observable.
 type fakeRaceStore struct {
-	rows []storage.UserRaceRow
+	rows  []storage.UserRaceRow
+	races map[string]*fakeRaceRow
+}
+
+type fakeRaceRow struct {
+	displayName *string
+	itemID      *int64
+	evidence    string
 }
 
 func (f *fakeRaceStore) UserRaces(_ context.Context, _ string) ([]storage.UserRaceRow, error) {
 	return f.rows, nil
 }
 
+func (f *fakeRaceStore) SetRaceDisplayName(_ context.Context, _, labelID string, displayName *string) (bool, error) {
+	r, ok := f.races[labelID]
+	if !ok {
+		return false, nil
+	}
+	r.displayName = displayName
+	return true, nil
+}
+
+func (f *fakeRaceStore) ClearRaceCalendarLink(_ context.Context, _, labelID string) (bool, error) {
+	r, ok := f.races[labelID]
+	if !ok {
+		return false, nil
+	}
+	if r.itemID != nil {
+		r.itemID = nil
+		r.evidence = "user_cleared"
+	}
+	return true, nil
+}
+
 func f64ptr(v float64) *float64 { return &v }
 func iptr2(v int) *int          { return &v }
+func i64ptr2(v int64) *int64    { return &v }
 func sptr2(v string) *string    { return &v }
 
 func TestGetRaces_ListAndBands(t *testing.T) {
@@ -108,5 +140,115 @@ func TestGetRaces_UserTierForbiddenForOtherUser(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/u2/races", nil))
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", w.Code)
+	}
+}
+
+func TestRenameRace(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	newRouter := func(store *fakeRaceStore) *gin.Engine {
+		r := gin.New()
+		r.Use(func(c *gin.Context) { c.Set(callerContextKey, Caller{Tier: TierUser, UserID: "u1"}) })
+		newRaceRoutes(store, nil).register(r.Group(""))
+		return r
+	}
+	patch := func(store *fakeRaceStore, labelID, body string) *httptest.ResponseRecorder {
+		r := newRouter(store)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPatch, "/api/u1/races/"+labelID, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(w, req)
+		return w
+	}
+	store := &fakeRaceStore{races: map[string]*fakeRaceRow{"l1": {evidence: "model_score"}}}
+
+	// Normal rename: 204 and the trimmed name lands in the store.
+	w := patch(store, "l1", `{"display_name": "  锡马  "}`)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("rename status = %d, want 204, body=%s", w.Code, w.Body.String())
+	}
+	if got := store.races["l1"].displayName; got == nil || *got != "锡马" {
+		t.Fatalf("stored display_name = %v, want trimmed 锡马", got)
+	}
+
+	// Blank after trim clears (NULL), still 204.
+	w = patch(store, "l1", `{"display_name": "   "}`)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("clear status = %d, want 204, body=%s", w.Code, w.Body.String())
+	}
+	if got := store.races["l1"].displayName; got != nil {
+		t.Fatalf("cleared display_name = %v, want nil", got)
+	}
+
+	// Over the 50-rune cap: 400, nothing stored.
+	w = patch(store, "l1", `{"display_name": "`+strings.Repeat("马", 51)+`"}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("overlong status = %d, want 400", w.Code)
+	}
+	w = patch(store, "l1", `{"display_name": "`+strings.Repeat("马", 50)+`"}`)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("50-rune status = %d, want 204", w.Code)
+	}
+
+	// Contract violations: missing body field, unknown race, foreign user.
+	if w := patch(store, "l1", `{}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("missing field status = %d, want 400", w.Code)
+	}
+	if w := patch(store, "nope", `{"display_name": "x"}`); w.Code != http.StatusNotFound {
+		t.Fatalf("unknown race status = %d, want 404", w.Code)
+	}
+	r := newRouter(&fakeRaceStore{races: map[string]*fakeRaceRow{"l1": {evidence: "model_score"}}})
+	w2 := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPatch, "/api/u2/races/l1", strings.NewReader(`{"display_name": "x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w2, req)
+	if w2.Code != http.StatusForbidden {
+		t.Fatalf("foreign user status = %d, want 403", w2.Code)
+	}
+}
+
+func TestClearRaceCalendarMatch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	newRouter := func(store *fakeRaceStore) *gin.Engine {
+		r := gin.New()
+		r.Use(func(c *gin.Context) { c.Set(callerContextKey, Caller{Tier: TierUser, UserID: "u1"}) })
+		newRaceRoutes(store, nil).register(r.Group(""))
+		return r
+	}
+
+	// Linked race: DELETE severs the link and stamps user_cleared.
+	store := &fakeRaceStore{races: map[string]*fakeRaceRow{"l1": {itemID: i64ptr2(77), evidence: "calendar_match"}}}
+	w := httptest.NewRecorder()
+	newRouter(store).ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/api/u1/races/l1/calendar-match", nil))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("clear status = %d, want 204, body=%s", w.Code, w.Body.String())
+	}
+	row := store.races["l1"]
+	if row.itemID != nil || row.evidence != "user_cleared" {
+		t.Fatalf("after clear = %+v, want unlinked with user_cleared", row)
+	}
+
+	// Already unlinked: still 204, evidence untouched.
+	w = httptest.NewRecorder()
+	newRouter(store).ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/api/u1/races/l1/calendar-match", nil))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("no-op status = %d, want 204", w.Code)
+	}
+	if row.evidence != "user_cleared" {
+		t.Fatalf("no-op must not touch evidence, got %q", row.evidence)
+	}
+
+	// Unknown race: 404.
+	w = httptest.NewRecorder()
+	newRouter(store).ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/api/u1/races/nope/calendar-match", nil))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("unknown race status = %d, want 404", w.Code)
+	}
+
+	// Foreign user: 403.
+	r := newRouter(&fakeRaceStore{races: map[string]*fakeRaceRow{"l1": {itemID: i64ptr2(77), evidence: "calendar_match"}}})
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/api/u2/races/l1/calendar-match", nil))
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("foreign user status = %d, want 403", w.Code)
 	}
 }
