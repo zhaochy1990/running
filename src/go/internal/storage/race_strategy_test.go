@@ -16,9 +16,6 @@ func migrateRaceStrategy(t *testing.T, st *Store) {
 	if err := st.AutoMigrateRaceStrategies(ctx); err != nil {
 		t.Fatalf("automigrate race_strategy: %v", err)
 	}
-	if err := st.db.WithContext(ctx).Exec("DELETE FROM race_strategy").Error; err != nil {
-		t.Fatalf("clear race_strategy: %v", err)
-	}
 }
 
 func TestRaceStrategy_TargetKeyedVersions(t *testing.T) {
@@ -26,6 +23,7 @@ func TestRaceStrategy_TargetKeyedVersions(t *testing.T) {
 	migrateRaceStrategy(t, st)
 	ctx := context.Background()
 	uid := uuid.NewString()
+	addUserTableCleanup(t, st, "race_strategy", uid)
 	pub := seedEngagementRace(t, st, "策略赛", "2032-04-10", true)
 
 	// Three goals coexist: 2:55:00, 2:50:00 and a double-digit-hour 10:30:00.
@@ -81,6 +79,7 @@ func TestRaceStrategy_DeleteRemovesOnlyThatGoal(t *testing.T) {
 	migrateRaceStrategy(t, st)
 	ctx := context.Background()
 	uid := uuid.NewString()
+	addUserTableCleanup(t, st, "race_strategy", uid)
 	pub := seedEngagementRace(t, st, "删除策略赛", "2032-04-12", true)
 
 	if _, _, err := st.UpsertRaceStrategy(ctx, uid, pub, "2:55:00", "Marathon", `{"target_finish_time":"2:55:00"}`); err != nil {
@@ -108,6 +107,7 @@ func TestRaceStrategy_Guards(t *testing.T) {
 	migrateRaceStrategy(t, st)
 	ctx := context.Background()
 	uid := uuid.NewString()
+	addUserTableCleanup(t, st, "race_strategy", uid)
 	unpub := seedEngagementRace(t, st, "未发布策略赛", "2032-04-11", false)
 
 	// A nonexistent or unpublished race is not strategizable: 404 sentinel,
@@ -130,6 +130,10 @@ func TestRaceStrategy_Guards(t *testing.T) {
 // with the target key backfilled from the content JSON.
 func TestRaceStrategy_MigratesLegacySingleRow(t *testing.T) {
 	st := openTestStore(t)
+	// The rewind re-shapes race_strategy in place; on the shared local database
+	// the real table (rows included) is renamed aside and restored afterwards
+	// (devops#563).
+	stashTable(t, st, "race_strategy")
 	migrateRaceStrategy(t, st)
 	ctx := context.Background()
 	m := st.db.WithContext(ctx).Migrator()
@@ -146,6 +150,8 @@ func TestRaceStrategy_MigratesLegacySingleRow(t *testing.T) {
 	}
 
 	uid := uuid.NewString()
+	otherUIDs := []string{uuid.NewString(), uuid.NewString()}
+	addUserTableCleanup(t, st, "race_strategy", append([]string{uid}, otherUIDs...)...)
 	pub := seedEngagementRace(t, st, "迁移策略赛", "2032-04-13", true)
 	// Three legacy users for the same race (the legacy UNIQUE(user, event)
 	// allowed one row per user): a well-formed target (backfilled), a
@@ -156,8 +162,8 @@ func TestRaceStrategy_MigratesLegacySingleRow(t *testing.T) {
 		content string
 	}{
 		{uid, `{"race_name":"上海马拉松","target_finish_time":"3:04:00"}`},
-		{uuid.NewString(), `{"race_name":"文字目标赛","target_finish_time":"2小时55分"}`},
-		{uuid.NewString(), `{"race_name":"无目标赛"}`},
+		{otherUIDs[0], `{"race_name":"文字目标赛","target_finish_time":"2小时55分"}`},
+		{otherUIDs[1], `{"race_name":"无目标赛"}`},
 	}
 	for _, row := range legacyRows {
 		if err := st.db.WithContext(ctx).Exec(
@@ -205,6 +211,7 @@ func TestRaceStrategy_SharedLinkQuery(t *testing.T) {
 	ctx := context.Background()
 	uid := uuid.NewString()
 	other := uuid.NewString()
+	addUserTableCleanup(t, st, "race_strategy", uid, other)
 	pub := seedEngagementRace(t, st, "分享赛", "2032-05-10", true)
 
 	row250, _, err := st.UpsertRaceStrategy(ctx, uid, pub, "2:50:00", "Marathon", `{"target_finish_time":"2:50:00"}`)

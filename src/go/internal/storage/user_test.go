@@ -514,6 +514,17 @@ func TestDeleteUserData_RemovesOwnedRowsAndPreservesOtherUsers(t *testing.T) {
 	}
 
 	deletedUID, keptUID := uuid.NewString(), uuid.NewString()
+	// keptUID's rows survive the sweep by design; remove them afterwards so a
+	// run against the shared local database leaves nothing behind (devops#563).
+	for _, table := range []string{"user_profile", "provider_credentials", "user_onboarding"} {
+		addUserTableCleanup(t, st, table, deletedUID, keptUID)
+	}
+	t.Cleanup(func() {
+		if err := st.db.Exec("DELETE FROM jobs WHERE user_id IN ? OR created_by IN ?",
+			[]string{deletedUID, keptUID}, []string{deletedUID, keptUID}).Error; err != nil {
+			t.Errorf("cleanup jobs: %v", err)
+		}
+	})
 	for _, uid := range []string{deletedUID, keptUID} {
 		if err := st.UpsertUserProfile(ctx, &UserProfile{UserID: uid, DisplayName: uid}); err != nil {
 			t.Fatalf("seed profile: %v", err)
@@ -591,6 +602,21 @@ func TestDeleteUserData_CoversSensitiveTables(t *testing.T) {
 	}
 
 	deletedUID, keptUID := uuid.NewString(), uuid.NewString()
+	// The sweep keeps keptUID's rows by design; remove them afterwards so a run
+	// against the shared local database leaves nothing behind (devops#563).
+	for _, table := range []string{
+		"ability_snapshot", "activity_ability", "vo2max_pb", "activity_zones",
+		"scheduled_workout", "weekly_feedback", "race_favorite", "race_plan",
+		"user_home_city", "user_home_city_history", "user_body_composition_scan",
+	} {
+		addUserTableCleanup(t, st, table, deletedUID, keptUID)
+	}
+	t.Cleanup(func() {
+		if err := st.db.Exec("DELETE FROM team_likes WHERE owner_user_id IN ? OR liker_user_id IN ?",
+			[]string{deletedUID, keptUID}, []string{deletedUID, keptUID}).Error; err != nil {
+			t.Errorf("cleanup team_likes: %v", err)
+		}
+	})
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	if err := st.UpsertUserProfile(ctx, &UserProfile{UserID: deletedUID, DisplayName: "doomed"}); err != nil {
 		t.Fatalf("seed profile: %v", err)
@@ -632,6 +658,13 @@ func TestDeleteUserData_CoversSensitiveTables(t *testing.T) {
 
 	// Body-composition scan + segment (segment has scan_id, not user_id).
 	scanIDs := map[string]string{}
+	t.Cleanup(func() {
+		for _, scanID := range scanIDs {
+			if err := st.db.Exec("DELETE FROM user_body_composition_segment WHERE scan_id = ?", scanID).Error; err != nil {
+				t.Errorf("cleanup body composition segments: %v", err)
+			}
+		}
+	})
 	for _, uid := range []string{deletedUID, keptUID} {
 		scanID := uuid.NewString()
 		scanIDs[uid] = scanID
@@ -762,15 +795,9 @@ func TestDeleteUserData_ErrorNamesTable(t *testing.T) {
 
 	// Drop one swept table so the per-table delete fails on it; every earlier
 	// table in the sweep exists, so the wrap must point at exactly this one.
-	// Cleanup re-migrates the schema for test runs against a shared database.
-	if err := st.db.Exec("DROP TABLE user_home_city").Error; err != nil {
-		t.Fatalf("drop user_home_city: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := st.db.AutoMigrate(&UserHomeCity{}); err != nil {
-			t.Errorf("restore user_home_city: %v", err)
-		}
-	})
+	// stashTable renames the shared database's real table aside and restores it
+	// (rows included) afterwards (devops#563).
+	stashTable(t, st, "user_home_city")
 
 	// No rows needed: the missing table fails the DELETE regardless of the
 	// affected-row count.

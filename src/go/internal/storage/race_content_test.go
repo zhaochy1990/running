@@ -5,11 +5,11 @@ import (
 	"testing"
 )
 
-// migrateRaceContent ensures the race-content schema exists for the integration
-// test and empties it (children first) so each test starts isolated. The
-// race_calendar tables are cleared too: the content tests seed their own
-// events. AutoMigrateRaceContent drops the retired pre-merge tables, so they
-// are not in the clear list.
+// migrateRaceContent ensures the race-content schema exists for the
+// integration test. It does not clear anything: the shared local MySQL also
+// holds the local stack's real calendar and city content (devops#563), so each
+// test owns its rows via unique sources/cities and fixture-scoped cleanups.
+// AutoMigrateRaceContent drops the retired pre-merge tables.
 func migrateRaceContent(t *testing.T, st *Store) {
 	t.Helper()
 	ctx := context.Background()
@@ -19,11 +19,17 @@ func migrateRaceContent(t *testing.T, st *Store) {
 	if err := st.AutoMigrateRaceContent(ctx); err != nil {
 		t.Fatalf("automigrate race content: %v", err)
 	}
-	for _, table := range []string{"race_city_content", "race_calendar_item", "race_calendar"} {
-		if err := st.db.WithContext(ctx).Exec("DELETE FROM " + table).Error; err != nil {
-			t.Fatalf("clear %s: %v", table, err)
+}
+
+// addRaceCityContentCleanup registers a t.Cleanup deleting only the fixture
+// city rows this test upserted (race_city_content is city-keyed shared data).
+func addRaceCityContentCleanup(t *testing.T, st *Store, cities ...string) {
+	t.Helper()
+	t.Cleanup(func() {
+		if err := st.db.Exec("DELETE FROM race_city_content WHERE city IN ?", cities).Error; err != nil {
+			t.Errorf("cleanup race_city_content: %v", err)
 		}
-	}
+	})
 }
 
 // seedRaceEvent inserts one race_calendar event directly and returns its id,
@@ -37,6 +43,7 @@ func seedRaceEvent(t *testing.T, st *Store, source, name, raceDate string) uint6
 	if err := st.db.Create(&row).Error; err != nil {
 		t.Fatalf("seed event: %v", err)
 	}
+	addRaceCalendarEventCleanup(t, st, row.ID)
 	return row.ID
 }
 
@@ -47,9 +54,13 @@ func TestRaceCityContent_Upsert(t *testing.T) {
 	migrateRaceContent(t, st)
 	ctx := context.Background()
 
+	// A fixture city the shared local database never holds (devops#563).
+	const city = "测试市-内容"
+	addRaceCityContentCleanup(t, st, city)
+
 	// Create.
 	in := &RaceCityContent{
-		City:        "厦门市",
+		City:        city,
 		Province:    strPtr("福建省"),
 		Attractions: []CityAttraction{{Name: "鼓浪屿", Description: "世界文化遗产"}},
 	}
@@ -66,7 +77,7 @@ func TestRaceCityContent_Upsert(t *testing.T) {
 	if _, err := st.UpsertRaceCityContent(ctx, in); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	row, err := st.GetRaceCityContent(ctx, "厦门市")
+	row, err := st.GetRaceCityContent(ctx, city)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -85,9 +96,14 @@ func TestRaceCityContent_AIDraft(t *testing.T) {
 	migrateRaceContent(t, st)
 	ctx := context.Background()
 
+	// Fixture cities the shared local database never holds (devops#563).
+	const city = "测试市-草稿"
+	const provincelessCity = "测试市-补省"
+	addRaceCityContentCleanup(t, st, city, provincelessCity)
+
 	// New city → a row with the intro + AI province filled, attractions empty.
 	got, err := st.UpsertRaceCityContentAIDraft(ctx, &RaceCityContent{
-		City:     "厦门市",
+		City:     city,
 		Province: strPtr("福建省"),
 		Intro:    &CityIntro{Overview: "海滨城市", Culture: "闽南文化", Food: "沙茶面", History: "经济特区"},
 	})
@@ -106,13 +122,13 @@ func TestRaceCityContent_AIDraft(t *testing.T) {
 	// value wins (the AI province only fills an empty field).
 	province := "福建省"
 	if _, err := st.UpsertRaceCityContent(ctx, &RaceCityContent{
-		City: "厦门市", Province: &province,
+		City: city, Province: &province,
 		Attractions: []CityAttraction{{Name: "鼓浪屿", Description: "世界文化遗产"}},
 	}); err != nil {
 		t.Fatalf("seed other sections: %v", err)
 	}
 	got, err = st.UpsertRaceCityContentAIDraft(ctx, &RaceCityContent{
-		City:     "厦门市",
+		City:     city,
 		Province: strPtr("江苏省"),
 		Intro:    &CityIntro{Overview: "更新概览", Culture: "更新文化", Food: "更新美食", History: "更新历史"},
 	})
@@ -129,13 +145,13 @@ func TestRaceCityContent_AIDraft(t *testing.T) {
 	// A city whose admin saved the intro but left the province empty gets it
 	// filled by the next AI draft.
 	if _, err := st.UpsertRaceCityContent(ctx, &RaceCityContent{
-		City:  "苏州市",
+		City:  provincelessCity,
 		Intro: &CityIntro{Overview: "园林城市"},
 	}); err != nil {
 		t.Fatalf("seed provinceless city: %v", err)
 	}
 	got, err = st.UpsertRaceCityContentAIDraft(ctx, &RaceCityContent{
-		City:     "苏州市",
+		City:     provincelessCity,
 		Province: strPtr("江苏省"),
 		Intro:    &CityIntro{Overview: "更新概览"},
 	})
@@ -213,6 +229,7 @@ func TestRaceCalendar_StaleDeleteKeepsContentRows(t *testing.T) {
 	migrateRaceContent(t, st)
 	ctx := context.Background()
 	src, year := "测试源-内容保护", "2034"
+	addRaceCalendarSourceCleanup(t, st, src)
 
 	if _, err := st.ReplaceRaceCalendarYear(ctx, src, year, []RaceCalendarEvent{
 		{Name: "带内容马拉松", RaceDate: "2034-01-10", Country: "CHN"},
@@ -262,7 +279,7 @@ func TestRaceCalendar_StaleDeleteKeepsContentRows(t *testing.T) {
 	}
 
 	// The list filter surfaces exactly the flagged row.
-	rows, total, err := st.ListRaceCalendarEvents(ctx, RaceCalendarListFilter{ContentStale: true, Page: 1, PerPage: 20})
+	rows, total, err := st.ListRaceCalendarEvents(ctx, RaceCalendarListFilter{Source: src, ContentStale: true, Page: 1, PerPage: 20})
 	if err != nil || total != 1 || len(rows) != 1 || rows[0].ID != flagged.ID {
 		t.Fatalf("content_stale filter = (%d, %+v, %v), want the flagged row", total, rows, err)
 	}
@@ -276,6 +293,7 @@ func TestRaceCalendar_StaleFlagClearedOnResync(t *testing.T) {
 	migrateRaceContent(t, st)
 	ctx := context.Background()
 	src, year := "测试源-清标", "2035"
+	addRaceCalendarSourceCleanup(t, st, src)
 	key := "2035-01-10"
 
 	if _, err := st.ReplaceRaceCalendarYear(ctx, src, year, []RaceCalendarEvent{
@@ -326,6 +344,7 @@ func TestRaceItemContent_SurvivesSyncMerge(t *testing.T) {
 	migrateRaceContent(t, st)
 	ctx := context.Background()
 	src, year := "测试源-重建项目", "2037"
+	addRaceCalendarSourceCleanup(t, st, src)
 
 	if _, err := st.ReplaceRaceCalendarYear(ctx, src, year, []RaceCalendarEvent{
 		{Name: "重建马拉松", RaceDate: "2037-01-10", Country: "CHN"},
@@ -407,6 +426,7 @@ func TestRaceContent_Move(t *testing.T) {
 	migrateRaceContent(t, st)
 	ctx := context.Background()
 	src := "测试源-搬运"
+	addRaceCalendarSourceCleanup(t, st, src)
 
 	if _, err := st.ReplaceRaceCalendarYear(ctx, src, "2039", []RaceCalendarEvent{
 		{Name: "旧名马拉松", RaceDate: "2039-01-05", Country: "CHN"},
