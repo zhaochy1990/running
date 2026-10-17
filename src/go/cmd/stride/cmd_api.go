@@ -146,6 +146,11 @@ func runAPI() error {
 	if err := store.AutoMigrateUserCustomRaces(ctx); err != nil {
 		return err
 	}
+	// roadmap_features + roadmap_votes back the product-roadmap surface
+	// (devops#551). Only the API writes them, so the worker does not migrate.
+	if err := store.AutoMigrateRoadmap(ctx); err != nil {
+		return err
+	}
 	// race_strategy backs the coach race-strategy surface (#396). Only the API
 	// writes it (coach + runner both go through endpoints), so the worker does
 	// not migrate it.
@@ -255,6 +260,7 @@ func runAPI() error {
 		RaceFavoriteStore:       store,
 		RacePlanStore:           store,
 		CustomRaceStore:         store,
+		RoadmapStore:            store,
 		RaceStrategyStore:       store,
 		RaceContentStore:        store,
 		RaceCatalogStore:        store,

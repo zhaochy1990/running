@@ -2315,6 +2315,151 @@ definitions:
     required:
     - display_name
     type: object
+  api.roadmapAcceptedItem:
+    properties:
+      category:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      planned_note:
+        type: string
+      title:
+        type: string
+      votes:
+        type: integer
+    type: object
+  api.roadmapAdminFeatureDTO:
+    properties:
+      category:
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      planned_note:
+        type: string
+      released_at:
+        type: string
+      status:
+        type: string
+      title:
+        type: string
+      updated_at:
+        type: string
+      votes:
+        type: integer
+      votes_snapshot:
+        type: integer
+    type: object
+  api.roadmapAdminListResponse:
+    properties:
+      features:
+        items:
+          $ref: '#/definitions/api.roadmapAdminFeatureDTO'
+        type: array
+    type: object
+  api.roadmapBacklogItem:
+    properties:
+      category:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      is_new:
+        type: boolean
+      title:
+        type: string
+      voted:
+        type: boolean
+      votes:
+        type: integer
+    type: object
+  api.roadmapFeatureCreateRequest:
+    properties:
+      category:
+        maxLength: 32
+        type: string
+      description:
+        maxLength: 1024
+        type: string
+      status:
+        maxLength: 16
+        type: string
+      title:
+        maxLength: 128
+        type: string
+    required:
+    - title
+    type: object
+  api.roadmapFeaturePatchRequest:
+    properties:
+      category:
+        maxLength: 32
+        type: string
+      description:
+        maxLength: 1024
+        type: string
+      planned_note:
+        maxLength: 32
+        type: string
+      status:
+        maxLength: 16
+        type: string
+      title:
+        maxLength: 128
+        type: string
+    type: object
+  api.roadmapReleasedItem:
+    properties:
+      description:
+        type: string
+      id:
+        type: integer
+      released_at:
+        type: string
+      title:
+        type: string
+      votes_snapshot:
+        type: integer
+    type: object
+  api.roadmapResponse:
+    properties:
+      accepted:
+        items:
+          $ref: '#/definitions/api.roadmapAcceptedItem'
+        type: array
+      backlog:
+        items:
+          $ref: '#/definitions/api.roadmapBacklogItem'
+        type: array
+      released:
+        items:
+          $ref: '#/definitions/api.roadmapReleasedItem'
+        type: array
+      summary:
+        $ref: '#/definitions/api.roadmapSummaryDTO'
+    type: object
+  api.roadmapSummaryDTO:
+    properties:
+      my_votes:
+        type: integer
+      released_count:
+        type: integer
+      total_votes:
+        type: integer
+    type: object
+  api.roadmapVoteResponse:
+    properties:
+      feature_id:
+        type: integer
+      voted:
+        type: boolean
+    type: object
   api.runStateResponse:
     properties:
       completed_at:
@@ -5940,6 +6085,161 @@ paths:
       summary: Publish dashboard
       tags:
       - admin
+  /api/admin/roadmap/features:
+    get:
+      description: Returns every feature (drafts included) with live vote counts,
+        optionally filtered by status.
+      parameters:
+      - description: Status filter (draft|backlog|accepted|released)
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.roadmapAdminListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List roadmap features (admin)
+      tags:
+      - roadmap-admin
+    post:
+      consumes:
+      - application/json
+      description: Creates one feature; status defaults to draft.
+      parameters:
+      - description: Feature
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.roadmapFeatureCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.roadmapAdminFeatureDTO'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a roadmap feature (admin)
+      tags:
+      - roadmap-admin
+  /api/admin/roadmap/features/{id}:
+    delete:
+      description: Deletes a draft or backlog feature (its votes go with it); accepted/released
+        rows are kept.
+      parameters:
+      - description: Feature id
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a roadmap feature (admin)
+      tags:
+      - roadmap-admin
+    patch:
+      consumes:
+      - application/json
+      description: Applies partial field updates and/or a one-way status transition;
+        →released freezes the vote snapshot.
+      parameters:
+      - description: Feature id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Fields
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.roadmapFeaturePatchRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.roadmapAdminFeatureDTO'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update a roadmap feature (admin)
+      tags:
+      - roadmap-admin
   /api/admin/users/{user_id}:
     delete:
       description: 'Deletes the user''s auth identity, coach data, STRIDE data, and
@@ -6436,6 +6736,97 @@ paths:
       summary: Training-plan setup cutover readiness
       tags:
       - catalog
+  /api/roadmap:
+    get:
+      description: Returns the summary plus backlog/accepted/released features with
+        live votes, the caller's voted flags and derived is_new badges. No pagination.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.roadmapResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List the product roadmap
+      tags:
+      - roadmap
+  /api/roadmap/features/{id}/vote:
+    delete:
+      description: Removes the caller's vote on one feature; withdrawing a non-existent
+        vote is an idempotent 200.
+      parameters:
+      - description: Feature id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.roadmapVoteResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Withdraw a roadmap vote
+      tags:
+      - roadmap
+    post:
+      description: Records the caller's vote on one backlog feature; repeats are idempotent
+        200s.
+      parameters:
+      - description: Feature id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.roadmapVoteResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Vote for a roadmap feature
+      tags:
+      - roadmap
   /api/users/{uid}/pipelines:
     get:
       description: Lists the pipeline runs for a user (the subject whose data they

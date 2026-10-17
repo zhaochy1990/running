@@ -265,6 +265,32 @@ _Avoid_: 个人赛历、自建赛事
 可生成配速卡图片（海报式，含目标与分段速览）保存本地。
 _Avoid_: 训练计划、配速表单指代整份策略
 
+## 产品路线（Roadmap）
+
+**产品路线（Roadmap）**：
+面向全体用户展示的产品功能路线图：想法（Feature）从草稿（draft，仅管理端可见）出发，单向
+流转 待投票（backlog）→ 已排期（accepted）→ 已上线（released），只进不退、允许跳级
+（devops#515 决议）。用户在 `GET /api/roadmap` 一次拿到三区全量（无分页），只能给 backlog
+条目投票；已排期条目展示实时票数，已上线条目展示发布时定格的**票数快照**。
+_Avoid_: 需求池、版本规划、product board
+
+**Feature（路线条目）**：
+产品路线上的一个功能想法：标题、描述（backlog 阶段=想法说明 / released 阶段=上线说明，
+同一字段）、可选类目 chip（自由短文本，空则不渲染）。全局内容，不属于任何用户；
+accepted 后可带「预计 YYYY.MM」的排期备注（planned_note，字典序即时间序，空值沉底）。
+_Avoid_: 需求、issue、卡片
+
+**投票（Vote）**：
+用户对一个 backlog Feature 的支持票：一人一票（服务端 UNIQUE(user_id, feature_id) 兼底），
+投票/撤销均幂等；非 backlog 状态不可投（409 not_votable）。匿名：任何端点不暴露投票人列表，
+管理端也只见总数。票数是实时 COUNT，feature 表不常驻计数列。
+_Avoid_: 点赞、支持数列（无实时 COUNT 意味着写在 feature 表上）
+
+**票数快照（Votes Snapshot）**：
+Feature 流转到 released 那一刻由服务端定格的实时票数，连同 released_at 一起写入；此后不随
+新投票变化，注销清票也不回滚——它是已发布的历史事实，不是用户数据。
+_Avoid_: 当前票数（released 条目不再展示实时票数）、缓存
+
 （前端从 Python 后端剥离为独立服务/容器的表层词汇；设计与取舍见 `docs/adr/0017`。）
 
 **stride-web**：
