@@ -213,6 +213,10 @@ type Config struct {
 	// races outside race_calendar, plus the my-races aggregate. Shares the
 	// RacePlanStore port for the aggregate. Leave zero to run without it.
 	CustomRaceStore UserCustomRaceStore
+	// RoadmapStore backs the product-roadmap surface (devops#551): the user
+	// read/vote endpoints plus the administrator feature maintenance. Leave
+	// zero to run without the roadmap endpoints.
+	RoadmapStore RoadmapStore
 	// RaceStrategyStore backs the race-strategy surface (#396): the coach's
 	// structured strategy per (user, race), written by the TS coach API via the
 	// internal endpoint and read/edited by the runner. Leave zero to run
@@ -316,6 +320,7 @@ type Service struct {
 	raceFavorites   *raceFavoriteRoutes
 	racePlans       *racePlanRoutes
 	customRaces     *customRaceRoutes
+	roadmap         *roadmapRoutes
 	raceStrategy    *raceStrategyRoutes
 	raceContent     *raceContentRoutes
 	raceCatalog     *raceCatalogRoutes
@@ -378,6 +383,7 @@ func NewService(cfg Config) *Service {
 		raceFavorites:           newRaceFavoriteRoutes(cfg.RaceFavoriteStore, log),
 		racePlans:               newRacePlanRoutes(cfg.RacePlanStore, log),
 		customRaces:             newCustomRaceRoutes(cfg.CustomRaceStore, cfg.RacePlanStore, log),
+		roadmap:                 newRoadmapRoutes(cfg.RoadmapStore, log),
 		raceStrategy:            newRaceStrategyRoutes(cfg.RaceStrategyStore, log),
 		raceContent:             newRaceContentRoutes(cfg.RaceContentStore, cfg.CityAIDraft, log),
 		raceCatalog:             newRaceCatalogRoutes(cfg.RaceCatalogStore, log),
@@ -451,6 +457,9 @@ func (s *Service) Router() *gin.Engine {
 	s.raceCalendar.register(authenticated)
 	// Race-content maintenance is administrator-only for the same reason.
 	s.raceContent.register(authenticated)
+	// Product-roadmap feature maintenance is administrator-only (same tier
+	// guard as the race-calendar admin tab); handlers re-check.
+	s.roadmap.registerAdmin(authenticated)
 
 	// Existing routes accept only the original user/internal tiers. Keeping this
 	// default deny prevents an admin-dashboard token from silently inheriting
@@ -494,6 +503,9 @@ func (s *Service) Router() *gin.Engine {
 	s.racePlans.register(authed)
 	s.customRaces.register(authed)
 	s.raceStrategy.register(authed)
+	// Product-roadmap user surface: read + vote, user-tier only (the admin
+	// tier has its own maintenance endpoints above).
+	s.roadmap.registerUser(authed)
 	s.bodyComposition.register(authed)
 	s.ability.register(authed)
 	s.predictions.register(authed)

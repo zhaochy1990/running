@@ -1591,6 +1591,244 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/admin/roadmap/features": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns every feature (drafts included) with live vote counts, optionally filtered by status.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "roadmap-admin"
+                ],
+                "summary": "List roadmap features (admin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Status filter (draft|backlog|accepted|released)",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.roadmapAdminListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates one feature; status defaults to draft.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "roadmap-admin"
+                ],
+                "summary": "Create a roadmap feature (admin)",
+                "parameters": [
+                    {
+                        "description": "Feature",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.roadmapFeatureCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.roadmapAdminFeatureDTO"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/roadmap/features/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes a draft or backlog feature (its votes go with it); accepted/released rows are kept.",
+                "tags": [
+                    "roadmap-admin"
+                ],
+                "summary": "Delete a roadmap feature (admin)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Feature id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Applies partial field updates and/or a one-way status transition; →released freezes the vote snapshot.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "roadmap-admin"
+                ],
+                "summary": "Update a roadmap feature (admin)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Feature id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.roadmapFeaturePatchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.roadmapAdminFeatureDTO"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/admin/users/{user_id}": {
             "delete": {
                 "security": [
@@ -2299,6 +2537,145 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/api.planSetupReadinessResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/roadmap": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the summary plus backlog/accepted/released features with live votes, the caller's voted flags and derived is_new badges. No pagination.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "roadmap"
+                ],
+                "summary": "List the product roadmap",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.roadmapResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/roadmap/features/{id}/vote": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Records the caller's vote on one backlog feature; repeats are idempotent 200s.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "roadmap"
+                ],
+                "summary": "Vote for a roadmap feature",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Feature id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.roadmapVoteResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes the caller's vote on one feature; withdrawing a non-existent vote is an idempotent 200.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "roadmap"
+                ],
+                "summary": "Withdraw a roadmap vote",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Feature id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.roadmapVoteResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
                         }
                     }
                 }
@@ -10707,6 +11084,224 @@ const docTemplate = `{
             "properties": {
                 "display_name": {
                     "type": "string"
+                }
+            }
+        },
+        "api.roadmapAcceptedItem": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "planned_note": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "votes": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.roadmapAdminFeatureDTO": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "planned_note": {
+                    "type": "string"
+                },
+                "released_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "votes": {
+                    "type": "integer"
+                },
+                "votes_snapshot": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.roadmapAdminListResponse": {
+            "type": "object",
+            "properties": {
+                "features": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.roadmapAdminFeatureDTO"
+                    }
+                }
+            }
+        },
+        "api.roadmapBacklogItem": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_new": {
+                    "type": "boolean"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "voted": {
+                    "type": "boolean"
+                },
+                "votes": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.roadmapFeatureCreateRequest": {
+            "type": "object",
+            "required": [
+                "title"
+            ],
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 1024
+                },
+                "status": {
+                    "type": "string",
+                    "maxLength": 16
+                },
+                "title": {
+                    "type": "string",
+                    "maxLength": 128
+                }
+            }
+        },
+        "api.roadmapFeaturePatchRequest": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 1024
+                },
+                "planned_note": {
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "status": {
+                    "type": "string",
+                    "maxLength": 16
+                },
+                "title": {
+                    "type": "string",
+                    "maxLength": 128
+                }
+            }
+        },
+        "api.roadmapReleasedItem": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "released_at": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "votes_snapshot": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.roadmapResponse": {
+            "type": "object",
+            "properties": {
+                "accepted": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.roadmapAcceptedItem"
+                    }
+                },
+                "backlog": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.roadmapBacklogItem"
+                    }
+                },
+                "released": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.roadmapReleasedItem"
+                    }
+                },
+                "summary": {
+                    "$ref": "#/definitions/api.roadmapSummaryDTO"
+                }
+            }
+        },
+        "api.roadmapSummaryDTO": {
+            "type": "object",
+            "properties": {
+                "my_votes": {
+                    "type": "integer"
+                },
+                "released_count": {
+                    "type": "integer"
+                },
+                "total_votes": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.roadmapVoteResponse": {
+            "type": "object",
+            "properties": {
+                "feature_id": {
+                    "type": "integer"
+                },
+                "voted": {
+                    "type": "boolean"
                 }
             }
         },

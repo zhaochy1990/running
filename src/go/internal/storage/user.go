@@ -264,6 +264,10 @@ var userOwnedDeletionModels = []any{
 	&ProviderCredential{}, &WeeklyPlan{}, &WeeklyFeedback{}, &MasterPlan{}, &RaceGoal{},
 	&AbilitySnapshot{}, &ActivityAbility{}, &Vo2MaxPB{},
 	&RaceFavorite{}, &RacePlan{}, &RaceStrategy{}, &UserCustomRace{},
+	// roadmap_votes only — roadmap_features is global content and stays; the
+	// released votes_snapshot is a historical fact erasure never rolls back
+	// (devops#551).
+	&RoadmapVote{},
 	&ScheduledWorkout{}, &WatchSchedule{}, &BodyCompositionScanRecord{},
 	&UserOnboarding{}, &UserProfile{}, &InjuryRecord{},
 	&UserHomeCity{}, &UserHomeCityHistory{},
