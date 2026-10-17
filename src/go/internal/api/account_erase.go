@@ -34,6 +34,17 @@ type UserDataDirRemover interface {
 	RemoveUserDir(userID string) (bool, error)
 }
 
+// FeedbackImageLister collects the COS keys a user referenced in feedbacks,
+// so account erasure can sweep the bucket. Satisfied by *storage.Store.
+type FeedbackImageLister interface {
+	FeedbackImageKeys(ctx context.Context, userID string) ([]string, error)
+}
+
+// COSObjectDeleter removes one COS object (satisfied by *cos.Client).
+type COSObjectDeleter interface {
+	Delete(ctx context.Context, key string) error
+}
+
 // DeletionAuditStore persists the per-attempt audit trail. Satisfied by
 // *storage.Store.
 type DeletionAuditStore interface {
@@ -52,16 +63,18 @@ func newAccountEraser(store UserStore, selfAuth AccountDeleter, adminAuth AdminA
 	if log == nil {
 		log = logging.Default()
 	}
+	imageLister, _ := store.(FeedbackImageLister)
 	return &accountEraser{
-		store:     store,
-		selfAuth:  selfAuth,
-		adminAuth: adminAuth,
-		coach:     coach,
-		files:     files,
-		audit:     audit,
-		now:       func() time.Time { return time.Now().UTC() },
-		newID:     uuid.NewString,
-		log:       log,
+		store:       store,
+		selfAuth:    selfAuth,
+		adminAuth:   adminAuth,
+		coach:       coach,
+		files:       files,
+		audit:       audit,
+		now:         func() time.Time { return time.Now().UTC() },
+		newID:       uuid.NewString,
+		log:         log,
+		imageLister: imageLister,
 	}
 }
 
@@ -105,6 +118,11 @@ type accountEraser struct {
 	now       func() time.Time
 	newID     func() string
 	log       *zap.Logger
+	// imageLister resolves the feedback-image COS keys (nil-safe: absent
+	// lister just skips the sweep).
+	imageLister FeedbackImageLister
+	// cosDelete removes COS objects; nil (unconfigured bucket) skips the sweep.
+	cosDelete COSObjectDeleter
 }
 
 // erase clears the subject's identity and all owned data. actorID identifies who
@@ -132,12 +150,34 @@ func (e *accountEraser) erase(ctx context.Context, subject, actor, bearer string
 		e.mark(ctx, auditID, storage.DeletionStepCoach)
 	}
 
+	// List the feedback-image COS keys while the DB rows still exist; the
+	// deletion itself runs after the sweep and is fail-open (devops#519: a
+	// stuck bucket must never block account deletion; orphan reconciliation
+	// is explicitly out of scope for v1).
+	var imageKeys []string
+	if e.imageLister != nil {
+		keys, err := e.imageLister.FeedbackImageKeys(ctx, subject)
+		if err != nil {
+			e.log.Error("list feedback image keys failed; skipping cos sweep", zap.String("user_id", subject), zapErr(err))
+		} else {
+			imageKeys = keys
+		}
+	}
+
 	if err := e.store.DeleteUserData(ctx, subject); err != nil {
 		return e.fail(ctx, auditID, storage.DeletionStepStride, &eraseError{
 			Status: http.StatusInternalServerError, Code: "delete_failed", Message: "failed to delete user data", Err: err,
 		}, coachCounts)
 	}
 	e.mark(ctx, auditID, storage.DeletionStepStride)
+
+	if e.cosDelete != nil {
+		for _, key := range imageKeys {
+			if err := e.cosDelete.Delete(ctx, key); err != nil {
+				e.log.Error("delete feedback cos image failed (fail-open)", zap.String("user_id", subject), zap.String("key", key), zapErr(err))
+			}
+		}
+	}
 
 	if e.files != nil {
 		if _, err := e.files.RemoveUserDir(subject); err != nil {

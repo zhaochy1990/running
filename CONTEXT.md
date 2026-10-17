@@ -291,6 +291,29 @@ Feature 流转到 released 那一刻由服务端定格的实时票数，连同 r
 新投票变化，注销清票也不回滚——它是已发布的历史事实，不是用户数据。
 _Avoid_: 当前票数（released 条目不再展示实时票数）、缓存
 
+## 用户反馈（Feedback）
+
+**反馈（Feedback）**：
+用户从「我的」页提交的一条 bug 报告或建议（type 二值：bug | suggestion），带正文（≤1000 字）、
+可选 0-9 张截图（COS 公开桶 `feedback/<userUUID>/<uuid>.<ext>`，单张 ≤10MB）与静默采集的
+client_version（零展示）。状态三态单向：open → replied（官方回复自动置位）→ closed（管理员
+手动）；closed 后用户追问被 409 feedback_closed 拒绝。文字/图片过微信 msgSecCheck v2 /
+mediaCheckAsync v2 检测（devops#519）：risky 文字拒 422 content_risky，检测不可用放行打
+`unchecked` 标；openid 尚无获取路径前（结论见 #519 决议）全部落 unchecked。
+_Avoid_: 工单、ticket、客服会话（它不是 IM）
+
+**回复线程（Reply Thread）**：
+反馈下的双向多轮对话行（author = user | admin）：用户追问与官方回复同表；未读 = admin 行的
+`is_read=false`（读即清——用户进详情页批量置 true，无独立游标），列表顶层 total_unread 喂
+「我的」入口角标；官方回复落库时若反馈仍为 open 自动翻 replied。会话列表倒序不分页。
+_Avoid_: 未读数列、游标、消息推送（订阅消息 v1 不做）
+
+**已采纳（Adopted）**：
+反馈被产品接受后回填的 `adopted_feature_id`（指向 roadmap_features.id），单向不可改不可清
+（同 roadmap 状态机哲学）；由 admin-dashboard 前端编排「建 feature + PATCH 反馈」两调用完成
+（devops#519），服务端校验 feature 存在。
+_Avoid_: 转单、关联需求、状态回写
+
 （前端从 Python 后端剥离为独立服务/容器的表层词汇；设计与取舍见 `docs/adr/0017`。）
 
 **stride-web**：

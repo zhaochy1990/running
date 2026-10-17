@@ -30,6 +30,7 @@ func TestDeleteUserData_CoversEveryUserOwnedTable(t *testing.T) {
 		st.AutoMigrateRaceStrategies,
 		st.AutoMigrateUserCustomRaces,
 		st.AutoMigrateRoadmap,
+		st.AutoMigrateFeedback,
 		st.AutoMigrateHomeCity,
 		st.AutoMigrateProviderEvents,
 	} {

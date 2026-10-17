@@ -82,3 +82,15 @@ func (c *Client) Upload(ctx context.Context, key string, r io.Reader, contentTyp
 func (c *Client) PublicURL(key string) string {
 	return strings.TrimSuffix(c.cfg.BaseURL, "/") + "/" + key
 }
+
+// Delete removes the object at key. Callers treat failures per their own
+// policy (account erasure is fail-open and only logs).
+func (c *Client) Delete(ctx context.Context, key string) error {
+	if !c.Configured() {
+		return fmt.Errorf("cos: not configured")
+	}
+	if _, err := c.cli.Object.Delete(ctx, key); err != nil {
+		return fmt.Errorf("cos: delete %s: %w", key, err)
+	}
+	return nil
+}

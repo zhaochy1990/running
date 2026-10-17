@@ -217,6 +217,21 @@ type Config struct {
 	// read/vote endpoints plus the administrator feature maintenance. Leave
 	// zero to run without the roadmap endpoints.
 	RoadmapStore RoadmapStore
+	// FeedbackStore backs the user-feedback surface (devops#552): upload,
+	// thread endpoints, admin queue and the WeChat media-check callback.
+	// Leave zero to run without the feedback endpoints.
+	FeedbackStore FeedbackStore
+	// FeedbackModeration is the UGC content-security port. Nil means the
+	// detection is unavailable (no openid path yet — devops#519 conclusion):
+	// accepted content is tagged `unchecked`, nothing is blocked.
+	FeedbackModeration FeedbackModeration
+	// FeedbackImages is the bucket surface for the upload endpoint and URL
+	// building (satisfied by *cos.Client); also drives the fail-open COS
+	// sweep during account erasure. Leave zero to answer uploads 503.
+	FeedbackImages FeedbackImages
+	// WXAPush holds the miniprogram message-push credentials for the
+	// media-check callback; empty Token leaves the endpoints at 404.
+	WXAPush WXAPushConfig
 	// RaceStrategyStore backs the race-strategy surface (#396): the coach's
 	// structured strategy per (user, race), written by the TS coach API via the
 	// internal endpoint and read/edited by the runner. Leave zero to run
@@ -321,6 +336,7 @@ type Service struct {
 	racePlans       *racePlanRoutes
 	customRaces     *customRaceRoutes
 	roadmap         *roadmapRoutes
+	feedback        *feedbackRoutes
 	raceStrategy    *raceStrategyRoutes
 	raceContent     *raceContentRoutes
 	raceCatalog     *raceCatalogRoutes
@@ -344,6 +360,14 @@ func NewService(cfg Config) *Service {
 		log = logging.Default()
 	}
 	eraser := newAccountEraser(cfg.UserStore, cfg.AccountDeleter, cfg.AdminAccountDeleter, cfg.CoachDataDeleter, cfg.UserDataDirRemover, cfg.DeletionAuditStore, log)
+	// Account erasure sweeps the bucket fail-open when the feedback image
+	// client is wired (devops#552); without it the sweep is skipped. eraser
+	// is nil in feedback-only test services (no UserStore).
+	if eraser != nil {
+		if cosDeleter, ok := cfg.FeedbackImages.(COSObjectDeleter); ok {
+			eraser.cosDelete = cosDeleter
+		}
+	}
 	return &Service{
 		enq:                     cfg.Enqueuer,
 		jobs:                    cfg.Jobs,
@@ -384,6 +408,7 @@ func NewService(cfg Config) *Service {
 		racePlans:               newRacePlanRoutes(cfg.RacePlanStore, log),
 		customRaces:             newCustomRaceRoutes(cfg.CustomRaceStore, cfg.RacePlanStore, log),
 		roadmap:                 newRoadmapRoutes(cfg.RoadmapStore, log),
+		feedback:                newFeedbackRoutes(cfg.FeedbackStore, cfg.FeedbackModeration, cfg.FeedbackImages, cfg.RoadmapStore, cfg.WXAPush, log),
 		raceStrategy:            newRaceStrategyRoutes(cfg.RaceStrategyStore, log),
 		raceContent:             newRaceContentRoutes(cfg.RaceContentStore, cfg.CityAIDraft, log),
 		raceCatalog:             newRaceCatalogRoutes(cfg.RaceCatalogStore, log),
@@ -460,6 +485,14 @@ func (s *Service) Router() *gin.Engine {
 	// Product-roadmap feature maintenance is administrator-only (same tier
 	// guard as the race-calendar admin tab); handlers re-check.
 	s.roadmap.registerAdmin(authenticated)
+	// Feedback admin queue is administrator-only for the same reason.
+	s.feedback.registerAdmin(authenticated)
+	// WeChat media-check push (devops#552): public, verified by the
+	// console-configured Token/EncodingAESKey, never a JWT caller.
+	s.feedback.registerPush(r)
+	// Feedback image upload carries a larger body cap than the shared
+	// authenticated group (10MB contract), so it mounts its own chain.
+	s.feedback.registerUpload(r, s.auth)
 
 	// Existing routes accept only the original user/internal tiers. Keeping this
 	// default deny prevents an admin-dashboard token from silently inheriting
@@ -506,6 +539,9 @@ func (s *Service) Router() *gin.Engine {
 	// Product-roadmap user surface: read + vote, user-tier only (the admin
 	// tier has its own maintenance endpoints above).
 	s.roadmap.registerUser(authed)
+	// User-feedback threads: same default-deny group (the admin tier reads
+	// through /api/admin/feedbacks above).
+	s.feedback.registerUser(authed)
 	s.bodyComposition.register(authed)
 	s.ability.register(authed)
 	s.predictions.register(authed)

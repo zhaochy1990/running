@@ -264,6 +264,10 @@ var userOwnedDeletionModels = []any{
 	&ProviderCredential{}, &WeeklyPlan{}, &WeeklyFeedback{}, &MasterPlan{}, &RaceGoal{},
 	&AbilitySnapshot{}, &ActivityAbility{}, &Vo2MaxPB{},
 	&RaceFavorite{}, &RacePlan{}, &RaceStrategy{}, &UserCustomRace{},
+	// feedback_replies has no user_id column and is swept through the
+	// feedbacks subquery in DeleteUserData (same shape as body-composition
+	// segments); feedback_image_checks are bookkeeping that dies with the row.
+	&Feedback{},
 	// roadmap_votes only — roadmap_features is global content and stays; the
 	// released votes_snapshot is a historical fact erasure never rolls back
 	// (devops#551).
@@ -309,6 +313,22 @@ func (s *Store) DeleteUserData(ctx context.Context, userID string) error {
 			uid,
 		).Error; err != nil {
 			return fmt.Errorf("storage: delete body composition segments: %w", err)
+		}
+
+		// feedback_replies and feedback_image_checks have no user_id column:
+		// sweep them through the feedbacks subquery BEFORE the feedbacks delete
+		// (the per-model loop below) empties it.
+		if err := tx.Exec(
+			"DELETE FROM feedback_replies WHERE feedback_id IN (SELECT id FROM feedbacks WHERE user_id = ?)",
+			uid,
+		).Error; err != nil {
+			return fmt.Errorf("storage: delete feedback replies: %w", err)
+		}
+		if err := tx.Exec(
+			"DELETE FROM feedback_image_checks WHERE feedback_id IN (SELECT id FROM feedbacks WHERE user_id = ?)",
+			uid,
+		).Error; err != nil {
+			return fmt.Errorf("storage: delete feedback image checks: %w", err)
 		}
 
 		// team_likes has no user_id column either. A user is referenced in two
