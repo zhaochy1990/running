@@ -419,7 +419,7 @@ func TestAutoMigrateWeeklyPlanConvergesLegacyRows(t *testing.T) {
 	seed(uuid.NewString(), old, "active", &activeSlot) // older active — deduped away
 	seed(uuid.NewString(), old, "draft", nil)          // never applied — deleted
 	kept := uuid.NewString()
-	seed(kept, newest, "archived", nil)                // newest snapshot — survives as the applied row
+	seed(kept, newest, "archived", nil) // newest snapshot — survives as the applied row
 
 	if err := store.AutoMigrateWeeklyPlan(ctx); err != nil {
 		t.Fatalf("converging automigrate: %v", err)

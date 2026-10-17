@@ -41,20 +41,20 @@ import "time"
 // (domain-owns-time, ADR 0003/0006); for a v2 row the authoritative timestamps
 // also live inside Content.
 type MasterPlan struct {
-	PlanID         string    `gorm:"column:plan_id;primaryKey;size:36"`
-	UserID         string    `gorm:"column:user_id;size:64;not null;uniqueIndex:uidx_master_plan_active,priority:1"`
-	ContentVersion int8      `gorm:"column:content_version;not null;check:ck_master_plan_content_version,content_version IN (1,2)"`
-	Content        string    `gorm:"column:content;type:longtext;not null"`
-	GoalID         string    `gorm:"column:goal_id;size:36;not null;index:idx_master_plan_goal"`
+	PlanID         string `gorm:"column:plan_id;primaryKey;size:36"`
+	UserID         string `gorm:"column:user_id;size:64;not null;uniqueIndex:uidx_master_plan_active,priority:1"`
+	ContentVersion int8   `gorm:"column:content_version;not null;check:ck_master_plan_content_version,content_version IN (1,2)"`
+	Content        string `gorm:"column:content;type:longtext;not null"`
+	GoalID         string `gorm:"column:goal_id;size:36;not null;index:idx_master_plan_goal"`
 	// The vocab check doubles as the current-marker check (draft/archived are no
 	// longer legal statuses), replacing ck_master_plan_current_marker. Both
 	// disjuncts are NULL-safe so an active row with a NULL flag is rejected.
-	Status         string    `gorm:"column:status;size:16;not null;check:ck_master_plan_current_marker_v2,(status = 'active' AND active_flag IS NOT NULL AND active_flag = 1) OR (status = 'superseded' AND active_flag IS NULL)"`
-	ActiveFlag     *int8     `gorm:"column:active_flag;uniqueIndex:uidx_master_plan_active,priority:2"`
-	ApplyToken     *string   `gorm:"column:apply_token;size:36;index:idx_master_plan_apply_token"`
-	Revision       *int64    `gorm:"column:revision;check:ck_master_plan_revision,(content_version = 1 AND revision IS NULL) OR (content_version = 2 AND revision IS NOT NULL AND revision >= 1)"`
-	CreatedAt      time.Time `gorm:"column:created_at"`
-	UpdatedAt      time.Time `gorm:"column:updated_at"`
+	Status     string    `gorm:"column:status;size:16;not null;check:ck_master_plan_current_marker_v2,(status = 'active' AND active_flag IS NOT NULL AND active_flag = 1) OR (status = 'superseded' AND active_flag IS NULL)"`
+	ActiveFlag *int8     `gorm:"column:active_flag;uniqueIndex:uidx_master_plan_active,priority:2"`
+	ApplyToken *string   `gorm:"column:apply_token;size:36;index:idx_master_plan_apply_token"`
+	Revision   *int64    `gorm:"column:revision;check:ck_master_plan_revision,(content_version = 1 AND revision IS NULL) OR (content_version = 2 AND revision IS NOT NULL AND revision >= 1)"`
+	CreatedAt  time.Time `gorm:"column:created_at"`
+	UpdatedAt  time.Time `gorm:"column:updated_at"`
 }
 
 // TableName pins the table name (GORM would otherwise pluralize).
@@ -70,6 +70,6 @@ const (
 // is a previously-active plan left behind by a newer apply (#585 — the draft
 // intermediate state is gone, plans only exist once applied).
 const (
-	MasterPlanStatusActive    = "active"
+	MasterPlanStatusActive     = "active"
 	MasterPlanStatusSuperseded = "superseded"
 )
