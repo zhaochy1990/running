@@ -22,14 +22,22 @@ test("MasterPlanCardSchema accepts an empty target_time (finish-only goal)", () 
   assert.equal(MasterPlanCardSchema.safeParse(card).success, true);
 });
 
-test("MasterPlanCardSchema carries an optional plan_id for the activate CTA (#429)", () => {
-  const withId = { ...validCard(), plan_id: "b34c6d7e-1111-4222-8333-444455556666" };
-  assert.equal(MasterPlanCardSchema.safeParse(withId).success, true);
-  const parsed = MasterPlanCardSchema.safeParse(withId);
-  assert.equal(parsed.success && parsed.data.plan_id, withId.plan_id);
-  // 空串拒绝：落库失败/降级卡片必须整个省略字段，而不是传空值
-  const emptyId = { ...validCard(), plan_id: "" };
-  assert.equal(MasterPlanCardSchema.safeParse(emptyId).success, false);
+test("MasterPlanCardSchema carries the apply payload (content + apply_token) for the apply CTA (#585)", () => {
+  const withPayload = {
+    ...validCard(),
+    apply_token: "b34c6d7e-1111-4222-8333-444455556666",
+    content: { goal: { goal_id: "g1" }, phases: [], milestones: [], weeks: [] },
+  };
+  assert.equal(MasterPlanCardSchema.safeParse(withPayload).success, true);
+  const parsed = MasterPlanCardSchema.safeParse(withPayload);
+  assert.equal(parsed.success && parsed.data.apply_token, withPayload.apply_token);
+  // 空串拒绝：降级卡片必须整个省略字段，而不是传空值
+  const emptyToken = { ...withPayload, apply_token: "" };
+  assert.equal(MasterPlanCardSchema.safeParse(emptyToken).success, false);
+  // 旧卡片（#429 plan_id）不再是合法新卡片字段；额外键由 passthrough 语义
+  // 不被 zod 拒绝，但新 schema 不再声明它。
+  const legacy = { ...validCard(), plan_id: "b34c6d7e-1111-4222-8333-444455556666" };
+  assert.equal(MasterPlanCardSchema.safeParse(legacy).success, true);
 });
 
 test("MasterPlanCardSchema rejects an unsupported distance and a malformed date", () => {

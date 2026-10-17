@@ -103,18 +103,21 @@ export function buildCoachCard(card: unknown, target: CoachSessionTarget | undef
     if (!isMasterPlanCardLike(wire.data)) return null;
     const plan = wire.data;
     // 摘要即卡片（#428：不做独立详情页）：卡片头部之下渲染 markdown 摘要正文。
-    // #429：落库成功带 plan_id 的卡片出「启用/放弃」双 CTA（动作型，聊天页
-    // onCardCta/onCardSecondary 直调底座端点，不走 url 跳转）；无 plan_id 的
-    // 旧卡片/降级卡片保持纯展示。
-    const planId = typeof plan.plan_id === 'string' && plan.plan_id.length > 0 ? plan.plan_id : '';
+    // #585 apply-from-content：带 content+apply_token 的卡片出「应用」单 CTA
+    // （动作型，聊天页 onCardCta 直调用户端 apply 端点，不走 url 跳转）；降级
+    // 卡片与 #585 之前的旧卡片（只带 plan_id）保持纯展示，旧卡片点不动。
+    const applicable =
+      typeof plan.apply_token === 'string' &&
+      plan.apply_token.length > 0 &&
+      plan.content != null && typeof plan.content === 'object';
     return {
       type: wire.$type,
       icon: '/assets/icons/calendar_month.svg',
       title: '赛季训练计划已生成',
       subtitle: masterPlanSubtitle(plan),
       badge: '初稿',
-      buttonText: planId ? '启用' : '',
-      secondaryButtonText: planId ? '放弃' : '',
+      buttonText: applicable ? '应用' : '',
+      secondaryButtonText: '',
       url: '',
       data: plan,
       inlineBody: true,

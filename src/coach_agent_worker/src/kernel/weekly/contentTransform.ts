@@ -9,6 +9,6 @@ import { type WeeklyPlan, WeeklyPlanSchema } from "@stride/contract";
  * or field hoisting — Go strips the `schema`/`week_name` metadata before
  * storage.
  */
-export function weeklyPlanToDraftContent(weeklyPlan: WeeklyPlan): Record<string, unknown> {
+export function weeklyPlanToContent(weeklyPlan: WeeklyPlan): Record<string, unknown> {
   return WeeklyPlanSchema.parse(weeklyPlan);
 }

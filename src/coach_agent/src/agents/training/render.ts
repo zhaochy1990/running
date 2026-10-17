@@ -59,6 +59,12 @@ function loadProjectionLines(plan: MasterPlan, simulation?: SimulationReport): s
   return lines;
 }
 
+/** #585 apply 载荷：完整 v2 content + 一次性 apply_token（成对出现）。 */
+export interface MasterPlanApplyPayload {
+  content: Record<string, unknown>;
+  applyToken: string;
+}
+
 /**
  * completed 产物的回复消息（#428）：正文是可读 markdown 摘要，卡片信封
  * `{$type: "master-plan", data}` 挂在消息自身（additional_kwargs.card）随
@@ -66,15 +72,15 @@ function loadProjectionLines(plan: MasterPlan, simulation?: SimulationReport): s
  * 不再运行时复验——投影是已校验 plan 的确定性标量挑选，形状由返回类型
  * 编译期钉死，契约由单测对信封 safeParse 把关）。
  */
-export function masterPlanCardMessage(plan: MasterPlan, planId?: string, simulation?: SimulationReport): AIMessage {
+export function masterPlanCardMessage(plan: MasterPlan, payload?: MasterPlanApplyPayload, simulation?: SimulationReport): AIMessage {
   return new AIMessage({
     content: renderMasterPlanMarkdown(plan, simulation),
-    additional_kwargs: { card: { $type: "master-plan", data: projectMasterPlanCard(plan, planId) } },
+    additional_kwargs: { card: { $type: "master-plan", data: projectMasterPlanCard(plan, payload) } },
   });
 }
 
 /** plan → 卡片结构（渲染/定位需要的标量摘要；时间轴与负荷投影走 markdown 正文）。 */
-function projectMasterPlanCard(plan: MasterPlan, planId?: string): MasterPlanCard {
+function projectMasterPlanCard(plan: MasterPlan, payload?: MasterPlanApplyPayload): MasterPlanCard {
   return {
     goal: {
       race_name: plan.goal.race_name,
@@ -85,9 +91,10 @@ function projectMasterPlanCard(plan: MasterPlan, planId?: string): MasterPlanCar
     start_date: plan.start_date,
     end_date: plan.end_date,
     total_weeks: plan.total_weeks,
-    // #429：draft 落库成功才有 plan_id（卡片「启用/放弃」CTA 的定位）；落库
-    // 失败/无 race goal 时整个省略，前端降级为无 CTA 卡片。
-    ...(planId !== undefined ? { plan_id: planId } : {}),
+    // #585：生成不落库——卡片携带完整 v2 content + apply_token，运动员点
+    // 「应用」才经 Go 用户端点落库；无 race goal/变换被拒时整个省略，前端
+    // 降级为无 CTA 卡片。
+    ...(payload !== undefined ? { apply_token: payload.applyToken, content: payload.content } : {}),
   };
 }
 

@@ -53,24 +53,6 @@ definitions:
       name:
         type: string
     type: object
-  api.activateMasterPlanDraftResponse:
-    properties:
-      plan:
-        $ref: '#/definitions/api.currentSeasonPlanEnvelope'
-      replaced_plan_id:
-        type: string
-      success:
-        type: boolean
-    type: object
-  api.activateWeeklyPlanDraftResponse:
-    properties:
-      plan:
-        $ref: '#/definitions/api.weeklyPlanDetailResponse'
-      replaced_plan_id:
-        type: string
-      success:
-        type: boolean
-    type: object
   api.activitiesListResponse:
     properties:
       activities:
@@ -255,6 +237,32 @@ definitions:
         items:
           $ref: '#/definitions/api.adminDeclarationEntry'
         type: array
+    type: object
+  api.applyFromContentMasterPlanRequest:
+    properties:
+      apply_token:
+        type: string
+      content:
+        additionalProperties: {}
+        type: object
+      expected_active_plan_id:
+        type: string
+      expected_active_revision:
+        type: integer
+    required:
+    - apply_token
+    - content
+    type: object
+  api.applyFromContentMasterPlanResponse:
+    properties:
+      plan:
+        $ref: '#/definitions/api.currentSeasonPlanEnvelope'
+      plan_id:
+        type: string
+      replaced_plan_id:
+        type: string
+      success:
+        type: boolean
     type: object
   api.applyMasterPlanRequest:
     properties:
@@ -675,15 +683,6 @@ definitions:
       provider:
         type: string
     type: object
-  api.draftIDResponse:
-    properties:
-      plan_id:
-        type: string
-      status:
-        type: string
-      success:
-        type: boolean
-    type: object
   api.enqueueJobResponse:
     properties:
       deduplicated:
@@ -708,6 +707,177 @@ definitions:
         type: integer
       sync_data_at_onboarding:
         type: boolean
+    type: object
+  api.feedbackAdminDTO:
+    properties:
+      adopted_feature_id:
+        type: integer
+      client_version:
+        type: string
+      content:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      image_urls:
+        items:
+          type: string
+        type: array
+      images:
+        items:
+          type: string
+        type: array
+      mod_images:
+        additionalProperties:
+          type: string
+        type: object
+      mod_text:
+        type: string
+      status:
+        type: string
+      type:
+        type: string
+      updated_at:
+        type: string
+      user:
+        $ref: '#/definitions/api.feedbackAdminUserDTO'
+    type: object
+  api.feedbackAdminDetailResponse:
+    properties:
+      feedback:
+        $ref: '#/definitions/api.feedbackAdminDTO'
+      replies:
+        items:
+          $ref: '#/definitions/api.feedbackReplyDTO'
+        type: array
+    type: object
+  api.feedbackAdminListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/api.feedbackAdminDTO'
+        type: array
+    type: object
+  api.feedbackAdminUserDTO:
+    properties:
+      name:
+        type: string
+      user_id:
+        type: string
+    type: object
+  api.feedbackCreateRequest:
+    properties:
+      client_version:
+        maxLength: 32
+        type: string
+      content:
+        maxLength: 1000
+        type: string
+      images:
+        items:
+          type: string
+        maxItems: 9
+        type: array
+      type:
+        maxLength: 16
+        type: string
+    required:
+    - content
+    - type
+    type: object
+  api.feedbackDetailDTO:
+    properties:
+      adopted_feature_id:
+        type: integer
+      content:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      image_urls:
+        items:
+          type: string
+        type: array
+      status:
+        type: string
+      type:
+        type: string
+    type: object
+  api.feedbackDetailResponse:
+    properties:
+      feedback:
+        $ref: '#/definitions/api.feedbackDetailDTO'
+      replies:
+        items:
+          $ref: '#/definitions/api.feedbackReplyDTO'
+        type: array
+    type: object
+  api.feedbackImageUploadResponse:
+    properties:
+      cos_key:
+        type: string
+    type: object
+  api.feedbackItemDTO:
+    properties:
+      adopted_feature_id:
+        type: integer
+      content:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      images:
+        items:
+          type: string
+        type: array
+      last_reply:
+        $ref: '#/definitions/api.feedbackLastReplyDTO'
+      status:
+        type: string
+      type:
+        type: string
+      unread:
+        type: boolean
+    type: object
+  api.feedbackLastReplyDTO:
+    properties:
+      author:
+        type: string
+      content:
+        type: string
+      created_at:
+        type: string
+    type: object
+  api.feedbackListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/api.feedbackItemDTO'
+        type: array
+      total_unread:
+        type: integer
+    type: object
+  api.feedbackReplyDTO:
+    properties:
+      author:
+        type: string
+      content:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+    type: object
+  api.feedbackReplyRequest:
+    properties:
+      content:
+        maxLength: 1000
+        type: string
+    required:
+    - content
     type: object
   api.goalInput:
     properties:
@@ -996,28 +1166,6 @@ definitions:
       updated_at:
         type: string
     type: object
-  api.insertMasterPlanDraftRequest:
-    properties:
-      content:
-        additionalProperties: {}
-        type: object
-      draft_id:
-        type: string
-    required:
-    - content
-    - draft_id
-    type: object
-  api.insertWeeklyPlanDraftRequest:
-    properties:
-      content:
-        additionalProperties: {}
-        type: object
-      draft_id:
-        type: string
-    required:
-    - content
-    - draft_id
-    type: object
   api.jobCatalogResponse:
     properties:
       jobs:
@@ -1167,24 +1315,6 @@ definitions:
         type: string
       id:
         type: integer
-    type: object
-  api.masterPlanDraftResponse:
-    properties:
-      content_version:
-        type: integer
-      created_at:
-        type: string
-      goal_id:
-        type: string
-      plan: {}
-      plan_id:
-        type: string
-      revision:
-        type: integer
-      status:
-        type: string
-      updated_at:
-        type: string
     type: object
   api.monthlySummaryDTO:
     properties:
@@ -3160,17 +3290,6 @@ definitions:
       week_name:
         type: string
     type: object
-  api.weeklyDraftIDResponse:
-    properties:
-      plan_id:
-        type: string
-      status:
-        type: string
-      success:
-        type: boolean
-      week_name:
-        type: string
-    type: object
   api.weeklyFeedbackResponse:
     properties:
       created_at:
@@ -3187,30 +3306,6 @@ definitions:
         type: string
     type: object
   api.weeklyPlanDetailResponse:
-    properties:
-      content: {}
-      content_version:
-        type: integer
-      created_at:
-        type: string
-      date_from:
-        type: string
-      date_to:
-        type: string
-      master_plan_id:
-        type: string
-      plan_id:
-        type: string
-      revision:
-        type: integer
-      status:
-        type: string
-      updated_at:
-        type: string
-      week_name:
-        type: string
-    type: object
-  api.weeklyPlanDraftResponse:
     properties:
       content: {}
       content_version:
@@ -4065,190 +4160,6 @@ paths:
       summary: Personal bests
       tags:
       - metrics
-  /api/{user}/plan/drafts:
-    get:
-      parameters:
-      - description: User id (JWT sub)
-        in: path
-        name: user
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - InternalToken: []
-      - BearerAuth: []
-      summary: List a user's weekly plan drafts
-      tags:
-      - weekly-plan
-  /api/{user}/plan/drafts/{plan_id}:
-    get:
-      parameters:
-      - description: User id (JWT sub)
-        in: path
-        name: user
-        required: true
-        type: string
-      - description: Draft plan id
-        in: path
-        name: plan_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.weeklyPlanDraftResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - InternalToken: []
-      - BearerAuth: []
-      summary: Get a weekly plan draft
-      tags:
-      - weekly-plan
-  /api/{user}/plan/drafts/{plan_id}/abandon:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: User id (JWT sub)
-        in: path
-        name: user
-        required: true
-        type: string
-      - description: Draft plan id
-        in: path
-        name: plan_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.weeklyDraftIDResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - InternalToken: []
-      - BearerAuth: []
-      summary: Abandon a weekly plan draft
-      tags:
-      - weekly-plan
-  /api/{user}/plan/drafts/{plan_id}/activate:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: User id (JWT sub)
-        in: path
-        name: user
-        required: true
-        type: string
-      - description: Draft plan id
-        in: path
-        name: plan_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.activateWeeklyPlanDraftResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - InternalToken: []
-      - BearerAuth: []
-      summary: Activate a weekly plan draft
-      tags:
-      - weekly-plan
   /api/{user}/plan/sessions/{date}/{sessionIndex}/push:
     post:
       consumes:
@@ -4457,65 +4368,6 @@ paths:
       security:
       - BearerAuth: []
       summary: Apply a structured Weekly Plan as an administrator
-      tags:
-      - weekly-plan
-  /api/{user}/plan/weeks/{weekName}/drafts:
-    post:
-      consumes:
-      - application/json
-      description: Internal-only. Persists a structured weekly plan as a draft, idempotent
-        by draft_id. Never activates.
-      parameters:
-      - description: User id (JWT sub)
-        in: path
-        name: user
-        required: true
-        type: string
-      - description: Shanghai week name (YYYY-MM-DD_MM-DD)
-        in: path
-        name: weekName
-        required: true
-        type: string
-      - description: Draft id and structured content
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/api.insertWeeklyPlanDraftRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.weeklyDraftIDResponse'
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/api.weeklyDraftIDResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "413":
-          description: Request Entity Too Large
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "422":
-          description: Unprocessable Entity
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - InternalToken: []
-      summary: Insert a weekly plan draft
       tags:
       - weekly-plan
   /api/{user}/pmc:
@@ -5466,6 +5318,181 @@ paths:
       summary: Publish a declaration draft
       tags:
       - admin
+  /api/admin/feedbacks:
+    get:
+      description: Newest-first feedback queue with user attribution; filterable by
+        type, status, adopted and moderation state. Risky image URLs are withheld.
+      parameters:
+      - description: bug|suggestion
+        in: query
+        name: type
+        type: string
+      - description: open|replied|closed
+        in: query
+        name: status
+        type: string
+      - description: true|false
+        in: query
+        name: adopted
+        type: string
+      - description: pass|review|risky|pending|unchecked
+        in: query
+        name: moderation
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.feedbackAdminListResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List feedbacks (admin)
+      tags:
+      - feedback-admin
+  /api/admin/feedbacks/{id}:
+    get:
+      description: Returns the full thread with the moderation state; risky image
+        URLs are withheld.
+      parameters:
+      - description: Feedback id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.feedbackAdminDetailResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Feedback thread (admin)
+      tags:
+      - feedback-admin
+    patch:
+      consumes:
+      - application/json
+      description: Closes the thread (status only accepts closed) and/or adopts it
+        onto a roadmap feature id; adopted_feature_id is one-way and can never be
+        moved or cleared.
+      parameters:
+      - description: Feedback id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: '{\'
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.feedbackAdminDTO'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Patch a feedback (admin)
+      tags:
+      - feedback-admin
+  /api/admin/feedbacks/{id}/replies:
+    post:
+      consumes:
+      - application/json
+      description: Posts the official reply (signed STRIDE 团队 at render time); an
+        open thread automatically becomes replied.
+      parameters:
+      - description: Feedback id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Reply
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.feedbackReplyRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.feedbackReplyDTO'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Reply to a feedback (admin)
+      tags:
+      - feedback-admin
   /api/admin/pipeline-runs:
     get:
       description: Lists pipeline runs across all users, newest first. Admin JWT or
@@ -7033,243 +7060,6 @@ paths:
       summary: Get a user's active season training plan
       tags:
       - master-plan
-  /api/users/{user_id}/master-plan/drafts:
-    get:
-      parameters:
-      - description: User id (JWT sub)
-        in: path
-        name: user_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - InternalToken: []
-      - BearerAuth: []
-      summary: List a user's season plan drafts
-      tags:
-      - master-plan
-    post:
-      consumes:
-      - application/json
-      description: Internal-only. Persists a structured season plan as a draft, idempotent
-        by draft_id. Never activates.
-      parameters:
-      - description: Target user UUID
-        in: path
-        name: user_id
-        required: true
-        type: string
-      - description: Draft id and structured content
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/api.insertMasterPlanDraftRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.draftIDResponse'
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/api.draftIDResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "413":
-          description: Request Entity Too Large
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "422":
-          description: Unprocessable Entity
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - InternalToken: []
-      summary: Insert a season training plan draft
-      tags:
-      - master-plan
-  /api/users/{user_id}/master-plan/drafts/{plan_id}:
-    get:
-      parameters:
-      - description: User id (JWT sub)
-        in: path
-        name: user_id
-        required: true
-        type: string
-      - description: Draft plan id
-        in: path
-        name: plan_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.masterPlanDraftResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - InternalToken: []
-      - BearerAuth: []
-      summary: Get a season plan draft
-      tags:
-      - master-plan
-  /api/users/{user_id}/master-plan/drafts/{plan_id}/abandon:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: User id (JWT sub)
-        in: path
-        name: user_id
-        required: true
-        type: string
-      - description: Draft plan id
-        in: path
-        name: plan_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.draftIDResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - InternalToken: []
-      - BearerAuth: []
-      summary: Abandon a season plan draft
-      tags:
-      - master-plan
-  /api/users/{user_id}/master-plan/drafts/{plan_id}/activate:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: User id (JWT sub)
-        in: path
-        name: user_id
-        required: true
-        type: string
-      - description: Draft plan id
-        in: path
-        name: plan_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.activateMasterPlanDraftResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - InternalToken: []
-      - BearerAuth: []
-      summary: Activate a season plan draft
-      tags:
-      - master-plan
   /api/users/{user_id}/race-strategies:
     post:
       consumes:
@@ -7484,6 +7274,198 @@ paths:
       summary: Update a custom race
       tags:
       - custom-races
+  /api/users/me/feedback-images:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Stores a single image (multipart field `file`, ≤10MB, image/*)
+        in COS at feedback/<userUUID>/<uuid>.<ext> and returns its object key.
+      parameters:
+      - description: Image file
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.feedbackImageUploadResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Upload one feedback image
+      tags:
+      - feedback
+  /api/users/me/feedbacks:
+    get:
+      description: Returns the caller's feedback threads newest-first (no paging)
+        with total_unread and last_reply previews.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.feedbackListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List my feedbacks
+      tags:
+      - feedback
+    post:
+      consumes:
+      - application/json
+      description: Creates one feedback (bug|suggestion) with optional image keys
+        (≤9, must be yours); risky text is rejected 422.
+      parameters:
+      - description: Feedback
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.feedbackCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.feedbackItemDTO'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Submit a feedback
+      tags:
+      - feedback
+  /api/users/me/feedbacks/{id}:
+    get:
+      description: Returns the thread with server-built image URLs; clears the unread
+        admin replies as a side effect.
+      parameters:
+      - description: Feedback id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.feedbackDetailResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Feedback thread detail
+      tags:
+      - feedback
+  /api/users/me/feedbacks/{id}/replies:
+    post:
+      consumes:
+      - application/json
+      description: Appends a user reply to the thread; closed feedbacks answer 409
+        feedback_closed; risky text is rejected 422.
+      parameters:
+      - description: Feedback id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Reply
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.feedbackReplyRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.feedbackReplyDTO'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Follow up on a feedback
+      tags:
+      - feedback
   /api/users/me/injuries:
     get:
       description: Returns active records first, then updated_at descending and id
@@ -7612,6 +7594,65 @@ paths:
       summary: Replace an injury record
       tags:
       - injuries
+  /api/users/me/master-plan/apply:
+    post:
+      consumes:
+      - application/json
+      description: 'User-tier. Validates the structured content, then atomically supersedes
+        the confirmed active plan and inserts the new active row. apply_token is the
+        idempotency key: replaying a token returns the already-applied plan (replayed=true)
+        and changes nothing.'
+      parameters:
+      - description: Structured plan, apply token and replacement decision
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.applyFromContentMasterPlanRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Idempotent replay of an already-applied token
+          schema:
+            $ref: '#/definitions/api.applyFromContentMasterPlanResponse'
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.applyFromContentMasterPlanResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Apply a coach-generated season plan (apply-from-content)
+      tags:
+      - master-plan
   /api/users/me/master-plan/current:
     get:
       produces:
@@ -8508,6 +8549,75 @@ paths:
       summary: Get a pipeline run's status
       tags:
       - pipelines
+  /webhook/push/wxa-media-check:
+    get:
+      description: Echoes echostr when the Token signature matches; part of the miniprogram
+        console message-push setup.
+      parameters:
+      - description: SHA1(token,timestamp,nonce)
+        in: query
+        name: signature
+        required: true
+        type: string
+      - description: Unix seconds
+        in: query
+        name: timestamp
+        required: true
+        type: string
+      - description: Random string
+        in: query
+        name: nonce
+        required: true
+        type: string
+      - description: Random echo payload
+        in: query
+        name: echostr
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+      summary: WeChat push URL verification
+      tags:
+      - wxa-push
+    post:
+      description: Receives the wxa_media_check event (plain or encrypted payload,
+        JSON or XML), verifies the Token/EncodingAESKey signatures, and updates the
+        traced image's moderation state.
+      parameters:
+      - description: SHA1(token,timestamp,nonce[,encrypt])
+        in: query
+        name: signature
+        required: true
+        type: string
+      - description: Unix seconds
+        in: query
+        name: timestamp
+        required: true
+        type: string
+      - description: Random string
+        in: query
+        name: nonce
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      summary: WeChat media-check result push
+      tags:
+      - wxa-push
 securityDefinitions:
   BearerAuth:
     description: '"Bearer <JWT>" for end-user callers (RS256).'

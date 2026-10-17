@@ -4,7 +4,6 @@ export { MasterPlanGraphRequest, WeeklyPlanGeneratorRequest } from "@stride/cont
 export * from "./config.js";
 export { MySqlDataProvider } from "./data/mysqlDataProvider.js";
 export { createPool, createStridePool, ensureDatabase } from "./db/mysql.js";
-export * from "./goClient/draftClient.js";
 export * from "./goClient/jobClient.js";
 export * from "./job/dispatch.js";
 export * from "./job/enqueue.js";
@@ -12,7 +11,6 @@ export * from "./job/errors.js";
 export * from "./job/model.js";
 export * from "./job/ports.js";
 export * from "./job/retry.js";
-export * from "./kernel/master/contentTransform.js";
 export * from "./kernel/master/handler.js";
 export * from "./kernel/master/kernel.js";
 export * from "./kernel/progress.js";

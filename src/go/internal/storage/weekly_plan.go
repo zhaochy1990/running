@@ -28,29 +28,39 @@ type WeeklyPlanReplacement struct {
 
 func (s *Store) AutoMigrateWeeklyPlan(ctx context.Context) error {
 	db := s.db.WithContext(ctx)
-	// ADR 0030 narrows the status_slot check: only the single active row per
-	// (user_id, week_start) carries a non-null slot, and every draft/archived
-	// row is NULL so drafts may be many. GORM AutoMigrate won't rewrite an
-	// existing CHECK constraint, so drop the old one before reconciling so a
-	// deployed table adopts the relaxed rule instead of rejecting draft rows.
+	// #585 convergence on an existing table: the draft intermediate state is
+	// gone, so the table collapses to one applied row per (user_id, week_start).
+	// GORM AutoMigrate won't rewrite existing CHECK constraints or drop the old
+	// unique index, so drop them first, converge the rows (drafts deleted;
+	// per week only the newest snapshot survives and becomes the applied row),
+	// then let AutoMigrate add the active-only checks and UNIQUE(user_id,
+	// week_start).
 	m := db.Migrator()
-	if m.HasTable(&WeeklyPlan{}) && m.HasConstraint(&WeeklyPlan{}, "ck_weekly_plan_status_slot_v2") {
-		// Drop the old CHECK first: it rejects craft/archived rows whose slot is
-		// anything but their own status, so it must be gone before we normalize
-		// those rows to NULL. AutoMigrate re-creates the relaxed rule below.
-		if err := m.DropConstraint(&WeeklyPlan{}, "ck_weekly_plan_status_slot_v2"); err != nil {
-			return fmt.Errorf("storage: drop old weekly_plan status_slot constraint: %w", err)
+	if m.HasTable(&WeeklyPlan{}) {
+		for _, constraint := range []string{"ck_weekly_plan_status", "ck_weekly_plan_status_slot", "ck_weekly_plan_status_slot_v2"} {
+			if m.HasConstraint(&WeeklyPlan{}, constraint) {
+				if err := m.DropConstraint(&WeeklyPlan{}, constraint); err != nil {
+					return fmt.Errorf("storage: drop old weekly_plan constraint %s: %w", constraint, err)
+				}
+			}
 		}
-		// Normalize pre-existing draft/archived rows: the old check allowed
-		// status_slot = status for drafts, which the relaxed rule rejects
-		// (drafts must now be NULL). Without this the re-ADD below fails on the
-		// residual rows and leaves the table with no constraint.
-		normalize := db.Model(&WeeklyPlan{}).
-			Where("status <> ?", WeeklyPlanStatusActive).
-			Where("status_slot IS NOT NULL").
-			Updates(map[string]any{"status_slot": nil})
-		if normalize.Error != nil {
-			return fmt.Errorf("storage: normalize weekly_plan status_slot: %w", normalize.Error)
+		if m.HasIndex(&WeeklyPlan{}, "uidx_weekly_plan_status_slot") {
+			if err := m.DropIndex(&WeeklyPlan{}, "uidx_weekly_plan_status_slot"); err != nil {
+				return fmt.Errorf("storage: drop old weekly_plan status-slot index: %w", err)
+			}
+		}
+		if err := db.Exec("DELETE FROM weekly_plan WHERE status = ?", "draft").Error; err != nil {
+			return fmt.Errorf("storage: delete legacy weekly plan drafts: %w", err)
+		}
+		// Keep only the newest snapshot per (user_id, week_start); older
+		// active/archived duplicates have no meaning once existence = applied.
+		if err := db.Exec(`DELETE t1 FROM weekly_plan t1 JOIN weekly_plan t2
+			ON t1.user_id = t2.user_id AND t1.week_start = t2.week_start
+			AND (t1.created_at < t2.created_at OR (t1.created_at = t2.created_at AND t1.plan_id < t2.plan_id))`).Error; err != nil {
+			return fmt.Errorf("storage: converge weekly plan duplicates: %w", err)
+		}
+		if err := db.Exec("UPDATE weekly_plan SET status = ?, status_slot = ?", WeeklyPlanStatusActive, WeeklyPlanStatusActive).Error; err != nil {
+			return fmt.Errorf("storage: normalize weekly plan rows to active: %w", err)
 		}
 	}
 	if err := db.AutoMigrate(&WeeklyPlan{}); err != nil {
@@ -248,25 +258,16 @@ func (s *Store) ApplyStructuredWeeklyPlan(
 			}
 
 			now := time.Now().UTC().Truncate(time.Millisecond)
+			// #585 convergence: same-week apply overwrites — the old row is deleted
+			// (existence = applied, no snapshot history) and the new row inserted.
 			if replaced != nil {
-				result := tx.Model(&WeeklyPlan{}).
-					Where("plan_id = ? AND user_id = ? AND status = ? AND revision = ?", replaced.PlanID, uid, WeeklyPlanStatusActive, replaced.Revision).
-					Updates(map[string]any{
-						"status":      WeeklyPlanStatusArchived,
-						"status_slot": nil,
-						"revision":    replaced.Revision + 1,
-						"updated_at":  now,
-					})
+				result := tx.Where("user_id = ? AND week_start = ?", uid, weekStart).Delete(&WeeklyPlan{})
 				if result.Error != nil {
-					return fmt.Errorf("storage: archive prior weekly plan: %w", result.Error)
+					return fmt.Errorf("storage: delete prior weekly plan: %w", result.Error)
 				}
-				if result.RowsAffected != 1 {
+				if result.RowsAffected < 1 {
 					return ErrWeeklyPlanConflict
 				}
-				replaced.Status = WeeklyPlanStatusArchived
-				replaced.StatusSlot = nil
-				replaced.Revision++
-				replaced.UpdatedAt = now
 			}
 
 			activeSlot := WeeklyPlanStatusActive

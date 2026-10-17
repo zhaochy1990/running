@@ -35,6 +35,11 @@ type MasterPlanReplacement struct {
 // schema. An existing non-final table fails closed: the destructive
 // version-to-revision rename belongs to the maintenance-window migration CLI,
 // and starting this API must never create a dual-column state.
+//
+// #585 convergence runs as a guarded pre-step on an existing table: draft rows
+// are deleted (never applied), archived rows become superseded, then the old
+// current-marker CHECK (which still admitted draft/archived) is dropped so
+// AutoMigrate re-creates it with the active/superseded-only vocabulary.
 func (s *Store) AutoMigrateMasterPlan(ctx context.Context) error {
 	db := s.db.WithContext(ctx)
 	migrator := db.Migrator()
@@ -43,6 +48,17 @@ func (s *Store) AutoMigrateMasterPlan(ctx context.Context) error {
 		hasRevision := migrator.HasColumn(&MasterPlan{}, "revision")
 		if !hasRevision || hasVersion {
 			return fmt.Errorf("storage: master_plan schema requires explicit version-to-revision migration (version=%t revision=%t)", hasVersion, hasRevision)
+		}
+		if err := db.Exec("DELETE FROM master_plan WHERE status = ?", "draft").Error; err != nil {
+			return fmt.Errorf("storage: delete legacy master plan drafts: %w", err)
+		}
+		if err := db.Exec("UPDATE master_plan SET status = ? WHERE status = ?", MasterPlanStatusSuperseded, "archived").Error; err != nil {
+			return fmt.Errorf("storage: converge master plan archived to superseded: %w", err)
+		}
+		if migrator.HasConstraint(&MasterPlan{}, "ck_master_plan_current_marker") {
+			if err := migrator.DropConstraint(&MasterPlan{}, "ck_master_plan_current_marker"); err != nil {
+				return fmt.Errorf("storage: drop old master_plan current-marker constraint: %w", err)
+			}
 		}
 	}
 	if err := db.AutoMigrate(&MasterPlan{}); err != nil {
@@ -117,14 +133,20 @@ func validateCurrentMasterPlan(p *MasterPlan, userID string) error {
 
 // ApplyStructuredMasterPlan inserts a new active structured master plan for an
 // athlete. Replacing an active row requires its exact plan ID (and, for a
-// structured content_version 2 row, its exact revision); that row is archived in
-// the same transaction before the new active row is inserted. A legacy markdown
-// (content_version 1) active row has a NULL revision — it carries no revision
-// concept, so only the plan ID is confirmed for replacement. All rows for the
-// user are locked so the active transition is serialized. The new plan has its
-// own identity and therefore starts at revision 1.
+// structured content_version 2 row, its exact revision); that row becomes
+// superseded in the same transaction before the new active row is inserted. A
+// legacy markdown (content_version 1) active row has a NULL revision — it
+// carries no revision concept, so only the plan ID is confirmed for
+// replacement. All rows for the user are locked so the active transition is
+// serialized. The new plan has its own identity and therefore starts at
+// revision 1.
+//
+// applyToken is the user-side apply idempotency key (#585): a non-empty token
+// that already exists on one of the user's rows short-circuits the apply and
+// returns that existing row (the lock above makes the check race-free), so a
+// replayed card apply never creates a second plan. Admin imports pass "".
 func (s *Store) ApplyStructuredMasterPlan(
-	ctx context.Context, userID, goalID, content string, replacement *MasterPlanReplacement,
+	ctx context.Context, userID, goalID, content, applyToken string, replacement *MasterPlanReplacement,
 ) (*MasterPlan, *MasterPlan, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
@@ -132,6 +154,11 @@ func (s *Store) ApplyStructuredMasterPlan(
 	}
 	if _, err := uuid.Parse(goalID); err != nil {
 		return nil, nil, fmt.Errorf("storage: invalid goal_id: %w", err)
+	}
+	if applyToken != "" {
+		if _, err := uuid.Parse(applyToken); err != nil {
+			return nil, nil, fmt.Errorf("storage: invalid apply_token: %w", err)
+		}
 	}
 	if strings.TrimSpace(content) == "" {
 		return nil, nil, fmt.Errorf("storage: content cannot be empty")
@@ -154,6 +181,20 @@ func (s *Store) ApplyStructuredMasterPlan(
 			for i := range rows {
 				if rows[i].Status == MasterPlanStatusActive {
 					replaced = &rows[i]
+				}
+			}
+			// Idempotent replay (#585): the token was already applied AND that row
+			// is still the active plan — return it untouched instead of creating a
+			// second plan. A token on a superseded row no longer short-circuits:
+			// the stale card must fall through to the normal apply logic (and
+			// conflict against the current active) instead of surfacing a dead plan.
+			if applyToken != "" {
+				for i := range rows {
+					if rows[i].Status == MasterPlanStatusActive && rows[i].ApplyToken != nil && *rows[i].ApplyToken == applyToken {
+						created = &rows[i]
+						replaced = nil
+						return nil
+					}
 				}
 			}
 			if replaced == nil {
@@ -185,17 +226,17 @@ func (s *Store) ApplyStructuredMasterPlan(
 					archiveQuery = archiveQuery.Where("revision IS NULL")
 				}
 				result := archiveQuery.Updates(map[string]any{
-					"status":      MasterPlanStatusArchived,
+					"status":      MasterPlanStatusSuperseded,
 					"active_flag": nil,
 					"updated_at":  now,
 				})
 				if result.Error != nil {
-					return fmt.Errorf("storage: archive prior master plan: %w", result.Error)
+					return fmt.Errorf("storage: supersede prior master plan: %w", result.Error)
 				}
 				if result.RowsAffected != 1 {
 					return ErrMasterPlanConflict
 				}
-				replaced.Status = MasterPlanStatusArchived
+				replaced.Status = MasterPlanStatusSuperseded
 				replaced.ActiveFlag = nil
 				replaced.UpdatedAt = now
 			}
@@ -207,6 +248,10 @@ func (s *Store) ApplyStructuredMasterPlan(
 				ContentVersion: MasterPlanContentStructured, Content: content,
 				Status: MasterPlanStatusActive, ActiveFlag: &activeFlag,
 				Revision: &revision, CreatedAt: now, UpdatedAt: now,
+			}
+			if applyToken != "" {
+				token := applyToken
+				row.ApplyToken = &token
 			}
 			if err := tx.Create(row).Error; err != nil {
 				if isDuplicateKey(err) {

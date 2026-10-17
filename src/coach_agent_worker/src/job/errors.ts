@@ -53,8 +53,6 @@ export const ERROR_CODES = {
   NO_ACTIVE_RACE_GOAL: "no_active_race_goal",
   /** Weekly kernel produced a week other than the current/next Shanghai week. */
   WEEK_NOT_SUPPORTED: "week_not_supported",
-  /** Go draft insert endpoint rejected the generated content. */
-  DRAFT_REJECTED: "draft_rejected",
   /** Go job state API rejected a transition as malformed/forbidden. */
   JOB_STATE_REJECTED: "job_state_rejected",
   /** Go job state API no longer has the row (retired or never created). */
@@ -64,9 +62,7 @@ export const ERROR_CODES = {
 } as const;
 
 export type HandlerResult = {
-  /** Serialized as `result_json` when the job finishes done (e.g. draft JSON). */
+  /** Serialized as `result_json` when the job finishes done (e.g. plan content). */
   result: string;
-  /** The Go plan draft id, surfaced on the poll endpoint once done. */
-  draftId?: string;
 };
 export type Handler = (job: PlanJob, hb: Heartbeat) => Promise<HandlerResult>;

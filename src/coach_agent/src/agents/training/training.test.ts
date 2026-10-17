@@ -48,7 +48,7 @@ test("training node answers non-master_plan intents without touching the agent",
   assert.equal(agent.calls, 0);
 });
 
-test("training node renders the envelope plan as markdown and attaches a validated master-plan card", async () => {
+test("training node renders the envelope plan as markdown and attaches a degraded card without a goal resolver", async () => {
   const plan = createTestMasterPlan();
   const node = makeTrainingNode({ agent: fakeAgent(envelopeResult(plan)) });
   const { text, message, count } = await replyOf(node);
@@ -58,7 +58,7 @@ test("training node renders the envelope plan as markdown and attaches a validat
   const card = kwargs?.card as Record<string, unknown> | undefined;
   assert.ok(card, "completed reply should carry additional_kwargs.card");
   assert.equal(card.$type, "master-plan");
-  // 信封 data 是渲染/定位需要的标量摘要（时间轴走 markdown 正文）
+  // 无 resolver（测试/降级）→ 卡片只带标量摘要（时间轴走 markdown 正文）
   const parsed = MasterPlanCardSchema.safeParse(card.data);
   assert.equal(parsed.success, true, JSON.stringify(parsed.error?.issues));
   if (parsed.success) {
@@ -77,65 +77,84 @@ test("training node renders the envelope plan as markdown and attaches a validat
 });
 
 // ---------------------------------------------------------------------------
-// #429 draft 落库（persistDraft dep，fail-soft）
+// #585 apply-from-content（resolveGoalId dep，fail-soft，不落库）
 // ---------------------------------------------------------------------------
 
-test("training node puts the persisted draft plan_id on the card", async () => {
+test("training node puts the full v2 content and an apply_token on the card", async () => {
   const plan = createTestMasterPlan();
-  let seen: { plan: unknown; userId: string } | undefined;
+  let asked: string | undefined;
   const node = makeTrainingNode({
     agent: fakeAgent(envelopeResult(plan)),
-    persistDraft: async (persisted, userId) => {
-      seen = { plan: persisted, userId };
-      return "plan-id-1";
+    resolveGoalId: async (userId) => {
+      asked = userId;
+      return "goal-1";
     },
   });
   const { message } = await replyOf(node);
-  assert.deepEqual(seen, { plan, userId: "user-1" }, "sink 收到已解析 plan 与 runtime context 的 userId");
+  assert.equal(asked, "user-1", "resolver 收到 runtime context 的 userId");
   const card = (message.additional_kwargs as Record<string, unknown>).card as Record<string, unknown>;
-  assert.equal((card.data as Record<string, unknown>).plan_id, "plan-id-1");
-  assert.equal(MasterPlanCardSchema.safeParse(card.data).success, true);
+  const data = card.data as Record<string, unknown>;
+  assert.equal(MasterPlanCardSchema.safeParse(data).success, true);
+  assert.equal(typeof data.apply_token, "string");
+  const content = data.content as Record<string, unknown>;
+  // content 是 v2 doc：goal 绑定真实 goal_id，phases/milestones/weeks 顶层展开
+  assert.deepEqual((content.goal as Record<string, unknown>).goal_id, "goal-1");
+  assert.equal(Array.isArray(content.phases), true);
+  assert.equal(Array.isArray(content.milestones), true);
+  assert.equal(Array.isArray(content.weeks), true);
+  // 顶层字段仍带 kernel 输出的展开（...plan）
+  assert.equal(content.total_weeks, plan.total_weeks);
 });
 
-test("training node degrades the card (no plan_id) when the draft sink returns null", async () => {
+test("training node degrades the card (no apply payload) when there is no race goal", async () => {
   const node = makeTrainingNode({
     agent: fakeAgent(envelopeResult(createTestMasterPlan())),
-    persistDraft: async () => null,
+    resolveGoalId: async () => null,
   });
   const { text, message } = await replyOf(node);
-  assert.match(text, /赛季训练计划初稿/, "回复不受落库失败影响");
+  assert.match(text, /赛季训练计划初稿/, "回复不受无 race goal 影响");
   const card = (message.additional_kwargs as Record<string, unknown>).card as Record<string, unknown>;
-  assert.equal("plan_id" in (card.data as Record<string, unknown>), false);
+  const data = card.data as Record<string, unknown>;
+  assert.equal("apply_token" in data, false);
+  assert.equal("content" in data, false);
 });
 
-test("training node degrades the card when the draft sink throws", async () => {
+test("training node degrades the card when the content transform is rejected", async () => {
+  const plan = createTestMasterPlan();
+  // 把一个 week 指到不存在的 phase（“speed”是合法枚举值但不在 phases[] 里）
+  // → 宽松信封 schema 仍放行，masterPlanToContent 产出孤儿 phase_id →
+  // assertWeeksLinkedToPhases 拒绝。
+  const broken = { ...plan, weeks: plan.weeks.map((week, index) => (index === 0 ? { ...week, phase_name: "speed" as const } : week)) };
   const node = makeTrainingNode({
-    agent: fakeAgent(envelopeResult(createTestMasterPlan())),
-    persistDraft: async () => {
-      throw new Error("go api down");
-    },
+    agent: fakeAgent(envelopeResult(broken)),
+    resolveGoalId: async () => "goal-1",
   });
   const { message } = await replyOf(node);
   const card = (message.additional_kwargs as Record<string, unknown>).card as Record<string, unknown>;
+  const data = card.data as Record<string, unknown>;
   assert.equal(card.$type, "master-plan");
-  assert.equal("plan_id" in (card.data as Record<string, unknown>), false);
+  assert.equal("apply_token" in data, false);
+  assert.equal("content" in data, false);
 });
 
-test("training node skips the draft sink when the runtime context has no userId", async () => {
+test("training node skips the goal resolver when the runtime context has no userId", async () => {
   let calls = 0;
   const node = makeTrainingNode({
     agent: fakeAgent(envelopeResult(createTestMasterPlan())),
-    persistDraft: async () => {
+    resolveGoalId: async () => {
       calls += 1;
-      return "plan-id-1";
+      return "goal-1";
     },
   });
   const result = (await node({ intent: { intent: "master_plan" }, messages: [] } as never, {} as never)) as {
     messages: AIMessage[];
   };
-  assert.equal(calls, 0, "无 userId 时不得调用落库 sink");
-  const card = (result.messages.at(-1)?.additional_kwargs as Record<string, unknown>).card as Record<string, unknown>;
-  assert.equal("plan_id" in (card.data as Record<string, unknown>), false);
+  assert.equal(calls, 0, "无 userId 时不得查询 race goal");
+  const last = result.messages.at(-1);
+  assert.ok(last instanceof AIMessage);
+  const card = (last.additional_kwargs as Record<string, unknown>).card as Record<string, unknown>;
+  const data = card.data as Record<string, unknown>;
+  assert.equal("apply_token" in data, false);
 });
 
 test("training node writes the agent's plain-text follow-up back when no envelope is produced", async () => {
@@ -152,7 +171,7 @@ test("training node writes the agent's plain-text follow-up back when no envelop
 test("training node recovers an envelope leaked as plain text", async () => {
   const plan = createTestMasterPlan();
   const leaked = JSON.stringify({ disposition: "return_direct", content: plan });
-  const leakedText = "```json\n" + leaked + "\n```";
+  const leakedText = `\`\`\`json\n${leaked}\n\`\`\``;
   const node = makeTrainingNode({
     agent: fakeAgent((input) => ({ messages: [...input.messages, new AIMessage(leakedText)] })),
   });

@@ -59,33 +59,20 @@ function deps(overrides: Partial<MasterPlanHandlerDeps> = {}): MasterPlanHandler
   return {
     graph: buildGraph(),
     resolveGoalId: async () => GOAL_ID,
-    insertDraft: async (userId, draftId, content) => {
-      void userId;
-      void draftId;
-      void content;
-      return "draft-abc";
-    },
     ...overrides,
   };
 }
 
-test("completed master run inserts the draft with a goal_id and returns its id", async () => {
-  let insertedContent: unknown;
-  const handler = createMasterPlanJobHandler(
-    deps({
-      insertDraft: async (_userId, _draftId, content) => {
-        insertedContent = content;
-        return "draft-abc";
-      },
-    }),
-  );
+test("completed master run reports the full v2 content in result_json (#585, no draft insert)", async () => {
+  const handler = createMasterPlanJobHandler(deps());
   const job = FakePlanJobStore.fixture({ inputJson: JSON.stringify(MasterPlanGraphRequest.parse(createTestRequest())) });
   const result = await handler(job, async () => {});
 
-  assert.equal(result.draftId, "draft-abc");
-  assert.deepEqual(JSON.parse(result.result), { draft_id: "draft-abc", revision: 1, generated_by: "plan-job" });
+  const parsed = JSON.parse(result.result) as { content: Record<string, unknown>; revision: number; generated_by: string };
+  assert.equal(parsed.revision, 1);
+  assert.equal(parsed.generated_by, "plan-job");
 
-  const content = insertedContent as {
+  const content = parsed.content as {
     goal: { goal_id: string };
     phases: Array<{ id: string; milestone_ids: string[] }>;
     milestones: Array<{ id: string; phase_id: string; type: string; target: string }>;
@@ -115,17 +102,8 @@ test("invalid enqueued request is a terminal contract violation", async () => {
   );
 });
 
-test("missing active race goal fails terminally without calling the kernel sink", async () => {
-  let insertCalls = 0;
-  const handler = createMasterPlanJobHandler(
-    deps({
-      resolveGoalId: async () => null,
-      insertDraft: async () => {
-        insertCalls += 1;
-        return "never";
-      },
-    }),
-  );
+test("missing active race goal fails terminally", async () => {
+  const handler = createMasterPlanJobHandler(deps({ resolveGoalId: async () => null }));
   const job = FakePlanJobStore.fixture({ inputJson: JSON.stringify(MasterPlanGraphRequest.parse(createTestRequest())) });
   await assert.rejects(
     handler(job, async () => {}),
@@ -136,5 +114,4 @@ test("missing active race goal fails terminally without calling the kernel sink"
       return true;
     },
   );
-  assert.equal(insertCalls, 0);
 });

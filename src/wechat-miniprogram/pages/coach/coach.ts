@@ -1,11 +1,11 @@
 import { sendCoachChatStream, fetchCoachHistory, fetchCoachSessions, takePendingCoachContext } from '../../services/coach';
 import type { CoachHistoryMessage, CoachSessionTarget, PendingCoachContext, CoachStreamEvent, CoachDone, CoachStreamHandle } from '../../services/coach';
 import {
-  abandonMasterPlanDraft,
-  activateMasterPlanDraft,
+  applyMasterPlanFromContent,
   getCurrentMasterPlan,
   type CurrentSeasonPlan,
   type MasterPlanCard,
+  type MasterPlanReplacementExpectation,
 } from '../../services/master-plan';
 import { ApiError } from '../../services/request';
 import { setPendingStrategyDraft, type RaceStrategy } from '../../services/race-strategy';
@@ -63,7 +63,7 @@ let streamRawText = '';
 let streamFlushTimer: number | null = null;
 // 流式气泡 id 自增：scroll-into-view 只在值变化时滚动，打字机文本不断变长，需跟着滚。
 let streamScrollTick = 0;
-// master-plan 启用/放弃进行中的 plan_id（串行化动作，防双击重复提交）。
+// master-plan 应用进行中的 apply_token（串行化动作，防双击重复提交）。
 let planActionInFlight = '';
 
 /** needs_input 时后端 interrupt 里的可展示文本（AskUserQuestionPayload 的 question 优先）。 */
@@ -122,8 +122,6 @@ interface CoachPageHandlers {
   /** 卡片主 CTA：导航类产物（策略）走 onCardOpen 同款跳转；动作类产物
    *  （master-plan 启用）直调端点。 */
   onCardCta(e: WechatMiniprogram.TouchEvent): void;
-  /** 卡片次级动作（master-plan 放弃）。 */
-  onCardSecondary(e: WechatMiniprogram.TouchEvent): void;
   onMenuTap(): void;
   onCloseDrawer(): void;
   onSearchTap(): void;
@@ -140,11 +138,15 @@ interface CoachPageHandlers {
   currentSessionTarget(): CoachSessionTarget | undefined;
   contextHintOf(session: CoachSession | undefined): string;
   // master-plan 卡片动作（#429）：启用（含替换确认）/放弃 + 卡片状态回写。
-  activateMasterPlanCard(messageId: number): Promise<void>;
-  abandonMasterPlanCard(messageId: number): Promise<void>;
+  applyMasterPlanCard(messageId: number): Promise<void>;
+  applyPlanContent(
+    messageId: number,
+    userId: string,
+    applyToken: string,
+    content: Record<string, unknown>,
+    expectation?: MasterPlanReplacementExpectation,
+  ): Promise<void>;
   markMasterPlanCard(messageId: number, badge: string): void;
-  markMasterPlanActive(messageId: number): void;
-  settlePlanCardFromRecheck(messageId: number, userId: string, planId: string, fallbackToast: string): Promise<void>;
   fetchCurrentPlanSafely(userId: string): Promise<CurrentSeasonPlan | null | 'unknown'>;
   confirmReplacePlan(uncertain: boolean): Promise<boolean>;
   // 流式回调（事件驱动，页面内以 this. 调用）。
@@ -546,104 +548,98 @@ Page<CoachPageData, CoachPageHandlers>({
     const message = this.data.messages.find((m) => m.id === id);
     if (!message?.card) return;
     if (message.card.type === 'master-plan') {
-      void this.activateMasterPlanCard(id);
+      void this.applyMasterPlanCard(id);
       return;
     }
     this.onCardOpen(e);
   },
 
-  /** 次级动作：目前只有 master-plan 的「放弃」。 */
-  onCardSecondary(e: WechatMiniprogram.TouchEvent) {
-    const id = e.currentTarget.dataset.id as number;
-    const message = this.data.messages.find((m) => m.id === id);
-    if (!message?.card || message.card.type !== 'master-plan') return;
-    wx.showModal({
-      title: '放弃这版计划',
-      content: '放弃后该草稿将归档，不可再启用。确定放弃吗？',
-      confirmText: '放弃',
-      confirmColor: '#ff6363',
-      success: (res) => {
-        if (res.confirm) void this.abandonMasterPlanCard(id);
-      },
-      fail: () => undefined,
-    });
+  /**
+   * 应用 master-plan 卡片（#585 apply-from-content）：卡片携带完整 v2 content
+   * + 一次性 apply_token。先查当前启用计划（#537 三态预检）——有则弹替换确认、
+   * 带确认身份应用；确认没有才直接应用；查不到按「可能有」保守确认后应用。
+   * 409（身份过期/存在未确认）/422（内容无效）由复查收口，区分「已失效/保留
+   * 重试」。旧卡片（#429 只带 plan_id）与降级卡片：draft 已下线，直接已失效
+   * 兜底。
+   */
+  async applyMasterPlanCard(messageId: number) {
+    const message = this.data.messages.find((m) => m.id === messageId);
+    const plan = message?.card?.data as MasterPlanCard | undefined;
+    if (planActionInFlight) return;
+    const applyToken = plan?.apply_token;
+    const content = plan?.content;
+    if (!applyToken || !content) {
+      // 旧卡片/降级卡片：无 apply 载荷（draft 端点已随 #585 下线）。
+      this.markMasterPlanCard(messageId, '已失效');
+      wx.showToast({ title: '这版计划不可再应用，请重新生成', icon: 'none' });
+      return;
+    }
+    const userId = userStore.getState().user?.id;
+    if (!userId) {
+      wx.showToast({ title: '请先登录后再应用', icon: 'none' });
+      return;
+    }
+    planActionInFlight = applyToken;
+    try {
+      const current = await this.fetchCurrentPlanSafely(userId);
+      if (current !== null && current !== 'unknown') {
+        const confirmed = await this.confirmReplacePlan(false);
+        if (!confirmed) return;
+        await this.applyPlanContent(messageId, userId, applyToken, content, {
+          expected_active_plan_id: current.plan_id,
+          // v1（markdown）行没有 revision 概念，按 API 契约传哨兵值 1（服务端
+          // 只比对 plan_id）；v2 传真实 revision。
+          expected_active_revision: current.revision ?? 1,
+        });
+        return;
+      }
+      if (current === 'unknown') {
+        // 查不到当前状态：按「可能有」保守确认（绝不把查不到当没有）。
+        const confirmed = await this.confirmReplacePlan(true);
+        if (!confirmed) return;
+      }
+      await this.applyPlanContent(messageId, userId, applyToken, content);
+    } finally {
+      planActionInFlight = '';
+    }
   },
 
   /**
-   * 启用 master-plan 草稿（#429）：先查当前启用计划——同版已在启用中则直接
-   * 回写卡片；有其他启用计划、或状态查不到（可能有）时弹替换确认（底座单人
-   * 单 active：启用即归档旧计划，确认是破坏性操作的前置）；确认没有才直接
-   * 启用。409（草稿已非 draft）/404 由复查收口，区分「已启用/已失效」。
+   * 调用户端 apply 端点并回写卡片终态。409 = 确认身份已过期或存在未确认的
+   * active（并发场景）；422 = 内容无效。复查一次：查不到 → 不写终态角标、
+   * CTA 保留可重试；查得到 → 这版已失效（服务端幂等保证同一 token 重放不会
+   * 产生第二份计划，因此不存在「已在别处应用」的歧义态）。
    */
-  async activateMasterPlanCard(messageId: number) {
-    const message = this.data.messages.find((m) => m.id === messageId);
-    const plan = message?.card?.data as MasterPlanCard | undefined;
-    const planId = plan?.plan_id;
-    if (!planId || planActionInFlight) return;
-    const userId = userStore.getState().user?.id;
-    if (!userId) {
-      wx.showToast({ title: '请先登录后再启用', icon: 'none' });
-      return;
-    }
-    planActionInFlight = planId;
+  async applyPlanContent(
+    messageId: number,
+    userId: string,
+    applyToken: string,
+    content: Record<string, unknown>,
+    expectation?: MasterPlanReplacementExpectation,
+  ) {
     try {
-      const current = await this.fetchCurrentPlanSafely(userId);
-      if (current !== 'unknown' && current !== null && current.plan_id === planId) {
-        this.markMasterPlanActive(messageId);
+      await applyMasterPlanFromContent(userId, applyToken, content, expectation);
+      this.markMasterPlanCard(messageId, '已应用');
+      wx.showToast({ title: '已应用，可在「我的训练计划」查看', icon: 'none' });
+    } catch (err) {
+      if (err instanceof ApiError && (err.statusCode === 409 || err.statusCode === 422)) {
+        const recheck = await this.fetchCurrentPlanSafely(userId);
+        if (recheck === 'unknown') {
+          wx.showToast({ title: '该计划状态暂时查不到，请稍后再试', icon: 'none' });
+          return;
+        }
+        this.markMasterPlanCard(messageId, '已失效');
+        wx.showToast({
+          title: err.statusCode === 422 ? '这版计划内容无效，无法应用' : '当前计划已更新，这版已失效',
+          icon: 'none',
+        });
         return;
       }
-      if (current !== null) {
-        const confirmed = await this.confirmReplacePlan(current === 'unknown');
-        if (!confirmed) return;
-      }
-      try {
-        await activateMasterPlanDraft(userId, planId);
-        this.markMasterPlanCard(messageId, '已启用');
-        wx.showToast({ title: '已启用，可在「我的训练计划」查看', icon: 'none' });
-      } catch (err) {
-        if (err instanceof ApiError && (err.statusCode === 409 || err.statusCode === 404)) {
-          // 409=已非草稿（如已在别处启用）；404=行不存在。复查当前计划收口终态。
-          await this.settlePlanCardFromRecheck(messageId, userId, planId, '该计划草稿不存在或已失效');
-          return;
-        }
-        wx.showToast({ title: '启用失败，请稍后再试', icon: 'none' });
-      }
-    } finally {
-      planActionInFlight = '';
+      wx.showToast({ title: '应用失败，请稍后再试', icon: 'none' });
     }
   },
 
-  /** 放弃 master-plan 草稿：归档后回写卡片；404（不存在或已非草稿）复查收口，
-   *  避免把已在别处启用的计划误标成已失效。 */
-  async abandonMasterPlanCard(messageId: number) {
-    const message = this.data.messages.find((m) => m.id === messageId);
-    const plan = message?.card?.data as MasterPlanCard | undefined;
-    const planId = plan?.plan_id;
-    if (!planId || planActionInFlight) return;
-    const userId = userStore.getState().user?.id;
-    if (!userId) {
-      wx.showToast({ title: '请先登录后再操作', icon: 'none' });
-      return;
-    }
-    planActionInFlight = planId;
-    try {
-      try {
-        await abandonMasterPlanDraft(userId, planId);
-        this.markMasterPlanCard(messageId, '已放弃');
-        wx.showToast({ title: '已放弃该草稿', icon: 'none' });
-      } catch (err) {
-        if (err instanceof ApiError && err.statusCode === 404) {
-          await this.settlePlanCardFromRecheck(messageId, userId, planId, '该计划草稿不存在');
-          return;
-        }
-        wx.showToast({ title: '操作失败，请稍后再试', icon: 'none' });
-      }
-    } finally {
-      planActionInFlight = '';
-    }
-  },
-
-  /** 启用/放弃终态回写：改角标并收掉双 CTA（消息数据是静态快照，不回改服务端历史）。 */
+  /** 应用/失效终态回写：改角标并收掉 CTA（消息数据是静态快照，不回改服务端历史）。 */
   markMasterPlanCard(messageId: number, badge: string) {
     const index = this.data.messages.findIndex((m) => m.id === messageId);
     if (index < 0) return;
@@ -652,31 +648,6 @@ Page<CoachPageData, CoachPageHandlers>({
       [`messages[${index}].card.buttonText`]: '',
       [`messages[${index}].card.secondaryButtonText`]: '',
     });
-  },
-
-  /** 「这版已是当前启用计划」的幂等回写（预检命中与 409/404 复查命中共用）。 */
-  markMasterPlanActive(messageId: number) {
-    this.markMasterPlanCard(messageId, '已启用');
-    wx.showToast({ title: '这版计划已在启用中', icon: 'none' });
-  },
-
-  /**
-   * 409/404 后复查一次收口终态：复查命中该 plan → 已启用（幂等）；确认不是
-   * → 已失效 + fallbackToast；复查也失败 → 不写终态角标（避免误判），提示
-   * 稍后再试，CTA 保留可重试。
-   */
-  async settlePlanCardFromRecheck(messageId: number, userId: string, planId: string, fallbackToast: string) {
-    const recheck = await this.fetchCurrentPlanSafely(userId);
-    if (recheck === 'unknown') {
-      wx.showToast({ title: '该计划状态暂时查不到，请稍后再试', icon: 'none' });
-      return;
-    }
-    if (recheck !== null && recheck.plan_id === planId) {
-      this.markMasterPlanActive(messageId);
-      return;
-    }
-    this.markMasterPlanCard(messageId, '已失效');
-    wx.showToast({ title: fallbackToast, icon: 'none' });
   },
 
   /**
@@ -698,9 +669,9 @@ Page<CoachPageData, CoachPageHandlers>({
       wx.showModal({
         title: '替换当前计划',
         content: uncertain
-          ? '暂时查不到你的计划状态。若已有一版启用中的训练计划，启用这版会替换它（旧计划归档）。确定启用吗？'
-          : '你已有一版启用中的训练计划，启用这版会替换它（旧计划归档）。确定启用吗？',
-        confirmText: '替换并启用',
+          ? '暂时查不到你的计划状态。若已有一版启用中的训练计划，应用这版会替换它（旧计划归档）。确定应用吗？'
+          : '你已有一版启用中的训练计划，应用这版会替换它（旧计划归档）。确定应用吗？',
+        confirmText: '替换并应用',
         success: (res) => resolve(res.confirm),
         fail: () => resolve(false),
       });

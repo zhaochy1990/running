@@ -32,7 +32,7 @@ interface CreateJobDto {
  * and is its only writer, so the worker never opens a connection to it: it
  * creates the row before publishing the pointer, reports every stage/progress/
  * terminal change as a compare-and-set transition, and asks Go to retire stale
- * running rows. Same dependency class as `GoDraftClient` (X-Internal-Token).
+ * running rows. Same dependency class as the plan-draft client it superseded (X-Internal-Token).
  */
 export class GoJobClient implements PlanJobStore {
   constructor(

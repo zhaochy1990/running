@@ -1,11 +1,4 @@
-import {
-  type ActivityFeelWriter,
-  type CoachAgentConfig,
-  createCoachAgent,
-  type DataProvider,
-  getAgentConfig,
-  type MasterPlanDraftSink,
-} from "@stride/coach-agent";
+import { type ActivityFeelWriter, type CoachAgentConfig, createCoachAgent, type DataProvider, getAgentConfig } from "@stride/coach-agent";
 import type { Persistence } from "../persistence/index.js";
 import { warnOnDegradedReply } from "../publicResponse.js";
 
@@ -35,24 +28,15 @@ export class CoachInvokerImpl implements CoachInvoker {
   private readonly dataProvider: DataProvider;
   private readonly coachConfig: CoachAgentConfig;
   private readonly persistence: Persistence;
-  /** #429 聊天内 master-plan draft 落库；缺省不落库（卡片无启用 CTA）。 */
-  private readonly masterPlanDraftSink: MasterPlanDraftSink | undefined;
   /** #508 体感写端口；缺省时 qa agent 不挂 set_activity_feel（纯只读）。 */
   private readonly activityFeelWriter: ActivityFeelWriter | undefined;
   /** The qa role's output ceiling, i.e. the budget reasoning tokens also draw on. */
   private readonly maxOutputTokens: number;
 
-  constructor(
-    dataProvider: DataProvider,
-    coachConfig: CoachAgentConfig,
-    persistence: Persistence,
-    masterPlanDraftSink?: MasterPlanDraftSink,
-    activityFeelWriter?: ActivityFeelWriter,
-  ) {
+  constructor(dataProvider: DataProvider, coachConfig: CoachAgentConfig, persistence: Persistence, activityFeelWriter?: ActivityFeelWriter) {
     this.dataProvider = dataProvider;
     this.coachConfig = coachConfig;
     this.persistence = persistence;
-    this.masterPlanDraftSink = masterPlanDraftSink;
     this.activityFeelWriter = activityFeelWriter;
     this.maxOutputTokens = getAgentConfig(coachConfig, "qa").max_tokens;
   }
@@ -102,7 +86,6 @@ export class CoachInvokerImpl implements CoachInvoker {
     const coach = await createCoachAgent(this.dataProvider, this.coachConfig, {
       checkpointer: this.persistence.checkpointer,
       store: this.persistence.store,
-      ...(this.masterPlanDraftSink ? { masterPlanDraftSink: this.masterPlanDraftSink } : {}),
       ...(this.activityFeelWriter ? { activityFeelWriter: this.activityFeelWriter } : {}),
     });
     this.agent = coach as unknown as CoachGraph;

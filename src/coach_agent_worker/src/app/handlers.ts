@@ -1,5 +1,4 @@
 import type { MySqlDataProvider } from "../data/mysqlDataProvider.js";
-import type { GoDraftClient } from "../goClient/draftClient.js";
 import type { Handler } from "../job/errors.js";
 import type { PlanJobType } from "../job/model.js";
 import { createMasterPlanJobHandler } from "../kernel/master/handler.js";
@@ -11,13 +10,13 @@ export interface PlanJobHandlerDeps {
   masterGraph: MasterPlanGraphShim;
   weeklyGraph: WeeklyPlanGraphShim;
   dataProvider: MySqlDataProvider;
-  draftClient: GoDraftClient;
 }
 
 /**
  * Build the job-type → handler registry. Each entry pairs a compiled kernel
- * graph with its Go draft-insert path; the dispatcher looks handlers up by
- * `job.jobType` (ADR 0030 — one state machine, per-type kernels).
+ * graph with its artifact path; the dispatcher looks handlers up by
+ * `job.jobType`. #585: handlers only report artifacts through the job's
+ * result_json — the plan tables are written exclusively by the apply endpoints.
  */
 export function createPlanJobHandlers(deps: PlanJobHandlerDeps): Map<PlanJobType, Handler> {
   return new Map<PlanJobType, Handler>([
@@ -25,16 +24,14 @@ export function createPlanJobHandlers(deps: PlanJobHandlerDeps): Map<PlanJobType
       "generate_master_plan",
       createMasterPlanJobHandler({
         graph: deps.masterGraph,
-        // The draft's goal_id references the athlete's active race_goal row.
+        // The plan's goal_id references the athlete's active race_goal row.
         resolveGoalId: async (userId) => (await deps.dataProvider.getRaceTarget(userId))?.goal_id ?? null,
-        insertDraft: (userId, draftId, content) => deps.draftClient.insertMasterPlanDraft(userId, draftId, content),
       }),
     ],
     [
       "generate_weekly_plan",
       createWeeklyPlanJobHandler({
         graph: deps.weeklyGraph,
-        insertDraft: (userId, weekName, draftId, content) => deps.draftClient.insertWeeklyPlanDraft(userId, weekName, draftId, content),
       }),
     ],
   ]);

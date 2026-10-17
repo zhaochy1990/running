@@ -4,8 +4,8 @@
 //    渲染/定位需要的标量摘要，阶段时间轴与负荷投影走 markdown 正文。
 // 2. #436 起展示页用的 `GET /master-plan/current` 信封与 v2 plan 类型镜像
 //    （frontend/src/api.ts 的 CurrentSeasonPlan 同构）；v1 计划是 markdown
-//    字符串，小程序端不渲染，只提示去网页看。#429 的 draft 落库/启用流程
-//    在此扩展端点与 plan_id。
+//    字符串，小程序端不渲染，只提示去网页看。#585 起 apply-from-content
+//    （POST /master-plan/apply）在此扩展端点；draft 端点已下线。
 
 import { http, ApiError } from './request';
 
@@ -24,9 +24,11 @@ export interface MasterPlanCard {
   start_date: string;
   end_date: string;
   total_weeks: number;
-  /** #429：draft 落库后的 plan_id，卡片「启用/放弃」CTA 的定位；缺省 = 旧
-   * 卡片或落库失败降级，前端不渲染 CTA。 */
-  plan_id?: string;
+  /** #585 apply-from-content：完整 v2 计划 doc + 一次性 apply_token（幂等
+   * 键），成对出现；缺省 = 降级卡片（无 race goal）或旧卡片（#429 只带
+   * plan_id），无「应用」CTA。 */
+  apply_token?: string;
+  content?: Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -202,31 +204,41 @@ export async function getCurrentMasterPlan(userId: string): Promise<CurrentSeaso
   }
 }
 
-/** POST .../drafts/:plan_id/activate 的响应（Go activateMasterPlanDraftResponse）。 */
-export interface ActivateDraftResponse {
+/** POST /master-plan/apply 的响应（Go applyFromContentMasterPlanResponse）。 */
+export interface ApplyMasterPlanResponse {
   success: boolean;
   plan: CurrentSeasonPlan;
-  /** 被替换归档的旧 active 计划 id；首次启用为 null。 */
+  plan_id: string;
+  /** 被替换的旧 active 计划 id；首次应用为 null。 */
   replaced_plan_id: string | null;
 }
 
-/**
- * 启用一版训练计划草稿（#429 卡片 CTA）：服务端事务内归档旧 active、把该
- * draft 升为 active（单人单 active 由底座保证）。409 = 该 plan 已不是草稿
- * （可能已在别处启用），404 = 草稿不存在。
- */
-export function activateMasterPlanDraft(userId: string, planId: string): Promise<ActivateDraftResponse> {
-  return http.post<ActivateDraftResponse>(
-    `/api/users/${encodeURIComponent(userId)}/master-plan/drafts/${encodeURIComponent(planId)}/activate`,
-  );
+/** 应用时的替换确认（#537 预检的当前计划身份；无当前计划时省略）。 */
+export interface MasterPlanReplacementExpectation {
+  expected_active_plan_id: string;
+  expected_active_revision: number;
 }
 
-/** 放弃一版草稿（归档，不可再启用）；404 = 草稿不存在或已非草稿。 */
-export function abandonMasterPlanDraft(
+/**
+ * 应用一版训练计划（#585 卡片 CTA，apply-from-content）：服务端校验内容、
+ * 事务内 supersede 旧 active 并写入新 active。apply_token 幂等——同一 token
+ * 重放返回既有结果，不产生第二份计划。409 master_plan_exists = 有 active 但
+ * 未带替换确认；409 master_plan_changed = 确认的身份已过期；422 = 内容无效。
+ */
+export function applyMasterPlanFromContent(
   userId: string,
-  planId: string,
-): Promise<{ success: boolean; plan_id: string; status: string }> {
-  return http.post<{ success: boolean; plan_id: string; status: string }>(
-    `/api/users/${encodeURIComponent(userId)}/master-plan/drafts/${encodeURIComponent(planId)}/abandon`,
-  );
+  applyToken: string,
+  content: Record<string, unknown>,
+  expectation?: MasterPlanReplacementExpectation,
+): Promise<ApplyMasterPlanResponse> {
+  return http.post<ApplyMasterPlanResponse>(`/api/users/${encodeURIComponent(userId)}/master-plan/apply`, {
+    apply_token: applyToken,
+    content,
+    ...(expectation
+      ? {
+          expected_active_plan_id: expectation.expected_active_plan_id,
+          expected_active_revision: expectation.expected_active_revision,
+        }
+      : {}),
+  });
 }

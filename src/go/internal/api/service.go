@@ -461,10 +461,6 @@ func (s *Service) Router() *gin.Engine {
 	s.masterPlan.registerAdminWrites(authenticated)
 	s.weeklyPlan.registerReads(authenticated)
 	s.weeklyPlan.registerAdminWrites(authenticated)
-	// Draft activation admits the admin tier (apply a generated draft); the
-	// remaining draft mutations stay on the default-deny group below.
-	s.weeklyPlan.registerDraftActivates(authenticated)
-	s.masterPlan.registerDraftActivates(authenticated)
 	// Admin pipeline-status surface: global list + any-run detail. Mounted on
 	// the authenticated group (NOT the rejectAdminCaller child) so the admin
 	// JWT tier can use them; the handlers admit admin OR internal and deny users.
@@ -498,12 +494,6 @@ func (s *Service) Router() *gin.Engine {
 	// default deny prevents an admin-dashboard token from silently inheriting
 	// user or server-to-server capabilities.
 	authed := authenticated.Group("", rejectAdminCaller)
-	// Plan-draft mutations are user-scoped (or internal-token for insert), so
-	// they live behind default-deny: an admin-dashboard token must not activate
-	// or abandon an athlete's draft. Draft reads stay on the authenticated group
-	// above, where verified admin/internal callers may inspect any user.
-	s.masterPlan.registerDraftWrites(authed)
-	s.weeklyPlan.registerDraftWrites(authed)
 	authed.POST("/jobs", s.createJob)
 	authed.GET("/jobs/:job_id", s.getJob)
 	authed.GET("/api/jobs/:job_id", s.getJob)

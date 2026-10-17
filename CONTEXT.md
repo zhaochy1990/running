@@ -13,8 +13,8 @@ _Avoid_: 计划调整、计划审阅
 _Avoid_: Master Plan、赛季总纲、训练总纲
 
 **赛季训练计划状态**：
-赛季训练计划可处于 `draft`、`active` 或 `archived` 状态，与本周课表对称。`draft` 表示内容完整、已持久化但尚未启用的候选计划；一名运动员可同时持有多份 draft（多候选）；`active` 表示当前生效的计划；`archived` 表示被新 active 启用后留下的旧版本。启用必须显式：启用一份 draft 后其余同槽位 draft 仍保留为 draft，直到被放弃。计划草稿以 `master_plan` 表 `status='draft'` 行持久化，由 Go 作为该表唯一写入者插入与启用。
-_Avoid_: 把 draft 用于未完成/不完整内容、同运动员多个 active
+赛季训练计划只有 `active` 与 `superseded` 两种状态。`active` 表示当前生效的计划（每名运动员至多一份）；`superseded` 表示被更新的 active 替换后留下的旧版本。生成不落库（#585 apply-from-content）：计划内容与一次性 `apply_token` 先随卡片/任务产物下发，运动员显式「应用」后经 Go 写入 `master_plan`（旧行原子转 `superseded`）；同一 token 重放幂等返回既有结果。Go 是该表唯一写入者。
+_Avoid_: draft 状态、未应用就落库、同运动员多个 active
 
 **赛季训练计划修订号（revision）**：
 结构化赛季训练计划每次内容变更后递增的并发控制标识；Markdown 文档版没有修订号。
@@ -37,8 +37,8 @@ _Avoid_: 单次活动反馈、feedback.md、绑定到 plan_id 的反馈
 _Avoid_: 修改历史课表、补改过去计划
 
 **本周课表状态**：
-本周课表可处于 `draft`、`active` 或 `archived` 状态。`draft` 表示内容完整、已经持久化但尚未启用的候选课表，一名运动员同一自然周可持有多份 draft（多候选）；`active` 表示该自然周当前生效的课表，至多一份；`archived` 表示同一自然周的旧 active 在新 draft 启用后留下的历史快照。赛季训练计划归档不会改变其下任何本周课表的状态；唯一性索引仅约束 active，不约束 draft 数量。
-_Avoid_: 用 draft 表示不完整内容、同周多个 active
+本周课表没有中间状态：`weekly_plan` 表以 `UNIQUE(user_id, week_start)` 收敛，一行即该周已应用的课表（存在即已应用）。同周重新应用是覆盖写——旧行在事务内删除、新行插入，无快照历史；周反馈独立于课表行，不受覆盖影响。历史周的课表行是只读记录。
+_Avoid_: draft/候选课表、同周多行、把覆盖当追加
 
 **今日安排（Planned Sessions）**：
 某一日期区间内"要练什么"的统一读视图，由三类来源分行组成、互不合并、互不转换：本周课表的课（教练意图）、自建课（用户意图）、手表课表（观察事实，只读呈现）；排序本周课表 → 自建课 → 手表课表。它是读投影，不是存储实体。
@@ -104,8 +104,8 @@ _Avoid_: tenant、scope、user id（后者只是其取值之一）
 _Avoid_: dead-letter（沿用作队列名 DLQ，但任务语义统一叫 poison）
 
 **训练计划任务（Plan Job）**：
-由一个独立 TS worker 执行的、围绕训练计划的异步任务，是 Async Job 在 coach 计划域的具体化：四种 `job_type`（生成/结构调整 × 赛季训练计划/本周课表），共享一套状态机与轮询契约，状态持久化在 coach 侧持久化库。任务只负责跑计划 kernel、上报进度、产出计划草稿；不写对话、不感知聊天层，也不直接写计划表（草稿经 Go 内部端点落库）。轻量调整不走任务（由 Coach 起草调整方案秒级完成），仅结构化调整升级为任务。实现设计见 `docs/adr/0030`。
-_Avoid_: 生成 job、background task、把整个任务笼统叫"生成"
+由一个独立 TS worker 执行的、围绕训练计划的异步任务，是 Async Job 在 coach 计划域的具体化：四种 `job_type`（生成/结构调整 × 赛季训练计划/本周课表），共享一套状态机与轮询契约，状态持久化在 Go 侧 `jobs` 表（worker 经 Go internal API 做 transition CAS 上报，ADR 0033）。任务只负责跑计划 kernel、上报进度、把完整计划产物写入 `jobs.result_json`（#585：不再落草稿——admin 审阅产物后走既有 apply 端点落库）；不写对话、不感知聊天层，也不直接写计划表。轻量调整不走任务（由 Coach 起草调整方案秒级完成），仅结构化调整升级为任务。实现设计见 `docs/adr/0030`。
+_Avoid_: 生成 job、background task、把整个任务笼统叫“生成”、任务直接写计划表
 
 ### 用户 Onboarding
 
