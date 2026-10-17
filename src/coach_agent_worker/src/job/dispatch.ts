@@ -142,7 +142,7 @@ export class PlanJobDispatcher {
       resultJson: result.result ?? "",
       clearError: true,
     });
-    logger.info({ jobId: job.jobId, jobType: job.jobType, draftId: result.draftId ?? null }, "plan-job done");
+    logger.info({ jobId: job.jobId, jobType: job.jobType }, "plan-job done");
   }
 
   private async handleFailure(job: PlanJob, message: PlanJobMessage, error: unknown): Promise<void> {

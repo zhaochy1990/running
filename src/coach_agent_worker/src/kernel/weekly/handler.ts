@@ -1,21 +1,19 @@
-import { randomUUID } from "node:crypto";
 import { addDays, mondayOnOrBefore, shanghaiDay, WeeklyPlanGeneratorRequest } from "@stride/contract";
 import { ERROR_CODES, type Handler, newPermanentError } from "../../job/errors.js";
 import type { PlanJob } from "../../job/model.js";
-import { weeklyPlanToDraftContent } from "./contentTransform.js";
+import { weeklyPlanToContent } from "./contentTransform.js";
 import { runWeeklyKernel, type WeeklyPlanGraphShim } from "./kernel.js";
 
 export interface WeeklyPlanHandlerDeps {
   graph: WeeklyPlanGraphShim;
-  /** Insert the plan draft through the Go internal endpoint; returns the draft id. */
-  insertDraft(userId: string, weekName: string, draftId: string, content: unknown): Promise<string>;
 }
 
 /**
  * `generate_weekly_plan` job handler: re-validates the enqueued kernel request,
  * runs the weekly kernel (streaming progress), guards that the target week is
- * the current or next Asia/Shanghai week, then lands a plan draft through the
- * Go internal insert endpoint (Go stays the single plan-table writer).
+ * the current or next Asia/Shanghai week, then reports the full v2 weekly
+ * content in the job's result_json (#585 — no draft insert; the admin reviews
+ * the artifact and applies it through the existing admin endpoint).
  */
 export function createWeeklyPlanJobHandler(deps: WeeklyPlanHandlerDeps): Handler {
   return async (job: PlanJob, hb) => {
@@ -32,17 +30,15 @@ export function createWeeklyPlanJobHandler(deps: WeeklyPlanHandlerDeps): Handler
       hb,
     );
     assertSupportedWeek(weeklyPlan.week_name);
-    const content = weeklyPlanToDraftContent(weeklyPlan);
-    const draftId = await deps.insertDraft(job.userId, weeklyPlan.week_name, randomUUID(), content);
+    const content = weeklyPlanToContent(weeklyPlan);
     return {
       result: JSON.stringify({
-        draft_id: draftId,
+        content,
         week_name: weeklyPlan.week_name,
         phase,
         generation_attempts: generationAttempts,
         generated_by: "plan-job",
       }),
-      draftId,
     };
   };
 }
@@ -50,7 +46,7 @@ export function createWeeklyPlanJobHandler(deps: WeeklyPlanHandlerDeps): Handler
 /**
  * The graph structurally targets the current or next Shanghai week (via
  * `planningStartDate`), but a misbehaving kernel could still emit a stale week;
- * guard so a draft never lands for a week the client did not ask for.
+ * guard so an artifact never lands for a week the client did not ask for.
  */
 function assertSupportedWeek(weekName: string): void {
   const weekStart = weekName.slice(0, 10);

@@ -17,10 +17,15 @@ import "time"
 // an inner field, and normalising would force re-implementing all of the Python
 // MasterPlan validation in Go/SQL for no query benefit.
 //
+// ApplyToken carries the idempotency key of a user-side apply-from-content
+// (#585): the coach card embeds a generated token, and replaying the same
+// token returns the already-applied row instead of creating a second plan.
+// It is NULL for rows applied through the admin import path.
+//
 // ActiveFlag is a STORAGE-INTEGRITY LEVER ONLY. It carries no business meaning
 // beyond Status and is never surfaced in the API response. MySQL uses
 // UNIQUE(user_id, active_flag) to enforce at most one active plan per athlete:
-// it is 1 on the current row and NULL on every draft/archived row. Current-row
+// it is 1 on the current row and NULL on every superseded row. Current-row
 // discovery checks both Status and ActiveFlag so either direction of marker
 // drift is exposed as an invariant failure.
 //
@@ -36,16 +41,20 @@ import "time"
 // (domain-owns-time, ADR 0003/0006); for a v2 row the authoritative timestamps
 // also live inside Content.
 type MasterPlan struct {
-	PlanID         string    `gorm:"column:plan_id;primaryKey;size:36"`
-	UserID         string    `gorm:"column:user_id;size:64;not null;uniqueIndex:uidx_master_plan_active,priority:1"`
-	ContentVersion int8      `gorm:"column:content_version;not null;check:ck_master_plan_content_version,content_version IN (1,2)"`
-	Content        string    `gorm:"column:content;type:longtext;not null"`
-	GoalID         string    `gorm:"column:goal_id;size:36;not null;index:idx_master_plan_goal"`
-	Status         string    `gorm:"column:status;size:16;not null;check:ck_master_plan_current_marker,(status = 'active' AND active_flag = 1) OR (status <> 'active' AND active_flag IS NULL)"`
-	ActiveFlag     *int8     `gorm:"column:active_flag;uniqueIndex:uidx_master_plan_active,priority:2"`
-	Revision       *int64    `gorm:"column:revision;check:ck_master_plan_revision,(content_version = 1 AND revision IS NULL) OR (content_version = 2 AND revision >= 1)"`
-	CreatedAt      time.Time `gorm:"column:created_at"`
-	UpdatedAt      time.Time `gorm:"column:updated_at"`
+	PlanID         string `gorm:"column:plan_id;primaryKey;size:36"`
+	UserID         string `gorm:"column:user_id;size:64;not null;uniqueIndex:uidx_master_plan_active,priority:1"`
+	ContentVersion int8   `gorm:"column:content_version;not null;check:ck_master_plan_content_version,content_version IN (1,2)"`
+	Content        string `gorm:"column:content;type:longtext;not null"`
+	GoalID         string `gorm:"column:goal_id;size:36;not null;index:idx_master_plan_goal"`
+	// The vocab check doubles as the current-marker check (draft/archived are no
+	// longer legal statuses), replacing ck_master_plan_current_marker. Both
+	// disjuncts are NULL-safe so an active row with a NULL flag is rejected.
+	Status     string    `gorm:"column:status;size:16;not null;check:ck_master_plan_current_marker_v2,(status = 'active' AND active_flag IS NOT NULL AND active_flag = 1) OR (status = 'superseded' AND active_flag IS NULL)"`
+	ActiveFlag *int8     `gorm:"column:active_flag;uniqueIndex:uidx_master_plan_active,priority:2"`
+	ApplyToken *string   `gorm:"column:apply_token;size:36;index:idx_master_plan_apply_token"`
+	Revision   *int64    `gorm:"column:revision;check:ck_master_plan_revision,(content_version = 1 AND revision IS NULL) OR (content_version = 2 AND revision IS NOT NULL AND revision >= 1)"`
+	CreatedAt  time.Time `gorm:"column:created_at"`
+	UpdatedAt  time.Time `gorm:"column:updated_at"`
 }
 
 // TableName pins the table name (GORM would otherwise pluralize).
@@ -57,9 +66,10 @@ const (
 	MasterPlanContentStructured int8 = 2 // structured MasterPlan JSON
 )
 
-// MasterPlan status values (mirror stride_core MasterPlanStatus).
+// MasterPlan status values: active is the athlete's current plan; superseded
+// is a previously-active plan left behind by a newer apply (#585 — the draft
+// intermediate state is gone, plans only exist once applied).
 const (
-	MasterPlanStatusDraft    = "draft"
-	MasterPlanStatusActive   = "active"
-	MasterPlanStatusArchived = "archived"
+	MasterPlanStatusActive     = "active"
+	MasterPlanStatusSuperseded = "superseded"
 )

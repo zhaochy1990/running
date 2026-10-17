@@ -7,7 +7,6 @@ import { loadWorkerConfig } from "./config.js";
 import { coachAgentConfigFiles, workerConfigFiles } from "./configPaths.js";
 import { MySqlDataProvider } from "./data/mysqlDataProvider.js";
 import { createStridePool } from "./db/mysql.js";
-import { GoDraftClient } from "./goClient/draftClient.js";
 import { GoJobClient } from "./goClient/jobClient.js";
 import { PlanJobDispatcher } from "./job/dispatch.js";
 import { PlanJobQueue, RabbitConsumer, RabbitPublisher } from "./queue/rabbit.js";
@@ -34,12 +33,10 @@ async function main(): Promise<void> {
   const store = new GoJobClient(workerConfig.goApi.baseUrl, workerConfig.goApi.internalToken);
 
   const dataProvider = new MySqlDataProvider(stridePool);
-  const draftClient = new GoDraftClient(workerConfig.goApi.baseUrl, workerConfig.goApi.internalToken);
   const handlers = createPlanJobHandlers({
     masterGraph: await masterPlanGraph(coachConfig, dataProvider),
     weeklyGraph: weeklyPlanGraph(coachConfig, dataProvider),
     dataProvider,
-    draftClient,
   });
 
   const dispatcher = new PlanJobDispatcher(store, handlers, publisher, workerConfig.retry, {

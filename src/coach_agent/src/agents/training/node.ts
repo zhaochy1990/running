@@ -1,9 +1,10 @@
-import type { BaseMessage } from "@langchain/core/messages";
-import { AIMessage } from "@langchain/core/messages";
+import { randomUUID } from "node:crypto";
+import { AIMessage, type BaseMessage } from "@langchain/core/messages";
 import type { GraphNode } from "@langchain/langgraph";
 import { getLogger } from "@stride/common";
 import { type MasterPlan, MasterPlanLenientDirectResponseSchema, normalizeRunWorkout } from "@stride/contract";
 import type { AgentsState } from "../state.js";
+import { assertWeeksLinkedToPhases, masterPlanToContent } from "./content.js";
 import { masterPlanCardMessage } from "./render.js";
 
 const logger = getLogger("coachAgent:training");
@@ -21,18 +22,13 @@ export interface TrainingAgent {
   invoke(input: unknown, config?: unknown): Promise<{ messages: BaseMessage[] } & Record<string, unknown>>;
 }
 
-/**
- * #429 draft 落库 sink：把生成计划存成 Go 侧 draft，成功返回 plan_id（进
- * 卡片 data，作为「启用/放弃」CTA 的定位）；返回 null / 抛错均降级——卡片
- * 照发，只是没有 CTA。落库绝不阻断回复。实现由 runtime 注入（coach_agent_api
- * 的 Go internal draft sink）。
- */
-export type MasterPlanDraftSink = (plan: MasterPlan, userId: string) => Promise<string | null>;
+/** Resolve the athlete's active race-goal id (the apply content needs a real UUID). */
+export type RaceGoalIdResolver = (userId: string) => Promise<string | null>;
 
 export interface TrainingNodeDeps {
   agent: TrainingAgent;
   timeoutMs?: number;
-  persistDraft?: MasterPlanDraftSink;
+  resolveGoalId?: RaceGoalIdResolver;
 }
 
 /**
@@ -40,6 +36,11 @@ export interface TrainingNodeDeps {
  * 信封（return_direct + MasterPlan）经宽松 schema 解析后渲染为 markdown 摘要
  * + master-plan 卡片消息；无信封（目标缺失追问、说明）按普通业务节点写回
  * 文本增量。跨字段确定性质量门暂不启用（临时决策，回归另立票）。
+ *
+ * #585 apply-from-content：生成不落库。卡片 data 携带完整 v2 content
+ * （masterPlanToContent）+ 一次性 apply_token，运动员点「应用」才经 Go
+ * 用户端点落库；无 race goal / 变换被拒时整个省略载荷（卡片降级，无 CTA），
+ * 绝不打断回复。
  */
 export function makeTrainingNode(deps: TrainingNodeDeps): GraphNode<typeof AgentsState> {
   const timeoutMs = deps.timeoutMs ?? MASTER_PLAN_TURN_TIMEOUT_MS;
@@ -66,10 +67,10 @@ export function makeTrainingNode(deps: TrainingNodeDeps): GraphNode<typeof Agent
     const plan = extractMasterPlan(result) ?? leakedPlanFromText(result, state);
     if (plan !== undefined) {
       logger.info({ elapsedMs: Date.now() - startedAt, totalWeeks: plan.total_weeks }, "master plan generated in-turn");
-      const planId = await persistPlanDraft(deps.persistDraft, plan, config);
+      const payload = await buildApplyPayload(deps.resolveGoalId, plan, config);
       // markdown 摘要正文 + `master-plan` 卡片信封（#428）。信封挂消息自身随
       // checkpoint 持久化，done/历史投影按消息读取，跨设备重进免费。
-      return { messages: [masterPlanCardMessage(plan, planId)] };
+      return { messages: [masterPlanCardMessage(plan, payload)] };
     }
     // 无信封：目标缺失追问或说明类回复，按普通业务节点写回增量——agent 的
     // 工具调用轨迹（含 ToolStrategy 伪调用）留在节点内，不进入会话历史。
@@ -81,29 +82,31 @@ const GENERATION_FAILED_COPY = "这次训练计划生成没能完成，请稍后
 const GENERATION_TIMEOUT_COPY = "这次训练计划生成用时超出了限制，已停止。请稍后再试一次。";
 
 /**
- * #429 draft 落库（fail-soft）：userId 从 runtime context 读（与内层工具
- * 同源）；任何失败（无 userId / sink 拒绝 / 抛错）都只降级卡片，不影响回复。
+ * #585 apply 载荷构建（fail-soft）：userId 从 runtime context 读（与内层工具
+ * 同源），race goal 经注入的 resolver 查；任何失败（无 userId / 无 goal /
+ * 变换被拒）都返回 undefined——卡片降级为无 apply 载荷，不影响回复。
  */
-async function persistPlanDraft(
-  persistDraft: ((plan: MasterPlan, userId: string) => Promise<string | null>) | undefined,
+async function buildApplyPayload(
+  resolveGoalId: RaceGoalIdResolver | undefined,
   plan: MasterPlan,
   config: unknown,
-): Promise<string | undefined> {
-  if (persistDraft === undefined) return undefined;
+): Promise<{ content: Record<string, unknown>; applyToken: string } | undefined> {
   const userId = (config as { context?: { userId?: unknown } } | undefined)?.context?.userId;
-  if (typeof userId !== "string" || userId.length === 0) {
-    logger.warn("master-plan draft skipped: no userId in runtime context; card degrades without activate CTA");
+  if (resolveGoalId === undefined || typeof userId !== "string" || userId.length === 0) {
+    logger.warn("master-plan apply payload skipped: no resolver or no userId in runtime context; card degrades without apply CTA");
     return undefined;
   }
   try {
-    const planId = await persistDraft(plan, userId);
-    if (planId === null) {
-      logger.warn({ userId }, "master-plan draft not persisted (no race goal or insert rejected); card degrades");
+    const goalId = await resolveGoalId(userId);
+    if (goalId === null) {
+      logger.info({ userId }, "master-plan apply payload skipped: no active race goal");
       return undefined;
     }
-    return planId;
+    const content = masterPlanToContent(plan, goalId);
+    assertWeeksLinkedToPhases(plan, content);
+    return { content, applyToken: randomUUID() };
   } catch (error) {
-    logger.error({ err: error instanceof Error ? error : undefined }, "master-plan draft persist threw; card degrades");
+    logger.warn({ err: error instanceof Error ? error : undefined, userId }, "master-plan apply payload rejected; card degrades without apply CTA");
     return undefined;
   }
 }

@@ -241,3 +241,158 @@ func TestApplyMasterPlanHandler(t *testing.T) {
 		}
 	})
 }
+
+func doApplyFromContent(t *testing.T, h *mpHarness, headers map[string]string, body map[string]any) *httptest.ResponseRecorder {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/users/me/master-plan/apply", bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	w := httptest.NewRecorder()
+	h.svc.Router().ServeHTTP(w, req)
+	return w
+}
+
+func TestApplyFromContentMasterPlanHandler(t *testing.T) {
+	userID := uuid.NewString()
+
+	t.Run("applies content without an active plan", func(t *testing.T) {
+		h := newMPHarness(t)
+		user := h.bearer(t, userID)
+		token := uuid.NewString()
+		body := map[string]any{"content": mustAppliedContent(t, uuid.NewString()), "apply_token": token}
+		w := doApplyFromContent(t, h, user, body)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("code = %d, want 201 (%s)", w.Code, w.Body.String())
+		}
+		var resp applyFromContentMasterPlanResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if !resp.Success || resp.PlanID == "" || resp.ReplacedPlanID != nil {
+			t.Fatalf("unexpected response: %+v", resp)
+		}
+		active, err := h.store.GetCurrentMasterPlan(t.Context(), userID)
+		if err != nil || active == nil || active.PlanID != resp.PlanID || active.ApplyToken == nil || *active.ApplyToken != token {
+			t.Fatalf("stored active plan = %+v, err=%v", active, err)
+		}
+	})
+
+	t.Run("replaying the token returns the already-applied plan", func(t *testing.T) {
+		h := newMPHarness(t)
+		user := h.bearer(t, userID)
+		token := uuid.NewString()
+		body := map[string]any{"content": mustAppliedContent(t, uuid.NewString()), "apply_token": token}
+		first := doApplyFromContent(t, h, user, body)
+		if first.Code != http.StatusCreated {
+			t.Fatalf("first apply code = %d (%s)", first.Code, first.Body.String())
+		}
+		w := doApplyFromContent(t, h, user, body)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("replay code = %d, want 201 (%s)", w.Code, w.Body.String())
+		}
+		var resp applyFromContentMasterPlanResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		var firstResp applyFromContentMasterPlanResponse
+		if err := json.Unmarshal(first.Body.Bytes(), &firstResp); err != nil {
+			t.Fatalf("unmarshal first: %v", err)
+		}
+		if resp.PlanID != firstResp.PlanID {
+			t.Fatalf("replay plan %s, want the already-applied %s", resp.PlanID, firstResp.PlanID)
+		}
+	})
+
+	t.Run("replacing requires the confirmed active identity", func(t *testing.T) {
+		h := newMPHarness(t)
+		user := h.bearer(t, userID)
+		goalID := uuid.NewString()
+		first := map[string]any{"content": mustAppliedContent(t, goalID), "apply_token": uuid.NewString()}
+		if w := doApplyFromContent(t, h, user, first); w.Code != http.StatusCreated {
+			t.Fatalf("first apply code = %d (%s)", w.Code, w.Body.String())
+		}
+		current, err := h.store.GetCurrentMasterPlan(t.Context(), userID)
+		if err != nil || current == nil {
+			t.Fatalf("get current: %+v err=%v", current, err)
+		}
+
+		// No expectation while an active plan exists → 409.
+		noConfirm := map[string]any{"content": mustAppliedContent(t, goalID), "apply_token": uuid.NewString()}
+		if w := doApplyFromContent(t, h, user, noConfirm); w.Code != http.StatusConflict || w.Body.String() != `{"error":"master_plan_exists"}` {
+			t.Fatalf("unconfirmed replace: code=%d body=%s", w.Code, w.Body.String())
+		}
+		// Stale identity → 409.
+		stale := map[string]any{
+			"content":                  mustAppliedContent(t, goalID),
+			"apply_token":              uuid.NewString(),
+			"expected_active_plan_id":  uuid.NewString(),
+			"expected_active_revision": *current.Revision,
+		}
+		if w := doApplyFromContent(t, h, user, stale); w.Code != http.StatusConflict {
+			t.Fatalf("stale confirm: code=%d body=%s", w.Code, w.Body.String())
+		}
+		// Confirmed identity → applied with the old plan superseded.
+		confirmed := map[string]any{
+			"content":                  mustAppliedContent(t, goalID),
+			"apply_token":              uuid.NewString(),
+			"expected_active_plan_id":  current.PlanID,
+			"expected_active_revision": *current.Revision,
+		}
+		w := doApplyFromContent(t, h, user, confirmed)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("confirmed replace code = %d (%s)", w.Code, w.Body.String())
+		}
+		var resp applyFromContentMasterPlanResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if resp.ReplacedPlanID == nil || *resp.ReplacedPlanID != current.PlanID {
+			t.Fatalf("replaced=%v, want %s", resp.ReplacedPlanID, current.PlanID)
+		}
+	})
+
+	t.Run("rejects a missing or malformed apply token", func(t *testing.T) {
+		h := newMPHarness(t)
+		user := h.bearer(t, userID)
+		noToken := map[string]any{"content": mustAppliedContent(t, uuid.NewString())}
+		if w := doApplyFromContent(t, h, user, noToken); w.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("missing token: code=%d body=%s", w.Code, w.Body.String())
+		}
+		badToken := map[string]any{"content": mustAppliedContent(t, uuid.NewString()), "apply_token": "not-a-uuid"}
+		if w := doApplyFromContent(t, h, user, badToken); w.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("bad token: code=%d body=%s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("rejects invalid content", func(t *testing.T) {
+		h := newMPHarness(t)
+		user := h.bearer(t, userID)
+		body := map[string]any{"content": map[string]any{"goal": map[string]any{"goal_id": "not-a-uuid"}}, "apply_token": uuid.NewString()}
+		if w := doApplyFromContent(t, h, user, body); w.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("code=%d body=%s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("internal, admin and anonymous callers are denied", func(t *testing.T) {
+		h := newMPHarness(t)
+		admin := h.bearerWithClaims(t, uuid.NewString(), testAdminAudience, "admin")
+		body := map[string]any{"content": mustAppliedContent(t, uuid.NewString()), "apply_token": uuid.NewString()}
+		// The /me route sits behind the user-tier auth middleware: the admin
+		// audience and the internal token never authenticate (401).
+		if w := doApplyFromContent(t, h, admin, body); w.Code != http.StatusUnauthorized {
+			t.Fatalf("admin: code=%d body=%s", w.Code, w.Body.String())
+		}
+		if w := doApplyFromContent(t, h, internalHdr(), body); w.Code != http.StatusUnauthorized {
+			t.Fatalf("internal: code=%d", w.Code)
+		}
+		if w := doApplyFromContent(t, h, nil, body); w.Code != http.StatusUnauthorized {
+			t.Fatalf("anonymous: code=%d", w.Code)
+		}
+	})
+}

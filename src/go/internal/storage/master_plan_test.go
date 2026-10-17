@@ -103,14 +103,12 @@ func TestMasterPlan_CurrentIgnoresInactiveAndOtherUsers(t *testing.T) {
 	active := structuredPlan(uid)
 	seedPlan(t, st, active)
 
-	draft := structuredPlan(uid)
-	draft.Status = MasterPlanStatusDraft
-	draft.ActiveFlag = nil
-	seedPlan(t, st, draft)
-	archived := structuredPlan(uid)
-	archived.Status = MasterPlanStatusArchived
-	archived.ActiveFlag = nil
-	seedPlan(t, st, archived)
+	// #585: a superseded (previously active) row for the same user and another
+	// user's active row must never surface as this user's current plan.
+	superseded := structuredPlan(uid)
+	superseded.Status = MasterPlanStatusSuperseded
+	superseded.ActiveFlag = nil
+	seedPlan(t, st, superseded)
 	seedPlan(t, st, structuredPlan(uuid.NewString()))
 
 	got, err := st.GetCurrentMasterPlan(ctx, uid)
@@ -177,7 +175,13 @@ func TestMasterPlan_RelationalInvariants(t *testing.T) {
 		}()},
 		{name: "flag without active status", plan: func() *MasterPlan {
 			p := structuredPlan(uuid.NewString())
-			p.Status = MasterPlanStatusArchived
+			p.Status = MasterPlanStatusSuperseded
+			return p
+		}()},
+		{name: "draft status is no longer a legal vocabulary", plan: func() *MasterPlan {
+			p := structuredPlan(uuid.NewString())
+			p.Status = "draft"
+			p.ActiveFlag = nil
 			return p
 		}()},
 	}

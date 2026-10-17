@@ -17,8 +17,8 @@ func migrateWeeklyPlan(t *testing.T, store *Store) {
 }
 
 func weeklyPlanRow(userID, weekStart, status string) *WeeklyPlan {
-	// ADR 0030: only the single active row per (user, week) carries a status_slot
-	// ('active'); drafts and archived rows are NULL so drafts may be many.
+	// #585: a row always is the week's applied plan — status and slot stay
+	// 'active' on every row.
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	row := &WeeklyPlan{
 		PlanID: uuid.NewString(), UserID: userID, WeekStart: weekStart,
@@ -26,10 +26,8 @@ func weeklyPlanRow(userID, weekStart, status string) *WeeklyPlan {
 		Content:        `{"sessions":[],"nutrition":[]}`,
 		Status:         status, Revision: 1, CreatedAt: now, UpdatedAt: now,
 	}
-	if status == WeeklyPlanStatusActive {
-		slot := status
-		row.StatusSlot = &slot
-	}
+	slot := status
+	row.StatusSlot = &slot
 	return row
 }
 
@@ -50,8 +48,6 @@ func TestWeeklyPlanReadsReturnOnlyActiveRows(t *testing.T) {
 	newer := weeklyPlanRow(userID, "2026-07-27", WeeklyPlanStatusActive)
 	seedWeeklyPlan(t, store, older)
 	seedWeeklyPlan(t, store, newer)
-	seedWeeklyPlan(t, store, weeklyPlanRow(userID, "2026-07-27", WeeklyPlanStatusDraft))
-	seedWeeklyPlan(t, store, weeklyPlanRow(userID, "2026-07-27", WeeklyPlanStatusArchived))
 	seedWeeklyPlan(t, store, weeklyPlanRow(otherUser, "2026-07-27", WeeklyPlanStatusActive))
 
 	plans, err := store.ListActiveWeeklyPlans(context.Background(), userID)
@@ -123,7 +119,6 @@ func TestListWeekSummariesReturnsUnfilteredSourceUnion(t *testing.T) {
 	userID, otherUser := uuid.NewString(), uuid.NewString()
 	plan := weeklyPlanRow(userID, "2026-08-03", WeeklyPlanStatusActive)
 	seedWeeklyPlan(t, store, plan)
-	seedWeeklyPlan(t, store, weeklyPlanRow(userID, "2026-07-27", WeeklyPlanStatusDraft))
 	distance, duration := 5000.0, 1800.0
 	seedActivity(t, store, userID, &Activity{
 		LabelID: "shanghai-monday", Date: time.Date(2026, 7, 26, 16, 0, 0, 0, time.UTC),
@@ -193,24 +188,18 @@ func TestListWeekActivitiesUsesShanghaiDatesAndChronologicalOrder(t *testing.T) 
 	}
 }
 
-func TestWeeklyPlanActiveSlotIsUniquePerWeek(t *testing.T) {
+func TestWeeklyPlanWeekIsUniquePerUser(t *testing.T) {
 	store := openTestStore(t)
 	migrateWeeklyPlan(t, store)
 	userID := uuid.NewString()
 
-	// ADR 0030: status_slot is only set on the single active row, so the unique
-	// index constrains exactly one active per (user, week) while drafts and
-	// archived rows (NULL status_slot) may be many.
+	// #585 convergence: UNIQUE(user_id, week_start) — a week's plan exists
+	// exactly once; overwrite happens through ApplyStructuredWeeklyPlan.
 	seedWeeklyPlan(t, store, weeklyPlanRow(userID, "2026-07-27", WeeklyPlanStatusActive))
 	if err := store.db.Create(weeklyPlanRow(userID, "2026-07-27", WeeklyPlanStatusActive)).Error; !isDuplicateKey(err) {
-		t.Fatalf("second active must be duplicate key, got %v", err)
+		t.Fatalf("second row for the same week must be duplicate key, got %v", err)
 	}
-
-	seedWeeklyPlan(t, store, weeklyPlanRow(userID, "2026-07-27", WeeklyPlanStatusDraft))
-	seedWeeklyPlan(t, store, weeklyPlanRow(userID, "2026-07-27", WeeklyPlanStatusDraft))
-
-	seedWeeklyPlan(t, store, weeklyPlanRow(userID, "2026-07-27", WeeklyPlanStatusArchived))
-	seedWeeklyPlan(t, store, weeklyPlanRow(userID, "2026-07-27", WeeklyPlanStatusArchived))
+	seedWeeklyPlan(t, store, weeklyPlanRow(userID, "2026-08-03", WeeklyPlanStatusActive))
 }
 
 func TestWeeklyPlanCheckConstraints(t *testing.T) {
@@ -230,10 +219,10 @@ func TestWeeklyPlanCheckConstraints(t *testing.T) {
 	}
 
 	invalidSlot := weeklyPlanRow(uuid.NewString(), "2026-07-27", WeeklyPlanStatusActive)
-	draftSlot := WeeklyPlanStatusDraft
-	invalidSlot.StatusSlot = &draftSlot
+	badSlot := "superseded"
+	invalidSlot.StatusSlot = &badSlot
 	if err := store.db.Create(invalidSlot).Error; err == nil {
-		t.Fatal("status_slot must match status")
+		t.Fatal("status_slot must be 'active'")
 	}
 
 	missingSlot := weeklyPlanRow(uuid.NewString(), "2026-07-27", WeeklyPlanStatusActive)
@@ -260,23 +249,17 @@ func TestApplyStructuredWeeklyPlanCreatesAndReplacesAtomically(t *testing.T) {
 	}
 
 	second, replaced, err := store.ApplyStructuredWeeklyPlan(ctx, userID, weekStart, content, &WeeklyPlanReplacement{PlanID: first.PlanID, Revision: first.Revision})
-	if err != nil || replaced == nil || replaced.PlanID != first.PlanID || replaced.Revision != 2 || second == nil || second.Revision != 1 {
+	if err != nil || replaced == nil || replaced.PlanID != first.PlanID || second == nil || second.Revision != 1 {
 		t.Fatalf("second=%+v replaced=%+v err=%v", second, replaced, err)
 	}
 	var rows []WeeklyPlan
 	if err := store.db.Where("user_id = ? AND week_start = ?", userID, weekStart).Find(&rows).Error; err != nil {
 		t.Fatalf("list rows: %v", err)
 	}
-	if len(rows) != 2 {
-		t.Fatalf("rows=%+v", rows)
-	}
-	byStatus := make(map[string]WeeklyPlan, len(rows))
-	for _, row := range rows {
-		byStatus[row.Status] = row
-	}
-	archived, active := byStatus[WeeklyPlanStatusArchived], byStatus[WeeklyPlanStatusActive]
-	if archived.PlanID != first.PlanID || archived.StatusSlot != nil || archived.Revision != 2 ||
-		active.PlanID != second.PlanID || active.StatusSlot == nil || *active.StatusSlot != WeeklyPlanStatusActive || active.Revision != 1 {
+	// #585 convergence: the overwrite deletes the prior row — the week keeps
+	// exactly one applied row.
+	if len(rows) != 1 || rows[0].PlanID != second.PlanID || rows[0].Status != WeeklyPlanStatusActive ||
+		rows[0].StatusSlot == nil || *rows[0].StatusSlot != WeeklyPlanStatusActive {
 		t.Fatalf("rows=%+v", rows)
 	}
 }
@@ -383,5 +366,73 @@ func TestApplyStructuredWeeklyPlanRejectsStaleReplacement(t *testing.T) {
 	got, err := store.GetActiveWeeklyPlan(ctx, userID, "2026-08-17")
 	if err != nil || got == nil || got.PlanID != active.PlanID || got.Revision != active.Revision {
 		t.Fatalf("active after conflict=%+v err=%v", got, err)
+	}
+}
+
+func TestAutoMigrateWeeklyPlanConvergesLegacyRows(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	// Recreate the pre-#585 table (draft/archived vocabulary, (user, week,
+	// slot) unique index) with legacy rows, then converge: drafts deleted,
+	// per week only the newest snapshot survives as the applied row.
+	if err := store.db.WithContext(ctx).Exec(`DROP TABLE IF EXISTS weekly_plan`).Error; err != nil {
+		t.Fatalf("drop table: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.db.WithContext(context.Background()).Exec(`DROP TABLE IF EXISTS weekly_plan`).Error
+	})
+	legacy := `CREATE TABLE weekly_plan (
+		plan_id varchar(36) PRIMARY KEY,
+		user_id varchar(64) NOT NULL,
+		master_plan_id varchar(36) NULL,
+		week_start date NOT NULL,
+		content_version tinyint NOT NULL,
+		content longtext NOT NULL,
+		status varchar(16) NOT NULL,
+		status_slot varchar(8) NULL,
+		revision bigint NOT NULL,
+		created_at datetime(3) NOT NULL,
+		updated_at datetime(3) NOT NULL,
+		UNIQUE KEY uidx_weekly_plan_status_slot (user_id, week_start, status_slot),
+		CONSTRAINT ck_weekly_plan_status CHECK (status IN ('draft','active','archived')),
+		CONSTRAINT ck_weekly_plan_status_slot_v2 CHECK ((status = 'active' AND status_slot IS NOT NULL AND status_slot = 'active') OR (status <> 'active' AND status_slot IS NULL))
+	)`
+	if err := store.db.WithContext(ctx).Exec(legacy).Error; err != nil {
+		t.Fatalf("create legacy table: %v", err)
+	}
+	userID := uuid.NewString()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	seed := func(planID string, ts time.Time, status string, slot *string) {
+		t.Helper()
+		if err := store.db.WithContext(ctx).Exec(
+			`INSERT INTO weekly_plan (plan_id, user_id, week_start, content_version, content, status, status_slot, revision, created_at, updated_at)
+			 VALUES (?, ?, ?, 2, '{}', ?, ?, 1, ?, ?)`,
+			planID, userID, "2026-08-17", status, slot, ts, ts,
+		).Error; err != nil {
+			t.Fatalf("seed legacy row (%s): %v", status, err)
+		}
+	}
+	activeSlot := "active"
+	old := now.Add(-2 * time.Hour)
+	newest := now.Add(-time.Hour)
+	seed(uuid.NewString(), old, "active", &activeSlot) // older active — deduped away
+	seed(uuid.NewString(), old, "draft", nil)          // never applied — deleted
+	kept := uuid.NewString()
+	seed(kept, newest, "archived", nil) // newest snapshot — survives as the applied row
+
+	if err := store.AutoMigrateWeeklyPlan(ctx); err != nil {
+		t.Fatalf("converging automigrate: %v", err)
+	}
+
+	var rows []WeeklyPlan
+	if err := store.db.WithContext(ctx).Where("user_id = ?", userID).Find(&rows).Error; err != nil {
+		t.Fatalf("read rows: %v", err)
+	}
+	if len(rows) != 1 || rows[0].PlanID != kept || rows[0].Status != WeeklyPlanStatusActive {
+		t.Fatalf("rows=%+v, want only the newest snapshot as the applied row", rows)
+	}
+	if rows[0].StatusSlot == nil || *rows[0].StatusSlot != WeeklyPlanStatusActive {
+		t.Fatalf("slot=%v, want active", rows[0].StatusSlot)
 	}
 }

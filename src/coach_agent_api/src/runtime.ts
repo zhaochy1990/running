@@ -12,7 +12,6 @@ import { createApp } from "./app.js";
 import { createJwtVerifier, fetchAuthPublicKey } from "./auth.js";
 import { createActivityFeelWriter } from "./coach/activityFeelWriter.js";
 import { CoachInvokerImpl } from "./coach/coachInvoker.js";
-import { createMasterPlanDraftSink } from "./coach/masterPlanDraftSink.js";
 import type { ApiConfig } from "./dto/config.js";
 import { MySqlCoachDataDeleter } from "./persistence/deletion.js";
 import { createPersistence, type Persistence } from "./persistence/index.js";
@@ -42,16 +41,10 @@ export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: C
   let planJobPublisher: RabbitPublisher | undefined;
   try {
     persistence = await createPersistence(apiConfig.persistenceDatabase);
-    // #429：聊天内生成的 master-plan 直接落 Go draft（fail-soft），卡片带
-    // plan_id 供小程序「启用/放弃」CTA 调用户端点。
+    // #585：master-plan 生成不落库，卡片带 content+apply_token 由用户「应用」
+    // 时落库——coach 侧计划写依赖清零。
     // #508：qa agent 的 set_activity_feel 走 Go API 写归一化 feel（fail-loud）。
-    const coachInvoker = new CoachInvokerImpl(
-      dataProvider,
-      coachConfig,
-      persistence,
-      createMasterPlanDraftSink(dataProvider, apiConfig.goApi),
-      createActivityFeelWriter(apiConfig.goApi),
-    );
+    const coachInvoker = new CoachInvokerImpl(dataProvider, coachConfig, persistence, createActivityFeelWriter(apiConfig.goApi));
     await coachInvoker.initialize();
 
     // Deterministic plan-job enqueue (ADR 0030): store-first via the worker's

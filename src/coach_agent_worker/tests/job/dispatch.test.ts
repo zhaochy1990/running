@@ -13,7 +13,7 @@ function dispatcher(store: FakePlanJobStore, publisher: FakePublisher, registry:
 
 const msg = (jobId: string, userId = "user-1"): PlanJobMessage => ({ jobId, userId });
 
-test("queued job is claimed, handler runs, job finishes done with its draft id", async () => {
+test("queued job is claimed, handler runs, job finishes done with its result", async () => {
   const store = new FakePlanJobStore();
   const job = FakePlanJobStore.fixture();
   await store.create(job);
@@ -23,7 +23,7 @@ test("queued job is claimed, handler runs, job finishes done with its draft id",
     seenInput = j.inputJson;
     await hb("reading_history", 10);
     await hb("evaluating", 55);
-    return { result: JSON.stringify({ ok: true }), draftId: "draft-1" };
+    return { result: JSON.stringify({ ok: true }) };
   };
   await dispatcher(store, publisher, new Map([["generate_master_plan", handler]])).dispatch(msg("job-1"));
 

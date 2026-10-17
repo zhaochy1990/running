@@ -26,7 +26,7 @@ export type {
 } from "./agents/coachAgent.js";
 export { CoachContext, createCoachAgent } from "./agents/coachAgent.js";
 export { flushLangfuse, isLangfuseEnabled } from "./agents/langfuse.js";
-export type { MasterPlanDraftSink } from "./agents/training/agent.js";
+export { assertWeeksLinkedToPhases, masterPlanToContent } from "./agents/training/content.js";
 export type { CoachTurnScopeValue } from "./agents/turnScope.js";
 export { CoachTurnScope } from "./agents/turnScope.js";
 export type { CoachAgentConfig, ModelConfig } from "./config/config.js";
