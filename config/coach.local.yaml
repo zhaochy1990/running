@@ -29,6 +29,10 @@ models:
 
 
 agents:
+  - name: race_strategy
+    model: deepseekv4flash
+    max_tokens: 65536
+    timeout_s: 600
   - name: qa
     model: deepseekv4flash
     thinking: disabled
