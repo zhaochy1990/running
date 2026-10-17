@@ -2,7 +2,7 @@ import type { BaseMessage } from "@langchain/core/messages";
 import { AIMessage } from "@langchain/core/messages";
 import type { GraphNode } from "@langchain/langgraph";
 import { getLogger } from "@stride/common";
-import { type MasterPlan, MasterPlanLenientDirectResponseSchema } from "@stride/contract";
+import { type MasterPlan, MasterPlanLenientDirectResponseSchema, normalizeRunWorkout } from "@stride/contract";
 import type { AgentsState } from "../state.js";
 import { masterPlanCardMessage } from "./render.js";
 
@@ -133,11 +133,33 @@ function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
  * ToolStrategy 解析层按宽松 schema 校验；此处 safeParse 是防御性二次确认。
  * 结构化输出未产生（目标缺失追问、说明）时返回 undefined。
  */
+/**
+ * lenient→normalize→strict：聊天侧宽松信封里的 workout_structure 经
+ * normalizeRunWorkout 补默认（note/hr_cap_bpm:null 等），得到严格 MasterPlan。
+ */
+function normalizeMasterPlanWorkouts(content: ReturnType<typeof MasterPlanLenientDirectResponseSchema.parse>["content"]): MasterPlan {
+  return {
+    ...content,
+    weeks: content.weeks.map((week) => ({
+      ...week,
+      key_sessions: week.key_sessions.map((session) => ({
+        ...session,
+        workout_structure: session.workout_structure ? normalizeRunWorkout(session.workout_structure) : session.workout_structure,
+      })),
+    })),
+  };
+}
+
+/**
+ * 从内层 agent 的返回里取结构化信封（与 race_strategy 同模式）。信封已在
+ * ToolStrategy 解析层按宽松 schema 校验；此处 safeParse 是防御性二次确认。
+ * 结构化输出未产生（目标缺失追问、说明）时返回 undefined。
+ */
 function extractMasterPlan(result: Record<string, unknown>): MasterPlan | undefined {
   const structured = result.structuredResponse;
   if (typeof structured !== "object" || structured === null) return undefined;
   const envelope = MasterPlanLenientDirectResponseSchema.safeParse(structured);
-  return envelope.success ? envelope.data.content : undefined;
+  return envelope.success ? normalizeMasterPlanWorkouts(envelope.data.content) : undefined;
 }
 
 /**
@@ -159,7 +181,7 @@ function leakedPlanFromText(result: { messages: BaseMessage[] }, state: { messag
       const envelope = MasterPlanLenientDirectResponseSchema.safeParse(JSON.parse(unfenced));
       if (envelope.success) {
         logger.warn({ preview: message.content.slice(0, 120) }, "master-plan envelope leaked as plain text; recovered by defensive parse");
-        return envelope.data.content;
+        return normalizeMasterPlanWorkouts(envelope.data.content);
       }
       return undefined;
     } catch {

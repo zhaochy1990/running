@@ -1,0 +1,28 @@
+{
+  "schema": "strength-workout/v1",
+  "name": "下肢力量",
+  "date": "2026-03-12",
+  "note": "力量课：COROS T-code provider_id",
+  "exercises": [
+    {
+      "canonical_id": "squat",
+      "display_name": "深蹲",
+      "sets": 3,
+      "target_kind": "reps",
+      "target_value": 12,
+      "rest_seconds": 90,
+      "note": null,
+      "provider_id": "T1262"
+    },
+    {
+      "canonical_id": "plank",
+      "display_name": "平板支撑",
+      "sets": 3,
+      "target_kind": "time_s",
+      "target_value": 45,
+      "rest_seconds": 60,
+      "note": "核心保持中立位",
+      "provider_id": "T1245"
+    }
+  ]
+}

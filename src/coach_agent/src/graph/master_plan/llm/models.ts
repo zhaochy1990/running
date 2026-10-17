@@ -1,5 +1,12 @@
 import { buildModel } from "@stride/common";
-import { MasterPlanSchema, ReviewReportSchema, StrategyCandidateSchema, StrategyJudgmentSchema } from "@stride/contract";
+import {
+  MasterPlanLenientSchema,
+  MasterPlanSchema,
+  normalizeRunWorkout,
+  ReviewReportSchema,
+  StrategyCandidateSchema,
+  StrategyJudgmentSchema,
+} from "@stride/contract";
 import type { ModelConfig } from "../../../config/config.js";
 import {
   canonicalizeAssessmentSummary,
@@ -35,10 +42,7 @@ export async function createMasterPlanLlmModels({ masterPlanModel, reviewerModel
             schema: GoalAssessmentSchema,
             name: "submit_goal_assessment",
             validate: (assessment) => {
-              const canonical = withAuthoritativeLevel(
-                withBackfilledClaimCitations(canonicalizeAssessmentSummary(assessment), input.facts),
-                input.facts,
-              );
+              const canonical = withAuthoritativeLevel(withBackfilledClaimCitations(canonicalizeAssessmentSummary(assessment), input.facts), input.facts);
               validateAssessmentReferences(canonical, input.facts);
               validateGoalAssessmentTargets(canonical, input.request, input.facts);
               return canonical;
@@ -68,25 +72,43 @@ export async function createMasterPlanLlmModels({ masterPlanModel, reviewerModel
         return buildModel({
           ...masterPlanModel,
           structured: {
-            schema: MasterPlanSchema,
+            // lenient→normalize→strict：LLM 直出可省略 note/hr_cap_bpm 等
+            // 键，normalizeRunWorkout 补默认后过硬校验，不为缺省键重烧生成。
+            schema: MasterPlanLenientSchema,
             name: "submit_master_plan_skeleton",
             validate: (plan) => {
-              // 未完成的 phase 带 summary 是确定性的契约违规（规则只看
-              // is_completed），服务器端直接置 null，不为它烧掉整次生成。
-              const canonical = { ...plan, phases: plan.phases.map((phase) => (phase.is_completed ? phase : { ...phase, summary: null })) };
-              const report = runMasterPlanRuleFilter(canonical, input.request, input.snapshot);
+              const strict = MasterPlanSchema.parse({
+                ...plan,
+                // 未完成的 phase 带 summary 是确定性的契约违规（规则只看
+                // is_completed），服务器端直接置 null，不为它烧掉整次生成。
+                phases: plan.phases.map((phase) => (phase.is_completed ? phase : { ...phase, summary: null })),
+                weeks: plan.weeks.map((week) => ({
+                  ...week,
+                  key_sessions: week.key_sessions.map((session) =>
+                    session.workout_structure ? { ...session, workout_structure: normalizeRunWorkout(session.workout_structure) } : session,
+                  ),
+                })),
+              });
+              const report = runMasterPlanRuleFilter(strict, input.request, input.snapshot);
               if (report.has_errors) {
                 const errors = report.violations
                   .filter((item) => item.severity === "error")
                   .map((item) => {
                     const issues = (item.evidence as { issues?: Array<{ path: string; message: string }> } | undefined)?.issues;
-                    return `${item.rule_id}:${item.message}${issues?.length ? ` (${issues.slice(0, 4).map((issue) => `${issue.path}:${issue.message}`).join(" | ")})` : ""}`;
+                    return `${item.rule_id}:${item.message}${
+                      issues?.length
+                        ? ` (${issues
+                            .slice(0, 4)
+                            .map((issue) => `${issue.path}:${issue.message}`)
+                            .join(" | ")})`
+                        : ""
+                    }`;
                   })
                   .join("; ");
                 throw new Error(`deterministic rule errors: ${errors}`);
               }
-              validateSkeletonAgainstStrategy(canonical, input.selectedStrategy);
-              return canonical;
+              validateSkeletonAgainstStrategy(strict, input.selectedStrategy);
+              return strict;
             },
           },
         }).invoke(skeletonPrompt(input, doctrine));

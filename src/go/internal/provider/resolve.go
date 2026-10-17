@@ -49,7 +49,7 @@ func ResolveTarget(t Target, b Baselines) (Target, error) {
 		return Target{}, err
 	}
 	switch t.Kind {
-	case TargetKind(""), TargetOpen, TargetPaceSKM, TargetHRBPM, TargetPowerW:
+	case TargetKind(""), TargetOpen, TargetPaceSKM, TargetHRBPM, TargetPowerW, TargetCadenceSPM:
 		return t, nil
 	case TargetPctMaxHR:
 		return resolveScaled(t, b.HRMaxBPM, TargetHRBPM, "HRmax")

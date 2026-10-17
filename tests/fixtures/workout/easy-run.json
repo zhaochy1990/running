@@ -1,0 +1,34 @@
+{
+  "schema": "run-workout/v1",
+  "name": "有氧跑 60 分钟",
+  "date": "2026-03-08",
+  "note": "线性 repeat=1 块：warmup → work → cooldown",
+  "blocks": [
+    {
+      "repeat": 1,
+      "steps": [
+        {
+          "step_kind": "warmup",
+          "duration": { "kind": "time_s", "value": 600 },
+          "target": { "kind": "open", "low": null, "high": null },
+          "note": null,
+          "hr_cap_bpm": null
+        },
+        {
+          "step_kind": "work",
+          "duration": { "kind": "time_s", "value": 3000 },
+          "target": { "kind": "hr_bpm", "low": 130, "high": 150 },
+          "note": "有氧基础，鼻呼吸",
+          "hr_cap_bpm": null
+        },
+        {
+          "step_kind": "cooldown",
+          "duration": { "kind": "time_s", "value": 600 },
+          "target": { "kind": "open", "low": null, "high": null },
+          "note": null,
+          "hr_cap_bpm": null
+        }
+      ]
+    }
+  ]
+}

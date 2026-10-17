@@ -1,0 +1,74 @@
+{
+  "schema": "run-workout/v1",
+  "name": "有氧间歇 3×4km + 6×400m",
+  "date": "2026-03-07",
+  "note": "与 interval-rest-field.json 同一节课：休息改用 block 尾部 rest step 表达（双 idiom 渲染与 totals 等价）",
+  "blocks": [
+    {
+      "repeat": 3,
+      "steps": [
+        {
+          "step_kind": "work",
+          "duration": {
+            "kind": "distance_m",
+            "value": 4000
+          },
+          "target": {
+            "kind": "pace_s_km",
+            "low": 240,
+            "high": 230
+          },
+          "note": null,
+          "hr_cap_bpm": null
+        },
+        {
+          "step_kind": "rest",
+          "duration": {
+            "kind": "time_s",
+            "value": 180
+          },
+          "target": {
+            "kind": "open",
+            "low": null,
+            "high": null
+          },
+          "note": null,
+          "hr_cap_bpm": null
+        }
+      ]
+    },
+    {
+      "repeat": 6,
+      "steps": [
+        {
+          "step_kind": "work",
+          "duration": {
+            "kind": "distance_m",
+            "value": 400
+          },
+          "target": {
+            "kind": "pace_s_km",
+            "low": 215,
+            "high": 205
+          },
+          "note": null,
+          "hr_cap_bpm": null
+        },
+        {
+          "step_kind": "rest",
+          "duration": {
+            "kind": "time_s",
+            "value": 90
+          },
+          "target": {
+            "kind": "open",
+            "low": null,
+            "high": null
+          },
+          "note": null,
+          "hr_cap_bpm": null
+        }
+      ]
+    }
+  ]
+}

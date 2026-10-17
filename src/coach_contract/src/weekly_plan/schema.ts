@@ -1,66 +1,9 @@
 import { z } from "zod/v4";
 import { addDays, mondayOnOrBefore, weekFolder } from "../date.js";
+import { RunWorkoutSchema, StrengthWorkoutSchema } from "../workout/schema.js";
 
 const DaySchema = z.iso.date();
 const NullableNumberSchema = z.number().nullable();
-
-const DurationSchema = z.strictObject({
-  kind: z.enum(["distance_m", "time_s", "open"]),
-  value: NullableNumberSchema,
-});
-
-const TargetSchema = z.strictObject({
-  kind: z.enum(["pace_s_km", "hr_bpm", "power_w", "open"]),
-  low: NullableNumberSchema,
-  high: NullableNumberSchema,
-});
-
-const WorkoutStepSchema = z.strictObject({
-  step_kind: z.enum(["warmup", "work", "recovery", "cooldown", "rest"]),
-  duration: DurationSchema,
-  target: TargetSchema,
-  note: z.string().nullable(),
-  hr_cap_bpm: z.int().nullable(),
-});
-
-const RunWorkoutSchema = z.strictObject({
-  schema: z.literal("run-workout/v1"),
-  name: z.string().min(1),
-  date: DaySchema,
-  note: z.string().nullable(),
-  blocks: z
-    .array(
-      z.strictObject({
-        repeat: z.int().positive(),
-        steps: z.array(WorkoutStepSchema).min(1),
-      }),
-    )
-    .min(1),
-});
-
-const StrengthWorkoutSchema = z.strictObject({
-  schema: z.literal("strength-workout/v1"),
-  name: z.string().min(1),
-  date: DaySchema,
-  note: z.string().nullable(),
-  exercises: z
-    .array(
-      z.strictObject({
-        canonical_id: z.string().min(1),
-        display_name: z.string().min(1),
-        sets: z.int().positive(),
-        target_kind: z.enum(["reps", "time_s"]),
-        target_value: z.int().positive(),
-        rest_seconds: z.int().nonnegative(),
-        note: z.string().nullable(),
-        provider_id: z
-          .string()
-          .regex(/^T\d+$/, "expected COROS T-code")
-          .nullable(),
-      }),
-    )
-    .min(1),
-});
 
 const SessionFields = {
   schema: z.literal("plan-session/v1"),
