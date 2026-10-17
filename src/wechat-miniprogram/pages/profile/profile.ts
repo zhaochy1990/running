@@ -76,6 +76,7 @@ const MENU_ROWS: MenuRow[] = [
   { key: 'training-status', title: '训练状态', iconPath: '/assets/icons/trend_up.svg' },
   { key: 'race-center', title: '赛事中心', iconPath: '/assets/icons/sprint.svg' },
   { key: 'my-races', title: '我的比赛', iconPath: '/assets/icons/flag.svg' },
+  { key: 'roadmap', title: '产品路线', iconPath: '/assets/icons/how_to_vote.svg' },
   { key: 'watch', title: '手表管理', iconPath: '/assets/icons/schedule.svg' },
 ];
 
@@ -163,6 +164,10 @@ Page<ProfilePageData, ProfilePageHandlers>({
     }
     if (key === 'my-races') {
       wx.navigateTo({ url: '/pages/my-races/my-races' });
+      return;
+    }
+    if (key === 'roadmap') {
+      wx.navigateTo({ url: '/pages/product-roadmap/product-roadmap' });
       return;
     }
     if (key === 'watch') {
