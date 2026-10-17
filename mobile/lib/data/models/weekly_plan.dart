@@ -87,9 +87,18 @@ class WeeklyPlanContent {
 sealed class WorkoutSpec {
   const WorkoutSpec({required this.name, this.note});
 
-  factory WorkoutSpec.fromJson(Map<String, dynamic> json) {
-    final schema = json['schema'] as String? ?? '';
-    return switch (schema) {
+  /// Stored rows written before #584 had the `schema` discriminator stripped,
+  /// so dispatch on the session `kind` first and fall back to the spec
+  /// `schema` for legacy/newer shapes; only an unrecognizable non-null spec
+  /// lands in [_UnknownWorkoutSpec] (a null spec maps to a null field).
+  factory WorkoutSpec.fromJson(Map<String, dynamic> json, {String? sessionKind}) {
+    switch (sessionKind) {
+      case 'run':
+        return RunWorkoutSpec.fromJson(json);
+      case 'strength':
+        return StrengthWorkoutSpec.fromJson(json);
+    }
+    return switch (json['schema'] as String?) {
       'run-workout/v1' => RunWorkoutSpec.fromJson(json),
       'strength-workout/v1' => StrengthWorkoutSpec.fromJson(json),
       _ => _UnknownWorkoutSpec.fromJson(json),
@@ -305,13 +314,14 @@ class PlannedSession {
 
   factory PlannedSession.fromJson(Map<String, dynamic> json) {
     final rawSpec = json['spec'];
+    final kind = json['kind'] as String? ?? 'note';
     return PlannedSession(
       date: json['date'] as String? ?? '',
       sessionIndex: json['session_index'] as int? ?? 0,
-      kind: json['kind'] as String? ?? 'note',
+      kind: kind,
       summary: json['summary'] as String? ?? '',
       spec: rawSpec is Map<String, dynamic>
-          ? WorkoutSpec.fromJson(rawSpec)
+          ? WorkoutSpec.fromJson(rawSpec, sessionKind: kind)
           : null,
       notesMd: json['notes_md'] as String?,
       totalDistanceM: json['total_distance_m'] as num?,

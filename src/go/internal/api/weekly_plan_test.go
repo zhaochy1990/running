@@ -794,6 +794,52 @@ func TestWeekSummaryListRejectsMalformedMasterPlan(t *testing.T) {
 	}
 }
 
+// TestWeeklyPlanDetailKeepsSchemaDiscriminatorBothShapes — the read path must
+// pass stored structured content through for both wire shapes: rows stored
+// before #584 (spec schema stripped) and rows stored after (#584 keeps nested
+// schema discriminators). No stripping on read either way.
+func TestWeeklyPlanDetailKeepsSchemaDiscriminatorBothShapes(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	userID := "user-a"
+	withSchema := `"spec":{"schema":"run-workout/v1","name":"Easy run","date":"2026-07-27","note":null,"blocks":[]}`
+	withoutSchema := `"spec":{"name":"Easy run","date":"2026-07-27","note":null,"blocks":[]}`
+	h.store.plans[userID] = []storage.WeeklyPlan{
+		weeklyPlanFixture("plan-new", userID, "2026-07-27", storage.WeeklyPlanContentStructured,
+			`{"sessions":[{"schema":"plan-session/v1","date":"2026-07-27","session_index":0,"kind":"run","summary":"Easy run",`+withSchema+`}],"nutrition":[]}`),
+		weeklyPlanFixture("plan-legacy", userID, "2026-07-20", storage.WeeklyPlanContentStructured,
+			`{"sessions":[{"date":"2026-07-20","session_index":0,"kind":"run","summary":"Easy run",`+withoutSchema+`}],"nutrition":[]}`),
+	}
+
+	for _, tc := range []struct {
+		weekName string
+		wantSub  string
+		banSub   string
+	}{
+		{weekName: "2026-07-27_08-02", wantSub: `"schema":"run-workout/v1"`, banSub: `"schema":"weekly-plan/v1"`},
+		{weekName: "2026-07-20_07-26", wantSub: `"blocks":[]`, banSub: `"schema":"run-workout/v1"`},
+	} {
+		resp := h.do(http.MethodGet, "/api/"+userID+"/plan/weeks/"+tc.weekName, h.bearer(t, userID))
+		if resp.Code != http.StatusOK {
+			t.Fatalf("%s status=%d body=%s", tc.weekName, resp.Code, resp.Body.String())
+		}
+		var body map[string]any
+		if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode %s: %v", tc.weekName, err)
+		}
+		content, ok := body["content"].(map[string]any)
+		if !ok || content["sessions"] == nil {
+			t.Fatalf("%s content must be object: %v", tc.weekName, body["content"])
+		}
+		raw := resp.Body.String()
+		if !strings.Contains(raw, tc.wantSub) {
+			t.Fatalf("%s content missing %s: %s", tc.weekName, tc.wantSub, raw)
+		}
+		if strings.Contains(raw, tc.banSub) {
+			t.Fatalf("%s content must not contain %s: %s", tc.weekName, tc.banSub, raw)
+		}
+	}
+}
+
 func TestWeeklyPlanDetailPreservesContentRepresentation(t *testing.T) {
 	h := newWeeklyPlanHarness(t)
 	userID := "user-a"

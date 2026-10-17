@@ -84,7 +84,9 @@ function buildWorkoutView(
 ): TodayWorkoutView | null {
   if (!session) return null;
 
-  const isRunning = session.kind === 'run' && session.spec?.schema === 'run-workout/v1';
+  // Stored rows may lack the spec.schema discriminator (pre-#584 rows), so
+  // dispatch on session kind + spec presence instead of the discriminator.
+  const isRunning = session.kind === 'run' && session.spec != null;
 
   const title = (session.spec && 'name' in session.spec && session.spec.name) || session.summary || '训练';
   const coachNote = firstLine(session.notes_md) || firstLine(plan?.coach_notes) || firstLine(plan?.notes_md);
@@ -112,7 +114,7 @@ function buildWorkoutView(
     note: firstLine(session.notes_md),
     sessionIndex: session.session_index,
     date: session.date,
-    scheduledWorkoutId: session.scheduled_workout_id,
+    scheduledWorkoutId: session.scheduled_workout_id ?? null,
     hasSpec,
   };
 }
@@ -289,7 +291,7 @@ function planSessionRow(s: PlannedSession): PlanSessionRowView {
     duration: fmtHms(s.total_duration_s),
     isRest: s.kind === 'rest',
     iconPath,
-    scheduledWorkoutId: s.scheduled_workout_id,
+    scheduledWorkoutId: s.scheduled_workout_id ?? null,
     hasSpec,
   };
 }

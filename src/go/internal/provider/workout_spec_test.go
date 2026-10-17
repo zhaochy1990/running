@@ -78,9 +78,9 @@ func TestStrengthWorkoutFromJSON(t *testing.T) {
 }
 
 func TestRunWorkoutFromJSONAcceptsMissingSchema(t *testing.T) {
-	// Stored weekly-plan content strips the schema discriminator (see
-	// api.stripStoredWeeklyPlanMetadata), so the push path must parse a
-	// schema-less run spec and normalize the discriminator back in.
+	// Weekly-plan rows stored before #584 have the schema discriminator
+	// stripped, so the push path must parse a schema-less run spec and
+	// normalize the discriminator back in.
 	raw := `{
 		"name": "Easy 10K",
 		"date": "2026-05-01",

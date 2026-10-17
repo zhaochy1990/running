@@ -111,6 +111,9 @@ func validateAppliedWeeklyPlan(document map[string]any, expectedWeek string) ([]
 	if err != nil {
 		return nil, fmt.Errorf("clone weekly plan content: %w", err)
 	}
+	// Top-level authoring metadata is stripped; nested schema discriminators
+	// (plan-session/v1, run-workout/v1, strength-workout/v1, plan-nutrition/v1)
+	// are canonical wire shape and must survive storage (issue zhaochy1990/stride-devops#584).
 	delete(stored, "schema")
 	delete(stored, "week_name")
 	stripStoredWeeklyPlanMetadata(stored)
@@ -134,10 +137,12 @@ func cloneJSONMap(document map[string]any) (map[string]any, error) {
 	return clone, nil
 }
 
+// stripStoredWeeklyPlanMetadata recursively removes only the legacy push
+// residue key. The schema discriminator inside content is preserved — clients
+// (mp/Flutter) and the push path dispatch on it.
 func stripStoredWeeklyPlanMetadata(value any) {
 	switch typed := value.(type) {
 	case map[string]any:
-		delete(typed, "schema")
 		delete(typed, "scheduled_workout_id")
 		for _, child := range typed {
 			stripStoredWeeklyPlanMetadata(child)

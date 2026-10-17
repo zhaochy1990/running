@@ -79,9 +79,47 @@ func TestValidateAppliedWeeklyPlanAcceptsCanonicalNestedContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("validate canonical plan: %v", err)
 	}
-	if string(content) == "" || strings.Contains(string(content), `"schema"`) ||
-		strings.Contains(string(content), `"week_name"`) || strings.Contains(string(content), `"scheduled_workout_id"`) {
-		t.Fatalf("stored content contains authoring metadata: %s", content)
+	stored := string(content)
+	if stored == "" {
+		t.Fatalf("stored content is empty")
+	}
+	// Top-level authoring metadata is stripped; nested schema discriminators are
+	// canonical wire shape and must survive storage.
+	for _, banned := range []string{
+		`"schema":"weekly-plan/v1"`, `"week_name"`, `"scheduled_workout_id"`,
+	} {
+		if strings.Contains(stored, banned) {
+			t.Fatalf("stored content contains authoring metadata %s: %s", banned, stored)
+		}
+	}
+	for _, want := range []string{
+		`"schema":"plan-session/v1"`, `"schema":"run-workout/v1"`,
+		`"schema":"strength-workout/v1"`, `"schema":"plan-nutrition/v1"`,
+	} {
+		if !strings.Contains(stored, want) {
+			t.Fatalf("stored content must keep nested schema discriminator %s: %s", want, stored)
+		}
+	}
+}
+
+func TestStripStoredWeeklyPlanMetadataKeepsSchemaDiscriminator(t *testing.T) {
+	value := map[string]any{
+		"schema":               "plan-session/v1",
+		"scheduled_workout_id": float64(42),
+		"spec": map[string]any{
+			"schema":               "run-workout/v1",
+			"scheduled_workout_id": float64(7),
+		},
+	}
+	stripStoredWeeklyPlanMetadata(value)
+	if value["schema"] != "plan-session/v1" || value["spec"].(map[string]any)["schema"] != "run-workout/v1" {
+		t.Fatalf("schema discriminator must survive strip: %v", value)
+	}
+	if _, ok := value["scheduled_workout_id"]; ok {
+		t.Fatalf("top-level scheduled_workout_id must be stripped: %v", value)
+	}
+	if _, ok := value["spec"].(map[string]any)["scheduled_workout_id"]; ok {
+		t.Fatalf("nested scheduled_workout_id must be stripped: %v", value)
 	}
 }
 
