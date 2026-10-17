@@ -27,6 +27,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/catalog"
 	"github.com/zhaochy1990/stride/internal/coachsvc"
 	"github.com/zhaochy1990/stride/internal/config"
+	"github.com/zhaochy1990/stride/internal/cos"
 	"github.com/zhaochy1990/stride/internal/health"
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/mq"
@@ -151,6 +152,11 @@ func runAPI() error {
 	if err := store.AutoMigrateRoadmap(ctx); err != nil {
 		return err
 	}
+	// feedbacks + feedback_replies (+ the trace correlation table) back the
+	// user-feedback surface (devops#552). Only the API writes them.
+	if err := store.AutoMigrateFeedback(ctx); err != nil {
+		return err
+	}
 	// race_strategy backs the coach race-strategy surface (#396). Only the API
 	// writes it (coach + runner both go through endpoints), so the worker does
 	// not migrate it.
@@ -192,6 +198,17 @@ func runAPI() error {
 	// Coach cleanup goes through the TypeScript coach service, forwarding the
 	// caller's bearer (admin token or the user's own).
 	coachClient := coachsvc.New(cfg.API.CoachServiceURL, 10*time.Second)
+
+	// Feedback-image bucket (devops#552): same cos: block the worker uses for
+	// route thumbnails. An unconfigured bucket keeps the API booting; the
+	// upload endpoint answers 503 cos_not_configured (auth-service precedent).
+	feedbackCos := cos.NewClient(cos.Config{
+		SecretID:  cfg.COS.SecretID,
+		SecretKey: cfg.COS.SecretKey,
+		Bucket:    cfg.COS.Bucket,
+		Region:    cfg.COS.Region,
+		BaseURL:   cfg.COS.BaseURL,
+	})
 	providerLogin := providerLoginAdapter{store: store, delay: watchRequestDelay}
 	providerInfo := providerInfoAdapter{store: store, delay: watchRequestDelay}
 	// File-based provider-binding fallback (registry.ProviderName) reads
@@ -261,10 +278,19 @@ func runAPI() error {
 		RacePlanStore:           store,
 		CustomRaceStore:         store,
 		RoadmapStore:            store,
-		RaceStrategyStore:       store,
-		RaceContentStore:        store,
-		RaceCatalogStore:        store,
-		RaceItemGeocoder:        newAMapGeocoder(cfg.AMap),
+		FeedbackStore:           store,
+		// FeedbackModeration stays nil until an openid path ships (see the
+		// devops#519 conclusion): accepted content is tagged unchecked.
+		FeedbackImages: feedbackCos,
+		WXAPush: api.WXAPushConfig{
+			AppID:          cfg.WXA.AppID,
+			Token:          cfg.WXA.PushToken,
+			EncodingAESKey: cfg.WXA.EncodingAESKey,
+		},
+		RaceStrategyStore: store,
+		RaceContentStore:  store,
+		RaceCatalogStore:  store,
+		RaceItemGeocoder:  newAMapGeocoder(cfg.AMap),
 		CityAIDraft: api.CityAIDraftConfig{
 			Endpoint: cfg.CityAIDraft.Endpoint,
 			APIKey:   cfg.CityAIDraft.APIKey,
