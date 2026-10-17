@@ -95,7 +95,8 @@ src/coach_agent_api/logs/
 .worktrees/
 
 # wechat-miniprogram 的 tsc 编译产物（与 .ts 同名的 .js 由编译生成，不入库；
-# components / custom-tab-bar / vendor 下是手写或第三方源码，正常跟踪）
+# vendor 及 components/mp-html 是手写或第三方源码，正常跟踪；
+# 已跟踪文件不受 gitignore 影响）
 src/wechat-miniprogram/app.js
 src/wechat-miniprogram/constants/*.js
 src/wechat-miniprogram/pages/**/*.js
@@ -103,5 +104,10 @@ src/wechat-miniprogram/services/*.js
 src/wechat-miniprogram/store/*.js
 src/wechat-miniprogram/types/*.js
 src/wechat-miniprogram/utils/*.js
+src/wechat-miniprogram/components/**/*.js
+src/wechat-miniprogram/custom-tab-bar/*.js
+
+# my-master 派发器本地工作状态
+.dispatch/
 docs/~$CoachAgent.drawio.dtmp
 .dsa/
