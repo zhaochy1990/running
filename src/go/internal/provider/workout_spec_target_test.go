@@ -1,4 +1,4 @@
-// Tests for the twelve-kind TargetKind matrix: JSON round-trips, the
+// Tests for the thirteen-kind TargetKind matrix: JSON round-trips, the
 // absolute-vs-relative-vs-zone families, and the parse-time validation gates
 // (unknown kind, bad fraction, inverted speed-ratio contract).
 package provider
@@ -39,6 +39,7 @@ func TestAllTargetKindsFamilyClassification(t *testing.T) {
 		{TargetHRBPM, false, false, false},
 		{TargetPowerW, false, false, false},
 		{TargetOpen, false, false, false},
+		{TargetCadenceSPM, false, false, false},
 		{TargetPctMaxHR, true, false, false},
 		{TargetPctHRR, true, false, false},
 		{TargetPctLTHR, true, false, false},
@@ -62,7 +63,7 @@ func TestAllTargetKindsFamilyClassification(t *testing.T) {
 			t.Errorf("%q: IsSpeedRatio = %v, want %v", tc.kind, got, tc.speed)
 		}
 	}
-	for _, bad := range []TargetKind{"cadence_spm", "rpe", "swim_pace_100m", "", "PACE_S_KM"} {
+	for _, bad := range []TargetKind{"rpe", "swim_pace_100m", "", "PACE_S_KM"} {
 		if bad.IsValid() {
 			t.Errorf("%q: IsValid = true, want false (candidate kinds are recorded, not added)", bad)
 		}
@@ -79,6 +80,7 @@ func TestAllTargetKindsRoundTrip(t *testing.T) {
 		{"pace_s_km", PaceRangeSKM(340, 320)},
 		{"hr_bpm", HRRangeBPM(130, 150)},
 		{"power_w", PowerRangeW(200, 250)},
+		{"cadence_spm", Target{Kind: TargetCadenceSPM, Low: floatPtr(176), High: floatPtr(186)}},
 		{"open", OpenTarget()},
 		{"pct_max_hr", PctRange(TargetPctMaxHR, 0.70, 0.80)},
 		{"pct_hrr", PctRange(TargetPctHRR, 0.60, 0.75)},
@@ -152,7 +154,7 @@ func TestTargetRoundTripOneSidedAndSinglePoint(t *testing.T) {
 }
 
 func TestTargetValidateRejectsUnknownKind(t *testing.T) {
-	for _, kind := range []string{"cadence_spm", "rpe", "swim_pace_100m", "bogus"} {
+	for _, kind := range []string{"rpe", "swim_pace_100m", "bogus"} {
 		raw := `{"schema":"run-workout/v1","name":"x","date":"2026-05-01","blocks":[{"repeat":1,"steps":[{"step_kind":"work","duration":{"kind":"time_s","value":600},"target":{"kind":"` + kind + `","low":170,"high":180}}]}]}`
 		_, err := RunWorkoutFromJSON([]byte(raw))
 		if err == nil || !strings.Contains(err.Error(), "unknown target kind") {

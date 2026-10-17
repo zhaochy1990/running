@@ -8,7 +8,7 @@ export interface PlannedRunWorkout {
         value: number | null;
       };
       target: {
-        kind: "pace_s_km" | "hr_bpm" | "power_w" | "open";
+        kind: "pace_s_km" | "hr_bpm" | "power_w" | "cadence_spm" | "open";
         low: number | null;
         high: number | null;
       };

@@ -56,7 +56,7 @@ const (
 // TargetKind is what metric a step targets. The canonical set is closed and
 // grouped in three families:
 //
-//   - Absolute: pace_s_km, hr_bpm, power_w, open.
+//   - Absolute: pace_s_km, hr_bpm, power_w, cadence_spm, open.
 //   - Relative: pct_max_hr, pct_hrr, pct_lt_hr, pct_lt_pace, pct_race_pace,
 //     pct_ftp. The stored Low/High values are plain fractions (0.70 == 70%),
 //     never ×100 or ×1000 scaled; adapters own any scaling at their boundary.
@@ -66,15 +66,16 @@ const (
 // resolution rule in resolve.go, and cover it in the round-trip tests. Unknown
 // kinds are a parse error (never a silent degrade).
 //
-// Candidate kinds that are deliberately NOT modelled yet: cadence_spm, rpe,
-// and a per-100m swim pace unit.
+// Candidate kinds that are deliberately NOT modelled yet: rpe,
+// and a per-100m swim pace unit. cadence_spm was added in ADR 0043.
 type TargetKind string
 
 const (
-	TargetPaceSKM TargetKind = "pace_s_km" // seconds per km
-	TargetHRBPM   TargetKind = "hr_bpm"    // beats per minute
-	TargetPowerW  TargetKind = "power_w"   // watts
-	TargetOpen    TargetKind = "open"      // no specific target
+	TargetPaceSKM    TargetKind = "pace_s_km"   // seconds per km
+	TargetHRBPM      TargetKind = "hr_bpm"      // beats per minute
+	TargetPowerW     TargetKind = "power_w"     // watts
+	TargetOpen       TargetKind = "open"        // no specific target
+	TargetCadenceSPM TargetKind = "cadence_spm" // strides per minute (running cadence)
 
 	TargetPctMaxHR    TargetKind = "pct_max_hr"    // fraction of HRmax
 	TargetPctHRR      TargetKind = "pct_hrr"       // fraction of heart-rate reserve
@@ -89,7 +90,7 @@ const (
 
 // validTargetKinds is the closed set of kinds the canonical spec accepts.
 var validTargetKinds = map[TargetKind]struct{}{
-	TargetPaceSKM: {}, TargetHRBPM: {}, TargetPowerW: {}, TargetOpen: {},
+	TargetPaceSKM: {}, TargetHRBPM: {}, TargetPowerW: {}, TargetOpen: {}, TargetCadenceSPM: {},
 	TargetPctMaxHR: {}, TargetPctHRR: {}, TargetPctLTHR: {},
 	TargetPctLTPace: {}, TargetPctRacePace: {}, TargetPctFTP: {},
 	TargetPaceZone: {}, TargetHRZone: {},

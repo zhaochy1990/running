@@ -1,0 +1,54 @@
+{
+  "schema": "run-workout/v1",
+  "name": "有氧间歇 3×4km + 6×400m",
+  "date": "2026-03-07",
+  "note": "用户例句：3×4km @ 3:50–4:00/km（休3′）＋ 6×400m @ 3:25–3:35/km（休90″）；休息记在 work 步的 rest 字段上",
+  "blocks": [
+    {
+      "repeat": 3,
+      "steps": [
+        {
+          "step_kind": "work",
+          "duration": {
+            "kind": "distance_m",
+            "value": 4000
+          },
+          "target": {
+            "kind": "pace_s_km",
+            "low": 240,
+            "high": 230
+          },
+          "note": null,
+          "hr_cap_bpm": null,
+          "rest": {
+            "kind": "time_s",
+            "value": 180
+          }
+        }
+      ]
+    },
+    {
+      "repeat": 6,
+      "steps": [
+        {
+          "step_kind": "work",
+          "duration": {
+            "kind": "distance_m",
+            "value": 400
+          },
+          "target": {
+            "kind": "pace_s_km",
+            "low": 215,
+            "high": 205
+          },
+          "note": null,
+          "hr_cap_bpm": null,
+          "rest": {
+            "kind": "time_s",
+            "value": 90
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -95,7 +95,7 @@ test("declared distance must match fully distance-based workout segments", () =>
   assert.equal(MasterPlanSchema.safeParse(plan).success, false);
 });
 
-test("canonical generated workouts reject unsupported power targets", () => {
+test("canonical generated workouts accept power targets (shared contract, ADR 0043)", () => {
   const plan = createTestMasterPlan();
   const firstSession = plan.weeks[0]?.key_sessions[0];
   assert.ok(firstSession?.workout_structure);
@@ -106,7 +106,7 @@ test("canonical generated workouts reject unsupported power targets", () => {
     low: 250,
     high: 300,
   };
-  assert.equal(MasterPlanSchema.safeParse(plan).success, false);
+  assert.equal(MasterPlanSchema.safeParse(plan).success, true);
 });
 
 test("race week accepts one race-pace activation but rejects other companions", () => {
@@ -196,6 +196,8 @@ function structuredWorkout(date: string, workDistanceM: number): NonNullable<Mas
             step_kind: "work" as const,
             duration: { kind: "distance_m" as const, value: workDistanceM },
             target: { kind: "pace_s_km" as const, low: 244, high: 240 },
+            note: null,
+            hr_cap_bpm: null,
           },
         ],
       },
@@ -210,12 +212,16 @@ function structuredActivation(date: string, workDistanceM: number, warmupDistanc
       step_kind: "warmup",
       duration: { kind: "distance_m", value: warmupDistanceM },
       target: { kind: "pace_s_km", low: 330, high: 300 },
+      note: null,
+      hr_cap_bpm: null,
     },
     ...structure.blocks[0]!.steps,
     {
       step_kind: "cooldown",
       duration: { kind: "distance_m", value: cooldownDistanceM },
       target: { kind: "pace_s_km", low: 330, high: 300 },
+      note: null,
+      hr_cap_bpm: null,
     },
   ];
   return structure;
@@ -254,11 +260,15 @@ test("key sessions accept the canonical structured running-workout shape", () =>
             step_kind: "work",
             duration: { kind: "time_s", value: 180 },
             target: { kind: "pace_s_km", low: 230, high: 225 },
+            note: null,
+            hr_cap_bpm: null,
           },
           {
             step_kind: "recovery",
             duration: { kind: "time_s", value: 120 },
             target: { kind: "open", low: null, high: null },
+            note: null,
+            hr_cap_bpm: null,
           },
         ],
       },
@@ -284,6 +294,8 @@ test("structured workout dates stay in their week and work targets are explicit"
             step_kind: "work",
             duration: { kind: "time_s", value: 600 },
             target: { kind: "open", low: null, high: null },
+            note: null,
+            hr_cap_bpm: null,
           },
         ],
       },

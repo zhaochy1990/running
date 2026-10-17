@@ -65,6 +65,8 @@ export function structuredRun(name: string, date: string, distanceM: number, pac
               low: paceSPerKm,
               high: paceSPerKm,
             },
+            note: null,
+            hr_cap_bpm: null,
           },
         ],
       },

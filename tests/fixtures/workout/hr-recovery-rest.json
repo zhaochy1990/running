@@ -1,0 +1,21 @@
+{
+  "schema": "run-workout/v1",
+  "name": "门槛间歇 5×1km",
+  "date": "2026-03-10",
+  "note": "心率恢复休息：rest kind=hr_bpm，心率降到 130 以下开始下一组",
+  "blocks": [
+    {
+      "repeat": 5,
+      "steps": [
+        {
+          "step_kind": "work",
+          "duration": { "kind": "distance_m", "value": 1000 },
+          "target": { "kind": "pace_s_km", "low": 245, "high": 235 },
+          "note": null,
+          "hr_cap_bpm": 175,
+          "rest": { "kind": "hr_bpm", "value": 130 }
+        }
+      ]
+    }
+  ]
+}

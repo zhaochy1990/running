@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { RunWorkoutLenientSchema, RunWorkoutSchema, type WorkoutTarget } from "../workout/schema.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const DaySchema = z
@@ -153,56 +154,39 @@ const RecoverySchema = z.object({
   adjustment_trigger: z.string().min(1),
 });
 
-const WorkoutDurationSchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.enum(["time_s", "distance_m"]),
-      value: z.number().positive(),
-    })
-    .strict(),
-  z.object({ kind: z.literal("open"), value: z.null() }).strict(),
-]);
+/** Key session 形状按 strict/lenient 注入对应的共享 run-workout schema（已 nullish 包裹）。 */
+const KeySessionFields = {
+  type: KeySessionTypeSchema.describe("Classify the complete standalone workout, not an interval or pace segment embedded inside another workout."),
+  distance_km: z
+    .number()
+    .nonnegative()
+    .nullable()
+    .describe("Total distance of this complete workout. Do not put only the distance of its work intervals here."),
+  duration_min: z
+    .number()
+    .nonnegative()
+    .nullable()
+    .describe("Total elapsed duration of this complete workout, including warm-up, recoveries, and cool-down; not only work-interval time."),
+  intensity: z.string().nullable().describe("Describe every component of this one workout here, including any race-pace blocks embedded in a long run."),
+  purpose: z.string().nullable(),
+};
 
-const WorkoutTargetSchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.enum(["pace_s_km", "hr_bpm"]),
-      low: z.number().positive(),
-      high: z.number().positive(),
-    })
-    .strict(),
-  z.object({ kind: z.literal("open"), low: z.null(), high: z.null() }).strict(),
-]);
-
-const WorkoutStepSchema = z
+/** lenient/strict 分别注入共享 run-workout schema 的宽松/严格层。 */
+const KeySessionLenientSchema = z
   .object({
-    step_kind: z.enum(["warmup", "work", "recovery", "cooldown", "rest"]),
-    duration: WorkoutDurationSchema,
-    target: WorkoutTargetSchema,
-    note: z.string().nullable().optional(),
-    hr_cap_bpm: z.int().positive().nullable().optional(),
+    ...KeySessionFields,
+    workout_structure: RunWorkoutLenientSchema.nullish().describe(
+      "Canonical running-workout blocks. Repeated interval work and recovery belong in the same block.",
+    ),
   })
-  .strict();
+  .describe("Exactly one independently performed workout. Embedded blocks are components of this object and must not be repeated as sibling key_sessions.");
 
-const WorkoutStructureSchema = z
+const KeySessionStrictSchema = z
   .object({
-    schema: z.literal("run-workout/v1"),
-    name: z.string().min(1),
-    date: DaySchema,
-    note: z.string().nullable(),
-    blocks: z
-      .array(
-        z
-          .object({
-            repeat: z.int().positive(),
-            steps: z.array(WorkoutStepSchema).min(1),
-          })
-          .strict(),
-      )
-      .min(1),
+    ...KeySessionFields,
+    workout_structure: RunWorkoutSchema.nullish().describe("Canonical running-workout blocks. Repeated interval work and recovery belong in the same block."),
   })
-  .strict()
-  .describe("Canonical running-workout blocks. Repeated interval work and recovery belong in the same block.");
+  .describe("Exactly one independently performed workout. Embedded blocks are components of this object and must not be repeated as sibling key_sessions.");
 
 /** Phase 形状（字段类型/枚举），不带跨字段确定性规则。 */
 const PhaseShapeSchema = z.object({
@@ -233,27 +217,6 @@ const PhaseSchema = PhaseShapeSchema.superRefine((phase, ctx) => {
   }
 });
 
-const KeySessionSchema = z
-  .object({
-    type: KeySessionTypeSchema.describe("Classify the complete standalone workout, not an interval or pace segment embedded inside another workout."),
-    distance_km: z
-      .number()
-      .nonnegative()
-      .nullable()
-      .describe("Total distance of this complete workout. Do not put only the distance of its work intervals here."),
-    duration_min: z
-      .number()
-      .nonnegative()
-      .nullable()
-      .describe("Total elapsed duration of this complete workout, including warm-up, recoveries, and cool-down; not only work-interval time."),
-    intensity: z.string().nullable().describe("Describe every component of this one workout here, including any race-pace blocks embedded in a long run."),
-    purpose: z.string().nullable(),
-    workout_structure: WorkoutStructureSchema.nullish().describe(
-      "Machine-readable structure for this complete running workout. Use null only for strength sessions or legacy plans.",
-    ),
-  })
-  .describe("Exactly one independently performed workout. Embedded blocks are components of this object and must not be repeated as sibling key_sessions.");
-
 /** Week 形状（字段类型/枚举），不带跨字段确定性规则。 */
 const WeekShapeSchema = z.object({
   week_index: z.int().positive(),
@@ -262,12 +225,13 @@ const WeekShapeSchema = z.object({
   target_weekly_km_low: z.number().nonnegative(),
   target_weekly_km_high: z.number().nonnegative(),
   key_sessions: z
-    .array(KeySessionSchema)
+    .array(KeySessionLenientSchema)
     .describe("Strategic workouts for the week. Each object is one independently performed workout, never a component of another object."),
   is_recovery_week: z.boolean(),
 });
 
-const WeekSchema = WeekShapeSchema.superRefine((week, ctx) => {
+/** Week 形状（字段类型/枚举），带跨字段确定性规则；workout_structure 为共享严格 schema。 */
+const WeekSchema = WeekShapeSchema.extend({ key_sessions: z.array(KeySessionStrictSchema) }).superRefine((week, ctx) => {
   if (week.key_sessions.length > (week.is_recovery_week ? 1 : 3)) {
     ctx.addIssue({
       code: "custom",
@@ -460,7 +424,7 @@ function targetPaceSPerKm(targetTime: string, distanceKm: number): number | null
   return totalSeconds > 0 ? totalSeconds / distanceKm : null;
 }
 
-function targetsGoalRacePace(target: z.infer<typeof WorkoutTargetSchema>, goalPaceSPerKm: number | null): boolean {
+function targetsGoalRacePace(target: WorkoutTarget, goalPaceSPerKm: number | null): boolean {
   if (target.kind !== "pace_s_km" || goalPaceSPerKm === null) return false;
   const fastest = Math.min(target.low, target.high);
   const slowest = Math.max(target.low, target.high);

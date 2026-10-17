@@ -1,0 +1,21 @@
+{
+  "schema": "run-workout/v1",
+  "name": "步频训练 8×20s",
+  "date": "2026-03-11",
+  "note": "步频 target（cadence_spm）+ manual 休息",
+  "blocks": [
+    {
+      "repeat": 8,
+      "steps": [
+        {
+          "step_kind": "work",
+          "duration": { "kind": "time_s", "value": 20 },
+          "target": { "kind": "cadence_spm", "low": 176, "high": 186 },
+          "note": "高步频快脚，躯干前倾",
+          "hr_cap_bpm": null,
+          "rest": { "kind": "manual", "value": null }
+        }
+      ]
+    }
+  ]
+}

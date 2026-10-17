@@ -31,11 +31,11 @@
 |------|--------|
 | `SessionKind` | `run`, `strength`, `rest`, `cross`, `note`（**没有** `interval`/`easy_run`/`long_run`/`tempo` —— 这些全部映射为 `run`） |
 | `DurationKind` (Run step) | `distance_m`, `time_s`, `open`（**没有** `duration_s`） |
-| `TargetKind` (Run step) | `pace_s_km`, `hr_bpm`, `power_w`, `open` |
+| `TargetKind` (Run step) | `pace_s_km`, `hr_bpm`, `power_w`, `cadence_spm`, `open` |
 | `StrengthTargetKind` | `reps`, `time_s` |
 | `StepKind` | `warmup`, `work`, `recovery`, `cooldown`, `rest` |
 
-**RUN session 的 `spec`** 是 `NormalizedRunWorkout`：`{name, date, blocks:[{repeat, steps:[WorkoutStep]}], note?}`。每个 `WorkoutStep` = `{step_kind, duration:{kind,value}, target:{kind,low,high}, note?, hr_cap_bpm?}`。pace 单位是 **秒/km**（4:00/km = 240）。距离是 **米**。
+**RUN session 的 `spec`** 是 `NormalizedRunWorkout`：`{name, date, blocks:[{repeat, steps:[WorkoutStep]}], note?}`。每个 `WorkoutStep` = `{step_kind, duration:{kind,value}, target:{kind,low,high}, note?, hr_cap_bpm?, rest?}`。pace 单位是 **秒/km**（4:00/km = 240）。距离是 **米**。可选 `rest` 是步后休息第一公民：`{kind: "time_s"|"hr_bpm"|"manual", value}`（hr_bpm=心率降到 value 以下继续；manual 时 value=null）；`step_kind='rest'` 的步不得带 `rest` 字段。两种休息写法（step `rest` 字段 / block 尾部 rest step）语义等价，渲染与 totals 输出一致。权威样例见 `tests/fixtures/workout/`，单一契约源是 `src/coach_contract/src/workout/`（ADR 0043）。
 
 **STRENGTH session 的 `spec`** 是 `NormalizedStrengthWorkout`：`{name, date, exercises:[StrengthExerciseSpec], note?}`。每个 exercise = `{canonical_id, display_name, sets, target_kind, target_value, rest_seconds, note?, provider_id?}`。`canonical_id` 当前等于 COROS T-code（如 `T1262`），`provider_id` 同值。**不允许的字段名**：`name`（用 `display_name`）、`reps`/`duration_s`/`rest_s`（合并到 `target_kind`+`target_value`+`rest_seconds`）、`notes`（用 `note`）。
 

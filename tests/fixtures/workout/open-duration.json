@@ -1,0 +1,27 @@
+{
+  "schema": "run-workout/v1",
+  "name": "节奏转开放慢收",
+  "date": "2026-03-13",
+  "note": "open 时长（手动结束步）与 open target；totals 相应量为 null",
+  "blocks": [
+    {
+      "repeat": 1,
+      "steps": [
+        {
+          "step_kind": "work",
+          "duration": { "kind": "time_s", "value": 1200 },
+          "target": { "kind": "pace_s_km", "low": 240, "high": 230 },
+          "note": null,
+          "hr_cap_bpm": null
+        },
+        {
+          "step_kind": "cooldown",
+          "duration": { "kind": "open", "value": null },
+          "target": { "kind": "open", "low": null, "high": null },
+          "note": "慢跑到心率回落",
+          "hr_cap_bpm": null
+        }
+      ]
+    }
+  ]
+}
