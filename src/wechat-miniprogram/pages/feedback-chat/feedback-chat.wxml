@@ -1,0 +1,91 @@
+<view class="page">
+  <!-- 自定义顶部栏 -->
+  <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn" bindtap="onBack">
+        <image class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">STRIDE 团队</view>
+        <view class="top-bar__subtitle">反馈会话</view>
+      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
+  </view>
+
+  <!-- 加载态 / 错误态（盖在聊天区上） -->
+  <view wx:if="{{loading}}" class="state-card" style="padding-top: {{contentPaddingTop}}rpx;">
+    <view class="spinner"></view>
+    <view class="state-card__text">加载中…</view>
+  </view>
+  <view wx:elif="{{loadError}}" class="banner banner--error" style="margin-top: {{contentPaddingTop}}rpx;" bindtap="onRetry">{{loadError}} · 点按重试</view>
+
+  <block wx:else>
+    <!-- 聊天滚动区 -->
+    <scroll-view class="chat-body" scroll-y scroll-into-view="{{scrollInto}}" style="padding-top: {{contentPaddingTop}}rpx;">
+      <!-- 头部 tag 行 -->
+      <view class="chat-head">
+        <view class="tag {{head.typeCls}}">{{head.typeLabel}}</view>
+        <view class="tag {{head.statusCls}}">{{head.statusLabel}}</view>
+        <view wx:if="{{head.adopted}}" class="tag tag--adopted">🏆 已采纳</view>
+      </view>
+
+      <!-- 已采纳横幅：去产品路线投票 -->
+      <view wx:if="{{head.adopted}}" class="adopt-banner" bindtap="onGoVote">
+        <view class="adopt-banner__t">🏆 已采纳<block wx:if="{{adoptedTitle}}"> —— 这个建议已进入产品路线「{{adoptedTitle}}」</block><block wx:else> —— 这个建议已进入产品路线</block></view>
+        <view class="adopt-banner__lnk">去投票 ›</view>
+      </view>
+
+      <!-- 首卡：反馈原文 -->
+      <view class="orig">
+        <view class="orig__body">{{card.content}}</view>
+        <view wx:if="{{card.imageUrls.length}}" class="orig__pics">
+          <image
+            wx:for="{{card.imageUrls}}"
+            wx:key="*this"
+            class="orig__pic"
+            src="{{item}}"
+            mode="aspectFill"
+            data-index="{{index}}"
+            bindtap="onPreviewImage"
+          />
+        </view>
+        <view class="orig__foot">{{card.time}}</view>
+      </view>
+
+      <!-- 气泡流 -->
+      <view
+        wx:for="{{bubbles}}"
+        wx:key="id"
+        id="bubble-{{index}}"
+        class="bubble-row {{item.who === 'me' ? 'bubble-row--me' : ''}}"
+      >
+        <view class="bub {{item.who === 'me' ? 'bub--me' : 'bub--pm'}}">
+          <view wx:if="{{item.who === 'pm'}}" class="bub__who">STRIDE 团队</view>
+          <text>{{item.text}}</text>
+          <view class="bub__t">{{item.time}}</view>
+        </view>
+      </view>
+
+      <view class="chat-pad"></view>
+    </scroll-view>
+
+    <!-- 常驻输入条 / closed 禁言 -->
+    <view class="input-bar">
+      <block wx:if="{{!closed}}">
+        <input
+          class="input-bar__input"
+          placeholder-class="input-bar__placeholder"
+          value="{{draft}}"
+          placeholder="追问或补充…"
+          maxlength="1000"
+          confirm-type="send"
+          bindinput="onDraftInput"
+          bindconfirm="onSend"
+        />
+        <view class="input-bar__send {{canSend && !sending ? '' : 'input-bar__send--off'}}" hover-class="input-bar__send--press" bindtap="onSend">➤</view>
+      </block>
+      <view wx:else class="closed-note">该反馈已关闭 · 如有问题请<text class="closed-note__lnk" bindtap="onNewFeedback">提交新反馈</text></view>
+    </view>
+  </block>
+</view>

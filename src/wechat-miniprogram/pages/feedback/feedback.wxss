@@ -1,0 +1,312 @@
+/* ============================================================
+   意见反馈·会话列表页（devops#554，原型 518 variant C 定稿）——
+   深色 STRIDE 主题，顶栏 / 加载 / 错误样式同 product-roadmap。
+   ============================================================ */
+@import "../../styles/dark.wxss";
+
+.page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: var(--color-bg);
+}
+
+/* ---------- 顶栏（同 product-roadmap） ---------- */
+
+.top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: var(--color-bg);
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+}
+
+.top-bar__inner {
+  height: 128rpx;
+  display: flex;
+  align-items: center;
+  padding: 0 40rpx;
+}
+
+.top-bar__btn {
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.top-bar__btn--spacer {
+  width: 88rpx;
+}
+
+.top-bar__icon {
+  width: 48rpx;
+  height: 48rpx;
+}
+
+.top-bar__icon--back {
+  transform: rotate(180deg);
+}
+
+.top-bar__title-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.top-bar__title {
+  font-size: 34rpx;
+  line-height: 48rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  color: var(--color-accent-pale);
+}
+
+.top-bar__subtitle {
+  font-size: 20rpx;
+  line-height: 32rpx;
+  color: rgba(225, 191, 188, 0.8);
+}
+
+.content {
+  padding: 0 24rpx calc(60rpx + env(safe-area-inset-bottom));
+}
+
+/* ---------- 加载 / 错误（同 product-roadmap） ---------- */
+
+.state-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+  padding: 96rpx 0;
+}
+
+.state-card__text {
+  font-size: 24rpx;
+  color: var(--color-text-secondary);
+}
+
+.banner {
+  padding: 20rpx 24rpx;
+  border-radius: 16rpx;
+  font-size: 24rpx;
+  margin-top: 24rpx;
+}
+
+.banner--error {
+  background: rgba(var(--color-accent-rgb), 0.1);
+  border: 1rpx solid rgba(var(--color-accent-rgb), 0.2);
+  color: var(--color-accent);
+}
+
+.spinner {
+  width: 48rpx;
+  height: 48rpx;
+  border: 4rpx solid rgba(95, 201, 146, 0.3);
+  border-top-color: var(--color-success);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- 提交入口卡 ---------- */
+
+.cta {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  padding: 30rpx 32rpx;
+  background: var(--color-card);
+  border-radius: 28rpx;
+  margin: 12rpx 0 12rpx;
+}
+
+.cta--press {
+  opacity: 0.85;
+}
+
+.cta__ic {
+  width: 76rpx;
+  height: 76rpx;
+  border-radius: 22rpx;
+  background: rgba(var(--color-accent-rgb), 0.14);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 38rpx;
+  flex-shrink: 0;
+}
+
+.cta__mid {
+  flex: 1;
+  min-width: 0;
+}
+
+.cta__t {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.cta__s {
+  font-size: 22rpx;
+  color: var(--color-text-secondary);
+  margin-top: 4rpx;
+}
+
+.cta__go {
+  color: var(--color-accent-light);
+  font-size: 40rpx;
+  font-weight: 300;
+}
+
+/* ---------- 空态 ---------- */
+
+.empty-card {
+  padding: 72rpx 32rpx;
+  background: var(--color-card);
+  border-radius: 28rpx;
+  text-align: center;
+}
+
+.empty-card__title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--color-text-bright);
+}
+
+.empty-card__sub {
+  font-size: 22rpx;
+  color: var(--color-text-secondary);
+  margin-top: 10rpx;
+}
+
+/* ---------- 会话行（原型 C convRow） ---------- */
+
+.conv {
+  display: flex;
+  gap: 22rpx;
+  padding: 26rpx 20rpx;
+  border-radius: 26rpx;
+}
+
+.conv--press {
+  background: var(--color-card);
+}
+
+.conv__ava {
+  width: 84rpx;
+  height: 84rpx;
+  border-radius: 24rpx;
+  background: var(--color-chip);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40rpx;
+  position: relative;
+}
+
+/* 头像右上未读点 */
+.conv__dot {
+  position: absolute;
+  top: -4rpx;
+  right: -4rpx;
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 50%;
+  background: #ff5f5f;
+  box-shadow: 0 0 0 6rpx rgba(255, 95, 95, 0.18);
+}
+
+.conv__mid {
+  flex: 1;
+  min-width: 0;
+}
+
+.conv__r1 {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.conv__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.conv__time {
+  font-size: 20rpx;
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.conv__r2 {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-top: 8rpx;
+}
+
+.conv__last {
+  flex: 1;
+  min-width: 0;
+  font-size: 24rpx;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 行尾未读点 */
+.dot-unread {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 50%;
+  background: #ff5f5f;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 6rpx rgba(255, 95, 95, 0.18);
+}
+
+/* ---------- 角标 / 脚注 ---------- */
+
+.tag {
+  font-size: 18rpx;
+  line-height: 32rpx;
+  padding: 0 14rpx;
+  border-radius: 10rpx;
+  flex-shrink: 0;
+}
+
+.tag--adopted {
+  color: var(--color-warning);
+  background: rgba(232, 192, 125, 0.13);
+}
+
+.foot-note {
+  text-align: center;
+  font-size: 20rpx;
+  color: var(--color-text-tertiary);
+  padding: 24rpx 0 8rpx;
+}

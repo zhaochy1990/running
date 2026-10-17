@@ -1,0 +1,62 @@
+<view class="page">
+  <!-- 自定义顶部栏 -->
+  <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn" bindtap="onBack">
+        <image class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">提交反馈</view>
+      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
+  </view>
+
+  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
+    <!-- type 分段 -->
+    <view class="seg">
+      <view
+        wx:for="{{types}}"
+        wx:key="type"
+        class="seg__item {{type === item.type ? 'seg__item--on' : ''}}"
+        data-type="{{item.type}}"
+        bindtap="onTypeTap"
+      >{{item.label}}</view>
+    </view>
+
+    <!-- 描述 -->
+    <view class="fld-label">描述 <text class="fld-label__req">*</text></view>
+    <textarea
+      class="fld-textarea"
+      placeholder-class="fld-placeholder"
+      value="{{content}}"
+      placeholder="{{placeholder}}"
+      maxlength="1000"
+      bindinput="onContentInput"
+    ></textarea>
+
+    <!-- 图片 -->
+    <view class="fld-label">截图 / 图片 <text class="fld-label__opt">（{{pics.length}}/9，选填）</text></view>
+    <view class="grid9">
+      <view
+        wx:for="{{pics}}"
+        wx:key="*this"
+        class="ph ph--pic"
+        data-index="{{index}}"
+        bindtap="onPreviewPic"
+      >
+        <image class="ph__img" src="{{item}}" mode="aspectFill" />
+        <view class="ph__x" data-index="{{index}}" catchtap="onDeletePic">✕</view>
+      </view>
+      <view wx:if="{{pics.length < 9}}" class="ph" bindtap="onAddPic">＋</view>
+    </view>
+
+    <!-- 提交 -->
+    <view
+      class="submit {{canSubmit && !submitting ? '' : 'submit--off'}}"
+      hover-class="submit--press"
+      bindtap="onSubmit"
+    >{{submitting ? '提交中…' : '提交反馈'}}</view>
+    <view class="hint">反馈仅你和 STRIDE 团队可见 · 提交即代表同意用于产品改进</view>
+  </view>
+</view>
