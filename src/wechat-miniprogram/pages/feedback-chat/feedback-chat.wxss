@@ -1,0 +1,358 @@
+/* ============================================================
+   意见反馈·聊天页（devops#554，原型 518 variant C）——
+   深色 STRIDE 主题，顶栏同 feedback 列表页；scroll-view 聊天区 +
+   常驻输入条（safe-area 兜底）。
+   ============================================================ */
+@import "../../styles/dark.wxss";
+
+.page {
+  height: 100vh;
+  box-sizing: border-box;
+  background: var(--color-bg);
+  overflow: hidden;
+}
+
+/* ---------- 顶栏（同 feedback 列表页） ---------- */
+
+.top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: var(--color-bg);
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+}
+
+.top-bar__inner {
+  height: 128rpx;
+  display: flex;
+  align-items: center;
+  padding: 0 40rpx;
+}
+
+.top-bar__btn {
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.top-bar__btn--spacer {
+  width: 88rpx;
+}
+
+.top-bar__icon {
+  width: 48rpx;
+  height: 48rpx;
+}
+
+.top-bar__icon--back {
+  transform: rotate(180deg);
+}
+
+.top-bar__title-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.top-bar__title {
+  font-size: 34rpx;
+  line-height: 48rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  color: var(--color-accent-pale);
+}
+
+.top-bar__subtitle {
+  font-size: 20rpx;
+  line-height: 32rpx;
+  color: rgba(225, 191, 188, 0.8);
+}
+
+/* ---------- 加载 / 错误 ---------- */
+
+.state-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.state-card__text {
+  font-size: 24rpx;
+  color: var(--color-text-secondary);
+}
+
+.banner {
+  margin: 0 24rpx;
+  padding: 20rpx 24rpx;
+  border-radius: 16rpx;
+  font-size: 24rpx;
+}
+
+.banner--error {
+  background: rgba(var(--color-accent-rgb), 0.1);
+  border: 1rpx solid rgba(var(--color-accent-rgb), 0.2);
+  color: var(--color-accent);
+}
+
+.spinner {
+  width: 48rpx;
+  height: 48rpx;
+  border: 4rpx solid rgba(95, 201, 146, 0.3);
+  border-top-color: var(--color-success);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- 聊天滚动区 ---------- */
+
+.chat-body {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0 24rpx calc(160rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+.chat-head {
+  padding: 16rpx 8rpx 20rpx;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex-wrap: wrap;
+}
+
+/* ---------- 已采纳横幅 ---------- */
+
+.adopt-banner {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 22rpx 26rpx;
+  background: rgba(232, 192, 125, 0.1);
+  border-radius: 24rpx;
+  margin-bottom: 20rpx;
+  font-size: 24rpx;
+  color: var(--color-warning);
+}
+
+.adopt-banner__t {
+  flex: 1;
+  min-width: 0;
+}
+
+.adopt-banner__lnk {
+  font-size: 22rpx;
+  color: var(--color-accent-light);
+  flex-shrink: 0;
+}
+
+/* ---------- 首卡：反馈原文 ---------- */
+
+.orig {
+  padding: 28rpx;
+  background: var(--color-card);
+  border-radius: 28rpx;
+}
+
+.orig__body {
+  font-size: 24rpx;
+  line-height: 36rpx;
+  color: var(--color-text-bright);
+  word-break: break-all;
+}
+
+.orig__pics {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 20rpx;
+  flex-wrap: wrap;
+}
+
+.orig__pic {
+  width: 104rpx;
+  height: 104rpx;
+  border-radius: 18rpx;
+  background: #1d1e21;
+}
+
+.orig__foot {
+  margin-top: 20rpx;
+  font-size: 20rpx;
+  color: var(--color-text-tertiary);
+}
+
+/* ---------- 气泡流 ---------- */
+
+.bubble-row {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 24rpx;
+}
+
+.bubble-row--me {
+  flex-direction: row-reverse;
+}
+
+.bub {
+  max-width: 76%;
+  padding: 20rpx 24rpx;
+  border-radius: 28rpx;
+  font-size: 25rpx;
+  line-height: 36rpx;
+  word-break: break-all;
+}
+
+.bub--pm {
+  background: var(--color-chip);
+  color: var(--color-text-primary);
+  border-top-left-radius: 8rpx;
+}
+
+.bub--me {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border-top-right-radius: 8rpx;
+}
+
+.bub__who {
+  font-size: 18rpx;
+  color: var(--color-text-tertiary);
+  margin-bottom: 6rpx;
+}
+
+.bub__t {
+  font-size: 18rpx;
+  color: rgba(122, 122, 124, 0.9);
+  margin-top: 8rpx;
+  text-align: right;
+}
+
+.bub--me .bub__t {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.chat-pad {
+  height: 8rpx;
+}
+
+/* ---------- 常驻输入条 ---------- */
+
+.input-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  background: var(--color-bg-sunken);
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 20rpx 24rpx calc(20rpx + env(safe-area-inset-bottom));
+}
+
+.input-bar__input {
+  flex: 1;
+  height: 76rpx;
+  background: var(--color-chip);
+  border-radius: 38rpx;
+  padding: 0 30rpx;
+  font-size: 26rpx;
+  color: var(--color-text-primary);
+}
+
+/* placeholder 深灰（原型 #5a5a5c） */
+.input-bar__placeholder {
+  color: #5a5a5c;
+}
+
+.input-bar__send {
+  width: 76rpx;
+  height: 76rpx;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30rpx;
+  flex-shrink: 0;
+}
+
+.input-bar__send--off {
+  opacity: 0.4;
+}
+
+.input-bar__send--press {
+  opacity: 0.85;
+}
+
+.closed-note {
+  flex: 1;
+  text-align: center;
+  font-size: 22rpx;
+  color: var(--color-text-tertiary);
+  padding: 8rpx 0;
+}
+
+.closed-note__lnk {
+  color: var(--color-accent-light);
+}
+
+/* ---------- tag（同原型） ---------- */
+
+.tag {
+  font-size: 18rpx;
+  line-height: 32rpx;
+  padding: 0 14rpx;
+  border-radius: 10rpx;
+  flex-shrink: 0;
+}
+
+.tag--bug {
+  color: #e8a07d;
+  background: rgba(232, 160, 125, 0.12);
+}
+
+.tag--idea {
+  color: var(--color-info);
+  background: rgba(143, 184, 232, 0.12);
+}
+
+.tag--open {
+  color: var(--color-text-secondary);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.tag--replied {
+  color: var(--color-accent-light);
+  background: rgba(var(--color-accent-rgb), 0.14);
+}
+
+.tag--closed {
+  color: var(--color-text-muted);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.tag--adopted {
+  color: var(--color-warning);
+  background: rgba(232, 192, 125, 0.13);
+}

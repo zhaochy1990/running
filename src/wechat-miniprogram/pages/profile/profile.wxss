@@ -203,6 +203,21 @@
   opacity: 0.6;
 }
 
+/* 意见反馈入口红点（total_unread，99+ 截断） */
+.menu-row__badge {
+  min-width: 32rpx;
+  height: 32rpx;
+  box-sizing: border-box;
+  padding: 0 10rpx;
+  border-radius: 16rpx;
+  background: #ff5f5f;
+  color: #ffffff;
+  font-size: 20rpx;
+  line-height: 32rpx;
+  text-align: center;
+  flex-shrink: 0;
+}
+
 .menu-row--disabled {
   opacity: 0.6;
 }

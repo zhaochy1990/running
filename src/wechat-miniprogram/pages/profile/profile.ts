@@ -1,6 +1,7 @@
 import { userStore } from '../../store/index';
 import { triggerSync, pollPipeline } from '../../services/sync';
 import { getWatchInfo } from '../../services/watch';
+import { listFeedbacks } from '../../services/feedback';
 import type { UserProfile } from '../../types/api';
 import type { PollPipelineHandle } from '../../services/sync';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
@@ -19,6 +20,8 @@ interface ProfilePageData {
   email: string;
   avatarUrl: string;
   rows: MenuRow[];
+  /** 意见反馈入口红点（total_unread，99+ 截断），0/隐藏 */
+  feedbackUnread: number;
   syncing: boolean;
   lastSyncText: string;
 }
@@ -33,6 +36,7 @@ interface ProfilePageHandlers {
   onSyncTap(): void;
   startSync(userId: string): Promise<void>;
   refreshLastSync(): Promise<void>;
+  refreshFeedbackUnread(): Promise<void>;
   /** 当前同步任务的轮询句柄，存实例上以避免模块级状态在多实例间串扰。 */
   _pollHandle?: PollPipelineHandle;
 }
@@ -77,6 +81,7 @@ const MENU_ROWS: MenuRow[] = [
   { key: 'race-center', title: '赛事中心', iconPath: '/assets/icons/sprint.svg' },
   { key: 'my-races', title: '我的比赛', iconPath: '/assets/icons/flag.svg' },
   { key: 'roadmap', title: '产品路线', iconPath: '/assets/icons/how_to_vote.svg' },
+  { key: 'feedback', title: '意见反馈', iconPath: '/assets/icons/forum.svg' },
   { key: 'watch', title: '手表管理', iconPath: '/assets/icons/schedule.svg' },
 ];
 
@@ -91,6 +96,7 @@ Page<ProfilePageData, ProfilePageHandlers>({
     email: '',
     avatarUrl: '',
     rows: MENU_ROWS,
+    feedbackUnread: 0,
     syncing: false,
     lastSyncText: '未同步',
   },
@@ -110,6 +116,18 @@ Page<ProfilePageData, ProfilePageHandlers>({
       avatarUrl: user?.avatar_url || '',
     });
     void this.refreshLastSync();
+    void this.refreshFeedbackUnread();
+  },
+
+  // 意见反馈入口红点 = total_unread；未登录/失败静默保留现值
+  async refreshFeedbackUnread() {
+    if (!this.data.user?.id) return;
+    try {
+      const res = await listFeedbacks();
+      this.setData({ feedbackUnread: res.total_unread });
+    } catch {
+      // 保留现值；临时网络错误不弹窗
+    }
   },
 
   async refreshLastSync() {
@@ -168,6 +186,10 @@ Page<ProfilePageData, ProfilePageHandlers>({
     }
     if (key === 'roadmap') {
       wx.navigateTo({ url: '/pages/product-roadmap/product-roadmap' });
+      return;
+    }
+    if (key === 'feedback') {
+      wx.navigateTo({ url: '/pages/feedback/feedback' });
       return;
     }
     if (key === 'watch') {

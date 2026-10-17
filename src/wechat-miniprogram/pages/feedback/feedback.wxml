@@ -1,0 +1,72 @@
+<view class="page">
+  <!-- 自定义顶部栏 -->
+  <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn" bindtap="onBack">
+        <image class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">意见反馈</view>
+        <view class="top-bar__subtitle">每条我们都会看</view>
+      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
+  </view>
+
+  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
+    <!-- 加载态 -->
+    <view wx:if="{{loading}}" class="state-card">
+      <view class="spinner"></view>
+      <view class="state-card__text">加载中…</view>
+    </view>
+
+    <!-- 错误态（点按重试） -->
+    <view wx:elif="{{loadError}}" class="banner banner--error" bindtap="onRetry">{{loadError}} · 点按重试</view>
+
+    <block wx:else>
+      <!-- 提交入口卡 -->
+      <view class="cta" hover-class="cta--press" bindtap="onCtaTap">
+        <view class="cta__ic">💬</view>
+        <view class="cta__mid">
+          <view class="cta__t">提交反馈</view>
+          <view class="cta__s">Bug 或建议 · 支持带图 · 我们会逐条回复</view>
+        </view>
+        <view class="cta__go">›</view>
+      </view>
+
+      <!-- 空态 -->
+      <view wx:if="{{!rows.length}}" class="empty-card">
+        <view class="empty-card__title">还没有反馈记录</view>
+        <view class="empty-card__sub">遇到问题或有想法，点上面「提交反馈」告诉我们</view>
+      </view>
+
+      <!-- 会话行 -->
+      <view
+        wx:for="{{rows}}"
+        wx:key="id"
+        class="conv"
+        hover-class="conv--press"
+        data-id="{{item.id}}"
+        bindtap="onRowTap"
+      >
+        <view class="conv__ava">
+          <text>{{item.emoji}}</text>
+          <view wx:if="{{item.unread}}" class="conv__dot"></view>
+        </view>
+        <view class="conv__mid">
+          <view class="conv__r1">
+            <view class="conv__name">{{item.title}}</view>
+            <view wx:if="{{item.adopted}}" class="tag tag--adopted">已采纳</view>
+            <view class="conv__time">{{item.time}}</view>
+          </view>
+          <view class="conv__r2">
+            <view class="conv__last">{{item.preview}}</view>
+            <view wx:if="{{item.unread}}" class="dot-unread"></view>
+          </view>
+        </view>
+      </view>
+
+      <view class="foot-note">— 反馈仅你与 STRIDE 团队可见 —</view>
+    </block>
+  </view>
+</view>
