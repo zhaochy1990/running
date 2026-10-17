@@ -368,10 +368,10 @@ func (w RunWorkout) Validate() error {
 // RunWorkoutFromJSON parses a "run-workout/v1" JSON payload (the same shape
 // Python's NormalizedRunWorkout.from_dict consumes) and validates it.
 //
-// The schema discriminator is authoring-time metadata that the weekly-plan
-// apply path strips from stored content (api.stripStoredWeeklyPlanMetadata). So
-// a missing schema is tolerated and normalized to "run-workout/v1" — this keeps
-// the push path consuming stored specs unchanged. A present-but-wrong schema is
+// The schema discriminator was stripped from stored content by the weekly-plan
+// apply path before #584, so legacy rows may lack it. A missing schema is
+// tolerated and normalized to "run-workout/v1" — this keeps the push path
+// consuming both stored shapes unchanged. A present-but-wrong schema is
 // still rejected to catch cross-type authoring mistakes.
 func RunWorkoutFromJSON(data []byte) (*RunWorkout, error) {
 	var head struct {

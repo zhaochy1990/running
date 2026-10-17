@@ -24,7 +24,8 @@ export interface WorkoutStep {
 }
 
 export interface NormalizedRunWorkout {
-  schema: 'run-workout/v1';
+  /** 判别符；#584 前落库内容被剥离，读旧数据时缺失，故可选 */
+  schema?: 'run-workout/v1';
   name: string;
   date: string;
   note: string | null;
@@ -32,7 +33,8 @@ export interface NormalizedRunWorkout {
 }
 
 export interface NormalizedStrengthWorkout {
-  schema: 'strength-workout/v1';
+  /** 判别符；#584 前落库内容被剥离，读旧数据时缺失，故可选 */
+  schema?: 'strength-workout/v1';
   name: string;
   date: string;
   note: string | null;
@@ -63,7 +65,10 @@ export interface PlannedSession {
   notes_md: string | null;
   total_distance_m: number | null;
   total_duration_s: number | null;
-  scheduled_workout_id: number | null;
+  /** canonical schema 含此 session 级字段；旧数据可能缺失 */
+  estimated_dose?: number | null;
+  /** legacy：#584 起落库即剥离此键，仅历史残留数据带值 */
+  scheduled_workout_id?: number | null;
 }
 
 export interface PlannedMeal {

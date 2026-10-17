@@ -218,10 +218,10 @@ func seedPushablePlan(h *pushHarness, userID, weekStart string) {
 }
 
 // structuredPlanContentStoredShape returns the same plan as
-// structuredPlanContent but with each session spec's `schema` discriminator
-// removed. This mirrors api.stripStoredWeeklyPlanMetadata, which strips the
-// schema key from stored weekly-plan content at apply time, so push must accept
-// schema-less specs.
+// structuredPlanContent but with each spec's `schema` discriminator removed,
+// mirroring rows stored before #584 (the strip used to include spec schema).
+// provider.RunWorkoutFromJSON / StrengthWorkoutFromJSON tolerate both shapes,
+// so push must accept schema-less legacy specs.
 func structuredPlanContentStoredShape(weekStart string) string {
 	var doc map[string]any
 	if err := json.Unmarshal([]byte(structuredPlanContent(weekStart)), &doc); err != nil {
@@ -302,9 +302,9 @@ func TestPushPlannedSessionStrengthSuccess(t *testing.T) {
 }
 
 func TestPushPlannedSessionAcceptsStoredSpecWithoutSchema(t *testing.T) {
-	// Regression: the weekly-plan apply path strips the spec.schema discriminator
-	// before storage, so the push endpoint must accept schema-less stored specs
-	// (previously it 400'd with "unexpected run workout schema \"\"").
+	// Regression: weekly-plan rows stored before #584 had the spec.schema
+	// discriminator stripped, so the push endpoint must accept schema-less
+	// stored specs (previously it 400'd with "unexpected run workout schema \"\"").
 	h := newPushHarness(t)
 	userID := "user-push-stored"
 	weekStart := "2026-08-10"
