@@ -231,7 +231,7 @@ Page<LoginPageData, LoginPageHandlers>({
       console.log('[login] 邮箱绑定登录成功');
       wx.showToast({ title: '登录成功', icon: 'success' });
       setTimeout(() => {
-        wx.switchTab({ url: '/pages/index/index' });
+        wx.switchTab({ url: '/pages/coach/coach' });
       }, 1000);
     } catch (err) {
       console.error(
@@ -282,7 +282,7 @@ Page<LoginPageData, LoginPageHandlers>({
           wx.redirectTo({ url: '/pages/onboarding/onboarding' });
           return;
         }
-        wx.switchTab({ url: '/pages/index/index' });
+        wx.switchTab({ url: '/pages/coach/coach' });
       }, 1000);
     } catch (err) {
       // 页面上只会显示映射后的中文（可能把多种失败合并成同一句），

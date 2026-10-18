@@ -1,4 +1,4 @@
-// 自定义底部导航栏 —— 训练 / 记录 / 教练 / 我。
+// 自定义底部导航栏 —— 教练 / 记录 / 训练 / 我。
 // app.json 里 `tabBar.custom: true` 启用；本组件为底栏唯一渲染源。
 // 各 tab 页在 onShow 里调用 `this.getTabBar().setData({ selected: N })` 同步选中态。
 
@@ -7,10 +7,10 @@ Component({
     selected: 0,
     list: [
       {
-        pagePath: '/pages/index/index',
-        text: '训练',
-        iconOff: '/assets/icons/tab_today_off.svg',
-        iconOn: '/assets/icons/tab_today_on.svg',
+        pagePath: '/pages/coach/coach',
+        text: '教练',
+        iconOff: '/assets/icons/tab_coach_off.svg',
+        iconOn: '/assets/icons/tab_coach_on.svg',
       },
       {
         pagePath: '/pages/activities/activities',
@@ -19,10 +19,10 @@ Component({
         iconOn: '/assets/icons/tab_record_on.svg',
       },
       {
-        pagePath: '/pages/coach/coach',
-        text: '教练',
-        iconOff: '/assets/icons/tab_coach_off.svg',
-        iconOn: '/assets/icons/tab_coach_on.svg',
+        pagePath: '/pages/index/index',
+        text: '训练',
+        iconOff: '/assets/icons/tab_today_off.svg',
+        iconOn: '/assets/icons/tab_today_on.svg',
       },
       {
         pagePath: '/pages/profile/profile',

@@ -208,7 +208,7 @@ Page<IndexPageData, IndexPageHandlers>({
   onShow() {
     const tabBar = this.getTabBar && this.getTabBar();
     if (tabBar) {
-      tabBar.setData({ selected: 0 });
+      tabBar.setData({ selected: 2 });
     }
   },
 

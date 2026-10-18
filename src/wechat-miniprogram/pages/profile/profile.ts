@@ -31,7 +31,6 @@ interface ProfilePageHandlers {
   onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onMenuTap(): void;
   onRowTap(e: WechatMiniprogram.TouchEvent): void;
-  onLogout(): void;
   onOpenProfileEdit(): void;
   onSyncTap(): void;
   startSync(userId: string): Promise<void>;
@@ -82,7 +81,6 @@ const MENU_ROWS: MenuRow[] = [
   { key: 'my-races', title: '我的比赛', iconPath: '/assets/icons/flag.svg' },
   { key: 'roadmap', title: '产品路线', iconPath: '/assets/icons/how_to_vote.svg' },
   { key: 'feedback', title: '意见反馈', iconPath: '/assets/icons/forum.svg' },
-  { key: 'watch', title: '手表管理', iconPath: '/assets/icons/schedule.svg' },
 ];
 
 Page<ProfilePageData, ProfilePageHandlers>({
@@ -192,10 +190,6 @@ Page<ProfilePageData, ProfilePageHandlers>({
       wx.navigateTo({ url: '/pages/feedback/feedback' });
       return;
     }
-    if (key === 'watch') {
-      wx.navigateTo({ url: '/pages/watch/watch' });
-      return;
-    }
     if (key === 'privacy') {
       wx.navigateTo({ url: '/pages/privacy/privacy' });
       return;
@@ -247,18 +241,5 @@ Page<ProfilePageData, ProfilePageHandlers>({
         this.setData({ syncing: false });
       }
     }
-  },
-
-  onLogout() {
-    wx.showModal({
-      title: '退出登录',
-      content: '确定要退出当前账号吗？',
-      success: (res) => {
-        if (res.confirm) {
-          userStore.clear();
-          wx.reLaunch({ url: '/pages/login/login' });
-        }
-      },
-    });
   },
 });

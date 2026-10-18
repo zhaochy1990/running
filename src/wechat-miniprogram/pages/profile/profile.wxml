@@ -62,9 +62,6 @@
       </view>
     </view>
 
-    <!-- 退出登录 -->
-    <button class="logout-btn" bindtap="onLogout">退出登录</button>
-
     <view class="version">STRIDE · 微信小程序</view>
   </view>
 </view>

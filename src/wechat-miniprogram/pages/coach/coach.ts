@@ -335,8 +335,18 @@ Page<CoachPageData, CoachPageHandlers>({
       currentSessionId,
       contextHint: this.contextHintOf(current),
     });
-    void this.loadSessions();
-    void this.loadSession(currentSessionId);
+    // 本页是冷启动落地页（tabBar 首位）：先等认证 settle 再拉会话/消息，
+    // 避免首屏请求在异步登录完成前发出（无 token / 过期 token）被数据面 401。
+    userStore.waitForAuth().then(() => {
+      const { isAuthenticated } = userStore.getState();
+      if (!isAuthenticated) {
+        // 会话失效/未绑定：正常情况下 checkAuth 会发起 reLaunch 到登录页，这里兜底。
+        wx.reLaunch({ url: '/pages/login/login' });
+        return;
+      }
+      void this.loadSessions();
+      void this.loadSession(currentSessionId);
+    });
   },
 
   /**
@@ -380,7 +390,7 @@ Page<CoachPageData, CoachPageHandlers>({
   onShow() {
     const tabBar = this.getTabBar && this.getTabBar();
     if (tabBar) {
-      tabBar.setData({ selected: 2 });
+      tabBar.setData({ selected: 0 });
     }
     // 首页「和教练聊一聊」移交的上下文：新建会话并锚定 target。
     const pending = takePendingCoachContext();

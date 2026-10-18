@@ -116,6 +116,18 @@
         <button wx:if="{{!hasProfile}}" class="save-btn" bindtap="onSaveBody" disabled="{{saving}}">保存</button>
         </block>
       </view>
+
+      <!-- 手表绑定（低频入口） -->
+      <view class="card">
+        <view class="field-row field-row--last" bindtap="onOpenWatch">
+          <view class="field-row__label">手表管理</view>
+          <view class="field-row__value field-row__value--muted">绑定 / 同步训练数据</view>
+          <image class="field-row__chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+        </view>
+      </view>
+
+      <!-- 退出登录 -->
+      <button class="logout-btn" bindtap="onLogout">退出登录</button>
     </block>
   </view>
 </view>

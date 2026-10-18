@@ -150,7 +150,7 @@ Page<OnboardingPageData, OnboardingPageHandlers>({
   },
 
   goHome() {
-    wx.switchTab({ url: '/pages/index/index' });
+    wx.switchTab({ url: '/pages/coach/coach' });
   },
 
   // 唯一的落点决策：每次进页面都按服务端状态重算该停在哪一步。

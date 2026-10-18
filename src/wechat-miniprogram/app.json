@@ -1,12 +1,12 @@
 {
   "pages": [
+    "pages/coach/coach",
     "pages/index/index",
     "pages/login/login",
     "pages/plan/plan",
     "pages/activities/activities",
     "pages/activity-detail/activity-detail",
     "pages/health/health",
-    "pages/coach/coach",
     "pages/profile/profile",
     "pages/profile-edit/profile-edit",
     "pages/training-status/training-status",
@@ -41,16 +41,16 @@
     "borderStyle": "black",
     "list": [
       {
-        "pagePath": "pages/index/index",
-        "text": "训练"
+        "pagePath": "pages/coach/coach",
+        "text": "教练"
       },
       {
         "pagePath": "pages/activities/activities",
         "text": "记录"
       },
       {
-        "pagePath": "pages/coach/coach",
-        "text": "教练"
+        "pagePath": "pages/index/index",
+        "text": "训练"
       },
       {
         "pagePath": "pages/profile/profile",

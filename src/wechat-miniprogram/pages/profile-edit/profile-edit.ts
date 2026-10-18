@@ -48,6 +48,8 @@ interface ProfileEditPageHandlers {
   onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
   onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onBack(): void;
+  onOpenWatch(): void;
+  onLogout(): void;
   onChooseAvatar(e: WechatMiniprogram.CustomEvent<{ avatarUrl: string }>): void;
   onNameInput(e: WechatMiniprogram.Input): void;
   onSaveName(): void;
@@ -170,6 +172,23 @@ Page<ProfileEditPageData, ProfileEditPageHandlers>({
 
   onBack() {
     wx.navigateBack();
+  },
+
+  onOpenWatch() {
+    wx.navigateTo({ url: '/pages/watch/watch' });
+  },
+
+  onLogout() {
+    wx.showModal({
+      title: '退出登录',
+      content: '确定要退出当前账号吗？',
+      success: (res) => {
+        if (res.confirm) {
+          userStore.clear();
+          wx.reLaunch({ url: '/pages/login/login' });
+        }
+      },
+    });
   },
 
   // 选完头像立即上传并保存（auth-service），不需要额外按钮。
