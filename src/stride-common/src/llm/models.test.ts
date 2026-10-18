@@ -6,11 +6,13 @@ import {
   buildModel,
   buildResponsesModel,
   enforceStrictRequired,
+  flattenAnyOf,
   inlineRefs,
   type ModelConfig,
   ModelContractError,
   type PromptMessage,
   renameOneOf,
+  sanitizeJsonSchema,
   stripUnsupportedFormats,
   type StructuredRunnable,
 } from "./models.js";
@@ -240,4 +242,36 @@ test("json schema sanitizer renames oneOf, inlines refs, and completes strict re
   const branches = sanitized.properties.kind.anyOf as Array<Record<string, any>>;
   assert.equal(branches.length, 2);
   assert.deepEqual(branches[1]?.properties.b, { type: "string", enum: ["km"] });
+});
+
+// #614 回归：DeepSeek 不收 anyOf 的分支本身是 anyOf（missing field type），
+// 发线前必须拍平 —— 内层分支提升到外层，纯等价改写。
+test("flattenAnyOf splices bare-anyOf branches into the parent anyOf", () => {
+  const nested = {
+    type: "object",
+    properties: {
+      rest: {
+        description: "rest after the step",
+        anyOf: [{ anyOf: [{ type: "object" }, { type: "string" }] }, { type: "null" }],
+      },
+      keep: { anyOf: [{ type: "string" }, { type: "null" }] },
+    },
+  };
+  const flat = flattenAnyOf(nested) as { properties: { rest: Record<string, unknown>; keep: Record<string, unknown> } };
+  assert.deepEqual(flat.properties.rest.anyOf, [{ type: "object" }, { type: "string" }, { type: "null" }]);
+  // 带约束的节点（有 type / 有 sibling 键的非 anyOf 包裹）不动；已扁平的 anyOf 不变。
+  assert.deepEqual(flat.properties.keep.anyOf, [{ type: "string" }, { type: "null" }]);
+  assert.equal(flat.properties.rest.description, "rest after the step");
+});
+
+test("sanitizeJsonSchema flattens deeply nested anyOf through the full pipeline", () => {
+  const deeply = {
+    type: "object",
+    properties: {
+      x: { anyOf: [{ anyOf: [{ anyOf: [{ type: "string" }, { type: "number" }] }, { type: "null" }] }] },
+    },
+    required: ["x"],
+  };
+  const wire = sanitizeJsonSchema(deeply) as { properties: { x: Record<string, unknown> } };
+  assert.deepEqual(wire.properties.x.anyOf, [{ type: "string" }, { type: "number" }, { type: "null" }]);
 });

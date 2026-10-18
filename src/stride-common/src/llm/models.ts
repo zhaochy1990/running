@@ -167,9 +167,10 @@ export function buildResponsesModel(config: ModelConfig): ChatOpenAIResponses {
 }
 
 /**
- * DeepSeek 的 json_schema 校验比 OpenAI 严三处：不认 `oneOf`（报错文案却写
+ * DeepSeek 的 json_schema 校验比 OpenAI 严四处：不认 `oneOf`（报错文案却写
  * `anyOf`）；strict 模式要求 `required` 覆盖全部 properties；`format` 只收
- * email/hostname/ipv4/ipv6/uuid（遇到 date/date-time 等报 ``unknown variant``）。
+ * email/hostname/ipv4/ipv6/uuid（遇到 date/date-time 等报 ``unknown variant``）；
+ * anyOf 的分支本身不得再是 anyOf（报 ``missing field type``，见 flattenAnyOf）。
  * 发线前做等价改写：oneOf→anyOf（判别并集语义等价）；strict 惯例补全——
  * required 补成全量、原本可选的属性包一层 anyOf-null（OpenAI strict 的标准
  * 表达，zod 侧 nullish 字段均可接住 null）；白名单外的 format 直接剥掉
@@ -182,7 +183,7 @@ const jsonSchemaSanitizingFetch: typeof fetch = async (input, init) => {
       const body = JSON.parse(init.body) as { text?: { format?: Record<string, unknown> } };
       const format = body?.text?.format;
       if (format?.type === "json_schema" && format.schema != null) {
-        format.schema = stripUnsupportedFormats(enforceStrictRequired(inlineRefs(renameOneOf(format.schema))));
+        format.schema = sanitizeJsonSchema(format.schema);
         init = { ...init, body: JSON.stringify(body) };
       }
     }
@@ -191,6 +192,35 @@ const jsonSchemaSanitizingFetch: typeof fetch = async (input, init) => {
   }
   return fetch(input, init);
 };
+
+/** 发线前对 json_schema 的全部等价改写，jsonSchemaSanitizingFetch 与回归测试共用。 */
+export function sanitizeJsonSchema(schema: unknown): unknown {
+  return stripUnsupportedFormats(enforceStrictRequired(flattenAnyOf(inlineRefs(renameOneOf(schema)))));
+}
+
+/** 拍平嵌套 anyOf：把「本身是裸 anyOf（无 type）」的分支提升到外层。DeepSeek
+ * 不收 anyOf 内嵌 anyOf（400 missing field type），而 zod 对 union 再套
+ * nullish（如 StepRest.nullish()）正好产出这种形状；纯 anyOf 节点自身没有
+ * 约束语义，展开拼接是纯等价改写（被拼分支的 sibling 键一并丢弃 —— 实践中
+ * 只会是 description 之类注解）。 */
+export function flattenAnyOf(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(flattenAnyOf);
+  if (node && typeof node === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(node)) out[key] = flattenAnyOf(value);
+    if (Array.isArray(out.anyOf)) {
+      out.anyOf = (out.anyOf as unknown[]).flatMap((branch) => {
+        if (branch != null && typeof branch === "object" && !Array.isArray(branch)) {
+          const record = branch as Record<string, unknown>;
+          if (!("type" in record) && Array.isArray(record.anyOf)) return record.anyOf;
+        }
+        return [branch];
+      });
+    }
+    return out;
+  }
+  return node;
+}
 
 /** DeepSeek json_schema 认可的 format 值（其余如 date/date-time 会被 400 拒收）。 */
 const DEEPSEEK_FORMAT_WHITELIST = new Set(["email", "hostname", "ipv4", "ipv6", "uuid"]);
@@ -248,7 +278,7 @@ export function inlineRefs(node: unknown, defs: Record<string, unknown> = {}, de
 }
 
 /** 把对象 schema 改写成 strict 惯例：required 全量，可选属性可空化。已是
- * anyOf 的节点扁平追加 null 分支——嵌套 anyOf（无 type 的分支）DeepSeek 不收。 */
+ * anyOf 的节点扁平追加 null 分支（进入本函数前 flattenAnyOf 已拍平嵌套）。 */
 export function enforceStrictRequired(node: unknown): unknown {
   if (Array.isArray(node)) return node.map(enforceStrictRequired);
   if (node && typeof node === "object") {
