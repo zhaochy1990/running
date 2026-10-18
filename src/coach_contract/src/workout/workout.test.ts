@@ -85,6 +85,9 @@ test("lenient parsing tolerates LLM noise and normalizeRunWorkout fills defaults
   // lenient 也容忍缺失 schema 判别符
   const { schema: _discarded, ...withoutSchema } = structuredClone(JSON.parse(JSON.stringify(lenient)));
   assert.equal(normalizeRunWorkout(withoutSchema).schema, "run-workout/v1");
+  // #611：LLM 给 optional rest 补 null，lenient 接受、normalize 丢弃
+  const withNullRest = { ...withoutSchema, blocks: [{ repeat: 1, steps: [{ ...withoutSchema.blocks[0]!.steps[0]!, rest: null }] }] };
+  assert.equal("rest" in normalizeRunWorkout(withNullRest).blocks[0]!.steps[0]!, false);
 });
 
 test("duration/target unions keep master's strict positive/null constraints", () => {

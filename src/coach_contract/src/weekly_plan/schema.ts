@@ -1,6 +1,6 @@
 import { z } from "zod/v4";
 import { addDays, mondayOnOrBefore, weekFolder } from "../date.js";
-import { RunWorkoutSchema, StrengthWorkoutSchema } from "../workout/schema.js";
+import { normalizeRunWorkout, RunWorkoutLenientSchema, RunWorkoutSchema, StrengthWorkoutSchema } from "../workout/schema.js";
 
 const DaySchema = z.iso.date();
 const NullableNumberSchema = z.number().nullable();
@@ -57,6 +57,41 @@ const PlannedNutritionSchema = z.strictObject({
   meals: z.array(MealSchema),
   notes_md: z.string().nullable(),
 });
+
+/** LLM 直出容忍层：非 strict 剥噪声键，notes 可省，run spec 走宽松 run-workout 层；不带跨字段规则（留在 strict 层）。 */
+const SessionLenientFields = { ...SessionFields, notes_md: z.string().nullish() };
+
+const PlannedSessionLenientSchema = z.discriminatedUnion("kind", [
+  z.object({ ...SessionLenientFields, kind: z.literal("run"), spec: RunWorkoutLenientSchema.nullable() }),
+  z.object({ ...SessionLenientFields, kind: z.literal("strength"), spec: StrengthWorkoutSchema.nullable() }),
+  z.object({ ...SessionLenientFields, kind: z.literal("rest"), spec: z.null() }),
+  z.object({ ...SessionLenientFields, kind: z.literal("cross"), spec: z.null() }),
+  z.object({ ...SessionLenientFields, kind: z.literal("note"), spec: z.null() }),
+]);
+
+export const WeeklyPlanLenientSchema = z.object({
+  schema: z.literal("weekly-plan/v1"),
+  week_name: z.string().min(1),
+  sessions: z.array(PlannedSessionLenientSchema),
+  nutrition: z.array(PlannedNutritionSchema).length(7),
+  notes_md: z.string().nullish(),
+  coach_notes: z.string().nullish(),
+});
+
+/** lenient → strict：补 notes 默认、run spec 经 normalizeRunWorkout 填默认（含丢弃 LLM 补的 rest:null），再过硬校验。 */
+export function normalizeWeeklyPlan(input: unknown): WeeklyPlan {
+  const lenient = WeeklyPlanLenientSchema.parse(input);
+  return WeeklyPlanSchema.parse({
+    schema: lenient.schema,
+    week_name: lenient.week_name,
+    sessions: lenient.sessions.map((session) =>
+      session.kind === "run" && session.spec !== null ? { ...session, spec: normalizeRunWorkout(session.spec) } : session,
+    ),
+    nutrition: lenient.nutrition,
+    notes_md: lenient.notes_md ?? null,
+    coach_notes: lenient.coach_notes ?? null,
+  });
+}
 
 /** Canonical content_version=2 contract for generated weekly plans. */
 export const WeeklyPlanSchema = z
@@ -164,7 +199,9 @@ export type WeeklyPlan = z.infer<typeof WeeklyPlanSchema>;
 export const WeeklyPlanGenerationSchema = z
   .strictObject({
     success: z.boolean(),
-    weeklyPlan: WeeklyPlanSchema.nullable(),
+    // LLM 边界信封带宽松层（#611）：生成侧 toJsonSchema 不强逼模型填 note/hr_cap_bpm，
+    // 消费侧先 normalizeWeeklyPlan 归一再过硬校验。
+    weeklyPlan: WeeklyPlanLenientSchema.nullable(),
     error: z.string(),
   })
   .superRefine((result, context) => {
