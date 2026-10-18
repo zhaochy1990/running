@@ -66,7 +66,9 @@ agents:
     timeout_s: 600
   - name: reviewer
     model: deepseekv4flash
-    max_tokens: 16384
+    # 评审输出很小，但 reasoning 偶发烧满 16384 → status=incomplete 无产物可解析
+    # （票 #612）；上限只是天花板，按实际用量计费，与 master_plan 对齐。
+    max_tokens: 65536
     timeout_s: 300
   - name: commentary
     model: deepseekv4flash

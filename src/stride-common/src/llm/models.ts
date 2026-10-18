@@ -12,6 +12,7 @@
  */
 
 import { OutputParserException } from "@langchain/core/output_parsers";
+import { toJsonSchema } from "@langchain/core/utils/json_schema";
 import { ChatOpenAI, ChatOpenAIResponses } from "@langchain/openai";
 import { z } from "zod/v4";
 import { getLogger } from "../logger.js";
@@ -90,7 +91,15 @@ export function buildModel<Output>(config: ModelConfig | StructuredModelConfig<O
     // DeepSeek thinking models reject the forced `tool_choice` that functionCalling
     // emits (400 "Thinking mode does not support this tool_choice"), so use the
     // response_format path instead.
-    const runnable = buildResponsesModel(config).withStructuredOutput(schema as never, {
+    // 传纯 JSON schema 走 JsonOutputParser 分支（直接从 message.text 解码）；
+    // zod 直传时 langchain 的 fallback 会把 content-block 数组当字符串喂给
+    // parser，一旦响应缺 SDK 附加的 parsed（如 reasoning 烧满 max_output_tokens
+    // → status=incomplete）就报 Failed to parse. Text: "undefined"（上游
+    // @langchain/openai 1.6.2 未修）。zod v4 的 toJsonSchema 产物带非枚举
+    // ~standard，会被误判 serializable schema 走同一 fallback —— 浅拷贝剥掉。
+    const wireSchema = { ...toJsonSchema(schema as never) } as Record<string, unknown>;
+    delete wireSchema["~standard"];
+    const runnable = buildResponsesModel(config).withStructuredOutput(wireSchema, {
       name,
       method: "jsonSchema",
       strict: true,
@@ -100,7 +109,7 @@ export function buildModel<Output>(config: ModelConfig | StructuredModelConfig<O
       async invoke(messages: PromptMessage[]): Promise<Output> {
         let output: Output;
         try {
-          output = (await runnable.invoke(messages)) as Output;
+          output = schema.parse(await runnable.invoke(messages));
         } catch (error) {
           throw isDecodeFailure(error) ? asContractError(error) : error;
         }
@@ -125,9 +134,11 @@ export function buildModel<Output>(config: ModelConfig | StructuredModelConfig<O
   }
 }
 
-/** A rejection by the structured decoder, as opposed to a provider-side failure. */
+/** A rejection by the structured decoder, as opposed to a provider-side failure.
+ * SyntaxError 是 JSON.parse 对空/截断/非 JSON 文本的失败（incomplete 响应的
+ * message.text 为空串），与 provider 侧 APIError 不会混淆。 */
 function isDecodeFailure(error: unknown): boolean {
-  return error instanceof OutputParserException || error instanceof z.ZodError;
+  return error instanceof OutputParserException || error instanceof z.ZodError || error instanceof SyntaxError;
 }
 
 function asContractError(error: unknown): ModelContractError {
@@ -156,11 +167,14 @@ export function buildResponsesModel(config: ModelConfig): ChatOpenAIResponses {
 }
 
 /**
- * DeepSeek 的 json_schema 校验比 OpenAI 严两处：不认 `oneOf`（报错文案却写
- * `anyOf`）；strict 模式要求 `required` 覆盖全部 properties。发线前做等价改写：
- * oneOf→anyOf（判别并集语义等价）；strict 惯例补全——required 补成全量、原本
- * 可选的属性包一层 anyOf-null（OpenAI strict 的标准表达，zod 侧 nullish 字段
- * 均可接住 null）。strict 本身保持开启，约束解码不受影响。
+ * DeepSeek 的 json_schema 校验比 OpenAI 严三处：不认 `oneOf`（报错文案却写
+ * `anyOf`）；strict 模式要求 `required` 覆盖全部 properties；`format` 只收
+ * email/hostname/ipv4/ipv6/uuid（遇到 date/date-time 等报 ``unknown variant``）。
+ * 发线前做等价改写：oneOf→anyOf（判别并集语义等价）；strict 惯例补全——
+ * required 补成全量、原本可选的属性包一层 anyOf-null（OpenAI strict 的标准
+ * 表达，zod 侧 nullish 字段均可接住 null）；白名单外的 format 直接剥掉
+ * （draft-07 里 format 仅是注解，客户端 zod 仍会硬校验）。strict 本身保持
+ * 开启，约束解码不受影响。
  */
 const jsonSchemaSanitizingFetch: typeof fetch = async (input, init) => {
   try {
@@ -168,7 +182,7 @@ const jsonSchemaSanitizingFetch: typeof fetch = async (input, init) => {
       const body = JSON.parse(init.body) as { text?: { format?: Record<string, unknown> } };
       const format = body?.text?.format;
       if (format?.type === "json_schema" && format.schema != null) {
-        format.schema = enforceStrictRequired(inlineRefs(renameOneOf(format.schema)));
+        format.schema = stripUnsupportedFormats(enforceStrictRequired(inlineRefs(renameOneOf(format.schema))));
         init = { ...init, body: JSON.stringify(body) };
       }
     }
@@ -177,6 +191,24 @@ const jsonSchemaSanitizingFetch: typeof fetch = async (input, init) => {
   }
   return fetch(input, init);
 };
+
+/** DeepSeek json_schema 认可的 format 值（其余如 date/date-time 会被 400 拒收）。 */
+const DEEPSEEK_FORMAT_WHITELIST = new Set(["email", "hostname", "ipv4", "ipv6", "uuid"]);
+
+/** 剥掉白名单外的 `format` 键：draft-07 中 format 是注解而非断言，去掉后
+ * DeepSeek 的格式校验收窄但不改变约束语义（zod 客户端校验不受影响）。 */
+export function stripUnsupportedFormats(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(stripUnsupportedFormats);
+  if (node && typeof node === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "format" && typeof value === "string" && !DEEPSEEK_FORMAT_WHITELIST.has(value)) continue;
+      out[key] = stripUnsupportedFormats(value);
+    }
+    return out;
+  }
+  return node;
+}
 
 export function renameOneOf(node: unknown): unknown {
   if (Array.isArray(node)) return node.map(renameOneOf);

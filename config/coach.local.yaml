@@ -57,7 +57,8 @@ agents:
     timeout_s: 600  
   - name: reviewer
     model: deepseekv4flash
-    max_tokens: 16384
+    # 与 coach.prod.yaml 对齐：16384 会被偶发长 reasoning 烧满（票 #612）。
+    max_tokens: 65536
     timeout_s: 300
   - name: commentary
     model: deepseekv4flash
