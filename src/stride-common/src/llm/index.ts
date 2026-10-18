@@ -7,6 +7,7 @@ export {
   ModelContractError,
   type PromptMessage,
   type ReasoningEffort,
+  sanitizeJsonSchema,
   type StructuredModelConfig,
   type StructuredRequest,
   type StructuredRunnable,
