@@ -2,7 +2,7 @@
 // 后端契约：`internal/api/feedback.go`（devops#552，契约 #519 决议）：
 //
 //	POST   /api/users/me/feedback-images        传图拿 cos_key（multipart `file`，单张 ≤10MB）
-//	POST   /api/users/me/feedbacks              提交（≤9 图；文本机检 risky → 422 content_risky）
+//	POST   /api/users/me/feedbacks              提交（≤9 图）
 //	GET    /api/users/me/feedbacks              会话列表（无分页；total_unread 喂「我的」页红点）
 //	GET    /api/users/me/feedbacks/:id          线程详情（服务端读即清官方回复未读）
 //	POST   /api/users/me/feedbacks/:id/replies  追问（已关闭 → 409 feedback_closed）

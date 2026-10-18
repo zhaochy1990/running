@@ -40,34 +40,12 @@ const (
 	FeedbackAuthorAdmin = "admin"
 )
 
-// Moderation states for feedbacks.mod_text and feedbacks.mod_images values.
-// pass/review/risky come from WeChat msgSecCheck / mediaCheckAsync; pending
-// marks a dispatched-but-unresolved image check; unchecked marks content that
-// was never machine-checked (detection unavailable — it stays readable and is
-// flagged 未机检 for the admin queue).
-const (
-	FeedbackModPass      = "pass"
-	FeedbackModReview    = "review"
-	FeedbackModRisky     = "risky"
-	FeedbackModPending   = "pending"
-	FeedbackModUnchecked = "unchecked"
-)
-
-// IsFeedbackModState reports whether v is one of the five moderation states.
-func IsFeedbackModState(v string) bool {
-	switch v {
-	case FeedbackModPass, FeedbackModReview, FeedbackModRisky, FeedbackModPending, FeedbackModUnchecked:
-		return true
-	}
-	return false
-}
-
-// Feedback is one user-submitted feedback (bug report or suggestion) plus its
-// moderation tags. images / mod_images are TEXT columns holding JSON: images
-// is an array of COS object keys (≤9, NULL = no images), mod_images a
-// {cosKey: state} map updated in place by the wxa_media_check callback.
-// adopted_feature_id is one-way (devops#519): once set it can never be
-// changed or cleared.
+// Feedback is one user-submitted feedback (bug report or suggestion).
+// images is a TEXT column holding a JSON array of COS object keys (≤9,
+// NULL = no images). adopted_feature_id is one-way (devops#519): once set it
+// can never be changed or cleared. The legacy mod_text/mod_images moderation
+// columns stay in MySQL as dead columns (devops#608); GORM no longer maps
+// them.
 type Feedback struct {
 	ID uint64 `gorm:"column:id;primaryKey;autoIncrement;index:idx_feedbacks_user_id,priority:2"`
 	// UserID is the canonical UUID of the submitter.
@@ -84,15 +62,9 @@ type Feedback struct {
 	// Status is open | replied | closed.
 	Status string `gorm:"column:status;size:16;not null;index"`
 	// AdoptedFeatureID references roadmap_features.id; one-way, never cleared.
-	AdoptedFeatureID *uint64 `gorm:"column:adopted_feature_id"`
-	// ModText is the msgSecCheck result for the body text; risky text is
-	// rejected at the API and never stored.
-	ModText string `gorm:"column:mod_text;size:16;not null;default:'unchecked'"`
-	// ModImages is the JSON {cosKey: pass|review|risky|pending|unchecked} map,
-	// or NULL when there is nothing to check.
-	ModImages *string   `gorm:"column:mod_images;type:text"`
-	CreatedAt time.Time `gorm:"column:created_at"`
-	UpdatedAt time.Time `gorm:"column:updated_at"`
+	AdoptedFeatureID *uint64   `gorm:"column:adopted_feature_id"`
+	CreatedAt        time.Time `gorm:"column:created_at"`
+	UpdatedAt        time.Time `gorm:"column:updated_at"`
 }
 
 // TableName pins the table name.
@@ -117,21 +89,3 @@ type FeedbackReply struct {
 
 // TableName pins the table name.
 func (FeedbackReply) TableName() string { return "feedback_replies" }
-
-// FeedbackImageCheck correlates one dispatched mediaCheckAsync task to its
-// feedback row and image key. WeChat echoes the trace_id in the
-// wxa_media_check push, and this table is how the push finds its target; the
-// row is consumed (deleted) when the result lands. It is bookkeeping, not
-// user content — erasure removes it through the feedback cascade.
-type FeedbackImageCheck struct {
-	// TraceID is the mediaCheckAsync task id (the callback's correlation key).
-	TraceID string `gorm:"column:trace_id;size:128;primaryKey"`
-	// FeedbackID references feedbacks.id.
-	FeedbackID uint64 `gorm:"column:feedback_id;not null;index"`
-	// CosKey is the image the trace was opened for.
-	CosKey    string    `gorm:"column:cos_key;size:256;not null"`
-	CreatedAt time.Time `gorm:"column:created_at"`
-}
-
-// TableName pins the table name.
-func (FeedbackImageCheck) TableName() string { return "feedback_image_checks" }

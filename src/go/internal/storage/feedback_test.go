@@ -1,16 +1,13 @@
 // feedback_test.go covers the feedback store semantics against a live MySQL
 // (STRIDE_WORKER_TEST_MYSQL_DSN), matching the other storage integration
 // tests: thread ordering, the unread read-clear cycle, the admin-reply
-// open→replied side effect, the one-way adopted_feature_id, the trace→image
-// callback resolution and the erasure cascade.
+// open→replied side effect, the one-way adopted_feature_id and the erasure
+// cascade. (The trace→image callback path was removed by devops#608.)
 package storage
 
 import (
 	"context"
 	"testing"
-	"time"
-
-	"encoding/json"
 
 	"github.com/google/uuid"
 )
@@ -31,7 +28,7 @@ func TestFeedback_ThreadLifecycle(t *testing.T) {
 
 	if err := st.CreateFeedback(ctx, &Feedback{
 		UserID: uid, Type: FeedbackTypeBug, Content: "首页崩溃",
-		ClientVersion: "1.2.3", Status: FeedbackStatusOpen, ModText: FeedbackModPass,
+		ClientVersion: "1.2.3", Status: FeedbackStatusOpen,
 	}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -95,7 +92,7 @@ func TestFeedback_PatchAdmin_OneWayAdoption(t *testing.T) {
 	uid := uuid.NewString()
 	if err := st.CreateFeedback(ctx, &Feedback{
 		UserID: uid, Type: FeedbackTypeSuggestion, Content: "想要深色模式",
-		Status: FeedbackStatusOpen, ModText: FeedbackModUnchecked,
+		Status: FeedbackStatusOpen,
 	}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -122,61 +119,6 @@ func TestFeedback_PatchAdmin_OneWayAdoption(t *testing.T) {
 	}
 }
 
-func TestFeedback_ImageCheckCallback(t *testing.T) {
-	st := openFeedbackTestStore(t)
-	ctx := context.Background()
-	uid := uuid.NewString()
-	key1, key2 := "feedback/"+uid+"/a.png", "feedback/"+uid+"/b.png"
-	imgs := `["` + key1 + `","` + key2 + `"]`
-	if err := st.CreateFeedback(ctx, &Feedback{
-		UserID: uid, Type: FeedbackTypeSuggestion, Content: "带图反馈",
-		Status: FeedbackStatusOpen, ModText: FeedbackModPass, Images: &imgs,
-	}); err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	id := (func() uint64 {
-		rows, _ := st.ListFeedbacksByUser(ctx, uid)
-		return rows[0].ID
-	})()
-
-	// Dispatch: both images pending + trace correlation rows.
-	if err := st.UpdateFeedbackModImages(ctx, id, map[string]string{
-		key1: FeedbackModPending, key2: FeedbackModPending,
-	}); err != nil {
-		t.Fatalf("set pending: %v", err)
-	}
-	if err := st.RecordFeedbackImageChecks(ctx, id, []FeedbackImageCheck{
-		{TraceID: "trace-1-" + uid, CosKey: key1, CreatedAt: time.Now().UTC()},
-		{TraceID: "trace-2-" + uid, CosKey: key2, CreatedAt: time.Now().UTC()},
-	}); err != nil {
-		t.Fatalf("record checks: %v", err)
-	}
-
-	if err := st.ApplyFeedbackImageCheck(ctx, "trace-1-"+uid, FeedbackModRisky); err != nil {
-		t.Fatalf("apply: %v", err)
-	}
-	row, err := st.GetFeedbackByID(ctx, id)
-	if err != nil {
-		t.Fatalf("get by id: %v", err)
-	}
-	states := decodeTestModImages(t, row.ModImages)
-	if states[key1] != FeedbackModRisky || states[key2] != FeedbackModPending {
-		t.Fatalf("states = %v, want key1 risky + key2 pending", states)
-	}
-	// The consumed trace is gone; a replayed push is a no-op.
-	if err := st.ApplyFeedbackImageCheck(ctx, "trace-1-"+uid, FeedbackModPass); err != nil {
-		t.Fatalf("replay: %v", err)
-	}
-	if states = decodeTestModImages(t, row.ModImages); states[key1] != FeedbackModRisky {
-		t.Fatalf("replay must not overwrite: %v", states)
-	}
-	// Erasure lists every referenced key for the COS sweep.
-	keys, err := st.FeedbackImageKeys(ctx, uid)
-	if err != nil || len(keys) != 2 {
-		t.Fatalf("image keys: %v %v", err, keys)
-	}
-}
-
 func TestFeedback_AdminListFilterAndName(t *testing.T) {
 	st := openFeedbackTestStore(t)
 	ctx := context.Background()
@@ -189,16 +131,15 @@ func TestFeedback_AdminListFilterAndName(t *testing.T) {
 	if err := st.UpsertUserProfile(ctx, &UserProfile{UserID: uid, DisplayName: "跑者小张"}); err != nil {
 		t.Fatalf("profile: %v", err)
 	}
-	risky := `[{"suggest":"` + FeedbackModRisky + `"}]`
 	if err := st.CreateFeedback(ctx, &Feedback{
 		UserID: uid, Type: FeedbackTypeBug, Content: "bug 单",
-		Status: FeedbackStatusOpen, ModText: FeedbackModRisky, ModImages: &risky,
+		Status: FeedbackStatusOpen,
 	}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	if err := st.CreateFeedback(ctx, &Feedback{
 		UserID: uid, Type: FeedbackTypeSuggestion, Content: "建议单",
-		Status: FeedbackStatusClosed, ModText: FeedbackModUnchecked,
+		Status: FeedbackStatusClosed,
 	}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -209,9 +150,6 @@ func TestFeedback_AdminListFilterAndName(t *testing.T) {
 	}
 	if rows, _ := st.ListFeedbacksAdmin(ctx, FeedbackFilter{Status: FeedbackStatusClosed}); len(rows) != 1 || rows[0].Type != FeedbackTypeSuggestion {
 		t.Fatalf("status filter: %+v", rows)
-	}
-	if rows, _ := st.ListFeedbacksAdmin(ctx, FeedbackFilter{Moderation: FeedbackModRisky}); len(rows) != 1 {
-		t.Fatalf("moderation filter (text): %+v", rows)
 	}
 	yes := true
 	if rows, _ = st.ListFeedbacksAdmin(ctx, FeedbackFilter{Adopted: &yes}); len(rows) != 0 {
@@ -250,7 +188,7 @@ func TestFeedback_DeleteUserDataCascades(t *testing.T) {
 	imgs := `["feedback/` + uid + `/a.png"]`
 	if err := st.CreateFeedback(ctx, &Feedback{
 		UserID: uid, Type: FeedbackTypeBug, Content: "待级联删除",
-		Status: FeedbackStatusOpen, ModText: FeedbackModUnchecked, Images: &imgs,
+		Status: FeedbackStatusOpen, Images: &imgs,
 	}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -263,10 +201,9 @@ func TestFeedback_DeleteUserDataCascades(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("reply: %v", err)
 	}
-	if err := st.RecordFeedbackImageChecks(ctx, id, []FeedbackImageCheck{
-		{TraceID: "trace-del-" + uid, CosKey: "feedback/" + uid + "/a.png", CreatedAt: time.Now().UTC()},
-	}); err != nil {
-		t.Fatalf("record: %v", err)
+	// Erasure lists every referenced COS key for the fail-open sweep.
+	if keys, err := st.FeedbackImageKeys(ctx, uid); err != nil || len(keys) != 1 {
+		t.Fatalf("image keys: %v %v", err, keys)
 	}
 
 	if err := st.DeleteUserData(ctx, uid); err != nil {
@@ -275,24 +212,8 @@ func TestFeedback_DeleteUserDataCascades(t *testing.T) {
 	if rows, _ := st.ListFeedbacksByUser(ctx, uid); len(rows) != 0 {
 		t.Fatal("feedbacks must be erased")
 	}
-	var replies, checks int64
+	var replies int64
 	if err := st.db.Model(&FeedbackReply{}).Where("feedback_id = ?", id).Count(&replies).Error; err != nil || replies != 0 {
 		t.Fatalf("replies must cascade: %v %d", err, replies)
 	}
-	if err := st.db.Model(&FeedbackImageCheck{}).Where("feedback_id = ?", id).Count(&checks).Error; err != nil || checks != 0 {
-		t.Fatalf("image checks must cascade: %v %d", err, checks)
-	}
-}
-
-// decodeTestModImages parses the mod_images JSON column.
-func decodeTestModImages(t *testing.T, encoded *string) map[string]string {
-	t.Helper()
-	out := map[string]string{}
-	if encoded == nil {
-		return out
-	}
-	if err := json.Unmarshal([]byte(*encoded), &out); err != nil {
-		t.Fatalf("decode mod_images: %v", err)
-	}
-	return out
 }

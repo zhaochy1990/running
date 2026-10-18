@@ -189,19 +189,6 @@ type APIConfig struct {
 	// upload endpoint (devops#552); same section the worker uses for route
 	// thumbnails. Leave any field empty and the upload endpoint answers 503.
 	COS COS `mapstructure:"cos"`
-	// WXA holds the miniprogram message-push credentials for the feedback
-	// image-moderation callback. Empty push-token leaves the endpoint 404.
-	WXA WXA `mapstructure:"wxa"`
-}
-
-// WXA is the WeChat miniprogram message-push credential set (Token for the
-// SHA1 signature check, EncodingAESKey for the safe/compatible mode payload,
-// AppID to pin the decrypted receiveid). All optional: without them the
-// callback endpoint answers 404.
-type WXA struct {
-	AppID          string `mapstructure:"app-id"`
-	PushToken      string `mapstructure:"push-token"`
-	EncodingAESKey string `mapstructure:"encoding-aes-key"`
 }
 
 // API holds the HTTP API server knobs.

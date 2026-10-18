@@ -2,10 +2,8 @@
 // type 分段（🐞 Bug 反馈 / 💡 产品建议）联动占位文案；描述必填点亮提交按钮；
 // 0-9 张图四列格（wx.chooseMedia，超 10MB 跳过）＋删除。
 // 提交两段式：先逐张 POST /feedback-images 拿 cos_key，再 POST /feedbacks
-// （client_version 由 services 层静默注入，页面零展示）。
-// 机检拒绝（content_risky）与上传失败都给用户可见提示。
+// （client_version 由 services 层静默注入，页面零展示）。上传失败给用户可见提示。
 
-import { ApiError } from '../../services/request';
 import { submitFeedback, uploadFeedbackImage } from '../../services/feedback';
 
 /** 单张上限，与后端 feedbackImageMaxBytes 一致 */
@@ -158,11 +156,7 @@ Page<FeedbackFormPageData, FeedbackFormPageHandlers>({
       setTimeout(() => wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/feedback/feedback' }) }), 600);
     } catch (err) {
       const msg = errMsg(err, '提交失败');
-      if (err instanceof ApiError && err.code === 'content_risky') {
-        wx.showToast({ title: '内容含违规信息，请修改后重试', icon: 'none' });
-      } else {
-        wx.showToast({ title: msg.length > 15 ? '提交失败，请重试' : msg, icon: 'none' });
-      }
+      wx.showToast({ title: msg.length > 15 ? '提交失败，请重试' : msg, icon: 'none' });
     } finally {
       this.setData({ submitting: false });
     }
