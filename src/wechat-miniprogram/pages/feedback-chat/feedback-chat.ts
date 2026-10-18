@@ -172,8 +172,6 @@ Page<FeedbackChatPageData, FeedbackChatPageHandlers>({
       if (err instanceof ApiError && err.code === 'feedback_closed') {
         this.setData({ closed: true });
         wx.showToast({ title: '该反馈已关闭，如有问题请提交新反馈', icon: 'none' });
-      } else if (err instanceof ApiError && err.code === 'content_risky') {
-        wx.showToast({ title: '内容含违规信息，请修改后重试', icon: 'none' });
       } else {
         wx.showToast({ title: '发送失败，请重试', icon: 'none' });
       }

@@ -297,10 +297,10 @@ _Avoid_: 当前票数（released 条目不再展示实时票数）、缓存
 用户从「我的」页提交的一条 bug 报告或建议（type 二值：bug | suggestion），带正文（≤1000 字）、
 可选 0-9 张截图（COS 公开桶 `feedback/<userUUID>/<uuid>.<ext>`，单张 ≤10MB）与静默采集的
 client_version（零展示）。状态三态单向：open → replied（官方回复自动置位）→ closed（管理员
-手动）；closed 后用户追问被 409 feedback_closed 拒绝。文字/图片过微信 msgSecCheck v2 /
-mediaCheckAsync v2 检测（devops#519）：risky 文字拒 422 content_risky，检测不可用放行打
-`unchecked` 标；openid 尚无获取路径前（结论见 #519 决议）全部落 unchecked。
-_Avoid_: 工单、ticket、客服会话（它不是 IM）
+手动）；closed 后用户追问被 409 feedback_closed 拒绝。UGC 机检（微信 msgSecCheck /
+mediaCheckAsync）已按产品决策移除（#608，git 历史可整体找回）；DB 旧 mod_text / mod_images
+列与 feedback_image_checks 表保留为死列/死表，不再读写。
+_Avoid_: 工单、ticket、客服会话（它不是 IM）、机检状态（已移除）
 
 **回复线程（Reply Thread）**：
 反馈下的双向多轮对话行（author = user | admin）：用户追问与官方回复同表；未读 = admin 行的

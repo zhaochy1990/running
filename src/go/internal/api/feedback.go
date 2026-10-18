@@ -1,25 +1,20 @@
 // feedback.go is the user-feedback surface (devops#552, contract per
-// devops#519's resolution): image upload, the user thread endpoints, the
-// administrator queue, and the WeChat media-check callback wiring.
+// devops#519's resolution): image upload, the user thread endpoints, and the
+// administrator queue.
 //
 //	User:  POST   /api/users/me/feedback-images          (multipart, ≤10MB, image/*)
-//	       POST   /api/users/me/feedbacks                (submit; msgSecCheck hooks)
+//	       POST   /api/users/me/feedbacks                (submit)
 //	       GET    /api/users/me/feedbacks                (session list, no paging)
 //	       GET    /api/users/me/feedbacks/:id            (thread; read-clears unread)
 //	       POST   /api/users/me/feedbacks/:id/replies    (follow-up; closed → 409)
-//	Admin: GET    /api/admin/feedbacks                   (?type=&status=&adopted=&moderation=)
+//	Admin: GET    /api/admin/feedbacks                   (?type=&status=&adopted=)
 //	       GET    /api/admin/feedbacks/:id               (full thread)
 //	       POST   /api/admin/feedbacks/:id/replies       (official reply; open→replied)
 //	       PATCH  /api/admin/feedbacks/:id               (status=closed, adopted_feature_id)
-//	Push:  GET/POST /webhook/push/wxa-media-check        (WeChat message push, wxa_push.go)
 //
-// Moderation degrade: msgSecCheck v2 / mediaCheckAsync v2 both require the
-// caller's openid, which lives in the auth-service (auth_user_wechat_links)
-// and is not reachable from stride-api today (no JWT claim, not in
-// GET /api/users/me — conclusion recorded on devops#519). Until an openid
-// path ships, FeedbackModeration stays nil and every accepted text/image is
-// tagged `unchecked` (检测故障放行打 unchecked 标, same bucket as a detection
-// outage); the callback endpoint is fully live so P6 only flips the client in.
+// UGC machine moderation (msgSecCheck / mediaCheckAsync + the wxa push
+// callback) was removed by product decision (devops#608); the legacy
+// mod_text/mod_images columns stay in MySQL as dead columns.
 package api
 
 import (
@@ -40,8 +35,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/storage"
 )
 
-// feedbackImageMaxBytes is the per-image cap (devops#519: 单张 10MB, aligned
-// with mediaCheckAsync's own 10M limit).
+// feedbackImageMaxBytes is the per-image cap (devops#519: 单张 10MB).
 const feedbackImageMaxBytes = 10 << 20
 
 // maxFeedbackUploadBody bounds the multipart envelope around one ≤10MB image.
@@ -64,25 +58,9 @@ type FeedbackStore interface {
 	CreateAdminFeedbackReply(ctx context.Context, row *storage.FeedbackReply) error
 	MarkFeedbackRepliesRead(ctx context.Context, feedbackID uint64) error
 	PatchFeedbackAdmin(ctx context.Context, id uint64, close bool, adoptedFeatureID *uint64) (*storage.Feedback, error)
-	UpdateFeedbackModImages(ctx context.Context, id uint64, mods map[string]string) error
-	RecordFeedbackImageChecks(ctx context.Context, feedbackID uint64, checks []storage.FeedbackImageCheck) error
-	ApplyFeedbackImageCheck(ctx context.Context, traceID, suggest string) error
 	ListFeedbacksAdmin(ctx context.Context, filter storage.FeedbackFilter) ([]storage.FeedbackWithUser, error)
 	// UserDisplayName attributes a row to its submitter on the admin surface.
 	UserDisplayName(ctx context.Context, userID string) (string, error)
-}
-
-// FeedbackModeration is the UGC content-security port (msgSecCheck v2 sync for
-// text, mediaCheckAsync v2 dispatch for images). Nil = detection unavailable:
-// callers degrade to `unchecked` tags and never block the user. A non-nil
-// implementation returns a non-nil error for the same degradation (outage,
-// quota) and `risky` judgments surface as 422 content_risky.
-type FeedbackModeration interface {
-	// CheckText returns pass|review|risky for the body text.
-	CheckText(ctx context.Context, userID, content string) (string, error)
-	// DispatchImages opens an async check per image key and returns the trace
-	// correlation rows (persisted by the caller).
-	DispatchImages(ctx context.Context, userID string, keys []string) ([]storage.FeedbackImageCheck, error)
 }
 
 // FeedbackImages is the bucket surface the upload endpoint and the URL
@@ -107,18 +85,16 @@ type RoadmapFeatureGetter interface {
 
 type feedbackRoutes struct {
 	store   FeedbackStore
-	mod     FeedbackModeration
 	images  FeedbackImages
 	roadmap RoadmapFeatureGetter
-	push    WXAPushConfig
 	log     *zap.Logger
 }
 
-func newFeedbackRoutes(store FeedbackStore, mod FeedbackModeration, images FeedbackImages, roadmap RoadmapFeatureGetter, push WXAPushConfig, log *zap.Logger) *feedbackRoutes {
+func newFeedbackRoutes(store FeedbackStore, images FeedbackImages, roadmap RoadmapFeatureGetter, log *zap.Logger) *feedbackRoutes {
 	if log == nil {
 		log = logging.Default()
 	}
-	return &feedbackRoutes{store: store, mod: mod, images: images, roadmap: roadmap, push: push, log: log}
+	return &feedbackRoutes{store: store, images: images, roadmap: roadmap, log: log}
 }
 
 // registerUser mounts the user-tier thread endpoints (default-deny group: the
@@ -156,24 +132,12 @@ func (f *feedbackRoutes) registerUpload(r *gin.Engine, auth *Authenticator) {
 	r.POST("/api/users/me/feedback-images", limitBody(maxFeedbackUploadBody), auth.middleware(), rejectAdminCaller, f.upload)
 }
 
-// registerPush mounts the public WeChat message-push endpoints; verification
-// lives in wxa_push.go. Until push-token is configured the endpoints 404
-// (same policy as the coros webhook before its credentials ship).
-func (f *feedbackRoutes) registerPush(r *gin.Engine) {
-	if f.store == nil {
-		return
-	}
-	r.GET("/webhook/push/wxa-media-check", limitBody(1<<20), f.pushVerify)
-	r.POST("/webhook/push/wxa-media-check", limitBody(1<<20), f.pushReceive)
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Image upload
 // ─────────────────────────────────────────────────────────────────────────────
 
 // feedbackImageExt maps a sniffed content type to a storage extension; the
-// closed vocabulary matches what mediaCheckAsync accepts (jpg/png/bmp/gif,
-// plus webp which WeChat transcodes).
+// closed vocabulary of image formats we accept (png/jpg/webp/gif/bmp).
 func feedbackImageExt(contentType string) (string, bool) {
 	switch contentType {
 	case "image/png":
@@ -334,11 +298,10 @@ type feedbackDetailDTO struct {
 }
 
 // create serves POST /api/users/me/feedbacks — validates the image keys belong
-// to the caller, runs the text check (risky → 422, unavailable → unchecked),
-// dispatches image checks (unavailable → unchecked), then persists.
+// to the caller, then persists.
 //
 //	@Summary		Submit a feedback
-//	@Description	Creates one feedback (bug|suggestion) with optional image keys (≤9, must be yours); risky text is rejected 422.
+//	@Description	Creates one feedback (bug|suggestion) with optional image keys (≤9, must be yours).
 //	@Tags			feedback
 //	@Accept			json
 //	@Produce		json
@@ -371,29 +334,9 @@ func (f *feedbackRoutes) create(c *gin.Context) {
 		}
 	}
 
-	// Text check happens before any write: risky content never lands. An
-	// unrecognized suggest (empty from a stub, future enum drift) degrades to
-	// unchecked rather than trusting an unknown token.
-	modText := storage.FeedbackModUnchecked
-	if f.mod != nil {
-		suggest, err := f.mod.CheckText(c.Request.Context(), uid, body.Content)
-		switch {
-		case err != nil:
-			f.log.Warn("feedback: text check unavailable; tagging unchecked", zap.String("user_id", uid), zapErr(err))
-		case suggest == storage.FeedbackModRisky:
-			c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "content_risky"})
-			return
-		case suggest == storage.FeedbackModPass || suggest == storage.FeedbackModReview:
-			modText = suggest
-		default:
-			f.log.Warn("feedback: unknown text suggest; tagging unchecked", zap.String("user_id", uid), zap.String("suggest", suggest))
-		}
-	}
-
 	row := &storage.Feedback{
 		UserID: uid, Type: body.Type, Content: body.Content,
 		ClientVersion: body.ClientVersion, Status: storage.FeedbackStatusOpen,
-		ModText: modText,
 	}
 	if len(body.Images) > 0 {
 		encoded, err := json.Marshal(body.Images)
@@ -408,33 +351,6 @@ func (f *feedbackRoutes) create(c *gin.Context) {
 	if err := f.store.CreateFeedback(c.Request.Context(), row); err != nil {
 		writeFeedbackError(c, f.log, err)
 		return
-	}
-	if len(body.Images) > 0 {
-		mods := make(map[string]string, len(body.Images))
-		for _, key := range body.Images {
-			mods[key] = storage.FeedbackModUnchecked
-		}
-		if f.mod != nil {
-			checks, err := f.mod.DispatchImages(c.Request.Context(), uid, body.Images)
-			switch {
-			case err != nil:
-				f.log.Warn("feedback: image dispatch unavailable; tagging unchecked", zap.String("user_id", uid), zapErr(err))
-			case len(checks) == 0:
-				// A dispatcher that opened nothing must not strand the images in
-				// pending — nobody would ever resolve them.
-			default:
-				if err := f.store.RecordFeedbackImageChecks(c.Request.Context(), row.ID, checks); err != nil {
-					f.log.Error("feedback: record image checks failed", zap.Uint64("feedback_id", row.ID), zapErr(err))
-				} else {
-					for key := range mods {
-						mods[key] = storage.FeedbackModPending
-					}
-				}
-			}
-		}
-		if err := f.store.UpdateFeedbackModImages(c.Request.Context(), row.ID, mods); err != nil {
-			f.log.Error("feedback: update mod_images failed", zap.Uint64("feedback_id", row.ID), zapErr(err))
-		}
 	}
 	c.JSON(http.StatusCreated, feedbackItemDTO{
 		ID: row.ID, Type: row.Type, Content: row.Content,
@@ -543,7 +459,7 @@ func (f *feedbackRoutes) detail(c *gin.Context) {
 	c.JSON(http.StatusOK, feedbackDetailResponse{
 		Feedback: feedbackDetailDTO{
 			ID: row.ID, Type: row.Type, Content: row.Content,
-			ImageURLs:        f.imageURLs(imageKeys(row.Images), nil),
+			ImageURLs:        f.imageURLs(imageKeys(row.Images)),
 			Status:           row.Status,
 			AdoptedFeatureID: row.AdoptedFeatureID,
 			CreatedAt:        row.CreatedAt.UTC().Format(time.RFC3339),
@@ -553,10 +469,10 @@ func (f *feedbackRoutes) detail(c *gin.Context) {
 }
 
 // reply serves POST /api/users/me/feedbacks/:id/replies — a follow-up; closed
-// threads refuse (409 feedback_closed) and the same text check applies.
+// threads refuse (409 feedback_closed).
 //
 //	@Summary		Follow up on a feedback
-//	@Description	Appends a user reply to the thread; closed feedbacks answer 409 feedback_closed; risky text is rejected 422.
+//	@Description	Appends a user reply to the thread; closed feedbacks answer 409 feedback_closed.
 //	@Tags			feedback
 //	@Accept			json
 //	@Produce		json
@@ -566,7 +482,6 @@ func (f *feedbackRoutes) detail(c *gin.Context) {
 //	@Failure		400		{object}	errorResponse
 //	@Failure		404		{object}	errorResponse
 //	@Failure		409		{object}	errorResponse
-//	@Failure		422		{object}	errorResponse
 //	@Failure		500		{object}	errorResponse
 //	@Security		BearerAuth
 //	@Router			/api/users/me/feedbacks/{id}/replies [post]
@@ -592,15 +507,6 @@ func (f *feedbackRoutes) reply(c *gin.Context) {
 	if !bindRaceCalendarJSON(c, &body, "invalid_body") {
 		return
 	}
-	if f.mod != nil {
-		suggest, err := f.mod.CheckText(c.Request.Context(), uid, body.Content)
-		if err != nil {
-			f.log.Warn("feedback: text check unavailable on reply", zap.String("user_id", uid), zapErr(err))
-		} else if suggest == storage.FeedbackModRisky {
-			c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "content_risky"})
-			return
-		}
-	}
 	reply := &storage.FeedbackReply{
 		FeedbackID: id, Author: storage.FeedbackAuthorUser, Content: body.Content,
 	}
@@ -625,8 +531,7 @@ type feedbackAdminUserDTO struct {
 }
 
 // feedbackAdminDTO is one row as the admin list/detail renders it: the full
-// moderation state plus image URLs with risky keys withheld (不渲染), while
-// mod_images still tells the UI what to flag (review=待人审, unchecked=未机检).
+// row plus image URLs.
 type feedbackAdminDTO struct {
 	ID               uint64               `json:"id"`
 	Type             string               `json:"type"`
@@ -636,8 +541,6 @@ type feedbackAdminDTO struct {
 	ClientVersion    string               `json:"client_version"`
 	Status           string               `json:"status"`
 	AdoptedFeatureID *uint64              `json:"adopted_feature_id"`
-	ModText          string               `json:"mod_text"`
-	ModImages        map[string]string    `json:"mod_images"`
 	User             feedbackAdminUserDTO `json:"user"`
 	CreatedAt        string               `json:"created_at"`
 	UpdatedAt        string               `json:"updated_at"`
@@ -652,16 +555,15 @@ type feedbackAdminDetailResponse struct {
 	Replies  []feedbackReplyDTO `json:"replies"`
 }
 
-// adminList serves GET /api/admin/feedbacks with the four filters.
+// adminList serves GET /api/admin/feedbacks with the filters.
 //
 //	@Summary		List feedbacks (admin)
-//	@Description	Newest-first feedback queue with user attribution; filterable by type, status, adopted and moderation state. Risky image URLs are withheld.
+//	@Description	Newest-first feedback queue with user attribution; filterable by type, status and adopted state.
 //	@Tags			feedback-admin
 //	@Produce		json
 //	@Param			type		query	string	false	"bug|suggestion"
 //	@Param			status		query	string	false	"open|replied|closed"
 //	@Param			adopted		query	string	false	"true|false"
-//	@Param			moderation	query	string	false	"pass|review|risky|pending|unchecked"
 //	@Success		200			{object}	feedbackAdminListResponse
 //	@Failure		403			{object}	errorResponse
 //	@Failure		422			{object}	errorResponse
@@ -673,9 +575,8 @@ func (f *feedbackRoutes) adminList(c *gin.Context) {
 		return
 	}
 	filter := storage.FeedbackFilter{
-		Type:       c.Query("type"),
-		Status:     c.Query("status"),
-		Moderation: c.Query("moderation"),
+		Type:   c.Query("type"),
+		Status: c.Query("status"),
 	}
 	if filter.Type != "" && !storage.IsFeedbackType(filter.Type) {
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_type"})
@@ -683,10 +584,6 @@ func (f *feedbackRoutes) adminList(c *gin.Context) {
 	}
 	if filter.Status != "" && !storage.IsFeedbackStatus(filter.Status) {
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_status"})
-		return
-	}
-	if filter.Moderation != "" && !storage.IsFeedbackModState(filter.Moderation) {
-		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_moderation"})
 		return
 	}
 	switch c.Query("adopted") {
@@ -716,7 +613,7 @@ func (f *feedbackRoutes) adminList(c *gin.Context) {
 // adminDetail serves GET /api/admin/feedbacks/:id — the full thread.
 //
 //	@Summary		Feedback thread (admin)
-//	@Description	Returns the full thread with the moderation state; risky image URLs are withheld.
+//	@Description	Returns the full thread with server-built image URLs.
 //	@Tags			feedback-admin
 //	@Produce		json
 //	@Param			id	path	int	true	"Feedback id"
@@ -905,30 +802,13 @@ func imageKeys(encoded *string) []string {
 	return out
 }
 
-// modImageStates decodes the mod_images JSON map; a NULL column renders {}.
-func modImageStates(encoded *string) map[string]string {
-	out := map[string]string{}
-	if encoded == nil {
-		return out
-	}
-	if err := json.Unmarshal([]byte(*encoded), &out); err != nil {
-		return map[string]string{}
-	}
-	return out
-}
-
-// imageURLs builds public direct URLs for the given keys, withholding any key
-// whose moderation state is risky (the admin surface never renders those).
-// On the user side mods is nil and every own image is rendered.
-func (f *feedbackRoutes) imageURLs(keys []string, mods map[string]string) []string {
+// imageURLs builds public direct URLs for the given keys.
+func (f *feedbackRoutes) imageURLs(keys []string) []string {
 	urls := []string{}
 	if f.images == nil {
 		return urls
 	}
 	for _, key := range keys {
-		if mods != nil && mods[key] == storage.FeedbackModRisky {
-			continue
-		}
 		urls = append(urls, f.images.PublicURL(key))
 	}
 	return urls
@@ -936,16 +816,13 @@ func (f *feedbackRoutes) imageURLs(keys []string, mods map[string]string) []stri
 
 // feedbackAdminView renders the admin projection of one row.
 func (f *feedbackRoutes) feedbackAdminView(row *storage.Feedback, name string) feedbackAdminDTO {
-	mods := modImageStates(row.ModImages)
 	return feedbackAdminDTO{
 		ID: row.ID, Type: row.Type, Content: row.Content,
 		Images:           imageKeys(row.Images),
-		ImageURLs:        f.imageURLs(imageKeys(row.Images), mods),
+		ImageURLs:        f.imageURLs(imageKeys(row.Images)),
 		ClientVersion:    row.ClientVersion,
 		Status:           row.Status,
 		AdoptedFeatureID: row.AdoptedFeatureID,
-		ModText:          row.ModText,
-		ModImages:        mods,
 		User:             feedbackAdminUserDTO{Name: name, UserID: row.UserID},
 		CreatedAt:        row.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:        row.UpdatedAt.UTC().Format(time.RFC3339),

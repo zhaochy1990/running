@@ -152,8 +152,8 @@ func runAPI() error {
 	if err := store.AutoMigrateRoadmap(ctx); err != nil {
 		return err
 	}
-	// feedbacks + feedback_replies (+ the trace correlation table) back the
-	// user-feedback surface (devops#552). Only the API writes them.
+	// feedbacks + feedback_replies back the user-feedback surface (devops#552).
+	// Only the API writes them.
 	if err := store.AutoMigrateFeedback(ctx); err != nil {
 		return err
 	}
@@ -279,18 +279,11 @@ func runAPI() error {
 		CustomRaceStore:         store,
 		RoadmapStore:            store,
 		FeedbackStore:           store,
-		// FeedbackModeration stays nil until an openid path ships (see the
-		// devops#519 conclusion): accepted content is tagged unchecked.
-		FeedbackImages: feedbackCos,
-		WXAPush: api.WXAPushConfig{
-			AppID:          cfg.WXA.AppID,
-			Token:          cfg.WXA.PushToken,
-			EncodingAESKey: cfg.WXA.EncodingAESKey,
-		},
-		RaceStrategyStore: store,
-		RaceContentStore:  store,
-		RaceCatalogStore:  store,
-		RaceItemGeocoder:  newAMapGeocoder(cfg.AMap),
+		FeedbackImages:          feedbackCos,
+		RaceStrategyStore:       store,
+		RaceContentStore:        store,
+		RaceCatalogStore:        store,
+		RaceItemGeocoder:        newAMapGeocoder(cfg.AMap),
 		CityAIDraft: api.CityAIDraftConfig{
 			Endpoint: cfg.CityAIDraft.Endpoint,
 			APIKey:   cfg.CityAIDraft.APIKey,

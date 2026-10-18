@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // ErrFeedbackNotFound is returned when a feedback id does not exist (or is
@@ -19,12 +18,12 @@ var ErrFeedbackNotFound = errors.New("storage: feedback row not found")
 // clear an already-set adopted_feature_id (one-way, devops#519).
 var ErrFeedbackAdoptedImmutable = errors.New("storage: feedback adopted_feature_id is immutable")
 
-// AutoMigrateFeedback creates/updates the feedbacks + feedback_replies tables
-// and the feedback_image_checks correlation table. Called by cmd/api at boot;
-// the worker does not touch feedback data.
+// AutoMigrateFeedback creates/updates the feedbacks + feedback_replies tables.
+// Called by cmd/api at boot; the worker does not touch feedback data. The
+// legacy feedback_image_checks table is no longer created (devops#608).
 func (s *Store) AutoMigrateFeedback(ctx context.Context) error {
 	if err := s.db.WithContext(ctx).AutoMigrate(
-		&Feedback{}, &FeedbackReply{}, &FeedbackImageCheck{},
+		&Feedback{}, &FeedbackReply{},
 	); err != nil {
 		return fmt.Errorf("storage: automigrate feedback: %w", err)
 	}
@@ -202,89 +201,12 @@ func (s *Store) PatchFeedbackAdmin(ctx context.Context, id uint64, close bool, a
 	return row, nil
 }
 
-// UpdateFeedbackModImages overwrites the mod_images JSON map (empty map →
-// NULL). The callback path and the dispatch path both go through here.
-func (s *Store) UpdateFeedbackModImages(ctx context.Context, id uint64, mods map[string]string) error {
-	var encoded *string
-	if len(mods) > 0 {
-		raw, err := json.Marshal(mods)
-		if err != nil {
-			return fmt.Errorf("storage: encode mod_images: %w", err)
-		}
-		v := string(raw)
-		encoded = &v
-	}
-	return s.db.WithContext(ctx).Model(&Feedback{}).Where("id = ?", id).
-		Update("mod_images", encoded).Error
-}
-
-// RecordFeedbackImageChecks persists the trace→(feedback, key) correlation
-// rows for one dispatch batch. The caller owns flipping mod_images to pending.
-func (s *Store) RecordFeedbackImageChecks(ctx context.Context, feedbackID uint64, checks []FeedbackImageCheck) error {
-	if len(checks) == 0 {
-		return nil
-	}
-	now := time.Now().UTC()
-	for i := range checks {
-		checks[i].FeedbackID = feedbackID
-		if checks[i].CreatedAt.IsZero() {
-			checks[i].CreatedAt = now
-		}
-	}
-	return s.db.WithContext(ctx).Create(&checks).Error
-}
-
-// ApplyFeedbackImageCheck resolves one wxa_media_check push: flips the traced
-// image's mod_images entry to suggest and consumes the correlation row. An
-// unknown trace is a no-op (nil) so a replayed push acks cleanly.
-func (s *Store) ApplyFeedbackImageCheck(ctx context.Context, traceID, suggest string) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var check FeedbackImageCheck
-		if err := tx.Where("trace_id = ?", traceID).First(&check).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil
-			}
-			return err
-		}
-		var row Feedback
-		// FOR UPDATE: two concurrent callbacks for different traces of the same
-		// feedback would otherwise read-modify-write mod_images and lose one
-		// result.
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ?", check.FeedbackID).First(&row).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil
-			}
-			return err
-		}
-		mods := map[string]string{}
-		if row.ModImages != nil {
-			if err := json.Unmarshal([]byte(*row.ModImages), &mods); err != nil {
-				return fmt.Errorf("storage: decode mod_images %d: %w", row.ID, err)
-			}
-		}
-		mods[check.CosKey] = suggest
-		raw, err := json.Marshal(mods)
-		if err != nil {
-			return err
-		}
-		encoded := string(raw)
-		if err := tx.Model(&Feedback{}).Where("id = ?", row.ID).
-			Update("mod_images", encoded).Error; err != nil {
-			return err
-		}
-		return tx.Where("trace_id = ?", traceID).Delete(&FeedbackImageCheck{}).Error
-	})
-}
-
 // FeedbackFilter is the admin-list filter set (devops#519): type / status /
-// adopted / moderation. Empty strings mean "no filter"; Adopted nil means "no
-// filter".
+// adopted. Empty strings mean "no filter"; Adopted nil means "no filter".
 type FeedbackFilter struct {
-	Type       string
-	Status     string
-	Adopted    *bool
-	Moderation string
+	Type    string
+	Status  string
+	Adopted *bool
 }
 
 // FeedbackWithUser is one admin-list row plus the submitter's display name.
@@ -294,8 +216,7 @@ type FeedbackWithUser struct {
 }
 
 // ListFeedbacksAdmin returns feedback rows newest first with the submitter's
-// display name, filtered per f. The moderation filter matches the text tag or
-// any image tag equal to the value.
+// display name, filtered per f.
 func (s *Store) ListFeedbacksAdmin(ctx context.Context, f FeedbackFilter) ([]FeedbackWithUser, error) {
 	q := s.db.WithContext(ctx).Table("feedbacks AS f").
 		Select("f.*, COALESCE(p.display_name, '') AS user_name").
@@ -312,9 +233,6 @@ func (s *Store) ListFeedbacksAdmin(ctx context.Context, f FeedbackFilter) ([]Fee
 		} else {
 			q = q.Where("f.adopted_feature_id IS NULL")
 		}
-	}
-	if f.Moderation != "" {
-		q = q.Where("f.mod_text = ? OR f.mod_images LIKE CONCAT('%\"', ?, '\"%')", f.Moderation, f.Moderation)
 	}
 	var rows []FeedbackWithUser
 	if err := q.Order("f.id DESC").Find(&rows).Error; err != nil {

@@ -728,12 +728,6 @@ definitions:
         items:
           type: string
         type: array
-      mod_images:
-        additionalProperties:
-          type: string
-        type: object
-      mod_text:
-        type: string
       status:
         type: string
       type:
@@ -5321,7 +5315,7 @@ paths:
   /api/admin/feedbacks:
     get:
       description: Newest-first feedback queue with user attribution; filterable by
-        type, status, adopted and moderation state. Risky image URLs are withheld.
+        type, status and adopted state.
       parameters:
       - description: bug|suggestion
         in: query
@@ -5334,10 +5328,6 @@ paths:
       - description: true|false
         in: query
         name: adopted
-        type: string
-      - description: pass|review|risky|pending|unchecked
-        in: query
-        name: moderation
         type: string
       produces:
       - application/json
@@ -5365,8 +5355,7 @@ paths:
       - feedback-admin
   /api/admin/feedbacks/{id}:
     get:
-      description: Returns the full thread with the moderation state; risky image
-        URLs are withheld.
+      description: Returns the full thread with server-built image URLs.
       parameters:
       - description: Feedback id
         in: path
@@ -7346,7 +7335,7 @@ paths:
       consumes:
       - application/json
       description: Creates one feedback (bug|suggestion) with optional image keys
-        (≤9, must be yours); risky text is rejected 422.
+        (≤9, must be yours).
       parameters:
       - description: Feedback
         in: body
@@ -7421,7 +7410,7 @@ paths:
       consumes:
       - application/json
       description: Appends a user reply to the thread; closed feedbacks answer 409
-        feedback_closed; risky text is rejected 422.
+        feedback_closed.
       parameters:
       - description: Feedback id
         in: path
@@ -7451,10 +7440,6 @@ paths:
             $ref: '#/definitions/api.errorResponse'
         "409":
           description: Conflict
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "422":
-          description: Unprocessable Entity
           schema:
             $ref: '#/definitions/api.errorResponse'
         "500":
@@ -8549,75 +8534,6 @@ paths:
       summary: Get a pipeline run's status
       tags:
       - pipelines
-  /webhook/push/wxa-media-check:
-    get:
-      description: Echoes echostr when the Token signature matches; part of the miniprogram
-        console message-push setup.
-      parameters:
-      - description: SHA1(token,timestamp,nonce)
-        in: query
-        name: signature
-        required: true
-        type: string
-      - description: Unix seconds
-        in: query
-        name: timestamp
-        required: true
-        type: string
-      - description: Random string
-        in: query
-        name: nonce
-        required: true
-        type: string
-      - description: Random echo payload
-        in: query
-        name: echostr
-        required: true
-        type: string
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-        "403":
-          description: Forbidden
-      summary: WeChat push URL verification
-      tags:
-      - wxa-push
-    post:
-      description: Receives the wxa_media_check event (plain or encrypted payload,
-        JSON or XML), verifies the Token/EncodingAESKey signatures, and updates the
-        traced image's moderation state.
-      parameters:
-      - description: SHA1(token,timestamp,nonce[,encrypt])
-        in: query
-        name: signature
-        required: true
-        type: string
-      - description: Unix seconds
-        in: query
-        name: timestamp
-        required: true
-        type: string
-      - description: Random string
-        in: query
-        name: nonce
-        required: true
-        type: string
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-        "403":
-          description: Forbidden
-        "404":
-          description: Not Found
-        "500":
-          description: Internal Server Error
-      summary: WeChat media-check result push
-      tags:
-      - wxa-push
 securityDefinitions:
   BearerAuth:
     description: '"Bearer <JWT>" for end-user callers (RS256).'

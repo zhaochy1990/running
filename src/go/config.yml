@@ -95,17 +95,6 @@ cos:
   region: ""
   base-url: ""          # public origin used to build thumb_url (CDN later)
 
-# WeChat miniprogram message-push credentials for the feedback image-moderation
-# callback (devops#552, POST /webhook/push/wxa-media-check). Both secrets come
-# from the console's message-push setup page:
-#   STRIDE_WORKER_WXA_PUSH_TOKEN / STRIDE_WORKER_WXA_ENCODING_AES_KEY
-# Until push-token is set the endpoint answers 404 (same policy as the coros
-# webhook before its credentials ship). app-id pins the decrypted receiveid.
-wxa:
-  app-id: ""
-  push-token: ""        # via STRIDE_WORKER_WXA_PUSH_TOKEN (secret)
-  encoding-aes-key: ""  # via STRIDE_WORKER_WXA_ENCODING_AES_KEY (secret)
-
 # World Athletics GraphQL API (public AWS AppSync endpoint) for the
 # race_calendar_sync pipeline. The api-key is public — World Athletics
 # embeds it in the site's JS bundle — so it ships here as a non-secret default

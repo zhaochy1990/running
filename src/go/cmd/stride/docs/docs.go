@@ -671,7 +671,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Newest-first feedback queue with user attribution; filterable by type, status, adopted and moderation state. Risky image URLs are withheld.",
+                "description": "Newest-first feedback queue with user attribution; filterable by type, status and adopted state.",
                 "produces": [
                     "application/json"
                 ],
@@ -696,12 +696,6 @@ const docTemplate = `{
                         "type": "string",
                         "description": "true|false",
                         "name": "adopted",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "pass|review|risky|pending|unchecked",
-                        "name": "moderation",
                         "in": "query"
                     }
                 ],
@@ -740,7 +734,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns the full thread with the moderation state; risky image URLs are withheld.",
+                "description": "Returns the full thread with server-built image URLs.",
                 "produces": [
                     "application/json"
                 ],
@@ -3292,7 +3286,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Creates one feedback (bug|suggestion) with optional image keys (≤9, must be yours); risky text is rejected 422.",
+                "description": "Creates one feedback (bug|suggestion) with optional image keys (≤9, must be yours).",
                 "consumes": [
                     "application/json"
                 ],
@@ -3407,7 +3401,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Appends a user reply to the thread; closed feedbacks answer 409 feedback_closed; risky text is rejected 422.",
+                "description": "Appends a user reply to the thread; closed feedbacks answer 409 feedback_closed.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3457,12 +3451,6 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
-                    "422": {
-                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
                         }
@@ -7574,103 +7562,6 @@ const docTemplate = `{
                     }
                 }
             }
-        },
-        "/webhook/push/wxa-media-check": {
-            "get": {
-                "description": "Echoes echostr when the Token signature matches; part of the miniprogram console message-push setup.",
-                "tags": [
-                    "wxa-push"
-                ],
-                "summary": "WeChat push URL verification",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "SHA1(token,timestamp,nonce)",
-                        "name": "signature",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Unix seconds",
-                        "name": "timestamp",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Random string",
-                        "name": "nonce",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Random echo payload",
-                        "name": "echostr",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden"
-                    }
-                }
-            },
-            "post": {
-                "description": "Receives the wxa_media_check event (plain or encrypted payload, JSON or XML), verifies the Token/EncodingAESKey signatures, and updates the traced image's moderation state.",
-                "tags": [
-                    "wxa-push"
-                ],
-                "summary": "WeChat media-check result push",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "SHA1(token,timestamp,nonce[,encrypt])",
-                        "name": "signature",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Unix seconds",
-                        "name": "timestamp",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Random string",
-                        "name": "nonce",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden"
-                    },
-                    "404": {
-                        "description": "Not Found"
-                    },
-                    "500": {
-                        "description": "Internal Server Error"
-                    }
-                }
-            }
         }
     },
     "definitions": {
@@ -8760,15 +8651,6 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
-                },
-                "mod_images": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "mod_text": {
-                    "type": "string"
                 },
                 "status": {
                     "type": "string"
