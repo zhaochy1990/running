@@ -101,7 +101,7 @@ export type WorkoutTarget = z.infer<typeof WorkoutTargetSchema>;
 export type StepRest = z.infer<typeof StepRestSchema>;
 export type StrengthWorkout = z.infer<typeof StrengthWorkoutSchema>;
 
-/** 宽松 step：note/hr_cap_bpm/schema 判别符可省略，未知键剥除；硬校验保留。 */
+/** 宽松 step：note/hr_cap_bpm/schema 判别符可省略、rest 可省或 null（LLM 爱给 optional 字段补 null），未知键剥除；硬校验保留。 */
 const RunWorkoutLenientStepSchema = z
   .object({
     step_kind: StepKindSchema,
@@ -109,10 +109,10 @@ const RunWorkoutLenientStepSchema = z
     target: WorkoutTargetSchema,
     note: z.string().nullish(),
     hr_cap_bpm: z.int().positive().nullish(),
-    rest: StepRestSchema.optional(),
+    rest: StepRestSchema.nullish(),
   })
   .superRefine((step, ctx) => {
-    if (step.step_kind === "rest" && step.rest !== undefined) {
+    if (step.step_kind === "rest" && step.rest != null) {
       ctx.addIssue({ code: "custom", path: ["rest"], message: NO_REST_ON_REST_STEP });
     }
   });
@@ -149,7 +149,7 @@ export function normalizeRunWorkout(input: unknown): RunWorkout {
         target: step.target,
         note: step.note ?? null,
         hr_cap_bpm: step.hr_cap_bpm ?? null,
-        ...(step.rest !== undefined ? { rest: step.rest } : {}),
+        ...(step.rest != null ? { rest: step.rest } : {}),
       })),
     })),
   });

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { toJsonSchema } from "@langchain/core/utils/json_schema";
 import { buildResponsesModel, getLogger, ModelContractError } from "@stride/common";
-import { type PhaseName, type TargetTrainingLoad, type WeeklyPlan, WeeklyPlanGenerationSchema, WeeklyPlanSchema } from "@stride/contract";
+import { normalizeWeeklyPlan, type PhaseName, type TargetTrainingLoad, type WeeklyPlan, WeeklyPlanGenerationSchema } from "@stride/contract";
 import type { ModelConfig } from "../../config/config.js";
 import type { WeeklyPlanContext } from "../../data/weeklyPlanContextProvider.js";
 import { acceptedLoadBand } from "./loadTolerance.js";
@@ -50,21 +50,16 @@ class WeeklyPlanLLMImplementation implements WeeklyPlanLLM {
       logger.info("failed to generate weekly plan %s", response.error);
     }
 
-    if (!response.success) {
-      throw new ModelContractError(`weekly plan model could not generate a plan: ${response.error}`);
+    if (!response.success || response.weeklyPlan === null) {
+      throw new ModelContractError(`weekly plan model could not generate a plan: ${response.error || "missing weeklyPlan"}`);
     }
-    console.log(`\n===== 生成的 weekly plan JSON =====\n${JSON.stringify(response.weeklyPlan, null, 2)}`);
 
-    let validatedPlan: WeeklyPlan;
-    try {
-      validatedPlan = validateGeneratedWeeklyPlan(WeeklyPlanSchema.parse(response.weeklyPlan), input);
-    } catch (error) {
-      // throw new ModelContractError(`weekly plan model returned an invalid structured plan: ${error instanceof Error ? error.message : "invalid contract"}`);
-    }
-    // logger.info(
-    //   `Generated weekly plan for phase ${input.phase} in ${((Date.now() - startedAt) / 1000).toFixed(1)}s (${validatedPlan.sessions.length} sessions)`,
-    // );
-    return WeeklyPlanSchema.parse(response.weeklyPlan);
+    // lenient→normalize→strict（#583 防御路径）：run spec 经 normalizeRunWorkout 补默认
+    // （丢弃 LLM 给 optional rest 补的 null），再过硬校验；业务校验失败拋出走
+    // quality_failure 重试路径。
+    const plan = validateGeneratedWeeklyPlan(normalizeWeeklyPlan(response.weeklyPlan), input);
+    logger.info(`Generated weekly plan for phase ${input.phase} in ${((Date.now() - startedAt) / 1000).toFixed(1)}s (${plan.sessions.length} sessions)`);
+    return plan;
   }
 }
 
