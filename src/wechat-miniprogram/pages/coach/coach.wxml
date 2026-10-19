@@ -49,6 +49,7 @@
               data-id="{{item.id}}"
               bindopen="onCardOpen"
               bindcta="onCardCta"
+              bindsecondary="onCardSecondary"
             />
             <mp-html
               wx:if="{{item.html}}"

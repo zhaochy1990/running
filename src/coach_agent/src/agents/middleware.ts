@@ -143,3 +143,23 @@ export function createLoggingMiddleware(scope = "agent") {
     },
   });
 }
+
+/**
+ * 把本轮上海日期注入系统提示：相对日期（明天/周几）换算的锚点（devops#587）。
+ * 日期取 runtime context 的 asof（coach API 每 turn 以上海日历日注入），系统
+ * 提示保持静态、不随服务启动时间固化。
+ */
+export function createCurrentDateMiddleware() {
+  return createMiddleware({
+    name: "CurrentDateMiddleware",
+    wrapModelCall: (request, handler) => {
+      const runtimeContext = request.runtime.context as { asof?: unknown } | undefined;
+      const asof = typeof runtimeContext?.asof === "string" ? runtimeContext.asof : "";
+      const suffix = asof.length > 0 ? `今天的日期是 ${asof}（Asia/Shanghai 日历日）。` : "";
+      return handler({
+        ...request,
+        systemMessage: suffix.length > 0 ? request.systemMessage.concat(`\n${suffix}`) : request.systemMessage,
+      });
+    },
+  });
+}

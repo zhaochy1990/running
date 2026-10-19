@@ -52,6 +52,7 @@ type WorkoutPusher interface {
 // by *storage.Store.
 type ScheduledWorkoutStore interface {
 	GetLatestScheduledWorkoutForPlanSession(ctx context.Context, userID, weekFolder, plannedDate string, sessionIndex int) (*storage.ScheduledWorkout, error)
+	GetLatestScheduledWorkoutForWorkout(ctx context.Context, userID, workoutID string) (*storage.ScheduledWorkout, error)
 	RecordPushedScheduledWorkout(ctx context.Context, userID string, in storage.RecordPushedWorkoutInput) (int64, error)
 }
 

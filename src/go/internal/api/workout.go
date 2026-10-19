@@ -62,18 +62,23 @@ type WorkoutStore interface {
 	UpsertCustomWorkout(ctx context.Context, userID string, in storage.UpsertCustomWorkoutInput) (*storage.Workout, error)
 	ListCustomWorkouts(ctx context.Context, userID, dateFrom, dateTo string) ([]storage.Workout, error)
 	ArchiveCustomWorkout(ctx context.Context, userID, workoutID string) (bool, error)
+	GetCustomWorkout(ctx context.Context, userID, workoutID string) (*storage.Workout, error)
 }
 
 type workoutRoutes struct {
 	store WorkoutStore
-	log   *zap.Logger
+	// Watch push (devops#587): nil pair leaves the push route unmounted (same
+	// degradation as the other optional surfaces in partial test services).
+	pusher  WorkoutPusher
+	swstore ScheduledWorkoutStore
+	log     *zap.Logger
 }
 
-func newWorkoutRoutes(store WorkoutStore, log *zap.Logger) *workoutRoutes {
+func newWorkoutRoutes(store WorkoutStore, pusher WorkoutPusher, swstore ScheduledWorkoutStore, log *zap.Logger) *workoutRoutes {
 	if log == nil {
 		log = logging.Default()
 	}
-	return &workoutRoutes{store: store, log: log}
+	return &workoutRoutes{store: store, pusher: pusher, swstore: swstore, log: log}
 }
 
 func (w *workoutRoutes) register(rg *gin.RouterGroup) {
@@ -84,6 +89,9 @@ func (w *workoutRoutes) register(rg *gin.RouterGroup) {
 	rg.POST("/api/users/me/custom-workouts", w.upsertCustom)
 	rg.GET("/api/users/me/custom-workouts", w.listCustom)
 	rg.DELETE("/api/users/me/custom-workouts/:workoutId", w.deleteCustom)
+	if w.pusher != nil && w.swstore != nil {
+		rg.POST("/api/users/me/custom-workouts/:workoutId/push", w.pushCustomWorkout)
+	}
 }
 
 // planSessionDTO is one row of the unified projection. spec carries the stored

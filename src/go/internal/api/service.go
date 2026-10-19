@@ -410,7 +410,7 @@ func NewService(cfg Config) *Service {
 		raceStrategy:            newRaceStrategyRoutes(cfg.RaceStrategyStore, log),
 		raceContent:             newRaceContentRoutes(cfg.RaceContentStore, cfg.CityAIDraft, log),
 		raceCatalog:             newRaceCatalogRoutes(cfg.RaceCatalogStore, log),
-		workouts:                newWorkoutRoutes(cfg.WorkoutStore, log),
+		workouts:                newWorkoutRoutes(cfg.WorkoutStore, cfg.WorkoutPusher, cfg.ScheduledWorkoutStore, log),
 		webhook:                 newWebhookRoutes(cfg.WebhookAdapters, cfg.WebhookEventStore, cfg.WebhookUserResolver, cfg.Enqueuer, cfg.WebhookFetchJobType, cfg.WebhookEnqueueEnabled, log),
 		auth:                    cfg.Auth,
 		corsOrigins:             cfg.CORSOrigins,

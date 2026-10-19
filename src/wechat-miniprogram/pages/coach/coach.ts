@@ -8,6 +8,8 @@ import {
   type MasterPlanReplacementExpectation,
 } from '../../services/master-plan';
 import { ApiError } from '../../services/request';
+import { pushCustomWorkout, upsertCustomWorkout } from '../../services/plan';
+import type { CustomWorkoutCard, PlanSessionRow } from '../../types/plan';
 import { setPendingStrategyDraft, type RaceStrategy } from '../../services/race-strategy';
 import { userStore } from '../../store/index';
 import { buildCoachCard, looksLikeJsonText, parseLeakedRaceStrategyEnvelope, type CoachCardView } from '../../utils/coachCards';
@@ -120,8 +122,10 @@ interface CoachPageHandlers {
   /** 结构化产物卡片 tap（卡片主体）：产物经 storage 交接后跳目标页（如报告页草稿模式）。 */
   onCardOpen(e: WechatMiniprogram.TouchEvent): void;
   /** 卡片主 CTA：导航类产物（策略）走 onCardOpen 同款跳转；动作类产物
-   *  （master-plan 启用）直调端点。 */
+   *  （master-plan 启用、custom-workout 保存）直调端点。 */
   onCardCta(e: WechatMiniprogram.TouchEvent): void;
+  /** 卡片次级 CTA（custom-workout 推送到手表）。 */
+  onCardSecondary(e: WechatMiniprogram.TouchEvent): void;
   onMenuTap(): void;
   onCloseDrawer(): void;
   onSearchTap(): void;
@@ -139,6 +143,10 @@ interface CoachPageHandlers {
   contextHintOf(session: CoachSession | undefined): string;
   // master-plan 卡片动作（#429）：启用（含替换确认）/放弃 + 卡片状态回写。
   applyMasterPlanCard(messageId: number): Promise<void>;
+  // custom-workout 卡片动作（devops#587）：保存 / 推送 + 角标回写。
+  saveCustomWorkoutCard(messageId: number, opts?: { alreadyGuarded?: boolean }): Promise<PlanSessionRow | null>;
+  pushCustomWorkoutCard(messageId: number): Promise<void>;
+  markCustomWorkoutCard(messageId: number, badge: string, keepPrimary: boolean, keepSecondary: boolean): void;
   applyPlanContent(
     messageId: number,
     userId: string,
@@ -552,7 +560,7 @@ Page<CoachPageData, CoachPageHandlers>({
     wx.navigateTo({ url: card.url });
   },
 
-  /** 主 CTA：master-plan 走启用流；其余产物与主体 tap 同款跳转。 */
+  /** 主 CTA：master-plan 走启用流；custom-workout 走保存流；其余产物与主体 tap 同款跳转。 */
   onCardCta(e: WechatMiniprogram.TouchEvent) {
     const id = e.currentTarget.dataset.id as number;
     const message = this.data.messages.find((m) => m.id === id);
@@ -561,7 +569,73 @@ Page<CoachPageData, CoachPageHandlers>({
       void this.applyMasterPlanCard(id);
       return;
     }
+    if (message.card.type === 'custom-workout') {
+      void this.saveCustomWorkoutCard(id);
+      return;
+    }
     this.onCardOpen(e);
+  },
+
+  /** 次级 CTA（devops#587）：自建课卡片「推送到手表」——未保存先保存
+   * （save_token 幂等链）再调推送端点。 */
+  onCardSecondary(e: WechatMiniprogram.TouchEvent) {
+    const id = e.currentTarget.dataset.id as number;
+    const message = this.data.messages.find((m) => m.id === id);
+    if (!message?.card) return;
+    if (message.card.type === 'custom-workout') {
+      void this.pushCustomWorkoutCard(id);
+      return;
+    }
+  },
+
+  /** 保存自建课卡片：save_token 幂等 upsert，成功回写「已保存」角标并收掉主
+   * CTA；失败不写终态可重试。返回 workout 行（推送链复用同一入口）。 */
+  async saveCustomWorkoutCard(messageId: number, opts: { alreadyGuarded?: boolean } = {}): Promise<PlanSessionRow | null> {
+    const message = this.data.messages.find((m) => m.id === messageId);
+    const card = message?.card?.data as CustomWorkoutCard | undefined;
+    if (!card?.save_token || !card.spec) {
+      this.markCustomWorkoutCard(messageId, '已失效', false, false);
+      wx.showToast({ title: '这张卡片不可再保存，请重新生成', icon: 'none' });
+      return null;
+    }
+    if (!userStore.getState().user?.id) {
+      wx.showToast({ title: '请先登录后再保存', icon: 'none' });
+      return null;
+    }
+    if (!opts.alreadyGuarded && planActionInFlight) return null;
+    planActionInFlight = card.save_token;
+    try {
+      const row = await upsertCustomWorkout(card);
+      this.markCustomWorkoutCard(messageId, '已保存', true, true);
+      return row;
+    } catch {
+      wx.showToast({ title: '保存失败，请稍后再试', icon: 'none' });
+      return null;
+    } finally {
+      planActionInFlight = '';
+    }
+  },
+
+  /** 推送自建课到手表：未保存先保存（幂等），再调推送端点；成功角标「已推
+   * 送」（隐含已保存），失败不写终态可重试。手表未绑定/不支持沿用服务端
+   * 失败文案。 */
+  async pushCustomWorkoutCard(messageId: number) {
+    if (planActionInFlight) return;
+    planActionInFlight = 'push';
+    wx.showLoading({ title: '推送中...', mask: true });
+    try {
+      const row = await this.saveCustomWorkoutCard(messageId, { alreadyGuarded: true });
+      if (!row?.workout_id) return;
+      await pushCustomWorkout(row.workout_id);
+      this.markCustomWorkoutCard(messageId, '已推送', false, false);
+      wx.showToast({ title: '已推送到手表', icon: 'success' });
+    } catch (err: any) {
+      const msg = err?.detail || err?.message || '推送失败';
+      wx.showToast({ title: msg.length > 15 ? '推送失败' : msg, icon: 'none' });
+    } finally {
+      wx.hideLoading();
+      planActionInFlight = '';
+    }
   },
 
   /**
@@ -657,6 +731,19 @@ Page<CoachPageData, CoachPageHandlers>({
       [`messages[${index}].card.badge`]: badge,
       [`messages[${index}].card.buttonText`]: '',
       [`messages[${index}].card.secondaryButtonText`]: '',
+    });
+  },
+
+  /** 自建课卡片状态回写：badge + 双 CTA 独立收放（保存只收主 CTA，推送收双）。 */
+  markCustomWorkoutCard(messageId: number, badge: string, keepPrimary: boolean, keepSecondary: boolean) {
+    const index = this.data.messages.findIndex((m) => m.id === messageId);
+    if (index < 0) return;
+    const card = this.data.messages[index]?.card;
+    if (!card) return;
+    this.setData({
+      [`messages[${index}].card.badge`]: badge,
+      [`messages[${index}].card.buttonText`]: keepPrimary ? card.buttonText : '',
+      [`messages[${index}].card.secondaryButtonText`]: keepSecondary ? card.secondaryButtonText : '',
     });
   },
 

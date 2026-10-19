@@ -347,3 +347,25 @@ func (s *Store) ArchiveCustomWorkout(ctx context.Context, userID, workoutID stri
 	}
 	return result.RowsAffected > 0, nil
 }
+
+// GetCustomWorkout returns the caller's active custom workout by id, or nil
+// when the id does not exist, is not the caller's, or is archived
+// (devops#587 custom-workout push reads the stored spec through it).
+func (s *Store) GetCustomWorkout(ctx context.Context, userID, workoutID string) (*Workout, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var row Workout
+	err = s.db.WithContext(ctx).
+		Where("workout_id = ? AND user_id = ? AND source = ? AND status = ?",
+			workoutID, uid, WorkoutSourceCustom, WorkoutStatusActive).
+		First(&row).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("storage: get custom workout: %w", err)
+	}
+	return &row, nil
+}

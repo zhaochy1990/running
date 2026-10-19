@@ -90,11 +90,11 @@ export async function collectCoachStream(run: CoachStreamSource, emit: CoachStre
   return withUsage(toPublicResponse(output), output);
 }
 
-/** 回复正文只可能来自这两个业务节点；orchestrator 的分类输出与 training
- * 节点内层 agent 的结构化信封都不是正文——后者会把整段计划 JSON 打进客户
- * 端打字机（分片是 token 级的，整块前缀的 echo 过滤拦不住），它们的回复由
- * 节点渲染、只随最终 state 到达。 */
-const REPLY_TEXT_NODES = new Set(["qa", "race_strategy"]);
+/** 回复正文只可能来自这三个业务节点；orchestrator 的分类输出与
+ * training / custom_workout 节点内层 agent 的结构化信封都不是正文——后者会把
+ * 整段计划/课表 JSON 打进客户端打字机（分片是 token 级的，整块前缀的 echo
+ * 过滤拦不住），它们的回复由节点渲染、只随最终 state 到达。 */
+const REPLY_TEXT_NODES = new Set(["qa", "race_strategy", "custom_workout"]);
 
 /** 结构化输出的伪工具名（langchain ToolStrategy/withStructuredOutput 内部
  * 生成 `extract` / `extract-N`）：是格式管道，不是运动员可见的工具工作，

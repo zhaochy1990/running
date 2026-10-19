@@ -26,8 +26,10 @@ const (
 // ScheduledWorkout is one provider-agnostic workout scheduled on the watch.
 // SpecJSON carries the normalized workout (run-workout/v1 or
 // strength-workout/v1) — the same payload the push pipeline consumed.
-// WeekFolder/PlannedDate/SessionIndex form the canonical plan identity so a
-// re-push of the same session supersedes (not duplicates) the prior row.
+// Canonical identity is per source: weekly rows carry the plan triple
+// (WeekFolder/PlannedDate/SessionIndex) so a re-push of the same session
+// supersedes (not duplicates) the prior row; custom-workout rows (devops#587)
+// carry WorkoutID instead (plan triple NULL).
 type ScheduledWorkout struct {
 	ID                int64      `gorm:"column:id;primaryKey;autoIncrement"`
 	UserID            string     `gorm:"column:user_id;size:64;not null;index:idx_scheduled_workout_user"`
@@ -41,7 +43,10 @@ type ScheduledWorkout struct {
 	PushedAt          *time.Time `gorm:"column:pushed_at;type:datetime(3)"`
 	CompletedLabelID  *string    `gorm:"column:completed_label_id;size:64"`
 	Note              *string    `gorm:"column:note;size:1000"`
-	// Canonical plan identity (week_start of the plan's Shanghai week).
+	// Custom-workout identity (workout.workout_id, devops#587); weekly rows NULL.
+	WorkoutID *string `gorm:"column:workout_id;size:36"`
+	// Canonical plan identity (week_start of the plan's Shanghai week); custom
+	// rows NULL.
 	WeekFolder   *string   `gorm:"column:week_folder;size:16;index:idx_scheduled_workout_plan_session,priority:1"`
 	PlannedDate  *string   `gorm:"column:planned_date;size:10;index:idx_scheduled_workout_plan_session,priority:2"`
 	SessionIndex *int      `gorm:"column:session_index;index:idx_scheduled_workout_plan_session,priority:3"`
@@ -83,8 +88,32 @@ func (s *Store) GetLatestScheduledWorkoutForPlanSession(
 	return &row, nil
 }
 
+// GetLatestScheduledWorkoutForWorkout returns the most recent execution row
+// for one custom workout (any status), or nil when none exists (devops#587).
+func (s *Store) GetLatestScheduledWorkoutForWorkout(ctx context.Context, userID, workoutID string) (*ScheduledWorkout, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var row ScheduledWorkout
+	err = s.db.WithContext(ctx).
+		Where("user_id = ? AND workout_id = ?", uid, workoutID).
+		Order("id DESC").
+		First(&row).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("storage: get latest scheduled workout for workout: %w", err)
+	}
+	return &row, nil
+}
+
 // RecordPushedWorkoutInput carries the fields for a successful push record.
+// Identity is per source: WorkoutID non-empty marks a custom-workout push
+// (plan triple ignored); otherwise the plan triple is required (weekly).
 type RecordPushedWorkoutInput struct {
+	WorkoutID         string // custom workout.workout_id (custom pushes; empty for weekly)
 	WeekFolder        string // plan week_start of the session's week
 	PlannedDate       string // canonical session date
 	SessionIndex      int    // canonical session index
@@ -123,6 +152,11 @@ func (s *Store) RecordPushedScheduledWorkout(
 		SessionIndex:      intPtr2(in.SessionIndex),
 		CreatedAt:         now,
 		UpdatedAt:         now,
+	}
+	if in.WorkoutID != "" {
+		// Custom-workout push (devops#587): identity is the workout row, plan triple NULL.
+		row.WorkoutID = stringPtr2(in.WorkoutID)
+		row.WeekFolder, row.PlannedDate, row.SessionIndex = nil, nil, nil
 	}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&row).Error; err != nil {
