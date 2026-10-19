@@ -59,3 +59,14 @@ one provider-agnostic shape so a third platform only needs a new adapter.
   (absolute wins; relative-only intake is allowed but marked in sync metadata).
 - Skipped strength sessions must be surfaced as a count so an athlete can see
   that content was intentionally not pulled.
+
+## Update (devops#588)
+
+- The `[STRIDE]` marker is upgraded from a naming convention to a contract:
+  the translate layer (`NormalizedToCorosRun` / `NormalizedToCorosStrength`,
+  and Garmin's `NormalizedToGarminWorkout`) always applies it, and the pull
+  side always skips a session whose name carries it. The rename edge case
+  (a user stripping the marker on the watch turns the entry into one extra
+  watch-source mirror row) is accepted and documented at the skip site.
+- Decision 5's principle is unchanged; only its enforcement moved into shared
+  helpers (`provider.ApplyStrideWorkoutPrefix` / `provider.IsStrideWorkoutName`).

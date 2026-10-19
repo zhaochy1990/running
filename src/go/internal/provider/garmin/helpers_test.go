@@ -38,16 +38,15 @@ func mockHTTPClient(srv *httptest.Server) *http.Client {
 // ─────────────────────────────────────────────────────────────────────────────
 
 type fakeWriter struct {
-	mu             sync.Mutex
-	activities     map[string]*storage.Activity
-	existsCalls    int
-	health         map[string]*storage.DailyHealth
-	hrv            map[string]*storage.DailyHRV
-	dashboards     int
-	races          int
-	meta           map[string]string
-	watchSchedules []storage.WatchSchedule
-	onActivity     func(string)
+	mu          sync.Mutex
+	activities  map[string]*storage.Activity
+	existsCalls int
+	health      map[string]*storage.DailyHealth
+	hrv         map[string]*storage.DailyHRV
+	dashboards  int
+	races       int
+	meta        map[string]string
+	onActivity  func(string)
 }
 
 func newFakeWriter() *fakeWriter {
@@ -95,10 +94,7 @@ func (f *fakeWriter) UpsertRacePrediction(context.Context, *storage.RacePredicti
 	f.races++
 	return nil
 }
-func (f *fakeWriter) UpsertWatchSchedules(_ context.Context, _ string, rows []storage.WatchSchedule) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.watchSchedules = append(f.watchSchedules, rows...)
+func (f *fakeWriter) UpsertWatchWorkouts(context.Context, string, []storage.WatchWorkoutInput, string, string) error {
 	return nil
 }
 func (f *fakeWriter) SetMeta(_ context.Context, _, key, value string) error {

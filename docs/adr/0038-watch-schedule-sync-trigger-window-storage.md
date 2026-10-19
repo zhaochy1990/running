@@ -70,3 +70,16 @@ envelope lands in MySQL, and how the two platform adapters produce it.
   guarantee; the same `entity_id` never yields two live rows for a user+provider.
 - Garmin pull, within-window stale deletion, and HR-step decoding are explicit
   follow-ups, not part of this change.
+
+## Update (devops#588)
+
+- Storage location changed: pulled sessions now land in the unified `workout`
+  table (`source=watch`, lineage `provider` + `provider_entity_id`, identity
+  key `watch:provider:entity`) via `Store.UpsertWatchWorkouts`. The
+  `watch_schedule` table is retired: kept with its data, no longer written.
+  The mirror-row principle (decision 1 of ADR 0036) is unchanged — watch rows
+  are never upgraded to plan rows and stay a separate source in the day-plan
+  projection.
+- Out-of-window cleanup landed: each pull (−7/+90) archives active watch rows
+  whose date left the window, scoped by `source=watch` so weekly / custom rows
+  are never touched. In-window deletions on the watch remain a follow-up.

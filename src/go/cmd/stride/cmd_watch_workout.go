@@ -131,7 +131,8 @@ func newWatchWorkoutDeleteCmd() *cobra.Command {
 			"watch schedule. Only entries whose program name carries the [STRIDE]\n" +
 			"prefix are touched — user-authored watch entries are never deleted.\n" +
 			"--name restricts the sweep to an exact program name (e.g. only the\n" +
-			"prior push of one session).",
+			"prior push of one session); the [STRIDE] prefix is applied to it\n" +
+			"automatically (devops#588).",
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return runWorkoutDelete(profile, args[0], name)

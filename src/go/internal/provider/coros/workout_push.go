@@ -106,6 +106,11 @@ func (p *Provider) DeleteScheduledWorkout(ctx context.Context, user, date, name 
 		}
 	}
 	deleted := 0
+	if name != "" {
+		// Callers pass the raw spec name; the [STRIDE] prefix is applied here so
+		// the filter matches what the push side actually wrote (devops#588).
+		name = provider.ApplyStrideWorkoutPrefix(name)
+	}
 	for _, entity := range sched.Entities {
 		if strAny(entity["happenDay"]) != corosDate {
 			continue
@@ -114,7 +119,7 @@ func (p *Provider) DeleteScheduledWorkout(ctx context.Context, user, date, name 
 		programName := namesByIDInPlan[idip]
 		// Always require the [STRIDE] prefix (project rule: never delete
 		// user-authored watch entries).
-		if !strings.HasPrefix(programName, "[STRIDE]") {
+		if !provider.IsStrideWorkoutName(programName) {
 			continue
 		}
 		// Push appends HR-cap guardrails to the program name (hrCapNameSuffix),
@@ -173,7 +178,7 @@ func (p *Provider) QuerySchedule(ctx context.Context, user, start, end string) (
 			Name:              namesByID[id],
 			Sport:             sportsByID[id],
 			ProviderWorkoutID: id,
-			IsStrideManaged:   strings.HasPrefix(namesByID[id], "[STRIDE]"),
+			IsStrideManaged:   provider.IsStrideWorkoutName(namesByID[id]),
 		})
 	}
 	return out, nil

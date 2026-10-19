@@ -22,7 +22,8 @@ type fakeWriter struct {
 	dashboard           *storage.Dashboard
 	dashboardUpsertMode string
 	meta                map[string]string
-	watchSchedules      []storage.WatchSchedule
+	watchWorkouts       []storage.WatchWorkoutInput
+	watchWindow         [2]string
 }
 
 func newFakeWriter() *fakeWriter {
@@ -68,8 +69,9 @@ func (f *fakeWriter) UpsertRacePrediction(_ context.Context, p *storage.RacePred
 	f.preds[p.RaceType] = p
 	return nil
 }
-func (f *fakeWriter) UpsertWatchSchedules(_ context.Context, _ string, rows []storage.WatchSchedule) error {
-	f.watchSchedules = append(f.watchSchedules, rows...)
+func (f *fakeWriter) UpsertWatchWorkouts(_ context.Context, _ string, rows []storage.WatchWorkoutInput, windowFrom, windowTo string) error {
+	f.watchWorkouts = append(f.watchWorkouts, rows...)
+	f.watchWindow = [2]string{windowFrom, windowTo}
 	return nil
 }
 func (f *fakeWriter) SetMeta(_ context.Context, _, key, value string) error {

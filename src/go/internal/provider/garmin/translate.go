@@ -280,7 +280,7 @@ func NormalizedToGarminWorkout(workout provider.RunWorkout) (map[string]any, err
 		note = *workout.Note
 	}
 	return map[string]any{
-		"workoutName":               workout.Name,
+		"workoutName":               provider.ApplyStrideWorkoutPrefix(workout.Name), // [STRIDE] contract, devops#588
 		"description":               note,
 		"sportType":                 runSportType,
 		"subSportType":              "GENERIC",
