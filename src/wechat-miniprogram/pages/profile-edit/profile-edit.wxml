@@ -117,11 +117,16 @@
         </block>
       </view>
 
-      <!-- 手表绑定（低频入口） -->
+      <!-- 低频设置入口（手表 / 隐私），压在退出登录上方 -->
       <view class="card">
-        <view class="field-row field-row--last" bindtap="onOpenWatch">
+        <view class="field-row" bindtap="onOpenWatch">
           <view class="field-row__label">手表管理</view>
           <view class="field-row__value field-row__value--muted">绑定 / 同步训练数据</view>
+          <image class="field-row__chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+        </view>
+        <view class="field-row field-row--last" bindtap="onOpenPrivacy">
+          <view class="field-row__label">隐私与权限</view>
+          <view class="field-row__value field-row__value--muted">协议声明与数据说明</view>
           <image class="field-row__chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
         </view>
       </view>

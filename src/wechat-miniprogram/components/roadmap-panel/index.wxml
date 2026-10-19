@@ -1,0 +1,118 @@
+<!-- 产品路线面板：loading / 错误自持，深色令牌由宿主页 @import dark.wxss 提供
+     （CSS 变量跨组件继承）。2026-10-18 拍板：hero 聚合卡已移除；列表扁平化
+     贴边（无卡底/圆角，内容直铺屏幕边），宿主页不再给左右留白。 -->
+<view class="panel">
+  <!-- 加载态 -->
+  <view wx:if="{{loading}}" class="state-card">
+    <view class="spinner"></view>
+    <view class="state-card__text">加载中…</view>
+  </view>
+
+  <!-- 错误态（点按重试） -->
+  <view wx:elif="{{loadError}}" class="banner banner--error" bindtap="onRetry">{{loadError}} · 点按重试</view>
+
+  <block wx:else>
+    <!-- 全量空态：三区都没有数据 -->
+    <view
+      wx:if="{{!releasedRows.length && !acceptedRows.length && !poolRows.length}}"
+      class="empty"
+    >
+      <view class="empty__title">产品路线还在筹备中</view>
+      <view class="empty__sub">上线后在这里投票，决定我们做什么</view>
+    </view>
+
+    <block wx:else>
+      <!-- 最近上线 changelog 时间线（常开） -->
+      <view class="sec-head">
+        <view class="sec-dot sec-dot--done"></view>
+        <view class="sec-head__t">最近上线</view>
+        <view class="sec-head__s">· 你的票变成了功能</view>
+        <view class="sec-head__n">{{releasedRows.length}}</view>
+      </view>
+      <view class="rel-list">
+        <view
+          class="rel"
+          wx:for="{{releasedRows}}"
+          wx:key="id"
+        >
+          <view class="rel__line {{index === releasedRows.length - 1 ? 'rel__line--last' : ''}}"></view>
+          <view class="rel__node"></view>
+          <view class="rel__date">{{item.date}} 上线</view>
+          <view class="rel__body">
+            <view class="rel__title">{{item.title}}</view>
+            <view class="rel__blurb">{{item.description}}</view>
+            <view class="rel__proof">🔥 由 {{item.proof}} 位跑友投票促成</view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 正在做（折叠） -->
+      <view class="sec-head" bindtap="onFoldPlan">
+        <view class="sec-dot sec-dot--plan"></view>
+        <view class="sec-head__t">正在做</view>
+        <view class="sec-head__s">· 已采纳</view>
+        <view class="sec-head__n">{{acceptedRows.length}}</view>
+        <view class="sec-head__arrow {{planOpen ? 'sec-head__arrow--open' : ''}}">›</view>
+      </view>
+      <block wx:if="{{planOpen}}">
+        <view class="plan-row" wx:for="{{acceptedRows}}" wx:key="id">
+          <view class="plan-row__body">
+            <view class="plan-row__title">{{item.title}}</view>
+            <view class="plan-row__desc">{{item.description}}</view>
+          </view>
+          <view class="plan-row__right">
+            <view wx:if="{{item.plannedNote}}" class="chip-plan">预计 {{item.plannedNote}}</view>
+            <view class="plan-row__votes">{{item.votes}} 票 · 已采纳</view>
+          </view>
+        </view>
+      </block>
+
+      <!-- 投票池（折叠=Top3 预览 + 展开全部） -->
+      <view class="sec-head" bindtap="onFoldPool">
+        <view class="sec-dot sec-dot--vote"></view>
+        <view class="sec-head__t">投票池</view>
+        <view class="sec-head__s">· 决定我们接下来做什么</view>
+        <view class="sec-head__n">{{poolRows.length}} 个想法</view>
+        <view class="sec-head__arrow {{poolOpen ? 'sec-head__arrow--open' : ''}}">›</view>
+      </view>
+      <view class="pool">
+        <view wx:if="{{poolOpen}}" class="rule">
+          🗳 每个想法可各投 <text class="rule__b">1 票</text>，再点一次即撤销 · 完全匿名
+        </view>
+
+        <block wx:for="{{poolRows}}" wx:key="id">
+          <view wx:if="{{poolOpen || index < 3}}" class="idea">
+            <view class="idea__body">
+              <view class="idea__title">{{item.title}}</view>
+              <view class="idea__desc">{{item.description}}</view>
+              <view class="idea__meta">
+                <view wx:if="{{item.category}}" class="cat">{{item.category}}</view>
+                <view wx:if="{{item.isNew}}" class="idea__new">NEW</view>
+              </view>
+            </view>
+            <view
+              class="vote-btn {{item.voted ? 'vote-btn--on' : ''}} {{poolOpen ? '' : 'vote-btn--sm'}}"
+              hover-class="vote-btn--press"
+              data-id="{{item.id}}"
+              bindtap="onVoteTap"
+            >
+              <view class="vote-btn__arrow">{{item.voted ? '✓' : '▲'}}</view>
+              <view class="vote-btn__count">{{item.votes}}</view>
+            </view>
+          </view>
+        </block>
+
+        <view wx:if="{{!poolRows.length}}" class="pool-empty">还没有可以投票的想法</view>
+        <view
+          wx:if="{{!poolOpen && poolRows.length > 3}}"
+          class="pool-expand"
+          hover-class="pool-expand--press"
+          bindtap="onExpandPool"
+        >展开全部 {{poolRows.length}} 个想法 ↓</view>
+      </view>
+
+      <view class="hint-end">— 每个想法可各投 1 票 · 完全匿名 —</view>
+    </block>
+  </block>
+</view>
+

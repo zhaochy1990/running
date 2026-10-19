@@ -49,6 +49,7 @@ interface ProfileEditPageHandlers {
   onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onBack(): void;
   onOpenWatch(): void;
+  onOpenPrivacy(): void;
   onLogout(): void;
   onChooseAvatar(e: WechatMiniprogram.CustomEvent<{ avatarUrl: string }>): void;
   onNameInput(e: WechatMiniprogram.Input): void;
@@ -176,6 +177,10 @@ Page<ProfileEditPageData, ProfileEditPageHandlers>({
 
   onOpenWatch() {
     wx.navigateTo({ url: '/pages/watch/watch' });
+  },
+
+  onOpenPrivacy() {
+    wx.navigateTo({ url: '/pages/privacy/privacy' });
   },
 
   onLogout() {

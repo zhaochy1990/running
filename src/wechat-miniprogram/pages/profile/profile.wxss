@@ -230,10 +230,3 @@
 .menu-row__icon--spin {
   animation: spin 1.2s linear infinite;
 }
-
-.version {
-  text-align: center;
-  font-size: 19rpx;
-  color: #6a6b6c;
-  margin-top: 48rpx;
-}

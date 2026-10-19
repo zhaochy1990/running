@@ -1,0 +1,417 @@
+/* ============================================================
+   产品路线面板 —— 从 product-roadmap 页抽出（页面并入意见反馈页
+   二级 tab 后，原页面保留为深链薄壳共用本组件）。
+   2026-10-18 用户拍板：hero 聚合卡移除；列表扁平化贴边——无卡底/
+   圆角/左右留白，内容直铺屏幕边（行内 32rpx 边距），行间发丝线分隔。
+   深色令牌（--color-*）由宿主页 @import styles/dark.wxss 在 page 上
+   定义，CSS 变量跨组件继承，本组件无需重复引入。
+   用户拍板：主题藕粉 #ff6363（--color-accent）。
+   ============================================================ */
+
+/* 自定义组件宿主节点默认 inline，铺满宿主容器 */
+:host {
+  display: block;
+}
+
+/* ---------- 加载 / 错误 ---------- */
+
+.state-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+  padding: 96rpx 0;
+}
+
+.state-card__text {
+  font-size: 24rpx;
+  color: var(--color-text-secondary);
+}
+
+.banner {
+  padding: 20rpx 24rpx;
+  border-radius: 16rpx;
+  font-size: 24rpx;
+  margin: 24rpx 32rpx 0;
+}
+
+.banner--error {
+  background: rgba(var(--color-accent-rgb), 0.1);
+  border: 1rpx solid rgba(var(--color-accent-rgb), 0.2);
+  color: var(--color-accent);
+}
+
+.spinner {
+  width: 48rpx;
+  height: 48rpx;
+  border: 4rpx solid rgba(95, 201, 146, 0.3);
+  border-top-color: var(--color-success);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- 空态（扁平，无卡底） ---------- */
+
+.empty {
+  padding: 112rpx 32rpx;
+  text-align: center;
+}
+
+.empty__title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--color-text-bright);
+}
+
+.empty__sub {
+  font-size: 22rpx;
+  color: var(--color-text-secondary);
+  margin-top: 10rpx;
+}
+
+/* ---------- 分区头 ---------- */
+
+.sec-head {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 32rpx 32rpx 12rpx;
+}
+
+.sec-dot {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sec-dot--vote {
+  background: var(--color-accent);
+}
+
+.sec-dot--plan {
+  background: var(--color-info);
+}
+
+.sec-dot--done {
+  background: var(--color-success);
+}
+
+.sec-head__t {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.sec-head__s {
+  font-size: 22rpx;
+  color: var(--color-text-tertiary);
+}
+
+.sec-head__n {
+  margin-left: auto;
+  font-size: 22rpx;
+  color: var(--color-text-tertiary);
+}
+
+.sec-head__arrow {
+  font-size: 22rpx;
+  color: var(--color-text-tertiary);
+  transition: transform 0.18s;
+}
+
+.sec-head__arrow--open {
+  transform: rotate(90deg);
+}
+
+/* ---------- 最近上线 changelog 时间线（扁平，无卡底） ---------- */
+
+.rel-list {
+  padding: 8rpx 32rpx 12rpx 36rpx;
+}
+
+.rel {
+  position: relative;
+  padding: 0 0 32rpx 44rpx;
+}
+
+.rel__line {
+  position: absolute;
+  left: 10rpx;
+  top: 16rpx;
+  bottom: -12rpx;
+  width: 4rpx;
+  background: rgba(95, 201, 146, 0.18);
+}
+
+.rel__line--last {
+  bottom: auto;
+  height: 28rpx;
+}
+
+.rel__node {
+  position: absolute;
+  left: 0;
+  top: 8rpx;
+  width: 24rpx;
+  height: 24rpx;
+  border-radius: 50%;
+  background: var(--color-bg);
+  border: 5rpx solid var(--color-success);
+  box-sizing: border-box;
+}
+
+.rel__date {
+  font-size: 20rpx;
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.rel__body {
+  margin-top: 8rpx;
+}
+
+.rel__title {
+  font-size: 28rpx;
+  font-weight: 600;
+  line-height: 40rpx;
+  color: var(--color-text-primary);
+}
+
+.rel__blurb {
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: var(--color-text-secondary);
+  margin-top: 6rpx;
+}
+
+.rel__proof {
+  font-size: 20rpx;
+  color: var(--color-accent-light);
+  margin-top: 12rpx;
+}
+
+/* ---------- 正在做（扁平行 + 发丝线） ---------- */
+
+.plan-row {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  padding: 26rpx 32rpx;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.04);
+}
+
+.plan-row:last-child {
+  border-bottom: none;
+}
+
+.plan-row__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.plan-row__title {
+  font-size: 28rpx;
+  font-weight: 600;
+  line-height: 40rpx;
+  color: var(--color-text-primary);
+}
+
+.plan-row__desc {
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: var(--color-text-secondary);
+  margin-top: 6rpx;
+}
+
+.plan-row__right {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.chip-plan {
+  display: inline-block;
+  font-size: 20rpx;
+  line-height: 34rpx;
+  padding: 0 16rpx;
+  border-radius: 18rpx;
+  color: var(--color-info);
+  background: rgba(143, 184, 232, 0.12);
+}
+
+.plan-row__votes {
+  font-size: 20rpx;
+  color: var(--color-text-tertiary);
+  margin-top: 10rpx;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 投票池（扁平行 + 发丝线） ---------- */
+
+.rule {
+  margin: 4rpx 32rpx 8rpx;
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: var(--color-text-secondary);
+}
+
+.rule__b {
+  color: var(--color-accent-light);
+  font-weight: 600;
+}
+
+.idea {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  padding: 26rpx 32rpx;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.04);
+}
+
+.idea:last-child {
+  border-bottom: none;
+}
+
+.idea__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.idea__title {
+  font-size: 28rpx;
+  font-weight: 600;
+  line-height: 40rpx;
+  color: var(--color-text-primary);
+}
+
+.idea__desc {
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: var(--color-text-secondary);
+  margin-top: 6rpx;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.idea__meta {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-top: 14rpx;
+}
+
+.cat {
+  font-size: 18rpx;
+  line-height: 32rpx;
+  padding: 0 14rpx;
+  border-radius: 10rpx;
+  color: var(--color-text-bright);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.idea__new {
+  font-size: 18rpx;
+  line-height: 32rpx;
+  padding: 0 12rpx;
+  border-radius: 10rpx;
+  color: var(--color-accent-light);
+  background: rgba(var(--color-accent-rgb), 0.13);
+}
+
+.vote-btn {
+  flex-shrink: 0;
+  width: 112rpx;
+  padding: 14rpx 0 12rpx;
+  border-radius: 22rpx;
+  background: var(--color-chip);
+  text-align: center;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.vote-btn--press {
+  transform: scale(0.94);
+}
+
+.vote-btn__arrow {
+  font-size: 26rpx;
+  line-height: 28rpx;
+  color: var(--color-accent-light);
+}
+
+.vote-btn__count {
+  font-size: 28rpx;
+  font-weight: 700;
+  line-height: 34rpx;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+  margin-top: 4rpx;
+}
+
+.vote-btn--on {
+  background: var(--color-accent);
+  box-shadow: 0 8rpx 28rpx rgba(var(--color-accent-rgb), 0.35);
+}
+
+/* 折叠预览态的小号投票 pill（原型 vote-btn--sm） */
+.vote-btn--sm {
+  width: 100rpx;
+  padding: 10rpx 0 8rpx;
+  border-radius: 20rpx;
+}
+
+.vote-btn--sm .vote-btn__arrow {
+  font-size: 22rpx;
+  line-height: 24rpx;
+}
+
+.vote-btn--sm .vote-btn__count {
+  font-size: 24rpx;
+  line-height: 30rpx;
+  margin-top: 2rpx;
+}
+
+.vote-btn--on .vote-btn__arrow {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.vote-btn--on .vote-btn__count {
+  color: #ffffff;
+}
+
+.pool-empty {
+  text-align: center;
+  font-size: 22rpx;
+  color: var(--color-text-tertiary);
+  padding: 40rpx 0 24rpx;
+}
+
+.pool-expand {
+  text-align: center;
+  font-size: 24rpx;
+  color: var(--color-accent-light);
+  padding: 28rpx 0 8rpx;
+}
+
+.pool-expand--press {
+  opacity: 0.85;
+}
+
+/* ---------- 尾注 ---------- */
+
+.hint-end {
+  text-align: center;
+  font-size: 20rpx;
+  color: #4a4a4c;
+  padding: 20rpx 0 8rpx;
+}

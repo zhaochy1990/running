@@ -1,5 +1,5 @@
 <view class="page">
-  <!-- 自定义顶部栏 -->
+  <!-- 自定义顶部栏 + 双 tab（同 my-races：反馈默认 / 产品路线） -->
   <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
     <view class="top-bar__inner">
       <view class="top-bar__btn" bindtap="onBack">
@@ -11,62 +11,81 @@
       </view>
       <view class="top-bar__btn top-bar__btn--spacer"></view>
     </view>
+
+    <!-- tab：意见反馈（默认）/ 产品路线 -->
+    <view class="tabs">
+      <view
+        class="tabs__item {{activeTab === 'feedback' ? 'tabs__item--on' : ''}}"
+        data-tab="feedback"
+        bindtap="onTabTap"
+      >意见反馈</view>
+      <view
+        class="tabs__item {{activeTab === 'roadmap' ? 'tabs__item--on' : ''}}"
+        data-tab="roadmap"
+        bindtap="onTabTap"
+      >产品路线</view>
+    </view>
   </view>
 
-  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
-    <!-- 加载态 -->
-    <view wx:if="{{loading}}" class="state-card">
-      <view class="spinner"></view>
-      <view class="state-card__text">加载中…</view>
+  <!-- 「意见反馈」tab：会话列表 -->
+  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;" wx:if="{{activeTab === 'feedback'}}">
+      <!-- 加载态 -->
+      <view wx:if="{{loading}}" class="state-card">
+        <view class="spinner"></view>
+        <view class="state-card__text">加载中…</view>
+      </view>
+
+      <!-- 错误态（点按重试） -->
+      <view wx:elif="{{loadError}}" class="banner banner--error" bindtap="onRetry">{{loadError}} · 点按重试</view>
+
+      <block wx:else>
+        <!-- 空态 -->
+        <view wx:if="{{!rows.length}}" class="empty-card">
+          <view class="empty-card__title">还没有反馈记录</view>
+          <view class="empty-card__sub">遇到问题或有想法，点右下角 + 告诉我们</view>
+        </view>
+
+        <!-- 会话行 -->
+        <view
+          wx:for="{{rows}}"
+          wx:key="id"
+          class="conv"
+          hover-class="conv--press"
+          data-id="{{item.id}}"
+          bindtap="onRowTap"
+        >
+          <view class="conv__ava">
+            <text>{{item.emoji}}</text>
+            <view wx:if="{{item.unread}}" class="conv__dot"></view>
+          </view>
+          <view class="conv__mid">
+            <view class="conv__r1">
+              <view class="conv__name">{{item.title}}</view>
+              <view wx:if="{{item.adopted}}" class="tag tag--adopted" catchtap="onAdoptedTap">已采纳 ↗</view>
+              <view class="conv__time">{{item.time}}</view>
+            </view>
+            <view class="conv__r2">
+              <view class="conv__last">{{item.preview}}</view>
+              <view wx:if="{{item.unread}}" class="dot-unread"></view>
+            </view>
+          </view>
+        </view>
+
+        <view class="foot-note">— 反馈仅你与 STRIDE 团队可见 —</view>
+      </block>
     </view>
 
-    <!-- 错误态（点按重试） -->
-    <view wx:elif="{{loadError}}" class="banner banner--error" bindtap="onRetry">{{loadError}} · 点按重试</view>
-
-    <block wx:else>
-      <!-- 提交入口卡 -->
-      <view class="cta" hover-class="cta--press" bindtap="onCtaTap">
-        <view class="cta__ic">💬</view>
-        <view class="cta__mid">
-          <view class="cta__t">提交反馈</view>
-          <view class="cta__s">Bug 或建议 · 支持带图 · 我们会逐条回复</view>
-        </view>
-        <view class="cta__go">›</view>
-      </view>
-
-      <!-- 空态 -->
-      <view wx:if="{{!rows.length}}" class="empty-card">
-        <view class="empty-card__title">还没有反馈记录</view>
-        <view class="empty-card__sub">遇到问题或有想法，点上面「提交反馈」告诉我们</view>
-      </view>
-
-      <!-- 会话行 -->
-      <view
-        wx:for="{{rows}}"
-        wx:key="id"
-        class="conv"
-        hover-class="conv--press"
-        data-id="{{item.id}}"
-        bindtap="onRowTap"
-      >
-        <view class="conv__ava">
-          <text>{{item.emoji}}</text>
-          <view wx:if="{{item.unread}}" class="conv__dot"></view>
-        </view>
-        <view class="conv__mid">
-          <view class="conv__r1">
-            <view class="conv__name">{{item.title}}</view>
-            <view wx:if="{{item.adopted}}" class="tag tag--adopted">已采纳</view>
-            <view class="conv__time">{{item.time}}</view>
-          </view>
-          <view class="conv__r2">
-            <view class="conv__last">{{item.preview}}</view>
-            <view wx:if="{{item.unread}}" class="dot-unread"></view>
-          </view>
-        </view>
-      </view>
-
-      <view class="foot-note">— 反馈仅你与 STRIDE 团队可见 —</view>
-    </block>
-  </view>
+    <!-- 「产品路线」tab：首次进入挂载后 sticky 保留（hidden 切换不卸载）；
+         全宽无左右留白（拍板：扁平化贴边），顶部让位 fixed 顶栏 -->
+    <view
+      wx:if="{{roadmapMounted}}"
+      hidden="{{activeTab !== 'roadmap'}}"
+      class="content content--flush"
+      style="padding-top: {{contentPaddingTop}}rpx;"
+    >
+      <roadmap-panel />
+    </view>
 </view>
+
+<!-- 提交反馈：右下角悬浮 +（仅反馈 tab，拍板：不占整行入口卡） -->
+<view wx:if="{{activeTab === 'feedback'}}" class="fab" hover-class="fab--press" bindtap="onCtaTap">+</view>

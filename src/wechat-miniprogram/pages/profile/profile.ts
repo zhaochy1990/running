@@ -10,6 +10,8 @@ interface MenuRow {
   key: string;
   title: string;
   iconPath: string;
+  /** 可选副标题（仅意见反馈行用：带出产品路线二级 tab） */
+  subtitle?: string;
 }
 
 interface ProfilePageData {
@@ -79,8 +81,14 @@ const MENU_ROWS: MenuRow[] = [
   { key: 'training-status', title: '训练状态', iconPath: '/assets/icons/trend_up.svg' },
   { key: 'race-center', title: '赛事中心', iconPath: '/assets/icons/sprint.svg' },
   { key: 'my-races', title: '我的比赛', iconPath: '/assets/icons/flag.svg' },
-  { key: 'roadmap', title: '产品路线', iconPath: '/assets/icons/how_to_vote.svg' },
-  { key: 'feedback', title: '意见反馈', iconPath: '/assets/icons/forum.svg' },
+  // 2026-10-18 拍板：产品路线并入意见反馈页二级 tab（默认反馈 tab），
+  // 菜单只留「意见反馈」一行，副标题带出路线
+  {
+    key: 'feedback',
+    title: '意见反馈',
+    iconPath: '/assets/icons/forum.svg',
+    subtitle: '产品路线也在这里 · 每条我们都会看',
+  },
 ];
 
 Page<ProfilePageData, ProfilePageHandlers>({
@@ -182,16 +190,8 @@ Page<ProfilePageData, ProfilePageHandlers>({
       wx.navigateTo({ url: '/pages/my-races/my-races' });
       return;
     }
-    if (key === 'roadmap') {
-      wx.navigateTo({ url: '/pages/product-roadmap/product-roadmap' });
-      return;
-    }
     if (key === 'feedback') {
       wx.navigateTo({ url: '/pages/feedback/feedback' });
-      return;
-    }
-    if (key === 'privacy') {
-      wx.navigateTo({ url: '/pages/privacy/privacy' });
       return;
     }
     wx.showToast({ title: `「${key}」建设中`, icon: 'none' });
