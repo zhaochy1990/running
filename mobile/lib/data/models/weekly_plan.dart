@@ -169,10 +169,41 @@ class WorkoutBlock {
   final int repeat;
 }
 
+/// {kind: distance_m|time_s, value} | {kind: open, value: null}
+class WorkoutDuration {
+  const WorkoutDuration({required this.kind, this.value});
+
+  factory WorkoutDuration.fromJson(Map<String, dynamic> json) {
+    return WorkoutDuration(
+      kind: json['kind'] as String? ?? 'open',
+      value: json['value'] as num?,
+    );
+  }
+
+  final String kind;
+  final num? value;
+}
+
+/// 步后休息（第一公民）：time_s=固定秒数；hr_bpm=心率降到 value 以下；
+/// manual=手动结束（value=null）。
+class StepRest {
+  const StepRest({required this.kind, this.value});
+
+  factory StepRest.fromJson(Map<String, dynamic> json) {
+    return StepRest(kind: json['kind'] as String? ?? 'manual', value: json['value'] as num?);
+  }
+
+  final String kind;
+  final num? value;
+}
+
 class WorkoutStep {
   const WorkoutStep({
     required this.stepKind,
     required this.target,
+    this.duration = const WorkoutDuration(kind: 'open'),
+    this.note,
+    this.rest,
     this.hrCapBpm,
   });
 
@@ -182,6 +213,13 @@ class WorkoutStep {
       target: WorkoutTarget.fromJson(
         json['target'] as Map<String, dynamic>? ?? const {},
       ),
+      duration: WorkoutDuration.fromJson(
+        json['duration'] as Map<String, dynamic>? ?? const {},
+      ),
+      note: json['note'] as String?,
+      rest: json['rest'] is Map<String, dynamic>
+          ? StepRest.fromJson(json['rest'] as Map<String, dynamic>)
+          : null,
       hrCapBpm: json['hr_cap_bpm'] as num?,
     );
   }
@@ -189,6 +227,11 @@ class WorkoutStep {
   /// warmup / work / recovery / cooldown / rest
   final String stepKind;
   final WorkoutTarget target;
+  final WorkoutDuration duration;
+  final String? note;
+
+  /// 步后休息（与 block 尾部 rest step 双 idiom 等价，ADR 0043）。
+  final StepRest? rest;
   final num? hrCapBpm;
 }
 
@@ -203,7 +246,7 @@ class WorkoutTarget {
     );
   }
 
-  /// pace_s_km / hr_bpm / power_w / open
+  /// pace_s_km / hr_bpm / power_w / cadence_spm / open
   final String kind;
   final num? low;
   final num? high;

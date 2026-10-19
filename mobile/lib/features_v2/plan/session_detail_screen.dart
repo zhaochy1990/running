@@ -331,13 +331,6 @@ class _RunSpecCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final rows = <WorkoutStep>[];
-    for (final block in spec.blocks) {
-      for (var r = 0; r < block.repeat; r++) {
-        rows.addAll(block.steps);
-      }
-    }
-
     return Container(
       decoration: BoxDecoration(
         color: StrideTokens.surface,
@@ -345,16 +338,35 @@ class _RunSpecCard extends StatelessWidget {
         border: Border.all(color: StrideTokens.border2),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (int i = 0; i < rows.length; i++) ...[
-            if (i > 0)
+          for (final (bi, block) in spec.blocks.indexed) ...[
+            if (bi > 0)
               const Divider(
                 height: 1,
                 indent: StrideTokens.spaceLg,
                 endIndent: StrideTokens.spaceLg,
                 color: StrideTokens.border2,
               ),
-            _StepRow(step: rows[i]),
+            // 对齐 admin SessionDetailModal：repeat>1 的块带「重复 N 次」分组头。
+            if (block.repeat > 1)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  StrideTokens.spaceLg,
+                  StrideTokens.spaceSm,
+                  StrideTokens.spaceLg,
+                  0,
+                ),
+                child: Text(
+                  '重复 ${block.repeat} 次',
+                  style: const TextStyle(
+                    fontFamily: AppTypography.fontSans,
+                    fontSize: StrideTokens.fs12,
+                    color: StrideTokens.muted,
+                  ),
+                ),
+              ),
+            for (final step in block.steps) _StepRow(step: step),
           ],
         ],
       ),
@@ -375,6 +387,7 @@ class _StepRow extends StatelessWidget {
         vertical: StrideTokens.spaceSm,
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
             width: 64,
@@ -386,13 +399,29 @@ class _StepRow extends StatelessWidget {
           ),
           const SizedBox(width: StrideTokens.spaceMd),
           Expanded(
-            child: Text(
-              _targetText(step.target),
-              style: const TextStyle(
-                fontFamily: AppTypography.fontSans,
-                fontSize: StrideTokens.fs14,
-                color: StrideTokens.fgSoft,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${_durationText(step.duration)} · ${_targetText(step.target)}'
+                  '${step.hrCapBpm != null ? '，HR≤${step.hrCapBpm!.round()}' : ''}'
+                  '${step.rest != null ? _restText(step.rest!) : ''}',
+                  style: const TextStyle(
+                    fontFamily: AppTypography.fontSans,
+                    fontSize: StrideTokens.fs14,
+                    color: StrideTokens.fgSoft,
+                  ),
+                ),
+                if (step.note != null && step.note!.isNotEmpty)
+                  Text(
+                    step.note!,
+                    style: const TextStyle(
+                      fontFamily: AppTypography.fontSans,
+                      fontSize: StrideTokens.fs12,
+                      color: StrideTokens.muted,
+                    ),
+                  ),
+              ],
             ),
           ),
         ],
@@ -419,6 +448,35 @@ class _StepRow extends StatelessWidget {
     };
   }
 
+  /// 距离/时长（open → 自由）。
+  static String _durationText(WorkoutDuration duration) {
+    switch (duration.kind) {
+      case 'distance_m':
+        final v = duration.value;
+        return v == null ? '—' : '${(v / 1000).toStringAsFixed(1)}km';
+      case 'time_s':
+        final v = duration.value;
+        return v == null ? '—' : _fmtDurationSec(v.toInt());
+      default:
+        return '自由';
+    }
+  }
+
+  /// 秒 → “X′”（整分钟）/ “N″”（其余），与 coach_contract 渲染一致。
+  static String _fmtDurationSec(int totalSec) {
+    final total = totalSec.round();
+    return total % 60 == 0 ? '${total ~/ 60}′' : '$total″';
+  }
+
+  /// （休3′）/（休90″）/（休至HR<130）/（休手动）。
+  static String _restText(StepRest rest) {
+    return switch (rest.kind) {
+      'manual' => '（休手动）',
+      'hr_bpm' => '（休至HR<${rest.value?.round() ?? '?'}）',
+      _ => '（休${rest.value == null ? '?' : _fmtDurationSec(rest.value!.toInt())}）',
+    };
+  }
+
   static String _targetText(WorkoutTarget target) {
     switch (target.kind) {
       case 'pace_s_km':
@@ -435,6 +493,8 @@ class _StepRow extends StatelessWidget {
         return '心率 ${target.low ?? '?'}–${target.high ?? '?'} bpm';
       case 'power_w':
         return '功率 ${target.low ?? '?'}–${target.high ?? '?'} W';
+      case 'cadence_spm':
+        return '步频 ${target.low ?? '?'}–${target.high ?? '?'} spm';
       default:
         return '开放式';
     }

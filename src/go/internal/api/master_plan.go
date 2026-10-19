@@ -385,8 +385,11 @@ func (m *masterPlanRoutes) update(c *gin.Context) {
 // validateAppliedMasterPlan enforces the canonical content_version=2 contract
 // at the API seam before anything is written: goal.goal_id must be a UUID and
 // the content must satisfy the same structural rules the current-plan reader
-// applies (validateStructuredPlanDoc). A plan that would fail to serve is
-// rejected with 422 instead of being committed and then erroring on read.
+// applies (validateStructuredPlanDoc), plus the deep checks that only write
+// paths enforce (deepValidateStructuredContent — workout_structure schema and
+// phase/milestone/week linkage; the read path stays lenient on legacy rows).
+// A plan that would fail to serve is rejected with 422 instead of being
+// committed and then erroring on read.
 func validateAppliedMasterPlan(content map[string]any) ([]byte, string, error) {
 	goal, ok := content["goal"].(map[string]any)
 	if !ok {
@@ -411,7 +414,65 @@ func validateAppliedMasterPlan(content map[string]any) ([]byte, string, error) {
 	if err := validateStructuredPlanDoc(content, parsed); err != nil {
 		return nil, "", err
 	}
+	if err := deepValidateStructuredContent(content); err != nil {
+		return nil, "", err
+	}
 	return jsonBytes, goalID, nil
+}
+
+// deepValidateStructuredContent enforces the write-path-only checks (#589):
+// key_sessions[].workout_structure must match the P1-generated lenient
+// run-workout schema (LLM output — noise keys tolerated, note/hr_cap_bpm/schema
+// discriminator optional), and the phase/milestone/week references must be
+// internally consistent. Absent workout_structure stays tolerated here for
+// legacy and hand-authored rows; only a present-but-malformed structure is
+// rejected.
+func deepValidateStructuredContent(doc map[string]any) error {
+	phaseIDs := map[string]bool{}
+	for _, raw := range toMapSlice(doc["phases"]) {
+		if id := asString(raw["id"]); id != "" {
+			phaseIDs[id] = true
+		}
+	}
+	milestoneIDs := map[string]bool{}
+	for _, raw := range toMapSlice(doc["milestones"]) {
+		id := asString(raw["id"])
+		if id == "" {
+			continue
+		}
+		if !phaseIDs[asString(raw["phase_id"])] {
+			return fmt.Errorf("milestone %q references unknown phase", id)
+		}
+		milestoneIDs[id] = true
+	}
+	for _, raw := range toMapSlice(doc["phases"]) {
+		refs, _ := raw["milestone_ids"].([]any)
+		for _, ref := range refs {
+			id, _ := ref.(string)
+			if !milestoneIDs[id] {
+				return fmt.Errorf("phase %q references unknown milestone %q", asString(raw["id"]), id)
+			}
+		}
+	}
+	for _, week := range toMapSlice(doc["weeks"]) {
+		if phaseID := asString(week["phase_id"]); phaseID != "" && !phaseIDs[phaseID] {
+			return fmt.Errorf("week %d references unknown phase %q", asInt(week["week_index"]), phaseID)
+		}
+		for i, session := range toMapSlice(week["key_sessions"]) {
+			raw, present := session["workout_structure"]
+			if !present || raw == nil {
+				continue // absent / null: tolerated (legacy rows, strength keys)
+			}
+			structure, ok := raw.(map[string]any)
+			if !ok {
+				return fmt.Errorf("key_sessions[%d].workout_structure: must be an object", i)
+			}
+			if err := runWorkoutLenientSchema.Validate(structure); err != nil {
+				return fmt.Errorf("key_sessions[%d].workout_structure: %w", i, err)
+			}
+		}
+	}
+	return nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

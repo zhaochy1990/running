@@ -28,15 +28,22 @@ import (
 //go:embed run-workout.schema.json
 var runWorkoutSchemaJSON []byte
 
+//go:embed run-workout.lenient.schema.json
+var runWorkoutLenientSchemaJSON []byte
+
 //go:embed strength-workout.schema.json
 var strengthWorkoutSchemaJSON []byte
 
 // Embedded P1-generated workout schemas (same generator as the weekly-plan
 // schema): custom-workout specs must match the discriminated canonical shape
-// before they reach the workout table.
+// before they reach the workout table. The lenient variant is the input-mode
+// mirror of RunWorkoutLenientSchema (LLM noise keys tolerated, defaults
+// optional) and is used for master-plan key-session deep validation, where the
+// payload is P1 LLM output, not an internal producer.
 var (
-	runWorkoutSchema      = mustCompileWorkoutSchema("https://stride-running.cn/schemas/run-workout-v1.json", runWorkoutSchemaJSON)
-	strengthWorkoutSchema = mustCompileWorkoutSchema("https://stride-running.cn/schemas/strength-workout-v1.json", strengthWorkoutSchemaJSON)
+	runWorkoutSchema        = mustCompileWorkoutSchema("https://stride-running.cn/schemas/run-workout-v1.json", runWorkoutSchemaJSON)
+	runWorkoutLenientSchema = mustCompileWorkoutSchema("https://stride-running.cn/schemas/run-workout-v1-lenient.json", runWorkoutLenientSchemaJSON)
+	strengthWorkoutSchema   = mustCompileWorkoutSchema("https://stride-running.cn/schemas/strength-workout-v1.json", strengthWorkoutSchemaJSON)
 )
 
 func mustCompileWorkoutSchema(id string, raw []byte) *jsonschema.Schema {

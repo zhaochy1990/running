@@ -17,3 +17,25 @@ Generating or structurally adjusting a season training plan or a weekly plan run
 - **Retire the Python in-process generation path.** Once both the miniprogram and web frontends are switched, remove the Python generation routes, the in-memory job runner, and the master/weekly generators. Azure legacy draft reads are retained and migrated separately.
 
 ~~The TS worker owns the plan-job status table in the coach persistence database~~ — **superseded by ADR 0033**: plan-job state is a row in Go's `jobs` table (the `plan_jobs` table is retired), and the TS side reaches it only through the Go internal API. `master_plan` / `weekly_plan` schema and writes remain Go-owned.
+
+## Update (devops#585, P3 — draft lifecycle removed entirely)
+
+The draft half of this ADR is now retired for both plan kinds; only the
+job/worker architecture above stands.
+
+- **Master plans no longer have drafts.** Generated artifacts are stored in
+  `jobs.result_json` (no draft rows are written); applying is explicit via
+  content-bearing endpoints — the user-tier `POST /api/users/me/master-plan/apply`
+  (apply_token idempotency key, coach card carries the full plan) and the admin
+  `POST /api/users/{user_id}/master-plan`. The apply transaction supersedes the
+  current active row and inserts the new one, so the single-active invariant
+  rests on the apply transaction instead of a draft-activation step. The
+  multi-draft relaxation above is narrowed accordingly: master rows are
+  active/superseded only.
+- **Weekly plans have no drafts either.** The weekly draft insert endpoint is
+  removed; the weekly kernel handler writes its artifact to `jobs.result_json`
+  and the table converges on `UNIQUE(user_id, week_start)` — a row exists iff
+  the week is applied, and re-applying the same week overwrites it.
+- **The coach and worker hold no plan-write clients** (GoDraftClient /
+  masterPlanDraftSink deleted): the coach is purely read-only, and the worker's
+  only plan-table side effects are the job-state writes described by ADR 0033.

@@ -1,5 +1,9 @@
 """Structured weekly training plan specifications.
 
+FROZEN (devops#589): the canonical plan/workout contract is now the TypeScript
+``src/coach_contract/src/`` (ADR 0043). This module is read-only for contract
+evolution — legacy migration paths only, no new/changed fields.
+
 Plans have a canonical structured JSON representation in ``WeeklyPlanStore``.
 Legacy Markdown remains a human-readable authoring artifact and may be parsed
 back into this shape for compatibility. This module defines the schema used by

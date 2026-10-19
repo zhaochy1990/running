@@ -38,6 +38,7 @@ const structuredDays: PlanDay[] = [
         notes_md: "Z3",
         total_distance_m: 25000,
         total_duration_s: null,
+        estimated_dose: null,
         scheduled_workout_id: null,
       },
       {
@@ -52,6 +53,7 @@ const structuredDays: PlanDay[] = [
         notes_md: null,
         total_distance_m: null,
         total_duration_s: 1800,
+        estimated_dose: null,
         scheduled_workout_id: null,
       },
     ],

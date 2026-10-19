@@ -1,9 +1,9 @@
-// Legacy Python plan wire types. Mirrors `src/stride_core/plan_spec.py` + the bits of
-// `src/stride_core/workout_spec.py` we read on the frontend.
-//
-// Types mirror the Python `to_dict()` output (the JSON shape of
-// `WeeklyPlan.from_dict` / `to_dict`). Keep this file in lockstep with
-// `plan_spec.py` — when fields are added/removed there, mirror here.
+// Plan wire types. Canonical workout contract: `src/coach_contract/src/workout/`
+// (ADR 0043 — run-workout/v1 / strength-workout/v1); the session envelope
+// (plan-session/v1 / plan-nutrition/v1) mirrors the Go weekly-plan wire
+// (`src/go/internal/api/weekly_plan.go` + `weekly_plan_schema.json`).
+// Python `src/stride_core/plan_spec.py` / `workout_spec.py` are frozen and no
+// longer the source of truth — do not mirror changes from there.
 
 import type { PlanDay, PlannedSessionRow, WeekDetail } from "../api";
 
@@ -46,8 +46,10 @@ export interface WorkoutBlock {
   repeat: number;
 }
 
+/** run-workout/v1（canonical：src/coach_contract/src/workout）。schema 判别符
+ * 在 #584 前的存量行会被剥离，读侧按可缺失容忍。 */
 export interface NormalizedRunWorkout {
-  schema: "run-workout/v1";
+  schema?: "run-workout/v1";
   name: string;
   date: string;
   note: string | null;
@@ -65,7 +67,7 @@ export interface StrengthExerciseSpec {
 }
 
 export interface NormalizedStrengthWorkout {
-  schema: "strength-workout/v1";
+  schema?: "strength-workout/v1";
   name: string;
   date: string;
   note: string | null;
@@ -92,6 +94,9 @@ export interface PlannedSession {
   notes_md: string | null;
   total_distance_m: number | null;
   total_duration_s: number | null;
+  /** #526 progressive dose（周计划写入时确定性估算；自定义课为保存值）。 */
+  estimated_dose: number | null;
+  /** @legacy 统一 workout 表（ADR 0043 / #586）后仅旧推送行回读兼容；新代码用 workout_id。 */
   scheduled_workout_id: number | null;
 }
 

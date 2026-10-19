@@ -72,6 +72,7 @@ const runSession: PlannedSession = {
   notes_md: "RPE 3 — keep conversational",
   total_distance_m: 10000,
   total_duration_s: 3600,
+  estimated_dose: null,
   scheduled_workout_id: null,
 };
 
@@ -85,6 +86,7 @@ const strengthSession: PlannedSession = {
   notes_md: null,
   total_distance_m: null,
   total_duration_s: null,
+  estimated_dose: null,
   scheduled_workout_id: 42,
 };
 
@@ -98,6 +100,7 @@ const restSession: PlannedSession = {
   notes_md: null,
   total_distance_m: null,
   total_duration_s: null,
+  estimated_dose: null,
   scheduled_workout_id: null,
 };
 
