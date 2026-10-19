@@ -105,6 +105,11 @@ func runAPI() error {
 	if err := store.AutoMigrateWeeklyPlan(ctx); err != nil {
 		return err
 	}
+	// workout table for the unified workout surface (devops#586) — the worker
+	// does not need this.
+	if err := store.AutoMigrateWorkout(ctx); err != nil {
+		return err
+	}
 	if err := store.AutoMigrateWeeklyFeedback(ctx); err != nil {
 		return err
 	}
@@ -277,6 +282,7 @@ func runAPI() error {
 		RaceFavoriteStore:       store,
 		RacePlanStore:           store,
 		CustomRaceStore:         store,
+		WorkoutStore:            store,
 		RoadmapStore:            store,
 		FeedbackStore:           store,
 		FeedbackImages:          feedbackCos,

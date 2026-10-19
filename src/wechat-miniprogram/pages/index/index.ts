@@ -1,6 +1,8 @@
 import {
   buildDayView,
   currentWeekName,
+  deleteCustomWorkout,
+  getPlanSessions,
   getWeeklyPlan,
   pushPlannedSession,
 } from '../../services/plan';
@@ -17,11 +19,11 @@ import { fmtDose, fmtDurationShort, fmtKm, fmtPace } from '../../utils/format';
 import { userStore } from '../../store/index';
 import type { Activity } from '../../types/activity';
 import type {
+  PlanSessionRow,
   TodayNutritionView,
   TodayWeekDay,
   TodayWorkoutView,
   WeeklyPlanDetail,
-  WeeklyPlanContentStructured,
 } from '../../types/plan';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
@@ -103,6 +105,7 @@ interface IndexPageHandlers {
   onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
   onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   fetchPlan(): Promise<void>;
+  fetchWeekSessions(anchorYmd: string): Promise<void>;
   renderDay(dateYmd: string, isToday: boolean): void;
   fetchDayActivities(dateYmd: string): Promise<void>;
   onMenuTap(): void;
@@ -114,11 +117,15 @@ interface IndexPageHandlers {
   onThumbError(e: WechatMiniprogram.CustomEvent): void;
   onPushDateSelect(e: PushDateSelectEvent): void;
   onPushDateClose(): void;
+  onDeleteWorkout(): void;
 }
 
 // 页面实例上的非渲染状态（模块级避免与 data 串扰，同 login 页 codeTimer 模式）
 let fetchedPlan: WeeklyPlanDetail | null = null;
 let userId = '';
+// 当前周的统一课表行（三源投影）+ 其周起始日；renderDay 从这里取当日课次。
+let weekSessions: PlanSessionRow[] = [];
+let sessionsWeekStart = '';
 
 function todayLabelOf(ymd: string): string {
   return `${Number(ymd.slice(5, 7))}月${Number(ymd.slice(8))}日`;
@@ -174,7 +181,7 @@ Page<IndexPageData, IndexPageHandlers>({
     const user = userStore.getState().user;
     userId = user?.id ?? '';
 
-    const view = buildDayView(null, today);
+    const view = buildDayView(null, [], today);
     this.setData({
       statusBarHeight: statusBarHeight(),
       contentPaddingTop: contentPaddingTopRpx(),
@@ -220,32 +227,52 @@ Page<IndexPageData, IndexPageHandlers>({
       this.renderDay(this.data.selectedDate || today, this.data.selectedDate === today);
       this.setData({ loading: false });
     }
+    // 统一课表行（周计划+自建+手表）单独拉取；失败时今日卡片回退空态。
+    await this.fetchWeekSessions(this.data.selectedDate || shanghaiToday());
+  },
+
+  // 拉取指定日期所在周的统一课表行，并在返回后重渲染当天卡片。
+  async fetchWeekSessions(anchorYmd: string) {
+    if (!userId) return;
+    const weekStart = shanghaiWeekStart(anchorYmd);
+    sessionsWeekStart = weekStart; // 先记录，防止快速切周时的重入循环
+    // 周日 = 本周 buildWeekDays 的第 7 天（纯上海日历日运算，避免 tz 折算差一天）。
+    const weekEnd = buildWeekDays(weekStart)[6].date;
+    try {
+      const res = await getPlanSessions(userId, weekStart, weekEnd);
+      weekSessions = res.sessions ?? [];
+    } catch {
+      weekSessions = [];
+    }
+    // 快速切周时丢弃过期响应，只重渲染仍属于本周的选中日。
+    if (sessionsWeekStart !== weekStart) return;
+    if (this.data.selectedDate) {
+      this.renderDay(this.data.selectedDate, this.data.selectedDate === this.data.todayYmd);
+    }
   },
 
   // 渲染指定日期（上海 YYYY-MM-DD），并拉取当天的实际活动记录。
   renderDay(dateYmd: string, isToday: boolean) {
-    if (!fetchedPlan) {
-      this.setData({
-        selectedDate: dateYmd,
-        weekDays: buildWeekDays(dateYmd),
-        weekSubtitle: weekSubtitle(shanghaiWeekStart(dateYmd)),
-        todayLabel: todayLabelOf(dateYmd),
-        workout: null,
-        nutrition: null,
-        todayActivities: [],
-      });
-    } else {
-      const view = buildDayView(fetchedPlan, dateYmd);
-      this.setData({
-        selectedDate: dateYmd,
-        weekDays: buildWeekDays(dateYmd),
-        weekSubtitle: weekSubtitle(shanghaiWeekStart(dateYmd)),
-        todayLabel: todayLabelOf(dateYmd),
-        workout: view.workout,
-        nutrition: view.nutrition,
-        todayActivities: [],
-      });
+    const base = {
+      selectedDate: dateYmd,
+      weekDays: buildWeekDays(dateYmd),
+      weekSubtitle: weekSubtitle(shanghaiWeekStart(dateYmd)),
+      todayLabel: todayLabelOf(dateYmd),
+    };
+    if (shanghaiWeekStart(dateYmd) !== sessionsWeekStart) {
+      // 切到了尚未拉取的周：先用空行渲染，拉回后 fetchWeekSessions 会重渲染。
+      const view = buildDayView(fetchedPlan, [], dateYmd);
+      this.setData({ ...base, workout: view.workout, nutrition: view.nutrition, todayActivities: [] });
+      this.fetchWeekSessions(dateYmd);
+      return;
     }
+    const view = buildDayView(fetchedPlan, weekSessions, dateYmd);
+    this.setData({
+      ...base,
+      workout: view.workout,
+      nutrition: view.nutrition,
+      todayActivities: [],
+    });
     this.fetchDayActivities(dateYmd);
   },
 
@@ -285,17 +312,20 @@ Page<IndexPageData, IndexPageHandlers>({
     // switchTab 不能带 query，改经 storage 交接（教练页 onShow 消费）。
     const d = workout.date;
     const label = `${workout.title} · ${Number(d.slice(5, 7))}月${Number(d.slice(8))}日`;
-    setPendingCoachContext({
-      target: { kind: 'session', date: workout.date, session_index: workout.sessionIndex },
-      label,
-    });
+    if (workout.sessionIndex != null) {
+      setPendingCoachContext({
+        target: { kind: 'session', date: workout.date, session_index: workout.sessionIndex },
+        label,
+      });
+    }
     wx.switchTab({ url: '/pages/coach/coach' });
   },
 
   onWatchTap() {
     const { workout } = this.data;
     if (!workout || !workout.hasSpec) {
-      wx.showToast({ title: '该训练暂不支持推送', icon: 'none' });
+      // 仅周计划课支持推送；自建/手表源不支持（手表源本就来自推送）。
+      wx.showToast({ title: workout?.source === 'custom' ? '自建课暂不支持推送' : '该训练暂不支持推送', icon: 'none' });
       return;
     }
     if (!userId) {
@@ -338,15 +368,13 @@ Page<IndexPageData, IndexPageHandlers>({
     const targetDate = e.detail.value;
     const { workout } = this.data;
     this.setData({ pushSheetVisible: false });
-    if (!workout || !targetDate) return;
+    if (!workout || workout.sessionIndex == null || !targetDate) return;
 
     wx.showLoading({ title: '推送中...', mask: true });
     try {
-      const result = await pushPlannedSession(userId, workout.date, workout.sessionIndex, targetDate);
-      // 更新本地计划数据中的 scheduled_workout_id
-      updateSessionScheduledId(workout.date, workout.sessionIndex, result.scheduled_workout_id);
-      // 重新渲染当前日期
-      this.renderDay(this.data.selectedDate, this.data.selectedDate === this.data.todayYmd);
+      await pushPlannedSession(userId, workout.date, workout.sessionIndex, targetDate);
+      // 重新拉取本周统一课表并重渲染当前日期。
+      await this.fetchWeekSessions(this.data.selectedDate);
       wx.showToast({ title: '推送成功', icon: 'success' });
     } catch (err: any) {
       const msg = err?.detail || err?.message || '推送失败';
@@ -359,22 +387,25 @@ Page<IndexPageData, IndexPageHandlers>({
   onPushDateClose() {
     this.setData({ pushSheetVisible: false });
   },
+
+  // 删除自建课：确认后软删（服务端归档），再重拉本周统一课表。
+  onDeleteWorkout() {
+    const { workout } = this.data;
+    if (!workout || !workout.deletable || !workout.workoutId) return;
+    wx.showModal({
+      title: '删除自建课',
+      content: `确定删除「${workout.title}」吗？`,
+      confirmText: '删除',
+      success: async (res) => {
+        if (!res.confirm) return;
+        try {
+          await deleteCustomWorkout(userId, workout.workoutId);
+          await this.fetchWeekSessions(this.data.selectedDate);
+          wx.showToast({ title: '已删除', icon: 'success' });
+        } catch {
+          wx.showToast({ title: '删除失败', icon: 'none' });
+        }
+      },
+    });
+  },
 });
-
-// 更新 fetchedPlan 中指定 session 的 scheduled_workout_id，推送成功后调用
-function updateSessionScheduledId(date: string, sessionIndex: number, scheduledId: number) {
-  if (!fetchedPlan) return;
-  const content =
-    typeof fetchedPlan.content === 'object' && fetchedPlan.content !== null
-      ? (fetchedPlan.content as WeeklyPlanContentStructured)
-      : null;
-  if (!content || !Array.isArray(content.sessions)) return;
-
-  const session = content.sessions.find(
-    (s) => s.date === date && s.session_index === sessionIndex,
-  );
-  if (session) {
-    session.scheduled_workout_id = scheduledId;
-  }
-}
-

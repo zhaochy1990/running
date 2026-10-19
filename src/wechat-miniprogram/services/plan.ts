@@ -13,6 +13,7 @@ import type {
   PlannedNutrition,
   PlannedSession,
   PlanDayRowView,
+  PlanSessionRow,
   PlanSessionRowView,
   PlanWeekView,
   TodayNutritionView,
@@ -21,6 +22,7 @@ import type {
   TodayWorkoutView,
   WeeklyPlanContentStructured,
   WeeklyPlanDetail,
+  WorkoutSource,
   WorkoutStep,
 } from '../types/plan';
 import {
@@ -67,6 +69,21 @@ export function currentWeekName(): string {
   return weekFolderName(shanghaiWeekStart(today));
 }
 
+/** 统一课表投影：某日期段（含过去日期）的三源 active 课次，weekly→custom→watch 排序。 */
+export function getPlanSessions(
+  userId: string,
+  dateFrom: string,
+  dateTo: string,
+): Promise<{ sessions: PlanSessionRow[] }> {
+  const qs = `date_from=${encodeURIComponent(dateFrom)}&date_to=${encodeURIComponent(dateTo)}`;
+  return http.get<{ sessions: PlanSessionRow[] }>(`/api/users/me/plan/sessions?${qs}`);
+}
+
+/** 删除自建课（软删：服务端归档该行）。 */
+export function deleteCustomWorkout(userId: string, workoutId: string): Promise<void> {
+  return http.delete(`/api/users/me/custom-workouts/${encodeURIComponent(workoutId)}`);
+}
+
 // ---------------------------------------------------------------------------
 // 视图模型构建
 // ---------------------------------------------------------------------------
@@ -77,52 +94,71 @@ function firstLine(text: string | null | undefined): string {
   return line.length > 200 ? `${line.slice(0, 200)}…` : line;
 }
 
-/** 由结构化 session 提取今日训练卡片所需字段。 */
-function buildWorkoutView(
-  session: PlannedSession | null,
+/** 来源标记文案：weekly 不标（默认），custom「自建」，watch「手表」。 */
+function sourceLabelOf(source: WorkoutSource): string {
+  if (source === 'custom') return '自建';
+  if (source === 'watch') return '手表';
+  return '';
+}
+
+/** 由统一 workout 行提取今日训练卡片所需字段（devops#586 三源）。 */
+function buildWorkoutViewFromRow(
+  row: PlanSessionRow | null,
   plan: WeeklyPlanContentStructured | null,
 ): TodayWorkoutView | null {
-  if (!session) return null;
+  if (!row) return null;
 
-  // Stored rows may lack the spec.schema discriminator (pre-#584 rows), so
-  // dispatch on session kind + spec presence instead of the discriminator.
-  const isRunning = session.kind === 'run' && session.spec != null;
-
-  const title = (session.spec && 'name' in session.spec && session.spec.name) || session.summary || '训练';
-  const coachNote = firstLine(session.notes_md) || firstLine(plan?.coach_notes) || firstLine(plan?.notes_md);
+  // Stored spec may lack the discriminator (pre-#584 rows), so dispatch on
+  // kind + spec presence instead of the discriminator.
+  const isRunning = row.kind === 'run' && row.spec != null;
+  // 统一行不携带 session notes；weekly 源回联周计划内容补齐 coach 备注。
+  const weeklySession =
+    row.source === 'weekly' && row.session_index != null
+      ? plan?.sessions?.find(
+          (s) => s.date === row.date && s.session_index === row.session_index,
+        )
+      : null;
+  const coachNote =
+    firstLine(weeklySession?.notes_md) || firstLine(plan?.coach_notes) || firstLine(plan?.notes_md);
 
   const intensityBars = isRunning
-    ? deriveIntensityBars((session.spec as { blocks: Array<{ steps: WorkoutStep[]; repeat: number }> }).blocks)
+    ? deriveIntensityBars(
+        (row.spec as { blocks: Array<{ steps: WorkoutStep[]; repeat: number }> }).blocks,
+      )
     : [];
 
+  // 推送仅对 weekly 源的 run/strength 开放（custom/watch 源走后续阶段）。
+  const hasSpec =
+    row.source === 'weekly' &&
+    row.session_index != null &&
+    (row.kind === 'run' || row.kind === 'strength') &&
+    row.spec != null;
+
   const stats = [
-    { value: fmtKm(session.total_distance_m), label: '距离(公里)' },
-    { value: fmtHms(session.total_duration_s), label: '总时长' },
-    { value: fmtDose(trainingDoseOf(session)), label: '训练负荷' },
+    { value: fmtKm(row.total_distance_m), label: '距离(公里)' },
+    { value: fmtHms(row.total_duration_s), label: '总时长' },
+    { value: fmtDose(row.estimated_dose), label: '训练负荷' },
   ];
 
-  const hasSpec = (session.kind === 'run' || session.kind === 'strength') && session.spec != null;
-
   return {
-    title,
-    sessionKind: session.kind,
-    iconPath: '/assets/icons/directions_run.svg',
+    title: row.name || row.summary || '训练',
+    sessionKind: row.kind,
+    source: row.source,
+    sourceLabel: sourceLabelOf(row.source),
+    workoutId: row.workout_id,
+    iconPath: row.kind === 'strength'
+      ? '/assets/icons/fitness_center.svg'
+      : '/assets/icons/directions_run.svg',
     isRunning,
     intensityBars,
     stats,
     coachNote,
-    note: firstLine(session.notes_md),
-    sessionIndex: session.session_index,
-    date: session.date,
-    scheduledWorkoutId: session.scheduled_workout_id ?? null,
+    note: firstLine(weeklySession?.notes_md),
+    sessionIndex: row.session_index,
+    date: row.date,
+    deletable: row.source === 'custom',
     hasSpec,
   };
-}
-
-/** 计算训练负荷展示值：计划 session 本身大概率不带 dose，这里统一返回 null → 展示 '—'，
- * 待后端在会话上补 dose 字段后可移除该占位。 */
-function trainingDoseOf(_session: PlannedSession): number | null {
-  return null;
 }
 
 /** 由结构化营养提取今日营养卡片所需字段。 */
@@ -228,7 +264,11 @@ function sampleEvenly(arr: number[], count: number): number[] {
 }
 
 /** 组装指定日期（上海 YYYY-MM-DD）的视图模型。无训练/营养时对应字段为 null。 */
-export function buildDayView(plan: WeeklyPlanDetail | null, dateYmd: string): TodayView {
+export function buildDayView(
+  plan: WeeklyPlanDetail | null,
+  rows: PlanSessionRow[],
+  dateYmd: string,
+): TodayView {
   const weekStart = shanghaiWeekStart(dateYmd);
   const weekDays: TodayWeekDay[] = buildWeekDays(dateYmd);
   const subtitle = weekSubtitle(weekStart);
@@ -241,13 +281,10 @@ export function buildDayView(plan: WeeklyPlanDetail | null, dateYmd: string): To
       ? (plan.content as WeeklyPlanContentStructured)
       : null;
 
-  let workoutSession: PlannedSession | null = null;
-  if (content && Array.isArray(content.sessions)) {
-    const daySessions = content.sessions.filter((s) => s.date === dateYmd);
-    const pushable = daySessions.find((s) => s.kind === 'run' || s.kind === 'strength');
-    const anyNotRest = daySessions.find((s) => s.kind !== 'rest' && s.kind !== 'note');
-    workoutSession = pushable ?? anyNotRest ?? null;
-  }
+  // 服务端已按 weekly→custom→watch 排序；优先展示可训练的课，否则落到休息行。
+  const dayRows = rows.filter((r) => r.date === dateYmd);
+  const meaningful = dayRows.find((r) => r.kind !== 'rest' && r.kind !== 'note');
+  const workoutRow = meaningful ?? dayRows[0] ?? null;
 
   const nutrition = content?.nutrition?.find((n) => n.date === dateYmd) ?? null;
 
@@ -255,14 +292,17 @@ export function buildDayView(plan: WeeklyPlanDetail | null, dateYmd: string): To
     weekDays,
     weekSubtitle: subtitle,
     todayLabel,
-    workout: buildWorkoutView(workoutSession, content),
+    workout: buildWorkoutViewFromRow(workoutRow, content),
     nutrition: buildNutritionView(nutrition),
   };
 }
 
 /** 组装「今天」的视图模型。 */
-export function buildTodayView(plan: WeeklyPlanDetail | null): TodayView {
-  return buildDayView(plan, shanghaiToday());
+export function buildTodayView(
+  plan: WeeklyPlanDetail | null,
+  rows: PlanSessionRow[],
+): TodayView {
+  return buildDayView(plan, rows, shanghaiToday());
 }
 
 // ---------------------------------------------------------------------------

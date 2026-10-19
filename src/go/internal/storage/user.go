@@ -262,6 +262,8 @@ var userOwnedDeletionModels = []any{
 	&PersonalBest{}, &Race{}, &ActivityWatchZone{}, &ActivityZone{}, &TimeseriesPoint{}, &Lap{}, &Activity{},
 	&DailyHealth{}, &Dashboard{}, &DailyHRV{}, &RacePrediction{}, &SyncMeta{},
 	&ProviderCredential{}, &WeeklyPlan{}, &WeeklyFeedback{}, &MasterPlan{}, &RaceGoal{},
+	// workout rows (devops#586) — all three sources, archived included.
+	&Workout{},
 	&AbilitySnapshot{}, &ActivityAbility{}, &Vo2MaxPB{},
 	&RaceFavorite{}, &RacePlan{}, &RaceStrategy{}, &UserCustomRace{},
 	// feedback_replies has no user_id column and is swept through the

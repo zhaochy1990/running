@@ -381,6 +381,9 @@ func TestAutoMigrateWeeklyPlanConvergesLegacyRows(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		_ = store.db.WithContext(context.Background()).Exec(`DROP TABLE IF EXISTS weekly_plan`).Error
+		// Restore the current-shape table: the drop above must not leak into
+		// tests that run after this one in the same package run.
+		_ = store.AutoMigrateWeeklyPlan(context.Background())
 	})
 	legacy := `CREATE TABLE weekly_plan (
 		plan_id varchar(36) PRIMARY KEY,

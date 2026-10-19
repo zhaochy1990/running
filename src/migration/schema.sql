@@ -331,3 +331,80 @@ CREATE TABLE IF NOT EXISTS weekly_feedback (
   updated_at  DATETIME(3) NOT NULL,
   PRIMARY KEY (user_id, week_start)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- workout — the unified workout row (devops#586): one entity per planned /
+-- user-created / watch-pushed workout so「某天要练什么」is a single query.
+--
+-- Equivalent to the Go GORM model src/go/internal/storage/workout_models.go
+-- (Workout), created in prod by the cmd/api boot AutoMigrateWorkout, which also
+-- adds identity_key + the unique key via DDL AFTER AutoMigrate (GORM
+-- AutoMigrate has no generated-column support). The DDL below is the full
+-- post-AutoMigrate shape.
+--
+-- Column contract:
+--   workout_id      uuid4 PK; a re-applied week inserts FRESH ids (#523 rows immutable)
+--   user_id         app-level UUID (JWT sub)
+--   date            ISO YYYY-MM-DD Shanghai-local calendar day (never
+--                   tz-converted; VARCHAR like RaceGoal.RaceDate)
+--   source          weekly | custom | watch
+--   kind            plan session kind (run | strength | rest | cross | note)
+--   name            spec name when present, else summary
+--   spec_json       canonical discriminated spec (run-workout/v1 |
+--                   strength-workout/v1, devops#584) verbatim; NULL when none
+--   total_*         plan session totals (custom may carry user-entered values)
+--   estimated_dose  #526 progressive dose: weekly plan estimate / custom saved
+--                   value / watch NULL until P6
+--   save_token      custom idempotency key (upsert identity); NULL otherwise
+--   status          active | archived (soft delete / week re-apply archive)
+--   lineage         exactly one triple: weekly (plan_id, session_index),
+--                   custom (save_token), watch (provider, provider_entity_id) —
+--                   enforced by the ck_workout_lineage_* checks
+--   identity_key    GENERATED ALWAYS AS (active-only identity concatenation),
+--                   so archived rows carry NULL and MySQL's unique index
+--                   (NULLs distinct) never blocks re-use of a lineage
+--   created_at / updated_at  UTC write times (datetime(3))
+
+CREATE TABLE IF NOT EXISTS workout (
+  workout_id         VARCHAR(36)  NOT NULL,
+  user_id            VARCHAR(64)  NOT NULL,
+  date               VARCHAR(10)  NOT NULL,
+  source             VARCHAR(16)  NOT NULL,
+  kind               VARCHAR(16)  NOT NULL,
+  name               VARCHAR(255) NOT NULL,
+  summary            VARCHAR(1000) NULL,
+  spec_json          LONGTEXT     NULL,
+  total_distance_m   DOUBLE       NULL,
+  total_duration_s   BIGINT       NULL,
+  estimated_dose     DOUBLE       NULL,
+  save_token         VARCHAR(64)  NULL,
+  status             VARCHAR(16)  NOT NULL DEFAULT 'active',
+  plan_id            VARCHAR(36)  NULL,
+  session_index      INT          NULL,
+  provider           VARCHAR(16)  NULL,
+  provider_entity_id VARCHAR(64)  NULL,
+  identity_key       VARCHAR(191) GENERATED ALWAYS AS (
+    CASE WHEN status = 'active' THEN
+      CASE source
+        WHEN 'weekly' THEN CONCAT('weekly:', plan_id, ':', date, ':', session_index)
+        WHEN 'custom' THEN CONCAT('custom:', save_token)
+        WHEN 'watch' THEN CONCAT('watch:', provider, ':', provider_entity_id)
+      END
+    END
+  ) STORED,
+  created_at         DATETIME(3)  NOT NULL,
+  updated_at         DATETIME(3)  NOT NULL,
+  PRIMARY KEY (workout_id),
+  UNIQUE KEY uidx_workout_identity (user_id, identity_key),
+  KEY idx_workout_user_date (user_id, date),
+  KEY idx_workout_plan (plan_id),
+  CONSTRAINT ck_workout_source CHECK (source IN ('weekly', 'custom', 'watch')),
+  CONSTRAINT ck_workout_status CHECK (status IN ('active', 'archived')),
+  CONSTRAINT ck_workout_spec_json CHECK (spec_json IS NULL OR JSON_VALID(spec_json)),
+  CONSTRAINT ck_workout_lineage_weekly CHECK (
+    source <> 'weekly' OR (plan_id IS NOT NULL AND session_index IS NOT NULL)
+  ),
+  CONSTRAINT ck_workout_lineage_custom CHECK (source <> 'custom' OR save_token IS NOT NULL),
+  CONSTRAINT ck_workout_lineage_watch CHECK (
+    source <> 'watch' OR (provider IS NOT NULL AND provider_entity_id IS NOT NULL)
+  )
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
