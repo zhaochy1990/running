@@ -237,6 +237,75 @@ func (s *Store) UpsertCustomWorkout(ctx context.Context, userID string, in Upser
 	return &stored, nil
 }
 
+// WatchWorkoutInput carries one pulled watch-schedule session (devops#588).
+// (Provider, EntityID) is the idempotency key (identity_key "watch:provider:entity").
+type WatchWorkoutInput struct {
+	Provider string
+	EntityID string
+	Date     string // ISO YYYY-MM-DD Shanghai-local calendar day
+	Kind     string // watch-schedule/v1 models run only
+	Name     string
+	SpecJSON string // canonical run-workout/v1 document
+}
+
+// UpsertWatchWorkouts persists pulled watch sessions into the unified workout
+// table (source=watch) and archives out-of-window watch rows, in one
+// transaction. Each row is upserted idempotently on uidx_workout_identity
+// ("watch:provider:entity"): a re-pull updates date/kind/name/spec in place
+// (same workout_id); a row archived earlier re-inserts fresh (identity_key is
+// NULL while archived, so MySQL's unique index never blocks the reuse).
+// The window cleanup archives active watch rows whose date left the pull
+// window [windowFrom, windowTo] — scoped by source=watch so weekly / custom
+// rows are never touched (devops#588).
+func (s *Store) UpsertWatchWorkouts(ctx context.Context, userID string, rows []WatchWorkoutInput, windowFrom, windowTo string) error {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return err
+	}
+	if _, err := time.Parse("2006-01-02", windowFrom); err != nil {
+		return fmt.Errorf("storage: invalid window_from: %w", err)
+	}
+	if _, err := time.Parse("2006-01-02", windowTo); err != nil {
+		return fmt.Errorf("storage: invalid window_to: %w", err)
+	}
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for i := range rows {
+			in := &rows[i]
+			if in.Provider == "" || in.EntityID == "" {
+				return fmt.Errorf("storage: watch workout %d missing provider/entity id", i)
+			}
+			if _, err := time.Parse("2006-01-02", in.Date); err != nil {
+				return fmt.Errorf("storage: invalid watch workout date %q: %w", in.Date, err)
+			}
+			spec := in.SpecJSON
+			row := &Workout{
+				WorkoutID: uuid.NewString(), UserID: uid, Date: in.Date,
+				Source: WorkoutSourceWatch, Kind: in.Kind, Name: in.Name,
+				SpecJSON: &spec,
+				Status:   WorkoutStatusActive,
+				Provider: stringPtr2(in.Provider), ProviderEntityID: stringPtr2(in.EntityID),
+				CreatedAt: now, UpdatedAt: now,
+			}
+			// ON DUPLICATE KEY UPDATE fires on uidx_workout_identity (the fresh
+			// workout_id PK can never collide). Totals/dose stay NULL: watch rows
+			// carry no totals until a pipeline computes one (devops#526/588).
+			if err := tx.Clauses(clause.OnConflict{
+				DoUpdates: clause.AssignmentColumns([]string{"date", "kind", "name", "spec_json", "updated_at"}),
+			}).Create(row).Error; err != nil {
+				return fmt.Errorf("storage: upsert watch workout: %w", err)
+			}
+		}
+		if err := tx.Model(&Workout{}).
+			Where("user_id = ? AND source = ? AND status = ? AND (date < ? OR date > ?)",
+				uid, WorkoutSourceWatch, WorkoutStatusActive, windowFrom, windowTo).
+			Update("status", WorkoutStatusArchived).Error; err != nil {
+			return fmt.Errorf("storage: archive out-of-window watch workouts: %w", err)
+		}
+		return nil
+	})
+}
+
 // ListCustomWorkouts returns the user's active custom workouts in the window,
 // same ordering discipline as the unified read.
 func (s *Store) ListCustomWorkouts(ctx context.Context, userID, dateFrom, dateTo string) ([]Workout, error) {

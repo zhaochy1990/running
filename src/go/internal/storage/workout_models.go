@@ -12,8 +12,10 @@ import "time"
 //     inserts fresh workout_ids.
 //   - custom  — user-authored workouts via /api/users/me/custom-workouts
 //     (lineage: save_token, idempotent upsert key).
-//   - watch   — reserved for the P6 watch-source integration (lineage:
-//     provider + provider_entity_id); no writer before that phase lands.
+//   - watch   — pulled watch-schedule sessions (devops#588): the coros sync's
+//     schedule phase upserts them (lineage: provider + provider_entity_id,
+//     window −7/+90 cleanup scoped to this source); the legacy watch_schedule
+//     table is retired and no longer written.
 //
 // Identity: UNIQUE(user_id, identity_key) where identity_key is a MySQL
 // generated column concatenated only for active rows (weekly:

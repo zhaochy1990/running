@@ -292,7 +292,10 @@ func NormalizedToCorosRun(w provider.RunWorkout, b provider.Baselines) (*RunWork
 		return nil, err
 	}
 	w = resolved
-	out := NewRunWorkoutBuilder(w.Name+hrCapNameSuffix(w), isoToYYYYMMDD(w.Date), inferCorosWorkoutType(w))
+	// [STRIDE] prefix contract (devops#588): the push side always marks its
+	// entries so the pull side can skip them (self-loop guard). Idempotent, so
+	// legacy specs already carrying the marker are not double-prefixed.
+	out := NewRunWorkoutBuilder(provider.ApplyStrideWorkoutPrefix(w.Name)+hrCapNameSuffix(w), isoToYYYYMMDD(w.Date), inferCorosWorkoutType(w))
 	if caps := hrCapValues(w); len(caps) > 0 {
 		logging.Default().Debug(
 			"coros: hr_cap_bpm has no native exercise slot; folded into program name",
@@ -362,7 +365,7 @@ func NormalizedToCorosStrength(w provider.StrengthWorkout, available []map[strin
 			byTCode[tcode] = ex
 		}
 	}
-	out := NewStrengthWorkoutBuilder(w.Name, isoToYYYYMMDD(w.Date))
+	out := NewStrengthWorkoutBuilder(provider.ApplyStrideWorkoutPrefix(w.Name), isoToYYYYMMDD(w.Date)) // [STRIDE] contract, devops#588
 	var missing []map[string]any
 	for _, spec := range w.Exercises {
 		tcode := ""

@@ -21,6 +21,27 @@ import (
 // envelope.
 const WatchScheduleSchema = "watch-schedule/v1"
 
+// StrideWorkoutPrefix is the [STRIDE] name contract (devops#588): every
+// STRIDE-pushed watch workout carries it (translate layer applies it, so no
+// push path can forget), and the pull side never ingests a session whose name
+// carries it — the one-token self-loop guard (ADR 0036 decision 5).
+const StrideWorkoutPrefix = "[STRIDE]"
+
+// ApplyStrideWorkoutPrefix returns name with the [STRIDE] marker, idempotently
+// (an already-marked name passes through unharmed).
+func ApplyStrideWorkoutPrefix(name string) string {
+	if IsStrideWorkoutName(name) {
+		return name
+	}
+	return StrideWorkoutPrefix + " " + name
+}
+
+// IsStrideWorkoutName reports whether a watch-side workout name is
+// STRIDE-authored ([STRIDE] prefix).
+func IsStrideWorkoutName(name string) bool {
+	return strings.HasPrefix(name, StrideWorkoutPrefix)
+}
+
 // WatchSessionKindRun is the only session kind modelled by watch-schedule/v1.
 const WatchSessionKindRun = "run"
 

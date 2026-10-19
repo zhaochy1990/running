@@ -86,8 +86,10 @@ func TestTranslateEasyRunYieldsOneTrainingSegment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("translate: %v", err)
 	}
-	if b.name != "Easy 10K" {
-		t.Errorf("name = %q, want Easy 10K", b.name)
+	// [STRIDE] prefix contract (devops#588): the translate layer always marks
+	// the program name so the pull side can skip it (self-loop guard).
+	if want := "[STRIDE] Easy 10K"; b.name != want {
+		t.Errorf("name = %q, want %q", b.name, want)
 	}
 	if b.date != "20260501" { // ISO → COROS YYYYMMDD
 		t.Errorf("date = %q, want 20260501", b.date)
@@ -279,8 +281,8 @@ func TestEasyRunPayloadShape(t *testing.T) {
 	}
 	program := programs[0].(map[string]any)
 	entity := entities[0].(map[string]any)
-	if program["name"] != "Easy 10K" {
-		t.Errorf("program name = %v", program["name"])
+	if want := "[STRIDE] Easy 10K"; program["name"] != want {
+		t.Errorf("program name = %v, want %v", program["name"], want)
 	}
 	if program["sportType"] != 1 {
 		t.Errorf("sportType = %v, want 1 (running)", program["sportType"])

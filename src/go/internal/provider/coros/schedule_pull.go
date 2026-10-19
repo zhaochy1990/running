@@ -39,7 +39,10 @@ func (p *Provider) pullWatchSchedule(ctx context.Context, client *Client, _, sta
 }
 
 // syncSchedule runs the watch-schedule phase of a sync: pull → persist → update
-// the sync result metadata (ADR 0038 decision 4).
+// the sync result metadata (ADR 0038 decision 4). Since devops#588 the pulled
+// sessions land in the unified workout table (source=watch, lineage
+// provider:provider_entity_id); the legacy watch_schedule table is retired
+// (kept read-only, no longer written).
 func (p *Provider) syncSchedule(ctx context.Context, client *Client, user string, res *provider.SyncResult) error {
 	from, to := provider.SchedulePullWindow()
 	pull, err := p.pullWatchSchedule(ctx, client, user, from, to)
@@ -47,29 +50,25 @@ func (p *Provider) syncSchedule(ctx context.Context, client *Client, user string
 		return err
 	}
 
-	rows := make([]storage.WatchSchedule, 0, len(pull.Schedule.Sessions))
+	rows := make([]storage.WatchWorkoutInput, 0, len(pull.Schedule.Sessions))
 	for _, sess := range pull.Schedule.Sessions {
 		specJSON, err := json.Marshal(sess.Spec)
 		if err != nil {
 			return fmt.Errorf("coros: marshal watch session spec: %w", err)
 		}
-		fetchedAt, err := time.Parse(time.RFC3339, pull.Schedule.Fetch.FetchedAt)
-		if err != nil {
-			fetchedAt = time.Now().UTC()
-		}
-		rows = append(rows, storage.WatchSchedule{
-			Provider:   pull.Schedule.Provider,
-			EntityID:   sess.SourceIDs.EntityID,
-			Date:       sess.Date,
-			Kind:       sess.Kind,
-			Name:       sess.Spec.Name,
-			SpecJSON:   string(specJSON),
-			FetchedAt:  fetchedAt,
-			WindowFrom: pull.Schedule.Fetch.WindowFrom,
-			WindowTo:   pull.Schedule.Fetch.WindowTo,
+		rows = append(rows, storage.WatchWorkoutInput{
+			Provider: pull.Schedule.Provider,
+			EntityID: sess.SourceIDs.EntityID,
+			Date:     sess.Date,
+			Kind:     sess.Kind,
+			Name:     sess.Spec.Name,
+			SpecJSON: string(specJSON),
 		})
 	}
-	if err := p.store.UpsertWatchSchedules(ctx, user, rows); err != nil {
+	// One transaction: idempotent upsert keyed on the provider:entity identity,
+	// then the −7/+90 out-of-window cleanup scoped to source=watch so weekly /
+	// custom rows are never touched (devops#588).
+	if err := p.store.UpsertWatchWorkouts(ctx, user, rows, from, to); err != nil {
 		return err
 	}
 
@@ -130,7 +129,14 @@ func decodeWatchSchedule(raw json.RawMessage, from, to, fetchedAt string) (provi
 			pull.SkippedStrength++
 			continue
 		}
-		if strings.HasPrefix(prog.Name, "[STRIDE]") { // self-loop exclusion
+		// Self-loop exclusion, contract-locked (devops#588): the push side always
+		// marks its entries [STRIDE], so any entry still carrying the marker here
+		// is STRIDE's own and must never be re-ingested.
+		// Known edge (accepted): a user who renames a STRIDE-pushed entry on the
+		// watch (dropping the marker) turns it into a watch-source mirror row —
+		// one extra day-plan row next to the weekly materialized one; harmless
+		// and correctable by deleting the watch-side entry.
+		if provider.IsStrideWorkoutName(prog.Name) {
 			pull.SkippedStride++
 			continue
 		}

@@ -1,25 +1,18 @@
-// watch_schedule.go adds the watch-schedule pull domain to Store: the
-// watch_schedule table (ADR 0038) plus an idempotent upsert keyed on the
-// provider source ids (provider + entity_id) that ADR 0036 fixed on every
-// session.
+// watch_schedule.go keeps the legacy watch-schedule model. The table is
+// RETIRED since devops#588: pulls land in the unified workout table
+// (source=watch, see workout.go) and nothing writes watch_schedule anymore.
+// The model stays so AutoMigrate keeps the existing table (and its data)
+// intact; no reader or writer remains.
 package storage
 
-import (
-	"context"
-	"fmt"
-	"time"
-
-	"gorm.io/gorm/clause"
-)
+import "time"
 
 // WatchSchedule is one pulled watch-schedule session (table "watch_schedule").
-// It is the watch domain's calendar mirror — distinct from ScheduledWorkout,
-// which records the push-side execution state of coach-authored plan sessions.
 //
-// The unique (user_id, provider, entity_id) index is the idempotency key: a
-// re-pull of the same watch session updates the row rather than duplicating it.
-// SpecJSON carries the full run-workout/v1 document (run content only; strength
-// is skipped by the puller and counted in sync metadata).
+// Retired (devops#588): the workout table (source=watch) is the storage
+// location for pulled watch sessions now. The model is kept only so the
+// existing table survives AutoMigrate untouched; do not add new readers or
+// writers.
 type WatchSchedule struct {
 	ID         uint64    `gorm:"column:id;primaryKey;autoIncrement"`
 	UserID     string    `gorm:"column:user_id;type:char(36);not null;uniqueIndex:uq_watch_schedule_source,priority:1"`
@@ -37,33 +30,3 @@ type WatchSchedule struct {
 }
 
 func (WatchSchedule) TableName() string { return "watch_schedule" }
-
-// UpsertWatchSchedules writes pulled watch-schedule sessions idempotently, keyed
-// on (user_id, provider, entity_id). A re-pull updates date/kind/name/spec and
-// the fetch metadata without creating duplicate rows. The caller's user id is
-// canonicalised and stamped onto every row so the tenant key cannot drift.
-func (s *Store) UpsertWatchSchedules(ctx context.Context, userID string, rows []WatchSchedule) error {
-	if len(rows) == 0 {
-		return nil
-	}
-	uid, err := canonicalUserID(userID)
-	if err != nil {
-		return err
-	}
-	now := time.Now().UTC()
-	for i := range rows {
-		rows[i].UserID = uid
-		if rows[i].CreatedAt.IsZero() {
-			rows[i].CreatedAt = now
-		}
-		rows[i].UpdatedAt = now
-	}
-	err = s.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "user_id"}, {Name: "provider"}, {Name: "entity_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"date", "kind", "name", "spec_json", "fetched_at", "window_from", "window_to", "updated_at"}),
-	}).Create(&rows).Error
-	if err != nil {
-		return fmt.Errorf("storage: upsert watch schedule: %w", err)
-	}
-	return nil
-}

@@ -71,8 +71,10 @@ func garminSteps(t *testing.T, payload map[string]any) []map[string]any {
 
 func TestGarminEnvelopeShape(t *testing.T) {
 	payload := garminPayload(t, garminEasyRun10km())
-	if payload["workoutName"] != "Easy 10K" {
-		t.Errorf("workoutName = %v", payload["workoutName"])
+	// [STRIDE] prefix contract (devops#588): pushes are always marked so the
+	// future Garmin pull adapter can skip STRIDE-authored entries.
+	if want := "[STRIDE] Easy 10K"; payload["workoutName"] != want {
+		t.Errorf("workoutName = %v, want %v", payload["workoutName"], want)
 	}
 	if payload["sportType"].(map[string]any)["sportTypeKey"] != "running" {
 		t.Errorf("sportType = %v", payload["sportType"])

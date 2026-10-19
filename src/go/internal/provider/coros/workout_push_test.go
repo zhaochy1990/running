@@ -351,6 +351,29 @@ func TestDeleteScheduledWorkoutNameFilter(t *testing.T) {
 	}
 }
 
+func TestDeleteScheduledWorkoutPrefixesRawSpecName(t *testing.T) {
+	// devops#588: the push side always marks entries [STRIDE] (translate layer),
+	// while callers pass the raw spec name — the delete sweep must apply the
+	// prefix itself or the prior entry would never be cleared.
+	var deletes int
+	entities := `[{"happenDay":"20260504","idInPlan":17,"planProgramId":17,"id":"E1"}]`
+	programs := `[{"idInPlan":17,"name":"[STRIDE] Easy 10K","sportType":1}]`
+	mux := deleteScheduleMux(entities, programs)
+	mux.HandleFunc("/training/schedule/update", func(w http.ResponseWriter, r *http.Request) {
+		deletes++
+		writeEnvelope(w, resultSuccess, `{}`)
+	})
+	p := newTestProvider(t, mux, newFakeWriter())
+
+	deleted, err := p.DeleteScheduledWorkout(context.Background(), testUID, "2026-05-04", "Easy 10K")
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if !deleted || deletes != 1 {
+		t.Fatalf("deleted=%v deletes=%d, want true/1", deleted, deletes)
+	}
+}
+
 func TestQueryScheduleSummaries(t *testing.T) {
 	entities := `[
 		{"happenDay":"20260504","idInPlan":17,"planProgramId":17},

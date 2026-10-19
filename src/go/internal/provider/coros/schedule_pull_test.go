@@ -2,6 +2,7 @@ package coros
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -157,5 +158,44 @@ func TestPullWatchSchedule(t *testing.T) {
 	}
 	if pull.Schedule.Provider != providerName {
 		t.Errorf("provider = %q, want %q", pull.Schedule.Provider, providerName)
+	}
+}
+
+// TestSyncSchedulePersistsWorkoutRows locks the devops#588 storage contract:
+// the sync's schedule phase lands pulled sessions in the unified workout table
+// (source=watch via UpsertWatchWorkouts), skipping strength and [STRIDE]
+// entries with counts surfaced in the sync result.
+func TestSyncSchedulePersistsWorkoutRows(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/training/schedule/query", func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(w, resultSuccess, scheduleFixture)
+	})
+	fw := newFakeWriter()
+	p := newTestProvider(t, mux, fw)
+
+	res, err := p.SyncUser(context.Background(), testUID, provider.SyncOptions{Content: provider.ContentSchedule})
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if res.ScheduleSessions != 3 || res.ScheduleSkippedStrength != 1 || res.ScheduleSkippedStride != 1 || res.ScheduleSkippedInvalid != 1 {
+		t.Fatalf("schedule result = sessions %d strength %d stride %d invalid %d",
+			res.ScheduleSessions, res.ScheduleSkippedStrength, res.ScheduleSkippedStride, res.ScheduleSkippedInvalid)
+	}
+	if len(fw.watchWorkouts) != 3 {
+		t.Fatalf("persisted watch workout rows = %d, want 3 (%+v)", len(fw.watchWorkouts), fw.watchWorkouts)
+	}
+	for _, row := range fw.watchWorkouts {
+		if row.Provider != providerName || row.EntityID == "" || row.Kind != provider.WatchSessionKindRun {
+			t.Errorf("watch workout row = %+v", row)
+		}
+		if row.SpecJSON == "" || !json.Valid([]byte(row.SpecJSON)) {
+			t.Errorf("watch workout row spec invalid: %q", row.SpecJSON)
+		}
+		if provider.IsStrideWorkoutName(row.Name) {
+			t.Errorf("[STRIDE] entry leaked into workout rows: %q", row.Name)
+		}
+	}
+	if fw.watchWindow[0] == "" || fw.watchWindow[1] == "" {
+		t.Errorf("pull window not threaded through: %+v", fw.watchWindow)
 	}
 }

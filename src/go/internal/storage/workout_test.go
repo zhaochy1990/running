@@ -175,3 +175,97 @@ func TestListPlanSessionsWindowValidation(t *testing.T) {
 }
 
 func float64Ptr(f float64) *float64 { return &f }
+
+// TestWatchWorkoutUpsertAndWindowCleanup locks the devops#588 watch-source
+// contract: idempotent upsert on the provider:entity identity, re-activation
+// after archive mints a fresh row, and the −7/+90 out-of-window cleanup
+// archives only watch rows — weekly / custom rows are never touched.
+func TestWatchWorkoutUpsertAndWindowCleanup(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	uid := uuid.NewString()
+
+	run := func(name, date, spec string) WatchWorkoutInput {
+		return WatchWorkoutInput{
+			Provider: "coros", EntityID: "ent-1", Date: date, Kind: "run",
+			Name: name, SpecJSON: spec,
+		}
+	}
+
+	// Seed a weekly row (same user, outside any window edge) and a custom row
+	// that must survive every cleanup below.
+	_, _, err := st.ApplyStructuredWeeklyPlan(ctx, uid, "2026-01-19", weeklyContentFor("周计划课", 40), nil)
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	custom, err := st.UpsertCustomWorkout(ctx, uid, UpsertCustomWorkoutInput{
+		Date: "2026-01-01", Kind: "run", Name: "自建跑", SaveToken: "tok-watch-test",
+	})
+	if err != nil {
+		t.Fatalf("custom: %v", err)
+	}
+
+	if err := st.UpsertWatchWorkouts(ctx, uid, []WatchWorkoutInput{run("表上轻松跑", "2026-03-10", `{"schema":"run-workout/v1","name":"表上轻松跑","date":"2026-03-10","blocks":[{"repeat":1,"steps":[]}]}`)}, "2026-01-20", "2026-04-10"); err != nil {
+		t.Fatalf("upsert 1: %v", err)
+	}
+
+	// Re-pull the same entity with new content: updated in place, no duplicate.
+	if err := st.UpsertWatchWorkouts(ctx, uid, []WatchWorkoutInput{run("表上轻松跑(改)", "2026-03-10", `{"schema":"run-workout/v1","name":"表上轻松跑(改)","date":"2026-03-10","blocks":[{"repeat":1,"steps":[]}]}`)}, "2026-01-20", "2026-04-10"); err != nil {
+		t.Fatalf("upsert replay: %v", err)
+	}
+	sessions, err := st.ListPlanSessions(ctx, uid, "2025-12-01", "2026-12-31")
+	if err != nil {
+		t.Fatalf("list 1: %v", err)
+	}
+	// weeklyContentFor materializes two weekly rows (run + rest).
+	if len(sessions) != 4 {
+		t.Fatalf("plan sessions = %d, want 4 (%+v)", len(sessions), sessions)
+	}
+	// Ordering: date ASC first, then weekly → custom → watch (devops#525).
+	for i, want := range []string{WorkoutSourceCustom, WorkoutSourceWeekly, WorkoutSourceWeekly, WorkoutSourceWatch} {
+		if sessions[i].Source != want {
+			t.Fatalf("session %d source = %s, want %s", i, sessions[i].Source, want)
+		}
+	}
+	watch := sessions[3]
+	if watch.Name != "表上轻松跑(改)" || watch.Provider == nil || *watch.Provider != "coros" ||
+		watch.ProviderEntityID == nil || *watch.ProviderEntityID != "ent-1" {
+		t.Fatalf("watch row = %+v", watch)
+	}
+	firstID := watch.WorkoutID
+
+	// A pull whose window no longer covers the row archives it — and nothing else.
+	if err := st.UpsertWatchWorkouts(ctx, uid, nil, "2026-04-01", "2026-06-30"); err != nil {
+		t.Fatalf("upsert 2: %v", err)
+	}
+	sessions, err = st.ListPlanSessions(ctx, uid, "2025-12-01", "2026-12-31")
+	if err != nil {
+		t.Fatalf("list 2: %v", err)
+	}
+	// Cleanup archived only the watch row: custom + both weekly rows survive
+	// even though their dates sit outside the new window (scoped by source).
+	if len(sessions) != 3 || sessions[0].WorkoutID != custom.WorkoutID ||
+		sessions[1].Source != WorkoutSourceWeekly || sessions[2].Source != WorkoutSourceWeekly {
+		t.Fatalf("after cleanup sessions = %+v, want weekly+custom only", sessions)
+	}
+
+	// The identity is freed while archived: a re-pull mints a fresh row.
+	if err := st.UpsertWatchWorkouts(ctx, uid, []WatchWorkoutInput{run("表上轻松跑", "2026-05-01", `{"schema":"run-workout/v1","name":"表上轻松跑","date":"2026-05-01","blocks":[{"repeat":1,"steps":[]}]}`)}, "2026-04-01", "2026-06-30"); err != nil {
+		t.Fatalf("upsert 3: %v", err)
+	}
+	sessions, err = st.ListPlanSessions(ctx, uid, "2025-12-01", "2026-12-31")
+	if err != nil {
+		t.Fatalf("list 3: %v", err)
+	}
+	if len(sessions) != 4 {
+		t.Fatalf("re-activated sessions = %d, want 4", len(sessions))
+	}
+	if sessions[3].WorkoutID == firstID {
+		t.Fatalf("archived watch identity not freed: %s", firstID)
+	}
+
+	// The weekly row keeps its plan lineage through all of this.
+	if sessions[1].PlanID == nil {
+		t.Fatalf("weekly row lineage lost: %+v", sessions[0])
+	}
+}
