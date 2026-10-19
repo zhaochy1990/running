@@ -62,6 +62,7 @@ const session: PlannedSession = {
   notes_md: null,
   total_distance_m: 20000,
   total_duration_s: 7200,
+  estimated_dose: null,
   scheduled_workout_id: null,
 };
 

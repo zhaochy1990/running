@@ -53,6 +53,7 @@ function makeRun(overrides: Partial<PlannedSession> = {}): PlannedSession {
     notes_md: null,
     total_distance_m: 10000,
     total_duration_s: 3600,
+    estimated_dose: null,
     scheduled_workout_id: null,
     ...overrides,
   };
@@ -69,6 +70,7 @@ function makeStrength(overrides: Partial<PlannedSession> = {}): PlannedSession {
     notes_md: null,
     total_distance_m: null,
     total_duration_s: null,
+    estimated_dose: null,
     scheduled_workout_id: null,
     ...overrides,
   };
@@ -85,6 +87,7 @@ function makeRest(overrides: Partial<PlannedSession> = {}): PlannedSession {
     notes_md: null,
     total_distance_m: null,
     total_duration_s: null,
+    estimated_dose: null,
     scheduled_workout_id: null,
     ...overrides,
   };
@@ -164,6 +167,7 @@ describe("PushAllPlannedButton", () => {
           makeRun({
             summary: "轻松 10km",
             total_distance_m: 10000,
+            estimated_dose: null,
             scheduled_workout_id: 99,
           }),
         ]}

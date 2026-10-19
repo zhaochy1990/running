@@ -54,6 +54,7 @@ const days: PlanDay[] = [
         notes_md: null,
         total_distance_m: 8000,
         total_duration_s: 3000,
+        estimated_dose: null,
         scheduled_workout_id: null,
       },
     ],

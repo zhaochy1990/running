@@ -60,3 +60,51 @@ flat strictObject、nullable 值）与 master plan（`master_plan/schemas.ts` �
   变为拒绝；已落库文档不做回填，读取路径不重校验，无迁移需求。
 - 渲染文案是确定性 golden（`workout.test.ts` 钉死），消费方（小程序/Web）
   后续可直接复用 fixtures 自检，不再各自手写渲染。
+
+## Appendix A: COROS Training Hub 对照
+
+run-workout/v1 与 COROS Training Hub（非官方 API，`internal/provider/coros`，
+逆向自真实账号 2026-09-21 验证）的模型对照：
+
+| run-workout/v1 | COROS Training Hub | 备注 |
+|---|---|---|
+| `step_kind` warmup/work/recovery/cooldown/rest | `exerciseType` 1=warm-up / 2=training / 3=cool-down / 4=recovery | rest step 无独立 exerciseType，落 recovery |
+| `duration {kind: distance_m}` | `targetType=5`（毫米） | |
+| `duration {kind: time_s}` | `targetType=2`（秒） | |
+| `duration {kind: open}` | 无对应概念 | 推送降级，见 Appendix B |
+| `target {kind: pace_s_km}` | `intensityType=3` + `intensityValue/Extend`（ms/km）与 `intensityPercent`（阈值速度千分比） | 我们只下发绝对配速，不建模阈值内嵌 |
+| `target {kind: hr_bpm/power_w/cadence_spm}` | 无对应 targetType（pace-only） | 推送降级，见 Appendix B |
+| `step.rest {kind: time_s}` | COROS 原生把组间休息表示为 interval group 内的 recovery 步 | 语义等价的是双 idiom 中的「block 尾部 rest step」 |
+| `step.rest {kind: hr_bpm}` | 无对应概念（心率恢复型休息） | 契约新增能力，COROS 不可表达 |
+| `step.rest {kind: manual}` | 无对应概念 | 同上 |
+| strength `canonical_id` = COROS T-code | exercise library `originId`/`name`（T-code） | `provider_id` 同值，推送时查库回填完整 exercise 对象 |
+
+借鉴而**不采纳**的 COROS 设计（#521 D2）：扁平 Structure、整数/×100 数值约束、
+阈值内嵌（`intensityPercent`）、每步 StartTime。
+
+## Appendix B: Training Hub 推送降级清单
+
+`internal/provider/coros/translate.go` 把 run-workout/v1 翻译为 COROS
+schedule 时，契约能力超出 COROS 表达面的部分按下列清单降级（全部是**保守
+降级**，不丢弃整课）：
+
+- **多步 block** → 一个 COROS interval group，期望 (work, recovery) 或 (work,)
+  子步；其余形状 best-effort 拍平成逐 repeat 的独立 training 段。
+- **`target {kind: hr_bpm/power_w}`** → 主路径失败时从 `step.note` 正则抽配速
+  （计划文案常同写 "HR<148，配速 6:00-6:30/km"）；仍无则该段无配速目标。
+- **`target {kind: cadence_spm}`** → 暂不翻译，落 open/no-target 既有默认
+  行为（决策 7）；手表侧只显示时长。
+- **`duration {kind: open}`** → 固定默认时长（warmup/cooldown 5 min、
+  training 30 min）。
+- **`hr_cap_bpm`** → 无原生槽位，折叠进课名后缀自由文本，不在手表上静默丢失。
+- **`step.rest`（time_s/hr_bpm/manual）** → Go provider `WorkoutStep` 尚未建模
+  该字段，推送时丢弃；只有 block 尾部 rest step idiom 会在 interval group
+  里表达为 recovery。双 idiom 在手表侧因此**不**等价——需要手表呈现休息的
+  课表应继续用尾部 rest step 写法。
+
+## Deferred
+
+- **activities `workout_id` 回联**（COROS `planWorkoutId` 式，#521 D4）：
+  执行回联另票实施；webhook 已持久化 `provider_events.plan_workout_id`。
+- **步级 StartTime**（COROS 每步开始时刻，#521 D2 不采纳项）：契约不带，
+  待真实需求出现再议。

@@ -11,6 +11,8 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -49,6 +51,17 @@ WeekDetailData _makeData(List<PlannedSession> sessions,
         ),
     ],
   );
+}
+
+PlannedSession _sessionFromFixture(String name) {
+  final raw = File('../../../../tests/fixtures/workout/$name').readAsStringSync();
+  return PlannedSession.fromJson({
+    'date': '2026-05-12',
+    'session_index': 0,
+    'kind': 'run',
+    'summary': '',
+    'spec': jsonDecode(raw) as Map<String, dynamic>,
+  });
 }
 
 PlannedSession _easyRun() => const PlannedSession(
@@ -183,9 +196,34 @@ void main() {
     expect(find.text('课表结构'), findsOneWidget);
     expect(find.text('热身'), findsOneWidget);
     expect(find.text('主课'), findsOneWidget);
-    expect(find.text('心率 130–150 bpm'), findsOneWidget);
+    // open 时长 + 目标同行渲染（#589 步级距离/时长）。
+    expect(find.text('自由 · 心率 130–150 bpm'), findsOneWidget);
     // 教练备注取 notes_md 首行。
     expect(find.text('保持心率区间，别提速。'), findsOneWidget);
+  });
+
+  // ── 3b. #589 fixtures 渲染：重复分组头 / 距离时长 / 休息 / 步频 target ──
+  testWidgets('interval fixture renders repeat headers, durations and rest', (
+    tester,
+  ) async {
+    await _pump(tester, AsyncData(_makeData([_sessionFromFixture('interval-rest-field.json')])));
+    await tester.pumpAndSettle();
+
+    expect(find.text('重复 3 次'), findsOneWidget);
+    expect(find.text('重复 6 次'), findsOneWidget);
+    expect(find.text('4.0km · 配速 4:00–3:50 /km（休3′）'), findsOneWidget);
+    expect(find.text('0.4km · 配速 3:35–3:25 /km（休90″）'), findsOneWidget);
+  });
+
+  testWidgets('cadence fixture renders cadence target, manual rest and note', (
+    tester,
+  ) async {
+    await _pump(tester, AsyncData(_makeData([_sessionFromFixture('cadence-target.json')])));
+    await tester.pumpAndSettle();
+
+    expect(find.text('重复 8 次'), findsOneWidget);
+    expect(find.text('20″ · 步频 176–186 spm（休手动）'), findsOneWidget);
+    expect(find.text('高步频快脚，躯干前倾'), findsOneWidget);
   });
 
   // ── 4. Strength session renders exercise list ────────────────────────────

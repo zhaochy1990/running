@@ -14,6 +14,7 @@ function runSession(overrides: Partial<PlannedSessionRow> = {}): PlannedSessionR
     notes_md: null,
     total_distance_m: 8000,
     total_duration_s: null,
+    estimated_dose: null,
     scheduled_workout_id: null,
     id: 1,
     pushable: false,

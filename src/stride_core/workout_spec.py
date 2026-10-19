@@ -1,5 +1,9 @@
 """Provider-agnostic structured workout specifications.
 
+FROZEN (devops#589): the canonical workout contract is now the TypeScript
+``src/coach_contract/src/workout/`` (ADR 0043). This module is read-only for
+contract evolution — legacy migration paths only, no new/changed fields.
+
 Workouts are authored and stored in this normalized form. Adapters translate
 to provider-specific protocol payloads (COROS schedule/update entities,
 Garmin Workouts API steps, etc.) at push time. The same spec can also be

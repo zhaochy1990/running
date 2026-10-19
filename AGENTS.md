@@ -142,6 +142,10 @@ This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 
 加 helper / 算法 / 工具函数前，先在仓库 grep 同名 / 同概念实现。遇到现有实现质量不够 —— 修它，不要绕开新写一个。"两份功能相同的代码并存"在 review 里直接打回。这条规则的具体应用：上面的 Athlete baseline 单源，以及 [Timezone helpers](#timezone-discipline-hard) 单源。
 
+## Workout / plan 契约 — canonical = coach_contract（Python stride_core 冻结）
+
+「一次训练课」（run-workout/v1 / strength-workout/v1，ADR 0043）与 weekly / master plan 的结构契约，canonical 来源是 **TS `src/coach_contract/src/`**（`workout/`、`weekly_plan/`、`master_plan/`）；对外 JSON Schema 由 `generate-weekly-plan-schema.mjs` 生成进 `src/go/internal/api/`。Python `src/stride_core/`（`plan_spec.py` / `workout_spec.py` 等）**冻结只读**：不再新增或修改契约字段，仅供遗留迁移路径使用；路由与 import 不动。契约演化一律改 coach_contract，Go（embedded schema + `internal/provider` 类型）与各客户端随后对齐。
+
 ---
 
 ## Working Model summary

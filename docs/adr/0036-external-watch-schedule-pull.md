@@ -70,3 +70,17 @@ one provider-agnostic shape so a third platform only needs a new adapter.
   watch-source mirror row) is accepted and documented at the skip site.
 - Decision 5's principle is unchanged; only its enforcement moved into shared
   helpers (`provider.ApplyStrideWorkoutPrefix` / `provider.IsStrideWorkoutName`).
+
+## Update (devops#587, P6 — the push direction exists outside this domain)
+
+Decision 1's "one-way (watch → STRIDE)" statement remains true **of the
+watch-schedule domain only**. STRIDE→watch push of STRIDE-authored content now
+exists as separate surfaces — coach-generated weekly sessions and user-authored
+custom workouts (`POST /api/users/me/custom-workouts/:workoutId/push`) — both
+reusing the same translate layer and `[STRIDE]` marker with provider
+capability gating. These push paths write `scheduled_workout`, never
+`watch_schedule`, and a pushed workout that the pull later encounters is skipped
+by the marker — so the two directions stay loop-free without merging the
+domains. Custom push rows carry a nullable `workout_id` on `scheduled_workout`
+(weekly rows keep the plan identity); the activities `workout_id` back-link
+stays deferred (ADR 0043, Deferred).

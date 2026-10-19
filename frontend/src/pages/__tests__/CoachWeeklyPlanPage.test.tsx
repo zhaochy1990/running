@@ -133,6 +133,7 @@ describe("CoachWeeklyPlanPage", () => {
               notes_md: "保持 Z2",
               total_distance_m: 8000,
               total_duration_s: 3000,
+              estimated_dose: null,
               scheduled_workout_id: null,
             },
           ],

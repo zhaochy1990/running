@@ -36,6 +36,7 @@ const sessions: PlannedSession[] = [
     notes_md: "RPE 3",
     total_distance_m: 10000,
     total_duration_s: 3600,
+    estimated_dose: null,
     scheduled_workout_id: null,
   },
   {
@@ -48,6 +49,7 @@ const sessions: PlannedSession[] = [
     notes_md: null,
     total_distance_m: null,
     total_duration_s: null,
+    estimated_dose: null,
     scheduled_workout_id: null,
   },
 ];
@@ -90,6 +92,7 @@ describe("PlannedCalendar", () => {
       notes_md: null,
       total_distance_m: 14500,
       total_duration_s: null,
+      estimated_dose: null,
       scheduled_workout_id: null,
       spec: {
         schema: "run-workout/v1",
@@ -132,6 +135,7 @@ describe("PlannedCalendar", () => {
       notes_md: null,
       total_distance_m: 14500,
       total_duration_s: null,
+      estimated_dose: null,
       scheduled_workout_id: null,
       spec: {
         schema: "run-workout/v1",

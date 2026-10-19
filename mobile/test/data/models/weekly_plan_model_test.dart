@@ -3,6 +3,9 @@
 /// _Unknown（课时详情 blocks 恒空）。修复后 session.kind 优先分发、schema 兜底。
 library;
 
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:stride/data/models/weekly_plan.dart';
@@ -95,5 +98,42 @@ void main() {
     // 私有 _Unknown 兕底类型：既非 run 也非 strength。
     expect(unknown.spec, isNot(isA<RunWorkoutSpec>()));
     expect(unknown.spec, isNot(isA<StrengthWorkoutSpec>()));
+  });
+
+  group('#589 WorkoutStep duration/note/rest 解析（共享 fixtures）', () {
+    PlannedSession sessionFromFixture(String name) {
+      final raw = File('../../../../tests/fixtures/workout/$name').readAsStringSync();
+      return PlannedSession.fromJson({
+        'date': '2026-05-12',
+        'session_index': 0,
+        'kind': 'run',
+        'summary': '',
+        'spec': jsonDecode(raw) as Map<String, dynamic>,
+      });
+    }
+
+    test('interval-rest-field.json：duration + 步后 rest 字段', () {
+      final spec = sessionFromFixture('interval-rest-field.json').spec as RunWorkoutSpec;
+      expect(spec.blocks, hasLength(2));
+      final step = spec.blocks.first.steps.single;
+      expect(spec.blocks.first.repeat, 3);
+      expect(step.duration.kind, 'distance_m');
+      expect(step.duration.value, 4000);
+      expect(step.rest?.kind, 'time_s');
+      expect(step.rest?.value, 180);
+    });
+
+    test('cadence-target.json：步频 target + manual 休息 + note', () {
+      final spec = sessionFromFixture('cadence-target.json').spec as RunWorkoutSpec;
+      final step = spec.blocks.single.steps.single;
+      expect(step.duration.kind, 'time_s');
+      expect(step.duration.value, 20);
+      expect(step.target.kind, 'cadence_spm');
+      expect(step.target.low, 176);
+      expect(step.target.high, 186);
+      expect(step.rest?.kind, 'manual');
+      expect(step.rest?.value, isNull);
+      expect(step.note, '高步频快脚，躯干前倾');
+    });
   });
 }

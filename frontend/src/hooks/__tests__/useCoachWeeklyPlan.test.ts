@@ -57,6 +57,7 @@ function weekDetailWithSessions(): WeekDetail {
           total_distance_m: 10000,
           total_duration_s: 3600,
           pushable: false,
+          estimated_dose: null,
           scheduled_workout_id: null,
         },
       ],

@@ -6,7 +6,9 @@
 
 ## Source of truth
 
-`src/stride_core/plan_spec.py` 和 `src/stride_core/workout_spec.py`。任何字段命名分歧以这两个文件为准；这份 doc 落后于代码时 **信代码**。
+**Canonical：`src/coach_contract/src/workout/`（run-workout/v1 / strength-workout/v1，ADR 0043）与 `src/coach_contract/src/weekly_plan/`。** 任何字段命名分歧以 coach_contract 为准；这份 doc 落后于代码时 **信代码**。
+
+Python `src/stride_core/`（`plan_spec.py` / `workout_spec.py` 等）**冻结只读**：不再新增或修改契约字段，仅供遗留迁移路径（如 reparse）使用；路由与 import 不动。契约演化一律改 coach_contract，再由 Go/TS/客户端侧对齐。
 
 ## Top-level shape (`WeeklyPlan`)
 

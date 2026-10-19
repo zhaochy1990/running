@@ -34,6 +34,7 @@ function makeSession(overrides: Partial<PlannedSession> = {}): PlannedSession {
     notes_md: null,
     total_distance_m: 10000,
     total_duration_s: 3600,
+    estimated_dose: null,
     scheduled_workout_id: null,
     ...overrides,
   };

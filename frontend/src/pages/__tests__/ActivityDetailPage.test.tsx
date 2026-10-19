@@ -148,6 +148,7 @@ describe("ActivityDetailPage", () => {
               notes_md: null,
               total_distance_m: 10000,
               total_duration_s: null,
+              estimated_dose: null,
               scheduled_workout_id: null,
             },
           ],
