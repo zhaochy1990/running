@@ -285,6 +285,11 @@ func (s *Store) ApplyStructuredWeeklyPlan(
 				return fmt.Errorf("storage: create weekly plan: %w", err)
 			}
 			created = row
+			// devops#586 materialization: one workout row per session, in the same
+			// transaction so plan + workouts commit (or roll back) atomically.
+			if err := materializeWeeklyWorkouts(tx, uid, row.PlanID, weekStart, content); err != nil {
+				return err
+			}
 			return nil
 		})
 	}

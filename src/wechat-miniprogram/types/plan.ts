@@ -120,6 +120,33 @@ export interface WeeklyPlanDetail {
 }
 
 // ---------------------------------------------------------------------------
+// 统一课表（devops#586）：GET /api/users/me/plan/sessions 三源投影
+// ---------------------------------------------------------------------------
+
+export type WorkoutSource = 'weekly' | 'custom' | 'watch';
+
+/** 统一 workout 行：某天要练什么的一次性投影（仅 active，按 weekly→custom→watch 排序） */
+export interface PlanSessionRow {
+  workout_id: string;
+  /** 上海本地 YYYY-MM-DD */
+  date: string;
+  source: WorkoutSource;
+  kind: SessionKind;
+  name: string;
+  summary: string | null;
+  spec: NormalizedRunWorkout | NormalizedStrengthWorkout | null;
+  total_distance_m: number | null;
+  total_duration_s: number | null;
+  /** #526 渐进口径：weekly 计划估计值 / custom 落库值 / watch null */
+  estimated_dose: number | null;
+  /** 仅 weekly 源携带（plan lineage） */
+  session_index: number | null;
+  plan_id: string | null;
+  provider: string | null;
+  provider_entity_id: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // 今日页视图模型（展示就绪，非 wire 形状）
 // ---------------------------------------------------------------------------
 
@@ -138,6 +165,11 @@ export interface ViewIntensityBar {
 export interface TodayWorkoutView {
   title: string;
   sessionKind: SessionKind;
+  /** 来源标记：weekly 不标，custom「自建」，watch「手表」 */
+  source: WorkoutSource;
+  sourceLabel: string;
+  /** 统一 workout 行 ID（删除自建课用） */
+  workoutId: string;
   /** 视觉图标路径 */
   iconPath: string;
   /** 默认 false；非 run/strength 时不显示强度柱状图 */
@@ -146,13 +178,13 @@ export interface TodayWorkoutView {
   stats: ViewStat[];
   coachNote: string;
   note: string;
-  /** session 在当天的索引，用于推送 API */
-  sessionIndex: number;
+  /** session 在当天的索引，用于推送 API；仅 weekly 源有值 */
+  sessionIndex: number | null;
   /** session 所属日期 YYYY-MM-DD */
   date: string;
-  /** 关联的已排课训练 ID，null 表示未推送 */
-  scheduledWorkoutId: number | null;
-  /** 是否有完整 spec 可推送到手表 */
+  /** 是否为自建课（可删除） */
+  deletable: boolean;
+  /** 是否有完整 spec 可推送到手表（仅 weekly 源的 run/strength） */
   hasSpec: boolean;
 }
 

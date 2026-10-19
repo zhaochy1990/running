@@ -20,6 +20,7 @@ func TestDeleteUserData_CoversEveryUserOwnedTable(t *testing.T) {
 		st.AutoMigrateGoals,
 		st.AutoMigrateMasterPlan,
 		st.AutoMigrateWeeklyPlan,
+		st.AutoMigrateWorkout,
 		st.AutoMigrateWeeklyFeedback,
 		st.AutoMigrateBodyComposition,
 		st.AutoMigrateTeamLikes,

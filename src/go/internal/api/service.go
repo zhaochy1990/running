@@ -213,6 +213,10 @@ type Config struct {
 	// races outside race_calendar, plus the my-races aggregate. Shares the
 	// RacePlanStore port for the aggregate. Leave zero to run without it.
 	CustomRaceStore UserCustomRaceStore
+	// WorkoutStore backs the unified workout surface (devops#586): the
+	// three-source plan/sessions projection and custom-workout CRUD. Leave
+	// zero to run without those endpoints.
+	WorkoutStore WorkoutStore
 	// RoadmapStore backs the product-roadmap surface (devops#551): the user
 	// read/vote endpoints plus the administrator feature maintenance. Leave
 	// zero to run without the roadmap endpoints.
@@ -333,6 +337,7 @@ type Service struct {
 	raceStrategy    *raceStrategyRoutes
 	raceContent     *raceContentRoutes
 	raceCatalog     *raceCatalogRoutes
+	workouts        *workoutRoutes
 	webhook         *webhookRoutes
 
 	auth           *Authenticator
@@ -405,6 +410,7 @@ func NewService(cfg Config) *Service {
 		raceStrategy:            newRaceStrategyRoutes(cfg.RaceStrategyStore, log),
 		raceContent:             newRaceContentRoutes(cfg.RaceContentStore, cfg.CityAIDraft, log),
 		raceCatalog:             newRaceCatalogRoutes(cfg.RaceCatalogStore, log),
+		workouts:                newWorkoutRoutes(cfg.WorkoutStore, log),
 		webhook:                 newWebhookRoutes(cfg.WebhookAdapters, cfg.WebhookEventStore, cfg.WebhookUserResolver, cfg.Enqueuer, cfg.WebhookFetchJobType, cfg.WebhookEnqueueEnabled, log),
 		auth:                    cfg.Auth,
 		corsOrigins:             cfg.CORSOrigins,
@@ -515,6 +521,9 @@ func (s *Service) Router() *gin.Engine {
 	s.raceFavorites.register(authed)
 	s.racePlans.register(authed)
 	s.customRaces.register(authed)
+	// Unified workout surface (devops#586): same default-deny group as the
+	// sibling user-tier "me" endpoints.
+	s.workouts.register(authed)
 	s.raceStrategy.register(authed)
 	// Product-roadmap user surface: read + vote, user-tier only (the admin
 	// tier has its own maintenance endpoints above).

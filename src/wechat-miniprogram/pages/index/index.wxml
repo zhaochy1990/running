@@ -72,20 +72,21 @@
     <!-- 今日训练 -->
     <view class="section-title">今日安排 · {{todayLabel}}</view>
     <view wx:if="{{workout}}" class="card workout-card">
-      <!-- 头部：图标 + 标题 + 操作 -->
+      <!-- 头部：图标 + 来源标记 + 标题 + 操作 -->
       <view class="workout__head">
         <view class="workout__title-wrap">
           <view class="workout__icon">
             <image class="workout__icon-img" src="{{workout.iconPath}}" mode="aspectFit" />
           </view>
           <view class="workout__title">{{workout.title}}</view>
+          <view wx:if="{{workout.sourceLabel}}" class="workout__source">{{workout.sourceLabel}}</view>
         </view>
         <view class="workout__actions">
-          <view
-            class="workout__action {{workout.scheduledWorkoutId ? 'workout__action--pushed' : ''}}"
-            bindtap="onWatchTap"
-          >
+          <view class="workout__action" bindtap="onWatchTap">
             <image class="workout__action-icon" src="/assets/icons/watch.svg" mode="aspectFit" />
+          </view>
+          <view wx:if="{{workout.deletable}}" class="workout__action workout__action--danger" bindtap="onDeleteWorkout">
+            <image class="workout__action-icon" src="/assets/icons/delete.svg" mode="aspectFit" />
           </view>
           <view class="workout__action" bindtap="onMoreTap">
             <image class="workout__action-icon" src="/assets/icons/more_horiz.svg" mode="aspectFit" />
