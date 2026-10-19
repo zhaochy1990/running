@@ -1,3 +1,4 @@
+export * from "./custom_workout/schema.js";
 export * from "./date.js";
 export * from "./master_plan/assessment-schemas.js";
 export * from "./master_plan/card.js";

@@ -64,15 +64,25 @@ func (f *fakePusher) DeleteScheduledWorkout(_ context.Context, _, date, name str
 }
 
 type fakeScheduledWorkoutStore struct {
-	prior    *storage.ScheduledWorkout
-	nextID   int64
-	recorded []storage.RecordPushedWorkoutInput
+	prior          *storage.ScheduledWorkout
+	priorWorkoutID string
+	nextID         int64
+	recorded       []storage.RecordPushedWorkoutInput
 }
 
 func (f *fakeScheduledWorkoutStore) GetLatestScheduledWorkoutForPlanSession(
 	context.Context, string, string, string, int,
 ) (*storage.ScheduledWorkout, error) {
 	return f.prior, nil
+}
+
+func (f *fakeScheduledWorkoutStore) GetLatestScheduledWorkoutForWorkout(
+	_ context.Context, _ string, workoutID string,
+) (*storage.ScheduledWorkout, error) {
+	if f.priorWorkoutID == workoutID {
+		return f.prior, nil
+	}
+	return nil, nil
 }
 
 func (f *fakeScheduledWorkoutStore) RecordPushedScheduledWorkout(

@@ -55,6 +55,44 @@ eq(buildCoachCard({ $type: 'weekly-plan', data: {} }, raceTarget), null, 'unregi
 eq(buildCoachCard(null, raceTarget), null, 'null card');
 eq(buildCoachCard({}, raceTarget), null, 'missing $type');
 
+// 自建课卡片（devops#587）：双 CTA（保存到X月X日 / 推送到手表），摘要即卡片
+const customWorkoutCard = {
+  save_token: '0d6b07d8-0b7e-4f6e-9f2a-2a6f0b3c9d11',
+  date: '2026-10-20',
+  name: '4km×3 组 + 400m×6 间歇',
+  summary: '3 组 4km 巡航 + 6 个 400m 冲刺',
+  total_distance_m: 14400,
+  total_duration_s: null,
+  estimated_dose: null,
+  spec: {
+    schema: 'run-workout/v1',
+    name: '4km×3 组 + 400m×6 间歇',
+    date: '2026-10-20',
+    note: null,
+    blocks: [
+      { repeat: 3, steps: [{ step_kind: 'work', duration: { kind: 'distance_m', value: 4000 }, target: { kind: 'pace_s_km', low: 230, high: 240 }, note: null, hr_cap_bpm: null, rest: { kind: 'time_s', value: 180 } }] },
+      { repeat: 6, steps: [{ step_kind: 'work', duration: { kind: 'distance_m', value: 400 }, target: { kind: 'pace_s_km', low: 205, high: 215 }, note: null, hr_cap_bpm: null, rest: { kind: 'time_s', value: 90 } }] },
+    ],
+  },
+};
+{
+  const view = buildCoachCard({ $type: 'custom-workout', data: customWorkoutCard }, undefined);
+  if (!view) throw new Error('custom-workout card should build');
+  eq(view.type, 'custom-workout', 'custom-workout type');
+  eq(view.title, '训练课已创建', 'custom-workout title');
+  eq(view.subtitle, '10月20日 · 3 组 4km 巡航 + 6 个 400m 冲刺', 'custom-workout subtitle');
+  eq(view.badge, '待保存', 'custom-workout badge');
+  eq(view.buttonText, '保存到10月20日', 'custom-workout primary cta');
+  eq(view.secondaryButtonText, '推送到手表', 'custom-workout secondary cta');
+  eq(view.url, '', 'custom-workout action cta has no navigation');
+  eq(view.inlineBody, true, 'custom-workout inline body');
+  eq(view.data, customWorkoutCard, 'custom-workout data');
+  // 形状不对（缺 blocks / 坏日期 / 空 save_token）→ null 降级
+  eq(buildCoachCard({ $type: 'custom-workout', data: { ...customWorkoutCard, spec: { ...customWorkoutCard.spec, blocks: [] } } }, undefined), null, 'custom-workout empty blocks rejected');
+  eq(buildCoachCard({ $type: 'custom-workout', data: { ...customWorkoutCard, date: '10月20日' } }, undefined), null, 'custom-workout bad date rejected');
+  eq(buildCoachCard({ $type: 'custom-workout', data: { ...customWorkoutCard, save_token: '' } }, undefined), null, 'custom-workout empty save_token rejected');
+}
+
 // 历史自愈：信封 JSON / 裸策略 JSON 捞回；普通文本与坏 JSON 不动
 eq(parseLeakedRaceStrategyEnvelope(JSON.stringify({ disposition: 'return_direct', content: strategy })), { $type: 'race-strategy', data: strategy }, 'leaked envelope');
 eq(parseLeakedRaceStrategyEnvelope(JSON.stringify(strategy)), { $type: 'race-strategy', data: strategy }, 'leaked bare strategy');

@@ -64,6 +64,10 @@ agents:
     model: deepseekv4flash
     max_tokens: 65536
     timeout_s: 600
+  - name: custom_workout
+    model: deepseekv4flash
+    max_tokens: 65536
+    timeout_s: 600
   - name: reviewer
     model: deepseekv4flash
     # 评审输出很小，但 reasoning 偶发烧满 16384 → status=incomplete 无产物可解析

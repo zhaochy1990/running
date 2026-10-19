@@ -13,6 +13,7 @@
 import type { CoachSessionTarget } from '../services/coach';
 import type { MasterPlanCard } from '../services/master-plan';
 import type { RaceStrategy } from '../services/race-strategy';
+import type { CustomWorkoutCard } from '../types/plan';
 
 /** done.card 的 wire 形态镜像（$type = 双端约定的渲染器 key）。 */
 export interface CoachCardWire {
@@ -72,6 +73,26 @@ function isMasterPlanCardLike(value: unknown): value is MasterPlanCard {
   );
 }
 
+/** 自建课卡片内容的形状校验（CustomWorkoutCardSchema 的鸭子类型版，同上口径）。 */
+function isCustomWorkoutCardLike(value: unknown): value is CustomWorkoutCard {
+  if (value == null || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  const spec = v.spec as Record<string, unknown> | undefined;
+  return (
+    typeof v.save_token === 'string' && v.save_token.length > 0 &&
+    typeof v.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v.date) &&
+    typeof v.name === 'string' && v.name.length > 0 &&
+    typeof v.summary === 'string' && v.summary.length > 0 &&
+    spec != null && typeof spec === 'object' && Array.isArray(spec.blocks) && spec.blocks.length > 0
+  );
+}
+
+/** 「2026-10-20」→「10月20日」（卡片副标题/主 CTA 文案用）。 */
+function shanghaiMonthDayLabel(ymd: string): string {
+  const [, m, d] = ymd.split('-');
+  return `${Number(m)}月${Number(d)}日`;
+}
+
 /** done.card → 卡片视图；信封不认识/形状不对/缺 race target 时返回 null（降级走 markdown）。 */
 export function buildCoachCard(card: unknown, target: CoachSessionTarget | undefined): CoachCardView | null {
   if (card == null || typeof card !== 'object') return null;
@@ -120,6 +141,25 @@ export function buildCoachCard(card: unknown, target: CoachSessionTarget | undef
       secondaryButtonText: '',
       url: '',
       data: plan,
+      inlineBody: true,
+    };
+  }
+  if (wire.$type === 'custom-workout') {
+    if (!isCustomWorkoutCardLike(wire.data)) return null;
+    const card = wire.data;
+    const dayLabel = shanghaiMonthDayLabel(card.date);
+    // 双 CTA（devops#587）：主「保存到X月X日」（save_token 幂等 upsert）、次
+    // 「推送到手表」（未保存先保存再推，聊天页直调端点后回写角标）。
+    return {
+      type: wire.$type,
+      icon: '/assets/icons/directions_run.svg',
+      title: '训练课已创建',
+      subtitle: `${dayLabel} · ${card.summary}`,
+      badge: '待保存',
+      buttonText: `保存到${dayLabel}`,
+      secondaryButtonText: '推送到手表',
+      url: '',
+      data: card,
       inlineBody: true,
     };
   }

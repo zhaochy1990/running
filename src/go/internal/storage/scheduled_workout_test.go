@@ -108,3 +108,64 @@ func TestScheduledWorkoutRejectsNonUUIDUser(t *testing.T) {
 		t.Fatal("expected error for non-UUID user")
 	}
 }
+
+// Custom-workout pushes carry workout_id as canonical identity; the plan triple
+// stays NULL and a re-push supersedes by workout_id (devops#587).
+func TestScheduledWorkoutCustomIdentity(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.AutoMigrateScheduledWorkout(ctx); err != nil {
+		t.Fatalf("automigrate scheduled_workout: %v", err)
+	}
+	uid := uuid.NewString()
+	t.Cleanup(func() {
+		_ = st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&ScheduledWorkout{}).Error
+	})
+
+	if prior, err := st.GetLatestScheduledWorkoutForWorkout(ctx, uid, "w-1"); err != nil || prior != nil {
+		t.Fatalf("get (empty): %v %+v", err, prior)
+	}
+	id1, err := st.RecordPushedScheduledWorkout(ctx, uid, RecordPushedWorkoutInput{
+		WorkoutID: "w-1", PushDate: "2026-08-12", Kind: "run", Name: "[STRIDE] 4km×3组",
+		SpecJSON: `{"schema":"run-workout/v1"}`, Provider: "coros", ProviderWorkoutID: "R-1",
+	})
+	if err != nil {
+		t.Fatalf("record 1: %v", err)
+	}
+	row, err := st.GetLatestScheduledWorkoutForWorkout(ctx, uid, "w-1")
+	if err != nil || row == nil || row.ID != id1 {
+		t.Fatalf("get latest: %v %+v", err, row)
+	}
+	if row.WorkoutID == nil || *row.WorkoutID != "w-1" {
+		t.Fatalf("workout_id = %v, want w-1", row.WorkoutID)
+	}
+	if row.WeekFolder != nil || row.PlannedDate != nil || row.SessionIndex != nil {
+		t.Fatalf("custom row must not carry plan identity: %+v", row)
+	}
+
+	// Re-push supersedes by workout identity.
+	id2, err := st.RecordPushedScheduledWorkout(ctx, uid, RecordPushedWorkoutInput{
+		WorkoutID: "w-1", PushDate: "2026-08-13", Kind: "run", Name: "[STRIDE] 4km×3组",
+		SpecJSON: `{"schema":"run-workout/v1"}`, Provider: "coros", ProviderWorkoutID: "R-2",
+		PriorID: &id1,
+	})
+	if err != nil {
+		t.Fatalf("record 2: %v", err)
+	}
+	latest, err := st.GetLatestScheduledWorkoutForWorkout(ctx, uid, "w-1")
+	if err != nil || latest == nil || latest.ID != id2 {
+		t.Fatalf("latest after re-push: %v %+v", err, latest)
+	}
+	var first ScheduledWorkout
+	if err := st.db.WithContext(ctx).Where("id = ?", id1).First(&first).Error; err != nil {
+		t.Fatalf("reload prior: %v", err)
+	}
+	if first.Status != ScheduledWorkoutStatusSuperseded {
+		t.Errorf("prior status = %q, want superseded", first.Status)
+	}
+
+	// Other workout ids and plan-session lookups stay isolated.
+	if other, err := st.GetLatestScheduledWorkoutForWorkout(ctx, uid, "w-2"); err != nil || other != nil {
+		t.Errorf("other workout unexpectedly found: %v %+v", err, other)
+	}
+}

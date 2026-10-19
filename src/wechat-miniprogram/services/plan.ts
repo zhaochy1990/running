@@ -34,6 +34,7 @@ import {
   weekSubtitle,
 } from '../utils/date';
 import { fmtDose, fmtHms, fmtKm } from '../utils/format';
+import type { CustomWorkoutCard } from '../types/plan';
 
 /** 拉取用户某一周的活跃训练计划。 */
 export function getWeeklyPlan(userId: string, weekName: string): Promise<WeeklyPlanDetail> {
@@ -82,6 +83,40 @@ export function getPlanSessions(
 /** 删除自建课（软删：服务端归档该行）。 */
 export function deleteCustomWorkout(userId: string, workoutId: string): Promise<void> {
   return http.delete(`/api/users/me/custom-workouts/${encodeURIComponent(workoutId)}`);
+}
+
+/**
+ * 保存自建课（devops#587）：save_token 幂等 upsert —— 重放同一 token 更新同一
+ * 行（同一 workout_id），软删后重放则新建。卡片双 CTA（保存/推送）都先走它。
+ */
+export function upsertCustomWorkout(card: CustomWorkoutCard): Promise<PlanSessionRow> {
+  return http.post<PlanSessionRow>('/api/users/me/custom-workouts', {
+    date: card.date,
+    kind: 'run',
+    name: card.name,
+    summary: card.summary,
+    spec: card.spec,
+    total_distance_m: card.total_distance_m,
+    total_duration_s: card.total_duration_s,
+    estimated_dose: card.estimated_dose,
+    save_token: card.save_token,
+  });
+}
+
+/** 推送自建课到手表（未保存先保存的幂等链由调用方保证先后）。 */
+export interface PushCustomWorkoutResponse {
+  ok: boolean;
+  workout_id: string;
+  scheduled_workout_id: number;
+  provider: string;
+  provider_workout_id: string;
+  push_date: string;
+}
+
+export function pushCustomWorkout(workoutId: string): Promise<PushCustomWorkoutResponse> {
+  return http.post<PushCustomWorkoutResponse>(
+    `/api/users/me/custom-workouts/${encodeURIComponent(workoutId)}/push`,
+  );
 }
 
 // ---------------------------------------------------------------------------

@@ -125,6 +125,24 @@ export interface WeeklyPlanDetail {
 
 export type WorkoutSource = 'weekly' | 'custom' | 'watch';
 
+/**
+ * 教练自建课卡片（devops#587，$type: custom-workout）：save_token 是幂等保存键
+ * （POST /api/users/me/custom-workouts upsert），totals/dose 由后端确定性补齐。
+ * 与 @stride/contract CustomWorkoutCardSchema 镜像（仓内惯例：手工镜像）。
+ */
+export interface CustomWorkoutCard {
+  save_token: string;
+  /** 上海本地 YYYY-MM-DD */
+  date: string;
+  name: string;
+  summary: string;
+  advice?: string;
+  total_distance_m: number | null;
+  total_duration_s: number | null;
+  estimated_dose: number | null;
+  spec: NormalizedRunWorkout;
+}
+
 /** 统一 workout 行：某天要练什么的一次性投影（仅 active，按 weekly→custom→watch 排序） */
 export interface PlanSessionRow {
   workout_id: string;

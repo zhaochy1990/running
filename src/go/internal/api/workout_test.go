@@ -19,6 +19,7 @@ type fakeWorkoutStore struct {
 	upsertRow   *storage.Workout
 	listCustoms []storage.Workout
 	archived    bool
+	customs     map[string]*storage.Workout
 }
 
 func (f *fakeWorkoutStore) ListPlanSessions(_ context.Context, _, _, _ string) ([]storage.Workout, error) {
@@ -39,6 +40,14 @@ func (f *fakeWorkoutStore) ListCustomWorkouts(_ context.Context, _, _, _ string)
 
 func (f *fakeWorkoutStore) ArchiveCustomWorkout(_ context.Context, _, _ string) (bool, error) {
 	return f.archived, nil
+}
+
+func (f *fakeWorkoutStore) GetCustomWorkout(_ context.Context, userID, workoutID string) (*storage.Workout, error) {
+	row := f.customs[workoutID]
+	if row == nil || row.UserID != userID {
+		return nil, nil
+	}
+	return row, nil
 }
 
 // newWorkoutHarness builds the mp harness's auth stack plus a fake workout

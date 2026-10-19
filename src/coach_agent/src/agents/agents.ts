@@ -3,6 +3,8 @@ import type { GraphNode } from "@langchain/langgraph";
 import { type CoachAgentConfig, getAgentConfig } from "../config/config.js";
 import type { DataProvider } from "../data/dataProvider.js";
 import type { ActivityFeelWriter } from "../tools/feel.js";
+import { getCustomWorkoutAgent } from "./custom_workout/agent.js";
+import { type CalibrationResolver, makeCustomWorkoutNode } from "./custom_workout/node.js";
 import { getOrchestratorNode } from "./orchestrator.js";
 import { getOtherAgent } from "./other/agent.js";
 import { getQaAgent } from "./qa/agent.js";
@@ -39,7 +41,14 @@ export function getAgentNode(
     const agentConfig = getAgentConfig(config, "orchestrator");
     // master_plan 进 training 节点在聊天 turn 内同步跑 master kernel（#427）。
     // weekly_plan 暂留 qa（只读查看/解释周计划）——周计划的 turn 内生成另立票。
-    const routes = { training_question: "qa", weekly_plan: "qa", master_plan: "training", race_strategy: "race_strategy", other: "qa" };
+    const routes = {
+      training_question: "qa",
+      weekly_plan: "qa",
+      master_plan: "training",
+      race_strategy: "race_strategy",
+      custom_workout: "custom_workout",
+      other: "qa",
+    };
     return getOrchestratorNode(agentConfig, routes);
   }
 
@@ -53,6 +62,19 @@ export function getAgentNode(
     const agentConfig = getAgentConfig(config, "race_strategy");
     const raceAgent = getRaceStrategyAgent(dataProvider, agentConfig);
     return makeRaceStrategyNode(raceAgent);
+  }
+
+  if (agentName === "custom_workout") {
+    const agentConfig = getAgentConfig(config, "custom_workout");
+    const workoutAgent = getCustomWorkoutAgent(dataProvider, agentConfig);
+    // dose 确定性计算的校准读取与工具同源（dataProvider，读不到→卡片 dose=null）。
+    const resolveCalibration: CalibrationResolver = async (userId, asof) => {
+      const calibration = await dataProvider.getLatestRunningCalibration(userId, asof);
+      return calibration === null
+        ? null
+        : { thresholdSpeedMps: calibration.thresholdSpeedMps, thresholdHr: calibration.thresholdHr, rhrBaseline: calibration.rhrBaseline };
+    };
+    return makeCustomWorkoutNode({ agent: workoutAgent, resolveCalibration });
   }
 
   if (agentName === "other") {
