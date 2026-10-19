@@ -26,6 +26,8 @@ import 'package:stride/data/models/weekly_plan.dart';
 import 'package:stride/features_v2/plan/providers/week_detail_provider.dart';
 import 'package:stride/features_v2/plan/session_detail_screen.dart';
 
+import '../../helpers/workout_fixtures.dart';
+
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
 const _folder = '2026-05-11_05-17(W1基础)';
@@ -54,7 +56,8 @@ WeekDetailData _makeData(List<PlannedSession> sessions,
 }
 
 PlannedSession _sessionFromFixture(String name) {
-  final raw = File('../../../../tests/fixtures/workout/$name').readAsStringSync();
+  final raw =
+      File('${workoutFixturesDir().path}/$name').readAsStringSync();
   return PlannedSession.fromJson({
     'date': '2026-05-12',
     'session_index': 0,

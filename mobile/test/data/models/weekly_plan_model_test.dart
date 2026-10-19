@@ -10,6 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:stride/data/models/weekly_plan.dart';
 
+import '../../helpers/workout_fixtures.dart';
+
 void main() {
   test('run spec 无 schema 判别符 → kind 派发为 RunWorkoutSpec（旧存储形态）', () {
     final s = PlannedSession.fromJson({
@@ -102,7 +104,8 @@ void main() {
 
   group('#589 WorkoutStep duration/note/rest 解析（共享 fixtures）', () {
     PlannedSession sessionFromFixture(String name) {
-      final raw = File('../../../../tests/fixtures/workout/$name').readAsStringSync();
+      final raw =
+          File('${workoutFixturesDir().path}/$name').readAsStringSync();
       return PlannedSession.fromJson({
         'date': '2026-05-12',
         'session_index': 0,
