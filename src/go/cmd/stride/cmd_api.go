@@ -307,9 +307,11 @@ func runAPI() error {
 		WebhookEventStore:     store,
 		WebhookFetchJobType:   catalog.JobTypeProviderActivityFetch,
 		WebhookEnqueueEnabled: cfg.Webhook.EnqueueEnabled,
-		Auth:                  authn,
-		CORSOrigins:           cfg.API.CORSOrigins,
-		SwaggerEnabled:        cfg.API.SwaggerEnabled,
+		// Internal sync user list (devops#661) for the GHA workflows.
+		SyncUserLister: store,
+		Auth:           authn,
+		CORSOrigins:    cfg.API.CORSOrigins,
+		SwaggerEnabled: cfg.API.SwaggerEnabled,
 		Health: map[string]health.Check{
 			"mysql": store.Ping,
 			"rabbitmq": func(context.Context) error {

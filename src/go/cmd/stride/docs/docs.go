@@ -2486,6 +2486,55 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/internal/sync-users": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    }
+                ],
+                "description": "Internal-only. Distinct user_ids holding a provider credential, sorted, no PII — the daily/weekly sync workflow's user list (devops#660).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sync"
+                ],
+                "summary": "List syncable users (internal)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.syncUsersResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/pipelines/{run_id}": {
             "get": {
                 "security": [
@@ -2838,6 +2887,58 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/roadmap/features/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns one non-draft feature with its full markdown description for the detail page.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "roadmap"
+                ],
+                "summary": "Get one roadmap feature",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Feature id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.roadmapFeatureDetail"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/roadmap/features/{id}/vote": {
             "post": {
                 "security": [
@@ -3172,6 +3273,73 @@ const docTemplate = `{
                         "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/custom-workouts/{workoutId}/push": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Loads the caller's active custom workout, validates kind/spec/capability + optional ±7-day target_date, clears prior [STRIDE] watch entries (best-effort), pushes the normalized workout to the bound watch provider, and records a scheduled_workout row keyed by workout_id (superseding the prior one).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Push a user-authored workout to the user's watch",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Custom workout id",
+                        "name": "workoutId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Optional ISO YYYY-MM-DD date to actually push to (within ±7 days of the workout date)",
+                        "name": "target_date",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.pushCustomWorkoutResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Unsupported kind / missing spec / bad target_date / provider lacks capability",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Workout not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Upstream watch service rejected the push",
+                        "schema": {
+                            "type": "object"
                         }
                     }
                 }
@@ -10044,6 +10212,29 @@ const docTemplate = `{
                 }
             }
         },
+        "api.pushCustomWorkoutResponse": {
+            "type": "object",
+            "properties": {
+                "ok": {
+                    "type": "boolean"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "provider_workout_id": {
+                    "type": "string"
+                },
+                "push_date": {
+                    "type": "string"
+                },
+                "scheduled_workout_id": {
+                    "type": "integer"
+                },
+                "workout_id": {
+                    "type": "string"
+                }
+            }
+        },
         "api.pushPlannedSessionResponse": {
             "type": "object",
             "properties": {
@@ -11171,6 +11362,9 @@ const docTemplate = `{
                 "planned_note": {
                     "type": "string"
                 },
+                "summary": {
+                    "type": "string"
+                },
                 "title": {
                     "type": "string"
                 },
@@ -11201,6 +11395,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "status": {
+                    "type": "string"
+                },
+                "summary": {
                     "type": "string"
                 },
                 "title": {
@@ -11243,7 +11440,11 @@ const docTemplate = `{
                 "is_new": {
                     "type": "boolean"
                 },
+                "summary": {
+                    "type": "string"
+                },
                 "title": {
+                    "description": "Title + Summary are the list-row text; Summary (≤50 chars) is the blurb\nclients render, falling back to a truncation of the markdown Description\nwhen empty (legacy rows).",
                     "type": "string"
                 },
                 "voted": {
@@ -11272,9 +11473,43 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 16
                 },
+                "summary": {
+                    "description": "Summary is the ≤50-char list blurb; may be empty (clients then truncate\nthe description for list rows).",
+                    "type": "string",
+                    "maxLength": 50
+                },
                 "title": {
                     "type": "string",
                     "maxLength": 128
+                }
+            }
+        },
+        "api.roadmapFeatureDetail": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "planned_note": {
+                    "type": "string"
+                },
+                "released_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
                 }
             }
         },
@@ -11297,6 +11532,10 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 16
                 },
+                "summary": {
+                    "type": "string",
+                    "maxLength": 50
+                },
                 "title": {
                     "type": "string",
                     "maxLength": 128
@@ -11313,6 +11552,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "released_at": {
+                    "type": "string"
+                },
+                "summary": {
                     "type": "string"
                 },
                 "title": {
@@ -11839,6 +12081,20 @@ const docTemplate = `{
                         "incremental"
                     ],
                     "example": "incremental"
+                }
+            }
+        },
+        "api.syncUsersResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "users": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

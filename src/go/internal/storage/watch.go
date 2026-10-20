@@ -341,6 +341,25 @@ func (s *Store) DeleteCredential(ctx context.Context, userID, providerName strin
 		Delete(&ProviderCredential{}).Error
 }
 
+// ListSyncableUserIDs returns the distinct user_ids holding a provider
+// credential, sorted — the canonical "who should the daily/weekly sync cover"
+// set (devops#660/#661). Deliberately NOT unioned with sync_meta: a credential
+// is the live binding, while sync_meta rows can outlive a user (the erasure
+// race documented in devops#664), so only credentials make the list. IDs are
+// canonical lowercase UUIDs by write-side invariant: SaveCredential is the only
+// writer and it canonicalizes via canonicalUserID.
+func (s *Store) ListSyncableUserIDs(ctx context.Context) ([]string, error) {
+	var ids []string
+	if err := s.db.WithContext(ctx).
+		Model(&ProviderCredential{}).
+		Distinct().
+		Order("user_id").
+		Pluck("user_id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("storage: list syncable user ids: %w", err)
+	}
+	return ids, nil
+}
+
 // LatestActivityDevice returns the device model string of the user's most recent
 // activity (by date) for the watch status card. ok is false when the user has no
 // activity carrying a non-empty device.

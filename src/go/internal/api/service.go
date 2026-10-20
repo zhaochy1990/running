@@ -275,6 +275,11 @@ type Config struct {
 	WebhookFetchJobType   string
 	WebhookEnqueueEnabled bool
 
+	// SyncUserLister backs GET /api/internal/sync-users (devops#661): the
+	// internal-tier user list for the daily/weekly sync workflows. Satisfied by
+	// *storage.Store; leave zero to answer 503.
+	SyncUserLister SyncUserLister
+
 	Auth           *Authenticator
 	CORSOrigins    []string
 	SwaggerEnabled bool
@@ -339,6 +344,8 @@ type Service struct {
 	raceCatalog     *raceCatalogRoutes
 	workouts        *workoutRoutes
 	webhook         *webhookRoutes
+
+	syncUserLister SyncUserLister
 
 	auth           *Authenticator
 	corsOrigins    []string
@@ -412,6 +419,7 @@ func NewService(cfg Config) *Service {
 		raceCatalog:             newRaceCatalogRoutes(cfg.RaceCatalogStore, log),
 		workouts:                newWorkoutRoutes(cfg.WorkoutStore, cfg.WorkoutPusher, cfg.ScheduledWorkoutStore, log),
 		webhook:                 newWebhookRoutes(cfg.WebhookAdapters, cfg.WebhookEventStore, cfg.WebhookUserResolver, cfg.Enqueuer, cfg.WebhookFetchJobType, cfg.WebhookEnqueueEnabled, log),
+		syncUserLister:          cfg.SyncUserLister,
 		auth:                    cfg.Auth,
 		corsOrigins:             cfg.CORSOrigins,
 		swaggerEnabled:          cfg.SwaggerEnabled,
@@ -499,6 +507,9 @@ func (s *Service) Router() *gin.Engine {
 	authed.GET("/api/internal/jobs/:job_id", s.getInternalJob)
 	authed.POST("/api/internal/jobs/:job_id/transition", s.transitionJob)
 	authed.POST("/api/internal/jobs/stale-running", s.failStaleRunningJobs)
+	// Internal-tier sync user list (devops#661): the daily/weekly GHA
+	// workflows' user source, replacing data/.slug_aliases.json.
+	authed.GET("/api/internal/sync-users", s.listSyncUsers)
 	authed.POST("/pipelines", s.startPipeline)
 	authed.GET("/pipelines/:run_id", s.getPipelineRun)
 	authed.GET("/api/pipelines/:run_id", s.getPipelineRun)
