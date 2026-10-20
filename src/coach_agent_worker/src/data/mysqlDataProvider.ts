@@ -8,6 +8,7 @@ import type {
   DailyTrainingLoad,
   DataProvider,
   HeartRateZone,
+  DaySessionRow,
   MasterPlanDocument,
   PaceZone,
   PerformanceBaseline,
@@ -449,6 +450,37 @@ export class MySqlDataProvider implements DataProvider {
    * MySQL stores the week start only, so the caller-facing week identity is
    * reduced to its Monday date before querying.
    */
+  async getPlanSessions(userId: string, dateFrom: string, dateTo: string): Promise<DaySessionRow[]> {
+    const [rows] = await this.pool.query<RowDataPacket[]>(
+      `SELECT w.workout_id,
+              w.date,
+              w.source,
+              w.kind,
+              w.name,
+              w.summary,
+              w.spec_json,
+              EXISTS(SELECT 1 FROM scheduled_workout s
+                      WHERE s.user_id = w.user_id AND s.status = 'pushed'
+                        AND ((s.workout_id IS NOT NULL AND s.workout_id = w.workout_id)
+                          OR (s.workout_id IS NULL AND s.planned_date = w.date
+                              AND w.source = 'weekly' AND s.session_index <=> w.session_index))) AS pushed
+         FROM workout w
+        WHERE w.user_id = ? AND w.status = 'active' AND w.date BETWEEN ? AND ?
+        ORDER BY FIELD(w.source, 'weekly', 'custom', 'watch'), w.created_at`,
+      [userId, dateFrom, dateTo],
+    );
+    return rows.map((r) => ({
+      workout_id: String(r.workout_id),
+      date: String(r.date),
+      source: r.source,
+      kind: String(r.kind),
+      name: String(r.name),
+      summary: r.summary ?? null,
+      spec_json: r.spec_json ?? null,
+      pushed: Number(r.pushed) === 1,
+    }));
+  }
+
   async getWeeklyPlan(userId: string, weekName: string): Promise<WeeklyPlanDocument | null> {
     const weekStart = weekName.slice(0, 10);
     const [rows] = await this.pool.query<RowDataPacket[]>(

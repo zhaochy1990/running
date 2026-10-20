@@ -18,6 +18,8 @@ export interface DataProvider {
   getLatestRunningCalibration(userId: string, asOfDate: string): Promise<RunningCalibration | null>;
   getMasterPlan(userId: string, day: string): Promise<MasterPlanDocument | null>;
   getWeeklyPlan(userId: string, weekName: string): Promise<WeeklyPlanDocument | null>;
+  /** 统一训练安排投影（devops#586 三源：weekly/custom/watch active 行），供教练查询某天该练什么。 */
+  getPlanSessions(userId: string, dateFrom: string, dateTo: string): Promise<DaySessionRow[]>;
   getRaceTarget(userId: string): Promise<RaceTarget | null>;
   /** 一场赛事的内容聚合（race_calendar + items + race_city_content），供比赛策略；赛事不存在返回 null。 */
   getRaceCalendarContext(raceEventId: number): Promise<RaceCalendarContext | null>;
@@ -247,6 +249,20 @@ export interface RaceCalendarContext {
   content_source: string | null;
   items: RaceCalendarItemContent[];
   city_content: RaceCityContentBrief | null;
+}
+
+/** workout 表一行的教练查询投影（devops#586 三源统一读面）。 */
+export interface DaySessionRow {
+  workout_id: string;
+  date: string;
+  source: "weekly" | "custom" | "watch";
+  kind: string;
+  name: string;
+  summary: string | null;
+  /** 规范 spec 原文（run-workout/v1 或 strength-workout/v1）；查询端渲染摘要用。 */
+  spec_json: string | null;
+  /** 已推送到手表（scheduled_workout 有 pushed 行）。 */
+  pushed: boolean;
 }
 
 /** ability_snapshot L4 行的有界投影（取 as_of 前最近一天的整组）。 */
