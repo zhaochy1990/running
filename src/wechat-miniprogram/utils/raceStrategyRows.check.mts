@@ -77,6 +77,11 @@ const strategy: RaceStrategy = {
     { time_point: '20 km', content: '能量胶 1 支' },
     { time_point: '', content: '' },
   ],
+  fueling_checklist: [
+    { item: '能量胶（普通）', count: 3, note: '前半程每 40 分钟一支' },
+    { item: '双倍胶', count: 2, note: '30 km 起用，含咖啡因' },
+    { item: '', count: 1, note: '' },
+  ],
   course_tips: ['32km 爬坡提前降档'],
   weather_tips: ['穿背心+臂套'],
   basis_note: '近 90 天 L4 估计。',
@@ -92,6 +97,18 @@ eq(saved.pace_segments[0].pace, '5:40/km', '编辑回收 pace');
 eq(saved.pace_segments[0].segment_time, '56:40', '编辑后重算用时');
 eq(saved.pace_segments[0].cumulative_time, '56:40', '编辑后重算累计');
 eq(saved.fueling_plan.length, 2, '空补给行被过滤');
+
+// 打包清单：视图映射（note 兜底空串）+ 保存体原样带回（清单只读，不随编辑变）
+eq(view.checklistRows.length, 3, 'checklist 行数');
+eq(view.checklistRows[1].item, '双倍胶', 'checklist item');
+eq(view.checklistRows[1].count, 2, 'checklist count');
+eq(view.checklistRows[2].note, '', 'checklist note 兜底空串');
+eq(saved.fueling_checklist?.length, 3, '保存体带回清单');
+eq(saved.fueling_checklist?.[1].item, '双倍胶', '保存体清单内容');
+
+// 旧内容无清单字段：视图空清单（页面整卡隐藏）
+const legacy = toStrategyView({ ...strategy, fueling_checklist: undefined });
+eq(legacy.checklistRows.length, 0, '旧内容无清单 → 空清单');
 
 // 分享标题
 eq(strategyShareTitle(view), '我的杭州马拉松比赛策略 · 目标 3:59:59', 'share title');

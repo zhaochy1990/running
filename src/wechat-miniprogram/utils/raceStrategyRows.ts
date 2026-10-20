@@ -94,6 +94,14 @@ export interface FuelingRowView {
   content: string;
 }
 
+/** 补给打包清单的只读行：品类 ×数量 + 用法小字。 */
+export interface ChecklistRowView {
+  index: number;
+  item: string;
+  count: number;
+  note: string;
+}
+
 /** 报告页整体视图模型。 */
 export interface StrategyView {
   raceName: string;
@@ -105,6 +113,7 @@ export interface StrategyView {
   summary: string;
   paceRows: PaceRowView[];
   fuelingRows: FuelingRowView[];
+  checklistRows: ChecklistRowView[];
   courseTips: string[];
   weatherTips: string;
   basisNote: string;
@@ -148,6 +157,13 @@ export function toStrategyView(strategy: RaceStrategy): StrategyView {
       index: i,
       timePoint: f.time_point,
       content: f.content,
+    })),
+    // 打包清单是教练生成口径的汇总，报告页只读展示；旧内容无此字段按空隐藏。
+    checklistRows: (strategy.fueling_checklist ?? []).map((c, i) => ({
+      index: i,
+      item: c.item,
+      count: c.count,
+      note: c.note || '',
     })),
     courseTips: strategy.course_tips || [],
     weatherTips: (strategy.weather_tips || []).join('\n'),

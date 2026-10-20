@@ -65,14 +65,27 @@
         </view>
       </view>
 
-      <!-- 补给计划：只读 -->
+      <!-- 补给计划：只读；水站提示为固定口径（教练补给行不再写补水） -->
       <view class="card">
         <view class="card__title">补给计划</view>
+        <view class="fuel__water-tip">沿途每个水站都进站补水（全马后半程约每 2.5 km、半马与全马前半程约每 5 km 一站）</view>
         <view class="fuel-row" wx:for="{{view.fuelingRows}}" wx:for-item="row" wx:key="index">
           <view class="fuel">
             <view class="fuel__when">{{row.timePoint}}</view>
           </view>
           <view wx:if="{{row.content}}" class="fuel__what">{{row.content}}</view>
+        </view>
+      </view>
+
+      <!-- 补给打包清单：只读；旧版本内容无清单字段时整卡隐藏 -->
+      <view class="card" wx:if="{{view.checklistRows.length > 0}}">
+        <view class="card__title">补给打包清单<text class="card__hint">开跑前照单装包</text></view>
+        <view class="check-row" wx:for="{{view.checklistRows}}" wx:for-item="row" wx:key="index">
+          <view class="check">
+            <view class="check__item">{{row.item}}</view>
+            <view class="check__count">×{{row.count}}</view>
+          </view>
+          <view wx:if="{{row.note}}" class="check__note">{{row.note}}</view>
         </view>
       </view>
 

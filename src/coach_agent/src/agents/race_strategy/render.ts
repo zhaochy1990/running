@@ -25,6 +25,13 @@ export function renderRaceStrategyMarkdown(strategy: RaceStrategy): string {
       lines.push(`- ${item.time_point}｜${item.content}`);
     }
   }
+  if (strategy.fueling_checklist.length > 0) {
+    lines.push("");
+    lines.push("**补给打包清单**");
+    for (const entry of strategy.fueling_checklist) {
+      lines.push(`- ${entry.item} ×${entry.count}${entry.note ? ` —— ${entry.note}` : ""}`);
+    }
+  }
   if (strategy.course_tips.length > 0) {
     lines.push("");
     lines.push("**赛道提示**");

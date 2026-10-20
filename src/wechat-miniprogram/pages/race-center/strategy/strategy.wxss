@@ -279,6 +279,44 @@
   padding: 8rpx 0;
 }
 
+/* 固定口径的水站提示（教练补给行不再写补水） */
+.fuel__water-tip {
+  margin-bottom: 16rpx;
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: #8a8a8c;
+}
+
+/* 补给打包清单：品类 ×数量 一行，用法小字跟随 */
+.check-row {
+  padding: 14rpx 0;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+}
+.check-row:last-child {
+  border-bottom: none;
+}
+.check {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+.check__item {
+  font-size: 26rpx;
+  color: #f2f2f3;
+}
+.check__count {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #d8ff3e;
+}
+.check__note {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  line-height: 30rpx;
+  color: #8a8a8c;
+}
+
 .tip {
   font-size: 26rpx;
   color: #b9b9bc;

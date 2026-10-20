@@ -22,6 +22,10 @@ const strategy: RaceStrategy = {
     { time_point: "赛前 30 分钟", content: "能量胶 1 支 + 水 200ml" },
     { time_point: "20 km", content: "能量胶 1 支" },
   ],
+  fueling_checklist: [
+    { item: "能量胶（普通）", count: 3, note: "前半程每 40 分钟一支" },
+    { item: "双倍胶", count: 1, note: "30 km 起用，含咖啡因" },
+  ],
   course_tips: ["32km 钱塘江大桥爬坡提前降档"],
   weather_tips: ["11 月杭州早晨 12–16℃，穿背心+臂套"],
   basis_note: "以 2025 届官方路线与调研的补给站信息为参考；2026 届路线待公布。",
@@ -48,6 +52,17 @@ test("race-strategy prompt gates generation on race content and asks the athlete
   assert.doesNotMatch(RACE_STRATEGY_PROMPT, /进取/);
   assert.doesNotMatch(RACE_STRATEGY_PROMPT, /能力 L4/);
   assert.match(RACE_STRATEGY_PROMPT, /不得包含对运动员跑步能力的分析/);
+  // 补给口径（#396 补给优化）：水站交给客户端固定提示、胶分普通/双倍、
+  // 盐丸分颗粒/液体、四款常备品二选一，打包清单按品类汇总。
+  assert.match(RACE_STRATEGY_PROMPT, /禁止写单纯的喝水\/补水行/);
+  assert.match(RACE_STRATEGY_PROMPT, /每个水站都进站补水/);
+  assert.match(RACE_STRATEGY_PROMPT, /双倍胶/);
+  assert.match(RACE_STRATEGY_PROMPT, /颗粒盐丸/);
+  assert.match(RACE_STRATEGY_PROMPT, /液体盐丸/);
+  assert.match(RACE_STRATEGY_PROMPT, /赛速饮/);
+  assert.match(RACE_STRATEGY_PROMPT, /速耐饮/);
+  assert.match(RACE_STRATEGY_PROMPT, /酸轻片Pro/);
+  assert.match(RACE_STRATEGY_PROMPT, /fueling_checklist/);
 });
 
 test("race-strategy prompt asks first on generic entry before generating (#513)", () => {
@@ -73,6 +88,10 @@ test("renderRaceStrategyMarkdown covers the #385 display contract", () => {
   assert.match(markdown, /赛前 30 分钟｜能量胶 1 支 \+ 水 200ml/);
   assert.match(markdown, /钱塘江大桥爬坡/);
   assert.match(markdown, /依据：/);
+  // 补给打包清单：品类 ×数量 + 用法小字
+  assert.match(markdown, /补给打包清单/);
+  assert.match(markdown, /能量胶（普通） ×3/);
+  assert.match(markdown, /双倍胶 ×1/);
 });
 
 test("race-strategy node writes a rendered reply and the artifact for a structured turn", async () => {

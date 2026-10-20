@@ -100,9 +100,11 @@
       </view>
 
       <!-- 补给计划：逐行可编辑 + 增删。行结构同分段配速表：时间点为行首
-           短值（可编辑），内容是长文整行 textarea 自适应换行，不再截断 -->
+           短值（可编辑），内容是长文整行 textarea 自适应换行，不再截断。
+           水站提示是固定口径（教练不再写补水行）：每个水站都进站补水 -->
       <view class="card">
         <view class="card__title">补给计划<text class="card__hint">时间点｜内容，可增删</text></view>
+        <view class="fuel__water-tip">沿途每个水站都进站补水（全马后半程约每 2.5 km、半马与全马前半程约每 5 km 一站）</view>
         <view class="fuel-row" wx:for="{{view.fuelingRows}}" wx:for-item="row" wx:key="index">
           <view class="fuel">
             <input
@@ -118,12 +120,25 @@
             class="fuel__what pace__cell--edit"
             auto-height
             value="{{row.content}}"
-            placeholder="内容（能量胶 / 水 / 电解质…）"
+            placeholder="内容（能量胶 / 盐丸 / 赛速饮…）"
             data-index="{{index}}"
             bindblur="onFuelingWhatBlur"
           />
         </view>
         <view class="fuel__add" bindtap="onFuelingAdd">+ 添加一条补给</view>
+      </view>
+
+      <!-- 补给打包清单：教练按品类汇总的打包量（只读，照单装包）；
+           旧版本内容无清单字段时整卡隐藏 -->
+      <view class="card" wx:if="{{view.checklistRows.length > 0}}">
+        <view class="card__title">补给打包清单<text class="card__hint">开跑前照单装包</text></view>
+        <view class="check-row" wx:for="{{view.checklistRows}}" wx:for-item="row" wx:key="index">
+          <view class="check">
+            <view class="check__item">{{row.item}}</view>
+            <view class="check__count">×{{row.count}}</view>
+          </view>
+          <view wx:if="{{row.note}}" class="check__note">{{row.note}}</view>
+        </view>
       </view>
 
       <!-- 提示：赛道（来自调研内容）+ 天气 -->

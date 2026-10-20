@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { RaceStrategySchema } from "./schema.js";
+import { RaceStrategyDirectResponseSchema, RaceStrategySchema } from "./schema.js";
 
 const validStrategy = {
   race_name: "杭州马拉松",
@@ -43,4 +43,38 @@ test("race strategy skips the arithmetic check when rows are not computable", ()
 test("race strategy rejects a malformed target finish time", () => {
   const parsed = RaceStrategySchema.safeParse({ ...validStrategy, target_finish_time: "3.99.59" });
   assert.equal(parsed.success, false);
+});
+
+test("race strategy defaults the packing checklist for content without it", () => {
+  // 旧版本内容无 fueling_checklist：存储态解析不拦，读侧按空清单隐藏
+  const parsed = RaceStrategySchema.safeParse(validStrategy);
+  assert.equal(parsed.success, true);
+  if (parsed.success) assert.deepEqual(parsed.data.fueling_checklist, []);
+});
+
+test("race strategy accepts a packing checklist with counts", () => {
+  const parsed = RaceStrategySchema.safeParse({
+    ...validStrategy,
+    fueling_checklist: [
+      { item: "能量胶（普通）", count: 3, note: "前半程每 40 分钟一支" },
+      { item: "双倍胶", count: 2, note: "30 km 起用，含咖啡因" },
+      { item: "盐丸（颗粒）", count: 4, note: "需水送服" },
+    ],
+  });
+  assert.equal(parsed.success, true);
+});
+
+test("direct envelope rejects a strategy without the packing checklist", () => {
+  // 生成态（ToolStrategy 结构化输出）比存储态严：清单必须给出，缺了打回重试
+  const envelope = {
+    disposition: "return_direct",
+    content: { ...validStrategy, fueling_plan: [{ time_point: "赛前 30 分钟", content: "能量胶 1 支" }] },
+  };
+  const missing = RaceStrategyDirectResponseSchema.safeParse(envelope);
+  assert.equal(missing.success, false);
+  const withChecklist = RaceStrategyDirectResponseSchema.safeParse({
+    ...envelope,
+    content: { ...envelope.content, fueling_checklist: [{ item: "能量胶（普通）", count: 3, note: "" }] },
+  });
+  assert.equal(withChecklist.success, true);
 });

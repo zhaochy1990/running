@@ -32,6 +32,16 @@ export const RaceFuelingItemSchema = z.object({
   content: z.string().min(1),
 });
 
+/** 补给打包清单一行：按品类汇总的打包量（教练生成，报告页只读展示）。 */
+export const RaceFuelingChecklistItemSchema = z.object({
+  /** 品类名，如 "能量胶（普通）" / "双倍胶" / "盐丸（颗粒）" / "赛速饮"。 */
+  item: z.string().min(1),
+  /** 打包数量（支/粒/袋/片）。 */
+  count: z.number().int().positive(),
+  /** 一句用法提示（何时用/是否需水送服）。 */
+  note: z.string(),
+});
+
 export const RaceStrategySchema = z
   .object({
     race_name: z.string().min(1),
@@ -43,6 +53,9 @@ export const RaceStrategySchema = z
     summary: z.string().min(1),
     pace_segments: z.array(RacePaceSegmentSchema).min(1),
     fueling_plan: z.array(RaceFuelingItemSchema),
+    /** 补给打包清单：按品类汇总的打包量（普通胶/双倍胶/盐丸/饮品/片剂…）。
+     *  default([])：旧版本内容无此字段照常解析，报告页按空清单隐藏。 */
+    fueling_checklist: z.array(RaceFuelingChecklistItemSchema).max(12).default([]),
     /** 赛道提示（难点/爬升/折返，来自赛事内容）。 */
     course_tips: z.array(z.string()),
     /** 天气提示（赛期气候/着装/补水口径）。 */
@@ -93,9 +106,21 @@ function formatHms(sec: number): string {
 export type RaceStrategy = z.infer<typeof RaceStrategySchema>;
 export type RacePaceSegment = z.infer<typeof RacePaceSegmentSchema>;
 export type RaceFuelingItem = z.infer<typeof RaceFuelingItemSchema>;
+export type RaceFuelingChecklistItem = z.infer<typeof RaceFuelingChecklistItemSchema>;
 
-/** 会话直出信封（与 master plan 同形）：子代理最终结构化输出。 */
+/**
+ * 会话直出信封（与 master plan 同形）：子代理最终结构化输出。生成态比存储态
+ * 严一点：补给打包清单必须给出（缺了就打回重试）；存储态 default([]) 兜底旧内容。
+ */
 export const RaceStrategyDirectResponseSchema = z.object({
   disposition: z.literal("return_direct"),
-  content: RaceStrategySchema,
+  content: RaceStrategySchema.superRefine((strategy, ctx) => {
+    if (strategy.fueling_checklist.length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["fueling_checklist"],
+        message: "fueling_checklist must summarize the packing counts (normal/double gels, salt pills, drinks, tablets)",
+      });
+    }
+  }),
 });

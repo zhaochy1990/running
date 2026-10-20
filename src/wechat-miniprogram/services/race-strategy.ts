@@ -26,6 +26,16 @@ export interface RaceFuelingItem {
   content: string;
 }
 
+/** 补给打包清单一行：品类｜数量｜用法提示（教练生成，页面只读展示）。 */
+export interface RaceFuelingChecklistItem {
+  /** 品类名，如「能量胶（普通）」「双倍胶」「盐丸（颗粒）」「赛速饮」。 */
+  item: string;
+  /** 打包数量（支/粒/袋/片）。 */
+  count: number;
+  /** 一句用法提示（何时用/是否需水送服）。 */
+  note: string;
+}
+
 /** 教练生成的比赛策略内容（RaceStrategySchema 镜像）。 */
 export interface RaceStrategy {
   race_name: string;
@@ -34,6 +44,8 @@ export interface RaceStrategy {
   summary: string;
   pace_segments: RacePaceSegment[];
   fueling_plan: RaceFuelingItem[];
+  /** 旧版本内容无此字段（存储态缺省为空清单，页面按空隐藏）。 */
+  fueling_checklist?: RaceFuelingChecklistItem[];
   course_tips: string[];
   weather_tips: string[];
   basis_note: string;
