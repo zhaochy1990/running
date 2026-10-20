@@ -111,3 +111,6 @@ src/wechat-miniprogram/custom-tab-bar/*.js
 .dispatch/
 docs/~$CoachAgent.drawio.dtmp
 .dsa/
+
+# TypeScript incremental build cache
+*.tsbuildinfo
