@@ -17,5 +17,7 @@ export const users = [
     // gaohan
     "ba103cff-ad2c-4f9e-9920-983337544a2c",
     // zhaochaoyi
-    "f10bc353-01ab-4db1-af9f-d9305ea9a532"
+    "f10bc353-01ab-4db1-af9f-d9305ea9a532",
+    // 胡正杰 (devops#642: joined 2026-08, has active weekly/master plans)
+    "5177ff88-c0b7-4b3d-8c4e-80387af503e6"
 ];
