@@ -75,9 +75,10 @@ func TestListPlanSessionsHandler(t *testing.T) {
 		weeklyIdx := 0
 		// Fixture order mirrors the store's ORDER BY contract (weekly→custom→watch);
 		// the SQL-level ordering itself is covered by the storage tests.
+		customToken := "card-save-token-1"
 		store.sessions = []storage.Workout{
 			{WorkoutID: uuid.NewString(), Date: "2026-01-19", Source: storage.WorkoutSourceWeekly, Kind: "run", Name: "weekly-row", EstimatedDose: &dose, SessionIndex: &weeklyIdx},
-			{WorkoutID: uuid.NewString(), Date: "2026-01-19", Source: storage.WorkoutSourceCustom, Kind: "strength", Name: "custom-row"},
+			{WorkoutID: uuid.NewString(), Date: "2026-01-19", Source: storage.WorkoutSourceCustom, Kind: "strength", Name: "custom-row", SaveToken: &customToken},
 			{WorkoutID: uuid.NewString(), Date: "2026-01-19", Source: storage.WorkoutSourceWatch, Kind: "run", Name: "watch-row"},
 		}
 		w := h.do(http.MethodGet, "/api/users/me/plan/sessions?date_from=2026-01-19&date_to=2026-01-25", h.bearer(t, user))
@@ -102,6 +103,12 @@ func TestListPlanSessionsHandler(t *testing.T) {
 		}
 		if resp.Sessions[2].EstimatedDose != nil {
 			t.Fatalf("watch dose must be null, got %v", *resp.Sessions[2].EstimatedDose)
+		}
+		if resp.Sessions[1].SaveToken == nil || *resp.Sessions[1].SaveToken != "card-save-token-1" {
+			t.Errorf("custom save_token = %v, want card-save-token-1", resp.Sessions[1].SaveToken)
+		}
+		if resp.Sessions[0].SaveToken != nil {
+			t.Errorf("weekly save_token must be null, got %v", *resp.Sessions[0].SaveToken)
 		}
 	})
 

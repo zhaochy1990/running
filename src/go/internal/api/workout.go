@@ -130,6 +130,9 @@ type planSessionDTO struct {
 	ProviderEntityID *string         `json:"provider_entity_id"`
 	CreatedAt        string          `json:"created_at"`
 	UpdatedAt        string          `json:"updated_at"`
+	// SaveToken echoes the custom row's idempotency token so clients can
+	// reconcile chat-card state ("已保存/已推送") across reloads.
+	SaveToken *string `json:"save_token"`
 	// Pushed reports whether a pushed scheduled_workout row exists for this
 	// row (custom: same workout_id; weekly: same date + session_index).
 	Pushed bool `json:"pushed"`
@@ -148,7 +151,7 @@ func newPlanSessionDTO(row storage.Workout) planSessionDTO {
 		TotalDistanceM: row.TotalDistanceM, TotalDurationS: row.TotalDurationS,
 		EstimatedDose: row.EstimatedDose, SessionIndex: row.SessionIndex,
 		PlanID: row.PlanID, Provider: row.Provider, ProviderEntityID: row.ProviderEntityID,
-		CreatedAt: created, UpdatedAt: updated,
+		CreatedAt: created, UpdatedAt: updated, SaveToken: row.SaveToken,
 	}
 }
 

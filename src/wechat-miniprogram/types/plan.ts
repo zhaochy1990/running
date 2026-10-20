@@ -171,6 +171,8 @@ export interface PlanSessionRow {
   provider_entity_id: string | null;
   /** 已推送到手表（scheduled_workout 有 pushed 行；custom 按 workout_id、weekly 按日期+序号匹配） */
   pushed: boolean;
+  /** custom 行的幂等令牌（=教练卡片信封 save_token），聊天卡刷新后对账用 */
+  save_token: string | null;
 }
 
 // ---------------------------------------------------------------------------

@@ -8,7 +8,7 @@ import {
   type MasterPlanReplacementExpectation,
 } from '../../services/master-plan';
 import { ApiError } from '../../services/request';
-import { pushCustomWorkout, upsertCustomWorkout } from '../../services/plan';
+import { getPlanSessions, pushCustomWorkout, upsertCustomWorkout } from '../../services/plan';
 import type { CustomWorkoutCard, PlanSessionRow } from '../../types/plan';
 import { setPendingStrategyDraft, type RaceStrategy } from '../../services/race-strategy';
 import { userStore } from '../../store/index';
@@ -147,6 +147,7 @@ interface CoachPageHandlers {
   saveCustomWorkoutCard(messageId: number, opts?: { alreadyGuarded?: boolean; silent?: boolean }): Promise<PlanSessionRow | null>;
   pushCustomWorkoutCard(messageId: number): Promise<void>;
   markCustomWorkoutCard(messageId: number, badge: string, keepPrimary: boolean, keepSecondary: boolean): void;
+  reconcileCustomWorkoutCards(msgs: CoachMessage[]): Promise<void>;
   applyPlanContent(
     messageId: number,
     userId: string,
@@ -483,6 +484,13 @@ Page<CoachPageData, CoachPageHandlers>({
         seq = 0;
         msgs = welcomeMessages();
       }
+      // 自建课卡片对账：历史是静态快照，卡片按钮态只活在内存里，刷新即回退
+      // （10-20 用户实证）。用课表行的 save_token 对上卡片信封，恢复终态。
+      try {
+        await this.reconcileCustomWorkoutCards(msgs);
+      } catch {
+        // 对账失败按未保存渲染（旧版 Go api 无 save_token 时同样静默降级）。
+      }
       this.setData({
         messages: msgs,
         scrollIntoId: `msg-${msgs[msgs.length - 1].id}`,
@@ -747,6 +755,43 @@ Page<CoachPageData, CoachPageHandlers>({
       [`messages[${index}].card.buttonText`]: keepPrimary ? card.buttonText : '',
       [`messages[${index}].card.secondaryButtonText`]: keepSecondary ? card.secondaryButtonText : '',
     });
+  },
+
+  /**
+   * 自建课卡片对账：历史消息是 checkpoint 静态快照，按钮终态只活在内存，
+   * 刷新/重进后卡片会回到「待保存」原状（10-20 用户实证）。用课表行的
+   * save_token 对上卡片信封，恢复终态（已保存收主 CTA；已推送收双）。
+   * 对账窗口取全部卡片日期的 min~max；任何失败静默保持原状（旧版 Go api
+   * 无 save_token 时同样降级为未保存）。
+   */
+  async reconcileCustomWorkoutCards(msgs: CoachMessage[]) {
+    const uid = userStore.getState().user?.id;
+    if (!uid) return;
+    const cards = msgs
+      .map((m) => m.card)
+      .filter((c): c is CoachCardView & { type: 'custom-workout'; data: CustomWorkoutCard } =>
+        Boolean(c && c.type === 'custom-workout' && (c.data as CustomWorkoutCard)?.save_token),
+      );
+    if (cards.length === 0) return;
+    const dates = cards.map((c) => c.data.date).sort();
+    const { sessions } = await getPlanSessions(uid, dates[0], dates[dates.length - 1]);
+    const byToken = new Map(
+      sessions
+        .filter((r) => r.source === 'custom' && r.save_token)
+        .map((r) => [r.save_token as string, r]),
+    );
+    for (const card of cards) {
+      const row = byToken.get(card.data.save_token);
+      if (!row) continue;
+      if (row.pushed === true) {
+        card.badge = '已推送';
+        card.buttonText = '';
+        card.secondaryButtonText = '';
+      } else {
+        card.badge = '已保存';
+        card.buttonText = '';
+      }
+    }
   },
 
   /**
