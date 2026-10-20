@@ -64,6 +64,13 @@ jobs:
     name: Checks
     needs: bump-versions
     if: needs.bump-versions.outputs.changed != ''
+    # ci.yml requests pull-requests: read for its change-detection steps; a
+    # called workflow's permission request must be covered by the caller, so
+    # this job grants the read pair explicitly (narrower than the workflow's
+    # contents:write — the checks never need to write).
+    permissions:
+      contents: read
+      pull-requests: read
     uses: ./.github/workflows/ci.yml
     with:
       full: true
