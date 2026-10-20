@@ -124,6 +124,23 @@ func targetBlock(step provider.WorkoutStep) map[string]any {
 	}
 }
 
+// restFollowupStep materializes a work step's step-level rest ("rest" field,
+// devops#520 D2 idiom) as a standalone recovery step. Garmin steps have no
+// native rest slot, so without this the rest is silently dropped at translate
+// time. Only time_s is translatable; manual / hr_bpm have no precise Garmin
+// equivalent and stay dropped.
+func restFollowupStep(step provider.WorkoutStep) (provider.WorkoutStep, bool) {
+	rest := step.Rest
+	if rest == nil || rest.Kind != "time_s" || rest.Value == nil || *rest.Value <= 0 {
+		return provider.WorkoutStep{}, false
+	}
+	secs := float64(*rest.Value)
+	return provider.WorkoutStep{
+		StepKind: provider.StepRecovery,
+		Duration: provider.Duration{Kind: provider.DurationTimeS, Value: &secs},
+	}, true
+}
+
 func executableStep(step provider.WorkoutStep, stepOrder int) map[string]any {
 	endCond, endValue, endUnit := endCondition(step)
 	payload := map[string]any{
@@ -193,10 +210,27 @@ func stepDescription(step provider.WorkoutStep) string {
 
 func repeatBlock(block provider.WorkoutBlock, stepOrder, baseChildStepID int) map[string]any {
 	nested := make([]map[string]any, 0, len(block.Steps))
+	// A block that already carries standalone recovery/rest steps expresses its
+	// rest in the old idiom — do not double-materialize a work step's rest
+	// field on top of it.
+	hasStandaloneRest := false
+	for _, s := range block.Steps {
+		if s.StepKind == provider.StepRecovery || s.StepKind == provider.StepRest {
+			hasStandaloneRest = true
+			break
+		}
+	}
 	for i, step := range block.Steps {
 		child := executableStep(step, stepOrder+i+1)
 		child["childStepId"] = baseChildStepID
 		nested = append(nested, child)
+		if !hasStandaloneRest {
+			if follow, ok := restFollowupStep(step); ok {
+				followChild := executableStep(follow, stepOrder+i+1)
+				followChild["childStepId"] = baseChildStepID
+				nested = append(nested, followChild)
+			}
+		}
 	}
 	return map[string]any{
 		"type":               "RepeatGroupDTO",
@@ -225,6 +259,10 @@ func buildSteps(workout provider.RunWorkout) []map[string]any {
 			for _, step := range block.Steps {
 				out = append(out, executableStep(step, stepOrder))
 				stepOrder++
+				if follow, ok := restFollowupStep(step); ok {
+					out = append(out, executableStep(follow, stepOrder))
+					stepOrder++
+				}
 			}
 			stepOrder-- // we incremented once at top of loop already
 		}

@@ -144,7 +144,7 @@ interface CoachPageHandlers {
   // master-plan 卡片动作（#429）：启用（含替换确认）/放弃 + 卡片状态回写。
   applyMasterPlanCard(messageId: number): Promise<void>;
   // custom-workout 卡片动作（devops#587）：保存 / 推送 + 角标回写。
-  saveCustomWorkoutCard(messageId: number, opts?: { alreadyGuarded?: boolean }): Promise<PlanSessionRow | null>;
+  saveCustomWorkoutCard(messageId: number, opts?: { alreadyGuarded?: boolean; silent?: boolean }): Promise<PlanSessionRow | null>;
   pushCustomWorkoutCard(messageId: number): Promise<void>;
   markCustomWorkoutCard(messageId: number, badge: string, keepPrimary: boolean, keepSecondary: boolean): void;
   applyPlanContent(
@@ -589,8 +589,9 @@ Page<CoachPageData, CoachPageHandlers>({
   },
 
   /** 保存自建课卡片：save_token 幂等 upsert，成功回写「已保存」角标并收掉主
-   * CTA；失败不写终态可重试。返回 workout 行（推送链复用同一入口）。 */
-  async saveCustomWorkoutCard(messageId: number, opts: { alreadyGuarded?: boolean } = {}): Promise<PlanSessionRow | null> {
+   * CTA（推送按钮保留，保存后仍可推送）；失败不写终态可重试。返回 workout
+   * 行（推送链复用同一入口，silent 不弹 toast 以免顶掉推送 loading）。 */
+  async saveCustomWorkoutCard(messageId: number, opts: { alreadyGuarded?: boolean; silent?: boolean } = {}): Promise<PlanSessionRow | null> {
     const message = this.data.messages.find((m) => m.id === messageId);
     const card = message?.card?.data as CustomWorkoutCard | undefined;
     if (!card?.save_token || !card.spec) {
@@ -606,7 +607,8 @@ Page<CoachPageData, CoachPageHandlers>({
     planActionInFlight = card.save_token;
     try {
       const row = await upsertCustomWorkout(card);
-      this.markCustomWorkoutCard(messageId, '已保存', true, true);
+      this.markCustomWorkoutCard(messageId, '已保存', false, true);
+      if (!opts.silent) wx.showToast({ title: '已保存', icon: 'success' });
       return row;
     } catch {
       wx.showToast({ title: '保存失败，请稍后再试', icon: 'none' });
@@ -624,7 +626,7 @@ Page<CoachPageData, CoachPageHandlers>({
     planActionInFlight = 'push';
     wx.showLoading({ title: '推送中...', mask: true });
     try {
-      const row = await this.saveCustomWorkoutCard(messageId, { alreadyGuarded: true });
+      const row = await this.saveCustomWorkoutCard(messageId, { alreadyGuarded: true, silent: true });
       if (!row?.workout_id) return;
       await pushCustomWorkout(row.workout_id);
       this.markCustomWorkoutCard(messageId, '已推送', false, false);

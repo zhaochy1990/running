@@ -1,6 +1,6 @@
 import { SystemMessage } from "@langchain/core/messages";
 import { Command, END, type GraphNode } from "@langchain/langgraph";
-import { buildModel, getLogger } from "@stride/common";
+import { buildChatModel, getLogger } from "@stride/common";
 import type { ModelConfig } from "../config/config.js";
 import { type AgentsState, IntentClassificationSchema, type IntentLabel } from "./state.js";
 
@@ -15,7 +15,7 @@ export const ORCHESTRATOR_INTENT_PROMPT = `Analyze the user's utterance and clas
 - "training_question"：关于训练状态、疲劳、指标或跑步知识的问答；查看/解读已生成的计划
 - "other"：不属于以上任何一类
 
-判断依据是用户的**意图**，不是句中出现了「周 / 计划」：问训练跑得怎样、状态如何属于 training_question；查看已写好的计划（周或赛季）分别属于 weekly_plan / training_question；只有要**生成**或**整体重排**赛季计划才是 master_plan（耗时数分钟的完整规划）；描述一节具体课表（组数/距离/配速/休息）要落成单次训练课时才是 custom_workout——调整周计划里的某一天仍是 weekly_plan，「明天跑什么」这类提问仍是 training_question。
+判断依据是用户的**意图**，不是句中出现了「周 / 计划」：问训练跑得怎样、状态如何属于 training_question；查看已写好的计划（周或赛季）分别属于 weekly_plan / training_question；只有要**生成**或**整体重排**赛季计划才是 master_plan（耗时数分钟的完整规划）；要**创建**单次训练课就是 custom_workout——结构没说全（缺配速/日期/组数）也是 custom_workout（后续会追问补齐），不必等结构完整；描述一节具体课表（组数/距离/配速/休息）要落成单次训练课时才是 custom_workout——调整周计划里的某一天仍是 weekly_plan，「明天跑什么」这类提问仍是 training_question。
 示例（message → intent）：
 - "我这周跑的怎么样？" → training_question
 - "最近状态怎么样，累不累？" → training_question
@@ -32,29 +32,40 @@ export const ORCHESTRATOR_INTENT_PROMPT = `Analyze the user's utterance and clas
 - "再帮我出一版 250 的策略" → race_strategy
 - "我明天想跑3组4km，每个4k配速350-400，组间休息3分钟，第三个4k跑完接着跑6个400m，配速325-335，组间休息90秒" → custom_workout
 - "帮我建一节课：10km 有氧，配速530-600" → custom_workout
+- "帮我生成单次训练课程" → custom_workout（想建课但还没给结构，先追问补齐）
+- "配速430" → custom_workout（课程创建追问中的回答，结合上文）
 - "今天天气怎么样" → other
 
-Provide classification including intent.
+Provide classification including intent. Respond with a single JSON object: {"intent": "<label>"}.
         `;
 
 export function getOrchestratorNode(modelConfig: ModelConfig, routes: Partial<Record<IntentLabel, string>> = {}): GraphNode<typeof AgentsState> {
-  const model = buildModel(modelConfig);
-  // Create structured LLM that returns an IntentClassification object.
-  // DeepSeek Chat Completions does not support the `json_schema` response_format,
-  // so force function-calling (tool-calling) mode for the structured decode.
-  const structuredLlm = model.withStructuredOutput(IntentClassificationSchema, { method: "functionCalling" });
+  // 角色 yaml 固定 api_kind=chat-completions（DeepSeek），直接取 ChatOpenAI。
+  const model = buildChatModel(modelConfig);
+  // DeepSeek Chat Completions 两条结构化路都不可靠：response_format json_schema
+  // 直接 400（"This response_format type is unavailable now"，2026-10 实证）；
+  // functionCalling 依赖 flash 触发 tool call，偶发不触发时 langchain 静默返回
+  // undefined，该轮分类必挂兜底（10-20 生产实证：追问轮连挂两次掉 qa）。所以
+  // 走 JSON mode（json_object 只保证合法 JSON 文本）+ 本地 zod 硬校验。
   const prompt = ORCHESTRATOR_INTENT_PROMPT;
 
   const node: GraphNode<typeof AgentsState> = async (state) => {
-    const raw = await structuredLlm.invoke([new SystemMessage(prompt), ...state.messages]);
-
     // The structured decode is best-effort: a local model may return an
-    // off-schema / empty object. Degrade to "other" instead of crashing the
-    // graph on the strict `intent` channel.
-    const parsed = IntentClassificationSchema.safeParse(raw);
-    const classification = parsed.success ? parsed.data : { intent: "other" as const };
+    // off-schema / empty object. Degrade to the previous turn's intent
+    // (追问延续的先验：上一轮已进入某任务的对话，本轮更可能是延续而非换题；
+    // 首轮 intent 为 null 落 "other") instead of crashing the graph on the
+    // strict `intent` channel.
+    let parsed: ReturnType<typeof IntentClassificationSchema.safeParse> = { success: false, error: undefined as never };
+    try {
+      const raw = await model.invoke([new SystemMessage(prompt), ...state.messages], { response_format: { type: "json_object" } });
+      parsed = IntentClassificationSchema.safeParse(JSON.parse(raw.text));
+    } catch (error) {
+      logger.warn({ error }, "orchestrator: intent decode failed");
+    }
+
+    const classification = parsed.success ? parsed.data : state.intent ?? { intent: "other" as const };
     if (!parsed.success) {
-      logger.warn({ raw, issues: parsed.error.issues }, "orchestrator: intent classification did not match schema; defaulting to 'other'");
+      logger.warn({ fallback: classification }, "orchestrator: intent classification failed; keeping previous intent");
     }
     const msg = state.messages.at(-1)?.content ?? "";
 

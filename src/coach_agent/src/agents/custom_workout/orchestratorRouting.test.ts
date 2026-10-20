@@ -17,6 +17,11 @@ test("orchestrator prompt carries the custom_workout category and its boundary s
     ),
   );
 
+  // 无结构的建课意图与追问短答也是 custom_workout（10-20 生产误路由实证：
+  // 「帮我生成单次训练课程」「配速430」曾掉进 qa 出纯文本课表）。
+  assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes('"帮我生成单次训练课程" → custom_workout'));
+  assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes('"配速430" → custom_workout'));
+
   // 误路由守卫：提问仍是问答，调整周计划仍是 weekly_plan，都不是 custom_workout。
   assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes('"明天跑什么？" → training_question'));
   assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes('"下周计划调整一下，周三改成休息" → weekly_plan'));

@@ -143,6 +143,16 @@ func emitSingleStep(out *RunWorkoutBuilder, step provider.WorkoutStep) {
 	default: // WORK (or anything else) → training segment
 		dist, dur := stepDuration(step, 30)
 		out.addTraining(dist, dur, paceLow, paceHigh, 1, 0, 0)
+		// Step-level rest (run-workout/v1 work step "rest" field) → an explicit
+		// recovery segment right after the work step. COROS single-step
+		// exercises have no usable rest slot in the payload (restType is
+		// carried for API parity only), so the D2 step-rest idiom must be
+		// materialized as its own segment or it is silently dropped. Only
+		// time_s is translatable; manual/hr_bpm have no COROS equivalent and
+		// stay dropped (the watch-side athlete follows them by feel).
+		if rest := step.Rest; rest != nil && rest.Kind == "time_s" && rest.Value != nil && *rest.Value > 0 {
+			out.addRecovery(floatPtrOf(float64(*rest.Value)/60.0), nil, nil, nil)
+		}
 	}
 }
 

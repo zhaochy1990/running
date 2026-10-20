@@ -65,6 +65,38 @@
             "autoAttachChildProcesses": true
         },
         {
+            // 两轮「制定比赛策略」E2E（scripts/test_race_strategy.ts）：第 1 轮
+            // kickoff 追问目标，第 2 轮补目标时间出结构化策略。位置参数：
+            //   [username=zhaochaoyi] [race_event_id=59 天津马拉松] [item_type=Marathon] [target=255]
+            // race_event_id 须为 published=1 且内容调研过的 race_calendar.id。
+            "type": "node",
+            "request": "launch",
+            "name": "race-strategy-graph",
+            "runtimeExecutable": "pnpm",
+            "cwd": "${workspaceFolder}/src/coach_agent_api",
+            "runtimeArgs": [
+                "run",
+                "test:race-strategy-graph",
+                "zhaochaoyi",
+                "59",
+                "Marathon",
+                "255"
+            ],
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "outFiles": [
+                "${workspaceFolder}/src/*/dist/**/*.js"
+            ],
+            "sourceMaps": true,
+            "console": "integratedTerminal",
+            "autoAttachChildProcesses": true,
+            "env": {
+                "STRIDE_COACH_ENV": "prod"
+            },
+            "nodeVersionHint": 24
+        },
+        {
             "type": "node",
             "request": "launch",
             "name": "tests:qa",

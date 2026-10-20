@@ -341,3 +341,38 @@ func TestGarminHrCapStillAppendedWhenNoteStatesDifferentValue(t *testing.T) {
 		t.Errorf("description = %v, want %q", s["description"], want)
 	}
 }
+
+func TestGarminStepRestMaterializesRecoveryStep(t *testing.T) {
+	// devops#520 D2 step-level rest: a work step's time_s rest must appear as a
+	// recovery step after it, not be silently dropped at translate time.
+	w := garminEasyRun10km()
+	v := 240
+	w.Blocks = []provider.WorkoutBlock{
+		{Repeat: 1, Steps: []provider.WorkoutStep{
+			{
+				StepKind: provider.StepWork, Duration: provider.DurationOfDistanceM(5000),
+				Target: provider.PaceRangeSKM(245, 240), Rest: &provider.RestSpec{Kind: "time_s", Value: &v},
+			},
+			{
+				StepKind: provider.StepWork, Duration: provider.DurationOfDistanceM(1000),
+				Target: provider.PaceRangeSKM(220, 210),
+			},
+		}},
+	}
+	steps := garminSteps(t, garminPayload(t, w))
+	if len(steps) != 3 {
+		t.Fatalf("steps = %d, want 3 (work, recovery, work)", len(steps))
+	}
+	if key := steps[1]["stepType"].(map[string]any)["stepTypeKey"]; key != "recovery" {
+		t.Errorf("step[1] type = %v, want recovery", key)
+	}
+	if key := steps[1]["endCondition"].(map[string]any)["conditionTypeKey"]; key != "time" {
+		t.Errorf("step[1] endCondition = %v, want time", key)
+	}
+	if steps[1]["endConditionValue"] != 240.0 {
+		t.Errorf("step[1] endConditionValue = %v, want 240.0", steps[1]["endConditionValue"])
+	}
+	if key := steps[2]["stepType"].(map[string]any)["stepTypeKey"]; key != "interval" {
+		t.Errorf("step[2] type = %v, want interval (second work step)", key)
+	}
+}

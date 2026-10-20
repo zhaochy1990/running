@@ -16,6 +16,7 @@
     "test:deepagent:qa": "pnpm -r tsc && node dist/scripts/deep_agent_qa.js",
     "test:masterplan-graph": "npm run build:all && node dist/scripts/test_master_plan.js",
     "test:race-analysis": "npm run build:all && node dist/scripts/test_race_analysis.js",
+    "test:race-strategy-graph": "npm run build:all && node dist/scripts/test_race_strategy.js",
     "test:weekly-plan": "npm run build:all && node dist/scripts/test_weekly_plan.js",
     "test:weekly-plan-graph": "npm run build:all && node dist/scripts/test_weekly_plan_graph.js",
     "test:model": "npm run build:all && node dist/scripts/test_model.js",

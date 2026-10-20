@@ -434,3 +434,59 @@ func TestTranslateHrCapSuffixEvenWhenNoteStatesIt(t *testing.T) {
 		t.Errorf("name = %q, want %q", b.name, want)
 	}
 }
+
+func TestTranslateStepRestMaterializesRecoverySegment(t *testing.T) {
+	// devops#520 D2 step-level rest idiom: 5k rest 240s / 4k rest 180s / 3k
+	// rest 120s / 1k (no rest) — the production bug shape (10-20 push dropped
+	// every rest). Each time_s rest must become an explicit recovery segment.
+	v := func(s int) *int { return &s }
+	w := provider.RunWorkout{
+		Schema: provider.RunWorkoutSchema,
+		Name:   "5k+4k+3k+1k 递进",
+		Date:   "2026-10-20",
+		Blocks: []provider.WorkoutBlock{
+			{Repeat: 1, Steps: []provider.WorkoutStep{{
+				StepKind: provider.StepWork, Duration: provider.DurationOfDistanceM(5000),
+				Target: provider.PaceRangeSKM(245, 240), Rest: &provider.RestSpec{Kind: "time_s", Value: v(240)},
+			}}},
+			{Repeat: 1, Steps: []provider.WorkoutStep{{
+				StepKind: provider.StepWork, Duration: provider.DurationOfDistanceM(4000),
+				Target: provider.PaceRangeSKM(235, 230), Rest: &provider.RestSpec{Kind: "time_s", Value: v(180)},
+			}}},
+			{Repeat: 1, Steps: []provider.WorkoutStep{{
+				StepKind: provider.StepWork, Duration: provider.DurationOfDistanceM(3000),
+				Target: provider.PaceRangeSKM(230, 225), Rest: &provider.RestSpec{Kind: "time_s", Value: v(120)},
+			}}},
+			{Repeat: 1, Steps: []provider.WorkoutStep{{
+				StepKind: provider.StepWork, Duration: provider.DurationOfDistanceM(1000),
+				Target: provider.PaceRangeSKM(220, 210),
+			}}},
+		},
+	}
+	b, err := NormalizedToCorosRun(w, provider.Baselines{})
+	if err != nil {
+		t.Fatalf("translate: %v", err)
+	}
+	var types []string
+	var recoveryMins []float64
+	for _, s := range b.segments {
+		types = append(types, s.segmentType)
+		if s.segmentType == "recovery" && s.durationMin != nil {
+			recoveryMins = append(recoveryMins, *s.durationMin)
+		}
+	}
+	want := []string{"training", "recovery", "training", "recovery", "training", "recovery", "training"}
+	if len(types) != len(want) {
+		t.Fatalf("segment types = %v, want %v", types, want)
+	}
+	for i, segType := range want {
+		if types[i] != segType {
+			t.Fatalf("segment types = %v, want %v", types, want)
+		}
+	}
+	for i, wantMin := range []float64{4.0, 3.0, 2.0} {
+		if recoveryMins[i] != wantMin {
+			t.Errorf("recovery[%d] = %v min, want %v", i, recoveryMins[i], wantMin)
+		}
+	}
+}

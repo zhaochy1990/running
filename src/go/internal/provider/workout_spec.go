@@ -292,6 +292,17 @@ func PowerRangeW(low, high int) Target {
 // Step / Block / Run workout
 // ─────────────────────────────────────────────────────────────────────────────
 
+// RestSpec is the step-level rest carried on a work step (devops#520 D2, the
+// COROS-borrowed first-class idiom): time_s = fixed seconds; hr_bpm = resume
+// once HR drops below value; manual = user ends the rest manually (value nil).
+type RestSpec struct {
+	Kind string `json:"kind"`
+	// Value is seconds (time_s) or the BPM threshold (hr_bpm); nil for manual.
+	// No omitempty: manual must marshal back as "value": null so the JSON
+	// round-trips through the strict TS contract (strictObject requires the key).
+	Value *int `json:"value"`
+}
+
 // WorkoutStep is a single atomic step in a workout.
 type WorkoutStep struct {
 	StepKind StepKind `json:"step_kind"`
@@ -303,6 +314,9 @@ type WorkoutStep struct {
 	// ceiling that must not be crossed regardless of how the primary target
 	// goes (e.g. "4×3K @ 4:05-4:10/km, HR ≤167").
 	HRCapBPM *int `json:"hr_cap_bpm,omitempty"`
+	// Rest is the post-step recovery attached to a work step. A step whose
+	// StepKind is rest must not carry it (validated).
+	Rest *RestSpec `json:"rest,omitempty"`
 }
 
 // WorkoutBlock is a sequence of steps performed Repeat times. Repeat == 1 means
@@ -326,6 +340,34 @@ func (b WorkoutBlock) Validate() error {
 		if err := s.Target.Validate(); err != nil {
 			return fmt.Errorf("step %d: %w", i, err)
 		}
+		if err := s.validateRest(); err != nil {
+			return fmt.Errorf("step %d: %w", i, err)
+		}
+	}
+	return nil
+}
+
+// validateRest enforces the step-level rest rules (mirrors the TS contract's
+// WorkoutStepSchema): a step whose kind is rest must not carry a rest field,
+// and time_s / hr_bpm rests need a positive value.
+func (s WorkoutStep) validateRest() error {
+	if s.Rest == nil {
+		return nil
+	}
+	if s.StepKind == StepRest {
+		return fmt.Errorf("a rest step must not carry a rest field")
+	}
+	switch s.Rest.Kind {
+	case "time_s", "hr_bpm":
+		if s.Rest.Value == nil || *s.Rest.Value <= 0 {
+			return fmt.Errorf("rest kind %q requires a positive value", s.Rest.Kind)
+		}
+	case "manual":
+		if s.Rest.Value != nil {
+			return fmt.Errorf(`rest kind "manual" must have null value`)
+		}
+	default:
+		return fmt.Errorf("unknown rest kind %q", s.Rest.Kind)
 	}
 	return nil
 }

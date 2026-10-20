@@ -3,6 +3,7 @@
 package provider
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -120,5 +121,88 @@ func TestStrengthWorkoutFromJSONAcceptsMissingSchema(t *testing.T) {
 	}
 	if w.Name != "力量训练" || len(w.Exercises) != 1 {
 		t.Errorf("parsed = %+v", w)
+	}
+}
+
+func TestRunWorkoutFromJSONParsesStepRest(t *testing.T) {
+	raw := `{
+		"schema": "run-workout/v1",
+		"name": "递进",
+		"date": "2026-10-20",
+		"blocks": [{
+			"repeat": 1,
+			"steps": [{
+				"step_kind": "work",
+				"duration": {"kind": "distance_m", "value": 5000},
+				"target": {"kind": "pace_s_km", "low": 245, "high": 240},
+				"rest": {"kind": "time_s", "value": 240}
+			}]
+		}]
+	}`
+	w, err := RunWorkoutFromJSON([]byte(raw))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	rest := w.Blocks[0].Steps[0].Rest
+	if rest == nil || rest.Kind != "time_s" || rest.Value == nil || *rest.Value != 240 {
+		t.Fatalf("rest = %+v, want time_s/240", rest)
+	}
+	// Round-trip: manual rest must marshal back with explicit "value": null
+	// (the strict TS contract requires the key to be present).
+	re, err := json.Marshal(RunWorkout{
+		Schema: RunWorkoutSchema, Name: "m", Date: "2026-10-20",
+		Blocks: []WorkoutBlock{{Repeat: 1, Steps: []WorkoutStep{{
+			StepKind: StepWork, Duration: DurationOfTimeS(60),
+			Target: Target{Kind: TargetOpen},
+			Rest:   &RestSpec{Kind: "manual", Value: nil},
+		}}}},
+	})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(re), `"rest":{"kind":"manual","value":null}`) {
+		t.Errorf("marshaled rest = %s, want manual with explicit null value", re)
+	}
+}
+
+func TestRunWorkoutFromJSONRejectsRestOnRestStep(t *testing.T) {
+	raw := `{
+		"schema": "run-workout/v1",
+		"name": "bad",
+		"date": "2026-10-20",
+		"blocks": [{
+			"repeat": 1,
+			"steps": [{
+				"step_kind": "rest",
+				"duration": {"kind": "time_s", "value": 60},
+				"target": {"kind": "open"},
+				"rest": {"kind": "time_s", "value": 30}
+			}]
+		}]
+	}`
+	_, err := RunWorkoutFromJSON([]byte(raw))
+	if err == nil || !strings.Contains(err.Error(), "must not carry a rest field") {
+		t.Fatalf("err = %v, want rest-step rest rejection", err)
+	}
+}
+
+func TestRunWorkoutFromJSONRejectsBadRestValue(t *testing.T) {
+	raw := `{
+		"schema": "run-workout/v1",
+		"name": "bad",
+		"date": "2026-10-20",
+		"blocks": [{
+			"repeat": 1,
+			"steps": [{
+				"step_kind": "work",
+				"duration": {"kind": "distance_m", "value": 1000},
+				"target": {"kind": "open"},
+				"rest": {"kind": "time_s", "value": 0}
+			}]
+		}]
+	}`
+	_, err := RunWorkoutFromJSON([]byte(raw))
+	if err == nil || !strings.Contains(err.Error(), "positive value") {
+		t.Fatalf("err = %v, want non-positive rest value rejection", err)
 	}
 }
