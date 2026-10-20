@@ -4,7 +4,8 @@
 // （无卡底/圆角，内容直铺到屏幕边，行间用发丝线分隔）。
 // 结构：最近上线 changelog 时间线（绿点 + 票数快照）→ 正在做（折叠，
 // 预计 chip）→ 投票池（折叠=Top3 预览+展开全部；票数降序；toggle pill
-// ▲/✓）。投票/撤销乐观更新 + 本地重排，不重拉列表（纯逻辑在
+// ▲/✓）。三区行都可点按进详情页（列表只渲染概述 blurb，markdown 正文
+// 在详情页渲染）；投票/撤销乐观更新 + 本地重排，不重拉列表（纯逻辑在
 // utils/roadmapRows，配套自检）；接口幂等，同一想法的连点由 per-item
 // in-flight guard 串行化；请求失败回滚并静默重拉对齐服务端（弱网下
 // 请求可能已生效，以服务端为准）。
@@ -19,15 +20,15 @@ import {
 } from '../../services/roadmap';
 import { ApiError } from '../../services/request';
 import { shanghaiDateFromIso } from '../../utils/date';
-import { togglePoolVote, type PoolVoteRow } from '../../utils/roadmapRows';
+import { roadmapBlurb, togglePoolVote, type PoolVoteRow } from '../../utils/roadmapRows';
 
-/** 最近上线时间线行。 */
+/** 最近上线时间线行。blurb=列表概述（概述优先，存量行兜底截断描述）。 */
 interface ReleasedRow {
   id: number;
   /** 上海日期 2026.10.14 样式 */
   date: string;
   title: string;
-  description: string;
+  blurb: string;
   /** 发布时票数快照（「由 N 位跑友投票促成」） */
   proof: number;
 }
@@ -36,7 +37,7 @@ interface ReleasedRow {
 interface AcceptedRow {
   id: number;
   title: string;
-  description: string;
+  blurb: string;
   /** 预计上线说明，空则隐藏 chip */
   plannedNote: string;
   votes: number;
@@ -45,7 +46,7 @@ interface AcceptedRow {
 /** 投票池行（可投票想法）。 */
 interface PoolRow extends PoolVoteRow {
   title: string;
-  description: string;
+  blurb: string;
   category: string;
   isNew: boolean;
 }
@@ -75,6 +76,7 @@ type RoadmapPanelMethods = {
   onFoldPool(): void;
   onExpandPool(): void;
   onVoteTap(e: WechatMiniprogram.TouchEvent): void;
+  onFeatureTap(e: WechatMiniprogram.TouchEvent): void;
 };
 
 function toReleasedRow(r: RoadmapReleasedItem): ReleasedRow {
@@ -83,7 +85,7 @@ function toReleasedRow(r: RoadmapReleasedItem): ReleasedRow {
     // released_at 已是上海偏移的 RFC3339，取上海日期部分（时区纪律：禁 slice 裸用日期语义）
     date: shanghaiDateFromIso(r.released_at).replace(/-/g, '.'),
     title: r.title,
-    description: r.description,
+    blurb: roadmapBlurb(r.summary, r.description),
     proof: r.votes_snapshot,
   };
 }
@@ -92,7 +94,7 @@ function toAcceptedRow(r: RoadmapAcceptedItem): AcceptedRow {
   return {
     id: r.id,
     title: r.title,
-    description: r.description,
+    blurb: roadmapBlurb(r.summary, r.description),
     plannedNote: r.planned_note,
     votes: r.votes,
   };
@@ -102,7 +104,7 @@ function toPoolRow(r: RoadmapBacklogItem): PoolRow {
   return {
     id: r.id,
     title: r.title,
-    description: r.description,
+    blurb: roadmapBlurb(r.summary, r.description),
     category: r.category,
     isNew: r.is_new,
     votes: r.votes,
@@ -151,6 +153,13 @@ Component<RoadmapPanelData, {}, RoadmapPanelMethods, [], RoadmapPanelInstance>({
 
     onExpandPool() {
       this.setData({ poolOpen: true });
+    },
+
+    // 行点按 → 详情页（markdown 正文）；投票按钮是独立兄弟节点，不冒泡到这。
+    onFeatureTap(e: WechatMiniprogram.TouchEvent) {
+      const id = Number(e.currentTarget.dataset.id as string);
+      if (!id) return;
+      wx.navigateTo({ url: `/pages/roadmap-detail/roadmap-detail?id=${id}` });
     },
 
     onVoteTap(e: WechatMiniprogram.TouchEvent) {

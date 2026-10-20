@@ -13,6 +13,7 @@
     "pages/training-plan/training-plan",
     "pages/my-races/my-races",
     "pages/product-roadmap/product-roadmap",
+    "pages/roadmap-detail/roadmap-detail",
     "pages/feedback/feedback",
     "pages/feedback-form/feedback-form",
     "pages/feedback-chat/feedback-chat",

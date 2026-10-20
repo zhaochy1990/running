@@ -63,8 +63,13 @@ type RoadmapFeature struct {
 	// Title is the idea name (≤128 chars).
 	Title string `gorm:"column:title;size:128;not null"`
 	// Description doubles as the backlog idea text and the released launch
-	// note — one column per the devops#515 DDL.
+	// note — one column per the devops#515 DDL. Markdown is allowed; the
+	// miniprogram renders it on the detail page only, never in list rows.
 	Description string `gorm:"column:description;size:1024;not null;default:''"`
+	// Summary is the ≤50-char plain-text blurb list rows render (概述). Empty
+	// is legal (legacy rows) — clients then fall back to a truncated
+	// Description, never to the raw markdown.
+	Summary string `gorm:"column:summary;size:50;not null;default:''"`
 	// Category is a free-text chip (≤8 chars, ≤32 stored); empty = not rendered.
 	Category string `gorm:"column:category;size:32;not null;default:''"`
 	// Status is one of the RoadmapStatus* tokens.

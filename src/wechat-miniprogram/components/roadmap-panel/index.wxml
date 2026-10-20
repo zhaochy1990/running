@@ -34,13 +34,16 @@
           class="rel"
           wx:for="{{releasedRows}}"
           wx:key="id"
+          hover-class="row-press"
+          data-id="{{item.id}}"
+          bindtap="onFeatureTap"
         >
           <view class="rel__line {{index === releasedRows.length - 1 ? 'rel__line--last' : ''}}"></view>
           <view class="rel__node"></view>
           <view class="rel__date">{{item.date}} 上线</view>
           <view class="rel__body">
             <view class="rel__title">{{item.title}}</view>
-            <view class="rel__blurb">{{item.description}}</view>
+            <view class="rel__blurb">{{item.blurb}}</view>
             <view class="rel__proof">🔥 由 {{item.proof}} 位跑友投票促成</view>
           </view>
         </view>
@@ -55,10 +58,17 @@
         <view class="sec-head__arrow {{planOpen ? 'sec-head__arrow--open' : ''}}">›</view>
       </view>
       <block wx:if="{{planOpen}}">
-        <view class="plan-row" wx:for="{{acceptedRows}}" wx:key="id">
+        <view
+          class="plan-row"
+          wx:for="{{acceptedRows}}"
+          wx:key="id"
+          hover-class="row-press"
+          data-id="{{item.id}}"
+          bindtap="onFeatureTap"
+        >
           <view class="plan-row__body">
             <view class="plan-row__title">{{item.title}}</view>
-            <view class="plan-row__desc">{{item.description}}</view>
+            <view class="plan-row__desc">{{item.blurb}}</view>
           </view>
           <view class="plan-row__right">
             <view wx:if="{{item.plannedNote}}" class="chip-plan">预计 {{item.plannedNote}}</view>
@@ -82,9 +92,14 @@
 
         <block wx:for="{{poolRows}}" wx:key="id">
           <view wx:if="{{poolOpen || index < 3}}" class="idea">
-            <view class="idea__body">
+            <view
+              class="idea__body"
+              hover-class="row-press"
+              data-id="{{item.id}}"
+              bindtap="onFeatureTap"
+            >
               <view class="idea__title">{{item.title}}</view>
-              <view class="idea__desc">{{item.description}}</view>
+              <view class="idea__desc">{{item.blurb}}</view>
               <view class="idea__meta">
                 <view wx:if="{{item.category}}" class="cat">{{item.category}}</view>
                 <view wx:if="{{item.isNew}}" class="idea__new">NEW</view>

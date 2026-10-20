@@ -52,6 +52,10 @@
   transform: rotate(180deg);
 }
 
+.top-bar__btn--spacer {
+  width: 88rpx;
+}
+
 .top-bar__title-wrap {
   flex: 1;
   display: flex;

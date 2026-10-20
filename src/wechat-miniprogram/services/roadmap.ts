@@ -2,10 +2,13 @@
 // 后端契约：`internal/api/roadmap.go`（devops#551，契约 #515 决议）：
 //
 //	GET    /api/roadmap                       summary + 三区分组（一次拉全，无分页，后端已排序）
+//	GET    /api/roadmap/features/:id          详情（详情页渲染 markdown 正文；draft 404）
 //	POST   /api/roadmap/features/:id/vote     投票（幂等；仅 Backlog 可投，否则 409 not_votable）
 //	DELETE /api/roadmap/features/:id/vote     撤销（幂等）
 //
 // 投票/撤销后由页面本地重排，不重拉列表（devops#553）。
+// 列表行只渲染概述（summary，≤50 字）；描述（可含 markdown）只在详情页渲染，
+// 存量行无概述时由 utils/roadmapBlurb 兜底截断。
 
 import { http } from './request';
 
@@ -23,6 +26,9 @@ export interface RoadmapSummary {
 export interface RoadmapBacklogItem {
   id: number;
   title: string;
+  /** 列表概述（≤50 字），可能为空（存量行，客户端兜底截断描述） */
+  summary: string;
+  /** 详细描述（可含 markdown），只在详情页渲染 */
   description: string;
   category: string;
   /** 创建 ≤7 天（Asia/Shanghai）派生的新想法徽章 */
@@ -35,6 +41,9 @@ export interface RoadmapBacklogItem {
 export interface RoadmapAcceptedItem {
   id: number;
   title: string;
+  /** 列表概述（≤50 字），可能为空（存量行，客户端兜底截断描述） */
+  summary: string;
+  /** 详细描述（可含 markdown），只在详情页渲染 */
   description: string;
   category: string;
   /** 预计上线说明（如 2026.11），可能为空 */
@@ -46,6 +55,9 @@ export interface RoadmapAcceptedItem {
 export interface RoadmapReleasedItem {
   id: number;
   title: string;
+  /** 列表概述（≤50 字），可能为空（存量行，客户端兜底截断描述） */
+  summary: string;
+  /** 详细描述（可含 markdown），只在详情页渲染 */
   description: string;
   /** 上海时区 RFC3339 */
   released_at: string;
@@ -65,9 +77,28 @@ export interface RoadmapVoteResult {
   voted: boolean;
 }
 
+/** 详情页数据（GET /api/roadmap/features/:id）。draft 不外露（404）。 */
+export interface RoadmapFeatureDetail {
+  id: number;
+  title: string;
+  summary: string;
+  /** 详细描述，markdown，详情页唯一正文 */
+  description: string;
+  category: string;
+  status: 'backlog' | 'accepted' | 'released';
+  planned_note: string;
+  /** 上海时区 RFC3339，未上线为 null */
+  released_at: string | null;
+}
+
 /** 拉取产品路线全量（summary + backlog/accepted/released，后端已排序）。 */
 export function getRoadmap(): Promise<RoadmapResponse> {
   return http.get<RoadmapResponse>('/api/roadmap');
+}
+
+/** 拉取一个想法的详情（详情页渲染 markdown 正文）。 */
+export function getRoadmapFeature(featureId: number): Promise<RoadmapFeatureDetail> {
+  return http.get<RoadmapFeatureDetail>(`/api/roadmap/features/${featureId}`);
 }
 
 /** 给一个想法投票（幂等；重复调用结果一致，弱网重试安全）。 */

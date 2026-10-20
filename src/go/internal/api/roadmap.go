@@ -3,6 +3,7 @@
 // administrator feature-maintenance endpoints.
 //
 //	User:  GET    /api/roadmap                        (single-shot full list, no paging)
+//	       GET    /api/roadmap/features/:id           (detail page: full markdown description)
 //	       POST   /api/roadmap/features/:id/vote      (idempotent; backlog only)
 //	       DELETE /api/roadmap/features/:id/vote      (idempotent)
 //	Admin: GET    /api/admin/roadmap/features         (?status= filter, live votes)
@@ -75,6 +76,7 @@ func (r *roadmapRoutes) registerUser(rg *gin.RouterGroup) {
 		return
 	}
 	rg.GET("/api/roadmap", r.userList)
+	rg.GET("/api/roadmap/features/:id", r.userFeatureDetail)
 	rg.POST("/api/roadmap/features/:id/vote", r.vote)
 	rg.DELETE("/api/roadmap/features/:id/vote", r.unvote)
 }
@@ -105,8 +107,12 @@ type roadmapSummaryDTO struct {
 
 // roadmapBacklogItem is one votable idea; voted mirrors the caller's own vote.
 type roadmapBacklogItem struct {
-	ID          uint64 `json:"id"`
+	ID uint64 `json:"id"`
+	// Title + Summary are the list-row text; Summary (≤50 chars) is the blurb
+	// clients render, falling back to a truncation of the markdown Description
+	// when empty (legacy rows).
 	Title       string `json:"title"`
+	Summary     string `json:"summary"`
 	Description string `json:"description"`
 	Category    string `json:"category"`
 	IsNew       bool   `json:"is_new"`
@@ -118,6 +124,7 @@ type roadmapBacklogItem struct {
 type roadmapAcceptedItem struct {
 	ID          uint64 `json:"id"`
 	Title       string `json:"title"`
+	Summary     string `json:"summary"`
 	Description string `json:"description"`
 	Category    string `json:"category"`
 	PlannedNote string `json:"planned_note"`
@@ -129,9 +136,25 @@ type roadmapAcceptedItem struct {
 type roadmapReleasedItem struct {
 	ID            uint64 `json:"id"`
 	Title         string `json:"title"`
+	Summary       string `json:"summary"`
 	Description   string `json:"description"`
 	ReleasedAt    string `json:"released_at"`
 	VotesSnapshot uint64 `json:"votes_snapshot"`
+}
+
+// roadmapFeatureDetail is one feature as the detail page renders it: the full
+// markdown Description plus the header context. Drafts are 404 here — they
+// never leave the admin surface. votes are omitted on purpose: the detail
+// page is content-only; counting happens on the list.
+type roadmapFeatureDetail struct {
+	ID          uint64  `json:"id"`
+	Title       string  `json:"title"`
+	Summary     string  `json:"summary"`
+	Description string  `json:"description"`
+	Category    string  `json:"category"`
+	Status      string  `json:"status"`
+	PlannedNote string  `json:"planned_note"`
+	ReleasedAt  *string `json:"released_at"`
 }
 
 // roadmapResponse is the GET /api/roadmap body: one shot, all three sections,
@@ -148,6 +171,7 @@ type roadmapResponse struct {
 type roadmapAdminFeatureDTO struct {
 	ID            uint64  `json:"id"`
 	Title         string  `json:"title"`
+	Summary       string  `json:"summary"`
 	Description   string  `json:"description"`
 	Category      string  `json:"category"`
 	Status        string  `json:"status"`
@@ -224,18 +248,19 @@ func (r *roadmapRoutes) userList(c *gin.Context) {
 		switch f.Status {
 		case storage.RoadmapStatusBacklog:
 			resp.Backlog = append(resp.Backlog, roadmapBacklogItem{
-				ID: f.ID, Title: f.Title, Description: f.Description, Category: f.Category,
-				IsNew: today.Sub(timefmt.ShanghaiDay(f.CreatedAt)) <= roadmapNewWindow,
-				Votes: counts[f.ID], Voted: voted[f.ID],
+				ID: f.ID, Title: f.Title, Summary: f.Summary, Description: f.Description,
+				Category: f.Category,
+				IsNew:    today.Sub(timefmt.ShanghaiDay(f.CreatedAt)) <= roadmapNewWindow,
+				Votes:    counts[f.ID], Voted: voted[f.ID],
 			})
 		case storage.RoadmapStatusAccepted:
 			resp.Accepted = append(resp.Accepted, roadmapAcceptedItem{
-				ID: f.ID, Title: f.Title, Description: f.Description, Category: f.Category,
-				PlannedNote: f.PlannedNote, Votes: counts[f.ID],
+				ID: f.ID, Title: f.Title, Summary: f.Summary, Description: f.Description,
+				Category: f.Category, PlannedNote: f.PlannedNote, Votes: counts[f.ID],
 			})
 		case storage.RoadmapStatusReleased:
 			resp.Released = append(resp.Released, roadmapReleasedItem{
-				ID: f.ID, Title: f.Title, Description: f.Description,
+				ID: f.ID, Title: f.Title, Summary: f.Summary, Description: f.Description,
 				ReleasedAt:    f.ReleasedAt.In(timefmt.Shanghai).Format(time.RFC3339),
 				VotesSnapshot: f.VotesSnapshot,
 			})
@@ -274,6 +299,50 @@ func (r *roadmapRoutes) userList(c *gin.Context) {
 		MyVotes: len(myIDs), TotalVotes: total, ReleasedCount: len(resp.Released),
 	}
 	c.JSON(http.StatusOK, resp)
+}
+
+// userFeatureDetail serves GET /api/roadmap/features/:id — one non-draft
+// feature for the miniprogram detail page (markdown Description rendered
+// there; list rows only ever show Summary). Drafts are 404 like missing ids:
+// they never leave the admin surface.
+//
+//	@Summary		Get one roadmap feature
+//	@Description	Returns one non-draft feature with its full markdown description for the detail page.
+//	@Tags			roadmap
+//	@Produce		json
+//	@Param			id	path	int	true	"Feature id"
+//	@Success		200	{object}	roadmapFeatureDetail
+//	@Failure		401	{object}	errorResponse
+//	@Failure		404	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/roadmap/features/{id} [get]
+func (r *roadmapRoutes) userFeatureDetail(c *gin.Context) {
+	if _, ok := requireUser(c); !ok {
+		return
+	}
+	id, ok := parseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	f, err := r.store.GetRoadmapFeature(c.Request.Context(), id)
+	if err != nil {
+		writeRoadmapError(c, r.log, err)
+		return
+	}
+	if f.Status == storage.RoadmapStatusDraft {
+		c.JSON(http.StatusNotFound, errorResponse{Error: "feature_not_found"})
+		return
+	}
+	dto := roadmapFeatureDetail{
+		ID: f.ID, Title: f.Title, Summary: f.Summary, Description: f.Description,
+		Category: f.Category, Status: f.Status, PlannedNote: f.PlannedNote,
+	}
+	if f.ReleasedAt != nil {
+		s := f.ReleasedAt.In(timefmt.Shanghai).Format(time.RFC3339)
+		dto.ReleasedAt = &s
+	}
+	c.JSON(http.StatusOK, dto)
 }
 
 // vote serves POST /api/roadmap/features/:id/vote — idempotent: a repeat vote
@@ -354,7 +423,10 @@ func (r *roadmapRoutes) unvote(c *gin.Context) {
 // else optional; status defaults to draft. planned_note is deliberately
 // absent — it arrives via PATCH when the feature is scheduled.
 type roadmapFeatureCreateRequest struct {
-	Title       string `json:"title" binding:"required,max=128"`
+	Title string `json:"title" binding:"required,max=128"`
+	// Summary is the ≤50-char list blurb; may be empty (clients then truncate
+	// the description for list rows).
+	Summary     string `json:"summary" binding:"max=50"`
 	Description string `json:"description" binding:"max=1024"`
 	Category    string `json:"category" binding:"max=32"`
 	Status      string `json:"status" binding:"max=16"`
@@ -365,6 +437,7 @@ type roadmapFeatureCreateRequest struct {
 // allowed; →released writes released_at + freezes the vote snapshot).
 type roadmapFeaturePatchRequest struct {
 	Title       *string `json:"title" binding:"omitempty,max=128"`
+	Summary     *string `json:"summary" binding:"omitempty,max=50"`
 	Description *string `json:"description" binding:"omitempty,max=1024"`
 	Category    *string `json:"category" binding:"omitempty,max=32"`
 	PlannedNote *string `json:"planned_note" binding:"omitempty,max=32"`
@@ -446,8 +519,9 @@ func (r *roadmapRoutes) adminCreate(c *gin.Context) {
 		return
 	}
 	row := &storage.RoadmapFeature{
-		Title: body.Title, Description: body.Description, Category: body.Category,
-		Status: status,
+		Title: body.Title, Summary: body.Summary, Description: body.Description,
+		Category: body.Category,
+		Status:   status,
 	}
 	if status == storage.RoadmapStatusReleased {
 		now := time.Now().UTC()
@@ -500,6 +574,9 @@ func (r *roadmapRoutes) adminPatch(c *gin.Context) {
 	}
 	if body.Title != nil {
 		row.Title = *body.Title
+	}
+	if body.Summary != nil {
+		row.Summary = *body.Summary
 	}
 	if body.Description != nil {
 		row.Description = *body.Description
@@ -582,8 +659,9 @@ func (r *roadmapRoutes) adminDelete(c *gin.Context) {
 // nil (create response — a fresh row has no votes anyway).
 func roadmapAdminFeature(f *storage.RoadmapFeature, counts map[uint64]uint64) roadmapAdminFeatureDTO {
 	dto := roadmapAdminFeatureDTO{
-		ID: f.ID, Title: f.Title, Description: f.Description, Category: f.Category,
-		Status: f.Status, PlannedNote: f.PlannedNote,
+		ID: f.ID, Title: f.Title, Summary: f.Summary, Description: f.Description,
+		Category: f.Category,
+		Status:   f.Status, PlannedNote: f.PlannedNote,
 		VotesSnapshot: f.VotesSnapshot,
 		CreatedAt:     f.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:     f.UpdatedAt.UTC().Format(time.RFC3339),

@@ -1,9 +1,10 @@
 /**
  * roadmapRows.ts 自检：`node --import ./utils/ts-resolve-hooks.mjs utils/roadmapRows.check.mts`。
- * 覆盖 投票池排序（票数降序 / 同票新想法在前 / 不改入参）与乐观投票 toggle
- * （投票 +1、撤销 -1、票数夹 0、我的票数同步、重排、未知 id no-op、二次 toggle 还原）。
+ * 覆盖 投票池排序（票数降序 / 同票新想法在前 / 不改入参）、乐观投票 toggle
+ * （投票 +1、撤销 -1、票数夹 0、我的票数同步、重排、未知 id no-op、二次 toggle 还原）、
+ * 列表概述 roadmapBlurb（概述优先 / 无概述去 markdown 截断 / 超长补省略号）。
  */
-import { sortPoolRows, togglePoolVote, type PoolVoteRow } from './roadmapRows.ts';
+import { roadmapBlurb, sortPoolRows, togglePoolVote, type PoolVoteRow } from './roadmapRows.ts';
 
 function eq(actual: unknown, expected: unknown, what: string): void {
   const a = JSON.stringify(actual);
@@ -48,5 +49,24 @@ const [a, ma] = togglePoolVote(pool, 7, 0);
 const [b, mb] = togglePoolVote(a, 7, ma);
 eq(b.map((r) => [r.id, r.votes, r.voted]), [[7, 10, false], [5, 4, false], [2, 4, false]], 'double toggle restores pool');
 eq(mb, 0, 'double toggle restores myVotes');
+
+// ── 列表概述：概述优先，原样透传 ──
+eq(roadmapBlurb('  一句话概述  ', '## 详细描述'), '一句话概述', 'blurb prefers trimmed summary');
+eq(roadmapBlurb(undefined, '描述'), '描述', 'blurb tolerates undefined summary (version skew)');
+
+// ── 无概述：描述去 markdown 取纯文本 ──
+eq(
+  roadmapBlurb('', '## 标题\n- 要点**一**\n- 要点二'),
+  '标题 要点一 要点二',
+  'blurb strips markdown to plain text',
+);
+eq(roadmapBlurb('', '[官网](https://x.com) 与 `code`'), '官网 与 code', 'blurb keeps link text, drops code ticks');
+
+// ── 无概述且描述超长：截到 50 字补省略号 ──
+const long = '很'.repeat(80);
+const blurb = roadmapBlurb('', long);
+eq(blurb.length, 51, 'blurb clamps to 50 chars + ellipsis');
+eq(blurb.endsWith('…'), true, 'blurb ends with ellipsis');
+eq(roadmapBlurb('', '短描述'), '短描述', 'blurb keeps short description whole');
 
 console.log('roadmapRows.check: all assertions passed');

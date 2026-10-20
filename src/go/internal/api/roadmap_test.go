@@ -251,7 +251,9 @@ func TestRoadmap_UserList(t *testing.T) {
 	backlogAt := func(title string, age time.Duration) *storage.RoadmapFeature {
 		return &storage.RoadmapFeature{Title: title, Status: storage.RoadmapStatusBacklog, CreatedAt: now.Add(-age)}
 	}
-	a := h.store.seed(backlogAt("想法A", 24*time.Hour))   // new, 2 votes
+	a := h.store.seed(backlogAt("想法A", 24*time.Hour)) // new, 2 votes
+	h.store.features[a].Summary = "概述A"
+	h.store.features[a].Description = "## 详细描述A"
 	b := h.store.seed(backlogAt("想法B", 8*24*time.Hour)) // old, 1 vote
 	c := h.store.seed(backlogAt("想法C", 24*time.Hour))   // new, 0 votes
 	h.store.seed(&storage.RoadmapFeature{Title: "草稿I", Status: storage.RoadmapStatusDraft, CreatedAt: now.Add(-24 * time.Hour)})
@@ -303,6 +305,11 @@ func TestRoadmap_UserList(t *testing.T) {
 	}
 	if !got.Backlog[0].Voted || got.Backlog[1].Voted || got.Backlog[2].Voted {
 		t.Errorf("voted flags (u1) = %v,%v,%v, want true,false,false", got.Backlog[0].Voted, got.Backlog[1].Voted, got.Backlog[2].Voted)
+	}
+	// Summary rides along on every section; empty stays empty (client-side
+	// truncation fallback, not server-invented text).
+	if got.Backlog[0].Summary != "概述A" || got.Backlog[1].Summary != "" || got.Backlog[0].Description != "## 详细描述A" {
+		t.Errorf("backlog summary = %q,%q desc %q", got.Backlog[0].Summary, got.Backlog[1].Summary, got.Backlog[0].Description)
 	}
 	// Accepted: planned_note asc with empty sinking.
 	if len(got.Accepted) != 3 ||
@@ -405,6 +412,64 @@ func TestRoadmap_VoteEndpoints(t *testing.T) {
 	}
 }
 
+func TestRoadmap_UserFeatureDetail(t *testing.T) {
+	h := newRoadmapHarness(t)
+	hdr := h.userToken(t, "11111111-2222-4333-8333-333333333333")
+	admin := h.adminToken(t)
+
+	h.store.seed(&storage.RoadmapFeature{Title: "草稿", Status: storage.RoadmapStatusDraft})
+	backlog := h.store.seed(&storage.RoadmapFeature{
+		Title: "待投", Summary: "概述", Description: "## 正文\n- 要点一", Status: storage.RoadmapStatusBacklog,
+	})
+	accepted := h.store.seed(&storage.RoadmapFeature{
+		Title: "已排期", Status: storage.RoadmapStatusAccepted, PlannedNote: "2026.11",
+	})
+	relAt := time.Date(2026, time.October, 14, 0, 0, 0, 0, time.UTC)
+	released := h.store.seed(&storage.RoadmapFeature{
+		Title: "已上线", Status: storage.RoadmapStatusReleased, ReleasedAt: &relAt, VotesSnapshot: 87,
+	})
+
+	// Backlog detail: full markdown description rides, no votes leaked.
+	w := h.do(t, http.MethodGet, "/api/roadmap/features/"+strconv.FormatUint(backlog, 10), nil, hdr)
+	if w.Code != http.StatusOK {
+		t.Fatalf("backlog detail: status = %d, body %s", w.Code, w.Body.String())
+	}
+	var got roadmapFeatureDetail
+	decodeRoadmapJSON(t, w, &got)
+	if got.Title != "待投" || got.Summary != "概述" || got.Description != "## 正文\n- 要点一" {
+		t.Errorf("backlog detail = %+v", got)
+	}
+	if got.Status != storage.RoadmapStatusBacklog || got.PlannedNote != "" || got.ReleasedAt != nil {
+		t.Errorf("backlog detail meta = %+v", got)
+	}
+
+	// Accepted detail carries planned_note; released carries +08:00 released_at.
+	decodeRoadmapJSON(t, h.do(t, http.MethodGet, "/api/roadmap/features/"+strconv.FormatUint(accepted, 10), nil, hdr), &got)
+	if got.PlannedNote != "2026.11" {
+		t.Errorf("accepted detail = %+v", got)
+	}
+	decodeRoadmapJSON(t, h.do(t, http.MethodGet, "/api/roadmap/features/"+strconv.FormatUint(released, 10), nil, hdr), &got)
+	if got.ReleasedAt == nil || !strings.HasSuffix(*got.ReleasedAt, "+08:00") {
+		t.Errorf("released detail released_at = %v, want +08:00 RFC3339", got.ReleasedAt)
+	}
+
+	// Drafts and missing ids are indistinguishable 404s; admin tier is refused.
+	for _, id := range []string{"1", "999"} {
+		if w := h.do(t, http.MethodGet, "/api/roadmap/features/"+id, nil, hdr); w.Code != http.StatusNotFound {
+			t.Errorf("detail id %s: status = %d, want 404", id, w.Code)
+		}
+	}
+	if w := h.do(t, http.MethodGet, "/api/roadmap/features/abc", nil, hdr); w.Code != http.StatusBadRequest {
+		t.Errorf("non-integer id: status = %d, want 400", w.Code)
+	}
+	if w := h.do(t, http.MethodGet, "/api/roadmap/features/"+strconv.FormatUint(backlog, 10), nil, admin); w.Code != http.StatusForbidden {
+		t.Errorf("admin on detail: status = %d, want 403", w.Code)
+	}
+	if w := h.do(t, http.MethodGet, "/api/roadmap/features/"+strconv.FormatUint(backlog, 10), nil, nil); w.Code != http.StatusUnauthorized {
+		t.Errorf("no-token detail: status = %d, want 401", w.Code)
+	}
+}
+
 func TestRoadmap_AdminLifecycle(t *testing.T) {
 	h := newRoadmapHarness(t)
 	admin := h.adminToken(t)
@@ -416,7 +481,7 @@ func TestRoadmap_AdminLifecycle(t *testing.T) {
 
 	// Create defaults to draft.
 	w := h.do(t, http.MethodPost, "/api/admin/roadmap/features",
-		map[string]any{"title": "新想法", "description": "说明", "category": "导航"}, admin)
+		map[string]any{"title": "新想法", "summary": "概述文本", "description": "说明", "category": "导航"}, admin)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create: status = %d, body %s", w.Code, w.Body.String())
 	}
@@ -424,6 +489,14 @@ func TestRoadmap_AdminLifecycle(t *testing.T) {
 	decodeRoadmapJSON(t, w, &created)
 	if created.Status != storage.RoadmapStatusDraft || created.ID == 0 {
 		t.Fatalf("created row = %+v, want draft", created)
+	}
+	if created.Summary != "概述文本" {
+		t.Errorf("created summary = %q, want 概述文本", created.Summary)
+	}
+	// A 51-rune summary busts the list-blurb cap → 400.
+	if w := h.do(t, http.MethodPost, "/api/admin/roadmap/features",
+		map[string]any{"title": "x", "summary": strings.Repeat("概", 51)}, admin); w.Code != http.StatusBadRequest {
+		t.Errorf("create oversized summary: status = %d, want 400", w.Code)
 	}
 
 	// Missing title → 400; unknown status → 422 invalid_status.
@@ -435,13 +508,13 @@ func TestRoadmap_AdminLifecycle(t *testing.T) {
 	}
 
 	// Field-only PATCH keeps status; explicit empty planned_note is allowed.
-	w = patch(created.ID, map[string]any{"title": "改名", "planned_note": ""})
+	w = patch(created.ID, map[string]any{"title": "改名", "summary": "新概述", "planned_note": ""})
 	if w.Code != http.StatusOK {
 		t.Fatalf("field patch: status = %d, body %s", w.Code, w.Body.String())
 	}
 	var patched roadmapAdminFeatureDTO
 	decodeRoadmapJSON(t, w, &patched)
-	if patched.Title != "改名" || patched.Status != storage.RoadmapStatusDraft {
+	if patched.Title != "改名" || patched.Summary != "新概述" || patched.Status != storage.RoadmapStatusDraft {
 		t.Errorf("patched row = %+v", patched)
 	}
 

@@ -37,8 +37,9 @@ func (s *Store) CreateRoadmapFeature(ctx context.Context, row *RoadmapFeature) e
 }
 
 // UpdateRoadmapFeature persists the full editable projection (title,
-// description, category, planned_note, status + release side effects) of the
-// row with the given id. releasing=true marks a →released transition: the
+// description, summary, category, planned_note, status + release side
+// effects) of the row with the given id. releasing=true marks a →released
+// transition: the
 // live vote count is taken and frozen into votes_snapshot, released_at set —
 // inside the same transaction so a vote landing mid-release cannot skew the
 // snapshot. A missing id is ErrRoadmapFeatureNotFound.
@@ -54,8 +55,9 @@ func (s *Store) UpdateRoadmapFeature(ctx context.Context, row *RoadmapFeature, r
 			row.VotesSnapshot = uint64(votes)
 		}
 		res := tx.Model(&RoadmapFeature{}).Where("id = ?", row.ID).Updates(map[string]any{
-			"title": row.Title, "description": row.Description, "category": row.Category,
-			"status": row.Status, "planned_note": row.PlannedNote,
+			"title": row.Title, "description": row.Description, "summary": row.Summary,
+			"category": row.Category,
+			"status":   row.Status, "planned_note": row.PlannedNote,
 			"released_at": row.ReleasedAt, "votes_snapshot": row.VotesSnapshot,
 			"updated_at": time.Now().UTC(),
 		})

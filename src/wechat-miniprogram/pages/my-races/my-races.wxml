@@ -9,6 +9,7 @@
         <view class="top-bar__title">我的比赛</view>
         <view class="top-bar__subtitle">参赛计划与成绩</view>
       </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
     </view>
 
     <!-- tab：我的赛事（默认）/ 我的成绩 -->
