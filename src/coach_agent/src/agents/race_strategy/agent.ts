@@ -8,6 +8,7 @@ import { createRaceStrategyContextTools } from "../../tools/raceStrategyContext.
 import { CoachContext } from "../context.js";
 import { createLoggingMiddleware } from "../middleware.js";
 import { RACE_STRATEGY_PROMPT } from "../prompts.js";
+import { loadSkillMarkdown, loadSkillReference } from "../skillLoader.js";
 import { createTurnScopeMiddleware } from "../turnScope.js";
 import { createRaceStrategyValidationMiddleware } from "./validationMiddleware.js";
 
@@ -29,10 +30,14 @@ export function getRaceStrategyAgent(store: DataProvider, config: ModelConfig) {
 
   const tools: StructuredTool[] = [...createRaceStrategyContextTools(store)];
 
+  // 补给领域口径与补给品规格台账以内联技能文档附在系统提示末尾（与
+  // generate-master-plan 同模式）：prompt 保留流程与输出契约，领域细节归 skill。
+  const systemPrompt = [RACE_STRATEGY_PROMPT, loadSkillMarkdown("race-strategy"), loadSkillReference("race-strategy", "fueling-products.md")].join("\n\n");
+
   return createAgent({
     model: buildModel(config),
     tools,
-    systemPrompt: RACE_STRATEGY_PROMPT,
+    systemPrompt,
     contextSchema: CoachContext,
     responseFormat: ToolStrategy.fromSchema(RaceStrategyDirectResponseSchema),
     middleware: [createTurnScopeMiddleware(), createRaceStrategyValidationMiddleware(), createLoggingMiddleware("agent:race_strategy")],

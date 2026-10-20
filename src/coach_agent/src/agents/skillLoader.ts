@@ -16,6 +16,11 @@ export function loadSkillMarkdown(name: string): string {
   return stripFrontmatter(raw).trim();
 }
 
+/** Read a reference file from a skill's `references/` dir, inlined like the SKILL body. */
+export function loadSkillReference(name: string, file: string): string {
+  return readFileSync(join(SKILLS_DIR, name, "references", file), "utf8").trim();
+}
+
 function stripFrontmatter(markdown: string): string {
   const match = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/.exec(markdown);
   return match ? markdown.slice(match[0].length) : markdown;

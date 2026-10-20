@@ -3,9 +3,13 @@ import test from "node:test";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import type { RaceStrategy } from "@stride/contract";
 import { RACE_STRATEGY_PROMPT } from "../prompts.js";
+import { loadSkillMarkdown, loadSkillReference } from "../skillLoader.js";
 import { CoachTargetRef } from "../turnScope.js";
 import { makeRaceStrategyNode } from "./node.js";
 import { extractRaceStrategyResult, parseRaceStrategyFromText, raceStrategyMessage, renderRaceStrategyMarkdown } from "./render.js";
+
+/** agent.ts 实际下发的系统提示：prompt + 补给技能文档 + 规格参考，断言以其为准。 */
+const systemPrompt = [RACE_STRATEGY_PROMPT, loadSkillMarkdown("race-strategy"), loadSkillReference("race-strategy", "fueling-products.md")].join("\n\n");
 
 const strategy: RaceStrategy = {
   race_name: "杭州马拉松",
@@ -53,16 +57,18 @@ test("race-strategy prompt gates generation on race content and asks the athlete
   assert.doesNotMatch(RACE_STRATEGY_PROMPT, /能力 L4/);
   assert.match(RACE_STRATEGY_PROMPT, /不得包含对运动员跑步能力的分析/);
   // 补给口径（#396 补给优化）：水站交给客户端固定提示、胶分普通/双倍、
-  // 盐丸分颗粒/液体、四款常备品二选一，打包清单按品类汇总。
-  assert.match(RACE_STRATEGY_PROMPT, /禁止写单纯的喝水\/补水行/);
-  assert.match(RACE_STRATEGY_PROMPT, /每个水站都进站补水/);
-  assert.match(RACE_STRATEGY_PROMPT, /双倍胶/);
-  assert.match(RACE_STRATEGY_PROMPT, /颗粒盐丸/);
-  assert.match(RACE_STRATEGY_PROMPT, /液体盐丸/);
-  assert.match(RACE_STRATEGY_PROMPT, /赛速饮/);
-  assert.match(RACE_STRATEGY_PROMPT, /速耐饮/);
-  assert.match(RACE_STRATEGY_PROMPT, /酸轻片Pro/);
-  assert.match(RACE_STRATEGY_PROMPT, /fueling_checklist/);
+  // 盐丸分颗粒/液体、四款常备品二选一，打包清单按品类汇总；
+  // 领域细节在 race-strategy 技能文档与规格参考里，随系统提示一起下发。
+  assert.match(systemPrompt, /禁止写单纯的喝水\/补水行/);
+  assert.match(systemPrompt, /每个水站都进站补水/);
+  assert.match(systemPrompt, /双倍胶/);
+  assert.match(systemPrompt, /颗粒盐丸/);
+  assert.match(systemPrompt, /液体盐丸/);
+  assert.match(systemPrompt, /赛速饮/);
+  assert.match(systemPrompt, /速耐饮/);
+  assert.match(systemPrompt, /酸轻片Pro/);
+  assert.match(systemPrompt, /fueling_checklist/);
+  assert.match(systemPrompt, /fueling-products\.md/);
 });
 
 test("race-strategy prompt asks first on generic entry before generating (#513)", () => {
