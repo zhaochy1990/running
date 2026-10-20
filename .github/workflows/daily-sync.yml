@@ -19,27 +19,49 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Build user UUID list from data/.slug_aliases.json
+      # The user list is the set of users holding a provider credential, read
+      # live from the API (devops#661 endpoint) — NOT a file in this repo. An
+      # empty list (nobody bound a watch) is a visible warning, not a failure.
+      - name: Build user UUID list from /api/internal/sync-users
         id: users
+        env:
+          STRIDE_GO_API_URL: ${{ vars.STRIDE_GO_API_URL }}
+          INTERNAL_TOKEN: ${{ secrets.STRIDE_GO_INTERNAL_TOKEN }}
         run: |
-          if [ ! -f data/.slug_aliases.json ]; then
-            echo "No data/.slug_aliases.json found — nothing to sync"
-            : > users.txt
-            echo "count=0" >> "$GITHUB_OUTPUT"
-          else
-            python3 -c "
+          set -u
+          if [ -z "$STRIDE_GO_API_URL" ] || [ -z "$INTERNAL_TOKEN" ]; then
+            echo "::error::STRIDE_GO_API_URL variable or STRIDE_GO_INTERNAL_TOKEN secret missing"
+            exit 1
+          fi
+          # One retry on a transient failure: this GET is the workflow's first
+          # request against an API that scales to zero, and a cold start takes
+          # ~15s (same pattern as race-calendar-sync / homecity-recompute).
+          fetch_users() {
+            curl -sS -o /tmp/users.json -w "%{http_code}" --max-time 30 \
+              -H "X-Internal-Token: $INTERNAL_TOKEN" \
+              "${STRIDE_GO_API_URL%/}/api/internal/sync-users"
+          }
+          http=$(fetch_users) || http="000"
+          if [ "$http" != "200" ]; then
+            echo "  retrying after HTTP $http (cold start?)"
+            sleep 15
+            http=$(fetch_users) || http="000"
+          fi
+          if [ "$http" != "200" ]; then
+            echo "::error::GET /api/internal/sync-users failed (HTTP $http): $(head -c 300 /tmp/users.json 2>/dev/null | tr '\n' ' ')"
+            exit 1
+          fi
+          python3 -c "
           import json
-          import sys
-          aliases = json.load(open('data/.slug_aliases.json'))
-          uuids = sorted(set(str(v) for v in aliases.values()))
-          sys.stdout.write('\n'.join(uuids))
-          if uuids:
-              sys.stdout.write('\n')
-          " > users.txt
-            count=$(wc -l < users.txt | tr -d ' ')
-            echo "count=$count" >> "$GITHUB_OUTPUT"
+          users = json.load(open('/tmp/users.json'))['users']
+          if users:
+              print('\n'.join(users))
+          " > users.txt || { echo "::error::invalid JSON from sync-users: $(head -c 300 /tmp/users.json | tr '\n' ' ')"; exit 1; }
+          count=$(wc -l < users.txt | tr -d ' ')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          if [ "$count" = "0" ]; then
+            echo "::warning::sync-users endpoint returned an empty list — no user has a bound watch, nothing to sync"
+          else
             echo "Found $count user(s):"
             cat users.txt
           fi
