@@ -202,6 +202,73 @@ func (c *Client) postJSON(ctx context.Context, path string, body any) (json.RawM
 	})
 }
 
+// doDelete issues an authenticated DELETE (no body) — same transport discipline
+// as doPost minus the JSON payload.
+func (c *Client) doDelete(ctx context.Context, u string) ([]byte, int, string, error) {
+	if err := c.ensureBearer(ctx); err != nil {
+		return nil, 0, "", err
+	}
+	c.mu.RLock()
+	bearer := c.oauth2.authHeader()
+	c.mu.RUnlock()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, u, nil)
+	if err != nil {
+		return nil, 0, bearer, err
+	}
+	req.Header.Set("Authorization", bearer)
+	req.Header.Set("User-Agent", connectUserAgent)
+	req.Header.Set("Accept", "application/json")
+
+	var raw []byte
+	var status int
+	err = httpx.Do(ctx, func() error {
+		if c.limiter != nil {
+			if err := c.limiter.Wait(ctx); err != nil {
+				return err
+			}
+		}
+		resp, e := c.http.Do(req)
+		if e != nil {
+			for {
+				urlErr, ok := e.(*url.Error)
+				if !ok {
+					break
+				}
+				e = urlErr.Err
+			}
+			return fmt.Errorf("garmin: DELETE request failed: %w", e)
+		}
+		defer resp.Body.Close()
+		b, e := io.ReadAll(resp.Body)
+		if e != nil {
+			return fmt.Errorf("garmin: read response: %w", e)
+		}
+		if httpx.RetryableStatus(resp.StatusCode) {
+			return &httpx.StatusError{Code: resp.StatusCode, Body: string(b)}
+		}
+		raw, status = b, resp.StatusCode
+		return nil
+	})
+	if err != nil {
+		var se *httpx.StatusError
+		if errors.As(err, &se) {
+			return []byte(se.Body), se.Code, bearer, nil
+		}
+		return nil, 0, bearer, err
+	}
+	return raw, status, bearer, nil
+}
+
+// deleteJSON issues an authenticated DELETE to connectapi.{domain}{path},
+// refreshing the bearer on 401 and retrying transient failures.
+func (c *Client) deleteJSON(ctx context.Context, path string) (json.RawMessage, error) {
+	u := "https://connectapi." + c.domain + path
+	return c.retryAuth(ctx, path, func() ([]byte, int, string, error) {
+		return c.doDelete(ctx, u)
+	})
+}
+
 // retryAuth issues one authenticated request via fn, force-refreshing the
 // OAuth2 bearer once if the server rejects it (401) and retrying, then
 // classifies the final status. fn returns (body, status, bearer, err).
@@ -531,4 +598,20 @@ func (c *Client) UploadWorkout(ctx context.Context, workout map[string]any) (jso
 // date (ISO YYYY-MM-DD). The watch picks it up on next sync.
 func (c *Client) ScheduleWorkout(ctx context.Context, workoutID int, date string) (json.RawMessage, error) {
 	return c.postJSON(ctx, fmt.Sprintf("/workout-service/schedule/%d", workoutID), map[string]any{"date": date})
+}
+
+// DeleteWorkout removes a workout template from the library
+// (DELETE /workout-service/workout/{id} — the garminconnect del_workout
+// endpoint). Returns false when Garmin answers 404 (already gone — still
+// success for the caller).
+func (c *Client) DeleteWorkout(ctx context.Context, workoutID int) (bool, error) {
+	_, err := c.deleteJSON(ctx, fmt.Sprintf("/workout-service/workout/%d", workoutID))
+	if err != nil {
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }

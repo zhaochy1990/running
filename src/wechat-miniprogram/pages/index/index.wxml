@@ -85,9 +85,6 @@
           <view class="workout__action" bindtap="onWatchTap">
             <image class="workout__action-icon" src="/assets/icons/watch.svg" mode="aspectFit" />
           </view>
-          <view wx:if="{{workout.deletable}}" class="workout__action workout__action--danger" bindtap="onDeleteWorkout">
-            <image class="workout__action-icon" src="/assets/icons/delete.svg" mode="aspectFit" />
-          </view>
           <view class="workout__action" bindtap="onMoreTap">
             <image class="workout__action-icon" src="/assets/icons/more_horiz.svg" mode="aspectFit" />
           </view>
@@ -102,7 +99,7 @@
             wx:for="{{workout.intensityBars}}"
             wx:key="index"
             class="workout__bar {{item.dim ? 'workout__bar--dim' : ''}}"
-            style="height: {{item.pct}}%;"
+            style="height: {{item.pct}}%; flex-grow: {{item.weight}};"
           ></view>
         </view>
         <view class="workout__chart-baseline"></view>

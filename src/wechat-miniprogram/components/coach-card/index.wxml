@@ -12,7 +12,7 @@
   <view wx:if="{{buttonText || secondaryButtonText}}" class="cc-card__actions">
     <view wx:if="{{buttonText}}" class="cc-card__cta" catchtap="onCtaTap">
       <text class="cc-card__cta-text">{{buttonText}}</text>
-      <image class="cc-card__cta-arrow" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+      <image class="cc-card__cta-arrow" src="/assets/icons/chevron_right_white.svg" mode="aspectFit" />
     </view>
     <view wx:if="{{secondaryButtonText}}" class="cc-card__cta cc-card__cta--ghost" catchtap="onSecondaryTap">
       <text class="cc-card__cta-text cc-card__cta-text--ghost">{{secondaryButtonText}}</text>

@@ -256,6 +256,9 @@ type Config struct {
 	// WorkoutPusher pushes normalized workouts to the user's bound watch
 	// provider (satisfied by the cmd-layer adapter over registry).
 	WorkoutPusher WorkoutPusher
+	// PushedScheduleReader annotates the unified read with per-row push state
+	// (same store; separate narrow interface for partial test services).
+	PushedScheduleReader PushedScheduleReader
 	// ScheduledWorkoutStore records device execution state after a push
 	// (satisfied by *storage.Store).
 	ScheduledWorkoutStore ScheduledWorkoutStore
@@ -410,7 +413,7 @@ func NewService(cfg Config) *Service {
 		raceStrategy:            newRaceStrategyRoutes(cfg.RaceStrategyStore, log),
 		raceContent:             newRaceContentRoutes(cfg.RaceContentStore, cfg.CityAIDraft, log),
 		raceCatalog:             newRaceCatalogRoutes(cfg.RaceCatalogStore, log),
-		workouts:                newWorkoutRoutes(cfg.WorkoutStore, cfg.WorkoutPusher, cfg.ScheduledWorkoutStore, log),
+		workouts:                newWorkoutRoutes(cfg.WorkoutStore, cfg.WorkoutPusher, cfg.ScheduledWorkoutStore, cfg.PushedScheduleReader, log),
 		webhook:                 newWebhookRoutes(cfg.WebhookAdapters, cfg.WebhookEventStore, cfg.WebhookUserResolver, cfg.Enqueuer, cfg.WebhookFetchJobType, cfg.WebhookEnqueueEnabled, log),
 		auth:                    cfg.Auth,
 		corsOrigins:             cfg.CORSOrigins,

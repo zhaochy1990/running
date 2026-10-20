@@ -4,6 +4,7 @@ import {
   deleteCustomWorkout,
   getPlanSessions,
   getWeeklyPlan,
+  pushCustomWorkout,
   pushPlannedSession,
 } from '../../services/plan';
 import { getActivities } from '../../services/activities';
@@ -324,7 +325,7 @@ Page<IndexPageData, IndexPageHandlers>({
   onWatchTap() {
     const { workout } = this.data;
     if (!workout || !workout.hasSpec) {
-      // 仅周计划课支持推送；自建/手表源不支持（手表源本就来自推送）。
+      // weekly / custom 源可推送；watch 源本就来自手表，不回推。
       wx.showToast({ title: workout?.source === 'custom' ? '自建课暂不支持推送' : '该训练暂不支持推送', icon: 'none' });
       return;
     }
@@ -341,7 +342,18 @@ Page<IndexPageData, IndexPageHandlers>({
   },
 
   onMoreTap() {
-    wx.showToast({ title: '暂未开放', icon: 'none' });
+    const { workout } = this.data;
+    if (workout?.deletable && workout.workoutId) {
+      wx.showActionSheet({
+        itemList: ['删除'],
+        itemColor: '#ff3b30',
+        success: (res) => {
+          if (res.tapIndex === 0) this.onDeleteWorkout();
+        },
+      });
+      return;
+    }
+    wx.showToast({ title: '暂无更多操作', icon: 'none' });
   },
 
   onTodayActivityTap(e: WechatMiniprogram.TouchEvent) {
@@ -368,11 +380,17 @@ Page<IndexPageData, IndexPageHandlers>({
     const targetDate = e.detail.value;
     const { workout } = this.data;
     this.setData({ pushSheetVisible: false });
-    if (!workout || workout.sessionIndex == null || !targetDate) return;
+    if (!workout || !targetDate) return;
+    if (workout.source !== 'custom' && workout.sessionIndex == null) return;
 
     wx.showLoading({ title: '推送中...', mask: true });
     try {
-      await pushPlannedSession(userId, workout.date, workout.sessionIndex, targetDate);
+      if (workout.source === 'custom') {
+        // 自建课：卡片同款推送端点（±7 天窗口由服务端校验）。
+        await pushCustomWorkout(workout.workoutId);
+      } else if (workout.sessionIndex != null) {
+        await pushPlannedSession(userId, workout.date, workout.sessionIndex, targetDate);
+      }
       // 重新拉取本周统一课表并重渲染当前日期。
       await this.fetchWeekSessions(this.data.selectedDate);
       wx.showToast({ title: '推送成功', icon: 'success' });

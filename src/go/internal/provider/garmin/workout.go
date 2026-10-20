@@ -53,6 +53,33 @@ func (p *Provider) PushRunWorkout(ctx context.Context, user string, w provider.R
 	return fmt.Sprintf("%d", workoutID), nil
 }
 
+// DeleteWorkoutByID removes the workout template identified by the
+// provider_workout_id recorded at push time. Returns false when the template
+// is already gone (404). Note: this deletes the Garmin-side workout; the
+// capability is intentionally NOT declared as CapDeleteWorkout — that flag
+// also gates the date+name sweep path (PushScheduledWorkout), which needs a
+// schedule-query API Garmin's adapter does not implement.
+func (p *Provider) DeleteWorkoutByID(ctx context.Context, user, providerWorkoutID string) (bool, error) {
+	id, ok := parseWorkoutID(providerWorkoutID)
+	if !ok {
+		return false, fmt.Errorf("garmin: invalid provider workout id %q", providerWorkoutID)
+	}
+	client, err := p.clientFor(ctx, user)
+	if err != nil {
+		return false, err
+	}
+	return client.DeleteWorkout(ctx, id)
+}
+
+// parseWorkoutID coerces the stored provider_workout_id (digits) to int.
+func parseWorkoutID(s string) (int, bool) {
+	id := intAny(s)
+	if id <= 0 {
+		return 0, false
+	}
+	return id, true
+}
+
 // intAny flexibly coerces a JSON number (float64) or numeric string to int.
 func intAny(v any) int {
 	switch t := v.(type) {

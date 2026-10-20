@@ -143,3 +143,64 @@ func newTestClient(t *testing.T, mux http.Handler) *Client {
 		OAuth2: OAuth2Token{AccessToken: "AT", ExpiresAt: time.Now().Add(time.Hour).Unix()},
 	}, WithHTTPClient(mockHTTPClient(srv)), WithDomain("garmin.com"), WithRequestDelay(0))
 }
+
+func TestDeleteWorkoutSendsDelete(t *testing.T) {
+	hits := 0
+	mux := garminMux()
+	mux.HandleFunc("/workout-service/workout/12345", func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if r.Method != http.MethodDelete {
+			t.Errorf("method = %s, want DELETE", r.Method)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	c := newTestClient(t, mux)
+
+	deleted, err := c.DeleteWorkout(context.Background(), 12345)
+	if err != nil || !deleted {
+		t.Fatalf("deleted = %v, err = %v, want true/nil", deleted, err)
+	}
+	if hits != 1 {
+		t.Errorf("hits = %d, want 1", hits)
+	}
+}
+
+func TestDeleteWorkoutTreats404AsAlreadyGone(t *testing.T) {
+	mux := garminMux()
+	mux.HandleFunc("/workout-service/workout/12345", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	c := newTestClient(t, mux)
+
+	deleted, err := c.DeleteWorkout(context.Background(), 12345)
+	if err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if deleted {
+		t.Errorf("deleted = true, want false (404 means already gone)")
+	}
+}
+
+func TestDeleteWorkoutByIDProviderLevel(t *testing.T) {
+	p, _ := newTestProvider(t, deleteWorkoutProviderMux(t, http.StatusNoContent), loggedInCreds())
+	ok, err := p.DeleteWorkoutByID(context.Background(), testUID, "12345")
+	if err != nil || !ok {
+		t.Fatalf("ok = %v, err = %v, want true/nil", ok, err)
+	}
+	// Non-numeric stored id is rejected before any network call.
+	bad, _ := newTestProvider(t, deleteWorkoutProviderMux(t, http.StatusNoContent), loggedInCreds())
+	if _, err := bad.DeleteWorkoutByID(context.Background(), testUID, "not-a-number"); err == nil {
+		t.Errorf("invalid id: err = nil, want error")
+	}
+}
+
+func deleteWorkoutProviderMux(t *testing.T, status int) *http.ServeMux {
+	mux := garminMux()
+	mux.HandleFunc("/workout-service/workout/12345", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Errorf("method = %s, want DELETE", r.Method)
+		}
+		w.WriteHeader(status)
+	})
+	return mux
+}

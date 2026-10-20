@@ -181,3 +181,23 @@ func (s *Store) RecordPushedScheduledWorkout(
 func stringPtr2(s string) *string { return &s }
 
 func intPtr2(i int) *int { return &i }
+
+// ListPushedScheduledWorkouts returns the user's pushed rows whose push date
+// falls in the inclusive window. Callers annotate unified read rows with their
+// push state; identity matching (workout_id for custom rows, plan date+index
+// for weekly rows) happens in the caller.
+func (s *Store) ListPushedScheduledWorkouts(ctx context.Context, userID, dateFrom, dateTo string) ([]ScheduledWorkout, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []ScheduledWorkout
+	err = s.db.WithContext(ctx).
+		Where("user_id = ? AND status = ? AND date >= ? AND date <= ?", uid, ScheduledWorkoutStatusPushed, dateFrom, dateTo).
+		Order("id DESC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("storage: list pushed scheduled workouts: %w", err)
+	}
+	return rows, nil
+}

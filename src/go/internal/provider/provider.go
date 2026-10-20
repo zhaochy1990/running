@@ -343,6 +343,14 @@ type Provider interface {
 	AddCustomExercise(ctx context.Context, user string, exercise map[string]any) (string, error)
 }
 
+// WorkoutDeleterByID is implemented by providers that can delete a pushed
+// workout precisely by the watch-side id recorded at push time (Garmin;
+// COROS deletes by date+name sweep via DeleteScheduledWorkout instead). The
+// cmd-layer push adapter forwards this when the bound provider offers it.
+type WorkoutDeleterByID interface {
+	DeleteWorkoutByID(ctx context.Context, user, providerWorkoutID string) (bool, error)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // BaseProvider — default optional impls
 // ─────────────────────────────────────────────────────────────────────────────

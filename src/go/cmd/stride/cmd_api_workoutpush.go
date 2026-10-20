@@ -62,4 +62,20 @@ func (a workoutPushAdapter) DeleteScheduledWorkout(ctx context.Context, user, da
 	return p.DeleteScheduledWorkout(ctx, user, date, name)
 }
 
+// DeleteWorkoutByID forwards the precise by-id deletion (Garmin) when the
+// bound provider offers it; the api layer prefers this over the date+name
+// sweep for pushed custom workouts.
+func (a workoutPushAdapter) DeleteWorkoutByID(ctx context.Context, user, providerWorkoutID string) (bool, error) {
+	p, _, err := a.build(ctx, user)
+	if err != nil {
+		return false, err
+	}
+	byID, ok := p.(provider.WorkoutDeleterByID)
+	if !ok {
+		// Sentinel lets the api layer fall back to the date+name sweep.
+		return false, &provider.FeatureNotSupported{Provider: p.Info().Name, Capability: provider.CapDeleteWorkout}
+	}
+	return byID.DeleteWorkoutByID(ctx, user, providerWorkoutID)
+}
+
 var _ api.WorkoutPusher = workoutPushAdapter{}

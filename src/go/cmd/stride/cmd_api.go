@@ -298,6 +298,7 @@ func runAPI() error {
 		},
 		WorkoutPusher:         workoutPush,
 		ScheduledWorkoutStore: store,
+		PushedScheduleReader:  store,
 		// Watch-provider event-push ingress (devops#287). The coros adapter
 		// registers only with a configured credential pair — an unconfigured
 		// provider answers 404 rather than accepting unverified pushes. The

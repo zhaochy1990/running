@@ -24,6 +24,7 @@ import type {
   WeeklyPlanDetail,
   WorkoutSource,
   WorkoutStep,
+  WorkoutStepRest,
 } from '../types/plan';
 import {
   buildWeekDays,
@@ -162,16 +163,29 @@ function buildWorkoutViewFromRow(
       )
     : [];
 
-  // 推送仅对 weekly 源的 run/strength 开放（custom/watch 源走后续阶段）。
+  // 可推送：weekly 源走 planned-session 端点（需 session_index 定位），
+  // custom 源走 custom-workouts/:id/push（devops#587）；watch 源本就来自
+  // 手表，不回推。
   const hasSpec =
-    row.source === 'weekly' &&
-    row.session_index != null &&
+    row.spec != null &&
     (row.kind === 'run' || row.kind === 'strength') &&
-    row.spec != null;
+    (row.source === 'custom' ||
+      (row.source === 'weekly' && row.session_index != null));
 
+  // 总时长：落库值优先；custom 课常缺 total_duration_s，用配速中值估时兜底
+  // （与柱状图同一套估时口径，10-20 用户拍板；不加约等号）。
+  const specBlocks = isRunning
+    ? (row.spec as { blocks: Array<{ steps: WorkoutStep[]; repeat: number }> }).blocks
+    : null;
+  const totalDurationText =
+    row.total_duration_s != null
+      ? fmtHms(row.total_duration_s)
+      : specBlocks
+        ? fmtHms(estimateWorkoutSeconds(specBlocks))
+        : fmtHms(null);
   const stats = [
     { value: fmtKm(row.total_distance_m), label: '距离(公里)' },
-    { value: fmtHms(row.total_duration_s), label: '总时长' },
+    { value: totalDurationText, label: '总时长' },
     { value: fmtDose(row.estimated_dose), label: '训练负荷' },
   ];
 
@@ -185,6 +199,7 @@ function buildWorkoutViewFromRow(
       ? '/assets/icons/fitness_center.svg'
       : '/assets/icons/directions_run.svg',
     isRunning,
+    pushed: row.pushed,
     intensityBars,
     stats,
     coachNote,
@@ -238,59 +253,176 @@ function integerOrDash(value: number | null | undefined): string {
 }
 
 /**
- * 由跑课 blocks 生成强度柱状图（0-100 高度）。
- * 启发式：warmup/recovery/cooldown/rest 给固定低强度，work 段按目标心率/配速映射到
- * 60-95。首段淡化为设计稿的 60% 透明度形态。真实数据有明确区间后应替换为
- * 逐段工作区间映射。返回最多 12 根柱，超出则均匀采样。
+ * 由跑课 blocks 生成强度柱状图：高度=强度（0-100），宽度=段估时占比
+ * （时间轴——10-20 用户拍板：柱宽编码预计用时、空档宽编码休息时长，严格
+ * 真实比例不钳制）。work 段按目标配速/心率做分段线性映射；课内 work 分数
+ * 跨度 ≥3 时再相对归一到 [55,95]，保证递进/间歇课的梯度可见。step.rest /
+ * 独立休息步为零高度占位（保留槽位形成空档，休息不是训练、不画柱）。
+ * 首段淡化为设计稿的 60% 透明度形态。返回最多 16 根柱，超出则均匀采样。
  */
 function deriveIntensityBars(
   blocks: Array<{ steps: WorkoutStep[]; repeat: number }>,
-): Array<{ pct: number; dim: boolean }> {
-  const raw: number[] = [];
+): Array<{ pct: number; weight: number; dim: boolean }> {
+  type Entry = { pct: number | null; weight: number; fixed?: boolean };
+  // 第一遍：课内配速中值均值——无 pace target 的距离段估时兜底
+  let paceSum = 0;
+  let paceCount = 0;
+  for (const block of blocks) {
+    for (const step of block.steps) {
+      const t = step.target;
+      if (t && t.kind === 'pace_s_km' && t.low != null && t.high != null) {
+        paceSum += (t.low + t.high) / 2;
+        paceCount++;
+      }
+    }
+  }
+  const fallbackPace = paceCount > 0 ? paceSum / paceCount : DEFAULT_PACE_S_KM;
+
+  const raw: Entry[] = [];
+  const workScores: number[] = [];
   for (const block of blocks) {
     for (let r = 0; r < Math.max(1, block.repeat); r++) {
       for (const step of block.steps) {
-        const pct = stepIntensity(step);
-        raw.push(pct);
+        if (step.step_kind === 'rest' || step.step_kind === 'recovery') {
+          raw.push({ pct: null, weight: estimateStepSeconds(step, fallbackPace) });
+          continue;
+        }
+        if (step.step_kind === 'warmup' || step.step_kind === 'cooldown') {
+          raw.push({
+            pct: step.step_kind === 'warmup' ? 35 : 25,
+            weight: estimateStepSeconds(step, fallbackPace),
+            fixed: true,
+          });
+          continue;
+        }
+        workScores.push(stepIntensity(step));
+        raw.push({ pct: stepIntensity(step), weight: estimateStepSeconds(step, fallbackPace) });
+        if (step.rest) raw.push({ pct: null, weight: estimateRestSeconds(step.rest) });
       }
     }
   }
   if (raw.length === 0) return [];
-  const sampled = raw.length > 12 ? sampleEvenly(raw, 12) : raw;
-  return sampled.map((pct, i) => ({ pct, dim: i === 0 }));
+  // 课内归一：work 分数跨度 ≥3（约 7s/km 配速差）时线性拉伸到 [55,95]，
+  // 让梯度可读（递进课的绝对锚分差往往只有 4-6 分，直接显示则柱高几乎齐平）。
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const s of workScores) {
+    lo = Math.min(lo, s);
+    hi = Math.max(hi, s);
+  }
+  const normalize = (s: number): number => {
+    if (hi - lo < 3) return clampPct(s);
+    return clampPct(55 + ((s - lo) / (hi - lo)) * 40);
+  };
+  const sampled = raw.length > 16 ? sampleEvenly(raw, 16) : raw;
+  return sampled.map((e, i) => ({
+    pct: e.pct === null ? 0 : e.fixed ? clampPct(e.pct) : normalize(e.pct),
+    weight: e.weight,
+    dim: i === 0,
+  }));
 }
 
-function stepIntensity(step: WorkoutStep): number {
-  const kind = step.step_kind;
-  if (kind === 'rest') return 10;
-  if (kind === 'cooldown') return 25;
-  if (kind === 'warmup') return 35;
-  if (kind === 'recovery') return 45;
+const DEFAULT_PACE_S_KM = 330; // 无任何配速信息时的估时兜底（5:30/km）
+const OPEN_STEP_DEFAULT_S = 300; // open 段（lap 键手动结束）估 5 分钟
+const NON_TIME_REST_DEFAULT_S = 90; // manual / hr_bpm 休息估时不可知，示意宽度
 
-  // work（或未知类型）：按目标区间映射
+/** 段估时（秒，近似可视化用，非精确值）：time_s 直取；distance_m 按目标
+ * 配速中值折算（无 pace target 用课内配速均值兜底）；open 估 5 分钟。 */
+function estimateStepSeconds(step: WorkoutStep, fallbackPace: number): number {
+  if (step.duration.kind === 'time_s' && step.duration.value) return step.duration.value;
+  if (step.duration.kind === 'distance_m' && step.duration.value) {
+    const t = step.target;
+    const pace =
+      t && t.kind === 'pace_s_km' && t.low != null && t.high != null ? (t.low + t.high) / 2 : fallbackPace;
+    return (step.duration.value / 1000) * pace;
+  }
+  return OPEN_STEP_DEFAULT_S;
+}
+
+/** 步后休息估时：time_s 直取；manual / hr_bpm 结束时机由跑者决定，估时不可知。 */
+function estimateRestSeconds(rest: WorkoutStepRest): number {
+  if (rest.kind === 'time_s' && rest.value) return rest.value;
+  return NON_TIME_REST_DEFAULT_S;
+}
+
+/** 整课估时（秒，全量求和不受柱状图采样影响）：落库 total_duration_s 缺失时
+ * 的展示兜底（配速中值折算，10-20 用户拍板）。 */
+function estimateWorkoutSeconds(
+  blocks: Array<{ steps: WorkoutStep[]; repeat: number }>,
+): number {
+  let paceSum = 0;
+  let paceCount = 0;
+  for (const block of blocks) {
+    for (const step of block.steps) {
+      const t = step.target;
+      if (t && t.kind === 'pace_s_km' && t.low != null && t.high != null) {
+        paceSum += (t.low + t.high) / 2;
+        paceCount++;
+      }
+    }
+  }
+  const fallbackPace = paceCount > 0 ? paceSum / paceCount : DEFAULT_PACE_S_KM;
+  let total = 0;
+  for (const block of blocks) {
+    for (let r = 0; r < Math.max(1, block.repeat); r++) {
+      for (const step of block.steps) {
+        total += estimateStepSeconds(step, fallbackPace);
+        if (step.rest) total += estimateRestSeconds(step.rest);
+      }
+    }
+  }
+  return total;
+}
+
+function clampPct(v: number): number {
+  return Math.max(10, Math.min(100, Math.round(v)));
+}
+
+/** work 段绝对强度分（60-100 启发式）：配速/心率分段线性，区间取中值。 */
+function stepIntensity(step: WorkoutStep): number {
   const target = step.target;
   if (!target) return 75;
   if (target.kind === 'hr_bpm') {
     const high = target.high ?? target.low;
     if (high == null) return 75;
-    if (high >= 175) return 95;
-    if (high >= 165) return 85;
-    if (high >= 150) return 75;
-    return 65;
+    return piecewise(high, [[145, 62], [155, 72], [165, 84], [175, 92], [185, 100]]);
   }
   if (target.kind === 'pace_s_km') {
-    const low = target.low ?? target.high; // 更快 = 更小秒值 = 更高强度
-    if (low == null) return 75;
-    if (low <= 240) return 95;
-    if (low <= 300) return 85;
-    if (low <= 360) return 75;
-    return 65;
+    const slow = target.low ?? target.high;
+    const fast = target.high ?? target.low;
+    if (slow == null || fast == null) return 75;
+    const mid = (slow + fast) / 2; // 越小越快
+    return piecewise(
+      mid,
+      [
+        [180, 100],
+        [210, 95],
+        [240, 90],
+        [270, 85],
+        [300, 78],
+        [360, 65],
+        [420, 55],
+      ],
+    );
   }
   return 75;
 }
 
-function sampleEvenly(arr: number[], count: number): number[] {
-  const out: number[] = [];
+/** 分段线性插值：anchors 为 [x, y] 升序点列，x 之外 clamp 到端点 y。 */
+function piecewise(x: number, anchors: Array<[number, number]>): number {
+  if (x <= anchors[0][0]) return anchors[0][1];
+  const last = anchors[anchors.length - 1];
+  if (x >= last[0]) return last[1];
+  for (let i = 1; i < anchors.length; i++) {
+    const [x1, y1] = anchors[i - 1];
+    const [x2, y2] = anchors[i];
+    if (x <= x2) return y1 + ((x - x1) / (x2 - x1)) * (y2 - y1);
+  }
+  return last[1];
+}
+
+function sampleEvenly<T>(arr: T[], count: number): T[] {
+  const out: T[] = [];
   for (let i = 0; i < count; i++) {
     const idx = Math.round((i * (arr.length - 1)) / (count - 1));
     out.push(arr[idx]);

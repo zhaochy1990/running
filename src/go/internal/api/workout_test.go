@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/zhaochy1990/stride/internal/provider"
 	"github.com/zhaochy1990/stride/internal/storage"
 )
 
@@ -181,6 +183,9 @@ func TestCustomWorkoutHandlers(t *testing.T) {
 
 	t.Run("delete custom workout soft-archives", func(t *testing.T) {
 		store.archived = true
+		row := customWorkoutRow("w-1", user)
+		row.Name = "课A"
+		store.customs = map[string]*storage.Workout{"w-1": row}
 		w := h.do(http.MethodDelete, "/api/users/me/custom-workouts/w-1", h.bearer(t, user))
 		if w.Code != http.StatusNoContent {
 			t.Fatalf("code = %d, want 204", w.Code)
@@ -189,6 +194,7 @@ func TestCustomWorkoutHandlers(t *testing.T) {
 
 	t.Run("delete unknown id is 404", func(t *testing.T) {
 		store.archived = false
+		store.customs = nil
 		w := h.do(http.MethodDelete, "/api/users/me/custom-workouts/nope", h.bearer(t, user))
 		if w.Code != http.StatusNotFound {
 			t.Fatalf("code = %d, want 404", w.Code)
@@ -203,4 +209,186 @@ func marshalBody(t *testing.T, body any) []byte {
 		t.Fatalf("marshal body: %v", err)
 	}
 	return raw
+}
+
+// --- fake pushed-schedule reader ----------------------------------------------
+
+type fakePushedReader struct{ rows []storage.ScheduledWorkout }
+
+func (f *fakePushedReader) ListPushedScheduledWorkouts(_ context.Context, _, _, _ string) ([]storage.ScheduledWorkout, error) {
+	return f.rows, nil
+}
+
+func TestListPlanSessionsPushState(t *testing.T) {
+	h := newMPHarness(t)
+	store := &fakeWorkoutStore{}
+	pushed := &fakePushedReader{}
+	h.svc = NewService(Config{
+		Auth:                 h.svc.auth,
+		MasterPlanStore:      h.store,
+		WorkoutStore:         store,
+		PushedScheduleReader: pushed,
+	})
+	user := uuid.NewString()
+
+	customID := uuid.NewString()
+	weeklyIdx := 1
+	plannedDate := "2026-01-20"
+	store.sessions = []storage.Workout{
+		{WorkoutID: customID, Date: "2026-01-20", Source: storage.WorkoutSourceCustom, Kind: "run", Name: "custom-row"},
+		{WorkoutID: uuid.NewString(), Date: "2026-01-20", Source: storage.WorkoutSourceWeekly, Kind: "run", Name: "weekly-row", SessionIndex: &weeklyIdx},
+	}
+	// Custom row pushed by workout_id; weekly row pushed by plan date+index.
+	pushed.rows = []storage.ScheduledWorkout{
+		{ID: 1, WorkoutID: &customID, Status: storage.ScheduledWorkoutStatusPushed, Date: "2026-01-20"},
+		{ID: 2, Status: storage.ScheduledWorkoutStatusPushed, Date: "2026-01-20", PlannedDate: &plannedDate, SessionIndex: &weeklyIdx},
+	}
+
+	w := h.do(http.MethodGet, "/api/users/me/plan/sessions?date_from=2026-01-19&date_to=2026-01-25", h.bearer(t, user))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, body %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Sessions []planSessionDTO `json:"sessions"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Sessions) != 2 {
+		t.Fatalf("sessions = %d, want 2: %s", len(resp.Sessions), w.Body.String())
+	}
+	if !resp.Sessions[0].Pushed {
+		t.Errorf("custom row pushed = false, want true (matched by workout_id)")
+	}
+	if !resp.Sessions[1].Pushed {
+		t.Errorf("weekly row pushed = false, want true (matched by planned_date+session_index)")
+	}
+}
+
+// --- delete → watch-copy sweep (devops#587 follow-up) -------------------------
+
+// fakePusherByID adds the by-provider_workout_id delete path (Garmin) on top
+// of the base fake pusher.
+type fakePusherByID struct {
+	*fakePusher
+	byIDCalls []string
+	byIDErr   error
+}
+
+func (f *fakePusherByID) DeleteWorkoutByID(_ context.Context, _, id string) (bool, error) {
+	f.byIDCalls = append(f.byIDCalls, id)
+	if f.byIDErr != nil {
+		return false, f.byIDErr
+	}
+	return true, nil
+}
+
+func pushedSwRow(workoutID, provider, providerWorkoutID, date string) *storage.ScheduledWorkout {
+	p, pw := provider, providerWorkoutID
+	return &storage.ScheduledWorkout{
+		Status: storage.ScheduledWorkoutStatusPushed, Date: date,
+		Provider: &p, ProviderWorkoutID: &pw, WorkoutID: &workoutID,
+		Name: "[STRIDE] 递进课",
+	}
+}
+
+func TestDeleteCustomWorkoutSweepsWatchCopy(t *testing.T) {
+	h, _, pusher, swstore := newCustomPushHarness(t)
+	swstore.prior = pushedSwRow("w-custom", "coros", "C-9", "2026-08-12")
+	swstore.priorWorkoutID = "w-custom"
+
+	w := h.do(http.MethodDelete, "/api/users/me/custom-workouts/w-custom", h.bearer(t, "u1"))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("code = %d, want 204", w.Code)
+	}
+	// COROS has no by-ID delete: the sweep runs on the push date + [STRIDE] name.
+	if len(pusher.deleteCalls) != 1 {
+		t.Fatalf("deleteCalls = %v, want 1 entry", pusher.deleteCalls)
+	}
+	if want := "2026-08-12\x00[STRIDE] 4km×3组"; pusher.deleteCalls[0] != want {
+		t.Errorf("deleteCalls[0] = %q, want %q", pusher.deleteCalls[0], want)
+	}
+}
+
+func TestDeleteCustomWorkoutByProviderWorkoutID(t *testing.T) {
+	h, store, pusher, swstore := newCustomPushHarness(t)
+	byID := &fakePusherByID{fakePusher: pusher}
+	swstore.prior = pushedSwRow("w-custom", "garmin", "12345", "2026-08-12")
+	swstore.priorWorkoutID = "w-custom"
+	h.svc = NewService(Config{
+		Auth:                  h.svc.auth,
+		MasterPlanStore:       h.store,
+		WorkoutStore:          store,
+		WorkoutPusher:         byID,
+		ScheduledWorkoutStore: swstore,
+	})
+
+	w := h.do(http.MethodDelete, "/api/users/me/custom-workouts/w-custom", h.bearer(t, "u1"))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("code = %d, want 204", w.Code)
+	}
+	if len(byID.byIDCalls) != 1 || byID.byIDCalls[0] != "12345" {
+		t.Fatalf("byIDCalls = %v, want [12345]", byID.byIDCalls)
+	}
+	// The date+name sweep must NOT run on the by-ID path.
+	if len(byID.deleteCalls) != 0 {
+		t.Fatalf("deleteCalls = %v, want none", byID.deleteCalls)
+	}
+}
+
+func TestDeleteCustomWorkoutNotPushedSkipsWatch(t *testing.T) {
+	h, _, pusher, _ := newCustomPushHarness(t)
+	// No prior pushed row: the workout only lived locally.
+
+	w := h.do(http.MethodDelete, "/api/users/me/custom-workouts/w-custom", h.bearer(t, "u1"))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("code = %d, want 204", w.Code)
+	}
+	if len(pusher.deleteCalls) != 0 {
+		t.Fatalf("deleteCalls = %v, want none", pusher.deleteCalls)
+	}
+}
+
+func TestDeleteCustomWorkoutWatchFailureStillDeletes(t *testing.T) {
+	h, _, pusher, swstore := newCustomPushHarness(t)
+	swstore.prior = pushedSwRow("w-custom", "coros", "C-9", "2026-08-12")
+	swstore.priorWorkoutID = "w-custom"
+	pusher.deleteErr = errors.New("coros down")
+
+	w := h.do(http.MethodDelete, "/api/users/me/custom-workouts/w-custom", h.bearer(t, "u1"))
+	// The local archive is already committed; provider failure is swallowed.
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("code = %d, want 204", w.Code)
+	}
+}
+
+func TestDeleteCustomWorkoutFallsBackToSweepWhenByIDUnsupported(t *testing.T) {
+	// Real COROS chain: the cmd adapter always offers DeleteWorkoutByID, but the
+	// bound COROS provider answers FeatureNotSupported — the handler must fall
+	// back to the date+name sweep instead of swallowing the failure.
+	h, store, pusher, swstore := newCustomPushHarness(t)
+	byID := &fakePusherByID{
+		fakePusher: pusher,
+		byIDErr:    &provider.FeatureNotSupported{Provider: "coros", Capability: provider.CapDeleteWorkout},
+	}
+	swstore.prior = pushedSwRow("w-custom", "coros", "C-9", "2026-08-12")
+	swstore.priorWorkoutID = "w-custom"
+	h.svc = NewService(Config{
+		Auth:                  h.svc.auth,
+		MasterPlanStore:       h.store,
+		WorkoutStore:          store,
+		WorkoutPusher:         byID,
+		ScheduledWorkoutStore: swstore,
+	})
+
+	w := h.do(http.MethodDelete, "/api/users/me/custom-workouts/w-custom", h.bearer(t, "u1"))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("code = %d, want 204", w.Code)
+	}
+	if len(byID.byIDCalls) != 1 {
+		t.Fatalf("byIDCalls = %v, want 1 attempt", byID.byIDCalls)
+	}
+	if want := "2026-08-12\x00[STRIDE] 4km×3组"; len(byID.deleteCalls) != 1 || byID.deleteCalls[0] != want {
+		t.Fatalf("deleteCalls = %v, want [%q]", byID.deleteCalls, want)
+	}
 }

@@ -15,12 +15,19 @@ export interface WorkoutTarget {
   high: number | null;
 }
 
+export interface WorkoutStepRest {
+  kind: 'time_s' | 'hr_bpm' | 'manual';
+  value: number | null;
+}
+
 export interface WorkoutStep {
   step_kind: StepKind;
   duration: { kind: string; value: number | null };
   target: WorkoutTarget;
   note: string | null;
   hr_cap_bpm?: number | null;
+  /** 步后休息（devops#520 D2 新 idiom，work 步可携带） */
+  rest?: WorkoutStepRest;
 }
 
 export interface NormalizedRunWorkout {
@@ -162,6 +169,8 @@ export interface PlanSessionRow {
   plan_id: string | null;
   provider: string | null;
   provider_entity_id: string | null;
+  /** 已推送到手表（scheduled_workout 有 pushed 行；custom 按 workout_id、weekly 按日期+序号匹配） */
+  pushed: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -176,6 +185,8 @@ export interface ViewStat {
 export interface ViewIntensityBar {
   /** 0-100，相对图表容器高度 */
   pct: number;
+  /** 段估时（秒）——驱动 flex-grow 宽度（时间轴比例），休息空档同样占权 */
+  weight: number;
   /** 首段淡化（对应设计稿首段 60% 透明度） */
   dim: boolean;
 }
@@ -192,6 +203,8 @@ export interface TodayWorkoutView {
   iconPath: string;
   /** 默认 false；非 run/strength 时不显示强度柱状图 */
   isRunning: boolean;
+  /** 已推送到手表——手表图标高亮 */
+  pushed: boolean;
   intensityBars: ViewIntensityBar[];
   stats: ViewStat[];
   coachNote: string;

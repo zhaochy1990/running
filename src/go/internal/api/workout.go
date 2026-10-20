@@ -21,6 +21,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/zhaochy1990/stride/internal/logging"
+	"github.com/zhaochy1990/stride/internal/provider"
 	"github.com/zhaochy1990/stride/internal/storage"
 	"go.uber.org/zap"
 )
@@ -63,6 +64,11 @@ func mustCompileWorkoutSchema(id string, raw []byte) *jsonschema.Schema {
 	return schema
 }
 
+// PushedScheduleReader lists pushed watch rows for push-state annotation.
+type PushedScheduleReader interface {
+	ListPushedScheduledWorkouts(ctx context.Context, userID, dateFrom, dateTo string) ([]storage.ScheduledWorkout, error)
+}
+
 // WorkoutStore is the persistence the workout endpoints need.
 type WorkoutStore interface {
 	ListPlanSessions(ctx context.Context, userID, dateFrom, dateTo string) ([]storage.Workout, error)
@@ -78,14 +84,17 @@ type workoutRoutes struct {
 	// degradation as the other optional surfaces in partial test services).
 	pusher  WorkoutPusher
 	swstore ScheduledWorkoutStore
-	log     *zap.Logger
+	// Push-state annotation for the unified read (may be nil in partial test
+	// services — the DTO then simply reports pushed=false).
+	pushed PushedScheduleReader
+	log    *zap.Logger
 }
 
-func newWorkoutRoutes(store WorkoutStore, pusher WorkoutPusher, swstore ScheduledWorkoutStore, log *zap.Logger) *workoutRoutes {
+func newWorkoutRoutes(store WorkoutStore, pusher WorkoutPusher, swstore ScheduledWorkoutStore, pushed PushedScheduleReader, log *zap.Logger) *workoutRoutes {
 	if log == nil {
 		log = logging.Default()
 	}
-	return &workoutRoutes{store: store, pusher: pusher, swstore: swstore, log: log}
+	return &workoutRoutes{store: store, pusher: pusher, swstore: swstore, pushed: pushed, log: log}
 }
 
 func (w *workoutRoutes) register(rg *gin.RouterGroup) {
@@ -121,6 +130,9 @@ type planSessionDTO struct {
 	ProviderEntityID *string         `json:"provider_entity_id"`
 	CreatedAt        string          `json:"created_at"`
 	UpdatedAt        string          `json:"updated_at"`
+	// Pushed reports whether a pushed scheduled_workout row exists for this
+	// row (custom: same workout_id; weekly: same date + session_index).
+	Pushed bool `json:"pushed"`
 }
 
 func newPlanSessionDTO(row storage.Workout) planSessionDTO {
@@ -165,11 +177,48 @@ func (w *workoutRoutes) listPlanSessions(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
+	// Push-state annotation: pushed rows whose watch date falls within the
+	// window widened by the ±7-day push offset (a workout planned at the
+	// window edge may have been pushed up to 7 days off its planned date).
+	pushed := map[string]bool{}
+	if w.pushed != nil {
+		from, _ := shiftDate(dateFrom, -7)
+		to, _ := shiftDate(dateTo, 7)
+		srows, err := w.pushed.ListPushedScheduledWorkouts(c.Request.Context(), uid, from, to)
+		if err != nil {
+			w.log.Error("list pushed scheduled workouts failed", zapErr(err), zap.String("user", uid))
+			// Push state is decorative — degrade to pushed=false, not a 500.
+		}
+		for _, sr := range srows {
+			if sr.WorkoutID != nil && *sr.WorkoutID != "" {
+				pushed["wid:"+*sr.WorkoutID] = true
+			} else if sr.PlannedDate != nil && sr.SessionIndex != nil {
+				pushed["plan:"+*sr.PlannedDate+":"+fmt.Sprint(*sr.SessionIndex)] = true
+			}
+		}
+	}
 	dtos := make([]planSessionDTO, 0, len(rows))
 	for _, row := range rows {
-		dtos = append(dtos, newPlanSessionDTO(row))
+		dto := newPlanSessionDTO(row)
+		if pushed != nil {
+			if row.Source == "custom" {
+				dto.Pushed = pushed["wid:"+row.WorkoutID]
+			} else if row.Source == "weekly" && row.SessionIndex != nil {
+				dto.Pushed = pushed["plan:"+row.Date+":"+fmt.Sprint(*row.SessionIndex)]
+			}
+		}
+		dtos = append(dtos, dto)
 	}
 	c.JSON(http.StatusOK, gin.H{"sessions": dtos})
+}
+
+// shiftDate moves an ISO date by n days (used to widen the push-state window).
+func shiftDate(date string, n int) (string, error) {
+	t, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return "", err
+	}
+	return t.AddDate(0, 0, n).Format("2006-01-02"), nil
 }
 
 func isInvalidDate(err error) bool {
@@ -295,21 +344,87 @@ func (w *workoutRoutes) listCustom(c *gin.Context) {
 }
 
 // deleteCustom soft-deletes the caller's custom workout: the row is archived
-// (frees its save_token identity for reuse), never physically removed.
+// (frees its save_token identity for reuse), never physically removed. When
+// the workout was already pushed to a watch, the watch-side copy is deleted
+// too (best-effort — a provider failure never blocks the local delete).
 func (w *workoutRoutes) deleteCustom(c *gin.Context) {
 	uid, ok := requireUser(c)
 	if !ok {
 		return
 	}
-	archived, err := w.store.ArchiveCustomWorkout(c.Request.Context(), uid, c.Param("workoutId"))
+	ctx := c.Request.Context()
+	row, err := w.store.GetCustomWorkout(ctx, uid, c.Param("workoutId"))
 	if err != nil {
+		w.log.Error("get custom workout failed", zapErr(err), zap.String("user", uid))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if row == nil {
+		c.JSON(http.StatusNotFound, errorResponse{Error: "workout not found"})
+		return
+	}
+	if _, err := w.store.ArchiveCustomWorkout(ctx, uid, row.WorkoutID); err != nil {
 		w.log.Error("archive custom workout failed", zapErr(err), zap.String("user", uid))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
-	if !archived {
-		c.JSON(http.StatusNotFound, errorResponse{Error: "workout not found"})
+	w.deleteWatchCopy(ctx, uid, row)
+	c.Status(http.StatusNoContent)
+}
+
+// workoutDeleterByID is implemented by providers that can delete a pushed
+// workout precisely by the provider_workout_id recorded at push time (Garmin).
+// Providers without it fall back to the date+name sweep (COROS).
+type workoutDeleterByID interface {
+	DeleteWorkoutByID(ctx context.Context, user, providerWorkoutID string) (bool, error)
+}
+
+// deleteWatchCopy best-effort deletes the watch-side copy of a pushed custom
+// workout. Never fails the caller: every error is logged and swallowed — the
+// local archive is already committed and the user can always remove the watch
+// entry manually.
+func (w *workoutRoutes) deleteWatchCopy(ctx context.Context, uid string, row *storage.Workout) {
+	if w.pusher == nil || w.swstore == nil {
 		return
 	}
-	c.Status(http.StatusNoContent)
+	sw, err := w.swstore.GetLatestScheduledWorkoutForWorkout(ctx, uid, row.WorkoutID)
+	if err != nil {
+		w.log.Warn("look up pushed scheduled workout failed", zapErr(err), zap.String("user", uid))
+		return
+	}
+	if sw == nil || sw.Status != storage.ScheduledWorkoutStatusPushed {
+		return
+	}
+	providerName := ""
+	if sw.Provider != nil {
+		providerName = *sw.Provider
+	}
+	if byID, ok := w.pusher.(workoutDeleterByID); ok && sw.ProviderWorkoutID != nil && *sw.ProviderWorkoutID != "" {
+		_, err := byID.DeleteWorkoutByID(ctx, uid, *sw.ProviderWorkoutID)
+		if err == nil {
+			return
+		}
+		var fns *provider.FeatureNotSupported
+		if !errors.As(err, &fns) {
+			// Real provider failure — logged, never blocks the local delete.
+			w.log.Warn("best-effort watch workout delete failed", zapErr(err),
+				zap.String("user", uid), zap.String("provider", providerName),
+				zap.String("provider_workout_id", *sw.ProviderWorkoutID))
+			return
+		}
+		// Bound provider has no by-ID delete (COROS): fall through to the
+		// date+name sweep below.
+	}
+	info, err := w.pusher.Info(ctx, uid)
+	if err != nil {
+		w.log.Warn("resolve watch provider failed", zapErr(err), zap.String("user", uid))
+		return
+	}
+	if !info.Capabilities.Has(provider.CapDeleteWorkout) {
+		return
+	}
+	if _, err := w.pusher.DeleteScheduledWorkout(ctx, uid, sw.Date, row.Name); err != nil {
+		w.log.Warn("best-effort watch workout delete failed", zapErr(err),
+			zap.String("user", uid), zap.String("provider", providerName), zap.String("date", sw.Date))
+	}
 }

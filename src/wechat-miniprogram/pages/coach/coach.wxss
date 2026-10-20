@@ -1,6 +1,10 @@
 /* ============================================================
    教练页 —— 深色 STRIDE 主题（与 today.html / login 一致）
+   深色令牌（含主题藕粉 --color-accent）由 styles/dark.wxss 提供；
+   本页自身样式为写死色值，import 令牌供子组件（coach-card 等）
+   的 var() 引用解析。换主题色改 dark.wxss 一处即可。
    ============================================================ */
+@import "../../styles/dark.wxss";
 
 .coach {
   height: 100vh;
