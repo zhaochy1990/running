@@ -128,16 +128,6 @@
   color: var(--color-text-tertiary);
 }
 
-.sec-head__arrow {
-  font-size: 22rpx;
-  color: var(--color-text-tertiary);
-  transition: transform 0.18s;
-}
-
-.sec-head__arrow--open {
-  transform: rotate(90deg);
-}
-
 /* ---------- 最近上线 changelog 时间线（扁平，无卡底） ---------- */
 
 .rel-list {
@@ -368,24 +358,6 @@
   box-shadow: 0 8rpx 28rpx rgba(var(--color-accent-rgb), 0.35);
 }
 
-/* 折叠预览态的小号投票 pill（原型 vote-btn--sm） */
-.vote-btn--sm {
-  width: 100rpx;
-  padding: 10rpx 0 8rpx;
-  border-radius: 20rpx;
-}
-
-.vote-btn--sm .vote-btn__arrow {
-  font-size: 22rpx;
-  line-height: 24rpx;
-}
-
-.vote-btn--sm .vote-btn__count {
-  font-size: 24rpx;
-  line-height: 30rpx;
-  margin-top: 2rpx;
-}
-
 .vote-btn--on .vote-btn__arrow {
   color: rgba(255, 255, 255, 0.85);
 }
@@ -399,24 +371,4 @@
   font-size: 22rpx;
   color: var(--color-text-tertiary);
   padding: 40rpx 0 24rpx;
-}
-
-.pool-expand {
-  text-align: center;
-  font-size: 24rpx;
-  color: var(--color-accent-light);
-  padding: 28rpx 0 8rpx;
-}
-
-.pool-expand--press {
-  opacity: 0.85;
-}
-
-/* ---------- 尾注 ---------- */
-
-.hint-end {
-  text-align: center;
-  font-size: 20rpx;
-  color: #4a4a4c;
-  padding: 20rpx 0 8rpx;
 }

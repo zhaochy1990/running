@@ -49,49 +49,45 @@
         </view>
       </view>
 
-      <!-- 正在做（折叠） -->
-      <view class="sec-head" bindtap="onFoldPlan">
+      <!-- 正在做（全量平铺） -->
+      <view class="sec-head">
         <view class="sec-dot sec-dot--plan"></view>
         <view class="sec-head__t">正在做</view>
         <view class="sec-head__s">· 已采纳</view>
         <view class="sec-head__n">{{acceptedRows.length}}</view>
-        <view class="sec-head__arrow {{planOpen ? 'sec-head__arrow--open' : ''}}">›</view>
       </view>
-      <block wx:if="{{planOpen}}">
-        <view
-          class="plan-row"
-          wx:for="{{acceptedRows}}"
-          wx:key="id"
-          hover-class="row-press"
-          data-id="{{item.id}}"
-          bindtap="onFeatureTap"
-        >
-          <view class="plan-row__body">
-            <view class="plan-row__title">{{item.title}}</view>
-            <view class="plan-row__desc">{{item.blurb}}</view>
-          </view>
-          <view class="plan-row__right">
-            <view wx:if="{{item.plannedNote}}" class="chip-plan">预计 {{item.plannedNote}}</view>
-            <view class="plan-row__votes">{{item.votes}} 票 · 已采纳</view>
-          </view>
+      <view
+        class="plan-row"
+        wx:for="{{acceptedRows}}"
+        wx:key="id"
+        hover-class="row-press"
+        data-id="{{item.id}}"
+        bindtap="onFeatureTap"
+      >
+        <view class="plan-row__body">
+          <view class="plan-row__title">{{item.title}}</view>
+          <view class="plan-row__desc">{{item.blurb}}</view>
         </view>
-      </block>
+        <view class="plan-row__right">
+          <view wx:if="{{item.plannedNote}}" class="chip-plan">预计 {{item.plannedNote}}</view>
+          <view class="plan-row__votes">{{item.votes}} 票 · 已采纳</view>
+        </view>
+      </view>
 
-      <!-- 投票池（折叠=Top3 预览 + 展开全部） -->
-      <view class="sec-head" bindtap="onFoldPool">
+      <!-- 投票池（全量平铺，下滑浏览全部想法） -->
+      <view class="sec-head">
         <view class="sec-dot sec-dot--vote"></view>
         <view class="sec-head__t">投票池</view>
         <view class="sec-head__s">· 决定我们接下来做什么</view>
         <view class="sec-head__n">{{poolRows.length}} 个想法</view>
-        <view class="sec-head__arrow {{poolOpen ? 'sec-head__arrow--open' : ''}}">›</view>
       </view>
       <view class="pool">
-        <view wx:if="{{poolOpen}}" class="rule">
+        <view wx:if="{{poolRows.length}}" class="rule">
           🗳 每个想法可各投 <text class="rule__b">1 票</text>，再点一次即撤销 · 完全匿名
         </view>
 
         <block wx:for="{{poolRows}}" wx:key="id">
-          <view wx:if="{{poolOpen || index < 3}}" class="idea">
+          <view class="idea">
             <view
               class="idea__body"
               hover-class="row-press"
@@ -106,7 +102,7 @@
               </view>
             </view>
             <view
-              class="vote-btn {{item.voted ? 'vote-btn--on' : ''}} {{poolOpen ? '' : 'vote-btn--sm'}}"
+              class="vote-btn {{item.voted ? 'vote-btn--on' : ''}}"
               hover-class="vote-btn--press"
               data-id="{{item.id}}"
               bindtap="onVoteTap"
@@ -118,15 +114,7 @@
         </block>
 
         <view wx:if="{{!poolRows.length}}" class="pool-empty">还没有可以投票的想法</view>
-        <view
-          wx:if="{{!poolOpen && poolRows.length > 3}}"
-          class="pool-expand"
-          hover-class="pool-expand--press"
-          bindtap="onExpandPool"
-        >展开全部 {{poolRows.length}} 个想法 ↓</view>
       </view>
-
-      <view class="hint-end">— 每个想法可各投 1 票 · 完全匿名 —</view>
     </block>
   </block>
 </view>

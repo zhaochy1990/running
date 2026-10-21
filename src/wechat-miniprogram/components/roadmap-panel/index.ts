@@ -2,9 +2,10 @@
 // 共享组件——产品路线并入意见反馈页二级 tab 后，原页面保留为深链薄壳）。
 // 2026-10-18 用户拍板：hero 聚合卡整卡移除；列表卡全部扁平化贴边
 // （无卡底/圆角，内容直铺到屏幕边，行间用发丝线分隔）。
-// 结构：最近上线 changelog 时间线（绿点 + 票数快照）→ 正在做（折叠，
-// 预计 chip）→ 投票池（折叠=Top3 预览+展开全部；票数降序；toggle pill
-// ▲/✓）。三区行都可点按进详情页（列表只渲染概述 blurb，markdown 正文
+// 结构：最近上线 changelog 时间线（绿点 + 票数快照）→ 正在做（预计
+// chip）→ 投票池（全量平铺不折叠；票数降序；toggle pill ▲/✓）。
+// 2026-10-20 用户拍板：三区一律不折叠，所有想法直接平铺、下滑浏览，
+// 投票规则说明常显（原 Top3 预览 + 展开全部已删）。三区行都可点按进详情页（列表只渲染概述 blurb，markdown 正文
 // 在详情页渲染）；投票/撤销乐观更新 + 本地重排，不重拉列表（纯逻辑在
 // utils/roadmapRows，配套自检）；接口幂等，同一想法的连点由 per-item
 // in-flight guard 串行化；请求失败回滚并静默重拉对齐服务端（弱网下
@@ -56,8 +57,6 @@ interface RoadmapPanelData {
   loadError: string;
   releasedRows: ReleasedRow[];
   acceptedRows: AcceptedRow[];
-  planOpen: boolean;
-  poolOpen: boolean;
   poolRows: PoolRow[];
 }
 
@@ -72,9 +71,6 @@ interface RoadmapPanelInstance {
 type RoadmapPanelMethods = {
   fetchRoadmap(): Promise<void>;
   onRetry(): void;
-  onFoldPlan(): void;
-  onFoldPool(): void;
-  onExpandPool(): void;
   onVoteTap(e: WechatMiniprogram.TouchEvent): void;
   onFeatureTap(e: WechatMiniprogram.TouchEvent): void;
 };
@@ -118,8 +114,6 @@ Component<RoadmapPanelData, {}, RoadmapPanelMethods, [], RoadmapPanelInstance>({
     loadError: '',
     releasedRows: [],
     acceptedRows: [],
-    planOpen: false,
-    poolOpen: false,
     poolRows: [],
   },
 
@@ -141,18 +135,6 @@ Component<RoadmapPanelData, {}, RoadmapPanelMethods, [], RoadmapPanelInstance>({
   methods: {
     onRetry() {
       void this.fetchRoadmap();
-    },
-
-    onFoldPlan() {
-      this.setData({ planOpen: !this.data.planOpen });
-    },
-
-    onFoldPool() {
-      this.setData({ poolOpen: !this.data.poolOpen });
-    },
-
-    onExpandPool() {
-      this.setData({ poolOpen: true });
     },
 
     // 行点按 → 详情页（markdown 正文）；投票按钮是独立兄弟节点，不冒泡到这。
