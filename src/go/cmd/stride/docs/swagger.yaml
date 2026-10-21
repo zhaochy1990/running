@@ -1373,6 +1373,15 @@ definitions:
       watch_ready:
         type: boolean
     type: object
+  api.orphanSyncUsersResponse:
+    properties:
+      count:
+        type: integer
+      orphans:
+        items:
+          type: string
+        type: array
+    type: object
   api.pbEntryDTO:
     properties:
       achieved_at:
@@ -6592,6 +6601,39 @@ paths:
       summary: Fail stale running jobs (internal)
       tags:
       - jobs
+  /api/internal/sync-user-orphans:
+    get:
+      description: Internal-only. Credential user_ids with no live auth identity (erasure
+        residue); empty is steady state — the weekly audit workflow (devops#663) alerts
+        when non-empty.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.orphanSyncUsersResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      summary: List orphan sync users (internal)
+      tags:
+      - sync
   /api/internal/sync-users:
     get:
       description: Internal-only. Distinct user_ids holding a provider credential,

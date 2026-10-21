@@ -1,0 +1,88 @@
+name: Orphan sync-user audit
+
+# Required GitHub Actions repository variable and secret:
+#   STRIDE_GO_API_URL         — base URL of the deployed Go API, e.g.
+#                               https://api.stride-running.cn
+#   STRIDE_GO_INTERNAL_TOKEN  — the same value the Go API receives as
+#                               STRIDE_WORKER_API_INTERNAL_TOKEN.
+#
+# Weekly erasure-residue guard (devops#663): the API joins
+# provider_credentials against the auth identity table and reports the
+# user_ids whose credential outlived their account (the devops#664 race, or a
+# deletion path that bypassed the orchestrated erasure). Empty is steady
+# state; any orphan fails this workflow visibly so someone cleans the rows per
+# DeleteUserData semantics (keep user_deletion_audit). Runs half an hour after
+# the homecity recompute purely to keep the Sunday logs distinguishable — the
+# audit shares no data with either earlier workflow.
+
+on:
+  schedule:
+    # 05:00 UTC Sunday = 13:00 Asia/Shanghai. UTC+8 has no DST.
+    - cron: '0 5 * * 0'
+  workflow_dispatch: {}
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check for orphan sync users
+        env:
+          STRIDE_GO_API_URL: ${{ vars.STRIDE_GO_API_URL }}
+          INTERNAL_TOKEN: ${{ secrets.STRIDE_GO_INTERNAL_TOKEN }}
+        run: |
+          set -u
+          if [ -z "$STRIDE_GO_API_URL" ] || [ -z "$INTERNAL_TOKEN" ]; then
+            echo "::error::STRIDE_GO_API_URL variable or STRIDE_GO_INTERNAL_TOKEN secret missing"
+            exit 1
+          fi
+          # One retry on a transient failure: this GET is the workflow's first
+          # request against an API that scales to zero (same pattern as
+          # daily-sync / race-calendar-sync).
+          fetch_orphans() {
+            curl -sS -o /tmp/orphans.json -w "%{http_code}" --max-time 30 \
+              -H "X-Internal-Token: $INTERNAL_TOKEN" \
+              "${STRIDE_GO_API_URL%/}/api/internal/sync-user-orphans"
+          }
+          http=$(fetch_orphans) || http="000"
+          if [ "$http" != "200" ]; then
+            echo "  retrying after HTTP $http (cold start?)"
+            sleep 15
+            http=$(fetch_orphans) || http="000"
+          fi
+          if [ "$http" != "200" ]; then
+            echo "::error::GET /api/internal/sync-user-orphans failed (HTTP $http): $(head -c 300 /tmp/orphans.json 2>/dev/null | tr '\n' ' ')"
+            exit 1
+          fi
+          python3 -c "
+          import json
+          orphans = json.load(open('/tmp/orphans.json'))['orphans']
+          if orphans:
+              print('\n'.join(orphans))
+          " > orphans.txt || { echo "::error::invalid JSON from sync-user-orphans: $(head -c 300 /tmp/orphans.json 2>/dev/null | tr '\n' ' ')"; exit 1; }
+          count=$(wc -l < orphans.txt | tr -d ' ')
+          echo "## Orphan sync-user audit" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$count" = "0" ]; then
+            echo "No orphan sync users — erasure coverage is clean."
+            echo "**0 orphans** — steady state." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Orphan user(s):"
+            cat orphans.txt
+            {
+              echo "**$count orphan(s)** — credential rows outlived their auth identity:"
+              echo '```'
+              cat orphans.txt
+              echo '```'
+              echo "Clean per DeleteUserData semantics (keep user_deletion_audit): see devops#663/#664."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::$count orphan sync user(s) — see step summary; clean up per devops#663"
+            exit 1
+          fi
+
+      # Side-channel to the WeCom group; the action never fails this job.
+      - name: Notify WeCom
+        if: always()
+        uses: zhaochy1990/configurations/notify-wecom@v1
+        with:
+          webhook_url: ${{ secrets.WECOM_WEBHOOK_URL }}

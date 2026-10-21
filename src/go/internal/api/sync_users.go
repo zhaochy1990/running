@@ -55,3 +55,52 @@ func (s *Service) listSyncUsers(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, syncUsersResponse{Users: ids, Count: len(ids)})
 }
+
+// SyncUserAuditor backs GET /api/internal/sync-user-orphans (devops#663): the
+// credential user_ids with no live auth identity — the residue the weekly
+// audit workflow alerts on. Satisfied by *storage.Store.
+type SyncUserAuditor interface {
+	ListOrphanSyncUsers(ctx context.Context) ([]string, error)
+}
+
+type orphanSyncUsersResponse struct {
+	Orphans []string `json:"orphans"`
+	Count   int      `json:"count"`
+}
+
+// listOrphanSyncUsers answers the internal caller with the orphan list. Empty
+// is the steady state; any hit means a deletion path bypassed the orchestrated
+// erasure (devops#595/#664) and a human must clean up per DeleteUserData
+// semantics. Same internal-only tier as the sync-user list.
+//
+//	@Summary		List orphan sync users (internal)
+//	@Description	Internal-only. Credential user_ids with no live auth identity (erasure residue); empty is steady state — the weekly audit workflow (devops#663) alerts when non-empty.
+//	@Tags			sync
+//	@Produce		json
+//	@Success		200		{object}	orphanSyncUsersResponse
+//	@Failure		401		{object}	errorResponse
+//	@Failure		403		{object}	errorResponse
+//	@Failure		500		{object}	errorResponse
+//	@Failure		503		{object}	errorResponse
+//	@Security		InternalToken
+//	@Router			/api/internal/sync-user-orphans [get]
+func (s *Service) listOrphanSyncUsers(c *gin.Context) {
+	if callerFrom(c).Tier != TierInternal {
+		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
+		return
+	}
+	if s.syncUserAuditor == nil {
+		c.JSON(http.StatusServiceUnavailable, errorResponse{Error: "sync user auditor not configured"})
+		return
+	}
+	ids, err := s.syncUserAuditor.ListOrphanSyncUsers(c.Request.Context())
+	if err != nil {
+		s.log.Error("list orphan sync users failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if ids == nil {
+		ids = []string{}
+	}
+	c.JSON(http.StatusOK, orphanSyncUsersResponse{Orphans: ids, Count: len(ids)})
+}

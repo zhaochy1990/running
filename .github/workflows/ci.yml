@@ -209,6 +209,16 @@ jobs:
           go test ./internal/storage/...
           -run 'TestProviderEvents'
           -count=1 -v
+      # The sync-user enumeration and orphan audit are cross-schema SQL
+      # (devops#661/#663) — the audit joins auth.auth_users, so the test
+      # creates a minimal auth mirror on this job's empty MySQL.
+      - name: Sync-user storage tests (MySQL)
+        env:
+          STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
+        run: >-
+          go test ./internal/storage/...
+          -run 'TestListSyncableUserIDs|TestListOrphanSyncUsers'
+          -count=1 -v
 
   miniprogram:
     name: WeChat miniprogram (tsc + row self-checks)

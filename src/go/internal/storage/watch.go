@@ -360,6 +360,28 @@ func (s *Store) ListSyncableUserIDs(ctx context.Context) ([]string, error) {
 	return ids, nil
 }
 
+// ListOrphanSyncUsers returns the credential user_ids that have no live
+// identity row in the auth schema — the erasure-race / bypassed-erasure
+// residue the weekly audit guard (devops#663) watches for. Empty is the
+// steady state: the orchestrated erasure (devops#595) deletes credentials with
+// the account, so any hit means a deletion path went around stride-api. The
+// auth schema lives on the same MySQL instance; the COLLATE pins the join
+// because the two schemas were created with different server defaults
+// (stride=utf8mb4_unicode_ci, auth=utf8mb4_0900_ai_ci) and a bare equality
+// fails with MySQL 1267.
+func (s *Store) ListOrphanSyncUsers(ctx context.Context) ([]string, error) {
+	var ids []string
+	err := s.db.WithContext(ctx).Raw(
+		"SELECT DISTINCT pc.user_id FROM provider_credentials pc " +
+			"LEFT JOIN auth.auth_users u ON u.id = pc.user_id COLLATE utf8mb4_unicode_ci " +
+			"WHERE u.id IS NULL ORDER BY pc.user_id",
+	).Scan(&ids).Error
+	if err != nil {
+		return nil, fmt.Errorf("storage: list orphan sync users: %w", err)
+	}
+	return ids, nil
+}
+
 // LatestActivityDevice returns the device model string of the user's most recent
 // activity (by date) for the watch status card. ok is false when the user has no
 // activity carrying a non-empty device.

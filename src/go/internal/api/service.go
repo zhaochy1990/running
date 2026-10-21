@@ -283,6 +283,11 @@ type Config struct {
 	// *storage.Store; leave zero to answer 503.
 	SyncUserLister SyncUserLister
 
+	// SyncUserAuditor backs GET /api/internal/sync-user-orphans (devops#663):
+	// the weekly erasure-residue audit. Satisfied by *storage.Store; leave
+	// zero to answer 503.
+	SyncUserAuditor SyncUserAuditor
+
 	Auth           *Authenticator
 	CORSOrigins    []string
 	SwaggerEnabled bool
@@ -348,7 +353,8 @@ type Service struct {
 	workouts        *workoutRoutes
 	webhook         *webhookRoutes
 
-	syncUserLister SyncUserLister
+	syncUserLister  SyncUserLister
+	syncUserAuditor SyncUserAuditor
 
 	auth           *Authenticator
 	corsOrigins    []string
@@ -423,6 +429,7 @@ func NewService(cfg Config) *Service {
 		workouts:                newWorkoutRoutes(cfg.WorkoutStore, cfg.WorkoutPusher, cfg.ScheduledWorkoutStore, cfg.PushedScheduleReader, log),
 		webhook:                 newWebhookRoutes(cfg.WebhookAdapters, cfg.WebhookEventStore, cfg.WebhookUserResolver, cfg.Enqueuer, cfg.WebhookFetchJobType, cfg.WebhookEnqueueEnabled, log),
 		syncUserLister:          cfg.SyncUserLister,
+		syncUserAuditor:         cfg.SyncUserAuditor,
 		auth:                    cfg.Auth,
 		corsOrigins:             cfg.CORSOrigins,
 		swaggerEnabled:          cfg.SwaggerEnabled,
@@ -513,6 +520,8 @@ func (s *Service) Router() *gin.Engine {
 	// Internal-tier sync user list (devops#661): the daily/weekly GHA
 	// workflows' user source, replacing data/.slug_aliases.json.
 	authed.GET("/api/internal/sync-users", s.listSyncUsers)
+	// Erasure-residue audit (devops#663): orphans the weekly guard alerts on.
+	authed.GET("/api/internal/sync-user-orphans", s.listOrphanSyncUsers)
 	authed.POST("/pipelines", s.startPipeline)
 	authed.GET("/pipelines/:run_id", s.getPipelineRun)
 	authed.GET("/api/pipelines/:run_id", s.getPipelineRun)
