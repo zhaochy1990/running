@@ -80,9 +80,9 @@ func (s *Store) UpdateRoadmapFeature(ctx context.Context, row *RoadmapFeature, r
 }
 
 // DeleteRoadmapFeature removes the feature and its votes in one transaction —
-// orphaned votes on a deleted draft/backlog feature would otherwise inflate
-// total_votes forever. Admin callers must have already refused to delete
-// accepted/released rows (history preservation); this method does not check.
+// orphaned votes would otherwise inflate total_votes forever. Any status is
+// deletable per the 2026-10-20 admin policy (the API layer no longer guards
+// draft/backlog-only either); the released votes_snapshot dies with the row.
 func (s *Store) DeleteRoadmapFeature(ctx context.Context, id uint64) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("feature_id = ?", id).Delete(&RoadmapVote{}).Error; err != nil {

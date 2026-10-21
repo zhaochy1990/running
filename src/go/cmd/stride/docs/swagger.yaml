@@ -6248,8 +6248,7 @@ paths:
       - roadmap-admin
   /api/admin/roadmap/features/{id}:
     delete:
-      description: Deletes a draft or backlog feature (its votes go with it); accepted/released
-        rows are kept.
+      description: Deletes a roadmap feature in any status; its votes go with it.
       parameters:
       - description: Feature id
         in: path
@@ -6265,10 +6264,6 @@ paths:
             $ref: '#/definitions/api.errorResponse'
         "404":
           description: Not Found
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "422":
-          description: Unprocessable Entity
           schema:
             $ref: '#/definitions/api.errorResponse'
         "500":

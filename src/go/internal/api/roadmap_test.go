@@ -583,15 +583,14 @@ func TestRoadmap_AdminLifecycle(t *testing.T) {
 		t.Errorf("patch missing: status = %d, want 404", w.Code)
 	}
 
-	// Accepted/released are preserved history → 422 not_deletable.
+	// Any status is deletable (2026-10-20 policy): the released row goes away
+	// with its votes — live count and snapshot alike.
 	w = h.do(t, http.MethodDelete, "/api/admin/roadmap/features/"+strconv.FormatUint(created.ID, 10), nil, admin)
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("delete released: status = %d, want 422", w.Code)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("delete released: status = %d, want 204", w.Code)
 	}
-	var delErr errorResponse
-	decodeRoadmapJSON(t, w, &delErr)
-	if delErr.Error != "not_deletable" {
-		t.Errorf("delete released: error = %q, want not_deletable", delErr.Error)
+	if h.store.features[created.ID] != nil || len(h.store.votes[created.ID]) != 0 {
+		t.Errorf("delete released did not cascade: feature=%v votes=%v", h.store.features[created.ID], h.store.votes[created.ID])
 	}
 
 	// draft/backlog delete works and cascades the votes.

@@ -9,7 +9,7 @@
 //	Admin: GET    /api/admin/roadmap/features         (?status= filter, live votes)
 //	       POST   /api/admin/roadmap/features         (defaults to draft)
 //	       PATCH  /api/admin/roadmap/features/:id     (fields + status in one entry)
-//	       DELETE /api/admin/roadmap/features/:id     (draft/backlog only)
+//	       DELETE /api/admin/roadmap/features/:id     (any status; votes cascade)
 //
 // Vote counts are live COUNTs — the feature row never carries a count column;
 // only the →released transition freezes votes_snapshot (a historical fact
@@ -612,18 +612,18 @@ func (r *roadmapRoutes) adminPatch(c *gin.Context) {
 	c.JSON(http.StatusOK, roadmapAdminFeature(row, counts))
 }
 
-// adminDelete serves DELETE /api/admin/roadmap/features/:id — only draft and
-// backlog rows are deletable; accepted/released rows are preserved history
-// (422 not_deletable).
+// adminDelete serves DELETE /api/admin/roadmap/features/:id — any status is
+// deletable (2026-10-20 user decision: the earlier draft/backlog-only guard,
+// which kept accepted/released rows as preserved history, is dropped); the
+// votes go with the row in the same transaction.
 //
 //	@Summary		Delete a roadmap feature (admin)
-//	@Description	Deletes a draft or backlog feature (its votes go with it); accepted/released rows are kept.
+//	@Description	Deletes a roadmap feature in any status; its votes go with it.
 //	@Tags			roadmap-admin
 //	@Param			id	path	int	true	"Feature id"
 //	@Success		204	{object}	nil
 //	@Failure		403	{object}	errorResponse
 //	@Failure		404	{object}	errorResponse
-//	@Failure		422	{object}	errorResponse
 //	@Failure		500	{object}	errorResponse
 //	@Security		BearerAuth
 //	@Router			/api/admin/roadmap/features/{id} [delete]
@@ -635,13 +635,8 @@ func (r *roadmapRoutes) adminDelete(c *gin.Context) {
 	if !ok {
 		return
 	}
-	row, err := r.store.GetRoadmapFeature(c.Request.Context(), id)
-	if err != nil {
+	if _, err := r.store.GetRoadmapFeature(c.Request.Context(), id); err != nil {
 		writeRoadmapError(c, r.log, err)
-		return
-	}
-	if row.Status != storage.RoadmapStatusDraft && row.Status != storage.RoadmapStatusBacklog {
-		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "not_deletable"})
 		return
 	}
 	if err := r.store.DeleteRoadmapFeature(c.Request.Context(), id); err != nil {

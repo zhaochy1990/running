@@ -1969,7 +1969,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Deletes a draft or backlog feature (its votes go with it); accepted/released rows are kept.",
+                "description": "Deletes a roadmap feature in any status; its votes go with it.",
                 "tags": [
                     "roadmap-admin"
                 ],
@@ -1995,12 +1995,6 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
-                    "422": {
-                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
                         }
