@@ -134,7 +134,7 @@
             <view class="lap-row__cell lap-row__cell--hr">
               <text>{{item.hr}}</text>
               <view class="lap-row__trend-slot">
-                <image wx:if="{{item.hrTrend}}" class="lap-row__trend" src="/assets/icons/trend_{{item.hrTrend}}.svg" mode="aspectFit" />
+                <image wx:if="{{item.hrTrend}}" class="lap-row__trend" src="/assets/icons/trend_hr_{{item.hrTrend}}.svg" mode="aspectFit" />
               </view>
             </view>
             <view class="lap-row__cell">{{item.cadence}}</view>

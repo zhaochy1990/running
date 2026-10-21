@@ -423,7 +423,7 @@
   color: #ff6b6b;
 }
 
-/* 配速后的走向箭头：绿 ↗ 变快，红 ↘ 变慢 */
+/* 走向箭头：配速列绿 ↗ 变快、红 ↘ 变慢；心率列相反——涨红 ↗、降绿 ↘（trend_hr_*.svg） */
 .lap-row__trend {
   width: 20rpx;
   height: 20rpx;

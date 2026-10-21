@@ -57,7 +57,7 @@ interface LapRow {
   paceSec: string;
   /** 配速走向（与上一圈比较）→ /assets/icons/trend_{{trend}}.svg：'' | 'up' | 'down' */
   paceTrend: string;
-  /** 心率走向（与上一圈比较）：'' | 'up' | 'down' */
+  /** 心率走向（与上一圈比较）→ /assets/icons/trend_hr_{{hrTrend}}.svg，涨红 / 降绿：'' | 'up' | 'down' */
   hrTrend: string;
   /** 整行高亮：'' | 'lap-row--fastest' | 'lap-row--slowest' */
   rowClass: string;
