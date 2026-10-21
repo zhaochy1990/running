@@ -171,6 +171,10 @@ function buildWorkoutViewFromRow(
     (row.kind === 'run' || row.kind === 'strength') &&
     (row.source === 'custom' ||
       (row.source === 'weekly' && row.session_index != null));
+  // 可渲染结构：任意源的 run/strength 只要带 spec 就能看分段详情（watch 源
+  // 不可推送但课表本身可看）。
+  const hasStructure =
+    row.spec != null && (row.kind === 'run' || row.kind === 'strength');
 
   // 总时长：落库值优先；custom 课常缺 total_duration_s，用配速中值估时兜底
   // （与柱状图同一套估时口径，10-20 用户拍板；不加约等号）。
@@ -208,6 +212,7 @@ function buildWorkoutViewFromRow(
     date: row.date,
     deletable: row.source === 'custom',
     hasSpec,
+    hasStructure,
   };
 }
 
@@ -346,8 +351,8 @@ function estimateRestSeconds(rest: WorkoutStepRest): number {
 }
 
 /** 整课估时（秒，全量求和不受柱状图采样影响）：落库 total_duration_s 缺失时
- * 的展示兜底（配速中值折算，10-20 用户拍板）。 */
-function estimateWorkoutSeconds(
+ * 的展示兜底（配速中值折算，10-20 用户拍板）。课表详情页复用同一口径。 */
+export function estimateWorkoutSeconds(
   blocks: Array<{ steps: WorkoutStep[]; repeat: number }>,
 ): number {
   let paceSum = 0;

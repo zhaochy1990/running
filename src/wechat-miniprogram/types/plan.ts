@@ -219,6 +219,8 @@ export interface TodayWorkoutView {
   deletable: boolean;
   /** 是否有完整 spec 可推送到手表（仅 weekly 源的 run/strength） */
   hasSpec: boolean;
+  /** 是否有可渲染的结构（spec 非空且为 run/strength）——课表详情入口 */
+  hasStructure: boolean;
 }
 
 export interface TodayMealView {

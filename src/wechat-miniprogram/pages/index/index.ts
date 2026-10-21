@@ -110,6 +110,7 @@ interface IndexPageHandlers {
   renderDay(dateYmd: string, isToday: boolean): void;
   fetchDayActivities(dateYmd: string): Promise<void>;
   onMenuTap(): void;
+  onWorkoutCardTap(): void;
   onDayTap(e: WechatMiniprogram.TouchEvent): void;
   onCoachTap(): void;
   onWatchTap(): void;
@@ -295,6 +296,16 @@ Page<IndexPageData, IndexPageHandlers>({
 
   onMenuTap() {
     wx.showToast({ title: '暂未开放', icon: 'none' });
+  },
+
+  // 卡片整体点击 → 课表详情（分段结构/配速要求）。内层手表/更多/教练按钮
+  // 已 catchtap，不会冒泡到这里。
+  onWorkoutCardTap() {
+    const { workout } = this.data;
+    if (!workout || !workout.hasStructure) return;
+    wx.navigateTo({
+      url: `/pages/workout-detail/workout-detail?date=${workout.date}&workoutId=${encodeURIComponent(workout.workoutId)}&title=${encodeURIComponent(workout.title)}`,
+    });
   },
 
   onDayTap(e: WechatMiniprogram.TouchEvent) {

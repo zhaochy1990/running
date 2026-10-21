@@ -3,6 +3,7 @@
     "pages/coach/coach",
     "pages/index/index",
     "pages/login/login",
+    "pages/workout-detail/workout-detail",
     "pages/plan/plan",
     "pages/activities/activities",
     "pages/activity-detail/activity-detail",

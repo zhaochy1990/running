@@ -1,0 +1,412 @@
+/* ============================================================
+   课表详情页 —— 深色 STRIDE 主题（与今日/计划页一致）
+   ============================================================ */
+
+.page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: #07080a;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- 自定义顶部栏 ---------- */
+
+.top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: #07080a;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+}
+
+.top-bar__inner {
+  height: 128rpx;
+  display: flex;
+  align-items: center;
+  padding: 0 40rpx;
+}
+
+.top-bar__btn {
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.top-bar__btn--spacer {
+  width: 88rpx;
+}
+
+.top-bar__icon {
+  width: 48rpx;
+  height: 48rpx;
+}
+
+/* chevron_right.svg 旋转 180° 当返回箭头（activity-detail 同款） */
+.top-bar__icon--back {
+  transform: rotate(180deg);
+}
+
+.top-bar__title-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.top-bar__title {
+  font-size: 34rpx;
+  line-height: 48rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  color: #ffb3af;
+}
+
+/* ---------- 内容 ---------- */
+
+.content {
+  padding: 0 40rpx calc(120rpx + env(safe-area-inset-bottom));
+}
+
+.card {
+  background: #101111;
+  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  border-radius: 24rpx;
+  padding: 32rpx;
+  margin-bottom: 48rpx;
+}
+
+.card-title {
+  font-size: 27rpx;
+  line-height: 52rpx;
+  font-weight: 600;
+  color: #e3e2e5;
+  margin-bottom: 24rpx;
+}
+
+/* ---------- 状态卡（加载/未找到/失败） ---------- */
+
+.state-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #101111;
+  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  border-radius: 24rpx;
+  padding: 88rpx 32rpx;
+}
+
+.state-card__spinner {
+  width: 56rpx;
+  height: 56rpx;
+  border: 4rpx solid rgba(255, 99, 99, 0.2);
+  border-top-color: #ff6363;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 24rpx;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.state-card__title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #e3e2e5;
+}
+
+.state-card__text {
+  font-size: 22rpx;
+  color: #9c9c9d;
+  margin-top: 12rpx;
+}
+
+.state-card__cta {
+  margin-top: 36rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #ff6363;
+  border: 1rpx solid rgba(255, 99, 99, 0.4);
+  border-radius: 999rpx;
+  padding: 12rpx 48rpx;
+}
+
+/* ---------- 课表头 ---------- */
+
+.hero__row {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+}
+
+.hero__icon {
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 50%;
+  background: rgba(255, 99, 99, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.hero__icon-img {
+  width: 40rpx;
+  height: 40rpx;
+}
+
+.hero__titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.hero__title-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  flex-wrap: wrap;
+}
+
+.hero__name {
+  font-size: 34rpx;
+  line-height: 44rpx;
+  font-weight: 700;
+  color: #e3e2e5;
+}
+
+.hero__chip {
+  flex-shrink: 0;
+  font-size: 20rpx;
+  line-height: 28rpx;
+  color: #9c9c9d;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8rpx;
+  padding: 4rpx 12rpx;
+}
+
+.hero__chip--type {
+  color: #ff9d9a;
+  background: rgba(255, 99, 99, 0.1);
+  border: 1rpx solid rgba(255, 99, 99, 0.3);
+}
+
+.hero__date {
+  font-size: 21rpx;
+  color: #9c9c9d;
+  margin-top: 6rpx;
+  font-variant-numeric: tabular-nums;
+}
+
+.hero__summary {
+  font-size: 23rpx;
+  line-height: 36rpx;
+  color: rgba(225, 191, 188, 0.85);
+  margin-top: 24rpx;
+}
+
+/* ---------- 指标行（对齐今日卡片） ---------- */
+
+.stat-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16rpx;
+  width: 100%;
+  margin-top: 28rpx;
+}
+
+.stat {
+  flex: 1;
+  text-align: center;
+}
+
+.stat__value {
+  font-size: 34rpx;
+  line-height: 44rpx;
+  font-weight: 700;
+  color: #e3e2e5;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat__label {
+  font-size: 18rpx;
+  color: #9c9c9d;
+  margin-top: 4rpx;
+}
+
+/* ---------- 跑课分段结构 ---------- */
+
+/* 重复组：×N 徽章骑在组框上沿 */
+.seg-group {
+  position: relative;
+  border: 1rpx solid rgba(255, 255, 255, 0.09);
+  border-radius: 20rpx;
+  padding: 12rpx 24rpx 16rpx;
+  margin: 28rpx 0;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.seg-group__badge {
+  position: absolute;
+  top: -20rpx;
+  left: 24rpx;
+  font-size: 20rpx;
+  font-weight: 700;
+  line-height: 1;
+  color: #ff9d9a;
+  background: #17181a;
+  border: 1rpx solid rgba(255, 99, 99, 0.45);
+  border-radius: 999rpx;
+  padding: 8rpx 20rpx;
+  font-variant-numeric: tabular-nums;
+}
+
+.seg {
+  display: flex;
+  gap: 16rpx;
+  padding: 12rpx 0;
+  align-items: flex-start;
+}
+
+.seg__tag {
+  flex-shrink: 0;
+  font-size: 18rpx;
+  font-weight: 600;
+  line-height: 1;
+  padding: 8rpx 12rpx;
+  border-radius: 8rpx;
+  margin-top: 2rpx;
+  white-space: nowrap;
+}
+
+/* 休息行：空心灰标签 + 次要色文字（quiet） */
+.seg__tag--hollow {
+  background: transparent !important;
+  border: 1rpx solid rgba(156, 156, 157, 0.55);
+}
+
+.seg--quiet .seg__main {
+  color: #b9b8bc;
+}
+
+.seg__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.seg__main {
+  font-size: 24rpx;
+  color: #e3e2e5;
+  font-variant-numeric: tabular-nums;
+  line-height: 40rpx;
+}
+
+.seg__hr {
+  display: inline-block;
+  font-size: 18rpx;
+  color: #d9a45f;
+  margin-left: 12rpx;
+}
+
+.seg__note {
+  font-size: 20rpx;
+  color: #9c9c9d;
+  line-height: 30rpx;
+  margin-top: 2rpx;
+}
+
+/* ---------- 力量动作清单 ---------- */
+
+.exercise {
+  display: flex;
+  gap: 24rpx;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.04);
+  align-items: flex-start;
+}
+
+.exercise:last-child {
+  border-bottom: none;
+  padding-bottom: 4rpx;
+}
+
+/* 动作图/GIF 占位：素材管线接入后换真图（契约需扩 image_url） */
+.exercise__img {
+  width: 104rpx;
+  height: 104rpx;
+  flex-shrink: 0;
+  border-radius: 16rpx;
+  border: 1rpx dashed rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6rpx;
+}
+
+.exercise__img-icon {
+  width: 32rpx;
+  height: 32rpx;
+}
+
+.exercise__img-text {
+  font-size: 17rpx;
+  color: #6f7073;
+  letter-spacing: 1rpx;
+}
+
+.exercise__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.exercise__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.exercise__name {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #e3e2e5;
+}
+
+.exercise__target {
+  flex-shrink: 0;
+  font-size: 22rpx;
+  color: #ff9d9a;
+  font-variant-numeric: tabular-nums;
+}
+
+.exercise__meta {
+  font-size: 20rpx;
+  color: #9c9c9d;
+  margin-top: 6rpx;
+}
+
+/* ---------- 备注 ---------- */
+
+.note-card__title {
+  font-size: 20rpx;
+  color: #9c9c9d;
+  margin-bottom: 12rpx;
+}
+
+.note-card__text {
+  font-size: 23rpx;
+  line-height: 38rpx;
+  color: rgba(225, 191, 188, 0.9);
+}

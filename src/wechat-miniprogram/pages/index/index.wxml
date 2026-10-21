@@ -71,8 +71,8 @@
 
     <!-- 今日训练 -->
     <view class="section-title">今日安排 · {{todayLabel}}</view>
-    <view wx:if="{{workout}}" class="card workout-card">
-      <!-- 头部：图标 + 来源标记 + 标题 + 操作 -->
+    <view wx:if="{{workout}}" class="card workout-card" bindtap="onWorkoutCardTap">
+      <!-- 头部：图标 + 来源标记 + 标题 + 操作（操作按钮 catchtap，不触发卡片跳详情） -->
       <view class="workout__head">
         <view class="workout__title-wrap">
           <view class="workout__icon">
@@ -82,10 +82,10 @@
           <view wx:if="{{workout.sourceLabel}}" class="workout__source">{{workout.sourceLabel}}</view>
         </view>
         <view class="workout__actions">
-          <view class="workout__action" bindtap="onWatchTap">
+          <view class="workout__action" catchtap="onWatchTap">
             <image class="workout__action-icon" src="/assets/icons/watch.svg" mode="aspectFit" />
           </view>
-          <view class="workout__action" bindtap="onMoreTap">
+          <view class="workout__action" catchtap="onMoreTap">
             <image class="workout__action-icon" src="/assets/icons/more_horiz.svg" mode="aspectFit" />
           </view>
         </view>
@@ -93,7 +93,10 @@
 
       <!-- 强度柱状图 -->
       <view wx:if="{{workout.isRunning}}" class="workout__chart-block">
-        <view class="workout__label">课表内容</view>
+        <view class="workout__label-row">
+          <view class="workout__label">课表内容</view>
+          <view wx:if="{{workout.hasStructure}}" class="workout__label-hint">点击卡片看分段详情 ›</view>
+        </view>
         <view class="workout__chart">
           <view
             wx:for="{{workout.intensityBars}}"
@@ -119,8 +122,8 @@
         <view class="note-box__text">{{workout.coachNote}}</view>
       </view>
 
-      <!-- 和教练聊一聊 -->
-      <button class="workout__cta" bindtap="onCoachTap">
+      <!-- 和教练聊一聊（catchtap：不触发卡片跳详情） -->
+      <button class="workout__cta" catchtap="onCoachTap">
         <image class="workout__cta-icon" src="/assets/icons/forum.svg" mode="aspectFit" />
         <text class="workout__cta-text">和教练聊一聊</text>
       </button>

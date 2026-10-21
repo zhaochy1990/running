@@ -1,0 +1,128 @@
+<view class="page">
+  <!-- 自定义顶部栏（与 activity-detail 同款：返回 + 标题） -->
+  <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn" bindtap="onBack">
+        <image class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">课表详情</view>
+      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
+  </view>
+
+  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
+    <!-- ============ 加载中 ============ -->
+    <view wx:if="{{loadState === 'loading'}}" class="state-card">
+      <view class="state-card__spinner"></view>
+      <view class="state-card__text">正在加载课表…</view>
+    </view>
+
+    <!-- ============ 未找到（行已删除/过期） ============ -->
+    <view wx:elif="{{loadState === 'notfound'}}" class="state-card">
+      <view class="state-card__title">未找到该课表</view>
+      <view class="state-card__text">可能已删除或不在当前课表中</view>
+      <view class="state-card__cta" bindtap="onBack">返回</view>
+    </view>
+
+    <!-- ============ 加载失败 ============ -->
+    <view wx:elif="{{loadState === 'error'}}" class="state-card">
+      <view class="state-card__title">加载失败</view>
+      <view class="state-card__text">网络开小差了，请重试</view>
+      <view class="state-card__cta" bindtap="onRetryTap">重试</view>
+    </view>
+
+    <!-- ============ 详情 ============ -->
+    <block wx:elif="{{loadState === 'ready'}}">
+      <!-- 课表头：图标 + 名称 + 来源 + 日期 + 摘要 + 指标 -->
+      <view class="card hero">
+        <view class="hero__row">
+          <view class="hero__icon">
+            <image class="hero__icon-img" src="{{header.iconPath}}" mode="aspectFit" />
+          </view>
+          <view class="hero__titles">
+            <view class="hero__title-row">
+              <view class="hero__name">{{header.name}}</view>
+              <view wx:if="{{header.typeChip}}" class="hero__chip hero__chip--type">{{header.typeChip}}</view>
+              <view wx:if="{{header.sourceLabel}}" class="hero__chip">{{header.sourceLabel}}</view>
+            </view>
+            <view class="hero__date">{{header.dateLabel}}</view>
+          </view>
+        </view>
+        <view wx:if="{{header.summary}}" class="hero__summary">{{header.summary}}</view>
+        <view class="stat-row">
+          <view wx:for="{{stats}}" wx:key="label" class="stat">
+            <view class="stat__value">{{item.value}}</view>
+            <view class="stat__label">{{item.label}}</view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 跑课分段结构：block 组（repeat>1 带骑线 ×N 徽章）→ 步行；
+           步后休息展开为独立休息行（quiet），执行顺序与手表课表一致 -->
+      <view wx:if="{{runGroups.length}}" class="card">
+        <view class="card-title">分段结构</view>
+        <block wx:for="{{runGroups}}" wx:key="key">
+          <view wx:if="{{item.repeat > 1}}" class="seg-group">
+            <view class="seg-group__badge">×{{item.repeat}}</view>
+            <view wx:for="{{item.rows}}" wx:for-item="step" wx:key="key" class="seg {{step.quiet ? 'seg--quiet' : ''}}">
+              <view class="seg__tag {{step.quiet ? 'seg__tag--hollow' : ''}}" style="color: {{step.color}}; {{step.quiet ? '' : 'background: ' + step.color + '1f;'}}">{{step.kindLabel}}</view>
+              <view class="seg__body">
+                <view class="seg__main">
+                  <text>{{step.main}}</text>
+                  <text wx:if="{{step.hrCapText}}" class="seg__hr">{{step.hrCapText}}</text>
+                </view>
+                <view wx:if="{{step.note}}" class="seg__note">{{step.note}}</view>
+              </view>
+            </view>
+          </view>
+          <block wx:else>
+            <view wx:for="{{item.rows}}" wx:for-item="step" wx:key="key" class="seg {{step.quiet ? 'seg--quiet' : ''}}">
+              <view class="seg__tag {{step.quiet ? 'seg__tag--hollow' : ''}}" style="color: {{step.color}}; {{step.quiet ? '' : 'background: ' + step.color + '1f;'}}">{{step.kindLabel}}</view>
+              <view class="seg__body">
+                <view class="seg__main">
+                  <text>{{step.main}}</text>
+                  <text wx:if="{{step.hrCapText}}" class="seg__hr">{{step.hrCapText}}</text>
+                </view>
+                <view wx:if="{{step.note}}" class="seg__note">{{step.note}}</view>
+              </view>
+            </view>
+          </block>
+        </block>
+      </view>
+
+      <!-- 力量课动作清单：动作图/GIF 占位（素材管线接入后换真图，契约需扩 image_url） -->
+      <view wx:if="{{exercises.length}}" class="card">
+        <view class="card-title">力量动作</view>
+        <view wx:for="{{exercises}}" wx:key="key" class="exercise">
+          <view class="exercise__img">
+            <image class="exercise__img-icon" src="/assets/icons/play_circle_gray.svg" mode="aspectFit" />
+            <text class="exercise__img-text">示意动图</text>
+          </view>
+          <view class="exercise__body">
+            <view class="exercise__head">
+              <view class="exercise__name">{{item.name}}</view>
+              <view class="exercise__target">{{item.target}}</view>
+            </view>
+            <view wx:if="{{item.rest || item.note}}" class="exercise__meta">
+              <text wx:if="{{item.rest}}">{{item.rest}}</text>
+              <text wx:if="{{item.rest && item.note}}"> · </text>
+              <text wx:if="{{item.note}}">{{item.note}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 备注：课表自带 + 教练备注 -->
+      <view wx:if="{{specNote}}" class="card note-card">
+        <view class="note-card__title">课表备注</view>
+        <view class="note-card__text">{{specNote}}</view>
+      </view>
+      <view wx:if="{{coachNote}}" class="card note-card">
+        <view class="note-card__title">教练备注</view>
+        <view class="note-card__text">{{coachNote}}</view>
+      </view>
+    </block>
+  </view>
+</view>
