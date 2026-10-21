@@ -310,9 +310,11 @@ func runAPI() error {
 		WebhookEnqueueEnabled: cfg.Webhook.EnqueueEnabled,
 		// Internal sync user list (devops#661) for the GHA workflows.
 		SyncUserLister: store,
-		Auth:           authn,
-		CORSOrigins:    cfg.API.CORSOrigins,
-		SwaggerEnabled: cfg.API.SwaggerEnabled,
+		// Weekly erasure-residue audit (devops#663).
+		SyncUserAuditor: store,
+		Auth:            authn,
+		CORSOrigins:     cfg.API.CORSOrigins,
+		SwaggerEnabled:  cfg.API.SwaggerEnabled,
 		Health: map[string]health.Check{
 			"mysql": store.Ping,
 			"rabbitmq": func(context.Context) error {
