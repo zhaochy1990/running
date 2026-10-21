@@ -22,11 +22,11 @@ import {
 import { cnBadgeOf, waBadgeOf } from '../../utils/raceCenterRows';
 import { applyRaceRename, raceDisplayName } from '../../utils/raceResultRows';
 import {
+  customRaceBody,
   deleteCustomRace,
   fetchMyRaces,
   updateCustomRace,
   type CustomRace,
-  type CustomRaceBody,
   type CustomRaceState,
 } from '../../services/custom-races';
 import { upsertRacePlan, type RacePlanState } from '../../services/race-plans';
@@ -583,21 +583,6 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
     wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/profile/profile' }) });
   },
 });
-
-/** 全量更新请求体：聚合下发的原始行 + 覆盖状态（PUT 缺省可选字段会被清空）。 */
-function customRaceBody(raw: CustomRace, state: CustomRaceState): CustomRaceBody {
-  return {
-    name: raw.name,
-    race_date: raw.race_date,
-    item_type: raw.item_type,
-    distance_km: raw.distance_km,
-    ascent_m: raw.ascent_m,
-    city: raw.city,
-    website: raw.website,
-    note: raw.note,
-    state,
-  };
-}
 
 /** 就地更新一行混排卡的局部字段（官方状态流转 / 自定义状态切换共用）。 */
 function patchRow(

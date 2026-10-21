@@ -6,9 +6,9 @@
 
 import {
   createCustomRace,
+  customRaceBody,
   updateCustomRace,
   type CustomRace,
-  type CustomRaceBody,
   type CustomRaceState,
 } from '../../services/custom-races';
 import { CUSTOM_TYPE_CHIPS } from '../../utils/myRaceRows';
@@ -169,17 +169,19 @@ Page<CustomRaceFormPageData, CustomRaceFormPageHandlers>({
       ascentM = n;
     }
     // PUT 是全量更新（缺省可选字段会被清空），可选项显式带 null/空串即可
-    const body: CustomRaceBody = {
-      name,
-      race_date: date,
-      item_type: this.data.typeToken,
-      distance_km: distanceKm,
-      ascent_m: ascentM,
-      city: this.data.city.trim(),
-      website: this.data.website.trim(),
-      note: this.data.note.trim(),
-      state: this.data.state,
-    };
+    const body = customRaceBody(
+      {
+        name,
+        race_date: date,
+        item_type: this.data.typeToken,
+        distance_km: distanceKm,
+        ascent_m: ascentM,
+        city: this.data.city.trim(),
+        website: this.data.website.trim(),
+        note: this.data.note.trim(),
+      },
+      this.data.state,
+    );
     this.setData({ saving: true });
     try {
       if (this.data.editingId) await updateCustomRace(this.data.editingId, body);
