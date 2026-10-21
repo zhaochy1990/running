@@ -47,6 +47,27 @@ export interface CustomRaceBody {
   state?: CustomRaceState;
 }
 
+/** 请求体拼装源：CustomRaceBody 除 state 外的字段（Required——可传 null/空串，不可缺省）。
+ *  存储行 CustomRace 结构上满足；id/hotel/done 等多余字段由 builder 显式挑拣丢弃。 */
+type CustomRaceFields = Required<Omit<CustomRaceBody, 'state'>>;
+
+/** 全仓唯一的请求体字段枚举（#499）：PUT 全量更新缺省可选字段会被清空。
+ *  返回字面量 satisfies Required —— 将来给 CustomRaceBody 加字段而漏改本函数即编译失败，
+ *  需要同步的只剩本函数与两处输入源。 */
+export function customRaceBody(fields: CustomRaceFields, state: CustomRaceState): CustomRaceBody {
+  return {
+    name: fields.name,
+    race_date: fields.race_date,
+    item_type: fields.item_type,
+    distance_km: fields.distance_km,
+    ascent_m: fields.ascent_m,
+    city: fields.city,
+    website: fields.website,
+    note: fields.note,
+    state,
+  } satisfies Required<CustomRaceBody>;
+}
+
 /** 聚合端点的一张卡（myRaceItem 镜像）：official 的 plan 即 race-plans DTO 原样。 */
 export interface MyRaceItem {
   source: 'official' | 'custom';
