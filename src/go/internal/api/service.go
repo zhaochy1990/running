@@ -351,6 +351,7 @@ type Service struct {
 	raceContent     *raceContentRoutes
 	raceCatalog     *raceCatalogRoutes
 	workouts        *workoutRoutes
+	sharedWorkouts  *sharedWorkoutRoutes
 	webhook         *webhookRoutes
 
 	syncUserLister  SyncUserLister
@@ -427,6 +428,7 @@ func NewService(cfg Config) *Service {
 		raceContent:             newRaceContentRoutes(cfg.RaceContentStore, cfg.CityAIDraft, log),
 		raceCatalog:             newRaceCatalogRoutes(cfg.RaceCatalogStore, log),
 		workouts:                newWorkoutRoutes(cfg.WorkoutStore, cfg.WorkoutPusher, cfg.ScheduledWorkoutStore, cfg.PushedScheduleReader, log),
+		sharedWorkouts:          newSharedWorkoutRoutes(cfg.WorkoutStore, log),
 		webhook:                 newWebhookRoutes(cfg.WebhookAdapters, cfg.WebhookEventStore, cfg.WebhookUserResolver, cfg.Enqueuer, cfg.WebhookFetchJobType, cfg.WebhookEnqueueEnabled, log),
 		syncUserLister:          cfg.SyncUserLister,
 		syncUserAuditor:         cfg.SyncUserAuditor,
@@ -466,6 +468,9 @@ func (s *Service) Router() *gin.Engine {
 	// Strategy share link (#506): read-only, the UUID triple is the access
 	// boundary — the viewer may not be logged in.
 	s.raceStrategy.registerPublic(r)
+	// Workout share link (devops#701): read-only, the (user, workout) UUID
+	// pair is the access boundary — the viewer may not be logged in.
+	s.sharedWorkouts.registerPublic(r)
 	// Watch-provider event-push ingress (devops#287): public, verified by
 	// each provider's own credentials (header constants), never a JWT caller.
 	s.webhook.register(r)
