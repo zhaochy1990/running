@@ -8,11 +8,17 @@ import {
   type MasterPlanReplacementExpectation,
 } from '../../services/master-plan';
 import { ApiError } from '../../services/request';
-import { getPlanSessions, pushCustomWorkout, upsertCustomWorkout } from '../../services/plan';
-import type { CustomWorkoutCard, PlanSessionRow } from '../../types/plan';
+import {
+  deleteCustomWorkout,
+  getPlanSessions,
+  moveCustomWorkout,
+  pushCustomWorkout,
+  upsertCustomWorkout,
+} from '../../services/plan';
+import type { CustomWorkoutCard, PlanSessionRow, WorkoutOpCard } from '../../types/plan';
 import { setPendingStrategyDraft, type RaceStrategy } from '../../services/race-strategy';
 import { userStore } from '../../store/index';
-import { buildCoachCard, looksLikeJsonText, parseLeakedRaceStrategyEnvelope, type CoachCardView } from '../../utils/coachCards';
+import { buildCoachCard, looksLikeJsonText, parseLeakedRaceStrategyEnvelope, shanghaiMonthDayLabel, type CoachCardView } from '../../utils/coachCards';
 import { markdownToHtml } from '../../utils/markdown';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
@@ -146,6 +152,9 @@ interface CoachPageHandlers {
   // custom-workout 卡片动作（devops#587）：保存 / 推送 + 角标回写。
   saveCustomWorkoutCard(messageId: number, opts?: { alreadyGuarded?: boolean; silent?: boolean }): Promise<PlanSessionRow | null>;
   pushCustomWorkoutCard(messageId: number): Promise<void>;
+  // workout-op 确认卡动作（devops#698）：删除（modal 双重确认）/ 改期 + 终态回写。
+  deleteWorkoutOpCard(messageId: number): Promise<void>;
+  moveWorkoutOpCard(messageId: number): Promise<void>;
   markCustomWorkoutCard(messageId: number, badge: string, keepPrimary: boolean, keepSecondary: boolean): void;
   reconcileCustomWorkoutCards(msgs: CoachMessage[]): Promise<void>;
   applyPlanContent(
@@ -568,8 +577,9 @@ Page<CoachPageData, CoachPageHandlers>({
     wx.navigateTo({ url: card.url });
   },
 
-  /** 主 CTA：master-plan 走启用流；custom-workout 走保存流；其余产物与主体 tap 同款跳转。 */
-  onCardCta(e: WechatMiniprogram.TouchEvent) {
+  /** 主 CTA：master-plan 走启用流；custom-workout 走保存流；workout-op 走
+   *  删除/改期确认流；其余产物与主体 tap 同款跳转。 */
+  onCardCta(e: WechatMiniprogram.TouchEvent): void {
     const id = e.currentTarget.dataset.id as number;
     const message = this.data.messages.find((m) => m.id === id);
     if (!message?.card) return;
@@ -579,6 +589,15 @@ Page<CoachPageData, CoachPageHandlers>({
     }
     if (message.card.type === 'custom-workout') {
       void this.saveCustomWorkoutCard(id);
+      return;
+    }
+    if (message.card.type === 'workout-op') {
+      const op = message.card.data as WorkoutOpCard;
+      if (op.op === 'move') {
+        void this.moveWorkoutOpCard(id);
+      } else {
+        void this.deleteWorkoutOpCard(id);
+      }
       return;
     }
     this.onCardOpen(e);
@@ -642,6 +661,86 @@ Page<CoachPageData, CoachPageHandlers>({
     } catch (err: any) {
       const msg = err?.detail || err?.message || '推送失败';
       wx.showToast({ title: msg.length > 15 ? '推送失败' : msg, icon: 'none' });
+    } finally {
+      wx.hideLoading();
+      planActionInFlight = '';
+    }
+  },
+
+  /**
+   * 删除确认卡 CTA（devops#698）：wx.showModal 双重确认（#669 决策：删除破坏
+   * 性最强，卡片确认之外再过一道 modal）→ 现有软删端点。404 = 该课已在今天页
+   * 等别处删除，同样是删除终态（「该课已删除」），不按失败处理。modal 期间
+   * 持有 planActionInFlight，防 modal 未答时重复触发其它卡动作。
+   */
+  async deleteWorkoutOpCard(messageId: number) {
+    const message = this.data.messages.find((m) => m.id === messageId);
+    const op = message?.card?.data as WorkoutOpCard | undefined;
+    if (!op?.workout_id) return;
+    if (planActionInFlight) return;
+    const userId = userStore.getState().user?.id;
+    if (!userId) {
+      wx.showToast({ title: '请先登录后再操作', icon: 'none' });
+      return;
+    }
+    planActionInFlight = op.workout_id;
+    try {
+      const dayLabel = shanghaiMonthDayLabel(op.date);
+      const confirmed = await new Promise<boolean>((resolve) => {
+        wx.showModal({
+          title: '删除训练课',
+          content: `确定删除「${op.name}」（${dayLabel}）吗？`,
+          confirmText: '删除',
+          success: (res) => resolve(res.confirm),
+          fail: () => resolve(false),
+        });
+      });
+      if (!confirmed) return;
+      await deleteCustomWorkout(userId, op.workout_id);
+      this.markCustomWorkoutCard(messageId, '已删除', false, false);
+      wx.showToast({ title: '已删除', icon: 'success' });
+    } catch (err) {
+      if (err instanceof ApiError && err.statusCode === 404) {
+        this.markCustomWorkoutCard(messageId, '已删除', false, false);
+        wx.showToast({ title: '该课已删除', icon: 'none' });
+        return;
+      }
+      wx.showToast({ title: '删除失败，请稍后再试', icon: 'none' });
+    } finally {
+      planActionInFlight = '';
+    }
+  },
+
+  /**
+   * 改期确认卡 CTA（devops#698）：直调 T1 move 端点（devops#696）。服务端先
+   * 改 DB 日期，已推送课 best-effort 重推：watch_synced=true → 「已改期」；
+   * false → 「已改期·手表未同步」（改期已生效，仅手表副本未跟上，toast 说明）。
+   * 失败不写终态可重试；watch_synced 只活在本次响应里，刷新后对账只能恢复
+   * 「已改期」（已知局限，devops#669）。
+   */
+  async moveWorkoutOpCard(messageId: number) {
+    const message = this.data.messages.find((m) => m.id === messageId);
+    const op = message?.card?.data as WorkoutOpCard | undefined;
+    if (op?.op !== 'move' || !op.workout_id || !op.new_date) return;
+    if (planActionInFlight) return;
+    const userId = userStore.getState().user?.id;
+    if (!userId) {
+      wx.showToast({ title: '请先登录后再操作', icon: 'none' });
+      return;
+    }
+    planActionInFlight = op.workout_id;
+    wx.showLoading({ title: '改期中...', mask: true });
+    try {
+      const res = await moveCustomWorkout(userId, op.workout_id, op.new_date);
+      if (res.watch_synced) {
+        this.markCustomWorkoutCard(messageId, '已改期', false, false);
+        wx.showToast({ title: '已改期', icon: 'success' });
+      } else {
+        this.markCustomWorkoutCard(messageId, '已改期·手表未同步', false, false);
+        wx.showToast({ title: '已改期，手表暂未同步', icon: 'none' });
+      }
+    } catch {
+      wx.showToast({ title: '改期失败，请稍后再试', icon: 'none' });
     } finally {
       wx.hideLoading();
       planActionInFlight = '';
@@ -759,28 +858,40 @@ Page<CoachPageData, CoachPageHandlers>({
 
   /**
    * 自建课卡片对账：历史消息是 checkpoint 静态快照，按钮终态只活在内存，
-   * 刷新/重进后卡片会回到「待保存」原状（10-20 用户实证）。用课表行的
-   * save_token 对上卡片信封，恢复终态（已保存收主 CTA；已推送收双）。
-   * 对账窗口取全部卡片日期的 min~max；任何失败静默保持原状（旧版 Go api
-   * 无 save_token 时同样降级为未保存）。
+   * 刷新/重进后卡片会回到「待保存/待确认」原状（10-20 用户实证）。
+   * - custom-workout 卡（含 devops#698 reissue 卡——复用原 save_token，同一
+   *   匹配天然恢复）：按 save_token 对上课表行，恢复「已保存/已推送」。
+   * - workout-op 卡（devops#698）：按 workout_id 对账——行消失 → 「已删除」
+   *   终态；行在且日期已等于 move 的 new_date → 「已改期」（watch_synced 只
+   *   活在 CTA 响应里，对账恢复不了，已知局限见 devops#669）。
+   * 对账窗口取 custom 卡日期与 op 卡 date/new_date 的并集 min~max；任何失败
+   * 静默保持原状（旧版 Go api 无 save_token 时同样降级为未保存）。
    */
   async reconcileCustomWorkoutCards(msgs: CoachMessage[]) {
     const uid = userStore.getState().user?.id;
     if (!uid) return;
-    const cards = msgs
+    const customCards = msgs
       .map((m) => m.card)
       .filter((c): c is CoachCardView & { type: 'custom-workout'; data: CustomWorkoutCard } =>
         Boolean(c && c.type === 'custom-workout' && (c.data as CustomWorkoutCard)?.save_token),
       );
-    if (cards.length === 0) return;
-    const dates = cards.map((c) => c.data.date).sort();
+    const opCards = msgs
+      .map((m) => m.card)
+      .filter((c): c is CoachCardView & { type: 'workout-op'; data: WorkoutOpCard } =>
+        Boolean(c && c.type === 'workout-op' && (c.data as WorkoutOpCard)?.workout_id),
+      );
+    if (customCards.length === 0 && opCards.length === 0) return;
+    const dates = [
+      ...customCards.map((c) => c.data.date),
+      ...opCards.flatMap((c) => [c.data.date, ...(c.data.op === 'move' ? [c.data.new_date] : [])]),
+    ].sort();
     const { sessions } = await getPlanSessions(uid, dates[0], dates[dates.length - 1]);
     const byToken = new Map(
       sessions
         .filter((r) => r.source === 'custom' && r.save_token)
         .map((r) => [r.save_token as string, r]),
     );
-    for (const card of cards) {
+    for (const card of customCards) {
       const row = byToken.get(card.data.save_token);
       if (!row) continue;
       if (row.pushed === true) {
@@ -790,6 +901,25 @@ Page<CoachPageData, CoachPageHandlers>({
       } else {
         card.badge = '已保存';
         card.buttonText = '';
+      }
+    }
+    // workout-op 卡按 workout_id 对账（workout 行 ID 全局唯一，直接索引）。
+    const byWorkoutId = new Map(sessions.map((r) => [r.workout_id, r]));
+    for (const card of opCards) {
+      const op = card.data;
+      const row = byWorkoutId.get(op.workout_id);
+      if (!row) {
+        // 行消失（软删/归档后不再出现在 active 投影里）：删除终态。move 卡的
+        // 行同样可能已被别处删除，一并归「已删除」。
+        card.badge = '已删除';
+        card.buttonText = '';
+        card.secondaryButtonText = '';
+        continue;
+      }
+      if (op.op === 'move' && row.date === op.new_date) {
+        card.badge = '已改期';
+        card.buttonText = '';
+        card.secondaryButtonText = '';
       }
     }
   },

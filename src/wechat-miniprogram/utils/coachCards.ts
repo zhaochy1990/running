@@ -13,7 +13,7 @@
 import type { CoachSessionTarget } from '../services/coach';
 import type { MasterPlanCard } from '../services/master-plan';
 import type { RaceStrategy } from '../services/race-strategy';
-import type { CustomWorkoutCard } from '../types/plan';
+import type { CustomWorkoutCard, WorkoutOpCard } from '../types/plan';
 
 /** done.card 的 wire 形态镜像（$type = 双端约定的渲染器 key）。 */
 export interface CoachCardWire {
@@ -87,8 +87,26 @@ function isCustomWorkoutCardLike(value: unknown): value is CustomWorkoutCard {
   );
 }
 
-/** 「2026-10-20」→「10月20日」（卡片副标题/主 CTA 文案用）。 */
-function shanghaiMonthDayLabel(ymd: string): string {
+/** workout-op 确认卡内容的形状校验（WorkoutOpCard 的鸭子类型版，同上口径）：
+ * workout_id/date/name 必填，op ∈ delete|move，move 须 new_date。 */
+function isWorkoutOpCardLike(value: unknown): value is WorkoutOpCard {
+  if (value == null || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  const isYmd = (s: unknown): s is string => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
+  if (
+    (v.op !== 'delete' && v.op !== 'move') ||
+    typeof v.workout_id !== 'string' || v.workout_id.length === 0 ||
+    !isYmd(v.date) ||
+    typeof v.name !== 'string' || v.name.length === 0
+  ) {
+    return false;
+  }
+  if (v.op === 'move' && !isYmd(v.new_date)) return false;
+  return true;
+}
+
+/** 「2026-10-20」→「10月20日」（卡片副标题/主 CTA/确认弹窗文案用）。 */
+export function shanghaiMonthDayLabel(ymd: string): string {
   const [, m, d] = ymd.split('-');
   return `${Number(m)}月${Number(d)}日`;
 }
@@ -150,6 +168,26 @@ export function buildCoachCard(card: unknown, target: CoachSessionTarget | undef
     const dayLabel = shanghaiMonthDayLabel(card.date);
     // 双 CTA（devops#587）：主「保存到X月X日」（save_token 幂等 upsert）、次
     // 「推送到手表」（未保存先保存再推，聊天页直调端点后回写角标）。
+    //
+    // 改内容重发卡（devops#698 reissue）：复用原 save_token，保存即原地更新
+    // 同一行。副标题明示覆盖对象（prompt 硬约束「调整课默认沿用原课名」，此处
+    // 的 date/name 即原课的日期与课名）——防 agent 选错源课的误覆盖，用户点
+    // 保存前看得见要覆盖的是哪节课；混合改期请求 date 为新日期，保存时日期
+    // 一并更新（upsert 冲突列含 date），CTA 显示的就是落库日期。
+    if (card.reissue === true) {
+      return {
+        type: wire.$type,
+        icon: '/assets/icons/directions_run.svg',
+        title: '训练课已调整',
+        subtitle: `将更新 ${dayLabel} · ${card.name}`,
+        badge: '待保存',
+        buttonText: `保存到${dayLabel}`,
+        secondaryButtonText: '推送到手表',
+        url: '',
+        data: card,
+        inlineBody: true,
+      };
+    }
     return {
       type: wire.$type,
       icon: '/assets/icons/directions_run.svg',
@@ -160,6 +198,42 @@ export function buildCoachCard(card: unknown, target: CoachSessionTarget | undef
       secondaryButtonText: '推送到手表',
       url: '',
       data: card,
+      inlineBody: true,
+    };
+  }
+  if (wire.$type === 'workout-op') {
+    if (!isWorkoutOpCardLike(wire.data)) return null;
+    const op = wire.data;
+    const dayLabel = shanghaiMonthDayLabel(op.date);
+    // 单 CTA 确认卡（devops#698）：删除走双重确认（聊天页 modal）+ 现有软删
+    // 端点；改期走 T1 move 端点。均无次级按钮、不可跳转（动作型卡片）。
+    if (op.op === 'delete') {
+      return {
+        type: wire.$type,
+        icon: '/assets/icons/delete.svg',
+        title: '删除训练课',
+        // 已推送课（T2 pushed）：软删会 best-effort 清手表副本，提前告知。
+        subtitle: op.pushed
+          ? `${dayLabel} · ${op.name} · 删除将同步移除手表副本`
+          : `${dayLabel} · ${op.name}`,
+        badge: '待确认',
+        buttonText: '确认删除',
+        secondaryButtonText: '',
+        url: '',
+        data: op,
+        inlineBody: true,
+      };
+    }
+    return {
+      type: wire.$type,
+      icon: '/assets/icons/schedule.svg',
+      title: '训练课改期',
+      subtitle: `${dayLabel} → ${shanghaiMonthDayLabel(op.new_date)} · ${op.name}`,
+      badge: '待确认',
+      buttonText: '确认改期',
+      secondaryButtonText: '',
+      url: '',
+      data: op,
       inlineBody: true,
     };
   }

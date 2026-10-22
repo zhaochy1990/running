@@ -86,6 +86,28 @@ export function deleteCustomWorkout(userId: string, workoutId: string): Promise<
   return http.delete(`/api/users/me/custom-workouts/${encodeURIComponent(workoutId)}`);
 }
 
+/** 改期自建课响应（T1 devops#696）：统一行 DTO + 手表同步结果。 */
+export interface MoveCustomWorkoutResponse extends PlanSessionRow {
+  /** 已推送课 best-effort 重推的结果；未推送课无手表副本需同步，恒 true。 */
+  watch_synced: boolean;
+}
+
+/**
+ * 改期自建课（devops#698，T1 端点 devops#696）：服务端先改 DB 日期（手表同步
+ * 永远不阻塞改期），已推送课再 best-effort 重推新日期副本并清扫旧日期，结果
+ * 经 watch_synced 反馈（false 时改期已生效、仅手表未同步）。
+ */
+export function moveCustomWorkout(
+  userId: string,
+  workoutId: string,
+  date: string,
+): Promise<MoveCustomWorkoutResponse> {
+  return http.post<MoveCustomWorkoutResponse>(
+    `/api/users/me/custom-workouts/${encodeURIComponent(workoutId)}/move`,
+    { date },
+  );
+}
+
 /**
  * 保存自建课（devops#587）：save_token 幂等 upsert —— 重放同一 token 更新同一
  * 行（同一 workout_id），软删后重放则新建。卡片双 CTA（保存/推送）都先走它。
