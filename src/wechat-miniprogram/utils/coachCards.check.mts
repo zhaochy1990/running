@@ -93,6 +93,64 @@ const customWorkoutCard = {
   eq(buildCoachCard({ $type: 'custom-workout', data: { ...customWorkoutCard, save_token: '' } }, undefined), null, 'custom-workout empty save_token rejected');
 }
 
+// reissue 卡（devops#698 D）：复用原 save_token 的改内容重发——标题/副标题
+// 明示覆盖对象（原日期 · 原课名），CTA 仍是保存/推送双按钮，保存后角标走「已保存」
+{
+  const view = buildCoachCard({ $type: 'custom-workout', data: { ...customWorkoutCard, reissue: true } }, undefined);
+  if (!view) throw new Error('reissue card should build');
+  eq(view.title, '训练课已调整', 'reissue title');
+  eq(view.subtitle, '将更新 10月20日 · 4km×3 组 + 400m×6 间歇', 'reissue subtitle names the overwritten row');
+  eq(view.badge, '待保存', 'reissue badge');
+  eq(view.buttonText, '保存到10月20日', 'reissue primary cta');
+  eq(view.secondaryButtonText, '推送到手表', 'reissue keeps push cta');
+  eq(view.data, { ...customWorkoutCard, reissue: true }, 'reissue keeps card data');
+}
+
+// workout-op 确认卡（devops#698 A）：删除/改期单 CTA、角标「待确认」、不可跳转
+const workoutOpBase = {
+  workout_id: 'c9f3a2e1-8b7d-4c5e-9a0f-1e2d3c4b5a69',
+  date: '2026-10-23',
+  name: '4km×3 组 + 400m×6 间歇',
+  kind: 'run',
+  summary: '3 组 4km 巡航',
+};
+{
+  const del = buildCoachCard({ $type: 'workout-op', data: { ...workoutOpBase, op: 'delete', pushed: false } }, undefined);
+  if (!del) throw new Error('workout-op delete card should build');
+  eq(del.type, 'workout-op', 'workout-op type');
+  eq(del.icon, '/assets/icons/delete.svg', 'workout-op delete icon');
+  eq(del.title, '删除训练课', 'workout-op delete title');
+  eq(del.subtitle, '10月23日 · 4km×3 组 + 400m×6 间歇', 'workout-op delete subtitle');
+  eq(del.badge, '待确认', 'workout-op delete badge');
+  eq(del.buttonText, '确认删除', 'workout-op delete cta');
+  eq(del.secondaryButtonText, '', 'workout-op has no secondary cta');
+  eq(del.url, '', 'workout-op action cta has no navigation');
+  eq(del.inlineBody, true, 'workout-op inline body');
+  eq(del.data, { ...workoutOpBase, op: 'delete', pushed: false }, 'workout-op keeps data for the handler');
+  // pushed：删除副标题附「删除将同步移除手表副本」（软删 best-effort 清手表副本）
+  const delPushed = buildCoachCard({ $type: 'workout-op', data: { ...workoutOpBase, op: 'delete', pushed: true } }, undefined);
+  eq(delPushed?.subtitle, '10月23日 · 4km×3 组 + 400m×6 间歇 · 删除将同步移除手表副本', 'workout-op delete pushed subtitle');
+}
+{
+  const move = buildCoachCard(
+    { $type: 'workout-op', data: { ...workoutOpBase, op: 'move', new_date: '2026-10-25', pushed: true } },
+    undefined,
+  );
+  if (!move) throw new Error('workout-op move card should build');
+  eq(move.icon, '/assets/icons/schedule.svg', 'workout-op move icon');
+  eq(move.title, '训练课改期', 'workout-op move title');
+  eq(move.subtitle, '10月23日 → 10月25日 · 4km×3 组 + 400m×6 间歇', 'workout-op move subtitle');
+  eq(move.badge, '待确认', 'workout-op move badge');
+  eq(move.buttonText, '确认改期', 'workout-op move cta');
+}
+// 形状不对：未知 op / 缺 workout_id / 坏 date / move 缺/坏 new_date / 缺 name → null 降级 markdown
+eq(buildCoachCard({ $type: 'workout-op', data: { ...workoutOpBase, op: 'rename' } }, undefined), null, 'workout-op unknown op rejected');
+eq(buildCoachCard({ $type: 'workout-op', data: { ...workoutOpBase, op: 'delete', workout_id: '' } }, undefined), null, 'workout-op empty workout_id rejected');
+eq(buildCoachCard({ $type: 'workout-op', data: { ...workoutOpBase, op: 'delete', date: '10月23日' } }, undefined), null, 'workout-op bad date rejected');
+eq(buildCoachCard({ $type: 'workout-op', data: { ...workoutOpBase, op: 'delete', name: '' } }, undefined), null, 'workout-op empty name rejected');
+eq(buildCoachCard({ $type: 'workout-op', data: { ...workoutOpBase, op: 'move' } }, undefined), null, 'workout-op move without new_date rejected');
+eq(buildCoachCard({ $type: 'workout-op', data: { ...workoutOpBase, op: 'move', new_date: '10月25日' } }, undefined), null, 'workout-op move bad new_date rejected');
+
 // 历史自愈：信封 JSON / 裸策略 JSON 捞回；普通文本与坏 JSON 不动
 eq(parseLeakedRaceStrategyEnvelope(JSON.stringify({ disposition: 'return_direct', content: strategy })), { $type: 'race-strategy', data: strategy }, 'leaked envelope');
 eq(parseLeakedRaceStrategyEnvelope(JSON.stringify(strategy)), { $type: 'race-strategy', data: strategy }, 'leaked bare strategy');

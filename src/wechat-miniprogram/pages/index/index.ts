@@ -125,6 +125,9 @@ interface IndexPageHandlers {
 // 页面实例上的非渲染状态（模块级避免与 data 串扰，同 login 页 codeTimer 模式）
 let fetchedPlan: WeeklyPlanDetail | null = null;
 let userId = '';
+// 首帧加载完成标记（devops#698）：onShow 静默刷新跳过首帧（onLoad 刚拉过）
+// 与未登录/未加载态。
+let planLoaded = false;
 // 当前周的统一课表行（三源投影）+ 其周起始日；renderDay 从这里取当日课次。
 let weekSessions: PlanSessionRow[] = [];
 let sessionsWeekStart = '';
@@ -212,6 +215,11 @@ Page<IndexPageData, IndexPageHandlers>({
     if (tabBar) {
       tabBar.setData({ selected: 2 });
     }
+    // 静默刷新（devops#698）：教练在对话里删除/改期/保存自建课后切回本 tab，
+    // 课表即时反映，无需手动下拉刷新。跳过首帧（onLoad 已拉）与未加载态。
+    if (planLoaded && userId) {
+      void this.fetchWeekSessions(this.data.selectedDate || shanghaiToday());
+    }
   },
 
   async fetchPlan() {
@@ -231,6 +239,7 @@ Page<IndexPageData, IndexPageHandlers>({
     }
     // 统一课表行（周计划+自建+手表）单独拉取；失败时今日卡片回退空态。
     await this.fetchWeekSessions(this.data.selectedDate || shanghaiToday());
+    planLoaded = true;
   },
 
   // 拉取指定日期所在周的统一课表行，并在返回后重渲染当天卡片。

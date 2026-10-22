@@ -148,7 +148,43 @@ export interface CustomWorkoutCard {
   total_duration_s: number | null;
   estimated_dose: number | null;
   spec: NormalizedRunWorkout;
+  /** 改内容重发卡（devops#698）：复用原 save_token 原地更新同一 workout 行，
+   *  副标题明示覆盖对象（防 agent 选错源课的误覆盖）。 */
+  reissue?: boolean;
 }
+
+/**
+ * 教练 workout-op 确认卡（devops#698，$type: workout-op）：删除/改期**已保存**
+ * 自建课的确认信封（T2 workout_manage 节点下发，devops#697）。CTA 由客户端
+ * 直调用户端点（DELETE 现有端点 / POST move 端点，devops#696）。与
+ * @stride/contract 镜像口径同 CustomWorkoutCard——手工镜像最小字段子集。
+ * 可辨识联合：move 变体的 new_date 必填（形状校验同口径拒绝缺失）。
+ */
+export type WorkoutOpCard =
+  | {
+      op: 'delete';
+      /** 目标自建课的统一 workout 行 ID（CTA 执行与刷新对账都按它定位） */
+      workout_id: string;
+      /** 上海本地 YYYY-MM-DD */
+      date: string;
+      name: string;
+      kind?: string;
+      summary?: string | null;
+      /** 目标课已推送手表（delete 副标题提示「删除将同步移除手表副本」） */
+      pushed?: boolean;
+    }
+  | {
+      op: 'move';
+      workout_id: string;
+      /** 上海本地 YYYY-MM-DD */
+      date: string;
+      /** 改期目标日（上海本地 YYYY-MM-DD） */
+      new_date: string;
+      name: string;
+      kind?: string;
+      summary?: string | null;
+      pushed?: boolean;
+    };
 
 /** 统一 workout 行：某天要练什么的一次性投影（仅 active，按 weekly→custom→watch 排序） */
 export interface PlanSessionRow {
