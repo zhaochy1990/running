@@ -5404,6 +5404,60 @@
                 }
             }
         },
+        "/api/workouts/shared/{user_id}/{workout_id}": {
+            "get": {
+                "description": "Read-only share-link read. Returns one active custom workout's render fields (kind, name, summary, date, spec, totals, dose) with zero owner identity. Any miss (bad UUID, wrong owner, archived, weekly/watch source) answers 404 without saying which part missed.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workouts"
+                ],
+                "summary": "Get a shared workout",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Owner user UUID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Workout UUID",
+                        "name": "workout_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.sharedWorkoutDTO"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/{user}/ability/backfill": {
             "post": {
                 "security": [
@@ -11759,6 +11813,35 @@
                 },
                 "seg_name": {
                     "type": "string"
+                }
+            }
+        },
+        "api.sharedWorkoutDTO": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "estimated_dose": {
+                    "type": "number"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "spec": {
+                    "type": "object"
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "total_distance_m": {
+                    "type": "number"
+                },
+                "total_duration_s": {
+                    "type": "integer"
                 }
             }
         },

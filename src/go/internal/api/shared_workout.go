@@ -95,7 +95,7 @@ type sharedWorkoutDTO struct {
 	Name           string          `json:"name"`
 	Summary        *string         `json:"summary"`
 	Date           string          `json:"date"`
-	Spec           json.RawMessage `json:"spec"`
+	Spec           json.RawMessage `json:"spec" swaggertype:"object"`
 	TotalDistanceM *float64        `json:"total_distance_m"`
 	TotalDurationS *int64          `json:"total_duration_s"`
 	EstimatedDose  *float64        `json:"estimated_dose"`
