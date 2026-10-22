@@ -141,6 +141,8 @@ export interface CustomWorkoutCard {
   save_token: string;
   /** 上海本地 YYYY-MM-DD */
   date: string;
+  /** 课表类型；缺省 'run'（教练卡片历史形态）。分享落地页（#703）传力量课 */
+  kind?: 'run' | 'strength';
   name: string;
   summary: string;
   advice?: string;

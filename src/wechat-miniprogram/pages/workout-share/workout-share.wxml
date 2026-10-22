@@ -1,0 +1,136 @@
+<view class="page">
+  <!-- 自定义顶部栏（workout-detail 同款；冷开分享卡无页面栈时不显示返回） -->
+  <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn">
+        <image wx:if="{{canBack}}" class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right.svg" mode="aspectFit" bindtap="onBack" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">课表分享</view>
+      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
+  </view>
+
+  <view class="content {{loadState === 'ready' ? 'content--cta' : ''}}" style="padding-top: calc({{statusBarHeight}}px + 128rpx);">
+    <!-- ============ 加载中 ============ -->
+    <view wx:if="{{loadState === 'loading'}}" class="state-card">
+      <view class="state-card__spinner"></view>
+      <view class="state-card__text">正在加载课表…</view>
+    </view>
+
+    <!-- ============ 失效空态（缺参 / 端点 404：链接坏、课已删、非自建课） ============ -->
+    <view wx:elif="{{loadState === 'dead'}}" class="state-card">
+      <view class="state-card__title">该分享已失效</view>
+      <view class="state-card__text">课程可能已被分享者删除</view>
+    </view>
+
+    <!-- ============ 加载失败（网络 / 5xx，可重试） ============ -->
+    <view wx:elif="{{loadState === 'error'}}" class="state-card">
+      <view class="state-card__title">加载失败</view>
+      <view class="state-card__text">网络开小差了，请重试</view>
+      <view class="state-card__cta" bindtap="onRetryTap">重试</view>
+    </view>
+
+    <!-- ============ V1 沉浸课卡（零身份，所见即所得 workout-detail） ============ -->
+    <block wx:else>
+      <view class="card hero">
+        <view class="hero__row">
+          <view class="hero__icon">
+            <image class="hero__icon-img" src="{{header.iconPath}}" mode="aspectFit" />
+          </view>
+          <view class="hero__titles">
+            <view class="hero__title-row">
+              <view class="hero__name">{{header.name}}</view>
+              <view wx:if="{{header.dateLabel}}" class="hero__chip hero__chip--date">{{header.dateLabel}}</view>
+            </view>
+          </view>
+        </view>
+        <view wx:if="{{header.summary}}" class="share-summary">{{header.summary}}</view>
+        <view class="stat-row">
+          <view wx:for="{{stats}}" wx:key="label" class="stat">
+            <view class="stat__value">{{item.value}}</view>
+            <view class="stat__label">{{item.label}}</view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 跑课分段结构：block 组（repeat>1 带骑线 ×N 徽章）→ 步行；
+           步后休息展开为独立休息行（quiet），与 workout-detail 同一渲染语言 -->
+      <view wx:if="{{runGroups.length}}" class="card">
+        <view class="card-title">分段结构</view>
+        <block wx:for="{{runGroups}}" wx:key="key">
+          <view wx:if="{{item.repeat > 1}}" class="seg-group">
+            <view class="seg-group__badge">×{{item.repeat}}</view>
+            <view wx:for="{{item.rows}}" wx:for-item="step" wx:key="key" class="seg {{step.quiet ? 'seg--quiet' : ''}}">
+              <view class="seg__tag {{step.quiet ? 'seg__tag--hollow' : ''}}" style="color: {{step.color}}; {{step.quiet ? '' : 'background: ' + step.color + '1f;'}}">{{step.kindLabel}}</view>
+              <view class="seg__body">
+                <view class="seg__main">
+                  <text>{{step.main}}</text>
+                  <text wx:if="{{step.hrCapText}}" class="seg__hr">{{step.hrCapText}}</text>
+                </view>
+                <view wx:if="{{step.note}}" class="seg__note">{{step.note}}</view>
+              </view>
+            </view>
+          </view>
+          <block wx:else>
+            <view wx:for="{{item.rows}}" wx:for-item="step" wx:key="key" class="seg {{step.quiet ? 'seg--quiet' : ''}}">
+              <view class="seg__tag {{step.quiet ? 'seg__tag--hollow' : ''}}" style="color: {{step.color}}; {{step.quiet ? '' : 'background: ' + step.color + '1f;'}}">{{step.kindLabel}}</view>
+              <view class="seg__body">
+                <view class="seg__main">
+                  <text>{{step.main}}</text>
+                  <text wx:if="{{step.hrCapText}}" class="seg__hr">{{step.hrCapText}}</text>
+                </view>
+                <view wx:if="{{step.note}}" class="seg__note">{{step.note}}</view>
+              </view>
+            </view>
+          </block>
+        </block>
+      </view>
+
+      <!-- 力量课动作清单：与 workout-detail 同款 -->
+      <view wx:if="{{exercises.length}}" class="card">
+        <view class="card-title">力量动作</view>
+        <view wx:for="{{exercises}}" wx:key="key" class="exercise">
+          <view class="exercise__img">
+            <image class="exercise__img-icon" src="/assets/icons/play_circle_gray.svg" mode="aspectFit" />
+            <text class="exercise__img-text">示意动图</text>
+          </view>
+          <view class="exercise__body">
+            <view class="exercise__head">
+              <view class="exercise__name">{{item.name}}</view>
+              <view class="exercise__target">{{item.target}}</view>
+            </view>
+            <view wx:if="{{item.rest || item.note}}" class="exercise__meta">
+              <text wx:if="{{item.rest}}">{{item.rest}}</text>
+              <text wx:if="{{item.rest && item.note}}"> · </text>
+              <text wx:if="{{item.note}}">{{item.note}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 课表自带备注 -->
+      <view wx:if="{{specNote}}" class="card note-card">
+        <view class="note-card__title">课表备注</view>
+        <view class="note-card__text">{{specNote}}</view>
+      </view>
+    </block>
+  </view>
+
+  <!-- 并排双 CTA（#693 amendment）：主「保存到我的课表」+ 次「推送手表」 -->
+  <view wx:if="{{loadState === 'ready'}}" class="cta-bar">
+    <view class="cta-bar__btn {{saved ? 'cta-bar__btn--done' : 'cta-bar__btn--primary'}}" bindtap="onSaveTap">{{saved ? '已保存到我的课表' : '保存到我的课表'}}</view>
+    <view class="cta-bar__btn cta-bar__btn--secondary" bindtap="onPushTap">{{pushed ? '已推送' : '推送手表'}}</view>
+  </view>
+
+  <!-- 选日弹层：保存 / 保存并推送共用（±7 天，默认原排期或今天） -->
+  <push-date-sheet
+    wx:if="{{sheetVisible}}"
+    show="{{sheetVisible}}"
+    title="{{sheetTitle}}"
+    options="{{sheetOptions}}"
+    bindselect="onDateSelect"
+    bindclose="onDateClose"
+  />
+</view>

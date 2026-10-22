@@ -10,6 +10,8 @@
 
 import { http } from './request';
 import type {
+  NormalizedRunWorkout,
+  NormalizedStrengthWorkout,
   PlannedNutrition,
   PlannedSession,
   PlanDayRowView,
@@ -115,7 +117,7 @@ export function moveCustomWorkout(
 export function upsertCustomWorkout(card: CustomWorkoutCard): Promise<PlanSessionRow> {
   return http.post<PlanSessionRow>('/api/users/me/custom-workouts', {
     date: card.date,
-    kind: 'run',
+    kind: card.kind ?? 'run',
     name: card.name,
     summary: card.summary,
     spec: card.spec,
@@ -136,9 +138,35 @@ export interface PushCustomWorkoutResponse {
   push_date: string;
 }
 
-export function pushCustomWorkout(workoutId: string): Promise<PushCustomWorkoutResponse> {
+export function pushCustomWorkout(workoutId: string, targetDate?: string): Promise<PushCustomWorkoutResponse> {
+  const qs = targetDate ? `?target_date=${encodeURIComponent(targetDate)}` : '';
   return http.post<PushCustomWorkoutResponse>(
-    `/api/users/me/custom-workouts/${encodeURIComponent(workoutId)}/push`,
+    `/api/users/me/custom-workouts/${encodeURIComponent(workoutId)}/push${qs}`,
+  );
+}
+
+/**
+ * 免登录分享落地页数据（devops#703）：公开端点
+ * GET /api/workouts/shared/:user/:workout（#701），{auth:false} 与
+ * strategy-share 同款；(user, workout) UUID 对即访问边界，端点任何 miss 都
+ * 回 404（调用方统一映射为「该分享已失效」）。
+ */
+export interface SharedWorkout {
+  kind: string;
+  name: string;
+  summary: string | null;
+  /** 分享者（A）的原排期日，上海本地 YYYY-MM-DD */
+  date: string;
+  spec: NormalizedRunWorkout | NormalizedStrengthWorkout | null;
+  total_distance_m: number | null;
+  total_duration_s: number | null;
+  estimated_dose: number | null;
+}
+
+export function getSharedWorkout(userId: string, workoutId: string): Promise<SharedWorkout> {
+  return http.get<SharedWorkout>(
+    `/api/workouts/shared/${encodeURIComponent(userId)}/${encodeURIComponent(workoutId)}`,
+    { auth: false },
   );
 }
 

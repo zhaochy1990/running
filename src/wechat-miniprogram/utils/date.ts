@@ -136,7 +136,7 @@ export interface PushDateOption {
 
 const PUSH_DATE_FORWARD_DAYS = 7; // 今天起共 8 个可选日（含今天）
 
-export function buildPushDateOptions(plannedDate: string): PushDateOption[] {
+export function buildPushDateOptions(plannedDate: string, plannedTag = '（计划日）'): PushDateOption[] {
   const today = shanghaiToday();
   const todayEpoch = shanghaiYmdToEpoch(today);
   const plannedEpoch = shanghaiYmdToEpoch(plannedDate);
@@ -166,7 +166,7 @@ export function buildPushDateOptions(plannedDate: string): PushDateOption[] {
     }
 
     if (date === plannedDate) {
-      label = `${label}（计划日）`;
+      label = `${label}${plannedTag}`;
     }
 
     out.push({ label, value: date, selected: date === epochToShanghaiYmd(defaultEpoch) });

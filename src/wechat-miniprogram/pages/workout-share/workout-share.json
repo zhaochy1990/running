@@ -1,0 +1,9 @@
+{
+  "navigationStyle": "custom",
+  "usingComponents": {
+    "push-date-sheet": "/components/push-date-sheet/index"
+  },
+  "componentPlaceholder": {
+    "push-date-sheet": "view"
+  }
+}
