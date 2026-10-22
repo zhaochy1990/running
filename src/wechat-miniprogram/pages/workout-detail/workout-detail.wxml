@@ -35,9 +35,13 @@
 
     <!-- ============ 详情 ============ -->
     <block wx:elif="{{loadState === 'ready'}}">
-      <!-- 课表头：图标 + 名称 + 来源 + 日期 + 摘要 + 指标 -->
+      <!-- 课表头：图标 + 名称 + 来源 + 日期 + 摘要 + 指标；自建课右上角分享 pill（#704 站①） -->
       <view class="card hero">
-        <view class="hero__row">
+        <button wx:if="{{canShare}}" class="hero__share" open-type="share">
+          <image class="hero__share-icon" src="/assets/icons/share.svg" mode="aspectFit" />
+          <text>分享</text>
+        </button>
+        <view class="hero__row {{canShare ? 'hero__row--share' : ''}}">
           <view class="hero__icon">
             <image class="hero__icon-img" src="{{header.iconPath}}" mode="aspectFit" />
           </view>
@@ -125,4 +129,7 @@
       </view>
     </block>
   </view>
+
+  <!-- 分享封面 canvas（离屏绘制后经 canvasToTempFilePath 缓存，strategy #poster 同款） -->
+  <canvas type="2d" id="share-cover" class="share-cover-canvas"></canvas>
 </view>
