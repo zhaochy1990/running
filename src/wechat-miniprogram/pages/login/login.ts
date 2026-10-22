@@ -1,5 +1,6 @@
 import { sendBindPhoneCode, wechatBindAccount, wechatBindPhone } from '../../services/auth';
 import { userStore } from '../../store/index';
+import { sanitizeRedirect } from '../../utils/redirect';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 // 手机号验证码登录的特性开关（issue #335）：auth-service 的新 grant
@@ -32,6 +33,7 @@ interface LoginPageData {
 
 // 页面自定义方法（TCustom 泛型，供 this 类型收窄）
 interface LoginPageHandlers {
+  onLoad(options: Record<string, string | undefined>): void;
   onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
   onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onSwitchTab(e: WechatMiniprogram.TouchEvent): void;
@@ -51,6 +53,9 @@ interface LoginPageHandlers {
   onTermsTap(): void;
   onPrivacyTap(): void;
   onToggleAgreement(): void;
+  navigateAfterLogin(registered: boolean): void;
+  /** 登录回跳目标（sanitizeRedirect 校验过的完整 path+query），空串 = 无回跳 */
+  _redirect?: string;
 }
 
 // 倒计时 timer（页面实例卸载时清理，避免残留定时器）
@@ -84,6 +89,26 @@ Page<LoginPageData, LoginPageHandlers>({
       clearInterval(codeTimer);
       codeTimer = null;
     }
+  },
+
+  onLoad(options: Record<string, string | undefined>) {
+    this._redirect = sanitizeRedirect(options.redirect);
+    if (this._redirect) console.log(`[login] 带回跳参数：${this._redirect}`);
+  },
+
+  // 登录成功后的统一落点（issue #702）：有 redirect 优先 reLaunch 回目标页；
+  // 新注册进 onboarding（透传 redirect，完成后回跳）；否则维持原状进 coach 首页。
+  navigateAfterLogin(registered: boolean) {
+    if (this._redirect) {
+      wx.reLaunch({ url: this._redirect });
+      return;
+    }
+    if (registered) {
+      // redirectTo 替换登录页：返回键不再回到已登录状态的登录页。
+      wx.redirectTo({ url: '/pages/onboarding/onboarding' });
+      return;
+    }
+    wx.switchTab({ url: '/pages/coach/coach' });
   },
 
   // --- 通用 ---
@@ -230,9 +255,7 @@ Page<LoginPageData, LoginPageHandlers>({
       userStore.setUser(result.user);
       console.log('[login] 邮箱绑定登录成功');
       wx.showToast({ title: '登录成功', icon: 'success' });
-      setTimeout(() => {
-        wx.switchTab({ url: '/pages/coach/coach' });
-      }, 1000);
+      setTimeout(() => this.navigateAfterLogin(false), 1000);
     } catch (err) {
       console.error(
         '[login] 邮箱绑定登录失败，展示给用户的文案：',
@@ -275,15 +298,7 @@ Page<LoginPageData, LoginPageHandlers>({
           (result.registered ? ' → 跳手表绑定引导页' : ' → 进首页'),
       );
       wx.showToast({ title: '登录成功', icon: 'success' });
-      setTimeout(() => {
-        if (result.registered) {
-          // 新注册用户进入 onboarding（资料必填 → 绑表/同步可跳过）。
-          // redirectTo 替换登录页：返回键不再回到已登录状态的登录页。
-          wx.redirectTo({ url: '/pages/onboarding/onboarding' });
-          return;
-        }
-        wx.switchTab({ url: '/pages/coach/coach' });
-      }, 1000);
+      setTimeout(() => this.navigateAfterLogin(result.registered), 1000);
     } catch (err) {
       // 页面上只会显示映射后的中文（可能把多种失败合并成同一句），
       // 真正的原因看上面 [auth]/[http] 的原始日志。
