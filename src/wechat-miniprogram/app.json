@@ -4,6 +4,7 @@
     "pages/index/index",
     "pages/login/login",
     "pages/workout-detail/workout-detail",
+    "pages/workout-share/workout-share",
     "pages/plan/plan",
     "pages/activities/activities",
     "pages/activity-detail/activity-detail",
