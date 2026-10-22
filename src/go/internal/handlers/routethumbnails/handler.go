@@ -62,6 +62,9 @@ type thumbInput struct {
 	// input is merged from the sync run ({mode,content,limit}), which carries no
 	// force field, so a routine sync can never re-render the whole history.
 	Force bool `json:"force,omitempty"`
+	// LabelIDs is the sync's threaded batch (watch_sync → … → compute echo it
+	// down); echoed into the result so the downstream ability step keeps seeing it.
+	LabelIDs []string `json:"label_ids,omitempty"`
 }
 
 type thumbResult struct {
@@ -71,6 +74,8 @@ type thumbResult struct {
 	Failed     int `json:"failed"`
 	// Skipped names why the job did nothing, when it did nothing on purpose.
 	Skipped string `json:"skipped,omitempty"`
+	// LabelIDs echoes the input batch through to the next pipeline step.
+	LabelIDs []string `json:"label_ids,omitempty"`
 }
 
 // New builds the handler for both job types. Candidate failures are collected
@@ -82,18 +87,18 @@ func New(store Store, uploader *cos.Client) job.Handler {
 			return "", job.NewPermanentError("bad_partition", fmt.Errorf("route thumbnails: user must be UUID: %w", err))
 		}
 
-		// A bucket without credentials is a normal deployment state, not a
-		// failure: thumbnails are cosmetic, so skip cleanly and report why.
-		if !uploader.Configured() {
-			result, _ := json.Marshal(thumbResult{Skipped: "cos_not_configured"})
-			return string(result), nil
-		}
-
 		var in thumbInput
 		if j.InputJSON != "" {
 			if err := json.Unmarshal([]byte(j.InputJSON), &in); err != nil {
 				return "", job.NewPermanentError("bad_payload", fmt.Errorf("route thumbnails: parse input: %w", err))
 			}
+		}
+
+		// A bucket without credentials is a normal deployment state, not a
+		// failure: thumbnails are cosmetic, so skip cleanly and report why.
+		if !uploader.Configured() {
+			result, _ := json.Marshal(thumbResult{Skipped: "cos_not_configured", LabelIDs: in.LabelIDs})
+			return string(result), nil
 		}
 
 		candidates, err := store.RouteThumbCandidates(ctx, j.UserID, in.Force)
@@ -142,6 +147,7 @@ func New(store Store, uploader *cos.Client) job.Handler {
 		}
 
 		out.Failed = len(failures)
+		out.LabelIDs = in.LabelIDs
 		result, _ := json.Marshal(out)
 		if len(failures) > 0 {
 			return string(result), errors.Join(failures...)
