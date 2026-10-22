@@ -138,8 +138,21 @@ export function handleSessionExpired(): void {
 }
 
 function redirectToLogin(): void {
+  // 带当前页做回跳（登录成功后 reLaunch 回来，修 401 丢上下文）；已在登录页
+  // （登录请求自身 401）就不带，避免回跳指到登录页自己。
+  let url = '/pages/login/login';
+  const pages = getCurrentPages();
+  const current = pages[pages.length - 1];
+  if (current && current.route !== 'pages/login/login') {
+    const query = Object.entries(current.options || {})
+      .filter(([, v]) => v !== undefined)
+      .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+      .join('&');
+    const target = `/${current.route}${query ? `?${query}` : ''}`;
+    url += `?redirect=${encodeURIComponent(target)}`;
+  }
   wx.reLaunch({
-    url: '/pages/login/login',
+    url,
     complete: () => {
       redirectingToLogin = false;
     },

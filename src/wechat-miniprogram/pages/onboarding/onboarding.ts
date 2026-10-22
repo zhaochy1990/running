@@ -28,6 +28,7 @@ import {
 } from '../../utils/profileFields';
 import { shanghaiToday } from '../../utils/date';
 import { logger } from '../../utils/logger';
+import { sanitizeRedirect } from '../../utils/redirect';
 import { userStore } from '../../store/index';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
@@ -96,8 +97,11 @@ interface OnboardingPageHandlers {
   cancelPoll(): void;
   currentUserId(): string;
   goHome(): void;
+
   /** 轮询句柄存实例上，避免模块级状态在多实例间串扰（同 profile.ts）。 */
   _pollHandle?: PollPipelineHandle;
+  /** 登录流程带回的回跳目标（sanitizeRedirect 已校验），空/undefined = 默认回 coach 首页 */
+  _redirect?: string;
 }
 
 Page<OnboardingPageData, OnboardingPageHandlers>({
@@ -130,6 +134,10 @@ Page<OnboardingPageData, OnboardingPageHandlers>({
     syncPending: false,
   },
 
+  onLoad(options: Record<string, string | undefined>) {
+    this._redirect = sanitizeRedirect(options.redirect);
+  },
+
   onShow() {
     void this.refresh();
   },
@@ -150,6 +158,11 @@ Page<OnboardingPageData, OnboardingPageHandlers>({
   },
 
   goHome() {
+    // 从登录流程带 redirect 进来时优先回跳目标页（issue #702）
+    if (this._redirect) {
+      wx.reLaunch({ url: this._redirect });
+      return;
+    }
     wx.switchTab({ url: '/pages/coach/coach' });
   },
 

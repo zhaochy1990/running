@@ -3,6 +3,15 @@ import { getOnboardingStatus } from './services/onboarding';
 import { ApiError } from './services/request';
 import { userStore } from './store/index';
 
+// 免登录入口白名单（issue #702）：深链冷开这些公开落地页时不强制登录 ——
+// silentLogin 照跑（微信已绑者无感升级已登录态），失败不再甩登录页、
+// routeToOnboardingIfProfileMissing 也不再拽 onboarding，仅记日志；热启动
+// 不重跑 checkAuth，天然不受影响。#602 等后续落地页就绪后直接在此追加。
+const PUBLIC_ENTRY_PAGES: ReadonlySet<string> = new Set([
+  'pages/workout-share/workout-share',
+  'pages/race-center/strategy-share/strategy-share',
+]);
+
 // 免密登录：用 wx.login() 的 code 换 JWT。微信已绑定 → 存好 token/user 返回 true；
 // 未绑定或失败 → 返回 false。函数本身不导航，由调用方决定去哪。
 async function silentLogin(): Promise<boolean> {
@@ -71,6 +80,13 @@ App<IAppOption>({
     console.log(`[auth] checkAuth 启动：本地 ${hadToken ? '有' : '无'} token`);
     userStore.setLoading(true);
 
+    // 冷启动入口判定：公开落地页跳过下面两处强制 reLaunch（登录页 / onboarding）。
+    const entryPage = wx.getLaunchOptionsSync().path;
+    const publicEntry = PUBLIC_ENTRY_PAGES.has(entryPage);
+    if (publicEntry) {
+      console.log(`[auth] 公开落地页冷开（${entryPage}）→ 跳过强制登录/onboarding 跳转`);
+    }
+
     try {
       // 本地已有 token：不要仅凭本地 expiresAt 判定有效（它可能是「本地未过期但服务端
       // 已失效/吊销」的 token），主动向服务端验证一次，避免出现假登录态留在首页。
@@ -78,14 +94,18 @@ App<IAppOption>({
         const user = await validateSession();
         console.log('[auth] 本地 token 仍被服务端接受 → 视为已登录');
         userStore.setUser(user);
+        if (publicEntry) return;
         await routeToOnboardingIfProfileMissing();
         return;
       }
 
       // 无本地 token → 免密登录换 JWT
-      // 未绑定 → 跳登录页（邮箱登录即绑定已有 STRIDE 账号）
+      // 未绑定 → 跳登录页（邮箱登录即绑定已有 STRIDE 账号）；公开落地页例外：留在落地页继续浏览
       if (await silentLogin()) {
+        if (publicEntry) return;
         await routeToOnboardingIfProfileMissing();
+      } else if (publicEntry) {
+        console.log('[auth] 公开落地页免密未成（未绑定 / 网络）→ 留在落地页继续浏览');
       } else {
         console.log('[auth] 免密登录没成功（未绑定 / 网络）→ 去登录页');
         wx.reLaunch({
