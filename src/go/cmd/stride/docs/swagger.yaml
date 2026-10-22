@@ -2712,6 +2712,25 @@ definitions:
       seg_name:
         type: string
     type: object
+  api.sharedWorkoutDTO:
+    properties:
+      date:
+        type: string
+      estimated_dose:
+        type: number
+      kind:
+        type: string
+      name:
+        type: string
+      spec:
+        type: object
+      summary:
+        type: string
+      total_distance_m:
+        type: number
+      total_duration_s:
+        type: integer
+    type: object
   api.staleRunningRequest:
     properties:
       error_code:
@@ -8546,6 +8565,45 @@ paths:
       summary: Connect a watch provider (COROS/Garmin)
       tags:
       - users
+  /api/workouts/shared/{user_id}/{workout_id}:
+    get:
+      description: Read-only share-link read. Returns one active custom workout's
+        render fields (kind, name, summary, date, spec, totals, dose) with zero owner
+        identity. Any miss (bad UUID, wrong owner, archived, weekly/watch source)
+        answers 404 without saying which part missed.
+      parameters:
+      - description: Owner user UUID
+        in: path
+        name: user_id
+        required: true
+        type: string
+      - description: Workout UUID
+        in: path
+        name: workout_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.sharedWorkoutDTO'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      summary: Get a shared workout
+      tags:
+      - workouts
   /jobs:
     get:
       description: Returns every job type the system supports (hardcoded in the catalog),
