@@ -49,6 +49,8 @@ interface WorkoutDetailPageData {
   specNote: string;
   /** 教练备注（weekly 源回联周计划，custom/watch 源为空） */
   coachNote: string;
+  /** 自建课才出分享 pill（weekly/watch 保持品牌默认分享卡，#704） */
+  canShare: boolean;
 }
 
 interface WorkoutDetailPageHandlers {
@@ -59,6 +61,11 @@ interface WorkoutDetailPageHandlers {
   load(): Promise<void>;
   /** 拉到统一课表行后构建视图模型（render 是 Page 实例保留名，故用 applyRow）。 */
   applyRow(row: PlanSessionRow): Promise<void>;
+  /** 分享卡封面：canvas 深色卡预生成 → 临时文件缓存（onShareAppMessage 同步取）。 */
+  renderShareCover(): void;
+
+  /** canvas 生成的封面临时文件路径；空 = 未生成/失败，分享回落默认截图。 */
+  _shareCover: string;
 }
 
 // 页面入参（onLoad query）；retry 复用。
@@ -163,7 +170,21 @@ function deriveWorkoutType(row: PlanSessionRow): string {
 // ---------------------------------------------------------------------------
 
 Page<WorkoutDetailPageData, WorkoutDetailPageHandlers>({
-  onShareAppMessage: defaultShareAppMessage,
+  _shareCover: '',
+
+  // 自建课定制分享卡（#704）：title=课名，path=免登录落地页。path 同步纯拼接、
+  // 零网络请求（平台不支持异步返回，#690 实证）；封面用预生成缓存，取不到
+  // （未生成/失败）时省略 imageUrl 回落默认截图。
+  onShareAppMessage() {
+    if (this.data.canShare && userId && queryWorkoutId) {
+      return {
+        title: this.data.header.name || '训练课表',
+        path: `/pages/workout-share/workout-share?user=${userId}&workout=${queryWorkoutId}`,
+        imageUrl: this._shareCover || undefined,
+      };
+    }
+    return defaultShareAppMessage();
+  },
   onShareTimeline: defaultShareTimeline,
   data: {
     statusBarHeight: 0,
@@ -175,6 +196,7 @@ Page<WorkoutDetailPageData, WorkoutDetailPageHandlers>({
     exercises: [],
     specNote: '',
     coachNote: '',
+    canShare: false,
   },
 
   onLoad(query) {
@@ -258,6 +280,7 @@ Page<WorkoutDetailPageData, WorkoutDetailPageHandlers>({
         ];
 
     this.setData({
+      canShare: row.source === 'custom',
       header: {
         name: row.name || row.summary || '训练',
         typeChip: deriveWorkoutType(row),
@@ -274,6 +297,9 @@ Page<WorkoutDetailPageData, WorkoutDetailPageHandlers>({
       exercises,
       specNote: isRun ? (row.spec as NormalizedRunWorkout).note || '' : '',
     });
+
+    // 封面异步预生成（onLoad 后拿到行数据即绘，分享时同步取缓存，不挤分享 3 秒预算）。
+    if (row.source === 'custom') this.renderShareCover();
 
     // 教练备注：weekly 源回联周计划（session notes_md 优先，退回计划级备注）。
     if (row.source === 'weekly') {
@@ -300,4 +326,101 @@ Page<WorkoutDetailPageData, WorkoutDetailPageHandlers>({
       }
     }
   },
+
+  /** 分享卡封面（#704，站④定稿）：深色底 + 课名 + 前两项指标色块，绘制同
+   * strategy 配速卡（canvas 2d → canvasToTempFilePath）。失败静默：分享回落
+   * 微信默认截图。 */
+  renderShareCover() {
+    const name = this.data.header.name;
+    const stats = this.data.stats;
+    const query = wx.createSelectorQuery().in(this as never);
+    query
+      .select('#share-cover')
+      .fields({ node: true, size: true }, (res) => {
+        const canvas = res?.node;
+        if (!canvas) return;
+        const width = 500;
+        const height = 400;
+        const dpr = 2;
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+        const ctx = canvas.getContext('2d') as unknown as CoverCtx;
+        ctx.scale(dpr, dpr);
+        drawShareCover(ctx, width, height, name, stats);
+        wx.canvasToTempFilePath({
+          canvas,
+          success: (out) => {
+            this._shareCover = out.tempFilePath;
+          },
+        });
+      })
+      .exec();
+  },
 });
+
+/** 分享封面 canvas 2d 上下文的最小结构（同 strategy PosterCtx）。 */
+interface CoverCtx {
+  fillStyle: string;
+  font: string;
+  scale(x: number, y: number): void;
+  fillRect(x: number, y: number, w: number, h: number): void;
+  fillText(text: string, x: number, y: number): void;
+  measureText(text: string): { width: number };
+}
+
+/** 深色分享封面：藕粉顶线 + 品牌 label + 课名（最多两行）+ 两指标色块。 */
+function drawShareCover(
+  ctx: CoverCtx,
+  width: number,
+  height: number,
+  name: string,
+  stats: Array<{ value: string; label: string }>,
+): void {
+  ctx.fillStyle = '#0a0a0b';
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = '#ff6363';
+  ctx.fillRect(0, 0, width, 6);
+
+  ctx.fillStyle = '#8a8a8c';
+  ctx.font = '20px sans-serif';
+  ctx.fillText('砺跑 · 自建课表', 36, 58);
+
+  ctx.fillStyle = '#f2f2f3';
+  ctx.font = 'bold 40px sans-serif';
+  // 课名超宽换行，最多两行（第二行尾部 …）
+  const maxW = width - 72;
+  const chars = Array.from(name);
+  let idx = 0;
+  let line1 = '';
+  while (idx < chars.length && ctx.measureText(line1 + chars[idx]).width <= maxW) {
+    line1 += chars[idx];
+    idx += 1;
+  }
+  let line2 = '';
+  if (idx < chars.length) {
+    const rest = chars.slice(idx);
+    if (ctx.measureText(rest.join('')).width > maxW) {
+      while (rest.length && ctx.measureText(`${rest.join('')}…`).width > maxW) rest.pop();
+      rest.push('…');
+    }
+    line2 = rest.join('');
+  }
+  ctx.fillText(line1, 36, 126);
+  if (line2) ctx.fillText(line2, 36, 178);
+
+  // 指标色块：跑课前两项=距离/总时长，力量课=预计时长/动作（与页内 stat 同源）
+  const blockW = (width - 72 - 24) / 2;
+  const blockY = height - 140;
+  ctx.fillStyle = 'rgba(255, 99, 99, 0.12)';
+  ctx.fillRect(36, blockY, blockW, 104);
+  ctx.fillRect(36 + blockW + 24, blockY, blockW, 104);
+  for (let i = 0; i < 2 && i < stats.length; i++) {
+    const x = 36 + i * (blockW + 24);
+    ctx.fillStyle = '#ff9d9a';
+    ctx.font = 'bold 40px sans-serif';
+    ctx.fillText(stats[i].value, x + 24, blockY + 58);
+    ctx.fillStyle = '#8a8a8c';
+    ctx.font = '20px sans-serif';
+    ctx.fillText(stats[i].label, x + 24, blockY + 88);
+  }
+}
