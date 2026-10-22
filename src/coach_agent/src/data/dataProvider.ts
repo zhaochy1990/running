@@ -261,6 +261,8 @@ export interface DaySessionRow {
   summary: string | null;
   /** 规范 spec 原文（run-workout/v1 或 strength-workout/v1）；查询端渲染摘要用。 */
   spec_json: string | null;
+  /** custom 行的幂等保存令牌（devops#697 reissue 复用用）；weekly/watch 行为 null。 */
+  save_token: string | null;
   /** 已推送到手表（scheduled_workout 有 pushed 行）。 */
   pushed: boolean;
 }

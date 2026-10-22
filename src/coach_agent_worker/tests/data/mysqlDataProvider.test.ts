@@ -55,6 +55,47 @@ test("personal best loader preserves label ID and decimal precision contract", a
   assert.match(sql, /entry_json, '\$\.label_id'/);
 });
 
+test("plan sessions expose the custom row's save_token (coach reissue 复用，devops#697)", async () => {
+  const calls: Array<{ sql: string; values: unknown[] }> = [];
+  const provider = new MySqlDataProvider({
+    async query(sql: string, values: unknown[]) {
+      calls.push({ sql, values });
+      return [
+        [
+          {
+            workout_id: "w-1",
+            date: "2026-10-23",
+            source: "custom",
+            kind: "run",
+            name: "4km×3组",
+            summary: null,
+            spec_json: null,
+            save_token: "tok-1",
+            pushed: 1,
+          },
+          {
+            workout_id: "w-2",
+            date: "2026-10-21",
+            source: "weekly",
+            kind: "run",
+            name: "周三有氧",
+            summary: null,
+            spec_json: null,
+            save_token: null,
+            pushed: 0,
+          },
+        ],
+      ];
+    },
+  } as never);
+
+  const rows = await provider.getPlanSessions("athlete", "2026-10-15", "2026-11-05");
+  assert.equal(rows[0]?.save_token, "tok-1");
+  assert.equal(rows[1]?.save_token, null);
+  assert.match(calls[0]?.sql ?? "", /w\.save_token/);
+  assert.deepEqual(calls[0]?.values, ["athlete", "2026-10-15", "2026-11-05"]);
+});
+
 test("plan reads are scoped to user, active version, and week start", async () => {
   const calls: Array<{ sql: string; values: unknown[] }> = [];
   const provider = new MySqlDataProvider({
