@@ -22,6 +22,7 @@ type fakeWorkoutStore struct {
 	listCustoms []storage.Workout
 	archived    bool
 	customs     map[string]*storage.Workout
+	dateUpdates []string // workoutID→date pairs recorded by UpdateCustomWorkoutDate
 }
 
 func (f *fakeWorkoutStore) ListPlanSessions(_ context.Context, _, _, _ string) ([]storage.Workout, error) {
@@ -50,6 +51,18 @@ func (f *fakeWorkoutStore) GetCustomWorkout(_ context.Context, userID, workoutID
 		return nil, nil
 	}
 	return row, nil
+}
+
+func (f *fakeWorkoutStore) UpdateCustomWorkoutDate(_ context.Context, userID, workoutID, date string) error {
+	// Rows absent from the map are archived (GetCustomWorkout never returns
+	// them), mirroring the real store's status filter.
+	row := f.customs[workoutID]
+	if row == nil || row.UserID != userID {
+		return storage.ErrCustomWorkoutNotFound
+	}
+	row.Date = date
+	f.dateUpdates = append(f.dateUpdates, workoutID+"→"+date)
+	return nil
 }
 
 // newWorkoutHarness builds the mp harness's auth stack plus a fake workout

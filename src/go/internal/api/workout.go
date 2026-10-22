@@ -4,6 +4,7 @@
 //	POST   /api/users/me/custom-workouts                   (save_token idempotent upsert)
 //	GET    /api/users/me/custom-workouts?date_from&date_to
 //	DELETE /api/users/me/custom-workouts/:workoutId        (soft delete)
+//	POST   /api/users/me/custom-workouts/:workoutId/move   (devops#696, best-effort watch sync)
 //
 // Every row is strictly user-private ("me" endpoints on the default-deny
 // group); the store keeps tenant isolation and archived rows never appear.
@@ -76,6 +77,7 @@ type WorkoutStore interface {
 	ListCustomWorkouts(ctx context.Context, userID, dateFrom, dateTo string) ([]storage.Workout, error)
 	ArchiveCustomWorkout(ctx context.Context, userID, workoutID string) (bool, error)
 	GetCustomWorkout(ctx context.Context, userID, workoutID string) (*storage.Workout, error)
+	UpdateCustomWorkoutDate(ctx context.Context, userID, workoutID, date string) error
 }
 
 type workoutRoutes struct {
@@ -105,6 +107,10 @@ func (w *workoutRoutes) register(rg *gin.RouterGroup) {
 	rg.POST("/api/users/me/custom-workouts", w.upsertCustom)
 	rg.GET("/api/users/me/custom-workouts", w.listCustom)
 	rg.DELETE("/api/users/me/custom-workouts/:workoutId", w.deleteCustom)
+	// The move is DB-first with best-effort watch sync (devops#696): it stays
+	// mounted without the watch pair — the date change is the point, the
+	// re-publish degrades to watch_synced=true in partial services.
+	rg.POST("/api/users/me/custom-workouts/:workoutId/move", w.moveCustomWorkout)
 	if w.pusher != nil && w.swstore != nil {
 		rg.POST("/api/users/me/custom-workouts/:workoutId/push", w.pushCustomWorkout)
 	}
@@ -390,12 +396,8 @@ func (w *workoutRoutes) deleteWatchCopy(ctx context.Context, uid string, row *st
 	if w.pusher == nil || w.swstore == nil {
 		return
 	}
-	sw, err := w.swstore.GetLatestScheduledWorkoutForWorkout(ctx, uid, row.WorkoutID)
-	if err != nil {
-		w.log.Warn("look up pushed scheduled workout failed", zapErr(err), zap.String("user", uid))
-		return
-	}
-	if sw == nil || sw.Status != storage.ScheduledWorkoutStatusPushed {
+	sw := w.latestPushedForWorkout(ctx, uid, row.WorkoutID)
+	if sw == nil {
 		return
 	}
 	providerName := ""

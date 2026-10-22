@@ -6,6 +6,7 @@ package storage
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -13,6 +14,12 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+// ErrCustomWorkoutNotFound is returned by UpdateCustomWorkoutDate when the
+// workout id does not exist, is not the caller's, or is already archived
+// (devops#696). Callers GetCustomWorkout first; this surfaces only the
+// concurrent-archive race.
+var ErrCustomWorkoutNotFound = errors.New("storage: custom workout not found")
 
 // AutoMigrateWorkout creates/updates the workout table. GORM AutoMigrate has no
 // generated-column support, so identity_key + UNIQUE(user_id, identity_key) are
@@ -346,6 +353,34 @@ func (s *Store) ArchiveCustomWorkout(ctx context.Context, userID, workoutID stri
 		return false, fmt.Errorf("storage: archive custom workout: %w", result.Error)
 	}
 	return result.RowsAffected > 0, nil
+}
+
+// UpdateCustomWorkoutDate moves the user's active custom workout to a new date
+// in place (devops#696): same workout_id, same save_token identity (the
+// generated identity_key never references date), updated_at bumped. Watch sync
+// is the caller's best-effort concern — this write always lands first.
+func (s *Store) UpdateCustomWorkoutDate(ctx context.Context, userID, workoutID, date string) error {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return err
+	}
+	if _, err := time.Parse("2006-01-02", date); err != nil {
+		return fmt.Errorf("storage: invalid date: %w", err)
+	}
+	result := s.db.WithContext(ctx).Model(&Workout{}).
+		Where("workout_id = ? AND user_id = ? AND source = ? AND status = ?",
+			workoutID, uid, WorkoutSourceCustom, WorkoutStatusActive).
+		Updates(map[string]any{
+			"date":       date,
+			"updated_at": time.Now().UTC().Truncate(time.Millisecond),
+		})
+	if result.Error != nil {
+		return fmt.Errorf("storage: update custom workout date: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrCustomWorkoutNotFound
+	}
+	return nil
 }
 
 // GetCustomWorkout returns the caller's active custom workout by id, or nil

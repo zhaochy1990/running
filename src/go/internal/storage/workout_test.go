@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -171,6 +172,56 @@ func TestListPlanSessionsWindowValidation(t *testing.T) {
 	st := openTestStore(t)
 	if _, err := st.ListPlanSessions(context.Background(), "u1", "bad", "2026-01-01"); err == nil {
 		t.Fatal("expected invalid date_from error")
+	}
+}
+
+// TestUpdateCustomWorkoutDate locks the devops#696 move semantics at the store
+// level: in-place date change (same workout_id), ownership scoping, archived
+// rows invisible, and the not-found sentinel for the race / archive case.
+func TestUpdateCustomWorkoutDate(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	uid := uuid.NewString()
+
+	row, err := st.UpsertCustomWorkout(ctx, uid, UpsertCustomWorkoutInput{
+		Date: "2026-02-02", Kind: "run", Name: "自建节奏跑", SaveToken: "token-move",
+	})
+	if err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	if err := st.UpdateCustomWorkoutDate(ctx, uid, row.WorkoutID, "2026-02-05"); err != nil {
+		t.Fatalf("move: %v", err)
+	}
+	got, err := st.GetCustomWorkout(ctx, uid, row.WorkoutID)
+	if err != nil || got == nil {
+		t.Fatalf("get after move: %v %v", got, err)
+	}
+	if got.Date != "2026-02-05" || got.WorkoutID != row.WorkoutID ||
+		got.SaveToken == nil || *got.SaveToken != *row.SaveToken {
+		t.Fatalf("moved row = %+v, want same identity on 2026-02-05", got)
+	}
+	if got.UpdatedAt.Before(row.UpdatedAt) {
+		t.Fatalf("updated_at not bumped: %v → %v", row.UpdatedAt, got.UpdatedAt)
+	}
+
+	// Invalid date format is rejected before any write.
+	if err := st.UpdateCustomWorkoutDate(ctx, uid, row.WorkoutID, "02/05/2026"); err == nil {
+		t.Fatal("expected invalid date error")
+	}
+	// Foreign user / unknown id → not-found sentinel.
+	if err := st.UpdateCustomWorkoutDate(ctx, uuid.NewString(), row.WorkoutID, "2026-02-06"); !errors.Is(err, ErrCustomWorkoutNotFound) {
+		t.Fatalf("cross-user move err = %v, want ErrCustomWorkoutNotFound", err)
+	}
+	if err := st.UpdateCustomWorkoutDate(ctx, uid, "missing-id", "2026-02-06"); !errors.Is(err, ErrCustomWorkoutNotFound) {
+		t.Fatalf("unknown-id move err = %v, want ErrCustomWorkoutNotFound", err)
+	}
+	// Archived rows are invisible to the move (soft delete wins).
+	if ok, err := st.ArchiveCustomWorkout(ctx, uid, row.WorkoutID); err != nil || !ok {
+		t.Fatalf("archive: ok=%v err=%v", ok, err)
+	}
+	if err := st.UpdateCustomWorkoutDate(ctx, uid, row.WorkoutID, "2026-02-06"); !errors.Is(err, ErrCustomWorkoutNotFound) {
+		t.Fatalf("archived move err = %v, want ErrCustomWorkoutNotFound", err)
 	}
 }
 
