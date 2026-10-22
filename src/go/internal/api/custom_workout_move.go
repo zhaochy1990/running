@@ -37,21 +37,11 @@ type moveCustomWorkoutResponse struct {
 	WatchSynced bool `json:"watch_synced"`
 }
 
-// moveCustomWorkout godoc
-//
-//	@Summary		Move a user-authored workout to another date
-//	@Description	Updates the caller's active custom workout date in place (same workout_id). When the workout was already pushed to the watch, the watch copy is re-published to the new date best-effort (sweep + push + supersede); a failure never blocks the date change and only reports watch_synced=false. Same-date moves are a no-op.
-//	@Tags			workouts
-//	@Accept			json
-//	@Produce		json
-//	@Param			workoutId	path		string					true	"Custom workout id"
-//	@Param			body		body		moveCustomWorkoutRequest	true	"Target date"
-//	@Success		200			{object}	moveCustomWorkoutResponse
-//	@Failure		401			{object}	errorResponse
-//	@Failure		404			{object}	errorResponse	"Workout not found"
-//	@Failure		422			{object}	object	"date must be YYYY-MM-DD"
-//	@Security		BearerAuth
-//	@Router			/api/users/me/custom-workouts/{workoutId}/move [post]
+// moveCustomWorkout moves the caller's custom workout to another date: DB
+// first (never blocked by watch sync), then the best-effort watch re-publish
+// when the workout was already pushed. No swagger annotation on purpose — the
+// response embeds planSessionDTO (json.RawMessage spec), which swag cannot
+// express; same as the sibling upsert/list/delete handlers.
 func (w *workoutRoutes) moveCustomWorkout(c *gin.Context) {
 	uid, ok := requireUser(c)
 	if !ok {
