@@ -73,6 +73,9 @@ type computeResult struct {
 	Activities    int    `json:"activities"`
 	PersonalBests int    `json:"personal_bests"`
 	DailyLoadRows int    `json:"daily_load_rows"`
+	// Echoes the sync's label_ids so downstream pipeline steps (route_thumbnails
+	// → ability) keep seeing which activities this sync produced.
+	LabelIDs []string `json:"label_ids,omitempty"`
 }
 
 // NewCompute builds the mode-aware compute handler. It reads the latest
@@ -109,13 +112,13 @@ func NewCompute(store ComputeStore) job.Handler {
 		if in.Mode == string(provider.SyncIncremental) {
 			return runIncremental(ctx, store, user, in.LabelIDs, in.HealthDates, cal, asOf, hb)
 		}
-		return runFull(ctx, store, user, cal, asOf, hb)
+		return runFull(ctx, store, user, in.LabelIDs, cal, asOf, hb)
 	}
 }
 
 // runFull recomputes per-activity load over the trailing year, the daily PMC from
 // a zero EWMA seed, and the full personal-bests set (replace-all).
-func runFull(ctx context.Context, store ComputeStore, user string, cal trainingload.CalibrationSnapshot, asOf time.Time, hb job.Heartbeat) (string, error) {
+func runFull(ctx context.Context, store ComputeStore, user string, labelIDs []string, cal trainingload.CalibrationSnapshot, asOf time.Time, hb job.Heartbeat) (string, error) {
 	start := asOf.AddDate(0, 0, -trainingLoadLookbackDays)
 	results, acts, err := loadAndComputeActivity(ctx, store, user, start, asOf, cal)
 	if err != nil {
@@ -143,7 +146,7 @@ func runFull(ctx context.Context, store ComputeStore, user string, cal trainingl
 	}
 	_ = hb("personal_bests", pctPersonalBests)
 
-	out, _ := json.Marshal(computeResult{User: user, Status: "full", Mode: "full", Activities: len(results), PersonalBests: pbCount, DailyLoadRows: len(daily)})
+	out, _ := json.Marshal(computeResult{User: user, Status: "full", Mode: "full", Activities: len(results), PersonalBests: pbCount, DailyLoadRows: len(daily), LabelIDs: labelIDs})
 	return string(out), nil
 }
 
@@ -233,7 +236,7 @@ func runIncremental(ctx context.Context, store ComputeStore, user string, labelI
 	}
 	_ = hb("personal_bests", pctPersonalBests)
 
-	out, _ := json.Marshal(computeResult{User: user, Status: "incremental", Mode: "incremental", Activities: len(results), PersonalBests: pbCount, DailyLoadRows: len(daily)})
+	out, _ := json.Marshal(computeResult{User: user, Status: "incremental", Mode: "incremental", Activities: len(results), PersonalBests: pbCount, DailyLoadRows: len(daily), LabelIDs: labelIDs})
 	return string(out), nil
 }
 

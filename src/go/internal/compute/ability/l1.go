@@ -12,6 +12,24 @@ type PlanTarget struct {
 	HRHi    *int
 }
 
+// Activity-level L1 gate (Go-side, no Python counterpart): an activity shorter
+// than BOTH bounds carries no meaningful quality signal, so it is skipped
+// entirely rather than persisted with a noise score. The activity-level
+// analogue of dedupeAndFilterLaps' <0.3 km / <60 s lap filter. Bounds cover the
+// observed noise band (0.31–1.03 km / 2–6 min strolls) while keeping a real
+// warm-up (2 km / 13 min) scoreable.
+const (
+	minL1ActivityDistanceM = 1500.0
+	minL1ActivityDurationS = 600.0
+)
+
+// IsUltraShort reports whether an activity is too short to produce a meaningful
+// L1 quality score: distance < 1.5 km AND duration < 10 min (AND semantics, so
+// the conservative side keeps borderline activities scoreable).
+func IsUltraShort(distanceM, durationS float64) bool {
+	return distanceM < minL1ActivityDistanceM && durationS < minL1ActivityDurationS
+}
+
 // isRunning mirrors ability._is_running: sport_type in RUN_SPORT_IDS (0/unknown
 // treated as running, matching Python's None→True).
 func isRunning(a *Activity) bool {

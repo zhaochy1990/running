@@ -1,20 +1,24 @@
 // ability.go is the compute job handler that recomputes and persists the
 // 4-layer ability snapshot. It mirrors Python post_ability_backfill /
 // compute_ability_snapshot: per Shanghai day it loads the ability Source and
-// upserts the long-form ability_snapshot rows (meta/L2/L3/L4). The sync pipeline
-// drives this per-day; a standalone backfill mode seeds history over N days.
+// upserts the long-form ability_snapshot rows (meta/L2/L3/L4), and persists each
+// batch activity's L1 quality (not just the newest). The sync pipeline drives
+// this per-day; a standalone backfill mode seeds history over N days, and
+// mode=backfill_l1 fills missing per-activity L1 rows over the whole history.
 package compute
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/zhaochy1990/stride/internal/compute/ability"
 	"github.com/zhaochy1990/stride/internal/compute/abilitysource"
+	"github.com/zhaochy1990/stride/internal/compute/watchmap"
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/storage"
 	"github.com/zhaochy1990/stride/internal/utils/timefmt"
@@ -24,12 +28,17 @@ import (
 const AbilityJobType = "ability"
 
 // abilityInput is the optional job InputJSON. mode "full" (default) computes the
-// current day only; "backfill" seeds the last `days` days. ref_date overrides the
-// anchor Shanghai day (defaults to today).
+// current day only; "backfill" seeds the last `days` days; "backfill_l1" fills
+// missing per-activity L1 rows over the whole history without recomputing
+// snapshots. ref_date overrides the anchor Shanghai day (defaults to today).
+// label_ids is the pipeline-threaded batch of activities this sync produced
+// (watch_sync → compute → route_thumbnails echo it down); without it the L1
+// batch falls back to the anchor day's activities.
 type abilityInput struct {
-	Mode    string `json:"mode"`
-	Days    int    `json:"days"`
-	RefDate string `json:"ref_date"`
+	Mode     string   `json:"mode"`
+	Days     int      `json:"days"`
+	RefDate  string   `json:"ref_date"`
+	LabelIDs []string `json:"label_ids"`
 }
 
 // AbilityStore is the read+write surface the ability handler needs:
@@ -41,16 +50,24 @@ type AbilityStore interface {
 	ReplaceAbilitySnapshot(ctx context.Context, userID string, rows []storage.AbilitySnapshot) error
 	UpsertActivityAbility(ctx context.Context, userID string, row *storage.ActivityAbility) error
 	UpsertVo2MaxPB(ctx context.Context, userID string, row *storage.Vo2MaxPB) error
+	// backfill_l1 needs the full running history and which L1 rows already exist.
+	AllRunningActivities(ctx context.Context, userID string) ([]storage.Activity, error)
+	ActivityAbilityLabelIDs(ctx context.Context, userID string) (map[string]bool, error)
 }
 
 type abilityResult struct {
 	User   string `json:"user"`
 	Status string `json:"status"`
-	Days   int    `json:"days"`
+	Days   int    `json:"days,omitempty"`
+	// L1 bookkeeping: how many batch activities got an activity_ability row and
+	// how many were skipped as ultra-short (no row, no score).
+	L1Written int `json:"l1_written,omitempty"`
+	L1Skipped int `json:"l1_skipped,omitempty"`
 }
 
 // NewAbility builds the ability job handler. It computes the current-day snapshot
-// (default) or a backfill over `days`, and persists the ability_snapshot rows.
+// (default), a snapshot backfill over `days`, or an L1-only history backfill, and
+// persists the ability_snapshot rows plus each batch activity's L1.
 func NewAbility(store AbilityStore) job.Handler {
 	return func(ctx context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		user := j.UserID
@@ -65,83 +82,193 @@ func NewAbility(store AbilityStore) job.Handler {
 					fmt.Errorf("ability: bad input: %w", err))
 			}
 		}
-		n, err := runAbility(ctx, store, user, in)
+		res, err := runAbility(ctx, store, user, in)
 		if err != nil {
 			return "", err
 		}
 		_ = hb("ability", 100)
-		out, _ := json.Marshal(abilityResult{User: user, Status: "ok", Days: n})
+		out, _ := json.Marshal(res)
 		return string(out), nil
 	}
 }
 
-func runAbility(ctx context.Context, store AbilityStore, user string, in abilityInput) (int, error) {
+func runAbility(ctx context.Context, store AbilityStore, user string, in abilityInput) (abilityResult, error) {
+	if in.Mode == "backfill_l1" {
+		written, skipped, err := backfillL1(ctx, store, user)
+		if err != nil {
+			return abilityResult{}, err
+		}
+		return abilityResult{User: user, Status: "ok", L1Written: written, L1Skipped: skipped}, nil
+	}
+
 	ref, err := anchorDay(in.RefDate)
 	if err != nil {
-		return 0, job.NewPermanentError("bad_date", err)
+		return abilityResult{}, job.NewPermanentError("bad_date", err)
 	}
 
 	// Seed vo2max_pb from the PB detector's personal_bests so the PB-memory
 	// channel in compute_l3_vo2max has data (best-effort; the keep-higher-vdot
 	// guard makes this idempotent). Done once, before the day loop.
 	if err := seedVo2MaxPBs(ctx, store, user); err != nil {
-		return 0, err
+		return abilityResult{}, err
 	}
 
+	res := abilityResult{User: user, Status: "ok"}
 	if in.Mode == "backfill" && in.Days > 1 {
 		// Python post_ability_backfill iterates range(days+1) — days days back
 		// plus the anchor day, inclusive. Mirror that (start..end inclusive).
-		count := 0
 		for i := 0; i <= in.Days; i++ {
 			day := ref.AddDate(0, 0, -i)
-			if _, err := computeAndPersist(ctx, store, user, day); err != nil {
-				return count, err
+			// Only the anchor day's iteration carries label_ids: older days fall
+			// back to their own day's activities, so each activity is written
+			// exactly once and the counters stay honest.
+			labels := in.LabelIDs
+			if i > 0 {
+				labels = nil
 			}
-			count++
+			written, skipped, err := computeAndPersist(ctx, store, user, day, labels)
+			if err != nil {
+				return res, err
+			}
+			res.Days++
+			res.L1Written += written
+			res.L1Skipped += skipped
 		}
-		return count, nil
+		return res, nil
 	}
 
-	if _, err := computeAndPersist(ctx, store, user, ref); err != nil {
-		return 0, err
+	written, skipped, err := computeAndPersist(ctx, store, user, ref, in.LabelIDs)
+	if err != nil {
+		return res, err
 	}
-	return 1, nil
+	res.Days = 1
+	res.L1Written = written
+	res.L1Skipped = skipped
+	return res, nil
 }
 
 // computeAndPersist loads the Source, computes the snapshot for `day`, persists
-// its ability_snapshot rows, and records the latest activity's L1 (best-effort).
-func computeAndPersist(ctx context.Context, store AbilityStore, user string, day time.Time) (int, error) {
+// its ability_snapshot rows, and persists every batch activity's L1. The batch
+// is the sync's label_ids when the pipeline threaded them, else the anchor day's
+// activities. Ultra-short activities are skipped by ability.IsUltraShort.
+func computeAndPersist(ctx context.Context, store AbilityStore, user string, day time.Time, labelIDs []string) (written, skipped int, err error) {
 	src, err := abilitysource.Load(ctx, store, user, day, ability.AbilityLookbackDays)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	date := day.Format("2006-01-02")
 	snap := ability.ComputeAbilitySnapshot(src, date, nil)
 	rows := snapshotToRows(date, snap)
 	if err := store.ReplaceAbilitySnapshot(ctx, user, rows); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
-	// Best-effort: persist the latest activity's L1 so /activities/:id/ability
-	// has a row. Contribution is deferred (needs prior/posterior L3). Skip when
-	// no HRMax resolved (L1 needs it, and the snapshot is empty anyway).
-	if len(src.Activities) > 0 && src.HRMax != nil {
-		latest := src.Activities[0]
-		l1 := ability.ComputeL1Quality(&latest, nil, *src.HRMax)
-		breakdown, _ := json.Marshal(l1.Breakdown)
-		bs := string(breakdown)
-		stored := &storage.ActivityAbility{
-			UserID:      user,
-			LabelID:     latest.LabelID,
-			L1Quality:   ptrF(l1.Total),
-			L1Breakdown: &bs,
-			ComputedAt:  time.Now().UTC(),
-		}
-		if err := store.UpsertActivityAbility(ctx, user, stored); err != nil {
-			return 0, err
-		}
+	// Persist each batch activity's L1 so /activities/:id/ability has a row for
+	// every run, not just the newest. Contribution is deferred (needs
+	// prior/posterior L3). Skip entirely when no HRMax resolved (L1 needs it,
+	// and the snapshot is empty anyway).
+	if src.HRMax == nil {
+		return 0, 0, nil
 	}
-	return 1, nil
+	for i := range src.Activities {
+		a := &src.Activities[i]
+		if !inL1Batch(a, date, labelIDs) {
+			continue
+		}
+		if ability.IsUltraShort(a.DistanceM, a.DurationS) {
+			skipped++
+			continue
+		}
+		if err := upsertL1(ctx, store, user, a, *src.HRMax); err != nil {
+			return written, skipped, err
+		}
+		written++
+	}
+	return written, skipped, nil
+}
+
+// inL1Batch reports whether an activity belongs to this run's L1 batch: matched
+// against the sync's label_ids when present, else against the anchor day.
+func inL1Batch(a *ability.Activity, date string, labelIDs []string) bool {
+	if len(labelIDs) > 0 {
+		return slices.Contains(labelIDs, a.LabelID)
+	}
+	return a.Date == date
+}
+
+// upsertL1 computes one activity's L1 quality and upserts its activity_ability
+// row (contribution stays nil — deferred until prior/posterior L3 exist).
+func upsertL1(ctx context.Context, store AbilityStore, user string, a *ability.Activity, hrMax int) error {
+	l1 := ability.ComputeL1Quality(a, nil, hrMax)
+	breakdown, _ := json.Marshal(l1.Breakdown)
+	bs := string(breakdown)
+	return store.UpsertActivityAbility(ctx, user, &storage.ActivityAbility{
+		UserID:      user,
+		LabelID:     a.LabelID,
+		L1Quality:   ptrF(l1.Total),
+		L1Breakdown: &bs,
+		ComputedAt:  time.Now().UTC(),
+	})
+}
+
+// backfillL1 (mode=backfill_l1) walks the user's full running history and fills
+// in missing L1 rows: activities that already have one are skipped, ultra-short
+// ones fail the same gate as the routine path. Needs a calibration HRMax —
+// without one there is nothing to compute.
+func backfillL1(ctx context.Context, store AbilityStore, user string) (written, skipped int, err error) {
+	hrMax, err := abilitysource.ResolveHRMax(ctx, store, user)
+	if err != nil {
+		return 0, 0, err
+	}
+	if hrMax == nil {
+		return 0, 0, nil
+	}
+	existing, err := store.ActivityAbilityLabelIDs(ctx, user)
+	if err != nil {
+		return 0, 0, err
+	}
+	all, err := store.AllRunningActivities(ctx, user)
+	if err != nil {
+		return 0, 0, err
+	}
+	// Pre-filter on cheap row fields so the per-activity timeseries loads only
+	// happen for activities that will actually get a row.
+	pending := make([]storage.Activity, 0, len(all))
+	for i := range all {
+		a := all[i]
+		if existing[a.LabelID] {
+			continue
+		}
+		dist, dur := rowLenAndDuration(a)
+		if ability.IsUltraShort(dist, dur) {
+			skipped++
+			continue
+		}
+		pending = append(pending, a)
+	}
+	acts, err := abilitysource.MapActivities(ctx, store, pending)
+	if err != nil {
+		return 0, skipped, err
+	}
+	for i := range acts {
+		if err := upsertL1(ctx, store, user, &acts[i], *hrMax); err != nil {
+			return written, skipped, err
+		}
+		written++
+	}
+	return written, skipped, nil
+}
+
+// rowLenAndDuration extracts an activity row's (possibly adjusted) distance and
+// duration as plain meters/seconds, defaulting to 0 on NULLs.
+func rowLenAndDuration(a storage.Activity) (distM, durS float64) {
+	if p := watchmap.AsActivityDistanceMeters(a.DistanceM); p != nil {
+		distM = *p
+	}
+	if a.DurationS != nil {
+		durS = *a.DurationS
+	}
+	return distM, durS
 }
 
 // snapshotToRows flattens a Snapshot into the long-form ability_snapshot rows,

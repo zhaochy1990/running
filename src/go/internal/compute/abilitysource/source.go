@@ -46,36 +46,9 @@ func Load(ctx context.Context, r Reader, user string, asOf time.Time, lookbackDa
 	// Mirror Python _fetch_recent_activities' ORDER BY date DESC so activities[0]
 	// is the most recent (drives latest_l1).
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Date.After(rows[j].Date) })
-	activities := make([]ability.Activity, 0, len(rows))
-	for i := range rows {
-		a := rows[i]
-		sport := watchmap.SportFromRow(a.Sport, a.SportType)
-		if !watchmap.IsRunningSport(sport) {
-			continue
-		}
-		samples, err := r.ActivityTimeseries(ctx, user, a.LabelID)
-		if err != nil {
-			return nil, err
-		}
-		laps, err := r.ActivityLaps(ctx, user, a.LabelID)
-		if err != nil {
-			return nil, err
-		}
-		activities = append(activities, ability.Activity{
-			LabelID:    a.LabelID,
-			SportType:  a.SportType,
-			Date:       timefmt.ShanghaiDayStr(a.Date),
-			DistanceM:  derefF(watchmap.AsActivityDistanceMeters(a.DistanceM)),
-			DurationS:  derefF(a.DurationS),
-			AvgPaceSKm: a.AvgPaceSKm,
-			AvgHR:      a.AvgHR,
-			MaxHR:      a.MaxHR,
-			AvgCadence: a.AvgCadence,
-			TrainKind:  resolveTrainKind(a.TrainKind, a.TrainType),
-			TrainType:  a.TrainType,
-			Laps:       mapLaps(laps),
-			Samples:    mapSamples(samples),
-		})
+	activities, err := MapActivities(ctx, r, rows)
+	if err != nil {
+		return nil, err
 	}
 
 	health, err := r.AllDailyHealth(ctx, user)
@@ -114,7 +87,7 @@ func Load(ctx context.Context, r Reader, user string, asOf time.Time, lookbackDa
 		})
 	}
 
-	hrMax, err := resolveHRMax(ctx, r, user)
+	hrMax, err := ResolveHRMax(ctx, r, user)
 	if err != nil {
 		return nil, err
 	}
@@ -126,6 +99,45 @@ func Load(ctx context.Context, r Reader, user string, asOf time.Time, lookbackDa
 		Vo2MaxPBs:  pbs,
 		HRMax:      hrMax,
 	}, nil
+}
+
+// MapActivities maps synced activity rows into the ability domain activities,
+// loading each row's timeseries and laps and skipping non-running sports.
+// Exported for the L1 backfill, which pre-filters rows on cheap fields before
+// paying for the per-activity timeseries loads.
+func MapActivities(ctx context.Context, r Reader, rows []storage.Activity) ([]ability.Activity, error) {
+	activities := make([]ability.Activity, 0, len(rows))
+	for i := range rows {
+		a := rows[i]
+		sport := watchmap.SportFromRow(a.Sport, a.SportType)
+		if !watchmap.IsRunningSport(sport) {
+			continue
+		}
+		samples, err := r.ActivityTimeseries(ctx, a.UserID, a.LabelID)
+		if err != nil {
+			return nil, err
+		}
+		laps, err := r.ActivityLaps(ctx, a.UserID, a.LabelID)
+		if err != nil {
+			return nil, err
+		}
+		activities = append(activities, ability.Activity{
+			LabelID:    a.LabelID,
+			SportType:  a.SportType,
+			Date:       timefmt.ShanghaiDayStr(a.Date),
+			DistanceM:  derefF(watchmap.AsActivityDistanceMeters(a.DistanceM)),
+			DurationS:  derefF(a.DurationS),
+			AvgPaceSKm: a.AvgPaceSKm,
+			AvgHR:      a.AvgHR,
+			MaxHR:      a.MaxHR,
+			AvgCadence: a.AvgCadence,
+			TrainKind:  resolveTrainKind(a.TrainKind, a.TrainType),
+			TrainType:  a.TrainType,
+			Laps:       mapLaps(laps),
+			Samples:    mapSamples(samples),
+		})
+	}
+	return activities, nil
 }
 
 func mapLaps(rows []storage.Lap) []ability.Lap {
@@ -191,7 +203,11 @@ func windowHealth(rows []storage.DailyHealth, asOf time.Time, days int) []abilit
 	return out
 }
 
-func resolveHRMax(ctx context.Context, r Reader, user string) (*int, error) {
+// ResolveHRMax returns the calibrated HRMax from the latest running calibration
+// snapshot (single source rule — never recomputed here), or nil when the user
+// has no snapshot/estimate yet. Exported because the L1 backfill resolves the
+// same way as Load.
+func ResolveHRMax(ctx context.Context, r Reader, user string) (*int, error) {
 	snap, err := r.LatestRunningCalibrationSnapshot(ctx, user)
 	if err != nil {
 		return nil, err

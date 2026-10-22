@@ -64,6 +64,27 @@ func (s *Store) FetchActivityAbility(ctx context.Context, userID, labelID string
 	return &row, nil
 }
 
+// ActivityAbilityLabelIDs returns the set of the user's label_ids that already
+// have an activity_ability row. The L1 backfill uses it to skip finished work.
+func (s *Store) ActivityAbilityLabelIDs(ctx context.Context, userID string) (map[string]bool, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []ActivityAbility
+	if err := s.db.WithContext(ctx).
+		Select("user_id", "label_id").
+		Where("user_id = ?", uid).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(rows))
+	for i := range rows {
+		out[rows[i].LabelID] = true
+	}
+	return out, nil
+}
+
 // BestVo2MaxPBs returns the highest-vdot row per race_type (ties → latest
 // pb_date), matching Python's window-function dedupe.
 func (s *Store) BestVo2MaxPBs(ctx context.Context, userID string) ([]Vo2MaxPB, error) {

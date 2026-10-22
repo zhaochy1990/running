@@ -191,8 +191,8 @@ func Jobs() []JobSpec {
 		{
 			Type:          JobTypeAbility,
 			UserInitiable: false,
-			Description:   "Compute + persist the 4-layer ability snapshot (L1 quality / L2 freshness / L3 six dimensions / L4 composite + marathon/half estimates) for the subject athlete. Mode-aware: full computes the current Shanghai day; backfill seeds the last `days` days. Internal-only.",
-			InputSchema:   json.RawMessage(`{"type":"object","properties":{"mode":{"type":"string","enum":["full","backfill"],"default":"full"},"days":{"type":"integer","minimum":1,"maximum":365},"ref_date":{"type":"string","format":"date"}},"additionalProperties":false}`),
+			Description:   "Compute + persist the 4-layer ability snapshot (L1 quality / L2 freshness / L3 six dimensions / L4 composite + marathon/half estimates) for the subject athlete, and persist each batch activity's L1 row (label_ids the pipeline threaded through, else the anchor day's activities; ultra-short ones under 1.5 km AND 10 min are skipped). Mode-aware: full computes the current Shanghai day; backfill seeds the last `days` days; backfill_l1 fills missing per-activity L1 rows over the whole history without recomputing snapshots. Internal-only.",
+			InputSchema:   json.RawMessage(`{"type":"object","properties":{"mode":{"type":"string","enum":["full","backfill","backfill_l1"],"default":"full"},"days":{"type":"integer","minimum":1,"maximum":365},"ref_date":{"type":"string","format":"date"},"label_ids":{"type":"array","items":{"type":"string"},"description":"The activities this sync produced (pipeline-threaded); without it the L1 batch is the anchor day's activities."}},"additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{"mode":"backfill","days":180}`),
 		},
 		{
