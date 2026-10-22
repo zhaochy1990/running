@@ -1,16 +1,18 @@
 import type { BaseMessage } from "@langchain/core/messages";
 import type { GraphNode } from "@langchain/langgraph";
+import { buildChatModel } from "@stride/common";
 import { type CoachAgentConfig, getAgentConfig } from "../config/config.js";
 import type { DataProvider } from "../data/dataProvider.js";
 import type { ActivityFeelWriter } from "../tools/feel.js";
 import { getCustomWorkoutAgent } from "./custom_workout/agent.js";
-import { type CalibrationResolver, makeCustomWorkoutNode } from "./custom_workout/node.js";
+import { type CalibrationResolver, type ListCustomSessionsResolver, makeCustomWorkoutNode } from "./custom_workout/node.js";
 import { getOrchestratorNode } from "./orchestrator.js";
 import { getOtherAgent } from "./other/agent.js";
 import { getQaAgent } from "./qa/agent.js";
 import { getRaceStrategyAgent } from "./race_strategy/agent.js";
 import { makeRaceStrategyNode } from "./race_strategy/node.js";
 import type { AgentsState } from "./state.js";
+import { makeWorkoutManageNode } from "./workout_manage/node.js";
 
 /** Minimal surface of an inner `createAgent` agent that a node needs to run it. */
 interface InnerAgent {
@@ -47,6 +49,7 @@ export function getAgentNode(
       master_plan: "training",
       race_strategy: "race_strategy",
       custom_workout: "custom_workout",
+      workout_manage: "workout_manage",
       other: "qa",
     };
     return getOrchestratorNode(agentConfig, routes);
@@ -74,7 +77,21 @@ export function getAgentNode(
         ? null
         : { thresholdSpeedMps: calibration.thresholdSpeedMps, thresholdHr: calibration.thresholdHr, rhrBaseline: calibration.rhrBaseline };
     };
-    return makeCustomWorkoutNode({ agent: workoutAgent, resolveCalibration });
+    // reissue 注入（devops#697）：asof±14d 已存 custom 课（date/name/summary/save_token）。
+    const listCustomSessions: ListCustomSessionsResolver = async (userId, dateFrom, dateTo) => {
+      const rows = await dataProvider.getPlanSessions(userId, dateFrom, dateTo);
+      return rows.filter((row) => row.source === "custom").map((row) => ({ date: row.date, name: row.name, summary: row.summary, save_token: row.save_token }));
+    };
+    return makeCustomWorkoutNode({ agent: workoutAgent, resolveCalibration, listCustomSessions });
+  }
+
+  if (agentName === "workout_manage") {
+    const agentConfig = getAgentConfig(config, "workout_manage");
+    // 角色 yaml 固定 api_kind=chat-completions（DeepSeek），JSON mode 走 ChatOpenAI。
+    return makeWorkoutManageNode({
+      model: buildChatModel(agentConfig),
+      listSessions: (userId, dateFrom, dateTo) => dataProvider.getPlanSessions(userId, dateFrom, dateTo),
+    });
   }
 
   if (agentName === "other") {

@@ -459,6 +459,7 @@ export class MySqlDataProvider implements DataProvider {
               w.name,
               w.summary,
               w.spec_json,
+              w.save_token,
               EXISTS(SELECT 1 FROM scheduled_workout s
                       WHERE s.user_id = w.user_id AND s.status = 'pushed'
                         AND ((s.workout_id IS NOT NULL AND s.workout_id = w.workout_id)
@@ -477,6 +478,7 @@ export class MySqlDataProvider implements DataProvider {
       name: String(r.name),
       summary: r.summary ?? null,
       spec_json: r.spec_json ?? null,
+      save_token: r.save_token ?? null,
       pushed: Number(r.pushed) === 1,
     }));
   }

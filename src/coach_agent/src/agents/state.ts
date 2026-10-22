@@ -5,7 +5,7 @@ import { z } from "zod/v4";
 // Structured output of the intent classifier; also the type of the `intent`
 // state channel the orchestrator writes to.
 export const IntentClassificationSchema = z.object({
-  intent: z.enum(["weekly_plan", "master_plan", "race_strategy", "custom_workout", "training_question", "other"]),
+  intent: z.enum(["weekly_plan", "master_plan", "race_strategy", "custom_workout", "workout_manage", "training_question", "other"]),
   // topic: z.string(),
   // summary: z.string(),
 });

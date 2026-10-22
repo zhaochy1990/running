@@ -59,6 +59,12 @@ agents:
     model: deepseekv4flash
     max_tokens: 65536
     timeout_s: 600  
+  - name: workout_manage
+    model: deepseekv4flash
+    api_kind: chat-completions
+    thinking: disabled
+    max_tokens: 2048
+    timeout_s: 60
   - name: reviewer
     model: deepseekv4flash
     # 与 coach.prod.yaml 对齐：16384 会被偶发长 reasoning 烧满（票 #612）。

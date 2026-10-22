@@ -22,6 +22,8 @@ export const CustomWorkoutCardSchema = z.object({
   total_duration_s: z.number().nullable(),
   estimated_dose: z.number().nullable(),
   spec: RunWorkoutSchema,
+  /** reissue 卡（devops#697）：save_token 复用了已存课的原令牌，mp 保存即原地更新同一行。 */
+  reissue: z.boolean().optional(),
 });
 export type CustomWorkoutCard = z.infer<typeof CustomWorkoutCardSchema>;
 
@@ -31,6 +33,8 @@ export const CustomWorkoutLenientContentSchema = z.object({
   name: z.string().min(1),
   summary: z.string().min(1),
   advice: z.string().optional(),
+  /** 用户在调整一节已存课时，该课在注入列表里的 save_token；节点命中列表才复用。 */
+  original_save_token: z.string().min(1).optional(),
   spec: RunWorkoutLenientSchema,
 });
 
@@ -49,6 +53,7 @@ export function normalizeCustomWorkoutDraft(content: z.infer<typeof CustomWorkou
   name: string;
   summary: string;
   advice?: string;
+  original_save_token?: string;
   spec: RunWorkout;
 } {
   return {
@@ -56,6 +61,7 @@ export function normalizeCustomWorkoutDraft(content: z.infer<typeof CustomWorkou
     name: content.name,
     summary: content.summary,
     ...(content.advice !== undefined ? { advice: content.advice } : {}),
+    ...(content.original_save_token !== undefined ? { original_save_token: content.original_save_token } : {}),
     spec: normalizeRunWorkout(content.spec),
   };
 }

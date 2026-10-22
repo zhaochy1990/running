@@ -6,16 +6,17 @@ import { type AgentsState, IntentClassificationSchema, type IntentLabel } from "
 
 const logger = getLogger("orchestrator");
 
-/** 意图分类提示（导出供边界路由样本单测锁定；devops#587 增 custom_workout）。 */
+/** 意图分类提示（导出供边界路由样本单测锁定；devops#587 增 custom_workout，devops#697 增 workout_manage）。 */
 export const ORCHESTRATOR_INTENT_PROMPT = `Analyze the user's utterance and classify their intent into one of the following categories. Only output the classification result in a structured format, without providing any answers or training advice.
 - "weekly_plan"：查看或调整某一周的训练计划
 - "master_plan"：制定或重新制定赛季 / 总体训练计划（生成一份完整的新计划）
 - "race_strategy"：为一场具体比赛制定或调整执行策略（分段配速、补给、赛道应对）
-- "custom_workout"：创建一次具体的训练课（用户给出组数/距离/配速/休息等课表结构，要生成可保存的单次训练课）
+- "custom_workout"：创建一次具体的训练课（用户给出组数/距离/配速/休息等课表结构，要生成可保存的单次训练课）；**修改某节已保存训练课的内容**（改组数/配速/时长等，含同时改日期的混合请求）也归这里
+- "workout_manage"：**删除**或**改期**一节已保存的训练课（只动日期/存废，不改课表内容）
 - "training_question"：关于训练状态、疲劳、指标或跑步知识的问答；查看/解读已生成的计划
 - "other"：不属于以上任何一类
 
-判断依据是用户的**意图**，不是句中出现了「周 / 计划」：问训练跑得怎样、状态如何属于 training_question；查看已写好的计划（周或赛季）分别属于 weekly_plan / training_question；只有要**生成**或**整体重排**赛季计划才是 master_plan（耗时数分钟的完整规划）；要**创建**单次训练课就是 custom_workout——结构没说全（缺配速/日期/组数）也是 custom_workout（后续会追问补齐），不必等结构完整；描述一节具体课表（组数/距离/配速/休息）要落成单次训练课时才是 custom_workout——调整周计划里的某一天仍是 weekly_plan，「明天跑什么」这类提问仍是 training_question。
+判断依据是用户的**意图**，不是句中出现了「周 / 计划」：问训练跑得怎样、状态如何属于 training_question；查看已写好的计划（周或赛季）分别属于 weekly_plan / training_question；只有要**生成**或**整体重排**赛季计划才是 master_plan（耗时数分钟的完整规划）；要**创建**单次训练课就是 custom_workout——结构没说全（缺配速/日期/组数）也是 custom_workout（后续会追问补齐），不必等结构完整；描述一节具体课表（组数/距离/配速/休息）要落成单次训练课时才是 custom_workout——调整周计划里的某一天仍是 weekly_plan，「明天跑什么」这类提问仍是 training_question。**对已保存的课只动存废或日期是 workout_manage；动课表内容（改时长/组数/配速，无论是否同时改日期）是 custom_workout**——「把这节课改成 12 分钟 3 组」「改成后天 12 分钟 3 组」都是 custom_workout；「把明天的课删了」「今天训练挪到周五」是 workout_manage；调整周计划（改某天的安排/改成休息）仍是 weekly_plan。
 示例（message → intent）：
 - "我这周跑的怎么样？" → training_question
 - "最近状态怎么样，累不累？" → training_question
@@ -34,6 +35,10 @@ export const ORCHESTRATOR_INTENT_PROMPT = `Analyze the user's utterance and clas
 - "帮我建一节课：10km 有氧，配速530-600" → custom_workout
 - "帮我生成单次训练课程" → custom_workout（想建课但还没给结构，先追问补齐）
 - "配速430" → custom_workout（课程创建追问中的回答，结合上文）
+- "把明天的课删了" → workout_manage（删除已保存的课）
+- "今天训练挪到周五" → workout_manage（只改日期）
+- "把这节课改成 12 分钟 3 组" → custom_workout（改课表内容，不是 workout_manage）
+- "改成后天 12 分钟 3 组" → custom_workout（改期+改内容的混合请求，归 custom_workout）
 - "今天天气怎么样" → other
 
 Provide classification including intent. Respond with a single JSON object: {"intent": "<label>"}.
@@ -63,7 +68,7 @@ export function getOrchestratorNode(modelConfig: ModelConfig, routes: Partial<Re
       logger.warn({ error }, "orchestrator: intent decode failed");
     }
 
-    const classification = parsed.success ? parsed.data : state.intent ?? { intent: "other" as const };
+    const classification = parsed.success ? parsed.data : (state.intent ?? { intent: "other" as const });
     if (!parsed.success) {
       logger.warn({ fallback: classification }, "orchestrator: intent classification failed; keeping previous intent");
     }

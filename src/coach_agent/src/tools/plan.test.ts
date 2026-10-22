@@ -30,6 +30,7 @@ class FakePlanStore implements PlanStore {
     name: string;
     summary: string | null;
     spec_json: string | null;
+    save_token: string | null;
     pushed: boolean;
   }> = [];
 
@@ -108,9 +109,22 @@ test("get_day_plan_sessions defaults to today and summarizes saved sessions", as
         date: "2026-10-20",
         note: null,
         blocks: [
-          { repeat: 1, steps: [{ step_kind: "work", duration: { kind: "distance_m", value: 5000 }, target: { kind: "pace_s_km", low: 245, high: 240 }, note: null, hr_cap_bpm: null, rest: { kind: "time_s", value: 240 } }] },
+          {
+            repeat: 1,
+            steps: [
+              {
+                step_kind: "work",
+                duration: { kind: "distance_m", value: 5000 },
+                target: { kind: "pace_s_km", low: 245, high: 240 },
+                note: null,
+                hr_cap_bpm: null,
+                rest: { kind: "time_s", value: 240 },
+              },
+            ],
+          },
         ],
       }),
+      save_token: "token-1",
       pushed: true,
     },
   ];

@@ -202,3 +202,78 @@ test("prompt hard rules: shorthand conversion, date anchor, and boundary routing
   // orchestrator 边界（误路由样本）：明天跑什么仍是问答，调整周计划仍走 weekly_plan。
   assert.ok(CUSTOM_WORKOUT_PROMPT.includes("不要把休息写成平级的 rest step"));
 });
+
+test("reissue: an original_save_token hitting the injected list is reused with reissue flag", async () => {
+  const sessions = [{ date: "2026-10-20", name: spec.name, summary: draft.summary, save_token: "tok-existing" }];
+  const node = makeCustomWorkoutNode({
+    agent: {
+      async invoke() {
+        return { messages: [], structuredResponse: { disposition: "return_direct", content: { ...draft, original_save_token: "tok-existing" } } };
+      },
+    },
+    listCustomSessions: async () => sessions,
+  });
+  const update = (await node({ intent: { intent: "custom_workout" }, messages: [] } as never, { context: { userId: "u-1", asof: "2026-10-19" } })) as {
+    messages: AIMessage[];
+  };
+  const card = update.messages[0]?.additional_kwargs?.card as { data: CustomWorkoutCard };
+  // 复用原 token（mp 保存即原地更新同一行）并明示 reissue。
+  assert.equal(card.data.save_token, "tok-existing");
+  assert.equal(card.data.reissue, true);
+});
+
+test("reissue: an original_save_token missing from the list mints a fresh token (anti-hallucination)", async () => {
+  const node = makeCustomWorkoutNode({
+    agent: {
+      async invoke() {
+        return { messages: [], structuredResponse: { disposition: "return_direct", content: { ...draft, original_save_token: "tok-hallucinated" } } };
+      },
+    },
+    listCustomSessions: async () => [{ date: "2026-10-20", name: spec.name, summary: draft.summary, save_token: "tok-existing" }],
+  });
+  const update = (await node({ intent: { intent: "custom_workout" }, messages: [] } as never, { context: { userId: "u-1", asof: "2026-10-19" } })) as {
+    messages: AIMessage[];
+  };
+  const card = update.messages[0]?.additional_kwargs?.card as { data: CustomWorkoutCard };
+  assert.notEqual(card.data.save_token, "tok-hallucinated");
+  assert.equal(card.data.save_token.length, 36);
+  assert.equal(card.data.reissue, undefined);
+});
+
+test("reissue injection: the existing-session listing rides a SystemMessage with name/date/summary/save_token only", async () => {
+  const seen: Array<BaseMessage[]> = [];
+  let window: { from: string; to: string } | null = null;
+  const node = makeCustomWorkoutNode({
+    agent: {
+      async invoke(input) {
+        seen.push((input as { messages: BaseMessage[] }).messages);
+        return { messages: [], structuredResponse: envelope };
+      },
+    },
+    listCustomSessions: async (userId, dateFrom, dateTo) => {
+      window = { from: dateFrom, to: dateTo };
+      assert.equal(userId, "u-1");
+      return [{ date: "2026-10-20", name: spec.name, summary: draft.summary, save_token: "tok-existing" }];
+    },
+  });
+  const input = [new HumanMessage("把这节课改成 12 分钟 3 组")];
+  await node({ intent: { intent: "custom_workout" }, messages: input } as never, { context: { userId: "u-1", asof: "2026-10-19" } });
+  // 注入窗口 asof±14d；消息 = 原对话 + 列表 SystemMessage（不重排历史）。
+  assert.deepEqual(window, { from: "2026-10-05", to: "2026-11-02" });
+  const messages = seen[0] ?? [];
+  assert.equal(messages.length, input.length + 1);
+  const injected = messages.at(-1);
+  assert.equal(injected?.getType(), "system");
+  const listing = String((injected as { content: unknown }).content);
+  assert.match(listing, /已保存的自建训练课/);
+  assert.match(listing, /save_token=tok-existing/);
+  assert.match(listing, /date=2026-10-20/);
+  // 不 inject spec——对「改哪节课」的指认无用，只撑上下文。
+  assert.doesNotMatch(listing, /spec/);
+});
+
+test("reissue prompt rules: token provenance and keep-original-name default", () => {
+  assert.ok(CUSTOM_WORKOUT_PROMPT.includes("original_save_token"));
+  assert.ok(CUSTOM_WORKOUT_PROMPT.includes("列表里没有用户所指的课时不要输出该字段"));
+  assert.ok(CUSTOM_WORKOUT_PROMPT.includes("默认沿用原课名"));
+});

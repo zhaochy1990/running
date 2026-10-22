@@ -39,16 +39,20 @@ export async function createCoachAgent(dataProvider: DataProvider, config: Coach
   const trainingNode = createTrainingNode(dataProvider, config);
 
   const graph = new StateGraph(AgentsState)
-    .addNode("orchestrator", getAgentNode("orchestrator", config, dataProvider), { ends: ["qa", "training", "race_strategy", "custom_workout"] })
+    .addNode("orchestrator", getAgentNode("orchestrator", config, dataProvider), {
+      ends: ["qa", "training", "race_strategy", "custom_workout", "workout_manage"],
+    })
     .addNode("qa", getAgentNode("qa", config, dataProvider, options.activityFeelWriter))
     .addNode("training", trainingNode)
     .addNode("race_strategy", getAgentNode("race_strategy", config, dataProvider))
     .addNode("custom_workout", getAgentNode("custom_workout", config, dataProvider))
+    .addNode("workout_manage", getAgentNode("workout_manage", config, dataProvider))
     .addEdge(START, "orchestrator")
     .addEdge("qa", END)
     .addEdge("training", END)
     .addEdge("race_strategy", END)
     .addEdge("custom_workout", END)
+    .addEdge("workout_manage", END)
     .compile({
       checkpointer: options.checkpointer ?? new MemorySaver(),
       store: options.store ?? new InMemoryStore(),

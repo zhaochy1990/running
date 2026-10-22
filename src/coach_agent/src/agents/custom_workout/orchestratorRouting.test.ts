@@ -27,3 +27,22 @@ test("orchestrator prompt carries the custom_workout category and its boundary s
   assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes('"下周计划调整一下，周三改成休息" → weekly_plan'));
   assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes("调整周计划里的某一天仍是 weekly_plan"));
 });
+
+/**
+ * workout_manage 边界样本锁定（devops#697 验收，对齐 #669 验收第 4 条）：删/挪是
+ * workout_manage；改内容（含改期+改内容混合）仍归 custom_workout；周计划调整仍走
+ * weekly_plan——intent 误路由是本功能第一风险。
+ */
+test("orchestrator prompt carries the workout_manage category and its boundary samples", () => {
+  assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes('"workout_manage"：**删除**或**改期**一节已保存的训练课'));
+
+  // 例句本身 → workout_manage。
+  assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes('"把明天的课删了" → workout_manage'));
+  assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes('"今天训练挪到周五" → workout_manage'));
+
+  // 误路由守卫：改内容与混合请求归 custom_workout，周计划调整仍走 weekly_plan。
+  assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes('"把这节课改成 12 分钟 3 组" → custom_workout（改课表内容，不是 workout_manage）'));
+  assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes('"改成后天 12 分钟 3 组" → custom_workout（改期+改内容的混合请求，归 custom_workout）'));
+  assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes('"下周计划调整一下，周三改成休息" → weekly_plan'));
+  assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes("对已保存的课只动存废或日期是 workout_manage"));
+});
