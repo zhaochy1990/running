@@ -37,8 +37,11 @@ test("setup 幂等建 coach_shares 表（uk_selection 三元组唯一键）", as
   assert.match(sql, /PRIMARY KEY \(sid\)/);
 });
 
-test("createOrGet：插入成功返回 reused:false；冲突回读既有 sid 与 wxacode_url", async () => {
-  const inserted = new FakePool([() => [{ affectedRows: 1 }]]);
+test("createOrGet：插入成功回读 uk 行命中自身 sid → reused:false", async () => {
+  const inserted = new FakePool([
+    () => [{ affectedRows: 1 }],
+    () => [[{ sid: "newSidNewSidNewSidNew22", wxacode_url: null }]],
+  ]);
   const store = new MySqlCoachShareStore(inserted as never);
   const created = await store.createOrGet({
     sid: "newSidNewSidNewSidNew22",
@@ -54,26 +57,30 @@ test("createOrGet：插入成功返回 reused:false；冲突回读既有 sid 与
   assert.match(write?.sql ?? "", /INSERT INTO coach_shares/);
   assert.equal(write?.values?.[0], "newSidNewSidNewSidNew22");
   assert.equal(write?.values?.[5], '{"messages":[]}');
-
-  const duplicated = new FakePool([
-    () => [{ affectedRows: 0 }],
-    () => [[{ sid: "existingSid12345678901", wxacode_url: "https://cos.example.com/x.png" }]],
-  ]);
-  const reused = await new MySqlCoachShareStore(duplicated as never).createOrGet({
-    sid: "anotherSidAnotherSidAnothe",
-    userId: "u-1",
-    sessionId: "s-1",
-    selectionHash: "a".repeat(64),
-    messageCount: 2,
-    payload: { messages: [] },
-    totalBytes: 100,
-  });
-  assert.deepEqual(reused, { sid: "existingSid12345678901", reused: true, wxacodeUrl: "https://cos.example.com/x.png" });
-  assert.match(duplicated.statements[1]?.sql ?? "", /WHERE user_id=\? AND session_id=\? AND selection_hash=\?/);
+  assert.match(inserted.statements[1]?.sql ?? "", /WHERE user_id=\? AND session_id=\? AND selection_hash=\?/);
 });
 
-test("createOrGet：上报冲突却读不到行时抛错（read-your-write 违约）", async () => {
-  const pool = new FakePool([() => [{ affectedRows: 0 }], () => [[]]]);
+test("createOrGet：判据协议无关——affectedRows 不可靠（mysql2 默认 FOUND_ROWS 下重复无变更插入也报 1，#722），按回读 uk 行的 sid 判复用", async () => {
+  for (const affectedRows of [0, 1, 2]) {
+    const duplicated = new FakePool([
+      () => [{ affectedRows }],
+      () => [[{ sid: "existingSid12345678901", wxacode_url: "https://cos.example.com/x.png" }]],
+    ]);
+    const reused = await new MySqlCoachShareStore(duplicated as never).createOrGet({
+      sid: "anotherSidAnotherSidAnothe",
+      userId: "u-1",
+      sessionId: "s-1",
+      selectionHash: "a".repeat(64),
+      messageCount: 2,
+      payload: { messages: [] },
+      totalBytes: 100,
+    });
+    assert.deepEqual(reused, { sid: "existingSid12345678901", reused: true, wxacodeUrl: "https://cos.example.com/x.png" });
+  }
+});
+
+test("createOrGet：upsert 后回读不到行时抛错（read-your-write 违约）", async () => {
+  const pool = new FakePool([() => [{ affectedRows: 1 }], () => [[]]]);
   await assert.rejects(
     new MySqlCoachShareStore(pool as never).createOrGet({
       sid: "missingRowMissingRowMiss",
@@ -84,7 +91,7 @@ test("createOrGet：上报冲突却读不到行时抛错（read-your-write 违�
       payload: {},
       totalBytes: 10,
     }),
-    /selection row is missing/,
+    /selection row missing after upsert/,
   );
 });
 
