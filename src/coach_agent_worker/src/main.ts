@@ -24,7 +24,9 @@ async function main(): Promise<void> {
 
   const stridePool = createStridePool(workerConfig.strideDatabase);
 
-  const queue = await PlanJobQueue.connect(workerConfig.amqpUrl);
+  // Backoff instead of fail-fast: a rabbitmq Recreate roll is a 15-30s window,
+  // and exiting on it hands recovery to k8s crash-loop backoff (#493).
+  const queue = await PlanJobQueue.connectWithRetry(workerConfig.amqpUrl);
   await queue.declareTopology(workerConfig.queues);
   const publisher = await RabbitPublisher.create(queue, workerConfig.queues);
 

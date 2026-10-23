@@ -6,6 +6,9 @@ import { decodeMessage, encodeMessage } from "./codec.js";
 
 const logger = getLogger("plan-job/queue");
 
+/** Startup-connect retry policy (see PlanJobQueue.connectWithRetry). */
+const defaultConnectRetry = { attempts: 10, delayMs: 1_000, maxDelayMs: 30_000 } as const;
+
 /**
  * Queue names — deliberately distinct from the Go worker's `stride.jobs`* so a
  * plan-job worker and a Go worker can share the broker without interference.
@@ -32,6 +35,34 @@ export class PlanJobQueue {
 
   static async connect(url: string): Promise<PlanJobQueue> {
     return new PlanJobQueue(await connect(url));
+  }
+
+  /**
+   * Connect until the broker answers or the attempt budget runs out. The
+   * worker's startup path must not exit on a broker blip: k8s crash-loop
+   * backoff (10s..300s) would stretch a 15-30s broker restart into minutes
+   * of downtime (#493). Policy: doubling from 1s to a 30s cap, 10 attempts
+   * (~3min) — sized for a rabbitmq Recreate roll, matching the Go worker's
+   * mq.DialWithRetry.
+   */
+  static async connectWithRetry(url: string, deps: { connect?: typeof connect; sleep?: (ms: number) => Promise<void> } = {}): Promise<PlanJobQueue> {
+    const dial = deps.connect ?? connect;
+    const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= defaultConnectRetry.attempts; attempt++) {
+      try {
+        return new PlanJobQueue(await dial(url));
+      } catch (error) {
+        lastError = error;
+        if (attempt === defaultConnectRetry.attempts) break;
+        const waitMs = Math.min(defaultConnectRetry.delayMs * 2 ** (attempt - 1), defaultConnectRetry.maxDelayMs);
+        logger.warn({ error: String(error), attempt, retryInMs: waitMs }, "mq: connect failed; retrying");
+        await sleep(waitMs);
+      }
+    }
+    throw new Error(`mq: connect failed after ${defaultConnectRetry.attempts} attempts, broker still unreachable`, {
+      cause: lastError,
+    });
   }
 
   isHealthy(): boolean {
