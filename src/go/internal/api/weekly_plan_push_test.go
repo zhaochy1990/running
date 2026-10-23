@@ -28,7 +28,8 @@ type fakePusher struct {
 	pushRunID   string
 	runCalls    int
 	strCalls    int
-	deleteCalls []string // (date, name) pairs, flattened
+	deleteCalls []string              // (date, name) pairs, flattened
+	pushedRuns  []provider.RunWorkout // workouts handed to PushRunWorkout, in order
 	pushErr     error
 	deleteErr   error
 }
@@ -39,6 +40,7 @@ func (f *fakePusher) Info(context.Context, string) (provider.ProviderInfo, error
 
 func (f *fakePusher) PushRunWorkout(_ context.Context, _ string, w provider.RunWorkout) (string, error) {
 	f.runCalls++
+	f.pushedRuns = append(f.pushedRuns, w)
 	if f.pushErr != nil {
 		return "", f.pushErr
 	}
@@ -539,4 +541,58 @@ func TestPushPlannedSessionForbiddenOtherUser(t *testing.T) {
 	if resp.Code != http.StatusForbidden {
 		t.Fatalf("status=%d, want 403", resp.Code)
 	}
+}
+
+// buildPushableWorkout's date-stamping contract (devops#740): the workout's
+// embedded spec date must equal the resolved push date whenever the two differ
+// — whether the difference comes from target_date or, as in the move path,
+// from the row date having moved while spec_json still embeds the old date.
+func TestBuildPushableWorkoutRestampsEmbeddedDate(t *testing.T) {
+	const strengthSpec = `{"schema":"strength-workout/v1","name":"[STRIDE] 力量","date":"2026-08-12","note":null,"exercises":[{"canonical_id":"T01","display_name":"深蹲","sets":3,"target_kind":"reps","target_value":10,"rest_seconds":90,"note":null,"provider_id":"T01"}]}`
+
+	t.Run("move path: spec embeds old date, row date is the new one", func(t *testing.T) {
+		out, err := buildPushableWorkout("run", customRunSpec, "2026-08-15", "")
+		if err != nil {
+			t.Fatalf("build: %v", err)
+		}
+		if out.Date != "2026-08-15" || out.Run.Date != "2026-08-15" {
+			t.Fatalf("dates = %q/%q, want both 2026-08-15", out.Date, out.Run.Date)
+		}
+		if !strings.Contains(out.SpecJSON, `"date":"2026-08-15"`) || strings.Contains(out.SpecJSON, "2026-08-12") {
+			t.Fatalf("spec embeds a stale date: %s", out.SpecJSON)
+		}
+	})
+
+	t.Run("move path: strength spec embeds old date", func(t *testing.T) {
+		out, err := buildPushableWorkout("strength", strengthSpec, "2026-08-15", "")
+		if err != nil {
+			t.Fatalf("build: %v", err)
+		}
+		if out.Date != "2026-08-15" || out.Strength.Date != "2026-08-15" {
+			t.Fatalf("dates = %q/%q, want both 2026-08-15", out.Date, out.Strength.Date)
+		}
+		if !strings.Contains(out.SpecJSON, `"date":"2026-08-15"`) {
+			t.Fatalf("spec not re-stamped: %s", out.SpecJSON)
+		}
+	})
+
+	t.Run("aligned dates: spec is passed through byte-identical", func(t *testing.T) {
+		out, err := buildPushableWorkout("run", customRunSpec, "2026-08-12", "")
+		if err != nil {
+			t.Fatalf("build: %v", err)
+		}
+		if out.SpecJSON != customRunSpec {
+			t.Fatalf("spec re-serialized needlessly:\n got %s\nwant %s", out.SpecJSON, customRunSpec)
+		}
+	})
+
+	t.Run("target_date still restamps an aligned spec", func(t *testing.T) {
+		out, err := buildPushableWorkout("run", customRunSpec, "2026-08-12", "2026-08-15")
+		if err != nil {
+			t.Fatalf("build: %v", err)
+		}
+		if out.Date != "2026-08-15" || out.Run.Date != "2026-08-15" {
+			t.Fatalf("dates = %q/%q, want both 2026-08-15", out.Date, out.Run.Date)
+		}
+	})
 }
