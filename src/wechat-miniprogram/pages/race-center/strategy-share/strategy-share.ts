@@ -13,6 +13,8 @@ import { userStore } from '../../../store/index';
 
 interface StrategySharePageData {
   statusBarHeight: number;
+  /** 栈深>1 顶栏显示返回箭头；=1（冷开分享卡直达）显示回主页的小房子 */
+  canBack: boolean;
   loading: boolean;
   /** 非空时整页空态（链接失效 / 网络失败），文案已用户可读。 */
   error: string;
@@ -41,6 +43,7 @@ function statusBarHeight(): number {
 Page<StrategySharePageData, StrategySharePageHandlers>({
   data: {
     statusBarHeight: 0,
+    canBack: false,
     loading: true,
     error: '',
     view: null,
@@ -50,7 +53,7 @@ Page<StrategySharePageData, StrategySharePageHandlers>({
   _raceId: 0,
 
   onLoad(options) {
-    this.setData({ statusBarHeight: statusBarHeight() });
+    this.setData({ statusBarHeight: statusBarHeight(), canBack: getCurrentPages().length > 1 });
     const userId = String(options.user || '');
     const raceId = Number(options.id);
     const versionId = Number(options.version);
@@ -93,7 +96,7 @@ Page<StrategySharePageData, StrategySharePageHandlers>({
   },
 
   onBack() {
-    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/race-center/race-center' }) });
+    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/coach/coach' }) });
   },
 
   onGoCenter() {

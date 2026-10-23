@@ -78,6 +78,8 @@ type CardPatch = Partial<PlanCardView> | Partial<CustomCardView>;
 
 interface MyRacesPageData {
   statusBarHeight: number;
+  /** 栈深>1 顶栏显示返回箭头；=1（冷开分享卡直达）显示回主页的小房子 */
+  canBack: boolean;
   contentPaddingTop: number;
   activeTab: TabId;
   /** 我的成绩 tab */
@@ -231,6 +233,7 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
 
   data: {
     statusBarHeight: 0,
+    canBack: false,
     contentPaddingTop: 240,
     activeTab: 'plans',
     loading: true,
@@ -245,6 +248,7 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
   onLoad() {
     this.setData({
       statusBarHeight: statusBarHeight(),
+      canBack: getCurrentPages().length > 1,
       contentPaddingTop: contentPaddingTopRpx(),
     });
   },
@@ -580,7 +584,7 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
   },
 
   onBack() {
-    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/profile/profile' }) });
+    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/coach/coach' }) });
   },
 });
 

@@ -99,6 +99,8 @@ interface TimelineItemVM {
 
 interface TrainingPlanPageData {
   statusBarHeight: number;
+  /** 栈深>1 顶栏显示返回箭头；=1（冷开分享卡直达）显示回主页的小房子 */
+  canBack: boolean;
   contentPaddingTop: number;
   /** loading：请求中；ready：v2 内容；empty：无启用计划；v1：旧版计划；error：请求失败 */
   loadState: 'loading' | 'ready' | 'empty' | 'v1' | 'error';
@@ -678,6 +680,7 @@ Page<TrainingPlanPageData, TrainingPlanPageHandlers>({
   onShareTimeline: defaultShareTimeline,
   data: {
     statusBarHeight: 0,
+    canBack: false,
     contentPaddingTop: 232,
     loadState: 'loading',
     errorText: '',
@@ -709,6 +712,7 @@ Page<TrainingPlanPageData, TrainingPlanPageHandlers>({
     this._planCtx = null;
     this.setData({
       statusBarHeight: statusBarHeight(),
+      canBack: getCurrentPages().length > 1,
       contentPaddingTop: contentPaddingTopRpx(),
     });
     // 先等认证流程 settle 再拉数据，避免会话恢复期间误入「请先登录」误导已登录用户
@@ -788,11 +792,7 @@ Page<TrainingPlanPageData, TrainingPlanPageHandlers>({
   },
 
   onBackTap() {
-    wx.navigateBack({
-      fail: () => {
-        wx.switchTab({ url: '/pages/profile/profile' });
-      },
-    });
+    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/coach/coach' }) });
   },
 
   onRetryTap() {

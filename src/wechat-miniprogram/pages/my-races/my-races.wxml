@@ -3,7 +3,8 @@
   <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
     <view class="top-bar__inner">
       <view class="top-bar__btn" bindtap="onBack">
-        <image class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+        <image wx:if="{{canBack}}" class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+        <image wx:else class="top-bar__icon" src="/assets/icons/home.svg" mode="aspectFit" />
       </view>
       <view class="top-bar__title-wrap">
         <view class="top-bar__title">我的比赛</view>

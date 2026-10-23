@@ -12,6 +12,8 @@ interface PrivacyRow {
 
 interface PrivacyPageData {
   statusBarHeight: number;
+  /** 栈深>1 顶栏显示返回箭头；=1（冷开分享卡直达）显示回主页的小房子 */
+  canBack: boolean;
   contentPaddingTop: number;
   rows: PrivacyRow[];
 }
@@ -67,6 +69,7 @@ Page<PrivacyPageData, PrivacyPageHandlers>({
   onShareTimeline: defaultShareTimeline,
   data: {
     statusBarHeight: 0,
+    canBack: false,
     contentPaddingTop: 232,
     rows: PRIVACY_ROWS,
   },
@@ -74,12 +77,13 @@ Page<PrivacyPageData, PrivacyPageHandlers>({
   onLoad() {
     this.setData({
       statusBarHeight: statusBarHeight(),
+      canBack: getCurrentPages().length > 1,
       contentPaddingTop: contentPaddingTopRpx(),
     });
   },
 
   onBack() {
-    wx.navigateBack();
+    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/coach/coach' }) });
   },
 
   onRowTap(e: WechatMiniprogram.TouchEvent) {

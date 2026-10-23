@@ -16,6 +16,8 @@ type TabId = 'feedback' | 'roadmap';
 
 interface FeedbackPageData {
   statusBarHeight: number;
+  /** 栈深>1 顶栏显示返回箭头；=1（冷开分享卡直达）显示回主页的小房子 */
+  canBack: boolean;
   contentPaddingTop: number;
   activeTab: TabId;
   /** 路线 tab 首次进入后置 true 并保持挂载（hidden 切换，状态不丢） */
@@ -72,6 +74,7 @@ Page<FeedbackPageData, FeedbackPageHandlers>({
 
   data: {
     statusBarHeight: 0,
+    canBack: false,
     contentPaddingTop: 320,
     activeTab: 'feedback',
     roadmapMounted: false,
@@ -83,6 +86,7 @@ Page<FeedbackPageData, FeedbackPageHandlers>({
   onLoad(query: { tab?: string }) {
     this.setData({
       statusBarHeight: statusBarHeight(),
+      canBack: getCurrentPages().length > 1,
       contentPaddingTop: contentPaddingTopRpx(),
       // 深链直达路线 tab（如旧 product-roadmap 分享路径迁移过来时）
       ...(query.tab === 'roadmap' ? { activeTab: 'roadmap', roadmapMounted: true } : {}),
@@ -95,7 +99,7 @@ Page<FeedbackPageData, FeedbackPageHandlers>({
   },
 
   onBack() {
-    wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/profile/profile' }) });
+    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/coach/coach' }) });
   },
 
   onRetry() {

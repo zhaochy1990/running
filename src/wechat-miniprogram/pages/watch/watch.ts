@@ -13,6 +13,8 @@ import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share'
 
 interface WatchPageData {
   statusBarHeight: number;
+  /** 栈深>1 顶栏显示返回箭头；=1（冷开分享卡直达）显示回主页的小房子 */
+  canBack: boolean;
   contentPaddingTop: number;
   loading: boolean;
   watch: WatchInfo;
@@ -98,6 +100,7 @@ Page<WatchPageData, WatchPageHandlers>({
   onShareTimeline: defaultShareTimeline,
   data: {
     statusBarHeight: 0,
+    canBack: false,
     contentPaddingTop: 232,
     loading: true,
     watch: EMPTY_WATCH,
@@ -118,6 +121,7 @@ Page<WatchPageData, WatchPageHandlers>({
   onLoad(query: Record<string, string | undefined>) {
     this.setData({
       statusBarHeight: statusBarHeight(),
+      canBack: getCurrentPages().length > 1,
       contentPaddingTop: contentPaddingTopRpx(),
     });
     // 从 onboarding 引导页带 provider 进来：用户已经选过品牌了，直接进登录表单，
@@ -143,7 +147,7 @@ Page<WatchPageData, WatchPageHandlers>({
   },
 
   onBack() {
-    wx.navigateBack();
+    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/coach/coach' }) });
   },
 
   onSelectProvider(e: WechatMiniprogram.TouchEvent) {

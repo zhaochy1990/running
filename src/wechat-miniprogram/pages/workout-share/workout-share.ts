@@ -36,7 +36,7 @@ import type {
 
 interface WorkoutSharePageData {
   statusBarHeight: number;
-  /** 冷开分享卡时页面栈只有本页，返回键无处可回，隐藏 */
+  /** 冷开分享卡时页面栈只有本页，无上级可回：顶栏显示回主页的小房子 */
   canBack: boolean;
   /** loading：请求中；ready：已渲染；dead：链接失效（缺参/404）；error：网络失败可重试 */
   loadState: 'loading' | 'ready' | 'dead' | 'error';
@@ -165,9 +165,10 @@ Page<WorkoutSharePageData, WorkoutSharePageHandlers>({
     void this.pushSaved();
   },
 
+  // 有上级返回上级；栈深 1（冷开分享卡）navigateBack 必失败 → 回主页（教练 tab）
   onBack() {
     wx.navigateBack({
-      fail: () => wx.reLaunch({ url: '/pages/index/index' }),
+      fail: () => wx.switchTab({ url: '/pages/coach/coach' }),
     });
   },
 

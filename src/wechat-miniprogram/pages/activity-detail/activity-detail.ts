@@ -134,6 +134,8 @@ interface HeaderView {
 
 interface ActivityDetailPageData {
   statusBarHeight: number;
+  /** 栈深>1 顶栏显示返回箭头；=1（冷开分享卡直达）显示回主页的小房子 */
+  canBack: boolean;
   contentPaddingTop: number;
   loading: boolean;
   notFound: boolean;
@@ -910,6 +912,7 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
   onShareTimeline: defaultShareTimeline,
   data: {
     statusBarHeight: 0,
+    canBack: false,
     contentPaddingTop: 232,
     loading: true,
     notFound: false,
@@ -943,6 +946,7 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
 
     this.setData({
       statusBarHeight: statusBarHeight(),
+      canBack: getCurrentPages().length > 1,
       contentPaddingTop: contentPaddingTopRpx(),
     });
 
@@ -1025,7 +1029,7 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
   },
 
   onBack() {
-    wx.navigateBack();
+    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/coach/coach' }) });
   },
 
   onColoringChange(e: { currentTarget: { dataset: { coloring: MapColoring } } }) {

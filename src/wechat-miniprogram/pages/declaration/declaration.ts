@@ -12,6 +12,8 @@ import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share'
 
 interface DeclarationPageData {
   statusBarHeight: number;
+  /** 栈深>1 顶栏显示返回箭头；=1（冷开分享卡直达）显示回主页的小房子 */
+  canBack: boolean;
   contentPaddingTop: number;
   loading: boolean;
   error: string;
@@ -58,6 +60,7 @@ Page<DeclarationPageData, DeclarationPageHandlers>({
   onShareTimeline: defaultShareTimeline,
   data: {
     statusBarHeight: 0,
+    canBack: false,
     contentPaddingTop: 232,
     loading: true,
     error: '',
@@ -89,6 +92,7 @@ Page<DeclarationPageData, DeclarationPageHandlers>({
   onLoad(query: Record<string, string | undefined>) {
     this.setData({
       statusBarHeight: statusBarHeight(),
+      canBack: getCurrentPages().length > 1,
       contentPaddingTop: contentPaddingTopRpx(),
     });
 
@@ -119,6 +123,6 @@ Page<DeclarationPageData, DeclarationPageHandlers>({
   },
 
   onBack() {
-    wx.navigateBack();
+    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/coach/coach' }) });
   },
 });

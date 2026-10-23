@@ -18,6 +18,8 @@ const TYPES: Array<{ type: 'bug' | 'suggestion'; label: string; placeholder: str
 
 interface FeedbackFormPageData {
   statusBarHeight: number;
+  /** 栈深>1 顶栏显示返回箭头；=1（冷开分享卡直达）显示回主页的小房子 */
+  canBack: boolean;
   contentPaddingTop: number;
   types: Array<{ type: 'bug' | 'suggestion'; label: string; placeholder: string }>;
   type: 'bug' | 'suggestion';
@@ -69,6 +71,7 @@ function errMsg(err: unknown, fallback: string): string {
 Page<FeedbackFormPageData, FeedbackFormPageHandlers>({
   data: {
     statusBarHeight: 0,
+    canBack: false,
     contentPaddingTop: 232,
     types: TYPES,
     type: 'bug',
@@ -82,12 +85,13 @@ Page<FeedbackFormPageData, FeedbackFormPageHandlers>({
   onLoad() {
     this.setData({
       statusBarHeight: statusBarHeight(),
+      canBack: getCurrentPages().length > 1,
       contentPaddingTop: contentPaddingTopRpx(),
     });
   },
 
   onBack() {
-    wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/feedback/feedback' }) });
+    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/coach/coach' }) });
   },
 
   onTypeTap(e: WechatMiniprogram.TouchEvent) {

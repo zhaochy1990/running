@@ -33,6 +33,8 @@ const MAX_PAGES = 50;
 
 interface RaceCenterPageData {
   statusBarHeight: number;
+  /** 栈深>1 顶栏显示返回箭头；=1（冷开分享卡直达）显示回主页的小房子 */
+  canBack: boolean;
   loading: boolean;
   error: string;
   years: string[];
@@ -118,6 +120,7 @@ Page<RaceCenterPageData, RaceCenterPageHandlers>({
   },
   data: {
     statusBarHeight: 0,
+    canBack: false,
     loading: true,
     error: '',
     years: [],
@@ -144,6 +147,7 @@ Page<RaceCenterPageData, RaceCenterPageHandlers>({
     const thisYear = shanghaiToday().slice(0, 4);
     this.setData({
       statusBarHeight: statusBarHeight(),
+      canBack: getCurrentPages().length > 1,
       years,
       yearIndex: Math.max(years.indexOf(thisYear), 0),
     });
@@ -292,6 +296,6 @@ Page<RaceCenterPageData, RaceCenterPageHandlers>({
   },
 
   onBack() {
-    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/profile/profile' }) });
+    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/coach/coach' }) });
   },
 });

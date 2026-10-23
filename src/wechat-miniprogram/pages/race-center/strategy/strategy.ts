@@ -33,6 +33,8 @@ import { userStore } from '../../../store/index';
 
 interface StrategyPageData {
   statusBarHeight: number;
+  /** 栈深>1 顶栏显示返回箭头；=1（冷开分享卡直达）显示回主页的小房子 */
+  canBack: boolean;
   loading: boolean;
   /** 非空时整页错误条（未生成/不存在/网络失败） */
   error: string;
@@ -110,6 +112,7 @@ function timeLabel(iso: string): string {
 Page<StrategyPageData, StrategyPageHandlers>({
   data: {
     statusBarHeight: 0,
+    canBack: false,
     loading: true,
     error: '',
     view: null,
@@ -135,7 +138,7 @@ Page<StrategyPageData, StrategyPageHandlers>({
 
   onLoad(options) {
     const id = Number(options.id);
-    this.setData({ statusBarHeight: statusBarHeight() });
+    this.setData({ statusBarHeight: statusBarHeight(), canBack: getCurrentPages().length > 1 });
     if (!id || id <= 0) {
       this.setData({ loading: false, error: '赛事不存在' });
       return;
@@ -278,7 +281,7 @@ Page<StrategyPageData, StrategyPageHandlers>({
   },
 
   onBack() {
-    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/race-center/race-center' }) });
+    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/coach/coach' }) });
   },
 
   /** hero 主按钮：带 race target 回教练 tab（与详情页策略卡同一入口语义）。 */

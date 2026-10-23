@@ -36,6 +36,8 @@ import { userStore } from '../../store/index';
 
 interface RaceDetailPageData {
   statusBarHeight: number;
+  /** 栈深>1 顶栏显示返回箭头；=1（冷开分享卡直达）显示回主页的小房子 */
+  canBack: boolean;
   loading: boolean;
   /** 非空时整页只渲染错误条（含未登录 / 赛事不存在） */
   error: string;
@@ -104,6 +106,7 @@ function statusBarHeight(): number {
 Page<RaceDetailPageData, RaceDetailPageHandlers>({
   data: {
     statusBarHeight: 0,
+    canBack: false,
     loading: true,
     error: '',
     view: null,
@@ -129,7 +132,7 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
 
   onLoad(options) {
     const id = Number(options.id);
-    this.setData({ statusBarHeight: statusBarHeight() });
+    this.setData({ statusBarHeight: statusBarHeight(), canBack: getCurrentPages().length > 1 });
     if (!id || id <= 0) {
       this.setData({ loading: false, error: '赛事不存在' });
       return;
@@ -374,7 +377,7 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
   },
 
   onBack() {
-    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/profile/profile' }) });
+    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/coach/coach' }) });
   },
 
   onShareAppMessage() {

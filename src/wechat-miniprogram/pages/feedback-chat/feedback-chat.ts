@@ -31,6 +31,8 @@ interface BubbleRow {
 
 interface FeedbackChatPageData {
   statusBarHeight: number;
+  /** 栈深>1 顶栏显示返回箭头；=1（冷开分享卡直达）显示回主页的小房子 */
+  canBack: boolean;
   contentPaddingTop: number;
   loading: boolean;
   loadError: string;
@@ -105,6 +107,7 @@ Page<FeedbackChatPageData, FeedbackChatPageHandlers>({
 
   data: {
     statusBarHeight: 0,
+    canBack: false,
     contentPaddingTop: 232,
     loading: true,
     loadError: '',
@@ -123,13 +126,14 @@ Page<FeedbackChatPageData, FeedbackChatPageHandlers>({
     this._id = Number(options.id) || 0;
     this.setData({
       statusBarHeight: statusBarHeight(),
+      canBack: getCurrentPages().length > 1,
       contentPaddingTop: contentPaddingTopRpx(),
     });
     void this.fetchThread();
   },
 
   onBack() {
-    wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/feedback/feedback' }) });
+    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/coach/coach' }) });
   },
 
   onRetry() {

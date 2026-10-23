@@ -4,6 +4,7 @@
     <view class="top-bar__inner">
       <view class="top-bar__btn">
         <image wx:if="{{canBack}}" class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right.svg" mode="aspectFit" bindtap="onBack" />
+        <image wx:else class="top-bar__icon" src="/assets/icons/home.svg" mode="aspectFit" bindtap="onBack" />
       </view>
       <view class="top-bar__title-wrap">
         <view class="top-bar__title">课表分享</view>

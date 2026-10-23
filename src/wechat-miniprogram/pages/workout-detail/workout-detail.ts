@@ -38,6 +38,8 @@ interface WorkoutDetailHeaderVM {
 
 interface WorkoutDetailPageData {
   statusBarHeight: number;
+  /** 栈深>1 顶栏显示返回箭头；=1（冷开分享卡直达）显示回主页的小房子 */
+  canBack: boolean;
   contentPaddingTop: number;
   /** loading：请求中；ready：已渲染；notfound：行不存在/已删除；error：请求失败 */
   loadState: 'loading' | 'ready' | 'notfound' | 'error';
@@ -188,6 +190,7 @@ Page<WorkoutDetailPageData, WorkoutDetailPageHandlers>({
   onShareTimeline: defaultShareTimeline,
   data: {
     statusBarHeight: 0,
+    canBack: false,
     contentPaddingTop: 232,
     loadState: 'loading',
     header: { name: '', typeChip: '', sourceLabel: '', dateLabel: '', summary: '', iconPath: '' },
@@ -204,6 +207,7 @@ Page<WorkoutDetailPageData, WorkoutDetailPageHandlers>({
     queryWorkoutId = query.workoutId || '';
     this.setData({
       statusBarHeight: statusBarHeight(),
+      canBack: getCurrentPages().length > 1,
       contentPaddingTop: contentPaddingTopRpx(),
       // 标题先用列表页传来的名称占位，拉到行后再用行数据覆盖。
       header: { ...this.data.header, name: decodeURIComponent(query.title || '') || '课表详情' },    });
@@ -220,7 +224,7 @@ Page<WorkoutDetailPageData, WorkoutDetailPageHandlers>({
   },
 
   onBack() {
-    wx.navigateBack({ delta: 1 });
+    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/coach/coach' }) });
   },
 
   onRetryTap() {

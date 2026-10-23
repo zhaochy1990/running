@@ -7,6 +7,8 @@ import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share'
 
 interface ProductRoadmapPageData {
   statusBarHeight: number;
+  /** 栈深>1 顶栏显示返回箭头；=1（冷开分享卡直达）显示回主页的小房子 */
+  canBack: boolean;
   contentPaddingTop: number;
 }
 
@@ -47,17 +49,19 @@ Page<ProductRoadmapPageData, ProductRoadmapPageHandlers>({
 
   data: {
     statusBarHeight: 0,
+    canBack: false,
     contentPaddingTop: 240,
   },
 
   onLoad() {
     this.setData({
       statusBarHeight: statusBarHeight(),
+      canBack: getCurrentPages().length > 1,
       contentPaddingTop: contentPaddingTopRpx(),
     });
   },
 
   onBack() {
-    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/profile/profile' }) });
+    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/coach/coach' }) });
   },
 });
