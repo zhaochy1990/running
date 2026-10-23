@@ -45,10 +45,7 @@ export class PlanJobQueue {
    * (~3min) — sized for a rabbitmq Recreate roll, matching the Go worker's
    * mq.DialWithRetry.
    */
-  static async connectWithRetry(
-    url: string,
-    deps: { connect?: typeof connect; sleep?: (ms: number) => Promise<void> } = {},
-  ): Promise<PlanJobQueue> {
+  static async connectWithRetry(url: string, deps: { connect?: typeof connect; sleep?: (ms: number) => Promise<void> } = {}): Promise<PlanJobQueue> {
     const dial = deps.connect ?? connect;
     const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
     let lastError: unknown;

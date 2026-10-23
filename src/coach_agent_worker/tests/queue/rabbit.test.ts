@@ -33,15 +33,12 @@ test("connectWithRetry caps the delay, keeps the cause, and gives up after the b
   };
   const waits: number[] = [];
 
-  await assert.rejects(
-    PlanJobQueue.connectWithRetry("amqp://x", { connect, sleep: async (ms) => void waits.push(ms) }),
-    (error: unknown) => {
-      assert.ok(error instanceof Error);
-      assert.match(error.message, /after 10 attempts/);
-      assert.equal(error.cause, refusal);
-      return true;
-    },
-  );
+  await assert.rejects(PlanJobQueue.connectWithRetry("amqp://x", { connect, sleep: async (ms) => void waits.push(ms) }), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /after 10 attempts/);
+    assert.equal(error.cause, refusal);
+    return true;
+  });
   // 10 attempts → 9 waits: 1s,2s,4s,8s,16s, then capped at 30s
   assert.deepEqual(waits, [1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000, 30_000, 30_000]);
 });
