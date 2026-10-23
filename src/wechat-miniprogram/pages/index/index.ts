@@ -103,7 +103,7 @@ interface IndexPageData {
 }
 
 interface IndexPageHandlers {
-  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
+  onShareAppMessage(res: WechatMiniprogram.Page.IShareAppMessageOption): WechatMiniprogram.Page.ICustomShareContent;
   onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   fetchPlan(): Promise<void>;
   fetchWeekSessions(anchorYmd: string): Promise<void>;
@@ -111,6 +111,8 @@ interface IndexPageHandlers {
   fetchDayActivities(dateYmd: string): Promise<void>;
   onMenuTap(): void;
   onWorkoutCardTap(): void;
+  /** open-type=share 按钮的 catchtap：转发由 open-type 触发，这里只拦向卡片的冒泡 */
+  onShareTap(): void;
   onDayTap(e: WechatMiniprogram.TouchEvent): void;
   onCoachTap(): void;
   onWatchTap(): void;
@@ -163,7 +165,22 @@ function contentPaddingTopRpx(): number {
 }
 
 Page<IndexPageData, IndexPageHandlers>({
-  onShareAppMessage: defaultShareAppMessage,
+  // 今日卡分享按钮（data-share="today"）：仅自建课发免登录落地页卡（#689 仅自建课
+  // 可分享），path 同 workout-detail 的分享链路；封面暂回落页面截图（canvas 封面
+  // 目前只在详情页生成）。其余入口（胶囊菜单转发等）维持品牌默认卡。
+  onShareAppMessage(res) {
+    const w = this.data.workout;
+    if (
+      res.target?.dataset?.share === 'today' &&
+      userId && w && w.source === 'custom' && w.workoutId
+    ) {
+      return {
+        title: w.title || '训练课表',
+        path: `/pages/workout-share/workout-share?user=${userId}&workout=${w.workoutId}`,
+      };
+    }
+    return defaultShareAppMessage();
+  },
   onShareTimeline: defaultShareTimeline,
   data: {
     statusBarHeight: 0,
@@ -341,6 +358,10 @@ Page<IndexPageData, IndexPageHandlers>({
     }
     wx.switchTab({ url: '/pages/coach/coach' });
   },
+
+  // open-type=share 的 tap 仍会走 catchtap：转发由 open-type 触发，这里只为
+  // 拦住向 workout-card bindtap 的冒泡（否则分享的同时会跳去课表详情）。
+  onShareTap() {},
 
   onWatchTap() {
     const { workout } = this.data;

@@ -215,6 +215,35 @@
   height: 36rpx;
 }
 
+/* 今日卡分享钮（手表右侧，仅自建课显示）：裸图标无背景无描边。
+   原生 button（白底/固定宽高/椭圆）全套透明化归零 */
+.workout__share {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  margin: 0;
+  padding: 0;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  line-height: 1;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+.workout__share::after {
+  border: none;
+}
+
+.workout__share-icon {
+  display: block;
+  width: 40rpx;
+  height: 40rpx;
+}
+
 .workout__source {
   flex-shrink: 0;
   font-size: 20rpx;

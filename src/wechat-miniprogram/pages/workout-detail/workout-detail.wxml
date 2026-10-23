@@ -36,11 +36,13 @@
 
     <!-- ============ 详情 ============ -->
     <block wx:elif="{{loadState === 'ready'}}">
-      <!-- 课表头：图标 + 名称 + 来源 + 日期 + 摘要 + 指标；自建课右上角分享 pill（#704 站①） -->
+      <!-- 课表头：图标 + 名称 + 来源 + 日期 + 摘要 + 指标；自建课右上角分享图标钮（#704 站①） -->
       <view class="card hero {{canShare ? 'hero--share' : ''}}">
-        <button wx:if="{{canShare}}" class="hero__share" open-type="share">
+        <!-- 分享入口（仅自建课，#704 站①位置）：右上角纯图标钮（10-22 用户拍板去掉
+             文字/描边/填充）。size="mini"：原生 button 基础样式带固定 width≈184px
+             （页面类选择器压不过），mini 规格原生自带 width:auto 才能收缩 -->
+        <button wx:if="{{canShare}}" class="hero__share" size="mini" open-type="share" aria-label="分享">
           <image class="hero__share-icon" src="/assets/icons/share.svg" mode="aspectFit" />
-          <text>分享</text>
         </button>
         <view class="hero__row">
           <view class="hero__icon">

@@ -85,6 +85,19 @@
           <view class="workout__action" catchtap="onWatchTap">
             <image class="workout__action-icon" src="/assets/icons/watch.svg" mode="aspectFit" />
           </view>
+          <!-- 分享（仅自建课，#689）：open-type=share 触发 onShareAppMessage 今日卡分支；
+               裸图标无背景（10-22 拍板），size=mini 抹原生 button 固定宽，catchtap 拦冒泡防误跳详情 -->
+          <button
+            wx:if="{{workout.source === 'custom'}}"
+            class="workout__share"
+            size="mini"
+            open-type="share"
+            data-share="today"
+            catchtap="onShareTap"
+            aria-label="分享"
+          >
+            <image class="workout__share-icon" src="/assets/icons/share.svg" mode="aspectFit" />
+          </button>
           <view class="workout__action" catchtap="onMoreTap">
             <image class="workout__action-icon" src="/assets/icons/more_horiz.svg" mode="aspectFit" />
           </view>

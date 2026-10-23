@@ -180,9 +180,8 @@ function firstLine(text: string | null | undefined): string {
   return line.length > 200 ? `${line.slice(0, 200)}…` : line;
 }
 
-/** 来源标记文案：weekly 不标（默认），custom「自建」，watch「手表」。 */
+/** 来源标记文案：仅 watch「手表」；weekly/custom 不标。 */
 function sourceLabelOf(source: WorkoutSource): string {
-  if (source === 'custom') return '自建';
   if (source === 'watch') return '手表';
   return '';
 }
