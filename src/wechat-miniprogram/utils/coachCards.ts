@@ -207,6 +207,8 @@ export function buildCoachCard(card: unknown, target: CoachSessionTarget | undef
     const dayLabel = shanghaiMonthDayLabel(op.date);
     // 单 CTA 确认卡（devops#698）：删除走双重确认（聊天页 modal）+ 现有软删
     // 端点；改期走 T1 move 端点。均无次级按钮、不可跳转（动作型卡片）。
+    // inlineBody=false 卡片替代正文（10-23 用户拍板：确认卡信息自足，教练的
+    // 文字确认冗余不显示；正文仍随 done.message 下发，供旧版 mp 降级）。
     if (op.op === 'delete') {
       return {
         type: wire.$type,
@@ -221,7 +223,7 @@ export function buildCoachCard(card: unknown, target: CoachSessionTarget | undef
         secondaryButtonText: '',
         url: '',
         data: op,
-        inlineBody: true,
+        inlineBody: false,
       };
     }
     return {
@@ -234,7 +236,7 @@ export function buildCoachCard(card: unknown, target: CoachSessionTarget | undef
       secondaryButtonText: '',
       url: '',
       data: op,
-      inlineBody: true,
+      inlineBody: false,
     };
   }
   return null;

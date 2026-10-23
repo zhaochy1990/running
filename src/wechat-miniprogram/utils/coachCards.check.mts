@@ -125,7 +125,8 @@ const workoutOpBase = {
   eq(del.buttonText, '确认删除', 'workout-op delete cta');
   eq(del.secondaryButtonText, '', 'workout-op has no secondary cta');
   eq(del.url, '', 'workout-op action cta has no navigation');
-  eq(del.inlineBody, true, 'workout-op inline body');
+  // 卡片替代正文（10-23 用户拍板：确认卡信息自足，不再渲染教练文字确认）
+  eq(del.inlineBody, false, 'workout-op replaces body text');
   eq(del.data, { ...workoutOpBase, op: 'delete', pushed: false }, 'workout-op keeps data for the handler');
   // pushed：删除副标题附「删除将同步移除手表副本」（软删 best-effort 清手表副本）
   const delPushed = buildCoachCard({ $type: 'workout-op', data: { ...workoutOpBase, op: 'delete', pushed: true } }, undefined);
@@ -142,6 +143,7 @@ const workoutOpBase = {
   eq(move.subtitle, '10月23日 → 10月25日 · 4km×3 组 + 400m×6 间歇', 'workout-op move subtitle');
   eq(move.badge, '待确认', 'workout-op move badge');
   eq(move.buttonText, '确认改期', 'workout-op move cta');
+  eq(move.inlineBody, false, 'workout-op move replaces body text');
 }
 // 形状不对：未知 op / 缺 workout_id / 坏 date / move 缺/坏 new_date / 缺 name → null 降级 markdown
 eq(buildCoachCard({ $type: 'workout-op', data: { ...workoutOpBase, op: 'rename' } }, undefined), null, 'workout-op unknown op rejected');
