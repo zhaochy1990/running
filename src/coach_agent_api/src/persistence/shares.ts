@@ -15,7 +15,7 @@
  * revoke flow — the read route already distinguishes it from expiry.
  */
 import { getLogger } from "@stride/common";
-import type { Pool, ResultSetHeader, RowDataPacket } from "mysql2/promise";
+import type { Pool, RowDataPacket } from "mysql2/promise";
 
 const logger = getLogger("coachShares");
 
@@ -77,17 +77,19 @@ export class MySqlCoachShareStore implements CoachShareStore {
   }
 
   async createOrGet(share: CoachShareInsert): Promise<{ sid: string; reused: boolean; wxacodeUrl: string | null }> {
-    const [result] = await this.pool.execute<ResultSetHeader>(
+    // ON DUPLICATE KEY UPDATE sid = sid is a no-op that lets the unique key
+    // resolve concurrent races atomically. Its affectedRows cannot tell insert
+    // from reuse: mysql2 enables CLIENT_FOUND_ROWS by default, so MySQL ≥8.4
+    // reports affectedRows=1 for a duplicate no-change insert too (#722).
+    await this.pool.execute(
       `INSERT INTO coach_shares
          (sid, user_id, session_id, selection_hash, message_count, payload, total_bytes)
        VALUES (?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE sid = sid`,
       [share.sid, share.userId, share.sessionId, share.selectionHash, share.messageCount, JSON.stringify(share.payload), share.totalBytes],
     );
-    // affectedRows: 1 = inserted; 0 = duplicate key with the no-op update.
-    if (result.affectedRows === 1) {
-      return { sid: share.sid, reused: false, wxacodeUrl: null };
-    }
+    // Protocol-independent criterion: read the uk row back — it carries our
+    // freshly generated sid iff the insert landed.
     const existing = await this.pool.query<RowDataPacket[]>(`SELECT sid, wxacode_url FROM coach_shares WHERE user_id=? AND session_id=? AND selection_hash=?`, [
       share.userId,
       share.sessionId,
@@ -95,10 +97,13 @@ export class MySqlCoachShareStore implements CoachShareStore {
     ]);
     const row = existing[0][0];
     if (row === undefined) {
-      // Concurrent inserts raced past the unique key between the upsert and
-      // the select; the caller's own sid must exist, so this is a read-your-
-      // -write violation worth failing loudly on.
-      throw new Error(`coach_shares: upsert reported a duplicate but the selection row is missing (sid=${share.sid})`);
+      // The upsert did not error, so the row (ours or the racer's) must be
+      // readable back; failing here is a read-your-write violation worth
+      // failing loudly on.
+      throw new Error(`coach_shares: selection row missing after upsert (sid=${share.sid})`);
+    }
+    if (row.sid === share.sid) {
+      return { sid: share.sid, reused: false, wxacodeUrl: null };
     }
     return { sid: row.sid as string, reused: true, wxacodeUrl: (row.wxacode_url as string | null) ?? null };
   }
