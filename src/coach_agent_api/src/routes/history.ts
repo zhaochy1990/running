@@ -3,7 +3,8 @@ import type { Hono } from "hono";
 import type { AuthEnv } from "../auth.js";
 import { toPublicHistory } from "../publicResponse.js";
 
-const SESSION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+/** Shared shape of a coach session id (history routes + share routes #715). */
+export const SESSION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
 /** Narrow checkpointer surface the history route needs; `MySqlSaver` satisfies it. */
 export interface ThreadHistoryReader {

@@ -8,6 +8,7 @@ export const OPENAPI_DOCUMENT = {
   tags: [
     { name: "System", description: "Service lifecycle endpoints." },
     { name: "Coach", description: "Authenticated Coach conversations." },
+    { name: "Shares", description: "Coach chat sharing: authenticated snapshot creation, public read (#715)." },
   ],
   paths: {
     "/health": {
@@ -33,7 +34,7 @@ export const OPENAPI_DOCUMENT = {
         operationId: "deleteCoachDataForUser",
         summary: "Delete a user's Coach data",
         description:
-          "Administrator or self only: an administrator token may delete any user's Coach data; a regular token may delete only its own. Removes checkpoints, checkpoint writes, turn receipts, long-term memory, and plan jobs. Idempotent.",
+          "Administrator or self only: an administrator token may delete any user's Coach data; a regular token may delete only its own. Removes checkpoints, checkpoint writes, turn receipts, long-term memory, and share snapshots. Idempotent.",
         security: [{ bearerAuth: [] }],
         parameters: [
           {
@@ -272,6 +273,84 @@ export const OPENAPI_DOCUMENT = {
         },
       },
     },
+    "/api/users/me/coach/sessions/{session_id}/share": {
+      post: {
+        tags: ["Shares"],
+        operationId: "createShare",
+        summary: "Create a share snapshot of selected session messages",
+        description:
+          "The server re-projects the thread from its checkpoint and extracts the selected messages itself (projection indices only — coach content cannot be forged). Re-sharing the exact same selection returns the existing share sid with reused=true. A wxacode failure never blocks creation (wxacode_url stays null).",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "session_id",
+            in: "path",
+            required: true,
+            schema: { $ref: "#/components/schemas/TurnIdentifier" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ShareCreateRequest" },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "The share snapshot was created.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ShareCreateResponse" },
+              },
+            },
+          },
+          "200": {
+            description: "An identical selection already exists; the same sid is returned.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ShareCreateResponse" },
+              },
+            },
+          },
+          "400": errorResponse("The session_id, indices or sharer_name are invalid."),
+          "401": errorResponse("The bearer token is missing or invalid."),
+          "404": errorResponse("The session has no shareable history."),
+          "422": errorResponse("策略性超限：所选消息超过 30 条、单条超 64KB 或总体积超 2MB（中文提示）."),
+        },
+      },
+    },
+    "/api/coach-shares/{sid}": {
+      get: {
+        tags: ["Shares"],
+        operationId: "getCoachShare",
+        summary: "Read a coach chat share snapshot (public)",
+        description:
+          "Public, unauthenticated share landing endpoint (30-day expiry computed at read time, light per-IP rate limit). Serves the immutable snapshot; the checkpoint is never touched.",
+        parameters: [
+          {
+            name: "sid",
+            in: "path",
+            required: true,
+            schema: { type: "string", pattern: "^[A-Za-z0-9]{16,22}$" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "The share snapshot.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/CoachShareResponse" },
+              },
+            },
+          },
+          "404": errorResponse("The share does not exist (malformed sid included)."),
+          "410": errorResponse("The share expired (expired) or is no longer active (gone)."),
+          "429": errorResponse("Per-IP read rate limit exceeded; retry after the indicated delay."),
+        },
+      },
+    },
   },
   components: {
     securitySchemes: {
@@ -405,6 +484,65 @@ export const OPENAPI_DOCUMENT = {
       },
       SessionHistoryMessage: {
         type: "object",
+        required: ["role", "content"],
+        properties: {
+          role: { type: "string", enum: ["user", "assistant"] },
+          content: { type: "string" },
+          card: { $ref: "#/components/schemas/CardEnvelope" },
+        },
+        additionalProperties: false,
+      },
+      ShareCreateRequest: {
+        type: "object",
+        required: ["indices"],
+        properties: {
+          indices: {
+            type: "array",
+            description: "投影序号（toPublicHistory 输出下标，0 起）。服务端升序去重后最多 30 条。",
+            minItems: 1,
+            maxItems: 30,
+            items: { type: "integer", minimum: 0 },
+          },
+          sharer_name: {
+            type: "string",
+            description: "分享者展示名（昵称），≤64 字符；缺省时快照不带该字段。",
+            maxLength: 64,
+          },
+        },
+        additionalProperties: false,
+      },
+      ShareCreateResponse: {
+        type: "object",
+        required: ["sid", "reused", "wxacode_url"],
+        properties: {
+          sid: { type: "string", description: "22 位 base62 分享 token：路径/二维码 scene/归因三合一。" },
+          reused: { type: "boolean", description: "同一选集已分享过时为 true，sid 为既有分享。" },
+          wxacode_url: {
+            type: ["string", "null"],
+            description: "小程序码 COS URL；fail-soft：生成失败为 null（分享创建不受阻）。null 的既有分享再次创建会重试一次。",
+          },
+        },
+        additionalProperties: false,
+      },
+      CoachShareResponse: {
+        type: "object",
+        required: ["status", "message_count", "created_at", "wxacode_url", "messages"],
+        properties: {
+          status: { type: "string", const: "active" },
+          sharer_name: { type: "string", description: "分享者展示名；快照未带时不出现。" },
+          message_count: { type: "integer", minimum: 1 },
+          created_at: { type: "string", format: "date-time", description: "快照创建时间；过期 = created_at + 30 天（读取时计算）。" },
+          wxacode_url: { type: ["string", "null"] },
+          messages: {
+            type: "array",
+            items: { $ref: "#/components/schemas/ShareMessage" },
+          },
+        },
+        additionalProperties: false,
+      },
+      ShareMessage: {
+        type: "object",
+        description: "与 SessionHistoryMessage 同形（role/content/card），来自创建时服务端抽取的不可变快照。",
         required: ["role", "content"],
         properties: {
           role: { type: "string", enum: ["user", "assistant"] },

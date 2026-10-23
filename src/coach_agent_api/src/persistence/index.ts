@@ -3,12 +3,15 @@ import type { MySqlConfig } from "../dto/config.js";
 import { CoordinatedTurnRunner } from "../turn/coordinator.js";
 import { MySqlSaver } from "./checkpointer.js";
 import { createPool, ensureDatabase } from "./mysql.js";
+import { MySqlCoachShareStore } from "./shares.js";
 import { MySqlStore } from "./store.js";
 import { MySqlThreadLock, MySqlTurnReceiptStore } from "./turns.js";
 
 export interface Persistence {
   checkpointer: MySqlSaver;
   store: MySqlStore;
+  /** Coach chat share snapshots (#715). */
+  shares: MySqlCoachShareStore;
   turnCoordinator: CoordinatedTurnRunner;
   pool: Pool;
   close(): Promise<void>;
@@ -20,13 +23,16 @@ export async function createPersistence(config: MySqlConfig): Promise<Persistenc
   try {
     const checkpointer = new MySqlSaver(pool);
     const store = new MySqlStore(pool);
+    const shares = new MySqlCoachShareStore(pool);
     const turnReceipts = new MySqlTurnReceiptStore(pool, checkpointer);
     await checkpointer.setup();
     await store.setup();
+    await shares.setup();
     await turnReceipts.setup();
     return {
       checkpointer,
       store,
+      shares,
       turnCoordinator: new CoordinatedTurnRunner(turnReceipts, new MySqlThreadLock(config)),
       pool,
       close: () => pool.end(),
@@ -38,4 +44,5 @@ export async function createPersistence(config: MySqlConfig): Promise<Persistenc
 }
 
 export { MySqlSaver } from "./checkpointer.js";
+export { MySqlCoachShareStore } from "./shares.js";
 export { MySqlStore } from "./store.js";

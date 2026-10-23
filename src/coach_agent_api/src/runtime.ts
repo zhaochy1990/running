@@ -16,6 +16,7 @@ import type { ApiConfig } from "./dto/config.js";
 import { MySqlCoachDataDeleter } from "./persistence/deletion.js";
 import { createPersistence, type Persistence } from "./persistence/index.js";
 import type { PlanJobsService } from "./routes/planJobs.js";
+import { AuthWxacodeClient } from "./routes/shares.js";
 
 export interface CoachApiRuntime {
   app: ReturnType<typeof createApp>;
@@ -88,6 +89,21 @@ export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: C
         checkpointer: persistence.checkpointer,
         planJobs,
         coachDataDeleter: new MySqlCoachDataDeleter(persistence.pool),
+        // #715 分享服务：wxacode 未配置（base_url 为空）时不挂客户端——创建
+        // 端 fail-soft 落 wxacode_url NULL，P1 auth 端点上线后配置即生效。
+        coachShares: {
+          store: persistence.shares,
+          ...(apiConfig.share.wxacodeBaseUrl !== "" && apiConfig.share.wxacodeInternalToken !== ""
+            ? {
+                wxacode: new AuthWxacodeClient({
+                  baseUrl: apiConfig.share.wxacodeBaseUrl,
+                  internalToken: apiConfig.share.wxacodeInternalToken,
+                  page: apiConfig.share.wxacodePage,
+                  envVersion: apiConfig.share.wxacodeEnvVersion,
+                }),
+              }
+            : {}),
+        },
       }),
       close: () => Promise.all([dataProvider.close(), persistence?.close(), planJobPublisher?.close(), planJobQueue.close()]).then(() => undefined),
     };

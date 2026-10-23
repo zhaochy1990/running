@@ -98,7 +98,7 @@ test("deleter escapes LIKE wildcards and returns per-table counts", async () => 
   } as unknown as Pool;
   const deleter = new MySqlCoachDataDeleter(pool);
   const counts = await deleter.deleteForUser("user_with%wild_");
-  assert.equal(Object.keys(counts).length, 4);
+  assert.equal(Object.keys(counts).length, 5);
   assert.equal(counts.checkpoints, 3);
   const threadParams = executed.filter((e) => e.sql.includes("checkpoints") || e.sql.includes("checkpoint_writes") || e.sql.includes("receipts")).map((e) => e.params[0]);
   for (const param of threadParams) {
@@ -107,4 +107,7 @@ test("deleter escapes LIKE wildcards and returns per-table counts", async () => 
   const storeParams = executed.find((e) => e.sql.includes("FROM store"))?.params ?? [];
   assert.equal(storeParams[0], "athlete_memory\u001fuser_with%wild_");
   assert.equal(storeParams[1], "athlete\\_memory\u001fuser\\_with\\%wild\\_\u001f%");
+  // coach_shares（#715）按精确 user_id 删，不走 LIKE 前缀。
+  const shareParams = executed.find((e) => e.sql.includes("FROM coach_shares"))?.params ?? [];
+  assert.deepEqual(shareParams, ["user_with%wild_"]);
 });

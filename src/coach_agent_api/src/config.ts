@@ -114,6 +114,33 @@ const schema: convict.Schema<RawApiConfig> = {
     },
     internal_token: { format: requiredString, default: "", env: "STRIDE_COACH_GO_API_INTERNAL_TOKEN", sensitive: true },
   },
+  share: {
+    wxacode_base_url: {
+      doc: "Auth service origin exposing POST /api/internal/wxacode (#714); empty disables wxacode generation (share rows keep wxacode_url NULL)",
+      format: String,
+      default: "",
+      env: "STRIDE_COACH_SHARE_WXACODE_BASE_URL",
+    },
+    wxacode_internal_token: {
+      doc: "X-Internal-Token for the wxacode endpoint",
+      format: String,
+      default: "",
+      env: "STRIDE_COACH_SHARE_WXACODE_INTERNAL_TOKEN",
+      sensitive: true,
+    },
+    wxacode_page: {
+      doc: "Miniprogram page the wxacode opens (coach tab)",
+      format: String,
+      default: "pages/coach/coach",
+      env: "STRIDE_COACH_SHARE_WXACODE_PAGE",
+    },
+    wxacode_env_version: {
+      doc: "Miniprogram version the wxacode opens: trial during gateway check_path bring-up, release afterwards (#715)",
+      format: ["trial", "develop", "release"],
+      default: "trial",
+      env: "STRIDE_COACH_SHARE_WXACODE_ENV_VERSION",
+    },
+  },
   logging: {
     file: {
       doc: "Local-only debug log file (pretty text, tee'd alongside stdout). Empty disables it; relative paths resolve against the config directory",
@@ -139,6 +166,12 @@ export function loadApiConfig(options: LoadApiConfigOptions): ApiConfig {
     persistenceDatabase: raw.persistence_database,
     planJobs: { amqpUrl: raw.plan_jobs.amqp_url, queues: raw.plan_jobs.queues },
     goApi: { baseUrl: raw.go_api.base_url, internalToken: raw.go_api.internal_token },
+    share: {
+      wxacodeBaseUrl: raw.share.wxacode_base_url,
+      wxacodeInternalToken: raw.share.wxacode_internal_token,
+      wxacodePage: raw.share.wxacode_page,
+      wxacodeEnvVersion: raw.share.wxacode_env_version,
+    },
     logFile: raw.logging.file ? resolve(configDir, raw.logging.file) : "",
     auth: {
       publicKeyPem,
