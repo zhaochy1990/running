@@ -138,11 +138,6 @@
   margin-bottom: 20rpx;
 }
 
-/* 勾选框统一在气泡左侧（10-23 用户反馈：镜像到右太跳）；user 行整体右对齐保持气泡贴右 */
-.coach-msg--user {
-  justify-content: flex-end;
-}
-
 .coach-msg__main {
   display: flex;
   flex-direction: column;
@@ -156,10 +151,13 @@
 
 .coach-msg--user .coach-msg__main {
   align-items: flex-end;
+  /* 勾选框固定最左列后，气泡用 margin-left:auto 推到最右（微信多选样式，10-23 拍板） */
+  margin-left: auto;
 }
 
 /* ---------- 多选转发（devops#717）---------- */
 
+/* 勾选框固定最左列、所有消息同一 x 位（10-23 用户拍板：微信多选样式）；气泡对齐不变 */
 .coach-msg__check {
   display: none;
   width: 36rpx;
