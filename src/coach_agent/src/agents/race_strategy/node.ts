@@ -32,13 +32,25 @@ export function makeRaceStrategyNode(agent: InnerRaceAgent): GraphNode<typeof Ag
     const result = await agent.invoke({ messages: state.messages }, config);
     const strategy = extractRaceStrategyResult(result) ?? leakedStrategyFromText(result, state);
     if (strategy !== undefined) {
-      return { messages: [raceStrategyMessage(strategy)], raceStrategy: strategy };
+      return { messages: [raceStrategyMessage(strategy, raceEventIdFromContext(config))], raceStrategy: strategy };
     }
     return {
       messages: result.messages.slice(state.messages.length),
       raceStrategy: null,
     };
   };
+}
+
+/**
+ * 会话 target 的 race_event_id（#715）：随卡片 data 持久化，分享创建端据此
+ * 提取 strategy_refs.race_id。context 经 invoke config 顶层透传（chat.ts
+ * buildConfig），形状不对一律返回 undefined——只为溯源，绝不能挡生成。
+ */
+function raceEventIdFromContext(config: unknown): number | undefined {
+  const target = (config as { context?: { target?: { kind?: unknown; race_event_id?: unknown } } } | undefined)?.context?.target;
+  return target?.kind === "race" && typeof target.race_event_id === "number" && Number.isInteger(target.race_event_id) && target.race_event_id > 0
+    ? target.race_event_id
+    : undefined;
 }
 
 /** 扫描本轮新增的 AI 文本，命中防御性信封解析则告警并捞回（见 render.ts）。 */

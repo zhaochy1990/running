@@ -82,6 +82,23 @@ go_api:
   # than call Go unauthenticated.
   internal_token: ""
 
+# Coach chat sharing (#715). The wxacode call is fail-soft: an empty base_url
+# (or token) disables generation entirely and share rows keep wxacode_url NULL;
+# a configured endpoint that fails only logs a warning, never blocks creation.
+share:
+  # Auth service origin exposing POST /api/internal/wxacode (#714).
+  # Env: STRIDE_COACH_SHARE_WXACODE_BASE_URL.
+  wxacode_base_url: ""
+  # Env: STRIDE_COACH_SHARE_WXACODE_INTERNAL_TOKEN (secret).
+  wxacode_internal_token: ""
+  # Miniprogram page the wxacode opens (coach tab).
+  # Env: STRIDE_COACH_SHARE_WXACODE_PAGE.
+  wxacode_page: "pages/coach/coach"
+  # Miniprogram version the wxacode opens. trial while the gateway path check is
+  # pending; switch to release after check_path (#715).
+  # Env: STRIDE_COACH_SHARE_WXACODE_ENV_VERSION.
+  wxacode_env_version: "trial"
+
 # Local-only debug log file (pretty text, tee'd alongside stdout). Empty by
 # default; enabled in coach-api.local.yaml. A non-empty value outside the local
 # environment logs a startup warning and is ignored. Env: STRIDE_COACH_LOG_FILE.

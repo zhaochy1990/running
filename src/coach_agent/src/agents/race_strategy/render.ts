@@ -73,10 +73,15 @@ export function extractRaceStrategyResult(result: unknown): RaceStrategy | undef
  * 通道按会话累积，历史接口与崩溃恢复（recoverTurn）都从消息投影信封，卡片
  * 因此跨轮、跨重启保真——不依赖每轮被 orchestrator 清空的 state channel。
  */
-export function raceStrategyMessage(strategy: RaceStrategy): AIMessage {
+export function raceStrategyMessage(strategy: RaceStrategy, raceEventId?: number): AIMessage {
+  // #715 分享快照 strategy_refs 需要 (user_id, race_id, version_id) 三元组：
+  // race_event_id 在生成期已知（会话 target），随 data 持久化后才可能在分享
+  // 创建时溯源；version_id 是「应用」后 Go race_strategy 行 id，生成期尚不
+  // 存在，由分享创建端按可得字段尽力提取。增量字段对既有客户端向后兼容。
+  const data = raceEventId === undefined ? strategy : { ...strategy, race_event_id: raceEventId };
   return new AIMessage({
     content: renderRaceStrategyMarkdown(strategy),
-    additional_kwargs: { card: { $type: "race-strategy", data: strategy } },
+    additional_kwargs: { card: { $type: "race-strategy", data } },
   });
 }
 
