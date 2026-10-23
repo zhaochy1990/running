@@ -1,4 +1,4 @@
-import { sendCoachChatStream, fetchCoachHistory, fetchCoachSessions, takePendingCoachContext } from '../../services/coach';
+import { sendCoachChatStream, fetchCoachHistory, fetchCoachSessions, takePendingCoachContext, createCoachShare } from '../../services/coach';
 import type { CoachHistoryMessage, CoachSessionTarget, PendingCoachContext, CoachStreamEvent, CoachDone, CoachStreamHandle } from '../../services/coach';
 import {
   applyMasterPlanFromContent,
@@ -35,6 +35,14 @@ interface CoachMessage {
   // user 消息：本轮 client_turn_id（重试时复用）；failed 表示发送失败需重试。
   clientTurnId?: string;
   failed?: boolean;
+  // 该消息在服务端历史投影数组中的序号（分享创建 indices 用，devops#717）。
+  // undefined = 不在服务端投影（欢迎语 / 失败 / 生成中），不可多选转发。
+  shareIndex?: number;
+  // 多选转发：可勾选（投影内已发出消息）与当前勾选态（选择模式渲染用）。
+  selectable?: boolean;
+  selected?: boolean;
+  // 展示时间戳（HH:mm）。服务端历史无逐条时间，只有本会话内新产生的消息带。
+  ts?: string;
 }
 
 /** 本地维护的会话元信息。id 与服务端 thread `{user}:coach:{id}` 一一对应。 */
@@ -74,6 +82,21 @@ let streamScrollTick = 0;
 // master-plan 应用进行中的 apply_token（串行化动作，防双击重复提交）。
 let planActionInFlight = '';
 
+// ── 多选转发（devops#717）────────────────────────────────────────────────────
+// 单次分享条数上限（与服务端 422 口径一致）。
+const MAX_SHARE_MESSAGES = 30;
+// 分享阅读端页面（P5 落地，路径先按 epic #713 定稿写死）。
+const COACH_SHARE_PAGE = '/pages/coach-share/coach-share';
+// 当前会话已加载的服务端投影长度：历史加载后 = history.messages.length，
+// 之后每条确认落库的新消息（finishStream）递增。本地新气泡按它领投影序号。
+let projectionLength = 0;
+// 最近一次历史加载是否失败。失败时本地投影序号不可信（欢迎语兜底视图缺服务端
+// 前缀），多选入口 toast 拦截，onShow 静默重拉直到同步成功。
+let historySyncFailed = false;
+// 分享封面本地临时路径（canvas 预生成，5:4）；生成失败保持空，回落默认截图。
+let shareCoverPath = '';
+let shareCoverTimer: number | null = null;
+
 /** needs_input 时后端 interrupt 里的可展示文本（AskUserQuestionPayload 的 question 优先）。 */
 function interruptText(interrupt: unknown): string | undefined {
   if (typeof interrupt === 'string') return interrupt;
@@ -83,6 +106,100 @@ function interruptText(interrupt: unknown): string | undefined {
     if (typeof o.header === 'string' && o.header) return o.header;
   }
   return undefined;
+}
+
+/** 本地消息的展示时间戳（HH:mm）。 */
+function nowHhmm(): string {
+  const d = new Date();
+  const pad = (n: number): string => (n < 10 ? `0${n}` : String(n));
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** 清掉一组消息的勾选态（退出选择模式 / 重新全选前的复位）。 */
+function clearSelectionFlags(messages: CoachMessage[]): CoachMessage[] {
+  return messages.map((m) => (m.selected ? { ...m, selected: false } : m));
+}
+
+/** 封面气泡里的正文节选：去掉 markdown 装饰符并压成单行。 */
+function plainExcerpt(text: string): string {
+  return text
+    .replace(/[#*`>|_~]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60);
+}
+
+/** 分享封面 canvas 2d 上下文的最小结构（wx typings 不带 DOM Canvas 类型）。 */
+interface ShareCoverCtx {
+  fillStyle: string;
+  font: string;
+  fillRect(x: number, y: number, w: number, h: number): void;
+  fillText(text: string, x: number, y: number): void;
+  measureText(text: string): { width: number };
+  beginPath(): void;
+  moveTo(x: number, y: number): void;
+  arcTo(x1: number, y1: number, x2: number, y2: number, radius: number): void;
+  closePath(): void;
+  fill(): void;
+}
+
+/** 封面气泡文本折行：每行 16 个全角字符，最多两行，超长省略号收尾。 */
+function coverLines(text: string): string[] {
+  const perLine = 16;
+  if (text.length <= perLine * 2) {
+    return [text.slice(0, perLine), text.slice(perLine)].filter((line) => line.length > 0);
+  }
+  return [text.slice(0, perLine), `${text.slice(perLine, perLine * 2 - 1)}…`];
+}
+
+function roundRectPath(ctx: ShareCoverCtx, x: number, y: number, w: number, h: number, r: number): void {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+/** 分享封面（5:4，#717）：品牌顶标 STRIDE·砺跑 + 前两条所选对话气泡节选 + 底部落款。
+ *  纯绘制闭函数，参照配速卡海报 canvas 先例（strategy.ts drawPoster）。 */
+function drawShareCover(
+  ctx: ShareCoverCtx,
+  width: number,
+  height: number,
+  picks: Array<{ role: 'user' | 'assistant'; text: string }>,
+): void {
+  ctx.fillStyle = '#101111';
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = '#ff6363';
+  ctx.fillRect(0, 0, width, 6);
+
+  ctx.fillStyle = '#ffb3af';
+  ctx.font = 'bold 30px sans-serif';
+  ctx.fillText('STRIDE · 砺跑', 36, 66);
+
+  let y = 110;
+  for (const pick of picks) {
+    const lines = coverLines(pick.text);
+    ctx.font = '22px sans-serif';
+    const textWidth = Math.max(...lines.map((line) => ctx.measureText(line).width));
+    const bubbleWidth = Math.min(Math.ceil(textWidth) + 44, width - 72);
+    const bubbleHeight = lines.length * 32 + 28;
+    const isUser = pick.role === 'user';
+    const x = isUser ? width - 36 - bubbleWidth : 36;
+    ctx.fillStyle = isUser ? '#ff6363' : '#2a2b2e';
+    roundRectPath(ctx, x, y, bubbleWidth, bubbleHeight, 14);
+    ctx.fill();
+    ctx.fillStyle = isUser ? '#101111' : '#e3e2e5';
+    lines.forEach((line, i) => ctx.fillText(line, x + 22, y + 34 + i * 32));
+    y += bubbleHeight + 18;
+  }
+
+  ctx.fillStyle = '#8a8a8c';
+  ctx.font = '20px sans-serif';
+  const logo = '砺跑 · AI 马拉松教练';
+  ctx.fillText(logo, (width - ctx.measureText(logo).width) / 2, height - 30);
 }
 
 interface CoachPageData {
@@ -113,10 +230,15 @@ interface CoachPageData {
   // mp-html 样式：容器兜底颜色/字重 + 结构化 tag 样式（深色主题）。
   containerStyle: string;
   tagStyle: Record<string, string>;
+  // 多选转发（devops#717）：selectMode 时顶栏切「已选 N 条」、底栏切
+  // [取消][全选][转发 N]，消息行出现勾选框。
+  selectMode: boolean;
+  selectCount: number;
+  allSelected: boolean;
 }
 
 interface CoachPageHandlers {
-  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
+  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent | WechatMiniprogram.Page.IAsyncCustomShareContent;
   onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onInput(e: WechatMiniprogram.Input): void;
   onKeyboardHeightChange(e: WechatMiniprogram.InputKeyboardHeightChange): void;
@@ -124,6 +246,13 @@ interface CoachPageHandlers {
   onSend(): Promise<void>;
   onRetry(e: WechatMiniprogram.TouchEvent): void;
   onMessageLongPress(e: WechatMiniprogram.TouchEvent): void;
+  /** 选择模式中点消息：可勾选的切换勾选，不可选的 toast 原因；常态空操作。 */
+  onMessageTap(e: WechatMiniprogram.TouchEvent): void;
+  /** 消息 footer 的复制按钮（双叠方框线性 icon，#623 决议）。 */
+  onCopyFooterTap(e: WechatMiniprogram.TouchEvent): void;
+  /** 不可勾选消息的 toast 原因文案（失败 / 非投影消息）。 */
+  unselectableReason(message: CoachMessage): string;
+  onToggleSelectAll(): void;
   copyMessageText(messageId: number): void;
   /** 结构化产物卡片 tap（卡片主体）：产物经 storage 交接后跳目标页（如报告页草稿模式）。 */
   onCardOpen(e: WechatMiniprogram.TouchEvent): void;
@@ -172,6 +301,14 @@ interface CoachPageHandlers {
   finishStream(done: CoachDone, userMsgId: number): void;
   failStream(error: { code: string; message: string }, userMsgId: number): void;
   resetStream(): void;
+  // 多选转发（内部方法，页面内以 this. 调用）。
+  enterSelectMode(firstId?: number): void;
+  exitSelectMode(): void;
+  toggleSelect(id: number): void;
+  refreshAllSelected(): void;
+  scheduleShareCover(): void;
+  drawShareCover(): void;
+  createSelectedShare(): Promise<WechatMiniprogram.Page.ICustomShareContent>;
 }
 
 let seq = 0;
@@ -210,26 +347,27 @@ function contentPaddingTopRpx(): number {
 function welcomeMessages(): CoachMessage[] {
   const content =
     '你好，我是你的 AI 教练。可以问我今天的训练安排、疲劳状态、配速建议，或复盘某次训练。';
-  return [{ id: ++seq, role: 'assistant', content, html: markdownToHtml(content) }];
+  // 欢迎语不在服务端投影里（历史为空时的本地兜底）：shareIndex 缺省 → 不可多选转发。
+  return [{ id: ++seq, role: 'assistant', content, html: markdownToHtml(content), selectable: false }];
 }
 
 /** 卡片消息的气泡内容：inlineBody 产物（master-plan 摘要即卡片）正文摘要
  *  保留在卡片下方渲染；其余产物（race-strategy）卡片替代正文，content 留作
  *  复制兜底。 */
-function cardCoachMessage(card: CoachCardView, content: string): CoachMessage {
+function cardCoachMessage(card: CoachCardView, content: string, shareIndex?: number): CoachMessage {
   if (!card.inlineBody) {
-    return { id: ++seq, role: 'assistant', content: card.title, card };
+    return { id: ++seq, role: 'assistant', content: card.title, card, shareIndex, selectable: true };
   }
-  return { id: ++seq, role: 'assistant', content, card, html: markdownToHtml(content) };
+  return { id: ++seq, role: 'assistant', content, card, shareIndex, selectable: true, html: markdownToHtml(content) };
 }
 
-function toCoachMessage(m: CoachHistoryMessage, target?: CoachSessionTarget): CoachMessage {
+function toCoachMessage(m: CoachHistoryMessage, index: number, target?: CoachSessionTarget): CoachMessage {
   if (m.role === 'assistant') {
     // 首选：服务端信封（挂在产生它的消息上随 checkpoint 持久化，与 done.card
     // 同形），重开会话按行恢复通知卡片，多策略会话每张卡片各自保真。
     const fromServer = buildCoachCard(m.card, target);
     if (fromServer) {
-      return cardCoachMessage(fromServer, m.content);
+      return cardCoachMessage(fromServer, m.content, index);
     }
     // 兜底（历史自愈）：防御解析上线前，弱模型曾把策略信封 JSON 当正文写进
     // 会话历史；形似信封的 assistant 文本捞回成通知卡片（无 race target 定位
@@ -238,7 +376,7 @@ function toCoachMessage(m: CoachHistoryMessage, target?: CoachSessionTarget): Co
     if (leaked) {
       const card = buildCoachCard(leaked, target);
       if (card) {
-        return cardCoachMessage(card, m.content);
+        return cardCoachMessage(card, m.content, index);
       }
     }
   }
@@ -246,6 +384,9 @@ function toCoachMessage(m: CoachHistoryMessage, target?: CoachSessionTarget): Co
     id: ++seq,
     role: m.role === 'user' ? 'user' : 'assistant',
     content: m.content,
+    // 消息序号映射（devops#717）：历史行序 = 服务端投影序，分享创建直接引用。
+    shareIndex: index,
+    selectable: true,
   };
   if (m.role === 'assistant') msg.html = markdownToHtml(m.content);
   return msg;
@@ -298,7 +439,21 @@ function titleFromText(text: string): string {
 }
 
 Page<CoachPageData, CoachPageHandlers>({
-  onShareAppMessage: defaultShareAppMessage,
+  /**
+   * 多选中且已有勾选 → 转发所选对话；其余（含胶囊菜单转发、未同步态）走品牌
+   * 默认卡。静态字段是兜底（微信对 promise 自带 3 秒预算，超时用它）；promise
+   * 里调创建端点换真 sid。封面用预生成图，生成失败回落默认截图。
+   */
+  onShareAppMessage() {
+    if (this.data.selectMode && this.data.selectCount > 0 && !historySyncFailed) {
+      return {
+        ...defaultShareAppMessage(),
+        ...(shareCoverPath ? { imageUrl: shareCoverPath } : {}),
+        promise: this.createSelectedShare(),
+      };
+    }
+    return defaultShareAppMessage();
+  },
   onShareTimeline: defaultShareTimeline,
   data: {
     statusBarHeight: 0,
@@ -340,6 +495,9 @@ Page<CoachPageData, CoachPageHandlers>({
       th: 'padding:6px 8px;border:1px solid rgba(255,255,255,0.14);color:#b8b8bc;font-weight:600;text-align:left;',
       td: 'padding:6px 8px;border:1px solid rgba(255,255,255,0.14);color:#e3e2e5;',
     },
+    selectMode: false,
+    selectCount: 0,
+    allSelected: false,
   },
 
   onLoad() {
@@ -415,11 +573,19 @@ Page<CoachPageData, CoachPageHandlers>({
     if (pending) {
       this.startContextSession(pending);
     }
+    // 上次历史加载失败的静默重拉：同步成功前多选转发保持拦截（投影序号不可信）。
+    if (historySyncFailed) {
+      void this.loadSession(this.data.currentSessionId);
+    }
   },
 
   onUnload() {
     // 离开页面时中止在途流式请求，避免后台继续占用连接/接收 chunk。
     this.resetStream();
+    if (shareCoverTimer != null) {
+      clearTimeout(shareCoverTimer);
+      shareCoverTimer = null;
+    }
   },
 
   /** 入口「和教练聊一聊」：新建会话并挂 target，展示上下文提示条；带 kickoff 时自动发出首条消息。 */
@@ -435,6 +601,7 @@ Page<CoachPageData, CoachPageHandlers>({
     writeSessions(sessions);
     writeCurrentSessionId(newSession.id);
     seq = 0;
+    projectionLength = 0;
     this.setData({
       sessions,
       currentSessionId: newSession.id,
@@ -443,6 +610,9 @@ Page<CoachPageData, CoachPageHandlers>({
       scrollIntoId: '',
       drawerOpen: false,
       contextHint: this.contextHintOf(newSession),
+      selectMode: false,
+      selectCount: 0,
+      allSelected: false,
     });
     // #513：按钮已把意图说清，直接替用户发出首条消息让教练主动开场；
     // 失败时该消息带重试按钮，与手动发送一致。
@@ -488,9 +658,12 @@ Page<CoachPageData, CoachPageHandlers>({
         seq = 0;
         // 带上会话 target：历史自愈出的策略卡片需要 race_event_id 定位报告页。
         const target = this.data.sessions.find((s) => s.id === sessionId)?.target;
-        msgs = history.messages.map((m) => toCoachMessage(m, target));
+        msgs = history.messages.map((m, index) => toCoachMessage(m, index, target));
+        // 消息序号映射（devops#717）：历史行序即服务端投影序，作为分享 indices 基准。
+        projectionLength = history.messages.length;
       } else {
         seq = 0;
+        projectionLength = 0;
         msgs = welcomeMessages();
       }
       // 自建课卡片对账：历史是静态快照，卡片按钮态只活在内存里，刷新即回退
@@ -500,12 +673,14 @@ Page<CoachPageData, CoachPageHandlers>({
       } catch {
         // 对账失败按未保存渲染（旧版 Go api 无 save_token 时同样静默降级）。
       }
+      historySyncFailed = false;
       this.setData({
         messages: msgs,
         scrollIntoId: `msg-${msgs[msgs.length - 1].id}`,
       });
     } catch {
       // 历史拉取失败时保留欢迎语。
+      historySyncFailed = true;
     }
   },
 
@@ -531,23 +706,126 @@ Page<CoachPageData, CoachPageHandlers>({
   },
 
   /**
-   * 长按助手消息 → 复制全文。
-   *
-   * 为什么需要它：mp-html 把每个块渲染成独立的 `<rich-text>`，而 rich-text 的选区
-   * 不跨实例——长按一个段落只能选中该段，无法整段答案一次取走。所以这里补一个
-   * 「复制全文」入口。用户消息是单个 `<text user-select>`，自身可选中复制，无需接管。
+   * 长按消息 → 直接进选择模式且该条预选中（#623 定稿 B 直进式，无菜单）。
+   * 「复制全文」入口已迁移到每条 assistant 消息下方的常驻 footer。
+   * 选择模式中长按 = 切换勾选（微信范式）；不可选消息 toast 原因。
    */
   onMessageLongPress(e: WechatMiniprogram.TouchEvent) {
-    const { id, role } = e.currentTarget.dataset as { id?: number; role?: string };
-    if (role !== 'assistant' || typeof id !== 'number') return;
-    wx.showActionSheet({
-      itemList: ['复制全文'],
-      success: (res) => {
-        if (res.tapIndex === 0) this.copyMessageText(id);
-      },
-      // 用户点空白取消：静默返回，不要弹错误提示。
-      fail: () => undefined,
+    const { id } = e.currentTarget.dataset as { id?: number };
+    if (typeof id !== 'number') return;
+    if (this.data.selectMode) {
+      this.toggleSelect(id);
+      return;
+    }
+    if (historySyncFailed) {
+      wx.showToast({ title: '对话尚未同步，暂时无法多选转发', icon: 'none' });
+      return;
+    }
+    const message = this.data.messages.find((m) => m.id === id);
+    if (!message) return;
+    if (!message.selectable) {
+      wx.showToast({ title: this.unselectableReason(message), icon: 'none' });
+      return;
+    }
+    this.enterSelectMode(id);
+  },
+
+  /** 选择模式中点消息行：可勾选的切换勾选，不可选的 toast 原因（#717）。 */
+  onMessageTap(e: WechatMiniprogram.TouchEvent) {
+    if (!this.data.selectMode) return;
+    const { id } = e.currentTarget.dataset as { id?: number };
+    if (typeof id !== 'number') return;
+    this.toggleSelect(id);
+  },
+
+  /** 消息 footer 复制按钮：复制全文（复用 mp-html getText 逻辑，与原长按菜单同源）。 */
+  onCopyFooterTap(e: WechatMiniprogram.TouchEvent) {
+    const id = e.currentTarget.dataset.id as number;
+    if (typeof id !== 'number') return;
+    this.copyMessageText(id);
+  },
+
+  /** 不可勾选的原因文案（点击灰显消息时 toast）。 */
+  unselectableReason(message: CoachMessage): string {
+    if (message.failed) return '发送失败的消息不可转发';
+    return '该消息暂不可转发';
+  },
+
+  /** 进入选择模式；长按的那条直接预选中（0→1 触发封面预生成）。上次选中的
+   *  旧封面一并作废：新封面生成前转发回落默认截图，避免张冠李戴。 */
+  enterSelectMode(firstId?: number) {
+    shareCoverPath = '';
+    this.setData({ selectMode: true, selectCount: 0, allSelected: false });
+    if (firstId !== undefined) this.toggleSelect(firstId);
+  },
+
+  /** 退出选择模式：清全部勾选，顶栏/底栏还原。 */
+  exitSelectMode() {
+    if (!this.data.selectMode) return;
+    this.setData({
+      selectMode: false,
+      selectCount: 0,
+      allSelected: false,
+      messages: clearSelectionFlags(this.data.messages),
     });
+  },
+
+  /** 勾选/取消一条：上限 30 拦截；不可选 toast 原因。 */
+  toggleSelect(id: number) {
+    const index = this.data.messages.findIndex((m) => m.id === id);
+    if (index < 0) return;
+    const message = this.data.messages[index];
+    if (!message.selectable) {
+      wx.showToast({ title: this.unselectableReason(message), icon: 'none' });
+      return;
+    }
+    if (!message.selected) {
+      if (this.data.selectCount >= MAX_SHARE_MESSAGES) {
+        wx.showToast({ title: `一次最多转发 ${MAX_SHARE_MESSAGES} 条`, icon: 'none' });
+        return;
+      }
+      this.setData({ [`messages[${index}].selected`]: true, selectCount: this.data.selectCount + 1 });
+    } else {
+      this.setData({ [`messages[${index}].selected`]: false, selectCount: this.data.selectCount - 1 });
+    }
+    this.refreshAllSelected();
+    this.scheduleShareCover();
+  },
+
+  /** 全选/取消全选：全选超限自动截前 30（#717）。 */
+  onToggleSelectAll() {
+    if (!this.data.selectMode) return;
+    if (this.data.allSelected) {
+      this.setData({ messages: clearSelectionFlags(this.data.messages), selectCount: 0, allSelected: false });
+      return;
+    }
+    // 从清空状态重选前 30 条可选消息，避免与已有勾选并集突破上限。
+    const messages = clearSelectionFlags(this.data.messages);
+    let count = 0;
+    for (let i = 0; i < messages.length && count < MAX_SHARE_MESSAGES; i += 1) {
+      const m = messages[i];
+      if (m.selectable) {
+        messages[i] = { ...m, selected: true };
+        count += 1;
+      }
+    }
+    const selectableCount = messages.filter((m) => m.selectable).length;
+    this.setData({
+      messages,
+      selectCount: count,
+      allSelected: selectableCount > 0 && count >= selectableCount,
+    });
+    if (selectableCount > MAX_SHARE_MESSAGES) {
+      wx.showToast({ title: `一次最多转发 ${MAX_SHARE_MESSAGES} 条`, icon: 'none' });
+    }
+    this.scheduleShareCover();
+  },
+
+  /** 已选是否等于可选全集（底栏「全选/取消全选」文案切换）。 */
+  refreshAllSelected() {
+    const selectable = this.data.messages.filter((m) => m.selectable);
+    const allSelected = selectable.length > 0 && selectable.every((m) => m.selected);
+    if (allSelected !== this.data.allSelected) this.setData({ allSelected });
   },
 
   /** 复制一条助手消息。优先取渲染后的纯文本，取不到时退回原始 markdown。 */
@@ -981,7 +1259,8 @@ Page<CoachPageData, CoachPageHandlers>({
     }
 
     const clientTurnId = nextClientTurnId();
-    const userMsg: CoachMessage = { id: ++seq, role: 'user', content: text, clientTurnId };
+    // user 气泡先占位（无投影序号，流结束确认落库后由 finishStream 领号）。
+    const userMsg: CoachMessage = { id: ++seq, role: 'user', content: text, clientTurnId, ts: nowHhmm() };
     this.setData({
       messages: [...this.data.messages, userMsg],
       input: '',
@@ -992,6 +1271,11 @@ Page<CoachPageData, CoachPageHandlers>({
   },
 
   onRetry(e: WechatMiniprogram.TouchEvent) {
+    // 选择模式下重试按钮只提示不可转发，不触发重发（catchtap 已阻止冒泡勾选）。
+    if (this.data.selectMode) {
+      wx.showToast({ title: '发送失败的消息不可转发', icon: 'none' });
+      return;
+    }
     if (this.data.sending) return;
     const id = e.currentTarget.dataset.id as number;
     const msg = this.data.messages.find((m) => m.id === id);
@@ -1075,14 +1359,47 @@ Page<CoachPageData, CoachPageHandlers>({
     // 用户在报告页「应用」触发，不再生成即落库弹窗）。信封不认识时降级 markdown。
     const card = buildCoachCard(done.card, this.currentSessionTarget());
     if ((!content || !content.trim()) && !card) {
+      if (done.status === 'completed') {
+        // 空回复降级（服务端实证：reasoning 吃满 output budget）：turn 已完成落库，
+        // user 消息照常可分享；空 assistant 回复在服务端投影里也占一位（无气泡
+        // 渲染）。两处都计入长度，防止后续轮次序号漂移。
+        const messages = this.data.messages.map((m) =>
+          m.id === userMsgId ? { ...m, failed: false, shareIndex: projectionLength, selectable: true, ts: nowHhmm() } : m,
+        );
+        projectionLength += 2;
+        this.setData({
+          messages,
+          sending: false,
+          streaming: false,
+          streamPhase: '',
+          streamNarration: '',
+          streamText: '',
+          scrollIntoId: `msg-${userMsgId}`,
+        });
+        this.refreshAllSelected();
+        return;
+      }
       this.failStream({ code: 'empty', message: 'no_answer' }, userMsgId);
       return;
     }
     if (!content || !content.trim()) content = card?.title ?? '';
+    // 本轮确认落库：user 气泡占一个服务端投影位；completed 才有 assistant 回复
+    // 占下一个位。needs_input 的追问泡只是本地渲染（服务端 checkpoint 的 AI 消息
+    // 带 tool_calls，投影层剔除），不领序号、不可多选。
+    const userShareIndex = projectionLength;
+    projectionLength += 1;
+    const assistantShareIndex = done.status === 'completed' ? projectionLength++ : undefined;
+    const ts = nowHhmm();
+    const messages = this.data.messages.map((m) =>
+      m.id === userMsgId ? { ...m, failed: false, shareIndex: userShareIndex, selectable: true, ts } : m,
+    );
     const assistantMsg: CoachMessage = {
       id: ++seq,
       role: 'assistant',
       content,
+      ts,
+      selectable: true,
+      ...(assistantShareIndex !== undefined ? { shareIndex: assistantShareIndex } : {}),
       // 卡片存在时不渲染 markdown 正文（报告页才是完整视图）；inlineBody 产物
       // （master-plan 摘要即卡片）例外——摘要正文跟卡片同泡渲染。
       ...(card && !card.inlineBody
@@ -1091,9 +1408,6 @@ Page<CoachPageData, CoachPageHandlers>({
           ? { card, html: markdownToHtml(content) }
           : { html: markdownToHtml(content) }),
     };
-    const messages = this.data.messages.map((m) =>
-      m.id === userMsgId ? { ...m, failed: false } : m,
-    );
     this.setData({
       messages: [...messages, assistantMsg],
       sending: false,
@@ -1103,6 +1417,8 @@ Page<CoachPageData, CoachPageHandlers>({
       streamText: '',
       scrollIntoId: `msg-${assistantMsg.id}`,
     });
+    // 选择模式下流结束追加了新消息：全集变了，重算「全选」态（无选择模式时为无害空转）。
+    this.refreshAllSelected();
   },
 
   /** 流失败：清掉流式气泡，给该 user 消息打 failed 标记以展示重试按钮。 */
@@ -1142,7 +1458,111 @@ Page<CoachPageData, CoachPageHandlers>({
   },
 
 
+  /**
+   * 分享封面预生成（devops#717）：勾选变化后防抖重画 5:4 封面（品牌顶标 +
+   * 前两条所选对话节选 + 底部落款），本地临时路径备用。全链路 fail-soft：
+   * canvas 不可用/绘制失败只意味着分享卡回落微信默认截图。
+   */
+  scheduleShareCover() {
+    if (this.data.selectCount === 0) return;
+    if (shareCoverTimer != null) clearTimeout(shareCoverTimer);
+    shareCoverTimer = setTimeout(() => {
+      shareCoverTimer = null;
+      this.drawShareCover();
+    }, 300);
+  },
+
+  drawShareCover() {
+    if (this.data.selectCount === 0) return;
+    const picks = this.data.messages
+      .filter((m) => m.selected)
+      .slice(0, 2)
+      .map((m) => ({ role: m.role, text: plainExcerpt(m.content) }));
+    if (picks.length === 0) return;
+    const query = wx.createSelectorQuery().in(this as never);
+    query
+      .select('#share-cover')
+      .fields({ node: true }, (res) => {
+        const canvas = (res as { node?: unknown })?.node as
+          | { width: number; height: number; getContext(type: '2d'): unknown }
+          | undefined;
+        if (!canvas) return;
+        const width = 500;
+        const height = 400;
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d') as ShareCoverCtx;
+        drawShareCover(ctx, width, height, picks);
+        wx.canvasToTempFilePath({
+          canvas: canvas as unknown as WechatMiniprogram.Canvas,
+          x: 0,
+          y: 0,
+          width,
+          height,
+          destWidth: width,
+          destHeight: height,
+          success: (out) => {
+            shareCoverPath = out.tempFilePath;
+          },
+          fail: () => {
+            // fail-soft：无封面时微信用页面默认截图。
+          },
+        });
+      })
+      .exec();
+  },
+
+  /**
+   * 创建分享快照并产出真转发内容：path 带短 sid（阅读端 P5 落地）、标题
+   * `{昵称} 与 AI 教练的对话 · N 条`、封面用预生成图。任何失败/超时都回落
+   * 默认品牌分享并 toast，绝不阻塞转发面板。
+   */
+  createSelectedShare(): Promise<WechatMiniprogram.Page.ICustomShareContent> {
+    const selected = this.data.messages.filter((m) => m.selected && m.shareIndex !== undefined);
+    // 升序去重（服务端会再规范化一次，这里发干净数据）。
+    const indices = [...new Set(selected.map((m) => m.shareIndex as number))].sort((a, b) => a - b);
+    const name = (userStore.getState().user?.name ?? '').trim().slice(0, 64);
+    const title = name
+      ? `${name} 与 AI 教练的对话 · ${indices.length} 条`
+      : `我与 AI 教练的对话 · ${indices.length} 条`;
+    const fallback = defaultShareAppMessage();
+    return new Promise((resolve) => {
+      let settled = false;
+      const finishFallback = (reason: string) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        wx.showToast({ title: reason, icon: 'none' });
+        resolve(fallback);
+      };
+      // 抢在微信 3 秒预算之前主动回落，保证转发面板拿到完整兜底字段。
+      const timer = setTimeout(() => {
+        finishFallback('分享创建超时，将发送默认卡片');
+      }, 2800);
+      createCoachShare(this.data.currentSessionId, indices, name || undefined)
+        .then((res) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve({
+            title,
+            path: `${COACH_SHARE_PAGE}?sid=${res.sid}`,
+            ...(shareCoverPath ? { imageUrl: shareCoverPath } : {}),
+          });
+        })
+        .catch((err: unknown) => {
+          const detail = err instanceof ApiError && err.detail && err.detail.length <= 20 ? err.detail : '';
+          finishFallback(detail ? `分享创建失败：${detail}` : '分享创建失败，将发送默认卡片');
+        });
+    });
+  },
+
   onMenuTap() {
+    // 与会话抽屉互斥（#623 决议）：进抽屉先退出选择模式。
+    if (this.data.selectMode) {
+      this.exitSelectMode();
+      wx.showToast({ title: '已退出多选', icon: 'none' });
+    }
     this.setData({ drawerOpen: true });
   },
 
@@ -1165,6 +1585,7 @@ Page<CoachPageData, CoachPageHandlers>({
     writeSessions(sessions);
     writeCurrentSessionId(newSession.id);
     seq = 0;
+    projectionLength = 0;
     this.setData({
       sessions,
       currentSessionId: newSession.id,
@@ -1172,6 +1593,9 @@ Page<CoachPageData, CoachPageHandlers>({
       scrollIntoId: '',
       drawerOpen: false,
       contextHint: '',
+      selectMode: false,
+      selectCount: 0,
+      allSelected: false,
     });
   },
 
