@@ -28,6 +28,9 @@ export interface CoachShareCardVM {
 export interface CoachShareMessageVM {
   id: number;
   role: 'user' | 'assistant';
+  /** 快照原文：user 气泡为纯文本直接渲染（wxml {{item.content}}）；assistant
+   *  渲染走 html，content 仅透传存底。 */
+  content: string;
   /** user 为空串；assistant = markdownToHtml(content)（mp-html 渲染）。 */
   html: string;
   /** 静态摘要卡；null = 无卡片信封或已降级走 markdown 气泡。 */
@@ -38,7 +41,7 @@ export interface CoachShareMessageVM {
 export function buildCoachShareMessages(messages: CoachShareMessage[]): CoachShareMessageVM[] {
   return messages.map((message, index) => {
     if (message.role !== 'assistant') {
-      return { id: index, role: 'user', html: '', card: null };
+      return { id: index, role: 'user', content: message.content, html: '', card: null };
     }
 
     let card: CoachShareCardVM | null = null;
@@ -54,6 +57,7 @@ export function buildCoachShareMessages(messages: CoachShareMessage[]): CoachSha
     return {
       id: index,
       role: 'assistant',
+      content: message.content,
       // race-strategy 卡替代正文（coach 页 cardCoachMessage 同口径）；master-plan
       // 摘要即卡片，正文照常渲染。
       html: card && !card.inlineBody ? '' : markdownToHtml(message.content),

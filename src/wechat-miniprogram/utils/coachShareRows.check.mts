@@ -63,8 +63,9 @@ const messages: CoachShareMessage[] = [
 
 const vms = buildCoachShareMessages(messages);
 
-// user：纯文本气泡，无 html 无卡片
+// user：纯文本气泡（wxml {{item.content}} 直渲原文），无 html 无卡片
 eq(vms[0]?.role, 'user', 'msg0 role');
+eq(vms[0]?.content, '教练，我下月跑杭马。', 'msg0 content');
 eq(vms[0]?.html, '', 'msg0 html');
 eq(vms[0]?.card, null, 'msg0 card');
 
