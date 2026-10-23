@@ -133,16 +133,111 @@
 
 .coach-msg {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: flex-start;
   margin-bottom: 20rpx;
 }
 
-.coach-msg--assistant {
+/* 勾选框贴气泡外侧：assistant 在左、user 在右（623 原型像素参照） */
+.coach-msg--user {
+  flex-direction: row-reverse;
+}
+
+.coach-msg__main {
+  display: flex;
+  flex-direction: column;
+  max-width: 82%;
+  min-width: 0;
+}
+
+.coach-msg--assistant .coach-msg__main {
   align-items: flex-start;
 }
 
-.coach-msg--user {
+.coach-msg--user .coach-msg__main {
   align-items: flex-end;
+}
+
+/* ---------- 多选转发（devops#717）---------- */
+
+.coach-msg__check {
+  display: none;
+  width: 44rpx;
+  height: 44rpx;
+  margin-top: 8rpx;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  border: 2rpx solid rgba(255, 255, 255, 0.28);
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+}
+
+.coach--selecting .coach-msg__check {
+  display: flex;
+}
+
+/* 不可选消息：勾选框灰显 + 气泡降透明 */
+.coach--selecting .coach-msg--disabled .coach-msg__check {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.coach--selecting .coach-msg--disabled .coach-msg__bubble {
+  opacity: 0.4;
+}
+
+/* 选中：主题色藕粉实心填充 + 深色对勾（#623 定稿 solid） */
+.coach-msg--checked .coach-msg__check {
+  border-color: #ff6363;
+  background: #ff6363;
+}
+
+.coach-msg__check-icon {
+  display: none;
+  width: 20rpx;
+  height: 12rpx;
+  border-left: 4rpx solid #101111;
+  border-bottom: 4rpx solid #101111;
+  transform: rotate(-45deg) translateY(-2rpx);
+}
+
+.coach-msg--checked .coach-msg__check-icon {
+  display: block;
+}
+
+/* 选择模式下复制 footer 隐藏 */
+.coach--selecting .coach-msg__footer {
+  display: none;
+}
+
+.coach-msg__footer {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  margin-top: 8rpx;
+  min-height: 40rpx;
+}
+
+.coach-msg__copy-icon {
+  width: 30rpx;
+  height: 30rpx;
+  padding: 6rpx;
+  box-sizing: content-box;
+  opacity: 0.6;
+}
+
+.coach-msg__footer:active .coach-msg__copy-icon {
+  opacity: 1;
+}
+
+.coach-msg__ts {
+  flex-shrink: 0;
+  font-size: 20rpx;
+  line-height: 28rpx;
+  color: #7a7a7b;
 }
 
 .coach-msg__retry {
@@ -315,6 +410,75 @@
 
 .coach-input__send--disabled {
   opacity: 0.6;
+}
+
+/* ---------- 选择模式底栏：[取消][全选][转发 N]（devops#717）---------- */
+
+.coach-actions {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 16rpx 32rpx;
+  background: #121316;
+  border-top: 1rpx solid rgba(255, 255, 255, 0.06);
+}
+
+.coach-actions__cancel {
+  flex-shrink: 0;
+  height: 72rpx;
+  padding: 0 32rpx;
+  line-height: 70rpx;
+  border-radius: 36rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.15);
+  color: #e3e2e5;
+  font-size: 24rpx;
+  text-align: center;
+}
+
+.coach-actions__all {
+  flex-shrink: 0;
+  height: 72rpx;
+  padding: 0 28rpx;
+  line-height: 72rpx;
+  color: #ffb3af;
+  font-size: 24rpx;
+}
+
+/* 原生 button 三坑（默认宽/白底/overflow 裁切）逐一复位：显式宽高、自绘底色、
+   ::after 描边去除、行高与盒模型对齐。 */
+.coach-actions__share {
+  flex: 1;
+  min-width: 0;
+  height: 72rpx;
+  margin: 0;
+  padding: 0 32rpx;
+  box-sizing: border-box;
+  border-radius: 36rpx;
+  background: #ff6363;
+  color: #101111;
+  font-size: 24rpx;
+  font-weight: 600;
+  line-height: 72rpx;
+  text-align: center;
+  overflow: visible;
+}
+
+.coach-actions__share::after {
+  border: none;
+}
+
+.coach-actions__share--disabled {
+  opacity: 0.4;
+}
+
+/* 分享封面预生成画布：离屏摆放（保留真实尺寸保证 canvas 2d 可绘制）。 */
+.share-cover-canvas {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  width: 500px;
+  height: 400px;
+  pointer-events: none;
 }
 
 /* ---------- 会话历史抽屉 ---------- */

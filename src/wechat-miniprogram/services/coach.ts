@@ -368,3 +368,30 @@ export function getCoachShare(sid: string): Promise<CoachShareSnapshot> {
     auth: false,
   });
 }
+
+// ── 分享创建（devops#715 服务端契约，devops#717 客户端接入）──────────────────
+
+/** POST /api/users/me/coach/sessions/:id/share 的响应。201 fresh（reused:false）
+ *  / 200 同选集幂等复用（reused:true）；wxacode_url 可为 null（服务端 fail-soft）。 */
+export interface CoachShareCreateResult {
+  /** 22 位 base62 分享 id，阅读端路径 ?sid= 用。 */
+  sid: string;
+  reused: boolean;
+  wxacode_url: string | null;
+}
+
+/**
+ * 创建一条教练对话分享快照。只传所选消息的**服务端投影序号**（升序去重 ≤30，
+ * 去重/排序服务端也会做）；服务端自己重投影 checkpoint 抽取消息，客户端伪造
+ * 不了内容。超限（>30 条 / 体积）返回 422 中文提示；序号越界 400 invalid_indices。
+ */
+export function createCoachShare(
+  sessionId: string,
+  indices: number[],
+  sharerName?: string,
+): Promise<CoachShareCreateResult> {
+  return http.post<CoachShareCreateResult, { indices: number[]; sharer_name?: string }>(
+    `${COACH_BASE_URL}/api/users/me/coach/sessions/${encodeURIComponent(sessionId)}/share`,
+    { indices, ...(sharerName ? { sharer_name: sharerName } : {}) },
+  );
+}

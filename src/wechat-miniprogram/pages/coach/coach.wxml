@@ -1,12 +1,13 @@
-<view class="coach">
-  <!-- 自定义顶部栏（与 index 页一致：菜单在左，标题居中，右侧为胶囊保留区） -->
+<view class="coach {{selectMode ? 'coach--selecting' : ''}}">
+  <!-- 自定义顶部栏（与 index 页一致：菜单在左，标题居中，右侧为胶囊保留区）；
+       选择模式下标题切「已选 N 条」（#717，退出走底栏取消） -->
   <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
     <view class="top-bar__inner">
       <view class="top-bar__btn" bindtap="onMenuTap">
         <image class="top-bar__icon" src="/assets/icons/menu.svg" mode="aspectFit" />
       </view>
       <view class="top-bar__title-wrap">
-        <view class="top-bar__title">教练</view>
+        <view class="top-bar__title">{{selectMode ? '已选 ' + selectCount + ' 条' : '教练'}}</view>
         <!-- AI 生成内容标识（微信审核要求：AI 生成页面需显著说明） -->
         <view class="top-bar__subtitle">内容由 AI 生成，仅供参考</view>
       </view>
@@ -29,52 +30,68 @@
         wx:for="{{messages}}"
         wx:key="id"
         id="msg-{{item.id}}"
-        class="coach-msg {{item.role === 'user' ? 'coach-msg--user' : 'coach-msg--assistant'}}"
+        class="coach-msg {{item.role === 'user' ? 'coach-msg--user' : 'coach-msg--assistant'}} {{item.selected ? 'coach-msg--checked' : ''}} {{selectMode && !item.selectable ? 'coach-msg--disabled' : ''}}"
         data-id="{{item.id}}"
-        data-role="{{item.role}}"
         bindlongpress="onMessageLongPress"
+        bindtap="onMessageTap"
       >
-        <view class="coach-msg__bubble">
-          <text wx:if="{{item.role === 'user'}}" user-select="true">{{item.content}}</text>
-          <!-- 结构化产物（done.card 经 utils/coachCards 翻译）：通知卡片替代 markdown 正文；
-               inlineBody 产物（master-plan 摘要即卡片）卡片头部下方继续渲染 markdown 摘要 -->
-          <block wx:elif="{{item.card}}">
-            <coach-card
-              icon="{{item.card.icon}}"
-              title="{{item.card.title}}"
-              subtitle="{{item.card.subtitle}}"
-              badge="{{item.card.badge}}"
-              buttonText="{{item.card.buttonText}}"
-              secondaryButtonText="{{item.card.secondaryButtonText}}"
-              data-id="{{item.id}}"
-              bindopen="onCardOpen"
-              bindcta="onCardCta"
-              bindsecondary="onCardSecondary"
-            />
+        <!-- 多选勾选框（仅选择模式可见；主题色实心填充，#623 定稿） -->
+        <view class="coach-msg__check" aria-hidden="true">
+          <view class="coach-msg__check-icon"></view>
+        </view>
+        <view class="coach-msg__main">
+          <view class="coach-msg__bubble">
+            <text wx:if="{{item.role === 'user'}}" user-select="true">{{item.content}}</text>
+            <!-- 结构化产物（done.card 经 utils/coachCards 翻译）：通知卡片替代 markdown 正文；
+                 inlineBody 产物（master-plan 摘要即卡片）卡片头部下方继续渲染 markdown 摘要 -->
+            <block wx:elif="{{item.card}}">
+              <coach-card
+                icon="{{item.card.icon}}"
+                title="{{item.card.title}}"
+                subtitle="{{item.card.subtitle}}"
+                badge="{{item.card.badge}}"
+                buttonText="{{item.card.buttonText}}"
+                secondaryButtonText="{{item.card.secondaryButtonText}}"
+                data-id="{{item.id}}"
+                bindopen="onCardOpen"
+                bindcta="onCardCta"
+                bindsecondary="onCardSecondary"
+              />
+              <mp-html
+                wx:if="{{item.html}}"
+                id="md-{{item.id}}"
+                content="{{item.html}}"
+                containerStyle="{{containerStyle}}"
+                tagStyle="{{tagStyle}}"
+                selectable="force"
+              />
+            </block>
             <mp-html
-              wx:if="{{item.html}}"
+              wx:else
               id="md-{{item.id}}"
               content="{{item.html}}"
               containerStyle="{{containerStyle}}"
               tagStyle="{{tagStyle}}"
               selectable="force"
             />
-          </block>
-          <mp-html
-            wx:else
-            id="md-{{item.id}}"
-            content="{{item.html}}"
-            containerStyle="{{containerStyle}}"
-            tagStyle="{{tagStyle}}"
-            selectable="force"
-          />
+          </view>
+          <!-- 教练回复 footer：复制全文 icon + 行尾时间戳（选择模式下隐藏，#623） -->
+          <view
+            wx:if="{{item.role === 'assistant'}}"
+            class="coach-msg__footer"
+            data-id="{{item.id}}"
+            catchtap="onCopyFooterTap"
+          >
+            <image class="coach-msg__copy-icon" src="/assets/icons/copy.svg" mode="aspectFit" />
+            <text wx:if="{{item.ts}}" class="coach-msg__ts">{{item.ts}}</text>
+          </view>
+          <view
+            wx:if="{{item.role === 'user' && item.failed}}"
+            class="coach-msg__retry"
+            data-id="{{item.id}}"
+            catchtap="onRetry"
+          >发送失败，点击重试</view>
         </view>
-        <view
-          wx:if="{{item.role === 'user' && item.failed}}"
-          class="coach-msg__retry"
-          data-id="{{item.id}}"
-          bindtap="onRetry"
-        >发送失败，点击重试</view>
       </view>
       <!-- 流式回复气泡：阶段指示 + 纯文本打字机；done 后才进入 messages 渲染富文本 -->
       <view wx:if="{{streaming}}" id="{{streamScrollId}}" class="coach-msg coach-msg--assistant">
@@ -101,7 +118,18 @@
       </view>
     </scroll-view>
 
-    <view class="coach-input">
+    <!-- 常态：输入栏；选择模式：[取消][全选][转发 N]（#717）。
+         转发必须是 <button open-type="share">（小程序无代码唤起分享 API，#626） -->
+    <view wx:if="{{selectMode}}" class="coach-actions">
+      <view class="coach-actions__cancel" bindtap="exitSelectMode">取消</view>
+      <view class="coach-actions__all" bindtap="onToggleSelectAll">{{allSelected ? '取消全选' : '全选'}}</view>
+      <button
+        class="coach-actions__share {{selectCount === 0 ? 'coach-actions__share--disabled' : ''}}"
+        open-type="share"
+        disabled="{{selectCount === 0}}"
+      >转发{{selectCount > 0 ? ' ' + selectCount : ''}}</button>
+    </view>
+    <view wx:else class="coach-input">
       <input
         class="coach-input__field"
         value="{{input}}"
@@ -121,6 +149,9 @@
       >发送</view>
     </view>
   </view>
+
+  <!-- 分享封面预生成画布（5:4，离屏；devops#717） -->
+  <canvas type="2d" id="share-cover" class="share-cover-canvas"></canvas>
 
   <!-- 会话历史抽屉 -->
   <view wx:if="{{drawerOpen}}" class="drawer-mask" bindtap="onCloseDrawer"></view>
