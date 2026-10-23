@@ -738,10 +738,14 @@ Page<CoachPageData, CoachPageHandlers>({
     this.toggleSelect(id);
   },
 
-  /** 消息 footer 复制按钮：复制全文（复用 mp-html getText 逻辑，与原长按菜单同源）。 */
+  /** 消息 footer 复制按钮：复制全文（复用 mp-html getText 逻辑，与原长按菜单同源）。
+   *  卡片替代正文的消息（card 且无 html）正文已被卡片替代、无全文可复制，
+   *  footer 不渲染 icon，点击也不触发（与 wxml 的隐藏条件同款闸门）。 */
   onCopyFooterTap(e: WechatMiniprogram.TouchEvent) {
     const id = e.currentTarget.dataset.id as number;
     if (typeof id !== 'number') return;
+    const message = this.data.messages.find((m) => m.id === id);
+    if (message?.card && !message.html) return;
     this.copyMessageText(id);
   },
 
