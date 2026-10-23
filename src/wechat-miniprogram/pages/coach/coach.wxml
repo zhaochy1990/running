@@ -40,9 +40,10 @@
           <view class="coach-msg__check-icon"></view>
         </view>
         <view class="coach-msg__main">
-          <!-- 卡片替代正文的消息（card 且无 html，如 workout-op）：去气泡外壳，
-               coach-card 直接落在消息流里，避免卡中卡（10-23 用户反馈） -->
-          <view class="coach-msg__bubble {{item.card && !item.html ? 'coach-msg__bubble--flat' : ''}}">
+          <!-- 一切卡片消息（coach-card 自带卡片样式）：去气泡外壳，卡片直接
+               落在消息流里避免卡中卡；inlineBody 产物的 markdown 摘要改为跟在
+               卡片下方裸渲染（10-23 用户反馈，全卡片统一） -->
+          <view class="coach-msg__bubble {{item.card ? 'coach-msg__bubble--flat' : ''}}">
             <text wx:if="{{item.role === 'user'}}" user-select="true">{{item.content}}</text>
             <!-- 结构化产物（done.card 经 utils/coachCards 翻译）：通知卡片替代 markdown 正文；
                  inlineBody 产物（master-plan 摘要即卡片）卡片头部下方继续渲染 markdown 摘要 -->
@@ -78,8 +79,8 @@
             />
           </view>
           <!-- 教练回复 footer：复制全文 icon + 行尾时间戳（选择模式下隐藏，#623）。
-               卡片替代正文的消息（card 且无 html）没有可复制的正文，不渲染复制
-               icon，只留时间戳（10-23 用户反馈：复制按钮无内容可复制） -->
+               卡片消息（含 inlineBody 摘要型）不渲染复制 icon，只留时间戳——卡片
+               即产物本体无全文可复制，摘要文字仍可长按选择（10-23 用户反馈） -->
           <view
             wx:if="{{item.role === 'assistant'}}"
             class="coach-msg__footer"
@@ -87,7 +88,7 @@
             catchtap="onCopyFooterTap"
           >
             <image
-              wx:if="{{!(item.card && !item.html)}}"
+              wx:if="{{!item.card}}"
               class="coach-msg__copy-icon"
               src="/assets/icons/copy.svg"
               mode="aspectFit"

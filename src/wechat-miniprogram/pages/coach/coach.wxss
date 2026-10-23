@@ -269,9 +269,10 @@
   border-top-left-radius: 8rpx;
 }
 
-/* 卡片替代正文的消息：气泡外壳（背景/边框/padding）整体卸掉，coach-card
-   自带卡片样式直接渲染，避免卡中卡（10-23 用户反馈）。声明在
-   .coach-msg--assistant .coach-msg__bubble 之后以覆盖同名属性。 */
+/* 一切卡片消息：气泡外壳（背景/边框/padding）整体卸掉，coach-card 自带
+   卡片样式直接渲染，避免卡中卡；inlineBody 的 markdown 摘要在卡片下方裸
+   渲染（10-23 用户反馈，全卡片统一）。文字色/字号/换行仍由上面的
+   .coach-msg__bubble 基类提供。声明在其后以覆盖同名属性。 */
 .coach-msg--assistant .coach-msg__bubble--flat {
   background: transparent;
   border: none;
