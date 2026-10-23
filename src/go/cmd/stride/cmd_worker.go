@@ -113,8 +113,15 @@ func runWorker() error {
 	}
 
 	// --- RabbitMQ ---
-	conn, err := mq.Dial(cfg.AMQP.URL)
+	// Backoff instead of fail-fast: a rabbitmq Recreate roll is a 15-30s
+	// window, and exiting on it hands recovery to k8s crash-loop backoff
+	// (10s..300s) — a brief broker blip would become minutes of downtime
+	// (#493). SIGTERM during the backoff aborts via ctx and exits cleanly.
+	conn, err := mq.DialWithRetry(ctx, cfg.AMQP.URL, log)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil // shutdown requested mid-retry — not a failure
+		}
 		return err
 	}
 	defer conn.Close()
