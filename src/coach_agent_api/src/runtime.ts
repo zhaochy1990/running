@@ -38,7 +38,10 @@ async function resolvePublicKeyPem(auth: ApiConfig["auth"]): Promise<string> {
 export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: CoachAgentConfig): Promise<CoachApiRuntime> {
   const dataProvider = MySqlDataProvider.create(apiConfig.strideDatabase);
   let persistence: Persistence | undefined;
-  const planJobQueue = await PlanJobQueue.connect(apiConfig.planJobs.amqpUrl);
+  // connectWithRetry (#726): a pod (re)built during a rabbitmq Recreate gap
+  // must wait out the broker instead of exiting into CrashLoopBackOff — this
+  // is the user-facing coach API, unavailable means coach chat is down.
+  const planJobQueue = await PlanJobQueue.connectWithRetry(apiConfig.planJobs.amqpUrl);
   let planJobPublisher: RabbitPublisher | undefined;
   try {
     persistence = await createPersistence(apiConfig.persistenceDatabase);
