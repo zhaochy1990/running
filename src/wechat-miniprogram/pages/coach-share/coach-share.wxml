@@ -1,0 +1,100 @@
+<view class="page">
+  <!-- 顶栏（fixed，#624 D 定稿）：砺 logo + 分享标题 + 日期·N 条 + AI 生成标识 -->
+  <view class="top" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top__logo">砺</view>
+    <view class="top__titles">
+      <view class="top__title">{{title}}</view>
+      <view class="top__meta">{{meta}}</view>
+    </view>
+    <view class="top__badge">内容由 AI 生成</view>
+  </view>
+
+  <!-- 主体：气泡对话流 / 各状态空态 -->
+  <view class="body" style="padding-top: calc({{statusBarHeight}}px + 128rpx);">
+    <!-- ============ 加载中 ============ -->
+    <view wx:if="{{loadState === 'loading'}}" class="state">
+      <view class="state__spinner"></view>
+      <view class="state__text">正在加载分享…</view>
+    </view>
+
+    <!-- ============ 410 过期（#622：「分享已过期」+ 品牌收尾） ============ -->
+    <view wx:elif="{{loadState === 'expired'}}" class="state">
+      <view class="state__logo">砺</view>
+      <view class="state__title">分享已过期</view>
+      <view class="state__text">分享链接有效期 30 天，请联系分享者重新分享</view>
+    </view>
+
+    <!-- ============ 404 不存在（含链接缺参 / 非法 sid） ============ -->
+    <view wx:elif="{{loadState === 'notfound'}}" class="state">
+      <view class="state__logo">砺</view>
+      <view class="state__title">分享不存在</view>
+      <view class="state__text">链接可能已失效，请联系分享者重新分享</view>
+    </view>
+
+    <!-- ============ 失败（网络 / 5xx / 429 频控，可重试） ============ -->
+    <view wx:elif="{{loadState === 'error'}}" class="state">
+      <view class="state__title">加载失败</view>
+      <view class="state__text">网络开小差了，请重试</view>
+      <view class="state__cta" bindtap="onRetryTap">重试</view>
+    </view>
+
+    <!-- ============ D 气泡对话流·浅色 ============ -->
+    <block wx:else>
+      <view
+        wx:for="{{messages}}"
+        wx:key="id"
+        class="msg {{item.role === 'user' ? 'msg--user' : 'msg--coach'}}"
+      >
+        <!-- 用户：浅粉右气泡（纯文本，pre-wrap） -->
+        <view wx:if="{{item.role === 'user'}}" class="bubble-u">
+          <text user-select="true">{{item.content}}</text>
+        </view>
+        <block wx:else>
+          <!-- 策略卡降级：静态摘要卡（无 CTA，v1 快照无 #506 三元组） -->
+          <view wx:if="{{item.card && !item.card.inlineBody}}" class="scard">
+            <view class="scard__head">
+              <view class="scard__icon">
+                <image class="scard__icon-img" src="{{item.card.icon}}" mode="aspectFit" />
+              </view>
+              <view class="scard__titles">
+                <view class="scard__title">{{item.card.title}}</view>
+                <view class="scard__subtitle">{{item.card.subtitle}}</view>
+              </view>
+            </view>
+            <view class="scard__note">打开小程序查看完整策略</view>
+          </view>
+          <!-- 教练：白底左气泡（master-plan 卡头 + 正文 / 纯 markdown） -->
+          <view wx:else class="bubble-md">
+            <view wx:if="{{item.card}}" class="scard__head scard__head--inline">
+              <view class="scard__icon">
+                <image class="scard__icon-img" src="{{item.card.icon}}" mode="aspectFit" />
+              </view>
+              <view class="scard__titles">
+                <view class="scard__title">{{item.card.title}}</view>
+                <view class="scard__subtitle">{{item.card.subtitle}}</view>
+              </view>
+            </view>
+            <mp-html
+              wx:if="{{item.html}}"
+              content="{{item.html}}"
+              containerStyle="{{containerStyle}}"
+              tagStyle="{{tagStyle}}"
+              selectable="force"
+            />
+          </view>
+        </block>
+      </view>
+    </block>
+  </view>
+
+  <!-- 底部品牌条（fixed，ready 常驻）：码图 + 拉新文案 + 再转发 -->
+  <view wx:if="{{loadState === 'ready'}}" class="foot">
+    <image wx:if="{{wxacodeUrl}}" class="foot__qr" src="{{wxacodeUrl}}" mode="aspectFit" />
+    <view wx:else class="foot__qr foot__qr--fallback">砺</view>
+    <view class="foot__titles">
+      <view class="foot__title">扫码用 AI 教练备赛</view>
+      <view class="foot__subtitle">微信小程序 · 直达教练</view>
+    </view>
+    <button class="foot__share" open-type="share">转发</button>
+  </view>
+</view>

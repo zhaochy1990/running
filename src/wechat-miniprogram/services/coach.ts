@@ -336,3 +336,35 @@ export interface CoachSessionsResponse {
 export function fetchCoachSessions(): Promise<CoachSessionsResponse> {
   return http.get<CoachSessionsResponse>(`${COACH_BASE_URL}/api/users/me/coach/sessions`);
 }
+
+// ── 教练聊天分享公开读取（devops#715/#718）───────────────────────────────────
+
+/** 分享快照消息行（server publicResponse.SessionHistoryMessage 投影），与
+ *  CoachHistoryMessage 同形：user / assistant 气泡，assistant 可带卡片信封。 */
+export interface CoachShareMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  card?: CoachCardWire;
+}
+
+/** GET /api/coach-shares/{sid} 200 快照：30 天过期（410 expired）在服务端
+ *  读取时计算，频控 60/min/IP（429）。sharer_name 快照未带时不出现。 */
+export interface CoachShareSnapshot {
+  status: 'active';
+  sharer_name?: string;
+  message_count: number;
+  created_at: string;
+  wxacode_url: string | null;
+  messages: CoachShareMessage[];
+}
+
+/**
+ * 公开读取分享快照（阅读端 devops#718）：免登录不发 Authorization
+ * （{auth:false}，同 workout-share / strategy-share 的公开端点）。
+ * 404 不存在（含非法 sid）/ 410 过期由调用方按状态码分流空态。
+ */
+export function getCoachShare(sid: string): Promise<CoachShareSnapshot> {
+  return http.get<CoachShareSnapshot>(`/api/coach-shares/${encodeURIComponent(sid)}`, {
+    auth: false,
+  });
+}
