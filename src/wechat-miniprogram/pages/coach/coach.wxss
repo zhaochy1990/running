@@ -138,9 +138,9 @@
   margin-bottom: 20rpx;
 }
 
-/* 勾选框贴气泡外侧：assistant 在左、user 在右（623 原型像素参照） */
+/* 勾选框统一在气泡左侧（10-23 用户反馈：镜像到右太跳）；user 行整体右对齐保持气泡贴右 */
 .coach-msg--user {
-  flex-direction: row-reverse;
+  justify-content: flex-end;
 }
 
 .coach-msg__main {
@@ -162,9 +162,10 @@
 
 .coach-msg__check {
   display: none;
-  width: 44rpx;
-  height: 44rpx;
+  width: 36rpx;
+  height: 36rpx;
   margin-top: 8rpx;
+  margin-right: 12rpx;
   flex-shrink: 0;
   box-sizing: border-box;
   border: 2rpx solid rgba(255, 255, 255, 0.28);
@@ -195,11 +196,11 @@
 
 .coach-msg__check-icon {
   display: none;
-  width: 20rpx;
-  height: 12rpx;
-  border-left: 4rpx solid #101111;
-  border-bottom: 4rpx solid #101111;
-  transform: rotate(-45deg) translateY(-2rpx);
+  width: 16rpx;
+  height: 10rpx;
+  border-left: 3rpx solid #101111;
+  border-bottom: 3rpx solid #101111;
+  transform: rotate(-45deg) translateY(-1rpx);
 }
 
 .coach-msg--checked .coach-msg__check-icon {
