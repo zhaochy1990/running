@@ -199,3 +199,40 @@ func TestMoveCustomWorkoutIdempotentToSameTarget(t *testing.T) {
 		t.Fatalf("idempotent replay re-published: runCalls=%d recorded=%d", pusher.runCalls, len(swstore.recorded))
 	}
 }
+
+// devops#740 regression: the move path re-publishes with the row's already
+// updated date and no target_date, so the push core must re-stamp the spec's
+// embedded (old) date to the new one — the provider consumes the embedded date
+// (coros translate), and a stale one lands the watch entry on the old day while
+// watch_synced still reports true.
+func TestMoveCustomWorkoutRepublishStampsSpecEmbeddedDate(t *testing.T) {
+	h, _, pusher, swstore := newCustomPushHarness(t)
+	// Pre-move state a real push leaves behind: row + spec + prior pushed row
+	// all on 2026-08-12; the move below re-points only the row date to
+	// 2026-08-15 (the fake store, like the real one, does not touch spec_json).
+	pushedPriorFor(swstore, "2026-08-12")
+
+	resp := h.postCustomMove(t, "u1", "w-custom", `{"date":"2026-08-15"}`)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("move: %d %s", resp.Code, resp.Body.String())
+	}
+	if got := decodeMoveBody(t, resp); !got.WatchSynced {
+		t.Fatalf("watch_synced = false after successful re-publish (%s)", resp.Body.String())
+	}
+	// The workout handed to the provider must carry the new date.
+	if pusher.runCalls != 1 || len(pusher.pushedRuns) != 1 {
+		t.Fatalf("runCalls=%d pushedRuns=%d, want one re-publish push", pusher.runCalls, len(pusher.pushedRuns))
+	}
+	if got := pusher.pushedRuns[0].Date; got != "2026-08-15" {
+		t.Fatalf("pushed run date = %q, want 2026-08-15 (spec-embedded old date must be re-stamped)", got)
+	}
+	// And the recorded scheduled_workout row must store the re-stamped spec,
+	// not the stale one, so the next push/delete cycle stays consistent.
+	if len(swstore.recorded) != 1 {
+		t.Fatalf("recorded = %d, want 1", len(swstore.recorded))
+	}
+	spec := swstore.recorded[0].SpecJSON
+	if !strings.Contains(spec, `"date":"2026-08-15"`) || strings.Contains(spec, "2026-08-12") {
+		t.Fatalf("recorded spec embeds a stale date: %s", spec)
+	}
+}

@@ -300,7 +300,11 @@ type pushableWorkout struct {
 // buildPushableWorkout parses the stored spec (run-workout/v1 or
 // strength-workout/v1), validates it, and resolves the push date. When
 // target_date is given it must be within ±pushDateWindowDays of the planned
-// date; the workout's internal date is re-stamped to match.
+// date. The workout's internal date is re-stamped whenever it differs from the
+// resolved push date — that covers both a target_date move and the move
+// endpoint's re-publish (devops#740), where the row date is already the new
+// date but the spec still embeds the old one; the provider consumes the
+// embedded date, so a stale one lands the watch entry on the old day.
 func buildPushableWorkout(kind, specJSON, plannedDate, targetDate string) (*pushableWorkout, error) {
 	pushDate, err := resolvePushDate(plannedDate, targetDate)
 	if err != nil {
@@ -312,7 +316,7 @@ func buildPushableWorkout(kind, specJSON, plannedDate, targetDate string) (*push
 		if err != nil {
 			return nil, fmt.Errorf("stored spec is not a valid normalized run workout: %w", err)
 		}
-		if pushDate != plannedDate {
+		if run.Date != pushDate {
 			run.Date = pushDate
 			re, err := json.Marshal(run)
 			if err != nil {
@@ -327,7 +331,7 @@ func buildPushableWorkout(kind, specJSON, plannedDate, targetDate string) (*push
 	if err != nil {
 		return nil, fmt.Errorf("stored spec is not a valid normalized strength workout: %w", err)
 	}
-	if pushDate != plannedDate {
+	if str.Date != pushDate {
 		str.Date = pushDate
 		re, err := json.Marshal(str)
 		if err != nil {
