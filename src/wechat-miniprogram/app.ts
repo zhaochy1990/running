@@ -10,6 +10,7 @@ import { userStore } from './store/index';
 const PUBLIC_ENTRY_PAGES: ReadonlySet<string> = new Set([
   'pages/workout-share/workout-share',
   'pages/race-center/strategy-share/strategy-share',
+  'pages/coach-share/coach-share',
 ]);
 
 // 免密登录：用 wx.login() 的 code 换 JWT。微信已绑定 → 存好 token/user 返回 true；
