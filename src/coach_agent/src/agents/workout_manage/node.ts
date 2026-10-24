@@ -11,12 +11,19 @@ const logger = getLogger("coachAgent:workout_manage");
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * 模型 JSON-mode 输出会把不适用的可选字段显式置 null（devops#741：DeepSeek delete 分支
+ * 必带 "new_date": null），z.string().optional() 只容 undefined/缺键、拒收 JSON null。
+ * null 与缺键同义：剥掉再校验，下游 !== undefined 语义与三道硬防线保持不动。
+ */
+const nullAsMissingString = z.preprocess((value) => (value === null ? undefined : value), z.string().optional());
+
 /** 决策单次 LLM 调用的输出（JSON mode + 本地 zod 硬校验，对齐 orchestrator 修复后模式）。 */
 const WorkoutManageDecisionSchema = z.object({
   action: z.enum(["delete", "move", "unclear"]),
-  workout_id: z.string().optional(),
-  new_date: z.string().optional(),
-  reply: z.string().optional(),
+  workout_id: nullAsMissingString,
+  new_date: nullAsMissingString,
+  reply: nullAsMissingString,
 });
 type WorkoutManageDecision = z.infer<typeof WorkoutManageDecisionSchema>;
 

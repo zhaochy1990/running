@@ -122,6 +122,32 @@ test("move hit carries the resolved new_date and the watch note for a pushed ses
   assert.match(update.messages[0]?.content as string, /已推送到手表/);
 });
 
+test("a delete decision with explicit null new_date/reply still issues the confirmation card", async () => {
+  // devops#741：DeepSeek delete 分支会把不适用的可选字段显式置 null（"new_date": null），
+  // z.string().optional() 拒收 JSON null 会让具名删除 5/5 降级为文字澄清。
+  const { node } = makeNode(JSON.stringify({ action: "delete", workout_id: "cu-1", new_date: null, reply: null }));
+  const update = (await node(STATE, CONFIG)) as { messages: AIMessage[] };
+  const card = update.messages[0]?.additional_kwargs?.card as { data: Record<string, unknown> };
+  assert.equal(card.data.op, "delete");
+  assert.equal(card.data.workout_id, "cu-1");
+  assert.equal("new_date" in card.data, false, "null new_date is treated as missing");
+  assert.match(update.messages[0]?.content as string, /删除 2026-10-23 的「4km×3组」/);
+});
+
+test("explicit null workout_id/new_date behave exactly like missing fields against the hard guards", async () => {
+  // null workout_id → 未命中 DB 列表防线，澄清绝不执行。
+  const nullId = makeNode(JSON.stringify({ action: "delete", workout_id: null, new_date: null, reply: null }));
+  const nullIdUpdate = (await nullId.node(STATE, CONFIG)) as { messages: AIMessage[] };
+  assert.equal(nullIdUpdate.messages[0]?.additional_kwargs?.card, undefined);
+  assert.match(nullIdUpdate.messages[0]?.content as string, /不能确定你指的是哪节课/);
+
+  // move + null new_date → 触发「move 必须带合法日期」防线，追问目标日期。
+  const nullDate = makeNode(JSON.stringify({ action: "move", workout_id: "cu-1", new_date: null }));
+  const nullDateUpdate = (await nullDate.node(STATE, CONFIG)) as { messages: AIMessage[] };
+  assert.equal(nullDateUpdate.messages[0]?.additional_kwargs?.card, undefined);
+  assert.match(nullDateUpdate.messages[0]?.content as string, /挪到哪一天/);
+});
+
 test("unclear answers with the model reply plus the custom-session listing, no card", async () => {
   const { node } = makeNode(JSON.stringify({ action: "unclear", reply: "想删哪节课？" }));
   const update = (await node(STATE, CONFIG)) as { messages: AIMessage[] };
