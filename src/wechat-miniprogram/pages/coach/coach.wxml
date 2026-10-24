@@ -139,19 +139,21 @@
         disabled="{{selectCount === 0}}"
       >转发{{selectCount > 0 ? ' ' + selectCount : ''}}</button>
     </view>
+    <!-- textarea + auto-height：长文本自动换行完整展示；回车=换行，发送只走右侧按钮 -->
     <view wx:else class="coach-input">
-      <input
+      <textarea
         class="coach-input__field"
         value="{{input}}"
         placeholder="问问教练…"
         placeholder-class="coach-input__placeholder"
-        confirm-type="send"
+        auto-height="{{true}}"
+        disable-default-padding="{{true}}"
+        show-confirm-bar="{{false}}"
         adjust-position="{{false}}"
         cursor-spacing="{{16}}"
         bindkeyboardheightchange="onKeyboardHeightChange"
         bindblur="onBlur"
         bindinput="onInput"
-        bindconfirm="onSend"
       />
       <view
         class="coach-input__send {{sending ? 'coach-input__send--disabled' : ''}}"

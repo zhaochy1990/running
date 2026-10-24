@@ -388,17 +388,22 @@
 
 .coach-input {
   display: flex;
-  align-items: center;
+  /* 多行输入时发送按钮贴底行；单行时与 center 等效 */
+  align-items: flex-end;
   gap: 16rpx;
   padding: 16rpx 32rpx;
   background: #121316;
   border-top: 1rpx solid rgba(255, 255, 255, 0.06);
 }
 
+/* textarea + auto-height：单行保持原 72rpx 胶囊外观，超过 4 行封顶后框内滚动 */
 .coach-input__field {
   flex: 1;
-  height: 72rpx;
-  padding: 0 24rpx;
+  box-sizing: border-box;
+  min-height: 72rpx;
+  max-height: 192rpx;
+  padding: 16rpx 24rpx;
+  line-height: 40rpx;
   background: #1b1c1e;
   border-radius: 36rpx;
   font-size: 24rpx;
