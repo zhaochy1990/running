@@ -502,3 +502,28 @@ func (s *Store) UserPaceBaseline(ctx context.Context, userID string, before time
 	}
 	return &PaceBaseline{Count: len(sorted), MedianPaceSKm: median, BestPaceSKm: sorted[0]}, nil
 }
+
+// LinkedRaceLabels returns which of the given activities the race detection
+// pipeline has confirmed as race efforts (races table rows). An empty result
+// map means none are linked. Session classification reuses this as the race
+// signal instead of a competing heuristic (devops #743).
+func (s *Store) LinkedRaceLabels(ctx context.Context, userID string, labelIDs []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	if len(labelIDs) == 0 {
+		return out, nil
+	}
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []Race
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ? AND label_id IN ?", uid, labelIDs).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r.LabelID] = true
+	}
+	return out, nil
+}
