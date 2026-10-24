@@ -41,11 +41,11 @@ export interface ExerciseRowVM {
   note: string;
 }
 
-// 步类型配色沿用赛季总览页阶段色语义（热身绿/主课粉/恢复蓝/冷身紫/休息灰）；
+// 步类型配色沿用赛季总览页阶段色语义（热身绿/跑步粉/恢复蓝/冷身紫/休息灰）；
 // 休息行为 quiet（空心标签、次要色文字），见原型 workout-detail-types-spike。
 const STEP_KIND_META: Record<string, { label: string; color: string; quiet?: boolean }> = {
   warmup: { label: '热身', color: '#7ac9a3' },
-  work: { label: '主课', color: '#ff6363' },
+  work: { label: '跑步', color: '#ff6363' },
   recovery: { label: '恢复', color: '#6db3cf' },
   cooldown: { label: '冷身', color: '#b395d6' },
   rest: { label: '休息', color: '#9c9c9d', quiet: true },

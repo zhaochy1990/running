@@ -1,7 +1,7 @@
 // 训练课表免登录分享落地页 —— devops#703（Epic #700，设计 #690-#694）。
 // B 点开分享链接 ?user=<A_uuid>&workout=<workout_uuid>：免登录拉公开端点
 // GET /api/workouts/shared/:user/:workout（#701，{auth:false} 同 strategy-share），
-// 零身份只读渲染 V1 沉浸课卡：hero（课名+「原排期」chip+三 stat）→ summary
+// 零身份只读渲染 V1 沉浸课卡：hero（课名+日期 chip+三 stat）→ summary
 // 左边线引用 → 全量分段（复用 workout-detail 定稿语言：行构造公用
 // utils/workoutSegments，样式整包 @import workout-detail.wxss）。
 // CTA 并排双按钮（#693 amendment）：主「保存到我的课表」+ 次「推送手表」；
@@ -42,7 +42,7 @@ interface WorkoutSharePageData {
   loadState: 'loading' | 'ready' | 'dead' | 'error';
   header: {
     name: string;
-    /** `原排期 10月20日 · 周二` */
+    /** `10月20日 · 周二` */
     dateLabel: string;
     summary: string;
     iconPath: string;
@@ -227,7 +227,7 @@ Page<WorkoutSharePageData, WorkoutSharePageHandlers>({
       loadState: 'ready',
       header: {
         name: res.name || res.summary || '训练',
-        dateLabel: dateLabel ? `原排期 ${dateLabel}` : '',
+        dateLabel: dateLabel || '',
         summary: res.summary || '',
         iconPath:
           res.kind === 'strength'
