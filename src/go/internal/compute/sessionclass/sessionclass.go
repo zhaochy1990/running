@@ -121,7 +121,7 @@ const (
 
 var (
 	raceWordRe     = regexp.MustCompile(`马拉松|越野赛|锦标赛|冠军赛|邀请赛|欢乐跑|半马|全马|半程|全程|接力赛|比赛|marathon`)
-	trainWordRe    = regexp.MustCompile(`训练|备赛|课|测试|练习|模拟|配速|pace|prep`)
+	trainWordRe    = regexp.MustCompile(`训练|备赛|课|测试|练习|模拟|配速|pace|prep|组|赛前|队员|团练|拉练|俱乐部|梯队|营`)
 	hikeNameRe     = regexp.MustCompile(`徒步|hiking|爬山`)
 	strideNameRe   = regexp.MustCompile(`快步|strides`)
 	strideSuffixRe = regexp.MustCompile(`\+\s*\d*\s*(ST|st)\b`)
@@ -155,6 +155,15 @@ var vendorEasyType = map[string]bool{"AEROBIC_BASE": true, "AEROBIC": true, "REC
 // the classifier degrades gracefully (TE + vendor + name rules) per ticket R5.
 func Classify(in Input) Result {
 	r := Result{Confidence: "low"}
+	if isRunningSport(in.Sport) && repFragment(in) {
+		// Sprint reps logged as their own sub-kilometre activities: the
+		// threshold-or-faster pace held with average HR at the sustained
+		// quality line carries the evidence (peak HR alone also matches
+		// warm-up fragments, so it is not used).
+		r.Class, r.Subtype, r.Confidence = ClassQuality, SubRepetition, "high"
+		r.Signals = append(r.Signals, "short:rep-fragment")
+		return r
+	}
 	if in.DistanceM < 200 || in.DurationS < 120 {
 		// warm-up fragments and GPS junk: never a workout, never long
 		r.Class = ClassEasy
@@ -237,6 +246,9 @@ func Classify(in Input) Result {
 	// distance. TE hard signals inside a relaxed-long run still mark an
 	// endurance session with intensity; label/rule based quality stays quality.
 	absoluteLong := km >= 23.0 || (durMin >= longAbsMin && runPace)
+	// mLongQ: relaxed-long (20-23km) runs count as long_quality exactly when
+	// half the distance sits in the marathon band (adjudication line F2).
+	mLongQ := isLong && ls != nil && ls.MZoneFrac >= 0.5
 	quality := func(sub Subtype, conf string, sig string, teHard bool) Result {
 		if isLong && (absoluteLong || teHard) {
 			r.Class, r.Subtype, r.Confidence = ClassLongQuality, sub, conf
@@ -271,13 +283,18 @@ func Classify(in Input) Result {
 	// hard data-quality signals checked regardless of name intent (a planned
 	// easy run raced hard is a workout; a planned workout jogged is not).
 	r1Hard := aneCredible && aneVal(ane) >= 3.0
+	// In the fragment zone a TE spike needs sustained threshold-or-faster
+	// pace: jog+strides mixes also produce ane>=2 with peak HR at threshold.
 	r1Variant := aneCredible && aneVal(ane) >= 2.0 && maxhr != nil && thrHr != nil &&
-		*maxhr >= *thrHr && (paceInM || thrPct >= 0.25) && (!isTrail || paceInM)
-	r3 := paceInM && thrHr != nil && hr != nil && *hr >= 0.92**thrHr && durMin >= 20 && km >= 5
+		*maxhr >= *thrHr && (paceInM || thrPct >= 0.25) && (!isTrail || paceInM) &&
+		(km > 3.5 || (pace != nil && tSlow != nil && *pace <= *tSlow*1.05))
+	r3 := paceInM && thrHr != nil && hr != nil && *hr >= 0.93**thrHr && durMin >= 20 && km >= 5 ||
+		paceInM && ls != nil && ls.MZoneFrac >= 0.60 && thrHr != nil && hr != nil &&
+			*hr >= 0.93**thrHr && durMin >= 12 && km >= 3.5
 	r4 := ls != nil && ls.TailRatio > 0 && ls.TailRatio <= 0.86 && ls.TailPace > 0 && mSlow != nil &&
 		ls.TailPace <= *mSlow && maxhr != nil && thrHr != nil && *maxhr >= *thrHr && ls.TailHR >= 0.93**thrHr
-	r5 := km <= 3 && pace != nil && tSlow != nil && *pace <= *tSlow && thrHr != nil && hr != nil && *hr >= 0.93**thrHr
-	r2 := ls != nil && (ls.FastDistPct >= 0.30 || (ls.CV >= 0.20 && ls.FastDistPct >= 0.10 && !isTrail))
+	r5 := km <= 3.5 && pace != nil && tSlow != nil && *pace <= *tSlow && thrHr != nil && hr != nil && *hr >= 0.93**thrHr
+	r2 := ls != nil && km >= 5 && (ls.FastDistPct >= 0.30 || (ls.CV >= 0.20 && ls.FastDistPct >= 0.10 && !isTrail))
 
 	if nameQualitySub != "" {
 		// explicit workout name: needs any data corroboration (the plan may
@@ -287,32 +304,33 @@ func Classify(in Input) Result {
 			(isStrongQualityName(in.Name) && paceInM && thrPct >= 0.45) ||
 			((hr == nil || *hr == 0) && (ls != nil && ls.CV >= 0.30 || straplessVendorQuality(in)))
 		if nameCorroborated {
-			return quality(nameQualitySub, "high", "name:quality", r1Variant)
+			return quality(nameQualitySub, "high", "name:quality", mLongQ)
 		}
 		return easyClass("name:quality~noEffort")
 	}
 
 	if r1Hard {
-		return quality(teSubtype(in, tSlow), "high", "te:ane>=3", false)
+		return quality(teSubtype(in, tSlow), "high", "te:ane>=3", absoluteLong)
 	}
 	if r1Variant {
-		return quality(teSubtype(in, tSlow), "high", "te:ane>=2&maxhr@thr", true)
+		return quality(teSubtype(in, tSlow), "high", "te:ane>=2&maxhr@thr", absoluteLong || mLongQ)
 	}
 
 	// long-only TE rules (absolute long only: relaxed-long quality is decided
 	// above by the quality-signal split)
-	if isLong && absoluteLong {
+	if isLong {
 		longTE := (aneCredible && aneVal(ane) >= 2.0) ||
-			(ae != nil && *ae >= 4.5 && thrHr != nil && hr != nil && *hr > 0 && *hr >= 0.92**thrHr)
+			(ae != nil && *ae >= 4.5 && thrHr != nil && hr != nil && *hr > 0 && *hr >= 0.92**thrHr &&
+				ls != nil && ls.MZoneFrac >= 0.5)
 		if longTE {
 			return quality(longQualitySubtype(in, pace, mSlow, ls), "medium", "te:long", true)
 		}
 		longM := ls != nil && ls.MZoneFrac >= 0.70 && thrHr != nil && hr != nil && *hr > 0 &&
 			*hr >= 0.85**thrHr && ls.TailRatio <= 0.99 &&
 			(*hr >= 0.87**thrHr || (ae != nil && *ae >= 4.5 && ls.TailRatio <= 0.97))
-		longM50 := ls != nil && ls.MZoneFrac >= 0.50 && ls.TailRatio > 0 && ls.TailRatio <= 0.95 &&
+		longM50 := ls != nil && ls.MZoneFrac >= 0.50 && ls.TailRatio > 0 && ls.TailRatio <= 0.97 &&
 			thrHr != nil && ls.TailHR >= 0.90**thrHr
-		longFinishM := ls != nil && ls.TailRatio > 0 && ls.TailRatio <= 0.95 && mSlow != nil &&
+		longFinishM := ls != nil && ls.TailRatio > 0 && ls.TailRatio <= 0.96 && mSlow != nil &&
 			ls.TailPace > 0 && ls.TailPace <= *mSlow && thrHr != nil &&
 			ls.TailHR >= 0.95**thrHr && hr != nil && *hr > 0 && *hr >= 0.88**thrHr
 		if longM || longM50 || longFinishM {
@@ -321,13 +339,13 @@ func Classify(in Input) Result {
 	}
 
 	if r2 {
-		return quality(structureSubtype(in, ls), "high", "seg:structure", false)
+		return quality(structureSubtype(in, ls), "high", "seg:structure", mLongQ)
 	}
 	if r3 {
-		return quality(SubMarathon, "medium", "pace:m-sustained", false)
+		return quality(SubMarathon, "medium", "pace:m-sustained", mLongQ)
 	}
 	if r4 {
-		return quality(SubMarathon, "medium", "seg:fast-finish", false)
+		return quality(SubMarathon, "medium", "seg:fast-finish", mLongQ)
 	}
 	if r5 {
 		return quality(SubInterval, "medium", "short:all-out", false)
@@ -335,7 +353,7 @@ func Classify(in Input) Result {
 
 	// ---- vendor labels (need corroboration for quality kinds) ----
 	if vendorQualitySubtype(in, pace, tSlow) != "" && vendorQualityCorroborated(in, paceInM, thrPct, ls, r4) {
-		return quality(vendorQualitySubtype(in, pace, tSlow), "medium", "vendor:quality", false)
+		return quality(vendorQualitySubtype(in, pace, tSlow), "medium", "vendor:quality", mLongQ)
 	}
 	if nameEasy {
 		return easyClass("name:easy")
@@ -361,16 +379,13 @@ func isRace(in Input, km float64, pace, hr, maxhr, hrmax, ane *float64, aneCredi
 	}
 	// unlinked strong pattern: HM/FM band with near-max effort or a big
 	// anaerobic load; shorter bands require the near-max form only.
-	hmBand := km >= 20.9 && km <= 22.0
 	fmBand := km >= 41.9 && km <= 44.0
-	shortBand := km >= 9.7 && km <= 10.5
 	nearMax := hrmax != nil && *hrmax > 0 && maxhr != nil && *maxhr >= 0.97**hrmax && hr != nil && *hr >= 0.88**hrmax
-	// Nobody runs a casual 42km at major anaerobic load; half distance still
-	// needs the near-max form (interval sessions sit in that band too).
-	if fmBand && (nearMax || (aneCredible && ane != nil && *ane >= 2.0)) {
-		return true
-	}
-	if (hmBand || shortBand) && nearMax {
+	// The distance-band fallback is deliberately narrow: hard training
+	// sessions and club workouts sit inside every shorter band, so only a
+	// full-marathon-distance effort at near-max heart rate qualifies without
+	// the races-table link or an explicit race name.
+	if fmBand && nearMax {
 		return true
 	}
 	return false
@@ -397,6 +412,37 @@ func aneVal(v *float64) float64 {
 }
 
 func isRunningSport(sport string) bool { return strings.HasPrefix(sport, "run") }
+
+// repFragment detects sub-kilometre sprint-rep activities: threshold-or-
+// faster pace held through the fragment with average HR at the sustained
+// quality line.
+func repFragment(in Input) bool {
+	km := in.DistanceM / 1000
+	if km > 3.5 || in.DurationS >= 40*60 || in.DurationS < 60 {
+		return false
+	}
+	tSlow := zoneSlow(in.Zones, func(z *Zones) **Zone { return &z.Threshold })
+	if tSlow == nil || in.AvgPaceSKm == nil {
+		return false
+	}
+	if *in.AvgPaceSKm <= *tSlow && in.ThresholdHR != nil {
+		if in.AvgHR != nil && *in.AvgHR >= 0.93**in.ThresholdHR {
+			return true
+		}
+		// Average HR lags on 1-4 minute reps; a near-threshold peak plus
+		// threshold pace, or a real anaerobic load, still marks a rep.
+		if in.MaxHR != nil && *in.MaxHR >= 0.98**in.ThresholdHR {
+			return true
+		}
+		if in.AnaerobicEffect != nil && *in.AnaerobicEffect >= 1 {
+			return true
+		}
+	}
+	// Fragment with a distinctly sub-threshold best split and a peak at
+	// threshold: a sprint rep whose float/jog portion drags the average.
+	return in.BestKmPaceSKm != nil && *in.BestKmPaceSKm > 0 && in.ThresholdHR != nil &&
+		in.MaxHR != nil && *in.MaxHR >= *in.ThresholdHR && *in.BestKmPaceSKm <= *tSlow*0.92
+}
 
 func vendorQualitySubtype(in Input, pace, tSlow *float64) Subtype {
 	if sub, ok := vendorQualityKind[in.TrainKind]; ok {
@@ -450,19 +496,23 @@ func vendorQualityCorroborated(in Input, paceInM bool, thrPct float64, ls *lapSu
 	if r4 {
 		return true
 	}
-	if ls != nil && ls.FastDistPct >= 0.20 {
+	if ls != nil && ls.FastDistPct >= 0.20 && in.DistanceM > 3500 {
 		return true
 	}
 	hr, maxhr, thr := in.AvgHR, in.MaxHR, in.ThresholdHR
 	atThr := maxhr != nil && thr != nil && *maxhr >= *thr
-	if paceInM && thrPct >= 0.30 && hr != nil && thr != nil && *hr >= 0.93**thr {
+	if paceInM && thrPct >= 0.30 && hr != nil && thr != nil && *hr >= 0.93**thr &&
+		in.DistanceM > 3500 {
+		// Sub-3.5 km fragments only corroborate at threshold-or-faster pace
+		// (see repFragment); M-pace vendor labels there are warm-up noise.
 		return true
 	}
 	isTrail := in.Sport == "run_trail" || (in.AscentM != nil && *in.AscentM > 300)
 	if isTrail && thrPct >= 0.50 && atThr {
 		return true
 	}
-	if thrPct >= 0.50 && hr != nil && thr != nil && *hr >= 0.95**thr && atThr && in.DurationS >= 40*60 {
+	if thrPct >= 0.50 && hr != nil && thr != nil && *hr >= 0.95**thr && atThr && in.DurationS >= 40*60 &&
+		ls != nil && ls.MZoneFrac >= 0.40 {
 		return true
 	}
 	return false

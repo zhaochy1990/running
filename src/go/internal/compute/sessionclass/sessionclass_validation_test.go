@@ -1,14 +1,17 @@
 package sessionclass
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"testing"
 )
 
-// fixture mirrors gen script output (prod snapshot 2026-10-24 + per-item
-// adjudicated ground truth).
+// fixture mirrors the full-corpus dump (21 users × all running rows,
+// 21006 items, per-item adjudicated ground truth; see the #743 PR for the
+// adjudication methodology).
 type fixture struct {
 	Users []struct {
 		UserID        string              `json:"user_id"`
@@ -16,7 +19,8 @@ type fixture struct {
 		HRMaxEstimate *float64            `json:"hrmax_estimate"`
 		PaceZones     map[string]zoneJSON `json:"pace_zones"`
 		Activities    []struct {
-			Idx        int      `json:"idx"`
+			Label      string   `json:"label_id"`
+			Date       string   `json:"date"`
 			Name       string   `json:"name"`
 			Sport      string   `json:"sport"`
 			DistanceM  float64  `json:"distance_m"`
@@ -36,6 +40,7 @@ type fixture struct {
 				DistanceM float64  `json:"distance_m"`
 				DurationS float64  `json:"duration_s"`
 				AvgHR     *float64 `json:"avg_hr"`
+				LapType   string   `json:"lap_type"`
 			} `json:"laps"`
 		} `json:"activities"`
 	}
@@ -51,12 +56,21 @@ func loadFixture(tb testing.TB) []struct {
 	input Input
 	truth Class
 } {
-	raw, err := os.ReadFile("testdata/sessionclass_validation.json")
+	f, err := os.Open("testdata/sessionclass_validation.json.gz")
+	if err != nil {
+		tb.Fatalf("open fixture: %v", err)
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		tb.Fatalf("gzip fixture: %v", err)
+	}
+	raw, err := io.ReadAll(zr)
 	if err != nil {
 		tb.Fatalf("read fixture: %v", err)
 	}
-	var f fixture
-	if err := json.Unmarshal(raw, &f); err != nil {
+	var fx fixture
+	if err := json.Unmarshal(raw, &fx); err != nil {
 		tb.Fatalf("parse fixture: %v", err)
 	}
 	var out []struct {
@@ -64,7 +78,7 @@ func loadFixture(tb testing.TB) []struct {
 		input Input
 		truth Class
 	}
-	for _, u := range f.Users {
+	for _, u := range fx.Users {
 		var zones *Zones
 		if len(u.PaceZones) > 0 {
 			z := &Zones{}
@@ -97,15 +111,18 @@ func loadFixture(tb testing.TB) []struct {
 				uid   string
 				input Input
 				truth Class
-			}{u.UserID, in, Class(a.Truth)})
+			}{u.UserID[:8], in, Class(a.Truth)})
 		}
+	}
+	if len(out) != 21006 {
+		tb.Fatalf("fixture has %d items, want 21006", len(out))
 	}
 	return out
 }
 
-// TestValidationAccuracy is the #743 acceptance gate: the adjudicated
-// production snapshot must classify at ≥95% overall, with easy/quality ≥90%
-// precision and long_quality ≥85% (ticket thresholds).
+// TestValidationAccuracy is the #743 acceptance gate over the full production
+// corpus (21 users, all running rows): every class must hold ≥95% precision
+// AND recall, with the overall accuracy ≥97%.
 func TestValidationAccuracy(t *testing.T) {
 	items := loadFixture(t)
 	type stats struct{ total, correct int }
@@ -113,15 +130,13 @@ func TestValidationAccuracy(t *testing.T) {
 	byPred := map[Class]*stats{}
 	byTruth := map[Class]*stats{}
 	var misses []string
-	idx := 0
 	for _, it := range items {
-		idx++
 		got := Classify(it.input)
 		overall.total++
-		if p := byPred[got.Class]; p == nil {
+		if byPred[got.Class] == nil {
 			byPred[got.Class] = &stats{}
 		}
-		if p := byTruth[it.truth]; p == nil {
+		if byTruth[it.truth] == nil {
 			byTruth[it.truth] = &stats{}
 		}
 		byPred[got.Class].total++
@@ -132,49 +147,34 @@ func TestValidationAccuracy(t *testing.T) {
 			byTruth[it.truth].correct++
 		} else {
 			a := it.input
-			misses = append(misses, fmt.Sprintf("idx=%d %s %q sport=%s %.1fkm %.0fmin pace=%v hr %v/%v ae %v ane %v kind=%s tt=%s pred=%s truth=%s sig=%v",
-				idx, it.uid, trunc(a.Name, 18), a.Sport, a.DistanceM/1000, a.DurationS/60, fp(a.AvgPaceSKm), fp(a.AvgHR), fp(a.MaxHR), fp(a.AerobicEffect), fp(a.AnaerobicEffect), a.TrainKind, a.TrainType, got.Class, it.truth, got.Signals))
+			misses = append(misses, fmt.Sprintf("%s %q %.1fkm %.0fmin hr %v/%v ae %v ane %v kind=%s tt=%s pred=%s truth=%s",
+				it.uid, trunc(a.Name, 18), a.DistanceM/1000, a.DurationS/60, fp(a.AvgHR), fp(a.MaxHR), fp(a.AerobicEffect), fp(a.AnaerobicEffect), a.TrainKind, a.TrainType, got.Class, it.truth))
 		}
 	}
 	acc := float64(overall.correct) / float64(overall.total)
-	precision := func(c Class) (float64, bool) {
-		if s := byPred[c]; s != nil && s.total > 0 {
-			return float64(s.correct) / float64(s.total), true
-		}
-		return 0, false
-	}
-	recall := func(c Class) (float64, bool) {
-		if s := byTruth[c]; s != nil && s.total > 0 {
-			return float64(s.correct) / float64(s.total), true
-		}
-		return 0, false
-	}
-
-	os.MkdirAll("/tmp/sc743", 0o755)
-	os.WriteFile("/tmp/sc743/go_misses.txt", []byte(joinLines(misses)), 0o644)
-
-	t.Logf("overall: %d/%d = %.1f%%", overall.correct, overall.total, acc*100)
 	for _, c := range []Class{ClassEasy, ClassLongEasy, ClassQuality, ClassLongQuality, ClassRace} {
-		p, pok := precision(c)
-		rc, rcok := recall(c)
-		if pok {
-			t.Logf("%s: precision %.1f%% (%d)", c, p*100, byPred[c].total)
+		if s := byPred[c]; s != nil && s.total > 0 {
+			t.Logf("%s: precision %.1f%% (%d)", c, 100*float64(s.correct)/float64(s.total), s.total)
 		}
-		if rcok {
-			t.Logf("%s: recall    %.1f%% (%d)", c, rc*100, byTruth[c].total)
+		if s := byTruth[c]; s != nil && s.total > 0 {
+			t.Logf("%s: recall    %.1f%% (%d)", c, 100*float64(s.correct)/float64(s.total), s.total)
 		}
 	}
+	t.Logf("overall: %d/%d = %.2f%%", overall.correct, overall.total, acc*100)
 
-	if acc < 0.95 {
-		t.Fatalf("overall accuracy %.1f%% < 95%%; misses written to /tmp/sc743/go_misses.txt", acc*100)
+	_ = os.MkdirAll("/tmp/sc743", 0o755)
+	_ = os.WriteFile("/tmp/sc743/fixture_misses.txt", []byte(joinLines(misses)), 0o644)
+
+	if acc < 0.97 {
+		t.Fatalf("overall accuracy %.2f%% < 97%%", acc*100)
 	}
-	for _, c := range []Class{ClassEasy, ClassQuality} {
-		if p, ok := precision(c); ok && p < 0.90 {
-			t.Errorf("%s precision %.1f%% < 90%%", c, p*100)
+	for _, c := range []Class{ClassEasy, ClassLongEasy, ClassQuality, ClassLongQuality, ClassRace} {
+		if s := byPred[c]; s != nil && s.total > 0 && float64(s.correct)/float64(s.total) < 0.95 {
+			t.Errorf("%s precision %.1f%% < 95%%", c, 100*float64(s.correct)/float64(s.total))
 		}
-	}
-	if p, ok := precision(ClassLongQuality); ok && p < 0.85 {
-		t.Errorf("long_quality precision %.1f%% < 85%%", p*100)
+		if s := byTruth[c]; s != nil && s.total > 0 && float64(s.correct)/float64(s.total) < 0.95 {
+			t.Errorf("%s recall %.1f%% < 95%%", c, 100*float64(s.correct)/float64(s.total))
+		}
 	}
 }
 
