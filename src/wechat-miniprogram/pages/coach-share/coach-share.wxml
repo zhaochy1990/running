@@ -1,7 +1,7 @@
 <view class="page">
-  <!-- 顶栏（fixed，#624 D 定稿）：砺 logo + 分享标题 + 日期·N 条 + AI 生成标识 -->
+  <!-- 顶栏（fixed）：home 回主页 + 分享标题 + 日期·N 条 + AI 生成标识 -->
   <view class="top" style="padding-top: {{statusBarHeight}}px;">
-    <view class="top__logo">砺</view>
+    <image class="top__home" src="/assets/icons/home.svg" mode="aspectFit" bindtap="onBack" />
     <view class="top__titles">
       <view class="top__title">{{title}}</view>
       <view class="top__meta">{{meta}}</view>
@@ -92,8 +92,8 @@
     <image wx:if="{{wxacodeUrl}}" class="foot__qr" src="{{wxacodeUrl}}" mode="aspectFit" />
     <view wx:else class="foot__qr foot__qr--fallback">砺</view>
     <view class="foot__titles">
-      <view class="foot__title">扫码用 AI 教练备赛</view>
-      <view class="foot__subtitle">微信小程序 · 直达教练</view>
+      <view class="foot__title">跑马拉松，用 StrideWise</view>
+      <view class="foot__subtitle">训练计划 · 比赛策略</view>
     </view>
     <button class="foot__share" open-type="share">转发</button>
   </view>

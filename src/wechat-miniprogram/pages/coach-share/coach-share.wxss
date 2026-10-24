@@ -28,16 +28,10 @@ page {
   border-bottom: 1rpx solid #ececee;
 }
 
-.top__logo {
-  width: 68rpx;
-  height: 68rpx;
-  border-radius: 20rpx;
-  background: #ff6363;
-  color: #ffffff;
-  font-size: 30rpx;
-  font-weight: 700;
-  text-align: center;
-  line-height: 68rpx;
+.top__home {
+  width: 44rpx;
+  height: 44rpx;
+  padding: 12rpx;
   flex-shrink: 0;
 }
 

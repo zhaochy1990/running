@@ -44,6 +44,7 @@ interface CoachSharePageData {
 
 interface CoachSharePageHandlers {
   onLoad(options: Record<string, string | undefined>): void;
+  onBack(): void;
   onRetryTap(): void;
   onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
   load(): Promise<void>;
@@ -111,6 +112,13 @@ Page<CoachSharePageData, CoachSharePageHandlers>({
     void this.load();
   },
 
+  // 顶栏 home：有上级返回上级；栈深 1（冷开分享卡/扫码）navigateBack 必失败 → 回主页
+  onBack() {
+    wx.navigateBack({
+      fail: () => wx.switchTab({ url: '/pages/coach/coach' }),
+    });
+  },
+
   onRetryTap() {
     this.setData({ loadState: 'loading' });
     void this.load();
@@ -156,7 +164,7 @@ Page<CoachSharePageData, CoachSharePageHandlers>({
       return defaultShareAppMessage();
     }
     return {
-      title: `${this._sharerName || 'TA'} 与 AI 教练的对话 · ${this._count} 条`,
+      title: `${this._sharerName || 'TA'} 与 StrideWise 的对话 · ${this._count} 条`,
       path: `/pages/coach-share/coach-share?sid=${encodeURIComponent(this._sid)}`,
     };
   },

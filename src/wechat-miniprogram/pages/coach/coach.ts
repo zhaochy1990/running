@@ -162,7 +162,7 @@ function roundRectPath(ctx: ShareCoverCtx, x: number, y: number, w: number, h: n
   ctx.closePath();
 }
 
-/** 分享封面（5:4，#717）：品牌顶标 STRIDE·砺跑 + 前两条所选对话气泡节选 + 底部落款。
+/** 分享封面（5:4，#717）：前两条所选对话气泡节选，暗底纯气泡、无品牌字样。
  *  纯绘制闭函数，参照配速卡海报 canvas 先例（strategy.ts drawPoster）。 */
 function drawShareCover(
   ctx: ShareCoverCtx,
@@ -175,31 +175,23 @@ function drawShareCover(
   ctx.fillStyle = '#ff6363';
   ctx.fillRect(0, 0, width, 6);
 
-  ctx.fillStyle = '#ffb3af';
-  ctx.font = 'bold 30px sans-serif';
-  ctx.fillText('STRIDE · 砺跑', 36, 66);
-
-  let y = 110;
-  for (const pick of picks) {
-    const lines = coverLines(pick.text);
+  // 先折行算总高，气泡组整体垂直居中。
+  const wrapped = picks.map((pick) => ({ isUser: pick.role === 'user', lines: coverLines(pick.text) }));
+  const total = wrapped.reduce((sum, w) => sum + w.lines.length * 32 + 28, 0) + (wrapped.length - 1) * 18;
+  let y = Math.max(48, (height - total) / 2);
+  for (const w of wrapped) {
     ctx.font = '22px sans-serif';
-    const textWidth = Math.max(...lines.map((line) => ctx.measureText(line).width));
+    const textWidth = Math.max(...w.lines.map((line) => ctx.measureText(line).width));
     const bubbleWidth = Math.min(Math.ceil(textWidth) + 44, width - 72);
-    const bubbleHeight = lines.length * 32 + 28;
-    const isUser = pick.role === 'user';
-    const x = isUser ? width - 36 - bubbleWidth : 36;
-    ctx.fillStyle = isUser ? '#ff6363' : '#2a2b2e';
+    const bubbleHeight = w.lines.length * 32 + 28;
+    const x = w.isUser ? width - 36 - bubbleWidth : 36;
+    ctx.fillStyle = w.isUser ? '#ff6363' : '#2a2b2e';
     roundRectPath(ctx, x, y, bubbleWidth, bubbleHeight, 14);
     ctx.fill();
-    ctx.fillStyle = isUser ? '#101111' : '#e3e2e5';
-    lines.forEach((line, i) => ctx.fillText(line, x + 22, y + 34 + i * 32));
+    ctx.fillStyle = w.isUser ? '#101111' : '#e3e2e5';
+    w.lines.forEach((line, i) => ctx.fillText(line, x + 22, y + 34 + i * 32));
     y += bubbleHeight + 18;
   }
-
-  ctx.fillStyle = '#8a8a8c';
-  ctx.font = '20px sans-serif';
-  const logo = '砺跑 · AI 马拉松教练';
-  ctx.fillText(logo, (width - ctx.measureText(logo).width) / 2, height - 30);
 }
 
 interface CoachPageData {
@@ -1463,8 +1455,8 @@ Page<CoachPageData, CoachPageHandlers>({
 
 
   /**
-   * 分享封面预生成（devops#717）：勾选变化后防抖重画 5:4 封面（品牌顶标 +
-   * 前两条所选对话节选 + 底部落款），本地临时路径备用。全链路 fail-soft：
+   * 分享封面预生成（devops#717）：勾选变化后防抖重画 5:4 封面（前两条所选对
+   * 话节选，暗底纯气泡），本地临时路径备用。全链路 fail-soft：
    * canvas 不可用/绘制失败只意味着分享卡回落微信默认截图。
    */
   scheduleShareCover() {
@@ -1518,7 +1510,7 @@ Page<CoachPageData, CoachPageHandlers>({
 
   /**
    * 创建分享快照并产出真转发内容：path 带短 sid（阅读端 P5 落地）、标题
-   * `{昵称} 与 AI 教练的对话 · N 条`、封面用预生成图。任何失败/超时都回落
+   * `{昵称} 与 StrideWise 的对话 · N 条`、封面用预生成图。任何失败/超时都回落
    * 默认品牌分享并 toast，绝不阻塞转发面板。
    */
   createSelectedShare(): Promise<WechatMiniprogram.Page.ICustomShareContent> {
@@ -1527,8 +1519,8 @@ Page<CoachPageData, CoachPageHandlers>({
     const indices = [...new Set(selected.map((m) => m.shareIndex as number))].sort((a, b) => a - b);
     const name = (userStore.getState().user?.name ?? '').trim().slice(0, 64);
     const title = name
-      ? `${name} 与 AI 教练的对话 · ${indices.length} 条`
-      : `我与 AI 教练的对话 · ${indices.length} 条`;
+      ? `${name} 与 StrideWise 的对话 · ${indices.length} 条`
+      : `我与 StrideWise 的对话 · ${indices.length} 条`;
     const fallback = defaultShareAppMessage();
     return new Promise((resolve) => {
       let settled = false;
