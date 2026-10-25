@@ -1,14 +1,113 @@
 package trainingloadsource
 
 import (
+	"context"
 	"strings"
 
+	"github.com/zhaochy1990/stride/internal/compute/sessionclass"
 	"github.com/zhaochy1990/stride/internal/compute/trainingload"
 	"github.com/zhaochy1990/stride/internal/storage"
 )
 
-// sportFromRow mirrors training_load/adapter._sport_from_row (distinct from the
-// calibration connector: 104 -> run_treadmill, strength types 800/402).
+// SessionClass keeps the legacy enum contract while delegating running
+// classification to the evidence-based sessionclass pipeline (devops #743).
+// Without calibration/laps/race evidence (nil) the classifier degrades to the
+// name + TE + vendor-label rules; production callers pass evidence via Load.
+func SessionClass(a storage.Activity) trainingload.SessionClass {
+	return SessionClassWithEvidence(context.Background(), nil, a)
+}
+
+// SessionClassWithEvidence classifies one row with the evidence bundle Load
+// prepared for the window (zones, threshold HR, races, laps).
+func SessionClassWithEvidence(ctx context.Context, ev *evidence, a storage.Activity) trainingload.SessionClass {
+	sport := sportFromRow(a.Sport, a.SportType)
+	if !isRunningSport(sport) {
+		return legacyNonRunClass(a)
+	}
+	return legacySessionClass(classifyActivity(ctx, ev, a))
+}
+
+func classifyActivity(ctx context.Context, ev *evidence, a storage.Activity) sessionclass.Result {
+	var zones *sessionclass.Zones
+	var thrHr, hrmax *float64
+	var laps []storage.Lap
+	raceLinked := false
+	if ev != nil {
+		zones = ev.zones
+		thrHr, hrmax = ev.thresholdHR, ev.hrmaxEstimate
+		raceLinked = ev.races[a.LabelID]
+		laps = ev.lapsFor(ctx, a.LabelID)
+	}
+	return sessionclass.Classify(sessionclass.FromStorage(a, laps, zones, thrHr, hrmax, raceLinked))
+}
+
+// legacySessionClass maps the new taxonomy onto the legacy enum until
+// activity_training_load grows the dedicated columns (#743 P2): quality
+// subtypes keep the tempo/interval split (speed vs threshold credit),
+// long_quality maps by subtype so hard long runs still count as quality work,
+// long_easy stays Long.
+func legacySessionClass(r sessionclass.Result) trainingload.SessionClass {
+	switch r.Class {
+	case sessionclass.ClassRace:
+		return trainingload.SessionRace
+	case sessionclass.ClassLongEasy:
+		return trainingload.SessionLong
+	case sessionclass.ClassEasy, sessionclass.ClassStrides:
+		return trainingload.SessionEasy
+	case sessionclass.ClassQuality, sessionclass.ClassLongQuality:
+		if r.Subtype == sessionclass.SubInterval || r.Subtype == sessionclass.SubRepetition {
+			return trainingload.SessionInterval
+		}
+		return trainingload.SessionTempo
+	}
+	return trainingload.SessionUnknown
+}
+
+// legacyNonRunClass preserves the pre-#743 behaviour for non-running rows.
+func legacyNonRunClass(a storage.Activity) trainingload.SessionClass {
+	kind := ""
+	if a.TrainKind != nil {
+		kind = strings.ToLower(strings.TrimSpace(*a.TrainKind))
+	} else if a.TrainType != nil {
+		key := strings.ReplaceAll(strings.ToUpper(strings.TrimSpace(*a.TrainType)), " ", "_")
+		switch key {
+		case "BASE", "AEROBIC_BASE", "AEROBIC", "AEROBIC_ENDURANCE":
+			kind = "base"
+		case "TEMPO":
+			kind = "tempo"
+		case "THRESHOLD", "LACTATE_THRESHOLD":
+			kind = "threshold"
+		case "INTERVAL":
+			kind = "interval"
+		case "VO2MAX", "VO2_MAX":
+			kind = "vo2max"
+		case "ANAEROBIC", "ANAEROBIC_CAPACITY":
+			kind = "anaerobic"
+		case "SPRINT":
+			kind = "sprint"
+		case "RECOVERY":
+			kind = "recovery"
+		case "LONG_RUN":
+			kind = "long_run"
+		case "RACE":
+			kind = "race"
+		}
+	}
+	switch kind {
+	case "strength":
+		return trainingload.SessionStrength
+	case "mobility", "yoga":
+		return trainingload.SessionMobility
+	}
+	if sportFromRow(a.Sport, a.SportType) == "strength" {
+		return trainingload.SessionStrength
+	}
+	return trainingload.SessionUnknown
+}
+
+func isRunningSport(sport string) bool {
+	return strings.HasPrefix(sport, "run")
+}
 func sportFromRow(sport *string, sportType int) string {
 	if sport != nil {
 		if s := strings.TrimSpace(*sport); s != "" {
@@ -30,57 +129,4 @@ func sportFromRow(sport *string, sportType int) string {
 		return "strength"
 	}
 	return "unknown"
-}
-
-// legacyTrainTypeMap mirrors normalize._LEGACY_TRAIN_TYPE_MAP (uppercased keys ->
-// TrainKind value strings).
-var legacyTrainTypeMap = map[string]string{
-	"BASE": "base", "AEROBIC_BASE": "base", "AEROBIC": "aerobic",
-	"AEROBIC_ENDURANCE": "aerobic", "TEMPO": "tempo", "THRESHOLD": "threshold",
-	"LACTATE_THRESHOLD": "threshold", "INTERVAL": "interval", "VO2MAX": "vo2max",
-	"VO2_MAX": "vo2max", "ANAEROBIC": "anaerobic", "ANAEROBIC_CAPACITY": "anaerobic",
-	"SPRINT": "sprint", "RECOVERY": "recovery", "LONG_RUN": "long_run", "RACE": "race",
-}
-
-func kindFromLegacyTrainType(raw *string) string {
-	if raw == nil || strings.TrimSpace(*raw) == "" {
-		return ""
-	}
-	key := strings.ReplaceAll(strings.ToUpper(strings.TrimSpace(*raw)), " ", "_")
-	return legacyTrainTypeMap[key]
-}
-
-// SessionClass mirrors training_load/adapter._session_class_from_row: prefer the
-// train_kind label, else the legacy train_type mapping, else a sport fallback.
-func SessionClass(a storage.Activity) trainingload.SessionClass {
-	sport := sportFromRow(a.Sport, a.SportType)
-	var key string
-	if a.TrainKind != nil {
-		key = strings.ToLower(strings.TrimSpace(*a.TrainKind))
-	} else if k := kindFromLegacyTrainType(a.TrainType); k != "" {
-		key = strings.ToLower(k)
-	}
-	switch key {
-	case "base", "aerobic", "recovery":
-		return trainingload.SessionEasy
-	case "long_run":
-		return trainingload.SessionLong
-	case "threshold", "tempo":
-		return trainingload.SessionTempo
-	case "interval", "vo2max", "anaerobic", "sprint":
-		return trainingload.SessionInterval
-	case "race":
-		return trainingload.SessionRace
-	case "strength":
-		return trainingload.SessionStrength
-	case "mobility", "yoga":
-		return trainingload.SessionMobility
-	}
-	if sport == "strength" {
-		return trainingload.SessionStrength
-	}
-	if strings.HasPrefix(sport, "run") {
-		return trainingload.SessionEasy
-	}
-	return trainingload.SessionUnknown
 }

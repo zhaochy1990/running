@@ -194,3 +194,24 @@ func (s *Store) PersonalBests(ctx context.Context, userID string) ([]PersonalBes
 	}
 	return rows, nil
 }
+
+// LatestCalibrationPaceZones returns the latest running calibration snapshot
+// together with its pace zones (nil snapshot/nil zones when uncalibrated).
+// Session classification derives the M/T/I zone bounds from it (devops #743).
+func (s *Store) LatestCalibrationPaceZones(ctx context.Context, userID string) (*RunningCalibrationSnapshot, []RunningCalibrationPaceZone, error) {
+	snap, err := s.LatestRunningCalibrationSnapshot(ctx, userID)
+	if err != nil || snap == nil {
+		return nil, nil, err
+	}
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	var rows []RunningCalibrationPaceZone
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ? AND snapshot_id = ?", uid, snap.ID).
+		Find(&rows).Error; err != nil {
+		return nil, nil, err
+	}
+	return snap, rows, nil
+}
