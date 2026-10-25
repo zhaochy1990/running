@@ -24,7 +24,7 @@ func SessionClassWithEvidence(ctx context.Context, ev *evidence, a storage.Activ
 	if !isRunningSport(sport) {
 		return legacyNonRunClass(a)
 	}
-	return legacySessionClass(classifyActivity(ctx, ev, a))
+	return sessionClassFromResult(classifyActivity(ctx, ev, a))
 }
 
 func classifyActivity(ctx context.Context, ev *evidence, a storage.Activity) sessionclass.Result {
@@ -41,24 +41,24 @@ func classifyActivity(ctx context.Context, ev *evidence, a storage.Activity) ses
 	return sessionclass.Classify(sessionclass.FromStorage(a, laps, zones, thrHr, hrmax, raceLinked))
 }
 
-// legacySessionClass maps the new taxonomy onto the legacy enum until
-// activity_training_load grows the dedicated columns (#743 P2): quality
-// subtypes keep the tempo/interval split (speed vs threshold credit),
-// long_quality maps by subtype so hard long runs still count as quality work,
-// long_easy stays Long.
-func legacySessionClass(r sessionclass.Result) trainingload.SessionClass {
+// sessionClassFromResult stores the classifier's own class verbatim (devops
+// #745 enum upgrade): quality subtypes no longer split into tempo/interval —
+// subtype never lands in storage, and TS consumers normalise the legacy
+// values that pre-upgrade rows still carry.
+func sessionClassFromResult(r sessionclass.Result) trainingload.SessionClass {
 	switch r.Class {
 	case sessionclass.ClassRace:
 		return trainingload.SessionRace
 	case sessionclass.ClassLongEasy:
-		return trainingload.SessionLong
-	case sessionclass.ClassEasy, sessionclass.ClassStrides:
+		return trainingload.SessionLongEasy
+	case sessionclass.ClassEasy:
 		return trainingload.SessionEasy
-	case sessionclass.ClassQuality, sessionclass.ClassLongQuality:
-		if r.Subtype == sessionclass.SubInterval || r.Subtype == sessionclass.SubRepetition {
-			return trainingload.SessionInterval
-		}
-		return trainingload.SessionTempo
+	case sessionclass.ClassQuality:
+		return trainingload.SessionQuality
+	case sessionclass.ClassLongQuality:
+		return trainingload.SessionLongQuality
+	case sessionclass.ClassStrides:
+		return trainingload.SessionStrides
 	}
 	return trainingload.SessionUnknown
 }

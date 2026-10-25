@@ -12,16 +12,22 @@ const ModelVersion = 2
 // SessionClass mirrors types.SessionClass.
 type SessionClass string
 
+// Running rows store the classifier's own labels since devops #745
+// (easy/long_easy/quality/long_quality/race/strides); tempo/interval/long
+// survive only in pre-#745 storage rows and are normalised on the TS side
+// (coach_agent activityClassification.normalizeSessionClass). cross has no
+// write path today and is kept for the enum contract.
 const (
-	SessionEasy     SessionClass = "easy"
-	SessionLong     SessionClass = "long"
-	SessionTempo    SessionClass = "tempo"
-	SessionInterval SessionClass = "interval"
-	SessionRace     SessionClass = "race"
-	SessionStrength SessionClass = "strength"
-	SessionCross    SessionClass = "cross"
-	SessionMobility SessionClass = "mobility"
-	SessionUnknown  SessionClass = "unknown"
+	SessionEasy        SessionClass = "easy"
+	SessionLongEasy    SessionClass = "long_easy"
+	SessionQuality     SessionClass = "quality"
+	SessionLongQuality SessionClass = "long_quality"
+	SessionRace        SessionClass = "race"
+	SessionStrides     SessionClass = "strides"
+	SessionStrength    SessionClass = "strength"
+	SessionCross       SessionClass = "cross"
+	SessionMobility    SessionClass = "mobility"
+	SessionUnknown     SessionClass = "unknown"
 )
 
 // LoadConfidence mirrors types.LoadConfidence.

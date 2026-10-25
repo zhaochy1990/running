@@ -23,7 +23,7 @@ import type { StructuredTool } from "@langchain/core/tools";
 import { addDays, mondayOnOrBefore, shanghaiDay, weekFolder } from "@stride/contract";
 import * as z from "zod";
 import type { CoachToolRuntime } from "../agents/coachAgent.js";
-import { isQualityRunningActivity, isRunningActivity } from "../data/activityClassification.js";
+import { isQualityRunningActivity, isRunningActivity, normalizeSessionClass } from "../data/activityClassification.js";
 import type { Activity, ActivityLap, DataProvider, WeeklyPlanDocument } from "../data/dataProvider.js";
 import { defineCoachTools } from "./common.js";
 import { toPaceSPerKm } from "./runningCalibration.js";
@@ -242,8 +242,12 @@ function efficiencyDelta(activity: Activity, summaries: Activity[]): ActivityIns
   if (activity.strideSessionClass === null || activity.avgHr === null || activity.avgPaceSKm === null) {
     return { n: 0, reason: "session_class_missing" };
   }
+  // 基线按归一化后的 session_class 分组：365 天窗口内新旧值并存（#745 枚举
+  // 升级），tempo/interval 与 quality、long 与 long_easy 必须共用同一条基线，
+  // 否则效率回归的样本被值域变化人为切薄。
+  const classKey = normalizeSessionClass(activity.strideSessionClass);
   const baseline = summaries
-    .filter((candidate) => candidate.strideSessionClass === activity.strideSessionClass)
+    .filter((candidate) => normalizeSessionClass(candidate.strideSessionClass) === classKey)
     .filter((candidate) => candidate.avgHr !== null && candidate.avgPaceSKm !== null)
     .map((candidate) => ({ pace: candidate.avgPaceSKm as number, hr: candidate.avgHr as number }));
   if (baseline.length === 0) {

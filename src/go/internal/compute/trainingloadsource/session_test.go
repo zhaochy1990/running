@@ -64,8 +64,8 @@ func TestSessionClassWithEvidence(t *testing.T) {
 	if got := SessionClassWithEvidence(context.Background(), ev, rows[0]); got != trainingload.SessionRace {
 		t.Fatalf("races-linked run = %s, want race", got)
 	}
-	// Uncorroborated TEMPO on an easy run degrades to easy under the legacy
-	// enum too (the old passthrough returned tempo here).
+	// Uncorroborated TEMPO on an easy run degrades to easy under the #745 enum
+	// too (the old passthrough returned tempo here).
 	if got := SessionClassWithEvidence(context.Background(), ev, rows[1]); got != trainingload.SessionEasy {
 		t.Fatalf("vendor-noise run = %s, want easy", got)
 	}
@@ -80,7 +80,7 @@ func TestLoadEvidenceDegradesWithoutReader(t *testing.T) {
 	ev := loadEvidence(context.Background(), nil, "u1", nil)
 	_ = ev
 	a := storage.Activity{LabelID: "x", Sport: sPtr("run_treadmill"), SportType: 101, DistanceM: f64(7700), DurationS: f64(2760), AnaerobicEffect: f64(3.1), Name: sPtr("跑步机")}
-	if got := SessionClass(a); got != trainingload.SessionInterval {
-		t.Fatalf("degraded treadmill intervals = %s, want interval", got)
+	if got := SessionClass(a); got != trainingload.SessionQuality {
+		t.Fatalf("degraded treadmill intervals = %s, want quality", got)
 	}
 }
