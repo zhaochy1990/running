@@ -8,8 +8,17 @@ import { PhaseDivisionIntentSchema } from "./intent.js";
 export function makeEvidence(overrides: Partial<PhaseEvidence> = {}): PhaseEvidence {
   const base = {
     as_of: "2026-10-26",
-    target: { race: "全程马拉松 无锡马拉松", target_time: "3:00:00", goal_pace: "4:16/km" },
+    target: { race: "全程马拉松 无锡马拉松", target_time: "3:00:00", goal_pace: "4:16/km", improvement_pct: null },
     personal_bests: { FM: "3:12:00", HM: "1:30:00" },
+    peak_fm_pb: { time_sec: 11520, achieved_at: "2026-03-22" },
+    current_capability: {
+      vdot: 50,
+      equivalents: { "5K": 1196, "10K": 2480, HM: 5491, FM: 11440 },
+      source: "recent_race_hm_fm",
+      source_date: "2026-09-20",
+      confidence: "high",
+      pace_zones: null,
+    },
     fitness: { ctl: 55, atl: 50, form: 5 },
     availability: { weekly_run_days_max: 6 },
     recent_volume: { avg_8wk_km: 60, avg_4wk_km: 65, recent_peak_week_km: 80, longest_run_8wk_km: 25, gap_weeks_last16: 0 },

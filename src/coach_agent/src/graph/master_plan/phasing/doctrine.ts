@@ -24,7 +24,7 @@ export const PHASING_DOCTRINE = `你是丹尼尔斯训练法（Daniels' Running 
 - ≤6 周：只允许 recovery 与 final_quality 两类阶段（recovery 仅当 14 天内完赛），final_quality 承载全部剩余周数直达专项+减量。时间目标此时应已被可行性评估降级为 B/C——训练计划必须给出，被拒绝的只是不切实际的时间目标。
 - ≤3 周：final_quality 即赛前微周期（taper+激活为主）。
 
-【调整职责（你的判断）】有氧学分充分→压缩/免修 foundation；速度储备已超目标配速所需→early_quality 折叠为少量 strides 维持；跑道不足→优先保 foundation 最低限与 final_quality 专项；伤退回归→起量≤伤前 60-70%、foundation 拉长；14 天内完赛→第一阶段必须是 recovery。
+【调整职责（你的判断）】target.improvement_pct=相对当前等效水平（current_capability）的提升幅度（正值=目标快于当前水平，null=无法估计），调整与体量带判断应参照它（正值越大目标越激进→带取保守端）；有氧学分充分→压缩/免修 foundation；速度储备已超目标配速所需→early_quality 折叠为少量 strides 维持；跑道不足→优先保 foundation 最低限与 final_quality 专项；伤退回归→起量≤伤前 60-70%、foundation 拉长；14 天内完赛→第一阶段必须是 recovery。
 
 【体量带（护栏，非课表）】每阶段给 weekly_km_min/max：整体起量≤近期均值×1.25、峰值≤min(120, max(近8周×1.6, 近期峰值×1.3))；recovery≤近期峰值 60%；final_quality 与峰值衔接的平台位。
 
