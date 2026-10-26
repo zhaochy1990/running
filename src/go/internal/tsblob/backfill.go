@@ -30,11 +30,13 @@ func (l Logger) printf(format string, args ...any) {
 }
 
 // BackfillStore is the storage surface the backfill needs. *storage.Store
-// satisfies it; the interface exists so tests can drive the real Store.
+// satisfies it; the interface exists so tests can drive the real Store. The
+// row read is the explicit Rows variant (devops#786): the backfill must source
+// blobs from the rows themselves, never from the pointer-first read.
 type BackfillStore interface {
 	UnmigratedActivityUsers(ctx context.Context) ([]string, error)
 	PageUserActivitiesWithoutTSBlob(ctx context.Context, userID, afterLabel string, limit int) ([]storage.Activity, error)
-	ActivityTimeseries(ctx context.Context, userID, labelID string) ([]storage.TimeseriesPoint, error)
+	ActivityTimeseriesRows(ctx context.Context, userID, labelID string) ([]storage.TimeseriesPoint, error)
 	WriteActivityBlob(ctx context.Context, userID, labelID string, rows []storage.TimeseriesPoint) (key string, pointCount int, sha256 string, hasGPS bool, err error)
 	StampTSBlobColumns(ctx context.Context, userID, labelID, key string, pointCount int, sha256 string, hasGPS bool) (bool, error)
 }
@@ -179,7 +181,7 @@ func (b *Backfill) backfillUser(ctx context.Context, user string, report *Backfi
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			rows, err := b.store.ActivityTimeseries(ctx, user, a.LabelID)
+			rows, err := b.store.ActivityTimeseriesRows(ctx, user, a.LabelID)
 			if err != nil {
 				recordErr("user %s activity %s: read rows: %v", user, a.LabelID, err)
 				continue

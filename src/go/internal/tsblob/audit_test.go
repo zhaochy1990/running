@@ -27,7 +27,7 @@ func (f *fakeAuditStore) ListTSBlobPointers(context.Context) ([]storage.TSBlobPo
 	return f.pointers, nil
 }
 
-func (f *fakeAuditStore) ActivityTimeseries(_ context.Context, userID, labelID string) ([]storage.TimeseriesPoint, error) {
+func (f *fakeAuditStore) ActivityTimeseriesRows(_ context.Context, userID, labelID string) ([]storage.TimeseriesPoint, error) {
 	return f.rows[userID+"/"+labelID], nil
 }
 

@@ -105,7 +105,7 @@ func TestUpsertActivity_DualWriteStampsPointerColumns(t *testing.T) {
 	}
 
 	// Rows are still written — the migration is a dual-write, not a cutover.
-	rows, err := st.ActivityTimeseries(ctx, uid, "a1")
+	rows, err := st.ActivityTimeseriesRows(ctx, uid, "a1")
 	if err != nil || len(rows) != 3 {
 		t.Fatalf("timeseries rows after upsert = %d (err %v), want 3", len(rows), err)
 	}
@@ -137,7 +137,7 @@ func TestUpsertActivity_COROSEmptyTSWritesEmptyBlob(t *testing.T) {
 	if err != nil || blob.PointCount != 0 {
 		t.Fatalf("blob after empty rewrite = %+v (err %v), want 0 points", blob, err)
 	}
-	if rows, _ := st.ActivityTimeseries(ctx, uid, "a1"); len(rows) != 0 {
+	if rows, _ := st.ActivityTimeseriesRows(ctx, uid, "a1"); len(rows) != 0 {
 		t.Fatalf("rows after empty rewrite = %d, want 0", len(rows))
 	}
 }
@@ -175,7 +175,7 @@ func TestUpsertActivity_GarminEmptyDetailsPreservesPointer(t *testing.T) {
 	if got := mustGetBlob(t, ts, *stamped.TsBlobKey); string(got) != string(payloadBefore) {
 		t.Fatal("blob payload changed by preserve-empty upsert")
 	}
-	if rows, _ := st.ActivityTimeseries(ctx, uid, "g1"); len(rows) != 2 {
+	if rows, _ := st.ActivityTimeseriesRows(ctx, uid, "g1"); len(rows) != 2 {
 		t.Fatalf("rows after preserve-empty = %d, want 2 (preserved)", len(rows))
 	}
 }

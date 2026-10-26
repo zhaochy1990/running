@@ -33,9 +33,10 @@ func assertJSONColumn(t *testing.T, got *string, want string) {
 	}
 }
 
-// seedThumbActivity writes one activity plus a synthetic timeseries. A nil lat/lon
-// produces a row that exists but has no GPS fix, which is how the timeseries
-// table represents a dropped satellite lock.
+// seedThumbActivity writes one activity plus a synthetic timeseries through the
+// dual-write upsert, so the has_gps flag is stamped exactly as production
+// stamps it. A nil lat/lon produces a payload with no GPS fix — the dropped
+// satellite lock case.
 func seedThumbActivity(t *testing.T, st *Store, uid, labelID string, gps [][2]float64) {
 	t.Helper()
 	ctx := context.Background()
@@ -72,12 +73,11 @@ func routeThumbCandidateSet(t *testing.T, st *Store, uid string, force bool) map
 // fix to draw. Both halves matter: the first makes a rerun a no-op, the second
 // keeps activities with no trace from being re-read on every sync forever.
 func TestRouteThumbCandidatesSelectsOnlyOutdoorActivitiesMissingAThumbnail(t *testing.T) {
-	st := openTestStore(t)
+	// openBlobTestStore (not openTestStore): the has_gps predicate the query
+	// uses since devops#786 is only stamped when a blob backend is injected,
+	// and the dual-write through UpsertActivity is what stamps it.
+	st, _, uid := openBlobTestStore(t)
 	ctx := context.Background()
-	if err := st.AutoMigrateWatch(ctx); err != nil {
-		t.Fatalf("automigrate watch: %v", err)
-	}
-	uid := uuid.NewString()
 	other := uuid.NewString()
 	t.Cleanup(func() {
 		for _, u := range []string{uid, other} {
@@ -89,11 +89,26 @@ func TestRouteThumbCandidatesSelectsOnlyOutdoorActivitiesMissingAThumbnail(t *te
 	outdoor := [][2]float64{{31.2, 121.4}, {31.2001, 121.4001}}
 	seedThumbActivity(t, st, uid, "outdoor", outdoor)
 	seedThumbActivity(t, st, uid, "indoor", nil)                               // no timeseries rows at all
-	seedThumbActivity(t, st, uid, "gps-dropped", [][2]float64{{0, 0}, {0, 0}}) // rows exist, every fix is NULL
+	seedThumbActivity(t, st, uid, "gps-dropped", [][2]float64{{0, 0}, {0, 0}}) // rows exist, every fix is the null island
 	seedThumbActivity(t, st, other, "someone-else", outdoor)                   // a different athlete
 
 	if got := routeThumbCandidateSet(t, st, uid, false); len(got) != 1 || !got["outdoor"] {
 		t.Fatalf("candidates = %v, want only {outdoor}", got)
+	}
+
+	// An activity whose has_gps is still NULL — pre-backfill stock (or a store
+	// with no blob backend) — is not a candidate yet: the deployment gate is
+	// that the backfill drains before this predicate ships (devops#786 AC3).
+	legacy := &Activity{UserID: uid, LabelID: "legacy-null-hasgps", SportType: 100, Date: time.Now().UTC(), Provider: "test", SyncedAt: time.Now().UTC()}
+	if err := st.db.WithContext(ctx).Create(legacy).Error; err != nil {
+		t.Fatalf("seed legacy row: %v", err)
+	}
+	legacyPts := []TimeseriesPoint{{UserID: uid, LabelID: "legacy-null-hasgps", Timestamp: i64ptr(1), GPSLat: fptr(31.3), GPSLon: fptr(121.5)}}
+	if err := st.db.WithContext(ctx).Create(&legacyPts).Error; err != nil {
+		t.Fatalf("seed legacy points: %v", err)
+	}
+	if got := routeThumbCandidateSet(t, st, uid, false); len(got) != 1 || !got["outdoor"] {
+		t.Fatalf("candidates with an unstamped legacy row = %v, want only {outdoor}", got)
 	}
 
 	// Recording a thumbnail drops the activity out of the candidate set, which is
@@ -115,12 +130,8 @@ func TestRouteThumbCandidatesSelectsOnlyOutdoorActivitiesMissingAThumbnail(t *te
 // The write must land both columns: the URL is what the miniprogram renders, the
 // polyline is what the web client draws, and the thumbnail job owns both.
 func TestSetActivityRouteThumbWritesBothColumns(t *testing.T) {
-	st := openTestStore(t)
+	st, _, uid := openBlobTestStore(t)
 	ctx := context.Background()
-	if err := st.AutoMigrateWatch(ctx); err != nil {
-		t.Fatalf("automigrate watch: %v", err)
-	}
-	uid := uuid.NewString()
 	t.Cleanup(func() {
 		st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&TimeseriesPoint{})
 		st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&Activity{})
@@ -148,12 +159,8 @@ func TestSetActivityRouteThumbWritesBothColumns(t *testing.T) {
 // payload never carries these columns, and UpdateAll would write their zero
 // value over them on every resync.
 func TestUpsertActivityPreservesRouteThumbnail(t *testing.T) {
-	st := openTestStore(t)
+	st, _, uid := openBlobTestStore(t)
 	ctx := context.Background()
-	if err := st.AutoMigrateWatch(ctx); err != nil {
-		t.Fatalf("automigrate watch: %v", err)
-	}
-	uid := uuid.NewString()
 	t.Cleanup(func() {
 		st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&TimeseriesPoint{})
 		st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&Activity{})

@@ -35,7 +35,34 @@ func (s *Store) ActivitiesInWindow(ctx context.Context, userID, provider string,
 
 // ActivityTimeseries returns an activity's timeseries points ordered by id
 // (insertion order), matching the Python connector's "ORDER BY id".
+//
+// Phase 2 (devops#786) reads pointer-first: when the activities row carries a
+// ts_blob_key, the points are served from the blob store — decoded, verified
+// against the row's ts_point_count/ts_sha256, and kept in a process-local LRU
+// so a full compute's four sources GET each activity at most once
+// (readActivityBlob in tsread.go). Any blob-side failure logs and falls back
+// to the row query: during the dual-write window rows are still written, so
+// the read degrades latency, never correctness. Unmigrated activities (NULL
+// pointer) and stores without a blob backend take the row query directly.
+// Every read consumer keeps this signature unchanged.
 func (s *Store) ActivityTimeseries(ctx context.Context, userID, labelID string) ([]TimeseriesPoint, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	if pts, ok := s.readActivityBlob(ctx, uid, labelID); ok {
+		return pts, nil
+	}
+	return s.ActivityTimeseriesRows(ctx, userID, labelID)
+}
+
+// ActivityTimeseriesRows is the row-storage read: the activity's points
+// straight from the timeseries table ordered by id. It is what
+// ActivityTimeseries degrades to during the migration, and the explicit read
+// the migration tooling must use — the backfill sources blobs from rows and
+// the audit diffs rows against blobs, so neither may go through the
+// pointer-first path (that would compare a blob with itself).
+func (s *Store) ActivityTimeseriesRows(ctx context.Context, userID, labelID string) ([]TimeseriesPoint, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
 		return nil, err
