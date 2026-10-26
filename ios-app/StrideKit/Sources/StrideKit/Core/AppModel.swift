@@ -264,6 +264,42 @@ public final class AppModel {
         defer { pendingCustomRaceEdit = nil }
         return pendingCustomRaceEdit
     }
+
+    // MARK: - PR-7 收尾域动作（profile-edit / watch / 落地页 CTA）
+
+    /// 数据页回读到最新身份（profile 页 onShow / profile-edit 保存后）。
+    public func updateIdentity(_ user: MeUser) {
+        me = user
+    }
+
+    /// 退出登录（profile-edit modal 确认后；`userStore.clear` + reLaunch login
+    /// 等价：清 Keychain 由 APIClient 的 token 面统一处理）。
+    public func logout() async {
+        await api.clearTokens()
+        me = nil
+        phase = .loggedOut
+    }
+
+    /// 注销账号（#759 决议 2：DELETE /api/users/me → 清 Keychain → Login；
+    /// auth-service 原子清理 + 四步审计，失败保留会话由页面提示）。
+    public func deleteAccount() async throws {
+        try await api.deleteAccount()
+        await logout()
+    }
+
+    /// 绑表成功后跳 onboarding 看同步进度（watch.ts redirectTo onboarding 等价；
+    /// onboarding 页 onShow 重算落点并续跑轮询，已完成 onboarding 的用户同样
+    /// 看得到进度）。
+    public func presentOnboardingAfterWatchBind() {
+        phase = .onboarding
+    }
+
+    /// 落地页未登录 CTA → 登录流（login?redirect=本页 等价；#692 回跳白名单
+    /// 链路）：记录回跳目标并切全屏 Login。
+    public func requestLogin(redirect: Route) {
+        loginRedirect = redirect
+        phase = .loggedOut
+    }
 }
 
 /// 教练上下文交接（小程序 storage `coach.pendingContext` 的等价物；

@@ -93,6 +93,30 @@ extension View {
         self
         #endif
     }
+
+    /// 全屏覆盖（iOS fullScreenCover / macOS 兜底 sheet；图片查看器用，
+    /// mapping §8 D-9 的跨平台收敛点）。
+    @ViewBuilder
+    public func platformFullScreen<Content: View>(
+        isPresented: Binding<Bool>,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        #if canImport(UIKit)
+        self.fullScreenCover(isPresented: isPresented, content: content)
+        #else
+        self.sheet(isPresented: isPresented, content: content)
+        #endif
+    }
+
+    /// 分页 TabView 样式（iOS `.page`；macOS 无对等，默认样式兜底）。
+    @ViewBuilder
+    public func pageTabStyleCompat() -> some View {
+        #if canImport(UIKit)
+        self.tabViewStyle(.page)
+        #else
+        self
+        #endif
+    }
 }
 
 extension View {
