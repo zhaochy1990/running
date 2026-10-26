@@ -219,6 +219,18 @@ jobs:
           go test ./internal/storage/...
           -run 'TestListSyncableUserIDs|TestListOrphanSyncUsers'
           -count=1 -v
+      # The timeseries-blob dual-write, backfill, audit, and orphan GC
+      # (devops#785) are SQL-level behaviours over activities/timeseries; the
+      # blob backend in every test is a MemStore/FileStore, never a bucket.
+      # -p 1 serializes the two packages: both migrate the watch schema, and a
+      # fresh job database cannot take two concurrent AutoMigrateWatch runs.
+      - name: Timeseries-blob tests (MySQL)
+        env:
+          STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
+        run: >-
+          go test -p 1 ./internal/storage/... ./internal/tsblob/...
+          -run 'TestUpsertActivity|TestTSBlob|TestBackfill|TestAuditor|TestGC'
+          -count=1 -v
 
   miniprogram:
     name: WeChat miniprogram (tsc + row self-checks)

@@ -64,39 +64,46 @@ type Blob struct {
 	UserID     string
 	LabelID    string
 	PointCount int
-	Points     []Point
+	// SHA256 is the envelope's checksum of the uncompressed points JSON — the
+	// same hex string EncodePoints returns and the activities.ts_sha256 column
+	// stores, so a reader can compare the two without recomputing anything.
+	SHA256 string
+	Points []Point
 }
 
 // EncodePoints serialises one activity's points into the v1 gzip blob (the
-// exact bytes Put stores under BlobKey(userID, labelID)). A nil/empty slice
-// encodes as a zero-point blob — an activity without samples is representable.
-func EncodePoints(userID, labelID string, points []Point) ([]byte, error) {
+// exact bytes Put stores under BlobKey(userID, labelID)) and returns it with
+// the sha256 (hex) of the uncompressed points JSON — the value the
+// activities.ts_sha256 column records. A nil/empty slice encodes as a
+// zero-point blob — an activity without samples is representable.
+func EncodePoints(userID, labelID string, points []Point) ([]byte, string, error) {
 	if points == nil {
 		points = []Point{} // normalise so the checksum bytes are "[]", never "null"
 	}
 	body, err := json.Marshal(points)
 	if err != nil {
-		return nil, fmt.Errorf("tsstore: marshal points: %w", err)
+		return nil, "", fmt.Errorf("tsstore: marshal points: %w", err)
 	}
 	sum := sha256.Sum256(body)
+	hexSum := hex.EncodeToString(sum[:])
 	blob := blobV1{
 		V: blobVersion, UserID: userID, LabelID: labelID,
-		PointCount: len(points), SHA256: hex.EncodeToString(sum[:]),
+		PointCount: len(points), SHA256: hexSum,
 		Points: points,
 	}
 	raw, err := json.Marshal(blob)
 	if err != nil {
-		return nil, fmt.Errorf("tsstore: marshal blob: %w", err)
+		return nil, "", fmt.Errorf("tsstore: marshal blob: %w", err)
 	}
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
 	if _, err := gw.Write(raw); err != nil {
-		return nil, fmt.Errorf("tsstore: gzip blob: %w", err)
+		return nil, "", fmt.Errorf("tsstore: gzip blob: %w", err)
 	}
 	if err := gw.Close(); err != nil {
-		return nil, fmt.Errorf("tsstore: close gzip: %w", err)
+		return nil, "", fmt.Errorf("tsstore: close gzip: %w", err)
 	}
-	return buf.Bytes(), nil
+	return buf.Bytes(), hexSum, nil
 }
 
 // DecodePoints reverses EncodePoints. It verifies the envelope version, the
@@ -141,5 +148,5 @@ func DecodePoints(payload []byte) (Blob, error) {
 		return Blob{}, fmt.Errorf("tsstore: point count mismatch for %s/%s: blob says %d, points has %d",
 			blob.UserID, blob.LabelID, blob.PointCount, len(blob.Points))
 	}
-	return Blob{UserID: blob.UserID, LabelID: blob.LabelID, PointCount: blob.PointCount, Points: blob.Points}, nil
+	return Blob{UserID: blob.UserID, LabelID: blob.LabelID, PointCount: blob.PointCount, SHA256: blob.SHA256, Points: blob.Points}, nil
 }

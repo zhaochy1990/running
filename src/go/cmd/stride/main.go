@@ -10,6 +10,8 @@
 //	stride watch sync        pull latest activities/health from the bound provider
 //	stride watch status      show the bound provider + login state
 //	stride homecity          detect each user's resident city (read-only; --write persists via the weekly pipeline's recompute)
+//	stride tsblob backfill   migrate stock activities to timeseries blobs (devops#785, resumable)
+//	stride tsblob audit      reconcile rows vs blob pointers vs bucket objects (read-only)
 //
 // Each subcommand stays thin: parse flags via cobra, wire dependencies, run.
 // All logic lives in internal/.
@@ -83,6 +85,7 @@ func newRootCmd() *cobra.Command {
 		newReconcileCmd(),
 		newWatchCmd(),
 		newHomeCityCmd(),
+		newTSBlobCmd(),
 	)
 	return root
 }

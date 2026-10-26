@@ -33,7 +33,7 @@ func fixturePoints() []Point {
 
 func mustEncode(t *testing.T, userID, labelID string, points []Point) []byte {
 	t.Helper()
-	payload, err := EncodePoints(userID, labelID, points)
+	payload, _, err := EncodePoints(userID, labelID, points)
 	if err != nil {
 		t.Fatalf("EncodePoints: %v", err)
 	}
@@ -172,5 +172,40 @@ func TestBlobKey_Format(t *testing.T) {
 	key := BlobKey("user-1", "label-2")
 	if key != "ts/v1/user-1/label-2.json.gz" {
 		t.Fatalf("BlobKey = %q", key)
+	}
+}
+
+// TestEncodePoints_SumMatchesDecode: the sha EncodePoints returns must equal
+// the checksum inside the decoded blob (it is what activities.ts_sha256
+// stores, so the two can never drift).
+func TestEncodePoints_SumMatchesDecode(t *testing.T) {
+	_, sum, err := EncodePoints("u", "l", fixturePoints())
+	if err != nil {
+		t.Fatalf("EncodePoints: %v", err)
+	}
+	if len(sum) != 64 {
+		t.Fatalf("sum = %q, want 64 hex chars", sum)
+	}
+	blob, err := DecodePoints(mustEncode(t, "u", "l", fixturePoints()))
+	if err != nil {
+		t.Fatalf("DecodePoints: %v", err)
+	}
+	if blob.SHA256 != sum {
+		t.Fatalf("Blob.SHA256 = %s, EncodePoints sum = %s", blob.SHA256, sum)
+	}
+}
+
+func TestParseBlobKey(t *testing.T) {
+	u, l, ok := ParseBlobKey(BlobKey("user-1", "label-2"))
+	if !ok || u != "user-1" || l != "label-2" {
+		t.Fatalf("ParseBlobKey(BlobKey) = %q %q %v, want user-1 label-2 true", u, l, ok)
+	}
+	for _, bad := range []string{
+		"", "ts/v1/", "ts/v1/only-user", "ts/v1/u/", "ts/v1//l.json.gz",
+		"ts/v1/u/l.txt", "other/v1/u/l.json.gz", "ts/v1/u/a/b.json.gz",
+	} {
+		if _, _, ok := ParseBlobKey(bad); ok {
+			t.Errorf("ParseBlobKey(%q) = ok, want rejected", bad)
+		}
 	}
 }

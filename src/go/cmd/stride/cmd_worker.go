@@ -34,6 +34,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/racedetection"
 	"github.com/zhaochy1990/stride/internal/registry"
 	"github.com/zhaochy1990/stride/internal/storage"
+	"github.com/zhaochy1990/stride/internal/tsblob"
 	"github.com/zhaochy1990/stride/internal/tsstore"
 	"github.com/zhaochy1990/stride/internal/worldathletics"
 )
@@ -77,16 +78,15 @@ func runWorker() error {
 		BaseURL:   cfg.COS.BaseURL,
 	})
 
-	// Timeseries blob bucket (devops#784 Phase 0). Built now, consumed by the
-	// Phase 1 write path: constructing it at boot is the wiring this phase
-	// ships, and its explicit error keeps a misconfigured deployment from
-	// limping up degraded (timeseries is not a degradable extra). No call is
-	// made against the bucket here — client construction is purely local.
+	// Timeseries blob bucket (devops#784/#785). Constructed before the store
+	// so it can be injected right after Open: every watch upsert dual-writes
+	// its points blob from now on (Phase 1). Its explicit construction error
+	// keeps a misconfigured deployment from limping up degraded (timeseries is
+	// not a degradable extra).
 	tsBlobStore, err := newTSBlobStore(cfg.TSBlob)
 	if err != nil {
 		return err
 	}
-	_ = tsBlobStore // Phase 1 (devops#784) injects this into the sync write path.
 
 	// World Athletics GraphQL client for the race_calendar_sync pipeline.
 	waClient := worldathletics.New(worldathletics.Config{
@@ -108,6 +108,9 @@ func runWorker() error {
 		return err
 	}
 	defer store.Close()
+	// Phase 1 dual-write (devops#785): the blob backend goes in before any
+	// sync can run, so upserts blob-first from the first delivery.
+	store.SetTSBlobStore(tsBlobStore)
 	if err := store.AutoMigrate(ctx); err != nil {
 		return err
 	}
@@ -169,7 +172,7 @@ func runWorker() error {
 		}
 		return registry.Build(name, store, watchRequestDelay)
 	}
-	registerHandlers(reg, resolve, store, racedetection.New(raceClassifier), cfg.RaceDetection.MaxConcurrency, cosClient, waClient, log, competitioncalendar.Config{
+	registerHandlers(reg, resolve, store, racedetection.New(raceClassifier), cfg.RaceDetection.MaxConcurrency, cosClient, waClient, tsBlobStore, log, competitioncalendar.Config{
 		Client:                waClient,
 		Store:                 store,
 		CompetitionGroupID:    cfg.WorldAthletics.CompetitionGroupID,
@@ -327,8 +330,9 @@ func newTSBlobStore(cfg config.TSBlob) (tsstore.Store, error) {
 // `race_calendar_sync` mirrors the World Athletics calendar (ccConfig),
 // preceded by `fetch_wa_api_key` key discovery (waClient); `chinaath_race_calendar_sync`
 // mirrors the 中国田协 catalogue (caConfig); `homecity_recompute` refreshes
-// every user's resident-city snapshot.
-func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store, raceDetector *racedetection.Detector, raceConcurrency int, cosClient *cos.Client, waClient *worldathletics.Client, log *zap.Logger, ccConfig competitioncalendar.Config, caConfig chinaathcalendar.Config) {
+// every user's resident-city snapshot; `ts_blob_gc` collects orphaned
+// timeseries blobs (devops#785, operator-enqueued).
+func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store, raceDetector *racedetection.Detector, raceConcurrency int, cosClient *cos.Client, waClient *worldathletics.Client, tsBlobStore tsstore.Store, log *zap.Logger, ccConfig competitioncalendar.Config, caConfig chinaathcalendar.Config) {
 	reg.MustRegister("hello", func(_ context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		_ = hb("greeting", 50)
 		return fmt.Sprintf(`{"echo":%q}`, j.InputJSON), nil
@@ -354,4 +358,8 @@ func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *stor
 	reg.MustRegister(chinaathcalendar.JobType, chinaathcalendar.New(caConfig))
 	// homecity_recompute pipeline: refresh every user's resident-city snapshot.
 	reg.MustRegister(homecitysync.JobType, homecitysync.New(store))
+	// ts_blob_gc: sweep orphaned timeseries blobs (devops#785). Enqueued by the
+	// operator via the admin jobs API — the soak-window cadence is a human
+	// decision, not a cron (production runs are the operator's call).
+	reg.MustRegister(tsblob.GCJobType, tsblob.NewGCJobHandler(store, tsBlobStore))
 }

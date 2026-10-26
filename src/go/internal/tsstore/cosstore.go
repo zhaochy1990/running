@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/zhaochy1990/stride/internal/cos"
 )
@@ -42,10 +43,13 @@ func (s *COSStore) Get(ctx context.Context, key string) ([]byte, error) {
 	return b, err
 }
 
-// List walks every key under prefix in bucket order. An error from fn is
-// returned as-is (see Store.List).
-func (s *COSStore) List(ctx context.Context, prefix string, fn func(key string) error) error {
-	return s.cli.List(ctx, prefix, fn)
+// List walks every key under prefix in bucket order, reporting COS's
+// last-modified timestamp as ModTime. An error from fn is returned as-is (see
+// Store.List).
+func (s *COSStore) List(ctx context.Context, prefix string, fn func(ObjectInfo) error) error {
+	return s.cli.List(ctx, prefix, func(key string, modTime time.Time) error {
+		return fn(ObjectInfo{Key: key, ModTime: modTime})
+	})
 }
 
 // Delete removes each key, idempotently: a missing object is not an error.

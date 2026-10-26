@@ -145,11 +145,14 @@ func (c *Client) Get(ctx context.Context, key string) ([]byte, error) {
 	return b, nil
 }
 
-// List calls fn with the key of every object under prefix, walking the marker
-// pagination. Iteration order is the bucket's lexicographic key order. An
-// error returned by fn aborts the walk and is returned as-is, so a caller can
-// both fail and stop early (with its own sentinel).
-func (c *Client) List(ctx context.Context, prefix string, fn func(key string) error) error {
+// List calls fn with the key and last-modified time of every object under
+// prefix, walking the marker pagination. Iteration order is the bucket's
+// lexicographic key order. An error returned by fn aborts the walk and is
+// returned as-is, so a caller can both fail and stop early (with its own
+// sentinel). modTime is the zero time when the server's timestamp cannot be
+// parsed — callers with age rules must treat that as "age unknown", never
+// "old".
+func (c *Client) List(ctx context.Context, prefix string, fn func(key string, modTime time.Time) error) error {
 	if !c.Configured() {
 		return fmt.Errorf("cos: not configured")
 	}
@@ -163,7 +166,7 @@ func (c *Client) List(ctx context.Context, prefix string, fn func(key string) er
 			return fmt.Errorf("cos: list %q: %w", prefix, err)
 		}
 		for _, obj := range res.Contents {
-			if err := fn(obj.Key); err != nil {
+			if err := fn(obj.Key, parseCOSTime(obj.LastModified)); err != nil {
 				return err
 			}
 		}
@@ -181,6 +184,28 @@ func (c *Client) List(ctx context.Context, prefix string, fn func(key string) er
 		}
 		marker = next
 	}
+}
+
+// cosTimeLayouts are the timestamp forms COS's XML List body has been observed
+// to return (ISO-8601 with and without millis, space-separated, and the two
+// RFC-1123 forms S3-compatible layers emit).
+var cosTimeLayouts = []string{
+	"2006-01-02T15:04:05.000Z",
+	time.RFC3339,
+	"2006-01-02T15:04:05Z",
+	"2006-01-02 15:04:05",
+	time.RFC1123,
+	time.RFC1123Z,
+}
+
+// parseCOSTime parses a COS LastModified string; the zero time means unknown.
+func parseCOSTime(s string) time.Time {
+	for _, layout := range cosTimeLayouts {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.UTC()
+		}
+	}
+	return time.Time{}
 }
 
 // isNotFound reports whether err is the SDK's 404 ErrorResponse, unwrapping

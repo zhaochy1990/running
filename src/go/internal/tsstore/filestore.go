@@ -98,10 +98,11 @@ func (s *FileStore) Get(_ context.Context, key string) ([]byte, error) {
 }
 
 // List calls fn with every stored key under prefix (slash-separated), in
-// lexicographic order for reproducibility. An error from fn aborts the walk
-// and is returned as-is. Dot-leading files (crashed temp writes) are skipped.
-func (s *FileStore) List(_ context.Context, prefix string, fn func(key string) error) error {
-	var keys []string
+// lexicographic order for reproducibility, reporting each file's mtime as
+// ModTime (the orphan GC's age input). An error from fn aborts the walk and is
+// returned as-is. Dot-leading files (crashed temp writes) are skipped.
+func (s *FileStore) List(_ context.Context, prefix string, fn func(ObjectInfo) error) error {
+	var infos []ObjectInfo
 	err := filepath.WalkDir(s.dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -114,17 +115,22 @@ func (s *FileStore) List(_ context.Context, prefix string, fn func(key string) e
 			return err
 		}
 		key := filepath.ToSlash(rel)
-		if strings.HasPrefix(key, prefix) {
-			keys = append(keys, key)
+		if !strings.HasPrefix(key, prefix) {
+			return nil
 		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		infos = append(infos, ObjectInfo{Key: key, ModTime: info.ModTime().UTC()})
 		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("tsstore: walk %s: %w", s.dir, err)
 	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		if err := fn(key); err != nil {
+	sort.Slice(infos, func(i, j int) bool { return infos[i].Key < infos[j].Key })
+	for _, info := range infos {
+		if err := fn(info); err != nil {
 			return err
 		}
 	}

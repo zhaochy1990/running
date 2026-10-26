@@ -39,7 +39,13 @@ func TestFileStore_Smoke(t *testing.T) {
 
 	mustPut(t, store, "ts/v1/user-2/other.json.gz")
 	var keys []string
-	if err := store.List(ctx, "ts/v1/", func(k string) error { keys = append(keys, k); return nil }); err != nil {
+	if err := store.List(ctx, "ts/v1/", func(info ObjectInfo) error {
+		keys = append(keys, info.Key)
+		if info.ModTime.IsZero() {
+			t.Errorf("List ModTime for %s is zero, want the file mtime", info.Key)
+		}
+		return nil
+	}); err != nil {
 		t.Fatalf("List: %v", err)
 	}
 	if len(keys) != 2 {

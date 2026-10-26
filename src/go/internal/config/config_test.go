@@ -347,3 +347,29 @@ ts-blob:
 		t.Errorf("ts-blob.region = %q, want file default", cfg.TSBlob.Region)
 	}
 }
+
+func TestMustLoadTSBlobRuntimeFrom(t *testing.T) {
+	// The tsblob CLI's slice of config.yml (devops#785): mysql + ts-blob only,
+	// same file, same STRIDE_WORKER_* env namespace — so an operator runs it
+	// with the worker deployment's own config and secrets.
+	body := `
+mysql:
+  dsn: "user:pass@tcp(127.0.0.1:3306)/stride"
+ts-blob:
+  secret-id: ""
+  secret-key: ""
+  bucket: "stride-timeseries-1255867366"
+  region: "ap-shanghai"
+`
+	t.Setenv("STRIDE_WORKER_TS_BLOB_SECRET_ID", "env-id")
+	cfg := MustLoadTSBlobRuntimeFrom(writeConfig(t, body))
+	if cfg.MySQL.DSN != "user:pass@tcp(127.0.0.1:3306)/stride" {
+		t.Errorf("mysql.dsn = %q", cfg.MySQL.DSN)
+	}
+	if cfg.TSBlob.Bucket != "stride-timeseries-1255867366" {
+		t.Errorf("ts-blob.bucket = %q", cfg.TSBlob.Bucket)
+	}
+	if cfg.TSBlob.SecretID != "env-id" {
+		t.Errorf("ts-blob.secret-id = %q, want env override", cfg.TSBlob.SecretID)
+	}
+}

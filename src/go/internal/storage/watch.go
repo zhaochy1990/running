@@ -112,6 +112,33 @@ func (s *Store) upsertActivity(ctx context.Context, a *Activity, laps []Lap, ts 
 		zones[i].UserID, zones[i].LabelID = uid, a.LabelID
 	}
 
+	// --- Phase 1 dual-write (devops#785): blob first, then the transaction ---
+	//
+	// Whenever this upsert owns the timeseries payload (points present, or the
+	// replace-children semantics of a non-preserving upsert — a COROS empty-ts
+	// payload legitimately rewrites the activity to zero points), the blob is
+	// written BEFORE the row transaction and the four pointer columns are
+	// stamped on `a` so UpdateAll persists them with the rest. A Put failure
+	// fails the whole upsert so MQ retries it; the deterministic key makes the
+	// retry an idempotent overwrite. The row half (replaceChildren below) is
+	// untouched — rows keep being written until Phase 3 drops them.
+	//
+	// The one path that must NOT touch the blob is the Garmin empty-details
+	// preserve-upsert (preserveEmpty && len(ts)==0): it replaces nothing, so
+	// it must not overwrite the blob a fuller sync wrote, and it must not
+	// clobber the row's pointer columns either — all four are omitted below
+	// (the same mechanism the start-GPS preservation uses). A Store with no
+	// injected blob backend takes the same omit path.
+	blobWritten := false
+	if s.tsBlob != nil && (len(ts) > 0 || !preserveEmpty) {
+		key, count, sum, hasGPS, err := s.WriteActivityBlob(ctx, uid, a.LabelID, ts)
+		if err != nil {
+			return err
+		}
+		a.TsBlobKey, a.TsPointCount, a.TsSHA256, a.HasGPS = &key, &count, &sum, &hasGPS
+		blobWritten = true
+	}
+
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// The thumbnail columns are owned by the route_thumbnails job, never by a
 		// provider payload. UpdateAll would write the provider's zero value over
@@ -125,6 +152,9 @@ func (s *Store) upsertActivity(ctx context.Context, a *Activity, laps []Lap, ts 
 		// mechanism as the thumbnails above, but unconditional — there is no
 		// vendor-side "newer statement" like the numeric feel has).
 		omits = append(omits, "FeelNote")
+		if !blobWritten {
+			omits = append(omits, "TsBlobKey", "TsPointCount", "TsSHA256", "HasGPS")
+		}
 		// Garmin can return an empty details payload while still returning the
 		// summary. In that incomplete-response path, preserve the previously
 		// cached start alongside the preserved timeseries. Omit the two columns
