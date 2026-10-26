@@ -165,11 +165,16 @@ public struct TrainingHomeView: View {
         .buttonStyle(.plain)
     }
 
-    /// 自建课分享 icon（#689 仅自建课可分享；出向链接归 PR-8 接线，先占位
-    /// ShareLink 分享课名 + web 域落地路径）。
+    /// 自建课分享 icon（#689 仅自建课可分享；PR-8 出向：课名文案 +
+    /// `/s/` workout-share 链接——今日卡分享无封面，对齐小程序 index 分支）。
     private func workoutShareLink(_ workout: TodayWorkoutCard) -> some View {
-        ShareLink(item: WorkoutSharePlaceholder.link(user: app.me?.id, workout: workout.workoutId),
-                  subject: Text(workout.title)) {
+        ShareLink(
+            item: ShareOutbound.link(
+                base: app.api.config.shareBaseURL,
+                route: .workoutShare(user: app.me?.id ?? "", workout: workout.workoutId)
+            ),
+            preview: SharePreview(ShareCopy.workout(name: workout.title))
+        ) {
             Image(systemName: "square.and.arrow.up")
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(app.theme.current.mutedTwo)
@@ -421,23 +426,5 @@ struct PushDateSheet: View {
         .padding(.horizontal, app.theme.current.space(.md))
         .presentationDetents([.medium])
         .background(app.theme.current.surface)
-    }
-}
-
-// MARK: - 分享出向占位（PR-8 接线）
-
-/// 自建课分享链接占位：web 域 + 小程序落地路径形态。真实免登录落地页
-/// 与 universal link 注册归 PR-8（devops#758），此处先保证入口与形态存在。
-enum WorkoutSharePlaceholder {
-    static func link(user: String?, workout: String) -> URL {
-        var components = URLComponents()
-        components.scheme = "https"
-        components.host = "stride-running.cn"
-        components.path = "/pages/workout-share/workout-share"
-        components.queryItems = [
-            URLQueryItem(name: "user", value: user ?? ""),
-            URLQueryItem(name: "workout", value: workout),
-        ]
-        return components.url ?? URL(string: "https://stride-running.cn")!
     }
 }

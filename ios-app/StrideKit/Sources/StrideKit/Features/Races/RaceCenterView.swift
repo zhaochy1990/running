@@ -33,6 +33,16 @@ public struct RaceCenterView: View {
         .navigationTitle("赛事中心")
         .inlineNavigationTitle()
         .toolbar {
+            // PR-8 出向矩阵：赛事中心=定制文案+链接（小程序胶囊转发，D-13→D-1）。
+            ToolbarItem(placement: .raceTopBarTrailing) {
+                ShareLink(
+                    item: ShareOutbound.link(base: app.api.config.shareBaseURL, route: .raceCenter),
+                    preview: SharePreview(ShareCopy.raceCenter)
+                ) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(t.font(.fs13, weight: .medium))
+                }
+            }
             ToolbarItem(placement: .raceTopBarTrailing) {
                 Button("我的赛事") { app.router.push(.myRaces) }
                     .font(t.font(.fs13, weight: .medium))

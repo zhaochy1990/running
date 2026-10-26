@@ -220,7 +220,14 @@ extension Route {
     public init?(url: URL) {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let query = Self.queryDictionary(components.queryItems) else { return nil }
-        self.init(pagePath: components.path, query: query)
+        var path = components.path
+        // PR-8 分流页前缀（#758/#762）：出向链接统一 `裸域/s/<mp 页路径>`，
+        // Universal Link 唤起 App 时剥掉 /s 还原白名单页路径（微信内由分流
+        // 页换 URL Link，不经过这里）。
+        if path.hasPrefix("/s/") {
+            path = String(path.dropFirst(2))
+        }
+        self.init(pagePath: path, query: query)
     }
 
     init?(pagePath: String, query: [String: String]) {

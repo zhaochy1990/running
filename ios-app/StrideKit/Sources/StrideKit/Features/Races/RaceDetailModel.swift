@@ -48,6 +48,12 @@ public final class RaceDetailModel {
     // 赛道 tab 站点卡展开态
     public var courseOpen: Set<String> = []
 
+    /// 分享文案（PR-8 出向矩阵：赛事详情=定制文案+链接，detail.ts 直译）：
+    /// `<名> · <比赛日> 开跑`，未加载/无名回落「赛事详情」。
+    public var shareTitle: String {
+        ShareCopy.raceDetail(name: view?.head.name ?? "", date: detail?.raceDate)
+    }
+
     // MARK: - 私有
 
     public let raceId: Int

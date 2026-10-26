@@ -40,6 +40,33 @@ import Testing
         #expect(model.loginRedirect == .activityDetail(labelId: "abc"))
     }
 
+    // MARK: - 公开落地页免登录浏览（PR-8 devops#771）
+
+    @Test func coldPublicEntryBrowsesLoggedOutWithoutRedirect() async {
+        let (model, _) = makeModel()
+        await model.bootstrap(entry: .coachShare(sid: "s1"))
+        #expect(model.phase == .loggedOut)
+        #expect(model.publicLanding == .coachShare(sid: "s1"), "免登录先看内容")
+        #expect(model.loginRedirect == nil, "公开页不强制登录")
+    }
+
+    @Test func openSlashSPublicURLWhileLoggedOutSetsLanding() async {
+        let (model, _) = makeModel()
+        await model.bootstrap()
+        model.open(URL(string: "https://stride-running.cn/s/pages/workout-share/workout-share?user=u1&workout=w1")!)
+        #expect(model.phase == .loggedOut)
+        #expect(model.publicLanding == .workoutShare(user: "u1", workout: "w1"))
+    }
+
+    @Test func requestLoginClearsPublicLanding() async {
+        let (model, _) = makeModel()
+        await model.bootstrap(entry: .strategyShare(user: "u1", id: 9, version: 3))
+        #expect(model.publicLanding != nil)
+        model.requestLogin(redirect: .strategyShare(user: "u1", id: 9, version: 3))
+        #expect(model.publicLanding == nil, "CTA 登录回登录流")
+        #expect(model.loginRedirect == .strategyShare(user: "u1", id: 9, version: 3))
+    }
+
     @Test func validSessionGoesLoggedInAndLandsEntry() async throws {
         let transport = APIClientTests.MockTransport()
         await transport.plan("/api/users/me", responses: [(200, json(#"{"id":"u1"}"#))])

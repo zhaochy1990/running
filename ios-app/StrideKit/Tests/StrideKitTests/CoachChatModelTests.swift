@@ -50,7 +50,7 @@ import Testing
         private(set) var upsertCards: [CustomWorkoutCard] = []
         private(set) var deleteCalls: [String] = []
         private(set) var moveCalls: [(workoutId: String, date: String)] = []
-        private(set) var shareCalls: [(sessionId: String, indices: [Int])] = []
+        private(set) var shareCalls: [(sessionId: String, indices: [Int], sharerName: String?)] = []
 
         /// 锁保护的断言快照（写侧在锁内，读侧同锁）。
         var streamCallLog: [(message: String, sessionId: String, clientTurnId: String, target: CoachTarget?)] {
@@ -97,7 +97,7 @@ import Testing
 
         func createShare(sessionId: String, indices: [Int], sharerName: String?) async throws -> CoachShareResult {
             try lock.withLock {
-                shareCalls.append((sessionId, indices))
+                shareCalls.append((sessionId, indices, sharerName))
                 return try shareResult.get()
             }
         }
@@ -160,13 +160,15 @@ import Testing
     @MainActor
     private func makeModel(
         service: MockService = MockService(),
-        userId: String? = "u-1"
+        userId: String? = "u-1",
+        sharerNameProvider: (() -> String?)? = nil
     ) -> (CoachChatModel, MockService) {
         let model = CoachChatModel(
             service: service,
             store: InMemorySessionStore(),
             clock: fixedClock,
             userIdProvider: { userId },
+            sharerNameProvider: sharerNameProvider ?? { nil },
             openStrategyDraft: { _, _ in }
         )
         return (model, service)
@@ -590,8 +592,33 @@ import Testing
         #expect(service.shareCalls.count == 1)
         #expect(service.shareCalls[0].indices == [1, 3], "升序去重投影序号")
         #expect(model.sharePayload != nil)
-        #expect(model.sharePayload?.url.absoluteString.contains("coach-share") == true)
-        #expect(model.sharePayload?.url.query?.contains("sid=sid123") == true)
+        // PR-8：/s/ 分流链接 + 品牌口径文案（不提教练）
+        #expect(
+            model.sharePayload?.url.absoluteString
+                == "https://stride-running.cn/s/pages/coach-share/coach-share?sid=sid123"
+        )
+        #expect(model.sharePayload?.title == "我与 StrideWise 的对话 · 2 条")
+        // 封面投影：前两条所选（a1、a2 两条 assistant 节选）
+        #expect(model.sharePayload?.picks == [
+            CoachBubbleCoverView.Pick(isUser: false, lines: ["a1"]),
+            CoachBubbleCoverView.Pick(isUser: false, lines: ["a2"]),
+        ])
+    }
+
+    @Test @MainActor func forwardPassesSharerNameIntoSnapshotAndTitle() async {
+        let service = MockService()
+        service.historyResult = .success(CoachHistoryResponse(sessionId: "ios-default", messages: [
+            CoachHistoryMessage(role: .user, content: "q1"),
+            CoachHistoryMessage(role: .assistant, content: "a1"),
+        ]))
+        let (model, _) = makeModel(service: service, sharerNameProvider: { "小跑" })
+        await model.bootstrap()
+
+        model.handleMessageLongPress(model.messages[1].id)
+        await model.forwardSelected()
+
+        #expect(service.shareCalls[0].sharerName == "小跑", "昵称随快照上送（coach.ts 同款）")
+        #expect(model.sharePayload?.title == "小跑 与 StrideWise 的对话 · 1 条")
     }
 
     // MARK: - 会话 / 上下文
