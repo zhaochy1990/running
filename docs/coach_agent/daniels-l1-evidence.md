@@ -62,7 +62,7 @@ interface PhaseEvidence {
     source: "recent_race_hm_fm" | "recent_race_short" | "calibration" | "none";
     source_date: string | null;       // 换算源日期（比赛日 / 校准 as_of）
     confidence: "high" | "medium" | "low";  // hm_fm=high；短距离折扣=medium；校准=medium；none=low
-    pace_zones: {                     // 当前配速带（校准快照直读，s/km；开放端 null）
+    pace_zones: {                     // 当前配速带（校准快照直读、取整秒，s/km；开放端 null）
       easy: [lo, hi] | null; m: [lo, hi] | null; t: [lo, hi] | null; i: [lo, hi] | null; r: [lo, hi] | null;
     } | null;
   };

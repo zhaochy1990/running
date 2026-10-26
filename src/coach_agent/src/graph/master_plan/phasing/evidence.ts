@@ -15,7 +15,7 @@ const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 const paceBound = z.number().nullable();
 const PaceZoneSchema = z.tuple([paceBound, paceBound]);
-/** 当前配速带（校准快照直读，s/km；开放端为 null，如 r 的 lo / easy 的恢复侧不含）。 */
+/** 当前配速带（校准快照直读、取整秒，s/km；开放端为 null，如 r 的 lo / easy 的恢复侧不含）。 */
 const PaceZonesSchema = z.object({
   easy: PaceZoneSchema.nullable(),
   m: PaceZoneSchema.nullable(),
@@ -178,6 +178,11 @@ const DISTANCE_BUCKETS: ReadonlyArray<{ key: RaceDistanceKey; minKm: number; max
 const SHORT_SOURCE_DISCOUNT = 1.03;
 /** 近期比赛窗口（天）：12 个月。 */
 const RACE_WINDOW_DAYS = 365;
+/** VDOT 合理区间（丹尼尔斯表覆盖 30-85，两端留余量）：区间外视为脏数据行（如 duration_min 单位错误），跳过而非炸毁整份 evidence。 */
+const VDOT_PLAUSIBLE_MIN = 10;
+const VDOT_PLAUSIBLE_MAX = 90;
+
+const isPlausibleVdot = (vdot: number) => Number.isFinite(vdot) && vdot >= VDOT_PLAUSIBLE_MIN && vdot <= VDOT_PLAUSIBLE_MAX;
 
 interface RaceAnchor {
   source: "recent_race_hm_fm" | "recent_race_short";
@@ -207,7 +212,7 @@ function deriveRaceAnchor(snapshot: ContextSnapshot, asOfMs: number, thresholdPa
     const paceSecPerKm = r.avg_pace_s_km ?? timeSec / km;
     if (thresholdPaceSecPerKm != null && paceSecPerKm > thresholdPaceSecPerKm * 1.15) continue;
     const vdot = vdotFromRace(km * 1000, timeSec);
-    if (!Number.isFinite(vdot)) continue;
+    if (!isPlausibleVdot(vdot)) continue;
     candidates.push({ source: bucket.key === "HM" || bucket.key === "FM" ? "recent_race_hm_fm" : "recent_race_short", key: bucket.key, date: r.date, vdot });
   }
   const hmPlus = candidates.filter((c) => c.source === "recent_race_hm_fm");
@@ -245,11 +250,16 @@ function calibrationPaceZones(snapshot: ContextSnapshot): z.infer<typeof PaceZon
  * 4. improvement_pct 的锚 = 主锚与校准档同时可得时的保守者（VDOT 低者）
  *    ——比赛代表最高已证实水平、校准代表日常状态。
  */
-function deriveCapability(snapshot: ContextSnapshot, asOfDay: string, targetSec: number, goalDistance: RaceDistanceKey) {
+function deriveCapability(
+  snapshot: ContextSnapshot,
+  asOfDay: string,
+  targetSec: number,
+  goalDistance: RaceDistanceKey,
+): { improvement_pct: PhaseEvidence["target"]["improvement_pct"]; current_capability: PhaseEvidence["current_capability"] } {
   const calib = snapshot.running_calibration;
   const thresholdPaceSecPerKm = calib?.threshold_speed_mps && calib.threshold_speed_mps > 0 ? 1000 / calib.threshold_speed_mps : null;
   const calibVdot = thresholdPaceSecPerKm != null ? vdotFromThresholdPace(thresholdPaceSecPerKm) : Number.NaN;
-  const calibUsable = Number.isFinite(calibVdot);
+  const calibUsable = isPlausibleVdot(calibVdot);
 
   const race = deriveRaceAnchor(snapshot, new Date(asOfDay).getTime(), thresholdPaceSecPerKm);
 
@@ -270,15 +280,20 @@ function deriveCapability(snapshot: ContextSnapshot, asOfDay: string, targetSec:
         ? { vdot: calibVdot, source: "calibration", source_date: calib?.as_of_date ?? null, confidence: "medium" }
         : null;
 
-  const discount = race?.source === "recent_race_short" ? { sourceKey: race.key, discountLonger: SHORT_SOURCE_DISCOUNT } : {};
-  const equivalents = anchor != null ? equivalentsFromVdot(anchor.vdot, discount) : null;
+  const shortDiscount = race?.source === "recent_race_short" ? { sourceKey: race.key, discountLonger: SHORT_SOURCE_DISCOUNT } : {};
+  const capabilityDiscounted = shortDiscount.discountLonger !== undefined;
+  const equivalents = anchor != null ? equivalentsFromVdot(anchor.vdot, shortDiscount) : null;
 
   // improvement 锚（规则 4）：主锚与校准档取保守；短距离折扣只在短距离主锚胜出时生效
   const effectiveVdot = race != null && calibUsable ? Math.min(race.vdot, calibVdot) : (race?.vdot ?? (calibUsable ? calibVdot : Number.NaN));
   const effectiveUsesDiscount = race?.source === "recent_race_short" && (!calibUsable || race.vdot <= calibVdot);
   const improvementPct = (() => {
     if (!Number.isFinite(effectiveVdot) || targetSec <= 0) return null;
-    const anchorSec = equivalentsFromVdot(effectiveVdot, effectiveUsesDiscount ? discount : {})[goalDistance];
+    // 主路径（无校准，或比赛锚即保守者且折扣一致）下 improvement 锚与 current_capability 等效表同源，直接复用
+    const reusesCapability = equivalents != null && effectiveVdot === anchor?.vdot && effectiveUsesDiscount === capabilityDiscounted;
+    const anchorSec = reusesCapability
+      ? equivalents[goalDistance]
+      : equivalentsFromVdot(effectiveVdot, effectiveUsesDiscount ? shortDiscount : {})[goalDistance];
     if (!Number.isFinite(anchorSec) || anchorSec <= 0) return null;
     return r1(((anchorSec - targetSec) / anchorSec) * 100);
   })();
@@ -287,7 +302,7 @@ function deriveCapability(snapshot: ContextSnapshot, asOfDay: string, targetSec:
     improvement_pct: improvementPct,
     current_capability: {
       vdot: anchor != null ? r1(anchor.vdot) : null,
-      equivalents: equivalents != null ? { "5K": equivalents["5K"], "10K": equivalents["10K"], HM: equivalents.HM, FM: equivalents.FM } : null,
+      equivalents,
       source: anchor?.source ?? "none",
       source_date: anchor?.source_date ?? null,
       confidence: anchor?.confidence ?? "low",
@@ -341,8 +356,9 @@ export function buildPhaseEvidence(snapshot: ContextSnapshot, activities: Phasin
   const lastRace = snapshot.race_history[0] ?? null;
   const pbs: Record<string, string> = {};
   for (const pb of snapshot.personal_bests) pbs[pb.distance] = `${Math.floor(pb.time_sec / 60)}:${String(Math.round(pb.time_sec % 60)).padStart(2, "0")}`;
-  const goalPaceSPerKm = parseHms(goal.targetTime) / RACE_DISTANCE_KM;
-  const capability = deriveCapability(snapshot, asOfDay, parseHms(goal.targetTime), goal.distance);
+  const targetSec = parseHms(goal.targetTime);
+  const goalPaceSPerKm = targetSec / RACE_DISTANCE_KM;
+  const capability = deriveCapability(snapshot, asOfDay, targetSec, goal.distance);
   const fmPb = snapshot.personal_bests.find((pb) => pb.distance === "FM") ?? null;
 
   return PhaseEvidenceSchema.parse({

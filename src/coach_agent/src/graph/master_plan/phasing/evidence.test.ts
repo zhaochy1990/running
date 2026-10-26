@@ -125,8 +125,9 @@ test("三运动员 current_capability：阶梯第 1 档（HM+ 全力最佳）、
     assert.equal(cap.confidence, "high", name);
     assert.equal(cap.source_date, exp.sourceDate, name);
     assert.ok(Math.abs((cap.vdot ?? 0) - exp.vdot) <= 0.05, `${name} vdot ${cap.vdot}`);
-    assert.deepEqual(Object.keys(cap.equivalents ?? {}).sort(), ["10K", "5K", "FM", "HM"], name);
-    assert.ok(Math.abs((cap.equivalents?.FM ?? 0) - exp.fmEquiv) <= 1, `${name} FM 等效 ${cap.equivalents?.FM}`);
+    assert.ok(cap.equivalents, name);
+    assert.deepEqual(Object.keys(cap.equivalents).sort(), ["10K", "5K", "FM", "HM"], name);
+    assert.ok(Math.abs(cap.equivalents.FM - exp.fmEquiv) <= 1, `${name} FM 等效 ${cap.equivalents.FM}`);
     assert.equal(evidence.target.improvement_pct, exp.improvementPct, name);
     // 配速带（校准快照直读）：五带齐全，双边界带 lo<hi
     const zones = cap.pace_zones;
@@ -192,6 +193,22 @@ test("全力识别：均配慢于校准阈值×1.15 的比赛不参与取锚（�
     raw.race_history = [{ date: "2025-06-01", distance_km: 42.2, duration_min: 185, avg_pace_s_km: 263, avg_hr: 165, max_hr: 178, feel: null }];
   });
   assert.equal(buildPhaseEvidence(stale.snapshot, stale.activities, goal, AS_OF).current_capability.source, "calibration");
+});
+
+test("脏数据防御：荒谬 VDOT 行（如 duration_min 单位错误）被丢弃不炸 evidence；荒谬校准阈值同样落空", async () => {
+  const goal = { raceName: "无锡马拉松", distance: "FM" as const, targetTime: "2:50:00", weeklyRunDaysMax: 6 };
+  // 42.2km 记 3.2「分钟」（小时当分钟）→ 全力过滤只滤慢不滤快 → 荒谬 VDOT 须由合理性区间拦截
+  const dirtyRace = await fixtureSnapshot("chaoyi", (raw) => {
+    raw.race_history = [{ date: "2026-09-01", distance_km: 42.2, duration_min: 3.2, avg_pace_s_km: 4.5, avg_hr: 160, max_hr: 175, feel: null }];
+  });
+  const raceEvidence = buildPhaseEvidence(dirtyRace.snapshot, dirtyRace.activities, goal, AS_OF);
+  assert.equal(raceEvidence.current_capability.source, "calibration");
+  // 校准阈值速度单位错误（40 m/s）→ 校准档落空；叠加无比赛 → none
+  const dirtyCalib = await fixtureSnapshot("chaoyi", (raw) => {
+    raw.race_history = [];
+    (raw.running_calibration as { threshold_speed_mps?: number }).threshold_speed_mps = 40;
+  });
+  assert.equal(buildPhaseEvidence(dirtyCalib.snapshot, dirtyCalib.activities, goal, AS_OF).current_capability.source, "none");
 });
 
 test("阶梯第 2 档：仅 10K 近期比赛 → recent_race_short（medium），更长距离等效含 ×1.03 保守折扣", async () => {

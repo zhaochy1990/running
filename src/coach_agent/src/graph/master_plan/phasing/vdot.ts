@@ -17,10 +17,7 @@
 export const RACE_DISTANCES_M = { "5K": 5000, "10K": 10000, HM: 21097.5, FM: 42195 } as const;
 export type RaceDistanceKey = keyof typeof RACE_DISTANCES_M;
 /** 由短到长；「比源距离更长」的折扣判定用。 */
-export const RACE_DISTANCE_ORDER: readonly RaceDistanceKey[] = ["5K", "10K", "HM", "FM"];
-
-/** 丹尼尔斯配速带序（current_capability.pace_zones 键序）。 */
-export const PACE_ZONE_KEYS = ["easy", "m", "t", "i", "r"] as const;
+const RACE_DISTANCE_ORDER: readonly RaceDistanceKey[] = ["5K", "10K", "HM", "FM"];
 
 const vo2 = (vMetersPerMin: number) => 0.182258 * vMetersPerMin + 0.000104 * vMetersPerMin ** 2 - 4.6;
 const fracMax = (tMin: number) => 0.8 + 0.298956 * Math.exp(-0.193261 * tMin) + 0.189439 * Math.exp(-0.012778 * tMin);
