@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- TestFlight 出包导出配置（devops#748：自动签名 + ASC API key；
+	     xcodebuild -exportArchive 携带 -allowProvisioningUpdates 与
+	     -authenticationKey* 三参数即可完成「导出+上传」一体流程） -->
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>destination</key>
+	<string>upload</string>
+	<key>manageAppVersionAndBuildNumber</key>
+	<true/>
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<key>teamID</key>
+	<string>M4G5WA6N83</string>
+	<key>uploadSymbols</key>
+	<true/>
+</dict>
+</plist>
