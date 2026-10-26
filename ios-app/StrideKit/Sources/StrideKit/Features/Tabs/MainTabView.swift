@@ -50,15 +50,9 @@ public struct MainTabView: View {
     }
 }
 
-/// 训练 tab 占位（PR-5 训练域落地时替换；PR-7 不动）。
-struct TrainingHomeView: View {
-    var body: some View {
-        PageShell(title: "STRIDE", systemImage: "list.clipboard")
-    }
-}
-
-/// 路由落点：各域真实页面（PR-7 收尾域落地：profile 域 / 反馈路线域 /
-/// 手表 / 三公开落地页）；训练域（PR-5）未落地的落点沿用骨架壳。
+/// 路由落点：各域真实页面（PR-2 登录域 / PR-3 记录域 / PR-5 训练域 /
+/// PR-6 赛事域 / PR-7 收尾域均已落地；训练 tab 根 = Training/
+/// TrainingHomeView.swift 的真实页）。
 struct RouteShellView: View {
     let route: Route
 
@@ -80,6 +74,12 @@ struct RouteShellView: View {
             MyRacesView()
         case .customRaceForm:
             CustomRaceFormView()
+        case .workoutDetail(let date, let workoutId, let title):
+            WorkoutDetailView(date: date, workoutId: workoutId, title: title)
+        case .trainingPlan:
+            TrainingPlanView()
+        case .trainingStatus:
+            TrainingStatusView()
         case .feedback(let initialTab):
             FeedbackView(initialTab: initialTab)
         case .feedbackForm:

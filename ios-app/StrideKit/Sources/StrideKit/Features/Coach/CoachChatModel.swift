@@ -838,7 +838,7 @@ public final class CoachChatModel {
     /// 保存自建课卡片：save_token 幂等 upsert；成功回写「已保存」收主 CTA
     /// （推送保留）；失败不写终态可重试。
     @discardableResult
-    func saveCustomWorkoutCard(messageId: Int, alreadyGuarded: Bool = false, silent: Bool = false) async -> PlanSessionRow? {
+    func saveCustomWorkoutCard(messageId: Int, alreadyGuarded: Bool = false, silent: Bool = false) async -> CoachPlanSessionRow? {
         guard let message = messages.first(where: { $0.id == messageId }),
               case .customWorkout(let card) = message.card?.payload
         else { return nil }

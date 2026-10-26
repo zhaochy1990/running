@@ -390,7 +390,7 @@ public actor CoachClient {
     }
 
     /// `POST /api/users/me/custom-workouts` —— save_token 幂等 upsert。
-    public func upsertCustomWorkout(_ card: CustomWorkoutCard) async throws -> PlanSessionRow {
+    public func upsertCustomWorkout(_ card: CustomWorkoutCard) async throws -> CoachPlanSessionRow {
         let body: [String: Any] = [
             "date": card.date,
             "kind": card.kind ?? "run",
@@ -429,7 +429,7 @@ public actor CoachClient {
     }
 
     /// `GET /api/users/me/plan/sessions?date_from=&date_to=` —— 卡片终态对账窗口。
-    public func planSessions(userId: String, from: String, to: String) async throws -> [PlanSessionRow] {
+    public func planSessions(userId: String, from: String, to: String) async throws -> [CoachPlanSessionRow] {
         let o = try await getJSONObject(
             path: "/api/users/me/plan/sessions?date_from=\(from)&date_to=\(to)"
         )
@@ -437,8 +437,8 @@ public actor CoachClient {
         return rows.map(Self.parsePlanRow)
     }
 
-    static func parsePlanRow(_ o: [String: Any]) -> PlanSessionRow {
-        PlanSessionRow(
+    static func parsePlanRow(_ o: [String: Any]) -> CoachPlanSessionRow {
+        CoachPlanSessionRow(
             workoutId: (o["workout_id"] as? String) ?? "",
             date: (o["date"] as? String) ?? "",
             source: (o["source"] as? String) ?? "",
@@ -619,11 +619,11 @@ public protocol CoachServicing: Sendable {
 
     func currentPlan(userId: String) async throws -> CurrentPlanRef?
     func applyPlan(userId: String, applyToken: String, content: Data, expectation: (planId: String, revision: Int?)?) async throws
-    func upsertCustomWorkout(_ card: CustomWorkoutCard) async throws -> PlanSessionRow
+    func upsertCustomWorkout(_ card: CustomWorkoutCard) async throws -> CoachPlanSessionRow
     func pushCustomWorkout(workoutId: String) async throws
     func deleteCustomWorkout(userId: String, workoutId: String) async throws
     func moveCustomWorkout(userId: String, workoutId: String, date: String) async throws -> MoveWorkoutResult
-    func planSessions(userId: String, from: String, to: String) async throws -> [PlanSessionRow]
+    func planSessions(userId: String, from: String, to: String) async throws -> [CoachPlanSessionRow]
 }
 
 extension CoachClient: CoachServicing {}

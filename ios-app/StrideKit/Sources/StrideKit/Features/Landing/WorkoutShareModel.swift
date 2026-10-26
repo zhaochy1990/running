@@ -36,8 +36,8 @@ public final class WorkoutShareModel {
     public private(set) var dateLabel = ""
     public private(set) var summary = ""
     public private(set) var stats: [Stat] = []
-    public private(set) var runGroups: [SegmentGroup] = []
-    public private(set) var exercises: [ExerciseRow] = []
+    public private(set) var runGroups: [LandingSegmentGroup] = []
+    public private(set) var exercises: [LandingExerciseRow] = []
     public private(set) var specNote = ""
 
     // ── CTA 态 ─────────────────────────────────────────────────────────
@@ -53,7 +53,7 @@ public final class WorkoutShareModel {
     // ── 选日弹层（保存 / 保存并推送共用）───────────────────────────────
     public internal(set) var sheetVisible = false
     public internal(set) var sheetTitle = ""
-    public private(set) var sheetOptions: [PushDateOption] = []
+    public private(set) var sheetOptions: [LandingPushDateOption] = []
 
     let user: String
     let workout: String
@@ -131,7 +131,7 @@ public final class WorkoutShareModel {
         if let duration = res.totalDurationS {
             durationText = fmtDurationShort(duration)
         } else if let run = res.spec {
-            durationText = fmtDurationShort(estimateWorkoutSeconds(run))
+            durationText = fmtDurationShort(landingEstimateWorkoutSeconds(run))
         } else {
             durationText = "—"
         }
@@ -142,7 +142,7 @@ public final class WorkoutShareModel {
                 Stat("\(strength.exercises.count) 个", "动作"),
                 Stat("\(totalSets) 组", "总组数"),
             ]
-            exercises = buildExerciseRows(strength)
+            exercises = landingBuildExerciseRows(strength)
             runGroups = []
             specNote = ""
         } else {
@@ -151,7 +151,7 @@ public final class WorkoutShareModel {
                 Stat(durationText, "总时长"),
                 Stat(res.estimatedDose.map { String(format: "%.0f", $0) } ?? "—", "训练负荷"),
             ]
-            runGroups = res.spec.map(buildRunGroups) ?? []
+            runGroups = res.spec.map(landingBuildRunGroups) ?? []
             exercises = []
             specNote = (res.spec?.note ?? "").isEmpty ? "" : res.spec!.note!
         }
@@ -173,7 +173,7 @@ public final class WorkoutShareModel {
         guard ensureLogin() else { return }
         pendingPush = false
         sheetTitle = "保存到哪一天？"
-        sheetOptions = buildPushDateOptions(plannedDate: sourceDate, plannedTag: "（原排期）")
+        sheetOptions = landingBuildPushDateOptions(plannedDate: sourceDate, plannedTag: "（原排期）")
         sheetVisible = true
     }
 
@@ -187,7 +187,7 @@ public final class WorkoutShareModel {
         // 未保存先走「保存并推送」：选完日先 upsert 再推（coach 卡同款先后链）。
         pendingPush = true
         sheetTitle = "保存并推送到哪一天？"
-        sheetOptions = buildPushDateOptions(plannedDate: sourceDate, plannedTag: "（原排期）")
+        sheetOptions = landingBuildPushDateOptions(plannedDate: sourceDate, plannedTag: "（原排期）")
         sheetVisible = true
     }
 

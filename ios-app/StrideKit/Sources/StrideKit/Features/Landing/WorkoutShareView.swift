@@ -213,7 +213,7 @@ public struct WorkoutShareView: View {
         .padding(theme.space(.lg))
     }
 
-    private func segmentRow(_ row: SegmentRow, theme: any Theme) -> some View {
+    private func segmentRow(_ row: LandingSegmentRow, theme: any Theme) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: theme.space(.sm)) {
             Text(row.kindLabel)
                 .font(theme.font(.fs11, weight: .medium))

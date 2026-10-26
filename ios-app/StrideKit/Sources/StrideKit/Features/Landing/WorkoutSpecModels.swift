@@ -2,13 +2,15 @@ import Foundation
 
 // MARK: - 课表 spec 模型与分段渲染（types/plan.ts + utils/workoutSegments.ts 直译）
 //
-// workout-share 落地页与（未合并的）workout-detail「所见即所得」（devops#703）：
-// 跑课 blocks/steps → 分段组（repeat>1 骑线 ×N、步后休息独立行、心率帽）；
-// 力量课 → 动作行。PR-7 先自持一份；PR-5 训练域落地 workout-detail 时如
-// 需要复用，提升到 Shared 再去重（ledger 登记）。
+// workout-share 落地页的课表分段渲染（devops#703）。
+// PR-5 训练域（devops#768）落地后同模块出现同名 wire 镜像（Training/
+// TrainingWireModels.swift，flat 类型 + enum kind，四页消费）；本文件类型
+// 加 Landing 前缀重名规避（rebase 整合，同 CoachPlanSessionRow 先例）。
+// 两份镜像的语义去重（提升 Shared、统一 enum/String kind 口径）延后另票，
+// ledger 登记。
 
 /// 步目标（pace 区间 / 心率区间 / 功率区间 / 体感）。
-public struct WorkoutTarget: Codable, Sendable, Equatable {
+public struct LandingWorkoutTarget: Codable, Sendable, Equatable {
     public let kind: String
     public let low: Double?
     public let high: Double?
@@ -21,7 +23,7 @@ public struct WorkoutTarget: Codable, Sendable, Equatable {
 }
 
 /// 步后休息（time_s / hr_bpm / manual）。
-public struct WorkoutStepRest: Codable, Sendable, Equatable {
+public struct LandingWorkoutStepRest: Codable, Sendable, Equatable {
     public let kind: String
     public let value: Double?
 
@@ -32,16 +34,16 @@ public struct WorkoutStepRest: Codable, Sendable, Equatable {
 }
 
 /// 一步（warmup/work/recovery/cooldown/rest）。
-public struct WorkoutStep: Codable, Sendable, Equatable {
+public struct LandingWorkoutStep: Codable, Sendable, Equatable {
     public let stepKind: String
-    public let duration: WorkoutDuration
-    public let target: WorkoutTarget?
+    public let duration: LandingWorkoutDuration
+    public let target: LandingWorkoutTarget?
     public let note: String?
     public let hrCapBpm: Double?
-    public let rest: WorkoutStepRest?
+    public let rest: LandingWorkoutStepRest?
 
-    public init(stepKind: String, duration: WorkoutDuration, target: WorkoutTarget?,
-                note: String?, hrCapBpm: Double?, rest: WorkoutStepRest?) {
+    public init(stepKind: String, duration: LandingWorkoutDuration, target: LandingWorkoutTarget?,
+                note: String?, hrCapBpm: Double?, rest: LandingWorkoutStepRest?) {
         self.stepKind = stepKind
         self.duration = duration
         self.target = target
@@ -58,7 +60,7 @@ public struct WorkoutStep: Codable, Sendable, Equatable {
 }
 
 /// 步时长（distance_m / time_s / open）。
-public struct WorkoutDuration: Codable, Sendable, Equatable {
+public struct LandingWorkoutDuration: Codable, Sendable, Equatable {
     public let kind: String
     public let value: Double?
 
@@ -69,9 +71,9 @@ public struct WorkoutDuration: Codable, Sendable, Equatable {
 }
 
 /// 跑课 spec（schema `run-workout/v1`）。
-public struct RunWorkoutSpec: Codable, Sendable, Equatable {
+public struct LandingRunWorkoutSpec: Codable, Sendable, Equatable {
     public struct Block: Codable, Sendable, Equatable {
-        public let steps: [WorkoutStep]
+        public let steps: [LandingWorkoutStep]
         /// JSON 字段名 `repeat`（Swift 关键字，映射 repeatCount）。
         public let repeatCount: Int
 
@@ -80,7 +82,7 @@ public struct RunWorkoutSpec: Codable, Sendable, Equatable {
             case repeatCount = "repeat"
         }
 
-        public init(steps: [WorkoutStep], repeatCount: Int) {
+        public init(steps: [LandingWorkoutStep], repeatCount: Int) {
             self.steps = steps
             self.repeatCount = repeatCount
         }
@@ -100,7 +102,7 @@ public struct RunWorkoutSpec: Codable, Sendable, Equatable {
 }
 
 /// 力量课 spec（schema `strength-workout/v1`）。
-public struct StrengthWorkoutSpec: Codable, Sendable, Equatable {
+public struct LandingStrengthWorkoutSpec: Codable, Sendable, Equatable {
     public struct Exercise: Codable, Sendable, Equatable {
         public let canonicalId: String
         public let displayName: String
@@ -148,7 +150,7 @@ public struct StrengthWorkoutSpec: Codable, Sendable, Equatable {
 // MARK: - 分段行视图模型
 
 /// 分段行（主行 + 休息行两态）。
-public struct SegmentRow: Equatable, Identifiable, Sendable {
+public struct LandingSegmentRow: Equatable, Identifiable, Sendable {
     public let id: String
     public let kindLabel: String
     public let kindColorName: String
@@ -162,14 +164,14 @@ public struct SegmentRow: Equatable, Identifiable, Sendable {
 }
 
 /// 分段组：repeat>1 时整组带骑线 ×N 徽章。
-public struct SegmentGroup: Equatable, Identifiable, Sendable {
+public struct LandingSegmentGroup: Equatable, Identifiable, Sendable {
     public let id: String
     public let repeatCount: Int
-    public let rows: [SegmentRow]
+    public let rows: [LandingSegmentRow]
 }
 
 /// 力量动作行。
-public struct ExerciseRow: Equatable, Identifiable, Sendable {
+public struct LandingExerciseRow: Equatable, Identifiable, Sendable {
     public let id: String
     public let name: String
     /// `3 组 × 12 次` / `3 组 × 45 秒`。
@@ -195,17 +197,17 @@ public func stepKindMeta(_ kind: String) -> (label: String, colorName: String, q
 }
 
 /// 秒 → `M:SS`（段时长/休息用）。
-public func fmtClock(_ seconds: Double) -> String {
+public func landingFmtClock(_ seconds: Double) -> String {
     let total = max(0, Int(seconds.rounded()))
     return "\(total / 60):\(String(format: "%02d", total % 60))"
 }
 
 func fmtPaceValue(_ secondsPerKm: Double) -> String {
-    fmtClock(secondsPerKm)
+    landingFmtClock(secondsPerKm)
 }
 
 /// 步目标文案：pace 区间 / 心率区间 / 功率区间 / 体感。
-public func fmtTarget(_ target: WorkoutTarget?) -> String {
+public func fmtTarget(_ target: LandingWorkoutTarget?) -> String {
     guard let target else { return "体感" }
     if target.kind == "pace_s_km", let low = target.low, let high = target.high {
         return "\(fmtPaceValue(low))–\(fmtPaceValue(high))/km"
@@ -220,22 +222,22 @@ public func fmtTarget(_ target: WorkoutTarget?) -> String {
 }
 
 /// 步时长：距离段 `800 m` / `14 km`，时长段 `15:00`，open 段不定时长。
-public func fmtStepDuration(_ step: WorkoutStep) -> String {
+public func fmtStepDuration(_ step: LandingWorkoutStep) -> String {
     if step.duration.kind == "distance_m", let value = step.duration.value {
         if value < 1000 { return "\(Int(value)) m" }
         let km = value / 1000
         return km == km.rounded() ? "\(Int(km)) km" : String(format: "%.1f km", km)
     }
     if step.duration.kind == "time_s", let value = step.duration.value {
-        return fmtClock(value)
+        return landingFmtClock(value)
     }
     return "不定时长"
 }
 
 /// 步后休息文案（work 步携带；展开为独立休息行）。
-public func fmtStepRest(_ rest: WorkoutStepRest) -> String {
+public func fmtStepRest(_ rest: LandingWorkoutStepRest) -> String {
     if rest.kind == "time_s", let value = rest.value {
-        return value < 120 ? "\(Int(value)) 秒" : fmtClock(value)
+        return value < 120 ? "\(Int(value)) 秒" : landingFmtClock(value)
     }
     if rest.kind == "hr_bpm", let value = rest.value {
         return "心率降到 \(Int(value)) 以下继续"
@@ -244,12 +246,12 @@ public func fmtStepRest(_ rest: WorkoutStepRest) -> String {
 }
 
 /// 跑课 blocks → 分段组。
-public func buildRunGroups(_ spec: RunWorkoutSpec) -> [SegmentGroup] {
+public func landingBuildRunGroups(_ spec: LandingRunWorkoutSpec) -> [LandingSegmentGroup] {
     spec.blocks.enumerated().map { blockIndex, block in
-        var rows: [SegmentRow] = []
+        var rows: [LandingSegmentRow] = []
         block.steps.enumerated().forEach { stepIndex, step in
             let meta = stepKindMeta(step.stepKind)
-            rows.append(SegmentRow(
+            rows.append(LandingSegmentRow(
                 id: "s\(blockIndex)-\(stepIndex)",
                 kindLabel: meta.label,
                 kindColorName: meta.colorName,
@@ -260,7 +262,7 @@ public func buildRunGroups(_ spec: RunWorkoutSpec) -> [SegmentGroup] {
             ))
             // 步后休息第一公民（devops#520 D2 idiom）：展开为独立休息行。
             if let rest = step.rest {
-                rows.append(SegmentRow(
+                rows.append(LandingSegmentRow(
                     id: "s\(blockIndex)-\(stepIndex)-rest",
                     kindLabel: "休息",
                     kindColorName: "gray",
@@ -271,17 +273,17 @@ public func buildRunGroups(_ spec: RunWorkoutSpec) -> [SegmentGroup] {
                 ))
             }
         }
-        return SegmentGroup(id: "b\(blockIndex)", repeatCount: block.repeatCount, rows: rows)
+        return LandingSegmentGroup(id: "b\(blockIndex)", repeatCount: block.repeatCount, rows: rows)
     }
 }
 
 /// 力量课 → 动作行。
-public func buildExerciseRows(_ spec: StrengthWorkoutSpec) -> [ExerciseRow] {
+public func landingBuildExerciseRows(_ spec: LandingStrengthWorkoutSpec) -> [LandingExerciseRow] {
     spec.exercises.enumerated().map { index, exercise in
-        ExerciseRow(
+        LandingExerciseRow(
             id: "e\(index)",
             name: exercise.displayName.isEmpty ? exercise.canonicalId : exercise.displayName,
-            target: "\(exercise.sets) 组 × \(exercise.targetKind == "reps" ? "\(Int(exercise.targetValue)) 次" : fmtClock(exercise.targetValue))",
+            target: "\(exercise.sets) 组 × \(exercise.targetKind == "reps" ? "\(Int(exercise.targetValue)) 次" : landingFmtClock(exercise.targetValue))",
             rest: exercise.restSeconds > 0 ? "组间休息 \(exercise.restSeconds) 秒" : "",
             note: (exercise.note ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         )
@@ -290,32 +292,32 @@ public func buildExerciseRows(_ spec: StrengthWorkoutSpec) -> [ExerciseRow] {
 
 // MARK: - 整课估时（配速中值兜底，services/plan.ts 同口径）
 
-let defaultPaceSKm = 360.0
-let openStepDefaultS = 300.0
-let nonTimeRestDefaultS = 60.0
+let landingDefaultPaceSKm = 360.0
+let landingOpenStepDefaultS = 300.0
+let landingNonTimeRestDefaultS = 60.0
 
-func estimateStepSeconds(_ step: WorkoutStep, fallbackPace: Double) -> Double {
+func landingEstimateStepSeconds(_ step: LandingWorkoutStep, landingFallbackPace: Double) -> Double {
     if step.duration.kind == "time_s", let value = step.duration.value, value > 0 { return value }
     if step.duration.kind == "distance_m", let value = step.duration.value, value > 0 {
         let pace: Double
         if let target = step.target, target.kind == "pace_s_km", let low = target.low, let high = target.high {
             pace = (low + high) / 2
         } else {
-            pace = fallbackPace
+            pace = landingFallbackPace
         }
         return (value / 1000) * pace
     }
-    return openStepDefaultS
+    return landingOpenStepDefaultS
 }
 
-func estimateRestSeconds(_ rest: WorkoutStepRest) -> Double {
+func landingEstimateRestSeconds(_ rest: LandingWorkoutStepRest) -> Double {
     if rest.kind == "time_s", let value = rest.value, value > 0 { return value }
-    return nonTimeRestDefaultS
+    return landingNonTimeRestDefaultS
 }
 
 /// 整课估时（秒）：落库 total_duration_s 缺失时的展示兜底
 /// （配速中值折算，10-20 用户拍板）。
-public func estimateWorkoutSeconds(_ spec: RunWorkoutSpec) -> Double {
+public func landingEstimateWorkoutSeconds(_ spec: LandingRunWorkoutSpec) -> Double {
     var paceSum = 0.0
     var paceCount = 0
     for block in spec.blocks {
@@ -326,13 +328,13 @@ public func estimateWorkoutSeconds(_ spec: RunWorkoutSpec) -> Double {
             }
         }
     }
-    let fallbackPace = paceCount > 0 ? paceSum / Double(paceCount) : defaultPaceSKm
+    let landingFallbackPace = paceCount > 0 ? paceSum / Double(paceCount) : landingDefaultPaceSKm
     var total = 0.0
     for block in spec.blocks {
         for _ in 0..<max(1, block.repeatCount) {
             for step in block.steps {
-                total += estimateStepSeconds(step, fallbackPace: fallbackPace)
-                if let rest = step.rest { total += estimateRestSeconds(rest) }
+                total += landingEstimateStepSeconds(step, landingFallbackPace: landingFallbackPace)
+                if let rest = step.rest { total += landingEstimateRestSeconds(rest) }
             }
         }
     }
@@ -350,9 +352,9 @@ public func fmtDurationShort(_ sec: Double) -> String {
         : "\(String(format: "%02d", m)):\(String(format: "%02d", s))"
 }
 
-// MARK: - ±7 天选日（utils/date.ts buildPushDateOptions 直译）
+// MARK: - ±7 天选日（utils/date.ts landingBuildPushDateOptions 直译）
 
-public struct PushDateOption: Equatable, Identifiable, Sendable {
+public struct LandingPushDateOption: Equatable, Identifiable, Sendable {
     public let label: String
     public let value: String
     public let selected: Bool
@@ -362,7 +364,7 @@ public struct PushDateOption: Equatable, Identifiable, Sendable {
 
 /// 今天起共 8 个可选日（含今天）；计划日落在可见范围内提升为默认（带
 /// 「（原排期）」标），否则回退今天。
-public func buildPushDateOptions(plannedDate: String, plannedTag: String = "（计划日）", now: Date = Date()) -> [PushDateOption] {
+public func landingBuildPushDateOptions(plannedDate: String, plannedTag: String = "（计划日）", now: Date = Date()) -> [LandingPushDateOption] {
     let forwardDays = 7
     let today = Shanghai.todayYMD(now: now)
     var calendar = Calendar(identifier: .gregorian)
@@ -383,7 +385,7 @@ public func buildPushDateOptions(plannedDate: String, plannedTag: String = "（�
     let plannedVisible = plannedOffset != nil && plannedOffset! >= 0
     let defaultOffset = plannedVisible && plannedOffset! <= forwardDays ? plannedOffset! : 0
 
-    var out: [PushDateOption] = []
+    var out: [LandingPushDateOption] = []
     for offset in 0...forwardDays {
         guard let ymd = ymdByOffset(today, offset) else { continue }
         var label: String
@@ -398,7 +400,7 @@ public func buildPushDateOptions(plannedDate: String, plannedTag: String = "（�
         if ymd == plannedDate {
             label += plannedTag
         }
-        out.append(PushDateOption(label: label, value: ymd, selected: offset == defaultOffset))
+        out.append(LandingPushDateOption(label: label, value: ymd, selected: offset == defaultOffset))
     }
     return out
 }

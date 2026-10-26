@@ -6,7 +6,7 @@ import Testing
 /// 自检移植，devops#703）。
 @Suite struct WorkoutShareRowsTests {
 
-    private func runSpec() -> RunWorkoutSpec {
+    private func runSpec() -> LandingRunWorkoutSpec {
         let json = """
         {"name":"间歇课","date":"2026-10-28","note":"注意热身",
          "blocks":[{"repeat":2,"steps":[
@@ -16,7 +16,7 @@ import Testing
              "target":{"kind":"hr_bpm","low":150,"high":165},"note":"稳住",
              "rest":{"kind":"time_s","value":90}}]}]}
         """
-        return try! JSONDecoder().decode(RunWorkoutSpec.self, from: Data(json.utf8))
+        return try! JSONDecoder().decode(LandingRunWorkoutSpec.self, from: Data(json.utf8))
     }
 
     @Test func decodesRunSpecWithRepeatAndRest() throws {
@@ -29,7 +29,7 @@ import Testing
     }
 
     @Test func buildRunGroupsExpandsRestRowsAndRepeatBadge() {
-        let groups = buildRunGroups(runSpec())
+        let groups = landingBuildRunGroups(runSpec())
         #expect(groups.count == 1)
         #expect(groups[0].repeatCount == 2)
         // 2 步 + 1 休息行 = 3 行
@@ -45,7 +45,7 @@ import Testing
 
     @Test func estimateWorkoutSecondsUsesPaceMidpoint() {
         // warmup 800m @ 345s/km = 276s；work 600s + rest 90s；×2 组 = 1932s
-        let total = estimateWorkoutSeconds(runSpec())
+        let total = landingEstimateWorkoutSeconds(runSpec())
         #expect(abs(total - (276 + 600 + 90) * 2) < 1)
     }
 
@@ -57,8 +57,8 @@ import Testing
           {"canonical_id":"plank","display_name":"平板支撑","sets":3,"target_kind":"time_s",
            "target_value":45,"rest_seconds":0,"note":"保持直线"}]}
         """
-        let spec = try JSONDecoder().decode(StrengthWorkoutSpec.self, from: Data(json.utf8))
-        let rows = buildExerciseRows(spec)
+        let spec = try JSONDecoder().decode(LandingStrengthWorkoutSpec.self, from: Data(json.utf8))
+        let rows = landingBuildExerciseRows(spec)
         #expect(rows.count == 2)
         #expect(rows[0].target == "3 组 × 12 次")
         #expect(rows[0].rest == "组间休息 60 秒")
@@ -67,7 +67,7 @@ import Testing
         #expect(rows[1].note == "保持直线")
     }
 
-    // MARK: - ±7 天选日（buildPushDateOptions）
+    // MARK: - ±7 天选日（landingBuildPushDateOptions）
 
     private func date(_ ymd: String, hour: Int = 12) -> Date {
         let components = DateComponents(timeZone: Shanghai.timeZone,
@@ -77,7 +77,7 @@ import Testing
     }
 
     @Test func dateOptionsAreTodayPlusSevenWithPlannedDefault() {
-        let options = buildPushDateOptions(plannedDate: "2026-10-29", plannedTag: "（原排期）", now: date("2026-10-26"))
+        let options = landingBuildPushDateOptions(plannedDate: "2026-10-29", plannedTag: "（原排期）", now: date("2026-10-26"))
         #expect(options.count == 8)
         #expect(options[0].label == "今天")
         #expect(options[1].label == "明天")
@@ -90,7 +90,7 @@ import Testing
     }
 
     @Test func dateOptionsFallBackToTodayWhenPlannedIsPast() {
-        let options = buildPushDateOptions(plannedDate: "2026-10-20", now: date("2026-10-26"))
+        let options = landingBuildPushDateOptions(plannedDate: "2026-10-20", now: date("2026-10-26"))
         #expect(options.first { $0.value == "2026-10-26" }?.selected == true)
         // 过去计划日不出现在选项里
         #expect(!options.contains { $0.value == "2026-10-20" })
