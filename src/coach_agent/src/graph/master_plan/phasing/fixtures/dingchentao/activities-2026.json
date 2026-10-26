@@ -1,0 +1,3942 @@
+[
+  {
+    "date": "2026-04-01T06:56:25.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2010,
+    "duration_s": 532.9710083007812,
+    "avg_pace_s_km": 265.18165586796755,
+    "avg_hr": 144
+  },
+  {
+    "date": "2026-04-01T07:10:56.000Z",
+    "name": "青浦区 - 周三",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 10410,
+    "duration_s": 2606.76708984375,
+    "avg_pace_s_km": 250.43826505315067,
+    "avg_hr": 150
+  },
+  {
+    "date": "2026-04-02T05:46:33.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 12163.87,
+    "duration_s": 4407.09521484375,
+    "avg_pace_s_km": 362.31884183164556,
+    "avg_hr": 135
+  },
+  {
+    "date": "2026-04-03T07:25:50.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1754.3699951171875,
+    "avg_pace_s_km": null,
+    "avg_hr": 98
+  },
+  {
+    "date": "2026-04-04T03:23:35.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "long_easy",
+    "distance_m": 21186.26,
+    "duration_s": 5620.2919921875,
+    "avg_pace_s_km": 265.2519907319046,
+    "avg_hr": 148
+  },
+  {
+    "date": "2026-04-05T06:38:54.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "quality",
+    "distance_m": 10164.93,
+    "duration_s": 2871.52001953125,
+    "avg_pace_s_km": 282.48587875027715,
+    "avg_hr": 150
+  },
+  {
+    "date": "2026-04-06T06:29:47.000Z",
+    "name": "青浦区 骑行",
+    "sport_name": "cycling",
+    "stride_session_class": "unknown",
+    "distance_m": 9083.73,
+    "duration_s": 2951.044921875,
+    "avg_pace_s_km": 324.8862825509517,
+    "avg_hr": 80
+  },
+  {
+    "date": "2026-04-07T03:59:36.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 299.45,
+    "duration_s": 2397.342041015625,
+    "avg_pace_s_km": 8000,
+    "avg_hr": 98
+  },
+  {
+    "date": "2026-04-07T10:25:47.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2010,
+    "duration_s": 669.7780151367188,
+    "avg_pace_s_km": 333.2222672948015,
+    "avg_hr": 123
+  },
+  {
+    "date": "2026-04-07T10:40:04.000Z",
+    "name": "青浦区 - 周二",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 8010,
+    "duration_s": 1785.25,
+    "avg_pace_s_km": 222.86605806786264,
+    "avg_hr": 141
+  },
+  {
+    "date": "2026-04-08T04:03:55.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 297.65,
+    "duration_s": 2308.76806640625,
+    "avg_pace_s_km": 7751.938392820735,
+    "avg_hr": 101
+  },
+  {
+    "date": "2026-04-08T11:09:08.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 10183.7,
+    "duration_s": 3466.550048828125,
+    "avg_pace_s_km": 340.3676012031293,
+    "avg_hr": 129
+  },
+  {
+    "date": "2026-04-09T03:17:07.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 321.91,
+    "duration_s": 2386.922119140625,
+    "avg_pace_s_km": 7407.407113063494,
+    "avg_hr": 97
+  },
+  {
+    "date": "2026-04-09T03:58:20.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2191.3701171875,
+    "avg_pace_s_km": null,
+    "avg_hr": 90
+  },
+  {
+    "date": "2026-04-09T10:57:07.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 4010,
+    "duration_s": 1329.5689697265625,
+    "avg_pace_s_km": 331.5649831727552,
+    "avg_hr": 133
+  },
+  {
+    "date": "2026-04-09T11:25:28.000Z",
+    "name": "青浦区 - 周四",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 5950,
+    "duration_s": 1440.39404296875,
+    "avg_pace_s_km": 242.0721350380656,
+    "avg_hr": 147
+  },
+  {
+    "date": "2026-04-10T03:28:48.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 257.15,
+    "duration_s": 2906.510009765625,
+    "avg_pace_s_km": 11363.63642521141,
+    "avg_hr": 99
+  },
+  {
+    "date": "2026-04-11T23:30:04.000Z",
+    "name": "松江区 - 佘山半马",
+    "sport_name": "running",
+    "stride_session_class": "race",
+    "distance_m": 21180.8,
+    "duration_s": 5044.40087890625,
+    "avg_pace_s_km": 238.15194764534533,
+    "avg_hr": 132
+  },
+  {
+    "date": "2026-04-13T04:01:36.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 207.33,
+    "duration_s": 2389.701904296875,
+    "avg_pace_s_km": 11494.253204306404,
+    "avg_hr": 102
+  },
+  {
+    "date": "2026-04-14T03:31:07.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2362.81689453125,
+    "avg_pace_s_km": null,
+    "avg_hr": 94
+  },
+  {
+    "date": "2026-04-14T04:23:03.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 121.93,
+    "duration_s": 2026.0460205078125,
+    "avg_pace_s_km": 16666.6670391957,
+    "avg_hr": 110
+  },
+  {
+    "date": "2026-04-14T10:03:33.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 5200,
+    "duration_s": 1590.032958984375,
+    "avg_pace_s_km": 305.81039933726925,
+    "avg_hr": 128
+  },
+  {
+    "date": "2026-04-14T10:41:45.000Z",
+    "name": "青浦区 - 周二",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 10010,
+    "duration_s": 2334.22998046875,
+    "avg_pace_s_km": 233.2089494147847,
+    "avg_hr": 137
+  },
+  {
+    "date": "2026-04-15T03:17:13.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 161.78,
+    "duration_s": 2081.85498046875,
+    "avg_pace_s_km": 12820.512555995172,
+    "avg_hr": 105
+  },
+  {
+    "date": "2026-04-15T05:03:23.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1744.866943359375,
+    "avg_pace_s_km": null,
+    "avg_hr": 111
+  },
+  {
+    "date": "2026-04-15T08:07:22.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 6804.66,
+    "duration_s": 2550.737060546875,
+    "avg_pace_s_km": 374.8125961147244,
+    "avg_hr": 128
+  },
+  {
+    "date": "2026-04-16T03:27:30.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 284.31,
+    "duration_s": 2692.986083984375,
+    "avg_pace_s_km": 9433.96237555158,
+    "avg_hr": 102
+  },
+  {
+    "date": "2026-04-16T04:17:43.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1839.10498046875,
+    "avg_pace_s_km": null,
+    "avg_hr": 89
+  },
+  {
+    "date": "2026-04-16T11:27:58.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 1414.2,
+    "duration_s": 474.5740051269531,
+    "avg_pace_s_km": 335.57046765083936,
+    "avg_hr": 128
+  },
+  {
+    "date": "2026-04-16T11:37:31.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 12240,
+    "duration_s": 3656.794921875,
+    "avg_pace_s_km": 298.7750327941312,
+    "avg_hr": 144
+  },
+  {
+    "date": "2026-04-16T12:38:50.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 1402.36,
+    "duration_s": 502.2239990234375,
+    "avg_pace_s_km": 358.1661820160153,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-04-17T03:26:26.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 262.37,
+    "duration_s": 2148.777099609375,
+    "avg_pace_s_km": 8196.721219369336,
+    "avg_hr": 101
+  },
+  {
+    "date": "2026-04-17T10:39:00.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 320,
+    "duration_s": 95.91400146484376,
+    "avg_pace_s_km": 299.76019493148965,
+    "avg_hr": 104
+  },
+  {
+    "date": "2026-04-17T23:26:32.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "long_easy",
+    "distance_m": 24208.23,
+    "duration_s": 7392.33984375,
+    "avg_pace_s_km": 305.34350255883186,
+    "avg_hr": 143
+  },
+  {
+    "date": "2026-04-19T11:59:17.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 1405.06,
+    "duration_s": 470.47698974609375,
+    "avg_pace_s_km": 334.8961753380977,
+    "avg_hr": 124
+  },
+  {
+    "date": "2026-04-19T12:07:45.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 8020,
+    "duration_s": 2371.01708984375,
+    "avg_pace_s_km": 295.5956341842779,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-04-19T12:49:06.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 1289.66,
+    "duration_s": 400.1080017089844,
+    "avg_pace_s_km": 310.2699300693093,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-04-20T03:48:23.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 243.43,
+    "duration_s": 4295.5771484375,
+    "avg_pace_s_km": 17543.85963995004,
+    "avg_hr": 102
+  },
+  {
+    "date": "2026-04-20T10:55:15.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 16020,
+    "duration_s": 4150.15087890625,
+    "avg_pace_s_km": 259.0673645536912,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-04-21T03:24:06.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 258.62,
+    "duration_s": 5220.60205078125,
+    "avg_pace_s_km": 19999.99970197678,
+    "avg_hr": 100
+  },
+  {
+    "date": "2026-04-21T09:02:06.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 5030.53,
+    "duration_s": 1714.041015625,
+    "avg_pace_s_km": 340.71550919792094,
+    "avg_hr": 131
+  },
+  {
+    "date": "2026-04-22T03:32:35.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 688.4099731445312,
+    "avg_pace_s_km": null,
+    "avg_hr": 90
+  },
+  {
+    "date": "2026-04-22T03:51:01.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 346.97,
+    "duration_s": 2559.965087890625,
+    "avg_pace_s_km": 7352.940776871997,
+    "avg_hr": 119
+  },
+  {
+    "date": "2026-04-23T11:03:11.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 16070,
+    "duration_s": 5014.6298828125,
+    "avg_pace_s_km": 312.01248792657213,
+    "avg_hr": 141
+  },
+  {
+    "date": "2026-04-24T03:42:38.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 65.92,
+    "duration_s": 558.2880249023438,
+    "avg_pace_s_km": 8474.576219817887,
+    "avg_hr": 99
+  },
+  {
+    "date": "2026-04-24T06:25:56.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "long_quality",
+    "distance_m": 21168.85,
+    "duration_s": 5783.212890625,
+    "avg_pace_s_km": 273.224037308468,
+    "avg_hr": 153
+  },
+  {
+    "date": "2026-04-25T10:46:29.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 10225.6,
+    "duration_s": 3571.14892578125,
+    "avg_pace_s_km": 349.2839781044632,
+    "avg_hr": 134
+  },
+  {
+    "date": "2026-04-27T02:19:47.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1767.7039794921875,
+    "avg_pace_s_km": null,
+    "avg_hr": 102
+  },
+  {
+    "date": "2026-04-27T03:39:01.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 256.72,
+    "duration_s": 4581.38916015625,
+    "avg_pace_s_km": 17857.142305951962,
+    "avg_hr": 103
+  },
+  {
+    "date": "2026-04-27T11:03:14.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 1432.97,
+    "duration_s": 509.1449890136719,
+    "avg_pace_s_km": 355.3660407373828,
+    "avg_hr": 126
+  },
+  {
+    "date": "2026-04-27T11:15:17.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 13270,
+    "duration_s": 3873.083984375,
+    "avg_pace_s_km": 291.88557077725983,
+    "avg_hr": 153
+  },
+  {
+    "date": "2026-04-27T12:24:58.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 1508.97,
+    "duration_s": 512.1710205078125,
+    "avg_pace_s_km": 339.4433015387952,
+    "avg_hr": 145
+  },
+  {
+    "date": "2026-04-28T03:32:29.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 374.68,
+    "duration_s": 3417.39208984375,
+    "avg_pace_s_km": 9090.909140169128,
+    "avg_hr": 99
+  },
+  {
+    "date": "2026-04-29T03:32:45.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 296.4,
+    "duration_s": 4267.97509765625,
+    "avg_pace_s_km": 14492.753986249683,
+    "avg_hr": 99
+  },
+  {
+    "date": "2026-04-29T06:38:46.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 13061.24,
+    "duration_s": 3600.300048828125,
+    "avg_pace_s_km": 275.6339565096388,
+    "avg_hr": 143
+  },
+  {
+    "date": "2026-04-30T23:01:15.000Z",
+    "name": "青浦区 - 五一长距离",
+    "sport_name": "running",
+    "stride_session_class": "long_quality",
+    "distance_m": 36922.65,
+    "duration_s": 10298.244140625,
+    "avg_pace_s_km": 278.9400249258808,
+    "avg_hr": 148
+  },
+  {
+    "date": "2026-05-02T03:18:04.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 7014.48,
+    "duration_s": 2401.075927734375,
+    "avg_pace_s_km": 342.3485103368861,
+    "avg_hr": 133
+  },
+  {
+    "date": "2026-05-03T02:17:58.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 10008.34,
+    "duration_s": 2845.096923828125,
+    "avg_pace_s_km": 284.25242523818645,
+    "avg_hr": 147
+  },
+  {
+    "date": "2026-05-04T02:15:40.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1766.447998046875,
+    "avg_pace_s_km": null,
+    "avg_hr": 94
+  },
+  {
+    "date": "2026-05-04T22:31:04.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2010,
+    "duration_s": 605.1610107421875,
+    "avg_pace_s_km": 301.1141132595186,
+    "avg_hr": 133
+  },
+  {
+    "date": "2026-05-04T22:49:29.000Z",
+    "name": "青浦区 - 小节奏",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 4020,
+    "duration_s": 967.656005859375,
+    "avg_pace_s_km": 240.73183602173157,
+    "avg_hr": 161
+  },
+  {
+    "date": "2026-05-04T23:09:16.000Z",
+    "name": "青浦区 - 周四",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 5350,
+    "duration_s": 1439.9549560546875,
+    "avg_pace_s_km": 269.17901025674826,
+    "avg_hr": 155
+  },
+  {
+    "date": "2026-05-04T23:36:05.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 1200,
+    "duration_s": 366.35101318359375,
+    "avg_pace_s_km": 305.25030311763584,
+    "avg_hr": 146
+  },
+  {
+    "date": "2026-05-06T04:09:37.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2246.27294921875,
+    "avg_pace_s_km": null,
+    "avg_hr": 96
+  },
+  {
+    "date": "2026-05-06T04:47:55.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 545.8900146484375,
+    "avg_pace_s_km": null,
+    "avg_hr": 93
+  },
+  {
+    "date": "2026-05-06T10:41:23.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "long_easy",
+    "distance_m": 21117.2,
+    "duration_s": 6835.05615234375,
+    "avg_pace_s_km": 323.624604458551,
+    "avg_hr": 134
+  },
+  {
+    "date": "2026-05-07T04:19:46.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 875.7100219726562,
+    "avg_pace_s_km": null,
+    "avg_hr": 93
+  },
+  {
+    "date": "2026-05-07T04:36:04.000Z",
+    "name": "室内划船",
+    "sport_name": "indoor_rowing",
+    "stride_session_class": "unknown",
+    "distance_m": 0,
+    "duration_s": 892.1710205078125,
+    "avg_pace_s_km": null,
+    "avg_hr": 111
+  },
+  {
+    "date": "2026-05-07T06:40:24.000Z",
+    "name": "青浦区 - Aerobic +Anaerobic",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 13590,
+    "duration_s": 4122.47900390625,
+    "avg_pace_s_km": 303.3060421068769,
+    "avg_hr": 149
+  },
+  {
+    "date": "2026-05-08T03:15:05.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 137.39,
+    "duration_s": 2364.5859375,
+    "avg_pace_s_km": 17241.3798064596,
+    "avg_hr": 105
+  },
+  {
+    "date": "2026-05-08T03:58:40.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1754.7159423828125,
+    "avg_pace_s_km": null,
+    "avg_hr": 97
+  },
+  {
+    "date": "2026-05-09T10:25:22.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2010,
+    "duration_s": 611.2620239257812,
+    "avg_pace_s_km": 304.13624316141863,
+    "avg_hr": 137
+  },
+  {
+    "date": "2026-05-09T10:57:46.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 10010,
+    "duration_s": 2258.219970703125,
+    "avg_pace_s_km": 225.58086627745942,
+    "avg_hr": 168
+  },
+  {
+    "date": "2026-05-10T01:20:18.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1776.8790283203125,
+    "avg_pace_s_km": null,
+    "avg_hr": 110
+  },
+  {
+    "date": "2026-05-10T02:06:21.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 722.6170043945312,
+    "avg_pace_s_km": null,
+    "avg_hr": 85
+  },
+  {
+    "date": "2026-05-10T11:46:16.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 11010,
+    "duration_s": 3562.343017578125,
+    "avg_pace_s_km": 323.51988808905236,
+    "avg_hr": 135
+  },
+  {
+    "date": "2026-05-12T10:29:44.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2010,
+    "duration_s": 625.9089965820312,
+    "avg_pace_s_km": 311.42946455686143,
+    "avg_hr": 138
+  },
+  {
+    "date": "2026-05-12T10:43:17.000Z",
+    "name": "青浦区 - 瞎跑跑",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 8170,
+    "duration_s": 2217.75,
+    "avg_pace_s_km": 271.44408139470465,
+    "avg_hr": 164
+  },
+  {
+    "date": "2026-05-12T11:24:53.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2000,
+    "duration_s": 731.125,
+    "avg_pace_s_km": 365.4970678698207,
+    "avg_hr": 143
+  },
+  {
+    "date": "2026-05-13T08:14:56.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 10035.01,
+    "duration_s": 3600.35302734375,
+    "avg_pace_s_km": 358.8087625459546,
+    "avg_hr": 134
+  },
+  {
+    "date": "2026-05-13T11:13:24.000Z",
+    "name": "青浦区 足球",
+    "sport_name": "soccer",
+    "stride_session_class": "unknown",
+    "distance_m": 652.79,
+    "duration_s": 1336.0050048828125,
+    "avg_pace_s_km": 2044.989805960062,
+    "avg_hr": 107
+  },
+  {
+    "date": "2026-05-14T04:20:20.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1907.39501953125,
+    "avg_pace_s_km": null,
+    "avg_hr": 99
+  },
+  {
+    "date": "2026-05-14T10:49:09.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 16060,
+    "duration_s": 4828.31884765625,
+    "avg_pace_s_km": 300.66145744289264,
+    "avg_hr": 147
+  },
+  {
+    "date": "2026-05-15T22:05:45.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "long_easy",
+    "distance_m": 22959.97,
+    "duration_s": 7202.7587890625,
+    "avg_pace_s_km": 313.6762896384915,
+    "avg_hr": 143
+  },
+  {
+    "date": "2026-05-16T21:58:52.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 15009.83,
+    "duration_s": 4415.841796875,
+    "avg_pace_s_km": 294.2041838077517,
+    "avg_hr": 144
+  },
+  {
+    "date": "2026-05-17T01:47:37.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1781.8570556640625,
+    "avg_pace_s_km": null,
+    "avg_hr": 117
+  },
+  {
+    "date": "2026-05-19T03:07:18.000Z",
+    "name": "青浦区 骑行",
+    "sport_name": "cycling",
+    "stride_session_class": "unknown",
+    "distance_m": 1838.6,
+    "duration_s": 396.7590026855469,
+    "avg_pace_s_km": 215.796296475418,
+    "avg_hr": 101
+  },
+  {
+    "date": "2026-05-19T03:42:03.000Z",
+    "name": "青浦区 骑行",
+    "sport_name": "cycling",
+    "stride_session_class": "unknown",
+    "distance_m": 2859.95,
+    "duration_s": 571.572021484375,
+    "avg_pace_s_km": 199.84012043282405,
+    "avg_hr": 102
+  },
+  {
+    "date": "2026-05-19T08:58:05.000Z",
+    "name": "青浦区 骑行",
+    "sport_name": "cycling",
+    "stride_session_class": "unknown",
+    "distance_m": 7930.51,
+    "duration_s": 1901.0460205078125,
+    "avg_pace_s_km": 239.69319665829954,
+    "avg_hr": 92
+  },
+  {
+    "date": "2026-05-19T09:49:23.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 5210,
+    "duration_s": 1535.991943359375,
+    "avg_pace_s_km": 294.8113242359869,
+    "avg_hr": 148
+  },
+  {
+    "date": "2026-05-19T10:28:54.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 360,
+    "duration_s": 91.53900146484376,
+    "avg_pace_s_km": 254.25882982248393,
+    "avg_hr": 119
+  },
+  {
+    "date": "2026-05-19T10:43:45.000Z",
+    "name": "青浦区 - 跑跑走走",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 11000,
+    "duration_s": 2982.498046875,
+    "avg_pace_s_km": 271.1496772848054,
+    "avg_hr": 169
+  },
+  {
+    "date": "2026-05-19T11:56:23.000Z",
+    "name": "青浦区 骑行",
+    "sport_name": "cycling",
+    "stride_session_class": "unknown",
+    "distance_m": 1376.11,
+    "duration_s": 321.1340026855469,
+    "avg_pace_s_km": 233.37223701511724,
+    "avg_hr": 120
+  },
+  {
+    "date": "2026-05-19T23:18:45.000Z",
+    "name": "青浦区 骑行",
+    "sport_name": "cycling",
+    "stride_session_class": "unknown",
+    "distance_m": 8280.55,
+    "duration_s": 1534.9420166015625,
+    "avg_pace_s_km": 185.35681251814654,
+    "avg_hr": 112
+  },
+  {
+    "date": "2026-05-20T02:59:35.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1743.572998046875,
+    "avg_pace_s_km": null,
+    "avg_hr": 98
+  },
+  {
+    "date": "2026-05-20T06:07:46.000Z",
+    "name": "青浦区 骑行",
+    "sport_name": "cycling",
+    "stride_session_class": "unknown",
+    "distance_m": 5808.84,
+    "duration_s": 1074.3280029296875,
+    "avg_pace_s_km": 184.9454388766997,
+    "avg_hr": 111
+  },
+  {
+    "date": "2026-05-20T07:01:24.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 5554.09,
+    "duration_s": 1673.9620361328125,
+    "avg_pace_s_km": 301.3863702324279,
+    "avg_hr": 147
+  },
+  {
+    "date": "2026-05-21T10:09:33.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 1338.6,
+    "duration_s": 432.4440002441406,
+    "avg_pace_s_km": 323.10177407301586,
+    "avg_hr": 131
+  },
+  {
+    "date": "2026-05-21T10:24:04.000Z",
+    "name": "青浦区 - 慢跑",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 12750,
+    "duration_s": 3589.6220703125,
+    "avg_pace_s_km": 281.5315279032966,
+    "avg_hr": 158
+  },
+  {
+    "date": "2026-05-21T11:39:41.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 1385.45,
+    "duration_s": 462.2659912109375,
+    "avg_pace_s_km": 333.6670026695403,
+    "avg_hr": 118
+  },
+  {
+    "date": "2026-05-23T02:00:21.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "long_easy",
+    "distance_m": 21135.64,
+    "duration_s": 6712.09912109375,
+    "avg_pace_s_km": 317.5611376344531,
+    "avg_hr": 157
+  },
+  {
+    "date": "2026-05-24T06:11:33.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1803.0389404296875,
+    "avg_pace_s_km": null,
+    "avg_hr": 102
+  },
+  {
+    "date": "2026-05-25T09:19:07.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 13484.81,
+    "duration_s": 4272.2509765625,
+    "avg_pace_s_km": 316.85679088431164,
+    "avg_hr": 146
+  },
+  {
+    "date": "2026-05-26T10:57:01.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2000,
+    "duration_s": 642.8380126953125,
+    "avg_pace_s_km": 321.4400451240298,
+    "avg_hr": 140
+  },
+  {
+    "date": "2026-05-26T11:14:33.000Z",
+    "name": "青浦区 - 5.26跑走结合",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 8960,
+    "duration_s": 2513.010009765625,
+    "avg_pace_s_km": 280.5049043336271,
+    "avg_hr": 167
+  },
+  {
+    "date": "2026-05-26T12:11:16.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 1210,
+    "duration_s": 398.85699462890625,
+    "avg_pace_s_km": 329.5978992760845,
+    "avg_hr": 141
+  },
+  {
+    "date": "2026-05-26T12:35:03.000Z",
+    "name": "青浦区 骑行",
+    "sport_name": "cycling",
+    "stride_session_class": "unknown",
+    "distance_m": 1274.34,
+    "duration_s": 337.16900634765625,
+    "avg_pace_s_km": 264.55026655260417,
+    "avg_hr": 106
+  },
+  {
+    "date": "2026-05-27T03:57:53.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2206.35888671875,
+    "avg_pace_s_km": null,
+    "avg_hr": 92
+  },
+  {
+    "date": "2026-05-27T07:01:13.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 9527.67,
+    "duration_s": 3599.927978515625,
+    "avg_pace_s_km": 377.7861624094345,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-05-28T09:22:52.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 15240,
+    "duration_s": 4800.26708984375,
+    "avg_pace_s_km": 314.960634651494,
+    "avg_hr": 145
+  },
+  {
+    "date": "2026-05-29T21:15:01.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "long_easy",
+    "distance_m": 25009.11,
+    "duration_s": 7992.83203125,
+    "avg_pace_s_km": 319.59092887773267,
+    "avg_hr": 140
+  },
+  {
+    "date": "2026-05-31T02:15:06.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1789.91796875,
+    "avg_pace_s_km": null,
+    "avg_hr": 102
+  },
+  {
+    "date": "2026-06-02T10:20:54.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 3210,
+    "duration_s": 1043.7950439453125,
+    "avg_pace_s_km": 325.2032469896263,
+    "avg_hr": 128
+  },
+  {
+    "date": "2026-06-02T10:54:52.000Z",
+    "name": "青浦区 - 越跑越慢",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 9610,
+    "duration_s": 2450.781982421875,
+    "avg_pace_s_km": 255.03698011402986,
+    "avg_hr": 165
+  },
+  {
+    "date": "2026-06-02T11:42:01.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 1010,
+    "duration_s": 389.1029968261719,
+    "avg_pace_s_km": 385.20801883617014,
+    "avg_hr": 133
+  },
+  {
+    "date": "2026-06-03T04:06:59.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1793.074951171875,
+    "avg_pace_s_km": null,
+    "avg_hr": 101
+  },
+  {
+    "date": "2026-06-03T06:06:26.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 11257.44,
+    "duration_s": 3600.152099609375,
+    "avg_pace_s_km": 319.7953214300936,
+    "avg_hr": 141
+  },
+  {
+    "date": "2026-06-04T09:07:32.000Z",
+    "name": "青浦区 - 慢跑",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 15070,
+    "duration_s": 4520.244140625,
+    "avg_pace_s_km": 299.9400020452223,
+    "avg_hr": 152
+  },
+  {
+    "date": "2026-06-05T04:19:44.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1787.8780517578125,
+    "avg_pace_s_km": null,
+    "avg_hr": 97
+  },
+  {
+    "date": "2026-06-05T21:00:59.000Z",
+    "name": "青浦区 - lsd",
+    "sport_name": "running",
+    "stride_session_class": "long_easy",
+    "distance_m": 25020.01,
+    "duration_s": 7024.03515625,
+    "avg_pace_s_km": 280.74115379731785,
+    "avg_hr": 148
+  },
+  {
+    "date": "2026-06-06T22:59:17.000Z",
+    "name": "苏州市 越野跑",
+    "sport_name": "trail_running",
+    "stride_session_class": "quality",
+    "distance_m": 15829.77,
+    "duration_s": 9580.8623046875,
+    "avg_pace_s_km": 605.3268946845067,
+    "avg_hr": 157
+  },
+  {
+    "date": "2026-06-09T10:21:58.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 15000,
+    "duration_s": 4898.494140625,
+    "avg_pace_s_km": 326.58392820533027,
+    "avg_hr": 135
+  },
+  {
+    "date": "2026-06-09T11:47:35.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 2010,
+    "duration_s": 444.9800109863281,
+    "avg_pace_s_km": 221.3858658589677,
+    "avg_hr": 166
+  },
+  {
+    "date": "2026-06-10T11:03:28.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 13000,
+    "duration_s": 4249.380859375,
+    "avg_pace_s_km": 326.9042154337488,
+    "avg_hr": 136
+  },
+  {
+    "date": "2026-06-11T11:08:01.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 12810,
+    "duration_s": 3602.93505859375,
+    "avg_pace_s_km": 281.29394689777865,
+    "avg_hr": 152
+  },
+  {
+    "date": "2026-06-12T03:50:56.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2069.798095703125,
+    "avg_pace_s_km": null,
+    "avg_hr": 94
+  },
+  {
+    "date": "2026-06-12T09:53:20.000Z",
+    "name": "青浦区 骑行",
+    "sport_name": "cycling",
+    "stride_session_class": "unknown",
+    "distance_m": 2321.66,
+    "duration_s": 786.2550048828125,
+    "avg_pace_s_km": 338.6386646622175,
+    "avg_hr": 92
+  },
+  {
+    "date": "2026-06-12T10:46:16.000Z",
+    "name": "青浦区 骑行",
+    "sport_name": "cycling",
+    "stride_session_class": "unknown",
+    "distance_m": 1630.8,
+    "duration_s": 676.083984375,
+    "avg_pace_s_km": 414.5937083391447,
+    "avg_hr": 86
+  },
+  {
+    "date": "2026-06-12T12:06:15.000Z",
+    "name": "青浦区 骑行",
+    "sport_name": "cycling",
+    "stride_session_class": "unknown",
+    "distance_m": 859.54,
+    "duration_s": 402.8349914550781,
+    "avg_pace_s_km": 468.6035475655665,
+    "avg_hr": 87
+  },
+  {
+    "date": "2026-06-12T21:57:14.000Z",
+    "name": "青浦区 - 贱加速",
+    "sport_name": "running",
+    "stride_session_class": "long_easy",
+    "distance_m": 25017.66,
+    "duration_s": 6633.5869140625,
+    "avg_pace_s_km": 265.18165586796755,
+    "avg_hr": 147
+  },
+  {
+    "date": "2026-06-14T01:00:44.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1744.8580322265625,
+    "avg_pace_s_km": null,
+    "avg_hr": 104
+  },
+  {
+    "date": "2026-06-14T09:26:43.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 12870,
+    "duration_s": 3600.3291015625,
+    "avg_pace_s_km": 279.72027598934204,
+    "avg_hr": 154
+  },
+  {
+    "date": "2026-06-15T04:03:55.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1785.802978515625,
+    "avg_pace_s_km": null,
+    "avg_hr": 95
+  },
+  {
+    "date": "2026-06-16T09:59:33.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 5210,
+    "duration_s": 1488.9520263671875,
+    "avg_pace_s_km": 285.7959357775723,
+    "avg_hr": 148
+  },
+  {
+    "date": "2026-06-16T10:34:30.000Z",
+    "name": "青浦区 - 周二",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 12180,
+    "duration_s": 3172.846923828125,
+    "avg_pace_s_km": 260.4845020781045,
+    "avg_hr": 165
+  },
+  {
+    "date": "2026-06-16T11:41:26.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2810,
+    "duration_s": 877.9140014648438,
+    "avg_pace_s_km": 312.4023766779703,
+    "avg_hr": 144
+  },
+  {
+    "date": "2026-06-17T03:52:57.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2123.1259765625,
+    "avg_pace_s_km": null,
+    "avg_hr": 94
+  },
+  {
+    "date": "2026-06-17T06:58:32.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 10105.08,
+    "duration_s": 3600.251953125,
+    "avg_pace_s_km": 356.25223650138435,
+    "avg_hr": 146
+  },
+  {
+    "date": "2026-06-18T04:11:15.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1750.9580078125,
+    "avg_pace_s_km": null,
+    "avg_hr": 106
+  },
+  {
+    "date": "2026-06-18T09:22:10.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 13340,
+    "duration_s": 3798.0439453125,
+    "avg_pace_s_km": 284.73803419813015,
+    "avg_hr": 152
+  },
+  {
+    "date": "2026-06-21T02:09:20.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1757.35205078125,
+    "avg_pace_s_km": null,
+    "avg_hr": 100
+  },
+  {
+    "date": "2026-06-21T03:31:34.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "long_easy",
+    "distance_m": 23219.18,
+    "duration_s": 7200.18701171875,
+    "avg_pace_s_km": 310.07752854923956,
+    "avg_hr": 151
+  },
+  {
+    "date": "2026-06-22T04:16:52.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1770.4150390625,
+    "avg_pace_s_km": null,
+    "avg_hr": 103
+  },
+  {
+    "date": "2026-06-22T22:57:35.000Z",
+    "name": "跑步机",
+    "sport_name": "treadmill_running",
+    "stride_session_class": "easy",
+    "distance_m": 4830,
+    "duration_s": 1800.4830322265625,
+    "avg_pace_s_km": 372.7170955268482,
+    "avg_hr": 137
+  },
+  {
+    "date": "2026-06-23T10:15:35.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 3610,
+    "duration_s": 1079.89599609375,
+    "avg_pace_s_km": 299.13252150723906,
+    "avg_hr": 138
+  },
+  {
+    "date": "2026-06-23T10:45:09.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 10010,
+    "duration_s": 2357.051025390625,
+    "avg_pace_s_km": 235.46031288016027,
+    "avg_hr": 169
+  },
+  {
+    "date": "2026-06-23T11:28:03.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2010,
+    "duration_s": 708.02001953125,
+    "avg_pace_s_km": 352.23670472098183,
+    "avg_hr": 138
+  },
+  {
+    "date": "2026-06-24T04:07:18.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2080.551025390625,
+    "avg_pace_s_km": null,
+    "avg_hr": 90
+  },
+  {
+    "date": "2026-06-24T06:52:38.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 10064.36,
+    "duration_s": 2922.27587890625,
+    "avg_pace_s_km": 290.3600459751877,
+    "avg_hr": 150
+  },
+  {
+    "date": "2026-06-25T03:36:54.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 337.29,
+    "duration_s": 2695.327880859375,
+    "avg_pace_s_km": 8000,
+    "avg_hr": 102
+  },
+  {
+    "date": "2026-06-25T10:26:45.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 13600,
+    "duration_s": 4200.4091796875,
+    "avg_pace_s_km": 308.8326207283091,
+    "avg_hr": 132
+  },
+  {
+    "date": "2026-06-25T11:42:11.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 1620,
+    "duration_s": 401.6889953613281,
+    "avg_pace_s_km": 247.95437686380902,
+    "avg_hr": 144
+  },
+  {
+    "date": "2026-06-26T10:13:11.000Z",
+    "name": "青浦区 骑行",
+    "sport_name": "cycling",
+    "stride_session_class": "unknown",
+    "distance_m": 4346.69,
+    "duration_s": 1787.970947265625,
+    "avg_pace_s_km": 411.35335349805956,
+    "avg_hr": 89
+  },
+  {
+    "date": "2026-06-26T21:37:02.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "long_easy",
+    "distance_m": 25020,
+    "duration_s": 6726.05810546875,
+    "avg_pace_s_km": 268.81720223362316,
+    "avg_hr": 157
+  },
+  {
+    "date": "2026-06-28T13:42:15.000Z",
+    "name": "杭州市 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 5006.87,
+    "duration_s": 1619.89794921875,
+    "avg_pace_s_km": 323.51988808905236,
+    "avg_hr": 144
+  },
+  {
+    "date": "2026-06-30T22:44:40.000Z",
+    "name": "跑步机",
+    "sport_name": "treadmill_running",
+    "stride_session_class": "easy",
+    "distance_m": 5367.99,
+    "duration_s": 1800.3790283203125,
+    "avg_pace_s_km": 335.3453931128055,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-07-01T06:36:38.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 3210,
+    "duration_s": 932.1519775390624,
+    "avg_pace_s_km": 290.3600459751877,
+    "avg_hr": 135
+  },
+  {
+    "date": "2026-07-01T06:56:54.000Z",
+    "name": "青浦区 - 5321",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 12240,
+    "duration_s": 3164.549072265625,
+    "avg_pace_s_km": 258.53153880823254,
+    "avg_hr": 164
+  },
+  {
+    "date": "2026-07-01T08:12:26.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 1210,
+    "duration_s": 405.5979919433594,
+    "avg_pace_s_km": 335.23298242456264,
+    "avg_hr": 133
+  },
+  {
+    "date": "2026-07-02T04:21:57.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1973.1209716796875,
+    "avg_pace_s_km": null,
+    "avg_hr": 91
+  },
+  {
+    "date": "2026-07-02T07:54:57.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1790.3079833984375,
+    "avg_pace_s_km": null,
+    "avg_hr": 94
+  },
+  {
+    "date": "2026-07-02T09:54:46.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 11439.85,
+    "duration_s": 3600.406005859375,
+    "avg_pace_s_km": 314.762349887102,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-07-03T03:48:41.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 264.94,
+    "duration_s": 2725.0380859375,
+    "avg_pace_s_km": 10309.278046442463,
+    "avg_hr": 99
+  },
+  {
+    "date": "2026-07-03T07:08:05.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 5050.26,
+    "duration_s": 1800.279052734375,
+    "avg_pace_s_km": 356.50623037456023,
+    "avg_hr": 133
+  },
+  {
+    "date": "2026-07-04T00:04:33.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 19190,
+    "duration_s": 6551.2099609375,
+    "avg_pace_s_km": 341.4134632509778,
+    "avg_hr": 156
+  },
+  {
+    "date": "2026-07-04T10:42:03.000Z",
+    "name": "青浦区 - 400",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2010,
+    "duration_s": 671.4910278320312,
+    "avg_pace_s_km": 334.11292676367617,
+    "avg_hr": 131
+  },
+  {
+    "date": "2026-07-04T10:59:02.000Z",
+    "name": "青浦区 - 400",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 4980,
+    "duration_s": 1345.5889892578125,
+    "avg_pace_s_km": 270.19724579834764,
+    "avg_hr": 149
+  },
+  {
+    "date": "2026-07-05T01:03:17.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1831.2430419921875,
+    "avg_pace_s_km": null,
+    "avg_hr": 111
+  },
+  {
+    "date": "2026-07-05T11:41:38.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 10292.88,
+    "duration_s": 3321.26806640625,
+    "avg_pace_s_km": 322.6847393951815,
+    "avg_hr": 140
+  },
+  {
+    "date": "2026-07-06T04:14:46.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1798.0389404296875,
+    "avg_pace_s_km": null,
+    "avg_hr": 95
+  },
+  {
+    "date": "2026-07-07T10:48:12.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 5210,
+    "duration_s": 1647.6500244140625,
+    "avg_pace_s_km": 316.2555403856726,
+    "avg_hr": 141
+  },
+  {
+    "date": "2026-07-07T11:23:48.000Z",
+    "name": "青浦区 - 7*1",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 4760,
+    "duration_s": 1297.14794921875,
+    "avg_pace_s_km": 272.4795583682451,
+    "avg_hr": 162
+  },
+  {
+    "date": "2026-07-07T11:55:20.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2050,
+    "duration_s": 748.2570190429688,
+    "avg_pace_s_km": 364.9635023793565,
+    "avg_hr": 141
+  },
+  {
+    "date": "2026-07-08T01:53:22.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 9247.44,
+    "duration_s": 3600.35693359375,
+    "avg_pace_s_km": 389.4080878301338,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-07-08T09:42:36.000Z",
+    "name": "青浦区 骑行",
+    "sport_name": "cycling",
+    "stride_session_class": "unknown",
+    "distance_m": 2303.29,
+    "duration_s": 774.4229736328125,
+    "avg_pace_s_km": 336.24748073170616,
+    "avg_hr": 84
+  },
+  {
+    "date": "2026-07-08T10:30:20.000Z",
+    "name": "青浦区 骑行",
+    "sport_name": "cycling",
+    "stride_session_class": "unknown",
+    "distance_m": 4192.66,
+    "duration_s": 1206.407958984375,
+    "avg_pace_s_km": 287.76979207017723,
+    "avg_hr": 81
+  },
+  {
+    "date": "2026-07-08T10:56:08.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 9236.46,
+    "duration_s": 3126.342041015625,
+    "avg_pace_s_km": 338.52403564365835,
+    "avg_hr": 134
+  },
+  {
+    "date": "2026-07-09T04:02:55.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1763.634033203125,
+    "avg_pace_s_km": null,
+    "avg_hr": 97
+  },
+  {
+    "date": "2026-07-09T10:49:24.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 16010,
+    "duration_s": 4830.5830078125,
+    "avg_pace_s_km": 301.75016077427193,
+    "avg_hr": 144
+  },
+  {
+    "date": "2026-07-10T03:29:14.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 325.15,
+    "duration_s": 2853.81005859375,
+    "avg_pace_s_km": 8771.92981997502,
+    "avg_hr": 97
+  },
+  {
+    "date": "2026-07-10T21:59:40.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "long_easy",
+    "distance_m": 21606.26,
+    "duration_s": 6708.408203125,
+    "avg_pace_s_km": 310.4625934863984,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-07-13T03:45:51.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 279.52,
+    "duration_s": 2405.39794921875,
+    "avg_pace_s_km": 8620.6899032298,
+    "avg_hr": 108
+  },
+  {
+    "date": "2026-07-13T06:01:03.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1748.9019775390625,
+    "avg_pace_s_km": null,
+    "avg_hr": 111
+  },
+  {
+    "date": "2026-07-13T10:47:34.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 9209.28,
+    "duration_s": 3033.20703125,
+    "avg_pace_s_km": 329.3807627148525,
+    "avg_hr": 143
+  },
+  {
+    "date": "2026-07-14T04:05:43.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 178.59,
+    "duration_s": 1628.541015625,
+    "avg_pace_s_km": 9090.909140169128,
+    "avg_hr": 103
+  },
+  {
+    "date": "2026-07-14T10:27:18.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 3210,
+    "duration_s": 1024.198974609375,
+    "avg_pace_s_km": 319.08104017748565,
+    "avg_hr": 138
+  },
+  {
+    "date": "2026-07-14T10:56:05.000Z",
+    "name": "青浦区 - 400间歇",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 5930,
+    "duration_s": 1689.572021484375,
+    "avg_pace_s_km": 284.90028567436485,
+    "avg_hr": 166
+  },
+  {
+    "date": "2026-07-14T11:35:31.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 1210,
+    "duration_s": 408.8940124511719,
+    "avg_pace_s_km": 337.9519981796714,
+    "avg_hr": 150
+  },
+  {
+    "date": "2026-07-14T22:58:58.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1872.239013671875,
+    "avg_pace_s_km": null,
+    "avg_hr": 82
+  },
+  {
+    "date": "2026-07-15T02:29:36.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1467.7490234375,
+    "avg_pace_s_km": null,
+    "avg_hr": 102
+  },
+  {
+    "date": "2026-07-15T12:57:12.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 7062.28,
+    "duration_s": 2124.39794921875,
+    "avg_pace_s_km": 300.8423693069493,
+    "avg_hr": 151
+  },
+  {
+    "date": "2026-07-16T11:46:31.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2000,
+    "duration_s": 573.510009765625,
+    "avg_pace_s_km": 286.7794675313824,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-07-16T12:00:58.000Z",
+    "name": "青浦区 - 200*300*400",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 4690,
+    "duration_s": 1182.469970703125,
+    "avg_pace_s_km": 252.14321225445022,
+    "avg_hr": 143
+  },
+  {
+    "date": "2026-07-16T12:25:40.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 4360,
+    "duration_s": 1427.06005859375,
+    "avg_pace_s_km": 327.33223507306576,
+    "avg_hr": 130
+  },
+  {
+    "date": "2026-07-17T03:57:51.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 173.4,
+    "duration_s": 2524.092041015625,
+    "avg_pace_s_km": 14492.753986249683,
+    "avg_hr": 104
+  },
+  {
+    "date": "2026-07-17T11:19:32.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 11010,
+    "duration_s": 3610.705078125,
+    "avg_pace_s_km": 327.97638303301113,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-07-18T03:14:12.000Z",
+    "name": "放松和专注",
+    "sport_name": "breathwork",
+    "stride_session_class": "unknown",
+    "distance_m": 0,
+    "duration_s": 18.340999603271484,
+    "avg_pace_s_km": null,
+    "avg_hr": 73
+  },
+  {
+    "date": "2026-07-18T11:34:02.000Z",
+    "name": "青浦区 骑行",
+    "sport_name": "cycling",
+    "stride_session_class": "unknown",
+    "distance_m": 5023.46,
+    "duration_s": 900.43798828125,
+    "avg_pace_s_km": 179.24359216414413,
+    "avg_hr": 116
+  },
+  {
+    "date": "2026-07-18T20:38:50.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "long_easy",
+    "distance_m": 25008.24,
+    "duration_s": 7455.4951171875,
+    "avg_pace_s_km": 298.15145280364317,
+    "avg_hr": 161
+  },
+  {
+    "date": "2026-07-18T23:47:56.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1992.56103515625,
+    "avg_pace_s_km": null,
+    "avg_hr": 132
+  },
+  {
+    "date": "2026-07-20T03:53:40.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 322.88,
+    "duration_s": 2067.278076171875,
+    "avg_pace_s_km": 6410.256277997586,
+    "avg_hr": 103
+  },
+  {
+    "date": "2026-07-20T11:05:58.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 7442.45,
+    "duration_s": 2400.35400390625,
+    "avg_pace_s_km": 322.4766131061634,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-07-21T04:33:46.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1795.1619873046875,
+    "avg_pace_s_km": null,
+    "avg_hr": 96
+  },
+  {
+    "date": "2026-07-21T09:57:40.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 3610,
+    "duration_s": 1067.6700439453125,
+    "avg_pace_s_km": 295.7704784350715,
+    "avg_hr": 143
+  },
+  {
+    "date": "2026-07-21T10:45:25.000Z",
+    "name": "青浦区 - 800*400",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 10740,
+    "duration_s": 3166.070068359375,
+    "avg_pace_s_km": 294.8113242359869,
+    "avg_hr": 156
+  },
+  {
+    "date": "2026-07-21T11:41:18.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2010,
+    "duration_s": 614.1409912109375,
+    "avg_pace_s_km": 305.5300945362809,
+    "avg_hr": 152
+  },
+  {
+    "date": "2026-07-22T02:24:39.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1746.27197265625,
+    "avg_pace_s_km": null,
+    "avg_hr": 99
+  },
+  {
+    "date": "2026-07-22T02:57:25.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 589.2039794921875,
+    "avg_pace_s_km": null,
+    "avg_hr": 85
+  },
+  {
+    "date": "2026-07-22T06:18:22.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 9446.33,
+    "duration_s": 3600.39501953125,
+    "avg_pace_s_km": 381.09755044906103,
+    "avg_hr": 147
+  },
+  {
+    "date": "2026-07-22T21:03:36.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 12097.43,
+    "duration_s": 3600.125,
+    "avg_pace_s_km": 297.6190569111552,
+    "avg_hr": 149
+  },
+  {
+    "date": "2026-07-24T19:59:57.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "long_quality",
+    "distance_m": 30010.64,
+    "duration_s": 8554.3408203125,
+    "avg_pace_s_km": 285.062722166635,
+    "avg_hr": 156
+  },
+  {
+    "date": "2026-07-24T22:24:30.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 265.33,
+    "duration_s": 117.58200073242188,
+    "avg_pace_s_km": 443.06602282733803,
+    "avg_hr": 153
+  },
+  {
+    "date": "2026-07-25T10:10:54.000Z",
+    "name": "青浦区 骑行",
+    "sport_name": "cycling",
+    "stride_session_class": "unknown",
+    "distance_m": 748.07,
+    "duration_s": 294.8110046386719,
+    "avg_pace_s_km": 394.1663473812345,
+    "avg_hr": 91
+  },
+  {
+    "date": "2026-07-26T01:31:34.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1751.4189453125,
+    "avg_pace_s_km": null,
+    "avg_hr": 100
+  },
+  {
+    "date": "2026-07-26T02:03:46.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1784.93505859375,
+    "avg_pace_s_km": null,
+    "avg_hr": 77
+  },
+  {
+    "date": "2026-07-27T03:49:32.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1752.781005859375,
+    "avg_pace_s_km": null,
+    "avg_hr": 98
+  },
+  {
+    "date": "2026-07-27T10:36:56.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 11084.87,
+    "duration_s": 3750.955078125,
+    "avg_pace_s_km": 338.4094842025701,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-07-28T10:25:58.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 3210,
+    "duration_s": 1120.31005859375,
+    "avg_pace_s_km": 349.04013845420377,
+    "avg_hr": 128
+  },
+  {
+    "date": "2026-07-28T10:57:00.000Z",
+    "name": "青浦区 - 5321",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 11610,
+    "duration_s": 3119.458984375,
+    "avg_pace_s_km": 268.6727649810883,
+    "avg_hr": 156
+  },
+  {
+    "date": "2026-07-28T11:59:22.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 1210,
+    "duration_s": 487.677001953125,
+    "avg_pace_s_km": 403.06328961140747,
+    "avg_hr": 133
+  },
+  {
+    "date": "2026-07-28T23:24:19.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1160.8919677734375,
+    "avg_pace_s_km": null,
+    "avg_hr": 75
+  },
+  {
+    "date": "2026-07-29T02:29:10.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1337.991943359375,
+    "avg_pace_s_km": null,
+    "avg_hr": 95
+  },
+  {
+    "date": "2026-07-29T03:56:24.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 222.47,
+    "duration_s": 2644.952880859375,
+    "avg_pace_s_km": 11904.762065261943,
+    "avg_hr": 103
+  },
+  {
+    "date": "2026-07-29T10:57:39.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 9473.37,
+    "duration_s": 3600.2958984375,
+    "avg_pace_s_km": 380.0836123341151,
+    "avg_hr": 134
+  },
+  {
+    "date": "2026-07-29T21:33:23.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 11017.32,
+    "duration_s": 3275.083984375,
+    "avg_pace_s_km": 297.26515327571457,
+    "avg_hr": 152
+  },
+  {
+    "date": "2026-07-30T03:37:37.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1912.0389404296875,
+    "avg_pace_s_km": null,
+    "avg_hr": 94
+  },
+  {
+    "date": "2026-07-31T03:39:07.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 273.28,
+    "duration_s": 2532.02392578125,
+    "avg_pace_s_km": 9259.2590190828,
+    "avg_hr": 102
+  },
+  {
+    "date": "2026-07-31T11:26:54.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "long_quality",
+    "distance_m": 25055.08,
+    "duration_s": 6932.97998046875,
+    "avg_pace_s_km": 276.7017092711774,
+    "avg_hr": 161
+  },
+  {
+    "date": "2026-08-01T22:25:30.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 10231.28,
+    "duration_s": 3600.448974609375,
+    "avg_pace_s_km": 351.86488294000145,
+    "avg_hr": 138
+  },
+  {
+    "date": "2026-08-02T01:54:34.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1914.6180419921875,
+    "avg_pace_s_km": null,
+    "avg_hr": 83
+  },
+  {
+    "date": "2026-08-02T02:30:22.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1750.1190185546875,
+    "avg_pace_s_km": null,
+    "avg_hr": 106
+  },
+  {
+    "date": "2026-08-03T10:38:53.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 3210,
+    "duration_s": 1054.68603515625,
+    "avg_pace_s_km": 328.5151213698636,
+    "avg_hr": 137
+  },
+  {
+    "date": "2026-08-03T11:06:48.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 11120,
+    "duration_s": 2781.72998046875,
+    "avg_pace_s_km": 250.12506837836656,
+    "avg_hr": 166
+  },
+  {
+    "date": "2026-08-03T12:17:41.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 810,
+    "duration_s": 255.3800048828125,
+    "avg_pace_s_km": 315.2585188042511,
+    "avg_hr": 135
+  },
+  {
+    "date": "2026-08-04T10:24:55.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2410,
+    "duration_s": 783.4010009765625,
+    "avg_pace_s_km": 325.09753187937787,
+    "avg_hr": 133
+  },
+  {
+    "date": "2026-08-04T10:47:12.000Z",
+    "name": "青浦区 - 8.4",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 6350,
+    "duration_s": 1867.14697265625,
+    "avg_pace_s_km": 294.0311653249517,
+    "avg_hr": 150
+  },
+  {
+    "date": "2026-08-04T11:20:05.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 810,
+    "duration_s": 147.5500030517578,
+    "avg_pace_s_km": 182.1493700711625,
+    "avg_hr": 153
+  },
+  {
+    "date": "2026-08-04T11:32:31.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 800,
+    "duration_s": 278.18499755859375,
+    "avg_pace_s_km": 347.7051547988206,
+    "avg_hr": 130
+  },
+  {
+    "date": "2026-08-05T03:57:35.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2012.760009765625,
+    "avg_pace_s_km": null,
+    "avg_hr": 89
+  },
+  {
+    "date": "2026-08-05T04:31:21.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1448.81494140625,
+    "avg_pace_s_km": null,
+    "avg_hr": 106
+  },
+  {
+    "date": "2026-08-05T11:34:47.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 7210,
+    "duration_s": 2434.6650390625,
+    "avg_pace_s_km": 337.7237458949087,
+    "avg_hr": 131
+  },
+  {
+    "date": "2026-08-05T21:31:59.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 9476.28,
+    "duration_s": 3600.1689453125,
+    "avg_pace_s_km": 379.9392141317723,
+    "avg_hr": 131
+  },
+  {
+    "date": "2026-08-07T21:13:56.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 17008.13,
+    "duration_s": 5245.11083984375,
+    "avg_pace_s_km": 308.356457166114,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-08-08T02:54:20.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1794.708984375,
+    "avg_pace_s_km": null,
+    "avg_hr": 103
+  },
+  {
+    "date": "2026-08-08T04:15:17.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1207.97900390625,
+    "avg_pace_s_km": null,
+    "avg_hr": 75
+  },
+  {
+    "date": "2026-08-09T22:57:35.000Z",
+    "name": "跑步机",
+    "sport_name": "treadmill_running",
+    "stride_session_class": "easy",
+    "distance_m": 5313.78,
+    "duration_s": 1800.3809814453125,
+    "avg_pace_s_km": 338.86818312518363,
+    "avg_hr": 146
+  },
+  {
+    "date": "2026-08-10T04:02:44.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1749.9830322265625,
+    "avg_pace_s_km": null,
+    "avg_hr": 113
+  },
+  {
+    "date": "2026-08-10T08:31:32.000Z",
+    "name": "跑步机",
+    "sport_name": "treadmill_running",
+    "stride_session_class": "easy",
+    "distance_m": 12027.2,
+    "duration_s": 3601.43310546875,
+    "avg_pace_s_km": 299.401205298746,
+    "avg_hr": 147
+  },
+  {
+    "date": "2026-08-11T02:31:36.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1213.2540283203125,
+    "avg_pace_s_km": null,
+    "avg_hr": 80
+  },
+  {
+    "date": "2026-08-11T09:51:01.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 3610,
+    "duration_s": 1114.56494140625,
+    "avg_pace_s_km": 308.7372567701784,
+    "avg_hr": 136
+  },
+  {
+    "date": "2026-08-11T10:16:28.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 12010,
+    "duration_s": 3050.69091796875,
+    "avg_pace_s_km": 254.00050566297108,
+    "avg_hr": 147
+  },
+  {
+    "date": "2026-08-11T11:12:55.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2010,
+    "duration_s": 605.6060180664062,
+    "avg_pace_s_km": 301.29557043566524,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-08-12T02:41:09.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1439.6429443359375,
+    "avg_pace_s_km": null,
+    "avg_hr": 69
+  },
+  {
+    "date": "2026-08-12T06:55:15.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 8166.19,
+    "duration_s": 2604.10888671875,
+    "avg_pace_s_km": 318.87755936003157,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-08-12T21:31:37.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 12178.37,
+    "duration_s": 3599.991943359375,
+    "avg_pace_s_km": 295.5956341842779,
+    "avg_hr": 154
+  },
+  {
+    "date": "2026-08-15T06:50:15.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "long_easy",
+    "distance_m": 28008.4,
+    "duration_s": 8033.248046875,
+    "avg_pace_s_km": 286.7794675313824,
+    "avg_hr": 159
+  },
+  {
+    "date": "2026-08-16T01:47:41.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1794.18896484375,
+    "avg_pace_s_km": null,
+    "avg_hr": 103
+  },
+  {
+    "date": "2026-08-17T10:52:30.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 12280,
+    "duration_s": 3600.426025390625,
+    "avg_pace_s_km": 293.16915745698316,
+    "avg_hr": 156
+  },
+  {
+    "date": "2026-08-18T03:34:43.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 156.06,
+    "duration_s": 2205.85400390625,
+    "avg_pace_s_km": 14084.506581118614,
+    "avg_hr": 101
+  },
+  {
+    "date": "2026-08-18T04:20:48.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1592.0009765625,
+    "avg_pace_s_km": null,
+    "avg_hr": 77
+  },
+  {
+    "date": "2026-08-18T10:04:02.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 6010,
+    "duration_s": 1904.3289794921875,
+    "avg_pace_s_km": 316.85679088431164,
+    "avg_hr": 143
+  },
+  {
+    "date": "2026-08-18T10:47:04.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 7010,
+    "duration_s": 1779.60595703125,
+    "avg_pace_s_km": 253.87154800726793,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-08-18T11:27:07.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2010,
+    "duration_s": 576.3480224609375,
+    "avg_pace_s_km": 286.7794675313824,
+    "avg_hr": 140
+  },
+  {
+    "date": "2026-08-19T04:07:35.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 144.36,
+    "duration_s": 2237.77587890625,
+    "avg_pace_s_km": 15384.615948919734,
+    "avg_hr": 99
+  },
+  {
+    "date": "2026-08-19T07:18:23.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 9552.09,
+    "duration_s": 3600.410888671875,
+    "avg_pace_s_km": 376.9317588181844,
+    "avg_hr": 137
+  },
+  {
+    "date": "2026-08-19T21:33:26.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 11249.47,
+    "duration_s": 3600.297119140625,
+    "avg_pace_s_km": 320,
+    "avg_hr": 152
+  },
+  {
+    "date": "2026-08-20T03:40:41.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1359.4229736328125,
+    "avg_pace_s_km": null,
+    "avg_hr": 96
+  },
+  {
+    "date": "2026-08-23T11:59:20.000Z",
+    "name": "日照市 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 8790.4,
+    "duration_s": 2716.8740234375,
+    "avg_pace_s_km": 309.1190208432383,
+    "avg_hr": 143
+  },
+  {
+    "date": "2026-08-24T22:41:41.000Z",
+    "name": "盐城市 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 11470.23,
+    "duration_s": 3600.507080078125,
+    "avg_pace_s_km": 313.8731845185378,
+    "avg_hr": 146
+  },
+  {
+    "date": "2026-08-26T04:23:51.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1790.4840087890625,
+    "avg_pace_s_km": null,
+    "avg_hr": 95
+  },
+  {
+    "date": "2026-08-26T10:18:12.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 3610,
+    "duration_s": 1093.8170166015625,
+    "avg_pace_s_km": 303.03030740897304,
+    "avg_hr": 141
+  },
+  {
+    "date": "2026-08-26T10:46:28.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 5020,
+    "duration_s": 1192.5140380859375,
+    "avg_pace_s_km": 237.52968905913573,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-08-26T11:13:25.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 1610,
+    "duration_s": 383.15399169921875,
+    "avg_pace_s_km": 237.98190538084955,
+    "avg_hr": 140
+  },
+  {
+    "date": "2026-08-26T11:22:55.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 1610,
+    "duration_s": 378.6340026855469,
+    "avg_pace_s_km": 235.18345110344293,
+    "avg_hr": 136
+  },
+  {
+    "date": "2026-08-26T11:35:34.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 1600,
+    "duration_s": 368.4110107421875,
+    "avg_pace_s_km": 230.25558713609053,
+    "avg_hr": 141
+  },
+  {
+    "date": "2026-08-26T11:57:56.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2000,
+    "duration_s": 599.0670166015625,
+    "avg_pace_s_km": 299.4908667261559,
+    "avg_hr": 129
+  },
+  {
+    "date": "2026-08-27T02:32:52.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1027.0679931640625,
+    "avg_pace_s_km": null,
+    "avg_hr": 90
+  },
+  {
+    "date": "2026-08-27T03:49:55.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 245.78,
+    "duration_s": 2956.404052734375,
+    "avg_pace_s_km": 12048.193229648177,
+    "avg_hr": 106
+  },
+  {
+    "date": "2026-08-27T07:08:27.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 10533.3,
+    "duration_s": 3600.35498046875,
+    "avg_pace_s_km": 341.7634858457104,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-08-28T10:51:35.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 16020,
+    "duration_s": 4761.97021484375,
+    "avg_pace_s_km": 297.26515327571457,
+    "avg_hr": 156
+  },
+  {
+    "date": "2026-08-29T09:39:24.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "long_easy",
+    "distance_m": 25021.95,
+    "duration_s": 7731.52880859375,
+    "avg_pace_s_km": 309.0234799563361,
+    "avg_hr": 147
+  },
+  {
+    "date": "2026-08-30T00:39:29.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2365.739990234375,
+    "avg_pace_s_km": null,
+    "avg_hr": 97
+  },
+  {
+    "date": "2026-08-30T01:27:12.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1166.8089599609375,
+    "avg_pace_s_km": null,
+    "avg_hr": 115
+  },
+  {
+    "date": "2026-08-31T04:03:54.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1660.866943359375,
+    "avg_pace_s_km": null,
+    "avg_hr": 100
+  },
+  {
+    "date": "2026-08-31T11:10:45.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 12410,
+    "duration_s": 3617.22802734375,
+    "avg_pace_s_km": 291.460216166642,
+    "avg_hr": 152
+  },
+  {
+    "date": "2026-08-31T22:47:51.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 950.2239990234376,
+    "avg_pace_s_km": null,
+    "avg_hr": 77
+  },
+  {
+    "date": "2026-09-01T03:50:56.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 203.75,
+    "duration_s": 2502.4140625,
+    "avg_pace_s_km": 12345.678976006922,
+    "avg_hr": 94
+  },
+  {
+    "date": "2026-09-01T11:21:48.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 6010,
+    "duration_s": 1416.427001953125,
+    "avg_pace_s_km": 235.68229856411668,
+    "avg_hr": 140
+  },
+  {
+    "date": "2026-09-01T11:54:53.000Z",
+    "name": "青浦区 - 恢复跑",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 2140,
+    "duration_s": 539.4450073242188,
+    "avg_pace_s_km": 252.07965668686282,
+    "avg_hr": 165
+  },
+  {
+    "date": "2026-09-01T12:19:31.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2010,
+    "duration_s": 637.8779907226562,
+    "avg_pace_s_km": 317.3595660857556,
+    "avg_hr": 128
+  },
+  {
+    "date": "2026-09-02T11:04:12.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 10030,
+    "duration_s": 3601.93408203125,
+    "avg_pace_s_km": 359.06641622300987,
+    "avg_hr": 131
+  },
+  {
+    "date": "2026-09-03T03:40:28.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 212.4,
+    "duration_s": 2734.568115234375,
+    "avg_pace_s_km": 12820.512555995172,
+    "avg_hr": 102
+  },
+  {
+    "date": "2026-09-03T04:41:42.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1034.68603515625,
+    "avg_pace_s_km": null,
+    "avg_hr": 112
+  },
+  {
+    "date": "2026-09-03T10:44:10.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 15210,
+    "duration_s": 4961.4169921875,
+    "avg_pace_s_km": 326.1578620276497,
+    "avg_hr": 144
+  },
+  {
+    "date": "2026-09-04T04:01:06.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 140.11,
+    "duration_s": 2680.489013671875,
+    "avg_pace_s_km": 19230.76883399276,
+    "avg_hr": 104
+  },
+  {
+    "date": "2026-09-05T09:26:33.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "long_easy",
+    "distance_m": 30010,
+    "duration_s": 8501.9208984375,
+    "avg_pace_s_km": 283.28612127617026,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-09-05T12:04:14.000Z",
+    "name": "青浦区 - 5*150",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 1050,
+    "duration_s": 275.0450134277344,
+    "avg_pace_s_km": 261.9172287893488,
+    "avg_hr": 135
+  },
+  {
+    "date": "2026-09-05T12:12:36.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2010,
+    "duration_s": 732.155029296875,
+    "avg_pace_s_km": 364.298740142325,
+    "avg_hr": 120
+  },
+  {
+    "date": "2026-09-06T01:03:52.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1776.7049560546875,
+    "avg_pace_s_km": null,
+    "avg_hr": 120
+  },
+  {
+    "date": "2026-09-07T03:55:56.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2538.0390625,
+    "avg_pace_s_km": null,
+    "avg_hr": 95
+  },
+  {
+    "date": "2026-09-07T09:28:52.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 16810,
+    "duration_s": 4800.3837890625,
+    "avg_pace_s_km": 285.55110602866074,
+    "avg_hr": 151
+  },
+  {
+    "date": "2026-09-08T03:42:50.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 126.13,
+    "duration_s": 2962.544921875,
+    "avg_pace_s_km": 23255.813163702678,
+    "avg_hr": 102
+  },
+  {
+    "date": "2026-09-08T11:09:21.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 14010,
+    "duration_s": 4167.01123046875,
+    "avg_pace_s_km": 297.4419998227107,
+    "avg_hr": 141
+  },
+  {
+    "date": "2026-09-09T04:25:50.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1886.9830322265625,
+    "avg_pace_s_km": null,
+    "avg_hr": 74
+  },
+  {
+    "date": "2026-09-09T10:13:52.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 3310,
+    "duration_s": 911.083984375,
+    "avg_pace_s_km": 275.25461831829125,
+    "avg_hr": 140
+  },
+  {
+    "date": "2026-09-09T10:43:40.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 15010,
+    "duration_s": 3490.89892578125,
+    "avg_pace_s_km": 232.5581292193156,
+    "avg_hr": 143
+  },
+  {
+    "date": "2026-09-10T03:09:32.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2056.43994140625,
+    "avg_pace_s_km": null,
+    "avg_hr": 97
+  },
+  {
+    "date": "2026-09-10T04:00:47.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 158.45,
+    "duration_s": 2342.87890625,
+    "avg_pace_s_km": 14705.881553743993,
+    "avg_hr": 98
+  },
+  {
+    "date": "2026-09-10T11:55:26.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 10645.98,
+    "duration_s": 3600.054931640625,
+    "avg_pace_s_km": 338.1805864709995,
+    "avg_hr": 134
+  },
+  {
+    "date": "2026-09-11T03:41:17.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 291.57,
+    "duration_s": 3097.987060546875,
+    "avg_pace_s_km": 10638.298236606035,
+    "avg_hr": 110
+  },
+  {
+    "date": "2026-09-11T21:47:49.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "long_easy",
+    "distance_m": 25253.77,
+    "duration_s": 7569.09619140625,
+    "avg_pace_s_km": 299.76019493148965,
+    "avg_hr": 137
+  },
+  {
+    "date": "2026-09-13T02:16:41.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1796.27001953125,
+    "avg_pace_s_km": null,
+    "avg_hr": 96
+  },
+  {
+    "date": "2026-09-14T04:22:44.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1806.6610107421875,
+    "avg_pace_s_km": null,
+    "avg_hr": 79
+  },
+  {
+    "date": "2026-09-14T10:59:38.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 17280,
+    "duration_s": 4800.42578125,
+    "avg_pace_s_km": 277.7777851363761,
+    "avg_hr": 155
+  },
+  {
+    "date": "2026-09-15T04:19:10.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1943.1199951171875,
+    "avg_pace_s_km": null,
+    "avg_hr": 90
+  },
+  {
+    "date": "2026-09-15T10:53:35.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 11210,
+    "duration_s": 3672.297119140625,
+    "avg_pace_s_km": 327.546678266112,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-09-16T03:57:09.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 332.62,
+    "duration_s": 2702.31298828125,
+    "avg_pace_s_km": 8130.081076246635,
+    "avg_hr": 101
+  },
+  {
+    "date": "2026-09-16T10:44:34.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 16040,
+    "duration_s": 4564.78515625,
+    "avg_pace_s_km": 284.57598672997716,
+    "avg_hr": 146
+  },
+  {
+    "date": "2026-09-17T04:11:09.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 91.54,
+    "duration_s": 2779.075927734375,
+    "avg_pace_s_km": 30303.030467230426,
+    "avg_hr": 104
+  },
+  {
+    "date": "2026-09-17T10:57:40.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 11477.23,
+    "duration_s": 3600.1201171875,
+    "avg_pace_s_km": 313.6762896384915,
+    "avg_hr": 135
+  },
+  {
+    "date": "2026-09-18T03:43:44.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 252.57,
+    "duration_s": 3359.06103515625,
+    "avg_pace_s_km": 13333.33280351429,
+    "avg_hr": 106
+  },
+  {
+    "date": "2026-09-18T21:56:33.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "quality",
+    "distance_m": 16652.69,
+    "duration_s": 4308.6767578125,
+    "avg_pace_s_km": 258.7322115220019,
+    "avg_hr": 160
+  },
+  {
+    "date": "2026-09-18T23:16:35.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 5504.09,
+    "duration_s": 1900.738037109375,
+    "avg_pace_s_km": 345.30387831958365,
+    "avg_hr": 137
+  },
+  {
+    "date": "2026-09-20T02:17:33.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1951.0980224609375,
+    "avg_pace_s_km": null,
+    "avg_hr": 92
+  },
+  {
+    "date": "2026-09-20T11:00:30.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 17084.76,
+    "duration_s": 4930.828125,
+    "avg_pace_s_km": 288.6002957491377,
+    "avg_hr": 148
+  },
+  {
+    "date": "2026-09-21T03:30:32.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 378.94,
+    "duration_s": 4046.1201171875,
+    "avg_pace_s_km": 10638.298236606035,
+    "avg_hr": 85
+  },
+  {
+    "date": "2026-09-22T03:35:14.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 83.67,
+    "duration_s": 3238.903076171875,
+    "avg_pace_s_km": 38461.53766798552,
+    "avg_hr": 102
+  },
+  {
+    "date": "2026-09-22T11:06:28.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 3200,
+    "duration_s": 971.343017578125,
+    "avg_pace_s_km": 303.58227905730126,
+    "avg_hr": 134
+  },
+  {
+    "date": "2026-09-22T11:25:44.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 12020,
+    "duration_s": 2819.56298828125,
+    "avg_pace_s_km": 234.57658862666761,
+    "avg_hr": 167
+  },
+  {
+    "date": "2026-09-22T12:21:20.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 800,
+    "duration_s": 263.3590087890625,
+    "avg_pace_s_km": 329.1639120610603,
+    "avg_hr": 137
+  },
+  {
+    "date": "2026-09-23T02:19:09.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1498.8590087890625,
+    "avg_pace_s_km": null,
+    "avg_hr": 67
+  },
+  {
+    "date": "2026-09-23T04:22:09.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2086.76611328125,
+    "avg_pace_s_km": null,
+    "avg_hr": 85
+  },
+  {
+    "date": "2026-09-23T06:56:28.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 9344.73,
+    "duration_s": 3600.4169921875,
+    "avg_pace_s_km": 385.35645047200904,
+    "avg_hr": 125
+  },
+  {
+    "date": "2026-09-24T03:46:09.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 294.19,
+    "duration_s": 2823.79296875,
+    "avg_pace_s_km": 9615.38441699638,
+    "avg_hr": 99
+  },
+  {
+    "date": "2026-09-24T10:56:32.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 16020,
+    "duration_s": 5063.5771484375,
+    "avg_pace_s_km": 316.05562236064833,
+    "avg_hr": 134
+  },
+  {
+    "date": "2026-09-25T22:00:13.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "long_easy",
+    "distance_m": 21519.97,
+    "duration_s": 6364.626953125,
+    "avg_pace_s_km": 295.7704784350715,
+    "avg_hr": 146
+  },
+  {
+    "date": "2026-09-27T01:31:38.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1812.4090576171875,
+    "avg_pace_s_km": null,
+    "avg_hr": 108
+  },
+  {
+    "date": "2026-09-28T04:33:03.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1485.8780517578125,
+    "avg_pace_s_km": null,
+    "avg_hr": 92
+  },
+  {
+    "date": "2026-09-28T10:55:17.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 14020,
+    "duration_s": 4293.80419921875,
+    "avg_pace_s_km": 306.2787037886938,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-09-29T04:20:42.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2016.6180419921875,
+    "avg_pace_s_km": null,
+    "avg_hr": 73
+  },
+  {
+    "date": "2026-09-29T10:01:54.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2810,
+    "duration_s": 798.448974609375,
+    "avg_pace_s_km": 284.1716353576577,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-09-29T10:24:05.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 16060,
+    "duration_s": 3817.4970703125,
+    "avg_pace_s_km": 237.6990854745669,
+    "avg_hr": 166
+  },
+  {
+    "date": "2026-09-29T11:32:51.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2410,
+    "duration_s": 774.447998046875,
+    "avg_pace_s_km": 321.33676210713605,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-09-30T04:12:17.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2081.093017578125,
+    "avg_pace_s_km": null,
+    "avg_hr": 87
+  },
+  {
+    "date": "2026-10-01T07:00:19.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 15012.15,
+    "duration_s": 4583.59619140625,
+    "avg_pace_s_km": 305.34350255883186,
+    "avg_hr": 141
+  },
+  {
+    "date": "2026-10-02T10:25:48.000Z",
+    "name": "青浦区 篮球",
+    "sport_name": "basketball",
+    "stride_session_class": "unknown",
+    "distance_m": 875.57,
+    "duration_s": 1231.510009765625,
+    "avg_pace_s_km": 1406.4697109074232,
+    "avg_hr": 97
+  },
+  {
+    "date": "2026-10-02T21:43:39.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "long_quality",
+    "distance_m": 35034.77,
+    "duration_s": 9240.2080078125,
+    "avg_pace_s_km": 263.71307632204895,
+    "avg_hr": 154
+  },
+  {
+    "date": "2026-10-04T11:55:27.000Z",
+    "name": "跑步机",
+    "sport_name": "treadmill_running",
+    "stride_session_class": "easy",
+    "distance_m": 11034.83,
+    "duration_s": 3600.455078125,
+    "avg_pace_s_km": 326.2642679709653,
+    "avg_hr": 147
+  },
+  {
+    "date": "2026-10-06T10:32:14.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 4010,
+    "duration_s": 1103.9530029296875,
+    "avg_pace_s_km": 275.3303987892117,
+    "avg_hr": 127
+  },
+  {
+    "date": "2026-10-06T10:58:47.000Z",
+    "name": "青浦区 - 阈值训练",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 9870,
+    "duration_s": 2781.220947265625,
+    "avg_pace_s_km": 281.7695105701254,
+    "avg_hr": 159
+  },
+  {
+    "date": "2026-10-06T12:04:34.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 1260,
+    "duration_s": 428.82000732421875,
+    "avg_pace_s_km": 340.3676012031293,
+    "avg_hr": 127
+  },
+  {
+    "date": "2026-10-07T01:35:57.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1798.656982421875,
+    "avg_pace_s_km": null,
+    "avg_hr": 101
+  },
+  {
+    "date": "2026-10-07T09:35:49.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 13350,
+    "duration_s": 4775.1240234375,
+    "avg_pace_s_km": 357.6537906422243,
+    "avg_hr": 126
+  },
+  {
+    "date": "2026-10-08T02:32:15.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1311.89501953125,
+    "avg_pace_s_km": null,
+    "avg_hr": 67
+  },
+  {
+    "date": "2026-10-08T03:38:01.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 188.48,
+    "duration_s": 2962.9599609375,
+    "avg_pace_s_km": 15624.999257852358,
+    "avg_hr": 99
+  },
+  {
+    "date": "2026-10-08T11:04:05.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 10010,
+    "duration_s": 2686.06494140625,
+    "avg_pace_s_km": 268.31231567259596,
+    "avg_hr": 148
+  },
+  {
+    "date": "2026-10-08T11:56:33.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2010,
+    "duration_s": 588.8820190429688,
+    "avg_pace_s_km": 292.99735385423566,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-10-09T03:39:04.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 139.92,
+    "duration_s": 2857.4150390625,
+    "avg_pace_s_km": 20408.16379904202,
+    "avg_hr": 105
+  },
+  {
+    "date": "2026-10-09T04:39:22.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 575.2249755859375,
+    "avg_pace_s_km": null,
+    "avg_hr": 101
+  },
+  {
+    "date": "2026-10-09T07:31:21.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 10009.24,
+    "duration_s": 3649.802001953125,
+    "avg_pace_s_km": 364.697287540969,
+    "avg_hr": 137
+  },
+  {
+    "date": "2026-10-10T21:48:13.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 1203.71,
+    "duration_s": 389.72900390625,
+    "avg_pace_s_km": 323.72936365239667,
+    "avg_hr": 122
+  },
+  {
+    "date": "2026-10-10T22:06:00.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "quality",
+    "distance_m": 16027.73,
+    "duration_s": 3878.2041015625,
+    "avg_pace_s_km": 241.9550024003381,
+    "avg_hr": 169
+  },
+  {
+    "date": "2026-10-10T23:11:57.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 6011.53,
+    "duration_s": 1847.218994140625,
+    "avg_pace_s_km": 307.31407984824443,
+    "avg_hr": 153
+  },
+  {
+    "date": "2026-10-11T01:53:33.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1746.56298828125,
+    "avg_pace_s_km": null,
+    "avg_hr": 116
+  },
+  {
+    "date": "2026-10-12T02:45:48.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 400.37799072265625,
+    "avg_pace_s_km": null,
+    "avg_hr": 61
+  },
+  {
+    "date": "2026-10-12T04:04:46.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2117.179931640625,
+    "avg_pace_s_km": null,
+    "avg_hr": 94
+  },
+  {
+    "date": "2026-10-13T04:08:17.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 165.7,
+    "duration_s": 1896.531005859375,
+    "avg_pace_s_km": 11494.253204306404,
+    "avg_hr": 101
+  },
+  {
+    "date": "2026-10-13T10:48:48.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 10020,
+    "duration_s": 2797.985107421875,
+    "avg_pace_s_km": 279.25159870605495,
+    "avg_hr": 149
+  },
+  {
+    "date": "2026-10-13T11:38:06.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2330,
+    "duration_s": 608.6729736328125,
+    "avg_pace_s_km": 261.2330151678559,
+    "avg_hr": 168
+  },
+  {
+    "date": "2026-10-13T11:51:16.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2320,
+    "duration_s": 800.052001953125,
+    "avg_pace_s_km": 344.82757486713103,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-10-14T02:24:15.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1781.18798828125,
+    "avg_pace_s_km": null,
+    "avg_hr": 106
+  },
+  {
+    "date": "2026-10-14T03:57:35.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 281.61,
+    "duration_s": 2359.31591796875,
+    "avg_pace_s_km": 8403.361150920586,
+    "avg_hr": 111
+  },
+  {
+    "date": "2026-10-14T07:54:46.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 14810,
+    "duration_s": 4200.51806640625,
+    "avg_pace_s_km": 283.6074853966931,
+    "avg_hr": 149
+  },
+  {
+    "date": "2026-10-14T09:10:35.000Z",
+    "name": "青浦区 - 5*150",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 1110,
+    "duration_s": 253.36500549316406,
+    "avg_pace_s_km": 228.25838630949485,
+    "avg_hr": 162
+  },
+  {
+    "date": "2026-10-14T09:22:27.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 1210,
+    "duration_s": 418.24700927734375,
+    "avg_pace_s_km": 345.66195606587405,
+    "avg_hr": 135
+  },
+  {
+    "date": "2026-10-14T11:08:42.000Z",
+    "name": "青浦区 篮球",
+    "sport_name": "basketball",
+    "stride_session_class": "unknown",
+    "distance_m": 819.81,
+    "duration_s": 1150.9300537109375,
+    "avg_pace_s_km": 1404.4943575665834,
+    "avg_hr": 113
+  },
+  {
+    "date": "2026-10-15T12:14:13.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 10524.64,
+    "duration_s": 3600.278076171875,
+    "avg_pace_s_km": 342.114254779648,
+    "avg_hr": 135
+  },
+  {
+    "date": "2026-10-17T10:01:08.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "long_quality",
+    "distance_m": 35011.37,
+    "duration_s": 9373.1025390625,
+    "avg_pace_s_km": 267.73762465509895,
+    "avg_hr": 157
+  },
+  {
+    "date": "2026-10-17T12:48:23.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "quality",
+    "distance_m": 811.37,
+    "duration_s": 180.14599609375,
+    "avg_pace_s_km": 222.02485757084298,
+    "avg_hr": 165
+  },
+  {
+    "date": "2026-10-18T03:18:28.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1980.116943359375,
+    "avg_pace_s_km": null,
+    "avg_hr": 100
+  },
+  {
+    "date": "2026-10-19T03:48:46.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2307.055908203125,
+    "avg_pace_s_km": null,
+    "avg_hr": 108
+  },
+  {
+    "date": "2026-10-19T10:10:30.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 13210,
+    "duration_s": 4317.462890625,
+    "avg_pace_s_km": 326.7973917318617,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-10-20T10:22:03.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 3210,
+    "duration_s": 901.0369873046876,
+    "avg_pace_s_km": 280.6623660317425,
+    "avg_hr": 145
+  },
+  {
+    "date": "2026-10-20T10:47:44.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 10010,
+    "duration_s": 2347.760986328125,
+    "avg_pace_s_km": 234.52157934194682,
+    "avg_hr": 167
+  },
+  {
+    "date": "2026-10-20T11:31:59.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 1200,
+    "duration_s": 354.8949890136719,
+    "avg_pace_s_km": 295.7704784350715,
+    "avg_hr": 141
+  },
+  {
+    "date": "2026-10-21T08:50:23.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 5210,
+    "duration_s": 1460.2939453125,
+    "avg_pace_s_km": 280.2690521531943,
+    "avg_hr": 147
+  },
+  {
+    "date": "2026-10-21T09:21:20.000Z",
+    "name": "青浦区 - 400间歇",
+    "sport_name": "track_running",
+    "stride_session_class": "quality",
+    "distance_m": 5060,
+    "duration_s": 1208.885986328125,
+    "avg_pace_s_km": 238.89155064122411,
+    "avg_hr": 162
+  },
+  {
+    "date": "2026-10-21T09:44:50.000Z",
+    "name": "青浦区 操场跑步",
+    "sport_name": "track_running",
+    "stride_session_class": "easy",
+    "distance_m": 2000,
+    "duration_s": 635.0679931640625,
+    "avg_pace_s_km": 317.5611376344531,
+    "avg_hr": 137
+  },
+  {
+    "date": "2026-10-22T02:21:11.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1413.56396484375,
+    "avg_pace_s_km": null,
+    "avg_hr": 63
+  },
+  {
+    "date": "2026-10-22T03:44:53.000Z",
+    "name": "乒乓球",
+    "sport_name": "table_tennis",
+    "stride_session_class": "unknown",
+    "distance_m": 373.6,
+    "duration_s": 2712.1201171875,
+    "avg_pace_s_km": 7246.376993124842,
+    "avg_hr": 103
+  },
+  {
+    "date": "2026-10-22T04:44:30.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 545.6480102539062,
+    "avg_pace_s_km": null,
+    "avg_hr": 97
+  },
+  {
+    "date": "2026-10-22T12:27:15.000Z",
+    "name": "青浦区 跑步",
+    "sport_name": "running",
+    "stride_session_class": "easy",
+    "distance_m": 11627.53,
+    "duration_s": 3560.885009765625,
+    "avg_pace_s_km": 306.2787037886938,
+    "avg_hr": 126
+  },
+  {
+    "date": "2026-10-23T04:26:51.000Z",
+    "name": "力量训练",
+    "sport_name": "strength_training",
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1796.1600341796875,
+    "avg_pace_s_km": null,
+    "avg_hr": 96
+  },
+  {
+    "date": "2026-10-24T07:42:50.000Z",
+    "name": "青浦区 - [STRIDE] 5km 递进×7（4:50→",
+    "sport_name": "running",
+    "stride_session_class": "long_quality",
+    "distance_m": 35010.57,
+    "duration_s": 9253.6611328125,
+    "avg_pace_s_km": 264.3404710591482,
+    "avg_hr": 153
+  }
+]

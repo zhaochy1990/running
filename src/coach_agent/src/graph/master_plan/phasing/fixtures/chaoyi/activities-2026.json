@@ -1,0 +1,3102 @@
+[
+  {
+    "date": "2026-04-01T10:34:21.700Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 8427.27,
+    "duration_s": 2725.89,
+    "avg_pace_s_km": 323.46,
+    "avg_hr": 141
+  },
+  {
+    "date": "2026-04-02T09:53:37.190Z",
+    "name": "Easy Run 10.0km",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 11002.39,
+    "duration_s": 4146.68,
+    "avg_pace_s_km": 322.56,
+    "avg_hr": 141
+  },
+  {
+    "date": "2026-04-03T12:09:57.980Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1199.82,
+    "avg_pace_s_km": 0,
+    "avg_hr": 92
+  },
+  {
+    "date": "2026-04-04T11:53:48.710Z",
+    "name": "苏州市 跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 12009.27,
+    "duration_s": 3362.01,
+    "avg_pace_s_km": 279.96,
+    "avg_hr": 158
+  },
+  {
+    "date": "2026-04-06T06:44:44.690Z",
+    "name": "Easy 8km + Strides",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 10249.37,
+    "duration_s": 3571.2,
+    "avg_pace_s_km": 348.12,
+    "avg_hr": 143
+  },
+  {
+    "date": "2026-04-07T10:40:49.040Z",
+    "name": "Tempo 8.0km @ 4:08",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 12006.25,
+    "duration_s": 3260.7,
+    "avg_pace_s_km": 271.34,
+    "avg_hr": 157
+  },
+  {
+    "date": "2026-04-09T04:37:21.120Z",
+    "name": "Tempo 4.0km @ 4:08",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 6013.73,
+    "duration_s": 1824.88,
+    "avg_pace_s_km": 303.45,
+    "avg_hr": 149
+  },
+  {
+    "date": "2026-04-10T11:17:52.910Z",
+    "name": "Shakeout 4km + Strides",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 5523.45,
+    "duration_s": 1767.12,
+    "avg_pace_s_km": 319.23,
+    "avg_hr": 141
+  },
+  {
+    "date": "2026-04-11T23:30:13.280Z",
+    "name": "淮安市 跑步",
+    "sport_name": null,
+    "stride_session_class": "race",
+    "distance_m": 42656.55,
+    "duration_s": 12482.15,
+    "avg_pace_s_km": 292.63,
+    "avg_hr": 162
+  },
+  {
+    "date": "2026-04-13T23:37:29.520Z",
+    "name": "力量训练A - 腰腹+上肢推",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2148.89,
+    "avg_pace_s_km": 0,
+    "avg_hr": 88
+  },
+  {
+    "date": "2026-04-15T00:42:44.620Z",
+    "name": "Easy Run 6.0km",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 6113.37,
+    "duration_s": 2058.18,
+    "avg_pace_s_km": 336.68,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-04-16T10:43:32.370Z",
+    "name": "Easy Run 10.0km",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 10042.88,
+    "duration_s": 3281.95,
+    "avg_pace_s_km": 326.48,
+    "avg_hr": 137
+  },
+  {
+    "date": "2026-04-17T05:04:22.120Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 3703.08,
+    "avg_pace_s_km": 0,
+    "avg_hr": 112
+  },
+  {
+    "date": "2026-04-17T06:06:27.860Z",
+    "name": "力量训练B - 腰腹+上肢拉",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1013.45,
+    "avg_pace_s_km": 0,
+    "avg_hr": 115
+  },
+  {
+    "date": "2026-04-18T10:13:21.080Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 735.89,
+    "duration_s": 312.79,
+    "avg_pace_s_km": 425.05,
+    "avg_hr": 121
+  },
+  {
+    "date": "2026-04-19T08:29:07.470Z",
+    "name": "[STRIDE] Easy Run 14km",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 15641.76,
+    "duration_s": 5230.77,
+    "avg_pace_s_km": 334.41,
+    "avg_hr": 143
+  },
+  {
+    "date": "2026-04-21T00:32:20.310Z",
+    "name": "跑步机",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 14027.17,
+    "duration_s": 4634.46,
+    "avg_pace_s_km": 330.39,
+    "avg_hr": 145
+  },
+  {
+    "date": "2026-04-21T11:12:26.780Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2654.58,
+    "avg_pace_s_km": 0,
+    "avg_hr": 107
+  },
+  {
+    "date": "2026-04-22T11:31:33.820Z",
+    "name": "[STRIDE] Easy 14km + 6x100m Strides",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 15524.75,
+    "duration_s": 5242.37,
+    "avg_pace_s_km": 334.71,
+    "avg_hr": 143
+  },
+  {
+    "date": "2026-04-23T01:28:01.280Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 3287.28,
+    "avg_pace_s_km": 0,
+    "avg_hr": 98
+  },
+  {
+    "date": "2026-04-24T22:33:27.910Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1918.48,
+    "duration_s": 1026.87,
+    "avg_pace_s_km": 310.74,
+    "avg_hr": 140
+  },
+  {
+    "date": "2026-04-24T22:53:09.340Z",
+    "name": "[STRIDE] 10km TT Tempo 10km @ 3:50",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 5003.74,
+    "duration_s": 1199.64,
+    "avg_pace_s_km": 239.76,
+    "avg_hr": 173
+  },
+  {
+    "date": "2026-04-24T23:18:47.040Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2432.64,
+    "duration_s": 766.52,
+    "avg_pace_s_km": 315.1,
+    "avg_hr": 152
+  },
+  {
+    "date": "2026-04-25T22:54:57.880Z",
+    "name": "嘉兴市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 752.23,
+    "duration_s": 1072.81,
+    "avg_pace_s_km": 736.54,
+    "avg_hr": 113
+  },
+  {
+    "date": "2026-04-25T23:30:12.510Z",
+    "name": "嘉兴市 跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 10058.67,
+    "duration_s": 2453.04,
+    "avg_pace_s_km": 243.88,
+    "avg_hr": 173
+  },
+  {
+    "date": "2026-04-27T01:57:51.510Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 3346.35,
+    "avg_pace_s_km": 0,
+    "avg_hr": 104
+  },
+  {
+    "date": "2026-04-28T11:11:19.310Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2035.18,
+    "duration_s": 632.07,
+    "avg_pace_s_km": 310.58,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-04-28T11:24:36.620Z",
+    "name": "[STRIDE] Tempo 8km @ 4:05",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 8009.2,
+    "duration_s": 1984.17,
+    "avg_pace_s_km": 247.14,
+    "avg_hr": 171
+  },
+  {
+    "date": "2026-04-28T11:58:47.970Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1504.27,
+    "duration_s": 509.48,
+    "avg_pace_s_km": 338.7,
+    "avg_hr": 148
+  },
+  {
+    "date": "2026-04-29T12:00:01.600Z",
+    "name": "[STRIDE] 力量A 下肢稳定 P1W1",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2859.99,
+    "avg_pace_s_km": 0,
+    "avg_hr": 82
+  },
+  {
+    "date": "2026-04-30T01:57:27.510Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 4120.97,
+    "avg_pace_s_km": 0,
+    "avg_hr": 99
+  },
+  {
+    "date": "2026-04-30T03:07:10.590Z",
+    "name": "[STRIDE] 力量B 核心+灵活性 P1W1",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2569.64,
+    "avg_pace_s_km": 0,
+    "avg_hr": 98
+  },
+  {
+    "date": "2026-04-30T09:13:42.690Z",
+    "name": "[STRIDE] Easy Run 14km",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 14008.42,
+    "duration_s": 4696.74,
+    "avg_pace_s_km": 335.12,
+    "avg_hr": 141
+  },
+  {
+    "date": "2026-05-02T01:56:45.160Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "long_easy",
+    "distance_m": 25002.31,
+    "duration_s": 8571.71,
+    "avg_pace_s_km": 342.85,
+    "avg_hr": 152
+  },
+  {
+    "date": "2026-05-03T06:56:14.720Z",
+    "name": "[STRIDE] Easy Run 12km",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 12006.63,
+    "duration_s": 4070.74,
+    "avg_pace_s_km": 338.88,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-05-04T12:51:51.750Z",
+    "name": "[STRIDE] 力量 A 下肢稳定+核心 耐力",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2140.92,
+    "avg_pace_s_km": 0,
+    "avg_hr": 90
+  },
+  {
+    "date": "2026-05-05T01:51:00.230Z",
+    "name": "[STRIDE] 恢复跑 11km",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 11473.34,
+    "duration_s": 3660.69,
+    "avg_pace_s_km": 319.06,
+    "avg_hr": 150
+  },
+  {
+    "date": "2026-05-06T10:35:28.200Z",
+    "name": "[STRIDE] 3K×4 间歇 @ 4:10-4:05",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 14998.9,
+    "duration_s": 4485.35,
+    "avg_pace_s_km": 299.05,
+    "avg_hr": 157
+  },
+  {
+    "date": "2026-05-07T09:55:08.280Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 7416.14,
+    "avg_pace_s_km": 0,
+    "avg_hr": 90
+  },
+  {
+    "date": "2026-05-08T10:35:45.280Z",
+    "name": "[STRIDE] 轻松跑 13km",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 14019.51,
+    "duration_s": 4432.5,
+    "avg_pace_s_km": 315.7,
+    "avg_hr": 146
+  },
+  {
+    "date": "2026-05-09T10:46:47.600Z",
+    "name": "[STRIDE] 长距离 26km easy",
+    "sport_name": null,
+    "stride_session_class": "long_easy",
+    "distance_m": 27008.73,
+    "duration_s": 8636.1,
+    "avg_pace_s_km": 318.89,
+    "avg_hr": 140
+  },
+  {
+    "date": "2026-05-10T07:19:17.780Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 4731.2,
+    "avg_pace_s_km": 0,
+    "avg_hr": 118
+  },
+  {
+    "date": "2026-05-11T09:07:15.980Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 5469.15,
+    "avg_pace_s_km": 0,
+    "avg_hr": 88
+  },
+  {
+    "date": "2026-05-12T02:40:23.090Z",
+    "name": "跑步机",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 11055.87,
+    "duration_s": 3625.99,
+    "avg_pace_s_km": 327.2,
+    "avg_hr": 141
+  },
+  {
+    "date": "2026-05-13T11:09:54.760Z",
+    "name": "上海市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1967.91,
+    "duration_s": 628.19,
+    "avg_pace_s_km": 319.22,
+    "avg_hr": 136
+  },
+  {
+    "date": "2026-05-13T11:25:02.590Z",
+    "name": "[STRIDE] 间歇 1.6K x 6 @ 3:45-4:00",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 10404.09,
+    "duration_s": 3702,
+    "avg_pace_s_km": 304.44,
+    "avg_hr": 159
+  },
+  {
+    "date": "2026-05-15T09:52:29.410Z",
+    "name": "[STRIDE] 轻松跑 13km",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 13012.14,
+    "duration_s": 4147.09,
+    "avg_pace_s_km": 318.45,
+    "avg_hr": 145
+  },
+  {
+    "date": "2026-05-17T10:41:45.230Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "long_easy",
+    "distance_m": 28006.4,
+    "duration_s": 9081.89,
+    "avg_pace_s_km": 324.28,
+    "avg_hr": 143
+  },
+  {
+    "date": "2026-05-18T01:07:07.390Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 3486.66,
+    "avg_pace_s_km": 0,
+    "avg_hr": 94
+  },
+  {
+    "date": "2026-05-19T12:27:35.540Z",
+    "name": "[STRIDE] 恢复跑 10km",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 10005.67,
+    "duration_s": 3275.39,
+    "avg_pace_s_km": 327.06,
+    "avg_hr": 138
+  },
+  {
+    "date": "2026-05-20T11:57:00.740Z",
+    "name": "[STRIDE] 间歇 800m x 10 @ 3:40-3:45",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 13500.4,
+    "duration_s": 4878.87,
+    "avg_pace_s_km": 330.3,
+    "avg_hr": 155
+  },
+  {
+    "date": "2026-05-21T06:11:00.620Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 4385.89,
+    "avg_pace_s_km": 0,
+    "avg_hr": 98
+  },
+  {
+    "date": "2026-05-23T11:08:09.330Z",
+    "name": "[STRIDE] 长距离 22km easy",
+    "sport_name": null,
+    "stride_session_class": "long_easy",
+    "distance_m": 22007.29,
+    "duration_s": 7648.43,
+    "avg_pace_s_km": 342.82,
+    "avg_hr": 148
+  },
+  {
+    "date": "2026-05-25T08:11:26.680Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2771.81,
+    "avg_pace_s_km": 0,
+    "avg_hr": 112
+  },
+  {
+    "date": "2026-05-26T10:21:01.420Z",
+    "name": "[STRIDE] 恢复跑 11km",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 13006.93,
+    "duration_s": 4378.41,
+    "avg_pace_s_km": 334.39,
+    "avg_hr": 149
+  },
+  {
+    "date": "2026-05-27T10:50:42.050Z",
+    "name": "[STRIDE] 节奏 20min + 400m x 12",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 13358.61,
+    "duration_s": 4171,
+    "avg_pace_s_km": 312.23,
+    "avg_hr": 160
+  },
+  {
+    "date": "2026-05-28T03:18:09.170Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 10671.23,
+    "avg_pace_s_km": 0,
+    "avg_hr": 74
+  },
+  {
+    "date": "2026-05-29T01:14:28.870Z",
+    "name": "[STRIDE] 轻松跑 13km",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 13023.92,
+    "duration_s": 4261.98,
+    "avg_pace_s_km": 326.7,
+    "avg_hr": 138
+  },
+  {
+    "date": "2026-05-29T22:02:15.950Z",
+    "name": "[STRIDE] 长距离 30km easy",
+    "sport_name": null,
+    "stride_session_class": "long_easy",
+    "distance_m": 26952.75,
+    "duration_s": 8802.95,
+    "avg_pace_s_km": 313.94,
+    "avg_hr": 146
+  },
+  {
+    "date": "2026-06-01T10:03:52.810Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2797.06,
+    "avg_pace_s_km": 0,
+    "avg_hr": 101
+  },
+  {
+    "date": "2026-06-02T10:50:00.450Z",
+    "name": "上海市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 774.36,
+    "duration_s": 227.41,
+    "avg_pace_s_km": 293.68,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-06-02T10:54:54.060Z",
+    "name": "强度课 800/400 alternating × 8",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 9609.82,
+    "duration_s": 2649.22,
+    "avg_pace_s_km": 275.17,
+    "avg_hr": 169
+  },
+  {
+    "date": "2026-06-02T11:42:00.370Z",
+    "name": "上海市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2000.01,
+    "duration_s": 841.55,
+    "avg_pace_s_km": 420.78,
+    "avg_hr": 145
+  },
+  {
+    "date": "2026-06-04T01:31:49.580Z",
+    "name": "跑步机",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 11180.07,
+    "duration_s": 3659.5,
+    "avg_pace_s_km": 327.32,
+    "avg_hr": 137
+  },
+  {
+    "date": "2026-06-04T11:12:34.810Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 3216.82,
+    "avg_pace_s_km": 0,
+    "avg_hr": 112
+  },
+  {
+    "date": "2026-06-05T02:33:16.180Z",
+    "name": "跑步机",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 695.6,
+    "duration_s": 221.51,
+    "avg_pace_s_km": 305.43,
+    "avg_hr": 131
+  },
+  {
+    "date": "2026-06-05T05:51:08.270Z",
+    "name": "跑步机",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 10003.33,
+    "duration_s": 3004.49,
+    "avg_pace_s_km": 300.1,
+    "avg_hr": 146
+  },
+  {
+    "date": "2026-06-05T22:02:20.890Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "long_quality",
+    "distance_m": 20006.13,
+    "duration_s": 5520.54,
+    "avg_pace_s_km": 275.95,
+    "avg_hr": 159
+  },
+  {
+    "date": "2026-06-07T06:35:40.870Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 10155.13,
+    "duration_s": 6514.25,
+    "avg_pace_s_km": 346.66,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-06-07T08:45:47.070Z",
+    "name": "苏州市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 8006.07,
+    "duration_s": 3805.11,
+    "avg_pace_s_km": 359.92,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-06-07T09:53:25.550Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 503.56,
+    "duration_s": 158.68,
+    "avg_pace_s_km": 315.12,
+    "avg_hr": 149
+  },
+  {
+    "date": "2026-06-08T01:15:36.480Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 3292.1,
+    "avg_pace_s_km": 0,
+    "avg_hr": 97
+  },
+  {
+    "date": "2026-06-08T02:10:40.990Z",
+    "name": "跑步机",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 5005.25,
+    "duration_s": 1658.85,
+    "avg_pace_s_km": 328.16,
+    "avg_hr": 141
+  },
+  {
+    "date": "2026-06-09T01:36:25.370Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2915,
+    "duration_s": 843.62,
+    "avg_pace_s_km": 289.41,
+    "avg_hr": 144
+  },
+  {
+    "date": "2026-06-09T10:33:01.410Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 3731.74,
+    "duration_s": 1175.5,
+    "avg_pace_s_km": 315,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-06-09T10:58:37.420Z",
+    "name": "周三强度课",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 10057.85,
+    "duration_s": 2603.14,
+    "avg_pace_s_km": 258.45,
+    "avg_hr": 164
+  },
+  {
+    "date": "2026-06-09T11:45:29.920Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 867.39,
+    "duration_s": 329.44,
+    "avg_pace_s_km": 379.82,
+    "avg_hr": 143
+  },
+  {
+    "date": "2026-06-11T02:00:14.360Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 3441.53,
+    "avg_pace_s_km": 0,
+    "avg_hr": 107
+  },
+  {
+    "date": "2026-06-11T10:45:38.900Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 13464.58,
+    "duration_s": 4307.88,
+    "avg_pace_s_km": 319.95,
+    "avg_hr": 143
+  },
+  {
+    "date": "2026-06-12T21:57:13.260Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "long_quality",
+    "distance_m": 23002.17,
+    "duration_s": 6441.06,
+    "avg_pace_s_km": 272.07,
+    "avg_hr": 163
+  },
+  {
+    "date": "2026-06-14T11:17:53.580Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 12003.3,
+    "duration_s": 3921.35,
+    "avg_pace_s_km": 308.99,
+    "avg_hr": 143
+  },
+  {
+    "date": "2026-06-16T10:14:15.930Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 4865.68,
+    "duration_s": 1607.01,
+    "avg_pace_s_km": 321.05,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-06-16T10:56:42.510Z",
+    "name": "(300+100)*5*5组",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 11004.55,
+    "duration_s": 3602.17,
+    "avg_pace_s_km": 277.43,
+    "avg_hr": 166
+  },
+  {
+    "date": "2026-06-18T02:11:45.650Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 3116.23,
+    "avg_pace_s_km": 0,
+    "avg_hr": 103
+  },
+  {
+    "date": "2026-06-18T10:01:03.800Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 12433.75,
+    "duration_s": 4029.42,
+    "avg_pace_s_km": 320.01,
+    "avg_hr": 150
+  },
+  {
+    "date": "2026-06-19T00:04:31.570Z",
+    "name": "10k+5k*2",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 15097.7,
+    "duration_s": 4654.14,
+    "avg_pace_s_km": 289.85,
+    "avg_hr": 159
+  },
+  {
+    "date": "2026-06-22T06:08:56.360Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 4241.84,
+    "avg_pace_s_km": 0,
+    "avg_hr": 108
+  },
+  {
+    "date": "2026-06-23T05:53:56.760Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 7006.48,
+    "duration_s": 2220.45,
+    "avg_pace_s_km": 316.53,
+    "avg_hr": 147
+  },
+  {
+    "date": "2026-06-23T07:10:40.640Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 7226.75,
+    "duration_s": 2304.99,
+    "avg_pace_s_km": 318.96,
+    "avg_hr": 150
+  },
+  {
+    "date": "2026-06-24T10:59:16.220Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1449.91,
+    "duration_s": 453.5,
+    "avg_pace_s_km": 312.79,
+    "avg_hr": 141
+  },
+  {
+    "date": "2026-06-24T11:14:15.170Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 10010.91,
+    "duration_s": 2368.55,
+    "avg_pace_s_km": 236.61,
+    "avg_hr": 173
+  },
+  {
+    "date": "2026-06-26T07:42:08.790Z",
+    "name": "跑步机",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 6004.05,
+    "duration_s": 1965.69,
+    "avg_pace_s_km": 327.39,
+    "avg_hr": 145
+  },
+  {
+    "date": "2026-06-26T08:22:31.270Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1274.85,
+    "avg_pace_s_km": 0,
+    "avg_hr": 92
+  },
+  {
+    "date": "2026-06-27T01:08:03.310Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1650.87,
+    "duration_s": 525.97,
+    "avg_pace_s_km": 318.61,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-06-27T01:25:02.520Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 12001.7,
+    "duration_s": 3888.5,
+    "avg_pace_s_km": 324,
+    "avg_hr": 144
+  },
+  {
+    "date": "2026-06-27T07:58:04.370Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 7954.16,
+    "duration_s": 2695.02,
+    "avg_pace_s_km": 336.81,
+    "avg_hr": 143
+  },
+  {
+    "date": "2026-06-27T09:03:02.560Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1725.83,
+    "avg_pace_s_km": 0,
+    "avg_hr": 103
+  },
+  {
+    "date": "2026-06-28T01:06:53.240Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 8137.05,
+    "duration_s": 2805.6,
+    "avg_pace_s_km": 344.8,
+    "avg_hr": 137
+  },
+  {
+    "date": "2026-06-28T08:29:24.240Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2561.23,
+    "avg_pace_s_km": 0,
+    "avg_hr": 92
+  },
+  {
+    "date": "2026-06-29T01:03:44.880Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 12006.99,
+    "duration_s": 3866.66,
+    "avg_pace_s_km": 322.03,
+    "avg_hr": 147
+  },
+  {
+    "date": "2026-06-29T02:25:57.400Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2115.96,
+    "duration_s": 765.33,
+    "avg_pace_s_km": 361.7,
+    "avg_hr": 144
+  },
+  {
+    "date": "2026-06-29T08:15:01.380Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 8003.68,
+    "duration_s": 2358.98,
+    "avg_pace_s_km": 294.75,
+    "avg_hr": 152
+  },
+  {
+    "date": "2026-06-29T09:10:55.520Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 6471.51,
+    "avg_pace_s_km": 0,
+    "avg_hr": 97
+  },
+  {
+    "date": "2026-06-30T01:38:31.270Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 3286.57,
+    "duration_s": 1230.08,
+    "avg_pace_s_km": 374.27,
+    "avg_hr": 132
+  },
+  {
+    "date": "2026-06-30T02:05:22.210Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 11813.59,
+    "duration_s": 3295.99,
+    "avg_pace_s_km": 279,
+    "avg_hr": 158
+  },
+  {
+    "date": "2026-06-30T07:46:44.730Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 4238.78,
+    "duration_s": 1456.74,
+    "avg_pace_s_km": 343.68,
+    "avg_hr": 137
+  },
+  {
+    "date": "2026-06-30T08:25:46.750Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 3674.28,
+    "avg_pace_s_km": 0,
+    "avg_hr": 110
+  },
+  {
+    "date": "2026-07-01T00:38:44.880Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2517.32,
+    "duration_s": 936.98,
+    "avg_pace_s_km": 372.21,
+    "avg_hr": 134
+  },
+  {
+    "date": "2026-07-01T01:12:31.030Z",
+    "name": "跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 12968.17,
+    "duration_s": 3755.77,
+    "avg_pace_s_km": 267.17,
+    "avg_hr": 159
+  },
+  {
+    "date": "2026-07-01T08:28:47.920Z",
+    "name": "跑步机",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 5006.76,
+    "duration_s": 1812.79,
+    "avg_pace_s_km": 360.7,
+    "avg_hr": 132
+  },
+  {
+    "date": "2026-07-02T01:27:33.630Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 16006.55,
+    "duration_s": 5020.78,
+    "avg_pace_s_km": 313.68,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-07-03T01:10:59.870Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 4759.41,
+    "duration_s": 2189.05,
+    "avg_pace_s_km": 336.22,
+    "avg_hr": 134
+  },
+  {
+    "date": "2026-07-03T02:06:35.400Z",
+    "name": "跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 807.17,
+    "duration_s": 228.21,
+    "avg_pace_s_km": 282.74,
+    "avg_hr": 150
+  },
+  {
+    "date": "2026-07-03T02:12:12.430Z",
+    "name": "跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 3994.87,
+    "duration_s": 1182.72,
+    "avg_pace_s_km": 296.06,
+    "avg_hr": 158
+  },
+  {
+    "date": "2026-07-03T02:38:48.620Z",
+    "name": "跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1203.4,
+    "duration_s": 422.97,
+    "avg_pace_s_km": 348.82,
+    "avg_hr": 152
+  },
+  {
+    "date": "2026-07-03T02:53:01.660Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1357.04,
+    "duration_s": 613.77,
+    "avg_pace_s_km": 452.29,
+    "avg_hr": 127
+  },
+  {
+    "date": "2026-07-04T01:31:27.870Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 8812.45,
+    "duration_s": 2823.69,
+    "avg_pace_s_km": 318.27,
+    "avg_hr": 148
+  },
+  {
+    "date": "2026-07-04T08:00:25.300Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 8127.89,
+    "duration_s": 2813.31,
+    "avg_pace_s_km": 346.13,
+    "avg_hr": 131
+  },
+  {
+    "date": "2026-07-04T09:02:56.070Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 758.97,
+    "avg_pace_s_km": 0,
+    "avg_hr": 81
+  },
+  {
+    "date": "2026-07-04T09:30:15.160Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1065.01,
+    "avg_pace_s_km": 0,
+    "avg_hr": 97
+  },
+  {
+    "date": "2026-07-05T00:35:36.450Z",
+    "name": "长距离 26-30K (前轻松+后MP心率 )",
+    "sport_name": null,
+    "stride_session_class": "long_easy",
+    "distance_m": 20014.42,
+    "duration_s": 6788.01,
+    "avg_pace_s_km": 322.69,
+    "avg_hr": 144
+  },
+  {
+    "date": "2026-07-06T00:33:50.660Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2516.15,
+    "duration_s": 917.98,
+    "avg_pace_s_km": 329.15,
+    "avg_hr": 137
+  },
+  {
+    "date": "2026-07-06T01:02:06.810Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 10005.23,
+    "duration_s": 3135.49,
+    "avg_pace_s_km": 313.39,
+    "avg_hr": 148
+  },
+  {
+    "date": "2026-07-06T02:29:27.630Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2413.93,
+    "duration_s": 883.16,
+    "avg_pace_s_km": 365.87,
+    "avg_hr": 138
+  },
+  {
+    "date": "2026-07-06T08:48:31.260Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2122.6,
+    "avg_pace_s_km": 0,
+    "avg_hr": 89
+  },
+  {
+    "date": "2026-07-07T00:46:44.330Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1423.22,
+    "duration_s": 459.08,
+    "avg_pace_s_km": 322.57,
+    "avg_hr": 134
+  },
+  {
+    "date": "2026-07-07T01:02:14.380Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 12005.09,
+    "duration_s": 3562.45,
+    "avg_pace_s_km": 296.75,
+    "avg_hr": 153
+  },
+  {
+    "date": "2026-07-07T02:32:13.360Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 214.5,
+    "avg_pace_s_km": 0,
+    "avg_hr": 119
+  },
+  {
+    "date": "2026-07-07T02:46:27.150Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 77.41,
+    "duration_s": 17.36,
+    "avg_pace_s_km": 224.26,
+    "avg_hr": 122
+  },
+  {
+    "date": "2026-07-07T02:48:30.770Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1233.84,
+    "duration_s": 697,
+    "avg_pace_s_km": 564.91,
+    "avg_hr": 138
+  },
+  {
+    "date": "2026-07-07T03:04:37.230Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 681.21,
+    "duration_s": 323.85,
+    "avg_pace_s_km": 475.4,
+    "avg_hr": 130
+  },
+  {
+    "date": "2026-07-08T00:35:36.700Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 3847.77,
+    "duration_s": 1391.65,
+    "avg_pace_s_km": 332.53,
+    "avg_hr": 133
+  },
+  {
+    "date": "2026-07-08T01:13:10.180Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 10001.18,
+    "duration_s": 2651.86,
+    "avg_pace_s_km": 265.15,
+    "avg_hr": 159
+  },
+  {
+    "date": "2026-07-08T02:26:57.490Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 3886.6,
+    "duration_s": 1458.03,
+    "avg_pace_s_km": 345.82,
+    "avg_hr": 135
+  },
+  {
+    "date": "2026-07-08T08:02:53.200Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 5421.7,
+    "duration_s": 2503.42,
+    "avg_pace_s_km": 374.53,
+    "avg_hr": 129
+  },
+  {
+    "date": "2026-07-08T09:16:02.820Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1370.22,
+    "duration_s": 543.65,
+    "avg_pace_s_km": 396.77,
+    "avg_hr": 125
+  },
+  {
+    "date": "2026-07-09T00:33:29.850Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1725.27,
+    "duration_s": 948.95,
+    "avg_pace_s_km": 336.38,
+    "avg_hr": 132
+  },
+  {
+    "date": "2026-07-09T01:00:07.680Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 10006.37,
+    "duration_s": 3194.53,
+    "avg_pace_s_km": 319.25,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-07-09T02:25:52.250Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2351.45,
+    "duration_s": 837.37,
+    "avg_pace_s_km": 356.11,
+    "avg_hr": 131
+  },
+  {
+    "date": "2026-07-09T08:14:18.900Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2912.62,
+    "avg_pace_s_km": 0,
+    "avg_hr": 104
+  },
+  {
+    "date": "2026-07-10T01:01:48.830Z",
+    "name": "昆明市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1290.01,
+    "duration_s": 467.7,
+    "avg_pace_s_km": 362.57,
+    "avg_hr": 124
+  },
+  {
+    "date": "2026-07-10T01:16:44.920Z",
+    "name": "昆明市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 124.63,
+    "duration_s": 36.86,
+    "avg_pace_s_km": 295.77,
+    "avg_hr": 113
+  },
+  {
+    "date": "2026-07-10T01:37:16.930Z",
+    "name": "昆明市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 3263.3,
+    "duration_s": 1008.59,
+    "avg_pace_s_km": 309.07,
+    "avg_hr": 148
+  },
+  {
+    "date": "2026-07-10T01:58:30.980Z",
+    "name": "昆明市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2803.07,
+    "duration_s": 1000.89,
+    "avg_pace_s_km": 357.07,
+    "avg_hr": 147
+  },
+  {
+    "date": "2026-07-10T02:24:09.120Z",
+    "name": "昆明市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1155.59,
+    "duration_s": 643.66,
+    "avg_pace_s_km": 482.15,
+    "avg_hr": 141
+  },
+  {
+    "date": "2026-07-10T02:35:25.070Z",
+    "name": "昆明市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 837.42,
+    "duration_s": 357.23,
+    "avg_pace_s_km": 426.59,
+    "avg_hr": 130
+  },
+  {
+    "date": "2026-07-11T00:36:44.880Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 11396.85,
+    "duration_s": 4315.56,
+    "avg_pace_s_km": 328.91,
+    "avg_hr": 147
+  },
+  {
+    "date": "2026-07-11T02:08:13.350Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1423.46,
+    "duration_s": 497.49,
+    "avg_pace_s_km": 349.49,
+    "avg_hr": 138
+  },
+  {
+    "date": "2026-07-12T00:33:21.710Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2404.23,
+    "duration_s": 872.24,
+    "avg_pace_s_km": 342.6,
+    "avg_hr": 134
+  },
+  {
+    "date": "2026-07-12T01:10:15.120Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 19672.61,
+    "duration_s": 6564.37,
+    "avg_pace_s_km": 320.05,
+    "avg_hr": 144
+  },
+  {
+    "date": "2026-07-12T03:07:21.580Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2274.35,
+    "duration_s": 754.4,
+    "avg_pace_s_km": 307.33,
+    "avg_hr": 155
+  },
+  {
+    "date": "2026-07-13T00:34:39.690Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2060.94,
+    "duration_s": 1512.46,
+    "avg_pace_s_km": 411.74,
+    "avg_hr": 123
+  },
+  {
+    "date": "2026-07-13T01:24:41.760Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 8322.63,
+    "duration_s": 2189.56,
+    "avg_pace_s_km": 263.09,
+    "avg_hr": 160
+  },
+  {
+    "date": "2026-07-13T02:36:25.050Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 3484.77,
+    "duration_s": 1166.26,
+    "avg_pace_s_km": 334.68,
+    "avg_hr": 141
+  },
+  {
+    "date": "2026-07-13T08:03:57.960Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1393.81,
+    "duration_s": 497.4,
+    "avg_pace_s_km": 356.87,
+    "avg_hr": 127
+  },
+  {
+    "date": "2026-07-13T08:16:12.090Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 8009.36,
+    "duration_s": 2815.63,
+    "avg_pace_s_km": 351.55,
+    "avg_hr": 133
+  },
+  {
+    "date": "2026-07-14T00:37:43.050Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2091.72,
+    "duration_s": 687.82,
+    "avg_pace_s_km": 324.15,
+    "avg_hr": 129
+  },
+  {
+    "date": "2026-07-14T01:03:29.660Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 11768.23,
+    "duration_s": 3796.74,
+    "avg_pace_s_km": 322.64,
+    "avg_hr": 138
+  },
+  {
+    "date": "2026-07-14T08:25:32.890Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1908.33,
+    "avg_pace_s_km": 0,
+    "avg_hr": 99
+  },
+  {
+    "date": "2026-07-15T01:05:44.520Z",
+    "name": "昆明市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2611.46,
+    "duration_s": 820.97,
+    "avg_pace_s_km": 301.07,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-07-15T01:42:23.750Z",
+    "name": "昆明市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 6659.53,
+    "duration_s": 2573.36,
+    "avg_pace_s_km": 386.42,
+    "avg_hr": 151
+  },
+  {
+    "date": "2026-07-15T02:28:40.570Z",
+    "name": "昆明市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1000.78,
+    "duration_s": 371.5,
+    "avg_pace_s_km": 371.21,
+    "avg_hr": 142
+  },
+  {
+    "date": "2026-07-15T02:38:24.300Z",
+    "name": "昆明市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 873.04,
+    "duration_s": 370.86,
+    "avg_pace_s_km": 424.8,
+    "avg_hr": 128
+  },
+  {
+    "date": "2026-07-16T00:39:12.250Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2428.28,
+    "duration_s": 900.33,
+    "avg_pace_s_km": 370.78,
+    "avg_hr": 130
+  },
+  {
+    "date": "2026-07-16T01:06:07.540Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 14964.84,
+    "duration_s": 4317.37,
+    "avg_pace_s_km": 288.51,
+    "avg_hr": 154
+  },
+  {
+    "date": "2026-07-16T10:50:07.040Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 328.62,
+    "duration_s": 135,
+    "avg_pace_s_km": 410.82,
+    "avg_hr": 111
+  },
+  {
+    "date": "2026-07-17T00:40:04.590Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2414.86,
+    "duration_s": 849.61,
+    "avg_pace_s_km": 343.71,
+    "avg_hr": 133
+  },
+  {
+    "date": "2026-07-17T01:17:22.240Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 12003.04,
+    "duration_s": 3346.3,
+    "avg_pace_s_km": 278.8,
+    "avg_hr": 157
+  },
+  {
+    "date": "2026-07-17T02:43:31.130Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1651.32,
+    "duration_s": 958.79,
+    "avg_pace_s_km": 394.36,
+    "avg_hr": 124
+  },
+  {
+    "date": "2026-07-17T08:02:02.940Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 681.27,
+    "duration_s": 257.79,
+    "avg_pace_s_km": 378.4,
+    "avg_hr": 130
+  },
+  {
+    "date": "2026-07-17T08:15:03.360Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 8023.9,
+    "duration_s": 2831.1,
+    "avg_pace_s_km": 352.84,
+    "avg_hr": 132
+  },
+  {
+    "date": "2026-07-17T09:09:06.300Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1378.35,
+    "duration_s": 540.56,
+    "avg_pace_s_km": 392.18,
+    "avg_hr": 131
+  },
+  {
+    "date": "2026-07-18T00:30:15.990Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "long_quality",
+    "distance_m": 29001.97,
+    "duration_s": 8565.42,
+    "avg_pace_s_km": 295.34,
+    "avg_hr": 146
+  },
+  {
+    "date": "2026-07-19T01:12:02.540Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 420.34,
+    "duration_s": 216.65,
+    "avg_pace_s_km": 515.42,
+    "avg_hr": 110
+  },
+  {
+    "date": "2026-07-19T01:36:39.160Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 8684.3,
+    "duration_s": 3314.84,
+    "avg_pace_s_km": 374.27,
+    "avg_hr": 132
+  },
+  {
+    "date": "2026-07-20T00:35:35.000Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2399.61,
+    "duration_s": 820.15,
+    "avg_pace_s_km": 341.79,
+    "avg_hr": 136
+  },
+  {
+    "date": "2026-07-20T01:27:27.200Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 9857.76,
+    "duration_s": 3249.78,
+    "avg_pace_s_km": 324.48,
+    "avg_hr": 145
+  },
+  {
+    "date": "2026-07-20T02:52:47.920Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2309.84,
+    "duration_s": 839.61,
+    "avg_pace_s_km": 334.76,
+    "avg_hr": 136
+  },
+  {
+    "date": "2026-07-20T08:00:18.420Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1377.15,
+    "duration_s": 547.61,
+    "avg_pace_s_km": 397.65,
+    "avg_hr": 128
+  },
+  {
+    "date": "2026-07-20T08:12:24.820Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 8733.39,
+    "duration_s": 2973.32,
+    "avg_pace_s_km": 335.18,
+    "avg_hr": 140
+  },
+  {
+    "date": "2026-07-20T09:07:51.730Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1745.95,
+    "avg_pace_s_km": 0,
+    "avg_hr": 101
+  },
+  {
+    "date": "2026-07-21T00:36:20.290Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1307.49,
+    "duration_s": 448.98,
+    "avg_pace_s_km": 343.39,
+    "avg_hr": 130
+  },
+  {
+    "date": "2026-07-21T01:05:45.270Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 8017.67,
+    "duration_s": 2670.58,
+    "avg_pace_s_km": 333.09,
+    "avg_hr": 135
+  },
+  {
+    "date": "2026-07-21T02:08:57.020Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 3479.92,
+    "duration_s": 1324.44,
+    "avg_pace_s_km": 380.6,
+    "avg_hr": 146
+  },
+  {
+    "date": "2026-07-21T02:36:29.240Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 981.65,
+    "duration_s": 351.79,
+    "avg_pace_s_km": 358.37,
+    "avg_hr": 135
+  },
+  {
+    "date": "2026-07-22T01:02:28.990Z",
+    "name": "昆明市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2725.71,
+    "duration_s": 853.14,
+    "avg_pace_s_km": 313,
+    "avg_hr": 136
+  },
+  {
+    "date": "2026-07-22T01:43:08.530Z",
+    "name": "跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 4653.06,
+    "duration_s": 1678.45,
+    "avg_pace_s_km": 330.38,
+    "avg_hr": 149
+  },
+  {
+    "date": "2026-07-22T02:12:53.240Z",
+    "name": "昆明市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2151.91,
+    "duration_s": 850.54,
+    "avg_pace_s_km": 395.25,
+    "avg_hr": 148
+  },
+  {
+    "date": "2026-07-22T02:38:46.080Z",
+    "name": "昆明市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 962.78,
+    "duration_s": 387.25,
+    "avg_pace_s_km": 402.22,
+    "avg_hr": 134
+  },
+  {
+    "date": "2026-07-22T08:01:47.830Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 8014.98,
+    "duration_s": 3023.51,
+    "avg_pace_s_km": 339.85,
+    "avg_hr": 134
+  },
+  {
+    "date": "2026-07-23T00:35:03.540Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2117.41,
+    "duration_s": 739.35,
+    "avg_pace_s_km": 349.18,
+    "avg_hr": 126
+  },
+  {
+    "date": "2026-07-23T00:58:15.580Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 12021.78,
+    "duration_s": 4466.09,
+    "avg_pace_s_km": 303.83,
+    "avg_hr": 140
+  },
+  {
+    "date": "2026-07-23T02:32:08.210Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2002.7,
+    "duration_s": 1041.08,
+    "avg_pace_s_km": 519.85,
+    "avg_hr": 120
+  },
+  {
+    "date": "2026-07-23T08:56:19.270Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2562.51,
+    "avg_pace_s_km": 0,
+    "avg_hr": 85
+  },
+  {
+    "date": "2026-07-24T00:34:20.870Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1381.44,
+    "duration_s": 511.99,
+    "avg_pace_s_km": 349.16,
+    "avg_hr": 123
+  },
+  {
+    "date": "2026-07-24T00:52:07.840Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 10005.35,
+    "duration_s": 3048.5,
+    "avg_pace_s_km": 304.7,
+    "avg_hr": 147
+  },
+  {
+    "date": "2026-07-24T02:21:32.200Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1197.15,
+    "duration_s": 434.95,
+    "avg_pace_s_km": 363.32,
+    "avg_hr": 132
+  },
+  {
+    "date": "2026-07-25T00:49:50.350Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "long_quality",
+    "distance_m": 30005.46,
+    "duration_s": 9143.01,
+    "avg_pace_s_km": 295.98,
+    "avg_hr": 149
+  },
+  {
+    "date": "2026-07-26T06:07:02.640Z",
+    "name": "昆明市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 447.89,
+    "duration_s": 1006.07,
+    "avg_pace_s_km": 1616.59,
+    "avg_hr": 74
+  },
+  {
+    "date": "2026-07-27T10:49:36.970Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 11998.74,
+    "duration_s": 4011.46,
+    "avg_pace_s_km": 334.32,
+    "avg_hr": 137
+  },
+  {
+    "date": "2026-07-28T10:25:51.220Z",
+    "name": "上海市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 3561.57,
+    "duration_s": 1126.69,
+    "avg_pace_s_km": 316.35,
+    "avg_hr": 133
+  },
+  {
+    "date": "2026-07-28T10:56:59.160Z",
+    "name": "上海市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 3204.63,
+    "duration_s": 746.54,
+    "avg_pace_s_km": 232.97,
+    "avg_hr": 170
+  },
+  {
+    "date": "2026-07-28T11:15:46.790Z",
+    "name": "上海市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 408.26,
+    "duration_s": 147.72,
+    "avg_pace_s_km": 361.84,
+    "avg_hr": 136
+  },
+  {
+    "date": "2026-07-29T11:33:10.510Z",
+    "name": "上海市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2110.01,
+    "duration_s": 659.32,
+    "avg_pace_s_km": 312.47,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-07-29T12:00:42.500Z",
+    "name": "上海市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 2905.28,
+    "duration_s": 661.61,
+    "avg_pace_s_km": 227.74,
+    "avg_hr": 172
+  },
+  {
+    "date": "2026-07-29T14:21:45.980Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 713.98,
+    "duration_s": 205.96,
+    "avg_pace_s_km": 288.47,
+    "avg_hr": 146
+  },
+  {
+    "date": "2026-07-29T14:30:06.060Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 3000.25,
+    "duration_s": 689.83,
+    "avg_pace_s_km": 229.93,
+    "avg_hr": 172
+  },
+  {
+    "date": "2026-07-31T11:26:52.870Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "long_quality",
+    "distance_m": 25000.43,
+    "duration_s": 6919.06,
+    "avg_pace_s_km": 276.77,
+    "avg_hr": 159
+  },
+  {
+    "date": "2026-08-01T11:43:34.440Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 7257.8,
+    "duration_s": 2361.11,
+    "avg_pace_s_km": 325.32,
+    "avg_hr": 140
+  },
+  {
+    "date": "2026-08-02T11:33:38.520Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 16271.87,
+    "duration_s": 4725.41,
+    "avg_pace_s_km": 290.4,
+    "avg_hr": 151
+  },
+  {
+    "date": "2026-08-03T10:43:22.700Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 12008.05,
+    "duration_s": 3901.32,
+    "avg_pace_s_km": 324.9,
+    "avg_hr": 138
+  },
+  {
+    "date": "2026-08-04T10:58:00.040Z",
+    "name": "上海市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2000.34,
+    "duration_s": 668.35,
+    "avg_pace_s_km": 334.12,
+    "avg_hr": 136
+  },
+  {
+    "date": "2026-08-04T11:13:42.420Z",
+    "name": "上海市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 3759.12,
+    "duration_s": 1191.69,
+    "avg_pace_s_km": 317.01,
+    "avg_hr": 159
+  },
+  {
+    "date": "2026-08-04T11:41:43.480Z",
+    "name": "跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 3681.49,
+    "duration_s": 1189.47,
+    "avg_pace_s_km": 323.09,
+    "avg_hr": 162
+  },
+  {
+    "date": "2026-08-05T10:22:08.580Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1649.27,
+    "duration_s": 751.37,
+    "avg_pace_s_km": 435.17,
+    "avg_hr": 117
+  },
+  {
+    "date": "2026-08-05T11:42:51.220Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1949.85,
+    "duration_s": 836.8,
+    "avg_pace_s_km": 429.16,
+    "avg_hr": 121
+  },
+  {
+    "date": "2026-08-06T11:24:56.730Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1172.24,
+    "duration_s": 375.65,
+    "avg_pace_s_km": 320.45,
+    "avg_hr": 130
+  },
+  {
+    "date": "2026-08-06T11:35:39.760Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 8007.06,
+    "duration_s": 2048.42,
+    "avg_pace_s_km": 255.84,
+    "avg_hr": 162
+  },
+  {
+    "date": "2026-08-06T12:12:02.560Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 6118.99,
+    "duration_s": 1945.8,
+    "avg_pace_s_km": 318,
+    "avg_hr": 152
+  },
+  {
+    "date": "2026-08-07T11:01:05.220Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 10003.07,
+    "duration_s": 3079.78,
+    "avg_pace_s_km": 307.89,
+    "avg_hr": 145
+  },
+  {
+    "date": "2026-08-08T10:38:52.920Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "long_quality",
+    "distance_m": 25001.22,
+    "duration_s": 7387.05,
+    "avg_pace_s_km": 291.89,
+    "avg_hr": 152
+  },
+  {
+    "date": "2026-08-10T10:33:49.820Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 15001.39,
+    "duration_s": 4831.3,
+    "avg_pace_s_km": 315.72,
+    "avg_hr": 143
+  },
+  {
+    "date": "2026-08-11T11:49:25.550Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1362.75,
+    "duration_s": 415.21,
+    "avg_pace_s_km": 304.7,
+    "avg_hr": 135
+  },
+  {
+    "date": "2026-08-11T11:58:45.060Z",
+    "name": "跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 5724.82,
+    "duration_s": 1857.75,
+    "avg_pace_s_km": 324.52,
+    "avg_hr": 151
+  },
+  {
+    "date": "2026-08-12T10:48:53.270Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1893.72,
+    "duration_s": 718.64,
+    "avg_pace_s_km": 379.49,
+    "avg_hr": 123
+  },
+  {
+    "date": "2026-08-12T11:35:00.540Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 887.08,
+    "avg_pace_s_km": 0,
+    "avg_hr": 85
+  },
+  {
+    "date": "2026-08-12T11:51:01.890Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1733.4,
+    "duration_s": 716,
+    "avg_pace_s_km": 398.13,
+    "avg_hr": 117
+  },
+  {
+    "date": "2026-08-13T10:55:21.180Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2943.47,
+    "duration_s": 895.93,
+    "avg_pace_s_km": 304.38,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-08-13T11:15:02.620Z",
+    "name": "跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 11507.76,
+    "duration_s": 3581.26,
+    "avg_pace_s_km": 305.74,
+    "avg_hr": 160
+  },
+  {
+    "date": "2026-08-15T07:13:51.410Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "long_quality",
+    "distance_m": 26005.94,
+    "duration_s": 7434.25,
+    "avg_pace_s_km": 285.88,
+    "avg_hr": 158
+  },
+  {
+    "date": "2026-08-17T10:45:00.360Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 4129.97,
+    "duration_s": 2567.88,
+    "avg_pace_s_km": 390.39,
+    "avg_hr": 123
+  },
+  {
+    "date": "2026-08-17T11:45:55.320Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 185.62,
+    "duration_s": 96.93,
+    "avg_pace_s_km": 522.2,
+    "avg_hr": 109
+  },
+  {
+    "date": "2026-08-17T11:50:01.800Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 308.62,
+    "duration_s": 105.86,
+    "avg_pace_s_km": 343.01,
+    "avg_hr": 119
+  },
+  {
+    "date": "2026-08-17T11:53:19.250Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 12785.37,
+    "duration_s": 4025.68,
+    "avg_pace_s_km": 314.88,
+    "avg_hr": 150
+  },
+  {
+    "date": "2026-08-19T10:41:00.140Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1934.23,
+    "duration_s": 644.7,
+    "avg_pace_s_km": 333.31,
+    "avg_hr": 133
+  },
+  {
+    "date": "2026-08-19T11:02:27.180Z",
+    "name": "跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 9851.94,
+    "duration_s": 3223.28,
+    "avg_pace_s_km": 327.17,
+    "avg_hr": 156
+  },
+  {
+    "date": "2026-08-20T11:31:10.210Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 8100.82,
+    "duration_s": 2700.05,
+    "avg_pace_s_km": 333.31,
+    "avg_hr": 137
+  },
+  {
+    "date": "2026-08-21T07:57:37.970Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 5232.53,
+    "duration_s": 2738.47,
+    "avg_pace_s_km": 368.42,
+    "avg_hr": 125
+  },
+  {
+    "date": "2026-08-21T11:39:13.330Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 2644.86,
+    "avg_pace_s_km": 0,
+    "avg_hr": 83
+  },
+  {
+    "date": "2026-08-22T06:48:40.150Z",
+    "name": "泳池游泳",
+    "sport_name": null,
+    "stride_session_class": "unknown",
+    "distance_m": 100,
+    "duration_s": 2128.81,
+    "avg_pace_s_km": 107,
+    "avg_hr": 78
+  },
+  {
+    "date": "2026-08-22T10:29:30.360Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "long_quality",
+    "distance_m": 30008.02,
+    "duration_s": 8770.03,
+    "avg_pace_s_km": 292.26,
+    "avg_hr": 159
+  },
+  {
+    "date": "2026-08-24T01:10:53.180Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 8540.5,
+    "duration_s": 2805.69,
+    "avg_pace_s_km": 328.53,
+    "avg_hr": 148
+  },
+  {
+    "date": "2026-08-26T10:35:23.970Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 3230.45,
+    "duration_s": 1058.05,
+    "avg_pace_s_km": 327.53,
+    "avg_hr": 135
+  },
+  {
+    "date": "2026-08-26T11:06:40.810Z",
+    "name": "跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 3484.06,
+    "duration_s": 1255.6,
+    "avg_pace_s_km": 360.38,
+    "avg_hr": 152
+  },
+  {
+    "date": "2026-08-26T11:33:12.080Z",
+    "name": "跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 5138.46,
+    "duration_s": 2059.64,
+    "avg_pace_s_km": 389.93,
+    "avg_hr": 154
+  },
+  {
+    "date": "2026-08-27T10:28:35.110Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 14217.06,
+    "duration_s": 4821.84,
+    "avg_pace_s_km": 339.16,
+    "avg_hr": 137
+  },
+  {
+    "date": "2026-08-28T01:08:17.720Z",
+    "name": "上海市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 5200.12,
+    "duration_s": 1823.14,
+    "avg_pace_s_km": 350.61,
+    "avg_hr": 145
+  },
+  {
+    "date": "2026-08-29T09:39:23.890Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "long_quality",
+    "distance_m": 25002.48,
+    "duration_s": 7467.67,
+    "avg_pace_s_km": 297.52,
+    "avg_hr": 154
+  },
+  {
+    "date": "2026-08-31T11:02:36.300Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 14006.18,
+    "duration_s": 4271.54,
+    "avg_pace_s_km": 302.65,
+    "avg_hr": 146
+  },
+  {
+    "date": "2026-09-02T10:49:01.020Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1463.94,
+    "duration_s": 489.22,
+    "avg_pace_s_km": 334.18,
+    "avg_hr": 127
+  },
+  {
+    "date": "2026-09-02T10:58:31.270Z",
+    "name": "节奏课",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 3806.9,
+    "duration_s": 900.88,
+    "avg_pace_s_km": 236.65,
+    "avg_hr": 164
+  },
+  {
+    "date": "2026-09-02T11:16:12.830Z",
+    "name": "节奏课",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 7438.9,
+    "duration_s": 2147.63,
+    "avg_pace_s_km": 288.71,
+    "avg_hr": 168
+  },
+  {
+    "date": "2026-09-04T11:11:32.090Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 14008.36,
+    "duration_s": 4201.99,
+    "avg_pace_s_km": 299.97,
+    "avg_hr": 150
+  },
+  {
+    "date": "2026-09-05T00:36:54.380Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 5717.82,
+    "duration_s": 2037.86,
+    "avg_pace_s_km": 356.41,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-09-05T10:30:36.770Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1802.4,
+    "duration_s": 621.68,
+    "avg_pace_s_km": 344.93,
+    "avg_hr": 129
+  },
+  {
+    "date": "2026-09-05T11:35:02.320Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1895.45,
+    "duration_s": 776.88,
+    "avg_pace_s_km": 346.57,
+    "avg_hr": 129
+  },
+  {
+    "date": "2026-09-06T10:11:27.990Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "long_quality",
+    "distance_m": 30007.72,
+    "duration_s": 8414.55,
+    "avg_pace_s_km": 280.41,
+    "avg_hr": 154
+  },
+  {
+    "date": "2026-09-08T11:00:02.080Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 14210.69,
+    "duration_s": 4251.38,
+    "avg_pace_s_km": 299.17,
+    "avg_hr": 146
+  },
+  {
+    "date": "2026-09-09T10:29:18.270Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 3613.33,
+    "duration_s": 1183.54,
+    "avg_pace_s_km": 327.56,
+    "avg_hr": 133
+  },
+  {
+    "date": "2026-09-09T10:58:54.560Z",
+    "name": "强度课",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 12274.5,
+    "duration_s": 3711.49,
+    "avg_pace_s_km": 302.37,
+    "avg_hr": 158
+  },
+  {
+    "date": "2026-09-11T11:04:42.050Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 14015.75,
+    "duration_s": 4444.41,
+    "avg_pace_s_km": 317.1,
+    "avg_hr": 141
+  },
+  {
+    "date": "2026-09-13T10:07:14.960Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "long_quality",
+    "distance_m": 25003.59,
+    "duration_s": 6761.43,
+    "avg_pace_s_km": 270.42,
+    "avg_hr": 162
+  },
+  {
+    "date": "2026-09-16T10:40:46.630Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 3698.03,
+    "duration_s": 1242.1,
+    "avg_pace_s_km": 335.89,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-09-16T11:05:38.000Z",
+    "name": "跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 12660.76,
+    "duration_s": 4076.73,
+    "avg_pace_s_km": 321.78,
+    "avg_hr": 158
+  },
+  {
+    "date": "2026-09-18T10:41:18.220Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 12010.26,
+    "duration_s": 3875.8,
+    "avg_pace_s_km": 322.72,
+    "avg_hr": 146
+  },
+  {
+    "date": "2026-09-18T12:36:59.520Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 719.15,
+    "avg_pace_s_km": 0,
+    "avg_hr": 80
+  },
+  {
+    "date": "2026-09-19T08:03:35.380Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 10605.73,
+    "duration_s": 3643.84,
+    "avg_pace_s_km": 343.58,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-09-20T10:35:29.970Z",
+    "name": "跑步",
+    "sport_name": null,
+    "stride_session_class": "long_quality",
+    "distance_m": 24001.89,
+    "duration_s": 6989.75,
+    "avg_pace_s_km": 286.74,
+    "avg_hr": 153
+  },
+  {
+    "date": "2026-09-21T11:29:08.850Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 88.1,
+    "avg_pace_s_km": 0,
+    "avg_hr": 105
+  },
+  {
+    "date": "2026-09-21T11:30:54.340Z",
+    "name": "EP9",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 5232.25,
+    "avg_pace_s_km": 0,
+    "avg_hr": 86
+  },
+  {
+    "date": "2026-09-23T01:20:05.650Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 10007.76,
+    "duration_s": 3360.65,
+    "avg_pace_s_km": 335.81,
+    "avg_hr": 145
+  },
+  {
+    "date": "2026-09-23T02:31:55.030Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 548.71,
+    "duration_s": 135.3,
+    "avg_pace_s_km": 246.59,
+    "avg_hr": 151
+  },
+  {
+    "date": "2026-09-23T10:55:22.500Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1018.48,
+    "duration_s": 335.73,
+    "avg_pace_s_km": 329.65,
+    "avg_hr": 143
+  },
+  {
+    "date": "2026-09-23T11:05:48.910Z",
+    "name": "跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 11134.77,
+    "duration_s": 3919.32,
+    "avg_pace_s_km": 303.54,
+    "avg_hr": 160
+  },
+  {
+    "date": "2026-09-25T10:37:16.350Z",
+    "name": "跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 12093.13,
+    "duration_s": 3538.37,
+    "avg_pace_s_km": 292.6,
+    "avg_hr": 153
+  },
+  {
+    "date": "2026-09-25T11:39:30.640Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1033.48,
+    "duration_s": 342.14,
+    "avg_pace_s_km": 331.06,
+    "avg_hr": 146
+  },
+  {
+    "date": "2026-09-27T08:24:33.860Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 944.25,
+    "duration_s": 344.12,
+    "avg_pace_s_km": 364.44,
+    "avg_hr": 123
+  },
+  {
+    "date": "2026-09-28T00:18:39.240Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 12337.87,
+    "duration_s": 5003.71,
+    "avg_pace_s_km": 330.17,
+    "avg_hr": 146
+  },
+  {
+    "date": "2026-09-29T06:21:20.850Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 14333.57,
+    "duration_s": 4614.71,
+    "avg_pace_s_km": 321.96,
+    "avg_hr": 145
+  },
+  {
+    "date": "2026-09-30T01:11:47.880Z",
+    "name": "上海市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 400.94,
+    "duration_s": 312.47,
+    "avg_pace_s_km": 779.34,
+    "avg_hr": 113
+  },
+  {
+    "date": "2026-09-30T01:35:45.400Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2181.57,
+    "duration_s": 639.03,
+    "avg_pace_s_km": 292.93,
+    "avg_hr": 147
+  },
+  {
+    "date": "2026-09-30T01:49:29.160Z",
+    "name": "跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 11160.1,
+    "duration_s": 3246.6,
+    "avg_pace_s_km": 290.92,
+    "avg_hr": 167
+  },
+  {
+    "date": "2026-10-01T01:54:33.070Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 5784.68,
+    "duration_s": 3192.57,
+    "avg_pace_s_km": 546.62,
+    "avg_hr": 118
+  },
+  {
+    "date": "2026-10-02T22:35:19.280Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "long_quality",
+    "distance_m": 30304.03,
+    "duration_s": 7977.82,
+    "avg_pace_s_km": 263.26,
+    "avg_hr": 164
+  },
+  {
+    "date": "2026-10-05T02:12:07.740Z",
+    "name": "跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 4567.78,
+    "duration_s": 2207.25,
+    "avg_pace_s_km": 454.81,
+    "avg_hr": 127
+  },
+  {
+    "date": "2026-10-05T03:00:03.290Z",
+    "name": "力量训练",
+    "sport_name": null,
+    "stride_session_class": "strength",
+    "distance_m": 0,
+    "duration_s": 1587.06,
+    "avg_pace_s_km": 0,
+    "avg_hr": 101
+  },
+  {
+    "date": "2026-10-05T06:04:02.260Z",
+    "name": "苏州市 跑步",
+    "sport_name": null,
+    "stride_session_class": "long_quality",
+    "distance_m": 18462.53,
+    "duration_s": 10335.06,
+    "avg_pace_s_km": 559.8,
+    "avg_hr": 111
+  },
+  {
+    "date": "2026-10-05T22:54:21.800Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1186.68,
+    "duration_s": 394.39,
+    "avg_pace_s_km": 332.35,
+    "avg_hr": 147
+  },
+  {
+    "date": "2026-10-05T23:03:45.320Z",
+    "name": "强度课",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 12221.58,
+    "duration_s": 3275.33,
+    "avg_pace_s_km": 268,
+    "avg_hr": 162
+  },
+  {
+    "date": "2026-10-06T22:52:21.730Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 15540.79,
+    "duration_s": 4539.37,
+    "avg_pace_s_km": 292.09,
+    "avg_hr": 149
+  },
+  {
+    "date": "2026-10-08T11:03:04.140Z",
+    "name": "跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 10871.56,
+    "duration_s": 3787.63,
+    "avg_pace_s_km": 348.4,
+    "avg_hr": 129
+  },
+  {
+    "date": "2026-10-09T10:53:26.560Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 13005.32,
+    "duration_s": 3328.38,
+    "avg_pace_s_km": 255.93,
+    "avg_hr": 161
+  },
+  {
+    "date": "2026-10-10T18:54:06.740Z",
+    "name": "跑步",
+    "sport_name": null,
+    "stride_session_class": "long_quality",
+    "distance_m": 30015.17,
+    "duration_s": 8178.79,
+    "avg_pace_s_km": 272.49,
+    "avg_hr": 157
+  },
+  {
+    "date": "2026-10-12T00:44:50.870Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 4444.79,
+    "duration_s": 1537.05,
+    "avg_pace_s_km": 345.82,
+    "avg_hr": 131
+  },
+  {
+    "date": "2026-10-13T10:45:04.450Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2403.76,
+    "duration_s": 848.08,
+    "avg_pace_s_km": 352.82,
+    "avg_hr": 129
+  },
+  {
+    "date": "2026-10-13T11:05:18.360Z",
+    "name": "强度课",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 11193.35,
+    "duration_s": 3216.01,
+    "avg_pace_s_km": 265.18,
+    "avg_hr": 162
+  },
+  {
+    "date": "2026-10-13T12:03:16.120Z",
+    "name": "强度课",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 2676.3,
+    "duration_s": 1125.15,
+    "avg_pace_s_km": 420.41,
+    "avg_hr": 150
+  },
+  {
+    "date": "2026-10-14T11:21:37.930Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 10592.14,
+    "duration_s": 3602.33,
+    "avg_pace_s_km": 340.09,
+    "avg_hr": 129
+  },
+  {
+    "date": "2026-10-15T11:04:42.220Z",
+    "name": "跑步",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 15016.48,
+    "duration_s": 4103.76,
+    "avg_pace_s_km": 250.05,
+    "avg_hr": 162
+  },
+  {
+    "date": "2026-10-17T10:01:06.750Z",
+    "name": "跑步",
+    "sport_name": null,
+    "stride_session_class": "long_quality",
+    "distance_m": 28719.64,
+    "duration_s": 8236.73,
+    "avg_pace_s_km": 284.14,
+    "avg_hr": 157
+  },
+  {
+    "date": "2026-10-17T12:48:22.280Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 306.78,
+    "duration_s": 116.55,
+    "avg_pace_s_km": 379.92,
+    "avg_hr": 140
+  },
+  {
+    "date": "2026-10-18T10:44:43.800Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 1377.97,
+    "duration_s": 874.12,
+    "avg_pace_s_km": 634.35,
+    "avg_hr": 110
+  },
+  {
+    "date": "2026-10-18T11:03:40.990Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 6381.82,
+    "duration_s": 2480.98,
+    "avg_pace_s_km": 388.77,
+    "avg_hr": 123
+  },
+  {
+    "date": "2026-10-19T07:47:22.540Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 14004.85,
+    "duration_s": 4116.08,
+    "avg_pace_s_km": 293.91,
+    "avg_hr": 145
+  },
+  {
+    "date": "2026-10-20T10:36:03.400Z",
+    "name": "上海市 运动场跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2000.57,
+    "duration_s": 592.97,
+    "avg_pace_s_km": 296.4,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-10-20T10:47:45.310Z",
+    "name": "[STRIDE] 5km+4km+3km+1km 递减配速 课",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 11422.47,
+    "duration_s": 3133.41,
+    "avg_pace_s_km": 273.1,
+    "avg_hr": 164
+  },
+  {
+    "date": "2026-10-22T10:24:28.440Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 5008.31,
+    "duration_s": 1536.47,
+    "avg_pace_s_km": 306.79,
+    "avg_hr": 139
+  },
+  {
+    "date": "2026-10-22T10:56:22.020Z",
+    "name": "[STRIDE] 15′阈值跑×2（3:45–4:0 0）",
+    "sport_name": null,
+    "stride_session_class": "quality",
+    "distance_m": 8000.43,
+    "duration_s": 2060.37,
+    "avg_pace_s_km": 257.54,
+    "avg_hr": 163
+  },
+  {
+    "date": "2026-10-22T11:34:56.430Z",
+    "name": "上海市 跑步",
+    "sport_name": null,
+    "stride_session_class": "easy",
+    "distance_m": 2414.51,
+    "duration_s": 850.44,
+    "avg_pace_s_km": 352.22,
+    "avg_hr": 140
+  },
+  {
+    "date": "2026-10-24T07:42:48.830Z",
+    "name": "[STRIDE] 5km 递进×7（4:50→4:00）",
+    "sport_name": null,
+    "stride_session_class": "long_quality",
+    "distance_m": 35009.06,
+    "duration_s": 9334.44,
+    "avg_pace_s_km": 266.55,
+    "avg_hr": 160
+  }
+]
