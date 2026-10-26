@@ -288,3 +288,23 @@ func TestActivityTimeseriesUnmigratedServesFromRows(t *testing.T) {
 		t.Fatalf("backend GETs = %d for an unmigrated activity, want 0", counting.gets)
 	}
 }
+
+// TestActivityTimeseriesMissingActivityReturnsEmpty: the pointer query's
+// not-found branch must keep the old read's contract — an absent activity is
+// an empty point set, not an error, and never a blob GET.
+func TestActivityTimeseriesMissingActivityReturnsEmpty(t *testing.T) {
+	st, ts, uid := openBlobTestStore(t)
+	counting := &countingBlobStore{MemStore: ts}
+	st.SetTSBlobStore(counting)
+
+	got, err := st.ActivityTimeseries(context.Background(), uid, "never-synced")
+	if err != nil {
+		t.Fatalf("read missing activity: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("points for a missing activity = %d, want 0", len(got))
+	}
+	if counting.gets != 0 {
+		t.Fatalf("backend GETs = %d for a missing activity, want 0", counting.gets)
+	}
+}
