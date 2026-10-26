@@ -34,18 +34,18 @@ import Testing
         var shareResult: Result<CoachShareResult, Error> = .success(CoachShareResult(sid: "sid123", reused: false))
         var currentPlanResult: Result<CurrentPlanRef?, Error> = .success(nil)
         var applyError: Error?
-        var upsertResult: Result<PlanSessionRow, Error> = .success(
-            PlanSessionRow(workoutId: "w-1", date: "2026-10-28", source: "custom", pushed: false, saveToken: "save-1")
+        var upsertResult: Result<CoachPlanSessionRow, Error> = .success(
+            CoachPlanSessionRow(workoutId: "w-1", date: "2026-10-28", source: "custom", pushed: false, saveToken: "save-1")
         )
         var pushError: Error?
         var deleteError: Error?
         var moveResult: Result<MoveWorkoutResult, Error> = .success(
             MoveWorkoutResult(
-                row: PlanSessionRow(workoutId: "w-9", date: "2026-10-30", source: "custom", pushed: false),
+                row: CoachPlanSessionRow(workoutId: "w-9", date: "2026-10-30", source: "custom", pushed: false),
                 watchSynced: true
             )
         )
-        var planRowsResult: Result<[PlanSessionRow], Error> = .success([])
+        var planRowsResult: Result<[CoachPlanSessionRow], Error> = .success([])
         private(set) var applyCalls: [(userId: String, applyToken: String, expectation: (planId: String, revision: Int?)?)] = []
         private(set) var upsertCards: [CustomWorkoutCard] = []
         private(set) var deleteCalls: [String] = []
@@ -113,7 +113,7 @@ import Testing
             }
         }
 
-        func upsertCustomWorkout(_ card: CustomWorkoutCard) async throws -> PlanSessionRow {
+        func upsertCustomWorkout(_ card: CustomWorkoutCard) async throws -> CoachPlanSessionRow {
             try lock.withLock {
                 upsertCards.append(card)
                 return try upsertResult.get()
@@ -138,7 +138,7 @@ import Testing
             }
         }
 
-        func planSessions(userId: String, from: String, to: String) async throws -> [PlanSessionRow] {
+        func planSessions(userId: String, from: String, to: String) async throws -> [CoachPlanSessionRow] {
             try planRowsResult.get()
         }
     }
@@ -394,8 +394,8 @@ import Testing
         ]))
         // 课表行：save-1 已推送；w-9 已在新日期（已改期）；w-gone 已消失（已删除）。
         service.planRowsResult = .success([
-            PlanSessionRow(workoutId: "w-1", date: "2026-10-28", source: "custom", pushed: true, saveToken: "save-1"),
-            PlanSessionRow(workoutId: "w-9", date: "2026-10-30", source: "custom", pushed: false),
+            CoachPlanSessionRow(workoutId: "w-1", date: "2026-10-28", source: "custom", pushed: true, saveToken: "save-1"),
+            CoachPlanSessionRow(workoutId: "w-9", date: "2026-10-30", source: "custom", pushed: false),
         ])
         let (model, _) = makeModel(service: service)
         await model.bootstrap()

@@ -288,9 +288,10 @@ public struct WorkoutOpCard: Equatable, Sendable {
 
 // MARK: - 卡片动作端点响应面
 
-/// 统一课表行（`GET /api/users/me/plan/sessions`）：对账只消费
-/// workout_id/date/pushed/save_token 四个字段。
-public struct PlanSessionRow: Equatable, Sendable {
+/// 统一课表行的教练侧最小投影（`GET /api/users/me/plan/sessions`）：对账只
+/// 消费 workout_id/date/pushed/save_token 四个字段。完整 wire 镜像
+/// `PlanSessionRow`（训练域 devops#768）与其并存，重名规避改名。
+public struct CoachPlanSessionRow: Equatable, Sendable {
     public let workoutId: String
     public let date: String
     public let source: String
@@ -309,10 +310,10 @@ public struct PlanSessionRow: Equatable, Sendable {
 /// 改期自建课响应（T1 move 端点）：watch_synced=false 表示改期已生效、
 /// 仅手表副本未跟上。
 public struct MoveWorkoutResult: Equatable, Sendable {
-    public let row: PlanSessionRow
+    public let row: CoachPlanSessionRow
     public let watchSynced: Bool
 
-    public init(row: PlanSessionRow, watchSynced: Bool) {
+    public init(row: CoachPlanSessionRow, watchSynced: Bool) {
         self.row = row
         self.watchSynced = watchSynced
     }

@@ -304,7 +304,8 @@ public final class AppModel {
 
 /// 教练上下文交接（小程序 storage `coach.pendingContext` 的等价物；
 /// PR-4 教练域定稿：机器可读 target + 展示标签 + 可选 kickoff 首条消息——
-/// 入口按钮已把意图说清时替用户自动发出，教练主动开场确认，兼作会话标题）。
+/// 入口按钮已把意图说清时替用户自动发出，教练主动开场确认，兼作会话标题。
+/// 训练域 PR-5（devops#768）消费 session kind（date + session_index）交接）。
 public struct PendingCoachContext: Hashable, Sendable {
     public var target: CoachTarget
     public var label: String?

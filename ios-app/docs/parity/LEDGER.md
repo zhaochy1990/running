@@ -66,9 +66,19 @@
 - 流式气泡 16ms 帧节流合并（MP setTimeout 节流）：SwiftUI 状态更新天然合帧，逐 delta 更新渲染语义等价，不单列偏差。
 - `shareIndex` 投影序号、空回复降级占位、needs_input 追问不领序号、断流回前台对账：行为对齐（CoachChatModelTests 24 例覆盖）。
 
-## 训练域（PR-5 落地后登记）
+## 训练域（PR-5 落地后登记，devops#768）
 
-（空）
+| ID | 检查点 | 维度 | 小程序现状 | iOS 现状 | 状态 | 确认人 | 日期 | 说明 |
+| ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
+| D-trn-1 | 训练 tab 顶栏 | UI | 自绘顶栏（菜单钮 toast「暂未开放」/「本周训练」+ 周副标题） | 系统 inline 导航标题 + principal 副标题（周次），菜单钮删除（TrainingHomeView.swift） | confirmed | 用户（D-rec-1 同款推导 + D-menu-1） | 2026-10-26 | 保留偏差：菜单钮在小程序即占位 toast；周副标题保留在 principal |
+| D-trn-2 | 今日卡操作行 | UI | 手表/分享/更多 icon + ActionSheet→modal 双确认删除 | 显式 icon 按钮 + confirmationDialog 单确认（系统形态）；「更多」仅自建课出删除（TrainingHomeView.swift） | confirmed | 用户（D-sheet-1 / D-menu-1 对等实现） | 2026-10-26 | 保留偏差：删除确认从「ActionSheet 选删除 + modal 再确认」合并为系统 confirmationDialog；「暂无更多操作」toast 保留 |
+| D-trn-3 | 自建课分享出向 | 功能 | onShareAppMessage 免登录落地页卡（canvas 5:4 封面预生成） | ShareLink 单一路分享，URL = web 域 + 落地路径占位（WorkoutSharePlaceholder）；canvas 封面不迁 | pending | — | 2026-10-26 | 出向归 PR-8（#758）接线：universal link 注册、真实落地页形态、海报封面（D-poster-1）届时收口 |
+| D-trn-4 | 图表技术栈 | UI | uCharts（训练状态六图）+ CSS grid（计划周柱图/热力图格子）+ flex 强度条形图 | 训练状态六图 Swift Charts + chartOverlay tooltip（#756 决议沿 #754）；周柱图/强度条/16 周热力图自绘 SwiftUI 容器（#756：Charts RectangleMark 不适合该交互密度） | confirmed | 用户（#756 决议五） | 2026-10-26 | 保留偏差：图元技术栈换 Swift Charts；数据口径（分桶阈值/配色语义/归一算法）逐函数直译有单测 |
+| D-trn-5 | 雷达/预测/PB 三块 | 功能 | 无（#747 清点实证，#423 决议描述与现状不符） | 不做（TrainingStatusView 不含三块） | confirmed | 用户（#756 决议一拍板：以当前代码为唯一事实源） | 2026-10-26 | 1.x 与小程序 #615-#619 线一起上双端对齐；ledger 不需记（1.0 与样板一致） |
+| D-trn-6 | push 选日弹层 | UI | 自定义底部弹层组件（±7 天滚动列表） | .sheet + presentationDetents(.medium) 列表（今天起 8 个可选日，与 plan 端点 target_date 窗口一致）（PushDateSheet） | confirmed | 用户（#755 sheet 惯例 + D-sheet-1） | 2026-10-26 | 保留偏差：buildPushDateOptions 本身只取今天起 8 项（历史日不出现在选项）；iOS 沿同一工具函数口径 |
+| A-trn-1 | 强度条形图与估时口径 | UI | deriveIntensityBars/estimateWorkoutSeconds 启发式（配速中值折算、课内归一 [55,95]、16 柱采样） | 逐函数直译（WorkoutSpec.swift），配速/心率分段线性锚点表原样，单测覆盖锚点/采样/休息占位 | aligned | 用户（#756 决议三：10-20 口径照搬） | 2026-10-26 | 课表类型 chip 七类启发式、分段组（骑线 ×N/休息独立行/心率帽）、力量动作行同款直译 |
+| A-trn-2 | 备赛旅程视图模型 | UI | training-plan.ts buildViewModels（阶段 span 推导/当前周解析/周柱归一/点柱详情/dose 兜底系数） | TrainingPlanBuilder 逐函数直译（周区间缺口按日期推导、current_week_number 优先、km·dose 切换重建、计划 dose≈跑量×6.6-7.6 兜底），单测覆盖 | aligned | 用户（#756 决议四） | 2026-10-26 | v1 旧 markdown 计划不渲染、提示去网页；空态 CTA switchTab coach（selectedTab 等价） |
+| D-trn-7 | 跨域同名 wire 镜像 | 架构 | types/plan.ts + utils/workoutSegments.ts 全库一份（各页直接 import） | 训练域（TrainingWireModels/WorkoutSpec，flat 类型 + enum kind）与教练域（CoachPlanSessionRow，4 字段最小投影）、分享落地域（Landing 前缀自持镜像，String kind 嵌套类型）三份并存，rebase 整合重名规避 | pending | — | 2026-10-26 | PR-2/4/6/7 并行落地后同模块撞名（CoachPlanSessionRow 先例）；两套镜像的语义去重（提升 Shared、统一 kind 口径）延后另票收口 |
 
 ## 赛事域（PR-6 落地后登记，devops#769）
 

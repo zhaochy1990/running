@@ -14,8 +14,8 @@ public struct SharedWorkout: Decodable, Sendable, Equatable {
     public let summary: String?
     /// 分享者（A）的原排期日，上海本地 YYYY-MM-DD。
     public let date: String
-    public let spec: RunWorkoutSpec?
-    public let strengthSpec: StrengthWorkoutSpec?
+    public let spec: LandingRunWorkoutSpec?
+    public let strengthSpec: LandingStrengthWorkoutSpec?
     public let totalDistanceM: Double?
     public let totalDurationS: Double?
     public let estimatedDose: Double?
@@ -37,22 +37,22 @@ public struct SharedWorkout: Decodable, Sendable, Equatable {
         totalDurationS = try container.decodeIfPresent(Double.self, forKey: .totalDurationS)
         estimatedDose = try container.decodeIfPresent(Double.self, forKey: .estimatedDose)
         // 存量内容可能剥离判别符（#584 前），按 kind + 形状分流而不是只信 kind。
-        if kind == "run", let run = try? container.decode(RunWorkoutSpec.self, forKey: .spec),
+        if kind == "run", let run = try? container.decode(LandingRunWorkoutSpec.self, forKey: .spec),
            !run.blocks.isEmpty {
             spec = run
             strengthSpec = nil
-        } else if kind == "strength", let strength = try? container.decode(StrengthWorkoutSpec.self, forKey: .spec),
+        } else if kind == "strength", let strength = try? container.decode(LandingStrengthWorkoutSpec.self, forKey: .spec),
                   !strength.exercises.isEmpty {
             spec = nil
             strengthSpec = strength
         } else {
-            spec = try? container.decode(RunWorkoutSpec.self, forKey: .spec)
-            strengthSpec = try? container.decode(StrengthWorkoutSpec.self, forKey: .spec)
+            spec = try? container.decode(LandingRunWorkoutSpec.self, forKey: .spec)
+            strengthSpec = try? container.decode(LandingStrengthWorkoutSpec.self, forKey: .spec)
         }
     }
 
     public init(kind: String, name: String, summary: String?, date: String,
-                spec: RunWorkoutSpec?, strengthSpec: StrengthWorkoutSpec?,
+                spec: LandingRunWorkoutSpec?, strengthSpec: LandingStrengthWorkoutSpec?,
                 totalDistanceM: Double?, totalDurationS: Double?, estimatedDose: Double?) {
         self.kind = kind
         self.name = name
