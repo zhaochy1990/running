@@ -20,9 +20,13 @@ import (
 type Store struct {
 	db *gorm.DB
 	// tsBlob is the injected timeseries blob backend for the Phase 1
-	// dual-write (devops#785); nil keeps the pre-blob behaviour. See
-	// SetTSBlobStore in tsblob.go.
+	// dual-write (devops#785) and the Phase 2 pointer-first read (devops#786);
+	// nil keeps the pre-blob behaviour. See SetTSBlobStore in tsblob.go and
+	// readActivityBlob in tsread.go.
 	tsBlob tsstore.Store
+	// tsCache is the process-local LRU of decoded timeseries point sets
+	// (devops#786 AC2), created in Open and used only by the blob read path.
+	tsCache *tsPointCache
 }
 
 // Open connects to MySQL, forcing the DSN to parseTime=true & loc=UTC so
@@ -55,7 +59,7 @@ func Open(dsn string) (*Store, error) {
 	if err := tunePool(db); err != nil {
 		return nil, err
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, tsCache: newTSPointCache(tsReadCacheEntries)}, nil
 }
 
 // tunePool sizes the underlying database/sql connection pool. The default idle

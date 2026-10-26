@@ -8,6 +8,8 @@ package storage
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"time"
 
 	"github.com/zhaochy1990/stride/internal/tsstore"
 )
@@ -53,9 +55,23 @@ func (s *Store) WriteActivityBlob(ctx context.Context, userID, labelID string, r
 		return "", 0, "", false, fmt.Errorf("storage: encode ts blob %s/%s: %w", userID, labelID, err)
 	}
 	key := tsstore.BlobKey(userID, labelID)
+	start := time.Now()
 	if err := s.tsBlob.Put(ctx, key, payload); err != nil {
+		slog.Error("tsblob: blob put failed",
+			slog.String("event", "tsblob_put_error"),
+			slog.String("key", key),
+			slog.Duration("latency", time.Since(start)),
+			slog.Int("bytes", len(payload)),
+			slog.Int("points", len(rows)),
+			slog.String("error", err.Error()))
 		return "", 0, "", false, fmt.Errorf("storage: put ts blob %s: %w", key, err)
 	}
+	slog.Info("tsblob: blob put ok",
+		slog.String("event", "tsblob_put_ok"),
+		slog.String("key", key),
+		slog.Duration("latency", time.Since(start)),
+		slog.Int("bytes", len(payload)),
+		slog.Int("points", len(rows)))
 	return key, len(rows), sum, anyValidGPS(rows), nil
 }
 

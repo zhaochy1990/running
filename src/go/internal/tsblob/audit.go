@@ -22,11 +22,13 @@ import (
 )
 
 // AuditStore is the storage surface the audit needs; *storage.Store satisfies
-// it.
+// it. The row read is the explicit Rows variant: since Phase 2 (devops#786)
+// ActivityTimeseries serves from the blob, which would make the sample's
+// row-vs-blob diff compare a blob with itself.
 type AuditStore interface {
 	TSBlobUserAudits(ctx context.Context) ([]storage.TSBlobUserAudit, error)
 	ListTSBlobPointers(ctx context.Context) ([]storage.TSBlobPointer, error)
-	ActivityTimeseries(ctx context.Context, userID, labelID string) ([]storage.TimeseriesPoint, error)
+	ActivityTimeseriesRows(ctx context.Context, userID, labelID string) ([]storage.TimeseriesPoint, error)
 }
 
 // Auditor reconciles rows, pointer columns, and bucket objects.
@@ -141,7 +143,7 @@ func (a *Auditor) auditSample(ctx context.Context, pointers []storage.TSBlobPoin
 	for i := 0; i < len(pointers); i += step {
 		p := pointers[i]
 		report.Sample.Sampled++
-		rows, err := a.store.ActivityTimeseries(ctx, p.UserID, p.Label)
+		rows, err := a.store.ActivityTimeseriesRows(ctx, p.UserID, p.Label)
 		if err != nil {
 			problem("%s/%s: read rows: %v", p.UserID, p.Label, err)
 			continue
