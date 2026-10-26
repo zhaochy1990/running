@@ -1,6 +1,7 @@
 import { z } from "zod/v4";
 import { isRunningActivity, normalizeSessionClass } from "../../../data/activityClassification.js";
 import type { ContextSnapshot } from "../context.js";
+import { equivalentsFromVdot, type RaceDistanceKey, vdotFromRace, vdotFromThresholdPace } from "./vdot.js";
 
 /**
  * 阶段划分证据层（devops#782，daniels.md §2.1）：纯函数、无存储。
@@ -11,6 +12,32 @@ import type { ContextSnapshot } from "../context.js";
  */
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+const paceBound = z.number().nullable();
+const PaceZoneSchema = z.tuple([paceBound, paceBound]);
+/** 当前配速带（校准快照直读、取整秒，s/km；开放端为 null，如 r 的 lo / easy 的恢复侧不含）。 */
+const PaceZonesSchema = z.object({
+  easy: PaceZoneSchema.nullable(),
+  m: PaceZoneSchema.nullable(),
+  t: PaceZoneSchema.nullable(),
+  i: PaceZoneSchema.nullable(),
+  r: PaceZoneSchema.nullable(),
+});
+const EquivalentsSchema = z.object({ "5K": z.number(), "10K": z.number(), HM: z.number(), FM: z.number() });
+
+/** 当前训练水平（devops#789）：VDOT 换算阶梯推导，锚定「当前能力」而非历史 PB。 */
+const CurrentCapabilitySchema = z.object({
+  /** 能力标量（换算阶梯的 VDOT 直读，距离无关）。 */
+  vdot: z.number().nullable(),
+  /** 同一 VDOT 四换算（秒）；短距离源对比源更长的距离已含 ×1.03 保守折扣。 */
+  equivalents: EquivalentsSchema.nullable(),
+  source: z.enum(["recent_race_hm_fm", "recent_race_short", "calibration", "none"]),
+  /** 换算源日期（比赛日 / 校准 as_of）。 */
+  source_date: day.nullable(),
+  /** hm_fm=high；短距离折扣=medium；校准=medium；none=low。 */
+  confidence: z.enum(["high", "medium", "low"]),
+  pace_zones: PaceZonesSchema.nullable(),
+});
 
 const MonthlyFocusSchema = z.object({
   month: z.string().regex(/^\d{4}-\d{2}$/),
@@ -29,8 +56,17 @@ export type MonthlyFocus = z.infer<typeof MonthlyFocusSchema>;
 
 export const PhaseEvidenceSchema = z.object({
   as_of: day,
-  target: z.object({ race: z.string(), target_time: z.string(), goal_pace: z.string() }),
+  target: z.object({
+    race: z.string(),
+    target_time: z.string(),
+    goal_pace: z.string(),
+    /** 相对当前等效水平（current_capability）的提升幅度（%，1 位小数）：正值=目标快于当前水平、负值=慢于、null=无法估计。锚按目标距离取。 */
+    improvement_pct: z.number().nullable(),
+  }),
   personal_bests: z.record(z.string(), z.string()),
+  /** FM 历史 PB（辅助字段：追平/超越峰值叙事与多周期参考，不作可行性锚）。 */
+  peak_fm_pb: z.object({ time_sec: z.number().positive(), achieved_at: day.nullable() }).nullable(),
+  current_capability: CurrentCapabilitySchema,
   fitness: z.object({ ctl: z.number(), atl: z.number(), form: z.number() }),
   availability: z.object({ weekly_run_days_max: z.number().int().min(1).max(7) }),
   recent_volume: z.object({
@@ -130,6 +166,151 @@ function deriveInjuryReturn(snapshot: ContextSnapshot, asOf: string): PhaseEvide
   };
 }
 
+/** race_history 距离（km）→ 标准距离桶；桶外（<4.5km 小课 / >45km 超马）不参与取锚。 */
+const DISTANCE_BUCKETS: ReadonlyArray<{ key: RaceDistanceKey; minKm: number; maxKm: number }> = [
+  { key: "5K", minKm: 4.5, maxKm: 7.5 },
+  { key: "10K", minKm: 7.5, maxKm: 15.5 },
+  { key: "HM", minKm: 15.5, maxKm: 32 },
+  { key: "FM", minKm: 32, maxKm: 45.1 },
+];
+
+/** 短距离源（5K/10K）对更长距离等效成绩的保守折扣（短距离只高估长距离兑现）。 */
+const SHORT_SOURCE_DISCOUNT = 1.03;
+/** 近期比赛窗口（天）：12 个月。 */
+const RACE_WINDOW_DAYS = 365;
+/** VDOT 合理区间（丹尼尔斯表覆盖 30-85，两端留余量）：区间外视为脏数据行（如 duration_min 单位错误），跳过而非炸毁整份 evidence。 */
+const VDOT_PLAUSIBLE_MIN = 10;
+const VDOT_PLAUSIBLE_MAX = 90;
+
+const isPlausibleVdot = (vdot: number) => Number.isFinite(vdot) && vdot >= VDOT_PLAUSIBLE_MIN && vdot <= VDOT_PLAUSIBLE_MAX;
+
+interface RaceAnchor {
+  source: "recent_race_hm_fm" | "recent_race_short";
+  /** 取胜出比赛的桶键（等效折扣用）；VDOT 换算用实际距离与实际完赛时间。 */
+  key: RaceDistanceKey;
+  date: string;
+  vdot: number;
+}
+
+/**
+ * 换算阶梯第 1/2 档（devops#789）：近 12 个月 HM+ 全力最佳 → 主锚；
+ * 无 HM+ 则 10K/5K 最佳 → 短距离源。全力识别：均配慢于校准阈值配速 ×1.15
+ * 视为训练性比赛（污染源=周末长距离混入 race_history）；无校准阈值时无法
+ * 识别、全部放行。取最佳（max VDOT）而非最近——「能代表当前能力的最佳近期
+ * 表现」。完赛时间用 duration_min（race_history 无独立移动时长字段）。
+ */
+function deriveRaceAnchor(snapshot: ContextSnapshot, asOfMs: number, thresholdPaceSecPerKm: number | null): RaceAnchor | null {
+  const candidates: RaceAnchor[] = [];
+  for (const r of snapshot.race_history) {
+    const km = r.distance_km;
+    if (!km || !r.duration_min || r.duration_min <= 0) continue;
+    const daysAgo = Math.round((asOfMs - new Date(r.date).getTime()) / 86400_000);
+    if (daysAgo < 0 || daysAgo > RACE_WINDOW_DAYS) continue;
+    const bucket = DISTANCE_BUCKETS.find((b) => km >= b.minKm && km < b.maxKm);
+    if (!bucket) continue;
+    const timeSec = r.duration_min * 60;
+    const paceSecPerKm = r.avg_pace_s_km ?? timeSec / km;
+    if (thresholdPaceSecPerKm != null && paceSecPerKm > thresholdPaceSecPerKm * 1.15) continue;
+    const vdot = vdotFromRace(km * 1000, timeSec);
+    if (!isPlausibleVdot(vdot)) continue;
+    candidates.push({ source: bucket.key === "HM" || bucket.key === "FM" ? "recent_race_hm_fm" : "recent_race_short", key: bucket.key, date: r.date, vdot });
+  }
+  const hmPlus = candidates.filter((c) => c.source === "recent_race_hm_fm");
+  const pool = hmPlus.length > 0 ? hmPlus : candidates;
+  if (pool.length === 0) return null;
+  return pool.reduce((best, c) => (c.vdot > best.vdot ? c : best));
+}
+
+/** 校准快照 pace_zones（[{name,minPaceSPerKm,maxPaceSPerKm}]）→ 丹尼尔斯五带；不可解析返回 null。 */
+function calibrationPaceZones(snapshot: ContextSnapshot): z.infer<typeof PaceZonesSchema> | null {
+  const zones = snapshot.running_calibration?.pace_zones;
+  if (!Array.isArray(zones)) return null;
+  const byName = new Map<string, { minPaceSPerKm?: number | null; maxPaceSPerKm?: number | null }>();
+  for (const zone of zones) {
+    if (zone != null && typeof zone === "object" && typeof (zone as { name?: unknown }).name === "string") {
+      byName.set((zone as { name: string }).name, zone as { minPaceSPerKm?: number | null; maxPaceSPerKm?: number | null });
+    }
+  }
+  const pick = (name: string): [number | null, number | null] | null => {
+    const zone = byName.get(name);
+    if (!zone) return null;
+    const lo = typeof zone.minPaceSPerKm === "number" ? Math.round(zone.minPaceSPerKm) : null;
+    const hi = typeof zone.maxPaceSPerKm === "number" ? Math.round(zone.maxPaceSPerKm) : null;
+    return [lo, hi];
+  };
+  const mapped = { easy: pick("easy"), m: pick("marathon"), t: pick("threshold"), i: pick("interval"), r: pick("repetition") };
+  return Object.values(mapped).some((zone) => zone !== null) ? mapped : null;
+}
+
+/**
+ * VDOT 取锚阶梯 + improvement 推导（devops#789）：
+ * 1. 近 12 个月 HM+ 全力最佳 → recent_race_hm_fm（high）
+ * 2. 无则 10K/5K 最佳 → recent_race_short（medium；更长距离等效 ×1.03）
+ * 3. 无比赛 → 校准阈值配速（60 分钟可持续速度）→ calibration（medium）
+ * 4. improvement_pct 的锚 = 主锚与校准档同时可得时的保守者（VDOT 低者）
+ *    ——比赛代表最高已证实水平、校准代表日常状态。
+ */
+function deriveCapability(
+  snapshot: ContextSnapshot,
+  asOfDay: string,
+  targetSec: number,
+  goalDistance: RaceDistanceKey,
+): { improvement_pct: PhaseEvidence["target"]["improvement_pct"]; current_capability: PhaseEvidence["current_capability"] } {
+  const calib = snapshot.running_calibration;
+  const thresholdPaceSecPerKm = calib?.threshold_speed_mps && calib.threshold_speed_mps > 0 ? 1000 / calib.threshold_speed_mps : null;
+  const calibVdot = thresholdPaceSecPerKm != null ? vdotFromThresholdPace(thresholdPaceSecPerKm) : Number.NaN;
+  const calibUsable = isPlausibleVdot(calibVdot);
+
+  const race = deriveRaceAnchor(snapshot, new Date(asOfDay).getTime(), thresholdPaceSecPerKm);
+
+  const anchor: {
+    vdot: number;
+    source: "recent_race_hm_fm" | "recent_race_short" | "calibration";
+    source_date: string | null;
+    confidence: "high" | "medium";
+  } | null =
+    race != null
+      ? {
+          vdot: race.vdot,
+          source: race.source,
+          source_date: race.date,
+          confidence: race.source === "recent_race_hm_fm" ? "high" : "medium",
+        }
+      : calibUsable
+        ? { vdot: calibVdot, source: "calibration", source_date: calib?.as_of_date ?? null, confidence: "medium" }
+        : null;
+
+  const shortDiscount = race?.source === "recent_race_short" ? { sourceKey: race.key, discountLonger: SHORT_SOURCE_DISCOUNT } : {};
+  const capabilityDiscounted = shortDiscount.discountLonger !== undefined;
+  const equivalents = anchor != null ? equivalentsFromVdot(anchor.vdot, shortDiscount) : null;
+
+  // improvement 锚（规则 4）：主锚与校准档取保守；短距离折扣只在短距离主锚胜出时生效
+  const effectiveVdot = race != null && calibUsable ? Math.min(race.vdot, calibVdot) : (race?.vdot ?? (calibUsable ? calibVdot : Number.NaN));
+  const effectiveUsesDiscount = race?.source === "recent_race_short" && (!calibUsable || race.vdot <= calibVdot);
+  const improvementPct = (() => {
+    if (!Number.isFinite(effectiveVdot) || targetSec <= 0) return null;
+    // 主路径（无校准，或比赛锚即保守者且折扣一致）下 improvement 锚与 current_capability 等效表同源，直接复用
+    const reusesCapability = equivalents != null && effectiveVdot === anchor?.vdot && effectiveUsesDiscount === capabilityDiscounted;
+    const anchorSec = reusesCapability
+      ? equivalents[goalDistance]
+      : equivalentsFromVdot(effectiveVdot, effectiveUsesDiscount ? shortDiscount : {})[goalDistance];
+    if (!Number.isFinite(anchorSec) || anchorSec <= 0) return null;
+    return r1(((anchorSec - targetSec) / anchorSec) * 100);
+  })();
+
+  return {
+    improvement_pct: improvementPct,
+    current_capability: {
+      vdot: anchor != null ? r1(anchor.vdot) : null,
+      equivalents,
+      source: anchor?.source ?? "none",
+      source_date: anchor?.source_date ?? null,
+      confidence: anchor?.confidence ?? "low",
+      pace_zones: calibrationPaceZones(snapshot),
+    },
+  };
+}
+
 /** 证据层生成入口（纯函数）：snapshot + 活动行 + 目标 → 判断层 evidence。 */
 export function buildPhaseEvidence(snapshot: ContextSnapshot, activities: PhasingActivityInput[], goal: PhasingGoalInput, asOf: string): PhaseEvidence {
   const asOfDay = asOf.slice(0, 10);
@@ -175,7 +356,10 @@ export function buildPhaseEvidence(snapshot: ContextSnapshot, activities: Phasin
   const lastRace = snapshot.race_history[0] ?? null;
   const pbs: Record<string, string> = {};
   for (const pb of snapshot.personal_bests) pbs[pb.distance] = `${Math.floor(pb.time_sec / 60)}:${String(Math.round(pb.time_sec % 60)).padStart(2, "0")}`;
-  const goalPaceSPerKm = parseHms(goal.targetTime) / RACE_DISTANCE_KM;
+  const targetSec = parseHms(goal.targetTime);
+  const goalPaceSPerKm = targetSec / RACE_DISTANCE_KM;
+  const capability = deriveCapability(snapshot, asOfDay, targetSec, goal.distance);
+  const fmPb = snapshot.personal_bests.find((pb) => pb.distance === "FM") ?? null;
 
   return PhaseEvidenceSchema.parse({
     as_of: asOfDay,
@@ -183,8 +367,11 @@ export function buildPhaseEvidence(snapshot: ContextSnapshot, activities: Phasin
       race: `全程马拉松 ${goal.raceName}`,
       target_time: goal.targetTime,
       goal_pace: `${fmtPace(goalPaceSPerKm)}/km`,
+      improvement_pct: capability.improvement_pct,
     },
     personal_bests: pbs,
+    peak_fm_pb: fmPb != null ? { time_sec: fmPb.time_sec, achieved_at: fmPb.achieved_at } : null,
+    current_capability: capability.current_capability,
     fitness: {
       ctl: Math.round(snapshot.fitness_state.ctl ?? 0),
       atl: Math.round(snapshot.fitness_state.atl ?? 0),

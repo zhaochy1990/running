@@ -1,6 +1,6 @@
 # L1 证据层——详细设计
 
-> 归属：[daniels.md 总览](./daniels.md) · 随 devops#782 交付 · 治理规则同总览（只录已拍板决定）。数据结构与第六轮已验证的 spike 证据层一致（`spikePhaseIntent.ts buildEvidence`），标注 ⏳ 的为待拍板扩展。
+> 归属：[daniels.md 总览](./daniels.md) · 随 devops#782 交付（current_capability / improvement_pct 随 devops#789）· 治理规则同总览（只录已拍板决定）。数据结构与第六轮已验证的 spike 证据层一致（`spikePhaseIntent.ts buildEvidence`），标注 ⏳ 的为待拍板扩展。
 
 ## 1. 定位
 
@@ -47,7 +47,7 @@ interface PhaseEvidence {
     race: string;                      // "全程马拉松 无锡马拉松"（单赛制，A 赛）
     target_time: string;               // "2:50:00"（⏳ 完赛 C 目标暂不支持，待拍板）
     goal_pace: string;                 // "4:02/km"（targetTime ÷ 42.195 推导）
-    // ⏳ 待补（已拍板输入清单项，实现未落）：improvement_pct = 相对 FM PB 的提升幅度
+    improvement_pct: number | null;    // 相对当前等效水平的提升幅度（%，1 位小数；正值=目标快于当前水平、null=无法估计）——锚按目标距离取，主锚与校准档同时可得取保守（VDOT 低者）
   };
   availability: {
     weekly_run_days_max: number;       // 每周可用训练日（goal 透传）
@@ -55,7 +55,17 @@ interface PhaseEvidence {
 
   // ── 派生事实 ───────────────────────────────
   personal_bests: Record<string, string>;   // {"5K":"19:30","10K":"39:21","HM":"86:38","FM":"177:11"}
-  // ⏳ 待实现：calibration 区块（阈值配速 + E/M/T/I/R 配速带，速度储备论证用；已拍板输入项）
+  peak_fm_pb: { time_sec: number; achieved_at: string | null } | null;  // FM 历史 PB（辅助字段：追平/超越峰值叙事与多周期参考，不作可行性锚）
+  current_capability: {               // 当前训练水平（devops#789）：锚「当前能力」而非历史 PB
+    vdot: number | null;              // 能力标量（换算阶梯的 VDOT 直读，距离无关）
+    equivalents: { "5K": number; "10K": number; HM: number; FM: number } | null;  // 同一 VDOT 四换算（秒）；短距离源对比源更长距离已含 ×1.03 保守折扣
+    source: "recent_race_hm_fm" | "recent_race_short" | "calibration" | "none";
+    source_date: string | null;       // 换算源日期（比赛日 / 校准 as_of）
+    confidence: "high" | "medium" | "low";  // hm_fm=high；短距离折扣=medium；校准=medium；none=low
+    pace_zones: {                     // 当前配速带（校准快照直读、取整秒，s/km；开放端 null）
+      easy: [lo, hi] | null; m: [lo, hi] | null; t: [lo, hi] | null; i: [lo, hi] | null; r: [lo, hi] | null;
+    } | null;
+  };
   fitness: { ctl: number; atl: number; form: number };   // 取整
   recent_volume: {
     avg_8wk_km: number;                // 近 8 完成周均值（见 §4 口径）
@@ -103,10 +113,17 @@ interface PhaseEvidence {
 3. **E 份额**=(easy+long_easy) km ÷ 月总跑 km；**longest_run_km 必须含 long_quality**（渐加速长跑同样积累有氧学分）
 4. **race_like**：session_class=race 且 ≥10km（防标签误标的小课混入）
 5. **双值归一在聚合前做**（旧值 tempo/interval/long 先映射再分桶）
+6. **VDOT 取锚阶梯**（current_capability / improvement_pct，`phasing/vdot.ts` 公开 Daniels–Gilbert 方程，与官方 V.O2 计算器同式；锚点单测对照原书表 ±1%）：
+   - **第 1 档**：近 12 个月 HM 及以上距离上的最佳表现（max VDOT，非最近）→ 主锚 `recent_race_hm_fm`（high）。全力识别：活动均配慢于校准阈值配速 ×1.15 视为训练性比赛、不参与取锚（污染源=周末长距离混入 race_history）；完赛时间用 duration_min（race_history 无独立移动时长字段）
+   - **第 2 档**：无 HM+ 比赛则近 12 个月最佳 10K/5K → `recent_race_short`（medium），**×1.03 保守折扣只打在比源距离更长的等效成绩上**（短距离高估的只是长距离兑现）
+   - **第 3 档**：无比赛 → 校准阈值配速（速度-时长模型的 60 分钟可持续速度）按 %max(60) 代入同一方程 → `calibration`（medium）
+   - **规则 4**：主锚与校准档同时可得时，improvement_pct 用两者中保守（VDOT 低者）——比赛代表最高已证实水平，校准代表日常状态；current_capability.vdot 保持阶梯直读
+   - **improvement_pct = round(((equivalents[goal.distance] − target_sec) / equivalents[goal.distance]) × 1000) / 10**；锚按目标距离取（去 FM 硬编码，HM 目标锚 equivalent HM）；PB 降级为 peak_fm_pb 辅助字段（PB 是历史峰值，当前水平已退化/已超越都会算错）
+   - 版本注记：丹尼尔斯原书表的 5K/10K/HM 列与公开方程一致（±1%）；**FM 列 2nd 版为人工保守修订**（@VDOT50 原书 3:19:03 vs 公开方程 3:10:4x，约 +4.5%），公开方程与官方计算器均不复现——本模块按公开方程实现，短距离→长距离高估由 ×1.03 折扣机制吸收
 
 ## 5. 输出与消费
 
-单一 PhaseEvidence JSON：L2 全量消费（经 PhasingIntentInput 携带 runwayWeeks/raceDate）（教义 prompt 的 payload）；L3 消费 recent_volume/体量带推导/（⏳ habitual_week_km 起点）；R2 消费滚动状态。**不输出**：单课明细/laps（消费时按需下钻）、PMC 全仿真（验收门产物）、周序列原始数组（⏳ 若 R0-R6 入档，仅外露 habitual_week_km 一个数，序列留在函数内部）。
+单一 PhaseEvidence JSON：L2 全量消费（经 PhasingIntentInput 携带 runwayWeeks/raceDate）（教义 prompt 的 payload；target.improvement_pct 已进教义调整职责段——正值越大目标越激进→体量带取保守端）；L3 消费 recent_volume/体量带推导/（⏳ habitual_week_km 起点）；R2 消费滚动状态。**不输出**：单课明细/laps（消费时按需下钻）、PMC 全仿真（验收门产物）、周序列原始数组（⏳ 若 R0-R6 入档，仅外露 habitual_week_km 一个数，序列留在函数内部）。
 
 ## 6. 待拍板
 
