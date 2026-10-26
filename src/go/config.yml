@@ -95,6 +95,21 @@ cos:
   region: ""
   base-url: ""          # public origin used to build thumb_url (CDN later)
 
+# Tencent Cloud COS PRIVATE bucket holding per-activity timeseries blobs
+# (devops#784, timeseries→COS migration Phase 0). Separate from the thumbnail
+# bucket above: no public origin, no BaseURL. Secrets are the SAME
+# TENCENT_COS_* pair (devops#779, zero new sub-account) via env:
+#   STRIDE_WORKER_TS_BLOB_SECRET_ID / STRIDE_WORKER_TS_BLOB_SECRET_KEY
+# Unlike cos:, this section is load-bearing: an incomplete section fails boot
+# with an explicit error — timeseries storage is not a degradable decoration.
+# Local/testing stacks point at the same production bucket READ-ONLY
+# (devops#778 decision 2); that read-only-ness is discipline, not key scope.
+ts-blob:
+  secret-id: ""
+  secret-key: ""
+  bucket: "stride-timeseries-1255867366"
+  region: "ap-shanghai"
+
 # World Athletics GraphQL API (public AWS AppSync endpoint) for the
 # race_calendar_sync pipeline. The api-key is public — World Athletics
 # embeds it in the site's JS bundle — so it ships here as a non-secret default

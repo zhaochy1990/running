@@ -5,6 +5,7 @@ package cos
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,11 @@ import (
 
 	cosgo "github.com/tencentyun/cos-go-sdk-v5"
 )
+
+// ErrNotFound is returned (wrapped) by Get and Delete for a missing object, so
+// callers can distinguish "absent" from "broken" with errors.Is and map it to
+// their own sentinel (tsstore.ErrNotFound does exactly that).
+var ErrNotFound = errors.New("cos: object not found")
 
 // Config is the bucket credentials plus the public origin used to build URLs.
 type Config struct {
@@ -41,21 +47,61 @@ type Client struct {
 // NewClient builds a client for cfg. It returns a usable-but-inert client when
 // cfg is incomplete so the worker can boot without bucket credentials.
 func NewClient(cfg Config) *Client {
-	var cli *cosgo.Client
-	if cfg.configured() {
-		httpCli := &http.Client{Timeout: 30 * time.Second}
-		httpCli.Transport = &cosgo.AuthorizationTransport{
-			SecretID:  cfg.SecretID,
-			SecretKey: cfg.SecretKey,
-			Transport: &http.Transport{},
-		}
-		bucketURL, err := url.Parse(fmt.Sprintf("https://%s.cos.%s.myqcloud.com", cfg.Bucket, cfg.Region))
-		if err != nil {
-			return &Client{cfg: cfg}
-		}
-		cli = cosgo.NewClient(&cosgo.BaseURL{BucketURL: bucketURL}, httpCli)
+	if !cfg.configured() {
+		return &Client{cfg: cfg}
+	}
+	// A parse failure cannot happen for the well-formed URL built from
+	// non-empty fields; if it ever does, the inert client keeps boot
+	// fail-open (thumbnails are cosmetic).
+	cli, err := newSignedClient(cfg)
+	if err != nil {
+		return &Client{cfg: cfg}
 	}
 	return &Client{cfg: cfg, cli: cli}
+}
+
+// NewPrivateClient builds a client for a private bucket — one with no public
+// origin to build URLs from, like the timeseries blob store (devops#784). It
+// differs from NewClient in two deliberate ways: BaseURL is irrelevant (only
+// PublicURL reads it), and an incomplete config is an explicit error, never an
+// inert client — private-bucket data paths are load-bearing and must not
+// silently degrade the way the cosmetic thumbnail path may.
+func NewPrivateClient(cfg Config) (*Client, error) {
+	var missing []string
+	for _, f := range []struct {
+		name, value string
+	}{
+		{"secret-id", cfg.SecretID}, {"secret-key", cfg.SecretKey},
+		{"bucket", cfg.Bucket}, {"region", cfg.Region},
+	} {
+		if f.value == "" {
+			missing = append(missing, f.name)
+		}
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("cos: private bucket config incomplete, missing %s", strings.Join(missing, ", "))
+	}
+	cli, err := newSignedClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &Client{cfg: cfg, cli: cli}, nil
+}
+
+// newSignedClient builds the SDK client with the same signing setup for both
+// constructors.
+func newSignedClient(cfg Config) (*cosgo.Client, error) {
+	httpCli := &http.Client{Timeout: 30 * time.Second}
+	httpCli.Transport = &cosgo.AuthorizationTransport{
+		SecretID:  cfg.SecretID,
+		SecretKey: cfg.SecretKey,
+		Transport: &http.Transport{},
+	}
+	bucketURL, err := url.Parse(fmt.Sprintf("https://%s.cos.%s.myqcloud.com", cfg.Bucket, cfg.Region))
+	if err != nil {
+		return nil, fmt.Errorf("cos: parse bucket URL: %w", err)
+	}
+	return cosgo.NewClient(&cosgo.BaseURL{BucketURL: bucketURL}, httpCli), nil
 }
 
 // Configured reports whether this client can upload. Callers treat an
@@ -78,18 +124,92 @@ func (c *Client) Upload(ctx context.Context, key string, r io.Reader, contentTyp
 	return nil
 }
 
+// Get fetches the whole object at key. A missing object returns an error
+// wrapping ErrNotFound.
+func (c *Client) Get(ctx context.Context, key string) ([]byte, error) {
+	if !c.Configured() {
+		return nil, fmt.Errorf("cos: not configured")
+	}
+	resp, err := c.cli.Object.Get(ctx, key, nil)
+	if err != nil {
+		if isNotFound(err) {
+			return nil, fmt.Errorf("cos: get %s: %w", key, ErrNotFound)
+		}
+		return nil, fmt.Errorf("cos: get %s: %w", key, err)
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("cos: read %s: %w", key, err)
+	}
+	return b, nil
+}
+
+// List calls fn with the key of every object under prefix, walking the marker
+// pagination. Iteration order is the bucket's lexicographic key order. An
+// error returned by fn aborts the walk and is returned as-is, so a caller can
+// both fail and stop early (with its own sentinel).
+func (c *Client) List(ctx context.Context, prefix string, fn func(key string) error) error {
+	if !c.Configured() {
+		return fmt.Errorf("cos: not configured")
+	}
+	const maxKeys = 1000
+	marker := ""
+	for {
+		res, _, err := c.cli.Bucket.Get(ctx, &cosgo.BucketGetOptions{
+			Prefix: prefix, Marker: marker, MaxKeys: maxKeys,
+		})
+		if err != nil {
+			return fmt.Errorf("cos: list %q: %w", prefix, err)
+		}
+		for _, obj := range res.Contents {
+			if err := fn(obj.Key); err != nil {
+				return err
+			}
+		}
+		if !res.IsTruncated {
+			return nil
+		}
+		// S3/COS semantics: NextMarker is only guaranteed with a delimiter;
+		// otherwise continue after the last key seen.
+		next := res.NextMarker
+		if next == "" && len(res.Contents) > 0 {
+			next = res.Contents[len(res.Contents)-1].Key
+		}
+		if next == "" || next == marker {
+			return fmt.Errorf("cos: list %q: pagination stalled at %q", prefix, marker)
+		}
+		marker = next
+	}
+}
+
+// isNotFound reports whether err is the SDK's 404 ErrorResponse, unwrapping
+// the SDK's retry wrapper via errors.As.
+func isNotFound(err error) bool {
+	var apiErr *cosgo.ErrorResponse
+	if errors.As(err, &apiErr) && apiErr.Response != nil {
+		return apiErr.Response.StatusCode == http.StatusNotFound
+	}
+	return false
+}
+
 // PublicURL is the stable public URL of an uploaded object.
 func (c *Client) PublicURL(key string) string {
 	return strings.TrimSuffix(c.cfg.BaseURL, "/") + "/" + key
 }
 
-// Delete removes the object at key. Callers treat failures per their own
-// policy (account erasure is fail-open and only logs).
+// Delete removes the object at key. A missing object is reported as an error
+// wrapping ErrNotFound (COS deletes usually answer 204 regardless; the 404
+// branch is belt and braces). Callers treat failures per their own policy
+// (account erasure is fail-open and only logs).
 func (c *Client) Delete(ctx context.Context, key string) error {
 	if !c.Configured() {
 		return fmt.Errorf("cos: not configured")
 	}
 	if _, err := c.cli.Object.Delete(ctx, key); err != nil {
+		if isNotFound(err) {
+			return fmt.Errorf("cos: delete %s: %w", key, ErrNotFound)
+		}
 		return fmt.Errorf("cos: delete %s: %w", key, err)
 	}
 	return nil

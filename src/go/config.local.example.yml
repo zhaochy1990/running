@@ -10,3 +10,11 @@ race-detection:
   model: "gpt-5.6-luna"
   timeout: "90s"
   max-concurrency: 8
+
+# Timeseries blob bucket (devops#784). Required at boot — an empty secret
+# fails startup with an explicit error. Use the production TENCENT_COS_* pair
+# READ-ONLY: never trigger a sync write path from local, never write fixtures.
+#   export STRIDE_WORKER_TS_BLOB_SECRET_ID=... STRIDE_WORKER_TS_BLOB_SECRET_KEY=...
+ts-blob:
+  bucket: "stride-timeseries-1255867366"
+  region: "ap-shanghai"

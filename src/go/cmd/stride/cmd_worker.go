@@ -34,6 +34,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/racedetection"
 	"github.com/zhaochy1990/stride/internal/registry"
 	"github.com/zhaochy1990/stride/internal/storage"
+	"github.com/zhaochy1990/stride/internal/tsstore"
 	"github.com/zhaochy1990/stride/internal/worldathletics"
 )
 
@@ -75,6 +76,17 @@ func runWorker() error {
 		Region:    cfg.COS.Region,
 		BaseURL:   cfg.COS.BaseURL,
 	})
+
+	// Timeseries blob bucket (devops#784 Phase 0). Built now, consumed by the
+	// Phase 1 write path: constructing it at boot is the wiring this phase
+	// ships, and its explicit error keeps a misconfigured deployment from
+	// limping up degraded (timeseries is not a degradable extra). No call is
+	// made against the bucket here — client construction is purely local.
+	tsBlobStore, err := newTSBlobStore(cfg.TSBlob)
+	if err != nil {
+		return err
+	}
+	_ = tsBlobStore // Phase 1 (devops#784) injects this into the sync write path.
 
 	// World Athletics GraphQL client for the race_calendar_sync pipeline.
 	waClient := worldathletics.New(worldathletics.Config{
@@ -194,6 +206,7 @@ func runWorker() error {
 		zap.Int("prefetch", cfg.Runtime.Prefetch),
 		zap.Int("max_attempts", cfg.Retry.MaxAttempts),
 		zap.String("health_addr", cfg.Runtime.HealthAddr),
+		zap.String("ts_blob_bucket", cfg.TSBlob.Bucket),
 		zap.Strings("registered_types", reg.Types()),
 	)
 
@@ -286,6 +299,24 @@ func newRaceClassifier(cfg config.RaceDetection) (racedetection.Classifier, erro
 		APIKind: cfg.APIKind, Endpoint: cfg.Endpoint, APIKey: cfg.APIKey,
 		Model: cfg.Model, Timeout: cfg.Timeout,
 	})
+}
+
+// newTSBlobStore builds the timeseries blob Store from the ts-blob config
+// section (devops#784 Phase 0; shared by `stride worker` and `stride api`).
+// cos.NewPrivateClient carries the fail-fast semantics: any empty field is an
+// explicit boot error naming what is missing — this bucket is load-bearing,
+// unlike the degradable thumbnail bucket.
+func newTSBlobStore(cfg config.TSBlob) (tsstore.Store, error) {
+	cli, err := cos.NewPrivateClient(cos.Config{
+		SecretID:  cfg.SecretID,
+		SecretKey: cfg.SecretKey,
+		Bucket:    cfg.Bucket,
+		Region:    cfg.Region,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return tsstore.NewCOSStore(cli), nil
 }
 
 // registerHandlers wires job handlers. `hello` is the deploy smoke handler;
