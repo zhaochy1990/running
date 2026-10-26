@@ -13,4 +13,14 @@ extension View {
         self
         #endif
     }
+
+    /// iOS inline 导航标题（macOS 无该模式，兜底为无操作）。
+    @ViewBuilder
+    public func inlineNavigationTitle() -> some View {
+        #if canImport(UIKit)
+        self.navigationBarTitleDisplayMode(.inline)
+        #else
+        self
+        #endif
+    }
 }

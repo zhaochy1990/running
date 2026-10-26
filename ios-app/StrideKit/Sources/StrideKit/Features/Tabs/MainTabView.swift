@@ -57,12 +57,6 @@ struct CoachHomeView: View {
     }
 }
 
-struct ActivitiesView: View {
-    var body: some View {
-        PageShell(title: "活动记录", systemImage: "figure.run")
-    }
-}
-
 struct TrainingHomeView: View {
     var body: some View {
         PageShell(title: "STRIDE", systemImage: "list.clipboard")
@@ -75,12 +69,18 @@ struct ProfileHomeView: View {
     }
 }
 
-/// 路由占位页：深链落点 / push 目标的通用骨架（各域票逐页替换）。
+/// 路由占位页：深链落点 / push 目标的通用骨架（各域票逐页替换；
+/// 记录域 activity-detail 已在 PR-3 换成真实页）。
 struct RouteShellView: View {
     let route: Route
 
     var body: some View {
-        PageShell(title: routeTitle, systemImage: "square.grid.2x2")
+        switch route {
+        case .activityDetail(let labelId):
+            ActivityDetailView(labelId: labelId)
+        default:
+            PageShell(title: routeTitle, systemImage: "square.grid.2x2")
+        }
     }
 
     private var routeTitle: String {

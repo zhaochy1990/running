@@ -28,9 +28,16 @@
 
 （空）
 
-## 记录域（PR-3 落地后登记）
+## 记录域（PR-3 落地后登记，devops#766）
 
-（空）
+| ID | 检查点 | 维度 | 小程序现状 | iOS 现状 | 状态 | 确认人 | 日期 | 说明 |
+| ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
+| D-rec-1 | 记录 tab 顶栏 | UI | 自绘顶栏（菜单钮 toast「暂未开放」/标题+副标题「最近训练」/胶囊占位） | 系统 inline 导航标题「活动记录」，无菜单钮/副标题（ActivitiesView.swift） | confirmed | 用户（#749 §3 tab 顶栏升级系统容器 + D-menu-1） | 2026-10-26 | 保留偏差：菜单钮在小程序即占位 toast；副标题信息量低；胶囊占位删除 |
+| D-rec-2 | 指标值配色 | UI | METRIC_COLORS 深色荧光（run/pace #00e676、duration #0097a7、hr #ff5252） | 系统动态色映射同语义：跑量/配速 green、时长 teal、心率 danger（MetricsGridView） | confirmed | 用户（D-theme-1 亮色定调 + #753 决议：逐页按映射后语义判色） | 2026-10-26 | 保留偏差：数值语义保留，色值随亮色主题换系统动态色（深浅自适应） |
+| D-rec-3 | 列表行路线缩略图 | 功能 | 后端预渲染 thumb_url PNG，加载失败回退运动图标 | 同款 AsyncImage(thumb_url)+失败回退 SF Symbol；**未用 MKMapSnapshotter 本地生成** | pending | — | 2026-10-26 | #754 决议提过 MKMapSnapshotter，但 list 端点无 GPS 坐标、快照无数据源（后端 route_thumbnails job 已出图）；如需本地生成须列表端点加轻量 GPS 摘要，另立票 |
+| D-rec-4 | 区间卡走势曲线 | UI | uCharts 折线按区间档位渐变着色（linearColor 硬切）+ 基线带 + 触摸 tooltip | Swift Charts 单色 LineMark（uCharts 基础粉）+ 档位基线带（RectangleMark）+ chartOverlay tooltip；折线本体不逐段着色（ZoneChartView.swift） | pending | — | 2026-10-26 | Charts 无四角线段图元；档位信息由基线带承载；后续可 Canvas 叠层补分段着色 |
+| D-rec-5 | 详情头部字段 | UI | 顶栏仅名称+日期；sportLabel/trainTypeLabel 计算但 wxml 未渲染 | 按 baseline §3.1/票面渲染头部（运动 chip + 训练类型 + 体感 emoji；名称/日期在顶栏 principal） | pending | — | 2026-10-26 | baseline 描述与 wxml 实际不一致；iOS 按 baseline 票面实现，parity check 时与小程序对账 |
+| A-rec-1 | 轨迹地图渲染决议 | UI | `<map>` 腾讯底图：wgs84ToGcj02 预转 + include-points + polyline 分段 + marker/label | MKMapView 包装：WGS-84 直传（勿转 GCJ-02）+ 禁旋转/俯仰 + 三色 gradient3 + 共享端点 8 点分段 + pause 分段 + 10% padding + 起终点徽标 + 圈号（TrackMapBuilder/TrackMapView） | aligned | 用户（#754 决议一/二） | 2026-10-26 | 坐标铁律有单测（WGS-84 逐位直传）；中国区加偏实测（外滩地标）留待真机接入时执行并回填本行 |
 
 ## 教练域（PR-4 落地后登记）
 

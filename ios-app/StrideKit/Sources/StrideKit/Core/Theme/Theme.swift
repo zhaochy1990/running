@@ -62,4 +62,8 @@ public extension Theme {
     func font(_ size: FontScale, weight: GeistWeight) -> Font {
         font(size, weight: weight, mono: false)
     }
+
+    func font(_ size: FontScale, mono: Bool) -> Font {
+        font(size, weight: .regular, mono: mono)
+    }
 }

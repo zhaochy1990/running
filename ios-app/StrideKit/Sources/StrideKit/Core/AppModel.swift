@@ -20,6 +20,13 @@ public final class AppModel {
     public let router = AppRouter()
     public let theme = ThemeManager()
 
+    /// 当前用户（checkAuth 验证成功后落位；记录域等数据页取 `me.id` 拼
+    /// `/api/{user}/...` 路径，等价小程序 `userStore.getState().user.id`）。
+    public private(set) var me: MeUser?
+
+    /// 数据域共享的请求客户端（各 Repository 以此构造，401 刷新单飞全局一份）。
+    public let api: APIClient
+
     /// 登录成功后的回跳目标（401 / 冷开未登录时带 redirect，修丢上下文）。
     public internal(set) var loginRedirect: Route?
 
@@ -30,7 +37,6 @@ public final class AppModel {
     public internal(set) var pendingCoachContext: PendingCoachContext?
     public internal(set) var pendingStrategyDraft: PendingStrategyDraft?
 
-    private let api: APIClient
     private let tokens: any TokenStore
 
     public init(api: APIClient? = nil, tokens: (any TokenStore)? = nil) {
@@ -76,7 +82,7 @@ public final class AppModel {
             return
         }
         do {
-            _ = try await api.validateSession()
+            me = try await api.validateSession()
             phase = .loggedIn
             if let entry { router.reset(to: entry) }
         } catch let error as ApiError {
@@ -90,6 +96,14 @@ public final class AppModel {
         } catch {
             phase = .loggedIn
             if let entry { router.reset(to: entry) }
+        }
+    }
+
+    /// 等待启动认证 settle（`userStore.waitForAuth()` 等价）：数据页首屏
+    /// 请求在登录完成前发出会被 401，等 `phase` 离开 `.checking` 再发。
+    public func waitUntilSessionSettled() async {
+        while phase == .checking {
+            try? await Task.sleep(for: .milliseconds(50))
         }
     }
 
@@ -114,6 +128,7 @@ public final class AppModel {
     }
 
     private func loggedOut(withEntry entry: Route?) {
+        me = nil
         if let entry, !entry.isPublicLanding {
             loginRedirect = entry
         }
@@ -126,6 +141,7 @@ public final class AppModel {
     private func handleSessionExpired() {
         let current = router.paths[router.selectedTab]?.last ?? router.selectedTab.root
         loginRedirect = current
+        me = nil
         phase = .loggedOut
     }
 
