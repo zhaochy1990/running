@@ -8,10 +8,13 @@ import Observation
 @Observable
 public final class AppModel {
 
-    /// 启动认证状态机（app.ts checkAuth 骨架；onboarding 拦截归 PR-2 登录域）。
+    /// 启动认证状态机（app.ts checkAuth + PR-2 登录域 onboarding 拦截）。
     public enum AuthPhase: Equatable, Sendable {
         case checking
         case loggedIn
+        /// 档案未齐 / 刚注册：全屏 onboarding（app.ts
+        /// routeToOnboardingIfProfileMissing 的 reLaunch 等价）。
+        case onboarding
         case loggedOut
     }
 
@@ -30,8 +33,11 @@ public final class AppModel {
     /// 登录成功后的回跳目标（401 / 冷开未登录时带 redirect，修丢上下文）。
     public internal(set) var loginRedirect: Route?
 
-    /// 401 回登录页时预填的手机号（沿 #460 lastSmsPhone；真实登录表单归 PR-2）。
+    /// 401 回登录页时预填的手机号（沿 #460 lastSmsPhone）。
     public var prefilledPhone: String?
+
+    /// 登录域服务（SMS 验证码 / 邮箱密码，PR-2）。
+    public let auth: AuthService
 
     // ── 跨 tab 交接（storage 中转的等价物，单次消费语义）────────────────
     public internal(set) var pendingCoachContext: PendingCoachContext?
@@ -45,7 +51,9 @@ public final class AppModel {
     public init(api: APIClient? = nil, tokens: (any TokenStore)? = nil, coach: CoachClient? = nil) {
         let tokenStore = tokens ?? KeychainTokenStore()
         self.tokens = tokenStore
-        self.api = api ?? APIClient(tokens: tokenStore)
+        let client = api ?? APIClient(tokens: tokenStore)
+        self.api = client
+        self.auth = AuthService(api: client, tokens: tokenStore)
         self.coach = coach ?? CoachClient(tokens: tokenStore)
         // 初始化完成后装配 401 会话失效回调（切全屏 Login + redirect）。
         // 全链 weak：回调由 api 持有，而 api 由 self 持有，强捕会成环。
@@ -57,6 +65,13 @@ public final class AppModel {
             await self.coach.setSessionExpiredHandler { [weak self] in
                 self?.handleSessionExpired()
             }
+        }
+    }
+
+    /// Onboarding 页装配（RootView 全屏态创建）。
+    public func makeOnboardingModel() -> OnboardingModel {
+        OnboardingModel(api: api) { [weak self] in
+            self?.finishOnboarding()
         }
     }
 
@@ -92,17 +107,17 @@ public final class AppModel {
             me = try await api.validateSession()
             phase = .loggedIn
             if let entry { router.reset(to: entry) }
+            _ = try await api.validateSession()
+            await resolveLandingAfterSession(entry: entry)
         } catch let error as ApiError {
             if error.statusCode == 401 {
                 loggedOut(withEntry: entry)
             } else {
                 // 网络类失败：保留会话，交给数据页处理
-                phase = .loggedIn
-                if let entry { router.reset(to: entry) }
+                await enterLoggedIn(entry: entry)
             }
         } catch {
-            phase = .loggedIn
-            if let entry { router.reset(to: entry) }
+            await enterLoggedIn(entry: entry)
         }
     }
 
@@ -112,6 +127,71 @@ public final class AppModel {
         while phase == .checking {
             try? await Task.sleep(for: .milliseconds(50))
         }
+    }
+
+    /// 会话有效后的落点：profileReady 启动拦截（app.ts
+    /// routeToOnboardingIfProfileMissing）——档案未齐 → 全屏 onboarding
+    /// （entry 透传 redirect）；查询失败放行（网络抖动不该把用户从首页拽走）。
+    private func resolveLandingAfterSession(entry: Route?) async {
+        if let profile = try? await api.myProfile(), !profile.profileReady {
+            if let entry, !entry.isPublicLanding {
+                loginRedirect = entry
+            }
+            phase = .onboarding
+            return
+        }
+        await enterLoggedIn(entry: entry)
+    }
+
+    private func enterLoggedIn(entry: Route?) async {
+        phase = .loggedIn
+        if let entry { router.reset(to: entry) }
+    }
+
+    // MARK: - 登录域落点（PR-2，#752 决议 / login.ts navigateAfterLogin）
+
+    /// 登录成功分支：redirect 回跳优先；无 redirect 查档案——新注册/
+    /// 档案未齐 → onboarding（透传 redirect），老用户 → 教练 tab；
+    /// 档案查询失败放行教练 tab（`sms/verify` 不回 registered，新旧用户
+    /// 区分由 onboarding 重定向链天然覆盖，#419 决议 1）。
+    public func handleLoginSuccess() async {
+        if let redirect = loginRedirect {
+            loginRedirect = nil
+            phase = .loggedIn
+            router.reset(to: redirect)
+            return
+        }
+        if let profile = try? await api.myProfile(), !profile.profileReady {
+            me = MeUser(id: profile.id, displayName: profile.displayName)
+            phase = .onboarding
+            return
+        }
+        await refreshMeIfMissing()
+        enterHome()
+    }
+
+    /// onboarding 完成离场（完成 / 跳过 / 先进入首页 共用）：redirect 回跳
+    /// 或教练 tab（onboarding.ts:160-167）。
+    public func finishOnboarding() {
+        if let redirect = loginRedirect {
+            loginRedirect = nil
+            router.reset(to: redirect)
+        } else {
+            router.reset(to: .coach)
+        }
+        phase = .loggedIn
+    }
+
+    private func enterHome() {
+        router.reset(to: .coach)
+        phase = .loggedIn
+    }
+
+    /// 登录域离线落位后补 me（数据页 `me.id` 依赖；bootstrap 路径已由
+    /// validateSession 落位）。
+    private func refreshMeIfMissing() async {
+        guard me == nil else { return }
+        me = try? await api.validateSession()
     }
 
     /// 深链 / 分享回流入口（onOpenURL 冷热启动统一）。
@@ -124,6 +204,14 @@ public final class AppModel {
         switch phase {
         case .loggedIn:
             router.reset(to: route)
+        case .onboarding:
+            // 引导中已登录：非公开深链只暂存 redirect（完成引导后回跳），
+            // 不能把用户拽回登录页。
+            if route.isPublicLanding {
+                router.reset(to: route)
+            } else {
+                loginRedirect = route
+            }
         case .checking, .loggedOut:
             if route.isPublicLanding {
                 router.reset(to: route)
@@ -145,10 +233,12 @@ public final class AppModel {
     /// APIClient 401 刷新链失败回调：切全屏 Login + 当前页作 redirect
     /// （对应 request.ts handleSessionExpired → redirectToLogin；微信免密
     /// 恢复整段不迁，devops#751 决议 2）。token 已由 APIClient 清空。
+    /// 预填上次验证码手机号（#419 决议 4，一键重发不自动发）。
     private func handleSessionExpired() {
         let current = router.paths[router.selectedTab]?.last ?? router.selectedTab.root
         loginRedirect = current
         me = nil
+        prefilledPhone = auth.lastSmsPhone()
         phase = .loggedOut
     }
 

@@ -33,12 +33,26 @@ public struct APIRequest: Sendable {
     public var body: Data?
     /// 是否带 Bearer 并启用 401 刷新链（公开落地端点传 false）。
     public var authorized: Bool
+    /// 走 auth-service base（同域分流下与 baseURL 同值；显式标记，登录域
+    /// 端点 `/api/auth/*`、`/api/users/me` 身份面用它，分域部署时不改调用点）。
+    public var authBase: Bool
+    /// 追加请求头（如同步触发的 `Idempotency-Key`）。
+    public var headers: [String: String]
 
-    public init(method: Method = .get, path: String, body: Data? = nil, authorized: Bool = true) {
+    public init(
+        method: Method = .get,
+        path: String,
+        body: Data? = nil,
+        authorized: Bool = true,
+        authBase: Bool = false,
+        headers: [String: String] = [:]
+    ) {
         self.method = method
         self.path = path
         self.body = body
         self.authorized = authorized
+        self.authBase = authBase
+        self.headers = headers
     }
 }
 
@@ -142,9 +156,14 @@ public actor APIClient {
 
     private func perform(_ request: APIRequest, overridingToken: String? = nil) async throws -> (data: Data, response: HTTPURLResponse) {
         var urlRequest = makeURLRequest(
-            base: config.baseURL, path: request.path,
-            method: request.method.rawValue, body: request.body
+            base: request.authBase ? config.authBaseURL : config.baseURL,
+            path: request.path,
+            method: request.method.rawValue,
+            body: request.body
         )
+        for (name, value) in request.headers {
+            urlRequest.setValue(value, forHTTPHeaderField: name)
+        }
         if request.authorized {
             let token: String?
             if let overridingToken {
@@ -158,6 +177,44 @@ public actor APIClient {
         }
         log.debug("→ \(request.method.rawValue) \(request.path)")
         return try await transport.data(forHTTP: urlRequest)
+    }
+
+    // MARK: - 头像上传（wx.uploadFile 的 URLSession 等价，PR-2 登录域）
+
+    /// 上传头像到 auth-service（`POST {auth}/api/users/me/avatar`，
+    /// multipart 字段名 `file`，auth-service 写 COS 后回 `{avatar_url}`；
+    /// 小程序 services/profile.ts uploadAvatar 的等价实现）。
+    public func uploadAvatar(_ imageData: Data, mimeType: String = "image/jpeg") async throws -> String {
+        let boundary = "stride-\(UUID().uuidString)"
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"avatar\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
+        body.append(imageData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+
+        var urlRequest = makeURLRequest(
+            base: config.authBaseURL, path: "/api/users/me/avatar",
+            method: "POST", body: body
+        )
+        urlRequest.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        if let token = await tokens.accessToken() {
+            urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        log.debug("→ POST /api/users/me/avatar（multipart）")
+        let (data, response) = try await transport.data(forHTTP: urlRequest)
+        guard (200..<300).contains(response.statusCode) else {
+            throw ApiError.make(statusCode: response.statusCode, body: data)
+        }
+        struct AvatarResponse: Decodable {
+            let avatarURL: String
+            enum CodingKeys: String, CodingKey { case avatarURL = "avatar_url" }
+        }
+        do {
+            return try JSONDecoder().decode(AvatarResponse.self, from: data).avatarURL
+        } catch {
+            throw ApiError.decodeFailure(AvatarResponse.self)
+        }
     }
 
     // MARK: - 刷新单飞（request.ts refreshPromise 等价）
