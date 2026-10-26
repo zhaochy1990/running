@@ -88,11 +88,13 @@ type Activity struct {
 	// Timeseries blob pointer columns (devops#784, timeseries→COS migration
 	// Phase 0; AutoMigrate adds them, all nullable — a not-yet-migrated activity
 	// keeps NULLs and every reader stays on row storage until Phase 2). These
-	// are owned exclusively by the blob write path; provider sync payloads never
-	// carry them, so Phase 1 adds them to the upsert omit list before anything
-	// writes them. ts_sha256 is the hex sha256 of the blob's uncompressed points
-	// JSON (tsstore.EncodePoints); has_gps records whether the blob carries GPS
-	// so the detail path can skip the per-point EXISTS probe (Phase 2).
+	// are owned exclusively by the blob write path (the Phase 1 dual-write in
+	// upsertActivity and the backfill); provider sync payloads never carry
+	// them, and any upsert whose blob path did not run omits all four so it
+	// can never clobber a stamped pointer. ts_sha256 is the hex sha256 of the
+	// blob's uncompressed points JSON (tsstore.EncodePoints); has_gps records
+	// whether the blob carries GPS so the detail path can skip the per-point
+	// EXISTS probe (Phase 2).
 	TsBlobKey *string `gorm:"column:ts_blob_key;type:varchar(256)"`
 	// type:integer, NOT type:int — a `type:` literal that equals gorm's
 	// schema.Int constant ("int") is treated as the Go-kind mapping, where an
@@ -157,6 +159,13 @@ type TimeseriesPoint struct {
 
 func (TimeseriesPoint) TableName() string { return "timeseries" }
 
+// validGPSFix reports whether a paired coordinate is a usable fix: inside the
+// geodetic ranges and not the null island (0,0). Shared by the start-GPS cache
+// below and the blob path's has_gps flag so "valid" means one thing.
+func validGPSFix(lat, lon float64) bool {
+	return lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180 && !(lat == 0 && lon == 0)
+}
+
 // SetStartGPSFromTimeseries caches the first complete, valid GPS fix on the
 // activity row. It deliberately requires a paired coordinate so a partial
 // sample cannot become an unusable activity start.
@@ -167,7 +176,7 @@ func (a *Activity) SetStartGPSFromTimeseries(points []TimeseriesPoint) {
 			continue
 		}
 		lat, lon := *point.GPSLat, *point.GPSLon
-		if lat < -90 || lat > 90 || lon < -180 || lon > 180 || (lat == 0 && lon == 0) {
+		if !validGPSFix(lat, lon) {
 			continue
 		}
 		a.StartGPSLat, a.StartGPSLon = &lat, &lon

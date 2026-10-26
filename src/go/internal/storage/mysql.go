@@ -13,11 +13,16 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/zhaochy1990/stride/internal/job"
+	"github.com/zhaochy1990/stride/internal/tsstore"
 )
 
 // Store owns the GORM handle and exposes the job/pipeline stores.
 type Store struct {
 	db *gorm.DB
+	// tsBlob is the injected timeseries blob backend for the Phase 1
+	// dual-write (devops#785); nil keeps the pre-blob behaviour. See
+	// SetTSBlobStore in tsblob.go.
+	tsBlob tsstore.Store
 }
 
 // Open connects to MySQL, forcing the DSN to parseTime=true & loc=UTC so

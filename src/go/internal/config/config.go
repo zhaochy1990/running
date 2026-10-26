@@ -185,6 +185,25 @@ func MustLoadRaceDetectionRuntimeFrom(path string) *RaceDetectionRuntimeConfig {
 	return &cfg
 }
 
+// TSBlobRuntimeConfig is the tsblob CLI's (backfill/audit) view of the shared
+// config.yml: the MySQL handle plus the timeseries bucket section. Loading
+// only these two sections keeps the CLI from demanding AMQP/queue/race-detection
+// required fields it never uses, while the same STRIDE_WORKER_* env namespace
+// and config file keep it in lockstep with the worker deployment it runs
+// against (devops#785).
+type TSBlobRuntimeConfig struct {
+	MySQL  MySQL  `mapstructure:"mysql"`
+	TSBlob TSBlob `mapstructure:"ts-blob"`
+}
+
+// MustLoadTSBlobRuntimeFrom loads MySQL and ts-blob settings from one config
+// file with the same STRIDE_WORKER_* overrides as the worker.
+func MustLoadTSBlobRuntimeFrom(path string) *TSBlobRuntimeConfig {
+	var cfg TSBlobRuntimeConfig
+	xviper.MustLoadConfig(EnvPrefix, path, &cfg)
+	return &cfg
+}
+
 // --- cmd/api configuration ---------------------------------------------------
 //
 // The HTTP API is a separate binary (ADR 0012) with its own required fields, so

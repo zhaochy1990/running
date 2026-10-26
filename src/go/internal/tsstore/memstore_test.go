@@ -79,8 +79,11 @@ func TestMemStore_ListAndDelete(t *testing.T) {
 	mustPut(t, store, "other/x.json.gz")
 
 	var got []string
-	if err := store.List(ctx, "ts/v1/u1/", func(key string) error {
-		got = append(got, key)
+	if err := store.List(ctx, "ts/v1/u1/", func(info ObjectInfo) error {
+		got = append(got, info.Key)
+		if info.ModTime.IsZero() {
+			t.Errorf("List ModTime for %s is zero, want the Put timestamp", info.Key)
+		}
 		return nil
 	}); err != nil {
 		t.Fatalf("List: %v", err)
@@ -102,7 +105,7 @@ func TestMemStore_ListFnErrorPassesThrough(t *testing.T) {
 	store := NewMemStore()
 	mustPut(t, store, "ts/v1/u/a.json.gz")
 	stop := errors.New("caller stop")
-	err := store.List(context.Background(), "ts/v1/", func(string) error { return stop })
+	err := store.List(context.Background(), "ts/v1/", func(ObjectInfo) error { return stop })
 	if !errors.Is(err, stop) {
 		t.Fatalf("List fn error = %v, want passthrough of %v", err, stop)
 	}
