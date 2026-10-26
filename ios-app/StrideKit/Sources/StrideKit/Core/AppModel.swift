@@ -131,6 +131,8 @@ public final class AppModel {
         while phase == .checking {
             try? await Task.sleep(for: .milliseconds(50))
         }
+    }
+
     /// 会话有效后的落点：profileReady 启动拦截（app.ts
     /// routeToOnboardingIfProfileMissing）——档案未齐 → 全屏 onboarding
     /// （entry 透传 redirect）；查询失败放行（网络抖动不该把用户从首页拽走）。
