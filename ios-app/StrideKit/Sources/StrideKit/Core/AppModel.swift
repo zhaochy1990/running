@@ -51,14 +51,10 @@ public final class AppModel {
     public init(api: APIClient? = nil, tokens: (any TokenStore)? = nil, coach: CoachClient? = nil) {
         let tokenStore = tokens ?? KeychainTokenStore()
         self.tokens = tokenStore
-<<<<<<< HEAD
-        self.api = api ?? APIClient(tokens: tokenStore)
-        self.coach = coach ?? CoachClient(tokens: tokenStore)
-=======
         let client = api ?? APIClient(tokens: tokenStore)
         self.api = client
         self.auth = AuthService(api: client, tokens: tokenStore)
->>>>>>> ca77b1b2 (feat(ios-app): PR-2 登录与账号域（双tab登录+onboarding+声明页） (#765))
+        self.coach = coach ?? CoachClient(tokens: tokenStore)
         // 初始化完成后装配 401 会话失效回调（切全屏 Login + redirect）。
         // 全链 weak：回调由 api 持有，而 api 由 self 持有，强捕会成环。
         Task { [weak self] in
