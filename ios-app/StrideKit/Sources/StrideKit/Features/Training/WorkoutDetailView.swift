@@ -7,6 +7,7 @@ public struct WorkoutDetailView: View {
 
     @Environment(AppModel.self) private var app
     @State private var model: WorkoutDetailModel
+    @State private var shareOpen = false
 
     public init(date: String, workoutId: String, title: String?) {
         _model = State(initialValue: WorkoutDetailModel(date: date, workoutId: workoutId, title: title))
@@ -31,6 +32,7 @@ public struct WorkoutDetailView: View {
         .navigationTitle(model.header.name.isEmpty ? "课表详情" : model.header.name)
         .inlineNavigationTitle()
         .task { await model.activate(app: app) }
+        .sheet(isPresented: $shareOpen) { shareSheet }
     }
 
     @ViewBuilder
@@ -253,9 +255,12 @@ public struct WorkoutDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: app.theme.current.radius(.md)))
     }
 
-    /// 自建课分享 pill（#704 仅 custom 源；出向归 #758/PR-8 接线）。
+    /// 自建课分享 pill（#704 仅 custom 源；PR-8 出向矩阵：自建课封面=
+    /// 图+文案+链接——5:4 深色封面 + 课名 + workout-share `/s/` 链接整组）。
     private func sharePill(url: URL) -> some View {
-        ShareLink(item: url, subject: Text(model.header.name)) {
+        Button {
+            shareOpen = true
+        } label: {
             HStack(spacing: app.theme.current.space(.xs)) {
                 Image(systemName: "square.and.arrow.up")
                     .font(.system(size: 13, weight: .medium))
@@ -267,7 +272,36 @@ public struct WorkoutDetailView: View {
             .padding(.vertical, app.theme.current.space(.sm))
             .background(Capsule().fill(app.theme.current.accentTint))
         }
+        .buttonStyle(.plain)
     }
+
+    /// 图+文案+链接整组（封面渲染失败自动少一项，fail-soft）。
+    @ViewBuilder
+    private var shareSheet: some View {
+        #if canImport(UIKit)
+        if let url = model.shareURL {
+            ActivityShareSheet(items: shareItems(url))
+        }
+        #else
+        // macOS 仅测试编译面
+        Text(ShareCopy.workout(name: model.header.name))
+        #endif
+    }
+
+    #if canImport(UIKit)
+    private func shareItems(_ url: URL) -> [Any] {
+        let metrics = model.stats.prefix(2).map {
+            WorkoutDarkCoverView.Metric(value: $0.value, label: $0.label)
+        }
+        return ShareItemsBuilder.items(
+            cover: ShareCoverRenderer.render(
+                WorkoutDarkCoverView(name: model.header.name, metrics: metrics)
+            ),
+            title: ShareCopy.workout(name: model.header.name),
+            url: url
+        )
+    }
+    #endif
 
     // MARK: - 状态卡
 

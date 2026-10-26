@@ -129,13 +129,24 @@ extension Color {
 }
 
 /// 海报预览 sheet：缩放预览 + 显式保存/分享按钮。
+/// PR-8 出向矩阵：策略海报=图+文案+链接（海报图 + strategyShareTitle +
+/// 只读落地页/详情页 `/s/` 链接，经系统分享面板整组送出）。
 struct PacePosterSheet: View {
 
     @Environment(AppModel.self) private var app
     let data: StrategyViewData
     let raceDayText: String
-    /// 导出图缓存：ImageRenderer 不便宜，ShareLink item/preview 与保存共用一份。
+    /// 分享链接（与 hero 分享同源：已落库版本=三元组落地页，草稿=详情页）。
+    let shareURL: URL?
+    /// 导出图缓存：ImageRenderer 不便宜，预览门控/分享/保存共用一份。
     @State private var exported: Image?
+    @State private var shareOpen = false
+
+    init(data: StrategyViewData, raceDayText: String, shareURL: URL?) {
+        self.data = data
+        self.raceDayText = raceDayText
+        self.shareURL = shareURL
+    }
 
     var body: some View {
         let t = app.theme.current
@@ -153,6 +164,11 @@ struct PacePosterSheet: View {
         .frame(maxWidth: .infinity)
         .background(t.background)
         .onAppear { if exported == nil { exported = renderPosterImage() } }
+        #if canImport(UIKit)
+        .sheet(isPresented: $shareOpen) {
+            ActivityShareSheet(items: posterShareItems())
+        }
+        #endif
     }
 
     /// 显式保存（iOS）/分享按钮行（D-poster-1）。
@@ -167,15 +183,34 @@ struct PacePosterSheet: View {
                 posterButtonLabel("保存", systemImage: "square.and.arrow.down")
             }
             .buttonStyle(.plain)
-            #endif
+            Button {
+                shareOpen = true
+            } label: {
+                posterButtonLabel("分享", systemImage: "square.and.arrow.up")
+            }
+            .buttonStyle(.plain)
+            #else
+            // macOS 仅测试编译面：退化为单图 ShareLink。
             ShareLink(
                 item: exported,
                 preview: SharePreview(strategyShareTitle(data), image: exported)
             ) {
                 posterButtonLabel("分享", systemImage: "square.and.arrow.up")
             }
+            #endif
         }
     }
+
+    /// 图+文案+链接整组（#771 出向矩阵；链接缺省时仅图+文案）。
+    #if canImport(UIKit)
+    private func posterShareItems() -> [Any] {
+        ShareItemsBuilder.items(
+            cover: renderUIImage().map(ShareCoverImage.init),
+            title: strategyShareTitle(data),
+            url: shareURL
+        )
+    }
+    #endif
 
     private var posterPreview: some View {
         GeometryReader { proxy in

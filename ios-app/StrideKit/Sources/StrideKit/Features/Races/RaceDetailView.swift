@@ -42,6 +42,18 @@ public struct RaceDetailView: View {
         .background(t.background)
         .navigationTitle("赛事详情")
         .inlineNavigationTitle()
+        .toolbar {
+            // PR-8 出向矩阵：赛事详情=定制文案+链接（小程序胶囊转发，D-13→D-1）。
+            ToolbarItem(placement: .raceTopBarTrailing) {
+                ShareLink(
+                    item: ShareOutbound.link(base: app.api.config.shareBaseURL, route: .raceDetail(id: model.raceId)),
+                    preview: SharePreview(model.shareTitle)
+                ) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(t.font(.fs13, weight: .medium))
+                }
+            }
+        }
         .refreshable { await model.refresh() }
         .task { await model.activate(app: app) }
         .onAppear { Task { await model.onShowRefresh() } }

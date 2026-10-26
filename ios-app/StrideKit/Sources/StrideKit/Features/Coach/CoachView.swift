@@ -30,6 +30,7 @@ public struct CoachView: View {
             let chat = CoachChatModel(
                 service: app.coach,
                 userIdProvider: { [weak app] in app?.me?.id },
+                sharerNameProvider: { [weak app] in app?.me?.displayName },
                 openStrategyDraft: { [weak app] raceId, strategy in
                     app?.pendingStrategyDraft = PendingStrategyDraft(raceId: raceId, payload: strategy.payload)
                     app?.router.push(.raceStrategy(id: raceId, target: nil))
@@ -312,14 +313,23 @@ struct CoachScreen: View {
         .background(app.theme.current.background)
     }
 
-    // MARK: 系统分享（D-share-1：单一路分享 universal link 承载）
+    // MARK: 系统分享（D-share-1：单一路分享 universal link 承载；
+    // PR-8 出向矩阵：对话封面=图+文案+链接——封面在呈现时 ImageRenderer 出图，
+    // 渲染失败自动少一项 fail-soft）
 
     @ViewBuilder
     private func shareSheet(_ payload: CoachChatModel.SharePayload) -> some View {
         #if canImport(UIKit)
-        ActivityShareSheet(items: [payload.title, payload.url])
+        ActivityShareSheet(items: shareItems(payload))
         #else
         VStack(spacing: 12) {
+            if let cover = ShareCoverRenderer.render(CoachBubbleCoverView(picks: payload.picks)) {
+                Image(nsImage: cover.image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 250)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
             Text(payload.title)
             Text(payload.url.absoluteString)
                 .font(.system(.caption, design: .monospaced))
@@ -327,6 +337,17 @@ struct CoachScreen: View {
         .padding()
         #endif
     }
+
+    #if canImport(UIKit)
+    /// 图+文案+链接整组（封面渲染失败自动少一项）。
+    private func shareItems(_ payload: CoachChatModel.SharePayload) -> [Any] {
+        ShareItemsBuilder.items(
+            cover: ShareCoverRenderer.render(CoachBubbleCoverView(picks: payload.picks)),
+            title: payload.title,
+            url: payload.url
+        )
+    }
+    #endif
 }
 
 // MARK: - 消息行

@@ -132,10 +132,13 @@ public final class CoachChatModel {
     public private(set) var selectCount = 0
     public private(set) var allSelected = false
     /// 转发产物（创建分享成功后由视图呈现系统分享面板）。
+    /// picks 为 5:4 气泡封面的纯数据投影（前两条所选节选折行），视图层
+    /// ImageRenderer 出图（PR-8；模型不碰渲染器）。
     public struct SharePayload: Identifiable, Equatable, Sendable {
         public let id = UUID()
         public let url: URL
         public let title: String
+        public let picks: [CoachBubbleCoverView.Pick]
     }
     public var sharePayload: SharePayload?
 
@@ -162,6 +165,9 @@ public final class CoachChatModel {
     private let clock: () -> Date
     /// 卡片动作需要的用户 id（AppModel.me 注入，`/api/{user}/...` 路径用）。
     private let userIdProvider: () -> String?
+    /// 分享者昵称（AppModel.me.displayName 注入；转发文案与服务端快照共用，
+    /// coach.ts createSelectedShare 的 userStore name 等价）。
+    private let sharerNameProvider: () -> String?
     /// race-strategy 卡片草稿交接（写 AppModel.pendingStrategyDraft + 路由）。
     private let openStrategyDraft: @MainActor (_ raceId: Int, _ strategy: RaceStrategy) -> Void
 
@@ -183,12 +189,14 @@ public final class CoachChatModel {
         store: any CoachSessionStore = DefaultsCoachSessionStore(),
         clock: @escaping () -> Date = { Date() },
         userIdProvider: @escaping () -> String? = { nil },
+        sharerNameProvider: @escaping () -> String? = { nil },
         openStrategyDraft: @escaping @MainActor (_ raceId: Int, _ strategy: RaceStrategy) -> Void = { _, _ in }
     ) {
         self.service = service
         self.store = store
         self.clock = clock
         self.userIdProvider = userIdProvider
+        self.sharerNameProvider = sharerNameProvider
         self.openStrategyDraft = openStrategyDraft
     }
 
@@ -680,8 +688,10 @@ public final class CoachChatModel {
     }
 
     /// 转发所选：升序去重投影序号 → 创建分享快照 → 系统分享面板
-    ///（D-share-1：微信转发渠道无对等，单一路分享用 universal link 承载，
-    /// 阅读端 /pages/coach-share/coach-share?sid= 落地页归 PR-8）。
+    ///（D-share-1：微信转发渠道无对等，单一路分享用 universal link 承载）。
+    /// PR-8 出向矩阵（#771）：对话封面=图+文案+链接 —— 5:4 气泡封面
+    ///（CoachBubbleCoverView）+ 品牌口径文案（不提教练）+ `/s/` 分流链接
+    ///（阅读端 coach-share 落地页）；封面渲染失败仅降级无图（fail-soft）。
     public func forwardSelected() async {
         guard selectMode, selectCount > 0 else { return }
         guard !historySyncFailed else {
@@ -690,14 +700,15 @@ public final class CoachChatModel {
         }
         let indices = Set(messages.filter { $0.selected }.compactMap(\.shareIndex)).sorted()
         guard !indices.isEmpty else { return }
+        let sharerName = sharerNameProvider()
         do {
-            let result = try await service.createShare(sessionId: currentSessionId, indices: indices, sharerName: nil)
-            var components = URLComponents(url: URL(string: "https://stride-running.cn")!, resolvingAgainstBaseURL: false)!
-            components.path = "/pages/coach-share/coach-share"
-            components.queryItems = [URLQueryItem(name: "sid", value: result.sid)]
-            if let url = components.url {
-                sharePayload = SharePayload(url: url, title: "我与 StrideWise 教练的对话 · \(indices.count) 条")
-            }
+            let result = try await service.createShare(sessionId: currentSessionId, indices: indices, sharerName: sharerName)
+            let url = ShareOutbound.link(route: .coachShare(sid: result.sid))
+            sharePayload = SharePayload(
+                url: url,
+                title: ShareCopy.coachConversation(sharerName: sharerName, count: indices.count),
+                picks: CoachBubbleCoverView.picks(messages: messages)
+            )
         } catch let error as ApiError {
             showToast(error.detail.isEmpty ? "分享创建失败，请稍后再试" : "分享创建失败：\(error.detail)")
         } catch {

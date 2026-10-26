@@ -33,6 +33,11 @@ public final class AppModel {
     /// 登录成功后的回跳目标（401 / 冷开未登录时带 redirect，修丢上下文）。
     public internal(set) var loginRedirect: Route?
 
+    /// 未登录浏览中的公开落地页（PUBLIC_ENTRY_PAGES 白名单放行的免登录
+    /// 形态，PR-8 devops#771）：分享链接冷开/回流时未登录也能先看内容，
+    /// RootView loggedOut 根栈渲染本页（toolbar「登录」回登录流）。
+    public internal(set) var publicLanding: Route?
+
     /// 401 回登录页时预填的手机号（沿 #460 lastSmsPhone）。
     public var prefilledPhone: String?
 
@@ -160,6 +165,7 @@ public final class AppModel {
     public func handleLoginSuccess() async {
         if let redirect = loginRedirect {
             loginRedirect = nil
+            publicLanding = nil
             phase = .loggedIn
             router.reset(to: redirect)
             return
@@ -217,6 +223,8 @@ public final class AppModel {
             }
         case .checking, .loggedOut:
             if route.isPublicLanding {
+                // 公开落地页免登录浏览（PR-8）：loggedOut 根栈直接呈现。
+                publicLanding = route
                 router.reset(to: route)
             } else {
                 loginRedirect = route
@@ -229,6 +237,8 @@ public final class AppModel {
         me = nil
         if let entry, !entry.isPublicLanding {
             loginRedirect = entry
+        } else if let entry {
+            publicLanding = entry
         }
         phase = .loggedOut
     }
@@ -298,6 +308,7 @@ public final class AppModel {
     /// 链路）：记录回跳目标并切全屏 Login。
     public func requestLogin(redirect: Route) {
         loginRedirect = redirect
+        publicLanding = nil
         phase = .loggedOut
     }
 }

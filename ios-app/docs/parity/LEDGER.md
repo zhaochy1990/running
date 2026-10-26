@@ -58,8 +58,8 @@
 | A-coach-4 | 会话抽屉形态 | UI | 自绘 drawer（半屏浮层 + 新建/列表/当前徽标/搜索 toast） | .sheet bottom sheet（detents medium/large）同信息结构 | aligned | — | 2026-10-26 | D-sheet-1 种子条目推导演绎；搜索占位同 toast「暂未开放」 |
 | A-coach-5 | 键盘避让 | UI | onKeyboardHeightChange 手动 padding 顶起输入栏 | SwiftUI 系统键盘避让（safe area） | aligned | — | 2026-10-26 | 平台默认行为语义等价，无需手动垫高 |
 | D-coach-1 | markdown 渲染 | UI | mp-html 全量 GFM（含表格/嵌套） | 自研轻量子集（标题/列表/引用/围栏代码/表格/行内 AttributedString），零三方依赖 | pending | — | 2026-10-26 | 复杂嵌套 GFM（嵌套列表/内联 html）降级为段落文本；PR-10 parity 核对时请用户裁（补依赖库 or 保留子集） |
-| D-coach-2 | 多选转发封面 | UI | canvas 预生成 5:4 气泡封面图（onShareAppMessage imageUrl） | 无 canvas 封面：系统分享面板自带链接预览卡片 | pending | — | 2026-10-26 | D-poster-1/D-share-1 同族差异；是否需要自绘封面图 PR-8 分享出向统一裁 |
-| D-coach-3 | 转发阅读端 | 功能 | path=/pages/coach-share/coach-share?sid=（微信内打开） | universal link https://stride-running.cn/pages/coach-share/coach-share?sid= | aligned | 用户（D-share-1） | 2026-10-26 | 落地页免登录浏览形态归 PR-8（AppModel.applyIncoming 注释位） |
+| D-coach-2 | 多选转发封面 | UI | canvas 预生成 5:4 气泡封面图（onShareAppMessage imageUrl） | CoachBubbleCoverView 声明式 5:4 气泡封面（暗底+藕粉顶线+前两条所选节选折行，coach.ts drawShareCover 直译），转发面板呈现时 ImageRenderer 出图随图+文案+链接整组送出（PR-8） | aligned | — | 2026-10-26 | 渲染失败 fail-soft 自动少封面项；折行/节选纯函数单测覆盖（ShareOutboundTests） |
+| D-coach-3 | 转发阅读端 | 功能 | path=/pages/coach-share/coach-share?sid=（微信内打开） | universal link https://stride-running.cn/s/pages/coach-share/coach-share?sid=（PR-8 起 /s/ 分流前缀） | aligned | 用户（D-share-1） | 2026-10-26 | 未登录回流免登录浏览已随 PR-8 落地（A-share-6）；回流 Route(url:) 剥 /s/ 前缀 |
 
 ### PR-4 未迁面（显式登记）
 
@@ -90,10 +90,10 @@
 | A-race-4 | 混排卡乐观与在飞补丁 | 功能 | 状态 chips/行程勾选乐观更新失败回滚；在飞补丁防并发读打回；自定义 PUT 全量带聚合原行 | 同口径（MyRacesModel.inflight 合并闭包：并发 GET 重放补丁；customRaceBody 全字段回传） | aligned | — | 2026-10-26 | CustomRaceBody 显式 null 编码（PUT 缺省即清空契约）单测断言 |
 | A-race-5 | PB 徽章判定 | 功能 | 全马/半马各取净用时最短、同成绩记首场（新→旧遍历 `<=`） | 同口径（pbLabelIds）；显示名链四级兜底（官方→手编→活动→档位）单测覆盖 | aligned | — | 2026-10-26 | |
 | D-race-1 | 成绩行长按菜单 | UI | wx.showActionSheet（未识别：输入/修改比赛名+恢复活动名；自动识别：「不是这场比赛」二次确认） | iOS contextMenu + alert 文本框（#757 决议拍板 platform-difference） | confirmed | 用户（#757 决议一） | 2026-10-26 | 保留偏差：contextMenu/alert 系统形态；清除识别本地回落（断官方关联、手输名保留）后重拉对齐 |
-| D-race-2 | 配速卡海报保存交互 | UI | canvas 海报 → previewImage 长按保存 | 声明式海报 View + ImageRenderer（600×动态高、深色底+黄绿顶线规格照 #420）→ sheet 预览 + 显式「保存」（相册追加权限）/「分享」按钮 | confirmed | 用户（D-poster-1 + #757 决议一） | 2026-10-26 | 保留偏差：iOS 无长按保存惯例；NSPhotoLibraryAddUsageDescription 已随本 PR 落 Info.plist（完整出向统一归 PR-8） |
+| D-race-2 | 配速卡海报保存交互 | UI | canvas 海报 → previewImage 长按保存 | 声明式海报 View + ImageRenderer（600×动态高、深色底+黄绿顶线规格照 #420）→ sheet 预览 + 显式「保存」（相册追加权限）/「分享」按钮 | confirmed | 用户（D-poster-1 + #757 决议一） | 2026-10-26 | 保留偏差：iOS 无长按保存惯例；NSPhotoLibraryAddUsageDescription 已随本 PR 落 Info.plist；分享=图+文案+链接整组已随 PR-8 接线 |
 | D-race-3 | 配速表行内编辑落值时机 | UI | blur 落值 + dirty | SwiftUI TextField 直绑（每键落值即重算用时/置 dirty）；终态语义一致（值+自动换算+dirty） | confirmed | — | 2026-10-26 | 保留偏差：iOS 无 onBlur 表单惯例，直绑即时反馈；保存仍按 dirty 门控 |
 | D-race-4 | 自定义比赛编辑回显通道 | 架构 | navigateTo eventChannel emit('race', 全字段行) | AppModel.pendingCustomRaceEdit 单次消费交接（Route 表定稿「AppModel 交接，非 query」，Route.swift:58） | confirmed | — | 2026-10-26 | eventChannel 回显延迟坑在 iOS 单进程下自然消失（#757 决议一） |
-| D-race-5 | 策略分享出向 | 功能 | onShareAppMessage 带 strategy-share path（微信卡片） | ShareLink 单一路分享：已落库版本 → owner+race+version 三元组 universal link；草稿 → 详情页链接 | pending | — | 2026-10-26 | 分享深链分流与落地页形态归 #758/PR-7；D-share-1 同族 |
+| D-race-5 | 策略分享出向 | 功能 | onShareAppMessage 带 strategy-share path（微信卡片） | ShareLink 单一路分享：已落库版本 → owner+race+version 三元组 `/s/` 分流链接；草稿 → 赛事详情链接；hero 分享与配速卡海报共用（RaceStrategyModel.shareTarget） | aligned | — | 2026-10-26 | PR-8 落地：链接统一 ShareOutbound `/s/` 构造；海报分享=图+文案+链接（A-share-2） |
 | D-race-6 | 赛事中心顶栏 | UI | 自绘顶栏（返回/小房子 + 标题 + 「我的赛事」入口） | 系统 inline 导航标题 + toolbar「我的赛事」；返回走系统手势（D-nav-3 种子推演） | confirmed | — | 2026-10-26 | 保留偏差：D-nav-3 同族；「我的赛事」入口语义保留 |
 
 ## 收尾域（PR-7 落地后登记，devops#770；规格 #759 决议二 + #758 拍板 2 + #425）
@@ -112,8 +112,8 @@
 | P-fbc-1 | 反馈线程聊天 | 架构 | 进入 GET 详情（服务端读即清未读）/已采纳横幅去投票（roadmap 反查标题失败隐藏）/409 feedback_closed 前端同步禁言/草稿输入条/closed 禁言条+提交新反馈 | 同构（FeedbackChatModel：409 双判同步 closed；横幅标题 roadmap 反查 best-effort；气泡流 ScrollViewReader 滚底；图片九宫格全屏查看） | aligned | — | 2026-10-26 | 时间标签上海墙钟（今天/昨天/跨年补年份）直译单测 |
 | P-watch-1 | 手表绑定 | 架构 | 品牌网格（COROS/GARMIN）→ email+password 表单（region picker 仅 Garmin cn/global）→ 绑定成功 toast+回读+ensureSync fire-and-forget+redirectTo onboarding；解绑内联确认卡；?provider= 直达 | 同构（WatchModel/View：region 仅 Garmin+MFA 提示行；绑定后 presentOnboardingAfterWatchBind（AppModel 切全屏 onboarding 续跑进度）；解绑内联卡「已同步数据不删除」） | aligned | — | 2026-10-26 | #425 决议直译；绑表后跳 onboarding 与小程序 redirectTo 同语义 |
 | D-watch-1 | Garmin 登录形态 | 架构 | garth 式 SSO 直登：客户端收 email+password POST /api/users/me/watch/login（服务端 OAuth1→OAuth2；MFA fail-fast 提示） | 同 email+password 表单直连同端点（#425 实施清单口径）；**ASWebAuthenticationSession 前端 SSO 不采用**：需后端 OAuth 回调新端点，违反「端点零新增」铁律（mapping §0） | confirmed | — | 2026-10-26 | 保留偏差：#770 票面「garth SSO→ASWebAuthenticationSession」按 #425 实际契约（email+password 直登，garth 在服务端）落地；如未来开 OAuth 回调端点另立票 |
-| P-wshare-1 | workout-share 落地页 | 架构 | 免登录 GET /api/workouts/shared + 沉浸课卡（hero/summary/全量分段）+ 双 CTA（保存±7 天选日+save_token 幂等/推送先存后推+绑表检查 modal→watch 回来续推）；未登录 CTA→login?redirect=本页；缺参/404 失效态、5xx 重试 | 同构（WorkoutShareView/Model：三 stat 口径与 workout-detail 一致（力量=时长/动作/总组数）；选日 sheet 8 档+计划日默认；save_token=shared-{id}；绑表检查 alert→去绑定→onAppear 续推；AppModel.requestLogin(redirect:) 回跳；流测试覆盖保存/推送/续推/未登录四链） | aligned | — | 2026-10-26 | #758 拍板 2 直译；公开落地页在 loggedOut 根栈的免登录浏览形态归 PR-8（D-coach-3 既有登记） |
-| P-cshare-1 | coach-share 阅读端 | 架构 | 免登录 GET /api/coach-shares/{sid}（410/404/429 分流）浅色气泡流+策略卡静态摘要降级+底部品牌条（wxacode fail-soft） | 同构（CoachShareView/Model：410 过期/404 不存在/其余可重试三空态；race-strategy/master-plan 卡头静态摘要、动作卡降级 markdown（coachShareRows 口径单测）；品牌条占位块兜底） | aligned | — | 2026-10-26 | 「再转发同 sid」微信专属（open-type=share），iOS 出向归 PR-8 |
+| P-wshare-1 | workout-share 落地页 | 架构 | 免登录 GET /api/workouts/shared + 沉浸课卡（hero/summary/全量分段）+ 双 CTA（保存±7 天选日+save_token 幂等/推送先存后推+绑表检查 modal→watch 回来续推）；未登录 CTA→login?redirect=本页；缺参/404 失效态、5xx 重试 | 同构（WorkoutShareView/Model：三 stat 口径与 workout-detail 一致（力量=时长/动作/总组数）；选日 sheet 8 档+计划日默认；save_token=shared-{id}；绑表检查 alert→去绑定→onAppear 续推；AppModel.requestLogin(redirect:) 回跳；流测试覆盖保存/推送/续推/未登录四链） | aligned | — | 2026-10-26 | #758 拍板 2 直译；公开落地页 loggedOut 免登录浏览已随 PR-8 落地（A-share-6） |
+| P-cshare-1 | coach-share 阅读端 | 架构 | 免登录 GET /api/coach-shares/{sid}（410/404/429 分流）浅色气泡流+策略卡静态摘要降级+底部品牌条（wxacode fail-soft） | 同构（CoachShareView/Model：410 过期/404 不存在/其余可重试三空态；race-strategy/master-plan 卡头静态摘要、动作卡降级 markdown（coachShareRows 口径单测）；品牌条占位块兜底） | aligned | — | 2026-10-26 | 「再转发同 sid」已随 PR-8 落地（A-share-7） |
 | P-sshare-1 | strategy-share 落地页 | 架构 | 免登录三元组 GET；只读渲染+底部 CTA「生成我的比赛策略」（已登录→detail，未登录→登录流）；缺 pace_segments 视为失效；赛名以 race_calendar 行为准 | 同构（StrategyShareView/Model：hero/配速表/补给/打包清单/赛道/天气/依据全区块；损坏 content 失效分流；CTA 双分支；toStrategyShareView 纯函数单测含目标配速换算） | aligned | — | 2026-10-26 | #506 三元组即访问边界；行构造复用 raceStrategyRows 只读子集 |
 | D-net-1 | path 内嵌 query 编码缺陷 | 架构 | —（wx.request URL 原生合法） | 修复 APIClient makeURLRequest：`URL.appending(path:)` 会把 `?` 编成 `%3F`，path 拼串带 query 的调用（记录域 `?include=timeseries`、`?limit=&offset=`、自建课 `?target_date=`）此前整段被当路径 | aligned | — | 2026-10-26 | PR-7 落地时发现并修复的既有缺陷：拆 path 于 `?` 经 URLComponents 重组 query（回归靠 workout-share 推送流测试断言完整 URL） |
 | P-priv-2 | privacy 入口接线 | 架构 | privacy 两行菜单（P-priv-1 已登记，入口在 profile-edit） | profile-edit「隐私与权限」行 → .privacy push（本 PR 接线完成，闭环 P-priv-1 预留位） | aligned | — | 2026-10-26 | 页面本体 PR-2 落地；本行只补入口 |
@@ -121,9 +121,26 @@
 ### PR-7 未迁面（显式登记）
 
 - ASWebAuthenticationSession 前端 Garmin SSO：见 D-watch-1（端点零新增铁律下的保留偏差）。
-- 落地页 loggedOut 根栈免登录浏览形态：归 PR-8（AppModel.applyIncoming 注释位，D-coach-3 既有登记）；PR-7 页面在 loggedIn 栈 + 未登录 CTA 走 requestLogin(redirect:)。
+- ~~落地页 loggedOut 根栈免登录浏览形态：归 PR-8~~ 已随 PR-8 落地（AppModel.publicLanding + RootView loggedOut 根栈，见 A-share-6）。
 - 路线 tab 投票池「我的票数」聚合：hero 聚合卡已在 2026-10-20 拍板移除，两端口径一致，不单列偏差。
 
-## 分享出向（PR-8 落地后登记）
+## 分享出向（PR-8 落地后登记，devops#771）
 
-（空）
+| ID | 检查点 | 维度 | 小程序现状 | iOS 现状 | 状态 | 确认人 | 日期 | 说明 |
+| ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
+| A-share-1 | 出向链接架构 | 架构 | path=`/pages/...`（微信内小程序页直达） | 统一 `https://stride-running.cn/s/<mp 页路径>?query`（ShareOutbound 收口，页路径/query 复用 Route 白名单表）；App 回流 `Route(url:)` 剥 `/s/` 前缀解析 | aligned | — | 2026-10-26 | #758 拍板 1 + #762 分流页（PR-9 已上线）：微信内换 URL Link 进小程序、系统环境 UL 唤起 App/落下载卡；mp-link 页面白名单六页全覆盖 |
+| A-share-2 | 配速卡海报出向 | 功能 | canvas 海报 imageUrl + 卡片（title+path） | 海报 sheet「分享」=海报图+strategyShareTitle+只读落地页/详情 `/s/` 链接整组（系统分享面板，PacePosterSheet） | aligned | — | 2026-10-26 | #420/#757 海报规格；与 hero 分享同源链接（RaceStrategyModel.shareTarget） |
+| A-share-3 | 教练多选出向 | 功能 | onShareAppMessage promise：标题+canvas 封面+sid path | 标题（`<昵称> 与 StrideWise 的对话 · N 条`，昵称随快照上送）+5:4 气泡封面+`/s/` coach-share 链接整组（CoachChatModel.forwardSelected） | aligned | — | 2026-10-26 | 创建失败仅 toast 不出面板（微信必须回卡片、iOS 面板未开无需兜底卡）；封面渲染 fail-soft |
+| A-share-4 | 赛事三页出向 | 功能 | race-center/detail/strategy 定制标题+path（胶囊转发） | race-center/detail toolbar ShareLink：定制文案+`/s/` 链接（`StrideWise · 全年路跑赛事日历` / `<名> · <日> 开跑`）；strategy hero ShareLink（D-race-5） | aligned | — | 2026-10-26 | 胶囊转发→D-1 ShareLink（D-13）；detail 坏链 id 回落赛事中心语义天然消失（Route 强类型必带 id） |
+| D-share-2 | 微信卡片形态 | UI | 分享卡片三位一体（title+imageUrl+path 由微信组装） | 系统分享面板多 item 并列（图/文案/链接），接收渠道（信息/AirDrop/微信）各自组装 | confirmed | 用户（#758 决议三 / #771 票面） | 2026-10-26 | platform-difference：无微信卡片对等物；单一路分享语义由链接承载 |
+| D-share-3 | 默认品牌文案 | UI | `砺跑 · 马拉松训练助手`（utils/share.ts） | `StrideWise · 马拉松训练助手`（ShareCopy，拉丁优先品牌口径；文案不提 AI/教练，含 coach 转发标题修正） | confirmed | 用户（#771 品牌口径） | 2026-10-26 | 保留偏差：App 品牌统一 StrideWise（分流页/AASA 同口径）；coach-share 阅读端品牌条文案随本票对齐小程序「跑马拉松，用 StrideWise / 训练计划 · 比赛策略」 |
+| A-share-5 | 自建课出向 | 功能 | workout-detail 分享 pill（5:4 深色 canvas 封面+课名+落地页 path）/ index 今日卡（仅自建课，无封面） | workout-detail 分享 pill=5:4 深色封面（WorkoutDarkCoverView：顶线+品牌 label+课名两行+双指标色块）+课名+`/s/` workout-share 链接整组；今日卡 icon=课名文案+`/s/` 链接（无封面，对齐 MP index 分支） | aligned | — | 2026-10-26 | PR-5 占位（WorkoutSharePlaceholder）随本票删除，链接统一 ShareOutbound |
+| A-share-6 | 公开落地页免登录回流 | 架构 | PUBLIC_ENTRY_PAGES 白名单放行，未登录可浏览三落地页 | AppModel.publicLanding：冷开/回流 `/s/` 公开页未登录 → loggedOut 根栈直接渲染落地页（RootView），toolbar「登录」带 redirect 回跳；登录成功/CTA 登录清 landing 回栈内落点 | aligned | — | 2026-10-26 | 三链单测覆盖（AppModelTests：冷开/browse/requestLogin 清退）；CTA 继续走 requestLogin(redirect:) |
+| A-share-7 | coach-share 再转发 | 功能 | 底部品牌条「转发」按钮（open-type=share 同 sid path） | 品牌条「转发」ShareLink：同 sid `/s/` 链接+分享标题（ShareViews.swift）；品牌条文案对齐 MP | aligned | — | 2026-10-26 | PR-7 曾登记「归 PR-8」；阅读端转发无封面（MP 也是微信默认截图卡），D-share-1 单一路 |
+
+### PR-8 备注
+
+- 朋友圈渠道缺失、timeline 单页模式：全局种子 D-share-1（confirmed）已覆盖，页面级不再重复登记。
+- 三 canvas 产物齐且全部接线：配速卡海报（PR-6 海报+本票分享面板）、教练气泡封面（本票）、自建课深色封面（本票，PR-5 页面已合故直接接线）。
+- 品牌口径（#771）：StrideWise 拉丁优先、文案不提 AI/教练——PR-4 的「与 StrideWise 教练的对话」标题已随本票修正。
+- 实施期间 PR-5/PR-7 合入 master（#768/#770）：本票 rebase 其上完成自建课接线、coach-share 再转发与落地页免登录回流（原 PR-7 登记的 PR-8 归属项）。

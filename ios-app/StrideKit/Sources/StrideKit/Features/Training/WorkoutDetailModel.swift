@@ -36,7 +36,7 @@ public final class WorkoutDetailModel {
     public private(set) var coachNote = ""
     /// 自建课才出分享 pill（weekly/watch 不出，#704）。
     public private(set) var canShare = false
-    /// 自建课分享链接占位（出向 PR-8 接线）。
+    /// 自建课分享链接（PR-8：`/s/` workout-share 免登录落地页）。
     public private(set) var shareURL: URL?
 
     private let date: String
@@ -45,6 +45,8 @@ public final class WorkoutDetailModel {
     private let titleHint: String
     private var repo: TrainingRepository?
     private var userId = ""
+    /// 出向分享裸域（activate 从 AppModel.api.config 注入）。
+    private var shareBase = ShareOutbound.productionBase
 
     public init(date: String, workoutId: String, title: String?) {
         self.date = date
@@ -58,6 +60,7 @@ public final class WorkoutDetailModel {
         await app.waitUntilSessionSettled()
         repo = TrainingRepository(api: app.api)
         userId = app.me?.id ?? ""
+        shareBase = app.api.config.shareBaseURL
         header = Header(name: titleHint.isEmpty ? "课表详情" : titleHint,
                         typeChip: "", sourceLabel: "", dateLabel: "", summary: "", systemImage: "figure.run")
         guard !userId.isEmpty, !date.isEmpty, !workoutId.isEmpty else {
@@ -133,7 +136,9 @@ public final class WorkoutDetailModel {
         exercises = isStrength ? buildExerciseRows(spec: row.spec!.strengthSpec!) : []
         specNote = isRun ? (row.spec!.runSpec!.note ?? "") : ""
         canShare = row.source == .custom
-        shareURL = canShare ? WorkoutSharePlaceholder.link(user: userId, workout: workoutId) : nil
+        shareURL = canShare
+            ? ShareOutbound.link(base: shareBase, route: .workoutShare(user: userId, workout: workoutId))
+            : nil
 
         // 教练备注：weekly 源回联周计划（session notes_md 优先，退回计划级）。
         if row.source == .weekly {

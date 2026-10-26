@@ -274,19 +274,17 @@ public final class RaceStrategyModel {
 
     /// 分享目标（#506）：已落库版本 → 只读落地页 owner+race+version 三元组；
     /// 草稿/无版本行 id → 赛事详情页（报告页是私有产物）。
+    /// PR-8：链接统一走 `/s/` 分流页（ShareOutbound）。
     public func shareTarget(app: AppModel) -> URL? {
         guard view != nil, raceId > 0 else { return nil }
         let base = app.api.config.shareBaseURL
         if !draft, activeVersionId != 0, let owner = app.me?.id {
-            return base.appending(path: "/pages/race-center/strategy-share/strategy-share")
-                .appending(queryItems: [
-                    URLQueryItem(name: "user", value: owner),
-                    URLQueryItem(name: "id", value: String(raceId)),
-                    URLQueryItem(name: "version", value: String(activeVersionId)),
-                ])
+            return ShareOutbound.link(
+                base: base,
+                route: .strategyShare(user: owner, id: raceId, version: activeVersionId)
+            )
         }
-        return base.appending(path: "/pages/race-center/detail")
-            .appending(queryItems: [URLQueryItem(name: "id", value: String(raceId))])
+        return ShareOutbound.link(base: base, route: .raceDetail(id: raceId))
     }
 
     public func clearToast() { toast = nil }

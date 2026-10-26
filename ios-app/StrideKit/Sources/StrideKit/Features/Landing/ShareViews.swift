@@ -7,8 +7,11 @@ public struct CoachShareView: View {
 
     @Environment(AppModel.self) private var model
     @State private var share: CoachShareModel
+    /// 再转发同 sid 链接用（model.sid 私有，视图侧自持一份）。
+    private let sid: String
 
     public init(sid: String) {
+        self.sid = sid
         _share = State(initialValue: CoachShareModel(sid: sid))
     }
 
@@ -123,7 +126,8 @@ public struct CoachShareView: View {
         .background(RoundedRectangle(cornerRadius: theme.radius(.md)).strokeBorder(theme.accent.opacity(0.4)))
     }
 
-    /// 底部品牌条常驻：wxacode 码图 fail-soft（空回退品牌占位块）。
+    /// 底部品牌条常驻：wxacode 码图 fail-soft（空回退品牌占位块）+ 再转发
+    ///（PR-8：同 sid `/s/` 链接单一路分享，文案+链接）。
     private func brandBar(_ theme: any Theme) -> some View {
         HStack(spacing: theme.space(.md)) {
             Group {
@@ -147,17 +151,34 @@ public struct CoachShareView: View {
                 }
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text("STRIDE 跑步教练")
+                Text("跑马拉松，用 StrideWise")
                     .font(theme.font(.fs13, weight: .medium))
                     .foregroundStyle(theme.foreground)
-                Text("AI 训练计划 · 比赛策略")
+                Text("训练计划 · 比赛策略")
                     .font(theme.font(.fs11))
                     .foregroundStyle(theme.muted)
             }
             Spacer()
+            forwardButton(theme)
         }
         .padding(theme.space(.lg))
         .background(theme.surface)
+    }
+
+    /// 再转发（#624 Q3 同 sid；PR-8 出向矩阵=定制文案+链接，无封面——
+    /// 小程序阅读端转发也是微信默认截图卡）。
+    private func forwardButton(_ theme: any Theme) -> some View {
+        ShareLink(
+            item: ShareOutbound.link(base: model.api.config.shareBaseURL, route: .coachShare(sid: sid)),
+            preview: SharePreview(share.title.isEmpty ? ShareCopy.app : share.title)
+        ) {
+            Text("转发")
+                .font(theme.font(.fs13, weight: .medium))
+                .foregroundStyle(theme.onAccent)
+                .padding(.horizontal, theme.space(.lg))
+                .padding(.vertical, theme.space(.xs))
+                .background(Capsule().fill(theme.accent))
+        }
     }
 }
 

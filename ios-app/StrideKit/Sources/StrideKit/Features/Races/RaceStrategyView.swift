@@ -65,7 +65,11 @@ public struct RaceStrategyView: View {
         }
         .sheet(isPresented: $posterOpen) {
             if let view = model.view {
-                PacePosterSheet(data: view, raceDayText: model.raceDayText)
+                PacePosterSheet(
+                    data: view,
+                    raceDayText: model.raceDayText,
+                    shareURL: model.shareTarget(app: app)
+                )
             }
         }
     }

@@ -15,12 +15,28 @@ public struct RootView: View {
             case .checking:
                 ProgressView()
             case .loggedOut:
-                // 登录流的法务链接在本地栈 push declaration（返回回登录页）。
-                NavigationStack {
-                    LoginView()
-                        .navigationDestination(for: Route.self) { route in
-                            LegalDestinationView(route: route)
-                        }
+                if let landing = model.publicLanding {
+                    // 公开落地页免登录浏览（PR-8 devops#771，PUBLIC_ENTRY_PAGES
+                    // 语义）：分享链接冷开未登录先看内容，toolbar 回登录流
+                    //（redirect 回本页）。
+                    NavigationStack {
+                        RouteShellView(route: landing)
+                            .toolbar {
+                                ToolbarItem(placement: .navigation) {
+                                    Button("登录") {
+                                        model.requestLogin(redirect: landing)
+                                    }
+                                }
+                            }
+                    }
+                } else {
+                    // 登录流的法务链接在本地栈 push declaration（返回回登录页）。
+                    NavigationStack {
+                        LoginView()
+                            .navigationDestination(for: Route.self) { route in
+                                LegalDestinationView(route: route)
+                            }
+                    }
                 }
             case .onboarding:
                 OnboardingView()
