@@ -63,10 +63,9 @@ struct ProfileHomeView: View {
     }
 }
 
-/// 路由占位页：深链落点 / push 目标的通用骨架（各域票逐页替换；
-/// 记录域 activity-detail 已在 PR-3 换成真实页）。
-/// 路由占位页：深链落点 / push 目标的通用骨架（各域票逐页替换）。
-/// PR-2 登录域落地：法务两页（declaration/privacy）已是真实实现。
+/// 路由占位页：深链落点 / push 目标的通用骨架（各域票逐页替换）：
+/// PR-2 登录域（declaration/privacy）、PR-3（activity-detail）与
+/// PR-6 赛事域五页已是真实实现。
 struct RouteShellView: View {
     let route: Route
 
@@ -78,6 +77,16 @@ struct RouteShellView: View {
             DeclarationView(docType: docType)
         case .privacy:
             PrivacyView()
+        case .raceCenter:
+            RaceCenterView()
+        case .raceDetail(let id):
+            RaceDetailView(raceId: id)
+        case .raceStrategy(let id, let target):
+            RaceStrategyView(raceId: id, target: target)
+        case .myRaces:
+            MyRacesView()
+        case .customRaceForm:
+            CustomRaceFormView()
         default:
             PageShell(title: routeTitle, systemImage: "square.grid.2x2")
         }

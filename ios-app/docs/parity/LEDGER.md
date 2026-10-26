@@ -70,9 +70,21 @@
 
 （空）
 
-## 赛事域（PR-6 落地后登记）
+## 赛事域（PR-6 落地后登记，devops#769）
 
-（空）
+| ID | 检查点 | 维度 | 小程序现状 | iOS 现状 | 状态 | 确认人 | 日期 | 说明 |
+| ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
+| A-race-1 | 日历整年拉全与三防 | 功能 | per_page=100 翻页 ≤50 页；onShow 重拉真值+同键静默刷新+请求序号；星标乐观回滚 | 同口径直译（RaceCenterModel：fetchingKey/fetchSeq/rowsKey；星标 pendingStars 防连点，服务端结果为准失败回滚 toast） | aligned | — | 2026-10-26 | 空态三分（年份·省份无数据/收藏空/筛选空）+ 默认视图 upcoming 地板（收藏与往年看整年）单测覆盖 |
+| A-race-2 | 报名选择器 PUT/DELETE 语义 | 功能 | 同态纯确认不发写；删除 404 幂等收尾；hotel/transit 缺省保留（键省略） | 同口径（RaceDetailModel.chooseState；RacePlanUpsertBody encodeIfPresent = 键省略，单测断言 JSON 面） | aligned | — | 2026-10-26 | 计划/策略拉取失败不阻塞详情（按钮按未报名、策略卡按未生成展示） |
+| A-race-3 | 策略版本键控与草稿交接 | 功能 | target_finish_time 版本键、PUT 覆盖、DELETE ?target=、删空回未生成态；教练卡片 storage 交接草稿 | 同口径（RaceStrategyModel + AppModel.pendingStrategyDraft 消费；「用时=距离×配速」recompute 单测覆盖） | aligned | — | 2026-10-26 | 草稿应用后落自己目标版（initialTarget 指定刷新落点） |
+| A-race-4 | 混排卡乐观与在飞补丁 | 功能 | 状态 chips/行程勾选乐观更新失败回滚；在飞补丁防并发读打回；自定义 PUT 全量带聚合原行 | 同口径（MyRacesModel.inflight 合并闭包：并发 GET 重放补丁；customRaceBody 全字段回传） | aligned | — | 2026-10-26 | CustomRaceBody 显式 null 编码（PUT 缺省即清空契约）单测断言 |
+| A-race-5 | PB 徽章判定 | 功能 | 全马/半马各取净用时最短、同成绩记首场（新→旧遍历 `<=`） | 同口径（pbLabelIds）；显示名链四级兜底（官方→手编→活动→档位）单测覆盖 | aligned | — | 2026-10-26 | |
+| D-race-1 | 成绩行长按菜单 | UI | wx.showActionSheet（未识别：输入/修改比赛名+恢复活动名；自动识别：「不是这场比赛」二次确认） | iOS contextMenu + alert 文本框（#757 决议拍板 platform-difference） | confirmed | 用户（#757 决议一） | 2026-10-26 | 保留偏差：contextMenu/alert 系统形态；清除识别本地回落（断官方关联、手输名保留）后重拉对齐 |
+| D-race-2 | 配速卡海报保存交互 | UI | canvas 海报 → previewImage 长按保存 | 声明式海报 View + ImageRenderer（600×动态高、深色底+黄绿顶线规格照 #420）→ sheet 预览 + 显式「保存」（相册追加权限）/「分享」按钮 | confirmed | 用户（D-poster-1 + #757 决议一） | 2026-10-26 | 保留偏差：iOS 无长按保存惯例；NSPhotoLibraryAddUsageDescription 已随本 PR 落 Info.plist（完整出向统一归 PR-8） |
+| D-race-3 | 配速表行内编辑落值时机 | UI | blur 落值 + dirty | SwiftUI TextField 直绑（每键落值即重算用时/置 dirty）；终态语义一致（值+自动换算+dirty） | confirmed | — | 2026-10-26 | 保留偏差：iOS 无 onBlur 表单惯例，直绑即时反馈；保存仍按 dirty 门控 |
+| D-race-4 | 自定义比赛编辑回显通道 | 架构 | navigateTo eventChannel emit('race', 全字段行) | AppModel.pendingCustomRaceEdit 单次消费交接（Route 表定稿「AppModel 交接，非 query」，Route.swift:58） | confirmed | — | 2026-10-26 | eventChannel 回显延迟坑在 iOS 单进程下自然消失（#757 决议一） |
+| D-race-5 | 策略分享出向 | 功能 | onShareAppMessage 带 strategy-share path（微信卡片） | ShareLink 单一路分享：已落库版本 → owner+race+version 三元组 universal link；草稿 → 详情页链接 | pending | — | 2026-10-26 | 分享深链分流与落地页形态归 #758/PR-7；D-share-1 同族 |
+| D-race-6 | 赛事中心顶栏 | UI | 自绘顶栏（返回/小房子 + 标题 + 「我的赛事」入口） | 系统 inline 导航标题 + toolbar「我的赛事」；返回走系统手势（D-nav-3 种子推演） | confirmed | — | 2026-10-26 | 保留偏差：D-nav-3 同族；「我的赛事」入口语义保留 |
 
 ## 收尾域（PR-7 落地后登记）
 

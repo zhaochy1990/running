@@ -25,6 +25,9 @@
 	<!-- 锁亮色主题（devops#753 决议 1/2：1.0 只做亮色，勿跟随系统暗色） -->
 	<key>UIUserInterfaceStyle</key>
 	<string>Light</string>
+	<!-- 比赛策略配速卡海报「保存」按钮（devops#769 PR-6；仅追加写入） -->
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>保存你生成的比赛配速卡海报到相册</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>
