@@ -206,7 +206,15 @@ public final class AppModel {
         switch phase {
         case .loggedIn:
             router.reset(to: route)
-        case .checking, .loggedOut, .onboarding:
+        case .onboarding:
+            // 引导中已登录：非公开深链只暂存 redirect（完成引导后回跳），
+            // 不能把用户拽回登录页。
+            if route.isPublicLanding {
+                router.reset(to: route)
+            } else {
+                loginRedirect = route
+            }
+        case .checking, .loggedOut:
             if route.isPublicLanding {
                 router.reset(to: route)
             } else {

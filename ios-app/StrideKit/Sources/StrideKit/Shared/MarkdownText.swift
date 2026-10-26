@@ -28,7 +28,7 @@ public struct MarkdownText: View {
 
     // MARK: - 块模型
 
-    private enum Block {
+    enum Block: Equatable {
         case heading(level: Int, text: String)
         case paragraph(String)
         case bulletList(items: [String])
@@ -39,7 +39,9 @@ public struct MarkdownText: View {
         case code(lines: [String])
     }
 
-    private var blocks: [Block] {
+    /// 块解析（纯函数，只读存储属性）。nonisolated：View 结构体的
+    /// @MainActor 推断不适用于解析逻辑，测试可在任意执行器直取。
+    nonisolated var blocks: [Block] {
         var result: [Block] = []
         var paragraphLines: [String] = []
         var bullets: [String] = []
@@ -136,7 +138,9 @@ public struct MarkdownText: View {
                       line[line.startIndex..<space].allSatisfy({ $0.isNumber || $0 == "." }) {
                 flushParagraph()
                 if bullets.isEmpty == false { flushLists() }
-                numbers.append(String(line[line.index(after: space)...]))
+                var rest = line[line.index(after: space)...]
+                if rest.first == " " { rest = rest.dropFirst() }
+                numbers.append(String(rest))
             } else {
                 flushLists()
                 paragraphLines.append(line)

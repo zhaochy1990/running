@@ -47,9 +47,6 @@ public final class AuthService: Sendable {
         self.defaults = defaults
     }
 
-    // For unit tests: UserDefaults(suiteName:) 注入，用完清 suite。
-    public var injectedDefaults: UserDefaults { defaults }
-
     /// 发送登录场景验证码（60s 冷却 / 日上限在服务端，违规回 429 机器码，
     /// 由 `AuthErrorMessages` 翻译；发送失败**不启动**倒计时由 UI 保证）。
     public func sendSmsCode(phone: String) async throws {

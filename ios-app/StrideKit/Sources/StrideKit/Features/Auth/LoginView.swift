@@ -82,8 +82,8 @@ public struct LoginView: View {
         .task {
             // 401 回登录页预填上次验证码手机号（#419 决议 4，一键重发）；
             // 只在用户还没输入时预填，别覆盖手快敲进去的字。
-            if phone.isEmpty, let last = model.auth.lastSmsPhone() {
-                phone = last
+            if phone.isEmpty {
+                phone = model.prefilledPhone ?? model.auth.lastSmsPhone() ?? ""
             }
         }
         .onDisappear { countdownTimer?.cancel() }
@@ -249,11 +249,10 @@ public struct LoginView: View {
         }
     }
 
-    /// 法务链接 → declaration 公开页（登录流的 NavigationStack push，返回回登录）。
+    /// 法务链接 → declaration 公开页：登录流走 RootView 的本地
+    /// NavigationStack（NavigationLink value push，返回回登录页）。
     private func legalLink(_ label: String, docType: DeclarationType, theme: any Theme) -> some View {
-        Button {
-            model.router.push(.declaration(docType: docType))
-        } label: {
+        NavigationLink(value: Route.declaration(docType: docType)) {
             Text(label)
                 .font(theme.font(.fs12))
                 .foregroundStyle(theme.accentDeep)
@@ -277,9 +276,11 @@ public struct LoginView: View {
                 .padding(.vertical, theme.space(.sm))
                 .background(Capsule().fill(theme.foregroundSoft.opacity(0.92)))
                 .padding(.top, theme.space(.xl))
+                // id 绑定文案：连续两条 toast 视为新视图，自动消失的 task 才会重跑
+                .id(toast)
                 .task {
                     try? await Task.sleep(for: .seconds(2))
-                    self.toast = nil
+                    if self.toast == toast { self.toast = nil }
                 }
         }
     }

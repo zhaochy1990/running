@@ -154,9 +154,34 @@ import Testing
     }
 }
 
-// 测试钩子：loginRedirect 是 internal(set)
+// 测试钩子：loginRedirect / phase 是 internal(set) 或 private(set)
 extension AppModel {
     func setLoginRedirectForTesting(_ route: Route?) {
         loginRedirect = route
+    }
+}
+
+extension AppModelLandingTests {
+    @Test func deepLinkDuringOnboardingDefersInsteadOfLogout() async throws {
+        let transport = MockTransport()
+        await meOK(transport)
+        await transport.plan("/api/users/me/profile", responses: [(200, profileBody(ready: false))])
+        let (client, store) = makeTestClient(transport: transport)
+        await store.save(access: "acc", refresh: "ref", expiresIn: 300)
+        let model = AppModel(api: client, tokens: store)
+
+        // 冷开带 token + 档案未齐 → onboarding 全屏（老账号补档案通道）
+        await model.bootstrap()
+        #expect(model.phase == .onboarding)
+
+        // 引导中已登录：非公开深链只暂存 redirect，不把用户拽回登录页
+        model.open(URL(string: "https://stride-running.cn/pages/race-center/race-center")!)
+        #expect(model.phase == .onboarding)
+        #expect(model.loginRedirect == .raceCenter)
+
+        // 完成引导 → 回跳深链目标
+        model.finishOnboarding()
+        #expect(model.phase == .loggedIn)
+        #expect(model.router.selectedTab == .profile)
     }
 }
