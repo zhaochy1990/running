@@ -39,9 +39,23 @@
 | D-rec-5 | 详情头部字段 | UI | 顶栏仅名称+日期；sportLabel/trainTypeLabel 计算但 wxml 未渲染 | 按 baseline §3.1/票面渲染头部（运动 chip + 训练类型 + 体感 emoji；名称/日期在顶栏 principal） | pending | — | 2026-10-26 | baseline 描述与 wxml 实际不一致；iOS 按 baseline 票面实现，parity check 时与小程序对账 |
 | A-rec-1 | 轨迹地图渲染决议 | UI | `<map>` 腾讯底图：wgs84ToGcj02 预转 + include-points + polyline 分段 + marker/label | MKMapView 包装：WGS-84 直传（勿转 GCJ-02）+ 禁旋转/俯仰 + 三色 gradient3 + 共享端点 8 点分段 + pause 分段 + 10% padding + 起终点徽标 + 圈号（TrackMapBuilder/TrackMapView） | aligned | 用户（#754 决议一/二） | 2026-10-26 | 坐标铁律有单测（WGS-84 逐位直传）；中国区加偏实测（外滩地标）留待真机接入时执行并回填本行 |
 
-## 教练域（PR-4 落地后登记）
+## 教练域（PR-4 落地后登记，devops#767）
 
-（空）
+| ID | 检查点 | 维度 | 小程序现状 | iOS 现状 | 状态 | 确认人 | 日期 | 说明 |
+| ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
+| A-coach-1 | SSE 协议与解析 | 功能 | wx.request enableChunked + utils/sse.ts 字节级解析；五事件；超时 660s | URLSession.bytes + SSEParser 直译移植（mobile sse_parser.dart 同源）；timeoutInterval 空闲 120s + 总上限 660s（#421 决议勿照抄 60s） | aligned | — | 2026-10-26 | 单测覆盖任意字节边界/多字节 UTF-8/CRLF/截断恢复（SSEParserTests 12 例） |
+| A-coach-2 | 幂等与 401 | 功能 | client_turn_id 失败重试复用；流内 401 刷新一次重建 parser | body 一次编码逐字节复用（fingerprint=sha256）；SSE 通道独立 401 单飞刷新（CoachClientTests 断言两轮 body 相同） | aligned | — | 2026-10-26 | 会话 JSON 端点同享 coach 通道单飞，不走 APIClient data 面 |
+| A-coach-3 | 结构化卡片四型 | 功能 | race-strategy/master-plan/custom-workout/workout-op 注册表 + 历史信封自愈 | CoachCardRegistry 同口径移植（形状校验/角标/双 CTA/删除双确认/409/422 复查/重进对账） | aligned | — | 2026-10-26 | 对账恢复终态（save_token/workout_id）单测覆盖 |
+| A-coach-4 | 会话抽屉形态 | UI | 自绘 drawer（半屏浮层 + 新建/列表/当前徽标/搜索 toast） | .sheet bottom sheet（detents medium/large）同信息结构 | aligned | — | 2026-10-26 | D-sheet-1 种子条目推导演绎；搜索占位同 toast「暂未开放」 |
+| A-coach-5 | 键盘避让 | UI | onKeyboardHeightChange 手动 padding 顶起输入栏 | SwiftUI 系统键盘避让（safe area） | aligned | — | 2026-10-26 | 平台默认行为语义等价，无需手动垫高 |
+| D-coach-1 | markdown 渲染 | UI | mp-html 全量 GFM（含表格/嵌套） | 自研轻量子集（标题/列表/引用/围栏代码/表格/行内 AttributedString），零三方依赖 | pending | — | 2026-10-26 | 复杂嵌套 GFM（嵌套列表/内联 html）降级为段落文本；PR-10 parity 核对时请用户裁（补依赖库 or 保留子集） |
+| D-coach-2 | 多选转发封面 | UI | canvas 预生成 5:4 气泡封面图（onShareAppMessage imageUrl） | 无 canvas 封面：系统分享面板自带链接预览卡片 | pending | — | 2026-10-26 | D-poster-1/D-share-1 同族差异；是否需要自绘封面图 PR-8 分享出向统一裁 |
+| D-coach-3 | 转发阅读端 | 功能 | path=/pages/coach-share/coach-share?sid=（微信内打开） | universal link https://stride-running.cn/pages/coach-share/coach-share?sid= | aligned | 用户（D-share-1） | 2026-10-26 | 落地页免登录浏览形态归 PR-8（AppModel.applyIncoming 注释位） |
+
+### PR-4 未迁面（显式登记）
+
+- 流式气泡 16ms 帧节流合并（MP setTimeout 节流）：SwiftUI 状态更新天然合帧，逐 delta 更新渲染语义等价，不单列偏差。
+- `shareIndex` 投影序号、空回复降级占位、needs_input 追问不领序号、断流回前台对账：行为对齐（CoachChatModelTests 24 例覆盖）。
 
 ## 训练域（PR-5 落地后登记）
 

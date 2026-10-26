@@ -111,9 +111,14 @@ import Testing
 
     @Test func pendingCoachContextConsumedOnce() {
         let (model, _) = makeModel()
-        model.pendingCoachContext = PendingCoachContext(target: .race, kickoffMessage: "我想聊聊上马")
+        let context = PendingCoachContext(
+            target: CoachTarget(kind: .race, raceEventId: 9, itemType: "FM"),
+            label: "上海马拉松",
+            kickoff: "我想聊聊上马"
+        )
+        model.pendingCoachContext = context
         let taken = model.takePendingCoachContext()
-        #expect(taken == PendingCoachContext(target: .race, kickoffMessage: "我想聊聊上马"))
+        #expect(taken == context)
         #expect(model.takePendingCoachContext() == nil)
     }
 

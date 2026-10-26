@@ -42,7 +42,7 @@ public struct MainTabView: View {
     @ViewBuilder
     private func tabRoot(for tab: AppTab) -> some View {
         switch tab {
-        case .coach: CoachHomeView()
+        case .coach: CoachView()
         case .activities: ActivitiesView()
         case .training: TrainingHomeView()
         case .profile: ProfileHomeView()
@@ -50,12 +50,6 @@ public struct MainTabView: View {
     }
 }
 
-/// 四 tab 首页空壳（PR-1 骨架；各域实现归 PR-3~PR-7）。
-struct CoachHomeView: View {
-    var body: some View {
-        PageShell(title: "教练", systemImage: "bubble.left.and.text.bubble.right")
-    }
-}
 
 struct TrainingHomeView: View {
     var body: some View {
