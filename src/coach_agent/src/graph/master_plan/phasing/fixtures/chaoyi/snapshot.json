@@ -1,0 +1,991 @@
+{
+  "user": {
+    "id": "f10bc353-01ab-4db1-af9f-d9305ea9a532",
+    "profile": {
+      "display_name": "Chaoyi",
+      "dob": "1990-07-22",
+      "sex": "male",
+      "height_cm": 182,
+      "weight_kg": 70.5,
+      "running_age_range": "3y_plus"
+    }
+  },
+  "race_target": {
+    "goal_id": "ced07d9a-af11-4404-b25a-e454e794a27d",
+    "user_id": "f10bc353-01ab-4db1-af9f-d9305ea9a532",
+    "status": "active",
+    "race_date": "2026-10-18",
+    "race_distance": "FM",
+    "race_name": "西安马拉松",
+    "target_finish_time": "2:50:00",
+    "weekly_training_days": 6
+  },
+  "injuries": [],
+  "personal_bests": [
+    {
+      "distance": "1K",
+      "time_sec": 161.6,
+      "achieved_at": "2024-12-05",
+      "activity_label_id": "465297870310899727"
+    },
+    {
+      "distance": "3K",
+      "time_sec": 662,
+      "achieved_at": "2026-10-05",
+      "activity_label_id": "480817255477706954"
+    },
+    {
+      "distance": "5K",
+      "time_sec": 1170.3,
+      "achieved_at": "2026-05-27",
+      "activity_label_id": "477783793625760045"
+    },
+    {
+      "distance": "10K",
+      "time_sec": 2360.9,
+      "achieved_at": "2026-06-24",
+      "activity_label_id": "478433364213268684"
+    },
+    {
+      "distance": "HM",
+      "time_sec": 5197.7,
+      "achieved_at": "2025-03-30",
+      "activity_label_id": "467964145206067230"
+    },
+    {
+      "distance": "FM",
+      "time_sec": 10631.4,
+      "achieved_at": "2025-03-30",
+      "activity_label_id": "467964145206067230"
+    }
+  ],
+  "running_calibration": {
+    "as_of_date": "2026-10-20",
+    "threshold_hr": 167.3813,
+    "threshold_speed_mps": 4.1337,
+    "rhr_baseline": 47,
+    "threshold_hr_confidence": "high",
+    "threshold_speed_confidence": "high",
+    "heart_rate_zones": [
+      {
+        "name": "easy",
+        "minBpm": 133.90504,
+        "maxBpm": 147.295544
+      },
+      {
+        "name": "interval",
+        "minBpm": 169.055113,
+        "maxBpm": 177.424178
+      },
+      {
+        "name": "marathon",
+        "minBpm": 147.295544,
+        "maxBpm": 157.338422
+      },
+      {
+        "name": "recovery",
+        "minBpm": null,
+        "maxBpm": 133.90504
+      },
+      {
+        "name": "repetition",
+        "minBpm": 177.424178,
+        "maxBpm": null
+      },
+      {
+        "name": "threshold",
+        "minBpm": 157.338422,
+        "maxBpm": 169.055113
+      }
+    ],
+    "pace_zones": [
+      {
+        "name": "easy",
+        "minPaceSPerKm": 287.9928854237585,
+        "maxPaceSPerKm": 335.9916996610516
+      },
+      {
+        "name": "interval",
+        "minPaceSPerKm": 217.94056194230367,
+        "maxPaceSPerKm": 234.86798422908456
+      },
+      {
+        "name": "marathon",
+        "minPaceSPerKm": 249.39590077933727,
+        "maxPaceSPerKm": 287.9928854237585
+      },
+      {
+        "name": "recovery",
+        "minPaceSPerKm": 335.9916996610516,
+        "maxPaceSPerKm": null
+      },
+      {
+        "name": "repetition",
+        "minPaceSPerKm": null,
+        "maxPaceSPerKm": 217.94056194230367
+      },
+      {
+        "name": "threshold",
+        "minPaceSPerKm": 234.86798422908456,
+        "maxPaceSPerKm": 249.39590077933727
+      }
+    ]
+  },
+  "race_history": [
+    {
+      "date": "2026-10-24",
+      "distance_km": 35,
+      "duration_min": 155.6,
+      "avg_pace_s_km": 266.55,
+      "avg_hr": 160,
+      "max_hr": 175,
+      "feel": 10
+    },
+    {
+      "date": "2026-10-17",
+      "distance_km": 28.7,
+      "duration_min": 137.3,
+      "avg_pace_s_km": 284.14,
+      "avg_hr": 157,
+      "max_hr": 174,
+      "feel": 8
+    },
+    {
+      "date": "2026-10-11",
+      "distance_km": 30,
+      "duration_min": 136.3,
+      "avg_pace_s_km": 272.49,
+      "avg_hr": 157,
+      "max_hr": 178,
+      "feel": 10
+    },
+    {
+      "date": "2026-10-03",
+      "distance_km": 30.3,
+      "duration_min": 133,
+      "avg_pace_s_km": 263.26,
+      "avg_hr": 164,
+      "max_hr": 173,
+      "feel": null
+    },
+    {
+      "date": "2026-09-20",
+      "distance_km": 24,
+      "duration_min": 116.5,
+      "avg_pace_s_km": 286.74,
+      "avg_hr": 153,
+      "max_hr": 166,
+      "feel": 10
+    },
+    {
+      "date": "2026-09-13",
+      "distance_km": 25,
+      "duration_min": 112.7,
+      "avg_pace_s_km": 270.42,
+      "avg_hr": 162,
+      "max_hr": 178,
+      "feel": null
+    },
+    {
+      "date": "2026-09-06",
+      "distance_km": 30,
+      "duration_min": 140.2,
+      "avg_pace_s_km": 280.41,
+      "avg_hr": 154,
+      "max_hr": 172,
+      "feel": null
+    },
+    {
+      "date": "2026-08-29",
+      "distance_km": 25,
+      "duration_min": 124.5,
+      "avg_pace_s_km": 297.52,
+      "avg_hr": 154,
+      "max_hr": 169,
+      "feel": null
+    },
+    {
+      "date": "2026-08-22",
+      "distance_km": 30,
+      "duration_min": 146.2,
+      "avg_pace_s_km": 292.26,
+      "avg_hr": 159,
+      "max_hr": 173,
+      "feel": null
+    },
+    {
+      "date": "2026-08-15",
+      "distance_km": 26,
+      "duration_min": 123.9,
+      "avg_pace_s_km": 285.88,
+      "avg_hr": 158,
+      "max_hr": 170,
+      "feel": null
+    },
+    {
+      "date": "2026-08-08",
+      "distance_km": 25,
+      "duration_min": 123.1,
+      "avg_pace_s_km": 291.89,
+      "avg_hr": 152,
+      "max_hr": 172,
+      "feel": null
+    },
+    {
+      "date": "2026-07-31",
+      "distance_km": 25,
+      "duration_min": 115.3,
+      "avg_pace_s_km": 276.77,
+      "avg_hr": 159,
+      "max_hr": 179,
+      "feel": null
+    },
+    {
+      "date": "2026-07-25",
+      "distance_km": 30,
+      "duration_min": 152.4,
+      "avg_pace_s_km": 295.98,
+      "avg_hr": 149,
+      "max_hr": 162,
+      "feel": null
+    },
+    {
+      "date": "2026-07-18",
+      "distance_km": 29,
+      "duration_min": 142.8,
+      "avg_pace_s_km": 295.34,
+      "avg_hr": 146,
+      "max_hr": 166,
+      "feel": null
+    },
+    {
+      "date": "2026-07-05",
+      "distance_km": 20,
+      "duration_min": 113.1,
+      "avg_pace_s_km": 322.69,
+      "avg_hr": 144,
+      "max_hr": 165,
+      "feel": null
+    },
+    {
+      "date": "2026-06-13",
+      "distance_km": 23,
+      "duration_min": 107.4,
+      "avg_pace_s_km": 272.07,
+      "avg_hr": 163,
+      "max_hr": 175,
+      "feel": null
+    },
+    {
+      "date": "2026-06-06",
+      "distance_km": 20,
+      "duration_min": 92,
+      "avg_pace_s_km": 275.95,
+      "avg_hr": 159,
+      "max_hr": 180,
+      "feel": null
+    },
+    {
+      "date": "2026-05-30",
+      "distance_km": 27,
+      "duration_min": 146.7,
+      "avg_pace_s_km": 313.94,
+      "avg_hr": 146,
+      "max_hr": 167,
+      "feel": 6
+    },
+    {
+      "date": "2026-05-23",
+      "distance_km": 22,
+      "duration_min": 127.5,
+      "avg_pace_s_km": 342.82,
+      "avg_hr": 148,
+      "max_hr": 168,
+      "feel": 6
+    },
+    {
+      "date": "2026-05-17",
+      "distance_km": 28,
+      "duration_min": 151.4,
+      "avg_pace_s_km": 324.28,
+      "avg_hr": 143,
+      "max_hr": 159,
+      "feel": null
+    },
+    {
+      "date": "2026-05-09",
+      "distance_km": 27,
+      "duration_min": 143.9,
+      "avg_pace_s_km": 318.89,
+      "avg_hr": 140,
+      "max_hr": 151,
+      "feel": 6
+    },
+    {
+      "date": "2026-05-02",
+      "distance_km": 25,
+      "duration_min": 142.9,
+      "avg_pace_s_km": 342.85,
+      "avg_hr": 152,
+      "max_hr": 167,
+      "feel": null
+    },
+    {
+      "date": "2026-04-12",
+      "distance_km": 42.7,
+      "duration_min": 208,
+      "avg_pace_s_km": 292.63,
+      "avg_hr": 162,
+      "max_hr": 174,
+      "feel": null
+    },
+    {
+      "date": "2026-03-29",
+      "distance_km": 42.8,
+      "duration_min": 235.4,
+      "avg_pace_s_km": 330.12,
+      "avg_hr": 153,
+      "max_hr": 175,
+      "feel": 10
+    },
+    {
+      "date": "2026-03-22",
+      "distance_km": 21.3,
+      "duration_min": 90.7,
+      "avg_pace_s_km": 254.87,
+      "avg_hr": 172,
+      "max_hr": 177,
+      "feel": 10
+    },
+    {
+      "date": "2026-03-15",
+      "distance_km": 30,
+      "duration_min": 130.2,
+      "avg_pace_s_km": 260.09,
+      "avg_hr": 163,
+      "max_hr": 174,
+      "feel": 8
+    },
+    {
+      "date": "2026-03-08",
+      "distance_km": 30,
+      "duration_min": 130.2,
+      "avg_pace_s_km": 260.3,
+      "avg_hr": 166,
+      "max_hr": 174,
+      "feel": 10
+    },
+    {
+      "date": "2026-02-28",
+      "distance_km": 20,
+      "duration_min": 89.2,
+      "avg_pace_s_km": 267.53,
+      "avg_hr": 162,
+      "max_hr": 176,
+      "feel": 4
+    },
+    {
+      "date": "2026-02-21",
+      "distance_km": 25,
+      "duration_min": 109.6,
+      "avg_pace_s_km": 263.08,
+      "avg_hr": 165,
+      "max_hr": 173,
+      "feel": null
+    },
+    {
+      "date": "2026-02-15",
+      "distance_km": 27,
+      "duration_min": 126.8,
+      "avg_pace_s_km": 281.46,
+      "avg_hr": 162,
+      "max_hr": 177,
+      "feel": 10
+    }
+  ],
+  "macro_history": {
+    "start_date": "2024-10-26",
+    "end_date": "2026-10-26",
+    "months": [
+      {
+        "month": "2024-10",
+        "distance_km": 20,
+        "hours": 1.54,
+        "avg_pace_s_km": 273,
+        "avg_hr": 164,
+        "run_count": 3
+      },
+      {
+        "month": "2024-11",
+        "distance_km": 260.9,
+        "hours": 28.17,
+        "avg_pace_s_km": 479,
+        "avg_hr": 153,
+        "run_count": 16
+      },
+      {
+        "month": "2024-12",
+        "distance_km": 174.6,
+        "hours": 14.27,
+        "avg_pace_s_km": 296,
+        "avg_hr": 157,
+        "run_count": 14
+      },
+      {
+        "month": "2025-01",
+        "distance_km": 325.1,
+        "hours": 26.5,
+        "avg_pace_s_km": 293,
+        "avg_hr": 156,
+        "run_count": 24
+      },
+      {
+        "month": "2025-02",
+        "distance_km": 302.7,
+        "hours": 23.87,
+        "avg_pace_s_km": 279,
+        "avg_hr": 157,
+        "run_count": 24
+      },
+      {
+        "month": "2025-03",
+        "distance_km": 324.2,
+        "hours": 24.52,
+        "avg_pace_s_km": 275,
+        "avg_hr": 160,
+        "run_count": 24
+      },
+      {
+        "month": "2025-04",
+        "distance_km": 93.9,
+        "hours": 8.08,
+        "avg_pace_s_km": 312,
+        "avg_hr": 151,
+        "run_count": 18
+      },
+      {
+        "month": "2025-05",
+        "distance_km": 144.5,
+        "hours": 11.99,
+        "avg_pace_s_km": 299,
+        "avg_hr": 157,
+        "run_count": 20
+      },
+      {
+        "month": "2025-06",
+        "distance_km": 225.8,
+        "hours": 19.35,
+        "avg_pace_s_km": 299,
+        "avg_hr": 156,
+        "run_count": 15
+      },
+      {
+        "month": "2025-07",
+        "distance_km": 197.8,
+        "hours": 17.09,
+        "avg_pace_s_km": 310,
+        "avg_hr": 159,
+        "run_count": 19
+      },
+      {
+        "month": "2025-08",
+        "distance_km": 110.3,
+        "hours": 17.49,
+        "avg_pace_s_km": 222,
+        "avg_hr": 126,
+        "run_count": 15
+      },
+      {
+        "month": "2025-09",
+        "distance_km": 125.7,
+        "hours": 12.89,
+        "avg_pace_s_km": 306,
+        "avg_hr": 151,
+        "run_count": 13
+      },
+      {
+        "month": "2025-10",
+        "distance_km": 220.2,
+        "hours": 21.47,
+        "avg_pace_s_km": 276,
+        "avg_hr": 149,
+        "run_count": 20
+      },
+      {
+        "month": "2025-11",
+        "distance_km": 268.4,
+        "hours": 22.3,
+        "avg_pace_s_km": 298,
+        "avg_hr": 156,
+        "run_count": 22
+      },
+      {
+        "month": "2025-12",
+        "distance_km": 303.9,
+        "hours": 25.24,
+        "avg_pace_s_km": 296,
+        "avg_hr": 157,
+        "run_count": 24
+      },
+      {
+        "month": "2026-01",
+        "distance_km": 253.4,
+        "hours": 20.49,
+        "avg_pace_s_km": 293,
+        "avg_hr": 155,
+        "run_count": 20
+      },
+      {
+        "month": "2026-02",
+        "distance_km": 293.6,
+        "hours": 23.36,
+        "avg_pace_s_km": 287,
+        "avg_hr": 157,
+        "run_count": 26
+      },
+      {
+        "month": "2026-03",
+        "distance_km": 261.6,
+        "hours": 20.95,
+        "avg_pace_s_km": 289,
+        "avg_hr": 159,
+        "run_count": 19
+      },
+      {
+        "month": "2026-04",
+        "distance_km": 215.7,
+        "hours": 18.96,
+        "avg_pace_s_km": 317,
+        "avg_hr": 149,
+        "run_count": 23
+      },
+      {
+        "month": "2026-05",
+        "distance_km": 280.8,
+        "hours": 25.68,
+        "avg_pace_s_km": 324,
+        "avg_hr": 147,
+        "run_count": 18
+      },
+      {
+        "month": "2026-06",
+        "distance_km": 290.3,
+        "hours": 26.1,
+        "avg_pace_s_km": 310,
+        "avg_hr": 150,
+        "run_count": 37
+      },
+      {
+        "month": "2026-07",
+        "distance_km": 500.5,
+        "hours": 46.46,
+        "avg_pace_s_km": 333,
+        "avg_hr": 143,
+        "run_count": 93
+      },
+      {
+        "month": "2026-08",
+        "distance_km": 316.4,
+        "hours": 28.15,
+        "avg_pace_s_km": 317,
+        "avg_hr": 148,
+        "run_count": 38
+      },
+      {
+        "month": "2026-09",
+        "distance_km": 275.4,
+        "hours": 23.77,
+        "avg_pace_s_km": 308,
+        "avg_hr": 151,
+        "run_count": 30
+      },
+      {
+        "month": "2026-10",
+        "distance_km": 302.9,
+        "hours": 26.38,
+        "avg_pace_s_km": 334,
+        "avg_hr": 146,
+        "run_count": 27
+      }
+    ],
+    "peak_weekly_distance_km": 130.3,
+    "longest_run_km": 55.3,
+    "longest_road_run_km": 42.9,
+    "gap_periods": [],
+    "consistency_pct": 98.1
+  },
+  "recent_history": {
+    "start_date": "2026-07-07",
+    "end_date": "2026-10-26",
+    "weeks": [
+      {
+        "week_start": "2026-07-06",
+        "distance_km": 100.7,
+        "hours": 9.75,
+        "avg_pace_s_km": 353.8345833333333,
+        "avg_hr": 136.83333333333334,
+        "run_count": 24,
+        "run_day_count": 6,
+        "long_run_km": 19.7,
+        "speed_session_count": 1,
+        "race_count": 0,
+        "training_dose": 434.9,
+        "ctl": 53.5313,
+        "atl": 68.6873,
+        "form": -15.156,
+        "rhr": 51.666666666666664,
+        "hrv": 29.333333333333332
+      },
+      {
+        "week_start": "2026-07-13",
+        "distance_km": 130.3,
+        "hours": 11.95,
+        "avg_pace_s_km": 358.41956521739127,
+        "avg_hr": 134.95652173913044,
+        "run_count": 23,
+        "run_day_count": 7,
+        "long_run_km": 29,
+        "speed_session_count": 4,
+        "race_count": 0,
+        "training_dose": 559.7,
+        "ctl": 57.558,
+        "atl": 74.7613,
+        "form": -17.2034,
+        "rhr": 51.714285714285715,
+        "hrv": 26.857142857142858
+      },
+      {
+        "week_start": "2026-07-20",
+        "distance_km": 116.2,
+        "hours": 11.23,
+        "avg_pace_s_km": 410.5736363636364,
+        "avg_hr": 133.77272727272728,
+        "run_count": 22,
+        "run_day_count": 7,
+        "long_run_km": 30,
+        "speed_session_count": 3,
+        "race_count": 0,
+        "training_dose": 452.6,
+        "ctl": 58.57,
+        "atl": 66.3559,
+        "form": -7.7859,
+        "rhr": 50.714285714285715,
+        "hrv": 29
+      },
+      {
+        "week_start": "2026-07-27",
+        "distance_km": 76.4,
+        "hours": 6.18,
+        "avg_pace_s_km": 290.5981818181818,
+        "avg_hr": 150.45454545454547,
+        "run_count": 11,
+        "run_day_count": 6,
+        "long_run_km": 25,
+        "speed_session_count": 3,
+        "race_count": 0,
+        "training_dose": 367.3,
+        "ctl": 57.728,
+        "atl": 59.833,
+        "form": -2.105,
+        "rhr": 52.42857142857143,
+        "hrv": 31.833333333333332
+      },
+      {
+        "week_start": "2026-08-03",
+        "distance_km": 75.4,
+        "hours": 6.49,
+        "avg_pace_s_km": 332.5018181818181,
+        "avg_hr": 143.0909090909091,
+        "run_count": 11,
+        "run_day_count": 6,
+        "long_run_km": 25,
+        "speed_session_count": 3,
+        "race_count": 0,
+        "training_dose": 363.1,
+        "ctl": 56.8299,
+        "atl": 54.5948,
+        "form": 2.2351,
+        "rhr": 49.142857142857146,
+        "hrv": 31
+      },
+      {
+        "week_start": "2026-08-10",
+        "distance_km": 66.2,
+        "hours": 5.68,
+        "avg_pace_s_km": 327.32000000000005,
+        "avg_hr": 140.75,
+        "run_count": 8,
+        "run_day_count": 5,
+        "long_run_km": 26,
+        "speed_session_count": 3,
+        "race_count": 0,
+        "training_dose": 383.2,
+        "ctl": 56.5015,
+        "atl": 54.3365,
+        "form": 2.165,
+        "rhr": 48.142857142857146,
+        "hrv": 34.833333333333336
+      },
+      {
+        "week_start": "2026-08-17",
+        "distance_km": 72.5,
+        "hours": 6.91,
+        "avg_pace_s_km": 358.3277777777778,
+        "avg_hr": 134.55555555555554,
+        "run_count": 9,
+        "run_day_count": 5,
+        "long_run_km": 30,
+        "speed_session_count": 2,
+        "race_count": 0,
+        "training_dose": 422.5,
+        "ctl": 57.1122,
+        "atl": 58.3904,
+        "form": -1.2782,
+        "rhr": 47.42857142857143,
+        "hrv": 36.714285714285715
+      },
+      {
+        "week_start": "2026-08-24",
+        "distance_km": 64.8,
+        "hours": 5.91,
+        "avg_pace_s_km": 341.95142857142855,
+        "avg_hr": 146.42857142857142,
+        "run_count": 7,
+        "run_day_count": 5,
+        "long_run_km": 25,
+        "speed_session_count": 2,
+        "race_count": 0,
+        "training_dose": 346.8,
+        "ctl": 55.9813,
+        "atl": 53.2563,
+        "form": 2.7249,
+        "rhr": 48,
+        "hrv": 32.57142857142857
+      },
+      {
+        "week_start": "2026-08-31",
+        "distance_km": 80.1,
+        "hours": 6.63,
+        "avg_pace_s_km": 310.05333333333334,
+        "avg_hr": 145.11111111111111,
+        "run_count": 9,
+        "run_day_count": 5,
+        "long_run_km": 30,
+        "speed_session_count": 2,
+        "race_count": 0,
+        "training_dose": 378.1,
+        "ctl": 55.8503,
+        "atl": 58.3721,
+        "form": -2.5218,
+        "rhr": 49.42857142857143,
+        "hrv": 33
+      },
+      {
+        "week_start": "2026-09-07",
+        "distance_km": 69.1,
+        "hours": 5.65,
+        "avg_pace_s_km": 303.324,
+        "avg_hr": 148,
+        "run_count": 5,
+        "run_day_count": 4,
+        "long_run_km": 25,
+        "speed_session_count": 2,
+        "race_count": 0,
+        "training_dose": 399,
+        "ctl": 56.1674,
+        "atl": 61.1544,
+        "form": -4.987,
+        "rhr": 49.57142857142857,
+        "hrv": 29.857142857142858
+      },
+      {
+        "week_start": "2026-09-14",
+        "distance_km": 63,
+        "hours": 5.51,
+        "avg_pace_s_km": 322.142,
+        "avg_hr": 147,
+        "run_count": 5,
+        "run_day_count": 4,
+        "long_run_km": 24,
+        "speed_session_count": 2,
+        "race_count": 0,
+        "training_dose": 334.8,
+        "ctl": 55.059,
+        "atl": 56.9829,
+        "form": -1.9239,
+        "rhr": 49.42857142857143,
+        "hrv": 34.142857142857146
+      },
+      {
+        "week_start": "2026-09-21",
+        "distance_km": 36.8,
+        "hours": 3.33,
+        "avg_pace_s_km": 314.8128571428571,
+        "avg_hr": 145.85714285714286,
+        "run_count": 7,
+        "run_day_count": 3,
+        "long_run_km": 12.1,
+        "speed_session_count": 1,
+        "race_count": 0,
+        "training_dose": 201.4,
+        "ctl": 50.9806,
+        "atl": 37.7203,
+        "form": 13.2603,
+        "rhr": 48.857142857142854,
+        "hrv": 30.142857142857142
+      },
+      {
+        "week_start": "2026-09-28",
+        "distance_km": 76.5,
+        "hours": 6.94,
+        "avg_pace_s_km": 403.59999999999997,
+        "avg_hr": 142.85714285714286,
+        "run_count": 7,
+        "run_day_count": 5,
+        "long_run_km": 30.3,
+        "speed_session_count": 2,
+        "race_count": 0,
+        "training_dose": 415,
+        "ctl": 52.263,
+        "atl": 51.414,
+        "form": 0.849,
+        "rhr": 48,
+        "hrv": 29.142857142857142
+      },
+      {
+        "week_start": "2026-10-05",
+        "distance_km": 105.9,
+        "hours": 10.01,
+        "avg_pace_s_km": 347.98375,
+        "avg_hr": 142.875,
+        "run_count": 8,
+        "run_day_count": 6,
+        "long_run_km": 30,
+        "speed_session_count": 5,
+        "race_count": 0,
+        "training_dose": 492.5,
+        "ctl": 55.1013,
+        "atl": 65.3565,
+        "form": -10.2552,
+        "rhr": 48.57142857142857,
+        "hrv": 29
+      },
+      {
+        "week_start": "2026-10-12",
+        "distance_km": 83.1,
+        "hours": 7.26,
+        "avg_pace_s_km": 366.155,
+        "avg_hr": 139.3,
+        "run_count": 10,
+        "run_day_count": 6,
+        "long_run_km": 28.7,
+        "speed_session_count": 3,
+        "race_count": 0,
+        "training_dose": 398.5,
+        "ctl": 55.4403,
+        "atl": 61.2211,
+        "form": -5.7808,
+        "rhr": 50.142857142857146,
+        "hrv": 26.714285714285715
+      },
+      {
+        "week_start": "2026-10-19",
+        "distance_km": 77.9,
+        "hours": 6.01,
+        "avg_pace_s_km": 292.35857142857145,
+        "avg_hr": 150,
+        "run_count": 7,
+        "run_day_count": 4,
+        "long_run_km": 35,
+        "speed_session_count": 3,
+        "race_count": 0,
+        "training_dose": 444.6,
+        "ctl": 56.7164,
+        "atl": 63.4571,
+        "form": -6.7407,
+        "rhr": 50.166666666666664,
+        "hrv": 27.666666666666668
+      },
+      {
+        "week_start": "2026-10-26",
+        "distance_km": 0,
+        "hours": 0,
+        "avg_pace_s_km": null,
+        "avg_hr": null,
+        "run_count": 0,
+        "run_day_count": 0,
+        "long_run_km": null,
+        "speed_session_count": 0,
+        "race_count": 0,
+        "training_dose": 0,
+        "ctl": null,
+        "atl": null,
+        "form": null,
+        "rhr": null,
+        "hrv": null
+      }
+    ]
+  },
+  "fitness_state": {
+    "as_of_date": "2026-10-26",
+    "ctl": 56.7164,
+    "atl": 63.4571,
+    "form": -6.7407
+  },
+  "body_composition": {
+    "weight_kg": 70.5,
+    "body_fat_pct": null,
+    "skeletal_muscle_kg": null
+  },
+  "active_plan": null,
+  "current_phase": null,
+  "continuity": {
+    "active_plan_continuation": false,
+    "last_activity_date": "2026-10-24",
+    "days_since_last_run": 2
+  },
+  "coverage": [
+    {
+      "domain": "profile",
+      "status": "complete",
+      "detail": null
+    },
+    {
+      "domain": "activities",
+      "status": "complete",
+      "detail": null
+    },
+    {
+      "domain": "training_load",
+      "status": "complete",
+      "detail": null
+    },
+    {
+      "domain": "recovery",
+      "status": "complete",
+      "detail": null
+    },
+    {
+      "domain": "running_calibration",
+      "status": "complete",
+      "detail": null
+    },
+    {
+      "domain": "body_composition",
+      "status": "partial",
+      "detail": "no dedicated body-composition table; weight only"
+    },
+    {
+      "domain": "injuries",
+      "status": "complete",
+      "detail": "no recorded injuries"
+    },
+    {
+      "domain": "active_plan",
+      "status": "complete",
+      "detail": "no active plan, expected for new-season generation"
+    }
+  ],
+  "plan_start": "2026-10-26",
+  "as_of": "2026-10-26T00:00:00.000Z"
+}
