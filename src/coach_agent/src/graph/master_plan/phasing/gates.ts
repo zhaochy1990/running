@@ -1,6 +1,7 @@
 import type { PhaseEvidence } from "./evidence.js";
 import type { PhaseCanonical, PhaseDivisionIntent } from "./intent.js";
-import { EXPECTED_BLOCK_MODE, MIN_PHASE_WEEKS, PHASE_ORDER } from "./intent.js";
+import { EXPECTED_BLOCK_MODE, MIN_PHASE_WEEKS, PHASE_ORDER, phaseRefMatches } from "./intent.js";
+import { bandLoReachabilityIssues } from "./load/reachability.js";
 
 /**
  * 确定性结构门（devops#782 D 节，daniels.md §2.3）：LLM 输出的终检。
@@ -41,11 +42,6 @@ const EVIDENCE_KEYWORDS = ["km", "公里", "E 份额", "E份额", "Q", "质量",
 const BAND_TOLERANCE_KM = 0.5;
 
 const weeksOf = (p: PhaseDivisionIntent["phases"][number]) => p.end_week - p.start_week + 1;
-
-/** phase 引用字符串（milestones/gates/volume_bands 的 phase 字段）与阶段匹配（宽松三子句，与 spike 同款）。 */
-function phaseRefMatches(phase: { canonical: string; name: string }, ref: string): boolean {
-  return ref.includes(phase.canonical) || ref === phase.name || phase.name.includes(ref);
-}
 
 /**
  * 峰值体量帽（I8，daniels.md 教义）：min(120, max(近8周×1.6, 近期峰值×1.3))。
@@ -163,6 +159,16 @@ export function validatePhaseIntent(intent: PhaseDivisionIntent, runwayWeeks: nu
     const tooShort = phases.filter((p) => weeksOf(p) < MIN_PHASE_WEEKS[p.canonical]).map((p) => `${p.canonical}${weeksOf(p)}w`);
     checks.push({ id: "I11 最小周期", pass: tooShort.length === 0, detail: tooShort.join(",") || "达标" });
   }
+
+  // I12 带下限可达（devops#793 F 节）：I8 只校验上限帽；lo 是否在该布局下 ACWR
+  // 可达（前置 recovery 长度、伤退低起点都会决定可达性）在此校验。
+  // L3 带贴合门的爬坡豁免兜底（低于 lo 的逐周递增/帽压制仍是合法形态）。
+  const unreachable = bandLoReachabilityIssues(intent, {
+    seedAvg4Km: evidence.habitual.avg4_km,
+    recoveryLevelKm: evidence.habitual.week_km,
+    acwrApplicable: evidence.habitual.acwr_applicable,
+  });
+  checks.push({ id: "I12 带下限可达", pass: unreachable.length === 0, detail: unreachable.join(";") || "各阶段 lo 均可达" });
 
   return checks;
 }

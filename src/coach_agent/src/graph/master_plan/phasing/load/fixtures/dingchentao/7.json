@@ -1,0 +1,153 @@
+{
+  "scenario": "7",
+  "runway": 7,
+  "injury": false,
+  "intent": {
+    "phases": [
+      {
+        "canonical": "recovery",
+        "name": "恢复期（赛后卸疲劳）",
+        "start_week": 1,
+        "end_week": 1,
+        "primary_goal": "recovery",
+        "training_goal": "卸除 2026-10-24 35km 负荷，HRV/酸痛/主观疲劳回基线，仅 E+strides 维持跑感，不安排质量课",
+        "block_mode": "light",
+        "rationale": "as_of 2026-10-26，last_race 为 2026-10-24 的 35km（2 天前），且 CTL47/ATL56/form -9；10 月 weekly_km 120、quality_sessions 8、long_quality_sessions 3、longest_run_km 35，近期负荷与强度都高。按顺序不变量，14 天内完赛/大负荷后必须先 recovery，不能直接进入 foundation 或质量期。"
+      },
+      {
+        "canonical": "foundation",
+        "name": "第一阶段·基础期（压缩）",
+        "start_week": 2,
+        "end_week": 4,
+        "primary_goal": "aerobic_base",
+        "training_goal": "重建有氧地基与跑姿经济性：E 为主，strides 维持 R 触感，长距离渐进至 28-30km；不引入系统 I/T 负荷",
+        "block_mode": "progressive",
+        "rationale": "runway_weeks=7，处于 7-9 周坍缩档：先砍 early_quality、再砍 transition_quality，foundation≥2 与 final_quality≥3 为底线，因此 foundation 取 3 周。证据上 avg_8wk_km 82.4、avg_4wk_km 83.7、recent_peak_week_km 96，phase_credit 中 sustained_volume_months_ge40wk=7、months_with_long_run_ge25=7、months_with_ge4_quality=7，有氧与长距离学分充分；但 10 月 E 份额 46%、quality_sessions 8、long_quality_sessions 3，近期偏强度，需用 E+strides 修正并压缩基础期。"
+      },
+      {
+        "canonical": "final_quality",
+        "name": "第四阶段·最终质量期（FM专项+减量）",
+        "start_week": 5,
+        "end_week": 7,
+        "primary_goal": "race_specificity",
+        "training_goal": "在 3 周内完成 FM 专项：以 M 配速长距离为核心，T 段维持阈值，R/I 仅作触感；第 3 周进入 1 周 taper 激活",
+        "block_mode": "plateau",
+        "rationale": "runway 剩余 3 周，final_quality≥3（含 taper）不可再压缩；目标 2:47:00/goal_pace 3:57/km，对比 PB FM 170:44（2:50:44）与 HM 83:50（3:58/km）偏激进，因此专项期以 M 配速完成度而非绝对配速堆量。10 月 long_quality_sessions 3、longest_run_km 35 支持 M 长距离，但 CTL47 不算高，final_quality 采用 plateau：量持平、M 负荷增长，taper_weeks=1。"
+      }
+    ],
+    "taper_weeks": 1,
+    "milestones": [
+      {
+        "phase": "恢复期（赛后卸疲劳）",
+        "signal": "HRV/RPE 或体感",
+        "criterion": "第 1 周末 HRV 回 8 周基线±1SD、35km 后无酸痛、主观疲劳≤3、恢复周 weekly_km≤57.6；达标才进入 foundation"
+      },
+      {
+        "phase": "第一阶段·基础期（压缩）",
+        "signal": "weekly_km/long_run_km/E 份额",
+        "criterion": "第 4 周末 weekly_km≥85、long_run_km≥28、E 份额≥75%、strides 无不适；允许 1 次轻爬坡作为刺激"
+      },
+      {
+        "phase": "第四阶段·最终质量期（FM专项+减量）",
+        "signal": "T·M 配速课完成度/RPE",
+        "criterion": "赛前完成≥2 次 M 配速长距离（≥20km，含 3:57/km 段落）且 RPE≤7、无痛；若目标配速不可维持则按完成度而非绝对配速判定"
+      }
+    ],
+    "gates": [
+      {
+        "phase": "恢复期（赛后卸疲劳）",
+        "signal": "HRV/RPE/酸痛",
+        "criterion": "HRV 回基线±1SD、无酸痛、主观疲劳≤3、恢复周 weekly_km≤57.6",
+        "action_if_missed": "第 2 周继续 recovery（仅 E+strides），foundation 压缩至第 3-4 周 2 周，final_quality 维持第 5-7 周；同时将目标时间下调一档评估"
+      },
+      {
+        "phase": "第一阶段·基础期（压缩）",
+        "signal": "weekly_km/long_run_km/E 份额",
+        "criterion": "第 4 周末 weekly_km≥85、long_run_km≥28、E 份额≥75%、strides 无不适",
+        "action_if_missed": "第 5 周不堆 M 长距离，final_quality 降级为 T 段+短 M 段完成度优先，目标时间下调至 B/C，并取消额外质量课配额"
+      }
+    ],
+    "volume_bands": [
+      {
+        "phase": "恢复期（赛后卸疲劳）",
+        "weekly_km_min": 45,
+        "weekly_km_max": 57.6
+      },
+      {
+        "phase": "第一阶段·基础期（压缩）",
+        "weekly_km_min": 75,
+        "weekly_km_max": 95
+      },
+      {
+        "phase": "第四阶段·最终质量期（FM专项+减量）",
+        "weekly_km_min": 85,
+        "weekly_km_max": 110
+      }
+    ]
+  },
+  "expected": [
+    {
+      "week": 1,
+      "canonical": "recovery",
+      "block": 1,
+      "role": "progress",
+      "km": 45,
+      "lr": 13.5,
+      "q": 0
+    },
+    {
+      "week": 2,
+      "canonical": "foundation",
+      "block": 2,
+      "role": "progress",
+      "km": 82.5,
+      "lr": 29.7,
+      "q": 1
+    },
+    {
+      "week": 3,
+      "canonical": "foundation",
+      "block": 2,
+      "role": "progress",
+      "km": 85,
+      "lr": 30.6,
+      "q": 1
+    },
+    {
+      "week": 4,
+      "canonical": "foundation",
+      "block": 2,
+      "role": "progress",
+      "km": 87.6,
+      "lr": 31.5,
+      "q": 1
+    },
+    {
+      "week": 5,
+      "canonical": "final_quality",
+      "block": 3,
+      "role": "absorb",
+      "km": 70.9,
+      "lr": 25.5,
+      "q": 2
+    },
+    {
+      "week": 6,
+      "canonical": "final_quality",
+      "block": 3,
+      "role": "progress",
+      "km": 97.5,
+      "lr": 32,
+      "q": 2
+    },
+    {
+      "week": 7,
+      "canonical": "final_quality",
+      "block": 3,
+      "role": "race",
+      "km": 53.6,
+      "lr": null,
+      "q": 1
+    }
+  ]
+}

@@ -1,0 +1,202 @@
+{
+  "scenario": "9v2",
+  "runway": 9,
+  "injury": false,
+  "intent": {
+    "phases": [
+      {
+        "canonical": "recovery",
+        "name": "恢复期（赛后卸疲劳）",
+        "start_week": 1,
+        "end_week": 1,
+        "primary_goal": "recovery",
+        "training_goal": "卸除 2026-10-18 30 km 比赛负荷，恢复 HRV、消除酸痛与主观疲劳；仅 E 跑与 strides 触感，不引入质量负荷。",
+        "block_mode": "light",
+        "rationale": "证据显示 last_race.date=2026-10-18、distance_km=30、days_ago=8，处于距比赛≤14 天的 recovery 入口；fitness.ctl=43、atl=38、form=5，虽无 injuries，但刚完成 30 km 比赛，按顺序不变量必须先 recovery 再 foundation。"
+      },
+      {
+        "canonical": "foundation",
+        "name": "第一阶段·基础期",
+        "start_week": 2,
+        "end_week": 4,
+        "primary_goal": "aerobic_base",
+        "training_goal": "重建有氧地基与 E 份额，延长 E 长跑并加入轻爬坡/ strides；不急于上 I/T 主课，先把周量与长跑承受力接回可持续平台。",
+        "block_mode": "progressive",
+        "rationale": "runway_weeks=9 属短跑道坍缩档，先砍 early_quality、保留 foundation≥2 周；recent_volume.avg_8wk_km=46.8、avg_4wk_km=53.4、recent_peak_week_km=64，且 phase_credit.e_share_months_ge85=0，2026-10 e_share_pct=46、2026-09=57、2026-08=53，说明有氧占比不足；phase_credit.months_with_long_run_ge25=5、longest_run_8wk_km=30 可支撑 3 周 foundation 逐步接回 E 长跑，且 injuries=[] 允许渐进起量。"
+      },
+      {
+        "canonical": "transition_quality",
+        "name": "第三阶段·过渡质量期",
+        "start_week": 5,
+        "end_week": 6,
+        "primary_goal": "threshold",
+        "training_goal": "在保持有氧量的前提下引入保守 I 与 T 触感，建立目标配速附近的节奏控制；质量负荷增长但周量增量放缓，不做早期质量期式纯 R 堆叠。",
+        "block_mode": "progressive_quality",
+        "rationale": "2026-10 quality_sessions=6、long_quality_sessions=2、longest_run_km=30，2026-09 quality_sessions=6，已有质量课频率但 e_share_pct 仅 46；recent_volume.avg_4wk_km=53.4、recent_peak_week_km=64、ctl=43，具备从 foundation 进入 transition_quality 的载荷基础；目标 goal_pace=5:13/km，HM PB=102:15、FM PB=227:07，说明 T 配速段可先以可控节奏建立，不宜直接堆 M 专项。"
+      },
+      {
+        "canonical": "final_quality",
+        "name": "第四阶段·最终质量期",
+        "start_week": 7,
+        "end_week": 9,
+        "primary_goal": "race_specificity",
+        "training_goal": "进入 FM 比赛专项：以 M 配速长距离与 T+M 组合为主，量持平、M 负荷增长；最后 2 周内嵌 taper，保持配速感与比赛激活。",
+        "block_mode": "plateau",
+        "rationale": "目标为 FM 3:40:00、goal_pace=5:13/km，当前 FM PB=227:07、HM PB=102:15，需在 9 周 runway 内把 2026-10 longest_run_km=30、long_quality_sessions=2 与 phase_credit.months_with_long_run_ge25=5 的长跑基础转为 M 专项；runway_weeks=9 按坍缩阶梯保 final_quality≥3 周，且 taper_weeks=2 不设独立减量阶段；recent_peak_week_km=64、avg_4wk_km=53.4 决定 final 量为与峰值衔接的平台而非继续冲高。"
+      }
+    ],
+    "taper_weeks": 2,
+    "milestones": [
+      {
+        "phase": "恢复期（赛后卸疲劳）",
+        "signal": "HRV/RPE 或体感",
+        "criterion": "HRV 回个人基线、无延迟性酸痛、主观疲劳≤3/10，可正常完成 E 跑且跑姿无代偿。"
+      },
+      {
+        "phase": "第一阶段·基础期",
+        "signal": "long_run_km",
+        "criterion": "完成≥24 km 的 E 长跑，末段仍能维持 E 配速且 RPE≤5/10，无伤痛。"
+      },
+      {
+        "phase": "第一阶段·基础期",
+        "signal": "E 份额",
+        "criterion": "阶段后两周 E 类占比≥70%–75%，不出现连续质量课堆叠。"
+      },
+      {
+        "phase": "第三阶段·过渡质量期",
+        "signal": "T·M 配速课完成度",
+        "criterion": "完成至少 2 次 T 主课：单次 T 总量≥20 min @5:13–5:25/km，RPE≤6/10，配速漂移<5%。"
+      },
+      {
+        "phase": "第三阶段·过渡质量期",
+        "signal": "long_run_km",
+        "criterion": "long_run_km≥26 km，且末段可插入 3–5 km M 配速（5:13/km）不崩。"
+      }
+    ],
+    "gates": [
+      {
+        "phase": "恢复期（赛后卸疲劳）",
+        "signal": "HRV/RPE 或体感",
+        "criterion": "HRV 回基线、无酸痛、RPE≤3/10，才进入 foundation 起量。",
+        "action_if_missed": "延长 recovery 1 周（占用 foundation 首周），foundation 起量≤近期均值×1.0，取消质量课仅 E+strides。"
+      },
+      {
+        "phase": "第一阶段·基础期",
+        "signal": "weekly_km",
+        "criterion": "weekly_km 稳定≥50 km 且 long_run_km≥24 km，E 份额≥70%，无伤痛。",
+        "action_if_missed": "保持 foundation 1 周，不进入 T 主课；以 strides/R 触感替代质量课，周量不增，transition_quality 延后并压缩。"
+      },
+      {
+        "phase": "第三阶段·过渡质量期",
+        "signal": "T·M 配速课完成度",
+        "criterion": "至少 2 次 T 课达标（T 配速 5:13–5:25/km，单次 T 总量≥20 min）且 long_run_km≥26 km，RPE≤6/10。",
+        "action_if_missed": "final_quality 首周降为 T 维持，M 长距离改为 E+末段 M；taper 不加深，按 B 目标处理。"
+      }
+    ],
+    "volume_bands": [
+      {
+        "phase": "恢复期（赛后卸疲劳）",
+        "weekly_km_min": 28,
+        "weekly_km_max": 38
+      },
+      {
+        "phase": "第一阶段·基础期",
+        "weekly_km_min": 44,
+        "weekly_km_max": 54
+      },
+      {
+        "phase": "第三阶段·过渡质量期",
+        "weekly_km_min": 52,
+        "weekly_km_max": 62
+      },
+      {
+        "phase": "第四阶段·最终质量期",
+        "weekly_km_min": 52,
+        "weekly_km_max": 64
+      }
+    ]
+  },
+  "expected": [
+    {
+      "week": 1,
+      "canonical": "recovery",
+      "block": 1,
+      "role": "progress",
+      "km": 28,
+      "lr": 8.4,
+      "q": 0
+    },
+    {
+      "week": 2,
+      "canonical": "foundation",
+      "block": 2,
+      "role": "progress",
+      "km": 47.5,
+      "lr": 20,
+      "q": 0
+    },
+    {
+      "week": 3,
+      "canonical": "foundation",
+      "block": 2,
+      "role": "progress",
+      "km": 49,
+      "lr": 20.6,
+      "q": 0
+    },
+    {
+      "week": 4,
+      "canonical": "foundation",
+      "block": 2,
+      "role": "progress",
+      "km": 50.5,
+      "lr": 21.2,
+      "q": 0
+    },
+    {
+      "week": 5,
+      "canonical": "transition_quality",
+      "block": 3,
+      "role": "absorb",
+      "km": 41.5,
+      "lr": 17.4,
+      "q": 1
+    },
+    {
+      "week": 6,
+      "canonical": "transition_quality",
+      "block": 3,
+      "role": "progress",
+      "km": 57,
+      "lr": 23.9,
+      "q": 1
+    },
+    {
+      "week": 7,
+      "canonical": "final_quality",
+      "block": 4,
+      "role": "progress",
+      "km": 56.3,
+      "lr": 23.6,
+      "q": 1
+    },
+    {
+      "week": 8,
+      "canonical": "final_quality",
+      "block": 4,
+      "role": "taper",
+      "km": 47.9,
+      "lr": 20.1,
+      "q": 1
+    },
+    {
+      "week": 9,
+      "canonical": "final_quality",
+      "block": 4,
+      "role": "race",
+      "km": 31,
+      "lr": null,
+      "q": 1
+    }
+  ]
+}

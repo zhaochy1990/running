@@ -1,6 +1,7 @@
 import { z } from "zod/v4";
-import { isRunningActivity, normalizeSessionClass } from "../../../data/activityClassification.js";
+import { isRunLikeActivity, normalizeSessionClass } from "../../../data/activityClassification.js";
 import type { ContextSnapshot } from "../context.js";
+import { buildWeeklySeries, type HabitualBaseline, HabitualSchema, habitualBaseline } from "./load/baseline.js";
 import { equivalentsFromVdot, type RaceDistanceKey, vdotFromRace, vdotFromThresholdPace } from "./vdot.js";
 
 /**
@@ -69,6 +70,7 @@ export const PhaseEvidenceSchema = z.object({
   current_capability: CurrentCapabilitySchema,
   fitness: z.object({ ctl: z.number(), atl: z.number(), form: z.number() }),
   availability: z.object({ weekly_run_days_max: z.number().int().min(1).max(7) }),
+  habitual: HabitualSchema,
   recent_volume: z.object({
     avg_8wk_km: z.number().nonnegative(),
     avg_4wk_km: z.number().nonnegative(),
@@ -130,11 +132,8 @@ function monthsBack(asOf: string, count: number): string {
 /** 训练日归属用 UTC+8（与 masterPlanContextProvider 的 activityDay 同口径，中国跑者时区）。 */
 const dayOf = (date: Date | string) => new Date(new Date(date).getTime() + 8 * 3600_000).toISOString().slice(0, 10);
 
-/** 跑步行判定：有厂商 sport 信息走 isRunningActivity（骑行等不入画像），无则退回 >2km 距离阈值。 */
-const isRun = (a: PhasingActivityInput) =>
-  a.sport != null || a.sportName != null
-    ? isRunningActivity({ name: a.name, sport: a.sport ?? null, sportName: a.sportName ?? null, sportNote: null, strideSessionClass: a.strideSessionClass })
-    : (a.distanceM ?? 0) > 2000;
+/** 跑步行判定（周画像口径，与 habitual 周序列共用 isRunLikeActivity：骑行等不入画像）。 */
+const isRun = (a: PhasingActivityInput) => isRunLikeActivity(a);
 /** session_class 口径：easy/long_easy=E 类有氧（归一后），quality/long_quality=质量课。 */
 const isE = (cls: string | null) => cls === "easy" || cls === "long_easy";
 const isQ = (cls: string | null) => cls === "quality" || cls === "long_quality";
@@ -360,6 +359,7 @@ export function buildPhaseEvidence(snapshot: ContextSnapshot, activities: Phasin
   const goalPaceSPerKm = targetSec / RACE_DISTANCE_KM;
   const capability = deriveCapability(snapshot, asOfDay, targetSec, goal.distance);
   const fmPb = snapshot.personal_bests.find((pb) => pb.distance === "FM") ?? null;
+  const habitual: HabitualBaseline = habitualBaseline(buildWeeklySeries(activities, asOfDay));
 
   return PhaseEvidenceSchema.parse({
     as_of: asOfDay,
@@ -378,6 +378,7 @@ export function buildPhaseEvidence(snapshot: ContextSnapshot, activities: Phasin
       form: Math.round(snapshot.fitness_state.form ?? 0),
     },
     availability: { weekly_run_days_max: goal.weeklyRunDaysMax },
+    habitual,
     recent_volume: {
       avg_8wk_km: r1(avg(last8.map((w) => w.distance_km))),
       avg_4wk_km: r1(avg(last8.slice(-4).map((w) => w.distance_km))),

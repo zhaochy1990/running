@@ -11,17 +11,27 @@ import { makeEvidence } from "./testSupport.js";
 
 const scenarios = {
   base: () => makeEvidence(),
-  /** 评审 B1 三区间：零史（帽触 30 下限）、低量赛后、精英量（120 帽）。 */
-  zeroHistory: () => makeEvidence({ recent_volume: { avg_8wk_km: 0, avg_4wk_km: 0, recent_peak_week_km: 0, longest_run_8wk_km: 0, gap_weeks_last16: 8 } }),
+  /** 评审 B1 三区间：零史（帽触 30 下限）、低量赛后、精英量（120 帽）。habitual 与 recent_volume 同口径（I12 消费）。 */
+  zeroHistory: () =>
+    makeEvidence({
+      recent_volume: { avg_8wk_km: 0, avg_4wk_km: 0, recent_peak_week_km: 0, longest_run_8wk_km: 0, gap_weeks_last16: 8 },
+      habitual: { week_km: 10, level: "fallback_recent4", scenario: "fallback_avg4", avg4_km: 0, decay_factor: 0.65, acwr_applicable: false, pre_peak_km: 0 },
+    }),
   lowVolumeRaced: () =>
     makeEvidence({
       recent_volume: { avg_8wk_km: 9, avg_4wk_km: 10, recent_peak_week_km: 12, longest_run_8wk_km: 8, gap_weeks_last16: 0 },
+      habitual: { week_km: 10, level: "fallback_recent4", scenario: "detrain_return", avg4_km: 10, decay_factor: 1, acwr_applicable: false, pre_peak_km: 12 },
       last_race: { date: "2026-10-24", distance_km: 21, days_ago: 2 },
     }),
-  elite: () => makeEvidence({ recent_volume: { avg_8wk_km: 100, avg_4wk_km: 110, recent_peak_week_km: 130, longest_run_8wk_km: 35, gap_weeks_last16: 0 } }),
+  elite: () =>
+    makeEvidence({
+      recent_volume: { avg_8wk_km: 100, avg_4wk_km: 110, recent_peak_week_km: 130, longest_run_8wk_km: 35, gap_weeks_last16: 0 },
+      habitual: { week_km: 99, level: "median@12w", scenario: "normal", avg4_km: 110, decay_factor: 1, acwr_applicable: true, pre_peak_km: 130 },
+    }),
   eliteRaced: () =>
     makeEvidence({
       recent_volume: { avg_8wk_km: 100, avg_4wk_km: 110, recent_peak_week_km: 130, longest_run_8wk_km: 35, gap_weeks_last16: 0 },
+      habitual: { week_km: 79, level: "median@12w", scenario: "post_race", avg4_km: 110, decay_factor: 1, acwr_applicable: true, pre_peak_km: 130 },
       last_race: { date: "2026-10-24", distance_km: 42, days_ago: 2 },
     }),
   injured: () =>
@@ -29,6 +39,7 @@ const scenarios = {
       injury_return: { pre_injury_peak_week_km: 80, weeks_out: 3 },
       injuries: [{ body_area: "膝", status: "recovering" }],
       recent_volume: { avg_8wk_km: 35, avg_4wk_km: 30, recent_peak_week_km: 45, longest_run_8wk_km: 16, gap_weeks_last16: 3 },
+      habitual: { week_km: 18, level: "median@16w", scenario: "detrain_return", avg4_km: 30, decay_factor: 1, acwr_applicable: false, pre_peak_km: 45 },
     }),
   raced: () => makeEvidence({ last_race: { date: "2026-10-24", distance_km: 42, days_ago: 2 } }),
 } as const;

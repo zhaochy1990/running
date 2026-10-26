@@ -97,3 +97,13 @@ export const MIN_PHASE_WEEKS: Record<PhaseCanonical, number> = {
 
 /** 顺序律基准（I2）：可坍缩（跳过）不可倒置、不重复。 */
 export const PHASE_ORDER: readonly PhaseCanonical[] = ["recovery", "foundation", "early_quality", "transition_quality", "final_quality"];
+
+/**
+ * phase 引用字符串（milestones/gates/volume_bands 的 phase 字段）与阶段行匹配
+ * （宽松三子句）。L2 门与 L3 载荷层共用；查带必须用真实阶段行——引用常带
+ * 中文显示名（如「第一阶段·基础期（W3-W8）」），拿 canonical 造的假行永远
+ * 匹配不上（devops#793 spike 实测陷阱）。
+ */
+export function phaseRefMatches(phase: { canonical: string; name: string }, ref: string): boolean {
+  return ref.includes(phase.canonical) || ref === phase.name || phase.name.includes(ref);
+}

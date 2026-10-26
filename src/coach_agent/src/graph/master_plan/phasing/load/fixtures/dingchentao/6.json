@@ -1,0 +1,135 @@
+{
+  "scenario": "6",
+  "runway": 6,
+  "injury": false,
+  "intent": {
+    "phases": [
+      {
+        "canonical": "recovery",
+        "name": "恢复期（赛后卸疲劳）",
+        "start_week": 1,
+        "end_week": 1,
+        "primary_goal": "recovery",
+        "training_goal": "清除 2026-10-24 35 km 比赛负荷；全 E+strides，恢复肌肉、关节与自主神经，不安排质量课。",
+        "block_mode": "light",
+        "rationale": "last_race 为 2026-10-24、distance_km=35、days_ago=2，仍在距上场比赛≤14 天窗口内，因此 recovery 必须是第 1 阶段。fitness 显示 CTL=47、ATL=56、form=-9，近期疲劳尚未卸除；recent_peak_week_km=96，recovery 周量须≤近期峰值 60%（约 57.6 km）。runway_weeks=6 属于≤6 周坍缩档，只允许 recovery 与 final_quality 两类阶段。"
+      },
+      {
+        "canonical": "final_quality",
+        "name": "第四阶段·最终质量期（FM 专项+减量）",
+        "start_week": 2,
+        "end_week": 6,
+        "primary_goal": "race_specificity",
+        "training_goal": "在 5 周内完成 FM 专项：以 T+M 配速课与 M 配速长距离为主，量持平、M 负荷增长；最后 2 周减量，不设独立减量阶段。",
+        "block_mode": "plateau",
+        "rationale": "runway_weeks=6 触发短跑道坍缩：≤6 周只保留 recovery 与 final_quality，foundation/early_quality/transition_quality 不再单设。证据支持直接进入专项：phase_credit 中 sustained_volume_months_ge40wk=7、months_with_long_run_ge25=7、months_with_ge4_quality=7，2026-10 weekly_km=120、quality_sessions=8、long_quality_sessions=3、longest_run_km=35，recent_peak_week_km=96、longest_run_8wk_km=35，说明有氧与长距离学分充分。目标 FM 2:47:00、goal_pace 3:57/km 高于 PB FM 170:44（2:50:44），因此 final_quality 需用 M 配速长距离验证专项耐力，并以 plateau 方式衔接峰值、最后 2 周 taper。"
+      }
+    ],
+    "taper_weeks": 2,
+    "milestones": [
+      {
+        "phase": "恢复期（赛后卸疲劳）",
+        "signal": "HRV/RPE 或体感",
+        "criterion": "第 1 周末 HRV 回基线、无酸痛、主观疲劳≤3；E+strides 周量不超过 55 km。"
+      },
+      {
+        "phase": "第四阶段·最终质量期（FM 专项+减量）",
+        "signal": "long_run_km / T·M 配速课完成度",
+        "criterion": "taper 前完成至少 1 次≥24 km 长距离，其中≥12 km 按 3:57/km M 配速完成度≥90%，配速漂移≤5%。"
+      },
+      {
+        "phase": "第四阶段·最终质量期（FM 专项+减量）",
+        "signal": "CTL / RPE 或体感",
+        "criterion": "进入 taper 时 CTL 不低于 45、无伤痛；最后 2 周质量课减量后 RPE≤6。"
+      }
+    ],
+    "gates": [
+      {
+        "phase": "恢复期（赛后卸疲劳）",
+        "signal": "HRV/RPE 或体感 + weekly_km",
+        "criterion": "无酸痛、HRV 回基线、主观疲劳≤3，且 recovery 周量≤55 km（≤近期峰值 96×60%=57.6）。",
+        "action_if_missed": "延长 recovery 至第 2 周，final_quality 压缩为第 3–6 周 4 周（仍含 2 周 taper）；若仍异常则仅 E+strides，并把目标降为 B/C。"
+      },
+      {
+        "phase": "第四阶段·最终质量期（FM 专项+减量）",
+        "signal": "T·M 配速课完成度",
+        "criterion": "第 2 周 T 课累计 20–25 min 或 5–6 km @3:57–4:05/km，完成度≥85%，RPE≤7。",
+        "action_if_missed": "取消早期 M 长距离，改为 T 分段积累；M 专项总量下调 20–30%，保持 final_quality 但不加码。"
+      },
+      {
+        "phase": "第四阶段·最终质量期（FM 专项+减量）",
+        "signal": "long_run_km / M 配速课完成度",
+        "criterion": "taper 前≥24 km 长距离含≥12 km M 配速，无疼痛，配速漂移≤5%。",
+        "action_if_missed": "把 M 长距离后移至 taper 前最后一周并缩短至 20–22 km；若仍未达，将目标成绩降级为 2:52–2:55（B 目标）。"
+      }
+    ],
+    "volume_bands": [
+      {
+        "phase": "恢复期（赛后卸疲劳）",
+        "weekly_km_min": 35,
+        "weekly_km_max": 55
+      },
+      {
+        "phase": "第四阶段·最终质量期（FM 专项+减量）",
+        "weekly_km_min": 70,
+        "weekly_km_max": 100
+      }
+    ]
+  },
+  "expected": [
+    {
+      "week": 1,
+      "canonical": "recovery",
+      "block": 1,
+      "role": "progress",
+      "km": 35,
+      "lr": 10.5,
+      "q": 0
+    },
+    {
+      "week": 2,
+      "canonical": "final_quality",
+      "block": 2,
+      "role": "progress",
+      "km": 82.5,
+      "lr": 29.7,
+      "q": 2
+    },
+    {
+      "week": 3,
+      "canonical": "final_quality",
+      "block": 2,
+      "role": "progress",
+      "km": 85,
+      "lr": 30.6,
+      "q": 2
+    },
+    {
+      "week": 4,
+      "canonical": "final_quality",
+      "block": 2,
+      "role": "progress",
+      "km": 87.6,
+      "lr": 31.5,
+      "q": 2
+    },
+    {
+      "week": 5,
+      "canonical": "final_quality",
+      "block": 2,
+      "role": "taper",
+      "km": 74.5,
+      "lr": 26.8,
+      "q": 1
+    },
+    {
+      "week": 6,
+      "canonical": "final_quality",
+      "block": 2,
+      "role": "race",
+      "km": 48.2,
+      "lr": null,
+      "q": 1
+    }
+  ]
+}

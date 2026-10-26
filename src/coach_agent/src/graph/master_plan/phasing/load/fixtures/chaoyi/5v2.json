@@ -1,0 +1,115 @@
+{
+  "scenario": "5v2",
+  "runway": 5,
+  "injury": false,
+  "intent": {
+    "phases": [
+      {
+        "canonical": "recovery",
+        "name": "恢复期（W1）",
+        "start_week": 1,
+        "end_week": 1,
+        "primary_goal": "recovery",
+        "training_goal": "卸除 2026-10-24 35km 比赛/大课疲劳，恢复 HRV 与主观体感；仅 E 跑+strides，不安排 M/T 质量负荷。",
+        "block_mode": "light",
+        "rationale": "证据显示 last_race 为 2026-10-24、距离 35km、days_ago=2，处于 14 天内完赛/大强度刺激窗口，按短跑道坍缩阶梯首阶段必须是 recovery；同时 2026-10 月 km=300、weekly_km=124、e_share_pct=23、quality_sessions=13、long_quality_sessions=5，且 CTL=57/ATL=63/form=-7，近期质量负荷偏高、E 份额偏低，需要先卸疲劳而非直接堆专项。"
+      },
+      {
+        "canonical": "final_quality",
+        "name": "最终质量期（W2-W5，含 taper）",
+        "start_week": 2,
+        "end_week": 5,
+        "primary_goal": "race_specificity",
+        "training_goal": "在 4 周内直接承载 FM 专项：以 M 配速（4:02/km）长距离与 T/M 组合为主，量持平、M 负荷渐增，最后 2 周 taper 保留比赛激活；不设独立减量阶段。",
+        "block_mode": "plateau",
+        "rationale": "runway_weeks=5，按 ≤6 周坍缩阶梯只允许 recovery 与 final_quality 两类阶段，故 recovery 后剩余 W2-W5 共 4 周全部由 final_quality 承载（满足 final_quality≥3 周）。证据侧：目标 FM 2:50:00、goal_pace=4:02/km，PB FM=177:11、HM=86:38；recent avg_8wk_km=74.1、avg_4wk_km=85.9、recent_peak_week_km=106、longest_run_8wk_km=35，且 months_with_long_run_ge25=5、months_with_ge4_quality=7，具备直接进入 M 专项的长期有氧与质量课底子；2026-10 月 weekly_km=124、longest_run_km=35、long_quality_sessions=5，专项平台不宜再显著抬高周量，应以 M 配速课完成度增长为主并 taper 2 周。"
+      }
+    ],
+    "taper_weeks": 2,
+    "milestones": [
+      {
+        "phase": "恢复期（W1）",
+        "signal": "HRV/RPE 或体感",
+        "criterion": "HRV 回基线、连续无酸痛、主观疲劳≤3；本周 weekly_km 控制在 45-60，至少 1 次 E 跑后 24h 无异常。"
+      },
+      {
+        "phase": "最终质量期（W2-W5，含 taper）",
+        "signal": "T·M配速课完成度",
+        "criterion": "赛前 3 周内至少完成 1 次 M 配速（4:02/km）长距离 18-22km，完成度≥80% 且 RPE≤7；long_run_km 峰值不超过 35km，不以超长距离冒进。"
+      }
+    ],
+    "gates": [
+      {
+        "phase": "恢复期→最终质量期",
+        "signal": "HRV/RPE 或体感",
+        "criterion": "HRV 回基线且连续 48h 无酸痛，主观疲劳≤3，方可进入 final_quality 的 M/T 质量课。",
+        "action_if_missed": "延长 recovery 3-4 天；final_quality 首周仅 E+strides，M 配速长距离顺延，必要时将首周质量课计数降为 0。"
+      },
+      {
+        "phase": "最终质量期入口",
+        "signal": "weekly_km",
+        "criterion": "恢复周末 weekly_km 达 45-60，且 E 跑后无疼痛、form 不再低于 -10。",
+        "action_if_missed": "final_quality 首周量取体量带下限约 75km，取消 M 长距离，改为短 T 段维持配速触感；待 HRV/RPE 恢复后再上 M 课。"
+      }
+    ],
+    "volume_bands": [
+      {
+        "phase": "恢复期（W1）",
+        "weekly_km_min": 45,
+        "weekly_km_max": 60
+      },
+      {
+        "phase": "最终质量期（W2-W5，含 taper）",
+        "weekly_km_min": 75,
+        "weekly_km_max": 105
+      }
+    ]
+  },
+  "expected": [
+    {
+      "week": 1,
+      "canonical": "recovery",
+      "block": 1,
+      "role": "progress",
+      "km": 45,
+      "lr": 13.5,
+      "q": 0
+    },
+    {
+      "week": 2,
+      "canonical": "final_quality",
+      "block": 2,
+      "role": "progress",
+      "km": 87.3,
+      "lr": 31.4,
+      "q": 2
+    },
+    {
+      "week": 3,
+      "canonical": "final_quality",
+      "block": 2,
+      "role": "progress",
+      "km": 90,
+      "lr": 32,
+      "q": 2
+    },
+    {
+      "week": 4,
+      "canonical": "final_quality",
+      "block": 2,
+      "role": "taper",
+      "km": 76.5,
+      "lr": 27.5,
+      "q": 1
+    },
+    {
+      "week": 5,
+      "canonical": "final_quality",
+      "block": 2,
+      "role": "race",
+      "km": 49.5,
+      "lr": null,
+      "q": 1
+    }
+  ]
+}

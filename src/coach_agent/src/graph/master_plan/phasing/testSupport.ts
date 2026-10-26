@@ -21,6 +21,7 @@ export function makeEvidence(overrides: Partial<PhaseEvidence> = {}): PhaseEvide
     },
     fitness: { ctl: 55, atl: 50, form: 5 },
     availability: { weekly_run_days_max: 6 },
+    habitual: { week_km: 58, level: "median@12w", scenario: "normal", avg4_km: 65, decay_factor: 1, acwr_applicable: true, pre_peak_km: 80 },
     recent_volume: { avg_8wk_km: 60, avg_4wk_km: 65, recent_peak_week_km: 80, longest_run_8wk_km: 25, gap_weeks_last16: 0 },
     monthly_focus: [],
     phase_credit: {

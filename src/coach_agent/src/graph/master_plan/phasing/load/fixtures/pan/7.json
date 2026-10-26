@@ -1,0 +1,158 @@
+{
+  "scenario": "7",
+  "runway": 7,
+  "injury": false,
+  "intent": {
+    "phases": [
+      {
+        "canonical": "recovery",
+        "name": "恢复期",
+        "start_week": 1,
+        "end_week": 1,
+        "primary_goal": "recovery",
+        "training_goal": "卸除 2026-10-18 30 km 比赛/测试后的疲劳，恢复 HRV 与主观体感，仅保留 E 跑与 strides，不安排质量课。",
+        "block_mode": "light",
+        "rationale": "上场比赛为 2026-10-18 的 30 km，距 as_of 2026-10-26 仅 8 天（≤14 天），且 phase_credit.marathons_since_april=1（含 2026-08-29 悉尼马拉松 43 km）；当前 CTL 43、ATL 38、form 5，2026-10 周量 111 km 且有 6 次质量课，必须先进入 recovery。"
+      },
+      {
+        "canonical": "foundation",
+        "name": "第一阶段·基础期（压缩）",
+        "start_week": 2,
+        "end_week": 3,
+        "primary_goal": "aerobic_base",
+        "training_goal": "用 E 跑、strides 与轻爬坡重建有氧地基和跑姿经济性，把周量平稳接到赛前平台，不追强度。",
+        "block_mode": "progressive",
+        "rationale": "近 8 周均值 46.8 km、近 4 周 53.4 km、近期峰值 64 km、8 周最长 30 km；2026-10 月 190 km、E 份额 46%、质量课 6 次、long_quality 2 次，且 phase_credit.e_share_months_ge85=0，说明有氧地基未稳、E 份额偏低；7 周跑道按坍缩阶梯砍 early_quality 与 transition_quality，仅保留 foundation≥2 周，用 E+strides+轻爬坡承接恢复并建立周量平台。"
+      },
+      {
+        "canonical": "final_quality",
+        "name": "第四阶段·最终质量期（FM专项）",
+        "start_week": 4,
+        "end_week": 7,
+        "primary_goal": "race_specificity",
+        "training_goal": "以 T+M 比赛专项为主，安排 M 配速长距离质量课，周量持平形成 plateau，并内置 2 周 taper 直达 2026-12-13 全马。",
+        "block_mode": "plateau",
+        "rationale": "PB FM 227:07、HM 102:15，目标 3:40:00（5:13/km）需要 M 专项；2026-07 与 2026-10 最长 30 km、2026-08 最长 33 km，phase_credit.months_with_long_run_ge25=5 提供承受力，但 7 周内不能再补过渡质量期；按坍缩规则 final_quality≥3 周，设 4 周并以 plateau 承载 M 配速长距离，taper_weeks=2 内置减量。"
+      }
+    ],
+    "taper_weeks": 2,
+    "milestones": [
+      {
+        "phase": "恢复期",
+        "signal": "HRV/RPE 或体感",
+        "criterion": "HRV 连续 3 天回至个人基线附近、无延迟性酸痛、主观疲劳≤3/10；E+strides 可完成且无代偿。"
+      },
+      {
+        "phase": "第一阶段·基础期（压缩）",
+        "signal": "long_run_km",
+        "criterion": "第 3 周末完成一次 24–26 km E 长跑，最后 3 km 能维持 E 配速且次日无痛。"
+      },
+      {
+        "phase": "第一阶段·基础期（压缩）",
+        "signal": "weekly_km",
+        "criterion": "第 3 周末周量达 50–58 km，且至少 4 个跑步日、E 份额≥75%。"
+      },
+      {
+        "phase": "第四阶段·最终质量期（FM专项）",
+        "signal": "T·M 配速课完成度",
+        "criterion": "taper 前完成至少 2 次含 M 配速（5:13/km）的长距离质量课，单次 M 段累计≥8–12 km 且配速漂移≤5%。"
+      }
+    ],
+    "gates": [
+      {
+        "phase": "恢复期",
+        "signal": "HRV/RPE 或体感",
+        "criterion": "HRV 回基线且主观疲劳≤3/10、无酸痛；周量≤38 km。",
+        "action_if_missed": "延长 recovery 至 2 周，foundation 起点降至 24–30 km，取消爬坡仅留 strides。"
+      },
+      {
+        "phase": "第一阶段·基础期（压缩）",
+        "signal": "long_run_km",
+        "criterion": "第 3 周末 long_run_km≥24 km 且 weekly_km≥50，RPE≤5/10 且无痛。",
+        "action_if_missed": "final_quality 前保留 1 周 foundation 回补，M 长距离起点下调至 18–20 km，不追目标配速。"
+      }
+    ],
+    "volume_bands": [
+      {
+        "phase": "恢复期",
+        "weekly_km_min": 24,
+        "weekly_km_max": 38
+      },
+      {
+        "phase": "第一阶段·基础期（压缩）",
+        "weekly_km_min": 42,
+        "weekly_km_max": 58
+      },
+      {
+        "phase": "第四阶段·最终质量期（FM专项）",
+        "weekly_km_min": 52,
+        "weekly_km_max": 78
+      }
+    ]
+  },
+  "expected": [
+    {
+      "week": 1,
+      "canonical": "recovery",
+      "block": 1,
+      "role": "progress",
+      "km": 24,
+      "lr": 7.2,
+      "q": 0
+    },
+    {
+      "week": 2,
+      "canonical": "foundation",
+      "block": 2,
+      "role": "progress",
+      "km": 48.5,
+      "lr": 20.4,
+      "q": 0
+    },
+    {
+      "week": 3,
+      "canonical": "foundation",
+      "block": 2,
+      "role": "progress",
+      "km": 50,
+      "lr": 21,
+      "q": 0
+    },
+    {
+      "week": 4,
+      "canonical": "final_quality",
+      "block": 3,
+      "role": "progress",
+      "km": 50.4,
+      "lr": 21.2,
+      "q": 1
+    },
+    {
+      "week": 5,
+      "canonical": "final_quality",
+      "block": 4,
+      "role": "absorb",
+      "km": 41.5,
+      "lr": 17.4,
+      "q": 1
+    },
+    {
+      "week": 6,
+      "canonical": "final_quality",
+      "block": 4,
+      "role": "taper",
+      "km": 42.8,
+      "lr": 18,
+      "q": 1
+    },
+    {
+      "week": 7,
+      "canonical": "final_quality",
+      "block": 4,
+      "role": "race",
+      "km": 27.7,
+      "lr": null,
+      "q": 1
+    }
+  ]
+}

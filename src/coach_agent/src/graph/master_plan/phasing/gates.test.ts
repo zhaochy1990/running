@@ -314,3 +314,58 @@ test("I11 final-only 形态门：N≤6 出现 foundation 挂；recovery+final �
   });
   assert.ok(failing(validatePhaseIntent(goodShape, 6, raced), "I11")?.pass);
 });
+
+test("I12 带下限可达：低起点 + rec2 前置布局下 transQ lo 爬不到挂；ACWR 不适用场景整体豁免（devops#793 F 节）", () => {
+  // 低起点但仍在跑（habitual avg4=32、ACWR 适用）+ rec2+F2+early2 前置：
+  // transQ 带 lo=60 在第 7-8 周按 ACWR 最大爬坡包络只到 ~35km——布局本身决定 lo 不可达
+  const evidence = makeEvidence({
+    habitual: { week_km: 30, level: "median@16w", scenario: "normal", avg4_km: 32, decay_factor: 1, acwr_applicable: true, pre_peak_km: 35 },
+  });
+  const layout = {
+    phases: [
+      phase("recovery", 1, 2),
+      phase("foundation", 3, 4),
+      phase("early_quality", 5, 6),
+      phase("transition_quality", 7, 8),
+      phase("final_quality", 9, 10),
+    ],
+    taperWeeks: 1,
+    milestones: [
+      { phase: "recovery", signal: "HRV", criterion: "回基线" },
+      { phase: "foundation", signal: "weekly_km", criterion: "周量达 30km" },
+      { phase: "transition_quality", signal: "T 配速课完成度", criterion: "2 节完成" },
+    ],
+  };
+  const unreachable = makeIntent({
+    ...layout,
+    volumeBands: [
+      { phase: "recovery", weekly_km_min: 10, weekly_km_max: 20 },
+      { phase: "foundation", weekly_km_min: 15, weekly_km_max: 70 },
+      { phase: "early_quality", weekly_km_min: 20, weekly_km_max: 90 },
+      { phase: "transition_quality", weekly_km_min: 60, weekly_km_max: 95 },
+      { phase: "final_quality", weekly_km_min: 55, weekly_km_max: 95 },
+    ],
+  });
+  const check = failing(validatePhaseIntent(unreachable, 10, evidence), "I12");
+  assert.ok(check && !check.pass);
+  assert.ok(check?.detail.includes("transition_quality") === true, check?.detail);
+
+  // 同布局把 transQ lo 降到爬坡包络内 → 过（L3 侧低于 lo 的爬坡周另有带贴合豁免兜底）
+  const reachable = makeIntent({
+    ...layout,
+    volumeBands: [
+      { phase: "recovery", weekly_km_min: 10, weekly_km_max: 20 },
+      { phase: "foundation", weekly_km_min: 15, weekly_km_max: 70 },
+      { phase: "early_quality", weekly_km_min: 20, weekly_km_max: 90 },
+      { phase: "transition_quality", weekly_km_min: 30, weekly_km_max: 95 },
+      { phase: "final_quality", weekly_km_min: 55, weekly_km_max: 95 },
+    ],
+  });
+  assert.ok(failing(validatePhaseIntent(reachable, 10, evidence), "I12")?.pass);
+
+  // ACWR 不适用（断练回归/零史）：可达性是 ACWR 论证，整体豁免——构造从起点爬坡
+  const detrain = makeEvidence({
+    habitual: { week_km: 18, level: "median@16w", scenario: "detrain_return", avg4_km: 30, decay_factor: 1, acwr_applicable: false, pre_peak_km: 45 },
+  });
+  assert.ok(failing(validatePhaseIntent(unreachable, 10, detrain), "I12")?.pass);
+});
