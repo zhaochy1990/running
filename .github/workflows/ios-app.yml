@@ -1,0 +1,142 @@
+name: iOS App (StrideKit + TestFlight)
+
+# devops#764 PR-1：ios-app/ 工程地基的 CI。
+#
+# Jobs:
+#   build-and-test — PR / master / 手动都跑：StrideKit 包 `swift test`（宿主机）
+#                    + App target 模拟器构建（免签名，证明工程与包正确性）。
+#   testflight     — master push / 手动跑（沿 mobile-build.yml 先例：PR 不烧
+#                    ~$1/次的出包钱；PR 合并后首个 push 即出第一个内部包）。
+#                    自动签名 + ASC API key 三 secrets（devops#748 事实清单），
+#                    出包前 asc-bootstrap.rb 幂等建 ASC App 记录与
+#                    Associated Domains capability。
+#
+# Required secrets（仓库 Settings → Secrets 配置；缺失时 testflight 作业
+# 以 notice 跳过，不红 CI）：
+#   ASC_KEY_ID     — App Store Connect API Key ID
+#   ASC_ISSUER_ID  — ASC Issuer ID
+#   ASC_KEY_P8     — .p8 私钥（base64 或原文）
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'ios-app/**'
+      - '.github/workflows/ios-app.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'ios-app/**'
+      - '.github/workflows/ios-app.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: iOS build & test (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ios-app
+    steps:
+      - uses: actions/checkout@v4
+
+      # 镜像可能带多版 Xcode；选最新保证 pbxproj（Xcode 16+ 格式）与
+      # Swift 6 工具链稳定可用，并把版本打进日志。
+      - name: Select newest Xcode
+        run: |
+          XCODE="$(ls -td /Applications/Xcode*.app | head -1)"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Swift tests (StrideKit package)
+        run: swift test --package-path StrideKit
+
+      - name: Build app for iOS Simulator (no signing)
+        run: |
+          set -euo pipefail
+          xcodebuild -project Stridewise.xcodeproj \
+            -scheme Stridewise \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | { command -v xcbeautify >/dev/null && xcbeautify || cat; }
+
+  testflight:
+    name: TestFlight (auto signing)
+    needs: build-and-test
+    # master push / 手动（PR 不跑：出包 ~$1/次，见文件头说明）
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/master')
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select newest Xcode
+        run: |
+          XCODE="$(ls -td /Applications/Xcode*.app | head -1)"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      # 三 secrets 未配置 → notice 跳过（不红 CI；配置后重跑 dispatch 即可）
+      - name: Guard ASC secrets
+        id: secrets
+        run: |
+          if [ -z "$ASC_KEY_ID" ] || [ -z "$ASC_ISSUER_ID" ] || [ -z "$ASC_KEY_P8" ]; then
+            echo "::notice::ASC_KEY_ID / ASC_ISSUER_ID / ASC_KEY_P8 未配置，跳过 TestFlight 出包（配置见本 workflow 文件头注释）"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bootstrap ASC (bundle id + capability + app record)
+        if: steps.secrets.outputs.ready == 'true'
+        run: ruby ios-app/scripts/asc-bootstrap.rb
+
+      - name: Archive & upload to TestFlight
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/asc_keys"
+          case "$ASC_KEY_P8" in
+            -----BEGIN*) printf '%s' "$ASC_KEY_P8" > "$RUNNER_TEMP/asc_keys/AuthKey_${ASC_KEY_ID}.p8" ;;
+            *) echo "$ASC_KEY_P8" | base64 -d > "$RUNNER_TEMP/asc_keys/AuthKey_${ASC_KEY_ID}.p8" ;;
+          esac
+          cd ios-app
+          xcodebuild -project Stridewise.xcodeproj \
+            -scheme Stridewise \
+            -destination 'generic/platform=iOS' \
+            -configuration Release \
+            -archivePath "$RUNNER_TEMP/Stridewise.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc_keys/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            archive
+          # ExportOptions.plist 目的地为 upload：导出即上传（build number 由
+          # ASC 自动递增，manageAppVersionAndBuildNumber=true）
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Stridewise.xcarchive" \
+            -exportOptionsPlist Support/ExportOptions.plist \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc_keys/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      # Side-channel to the WeCom group; the action never fails this job.
+      - name: Notify WeCom
+        if: always()
+        uses: zhaochy1990/configurations/notify-wecom@v1
+        with:
+          webhook_url: ${{ secrets.WECOM_WEBHOOK_URL }}
+          needs_json: ${{ toJSON(needs) }}

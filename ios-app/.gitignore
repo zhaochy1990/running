@@ -1,0 +1,10 @@
+# Xcode / SPM 构建产物
+.build/
+DerivedData/
+build/
+
+# Xcode 用户态
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad
+.DS_Store

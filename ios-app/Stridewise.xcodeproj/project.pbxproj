@@ -1,0 +1,283 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	objectVersion = 70;
+	classes = {
+	};
+	objects = {
+
+/* Begin PBXBuildFile section */
+		764000000000000000000016 /* StrideKit in Frameworks */ = {isa = PBXBuildFile; productRef = 764000000000000000000015 /* StrideKit */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		76400000000000000000000B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		76400000000000000000000C /* Stridewise.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Stridewise.entitlements; sourceTree = "<group>"; };
+		76400000000000000000000D /* ExportOptions.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = ExportOptions.plist; sourceTree = "<group>"; };
+		764000000000000000000009 /* Stridewise.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Stridewise.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		764000000000000000000003 /* App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = App;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		764000000000000000000007 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				764000000000000000000016 /* StrideKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		764000000000000000000002 = {
+			isa = PBXGroup;
+			children = (
+				764000000000000000000003 /* App */,
+				76400000000000000000000A /* Support */,
+				764000000000000000000004 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		764000000000000000000004 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				764000000000000000000009 /* Stridewise.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		76400000000000000000000A /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				76400000000000000000000B /* Info.plist */,
+				76400000000000000000000C /* Stridewise.entitlements */,
+				76400000000000000000000D /* ExportOptions.plist */,
+			);
+			path = Support;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		764000000000000000000005 /* Stridewise */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 764000000000000000000010 /* Build configuration list for PBXNativeTarget "Stridewise" */;
+			buildPhases = (
+				764000000000000000000006 /* Sources */,
+				764000000000000000000007 /* Frameworks */,
+				764000000000000000000008 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				764000000000000000000003 /* App */,
+			);
+			name = Stridewise;
+			packageProductDependencies = (
+				764000000000000000000015 /* StrideKit */,
+			);
+			productName = Stridewise;
+			productReference = 764000000000000000000009 /* Stridewise.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		764000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					764000000000000000000005 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = 764000000000000000000013 /* Build configuration list for PBXProject "Stridewise" */;
+			developmentRegion = zh-Hans;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				zh-Hans,
+				Base,
+			);
+			mainGroup = 764000000000000000000002;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				764000000000000000000014 /* XCLocalSwiftPackageReference "StrideKit" */,
+			);
+			productRefGroup = 764000000000000000000004 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				764000000000000000000005 /* Stridewise */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		764000000000000000000008 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		764000000000000000000006 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		76400000000000000000000E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Support/Stridewise.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = M4G5WA6N83;
+				DEVELOPMENT_LANGUAGE = zh-Hans;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Support/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 2026.10.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lipaotech.stridewise;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		76400000000000000000000F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Support/Stridewise.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = M4G5WA6N83;
+				DEVELOPMENT_LANGUAGE = zh-Hans;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Support/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 2026.10.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lipaotech.stridewise;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		764000000000000000000011 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				ARCHS = arm64;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+			};
+			name = Debug;
+		};
+		764000000000000000000012 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				ARCHS = arm64;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_OPTIMIZATION_LEVEL = s;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		764000000000000000000010 /* Build configuration list for PBXNativeTarget "Stridewise" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				76400000000000000000000E /* Debug */,
+				76400000000000000000000F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		764000000000000000000013 /* Build configuration list for PBXProject "Stridewise" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				764000000000000000000011 /* Debug */,
+				764000000000000000000012 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		764000000000000000000014 /* XCLocalSwiftPackageReference "StrideKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = StrideKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		764000000000000000000015 /* StrideKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = StrideKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 764000000000000000000001 /* Project object */;
+}

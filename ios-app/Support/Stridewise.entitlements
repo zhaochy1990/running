@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Associated Domains（devops#764 票面：applinks:stride-running.cn；
+	     AASA 与 /s/* 分流页配套见 devops#762 方案，由分享深链票 #758 收口） -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:stride-running.cn</string>
+	</array>
+</dict>
+</plist>
