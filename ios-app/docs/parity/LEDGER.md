@@ -24,9 +24,18 @@
 | D-share-1 | 朋友圈渠道 | 功能 | onShareTimeline 单页模式分享 | 仅单一路分享（ShareLink），timeline 渠道无对等 | confirmed | 用户（#749 §8 D-2） | 2026-10-26 | 放弃该功能：微信生态渠道，iOS 无对等；单一路分享用 universal link 承载 |
 | D-poster-1 | 海报保存交互 | UI | canvas 海报 → previewImage 长按保存 | 声明式海报 View + ImageRenderer + fullScreenCover 预览 + 显式「保存/分享」按钮 | confirmed | 用户（#749 §5 / D-9） | 2026-10-26 | 保留偏差：iOS 无长按保存惯例；需照片库写入权限文案（PR-8 落地） |
 
-## 引导账号域（PR-2 落地后登记）
+## 引导账号域（PR-2 落地，devops#765）
 
-（空）
+| ID | 检查点 | 维度 | 小程序现状 | iOS 现状 | 状态 | 确认人 | 日期 | 说明 |
+| ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
+| P-login-1 | 登录页结构 | UI | 双 tab（手机验证码默认/邮箱密码）+ 60s 倒计时 + 行内错误区 + 协议勾选门默认不勾 + 忘记密码 toast + 法务链接 declaration | 同构：验证码默认双 tab、60s 倒计时（发送失败不启动）、18 错误码中文表（AuthErrorMessages.swift）、协议门、忘记密码「暂未开放，请联系客服」toast、法务链接本地栈 push（LoginView.swift） | aligned | — | 2026-10-26 | #752 决议一逐项；错误码表与 #460 三端同表 |
+| D-login-1 | 登录通道 | 架构 | 手机 tab 走 wechat_phone_bind grant（微信身份+手机号），微信免登 wx.login code 换 token | 纯 SMS login-or-register（sms/send scene=login + sms/verify）+ 邮箱密码 /api/auth/login；微信链路整体不迁 | confirmed | 用户（#419 决议 1 / #752 决议一） | 2026-10-26 | 保留偏差：iOS 无微信身份（全局面 D-auth-1 已覆盖，本条登记页面级）；invite_code 字段位预留（门禁将来开不用改客户端） |
+| P-login-2 | 登录成功分支 | 架构 | redirect 回跳 / registered=true→onboarding 透传 redirect / 老用户→coach tab（login.ts:99-112） | 同序：redirect 优先；sms/verify 不回 registered，由档案链（GET profile !profile_ready→onboarding）判定新用户；查询失败放行 coach（AppModel.handleLoginSuccess） | aligned | — | 2026-10-26 | #752 决议「onboarding 重定向链天然覆盖」；401 回登录页预填 lastSmsPhone（一键重发不自动发） |
+| P-onb-1 | onboarding 状态机 | 架构 | 单页三步五视图 + onShow 重算落点 + ensureSync 五段链（开关→有表→指针三分→认领别端 run→幂等键先落盘）+ 60min 超时=pending | 同构五视图（loading/profile/watch/sync/ready），进页面+前台恢复双触发 refresh；OnboardingSyncService 五段链，指针/幂等键 key 与 Web/小程序同名（stride:onboarding-run:{uid}），轮询 2s/60min、超时 pending 放行 | aligned | — | 2026-10-26 | #418 决议全量；complete=资料步（ADR 0013）空 body 幂等自愈；失败重试清指针+幂等键起新 run |
+| D-onb-1 | 头像选择 | UI | button open-type=chooseAvatar（微信头像/相册）→ 远端 URL 先 downloadFile 再 uploadFile | PhotosPicker 选图 → multipart 直传 POST /api/users/me/avatar → PATCH /api/users/me 回写 avatar_url；上传失败不阻断建档（best-effort） | confirmed | 用户（#752 决议一「chooseAvatar→PhotosPicker」） | 2026-10-26 | 保留偏差：平台选择器差异；微信头像 CDN 下载链路无对等（相册选图天然本地） |
+| P-onb-2 | 资料步字段 | UI | 六字段（昵称/性别 picker/生日 picker 默认 1990-01-01/身高体重/跑龄 picker），OPTIONS 展示与 VALUES 提交分离 | 同六字段；OPTIONS（男/女/其他、暂不透露…3 年以上）与 VALUES（male…、lt_6m…）分离（OnboardingSteps.swift），生日 DatePicker 默认 1990-01-01 防「今天」 | aligned | — | 2026-10-26 | 与 Go profileInput oneof 严格一致（users.go:206）；RHR/MaxHR 不在 onboarding（#418 决议 5） |
+| P-decl-1 | 声明页 | UI | mp-html 渲染 GET /api/declarations/{doc_type}（auth:false），404=尚未发布，非法 doc_type 白名单拒绝 | MarkdownText 简易 GFM 渲染（标题/列表/引用/表格/代码块 + AttributedString 行内），公开拉取 404=「该声明尚未发布」；doc_type 白名单由 DeclarationType 收口（DeclarationView.swift） | aligned | — | 2026-10-26 | mapping.md 转译约定（mp-html→简易渲染器，内容是 markdown 无需 WKWebView）；极端 HTML 标签按纯文本回退 |
+| P-priv-1 | 隐私聚合页 | UI | 两行菜单（用户协议/隐私政策，icon+标题+副标题）→ declaration | 同构两行菜单卡片，路由 .privacy → .declaration push（PrivacyView） | aligned | — | 2026-10-26 | 入口在 profile-edit「隐私与权限」行（PR-7 接线），路由与本页先行落地 |
 
 ## 记录域（PR-3 落地后登记，devops#766）
 

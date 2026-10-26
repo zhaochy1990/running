@@ -65,6 +65,8 @@ struct ProfileHomeView: View {
 
 /// 路由占位页：深链落点 / push 目标的通用骨架（各域票逐页替换；
 /// 记录域 activity-detail 已在 PR-3 换成真实页）。
+/// 路由占位页：深链落点 / push 目标的通用骨架（各域票逐页替换）。
+/// PR-2 登录域落地：法务两页（declaration/privacy）已是真实实现。
 struct RouteShellView: View {
     let route: Route
 
@@ -72,6 +74,10 @@ struct RouteShellView: View {
         switch route {
         case .activityDetail(let labelId):
             ActivityDetailView(labelId: labelId)
+        case .declaration(let docType):
+            DeclarationView(docType: docType)
+        case .privacy:
+            PrivacyView()
         default:
             PageShell(title: routeTitle, systemImage: "square.grid.2x2")
         }
