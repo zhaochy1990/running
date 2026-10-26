@@ -11,7 +11,7 @@
 ── 生成时（一次性，产物=完整计划）──────────────────────
 L1 证据层     纯代码   profile(user, as_of)：月度画像/当前状态/常态基线(待拍板)/学分
 L2 阶段划分层  LLM×1    五阶段+里程碑+体量带+块模式 ｜ 结构门+T 兜底       → devops#782
-L3 载荷层     纯代码(拟) 块计划→周骨架+回补策略+力量policy+边界自检
+L3 载荷层     纯代码(已实证) 块计划→周骨架+回补策略+力量policy+边界自检
 L4 内容层     LLM×N    并行生成器：强度课/长跑内容/专项细节/补给 → 具体课表
 L5 落位层     纯代码   scheduler 排日 + 验收门终检（12 规则+PMC）
 
@@ -62,7 +62,20 @@ race_date 已隐含季节，阶段结构由跑道与能力缺口驱动；天气�
 
 **冬季 transition_quality 以 T 为主（拍板）**：I 课受冷天约束时调整次序=先降内容（I 份额下调、T 扶正，FM 特化下几乎无损）→ 仅当质量课整体不可执行才降时长（压缩让渡 final_quality，接受 I 缺位不搬家）→ 永不降顺序（R→I→T 不倒置）。R/strides 冬季适合保留。生效前提（待补）：训练城市月度气候常态进证据层（静态表）、场地可用性字段；「温度太低」判据须城市级（硬约束是冰面/-15°C 级/气道敏感），非泛泛「冬天」。
 
-### 3.5 术语约定
+### 3.5 目标可行性阶梯（2026-10-26 拍板）
+
+确定性纯函数 `assessGoal(evidence): GoalVerdict`（零 LLM），**锚=当前等效水平** `equivalents[goal.distance]`（#789 产物；比赛锚与校准锚取保守者——PB 是历史峰值，退化/进步双向都会算错，已否决）：
+
+| verdict | 判据（阈值沿用 kernel 生产 doctrine） | 对计划的影响 |
+|---|---|---|
+| `supported` | gap ≤3% 且跑道 ≥12 周（gap≤0 同样 supported） | 按 A 目标正常出 |
+| `aggressive_but_plausible` | 3%<gap≤10%，或跑道 <12 周 | A 照出；**峰值帽 ×0.95**（I8 门与 T 兜底同乘）+ 里程碑从严 |
+| `multi_cycle_required` | gap>15%，或 >10% 且跑道 <16 周；**跑道 ≤6 周且 gap>0 强制此档**（与坍缩阶梯 §2.4 时间目标降级合一） | **不静默降级（2026-10-26 修正拍板）**：verdict 上浮 Coach Chat 明确告知（当前等效 vs 目标、gap），用户三选——坚持原目标 / 调整目标 / 换更远比赛；**B=equivalents×1.02 仅作建议值展示**，计划只按用户确认的目标生成；坚持 A 则照 A 构造并在 rationale 显式写风险；非对话入口返回 needs_confirmation 不代做决定 |
+| `conditional` | 锚不可得（equivalents=null） | 引导先测一场，或按 C（安全完赛）出计划 |
+
+**原则：系统不偷偷降低用户目标**——可以做体检、给建议，选择权在用户；aggressive 档的峰值帽 ×0.95 是安全边际非目标减配，但 Chat 中透明说明。三选项对话卡片属聊天路径实现，本决定定契约。
+
+### 3.6 术语约定
 
 L2 统一称**阶段划分层**（不用「意图层」）；契约 schema 名 `PhaseDivisionIntentSchema`（实现命名，代码 `phasing/intent.ts`）。
 
@@ -84,8 +97,8 @@ L2 与 L3 的耦合保留机制：**体量带**——阶段划分层给每阶段
 | 文档 | 覆盖 | 状态 |
 |---|---|---|
 | [daniels-l1-evidence.md](./daniels-l1-evidence.md) | L1 证据层 | 已落地（devops#782 / PR #630）；常态基线与 calibration 区块待拍板/待实现 |
-| [daniels-l2-phase-division.md](./daniels-l2-phase-division.md) | L2 阶段划分层 | 已落地（devops#782 / PR #630） |
-| [daniels-l3-load.md](./daniels-l3-load.md) | L3 载荷层 | 块机制/政策面已拍板；起点规则与维度细则待拍板 |
+| [daniels-l2-phase-division.md](./daniels-l2-phase-division.md) | L2 阶段划分层 | 已落地（devops#782 / PR #630）；可行性阶梯票待实现 |
+| [daniels-l3-load.md](./daniels-l3-load.md) | L3 载荷层 | 设计定稿+38 案例三档实测全绿（零 LLM 定案、R0-R5、四维度细则、六条门规则）；实现票待开 |
 | daniels-l4-content.md | L4 内容层 | 待设计（回收方案 B 维度 brief 资产） |
 | daniels-l5-scheduler.md | L5 落位层 | 待设计 |
 | daniels-r-execution.md | 执行回路 | 待设计（R2 信号阈值留白） |

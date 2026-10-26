@@ -102,7 +102,7 @@ interface PhaseEvidence {
   evidence_note: string;               // 「分类来自生产 session_class，直接采信」说明（进 prompt）
 
   // ── ⏳ 待拍板扩展 ───────────────────────────
-  habitual_week_km?: number;           // ⏳ 常态基线（R0-R6 算法，21 用户实测待批；入档后 recent_volume 均值降为参考）
+  habitual_week_km?: number;           // ⏳ 常态基线（R0-R5 算法，21 用户实测待批；入档后 recent_volume 均值降为参考）
 }
 ```
 
@@ -123,9 +123,9 @@ interface PhaseEvidence {
 
 ## 5. 输出与消费
 
-单一 PhaseEvidence JSON：L2 全量消费（经 PhasingIntentInput 携带 runwayWeeks/raceDate）（教义 prompt 的 payload；target.improvement_pct 已进教义调整职责段——正值越大目标越激进→体量带取保守端）；L3 消费 recent_volume/体量带推导/（⏳ habitual_week_km 起点）；R2 消费滚动状态。**不输出**：单课明细/laps（消费时按需下钻）、PMC 全仿真（验收门产物）、周序列原始数组（⏳ 若 R0-R6 入档，仅外露 habitual_week_km 一个数，序列留在函数内部）。
+单一 PhaseEvidence JSON：L2 全量消费（经 PhasingIntentInput 携带 runwayWeeks/raceDate）（教义 prompt 的 payload；target.improvement_pct 已进教义调整职责段——正值越大目标越激进→体量带取保守端）；L3 消费 recent_volume/体量带推导/（⏳ habitual_week_km 起点）；R2 消费滚动状态。**不输出**：单课明细/laps（消费时按需下钻）、PMC 全仿真（验收门产物）、周序列原始数组（⏳ 若 R0-R5 入档，仅外露 habitual_week_km 一个数，序列留在函数内部）。
 
-## 6. 待拍板
+## 6. 已拍板待实现 / 待拍板
 
-- `habitual_week_km`（常态基线 R0-R6）：有效训练周筛选（剔比赛周/赛后 14 天/taper 特征/断练 <15km）→ 中位数 → 逐级回退 + 新鲜度衰减 + 五档场景门 + 1.3×avg4 硬安全门；21 用户第二轮实测报告 `coach_agent/src/tests/spike-out/habitual-baseline-round2.md`
+- `habitual_week_km`（常态基线 R0-R5）：**已拍板**（2026-10-26，算法与实测见 L3 分文档 §2.1），随 L3 实现票落地；有效训练周筛选（剔比赛周/赛后 14 天/taper 特征/断练 <15km）→ 中位数 → 逐级回退 + 新鲜度衰减 + 五档场景门 + 1.3×avg4 硬安全门；21 用户第二轮实测报告 `coach_agent/src/tests/spike-out/habitual-baseline-round2.md`
 - 训练城市月度气候常态标注（总览 §3.4 季节性插入点的前提，静态表）
