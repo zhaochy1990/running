@@ -25,6 +25,7 @@ import MasterPlanAdjustPage from "./pages/MasterPlanAdjustPage";
 import { useUser } from "./UserContextValue";
 import { getMyProfile } from "./api";
 import LandingPage from "./pages/landing/LandingPage";
+import DeclarationPage from "./pages/DeclarationPage";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -184,6 +185,11 @@ export default function AppRoutes() {
     <Routes>
       <Route path="/login" element={<LoginEntry />} />
       <Route path="/register" element={<RegisterPage />} />
+      {/* 公开法务声明页（App Store 提审硬要求公开隐私政策 URL，
+          devops#750/#759/#773）。无登录门：与小程序/iOS 声明页同一
+          公开端点，路由本身不做鉴权。 */}
+      <Route path="/privacy" element={<DeclarationPage docType="privacy_policy" />} />
+      <Route path="/terms" element={<DeclarationPage docType="user_agreement" />} />
       <Route
         path="/onboarding"
         element={
