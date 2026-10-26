@@ -93,8 +93,13 @@ type Activity struct {
 	// writes them. ts_sha256 is the hex sha256 of the blob's uncompressed points
 	// JSON (tsstore.EncodePoints); has_gps records whether the blob carries GPS
 	// so the detail path can skip the per-point EXISTS probe (Phase 2).
-	TsBlobKey    *string `gorm:"column:ts_blob_key;type:varchar(256)"`
-	TsPointCount *int    `gorm:"column:ts_point_count;type:int"`
+	TsBlobKey *string `gorm:"column:ts_blob_key;type:varchar(256)"`
+	// type:integer, NOT type:int — a `type:` literal that equals gorm's
+	// schema.Int constant ("int") is treated as the Go-kind mapping, where an
+	// unsized *int lands as bigint on MySQL (devops#784 E2E finding). "integer"
+	// matches no gorm constant, passes through verbatim, and MySQL reads
+	// INTEGER as INT. Guarded by TestActivityTSBlobColumnDDLTypes.
+	TsPointCount *int    `gorm:"column:ts_point_count;type:integer"`
 	TsSHA256     *string `gorm:"column:ts_sha256;type:char(64)"`
 	HasGPS       *bool   `gorm:"column:has_gps;type:tinyint(1)"`
 }
