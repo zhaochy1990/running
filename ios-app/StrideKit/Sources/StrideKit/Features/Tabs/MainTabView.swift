@@ -50,22 +50,15 @@ public struct MainTabView: View {
     }
 }
 
-
+/// 训练 tab 占位（PR-5 训练域落地时替换；PR-7 不动）。
 struct TrainingHomeView: View {
     var body: some View {
         PageShell(title: "STRIDE", systemImage: "list.clipboard")
     }
 }
 
-struct ProfileHomeView: View {
-    var body: some View {
-        PageShell(title: "我", systemImage: "person.crop.circle")
-    }
-}
-
-/// 路由占位页：深链落点 / push 目标的通用骨架（各域票逐页替换）：
-/// PR-2 登录域（declaration/privacy）、PR-3（activity-detail）与
-/// PR-6 赛事域五页已是真实实现。
+/// 路由落点：各域真实页面（PR-7 收尾域落地：profile 域 / 反馈路线域 /
+/// 手表 / 三公开落地页）；训练域（PR-5）未落地的落点沿用骨架壳。
 struct RouteShellView: View {
     let route: Route
 
@@ -87,6 +80,26 @@ struct RouteShellView: View {
             MyRacesView()
         case .customRaceForm:
             CustomRaceFormView()
+        case .feedback(let initialTab):
+            FeedbackView(initialTab: initialTab)
+        case .feedbackForm:
+            FeedbackFormView()
+        case .feedbackChat(let id):
+            FeedbackChatView(feedbackId: Int(id) ?? 0)
+        case .productRoadmap:
+            ProductRoadmapView()
+        case .roadmapDetail(let id):
+            RoadmapDetailView(featureId: id)
+        case .watch(let provider):
+            WatchView(provider: provider)
+        case .profileEdit:
+            ProfileEditView()
+        case .workoutShare(let user, let workout):
+            WorkoutShareView(user: user, workout: workout)
+        case .coachShare(let sid):
+            CoachShareView(sid: sid)
+        case .strategyShare(let user, let id, let version):
+            StrategyShareView(user: user, id: id, version: version)
         default:
             PageShell(title: routeTitle, systemImage: "square.grid.2x2")
         }

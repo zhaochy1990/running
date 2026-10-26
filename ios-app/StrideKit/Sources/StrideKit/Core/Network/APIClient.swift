@@ -92,6 +92,12 @@ public actor APIClient {
         sessionExpiredHandler = handler
     }
 
+    /// 主动登出/注销后清 Keychain（退出登录与 DELETE 账号共用；
+    /// `userStore.clear` 的 token 面）。
+    public func clearTokens() async {
+        await tokens.clear()
+    }
+
     // MARK: - 公开请求面
 
     public func send(_ request: APIRequest) async throws -> Data {
@@ -146,8 +152,22 @@ public actor APIClient {
     }
 
     /// 统一 URLRequest 底座：方法/超时/Content-Type/X-Client-Id（协议头部约定）。
+    ///
+    /// path 内可携带 `?a=b` query（沿用调用点拼串惯例）：`URL.appending(path:)`
+    /// 会把 `?` 编成 `%3F` 破坏 query，这里拆开经 URLComponents 重组——
+    /// 顺带修复记录域 `?include=timeseries` / `?limit=&offset=` 的既有缺陷
+    /// （PR-7 收尾域落地时发现，服务端此前会把整段当路径 404）。
     private func makeURLRequest(base: URL, path: String, method: String, body: Data?) -> URLRequest {
-        var urlRequest = URLRequest(url: base.appending(path: path))
+        let url: URL
+        if let questionMark = path.firstIndex(of: "?") {
+            var components = URLComponents(url: base, resolvingAgainstBaseURL: false)!
+            components.path = String(path[path.startIndex..<questionMark])
+            components.percentEncodedQuery = String(path[path.index(after: questionMark)...])
+            url = components.url ?? base.appending(path: path)
+        } else {
+            url = base.appending(path: path)
+        }
+        var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = method
         urlRequest.httpBody = body
         urlRequest.timeoutInterval = config.timeout
@@ -219,6 +239,45 @@ public actor APIClient {
         }
     }
 
+    // MARK: - 反馈图片上传（wx.uploadFile 的 URLSession 等价，PR-7 收尾域）
+
+    /// 上传一张反馈图片，返回后端 cos_key（`POST /api/users/me/feedback-images`，
+    /// multipart 字段名 `file`，「先传拿 key 再提交」两段式的前段；单张 ≤10MB
+    /// 由调用方过滤——小程序 chooseMedia 跳过超限图的语义）。
+    public func uploadFeedbackImage(_ imageData: Data, mimeType: String = "image/jpeg") async throws -> String {
+        let boundary = "stride-\(UUID().uuidString)"
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"feedback\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
+        body.append(imageData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+
+        var urlRequest = makeURLRequest(
+            base: config.baseURL, path: "/api/users/me/feedback-images",
+            method: "POST", body: body
+        )
+        urlRequest.timeoutInterval = 60
+        urlRequest.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        if let token = await tokens.accessToken() {
+            urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        log.debug("→ POST /api/users/me/feedback-images（multipart）")
+        let (data, response) = try await transport.data(forHTTP: urlRequest)
+        guard (200..<300).contains(response.statusCode) else {
+            throw ApiError.make(statusCode: response.statusCode, body: data)
+        }
+        struct CosKeyResponse: Decodable {
+            let cosKey: String
+            enum CodingKeys: String, CodingKey { case cosKey = "cos_key" }
+        }
+        do {
+            return try JSONDecoder().decode(CosKeyResponse.self, from: data).cosKey
+        } catch {
+            throw ApiError.decodeFailure(CosKeyResponse.self)
+        }
+    }
+
     // MARK: - 刷新单飞（request.ts refreshPromise 等价）
 
     private func refreshedAccessToken() async throws -> String {
@@ -256,20 +315,34 @@ public actor APIClient {
     }
 }
 
-/// `GET /api/users/me` 返回面（骨架取会话验证所需最小字段；登录域 PR-2 展开）。
+/// `GET /api/users/me` 返回面（auth-service `UserProfile` 镜像：身份面的
+/// name/avatar_url 全 optional；`display_name` 是数据面镜像字段，身份优先）。
 public struct MeUser: Decodable, Hashable, Sendable {
     public let id: String
     public let email: String?
+    public let name: String?
+    public let avatarURL: String?
     public let displayName: String?
 
-    public init(id: String, email: String? = nil, displayName: String? = nil) {
+    /// 展示名（身份 name 优先，display_name 镜像兜底）。
+    public var displayTitle: String? {
+        if let name, !name.isEmpty { return name }
+        if let displayName, !displayName.isEmpty { return displayName }
+        return nil
+    }
+
+    public init(id: String, email: String? = nil, name: String? = nil,
+                avatarURL: String? = nil, displayName: String? = nil) {
         self.id = id
         self.email = email
+        self.name = name
+        self.avatarURL = avatarURL
         self.displayName = displayName
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, email
+        case id, email, name
+        case avatarURL = "avatar_url"
         case displayName = "display_name"
     }
 }

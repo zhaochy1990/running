@@ -168,7 +168,8 @@ public enum Shanghai {
         return "\(year)年\(month)月"
     }
 
-    private static func ymdDate(_ ymd: String) -> Date? {
+    /// `YYYY-MM-DD` → Date（上海时区语义；跨域复用，PR-7 落地页选日用）。
+    public static func ymdDate(_ ymd: String) -> Date? {
         guard ymd.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil else { return nil }
         return calendar.date(from: DateComponents(year: Int(ymd.prefix(4)), month: Int(ymd.dropFirst(5).prefix(2)), day: Int(ymd.suffix(2))))
     }

@@ -86,9 +86,33 @@
 | D-race-5 | 策略分享出向 | 功能 | onShareAppMessage 带 strategy-share path（微信卡片） | ShareLink 单一路分享：已落库版本 → owner+race+version 三元组 universal link；草稿 → 详情页链接 | pending | — | 2026-10-26 | 分享深链分流与落地页形态归 #758/PR-7；D-share-1 同族 |
 | D-race-6 | 赛事中心顶栏 | UI | 自绘顶栏（返回/小房子 + 标题 + 「我的赛事」入口） | 系统 inline 导航标题 + toolbar「我的赛事」；返回走系统手势（D-nav-3 种子推演） | confirmed | — | 2026-10-26 | 保留偏差：D-nav-3 同族；「我的赛事」入口语义保留 |
 
-## 收尾域（PR-7 落地后登记）
+## 收尾域（PR-7 落地后登记，devops#770；规格 #759 决议二 + #758 拍板 2 + #425）
 
-（空）
+| ID | 检查点 | 维度 | 小程序现状 | iOS 现状 | 状态 | 确认人 | 日期 | 说明 |
+| ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
+| P-prof-1 | 我 tab 结构 | UI | 自绘顶栏（菜单钮 toast/标题+副标题「个人中心」）→ 用户卡（头像/昵称/邮箱/「STRIDE 会员」标）→ 手动同步行 → 菜单五行（含反馈副标题+红点 99+ 截断） | 系统 inline 标题「我的」；同构用户卡/手动同步行（spinner+「上次同步 Xm ago」）/五行菜单 + 红点徽标（ProfileHomeView.swift） | aligned | — | 2026-10-26 | 顶栏差异沿 D-rec-1 同族（菜单钮小程序即 toast 占位）；红点=total_unread，失败静默保留 |
+| P-prof-2 | 手动同步链路 | 架构 | POST /api/{user}/sync {mode:'incremental'}（无幂等键）→ 轮询 GET /api/pipelines/{id} 2s/60min → 成功 toast + last_sync_at 回读；onUnload 取消 | 同构（triggerIncrementalSync 无 Idempotency-Key + pollRun 2s/60min + onDisappear cancel；#425 决议逐条，单测断言 body/无幂等头） | aligned | — | 2026-10-26 | 成功/失败 toast >15 字截断同款；取消不弹 toast |
+| P-pedit-1 | profile-edit 双面拆分 | 架构 | 身份 GET/PATCH /api/users/me + 头像即时传；身体 GET/POST/PATCH /api/users/me/profile（ADR 0013） | 同构：PhotosPicker 选完即传（uploadAvatar→PATCH avatar_url→AppModel.updateIdentity）；昵称失焦保存（空/未改不提交，失败回读）；身体已建立逐字段 PATCH 失败回读服务端值；未建立「完善身体数据」整表 POST（display_name 取当前昵称）（ProfileEditModel.swift） | aligned | — | 2026-10-26 | chooseAvatar→PhotosPicker 沿 D-onb-1 决议；身体失焦=FocusState 失焦+onSubmit 双触发 |
+| P-pedit-2 | 注销入口 | 架构 | 无（小程序无 App Store 合规要求） | profile-edit 底部危险区「注销账号」（退出登录下方）→ 二次确认警示（不可恢复→确认注销）→ DELETE {auth}/api/users/me → 清 Keychain → Login | aligned | 用户（#759 决议 2 拍板） | 2026-10-26 | **合规增量**（超样板）：App Store 5.1.1(v) 硬要求；后端链路现成（auth 原子清理+四步审计） |
+| P-fb-1 | 反馈双 tab | 架构 | 会话行（emoji 头像+标题截 20+已采纳角标+相对时间+末条预览+未读点）/onShow 重拉/路线 tab 首次挂载 hidden 保活/深链 ?tab=roadmap | 同构（FeedbackView.swift：会话行全要素、onShow 重拉、roadmapMounted opacity 保活、Route.feedback(initialTab:) 承接深链；行逻辑直译 feedbackRows.ts 单测覆盖） | aligned | — | 2026-10-26 | 已采纳角标点按切路线 tab（闭环手势）保留；右下悬浮 + 球 CTA 同位保留（原型 518 variant C） |
+| P-road-1 | 投票乐观更新 | 架构 | 投票乐观+本地重排不重拉列表（#553）；失败回滚静默重拉对齐；同想法 in-flight 串行；not_votable 409 文案 | 同构（RoadmapPanelModel.swift：togglePoolVote 纯函数 + voting Set 串行 + 失败回滚 fetch 静默对齐；单测覆盖重排/夹 0/未知 id） | aligned | — | 2026-10-26 | 排序与 Go 端 backlog（票数降序、同票新想法在前）同源 |
+| P-road-2 | 三区平铺形态 | UI | 最近上线时间线（绿点+日期+「由 N 位跑友投票促成」）/正在做（+预计 chip）/投票池（toggle pill ▲/✓+NEW 标）+投票规则常显，全部不折叠 | 同构三区平铺（RoadmapPanelView.swift，2026-10-20 拍板照搬） | aligned | — | 2026-10-26 | hero 聚合卡已移除（拍板既有）；product-roadmap 薄壳页保活照搬（RoadmapPages.swift） |
+| P-road-3 | roadmap-detail | UI | 标题+markdown 正文（mp-html）；draft 404=「这个想法不存在或已下线」 | MarkdownText 简易渲染（declaration 同款）；404 分流同文案（RoadmapPages.swift） | aligned | — | 2026-10-26 | D-coach-1 渲染子集决议共用 |
+| P-fbf-1 | 反馈表单 | 架构 | 类型分段联动占位/描述必填点亮/图片 0-9 张（>10MB 跳过 toast）previewImage/两段式上传（任一失败中止保留本地图）/client_version 静默注入 | 同构（FeedbackFormView/Model：PhotosPicker 多选+Data 载入+超限跳过 toast+全屏查看器（D-9 显式交互）；两段式逐张中止保留；client_version=ios/{version} 注入，单测断言 body） | aligned | — | 2026-10-26 | 版本号取 CFBundleShortVersionString（≤32 字符）；页面零展示同款 |
+| P-fbc-1 | 反馈线程聊天 | 架构 | 进入 GET 详情（服务端读即清未读）/已采纳横幅去投票（roadmap 反查标题失败隐藏）/409 feedback_closed 前端同步禁言/草稿输入条/closed 禁言条+提交新反馈 | 同构（FeedbackChatModel：409 双判同步 closed；横幅标题 roadmap 反查 best-effort；气泡流 ScrollViewReader 滚底；图片九宫格全屏查看） | aligned | — | 2026-10-26 | 时间标签上海墙钟（今天/昨天/跨年补年份）直译单测 |
+| P-watch-1 | 手表绑定 | 架构 | 品牌网格（COROS/GARMIN）→ email+password 表单（region picker 仅 Garmin cn/global）→ 绑定成功 toast+回读+ensureSync fire-and-forget+redirectTo onboarding；解绑内联确认卡；?provider= 直达 | 同构（WatchModel/View：region 仅 Garmin+MFA 提示行；绑定后 presentOnboardingAfterWatchBind（AppModel 切全屏 onboarding 续跑进度）；解绑内联卡「已同步数据不删除」） | aligned | — | 2026-10-26 | #425 决议直译；绑表后跳 onboarding 与小程序 redirectTo 同语义 |
+| D-watch-1 | Garmin 登录形态 | 架构 | garth 式 SSO 直登：客户端收 email+password POST /api/users/me/watch/login（服务端 OAuth1→OAuth2；MFA fail-fast 提示） | 同 email+password 表单直连同端点（#425 实施清单口径）；**ASWebAuthenticationSession 前端 SSO 不采用**：需后端 OAuth 回调新端点，违反「端点零新增」铁律（mapping §0） | confirmed | — | 2026-10-26 | 保留偏差：#770 票面「garth SSO→ASWebAuthenticationSession」按 #425 实际契约（email+password 直登，garth 在服务端）落地；如未来开 OAuth 回调端点另立票 |
+| P-wshare-1 | workout-share 落地页 | 架构 | 免登录 GET /api/workouts/shared + 沉浸课卡（hero/summary/全量分段）+ 双 CTA（保存±7 天选日+save_token 幂等/推送先存后推+绑表检查 modal→watch 回来续推）；未登录 CTA→login?redirect=本页；缺参/404 失效态、5xx 重试 | 同构（WorkoutShareView/Model：三 stat 口径与 workout-detail 一致（力量=时长/动作/总组数）；选日 sheet 8 档+计划日默认；save_token=shared-{id}；绑表检查 alert→去绑定→onAppear 续推；AppModel.requestLogin(redirect:) 回跳；流测试覆盖保存/推送/续推/未登录四链） | aligned | — | 2026-10-26 | #758 拍板 2 直译；公开落地页在 loggedOut 根栈的免登录浏览形态归 PR-8（D-coach-3 既有登记） |
+| P-cshare-1 | coach-share 阅读端 | 架构 | 免登录 GET /api/coach-shares/{sid}（410/404/429 分流）浅色气泡流+策略卡静态摘要降级+底部品牌条（wxacode fail-soft） | 同构（CoachShareView/Model：410 过期/404 不存在/其余可重试三空态；race-strategy/master-plan 卡头静态摘要、动作卡降级 markdown（coachShareRows 口径单测）；品牌条占位块兜底） | aligned | — | 2026-10-26 | 「再转发同 sid」微信专属（open-type=share），iOS 出向归 PR-8 |
+| P-sshare-1 | strategy-share 落地页 | 架构 | 免登录三元组 GET；只读渲染+底部 CTA「生成我的比赛策略」（已登录→detail，未登录→登录流）；缺 pace_segments 视为失效；赛名以 race_calendar 行为准 | 同构（StrategyShareView/Model：hero/配速表/补给/打包清单/赛道/天气/依据全区块；损坏 content 失效分流；CTA 双分支；toStrategyShareView 纯函数单测含目标配速换算） | aligned | — | 2026-10-26 | #506 三元组即访问边界；行构造复用 raceStrategyRows 只读子集 |
+| D-net-1 | path 内嵌 query 编码缺陷 | 架构 | —（wx.request URL 原生合法） | 修复 APIClient makeURLRequest：`URL.appending(path:)` 会把 `?` 编成 `%3F`，path 拼串带 query 的调用（记录域 `?include=timeseries`、`?limit=&offset=`、自建课 `?target_date=`）此前整段被当路径 | aligned | — | 2026-10-26 | PR-7 落地时发现并修复的既有缺陷：拆 path 于 `?` 经 URLComponents 重组 query（回归靠 workout-share 推送流测试断言完整 URL） |
+| P-priv-2 | privacy 入口接线 | 架构 | privacy 两行菜单（P-priv-1 已登记，入口在 profile-edit） | profile-edit「隐私与权限」行 → .privacy push（本 PR 接线完成，闭环 P-priv-1 预留位） | aligned | — | 2026-10-26 | 页面本体 PR-2 落地；本行只补入口 |
+
+### PR-7 未迁面（显式登记）
+
+- ASWebAuthenticationSession 前端 Garmin SSO：见 D-watch-1（端点零新增铁律下的保留偏差）。
+- 落地页 loggedOut 根栈免登录浏览形态：归 PR-8（AppModel.applyIncoming 注释位，D-coach-3 既有登记）；PR-7 页面在 loggedIn 栈 + 未登录 CTA 走 requestLogin(redirect:)。
+- 路线 tab 投票池「我的票数」聚合：hero 聚合卡已在 2026-10-20 拍板移除，两端口径一致，不单列偏差。
 
 ## 分享出向（PR-8 落地后登记）
 

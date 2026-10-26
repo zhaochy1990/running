@@ -33,12 +33,18 @@ public struct ProfileFeatureFlags: Decodable, Sendable, Equatable {
 public struct MyProfile: Decodable, Sendable, Equatable {
     public let id: String
     public let displayName: String?
+    /// 顶层跑龄档（profile 未建立时的兜底展示档位）。
+    public let runningAgeRange: String?
+    /// 身体档案核心六字段；nil = 尚未建立（整表 POST 建立）。
+    public let profile: ProfileCore?
     public let onboarding: OnboardingState?
     public let features: ProfileFeatureFlags?
 
     enum CodingKeys: String, CodingKey {
         case id
         case displayName = "display_name"
+        case runningAgeRange = "running_age_range"
+        case profile
         case onboarding, features
     }
 
@@ -130,6 +136,85 @@ public struct DeclarationDoc: Decodable, Sendable, Equatable {
     }
 }
 
+// MARK: - PR-7 收尾域模型（devops#770：ADR 0013 身体档案面 / 手表 / 手动同步 / 注销）
+
+/// 数据面 `GET /api/users/me/profile` 的 `profile` 核心六字段（ADR 0013；
+/// null = 尚未建立，POST 整表建立后才可逐字段 PATCH）。
+public struct ProfileCore: Decodable, Sendable, Equatable {
+    public let displayName: String
+    public let dob: String
+    public let sex: String
+    public let heightCm: Double
+    public let weightKg: Double
+    public let runningAgeRange: String
+
+    enum CodingKeys: String, CodingKey {
+        case displayName = "display_name"
+        case dob, sex
+        case heightCm = "height_cm"
+        case weightKg = "weight_kg"
+        case runningAgeRange = "running_age_range"
+    }
+}
+
+/// `PATCH /api/users/me/profile` 逐字段可提交面（省略即不变；身体段失焦保存用）。
+public struct ProfilePatch: Encodable, Sendable, Equatable {
+    public var dob: String?
+    public var sex: String?
+    public var heightCm: Double?
+    public var weightKg: Double?
+    public var runningAgeRange: String?
+
+    public init(dob: String? = nil, sex: String? = nil,
+                heightCm: Double? = nil, weightKg: Double? = nil, runningAgeRange: String? = nil) {
+        self.dob = dob
+        self.sex = sex
+        self.heightCm = heightCm
+        self.weightKg = weightKg
+        self.runningAgeRange = runningAgeRange
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case dob, sex
+        case heightCm = "height_cm"
+        case weightKg = "weight_kg"
+        case runningAgeRange = "running_age_range"
+    }
+}
+
+/// `GET /api/users/me/watch` 响应（镜像 Go `watchInfoResponse`，#425 契约：
+/// 未绑定 200 全 null）。
+public struct WatchInfo: Decodable, Sendable, Equatable {
+    public let provider: String?
+    public let providerDisplayName: String?
+    public let loggedIn: Bool
+    public let email: String?
+    public let device: String?
+    public let lastSyncAt: String?
+    public let capabilities: [String]
+
+    public init(provider: String?, providerDisplayName: String?, loggedIn: Bool,
+                email: String?, device: String?, lastSyncAt: String?, capabilities: [String]) {
+        self.provider = provider
+        self.providerDisplayName = providerDisplayName
+        self.loggedIn = loggedIn
+        self.email = email
+        self.device = device
+        self.lastSyncAt = lastSyncAt
+        self.capabilities = capabilities
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case provider
+        case providerDisplayName = "provider_display_name"
+        case loggedIn = "logged_in"
+        case email
+        case device = "device"
+        case lastSyncAt = "last_sync_at"
+        case capabilities
+    }
+}
+
 // MARK: - APIClient 账号域端点（devops#418 端点表全量承接）
 
 extension APIClient {
@@ -203,5 +288,52 @@ extension APIClient {
     public func updateAvatarURL(_ url: String) async throws {
         let body = try JSONEncoder().encode(["avatar_url": url])
         _ = try await send(APIRequest(method: .patch, path: "/api/users/me", body: body, authBase: true))
+    }
+
+    // MARK: - PR-7 收尾域端点（devops#770：ADR 0013 双面 / 手表 / 手动同步 / 注销）
+
+    /// 昵称回写身份面（`PATCH {auth}/api/users/me {name}`；昵称失焦自动保存）。
+    public func updateDisplayName(_ name: String) async throws {
+        let body = try JSONEncoder().encode(["name": name])
+        _ = try await send(APIRequest(method: .patch, path: "/api/users/me", body: body, authBase: true))
+    }
+
+    /// 已建立 profile 的逐字段更新（`PATCH /api/users/me/profile`；
+    /// 失败由调用方回读服务端值，防界面停在未保存态）。
+    @discardableResult
+    public func patchMyProfile(_ patch: ProfilePatch) async throws -> ProfileCore {
+        let body = try JSONEncoder().encode(patch)
+        struct PatchResponse: Decodable { let profile: ProfileCore }
+        return try await send(
+            APIRequest(method: .patch, path: "/api/users/me/profile", body: body),
+            as: PatchResponse.self
+        ).profile
+    }
+
+    /// 手表状态（`GET /api/users/me/watch`；未绑定 200 全 null）。
+    public func watchInfo() async throws -> WatchInfo {
+        try await send(APIRequest(path: "/api/users/me/watch"), as: WatchInfo.self)
+    }
+
+    /// 解绑手表（`DELETE /api/users/me/watch`；已同步数据保留）。
+    public func disconnectWatch() async throws {
+        _ = try await send(APIRequest(method: .delete, path: "/api/users/me/watch"))
+    }
+
+    /// 「我」页手动同步（`POST /api/{user}/sync {mode:"incremental"}`，
+    /// #425 决议：**无 Idempotency-Key**——幂等键仅 onboarding full 用；
+    /// 202 新建 / 200 deduplicated 复用同形）。
+    public func triggerIncrementalSync(user: String) async throws -> TriggerSyncResult {
+        let body = try JSONEncoder().encode(["mode": "incremental"])
+        return try await send(
+            APIRequest(method: .post, path: "/api/\(user)/sync", body: body),
+            as: TriggerSyncResult.self
+        )
+    }
+
+    /// 注销账号（App Store 5.1.1(v) 硬要求，#759 决议 2：profile-edit 底部
+    /// 危险区二次确认后调用；auth-service 原子清理 + 四步审计）。
+    public func deleteAccount() async throws {
+        _ = try await send(APIRequest(method: .delete, path: "/api/users/me", authBase: true))
     }
 }
