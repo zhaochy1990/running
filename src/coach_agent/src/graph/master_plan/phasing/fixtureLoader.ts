@@ -50,6 +50,13 @@ export function applyInjuryScenario(evidence: PhaseEvidence): PhaseEvidence {
   const halved = Math.max(10, Math.round(pre * 0.45));
   return {
     ...evidence,
+    habitual: {
+      ...evidence.habitual,
+      week_km: halved,
+      avg4_km: Math.round(halved * 0.8 * 10) / 10,
+      scenario: "detrain_return",
+      acwr_applicable: false,
+    },
     recent_volume: {
       ...evidence.recent_volume,
       avg_4wk_km: halved * 0.8,

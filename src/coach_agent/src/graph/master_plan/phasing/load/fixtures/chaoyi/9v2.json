@@ -1,0 +1,182 @@
+{
+  "scenario": "9v2",
+  "runway": 9,
+  "injury": false,
+  "intent": {
+    "phases": [
+      {
+        "canonical": "recovery",
+        "name": "恢复期",
+        "start_week": 1,
+        "end_week": 1,
+        "primary_goal": "recovery",
+        "training_goal": "卸掉 10-24 的 35km 比赛样跑负荷：全周 easy 跑 + 少量 strides，周量压到近期峰值 60% 以内，恢复 HRV 与主观体感。",
+        "block_mode": "light",
+        "rationale": "last_race 为 2026-10-24 的 35km（days_ago=2），距比赛 ≤14 天，按体系必须先进 recovery；fitness 显示 ATL 63 > CTL 57、form -7，且 10 月周量 124km、13 次质量课、5 次长质量课，属高负荷后状态，必须先卸疲劳再谈训练。injuries 为空但 35km 后肌肉损伤风险仍高，本周只允许 E + strides。"
+      },
+      {
+        "canonical": "foundation",
+        "name": "基础期",
+        "start_week": 2,
+        "end_week": 4,
+        "primary_goal": "aerobic_base",
+        "training_goal": "把 10 月被质量课挤压的有氧份额补回来：以 E 跑为主体（目标 E 份额 ≥70%），每周 2 次 strides 维持速度触感，long_run 从 20km 递进到 24km，周量从 60km 级爬到 85-90km 级。",
+        "block_mode": "progressive",
+        "rationale": "10 月 E 份额仅 23%（8 月 46%、9 月 48%），有氧地基被 13 次/月质量课与 5 次长质量课挤压；同时 phase_credit 显示 7 个月周量 ≥40km、5 个月长跑 ≥25km，说明无需从零起地基，3 周（高于 2 周底线）足够重建。速度端 5K PB 19:30、10K PB 39:21 折算约 3:54-3:56/km，已远超 FM 目标 4:02/km 所需，故按坍缩阶梯优先砍掉 early_quality，R 只以 strides 副课维持；起量按 8 周均值 74.1km×1.25≈92.6km 的护栏封顶，近期峰值 106km 不回补。"
+      },
+      {
+        "canonical": "final_quality",
+        "name": "最终质量期",
+        "start_week": 5,
+        "end_week": 9,
+        "primary_goal": "race_specificity",
+        "training_goal": "FM 专项：周量站上 85-100km 平台不再上探（plateau），M 配速（4:02-4:10/km）长距离逐周加长，T 课在 M 长距离之间穿插、I 只做少量短段保守刺激；末 2 周进入 taper，保量感、减总量、留强度触感。",
+        "block_mode": "plateau",
+        "rationale": "目标 2:50:00 = 4:02/km，而 HM PB 86:38 仅 4:07/km，说明 M 配速已贴近当前半马能力上限，短板是马拉松专项耐力而非速度，跑道上限 9 周时不设 transition_quality，把剩余 5 周（≥3 周底线）全部给 final_quality，其中 2 周 taper（taper_weeks=2）；周量平台取 85-100km，与近 4 周均值 85.9km 衔接，低于 8 周均值×1.6 与 120km 硬顶；long_run 从基础期末的 24km 续推到 30-32km 带 M 段，质量课密度从 10 月的 13 次/月回落到 2 次/周以内，避免把高密度质量课带进减量期。"
+      }
+    ],
+    "taper_weeks": 2,
+    "milestones": [
+      {
+        "phase": "恢复期",
+        "signal": "HRV/RPE 或体感",
+        "criterion": "第 1 周内连续 3 天晨起 RPE ≤3、无肌肉酸痛、HRV 回到个人基线 ±5%；周量 ≤55km（≤近期峰值 106km 的 60%），且本周不安排任何质量课。"
+      },
+      {
+        "phase": "基础期",
+        "signal": "weekly_km 与 E 份额",
+        "criterion": "第 4 周末周量达 85-90km（不超过 74.1×1.25≈92.6km 护栏），E 类（easy/long_easy）里程份额 ≥70%，且每周 ≥2 次 strides。"
+      },
+      {
+        "phase": "基础期",
+        "signal": "long_run_km",
+        "criterion": "第 4 周结束前完成一次 ≥24km 连续 E 长跑（由 20→22→24km 递进），全程无痛、末段仍可对话配速。"
+      },
+      {
+        "phase": "基础期",
+        "signal": "CTL",
+        "criterion": "第 4 周末 CTL 回升至 ≥58（起点 57）且 form 由 -7 转正，证明负荷已消化而非继续堆积。"
+      }
+    ],
+    "gates": [
+      {
+        "phase": "恢复期",
+        "signal": "HRV/RPE 或体感",
+        "criterion": "连续 3 天 HRV 在基线 ±5% 内、晨起 RPE ≤3、35km 赛后无残留酸痛，方可进入 foundation。",
+        "action_if_missed": "恢复期延长到第 2 周（周量 40-50km，仅 E+strides），基础期压到 2 周（60→80km 直接过渡），final_quality 首周仍以 E+strides 铺垫，taper 由 2 周压到 1 周把周数让出来。"
+      },
+      {
+        "phase": "基础期",
+        "signal": "long_run_km",
+        "criterion": "第 4 周结束前完成 ≥24km E 长跑且无痛，方可进入 M 长距离专项。",
+        "action_if_missed": "final_quality 前 2 周（第 5-6 周）继续补 long_run（20→24→28km 纯 E），M 配速段推迟到第 7 周起，M 总里程下调约 20%，taper 仍保 2 周。"
+      },
+      {
+        "phase": "基础期",
+        "signal": "E 份额/质量课计数",
+        "criterion": "第 4 周末 E 份额 ≥70% 且质量课 ≤2 次/周，确认已脱离 10 月 13 次/月、E 份额 23% 的高强度密度模式。",
+        "action_if_missed": "final_quality 前 2 周质量课限 1 次/周，M 长距离改为纯 E 长距离 + 末段 3km M，待 E 份额回到 65% 以上再恢复标准 M 课。"
+      }
+    ],
+    "volume_bands": [
+      {
+        "phase": "恢复期",
+        "weekly_km_min": 30,
+        "weekly_km_max": 55
+      },
+      {
+        "phase": "基础期",
+        "weekly_km_min": 60,
+        "weekly_km_max": 90
+      },
+      {
+        "phase": "最终质量期",
+        "weekly_km_min": 85,
+        "weekly_km_max": 100
+      }
+    ]
+  },
+  "expected": [
+    {
+      "week": 1,
+      "canonical": "recovery",
+      "block": 1,
+      "role": "progress",
+      "km": 30,
+      "lr": 9,
+      "q": 0
+    },
+    {
+      "week": 2,
+      "canonical": "foundation",
+      "block": 2,
+      "role": "progress",
+      "km": 72.8,
+      "lr": 26.2,
+      "q": 1
+    },
+    {
+      "week": 3,
+      "canonical": "foundation",
+      "block": 2,
+      "role": "progress",
+      "km": 75,
+      "lr": 27,
+      "q": 1
+    },
+    {
+      "week": 4,
+      "canonical": "foundation",
+      "block": 2,
+      "role": "progress",
+      "km": 77.3,
+      "lr": 27.8,
+      "q": 1
+    },
+    {
+      "week": 5,
+      "canonical": "final_quality",
+      "block": 3,
+      "role": "absorb",
+      "km": 61.2,
+      "lr": 22,
+      "q": 1
+    },
+    {
+      "week": 6,
+      "canonical": "final_quality",
+      "block": 3,
+      "role": "progress",
+      "km": 91.6,
+      "lr": 32,
+      "q": 2
+    },
+    {
+      "week": 7,
+      "canonical": "final_quality",
+      "block": 3,
+      "role": "progress",
+      "km": 95.3,
+      "lr": 32,
+      "q": 2
+    },
+    {
+      "week": 8,
+      "canonical": "final_quality",
+      "block": 3,
+      "role": "taper",
+      "km": 81,
+      "lr": 29.2,
+      "q": 1
+    },
+    {
+      "week": 9,
+      "canonical": "final_quality",
+      "block": 3,
+      "role": "race",
+      "km": 52.4,
+      "lr": null,
+      "q": 1
+    }
+  ]
+}

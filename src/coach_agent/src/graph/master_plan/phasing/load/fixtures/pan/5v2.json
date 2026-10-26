@@ -1,0 +1,120 @@
+{
+  "scenario": "5v2",
+  "runway": 5,
+  "injury": false,
+  "intent": {
+    "phases": [
+      {
+        "canonical": "recovery",
+        "name": "恢复期（赛后卸疲劳）",
+        "start_week": 1,
+        "end_week": 1,
+        "primary_goal": "recovery",
+        "training_goal": "清除2026-10-18 30km比赛与10月高质量负荷残留疲劳，仅E跑+strides，不安排M/T质量课，为最后4周FM专项建立可恢复起点",
+        "block_mode": "light",
+        "rationale": "last_race为2026-10-18的30km比赛，距as_of 2026-10-26仅8天；2026-10月km190、weekly_km111、quality_sessions6、long_quality_sessions2，E份额仅46%，CTL43/ATL38/form5，近期质量负荷偏高。按≤6周坍缩阶梯与14天内完赛规则，第1周必须设为recovery，并以HRV、酸痛与主观疲劳作为出口判据。"
+      },
+      {
+        "canonical": "final_quality",
+        "name": "最终质量期（FM专项+减量）",
+        "start_week": 2,
+        "end_week": 5,
+        "primary_goal": "race_specificity",
+        "training_goal": "用M配速长距离与T/M组合完成FM比赛专项，量持平后进入2周taper，重点是把5:13/km目标配速跑得经济且RPE可控",
+        "block_mode": "plateau",
+        "rationale": "runway_weeks=5，按≤6周坍缩阶梯只允许recovery与final_quality；final_quality承载第2-5周（含2周taper），满足final_quality≥3周底线。目标FM 3:40:00/5:13/km，对比PB FM 227:07、HM 102:15、10K 47:28，目标偏保守；近期8周均量46.8km、峰值64km、最长30km，且months_with_long_run_ge25=5，具备直接进入M专项的基础。但2026-10 E份额46%、质量课6次，故本阶段采用plateau，不再堆强度，只把M配速长距离与减量衔接。"
+      }
+    ],
+    "taper_weeks": 2,
+    "milestones": [
+      {
+        "phase": "恢复期（赛后卸疲劳）",
+        "signal": "HRV/RPE或体感",
+        "criterion": "HRV回基线、无延迟酸痛、主观疲劳≤3；未达标则不进入M专项。"
+      },
+      {
+        "phase": "最终质量期（FM专项+减量）",
+        "signal": "long_run_km/质量课计数",
+        "criterion": "赛前第3周前完成至少1次≥20km长跑且含2-3段M配速，当周质量课≤2。"
+      },
+      {
+        "phase": "最终质量期（FM专项+减量）",
+        "signal": "T·M配速课完成度",
+        "criterion": "赛前2周完成至少1次16-18km含3×5km@5:13/km，RPE≤7/10。"
+      }
+    ],
+    "gates": [
+      {
+        "phase": "恢复期（赛后卸疲劳）",
+        "signal": "HRV/RPE或体感",
+        "criterion": "HRV回基线、无酸痛、主观疲劳≤3",
+        "action_if_missed": "将final_quality首周降为纯E+strides并延迟首次M课3-5天；若仍未恢复，取消第一次M长距离，保留短M段落，按3周final_quality最低结构执行。"
+      },
+      {
+        "phase": "最终质量期（FM专项+减量）",
+        "signal": "T·M配速课完成度",
+        "criterion": "赛前2周内完成至少1次16-18km含3×5km@5:13/km且RPE≤7/10",
+        "action_if_missed": "取消第二次M长距离，改为E+4×1km@M；比赛目标下调至3:50并保守起跑。"
+      }
+    ],
+    "volume_bands": [
+      {
+        "phase": "恢复期（赛后卸疲劳）",
+        "weekly_km_min": 26,
+        "weekly_km_max": 38
+      },
+      {
+        "phase": "最终质量期（FM专项+减量）",
+        "weekly_km_min": 44,
+        "weekly_km_max": 64
+      }
+    ]
+  },
+  "expected": [
+    {
+      "week": 1,
+      "canonical": "recovery",
+      "block": 1,
+      "role": "progress",
+      "km": 26,
+      "lr": 7.8,
+      "q": 0
+    },
+    {
+      "week": 2,
+      "canonical": "final_quality",
+      "block": 2,
+      "role": "progress",
+      "km": 52.4,
+      "lr": 22,
+      "q": 1
+    },
+    {
+      "week": 3,
+      "canonical": "final_quality",
+      "block": 2,
+      "role": "progress",
+      "km": 54,
+      "lr": 22.7,
+      "q": 1
+    },
+    {
+      "week": 4,
+      "canonical": "final_quality",
+      "block": 2,
+      "role": "taper",
+      "km": 45.9,
+      "lr": 19.3,
+      "q": 1
+    },
+    {
+      "week": 5,
+      "canonical": "final_quality",
+      "block": 2,
+      "role": "race",
+      "km": 29.7,
+      "lr": null,
+      "q": 1
+    }
+  ]
+}

@@ -1,0 +1,126 @@
+{
+  "scenario": "5v2",
+  "runway": 5,
+  "injury": false,
+  "intent": {
+    "phases": [
+      {
+        "canonical": "recovery",
+        "name": "恢复期",
+        "start_week": 1,
+        "end_week": 1,
+        "primary_goal": "recovery",
+        "training_goal": "卸掉 2026-10-24 这场 35km 比赛的疲劳：全周纯 E 跑 + 短 strides 唤醒，不安排任何 T/I/M 质量段，让 HRV 与主观疲劳回到可承接专项课的基线。",
+        "block_mode": "light",
+        "rationale": "last_race 显示 2026-10-24 完成 35km、days_ago=2，处于 14 天窗口内，按顺序不变量第一阶段必须是 recovery。fitness 为 CTL 47 / ATL 56 / form -9，ATL 明显高于 CTL，说明刚承受了 35km（接近 longest_run_8wk_km=35 的上限）的负荷；10 月 e_share_pct 仅 46%、quality_sessions 8 次、long_quality_sessions 3 次，是全年质量负荷最重的月份之一，必须先卸再练。近期峰值 96km/周，recovery 上限取 60%≈58km。"
+      },
+      {
+        "canonical": "final_quality",
+        "name": "第四阶段·最终质量期（含减量）",
+        "start_week": 2,
+        "end_week": 5,
+        "primary_goal": "race_specificity",
+        "training_goal": "跑道仅剩 4 周，全部投入 FM 专项：以 M 配速（3:57/km 目标）长距离为主轴，T 段维持阈值触感，量在第 2-3 周持平于平台（承接 8 周均值 82.4km 与峰值 96km），第 4-5 周进入 taper，只保留短而准的 M 刺激。",
+        "block_mode": "plateau",
+        "rationale": "runway_weeks=5 且 recovery 占第 1 周，剩余 4 周全部给 final_quality（≥3 周底线满足），按 ≤6 周坍缩阶梯只允许 recovery+final_quality 两类阶段，foundation/early_quality/transition_quality 不设立。有氧学分已充分（phase_credit：sustained_volume_months_ge40wk=7、months_with_long_run_ge25=7、months_with_ge4_quality=7），无需再补基础期；速度储备亦不缺（PB 5K 18:32、10K 37:35、HM 83:50，均对应优于 3:57/km 的等效能力），R/I 只降为 strides 与短段落触感。专项缺口在马拉松末段：FM PB 170:44（2:50:44）与目标 2:47:00 相差约 3:44，必须在 10 月已有的 35km 与 longest_run_km 基础上把 M 配速段做长做准，而非再加总量。近 8 周 avg_8wk_km=82.4、recent_peak_week_km=96，平台位取 55-90km，与峰值衔接后逐周削减。"
+      }
+    ],
+    "taper_weeks": 2,
+    "milestones": [
+      {
+        "phase": "恢复期",
+        "signal": "RPE 或体感",
+        "criterion": "本周全部为 E 跑，跑后无延迟性酸痛、主观疲劳≤3，HRV 回到个人基线区间；周内完成 3-4 次 20-30s strides 且动作无代偿。"
+      },
+      {
+        "phase": "第四阶段·最终质量期（含减量）",
+        "signal": "T·M 配速课完成度",
+        "criterion": "在进入 taper 前（第 3 周末）至少完成 2 次含 M 配速长距离，单次 M 段累计≥12km 且配速稳定在 3:57-4:05/km，末段掉速≤5%，RPE≤7。"
+      },
+      {
+        "phase": "第四阶段·最终质量期（含减量）",
+        "signal": "long_run_km",
+        "criterion": "taper 前最长一次长距离≥30km（承接 8 周 longest_run_8wk_km=35），其中 M 段≥14km；taper 期长距离保留 18-22km 并含 6-10km M 段。"
+      }
+    ],
+    "gates": [
+      {
+        "phase": "恢复期",
+        "signal": "weekly_km",
+        "criterion": "第 1 周总量≤55km（≤近期峰值 96km 的 60%），零质量课；周末 HRV 回基线且主观疲劳≤3，方可进入专项期。",
+        "action_if_missed": "恢复期延长至 2 周（第 2 周 55-70km 仍纯 E+strides），final_quality 压缩为第 3-5 周 3 周、taper 保持 2 周，M 长距离首周只做 10-12km M 段。"
+      },
+      {
+        "phase": "第四阶段·最终质量期（含减量）",
+        "signal": "T·M 配速课完成度",
+        "criterion": "第 3 周末前完成≥2 次 M 配速长距离且 M 段配速≤4:05/km、掉速≤5%；同时 CTL 不低于 47（赛前不出现断崖式下滑）。",
+        "action_if_missed": "把比赛目标配速下调至 4:05-4:10/km（对应 2:53-2:56），后续 M 段缩短为 8-10km、改以 T 段累计为主；taper 由 2 周提前至 3 周，第 4 周即开始减量。"
+      },
+      {
+        "phase": "第四阶段·最终质量期（含减量）",
+        "signal": "HRV",
+        "criterion": "taper 期（第 4-5 周）HRV 不低于基线、晨脉不升高、主观疲劳≤4，且最后一次 M 配速课能按目标配速完成。",
+        "action_if_missed": "取消最后一次 M 段课改为 8-10km E+strides，taper 加深至 3 周强度只留 strides，按 4:05-4:10/km 的保守配速执行比赛。"
+      }
+    ],
+    "volume_bands": [
+      {
+        "phase": "恢复期",
+        "weekly_km_min": 40,
+        "weekly_km_max": 55
+      },
+      {
+        "phase": "第四阶段·最终质量期（含减量）",
+        "weekly_km_min": 55,
+        "weekly_km_max": 90
+      }
+    ]
+  },
+  "expected": [
+    {
+      "week": 1,
+      "canonical": "recovery",
+      "block": 1,
+      "role": "progress",
+      "km": 40,
+      "lr": 12,
+      "q": 0
+    },
+    {
+      "week": 2,
+      "canonical": "final_quality",
+      "block": 2,
+      "role": "progress",
+      "km": 70.3,
+      "lr": 25.3,
+      "q": 2
+    },
+    {
+      "week": 3,
+      "canonical": "final_quality",
+      "block": 2,
+      "role": "progress",
+      "km": 72.5,
+      "lr": 26.1,
+      "q": 2
+    },
+    {
+      "week": 4,
+      "canonical": "final_quality",
+      "block": 2,
+      "role": "taper",
+      "km": 61.6,
+      "lr": 22.2,
+      "q": 1
+    },
+    {
+      "week": 5,
+      "canonical": "final_quality",
+      "block": 2,
+      "role": "race",
+      "km": 39.9,
+      "lr": null,
+      "q": 1
+    }
+  ]
+}

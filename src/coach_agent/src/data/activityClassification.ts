@@ -29,6 +29,17 @@ export function isRunningActivity(activity: ActivityClassificationInput): boolea
   return activity.sport?.toLowerCase().startsWith("run") === true || activity.sportName?.toLowerCase().includes("run") === true;
 }
 
+/**
+ * 周画像口径的跑步行判定（evidence 月度画像与 L3 habitual 周序列共用）：
+ * 有厂商 sport 信息按 isRunningActivity 同判据（骑行等不入画像），无则退回
+ * >2km 距离阈值。入参取结构子集（sport/sportName 可缺省），两种活动投影都可直接过滤。
+ */
+export function isRunLikeActivity(activity: { name?: string | null; sport?: string | null; sportName?: string | null; distanceM?: number | null }): boolean {
+  return activity.sport != null || activity.sportName != null
+    ? activity.sport!.toLowerCase().startsWith("run") === true || activity.sportName!.toLowerCase().includes("run") === true
+    : (activity.distanceM ?? 0) > 2000;
+}
+
 /** Keep master- and weekly-plan contexts on the same quality definition. */
 export function isQualityRunningActivity(activity: ActivityClassificationInput): boolean {
   if (!isRunningActivity(activity)) return false;

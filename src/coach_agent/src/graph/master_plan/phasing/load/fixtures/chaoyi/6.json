@@ -1,0 +1,124 @@
+{
+  "scenario": "6",
+  "runway": 6,
+  "injury": false,
+  "intent": {
+    "phases": [
+      {
+        "canonical": "recovery",
+        "name": "恢复周",
+        "start_week": 1,
+        "end_week": 1,
+        "primary_goal": "recovery",
+        "training_goal": "卸载 2026-10-24 35km 比赛负荷，恢复 HRV 与主观疲劳，仅 E 跑+strides 维持跑感，不安排质量课。",
+        "block_mode": "light",
+        "rationale": "last_race 为 2026-10-24 的 35km，days_ago=2，且 2026-10 周量 124km、longest_run_km=35、quality_sessions=13，急性负荷高；fitness 显示 CTL=57、ATL=63、form=-7，ATL 高于 CTL，符合 14 天内完赛后的 recovery 入口条件。2026-10 的 e_share_pct=23，说明近期质量负荷偏高，恢复周应只做 E+strides，避免在 6 周跑道开头继续堆强度。"
+      },
+      {
+        "canonical": "final_quality",
+        "name": "最终质量期（比赛专项）",
+        "start_week": 2,
+        "end_week": 6,
+        "primary_goal": "race_specificity",
+        "training_goal": "在 5 周内直接进入 FM 专项：以 M 配速长距离和 T+M 课为主，E 跑托底，平台期维持周量并逐步提高 M 负荷；最后 2 周 taper，不设独立减量阶段。",
+        "block_mode": "plateau",
+        "rationale": "runway_weeks=6，按短跑道坍缩阶梯只能保留 recovery 与 final_quality，故第 2-6 周全部承载专项与 taper。证据上 phase_credit.sustained_volume_months_ge40wk=7、months_with_long_run_ge25=5、months_with_ge4_quality=7，有氧与质量课历史充分，不需要再设 foundation/early_quality/transition_quality。2026-10 周量 124km、longest_run_km=35、long_quality_sessions=5，已具备 M 长距离承载；但 e_share_pct=23 偏低，故 final_quality 只加 M 专项、不再加 R/I，并用 E 份额保护恢复。PB 为 FM 177:11、HM 86:38，而目标 2:50:00（4:02/km）明显激进，本阶段按 B/C 目标思维执行，优先保证专项课完成度而非追极限配速。"
+      }
+    ],
+    "taper_weeks": 2,
+    "milestones": [
+      {
+        "phase": "恢复周",
+        "signal": "HRV/RPE 或体感",
+        "criterion": "HRV 回基线、无酸痛、主观疲劳≤3；本周 E 跑 40-55km 且 strides 后无不适，方可进入 final_quality。"
+      },
+      {
+        "phase": "最终质量期（比赛专项）",
+        "signal": "T·M 配速课完成度 + long_run_km",
+        "criterion": "第 4 周末前完成 ≥24km M 配速长距离，配速落在 4:02-4:15/km，且 T 课完成度≥90%、RPE≤7。"
+      }
+    ],
+    "gates": [
+      {
+        "phase": "恢复周",
+        "signal": "HRV/RPE 或体感 + weekly_km",
+        "criterion": "HRV 回基线、无酸痛、主观疲劳≤3，且 recovery 周 E 跑≥45km 无代偿。",
+        "action_if_missed": "将 recovery 延长至第 2 周，final_quality 压缩为 4 周（仍≥3 周最低限）；取消第一个 M 长距离，仅保留 strides 与短 T 触感，后续 M 负荷顺延。"
+      },
+      {
+        "phase": "最终质量期（比赛专项）",
+        "signal": "T·M 配速课完成度 + long_run_km + RPE",
+        "criterion": "第 4 周末 M 长距离≥24km 且配速落在 4:02-4:15/km，T 课完成度≥90%，RPE≤7。",
+        "action_if_missed": "taper 提前到第 5 周，M 长距离降至 18-20km；比赛目标改为 2:55-3:00（B/C），不追 2:50，优先保证完赛与专项执行质量。"
+      }
+    ],
+    "volume_bands": [
+      {
+        "phase": "恢复周",
+        "weekly_km_min": 40,
+        "weekly_km_max": 60
+      },
+      {
+        "phase": "最终质量期（比赛专项）",
+        "weekly_km_min": 55,
+        "weekly_km_max": 100
+      }
+    ]
+  },
+  "expected": [
+    {
+      "week": 1,
+      "canonical": "recovery",
+      "block": 1,
+      "role": "progress",
+      "km": 40,
+      "lr": 12,
+      "q": 0
+    },
+    {
+      "week": 2,
+      "canonical": "final_quality",
+      "block": 2,
+      "role": "progress",
+      "km": 75.2,
+      "lr": 27.1,
+      "q": 2
+    },
+    {
+      "week": 3,
+      "canonical": "final_quality",
+      "block": 2,
+      "role": "progress",
+      "km": 77.5,
+      "lr": 27.9,
+      "q": 2
+    },
+    {
+      "week": 4,
+      "canonical": "final_quality",
+      "block": 2,
+      "role": "progress",
+      "km": 79.8,
+      "lr": 28.7,
+      "q": 2
+    },
+    {
+      "week": 5,
+      "canonical": "final_quality",
+      "block": 2,
+      "role": "taper",
+      "km": 67.8,
+      "lr": 24.4,
+      "q": 1
+    },
+    {
+      "week": 6,
+      "canonical": "final_quality",
+      "block": 2,
+      "role": "race",
+      "km": 43.9,
+      "lr": null,
+      "q": 1
+    }
+  ]
+}
