@@ -214,6 +214,15 @@ func runAPI() error {
 		Region:    cfg.COS.Region,
 		BaseURL:   cfg.COS.BaseURL,
 	})
+	// Timeseries blob bucket (devops#784 Phase 0): the API's future blob-read
+	// path (pointer-first detail with row fallback lands in Phase 2). Built at
+	// boot for the same fail-fast reason as in the worker — an incomplete
+	// ts-blob section is an explicit error, never a silently degraded read.
+	tsBlobStore, err := newTSBlobStore(cfg.TSBlob)
+	if err != nil {
+		return err
+	}
+	_ = tsBlobStore // Phase 2 (devops#784) injects this into the activity read path.
 	providerLogin := providerLoginAdapter{store: store, delay: watchRequestDelay}
 	providerInfo := providerInfoAdapter{store: store, delay: watchRequestDelay}
 	// File-based provider-binding fallback (registry.ProviderName) reads

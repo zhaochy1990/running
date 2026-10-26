@@ -32,6 +32,7 @@ type Config struct {
 	Runtime        Runtime             `mapstructure:"runtime"`
 	RaceDetection  RaceDetection       `mapstructure:"race-detection"`
 	COS            COS                 `mapstructure:"cos"`
+	TSBlob         TSBlob              `mapstructure:"ts-blob"`
 	WorldAthletics WorldAthletics      `mapstructure:"world-athletics"`
 	ChinaAth       ChinaAth            `mapstructure:"china-ath"`
 }
@@ -103,6 +104,23 @@ type COS struct {
 	// BaseURL is the public origin prepended to the object key when building
 	// the URL stored on the activity row.
 	BaseURL string `mapstructure:"base-url"`
+}
+
+// TSBlob configures the PRIVATE Tencent COS bucket holding per-activity
+// timeseries blobs (devops#784, timeseries→COS migration Phase 0) — a separate
+// bucket from the thumbnails above, with no public origin. Per devops#779 the
+// credentials are the SAME TENCENT_COS_* pair (zero new sub-account): k8s maps
+// STRIDE_WORKER_TS_BLOB_SECRET_ID/_SECRET_KEY from the existing stride-secrets
+// keys; local/testing stacks point at the production bucket read-only (that
+// read-only-ness is a discipline guarantee, devops#778 decision 2 — the key
+// itself can write). Unlike COS, this section is load-bearing, not decorative:
+// boot fails with an explicit error when a field is empty — no inert client,
+// no silent skip.
+type TSBlob struct {
+	SecretID  string `mapstructure:"secret-id"`
+	SecretKey string `mapstructure:"secret-key"`
+	Bucket    string `mapstructure:"bucket"`
+	Region    string `mapstructure:"region"`
 }
 
 // WorldAthletics configures the World Athletics GraphQL client used by the
@@ -189,6 +207,9 @@ type APIConfig struct {
 	// upload endpoint (devops#552); same section the worker uses for route
 	// thumbnails. Leave any field empty and the upload endpoint answers 503.
 	COS COS `mapstructure:"cos"`
+	// TSBlob is the private timeseries bucket (devops#784); same section the
+	// worker uses. Unlike COS, an incomplete section fails boot (see TSBlob).
+	TSBlob TSBlob `mapstructure:"ts-blob"`
 }
 
 // API holds the HTTP API server knobs.

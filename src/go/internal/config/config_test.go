@@ -320,3 +320,30 @@ amap:
 		t.Fatalf("amap key = %q, want env override", cfg.AMap.APIKey)
 	}
 }
+
+func TestMustLoadFrom_TSBlobSectionAndEnvOverride(t *testing.T) {
+	// The ts-blob section defaults its bucket/region in config.yml and takes
+	// secrets from env (devops#784) — same shape as cos:, but load-bearing.
+	body := validYAML + `
+ts-blob:
+  secret-id: ""
+  secret-key: ""
+  bucket: "stride-timeseries-1255867366"
+  region: "ap-shanghai"
+`
+	t.Setenv("STRIDE_WORKER_TS_BLOB_SECRET_ID", "env-id")
+	t.Setenv("STRIDE_WORKER_TS_BLOB_SECRET_KEY", "env-key")
+	t.Setenv("STRIDE_WORKER_TS_BLOB_BUCKET", "env-bucket")
+
+	cfg := MustLoadFrom(writeConfig(t, body))
+
+	if cfg.TSBlob.SecretID != "env-id" || cfg.TSBlob.SecretKey != "env-key" {
+		t.Errorf("ts-blob secrets not sourced from env: %+v", cfg.TSBlob)
+	}
+	if cfg.TSBlob.Bucket != "env-bucket" {
+		t.Errorf("env did not override ts-blob.bucket: %q", cfg.TSBlob.Bucket)
+	}
+	if cfg.TSBlob.Region != "ap-shanghai" {
+		t.Errorf("ts-blob.region = %q, want file default", cfg.TSBlob.Region)
+	}
+}

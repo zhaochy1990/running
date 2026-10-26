@@ -84,6 +84,19 @@ type Activity struct {
 
 	Provider string    `gorm:"column:provider;type:varchar(32);not null;default:coros"`
 	SyncedAt time.Time `gorm:"column:synced_at;type:datetime(6);not null"`
+
+	// Timeseries blob pointer columns (devops#784, timeseries→COS migration
+	// Phase 0; AutoMigrate adds them, all nullable — a not-yet-migrated activity
+	// keeps NULLs and every reader stays on row storage until Phase 2). These
+	// are owned exclusively by the blob write path; provider sync payloads never
+	// carry them, so Phase 1 adds them to the upsert omit list before anything
+	// writes them. ts_sha256 is the hex sha256 of the blob's uncompressed points
+	// JSON (tsstore.EncodePoints); has_gps records whether the blob carries GPS
+	// so the detail path can skip the per-point EXISTS probe (Phase 2).
+	TsBlobKey    *string `gorm:"column:ts_blob_key;type:varchar(256)"`
+	TsPointCount *int    `gorm:"column:ts_point_count;type:int"`
+	TsSHA256     *string `gorm:"column:ts_sha256;type:char(64)"`
+	HasGPS       *bool   `gorm:"column:has_gps;type:tinyint(1)"`
 }
 
 func (Activity) TableName() string { return "activities" }
