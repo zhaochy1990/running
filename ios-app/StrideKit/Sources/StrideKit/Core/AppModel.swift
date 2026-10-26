@@ -39,15 +39,22 @@ public final class AppModel {
 
     private let tokens: any TokenStore
 
-    public init(api: APIClient? = nil, tokens: (any TokenStore)? = nil) {
+    /// coach 通道客户端（SSE 流式 + 会话 JSON；独立 401 单飞，devops#767）。
+    public let coach: CoachClient
+
+    public init(api: APIClient? = nil, tokens: (any TokenStore)? = nil, coach: CoachClient? = nil) {
         let tokenStore = tokens ?? KeychainTokenStore()
         self.tokens = tokenStore
         self.api = api ?? APIClient(tokens: tokenStore)
+        self.coach = coach ?? CoachClient(tokens: tokenStore)
         // 初始化完成后装配 401 会话失效回调（切全屏 Login + redirect）。
         // 全链 weak：回调由 api 持有，而 api 由 self 持有，强捕会成环。
         Task { [weak self] in
             guard let self else { return }
             await self.api.setSessionExpiredHandler { [weak self] in
+                self?.handleSessionExpired()
+            }
+            await self.coach.setSessionExpiredHandler { [weak self] in
                 self?.handleSessionExpired()
             }
         }
@@ -160,20 +167,18 @@ public final class AppModel {
     }
 }
 
-/// 教练上下文交接（小程序 storage `coach.pendingContext`
-/// {target: session|race, kickoff?} 的等价物；字段面 PR-4 教练域展开）。
+/// 教练上下文交接（小程序 storage `coach.pendingContext` 的等价物；
+/// PR-4 教练域定稿：机器可读 target + 展示标签 + 可选 kickoff 首条消息——
+/// 入口按钮已把意图说清时替用户自动发出，教练主动开场确认，兼作会话标题）。
 public struct PendingCoachContext: Hashable, Sendable {
-    public enum Target: String, Hashable, Sendable {
-        case session
-        case race
-    }
+    public var target: CoachTarget
+    public var label: String?
+    public var kickoff: String?
 
-    public var target: Target
-    public var kickoffMessage: String?
-
-    public init(target: Target, kickoffMessage: String? = nil) {
+    public init(target: CoachTarget, label: String? = nil, kickoff: String? = nil) {
         self.target = target
-        self.kickoffMessage = kickoffMessage
+        self.label = label
+        self.kickoff = kickoff
     }
 }
 
