@@ -1,5 +1,9 @@
 # STRIDE Mobile (Flutter)
 
+> **⚠️ 本线已冻结（2026-10-25）**：产品路线定型为 SwiftUI 原生 iOS App + 微信小程序双轨
+> （devops#746），Flutter 线停止开发。本目录保留作 iOS 重写的**参考实现**——规格与逻辑
+> 对照源，勿在此续开发或提交新功能；iOS 工程落点为 `ios-app/`（新图 #746）。
+
 STRIDE 跑步训练项目的跨端移动 App。信息架构对齐小程序四 tab（训练 / 记录 /
 教练 / 我，stride-devops#414），**Android v1** 为当前发布目标；iOS 复用同一份
 `lib/` 代码，终验以 iOS 模拟器 + 真机走查为准。
