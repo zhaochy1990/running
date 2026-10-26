@@ -34,7 +34,7 @@ export function createMasterPlanContextTools(provider: MasterPlanContextProvider
     {
       name: "get_master_plan_context",
       description:
-        "一次获取有界聚合的运动员上下文：用户资料与伤病、PB、跑步校准、比赛候选、" +
+        "一次获取有界聚合的运动员上下文：用户资料与伤病、PB、跑步校准、比赛记录、" +
         "近两年按月历史、近期按周训练与恢复、当前 CTL/ATL/Form，以及当前计划连续性。",
       schema: getMasterPlanContextSchema,
       handler: (input, runtime) => impl.getMasterPlanContext(input, runtime),

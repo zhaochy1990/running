@@ -23,10 +23,11 @@ test("fixture evidence: 月度窗口 = as_of 往前 6 个整月（2026-04 起）
   }
 });
 
-test("fixture evidence: chaoyi 上场比赛 2026-10-24 → days_ago=2（I3 赛后先恢复场景）", async () => {
+test("fixture evidence: chaoyi race_history 换显式信号并集后，最近比赛=2026-04-12 全马（35km 渐进训练课不再误入，devops#790）", async () => {
   const evidence = await buildAthleteEvidence("chaoyi");
-  assert.equal(evidence.last_race?.date, "2026-10-24");
-  assert.equal(evidence.last_race?.days_ago, 2);
+  assert.equal(evidence.last_race?.date, "2026-04-12");
+  assert.equal(evidence.last_race?.distance_km, 42.7);
+  assert.equal(evidence.last_race?.days_ago, 197);
 });
 
 test("fixture evidence: phase_credit 五字段齐全且非负", async () => {
@@ -114,7 +115,7 @@ const fixtureSnapshot = async (name: AthleteName, mutate: (raw: Record<string, u
 
 test("三运动员 current_capability：阶梯第 1 档（HM+ 全力最佳）、四距离等效齐全、pace_zones 五带直读", async () => {
   const expected = {
-    chaoyi: { vdot: 51.3, sourceDate: "2026-03-15", improvementPct: 8.8, fmEquiv: 11187 },
+    chaoyi: { vdot: 51.1, sourceDate: "2026-03-22", improvementPct: 9.2, fmEquiv: 11228 },
     dingchentao: { vdot: 57, sourceDate: "2026-03-22", improvementPct: 4.6, fmEquiv: 10241 },
     pan: { vdot: 42.2, sourceDate: "2026-04-12", improvementPct: 2.6, fmEquiv: 13180 },
   } as const;
@@ -233,7 +234,35 @@ test("buildIntentPayload 透出 improvement_pct 与 current_capability（判断�
   const evidence = await buildAthleteEvidence("chaoyi");
   const payload = buildIntentPayload({ evidence, runwayWeeks: 20, raceDate: "2027-03-01" });
   const out = payload.evidence as typeof evidence;
-  assert.equal(out.target.improvement_pct, 8.8);
+  assert.equal(out.target.improvement_pct, 9.2);
   assert.equal(out.current_capability.source, "recent_race_hm_fm");
   assert.equal(out.peak_fm_pb?.achieved_at, "2025-03-30");
+});
+
+test("last_race ≥10km 下限：最近比赛是 5K 时不触发 I3（跳过取更早的 HM；只有 5K 则为 null）（devops#790）", async () => {
+  const mkRace = (date: string, distanceKm: number) => ({
+    date,
+    distance_km: distanceKm,
+    duration_min: 60,
+    avg_pace_s_km: null,
+    avg_hr: null,
+    max_hr: null,
+    feel: null,
+  });
+  const goal = { raceName: "测试", distance: "FM" as const, targetTime: "3:40:00", weeklyRunDaysMax: 5 };
+  const withHistory = async (rows: unknown[]) => {
+    const { snapshot, activities } = await fixtureSnapshot("pan", (raw) => {
+      raw.race_history = rows;
+    });
+    return buildPhaseEvidence(snapshot, activities, goal, AS_OF);
+  };
+
+  // 最近 5K（2026-10-20）+ 更早 HM（2026-10-01）→ last_race 取 HM，不被 5K 触发
+  const fiveKThenHm = await withHistory([mkRace("2026-10-20", 5), mkRace("2026-10-01", 21.1)]);
+  assert.equal(fiveKThenHm.last_race?.date, "2026-10-01");
+  assert.equal(fiveKThenHm.last_race?.distance_km, 21.1);
+
+  // 只有 5K → last_race 为 null（无长距离比赛，I3 不触发）
+  const fiveKOnly = await withHistory([mkRace("2026-10-20", 5)]);
+  assert.equal(fiveKOnly.last_race, null);
 });

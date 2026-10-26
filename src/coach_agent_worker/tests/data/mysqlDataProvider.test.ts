@@ -371,3 +371,55 @@ test("two live season plans covering the same day stay undecidable", async () =>
 
   await assert.rejects(() => provider.getMasterPlanMetadataForDate("athlete-1", "2026-09-14"), /multiple master plans cover 2026-09-14/);
 });
+
+test("getRaceHistory 走显式比赛信号并集：JOIN races ∪ session_class='race'，距离只做 4.5km 噪音地板、无距离判据兜底（devops#790）", async () => {
+  const calls: Array<{ sql: string; values: unknown[] }> = [];
+  const provider = new MySqlDataProvider({
+    async query(sql: string, values: unknown[]) {
+      calls.push({ sql, values });
+      return [[]];
+    },
+  } as never);
+
+  await provider.getRaceHistory("athlete-1", { asOfDate: "2026-10-26" });
+  await provider.getRaceHistory("athlete-1", { asOfDate: "2026-10-26", minDistanceKm: 10 });
+  assert.match(calls[0]?.sql ?? "", /LEFT JOIN races r ON r\.user_id = a\.user_id AND r\.label_id = a\.label_id/);
+  assert.match(calls[0]?.sql ?? "", /LEFT JOIN activity_training_load t ON t\.user_id = a\.user_id AND t\.label_id = a\.label_id/);
+  assert.match(calls[0]?.sql ?? "", /\(r\.label_id IS NOT NULL OR t\.session_class = 'race'\)/);
+  // 两信号皆空 = 真没比赛，不许悄悄退回距离判据（如 OR a.distance_m >= 20000）
+  assert.doesNotMatch(calls[0]?.sql ?? "", /OR a\.distance_m/);
+  assert.deepEqual(calls[0]?.values, ["athlete-1", 4500, "2026-10-26", 15]);
+  assert.deepEqual(calls[1]?.values, ["athlete-1", 10000, "2026-10-26", 15]);
+});
+
+test("getRaceHistory source 映射：races 命中 / session_class 命中 / 双命中同一 label 一行三态", async () => {
+  const row = (fromRaces: number | null, fromClass: number | null) => ({
+    sh_day: new Date("2026-10-24T00:00:00Z"),
+    label_id: "act-1",
+    name: "上海马拉松",
+    sport: "run",
+    distance_m: 42195,
+    duration_s: 10800,
+    avg_pace_s_km: 256,
+    avg_hr: 160,
+    max_hr: 178,
+    feel: 7,
+    from_races: fromRaces,
+    from_class: fromClass,
+  });
+  for (const [fromRaces, fromClass, expected] of [
+    // from_class 未命中时 LEFT JOIN 投影是 NULL（NULL = 'race' → NULL），0/1 是命中侧的形态
+    [1, 0, { races: true, sessionClass: false }],
+    [1, null, { races: true, sessionClass: false }],
+    [0, 1, { races: false, sessionClass: true }],
+    [1, 1, { races: true, sessionClass: true }],
+  ] as const) {
+    const provider = new MySqlDataProvider({
+      async query() {
+        return [[row(fromRaces, fromClass)]];
+      },
+    } as never);
+    const [effort] = await provider.getRaceHistory("athlete-1", { asOfDate: "2026-10-26" });
+    assert.deepEqual(effort?.source, expected, `from_races=${fromRaces} from_class=${fromClass}`);
+  }
+});
