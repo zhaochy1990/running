@@ -13,7 +13,11 @@ import type { DataProvider, PersonalBest, RaceEffort } from "../data/dataProvide
 import { defineCoachTools } from "./common.js";
 
 const getRaceHistorySchema = z.object({
-  minDistanceKm: z.number().positive().optional().describe("比赛候选的最小距离（公里），缺省 20（半马及以上）。想连长距离拉练一起看可调小。"),
+  minDistanceKm: z
+    .number()
+    .positive()
+    .optional()
+    .describe("返回记录的最小距离（公里），缺省 4.5。只是防极小课噪音的地板，不筛选比赛——比赛身份由 races 表与 session_class 判定。"),
   limit: z.number().int().positive().optional().describe("最多返回几条，缺省 15，最近在前"),
 });
 
@@ -67,8 +71,8 @@ export function createRaceTools(store: DataProvider): StructuredTool[] {
     {
       name: "get_race_history",
       description:
-        "回看运动员的长距离跑步记录（默认距离 ≥ 20km，最近在前），含距离、用时、平均配速、平均/最大心率与主观感受 feel。" +
-        "数据没有显式的“比赛”标记，返回的记录只是比赛候选。",
+        "回看运动员确认过的比赛记录（最近在前），含距离、用时、平均配速、平均/最大心率与主观感受 feel。" +
+        "比赛身份来自两个显式信号（race detection 的 races 表、活动分类器 session_class='race'），长距离训练课不会混入。",
       schema: getRaceHistorySchema,
       handler: (input, runtime) => impl.getRaceHistory(input, runtime),
     },

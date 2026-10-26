@@ -13,6 +13,7 @@ export interface DataProvider {
   /** 单条运动的完整明细（含 `laps` 分段）；不存在返回 null。列表查询用 getActivitySummariesByDateRange。 */
   getActivityDetail(userId: string, labelId: string): Promise<Activity | null>;
   getDailyTrainingLoadByDateRange(userId: string, startDay: string, endDay: string): Promise<DailyTrainingLoad[]>;
+  /** 确认为比赛的跑步记录（races 表 ∪ session_class='race'，devops#790），最近在前；`minDistanceKm` 只是噪音地板（默认 4.5km），不做比赛判定。 */
   getRaceHistory(userId: string, options: { asOfDate: string; minDistanceKm?: number; limit?: number }): Promise<RaceEffort[]>;
   getPersonalBests(userId: string, asOfDate: string): Promise<PersonalBest[]>;
   getLatestRunningCalibration(userId: string, asOfDate: string): Promise<RunningCalibration | null>;
@@ -110,6 +111,8 @@ export interface RaceEffort {
   avgHr: number | null;
   maxHr: number | null;
   feel: number | null;
+  /** 比赛信号的来源（devops#790）：races=race detection 确认行；sessionClass=分类器 session_class='race'。双命中置信最高。 */
+  source?: { races: boolean; sessionClass: boolean };
 }
 export interface PersonalBest {
   distance: string;

@@ -353,7 +353,8 @@ export function buildPhaseEvidence(snapshot: ContextSnapshot, activities: Phasin
       };
     });
 
-  const lastRace = snapshot.race_history[0] ?? null;
+  // I3 赛后恢复门输入（devops#790）：5K 比赛不该触发「首阶段 recovery」，只认 ≥10km 的比赛行
+  const lastRace = snapshot.race_history.find((r) => (r.distance_km ?? 0) >= 10) ?? null;
   const pbs: Record<string, string> = {};
   for (const pb of snapshot.personal_bests) pbs[pb.distance] = `${Math.floor(pb.time_sec / 60)}:${String(Math.round(pb.time_sec % 60)).padStart(2, "0")}`;
   const targetSec = parseHms(goal.targetTime);

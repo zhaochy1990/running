@@ -348,24 +348,30 @@ export class MySqlDataProvider implements DataProvider {
   }
 
   /**
-   * “比赛级别”的跑步努力，最近在前。数据没有显式比赛标记，故以「距离 ≥
-   * `minDistanceKm`（默认 20km，即半马及以上）的跑步」作为比赛候选，带上配速、心率、
-   * `feel` 供上层判断是否“跑崩”。生成赛季计划前用它回看运动员的历史比赛表现。
+   * 确认为比赛的跑步努力，最近在前（devops#790）：取两个显式比赛信号的并集
+   * ——`races` 表（race detection 模型打分 + 日历匹配双确认）∪
+   * `activity_training_load.session_class='race'`（手表证据分类器）——距离只做
+   * `minDistanceKm`（默认 4.5km，取锚桶下界）的噪音地板，不再作为比赛判据。
+   * 两信号皆空即无比赛，不设距离兜底。生成赛季计划前用它回看运动员的历史比赛表现。
    */
   async getRaceHistory(userId: string, options: { asOfDate: string; minDistanceKm?: number; limit?: number }): Promise<RaceEffort[]> {
     assertDay(options.asOfDate);
-    const minDistanceM = Math.round((options.minDistanceKm ?? 20) * 1000);
+    const minDistanceM = Math.round((options.minDistanceKm ?? 4.5) * 1000);
     const limit = Math.min(Math.max(options.limit ?? 15, 1), 100);
     const [rows] = await this.pool.query<RowDataPacket[]>(
-      `SELECT DATE(date + INTERVAL 8 HOUR) AS sh_day, label_id, name, sport,
-              distance_m, duration_s, avg_pace_s_km, avg_hr, max_hr, feel
-         FROM activities
-	       WHERE user_id = ?
-	         AND sport LIKE 'run%'
-	         AND distance_m >= ?
-	         AND DATE(date + INTERVAL 8 HOUR) <= ?
-	       ORDER BY date DESC
-	       LIMIT ?`,
+      `SELECT DATE(a.date + INTERVAL 8 HOUR) AS sh_day, a.label_id, a.name, a.sport,
+              a.distance_m, a.duration_s, a.avg_pace_s_km, a.avg_hr, a.max_hr, a.feel,
+              (r.label_id IS NOT NULL) AS from_races, (t.session_class = 'race') AS from_class
+         FROM activities a
+         LEFT JOIN races r ON r.user_id = a.user_id AND r.label_id = a.label_id
+         LEFT JOIN activity_training_load t ON t.user_id = a.user_id AND t.label_id = a.label_id
+        WHERE a.user_id = ?
+          AND a.sport LIKE 'run%'
+          AND a.distance_m >= ?
+          AND (r.label_id IS NOT NULL OR t.session_class = 'race')
+          AND DATE(a.date + INTERVAL 8 HOUR) <= ?
+        ORDER BY a.date DESC
+        LIMIT ?`,
       [userId, minDistanceM, options.asOfDate, limit],
     );
     return rows.map(rowToRaceEffort);
@@ -838,6 +844,7 @@ function rowToRaceEffort(row: RowDataPacket): RaceEffort {
     avgHr: (row.avg_hr ?? null) as number | null,
     maxHr: (row.max_hr ?? null) as number | null,
     feel: (row.feel ?? null) as number | null,
+    source: { races: row.from_races === 1, sessionClass: row.from_class === 1 },
   };
 }
 
