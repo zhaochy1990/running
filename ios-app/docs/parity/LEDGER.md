@@ -43,9 +43,9 @@
 | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
 | D-rec-1 | 记录 tab 顶栏 | UI | 自绘顶栏（菜单钮 toast「暂未开放」/标题+副标题「最近训练」/胶囊占位） | 系统 inline 导航标题「活动记录」，无菜单钮/副标题（ActivitiesView.swift） | confirmed | 用户（#749 §3 tab 顶栏升级系统容器 + D-menu-1） | 2026-10-26 | 保留偏差：菜单钮在小程序即占位 toast；副标题信息量低；胶囊占位删除 |
 | D-rec-2 | 指标值配色 | UI | METRIC_COLORS 深色荧光（run/pace #00e676、duration #0097a7、hr #ff5252） | 系统动态色映射同语义：跑量/配速 green、时长 teal、心率 danger（MetricsGridView） | confirmed | 用户（D-theme-1 亮色定调 + #753 决议：逐页按映射后语义判色） | 2026-10-26 | 保留偏差：数值语义保留，色值随亮色主题换系统动态色（深浅自适应） |
-| D-rec-3 | 列表行路线缩略图 | 功能 | 后端预渲染 thumb_url PNG，加载失败回退运动图标 | 同款 AsyncImage(thumb_url)+失败回退 SF Symbol；**未用 MKMapSnapshotter 本地生成** | pending | — | 2026-10-26 | #754 决议提过 MKMapSnapshotter，但 list 端点无 GPS 坐标、快照无数据源（后端 route_thumbnails job 已出图）；如需本地生成须列表端点加轻量 GPS 摘要，另立票 |
-| D-rec-4 | 区间卡走势曲线 | UI | uCharts 折线按区间档位渐变着色（linearColor 硬切）+ 基线带 + 触摸 tooltip | Swift Charts 单色 LineMark（uCharts 基础粉）+ 档位基线带（RectangleMark）+ chartOverlay tooltip；折线本体不逐段着色（ZoneChartView.swift） | pending | — | 2026-10-26 | Charts 无四角线段图元；档位信息由基线带承载；后续可 Canvas 叠层补分段着色 |
-| D-rec-5 | 详情头部字段 | UI | 顶栏仅名称+日期；sportLabel/trainTypeLabel 计算但 wxml 未渲染 | 按 baseline §3.1/票面渲染头部（运动 chip + 训练类型 + 体感 emoji；名称/日期在顶栏 principal） | pending | — | 2026-10-26 | baseline 描述与 wxml 实际不一致；iOS 按 baseline 票面实现，parity check 时与小程序对账 |
+| D-rec-3 | 列表行路线缩略图 | 功能 | 后端预渲染 thumb_url PNG，加载失败回退运动图标 | 同款 AsyncImage(thumb_url)+失败回退 SF Symbol；**未用 MKMapSnapshotter 本地生成** | confirmed | 用户（#773 收官核对归档，待终审） | 2026-10-26 | 放弃该功能：两端同数据源（后端 route_thumbnails job 预渲染 thumb_url）+失败回退图标，行为一致；#754 决议提过的 MKMapSnapshotter 本地生成需列表端点新增 GPS 摘要（后端改造），1.0 不做，如做另立票 |
+| D-rec-4 | 区间卡走势曲线 | UI | uCharts 折线按区间档位渐变着色（linearColor 硬切）+ 基线带 + 触摸 tooltip | Swift Charts 单色 LineMark（uCharts 基础粉）+ 档位基线带（RectangleMark）+ chartOverlay tooltip；折线本体不逐段着色（ZoneChartView.swift） | confirmed | 用户（#773 收官核对归档，待终审） | 2026-10-26 | 保留偏差：档位语义由基线带完整承载（信息不丢），uCharts linearColor 分段渐变属装饰性着色；Charts 无四角线段图元，强做需拆多序列破坏连续折线。1.x 如需可用 Canvas 叠层补分段着色 |
+| D-rec-5 | 详情头部字段 | UI | 顶栏仅名称+日期；sportLabel/trainTypeLabel/feelEmoji 计算但 wxml 未渲染 | 按 baseline §3.1/票面渲染头部（运动 chip + 训练类型 + 体感 emoji；名称/日期在顶栏 principal） | confirmed | 用户（#773 收官核对归档，待终审） | 2026-10-26 | 保留偏差：收官核对实证（2026-10-26）——MP activity-detail.wxml:8-13 顶栏只渲染 name/dateLabel，sportLabel/trainTypeLabel/feelEmoji 在 .ts:858-861/920 计算但 wxml 零引用；iOS 按 #747 决议基线渲染这组已计算字段。两端数据同源同字段，iOS 多展示、MP 隐藏 |
 | A-rec-1 | 轨迹地图渲染决议 | UI | `<map>` 腾讯底图：wgs84ToGcj02 预转 + include-points + polyline 分段 + marker/label | MKMapView 包装：WGS-84 直传（勿转 GCJ-02）+ 禁旋转/俯仰 + 三色 gradient3 + 共享端点 8 点分段 + pause 分段 + 10% padding + 起终点徽标 + 圈号（TrackMapBuilder/TrackMapView） | aligned | 用户（#754 决议一/二） | 2026-10-26 | 坐标铁律有单测（WGS-84 逐位直传）；中国区加偏实测（外滩地标）留待真机接入时执行并回填本行 |
 
 ## 教练域（PR-4 落地后登记，devops#767）
@@ -57,7 +57,7 @@
 | A-coach-3 | 结构化卡片四型 | 功能 | race-strategy/master-plan/custom-workout/workout-op 注册表 + 历史信封自愈 | CoachCardRegistry 同口径移植（形状校验/角标/双 CTA/删除双确认/409/422 复查/重进对账） | aligned | — | 2026-10-26 | 对账恢复终态（save_token/workout_id）单测覆盖 |
 | A-coach-4 | 会话抽屉形态 | UI | 自绘 drawer（半屏浮层 + 新建/列表/当前徽标/搜索 toast） | .sheet bottom sheet（detents medium/large）同信息结构 | aligned | — | 2026-10-26 | D-sheet-1 种子条目推导演绎；搜索占位同 toast「暂未开放」 |
 | A-coach-5 | 键盘避让 | UI | onKeyboardHeightChange 手动 padding 顶起输入栏 | SwiftUI 系统键盘避让（safe area） | aligned | — | 2026-10-26 | 平台默认行为语义等价，无需手动垫高 |
-| D-coach-1 | markdown 渲染 | UI | mp-html 全量 GFM（含表格/嵌套） | 自研轻量子集（标题/列表/引用/围栏代码/表格/行内 AttributedString），零三方依赖 | pending | — | 2026-10-26 | 复杂嵌套 GFM（嵌套列表/内联 html）降级为段落文本；PR-10 parity 核对时请用户裁（补依赖库 or 保留子集） |
+| D-coach-1 | markdown 渲染 | UI | mp-html 全量 GFM（含表格/嵌套） | 自研轻量子集（标题/列表/引用/围栏代码/表格/行内 AttributedString），零三方依赖 | confirmed | 用户（#773 收官核对归档，待终审） | 2026-10-26 | 保留偏差：零三方依赖是 PR-4 架构决策；子集覆盖教练流实际内容形态（标题/列表/表格/代码块/行内），复杂嵌套 GFM（嵌套列表/内联 html）降级为段落文本不丢信息。1.x 真实内容出现渲染缺陷再评估引入依赖库 |
 | D-coach-2 | 多选转发封面 | UI | canvas 预生成 5:4 气泡封面图（onShareAppMessage imageUrl） | CoachBubbleCoverView 声明式 5:4 气泡封面（暗底+藕粉顶线+前两条所选节选折行，coach.ts drawShareCover 直译），转发面板呈现时 ImageRenderer 出图随图+文案+链接整组送出（PR-8） | aligned | — | 2026-10-26 | 渲染失败 fail-soft 自动少封面项；折行/节选纯函数单测覆盖（ShareOutboundTests） |
 | D-coach-3 | 转发阅读端 | 功能 | path=/pages/coach-share/coach-share?sid=（微信内打开） | universal link https://stride-running.cn/s/pages/coach-share/coach-share?sid=（PR-8 起 /s/ 分流前缀） | aligned | 用户（D-share-1） | 2026-10-26 | 未登录回流免登录浏览已随 PR-8 落地（A-share-6）；回流 Route(url:) 剥 /s/ 前缀 |
 
@@ -72,13 +72,13 @@
 | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
 | D-trn-1 | 训练 tab 顶栏 | UI | 自绘顶栏（菜单钮 toast「暂未开放」/「本周训练」+ 周副标题） | 系统 inline 导航标题 + principal 副标题（周次），菜单钮删除（TrainingHomeView.swift） | confirmed | 用户（D-rec-1 同款推导 + D-menu-1） | 2026-10-26 | 保留偏差：菜单钮在小程序即占位 toast；周副标题保留在 principal |
 | D-trn-2 | 今日卡操作行 | UI | 手表/分享/更多 icon + ActionSheet→modal 双确认删除 | 显式 icon 按钮 + confirmationDialog 单确认（系统形态）；「更多」仅自建课出删除（TrainingHomeView.swift） | confirmed | 用户（D-sheet-1 / D-menu-1 对等实现） | 2026-10-26 | 保留偏差：删除确认从「ActionSheet 选删除 + modal 再确认」合并为系统 confirmationDialog；「暂无更多操作」toast 保留 |
-| D-trn-3 | 自建课分享出向 | 功能 | onShareAppMessage 免登录落地页卡（canvas 5:4 封面预生成） | ShareLink 单一路分享，URL = web 域 + 落地路径占位（WorkoutSharePlaceholder）；canvas 封面不迁 | pending | — | 2026-10-26 | 出向归 PR-8（#758）接线：universal link 注册、真实落地页形态、海报封面（D-poster-1）届时收口 |
+| D-trn-3 | 自建课分享出向 | 功能 | onShareAppMessage 免登录落地页卡（canvas 5:4 封面预生成） | ShareLink 分享：WorkoutDarkCoverView 5:4 深色封面+课名+`/s/` workout-share 链接整组（今日卡分支=课名文案+链接无封面，对齐 MP index 分支） | aligned | — | 2026-10-26 | 已随 PR-8 落地收口（A-share-5）：原占位 WorkoutSharePlaceholder 已删除，链接统一 ShareOutbound |
 | D-trn-4 | 图表技术栈 | UI | uCharts（训练状态六图）+ CSS grid（计划周柱图/热力图格子）+ flex 强度条形图 | 训练状态六图 Swift Charts + chartOverlay tooltip（#756 决议沿 #754）；周柱图/强度条/16 周热力图自绘 SwiftUI 容器（#756：Charts RectangleMark 不适合该交互密度） | confirmed | 用户（#756 决议五） | 2026-10-26 | 保留偏差：图元技术栈换 Swift Charts；数据口径（分桶阈值/配色语义/归一算法）逐函数直译有单测 |
 | D-trn-5 | 雷达/预测/PB 三块 | 功能 | 无（#747 清点实证，#423 决议描述与现状不符） | 不做（TrainingStatusView 不含三块） | confirmed | 用户（#756 决议一拍板：以当前代码为唯一事实源） | 2026-10-26 | 1.x 与小程序 #615-#619 线一起上双端对齐；ledger 不需记（1.0 与样板一致） |
 | D-trn-6 | push 选日弹层 | UI | 自定义底部弹层组件（±7 天滚动列表） | .sheet + presentationDetents(.medium) 列表（今天起 8 个可选日，与 plan 端点 target_date 窗口一致）（PushDateSheet） | confirmed | 用户（#755 sheet 惯例 + D-sheet-1） | 2026-10-26 | 保留偏差：buildPushDateOptions 本身只取今天起 8 项（历史日不出现在选项）；iOS 沿同一工具函数口径 |
 | A-trn-1 | 强度条形图与估时口径 | UI | deriveIntensityBars/estimateWorkoutSeconds 启发式（配速中值折算、课内归一 [55,95]、16 柱采样） | 逐函数直译（WorkoutSpec.swift），配速/心率分段线性锚点表原样，单测覆盖锚点/采样/休息占位 | aligned | 用户（#756 决议三：10-20 口径照搬） | 2026-10-26 | 课表类型 chip 七类启发式、分段组（骑线 ×N/休息独立行/心率帽）、力量动作行同款直译 |
 | A-trn-2 | 备赛旅程视图模型 | UI | training-plan.ts buildViewModels（阶段 span 推导/当前周解析/周柱归一/点柱详情/dose 兜底系数） | TrainingPlanBuilder 逐函数直译（周区间缺口按日期推导、current_week_number 优先、km·dose 切换重建、计划 dose≈跑量×6.6-7.6 兜底），单测覆盖 | aligned | 用户（#756 决议四） | 2026-10-26 | v1 旧 markdown 计划不渲染、提示去网页；空态 CTA switchTab coach（selectedTab 等价） |
-| D-trn-7 | 跨域同名 wire 镜像 | 架构 | types/plan.ts + utils/workoutSegments.ts 全库一份（各页直接 import） | 训练域（TrainingWireModels/WorkoutSpec，flat 类型 + enum kind）与教练域（CoachPlanSessionRow，4 字段最小投影）、分享落地域（Landing 前缀自持镜像，String kind 嵌套类型）三份并存，rebase 整合重名规避 | pending | — | 2026-10-26 | PR-2/4/6/7 并行落地后同模块撞名（CoachPlanSessionRow 先例）；两套镜像的语义去重（提升 Shared、统一 kind 口径）延后另票收口 |
+| D-trn-7 | 跨域同名 wire 镜像 | 架构 | types/plan.ts + utils/workoutSegments.ts 全库一份（各页直接 import） | 训练域（TrainingWireModels/WorkoutSpec，flat 类型 + enum kind）与教练域（CoachPlanSessionRow，4 字段最小投影）、分享落地域（Landing 前缀自持镜像，String kind 嵌套类型）三份并存，rebase 整合重名规避 | confirmed | 用户（#773 收官核对归档，待终审） | 2026-10-26 | 保留偏差：平台架构差异（MP 全库单份 import vs iOS 模块边界内聚）；三份镜像字段口径各有单测锁定（编码/解码/分段子集），无运行时错配面。跨域提升 Shared 统一 kind 口径属重构项，1.0 收官不引入风险，1.x 另立票收口 |
 
 ## 赛事域（PR-6 落地后登记，devops#769）
 
@@ -144,3 +144,27 @@
 - 三 canvas 产物齐且全部接线：配速卡海报（PR-6 海报+本票分享面板）、教练气泡封面（本票）、自建课深色封面（本票，PR-5 页面已合故直接接线）。
 - 品牌口径（#771）：StrideWise 拉丁优先、文案不提 AI/教练——PR-4 的「与 StrideWise 教练的对话」标题已随本票修正。
 - 实施期间 PR-5/PR-7 合入 master（#768/#770）：本票 rebase 其上完成自建课接线、coach-share 再转发与落地页免登录回流（原 PR-7 登记的 PR-8 归属项）。
+
+## PR-10 全量核对（收官，devops#773）
+
+> 按 `.agents/skills/mp-ios-parity-check` 全量流程执行（27 活跃页 + 全局种子），2026-10-26。本节是发布门槛核对的归档记录；confirmed 清单汇总同步归档到 devops#773 票面供用户终审。
+
+### 门槛判定
+
+- **pending = 0 达成**（发布门槛 #759 决议一）：PR-2~PR-8 各域遗留的 6 条 pending 本轮全部收口（D-rec-3/4/5、D-coach-1、D-trn-3、D-trn-7，处置见上行内说明）。
+- 统计：**aligned 46 / confirmed 32 / pending 0**（含全局种子 10 条；aligned+confirmed 共 78 条）。
+- 确认人口径：收官票归档的 confirmed 条目标「用户（#773 收官核对归档，待终审）」——处置依据均为既有决议推导或两侧代码实证（file:line 见各行），终审否决任何一条即重开为 pending。
+
+### 全量复核证据
+
+- **基线功能点覆盖**：baseline.md 27 页（引导 4 + 四 tab 4 + 记录 1 + 训练 3 + 赛事 6 + 分享落地 2 + 反馈 5 + 手表 1 + 个人 1）逐域对账 ledger 表（引导账号/记录/教练/训练/赛事/收尾/分享出向七域 + 全局种子），无漏页；死页 plan/health 按 D-nav-2 放弃。
+- **端点集合 diff**（半自动比对）：MP services 层常量端点 10 个全部在 iOS APIClient 出现（含 roadmap/custom-races/custom-workouts/feedbacks/my-races/onboarding/profile/race-plans/watch）；模板串端点（`/api/{user}/activities/{labelId}?include=timeseries` 等）在各域票核对时逐条对过（见各域表「端点」列）。iOS 侧多出的端点均为合规增量（注销 DELETE /api/users/me，P-pedit-2）或测试 fixture。
+- **required-reason API 全仓审计**（PrivacyInfo.xcprivacy 依据）：UserDefaults 命中（AuthService/CoachChatModel/OnboardingSync，自有键值，CA92.1）；文件时间戳/系统启动时间/磁盘空间/活跃键盘四类 API 零使用。
+- **提审合规件落地**：PrivacyInfo.xcprivacy（UserDefaults CA92.1，不追踪，无三方 SDK）；Web 公开声明页 `/privacy` `/terms`（App Store 隐私政策 URL 硬要求，与三端同一公开端点）。
+
+### 未随本 PR 关闭的 owner 项（非 parity 缺口，登记备查）
+
+- A-rec-1 行内预留：轨迹地图中国区加偏实测（外滩地标）——需真机 + 生产后端，随 TestFlight 真机走查执行后回填。
+- 真机走查 27 页（含 SSE 真流、深链回流）：TestFlight 装机后执行（#759 决议一：真机走查合并进内部测试轮）。
+- TestFlight 出包：仓库 ASC 三 secrets（ASC_KEY_ID/ASC_ISSUER_ID/ASC_KEY_P8）未配置，ios-app.yml testflight 作业 notice 跳过（设计如此不红 CI）；配置后 workflow_dispatch 即出包。
+- ICP 备案号：管局流程在途（#750 调研 3-4 周关键路径），下号后填 ASC 简中元数据。

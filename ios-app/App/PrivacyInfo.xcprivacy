@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	隐私清单（devops#750 调研结论 / devops#773 提审合规件）。
+	落在 App/（同步文件夹）→ 自动进 bundle 根，App Store 提交时随包扫描。
+
+	- NSPrivacyTracking = false：无追踪（无广告/无跨 App 追踪 SDK）。
+	- NSPrivacyTrackingDomains：不追踪，无需域清单。
+	- NSPrivacyCollectedDataTypes：数据收集在 ASC「App 隐私」问卷按后端实际
+	  申报；清单文件本身按「端上不额外收集」口径留空（与 #750 调研一致：
+	  纯自研 + 系统框架，无三方 SDK）。
+	- NSPrivacyAccessedAPITypes：全仓审计（2026-10-26）仅 UserDefaults 命中
+	  required-reason 类别（AuthService/CoachChatModel/OnboardingSync 均为
+	  自有键值读写，CA92.1）。文件时间戳/系统启动时间/磁盘空间/活跃键盘
+	  四类 API 零使用（grep 审计记录见 devops#773 PR 说明）。
+	-->
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

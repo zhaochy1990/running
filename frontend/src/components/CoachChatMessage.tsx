@@ -1,17 +1,14 @@
 /**
  * CoachChatMessage — one chat bubble.
  *
- * Coach turns render sanitized GFM Markdown inside a `prose` article. We use
- * react-markdown + remark-gfm and NEVER enable rehypeRaw, so raw HTML in the
- * model output is inert. Links are additionally sanitized (javascript: hrefs
- * dropped, external links get rel="noopener noreferrer").
+ * Coach turns render sanitized GFM Markdown inside a `prose` article via
+ * SafeMarkdown（react-markdown + remark-gfm，永不启用 rehypeRaw，原始 HTML
+ * 惰性化，链接 scheme 白名单）—— 安全口径与实现见 SafeMarkdown.tsx。
  *
  * User turns render as plain text (no Markdown), so the athlete's own message
  * can never be interpreted as markup.
  */
-import type { ComponentPropsWithoutRef } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import SafeMarkdown from "./SafeMarkdown";
 
 import type { AssistantPart, ChatMessageViewRole } from "../types/coachChat";
 
@@ -28,44 +25,6 @@ export interface CoachChatMessageProps {
   /** Event status (role="event"): `applied` → positive, else neutral. */
   eventStatus?: string | null;
 }
-
-/** Only http(s) and mailto links are allowed to render as clickable anchors. */
-function safeHref(href: string | undefined): string | undefined {
-  if (!href) return undefined;
-  const trimmed = href.trim();
-  if (/^(https?:|mailto:)/i.test(trimmed)) return trimmed;
-  // Relative links are allowed; anything with a disallowed scheme is dropped.
-  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return undefined;
-  return trimmed;
-}
-
-function MarkdownLink({ href, children, ...rest }: ComponentPropsWithoutRef<"a">) {
-  const safe = safeHref(href);
-  if (!safe) {
-    // Render the link text without an href so it is not clickable.
-    return <span {...rest}>{children}</span>;
-  }
-  const external = /^https?:/i.test(safe);
-  return (
-    <a href={safe} {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})} {...rest}>
-      {children}
-    </a>
-  );
-}
-
-function MarkdownTable({ children, ...rest }: ComponentPropsWithoutRef<"table">) {
-  // Wrap tables so wide content scrolls horizontally instead of overflowing.
-  return (
-    <div className="overflow-x-auto">
-      <table {...rest}>{children}</table>
-    </div>
-  );
-}
-
-const markdownComponents = {
-  a: MarkdownLink,
-  table: MarkdownTable,
-};
 
 function CoachAvatar() {
   return (
@@ -147,9 +106,7 @@ export default function CoachChatMessage({ role, content, refusal = false, parts
             refusal ? "text-text-muted" : "text-text-primary"
           }`}
         >
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-            {content}
-          </ReactMarkdown>
+          <SafeMarkdown content={content} />
         </article>
         {showDebug && parts ? <DebugParts parts={parts} /> : null}
       </div>
