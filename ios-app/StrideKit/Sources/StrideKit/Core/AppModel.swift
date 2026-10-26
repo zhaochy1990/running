@@ -42,6 +42,9 @@ public final class AppModel {
     // ── 跨 tab 交接（storage 中转的等价物，单次消费语义）────────────────
     public internal(set) var pendingCoachContext: PendingCoachContext?
     public internal(set) var pendingStrategyDraft: PendingStrategyDraft?
+    /// 自定义比赛编辑回显（小程序 navigateTo eventChannel 的等价物，
+    /// devops#769；Route 表定稿「AppModel 交接，非 query」）。
+    public internal(set) var pendingCustomRaceEdit: CustomRace?
 
     private let tokens: any TokenStore
 
@@ -254,6 +257,12 @@ public final class AppModel {
     public func takePendingStrategyDraft() -> PendingStrategyDraft? {
         defer { pendingStrategyDraft = nil }
         return pendingStrategyDraft
+    }
+
+    /// 消费挂起的自定义比赛编辑行（表单页 onAppear 等价物）。
+    public func takePendingCustomRaceEdit() -> CustomRace? {
+        defer { pendingCustomRaceEdit = nil }
+        return pendingCustomRaceEdit
     }
 }
 

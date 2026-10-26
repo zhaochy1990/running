@@ -68,7 +68,9 @@ public struct APIRequest: Sendable {
 /// body，敏感字段零出口；域票需要 body 排障时再带 redact 清单补）。
 public actor APIClient {
 
-    public private(set) var config: APIConfig
+    /// 环境配置（不可变、Sendable → nonisolated 可同步读；分享链接等
+    /// MainActor 场景免 await，devops#769）。
+    public nonisolated let config: APIConfig
     private let tokens: any TokenStore
     private let transport: any HTTPTransport
     private var refreshTask: Task<String, Error>?

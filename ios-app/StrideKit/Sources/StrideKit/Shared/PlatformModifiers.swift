@@ -94,3 +94,28 @@ extension View {
         #endif
     }
 }
+
+extension View {
+
+    /// iOS 关闭首字母自动大写（macOS 宿主编译兜底为无操作）。
+    @ViewBuilder
+    public func noAutocapitalization() -> some View {
+        #if canImport(UIKit)
+        self.textInputAutocapitalization(.never)
+        #else
+        self
+        #endif
+    }
+}
+
+extension ToolbarItemPlacement {
+
+    /// iOS 顶栏尾随位（macOS 宿主编译兜底 automatic）。
+    public static var raceTopBarTrailing: ToolbarItemPlacement {
+        #if canImport(UIKit)
+        .topBarTrailing
+        #else
+        .automatic
+        #endif
+    }
+}

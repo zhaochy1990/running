@@ -18,6 +18,9 @@ public struct APIConfig: Sendable {
     /// coach 单 turn 总上限：服务端预算 10 分钟，客户端放宽到 11 分钟保证
     /// 服务端失败文案先于客户端超时到达（MP coach.ts timeout 660s 同源）。
     public var coachTotalTimeout: TimeInterval
+    /// 分享 universal link 域（出向分享卡 path 的 host；devops#769，
+    /// 深链分流策略全量归 #758/PR-8）。
+    public var shareBaseURL: URL
 
     public init(
         baseURL: URL = URL(string: "https://api.stride-running.cn")!,
@@ -26,7 +29,8 @@ public struct APIConfig: Sendable {
         clientID: String = "app_62978bf2803346878a2e4805",
         timeout: TimeInterval = 15,
         coachIdleTimeout: TimeInterval = 120,
-        coachTotalTimeout: TimeInterval = 660
+        coachTotalTimeout: TimeInterval = 660,
+        shareBaseURL: URL = URL(string: "https://stride-running.cn")!
     ) {
         self.baseURL = baseURL
         self.authBaseURL = authBaseURL
@@ -35,5 +39,6 @@ public struct APIConfig: Sendable {
         self.timeout = timeout
         self.coachIdleTimeout = coachIdleTimeout
         self.coachTotalTimeout = coachTotalTimeout
+        self.shareBaseURL = shareBaseURL
     }
 }

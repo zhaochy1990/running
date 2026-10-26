@@ -172,6 +172,13 @@ public enum Shanghai {
         guard ymd.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil else { return nil }
         return calendar.date(from: DateComponents(year: Int(ymd.prefix(4)), month: Int(ymd.dropFirst(5).prefix(2)), day: Int(ymd.suffix(2))))
     }
+
+    /// 两个上海 YYYY-MM-DD 的间隔天数（to - from）；任一非法返回 nil
+    /// （赛事域倒计时/时间轴消费，devops#769）。
+    public static func daysBetween(fromYMD from: String, toYMD to: String) -> Int? {
+        guard let f = ymdDate(from), let t = ymdDate(to) else { return nil }
+        return calendar.dateComponents([.day], from: f, to: t).day
+    }
 }
 
 // MARK: - 运动类型展示
