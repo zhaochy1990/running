@@ -57,6 +57,9 @@ export function getAgentConfig(config: CoachAgentConfig, agentName: string): Mod
   if (agentConfig.api_kind !== undefined) {
     resolved.api_kind = agentConfig.api_kind;
   }
+  if (agentConfig.temperature !== undefined) {
+    resolved.temperature = agentConfig.temperature;
+  }
 
   return resolved;
 }

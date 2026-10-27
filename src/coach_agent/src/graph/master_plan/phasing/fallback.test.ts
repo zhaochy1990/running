@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { tableFallback } from "./fallback.js";
-import { validatePhaseIntent } from "./gates.js";
+import { peakVolumeCapKm, validatePhaseIntent } from "./gates.js";
 import { makeEvidence } from "./testSupport.js";
 
 /**
@@ -121,6 +121,85 @@ test("recovery 体量带 ≤ 近期峰值 55%；全表峰值带 ≤ 帽", () => 
   assert.ok(recoveryBand && recoveryBand.weekly_km_max <= 80 * 0.55 + 0.01);
   const maxBand = Math.max(...intent.volume_bands.map((b) => b.weekly_km_max));
   assert.ok(maxBand <= Math.min(120, Math.max(60 * 1.6, 80 * 1.3)) + 0.01);
+});
+
+test("#810 峰值带=保守锚不坐顶帽：常态锚 75/91/93 < 帽 104；锚驱动坐帽（elite）", () => {
+  for (const [N, expected] of [
+    [5, 75],
+    [9, 91],
+    [22, 93],
+  ] as const) {
+    const finalBand = tableFallback(scenarios.base(), N).volume_bands.find((b) => b.phase === "final_quality");
+    assert.equal(finalBand?.weekly_km_max, expected, `N=${N}`);
+  }
+  // 帽 104（avg8=60/peak=80）≫ 锚——兜底不再把合法上限当缺省值
+  const base22 = tableFallback(scenarios.base(), 22).volume_bands.find((b) => b.phase === "final_quality");
+  assert.ok(base22 && base22.weekly_km_max < peakVolumeCapKm(scenarios.base()));
+  // 锚被帽夹持时（elite avg8=100）：坐帽但由锚驱动（帽=上限语义不变）
+  const elite = tableFallback(scenarios.elite(), 22).volume_bands.find((b) => b.phase === "final_quality");
+  assert.equal(elite?.weekly_km_max, 120);
+});
+
+test("#810 零史/低量跑者：锚骑帽 30 护栏（计划永远给，峰值不塌到 habitual×1.25）", () => {
+  for (const make of [scenarios.zeroHistory, scenarios.lowVolumeRaced]) {
+    const evidence = make();
+    const finalBand = tableFallback(evidence, 22).volume_bands.find((b) => b.phase === "final_quality");
+    assert.equal(finalBand?.weekly_km_max, 30);
+  }
+});
+
+test("#810 伤退：锚夹伤前峰值 75%（低温判断层把伤后 60-70% 读进峰值）", () => {
+  // avg8=50 → 无夹持锚 77.5，被伤前 80×0.75=60 压制（夹持生效形态）
+  const injured = makeEvidence({
+    injury_return: { pre_injury_peak_week_km: 80, weeks_out: 3 },
+    injuries: [{ body_area: "膝", status: "recovering" }],
+    recent_volume: { avg_8wk_km: 50, avg_4wk_km: 30, recent_peak_week_km: 45, longest_run_8wk_km: 16, gap_weeks_last16: 3 },
+    habitual: { week_km: 18, level: "median@16w", scenario: "detrain_return", avg4_km: 30, decay_factor: 1, acwr_applicable: false, pre_peak_km: 45 },
+  });
+  const finalBand = tableFallback(injured, 23).volume_bands.find((b) => b.phase === "final_quality");
+  assert.equal(finalBand?.weekly_km_max, 60);
+});
+
+test("#810 阶段带保守阶梯：hi 不降、全表 ≤ 计划峰值锚（常态/伤退在跑/近量尖峰三形态）", () => {
+  // 伤退在跑（在册 active 伤、量仍在）：伤前 60 的 75% 夹持不得被中段带越过
+  const injuredActive = makeEvidence({
+    injuries: [{ body_area: "膝", status: "active; restriction=partial" }],
+    injury_return: { pre_injury_peak_week_km: 60, weeks_out: 2 },
+    recent_volume: { avg_8wk_km: 55, avg_4wk_km: 52, recent_peak_week_km: 58, longest_run_8wk_km: 22, gap_weeks_last16: 0 },
+    habitual: { week_km: 44, level: "median@12w", scenario: "normal", avg4_km: 52, decay_factor: 1, acwr_applicable: true, pre_peak_km: 58 },
+  });
+  // 近量尖峰（avg4 ≈ 1.55×avg8）：证据下限只抬 hi 不越锚、不倒置阶梯
+  const midBuild = makeEvidence({
+    recent_volume: { avg_8wk_km: 40, avg_4wk_km: 62, recent_peak_week_km: 50, longest_run_8wk_km: 20, gap_weeks_last16: 0 },
+    habitual: { week_km: 45, level: "median@12w", scenario: "normal", avg4_km: 62, decay_factor: 1, acwr_applicable: true, pre_peak_km: 50 },
+  });
+  for (const evidence of [scenarios.base(), injuredActive, midBuild]) {
+    const intent = tableFallback(evidence, 22);
+    const anchor = intent.volume_bands.find((b) => b.phase === "final_quality")?.weekly_km_max ?? 0;
+    let prev = 0;
+    for (const phase of ["foundation", "early_quality", "transition_quality", "final_quality"]) {
+      const hi = intent.volume_bands.find((b) => b.phase === phase)?.weekly_km_max ?? 0;
+      assert.ok(hi >= prev, `${phase} hi=${hi} < 前段 ${prev}`);
+      assert.ok(hi <= anchor, `${phase} hi=${hi} 越过计划峰值锚 ${anchor}`);
+      prev = hi;
+    }
+  }
+});
+
+test("#810 实测形态（chaoyi E2E 第二轮证据）：N=6 兜底峰值 92 而非坐顶 120", () => {
+  const chaoyi = makeEvidence({
+    habitual: { week_km: 70.3, level: "median@12w", scenario: "normal", avg4_km: 85, decay_factor: 1, acwr_applicable: true, pre_peak_km: 104.7 },
+    recent_volume: { avg_8wk_km: 74.1, avg_4wk_km: 85.9, recent_peak_week_km: 106, longest_run_8wk_km: 35, gap_weeks_last16: 0 },
+  });
+  const intent = tableFallback(chaoyi, 6);
+  const finalBand = intent.volume_bands.find((b) => b.phase === "final_quality");
+  assert.equal(finalBand?.weekly_km_max, 92);
+  assert.deepEqual(
+    validatePhaseIntent(intent, 6, chaoyi)
+      .filter((c) => !c.pass)
+      .map((c) => c.id),
+    [],
+  );
 });
 
 test("raced N=7..9：recovery 前置不挤掉 foundation≥2 底线（坍缩让渡 transition）", () => {
