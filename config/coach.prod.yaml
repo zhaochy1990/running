@@ -60,6 +60,12 @@ agents:
     model: deepseekv4flash
     max_tokens: 65536
     timeout_s: 600  
+  - name: phasing
+    model: deepseekv4flash
+    max_tokens: 65536
+    timeout_s: 600
+    # 阶段划分判断层（#810）：结构化输出+确定性结构门，低温稳定同输入过门率
+    temperature: 0.15
   - name: race_strategy
     model: deepseekv4flash
     max_tokens: 65536

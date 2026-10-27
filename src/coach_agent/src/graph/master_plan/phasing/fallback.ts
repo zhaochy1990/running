@@ -93,10 +93,53 @@ function closeToRunway(layout: PhaseWeeks[], N: number): PhaseWeeks[] {
   return layout.filter((p) => p.weeks > 0);
 }
 
-/** 体量带构造（I8 帽内留余量；lo>hi 时收敛为 lo）。 */
-function volumeBands(layout: PhaseWeeks[], evidence: PhaseEvidence): PhaseDivisionIntent["volume_bands"] {
+/**
+ * 峰值爬坡系数（按建设周数，三档）：N 周内安全可增体量随建设周数缩放——
+ * 短跑道（≤6 周）+25%、中跑道（7-9 周）+30%、长跑道（≥10 周）+55%。
+ * 中跑道另有判断层实证停位项（帽×0.88，见 conservativePeakAnchor）。
+ */
+function peakRampFactor(buildWeeks: number): number {
+  if (buildWeeks <= 6) return 1.25;
+  if (buildWeeks <= 9) return 1.3;
+  return 1.55;
+}
+
+/**
+ * 保守峰值锚（#810）：min(帽, max(habitual×1.25, avg8×爬坡, 中跑道帽停位))，
+ * 伤退再夹伤前峰值 75%，帽触 30 护栏时锚骑护栏——帽是上限不是目标，兜底
+ * 不得坐顶；兜底产物须与判断层保守判断同档（回放验收=兜底 vs 判断层峰值
+ * 中位带差 ≤15%）。
+ * 三项各自锚定判断层的一种保守停法（基线校准=#810 回放 12 切片×4 轮，
+ * 0.15 温判断层峰值中位）：habitual 增长下限、avg8 增长（长短跑道主导项，
+ * 判断层中位≈avg8×1.25/×1.55）、中跑道停位（判断层在帽 88% 位停车：
+ * chaoyi 0.875/dingchentao 0.85/pan 0.89——avg8 乘数此时按运动员分化
+ * ×1.2-1.6 无常数可覆盖，帽位反而三人一致）。判断层同切片抽样噪声
+ * ±10-15%，回放门按多抽样中位判（phasingReplay.ts）。
+ */
+function conservativePeakAnchor(evidence: PhaseEvidence, buildWeeks: number): number {
+  const peakCap = peakVolumeCapKm(evidence);
+  const midRunwayCapShare = buildWeeks > 6 && buildWeeks <= 9 ? 0.88 : 0;
+  let anchor = Math.min(
+    peakCap,
+    Math.max(evidence.habitual.week_km * 1.25, evidence.recent_volume.avg_8wk_km * peakRampFactor(buildWeeks), peakCap * midRunwayCapShare),
+  );
+  // 伤退：低温下判断层把「起量≤伤前 60-70%」读进峰值（回放实证 0.15 温
+  // injury 峰=伤前 64-81%），锚同口径夹持；75% 取宽松端留判断层空间
+  if (evidence.injury_return) anchor = Math.min(anchor, evidence.injury_return.pre_injury_peak_week_km * 0.75);
+  // 零史/极低量跑者：锚骑峰值帽 30 护栏（gates.ts「计划永远给」——锚无下限
+  // 会让兜底峰值塌到 habitual×1.25≈12，恰是 flash 最易落兜底的人群）
+  return Math.max(anchor, Math.min(peakCap, 30));
+}
+
+/**
+ * 体量带构造（#810 保守档对齐）：峰值锚见 conservativePeakAnchor；各阶段
+ * 带按锚的 85/90/95/100% 保守系数排成不降阶梯（一律 ≤ 锚，证据下限只抬升
+ * 不越锚），lo>hi 时收敛为 lo。
+ */
+function volumeBands(layout: PhaseWeeks[], evidence: PhaseEvidence, buildWeeks: number): PhaseDivisionIntent["volume_bands"] {
   const { avg_8wk_km, avg_4wk_km, recent_peak_week_km } = evidence.recent_volume;
   const peakCap = peakVolumeCapKm(evidence);
+  const peakAnchor = conservativePeakAnchor(evidence, buildWeeks);
   const band = (phase: string, lo: number, hi: number) => {
     // hi 用 floor 且先与峰值帽取小：四舍五入的进位会越过 I8 帽（58.5→59 / 120→125）；
     // 低量跑者的 lo 也不硬压 8（recovery 帽可低至 18km），只保证 1≤lo≤hi
@@ -104,17 +147,32 @@ function volumeBands(layout: PhaseWeeks[], evidence: PhaseEvidence): PhaseDivisi
     const l = Math.min(Math.max(1, Math.round(lo)), h);
     return { phase, weekly_km_min: l, weekly_km_max: h };
   };
+  // 阶梯 hi：锚分位与证据下限、前段 hi 三者取大再夹锚——保证 hi 不降且全表 ≤ 锚
+  // （证据下限高于锚分位时只抬到 hi 本身，不会把带顶推过计划峰值）
+  const ladderHi = (fraction: number, lo: number, prevHi: number) => Math.min(peakAnchor, Math.max(peakAnchor * fraction, lo, prevHi));
+  let prevHi = 0;
   const out: PhaseDivisionIntent["volume_bands"] = [];
   for (const { canonical } of layout) {
     if (canonical === "recovery") out.push(band("recovery", recent_peak_week_km * 0.3, recent_peak_week_km * 0.55));
     else if (canonical === "foundation") {
+      const lo = Math.max(avg_4wk_km * 0.9, 15);
+      // 伤后另夹伤前峰值 70%（I8 伤后门），与阶梯 hi 取小
       const hi = evidence.injury_return
-        ? Math.min(evidence.injury_return.pre_injury_peak_week_km * 0.7, peakCap * 0.88)
-        : Math.min(Math.max(recent_peak_week_km * 1.15, avg_4wk_km * 1.3), peakCap * 0.88);
-      out.push(band("foundation", Math.max(avg_4wk_km * 0.9, 15), hi));
-    } else if (canonical === "early_quality") out.push(band("early_quality", avg_4wk_km, peakCap * 0.92));
-    else if (canonical === "transition_quality") out.push(band("transition_quality", avg_8wk_km * 1.1, peakCap * 0.96));
-    else out.push(band("final_quality", Math.max(avg_8wk_km * 1.1, recent_peak_week_km), peakCap));
+        ? Math.min(evidence.injury_return.pre_injury_peak_week_km * 0.7, ladderHi(0.85, lo, prevHi))
+        : ladderHi(0.85, lo, prevHi);
+      out.push(band("foundation", lo, hi));
+      prevHi = hi;
+    } else if (canonical === "early_quality") {
+      const lo = avg_4wk_km;
+      const hi = ladderHi(0.9, lo, prevHi);
+      out.push(band("early_quality", lo, hi));
+      prevHi = hi;
+    } else if (canonical === "transition_quality") {
+      const lo = avg_8wk_km * 1.1;
+      const hi = ladderHi(0.95, lo, prevHi);
+      out.push(band("transition_quality", lo, hi));
+      prevHi = hi;
+    } else out.push(band("final_quality", Math.max(avg_8wk_km * 1.1, evidence.habitual.week_km), peakAnchor));
   }
   return out;
 }
@@ -213,6 +271,7 @@ export function tableFallback(evidence: PhaseEvidence, runwayWeeks: number): Pha
     taper_weeks: taperWeeks,
     milestones: milestonesFor(layout, evidence),
     gates: fallbackGates(layout),
-    volume_bands: volumeBands(layout, evidence),
+    // 爬坡按建设周数（effectiveN）取档：赛后 recovery 前置不占爬坡预算
+    volume_bands: volumeBands(layout, evidence, effectiveN),
   });
 }

@@ -13,6 +13,8 @@ export interface RoleConfig {
   /** DeepSeek 思考模式开关；缺省 = 模型默认（思考开、effort high）。 */
   thinking?: "enabled" | "disabled";
   api_kind?: ModelApiKind;
+  /** 采样温度（缺省 = buildModel 的 0.4）；结构化判断层调低以稳定过门（#810）。 */
+  temperature?: number;
 }
 
 export interface ObservabilityConfig {
