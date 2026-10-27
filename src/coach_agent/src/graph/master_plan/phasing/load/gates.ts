@@ -1,14 +1,14 @@
 import type { PhaseDivisionIntent } from "../intent.js";
 import { phaseRefMatches } from "../intent.js";
 import type { LoadWeek } from "./expand.js";
-import { bandOf } from "./reachability.js";
+import { ACTIVATION_MAX_KM, ACTIVATION_MIN_KM, bandOf, RACE_KM } from "./reachability.js";
 
 /**
  * 载荷层六条验收门（devops#793 E 节，daniels-l3-load.md §4，38 案例实测沉淀）：
  * 1 三硬门（ACWR≤1.3 / 单周尖峰 / 块对块） 2 带贴合（爬坡豁免） 3 节奏（3+1）
- * 4 LR（峰值/份额/赛周 null/期内单调） 5 taper（赛周区间/峰后弧单调/削减深度）
- * 6 块内微阶梯存在性。两个实测陷阱已内化：块豁免查带必须用真实阶段行；
- * taper 单调判据方向（削至赛周=递减）。
+ * 4 LR（峰值/份额/赛周 null/期内单调） 5 taper（赛周区间/峰后弧单调/削减深度，
+ * 低量档加激活量右支 #809） 6 块内微阶梯存在性。两个实测陷阱已内化：块豁免
+ * 查带必须用真实阶段行；taper 单调判据方向（削至赛周=递减）。
  */
 
 export interface LoadCheck {
@@ -127,24 +127,34 @@ export function validateLoad(intent: PhaseDivisionIntent, weeks: LoadWeek[], rec
     detail: `峰${lrMax}/下限${r1(lrFloor)} 份额${shareOk ? "✓" : "✗"} 单调${monoOk ? "✓" : "✗"}`,
   });
 
-  // 门 5：taper——赛周 0.35-0.72×峰、峰后弧单调、削减深度 30-50%。
+  // 门 5：taper——赛周物理下限（≥比赛里程）+ 赛周 0.35-0.72×峰 OR 激活量合规、
+  // 峰后弧单调、削减深度 30-50%。
+  // 激活量右支（#809 低量档）：峰 <~72.5km 时赛周 ≥52.2 必然越过 0.72×峰比值
+  // 带、<~74.6km 时必然越过削减深度上界——低量马拉松跑者的比赛必然主导整周，
+  // 非比赛日里程（=赛周−42.195）落激活带 [10,15] 即合法 taper，两个子判据同挂
+  // 此右支。物理下限（#809 评审）：赛周含比赛本身，总里程 <42.2 即物理不可能
+  // （#806 夹持回归的兜底——构造器侧公式之外，门侧也钉死）。
   // 峰后弧单调（#806，原「taper 段单调降」扩展）：末段平台顶（最后一个
-  // final_quality progress 周）起至赛周单调不升——吸收落进弧内被 taper 平台位
-  // 重算反超的锯齿在此判；中段吸收-回弹（峰值再临）在弧外，3+1 节奏合法。
+  // final_quality progress 周）起至赛周前一训练周单调不升——吸收落进弧内被
+  // taper 平台位重算反超的锯齿在此判；中段吸收-回弹（峰值再临）在弧外，3+1
+  // 节奏合法。赛周本身不进弧：量值由比值/削减深度/激活量判据专管（低量档
+  // 赛周必然高于 taper 曲线，与回退分支只看 taperKms 的口径一致）。
   // 无平台参照的全程 taper 布局退回 taper 段内单调。削减深度（平台参照=
   // final_quality 非赛周最大 km；N=1 单周跑道与无平台参照的衰退跑道豁免子判据
   // ——赛周即全计划，无 taper 结构可验）
   const raceKm = km.at(-1)!;
+  const nonRaceKm = raceKm - RACE_KM;
+  const activationOk = nonRaceKm >= ACTIVATION_MIN_KM - TOLERANCE_KM && nonRaceKm <= ACTIVATION_MAX_KM + TOLERANCE_KM;
   const arcStart = weeks.findLastIndex((w) => w.canonical === "final_quality" && w.role === "progress");
   const taperKms = weeks.filter((w) => w.role === "taper").map((w) => w.km);
   const monoDown =
     arcStart >= 0
-      ? weeks.slice(arcStart).every((x, i, arr) => i === 0 || x.km <= arr[i - 1]!.km + TOLERANCE_KM)
+      ? weeks.slice(arcStart, -1).every((x, i, arr) => i === 0 || x.km <= arr[i - 1]!.km + TOLERANCE_KM)
       : taperKms.every((x, i) => i === 0 || x <= taperKms[i - 1]! + TOLERANCE_KM);
   const plateauRef = Math.max(0, ...weeks.filter((w) => w.canonical === "final_quality" && w.role !== "race").map((w) => w.km));
   const singleWeek = weeks.length < 2;
-  const cutDepthOk = singleWeek || plateauRef <= 0 || (raceKm >= plateauRef * 0.5 - TOLERANCE_KM && raceKm <= plateauRef * 0.7 + TOLERANCE_KM);
-  const bandOk = singleWeek || (raceKm <= peak * 0.72 && raceKm >= peak * 0.35);
+  const cutDepthOk = singleWeek || plateauRef <= 0 || (raceKm >= plateauRef * 0.5 - TOLERANCE_KM && raceKm <= plateauRef * 0.7 + TOLERANCE_KM) || activationOk;
+  const bandOk = singleWeek || (raceKm >= RACE_KM - TOLERANCE_KM && ((raceKm <= peak * 0.72 && raceKm >= peak * 0.35) || activationOk));
   checks.push({
     id: "L4 taper",
     pass: bandOk && monoDown && cutDepthOk,

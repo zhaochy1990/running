@@ -195,10 +195,10 @@ test("L3 LR：峰值低于下限挂；赛周 LR 非 null 挂；相位末 LR 倒�
   assert.ok(!failOf(validateLoad(intent, inverted, seed), "L3")!.pass);
 });
 
-test("L4 taper：递增段挂（单调公式方向反例——写反会把递减判成递增）；削减深度出界挂", () => {
+test("L4 taper：taper 段递增挂（单调公式方向反例——写反会把递减判成递增）；削减深度出界挂", () => {
   const intent = makeIntent({
-    phases: [phase("foundation", 1, 5), phase("final_quality", 6, 8)],
-    taperWeeks: 2,
+    phases: [phase("foundation", 1, 4), phase("final_quality", 5, 8)],
+    taperWeeks: 3,
     volumeBands: [
       { phase: "foundation", weekly_km_min: 50, weekly_km_max: 75 },
       { phase: "final_quality", weekly_km_min: 50, weekly_km_max: 75 },
@@ -209,28 +209,57 @@ test("L4 taper：递增段挂（单调公式方向反例——写反会把递减
     [2, "foundation", 1, "progress", 64, 23, 1],
     [3, "foundation", 1, "progress", 68, 24.5, 2],
     [4, "foundation", 2, "progress", 70, 25.2, 2],
-    [5, "foundation", 2, "progress", 70, 25.2, 2],
-    [6, "final_quality", 3, "progress", 70, 25.2, 2],
-    [7, "final_quality", 3, "taper", 60, 21.6, 1],
-    [8, "final_quality", 3, "race", 38, null, 1], // 0.55×70 削减 45%
+    [5, "final_quality", 2, "progress", 70, 25.2, 2],
+    [6, "final_quality", 3, "taper", 60, 21.6, 1],
+    [7, "final_quality", 3, "taper", 52, 18.7, 1],
+    [8, "final_quality", 3, "race", 45, null, 1], // ≈0.64×平台 70，削减 35.7% 带内
   ]);
   const checks = validateLoad(intent, good, seed);
   assert.ok(failOf(checks, "L4")!.pass, failOf(checks, "L4")!.detail);
 
+  // 递增落在 taper 段内（#809 赛周不进弧后，段内递增仍独立可判）
   const rising = weeks([
     [1, "foundation", 1, "progress", 60, 22, 1],
     [2, "foundation", 1, "progress", 64, 23, 1],
     [3, "foundation", 1, "progress", 68, 24.5, 2],
     [4, "foundation", 2, "progress", 70, 25.2, 2],
-    [5, "foundation", 2, "progress", 70, 25.2, 2],
-    [6, "final_quality", 3, "progress", 70, 25.2, 2],
-    [7, "final_quality", 3, "taper", 55, 19.8, 1],
-    [8, "final_quality", 3, "race", 66, null, 1], // taper 段 55 → 赛周 66 递增
+    [5, "final_quality", 2, "progress", 70, 25.2, 2],
+    [6, "final_quality", 3, "taper", 52, 18.7, 1],
+    [7, "final_quality", 3, "taper", 62, 22.3, 1], // taper 段 52 → 62 递增
+    [8, "final_quality", 3, "race", 45, null, 1],
   ]);
   assert.ok(!failOf(validateLoad(intent, rising, seed), "L4")!.pass);
 
-  const tooDeep = good.map((w) => (w.role === "race" ? { ...w, km: 25 } : w)); // 削减 64% > 50%
+  const tooDeep = good.map((w) => (w.role === "race" ? { ...w, km: 25 } : w)); // 削减 64% > 50%，且非比赛日里程为负不入激活带
   assert.ok(!failOf(validateLoad(intent, tooDeep, seed), "L4")!.pass);
+
+  // 物理下限（#809 评审）：赛周 38 < 42.195（#806 夹持产出的不可能形态）——
+  // 比值带/削减深度带均过也挂：比赛就在那周，总里程不可能低于比赛里程
+  const subRace = good.map((w) => (w.role === "race" ? { ...w, km: 38 } : w));
+  assert.ok(!failOf(validateLoad(intent, subRace, seed), "L4")!.pass);
+});
+
+test("L4 激活量右支（#809）：低量档非比赛日里程∈[10,15] 过（赛周高于 taper 曲线不进弧）；出带挂", () => {
+  // 峰 54（0.72×54=38.9 < 52.2）：比值/削减深度左支在低量档数学不可过——
+  // 比赛主导整周时激活量本身合规即合法 taper（pan/5v2 修复后实测形态）
+  const intent = makeIntent({
+    phases: [phase("final_quality", 1, 4)],
+    taperWeeks: 1,
+    volumeBands: [{ phase: "final_quality", weekly_km_min: 45, weekly_km_max: 58 }],
+  });
+  const ok = weeks([
+    [1, "final_quality", 1, "progress", 52.4, 22, 1],
+    [2, "final_quality", 1, "progress", 54, 22.7, 1],
+    [3, "final_quality", 1, "taper", 45.9, 19.3, 1],
+    [4, "final_quality", 1, "race", 52.2, null, 1], // 非比赛日 10.0 ∈ [10,15]
+  ]);
+  const checks = validateLoad(intent, ok, seed);
+  assert.ok(failOf(checks, "L4")!.pass, failOf(checks, "L4")!.detail);
+
+  const over = ok.map((w) => (w.role === "race" ? { ...w, km: 58 } : w)); // 非比赛日 15.8 > 15：右支挂（左支 58 > 38.9 同挂）
+  assert.ok(!failOf(validateLoad(intent, over, seed), "L4")!.pass);
+  const under = ok.map((w) => (w.role === "race" ? { ...w, km: 50 } : w)); // 非比赛日 7.8 < 10：右支挂；左支 50 > 38.9 同挂
+  assert.ok(!failOf(validateLoad(intent, under, seed), "L4")!.pass);
 });
 
 test("L4 峰后弧单调（#806）：吸收落弧内被 taper 平台位重算反超挂；吸收在弧外过", () => {
