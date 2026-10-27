@@ -46,3 +46,21 @@ test("orchestrator prompt carries the workout_manage category and its boundary s
   assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes('"下周计划调整一下，周三改成休息" → weekly_plan'));
   assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes("对已保存的课只动存废或日期是 workout_manage"));
 });
+
+/**
+ * 赛事问答路由边界锁定（devops#812 验收）：QA 拿到赛历检索工具后，事实问
+ * （时间/城市/项目/赛道）必须落 training_question 进 qa；只有问执行方案（配速
+ * 分段/补给）才是 race_strategy——qa 会话无 race target，误路由到 race_strategy
+ * 会被弹回「从赛事详情页发起」，事实问题就答不上来。
+ */
+test("orchestrator prompt routes race-fact questions to training_question, not race_strategy", () => {
+  assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes("**查询赛事日历信息**"));
+  assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes("问赛事事实（时间/城市/项目/赛道/爬升）是 training_question"));
+
+  assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes('"杭州马拉松什么时候开跑？" → training_question'));
+  assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes('"11 月有哪些马拉松？" → training_question'));
+  assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes('"杭马的赛道难不难？" → training_question'));
+
+  // 守卫：策略例句仍锁在 race_strategy，划界句没被顺带改掉。
+  assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes('"帮我制定杭马的分段配速和补给策略" → race_strategy'));
+});

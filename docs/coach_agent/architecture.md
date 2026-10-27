@@ -226,6 +226,7 @@ API 基础设施配置由 Convict 从 `src/coach_agent_api/config/coach-api.yaml
 | 用户自然语言意图 | Conversation Plane | 澄清并归一化为用户声明 |
 | 用户确认的目标与时间约束 | Planning Request | 规划时视为不可静默修改的约束 |
 | 活动、健康、负荷、PB、校准、计划 | Canonical storage | 由 Context Builder 直接读取 |
+| 赛事日历（race_calendar） | Canonical storage（published 行） | QA 子代理只读检索（search_race_calendar / get_race_calendar_detail，devops#812）；race_strategy 仍走会话锚定的 turn-scope 单场工具 |
 | Athlete/Goal Assessment | Generation Graph state | 供 Strategy、Reviewer 和最终解释使用 |
 | 候选策略与 review issues | Generation Graph private state | 不作为正式计划保存 |
 | Master Plan draft | Generation Outcome | 等待用户 review，不自动激活 |

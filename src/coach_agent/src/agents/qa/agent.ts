@@ -6,6 +6,7 @@ import { createActivitiesTools } from "../../tools/activities.js";
 import { createActivityInsightTools } from "../../tools/activityInsights.js";
 import { type ActivityFeelWriter, createActivityFeelTools } from "../../tools/feel.js";
 import { createPlanTools } from "../../tools/plan.js";
+import { createRaceCalendarSearchTools } from "../../tools/raceCalendar.js";
 import { createRaceTools } from "../../tools/races.js";
 import { createRecoveryTools } from "../../tools/recovery.js";
 import { createRunningCalibrationTools } from "../../tools/runningCalibration.js";
@@ -25,6 +26,7 @@ const QA_SUBAGENT_PROMPT = `你是 STRIDE 跑步教练的训练问答专家，�
 3. 跑步知识（跑步技巧、训练方法、运动科学知识）
 4. 查看当前赛季计划、或某一周训练计划的内容
 5. 查看/核对某天的训练安排（有没有课、课是什么、是否已保存/已推送到手表）——必须用工具 "get_day_plan_sessions" 查证后回答，不要把对话里生成过但未保存的课当成已存在的训练
+6. 赛事日历信息（某场比赛的时间/城市/项目，或一段时间内有哪些比赛）——先用 "search_race_calendar" 检索，查不到就是暂无该赛事、如实告知，不要编造；要看赛道/爬升/补给/关门等细节，用检索结果里的 race_event_id 调 "get_race_calendar_detail"。制定或调整比赛执行策略不归你——那是 race_strategy 的事，让用户从赛事详情页发起。
 
 你有下面的几个skill，
 1. 当用户询问某个训练跑得怎么样的时候，先使用工具"get_activities_by_date_range"查找到对应的运动记录，然后使用skill "analyze-activity" 进行分析。
@@ -53,6 +55,7 @@ export function getQaTools(store: DataProvider, feelWriter?: ActivityFeelWriter)
     ...(feelWriter ? createActivityFeelTools(feelWriter) : []),
     ...createTrainingLoadTools(store),
     ...createRaceTools(store),
+    ...createRaceCalendarSearchTools(store),
     ...createRecoveryTools(store),
     ...createRunningCalibrationTools(store),
   ];
