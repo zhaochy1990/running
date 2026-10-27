@@ -152,3 +152,51 @@ test("formatStepRest covers all three kinds", () => {
   assert.equal(formatStepRest({ kind: "hr_bpm", value: 130 }), "（休至HR<130）");
   assert.equal(formatStepRest({ kind: "manual", value: null }), "（休手动）");
 });
+
+test("type/purpose are optional-and-nullable v1 appends: legacy docs stay legal (devops#807)", () => {
+  const base = loadFixture("easy-run.json");
+  // 存量文档（无 type/purpose）仍是合法 v1
+  assert.equal(base.type, undefined);
+  assert.equal(base.purpose, undefined);
+  assert.equal(RunWorkoutSchema.safeParse(base).success, true);
+  // 显式 null 与合法枚举值均过
+  for (const patch of [
+    { type: null, purpose: null },
+    { type: "LR" as const, purpose: "长跑课" },
+  ]) {
+    assert.equal(RunWorkoutSchema.safeParse({ ...structuredClone(base), ...patch }).success, true);
+  }
+  // 非法枚举值拒绝（嵌套在 workout 层）
+  for (const bad of ["X", "e", 1, true]) {
+    assert.equal(RunWorkoutSchema.safeParse({ ...structuredClone(base), type: bad }).success, false, JSON.stringify(bad));
+  }
+  assert.equal(RunWorkoutSchema.safeParse({ ...structuredClone(base), purpose: 42 }).success, false);
+});
+
+test("normalizeRunWorkout fills type/purpose null defaults and passes them through", () => {
+  const lenientBase = {
+    name: "E 10km",
+    date: "2026-11-02",
+    note: null,
+    blocks: [{ repeat: 1, steps: [{ step_kind: "work", duration: { kind: "distance_m", value: 10000 }, target: { kind: "open", low: null, high: null } }] }],
+  };
+  assert.deepEqual(normalizeRunWorkout(lenientBase), {
+    schema: "run-workout/v1",
+    name: "E 10km",
+    date: "2026-11-02",
+    note: null,
+    type: null,
+    purpose: null,
+    blocks: [
+      {
+        repeat: 1,
+        steps: [
+          { step_kind: "work", duration: { kind: "distance_m", value: 10000 }, target: { kind: "open", low: null, high: null }, note: null, hr_cap_bpm: null },
+        ],
+      },
+    ],
+  });
+  assert.equal(normalizeRunWorkout({ ...lenientBase, type: "T", purpose: "阈值课" }).type, "T");
+  // lenient 拒绝非法 type（normalize 抛错而非静默丢弃——生成侧意图必须可信）
+  assert.throws(() => normalizeRunWorkout({ ...lenientBase, type: "阈值" }));
+});

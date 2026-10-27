@@ -108,6 +108,34 @@
                           }
                         ]
                       },
+                      "type": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "E",
+                              "M",
+                              "T",
+                              "I",
+                              "R",
+                              "LR"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "purpose": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
                       "blocks": {
                         "minItems": 1,
                         "type": "array",

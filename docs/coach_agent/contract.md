@@ -472,7 +472,7 @@ RunWorkout 新增：
 
 **一致性校验**（声明↔数据互验）：声明 `type` 的带须罩住该课**主质量段**（按距离最长的质量段，±10s/km 容差）——声明 T 但主段在 E 带=违规；组合课（10k@M+1k 间歇+400m）主段=M 声明 M，副段只需谱内；LR 内嵌 M/T 尾段合法、type 仍 LR。
 
-**校验集（validation，2026-10-27 拍板不用 gate 叫法）**：C1 周量守恒（Σ课里程 vs total_km，±max(3km, 3%)；里程=totals 口径）｜C2 长跑唯一且合值（type=LR 恰一节 ±1.5km；**赛周 lr=null 豁免为 0 节**）｜C3 Q 配额=派生质量课数｜C4 训练日 ≤max_training_days（按 date 去重）｜C5 配速谱内（质量步/有氧步各按谱校验）｜C6 note 语义（无质量步且无短加速步的课 note=null；含 strides 的课给 strides 要点、LR 给补给/地形要点合法）｜C7 质量课热身/放松在场（**赛周比赛课豁免**）｜C8 展开守恒（课总里程=blocks 按 repeat 展开后 Σ步距离 ±容差——组数×步距算术错挂校验）。
+**校验集（validation，2026-10-27 拍板不用 gate 叫法）**：C1 周量守恒（Σ课里程 vs total_km，±max(3km, 3%)；里程=totals 口径）｜C2 长跑唯一且合值（type=LR 恰一节 ±1.5km；**赛周 lr=null 豁免为 0 节**）｜C3 Q 配额=派生质量课数｜C4 训练日 ≤max_training_days（按 date 去重）｜C5 配速谱内（质量步/有氧步各按谱校验）｜C6 note 语义（无质量步且无短加速步的课 note=null；含 strides 的课给 strides 要点、LR 给补给/地形要点合法）｜C7 质量课热身/放松在场（**赛周比赛课豁免**；LR 位型课豁免独立热身段——E 主体即热身，即「按里程差判」松弛路径）｜C8 展开守恒（课总里程=blocks 按 repeat 展开后 Σ步距离 ±容差——组数×步距算术错挂校验）。
 
 - **用户拍板规则**（2026-10-27 真人教练 8 周对比）：① E 课下限=单次有氧 ≥60min 按 E 带配速折算 km 下限（唯一例外=赛周激活课；校验 C9 候选 ⏳）② 质量课结构跨周不重复、强度谱覆盖 T/乳酸阈值长间歇、不得全周同型 ③ 赛周必须有激活性质量课（形态参照 5-8km@MP+1k×3-5（快 15s）+400m×3-5，赛前 2-3 天；赛周非比赛日 km 下限校验 ⏳，配合 #806 赛周量公式修正）④ 长距离形态谱跨周轮换（纯有氧/渐加速/纯 MP 段/变速/混合，不得全用含 M 尾段一种）。
 - **跨周规则**：taper 周总里程逐周递减；质量课组数/结构跨周不倒退（同族只增不减）、taper 缩短不换型（组数递进直接读 block.repeat）；赛周 Sunday=比赛课本身（type=M、里程≈42.2、name 含赛事名，该周无 LR）。
@@ -484,7 +484,7 @@ RunWorkout 新增：
 
 **刷新**：块界生成+按需重生成（R1）。**待定 ⏳**：解析失败重试/兜底（#796 ⑤）、8weeks.md 用法（#796 ④）、C9 E 课下限数值与多样性/赛周激活校验（#796 已记规则）、质量课间隔归 L4 还是 L5、strides 组数锚定（#798）；距离 profile 化 HM 先行（Epic Not yet specified）。
 
-**契约模块落地**：devops#807（ready-for-agent）= coach_contract v1 追加 type/purpose（strict/lenient/normalize 三层）+ `phasing/content/`（derive 判定表/validators C1-C8 读 V1+E2E 样本迁移回放）。
+**契约模块落地**：devops#807（已合并）= coach_contract v1 追加 type/purpose（strict/lenient/normalize 三层）+ `phasing/content/`（derive 判定表 / validators 一致性+C1-C8 读 V1 / migrate E2E 样本迁移回放，`l4-e2e-shanghai.json` 六周全绿）。
 
 ## 6. L5 落位层 🟡（#799 终审；E2E spike 实证 2026-10-27：0 修复门全绿）
 
@@ -567,7 +567,7 @@ RunWorkout 新增：
 | L1.5 | #792（非本图，在途） | 🟢 契约拍板 |
 | L3 | #793（PR #638，38 fixture）；**#806 短块三处修正（agent 实施中）** | ✅ 已合并 / 🟡 修正中 |
 | 课表库编目 | #797 | ✅ 已关（草案在分支 research/daniels-session-library） |
-| L4 契约 | #796（grilling；segments/repeat/type/purpose 已拍板）→ **#807 契约模块（ready-for-agent）** | 🟡→🟢 拍板部分落地 |
+| L4 契约 | #796（grilling；segments/repeat/type/purpose 已拍板）→ **#807 契约模块（已合并）** | ✅ 契约+判定表+校验+迁移回放已落地 |
 | 库×LLM 分工 | #798（blocked by #796+#797✅） | ⏳ |
 | L5 落位 | #799 | 🟡 grilling |
 | 夜复盘阈值 | #800 | ⏳ |
