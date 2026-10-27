@@ -201,6 +201,9 @@ test("prompt hard rules: shorthand conversion, date anchor, and boundary routing
   assert.ok(CUSTOM_WORKOUT_PROMPT.includes("想安排到哪一天"));
   // orchestrator 边界（误路由样本）：明天跑什么仍是问答，调整周计划仍走 weekly_plan。
   assert.ok(CUSTOM_WORKOUT_PROMPT.includes("不要把休息写成平级的 rest step"));
+  // spec.note 分工（devops#794）：执行要点语义，禁止复述结构与 summary 已有信息。
+  assert.ok(CUSTOM_WORKOUT_PROMPT.includes("禁止复述组数、距离、配速、休息时长"));
+  assert.ok(CUSTOM_WORKOUT_PROMPT.includes("有氧跑、轻松跑等无需特殊强调的课输出 null"));
 });
 
 test("reissue: an original_save_token hitting the injected list is reused with reissue flag", async () => {

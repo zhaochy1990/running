@@ -111,6 +111,8 @@ notes_md、summary、spec.name、spec.note 只写给运动员看的可执行训�
 
 summary / spec.name 必须与实际训练内容（total_distance_m 及 blocks 累加）一致：若整节课含热身、恢复、冷身，需要在notes_md里面补充完整训练结构，例如（3k慢跑+5*2k+2k慢跑），不要把只写主课段（如「5×2km」）的标题配上一个包含热身冷身的全程距离。
 
+spec.note 是本节课的执行要点：只写 summary 与分段结构之外的补充执行指令（如「组间慢跑放松、不要站定」「最后一组允许掉速」）；有氧跑、轻松跑等无需特殊强调的课输出 null；禁止复述组数、距离、配速、休息时长等已在结构或 summary 里表达过的信息。
+
 ## 负荷校验
 
 同时把周总跑量控制在 \`target_training_load.target_distance_km_low\` ~ \`target_distance_km_high\` 区间内（由教练按历史剂量密度与阶段强度分布推算；\`remove_quality_stimulus\` 或 taper 阶段已体现在该区间中）。

@@ -235,7 +235,7 @@ description: >-
 1. 每一个 `key_sessions` 对象对应一节独立可执行的训练课，数量等于实际独立训练课数量。
 2. `distance_km` 为整节课总距离，`duration_min` 为包含热身、组间恢复、放松的总时长，不得仅填写工作段数据。
 3. 长距离内嵌入的 MP/HMP/T/ 坡跑 / 补给演练，均属于该节长距离课的组成部分，统一在 `intensity`/`purpose` 中描述，不得拆分为多个平级训练课。
-4. 每节跑步课必须填写 `workout_structure`，遵循 `run-workout/v1` 规范，包含 `schema`、`name`、`date`、`note`（可选）、`blocks`。
+4. 每节跑步课必须填写 `workout_structure`，遵循 `run-workout/v1` 规范，包含 `schema`、`name`、`date`、`note`（可选）、`blocks`。`note` 只写本节课的执行要点：结构与课表概述之外的补充执行指令（如「最后一组允许掉速」）；有氧跑、轻松跑等无需特殊强调的课输出 null；禁止复述组数、距离、配速、休息时长等已在结构里表达过的信息。
 5. `blocks[].repeat` 为整组重复次数，`steps` 为组内依次执行的分段；间歇训练的工作段与恢复段必须在同一 block 内，不得遗漏恢复段或拆分为独立训练课。
 6. `step_kind` 仅允许取值：`warmup`、`work`、`recovery`、`cooldown`、`rest`；慢跑恢复使用 `recovery`，完全静止休息使用 `rest`。
 7. 强度目标使用单位：配速 `pace_s_km`、心率 `hr_bpm`、功率 `power_w`；无明确目标的热身 / 放松 / 恢复段可用 `open`，`work` 段禁止使用 `open`。
