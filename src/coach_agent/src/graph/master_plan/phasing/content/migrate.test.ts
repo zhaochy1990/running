@@ -136,6 +136,9 @@ test("E2E 重判：spike 七值样本迁移 V1 后六周 一致性+C1-C8 全绿�
       row: { total_km: row.total_km, long_run_km: row.long_run_km, quality_sessions: row.quality_sessions },
       zones,
       maxTrainingDays,
+      // spike 样本是 ⑨ 量纲拍板（E 处方 duration 为主）之前的 distance 形态，
+      // C9 走 legacy 豁免；其余 C1-C8+一致性仍全量判
+      legacyEDuration: true,
       ...(week.week_no === 6 ? { raceDate: RACE_DATE } : {}),
     });
     for (const c of checks) assert.equal(c.pass, true, `week ${week.week_no} ${c.id}: ${c.detail}`);

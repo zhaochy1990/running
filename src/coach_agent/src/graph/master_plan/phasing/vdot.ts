@@ -56,6 +56,18 @@ export function vdotFromThresholdPace(paceSecPerKm: number): number {
   return vo2(60000 / paceSecPerKm) / fracMax(60);
 }
 
+/**
+ * VDOT → 校准阈值配速（s/km）：vdotFromThresholdPace 的闭式逆。解
+ * vo2(v) = VDOT·%max(60)（0.000104·v² + 0.182258·v − 4.6 − VDOT·%max(60) = 0
+ * 的正根，v = m/min）。L4 projectZones 的带换算入口（devops#811）。
+ */
+export function thresholdPaceFromVdot(vdot: number): number {
+  if (!Number.isFinite(vdot) || vdot <= 0) return Number.NaN;
+  const discriminant = 0.182258 ** 2 + 4 * 0.000104 * (4.6 + vdot * fracMax(60));
+  const vMetersPerMin = (-0.182258 + Math.sqrt(discriminant)) / (2 * 0.000104);
+  return 60000 / vMetersPerMin;
+}
+
 export interface EquivalentsOptions {
   /** 短距离比赛锚：比该距离更长的等效成绩打保守折扣（默认不打）。 */
   sourceKey?: RaceDistanceKey;
