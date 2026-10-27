@@ -107,7 +107,7 @@ L2 与 L3 的耦合保留机制：**体量带**——阶段划分层给每阶段
 | [daniels-l1-evidence.md](./daniels-l1-evidence.md) | L1 证据层 | 已落地（devops#782 / PR #630）；常态基线与 calibration 区块待拍板/待实现 |
 | [daniels-l2-phase-division.md](./daniels-l2-phase-division.md) | L2 阶段划分层 | 已落地（devops#782 / PR #630）；可行性阶梯票待实现 |
 | [daniels-l3-load.md](./daniels-l3-load.md) | L3 载荷层 | 设计定稿+38 案例三档实测全绿；已实现合并（devops#793 / PR #638） |
-| daniels-l4-content.md | L4 内容层 | 待设计（地基=块界生成+课表库缺省/校验+VDOT 六带配速，§3.2） |
+| [daniels-l4-content.md](./daniels-l4-content.md) | L4 内容层 | 定稿（#796 已关：V1 扩展+九条规则+projectZones+编排）；实现 #807/#811/#798 |
 | daniels-l5-scheduler.md | L5 落位层 | 待设计 |
 | daniels-r-execution.md | 执行回路 | 骨架已拍板（§3.2：块界生成+每夜复盘+调整分级）；信号阈值表与完成追踪前置待设计 |
 
