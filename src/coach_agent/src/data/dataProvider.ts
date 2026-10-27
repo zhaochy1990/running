@@ -24,6 +24,8 @@ export interface DataProvider {
   getRaceTarget(userId: string): Promise<RaceTarget | null>;
   /** 一场赛事的内容聚合（race_calendar + items + race_city_content），供比赛策略；赛事不存在返回 null。 */
   getRaceCalendarContext(raceEventId: number): Promise<RaceCalendarContext | null>;
+  /** 已发布赛历检索（devops#812，QA 只读列表）；日期窗缺省 = asofDate 起 90 天。 */
+  searchRaceCalendar(options: RaceCalendarSearchQuery): Promise<RaceCalendarSummary[]>;
   /** 运动员成绩基线（race_predictions + ability L4 + running_calibration）的有界聚合。 */
   getPerformanceBaseline(userId: string, asOfDate: string): Promise<PerformanceBaseline>;
 }
@@ -252,6 +254,33 @@ export interface RaceCalendarContext {
   content_source: string | null;
   items: RaceCalendarItemContent[];
   city_content: RaceCityContentBrief | null;
+}
+
+/** searchRaceCalendar 的检索条件；`asofDate` 锚定缺省日期窗（实现层补齐）。 */
+export interface RaceCalendarSearchQuery {
+  asofDate: string;
+  /** 名称关键词，子串匹配 name / name_cn。 */
+  keyword?: string;
+  /** 城市精确匹配（如「杭州市」）。 */
+  city?: string;
+  /** 比赛日期下界 YYYY-MM-DD（含），缺省 = asofDate。 */
+  dateFrom?: string;
+  /** 比赛日期上界 YYYY-MM-DD（含），缺省 = dateFrom + 90 天。 */
+  dateTo?: string;
+  /** 项目类型 token（Marathon / HalfMarathon / Trail / Ultra / {n}Km，与 race_calendar_item.type 同词汇）。 */
+  itemType?: string;
+  limit?: number;
+}
+
+/** race_calendar 检索摘要行：轻量列表投影，赛道等内容明细走 getRaceCalendarContext。 */
+export interface RaceCalendarSummary {
+  race_event_id: number;
+  name: string;
+  name_cn: string | null;
+  race_date: string;
+  province: string | null;
+  city: string | null;
+  items: Array<{ item_type: string; distance_km: number | null }>;
 }
 
 /** workout 表一行的教练查询投影（devops#586 三源统一读面）。 */

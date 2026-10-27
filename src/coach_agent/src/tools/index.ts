@@ -8,6 +8,7 @@ export {
 export { createMasterPlanContextTools } from "./masterPlanContext.js";
 export type { PlanStore } from "./plan.js";
 export { createPlanTools } from "./plan.js";
+export { createRaceCalendarSearchTools } from "./raceCalendar.js";
 export { createRaceTools } from "./races.js";
 export { createRecoveryTools } from "./recovery.js";
 export { createRunningCalibrationTools } from "./runningCalibration.js";

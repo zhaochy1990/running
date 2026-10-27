@@ -13,14 +13,17 @@ export const ORCHESTRATOR_INTENT_PROMPT = `Analyze the user's utterance and clas
 - "race_strategy"：为一场具体比赛制定或调整执行策略（分段配速、补给、赛道应对）
 - "custom_workout"：创建一次具体的训练课（用户给出组数/距离/配速/休息等课表结构，要生成可保存的单次训练课）；**修改某节已保存训练课的内容**（改组数/配速/时长等，含同时改日期的混合请求）也归这里
 - "workout_manage"：**删除**或**改期**一节已保存的训练课（只动日期/存废，不改课表内容）
-- "training_question"：关于训练状态、疲劳、指标或跑步知识的问答；查看/解读已生成的计划
+- "training_question"：关于训练状态、疲劳、指标或跑步知识的问答；查看/解读已生成的计划；**查询赛事日历信息**（某场比赛的时间/城市/项目，一段时间内有哪些比赛——只问事实，不制定策略）
 - "other"：不属于以上任何一类
 
-判断依据是用户的**意图**，不是句中出现了「周 / 计划」：问训练跑得怎样、状态如何属于 training_question；查看已写好的计划（周或赛季）分别属于 weekly_plan / training_question；只有要**生成**或**整体重排**赛季计划才是 master_plan（耗时数分钟的完整规划）；要**创建**单次训练课就是 custom_workout——结构没说全（缺配速/日期/组数）也是 custom_workout（后续会追问补齐），不必等结构完整；描述一节具体课表（组数/距离/配速/休息）要落成单次训练课时才是 custom_workout——调整周计划里的某一天仍是 weekly_plan，「明天跑什么」这类提问仍是 training_question。**对已保存的课只动存废或日期是 workout_manage；动课表内容（改时长/组数/配速，无论是否同时改日期）是 custom_workout**——「把这节课改成 12 分钟 3 组」「改成后天 12 分钟 3 组」都是 custom_workout；「把明天的课删了」「今天训练挪到周五」是 workout_manage；调整周计划（改某天的安排/改成休息）仍是 weekly_plan。
+判断依据是用户的**意图**，不是句中出现了「周 / 计划」：问训练跑得怎样、状态如何属于 training_question；查看已写好的计划（周或赛季）分别属于 weekly_plan / training_question；**赛事问答按问的是事实还是方案划界——问赛事事实（时间/城市/项目/赛道/爬升）是 training_question，问怎么跑（配速分段/补给方案）才是 race_strategy**；只有要**生成**或**整体重排**赛季计划才是 master_plan（耗时数分钟的完整规划）；要**创建**单次训练课就是 custom_workout——结构没说全（缺配速/日期/组数）也是 custom_workout（后续会追问补齐），不必等结构完整；描述一节具体课表（组数/距离/配速/休息）要落成单次训练课时才是 custom_workout——调整周计划里的某一天仍是 weekly_plan，「明天跑什么」这类提问仍是 training_question。**对已保存的课只动存废或日期是 workout_manage；动课表内容（改时长/组数/配速，无论是否同时改日期）是 custom_workout**——「把这节课改成 12 分钟 3 组」「改成后天 12 分钟 3 组」都是 custom_workout；「把明天的课删了」「今天训练挪到周五」是 workout_manage；调整周计划（改某天的安排/改成休息）仍是 weekly_plan。
 示例（message → intent）：
 - "我这周跑的怎么样？" → training_question
 - "最近状态怎么样，累不累？" → training_question
 - "明天跑什么？" → training_question
+- "杭州马拉松什么时候开跑？" → training_question（查赛事信息，不是制定策略）
+- "11 月有哪些马拉松？" → training_question
+- "杭马的赛道难不难？" → training_question（问赛道事实；要配速/补给方案才是 race_strategy）
 - "帮我看下这周的训练计划" → weekly_plan
 - "下周计划调整一下，周三改成休息" → weekly_plan
 - "帮我看下赛季计划" → training_question

@@ -423,3 +423,124 @@ test("getRaceHistory source 映射：races 命中 / session_class 命中 / 双�
     assert.deepEqual(effort?.source, expected, `from_races=${fromRaces} from_class=${fromClass}`);
   }
 });
+
+test("searchRaceCalendar 缺省窗=asof 起 90 天、published=1、日期升序 LIMIT（devops#812）", async () => {
+  const calls: Array<{ sql: string; values: unknown[] }> = [];
+  const provider = new MySqlDataProvider({
+    async query(sql: string, values: unknown[]) {
+      calls.push({ sql, values });
+      return [[], []];
+    },
+  } as never);
+
+  const rows = await provider.searchRaceCalendar({ asofDate: "2026-10-27" });
+  assert.deepEqual(rows, []);
+  const search = calls[0];
+  assert.ok(search);
+  assert.match(search.sql, /published = 1/);
+  assert.match(search.sql, /race_date BETWEEN \? AND \?/);
+  assert.match(search.sql, /ORDER BY race_date ASC, id ASC/);
+  assert.match(search.sql, /LIMIT \?/);
+  assert.deepEqual(search.values, ["2026-10-27", "2027-01-25", 10]);
+  assert.equal(calls.length, 1, "no item query when the event list is empty");
+});
+
+test("searchRaceCalendar 显式过滤透传：keyword 双列 LIKE、city 等值、itemType 子查询、dateFrom 锚定 dateTo", async () => {
+  const calls: Array<{ sql: string; values: unknown[] }> = [];
+  const provider = new MySqlDataProvider({
+    async query(sql: string, values: unknown[]) {
+      calls.push({ sql, values });
+      if (sql.startsWith("SELECT race_event_id, type")) {
+        return [
+          [
+            { race_event_id: 30, type: "Marathon", distance_km: 42.195 },
+            { race_event_id: 30, type: "HalfMarathon", distance_km: 21.0975 },
+            { race_event_id: 31, type: "Marathon", distance_km: null },
+          ],
+          [],
+        ];
+      }
+      return [
+        [
+          { id: 30, name: "Hangzhou Marathon", name_cn: "杭州马拉松", race_date: "2026-11-01", province: "浙江省", city: "杭州市" },
+          { id: 31, name: "X Marathon", name_cn: null, race_date: "2026-11-08", province: null, city: null },
+        ],
+        [],
+      ];
+    },
+  } as never);
+
+  const rows = await provider.searchRaceCalendar({
+    asofDate: "2026-10-27",
+    keyword: "马%",
+    city: "杭州市",
+    dateFrom: "2026-11-01",
+    itemType: "Marathon",
+    limit: 2,
+  });
+  const [eventSql, itemSql] = calls;
+  assert.ok(eventSql);
+  assert.ok(itemSql);
+  // keyword 里的 % 被转义为字面量，再包 %…%；dateTo 缺省=显式 dateFrom+90 天。
+  assert.deepEqual(eventSql.values, ["2026-11-01", "2027-01-30", "%马\\%%", "%马\\%%", "杭州市", "Marathon", 2]);
+  assert.match(eventSql.sql, /name LIKE \? ESCAPE '\\\\' OR name_cn LIKE \? ESCAPE '\\\\'/);
+  assert.match(eventSql.sql, /id IN \(SELECT race_event_id FROM race_calendar_item WHERE type = \?\)/);
+  assert.match(itemSql.sql, /WHERE race_event_id IN \(\?, \?\)/);
+  assert.deepEqual(itemSql.values, [30, 31]);
+  assert.deepEqual(rows, [
+    {
+      race_event_id: 30,
+      name: "Hangzhou Marathon",
+      name_cn: "杭州马拉松",
+      race_date: "2026-11-01",
+      province: "浙江省",
+      city: "杭州市",
+      items: [
+        { item_type: "Marathon", distance_km: 42.195 },
+        { item_type: "HalfMarathon", distance_km: 21.0975 },
+      ],
+    },
+    {
+      race_event_id: 31,
+      name: "X Marathon",
+      name_cn: null,
+      race_date: "2026-11-08",
+      province: null,
+      city: null,
+      items: [{ item_type: "Marathon", distance_km: null }],
+    },
+  ]);
+});
+
+test("searchRaceCalendar 转义下划线与反斜杠，clamp limit 到 1..20", async () => {
+  const calls: Array<{ sql: string; values: unknown[] }> = [];
+  const provider = new MySqlDataProvider({
+    async query(sql: string, values: unknown[]) {
+      calls.push({ sql, values });
+      return [[], []];
+    },
+  } as never);
+
+  await provider.searchRaceCalendar({ asofDate: "2026-10-27", keyword: "a_b\\c", limit: 99 });
+  await provider.searchRaceCalendar({ asofDate: "2026-10-27", limit: 0 });
+  assert.deepEqual(calls[0]?.values, ["2026-10-27", "2027-01-25", "%a\\_b\\\\c%", "%a\\_b\\\\c%", 20]);
+  assert.deepEqual(calls[1]?.values, ["2026-10-27", "2027-01-25", 1]);
+});
+
+test("searchRaceCalendar 拒绝倒置窗与畸形日期（不查库）", async () => {
+  let queried = false;
+  const provider = new MySqlDataProvider({
+    async query() {
+      queried = true;
+      return [[], []];
+    },
+  } as never);
+
+  await assert.rejects(
+    provider.searchRaceCalendar({ asofDate: "2026-10-27", dateFrom: "2026-12-01", dateTo: "2026-11-01" }),
+    /dateFrom \(2026-12-01\) must not be after dateTo \(2026-11-01\)/,
+  );
+  await assert.rejects(provider.searchRaceCalendar({ asofDate: "2026/11/01" }), /invalid day/);
+  await assert.rejects(provider.searchRaceCalendar({ asofDate: "20261027" }), /invalid day/);
+  assert.equal(queried, false, "validation failures must reject without hitting the database");
+});

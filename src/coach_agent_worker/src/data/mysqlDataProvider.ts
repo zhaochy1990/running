@@ -16,6 +16,8 @@ import type {
   RaceAidStation,
   RaceCalendarContext,
   RaceCalendarItemContent,
+  RaceCalendarSearchQuery,
+  RaceCalendarSummary,
   RaceCourseChallenge,
   RaceCutoff,
   RaceEffort,
@@ -567,6 +569,69 @@ export class MySqlDataProvider implements DataProvider {
       items: itemRows[0].map(rowToRaceItemContent),
       city_content: cityContent,
     };
+  }
+
+  async searchRaceCalendar(options: RaceCalendarSearchQuery): Promise<RaceCalendarSummary[]> {
+    const dateFrom = assertDay(options.dateFrom ?? options.asofDate);
+    const dateTo = assertDay(options.dateTo ?? dayShift(dateFrom, 90));
+    if (dateFrom > dateTo) {
+      throw new Error(`dateFrom (${dateFrom}) must not be after dateTo (${dateTo})`);
+    }
+    // limit 与工具 schema 同界（1..20）：非工具路径直调也保持检索有界。
+    const limit = Math.min(Math.max(options.limit ?? 10, 1), 20);
+
+    // 固定日期窗让检索永远时间有界（QA 侧无「全库枚举」敞口）；其余过滤按传入拼接。
+    const where: string[] = ["published = 1", "race_date BETWEEN ? AND ?"];
+    const values: unknown[] = [dateFrom, dateTo];
+    if (options.keyword !== undefined) {
+      // LIKE 通配符当字面量用：用户输入里的 % _ \ 一律转义后再包 %…%。
+      const pattern = `%${options.keyword.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+      where.push("(name LIKE ? ESCAPE '\\\\' OR name_cn LIKE ? ESCAPE '\\\\')");
+      values.push(pattern, pattern);
+    }
+    if (options.city !== undefined) {
+      where.push("city = ?");
+      values.push(options.city);
+    }
+    if (options.itemType !== undefined) {
+      where.push("id IN (SELECT race_event_id FROM race_calendar_item WHERE type = ?)");
+      values.push(options.itemType);
+    }
+    values.push(limit);
+
+    const [eventRows] = await this.pool.query<RowDataPacket[]>(
+      `SELECT id, name, name_cn, race_date, province, city
+         FROM race_calendar
+        WHERE ${where.join(" AND ")}
+        ORDER BY race_date ASC, id ASC
+        LIMIT ?`,
+      values,
+    );
+    if (eventRows.length === 0) return [];
+
+    // 摘要只要项目类型+距离，第二条 IN 查询按事件拼回（不 JOIN 展开，LIMIT 语义不破）。
+    const [itemRows] = await this.pool.query<RowDataPacket[]>(
+      `SELECT race_event_id, type, distance_km
+         FROM race_calendar_item
+        WHERE race_event_id IN (${eventRows.map(() => "?").join(", ")})
+        ORDER BY race_event_id ASC, id ASC`,
+      eventRows.map((row) => row.id),
+    );
+    const itemsByEvent = new Map<number, Array<{ item_type: string; distance_km: number | null }>>();
+    for (const row of itemRows) {
+      const items = itemsByEvent.get(row.race_event_id as number) ?? [];
+      items.push({ item_type: row.type as string, distance_km: (row.distance_km ?? null) as number | null });
+      itemsByEvent.set(row.race_event_id as number, items);
+    }
+    return eventRows.map((row) => ({
+      race_event_id: row.id as number,
+      name: row.name as string,
+      name_cn: (row.name_cn ?? null) as string | null,
+      race_date: normalizeDay(row.race_date as string),
+      province: (row.province ?? null) as string | null,
+      city: (row.city ?? null) as string | null,
+      items: itemsByEvent.get(row.id as number) ?? [],
+    }));
   }
 
   /**
