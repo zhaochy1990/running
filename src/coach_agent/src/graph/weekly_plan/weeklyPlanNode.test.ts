@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { TargetTrainingLoad } from "@stride/contract";
+import { GENERATE_WEEKLY_PLAN_SYSTEM_PROMPT } from "./prompt.js";
 import { createWeeklyPlanSimulationContext } from "./testFixtures.js";
 import { buildUserPrompt, type WeeklyPlanLlmInput } from "./weeklyPlanNode.js";
 
@@ -43,6 +44,11 @@ test("buildUserPrompt omits retry feedback on the first attempt", () => {
   const prompt = JSON.parse(buildUserPrompt(input(null))) as Record<string, unknown>;
 
   assert.equal("retryFeedback" in prompt, false);
+});
+
+test("system prompt encodes step_kind doctrine (#808): standalone rest step only, paced slow segments are work", () => {
+  assert.ok(GENERATE_WEEKLY_PLAN_SYSTEM_PROMPT.includes("不要输出 step.rest 步后字段"));
+  assert.ok(GENERATE_WEEKLY_PLAN_SYSTEM_PROMPT.includes("变速课慢段不是 recovery"));
 });
 
 test("buildUserPrompt includes deterministic load feedback on retries", () => {

@@ -59,7 +59,9 @@ export const CUSTOM_WORKOUT_PROMPT = `你是 STRIDE 跑步教练的单次训练�
 2. 解析最新用户消息里的课表描述，得到 date / name / summary / spec：
    - 相对日期（明天/后天/周几）以系统提示给出的上海今天为基准换算成 YYYY-MM-DD；用户完全没提日期时不要猜，用中文追问「想安排到哪一天」。
    - 配速速记换算成 pace_s_km（秒/公里）：350-400 → 3:50–4:00/km 即 low=230, high=240；325-335 → low=205, high=215；单值 350 → low=high=230。时间速记如「82秒一个400」→ duration {kind:"time_s", value:82}。速记数字含糊或矛盾（如 500-350）时用中文追问，不要臆造。
-   - 组间休息优先写在 work 步的 rest 字段：「组间休息3分钟」→ rest {kind:"time_s", value:180}，「休息90秒」→ value:90；休息到心率降到某值用 {kind:"hr_bpm", value:...}。不要把休息写成平级的 rest step（两种写法都合法时统一用 rest 字段）。
+   - step_kind 教义：work=一切有配速处方的跑步主体（含轻松跑主体与变速课慢段）；warmup/cooldown=用户明确提到的课头/课尾慢跑；recovery=组间慢跑恢复（无配速处方、只为恢复，target 用 open）；rest=不在跑（站定/走动），唯一写法是平级独立 rest step。
+   - 组间静止休息写独立 rest step：「组间休息3分钟」→ {step_kind:"rest", duration:{kind:"time_s", value:180}, target:{kind:"open", low:null, high:null}}，「休息90秒」→ value:90；不要再输出 step.rest 步后字段（旧写法已废弃，仅兼容历史数据）。组间慢跑（不站定）写 recovery 步。
+   - 变速课慢段不是 recovery：有配速处方的慢跑=work 步+有氧配速。正例：「(2k快+2k慢)×4」→ 同一 block 内 work@快配速与 work@有氧配速交替，无 recovery 步；反例：把这 2k 慢段写成 recovery——它有配速处方，是训练内容不是恢复。
    - 重复结构用 block.repeat：「3组4km」→ 一个 repeat=3 的 block；「第三个4k跑完接着跑6个400m」= 两个连续 block。
    - 热身/放松只有用户明确提到才写 warmup/cooldown；不要自行添加。
    - name 是课表短名（如「4km×3组 + 400m×6」）；summary 是一句话课表总览（含组数、距离与配速要点）。

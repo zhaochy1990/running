@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AIMessage, type BaseMessage, HumanMessage } from "@langchain/core/messages";
-import { type CustomWorkoutCard, renderRunWorkoutSummary } from "@stride/contract";
+import { type CustomWorkoutCard, normalizeRunWorkout, renderRunWorkoutSummary } from "@stride/contract";
 import { CUSTOM_WORKOUT_PROMPT } from "../prompts.js";
 import { makeCustomWorkoutNode } from "./node.js";
 import { customWorkoutCardMessage, extractCustomWorkoutDraft, parseCustomWorkoutFromText, renderCustomWorkoutMarkdown } from "./render.js";
@@ -21,7 +21,13 @@ const spec = {
           target: { kind: "pace_s_km" as const, low: 230, high: 240 },
           note: null,
           hr_cap_bpm: null,
-          rest: { kind: "time_s" as const, value: 180 },
+        },
+        {
+          step_kind: "rest" as const,
+          duration: { kind: "time_s" as const, value: 180 },
+          target: { kind: "open" as const, low: null, high: null },
+          note: null,
+          hr_cap_bpm: null,
         },
       ],
     },
@@ -34,7 +40,13 @@ const spec = {
           target: { kind: "pace_s_km" as const, low: 205, high: 215 },
           note: null,
           hr_cap_bpm: null,
-          rest: { kind: "time_s" as const, value: 90 },
+        },
+        {
+          step_kind: "rest" as const,
+          duration: { kind: "time_s" as const, value: 90 },
+          target: { kind: "open" as const, low: null, high: null },
+          note: null,
+          hr_cap_bpm: null,
         },
       ],
     },
@@ -195,15 +207,58 @@ test("markdown renderer includes advice when present", () => {
   assert.ok(renderCustomWorkoutMarkdown(card).includes("注意热身充分"));
 });
 
-test("prompt hard rules: shorthand conversion, date anchor, and boundary routing samples", () => {
+test("prompt hard rules: shorthand conversion, date anchor, and step_kind doctrine", () => {
   assert.ok(CUSTOM_WORKOUT_PROMPT.includes("350-400 → 3:50–4:00/km 即 low=230, high=240"));
-  assert.ok(CUSTOM_WORKOUT_PROMPT.includes('组间休息3分钟」→ rest {kind:"time_s", value:180}'));
   assert.ok(CUSTOM_WORKOUT_PROMPT.includes("想安排到哪一天"));
-  // orchestrator 边界（误路由样本）：明天跑什么仍是问答，调整周计划仍走 weekly_plan。
-  assert.ok(CUSTOM_WORKOUT_PROMPT.includes("不要把休息写成平级的 rest step"));
+  // step_kind 语义教义（devops#808）：rest 字段停止新生成、静止休息唯一写法=独立步、变速慢段=work@easy。
+  assert.ok(CUSTOM_WORKOUT_PROMPT.includes('「组间休息3分钟」→ {step_kind:"rest"'));
+  assert.ok(CUSTOM_WORKOUT_PROMPT.includes("不要再输出 step.rest 步后字段"));
+  assert.ok(CUSTOM_WORKOUT_PROMPT.includes("变速课慢段不是 recovery"));
   // spec.note 分工（devops#794）：执行要点语义，禁止复述结构与 summary 已有信息。
   assert.ok(CUSTOM_WORKOUT_PROMPT.includes("禁止复述组数、距离、配速、休息时长"));
   assert.ok(CUSTOM_WORKOUT_PROMPT.includes("有氧跑、轻松跑等无需特殊强调的课输出 null"));
+});
+
+test("fartlek doctrine (devops#808): paced slow segments are work@easy, no recovery step, zero rest fields", () => {
+  const fartlekSpec = {
+    schema: "run-workout/v1" as const,
+    name: "2km快2km慢 ×4 变速",
+    date: "2026-10-20",
+    note: null,
+    blocks: [
+      {
+        repeat: 4,
+        steps: [
+          {
+            step_kind: "work" as const,
+            duration: { kind: "distance_m" as const, value: 2000 },
+            target: { kind: "pace_s_km" as const, low: 260, high: 265 },
+            note: null,
+            hr_cap_bpm: null,
+          },
+          {
+            step_kind: "work" as const,
+            duration: { kind: "distance_m" as const, value: 2000 },
+            target: { kind: "pace_s_km" as const, low: 330, high: 360 },
+            note: null,
+            hr_cap_bpm: null,
+          },
+        ],
+      },
+    ],
+  };
+  const normalized = normalizeRunWorkout(fartlekSpec);
+  const steps = normalized.blocks.flatMap((block) => block.steps);
+  // 快/慢段都是有配速处方的训练内容 → 全 work 步，无 recovery、无 rest 步。
+  assert.deepEqual(
+    steps.map((step) => step.step_kind),
+    ["work", "work"],
+  );
+  // 新生成形态零 rest 字段（devops#808 验收）。
+  for (const step of steps) assert.equal("rest" in step, false);
+  // 慢段是 work@easy（有氧配速处方），不是 open target 的 recovery。
+  const slow = steps[1];
+  assert.equal(slow?.target.kind, "pace_s_km");
 });
 
 test("reissue: an original_save_token hitting the injected list is reused with reissue flag", async () => {
