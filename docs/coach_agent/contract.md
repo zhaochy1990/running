@@ -578,11 +578,7 @@ RunWorkout 新增：
 | L1.5 | #792（非本图，在途） | 🟢 契约拍板 |
 | L3 | #793（PR #638，38 fixture）；#806 短块三处修正（PR #642）；#809 赛周低量档修复+taper 门右支+taper 削 LR | ✅ 已合并 |
 | 课表库编目 | #797 | ✅ 已关（草案在分支 research/daniels-session-library） |
-<<<<<<< HEAD
-| L4 契约 | #796（grilling；segments/repeat/type/purpose 已拍板）→ **#807 契约模块（已合并）** | ✅ 契约+判定表+校验+迁移回放已落地 |
-=======
-| L4 契约+生成器 | #796 已关（决议）→ **#807 契约模块（在途）+ #811 生成器（blocked by #807）** | 🟢 契约定稿 |
->>>>>>> 1a07de6f (docs(coach): L4 内容层定稿——daniels-l4-content.md 新建（契约/九条规则/projectZones 投影/编排），#796 关票，contract.md/daniels.md 同步)
+| L4 契约+生成器 | #796 已关（决议）→ #807 契约模块（PR running#643 已合并：契约+判定表+校验+迁移回放）+ **#811 生成器（agent 在途）** | 🟢 契约落地；生成器在途 |
 | 库×LLM 分工 | #798（#796✅+#797✅ 已解锁） | ⏳ 前沿 |
 | L5 落位 | #799 | 🟡 grilling |
 | 夜复盘阈值 | #800 | ⏳ |
