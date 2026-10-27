@@ -5,7 +5,7 @@ import { sanitizeJsonSchema } from "@stride/common";
 import { MasterPlanLenientSchema } from "@stride/contract";
 import type { ModelConfig } from "../../config/config.js";
 import { createMasterPlanLlmModels } from "./llm/models.js";
-import { goalAssessmentPrompt, reviewPrompt, strategyPrompt } from "./llm/prompts.js";
+import { goalAssessmentPrompt, reviewPrompt, skeletonPrompt, strategyPrompt } from "./llm/prompts.js";
 
 /** 收集「anyOf 的分支本身是裸 anyOf（无 type）」的路径 —— DeepSeek 400
  * missing field type 的触发形状（#614 现场复现判据）。 */
@@ -117,4 +117,11 @@ test("prompt builders append doctrine and review rubrics to system messages", ()
   assert.match(reviewMessages[0]?.[1] ?? "", /\n\nRUBRIC$/);
   assert.equal(strategyMessages[1]?.[1], JSON.stringify(input));
   assert.equal(reviewMessages[1]?.[1], JSON.stringify(input));
+});
+
+test("skeleton prompt encodes step_kind doctrine (#808): no per-step rest field, paced slow segments are work", () => {
+  const [system] = skeletonPrompt({ id: "input" }, "");
+  const text = String(system?.[1]);
+  assert.ok(text.includes("never use the per-step rest field"));
+  assert.ok(text.includes("is a work step at easy pace, not recovery"));
 });
