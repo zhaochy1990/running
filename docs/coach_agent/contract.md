@@ -454,6 +454,12 @@ RunWorkout 新增：
 
 ### 5.3 语义与验收门（判定表派生 + 一致性门；#807 落地）
 
+**step_kind 语义统一（2026-10-27 用户拍板，全管道教义）**：
+- `recovery` = **组间慢跑恢复**——以恢复为目的、无配速处方（target=open）的短慢跑（I 1km 组间 400m jog / 90s-3min），从属服务于下一组刺激
+- `rest` = **不在跑**（站定/走动）——唯一写法=独立 rest step；`step.rest` 步后字段停止新生成、仅 legacy 读侧兼容（其 Garmin 物化降级为 recovery 且 hr_bpm/manual 被静默丢弃，garmin/translate.go restFollowupStep 实证）
+- **变速课慢段不是 recovery**：(2k快+2k慢)×4 的 2k 慢段有配速处方（有氧配速）→ 是训练内容 → `work` 步+easy target（判定为有氧段）。判别式=**有配速处方的慢跑=work@easy；open target 的组间慢跑=recovery**
+- `work` 涵盖一切有配速处方的跑步主体（含 E 课主体，v1 惯例 "easy run body"）；`warmup`/`cooldown` = 课头/课尾结构性慢跑段
+
 **判定表**（确定性派生，**读 V1 字段**——类型从 target 配速+duration 派生，不依赖 step_kind 自报）：
 
 | 判定 | 规则 |
