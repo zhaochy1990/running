@@ -21,8 +21,22 @@ const ABSORB_EVERY = 4;
 const ABSORB_FACTOR = 0.75;
 /** taper 曲线削至赛周：缺省削减 40%（30-50% 带内），赛周=比赛+激活。 */
 const TAPER_CURVE = 0.45;
-/** 赛周 km=训练负荷投影（0.55×平台，非字面里程账——比赛与激活的课表归 L4 内容层排）。 */
-const RACE_FRACTION = 0.55;
+/**
+ * 赛周 km=比赛里程+激活（#806 弃 0.55×平台投影）：丹尼尔斯 FM 赛周激活原教义
+ * 10-15km@MP（老 kernel skeletonPrompt 同款规则），激活量随平台位在带内缩放；
+ * 字面值再被削减深度门带 [0.5, 0.7]×平台参照双侧夹取——低量计划（平台 <~77km
+ * 撑不起字面账）赛周回负荷投影语义；高平台（>~114km）激活随下界放大，
+ * 构造与门永不自挂。参照取门的 plateauRef 同款口径（FQ 非赛周最大 km，含
+ * taper 周——fq≤taperW 的退化布局下无 progress 周，锚回退平台会劈叉）。
+ */
+const RACE_KM = 42.195; // FM（判断层教义只验证 FM；距离 profile 化另票，spec §7）
+const ACTIVATION_SHARE = 0.15;
+const ACTIVATION_MIN_KM = 10;
+const ACTIVATION_MAX_KM = 15;
+const RACE_FLOOR_RATIO = 0.5;
+const RACE_CAP_RATIO = 0.7;
+/** 短跑道（≤8 周）禁用吸收周（#806 拍板①）：短块峰值后单调递减至赛周，全局 3+1 计数不注入短块。 */
+const SHORT_ABSORB_MAX_WEEKS = 8;
 /** 块内微阶梯（质感项）：三周 0.97/1/1.03 微递进而非平台直排。 */
 const STAIR: readonly number[] = [0.97, 1, 1.03];
 /** LR 曲线：峰值 ≤32；份额 ≤36%（周量 <60km 放宽 42%）；低量档下限随峰下调。 */
@@ -168,7 +182,7 @@ const STRENGTH_POLICY: StrengthPhasePolicy[] = [
   {
     canonical: "final_quality",
     strength_focus: "力量减量维持神经激活（1 次/周，赛前 10 天停）",
-    quality_family: "M 配速比赛专项",
+    quality_family: "M 配速专项为主，保留 T 长间歇（MP-10~20s 级）与间歇刺激维持 VO2max；跨周质量课结构不重复（课表库 #798）",
     strides_note: "赛前激活 strides 保留，不计质量课",
   },
 ];
@@ -212,9 +226,13 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
     const inTaper = p.canonical === "final_quality" && fromEnd < taperW;
     const isRace = w === N;
     // 吸收周：全局建设周计数每第 4 周（计数含吸收周自身——spike 实测死循环陷阱；
-    // recovery 不计入；跨阶段不重置——相位内计数会在短阶段漏排）
+    // recovery 不计入；跨阶段不重置——相位内计数会在短阶段漏排）。
+    // 放位规则（#806 拍板①）：吸收距赛周 ≥ taper_weeks+1——吸收落在 taper 前一周
+    // 时 taper 从平台位重算会反超吸收周（E2E 实测锯齿 63.8→70.1）；距赛不足则该
+    // 周按常规建设周计，计数顺延。短跑道（≤8 周）整体禁用——减量弧本身即恢复。
     const buildSoFar = weeks.filter((x) => x.canonical !== "recovery" && (x.role === "progress" || x.role === "absorb")).length;
-    const absorb = !inTaper && p.canonical !== "recovery" && buildSoFar > 0 && (buildSoFar + 1) % ABSORB_EVERY === 0;
+    const absorb =
+      N > SHORT_ABSORB_MAX_WEEKS && !inTaper && p.canonical !== "recovery" && buildSoFar > 0 && (buildSoFar + 1) % ABSORB_EVERY === 0 && N - w >= taperW + 1;
     if (phaseWeekIdx === 1 || absorb) blockId++;
     const prev4 = [...actual4, ...weeks.map((x) => x.km)].slice(-4);
     const rollMean = prev4.reduce((s, x) => s + x, 0) / Math.max(1, prev4.length);
@@ -227,7 +245,12 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
     } else if (inTaper) {
       const tIdx = taperW - fromEnd;
       const plateau = weeks.filter((x) => x.canonical === "final_quality" && x.role === "progress").at(-1)?.km ?? Math.min(hi, rollMean);
-      km = isRace ? plateau * RACE_FRACTION : plateau * (1 - (TAPER_CURVE * tIdx) / (taperW + 1));
+      // 夹取参照=削减深度门的 plateauRef 同款（FQ 非赛周最大 km，含 taper 周）
+      const ref = Math.max(plateau, ...weeks.filter((x) => x.canonical === "final_quality" && x.role !== "race").map((x) => x.km));
+      const activation = Math.min(ACTIVATION_MAX_KM, Math.max(ACTIVATION_MIN_KM, plateau * ACTIVATION_SHARE));
+      km = isRace
+        ? Math.min(Math.max(RACE_KM + activation, ref * RACE_FLOOR_RATIO), ref * RACE_CAP_RATIO)
+        : plateau * (1 - (TAPER_CURVE * tIdx) / (taperW + 1));
       role = isRace ? "race" : "taper";
     } else {
       const stair = STAIR[(phaseWeekIdx - 1) % STAIR.length]!;

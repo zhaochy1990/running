@@ -202,18 +202,18 @@
       "week": 10,
       "canonical": "final_quality",
       "block": 4,
-      "role": "absorb",
-      "km": 52.7,
-      "lr": 22.1,
-      "q": 1
+      "role": "progress",
+      "km": 70.2,
+      "lr": 24.7,
+      "q": 2
     },
     {
       "week": 11,
       "canonical": "final_quality",
       "block": 4,
       "role": "taper",
-      "km": 49.3,
-      "lr": 20.7,
+      "km": 59.7,
+      "lr": 24.7,
       "q": 1
     },
     {
@@ -221,7 +221,7 @@
       "canonical": "final_quality",
       "block": 4,
       "role": "race",
-      "km": 30.8,
+      "km": 49.1,
       "lr": null,
       "q": 1
     }

@@ -126,9 +126,9 @@
       "week": 5,
       "canonical": "final_quality",
       "block": 3,
-      "role": "absorb",
-      "km": 70.9,
-      "lr": 25.5,
+      "role": "progress",
+      "km": 94.6,
+      "lr": 32,
       "q": 2
     },
     {
@@ -145,7 +145,7 @@
       "canonical": "final_quality",
       "block": 3,
       "role": "race",
-      "km": 53.6,
+      "km": 56.8,
       "lr": null,
       "q": 1
     }

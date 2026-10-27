@@ -233,6 +233,73 @@ test("L4 taper：递增段挂（单调公式方向反例——写反会把递减
   assert.ok(!failOf(validateLoad(intent, tooDeep, seed), "L4")!.pass);
 });
 
+test("L4 峰后弧单调（#806）：吸收落弧内被 taper 平台位重算反超挂；吸收在弧外过", () => {
+  const intent = makeIntent({
+    phases: [phase("recovery", 1, 1), phase("foundation", 2, 3), phase("final_quality", 4, 7)],
+    taperWeeks: 2,
+    volumeBands: [
+      { phase: "recovery", weekly_km_min: 20, weekly_km_max: 40 },
+      { phase: "foundation", weekly_km_min: 70, weekly_km_max: 90 },
+      { phase: "final_quality", weekly_km_min: 75, weekly_km_max: 95 },
+    ],
+  });
+  // E2E 实测锯齿（N=7 旧产出）：峰 82.5 → 吸收 63.8 → taper 从平台重算 70.1
+  // 反超吸收 → 赛周——峰后弧（末平台顶起至赛周）内上升
+  const zigzag = weeks([
+    [1, "recovery", 1, "progress", 20, 6, 0],
+    [2, "foundation", 2, "progress", 75.2, 27.1, 1],
+    [3, "foundation", 2, "progress", 80, 28.8, 1],
+    [4, "final_quality", 3, "progress", 82.5, 29.7, 2],
+    [5, "final_quality", 3, "absorb", 63.8, 23, 1],
+    [6, "final_quality", 3, "taper", 70.1, 25.2, 1],
+    [7, "final_quality", 3, "race", 54.9, null, 1],
+  ]);
+  assert.ok(!failOf(validateLoad(intent, zigzag, [75, 75, 75, 75]), "L4")!.pass);
+
+  // 弧外吸收（吸收在末平台顶之前、弧外，后续 progress 周垫高弧起点）：过
+  const fixed = weeks([
+    [1, "recovery", 1, "progress", 20, 6, 0],
+    [2, "foundation", 2, "progress", 75.2, 27.1, 1],
+    [3, "foundation", 2, "progress", 80, 28.8, 1],
+    [4, "final_quality", 3, "absorb", 63.8, 23, 1],
+    [5, "final_quality", 3, "progress", 85, 30.6, 2],
+    [6, "final_quality", 3, "taper", 72.3, 26, 1],
+    [7, "final_quality", 3, "race", 54.9, null, 1],
+  ]);
+  const checks = validateLoad(intent, fixed, [75, 75, 75, 75]);
+  assert.ok(failOf(checks, "L4")!.pass, failOf(checks, "L4")!.detail);
+});
+
+test("L4 峰后弧回退分支（#806 评审 m1）：fq≤taperW 全程 taper 布局退回 taper 段内单调", () => {
+  // 无 final_quality progress 周（fq3/taper3 贴满）：弧锚不存在，退回段内单调
+  const intent = makeIntent({
+    phases: [phase("foundation", 1, 2), phase("final_quality", 3, 5)],
+    taperWeeks: 3,
+    volumeBands: [
+      { phase: "foundation", weekly_km_min: 50, weekly_km_max: 75 },
+      { phase: "final_quality", weekly_km_min: 50, weekly_km_max: 75 },
+    ],
+  });
+  const mono = weeks([
+    [1, "foundation", 1, "progress", 70, 25.2, 2],
+    [2, "foundation", 1, "progress", 72, 25.9, 2],
+    [3, "final_quality", 2, "taper", 61.2, 22, 1],
+    [4, "final_quality", 2, "taper", 52, 18.7, 1],
+    [5, "final_quality", 2, "race", 43, null, 1],
+  ]);
+  const checks = validateLoad(intent, mono, [70, 70, 70, 70]);
+  assert.ok(failOf(checks, "L4")!.pass, failOf(checks, "L4")!.detail);
+
+  const rising = weeks([
+    [1, "foundation", 1, "progress", 70, 25.2, 2],
+    [2, "foundation", 1, "progress", 72, 25.9, 2],
+    [3, "final_quality", 2, "taper", 52, 18.7, 1],
+    [4, "final_quality", 2, "taper", 61.2, 22, 1],
+    [5, "final_quality", 2, "race", 43, null, 1],
+  ]);
+  assert.ok(!failOf(validateLoad(intent, rising, [70, 70, 70, 70]), "L4")!.pass);
+});
+
 test("L5 块内微阶梯：全平台直排挂；无 ≥3 周块豁免", () => {
   const intent = makeIntent({
     phases: [phase("foundation", 1, 5), phase("final_quality", 6, 7)],

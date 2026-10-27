@@ -78,7 +78,7 @@ test("块内微阶梯：≥3 个建设周的块呈非平台直排（0.97/1/1.03�
   assert.ok(Math.max(...fWeeks) - Math.min(...fWeeks) >= 0.5, `foundation kms=${fWeeks}`);
 });
 
-test("taper：段内递减、赛周=0.55×平台、LR null、Q=1", () => {
+test("taper：段内递减、赛周=比赛+激活（字面 52-57 且落在削减深度门带内）、LR null、Q=1", () => {
   const { weeks } = run();
   const taper = weeks.filter((w) => w.role === "taper").map((w) => w.km);
   const race = weeks.at(-1)!;
@@ -89,8 +89,103 @@ test("taper：段内递减、赛周=0.55×平台、LR null、Q=1", () => {
     taper.every((x, i) => i === 0 || x <= taper[i - 1]! + 0.5),
     `taper=${taper}`,
   );
-  const plateau = weeks.filter((w) => w.canonical === "final_quality" && w.role === "progress").at(-1)!.km;
-  assert.ok(Math.abs(race.km - plateau * 0.55) < 0.6, `race=${race.km} plateau=${plateau}`);
+  // 性质断言（不复制实现公式）：高平台走丹尼尔斯字面账 52-57（含比赛里程），
+  // 且始终在削减深度门带 [0.5, 0.7]×平台参照内（构造与门不自挂）
+  assert.ok(race.km >= 52 && race.km <= 57, `race=${race.km} 不在 52-57 带内`);
+  const ref = Math.max(...weeks.filter((w) => w.canonical === "final_quality" && w.role !== "race").map((w) => w.km));
+  assert.ok(race.km >= ref * 0.5 - 0.6 && race.km <= ref * 0.7 + 0.6, `race=${race.km} ref=${ref}`);
+});
+
+test("赛周低平台分支（#806）：平台撑不起字面账时回 0.70×平台（赛周仍为负荷投影）", () => {
+  const base: HabitualBaseline = {
+    week_km: 10,
+    level: "fallback_recent4",
+    scenario: "fallback_avg4",
+    avg4_km: 0,
+    decay_factor: 0.65,
+    acwr_applicable: false,
+    pre_peak_km: 12,
+  };
+  const intent = makeIntent({
+    phases: [phase("final_quality", 1, 6)],
+    taper_weeks: 1,
+    volume_bands: [{ phase: "final_quality", weekly_km_min: 12, weekly_km_max: 30 }],
+  });
+  const { weeks } = expandLoad({ intent, runwayWeeks: 6, baseline: base, recentWeeksKm: [0, 0, 0, 0] });
+  const plateau = weeks.filter((w) => w.role === "progress").at(-1)!.km;
+  const race = weeks.at(-1)!;
+  assert.ok(race.km < 42.2, `race=${race.km}`);
+  assert.ok(Math.abs(race.km - plateau * 0.7) < 0.6, `race=${race.km} plateau=${plateau}`);
+});
+
+test("赛周高平台分支（#806 评审 M1）：平台 >~114km 时激活下界放大，削减深度下界不破", () => {
+  // 高量档（band 100-120）：平台爬到 115+ 后字面 57.2 < 0.5×平台——赛周被
+  // 削减深度门带 [0.5,0.7]×参照双侧夹取，构造与门自洽
+  const high: HabitualBaseline = { ...baseline, week_km: 105, avg4_km: 105, pre_peak_km: 118 };
+  const { weeks } = expandLoad({
+    intent: makeIntent({
+      phases: [phase("final_quality", 1, 8)],
+      taper_weeks: 2,
+      volume_bands: [{ phase: "final_quality", weekly_km_min: 105, weekly_km_max: 125 }],
+    }),
+    runwayWeeks: 8,
+    baseline: high,
+    recentWeeksKm: [100, 105, 102, 108],
+  });
+  const race = weeks.at(-1)!;
+  const ref = Math.max(...weeks.filter((w) => w.role !== "race").map((w) => w.km));
+  assert.ok(ref > 114, `ref=${ref}（用例未进入高平台域）`);
+  assert.ok(race.km >= ref * 0.5 - 0.6, `race=${race.km} ref=${ref}（削减深度下界破）`);
+});
+
+test("吸收放位（#806）：距赛周 < taper+1 不落吸收；≤8 周短跑道禁用；峰后弧单调", () => {
+  const mk = (n: number) =>
+    makeIntent({
+      phases: [phase("recovery", 1, 1), phase("foundation", 2, n - 4), phase("final_quality", n - 3, n)],
+      taper_weeks: 2,
+      volume_bands: [
+        { phase: "recovery", weekly_km_min: 20, weekly_km_max: 40 },
+        { phase: "foundation", weekly_km_min: 70, weekly_km_max: 90 },
+        { phase: "final_quality", weekly_km_min: 75, weekly_km_max: 95 },
+      ],
+    });
+  const seed = [58, 62, 55, 60];
+  // N=7：E2E 锯齿案（w4 峰 82.5 → 旧代码 w5 吸收 63.8 → w6 taper 70.1 反超）——
+  // 现无吸收（该候选同时被距赛与短跑道两规则压制，距赛规则的独立效应见 z11）
+  const z7 = expandLoad({ intent: mk(7), runwayWeeks: 7, baseline, recentWeeksKm: seed });
+  assert.deepEqual(
+    z7.weeks.filter((w) => w.role === "absorb"),
+    [],
+  );
+  // N=8：w5 候选距赛 3 = taper+1 放位合法，但短跑道 ≤8 整体禁用全局吸收计数
+  const z8 = expandLoad({ intent: mk(8), runwayWeeks: 8, baseline, recentWeeksKm: seed });
+  assert.deepEqual(
+    z8.weeks.filter((w) => w.role === "absorb"),
+    [],
+  );
+  // N=9：w5 候选距赛 4 ≥3 且非短跑道 → 吸收保留（3+1 节奏合法形态）
+  const z9 = expandLoad({ intent: mk(9), runwayWeeks: 9, baseline, recentWeeksKm: seed });
+  assert.deepEqual(
+    z9.weeks.filter((w) => w.role === "absorb").map((w) => w.week),
+    [5],
+  );
+  // N=11（非短跑道）：w9 候选距赛 2 <3 → 放位规则独立压制（短禁用不参与），
+  // 该周按常规建设周计、计数顺延
+  const z11 = expandLoad({ intent: mk(11), runwayWeeks: 11, baseline, recentWeeksKm: seed });
+  assert.deepEqual(
+    z11.weeks.filter((w) => w.role === "absorb").map((w) => w.week),
+    [5],
+  );
+  assert.equal(z11.weeks.find((w) => w.week === 9)!.role, "progress");
+  // 峰后弧单调：末平台顶（最后一个 final_quality progress 周）起至赛周不升
+  for (const z of [z7, z8, z9, z11]) {
+    const arcStart = z.weeks.findLastIndex((w) => w.canonical === "final_quality" && w.role === "progress");
+    const arc = z.weeks.slice(arcStart).map((w) => w.km);
+    assert.ok(
+      arc.every((x, i) => i === 0 || x <= arc[i - 1]! + 0.5),
+      `arc=${arc}`,
+    );
+  }
 });
 
 test("Q 配额：foundation km<60→0 / km≥60→1；其余建设 km≥70→2 否则 1", () => {
