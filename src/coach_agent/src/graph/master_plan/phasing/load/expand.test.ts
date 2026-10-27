@@ -96,7 +96,7 @@ test("taper：段内递减、赛周=比赛+激活（字面 52-57 且落在削减
   assert.ok(race.km >= ref * 0.5 - 0.6 && race.km <= ref * 0.7 + 0.6, `race=${race.km} ref=${ref}`);
 });
 
-test("赛周低平台分支（#806）：平台撑不起字面账时回 0.70×平台（赛周仍为负荷投影）", () => {
+test("赛周低量档字面最小值优先（#809）：0.7×平台上限不得把赛周压到比赛里程之下", () => {
   const base: HabitualBaseline = {
     week_km: 10,
     level: "fallback_recent4",
@@ -114,15 +114,17 @@ test("赛周低平台分支（#806）：平台撑不起字面账时回 0.70×平
   const { weeks } = expandLoad({ intent, runwayWeeks: 6, baseline: base, recentWeeksKm: [0, 0, 0, 0] });
   const plateau = weeks.filter((w) => w.role === "progress").at(-1)!.km;
   const race = weeks.at(-1)!;
-  assert.ok(race.km < 42.2, `race=${race.km}`);
-  assert.ok(Math.abs(race.km - plateau * 0.7) < 0.6, `race=${race.km} plateau=${plateau}`);
+  // 赛周含 FM 本身：总里程 ≥42.2+激活下限 10（字面最小值 52.2 反超 0.7×平台上限——
+  // 旧双侧夹取会产出 37.8<42.2 的物理不可能赛周）
+  assert.ok(plateau * 0.7 < 52.2, `plateau=${plateau}（用例未进入低量域）`);
+  assert.ok(Math.abs(race.km - 52.2) < 0.1, `race=${race.km}`);
 });
 
-test("赛周高平台分支（#806 评审 M1）：平台 >~114km 时激活下界放大，削减深度下界不破", () => {
-  // 高量档（band 100-120）：平台爬到 115+ 后字面 57.2 < 0.5×平台——赛周被
-  // 削减深度门带 [0.5,0.7]×参照双侧夹取，构造与门自洽
+test("赛周高平台分支（#809）：回归纯字面账 ≤57.2，不再被 0.5×ref 下界抬升", () => {
+  // 高量档（band 100-120）：平台爬到 115+ 后旧公式赛周=0.5×平台（60+）——激活
+  // 原教义上限 15km，字面账封顶 57.2；量值合法性由 L4 门左支/激活量右支兜底
   const high: HabitualBaseline = { ...baseline, week_km: 105, avg4_km: 105, pre_peak_km: 118 };
-  const { weeks } = expandLoad({
+  const plan = buildLoadPlan({
     intent: makeIntent({
       phases: [phase("final_quality", 1, 8)],
       taper_weeks: 2,
@@ -132,10 +134,12 @@ test("赛周高平台分支（#806 评审 M1）：平台 >~114km 时激活下界
     baseline: high,
     recentWeeksKm: [100, 105, 102, 108],
   });
-  const race = weeks.at(-1)!;
-  const ref = Math.max(...weeks.filter((w) => w.role !== "race").map((w) => w.km));
+  const race = plan.weeks.at(-1)!;
+  const ref = Math.max(...plan.weeks.filter((w) => w.role !== "race").map((w) => w.km));
   assert.ok(ref > 114, `ref=${ref}（用例未进入高平台域）`);
-  assert.ok(race.km >= ref * 0.5 - 0.6, `race=${race.km} ref=${ref}（削减深度下界破）`);
+  assert.ok(Math.abs(race.km - 57.2) < 0.1, `race=${race.km}`);
+  assert.ok(race.km < ref * 0.5, `race=${race.km} ref=${ref}（旧 0.5×ref 下界已随 #809 双侧夹取移除）`);
+  assert.ok(plan.checks.find((c) => c.id.startsWith("L4"))!.pass, plan.checks.find((c) => c.id.startsWith("L4"))!.detail);
 });
 
 test("吸收放位（#806）：距赛周 < taper+1 不落吸收；≤8 周短跑道禁用；峰后弧单调", () => {
@@ -237,9 +241,12 @@ test("LR 份额：低量周放宽 42%，常规 36%；LR ≥12 下限", () => {
   }
 });
 
-test("低量/断练自洽（评审回归）：ACWR 不适用时种子=起点构造位，六门全绿", () => {
+test("低量/断练播种自洽（评审回归 + #809 语义更新）：建设周不被误伤；FM 赛周字面尖峰被硬门诚实标记", () => {
   // 零史用户（recentWeeksKm 全 0、起点 10km）：展开器播种 0.7×起点，验收门
-  // 用同一 rollingSeed——构造与门不自相矛盾（H1/H2/L1/份额门都不误伤）
+  // 用同一 rollingSeed——建设周（W1-W5）不被 H1/H2/L1 误伤（原回归目的）。
+  // #809：赛周=FM 字面账 52.2（比赛就在那周，物理不可再低）——从 ~15km 平台
+  // 跳到 52.2 是真实尖峰，H1/H2 诚实报红、L3 LR 峰值参照被赛周抬高——构造
+  // 不再用 #806 夹持「赛周 10km 却含全马」的谎言讨好门；这类目标应由 L2/判断层拒收
   const base: HabitualBaseline = {
     week_km: 10,
     level: "fallback_recent4",
@@ -255,16 +262,54 @@ test("低量/断练自洽（评审回归）：ACWR 不适用时种子=起点构�
     volume_bands: [{ phase: "final_quality", weekly_km_min: 12, weekly_km_max: 30 }],
   });
   const plan = buildLoadPlan({ intent, runwayWeeks: 6, baseline: base, recentWeeksKm: [0, 0, 0, 0] });
-  const failed = plan.checks.filter((c) => !c.pass).map((c) => `${c.id}:${c.detail}`);
-  assert.deepEqual(failed, []);
+  const failed = plan.checks.filter((c) => !c.pass);
+  assert.deepEqual(
+    failed.map((c) => c.id),
+    ["H1 ACWR≤1.3", "H2 单周尖峰≤1.5×滚动均值", "L3 LR曲线"],
+    `failed=${failed.map((c) => `${c.id}:${c.detail}`)}`,
+  );
+  // 误伤回归本体：H1/H2 尖峰只报赛周 W6（播种建设周干净）；L3 为 LR 峰值参照被赛周抬高（无周号）
+  assert.deepEqual(
+    failed.filter((c) => c.id.startsWith("H")).map((c) => c.detail),
+    ["W6 超限", "W6 超限"],
+  );
   assert.ok(
     plan.weeks.every((w) => w.km > 0),
     `weeks=${plan.weeks.map((w) => w.km)}`,
   );
+  assert.ok(Math.abs(plan.weeks.at(-1)!.km - 52.2) < 0.1);
   // LR 下限让位份额：低量周 lr ≤ km×cap+0.5（不硬顶 12）
   for (const w of plan.weeks) {
     if (w.lr == null) continue;
     const cap = w.km < 60 ? 0.42 : 0.36;
     assert.ok((w.lr ?? 0) <= w.km * cap + 0.6, `W${w.week} lr=${w.lr} km=${w.km}`);
   }
+});
+
+test("taper 周 LR 削减（#809）：常规目标被 25→20 随深度递减的带上限修剪；赛周 null 不变", () => {
+  // 高量档让常规 LR 目标顶到 32（LR_MAX_KM）：taper 削减带独立可见
+  const high: HabitualBaseline = { ...baseline, week_km: 100, avg4_km: 100, pre_peak_km: 110 };
+  const { weeks } = expandLoad({
+    intent: makeIntent({
+      phases: [phase("foundation", 1, 8), phase("final_quality", 9, 14)],
+      taper_weeks: 3,
+      volume_bands: [
+        { phase: "foundation", weekly_km_min: 90, weekly_km_max: 110 },
+        { phase: "final_quality", weekly_km_min: 100, weekly_km_max: 120 },
+      ],
+    }),
+    runwayWeeks: 14,
+    baseline: high,
+    recentWeeksKm: [95, 100, 98, 102],
+  });
+  const tapers = weeks.filter((w) => w.role === "taper");
+  assert.equal(tapers.length, 2);
+  // tIdx 1→25、2→20（每深一周 −5，带 [20,25]；常规目标 32 被修剪）
+  assert.deepEqual(
+    tapers.map((w) => w.lr),
+    [25, 20],
+  );
+  assert.equal(weeks.at(-1)!.lr, null);
+  // 反向参照：同级常规建设周不被 taper 带修剪（顶格 32）
+  assert.ok(weeks.some((w) => w.role === "progress" && w.canonical !== "recovery" && (w.lr ?? 0) > 25));
 });

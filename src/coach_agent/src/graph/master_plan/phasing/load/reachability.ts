@@ -17,6 +17,11 @@ export const BUILD_CAP = 1.28;
 /** recovery 构造位：min(带 lo, max(15, 起点×0.7))。 */
 export const RECOVERY_FLOOR_KM = 15;
 export const RECOVERY_FACTOR = 0.7;
+/** 比赛里程（km）：FM（判断层教义只验证 FM；距离 profile 化另票，spec §7）——赛周公式与 L4 门激活量判据共用。 */
+export const RACE_KM = 42.195;
+/** FM 赛周激活带（km，丹尼尔斯原教义 10-15km@MP）：展开器赛周公式与 L4 门低量档判据同源。 */
+export const ACTIVATION_MIN_KM = 10;
+export const ACTIVATION_MAX_KM = 15;
 /** 与 L3 带贴合门一致的 lo 容差（km）。 */
 const LO_TOLERANCE_KM = 2;
 

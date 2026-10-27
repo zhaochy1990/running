@@ -2,7 +2,7 @@ import type { PhaseCanonical, PhaseDivisionIntent } from "../intent.js";
 import { phaseRefMatches } from "../intent.js";
 import type { HabitualBaseline } from "./baseline.js";
 import { type LoadCheck, validateLoad } from "./gates.js";
-import { BUILD_CAP, bandOf, RECOVERY_FACTOR, RECOVERY_FLOOR_KM } from "./reachability.js";
+import { ACTIVATION_MAX_KM, ACTIVATION_MIN_KM, BUILD_CAP, bandOf, RACE_KM, RECOVERY_FACTOR, RECOVERY_FLOOR_KM } from "./reachability.js";
 
 /**
  * 载荷展开器（devops#793，daniels-l3-load.md §2.2-§2.5）：把 L2 阶段划分
@@ -23,17 +23,17 @@ const ABSORB_FACTOR = 0.75;
 const TAPER_CURVE = 0.45;
 /**
  * 赛周 km=比赛里程+激活（#806 弃 0.55×平台投影）：丹尼尔斯 FM 赛周激活原教义
- * 10-15km@MP（老 kernel skeletonPrompt 同款规则），激活量随平台位在带内缩放；
- * 字面值再被削减深度门带 [0.5, 0.7]×平台参照双侧夹取——低量计划（平台 <~77km
- * 撑不起字面账）赛周回负荷投影语义；高平台（>~114km）激活随下界放大，
- * 构造与门永不自挂。参照取门的 plateauRef 同款口径（FQ 非赛周最大 km，含
- * taper 周——fq≤taperW 的退化布局下无 progress 周，锚回退平台会劈叉）。
+ * 10-15km@MP（老 kernel skeletonPrompt 同款规则），激活量随平台位在带内缩放。
+ * #809 低量档修复：字面最小值 42.2+10 优先于 0.7×ref 上限——低量跑者（峰
+ * <~72.5km 时赛周 ≥52.2 必然越过 0.72×峰比值带、<~74.6km 时必然越过削减深度
+ * 上界）比赛必然主导整周，上限夹持不得把赛周压到低于比赛里程本身（原双侧夹取
+ * 会产出 37.8<42.2 的物理不可能赛周）。上限仅在高于字面最小值时生效（压高
+ * 激活）；0.5×ref 下限随 #806 双侧夹取一并移除（>~114km 高平台回归纯字面账
+ * ≤57.2，由 L4 门激活量右支兜底）。参照取门的 plateauRef 同款口径（FQ 非赛
+ * 周最大 km，含 taper 周——fq≤taperW 的退化布局下无 progress 周，锚回退平
+ * 台会劈叉）。
  */
-const RACE_KM = 42.195; // FM（判断层教义只验证 FM；距离 profile 化另票，spec §7）
 const ACTIVATION_SHARE = 0.15;
-const ACTIVATION_MIN_KM = 10;
-const ACTIVATION_MAX_KM = 15;
-const RACE_FLOOR_RATIO = 0.5;
 const RACE_CAP_RATIO = 0.7;
 /** 短跑道（≤8 周）禁用吸收周（#806 拍板①）：短块峰值后单调递减至赛周，全局 3+1 计数不注入短块。 */
 const SHORT_ABSORB_MAX_WEEKS = 8;
@@ -47,6 +47,8 @@ const LR_LOW_VOLUME_WEEK_KM = 60;
 const LR_FLOOR_KM = 22;
 /** LR 运行下限（km）：低量周让位于份额上限（min(12, km×cap)），不硬顶破份额门。 */
 const LR_MIN_KM = 12;
+/** taper 周 LR 削减（#809，真人教练 8 周对比拍板）：首 taper 周 25、每深一周 −5（带 20-25，由 taperW≤3 不变量保证）；race 周 lr=null 不变。 */
+const TAPER_LR_MAX_KM = 25;
 /** Q 配额（spec §2.4）：recovery=0｜foundation km≥60→1 否则 0｜其余建设 km≥70→2 否则 1｜taper/赛周=1。 */
 const Q_FOUNDATION_KM = 60;
 const Q_BUILD_KM = 70;
@@ -248,8 +250,10 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
       // 夹取参照=削减深度门的 plateauRef 同款（FQ 非赛周最大 km，含 taper 周）
       const ref = Math.max(plateau, ...weeks.filter((x) => x.canonical === "final_quality" && x.role !== "race").map((x) => x.km));
       const activation = Math.min(ACTIVATION_MAX_KM, Math.max(ACTIVATION_MIN_KM, plateau * ACTIVATION_SHARE));
+      // 赛周=字面账 42.2+激活（#809）：字面最小值优先——低量档上限夹持不得
+      // 把赛周压到比赛里程之下；0.7×ref 仅在高于字面最小值时修剪高激活
       km = isRace
-        ? Math.min(Math.max(RACE_KM + activation, ref * RACE_FLOOR_RATIO), ref * RACE_CAP_RATIO)
+        ? Math.max(RACE_KM + ACTIVATION_MIN_KM, Math.min(RACE_KM + activation, ref * RACE_CAP_RATIO))
         : plateau * (1 - (TAPER_CURVE * tIdx) / (taperW + 1));
       role = isRace ? "race" : "taper";
     } else {
@@ -264,8 +268,19 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
     const lrCap = km < LR_LOW_VOLUME_WEEK_KM ? LR_SHARE_LOW_VOLUME : LR_SHARE;
     const lrFloor = Math.max(LR_FLOOR_KM, lr8 * 1.2);
     const lrTarget = Math.min(LR_MAX_KM, lrFloor, km * lrCap);
-    // 下限 min(12, km×cap)：低量周（km≲27）份额优先，运行下限不再硬顶破份额门
-    const lr = p.canonical === "recovery" || isRace ? (isRace ? null : r1(Math.min(14, km * 0.3))) : r1(Math.max(Math.min(LR_MIN_KM, km * lrCap), lrTarget));
+    // 下限 min(12, km×cap)：低量周（km≲27）份额优先，运行下限不再硬顶破份额门。
+    // taper 周独立削减（#809）：常规目标再被随深度递减的带上限修剪（首 taper 周 25、
+    // 每深一周 −5；taperW≤3 不变量保证结果恒落 20-25 带，无需下限钳制）；
+    // recovery 小 LR、赛周 null 不变。
+    let lr: number | null;
+    if (isRace) {
+      lr = null;
+    } else if (p.canonical === "recovery") {
+      lr = r1(Math.min(14, km * 0.3));
+    } else {
+      const base = Math.max(Math.min(LR_MIN_KM, km * lrCap), lrTarget);
+      lr = r1(role === "taper" ? Math.min(base, TAPER_LR_MAX_KM - 5 * (taperW - fromEnd - 1)) : base);
+    }
     const q =
       p.canonical === "recovery" ? 0 : isRace || inTaper ? 1 : p.canonical === "foundation" ? (km >= Q_FOUNDATION_KM ? 1 : 0) : km >= Q_BUILD_KM ? 2 : 1;
     weeks.push({ week: w, canonical: p.canonical, block: blockId, role, km: r1(km), lr, q });
