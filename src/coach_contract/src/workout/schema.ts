@@ -11,8 +11,8 @@ import { z } from "zod/v4";
  * 对象不 strict（剥掉模型多吐的噪声键）、note/hr_cap_bpm/schema 判别符可省略，
  * 经 normalizeRunWorkout() 补默认后必须能通过严格层。
  *
- * 版本策略：v1 内只追加可选字段（step.rest、target kind=power_w/cadence_spm），
- * 不升 v2 —— 旧文档仍是合法 v1（见 docs/adr/0043）。
+ * 版本策略：v1 内只追加可选字段（step.rest、target kind=power_w/cadence_spm、
+ * workout type/purpose），不升 v2 —— 旧文档仍是合法 v1（见 docs/adr/0043）。
  */
 
 const DaySchema = z.iso.date();
@@ -37,6 +37,15 @@ export const StepRestSchema = z.discriminatedUnion("kind", [
 
 const StepKindSchema = z.enum(["warmup", "work", "recovery", "cooldown", "rest"]);
 
+/**
+ * 生成时声明的主刺激类型（devops#807，#796 拍板）：配速意义因人而异
+ * （4:10/km 是高手有氧、另一个人的 M），意图显式供一致性校验与复盘消费；
+ * LR=长跑位型课（E 配速为主，可嵌 work 尾段）。类型是意图声明而非合法性
+ * 来源——合法性仍由谱内校验派生（配速/距离/时长事实）。
+ */
+export const RunWorkoutTypeSchema = z.enum(["E", "M", "T", "I", "R", "LR"]);
+export type RunWorkoutType = z.infer<typeof RunWorkoutTypeSchema>;
+
 const NO_REST_ON_REST_STEP = "a rest step must not carry a rest field";
 
 /** 严格 step：note/hr_cap_bpm 必填可 null；rest 可选；step_kind='rest' 的步不得带 rest 字段。 */
@@ -60,6 +69,10 @@ export const RunWorkoutSchema = z.strictObject({
   name: z.string().min(1),
   date: DaySchema,
   note: z.string().nullable(),
+  /** 主刺激类型（可选可 null，旧文档仍是合法 v1）；E/M/T/I/R=对应带的主刺激，LR=长跑位型课。 */
+  type: RunWorkoutTypeSchema.nullish(),
+  /** 训练说明：练什么、为什么、本节课在本周/本阶段的位置（给用户看也给复盘看）；新生成的课必填，存量缺省视为 legacy。 */
+  purpose: z.string().nullish(),
   blocks: z
     .array(
       z.strictObject({
@@ -123,6 +136,8 @@ export const RunWorkoutLenientSchema = z.object({
   name: z.string().min(1),
   date: DaySchema,
   note: z.string().nullish(),
+  type: RunWorkoutTypeSchema.nullish(),
+  purpose: z.string().nullish(),
   blocks: z
     .array(
       z.object({
@@ -141,6 +156,8 @@ export function normalizeRunWorkout(input: unknown): RunWorkout {
     name: lenient.name,
     date: lenient.date,
     note: lenient.note ?? null,
+    type: lenient.type ?? null,
+    purpose: lenient.purpose ?? null,
     blocks: lenient.blocks.map((block) => ({
       repeat: block.repeat,
       steps: block.steps.map((step) => ({
