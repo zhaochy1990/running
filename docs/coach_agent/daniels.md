@@ -103,6 +103,7 @@ L2 与 L3 的耦合保留机制：**体量带**——阶段划分层给每阶段
 
 | 文档 | 覆盖 | 状态 |
 |---|---|---|
+| [contract.md](./contract.md) | L1-L5 全层契约总表（Epic devops#795 终态整理；L4/L5 含 spike 实证与用户拍板规则，待定项挂票号） | 快照维护中（2026-10-27） |
 | [daniels-l1-evidence.md](./daniels-l1-evidence.md) | L1 证据层 | 已落地（devops#782 / PR #630）；常态基线与 calibration 区块待拍板/待实现 |
 | [daniels-l2-phase-division.md](./daniels-l2-phase-division.md) | L2 阶段划分层 | 已落地（devops#782 / PR #630）；可行性阶梯票待实现 |
 | [daniels-l3-load.md](./daniels-l3-load.md) | L3 载荷层 | 设计定稿+38 案例三档实测全绿；已实现合并（devops#793 / PR #638） |
