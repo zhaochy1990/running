@@ -227,27 +227,27 @@
     {
       "week": 14,
       "canonical": "final_quality",
-      "block": 7,
-      "role": "absorb",
-      "km": 76.5,
-      "lr": 27.5,
+      "block": 6,
+      "role": "progress",
+      "km": 102,
+      "lr": 32,
       "q": 2
     },
     {
       "week": 15,
       "canonical": "final_quality",
-      "block": 7,
+      "block": 6,
       "role": "taper",
-      "km": 84.1,
-      "lr": 30.3,
+      "km": 86.7,
+      "lr": 31.2,
       "q": 1
     },
     {
       "week": 16,
       "canonical": "final_quality",
-      "block": 7,
+      "block": 6,
       "role": "race",
-      "km": 54.5,
+      "km": 57.2,
       "lr": null,
       "q": 1
     }

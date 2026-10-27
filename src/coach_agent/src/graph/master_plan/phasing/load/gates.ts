@@ -6,7 +6,7 @@ import { bandOf } from "./reachability.js";
 /**
  * 载荷层六条验收门（devops#793 E 节，daniels-l3-load.md §4，38 案例实测沉淀）：
  * 1 三硬门（ACWR≤1.3 / 单周尖峰 / 块对块） 2 带贴合（爬坡豁免） 3 节奏（3+1）
- * 4 LR（峰值/份额/赛周 null/期内单调） 5 taper（赛周区间/单调降/削减深度）
+ * 4 LR（峰值/份额/赛周 null/期内单调） 5 taper（赛周区间/峰后弧单调/削减深度）
  * 6 块内微阶梯存在性。两个实测陷阱已内化：块豁免查带必须用真实阶段行；
  * taper 单调判据方向（削至赛周=递减）。
  */
@@ -127,13 +127,20 @@ export function validateLoad(intent: PhaseDivisionIntent, weeks: LoadWeek[], rec
     detail: `峰${lrMax}/下限${r1(lrFloor)} 份额${shareOk ? "✓" : "✗"} 单调${monoOk ? "✓" : "✗"}`,
   });
 
-  // 门 5：taper——赛周 0.35-0.72×峰、taper 段单调降（方向：削至赛周=递减；
-  // 单调公式写反会把递减判成递增，spike 实测陷阱）、削减深度 30-50%
-  // （平台参照=final_quality 非赛周最大 km；N=1 单周跑道与无平台参照的
-  // 衰退跑道豁免子判据——赛周即全计划，无 taper 结构可验）
+  // 门 5：taper——赛周 0.35-0.72×峰、峰后弧单调、削减深度 30-50%。
+  // 峰后弧单调（#806，原「taper 段单调降」扩展）：末段平台顶（最后一个
+  // final_quality progress 周）起至赛周单调不升——吸收落进弧内被 taper 平台位
+  // 重算反超的锯齿在此判；中段吸收-回弹（峰值再临）在弧外，3+1 节奏合法。
+  // 无平台参照的全程 taper 布局退回 taper 段内单调。削减深度（平台参照=
+  // final_quality 非赛周最大 km；N=1 单周跑道与无平台参照的衰退跑道豁免子判据
+  // ——赛周即全计划，无 taper 结构可验）
   const raceKm = km.at(-1)!;
+  const arcStart = weeks.findLastIndex((w) => w.canonical === "final_quality" && w.role === "progress");
   const taperKms = weeks.filter((w) => w.role === "taper").map((w) => w.km);
-  const monoDown = taperKms.every((x, i) => i === 0 || x <= taperKms[i - 1]! + TOLERANCE_KM);
+  const monoDown =
+    arcStart >= 0
+      ? weeks.slice(arcStart).every((x, i, arr) => i === 0 || x.km <= arr[i - 1]!.km + TOLERANCE_KM)
+      : taperKms.every((x, i) => i === 0 || x <= taperKms[i - 1]! + TOLERANCE_KM);
   const plateauRef = Math.max(0, ...weeks.filter((w) => w.canonical === "final_quality" && w.role !== "race").map((w) => w.km));
   const singleWeek = weeks.length < 2;
   const cutDepthOk = singleWeek || plateauRef <= 0 || (raceKm >= plateauRef * 0.5 - TOLERANCE_KM && raceKm <= plateauRef * 0.7 + TOLERANCE_KM);
@@ -143,7 +150,7 @@ export function validateLoad(intent: PhaseDivisionIntent, weeks: LoadWeek[], rec
     pass: bandOk && monoDown && cutDepthOk,
     detail: singleWeek
       ? "单周跑道豁免"
-      : `赛周${raceKm}/峰${r1(peak)}=${r1(raceKm / peak)} 单调${monoDown ? "✓" : "✗"} 削减${plateauRef > 0 ? r1((1 - raceKm / plateauRef) * 100) : "?"}%`,
+      : `赛周${raceKm}/峰${r1(peak)}=${r1(raceKm / peak)} 弧单调${monoDown ? "✓" : "✗"} 削减${plateauRef > 0 ? r1((1 - raceKm / plateauRef) * 100) : "?"}%`,
   });
 
   // 门 6：块内微阶梯存在性——至少一块 ≥3 个建设周呈 0.97/1/1.03 微递进
