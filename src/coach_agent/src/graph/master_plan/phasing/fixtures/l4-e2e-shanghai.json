@@ -1,0 +1,1138 @@
+{
+ "input": {
+  "week_rows": [
+   {
+    "no": 1,
+    "phase": "final_quality",
+    "role": "progress",
+    "total_km": 77.6,
+    "long_run_km": 27.9,
+    "quality_sessions": 2,
+    "quality_family": "M 配速比赛专项",
+    "block_position": "块1第1周"
+   },
+   {
+    "no": 2,
+    "phase": "final_quality",
+    "role": "progress",
+    "total_km": 80,
+    "long_run_km": 28.8,
+    "quality_sessions": 2,
+    "quality_family": "M 配速比赛专项",
+    "block_position": "块1第2周"
+   },
+   {
+    "no": 3,
+    "phase": "final_quality",
+    "role": "progress",
+    "total_km": 82.4,
+    "long_run_km": 29.7,
+    "quality_sessions": 2,
+    "quality_family": "M 配速比赛专项",
+    "block_position": "块1第3周"
+   },
+   {
+    "no": 4,
+    "phase": "final_quality",
+    "role": "absorb",
+    "total_km": 58.2,
+    "long_run_km": 24.4,
+    "quality_sessions": 1,
+    "quality_family": "M 配速比赛专项",
+    "block_position": "块2第1周"
+   },
+   {
+    "no": 5,
+    "phase": "final_quality",
+    "role": "taper",
+    "total_km": 70,
+    "long_run_km": 25.2,
+    "quality_sessions": 1,
+    "quality_family": "M 配速比赛专项",
+    "block_position": "块2第2周"
+   },
+   {
+    "no": 6,
+    "phase": "final_quality",
+    "role": "race",
+    "total_km": 45.3,
+    "long_run_km": null,
+    "quality_sessions": 1,
+    "quality_family": "M 配速比赛专项",
+    "block_position": "块2第3周"
+   }
+  ],
+  "pace_zones": {
+   "easy": [
+    288,
+    336
+   ],
+   "m": [
+    249,
+    288
+   ],
+   "t": [
+    235,
+    249
+   ],
+   "i": [
+    218,
+    235
+   ],
+   "r": [
+    null,
+    218
+   ]
+  }
+ },
+ "output": {
+  "weeks": [
+   {
+    "week_no": 1,
+    "sessions": [
+     {
+      "day": "Mon",
+      "type": "E",
+      "name": "E 10km",
+      "km": 10,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 10000,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": null
+     },
+     {
+      "day": "Tue",
+      "type": "M",
+      "name": "M 8km",
+      "km": 14,
+      "segments": [
+       {
+        "kind": "warmup",
+        "distance_m": 3000,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       },
+       {
+        "kind": "work",
+        "distance_m": 8000,
+        "time_s": null,
+        "pace_s_km_min": 249,
+        "pace_s_km_max": 288
+       },
+       {
+        "kind": "cooldown",
+        "distance_m": 3000,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": "起跑别冲，呼吸保持稳定；后程不因体感变好而加速"
+     },
+     {
+      "day": "Wed",
+      "type": "E",
+      "name": "E 10km 含快步",
+      "km": 10,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 9600,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       }
+      ],
+      "note": null
+     },
+     {
+      "day": "Thu",
+      "type": "E",
+      "name": "E 9km",
+      "km": 9,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 9000,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": null
+     },
+     {
+      "day": "Sat",
+      "type": "E",
+      "name": "E 6.7km",
+      "km": 6.7,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 6700,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": null
+     },
+     {
+      "day": "Sun",
+      "type": "LR",
+      "name": "长跑 27.9km 含 6km M",
+      "km": 27.9,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 20900,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       },
+       {
+        "kind": "work",
+        "distance_m": 6000,
+        "time_s": null,
+        "pace_s_km_min": 249,
+        "pace_s_km_max": 288
+       },
+       {
+        "kind": "cooldown",
+        "distance_m": 1000,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": "尾段进入马配后保持放松，不要为了配速改变步频"
+     }
+    ]
+   },
+   {
+    "week_no": 2,
+    "sessions": [
+     {
+      "day": "Mon",
+      "type": "E",
+      "name": "E 11km",
+      "km": 11,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 11000,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": null
+     },
+     {
+      "day": "Tue",
+      "type": "M",
+      "name": "M 9km",
+      "km": 15,
+      "segments": [
+       {
+        "kind": "warmup",
+        "distance_m": 3000,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       },
+       {
+        "kind": "work",
+        "distance_m": 9000,
+        "time_s": null,
+        "pace_s_km_min": 249,
+        "pace_s_km_max": 288
+       },
+       {
+        "kind": "cooldown",
+        "distance_m": 3000,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": "进入节奏后保持步频，别盯着配速忽快忽慢"
+     },
+     {
+      "day": "Wed",
+      "type": "E",
+      "name": "E 10km 含快步",
+      "km": 10,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 9600,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       }
+      ],
+      "note": null
+     },
+     {
+      "day": "Thu",
+      "type": "E",
+      "name": "E 9.2km",
+      "km": 9.2,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 9200,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": null
+     },
+     {
+      "day": "Sat",
+      "type": "E",
+      "name": "E 6km",
+      "km": 6,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 6000,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": null
+     },
+     {
+      "day": "Sun",
+      "type": "LR",
+      "name": "长跑 28.8km 含 9km M",
+      "km": 28.8,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 18800,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       },
+       {
+        "kind": "work",
+        "distance_m": 9000,
+        "time_s": null,
+        "pace_s_km_min": 249,
+        "pace_s_km_max": 288
+       },
+       {
+        "kind": "cooldown",
+        "distance_m": 1000,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": "长距离后段保持补给节奏，动作不要因疲劳变形"
+     }
+    ]
+   },
+   {
+    "week_no": 3,
+    "sessions": [
+     {
+      "day": "Mon",
+      "type": "E",
+      "name": "E 10km",
+      "km": 10,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 10000,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": null
+     },
+     {
+      "day": "Tue",
+      "type": "M",
+      "name": "M 10km",
+      "km": 16,
+      "segments": [
+       {
+        "kind": "warmup",
+        "distance_m": 3000,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       },
+       {
+        "kind": "work",
+        "distance_m": 10000,
+        "time_s": null,
+        "pace_s_km_min": 249,
+        "pace_s_km_max": 288
+       },
+       {
+        "kind": "cooldown",
+        "distance_m": 3000,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": "前段克制，末段保持动作完整；出现僵硬时优先放松肩颈"
+     },
+     {
+      "day": "Wed",
+      "type": "E",
+      "name": "E 11km 含快步",
+      "km": 11,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 10600,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       }
+      ],
+      "note": null
+     },
+     {
+      "day": "Thu",
+      "type": "E",
+      "name": "E 9.7km",
+      "km": 9.7,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 9700,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": null
+     },
+     {
+      "day": "Sat",
+      "type": "E",
+      "name": "E 6km",
+      "km": 6,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 6000,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": null
+     },
+     {
+      "day": "Sun",
+      "type": "LR",
+      "name": "长跑 29.7km 含 10km M",
+      "km": 29.7,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 18700,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       },
+       {
+        "kind": "work",
+        "distance_m": 10000,
+        "time_s": null,
+        "pace_s_km_min": 249,
+        "pace_s_km_max": 288
+       },
+       {
+        "kind": "cooldown",
+        "distance_m": 1000,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": "后段即使状态好也按体感稳住，不提前冲刺"
+     }
+    ]
+   },
+   {
+    "week_no": 4,
+    "sessions": [
+     {
+      "day": "Mon",
+      "type": "E",
+      "name": "E 9km",
+      "km": 9,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 9000,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": null
+     },
+     {
+      "day": "Tue",
+      "type": "E",
+      "name": "E 10km 含快步",
+      "km": 10,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 9600,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       }
+      ],
+      "note": null
+     },
+     {
+      "day": "Wed",
+      "type": "E",
+      "name": "E 8km",
+      "km": 8,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 8000,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": null
+     },
+     {
+      "day": "Thu",
+      "type": "E",
+      "name": "E 6.8km",
+      "km": 6.8,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 6800,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": null
+     },
+     {
+      "day": "Sun",
+      "type": "LR",
+      "name": "长跑 24.4km 含 10km M",
+      "km": 24.4,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 13400,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       },
+       {
+        "kind": "work",
+        "distance_m": 10000,
+        "time_s": null,
+        "pace_s_km_min": 249,
+        "pace_s_km_max": 288
+       },
+       {
+        "kind": "cooldown",
+        "distance_m": 1000,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": "尾段上强度前先稳住呼吸，按体感衔接，不要突然提速"
+     }
+    ]
+   },
+   {
+    "week_no": 5,
+    "sessions": [
+     {
+      "day": "Mon",
+      "type": "E",
+      "name": "E 9km",
+      "km": 9,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 9000,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": null
+     },
+     {
+      "day": "Tue",
+      "type": "M",
+      "name": "M 6km",
+      "km": 12,
+      "segments": [
+       {
+        "kind": "warmup",
+        "distance_m": 3000,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       },
+       {
+        "kind": "work",
+        "distance_m": 6000,
+        "time_s": null,
+        "pace_s_km_min": 249,
+        "pace_s_km_max": 288
+       },
+       {
+        "kind": "cooldown",
+        "distance_m": 3000,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": "缩短距离后更要注意放松，不要用速度补偿"
+     },
+     {
+      "day": "Wed",
+      "type": "E",
+      "name": "E 10km 含快步",
+      "km": 10,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 9600,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       }
+      ],
+      "note": null
+     },
+     {
+      "day": "Thu",
+      "type": "E",
+      "name": "E 8.8km",
+      "km": 8.8,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 8800,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": null
+     },
+     {
+      "day": "Sat",
+      "type": "E",
+      "name": "E 5km",
+      "km": 5,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 5000,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": null
+     },
+     {
+      "day": "Sun",
+      "type": "LR",
+      "name": "长跑 25.2km",
+      "km": 25.2,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 25200,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": null
+     }
+    ]
+   },
+   {
+    "week_no": 6,
+    "sessions": [
+     {
+      "day": "Thu",
+      "type": "E",
+      "name": "E 1.6km",
+      "km": 1.6,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 1600,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       }
+      ],
+      "note": null
+     },
+     {
+      "day": "Fri",
+      "type": "E",
+      "name": "赛前激活 1.5km 含快步",
+      "km": 1.5,
+      "segments": [
+       {
+        "kind": "main",
+        "distance_m": 1100,
+        "time_s": null,
+        "pace_s_km_min": 288,
+        "pace_s_km_max": 336
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       },
+       {
+        "kind": "strides",
+        "distance_m": 100,
+        "time_s": null,
+        "pace_s_km_min": null,
+        "pace_s_km_max": null
+       }
+      ],
+      "note": null
+     },
+     {
+      "day": "Sun",
+      "type": "M",
+      "name": "上海马拉松 42.2km",
+      "km": 42.2,
+      "segments": [
+       {
+        "kind": "work",
+        "distance_m": 42200,
+        "time_s": null,
+        "pace_s_km_min": 249,
+        "pace_s_km_max": 288
+       }
+      ],
+      "note": "前半程控制兴奋，按计划补水；后半程专注动作放松"
+     }
+    ]
+   }
+  ]
+ },
+ "gates": {
+  "1": [
+   {
+    "id": "G1 里程守恒",
+    "pass": true,
+    "detail": "Σ77.6 vs 骨架77.6"
+   },
+   {
+    "id": "G2 长跑唯一且合值",
+    "pass": true,
+    "detail": "27.9 vs 27.9"
+   },
+   {
+    "id": "G3 Q配额",
+    "pass": true,
+    "detail": "2 节含work vs 配额2"
+   },
+   {
+    "id": "G4 训练日≤上限",
+    "pass": true,
+    "detail": "6 天 vs ≤6"
+   },
+   {
+    "id": "G5 work配速落带",
+    "pass": true,
+    "detail": "全过"
+   },
+   {
+    "id": "G6 有氧课note=null",
+    "pass": true,
+    "detail": "全过"
+   },
+   {
+    "id": "G7 质量课结构完整",
+    "pass": true,
+    "detail": "全过"
+   }
+  ],
+  "2": [
+   {
+    "id": "G1 里程守恒",
+    "pass": true,
+    "detail": "Σ80.0 vs 骨架80"
+   },
+   {
+    "id": "G2 长跑唯一且合值",
+    "pass": true,
+    "detail": "28.8 vs 28.8"
+   },
+   {
+    "id": "G3 Q配额",
+    "pass": true,
+    "detail": "2 节含work vs 配额2"
+   },
+   {
+    "id": "G4 训练日≤上限",
+    "pass": true,
+    "detail": "6 天 vs ≤6"
+   },
+   {
+    "id": "G5 work配速落带",
+    "pass": true,
+    "detail": "全过"
+   },
+   {
+    "id": "G6 有氧课note=null",
+    "pass": true,
+    "detail": "全过"
+   },
+   {
+    "id": "G7 质量课结构完整",
+    "pass": true,
+    "detail": "全过"
+   }
+  ],
+  "3": [
+   {
+    "id": "G1 里程守恒",
+    "pass": true,
+    "detail": "Σ82.4 vs 骨架82.4"
+   },
+   {
+    "id": "G2 长跑唯一且合值",
+    "pass": true,
+    "detail": "29.7 vs 29.7"
+   },
+   {
+    "id": "G3 Q配额",
+    "pass": true,
+    "detail": "2 节含work vs 配额2"
+   },
+   {
+    "id": "G4 训练日≤上限",
+    "pass": true,
+    "detail": "6 天 vs ≤6"
+   },
+   {
+    "id": "G5 work配速落带",
+    "pass": true,
+    "detail": "全过"
+   },
+   {
+    "id": "G6 有氧课note=null",
+    "pass": true,
+    "detail": "全过"
+   },
+   {
+    "id": "G7 质量课结构完整",
+    "pass": true,
+    "detail": "全过"
+   }
+  ],
+  "4": [
+   {
+    "id": "G1 里程守恒",
+    "pass": true,
+    "detail": "Σ58.2 vs 骨架58.2"
+   },
+   {
+    "id": "G2 长跑唯一且合值",
+    "pass": true,
+    "detail": "24.4 vs 24.4"
+   },
+   {
+    "id": "G3 Q配额",
+    "pass": true,
+    "detail": "1 节含work vs 配额1"
+   },
+   {
+    "id": "G4 训练日≤上限",
+    "pass": true,
+    "detail": "5 天 vs ≤6"
+   },
+   {
+    "id": "G5 work配速落带",
+    "pass": true,
+    "detail": "全过"
+   },
+   {
+    "id": "G6 有氧课note=null",
+    "pass": true,
+    "detail": "全过"
+   },
+   {
+    "id": "G7 质量课结构完整",
+    "pass": true,
+    "detail": "全过"
+   }
+  ],
+  "5": [
+   {
+    "id": "G1 里程守恒",
+    "pass": true,
+    "detail": "Σ70.0 vs 骨架70"
+   },
+   {
+    "id": "G2 长跑唯一且合值",
+    "pass": true,
+    "detail": "25.2 vs 25.2"
+   },
+   {
+    "id": "G3 Q配额",
+    "pass": true,
+    "detail": "1 节含work vs 配额1"
+   },
+   {
+    "id": "G4 训练日≤上限",
+    "pass": true,
+    "detail": "6 天 vs ≤6"
+   },
+   {
+    "id": "G5 work配速落带",
+    "pass": true,
+    "detail": "全过"
+   },
+   {
+    "id": "G6 有氧课note=null",
+    "pass": true,
+    "detail": "全过"
+   },
+   {
+    "id": "G7 质量课结构完整",
+    "pass": true,
+    "detail": "全过"
+   }
+  ],
+  "6": [
+   {
+    "id": "G1 里程守恒",
+    "pass": true,
+    "detail": "Σ45.3 vs 骨架45.3"
+   },
+   {
+    "id": "G2 长跑唯一且合值",
+    "pass": false,
+    "detail": "0 节 LR（骨架 null）"
+   },
+   {
+    "id": "G3 Q配额",
+    "pass": true,
+    "detail": "1 节含work vs 配额1"
+   },
+   {
+    "id": "G4 训练日≤上限",
+    "pass": true,
+    "detail": "3 天 vs ≤6"
+   },
+   {
+    "id": "G5 work配速落带",
+    "pass": true,
+    "detail": "全过"
+   },
+   {
+    "id": "G6 有氧课note=null",
+    "pass": true,
+    "detail": "全过"
+   },
+   {
+    "id": "G7 质量课结构完整",
+    "pass": false,
+    "detail": "上海马拉松 42.2km"
+   }
+  ]
+ }
+}
