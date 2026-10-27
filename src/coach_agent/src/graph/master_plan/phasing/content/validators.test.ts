@@ -28,15 +28,15 @@ const W = (over: Partial<RunWorkout> & Pick<RunWorkout, "name" | "date" | "block
     ...over,
   }) as RunWorkout;
 
-/** 绿色周：E 6km + M 课 10km（热身/主体/放松）+ LR 15km（E 主体 + M 尾段 + 放松）。 */
+/** 绿色周（⑨量纲）：E 60min（time 处方）+ M 课 10km（热身/主体/放松）+ LR 15km（E 主体 + M 尾段 + 放松）。 */
 function greenSessions(): SessionUnderTest[] {
   return [
     {
       workout: W({
-        name: "E 6km",
+        name: "E 60min",
         date: "2026-11-02",
         type: "E",
-        blocks: [{ repeat: 1, steps: [s("work", km(6), EASY)] }],
+        blocks: [{ repeat: 1, steps: [s("work", { kind: "time_s", value: 3600 }, EASY)] }],
       }),
     },
     {
@@ -63,7 +63,8 @@ function greenSessions(): SessionUnderTest[] {
 function weekInput(sessions: SessionUnderTest[], over: Partial<WeekContentInput> = {}): WeekContentInput {
   return {
     sessions,
-    row: { total_km: 31, long_run_km: 15, quality_sessions: 2 },
+    // E 60min@E 带中点 312s/km 派生 11.5km + M 课 10km + LR 15km
+    row: { total_km: 36.5, long_run_km: 15, quality_sessions: 2 },
     zones: ZONES,
     maxTrainingDays: 6,
     ...over,
@@ -76,19 +77,21 @@ const byId = (checks: ReturnType<typeof validateWeekContent>, id: string) => {
   return hit;
 };
 
-test("绿色基线：一致性 + C1-C8 全过", () => {
+test("绿色基线：一致性 + C1-C9 全过（E time 处方派生里程参与 C1）", () => {
   const checks = validateWeekContent(weekInput(greenSessions()));
-  assert.equal(checks.length, 10);
+  assert.equal(checks.length, 11);
   for (const c of checks) assert.equal(c.pass, true, `${c.id}: ${c.detail}`);
 });
 
-test("C1 周量守恒：Σ超 ±max(3km,3%) 挂、totals 不可知挂", () => {
+test("C1 周量守恒：Σ超 ±max(3km,3%) 挂、time+open 步里程不可知挂", () => {
   const drifted = greenSessions();
-  drifted[0] = { workout: { ...drifted[0]!.workout, blocks: [{ repeat: 1, steps: [s("work", km(11), EASY)] }] } };
+  drifted[1] = {
+    workout: { ...drifted[1]!.workout, blocks: [{ repeat: 1, steps: [s("warmup", km(2), EASY), s("work", km(11), M_PACE), s("cooldown", km(2), EASY)] }] },
+  };
   assert.equal(byId(validateWeekContent(weekInput(drifted)), "C1 周量守恒").pass, false);
 
   const unknown = greenSessions();
-  unknown[0] = { workout: { ...unknown[0]!.workout, blocks: [{ repeat: 1, steps: [s("work", { kind: "time_s", value: 2400 }, EASY)] }] } };
+  unknown[0] = { workout: { ...unknown[0]!.workout, blocks: [{ repeat: 1, steps: [s("work", { kind: "time_s", value: 3600 }, OPEN)] }] } };
   const g1 = byId(validateWeekContent(weekInput(unknown)), "C1 周量守恒");
   assert.equal(g1.pass, false);
   assert.match(g1.detail, /不可知/);
@@ -201,8 +204,9 @@ test("C7 热身放松在场：缺挂；比赛课与 LR 位型课豁免", () => {
   assert.equal(byId(validateWeekContent(weekInput(lrNoWarmup)), "C7 热身放松在场").pass, true);
 });
 
-test("C8 展开守恒：repeat 展开与期望里程对不上挂、一致过、无锚跳过", () => {
-  const anchored = greenSessions().map((x, i) => ({ ...x, expectedKm: [6, 10, 15][i]! }));
+test("C8 展开守恒：repeat 展开与期望里程对不上挂、一致过（E 派生口径）、无锚跳过", () => {
+  // E 60min time 处方按 E 带中点派生 11.5km（⑨：派生 km 参与）
+  const anchored = greenSessions().map((x, i) => ({ ...x, expectedKm: [11.5, 10, 15][i]! }));
   assert.equal(byId(validateWeekContent(weekInput(anchored)), "C8 展开守恒").pass, true);
 
   // 3×(2km T + 400m recovery) 的课：期望 10.4km，blocks 只展开 7.2km → 挂（组数×步距算术错）
@@ -291,4 +295,143 @@ test("一致性 purpose必填：新生成课缺 purpose 挂；legacy 豁免", ()
   const legacy = validateWeekContent(weekInput(missing, { requirePurpose: false }));
   assert.equal(byId(legacy, "一致性 purpose必填").pass, true);
   assert.equal(byId(legacy, "一致性 purpose必填").detail, "legacy豁免");
+});
+
+test("一致性 type罩主段：比赛课豁免（规则⑤处方锚 goal_pace，不罩投影带）", () => {
+  // 激进目标：goal 242s/km 快于投影 M 带快端 249——罩带会误挂，但 date=raceDate 豁免
+  const race: SessionUnderTest = {
+    workout: W({
+      name: "上海马拉松 42.2km",
+      date: "2026-11-08",
+      type: "M",
+      purpose: "比赛课",
+      note: "按计划补给",
+      blocks: [{ repeat: 1, steps: [s("work", km(42.2), { kind: "pace_s_km", low: 237, high: 247 })] }],
+    }),
+  };
+  const single = weekInput([race], { row: { total_km: 42.2, long_run_km: null, quality_sessions: 1 }, raceDate: "2026-11-08" });
+  assert.equal(byId(validateWeekContent(single), "一致性 type罩主段").pass, true);
+  // 同一节去掉比赛日身份 → 罩带挂（M 带 249-288 罩不住 237-247）
+  const notRace = weekInput([race]);
+  assert.equal(byId(validateWeekContent(notRace), "一致性 type罩主段").pass, false);
+});
+
+test("C9 E课时长分层：间隔日 30-60、普通日 60-90、duration 必填（distance 步挂）、strides 豁免", () => {
+  const eOf = (name: string, date: string, duration: WorkoutStep["duration"], extra: WorkoutStep[] = []): SessionUnderTest => ({
+    workout: W({ name, date, type: "E", blocks: [{ repeat: 1, steps: [s("work", duration, EASY), ...extra] }] }),
+  });
+  const m = greenSessions()[1]!;
+  const lr = greenSessions()[2]!;
+  // 周二 M（质量）+ 周四 M?——用 Tue M + Sat M 制造 Wed 间隔日；Mon/Thu=普通日
+  const m2: SessionUnderTest = {
+    workout: {
+      ...m.workout,
+      name: "M 5km",
+      date: "2026-11-07",
+      blocks: [{ repeat: 1, steps: [s("warmup", km(2), EASY), s("work", km(5), M_PACE), s("cooldown", km(2), EASY)] }],
+    },
+  };
+  const base: SessionUnderTest[] = [
+    eOf("E 周一 60min", "2026-11-02", { kind: "time_s", value: 3600 }),
+    m,
+    eOf("E 周三 45min", "2026-11-04", { kind: "time_s", value: 2700 }),
+    m2,
+    lr,
+  ];
+  // 周一普通日 60min ✓、周三间隔日（周二 M/周六 M/周日 LR 尾段三节质量课之间）45min ✓
+  const row = { total_km: 54.2, long_run_km: 15, quality_sessions: 3 };
+  const ok = validateWeekContent(weekInput(base, { row }));
+  assert.equal(byId(ok, "C9 E课时长分层").pass, true, byId(ok, "C9 E课时长分层").detail);
+
+  // 普通日落短带（30min）挂
+  const tooShort = [...base];
+  tooShort[0] = eOf("E 周一 30min", "2026-11-02", { kind: "time_s", value: 1800 });
+  assert.equal(byId(validateWeekContent(weekInput(tooShort, { row })), "C9 E课时长分层").pass, false);
+
+  // 间隔日落长带（90min）挂
+  const tooLong = [...base];
+  tooLong[2] = eOf("E 周三 90min", "2026-11-04", { kind: "time_s", value: 5400 });
+  assert.equal(byId(validateWeekContent(weekInput(tooLong, { row })), "C9 E课时长分层").pass, false);
+
+  // duration 必填：E 主体 distance 步挂（⑨ 量纲=时间）
+  const distanceE = [...base];
+  distanceE[0] = eOf("E 周一 11.5km", "2026-11-02", km(11.5));
+  const g9 = byId(validateWeekContent(weekInput(distanceE, { row })), "C9 E课时长分层");
+  assert.equal(g9.pass, false);
+  assert.match(g9.detail, /duration缺失/);
+
+  // strides（open 短 work 步）不计时长也不算缺失
+  const withStrides = [...base];
+  withStrides[0] = eOf("E 周一 60min", "2026-11-02", { kind: "time_s", value: 3600 }, [s("work", { kind: "distance_m", value: 100 }, OPEN)]);
+  assert.equal(byId(validateWeekContent(weekInput(withStrides, { row })), "C9 E课时长分层").pass, true);
+});
+
+test("C9 赛周激活课豁免：比赛日前 1-3 天短 E 不受下限约束；赛前 4+ 天仍按带", () => {
+  const race: SessionUnderTest = {
+    workout: W({
+      name: "上海马拉松 42.2km",
+      date: "2026-11-08",
+      type: "M",
+      purpose: "比赛课",
+      note: null,
+      blocks: [{ repeat: 1, steps: [s("work", km(42.2), M_PACE)] }],
+    }),
+  };
+  const shake = (date: string, minutes: number): SessionUnderTest => ({
+    workout: W({ name: `赛前激活 ${minutes}min`, date, type: "E", blocks: [{ repeat: 1, steps: [s("work", { kind: "time_s", value: minutes * 60 }, EASY)] }] }),
+  });
+  const row = { total_km: 52, long_run_km: null, quality_sessions: 1 };
+  // 周日比赛：周五（前 2 天）20min 激活 ✓
+  const ok = weekInput([race, shake("2026-11-06", 20)], { row, raceDate: "2026-11-08" });
+  assert.equal(byId(validateWeekContent(ok), "C9 E课时长分层").pass, true, byId(validateWeekContent(ok), "C9 E课时长分层").detail);
+  // 周一（前 6 天）20min → 普通日下限挂
+  const far = weekInput([race, shake("2026-11-02", 20)], { row, raceDate: "2026-11-08" });
+  assert.equal(byId(validateWeekContent(far), "C9 E课时长分层").pass, false);
+  // 窗内豁免只放开下限：80min「激活」不是短 E，挂（①「短」语义）
+  const tooLongShake = weekInput([race, shake("2026-11-06", 80)], { row, raceDate: "2026-11-08" });
+  const g9s = byId(validateWeekContent(tooLongShake), "C9 E课时长分层");
+  assert.equal(g9s.pass, false);
+  assert.match(g9s.detail, /超短带上限/);
+});
+
+test("C1 赛周托底：骨架低于 42.195 时目标=比赛里程，detail 打有效目标（重试可对齐）", () => {
+  const race: SessionUnderTest = {
+    workout: W({
+      name: "测试马拉松 42.2km",
+      date: "2026-11-08",
+      type: "M",
+      purpose: "比赛课",
+      note: null,
+      blocks: [{ repeat: 1, steps: [s("work", km(42.2), M_PACE)] }],
+    }),
+  };
+  // pan 型低平台赛周：骨架 37.8 < 42.195——按托底目标 42.195 判（Σ=42.2 过）
+  const floor = weekInput([race], { row: { total_km: 37.8, long_run_km: null, quality_sessions: 1 }, raceDate: "2026-11-08" });
+  const g1 = byId(validateWeekContent(floor), "C1 周量守恒");
+  assert.equal(g1.pass, true, g1.detail);
+  assert.match(g1.detail, /赛周托底42\.2/);
+  // 非赛周不托底：骨架 36.5 vs Σ36.5 照常
+  assert.match(byId(validateWeekContent(weekInput(greenSessions())), "C1 周量守恒").detail, /vs 骨架36\.5/);
+});
+
+test("C9 再生周（recovery）短带 + legacy 豁免", () => {
+  const e = (minutes: number): SessionUnderTest => ({
+    workout: W({
+      name: `E ${minutes}min`,
+      date: "2026-11-02",
+      type: "E",
+      blocks: [{ repeat: 1, steps: [s("work", { kind: "time_s", value: minutes * 60 }, EASY)] }],
+    }),
+  });
+  const lr: SessionUnderTest = {
+    workout: W({ name: "长跑 4.5km", date: "2026-11-08", type: "LR", note: "轻松跑", blocks: [{ repeat: 1, steps: [s("work", km(4.5), EASY)] }] }),
+  };
+  const row = { total_km: 15, long_run_km: 4.5, quality_sessions: 0 };
+  // 再生周：40min 短带合法；非再生周（普通日）40min 挂
+  assert.equal(byId(validateWeekContent(weekInput([e(40), lr], { row, regeneration: true })), "C9 E课时长分层").pass, true);
+  assert.equal(byId(validateWeekContent(weekInput([e(40), lr], { row })), "C9 E课时长分层").pass, false);
+  // legacy（⑨ 前样本）整条豁免
+  const legacy = validateWeekContent(weekInput([e(20), lr], { row, legacyEDuration: true }));
+  assert.equal(byId(legacy, "C9 E课时长分层").pass, true);
+  assert.equal(byId(legacy, "C9 E课时长分层").detail, "legacy豁免");
 });

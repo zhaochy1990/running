@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { equivalentsFromVdot, RACE_DISTANCES_M, type RaceDistanceKey, raceTimeSecFromVdot, vdotFromRace, vdotFromThresholdPace } from "./vdot.js";
+import {
+  equivalentsFromVdot,
+  RACE_DISTANCES_M,
+  type RaceDistanceKey,
+  raceTimeSecFromVdot,
+  thresholdPaceFromVdot,
+  vdotFromRace,
+  vdotFromThresholdPace,
+} from "./vdot.js";
 
 const parseHms = (s: string) => {
   const parts = s.split(":").map(Number);
@@ -80,4 +88,15 @@ test("无效入参返回 NaN（距离 <1200m / 非正时间 / 非法值）", () 
   assert.ok(Number.isNaN(vdotFromRace(Number.NaN, 1000)));
   assert.ok(Number.isNaN(raceTimeSecFromVdot(5000, 0)));
   assert.ok(Number.isNaN(vdotFromThresholdPace(0)));
+});
+
+test("thresholdPaceFromVdot：与 vdotFromThresholdPace 互逆（VDOT 30-75 全程往返）", () => {
+  for (const vdot of [30, 40, 45, 51.1, 52.85, 60, 75]) {
+    const pace = thresholdPaceFromVdot(vdot);
+    const back = vdotFromThresholdPace(pace);
+    assert.ok(Math.abs(back - vdot) <= 0.01, `VDOT ${vdot} → ${pace.toFixed(1)}s/km → ${back.toFixed(3)}`);
+  }
+  assert.ok(Number.isNaN(thresholdPaceFromVdot(0)));
+  // 锚点：#789 设计校准例 4:02/km ↔ VDOT 52.9
+  assert.ok(Math.abs(thresholdPaceFromVdot(52.9) - 242) <= 0.5, `52.9 → ${thresholdPaceFromVdot(52.9).toFixed(1)}s/km`);
 });
