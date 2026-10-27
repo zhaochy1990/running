@@ -117,7 +117,18 @@ function spotCheck(outcome: Awaited<ReturnType<typeof generateWeekContent>>, inp
         issues.push("赛周无激活/shakeout 课");
       }
       for (const x of flat.filter((y) => y.w.date < raceDate && y.w.date >= weekStartOf(input, raceRow.week) && y.w.type === "E")) {
-        const minutes = x.w.blocks.reduce((s, b) => s + b.steps.reduce((t, st) => t + (st.duration.kind === "time_s" ? st.duration.value / 60 : 0), 0), 0);
+        // 与 C9 完全同口径：rest/recovery 步与 strides（open 短触感步）不计时长，repeat 展开
+        const minutes = x.w.blocks.reduce((s, b) => {
+          const perRep = b.steps.reduce((t, st) => {
+            if (st.step_kind === "rest" || st.step_kind === "recovery") return t;
+            const isStride =
+              st.target.kind === "open" &&
+              ((st.duration.kind === "distance_m" && st.duration.value <= 100) || (st.duration.kind === "time_s" && st.duration.value < 30));
+            if (isStride) return t;
+            return t + (st.duration.kind === "time_s" ? st.duration.value / 60 : 0);
+          }, 0);
+          return s + b.repeat * perRep;
+        }, 0);
         if (minutes > 60.5) issues.push(`赛周激活 ${x.w.name} ${minutes.toFixed(0)}min 超短带上限`);
       }
     }
