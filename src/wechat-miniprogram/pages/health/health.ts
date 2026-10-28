@@ -33,6 +33,8 @@ interface HealthPageHandlers {
 }
 
 let current: StrideTrainingLoadRecord | null = null;
+/** 后端按日升序的逐日负荷序列（近 30 天），供趋势图截取近 14 天。 */
+let series: StrideTrainingLoadRecord[] = [];
 let userId = '';
 let loaded = false;
 
@@ -76,7 +78,10 @@ function heroTitleFor(record: StrideTrainingLoadRecord): { text: string; sub: st
   return { text: '状态待观察', sub: '继续跟踪身体信号' };
 }
 
-function buildFromRecord(record: StrideTrainingLoadRecord | null): {
+function buildFromRecord(
+  record: StrideTrainingLoadRecord | null,
+  recentSeries: StrideTrainingLoadRecord[],
+): {
   stats: HealthStat[];
   trend: number[];
   formZone: string;
@@ -110,7 +115,8 @@ function buildFromRecord(record: StrideTrainingLoadRecord | null): {
       { value: record.form != null ? `${record.form > 0 ? '+' : ''}${Math.round(record.form)}` : '—', label: 'form' },
       { value: cf.zone, label: '状态', sub: cf.text },
     ],
-    trend: [],
+    // 近 14 天 form 柱：form 缺失的日记 0（柱高 0% 即不显示该天）。
+    trend: recentSeries.slice(-14).map((day) => day.form ?? 0),
     formZone: cf.zone,
     formColor: cf.color,
     heroText: hero.text,
@@ -136,6 +142,7 @@ Page<HealthPageData, HealthPageHandlers>({
 
   onLoad() {
     current = null;
+    series = [];
     this.setData({
       statusBarHeight: statusBarHeight(),
       contentPaddingTop: contentPaddingTopRpx(),
@@ -161,6 +168,7 @@ Page<HealthPageData, HealthPageHandlers>({
     try {
       const res = await getStrideTrainingLoad(userId, 30);
       current = res.current;
+      series = res.series;
       loaded = true;
     } catch {
       loaded = false;
@@ -170,7 +178,7 @@ Page<HealthPageData, HealthPageHandlers>({
   },
 
   render() {
-    const v = buildFromRecord(current);
+    const v = buildFromRecord(current, series);
     this.setData({
       ...v,
       hasData: loaded && !!current,

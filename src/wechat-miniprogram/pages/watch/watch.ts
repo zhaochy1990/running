@@ -9,6 +9,7 @@ import {
 import { ApiError } from '../../services/request';
 import { ensureSync } from '../../services/onboarding';
 import { userStore } from '../../store/index';
+import { fmtShanghaiMdHm } from '../../utils/format';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 interface WatchPageData {
@@ -18,6 +19,8 @@ interface WatchPageData {
   contentPaddingTop: number;
   loading: boolean;
   watch: WatchInfo;
+  /** last_sync_at 的展示串（上海 MM-DD HH:mm）—— wxml 不直接渲染原始 ISO。 */
+  lastSyncText: string;
   connected: boolean;
   error: string;
   success: string;
@@ -104,6 +107,7 @@ Page<WatchPageData, WatchPageHandlers>({
     contentPaddingTop: 232,
     loading: true,
     watch: EMPTY_WATCH,
+    lastSyncText: '—',
     connected: false,
     error: '',
     success: '',
@@ -140,7 +144,12 @@ Page<WatchPageData, WatchPageHandlers>({
     this.setData({ loading: true, error: '' });
     try {
       const info = await getWatchInfo();
-      this.setData({ watch: info, connected: info.logged_in, loading: false });
+      this.setData({
+        watch: info,
+        lastSyncText: fmtShanghaiMdHm(info.last_sync_at),
+        connected: info.logged_in,
+        loading: false,
+      });
     } catch {
       this.setData({ loading: false, error: '加载手表信息失败' });
     }
