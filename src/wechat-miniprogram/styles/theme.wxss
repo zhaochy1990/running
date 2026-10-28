@@ -31,6 +31,7 @@ page {
   --color-text-primary: #2c3340; /* 名称 / 标题 / 正文 */
   --color-text-max: #2c3340; /* 最强强调文字（深色下写死 #fff 的大数字） */
   --color-on-accent: #ffffff; /* 实心主题色上的文字 */
+  --color-route-ink: #2c3340; /* 轨迹缩略图折线墨色（devops#827 canvas 绘制用） */
 
   /* 主题色（藕粉）——改主题色只动这一组；
      透明度变体用 -rgb 组合：rgba(var(--color-accent-rgb), α) */

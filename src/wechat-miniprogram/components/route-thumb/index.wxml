@@ -1,0 +1,7 @@
+<!-- 轨迹缩略图：导出的临时图就绪后铺满展示，否则回退运动图标
+     （无 GPS / 导图失败同口径；fallback 图标占 5/9，视觉与旧
+     .activity__icon-img（40rpx in 72rpx 槽）一致） -->
+<view class="route-thumb" style="width: {{size}}rpx; height: {{size}}rpx">
+  <image wx:if="{{thumbPath}}" class="route-thumb__img" src="{{thumbPath}}" mode="aspectFit" />
+  <image wx:else class="route-thumb__icon" src="{{icon}}" mode="aspectFit" />
+</view>

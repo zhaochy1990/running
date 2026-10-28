@@ -5,5 +5,8 @@
   "navigationBarTextStyle": "black",
   "backgroundColor": "#F7F9FB",
   "enablePullDownRefresh": true,
-  "backgroundTextStyle": "dark"
+  "backgroundTextStyle": "dark",
+  "usingComponents": {
+    "route-thumb": "/components/route-thumb/index"
+  }
 }

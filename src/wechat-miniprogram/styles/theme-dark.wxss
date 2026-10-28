@@ -32,6 +32,9 @@ page {
   --color-text-primary: #e3e2e5; /* 名称 / 标题 */
   --color-field-text: #e8e8ea; /* 表单输入文字 */
   --color-on-accent: #ffffff; /* 实心主题色上的文字 */
+  /* 轨迹缩略图折线墨色（devops#827）：客户端切深色主题时用
+     （utils/theme.ts 的 routeInk 同步换此值，浅色值见 styles/theme.wxss） */
+  --color-route-ink: #e3e2e5;
 
   /* 主题色（藕粉）——改主题色只动这一组；
      透明度变体用 --color-accent-rgb 组合：rgba(var(--color-accent-rgb), α) */

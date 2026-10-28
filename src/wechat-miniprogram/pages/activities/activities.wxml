@@ -43,17 +43,14 @@
             bindtap="onActivityTap"
           >
             <view class="activity__icon">
-              <!-- 有路线缩略图就展示路线，否则回退运动图标；加载失败同样回退 -->
-              <image
-                wx:if="{{row.thumbUrl}}"
-                class="activity__thumb"
-                src="{{row.thumbUrl}}"
-                mode="aspectFill"
-                lazy-load
-                data-id="{{row.labelId}}"
-                binderror="onThumbError"
+              <!-- 有 GPS 折线就 canvas 矢量绘制路线缩略图，否则组件内部回退运动图标
+                   （无 GPS / 导图失败同口径，devops#827；不再消费 thumb_url PNG） -->
+              <route-thumb
+                shape="{{row.routeThumb || []}}"
+                size="{{72}}"
+                icon="{{row.iconPath}}"
+                label-id="{{row.labelId}}"
               />
-              <image wx:else class="activity__icon-img" src="{{row.iconPath}}" mode="aspectFit" />
             </view>
             <view class="activity__info">
               <view class="activity__name">{{row.name}}</view>
