@@ -1,6 +1,13 @@
 /* ============================================================
    自定义底部导航栏 —— 对应 design/today.html 的 4 tab 设计
    （P2 浅色：白底 + 顶部弱分隔线 + 灰字 / 藕粉激活色）
+
+   ⚠️ 根级组件令牌自持（devops#818 实证）：custom-tab-bar 挂在 page
+   节点树之外的根级，app.wxss @import 定义的 page{} 令牌继承不进来
+   （#665 结论只适用页面树内组件，本组件是唯一例外），var() 解析为
+   空 → P1 迁移 var() 后整条 tab 透明。所需令牌必须在 .tabbar 内
+   本地自持；换主题（styles/theme.wxss + utils/theme.ts）须同步本
+   文件——一致性由 utils/theme.check.mts 在 CI 兜底，勿靠记忆。
    ============================================================ */
 
 .tabbar {
@@ -14,6 +21,11 @@
   height: 120rpx;
   box-sizing: content-box;
   padding-bottom: env(safe-area-inset-bottom);
+  /* 本地自持令牌（值 = styles/theme.wxss 浅色值原样） */
+  --color-card: #FFFFFF;
+  --color-border-soft: #EBEEF3;
+  --color-text-secondary: #6B7280;
+  --color-accent: #FF6363;
   background: var(--color-card);
   border-top: 1rpx solid var(--color-border-soft);
 }
