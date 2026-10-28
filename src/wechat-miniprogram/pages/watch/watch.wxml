@@ -52,7 +52,7 @@
           </view>
           <view wx:if="{{watch.last_sync_at}}" class="watch-meta-row">
             <text class="watch-meta-row__label">最后同步</text>
-            <text class="watch-meta-row__value">{{watch.last_sync_at}}</text>
+            <text class="watch-meta-row__value">{{lastSyncText}}</text>
           </view>
           <view wx:if="{{watch.capabilities.length}}" class="watch-caps">
             <text class="watch-caps__label">支持功能</text>

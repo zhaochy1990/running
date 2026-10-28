@@ -1,5 +1,7 @@
 // 展示格式化工具 —— 配速 / 时间 / 距离 / 负荷。
 
+import { epochToShanghaiYmd } from './date';
+
 /** 米 → 公里字符串（保留 2 位小数）。null/非法 → '—'。 */
 export function fmtKm(meters: number | null | undefined): string {
   if (meters == null || !Number.isFinite(meters) || meters <= 0) return '—';
@@ -57,4 +59,19 @@ export function fmtDurationShort(seconds: number | null | undefined): string {
   const ss = String(s).padStart(2, '0');
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${ss}`;
   return `${m}:${ss}`;
+}
+
+// 上海时区偏移（UTC+8，无 DST）：日期部分走 utils/date.ts 的 canonical 转换，
+// 时刻部分用同一偏移 + getUTC* 取墙钟（禁止本地时区 getHours 等假设）。
+const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+/** ISO 时间串（如 `2026-10-27T20:36:25Z`）→ 上海墙钟 `MM-DD HH:mm`（如 `10-28 04:36`）。null/非法 → '—'。 */
+export function fmtShanghaiMdHm(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const epoch = Date.parse(iso);
+  if (!Number.isFinite(epoch)) return '—';
+  const md = epochToShanghaiYmd(epoch).slice(5);
+  const d = new Date(epoch + SHANGHAI_OFFSET_MS);
+  const hm = `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+  return `${md} ${hm}`;
 }
