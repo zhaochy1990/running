@@ -43,11 +43,12 @@ const (
 	progressEvery = 25
 )
 
-// strokeColor is the single colour a route is stroked in. The activity list is
-// a dark surface (#101111 card, 5%-white icon slot), so the route is drawn in
-// the same near-white as the row's own text rather than a dark ink that would
-// vanish into the card.
-var strokeColor = color.RGBA{R: 0xe3, G: 0xe2, B: 0xe5, A: 0xff}
+// strokeColor is the single colour a route is stroked in. Since the light
+// theme (devops#817) the miniprogram list card and the iOS row are both white,
+// so the route is drawn in the dark textPrimary ink #2C3340 from the theme
+// mapping table — the previous near-white stroke was tuned to the old dark
+// card surface and is invisible on white.
+var strokeColor = color.RGBA{R: 0x2c, G: 0x33, B: 0x40, A: 0xff}
 
 // Store is the slice of storage the handler needs.
 type Store interface {
@@ -58,9 +59,13 @@ type Store interface {
 
 type thumbInput struct {
 	// Force regenerates activities that already have a thumbnail instead of only
-	// filling the gaps. Only the backfill job documents it: the pipeline step's
-	// input is merged from the sync run ({mode,content,limit}), which carries no
-	// force field, so a routine sync can never re-render the whole history.
+	// filling the gaps — the operator exit when a rendering change (e.g. the
+	// devops#817 ink flip) must reach stock PNGs: enqueue route_thumbnails_backfill
+	// per athlete with {"force":true} and the thumbnail filter drops, so every
+	// outdoor activity with a drawable trace renders again, overwriting its
+	// object key in place. Only the backfill job can carry it: the pipeline
+	// step's input is merged from the sync run ({mode,content,limit}), which has
+	// no force field, so a routine sync can never re-render the whole history.
 	Force bool `json:"force,omitempty"`
 	// LabelIDs is the sync's threaded batch (watch_sync → … → compute echo it
 	// down); echoed into the result so the downstream ability step keeps seeing it.
