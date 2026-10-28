@@ -13,7 +13,7 @@
 
 | ID | 检查点 | 维度 | 小程序现状 | iOS 现状 | 状态 | 确认人 | 日期 | 说明 |
 | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
-| D-theme-1 | 主题体系 | UI | 深色 `#07080A` 底 + dark.wxss 26 token（styles/dark.wxss:31） | 亮色 LightTheme，accent 藕粉 #ff6363（StrideKit/Sources/StrideKit/Core/Theme/LightTheme.swift:15），Info.plist 锁 UIUserInterfaceStyle=Light | confirmed | 用户（#753 决议 1，2026-10-25） | 2026-10-26 | 保留偏差：App 亮色定调；逐页颜色按「映射后语义」判对比，不逐色判 |
+| D-theme-1 | 主题体系 | UI | 全浅色（Epic #815：theme.wxss / theme.ts 单源浅色值，数值源=iOS LightTheme；含 canvas 分享封面/海报、coach-share 等分享出向物料浅色；深色值存档 theme-dark.wxss 不引用） | 亮色 LightTheme，accent 藕粉 #ff6363（StrideKit/Sources/StrideKit/Core/Theme/LightTheme.swift:15），Info.plist 锁 UIUserInterfaceStyle=Light；分享出向物料保留深色（WorkoutDarkCoverView、配速海报深色底等） | confirmed | 用户（Epic #815 决议 6，2026-10-27 拍板） | 2026-10-28 | 保留偏差：mp 全浅色（含分享出向物料浅色）vs iOS 分享物料深色 = 产品有意分叉，iOS 是否跟进另议；旧「App 亮色 vs mp 深色」全局最大偏差行销账（mp 已切浅色） |
 | D-icon-1 | 图标体系 | UI | SVG 资产双态图标（custom-tab-bar、各页内联 svg） | SF Symbols 重制（AppTab.swift:17），品牌资产（logo/海报字样）仍自带 | confirmed | 用户（#753 决议 6） | 2026-10-26 | 保留偏差：图标 SF Symbols 全套重制，逐 icon 对照表归各域票产出 |
 | D-nav-1 | switchTab 栈语义 | 架构 | switchTab 销毁所有普通页栈（26 处调用） | TabView 四 tab 各自 NavigationStack 栈保留（AppRouter.swift:16） | confirmed | 用户（#751 决议 4） | 2026-10-26 | 保留偏差：iOS 惯例切 tab 不清栈；reLaunch 语义由 AppRouter.reset(to:) 保住 |
 | D-nav-2 | 死页 | 架构 | plan/health 两页注册但零引用（baseline §10） | Route 表 27 页不含这两页（Route.swift） | confirmed | 用户（#751 推导项） | 2026-10-26 | 放弃该功能：死页不迁；其 services 端点在活跃页仍消费 |
