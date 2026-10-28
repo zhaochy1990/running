@@ -54,8 +54,6 @@ export const theme = {
   danger: '#ff5252',
 } as const;
 
-export type ThemeTokenName = keyof typeof theme;
-
 /** rgba 组合：theme.wxss 里 rgba(var(--color-accent-rgb), α) 的 TS 等价。 */
 export function themeRgba(rgb: string, alpha: number | string): string {
   return `rgba(${rgb}, ${alpha})`;
