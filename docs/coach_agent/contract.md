@@ -526,11 +526,17 @@ RunWorkout 新增：
   repairs: string[];           // 修复留痕文案，如「w3 T 3×3km Tue→Thu（P2 质量课相邻）」
   load_series: Array<{         // 逐日负荷序列（2026-10-28 拍板一等输出，前端波浪曲线直读）
     date: string;
-    load_pt: number;           // 当日处方剂量（时长×强度系数，E=1 基准；系数生产回归标定 ⏳）
-    atl: number; ctl: number;  // 指数 PMC（ATL τ=8d/CTL τ=30d），种子=近 4 周实际
-    ratio: number;             // atl/ctl——波浪主线（峰 1.1-1.2/谷 ~1.0/cap 1.3）
-    session: string;           // 当日课名（休=空）
-  }>;                          // 消费：前端波浪图（#804）+ R0 复盘叠实际曲线成计划 vs 实际双线
+    week: number;              // 周序号（join 键：相位带着色经 L3 骨架按周查 canonical）
+    load_pt: number;           // 当日处方剂量——量纲与生产 stride_training_dose 同源（系数回归标定 ⏳）
+    atl: number; ctl: number;  // **指数 PMC 与生产同款：kAcute=1−e^(−1/7)、kChronic=1−e^(−1/42)**（trainingload/daily.go；POC 曾用 8/30 系笔误口径，作废）
+    ratio: number;             // atl/ctl——命名=**日负荷比**（区别于 L3 的「周量比」km-ACWR；峰 1.1-1.2/谷 ~1.0/cap 1.3）
+    sessions: string[];        // 当日课名数组（双练日 >1；休=空数组）——与 calendar.sessions 同构
+  }>;
+  load_meta: {                 // 模型元数据必须随序列落库（系数再标定后旧计划的数字仍可解释）
+    model: "exp-pmc-7-42";     // 与生产 daily_training_load 同款常数
+    seed: "生成时点直读生产 PMC 当日 ATL/CTL 快照（daily_training_load.acute_load/chronic_load）——不自算种子，保证计划曲线与实际曲线同一分母体系"
+    coefficient_version: string;  // 剂量系数版本（回归标定后递增）
+  };                           // 时点语义：load_series=生成时点的预测轨迹，R1 每次块界重生成刷新（种子随之更新）；R0 上线后前端展示「实际到今天+计划从明天」
 }
 ```
 
