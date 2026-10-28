@@ -63,6 +63,12 @@ export function createContentModel(config: ModelConfig): ContentModel {
   };
 }
 
+/** 单次失败尝试的可观测性记录（#822，#814 Phase 1）：校验违规逐条；解析/调用失败走 parseError。 */
+export interface ContentAttemptDetail {
+  violations: string[];
+  parseError?: string;
+}
+
 export interface ContentOutcome {
   weeks: WeekContentResult[];
   /** llm = 校验全绿；fallback = 重试耗尽/调用失败落模板。 */
@@ -70,6 +76,8 @@ export interface ContentOutcome {
   attempts: number;
   /** 逐周终检结果（与 weeks 对齐；fallback 为模板自身门检，构造保证全绿）。 */
   checks: ContentValidation[][];
+  /** 逐次失败尝试明细，仅失败尝试入列：首过=空；llm 重试后过=失败次数条；fallback=3 条。 */
+  attemptsDetail: ContentAttemptDetail[];
 }
 
 /** 校验违规重试上限（≤2，加首次共 3 次尝试；调用/解析异常同计数——L2 同款）。 */
@@ -144,6 +152,7 @@ export async function generateWeekContent(input: ContentGeneratorInput, model: C
   let attempts = 0;
   let lastDraft: unknown;
   let lastViolations: string[] = [];
+  const attemptsDetail: ContentAttemptDetail[] = [];
   for (let round = 0; round <= MAX_CONTENT_RETRIES; round++) {
     attempts++;
     try {
@@ -156,11 +165,15 @@ export async function generateWeekContent(input: ContentGeneratorInput, model: C
         ...missing.map((w) => `第${w}周缺失（week_rows 每周都要输出）`),
         ...checks.flatMap((weekChecks, i) => weekChecks.filter((c) => !c.pass).map((c) => `第${weeks[i]!.week}周 ${c.id}：${c.detail}`)),
       ];
-      if (violations.length === 0) return { weeks, source: "llm", attempts, checks };
+      if (violations.length === 0) return { weeks, source: "llm", attempts, checks, attemptsDetail };
       lastDraft = draft;
       lastViolations = violations;
+      // 拷贝隔离：重试载荷数组与落盘明细互不串改（模型端只读，此处防未来包装器污染）
+      attemptsDetail.push({ violations: violations.slice() });
     } catch (error) {
-      lastViolations = [`模型调用或契约解析失败（${error instanceof Error ? error.message.slice(0, 200) : "unknown"}），请重新输出完整 weeks`];
+      const parseError = error instanceof Error ? error.message.slice(0, 200) : "unknown";
+      lastViolations = [`模型调用或契约解析失败（${parseError}），请重新输出完整 weeks`];
+      attemptsDetail.push({ violations: [], parseError });
     }
   }
   // 兜底永不静默吞错：断言已过而分配器仍抛（包络外输入）= 实现缺陷，显式上抛
@@ -172,5 +185,5 @@ export async function generateWeekContent(input: ContentGeneratorInput, model: C
   } catch (error) {
     throw new Error(`L4 兜底构造失败（输入超出 L3 缺省包络）：${error instanceof Error ? error.message : String(error)}`);
   }
-  return { weeks, source: "fallback", attempts, checks };
+  return { weeks, source: "fallback", attempts, checks, attemptsDetail };
 }
