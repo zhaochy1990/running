@@ -524,6 +524,13 @@ RunWorkout 新增：
   }>;
   checks: GateCheck[];         // 排日门结果（P1-P4 每周逐门）
   repairs: string[];           // 修复留痕文案，如「w3 T 3×3km Tue→Thu（P2 质量课相邻）」
+  load_series: Array<{         // 逐日负荷序列（2026-10-28 拍板一等输出，前端波浪曲线直读）
+    date: string;
+    load_pt: number;           // 当日处方剂量（时长×强度系数，E=1 基准；系数生产回归标定 ⏳）
+    atl: number; ctl: number;  // 指数 PMC（ATL τ=8d/CTL τ=30d），种子=近 4 周实际
+    ratio: number;             // atl/ctl——波浪主线（峰 1.1-1.2/谷 ~1.0/cap 1.3）
+    session: string;           // 当日课名（休=空）
+  }>;                          // 消费：前端波浪图（#804）+ R0 复盘叠实际曲线成计划 vs 实际双线
 }
 ```
 
