@@ -1,6 +1,9 @@
 /* 教练聊天分享免登录只读阅读端 —— devops#718，#624 原型 D 变体（气泡对话流·浅色）
    像素级参照： prototypes/624-reader-spike.html .vd_*（px×2=rpx）。主题藕粉
-   #ff6363 / 浅粉 #ffe9e9 / 页面底 #f4f5f7；无卡片边框风格，仅摘要卡保留浅粉描边。 */
+   #ff6363 / 浅粉 #ffe9e9 / 页面底 #f4f5f7；无卡片边框风格，仅摘要卡保留浅粉描边。
+   #816：本页是刻意浅色的分享落地页，accent 族已引全局令牌；页面自有浅色
+   值（#f4f5f7 底 / #ffffff 气泡 / #ffe9e9 / #1c1d21 文字等）不属深色令牌体系，
+   保持写死，P3 落地页浅色归置时统一处理。 */
 
 page {
   background: #f4f5f7;
@@ -129,7 +132,7 @@ page {
   width: 72rpx;
   height: 72rpx;
   border-radius: 22rpx;
-  background: rgba(255, 99, 99, 0.14);
+  background: rgba(var(--color-accent-rgb), 0.14);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -175,8 +178,8 @@ page {
   width: 64rpx;
   height: 64rpx;
   margin: 0 auto 24rpx;
-  border: 6rpx solid rgba(255, 99, 99, 0.2);
-  border-top-color: #ff6363;
+  border: 6rpx solid rgba(var(--color-accent-rgb), 0.2);
+  border-top-color: var(--color-accent);
   border-radius: 50%;
   animation: coach-share-spin 0.8s linear infinite;
 }
@@ -192,7 +195,7 @@ page {
   height: 96rpx;
   margin: 0 auto 28rpx;
   border-radius: 28rpx;
-  background: #ff6363;
+  background: var(--color-accent);
   color: #ffffff;
   font-size: 44rpx;
   font-weight: 700;
@@ -220,7 +223,7 @@ page {
   padding: 0 64rpx;
   line-height: 76rpx;
   border-radius: 38rpx;
-  background: #ff6363;
+  background: var(--color-accent);
   color: #ffffff;
   font-size: 26rpx;
   font-weight: 600;
@@ -251,7 +254,7 @@ page {
 
 /* wxacode 生成失败（fail-soft 为 null）回退品牌占位块 */
 .foot__qr--fallback {
-  background: #ff6363;
+  background: var(--color-accent);
   color: #ffffff;
   font-size: 48rpx;
   font-weight: 700;
@@ -281,7 +284,7 @@ page {
   padding: 0 40rpx;
   line-height: 80rpx;
   border-radius: 40rpx;
-  background: #ff6363;
+  background: var(--color-accent);
   color: #ffffff;
   font-size: 26rpx;
   font-weight: 600;

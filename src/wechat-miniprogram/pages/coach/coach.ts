@@ -21,6 +21,7 @@ import { userStore } from '../../store/index';
 import { buildCoachCard, looksLikeJsonText, parseLeakedRaceStrategyEnvelope, shanghaiMonthDayLabel, type CoachCardView } from '../../utils/coachCards';
 import { markdownToHtml } from '../../utils/markdown';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
+import { theme } from '../../utils/theme';
 
 interface CoachMessage {
   id: number;
@@ -170,9 +171,9 @@ function drawShareCover(
   height: number,
   picks: Array<{ role: 'user' | 'assistant'; text: string }>,
 ): void {
-  ctx.fillStyle = '#101111';
+  ctx.fillStyle = theme.card;
   ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = '#ff6363';
+  ctx.fillStyle = theme.accent;
   ctx.fillRect(0, 0, width, 6);
 
   // 先折行算总高，气泡组整体垂直居中。
@@ -185,10 +186,10 @@ function drawShareCover(
     const bubbleWidth = Math.min(Math.ceil(textWidth) + 44, width - 72);
     const bubbleHeight = w.lines.length * 32 + 28;
     const x = w.isUser ? width - 36 - bubbleWidth : 36;
-    ctx.fillStyle = w.isUser ? '#ff6363' : '#2a2b2e';
+    ctx.fillStyle = w.isUser ? theme.accent : '#2a2b2e';
     roundRectPath(ctx, x, y, bubbleWidth, bubbleHeight, 14);
     ctx.fill();
-    ctx.fillStyle = w.isUser ? '#101111' : '#e3e2e5';
+    ctx.fillStyle = w.isUser ? theme.card : theme.textPrimary;
     w.lines.forEach((line, i) => ctx.fillText(line, x + 22, y + 34 + i * 32));
     y += bubbleHeight + 18;
   }

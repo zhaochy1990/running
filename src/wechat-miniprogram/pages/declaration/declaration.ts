@@ -9,6 +9,7 @@ import {
 import { markdownToHtml } from '../../utils/markdown';
 import { ApiError } from '../../services/request';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
+import { theme } from '../../utils/theme';
 
 interface DeclarationPageData {
   statusBarHeight: number;
@@ -66,26 +67,25 @@ Page<DeclarationPageData, DeclarationPageHandlers>({
     error: '',
     title: '',
     html: '',
-    containerStyle: 'color:#e3e2e5;font-size:14px;line-height:22px;',
+    containerStyle: `color:${theme.textPrimary};font-size:14px;line-height:22px;`,
     tagStyle: {
-      p: 'margin:0 0 12px;color:#e3e2e5;',
-      ul: 'margin:0 0 12px;padding-left:20px;color:#e3e2e5;',
-      ol: 'margin:0 0 12px;padding-left:20px;color:#e3e2e5;',
-      li: 'margin:0 0 4px;color:#e3e2e5;',
-      h1: 'margin:16px 0 8px;color:#ffffff;font-weight:600;',
-      h2: 'margin:16px 0 8px;color:#ffffff;font-weight:600;',
-      h3: 'margin:14px 0 6px;color:#ffffff;font-weight:600;',
-      h4: 'margin:14px 0 6px;color:#ffffff;font-weight:600;',
-      h5: 'margin:14px 0 6px;color:#ffffff;font-weight:600;',
-      h6: 'margin:14px 0 6px;color:#ffffff;font-weight:600;',
-      blockquote:
-        'margin:0 0 12px;padding-left:10px;border-left:3px solid rgba(255,255,255,0.18);color:#9c9c9d;',
-      pre: 'margin:0 0 12px;padding:10px;background:#1d1e22;border-radius:8px;overflow-x:auto;color:#e3e2e5;',
-      code: 'font-family:monospace;background:rgba(255,255,255,0.08);border-radius:4px;padding:0 4px;color:#e3e2e5;',
-      a: 'color:#ffb3af;',
+      p: `margin:0 0 12px;color:${theme.textPrimary};`,
+      ul: `margin:0 0 12px;padding-left:20px;color:${theme.textPrimary};`,
+      ol: `margin:0 0 12px;padding-left:20px;color:${theme.textPrimary};`,
+      li: `margin:0 0 4px;color:${theme.textPrimary};`,
+      h1: `margin:16px 0 8px;color:${theme.textMax};font-weight:600;`,
+      h2: `margin:16px 0 8px;color:${theme.textMax};font-weight:600;`,
+      h3: `margin:14px 0 6px;color:${theme.textMax};font-weight:600;`,
+      h4: `margin:14px 0 6px;color:${theme.textMax};font-weight:600;`,
+      h5: `margin:14px 0 6px;color:${theme.textMax};font-weight:600;`,
+      h6: `margin:14px 0 6px;color:${theme.textMax};font-weight:600;`,
+      blockquote: `margin:0 0 12px;padding-left:10px;border-left:3px solid rgba(${theme.overlayRgb},0.18);color:${theme.textSecondary};`,
+      pre: `margin:0 0 12px;padding:10px;background:#1d1e22;border-radius:8px;overflow-x:auto;color:${theme.textPrimary};`,
+      code: `font-family:monospace;background:${theme.hairline};border-radius:4px;padding:0 4px;color:${theme.textPrimary};`,
+      a: `color:${theme.accentPale};`,
       table: 'border-collapse:collapse;margin:0 0 12px;width:100%;',
-      th: 'border:1px solid rgba(255,255,255,0.14);padding:6px 8px;color:#ffffff;',
-      td: 'border:1px solid rgba(255,255,255,0.14);padding:6px 8px;color:#e3e2e5;',
+      th: `border:1px solid rgba(${theme.overlayRgb},0.14);padding:6px 8px;color:${theme.textMax};`,
+      td: `border:1px solid rgba(${theme.overlayRgb},0.14);padding:6px 8px;color:${theme.textPrimary};`,
     },
   },
 

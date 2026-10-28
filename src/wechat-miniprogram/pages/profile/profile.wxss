@@ -5,7 +5,7 @@
 .page {
   min-height: 100vh;
   box-sizing: border-box;
-  background: #07080a;
+  background: var(--color-bg);
   display: flex;
   flex-direction: column;
 }
@@ -16,8 +16,8 @@
   left: 0;
   right: 0;
   z-index: 50;
-  background: #07080a;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+  background: var(--color-bg);
+  border-bottom: 1rpx solid var(--color-border-soft);
 }
 
 .top-bar__inner {
@@ -58,13 +58,13 @@
   line-height: 48rpx;
   font-weight: 700;
   letter-spacing: 1rpx;
-  color: #ffb3af;
+  color: var(--color-accent-pale);
 }
 
 .top-bar__subtitle {
   font-size: 20rpx;
   line-height: 32rpx;
-  color: rgba(225, 191, 188, 0.8);
+  color: rgba(var(--color-header-meta-rgb), 0.8);
 }
 
 .content {
@@ -72,7 +72,7 @@
 }
 
 .card {
-  background: #101111;
+  background: var(--color-card);
   border-radius: 0;
   padding: 32rpx;
   margin-bottom: 48rpx;
@@ -90,7 +90,7 @@
   width: 128rpx;
   height: 128rpx;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--color-overlay-rgb), 0.06);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -119,12 +119,12 @@
 .profile-info__name {
   font-size: 34rpx;
   font-weight: 700;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .profile-info__email {
   font-size: 20rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -133,10 +133,10 @@
 .profile-info__tag {
   align-self: flex-start;
   font-size: 17rpx;
-  color: #ff6363;
+  color: var(--color-accent);
   padding: 4rpx 12rpx;
   border-radius: 8rpx;
-  background: rgba(255, 99, 99, 0.1);
+  background: rgba(var(--color-accent-rgb), 0.1);
 }
 
 .profile-chevron {
@@ -156,7 +156,7 @@
   align-items: center;
   gap: 24rpx;
   padding: 28rpx 32rpx 28rpx 48rpx;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1rpx solid rgba(var(--color-overlay-rgb), 0.04);
 }
 
 .menu-row:last-child {
@@ -172,7 +172,7 @@
 .menu-row__title {
   flex: 1;
   font-size: 26rpx;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .menu-row__body {
@@ -190,7 +190,7 @@
 .menu-row__subtitle {
   font-size: 19rpx;
   line-height: 1.4;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -211,7 +211,7 @@
   padding: 0 10rpx;
   border-radius: 16rpx;
   background: #ff5f5f;
-  color: #ffffff;
+  color: var(--color-on-accent);
   font-size: 20rpx;
   line-height: 32rpx;
   text-align: center;

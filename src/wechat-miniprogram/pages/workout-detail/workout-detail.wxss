@@ -5,7 +5,7 @@
 .page {
   min-height: 100vh;
   box-sizing: border-box;
-  background: #07080a;
+  background: var(--color-bg);
   display: flex;
   flex-direction: column;
 }
@@ -18,8 +18,8 @@
   left: 0;
   right: 0;
   z-index: 50;
-  background: #07080a;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+  background: var(--color-bg);
+  border-bottom: 1rpx solid var(--color-border-soft);
 }
 
 .top-bar__inner {
@@ -65,7 +65,7 @@
   line-height: 48rpx;
   font-weight: 700;
   letter-spacing: 1rpx;
-  color: #ffb3af;
+  color: var(--color-accent-pale);
 }
 
 /* ---------- 内容 ---------- */
@@ -75,8 +75,8 @@
 }
 
 .card {
-  background: #101111;
-  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  background: var(--color-card);
+  border: 1rpx solid rgba(var(--color-overlay-rgb), 0.06);
   border-radius: 24rpx;
   padding: 32rpx;
   margin-bottom: 48rpx;
@@ -86,7 +86,7 @@
   font-size: 27rpx;
   line-height: 52rpx;
   font-weight: 600;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
   margin-bottom: 24rpx;
 }
 
@@ -97,8 +97,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: #101111;
-  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  background: var(--color-card);
+  border: 1rpx solid rgba(var(--color-overlay-rgb), 0.06);
   border-radius: 24rpx;
   padding: 88rpx 32rpx;
 }
@@ -106,8 +106,8 @@
 .state-card__spinner {
   width: 56rpx;
   height: 56rpx;
-  border: 4rpx solid rgba(255, 99, 99, 0.2);
-  border-top-color: #ff6363;
+  border: 4rpx solid rgba(var(--color-accent-rgb), 0.2);
+  border-top-color: var(--color-accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
   margin-bottom: 24rpx;
@@ -122,12 +122,12 @@
 .state-card__title {
   font-size: 30rpx;
   font-weight: 600;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .state-card__text {
   font-size: 22rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   margin-top: 12rpx;
 }
 
@@ -135,8 +135,8 @@
   margin-top: 36rpx;
   font-size: 24rpx;
   font-weight: 600;
-  color: #ff6363;
-  border: 1rpx solid rgba(255, 99, 99, 0.4);
+  color: var(--color-accent);
+  border: 1rpx solid rgba(var(--color-accent-rgb), 0.4);
   border-radius: 999rpx;
   padding: 12rpx 48rpx;
 }
@@ -192,7 +192,7 @@
   width: 80rpx;
   height: 80rpx;
   border-radius: 50%;
-  background: rgba(255, 99, 99, 0.12);
+  background: rgba(var(--color-accent-rgb), 0.12);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -220,28 +220,28 @@
   font-size: 34rpx;
   line-height: 44rpx;
   font-weight: 700;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .hero__chip {
   flex-shrink: 0;
   font-size: 20rpx;
   line-height: 28rpx;
-  color: #9c9c9d;
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-text-secondary);
+  background: rgba(var(--color-overlay-rgb), 0.05);
   border-radius: 8rpx;
   padding: 4rpx 12rpx;
 }
 
 .hero__chip--type {
   color: #ff9d9a;
-  background: rgba(255, 99, 99, 0.1);
-  border: 1rpx solid rgba(255, 99, 99, 0.3);
+  background: rgba(var(--color-accent-rgb), 0.1);
+  border: 1rpx solid rgba(var(--color-accent-rgb), 0.3);
 }
 
 .hero__date {
   font-size: 21rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   margin-top: 6rpx;
   font-variant-numeric: tabular-nums;
 }
@@ -249,7 +249,7 @@
 .hero__summary {
   font-size: 23rpx;
   line-height: 36rpx;
-  color: rgba(225, 191, 188, 0.85);
+  color: rgba(var(--color-header-meta-rgb), 0.85);
   margin-top: 24rpx;
 }
 
@@ -283,13 +283,13 @@
   font-size: 34rpx;
   line-height: 44rpx;
   font-weight: 700;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
 }
 
 .stat__label {
   font-size: 18rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   margin-top: 4rpx;
 }
 
@@ -298,11 +298,11 @@
 /* 重复组：×N 徽章骑在组框上沿 */
 .seg-group {
   position: relative;
-  border: 1rpx solid rgba(255, 255, 255, 0.09);
+  border: 1rpx solid rgba(var(--color-overlay-rgb), 0.09);
   border-radius: 20rpx;
   padding: 12rpx 24rpx 16rpx;
   margin: 28rpx 0;
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(var(--color-overlay-rgb), 0.02);
 }
 
 .seg-group__badge {
@@ -313,8 +313,8 @@
   font-weight: 700;
   line-height: 1;
   color: #ff9d9a;
-  background: #17181a;
-  border: 1rpx solid rgba(255, 99, 99, 0.45);
+  background: var(--color-chip);
+  border: 1rpx solid rgba(var(--color-accent-rgb), 0.45);
   border-radius: 999rpx;
   padding: 8rpx 20rpx;
   font-variant-numeric: tabular-nums;
@@ -345,7 +345,7 @@
 }
 
 .seg--quiet .seg__main {
-  color: #b9b8bc;
+  color: var(--color-text-bright);
 }
 
 .seg__body {
@@ -355,7 +355,7 @@
 
 .seg__main {
   font-size: 24rpx;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
   line-height: 40rpx;
 }
@@ -369,7 +369,7 @@
 
 .seg__note {
   font-size: 20rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   line-height: 30rpx;
   margin-top: 2rpx;
 }
@@ -380,7 +380,7 @@
   display: flex;
   gap: 24rpx;
   padding: 20rpx 0;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1rpx solid rgba(var(--color-overlay-rgb), 0.04);
   align-items: flex-start;
 }
 
@@ -395,8 +395,8 @@
   height: 104rpx;
   flex-shrink: 0;
   border-radius: 16rpx;
-  border: 1rpx dashed rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.02);
+  border: 1rpx dashed rgba(var(--color-overlay-rgb), 0.18);
+  background: rgba(var(--color-overlay-rgb), 0.02);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -430,7 +430,7 @@
 .exercise__name {
   font-size: 26rpx;
   font-weight: 600;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .exercise__target {
@@ -442,7 +442,7 @@
 
 .exercise__meta {
   font-size: 20rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   margin-top: 6rpx;
 }
 
@@ -450,12 +450,12 @@
 
 .note-card__title {
   font-size: 20rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   margin-bottom: 12rpx;
 }
 
 .note-card__text {
   font-size: 23rpx;
   line-height: 38rpx;
-  color: rgba(225, 191, 188, 0.9);
+  color: rgba(var(--color-header-meta-rgb), 0.9);
 }

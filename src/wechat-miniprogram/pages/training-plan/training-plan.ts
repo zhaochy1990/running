@@ -7,6 +7,7 @@
 // v1（markdown）计划不做渲染，只提示去网页查看。
 
 import { getCurrentMasterPlan } from '../../services/master-plan';
+import { theme } from '../../utils/theme';
 import type {
   MasterPlanMilestone,
   MasterPlanPhase,
@@ -431,7 +432,7 @@ function buildChart(ctx: PlanContext, metric: 'km' | 'dose'): { bars: ChartBarVM
       fillH,
       bandH,
       tickBottom,
-      barColor: state === 'current' ? '#ff6363' : meta.color,
+      barColor: state === 'current' ? theme.accent : meta.color,
       bandColor: meta.color,
       opacity: state === 'future' ? 0.18 : state === 'done' ? 0.85 : 1,
       label: state === 'current' ? '当前' : '',

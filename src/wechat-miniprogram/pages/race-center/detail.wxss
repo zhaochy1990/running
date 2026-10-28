@@ -8,7 +8,7 @@
 .page {
   min-height: 100vh;
   box-sizing: border-box;
-  background: #07080a;
+  background: var(--color-bg);
   display: flex;
   flex-direction: column;
 }
@@ -21,8 +21,8 @@
   left: 0;
   right: 0;
   z-index: 50;
-  background: #07080a;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+  background: var(--color-bg);
+  border-bottom: 1rpx solid var(--color-border-soft);
 }
 
 .top-bar__inner {
@@ -67,7 +67,7 @@
   line-height: 48rpx;
   font-weight: 700;
   letter-spacing: 1rpx;
-  color: #ffb3af;
+  color: var(--color-accent-pale);
 }
 
 .content {
@@ -86,7 +86,7 @@
 
 .state-card__text {
   font-size: 24rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
 }
 
 .banner {
@@ -97,16 +97,16 @@
 }
 
 .banner--error {
-  background: rgba(255, 99, 99, 0.1);
-  border: 1rpx solid rgba(255, 99, 99, 0.2);
-  color: #ff6363;
+  background: rgba(var(--color-accent-rgb), 0.1);
+  border: 1rpx solid rgba(var(--color-accent-rgb), 0.2);
+  color: var(--color-accent);
 }
 
 .spinner {
   width: 48rpx;
   height: 48rpx;
-  border: 4rpx solid rgba(95, 201, 146, 0.3);
-  border-top-color: #5fc992;
+  border: 4rpx solid rgba(var(--color-success-rgb), 0.3);
+  border-top-color: var(--color-success);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -119,7 +119,7 @@
 /* ---------- 卡片与标题 ---------- */
 
 .card {
-  background: #101111;
+  background: var(--color-card);
   border-radius: 16rpx;
   padding: 28rpx;
   margin-bottom: 24rpx;
@@ -129,14 +129,14 @@
   font-size: 24rpx;
   font-weight: 600;
   letter-spacing: 2rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   margin-bottom: 16rpx;
 }
 
 .card__empty {
   padding: 24rpx 0 8rpx;
   font-size: 24rpx;
-  color: #6a6a6c;
+  color: var(--color-text-tertiary);
 }
 
 /* ---------- 头区 ---------- */
@@ -153,7 +153,7 @@
   font-size: 34rpx;
   line-height: 48rpx;
   font-weight: 700;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .head__star {
@@ -165,11 +165,11 @@
   justify-content: center;
   font-size: 40rpx;
   line-height: 64rpx;
-  color: #6a6a6c;
+  color: var(--color-text-tertiary);
 }
 
 .head__star--on {
-  color: #ffb3af;
+  color: var(--color-accent-pale);
 }
 
 /* 标签全称双徽章（同列表行：田协暖色 / 世界田联冷色） */
@@ -190,13 +190,13 @@
 }
 
 .badge--cn {
-  color: #e8c07d;
-  background: rgba(232, 192, 125, 0.12);
+  color: var(--color-warning);
+  background: rgba(var(--color-warning-rgb), 0.12);
 }
 
 .badge--wa {
-  color: #8fb8e8;
-  background: rgba(143, 184, 232, 0.12);
+  color: var(--color-info);
+  background: rgba(var(--color-info-rgb), 0.12);
 }
 
 /* 三宫格：天后开赛 / 比赛日 / 报名制式 */
@@ -210,7 +210,7 @@
 .grid__cell {
   flex: 1;
   min-width: 0;
-  background: #17181a;
+  background: var(--color-chip);
   border-radius: 12rpx;
   padding: 16rpx 8rpx;
   text-align: center;
@@ -220,21 +220,21 @@
   font-size: 30rpx;
   line-height: 44rpx;
   font-weight: 700;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
 }
 
 .grid__value--lead {
-  color: #ffb3af;
+  color: var(--color-accent-pale);
 }
 
 .grid__label {
   margin-top: 4rpx;
   font-size: 18rpx;
   line-height: 26rpx;
-  color: #8a8a8c;
+  color: var(--color-text-muted);
   white-space: nowrap;
   overflow: hidden;
 }
@@ -246,7 +246,7 @@
   align-items: flex-start;
   margin-top: 24rpx;
   padding: 20rpx 8rpx 12rpx;
-  background: #17181a;
+  background: var(--color-chip);
   border-radius: 12rpx;
 }
 
@@ -262,7 +262,7 @@
 .tl__date {
   font-size: 22rpx;
   line-height: 30rpx;
-  color: #8a8a8c;
+  color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -277,7 +277,7 @@
 .tl__label {
   font-size: 18rpx;
   line-height: 26rpx;
-  color: #6a6a6c;
+  color: var(--color-text-tertiary);
   white-space: nowrap;
 }
 
@@ -289,21 +289,21 @@
 }
 
 .tl__step--on .tl__date {
-  color: #5fc992;
+  color: var(--color-success);
   font-weight: 600;
 }
 
 .tl__step--on .tl__dot {
-  background: #5fc992;
-  box-shadow: 0 0 0 6rpx rgba(95, 201, 146, 0.15);
+  background: var(--color-success);
+  box-shadow: 0 0 0 6rpx rgba(var(--color-success-rgb), 0.15);
 }
 
 .tl__step--on .tl__label {
-  color: #5fc992;
+  color: var(--color-success);
 }
 
 .tl__bar--on {
-  background: rgba(95, 201, 146, 0.55);
+  background: rgba(var(--color-success-rgb), 0.55);
 }
 
 /* 报名按钮：唯一的计划创建入口 */
@@ -315,15 +315,15 @@
   align-items: center;
   justify-content: center;
   border-radius: 40rpx;
-  background: rgba(255, 99, 99, 0.14);
-  border: 1rpx solid rgba(255, 99, 99, 0.38);
-  color: #ff6363;
+  background: rgba(var(--color-accent-rgb), 0.14);
+  border: 1rpx solid rgba(var(--color-accent-rgb), 0.38);
+  color: var(--color-accent);
   font-size: 26rpx;
   font-weight: 600;
 }
 
 .signup-btn:active {
-  background: rgba(255, 99, 99, 0.24);
+  background: rgba(var(--color-accent-rgb), 0.24);
 }
 
 /* ---------- 三 tab ---------- */
@@ -333,8 +333,8 @@
   z-index: 10;
   display: flex;
   margin-bottom: 24rpx;
-  background: #07080a;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.06);
+  background: var(--color-bg);
+  border-bottom: 1rpx solid rgba(var(--color-overlay-rgb), 0.06);
 }
 
 .tabs__item {
@@ -342,13 +342,13 @@
   text-align: center;
   padding: 20rpx 0;
   font-size: 26rpx;
-  color: #8a8a8c;
+  color: var(--color-text-muted);
 }
 
 .tabs__item--on {
-  color: #ff6363;
+  color: var(--color-accent);
   font-weight: 700;
-  border-bottom: 4rpx solid #ff6363;
+  border-bottom: 4rpx solid var(--color-accent);
 }
 
 /* ---------- 键值行 ---------- */
@@ -357,7 +357,7 @@
   display: flex;
   gap: 16rpx;
   padding: 14rpx 0;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1rpx solid var(--color-border-soft);
 }
 
 .kv--last {
@@ -368,7 +368,7 @@
   flex: 0 0 128rpx;
   font-size: 24rpx;
   line-height: 36rpx;
-  color: #8a8a8c;
+  color: var(--color-text-muted);
 }
 
 .kv__v {
@@ -376,18 +376,18 @@
   min-width: 0;
   font-size: 26rpx;
   line-height: 36rpx;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
   word-break: break-all;
 }
 
 .kv__v--dim {
-  color: #6a6a6c;
+  color: var(--color-text-tertiary);
 }
 
 .kv__line {
   font-size: 26rpx;
   line-height: 40rpx;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
 }
 
@@ -405,7 +405,7 @@
   justify-content: space-between;
   gap: 16rpx;
   padding: 18rpx 0;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1rpx solid var(--color-border-soft);
 }
 
 .ch:last-child {
@@ -416,7 +416,7 @@
   flex: 1;
   min-width: 0;
   font-size: 26rpx;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -425,29 +425,29 @@
 .ch__type {
   margin-left: 10rpx;
   font-size: 18rpx;
-  color: #6a6a6c;
+  color: var(--color-text-tertiary);
 }
 
 .ch__copy {
   flex-shrink: 0;
   font-size: 24rpx;
-  color: #ff6363;
+  color: var(--color-accent);
   padding: 4rpx 12rpx;
-  border: 1rpx solid rgba(95, 201, 146, 0.35);
+  border: 1rpx solid rgba(var(--color-success-rgb), 0.35);
   border-radius: 20rpx;
 }
 
 .ch__inline {
   flex-shrink: 0;
   font-size: 22rpx;
-  color: #6a6a6c;
+  color: var(--color-text-tertiary);
 }
 
 /* ---------- 城市景点 ---------- */
 
 .attr {
   padding: 14rpx 0;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1rpx solid var(--color-border-soft);
 }
 
 .attr:last-child {
@@ -458,14 +458,14 @@
   font-size: 26rpx;
   line-height: 38rpx;
   font-weight: 600;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .attr__desc {
   margin-top: 4rpx;
   font-size: 22rpx;
   line-height: 32rpx;
-  color: #8a8a8c;
+  color: var(--color-text-muted);
 }
 
 /* ---------- 空态 ---------- */
@@ -486,7 +486,7 @@
 
 .course__sep {
   margin: 24rpx 0;
-  border-top: 1rpx solid rgba(255, 255, 255, 0.05);
+  border-top: 1rpx solid var(--color-border-soft);
 }
 
 .course__head {
@@ -501,7 +501,7 @@
 
 .course__meta {
   font-size: 22rpx;
-  color: #8a8a8c;
+  color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;
 }
 
@@ -524,7 +524,7 @@
   bottom: 0;
   width: 6rpx;
   border-radius: 3rpx;
-  background: #17181a;
+  background: var(--color-chip);
 }
 
 .course__station {
@@ -549,20 +549,20 @@
      圆点含边框总高 26rpx；实机量偏差校准为 22rpx */
   margin-top: 22rpx;
   margin-left: -7rpx;
-  border: 3rpx solid #101111;
+  border: 3rpx solid var(--color-card);
 }
 
 .course__card {
   flex: 1;
   min-width: 0;
   margin-left: 20rpx;
-  background: #17181a;
+  background: var(--color-chip);
   border-radius: 12rpx;
   padding: 16rpx 20rpx;
 }
 
 .course__card--open {
-  background: #1d1e21;
+  background: var(--color-chip);
 }
 
 .course__row {
@@ -585,7 +585,7 @@
   font-size: 24rpx;
   font-weight: 600;
   line-height: 36rpx;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .course__km {
@@ -597,7 +597,7 @@
 .course__more {
   margin-top: 6rpx;
   font-size: 20rpx;
-  color: #6a6a6c;
+  color: var(--color-text-tertiary);
 }
 
 .course__body {
@@ -611,7 +611,7 @@
   margin-top: 16rpx;
   margin-left: 8rpx;
   font-size: 20rpx;
-  color: #6a6a6c;
+  color: var(--color-text-tertiary);
 }
 
 /* ---------- 报名选择器 action sheet ---------- */
@@ -632,7 +632,7 @@
   right: 0;
   bottom: 0;
   z-index: 100;
-  background: #141517;
+  background: var(--color-card);
   border-radius: 24rpx 24rpx 0 0;
   padding: 32rpx 40rpx calc(32rpx + env(safe-area-inset-bottom));
 }
@@ -640,7 +640,7 @@
 .sheet__hint {
   font-size: 22rpx;
   line-height: 34rpx;
-  color: #8a8a8c;
+  color: var(--color-text-muted);
   padding-bottom: 20rpx;
 }
 
@@ -654,21 +654,21 @@
 
 .sheet__chips-label {
   font-size: 24rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
 }
 
 .chip {
   padding: 10rpx 30rpx;
   border-radius: 28rpx;
-  border: 1rpx solid rgba(255, 255, 255, 0.12);
+  border: 1rpx solid rgba(var(--color-overlay-rgb), 0.12);
   font-size: 26rpx;
-  color: #b9b8bc;
+  color: var(--color-text-bright);
 }
 
 .chip--on {
-  border-color: rgba(255, 99, 99, 0.6);
-  background: rgba(255, 99, 99, 0.14);
-  color: #ff6363;
+  border-color: rgba(var(--color-accent-rgb), 0.6);
+  background: rgba(var(--color-accent-rgb), 0.14);
+  color: var(--color-accent);
   font-weight: 600;
 }
 
@@ -676,11 +676,11 @@
   padding: 26rpx 8rpx;
   font-size: 28rpx;
   color: #d5d4d7;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1rpx solid rgba(var(--color-overlay-rgb), 0.06);
 }
 
 .sheet__opt--on {
-  color: #ff6363;
+  color: var(--color-accent);
   font-weight: 600;
 }
 
@@ -693,7 +693,7 @@
   padding: 20rpx 0 8rpx;
   text-align: center;
   font-size: 26rpx;
-  color: #8a8a8c;
+  color: var(--color-text-muted);
 }
 
 /* ── 比赛策略卡（#396：未生成=CTA / 已生成=摘要 → 报告页） ── */
@@ -703,7 +703,7 @@
 .strategy__state {
   font-size: 22rpx;
   font-weight: 400;
-  color: #8a8a8c;
+  color: var(--color-text-muted);
   margin-left: 12rpx;
 }
 .strategy__state--on {
@@ -711,7 +711,7 @@
 }
 .strategy__desc {
   font-size: 26rpx;
-  color: #b9b9bc;
+  color: var(--color-text-bright);
   line-height: 1.6;
 }
 .strategy__cta {
@@ -727,7 +727,7 @@
 }
 .strategy__target {
   font-size: 26rpx;
-  color: #b9b9bc;
+  color: var(--color-text-bright);
 }
 .strategy__time {
   font-size: 40rpx;
@@ -737,12 +737,12 @@
 }
 .strategy__count {
   font-size: 22rpx;
-  color: #b9b9bc;
+  color: var(--color-text-bright);
   margin-left: 16rpx;
 }
 .strategy__updated {
   font-size: 22rpx;
-  color: #8a8a8c;
+  color: var(--color-text-muted);
 }
 .strategy__go {
   margin-top: 16rpx;

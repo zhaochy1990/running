@@ -5,7 +5,7 @@
 .page {
   min-height: 100vh;
   box-sizing: border-box;
-  background: #07080a;
+  background: var(--color-bg);
   display: flex;
   flex-direction: column;
 }
@@ -18,8 +18,8 @@
   left: 0;
   right: 0;
   z-index: 50;
-  background: #07080a;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+  background: var(--color-bg);
+  border-bottom: 1rpx solid var(--color-border-soft);
 }
 
 .top-bar__inner {
@@ -63,7 +63,7 @@
   line-height: 48rpx;
   font-weight: 700;
   letter-spacing: 1rpx;
-  color: #ffb3af;
+  color: var(--color-accent-pale);
 }
 
 .content {
@@ -82,14 +82,14 @@
 
 .state-card__text {
   font-size: 24rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
 }
 
 .spinner {
   width: 48rpx;
   height: 48rpx;
-  border: 4rpx solid rgba(95, 201, 146, 0.3);
-  border-top-color: #5fc992;
+  border: 4rpx solid rgba(var(--color-success-rgb), 0.3);
+  border-top-color: var(--color-success);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -107,9 +107,9 @@
 }
 
 .banner--error {
-  background: rgba(255, 99, 99, 0.1);
-  border: 1rpx solid rgba(255, 99, 99, 0.2);
-  color: #ff6363;
+  background: rgba(var(--color-accent-rgb), 0.1);
+  border: 1rpx solid rgba(var(--color-accent-rgb), 0.2);
+  color: var(--color-accent);
 }
 
 /* ---------- 头像 header ---------- */
@@ -130,7 +130,7 @@
   padding: 0;
   margin: 0;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--color-overlay-rgb), 0.06);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -155,20 +155,20 @@
 
 .hero__hint {
   font-size: 22rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
 }
 
 .hero__name {
   font-size: 32rpx;
   font-weight: 700;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 /* ---------- 字段行 ---------- */
 
 .card {
-  background: #101111;
-  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  background: var(--color-card);
+  border: 1rpx solid rgba(var(--color-overlay-rgb), 0.06);
   border-radius: 24rpx;
   padding: 8rpx 32rpx;
   margin-bottom: 48rpx;
@@ -179,7 +179,7 @@
   align-items: center;
   gap: 20rpx;
   min-height: 100rpx;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1rpx solid rgba(var(--color-overlay-rgb), 0.04);
 }
 
 .field-row--last {
@@ -188,7 +188,7 @@
 
 .field-row__label {
   font-size: 26rpx;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
   flex-shrink: 0;
 }
 
@@ -196,21 +196,21 @@
   flex: 1;
   text-align: right;
   font-size: 26rpx;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .field-row__value--muted {
-  color: #6a6b6c;
+  color: var(--color-text-tertiary);
 }
 
 .field-row__input {
   flex: 1;
   text-align: right;
   font-size: 26rpx;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
   height: 100rpx;
 }
 
@@ -220,7 +220,7 @@
 
 .field-row__unit {
   font-size: 24rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   flex-shrink: 0;
 }
 
@@ -248,13 +248,13 @@
 .body-entry__title {
   font-size: 28rpx;
   font-weight: 600;
-  color: #ffb3af;
+  color: var(--color-accent-pale);
 }
 
 .body-entry__sub {
   margin-top: 6rpx;
   font-size: 21rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
 }
 
 /* 同 hero 头像按钮：提升特异度以压过基础库按钮默认 width:184px。 */
@@ -265,8 +265,8 @@
   margin: 24rpx 0;
   padding: 0;
   border-radius: 20rpx;
-  background: #ff6363;
-  color: #fff;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
   font-size: 26rpx;
   font-weight: 600;
   text-align: center;
@@ -289,10 +289,10 @@
   line-height: 88rpx;
   margin: 0;
   padding: 0;
-  border: 1rpx solid rgba(255, 99, 99, 0.4);
+  border: 1rpx solid rgba(var(--color-accent-rgb), 0.4);
   border-radius: 20rpx;
-  background: rgba(255, 99, 99, 0.08);
-  color: #ff6363;
+  background: rgba(var(--color-accent-rgb), 0.08);
+  color: var(--color-accent);
   font-size: 24rpx;
   font-weight: 600;
   text-align: center;
