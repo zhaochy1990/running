@@ -1,5 +1,6 @@
 {
   "navigationStyle": "custom",
+  "backgroundColor": "#F7F9FB",
   "usingComponents": {
     "push-date-sheet": "/components/push-date-sheet/index"
   },

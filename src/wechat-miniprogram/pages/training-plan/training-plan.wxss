@@ -705,10 +705,10 @@
 
 .tl-week__tag {
   font-size: 18rpx;
-  color: #d8ff3e;
+  color: var(--color-accent-deep);
   padding: 2rpx 10rpx;
   border-radius: 6rpx;
-  background: rgba(216, 255, 62, 0.1);
+  background: var(--color-accent-tint);
   flex-shrink: 0;
 }
 

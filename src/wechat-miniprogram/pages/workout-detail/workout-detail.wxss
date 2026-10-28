@@ -1,5 +1,6 @@
 /* ============================================================
-   课表详情页 —— 深色 STRIDE 主题（与今日/计划页一致）
+   课表详情页 —— 浅色主题令牌（原深色 STRIDE 主题，#816/#818 已收敛；
+   workout-share 落地页整包 @import 本文件，所见即所得）
    ============================================================ */
 
 .page {
@@ -234,7 +235,7 @@
 }
 
 .hero__chip--type {
-  color: #ff9d9a;
+  color: var(--color-accent-deep);
   background: rgba(var(--color-accent-rgb), 0.1);
   border: 1rpx solid rgba(var(--color-accent-rgb), 0.3);
 }
@@ -312,7 +313,7 @@
   font-size: 20rpx;
   font-weight: 700;
   line-height: 1;
-  color: #ff9d9a;
+  color: var(--color-accent-deep);
   background: var(--color-chip);
   border: 1rpx solid rgba(var(--color-accent-rgb), 0.45);
   border-radius: 999rpx;
@@ -363,7 +364,7 @@
 .seg__hr {
   display: inline-block;
   font-size: 18rpx;
-  color: #d9a45f;
+  color: var(--color-warning);
   margin-left: 12rpx;
 }
 
@@ -411,7 +412,7 @@
 
 .exercise__img-text {
   font-size: 17rpx;
-  color: #6f7073;
+  color: var(--color-text-secondary);
   letter-spacing: 1rpx;
 }
 
@@ -436,7 +437,7 @@
 .exercise__target {
   flex-shrink: 0;
   font-size: 22rpx;
-  color: #ff9d9a;
+  color: var(--color-accent-deep);
   font-variant-numeric: tabular-nums;
 }
 

@@ -1,12 +1,13 @@
 /* 教练聊天分享免登录只读阅读端 —— devops#718，#624 原型 D 变体（气泡对话流·浅色）
-   像素级参照： prototypes/624-reader-spike.html .vd_*（px×2=rpx）。主题藕粉
-   #ff6363 / 浅粉 #ffe9e9 / 页面底 #f4f5f7；无卡片边框风格，仅摘要卡保留浅粉描边。
-   #816：本页是刻意浅色的分享落地页，accent 族已引全局令牌；页面自有浅色
-   值（#f4f5f7 底 / #ffffff 气泡 / #ffe9e9 / #1c1d21 文字等）不属深色令牌体系，
-   保持写死，P3 落地页浅色归置时统一处理。 */
+   像素级参照： prototypes/624-reader-spike.html .vd_*（px×2=rpx）。
+   #816：本页是刻意浅色的分享落地页，accent 族已引全局令牌；
+   devops#818 P3：页面自有浅色值已统一收敛到全局令牌（底/卡/文字/气泡/
+   品牌条），实底 accent 上的白字一律 --color-on-accent；顶栏毛玻璃白
+   rgba(255,255,255,0.97) 无对应令牌、保持写死；mp-html 的 tagStyle 在
+   coach-share.ts（归 TS 侧票处理）。 */
 
 page {
-  background: #f4f5f7;
+  background: var(--color-bg);
 }
 
 .page {
@@ -28,7 +29,7 @@ page {
   gap: 20rpx;
   padding: 20rpx 32rpx;
   background: rgba(255, 255, 255, 0.97);
-  border-bottom: 1rpx solid #ececee;
+  border-bottom: 1rpx solid var(--color-border-soft);
 }
 
 .top__home {
@@ -46,7 +47,7 @@ page {
 .top__title {
   font-size: 30rpx;
   font-weight: 700;
-  color: #1c1d21;
+  color: var(--color-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -54,7 +55,7 @@ page {
 
 .top__meta {
   font-size: 20rpx;
-  color: #8a8a8c;
+  color: var(--color-text-secondary);
   margin-top: 4rpx;
 }
 
@@ -64,8 +65,8 @@ page {
   line-height: 34rpx;
   padding: 0 14rpx;
   border-radius: 10rpx;
-  color: #8a8a8c;
-  background: #f1f1f3;
+  color: var(--color-text-secondary);
+  background: var(--color-chip);
 }
 
 /* ---------- 主体 ---------- */
@@ -83,11 +84,11 @@ page {
   justify-content: flex-end;
 }
 
-/* 用户浅粉右气泡（#ffe9e9，右上角收角） */
+/* 用户浅粉右气泡（accent-tint，右上角收角） */
 .bubble-u {
   max-width: 80%;
-  background: #ffe9e9;
-  color: #33353a;
+  background: var(--color-accent-tint);
+  color: var(--color-text-primary);
   border-radius: 32rpx;
   border-top-right-radius: 10rpx;
   padding: 22rpx 28rpx;
@@ -100,22 +101,22 @@ page {
 /* 教练白底左气泡（左上角收角，轻阴影） */
 .bubble-md {
   max-width: 92%;
-  background: #ffffff;
+  background: var(--color-card);
   border-radius: 32rpx;
   border-top-left-radius: 10rpx;
   padding: 24rpx 28rpx;
-  box-shadow: 0 2rpx 6rpx rgba(20, 20, 30, 0.05);
+  box-shadow: 0 2rpx 6rpx rgba(var(--color-overlay-rgb), 0.05);
 }
 
 /* ---------- 静态摘要卡（策略卡降级） ---------- */
 
 .scard {
   max-width: 92%;
-  background: #ffffff;
-  border: 1rpx solid #f3e3e3;
+  background: var(--color-card);
+  border: 1rpx solid rgba(var(--color-accent-rgb), 0.2);
   border-radius: 32rpx;
   padding: 28rpx;
-  box-shadow: 0 2rpx 6rpx rgba(20, 20, 30, 0.05);
+  box-shadow: 0 2rpx 6rpx rgba(var(--color-overlay-rgb), 0.05);
 }
 
 .scard__head {
@@ -152,19 +153,19 @@ page {
 .scard__title {
   font-size: 28rpx;
   font-weight: 700;
-  color: #1c1d21;
+  color: var(--color-text-primary);
 }
 
 .scard__subtitle {
   font-size: 22rpx;
-  color: #8a8a8c;
+  color: var(--color-text-secondary);
   margin-top: 4rpx;
 }
 
 .scard__note {
   margin-top: 16rpx;
   font-size: 20rpx;
-  color: #a5a5a8;
+  color: var(--color-text-muted);
 }
 
 /* ---------- 状态空态（加载 / 过期 / 不存在 / 失败） ---------- */
@@ -196,7 +197,7 @@ page {
   margin: 0 auto 28rpx;
   border-radius: 28rpx;
   background: var(--color-accent);
-  color: #ffffff;
+  color: var(--color-on-accent);
   font-size: 44rpx;
   font-weight: 700;
   text-align: center;
@@ -207,12 +208,12 @@ page {
 .state__title {
   font-size: 32rpx;
   font-weight: 700;
-  color: #1c1d21;
+  color: var(--color-text-primary);
 }
 
 .state__text {
   font-size: 24rpx;
-  color: #8a8a8c;
+  color: var(--color-text-secondary);
   margin-top: 14rpx;
   line-height: 36rpx;
 }
@@ -224,7 +225,7 @@ page {
   line-height: 76rpx;
   border-radius: 38rpx;
   background: var(--color-accent);
-  color: #ffffff;
+  color: var(--color-on-accent);
   font-size: 26rpx;
   font-weight: 600;
 }
@@ -241,8 +242,8 @@ page {
   align-items: center;
   gap: 24rpx;
   padding: 24rpx 32rpx calc(24rpx + env(safe-area-inset-bottom));
-  background: #ffffff;
-  border-top: 1rpx solid #ececee;
+  background: var(--color-card);
+  border-top: 1rpx solid var(--color-border-soft);
 }
 
 .foot__qr {
@@ -255,7 +256,7 @@ page {
 /* wxacode 生成失败（fail-soft 为 null）回退品牌占位块 */
 .foot__qr--fallback {
   background: var(--color-accent);
-  color: #ffffff;
+  color: var(--color-on-accent);
   font-size: 48rpx;
   font-weight: 700;
   text-align: center;
@@ -270,12 +271,12 @@ page {
 .foot__title {
   font-size: 25rpx;
   font-weight: 600;
-  color: #1c1d21;
+  color: var(--color-text-primary);
 }
 
 .foot__subtitle {
   font-size: 21rpx;
-  color: #8a8a8c;
+  color: var(--color-text-secondary);
   margin-top: 6rpx;
 }
 
@@ -285,7 +286,7 @@ page {
   line-height: 80rpx;
   border-radius: 40rpx;
   background: var(--color-accent);
-  color: #ffffff;
+  color: var(--color-on-accent);
   font-size: 26rpx;
   font-weight: 600;
   flex-shrink: 0;

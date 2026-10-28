@@ -1,8 +1,9 @@
-/* 比赛策略报告页 —— 沿用赛事中心深色视觉语言（#385/#392）。 */
+/* 比赛策略报告页 —— 浅色主题令牌（devops#818 P3：荧光绿并入藕粉族、
+   深色时代硬编码收敛到令牌；strategy-share 整包复用本文件）。 */
 .page {
   min-height: 100vh;
   background: var(--color-bg);
-  color: #f2f2f3;
+  color: var(--color-text-primary);
 }
 
 .top-bar {
@@ -11,8 +12,8 @@
   left: 0;
   right: 0;
   z-index: 20;
-  background: rgba(7, 7, 8, 0.92);
-  backdrop-filter: blur(12px);
+  background: var(--color-bg);
+  border-bottom: 1rpx solid var(--color-border-soft);
 }
 .top-bar__inner {
   height: 128rpx;
@@ -64,7 +65,7 @@
   height: 48rpx;
   border-radius: 50%;
   border: 4rpx solid rgba(var(--color-overlay-rgb), 0.15);
-  border-top-color: #d8ff3e;
+  border-top-color: var(--color-success);
   animation: spin 0.9s linear infinite;
 }
 @keyframes spin {
@@ -76,7 +77,7 @@
 .banner--error {
   background: rgba(255, 92, 92, 0.12);
   border: 1rpx solid rgba(255, 92, 92, 0.3);
-  color: #ff9d9d;
+  color: var(--color-danger);
   border-radius: 16rpx;
   padding: 24rpx;
   font-size: 26rpx;
@@ -133,11 +134,11 @@
 .hero__time {
   font-size: 44rpx;
   font-weight: 700;
-  color: #d8ff3e;
+  color: var(--color-accent-deep);
   margin-left: 8rpx;
 }
 .hero__time--pace {
-  color: #f2f2f3;
+  color: var(--color-text-max);
 }
 .hero__summary {
   font-size: 26rpx;
@@ -167,13 +168,13 @@
 .hero__btn--lead {
   flex: 2;
   background: var(--color-accent);
-  color: var(--color-card);
+  color: var(--color-on-accent);
   font-weight: 600;
 }
 .hero__btn--minor {
   flex: 1;
   background: rgba(var(--color-overlay-rgb), 0.08);
-  color: #f2f2f3;
+  color: var(--color-text-primary);
 }
 
 /* 分段配速表 */
@@ -203,7 +204,7 @@
 .pace__seg-dist {
   font-size: 26rpx;
   font-weight: 600;
-  color: #f2f2f3;
+  color: var(--color-text-primary);
 }
 .pace__seg-desc {
   margin-top: 4rpx;
@@ -235,7 +236,7 @@
   border-radius: 8rpx;
   padding: 8rpx 12rpx;
   font-size: 24rpx;
-  color: #f2f2f3;
+  color: var(--color-text-primary);
   min-height: 40rpx;
 }
 
@@ -275,7 +276,7 @@
 .fuel__add {
   margin-top: 16rpx;
   font-size: 26rpx;
-  color: #d8ff3e;
+  color: var(--color-accent-deep);
   padding: 8rpx 0;
 }
 
@@ -303,12 +304,12 @@
 }
 .check__item {
   font-size: 26rpx;
-  color: #f2f2f3;
+  color: var(--color-text-primary);
 }
 .check__count {
   font-size: 28rpx;
   font-weight: 600;
-  color: #d8ff3e;
+  color: var(--color-accent-deep);
 }
 .check__note {
   margin-top: 6rpx;
@@ -342,8 +343,8 @@
   color: var(--color-text-muted);
 }
 .actions__save--on {
-  background: #d8ff3e;
-  color: var(--color-card);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
   font-weight: 600;
 }
 .actions__delete {
@@ -352,7 +353,7 @@
   line-height: 84rpx;
   font-size: 28rpx;
   background: rgba(255, 92, 92, 0.1);
-  color: #ff5c5c;
+  color: var(--color-danger);
 }
 
 /* 版本切换 pills：目标成绩键控的多版本（点击切换，active 高亮） */
@@ -373,9 +374,9 @@
   color: var(--color-text-bright);
 }
 .versions__pill--on {
-  background: rgba(216, 255, 62, 0.14);
-  border-color: #d8ff3e;
-  color: #d8ff3e;
+  background: var(--color-accent-tint);
+  border-color: var(--color-accent);
+  color: var(--color-accent-deep);
 }
 
 /* 配速卡 canvas：离屏（页面内不可见位置）绘制 */
@@ -393,8 +394,8 @@
   margin-right: 12rpx;
   padding: 2rpx 12rpx;
   font-size: 20rpx;
-  color: #d8ff3e;
-  background: rgba(216, 255, 62, 0.12);
+  color: var(--color-accent-deep);
+  background: var(--color-accent-tint);
   border-radius: 8rpx;
   vertical-align: middle;
 }
@@ -404,8 +405,8 @@
   line-height: 84rpx;
   font-size: 28rpx;
   font-weight: 600;
-  background: #d8ff3e;
-  color: var(--color-card);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
 }
 .actions__apply--busy {
   opacity: 0.6;

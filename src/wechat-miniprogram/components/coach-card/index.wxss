@@ -1,8 +1,10 @@
-/* 教练卡片：深色浅浮雕，accent 主题藕粉。令牌由 styles/theme.wxss 唯一
+/* 教练卡片：浅色主题令牌（藕粉 accent）。令牌由 styles/theme.wxss 唯一
    定义（app.wxss 全局 @import），CSS 变量跨组件继承，本组件直接 var() 引用、
    不重定义令牌、不写 var() 兜底值——#665 实证：page{} 双定义（旧 app.wxss
    与页面 dark.wxss 各定义一份）时，组件内 var() 可能解析到 app.wxss 旧值；
-   单源后竞争消除，兜底值反而会掩盖令牌缺失，故一律不写（#816）。 */
+   单源后竞争消除，兜底值反而会掩盖令牌缺失，故一律不写（#816）。
+   devops#818 P3：标题残留深色时代 #f2f2f3 白字 → --color-text-max；
+   浅衬底上的 accent 文字（badge / ghost CTA）统一 accent-deep 阶。 */
 .cc-card {
   width: 100%;
   box-sizing: border-box;
@@ -37,14 +39,14 @@
 .cc-card__title {
   font-size: 15px;
   font-weight: 600;
-  color: #f2f2f3;
+  color: var(--color-text-max);
 }
 
 .cc-card__badge {
   margin-left: 12rpx;
   padding: 2rpx 12rpx;
   font-size: 10px;
-  color: var(--color-accent);
+  color: var(--color-accent-deep);
   background: rgba(var(--color-accent-rgb), 0.12);
   border-radius: 8rpx;
 }
@@ -88,7 +90,7 @@
 }
 
 .cc-card__cta-text--ghost {
-  color: var(--color-accent);
+  color: var(--color-accent-deep);
 }
 
 .cc-card__cta-arrow {
