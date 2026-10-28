@@ -7,6 +7,10 @@
 // candidate query already selects only activities that still need a thumbnail,
 // so no input narrows it. Thumbnails are cosmetic, so every failure mode here
 // degrades to "no thumbnail" rather than to "sync failed".
+//
+// The same reduction also feeds a compute-only backfill (NewShapeBackfill,
+// devops#830): it fills the route_thumb_json shape column for historical rows
+// without rendering or uploading anything.
 package routethumbnails
 
 import (

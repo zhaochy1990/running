@@ -193,3 +193,92 @@ func TestUpsertActivityPreservesRouteThumbnail(t *testing.T) {
 		t.Fatalf("resync wiped route_thumb_url: %v", row.RouteThumbURL)
 	}
 }
+
+// The shape backfill's candidates key on route_thumb_json, not route_thumb_url
+// (devops#830): a row rendered before the dual-write carries a URL but no
+// polyline, and it must still be selected — the URL says a PNG exists, not that
+// a shape does. Rows without GPS stay out, and a filled shape drops out, which
+// is what makes the backfill idempotent.
+func TestRouteThumbShapeCandidatesSelectOnlyRowsMissingJSON(t *testing.T) {
+	st, _, uid := openBlobTestStore(t)
+	ctx := context.Background()
+	t.Cleanup(func() {
+		st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&TimeseriesPoint{})
+		st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&Activity{})
+	})
+
+	outdoor := [][2]float64{{31.2, 121.4}, {31.2001, 121.4001}}
+	seedThumbActivity(t, st, uid, "shape-gap", outdoor)
+	seedThumbActivity(t, st, uid, "done", outdoor)
+	seedThumbActivity(t, st, uid, "indoor", nil)
+
+	shapeCandidates := func() map[string]bool {
+		ids, err := st.RouteThumbShapeCandidates(ctx, uid)
+		if err != nil {
+			t.Fatalf("route thumb shape candidates: %v", err)
+		}
+		set := make(map[string]bool, len(ids))
+		for _, id := range ids {
+			set[id] = true
+		}
+		return set
+	}
+
+	// A row with a URL but no polyline (the pre-dual-write era) is the shape
+	// backfill's whole reason to exist — the PNG candidate query skips it.
+	if err := st.db.WithContext(ctx).Model(&Activity{}).
+		Where("user_id = ? AND label_id = ?", uid, "shape-gap").
+		Update("route_thumb_url", "https://cdn.example/thumbnails/shape-gap.png").Error; err != nil {
+		t.Fatalf("seed legacy URL: %v", err)
+	}
+	if err := st.SetActivityRouteThumb(ctx, uid, "done", `[[5,95],[95,5]]`, "https://cdn.example/thumbnails/done.png"); err != nil {
+		t.Fatalf("seed finished row: %v", err)
+	}
+
+	if got := shapeCandidates(); len(got) != 1 || !got["shape-gap"] {
+		t.Fatalf("shape candidates = %v, want only {shape-gap}", got)
+	}
+
+	// Filling the shape drops the row out — the idempotency contract.
+	if err := st.SetActivityRouteThumbJSON(ctx, uid, "shape-gap", `[[5,95],[95,5]]`); err != nil {
+		t.Fatalf("set route thumb json: %v", err)
+	}
+	if got := shapeCandidates(); len(got) != 0 {
+		t.Fatalf("after filling the shape, candidates = %v, want none", got)
+	}
+}
+
+// The shape write must touch only its own column: a legacy PNG URL already on
+// the row is the miniprogram's image until the vector switch, and the
+// compute-only backfill must not clobber it.
+func TestSetActivityRouteThumbJSONPreservesURL(t *testing.T) {
+	st, _, uid := openBlobTestStore(t)
+	ctx := context.Background()
+	t.Cleanup(func() {
+		st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&TimeseriesPoint{})
+		st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&Activity{})
+	})
+	seedThumbActivity(t, st, uid, "png-era", [][2]float64{{31.2, 121.4}})
+
+	const url = "https://cdn.example/thumbnails/png-era.png"
+	if err := st.db.WithContext(ctx).Model(&Activity{}).
+		Where("user_id = ? AND label_id = ?", uid, "png-era").
+		Update("route_thumb_url", url).Error; err != nil {
+		t.Fatalf("seed legacy URL: %v", err)
+	}
+
+	const shape = `[[5,95],[95,5]]`
+	if err := st.SetActivityRouteThumbJSON(ctx, uid, "png-era", shape); err != nil {
+		t.Fatalf("set route thumb json: %v", err)
+	}
+
+	var row Activity
+	if err := st.db.WithContext(ctx).
+		Where("user_id = ? AND label_id = ?", uid, "png-era").First(&row).Error; err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	assertJSONColumn(t, row.RouteThumbJSON, shape)
+	if row.RouteThumbURL == nil || *row.RouteThumbURL != url {
+		t.Fatalf("route_thumb_url = %v, want %q preserved", row.RouteThumbURL, url)
+	}
+}

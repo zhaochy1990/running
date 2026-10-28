@@ -198,6 +198,17 @@ It is not a scheduled job; the pipeline's own `route_thumbnails` step keeps new
 activities covered. Both share one handler, and the candidate query selects only
 activities still missing a thumbnail, so re-running either is a cheap no-op.
 
+`route_thumbnails_shape_backfill` (devops#830) is the compute-only sibling: it
+fills `activities.route_thumb_json` for rows that have GPS but no stored shape
+(`route_thumb_json IS NULL AND has_gps`), rendering nothing and touching no
+bucket — an unconfigured `cos:` section does not skip it. Its candidates key on
+the JSON column, not the URL, so rows that carry a legacy PNG URL but no
+polyline are still selected. Idempotent per athlete: filled rows drop out of the
+candidate query, a rerun reports `{"candidates":0}`; traces with too few valid
+fixes are counted as `no_gps` and left NULL on purpose (the client keeps the
+sport-icon fallback). Enqueue it once per existing user via the internal
+`POST /jobs` after the worker deploys, in athlete batches if the gap is large.
+
 ### 赛季训练计划统一读取切流
 
 Web 从登录 JWT 的 `sub` 构造 `GET /api/users/{user_id}/master-plan/current`，并通过 BFF 的动态路由转发到 Go；`GET /api/users/me/master-plan/current` 仅作为后端兼容别名保留。该接口从
