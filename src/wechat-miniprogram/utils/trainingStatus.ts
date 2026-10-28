@@ -305,8 +305,18 @@ export function formatDurationHuman(seconds: number | null | undefined): string 
 // ---------------------------------------------------------------------------
 
 const CHART_PADDING: [number, number, number, number] = [10, 6, 0, 0];
-const CHART_GRID_COLOR = theme.hairline;
+// 网格线用 bgDim（浅色下比发丝线更淡一档，devops#819）；发丝线留给卡片描边。
+const CHART_GRID_COLOR = theme.bgDim;
 const CHART_FONT_COLOR = theme.textSecondary;
+// 浅色 tooltip：白卡 + 发丝线描边 + 主文字色（devops#819 图表规格），折线/柱状共用。
+const CHART_TOOLTIP = {
+  showBox: true,
+  bgColor: theme.card,
+  borderColor: theme.hairline,
+  borderWidth: 1,
+  fontColor: theme.textPrimary,
+  gridType: 'dash',
+};
 const CHART_FONT_SIZE = 10;
 
 export interface ChartSeries {
@@ -387,7 +397,7 @@ export function buildLineChartOptions(params: {
     },
     extra: {
       line: { type: 'straight', width: 2 },
-      tooltip: { showBox: true, bgColor: theme.card, fontColor: theme.textPrimary, gridType: 'dash' },
+      tooltip: CHART_TOOLTIP,
     },
     series: params.series.map((s) => ({ name: s.name, data: s.data, color: s.color })),
   };
@@ -423,7 +433,7 @@ export function buildColumnChartOptions(params: {
     },
     extra: {
       column: { type: 'group', categoryGap },
-      tooltip: { showBox: true, bgColor: theme.card, fontColor: theme.textPrimary, gridType: 'dash' },
+      tooltip: CHART_TOOLTIP,
     },
     series: [{ name: '', color: params.color, data: params.data }],
   };

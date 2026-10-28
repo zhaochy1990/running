@@ -133,6 +133,7 @@ function plainExcerpt(text: string): string {
 /** 分享封面 canvas 2d 上下文的最小结构（wx typings 不带 DOM Canvas 类型）。 */
 interface ShareCoverCtx {
   fillStyle: string;
+  strokeStyle: string;
   font: string;
   fillRect(x: number, y: number, w: number, h: number): void;
   fillText(text: string, x: number, y: number): void;
@@ -142,6 +143,7 @@ interface ShareCoverCtx {
   arcTo(x1: number, y1: number, x2: number, y2: number, radius: number): void;
   closePath(): void;
   fill(): void;
+  stroke(): void;
 }
 
 /** 封面气泡文本折行：每行 16 个全角字符，最多两行，超长省略号收尾。 */
@@ -163,7 +165,7 @@ function roundRectPath(ctx: ShareCoverCtx, x: number, y: number, w: number, h: n
   ctx.closePath();
 }
 
-/** 分享封面（5:4，#717）：前两条所选对话气泡节选，暗底纯气泡、无品牌字样。
+/** 分享封面（5:4，#717）：前两条所选对话气泡节选，浅色底纯气泡、无品牌字样。
  *  纯绘制闭函数，参照配速卡海报 canvas 先例（strategy.ts drawPoster）。 */
 function drawShareCover(
   ctx: ShareCoverCtx,
@@ -171,7 +173,7 @@ function drawShareCover(
   height: number,
   picks: Array<{ role: 'user' | 'assistant'; text: string }>,
 ): void {
-  ctx.fillStyle = theme.card;
+  ctx.fillStyle = theme.bg;
   ctx.fillRect(0, 0, width, height);
   ctx.fillStyle = theme.accent;
   ctx.fillRect(0, 0, width, 6);
@@ -180,16 +182,19 @@ function drawShareCover(
   const wrapped = picks.map((pick) => ({ isUser: pick.role === 'user', lines: coverLines(pick.text) }));
   const total = wrapped.reduce((sum, w) => sum + w.lines.length * 32 + 28, 0) + (wrapped.length - 1) * 18;
   let y = Math.max(48, (height - total) / 2);
+  ctx.strokeStyle = theme.hairline;
   for (const w of wrapped) {
     ctx.font = '22px sans-serif';
     const textWidth = Math.max(...w.lines.map((line) => ctx.measureText(line).width));
     const bubbleWidth = Math.min(Math.ceil(textWidth) + 44, width - 72);
     const bubbleHeight = w.lines.length * 32 + 28;
     const x = w.isUser ? width - 36 - bubbleWidth : 36;
-    ctx.fillStyle = w.isUser ? theme.accent : '#2a2b2e';
+    // 浅色海报规格：教练白卡气泡 + 发丝线描边，用户气泡 accentTint。
+    ctx.fillStyle = w.isUser ? theme.accentTint : theme.card;
     roundRectPath(ctx, x, y, bubbleWidth, bubbleHeight, 14);
     ctx.fill();
-    ctx.fillStyle = w.isUser ? theme.card : theme.textPrimary;
+    if (!w.isUser) ctx.stroke(); // 白卡气泡加发丝线描边，避免与浅底融为一体
+    ctx.fillStyle = w.isUser ? theme.accentDeep : theme.textPrimary;
     w.lines.forEach((line, i) => ctx.fillText(line, x + 22, y + 34 + i * 32));
     y += bubbleHeight + 18;
   }
@@ -220,7 +225,7 @@ interface CoachPageData {
   currentSessionId: string;
   // 顶部上下文提示条：存在时表示当前会话锚定了一项计划训练。
   contextHint: string;
-  // mp-html 样式：容器兜底颜色/字重 + 结构化 tag 样式（深色主题）。
+  // mp-html 样式：容器兜底颜色/字重 + 结构化 tag 样式（浅色主题）。
   containerStyle: string;
   tagStyle: Record<string, string>;
   // 多选转发（devops#717）：selectMode 时顶栏切「已选 N 条」、底栏切
@@ -481,15 +486,14 @@ Page<CoachPageData, CoachPageHandlers>({
       h5: `margin:10px 0 6px;color:${theme.textPrimary};font-weight:600;`,
       h6: `margin:10px 0 6px;color:${theme.textPrimary};font-weight:600;`,
       blockquote:
-        `margin:0 0 10px;padding-left:10px;border-left:3px solid rgba(${theme.overlayRgb},0.18);color:${theme.textBright};`,
-      // pre 底与 declaration / roadmap-detail 同值 #1d1e22（白名单「mp-html pre 背景」条目）；
-      // 原 #25262a 就近归并（通道差恰 8/255，票内授权阈值内，截图不可辨）。
-      pre: `margin:0 0 10px;padding:10px;background:#1d1e22;border-radius:8px;overflow-x:auto;color:${theme.textPrimary};`,
+        `margin:0 0 10px;padding-left:10px;border-left:3px solid rgba(${theme.overlayRgb},0.18);color:${theme.textSecondary};`,
+      // pre 底与 declaration / roadmap-detail 同令牌 bgSunken（浅色 pre 底，devops#819）。
+      pre: `margin:0 0 10px;padding:10px;background:${theme.bgSunken};border-radius:8px;overflow-x:auto;color:${theme.textPrimary};`,
       code: `font-family:monospace;background:${theme.hairline};border-radius:4px;padding:0 4px;color:${theme.textPrimary};`,
-      a: `color:${theme.accentPale};`,
+      a: `color:${theme.accentDeep};`,
       // markdownToHtml 会产出 GFM 表格；无样式时无边框无对齐，不可读。
       table: `width:100%;margin:0 0 10px;border-collapse:collapse;color:${theme.textPrimary};`,
-      th: `padding:6px 8px;border:1px solid rgba(${theme.overlayRgb},0.14);color:${theme.textBright};font-weight:600;text-align:left;`,
+      th: `padding:6px 8px;border:1px solid rgba(${theme.overlayRgb},0.14);color:${theme.textSecondary};font-weight:600;text-align:left;`,
       td: `padding:6px 8px;border:1px solid rgba(${theme.overlayRgb},0.14);color:${theme.textPrimary};`,
     },
     selectMode: false,
@@ -1461,7 +1465,7 @@ Page<CoachPageData, CoachPageHandlers>({
 
   /**
    * 分享封面预生成（devops#717）：勾选变化后防抖重画 5:4 封面（前两条所选对
-   * 话节选，暗底纯气泡），本地临时路径备用。全链路 fail-soft：
+   * 话节选，浅色底纯气泡），本地临时路径备用。全链路 fail-soft：
    * canvas 不可用/绘制失败只意味着分享卡回落微信默认截图。
    */
   scheduleShareCover() {

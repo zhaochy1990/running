@@ -170,7 +170,8 @@ export function downsample(points: CurvePoint[], max = MAX_CURVE_POINTS): CurveP
 
 /** uCharts 会把这些值乘 pixelRatio，所以都按 css px 给。 */
 const CHART_PADDING: [number, number, number, number] = [10, 4, 0, 0]; // 上右下左
-const CHART_GRID_COLOR = theme.hairline;
+// 网格线用 bgDim（浅色下比发丝线更淡一档，devops#819）；发丝线留给卡片描边。
+const CHART_GRID_COLOR = theme.bgDim;
 const CHART_FONT_COLOR = theme.textSecondary;
 const CHART_FONT_SIZE = 10;
 const CHART_GRID_LINES = 4;
@@ -231,7 +232,15 @@ export function buildChartOptions(
     extra: {
       // linearColor 由区间档位生成 → 一个区间一种颜色的折线
       line: { type: 'straight', width: 2, linearType: 'custom' },
-      tooltip: { showBox: true, bgColor: theme.card, fontColor: theme.textPrimary, gridType: 'dash' },
+      // 浅色 tooltip：白卡 + 发丝线描边 + 主文字色（devops#819 图表规格）。
+      tooltip: {
+        showBox: true,
+        bgColor: theme.card,
+        borderColor: theme.hairline,
+        borderWidth: 1,
+        fontColor: theme.textPrimary,
+        gridType: 'dash',
+      },
     },
     categories: spec.series.map((p) => formatChartTime(p.t)),
     series: [

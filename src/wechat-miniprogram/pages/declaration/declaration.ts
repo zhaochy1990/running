@@ -21,7 +21,7 @@ interface DeclarationPageData {
   title: string;
   /** markdownToHtml 产出的 HTML，经 <mp-html> 渲染。 */
   html: string;
-  // mp-html 样式：容器兜底颜色/字重 + 结构化 tag 样式（深色主题，与 coach 页一致）。
+  // mp-html 样式：容器兜底颜色/字重 + 结构化 tag 样式（浅色主题，与 coach 页一致）。
   containerStyle: string;
   tagStyle: Record<string, string>;
 }
@@ -80,9 +80,9 @@ Page<DeclarationPageData, DeclarationPageHandlers>({
       h5: `margin:14px 0 6px;color:${theme.textMax};font-weight:600;`,
       h6: `margin:14px 0 6px;color:${theme.textMax};font-weight:600;`,
       blockquote: `margin:0 0 12px;padding-left:10px;border-left:3px solid rgba(${theme.overlayRgb},0.18);color:${theme.textSecondary};`,
-      pre: `margin:0 0 12px;padding:10px;background:#1d1e22;border-radius:8px;overflow-x:auto;color:${theme.textPrimary};`,
+      pre: `margin:0 0 12px;padding:10px;background:${theme.bgSunken};border-radius:8px;overflow-x:auto;color:${theme.textPrimary};`,
       code: `font-family:monospace;background:${theme.hairline};border-radius:4px;padding:0 4px;color:${theme.textPrimary};`,
-      a: `color:${theme.accentPale};`,
+      a: `color:${theme.accentDeep};`,
       table: 'border-collapse:collapse;margin:0 0 12px;width:100%;',
       th: `border:1px solid rgba(${theme.overlayRgb},0.14);padding:6px 8px;color:${theme.textMax};`,
       td: `border:1px solid rgba(${theme.overlayRgb},0.14);padding:6px 8px;color:${theme.textPrimary};`,

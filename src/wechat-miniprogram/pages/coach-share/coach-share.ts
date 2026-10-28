@@ -11,6 +11,7 @@ import { ApiError } from '../../services/request';
 import { getCoachShare, type CoachShareSnapshot } from '../../services/coach';
 import { buildCoachShareMessages, type CoachShareMessageVM } from '../../utils/coachShareRows';
 import { epochToShanghaiYmd } from '../../utils/date';
+import { theme } from '../../utils/theme';
 import { defaultShareAppMessage } from '../../utils/share';
 
 /** 「2026-10-21」→「10月21日」（顶栏 meta 用）。 */
@@ -37,7 +38,7 @@ interface CoachSharePageData {
   messages: CoachShareMessageVM[];
   /** 码图 URL；空串回退品牌占位块（wxacode fail-soft 可为 null） */
   wxacodeUrl: string;
-  /** mp-html 浅色主题样式（#624 D：coach 页深色 tagStyle 的浅色版） */
+  /** mp-html 浅色主题样式（devops#819：theme.ts 令牌体系，页内规格与 coach 页略异） */
   containerStyle: string;
   tagStyle: Record<string, string>;
 }
@@ -65,27 +66,28 @@ Page<CoachSharePageData, CoachSharePageHandlers>({
     meta: '',
     messages: [],
     wxacodeUrl: '',
-    containerStyle: 'color:#33353a;font-size:13.5px;line-height:21px;',
+    // 浅色主题样式收敛到 theme.ts 令牌（devops#819）。
+    containerStyle: `color:${theme.textPrimary};font-size:13.5px;line-height:21px;`,
     tagStyle: {
-      p: 'margin:0 0 10px;color:#33353a;',
-      ul: 'margin:0 0 10px;padding-left:20px;color:#33353a;',
-      ol: 'margin:0 0 10px;padding-left:20px;color:#33353a;',
-      li: 'margin:0 0 4px;color:#33353a;',
-      h1: 'margin:10px 0 6px;color:#d94f4f;',
-      h2: 'margin:10px 0 6px;color:#d94f4f;',
-      h3: 'margin:10px 0 6px;color:#d94f4f;',
-      h4: 'margin:10px 0 6px;color:#d94f4f;font-weight:600;',
-      h5: 'margin:10px 0 6px;color:#d94f4f;font-weight:600;',
-      h6: 'margin:10px 0 6px;color:#d94f4f;font-weight:600;',
+      p: `margin:0 0 10px;color:${theme.textPrimary};`,
+      ul: `margin:0 0 10px;padding-left:20px;color:${theme.textPrimary};`,
+      ol: `margin:0 0 10px;padding-left:20px;color:${theme.textPrimary};`,
+      li: `margin:0 0 4px;color:${theme.textPrimary};`,
+      h1: `margin:10px 0 6px;color:${theme.accentDeep};`,
+      h2: `margin:10px 0 6px;color:${theme.accentDeep};`,
+      h3: `margin:10px 0 6px;color:${theme.accentDeep};`,
+      h4: `margin:10px 0 6px;color:${theme.accentDeep};font-weight:600;`,
+      h5: `margin:10px 0 6px;color:${theme.accentDeep};font-weight:600;`,
+      h6: `margin:10px 0 6px;color:${theme.accentDeep};font-weight:600;`,
       blockquote:
-        'margin:0 0 10px;padding-left:10px;border-left:3px solid rgba(0,0,0,0.12);color:#6b6d74;',
-      pre: 'margin:0 0 10px;padding:10px;background:#f1f1f3;border-radius:8px;overflow-x:auto;color:#33353a;',
-      code: 'font-family:monospace;background:rgba(0,0,0,0.06);border-radius:4px;padding:0 4px;color:#33353a;',
-      a: 'color:#d94f4f;',
+        `margin:0 0 10px;padding-left:10px;border-left:3px solid rgba(${theme.overlayRgb},0.12);color:${theme.textSecondary};`,
+      pre: `margin:0 0 10px;padding:10px;background:${theme.bgSunken};border-radius:8px;overflow-x:auto;color:${theme.textPrimary};`,
+      code: `font-family:monospace;background:rgba(${theme.overlayRgb},0.06);border-radius:4px;padding:0 4px;color:${theme.textPrimary};`,
+      a: `color:${theme.accentDeep};`,
       // markdownToHtml 会产出 GFM 表格；无样式时无边框无对齐，不可读。
-      table: 'width:100%;margin:0 0 10px;border-collapse:collapse;color:#33353a;',
-      th: 'padding:6px 8px;border:1px solid #e8e8ea;color:#6b6d74;font-weight:600;text-align:left;',
-      td: 'padding:6px 8px;border:1px solid #e8e8ea;color:#33353a;',
+      table: `width:100%;margin:0 0 10px;border-collapse:collapse;color:${theme.textPrimary};`,
+      th: `padding:6px 8px;border:1px solid ${theme.hairline};color:${theme.textSecondary};font-weight:600;text-align:left;`,
+      td: `padding:6px 8px;border:1px solid ${theme.hairline};color:${theme.textPrimary};`,
     },
   },
 
