@@ -12,6 +12,7 @@
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { getLogger } from "@stride/common";
 import { getAgentConfig, loadConfig, type ModelConfig } from "../config/config.js";
 import { isQualityStep } from "../graph/master_plan/phasing/content/derive.js";
 import type { ContentWeekRow } from "../graph/master_plan/phasing/content/doctrine.js";
@@ -25,6 +26,7 @@ import { buildCaseContext, listLoadCases } from "../graph/master_plan/phasing/lo
 const OUT_DIR = resolve(import.meta.dirname, "../../test-output/content-replay");
 const RUNWAYS = (process.env.REPLAY_RUNWAYS ?? "9,22").split(",").map(Number);
 const RACE_DISTANCE_M = 42195;
+const logger = getLogger("coachAgent:contentReplay");
 
 function loadModel(): ModelConfig {
   const repoRoot = resolve(import.meta.dirname, "../../../..");
@@ -198,6 +200,13 @@ async function main() {
     };
     const t0 = Date.now();
     const outcome = await generateWeekContent(input, model);
+    // 可观测性（#822，#814 Phase 1）：重试违规全量出日志，供失败归因采集
+    if (outcome.attemptsDetail.length > 0) {
+      logger.warn(
+        { athlete: s.athlete, scenario: String(s.runway), source: outcome.source, attempts: outcome.attempts, attemptsDetail: outcome.attemptsDetail },
+        "content generation retry violations",
+      );
+    }
     const fails = outcome.checks.flatMap((weekChecks) => weekChecks.filter((c) => !c.pass).map((c) => c.id));
     const spot = outcome.source === "llm" ? spotCheck(outcome, input, input.race.goalPaceSKm) : [];
     const row = {
@@ -216,7 +225,7 @@ async function main() {
     );
     await writeFile(
       resolve(OUT_DIR, `content-${s.athlete}-${s.runway}.json`),
-      JSON.stringify({ ...row, projection: projection.meta, weeks: outcome.weeks, checks: outcome.checks }, null, 1),
+      JSON.stringify({ ...row, attemptsDetail: outcome.attemptsDetail, projection: projection.meta, weeks: outcome.weeks, checks: outcome.checks }, null, 1),
     );
   }
 

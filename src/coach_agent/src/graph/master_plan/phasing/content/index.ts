@@ -12,7 +12,7 @@
 export type { PaceZones } from "./derive.js";
 export type { ContentAthleteContext, ContentGeneratorInput, ContentRaceContext, ContentWeekRow } from "./doctrine.js";
 export type { WeekContentResult } from "./fallback.js";
-export type { ContentDraft, ContentModel, ContentOutcome } from "./generate.js";
+export type { ContentAttemptDetail, ContentDraft, ContentModel, ContentOutcome } from "./generate.js";
 export { createContentModel, generateWeekContent } from "./generate.js";
 export type { ProjectedWeekZones, ProjectZonesMeta, ProjectZonesResult } from "./project.js";
 export { projectZones } from "./project.js";

@@ -40,11 +40,12 @@ function fallbackAsDraft(input: ContentGeneratorInput, dropWeeks = 0): ContentDr
   });
 }
 
-test("首过：draft 归一后 C1-C9 全绿 → source=llm attempts=1", async () => {
+test("首过：draft 归一后 C1-C9 全绿 → source=llm attempts=1 attemptsDetail=空", async () => {
   const model = { invoke: async () => fallbackAsDraft(INPUT) };
   const outcome = await generateWeekContent(INPUT, model);
   assert.equal(outcome.source, "llm");
   assert.equal(outcome.attempts, 1);
+  assert.deepEqual(outcome.attemptsDetail, []);
   assert.equal(outcome.weeks.length, 2);
   for (const weekChecks of outcome.checks) for (const c of weekChecks) assert.equal(c.pass, true, `${c.id}: ${c.detail}`);
 });
@@ -62,9 +63,25 @@ test("违规重试：首版缺周 → 带违规清单重试 → 第二版通过�
   assert.equal(outcome.attempts, 2);
   assert.equal(calls.length, 2);
   assert.match((calls[1] as { violations: string[] }).violations.join(";"), /第2周缺失/);
+  // attemptsDetail 逐失败尝试一条，与传给模型的重试违规清单一致
+  assert.equal(outcome.attemptsDetail.length, 1);
+  assert.deepEqual(outcome.attemptsDetail[0]!.violations, (calls[1] as { violations: string[] }).violations);
+  assert.equal(outcome.attemptsDetail[0]!.parseError, undefined);
 });
 
-test("重试耗尽：模型始终抛错 → 模板兜底、兜底产物全绿", async () => {
+test("解析失败重试：首版抛错 → parseError 入列 → 第二版通过（attempts=2）", async () => {
+  const model = {
+    invoke: async (_input: unknown, retry?: { violations: string[] }) => (retry == null ? Promise.reject(new Error("JSON 截断")) : fallbackAsDraft(INPUT)),
+  };
+  const outcome = await generateWeekContent(INPUT, model);
+  assert.equal(outcome.source, "llm");
+  assert.equal(outcome.attempts, 2);
+  assert.equal(outcome.attemptsDetail.length, 1);
+  assert.deepEqual(outcome.attemptsDetail[0]!.violations, []);
+  assert.match(outcome.attemptsDetail[0]!.parseError ?? "", /JSON 截断/);
+});
+
+test("重试耗尽：模型始终抛错 → 模板兜底、兜底产物全绿；attemptsDetail 3 条全 parseError", async () => {
   const model = {
     invoke: async () => {
       throw new Error("boom");
@@ -74,15 +91,25 @@ test("重试耗尽：模型始终抛错 → 模板兜底、兜底产物全绿", 
   assert.equal(outcome.source, "fallback");
   assert.equal(outcome.attempts, 3);
   assert.equal(outcome.weeks.length, 2);
+  assert.equal(outcome.attemptsDetail.length, 3);
+  for (const detail of outcome.attemptsDetail) {
+    assert.deepEqual(detail.violations, []);
+    assert.match(detail.parseError ?? "", /^boom$/);
+  }
   for (const weekChecks of outcome.checks) for (const c of weekChecks) assert.equal(c.pass, true, `${c.id}: ${c.detail}`);
 });
 
-test("重试耗尽：始终违规（非异常）→ 兜底；比赛课配速锚 goal_pace", async () => {
+test("重试耗尽：始终违规（非异常）→ 兜底；比赛课配速锚 goal_pace；attemptsDetail 3 条全违规", async () => {
   const bad = fallbackAsDraft(INPUT);
   for (const week of bad.weeks) for (const session of week.sessions) session.purpose = "";
   const model = { invoke: async () => bad };
   const outcome = await generateWeekContent(INPUT, model);
   assert.equal(outcome.source, "fallback");
+  assert.equal(outcome.attemptsDetail.length, 3);
+  for (const detail of outcome.attemptsDetail) {
+    assert.ok(detail.violations.length > 0, "每次尝试都有违规");
+    assert.equal(detail.parseError, undefined);
+  }
   const race = outcome.weeks[1]!.sessions.find((w) => w.date === INPUT.race.date)!;
   assert.ok(race, "比赛课在场");
   const main = race.blocks[0]!.steps[0]!;
