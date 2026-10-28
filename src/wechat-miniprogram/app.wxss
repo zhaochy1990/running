@@ -1,18 +1,10 @@
-/* 全局样式变量 */
-page {
-  --color-primary: #1c1c1e;
-  --color-secondary: #8a8a8e;
-  --color-accent: #ff6b35;
-  --color-success: #34c759;
-  --color-warning: #ff9f0a;
-  --color-danger: #ff3b30;
-  --color-bg: #f7f7f8;
-  --color-card: #ffffff;
-  --color-border: #e5e5ea;
-  --color-text-primary: #1c1c1e;
-  --color-text-secondary: #8a8a8e;
-  --color-text-tertiary: #c7c7cc;
+/* 主题色令牌唯一真相源：styles/theme.wxss（#816；换主题只改该文件
+   与镜像常量 utils/theme.ts）。本文件只保留非颜色工具令牌（间距 /
+   圆角 / 字号 / 字重）与通用工具类，不定义任何色值。 */
+@import "styles/theme.wxss";
 
+/* 通用工具令牌（非颜色） */
+page {
   --spacing-xs: 8rpx;
   --spacing-sm: 16rpx;
   --spacing-md: 24rpx;
@@ -109,8 +101,8 @@ page {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: #101111;
-  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  background: var(--color-card);
+  border: 1rpx solid rgba(var(--color-overlay-rgb), 0.06);
   border-radius: 24rpx;
   padding: 64rpx 32rpx;
   margin-bottom: 48rpx;
@@ -119,11 +111,11 @@ page {
 .empty-card__title {
   font-size: 27rpx;
   font-weight: 600;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .empty-card__sub {
   font-size: 20rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   margin-top: 12rpx;
 }

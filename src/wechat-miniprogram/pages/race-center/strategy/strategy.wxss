@@ -1,7 +1,7 @@
 /* 比赛策略报告页 —— 沿用赛事中心深色视觉语言（#385/#392）。 */
 .page {
   min-height: 100vh;
-  background: #070708;
+  background: var(--color-bg);
   color: #f2f2f3;
 }
 
@@ -57,13 +57,13 @@
 }
 .state-card__text {
   font-size: 26rpx;
-  color: #8a8a8c;
+  color: var(--color-text-muted);
 }
 .spinner {
   width: 48rpx;
   height: 48rpx;
   border-radius: 50%;
-  border: 4rpx solid rgba(255, 255, 255, 0.15);
+  border: 4rpx solid rgba(var(--color-overlay-rgb), 0.15);
   border-top-color: #d8ff3e;
   animation: spin 0.9s linear infinite;
 }
@@ -84,7 +84,7 @@
 }
 
 .card {
-  background: #101111;
+  background: var(--color-card);
   border-radius: 16rpx;
   padding: 28rpx;
   margin-bottom: 24rpx;
@@ -97,18 +97,18 @@
 .card__hint {
   font-size: 22rpx;
   font-weight: 400;
-  color: #8a8a8c;
+  color: var(--color-text-muted);
   margin-left: 12rpx;
 }
 .card__empty {
   font-size: 26rpx;
-  color: #8a8a8c;
+  color: var(--color-text-muted);
 }
 
 /* hero */
 .hero__sub {
   font-size: 24rpx;
-  color: #8a8a8c;
+  color: var(--color-text-muted);
 }
 .hero__name {
   font-size: 40rpx;
@@ -128,7 +128,7 @@
 }
 .hero__stat-label {
   font-size: 26rpx;
-  color: #b9b9bc;
+  color: var(--color-text-bright);
 }
 .hero__time {
   font-size: 44rpx;
@@ -141,7 +141,7 @@
 }
 .hero__summary {
   font-size: 26rpx;
-  color: #b9b9bc;
+  color: var(--color-text-bright);
   margin-top: 16rpx;
   line-height: 1.6;
 }
@@ -166,13 +166,13 @@
 }
 .hero__btn--lead {
   flex: 2;
-  background: #ff6363;
-  color: #101111;
+  background: var(--color-accent);
+  color: var(--color-card);
   font-weight: 600;
 }
 .hero__btn--minor {
   flex: 1;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(var(--color-overlay-rgb), 0.08);
   color: #f2f2f3;
 }
 
@@ -180,7 +180,7 @@
 /* 行容器：一行数值 + 分段描述/说明整行（长文不再挤压列宽） */
 .pace-row {
   padding: 14rpx 0;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1rpx solid var(--color-border-soft);
 }
 .pace {
   display: flex;
@@ -192,8 +192,8 @@
   align-items: center;
   gap: 8rpx;
   font-size: 22rpx;
-  color: #8a8a8c;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.12);
+  color: var(--color-text-muted);
+  border-bottom: 1rpx solid rgba(var(--color-overlay-rgb), 0.12);
 }
 /* flex-basis 0 + min-width 0：列按比例分宽，长内容换行而不是把行撑出屏 */
 .pace__seg {
@@ -209,7 +209,7 @@
   margin-top: 4rpx;
   font-size: 22rpx;
   line-height: 30rpx;
-  color: #8a8a8c;
+  color: var(--color-text-muted);
 }
 .pace__pace {
   flex: 1 1 0;
@@ -219,7 +219,7 @@
   flex: 0.9 1 0;
   min-width: 0;
   font-size: 24rpx;
-  color: #b9b9bc;
+  color: var(--color-text-bright);
 }
 /* 说明：整行 textarea（auto-height 自动换行），不再是第五列 */
 .pace__note {
@@ -228,10 +228,10 @@
   margin-top: 10rpx;
   font-size: 22rpx;
   line-height: 30rpx;
-  color: #b9b9bc;
+  color: var(--color-text-bright);
 }
 .pace__cell--edit {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--color-overlay-rgb), 0.05);
   border-radius: 8rpx;
   padding: 8rpx 12rpx;
   font-size: 24rpx;
@@ -243,7 +243,7 @@
 /* 补给计划（行结构同分段配速表）：时间点行首短值，内容整行换行不截断 */
 .fuel-row {
   padding: 14rpx 0;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1rpx solid var(--color-border-soft);
 }
 .fuel {
   display: flex;
@@ -261,7 +261,7 @@
   margin-top: 10rpx;
   font-size: 22rpx;
   line-height: 30rpx;
-  color: #b9b9bc;
+  color: var(--color-text-bright);
 }
 .fuel__del {
   width: 48rpx;
@@ -269,7 +269,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #8a8a8c;
+  color: var(--color-text-muted);
   font-size: 26rpx;
 }
 .fuel__add {
@@ -284,13 +284,13 @@
   margin-bottom: 16rpx;
   font-size: 22rpx;
   line-height: 32rpx;
-  color: #8a8a8c;
+  color: var(--color-text-muted);
 }
 
 /* 补给打包清单：品类 ×数量 一行，用法小字跟随 */
 .check-row {
   padding: 14rpx 0;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1rpx solid var(--color-border-soft);
 }
 .check-row:last-child {
   border-bottom: none;
@@ -314,12 +314,12 @@
   margin-top: 6rpx;
   font-size: 22rpx;
   line-height: 30rpx;
-  color: #8a8a8c;
+  color: var(--color-text-muted);
 }
 
 .tip {
   font-size: 26rpx;
-  color: #b9b9bc;
+  color: var(--color-text-bright);
   line-height: 1.7;
   margin-bottom: 6rpx;
 }
@@ -338,12 +338,12 @@
   border-radius: 12rpx;
   line-height: 84rpx;
   font-size: 28rpx;
-  background: rgba(255, 255, 255, 0.08);
-  color: #8a8a8c;
+  background: rgba(var(--color-overlay-rgb), 0.08);
+  color: var(--color-text-muted);
 }
 .actions__save--on {
   background: #d8ff3e;
-  color: #101111;
+  color: var(--color-card);
   font-weight: 600;
 }
 .actions__delete {
@@ -368,9 +368,9 @@
   border-radius: 999rpx;
   font-size: 26rpx;
   font-weight: 600;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1rpx solid rgba(255, 255, 255, 0.14);
-  color: #b9b9bc;
+  background: rgba(var(--color-overlay-rgb), 0.06);
+  border: 1rpx solid rgba(var(--color-overlay-rgb), 0.14);
+  color: var(--color-text-bright);
 }
 .versions__pill--on {
   background: rgba(216, 255, 62, 0.14);
@@ -405,7 +405,7 @@
   font-size: 28rpx;
   font-weight: 600;
   background: #d8ff3e;
-  color: #101111;
+  color: var(--color-card);
 }
 .actions__apply--busy {
   opacity: 0.6;
@@ -414,5 +414,5 @@
   margin-top: 12rpx;
   text-align: center;
   font-size: 22rpx;
-  color: #8a8a8c;
+  color: var(--color-text-muted);
 }

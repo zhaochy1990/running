@@ -7,6 +7,7 @@ import { userStore } from '../../store/index';
 import { shanghaiWeekStart, shanghaiWeekdayLabel, weekFolderName } from '../../utils/date';
 import { fmtDose, fmtDurationShort, fmtKm } from '../../utils/format';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
+import { theme, themeRgba } from '../../utils/theme';
 import type {
   NormalizedRunWorkout,
   NormalizedStrengthWorkout,
@@ -382,10 +383,10 @@ function drawShareCover(
 ): void {
   ctx.fillStyle = '#0a0a0b';
   ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = '#ff6363';
+  ctx.fillStyle = theme.accent;
   ctx.fillRect(0, 0, width, 6);
 
-  ctx.fillStyle = '#8a8a8c';
+  ctx.fillStyle = theme.textMuted;
   ctx.font = '20px sans-serif';
   ctx.fillText('砺跑 · 自建课表', 36, 58);
 
@@ -415,7 +416,7 @@ function drawShareCover(
   // 指标色块：跑课前两项=距离/总时长，力量课=预计时长/动作（与页内 stat 同源）
   const blockW = (width - 72 - 24) / 2;
   const blockY = height - 140;
-  ctx.fillStyle = 'rgba(255, 99, 99, 0.12)';
+  ctx.fillStyle = themeRgba(theme.accentRgb, 0.12);
   ctx.fillRect(36, blockY, blockW, 104);
   ctx.fillRect(36 + blockW + 24, blockY, blockW, 104);
   for (let i = 0; i < 2 && i < stats.length; i++) {
@@ -423,7 +424,7 @@ function drawShareCover(
     ctx.fillStyle = '#ff9d9a';
     ctx.font = 'bold 40px sans-serif';
     ctx.fillText(stats[i].value, x + 24, blockY + 58);
-    ctx.fillStyle = '#8a8a8c';
+    ctx.fillStyle = theme.textMuted;
     ctx.font = '20px sans-serif';
     ctx.fillText(stats[i].label, x + 24, blockY + 88);
   }

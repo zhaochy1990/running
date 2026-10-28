@@ -2,14 +2,14 @@
    1. 所有卡片一律无边框，高亮只靠底色 tint（如当前周 rgba(255,99,99,.12)）；
    2. 吃满屏宽：页面左右 padding 24rpx、卡片 padding 24rpx、时间轴左轨 36rpx；
    3. 全页字号整体 +2rpx（15→17 … 30→32；顶栏 34/20 保持全 app 统一不动）；
-   4. 深色主题：底 #07080A、卡 #101111、主题粉 #FF6363、BEM、rpx。
+   4. 深色主题（令牌见 styles/theme.wxss）、BEM、rpx。
    阶段配色沿用 Web PHASE_VISUALS 语义降饱和（base 绿/build 青/peak 琥珀/
    taper 紫），与原型 prototype/mp-profile-training-plan 保持一致。 */
 
 .page {
   min-height: 100vh;
   box-sizing: border-box;
-  background: #07080a;
+  background: var(--color-bg);
   display: flex;
   flex-direction: column;
 }
@@ -20,8 +20,8 @@
   left: 0;
   right: 0;
   z-index: 50;
-  background: #07080a;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+  background: var(--color-bg);
+  border-bottom: 1rpx solid var(--color-border-soft);
 }
 
 .top-bar__inner {
@@ -66,7 +66,7 @@
   line-height: 48rpx;
   font-weight: 700;
   letter-spacing: 1rpx;
-  color: #ffb3af;
+  color: var(--color-accent-pale);
 }
 
 .content {
@@ -75,7 +75,7 @@
 
 /* 无边框卡片：靠底色与留白分区 */
 .card {
-  background: #101111;
+  background: var(--color-card);
   border-radius: 24rpx;
   padding: 24rpx;
   margin-bottom: 40rpx;
@@ -89,7 +89,7 @@
   flex-direction: column;
   align-items: center;
   padding: 80rpx 32rpx 64rpx;
-  background: #101111;
+  background: var(--color-card);
   border-radius: 24rpx;
 }
 
@@ -97,8 +97,8 @@
   width: 56rpx;
   height: 56rpx;
   border-radius: 50%;
-  border: 4rpx solid rgba(255, 99, 99, 0.2);
-  border-top-color: #ff6363;
+  border: 4rpx solid rgba(var(--color-accent-rgb), 0.2);
+  border-top-color: var(--color-accent);
   animation: tp-spin 0.8s linear infinite;
   margin-bottom: 32rpx;
 }
@@ -119,12 +119,12 @@
 .state-card__title {
   font-size: 32rpx;
   font-weight: 600;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .state-card__text {
   font-size: 23rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   margin-top: 14rpx;
   text-align: center;
   line-height: 1.6;
@@ -136,8 +136,8 @@
   line-height: 80rpx;
   padding: 0 56rpx;
   border-radius: 40rpx;
-  background: #ff6363;
-  color: #101111;
+  background: var(--color-accent);
+  color: var(--color-card);
   font-size: 27rpx;
   font-weight: 700;
 }
@@ -151,7 +151,7 @@
 .goal-strip__eyebrow {
   font-size: 20rpx;
   letter-spacing: 0.14em;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   margin-bottom: 20rpx;
 }
 
@@ -179,7 +179,7 @@
 .goal-strip__name {
   font-size: 32rpx;
   font-weight: 700;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -187,10 +187,10 @@
 
 .goal-strip__badge {
   font-size: 19rpx;
-  color: #ff6363;
+  color: var(--color-accent);
   padding: 4rpx 12rpx;
   border-radius: 8rpx;
-  background: rgba(255, 99, 99, 0.1);
+  background: rgba(var(--color-accent-rgb), 0.1);
   flex-shrink: 0;
 }
 
@@ -204,20 +204,20 @@
 .goal-strip__count {
   font-size: 34rpx;
   font-weight: 800;
-  color: #ff6363;
+  color: var(--color-accent);
   line-height: 1.1;
 }
 
 .goal-strip__count-sub {
   font-size: 20rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
 }
 
 .goal-strip__lede {
   margin-top: 22rpx;
   font-size: 23rpx;
   line-height: 1.6;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
 }
 
 /* --- 训练周期图（Web MileageCycleCard 转译） --- */
@@ -232,7 +232,7 @@
 .cycle-card__title {
   font-size: 29rpx;
   font-weight: 600;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .metric-toggle {
@@ -240,19 +240,19 @@
   gap: 8rpx;
   padding: 4rpx;
   border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--color-overlay-rgb), 0.05);
 }
 
 .metric-toggle__item {
   font-size: 21rpx;
   padding: 6rpx 20rpx;
   border-radius: 999rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
 }
 
 .metric-toggle__item--on {
-  background: #e3e2e5;
-  color: #101111;
+  background: var(--color-text-primary);
+  color: var(--color-card);
   font-weight: 700;
 }
 
@@ -279,7 +279,7 @@
   bottom: -12rpx;
   height: 4rpx;
   border-radius: 2rpx;
-  background: #ff6363;
+  background: var(--color-accent);
 }
 
 .chart__cur-label {
@@ -288,7 +288,7 @@
   left: 50%;
   transform: translateX(-50%);
   font-size: 17rpx;
-  color: #ff6363;
+  color: var(--color-accent);
   white-space: nowrap;
   font-weight: 700;
 }
@@ -319,7 +319,7 @@
   position: absolute;
   left: 0;
   right: 0;
-  border-top: 2rpx dashed rgba(255, 255, 255, 0.4);
+  border-top: 2rpx dashed rgba(var(--color-overlay-rgb), 0.4);
 }
 
 .chart__span {
@@ -336,7 +336,7 @@
 
 .chart__span-label {
   font-size: 19rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   text-align: center;
 }
 
@@ -344,10 +344,10 @@
   margin-top: 24rpx;
   padding: 18rpx 20rpx;
   border-radius: 12rpx;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(var(--color-overlay-rgb), 0.04);
   font-size: 21rpx;
   line-height: 1.6;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .chart-legend {
@@ -361,7 +361,7 @@
   align-items: center;
   gap: 8rpx;
   font-size: 19rpx;
-  color: #6a6b6c;
+  color: var(--color-text-tertiary);
 }
 
 .chart-legend__swatch {
@@ -371,7 +371,7 @@
 }
 
 .chart-legend__swatch--dim {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(var(--color-overlay-rgb), 0.15);
 }
 
 /* --- 旅程时间轴 --- */
@@ -388,7 +388,7 @@
   top: 16rpx;
   bottom: 16rpx;
   width: 2rpx;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(var(--color-overlay-rgb), 0.08);
 }
 
 .tl-item {
@@ -404,12 +404,12 @@
   width: 16rpx;
   height: 16rpx;
   border-radius: 50%;
-  background: #101111;
-  border: 3rpx solid #6a6b6c;
+  background: var(--color-card);
+  border: 3rpx solid var(--color-text-tertiary);
 }
 
 .tl-item--phase {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--color-overlay-rgb), 0.03);
   border-radius: 16rpx;
   padding: 20rpx;
 }
@@ -427,12 +427,12 @@
 }
 
 .tl-item--current::before {
-  border-color: #ff6363;
-  box-shadow: 0 0 0 8rpx rgba(255, 99, 99, 0.15);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 8rpx rgba(var(--color-accent-rgb), 0.15);
 }
 
 .tl-item--future::before {
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: rgba(var(--color-overlay-rgb), 0.15);
 }
 
 .tl-phase__head {
@@ -451,48 +451,48 @@
 .tl-phase__name {
   font-size: 30rpx;
   font-weight: 700;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .tl-item--current.tl-item--phase .tl-phase__name {
-  color: #ff6363;
+  color: var(--color-accent);
 }
 
 .tl-phase__suffix {
   font-size: 21rpx;
   font-weight: 400;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
 }
 
 .tl-phase__suffix--cur {
-  color: #ff6363;
+  color: var(--color-accent);
 }
 
 .tl-phase__weeks {
   margin-left: auto;
   font-size: 20rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   font-weight: 600;
 }
 
 .tl-phase__km {
   font-size: 20rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   padding: 2rpx 10rpx;
   border-radius: 6rpx;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--color-overlay-rgb), 0.05);
 }
 
 .tl-phase__meta {
   margin-top: 8rpx;
   font-size: 21rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
 }
 
 .tl-phase__you {
   margin-top: 10rpx;
   font-size: 20rpx;
-  color: #ff6363;
+  color: var(--color-accent);
   font-weight: 700;
 }
 
@@ -500,9 +500,9 @@
   margin-top: 18rpx;
   text-align: center;
   font-size: 21rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   padding: 14rpx 0 4rpx;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--color-overlay-rgb), 0.03);
   border-radius: 10rpx;
 }
 
@@ -510,14 +510,14 @@
   margin-top: 12rpx;
   font-size: 22rpx;
   line-height: 1.6;
-  color: #b9b8bb;
+  color: var(--color-text-bright);
 }
 
 .tl-phase__line-label {
   display: inline-block;
   font-size: 19rpx;
-  color: #9c9c9d;
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-text-secondary);
+  background: rgba(var(--color-overlay-rgb), 0.05);
   border-radius: 6rpx;
   padding: 2rpx 10rpx;
   margin-right: 12rpx;
@@ -529,8 +529,8 @@
 
 .tl-phase__triggers-title {
   font-size: 19rpx;
-  color: #9c9c9d;
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-text-secondary);
+  background: rgba(var(--color-overlay-rgb), 0.05);
   border-radius: 6rpx;
   padding: 2rpx 10rpx;
   align-self: flex-start;
@@ -556,7 +556,7 @@
   flex: 1;
   font-size: 21rpx;
   line-height: 1.6;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
 }
 
 .tl-phase__ms {
@@ -568,8 +568,8 @@
 
 .tl-phase__ms-title {
   font-size: 19rpx;
-  color: #9c9c9d;
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-text-secondary);
+  background: rgba(var(--color-overlay-rgb), 0.05);
   border-radius: 6rpx;
   padding: 2rpx 10rpx;
   align-self: flex-start;
@@ -581,7 +581,7 @@
   gap: 16rpx;
   padding: 14rpx 18rpx;
   border-radius: 12rpx;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--color-overlay-rgb), 0.03);
 }
 
 .tl-ms-row--done {
@@ -602,27 +602,27 @@
 
 .tl-ms-row__value {
   font-size: 23rpx;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .tl-ms-row__type {
   font-size: 18rpx;
-  color: #9c9c9d;
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-text-secondary);
+  background: rgba(var(--color-overlay-rgb), 0.05);
   border-radius: 6rpx;
   padding: 0 8rpx;
 }
 
 .tl-ms-row__next {
   font-size: 18rpx;
-  color: #ff6363;
+  color: var(--color-accent);
   font-weight: 700;
   flex-shrink: 0;
 }
 
 .tl-ms-row__check {
   font-size: 22rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   flex-shrink: 0;
 }
 
@@ -635,16 +635,16 @@
 
 .tl-phase__chip {
   font-size: 19rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   padding: 4rpx 14rpx;
   border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--color-overlay-rgb), 0.06);
 }
 
 .tl-phase__summary {
   margin-top: 12rpx;
   font-size: 20rpx;
-  color: #6a6b6c;
+  color: var(--color-text-tertiary);
 }
 
 .tl-phase__note {
@@ -652,22 +652,22 @@
   padding: 12rpx 18rpx;
   border-left: 4rpx solid;
   border-radius: 0 10rpx 10rpx 0;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--color-overlay-rgb), 0.03);
   font-size: 21rpx;
   line-height: 1.6;
-  color: #b9b8bb;
+  color: var(--color-text-bright);
   font-style: italic;
 }
 
 .tl-item--week {
   padding: 14rpx 18rpx;
   border-radius: 14rpx;
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(var(--color-overlay-rgb), 0.02);
 }
 
 /* 当前周高亮只靠底色 tint，无边框 */
 .tl-item--week.tl-item--current {
-  background: rgba(255, 99, 99, 0.12);
+  background: rgba(var(--color-accent-rgb), 0.12);
 }
 
 .tl-week__head {
@@ -679,7 +679,7 @@
 .tl-week__no {
   font-size: 23rpx;
   font-weight: 700;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
   width: 64rpx;
   flex-shrink: 0;
 }
@@ -688,18 +688,18 @@
 .tl-item--done .tl-week__date,
 .tl-item--done .tl-week__actual,
 .tl-item--done .tl-week__sub {
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
 }
 
 .tl-item--future .tl-week__no,
 .tl-item--future .tl-week__date,
 .tl-item--future .tl-week__plan {
-  color: #6a6b6c;
+  color: var(--color-text-tertiary);
 }
 
 .tl-week__date {
   font-size: 22rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   flex: 1;
 }
 
@@ -722,23 +722,23 @@
 
 .tl-week__actual {
   font-size: 23rpx;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .tl-week__sub {
   font-size: 18rpx;
-  color: #6a6b6c;
+  color: var(--color-text-tertiary);
 }
 
 .tl-week__plan {
   font-size: 22rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
 }
 
 .tl-week__you {
   margin-top: 12rpx;
   font-size: 20rpx;
-  color: #ff6363;
+  color: var(--color-accent);
   font-weight: 700;
 }
 
@@ -755,7 +755,7 @@
   gap: 14rpx;
   padding: 14rpx 18rpx;
   border-radius: 12rpx;
-  background: #101111;
+  background: var(--color-card);
 }
 
 .tl-sess__icon {
@@ -771,13 +771,13 @@
 
 .tl-sess__title {
   font-size: 23rpx;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .tl-sess__meta {
   margin-top: 4rpx;
   font-size: 19rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -785,14 +785,14 @@
 
 .tl-sess__km {
   font-size: 22rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   flex-shrink: 0;
 }
 
 .tl-footer {
   text-align: center;
   font-size: 21rpx;
-  color: #6a6b6c;
+  color: var(--color-text-tertiary);
   padding: 12rpx 0 24rpx;
 }
 
@@ -805,7 +805,7 @@
 .principles__title {
   font-size: 29rpx;
   font-weight: 600;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .principles__list {
@@ -823,7 +823,7 @@
 
 .principles__no {
   font-size: 21rpx;
-  color: #ff6363;
+  color: var(--color-accent);
   font-weight: 700;
   flex-shrink: 0;
   padding-top: 2rpx;
@@ -833,7 +833,7 @@
   flex: 1;
   font-size: 23rpx;
   line-height: 1.6;
-  color: #b9b8bb;
+  color: var(--color-text-bright);
 }
 
 /* --- CTA --- */
@@ -854,15 +854,15 @@
   line-height: 88rpx;
   text-align: center;
   border-radius: 20rpx;
-  background: #ff6363;
-  color: #101111;
+  background: var(--color-accent);
+  color: var(--color-card);
   font-size: 27rpx;
   font-weight: 700;
 }
 
 .cta-btn--ghost {
-  background: rgba(255, 99, 99, 0.12);
-  color: #ff6363;
+  background: rgba(var(--color-accent-rgb), 0.12);
+  color: var(--color-accent);
 }
 
 .cta-row--single .cta-btn {

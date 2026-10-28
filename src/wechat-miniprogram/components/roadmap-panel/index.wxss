@@ -3,9 +3,11 @@
    二级 tab 后，原页面保留为深链薄壳共用本组件）。
    2026-10-18 用户拍板：hero 聚合卡移除；列表扁平化贴边——无卡底/
    圆角/左右留白，内容直铺屏幕边（行内 32rpx 边距），行间发丝线分隔。
-   深色令牌（--color-*）由宿主页 @import styles/dark.wxss 在 page 上
-   定义，CSS 变量跨组件继承，本组件无需重复引入。
-   用户拍板：主题藕粉 #ff6363（--color-accent）。
+   深色令牌（--color-*）由 styles/theme.wxss 在 page 上唯一定义
+   （app.wxss 全局 @import），CSS 变量跨组件继承，本组件直接 var() 引用、
+   不重定义令牌（#816；#665 结论：page{} 双定义会让组件内 var() 解析
+   竞争，单源后消除）。
+   用户拍板：主题藕粉（--color-accent，值见 theme.wxss）。
    ============================================================ */
 
 /* 自定义组件宿主节点默认 inline，铺满宿主容器 */
@@ -15,7 +17,7 @@
 
 /* 行点按反馈：三区行都可进详情页（投票按钮除外，独立兄弟节点） */
 .row-press {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(var(--color-overlay-rgb), 0.04);
 }
 
 /* ---------- 加载 / 错误 ---------- */
@@ -49,7 +51,7 @@
 .spinner {
   width: 48rpx;
   height: 48rpx;
-  border: 4rpx solid rgba(95, 201, 146, 0.3);
+  border: 4rpx solid rgba(var(--color-success-rgb), 0.3);
   border-top-color: var(--color-success);
   border-radius: 50%;
   animation: spin 1s linear infinite;
@@ -145,7 +147,7 @@
   top: 16rpx;
   bottom: -12rpx;
   width: 4rpx;
-  background: rgba(95, 201, 146, 0.18);
+  background: rgba(var(--color-success-rgb), 0.18);
 }
 
 .rel__line--last {
@@ -202,7 +204,7 @@
   align-items: center;
   gap: 24rpx;
   padding: 26rpx 32rpx;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1rpx solid rgba(var(--color-overlay-rgb), 0.04);
 }
 
 .plan-row:last-child {
@@ -240,7 +242,7 @@
   padding: 0 16rpx;
   border-radius: 18rpx;
   color: var(--color-info);
-  background: rgba(143, 184, 232, 0.12);
+  background: rgba(var(--color-info-rgb), 0.12);
 }
 
 .plan-row__votes {
@@ -269,7 +271,7 @@
   align-items: center;
   gap: 24rpx;
   padding: 26rpx 32rpx;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1rpx solid rgba(var(--color-overlay-rgb), 0.04);
 }
 
 .idea:last-child {
@@ -312,7 +314,7 @@
   padding: 0 14rpx;
   border-radius: 10rpx;
   color: var(--color-text-bright);
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(var(--color-overlay-rgb), 0.07);
 }
 
 .idea__new {
@@ -359,11 +361,11 @@
 }
 
 .vote-btn--on .vote-btn__arrow {
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(var(--color-overlay-rgb), 0.85);
 }
 
 .vote-btn--on .vote-btn__count {
-  color: #ffffff;
+  color: var(--color-on-accent);
 }
 
 .pool-empty {

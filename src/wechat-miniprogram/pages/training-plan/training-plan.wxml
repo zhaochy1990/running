@@ -106,7 +106,7 @@
         <view class="chart-legend">
           <view class="chart-legend__item"><view class="chart-legend__swatch" style="background: #7ac9a3;"></view>实际</view>
           <view class="chart-legend__item"><view class="chart-legend__swatch chart-legend__swatch--dim"></view>计划</view>
-          <view class="chart-legend__item"><view class="chart-legend__swatch" style="background: #ff6363;"></view>当前周</view>
+          <view class="chart-legend__item"><view class="chart-legend__swatch" style="background: var(--color-accent);"></view>当前周</view>
         </view>
       </view>
 

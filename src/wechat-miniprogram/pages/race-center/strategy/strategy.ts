@@ -30,6 +30,7 @@ import {
 import { setPendingCoachContext } from '../../../services/coach';
 import { shanghaiDateFromIso, shanghaiTimeFromIso } from '../../../utils/date';
 import { userStore } from '../../../store/index';
+import { theme, themeRgba } from '../../../utils/theme';
 
 interface StrategyPageData {
   statusBarHeight: number;
@@ -506,7 +507,7 @@ function drawPoster(
   ctx.fillStyle = '#d8ff3e';
   ctx.fillRect(0, 0, width, 6);
 
-  ctx.fillStyle = '#8a8a8c';
+  ctx.fillStyle = theme.textMuted;
   ctx.font = '20px sans-serif';
   ctx.fillText(`${raceDayText} · ${view.itemTypeLabel}`, 36, 60);
 
@@ -514,7 +515,7 @@ function drawPoster(
   ctx.font = 'bold 34px sans-serif';
   ctx.fillText(view.raceName, 36, 106);
 
-  ctx.fillStyle = '#8a8a8c';
+  ctx.fillStyle = theme.textMuted;
   ctx.font = '20px sans-serif';
   ctx.fillText('目标成绩', 36, 160);
   ctx.fillStyle = '#d8ff3e';
@@ -523,13 +524,13 @@ function drawPoster(
 
   // 表头
   let y = 276;
-  ctx.fillStyle = '#8a8a8c';
+  ctx.fillStyle = theme.textMuted;
   ctx.font = '20px sans-serif';
   ctx.fillText('分段', 36, y);
   ctx.fillText('配速', 250, y);
   ctx.fillText('累计', 410, y);
   y += 12;
-  ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+  ctx.strokeStyle = themeRgba(theme.overlayRgb, 0.2);
   ctx.beginPath();
   ctx.moveTo(36, y);
   ctx.lineTo(width - 36, y);
@@ -541,11 +542,11 @@ function drawPoster(
     ctx.font = '22px sans-serif';
     ctx.fillText(row.segment, 36, y);
     ctx.fillText(row.pace, 250, y);
-    ctx.fillStyle = '#b9b9bc';
+    ctx.fillStyle = theme.textBright;
     ctx.fillText(row.cumulativeTime, 410, y);
   }
 
-  ctx.fillStyle = '#8a8a8c';
+  ctx.fillStyle = theme.textMuted;
   ctx.font = '18px sans-serif';
   ctx.fillText('STRIDE · 比赛策略', 36, height - 28);
 }

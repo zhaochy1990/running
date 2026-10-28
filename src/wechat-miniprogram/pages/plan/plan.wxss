@@ -5,7 +5,7 @@
 .page {
   min-height: 100vh;
   box-sizing: border-box;
-  background: #07080a;
+  background: var(--color-bg);
   display: flex;
   flex-direction: column;
 }
@@ -18,8 +18,8 @@
   left: 0;
   right: 0;
   z-index: 50;
-  background: #07080a;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+  background: var(--color-bg);
+  border-bottom: 1rpx solid var(--color-border-soft);
 }
 
 .top-bar__inner {
@@ -60,13 +60,13 @@
   line-height: 48rpx;
   font-weight: 700;
   letter-spacing: 1rpx;
-  color: #ffb3af;
+  color: var(--color-accent-pale);
 }
 
 .top-bar__subtitle {
   font-size: 20rpx;
   line-height: 32rpx;
-  color: rgba(225, 191, 188, 0.8);
+  color: rgba(var(--color-header-meta-rgb), 0.8);
 }
 
 /* ---------- 内容 ---------- */
@@ -76,8 +76,8 @@
 }
 
 .card {
-  background: #101111;
-  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  background: var(--color-card);
+  border: 1rpx solid rgba(var(--color-overlay-rgb), 0.06);
   border-radius: 24rpx;
   padding: 32rpx;
   margin-bottom: 48rpx;
@@ -87,7 +87,7 @@
   font-size: 27rpx;
   line-height: 52rpx;
   font-weight: 600;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
   margin-bottom: 24rpx;
 }
 
@@ -101,7 +101,7 @@
 
 .week-hero__label {
   font-size: 20rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 1rpx;
 }
@@ -110,12 +110,12 @@
   font-size: 37rpx;
   line-height: 56rpx;
   font-weight: 700;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .week-hero__range {
   font-size: 20rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   font-variant-numeric: tabular-nums;
 }
 
@@ -127,7 +127,7 @@
 
 .plan-day {
   padding: 24rpx 24rpx 24rpx 0;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1rpx solid rgba(var(--color-overlay-rgb), 0.04);
 }
 
 .plan-day:last-child {
@@ -144,18 +144,18 @@
 .plan-day__weekday {
   font-size: 22rpx;
   font-weight: 600;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .plan-day__num {
   font-size: 22rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   font-variant-numeric: tabular-nums;
 }
 
 .plan-day__num--today {
-  color: #101111;
-  background: #ff6363;
+  color: var(--color-card);
+  background: var(--color-accent);
   border-radius: 8rpx;
   padding: 2rpx 12rpx;
   font-weight: 700;
@@ -163,7 +163,7 @@
 
 .plan-day__today-tag {
   font-size: 17rpx;
-  color: #ff6363;
+  color: var(--color-accent);
   margin-left: 4rpx;
 }
 
@@ -182,7 +182,7 @@
   align-items: center;
   gap: 20rpx;
   padding: 12rpx 16rpx;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--color-overlay-rgb), 0.03);
   border-radius: 12rpx;
 }
 
@@ -201,12 +201,12 @@
 .plan-session__title {
   font-size: 26rpx;
   font-weight: 600;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .plan-session__meta {
   font-size: 20rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   margin-top: 4rpx;
   font-variant-numeric: tabular-nums;
 }
@@ -235,6 +235,6 @@
 
 .plan-day__rest {
   font-size: 22rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   padding: 12rpx 16rpx;
 }

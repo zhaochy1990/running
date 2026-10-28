@@ -1,10 +1,8 @@
 /* ============================================================
    教练页 —— 深色 STRIDE 主题（与 today.html / login 一致）
-   深色令牌（含主题藕粉 --color-accent）由 styles/dark.wxss 提供；
-   本页自身样式为写死色值，import 令牌供子组件（coach-card 等）
-   的 var() 引用解析。换主题色改 dark.wxss 一处即可。
+   主题令牌由 styles/theme.wxss 唯一定义（app.wxss 全局 @import），
+   本页样式直接 var() 引用；换主题改 theme.wxss 一处即可（#816）。
    ============================================================ */
-@import "../../styles/dark.wxss";
 
 .coach {
   height: 100vh;
@@ -12,7 +10,7 @@
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  background: #07080a;
+  background: var(--color-bg);
 }
 
 .top-bar {
@@ -21,8 +19,8 @@
   left: 0;
   right: 0;
   z-index: 50;
-  background: #07080a;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+  background: var(--color-bg);
+  border-bottom: 1rpx solid var(--color-border-soft);
 }
 
 .top-bar__inner {
@@ -63,13 +61,13 @@
   line-height: 48rpx;
   font-weight: 700;
   letter-spacing: 1rpx;
-  color: #ffb3af;
+  color: var(--color-accent-pale);
 }
 
 .top-bar__subtitle {
   font-size: 20rpx;
   line-height: 32rpx;
-  color: rgba(225, 191, 188, 0.8);
+  color: rgba(var(--color-header-meta-rgb), 0.8);
 }
 
 /* ---------- 对话主体 ---------- */
@@ -92,9 +90,9 @@
   border-radius: 16rpx;
   font-size: 22rpx;
   line-height: 34rpx;
-  color: #ffb3af;
-  background: rgba(255, 99, 99, 0.08);
-  border: 1rpx solid rgba(255, 99, 99, 0.25);
+  color: var(--color-accent-pale);
+  background: rgba(var(--color-accent-rgb), 0.08);
+  border: 1rpx solid rgba(var(--color-accent-rgb), 0.25);
 }
 
 .coach-context-hint__text {
@@ -114,14 +112,14 @@
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: rgba(255, 99, 99, 0.12);
-  border: 1rpx solid rgba(255, 99, 99, 0.3);
+  background: rgba(var(--color-accent-rgb), 0.12);
+  border: 1rpx solid rgba(var(--color-accent-rgb), 0.3);
 }
 
 .coach-context-hint__close-icon {
   font-size: 30rpx;
   line-height: 44rpx;
-  color: #ffb3af;
+  color: var(--color-accent-pale);
 }
 
 .coach-list {
@@ -166,7 +164,7 @@
   margin-right: 12rpx;
   flex-shrink: 0;
   box-sizing: border-box;
-  border: 2rpx solid rgba(255, 255, 255, 0.28);
+  border: 2rpx solid rgba(var(--color-overlay-rgb), 0.28);
   border-radius: 50%;
   align-items: center;
   justify-content: center;
@@ -178,8 +176,8 @@
 
 /* 不可选消息：勾选框灰显 + 气泡降透明 */
 .coach--selecting .coach-msg--disabled .coach-msg__check {
-  border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(var(--color-overlay-rgb), 0.1);
+  background: rgba(var(--color-overlay-rgb), 0.04);
 }
 
 .coach--selecting .coach-msg--disabled .coach-msg__bubble {
@@ -188,16 +186,16 @@
 
 /* 选中：主题色藕粉实心填充 + 深色对勾（#623 定稿 solid） */
 .coach-msg--checked .coach-msg__check {
-  border-color: #ff6363;
-  background: #ff6363;
+  border-color: var(--color-accent);
+  background: var(--color-accent);
 }
 
 .coach-msg__check-icon {
   display: none;
   width: 16rpx;
   height: 10rpx;
-  border-left: 3rpx solid #101111;
-  border-bottom: 3rpx solid #101111;
+  border-left: 3rpx solid var(--color-card);
+  border-bottom: 3rpx solid var(--color-card);
   transform: rotate(-45deg) translateY(-1rpx);
 }
 
@@ -248,9 +246,9 @@
   border-radius: 999rpx;
   font-size: 22rpx;
   line-height: 32rpx;
-  color: #ffb3af;
-  background: rgba(255, 99, 99, 0.12);
-  border: 1rpx solid rgba(255, 99, 99, 0.4);
+  color: var(--color-accent-pale);
+  background: rgba(var(--color-accent-rgb), 0.12);
+  border: 1rpx solid rgba(var(--color-accent-rgb), 0.4);
 }
 
 .coach-msg__bubble {
@@ -259,13 +257,13 @@
   border-radius: 24rpx;
   font-size: 24rpx;
   line-height: 40rpx;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
   word-break: break-word;
 }
 
 .coach-msg--assistant .coach-msg__bubble {
-  background: #1b1c1e;
-  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  background: var(--color-chip);
+  border: 1rpx solid rgba(var(--color-overlay-rgb), 0.06);
   border-top-left-radius: 8rpx;
 }
 
@@ -281,8 +279,8 @@
 }
 
 .coach-msg--user .coach-msg__bubble {
-  background: #ff6363;
-  color: #101111;
+  background: var(--color-accent);
+  color: var(--color-card);
   font-weight: 500;
   border-top-right-radius: 8rpx;
 }
@@ -297,7 +295,7 @@
 
 .coach-msg__thinking-text {
   font-size: 24rpx;
-  color: #8a8a8e;
+  color: var(--color-text-muted);
 }
 
 .think-dots {
@@ -309,7 +307,7 @@
   width: 9rpx;
   height: 9rpx;
   border-radius: 50%;
-  background: #8a8a8e;
+  background: var(--color-text-muted);
   animation: think-blink 1.2s infinite ease-in-out;
 }
 
@@ -344,14 +342,14 @@
 .coach-msg__phase {
   font-size: 22rpx;
   line-height: 30rpx;
-  color: #ffb3af;
+  color: var(--color-accent-pale);
 }
 
 /* 工具调用前的进度说明：比 phase 略大、更淡，读起来像旁白而不是正文 */
 .coach-msg__narration {
   font-size: 24rpx;
   line-height: 34rpx;
-  color: #ffb3af;
+  color: var(--color-accent-pale);
   opacity: 0.72;
   font-style: italic;
 }
@@ -370,7 +368,7 @@
 .coach-stream-cursor {
   width: 3rpx;
   height: 28rpx;
-  background: #ffb3af;
+  background: var(--color-accent-pale);
   animation: cursor-blink 0.8s infinite ease-in-out;
 }
 
@@ -392,8 +390,8 @@
   align-items: flex-end;
   gap: 16rpx;
   padding: 16rpx 32rpx;
-  background: #121316;
-  border-top: 1rpx solid rgba(255, 255, 255, 0.06);
+  background: var(--color-chip);
+  border-top: 1rpx solid rgba(var(--color-overlay-rgb), 0.06);
 }
 
 /* textarea + auto-height：单行保持原 72rpx 胶囊外观，超过 4 行封顶后框内滚动 */
@@ -404,10 +402,10 @@
   max-height: 192rpx;
   padding: 16rpx 24rpx;
   line-height: 40rpx;
-  background: #1b1c1e;
+  background: var(--color-chip);
   border-radius: 36rpx;
   font-size: 24rpx;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .coach-input__placeholder {
@@ -420,8 +418,8 @@
   padding: 0 32rpx;
   line-height: 72rpx;
   border-radius: 36rpx;
-  background: #ff6363;
-  color: #101111;
+  background: var(--color-accent);
+  color: var(--color-card);
   font-size: 24rpx;
   font-weight: 600;
 }
@@ -437,8 +435,8 @@
   align-items: center;
   gap: 16rpx;
   padding: 16rpx 32rpx;
-  background: #121316;
-  border-top: 1rpx solid rgba(255, 255, 255, 0.06);
+  background: var(--color-chip);
+  border-top: 1rpx solid rgba(var(--color-overlay-rgb), 0.06);
 }
 
 .coach-actions__cancel {
@@ -447,8 +445,8 @@
   padding: 0 32rpx;
   line-height: 70rpx;
   border-radius: 36rpx;
-  border: 1rpx solid rgba(255, 255, 255, 0.15);
-  color: #e3e2e5;
+  border: 1rpx solid rgba(var(--color-overlay-rgb), 0.15);
+  color: var(--color-text-primary);
   font-size: 24rpx;
   text-align: center;
 }
@@ -458,7 +456,7 @@
   height: 72rpx;
   padding: 0 28rpx;
   line-height: 72rpx;
-  color: #ffb3af;
+  color: var(--color-accent-pale);
   font-size: 24rpx;
 }
 
@@ -472,8 +470,8 @@
   padding: 0 32rpx;
   box-sizing: border-box;
   border-radius: 36rpx;
-  background: #ff6363;
-  color: #101111;
+  background: var(--color-accent);
+  color: var(--color-card);
   font-size: 24rpx;
   font-weight: 600;
   line-height: 72rpx;
@@ -518,8 +516,8 @@
   left: 0;
   z-index: 99;
   width: 640rpx;
-  background: #121316;
-  border-right: 1rpx solid rgba(255, 255, 255, 0.06);
+  background: var(--color-chip);
+  border-right: 1rpx solid rgba(var(--color-overlay-rgb), 0.06);
   transform: translateX(-100%);
   transition: transform 0.28s ease;
   display: flex;
@@ -534,7 +532,7 @@
 .drawer__header {
   padding: 24rpx 32rpx;
   padding-bottom: 8rpx;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1rpx solid rgba(var(--color-overlay-rgb), 0.06);
   flex-shrink: 0;
 }
 
@@ -543,8 +541,8 @@
   align-items: center;
   gap: 20rpx;
   padding: 24rpx 32rpx;
-  background: #121316;
-  border-top: 1rpx solid rgba(255, 255, 255, 0.06);
+  background: var(--color-chip);
+  border-top: 1rpx solid rgba(var(--color-overlay-rgb), 0.06);
   flex-shrink: 0;
 }
 
@@ -555,7 +553,7 @@
   gap: 12rpx;
   height: 72rpx;
   padding: 0 24rpx;
-  background: #1b1c1e;
+  background: var(--color-chip);
   border-radius: 36rpx;
 }
 
@@ -588,7 +586,7 @@
 .drawer__title {
   font-size: 26rpx;
   font-weight: 600;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .drawer__list {
@@ -606,14 +604,14 @@
 }
 
 .drawer__item--active {
-  background: rgba(255, 99, 99, 0.08);
+  background: rgba(var(--color-accent-rgb), 0.08);
 }
 
 .drawer__item-icon {
   width: 64rpx;
   height: 64rpx;
   border-radius: 50%;
-  background: #1b1c1e;
+  background: var(--color-chip);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -629,7 +627,7 @@
   flex: 1;
   min-width: 0;
   font-size: 26rpx;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -638,8 +636,8 @@
 .drawer__item-current {
   flex-shrink: 0;
   font-size: 20rpx;
-  color: #ffb3af;
-  border: 1rpx solid rgba(255, 179, 175, 0.4);
+  color: var(--color-accent-pale);
+  border: 1rpx solid rgba(var(--color-accent-pale-rgb), 0.4);
   border-radius: 999rpx;
   padding: 4rpx 16rpx;
 }

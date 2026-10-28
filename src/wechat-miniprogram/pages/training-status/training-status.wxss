@@ -5,7 +5,7 @@
 .page {
   min-height: 100vh;
   box-sizing: border-box;
-  background: #07080a;
+  background: var(--color-bg);
   display: flex;
   flex-direction: column;
 }
@@ -16,8 +16,8 @@
   left: 0;
   right: 0;
   z-index: 50;
-  background: #07080a;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+  background: var(--color-bg);
+  border-bottom: 1rpx solid var(--color-border-soft);
 }
 
 .top-bar__inner {
@@ -63,13 +63,13 @@
   line-height: 48rpx;
   font-weight: 700;
   letter-spacing: 1rpx;
-  color: #ffb3af;
+  color: var(--color-accent-pale);
 }
 
 .top-bar__subtitle {
   font-size: 20rpx;
   line-height: 32rpx;
-  color: rgba(225, 191, 188, 0.8);
+  color: rgba(var(--color-header-meta-rgb), 0.8);
 }
 
 .content {
@@ -77,8 +77,8 @@
 }
 
 .card {
-  background: #101111;
-  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  background: var(--color-card);
+  border: 1rpx solid rgba(var(--color-overlay-rgb), 0.06);
   border-radius: 24rpx;
   padding: 32rpx;
   margin-bottom: 48rpx;
@@ -88,7 +88,7 @@
   font-size: 27rpx;
   line-height: 52rpx;
   font-weight: 600;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
   margin-bottom: 24rpx;
 }
 
@@ -111,8 +111,8 @@
 .spinner {
   width: 56rpx;
   height: 56rpx;
-  border: 4rpx solid rgba(255, 179, 175, 0.3);
-  border-top-color: #ffb3af;
+  border: 4rpx solid rgba(var(--color-accent-pale-rgb), 0.3);
+  border-top-color: var(--color-accent-pale);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -124,7 +124,7 @@
 .state-card__text {
   margin-top: 24rpx;
   font-size: 22rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
 }
 
 /* ---------- 核心指标（2×2） ---------- */
@@ -139,8 +139,8 @@
 .metric-card {
   width: calc((100% - 24rpx) / 2);
   box-sizing: border-box;
-  background: #101111;
-  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  background: var(--color-card);
+  border: 1rpx solid rgba(var(--color-overlay-rgb), 0.06);
   border-radius: 24rpx;
   padding: 24rpx;
   display: flex;
@@ -149,19 +149,19 @@
 
 .metric-card__label {
   font-size: 20rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
 }
 
 .metric-card__sub {
   font-size: 17rpx;
-  color: #6a6b6c;
+  color: var(--color-text-tertiary);
   margin-top: 2rpx;
 }
 
 .metric-card__value {
   font-size: 40rpx;
   font-weight: 700;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
   margin-top: 8rpx;
   font-variant-numeric: tabular-nums;
 }
@@ -169,13 +169,13 @@
 .metric-card__unit {
   font-size: 20rpx;
   font-weight: 400;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   margin-left: 6rpx;
 }
 
 .metric-card__baseline {
   font-size: 17rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   margin-top: 6rpx;
 }
 
@@ -185,21 +185,21 @@
   display: flex;
   align-items: center;
   gap: 4rpx;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(var(--color-overlay-rgb), 0.04);
   border-radius: 12rpx;
   padding: 4rpx;
 }
 
 .window-toggle__item {
   font-size: 19rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   padding: 6rpx 14rpx;
   border-radius: 8rpx;
 }
 
 .window-toggle__item--active {
-  color: #e3e2e5;
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text-primary);
+  background: rgba(var(--color-overlay-rgb), 0.08);
 }
 
 /* ---------- 图表卡片 ---------- */
@@ -211,7 +211,7 @@
 
 .chart-card__label {
   font-size: 20rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   margin-bottom: 16rpx;
 }
 
@@ -230,7 +230,7 @@
   justify-content: center;
   height: 160rpx;
   font-size: 20rpx;
-  color: #6a6b6c;
+  color: var(--color-text-tertiary);
 }
 
 /* ---------- 训练负荷 ---------- */
@@ -248,13 +248,13 @@
 
 .load-stat__label {
   font-size: 17rpx;
-  color: #6a6b6c;
+  color: var(--color-text-tertiary);
 }
 
 .load-stat__value {
   font-size: 32rpx;
   font-weight: 700;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
   margin-top: 4rpx;
   font-variant-numeric: tabular-nums;
 }
@@ -262,7 +262,7 @@
 .readiness {
   margin-top: 16rpx;
   padding-top: 20rpx;
-  border-top: 1rpx solid rgba(255, 255, 255, 0.06);
+  border-top: 1rpx solid rgba(var(--color-overlay-rgb), 0.06);
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -278,7 +278,7 @@
 
 .readiness__reasons {
   font-size: 17rpx;
-  color: #6a6b6c;
+  color: var(--color-text-tertiary);
 }
 
 /* ---------- Form 图例 / 注释 ---------- */
@@ -304,12 +304,12 @@
 
 .legend__text {
   font-size: 17rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
 }
 
 .chart-note {
   font-size: 17rpx;
-  color: #6a6b6c;
+  color: var(--color-text-tertiary);
   margin-top: 16rpx;
 }
 
@@ -334,7 +334,7 @@
   height: 32rpx;
   line-height: 32rpx;
   font-size: 17rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   text-align: center;
 }
 
@@ -348,7 +348,7 @@
 .heatmap__month {
   height: 24rpx;
   font-size: 17rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   line-height: 24rpx;
   white-space: nowrap;
 }
@@ -361,7 +361,7 @@
 }
 
 .heatmap__cell--rest {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(var(--color-overlay-rgb), 0.07);
 }
 
 .heatmap__cell--b1 {
@@ -382,21 +382,21 @@
 
 .heatmap__cell--absent {
   background: transparent;
-  border: 1rpx dashed rgba(255, 255, 255, 0.12);
+  border: 1rpx dashed rgba(var(--color-overlay-rgb), 0.12);
 }
 
 .heatmap__cell--unknown {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1rpx dashed rgba(255, 255, 255, 0.2);
+  background: rgba(var(--color-overlay-rgb), 0.04);
+  border: 1rpx dashed rgba(var(--color-overlay-rgb), 0.2);
 }
 
 .heatmap__cell--future {
   background: transparent;
-  border: 1rpx dashed rgba(255, 255, 255, 0.08);
+  border: 1rpx dashed var(--color-hairline);
 }
 
 .heatmap__cell--today {
-  border: 2rpx solid #ff6363;
+  border: 2rpx solid var(--color-accent);
 }
 
 .heatmap-legend {
@@ -408,7 +408,7 @@
 
 .heatmap-legend__text {
   font-size: 17rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
 }
 
 .heatmap-legend__swatch {
@@ -420,15 +420,15 @@
 .heat-detail {
   margin-top: 20rpx;
   padding: 20rpx;
-  border: 1rpx solid rgba(255, 255, 255, 0.08);
+  border: 1rpx solid var(--color-hairline);
   border-radius: 16rpx;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--color-overlay-rgb), 0.03);
 }
 
 .heat-detail__title {
   font-size: 20rpx;
   font-weight: 600;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .heat-detail__dose {
@@ -440,7 +440,7 @@
 
 .heat-detail__line {
   font-size: 18rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   margin-top: 6rpx;
   line-height: 1.5;
 }
@@ -455,7 +455,7 @@
   display: flex;
   align-items: center;
   padding: 14rpx 0;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1rpx solid rgba(var(--color-overlay-rgb), 0.04);
 }
 
 .zone-row:last-child {
@@ -463,7 +463,7 @@
 }
 
 .zone-row--head {
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1rpx solid rgba(var(--color-overlay-rgb), 0.1);
 }
 
 .zone-row__name {
@@ -477,34 +477,34 @@
 }
 
 .zone-row__name--hr {
-  color: #ffb3af;
+  color: var(--color-accent-pale);
 }
 
 .zone-row__label {
   flex: 1;
   font-size: 20rpx;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
 }
 
 .zone-row__range {
   font-size: 19rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   font-variant-numeric: tabular-nums;
 }
 
 .zone-row--head .zone-row__label,
 .zone-row--head .zone-row__range,
 .zone-row--head .zone-row__name {
-  color: #6a6b6c;
+  color: var(--color-text-tertiary);
 }
 
 /* ---------- 数据状态 ---------- */
 
 .footer {
   padding: 24rpx 8rpx 0;
-  border-top: 1rpx solid rgba(255, 255, 255, 0.06);
+  border-top: 1rpx solid rgba(var(--color-overlay-rgb), 0.06);
   margin-top: 8rpx;
   font-size: 17rpx;
-  color: #6a6b6c;
+  color: var(--color-text-tertiary);
   line-height: 1.8;
 }

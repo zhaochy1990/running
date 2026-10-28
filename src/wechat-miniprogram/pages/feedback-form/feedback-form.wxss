@@ -2,7 +2,6 @@
    意见反馈·全屏表单页（devops#554，原型 518 variant C）——
    深色 STRIDE 主题，顶栏同 feedback 列表页。
    ============================================================ */
-@import "../../styles/dark.wxss";
 
 .page {
   min-height: 100vh;
@@ -19,7 +18,7 @@
   right: 0;
   z-index: 50;
   background: var(--color-bg);
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1rpx solid var(--color-border-soft);
 }
 
 .top-bar__inner {
@@ -151,7 +150,7 @@
 }
 
 .ph--pic {
-  background: #1d1e21;
+  background: var(--color-chip);
 }
 
 .ph__img {
@@ -164,7 +163,7 @@
   top: 6rpx;
   right: 10rpx;
   font-size: 20rpx;
-  color: #6a6a6c;
+  color: var(--color-text-tertiary);
   padding: 4rpx;
   text-shadow: 0 0 8rpx rgba(0, 0, 0, 0.8);
 }

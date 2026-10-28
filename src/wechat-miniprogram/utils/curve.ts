@@ -3,6 +3,7 @@
  * 渲染交给 uCharts（见 `vendor/ucharts/`）。`node utils/curve.check.mts` 跑自检。
  */
 import type { TimeseriesPoint, Zone } from '../types/activity';
+import { theme } from './theme';
 
 /** timeseries.timestamp 是厘秒（与 pause / 轨迹一致），横轴统一换成「起点起的秒数」。 */
 export interface CurvePoint {
@@ -16,8 +17,8 @@ export const MAX_CURVE_POINTS = 160;
 /** 区间配色：Z1 蓝 → Z5 红（与 COROS 一致）；超过 5 档循环补色。 */
 export const ZONE_COLORS = ['#4c8dff', '#37c85a', '#f5c542', '#f5863b', '#ef4444', '#b45bff', '#9aa4b2'];
 
-/** 没有区间数据时的曲线兜底色（主题粉）。 */
-export const CURVE_FALLBACK_COLOR = '#ffb3af';
+/** 没有区间数据时的曲线兜底色（主题粉，令牌见 utils/theme.ts）。 */
+export const CURVE_FALLBACK_COLOR = theme.accentPale;
 
 /** 区间条与曲线共用的第 i 档配色。 */
 export function zoneColor(index: number): string {
@@ -169,8 +170,8 @@ export function downsample(points: CurvePoint[], max = MAX_CURVE_POINTS): CurveP
 
 /** uCharts 会把这些值乘 pixelRatio，所以都按 css px 给。 */
 const CHART_PADDING: [number, number, number, number] = [10, 4, 0, 0]; // 上右下左
-const CHART_GRID_COLOR = 'rgba(255, 255, 255, 0.08)';
-const CHART_FONT_COLOR = '#9c9c9d';
+const CHART_GRID_COLOR = theme.hairline;
+const CHART_FONT_COLOR = theme.textSecondary;
 const CHART_FONT_SIZE = 10;
 const CHART_GRID_LINES = 4;
 
@@ -230,7 +231,7 @@ export function buildChartOptions(
     extra: {
       // linearColor 由区间档位生成 → 一个区间一种颜色的折线
       line: { type: 'straight', width: 2, linearType: 'custom' },
-      tooltip: { showBox: true, bgColor: '#101111', fontColor: '#e3e2e5', gridType: 'dash' },
+      tooltip: { showBox: true, bgColor: theme.card, fontColor: theme.textPrimary, gridType: 'dash' },
     },
     categories: spec.series.map((p) => formatChartTime(p.t)),
     series: [

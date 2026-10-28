@@ -1,11 +1,14 @@
-/* 教练卡片：深色浅浮雕，accent 主题藕粉（var 引用 styles/dark.wxss 令牌；
-   coach 页已 @import 该令牌组——组件用变量，换主题色随 dark.wxss 一处生效）。 */
+/* 教练卡片：深色浅浮雕，accent 主题藕粉。令牌由 styles/theme.wxss 唯一
+   定义（app.wxss 全局 @import），CSS 变量跨组件继承，本组件直接 var() 引用、
+   不重定义令牌、不写 var() 兜底值——#665 实证：page{} 双定义（旧 app.wxss
+   与页面 dark.wxss 各定义一份）时，组件内 var() 可能解析到 app.wxss 旧值；
+   单源后竞争消除，兜底值反而会掩盖令牌缺失，故一律不写（#816）。 */
 .cc-card {
   width: 100%;
   box-sizing: border-box;
   padding: 24rpx;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1rpx solid rgba(255, 255, 255, 0.1);
+  background: rgba(var(--color-overlay-rgb), 0.05);
+  border: 1rpx solid rgba(var(--color-overlay-rgb), 0.1);
   border-radius: 20rpx;
 }
 
@@ -41,7 +44,7 @@
   margin-left: 12rpx;
   padding: 2rpx 12rpx;
   font-size: 10px;
-  color: var(--color-accent, #ff6363);
+  color: var(--color-accent);
   background: rgba(var(--color-accent-rgb), 0.12);
   border-radius: 8rpx;
 }
@@ -51,7 +54,7 @@
   margin-top: 8rpx;
   font-size: 12px;
   line-height: 18px;
-  color: #b8b8bc;
+  color: var(--color-text-bright);
 }
 
 .cc-card__actions {
@@ -66,7 +69,7 @@
   justify-content: center;
   flex: 1;
   padding: 14rpx 0;
-  background: var(--color-accent, #ff6363);
+  background: var(--color-accent);
   border-radius: 12rpx;
 }
 
@@ -81,11 +84,11 @@
 .cc-card__cta-text {
   font-size: 13px;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--color-on-accent);
 }
 
 .cc-card__cta-text--ghost {
-  color: var(--color-accent, #ff6363);
+  color: var(--color-accent);
 }
 
 .cc-card__cta-arrow {
