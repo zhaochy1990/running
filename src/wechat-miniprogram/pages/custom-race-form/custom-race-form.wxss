@@ -129,9 +129,9 @@ page {
 }
 
 .seg__item--on {
-  color: var(--color-on-accent);
+  color: var(--color-accent-deep);
   border-color: var(--color-accent);
-  background: rgba(var(--color-accent-rgb), 0.12);
+  background: var(--color-accent-tint);
   font-weight: 600;
 }
 
