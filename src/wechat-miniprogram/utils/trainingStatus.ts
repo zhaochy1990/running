@@ -13,6 +13,7 @@ import {
   shanghaiYmdToEpoch,
 } from './date';
 import type { StrideTrainingLoadRecord } from '../types/health';
+import { theme } from './theme';
 
 // ---------------------------------------------------------------------------
 // Form zone —— 阈值按当日慢性负荷 (CTL) 比例划分（与 Web 相同）
@@ -304,8 +305,8 @@ export function formatDurationHuman(seconds: number | null | undefined): string 
 // ---------------------------------------------------------------------------
 
 const CHART_PADDING: [number, number, number, number] = [10, 6, 0, 0];
-const CHART_GRID_COLOR = 'rgba(255, 255, 255, 0.08)';
-const CHART_FONT_COLOR = '#9c9c9d';
+const CHART_GRID_COLOR = theme.hairline;
+const CHART_FONT_COLOR = theme.textSecondary;
 const CHART_FONT_SIZE = 10;
 
 export interface ChartSeries {
@@ -386,7 +387,7 @@ export function buildLineChartOptions(params: {
     },
     extra: {
       line: { type: 'straight', width: 2 },
-      tooltip: { showBox: true, bgColor: '#101111', fontColor: '#e3e2e5', gridType: 'dash' },
+      tooltip: { showBox: true, bgColor: theme.card, fontColor: theme.textPrimary, gridType: 'dash' },
     },
     series: params.series.map((s) => ({ name: s.name, data: s.data, color: s.color })),
   };
@@ -422,7 +423,7 @@ export function buildColumnChartOptions(params: {
     },
     extra: {
       column: { type: 'group', categoryGap },
-      tooltip: { showBox: true, bgColor: '#101111', fontColor: '#e3e2e5', gridType: 'dash' },
+      tooltip: { showBox: true, bgColor: theme.card, fontColor: theme.textPrimary, gridType: 'dash' },
     },
     series: [{ name: '', color: params.color, data: params.data }],
   };
