@@ -1,7 +1,8 @@
 import type { PhaseEvidence } from "./evidence.js";
-import { peakVolumeCapKm } from "./gates.js";
+import { peakVolumeCapKm, reachabilitySeed } from "./gates.js";
 import type { PhaseCanonical, PhaseDivisionIntent } from "./intent.js";
 import { DEFAULT_PRIMARY_GOAL, EXPECTED_BLOCK_MODE, MIN_PHASE_WEEKS, PHASE_DISPLAY_NAME, PhaseDivisionIntentSchema } from "./intent.js";
+import { envelopeReachedKm } from "./load/reachability.js";
 
 /**
  * T 表兜底（devops#782 E 节，#732 终调和的落地形态）：确定性跑道查表 + 学分调整，
@@ -177,6 +178,26 @@ function volumeBands(layout: PhaseWeeks[], evidence: PhaseEvidence, buildWeeks: 
   return out;
 }
 
+/**
+ * I12 自愈夹持（#813）：declining 形态（avg4 ≪ avg8）下 transition 的 avg8×1.1
+ * 口径从当前状态 ACWR 爬不到（短跑道 N=7-10 尤甚），兜底契约=构造保证合法——
+ * 建设阶段 lo 夹到包络内该阶段最高位。种子与 I12 门共用 reachabilitySeed
+ * （gates.ts，单一真源）。夹持只降不升，lo ≤ 包络位的形态零扰动；有意不留
+ * I12 的 2km 容差、直接夹到包络位，让门余量恢复满额。final_quality 不夹
+ * （lo 是平台目标语义，I12 豁免、L3 爬坡豁免兜底）。
+ *
+ * 夹后包络模拟结果稳定的三条前提：建设周读 hi 不读 lo；recovery 构造位与
+ * taper 周（km=lo×0.7）读的是不参与夹持的 recovery/final 带 lo。
+ */
+function clampBuildLoToEnvelope(intent: PhaseDivisionIntent, evidence: PhaseEvidence): void {
+  const reached = envelopeReachedKm(intent, reachabilitySeed(evidence));
+  for (const band of intent.volume_bands) {
+    if (band.phase !== "foundation" && band.phase !== "early_quality" && band.phase !== "transition_quality") continue;
+    const ceiling = reached.get(band.phase);
+    if (ceiling !== undefined && band.weekly_km_min > ceiling) band.weekly_km_min = Math.max(1, Math.round(ceiling));
+  }
+}
+
 function milestonesFor(layout: PhaseWeeks[], evidence: PhaseEvidence): PhaseDivisionIntent["milestones"] {
   const out: PhaseDivisionIntent["milestones"] = [];
   const push = (phase: string, signal: string, criterion: string) => out.push({ phase, signal, criterion });
@@ -233,7 +254,7 @@ const TRAINING_GOAL: Record<PhaseCanonical, string> = {
 
 /**
  * T 表兜底入口：LLM 失败/违规重试耗尽时调用；构造保证通过全部结构门
- * （fallback.test.ts 对 N=1..26 × 常态/伤后/赛后三场景做性质验证）。
+ * （fallback.test.ts 对 N=1..26 × 全场景扫描做性质验证）。
  */
 export function tableFallback(evidence: PhaseEvidence, runwayWeeks: number): PhaseDivisionIntent {
   const N = runwayWeeks;
@@ -266,7 +287,7 @@ export function tableFallback(evidence: PhaseEvidence, runwayWeeks: number): Pha
     week += weeks;
   }
 
-  return PhaseDivisionIntentSchema.parse({
+  const intent = PhaseDivisionIntentSchema.parse({
     phases,
     taper_weeks: taperWeeks,
     milestones: milestonesFor(layout, evidence),
@@ -274,4 +295,7 @@ export function tableFallback(evidence: PhaseEvidence, runwayWeeks: number): Pha
     // 爬坡按建设周数（effectiveN）取档：赛后 recovery 前置不占爬坡预算
     volume_bands: volumeBands(layout, evidence, effectiveN),
   });
+  // I12 自愈（#813）在 parse 后做：夹持只降 lo 不动 hi，包络模拟结果稳定
+  clampBuildLoToEnvelope(intent, evidence);
+  return intent;
 }

@@ -6,7 +6,7 @@ import { makeEvidence } from "./testSupport.js";
 
 /**
  * T 兜底性质测试（devops#782 验收：T 兜底可在 LLM 失败时产出合法意图）：
- * N=1..26 × {常态, 伤后, 赛后14天内} 全部通过 IntentSchema + 11 条结构门。
+ * N=1..26 × 全场景扫描，全部通过 IntentSchema + 11 条结构门。
  */
 
 const scenarios = {
@@ -41,10 +41,23 @@ const scenarios = {
       recent_volume: { avg_8wk_km: 35, avg_4wk_km: 30, recent_peak_week_km: 45, longest_run_8wk_km: 16, gap_weeks_last16: 3 },
       habitual: { week_km: 18, level: "median@16w", scenario: "detrain_return", avg4_km: 30, decay_factor: 1, acwr_applicable: false, pre_peak_km: 45 },
     }),
+  /** #813 declining 形态：近 4 周量大幅回落（avg4 ≈ 0.4×avg8），avg8 已不代表当前状态。 */
+  declining: () =>
+    makeEvidence({
+      recent_volume: { avg_8wk_km: 60, avg_4wk_km: 25, recent_peak_week_km: 80, longest_run_8wk_km: 25, gap_weeks_last16: 0 },
+      habitual: { week_km: 45, level: "median@12w", scenario: "normal", avg4_km: 25, decay_factor: 1, acwr_applicable: true, pre_peak_km: 80 },
+    }),
+  /** #813 declining × 赛后：recovery 前置周进滚动均值，包络路径与常态不同（评审 A 补的组合回归）。 */
+  decliningRaced: () =>
+    makeEvidence({
+      recent_volume: { avg_8wk_km: 60, avg_4wk_km: 25, recent_peak_week_km: 80, longest_run_8wk_km: 25, gap_weeks_last16: 0 },
+      habitual: { week_km: 45, level: "median@12w", scenario: "normal", avg4_km: 25, decay_factor: 1, acwr_applicable: true, pre_peak_km: 80 },
+      last_race: { date: "2026-10-24", distance_km: 42, days_ago: 2 },
+    }),
   raced: () => makeEvidence({ last_race: { date: "2026-10-24", distance_km: 42, days_ago: 2 } }),
 } as const;
 
-test("N=1..26 × 三场景：兜底意图全部通过 IntentSchema 与 11 条结构门", () => {
+test("N=1..26 × 全场景：兜底意图全部通过 IntentSchema 与 11 条结构门", () => {
   const failures: string[] = [];
   for (const [scenario, make] of Object.entries(scenarios)) {
     for (let N = 1; N <= 26; N++) {
@@ -62,6 +75,16 @@ test("赛后 14 天内 → 首阶段 recovery；常态无 recovery 前置", () =
   const raced = scenarios.raced();
   assert.equal(tableFallback(raced, 22).phases[0]?.canonical, "recovery");
   assert.notEqual(tableFallback(scenarios.base(), 22).phases[0]?.canonical, "recovery");
+});
+
+test("#813 declining 形态（avg4 ≪ avg8）：短跑道兜底 lo 夹到包络可达位（门全绿由全场景扫描覆盖）", () => {
+  const evidence = scenarios.declining();
+  const loOf = (n: number) => tableFallback(evidence, n).volume_bands.find((b) => b.phase === "transition_quality")?.weekly_km_min;
+  // N=7-10 复现区间：transition lo=avg8×1.1=66 从 avg4=25 起点爬不到 → 夹到各布局包络位
+  assert.equal(loOf(7), 41);
+  assert.equal(loOf(10), 56);
+  // 长跑道（N=22）avg8×1.1 布局内可达，夹持零扰动
+  assert.equal(loOf(22), 66);
 });
 
 test("≤6 周 final-only 形态：只允许 recovery/final_quality", () => {

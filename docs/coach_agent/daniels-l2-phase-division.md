@@ -101,7 +101,7 @@ interface PhaseDivisionIntent {
 ## 5. 判定与兜底
 
 - **判断模型 = deepseek-flash**（第五轮实证 6/8 门全绿、三人结构分化 3/3；GLM-5.3-flash 结构退化+慢 6-9 倍出局，glm-5.3 深思考档超时出局，pro 已弃）
-- **T 查表 = 结构缺省 + 包络校验 + LLM 失败兜底**（#732 终调和：查表不拿走判断）
+- **T 查表 = 结构缺省 + 包络校验 + LLM 失败兜底**（#732 终调和：查表不拿走判断；**#813：建设阶段 lo 夹到包络可达位**——declining 形态 avg4≪avg8 下 transition lo=avg8×1.1 短跑道 ACWR 爬不到挂 I12，夹持与 I12 门共用同一包络模拟、只降不升，常态零扰动）
 - **确定性结构门**：跑道闭合（周数和=跑道、日期连续）、顺序律（recovery→foundation→early_quality→transition_quality→final_quality，可坍缩不可倒置、canonical 不重复）、赛后 14 天内完赛先恢复、FM 含专项期（N≥16 时 final_quality≥4 周；N≤2 退化跑道豁免：I3 只余 recovery 与 I4 的 ≥2 周互斥时按赛前微周期退化处理）、taper 属性合法（1-3 周）、里程碑覆盖且绑可观察信号、gate 2-3 条含未达标动作、体量带合法（峰值带 ≤min(120, max(近8周×1.6, 近期峰值×1.3)) 且**帽下限 30km**——零史跑者 0 帽会锁死一切合法带，「训练计划永远给」；比较留 0.5km 容差；recovery ≤近期峰值 60%；伤后 foundation 带 ≤伤前峰值 78%；每阶段须有带）、块模式一致、rationale 引证、最小周期（见 §6）；不过 → 带违规清单重试 ≤2 次 → 落 T 骨架
 - 设计时场景智能（LLM 价值区）：有氧学分够→压缩/免修 foundation；速度储备超目标→early_quality 折叠为 strides 维持；短跑道→坍缩阶梯；伤退史→foundation 拉长
 

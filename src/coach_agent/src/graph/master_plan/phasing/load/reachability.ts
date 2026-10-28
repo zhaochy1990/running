@@ -41,17 +41,18 @@ export function bandOf(intent: PhaseDivisionIntent, phase: { canonical: string; 
 }
 
 /**
- * 最大爬坡包络：按展开器同款物理（recovery 低量平、建设周 min(hi, 1.28×滚动
- * 均值)、taper 不要求进带）逐周模拟，返回 lo 不可达的建设阶段清单（空=全可达）。
+ * 包络模拟构芯：按展开器同款物理（recovery 低量平、建设周 min(hi, 1.28×滚动
+ * 均值)、taper 不要求进带）逐周爬坡，返回各阶段（recovery/taper 周除外）布局
+ * 内最高位。T 兜底的 lo 夹持（fallback.ts #813）与本门的可达性判定共用同一
+ * 模拟，口径不劈叉。
  */
-export function bandLoReachabilityIssues(intent: PhaseDivisionIntent, seed: ReachabilitySeed): string[] {
+export function envelopeReachedKm(intent: PhaseDivisionIntent, seed: ReachabilitySeed): Map<string, number> {
   const phases = [...intent.phases].sort((a, b) => a.start_week - b.start_week);
   const N = phases.at(-1)?.end_week ?? 0;
-  if (N === 0 || !seed.acwrApplicable) return [];
+  const reached = new Map<string, number>();
+  if (N === 0 || !seed.acwrApplicable) return reached;
   const taperW = Math.min(intent.taper_weeks, 3);
   const window: number[] = [seed.seedAvg4Km, seed.seedAvg4Km, seed.seedAvg4Km, seed.seedAvg4Km];
-  const reached = new Map<string, number>();
-  const issues: string[] = [];
   for (let w = 1; w <= N; w++) {
     const p = phases.find((x) => x.start_week <= w && w <= x.end_week) ?? phases.at(-1)!;
     const band = bandOf(intent, p);
@@ -72,6 +73,15 @@ export function bandLoReachabilityIssues(intent: PhaseDivisionIntent, seed: Reac
       reached.set(p.canonical, Math.max(reached.get(p.canonical) ?? 0, km));
     }
   }
+  return reached;
+}
+
+/** 带下限可达性门：lo 不可达的建设阶段清单（空=全可达；ACWR 不适用整体豁免）。 */
+export function bandLoReachabilityIssues(intent: PhaseDivisionIntent, seed: ReachabilitySeed): string[] {
+  if (!seed.acwrApplicable) return [];
+  const reached = envelopeReachedKm(intent, seed);
+  const phases = [...intent.phases].sort((a, b) => a.start_week - b.start_week);
+  const issues: string[] = [];
   for (const p of phases) {
     // 只校验建设阶段：final_quality 的 lo 是「平台目标」语义，短跑道/低量下
     // 从 ACWR 帽下直接进 taper 合法（L3 爬坡豁免兜底）；票面 F 的两形态
