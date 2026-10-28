@@ -10,8 +10,9 @@ interface ActivityRow {
   name: string;
   date: string; // 用于显示的日期（已转上海）
   iconPath: string;
-  /** 路线缩略图地址；空串表示回退 iconPath（室内活动、尚未生成、或加载失败） */
-  thumbUrl: string;
+  /** 归一折线 [[x,y],...]（route_thumb，devops#827 起客户端 canvas 矢量绘制）；
+   * null 表示回退 iconPath（室内活动、尚未生成、或无 GPS） */
+  routeThumb: number[][] | null;
   distanceKm: string;
   duration: string;
   pace: string;
@@ -61,7 +62,6 @@ interface ActivitiesPageHandlers {
   onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   fetch(): Promise<void>;
   onMenuTap(): void;
-  onThumbError(e: WechatMiniprogram.CustomEvent): void;
   onActivityTap(e: WechatMiniprogram.TouchEvent): void;
   onMonthHeaderTap(e: WechatMiniprogram.TouchEvent): void;
   onLoadMore(): void;
@@ -133,7 +133,7 @@ function toRow(a: Activity): ActivityRow {
     name: displayName(a),
     date: formatDateLabel(a.date),
     iconPath: iconPathForSport(a.sport_name),
-    thumbUrl: a.thumb_url || '',
+    routeThumb: a.route_thumb ?? null,
     distanceKm: a.distance_km != null && a.distance_km > 0 ? fmtKm(a.distance_m) : '—',
     duration: fmtDurationShort(a.duration_s),
     pace: fmtPace(a.avg_pace_s_km),
@@ -328,18 +328,6 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
 
   onMenuTap() {
     wx.showToast({ title: '暂未开放', icon: 'none' });
-  },
-
-  // 缩略图加载失败（网络、合法域名未配置、对象被清理）时，把该行回退到运动图标，
-  // 而不是留一个空白圆槽。按 labelId 定位，不依赖 wx:for 的层级索引。
-  onThumbError(e: WechatMiniprogram.CustomEvent) {
-    const labelId = e.currentTarget.dataset.id as string;
-    if (!labelId) return;
-    const monthGroups = this.data.monthGroups.map((g) => ({
-      ...g,
-      rows: g.rows.map((r) => (r.labelId === labelId && r.thumbUrl ? { ...r, thumbUrl: '' } : r)),
-    }));
-    this.setData({ monthGroups });
   },
 
   onPullDownRefresh() {

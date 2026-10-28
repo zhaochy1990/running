@@ -28,6 +28,11 @@ export const theme = {
   textMax: '#2c3340',
   onAccent: '#ffffff',
 
+  /* 轨迹缩略图墨色（devops#827）：canvas 矢量绘制的折线颜色。初值与
+     textPrimary 同值（浅色主题下墨色 #2C3340，与旧 PNG 渲染端一致）；
+     深色对应值存档于 styles/theme-dark.wxss（客户端切深色主题时用）。 */
+  routeInk: '#2c3340',
+
   /* 主题色（藕粉）：透明度变体用 themeRgba(accentRgb, α) */
   accent: '#ff6363',
   accentRgb: '255, 99, 99',

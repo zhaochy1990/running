@@ -27,8 +27,12 @@ export interface Activity {
   stride_training_dose?: number | null;
   vo2max: number | null;
   train_type: string | null;
-  /** 后端预渲染的路线缩略图 PNG 公开地址；室内活动或尚未生成时为 null */
+  /** @deprecated 后端预渲染的路线缩略图 PNG 公开地址（devops#827 起客户端改画
+   * route_thumb 矢量折线，本字段不再消费；P3 后端退役缩略图管线后删除）。 */
   thumb_url?: string | null;
+  /** 归一折线 [[x,y],...]（≤60 点，[0,100]×[0,100] 视框，语义见 Go thumbnail 包），
+   * 客户端 canvas 矢量绘制缩略图用（devops#827）；null = 无 GPS / 未算。 */
+  route_thumb?: number[][] | null;
 
   // —— 以下为详情页字段（list 端点可能不返回，故可选）——
   ascent_m?: number | null;

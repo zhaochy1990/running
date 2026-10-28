@@ -1,0 +1,22 @@
+/* 轨迹缩略图（components/route-thumb）。折线已由绘制端（utils/routeThumb
+   的内切圆收拢）收进圆内，页面侧圆槽（border-radius:50% + overflow:hidden）
+   只会裁掉空白角；位图背景透明，墨色随 theme.routeInk 令牌（wxss 侧
+   --color-route-ink 镜像，theme.check.mts 对账）。 */
+.route-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.route-thumb__img {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* fallback 运动图标：5/9 ≈ 40rpx / 72rpx，与旧 .activity__icon-img 同视觉。 */
+.route-thumb__icon {
+  width: 55.6%;
+  height: 55.6%;
+  display: block;
+}

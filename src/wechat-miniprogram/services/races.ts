@@ -37,6 +37,7 @@ export interface RaceItem {
   avg_hr: number | null;
   max_hr: number | null;
   ascent_m: number | null;
+  /** @deprecated 路线缩略图 PNG 地址；devops#827 起小程序不再消费（P3 后端退役后删）。 */
   thumb_url: string | null;
 }
 

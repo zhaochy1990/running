@@ -37,8 +37,9 @@ interface TodayActivityRow {
   labelId: string;
   name: string;
   iconPath: string;
-  /** 路线缩略图公开地址；室内活动/未生成/加载失败时为空串，回退 iconPath */
-  thumbUrl: string;
+  /** 归一折线 [[x,y],...]（route_thumb，devops#827 起客户端 canvas 矢量绘制）；
+   * null 表示回退 iconPath（室内活动、尚未生成、或无 GPS） */
+  routeThumb: number[][] | null;
   distanceKm: string;
   duration: string;
   pace: string;
@@ -67,7 +68,7 @@ function toTodayActivityRow(a: Activity): TodayActivityRow {
     labelId: a.label_id,
     name: displayName(a),
     iconPath: iconPathForSport(a.sport_name),
-    thumbUrl: a.thumb_url || '',
+    routeThumb: a.route_thumb ?? null,
     distanceKm: a.distance_km != null && a.distance_km > 0 ? fmtKm(a.distance_m) : '—',
     duration: fmtDurationShort(a.duration_s),
     pace: fmtPace(a.avg_pace_s_km),
@@ -119,7 +120,6 @@ interface IndexPageHandlers {
   onWatchTap(): void;
   onMoreTap(): void;
   onTodayActivityTap(e: WechatMiniprogram.TouchEvent): void;
-  onThumbError(e: WechatMiniprogram.CustomEvent): void;
   onPushDateSelect(e: PushDateSelectEvent): void;
   onPushDateClose(): void;
   onDeleteWorkout(): void;
@@ -403,18 +403,6 @@ Page<IndexPageData, IndexPageHandlers>({
     if (!labelId) return;
     wx.navigateTo({
       url: `/pages/activity-detail/activity-detail?labelId=${encodeURIComponent(labelId)}`,
-    });
-  },
-
-  // 缩略图加载失败（网络、合法域名未配置、对象被清理）时，把该行回退到运动图标，
-  // 而不是留一个空白圆槽。按 labelId 定位，不依赖 wx:for 的层级索引。
-  onThumbError(e: WechatMiniprogram.CustomEvent) {
-    const labelId = e.currentTarget.dataset.id as string;
-    if (!labelId) return;
-    this.setData({
-      todayActivities: this.data.todayActivities.map((r) =>
-        r.labelId === labelId && r.thumbUrl ? { ...r, thumbUrl: '' } : r,
-      ),
     });
   },
 
