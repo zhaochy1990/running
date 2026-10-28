@@ -1,12 +1,14 @@
 /* 训练课表免登录分享落地页 —— 样式整包复用 workout-detail（类名一致，
-   与详情页所见即所得 #691），这里只补页面差异。 */
+   与详情页所见即所得 #691），这里只补页面差异。
+   devops#818 P3：浅色令牌收敛（原排期 chip 蓝=计划语义 → --color-info；
+   已保存徽章态文字浅粉 → accent-deep 提对比）。 */
 @import "../workout-detail/workout-detail.wxss";
 
 /* 原排期 chip（hero__chip 语义色：蓝 = 计划语义，同恢复色系） */
 .hero__chip--date {
-  color: #6db3cf;
-  background: rgba(109, 179, 207, 0.12);
-  border: 1rpx solid rgba(109, 179, 207, 0.3);
+  color: var(--color-info);
+  background: rgba(var(--color-info-rgb), 0.12);
+  border: 1rpx solid rgba(var(--color-info-rgb), 0.3);
 }
 
 /* summary 左边线引用（V1 沉浸课卡定稿 #694） */
@@ -61,6 +63,6 @@
 /* 已保存徽章态（仍可点，处理函数幂等空操作） */
 .cta-bar__btn--done {
   background: rgba(var(--color-accent-rgb), 0.15);
-  color: #ff9d9a;
+  color: var(--color-accent-deep);
   font-weight: 600;
 }

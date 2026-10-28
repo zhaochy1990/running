@@ -696,9 +696,9 @@
   color: var(--color-text-muted);
 }
 
-/* ── 比赛策略卡（#396：未生成=CTA / 已生成=摘要 → 报告页） ── */
+/* ── 比赛策略卡（#396：未生成=CTA / 已生成=摘要 → 报告页；devops#818 荧光绿→藕粉族） ── */
 .strategy {
-  border: 1rpx solid rgba(216, 255, 62, 0.25);
+  border: 1rpx solid rgba(var(--color-accent-rgb), 0.25);
 }
 .strategy__state {
   font-size: 22rpx;
@@ -707,7 +707,7 @@
   margin-left: 12rpx;
 }
 .strategy__state--on {
-  color: #d8ff3e;
+  color: var(--color-accent-deep);
 }
 .strategy__desc {
   font-size: 26rpx;
@@ -718,7 +718,7 @@
   margin-top: 20rpx;
   font-size: 28rpx;
   font-weight: 600;
-  color: #d8ff3e;
+  color: var(--color-accent-deep);
 }
 .strategy__row {
   display: flex;
@@ -732,7 +732,7 @@
 .strategy__time {
   font-size: 40rpx;
   font-weight: 700;
-  color: #d8ff3e;
+  color: var(--color-accent-deep);
   margin-left: 8rpx;
 }
 .strategy__count {
@@ -747,5 +747,5 @@
 .strategy__go {
   margin-top: 16rpx;
   font-size: 24rpx;
-  color: #d8ff3e;
+  color: var(--color-accent-deep);
 }
