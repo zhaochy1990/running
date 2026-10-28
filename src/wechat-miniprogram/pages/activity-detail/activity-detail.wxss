@@ -523,7 +523,8 @@
 .map-toggle {
   display: flex;
   margin-left: 20rpx;
-  background: rgba(16, 17, 18, 0.85);
+  /* devops#818 追加：深色 rgba(16,17,18,.85) 残留 → 控件条语义归 bg-sunken */
+  background: var(--color-bg-sunken);
   border: 1rpx solid var(--color-hairline);
   border-radius: 12rpx;
   overflow: hidden;

@@ -199,7 +199,10 @@
   font-weight: 600;
   letter-spacing: 2rpx;
   color: var(--color-text-secondary);
-  background: rgba(16, 17, 17, 0.96);
+  /* devops#818 追加：深色卡 #101111 的 rgba(16,17,17,.96) 形态是 P1
+     hex 迁移的盲区，浅色下按「粘性提示条」语义归 bg-sunken（不透明，
+     theme.wxss 无 bg-sunken rgb 组合令牌） */
+  background: var(--color-bg-sunken);
   border-radius: 12rpx 12rpx 0 0;
 }
 
