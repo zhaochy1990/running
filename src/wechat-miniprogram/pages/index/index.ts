@@ -17,6 +17,7 @@ import {
   weekSubtitle,
 } from '../../utils/date';
 import { fmtDose, fmtDurationShort, fmtKm, fmtPace } from '../../utils/format';
+import { theme } from '../../utils/theme';
 import { userStore } from '../../store/index';
 import type { Activity } from '../../types/activity';
 import type {
@@ -387,7 +388,7 @@ Page<IndexPageData, IndexPageHandlers>({
     if (workout?.deletable && workout.workoutId) {
       wx.showActionSheet({
         itemList: ['删除'],
-        itemColor: '#ff3b30',
+        itemColor: theme.danger,
         success: (res) => {
           if (res.tapIndex === 0) this.onDeleteWorkout();
         },

@@ -1,7 +1,7 @@
 // 产品路线详情页 —— 列表行只显示概述（≤50 字），markdown 详细正文只在
 // 这里渲染（roadmap-panel 三区行点按进入；分享卡 path 自持，深链直落本页）。
 // 正文渲染复用 utils/markdown（GFM→HTML，原始 HTML inert）+ mp-html，
-// 深色 tagStyle 与 declaration / coach 页同源。
+// 浅色 tagStyle 与 declaration / coach 页同源。
 import { getRoadmapFeature } from '../../services/roadmap';
 import { markdownToHtml } from '../../utils/markdown';
 import { theme } from '../../utils/theme';
@@ -54,7 +54,7 @@ function contentPaddingTopRpx(): number {
   return Math.round((statusPx * 750) / width) + 128 + 24;
 }
 
-// 与 declaration 页同源的深色 mp-html 样式（主题一致，勿随手改色）。
+// 与 declaration 页同源的浅色 mp-html 样式（主题一致，勿随手改色）。
 const CONTAINER_STYLE = `color:${theme.textPrimary};font-size:14px;line-height:22px;`;
 const TAG_STYLE: Record<string, string> = {
   p: `margin:0 0 12px;color:${theme.textPrimary};`,
@@ -68,9 +68,9 @@ const TAG_STYLE: Record<string, string> = {
   h5: `margin:14px 0 6px;color:${theme.textMax};font-weight:600;`,
   h6: `margin:14px 0 6px;color:${theme.textMax};font-weight:600;`,
   blockquote: `margin:0 0 12px;padding-left:10px;border-left:3px solid rgba(${theme.overlayRgb},0.18);color:${theme.textSecondary};`,
-  pre: `margin:0 0 12px;padding:10px;background:#1d1e22;border-radius:8px;overflow-x:auto;color:${theme.textPrimary};`,
+  pre: `margin:0 0 12px;padding:10px;background:${theme.bgSunken};border-radius:8px;overflow-x:auto;color:${theme.textPrimary};`,
   code: `font-family:monospace;background:${theme.hairline};border-radius:4px;padding:0 4px;color:${theme.textPrimary};`,
-  a: `color:${theme.accentPale};`,
+  a: `color:${theme.accentDeep};`,
   table: 'border-collapse:collapse;margin:0 0 12px;width:100%;',
   th: `border:1px solid rgba(${theme.overlayRgb},0.14);padding:6px 8px;color:${theme.textMax};`,
   td: `border:1px solid rgba(${theme.overlayRgb},0.14);padding:6px 8px;color:${theme.textPrimary};`,

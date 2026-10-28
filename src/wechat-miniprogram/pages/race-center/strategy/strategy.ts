@@ -30,7 +30,7 @@ import {
 import { setPendingCoachContext } from '../../../services/coach';
 import { shanghaiDateFromIso, shanghaiTimeFromIso } from '../../../utils/date';
 import { userStore } from '../../../store/index';
-import { theme, themeRgba } from '../../../utils/theme';
+import { theme } from '../../../utils/theme';
 
 interface StrategyPageData {
   statusBarHeight: number;
@@ -410,7 +410,7 @@ Page<StrategyPageData, StrategyPageHandlers>({
       title: '删除目标版本',
       content: `删除 ${target} 这一版策略？其它目标版本不受影响。`,
       confirmText: '删除',
-      confirmColor: '#ff5c5c',
+      confirmColor: theme.accentDeep,
       success: (res) => {
         if (!res.confirm) return;
         void this.deleteActiveVersion(target);
@@ -494,7 +494,7 @@ interface PosterCtx {
   stroke(): void;
 }
 
-/** 配速卡海报：深色底 + 目标成绩 + 分段表（纯绘制，页面内闭函数）。 */
+/** 配速卡海报：浅色底 + 目标成绩 + 分段表（纯绘制，页面内闭函数）。 */
 function drawPoster(
   ctx: PosterCtx,
   width: number,
@@ -502,35 +502,35 @@ function drawPoster(
   view: StrategyView,
   raceDayText: string,
 ): void {
-  ctx.fillStyle = '#0a0a0b';
+  ctx.fillStyle = theme.bg;
   ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = '#d8ff3e';
+  ctx.fillStyle = theme.accent;
   ctx.fillRect(0, 0, width, 6);
 
-  ctx.fillStyle = theme.textMuted;
+  ctx.fillStyle = theme.textSecondary;
   ctx.font = '20px sans-serif';
   ctx.fillText(`${raceDayText} · ${view.itemTypeLabel}`, 36, 60);
 
-  ctx.fillStyle = '#f2f2f3';
+  ctx.fillStyle = theme.textPrimary;
   ctx.font = 'bold 34px sans-serif';
   ctx.fillText(view.raceName, 36, 106);
 
-  ctx.fillStyle = theme.textMuted;
+  ctx.fillStyle = theme.textSecondary;
   ctx.font = '20px sans-serif';
   ctx.fillText('目标成绩', 36, 160);
-  ctx.fillStyle = '#d8ff3e';
+  ctx.fillStyle = theme.accentDeep;
   ctx.font = 'bold 56px sans-serif';
   ctx.fillText(view.targetTime, 36, 220);
 
   // 表头
   let y = 276;
-  ctx.fillStyle = theme.textMuted;
+  ctx.fillStyle = theme.textSecondary;
   ctx.font = '20px sans-serif';
   ctx.fillText('分段', 36, y);
   ctx.fillText('配速', 250, y);
   ctx.fillText('累计', 410, y);
   y += 12;
-  ctx.strokeStyle = themeRgba(theme.overlayRgb, 0.2);
+  ctx.strokeStyle = theme.hairline;
   ctx.beginPath();
   ctx.moveTo(36, y);
   ctx.lineTo(width - 36, y);
@@ -538,15 +538,15 @@ function drawPoster(
 
   for (const row of view.paceRows) {
     y += 44;
-    ctx.fillStyle = '#f2f2f3';
+    ctx.fillStyle = theme.textPrimary;
     ctx.font = '22px sans-serif';
     ctx.fillText(row.segment, 36, y);
     ctx.fillText(row.pace, 250, y);
-    ctx.fillStyle = theme.textBright;
+    ctx.fillStyle = theme.textSecondary;
     ctx.fillText(row.cumulativeTime, 410, y);
   }
 
-  ctx.fillStyle = theme.textMuted;
+  ctx.fillStyle = theme.textSecondary;
   ctx.font = '18px sans-serif';
   ctx.fillText('STRIDE · 比赛策略', 36, height - 28);
 }

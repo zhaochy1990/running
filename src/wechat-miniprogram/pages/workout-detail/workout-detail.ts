@@ -7,7 +7,7 @@ import { userStore } from '../../store/index';
 import { shanghaiWeekStart, shanghaiWeekdayLabel, weekFolderName } from '../../utils/date';
 import { fmtDose, fmtDurationShort, fmtKm } from '../../utils/format';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
-import { theme, themeRgba } from '../../utils/theme';
+import { theme } from '../../utils/theme';
 import type {
   NormalizedRunWorkout,
   NormalizedStrengthWorkout,
@@ -332,7 +332,7 @@ Page<WorkoutDetailPageData, WorkoutDetailPageHandlers>({
     }
   },
 
-  /** 分享卡封面（#704，站④定稿）：深色底 + 课名 + 前两项指标色块，绘制同
+  /** 分享卡封面（#704，站④定稿）：浅色底 + 课名 + 前两项指标色块，绘制同
    * strategy 配速卡（canvas 2d → canvasToTempFilePath）。失败静默：分享回落
    * 微信默认截图。 */
   renderShareCover() {
@@ -366,14 +366,19 @@ Page<WorkoutDetailPageData, WorkoutDetailPageHandlers>({
 /** 分享封面 canvas 2d 上下文的最小结构（同 strategy PosterCtx）。 */
 interface CoverCtx {
   fillStyle: string;
+  strokeStyle: string;
   font: string;
   scale(x: number, y: number): void;
   fillRect(x: number, y: number, w: number, h: number): void;
   fillText(text: string, x: number, y: number): void;
   measureText(text: string): { width: number };
+  beginPath(): void;
+  moveTo(x: number, y: number): void;
+  lineTo(x: number, y: number): void;
+  stroke(): void;
 }
 
-/** 深色分享封面：藕粉顶线 + 品牌 label + 课名（最多两行）+ 两指标色块。 */
+/** 浅色分享封面：藕粉顶线 + 品牌 label + 课名（最多两行）+ 两指标色块。 */
 function drawShareCover(
   ctx: CoverCtx,
   width: number,
@@ -381,16 +386,16 @@ function drawShareCover(
   name: string,
   stats: Array<{ value: string; label: string }>,
 ): void {
-  ctx.fillStyle = '#0a0a0b';
+  ctx.fillStyle = theme.bg;
   ctx.fillRect(0, 0, width, height);
   ctx.fillStyle = theme.accent;
   ctx.fillRect(0, 0, width, 6);
 
-  ctx.fillStyle = theme.textMuted;
+  ctx.fillStyle = theme.textSecondary;
   ctx.font = '20px sans-serif';
   ctx.fillText('砺跑 · 自建课表', 36, 58);
 
-  ctx.fillStyle = '#f2f2f3';
+  ctx.fillStyle = theme.textPrimary;
   ctx.font = 'bold 40px sans-serif';
   // 课名超宽换行，最多两行（第二行尾部 …）
   const maxW = width - 72;
@@ -413,18 +418,29 @@ function drawShareCover(
   ctx.fillText(line1, 36, 126);
   if (line2) ctx.fillText(line2, 36, 178);
 
-  // 指标色块：跑课前两项=距离/总时长，力量课=预计时长/动作（与页内 stat 同源）
+  // 指标色块：白卡 + 发丝线描边承载（浅色海报规格），跑课前两项=距离/总时长，
+  // 力量课=预计时长/动作（与页内 stat 同源）
   const blockW = (width - 72 - 24) / 2;
   const blockY = height - 140;
-  ctx.fillStyle = themeRgba(theme.accentRgb, 0.12);
-  ctx.fillRect(36, blockY, blockW, 104);
-  ctx.fillRect(36 + blockW + 24, blockY, blockW, 104);
+  ctx.fillStyle = theme.card;
+  ctx.strokeStyle = theme.hairline;
+  for (let i = 0; i < 2; i++) {
+    const x = 36 + i * (blockW + 24);
+    ctx.fillRect(x, blockY, blockW, 104);
+    ctx.beginPath();
+    ctx.moveTo(x, blockY);
+    ctx.lineTo(x + blockW, blockY);
+    ctx.lineTo(x + blockW, blockY + 104);
+    ctx.lineTo(x, blockY + 104);
+    ctx.lineTo(x, blockY);
+    ctx.stroke();
+  }
   for (let i = 0; i < 2 && i < stats.length; i++) {
     const x = 36 + i * (blockW + 24);
-    ctx.fillStyle = '#ff9d9a';
+    ctx.fillStyle = theme.accentDeep;
     ctx.font = 'bold 40px sans-serif';
     ctx.fillText(stats[i].value, x + 24, blockY + 58);
-    ctx.fillStyle = theme.textMuted;
+    ctx.fillStyle = theme.textSecondary;
     ctx.font = '20px sans-serif';
     ctx.fillText(stats[i].label, x + 24, blockY + 88);
   }

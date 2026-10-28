@@ -445,7 +445,7 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
       title: '删除自定义比赛',
       content: `删除「${name}」？记录不可恢复`,
       confirmText: '删除',
-      confirmColor: theme.accent,
+      confirmColor: theme.accentDeep,
     });
     if (!res.confirm) return;
     try {
@@ -555,7 +555,7 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
       title: '清除比赛识别',
       content: `不再把这场成绩识别为「${raceName}」？`,
       confirmText: '清除',
-      confirmColor: theme.accent,
+      confirmColor: theme.accentDeep,
     });
     if (!res.confirm) return;
     try {
