@@ -23,8 +23,6 @@ public struct TrainingHomeView: View {
                             ForEach(model.todayActivities) { row in
                                 ActivityRowView(row: row) {
                                     app.router.push(.activityDetail(labelId: row.labelId))
-                                } onThumbError: {
-                                    // 当日活动行缩略图失败回退图标（记录 tab 同款）。
                                 }
                             }
                         }
