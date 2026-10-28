@@ -6,13 +6,13 @@ import Testing
 @Suite struct ActivitiesModelGroupingTests {
 
     private func activity(_ labelId: String, date: String, distanceM: Double = 10_000,
-                          sportName: String? = "Run", thumb: String? = nil) -> Activity {
+                          sportName: String? = "Run", route: [[Double]]? = nil) -> Activity {
         Activity(
             labelId: labelId, name: "晨跑 \(labelId)", sportName: sportName, sportType: 1,
             date: date, distanceM: distanceM, distanceKm: distanceM / 1000, durationS: 3600,
             durationFmt: "01:00:00", avgPaceSKm: 300, avgHr: 150, maxHr: 170, avgCadence: 180,
             avgStepLenCm: 110, trainingLoad: 50, strideTrainingDose: 66.6, trainType: "Base",
-            thumbUrl: thumb
+            routeThumb: route
         )
     }
 
@@ -57,13 +57,14 @@ import Testing
 
     @Test func rowFieldsAndFallbacks() {
         let res = listResponse([
-            activity("a1", date: "2026-10-02", thumb: "https://cdn/x.png"),
+            activity("a1", date: "2026-10-02", route: [[5, 95], [95, 5]]),
             Activity(labelId: "a2", name: nil, sportName: nil, sportType: 1, date: "2026-10-03",
                      distanceM: 0, distanceKm: 0, durationS: 0, durationFmt: nil),
         ])
         let rows = ActivitiesModel.monthGroups(from: res, currentMonth: "2026-10")[0].rows
 
-        #expect(rows[0].thumbURL?.absoluteString == "https://cdn/x.png")
+        #expect(rows[0].routeThumb == [[5, 95], [95, 5]])
+        #expect(rows[1].routeThumb == nil)
         #expect(rows[0].distanceKm == "10.00")
         #expect(rows[0].pace == "5:00/km")
         #expect(rows[0].avgHr == "150")
@@ -142,6 +143,7 @@ import Testing
               "stride_training_dose": 61.25,
               "vo2max": 52,
               "train_type": "Base",
+              "route_thumb": [[5, 95], [95, 5]],
               "thumb_url": "https://cdn/thumb.png"
             },
             {
@@ -161,6 +163,7 @@ import Testing
               "avg_cadence": null,
               "training_load": 30,
               "train_type": null,
+              "route_thumb": null,
               "thumb_url": null,
               "feels_like": 20
             }
@@ -174,6 +177,9 @@ import Testing
         #expect(res.total == 2)
         #expect(res.activities[0].sportName == nil)
         #expect(res.activities[0].strideTrainingDose == 61.25)
+        // route_thumb 形状解码（devops#828）；null → nil；thumb_url 已弃用忽略。
+        #expect(res.activities[0].routeThumb == [[5, 95], [95, 5]])
+        #expect(res.activities[1].routeThumb == nil)
         #expect(res.activities[1].isStrength)
         #expect(res.monthlySummaries?["2026-10"]?.activityCount == 9)
     }

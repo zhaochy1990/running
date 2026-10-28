@@ -19,9 +19,10 @@ public final class ActivitiesModel {
         public let name: String
         public let date: String
         public let systemImage: String
-        /// 路线缩略图（后端预渲染 PNG）；nil = 无图，回退运动图标；
-        /// var：加载失败时置 nil 触发回退（小程序 onThumbError 同款）。
-        public var thumbURL: URL?
+        /// 路线缩略图形状（route_thumb，[[x,y],...] 0..100 视窗，devops#828）；
+        /// nil/不足 2 点回退运动图标。原生 Path 绘制、无网络加载，
+        /// 不存在「加载失败回退」路径（旧 PNG 方案的 clearThumb 已随之删除）。
+        public let routeThumb: [[Double]]?
         public let distanceKm: String
         public let duration: String
         public let pace: String
@@ -119,19 +120,6 @@ public final class ActivitiesModel {
         monthGroups = monthGroups.map { g in
             var g = g
             if g.monthKey == key { g.expanded.toggle() }
-            return g
-        }
-    }
-
-    /// 缩略图加载失败（网络 / 对象被清理）时回退运动图标，不留空白圆槽。
-    public func clearThumb(_ labelId: String) {
-        monthGroups = monthGroups.map { g in
-            var g = g
-            g.rows = g.rows.map { r in
-                var r = r
-                if r.labelId == labelId, r.thumbURL != nil { r.thumbURL = nil }
-                return r
-            }
             return g
         }
     }
@@ -251,7 +239,7 @@ public final class ActivitiesModel {
             name: name,
             date: Shanghai.dateLabel(fromYMD: a.date),
             systemImage: SportDisplay.systemImage(forSportName: a.sportName),
-            thumbURL: a.thumbUrl.flatMap(URL.init(string:)),
+            routeThumb: a.routeThumb,
             distanceKm: a.distanceKm > 0 ? Fmt.km(a.distanceM) : "—",
             duration: Fmt.durationShort(a.durationS),
             pace: Fmt.pace(a.avgPaceSKm),

@@ -5,14 +5,14 @@ import Testing
 /// 详情页视图数据构建（devops#766，对齐 activity-detail.ts buildView/buildMetrics/buildWeather）。
 @Suite struct ActivityDetailBuildTests {
 
-    private func runActivity(strength: Bool = false, thumb: String? = nil) -> Activity {
+    private func runActivity(strength: Bool = false) -> Activity {
         Activity(
             labelId: "lbl-1", name: "  外滩晨跑  ", sportName: "Run",
             sportType: strength ? 402 : 1,
             date: "2026-10-18T06:30:00+08:00",
             distanceM: 10_240, distanceKm: 10.24, durationS: 3081, durationFmt: "00:51:21",
             avgPaceSKm: 300, avgHr: 152, maxHr: 171, avgCadence: 180, avgStepLenCm: 112,
-            trainingLoad: 55, strideTrainingDose: 61.25, trainType: "Threshold", thumbUrl: thumb,
+            trainingLoad: 55, strideTrainingDose: 61.25, trainType: "Threshold",
             ascentM: 42, temperature: 18.5, humidity: 62, feelsLike: 16.5, windSpeed: 8.4,
             feelType: 2, feelNote: "腿部略沉", sportNote: "匀速有氧",
             pauses: nil, commentary: "  本周有氧底子扎实。  "
@@ -61,7 +61,7 @@ import Testing
                      date: a.date, distanceM: a.distanceM, distanceKm: a.distanceKm, durationS: a.durationS,
                      durationFmt: a.durationFmt, avgPaceSKm: a.avgPaceSKm, avgHr: a.avgHr, maxHr: a.maxHr,
                      avgCadence: a.avgCadence, avgStepLenCm: a.avgStepLenCm, trainingLoad: a.trainingLoad,
-                     strideTrainingDose: a.strideTrainingDose, trainType: a.trainType, thumbUrl: a.thumbUrl,
+                     strideTrainingDose: a.strideTrainingDose, trainType: a.trainType,
                      ascentM: a.ascentM, temperature: a.temperature, humidity: a.humidity,
                      feelsLike: a.feelsLike, windSpeed: a.windSpeed, feelType: a.feelType,
                      feelNote: a.feelNote, sportNote: a.sportNote, pauses: a.pauses, commentary: "   ")
@@ -80,7 +80,7 @@ import Testing
         a = Activity(labelId: a.labelId, name: nil, sportName: a.sportName, sportType: a.sportType,
                      date: a.date, distanceM: 0, distanceKm: 0, durationS: 0, durationFmt: nil,
                      avgPaceSKm: nil, avgHr: nil, maxHr: nil, avgCadence: nil, avgStepLenCm: nil,
-                     trainingLoad: nil, strideTrainingDose: nil, trainType: nil, thumbUrl: nil,
+                     trainingLoad: nil, strideTrainingDose: nil, trainType: nil,
                      ascentM: nil, temperature: 20, humidity: nil, feelsLike: 20, windSpeed: nil,
                      feelType: nil, feelNote: nil, sportNote: nil, pauses: nil, commentary: nil)
         let view = ActivityDetailModel.buildView(detail(activity: a))

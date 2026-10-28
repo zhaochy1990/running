@@ -32,8 +32,10 @@ public struct Activity: Decodable, Hashable, Sendable {
     /// STRIDE 自身计算的 PMC 训练剂量；列表页负荷展示优先。
     public let strideTrainingDose: Double?
     public let trainType: String?
-    /// 后端预渲染的路线缩略图 PNG 公开地址；室内活动或尚未生成时为 null。
-    public let thumbUrl: String?
+    /// 路线缩略图形状（devops#828）：[[x,y],...] 归一化 0..100 视窗、Y 已翻转
+    /// （屏幕坐标），列表行用 RouteThumbView 原生 Path 绘制；室内/无 GPS/尚未
+    /// 生成时为 null。
+    public let routeThumb: [[Double]]?
 
     // —— 详情页字段（list 端点可能不返回）——
     public let ascentM: Double?
@@ -68,7 +70,7 @@ public struct Activity: Decodable, Hashable, Sendable {
         trainingLoad: Double? = nil,
         strideTrainingDose: Double? = nil,
         trainType: String? = nil,
-        thumbUrl: String? = nil,
+        routeThumb: [[Double]]? = nil,
         ascentM: Double? = nil,
         temperature: Double? = nil,
         humidity: Double? = nil,
@@ -97,7 +99,7 @@ public struct Activity: Decodable, Hashable, Sendable {
         self.trainingLoad = trainingLoad
         self.strideTrainingDose = strideTrainingDose
         self.trainType = trainType
-        self.thumbUrl = thumbUrl
+        self.routeThumb = routeThumb
         self.ascentM = ascentM
         self.temperature = temperature
         self.humidity = humidity
@@ -128,7 +130,10 @@ public struct Activity: Decodable, Hashable, Sendable {
         case trainingLoad = "training_load"
         case strideTrainingDose = "stride_training_dose"
         case trainType = "train_type"
-        case thumbUrl = "thumb_url"
+        // thumb_url（后端预渲染 PNG）已弃用（devops#828，用户 2026-10-28 拍板）：
+        // 不再解码消费，列表缩略图改由 route_thumb 形状数据原生绘制；
+        // 后端停止预渲染 thumb_url 归 Epic #826 发版节奏统一（两端 adoption 后）。
+        case routeThumb = "route_thumb"
         case ascentM = "ascent_m"
         case temperature
         case humidity

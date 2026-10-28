@@ -720,10 +720,11 @@ private func blocks(_ items: [(steps: [WorkoutStep], repeatCount: Int)]) -> [Wor
     @Test func dosePrefersStrideValue() {
         let a = Activity(labelId: "l1", name: nil, sportName: "Trail Run", sportType: 1,
                          date: "2026-10-28", distanceM: 10_000, distanceKm: 10, durationS: 3600,
-                         trainingLoad: 50, strideTrainingDose: 66.6, thumbUrl: nil)
+                         trainingLoad: 50, strideTrainingDose: 66.6)
         let row = TrainingHomeModel.activityRow(a)
         #expect(row.name == "Trail Run")       // name 缺失回退 sport_name
         #expect(row.load == "66.6")            // STRIDE dose 优先
         #expect(row.distanceKm == "10.00")
+        #expect(row.routeThumb == nil)         // 今日活动行同款 route_thumb 透传（devops#828）
     }
 }

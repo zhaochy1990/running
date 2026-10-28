@@ -85,8 +85,6 @@ public struct ActivitiesView: View {
                         ForEach(group.rows) { row in
                             ActivityRowView(row: row) {
                                 app.router.push(.activityDetail(labelId: row.labelId))
-                            } onThumbError: {
-                                model.clearThumb(row.labelId)
                             }
                         }
                     }
@@ -138,14 +136,13 @@ public struct ActivitiesView: View {
     }
 }
 
-/// 单条活动行：缩略图（后端预渲染路线 PNG，加载失败回退运动图标）+
-/// 名称/日期/指标串 + 右侧负荷。
+/// 单条活动行：缩略图（route_thumb 形状数据原生 Path 绘制，无图回退运动
+/// 图标，devops#828）+ 名称/日期/指标串 + 右侧负荷。
 struct ActivityRowView: View {
 
     @Environment(AppModel.self) private var app
     let row: ActivitiesModel.ActivityRow
     let onTap: () -> Void
-    let onThumbError: () -> Void
 
     var body: some View {
         Button(action: onTap) {
@@ -197,19 +194,10 @@ struct ActivityRowView: View {
         ZStack {
             RoundedRectangle(cornerRadius: app.theme.current.radius(.sm))
                 .fill(app.theme.current.accentTint)
-            if let url = row.thumbURL {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    case .failure:
-                        // 加载失败回退运动图标（不留空白圆槽）；
-                        // onAppear 上报一次，model 记住该行不再加载。
-                        fallbackIcon.onAppear { onThumbError() }
-                    default:
-                        Color.clear
-                    }
-                }
+            if let route = row.routeThumb, route.count >= 2 {
+                // 原生 Path 绘制（devops#828）：route_thumb 形状 + 主题墨色，
+                // 无网络加载；nil/单点回退运动图标。
+                RouteThumbView(points: route, ink: app.theme.current.muted, size: 44)
             } else {
                 fallbackIcon
             }

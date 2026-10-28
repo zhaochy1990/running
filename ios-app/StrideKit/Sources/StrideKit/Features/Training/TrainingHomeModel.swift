@@ -380,7 +380,7 @@ public final class TrainingHomeModel {
             name: name,
             date: Shanghai.dateLabel(fromYMD: a.date),
             systemImage: SportDisplay.systemImage(forSportName: a.sportName),
-            thumbURL: a.thumbUrl.flatMap(URL.init(string:)),
+            routeThumb: a.routeThumb,
             distanceKm: a.distanceKm > 0 ? Fmt.km(a.distanceM) : "—",
             duration: Fmt.durationShort(a.durationS),
             pace: Fmt.pace(a.avgPaceSKm),
