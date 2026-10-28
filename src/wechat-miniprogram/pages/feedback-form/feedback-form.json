@@ -1,8 +1,8 @@
 {
   "navigationStyle": "custom",
   "navigationBarTitleText": "提交反馈",
-  "navigationBarBackgroundColor": "#07080A",
-  "navigationBarTextStyle": "white",
-  "backgroundColor": "#07080A",
-  "backgroundTextStyle": "light"
+  "navigationBarBackgroundColor": "#F7F9FB",
+  "navigationBarTextStyle": "black",
+  "backgroundColor": "#F7F9FB",
+  "backgroundTextStyle": "dark"
 }

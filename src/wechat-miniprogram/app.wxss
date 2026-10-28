@@ -95,7 +95,7 @@ page {
   font-weight: var(--font-weight-bold);
 }
 
-/* 空态卡片（各页通用，深色主题，自包含不依赖 .card） */
+/* 空态卡片（各页通用，自包含不依赖 .card；色值走主题令牌，随主题切换） */
 .empty-card {
   display: flex;
   flex-direction: column;

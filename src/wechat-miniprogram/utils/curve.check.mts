@@ -9,6 +9,7 @@ import {
   buildHrSeries,
   buildPaceSeries,
   colorOfBands,
+  CURVE_FALLBACK_COLOR,
   downsample,
   formatChartTime,
   lineColorStops,
@@ -78,7 +79,7 @@ eq(colorOfBands(dupPace, 320), '#37c85a', 'slow segment gets Z2 color, not Z1');
 eq(colorOfBands(hrBands, 120), '#4c8dff', 'color in first band');
 eq(colorOfBands(hrBands, 140), '#37c85a', 'color in middle band');
 eq(colorOfBands(hrBands, 200), '#f5c542', 'color above all bands → nearest');
-eq(colorOfBands([], 120), '#ffb3af', 'no bands → fallback color');
+eq(colorOfBands([], 120), CURVE_FALLBACK_COLOR, 'no bands → fallback color');
 
 // 曲线配色停靠点：同一档两停靠点，跨档同位硬切（0/0.5/1 对应 3 个采样）
 eq(

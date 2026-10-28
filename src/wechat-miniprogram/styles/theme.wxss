@@ -6,56 +6,58 @@
    令牌）时，自定义组件内 var() 的解析结果取决于两段 page{} 规则
    在合并样式表中的顺序，组件侧可能拿到 app.wxss 的旧值而非页面
    重定义值。令牌收敛为仅此一处定义后，该竞争自然消除。
-   换主题（P2 浅色 / 未来双主题）只改本文件与镜像常量 utils/theme.ts
+   换主题（未来双主题）只改本文件与镜像常量 utils/theme.ts
    （自检脚本 utils/theme.check.mts 对账两源一致）。
-   当前值为深色现值（P1 视觉零变化）。
+   当前值为浅色新值（devops#817 P2，数值源 = iOS LightTheme
+   Tokens.swift；深色旧值存档见 styles/theme-dark.wxss）。
    ============================================================ */
 page {
   /* 底色 */
-  --color-bg: #07080a; /* 页面 / 顶栏底 */
-  --color-bg-sunken: #0a0b0d; /* 次级底：tab 条 / 状态条 / 提示行 / 备注 */
-  --color-bg-dim: #0d0e10; /* 更暗底：已下架 / 已结束卡 */
-  --color-card: #101111; /* 卡片 / 计划卡 / 输入框底 */
-  --color-chip: #17181a; /* chip 底（散点深底 #121316/#1b1c1e 等就近归并） */
+  --color-bg: #f7f9fb; /* 页面 / 顶栏底 */
+  --color-bg-sunken: #eff2f6; /* 次级底：tab 条 / 状态条 / 提示行 / 备注 */
+  --color-bg-dim: #ebeef3; /* 更弱底：已下架 / 已结束卡 */
+  --color-card: #ffffff; /* 卡片 / 计划卡 / 输入框底 */
+  --color-chip: #eff2f6; /* chip 底（散点深底 #121316/#1b1c1e 等就近归并） */
 
-  /* 文字（暗 → 亮；muted 与 tertiary 深色下分立、浅色下收敛为两级灰，
+  /* 文字（深 → 浅；muted 与 tertiary 深色下分立、浅色下收敛为两级灰，
      保留语义槽位） */
-  --color-text-tertiary: #6a6a6c; /* 最弱：占位符 / 提示 / 箭头 */
-  --color-text-muted: #8a8a8c; /* 弱化说明 / 已结束 / 已下架 */
-  --color-text-secondary: #9c9c9d; /* 正文次级 / 日期 / meta */
-  --color-text-cool: #8a8f99; /* chip 文字（冷灰） */
-  --color-text-bright: #b9b8bc; /* 区块标题 / 空态标题 */
-  --color-band-other: #c9c3c4; /* 成绩横带「其他项目」 */
-  --color-field-text: #e8e8ea; /* 表单输入文字 */
-  --color-text-primary: #e3e2e5; /* 名称 / 标题 / 正文 */
-  --color-text-max: #ffffff; /* 最强强调文字（深色下写死 #fff 的大数字） */
+  --color-text-tertiary: #aab1bd; /* 最弱：占位符 / 提示 / 箭头 */
+  --color-text-muted: #aab1bd; /* 弱化说明 / 已结束 / 已下架 */
+  --color-text-secondary: #6b7280; /* 正文次级 / 日期 / meta */
+  --color-text-cool: #6b7280; /* chip 文字（冷灰） */
+  --color-text-bright: #4a5260; /* 区块标题 / 空态标题 */
+  --color-band-other: #6b7280; /* 成绩横带「其他项目」 */
+  --color-field-text: #2c3340; /* 表单输入文字 */
+  --color-text-primary: #2c3340; /* 名称 / 标题 / 正文 */
+  --color-text-max: #2c3340; /* 最强强调文字（深色下写死 #fff 的大数字） */
   --color-on-accent: #ffffff; /* 实心主题色上的文字 */
 
   /* 主题色（藕粉）——改主题色只动这一组；
      透明度变体用 -rgb 组合：rgba(var(--color-accent-rgb), α) */
   --color-accent: #ff6363;
   --color-accent-rgb: 255, 99, 99;
-  --color-accent-light: #ff8f8f; /* 倒计时 / 高亮提示 */
-  --color-accent-pale: #ffb3af; /* 顶栏标题 / 成绩时长 / 曲线兜底 */
-  --color-accent-pale-rgb: 255, 179, 175;
-  --color-accent-deep: #ff8f8f; /* 白底 accent 文字统一阶（P2 → #d04545） */
-  --color-accent-tint: rgba(255, 99, 99, 0.12); /* accent 浅衬底：胶囊 / chip / 用户气泡底 */
+  --color-accent-light: #d04545; /* 倒计时 / 高亮提示（浅底下 accent 文字统一加深阶） */
+  --color-accent-pale: #d04545; /* 顶栏标题 / 成绩时长 / 曲线兜底 */
+  --color-accent-pale-rgb: 208, 69, 69;
+  --color-accent-deep: #d04545; /* 白底 accent 文字统一阶（= iOS accentDeep） */
+  --color-accent-tint: #ffecec; /* accent 浅衬底：胶囊 / chip / 用户气泡底（= iOS accentTint） */
 
-  /* 白 overlay（深色下发丝线 / 弱分隔 / 提亮层；浅色主题下整体翻转） */
-  --color-overlay-rgb: 255, 255, 255;
-  --color-border-soft: rgba(255, 255, 255, 0.05); /* 弱分隔线 */
-  --color-hairline: rgba(255, 255, 255, 0.08); /* 边线 / 分隔 */
+  /* 黑 overlay（浅色下发丝线 / 弱分隔 / 压暗层；深色下为白 overlay，随主题整体翻转） */
+  --color-overlay-rgb: 0, 0, 0;
+  --color-border-soft: #ebeef3; /* 弱分隔线 */
+  --color-hairline: #dfe3ea; /* 边线 / 分隔 */
 
-  /* 顶栏副标题暖粉（各页共享的 rgba(225,191,188,α)） */
-  --color-header-meta-rgb: 225, 191, 188;
+  /* 顶栏副标题（深色下暖粉 rgba(225,191,188,α)，浅色下暖粉在浅底不可读，
+     收敛为 iOS foregroundSoft 同阶灰蓝，α 用法不变） */
+  --color-header-meta-rgb: 74, 82, 96;
 
   /* 状态徽章 / 状态色（透明度变体用 -rgb 组合） */
-  --color-success: #5fc992; /* 加载环 / 已确认 / 勾选 */
-  --color-success-rgb: 95, 201, 146;
-  --color-success-light: #7ec9a6; /* 半马横带 */
-  --color-warning: #e8c07d; /* 已中签 / 想跑 / PB 金 */
-  --color-warning-rgb: 232, 192, 125;
-  --color-info: #8fb8e8; /* 已报名蓝 */
-  --color-info-rgb: 143, 184, 232;
-  --color-danger: #ff5252; /* 危险 / 删除 / 心率强调 */
+  --color-success: #00a85a; /* 加载环 / 已确认 / 勾选 */
+  --color-success-rgb: 0, 168, 90;
+  --color-success-light: #00a85a; /* 半马横带（浅色下与 success 同值收敛） */
+  --color-warning: #d89a3d; /* 已中签 / 想跑 / PB 金 */
+  --color-warning-rgb: 216, 154, 61;
+  --color-info: #4c8dff; /* 已报名蓝 */
+  --color-info-rgb: 76, 141, 255;
+  --color-danger: #d74331; /* 危险 / 删除 / 心率强调 */
 }

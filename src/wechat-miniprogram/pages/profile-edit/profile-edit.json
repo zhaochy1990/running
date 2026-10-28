@@ -1,7 +1,7 @@
 {
   "navigationStyle": "custom",
   "navigationBarTitleText": "个人资料",
-  "navigationBarBackgroundColor": "#07080A",
-  "navigationBarTextStyle": "white",
-  "backgroundColor": "#07080A"
+  "navigationBarBackgroundColor": "#F7F9FB",
+  "navigationBarTextStyle": "black",
+  "backgroundColor": "#F7F9FB"
 }
