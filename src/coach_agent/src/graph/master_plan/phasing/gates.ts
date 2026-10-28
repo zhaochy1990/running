@@ -1,12 +1,25 @@
 import type { PhaseEvidence } from "./evidence.js";
 import type { PhaseCanonical, PhaseDivisionIntent } from "./intent.js";
 import { EXPECTED_BLOCK_MODE, MIN_PHASE_WEEKS, PHASE_ORDER, phaseRefMatches } from "./intent.js";
-import { bandLoReachabilityIssues } from "./load/reachability.js";
+import { bandLoReachabilityIssues, type ReachabilitySeed } from "./load/reachability.js";
 
 /**
  * 确定性结构门（devops#782 D 节，daniels.md §2.3）：LLM 输出的终检。
  * 违规 → 带违规清单重试 ≤2 次 → 落 T 兜底（generate.ts 编排）。
  */
+
+/**
+ * I12 种子的单一真源（#813）：I12 门与 T 兜底的 lo 夹持（fallback.ts
+ * clampBuildLoToEnvelope）必须共用同一口径——两侧劈叉会让夹持对不上门，
+ * 「兜底构造保证合法」契约静默破洞。
+ */
+export function reachabilitySeed(evidence: PhaseEvidence): ReachabilitySeed {
+  return {
+    seedAvg4Km: evidence.habitual.avg4_km,
+    recoveryLevelKm: evidence.habitual.week_km,
+    acwrApplicable: evidence.habitual.acwr_applicable,
+  };
+}
 
 export interface GateCheck {
   id: string;
@@ -163,11 +176,7 @@ export function validatePhaseIntent(intent: PhaseDivisionIntent, runwayWeeks: nu
   // I12 带下限可达（devops#793 F 节）：I8 只校验上限帽；lo 是否在该布局下 ACWR
   // 可达（前置 recovery 长度、伤退低起点都会决定可达性）在此校验。
   // L3 带贴合门的爬坡豁免兜底（低于 lo 的逐周递增/帽压制仍是合法形态）。
-  const unreachable = bandLoReachabilityIssues(intent, {
-    seedAvg4Km: evidence.habitual.avg4_km,
-    recoveryLevelKm: evidence.habitual.week_km,
-    acwrApplicable: evidence.habitual.acwr_applicable,
-  });
+  const unreachable = bandLoReachabilityIssues(intent, reachabilitySeed(evidence));
   checks.push({ id: "I12 带下限可达", pass: unreachable.length === 0, detail: unreachable.join(";") || "各阶段 lo 均可达" });
 
   return checks;
