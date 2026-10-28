@@ -50,6 +50,7 @@ import type {
 } from '../../types/health';
 import type { Activity } from '../../types/activity';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
+import { theme } from '../../utils/theme';
 
 type Chart = InstanceType<typeof UCharts>;
 
@@ -405,7 +406,7 @@ function buildLoadStats(cur: StrideTrainingLoadRecord | null): LoadStat[] {
       color: classifyForm(cur.form, cur.chronic_load) === 'overload' ? '#d32f2f' : '#00a85a',
     },
     { label: '负荷比', value: cur.load_ratio != null ? cur.load_ratio.toFixed(2) : '—', color: '#7a4dd4' },
-    { label: '状态', value: loadStateLabel(cur.load_ratio), color: '#e3e2e5' },
+    { label: '状态', value: loadStateLabel(cur.load_ratio), color: theme.textPrimary },
   ];
 }
 
