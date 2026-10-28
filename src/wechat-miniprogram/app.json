@@ -31,18 +31,18 @@
     "pages/declaration/declaration"
   ],
   "window": {
-    "backgroundTextStyle": "light",
-    "navigationBarBackgroundColor": "#07080A",
+    "backgroundTextStyle": "dark",
+    "navigationBarBackgroundColor": "#F7F9FB",
     "navigationBarTitleText": "STRIDE",
-    "navigationBarTextStyle": "white",
-    "backgroundColor": "#07080A"
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#F7F9FB"
   },
   "tabBar": {
     "custom": true,
-    "color": "#9a8f90",
-    "selectedColor": "#ff6363",
-    "backgroundColor": "#121316",
-    "borderStyle": "black",
+    "color": "#6B7280",
+    "selectedColor": "#FF6363",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "white",
     "list": [
       {
         "pagePath": "pages/coach/coach",

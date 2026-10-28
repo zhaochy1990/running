@@ -1,5 +1,5 @@
 <!-- Onboarding 单页三步：资料（必填） → 绑表（可跳过） → 同步（可跳过）
-     深色 STRIDE 主题，与登录页同一套配色（#07080A / #141517 / #FF6363）。 -->
+     主题走全局令牌（styles/theme.wxss，P2 起为浅色），与登录页同一套配色。 -->
 <view class="ob-page">
   <!-- 步骤指示：只在流程中显示，loading / ready 不显示 -->
   <view wx:if="{{step === 'profile' || step === 'watch' || step === 'sync'}}" class="ob-steps">

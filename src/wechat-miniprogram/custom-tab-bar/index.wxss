@@ -1,5 +1,6 @@
 /* ============================================================
    自定义底部导航栏 —— 对应 design/today.html 的 4 tab 设计
+   （P2 浅色：白底 + 顶部弱分隔线 + 灰字 / 藕粉激活色）
    ============================================================ */
 
 .tabbar {
@@ -13,8 +14,8 @@
   height: 120rpx;
   box-sizing: content-box;
   padding-bottom: env(safe-area-inset-bottom);
-  background: var(--color-chip);
-  border-top: 1rpx solid rgba(var(--color-overlay-rgb), 0.06);
+  background: var(--color-card);
+  border-top: 1rpx solid var(--color-border-soft);
 }
 
 .tab-item {
@@ -40,7 +41,7 @@
   font-size: 19rpx;
   line-height: 30rpx;
   font-weight: 500;
-  color: #9a8f90;
+  color: var(--color-text-secondary);
 }
 
 .tab-item--active .tab-item__text {
