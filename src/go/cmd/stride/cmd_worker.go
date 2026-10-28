@@ -326,7 +326,9 @@ func newTSBlobStore(cfg config.TSBlob) (tsstore.Store, error) {
 // `watch_sync` runs a user's watch-data sync (ADR 0011); `calibration` computes
 // the athlete baseline and `compute` derives load/PMC/PBs from synced data,
 // mode-aware (ADR 0020); `route_thumbnails` renders outdoor activities into
-// route PNGs in COS, with `route_thumbnails_backfill` doing the all-history scan;
+// route PNGs in COS, with `route_thumbnails_backfill` doing the all-history scan
+// and `route_thumbnails_shape_backfill` the compute-only route_thumb_json fill
+// (devops#830, no PNG/COS);
 // `race_calendar_sync` mirrors the World Athletics calendar (ccConfig),
 // preceded by `fetch_wa_api_key` key discovery (waClient); `chinaath_race_calendar_sync`
 // mirrors the 中国田协 catalogue (caConfig); `homecity_recompute` refreshes
@@ -348,6 +350,9 @@ func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *stor
 	// different behaviour — only its own catalog entry to be triggered on demand.
 	reg.MustRegister(routethumbnails.JobType, routethumbnails.New(store, cosClient))
 	reg.MustRegister(routethumbnails.BackfillJobType, routethumbnails.New(store, cosClient))
+	// The shape-only variant (devops#830) backfills route_thumb_json without the
+	// PNG/COS half; it deliberately takes no COS client.
+	reg.MustRegister(routethumbnails.ShapeBackfillJobType, routethumbnails.NewShapeBackfill(store))
 	// race_calendar_sync pipeline: discover the current WA API key (so a
 	// rotation self-heals), then mirror the calendar with the discovered or the
 	// configured key.

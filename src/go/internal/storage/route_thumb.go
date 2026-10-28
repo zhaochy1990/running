@@ -70,3 +70,46 @@ func (s *Store) SetActivityRouteThumb(ctx context.Context, userID, labelID, thum
 			"route_thumb_url":  thumbURL,
 		}).Error
 }
+
+// RouteThumbShapeCandidates returns the label IDs of a user's activities that
+// have GPS but no stored route_thumb_json — the shape-channel gap the
+// compute-only backfill (devops#830) fills. The predicate is deliberately
+// different from RouteThumbCandidates': it keys on route_thumb_json, not
+// route_thumb_url, because the two columns have different histories. A row can
+// carry a URL but no polyline (rendered before the sync pipeline started
+// writing both), and once client-side vector drawing replaces the PNG that row
+// still needs its shape. Like the PNG candidate query it narrows itself: a
+// filled row drops out permanently, so a rerun is a no-op, and the has_gps
+// filter keeps no-trace activities out of every future run.
+func (s *Store) RouteThumbShapeCandidates(ctx context.Context, userID string) ([]string, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	if err := s.db.WithContext(ctx).
+		Model(&Activity{}).
+		Where("user_id = ?", uid).
+		Where("has_gps = ?", true).
+		Where("route_thumb_json IS NULL").
+		Order("date DESC").
+		Pluck("label_id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("storage: route thumb shape candidates: %w", err)
+	}
+	return ids, nil
+}
+
+// SetActivityRouteThumbJSON fills in only the polyline column of one activity,
+// leaving route_thumb_url untouched: the shape backfill (devops#830) computes
+// geometry and never renders or uploads, so a legacy PNG URL that already
+// exists must survive the write.
+func (s *Store) SetActivityRouteThumbJSON(ctx context.Context, userID, labelID, thumbJSON string) error {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return err
+	}
+	return s.db.WithContext(ctx).
+		Model(&Activity{}).
+		Where("user_id = ? AND label_id = ?", uid, labelID).
+		Update("route_thumb_json", thumbJSON).Error
+}

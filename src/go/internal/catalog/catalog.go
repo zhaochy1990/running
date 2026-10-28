@@ -49,6 +49,11 @@ const (
 	// JobTypeRouteThumbnailsBackfill is the internal one-time all-history scan
 	// that fills in thumbnails for activities synced before the feature existed.
 	JobTypeRouteThumbnailsBackfill = "route_thumbnails_backfill"
+	// JobTypeRouteThumbnailsShapeBackfill is the internal compute-only backfill
+	// (devops#830): it fills activities.route_thumb_json for historical rows
+	// that have GPS but no stored shape — no PNG is rendered and COS is not
+	// touched, unlike route_thumbnails_backfill whose job is the PNG URL.
+	JobTypeRouteThumbnailsShapeBackfill = "route_thumbnails_shape_backfill"
 	// JobTypeRaceCalendar syncs the external World Athletics competition
 	// calendar (label road races) into the race_calendar table. It is a system
 	// job (no subject user): internal-only, the final step of the
@@ -180,6 +185,13 @@ func Jobs() []JobSpec {
 			Description:   "All-history route-thumbnail backfill for one athlete: fills in activities that have no thumbnail yet. Pass {\"force\":true} to also regenerate activities that already have one, which is what a rendering-algorithm change needs — the default selection skips finished work on purpose. Internal-only.",
 			InputSchema:   json.RawMessage(`{"type":"object","properties":{"force":{"type":"boolean","default":false,"description":"Regenerate activities that already have a thumbnail instead of only filling the gaps. Object keys are per-activity, so this overwrites in place."}},"additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{"force":true}`),
+		},
+		{
+			Type:          JobTypeRouteThumbnailsShapeBackfill,
+			UserInitiable: false,
+			Description:   "Compute-only shape backfill (devops#830) for one athlete: recomputes the route_thumb_json polyline of every activity that has GPS but no stored shape, without rendering PNGs or touching COS. Idempotent — filled rows drop out of the candidate set, so a rerun is a no-op. Internal-only.",
+			InputSchema:   json.RawMessage(`{"type":"object","description":"No input fields; operates on the job's user_id (subject UUID).","additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{}`),
 		},
 		{
 			Type:          JobTypeCompute,
