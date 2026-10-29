@@ -140,6 +140,9 @@ const VALLEY_RATIO = 1.02;
 const P6_REPAIR_PASSES = 2;
 /** E 分钟取整粒度（30s）。 */
 const E_MINUTE_ROUND_S = 30;
+/** strides 触感块（E 槽位 strides=true 时物化）：4×100m。 */
+const STRIDES_COUNT = 4;
+const STRIDE_M = 100;
 
 const round2 = (x: number) => Math.round(x * 100) / 100;
 
@@ -201,9 +204,11 @@ function ePurpose(flavor: EFlavor, minutes: number, strides: boolean, slotPurpos
 function materializeE(slot: ESlotCourse, flavor: EFlavor, minutes: number, date: string, row: ContentWeekRow, raceName: string | null): RunWorkout {
   const [lo, hi] = row.zones.easy ?? [null, null];
   const eMid = easyMidOf(row);
+  const stridesM = slot.strides ? STRIDES_COUNT * STRIDE_M : 0;
   let seconds = Math.max(E_MINUTE_ROUND_S, Math.round((minutes * 60) / E_MINUTE_ROUND_S) * E_MINUTE_ROUND_S);
-  // LR 前日轻量帽按 km 终钳（30s 取整在慢带上可越 8km——P3 门按课实际里程判）
-  if (flavor === "lrEve") seconds = Math.min(seconds, Math.floor((LR_EVE_MAX_KM * eMid) / E_MINUTE_ROUND_S) * E_MINUTE_ROUND_S);
+  // LR 前日轻量帽按课整程 km 终钳（30s 取整可越帽；strides 里程计入帽——#825 帽
+  // 判定=P3 按课实际里程（含 strides），钳制不扣它就会自产 8.4km>8 假违规）
+  if (flavor === "lrEve") seconds = Math.min(seconds, Math.floor(((LR_EVE_MAX_KM - stridesM / 1000) * eMid) / E_MINUTE_ROUND_S) * E_MINUTE_ROUND_S);
   const easy = { kind: "pace_s_km" as const, low: lo, high: hi };
   return normalizeRunWorkout({
     name: `E ${Math.round(seconds / 60)}min${slot.strides ? "+strides" : ""}`,
@@ -216,11 +221,11 @@ function materializeE(slot: ESlotCourse, flavor: EFlavor, minutes: number, date:
       ...(slot.strides
         ? [
             {
-              repeat: 4,
+              repeat: STRIDES_COUNT,
               steps: [
                 {
                   step_kind: "work" as const,
-                  duration: { kind: "distance_m" as const, value: 100 },
+                  duration: { kind: "distance_m" as const, value: STRIDE_M },
                   target: { kind: "open" as const, low: null, high: null },
                   note: null,
                   hr_cap_bpm: null,
@@ -397,13 +402,14 @@ function placeNormalWeek(
 // ── E 实例化与 C1 收敛 ──
 
 /**
- * 落位 flavor（判序=validator C9 同序）：周六=LR 前日 km 帽（再生周亦然——
- * validator 的 lrEve 分支在 regen 分支之前）；赛周激活窗=shake；再生周全短带；
- * 质量课间隔日=短带。
+ * 落位 flavor（判序=validator C9 同序）：赛周激活窗=shake 优先于周六——赛周无 LR，
+ * 比赛前的周六 E 是赛前激活不是「LR 前日」（#824 抽查发现：否则 purpose 会生成
+ * 「为明日长跑蓄力」而明日是比赛）；周六=LR 前日 km 帽（再生周亦然——validator
+ * 的 lrEve 分支在 regen 分支之前）；再生周全短带；质量课间隔日=短带。
  */
 function eFlavorOf(di: number, qualityWds: Set<number>, row: ContentWeekRow, raceWd: number | null): EFlavor {
-  if (di === 5) return "lrEve";
   if (raceWd != null && di < raceWd && raceWd - di <= 3) return "shake";
+  if (di === 5) return "lrEve";
   if (row.phase === "recovery") return "regen";
   const between = [...qualityWds].some((a) => a < di) && [...qualityWds].some((b) => b > di);
   return between ? "interval" : "normal";

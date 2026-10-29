@@ -29,10 +29,12 @@ const easyBand = (row: ContentWeekRow): [number, number] => {
   if (lo == null || hi == null) throw new Error(`templateFallback: 第${row.week}周 easy 带缺失`);
   return [lo, hi];
 };
-const mBand = (row: ContentWeekRow): [number, number] => {
+/** M 主体窄带（#824/C12）：带中位 ±5s——与教义同口径，整带复制会挂 C12。 */
+const mNarrow = (row: ContentWeekRow): [number, number] => {
   const [lo, hi] = row.zones.m ?? [null, null];
   if (lo == null || hi == null) throw new Error(`templateFallback: 第${row.week}周 m 带缺失`);
-  return [lo, hi];
+  const mid = (lo + hi) / 2;
+  return [Math.round(mid - 5), Math.round(mid + 5)];
 };
 
 const course = (name: string, type: StructuredCourse["type"], purpose: string, note: string | null, blocks: V1Block[]): StructuredCourse => ({
@@ -72,7 +74,7 @@ function raceWeekCourses(row: ContentWeekRow, input: ContentGeneratorInput): Wee
             repeat: 1,
             steps: [
               step("warmup", { kind: "time_s", value: 15 * 60 }, pace(easyBand(row))),
-              step("work", { kind: "distance_m", value: Math.round(alloc.activation.bodyKm * 1000) }, pace(mBand(row))),
+              step("work", { kind: "distance_m", value: Math.round(alloc.activation.bodyKm * 1000) }, pace(mNarrow(row))),
             ],
           },
           { repeat: 4, steps: [step("work", { kind: "distance_m", value: 100 }, { kind: "open", low: null, high: null })] },
@@ -99,7 +101,7 @@ function normalWeekCourses(row: ContentWeekRow, input: ContentGeneratorInput, re
     ),
   ];
   for (let i = 0; i < alloc.qualitySessions; i++) {
-    const m = mBand(row);
+    const m = mNarrow(row);
     courses.push(
       course(
         `M ${r1(alloc.mBodyKm)}km`,
@@ -120,15 +122,13 @@ function normalWeekCourses(row: ContentWeekRow, input: ContentGeneratorInput, re
     );
   }
   for (const e of alloc.eSessions) {
+    // purpose 一律 null（#824 拍板）：说明由 L4b ePurpose 按实际落位生成——构造
+    // 侧的 lrEve/regeneration 提示与排位结果可能错位，不自写
     courses.push({
       kind: "e-slot",
       band: e.intervalDay || e.lrEve || regeneration ? "interval" : "normal",
       strides: false,
-      purpose: e.lrEve
-        ? `LR 前日轻量：短 E（≤8km）保持腿部活性，为明日长跑蓄力，不追距离。`
-        : regeneration
-          ? `恢复周轻松课：E 配速促进恢复，保持腿部活性，不追强度。`
-          : null,
+      purpose: null,
     });
   }
   return courses;

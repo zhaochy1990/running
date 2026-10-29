@@ -16,11 +16,13 @@ export const CONTENT_DOCTRINE = `你是丹尼尔斯训练法（Daniels' Running 
 - weeks[]：每周 {week_no, courses[]}；周号必须与输入 week_rows 完全一致、不缺不漏。
 - 课程两形态（无 day 字段——你不决定星期几）：
   1) 结构课（质量课/长跑）：{name, type（M/T/I/R/LR 主刺激声明）, purpose（必填，写实义：练什么/为什么/本节课在本周的位置）, note（执行要点，可 null）, blocks}。
-  2) E 槽位（有氧课不写结构）：{type:"E", band:"normal"|"interval"（normal=普通 E 日 60-90min、interval=质量课间隔日/轻量日 30-60min）, strides（true=加 4×100m 快步跑触感，默认 false）, purpose（可选，缺省自动生成）}。
+  2) E 槽位（有氧课不写结构）：{type:"E", band:"normal"|"interval"（normal=普通 E 日 60-90min、interval=质量课间隔日/轻量日 30-60min）, strides（true=加 4×100m 快步跑触感，默认 false）}——不写 purpose：按实际落位（间隔日/LR 前日/赛前激活/普通日）由调度器生成对应说明，自写会与落位错位。
 - blocks[].steps[] 每步：step_kind（warmup/work/recovery/cooldown/rest）+ duration + target + note + hr_cap_bpm。
 - rest=不在跑（站定/走动）：唯一写法=独立 rest step；不用步后 rest 字段。
-- 组间慢跑恢复=recovery 步（target=open 无配速处方，duration 用 distance_m 如 400m jog——open+time 的步里程不可知，会让整周 C1 挂「里程不可知」）；有配速处方的慢段（变速课慢段）=work 步+easy target——判别式：有配速处方的慢跑是 work@easy，open 的组间慢跑才是 recovery。
+- 组间慢跑恢复=recovery 步（target=open 无配速处方，duration 用 distance_m 如 400m jog 或 time_s 如 90s——time 形态的里程按 E 带中点折算计入周量，不再挂「里程不可知」）；有配速处方的慢段（变速课慢段）=work 步+easy target——判别式：有配速处方的慢跑是 work@easy，open 的组间慢跑才是 recovery。
 - work 涵盖一切有配速处方的跑步主体（含 E 课主体）；warmup/cooldown=课头/课尾结构性慢跑段。
+- 质量段配速处方=窄带（#824）：锚目标带中位 ±3~5s/km，不是整条投影带——带宽 15s+ 的处方会让运动员跑慢端时刺激实际滑到下一带；段长可微调（短段偏快 3~5s、长段偏慢 3~5s）。E/热身/放松/LR 主体照用 E 全带，不受此限。
+- 阶梯/金字塔/多段结构课（#824）：每个不同时长的 work 段独立配速处方、沿基带做梯度——最短段≈带快端、最长段≈带慢端；全段同配速=形状像但刺激是等长间歇，算违规。等长间歇（同距同配速×N，如 8×800）不受此限。
 
 【量纲教义（规则⑨）】
 - E 课/热身/放松/组间慢跑：duration 用 time_s（处方以时间为量纲），target 给 E 配速带；距离由配速派生，不要自己换算成 distance_m。
@@ -41,7 +43,7 @@ export const CONTENT_DOCTRINE = `你是丹尼尔斯训练法（Daniels' Running 
 9. 时间量纲（规则⑨）：见上——E/热身/放松/组间慢跑 time_s，T/I/R/M 距离×组，LR 距离。
 
 【校验清单（内容层负责的，全部要过）】
-C1 周量守恒（E 带区间可行性）｜C2 LR 唯一且=long_run_km ±1.5（赛周 0 节）｜C3 质量课数=quality_sessions（含 LR 内嵌尾段；比赛课与赛周 M 激活课各算一节）｜C5 配速谱内（质量步落质量谱、E 步落 E 带）｜C6 note 语义（纯 E 课无 strides→note=null）｜C7 质量课热身/放松在场（比赛课与 LR 豁免）。
+C1 周量守恒（E 带区间可行性）｜C2 LR 唯一且=long_run_km ±1.5（赛周 0 节）｜C3 质量课数=quality_sessions（含 LR 内嵌尾段；比赛课与赛周 M 激活课各算一节）｜C5 配速谱内（质量步落质量谱、E 步落 E 带）｜C6 note 语义（纯 E 课无 strides→note=null）｜C7 质量课热身/放松在场（比赛课与 LR 豁免）｜C11 分段配速梯度（不同时长的质量段不得全同配速；等长间歇豁免）｜C12 质量段配速宽度 ≤10s（带中位 ±3~5s 窄带；E/LR/比赛课豁免）。
 （C4 训练日、C9 E 时长分层按落位判定——归排位段，不在本清单。）
 
 【其它】
@@ -163,7 +165,7 @@ export function buildContentPayload(input: ContentGeneratorInput): Record<string
       goal_pace: `${fmtPace(race.goalPaceSKm)}/km`,
       goal_pace_s_per_km: race.goalPaceSKm,
     },
-    note: "课程不含 day 字段——周内落位由调度器决定（LR 周日、质量课隔日、间隔日短 E）",
+    note: "课程不含 day 字段、E 槽位不写 purpose——周内落位与 E 课说明均由调度器按实际位置生成（LR 周日、质量课隔日、间隔日短 E）",
   };
 }
 
@@ -173,7 +175,7 @@ export function buildContentMessages(input: ContentGeneratorInput, retry?: { pre
   if (retry) {
     user += `\n\n你上一版课包违反了以下校验，逐条修正后重新输出完整 weeks（其余保持不变）：\n${retry.violations
       .map((v, i) => `${i + 1}. ${v}`)
-      .join("\n")}\n上一版输出（仅供对照，不要原样重复）：${JSON.stringify(retry.previous).slice(0, 6000)}`;
+      .join("\n")}\n上一版输出（仅供对照，不要原样重复）：${JSON.stringify(retry.previous ?? null).slice(0, 6000)}`;
   }
   return [
     ["system", CONTENT_DOCTRINE],

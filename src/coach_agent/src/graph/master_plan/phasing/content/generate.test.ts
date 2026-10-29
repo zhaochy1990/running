@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ContentGeneratorInput, ContentWeekRow } from "./doctrine.js";
+import { buildContentMessages, type ContentGeneratorInput, type ContentWeekRow } from "./doctrine.js";
 import { templateFallback } from "./fallback.js";
 import { type ContentDraft, ContentDraftSchema, generateWeekContent } from "./generate.js";
 
@@ -31,7 +31,9 @@ function fallbackAsDraft(input: ContentGeneratorInput, dropWeeks = 0): ContentDr
       week_no: week,
       courses: courses.map((course) =>
         course.kind === "e-slot"
-          ? { type: "E", band: course.band, strides: course.strides, purpose: course.purpose }
+          ? // 故意保留 purpose 传参：E-slot schema 已删该字段（#824），此处隐式钉
+            // zod strip 语义（多余字段静默剥除、旧形态 draft 不炸）
+            { type: "E", band: course.band, strides: course.strides, purpose: course.purpose }
           : { name: course.name, type: course.type, purpose: course.purpose, note: course.note, blocks: course.blocks },
       ),
     })),
@@ -135,4 +137,14 @@ test("入口断言：空 rows / 带缺失 / 非赛周 lr=null / q>2 / 比赛日�
   // #825：周一/周二比赛——M 激活窗（赛前 2-3 天）跨周不可表达，门口拒绝（C3 不再结构性无解）
   await assert.rejects(() => generateWeekContent({ ...INPUT, race: { ...INPUT.race, date: "2026-10-26" } }, model), /周一\/周二/);
   await assert.rejects(() => generateWeekContent({ ...INPUT, race: { ...INPUT.race, date: "2026-10-27" } }, model), /周一\/周二/);
+});
+
+test("retry 载荷防御（#824 修复2）：首试 parseError 后 previous=undefined 不炸重试链——违规清单照常送达", () => {
+  // 首试模型调用/解析失败时 generateWeekContent 不落 lastDraft（undefined）——
+  // 修复前 JSON.stringify(undefined)=undefined → .slice 抛 TypeError，真模型路径
+  // 三次尝试连环崩成 parseError（违规清单永远送不到模型手里）
+  const messages = buildContentMessages(INPUT, { previous: undefined, violations: ["第2周缺失（week_rows 每周都要输出）"] });
+  assert.equal(messages.length, 2);
+  assert.match(messages[1]![1] as string, /第2周缺失/);
+  assert.match(messages[1]![1] as string, /null/); // previous 归一为字面量 null，不再抛错
 });

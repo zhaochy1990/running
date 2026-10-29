@@ -36,11 +36,11 @@ const StructuredDraftSchema = z.object({
   note: z.string().nullish(),
   blocks: z.array(BlockDraftSchema).min(1),
 });
+/** E 槽位：不收 purpose（#824 拍板）——模型自写会与实际落位错位，说明统一由 L4b ePurpose 按位置生成；多余字段 schema 静默剥除。 */
 const ESlotDraftSchema = z.object({
   type: z.literal("E"),
   band: z.enum(["normal", "interval"]),
   strides: z.boolean().nullish(),
-  purpose: z.string().nullish(),
 });
 const SessionDraftSchema = z.union([StructuredDraftSchema, ESlotDraftSchema]);
 export const ContentDraftSchema = z.object({
@@ -105,7 +105,7 @@ function normalizeDraft(draft: ContentDraft, input: ContentGeneratorInput): Week
       week: week.week_no,
       courses: week.courses.map((course): WeekBag["courses"][number] =>
         course.type === "E"
-          ? { kind: "e-slot", band: course.band, strides: course.strides ?? false, purpose: course.purpose ?? null }
+          ? { kind: "e-slot", band: course.band, strides: course.strides ?? false, purpose: null }
           : {
               kind: "course",
               name: course.name,

@@ -26,6 +26,26 @@ export interface PaceZones {
   r: PaceBand | null;
 }
 
+/** E 带中点（s/km）：duration↔km 折算锚（easy 缺失返回 null——折算不可知）。 */
+export function easyMidOfZones(zones: PaceZones): number | null {
+  const [lo, hi] = zones.easy ?? [null, null];
+  return lo != null && hi != null ? (lo + hi) / 2 : null;
+}
+
+/**
+ * 步里程（km）：distance 步直读；time 步按配速区间中点派生（⑨量纲：E/REC 处方
+ * duration 为主、距离=时长×带配速派生）。recovery 步（组间慢跑）的 time+open
+ * 处方按 E 带中点折算计入（#824 拍板：组间慢跑计有氧公里——量纲与分段核算
+ * 一致；eMid 缺失返回 null）。其余 open duration / time+open → null（不可知不猜）。
+ * validators.sessionKm 与 schedule/dose.courseDose 共用本判定（单一折算口径源）。
+ */
+export function stepKmOf(step: WorkoutStep, eMidSPerKm?: number | null): number | null {
+  if (step.duration.kind === "distance_m") return step.duration.value / 1000;
+  if (step.duration.kind === "time_s" && step.target.kind === "pace_s_km") return step.duration.value / ((step.target.low + step.target.high) / 2);
+  if (step.step_kind === "recovery" && step.duration.kind === "time_s" && eMidSPerKm != null && eMidSPerKm > 0) return step.duration.value / eMidSPerKm;
+  return null;
+}
+
 /** 质量谱慢端容差（s/km）：M 带上沿 +10（判定表拍板锚点）。 */
 const QUALITY_SLOW_TOL_S = 10;
 /** 有氧步 E 带容差（s/km）：±10。 */

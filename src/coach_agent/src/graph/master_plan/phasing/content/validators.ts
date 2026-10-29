@@ -1,14 +1,17 @@
 import type { RunWorkout, RunWorkoutType } from "@stride/contract";
 import {
+  easyMidOfZones,
   hasCooldown,
   hasQualitySegment,
   hasStrideStep,
   hasWarmup,
   isAerobicStep,
+  isQualityStep,
   isStrideStep,
   mainQualitySegment,
   type PaceZones,
   qualitySpectrum,
+  stepKmOf,
 } from "./derive.js";
 
 /**
@@ -43,6 +46,8 @@ export interface WeekContentInput {
   requirePurpose?: boolean;
   /** C9 开关（默认 true=按⑨量纲校验 E 课时长分层）；⑨ 之前的存量样本（spike 迁移）传 true 豁免。 */
   legacyEDuration?: boolean;
+  /** C11/C12 开关（默认 true=按 #824 校验分段梯度与配速宽度）；#824 之前的存量样本（spike 迁移=真实教练基线全带处方）传 true 豁免。 */
+  legacyQualityPace?: boolean;
   /** 再生周（L3 canonical=recovery）：周内无质量课，E 全走间隔日短带（⑦恢复端）——低量恢复周与 C1 的可行性调和（injury 周可低至 10km）。 */
   regeneration?: boolean;
   /**
@@ -81,21 +86,25 @@ export const LR_EVE_MAX_KM = 8;
 const LR_EVE_KM_TOL = 0.1;
 /** 赛周激活课豁免窗：比赛日前 1-3 天（①唯一例外；weekday 差 ≤3 且不跨周）——窗内豁免下限（短激活可 <30min）但仍受短带上限 60min 约束（①原文=「短」E 激活）。 */
 const RACE_WEEK_ACTIVATION_DAYS = 3;
+/** C12 质量段配速处方宽度上限（s/km，#824）：带中位 ±3~5s 的窄带——整条投影带复制（15s+）会让慢端刺激滑到下一带。 */
+const QUALITY_PRECISION_S = 10;
+/** C11 分段梯度判据（s/km，#824）：不同时长质量段的配速中位差 ≤此值视为「全同配速」（等长刺激=形状像但梯度缺位）。 */
+const LADDER_PACE_EPS_S = 2;
 
 /**
- * 课里程（km）：distance 步直读；time 步按配速区间中点派生（⑨量纲：E/REC 处方
- * duration 为主、距离=时长×带配速派生参与 C1）。open duration / time+open /
- * 非配速处方的 time 步 → null（不可知不猜）。
+ * 课里程（km）：repeat 展开 Σ步里程（折算口径单源=derive.stepKmOf：distance
+ * 直读 + time×配速中点派生 + recovery time 处方按 E 带中点折算，#824）。
+ * 任一步不可知（open 等）→ 整课 null（不可知不猜）。
  */
-export function sessionKm(workout: RunWorkout): number | null {
+export function sessionKm(workout: RunWorkout, eMidSPerKm?: number | null): number | null {
   let km: number | null = 0;
   for (const block of workout.blocks) {
     for (let rep = 0; rep < block.repeat; rep++) {
       for (const step of block.steps) {
         if (step.step_kind === "rest") continue;
-        if (step.duration.kind === "distance_m") km += step.duration.value / 1000;
-        else if (step.duration.kind === "time_s" && step.target.kind === "pace_s_km") km += step.duration.value / ((step.target.low + step.target.high) / 2);
-        else return null;
+        const stepKm = stepKmOf(step, eMidSPerKm);
+        if (stepKm == null) return null;
+        km += stepKm;
       }
     }
   }
@@ -105,12 +114,20 @@ export function sessionKm(workout: RunWorkout): number | null {
 /** date（ISO）→ 周内位（周一=0…周日=6，UTC 口径）。 */
 export const weekdayOf = (date: string) => (new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7;
 
+/** 步量标签（违规明细/重试清单用）：<1km 用 m、≥1km 用 km；<60s 用 s、≥60s 用 min。 */
+function fmtStepAmount(value: number, kind: "distance_m" | "time_s"): string {
+  if (kind === "distance_m") return value < 1000 ? `${Math.round(value)}m` : `${Math.round(value / 100) / 10}km`;
+  return value < 60 ? `${Math.round(value)}s` : `${Math.round(value / 6) / 10}min`;
+}
+
 export function validateWeekContent(input: WeekContentInput): ContentValidation[] {
   const { sessions, row, zones, maxTrainingDays, raceDate } = input;
   const requirePurpose = input.requirePurpose ?? true;
   const checks: ContentValidation[] = [];
   const spectrum = qualitySpectrum(zones);
   const isRace = (w: RunWorkout) => raceDate != null && w.date === raceDate;
+  // E 带中点（s/km）：recovery 步 time 处方折算锚（sessionKm 同源）
+  const eMid = easyMidOfZones(zones);
 
   // 一致性：声明 type 的带须罩住主质量段（按距离最长的质量段 ±10s/km）。
   // 声明 T 但主段在 E 带=违规；组合课副段只需谱内（C5）；LR 内嵌 M/T 尾段合法、
@@ -151,8 +168,8 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
   // 守恒目标取 max(骨架, FM 里程)。课包阶段（bagStage）：E 槽位以 km 区间
   // 参与可行性（终值由 L4b 实例化后另跑全量）。
   const c1Target = raceDate != null && row.long_run_km == null ? Math.max(row.total_km, 42.195) : row.total_km;
-  const unknown = sessions.filter((s) => sessionKm(s.workout) == null).map((s) => s.workout.name);
-  const sumKm = unknown.length === 0 ? sessions.reduce((sum, s) => sum + (sessionKm(s.workout) ?? 0), 0) : null;
+  const unknown = sessions.filter((s) => sessionKm(s.workout, eMid) == null).map((s) => s.workout.name);
+  const sumKm = unknown.length === 0 ? sessions.reduce((sum, s) => sum + (sessionKm(s.workout, eMid) ?? 0), 0) : null;
   const tol = Math.max(WEEK_KM_ABS_TOL, c1Target * WEEK_KM_REL_TOL);
   // detail 打有效目标（托底时附骨架原值）——重试违规清单据此引导，模型须能对齐
   const c1Label = c1Target === row.total_km ? `骨架${row.total_km}` : `赛周托底${c1Target.toFixed(1)}（骨架${row.total_km}）`;
@@ -184,7 +201,7 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
     lrOk = lrs.length === 0;
     lrDetail = `赛周 lr=null，${lrs.length} 节 LR`;
   } else {
-    const lrKm = lrs.length === 1 ? sessionKm(lrs[0]!.workout) : null;
+    const lrKm = lrs.length === 1 ? sessionKm(lrs[0]!.workout, eMid) : null;
     lrOk = lrs.length === 1 && lrKm != null && Math.abs(lrKm - row.long_run_km) <= LR_KM_TOL;
     lrDetail = lrs.length === 1 ? `${lrKm ?? "?"} vs ${row.long_run_km}（±${LR_KM_TOL}）` : `${lrs.length} 节 LR`;
   }
@@ -251,12 +268,48 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
   const anchored = sessions.filter((s) => s.expectedKm != null);
   const expandBad = anchored
     .filter((s) => {
-      const km = sessionKm(s.workout);
+      const km = sessionKm(s.workout, eMid);
       return km == null || Math.abs(km - (s.expectedKm ?? 0)) > EXPAND_KM_TOL;
     })
-    .map((s) => `${s.workout.name} ${(sessionKm(s.workout) ?? 0).toFixed(1)}vs${s.expectedKm}`);
+    .map((s) => `${s.workout.name} ${(sessionKm(s.workout, eMid) ?? 0).toFixed(1)}vs${s.expectedKm}`);
   const expandDetail = expandBad.length > 0 ? expandBad.join(";") : anchored.length > 0 ? `全过(${anchored.length}锚)` : "无期望锚，跳过";
   checks.push({ id: "C8 展开守恒", pass: expandBad.length === 0, detail: expandDetail });
+
+  // C11 分段配速梯度（#824 用户审发现②）：阶梯/金字塔/变速等多段结构课，不同
+  // 时长的质量段不得全同配速（形状像阶梯、刺激=等长间歇——梯度缺位）。等长间歇
+  // （单一时长组，如 8×800）豁免；E/LR/比赛课不在范围（E 无质量段带、LR 内嵌
+  // 尾段自由形态、比赛课锚 goal_pace）。legacyQualityPace=存量迁移样本豁免。
+  // C12 质量段配速宽度（#824 用户审发现③）：质量段处方=带中位 ±3~5s 窄带，
+  // 整条投影带逐秒复制（宽 15s+）会让运动员跑慢端时刺激实际落到下一带。E/LR
+  // 主体（E 全带）与比赛课（goal±5s）不在范围；变速课 work@easy 慢段不是
+  // 质量段、不受限。
+  const paceWidthBad: string[] = [];
+  const ladderBad: string[] = [];
+  const legacyPace = input.legacyQualityPace === true;
+  if (!legacyPace && spectrum == null) paceWidthBad.push("配速带缺失（m/r），无法判分段配速");
+  if (!legacyPace && spectrum != null) {
+    for (const { workout } of sessions) {
+      if (workout.type === "E" || workout.type === "LR" || isRace(workout)) continue;
+      const labels = new Map<string, string>();
+      const mids: number[] = [];
+      for (const block of workout.blocks) {
+        for (const step of block.steps) {
+          if (!isQualityStep(step, zones) || step.target.kind !== "pace_s_km" || (step.duration.kind !== "distance_m" && step.duration.kind !== "time_s"))
+            continue;
+          const width = step.target.high - step.target.low;
+          if (width > QUALITY_PRECISION_S + 1e-6) paceWidthBad.push(`${workout.name} work段@${step.target.low}-${step.target.high} 宽${Math.round(width)}s`);
+          const key = `${step.duration.kind}:${step.duration.value}`;
+          if (!labels.has(key))
+            labels.set(key, `${fmtStepAmount(step.duration.value, step.duration.kind)}@${Math.round((step.target.low + step.target.high) / 2)}`);
+          mids.push((step.target.low + step.target.high) / 2);
+        }
+      }
+      if (labels.size >= 2 && Math.max(...mids) - Math.min(...mids) <= LADDER_PACE_EPS_S)
+        ladderBad.push(`${workout.name} ${labels.size}段不同时长全同配速（${[...labels.values()].join("+")}）`);
+    }
+  }
+  checks.push({ id: "C11 分段配速梯度", pass: ladderBad.length === 0, detail: legacyPace ? "legacy豁免" : ladderBad.slice(0, 3).join(";") || "全过" });
+  checks.push({ id: "C12 质量段配速宽度", pass: paceWidthBad.length === 0, detail: legacyPace ? "legacy豁免" : paceWidthBad.slice(0, 3).join(";") || "全过" });
 
   // C9 E 课时长分层（①⑦⑨，devops#811）：type=E 的课 duration 必填（非 strides
   // 跑步步一律 time_s 处方——⑨ E/REC 量纲=时间）且落带——质量课间隔日 30-60min、
@@ -312,7 +365,7 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
     // LR 前日轻量（#825）：≤8km 或休、时长下限豁免——里程按日累计，循环后统一判日合计
     if (lrEveDate != null && workout.date === lrEveDate) {
       lrEveHasE = true;
-      const km = sessionKm(workout);
+      const km = sessionKm(workout, eMid);
       if (km == null) lrEveUnknown = true;
       else lrEveSumKm += km;
       continue;
