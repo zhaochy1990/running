@@ -1,5 +1,5 @@
 import type { ContentGeneratorInput, ContentWeekRow } from "./doctrine.js";
-import { E_DURATION_INTERVAL_BAND, E_DURATION_NORMAL_BAND } from "./validators.js";
+import { E_DURATION_INTERVAL_BAND, E_DURATION_NORMAL_BAND, LR_EVE_MAX_KM } from "./validators.js";
 
 /**
  * 确定性量账分配（devops#811）：把一周骨架（km/lr/q）分解成 LR+质量课+E 时长
@@ -16,6 +16,8 @@ export interface AllocatedESession {
   minutes: number;
   /** 质量课间隔日（C9 短带 30-60min）。 */
   intervalDay: boolean;
+  /** LR 前日（周六，#825 轻量帽 ≤8km 或休）。 */
+  lrEve: boolean;
 }
 
 export interface WeekAllocation {
@@ -51,11 +53,15 @@ export function allocateWeek(row: ContentWeekRow, maxTrainingDays: number, regen
   const total = row.totalKm;
 
   const qualityWds = q === 2 ? [1, 4] : q === 1 ? [1] : [];
+  // LR 固定周日 → 周六=LR 前日轻量（#825 拍板：E ≤8km 或休）：上限=8km 折算分钟
+  // （与短带上限取紧），下限=E 家族 30min（帽小于 30min 的精英带取帽本身）
+  const lrEveCapMin = Math.min(E_DURATION_INTERVAL_BAND[1], (LR_EVE_MAX_KM * eMid) / 60);
+  const lrEveBand: readonly [number, number] = [Math.min(E_DURATION_INTERVAL_BAND[0], lrEveCapMin), lrEveCapMin];
   const eSlots = [2, 3, 5, 0]
     .map((wd) => {
       const intervalDay = qualityWds.some((a) => a < wd) && qualityWds.some((b) => b > wd);
-      const band: readonly [number, number] = intervalDay || regeneration ? E_DURATION_INTERVAL_BAND : E_DURATION_NORMAL_BAND;
-      return { wd, band, intervalDay };
+      const band: readonly [number, number] = wd === 5 ? lrEveBand : intervalDay || regeneration ? E_DURATION_INTERVAL_BAND : E_DURATION_NORMAL_BAND;
+      return { wd, band, intervalDay, lrEve: wd === 5 };
     })
     .sort((a, b) => a.band[0] - b.band[0]); // 短带槽位优先装填（预算紧时先落间隔日）
 
@@ -91,10 +97,11 @@ export function allocateWeek(row: ContentWeekRow, maxTrainingDays: number, regen
     rest = eBudget - sumKm;
   }
   // 终量吸收序（E 全部顶格/缺位后的残余，结构性洞如单槽 90min 装不满低量周）：
-  // ① M 主体（帽 [3,14]）② LR ±≤1.4（C2 容差 1.5 内留余）③ 热身/放松 +10min
-  // （E 时段不占 C9 分层带）——仍残留由 C1 容差吸收
+  // ① M 主体（帽 [3,16]——16km≈丹氏 MP 大课 10 英里天花板；LR 前日帽压缩 E
+  // 容量后，峰值周残量靠 M 主体收口）② LR ±≤1.4（C2 容差 1.5 内留余）
+  // ③ 热身/放松 +10min（E 时段不占 C9 分层带）——仍残留由 C1 容差吸收
   if (q >= 1 && Math.abs(rest) > 0.05) {
-    const target = Math.min(14, Math.max(3, mBody + rest / q));
+    const target = Math.min(16, Math.max(3, mBody + rest / q));
     rest -= (target - mBody) * q;
     mBody = target;
   }
@@ -103,9 +110,11 @@ export function allocateWeek(row: ContentWeekRow, maxTrainingDays: number, regen
     lr += grow;
     rest -= grow;
   }
-  const wuCdExtraMin = rest > 0.05 && q >= 1 ? 10 : 0;
+  // ③ 热身/放松加时（E 时段不占 C9 分层带）——5min 分档、帽 10min：残量装得下
+  // 才加（#825：LR 前日帽压缩 E 容量后，小残量硬加整档会超调 C1），装不下由容差吸收
+  const wuCdExtraMin = q >= 1 ? (([10, 5] as const).find((m) => rest + 0.05 >= kmOf(m) * q) ?? 0) : 0;
 
-  const eSessions = eMinutes.map((minutes, i) => ({ weekday: eSlots[i]!.wd, minutes, intervalDay: eSlots[i]!.intervalDay }));
+  const eSessions = eMinutes.map((minutes, i) => ({ weekday: eSlots[i]!.wd, minutes, intervalDay: eSlots[i]!.intervalDay, lrEve: eSlots[i]!.lrEve }));
   const sumKm = lr + q * (mBody + wuCdKm + kmOf(wuCdExtraMin)) + eSessions.reduce((s, e) => s + kmOf(e.minutes), 0);
   return {
     lr,
@@ -125,22 +134,53 @@ export interface RaceWeekShake {
   minutes: number;
 }
 
+export interface RaceWeekActivation {
+  weekday: number;
+  /** M 主体里程（km，简版 #825：3-5km 带内按预算定，热身 15min+放松 10min+strides 400m 另计）。 */
+  bodyKm: number;
+}
+
 export interface RaceWeekAllocation {
-  /** 赛前激活 E（每段 ≤60min 短带上限，余量拆第二段；空=预算装不下/窗口不可用）。 */
+  /** M 配速激活课（#825 规则③⑧维持原则：赛前 2-3 天一节 M 触感短课；窗不可用/预算装不下=null）。 */
+  activation: RaceWeekActivation | null;
+  /** 赛前短 E 激活（每段 ≤60min 短带上限；M 激活日之外的窗内日子）。 */
   shakes: RaceWeekShake[];
   sumKm: number;
 }
 
-/** 比赛周分配：比赛 42.195km + 赛前 1-3 天短 E 激活（C9 豁免窗内、短带上限内）。 */
+/** 赛周 M 激活课简版形状（#825）：主体 3-5km 带内 + 4×100m strides；热身/放松 E 时长（min）。 */
+const M_ACTIVATION_BODY_KM_DEFAULT = 4;
+const M_ACTIVATION_BODY_KM_MIN = 3;
+const M_ACTIVATION_STRIDES_M = 400;
+
+/** 比赛周分配：比赛 42.195km + 赛前 M 配速激活短课（2-3 天前，简版）+ 窗内短 E 激活。 */
 export function allocateRaceWeek(row: ContentWeekRow, race: ContentGeneratorInput["race"]): RaceWeekAllocation {
   const eMid = easyMidOf(row);
+  const kmOf = (minutes: number) => (minutes * 60) / eMid;
   const raceWd = (new Date(`${race.date}T00:00:00Z`).getUTCDay() + 6) % 7;
   const remaining = row.totalKm - 42.195;
-  // 激活窗（赛前 1-3 天），偏好赛前 2 天起往前铺
-  const windowDays = [raceWd - 2, raceWd - 3, raceWd - 1].filter((wd) => wd >= 0);
-  const shakes: RaceWeekShake[] = [];
+
+  // M 激活窗=赛前 2-3 天（偏 2 天；raceWd≥2 由 generateWeekContent 入口保证）；E 激活=窗内其余日子（偏赛前 1 天起）
+  const activationWd = [raceWd - 2, raceWd - 3].find((wd) => wd >= 0) ?? null;
   let left = remaining;
-  for (const wd of windowDays) {
+  // 热身 15min+放松 10min（E 折算）+strides 400m 的固定形状；主体取拍板带 [3,5] 缺省 4、按预算向下收
+  const fixedKm = kmOf(15 + 10) + M_ACTIVATION_STRIDES_M / 1000;
+  let activation: RaceWeekActivation | null = null;
+  let activationKm = 0;
+  if (activationWd != null) {
+    // 主体 <3km=预算装不下 M 激活下限（精英带 + 低平台赛周触底 52.2 的包络边界，
+    // 需 eMid≲227s/km），置 null 由 C3 如实挂出——不破拍板下限换过门
+    const bodyKm = Math.min(M_ACTIVATION_BODY_KM_DEFAULT, left - fixedKm);
+    if (bodyKm >= M_ACTIVATION_BODY_KM_MIN) {
+      activation = { weekday: activationWd, bodyKm };
+      activationKm = fixedKm + bodyKm;
+      left -= activationKm;
+    }
+  }
+  const shakeWindow = [raceWd - 1, raceWd - 3, raceWd - 2].filter((wd) => wd >= 0 && (activation == null || wd !== activation.weekday));
+
+  const shakes: RaceWeekShake[] = [];
+  for (const wd of shakeWindow) {
     if (left < 2) break;
     const capMin = E_DURATION_INTERVAL_BAND[1]; // 赛周激活=短 E（①拍板），上限 60min
     const minutes = Math.min((left * eMid) / 60, capMin);
@@ -148,7 +188,7 @@ export function allocateRaceWeek(row: ContentWeekRow, race: ContentGeneratorInpu
     shakes.push({ weekday: wd, minutes: seconds / 60 });
     left -= seconds / eMid;
   }
-  // 未铺完的残量（窗口耗尽）由 C1 容差吸收；Σ 按 30s 取整后的实际处方计
-  const sumKm = 42.195 + shakes.reduce((s, x) => s + (x.minutes * 60) / eMid, 0);
-  return { shakes, sumKm };
+  // 未铺完的残量（窗口耗尽）由 C1 容差吸收；Σ 按 30s 取整后的实际处方计（M 激活按课形状计）
+  const sumKm = 42.195 + activationKm + shakes.reduce((s, x) => s + (x.minutes * 60) / eMid, 0);
+  return { activation, shakes, sumKm };
 }

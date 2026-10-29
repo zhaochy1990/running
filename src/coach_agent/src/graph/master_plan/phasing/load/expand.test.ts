@@ -84,7 +84,7 @@ test("taper：段内递减、赛周=比赛+激活（字面 52-57 且落在削减
   const race = weeks.at(-1)!;
   assert.equal(race.role, "race");
   assert.equal(race.lr, null);
-  assert.equal(race.q, 1);
+  assert.equal(race.q, 2); // 赛周=比赛课+M 激活（#825）
   assert.ok(
     taper.every((x, i) => i === 0 || x <= taper[i - 1]! + 0.5),
     `taper=${taper}`,

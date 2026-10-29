@@ -4,7 +4,9 @@ import { type ContentGeneratorInput, type ContentWeekRow, fmtPace } from "./doct
 
 /**
  * 简版模板兜底（devops#811，daniels-l4-content.md §5）：重试耗尽/调用失败时的
- * 确定性直出——M 课（热身/主体/放松）+ LR（纯 E 主体）+ E 时长填充的最小合法周。
+ * 确定性直出——M 课（热身/主体/放松）+ LR（纯 E 主体）+ E 时长填充的最小合法周；
+ * 赛周=比赛课 + M 配速激活短课（#825 简版：主体 3-5km+strides，赛前 2-3 天）+
+ * 窗内短 E 激活；常规周周六=LR 前日轻量（E ≤8km 或休，#825 拍板）。
  * 量账=allocate.ts 的可行解分配（C1×C9 联立带内构造，38 案例全量验证）；
  * 构造保证过全部校验（兜底永远合法）；#798 课表库落地后替换为库直出
  * （本模块即替换点，generate.ts 的接入面不变）。
@@ -50,7 +52,7 @@ function workout(
   return normalizeRunWorkout({ name, date, type, purpose, note, blocks: [{ repeat: 1, steps }] });
 }
 
-/** 比赛周：比赛课（锚 goal_pace）+ 赛前 1-3 天短 E 激活（C9 豁免窗内）。 */
+/** 比赛周：比赛课（锚 goal_pace）+ 赛前 2-3 天 M 配速激活短课（#825 简版）+ 赛前 1-3 天短 E 激活。 */
 function raceWeekSessions(row: ContentWeekRow, input: ContentGeneratorInput): RunWorkout[] {
   const race = input.race;
   const goal = race.goalPaceSKm;
@@ -66,6 +68,29 @@ function raceWeekSessions(row: ContentWeekRow, input: ContentGeneratorInput): Ru
       [step("work", { kind: "distance_m", value: 42195 }, pace(goalBand))],
     ),
   ];
+  if (alloc.activation != null) {
+    // 三块结构（主体/strides×4/放松）——C7 看首末块，strides 走 repeat 块展开
+    sessions.push(
+      normalizeRunWorkout({
+        name: `赛前激活 M ${r1(alloc.activation.bodyKm)}km+strides`,
+        date: dateOf(input.planStartMonday, row.week, alloc.activation.weekday),
+        type: "M",
+        purpose: `赛前激活：M 配速主体 ${r1(alloc.activation.bodyKm)}km 保持比赛节奏触感（减量期保强度即可维持），加 4×100m strides 唤醒神经肌肉，为${race.name}保持兴奋性。`,
+        note: "主体按 M 带执行不追强度；每组 strides 后充分恢复再起下一组。",
+        blocks: [
+          {
+            repeat: 1,
+            steps: [
+              step("warmup", { kind: "time_s", value: 15 * 60 }, pace(easyBand(row))),
+              step("work", { kind: "distance_m", value: Math.round(alloc.activation.bodyKm * 1000) }, pace(mBand(row))),
+            ],
+          },
+          { repeat: 4, steps: [step("work", { kind: "distance_m", value: 100 }, { kind: "open", low: null, high: null })] },
+          { repeat: 1, steps: [step("cooldown", { kind: "time_s", value: 10 * 60 }, pace(easyBand(row)))] },
+        ],
+      }),
+    );
+  }
   for (const shake of alloc.shakes) {
     sessions.push(
       workout(
@@ -120,9 +145,11 @@ function normalWeekSessions(row: ContentWeekRow, input: ContentGeneratorInput, r
         `E ${Math.round(e.minutes)}min`,
         dateOf(input.planStartMonday, row.week, e.weekday),
         "E",
-        regeneration
-          ? `恢复周轻松课：${Math.round(e.minutes)} 分钟 E 配速促进恢复，保持腿部活性，不追强度。`
-          : `有氧轻松课：${Math.round(e.minutes)} 分钟 E 配速巩固有氧地基，全程可交谈。`,
+        e.lrEve
+          ? `LR 前日轻量：${Math.round(e.minutes)} 分钟短 E 保持腿部活性（≤8km），为明日长跑蓄力，不追距离。`
+          : regeneration
+            ? `恢复周轻松课：${Math.round(e.minutes)} 分钟 E 配速促进恢复，保持腿部活性，不追强度。`
+            : `有氧轻松课：${Math.round(e.minutes)} 分钟 E 配速巩固有氧地基，全程可交谈。`,
         null,
         [step("work", { kind: "time_s", value: Math.round((e.minutes * 60) / 30) * 30 }, pace(eBand))],
       ),

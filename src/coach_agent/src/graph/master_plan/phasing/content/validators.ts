@@ -68,6 +68,10 @@ const EXPAND_KM_TOL = 0.5;
 /** C9 E 课时长分层带（min，⑦）：[下限, 上限]；间隔日/再生周=短带。分配器（allocate.ts）同源 import。 */
 export const E_DURATION_INTERVAL_BAND: readonly [number, number] = [30, 60];
 export const E_DURATION_NORMAL_BAND: readonly [number, number] = [60, 90];
+/** LR 前日轻量帽（#825，#814 附带修复拍板）：长跑前一日的 E 课 ≤8km 或休——按课实际里程判（V1 事实），不设时长下限。 */
+export const LR_EVE_MAX_KM = 8;
+/** LR 前日里程帽容差（km）：30s 时长取整粒度折算 ≈0.05km，留 0.1。 */
+const LR_EVE_KM_TOL = 0.1;
 /** 赛周激活课豁免窗：比赛日前 1-3 天（①唯一例外；weekday 差 ≤3 且不跨周）——窗内豁免下限（短激活可 <30min）但仍受短带上限 60min 约束（①原文=「短」E 激活）。 */
 const RACE_WEEK_ACTIVATION_DAYS = 3;
 
@@ -92,7 +96,7 @@ export function sessionKm(workout: RunWorkout): number | null {
 }
 
 /** date（ISO）→ 周内位（周一=0…周日=6，UTC 口径）。 */
-const weekdayOf = (date: string) => (new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7;
+export const weekdayOf = (date: string) => (new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7;
 
 export function validateWeekContent(input: WeekContentInput): ContentValidation[] {
   const { sessions, row, zones, maxTrainingDays, raceDate } = input;
@@ -234,8 +238,9 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
   // 跑步步一律 time_s 处方——⑨ E/REC 量纲=时间）且落带——质量课间隔日 30-60min、
   // 普通日 60-90min。间隔日=周内两节质量课（含比赛课）之间的日子，从 date 周内
   // 位派生；再生周（recovery）无质量课、E 全走短带（低量恢复周与 C1 的可行性
-  // 调和，injury 周可低至 10km）。唯一豁免=赛周激活课（①拍板）：比赛日前 1-3
-  // 天的短 E 激活/shakeout。legacyEDuration=⑨ 之前存量样本整条跳过。
+  // 调和，injury 周可低至 10km）。两个例外：赛周激活课（①拍板）=比赛日前 1-3
+  // 天的短 E 激活/shakeout；LR 前日轻量（#825 拍板）=长跑前一日 E ≤8km（课实际
+  // 里程）或休，时长下限豁免。legacyEDuration=⑨ 之前存量样本整条跳过。
   if (input.legacyEDuration) {
     checks.push({ id: "C9 E课时长分层", pass: true, detail: "legacy豁免" });
     return checks;
@@ -243,6 +248,13 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
   const qualityWeekdays = new Set(sessions.filter((s) => hasQualitySegment(s.workout, zones) || isRace(s.workout)).map((s) => weekdayOf(s.workout.date)));
   const isIntervalDay = (wd: number) => [...qualityWeekdays].some((a) => a < wd) && [...qualityWeekdays].some((b) => b > wd);
   const raceWd = raceDate != null ? weekdayOf(raceDate) : null;
+  // LR 前日（按周内位 LR−1，不跨周——LR 周一的前日在上周，本层不可判）；赛周无 LR 不适用
+  // LR 前日（按 LR 日期−1 天的日期判，LR 周一时前日在上周本层不可判）；帽按日合计
+  // 不按单课判（两节各 ≤8km 的 E 合计 16km 同样违规）；里程不可知的 E 挂「不可知」
+  const lrEveDate = lrs.length > 0 ? new Date(new Date(`${lrs[0]!.workout.date}T00:00:00Z`).getTime() - 86400_000).toISOString().slice(0, 10) : null;
+  let lrEveSumKm = 0;
+  let lrEveUnknown = false;
+  let lrEveHasE = false;
   const eBad: string[] = [];
   for (const { workout } of sessions) {
     if (workout.type !== "E") continue;
@@ -272,12 +284,24 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
         eBad.push(`${workout.name} 赛周激活 ${durationMin.toFixed(0)}min 超短带上限${E_DURATION_INTERVAL_BAND[1]}min`);
       continue;
     }
+    // LR 前日轻量（#825）：≤8km 或休、时长下限豁免——里程按日累计，循环后统一判日合计
+    if (lrEveDate != null && workout.date === lrEveDate) {
+      lrEveHasE = true;
+      const km = sessionKm(workout);
+      if (km == null) lrEveUnknown = true;
+      else lrEveSumKm += km;
+      continue;
+    }
     const band = isIntervalDay(wd) || input.regeneration ? E_DURATION_INTERVAL_BAND : E_DURATION_NORMAL_BAND;
     if (durationMin < band[0] - 1e-6 || durationMin > band[1] + 1e-6) {
       eBad.push(
         `${workout.name} ${durationMin.toFixed(0)}min ∉ ${input.regeneration && !isIntervalDay(wd) ? "再生周" : isIntervalDay(wd) ? "间隔日" : "普通日"}[${band[0]}-${band[1]}]`,
       );
     }
+  }
+  if (lrEveHasE) {
+    if (lrEveUnknown) eBad.push(`LR前日(${lrEveDate}) E 里程不可知（open 处方）——无法判 ≤${LR_EVE_MAX_KM}km 轻量帽`);
+    else if (lrEveSumKm > LR_EVE_MAX_KM + LR_EVE_KM_TOL) eBad.push(`LR前日(${lrEveDate}) E 合计 ${lrEveSumKm.toFixed(1)}km 超 ${LR_EVE_MAX_KM}km 轻量帽`);
   }
   checks.push({ id: "C9 E课时长分层", pass: eBad.length === 0, detail: eBad.slice(0, 3).join(";") || "全过" });
 
