@@ -4,6 +4,7 @@ import type { GraphNode } from "@langchain/langgraph";
 import { getLogger } from "@stride/common";
 import { addDays, type CustomWorkoutCard, workoutTotals } from "@stride/contract";
 import { estimatePlannedRunLoad } from "../../graph/training_load/plannedRunLoad.js";
+import { normalizeMessageContent } from "../messages.js";
 import type { AgentsState } from "../state.js";
 import { customWorkoutCardMessage, extractCustomWorkoutDraft, leakedCustomWorkoutFromText, type NormalizedCustomWorkoutDraft } from "./render.js";
 
@@ -104,7 +105,8 @@ export function makeCustomWorkoutNode(deps: CustomWorkoutNodeDeps): GraphNode<ty
     }
     // 无信封：缺日期/缺结构的中文追问或说明，按普通业务节点写回增量——agent
     // 的工具调用轨迹（含 ToolStrategy 伪调用）留在节点内，不进入会话历史。
-    return { messages: result.messages.slice(state.messages.length) };
+    // 数组 content 归一化为字符串再入会话历史（devops#833）。
+    return { messages: result.messages.slice(state.messages.length).map(normalizeMessageContent) };
   };
 }
 

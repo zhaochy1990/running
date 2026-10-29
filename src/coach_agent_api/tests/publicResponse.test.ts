@@ -77,3 +77,14 @@ test("toPublicHistory restores cards per artifact turn and keeps legacy rows pla
     { role: "assistant", content: "不客气！" },
   ]);
 });
+
+test("an empty-string reply row is kept in history (devops#833 content normalization)", () => {
+  // responses API 的空数组 content 经写回归一化后落库为 ""（此前数组形态被
+  // textContent 判 undefined 整行跳过）。空回复保留为空行：与 chat-completions
+  // 空回复同构，warnOnDegradedReply 的 empty_reply 口径可归因，不再静默消失。
+  const history = toPublicHistory([{ type: "human", content: "帮我制定策略" }, ai("")]);
+  assert.deepEqual(history, [
+    { role: "user", content: "帮我制定策略" },
+    { role: "assistant", content: "" },
+  ]);
+});

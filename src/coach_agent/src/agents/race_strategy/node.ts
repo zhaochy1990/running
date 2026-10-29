@@ -2,6 +2,7 @@ import type { BaseMessage } from "@langchain/core/messages";
 import type { GraphNode } from "@langchain/langgraph";
 import { getLogger } from "@stride/common";
 import type { RaceStrategy } from "@stride/contract";
+import { normalizeMessageContent } from "../messages.js";
 import type { AgentsState } from "../state.js";
 import { extractRaceStrategyResult, parseRaceStrategyFromText, raceStrategyMessage } from "./render.js";
 
@@ -35,7 +36,8 @@ export function makeRaceStrategyNode(agent: InnerRaceAgent): GraphNode<typeof Ag
       return { messages: [raceStrategyMessage(strategy, raceEventIdFromContext(config))], raceStrategy: strategy };
     }
     return {
-      messages: result.messages.slice(state.messages.length),
+      // 数组 content 归一化为字符串再入会话历史（devops#833）。
+      messages: result.messages.slice(state.messages.length).map(normalizeMessageContent),
       raceStrategy: null,
     };
   };
