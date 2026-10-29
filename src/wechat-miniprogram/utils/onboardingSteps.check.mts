@@ -18,7 +18,7 @@ const onboarding = (status: string, currentStep: number) => ({
     { name: 'race_detection' },
     { name: 'calibration' },
     { name: 'compute' },
-    { name: 'route_thumbnails' },
+    { name: 'route_shapes' },
     { name: 'ability' },
   ],
 });

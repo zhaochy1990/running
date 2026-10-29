@@ -51,15 +51,17 @@ public enum WatchRegion: String, Hashable, Sendable, CaseIterable, Identifiable 
 }
 
 /// onboarding pipeline 六步的进度展示（与小程序 `utils/onboardingSteps.ts`
-/// 同名同义：sync → race_detection → calibration → compute → route_thumbnails
-/// → ability；后三步 ContinueOnFailure——步失败标注但 run 仍 done）。
+/// 同名同义：sync → race_detection → calibration → compute → route_shapes
+/// → ability；后三步 ContinueOnFailure——步失败标注但 run 仍 done。
+/// route_shapes 由退役的 route_thumbnails PNG 步骤演变而来（devops#829）：
+/// 后端只产 route_thumb_json 形状，缩略图由端上矢量绘制。
 public struct RunProgress: Equatable, Sendable {
     public static let stepLabels: [String: String] = [
         "sync": "同步训练数据",
         "race_detection": "识别比赛",
         "calibration": "计算能力基线",
         "compute": "生成负荷与趋势",
-        "route_thumbnails": "生成路线缩略图",
+        "route_shapes": "生成路线缩略图",
         "ability": "评估当前能力",
     ]
 

@@ -204,9 +204,11 @@ func runAPI() error {
 	// caller's bearer (admin token or the user's own).
 	coachClient := coachsvc.New(cfg.API.CoachServiceURL, 10*time.Second)
 
-	// Feedback-image bucket (devops#552): same cos: block the worker uses for
-	// route thumbnails. An unconfigured bucket keeps the API booting; the
-	// upload endpoint answers 503 cos_not_configured (auth-service precedent).
+	// Feedback-image bucket (devops#552): the cos: block is now the API's own
+	// (avatar + feedback images) — the worker stopped reading it when the
+	// thumbnail PNG pipeline was retired (devops#829). An unconfigured bucket
+	// keeps the API booting; the upload endpoint answers 503 cos_not_configured
+	// (auth-service precedent).
 	feedbackCos := cos.NewClient(cos.Config{
 		SecretID:  cfg.COS.SecretID,
 		SecretKey: cfg.COS.SecretKey,

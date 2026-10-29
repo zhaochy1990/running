@@ -32,7 +32,7 @@ const AbilityJobType = "ability"
 // missing per-activity L1 rows over the whole history without recomputing
 // snapshots. ref_date overrides the anchor Shanghai day (defaults to today).
 // label_ids is the pipeline-threaded batch of activities this sync produced
-// (watch_sync → compute → route_thumbnails echo it down); without it the L1
+// (watch_sync → compute → route_shapes echo it down); without it the L1
 // batch falls back to the anchor day's activities.
 type abilityInput struct {
 	Mode     string   `json:"mode"`

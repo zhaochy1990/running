@@ -16,7 +16,7 @@ import Testing
             PipelineStep(name: "race_detection", status: "running"),
             PipelineStep(name: "calibration", status: "pending"),
             PipelineStep(name: "compute", status: "pending"),
-            PipelineStep(name: "route_thumbnails", status: "pending"),
+            PipelineStep(name: "route_shapes", status: "pending"),
             PipelineStep(name: "ability", status: "pending"),
         ]
         let progress = RunProgress(run: run(status: "running", currentStep: 1, steps: steps))

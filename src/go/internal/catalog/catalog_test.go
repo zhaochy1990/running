@@ -29,9 +29,10 @@ func TestPipelineRegistryMatchesUserInitiable(t *testing.T) {
 }
 
 func TestOnboardingPipelineCataloged(t *testing.T) {
-	// calibration, compute and the thumbnail jobs are internal-only: users start a
-	// pipeline, not a step.
-	for _, jt := range []string{JobTypeCalibration, JobTypeCompute, JobTypeRouteThumbnails, JobTypeRouteThumbnailsBackfill} {
+	// calibration, compute and the route-shape jobs are internal-only: users
+	// start a pipeline, not a step. The deprecated route_thumbnails tombstone
+	// must stay internal-only too (devops#829).
+	for _, jt := range []string{JobTypeCalibration, JobTypeCompute, JobTypeRouteShapes, JobTypeRouteThumbnails} {
 		if ui, ok := JobUserInitiable()[jt]; !ok || ui {
 			t.Fatalf("%s should be internal-only, got ok=%v ui=%v", jt, ok, ui)
 		}
@@ -44,7 +45,7 @@ func TestOnboardingPipelineCataloged(t *testing.T) {
 	if !ok {
 		t.Fatalf("onboarding pipeline missing from registry")
 	}
-	want := []string{JobTypeWatchSync, JobTypeRaceDetection, JobTypeCalibration, JobTypeCompute, JobTypeRouteThumbnails, JobTypeAbility}
+	want := []string{JobTypeWatchSync, JobTypeRaceDetection, JobTypeCalibration, JobTypeCompute, JobTypeRouteShapes, JobTypeAbility}
 	if len(def.Steps) != len(want) {
 		t.Fatalf("onboarding has %d steps, want %d", len(def.Steps), len(want))
 	}
@@ -57,14 +58,14 @@ func TestOnboardingPipelineCataloged(t *testing.T) {
 		t.Fatal("onboarding race detection must continue on terminal failure")
 	}
 	if !def.Steps[4].ContinueOnFailure {
-		t.Fatal("onboarding route thumbnails must continue on terminal failure")
+		t.Fatal("onboarding route shapes must continue on terminal failure")
 	}
 	if !def.Steps[5].ContinueOnFailure {
 		t.Fatal("onboarding ability step must continue on terminal failure")
 	}
 }
 
-// TestDataSyncPipelineCataloged checks the incremental path: sync -> race detection -> compute -> route thumbnails.
+// TestDataSyncPipelineCataloged checks the incremental path: sync -> race detection -> compute -> route shapes.
 func TestDataSyncPipelineCataloged(t *testing.T) {
 	if ui, ok := PipelineUserInitiable()[PipelineDataSync]; !ok || !ui {
 		t.Fatalf("data_sync pipeline should be user-initiable, got ok=%v ui=%v", ok, ui)
@@ -73,7 +74,7 @@ func TestDataSyncPipelineCataloged(t *testing.T) {
 	if !ok {
 		t.Fatalf("data_sync pipeline missing from registry")
 	}
-	want := []string{JobTypeWatchSync, JobTypeRaceDetection, JobTypeCompute, JobTypeRouteThumbnails, JobTypeAbility}
+	want := []string{JobTypeWatchSync, JobTypeRaceDetection, JobTypeCompute, JobTypeRouteShapes, JobTypeAbility}
 	if len(def.Steps) != len(want) {
 		t.Fatalf("data_sync has %d steps, want %d", len(def.Steps), len(want))
 	}
@@ -86,7 +87,24 @@ func TestDataSyncPipelineCataloged(t *testing.T) {
 		t.Fatal("data_sync race detection must continue on terminal failure")
 	}
 	if !def.Steps[3].ContinueOnFailure {
-		t.Fatal("data_sync route thumbnails must continue on terminal failure")
+		t.Fatal("data_sync route shapes must continue on terminal failure")
+	}
+}
+
+// TestRetiredThumbnailJobsAreGone guards the devops#829 retirement: the PNG
+// backfill job type must not be cataloged (an unknown type is the API's 400,
+// which is the retirement working), while the deprecated route_thumbnails
+// tombstone stays cataloged one version so in-flight runs dispatch cleanly.
+func TestRetiredThumbnailJobsAreGone(t *testing.T) {
+	if _, ok := JobUserInitiable()["route_thumbnails_backfill"]; ok {
+		t.Fatal("route_thumbnails_backfill must be removed from the catalog (devops#829)")
+	}
+	for _, p := range Pipelines() {
+		for _, s := range p.Def.Steps {
+			if s.JobType == JobTypeRouteThumbnails {
+				t.Fatalf("pipeline %q still runs the retired route_thumbnails step", p.Def.Name)
+			}
+		}
 	}
 }
 
