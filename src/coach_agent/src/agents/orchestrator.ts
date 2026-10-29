@@ -2,6 +2,7 @@ import { SystemMessage } from "@langchain/core/messages";
 import { Command, END, type GraphNode } from "@langchain/langgraph";
 import { buildChatModel, getLogger } from "@stride/common";
 import type { ModelConfig } from "../config/config.js";
+import { normalizeMessageContent } from "./messages.js";
 import { type AgentsState, IntentClassificationSchema, type IntentLabel } from "./state.js";
 
 const logger = getLogger("orchestrator");
@@ -65,7 +66,12 @@ export function getOrchestratorNode(modelConfig: ModelConfig, routes: Partial<Re
     // strict `intent` channel.
     let parsed: ReturnType<typeof IntentClassificationSchema.safeParse> = { success: false, error: undefined as never };
     try {
-      const raw = await model.invoke([new SystemMessage(prompt), ...state.messages], { response_format: { type: "json_object" } });
+      // devops#833：存量 checkpoint 里 responses API 落下的数组 content 消息会被
+      // langchain 原样回传，DeepSeek 格式模仿破坏 json_object 约束（纯空白输出）。
+      // 分类输入在此归一化——只影响本次调用，不改写 checkpoint。
+      const raw = await model.invoke([new SystemMessage(prompt), ...state.messages.map(normalizeMessageContent)], {
+        response_format: { type: "json_object" },
+      });
       parsed = IntentClassificationSchema.safeParse(JSON.parse(raw.text));
     } catch (error) {
       logger.warn({ error }, "orchestrator: intent decode failed");

@@ -3,6 +3,7 @@ import { AIMessage, type BaseMessage } from "@langchain/core/messages";
 import type { GraphNode } from "@langchain/langgraph";
 import { getLogger } from "@stride/common";
 import { type MasterPlan, MasterPlanLenientDirectResponseSchema, normalizeRunWorkout } from "@stride/contract";
+import { normalizeMessageContent } from "../messages.js";
 import type { AgentsState } from "../state.js";
 import { assertWeeksLinkedToPhases, masterPlanToContent } from "./content.js";
 import { masterPlanCardMessage } from "./render.js";
@@ -74,7 +75,8 @@ export function makeTrainingNode(deps: TrainingNodeDeps): GraphNode<typeof Agent
     }
     // 无信封：目标缺失追问或说明类回复，按普通业务节点写回增量——agent 的
     // 工具调用轨迹（含 ToolStrategy 伪调用）留在节点内，不进入会话历史。
-    return { messages: result.messages.slice(state.messages.length) };
+    // 数组 content 归一化为字符串再入会话历史（devops#833）。
+    return { messages: result.messages.slice(state.messages.length).map(normalizeMessageContent) };
   };
 }
 

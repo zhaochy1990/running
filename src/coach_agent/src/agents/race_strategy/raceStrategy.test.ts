@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AIMessage, HumanMessage } from "@langchain/core/messages";
+import { AIMessage, type BaseMessage, HumanMessage } from "@langchain/core/messages";
 import type { RaceStrategy } from "@stride/contract";
 import { RACE_STRATEGY_PROMPT } from "../prompts.js";
 import { loadSkillMarkdown, loadSkillReference } from "../skillLoader.js";
@@ -131,6 +131,32 @@ test("race-strategy node behaves like a plain business node without structured o
     raceStrategy: RaceStrategy | null;
   };
   assert.deepEqual(update.messages, [reply]);
+  assert.equal(update.raceStrategy, null);
+});
+
+test("race-strategy node normalizes array-content delta before writing back (devops#833)", async () => {
+  // responses API 的回复 content 是 content-parts 数组（含空数组）；原样入会话
+  // 历史会击穿下游 chat-completions 分类器。写回的增量必须是纯字符串 content，
+  // additional_kwargs（card）原样保留。
+  const userMessage = new HumanMessage("帮我制定杭马策略");
+  const reply = new AIMessage({
+    content: [{ type: "text", text: "先确认目标：" }],
+    additional_kwargs: { card: { $type: "race-strategy" } },
+  });
+  const empty = new AIMessage({ content: [] });
+  const node = makeRaceStrategyNode({
+    async invoke() {
+      return { messages: [userMessage, reply, empty] };
+    },
+  });
+  const update = (await node({ messages: [userMessage] } as never, {} as never)) as {
+    messages: BaseMessage[];
+    raceStrategy: RaceStrategy | null;
+  };
+  assert.equal(update.messages.length, 2);
+  assert.equal(update.messages[0]?.content, "先确认目标：");
+  assert.deepEqual((update.messages[0] as AIMessage).additional_kwargs.card, { $type: "race-strategy" });
+  assert.equal(update.messages[1]?.content, "");
   assert.equal(update.raceStrategy, null);
 });
 

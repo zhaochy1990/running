@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
-import { HumanMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import { Command } from "@langchain/langgraph";
 import type { ModelConfig } from "../config/config.js";
 import { getOrchestratorNode } from "./orchestrator.js";
@@ -76,4 +76,89 @@ test("orchestrator decode-failure warn carries the serialized error", async () =
   assert.ok(nonEmptyString(error?.message), `error.message must be a non-empty string, not {}: ${JSON.stringify(error)}`);
   assert.ok(nonEmptyString(error?.type), `error.type must be a non-empty string: ${JSON.stringify(error)}`);
   assert.ok(nonEmptyString(error?.stack), `error.stack must be a non-empty string: ${JSON.stringify(error)}`);
+});
+
+/**
+ * devops#833：存量 checkpoint 里的数组 content 消息（responses API 落下）曾被
+ * langchain 原样回传，DeepSeek 格式模仿破坏 json_object 约束（实测纯空白输出）。
+ * 分类调用的 wire body 里全部消息 content 必须是字符串；归一化只影响本次调用，
+ * state.messages 本身不得被改写。成功响应走通 parse → 污染历史上也能正常换意图。
+ */
+test("orchestrator sends string-only content on the wire for polluted history", async () => {
+  process.env.STRIDE_TEST_ORCHESTRATOR_KEY = "test-key";
+  const bodies: unknown[] = [];
+  const server = createServer((req, res) => {
+    let raw = "";
+    req.on("data", (chunk: Uint8Array) => {
+      raw += Buffer.from(chunk).toString("utf8");
+    });
+    req.on("end", () => {
+      bodies.push(JSON.parse(raw));
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "chatcmpl-test",
+          object: "chat.completion",
+          created: Math.floor(Date.now() / 1000),
+          model: "deepseek-test",
+          choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify({ intent: "custom_workout" }) }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }),
+      );
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const modelConfig: ModelConfig = {
+    name: "orchestrator-wire-sanitize",
+    model: "deepseek-test",
+    endpoint,
+    api_key_env: "STRIDE_TEST_ORCHESTRATOR_KEY",
+    api_kind: "chat-completions",
+    max_tokens: 64,
+    timeout_s: 10,
+  };
+
+  const pollutedHistory = [
+    new HumanMessage("帮我按照这个比赛策略生成单次训练课程"),
+    new AIMessage({
+      content: [
+        { type: "text", text: "已生成比赛策略：" },
+        { type: "text", text: "分段配速见卡片。" },
+      ],
+      // 取证会话的数组消息实测带 name（coach_messages.json）。
+      name: "model",
+      additional_kwargs: { card: { $type: "race-strategy" } },
+    }),
+    new AIMessage({ content: [] }),
+    new AIMessage("还想再调一版策略。"),
+  ];
+  let result: unknown;
+  try {
+    const node = getOrchestratorNode(modelConfig);
+    result = await node({ messages: [...pollutedHistory], intent: { intent: "race_strategy" } } as never, {} as never);
+  } finally {
+    delete process.env.STRIDE_TEST_ORCHESTRATOR_KEY;
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+
+  assert.equal(bodies.length, 1);
+  const wireMessages = (bodies[0] as { messages: { role: string; content: unknown }[] }).messages;
+  assert.equal(wireMessages.length, pollutedHistory.length + 1);
+  for (const [index, message] of wireMessages.entries()) {
+    assert.equal(typeof message.content, "string", `wire message ${index} content must be a string: ${JSON.stringify(message.content)}`);
+  }
+  assert.equal(wireMessages[0]?.role, "system");
+  assert.equal(wireMessages[1]?.content, "帮我按照这个比赛策略生成单次训练课程");
+  assert.equal(wireMessages[2]?.content, "已生成比赛策略：分段配速见卡片。");
+  assert.equal(wireMessages[3]?.content, "");
+  assert.equal(wireMessages[4]?.content, "还想再调一版策略。");
+
+  // 读取侧 sanitize 只影响分类输入，不落 checkpoint：state 原数组保持数组形态。
+  assert.ok(Array.isArray(pollutedHistory[1]?.content));
+  assert.deepEqual(pollutedHistory[2]?.content, []);
+
+  // 污染历史上分类照常成功并换掉旧意图（deep 会话 18/18 全挂的恢复路径）。
+  assert.ok(result instanceof Command);
+  assert.deepEqual((result as { update: { intent: unknown } }).update.intent, { intent: "custom_workout" });
 });
