@@ -23,10 +23,8 @@ src/wechat-miniprogram/
 ├── pages/                       # 页面（每页面四件套：.ts / .wxml / .wxss / .json）
 │   ├── login/                   # 登录页（微信未绑定账号入口；设计稿 design/login_*.html）
 │   ├── index/                   # 首页 —— 今日训练 + 状态概览
-│   ├── plan/                    # 周训练计划
 │   ├── activities/              # 活动列表
 │   ├── activity-detail/         # 活动详情
-│   ├── health/                  # 健康 & 疲劳趋势
 │   ├── coach/                   # Coach 问答
 │   ├── profile/                 # 个人中心
 │   └── profile-edit/            # 个人资料设置页（头像 / 昵称 / 身体数据）
