@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>对话 Agent 内部架构</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f7f3ee;
+      --color-ink:     #343b42;
+      --color-muted:   #56606b;
+      --color-soft:    #5f6874;
+      --color-accent:  #c93535;
+      --font-sans:     'Geist', 'Noto Sans SC', 'PingFang SC', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', 'Noto Serif', 'Noto Serif SC', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1360px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+    svg { width: 100%; min-width: 1280px; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Stridewise · Coach Agent · Conversation Runtime</p>
+    <h1>对话 Agent 内部架构</h1>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="coach-agent-chat-runtime-title coach-agent-chat-runtime-desc">
+        <title id="coach-agent-chat-runtime-title">对话 Agent 内部架构</title>
+        <desc id="coach-agent-chat-runtime-desc">对话 Agent 内部：用户 turn 进入 LangGraph 意图路由，按意图分发到 QA（deepagent 加 skills）、训练计划（内嵌 Master Plan 生成 subagent）、比赛策略、自建课程、课表管理五个业务节点；结构化产物以信封卡片随 SSE 回复，运行时共享十六个工具与 LangGraph Store 长期记忆。</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#56606b"/></marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#c93535"/></marker>
+          <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#3d5a80"/></marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#f7f3ee"/>
+
+        <!-- ============ ZONES ============ -->
+        <rect x="360" y="200" width="688" height="136" rx="8" fill="rgba(52,59,66,0.02)" stroke="rgba(52,59,66,0.10)" stroke-width="0.8"/>
+        <rect x="372" y="204" width="76" height="18" rx="2" fill="#f7f3ee"/>
+        <text x="410" y="217" fill="#5f6874" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">业务节点</text>
+
+        <rect x="48" y="548" width="760" height="112" rx="8" fill="rgba(52,59,66,0.02)" stroke="rgba(52,59,66,0.10)" stroke-width="0.8"/>
+        <rect x="60" y="552" width="88" height="18" rx="2" fill="#f7f3ee"/>
+        <text x="104" y="565" fill="#5f6874" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">共享运行时</text>
+
+        <!-- ============ ARROWS ============ -->
+        <!-- E1 用户 turn → orchestrator -->
+        <line x1="272" y1="100" x2="592" y2="100" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="400" y="80" width="48" height="12" rx="2" fill="#f7f3ee"/>
+        <text x="424" y="89" fill="#5f6874" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.06em">TURN</text>
+
+        <!-- E2..E6 orchestrator → 五个业务节点（错层肘形，无交叉） -->
+        <path d="M 628,136 V 160 Q 628,168 636,168 H 424 Q 432,168 432,176 V 240" fill="none" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <path d="M 664,136 V 174 Q 664,182 656,182 H 576 Q 568,182 568,190 V 240" fill="none" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="704" y1="136" x2="704" y2="240" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <path d="M 800,136 V 202 Q 800,210 808,210 H 832 Q 840,210 840,218 V 240" fill="none" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <path d="M 768,136 V 216 Q 768,224 776,224 H 968 Q 976,224 976,232 V 240" fill="none" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- E7 training → master plan subagent -->
+        <line x1="568" y1="304" x2="568" y2="368" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="576" y="324" width="56" height="12" rx="2" fill="#f7f3ee"/>
+        <text x="580" y="333" fill="#5f6874" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="start" letter-spacing="0.06em">SPAWN</text>
+
+        <!-- E8 subagent → 卡片 -->
+        <line x1="648" y1="400" x2="720" y2="400" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- E9 race_strategy → 卡片 -->
+        <path d="M 704,304 V 332 Q 704,340 712,340 H 800 Q 808,340 808,348 V 368" fill="none" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- E10 custom_workout → 卡片 -->
+        <line x1="840" y1="304" x2="840" y2="368" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- E11 workout_manage → 卡片 -->
+        <path d="M 976,304 V 332 Q 976,340 968,340 H 908 Q 900,340 900,348 V 368" fill="none" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- E12 qa → 会话回复（SSE 文本） -->
+        <path d="M 464,304 V 444 Q 464,452 472,452 H 664 Q 672,452 672,460 V 480" fill="none" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="548" y="434" width="40" height="12" rx="2" fill="#f7f3ee"/>
+        <text x="568" y="443" fill="#5f6874" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.06em">TEXT</text>
+
+        <!-- E13 卡片 → 会话回复 -->
+        <line x1="832" y1="432" x2="832" y2="480" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="840" y="448" width="48" height="12" rx="2" fill="#f7f3ee"/>
+        <text x="844" y="457" fill="#5f6874" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="start" letter-spacing="0.06em">CARD</text>
+
+        <!-- E14 qa → 工具层 -->
+        <line x1="392" y1="304" x2="392" y2="584" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="400" y="408" width="84" height="12" rx="2" fill="#f7f3ee"/>
+        <text x="404" y="417" fill="#5f6874" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="start" letter-spacing="0.06em">TOOL CALLS</text>
+
+        <!-- E15 subagent → 工具层 -->
+        <line x1="568" y1="432" x2="568" y2="584" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="576" y="552" width="68" height="12" rx="2" fill="#f7f3ee"/>
+        <text x="580" y="561" fill="#5f6874" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="start" letter-spacing="0.06em">CONTEXT</text>
+
+        <!-- E16 qa → 运动员记忆（虚线） -->
+        <path d="M 376,288 H 160 Q 152,288 152,296 V 584" fill="none" stroke="#56606b" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <rect x="160" y="430" width="72" height="12" rx="2" fill="#f7f3ee"/>
+        <text x="164" y="439" fill="#5f6874" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="start" letter-spacing="0.06em">MEMORY</text>
+
+        <!-- callout：提示词层 -->
+        <line x1="872" y1="76" x2="872" y2="148" stroke="rgba(201,53,53,0.50)" stroke-width="1"/>
+        <text x="888" y="96" fill="#5f6874" font-size="14" font-style="italic" font-family="'Instrument Serif','Noto Serif','Noto Serif SC',serif">提示词层：SKILL.md 内联进系统提示，</text>
+        <text x="888" y="120" fill="#5f6874" font-size="14" font-style="italic" font-family="'Instrument Serif','Noto Serif','Noto Serif SC',serif">qa 经 FilesystemBackend 按需</text>
+        <text x="888" y="144" fill="#5f6874" font-size="14" font-style="italic" font-family="'Instrument Serif','Noto Serif','Noto Serif SC',serif">read_file 取技能，不占上下文。</text>
+
+        <!-- ============ NODES ============ -->
+        <!-- N_in 用户 turn (input) -->
+        <rect x="96" y="72" width="176" height="56" rx="6" fill="#f7f3ee"/>
+        <rect x="96" y="72" width="176" height="56" rx="6" fill="rgba(86,96,107,0.10)" stroke="#5f6874" stroke-width="1"/>
+        <rect x="104" y="78" width="40" height="12" rx="2" fill="none" stroke="rgba(52,59,66,0.40)" stroke-width="0.8"/>
+        <text x="124" y="87" fill="rgba(52,59,66,0.80)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">CLIENT</text>
+        <text x="184" y="105" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">用户 turn</text>
+        <text x="184" y="119" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">chat · thread_id</text>
+
+        <!-- orchestrator (focal) -->
+        <rect x="592" y="64" width="224" height="72" rx="6" fill="#f7f3ee"/>
+        <rect x="592" y="64" width="224" height="72" rx="6" fill="rgba(255,99,99,0.10)" stroke="#c93535" stroke-width="1.2"/>
+        <rect x="600" y="70" width="44" height="12" rx="2" fill="none" stroke="rgba(201,53,53,0.50)" stroke-width="0.8"/>
+        <text x="622" y="79" fill="rgba(201,53,53,0.80)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">ROUTER</text>
+        <text x="704" y="103" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">意图路由 orchestrator</text>
+        <text x="704" y="121" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">json+zod · fallback prev</text>
+
+        <!-- qa -->
+        <rect x="376" y="240" width="112" height="64" rx="6" fill="#f7f3ee"/>
+        <rect x="376" y="240" width="112" height="64" rx="6" fill="#ffffff" stroke="#343b42" stroke-width="1"/>
+        <rect x="384" y="246" width="64" height="12" rx="2" fill="none" stroke="rgba(52,59,66,0.40)" stroke-width="0.8"/>
+        <text x="416" y="255" fill="rgba(52,59,66,0.80)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">DEEPAGENT</text>
+        <text x="432" y="277" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">QA 问答</text>
+        <text x="432" y="293" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">deepagent · skills</text>
+
+        <!-- training -->
+        <rect x="512" y="240" width="112" height="64" rx="6" fill="#f7f3ee"/>
+        <rect x="512" y="240" width="112" height="64" rx="6" fill="#ffffff" stroke="#343b42" stroke-width="1"/>
+        <text x="568" y="277" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">训练·计划</text>
+        <text x="568" y="293" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">agent · plan spawn</text>
+
+        <!-- race_strategy -->
+        <rect x="648" y="240" width="112" height="64" rx="6" fill="#f7f3ee"/>
+        <rect x="648" y="240" width="112" height="64" rx="6" fill="#ffffff" stroke="#343b42" stroke-width="1"/>
+        <text x="704" y="277" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">比赛策略</text>
+        <text x="704" y="293" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">agent · envelope</text>
+
+        <!-- custom_workout -->
+        <rect x="784" y="240" width="112" height="64" rx="6" fill="#f7f3ee"/>
+        <rect x="784" y="240" width="112" height="64" rx="6" fill="#ffffff" stroke="#343b42" stroke-width="1"/>
+        <text x="840" y="277" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">自建课程</text>
+        <text x="840" y="293" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">agent · envelope</text>
+
+        <!-- workout_manage -->
+        <rect x="920" y="240" width="112" height="64" rx="6" fill="#f7f3ee"/>
+        <rect x="920" y="240" width="112" height="64" rx="6" fill="#ffffff" stroke="#343b42" stroke-width="1"/>
+        <text x="976" y="277" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">课表管理</text>
+        <text x="976" y="293" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">deterministic + llm</text>
+
+        <!-- master plan subagent -->
+        <rect x="488" y="368" width="160" height="64" rx="6" fill="#f7f3ee"/>
+        <rect x="488" y="368" width="160" height="64" rx="6" fill="#ffffff" stroke="#343b42" stroke-width="1"/>
+        <rect x="496" y="374" width="44" height="12" rx="2" fill="none" stroke="rgba(52,59,66,0.40)" stroke-width="0.8"/>
+        <text x="518" y="383" fill="rgba(52,59,66,0.80)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">SUBAGENT</text>
+        <text x="568" y="405" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">Master Plan 生成</text>
+        <text x="568" y="421" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">agent · 10min budget</text>
+
+        <!-- 结构化卡片 (focal) -->
+        <rect x="720" y="368" width="224" height="64" rx="6" fill="#f7f3ee"/>
+        <rect x="720" y="368" width="224" height="64" rx="6" fill="rgba(255,99,99,0.10)" stroke="#c93535" stroke-width="1.2"/>
+        <rect x="728" y="374" width="44" height="12" rx="2" fill="none" stroke="rgba(201,53,53,0.50)" stroke-width="0.8"/>
+        <text x="750" y="383" fill="rgba(201,53,53,0.80)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">ARTIFACT</text>
+        <text x="832" y="405" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">结构化卡片</text>
+        <text x="832" y="421" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">$type envelope · apply_token</text>
+
+        <!-- 会话回复 out -->
+        <rect x="552" y="480" width="288" height="64" rx="6" fill="#f7f3ee"/>
+        <rect x="552" y="480" width="288" height="64" rx="6" fill="#ffffff" stroke="#343b42" stroke-width="1"/>
+        <rect x="560" y="486" width="28" height="12" rx="2" fill="none" stroke="rgba(52,59,66,0.40)" stroke-width="0.8"/>
+        <text x="574" y="495" fill="rgba(52,59,66,0.80)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">SSE</text>
+        <text x="696" y="517" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">会话回复</text>
+        <text x="696" y="533" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">text delta · status · card</text>
+
+        <!-- 运动员记忆 (store) -->
+        <rect x="64" y="584" width="176" height="64" rx="6" fill="#f7f3ee"/>
+        <rect x="64" y="584" width="176" height="64" rx="6" fill="rgba(52,59,66,0.05)" stroke="#56606b" stroke-width="1"/>
+        <rect x="72" y="590" width="32" height="12" rx="2" fill="none" stroke="rgba(52,59,66,0.40)" stroke-width="0.8"/>
+        <text x="88" y="599" fill="rgba(52,59,66,0.80)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">STORE</text>
+        <text x="152" y="621" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">运动员记忆</text>
+        <text x="152" y="637" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">langgraph store</text>
+
+        <!-- 工具层 (store-ish bar) -->
+        <rect x="304" y="584" width="488" height="64" rx="6" fill="#f7f3ee"/>
+        <rect x="304" y="584" width="488" height="64" rx="6" fill="rgba(52,59,66,0.05)" stroke="#56606b" stroke-width="1"/>
+        <rect x="312" y="590" width="40" height="12" rx="2" fill="none" stroke="rgba(52,59,66,0.40)" stroke-width="0.8"/>
+        <text x="332" y="599" fill="rgba(52,59,66,0.80)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">TOOLS</text>
+        <text x="548" y="621" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">工具层 ×16</text>
+        <text x="548" y="637" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">r/o data · feel write · ask_user</text>
+
+        <!-- ============ LEGEND ============ -->
+        <line x1="30" y1="668" x2="1250" y2="668" stroke="rgba(52,59,66,0.10)" stroke-width="0.8"/>
+        <text x="30" y="699" fill="#56606b" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" letter-spacing="0.14em">LEGEND</text>
+
+        <rect x="110" y="688" width="24" height="14" rx="3" fill="rgba(255,99,99,0.10)" stroke="#c93535" stroke-width="1"/>
+        <text x="142" y="699" fill="#56606b" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" letter-spacing="0.06em">FOCAL</text>
+
+        <rect x="230" y="688" width="24" height="14" rx="3" fill="#ffffff" stroke="#343b42" stroke-width="1"/>
+        <text x="262" y="699" fill="#56606b" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" letter-spacing="0.06em">NODE</text>
+
+        <rect x="340" y="688" width="24" height="14" rx="3" fill="rgba(52,59,66,0.05)" stroke="#56606b" stroke-width="1"/>
+        <text x="372" y="699" fill="#56606b" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" letter-spacing="0.06em">STATE</text>
+
+        <rect x="450" y="688" width="24" height="14" rx="3" fill="rgba(86,96,107,0.10)" stroke="#5f6874" stroke-width="1"/>
+        <text x="482" y="699" fill="#56606b" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" letter-spacing="0.06em">CLIENT</text>
+
+        <line x1="580" y1="695" x2="604" y2="695" stroke="#56606b" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <text x="616" y="699" fill="#56606b" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" letter-spacing="0.06em">STATE ACCESS</text>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>

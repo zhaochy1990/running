@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Coach Agent 架构总览</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f7f3ee;
+      --color-ink:     #343b42;
+      --color-muted:   #56606b;
+      --color-soft:    #5f6874;
+      --color-accent:  #c93535;
+      --font-sans:     'Geist', 'Noto Sans SC', 'PingFang SC', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', 'Noto Serif', 'Noto Serif SC', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1360px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+    svg { width: 100%; min-width: 1280px; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Stridewise · Coach Agent · Architecture</p>
+    <h1>Coach Agent 架构总览</h1>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="coach-agent-overview-title coach-agent-overview-desc">
+        <title id="coach-agent-overview-title">Coach Agent 架构总览</title>
+        <desc id="coach-agent-overview-desc">Coach Agent 总览：小程序经 Caddy 进入 coach-api 聊天平面（LangGraph 意图路由五个业务节点加十六个工具），计划生成经 Go API 与 RabbitMQ 进入 coach-worker 规划平面（Master 与 Weekly kernel），数据落 MySQL 双库，模型统一走 DeepSeek。</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#56606b"/></marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#c93535"/></marker>
+          <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#3d5a80"/></marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#f7f3ee"/>
+
+        <!-- ============ ZONES (before arrows & nodes) ============ -->
+        <rect x="320" y="168" width="240" height="352" rx="8" fill="rgba(52,59,66,0.02)" stroke="rgba(52,59,66,0.10)" stroke-width="0.8"/>
+        <rect x="332" y="172" width="64" height="18" rx="2" fill="#f7f3ee"/>
+        <text x="364" y="185" fill="#5f6874" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">对话平面</text>
+
+        <rect x="672" y="288" width="248" height="256" rx="8" fill="rgba(52,59,66,0.02)" stroke="rgba(52,59,66,0.10)" stroke-width="0.8"/>
+        <rect x="684" y="292" width="64" height="18" rx="2" fill="#f7f3ee"/>
+        <text x="716" y="305" fill="#5f6874" font-size="12" font-weight="500" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">规划平面</text>
+
+        <!-- ============ ARROWS (before nodes) ============ -->
+        <!-- E1 小程序 → Caddy -->
+        <line x1="240" y1="92" x2="352" y2="92" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="272" y="72" width="48" height="12" rx="2" fill="#f7f3ee"/>
+        <text x="296" y="81" fill="#5f6874" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.06em">HTTPS</text>
+
+        <!-- E13 小程序 → Go API（应用计划 / 回写体感，用户动作，异步） -->
+        <path d="M 152,120 V 144 Q 152,152 160,152 H 432 a 8,8 0 0,1 16,0 H 952 Q 960,152 960,160 V 200 Q 960,208 968,208 H 1000" fill="none" stroke="#56606b" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <rect x="656" y="132" width="88" height="12" rx="2" fill="#f7f3ee"/>
+        <text x="700" y="141" fill="#5f6874" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.06em">APPLY · FEEL</text>
+
+        <!-- E2 Caddy → Coach API -->
+        <line x1="440" y1="120" x2="440" y2="200" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="448" y="150" width="44" height="12" rx="2" fill="#f7f3ee"/>
+        <text x="452" y="159" fill="#5f6874" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="start" letter-spacing="0.06em">CHAT</text>
+
+        <!-- E3 Coach API → Agent -->
+        <line x1="440" y1="256" x2="440" y2="320" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="448" y="280" width="36" height="12" rx="2" fill="#f7f3ee"/>
+        <text x="452" y="289" fill="#5f6874" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="start" letter-spacing="0.06em">SSE</text>
+
+        <!-- E4 Agent → 工具层 -->
+        <line x1="440" y1="384" x2="440" y2="448" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="448" y="408" width="48" height="12" rx="2" fill="#f7f3ee"/>
+        <text x="452" y="417" fill="#5f6874" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="start" letter-spacing="0.06em">TOOLS</text>
+
+        <!-- E5 工具层 → 业务库 -->
+        <line x1="440" y1="504" x2="440" y2="576" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="452" y="532" width="72" height="12" rx="2" fill="#f7f3ee"/>
+        <text x="456" y="541" fill="#5f6874" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="start" letter-spacing="0.06em">READ SQL</text>
+
+        <!-- E6 Agent → 会话库（checkpoint / store） -->
+        <path d="M 336,344 H 168 Q 160,344 160,352 V 576" fill="none" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="168" y="440" width="84" height="12" rx="2" fill="#f7f3ee"/>
+        <text x="172" y="449" fill="#5f6874" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="start" letter-spacing="0.06em">CHECKPOINT</text>
+
+        <!-- E7 Coach API → Go API（plan-jobs 入队） -->
+        <line x1="528" y1="228" x2="1000" y2="228" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="736" y="208" width="72" height="12" rx="2" fill="#f7f3ee"/>
+        <text x="772" y="217" fill="#5f6874" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.06em">PLAN-JOBS</text>
+
+        <!-- E8 Go API → RabbitMQ -->
+        <path d="M 1040,240 V 336 Q 1040,344 1032,344 H 904" fill="none" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="1048" y="280" width="72" height="12" rx="2" fill="#f7f3ee"/>
+        <text x="1052" y="289" fill="#5f6874" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="start" letter-spacing="0.06em">ENQUEUE</text>
+
+        <!-- E9 RabbitMQ → Worker -->
+        <path d="M 824,376 V 416 Q 824,424 816,424 H 784 Q 776,424 776,432 V 448" fill="none" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="832" y="388" width="76" height="12" rx="2" fill="#f7f3ee"/>
+        <text x="836" y="397" fill="#5f6874" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="start" letter-spacing="0.06em">CONSUME</text>
+
+        <!-- E11 Worker → 业务库（DataProvider 只读） -->
+        <path d="M 704,512 V 540 Q 704,548 696,548 H 656 a 8,8 0 0,0 -16,0 H 536 Q 528,548 528,556 V 576" fill="none" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="556" y="530" width="76" height="12" rx="2" fill="#f7f3ee"/>
+        <text x="594" y="539" fill="#5f6874" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.06em">KERNEL R/O</text>
+
+        <!-- E10 Worker → DeepSeek -->
+        <line x1="744" y1="512" x2="744" y2="576" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="752" y="556" width="88" height="12" rx="2" fill="#f7f3ee"/>
+        <text x="756" y="565" fill="#5f6874" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="start" letter-spacing="0.06em">KERNEL LLM</text>
+
+        <!-- E12 Agent → DeepSeek -->
+        <path d="M 544,344 H 640 Q 648,344 648,352 V 576" fill="none" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="568" y="450" width="72" height="12" rx="2" fill="#f7f3ee"/>
+        <text x="604" y="459" fill="#5f6874" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.06em">CHAT LLM</text>
+
+        <!-- E14 Worker → Go API（job 状态回写，返回） -->
+        <path d="M 864,484 H 1088 Q 1096,484 1096,476 V 240" fill="none" stroke="#56606b" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <rect x="1104" y="352" width="84" height="12" rx="2" fill="#f7f3ee"/>
+        <text x="1108" y="361" fill="#5f6874" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="start" letter-spacing="0.06em">JOB STATUS</text>
+
+        <!-- ============ NODES ============ -->
+        <!-- N1 小程序用户 (input) -->
+        <rect x="64" y="64" width="176" height="56" rx="6" fill="#f7f3ee"/>
+        <rect x="64" y="64" width="176" height="56" rx="6" fill="rgba(86,96,107,0.10)" stroke="#5f6874" stroke-width="1"/>
+        <rect x="72" y="70" width="40" height="12" rx="2" fill="none" stroke="rgba(52,59,66,0.40)" stroke-width="0.8"/>
+        <text x="92" y="79" fill="rgba(52,59,66,0.80)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">CLIENT</text>
+        <text x="152" y="97" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">小程序用户</text>
+        <text x="152" y="111" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">wechat mp · swiftui</text>
+
+        <!-- N2 Caddy (backend) -->
+        <rect x="352" y="64" width="176" height="56" rx="6" fill="#f7f3ee"/>
+        <rect x="352" y="64" width="176" height="56" rx="6" fill="#ffffff" stroke="#343b42" stroke-width="1"/>
+        <rect x="360" y="70" width="24" height="12" rx="2" fill="none" stroke="rgba(52,59,66,0.40)" stroke-width="0.8"/>
+        <text x="372" y="79" fill="rgba(52,59,66,0.80)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">GW</text>
+        <text x="440" y="97" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">Caddy 网关</text>
+        <text x="440" y="111" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">route /coach/* → ts</text>
+
+        <!-- N3 Go API (backend) -->
+        <rect x="1000" y="176" width="200" height="64" rx="6" fill="#f7f3ee"/>
+        <rect x="1000" y="176" width="200" height="64" rx="6" fill="#ffffff" stroke="#343b42" stroke-width="1"/>
+        <rect x="1008" y="182" width="24" height="12" rx="2" fill="none" stroke="rgba(52,59,66,0.40)" stroke-width="0.8"/>
+        <text x="1020" y="191" fill="rgba(52,59,66,0.80)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">GO</text>
+        <text x="1100" y="213" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">Go API</text>
+        <text x="1100" y="229" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">jobs owner · apply · feel</text>
+
+        <!-- N4 Coach API (backend) -->
+        <rect x="352" y="200" width="176" height="56" rx="6" fill="#f7f3ee"/>
+        <rect x="352" y="200" width="176" height="56" rx="6" fill="#ffffff" stroke="#343b42" stroke-width="1"/>
+        <rect x="360" y="206" width="32" height="12" rx="2" fill="none" stroke="rgba(52,59,66,0.40)" stroke-width="0.8"/>
+        <text x="376" y="215" fill="rgba(52,59,66,0.80)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">HTTP</text>
+        <text x="440" y="233" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">Coach API</text>
+        <text x="440" y="247" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">hono · streamSSE</text>
+
+        <!-- N5 createCoachAgent (focal) -->
+        <rect x="336" y="320" width="208" height="64" rx="6" fill="#f7f3ee"/>
+        <rect x="336" y="320" width="208" height="64" rx="6" fill="rgba(255,99,99,0.10)" stroke="#c93535" stroke-width="1.2"/>
+        <rect x="344" y="326" width="36" height="12" rx="2" fill="none" stroke="rgba(201,53,53,0.50)" stroke-width="0.8"/>
+        <text x="362" y="335" fill="rgba(201,53,53,0.80)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">AGENT</text>
+        <text x="440" y="357" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">对话 Agent</text>
+        <text x="440" y="373" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">langgraph intent ×5</text>
+
+        <!-- N6 工具层 (backend) -->
+        <rect x="336" y="448" width="208" height="56" rx="6" fill="#f7f3ee"/>
+        <rect x="336" y="448" width="208" height="56" rx="6" fill="#ffffff" stroke="#343b42" stroke-width="1"/>
+        <rect x="344" y="454" width="36" height="12" rx="2" fill="none" stroke="rgba(52,59,66,0.40)" stroke-width="0.8"/>
+        <text x="362" y="463" fill="rgba(52,59,66,0.80)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">TOOLS</text>
+        <text x="440" y="481" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">工具层</text>
+        <text x="440" y="495" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">tools ×16 · mysql r/o</text>
+
+        <!-- N7 RabbitMQ (store) -->
+        <rect x="744" y="320" width="160" height="56" rx="6" fill="#f7f3ee"/>
+        <rect x="744" y="320" width="160" height="56" rx="6" fill="rgba(52,59,66,0.05)" stroke="#56606b" stroke-width="1"/>
+        <rect x="752" y="326" width="36" height="12" rx="2" fill="none" stroke="rgba(52,59,66,0.40)" stroke-width="0.8"/>
+        <text x="770" y="335" fill="rgba(52,59,66,0.80)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">QUEUE</text>
+        <text x="824" y="353" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">RabbitMQ</text>
+        <text x="824" y="367" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">plan.jobs ×3</text>
+
+        <!-- N8 Coach Worker (focal) -->
+        <rect x="688" y="448" width="176" height="64" rx="6" fill="#f7f3ee"/>
+        <rect x="688" y="448" width="176" height="64" rx="6" fill="rgba(255,99,99,0.10)" stroke="#c93535" stroke-width="1.2"/>
+        <rect x="696" y="454" width="40" height="12" rx="2" fill="none" stroke="rgba(201,53,53,0.50)" stroke-width="0.8"/>
+        <text x="716" y="463" fill="rgba(201,53,53,0.80)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">WORKER</text>
+        <text x="776" y="485" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">Coach Worker</text>
+        <text x="776" y="501" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">master / weekly kernel</text>
+
+        <!-- N9 Coach 会话库 (store) -->
+        <rect x="64" y="576" width="192" height="64" rx="6" fill="#f7f3ee"/>
+        <rect x="64" y="576" width="192" height="64" rx="6" fill="rgba(52,59,66,0.05)" stroke="#56606b" stroke-width="1"/>
+        <rect x="72" y="582" width="24" height="12" rx="2" fill="none" stroke="rgba(52,59,66,0.40)" stroke-width="0.8"/>
+        <text x="84" y="591" fill="rgba(52,59,66,0.80)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">DB</text>
+        <text x="160" y="613" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">Coach 会话库</text>
+        <text x="160" y="629" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">checkpoints · store · shares</text>
+
+        <!-- N10 业务数据库 (store) -->
+        <rect x="304" y="576" width="232" height="64" rx="6" fill="#f7f3ee"/>
+        <rect x="304" y="576" width="232" height="64" rx="6" fill="rgba(52,59,66,0.05)" stroke="#56606b" stroke-width="1"/>
+        <rect x="312" y="582" width="24" height="12" rx="2" fill="none" stroke="rgba(52,59,66,0.40)" stroke-width="0.8"/>
+        <text x="324" y="591" fill="rgba(52,59,66,0.80)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">DB</text>
+        <text x="420" y="613" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">业务数据库</text>
+        <text x="420" y="629" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">20+ tables · daily sync</text>
+
+        <!-- N11 DeepSeek (external) -->
+        <rect x="584" y="576" width="168" height="64" rx="6" fill="#f7f3ee"/>
+        <rect x="584" y="576" width="168" height="64" rx="6" fill="rgba(52,59,66,0.03)" stroke="rgba(52,59,66,0.30)" stroke-width="1"/>
+        <rect x="592" y="582" width="24" height="12" rx="2" fill="none" stroke="rgba(52,59,66,0.40)" stroke-width="0.8"/>
+        <text x="604" y="591" fill="rgba(52,59,66,0.80)" font-size="7" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle" letter-spacing="0.08em">LLM</text>
+        <text x="668" y="613" fill="#343b42" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">DeepSeek</text>
+        <text x="668" y="629" fill="#56606b" font-size="9" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">v4-pro · flash</text>
+
+        <!-- ============ LEGEND ============ -->
+        <line x1="30" y1="656" x2="1250" y2="656" stroke="rgba(52,59,66,0.10)" stroke-width="0.8"/>
+        <text x="30" y="692" fill="#56606b" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" letter-spacing="0.14em">LEGEND</text>
+
+        <rect x="110" y="682" width="24" height="14" rx="3" fill="rgba(255,99,99,0.10)" stroke="#c93535" stroke-width="1"/>
+        <text x="142" y="693" fill="#56606b" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" letter-spacing="0.06em">FOCAL</text>
+
+        <rect x="230" y="682" width="24" height="14" rx="3" fill="#ffffff" stroke="#343b42" stroke-width="1"/>
+        <text x="262" y="693" fill="#56606b" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" letter-spacing="0.06em">SERVICE</text>
+
+        <rect x="360" y="682" width="24" height="14" rx="3" fill="rgba(52,59,66,0.05)" stroke="#56606b" stroke-width="1"/>
+        <text x="392" y="693" fill="#56606b" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" letter-spacing="0.06em">STORE</text>
+
+        <rect x="480" y="682" width="24" height="14" rx="3" fill="rgba(52,59,66,0.03)" stroke="rgba(52,59,66,0.30)" stroke-width="1"/>
+        <text x="512" y="693" fill="#56606b" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" letter-spacing="0.06em">EXTERNAL</text>
+
+        <rect x="620" y="682" width="24" height="14" rx="3" fill="rgba(86,96,107,0.10)" stroke="#5f6874" stroke-width="1"/>
+        <text x="652" y="693" fill="#56606b" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" letter-spacing="0.06em">CLIENT</text>
+
+        <line x1="740" y1="689" x2="764" y2="689" stroke="#56606b" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <text x="776" y="693" fill="#56606b" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" letter-spacing="0.06em">SYNC CALL</text>
+
+        <line x1="890" y1="689" x2="914" y2="689" stroke="#56606b" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <text x="926" y="693" fill="#56606b" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" letter-spacing="0.06em">ASYNC / RETURN</text>
+
+        <rect x="1080" y="681" width="36" height="16" rx="3" fill="rgba(52,59,66,0.02)" stroke="rgba(52,59,66,0.10)" stroke-width="0.8"/>
+        <text x="1124" y="693" fill="#56606b" font-size="8" font-family="'Geist Mono',ui-monospace,monospace" letter-spacing="0.06em">PLANE (ZONE)</text>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>
