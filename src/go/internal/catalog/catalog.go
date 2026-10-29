@@ -40,19 +40,27 @@ const (
 	JobTypeRaceDetection = "race_detection"
 	// JobTypeRaceDetectionBackfill is the internal one-time all-history scan.
 	JobTypeRaceDetectionBackfill = "race_detection_backfill"
-	// JobTypeRouteThumbnails renders each newly synced outdoor activity's GPS
-	// trace into a route-thumbnail PNG in COS and records the polyline plus the
-	// PNG URL on the activity. Optional inside sync pipelines: thumbnails are
-	// cosmetic, so a terminal failure stays observable on its step while the
-	// pipeline advances.
+	// JobTypeRouteThumbnails is the retired PNG-rendering step (devops#829).
+	// Deprecated: the sync pipeline stopped producing route-thumbnail PNGs and
+	// uploading them to COS — route_thumb_json is the only trace channel now.
+	// The type stays cataloged and worker-registered as a no-op tombstone for
+	// one version so in-flight pipeline runs (whose stored definitions still
+	// carry the step) and stale operator triggers dispatch cleanly instead of
+	// terminally failing on an unknown job type. Remove with the next
+	// contract-cleanup pass once no pre-retirement run can still be alive.
 	JobTypeRouteThumbnails = "route_thumbnails"
-	// JobTypeRouteThumbnailsBackfill is the internal one-time all-history scan
-	// that fills in thumbnails for activities synced before the feature existed.
-	JobTypeRouteThumbnailsBackfill = "route_thumbnails_backfill"
+	// JobTypeRouteShapes fills activities.route_thumb_json for the subject
+	// athlete's activities that have GPS but no stored shape (devops#829). It is
+	// the compute-only successor of the retired route_thumbnails PNG step and
+	// the sync pipelines' trace channel: no PNG is rendered, COS is not
+	// touched, and route_thumb_url is never written. Optional inside sync
+	// pipelines: the shape is cosmetic, so a terminal failure stays observable
+	// on its step while the pipeline advances.
+	JobTypeRouteShapes = "route_shapes"
 	// JobTypeRouteThumbnailsShapeBackfill is the internal compute-only backfill
 	// (devops#830): it fills activities.route_thumb_json for historical rows
 	// that have GPS but no stored shape — no PNG is rendered and COS is not
-	// touched, unlike route_thumbnails_backfill whose job is the PNG URL.
+	// touched.
 	JobTypeRouteThumbnailsShapeBackfill = "route_thumbnails_shape_backfill"
 	// JobTypeRaceCalendar syncs the external World Athletics competition
 	// calendar (label road races) into the race_calendar table. It is a system
@@ -175,16 +183,16 @@ func Jobs() []JobSpec {
 		{
 			Type:          JobTypeRouteThumbnails,
 			UserInitiable: false,
-			Description:   "Render the subject athlete's outdoor activities into route-thumbnail PNGs stored in COS, recording the polyline and PNG URL on each activity. Only activities that still lack a thumbnail are touched, so the step is a cheap no-op on a routine sync. Internal optional pipeline step; with an empty COS config it skips itself and reports why.",
+			Description:   "Deprecated no-op (devops#829): the PNG rendering pipeline is retired — the worker logs a deprecation warning, echoes label_ids through and reports skipped without doing anything. Retained one version so in-flight pipeline runs and stale triggers dispatch cleanly; remove with the next contract-cleanup pass. Internal-only.",
 			InputSchema:   json.RawMessage(`{"type":"object","additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{}`),
 		},
 		{
-			Type:          JobTypeRouteThumbnailsBackfill,
+			Type:          JobTypeRouteShapes,
 			UserInitiable: false,
-			Description:   "All-history route-thumbnail backfill for one athlete: fills in activities that have no thumbnail yet. Pass {\"force\":true} to also regenerate activities that already have one, which is what a rendering-algorithm change needs — the default selection skips finished work on purpose. Internal-only.",
-			InputSchema:   json.RawMessage(`{"type":"object","properties":{"force":{"type":"boolean","default":false,"description":"Regenerate activities that already have a thumbnail instead of only filling the gaps. Object keys are per-activity, so this overwrites in place."}},"additionalProperties":false}`),
-			ExampleInput:  json.RawMessage(`{"force":true}`),
+			Description:   "Fill the subject athlete's route_thumb_json shape column for activities that have GPS but no stored shape: read the timeseries, normalize the trace into a ≤60-point polyline and persist it. No PNG is rendered and COS is not touched (devops#829). Only activities still missing their shape are selected, so the step is a cheap no-op on a routine sync. Internal optional pipeline step.",
+			InputSchema:   json.RawMessage(`{"type":"object","properties":{"label_ids":{"type":"array","items":{"type":"string"},"description":"The sync's threaded batch, echoed through to the downstream ability step."}},"additionalProperties":true}`),
+			ExampleInput:  json.RawMessage(`{"label_ids":["a1b2"]}`),
 		},
 		{
 			Type:          JobTypeRouteThumbnailsShapeBackfill,
@@ -262,12 +270,12 @@ func Pipelines() []PipelineSpec {
 					{Name: "race_detection", JobType: JobTypeRaceDetection, ContinueOnFailure: true},
 					{Name: "calibration", JobType: JobTypeCalibration},
 					{Name: "compute", JobType: JobTypeCompute},
-					{Name: "route_thumbnails", JobType: JobTypeRouteThumbnails, ContinueOnFailure: true},
+					{Name: "route_shapes", JobType: JobTypeRouteShapes, ContinueOnFailure: true},
 					{Name: "ability", JobType: JobTypeAbility, ContinueOnFailure: true},
 				},
 			},
 			UserInitiable: true,
-			Description:   "Full path (new-user onboarding or explicit full resync): a full watch sync, optional race detection, the athlete baseline, a full load/PMC/PB compute, then route thumbnails. Race-detection and thumbnail failures remain visible on their steps but do not fail the pipeline. The run's user_id is the subject athlete.",
+			Description:   "Full path (new-user onboarding or explicit full resync): a full watch sync, optional race detection, the athlete baseline, a full load/PMC/PB compute, then route shapes (route_thumb_json). Race-detection and shape failures remain visible on their steps but do not fail the pipeline. The run's user_id is the subject athlete.",
 			InputSchema:   syncInputSchema,
 			ExampleInput:  json.RawMessage(`{"mode":"full"}`),
 		},
@@ -278,12 +286,12 @@ func Pipelines() []PipelineSpec {
 					{Name: "sync", JobType: JobTypeWatchSync},
 					{Name: "race_detection", JobType: JobTypeRaceDetection, ContinueOnFailure: true},
 					{Name: "compute", JobType: JobTypeCompute},
-					{Name: "route_thumbnails", JobType: JobTypeRouteThumbnails, ContinueOnFailure: true},
+					{Name: "route_shapes", JobType: JobTypeRouteShapes, ContinueOnFailure: true},
 					{Name: "ability", JobType: JobTypeAbility, ContinueOnFailure: true},
 				},
 			},
 			UserInitiable: true,
-			Description:   "Ongoing incremental path: an incremental watch sync, optional race detection, an incremental compute over only this sync's new activities, then route thumbnails for those activities. Race-detection and thumbnail failures remain visible on their steps but do not fail the pipeline. The run's user_id is the subject athlete.",
+			Description:   "Ongoing incremental path: an incremental watch sync, optional race detection, an incremental compute over only this sync's new activities, then route shapes for activities still missing their route_thumb_json. Race-detection and shape failures remain visible on their steps but do not fail the pipeline. The run's user_id is the subject athlete.",
 			InputSchema:   syncInputSchema,
 			ExampleInput:  json.RawMessage(`{"mode":"incremental"}`),
 		},

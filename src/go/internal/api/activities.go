@@ -474,9 +474,13 @@ type activityListItem struct {
 	DurationFmt     string          `json:"duration_fmt"`
 	PaceFmt         string          `json:"pace_fmt"`
 	RouteThumb      json.RawMessage `json:"route_thumb" swaggertype:"object"`
-	// ThumbURL is the public URL of the pre-rendered route-thumbnail PNG clients
-	// can drop straight into an <image>. Null for indoor activities and until the
-	// thumbnail job has run.
+	// ThumbURL is the legacy pre-rendered route-thumbnail PNG URL from the
+	// retired rendering pipeline (devops#829). Deprecated: nothing writes
+	// route_thumb_url anymore and no new COS objects are produced — the value
+	// is the stock URL frozen at retirement, returned read-only as a long-tail
+	// fallback for old clients that still load the image. New clients draw
+	// route_thumb themselves. Null for indoor activities and rows that never
+	// got a PNG. Full removal waits for the next contract-cleanup ticket.
 	ThumbURL *string `json:"thumb_url"`
 }
 

@@ -165,49 +165,44 @@ candidates. It is not a scheduled job and is unnecessary for newly synced
 activities. The job is partial-success: confirmed rows are committed as they are
 found, while a failed candidate remains absent and causes the job to retry/fail.
 
-#### Route thumbnail worker configuration
+#### Route shapes（route_thumb_json）与已退役的 PNG 管线
 
-The worker's route-thumbnail step uploads generated PNGs to Tencent Cloud COS.
-It is optional by design: an incomplete `cos:` section makes the job skip itself
-and report `{"skipped":"cos_not_configured"}` instead of failing the sync, so a
-deployment without bucket credentials still syncs normally (just without
-thumbnails). The committed `src/go/config.yml` supplies the non-secret defaults
-(all empty) under the `cos:` key:
+The worker's route step no longer renders or uploads anything: since devops#829
+the PNG pipeline is retired and `activities.route_thumb_json` (the shape JSON
+clients draw themselves, devops#827/#828) is the only trace channel. The sync
+pipelines' `route_shapes` step fills `route_thumb_json` for activities that
+have GPS but no stored shape — pure compute, no COS involvement, so the worker
+needs no `cos:` credentials at all anymore (its only remaining bucket client is
+the fail-fast ts-blob store).
 
-- `cos.bucket` — bucket name, e.g. `stride-running-1255867366`;
-- `cos.region` — e.g. `ap-shanghai`;
-- `cos.base-url` — the public origin prepended to the object key when building
-  `thumb_url`, e.g. `https://stride-running-1255867366.cos.ap-shanghai.myqcloud.com`
-  (a CDN origin can be substituted later without touching stored rows only if
-  existing rows are rewritten — the URL is persisted on each activity).
+`route_thumbnails_shape_backfill` (devops#830) is the operator-triggered
+historical fill of the same column for rows that have GPS but no stored shape
+(`route_thumb_json IS NULL AND has_gps`). Idempotent per athlete: filled rows
+drop out of the candidate query, a rerun reports `{"candidates":0}`; traces
+with too few valid fixes are counted as `no_gps` and left NULL on purpose (the
+client keeps the sport-icon fallback). Enqueue it once per existing user via
+the internal `POST /jobs` after the worker deploys, in athlete batches if the
+gap is large.
 
-The two secrets must be injected into `stride-worker` only, via
-`STRIDE_WORKER_COS_SECRET_ID` and `STRIDE_WORKER_COS_SECRET_KEY`; never commit or
-print them. `stride-api` neither loads nor needs them.
+Retired surface (devops#829):
 
-The bucket must allow public reads on `thumbnails/*`: the miniprogram loads the
-stored URL directly. Add the bucket's public domain to the WeChat MP
-`downloadFile` / image domain allow-list — the avatar upload already uses the
-same bucket, so this is usually in place. Objects are keyed
-`thumbnails/{user_id}/{label_id}.png`, so a re-render overwrites in place and no
-cleanup job is needed for deleted activities beyond normal bucket lifecycle.
-
-After deploying the worker, enqueue internal-only `route_thumbnails_backfill`
-once per existing user to fill in activities synced before the feature existed.
-It is not a scheduled job; the pipeline's own `route_thumbnails` step keeps new
-activities covered. Both share one handler, and the candidate query selects only
-activities still missing a thumbnail, so re-running either is a cheap no-op.
-
-`route_thumbnails_shape_backfill` (devops#830) is the compute-only sibling: it
-fills `activities.route_thumb_json` for rows that have GPS but no stored shape
-(`route_thumb_json IS NULL AND has_gps`), rendering nothing and touching no
-bucket — an unconfigured `cos:` section does not skip it. Its candidates key on
-the JSON column, not the URL, so rows that carry a legacy PNG URL but no
-polyline are still selected. Idempotent per athlete: filled rows drop out of the
-candidate query, a rerun reports `{"candidates":0}`; traces with too few valid
-fixes are counted as `no_gps` and left NULL on purpose (the client keeps the
-sport-icon fallback). Enqueue it once per existing user via the internal
-`POST /jobs` after the worker deploys, in athlete batches if the gap is large.
+- `route_thumbnails_backfill` is deleted from the catalog — the API now rejects
+  it as an unknown job type, and the `{"force":true}` regeneration escape hatch
+  died with it (the epic's runbook had already cancelled the forced backfill).
+- `route_thumbnails` stays cataloged and worker-registered for one version as a
+  logged no-op tombstone, so pipeline runs whose stored step definitions still
+  carry the old step dispatch cleanly instead of poisoning at dispatch. Remove
+  both with the next contract-cleanup pass once no pre-retirement run can still
+  be alive.
+- `activities.route_thumb_url` is frozen legacy: nothing writes it, the column
+  and the list endpoint's `thumb_url` field stay (read-only) as the old-client
+  long-tail fallback, pointing at the stock PNG objects already in COS.
+- The stock `thumbnails/*` COS objects and the column cleanup are a **gated
+  operator action** (enumerate + batch-delete + clear the column): do NOT run
+  it until the user explicitly approves — the old clients still load those
+  URLs. Decision record: epic devops#826 / ticket devops#829.
+- The `cos:` config block now serves the API only (avatar and feedback-image
+  uploads); `stride-worker` no longer reads it.
 
 ### 赛季训练计划统一读取切流
 

@@ -1,5 +1,9 @@
-// Package thumbnail turns an activity's GPS time series into a small route
-// thumbnail: a normalized polyline, plus a PNG rendering of that polyline.
+// Package thumbnail turns an activity's GPS time series into the normalized
+// route shape stored in activities.route_thumb_json: a ≤TargetPoints-point
+// polyline in the [0,Viewbox] frame that clients draw themselves (mp canvas /
+// iOS Path, devops#827/#828). The PNG renderer that once lived beside it was
+// retired with the rendering pipeline (devops#829); only the reduction
+// remains, and it is route_thumb_json's production code.
 //
 // The reduction step is NOT the Python reference's. The original thinned by
 // distance, which aliases on the routes people actually run — a loop covered
@@ -23,8 +27,7 @@ import (
 
 // Constants inherited from the Python reference.
 const (
-	// TargetPoints caps the polyline length handed to the renderer and stored
-	// in route_thumb_json.
+	// TargetPoints caps the polyline length stored in route_thumb_json.
 	TargetPoints = 60
 	// Viewbox is the square coordinate space the polyline is normalized into.
 	// Points land in [0,Viewbox] on both axes, inset by Padding.

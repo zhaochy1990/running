@@ -68,16 +68,6 @@ func runWorker() error {
 		return err
 	}
 
-	// Route-thumbnail bucket. An incomplete config yields an inert client rather
-	// than a boot failure — the handler skips itself and reports why.
-	cosClient := cos.NewClient(cos.Config{
-		SecretID:  cfg.COS.SecretID,
-		SecretKey: cfg.COS.SecretKey,
-		Bucket:    cfg.COS.Bucket,
-		Region:    cfg.COS.Region,
-		BaseURL:   cfg.COS.BaseURL,
-	})
-
 	// Timeseries blob bucket (devops#784/#785). Constructed before the store
 	// so it can be injected right after Open: every watch upsert dual-writes
 	// its points blob from now on (Phase 1). Its explicit construction error
@@ -172,7 +162,7 @@ func runWorker() error {
 		}
 		return registry.Build(name, store, watchRequestDelay)
 	}
-	registerHandlers(reg, resolve, store, racedetection.New(raceClassifier), cfg.RaceDetection.MaxConcurrency, cosClient, waClient, tsBlobStore, log, competitioncalendar.Config{
+	registerHandlers(reg, resolve, store, racedetection.New(raceClassifier), cfg.RaceDetection.MaxConcurrency, waClient, tsBlobStore, log, competitioncalendar.Config{
 		Client:                waClient,
 		Store:                 store,
 		CompetitionGroupID:    cfg.WorldAthletics.CompetitionGroupID,
@@ -308,7 +298,8 @@ func newRaceClassifier(cfg config.RaceDetection) (racedetection.Classifier, erro
 // section (devops#784 Phase 0; shared by `stride worker` and `stride api`).
 // cos.NewPrivateClient carries the fail-fast semantics: any empty field is an
 // explicit boot error naming what is missing — this bucket is load-bearing,
-// unlike the degradable thumbnail bucket.
+// and since the thumbnail bucket stopped being the worker's degradable extra
+// (devops#829) it is the only COS client the worker builds.
 func newTSBlobStore(cfg config.TSBlob) (tsstore.Store, error) {
 	cli, err := cos.NewPrivateClient(cos.Config{
 		SecretID:  cfg.SecretID,
@@ -325,16 +316,18 @@ func newTSBlobStore(cfg config.TSBlob) (tsstore.Store, error) {
 // registerHandlers wires job handlers. `hello` is the deploy smoke handler;
 // `watch_sync` runs a user's watch-data sync (ADR 0011); `calibration` computes
 // the athlete baseline and `compute` derives load/PMC/PBs from synced data,
-// mode-aware (ADR 0020); `route_thumbnails` renders outdoor activities into
-// route PNGs in COS, with `route_thumbnails_backfill` doing the all-history scan
-// and `route_thumbnails_shape_backfill` the compute-only route_thumb_json fill
-// (devops#830, no PNG/COS);
+// mode-aware (ADR 0020); `route_shapes` fills the route_thumb_json shape
+// channel for the sync pipelines (devops#829 — the PNG-rendering
+// route_thumbnails step is retired and kept one version as a logged no-op
+// tombstone, and route_thumbnails_backfill is gone entirely), with
+// `route_thumbnails_shape_backfill` as the operator-triggered historical fill
+// (devops#830);
 // `race_calendar_sync` mirrors the World Athletics calendar (ccConfig),
 // preceded by `fetch_wa_api_key` key discovery (waClient); `chinaath_race_calendar_sync`
 // mirrors the 中国田协 catalogue (caConfig); `homecity_recompute` refreshes
 // every user's resident-city snapshot; `ts_blob_gc` collects orphaned
 // timeseries blobs (devops#785, operator-enqueued).
-func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store, raceDetector *racedetection.Detector, raceConcurrency int, cosClient *cos.Client, waClient *worldathletics.Client, tsBlobStore tsstore.Store, log *zap.Logger, ccConfig competitioncalendar.Config, caConfig chinaathcalendar.Config) {
+func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store, raceDetector *racedetection.Detector, raceConcurrency int, waClient *worldathletics.Client, tsBlobStore tsstore.Store, log *zap.Logger, ccConfig competitioncalendar.Config, caConfig chinaathcalendar.Config) {
 	reg.MustRegister("hello", func(_ context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		_ = hb("greeting", 50)
 		return fmt.Sprintf(`{"echo":%q}`, j.InputJSON), nil
@@ -345,13 +338,14 @@ func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *stor
 	reg.MustRegister(compute.CalibrationJobType, compute.NewCalibration(store))
 	reg.MustRegister(compute.ComputeJobType, compute.NewCompute(store))
 	reg.MustRegister(compute.AbilityJobType, compute.NewAbility(store))
-	// Both thumbnail job types share one handler: the candidate query already
-	// selects only activities lacking a thumbnail, so the backfill needs no
-	// different behaviour — only its own catalog entry to be triggered on demand.
-	reg.MustRegister(routethumbnails.JobType, routethumbnails.New(store, cosClient))
-	reg.MustRegister(routethumbnails.BackfillJobType, routethumbnails.New(store, cosClient))
-	// The shape-only variant (devops#830) backfills route_thumb_json without the
-	// PNG/COS half; it deliberately takes no COS client.
+	// The sync pipelines' shape step (devops#829): fills route_thumb_json only —
+	// it deliberately takes no COS client, nothing renders or uploads anymore.
+	reg.MustRegister(routethumbnails.ShapesJobType, routethumbnails.NewShapes(store))
+	// One-version tombstone for the retired PNG job: in-flight runs whose stored
+	// definitions still carry the old step dispatch to this no-op instead of
+	// terminally failing at dispatch.
+	reg.MustRegister(routethumbnails.JobType, routethumbnails.NewDeprecated(log))
+	// The historical shape fill (devops#830), operator-triggered per athlete.
 	reg.MustRegister(routethumbnails.ShapeBackfillJobType, routethumbnails.NewShapeBackfill(store))
 	// race_calendar_sync pipeline: discover the current WA API key (so a
 	// rotation self-heals), then mirror the calendar with the discovered or the

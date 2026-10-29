@@ -1,9 +1,6 @@
 package thumbnail
 
 import (
-	"bytes"
-	"image/color"
-	"image/png"
 	"math"
 	"testing"
 )
@@ -381,81 +378,5 @@ func TestJSONMatchesPythonFormat(t *testing.T) {
 	}
 	if got := JSON(nil); got != "[]" {
 		t.Fatalf("JSON(nil) = %s, want []", got)
-	}
-}
-
-// Activity rows draw the thumbnail inside a circular slot, so a route that runs
-// corner to corner must still be wholly inside the inscribed circle. Fitting the
-// square instead would clip both ends off a straight diagonal out-and-back.
-func TestRenderPNGKeepsCornerToCornerRouteInsideCircularSlot(t *testing.T) {
-	// A straight SW->NE trace normalizes to opposite corners of the padded box.
-	points := []Point{{X: Padding, Y: Viewbox - Padding}, {X: Viewbox / 2, Y: Viewbox / 2}, {X: Viewbox - Padding, Y: Padding}}
-
-	const size = 96
-	raw, err := RenderPNG(points, size, color.RGBA{A: 0xff})
-	if err != nil {
-		t.Fatalf("RenderPNG: %v", err)
-	}
-	img, err := png.Decode(bytes.NewReader(raw))
-	if err != nil {
-		t.Fatalf("decode png: %v", err)
-	}
-
-	centre := float64(size) / 2
-	ink := 0
-	for y := range size {
-		for x := range size {
-			if _, _, _, a := img.At(x, y).RGBA(); a == 0 {
-				continue
-			}
-			ink++
-			if d := math.Hypot(float64(x)+0.5-centre, float64(y)+0.5-centre); d > centre {
-				t.Fatalf("ink at (%d,%d) is %.1f from centre, outside the %.0f radius slot", x, y, d, centre)
-			}
-		}
-	}
-	if ink == 0 {
-		t.Fatal("no stroke pixels drawn")
-	}
-}
-
-func TestRenderPNGProducesTransparentCanvasWithInk(t *testing.T) {
-	points, ok := Compute(trackTrace(25, 48))
-	if !ok {
-		t.Fatal("Compute returned no polyline")
-	}
-
-	raw, err := RenderPNG(points, 96, color.RGBA{R: 0x1f, G: 0x29, B: 0x37, A: 0xff})
-	if err != nil {
-		t.Fatalf("RenderPNG: %v", err)
-	}
-	img, err := png.Decode(bytes.NewReader(raw))
-	if err != nil {
-		t.Fatalf("decode png: %v", err)
-	}
-	if b := img.Bounds(); b.Dx() != 96 || b.Dy() != 96 {
-		t.Fatalf("canvas %v, want 96x96", b)
-	}
-
-	ink, opaque := 0, 0
-	for y := range 96 {
-		for x := range 96 {
-			_, _, _, a := img.At(x, y).RGBA()
-			if a == 0 {
-				continue
-			}
-			opaque++
-			r, g, b, _ := img.At(x, y).RGBA()
-			if r == 0x1f*257 && g == 0x29*257 && b == 0x37*257 {
-				ink++
-			}
-		}
-	}
-	if ink == 0 {
-		t.Fatal("no stroke pixels drawn")
-	}
-	// The route is a thin outline, not a fill: most of the canvas stays clear.
-	if opaque*2 > 96*96 {
-		t.Fatalf("canvas is %d/%d opaque — the polyline looks filled", opaque, 96*96)
 	}
 }

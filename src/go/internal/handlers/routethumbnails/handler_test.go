@@ -1,58 +1,119 @@
 package routethumbnails
 
 import (
-	"bytes"
-	"image/color"
-	"image/png"
+	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 
-	"github.com/zhaochy1990/stride/internal/thumbnail"
+	"go.uber.org/zap"
+
+	"github.com/zhaochy1990/stride/internal/job"
+	"github.com/zhaochy1990/stride/internal/storage"
 )
 
-// The thumbnail sits on a light card since the theme flip (devops#817), so the
-// stroke ink must be the dark textPrimary #2C3340 — the earlier near-white
-// stroke, tuned to the old dark card, is invisible on white. The constant is
-// pinned directly because RenderPNG takes its colour as a parameter: only a
-// test reading strokeColor catches the handler drifting back to an unusable
-// value.
-func TestStrokeColorIsTheLightThemeInk(t *testing.T) {
-	want := color.RGBA{R: 0x2c, G: 0x33, B: 0x40, A: 0xff}
-	if strokeColor != want {
-		t.Fatalf("strokeColor = %+v, want the devops#817 light-theme ink %+v", strokeColor, want)
+// The tombstone must never fail and never write: an old in-flight pipeline run
+// lands here and needs its label_ids batch threaded through to the downstream
+// ability step, with a skipped result explaining why nothing happened.
+func TestDeprecatedTombstoneIsANoopThatEchoesLabelIDs(t *testing.T) {
+	h := NewDeprecated(zap.NewNop())
+	result, err := h(context.Background(), &job.Job{
+		ID:        "job-1",
+		UserID:    testUser,
+		InputJSON: `{"mode":"incremental","label_ids":["a1b2","c3d4"]}`,
+	}, noopHeartbeat)
+	if err != nil {
+		t.Fatalf("deprecated tombstone errored: %v", err)
 	}
 
-	// Then render with the handler's own constant and sample the pixels, so the
-	// exact bytes that get uploaded are covered, not just the declared value.
-	// Same corner-to-corner route the renderer tests use: it crosses the whole
-	// canvas, so a wrong or transparent ink shows up as zero matching pixels.
-	points := []thumbnail.Point{
-		{X: thumbnail.Padding, Y: thumbnail.Viewbox - thumbnail.Padding},
-		{X: thumbnail.Viewbox / 2, Y: thumbnail.Viewbox / 2},
-		{X: thumbnail.Viewbox - thumbnail.Padding, Y: thumbnail.Padding},
+	var got struct {
+		Skipped  string   `json:"skipped"`
+		LabelIDs []string `json:"label_ids"`
 	}
-	raw, err := thumbnail.RenderPNG(points, canvasSize, strokeColor)
-	if err != nil {
-		t.Fatalf("RenderPNG: %v", err)
+	if err := json.Unmarshal([]byte(result), &got); err != nil {
+		t.Fatalf("decode result %s: %v", result, err)
 	}
-	img, err := png.Decode(bytes.NewReader(raw))
+	if got.Skipped != "png_pipeline_retired" {
+		t.Fatalf("skipped = %q, want png_pipeline_retired", got.Skipped)
+	}
+	if len(got.LabelIDs) != 2 || got.LabelIDs[0] != "a1b2" || got.LabelIDs[1] != "c3d4" {
+		t.Fatalf("label_ids = %v, want the batch echoed through", got.LabelIDs)
+	}
+}
+
+// Even a malformed payload must not fail the tombstone — its whole job is to
+// let a retired trigger die quietly rather than poison a pipeline.
+func TestDeprecatedTombstoneToleratesBadPayload(t *testing.T) {
+	h := NewDeprecated(zap.NewNop())
+	result, err := h(context.Background(), &job.Job{
+		ID:        "job-2",
+		UserID:    testUser,
+		InputJSON: `{"force":tr`,
+	}, noopHeartbeat)
 	if err != nil {
-		t.Fatalf("decode png: %v", err)
+		t.Fatalf("deprecated tombstone errored on bad payload: %v", err)
+	}
+	if !strings.Contains(result, "png_pipeline_retired") {
+		t.Fatalf("result = %s, want the skipped marker", result)
+	}
+}
+
+// The sync step behaves like the shape backfill (fills every drawable gap) and
+// additionally echoes the sync's label_ids batch through its result, which is
+// what keeps the downstream ability step's L1 batch correct after the retired
+// PNG step stopped doing that job (devops#829).
+func TestShapesStepFillsGapsAndEchoesLabelIDs(t *testing.T) {
+	store := &fakeShapeStore{
+		timeseries: map[string][]storage.TimeseriesPoint{
+			"run-1": gpsTrace(20),
+			"run-2": gpsTrace(20),
+		},
+		rows: map[string]*string{"run-1": nil, "run-2": nil},
 	}
 
-	ink := 0
-	for y := range canvasSize {
-		for x := range canvasSize {
-			r, g, b, a := img.At(x, y).RGBA()
-			if a == 0 {
-				continue
-			}
-			// At() widens 8-bit channels to 16-bit by multiplying by 257.
-			if r == 0x2c*257 && g == 0x33*257 && b == 0x40*257 {
-				ink++
-			}
+	h := NewShapes(store)
+	result, err := h(context.Background(), &job.Job{
+		UserID:    testUser,
+		InputJSON: `{"mode":"incremental","label_ids":["a1b2"]}`,
+	}, noopHeartbeat)
+	if err != nil {
+		t.Fatalf("shapes step: %v", err)
+	}
+
+	got := decodeShapeResult(t, result)
+	if got.Candidates != 2 || got.Generated != 2 || got.Failed != 0 {
+		t.Fatalf("result = %+v, want 2 candidates generated, none failed", got)
+	}
+	if len(got.LabelIDs) != 1 || got.LabelIDs[0] != "a1b2" {
+		t.Fatalf("label_ids = %v, want [a1b2] echoed through", got.LabelIDs)
+	}
+	for _, id := range []string{"run-1", "run-2"} {
+		if store.rows[id] == nil {
+			t.Fatalf("activity %s still has no route_thumb_json", id)
 		}
 	}
-	if ink == 0 {
-		t.Fatal("no stroke pixel matches the light-theme ink")
+}
+
+// A malformed step input fails permanently rather than retrying a doomed fill,
+// matching the sync-pipeline contract the retired PNG step held.
+func TestShapesStepRejectsBadPayload(t *testing.T) {
+	h := NewShapes(&fakeShapeStore{})
+	_, err := h(context.Background(), &job.Job{
+		UserID:    testUser,
+		InputJSON: `{"label_ids":`,
+	}, noopHeartbeat)
+	pe, ok := job.AsPermanent(err)
+	if !ok || pe.Code != "bad_payload" {
+		t.Fatalf("err = %v, want permanent bad_payload", err)
+	}
+}
+
+// The step shares the backfill's partition contract.
+func TestShapesStepRejectsNonUUIDUser(t *testing.T) {
+	h := NewShapes(&fakeShapeStore{})
+	_, err := h(context.Background(), &job.Job{UserID: "not-a-uuid"}, noopHeartbeat)
+	pe, ok := job.AsPermanent(err)
+	if !ok || pe.Code != "bad_partition" {
+		t.Fatalf("err = %v, want permanent bad_partition", err)
 	}
 }

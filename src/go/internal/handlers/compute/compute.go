@@ -73,7 +73,7 @@ type computeResult struct {
 	Activities    int    `json:"activities"`
 	PersonalBests int    `json:"personal_bests"`
 	DailyLoadRows int    `json:"daily_load_rows"`
-	// Echoes the sync's label_ids so downstream pipeline steps (route_thumbnails
+	// Echoes the sync's label_ids so downstream pipeline steps (route_shapes
 	// → ability) keep seeing which activities this sync produced.
 	LabelIDs []string `json:"label_ids,omitempty"`
 }

@@ -140,11 +140,12 @@ func (s *Store) upsertActivity(ctx context.Context, a *Activity, laps []Lap, ts 
 	}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// The thumbnail columns are owned by the route_thumbnails job, never by a
-		// provider payload. UpdateAll would write the provider's zero value over
-		// them, so every resync of an activity would wipe its thumbnail and force
-		// a re-render and re-upload. Omit them so a sync can only ever add
-		// activities, not strip their thumbnails.
+		// The thumbnail columns are never written by a provider payload:
+		// route_thumb_json is owned by the route_shapes step, and route_thumb_url
+		// is frozen legacy from the retired PNG pipeline (devops#829). UpdateAll
+		// would write the provider's zero value over them, so every resync of an
+		// activity would wipe its shape (and once resurrected a URL). Omit them
+		// so a sync can only ever add activities, not strip their shape.
 		omits := []string{"RouteThumbJSON", "RouteThumbURL"}
 		// feel_note is athlete-authored free text (coach-chat write path); a
 		// provider payload never carries it, so it is unconditionally omitted:

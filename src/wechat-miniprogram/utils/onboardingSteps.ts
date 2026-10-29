@@ -1,6 +1,8 @@
 // onboarding pipeline 的进度展示 —— 纯函数，自检见 utils/onboardingSteps.check.mts。
 // 步骤名与 Go catalog 的 onboarding 步骤一一对应：
-//   sync → race_detection → calibration → compute → route_thumbnails → ability
+//   sync → race_detection → calibration → compute → route_shapes → ability
+//   （route_shapes 由退役的 route_thumbnails PNG 步骤演变而来，devops#829：
+//    后端只产 route_thumb_json 形状，缩略图由端上矢量绘制）
 
 /** describeRun 的入参：只用到这三个字段，所以不依赖 types/sync 的完整类型。 */
 export interface RunLike {
@@ -24,7 +26,7 @@ export const STEP_LABELS: Record<string, string> = {
   race_detection: '识别比赛',
   calibration: '计算能力基线',
   compute: '生成负荷与趋势',
-  route_thumbnails: '生成路线缩略图',
+  route_shapes: '生成路线缩略图',
   ability: '评估当前能力',
 };
 
