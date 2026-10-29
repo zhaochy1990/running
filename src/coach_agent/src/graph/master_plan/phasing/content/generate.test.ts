@@ -5,8 +5,9 @@ import { templateFallback } from "./fallback.js";
 import { type ContentDraft, ContentDraftSchema, generateWeekContent } from "./generate.js";
 
 /**
- * 生成编排单测（devops#811）：fake model 三路径——首过 / 违规重试后过 /
- * 重试耗尽落兜底（兜底产物必须自身全绿）。真模型回放见 tests/contentReplay.ts。
+ * 生成编排单测（devops#811 建立、#799 改两段制）：fake model 三路径——首过 /
+ * 违规重试后过 / 重试耗尽落兜底（课包+排位两段产物必须自身全绿）。真模型回放
+ * 见 tests/contentReplay.ts。
  */
 
 const ZONES = { easy: [288, 336], m: [249, 288], t: [235, 249], i: [218, 235], r: [null, 218] } as const;
@@ -22,33 +23,35 @@ const INPUT: ContentGeneratorInput = {
   planStartMonday: "2026-10-19",
 };
 
-/** 兜底产物 → draft 形态（date 反解 weekday）：合法输出的机械来源；dropWeeks 砍尾周制造违规。 */
+/** 兜底课包 → draft 形态（无 day；E=槽位）：合法输出的机械来源；dropWeeks 砍尾周制造违规。 */
 function fallbackAsDraft(input: ContentGeneratorInput, dropWeeks = 0): ContentDraft {
-  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
-  const weeks = templateFallback(input).slice(0, input.rows.length - dropWeeks);
+  const bags = templateFallback(input).slice(0, input.rows.length - dropWeeks);
   return ContentDraftSchema.parse({
-    weeks: weeks.map(({ week, sessions }) => ({
+    weeks: bags.map(({ week, courses }) => ({
       week_no: week,
-      sessions: sessions.map((w) => ({
-        day: days[(new Date(`${w.date}T00:00:00Z`).getUTCDay() + 6) % 7],
-        name: w.name,
-        type: w.type,
-        purpose: w.purpose,
-        note: w.note,
-        blocks: w.blocks,
-      })),
+      courses: courses.map((course) =>
+        course.kind === "e-slot"
+          ? { type: "E", band: course.band, strides: course.strides, purpose: course.purpose }
+          : { name: course.name, type: course.type, purpose: course.purpose, note: course.note, blocks: course.blocks },
+      ),
     })),
   });
 }
 
-test("首过：draft 归一后 C1-C9 全绿 → source=llm attempts=1 attemptsDetail=空", async () => {
+test("首过：draft 归一后课包校验+排位+终检全绿 → source=llm attempts=1 attemptsDetail=空", async () => {
   const model = { invoke: async () => fallbackAsDraft(INPUT) };
   const outcome = await generateWeekContent(INPUT, model);
   assert.equal(outcome.source, "llm");
   assert.equal(outcome.attempts, 1);
   assert.deepEqual(outcome.attemptsDetail, []);
   assert.equal(outcome.weeks.length, 2);
+  // 两段产物完整：逐周 C（落位后全量）+ P 门全绿、load_series 两周 14 点、load_meta 契约
   for (const weekChecks of outcome.checks) for (const c of weekChecks) assert.equal(c.pass, true, `${c.id}: ${c.detail}`);
+  for (const weekChecks of outcome.scheduleChecks) for (const c of weekChecks) assert.equal(c.pass, true, `${c.id}: ${c.detail}`);
+  assert.equal(outcome.loadSeries.length, 14);
+  assert.equal(outcome.loadMeta.model, "exp-pmc-7-42");
+  assert.equal(outcome.loadMeta.coefficient_version, "lsq-20261029");
+  assert.ok(outcome.loadSeries.every((p) => p.atl > 0 && p.ctl > 0 && p.ratio != null));
 });
 
 test("违规重试：首版缺周 → 带违规清单重试 → 第二版通过（attempts=2）", async () => {
@@ -82,7 +85,7 @@ test("解析失败重试：首版抛错 → parseError 入列 → 第二版通�
   assert.match(outcome.attemptsDetail[0]!.parseError ?? "", /JSON 截断/);
 });
 
-test("重试耗尽：模型始终抛错 → 模板兜底、兜底产物全绿；attemptsDetail 3 条全 parseError", async () => {
+test("重试耗尽：模型始终抛错 → 模板兜底、兜底课包+排位两段全绿；attemptsDetail 3 条全 parseError", async () => {
   const model = {
     invoke: async () => {
       throw new Error("boom");
@@ -98,11 +101,12 @@ test("重试耗尽：模型始终抛错 → 模板兜底、兜底产物全绿；
     assert.match(detail.parseError ?? "", /^boom$/);
   }
   for (const weekChecks of outcome.checks) for (const c of weekChecks) assert.equal(c.pass, true, `${c.id}: ${c.detail}`);
+  for (const weekChecks of outcome.scheduleChecks) for (const c of weekChecks) assert.equal(c.pass, true, `${c.id}: ${c.detail}`);
 });
 
 test("重试耗尽：始终违规（非异常）→ 兜底；比赛课配速锚 goal_pace；attemptsDetail 3 条全违规", async () => {
   const bad = fallbackAsDraft(INPUT);
-  for (const week of bad.weeks) for (const session of week.sessions) session.purpose = "";
+  for (const week of bad.weeks) for (const course of week.courses) if (course.type !== "E") course.purpose = "";
   const model = { invoke: async () => bad };
   const outcome = await generateWeekContent(INPUT, model);
   assert.equal(outcome.source, "fallback");

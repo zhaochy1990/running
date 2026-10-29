@@ -1,14 +1,17 @@
 /**
- * L4 内容生成·真模型回放（devops#811 验收）：
+ * L4 内容+排位全链·真模型回放（devops#811 建立、#799 扩 L4b 排位段）：
  * - chaoyi×上海马拉松 N=6：#807 迁移 fixture 的周骨架（l4-e2e-shanghai.json
  *   week_rows）+ projectZones 撞帽投影（51.1→52.85 残差 4.4）——规则⑤⑥天然用例；
  * - 三运动员多跑道（9/22 周）：L2 T 表 fallback 意图 + L3 展开（确定性、零 L2 token）。
- * 全链走生产生成编排（deepseek-flash 低温 → C1-C9 校验 → 违规重试 ≤2 → 模板兜底）。
+ * 全链走生产编排（deepseek-flash 低温 → 课包校验 → L4b 波浪排位 → P 门+C 终检 →
+ * 违规重试 ≤2 → 模板兜底课包+排位）。
  *
  * 烧 token，不进 CI（门禁层零 token）；本地验收用：
  *   DEEPSEEK_API_KEY=... npm run replay:content
- * 断言=C1-C9 全绿 + 规则抽查（多样性/赛周激活/E 时长/比赛配速=goal_pace±5s/km）；
- * 兜底产物挂门=实现缺陷直接判失败。
+ * 断言=课包/排位/终检全绿 + 规则抽查（多样性/赛周激活/E 时长/比赛配速锚 goal_pace）+
+ * 波浪带内（POC wave-poc.mjs 对照：峰 ≤cap1.3、建设周锯齿显形、LR 周日/周六轻量/Q 隔日）；
+ * 结构性无解（种子×L3 包络 P6 越 cap，如伤退低 CTL 长跑道）=设计内上浮路径，
+ * 记账为 escalated 并断言原因含 P6——不当失败也不静默。
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -16,7 +19,7 @@ import { getLogger } from "@stride/common";
 import { getAgentConfig, loadConfig, type ModelConfig } from "../config/config.js";
 import { isQualityStep } from "../graph/master_plan/phasing/content/derive.js";
 import type { ContentWeekRow } from "../graph/master_plan/phasing/content/doctrine.js";
-import { createContentModel, generateWeekContent } from "../graph/master_plan/phasing/content/generate.js";
+import { createContentModel, generateWeekContent, type ScheduledOutcome } from "../graph/master_plan/phasing/content/generate.js";
 import { projectZones } from "../graph/master_plan/phasing/content/project.js";
 import { QUALITY_FAMILY_OF } from "../graph/master_plan/phasing/content/testSupport.js";
 import { AS_OF, ATHLETES, type AthleteName, buildAthleteEvidence } from "../graph/master_plan/phasing/fixtureLoader.js";
@@ -103,7 +106,7 @@ async function fallbackRows(athlete: AthleteName, runwayWeeks: number): Promise<
 }
 
 /** 规则抽查（非校验器覆盖的 prompt 规则）：多样性/赛周激活/比赛配速锚。 */
-function spotCheck(outcome: Awaited<ReturnType<typeof generateWeekContent>>, input: Parameters<typeof generateWeekContent>[0], goalPaceSKm: number): string[] {
+function spotCheck(outcome: ScheduledOutcome, input: Parameters<typeof generateWeekContent>[0], goalPaceSKm: number): string[] {
   const issues: string[] = [];
   const flat = outcome.weeks.flatMap(({ week, sessions }) => sessions.map((w) => ({ week, w })));
 
@@ -123,10 +126,11 @@ function spotCheck(outcome: Awaited<ReturnType<typeof generateWeekContent>>, inp
         if (Math.abs(mid - goalPaceSKm) > 5) issues.push(`比赛配速 ${main.target.low}-${main.target.high} 偏离 goal ${goalPaceSKm.toFixed(0)} 超±5s/km`);
       }
       // 赛周激活：预算允许时（总账−42.2 ≥ 2km）比赛日前须有非比赛课（短激活 ≤60min）
-      if (raceRow.totalKm - 42.195 >= 2 && !flat.some((x) => x.w.date < raceDate && x.w.date >= weekStartOf(input, raceRow.week))) {
+      const weekStart = new Date(new Date(`${input.planStartMonday}T00:00:00Z`).getTime() + (raceRow.week - 1) * 604800_000).toISOString().slice(0, 10);
+      if (raceRow.totalKm - 42.195 >= 2 && !flat.some((x) => x.w.date < raceDate && x.w.date >= weekStart)) {
         issues.push("赛周无激活/shakeout 课");
       }
-      for (const x of flat.filter((y) => y.w.date < raceDate && y.w.date >= weekStartOf(input, raceRow.week) && y.w.type === "E")) {
+      for (const x of flat.filter((y) => y.w.date < raceDate && y.w.date >= weekStart && y.w.type === "E")) {
         // 与 C9 完全同口径：rest/recovery 步与 strides（open 短触感步）不计时长，repeat 展开
         const minutes = x.w.blocks.reduce((s, b) => {
           const perRep = b.steps.reduce((t, st) => {
@@ -163,11 +167,19 @@ function spotCheck(outcome: Awaited<ReturnType<typeof generateWeekContent>>, inp
   return issues;
 }
 
-const weekStartOf = (input: Parameters<typeof generateWeekContent>[0], week: number) =>
-  new Date(new Date(`${input.planStartMonday}T00:00:00Z`).getTime() + (week - 1) * 604800_000).toISOString().slice(0, 10);
+/** 波浪统计（POC wave-poc.mjs 对照）：建设周锯齿（峰谷差）、全段峰谷、比值 cap。 */
+function waveStats(outcome: ScheduledOutcome, raceDate: string | null): { sawtooth: number; peak: number; valley: number; capOk: boolean } {
+  // 比赛日豁免同 P6 门——马拉松当日剂量必然冲高（目标事件非可调度负荷）
+  const pts = outcome.loadSeries.filter((p) => p.date !== raceDate);
+  const byWeek = new Map<number, number[]>();
+  for (const p of pts) byWeek.set(p.week, [...(byWeek.get(p.week) ?? []), p.ratio ?? 0]);
+  const sawtooth = Math.max(0, ...[...byWeek.entries()].map(([, rs]) => (rs.length > 0 ? Math.max(...rs) - Math.min(...rs) : 0)));
+  const all = pts.map((p) => p.ratio ?? 0);
+  return { sawtooth, peak: Math.max(...all), valley: Math.min(...all), capOk: all.every((r) => r <= 1.31) };
+}
 
 interface Scenario {
-  athlete: AthleteName;
+  athlete: AthleteName | "chaoyi-fixture";
   runway: number;
   raceName: string;
   rows: Array<Omit<ContentWeekRow, "zones">>;
@@ -181,18 +193,29 @@ async function main() {
   const model = createContentModel(loadModel());
   await mkdir(OUT_DIR, { recursive: true });
 
-  const scenarios: Scenario[] = [{ athlete: "chaoyi", runway: 6, raceName: "上海马拉松", rows: await fixtureRows() }];
+  const scenarios: Scenario[] = [{ athlete: "chaoyi-fixture", runway: 6, raceName: "上海马拉松", rows: await fixtureRows() }];
   for (const athlete of Object.keys(ATHLETES) as AthleteName[]) {
     for (const runway of RUNWAYS) scenarios.push({ athlete, runway, raceName: "无锡马拉松", rows: await fallbackRows(athlete, runway) });
   }
 
-  const results: Array<{ athlete: string; scenario: string; source: string; attempts: number; green: boolean; fails: string[]; spot: string[]; ms: number }> =
-    [];
+  const results: Array<{
+    athlete: string;
+    scenario: string;
+    source: string;
+    attempts: number;
+    green: boolean;
+    escalated?: string;
+    fails: string[];
+    spot: string[];
+    wave?: ReturnType<typeof waveStats>;
+    ms: number;
+  }> = [];
   for (const s of scenarios) {
-    const spec = ATHLETES[s.athlete];
-    const evidence = await buildAthleteEvidence(s.athlete, s.raceName);
+    const evidenceAthlete = s.athlete === "chaoyi-fixture" ? "chaoyi" : s.athlete;
+    const spec = ATHLETES[evidenceAthlete as AthleteName];
+    const evidence = await buildAthleteEvidence(evidenceAthlete as AthleteName, s.raceName);
     const vdot = evidence.current_capability.vdot;
-    if (vdot == null) throw new Error(`${s.athlete} 无当前能力锚（vdot=null），投影不可用`);
+    if (vdot == null) throw new Error(`${evidenceAthlete} 无当前能力锚（vdot=null），投影不可用`);
     const targetSec = parseHms(spec.targetTime);
     const projection = projectZones(vdot, targetSec, RACE_DISTANCE_M, s.runway);
     const rows: ContentWeekRow[] = s.rows.map((r) => ({ ...r, zones: projection.weeks[r.week - 1]!.zones }));
@@ -207,40 +230,84 @@ async function main() {
       planStartMonday: AS_OF,
     };
     const t0 = Date.now();
-    const outcome = await generateWeekContent(input, model);
-    // 可观测性（#822，#814 Phase 1）：重试违规全量出日志，供失败归因采集
-    if (outcome.attemptsDetail.length > 0) {
-      logger.warn(
-        { athlete: s.athlete, scenario: String(s.runway), source: outcome.source, attempts: outcome.attempts, attemptsDetail: outcome.attemptsDetail },
-        "content generation retry violations",
+    try {
+      const outcome = await generateWeekContent(input, model);
+      // 可观测性（#822，#814 Phase 1）：重试违规全量出日志，供失败归因采集
+      if (outcome.attemptsDetail.length > 0) {
+        logger.warn(
+          { athlete: s.athlete, scenario: String(s.runway), source: outcome.source, attempts: outcome.attempts, attemptsDetail: outcome.attemptsDetail },
+          "content generation retry violations",
+        );
+      }
+      const fails = [
+        ...outcome.checks.flatMap((weekChecks) => weekChecks.filter((c) => !c.pass).map((c) => c.id)),
+        ...outcome.scheduleChecks.flatMap((weekChecks) => weekChecks.filter((c) => !c.pass).map((c) => c.id)),
+      ];
+      const spot = outcome.source === "llm" ? spotCheck(outcome, input, input.race.goalPaceSKm) : [];
+      const wave = waveStats(outcome, raceDateOf(s.runway));
+      const row = {
+        athlete: s.athlete,
+        scenario: String(s.runway),
+        source: outcome.source,
+        attempts: outcome.attempts,
+        green: outcome.source === "llm" && fails.length === 0 && spot.length === 0 && wave.capOk,
+        fails,
+        spot,
+        wave,
+        ms: Date.now() - t0,
+      };
+      results.push(row);
+      console.log(
+        `  ${s.athlete}/${s.runway}w [${projection.meta.capped ? `撞帽residual=${projection.meta.residual}` : "直线抵达"}] ${row.green ? "✓llm" : outcome.source === "fallback" ? "↺兜底" : "✗"} ${row.ms / 1000}s (第${outcome.attempts}次) 峰${wave.peak.toFixed(2)}/谷${wave.valley.toFixed(2)}/锯齿${wave.sawtooth.toFixed(2)}${row.fails.length ? ` fails=${row.fails.join("/")}` : ""}${row.spot.length ? ` spot=${row.spot.join(";")}` : ""}`,
       );
+      await writeFile(
+        resolve(OUT_DIR, `content-${s.athlete}-${s.runway}.json`),
+        JSON.stringify(
+          {
+            ...row,
+            attemptsDetail: outcome.attemptsDetail,
+            projection: projection.meta,
+            weeks: outcome.weeks,
+            checks: outcome.checks,
+            scheduleChecks: outcome.scheduleChecks,
+            calendar: outcome.calendar,
+            loadSeries: outcome.loadSeries,
+            loadMeta: outcome.loadMeta,
+            repairs: outcome.repairs,
+          },
+          null,
+          1,
+        ),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // 结构性无解（P6 波形 cap 等：种子×L3 包络联合属性）=设计内上浮路径——记账并断言原因
+      if (message.includes("L4 结构性无解")) {
+        results.push({
+          athlete: s.athlete,
+          scenario: String(s.runway),
+          source: "escalated",
+          attempts: 0,
+          green: false,
+          escalated: message.slice(0, 300),
+          fails: [],
+          spot: [],
+          ms: Date.now() - t0,
+        });
+        console.log(`  ${s.athlete}/${s.runway}w ↑上浮 ${message.slice(0, 140)}`);
+        continue;
+      }
+      throw error;
     }
-    const fails = outcome.checks.flatMap((weekChecks) => weekChecks.filter((c) => !c.pass).map((c) => c.id));
-    const spot = outcome.source === "llm" ? spotCheck(outcome, input, input.race.goalPaceSKm) : [];
-    const row = {
-      athlete: s.athlete,
-      scenario: String(s.runway),
-      source: outcome.source,
-      attempts: outcome.attempts,
-      green: outcome.source === "llm" && fails.length === 0 && spot.length === 0,
-      fails,
-      spot,
-      ms: Date.now() - t0,
-    };
-    results.push(row);
-    console.log(
-      `  ${s.athlete}/${s.runway}w [${projection.meta.capped ? `撞帽residual=${projection.meta.residual}` : "直线抵达"}] ${row.green ? "✓llm" : outcome.source === "fallback" ? "↺兜底" : "✗"} ${row.ms / 1000}s (第${outcome.attempts}次)${row.fails.length ? ` fails=${row.fails.join("/")}` : ""}${row.spot.length ? ` spot=${row.spot.join(";")}` : ""}`,
-    );
-    await writeFile(
-      resolve(OUT_DIR, `content-${s.athlete}-${s.runway}.json`),
-      JSON.stringify({ ...row, attemptsDetail: outcome.attemptsDetail, projection: projection.meta, weeks: outcome.weeks, checks: outcome.checks }, null, 1),
-    );
   }
 
   const green = results.filter((r) => r.green).length;
-  const fallback = results.filter((r) => r.source === "fallback").length;
-  console.log(`\n回放汇总：${green}/${results.length} 全绿；兜底 ${fallback} 次`);
-  const notGreen = results.filter((r) => !r.green);
+  const legalFallback = results.filter((r) => r.source === "fallback" && r.fails.length === 0 && (r.wave?.capOk ?? true));
+  const escalated = results.filter((r) => r.escalated != null);
+  console.log(
+    `\n回放汇总：llm 全绿 ${green}；合法兜底 ${legalFallback.length}；结构性上浮 ${escalated.length}；共 ${results.length}——验收口径=全场景日历合法+波浪带内（兜底率=可观测性归 #823/#798 质量线）`,
+  );
+  const notGreen = results.filter((r) => !r.green && r.escalated == null);
   if (notGreen.length)
     console.log("未全绿切片：", notGreen.map((r) => `${r.athlete}/${r.scenario}(${[...r.fails, ...r.spot].join("/") || "fallback"})`).join(" "));
   // 兜底产物必须永远合法：兜底行仍挂门 = 实现缺陷，直接判失败
@@ -249,7 +316,14 @@ async function main() {
     console.error("兜底产物挂门（实现缺陷）：", illegalFallback.map((r) => `${r.athlete}/${r.scenario}(${r.fails.join("/")})`).join(" "));
     process.exit(1);
   }
-  if (green < results.length) process.exit(1);
+  // 上浮必须全部为结构性原因（P6 波形 cap）——其它上浮=实现缺陷
+  for (const r of escalated) {
+    if (!/P6/.test(r.escalated ?? "")) {
+      console.error(`非 P6 结构性上浮（实现缺陷嫌疑）：${r.athlete}/${r.scenario} ${r.escalated}`);
+      process.exit(1);
+    }
+  }
+  if (green + legalFallback.length + escalated.length < results.length) process.exit(1);
 }
 
 await main().catch((error) => {

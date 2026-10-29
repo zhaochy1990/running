@@ -15,6 +15,7 @@ const coachSchema = {
   models: { format: Array, default: [] },
   agents: { format: Array, default: [] },
   observability: { default: {} },
+  training_plan: { format: Object, default: {} },
 };
 
 export interface LoadConfigOptions {

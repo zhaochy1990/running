@@ -13,9 +13,10 @@ L1 证据层      纯代码   ✅  ─→ L1.5 可行性 纯函数 🟢(#792 实
 L2 阶段划分层  LLM×1    ✅
 L3 载荷层      纯代码   ✅  ──────────────────────────→ 政策包落库（#803 ⏳）
                                                         │
-L4 内容层      LLM×1/块 🟡  周骨架→整块课表  ←─ R1 块界生成（#801 ⏳）
-L5 落位层      纯代码   🟡  课表→具体日历                │
-R0 每夜复盘    纯代码   🟢骨架(#800 ⏳阈值) ←── 完成追踪（#802 ⏳）
+L4 内容与排位层（2026-10-29 拍板合并为一层两段，共享 R1 生命周期） ←─ R1 块界生成（#801 ⏳）
+  L4a 内容生成  LLM×1/块 ✅  周骨架→课包（无 day、E=槽位+时长带）
+  L4b 波浪排位  纯代码   ✅  课包→日历+load_series（#799 已实现）
+R0 每夜复盘    纯代码   🟢骨架(#800 ⏳阈值) ←── 完成追踪（#802 ⏳）；微调走 L4b scheduleOnly
 R2 块边界级    每~4周   🟢骨架(#805 ⏳触发表)  R3 结构级 → 重发 L2
 ```
 
@@ -410,9 +411,9 @@ interface MilestoneAlignment {
 
 ---
 
-## 5. L4 内容层 🟢契约定稿（#796 已关 2026-10-27：=扩展 run-workout/v1 + 九条规则 + projectZones + 编排拍板；落地 #807 契约模块 + #811 生成器 + #798 库）
+## 5. L4 内容与排位层（L4a 内容生成 + L4b 波浪排位）🟢（#796 契约已关 2026-10-27；#807 契约模块 + #811 生成器 + #799 两段制/波浪排位/load_series 已实现 2026-10-29；#798 库 ⏳）
 
-**职责**：周骨架→具体课表（结构+配速+执行要点）。**LLM×1 整块生成**（deepseek-flash structured，一次生成整段 weeks 数组；块内微阶梯/递进/吸收需整块连贯）；结构=课表库缺省+LLM 选择适配，配速=VDOT 六带确定性。
+**职责**：周骨架→具体课表→具体日历。**一层两段**（2026-10-29 拍板合并，原 L5 并入）：L4a=LLM×1 整块生成**课包**（deepseek-flash structured；结构=课表库缺省+LLM 选择适配，配速=VDOT 六带确定性）；L4b=纯代码波浪排位（逐日贪心+E 实例化+load_series）。两段共享 R1 生命周期；排位失败先层内仲裁（挪日/缩 E 时长），课包无解才带原因重生成 L4a（统一重试环）——**排位段绝不直接触发 LLM**。
 
 ### 5.1 输入（user 消息 JSON，spike 实证形态）
 
@@ -439,7 +440,11 @@ interface MilestoneAlignment {
 }
 ```
 
-### 5.2 输出：`RunWorkout`（**现网 run-workout/v1 + 两个可选字段**，2026-10-27 终审；整段生成时外层包 `weeks: Array<{week_no, workouts: RunWorkout[]}>`）
+### 5.2 L4a 输出：课包（`WeekBag`；无 day、E=槽位+时长带——#799 两段制）
+
+课包=结构课（M/T/I/R/LR，blocks 与 v1 同形、**无日期**）+ E 槽位（`{band: normal 60-90min | interval 30-60min, strides, purpose?}`——分钟数与落位归 L4b 实例化）。day 字段废除（2026-10-29）：落位归 L4b（LR 周日位型先验/谷排刺激/间隔日短带）；**C4（训练日）与 C9（E 时长分层按位判定）随 day 移入排位段**（P1/实例化定带），L4a 课包校验=C2/C3/C5-C8+一致性+C1 带区间可行性。E 课最终物化（work time_s@E 带 + strides 独立块）与日期由 L4b 产出；终检 C1-C9 在排位后的日历上全量复跑。
+
+### 5.2a L4b 物化输出：`RunWorkout`（**现网 run-workout/v1 + 两个可选字段**，2026-10-27 终审；排位后外层带日历 calendar[]）
 
 **不新建段 schema（弃 V2）**：L4 直出 v1 形态（blocks/steps 五值 step_kind/duration·target 判别联合/rest 条件全保留——生产验证充分、lenient 容错层现成、存储/小程序/Go 推送零改动、四条 LLM 路径共用契约）。v1 追加（ADR 0043 只追加可选字段路径，旧文档仍是合法 v1）：
 
@@ -497,18 +502,20 @@ RunWorkout 新增：
 
 **契约模块落地**：devops#807（已合并）= coach_contract v1 追加 type/purpose（strict/lenient/normalize 三层）+ `phasing/content/`（derive 判定表 / validators 一致性+C1-C8 读 V1 / migrate E2E 样本迁移回放，`l4-e2e-shanghai.json` 六周全绿）。
 
-## 6. L5 落位层 🟡（#799 终审；E2E spike 实证 2026-10-27：0 修复门全绿）
+## 6. L4b 波浪排位段 ✅（#799 已实现 2026-10-29；E2E spike 实证 2026-10-27、wave-poc 行为对照）
 
-**职责**：sessions[] 排到周内具体日+日历映射。纯代码（实证形态=验证器+修复机：L4 的 day 提示已满足全部约束时 0 修复；职责边界 ⏳#799——L4 只出课 L5 全权排日 vs 维持 L4 提示+L5 校验修复）。
+**职责**：课包→周内具体日+日历映射+负荷序列。纯代码逐日贪心（谷=比值≤阈值排下一刺激/高时 E 短消化消化、LR 固定周日位型先验、周六=LR 前日轻量、谷阈值动态化=剩余质量课≥剩余合法日到期强制+强制窗口含周五——POC 丢课修复）；E 槽位实例化（位置定带：间隔日/再生周短带、LR 前日 km 帽、赛周激活窗短帽；water-fill 收敛 C1）；**层内仲裁**=挪日/缩 E 时长/剪余量槽位/双练准入（P5），无解上浮带原因重生成 L4a。**剂量估算**=分步时长×五带系数（E=1 基准，生产回归标定 `lsq-20261029`：R²=0.851/739 活动，报告 dose-calibration-report.md、快照+复现单测进仓；系数 config `training_plan.dose_coefficients` 可配）。**P6 结构性上浮**：种子（生产 PMC 直读）×L3 周量联合可越 cap（伤退低 CTL 长跑道实测）——正确行为，解在 L3 压量/R2，不在排位层。`scheduleOnly(bag, row, ctx, pmcSnapshot)`=R0 夜复盘微调入口（换日/单课减量只重跑本段不碰 LLM）。
 
 ### 6.1 输入
 
 ```typescript
 {
-  weeks: Array<{ week_no: number; sessions: Session[] }>;  // L4 整段产物
-  anchor_monday: string;       // week1 周一 YYYY-MM-DD（日历映射：date = anchor + (week_no-1)×7 + day 偏移）
-  race_date: string;           // 比赛日（P4 校验基准）
-  days_max: number;            // =availability.weekly_run_days_max（P1 上限）
+  bags: Array<WeekBag>;         // L4a 课包（结构课无 day；E=槽位+时长带）
+  rows: ContentWeekRow[];       // L3 周行（km/lr/q 硬边界 + 该周投影带）
+  plan_start_monday: string;    // week1 周一 YYYY-MM-DD（日历映射锚）
+  race: ContentRaceContext;     // 比赛日（P4 校验基准）
+  athlete: { weeklyRunDaysMax };  // P1 上限
+  pmc_seed: { acute; chronic };   // 生产 daily_training_load.acute_load/chronic_load 直读
 }
 ```
 
@@ -540,12 +547,11 @@ RunWorkout 新增：
 }
 ```
 
-### 6.3 排日门与约束
+### 6.3 排位门与约束（P1-P7，gates.ts 实现）
 
-- **实证门**：P1 训练日 ≤days_max｜P2 质量课不相邻（相邻日独立质量课须挪开；LR 内嵌质量用 work 段识别参与判定）｜P3 LR 落 Fri-Sun｜P4 赛周比赛=Sun。
-- **修复机**：挪最小 E 课并日（P1）/挪质量课至最近空档日（P2）/挪 LR 至周末空位 Sun→Sat→Fri（P3）。
-- **用户拍板约束**（2026-10-27）：① P5 双练=周量 >110km 允许双练日（早+下午），上限约束从「训练日数」切换为「训练日数+双练准入」② 长跑前一日轻量（软化拍板 2026-10-27：E ≤8km 或休息，不强制整休；整休日每周至少一天由位型自然产生；力量排日另议）③ 缺省位型参照=2Q+1L 两种位型（Tue-Q1/Thu-Q2/Sat-L 或 Wed-Q1/Fri-Q2/Sun-L），位型选择 ⏳#799。
-- **待定 ⏳**：L4 day vs L5 排日职责边界；与现有 weekly_plan 排日逻辑关系（复用/替换）；P5/休息日两约束的门与修复形态（#799）。
+- **P1 训练日 ≤availability**（按 date 去重；双练日算一天——C4 承接）｜**P2 质量课不相邻日**（判定表口径：含带质量尾段的 LR 与比赛课；已知边界=跨周相邻（周日 LR/比赛 ↔ 下周一 Q 的 deadline 破例）不在周内判定内，后续票）｜**P3 LR 周日+前日轻量**（周六全 E 且 ≤8km 或休）｜**P4 比赛课=比赛日**（赛日恰一节）｜**P5 双练准入**（>1 节/日 仅当周量 >110km；判定归本段）｜**P6 比值 cap 1.3**（比赛日豁免——马拉松=目标事件非可调度负荷；越界=调度无解上浮；种子×L3 周量联合可结构性越 cap——个体剂量尺度偏差，正确行为=上浮，解在 L3/R2）｜**P7 有氧份额按阶段下限**（recovery .85/foundation .76/early .80/transition .70/final .65；absorb −9pct/taper −2pct——校准基线=38 案例包络；赛周豁免）。
+- **层内仲裁**（排位失败先确定性修复）：C1 超界→周六 E 缩短/置休→剪下限最高槽位重灌；P6 越界→质量课挪日（空平日+间距合法）→当日 E 缩至带下限/置休；P6×C1 不可兼得=结构冲突上浮；结构课永不剪（排不下=课包无解上浮重生成 L4a——统一重试环，排位段绝不直接触发 LLM）。
+- **位型先验**（用户拍板 2026-10-27 + #799 落地）：LR 固定周日；周一=LR 后日不排 Q；周六=LR 前日轻量（≤8km 或休）；质量课 Mon-Fri 间距 ≥2；位型=2Q+1L（Tue/Thu 位型由贪心自然涌现）。
 
 ---
 
@@ -575,10 +581,10 @@ RunWorkout 新增：
 | L1 → L2 | PhasingIntentInput（evidence 全量 + runwayWeeks + raceDate） | ✅ |
 | L2 → L3 | PhaseDivisionIntent（phases+taper_weeks+milestones+gates+volume_bands） | ✅ |
 | L2/L3 → 政策包 | intent + LoadPlan 序列化 | ⏳ #803 |
-| L3 → L4 | week_rows 投影（weeks+quality_family+block 位置）+ athlete（vdot/pace_zones/max_training_days） | 🟡 |
+| L3 → L4a | week_rows 投影（weeks+quality_family+block 位置）+ athlete（vdot/pace_zones/max_training_days/fitness=PMC 种子） | ✅ |
 | L3 → R2 | recovery_policy + blocks + milestones 周对齐 | 🟢骨架 ⏳触发表 |
-| L4 → L5 | weeks[]{week_no, workouts: RunWorkout[]}（v1+type/purpose） | 🟢契约 |
-| L5 → 用户/weekly | calendar[]{week,date,day,sessions} + checks + repairs | 🟡 |
+| L4a → L4b | 课包 WeekBag[]（结构课无 day；E=槽位+时长带） | ✅ |
+| L4b → 用户/weekly | calendar[]{week,date,day,sessions} + load_series + load_meta + P 门/C 终检 + repairs | ✅ |
 | L4/L5 → 完成追踪 | 计划课侧标识（启发式匹配锚点） | ⏳ #802 |
 | R0 → R1/R2/R3 | 信号与分级路由（静默/通知/确认） | 🟢骨架 ⏳ #800 |
 | R3 → L2 | 重发触发（新跑道/新目标参数） | ⏳ #805 |
@@ -591,11 +597,10 @@ RunWorkout 新增：
 | L1.5 | #792（非本图，在途） | 🟢 契约拍板 |
 | L3 | #793（PR #638，38 fixture）；#806 短块三处修正（PR #642）；#809 赛周低量档修复+taper 门右支+taper 削 LR | ✅ 已合并 |
 | 课表库编目 | #797 | ✅ 已关（草案在分支 research/daniels-session-library） |
-| L4 契约+生成器 | #796 已关（决议）→ #807 契约模块（PR running#643 已合并：契约+判定表+校验+迁移回放）+ **#811 生成器（agent 在途）** | 🟢 契约落地；生成器在途 |
+| L4 契约+生成器+排位 | #796 已关（决议）→ #807 契约模块（PR running#643）+ #811 生成器（已合并）+ **#799 两段制+波浪排位+load_series（已实现 2026-10-29：L4a 删 day/E 槽位化+剂量系数生产标定+P1-P7）** | ✅ #799 落地；#798 库 ⏳ |
 | 库×LLM 分工 | #798（#796✅+#797✅ 已解锁） | ⏳ 前沿 |
-| L5 落位 | #799 | 🟡 grilling |
-| 夜复盘阈值 | #800 | ⏳ |
-| 块界生成 | #801（blocked by #799） | ⏳ |
+| 夜复盘阈值 | #800（微调入口=L4b scheduleOnly 已随 #799 留口） | ⏳ |
+| 块界生成 | #801（原 blocked by #799——已解锁） | ⏳ |
 | 完成追踪 | #802 | ⏳ |
 | 政策包存储/接入 | #803（#796✅ 已解锁） | ⏳ 前沿 |
 | 前端呈现 | #804（blocked by #803） | ⏳ |

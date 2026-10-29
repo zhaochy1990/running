@@ -45,6 +45,13 @@ export interface WeekContentInput {
   legacyEDuration?: boolean;
   /** 再生周（L3 canonical=recovery）：周内无质量课，E 全走间隔日短带（⑦恢复端）——低量恢复周与 C1 的可行性调和（injury 周可低至 10km）。 */
   regeneration?: boolean;
+  /**
+   * 课包阶段（devops#799 L4a→L4b 交接）：sessions 只含结构课（E 走槽位不进
+   * sessions）；C4/C9 按日判定不可用——跳过并标注归排位段（P1/实例化定带）；
+   * C1 改 E 带区间可行性（eSlotKmRanges=每槽 [loKm,hiKm]，目标±容差与
+   * Σ区间相交即过——终值由 L4b water-fill 收敛后另跑全量校验）。
+   */
+  bagStage?: { eSlotKmRanges: Array<[number, number]> };
 }
 
 /** type → 配速带（一致性：声明 type 的带须罩住主质量段）。LR 为位型课不参与罩带。 */
@@ -141,18 +148,33 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
   // vs L3 total_km，±max(3km, 3%)。open/time+open 步里程不可知 → 整周挂「不可知」。
   // 赛周目标由比赛里程托底（devops#811）：L3 的赛周比例削减帽（0.7×平台参照）
   // 对低平台运动员可低于 42.195km 本身，而比赛课处方不可削减（规则⑤）——
-  // 守恒目标取 max(骨架, FM 里程)。
+  // 守恒目标取 max(骨架, FM 里程)。课包阶段（bagStage）：E 槽位以 km 区间
+  // 参与可行性（终值由 L4b 实例化后另跑全量）。
   const c1Target = raceDate != null && row.long_run_km == null ? Math.max(row.total_km, 42.195) : row.total_km;
   const unknown = sessions.filter((s) => sessionKm(s.workout) == null).map((s) => s.workout.name);
   const sumKm = unknown.length === 0 ? sessions.reduce((sum, s) => sum + (sessionKm(s.workout) ?? 0), 0) : null;
   const tol = Math.max(WEEK_KM_ABS_TOL, c1Target * WEEK_KM_REL_TOL);
   // detail 打有效目标（托底时附骨架原值）——重试违规清单据此引导，模型须能对齐
   const c1Label = c1Target === row.total_km ? `骨架${row.total_km}` : `赛周托底${c1Target.toFixed(1)}（骨架${row.total_km}）`;
-  checks.push({
-    id: "C1 周量守恒",
-    pass: sumKm != null && Math.abs(sumKm - c1Target) <= tol,
-    detail: unknown.length ? `里程不可知:${unknown.join(",")}` : sumKm != null ? `Σ${sumKm.toFixed(1)} vs ${c1Label}（±${tol.toFixed(1)}）` : "",
-  });
+  if (input.bagStage != null) {
+    const loKm = input.bagStage.eSlotKmRanges.reduce((s, r) => s + r[0], 0);
+    const hiKm = input.bagStage.eSlotKmRanges.reduce((s, r) => s + r[1], 0);
+    const structured = sumKm ?? 0;
+    const feasible = sumKm != null && c1Target - tol <= structured + hiKm && c1Target + tol >= structured + loKm;
+    checks.push({
+      id: "C1 周量守恒",
+      pass: feasible,
+      detail: unknown.length
+        ? `里程不可知:${unknown.join(",")}`
+        : `结构${structured.toFixed(1)}+E带[${(structured + loKm).toFixed(1)},${(structured + hiKm).toFixed(1)}] vs ${c1Label}（±${tol.toFixed(1)}）`,
+    });
+  } else {
+    checks.push({
+      id: "C1 周量守恒",
+      pass: sumKm != null && Math.abs(sumKm - c1Target) <= tol,
+      detail: unknown.length ? `里程不可知:${unknown.join(",")}` : sumKm != null ? `Σ${sumKm.toFixed(1)} vs ${c1Label}（±${tol.toFixed(1)}）` : "",
+    });
+  }
 
   // C2 长跑唯一且合值：lr≠null 时 type=LR 恰一节 ±1.5km；赛周 lr=null 豁免为 0 节。
   const lrs = sessions.filter((s) => s.workout.type === "LR");
@@ -172,9 +194,11 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
   const quality = sessions.filter((s) => hasQualitySegment(s.workout, zones) || isRace(s.workout));
   checks.push({ id: "C3 Q配额", pass: quality.length === row.quality_sessions, detail: `${quality.length} 节质量课 vs 配额${row.quality_sessions}` });
 
-  // C4 训练日 ≤上限（按 date 去重）。
-  const days = new Set(sessions.map((s) => s.workout.date));
-  checks.push({ id: "C4 训练日", pass: days.size <= maxTrainingDays, detail: `${days.size} 天 vs ≤${maxTrainingDays}` });
+  // C4 训练日 ≤上限（按 date 去重）；课包阶段不查——落位归 L4b（P1 同判据）。
+  if (input.bagStage == null) {
+    const days = new Set(sessions.map((s) => s.workout.date));
+    checks.push({ id: "C4 训练日", pass: days.size <= maxTrainingDays, detail: `${days.size} 天 vs ≤${maxTrainingDays}` });
+  }
 
   // C5 配速谱内：work 步须落 质量谱∪E带容差（不要求单带归属，MP-10s 跨带、
   // 变速课 work@easy 慢段均合法）；warmup/cooldown 是有氧步、只认 E 带 ±10
@@ -241,6 +265,7 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
   // 调和，injury 周可低至 10km）。两个例外：赛周激活课（①拍板）=比赛日前 1-3
   // 天的短 E 激活/shakeout；LR 前日轻量（#825 拍板）=长跑前一日 E ≤8km（课实际
   // 里程）或休，时长下限豁免。legacyEDuration=⑨ 之前存量样本整条跳过。
+  if (input.bagStage != null) return checks; // C9 归排位段实例化（位置定带），课包阶段不查
   if (input.legacyEDuration) {
     checks.push({ id: "C9 E课时长分层", pass: true, detail: "legacy豁免" });
     return checks;

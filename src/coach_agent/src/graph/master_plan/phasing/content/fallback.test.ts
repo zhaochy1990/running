@@ -4,17 +4,20 @@ import { ATHLETES, type AthleteName, buildAthleteEvidence } from "../fixtureLoad
 import { listLoadCases } from "../load/fixtureLoader.js";
 import type { ContentWeekRow } from "./doctrine.js";
 import { templateFallback } from "./fallback.js";
+import { validateWeekBag } from "./generate.js";
 import { projectZones } from "./project.js";
+import { DEFAULT_DOSE_COEFFICIENTS } from "./schedule/dose.js";
+import { scheduleWeeks } from "./schedule/scheduler.js";
 import { QUALITY_FAMILY_OF } from "./testSupport.js";
 import { LR_EVE_MAX_KM, sessionKm, validateWeekContent, weekdayOf } from "./validators.js";
 
 /**
- * 兜底合法性扫描（devops#811 验收「兜底永远合法」）：38 案例 L3 golden 周骨架
- * × 三运动员投影带，模板直出逐周过全套校验（一致性 + C1-C9）。覆盖 recovery/
- * absorb/taper/race 全角色与 injury 低量周（10km）——allocator 必须在 C9 分层带
- * 与 C1 守恒之间找到可行解。附带 #825 两项模板修复的形状断言：常规周 LR 前日
- * （周六）E ≤8km 或无课；赛周恰一节 M 配速激活短课（主体 3-5km+strides，
- * 赛前 2-3 天）。
+ * 兜底合法性扫描（devops#811 验收「兜底永远合法」、#799 改两段制）：38 案例
+ * L3 golden 周骨架 × 三运动员投影带，模板课包走全链——课包校验（bag 阶段）→
+ * L4b 排位（P 门）→ 落位终检（C1-C9 全量）。覆盖 recovery/absorb/taper/race
+ * 全角色与 injury 低量周（10km）——allocator 必须在 C9 分层带与 C1 守恒之间
+ * 找到可行解。附带 #825 两项模板修复的形状断言：常规周 LR 前日（周六）E ≤8km
+ * 或无课；赛周恰一节 M 配速激活短课（主体 3-5km+strides，赛前 2-3 天）。
  */
 
 const PLAN_START_MONDAY = "2026-10-19";
@@ -24,7 +27,7 @@ const parseHms = (s: string) =>
     .map(Number)
     .reduce((acc, p) => acc * 60 + p, 0);
 
-test("38 案例 × 投影带：模板兜底逐周一致性+C1-C9 全绿", async () => {
+test("38 案例 × 投影带：模板课包→排位全链 课包校验+P 门+C1-C9 终检全绿", async () => {
   const cases = await listLoadCases();
   assert.equal(cases.length, 38);
   const evidenceCache = new Map<AthleteName, number>();
@@ -45,16 +48,36 @@ test("38 案例 × 投影带：模板兜底逐周一致性+C1-C9 全绿", async 
       zones: projection.weeks[w.week - 1]!.zones,
     }));
     const input = {
+      // 种子=代表性体能（CTL 70）：本测试验证模板构型合法性（课包/P/C 门），P6 波形
+      // 的种子×包络联合敏感性（伤退/低 CTL 长跑道可结构性越 cap=设计内上浮路径）
+      // 由 scheduler.test 的无解用例与真种子回放覆盖
       rows,
-      athlete: { weeklyRunDaysMax: spec.weeklyRunDaysMax, weekKm: 60, fitness: { ctl: 60, atl: 55, form: 5 } },
+      athlete: { weeklyRunDaysMax: spec.weeklyRunDaysMax, weekKm: 60, fitness: { ctl: 70, atl: 65, form: 5 } },
       race: { name: "测试马拉松", date: raceDateOf(PLAN_START_MONDAY, c.runwayWeeks), targetTime: spec.targetTime, goalPaceSKm: targetSec / 42.195 },
       planStartMonday: PLAN_START_MONDAY,
     };
-    const weeks = templateFallback(input);
-    for (const { week, sessions } of weeks) {
-      const row = rows[week - 1]!;
+    // ① 课包阶段：C2/C3/C5-C8 + C1 带可行性
+    const bags = templateFallback(input);
+    for (const bag of bags) {
+      const row = rows[bag.week - 1]!;
+      const bagChecks = validateWeekBag(bag, row, input);
+      const bagFailed = bagChecks.filter((x) => !x.pass);
+      assert.deepEqual(bagFailed, [], `${c.athlete}/${c.scenario} 第${bag.week}周 课包阶段`);
+    }
+    // ② L4b 排位（P 门内置）+ ③ 落位终检（C1-C9 全量）
+    const scheduled = scheduleWeeks(bags, {
+      rows,
+      planStartMonday: PLAN_START_MONDAY,
+      race: input.race,
+      athlete: { weeklyRunDaysMax: spec.weeklyRunDaysMax },
+      pmcSeed: { acute: 65, chronic: 70 },
+      coefficients: DEFAULT_DOSE_COEFFICIENTS,
+    });
+    assert.ok(scheduled.ok, `${c.athlete}/${c.scenario} 排位失败：${scheduled.failures.join(";")}`);
+    for (const week of scheduled.weeks) {
+      const row = rows[week.week - 1]!;
       const checks = validateWeekContent({
-        sessions: sessions.map((workout) => ({ workout })),
+        sessions: week.sessions.map((workout) => ({ workout })),
         row: { total_km: row.totalKm, long_run_km: row.longRunKm, quality_sessions: row.qualitySessions },
         zones: row.zones,
         maxTrainingDays: spec.weeklyRunDaysMax,
@@ -62,20 +85,23 @@ test("38 案例 × 投影带：模板兜底逐周一致性+C1-C9 全绿", async 
         ...(row.phase === "recovery" ? { regeneration: true } : {}),
       });
       const failed = checks.filter((x) => !x.pass);
-      assert.deepEqual(failed, [], `${c.athlete}/${c.scenario} 第${week}周（km=${row.totalKm} lr=${row.longRunKm} q=${row.qualitySessions}）`);
+      assert.deepEqual(failed, [], `${c.athlete}/${c.scenario} 第${week.week}周（km=${row.totalKm} lr=${row.longRunKm} q=${row.qualitySessions}）`);
       // #825-①：常规周 LR 前日（周六）——有课则 ≤8km
       if (row.role !== "race") {
-        for (const s of sessions.filter((x) => weekdayOf(x.date) === 5)) {
-          assert.ok((sessionKm(s) ?? 0) <= LR_EVE_MAX_KM + 0.1, `${c.athlete}/${c.scenario} 第${week}周 LR前日 ${s.name} ${sessionKm(s)?.toFixed(1)}km 超帽`);
+        for (const s of week.sessions.filter((x) => weekdayOf(x.date) === 5)) {
+          assert.ok(
+            (sessionKm(s) ?? 0) <= LR_EVE_MAX_KM + 0.1,
+            `${c.athlete}/${c.scenario} 第${week.week}周 LR前日 ${s.name} ${sessionKm(s)?.toFixed(1)}km 超帽`,
+          );
         }
       }
       // #825-②：赛周恰一节 M 激活短课（赛前 2-3 天、主体 3-5km+strides）
       if (row.role === "race") {
-        const acts = sessions.filter((x) => x.name.startsWith("赛前激活 M"));
-        assert.equal(acts.length, 1, `${c.athlete}/${c.scenario} 第${week}周 M 激活课 ${acts.length} 节`);
+        const acts = week.sessions.filter((x) => x.name.startsWith("赛前激活 M"));
+        assert.equal(acts.length, 1, `${c.athlete}/${c.scenario} 第${week.week}周 M 激活课 ${acts.length} 节`);
         const act = acts[0]!;
         const gap = weekdayOf(input.race.date) - weekdayOf(act.date);
-        assert.ok(gap === 2 || gap === 3, `${c.athlete}/${c.scenario} 第${week}周 M 激活课距赛 ${gap} 天`);
+        assert.ok(gap === 2 || gap === 3, `${c.athlete}/${c.scenario} 第${week.week}周 M 激活课距赛 ${gap} 天`);
         const bodyKm = act.blocks[0]!.steps.filter(
           (st) => st.step_kind === "work" && st.target.kind === "pace_s_km" && st.duration.kind === "distance_m",
         ).reduce((s2, st) => s2 + (st.duration.kind === "distance_m" ? st.duration.value : 0) / 1000, 0);
@@ -109,15 +135,9 @@ test("赛周 M 激活包络边界（#825）：精英带+触底骨架装不下激
     race: { name: "测试马拉松", date: "2026-10-25", targetTime: "2:35:00", goalPaceSKm: 9300 / 42.195 },
     planStartMonday: PLAN_START_MONDAY,
   };
-  const sessions = templateFallback(input)[0]!.sessions;
-  assert.equal(sessions.filter((s) => s.name.startsWith("赛前激活 M")).length, 0, "不应出现缩水 M 激活课");
-  const checks = validateWeekContent({
-    sessions: sessions.map((workout) => ({ workout })),
-    row: { total_km: 52.2, long_run_km: null, quality_sessions: 2 },
-    zones,
-    maxTrainingDays: 6,
-    raceDate: input.race.date,
-  });
-  const c3 = checks.find((c) => c.id === "C3 Q配额")!;
+  const bags = templateFallback(input);
+  assert.equal(bags[0]!.courses.filter((c) => c.kind === "course" && c.name.startsWith("赛前激活 M")).length, 0, "不应出现缩水 M 激活课");
+  const bagChecks = validateWeekBag(bags[0]!, rows[0]!, input);
+  const c3 = bagChecks.find((c) => c.id === "C3 Q配额")!;
   assert.equal(c3.pass, false, "包络边界应如实挂 C3（比赛课 1 节 vs 配额 2）");
 });

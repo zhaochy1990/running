@@ -24,10 +24,22 @@ export interface ObservabilityConfig {
   langsmith_api_key_env: string;
 }
 
+export interface TrainingPlanConfig {
+  /** L4b 处方剂量系数（devops#799 生产回归标定；缺省=代码内 DEFAULT_DOSE_COEFFICIENTS）。 */
+  dose_coefficients?: {
+    E: number;
+    M: number;
+    T: number;
+    I: number;
+    R: number;
+  };
+}
+
 export interface CoachAgentConfig {
   models: ModelConfig[];
   agents: RoleConfig[];
   observability: ObservabilityConfig;
+  training_plan?: TrainingPlanConfig;
 }
 
 export type PartialCoachAgentConfig = DeepPartial<CoachAgentConfig>;

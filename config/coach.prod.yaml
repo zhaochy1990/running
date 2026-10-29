@@ -96,3 +96,9 @@ observability:
   langsmith_project: stride-coach-dev
   langsmith_endpoint: https://api.smith.langchain.com
   langsmith_api_key_env: LANGSMITH_API_KEY
+
+# L4b 处方剂量系数（devops#799）：缺省=代码内 DEFAULT_DOSE_COEFFICIENTS
+# （lsq-20261029，报告 docs/coach_agent/dose-calibration-report.md）。
+# 覆盖示例（勿留与缺省逐位相同的值——会让 coefficient_version 误标 custom）：
+# training_plan:
+#   dose_coefficients: { E: 0.59, M: 1.37, T: 1.31, I: 2.01, R: 2.94 }
