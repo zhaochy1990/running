@@ -1,22 +1,28 @@
 /**
- * L4 内容生成·真模型回放（devops#811 验收）：
+ * L4 内容生成·真模型回放（devops#811 验收；#823 宽矩阵采集扩展）：
  * - chaoyi×上海马拉松 N=6：#807 迁移 fixture 的周骨架（l4-e2e-shanghai.json
  *   week_rows）+ projectZones 撞帽投影（51.1→52.85 残差 4.4）——规则⑤⑥天然用例；
- * - 三运动员多跑道（9/22 周）：L2 T 表 fallback 意图 + L3 展开（确定性、零 L2 token）。
+ * - 三运动员多跑道（6/9/16/22 周）：L2 T 表 fallback 意图 + L3 展开（确定性、零 L2
+ *   token）——#823 场景 7→12（补 16w 中跑道与 ding/pan 6w 短跑道多样性），
+ *   撞帽/直线 × 短/中/长跑道 × 三运动员覆盖；chaoyi/6 由 fixture 场景独占。
  * 全链走生产生成编排（deepseek-flash 低温 → C1-C9 校验 → 违规重试 ≤2 → 模板兜底）。
  *
  * 烧 token，不进 CI（门禁层零 token）；本地验收用：
  *   DEEPSEEK_API_KEY=... npm run replay:content
+ * 采集轮可加 REPLAY_REPEATS=2（同场景重复生成 N 次各自落盘，文件名带 -rN 后缀，
+ * #814 Phase 2：低温仍有随机性，同案例多次失败才算系统性）；REPLAY_RUNWAYS 可
+ * 覆盖跑道集（默认 6,9,16,22）。单次生成超 SCENARIO_TIMEOUT_MS 记超时切片继续。
  * 断言=C1-C9 全绿 + 规则抽查（多样性/赛周激活/E 时长/比赛配速=goal_pace±5s/km）；
  * 兜底产物挂门=实现缺陷直接判失败。
  */
+import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { getLogger } from "@stride/common";
 import { getAgentConfig, loadConfig, type ModelConfig } from "../config/config.js";
 import { isQualityStep } from "../graph/master_plan/phasing/content/derive.js";
 import type { ContentWeekRow } from "../graph/master_plan/phasing/content/doctrine.js";
-import { createContentModel, generateWeekContent } from "../graph/master_plan/phasing/content/generate.js";
+import { createContentModel, generateWeekContent, type ContentOutcome } from "../graph/master_plan/phasing/content/generate.js";
 import { projectZones } from "../graph/master_plan/phasing/content/project.js";
 import { QUALITY_FAMILY_OF } from "../graph/master_plan/phasing/content/testSupport.js";
 import { AS_OF, ATHLETES, type AthleteName, buildAthleteEvidence } from "../graph/master_plan/phasing/fixtureLoader.js";
@@ -24,7 +30,13 @@ import { buildLoadPlan } from "../graph/master_plan/phasing/load/expand.js";
 import { buildCaseContext, listLoadCases } from "../graph/master_plan/phasing/load/fixtureLoader.js";
 
 const OUT_DIR = resolve(import.meta.dirname, "../../test-output/content-replay");
-const RUNWAYS = (process.env.REPLAY_RUNWAYS ?? "9,22").split(",").map(Number);
+const RUNWAYS = (process.env.REPLAY_RUNWAYS ?? "6,9,16,22").split(",").map(Number);
+/** #814 Phase 2 重复采样：同场景生成 N 次（默认 1）——采集轮建议 2。 */
+const REPEATS = Math.max(1, Number.parseInt(process.env.REPLAY_REPEATS ?? "1", 10) || 1);
+/** #823 采集护栏：单次生成（≤3 尝试）超 20min 判超时切片，继续下一场景不阻塞采集轮。 */
+const SCENARIO_TIMEOUT_MS = 20 * 60_000;
+/** #823 断点续采：产物文件已存在的 (场景×repeat) 直接跳过——采集轮中断后重跑不重烧已完成 token。 */
+const SKIP_EXISTING = process.env.REPLAY_SKIP_EXISTING === "1";
 const RACE_DISTANCE_M = 42195;
 const logger = getLogger("coachAgent:contentReplay");
 
@@ -166,6 +178,25 @@ function spotCheck(outcome: Awaited<ReturnType<typeof generateWeekContent>>, inp
 const weekStartOf = (input: Parameters<typeof generateWeekContent>[0], week: number) =>
   new Date(new Date(`${input.planStartMonday}T00:00:00Z`).getTime() + (week - 1) * 604800_000).toISOString().slice(0, 10);
 
+/** 单场景生成超时（#823 护栏）：记切片继续，不阻塞采集轮。 */
+class ScenarioTimeout extends Error {}
+
+function withTimeout<T>(p: Promise<T>, label: string): Promise<T> {
+  return new Promise<T>((res, rej) => {
+    const timer = setTimeout(() => rej(new ScenarioTimeout(`${label} 超 ${SCENARIO_TIMEOUT_MS / 60_000}min`)), SCENARIO_TIMEOUT_MS);
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        res(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        rej(e);
+      },
+    );
+  });
+}
+
 interface Scenario {
   athlete: AthleteName;
   runway: number;
@@ -181,12 +212,19 @@ async function main() {
   const model = createContentModel(loadModel());
   await mkdir(OUT_DIR, { recursive: true });
 
+  // 场景矩阵（#823：7→12）= chaoyi/6 fixture（上海撞帽）+ 三运动员 × {6,9,16,22}
+  // 的 L3 展开行（ding/pan 6w=短跑道多样性、16w=中跑道、9w/22w=原有形态）。
+  // chaoyi/6 的 fallback 行场景由 fixture 场景独占，不双跑。
   const scenarios: Scenario[] = [{ athlete: "chaoyi", runway: 6, raceName: "上海马拉松", rows: await fixtureRows() }];
   for (const athlete of Object.keys(ATHLETES) as AthleteName[]) {
-    for (const runway of RUNWAYS) scenarios.push({ athlete, runway, raceName: "无锡马拉松", rows: await fallbackRows(athlete, runway) });
+    for (const runway of RUNWAYS) {
+      if (athlete === "chaoyi" && runway === 6) continue;
+      scenarios.push({ athlete, runway, raceName: "无锡马拉松", rows: await fallbackRows(athlete, runway) });
+    }
   }
+  console.log(`场景矩阵 ${scenarios.length} 个 × REPEATS=${REPEATS}（跑道集 ${RUNWAYS.join("/")}w）`);
 
-  const results: Array<{ athlete: string; scenario: string; source: string; attempts: number; green: boolean; fails: string[]; spot: string[]; ms: number }> =
+  const results: Array<{ athlete: string; scenario: string; repeat: number; source: string; attempts: number; green: boolean; fails: string[]; spot: string[]; ms: number }> =
     [];
   for (const s of scenarios) {
     const spec = ATHLETES[s.athlete];
@@ -206,43 +244,76 @@ async function main() {
       race: { name: s.raceName, date: raceDateOf(s.runway), targetTime: spec.targetTime, goalPaceSKm: targetSec / 42.195 },
       planStartMonday: AS_OF,
     };
-    const t0 = Date.now();
-    const outcome = await generateWeekContent(input, model);
-    // 可观测性（#822，#814 Phase 1）：重试违规全量出日志，供失败归因采集
-    if (outcome.attemptsDetail.length > 0) {
-      logger.warn(
-        { athlete: s.athlete, scenario: String(s.runway), source: outcome.source, attempts: outcome.attempts, attemptsDetail: outcome.attemptsDetail },
-        "content generation retry violations",
+    // #814 Phase 2 重复采样：同场景独立生成 N 次（低温随机性下同案例多次失败才算系统性）
+    for (let repeat = 1; repeat <= REPEATS; repeat++) {
+      const outPath = resolve(OUT_DIR, `content-${s.athlete}-${s.runway}${repeat > 1 ? `-r${repeat}` : ""}.json`);
+      if (SKIP_EXISTING && existsSync(outPath)) {
+        console.log(`  ${s.athlete}/${s.runway}w r${repeat} 产物已存在，跳过（REPLAY_SKIP_EXISTING）`);
+        continue;
+      }
+      const t0 = Date.now();
+      let outcome: ContentOutcome | null = null;
+      let timedOut = false;
+      try {
+        outcome = await withTimeout(generateWeekContent(input, model), `${s.athlete}/${s.runway}w r${repeat}`);
+      } catch (error) {
+        if (!(error instanceof ScenarioTimeout)) throw error;
+        timedOut = true;
+        logger.warn({ athlete: s.athlete, scenario: String(s.runway), repeat }, "content generation scenario timeout");
+      }
+      // 可观测性（#822，#814 Phase 1）：重试违规全量出日志，供失败归因采集
+      if (outcome != null && outcome.attemptsDetail.length > 0) {
+        logger.warn(
+          { athlete: s.athlete, scenario: String(s.runway), repeat, source: outcome.source, attempts: outcome.attempts, attemptsDetail: outcome.attemptsDetail },
+          "content generation retry violations",
+        );
+      }
+      const fails = timedOut ? ["timeout"] : outcome!.checks.flatMap((weekChecks) => weekChecks.filter((c) => !c.pass).map((c) => c.id));
+      const spot = !timedOut && outcome!.source === "llm" ? spotCheck(outcome!, input, input.race.goalPaceSKm) : [];
+      const row = {
+        athlete: s.athlete,
+        scenario: String(s.runway),
+        repeat,
+        source: timedOut ? "timeout" : outcome!.source,
+        attempts: timedOut ? 0 : outcome!.attempts,
+        green: !timedOut && outcome!.source === "llm" && fails.length === 0 && spot.length === 0,
+        fails,
+        spot,
+        ms: Date.now() - t0,
+      };
+      results.push(row);
+      console.log(
+        `  ${s.athlete}/${s.runway}w${REPEATS > 1 ? ` r${repeat}` : ""} [${projection.meta.capped ? `撞帽residual=${projection.meta.residual}` : "直线抵达"}] ${row.green ? "✓llm" : row.source === "fallback" ? "↺兜底" : row.source === "timeout" ? "⏱超时" : "✗"} ${row.ms / 1000}s (第${row.attempts}次)${row.fails.length ? ` fails=${row.fails.join("/")}` : ""}${row.spot.length ? ` spot=${row.spot.join(";")}` : ""}`,
+      );
+      await writeFile(
+        outPath,
+        JSON.stringify(
+          {
+            ...row,
+            attemptsDetail: outcome?.attemptsDetail ?? [],
+            projection: projection.meta,
+            weeks: outcome?.weeks ?? [],
+            checks: outcome?.checks ?? [],
+          },
+          null,
+          1,
+        ),
       );
     }
-    const fails = outcome.checks.flatMap((weekChecks) => weekChecks.filter((c) => !c.pass).map((c) => c.id));
-    const spot = outcome.source === "llm" ? spotCheck(outcome, input, input.race.goalPaceSKm) : [];
-    const row = {
-      athlete: s.athlete,
-      scenario: String(s.runway),
-      source: outcome.source,
-      attempts: outcome.attempts,
-      green: outcome.source === "llm" && fails.length === 0 && spot.length === 0,
-      fails,
-      spot,
-      ms: Date.now() - t0,
-    };
-    results.push(row);
-    console.log(
-      `  ${s.athlete}/${s.runway}w [${projection.meta.capped ? `撞帽residual=${projection.meta.residual}` : "直线抵达"}] ${row.green ? "✓llm" : outcome.source === "fallback" ? "↺兜底" : "✗"} ${row.ms / 1000}s (第${outcome.attempts}次)${row.fails.length ? ` fails=${row.fails.join("/")}` : ""}${row.spot.length ? ` spot=${row.spot.join(";")}` : ""}`,
-    );
-    await writeFile(
-      resolve(OUT_DIR, `content-${s.athlete}-${s.runway}.json`),
-      JSON.stringify({ ...row, attemptsDetail: outcome.attemptsDetail, projection: projection.meta, weeks: outcome.weeks, checks: outcome.checks }, null, 1),
-    );
   }
 
   const green = results.filter((r) => r.green).length;
   const fallback = results.filter((r) => r.source === "fallback").length;
-  console.log(`\n回放汇总：${green}/${results.length} 全绿；兜底 ${fallback} 次`);
+  const timeout = results.filter((r) => r.source === "timeout").length;
+  const firstPass = results.filter((r) => r.green && r.attempts === 1).length;
+  const llm = results.filter((r) => r.source === "llm").length;
+  const avgAttempts = llm > 0 ? (results.filter((r) => r.source === "llm").reduce((s, r) => s + r.attempts, 0) / llm).toFixed(2) : "-";
+  console.log(
+    `\n回放汇总：全绿 ${green}/${results.length}；llm ${llm}（首过 ${firstPass}、平均尝试 ${avgAttempts}）；兜底 ${fallback}；超时 ${timeout}`,
+  );
   const notGreen = results.filter((r) => !r.green);
   if (notGreen.length)
-    console.log("未全绿切片：", notGreen.map((r) => `${r.athlete}/${r.scenario}(${[...r.fails, ...r.spot].join("/") || "fallback"})`).join(" "));
+    console.log("未全绿切片：", notGreen.map((r) => `${r.athlete}/${r.scenario}${REPEATS > 1 ? `#r${r.repeat}` : ""}(${[...r.fails, ...r.spot].join("/") || "fallback"})`).join(" "));
   // 兜底产物必须永远合法：兜底行仍挂门 = 实现缺陷，直接判失败
   const illegalFallback = results.filter((r) => r.source === "fallback" && r.fails.length > 0);
   if (illegalFallback.length > 0) {
