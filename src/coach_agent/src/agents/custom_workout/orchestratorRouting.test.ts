@@ -64,3 +64,13 @@ test("orchestrator prompt routes race-fact questions to training_question, not r
   // 守卫：策略例句仍锁在 race_strategy，划界句没被顺带改掉。
   assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes('"帮我制定杭马的分段配速和补给策略" → race_strategy'));
 });
+
+/**
+ * 「结合上文」类短回复样本锁定（devops#834 验收第 2 条）：裸短答（"2:55"、
+ * "配速430"）脱离上下文无 intent 可言，全靠最近对话轮次判延续——样本必须留在
+ * prompt 里，窗口内保留由 orchestrator 裁剪测试保证。
+ */
+test("orchestrator prompt carries the continuation short-reply samples", () => {
+  assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes('"2:55" → race_strategy（比赛策略对话中回答目标完赛时间，继续生成策略）'));
+  assert.ok(ORCHESTRATOR_INTENT_PROMPT.includes('"配速430" → custom_workout（课程创建追问中的回答，结合上文）'));
+});

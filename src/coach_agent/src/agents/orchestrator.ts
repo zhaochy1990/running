@@ -1,4 +1,4 @@
-import { SystemMessage } from "@langchain/core/messages";
+import { SystemMessage, ToolMessage } from "@langchain/core/messages";
 import { Command, END, type GraphNode } from "@langchain/langgraph";
 import { buildChatModel, getLogger } from "@stride/common";
 import type { ModelConfig } from "../config/config.js";
@@ -6,6 +6,12 @@ import { normalizeMessageContent } from "./messages.js";
 import { type AgentsState, IntentClassificationSchema, type IntentLabel } from "./state.js";
 
 const logger = getLogger("orchestrator");
+
+/**
+ * 意图分类输入窗口：最近 N 条（devops#834 E6，票面固定 10，不做配置）。
+ * 根因叙事见下方分类调用点注释。
+ */
+const INTENT_CONTEXT_MESSAGES = 10;
 
 /** 意图分类提示（导出供边界路由样本单测锁定；devops#587 增 custom_workout，devops#697 增 workout_manage）。 */
 export const ORCHESTRATOR_INTENT_PROMPT = `Analyze the user's utterance and classify their intent into one of the following categories. Only output the classification result in a structured format, without providing any answers or training advice.
@@ -69,7 +75,21 @@ export function getOrchestratorNode(modelConfig: ModelConfig, routes: Partial<Re
       // devops#833：存量 checkpoint 里 responses API 落下的数组 content 消息会被
       // langchain 原样回传，DeepSeek 格式模仿破坏 json_object 约束（纯空白输出）。
       // 分类输入在此归一化——只影响本次调用，不改写 checkpoint。
-      const raw = await model.invoke([new SystemMessage(prompt), ...state.messages.map(normalizeMessageContent)], {
+      // devops#834（10-29 二次取证修正根因）：深会话里大量教练风格 assistant 长文
+      // 会把开头的分类 system 指令稀释，deepseek-flash 跟上下文继续扮演教练
+      // （输出教练文本或纯空白），json_object 失效 → decode 挂 fallback 锁旧意图。
+      // E6 裁剪到最近 N 条（实证 in=4,128 tokens，全量 31k 省 87%）+ E5 分类指令
+      // 移到消息序列末尾抗指令稀释——两臂在污染会话上各自实证 4/4 恢复，
+      // 叠加形态 = 裁剪后的消息 + 末位 system。
+      let history = state.messages.slice(-INTENT_CONTEXT_MESSAGES).map(normalizeMessageContent);
+      // 裁剪边界若切进上一轮工具块（AIMessage(tool_calls) 在窗外、其 ToolMessage
+      // 成为窗口首条），孤儿 tool 消息会被 DeepSeek 400 拒收，分类挂 fallback 锁
+      // 旧意图——恰是本票要修的症状。丢弃头部孤儿 ToolMessage；AIMessage(tool_calls)
+      // 落在窗口内时其后继 tool 响应必同在窗口，不会产生悬挂 tool_calls。
+      while (history.length > 0 && history[0] instanceof ToolMessage) {
+        history = history.slice(1);
+      }
+      const raw = await model.invoke([...history, new SystemMessage(prompt)], {
         response_format: { type: "json_object" },
       });
       parsed = IntentClassificationSchema.safeParse(JSON.parse(raw.text));
