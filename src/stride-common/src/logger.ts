@@ -99,10 +99,31 @@ function buildTeeDestination(): NodeJS.WritableStream {
   });
 }
 
+/**
+ * Serialize what is actually an error, pass everything else through verbatim.
+ * pino's own gate (`message` is a string) also grabs plain objects that merely
+ * carry a `message` — e.g. an OpenAI-style error body `{type, message, code}` —
+ * re-typing them and dropping a pre-existing `type` field, so we gate harder:
+ * real Error instances plus stack-bearing error-likes (cross-realm errors fail
+ * `instanceof`) serialize, anything else keeps its fields untouched.
+ */
+function serializeError(value: unknown): unknown {
+  const isErrorLike = value instanceof Error || (typeof value === "object" && value !== null && "stack" in value);
+  return isErrorLike ? pino.stdSerializers.err(value as Error) : value;
+}
+
 function buildRootLogger(): Logger {
   const options: pino.LoggerOptions = {
     level: resolveLevel(),
     redact: { paths: REDACT_PATHS, censor: "[redacted]" },
+    // pino only serializes the conventional `err` key by default; this codebase
+    // logs errors under `error`, and JSON.stringify of an Error keeps only own
+    // enumerable props (usually none) — the exact blind spot that hid the real
+    // cause of the orchestrator intent-decode failures (devops#832).
+    serializers: {
+      error: serializeError,
+      err: serializeError,
+    },
   };
   return pino(options, buildTeeDestination());
 }
