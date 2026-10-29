@@ -71,3 +71,40 @@ test("分步剂量：E 60min=0.59×60；M 带 30min=1.37×30；rest 步零剂量
   assert.equal(open.loadPt, Math.round(c.E * 30 * 10) / 10);
   assert.equal(open.km, null);
 });
+
+test("recovery 折算（#824）：time+open 组间慢跑按 E 带中点折算计里程、计有氧账（water-fill/P7 不再挂不可知）", () => {
+  const c = DEFAULT_DOSE_COEFFICIENTS;
+  // I 1k×4（90s open jog）：4×(1km@I + 90s/321s/km)≈4×1.28=5.12km（E 带中点 321）
+  const workout = {
+    schema: "run-workout/v1",
+    name: "I 1k×4",
+    date: "2026-11-02",
+    type: "I",
+    note: null,
+    purpose: "p",
+    blocks: [
+      {
+        repeat: 4,
+        steps: [
+          {
+            step_kind: "work",
+            duration: { kind: "distance_m", value: 1000 },
+            target: { kind: "pace_s_km", low: 220, high: 230 },
+            note: null,
+            hr_cap_bpm: null,
+          },
+          { step_kind: "recovery", duration: { kind: "time_s", value: 90 }, target: { kind: "open", low: null, high: null }, note: null, hr_cap_bpm: null },
+        ],
+      },
+    ],
+  } as RunWorkout;
+  const d = courseDose(workout, ZONES, c);
+  assert.ok(d.km != null, "recovery time 步不再让整课里程不可知");
+  const foldedJogKm = 4 * (90 / 321);
+  assert.ok(Math.abs(d.aerobicKm - foldedJogKm) < 0.06, `有氧账含折算慢跑：${d.aerobicKm}`);
+  assert.ok(Math.abs((d.km ?? 0) - (4 + foldedJogKm)) < 0.06, `总里程=强度+折算：${d.km}`);
+  // 折算不改变剂量账（recovery time 步剂量本就按 E 带计时长）；
+  // 非 recovery 的 time+open（如 work 步 open）仍不可知
+  const openWork = courseDose(singleStepWorkout({ kind: "time_s", value: 1800 }, { kind: "open", low: null, high: null }), ZONES, c);
+  assert.equal(openWork.km, null);
+});

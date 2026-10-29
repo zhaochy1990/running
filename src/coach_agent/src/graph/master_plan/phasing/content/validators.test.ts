@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { RunWorkout, WorkoutStep } from "@stride/contract";
 import type { PaceZones } from "./derive.js";
-import { type SessionUnderTest, validateWeekContent, type WeekContentInput } from "./validators.js";
+import { type SessionUnderTest, sessionKm, validateWeekContent, type WeekContentInput } from "./validators.js";
 
 const ZONES: PaceZones = { easy: [288, 336], m: [249, 288], t: [235, 249], i: [218, 235], r: [null, 218] };
 const EASY = { kind: "pace_s_km" as const, low: 288, high: 336 };
 const M_PACE = { kind: "pace_s_km" as const, low: 249, high: 288 };
+/** M 带中位 ±5 窄带（#824/C12 口径）：绿色基线的质量段处方形态。 */
+const M_NARROW = { kind: "pace_s_km" as const, low: 264, high: 274 };
 const T_PACE = { kind: "pace_s_km" as const, low: 235, high: 249 };
 const OPEN = { kind: "open" as const, low: null, high: null };
 
@@ -28,7 +30,7 @@ const W = (over: Partial<RunWorkout> & Pick<RunWorkout, "name" | "date" | "block
     ...over,
   }) as RunWorkout;
 
-/** 绿色周（⑨量纲）：E 60min（time 处方）+ M 课 10km（热身/主体/放松）+ LR 15km（E 主体 + M 尾段 + 放松）。 */
+/** 绿色周（⑨量纲+#824 窄带口径）：E 60min（time 处方）+ M 课 10km（热身/主体窄带/放松）+ LR 15km（E 主体 + M 尾段 + 放松）。 */
 function greenSessions(): SessionUnderTest[] {
   return [
     {
@@ -45,7 +47,7 @@ function greenSessions(): SessionUnderTest[] {
         date: "2026-11-03",
         type: "M",
         note: "起跑别冲",
-        blocks: [{ repeat: 1, steps: [s("warmup", km(2), EASY), s("work", km(6), M_PACE), s("cooldown", km(2), EASY)] }],
+        blocks: [{ repeat: 1, steps: [s("warmup", km(2), EASY), s("work", km(6), M_NARROW), s("cooldown", km(2), EASY)] }],
       }),
     },
     {
@@ -77,9 +79,9 @@ const byId = (checks: ReturnType<typeof validateWeekContent>, id: string) => {
   return hit;
 };
 
-test("绿色基线：一致性 + C1-C9 全过（E time 处方派生里程参与 C1）", () => {
+test("绿色基线：一致性 + C1-C12 全过（E time 处方派生里程参与 C1）", () => {
   const checks = validateWeekContent(weekInput(greenSessions()));
-  assert.equal(checks.length, 11);
+  assert.equal(checks.length, 13);
   for (const c of checks) assert.equal(c.pass, true, `${c.id}: ${c.detail}`);
 });
 
@@ -458,4 +460,202 @@ test("C9 再生周（recovery）短带 + legacy 豁免", () => {
   const legacy = validateWeekContent(weekInput([e(20), lr], { row, legacyEDuration: true }));
   assert.equal(byId(legacy, "C9 E课时长分层").pass, true);
   assert.equal(byId(legacy, "C9 E课时长分层").detail, "legacy豁免");
+});
+
+test("C12 质量段配速宽度：整带复制挂（>10s）、窄带过；E/LR/比赛课与变速慢段豁免、legacy 豁免", () => {
+  // 质量课主体=整条 T 带复制（235-249 宽 14s）→ 挂
+  const fullBand: SessionUnderTest[] = [
+    {
+      workout: W({
+        name: "T 3×2km",
+        date: "2026-11-03",
+        type: "T",
+        blocks: [{ repeat: 3, steps: [s("work", km(2), T_PACE), s("recovery", { kind: "distance_m", value: 400 }, OPEN)] }],
+      }),
+    },
+  ];
+  const g12 = byId(validateWeekContent(weekInput(fullBand, { row: { total_km: 7.2, long_run_km: null, quality_sessions: 1 } })), "C12 质量段配速宽度");
+  assert.equal(g12.pass, false);
+  assert.match(g12.detail, /宽14s/);
+  // 带中位 ±5 窄带 → 过
+  const narrow = fullBand.map((x) => ({
+    workout: {
+      ...x.workout,
+      blocks: [{ repeat: 3, steps: [s("work", km(2), { kind: "pace_s_km", low: 237, high: 247 }), s("recovery", { kind: "distance_m", value: 400 }, OPEN)] }],
+    },
+  }));
+  assert.equal(
+    byId(validateWeekContent(weekInput(narrow, { row: { total_km: 7.2, long_run_km: null, quality_sessions: 1 } })), "C12 质量段配速宽度").pass,
+    true,
+  );
+  // LR 内嵌 M 尾段（全带）不在 C12 范围；E 课主体（E 全带）不在范围
+  const lrTail = greenSessions();
+  assert.equal(byId(validateWeekContent(weekInput(lrTail)), "C12 质量段配速宽度").pass, true);
+  // 变速课 work@easy 慢段（E 全带 48s 宽）不是质量段、不受限
+  const fartlek: SessionUnderTest[] = [
+    {
+      workout: W({
+        name: "变速 4×(1k T + 1k E)",
+        date: "2026-11-03",
+        type: "T",
+        blocks: [{ repeat: 4, steps: [s("work", km(1), { kind: "pace_s_km", low: 237, high: 247 }), s("work", km(1), EASY)] }],
+      }),
+    },
+  ];
+  assert.equal(
+    byId(validateWeekContent(weekInput(fartlek, { row: { total_km: 8, long_run_km: null, quality_sessions: 1 } })), "C12 质量段配速宽度").pass,
+    true,
+  );
+  // legacy（#824 前存量=真实教练全带处方）豁免
+  const legacy = validateWeekContent(weekInput(fullBand, { row: { total_km: 7.2, long_run_km: null, quality_sessions: 1 }, legacyQualityPace: true }));
+  assert.equal(byId(legacy, "C12 质量段配速宽度").pass, true);
+  assert.equal(byId(legacy, "C12 质量段配速宽度").detail, "legacy豁免");
+});
+
+test("C11 分段配速梯度：阶梯全段同配速挂、沿带梯度过；等长间歇豁免", () => {
+  // 阶梯 3k+2k+1k 全部同配速（中位差 0）→ 挂（形状像阶梯、刺激=等长间歇）
+  const flatLadder: SessionUnderTest = {
+    workout: W({
+      name: "T 阶梯 3-2-1km",
+      date: "2026-11-03",
+      type: "T",
+      blocks: [
+        {
+          repeat: 1,
+          steps: [
+            s("work", km(3), { kind: "pace_s_km", low: 237, high: 247 }),
+            s("recovery", { kind: "distance_m", value: 400 }, OPEN),
+            s("work", km(2), { kind: "pace_s_km", low: 238, high: 248 }),
+            s("recovery", { kind: "distance_m", value: 400 }, OPEN),
+            s("work", km(1), { kind: "pace_s_km", low: 237, high: 247 }),
+          ],
+        },
+      ],
+    }),
+  };
+  const g11 = byId(validateWeekContent(weekInput([flatLadder], { row: { total_km: 7, long_run_km: null, quality_sessions: 1 } })), "C11 分段配速梯度");
+  assert.equal(g11.pass, false);
+  assert.match(g11.detail, /3段不同时长全同配速/);
+  // legacy（#824 前存量=真实教练全带处方）豁免（与 C12 同门）
+  const legacy11 = validateWeekContent(weekInput([flatLadder], { row: { total_km: 7, long_run_km: null, quality_sessions: 1 }, legacyQualityPace: true }));
+  assert.equal(byId(legacy11, "C11 分段配速梯度").pass, true);
+  assert.equal(byId(legacy11, "C11 分段配速梯度").detail, "legacy豁免");
+  // 沿带梯度（短段≈快端 237、长段≈慢端 253）→ 过
+  const graded = {
+    workout: {
+      ...flatLadder.workout,
+      blocks: [
+        {
+          repeat: 1,
+          steps: [
+            s("work", km(3), { kind: "pace_s_km", low: 248, high: 258 }),
+            s("recovery", { kind: "distance_m", value: 400 }, OPEN),
+            s("work", km(2), { kind: "pace_s_km", low: 242, high: 252 }),
+            s("recovery", { kind: "distance_m", value: 400 }, OPEN),
+            s("work", km(1), { kind: "pace_s_km", low: 237, high: 247 }),
+          ],
+        },
+      ],
+    },
+  };
+  assert.equal(byId(validateWeekContent(weekInput([graded], { row: { total_km: 7, long_run_km: null, quality_sessions: 1 } })), "C11 分段配速梯度").pass, true);
+  // 等长间歇（8×800 同距同配速）= 单一时长组，豁免
+  const evenIntervals: SessionUnderTest = {
+    workout: W({
+      name: "I 800m×8",
+      date: "2026-11-03",
+      type: "I",
+      blocks: [
+        {
+          repeat: 8,
+          steps: [
+            s("work", { kind: "distance_m", value: 800 }, { kind: "pace_s_km", low: 220, high: 230 }),
+            s("recovery", { kind: "time_s", value: 90 }, OPEN),
+          ],
+        },
+      ],
+    }),
+  };
+  assert.equal(
+    byId(validateWeekContent(weekInput([evenIntervals], { row: { total_km: 8, long_run_km: null, quality_sessions: 1 } })), "C11 分段配速梯度").pass,
+    true,
+  );
+  // 混合家族（6×800@I + 4×400@R）配速天然分层 → 过
+  const mixed: SessionUnderTest = {
+    workout: W({
+      name: "I/R 混合",
+      date: "2026-11-03",
+      type: "I",
+      blocks: [
+        {
+          repeat: 6,
+          steps: [
+            s("work", { kind: "distance_m", value: 800 }, { kind: "pace_s_km", low: 220, high: 230 }),
+            s("recovery", { kind: "time_s", value: 90 }, OPEN),
+          ],
+        },
+        {
+          repeat: 4,
+          steps: [
+            s("work", { kind: "distance_m", value: 400 }, { kind: "pace_s_km", low: 195, high: 205 }),
+            s("recovery", { kind: "time_s", value: 60 }, OPEN),
+          ],
+        },
+      ],
+    }),
+  };
+  assert.equal(byId(validateWeekContent(weekInput([mixed], { row: { total_km: 8, long_run_km: null, quality_sessions: 1 } })), "C11 分段配速梯度").pass, true);
+});
+
+test("sessionKm recovery 折算（#824 修复1）：time+open recovery 步按 E 带中点折算计里程、eMid 缺失挂不可知", () => {
+  const workout = W({
+    name: "I 1k×4（90s jog）",
+    date: "2026-11-03",
+    type: "I",
+    blocks: [
+      {
+        repeat: 4,
+        steps: [s("work", { kind: "distance_m", value: 1000 }, { kind: "pace_s_km", low: 220, high: 230 }), s("recovery", { kind: "time_s", value: 90 }, OPEN)],
+      },
+    ],
+  });
+  // E 带中点 312s/km：4×(1km + 90s/312s/km) = 4×1.2885 ≈ 5.15km
+  const foldedKm = sessionKm(workout, (288 + 336) / 2)!;
+  assert.ok(Math.abs(foldedKm - 4 * (1 + 90 / 312)) < 1e-9, `folded km=${foldedKm}`);
+  // 无 eMid → 不可知（不猜）；非 recovery 的 time+open 步仍不可知
+  assert.equal(sessionKm(workout), null);
+  const openWork = W({ name: "x", date: "2026-11-03", type: "E", blocks: [{ repeat: 1, steps: [s("work", { kind: "time_s", value: 600 }, OPEN)] }] });
+  assert.equal(sessionKm(openWork, 312), null);
+  // distance 形态 recovery（400m jog）直读不受 eMid 影响
+  const distRecovery = W({
+    name: "T 3×2km",
+    date: "2026-11-03",
+    type: "T",
+    blocks: [{ repeat: 3, steps: [s("work", km(2), { kind: "pace_s_km", low: 237, high: 247 }), s("recovery", { kind: "distance_m", value: 400 }, OPEN)] }],
+  });
+  assert.ok(Math.abs((sessionKm(distRecovery, 312) ?? 0) - 7.2) < 1e-9);
+  // C1 集成：time+open recovery 不再让整周挂「不可知」
+  const week = greenSessions();
+  week[1] = {
+    workout: {
+      ...week[1]!.workout,
+      name: "I 1k×4",
+      type: "I",
+      blocks: [
+        { repeat: 1, steps: [s("warmup", km(2), EASY)] },
+        {
+          repeat: 4,
+          steps: [
+            s("work", { kind: "distance_m", value: 1000 }, { kind: "pace_s_km", low: 220, high: 230 }),
+            s("recovery", { kind: "time_s", value: 90 }, OPEN),
+          ],
+        },
+        { repeat: 1, steps: [s("cooldown", km(2), EASY)] },
+      ],
+    },
+  };
+  // E 11.5 + I 课 4×(1+90/312)=5.15 + wu/cd 4 + LR 15 ≈ 35.7；row 对齐后 C1 过且无「不可知」
+  const g1 = byId(validateWeekContent(weekInput(week, { row: { total_km: 35.7, long_run_km: 15, quality_sessions: 2 } })), "C1 周量守恒");
+  assert.equal(g1.pass, true, g1.detail);
+  assert.doesNotMatch(g1.detail, /不可知/);
 });

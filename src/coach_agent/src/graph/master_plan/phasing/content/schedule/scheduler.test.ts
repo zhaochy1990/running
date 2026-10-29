@@ -134,6 +134,13 @@ test("六周全链：P 门全绿 + C1 全周命中 + LR 周日 + 周六轻量 + 
       const act = week.sessions.find((w) => w.date !== RACE_DATE && w.type === "M")!;
       const gap = (new Date(`${RACE_DATE}T00:00:00Z`).getTime() - new Date(`${act.date}T00:00:00Z`).getTime()) / 86400_000;
       assert.ok(gap === 2 || gap === 3, `激活课距赛 ${gap} 天`);
+      // 赛周周六 E=赛前激活 flavor（#824 抽查回归：shake 优先于 lrEve——赛周无 LR，
+      // 「为明日长跑蓄力」模板落在比赛前日是 purpose 与落位错位）
+      const satE = week.calendar[5]!.sessions.find((w) => w.type === "E");
+      if (satE != null) {
+        assert.match(satE.purpose ?? "", /赛前激活/, `赛周周六 E purpose=${satE.purpose}`);
+        assert.doesNotMatch(satE.purpose ?? "", /长跑蓄力/);
+      }
     }
     // Q 隔日（不相邻）
     const qWds = week.calendar
@@ -189,6 +196,29 @@ test("E 实例化：间隔日短带、普通日长带、周六 km 帽、water-fi
       assert.ok(min >= 29.4 && min <= 90.6, `${day.day} E ${min.toFixed(0)}min 出分层带`);
       if (isSat) assert.ok((sessionKm(s) ?? 0) <= LR_EVE_MAX_KM + 0.1, `周六 E ${sessionKm(s)?.toFixed(1)}km 超轻量帽`);
     }
+  }
+});
+
+test("LR 前日帽含 strides（#824 回放发现）：strides 槽顶格 water-fill 后课整程 ≤8km（帽扣减触感里程）", () => {
+  // 大骨架周（water-fill 顶满周六 lrEve 带）+ 周六槽 strides=true：钳制须扣 0.4km
+  // 触感里程，否则 work 8.0 + strides 0.4 = 8.4 > 8 自产 P3 假违规
+  const rows: ContentWeekRow[] = [ROWS[0]!];
+  const bag: WeekBag = {
+    week: 1,
+    courses: [
+      lrCourse(rows[0]!.longRunKm!),
+      mCourse(7),
+      { kind: "e-slot", band: "interval", strides: true, purpose: null },
+      eSlot("normal"),
+      eSlot("interval"),
+    ],
+  };
+  const result = scheduleWeeks([bag], { ...CTX, rows });
+  assert.ok(result.ok, result.failures.join(";"));
+  const sat = result.weeks[0]!.calendar[5]!;
+  const e = sat.sessions.find((w) => w.type === "E" && w.name.includes("strides"));
+  if (e != null) {
+    assert.ok((sessionKm(e) ?? 0) <= LR_EVE_MAX_KM + 0.05, `周六 strides E ${sessionKm(e)?.toFixed(2)}km 超帽（未扣触感里程）`);
   }
 });
 

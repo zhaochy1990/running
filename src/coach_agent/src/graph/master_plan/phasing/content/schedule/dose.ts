@@ -1,5 +1,5 @@
 import type { RunWorkout, WorkoutStep } from "@stride/contract";
-import { isQualityStep, type PaceZones } from "../derive.js";
+import { easyMidOfZones, isQualityStep, type PaceZones, stepKmOf } from "../derive.js";
 
 /**
  * L4b 处方剂量估算器（devops#799）：分步剂量=段时长×强度带系数，量纲与生产
@@ -65,15 +65,6 @@ function stepMinutes(step: WorkoutStep): number | null {
   return null;
 }
 
-/** 步距离（km）：distance 直读；time 按处方中点折算；open 配速不可知=null。 */
-function stepKm(step: WorkoutStep): number | null {
-  if (step.duration.kind === "distance_m") return step.duration.value / 1000;
-  if (step.duration.kind === "time_s" && step.target.kind === "pace_s_km") {
-    return step.duration.value / ((step.target.low + step.target.high) / 2);
-  }
-  return null;
-}
-
 /** 课的分段核算：剂量点数 + 有氧/强度里程（判定表口径：质量步=强度、其余=有氧）。 */
 export interface CourseDose {
   /** 处方剂量（Σ步时长×带系数；rest 步不计）。 */
@@ -82,14 +73,19 @@ export interface CourseDose {
   aerobicKm: number;
   /** 强度（质量段）里程 km。 */
   intensityKm: number;
-  /** 总里程 km；任一跑步步里程不可知（open+time）则 null。 */
+  /** 总里程 km；任一跑步步里程不可知（recovery 之外的 open+time）则 null。 */
   km: number | null;
 }
 
 const round1 = (x: number) => Math.round(x * 10) / 10;
 
-/** 单课剂量核算（repeat 展开；rest=不在跑不计；recovery/open=有氧 E 带）。 */
+/**
+ * 单课剂量核算（repeat 展开；rest=不在跑不计；recovery/open=有氧 E 带）。
+ * 步里程折算口径单源=derive.stepKmOf（recovery 的 time+open 按 E 带中点折算，
+ * #824——与 validators.sessionKm 一致，防调度器 water-fill/P7 挂「不可知」）。
+ */
 export function courseDose(workout: RunWorkout, zones: PaceZones, coefficients: DoseCoefficients): CourseDose {
+  const eMid = easyMidOfZones(zones);
   let loadPt = 0;
   let aerobicKm = 0;
   let intensityKm = 0;
@@ -101,7 +97,7 @@ export function courseDose(workout: RunWorkout, zones: PaceZones, coefficients: 
         const minutes = stepMinutes(step);
         const band: DoseBand = step.target.kind === "pace_s_km" ? doseBandOfPace(step.target.low, step.target.high, zones) : "E";
         if (minutes != null) loadPt += minutes * coefficients[band];
-        const stepKmV = stepKm(step);
+        const stepKmV = stepKmOf(step, eMid);
         if (stepKmV == null) {
           kmKnown = false;
           continue;

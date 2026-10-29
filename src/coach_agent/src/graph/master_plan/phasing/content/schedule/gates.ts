@@ -1,5 +1,5 @@
 import type { RunWorkout } from "@stride/contract";
-import { hasQualitySegment, type PaceZones } from "../derive.js";
+import { easyMidOfZones, hasQualitySegment, type PaceZones } from "../derive.js";
 import type { ContentWeekRow } from "../doctrine.js";
 import { LR_EVE_MAX_KM, sessionKm } from "../validators.js";
 import { courseDose, type DoseCoefficients } from "./dose.js";
@@ -75,7 +75,9 @@ export function scheduleGates(input: GateInput): ScheduleCheck[] {
   const lrs = sessions.filter((s) => s.type === "LR");
   const lrWd = lrs.length === 1 ? (new Date(`${lrs[0]!.date}T00:00:00Z`).getUTCDay() + 6) % 7 : null;
   const sat = calendar[5]!;
-  const satKm = sat.sessions.reduce((s, w) => s + (sessionKm(w) ?? 0), 0);
+  // E 带中点：周六课 recovery time 步折算锚（sessionKm 同源；E 带缺失传 null）
+  const eMid = easyMidOfZones(zones);
+  const satKm = sat.sessions.reduce((s, w) => s + (sessionKm(w, eMid) ?? 0), 0);
   const satLight = sat.sessions.every((w) => w.type === "E") && (sat.sessions.length === 0 || satKm <= LR_EVE_MAX_KM + LR_EVE_KM_TOL);
   const p3Ok = row.longRunKm == null ? lrs.length === 0 : lrWd === 6 && satLight;
   checks.push({
