@@ -73,7 +73,7 @@ test("H3：块对块 +25% 可判；豁免「跨阶段进更高带」须用真实
     [5, "transition_quality", 2, "progress", 57, 20.5, 1],
     [6, "transition_quality", 2, "progress", 58, 20.9, 1],
     [7, "final_quality", 3, "progress", 58, 20.9, 1],
-    [8, "final_quality", 3, "race", 32, null, 1],
+    [8, "final_quality", 3, "race", 32, null, 2],
   ]);
   const checks = validateLoad(intent, ramp, [38, 38, 38, 38]);
   assert.ok(failOf(checks, "H3")!.pass, failOf(checks, "H3")!.detail); // 跨阶段进更高带豁免生效
@@ -87,7 +87,7 @@ test("H3：块对块 +25% 可判；豁免「跨阶段进更高带」须用真实
     [5, "foundation", 2, "progress", 58, 20.9, 1],
     [6, "foundation", 2, "progress", 60, 21.6, 1],
     [7, "final_quality", 3, "progress", 60, 21.6, 1],
-    [8, "final_quality", 3, "race", 33, null, 1],
+    [8, "final_quality", 3, "race", 33, null, 2],
   ]);
   assert.ok(!failOf(validateLoad(intent, jump, [38, 38, 38, 38]), "H3")!.pass);
 });
@@ -108,7 +108,7 @@ test("L1 带贴合：低于 lo 且非爬坡、非帽压制挂；两种合法爬�
     [3, "foundation", 1, "progress", 54, 19.4, 1],
     [4, "foundation", 1, "progress", 52, 18.7, 1],
     [5, "final_quality", 2, "progress", 70, 25.2, 1],
-    [6, "final_quality", 2, "race", 38, null, 1],
+    [6, "final_quality", 2, "race", 38, null, 2],
   ]);
   assert.ok(!failOf(validateLoad(intent, dipping, [40, 40, 40, 40]), "L1")!.pass);
 
@@ -119,7 +119,7 @@ test("L1 带贴合：低于 lo 且非爬坡、非帽压制挂；两种合法爬�
     [3, "foundation", 1, "progress", 60, 21.6, 1],
     [4, "foundation", 1, "progress", 65, 23.4, 1],
     [5, "final_quality", 2, "progress", 70, 25.2, 1],
-    [6, "final_quality", 2, "race", 38, null, 1],
+    [6, "final_quality", 2, "race", 38, null, 2],
   ]);
   assert.ok(failOf(validateLoad(intent, ramping, [50, 50, 50, 50]), "L1")!.pass);
 
@@ -130,7 +130,7 @@ test("L1 带贴合：低于 lo 且非爬坡、非帽压制挂；两种合法爬�
     [3, "foundation", 1, "progress", 60, 21.6, 1],
     [4, "foundation", 1, "progress", 61, 21.9, 1],
     [5, "final_quality", 2, "progress", 62, 22.3, 1],
-    [6, "final_quality", 2, "race", 34, null, 1],
+    [6, "final_quality", 2, "race", 34, null, 2],
   ]);
   assert.ok(failOf(validateLoad(intent, suppressed, [45, 45, 45, 45]), "L1")!.pass);
 });
@@ -181,7 +181,7 @@ test("L3 LR：峰值低于下限挂；赛周 LR 非 null 挂；相位末 LR 倒�
     [4, "foundation", 2, "progress", 70, 25.2, 2],
     [5, "foundation", 2, "progress", 72, 25.9, 2],
     [6, "final_quality", 3, "taper", 55, 19.8, 1],
-    [7, "final_quality", 3, "race", 32, null, 1],
+    [7, "final_quality", 3, "race", 32, null, 2],
   ]);
   assert.ok(failOf(validateLoad(intent, ok, seed), "L3")!.pass);
 
@@ -226,7 +226,7 @@ test("L4 taper：taper 段递增挂（单调公式方向反例——写反会把
     [5, "final_quality", 2, "progress", 70, 25.2, 2],
     [6, "final_quality", 3, "taper", 52, 18.7, 1],
     [7, "final_quality", 3, "taper", 62, 22.3, 1], // taper 段 52 → 62 递增
-    [8, "final_quality", 3, "race", 45, null, 1],
+    [8, "final_quality", 3, "race", 45, null, 2],
   ]);
   assert.ok(!failOf(validateLoad(intent, rising, seed), "L4")!.pass);
 
@@ -281,7 +281,7 @@ test("L4 峰后弧单调（#806）：吸收落弧内被 taper 平台位重算反
     [4, "final_quality", 3, "progress", 82.5, 29.7, 2],
     [5, "final_quality", 3, "absorb", 63.8, 23, 1],
     [6, "final_quality", 3, "taper", 70.1, 25.2, 1],
-    [7, "final_quality", 3, "race", 54.9, null, 1],
+    [7, "final_quality", 3, "race", 54.9, null, 2],
   ]);
   assert.ok(!failOf(validateLoad(intent, zigzag, [75, 75, 75, 75]), "L4")!.pass);
 
@@ -293,7 +293,7 @@ test("L4 峰后弧单调（#806）：吸收落弧内被 taper 平台位重算反
     [4, "final_quality", 3, "absorb", 63.8, 23, 1],
     [5, "final_quality", 3, "progress", 85, 30.6, 2],
     [6, "final_quality", 3, "taper", 72.3, 26, 1],
-    [7, "final_quality", 3, "race", 54.9, null, 1],
+    [7, "final_quality", 3, "race", 54.9, null, 2],
   ]);
   const checks = validateLoad(intent, fixed, [75, 75, 75, 75]);
   assert.ok(failOf(checks, "L4")!.pass, failOf(checks, "L4")!.detail);
@@ -314,7 +314,7 @@ test("L4 峰后弧回退分支（#806 评审 m1）：fq≤taperW 全程 taper �
     [2, "foundation", 1, "progress", 72, 25.9, 2],
     [3, "final_quality", 2, "taper", 61.2, 22, 1],
     [4, "final_quality", 2, "taper", 52, 18.7, 1],
-    [5, "final_quality", 2, "race", 43, null, 1],
+    [5, "final_quality", 2, "race", 43, null, 2],
   ]);
   const checks = validateLoad(intent, mono, [70, 70, 70, 70]);
   assert.ok(failOf(checks, "L4")!.pass, failOf(checks, "L4")!.detail);
@@ -324,7 +324,7 @@ test("L4 峰后弧回退分支（#806 评审 m1）：fq≤taperW 全程 taper �
     [2, "foundation", 1, "progress", 72, 25.9, 2],
     [3, "final_quality", 2, "taper", 52, 18.7, 1],
     [4, "final_quality", 2, "taper", 61.2, 22, 1],
-    [5, "final_quality", 2, "race", 43, null, 1],
+    [5, "final_quality", 2, "race", 43, null, 2],
   ]);
   assert.ok(!failOf(validateLoad(intent, rising, [70, 70, 70, 70]), "L4")!.pass);
 });
@@ -345,7 +345,7 @@ test("L5 块内微阶梯：全平台直排挂；无 ≥3 周块豁免", () => {
     [4, "foundation", 1, "progress", 60, 21.6, 1],
     [5, "foundation", 1, "progress", 60, 21.6, 1],
     [6, "final_quality", 2, "progress", 60, 21.6, 1],
-    [7, "final_quality", 2, "race", 33, null, 1],
+    [7, "final_quality", 2, "race", 33, null, 2],
   ]);
   assert.ok(!failOf(validateLoad(intent, flat, seed), "L5")!.pass); // 5 个同块建设周全等
 
@@ -357,7 +357,7 @@ test("L5 块内微阶梯：全平台直排挂；无 ≥3 周块豁免", () => {
   const short = weeks([
     [1, "final_quality", 1, "progress", 50, 18, 1],
     [2, "final_quality", 1, "taper", 42, 15.1, 1],
-    [3, "final_quality", 1, "race", 25, null, 1],
+    [3, "final_quality", 1, "race", 25, null, 2],
   ]);
   assert.ok(failOf(validateLoad(shortIntent, short, seed), "L5")!.pass); // 无 ≥3 建设周块：豁免
 });
@@ -386,7 +386,7 @@ test("L2 节奏：rec2 前置不计入建设周（评审回归——与展开器
     [9, "foundation", 3, "progress", 60, 21.6, 1],
     [10, "foundation", 3, "progress", 60, 21.6, 1],
     [11, "final_quality", 4, "taper", 50, 18, 1],
-    [12, "final_quality", 4, "race", 28, null, 1],
+    [12, "final_quality", 4, "race", 28, null, 2],
   ];
   assert.ok(failOf(validateLoad(intent, weeks(rows), [50, 50, 50, 50]), "L2")!.pass);
 });

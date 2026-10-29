@@ -414,6 +414,30 @@ test("C1 赛周托底：骨架低于 42.195 时目标=比赛里程，detail 打�
   assert.match(byId(validateWeekContent(weekInput(greenSessions())), "C1 周量守恒").detail, /vs 骨架36\.5/);
 });
 
+test("C9 LR 前日轻量（#825）：E ≤8km 或休、时长下限豁免；超帽挂（按日合计里程判）", () => {
+  const eOf = (name: string, date: string, minutes: number): SessionUnderTest => ({
+    workout: W({ name, date, type: "E", blocks: [{ repeat: 1, steps: [s("work", { kind: "time_s", value: minutes * 60 }, EASY)] }] }),
+  });
+  const lr = greenSessions()[2]!; // LR 周日 2026-11-08 → 前日=周六 11-07
+  const row = { total_km: 30, long_run_km: 15, quality_sessions: 1 };
+  // 周六 40min（E 带中点 312s/km 折算 7.7km ≤8）✓——短于普通日 60min 下限也过（下限豁免）
+  const ok = weekInput([eOf("E 周六 40min", "2026-11-07", 40), lr], { row });
+  assert.equal(byId(validateWeekContent(ok), "C9 E课时长分层").pass, true, byId(validateWeekContent(ok), "C9 E课时长分层").detail);
+  // 周六 75min（≈14.4km >8km）挂——普通日带内也过不了 8km 帽
+  const over = weekInput([eOf("E 周六 75min", "2026-11-07", 75), lr], { row });
+  const g9 = byId(validateWeekContent(over), "C9 E课时长分层");
+  assert.equal(g9.pass, false);
+  assert.match(g9.detail, /LR前日.*轻量帽/);
+  // 按日合计判：两节各 40min（各 ≈7.7km 单课合法、合计 ≈15.4km >8km）挂——帽管日不管课
+  const split = weekInput([eOf("E 周六 40min 早", "2026-11-07", 40), eOf("E 周六 40min 晚", "2026-11-07", 40), lr], { row });
+  const g9s = byId(validateWeekContent(split), "C9 E课时长分层");
+  assert.equal(g9s.pass, false);
+  assert.match(g9s.detail, /LR前日.*合计.*轻量帽/);
+  // 无 LR 的周没有「前日」语义：周六 E 按普通日带 60-90 正常判
+  const noLr = weekInput([eOf("E 周六 75min", "2026-11-07", 75)], { row: { total_km: 20, long_run_km: null, quality_sessions: 0 } });
+  assert.equal(byId(validateWeekContent(noLr), "C9 E课时长分层").pass, true, byId(validateWeekContent(noLr), "C9 E课时长分层").detail);
+});
+
 test("C9 再生周（recovery）短带 + legacy 豁免", () => {
   const e = (minutes: number): SessionUnderTest => ({
     workout: W({

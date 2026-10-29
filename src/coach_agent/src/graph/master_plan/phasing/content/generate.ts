@@ -123,7 +123,8 @@ function validateWeeks(weeks: WeekContentResult[], input: ContentGeneratorInput)
 
 /**
  * 入口前置断言（fail fast，防兜底路径抛裸异常）：投影带完整（easy/m）、
- * 非 race 行 lr≠null、q≤2、赛周行网格含比赛日。L3+projectZones 正常产出恒满足；
+ * 非 race 行 lr≠null、q≤2、赛周行网格含比赛日且比赛日 ≥周三（#825：周一/周二
+ * 比赛的激活窗跨周不可表达）。L3+projectZones 正常产出恒满足；
  * ContentGeneratorInput 是 #803 的公开接入面，坏输入在门口给出可读错误。
  */
 function assertInput(input: ContentGeneratorInput): void {
@@ -134,6 +135,12 @@ function assertInput(input: ContentGeneratorInput): void {
     const raceMs = new Date(`${input.race.date}T00:00:00Z`).getTime();
     if (raceMs < weekStart || raceMs > weekStart + 6 * 86400_000)
       throw new Error(`generateWeekContent: 比赛日 ${input.race.date} 不落在赛周（第${raceRow.week}周）网格内`);
+    // #825：赛周 M 激活窗=赛前 2-3 天，须落在本周内（比赛日周三及以后）；周一/周二
+    // 比赛的激活窗在上一周、周内模型不可表达（L3 无比赛日期不可先知）——fail fast
+    // 逼上游处理，不静默产出 C3 结构性非法的课表
+    const raceWd = (new Date(`${input.race.date}T00:00:00Z`).getUTCDay() + 6) % 7;
+    if (raceWd < 2)
+      throw new Error(`generateWeekContent: 比赛日 ${input.race.date} 落在周一/周二——赛前 2-3 天激活窗跨周，周内模型不可表达（上游须先解决跨周激活）`);
   }
   for (const row of input.rows) {
     if (row.zones.easy == null || row.zones.m == null) throw new Error(`generateWeekContent: 第${row.week}周 easy/m 投影带缺失`);

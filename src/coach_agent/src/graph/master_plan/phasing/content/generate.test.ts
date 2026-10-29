@@ -12,7 +12,8 @@ import { type ContentDraft, ContentDraftSchema, generateWeekContent } from "./ge
 const ZONES = { easy: [288, 336], m: [249, 288], t: [235, 249], i: [218, 235], r: [null, 218] } as const;
 const ROWS: ContentWeekRow[] = [
   { week: 1, phase: "final_quality", role: "progress", totalKm: 60, longRunKm: 21, qualitySessions: 1, qualityFamily: "M 配速比赛专项", zones: ZONES },
-  { week: 2, phase: "final_quality", role: "race", totalKm: 45.3, longRunKm: null, qualitySessions: 1, qualityFamily: "M 配速比赛专项", zones: ZONES },
+  // 赛周行取 L3 契约形（≥42.2+激活带、q=2 比赛课+M 激活，#825）——模板 M 激活课（≈9km）在 45.3 旧骨架下 C1 数学无解
+  { week: 2, phase: "final_quality", role: "race", totalKm: 52.2, longRunKm: null, qualitySessions: 2, qualityFamily: "M 配速比赛专项", zones: ZONES },
 ];
 const INPUT: ContentGeneratorInput = {
   rows: ROWS,
@@ -117,7 +118,7 @@ test("重试耗尽：始终违规（非异常）→ 兜底；比赛课配速锚 
   assert.ok(Math.abs((main.target.low + main.target.high) / 2 - INPUT.race.goalPaceSKm) <= 5, `goal ${main.target.low}-${main.target.high}`);
 });
 
-test("入口断言：空 rows / 带缺失 / 非赛周 lr=null / q>2 / 比赛日网格错位 早失败", async () => {
+test("入口断言：空 rows / 带缺失 / 非赛周 lr=null / q>2 / 比赛日网格错位 / 比赛日周一二 早失败", async () => {
   const model = { invoke: async () => fallbackAsDraft(INPUT) };
   await assert.rejects(() => generateWeekContent({ ...INPUT, rows: [] }, model), /rows 为空/);
   await assert.rejects(
@@ -127,4 +128,7 @@ test("入口断言：空 rows / 带缺失 / 非赛周 lr=null / q>2 / 比赛日�
   await assert.rejects(() => generateWeekContent({ ...INPUT, rows: [{ ...ROWS[0]!, longRunKm: null }, ROWS[1]!] }, model), /非赛周但 lr=null/);
   await assert.rejects(() => generateWeekContent({ ...INPUT, rows: [{ ...ROWS[0]!, qualitySessions: 3 }, ROWS[1]!] }, model), /超域/);
   await assert.rejects(() => generateWeekContent({ ...INPUT, race: { ...INPUT.race, date: "2026-10-24" } }, model), /不落在赛周/);
+  // #825：周一/周二比赛——M 激活窗（赛前 2-3 天）跨周不可表达，门口拒绝（C3 不再结构性无解）
+  await assert.rejects(() => generateWeekContent({ ...INPUT, race: { ...INPUT.race, date: "2026-10-26" } }, model), /周一\/周二/);
+  await assert.rejects(() => generateWeekContent({ ...INPUT, race: { ...INPUT.race, date: "2026-10-27" } }, model), /周一\/周二/);
 });

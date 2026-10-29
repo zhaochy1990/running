@@ -59,15 +59,23 @@ async function fixtureRows(): Promise<Array<Omit<ContentWeekRow, "zones">>> {
       }>;
     };
   };
-  return raw.input.week_rows.map((r) => ({
-    week: r.no,
-    phase: r.phase,
-    role: r.role,
-    totalKm: r.total_km,
-    longRunKm: r.long_run_km,
-    qualitySessions: r.quality_sessions,
-    qualityFamily: r.quality_family,
-  }));
+  return raw.input.week_rows
+    .map((r) => {
+      // 赛周行覆写为当前 L3 契约形（#809 下限 42.2+10、#825 q=2=比赛课+M 激活）：
+      // 迁移样本冻结于 #807（45.3/q=1）供 migrate.test 钉真实教练基线；生成侧按
+      // 现行契约跑——45.3 骨架装不下 M 激活课（C1 数学无解）
+      if (r.role === "race") return { ...r, total_km: 52.2, quality_sessions: 2 };
+      return r;
+    })
+    .map((r) => ({
+      week: r.no,
+      phase: r.phase,
+      role: r.role,
+      totalKm: r.total_km,
+      longRunKm: r.long_run_km,
+      qualitySessions: r.quality_sessions,
+      qualityFamily: r.quality_family,
+    }));
 }
 
 /**
