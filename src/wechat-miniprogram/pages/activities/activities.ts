@@ -61,7 +61,6 @@ interface ActivitiesPageHandlers {
   onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
   onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   fetch(): Promise<void>;
-  onMenuTap(): void;
   onActivityTap(e: WechatMiniprogram.TouchEvent): void;
   onMonthHeaderTap(e: WechatMiniprogram.TouchEvent): void;
   onLoadMore(): void;
@@ -324,10 +323,6 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
       // 拉取失败时保持空态，由界面展示空态卡片。
       this.setData({ loading: false, loadingMore: false });
     }
-  },
-
-  onMenuTap() {
-    wx.showToast({ title: '暂未开放', icon: 'none' });
   },
 
   onPullDownRefresh() {

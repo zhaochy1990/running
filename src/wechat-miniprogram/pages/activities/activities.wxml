@@ -1,10 +1,8 @@
 <view class="page">
-  <!-- 自定义顶部栏 -->
+  <!-- 自定义顶部栏（两侧 88rpx 对称留白，右侧为胶囊保留区） -->
   <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
     <view class="top-bar__inner">
-      <view class="top-bar__btn" bindtap="onMenuTap">
-        <image class="top-bar__icon" src="/assets/icons/directions_run.svg" mode="aspectFit" />
-      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
       <view class="top-bar__title-wrap">
         <view class="top-bar__title">活动记录</view>
         <view class="top-bar__subtitle">最近训练</view>
