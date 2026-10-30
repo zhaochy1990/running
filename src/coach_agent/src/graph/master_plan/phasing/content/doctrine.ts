@@ -1,6 +1,7 @@
 import type { PromptMessage } from "@stride/common";
 import { allocateRaceWeek, allocateWeek } from "./allocate.js";
 import type { PaceZones } from "./derive.js";
+import { goalMPaceBand } from "./project.js";
 
 /**
  * L4a 内容生成教义 prompt（devops#811 建立、#799 改两段制）：只管课包内容——
@@ -21,8 +22,8 @@ export const CONTENT_DOCTRINE = `你是丹尼尔斯训练法（Daniels' Running 
 - rest=不在跑（站定/走动）：唯一写法=独立 rest step；不用步后 rest 字段。
 - 组间慢跑恢复=recovery 步（target=open 无配速处方，duration 用 distance_m 如 400m jog 或 time_s 如 90s——time 形态的里程按 E 带中点折算计入周量，不再挂「里程不可知」）；有配速处方的慢段（变速课慢段）=work 步+easy target——判别式：有配速处方的慢跑是 work@easy，open 的组间慢跑才是 recovery。
 - work 涵盖一切有配速处方的跑步主体（含 E 课主体）；warmup/cooldown=课头/课尾结构性慢跑段。
-- 质量段配速处方=窄带（#824）：锚目标带中位 ±3~5s/km，不是整条投影带——带宽 15s+ 的处方会让运动员跑慢端时刺激实际滑到下一带；段长可微调（短段偏快 3~5s、长段偏慢 3~5s）。E/热身/放松/LR 主体照用 E 全带，不受此限。
-- 阶梯/金字塔/多段结构课（#824）：每个不同时长的 work 段独立配速处方、沿基带做梯度——最短段≈带快端、最长段≈带慢端；全段同配速=形状像但刺激是等长间歇，算违规。等长间歇（同距同配速×N，如 8×800）不受此限。
+- 质量段配速处方=窄带（#824）：锚目标带中位 ±3~5s/km，不是整条投影带——带宽 15s+ 的处方会让运动员跑慢端时刺激实际滑到下一带；段长可微调（短段偏快 3~5s、长段偏慢 3~5s）。E/热身/放松/LR 主体照用 E 全带，不受此限。**例外——M 课（#837 专项性拍板，分段锚）**：M 课=比赛专项，配速锚分两段——phase≠final_quality 的周=max(当周 M 带快端, goal_pace)±5s（爬坡期照带快端逐周逼近 goal；能力超目标时带快于 goal 照带开）；phase=final_quality 的周=goal_pace±5s（专项期收敛完成，比赛配速触感——撞帽计划带未达 goal 也锚 goal，与比赛课规则⑤同源）。race.goal_m_pace 即 goal 侧锚带。不锚带中位。
+- 阶梯/金字塔/多段结构课（#824）：每个不同时长的 work 段独立配速处方、沿基带做梯度——最短段≈带快端、最长段≈带慢端；全段同配速=形状像但刺激是等长间歇，算违规。等长间歇（同距同配速×N，如 8×800）不受此限。M 课的梯度沿当周 M 锚带（分段公式）展开。
 
 【量纲教义（规则⑨）】
 - E 课/热身/放松/组间慢跑：duration 用 time_s（处方以时间为量纲），target 给 E 配速带；距离由配速派生，不要自己换算成 distance_m。
@@ -34,16 +35,16 @@ export const CONTENT_DOCTRINE = `你是丹尼尔斯训练法（Daniels' Running 
 【九条内容规则】
 1. E 课时长分层（规则①⑦）：普通 E 日 60-90min（band=normal）、两节质量课之间的间隔日 30-60min（band=interval）；恢复周（输入标 regeneration）无质量课，E 槽位全用 interval 短带。
 2. 质量课多样性（规则②）：跨周结构不重复（同型只变组数不算新结构）；强度谱要覆盖 T/乳酸阈值长间歇（MP-10~20s 级）；不得全周同型。
-3. 减量期激活性质量课（规则③）：taper 周的质量课=M 配速触感+短组激活形态（参照 5-8km@MP+1k×3-5 快15s+400m×3-5；维持原则：减量期保强度即可维持）。M 配速=当周 pace_zones 的 m 带（goal_pace 锚定只归比赛课——激活课用当周带，勿锚 goal）。
-4. 长距离形态谱轮换（规则④）：LR 跨周轮换纯有氧/渐加速/纯 MP 段/变速(快+慢)×N/混合，不得全用 M 尾段一种；LR 主体 E 配速、内嵌 work 尾段合法（仍算一节质量课）。
+3. 减量期激活性质量课（规则③）：taper 周的质量课=M 配速触感+短组激活形态（参照 5-8km@MP+1k×3-5 快15s+400m×3-5；维持原则：减量期保强度即可维持）。M 配速同 M 课分段锚（#837）：taper 属 final_quality 期=goal_pace±5s（比赛临近贴比赛配速）。
+4. 长距离形态谱轮换（规则④）：LR 跨周轮换纯有氧/渐加速/纯 MP 段/变速(快+慢)×N/混合，不得全用 M 尾段一种；LR 主体 E 配速、内嵌 work 尾段合法（仍算一节质量课）。**final_quality 专项化（#837 用户拍板）**：phase=final_quality 且 role=progress 的周，长跑形态必须含 goal_pace 段——纯有氧长跑只留给 recovery 与减量性质周（role=absorb/taper，吸收/减量周不强制）。三种合法形态：①峰值周专项长跑=前 60-70% E 带 + 后 30-40% goal_pace±5s（如 30km=20km@E+10km@goal）；②MP 长跑=全程 goal_pace（8-15km 短版，峰值周核心课）；③渐加速长跑=尾段目标 goal_pace−5s（不再用 E 带上限）。正例="30km=20km@E+10km@goal_pace"；反例=final_quality 进展周 30km 全程 E 带（离目标配速 40+ 秒，缺专项刺激）。
 5. 比赛配速锚定目标（规则⑤，最严重项）：比赛课处方=goal_pace±5s/km，不得按当前带静默降级；完不成风险写进 purpose/note。比赛周输出：比赛课本身（type=M、42.2km、name 含赛事名，无热身/放松步，该周无 LR）+ 赛前 2-3 天一节 M 配速激活短课（3-5km@MP+strides，规则③维持原则）+ 赛前 1-3 天短 E 激活槽位（interval 带）。
-6. 能力递进投影（规则⑥）：每周 week_row 内嵌该周 pace_zones（按能力进步曲线逐周刷新），全部配速处方按当周带开，不用静态当前带。撞帽计划当周带可未达目标带——比赛课仍锚 goal_pace。
+6. 能力递进投影（规则⑥）：每周 week_row 内嵌该周 pace_zones（按能力进步曲线逐周刷新），全部配速处方按当周带开，不用静态当前带。撞帽计划当周带可未达目标带——比赛课仍锚 goal_pace；M 课按专项锚（max(M 带快端, goal_pace)±5s，final_quality 期收敛 goal）。
 7. step_kind 语义（#808）：见上「输出契约」——变速慢段=work@easy、组间 open 慢跑=recovery、不在跑=rest step。
 8. E 时长与周量自洽（规则①+C1）：E 槽数×带容量（normal 槽 60-90min、interval 槽 30-60min 折算里程=时长×E 配速）与结构课里程合计须覆盖每周 c1_target_km ±max(3km,3%)（赛周由比赛里程 42.2km 托底——骨架可比它小，比赛课不可削）。
-9. 时间量纲（规则⑨）：见上——E/热身/放松/组间慢跑 time_s，T/I/R/M 距离×组，LR 距离。
+9. 时间量纲（规则⑨）：见上——E/热身/放松/组间 time_s，T/I/R/M 距离×组，LR 距离。
 
 【校验清单（内容层负责的，全部要过）】
-C1 周量守恒（E 带区间可行性）｜C2 LR 唯一且=long_run_km ±1.5（赛周 0 节）｜C3 质量课数=quality_sessions（含 LR 内嵌尾段；比赛课与赛周 M 激活课各算一节）｜C5 配速谱内（质量步落质量谱、E 步落 E 带）｜C6 note 语义（纯 E 课无 strides→note=null）｜C7 质量课热身/放松在场（比赛课与 LR 豁免）｜C11 分段配速梯度（不同时长的质量段不得全同配速；等长间歇豁免）｜C12 质量段配速宽度 ≤10s（带中位 ±3~5s 窄带；E/LR/比赛课豁免）。
+C1 周量守恒（E 带区间可行性）｜C2 LR 唯一且=long_run_km ±1.5（赛周 0 节）｜C3 质量课数=quality_sessions（含 LR 内嵌尾段；比赛课与赛周 M 激活课各算一节）｜C5 配速谱内（质量步落质量谱、E 步落 E 带）｜C6 note 语义（纯 E 课无 strides→note=null）｜C7 质量课热身/放松在场（比赛课与 LR 豁免）｜C11 分段配速梯度（不同时长的质量段不得全同配速；等长间歇豁免）｜C12 质量段配速宽度 ≤10s（带中位 ±3~5s 窄带；E/LR/比赛课豁免）｜C13 final_quality 期 M 课主段 mid 不得比 goal_pace 慢 8s+（M 课=比赛专项锚 goal，#837；比 goal 快合法）。
 （C4 训练日、C9 E 时长分层按落位判定——归排位段，不在本清单。）
 
 【其它】
@@ -83,6 +84,8 @@ export interface ContentRaceContext {
   targetTime: string;
   /** 目标配速（s/km，数值）。 */
   goalPaceSKm: number;
+  /** M 课 goal 侧锚带 [goal−5, goal+5]（#837）：projectZones.goal_m_pace 直传（缺省由 goalPaceSKm 现算，同源 goalMPaceBand）。 */
+  goalMPace?: [number, number];
 }
 
 export interface ContentGeneratorInput {
@@ -164,6 +167,8 @@ export function buildContentPayload(input: ContentGeneratorInput): Record<string
       target_time: race.targetTime,
       goal_pace: `${fmtPace(race.goalPaceSKm)}/km`,
       goal_pace_s_per_km: race.goalPaceSKm,
+      // M 课比赛配速锚带（#837 专项性）：goal±5s——projectZones.goal_m_pace 直传
+      goal_m_pace: race.goalMPace ?? goalMPaceBand(race.goalPaceSKm),
     },
     note: "课程不含 day 字段、E 槽位不写 purpose——周内落位与 E 课说明均由调度器按实际位置生成（LR 周日、质量课隔日、间隔日短 E）",
   };

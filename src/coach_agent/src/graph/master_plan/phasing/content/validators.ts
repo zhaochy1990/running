@@ -1,4 +1,5 @@
 import type { RunWorkout, RunWorkoutType } from "@stride/contract";
+import { goalMPaceBand } from "./project.js";
 import {
   easyMidOfZones,
   hasCooldown,
@@ -50,6 +51,10 @@ export interface WeekContentInput {
   legacyQualityPace?: boolean;
   /** 再生周（L3 canonical=recovery）：周内无质量课，E 全走间隔日短带（⑦恢复端）——低量恢复周与 C1 的可行性调和（injury 周可低至 10km）。 */
   regeneration?: boolean;
+  /** 目标配速（s/km，#837）：M 课专项锚=C13 与 type=M 罩带豁免的依据；缺省跳过（存量回放）。 */
+  goalPaceSKm?: number;
+  /** final_quality 期标志（#837）：C13 只在该期生效（M 课早期周照投影带爬坡、后期收敛 goal）。 */
+  finalQuality?: boolean;
   /**
    * 课包阶段（devops#799 L4a→L4b 交接）：sessions 只含结构课（E 走槽位不进
    * sessions）；C4/C9 按日判定不可用——跳过并标注归排位段（P1/实例化定带）；
@@ -90,6 +95,8 @@ const RACE_WEEK_ACTIVATION_DAYS = 3;
 const QUALITY_PRECISION_S = 10;
 /** C11 分段梯度判据（s/km，#824）：不同时长质量段的配速中位差 ≤此值视为「全同配速」（等长刺激=形状像但梯度缺位）。 */
 const LADDER_PACE_EPS_S = 2;
+/** C13 M 课锚定目标容差（s/km，#837）：final_quality 期 M 课主段 mid 不得比 goal_pace 慢超过此值（兜底 mNarrow 同源 import）。 */
+export const M_GOAL_TOL_S = 8;
 
 /**
  * 课里程（km）：repeat 展开 Σ步里程（折算口径单源=derive.stepKmOf：distance
@@ -134,6 +141,8 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
   // type 仍 LR（位型课不罩带）；E/M/T/I/R 无主质量段时无罩带义务（纯有氧课）；
   // 比赛课豁免（规则⑤，devops#811）：处方锚 goal_pace 而非当周投影带——目标
   // 激进时 goal 快于投影 M 带快端是「逼近不抵达」的设计事实，不是违规。
+  // type=M 同理（#837 专项性拍板）：M 课锚=max(M 带快端, goal_pace)±5s——
+  // 罩带判据放宽为 M 带 ∪ goal±5 的包络。
   // 带边界 null=开放界（如 r 快端），只比较有值一侧——与 qualitySpectrum 语义对齐。
   const coverBad: string[] = [];
   for (const { workout } of sessions) {
@@ -142,14 +151,17 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
     const main = mainQualitySegment(workout, zones);
     if (main == null) continue;
     const band = zones[TYPE_BAND[type]];
-    if (band == null || (band[0] == null && band[1] == null)) {
+    const goalBand = type === "M" && input.goalPaceSKm != null ? goalMPaceBand(input.goalPaceSKm) : null;
+    const los = [band?.[0], goalBand?.[0]].filter((x): x is number => x != null);
+    const his = [band?.[1], goalBand?.[1]].filter((x): x is number => x != null);
+    if (los.length === 0 && his.length === 0) {
       coverBad.push(`${workout.name} ${type}带缺失`);
       continue;
     }
     const covered =
       main.step.target.kind === "pace_s_km" &&
-      (band[0] == null || main.step.target.low >= band[0] - TYPE_COVER_TOL_S) &&
-      (band[1] == null || main.step.target.high <= band[1] + TYPE_COVER_TOL_S);
+      (los.length === 0 || main.step.target.low >= Math.min(...los) - TYPE_COVER_TOL_S) &&
+      (his.length === 0 || main.step.target.high <= Math.max(...his) + TYPE_COVER_TOL_S);
     if (!covered) {
       const pace = main.step.target.kind === "pace_s_km" ? `@${main.step.target.low}-${main.step.target.high}` : "非配速处方";
       coverBad.push(`${workout.name} 声明${type}主段${pace}`);
@@ -310,6 +322,34 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
   }
   checks.push({ id: "C11 分段配速梯度", pass: ladderBad.length === 0, detail: legacyPace ? "legacy豁免" : ladderBad.slice(0, 3).join(";") || "全过" });
   checks.push({ id: "C12 质量段配速宽度", pass: paceWidthBad.length === 0, detail: legacyPace ? "legacy豁免" : paceWidthBad.slice(0, 3).join(";") || "全过" });
+
+  // C13 M 课锚定目标（#837 用户审 254 计划发现）：final_quality 期 M 课主段
+  // 配速 mid 不得比 goal_pace 慢 8s+——**单侧判定**（慢侧违规）：M 课=比赛专项，
+  // 全程按投影带开离 goal 22-30s 是缺陷；比 goal 快（能力超目标的维持路径照带开）
+  // 合法不罚。比赛课豁免（锚 goal 已是定义）；goal 慢于质量谱慢端时跳过（目标
+  // 不在专项域——维持路径的极松目标，M 课照带）；goalPaceSKm/finalQuality
+  // 缺省跳过（存量回放无 goal 上下文）。
+  const mGoalBad: string[] = [];
+  if (input.finalQuality === true && input.goalPaceSKm != null) {
+    const goalBeyondSpectrum = spectrum != null && input.goalPaceSKm > spectrum.slow - 5;
+    for (const { workout } of sessions) {
+      if (workout.type !== "M" || isRace(workout)) continue;
+      const main = mainQualitySegment(workout, zones);
+      if (main == null || main.step.target.kind !== "pace_s_km") continue;
+      const mid = (main.step.target.low + main.step.target.high) / 2;
+      if (!goalBeyondSpectrum && mid > input.goalPaceSKm + M_GOAL_TOL_S + 1e-6) {
+        mGoalBad.push(
+          `${workout.name} 主段@${main.step.target.low}-${main.step.target.high} mid ${Math.round(mid)} 比 goal ${Math.round(input.goalPaceSKm)} 慢 ${(mid - input.goalPaceSKm).toFixed(1)}s`,
+        );
+      }
+    }
+  }
+  checks.push({
+    id: "C13 M课锚定目标",
+    pass: mGoalBad.length === 0,
+    detail:
+      input.finalQuality !== true ? "非 final_quality 期，跳过" : input.goalPaceSKm == null ? "无 goal 上下文，跳过" : mGoalBad.slice(0, 3).join(";") || "全过",
+  });
 
   // C9 E 课时长分层（①⑦⑨，devops#811）：type=E 的课 duration 必填（非 strides
   // 跑步步一律 time_s 处方——⑨ E/REC 量纲=时间）且落带——质量课间隔日 30-60min、

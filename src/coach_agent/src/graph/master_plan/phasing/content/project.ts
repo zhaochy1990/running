@@ -57,9 +57,16 @@ export interface ProjectZonesMeta {
   requiredSlope: number;
 }
 
+/** goal±5s（s/km 取整）：M 课比赛配速锚带（#837 专项性拍板，doctrine/兜底/校验同源）。 */
+export function goalMPaceBand(goalPaceSKm: number): [number, number] {
+  return [Math.round(goalPaceSKm - 5), Math.round(goalPaceSKm + 5)];
+}
+
 export interface ProjectZonesResult {
   weeks: ProjectedWeekZones[];
   meta: ProjectZonesMeta;
+  /** 目标配速锚带 [goal−5, goal+5]（s/km；#837 M 课配速= max(当周 M 带快端, goal_pace)±5s 的 goal 侧）。 */
+  goal_m_pace: [number, number];
 }
 
 /**
@@ -78,12 +85,17 @@ export function projectZones(currentVdot: number, targetTimeSec: number, distanc
 
   const push = (weeks: ProjectedWeekZones[], week: number, vdot: number) => weeks.push({ week, vdot: round2(vdot), zones: zonesOfVdot(vdot) });
   const slope = (gap: number) => round2(runwayWeeks > 1 ? gap / (runwayWeeks - 1) : gap);
+  const goalMPace = goalMPaceBand(targetTimeSec / (distanceM / 1000));
 
   // ② 目标不高于当前：恒定当前带（维持），无递进。
   if (targetVdot <= currentVdot) {
     const weeks: ProjectedWeekZones[] = [];
     for (let w = 1; w <= runwayWeeks; w++) push(weeks, w, currentVdot);
-    return { weeks, meta: { capped: false, residual: round2(targetVdot - currentVdot), requiredSlope: slope(targetVdot - currentVdot) } };
+    return {
+      weeks,
+      meta: { capped: false, residual: round2(targetVdot - currentVdot), requiredSlope: slope(targetVdot - currentVdot) },
+      goal_m_pace: goalMPace,
+    };
   }
 
   // ③ 起点：不高于目标−2（丹氏 2Q「头 6 周」原生式——目标远高于当前时降起点）。
@@ -99,5 +111,9 @@ export function projectZones(currentVdot: number, targetTimeSec: number, distanc
     v += Math.min(ideal, cap);
     push(weeks, w, v);
   }
-  return { weeks, meta: { capped, residual: round2(targetVdot - v), requiredSlope: slope(targetVdot - Math.min(currentVdot, targetVdot - 2)) } };
+  return {
+    weeks,
+    meta: { capped, residual: round2(targetVdot - v), requiredSlope: slope(targetVdot - Math.min(currentVdot, targetVdot - 2)) },
+    goal_m_pace: goalMPace,
+  };
 }

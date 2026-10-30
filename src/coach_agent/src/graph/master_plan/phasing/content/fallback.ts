@@ -1,6 +1,7 @@
 import { allocateRaceWeek, allocateWeek } from "./allocate.js";
 import { type ContentGeneratorInput, type ContentWeekRow, fmtPace } from "./doctrine.js";
 import type { ESlotCourse, StructuredCourse, WeekBag } from "./schedule/scheduler.js";
+import { M_GOAL_TOL_S } from "./validators.js";
 
 /**
  * 简版模板兜底（devops#811，#799 改课包形态）：重试耗尽/调用失败时的确定性
@@ -29,12 +30,21 @@ const easyBand = (row: ContentWeekRow): [number, number] => {
   if (lo == null || hi == null) throw new Error(`templateFallback: 第${row.week}周 easy 带缺失`);
   return [lo, hi];
 };
-/** M 主体窄带（#824/C12）：带中位 ±5s——与教义同口径，整带复制会挂 C12。 */
-const mNarrow = (row: ContentWeekRow): [number, number] => {
-  const [lo, hi] = row.zones.m ?? [null, null];
-  if (lo == null || hi == null) throw new Error(`templateFallback: 第${row.week}周 m 带缺失`);
-  const mid = (lo + hi) / 2;
-  return [Math.round(mid - 5), Math.round(mid + 5)];
+/**
+ * M 主体窄带（#824/C12 宽度 + #837 分段专项锚，与教义/校验同口径）：
+ * 爬坡期（非 final_quality）=max(M 带快端, goal_pace)±5s；final_quality 期
+ * =goal_pace±5s（专项期收敛完成，撞帽计划也锚 goal）。兜底构造保证永远合法
+ * （三重防护）：锚上夹 M 带慢端（维持路径 goal 慢于带时不产谱外处方，C5）；
+ * 取整后复核 mid（round 可使 mid 漂 +0.5s——超 C13 容差时整体下调 1s）。
+ */
+const mNarrow = (row: ContentWeekRow, goalPaceSKm: number): [number, number] => {
+  const [mFast, mSlow] = row.zones.m ?? [null, null];
+  if (mFast == null || mSlow == null) throw new Error(`templateFallback: 第${row.week}周 m 带缺失`);
+  let anchor = row.phase === "final_quality" ? goalPaceSKm : Math.max(mFast, goalPaceSKm);
+  anchor = Math.min(anchor, mSlow);
+  let band: [number, number] = [Math.round(anchor - 5), Math.round(anchor + 5)];
+  if ((band[0] + band[1]) / 2 > goalPaceSKm + M_GOAL_TOL_S) band = [band[0] - 1, band[1] - 1];
+  return band;
 };
 
 const course = (name: string, type: StructuredCourse["type"], purpose: string, note: string | null, blocks: V1Block[]): StructuredCourse => ({
@@ -74,7 +84,7 @@ function raceWeekCourses(row: ContentWeekRow, input: ContentGeneratorInput): Wee
             repeat: 1,
             steps: [
               step("warmup", { kind: "time_s", value: 15 * 60 }, pace(easyBand(row))),
-              step("work", { kind: "distance_m", value: Math.round(alloc.activation.bodyKm * 1000) }, pace(mNarrow(row))),
+              step("work", { kind: "distance_m", value: Math.round(alloc.activation.bodyKm * 1000) }, pace(mNarrow(row, race.goalPaceSKm))),
             ],
           },
           { repeat: 4, steps: [step("work", { kind: "distance_m", value: 100 }, { kind: "open", low: null, high: null })] },
@@ -101,7 +111,7 @@ function normalWeekCourses(row: ContentWeekRow, input: ContentGeneratorInput, re
     ),
   ];
   for (let i = 0; i < alloc.qualitySessions; i++) {
-    const m = mNarrow(row);
+    const m = mNarrow(row, input.race.goalPaceSKm);
     courses.push(
       course(
         `M ${r1(alloc.mBodyKm)}km`,

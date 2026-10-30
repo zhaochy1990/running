@@ -59,9 +59,9 @@ interface PhaseEvidence {
   current_capability: {               // 当前训练水平（devops#789）：锚「当前能力」而非历史 PB
     vdot: number | null;              // 能力标量（换算阶梯的 VDOT 直读，距离无关）
     equivalents: { "5K": number; "10K": number; HM: number; FM: number } | null;  // 同一 VDOT 四换算（秒）；短距离源对比源更长距离已含 ×1.03 保守折扣
-    source: "recent_race_hm_fm" | "recent_race_short" | "calibration" | "none";
-    source_date: string | null;       // 换算源日期（比赛日 / 校准 as_of）
-    confidence: "high" | "medium" | "low";  // hm_fm=high；短距离折扣=medium；校准=medium；none=low
+    source: "recent_race_hm_fm" | "recent_race_short" | "calibration" | "training_inference" | "none";
+    source_date: string | null;       // 换算源日期（比赛日 / 校准 as_of / 推断源课日期）
+    confidence: "high" | "medium" | "low";  // hm_fm 且 8 周内=high；短距离折扣/校准/推断/陈旧比赛=medium；none=low
     pace_zones: {                     // 当前配速带（校准快照直读、取整秒，s/km；开放端 null）
       easy: [lo, hi] | null; m: [lo, hi] | null; t: [lo, hi] | null; i: [lo, hi] | null; r: [lo, hi] | null;
     } | null;
@@ -113,11 +113,13 @@ interface PhaseEvidence {
 3. **E 份额**=(easy+long_easy) km ÷ 月总跑 km；**longest_run_km 必须含 long_quality**（渐加速长跑同样积累有氧学分）
 4. **race_like**：session_class=race 且 ≥10km（防标签误标的小课混入）
 5. **双值归一在聚合前做**（旧值 tempo/interval/long 先映射再分桶）
-6. **VDOT 取锚阶梯**（current_capability / improvement_pct，`phasing/vdot.ts` 公开 Daniels–Gilbert 方程，与官方 V.O2 计算器同式；锚点单测对照原书表 ±1%）：
-   - **第 1 档**：近 12 个月 HM 及以上距离上的最佳表现（max VDOT，非最近）→ 主锚 `recent_race_hm_fm`（high）。全力识别：活动均配慢于校准阈值配速 ×1.15 视为训练性比赛、不参与取锚（污染源=周末长距离混入 race_history）；完赛时间用 duration_min（race_history 无独立移动时长字段）
+6. **VDOT 取锚阶梯**（current_capability / improvement_pct，`phasing/vdot.ts` 公开 Daniels–Gilbert 方程，与官方 V.O2 计算器同式；锚点单测对照原书表 ±1%；**新鲜度融合与第 4 档 #837**）：
+   - **第 1 档**：近 12 个月 HM 及以上距离上的最佳表现（max VDOT，非最近）→ 主锚 `recent_race_hm_fm`（8 周内=high）。全力识别：活动均配慢于校准阈值配速 ×1.15 视为训练性比赛、不参与取锚（污染源=周末长距离混入 race_history）；完赛时间用 duration_min（race_history 无独立移动时长字段）
    - **第 2 档**：无 HM+ 比赛则近 12 个月最佳 10K/5K → `recent_race_short`（medium），**×1.03 保守折扣只打在比源距离更长的等效成绩上**（短距离高估的只是长距离兑现）
    - **第 3 档**：无比赛 → 校准阈值配速（速度-时长模型的 60 分钟可持续速度）按 %max(60) 代入同一方程 → `calibration`（medium）
-   - **规则 4**：主锚与校准档同时可得时，improvement_pct 用两者中保守（VDOT 低者）——比赛代表最高已证实水平，校准代表日常状态；current_capability.vdot 保持阶梯直读
+   - **第 4 档（#837）**：比赛与校准均不可用 → 训练进步推断 `training_inference`（medium）：近 8 周 ≥3 次 quality/long_quality 课且后半窗反推 VDOT 中位高于前半窗（配速在改善，中位抗单课噪声）→ 后半窗最快一节整课（里程×时长）反推。整课口径是能力下界（非全力完成即证明至少该水平），工作段配速（laps）不在证据层输入域；活动行缺 pace/duration 时该课不参与推断
+   - **新鲜度融合（#837 用户审 254 计划发现）**：比赛锚距 as_of 超 8 周=陈旧（confidence 降 medium）；陈旧且校准可用时锚取 **max(校准, 比赛×0.98)**——比赛陈旧而训练数据新鲜时保守方向翻转（进步被低估是缺陷：chaoyi 例=旧比赛锚 51.1 vs 校准 52.9，旧逻辑 min 取 51.1 拖低整条投影），胜者定 source；新鲜比赛（≤8 周）完全采信
+   - **规则 4**：主锚与校准档同时可得时，improvement_pct 用两者中保守（VDOT 低者）——比赛代表最高已证实水平，校准代表日常状态；current_capability.vdot 保持阶梯直读。**#837 修订**：比赛陈旧时 improvement 锚与 current_capability 同源（max 融合），不再被旧比赛拖低
    - **improvement_pct = round(((equivalents[goal.distance] − target_sec) / equivalents[goal.distance]) × 1000) / 10**；锚按目标距离取（去 FM 硬编码，HM 目标锚 equivalent HM）；PB 降级为 peak_fm_pb 辅助字段（PB 是历史峰值，当前水平已退化/已超越都会算错）
    - 版本注记：丹尼尔斯原书表的 5K/10K/HM 列与公开方程一致（±1%）；**FM 列 2nd 版为人工保守修订**（@VDOT50 原书 3:19:03 vs 公开方程 3:10:4x，约 +4.5%），公开方程与官方计算器均不复现——本模块按公开方程实现，短距离→长距离高估由 ×1.03 折扣机制吸收
 
