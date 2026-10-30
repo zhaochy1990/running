@@ -251,8 +251,10 @@
   border: 1rpx solid rgba(var(--color-accent-rgb), 0.4);
 }
 
+/* 宽度上限由 .coach-msg__main 的 82% 单源兜底；气泡层不再重复设
+     max-width（曾与 main 的 82% 嵌套相乘，把短消息气泡压到比文字
+     自然宽度还窄导致无谓折行） */
 .coach-msg__bubble {
-  max-width: 82%;
   padding: 20rpx 24rpx;
   border-radius: 24rpx;
   font-size: 24rpx;
