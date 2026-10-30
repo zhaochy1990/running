@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { AIMessage, type BaseMessage, SystemMessage } from "@langchain/core/messages";
 import type { GraphNode } from "@langchain/langgraph";
 import { getLogger } from "@stride/common";
-import { addDays, type CustomWorkoutCard, workoutTotals } from "@stride/contract";
+import { addDays, type CustomWorkoutCard, estimatedTotalDistanceM, workoutTotals } from "@stride/contract";
 import { estimatePlannedRunLoad } from "../../graph/training_load/plannedRunLoad.js";
 import { normalizeMessageContent } from "../messages.js";
 import type { AgentsState } from "../state.js";
@@ -23,11 +23,11 @@ export interface CustomWorkoutAgent {
   invoke(input: unknown, config?: unknown): Promise<{ messages: BaseMessage[] } & Record<string, unknown>>;
 }
 
-/** 校准读取（estimatePlannedRunLoad 的确定性 dose 输入）；缺数据返回 null。 */
+/** 校准读取（estimatePlannedRunLoad 的确定性 dose 输入 + 契约⑨估距的 easy 带锚）；缺数据返回 null。 */
 export type CalibrationResolver = (
   userId: string,
   asof: string,
-) => Promise<{ thresholdSpeedMps: number | null; thresholdHr: number | null; rhrBaseline: number | null } | null>;
+) => Promise<{ thresholdSpeedMps: number | null; thresholdHr: number | null; rhrBaseline: number | null; easyPaceMidSPerKm: number | null } | null>;
 
 /** 已存 custom 课的有界投影（reissue 注入/复用判定用；只给 LLM 指认所需字段，不 inject spec）。 */
 export interface ExistingCustomSession {
@@ -128,22 +128,22 @@ async function buildCard(
 ): Promise<CustomWorkoutCard> {
   const totals = workoutTotals(draft.spec);
   const runtime = (config as { context?: { userId?: unknown; asof?: unknown } } | undefined)?.context;
-  let dose: number | null = null;
+  let calibration: Awaited<ReturnType<CalibrationResolver>> = null;
   if (resolveCalibration && typeof runtime?.userId === "string" && typeof runtime?.asof === "string") {
     try {
-      const calibration = await resolveCalibration(runtime.userId, runtime.asof);
-      const thresholdSpeed = calibration?.thresholdSpeedMps;
-      const estimate =
-        thresholdSpeed !== null && thresholdSpeed !== undefined && thresholdSpeed > 0
-          ? estimatePlannedRunLoad(draft.spec, thresholdSpeed, calibration?.thresholdHr ?? null, calibration?.rhrBaseline ?? null)
-          : null;
-      dose = estimate === null ? null : Math.round(estimate.expectedDose);
+      calibration = await resolveCalibration(runtime.userId, runtime.asof);
     } catch (error) {
-      logger.warn({ err: error instanceof Error ? error : undefined }, "custom-workout dose estimation failed; card keeps estimated_dose null");
+      logger.warn({ err: error instanceof Error ? error : undefined }, "custom-workout calibration lookup failed; card keeps estimated_dose null");
     }
   } else if (resolveCalibration) {
     logger.warn("custom-workout dose skipped: no userId/asof in runtime context; card keeps estimated_dose null");
   }
+  const thresholdSpeed = calibration?.thresholdSpeedMps;
+  const estimate =
+    thresholdSpeed !== null && thresholdSpeed !== undefined && thresholdSpeed > 0
+      ? estimatePlannedRunLoad(draft.spec, thresholdSpeed, calibration?.thresholdHr ?? null, calibration?.rhrBaseline ?? null)
+      : null;
+  const dose = estimate === null ? null : Math.round(estimate.expectedDose);
   const reusedToken =
     draft.original_save_token !== undefined && existing.some((session) => session.save_token === draft.original_save_token) ? draft.original_save_token : null;
   if (draft.original_save_token !== undefined && reusedToken === null) {
@@ -158,7 +158,8 @@ async function buildCard(
     name: draft.name,
     summary: draft.summary,
     ...(draft.advice !== undefined ? { advice: draft.advice } : {}),
-    total_distance_m: totals.total_distance_m,
+    // 时间制课估距（#838，契约⑨显示口径；无校准由估距函数兜底 330s/km）。
+    total_distance_m: totals.total_distance_m ?? estimatedTotalDistanceM(draft.spec, calibration?.easyPaceMidSPerKm),
     total_duration_s: totals.total_duration_s,
     estimated_dose: dose,
     spec: draft.spec,

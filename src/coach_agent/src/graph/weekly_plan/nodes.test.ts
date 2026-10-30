@@ -30,11 +30,69 @@ test("mergeSimulationIntoPlan keys doses by date and session index", () => {
     ],
   } as WeeklyPlanSimulationReport;
 
-  const merged = mergeSimulationIntoPlan(plan, simulation);
+  const merged = mergeSimulationIntoPlan(plan, simulation, null);
 
   assert.equal(merged.sessions[0]?.estimated_dose, 40);
   assert.equal(merged.sessions[1]?.estimated_dose, 70);
   assert.equal(merged.sessions[2]?.estimated_dose, null);
+});
+
+test("mergeSimulationIntoPlan back-fills display distance for time-based run sessions only（devops#838）", () => {
+  const base = createWeeklyPlanForSimulation();
+  const timeBased: WeeklyPlan = {
+    ...base,
+    sessions: [
+      ...base.sessions.map((session) => {
+        if (session.kind !== "run" || session.spec === null) return session;
+        return {
+          ...session,
+          total_distance_m: null,
+          spec: {
+            ...session.spec,
+            blocks: [
+              {
+                repeat: 1,
+                steps: [
+                  {
+                    step_kind: "work" as const,
+                    duration: { kind: "time_s" as const, value: 3600 },
+                    target: { kind: "open" as const, low: null, high: null },
+                    note: null,
+                    hr_cap_bpm: null,
+                  },
+                ],
+              },
+            ],
+          },
+        };
+      }),
+      {
+        schema: "plan-session/v1",
+        date: "2026-08-20",
+        session_index: 0,
+        kind: "strength",
+        summary: "力量训练",
+        spec: null,
+        notes_md: null,
+        total_distance_m: null,
+        total_duration_s: null,
+        estimated_dose: null,
+      },
+    ],
+  };
+
+  const merged = mergeSimulationIntoPlan(timeBased, { sessions: [] } as unknown as WeeklyPlanSimulationReport, 400);
+  // 两节 run 课 3600s ÷ 400s/km = 9000m；rest/strength session 不动（strength 恒 null）。
+  assert.equal(merged.sessions[0]?.total_distance_m, 9000);
+  assert.equal(merged.sessions[1]?.total_distance_m, 9000);
+  assert.equal(merged.sessions[2]?.total_distance_m, null);
+  assert.equal(merged.sessions[3]?.total_distance_m, null);
+
+  // 已有距离不覆盖；无校准（null 配速）由估距函数兜底 330s/km。
+  const untouched = mergeSimulationIntoPlan(base, { sessions: [] } as unknown as WeeklyPlanSimulationReport, 400);
+  assert.equal(untouched.sessions[0]?.total_distance_m, 10_000);
+  const fallback = mergeSimulationIntoPlan(timeBased, { sessions: [] } as unknown as WeeklyPlanSimulationReport, null);
+  assert.equal(fallback.sessions[0]?.total_distance_m, (3600 / 330) * 1000);
 });
 
 test("loadWithinTolerance uses the same rounded acceptance band as retry feedback", () => {

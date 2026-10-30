@@ -33,7 +33,7 @@ markdown 渲染）；旧后端 + 新客户端 → 没有 `card`，同样走 mark
 |---|---|---|
 | `race-strategy` | `raceStrategyMessage` 挂 `additional_kwargs.card` | 图标/文案/路由 → 报告页 |
 | `master-plan` | `masterPlanCardMessage`（training 节点，#428/#429） | 图标/标题/角标「初稿」；摘要即卡片——markdown 摘要同泡渲染，无独立详情页；data 带 `plan_id` 时出「启用/放弃」双 CTA（#429） |
-| `custom-workout`（devops#587） | `customWorkoutCardMessage`（custom_workout 节点） | 图标/「训练课已创建」/角标「待保存」；摘要即卡片（课表压缩文案 inlineBody）；双 CTA「保存到X月X日」（save_token 幂等 upsert）+「推送到手表」（未保存先保存再推） |
+| `custom-workout`（devops#587） | `customWorkoutCardMessage`（custom_workout 节点） | 图标/「训练课已创建」/角标「待保存」；摘要即卡片（课表压缩文案 inlineBody）；双 CTA「保存到X月X日」（save_token 幂等 upsert）+「推送到手表」（未保存先保存再推）。时间制课 `total_distance_m` 由节点按契约⑨估算补齐（#838：easy 带中点、无校准 330s/km 兜底） |
 | `weekly-plan`（未来） | 同上 | → 周计划页草稿态 |
 
 **信封随消息持久化**：业务节点把 `{$type, data}` 挂在产生它的回复消息自身
