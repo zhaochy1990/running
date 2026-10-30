@@ -44,6 +44,11 @@ export function shanghaiToday(): string {
   return epochToShanghaiYmd(Date.now());
 }
 
+/** 上海 YYYY-MM-DD 偏移 N 天（负数往前）→ 上海 YYYY-MM-DD。 */
+export function shanghaiShiftDays(ymd: string, days: number): string {
+  return epochToShanghaiYmd(shanghaiYmdToEpoch(ymd) + days * DAY_MS);
+}
+
 function shanghaiDowOfYmd(ymd: string): number {
   return epochToShanghaiDow(shanghaiYmdToEpoch(ymd));
 }

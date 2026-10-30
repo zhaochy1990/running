@@ -1,10 +1,8 @@
 <view class="page">
-  <!-- 自定义顶部栏（自定义导航：菜单在左，标题居中，右侧为胶囊保留区） -->
+  <!-- 自定义顶部栏（自定义导航：标题居中，两侧 88rpx 对称留白，右侧为胶囊保留区） -->
   <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
     <view class="top-bar__inner">
-      <view class="top-bar__btn" bindtap="onMenuTap">
-        <image class="top-bar__icon" src="/assets/icons/menu.svg" mode="aspectFit" />
-      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
       <view class="top-bar__title-wrap">
         <view class="top-bar__title">本周训练</view>
         <view class="top-bar__subtitle">{{weekSubtitle}}</view>
@@ -14,8 +12,13 @@
     </view>
   </view>
 
-  <!-- 内容 -->
-  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
+  <!-- 内容区左右轻扫切日（左滑=前一天 / 右滑=后一天），判定见 onContentTouchEnd -->
+  <view
+    class="content"
+    style="padding-top: {{contentPaddingTop}}rpx;"
+    bindtouchstart="onContentTouchStart"
+    bindtouchend="onContentTouchEnd"
+  >
     <!-- 周历 -->
     <view class="card week-card">
       <view

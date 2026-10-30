@@ -12,6 +12,7 @@ import { setPendingCoachContext } from '../../services/coach';
 import {
   buildPushDateOptions,
   buildWeekDays,
+  shanghaiShiftDays,
   shanghaiToday,
   shanghaiWeekStart,
   weekSubtitle,
@@ -111,11 +112,13 @@ interface IndexPageHandlers {
   fetchWeekSessions(anchorYmd: string): Promise<void>;
   renderDay(dateYmd: string, isToday: boolean): void;
   fetchDayActivities(dateYmd: string): Promise<void>;
-  onMenuTap(): void;
   onWorkoutCardTap(): void;
   /** open-type=share 按钮的 catchtap：转发由 open-type 触发，这里只拦向卡片的冒泡 */
   onShareTap(): void;
   onDayTap(e: WechatMiniprogram.TouchEvent): void;
+  onContentTouchStart(e: WechatMiniprogram.TouchEvent): void;
+  onContentTouchEnd(e: WechatMiniprogram.TouchEvent): void;
+  shiftSelectedDay(delta: number): void;
   onCoachTap(): void;
   onWatchTap(): void;
   onMoreTap(): void;
@@ -134,6 +137,10 @@ let planLoaded = false;
 // 当前周的统一课表行（三源投影）+ 其周起始日；renderDay 从这里取当日课次。
 let weekSessions: PlanSessionRow[] = [];
 let sessionsWeekStart = '';
+
+// 内容区左右轻扫切日的触摸起点（onContentTouchStart 记录，onContentTouchEnd 判定）。
+let swipeStartX = 0;
+let swipeStartY = 0;
 
 function todayLabelOf(ymd: string): string {
   return `${Number(ymd.slice(5, 7))}月${Number(ymd.slice(8))}日`;
@@ -321,10 +328,6 @@ Page<IndexPageData, IndexPageHandlers>({
 
   // --- 交互 ---
 
-  onMenuTap() {
-    wx.showToast({ title: '暂未开放', icon: 'none' });
-  },
-
   // 卡片整体点击 → 课表详情（分段结构/配速要求）。内层手表/更多/教练按钮
   // 已 catchtap，不会冒泡到这里。
   onWorkoutCardTap() {
@@ -339,6 +342,30 @@ Page<IndexPageData, IndexPageHandlers>({
     const date = e.currentTarget.dataset.date as string;
     if (!date || date === this.data.selectedDate) return;
     this.renderDay(date, date === this.data.todayYmd);
+  },
+
+  onContentTouchStart(e: WechatMiniprogram.TouchEvent) {
+    const t = e.touches[0];
+    if (!t) return;
+    swipeStartX = t.clientX;
+    swipeStartY = t.clientY;
+  },
+
+  // 横向轻扫切日：位移够长且横向显著盖过纵向（不干扰页面上下滚动），无时间门限，
+  // 慢拖也算。左滑（dx<0）→ 前一天，右滑（dx>0）→ 后一天。
+  onContentTouchEnd(e: WechatMiniprogram.TouchEvent) {
+    const t = e.changedTouches[0];
+    if (!t) return;
+    const dx = t.clientX - swipeStartX;
+    const dy = t.clientY - swipeStartY;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 2) return;
+    this.shiftSelectedDay(dx < 0 ? -1 : 1);
+  },
+
+  shiftSelectedDay(delta: number) {
+    const next = shanghaiShiftDays(this.data.selectedDate || shanghaiToday(), delta);
+    if (next === this.data.selectedDate) return;
+    this.renderDay(next, next === this.data.todayYmd);
   },
 
   onCoachTap() {
