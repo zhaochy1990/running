@@ -81,6 +81,8 @@ test("38 案例 × 投影带：模板课包→排位全链 课包校验+P 门+C1
         row: { total_km: row.totalKm, long_run_km: row.longRunKm, quality_sessions: row.qualitySessions },
         zones: row.zones,
         maxTrainingDays: spec.weeklyRunDaysMax,
+        goalPaceSKm: input.race.goalPaceSKm,
+        finalQuality: row.phase === "final_quality",
         ...(row.role === "race" ? { raceDate: input.race.date } : {}),
         ...(row.phase === "recovery" ? { regeneration: true } : {}),
       });
@@ -140,4 +142,59 @@ test("赛周 M 激活包络边界（#825）：精英带+触底骨架装不下激
   const bagChecks = validateWeekBag(bags[0]!, rows[0]!, input);
   const c3 = bagChecks.find((c) => c.id === "C3 Q配额")!;
   assert.equal(c3.pass, false, "包络边界应如实挂 C3（比赛课 1 节 vs 配额 2）");
+});
+
+// ── #837 M 课分段专项锚：兜底在 C13/C5 下永远合法（评审 A P0 场景钉） ──
+
+test("M 课分段锚兜底合法性：final_quality 全周撞帽（带快端离 goal >8s）与维持路径（goal 慢于带），兜底 M 课不挂 C13/C5", async () => {
+  // 撞帽复现场景=评审 A 实测：chaoyi 锚 52.9、目标 2:50（goal≈241.7s）、6 周全 final_quality
+  // ——早期带快端≈249.7 离 goal 8.27s，兜底 final_quality 直锚 goal 后 mid=goal ✓
+  const capped = projectZones(52.9, parseHms("2:50:00"), 42195, 6);
+  assert.ok(capped.meta.capped && capped.meta.residual > 2, "前置：撞帽 residual>2");
+  const rows: ContentWeekRow[] = [1, 2, 3, 4, 5, 6].map((w) => ({
+    week: w,
+    phase: "final_quality",
+    role: w === 6 ? ("race" as const) : ("progress" as const),
+    totalKm: w === 6 ? 52.2 : 65,
+    longRunKm: w === 6 ? null : 28,
+    qualitySessions: w === 6 ? 2 : 2,
+    qualityFamily: "m",
+    zones: capped.weeks[w - 1]!.zones,
+  }));
+  const goalPace = parseHms("2:50:00") / 42.195;
+  const input = {
+    rows,
+    athlete: { weeklyRunDaysMax: 6, weekKm: 60, fitness: { ctl: 70, atl: 65, form: 5 } },
+    race: { name: "撞帽测试马拉松", date: raceDateOf(PLAN_START_MONDAY, 6), targetTime: "2:50:00", goalPaceSKm: goalPace },
+    planStartMonday: PLAN_START_MONDAY,
+  };
+  for (const bag of templateFallback(input)) {
+    const failed = validateWeekBag(bag, rows[bag.week - 1]!, input).filter((x) => !x.pass);
+    assert.deepEqual(failed, [], `撞帽兜底 第${bag.week}周`);
+  }
+  // 维持路径（评审 A P1 第二类）：当前 57、目标 3:05（goal≈261.6 慢于 57 档 M 带慢端）
+  // ——锚上夹带慢端，处方不出质量谱慢端（C5）、mid 不比 goal 慢 8s+（C13）
+  const maintain = projectZones(57, parseHms("3:05:00"), 42195, 8);
+  assert.ok(!maintain.meta.capped, "前置：维持路径");
+  const mRows: ContentWeekRow[] = [1, 2, 3, 4, 5, 6, 7, 8].map((w) => ({
+    week: w,
+    phase: w <= 6 ? "final_quality" : "final_quality",
+    role: w === 8 ? ("race" as const) : ("progress" as const),
+    totalKm: w === 8 ? 52.2 : 60,
+    longRunKm: w === 8 ? null : 26,
+    qualitySessions: 2,
+    qualityFamily: "m",
+    zones: maintain.weeks[w - 1]!.zones,
+  }));
+  const mGoal = parseHms("3:05:00") / 42.195;
+  const mInput = {
+    rows: mRows,
+    athlete: { weeklyRunDaysMax: 6, weekKm: 55, fitness: { ctl: 70, atl: 65, form: 5 } },
+    race: { name: "维持测试马拉松", date: raceDateOf(PLAN_START_MONDAY, 8), targetTime: "3:05:00", goalPaceSKm: mGoal },
+    planStartMonday: PLAN_START_MONDAY,
+  };
+  for (const bag of templateFallback(mInput)) {
+    const failed = validateWeekBag(bag, mRows[bag.week - 1]!, mInput).filter((x) => !x.pass);
+    assert.deepEqual(failed, [], `维持兜底 第${bag.week}周`);
+  }
 });

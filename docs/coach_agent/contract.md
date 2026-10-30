@@ -171,15 +171,16 @@ interface PhaseEvidence {
   personal_bests: Record<string, string>;     // {"5K":"19:30","10K":"39:21","HM":"86:38","FM":"177:11"}（分:秒）
   peak_fm_pb: { time_sec: number; achieved_at: string | null } | null;
                                               // FM 历史 PB（辅助：追平/超越峰值叙事与多周期参考，不作可行性锚）
-  current_capability: {                       // 当前训练水平（#789）：锚「当前能力」非历史 PB
+  current_capability: {                       // 当前训练水平（#789，#837 补新鲜度融合+推断档）：锚「当前能力」非历史 PB
     vdot: number | null;                      // 能力标量（换算阶梯 VDOT 直读，1 位小数，距离无关）
     equivalents: { "5K": number; "10K": number; HM: number; FM: number } | null;
                                               // 同一 VDOT 四距离换算（秒）；短距离源对比源更长的距离已含 ×1.03 保守折扣
-    source: "recent_race_hm_fm" | "recent_race_short" | "calibration" | "none";
-                                              // 取锚阶梯：① 近 12 月 HM+ 全力最佳（high）→ ② 10K/5K 最佳（medium，长距离等效 ×1.03）
-                                              //   → ③ 校准阈值配速 %max(60)（medium）→ none（low）
-    source_date: string | null;               // 换算源日期（比赛日 / 校准 as_of）
-    confidence: "high" | "medium" | "low";    // hm_fm=high；短距离折扣/校准=medium；none=low
+    source: "recent_race_hm_fm" | "recent_race_short" | "calibration" | "training_inference" | "none";
+                                              // 取锚阶梯：① 近 12 月 HM+ 全力最佳（8 周内 high/超窗降 medium）→ ② 10K/5K 最佳（medium，长距离等效 ×1.03）
+                                              //   → ③ 校准阈值配速 %max(60)（medium）→ ④ 训练进步推断=近 8 周质量课整课反推（medium，#837）→ none（low）
+                                              //   融合（#837）：比赛锚 >8 周且校准可用 → max(校准, 比赛×0.98)，胜者定 source
+    source_date: string | null;               // 换算源日期（比赛日 / 校准 as_of / 推断源课日期）
+    confidence: "high" | "medium" | "low";    // hm_fm 且 8 周内=high；短距离折扣/校准/推断/陈旧比赛=medium；none=low
     pace_zones: {                             // 当前配速带（校准快照直读、取整秒，s/km；开放端 null）
       easy: [lo, hi] | null;                  // E 带
       m: [lo, hi] | null;                     // M 带（马拉松配速）
@@ -442,7 +443,7 @@ interface MilestoneAlignment {
 
 ### 5.2 L4a 输出：课包（`WeekBag`；无 day、E=槽位+时长带——#799 两段制）
 
-课包=结构课（M/T/I/R/LR，blocks 与 v1 同形、**无日期**）+ E 槽位（`{band: normal 60-90min | interval 30-60min, strides}`——分钟数与落位归 L4b 实例化；**purpose 字段已废除（#824 拍板）**：说明统一由 L4b ePurpose 按实际落位生成，模型自写会与落位错位、draft schema 已删字段）。day 字段废除（2026-10-29）：落位归 L4b（LR 周日位型先验/谷排刺激/间隔日短带）；**C4（训练日）与 C9（E 时长分层按位判定）随 day 移入排位段**（P1/实例化定带），L4a 课包校验=C2/C3/C5-C8+一致性+C1 带区间可行性+C11/C12（分段梯度与配速宽度两阶段都判）。E 课最终物化（work time_s@E 带 + strides 独立块）与日期由 L4b 产出；终检 C1-C12 在排位后的日历上全量复跑。
+课包=结构课（M/T/I/R/LR，blocks 与 v1 同形、**无日期**）+ E 槽位（`{band: normal 60-90min | interval 30-60min, strides}`——分钟数与落位归 L4b 实例化；**purpose 字段已废除（#824 拍板）**：说明统一由 L4b ePurpose 按实际落位生成，模型自写会与落位错位、draft schema 已删字段）。day 字段废除（2026-10-29）：落位归 L4b（LR 周日位型先验/谷排刺激/间隔日短带）；**C4（训练日）与 C9（E 时长分层按位判定）随 day 移入排位段**（P1/实例化定带），L4a 课包校验=C2/C3/C5-C8+一致性+C1 带区间可行性+C11/C12/C13（分段梯度与配速宽度、final_quality 期 M 课锚 goal 两阶段都判，#837）。E 课最终物化（work time_s@E 带 + strides 独立块）与日期由 L4b 产出；终检 C1-C13 在排位后的日历上全量复跑。
 
 ### 5.2a L4b 物化输出：`RunWorkout`（**现网 run-workout/v1 + 两个可选字段**，2026-10-27 终审；排位后外层带日历 calendar[]）
 
@@ -477,16 +478,16 @@ RunWorkout 新增：
 | 课内角色 | 首/末块的 warmup/cooldown 步=热身/放松；LR=type 声明+位型判定 |
 | 合法性（谱内校验） | 质量步 target 须落质量谱、有氧步须落 E 带容差——**不要求单带归属**（教练 MP-10s/MP-20s 处方天然跨带合法）；带归类（区间中点）只作多样性统计不作合法性判据 |
 
-**一致性校验**（声明↔数据互验）：声明 `type` 的带须罩住该课**主质量段**（按距离最长的质量段，±10s/km 容差）——声明 T 但主段在 E 带=违规；组合课（10k@M+1k 间歇+400m）主段=M 声明 M，副段只需谱内；LR 内嵌 M/T 尾段合法、type 仍 LR。
+**一致性校验**（声明↔数据互验）：声明 `type` 的带须罩住该课**主质量段**（按距离最长的质量段，±10s/km 容差）——声明 T 但主段在 E 带=违规；组合课（10k@M+1k 间歇+400m）主段=M 声明 M，副段只需谱内；LR 内嵌 M/T 尾段合法、type 仍 LR。**type=M 罩带=M 带 ∪ goal±5 包络（#837）**：M 课锚=max(M 带快端, goal_pace)±5s，goal 侧出带是专项锚合法域。
 
-**校验集（validation，2026-10-27 拍板不用 gate 叫法；C11/C12 = #824 追加）**：C1 周量守恒（Σ课里程 vs total_km，±max(3km, 3%)；里程=totals 口径，**recovery 步 time 处方按 E 带中点折算计入**——组间慢跑计有氧公里，#824 拍板）｜C2 长跑唯一且合值（type=LR 恰一节 ±1.5km；**赛周 lr=null 豁免为 0 节**）｜C3 Q 配额=派生质量课数｜C4 训练日 ≤max_training_days（按 date 去重）｜C5 配速谱内（质量步/有氧步各按谱校验）｜C6 note 语义（无质量步且无短加速步的课 note=null；含 strides 的课给 strides 要点、LR 给补给/地形要点合法）｜C7 质量课热身/放松在场（**赛周比赛课豁免**；LR 位型课豁免独立热身段——E 主体即热身，即「按里程差判」松弛路径）｜C8 展开守恒（课总里程=blocks 按 repeat 展开后 Σ步距离 ±容差——组数×步距算术错挂校验）｜**C11 分段配速梯度（#824 用户审发现②）**：≥2 个不同时长的质量段不得全同配速（阶梯/金字塔形状像、刺激=等长间歇=梯度缺位；等长间歇=单一时长组豁免；E/LR/比赛课不在范围）｜**C12 质量段配速宽度（#824 用户审发现③）**：质量段处方宽度 ≤10s/km（教义=带中位 ±3~5s 窄带——整条投影带复制宽 15s+，运动员跑慢端时刺激实际滑到下一带；E/LR 主体与变速 work@easy 慢段不受限、比赛课 goal±5s 天然合规）。存量迁移样本（#824 前真实教练全带处方）走 `legacyQualityPace` 豁免。
+**校验集（validation，2026-10-27 拍板不用 gate 叫法；C11/C12 = #824 追加；C13 = #837 追加）**：C1 周量守恒（Σ课里程 vs total_km，±max(3km, 3%)；里程=totals 口径，**recovery 步 time 处方按 E 带中点折算计入**——组间慢跑计有氧公里，#824 拍板）｜C2 长跑唯一且合值（type=LR 恰一节 ±1.5km；**赛周 lr=null 豁免为 0 节**）｜C3 Q 配额=派生质量课数｜C4 训练日 ≤max_training_days（按 date 去重）｜C5 配速谱内（质量步/有氧步各按谱校验）｜C6 note 语义（无质量步且无短加速步的课 note=null；含 strides 的课给 strides 要点、LR 给补给/地形要点合法）｜C7 质量课热身/放松在场（**赛周比赛课豁免**；LR 位型课豁免独立热身段——E 主体即热身，即「按里程差判」松弛路径）｜C8 展开守恒（课总里程=blocks 按 repeat 展开后 Σ步距离 ±容差——组数×步距算术错挂校验）｜**C11 分段配速梯度（#824 用户审发现②）**：≥2 个不同时长的质量段不得全同配速（阶梯/金字塔形状像、刺激=等长间歇=梯度缺位；等长间歇=单一时长组豁免；E/LR/比赛课不在范围）｜**C12 质量段配速宽度（#824 用户审发现③）**：质量段处方宽度 ≤10s/km（教义=带中位 ±3~5s 窄带——整条投影带复制宽 15s+，运动员跑慢端时刺激实际滑到下一带；E/LR 主体与变速 work@easy 慢段不受限、比赛课 goal±5s 天然合规）｜**C13 M 课锚定目标（#837 用户审 254 计划发现）**：final_quality 期 M 课主段配速 mid 与 goal_pace 差 ≤8s——M 课=比赛专项（max(M 带快端, goal_pace)±5s，早期照带快端爬坡、final_quality 收敛 goal），全程照投影带开离 goal 22-30s 是缺陷；goal 上下文缺省跳过（存量回放兼容）。存量迁移样本（#824 前真实教练全带处方）走 `legacyQualityPace` 豁免。
 
 - **用户拍板规则**（2026-10-27 真人教练 8 周对比 + E2E 复盘）：
   ① E 课下限=单次有氧 ≥60min 按 E 带配速折算 km 下限（唯一例外=赛周激活课；校验 C9 候选 ⏳）；
   ② 质量课结构跨周不重复、强度谱覆盖 T/乳酸阈值长间歇、不得全周同型；
   ③ 赛周必须有激活性质量课（赛前 2-3 天，M 配速触感+短组，形态参照 5-8km@MP+1k×3-5（快 15s）+400m×3-5；原生出处=维持原则之八「减量期保强度即可维持」；赛周非比赛日 km 下限校验 ⏳，配合 #809——L3 侧赛周激活带 [10,15] 与 taper 削 LR 已落地，L4 侧校验为 C9 候选）；
-  ④ 长距离形态谱跨周轮换（纯有氧/渐加速/纯 MP 段/变速/混合，不得全用含 M 尾段一种）；
-  ⑤ **比赛配速锚定目标**（E2E 复盘拍板，最严重项）：比赛课处方必须按 goal_pace 开（±小容差），风险写 purpose/note——内容层不得静默降级（§3.5 延伸）。反例实证：目标 2:50=4:02/km，生成处方 4:15-4:35；
+  ④ 长距离形态谱跨周轮换（纯有氧/渐加速/纯 MP 段/变速/混合，不得全用含 M 尾段一种）；**final_quality 专项化（#837 用户拍板）**：final_quality 期长跑形态必须含 goal_pace 段（纯有氧只留给 recovery/减量周）——峰值周专项长跑=前 60-70% E+后 30-40% goal±5s、MP 长跑=全程 goal（8-15km 短版）、渐加速尾段=goal−5s；
+  ⑤ **比赛配速锚定目标**（E2E 复盘拍板，最严重项）：比赛课处方必须按 goal_pace 开（±小容差），风险写 purpose/note——内容层不得静默降级（§3.5 延伸）。反例实证：目标 2:50=4:02/km，生成处方 4:15-4:35；**#837 扩展到 M 课**：M 课=比赛专项，work 段=max(M 带快端, goal_pace)±5s（projectZones 输出 goal_m_pace 锚带供 doctrine 引用；校验 C13 强制 final_quality 期贴 goal ≤8s）；
   ⑥ **能力递进投影**（E2E 复盘拍板，新设计项）：排课按预估能力进步曲线逐周刷新配速带，不用静态当前能力。原生锚=课表库 §7 锚点 4（Daniels 第 14 章 2Q：「头 6 周 VDOT=min(当前, 目标−2)→中 +1→末 +1」，配速层递进归 pace_zones 刷新）；工程化=projectZones 纯函数（L4 输入构造时调用）：起点 min(当前,目标−2)、线性剩余均摊、**分档封顶 0.8/<45 · 0.5/45-52 · 0.25/≥52**（=群体 p90 取整，20 用户标定+17 用户 1800 点回测中位偏差 −0.08 无偏；已知偏差=45-52 档偏前置待 R0 回头校）；gap≤0 维持；封顶时比赛周带可未达目标（残差→风险声明），比赛课处方仍锚 goal_pace；定稿=daniels-l4-content.md §4，实现 #811；
   ⑦ E 课时长分层（修正拍板：弃固定 km——不随水平缩放）：普通 E 日 **60-90min**、**质量课间隔日 30-60min**（8weeks.md 教练原话+E 家族原生下限 30min），里程=时长×各自 E 带配速折算（chaoyi 间隔日≈10.7-12km、精英≈15km）；重 E 挪到无质量课日而非砍量。
   ⑨ **有氧/轻松跑以时间为量纲**（⑦的延伸定稿）：E 课/恢复跑（含热身/放松/组间慢跑）处方 duration 为主，距离=时长×E 带配速派生仅参考显示；量纲边界=E/REC 时间｜T/I/R/M 结构（距离×组）｜LR 距离（比赛关联，原生帽双量纲）。校验 C9=E 课 duration 必填且落⑦分层带；派生 km 参与 C1（**recovery 步 time 处方同样按 E 带中点折算，#824**）；#802 完成度按 duration+带比对（抗配速漂移）。

@@ -113,17 +113,19 @@ const fixtureSnapshot = async (name: AthleteName, mutate: (raw: Record<string, u
   return { snapshot: ContextSnapshotSchema.parse(raw), activities };
 };
 
-test("三运动员 current_capability：阶梯第 1 档（HM+ 全力最佳）、四距离等效齐全、pace_zones 五带直读", async () => {
+test("三运动员 current_capability：陈旧比赛锚（>8 周，#837）与校准融合、confidence 降 medium、等效齐全、pace_zones 五带直读", async () => {
+  // 比赛锚均距 as_of 超 8 周（chaoyi 3/22、ding 3/22、pan 4/12）：融合 max(校准, 比赛×0.98)
+  // ——chaoyi 校准胜（52.9>50.1），ding/pan 打折比赛胜；hm_fm 保持档名但降 medium
   const expected = {
-    chaoyi: { vdot: 51.1, sourceDate: "2026-03-22", improvementPct: 9.2, fmEquiv: 11228 },
-    dingchentao: { vdot: 57, sourceDate: "2026-03-22", improvementPct: 4.6, fmEquiv: 10241 },
-    pan: { vdot: 42.2, sourceDate: "2026-04-12", improvementPct: 2.6, fmEquiv: 13180 },
+    chaoyi: { vdot: 52.9, source: "calibration", sourceDate: "2026-10-20", improvementPct: 6.4, fmEquiv: 10903 },
+    dingchentao: { vdot: 55.9, source: "recent_race_hm_fm", sourceDate: "2026-03-22", improvementPct: 3.8, fmEquiv: 10418 },
+    pan: { vdot: 41.4, source: "recent_race_hm_fm", sourceDate: "2026-04-12", improvementPct: 1.5, fmEquiv: 13402 },
   } as const;
   for (const [name, exp] of Object.entries(expected)) {
     const evidence = await buildAthleteEvidence(name as AthleteName);
     const cap = evidence.current_capability;
-    assert.equal(cap.source, "recent_race_hm_fm", name);
-    assert.equal(cap.confidence, "high", name);
+    assert.equal(cap.source, exp.source, name);
+    assert.equal(cap.confidence, "medium", name);
     assert.equal(cap.source_date, exp.sourceDate, name);
     assert.ok(Math.abs((cap.vdot ?? 0) - exp.vdot) <= 0.05, `${name} vdot ${cap.vdot}`);
     assert.ok(cap.equivalents, name);
@@ -140,14 +142,39 @@ test("三运动员 current_capability：阶梯第 1 档（HM+ 全力最佳）、
   }
 });
 
-test("improvement_pct 保守档（规则 4）：ding 校准 VDOT 低于比赛锚 → 锚取保守者而非 current_capability.vdot", async () => {
-  const evidence = await buildAthleteEvidence("dingchentao");
+test("improvement_pct 保守档（规则 4，新鲜比赛）：8 周内比赛与校准同在 → 锚取保守者（min）而非 current_capability.vdot", async () => {
+  // ding 3/22 比赛已陈旧（融合语义），注入 8 周内新鲜比赛还原规则 4 原路径：
+  // 校准 VDOT≈54.8 < 新鲜比赛锚 → improvement 按保守者（校准档）算
+  const { snapshot, activities } = await fixtureSnapshot("dingchentao", (raw) => {
+    raw.race_history = [{ date: "2026-10-11", distance_km: 21.3, duration_min: 82, avg_pace_s_km: 231, avg_hr: 168, max_hr: 182, feel: null }];
+  });
+  const evidence = buildPhaseEvidence(snapshot, activities, { raceName: "无锡马拉松", distance: "FM", targetTime: "2:47:00", weeklyRunDaysMax: 7 }, AS_OF);
+  const cap = evidence.current_capability;
+  assert.equal(cap.source, "recent_race_hm_fm");
+  assert.equal(cap.confidence, "high"); // 新鲜比赛保持 high（#837 只降陈旧锚）
   const targetSec = 2 * 3600 + 47 * 60;
-  const impliedByCapability =
-    Math.round((((evidence.current_capability.equivalents?.FM ?? 0) - targetSec) / (evidence.current_capability.equivalents?.FM ?? 1)) * 1000) / 10;
-  // 校准阈值 4.28 m/s → VDOT≈55.3 < 比赛锚 57 → improvement 按 55.3 档算（4.6），而非 57 档的 2.2
-  assert.equal(evidence.target.improvement_pct, 4.6);
+  const impliedByCapability = Math.round((((cap.equivalents?.FM ?? 0) - targetSec) / (cap.equivalents?.FM ?? 1)) * 1000) / 10;
   assert.notEqual(impliedByCapability, evidence.target.improvement_pct);
+});
+
+test("陈旧比赛锚（>8 周，#837）：无校准时比赛照用但降 medium；有校准取 max(校准, 比赛×0.98)——进步被低估方向翻转", async () => {
+  const goal = { raceName: "无锡马拉松", distance: "FM" as const, targetTime: "2:50:00", weeklyRunDaysMax: 6 };
+  // 陈旧 HM 比赛（VDOT≈51.1）无校准：照用原值、降 medium
+  const noCalib = await fixtureSnapshot("chaoyi", (raw) => {
+    raw.race_history = [{ date: "2026-03-22", distance_km: 21.3, duration_min: 90.7, avg_pace_s_km: 254.87, avg_hr: 165, max_hr: 180, feel: null }];
+    raw.running_calibration = null;
+  });
+  const staleEvidence = buildPhaseEvidence(noCalib.snapshot, noCalib.activities, goal, AS_OF);
+  assert.equal(staleEvidence.current_capability.source, "recent_race_hm_fm");
+  assert.equal(staleEvidence.current_capability.confidence, "medium"); // 陈旧降级（原 high）
+  assert.ok(Math.abs((staleEvidence.current_capability.vdot ?? 0) - 51.1) <= 0.05); // 无校准不打折
+  // 同一比赛 + 校准 52.9：融合取校准（旧比赛不再把锚拖到 51.1——#837 主诉场景）
+  const withCalib = await fixtureSnapshot("chaoyi", (raw) => {
+    raw.race_history = [{ date: "2026-03-22", distance_km: 21.3, duration_min: 90.7, avg_pace_s_km: 254.87, avg_hr: 165, max_hr: 180, feel: null }];
+  });
+  const fused = buildPhaseEvidence(withCalib.snapshot, withCalib.activities, goal, AS_OF).current_capability;
+  assert.equal(fused.source, "calibration");
+  assert.ok(Math.abs((fused.vdot ?? 0) - 52.9) <= 0.05);
 });
 
 test("peak_fm_pb：FM PB 直读（辅助字段，不作可行性锚）", async () => {
@@ -169,18 +196,41 @@ test("阶梯第 3 档：无近期比赛 + 有校准 → source=calibration、vdo
   assert.equal(evidence.target.improvement_pct, 6.4);
 });
 
-test("阶梯落空：无近期比赛且无校准 → source=none、全 null、improvement_pct=null", async () => {
-  const { snapshot, activities } = await fixtureSnapshot("chaoyi", (raw) => {
+test("阶梯第 4 档（#837）：无比赛无校准 + 近 8 周质量课配速改善 → training_inference（medium）；配速未改善或无素材 → none", async () => {
+  const goal = { raceName: "无锡马拉松", distance: "FM" as const, targetTime: "2:50:00", weeklyRunDaysMax: 6 };
+  // chaoyi fixture 近 8 周有足量质量课且配速在改善 → 第 4 档接住（不再直接落 none）
+  const noAnchors = await fixtureSnapshot("chaoyi", (raw) => {
     raw.race_history = [];
     raw.running_calibration = null;
   });
-  const evidence = buildPhaseEvidence(snapshot, activities, { raceName: "无锡马拉松", distance: "FM", targetTime: "2:50:00", weeklyRunDaysMax: 6 }, AS_OF);
+  const inferred = buildPhaseEvidence(noAnchors.snapshot, noAnchors.activities, goal, AS_OF).current_capability;
+  assert.equal(inferred.source, "training_inference");
+  assert.equal(inferred.confidence, "medium");
+  assert.ok(inferred.vdot != null && inferred.vdot > 40 && inferred.vdot < 70, `推断 VDOT 合理区间，实际 ${inferred.vdot}`);
+  assert.ok(inferred.source_date != null);
+  // 质量课配速未改善（整窗统一配速）→ 推断不成立落 none
+  const flat = {
+    snapshot: noAnchors.snapshot,
+    activities: noAnchors.activities.map((a, i) => ({
+      date: a.date,
+      name: a.name,
+      distanceM: a.distanceM,
+      strideSessionClass: a.strideSessionClass,
+      durationS: a.distanceM != null ? a.distanceM * 0.27 : null,
+    })),
+  };
+  assert.equal(buildPhaseEvidence(flat.snapshot, flat.activities, goal, AS_OF).current_capability.source, "none");
+  // 质量课素材不可得（活动行无时长）→ 阶梯彻底落空 none
+  const noMaterial = {
+    snapshot: noAnchors.snapshot,
+    activities: noAnchors.activities.map((a) => ({ date: a.date, name: a.name, distanceM: a.distanceM, strideSessionClass: a.strideSessionClass })),
+  };
+  const evidence = buildPhaseEvidence(noMaterial.snapshot, noMaterial.activities, goal, AS_OF);
   assert.equal(evidence.current_capability.source, "none");
   assert.equal(evidence.current_capability.confidence, "low");
   assert.equal(evidence.current_capability.vdot, null);
   assert.equal(evidence.current_capability.equivalents, null);
   assert.equal(evidence.current_capability.source_date, null);
-  assert.equal(evidence.current_capability.pace_zones, null);
   assert.equal(evidence.target.improvement_pct, null);
 });
 
@@ -204,12 +254,14 @@ test("脏数据防御：荒谬 VDOT 行（如 duration_min 单位错误）被丢
   });
   const raceEvidence = buildPhaseEvidence(dirtyRace.snapshot, dirtyRace.activities, goal, AS_OF);
   assert.equal(raceEvidence.current_capability.source, "calibration");
-  // 校准阈值速度单位错误（40 m/s）→ 校准档落空；叠加无比赛 → none
+  // 校准阈值速度单位错误（40 m/s）→ 校准档落空；叠加无比赛 → 第 4 档推断接住（#837）
   const dirtyCalib = await fixtureSnapshot("chaoyi", (raw) => {
     raw.race_history = [];
     (raw.running_calibration as { threshold_speed_mps?: number }).threshold_speed_mps = 40;
   });
-  assert.equal(buildPhaseEvidence(dirtyCalib.snapshot, dirtyCalib.activities, goal, AS_OF).current_capability.source, "none");
+  const dirtyEvidence = buildPhaseEvidence(dirtyCalib.snapshot, dirtyCalib.activities, goal, AS_OF);
+  assert.equal(dirtyEvidence.current_capability.source, "training_inference");
+  assert.ok(dirtyEvidence.current_capability.vdot != null && dirtyEvidence.current_capability.vdot < 70, "荒谬校准不污染推断档");
 });
 
 test("阶梯第 2 档：仅 10K 近期比赛 → recent_race_short（medium），更长距离等效含 ×1.03 保守折扣", async () => {
@@ -234,8 +286,8 @@ test("buildIntentPayload 透出 improvement_pct 与 current_capability（判断�
   const evidence = await buildAthleteEvidence("chaoyi");
   const payload = buildIntentPayload({ evidence, runwayWeeks: 20, raceDate: "2027-03-01" });
   const out = payload.evidence as typeof evidence;
-  assert.equal(out.target.improvement_pct, 9.2);
-  assert.equal(out.current_capability.source, "recent_race_hm_fm");
+  assert.equal(out.target.improvement_pct, 6.4);
+  assert.equal(out.current_capability.source, "calibration");
   assert.equal(out.peak_fm_pb?.achieved_at, "2025-03-30");
 });
 
@@ -265,4 +317,26 @@ test("last_race ≥10km 下限：最近比赛是 5K 时不触发 I3（跳过取�
   // 只有 5K → last_race 为 null（无长距离比赛，I3 不触发）
   const fiveKOnly = await withHistory([mkRace("2026-10-20", 5)]);
   assert.equal(fiveKOnly.last_race, null);
+});
+
+test("陈旧短距离比赛锚（#837）：打折赛值胜出融合时保持 recent_race_short 且等效含折扣，校准胜出时折扣不跟（锚不再是短距离源）", async () => {
+  const goal = { raceName: "无锡马拉松", distance: "FM" as const, targetTime: "2:50:00", weeklyRunDaysMax: 6 };
+  // 陈旧 10K 强表现（VDOT≈60，×0.98≈58.8 仍胜 chaoyi 校准 52.9）→ race 档胜出
+  const raceWins = await fixtureSnapshot("chaoyi", (raw) => {
+    raw.race_history = [{ date: "2026-03-01", distance_km: 10, duration_min: 34, avg_pace_s_km: 204, avg_hr: 175, max_hr: 188, feel: null }];
+  });
+  const winsCap = buildPhaseEvidence(raceWins.snapshot, raceWins.activities, goal, AS_OF).current_capability;
+  assert.equal(winsCap.source, "recent_race_short");
+  assert.equal(winsCap.confidence, "medium"); // 陈旧降级
+  const winsEq = winsCap.equivalents!;
+  const plainFm = raceTimeSecFromVdot(RACE_DISTANCES_M.FM, winsCap.vdot ?? 0);
+  assert.ok(winsEq.FM >= plainFm * 1.02 && winsEq.FM <= plainFm * 1.04, `融合胜出时长距等效仍含 ×1.03（${winsEq.FM} vs ${plainFm}）`);
+  // 陈旧 10K 弱表现（×0.98 后低于校准 52.9）→ 校准胜出，等效不打短距离折扣
+  const calibWins = await fixtureSnapshot("chaoyi", (raw) => {
+    raw.race_history = [{ date: "2026-03-01", distance_km: 10, duration_min: 40, avg_pace_s_km: 240, avg_hr: 168, max_hr: 180, feel: null }];
+  });
+  const calibCap = buildPhaseEvidence(calibWins.snapshot, calibWins.activities, goal, AS_OF).current_capability;
+  assert.equal(calibCap.source, "calibration");
+  const calibPlain = raceTimeSecFromVdot(RACE_DISTANCES_M.FM, calibCap.vdot ?? 0);
+  assert.ok(Math.abs(calibCap.equivalents!.FM - calibPlain) <= 8, `校准锚等效无折扣（${calibCap.equivalents!.FM} vs ${calibPlain}，容差吸收 vdot 1 位小数取整≈FM 5s）`);
 });

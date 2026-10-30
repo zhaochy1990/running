@@ -17,7 +17,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { getLogger } from "@stride/common";
 import { getAgentConfig, loadConfig, type ModelConfig } from "../config/config.js";
-import { isQualityStep } from "../graph/master_plan/phasing/content/derive.js";
+import { isQualityStep, mainQualitySegment } from "../graph/master_plan/phasing/content/derive.js";
 import type { ContentWeekRow } from "../graph/master_plan/phasing/content/doctrine.js";
 import { createContentModel, generateWeekContent, type ScheduledOutcome } from "../graph/master_plan/phasing/content/generate.js";
 import { projectZones } from "../graph/master_plan/phasing/content/project.js";
@@ -105,10 +105,46 @@ async function fallbackRows(athlete: AthleteName, runwayWeeks: number): Promise<
   }));
 }
 
-/** 规则抽查（非校验器覆盖的 prompt 规则）：多样性/赛周激活/比赛配速锚。 */
+/** 规则抽查（非校验器覆盖的 prompt 规则）：多样性/赛周激活/比赛配速锚/#837 M 专项与长跑 goal 段。 */
 function spotCheck(outcome: ScheduledOutcome, input: Parameters<typeof generateWeekContent>[0], goalPaceSKm: number): string[] {
   const issues: string[] = [];
   const flat = outcome.weeks.flatMap(({ week, sessions }) => sessions.map((w) => ({ week, w })));
+
+  // #837 验收口径：M 课=比赛专项，主段 mid 不得比 goal 慢 12s+（宽松合理性断言，
+  // 覆盖爬坡期照带快端的教义合规区间；final_quality 期 ≤8s 由 C13 硬校验强制）
+  const rowOfWeek = new Map(input.rows.map((r) => [r.week, r]));
+  for (const { week, w } of flat) {
+    if (w.type !== "M" || w.date === input.race.date) continue;
+    const row = rowOfWeek.get(week);
+    if (row == null) continue;
+    const main = mainQualitySegment(w, row.zones);
+    if (main == null || main.step.target.kind !== "pace_s_km") continue;
+    const mid = (main.step.target.low + main.step.target.high) / 2;
+    if (mid > input.race.goalPaceSKm + 12)
+      issues.push(
+        `第${week}周 ${w.name} M 主段 mid ${Math.round(mid)} 比 goal ${Math.round(input.race.goalPaceSKm)} 慢 ${(mid - input.race.goalPaceSKm).toFixed(1)}s`,
+      );
+  }
+
+  // #837 final_quality 进展周长跑必须含 goal_pace 段（纯有氧只留给 recovery 与
+  // 减量性质周 absorb/taper；race 无 LR）：LR 的 work 步须有一段贴 goal（专项段
+  // goal±5 / MP 长跑全程 / 渐加速尾段 goal−5）
+  for (const { week, sessions } of outcome.weeks) {
+    const row = rowOfWeek.get(week);
+    if (row == null || row.phase !== "final_quality" || row.role !== "progress") continue;
+    for (const w of sessions.filter((x) => x.type === "LR")) {
+      // ≥1km 的 goal 段即认可（含变速长跑 1km@goal×N 的间歇式暴露——票面三形态之外
+      // 的合法变体，专项刺激在场；<1km 是 strides 级触感不算）
+      const hasGoalSeg = w.blocks.some((b) =>
+        b.steps.some((st) => {
+          if (st.target.kind !== "pace_s_km" || st.duration.kind !== "distance_m" || st.duration.value < 1000) return false;
+          const mid = (st.target.low + st.target.high) / 2;
+          return Math.abs(mid - input.race.goalPaceSKm) <= 10;
+        }),
+      );
+      if (!hasGoalSeg) issues.push(`第${week}周 ${w.name} final_quality 长跑无 goal_pace 段（专项长跑/MP 长跑/渐加速尾段三选一）`);
+    }
+  }
 
   // 规则⑤：比赛课处方=goal_pace±5s/km
   const raceRow = input.rows.at(-1)!;
@@ -226,7 +262,7 @@ async function main() {
         weekKm: evidence.habitual.week_km,
         fitness: { ctl: evidence.fitness.ctl, atl: evidence.fitness.atl, form: evidence.fitness.form },
       },
-      race: { name: s.raceName, date: raceDateOf(s.runway), targetTime: spec.targetTime, goalPaceSKm: targetSec / 42.195 },
+      race: { name: s.raceName, date: raceDateOf(s.runway), targetTime: spec.targetTime, goalPaceSKm: targetSec / 42.195, goalMPace: projection.goal_m_pace },
       planStartMonday: AS_OF,
     };
     const t0 = Date.now();

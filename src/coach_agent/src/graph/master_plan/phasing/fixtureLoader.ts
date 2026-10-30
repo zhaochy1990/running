@@ -26,6 +26,8 @@ interface FixtureActivityRow {
   name: string | null;
   distance_m: number | null;
   stride_session_class: string | null;
+  avg_pace_s_km?: number | null;
+  duration_s?: number | null;
 }
 
 export async function loadAthlete(name: AthleteName): Promise<{ snapshot: ContextSnapshot; activities: PhasingActivityInput[] }> {
@@ -34,7 +36,13 @@ export async function loadAthlete(name: AthleteName): Promise<{ snapshot: Contex
   const rows = JSON.parse(await readFile(resolve(dir, "activities-2026.json"), "utf8")) as FixtureActivityRow[];
   return {
     snapshot,
-    activities: rows.map((r) => ({ date: r.date, name: r.name, distanceM: r.distance_m, strideSessionClass: r.stride_session_class })),
+    activities: rows.map((r) => ({
+      date: r.date,
+      name: r.name,
+      distanceM: r.distance_m,
+      strideSessionClass: r.stride_session_class,
+      durationS: r.duration_s ?? null,
+    })),
   };
 }
 

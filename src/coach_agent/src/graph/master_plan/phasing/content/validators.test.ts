@@ -79,9 +79,9 @@ const byId = (checks: ReturnType<typeof validateWeekContent>, id: string) => {
   return hit;
 };
 
-test("绿色基线：一致性 + C1-C12 全过（E time 处方派生里程参与 C1）", () => {
+test("绿色基线：一致性 + C1-C13 全过（E time 处方派生里程参与 C1；无 goal 上下文 C13 跳过）", () => {
   const checks = validateWeekContent(weekInput(greenSessions()));
-  assert.equal(checks.length, 13);
+  assert.equal(checks.length, 14);
   for (const c of checks) assert.equal(c.pass, true, `${c.id}: ${c.detail}`);
 });
 
@@ -658,4 +658,64 @@ test("sessionKm recovery 折算（#824 修复1）：time+open recovery 步按 E 
   const g1 = byId(validateWeekContent(weekInput(week, { row: { total_km: 35.7, long_run_km: 15, quality_sessions: 2 } })), "C1 周量守恒");
   assert.equal(g1.pass, true, g1.detail);
   assert.doesNotMatch(g1.detail, /不可知/);
+});
+
+// ── C13 M 课锚定目标（#837：final_quality 期 M 课主段 mid 与 goal 差 ≤8s） ──
+
+test("C13 M课锚定目标：final_quality 期 M 课主段离 goal ≤8s 过、>8s 挂；非 final_quality 期跳过；无 goal 上下文跳过", () => {
+  // goal=258s/km（4:18）：M 课主段锚 262（goal+4，照带快端爬坡末段）±5 → mid 262 差 4s 过
+  const near = greenSessions();
+  near[1] = {
+    workout: {
+      ...near[1]!.workout,
+      blocks: [{ repeat: 1, steps: [s("warmup", km(2), EASY), s("work", km(6), { kind: "pace_s_km", low: 257, high: 267 }), s("cooldown", km(2), EASY)] }],
+    },
+  };
+  const ok = byId(validateWeekContent(weekInput(near, { goalPaceSKm: 258, finalQuality: true })), "C13 M课锚定目标");
+  assert.equal(ok.pass, true, ok.detail);
+  // 主段 mid 275（带中位处方，#837 之前的写法）离 goal 17s 挂
+  const far = greenSessions();
+  far[1] = {
+    workout: {
+      ...far[1]!.workout,
+      blocks: [{ repeat: 1, steps: [s("warmup", km(2), EASY), s("work", km(6), { kind: "pace_s_km", low: 270, high: 280 }), s("cooldown", km(2), EASY)] }],
+    },
+  };
+  const bad = byId(validateWeekContent(weekInput(far, { goalPaceSKm: 258, finalQuality: true })), "C13 M课锚定目标");
+  assert.equal(bad.pass, false);
+  assert.match(bad.detail, /慢 17/);
+  // 单侧判定（#837）：mid 比 goal 快（维持路径照带开）合法不罚
+  const faster = greenSessions();
+  faster[1] = {
+    workout: {
+      ...faster[1]!.workout,
+      blocks: [{ repeat: 1, steps: [s("warmup", km(2), EASY), s("work", km(6), { kind: "pace_s_km", low: 230, high: 240 }), s("cooldown", km(2), EASY)] }],
+    },
+  };
+  const fast = byId(validateWeekContent(weekInput(faster, { goalPaceSKm: 258, finalQuality: true })), "C13 M课锚定目标");
+  assert.equal(fast.pass, true, fast.detail);
+  // 同处方非 final_quality 期（早期周照投影带爬坡合法）跳过
+  const early = byId(validateWeekContent(weekInput(far, { goalPaceSKm: 258 })), "C13 M课锚定目标");
+  assert.equal(early.pass, true, early.detail);
+  // 无 goal 上下文（存量回放）跳过
+  const noGoal = byId(validateWeekContent(weekInput(far, { finalQuality: true })), "C13 M课锚定目标");
+  assert.equal(noGoal.pass, true, noGoal.detail);
+});
+
+test("C13 罩带豁免（#837）：M 课主段锚 goal（快于投影 M 带快端）不挂 type 罩带一致性", () => {
+  // goal=270（快于 M 带快端 249…取 goal=230 快于带的极端）：M 课主段 225-235 全在带外但贴 goal
+  const anchored = greenSessions();
+  anchored[1] = {
+    workout: {
+      ...anchored[1]!.workout,
+      blocks: [{ repeat: 1, steps: [s("warmup", km(2), EASY), s("work", km(6), { kind: "pace_s_km", low: 226, high: 236 }), s("cooldown", km(2), EASY)] }],
+    },
+  };
+  // goal 229：主段 mid 231 差 2s（C13 过）；goal±5=[224,234] 与 M 带包络罩住 226-236（+10 容差）
+  const checks = validateWeekContent(weekInput(anchored, { goalPaceSKm: 229, finalQuality: true }));
+  assert.equal(byId(checks, "一致性 type罩主段").pass, true, byId(checks, "一致性 type罩主段").detail);
+  assert.equal(byId(checks, "C13 M课锚定目标").pass, true);
+  // 无 goal 上下文时同一处方（主段快于 M 带 249-288 超 10s 容差）仍挂罩带——豁免只认 M 课 goal 锚
+  const noGoal = validateWeekContent(weekInput(anchored));
+  assert.equal(byId(noGoal, "一致性 type罩主段").pass, false);
 });

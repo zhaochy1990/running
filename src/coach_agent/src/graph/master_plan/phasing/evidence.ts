@@ -26,16 +26,16 @@ const PaceZonesSchema = z.object({
 });
 const EquivalentsSchema = z.object({ "5K": z.number(), "10K": z.number(), HM: z.number(), FM: z.number() });
 
-/** 当前训练水平（devops#789）：VDOT 换算阶梯推导，锚定「当前能力」而非历史 PB。 */
+/** 当前训练水平（devops#789，#837 补新鲜度融合与训练进步推断）：VDOT 换算阶梯推导，锚定「当前能力」而非历史 PB。 */
 const CurrentCapabilitySchema = z.object({
   /** 能力标量（换算阶梯的 VDOT 直读，距离无关）。 */
   vdot: z.number().nullable(),
   /** 同一 VDOT 四换算（秒）；短距离源对比源更长的距离已含 ×1.03 保守折扣。 */
   equivalents: EquivalentsSchema.nullable(),
-  source: z.enum(["recent_race_hm_fm", "recent_race_short", "calibration", "none"]),
-  /** 换算源日期（比赛日 / 校准 as_of）。 */
+  source: z.enum(["recent_race_hm_fm", "recent_race_short", "calibration", "training_inference", "none"]),
+  /** 换算源日期（比赛日 / 校准 as_of / 推断源课日期）。 */
   source_date: day.nullable(),
-  /** hm_fm=high；短距离折扣=medium；校准=medium；none=low。 */
+  /** hm_fm 且新鲜=high；短距离折扣/校准/推断/陈旧比赛=medium；none=low。 */
   confidence: z.enum(["high", "medium", "low"]),
   pace_zones: PaceZonesSchema.nullable(),
 });
@@ -111,6 +111,8 @@ export interface PhasingActivityInput {
   sportName?: string | null;
   distanceM: number | null;
   strideSessionClass: string | null;
+  /** 整课时长（s，#837 训练进步推断用；缺省时该课不参与推断）。 */
+  durationS?: number | null;
 }
 
 const RACE_DISTANCE_KM = 42.195;
@@ -177,6 +179,16 @@ const DISTANCE_BUCKETS: ReadonlyArray<{ key: RaceDistanceKey; minKm: number; max
 const SHORT_SOURCE_DISCOUNT = 1.03;
 /** 近期比赛窗口（天）：12 个月。 */
 const RACE_WINDOW_DAYS = 365;
+/** 比赛锚新鲜度窗口（天，#837）：8 周内=新鲜（hm_fm 保持 high）；超窗=陈旧（降 medium，并与校准融合）。 */
+const RACE_STALENESS_DAYS = 56;
+/** 陈旧比赛锚保守折扣（#837）：旧成绩不再完全代表当前（训练漂移），×0.98 后与校准取大——比赛陈旧而训练数据新鲜时，保守方向从「压低」翻转为「采信校准」。 */
+const RACE_STALENESS_FACTOR = 0.98;
+/** 训练进步推断窗（天，#837）：近 8 周质量课。 */
+const INFERENCE_WINDOW_DAYS = 56;
+/** 推断最少质量课次数（#837）：≥3 次且配速在改善。 */
+const INFERENCE_MIN_SESSIONS = 3;
+/** 推断课最小里程（km）：短课配速噪声大（strides/短间歇混入 quality 档）。 */
+const INFERENCE_MIN_KM = 5;
 /** VDOT 合理区间（丹尼尔斯表覆盖 30-85，两端留余量）：区间外视为脏数据行（如 duration_min 单位错误），跳过而非炸毁整份 evidence。 */
 const VDOT_PLAUSIBLE_MIN = 10;
 const VDOT_PLAUSIBLE_MAX = 90;
@@ -242,15 +254,52 @@ function calibrationPaceZones(snapshot: ContextSnapshot): z.infer<typeof PaceZon
 }
 
 /**
- * VDOT 取锚阶梯 + improvement 推导（devops#789）：
- * 1. 近 12 个月 HM+ 全力最佳 → recent_race_hm_fm（high）
+ * 训练进步推断（#837 第 4 档锚）：近 8 周 ≥3 次质量课（quality/long_quality）
+ * 且后半窗最快反推 VDOT 高于前半窗（配速在改善）时，取后半窗最快一节整课
+ * （里程×时长）反推 VDOT。整课反推是能力下界——非全力完成即证明至少该水平，
+ * 采信不冒进。仅当比赛锚与校准档都不可用时入选（长尾兜底）。工作段配速
+ * （laps）不在证据层输入域，用整课口径近似。
+ */
+function deriveTrainingInference(activities: PhasingActivityInput[], asOfMs: number): { vdot: number; date: string } | null {
+  const sessions = activities
+    .filter(isRun)
+    .filter((a) => isQ(normalizeSessionClass(a.strideSessionClass)))
+    .map((a) => {
+      const date = dayOf(a.date);
+      const daysAgo = Math.round((asOfMs - new Date(date).getTime()) / 86400_000);
+      const vdot = a.distanceM != null && a.durationS != null && a.durationS > 0 ? vdotFromRace(a.distanceM, a.durationS) : Number.NaN;
+      return { date, daysAgo, km: (a.distanceM ?? 0) / 1000, vdot };
+    })
+    .filter((s) => s.daysAgo >= 0 && s.daysAgo <= INFERENCE_WINDOW_DAYS && s.km >= INFERENCE_MIN_KM && isPlausibleVdot(s.vdot))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (sessions.length < INFERENCE_MIN_SESSIONS) return null;
+  // 「持续改善」=后半窗反推 VDOT 中位 > 前半窗中位（中位抗单课噪声——质量课
+  // 混有恢复性慢课与脏行，单课极值会误判趋势）；锚取后半窗最快反推（近端能力）
+  const half = Math.max(1, Math.floor(sessions.length / 2));
+  const medianVdot = (xs: Array<{ vdot: number }>) => {
+    const sorted = xs.map((s) => s.vdot).sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+  };
+  if (medianVdot(sessions.slice(half)) <= medianVdot(sessions.slice(0, half))) return null;
+  const late = sessions.slice(half).reduce((best, s) => (s.vdot > best.vdot ? s : best));
+  return { vdot: late.vdot, date: late.date };
+}
+
+/**
+ * VDOT 取锚阶梯 + improvement 推导（devops#789，#837 补新鲜度与融合）：
+ * 1. 近 12 个月 HM+ 全力最佳 → recent_race_hm_fm（8 周内 high / 超窗降 medium）
  * 2. 无则 10K/5K 最佳 → recent_race_short（medium；更长距离等效 ×1.03）
  * 3. 无比赛 → 校准阈值配速（60 分钟可持续速度）→ calibration（medium）
- * 4. improvement_pct 的锚 = 主锚与校准档同时可得时的保守者（VDOT 低者）
- *    ——比赛代表最高已证实水平、校准代表日常状态。
+ * 4. 均不可用 → 训练进步推断（近 8 周质量课反推，#837）→ training_inference（medium）
+ * 5. 融合（#837）：比赛锚距 as_of 超 8 周且校准可用时，锚取 max(校准, 比赛×0.98)
+ *    ——比赛陈旧而训练数据新鲜时保守方向翻转（进步被低估是缺陷）；新鲜比赛
+ *    仍完全采信。improvement_pct 的锚：新鲜比赛与校准同在取保守者（VDOT 低者），
+ *    陈旧比赛与校准同在与 current_capability 同源（max 融合）。
  */
 function deriveCapability(
   snapshot: ContextSnapshot,
+  activities: PhasingActivityInput[],
   asOfDay: string,
   targetSec: number,
   goalDistance: RaceDistanceKey,
@@ -261,31 +310,56 @@ function deriveCapability(
   const calibUsable = isPlausibleVdot(calibVdot);
 
   const race = deriveRaceAnchor(snapshot, new Date(asOfDay).getTime(), thresholdPaceSecPerKm);
+  const raceStale = race != null && Math.round((new Date(asOfDay).getTime() - new Date(race.date).getTime()) / 86400_000) > RACE_STALENESS_DAYS;
 
+  // 取锚（#837）：新鲜比赛直采（hm_fm=high）；陈旧比赛与校准融合 max(校准, 比赛×0.98)
+  // ——胜者定 source（校准胜=calibration，比赛胜=比赛档），置信同降 medium。
+  const raceVdotDiscounted = race != null ? race.vdot * RACE_STALENESS_FACTOR : null;
   const anchor: {
     vdot: number;
-    source: "recent_race_hm_fm" | "recent_race_short" | "calibration";
+    source: "recent_race_hm_fm" | "recent_race_short" | "calibration" | "training_inference";
     source_date: string | null;
     confidence: "high" | "medium";
-  } | null =
-    race != null
-      ? {
-          vdot: race.vdot,
-          source: race.source,
-          source_date: race.date,
-          confidence: race.source === "recent_race_hm_fm" ? "high" : "medium",
-        }
-      : calibUsable
-        ? { vdot: calibVdot, source: "calibration", source_date: calib?.as_of_date ?? null, confidence: "medium" }
-        : null;
+  } | null = (() => {
+    if (race != null && !raceStale) {
+      return {
+        vdot: race.vdot,
+        source: race.source,
+        source_date: race.date,
+        confidence: race.source === "recent_race_hm_fm" ? "high" : "medium",
+      };
+    }
+    if (race != null && calibUsable) {
+      const raceWins = raceVdotDiscounted! > calibVdot;
+      return raceWins
+        ? { vdot: raceVdotDiscounted!, source: race.source, source_date: race.date, confidence: "medium" }
+        : { vdot: calibVdot, source: "calibration", source_date: calib?.as_of_date ?? null, confidence: "medium" };
+    }
+    if (race != null) return { vdot: race.vdot, source: race.source, source_date: race.date, confidence: "medium" };
+    if (calibUsable) return { vdot: calibVdot, source: "calibration", source_date: calib?.as_of_date ?? null, confidence: "medium" };
+    const inference = deriveTrainingInference(activities, new Date(asOfDay).getTime());
+    return inference != null ? { vdot: inference.vdot, source: "training_inference", source_date: inference.date, confidence: "medium" } : null;
+  })();
 
-  const shortDiscount = race?.source === "recent_race_short" ? { sourceKey: race.key, discountLonger: SHORT_SOURCE_DISCOUNT } : {};
+  // 短距离折扣跟随胜出的锚（融合后校准胜出时等效表不打折扣——折扣语义是
+  // 「短距离源对更长距离的高估」，锚不再是短距离源就不适用）
+  const shortDiscount = anchor?.source === "recent_race_short" ? { sourceKey: race!.key, discountLonger: SHORT_SOURCE_DISCOUNT } : {};
   const capabilityDiscounted = shortDiscount.discountLonger !== undefined;
   const equivalents = anchor != null ? equivalentsFromVdot(anchor.vdot, shortDiscount) : null;
 
-  // improvement 锚（规则 4）：主锚与校准档取保守；短距离折扣只在短距离主锚胜出时生效
-  const effectiveVdot = race != null && calibUsable ? Math.min(race.vdot, calibVdot) : (race?.vdot ?? (calibUsable ? calibVdot : Number.NaN));
-  const effectiveUsesDiscount = race?.source === "recent_race_short" && (!calibUsable || race.vdot <= calibVdot);
+  // improvement 锚（规则 4+#837）：新鲜比赛与校准同在取保守者（min）；陈旧比赛
+  // 与校准同在与 current_capability 同源（max 融合，锚即 effectiveVdot）；短距离
+  // 折扣只在比赛档为 effective 锚时生效
+  const effectiveVdot = (() => {
+    if (race != null && calibUsable) return raceStale ? Math.max(calibVdot, raceVdotDiscounted!) : Math.min(race.vdot, calibVdot);
+    if (race != null) return race.vdot;
+    if (calibUsable) return calibVdot;
+    return anchor?.vdot ?? Number.NaN;
+  })();
+  // effective 锚是否为短距离比赛值：新鲜=赛值是保守者（≤校准）；陈旧=打折赛值
+  // 胜出融合（>校准）；无校准=赛值本身就是 effective 锚
+  const effectiveUsesDiscount =
+    race?.source === "recent_race_short" && (!calibUsable || (raceStale ? raceVdotDiscounted! > calibVdot : race.vdot <= calibVdot));
   const improvementPct = (() => {
     if (!Number.isFinite(effectiveVdot) || targetSec <= 0) return null;
     // 主路径（无校准，或比赛锚即保守者且折扣一致）下 improvement 锚与 current_capability 等效表同源，直接复用
@@ -358,7 +432,7 @@ export function buildPhaseEvidence(snapshot: ContextSnapshot, activities: Phasin
   for (const pb of snapshot.personal_bests) pbs[pb.distance] = `${Math.floor(pb.time_sec / 60)}:${String(Math.round(pb.time_sec % 60)).padStart(2, "0")}`;
   const targetSec = parseHms(goal.targetTime);
   const goalPaceSPerKm = targetSec / RACE_DISTANCE_KM;
-  const capability = deriveCapability(snapshot, asOfDay, targetSec, goal.distance);
+  const capability = deriveCapability(snapshot, activities, asOfDay, targetSec, goal.distance);
   const fmPb = snapshot.personal_bests.find((pb) => pb.distance === "FM") ?? null;
   const habitual: HabitualBaseline = habitualBaseline(buildWeeklySeries(activities, asOfDay));
 
