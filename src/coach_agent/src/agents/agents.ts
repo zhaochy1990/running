@@ -1,6 +1,7 @@
 import type { BaseMessage } from "@langchain/core/messages";
 import type { GraphNode } from "@langchain/langgraph";
 import { buildChatModel } from "@stride/common";
+import { easyMidOfPaceZones } from "@stride/contract";
 import { type CoachAgentConfig, getAgentConfig } from "../config/config.js";
 import type { DataProvider } from "../data/dataProvider.js";
 import type { ActivityFeelWriter } from "../tools/feel.js";
@@ -74,12 +75,18 @@ export function getAgentNode(
   if (agentName === "custom_workout") {
     const agentConfig = getAgentConfig(config, "custom_workout");
     const workoutAgent = getCustomWorkoutAgent(dataProvider, agentConfig);
-    // dose 确定性计算的校准读取与工具同源（dataProvider，读不到→卡片 dose=null）。
+    // dose 确定性计算的校准读取与工具同源（dataProvider，读不到→卡片 dose=null）；
+    // easyPaceMidSPerKm 供契约⑨估距（devops#838）。
     const resolveCalibration: CalibrationResolver = async (userId, asof) => {
       const calibration = await dataProvider.getLatestRunningCalibration(userId, asof);
       return calibration === null
         ? null
-        : { thresholdSpeedMps: calibration.thresholdSpeedMps, thresholdHr: calibration.thresholdHr, rhrBaseline: calibration.rhrBaseline };
+        : {
+            thresholdSpeedMps: calibration.thresholdSpeedMps,
+            thresholdHr: calibration.thresholdHr,
+            rhrBaseline: calibration.rhrBaseline,
+            easyPaceMidSPerKm: easyMidOfPaceZones(calibration.paceZones),
+          };
     };
     // reissue 注入（devops#697）：asof±14d 已存 custom 课（date/name/summary/save_token）。
     const listCustomSessions: ListCustomSessionsResolver = async (userId, dateFrom, dateTo) => {

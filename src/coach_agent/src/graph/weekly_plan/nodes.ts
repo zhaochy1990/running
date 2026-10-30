@@ -14,6 +14,8 @@ import {
   WeeklyPlanSchema,
   type WeeklyPlanSimulationReport,
   WeeklyPlanSimulationReportSchema,
+  easyMidOfPaceZones,
+  estimatedTotalDistanceM,
 } from "@stride/contract";
 import { z } from "zod/v4";
 import type { CoachAgentConfig } from "../../config/config.js";
@@ -43,15 +45,23 @@ export function loadWithinTolerance(
   return simulation.total_dose >= low * (1 - tolerance) && simulation.total_dose <= high * (1 + tolerance);
 }
 
-/** Copy deterministic per-session doses from the simulation report into the plan. */
-export function mergeSimulationIntoPlan(plan: WeeklyPlan, simulation: WeeklyPlanSimulationReport): WeeklyPlan {
+/**
+ * Copy deterministic per-session doses from the simulation report into the plan,
+ * and back-fill display distance estimates for time-based run sessions（#838）：
+ * total_distance_m 为 null 且结构在场时按契约⑨折算（无校准由估距函数兜底
+ * 330s/km）；已有距离不覆盖，估算不进任何校验门。
+ */
+export function mergeSimulationIntoPlan(plan: WeeklyPlan, simulation: WeeklyPlanSimulationReport, estimatePaceSPerKm: number | null): WeeklyPlan {
   const doses = new Map(simulation.sessions.map((session) => [`${session.date}:${session.session_index}`, session.estimated_dose]));
   return {
     ...plan,
-    sessions: plan.sessions.map((session) => ({
-      ...session,
-      estimated_dose: doses.get(`${session.date}:${session.session_index}`) ?? null,
-    })),
+    sessions: plan.sessions.map((session) => {
+      const estimated_dose = doses.get(`${session.date}:${session.session_index}`) ?? null;
+      if (session.kind !== "run" || session.spec === null || session.total_distance_m !== null) {
+        return { ...session, estimated_dose };
+      }
+      return { ...session, estimated_dose, total_distance_m: estimatedTotalDistanceM(session.spec, estimatePaceSPerKm) };
+    }),
   };
 }
 
@@ -382,7 +392,8 @@ export class WeeklyPlanGeneratorNodes {
     );
     return {
       simulation,
-      weekly_plan: mergeSimulationIntoPlan(weeklyPlan, simulation),
+      // 估距配速（#838）：easy 带中点，缺失由 estimatedTotalDistanceM 兜底 330s/km（仅显示口径）。
+      weekly_plan: mergeSimulationIntoPlan(weeklyPlan, simulation, easyMidOfPaceZones(weeklyContext.user_profile.pace_zones)),
     };
   };
 

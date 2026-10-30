@@ -27,7 +27,7 @@ Python `src/stride_core/`（`plan_spec.py` / `workout_spec.py` 等）**冻结只
 
 ## `PlannedSession`
 
-必需字段 `date` (ISO YYYY-MM-DD)、`session_index` (int ≥0；同一天多 session 时区分)、`kind`、`summary`、可选 `spec` / `notes_md` / `total_distance_m` / `total_duration_s`。
+必需字段 `date` (ISO YYYY-MM-DD)、`session_index` (int ≥0；同一天多 session 时区分)、`kind`、`summary`、可选 `spec` / `notes_md` / `total_distance_m` / `total_duration_s`。`total_distance_m` 语义（devops#838）：距离制课=处方距离；时间制 run 课=生成侧按契约⑨折算的**估算派生值**（easy 带中点，无校准 330s/km 兜底；strength/rest/cross/note 恒 null）——时间制 run 课端上不再显示 "—" 空距离。
 
 | 枚举 | 合法值 |
 |------|--------|

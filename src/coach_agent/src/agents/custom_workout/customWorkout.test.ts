@@ -67,7 +67,7 @@ test("node renders the card message with deterministic scalars (save_token/total
     },
     resolveCalibration: async (userId, asof) => {
       seen.push({ userId, asof });
-      return { thresholdSpeedMps: 3.5, thresholdHr: 170, rhrBaseline: 55 };
+      return { thresholdSpeedMps: 3.5, thresholdHr: 170, rhrBaseline: 55, easyPaceMidSPerKm: 400 };
     },
   });
   const config = { context: { userId: "u-1", asof: "2026-10-19" } };
@@ -100,6 +100,63 @@ test("node keeps estimated_dose null when calibration is missing (un-calibrated 
   assert.equal(card.data.estimated_dose, null);
   // totals 与 dose 无关，照常补齐。
   assert.equal(card.data.total_distance_m, 14400);
+});
+
+const timeBasedSpec = {
+  schema: "run-workout/v1" as const,
+  name: "60分钟慢跑",
+  date: "2026-10-30",
+  note: null,
+  blocks: [
+    {
+      repeat: 1,
+      steps: [
+        {
+          step_kind: "work" as const,
+          duration: { kind: "time_s" as const, value: 3600 },
+          target: { kind: "open" as const, low: null, high: null },
+          note: null,
+          hr_cap_bpm: null,
+        },
+      ],
+    },
+  ],
+};
+const timeBasedEnvelope = {
+  disposition: "return_direct" as const,
+  content: { date: timeBasedSpec.date, name: timeBasedSpec.name, summary: "60分钟慢跑", spec: timeBasedSpec },
+};
+
+test("time-based workout card estimates distance from the easy band mid（devops#838）", async () => {
+  const node = makeCustomWorkoutNode({
+    agent: {
+      async invoke() {
+        return { messages: [], structuredResponse: timeBasedEnvelope };
+      },
+    },
+    resolveCalibration: async () => ({ thresholdSpeedMps: null, thresholdHr: null, rhrBaseline: null, easyPaceMidSPerKm: 400 }),
+  });
+  const update = (await node({ intent: { intent: "custom_workout" }, messages: [] } as never, { context: { userId: "u-1", asof: "2026-10-30" } })) as {
+    messages: AIMessage[];
+  };
+  const card = update.messages[0]?.additional_kwargs?.card as { data: CustomWorkoutCard };
+  // 3600s ÷ 400s/km = 9km；dose 无阈值速度仍为 null（估距不进剂量）。
+  assert.equal(card.data.total_distance_m, 9000);
+  assert.equal(card.data.total_duration_s, 3600);
+  assert.equal(card.data.estimated_dose, null);
+});
+
+test("time-based workout card falls back to 330s/km without calibration（devops#838）", async () => {
+  const node = makeCustomWorkoutNode({
+    agent: {
+      async invoke() {
+        return { messages: [], structuredResponse: timeBasedEnvelope };
+      },
+    },
+  });
+  const update = (await node({ intent: { intent: "custom_workout" }, messages: [] } as never, {})) as { messages: AIMessage[] };
+  const card = update.messages[0]?.additional_kwargs?.card as { data: CustomWorkoutCard };
+  assert.equal(card.data.total_distance_m, (3600 / 330) * 1000);
 });
 
 test("node falls back to a plain business node when no structured envelope is produced", async () => {
