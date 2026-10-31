@@ -151,8 +151,11 @@ function redirectToLogin(): void {
     const target = `/${current.route}${query ? `?${query}` : ''}`;
     url += `?redirect=${encodeURIComponent(target)}`;
   }
-  wx.reLaunch({
+  // navigateTo 保留返回栈：返回键/登录页「暂不登录」都能离开登录流程（审核合规，
+  // 不把用户困在登录页）；跳过后由各 tab 页游客态接管。栈满等 fail 兜底 reLaunch。
+  wx.navigateTo({
     url,
+    fail: () => wx.reLaunch({ url }),
     complete: () => {
       redirectingToLogin = false;
     },

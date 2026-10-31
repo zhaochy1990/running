@@ -15,6 +15,7 @@ import type {
   SeasonPlanContent,
 } from '../../services/master-plan';
 import { userStore } from '../../store/index';
+import { currentRouteForRedirect, openLogin } from '../../utils/authGate';
 import { epochToShanghaiYmd, shanghaiToday, shanghaiYmdToEpoch } from '../../utils/date';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
@@ -721,7 +722,8 @@ Page<TrainingPlanPageData, TrainingPlanPageHandlers>({
     userStore.waitForAuth().then(() => {
       const { isAuthenticated, user } = userStore.getState();
       if (!isAuthenticated || !user) {
-        wx.reLaunch({ url: '/pages/login/login' });
+        // 游客/会话失效兜底：可返回的登录引导（登录页可跳过，审核合规）。
+        openLogin(currentRouteForRedirect());
         return;
       }
       void this.loadPlan();

@@ -4,6 +4,7 @@
 // 取当日行；weekly 源回联周计划补教练备注（与今日卡片同一口径）。
 import { estimateWorkoutSeconds, getPlanSessions, getWeeklyPlan } from '../../services/plan';
 import { userStore } from '../../store/index';
+import { currentRouteForRedirect, openLogin } from '../../utils/authGate';
 import { shanghaiWeekStart, shanghaiWeekdayLabel, weekFolderName } from '../../utils/date';
 import { fmtDose, fmtDurationShort, fmtKm } from '../../utils/format';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
@@ -216,7 +217,8 @@ Page<WorkoutDetailPageData, WorkoutDetailPageHandlers>({
     userStore.waitForAuth().then(() => {
       const { user, isAuthenticated } = userStore.getState();
       if (!isAuthenticated || !user) {
-        wx.reLaunch({ url: '/pages/login/login' });
+        // 游客/会话失效兜底：可返回的登录引导（登录页可跳过，审核合规）。
+        openLogin(currentRouteForRedirect());
         return;
       }
       userId = user.id;

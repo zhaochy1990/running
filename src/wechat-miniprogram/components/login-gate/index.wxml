@@ -1,0 +1,8 @@
+<!-- 游客态空态块：登录后才能看的内容在未登录时统一显示这块，
+     用户可浏览页面结构、按需登录，不强制跳转（微信审核合规） -->
+<view class="gate">
+  <image class="gate__icon" src="{{icon}}" mode="aspectFit" />
+  <view class="gate__title">{{title}}</view>
+  <view wx:if="{{subtitle}}" class="gate__subtitle">{{subtitle}}</view>
+  <view class="gate__btn" bindtap="onTap">去登录</view>
+</view>

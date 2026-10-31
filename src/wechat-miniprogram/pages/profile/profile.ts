@@ -1,4 +1,5 @@
 import { userStore } from '../../store/index';
+import { openLogin } from '../../utils/authGate';
 import { triggerSync, pollPipeline } from '../../services/sync';
 import { getWatchInfo } from '../../services/watch';
 import { listFeedbacks } from '../../services/feedback';
@@ -17,6 +18,8 @@ interface MenuRow {
 interface ProfilePageData {
   statusBarHeight: number;
   contentPaddingTop: number;
+  /** 游客态（未登录）：资料卡显示登录引导，菜单操作引导登录而非强跳 */
+  guest: boolean;
   user: UserProfile | null;
   name: string;
   email: string;
@@ -97,6 +100,7 @@ Page<ProfilePageData, ProfilePageHandlers>({
   data: {
     statusBarHeight: 0,
     contentPaddingTop: 232,
+    guest: false,
     user: null,
     name: '跑步爱好者',
     email: '',
@@ -115,9 +119,12 @@ Page<ProfilePageData, ProfilePageHandlers>({
 
     const state = userStore.getState();
     const user = state.user;
+    // 游客态（未登录）：保留页面结构与菜单可浏览，操作时再引导登录（微信审核合规）。
+    // 登录成功 switchTab 回来时这里会自动切回已登录展示。
     this.setData({
+      guest: !state.isAuthenticated,
       user,
-      name: user?.name || '跑步爱好者',
+      name: user?.name || (state.isAuthenticated ? '跑步爱好者' : '未登录'),
       email: user?.email || '',
       avatarUrl: user?.avatar_url || '',
     });
@@ -173,6 +180,11 @@ Page<ProfilePageData, ProfilePageHandlers>({
   },
 
   onRowTap(e: WechatMiniprogram.TouchEvent) {
+    // 游客态：菜单功能均需登录，引导去登录页（可返回/可跳过，不强制）。
+    if (this.data.guest) {
+      openLogin('/pages/profile/profile');
+      return;
+    }
     const key = e.currentTarget.dataset.key as string;
     if (key === 'plan') {
       wx.navigateTo({ url: '/pages/training-plan/training-plan' });
@@ -198,6 +210,11 @@ Page<ProfilePageData, ProfilePageHandlers>({
   },
 
   onOpenProfileEdit() {
+    // 游客态：资料卡即登录入口。
+    if (this.data.guest) {
+      openLogin('/pages/profile/profile');
+      return;
+    }
     wx.navigateTo({ url: '/pages/profile-edit/profile-edit' });
   },
 
@@ -206,8 +223,8 @@ Page<ProfilePageData, ProfilePageHandlers>({
 
     const state = userStore.getState();
     const userId = state.user?.id;
-    if (!userId) {
-      wx.showToast({ title: '请先登录', icon: 'none' });
+    if (!userId || this.data.guest) {
+      openLogin('/pages/profile/profile');
       return;
     }
 

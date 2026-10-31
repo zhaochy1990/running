@@ -194,7 +194,8 @@ Page<ProfileEditPageData, ProfileEditPageHandlers>({
       success: (res) => {
         if (res.confirm) {
           userStore.clear();
-          wx.reLaunch({ url: '/pages/login/login' });
+          // 退出后回教练首页游客态继续浏览；再登录走「我的」页登录入口（审核合规）。
+          wx.switchTab({ url: '/pages/coach/coach' });
         }
       },
     });

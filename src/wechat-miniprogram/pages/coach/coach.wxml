@@ -25,7 +25,22 @@
         <text class="coach-context-hint__close-icon">×</text>
       </view>
     </view>
-    <scroll-view class="coach-list" scroll-y scroll-with-animation scroll-into-view="{{scrollIntoId}}">
+    <!-- 游客态欢迎页（未登录不强制，可浏览后再登录） -->
+    <scroll-view wx:if="{{guest}}" class="coach-list" scroll-y>
+      <view class="coach-guest">
+        <image class="coach-guest__icon" src="/assets/icons/sprint.svg" mode="aspectFit" />
+        <view class="coach-guest__title">你的 AI 跑步教练</view>
+        <view class="coach-guest__desc">登录后即可与教练对话，获得贯穿周期的训练指导</view>
+        <view class="coach-guest__features">
+          <view class="coach-guest__feature">制定周期化训练计划并跟进调整</view>
+          <view class="coach-guest__feature">赛前策略、配速与补给建议</view>
+          <view class="coach-guest__feature">训练数据复盘与身体状态解读</view>
+        </view>
+        <view class="coach-guest__btn" bindtap="onGuestLoginTap">去登录</view>
+        <view class="coach-guest__hint">也可以先看看「训练」「记录」和「赛事中心」</view>
+      </view>
+    </scroll-view>
+    <scroll-view wx:else class="coach-list" scroll-y scroll-with-animation scroll-into-view="{{scrollIntoId}}">
       <view
         wx:for="{{messages}}"
         wx:key="id"
@@ -138,6 +153,11 @@
         open-type="share"
         disabled="{{selectCount === 0}}"
       >转发{{selectCount > 0 ? ' ' + selectCount : ''}}</button>
+    </view>
+    <!-- 游客态：输入栏换成登录引导条（点击进登录页，可跳过） -->
+    <view wx:elif="{{guest}}" class="coach-input" bindtap="onGuestLoginTap">
+      <view class="coach-input__field coach-input__field--ghost">登录后可与教练对话</view>
+      <view class="coach-input__send">登录</view>
     </view>
     <!-- textarea + auto-height：长文本自动换行完整展示；回车=换行，发送只走右侧按钮 -->
     <view wx:else class="coach-input">

@@ -18,6 +18,7 @@ import {
 import type { CustomWorkoutCard, PlanSessionRow, WorkoutOpCard } from '../../types/plan';
 import { setPendingStrategyDraft, type RaceStrategy } from '../../services/race-strategy';
 import { userStore } from '../../store/index';
+import { openLogin } from '../../utils/authGate';
 import { buildCoachCard, looksLikeJsonText, parseLeakedRaceStrategyEnvelope, shanghaiMonthDayLabel, type CoachCardView } from '../../utils/coachCards';
 import { markdownToHtml } from '../../utils/markdown';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
@@ -203,6 +204,8 @@ function drawShareCover(
 interface CoachPageData {
   statusBarHeight: number;
   contentPaddingTop: number;
+  /** 游客态（未登录）：欢迎页替代消息流，输入栏换登录引导 */
+  guest: boolean;
   messages: CoachMessage[];
   input: string;
   sending: boolean;
@@ -260,6 +263,7 @@ interface CoachPageHandlers {
   /** 卡片次级 CTA（custom-workout 推送到手表）。 */
   onCardSecondary(e: WechatMiniprogram.TouchEvent): void;
   onMenuTap(): void;
+  onGuestLoginTap(): void;
   onCloseDrawer(): void;
   onSearchTap(): void;
   onClearContext(): void;
@@ -468,6 +472,8 @@ Page<CoachPageData, CoachPageHandlers>({
     keyboardHeight: 0,
     keyboardPaddedStyle: '',
     drawerOpen: false,
+    // 游客态(未登录):欢迎页替代消息流,输入栏换登录引导(微信审核:不强制登录)
+    guest: false,
     sessions: [],
     currentSessionId: DEFAULT_SESSION_ID,
     contextHint: '',
@@ -517,8 +523,9 @@ Page<CoachPageData, CoachPageHandlers>({
     userStore.waitForAuth().then(() => {
       const { isAuthenticated } = userStore.getState();
       if (!isAuthenticated) {
-        // 会话失效/未绑定：正常情况下 checkAuth 会发起 reLaunch 到登录页，这里兜底。
-        wx.reLaunch({ url: '/pages/login/login' });
+        // 未绑定/会话失效：游客态展示欢迎页，不强制登录（微信审核合规）；
+        // 登录成功 switchTab 回来时由 onShow 恢复加载。
+        this.setData({ guest: true });
         return;
       }
       void this.loadSessions();
@@ -568,6 +575,12 @@ Page<CoachPageData, CoachPageHandlers>({
     const tabBar = this.getTabBar && this.getTabBar();
     if (tabBar) {
       tabBar.setData({ selected: 0 });
+    }
+    // 游客态期间用户去登录页完成登录，switchTab 回来：退出游客态并补拉会话/消息。
+    if (this.data.guest && userStore.getState().isAuthenticated) {
+      this.setData({ guest: false });
+      void this.loadSessions();
+      void this.loadSession(this.data.currentSessionId);
     }
     // 首页「和教练聊一聊」移交的上下文：新建会话并锚定 target。
     const pending = takePendingCoachContext();
@@ -1236,6 +1249,11 @@ Page<CoachPageData, CoachPageHandlers>({
   },
 
   async onSend() {
+    // 游客态兜底（输入栏已换成登录引导，正常不可达）
+    if (this.data.guest) {
+      openLogin();
+      return;
+    }
     const text = this.data.input.trim();
     if (!text || this.data.sending) return;
     await this.sendText(text);
@@ -1562,7 +1580,16 @@ Page<CoachPageData, CoachPageHandlers>({
     });
   },
 
+  onGuestLoginTap() {
+    openLogin();
+  },
+
   onMenuTap() {
+    // 游客态：历史会话需登录，引导去登录页（可返回/可跳过，不强制）。
+    if (this.data.guest) {
+      openLogin();
+      return;
+    }
     // 与会话抽屉互斥（#623 决议）：进抽屉先退出选择模式。
     if (this.data.selectMode) {
       this.exitSelectMode();

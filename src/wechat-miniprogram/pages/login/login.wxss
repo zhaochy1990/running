@@ -332,3 +332,12 @@
   font-size: 22rpx;
   line-height: 36rpx;
 }
+
+/* 暂不登录（游客模式出口）：弱化为文字链，不与主 CTA 抢视觉 */
+.login-skip {
+  margin-top: 48rpx;
+  padding: 20rpx 0 60rpx;
+  text-align: center;
+  font-size: 28rpx;
+  color: var(--color-text-secondary);
+}

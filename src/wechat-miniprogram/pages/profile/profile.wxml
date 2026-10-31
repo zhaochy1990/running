@@ -24,7 +24,7 @@
       <view class="profile-info">
         <view class="profile-info__name">{{name}}</view>
         <view wx:if="{{email}}" class="profile-info__email">{{email}}</view>
-        <view class="profile-info__tag">STRIDE 会员</view>
+        <view class="profile-info__tag">{{guest ? '未登录 · 点击登录' : 'STRIDE 会员'}}</view>
       </view>
       <image class="profile-chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
     </view>

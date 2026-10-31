@@ -41,6 +41,7 @@ import { toUChartsTouchEvent } from '../../utils/ucharts';
 import { getHealth, getHrv, getStrideTrainingLoad, getStrideZones } from '../../services/health';
 import { getActivities } from '../../services/activities';
 import { userStore } from '../../store/index';
+import { currentRouteForRedirect, openLogin } from '../../utils/authGate';
 import type {
   HealthResponse,
   HrvResponse,
@@ -537,7 +538,8 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
     userStore.waitForAuth().then(() => {
       const { user, isAuthenticated } = userStore.getState();
       if (!isAuthenticated || !user) {
-        wx.reLaunch({ url: '/pages/login/login' });
+        // 游客/会话失效兜底：可返回的登录引导（登录页可跳过，审核合规）。
+        openLogin(currentRouteForRedirect());
         return;
       }
       userId = user.id;

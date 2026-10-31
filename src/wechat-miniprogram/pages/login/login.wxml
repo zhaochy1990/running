@@ -151,4 +151,8 @@
       <text class="login-terms-link" catchtap="onPrivacyTap">《隐私政策》</text>
     </view>
   </view>
+
+  <!-- 暂不登录：游客模式出口（微信审核要求登录可拒绝、可返回）。
+       switchTab 回教练首页游客态；导航栏返回键同样可离开本页 -->
+  <view class="login-skip" bindtap="onSkipTap">暂不登录，先随便看看</view>
 </view>

@@ -74,7 +74,7 @@ App<IAppOption>({
    *    - 网络等非认证错误 → 保留本地会话，交给数据页处理，不误登出
    * 2. 无 token → 用 wx.login() 的 code 换 JWT
    *    - 已绑定账号 → 存 token，进入首页
-   *    - 未绑定 → 跳转到登录页（邮箱登录即绑定已有 STRIDE 账号）
+   *    - 未绑定 → 游客态放行：留在启动页浏览，需要账号的操作由页面引导登录
    */
   async checkAuth(): Promise<void> {
     const hadToken = hasValidToken();
@@ -100,18 +100,14 @@ App<IAppOption>({
         return;
       }
 
-      // 无本地 token → 免密登录换 JWT
-      // 未绑定 → 跳登录页（邮箱登录即绑定已有 STRIDE 账号）；公开落地页例外：留在落地页继续浏览
+      // 无本地 token → 免密登录换 JWT；未绑定（新用户）→ 游客态放行（微信审核合规：
+      // 不得强制登录，先让用户浏览功能，触发需要账号的操作时再由页面引导去登录页）。
+      // 各数据页的 waitForAuth 兜底会同判 isAuthenticated=false 走各自的游客空态。
       if (await silentLogin()) {
         if (publicEntry) return;
         await routeToOnboardingIfProfileMissing();
-      } else if (publicEntry) {
-        console.log('[auth] 公开落地页免密未成（未绑定 / 网络）→ 留在落地页继续浏览');
       } else {
-        console.log('[auth] 免密登录没成功（未绑定 / 网络）→ 去登录页');
-        wx.reLaunch({
-          url: '/pages/login/login',
-        });
+        console.log('[auth] 免密登录没成功（未绑定 / 网络）→ 游客态继续浏览');
       }
     } catch (err) {
       const authFailure =

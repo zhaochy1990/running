@@ -2,6 +2,7 @@ import { getActivities } from '../../services/activities';
 import { fmtDurationShort, fmtKm, fmtPace, fmtDose } from '../../utils/format';
 import { shanghaiToday, shanghaiWeekdayLabel } from '../../utils/date';
 import { userStore } from '../../store/index';
+import { openLogin } from '../../utils/authGate';
 import type { Activity, ActivitiesListResponse } from '../../types/activity';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
@@ -40,6 +41,8 @@ interface Summary {
 interface ActivitiesPageData {
   statusBarHeight: number;
   contentPaddingTop: number;
+  /** 游客态（未登录）：登录引导空态替代数据列表 */
+  guest: boolean;
   loading: boolean;
   /** 本月（上海）YYYY-MM，默认展开该月份 */
   currentMonth: string;
@@ -64,6 +67,7 @@ interface ActivitiesPageHandlers {
   onActivityTap(e: WechatMiniprogram.TouchEvent): void;
   onMonthHeaderTap(e: WechatMiniprogram.TouchEvent): void;
   onLoadMore(): void;
+  onGateLoginTap(): void;
   onPullDownRefresh(): void;
 }
 
@@ -263,6 +267,8 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
   data: {
     statusBarHeight: 0,
     contentPaddingTop: 232,
+    // 游客态（未登录）：登录引导空态替代数据列表
+    guest: false,
     loading: true,
     currentMonth: '',
     monthGroups: [],
@@ -286,7 +292,8 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
     userStore.waitForAuth().then(() => {
       const { user, isAuthenticated } = userStore.getState();
       if (!isAuthenticated || !user) {
-        wx.reLaunch({ url: '/pages/login/login' });
+        // 游客态：展示登录引导空态，不强制跳登录页（微信审核合规）。
+        this.setData({ guest: true });
         return;
       }
       userId = user.id;
@@ -298,6 +305,13 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
     const tabBar = this.getTabBar && this.getTabBar();
     if (tabBar) {
       tabBar.setData({ selected: 1 });
+    }
+    // 游客态期间完成登录，switchTab 回来：退出游客态补拉数据。
+    if (this.data.guest && userStore.getState().isAuthenticated) {
+      this.setData({ guest: false });
+      const user = userStore.getState().user;
+      userId = user?.id ?? '';
+      this.fetch();
     }
   },
 
@@ -327,6 +341,11 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
 
   onPullDownRefresh() {
     this.fetch().finally(() => wx.stopPullDownRefresh());
+  },
+
+  onGateLoginTap() {
+    // 登录成功后 reLaunch 回本 tab（redirect 支持 tab 页）。
+    openLogin('/pages/activities/activities');
   },
 
   onActivityTap(e: WechatMiniprogram.TouchEvent) {

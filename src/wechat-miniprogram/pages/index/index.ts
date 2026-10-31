@@ -20,6 +20,7 @@ import {
 import { fmtDose, fmtDurationShort, fmtKm, fmtPace } from '../../utils/format';
 import { theme } from '../../utils/theme';
 import { userStore } from '../../store/index';
+import { openLogin } from '../../utils/authGate';
 import type { Activity } from '../../types/activity';
 import type {
   PlanSessionRow,
@@ -90,6 +91,8 @@ interface PushDateSelectEvent {
 interface IndexPageData {
   statusBarHeight: number;
   contentPaddingTop: number;
+  /** 游客态（未登录）：周历可浏览，训练数据区换登录引导 */
+  guest: boolean;
   weekDays: TodayWeekDay[];
   weekSubtitle: string;
   todayYmd: string;
@@ -116,6 +119,7 @@ interface IndexPageHandlers {
   /** open-type=share 按钮的 catchtap：转发由 open-type 触发，这里只拦向卡片的冒泡 */
   onShareTap(): void;
   onDayTap(e: WechatMiniprogram.TouchEvent): void;
+  onGateLoginTap(): void;
   onContentTouchStart(e: WechatMiniprogram.TouchEvent): void;
   onContentTouchEnd(e: WechatMiniprogram.TouchEvent): void;
   shiftSelectedDay(delta: number): void;
@@ -193,6 +197,8 @@ Page<IndexPageData, IndexPageHandlers>({
   data: {
     statusBarHeight: 0,
     contentPaddingTop: 232,
+    // 游客态（未登录）：周历可浏览，训练数据区换登录引导
+    guest: false,
     weekDays: [],
     weekSubtitle: '',
     todayYmd: '',
@@ -225,9 +231,8 @@ Page<IndexPageData, IndexPageHandlers>({
     userStore.waitForAuth().then(() => {
       const { user, isAuthenticated } = userStore.getState();
       if (!isAuthenticated || !user) {
-        // 会话失效/未绑定：正常情况下 checkAuth 会发起 reLaunch 到登录页，这里兜底，
-        // 避免「token 已无效却停留在本周训练首页」的空态。
-        wx.reLaunch({ url: '/pages/login/login' });
+        // 游客态：展示登录引导空态，不强制跳登录页（微信审核合规）。
+        this.setData({ guest: true });
         return;
       }
       userId = user.id;
@@ -239,6 +244,13 @@ Page<IndexPageData, IndexPageHandlers>({
     const tabBar = this.getTabBar && this.getTabBar();
     if (tabBar) {
       tabBar.setData({ selected: 2 });
+    }
+    // 游客态期间完成登录，switchTab 回来：退出游客态补拉数据。
+    if (this.data.guest && userStore.getState().isAuthenticated) {
+      this.setData({ guest: false });
+      const user = userStore.getState().user;
+      userId = user?.id ?? '';
+      this.fetchPlan();
     }
     // 静默刷新（devops#698）：教练在对话里删除/改期/保存自建课后切回本 tab，
     // 课表即时反映，无需手动下拉刷新。跳过首帧（onLoad 已拉）与未加载态。
@@ -336,6 +348,11 @@ Page<IndexPageData, IndexPageHandlers>({
     wx.navigateTo({
       url: `/pages/workout-detail/workout-detail?date=${workout.date}&workoutId=${encodeURIComponent(workout.workoutId)}&title=${encodeURIComponent(workout.title)}`,
     });
+  },
+
+  onGateLoginTap() {
+    // 登录成功后 reLaunch 回本 tab。
+    openLogin('/pages/index/index');
   },
 
   onDayTap(e: WechatMiniprogram.TouchEvent) {

@@ -6,7 +6,8 @@
   "backgroundColor": "#F7F9FB",
   "usingComponents": {
     "push-date-sheet": "/components/push-date-sheet/index",
-    "route-thumb": "/components/route-thumb/index"
+    "route-thumb": "/components/route-thumb/index",
+    "login-gate": "/components/login-gate/index"
   },
   "componentPlaceholder": {
     "push-date-sheet": "view"

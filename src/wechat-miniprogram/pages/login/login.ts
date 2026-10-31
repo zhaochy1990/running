@@ -34,6 +34,8 @@ interface LoginPageData {
 // 页面自定义方法（TCustom 泛型，供 this 类型收窄）
 interface LoginPageHandlers {
   onLoad(options: Record<string, string | undefined>): void;
+  /** 暂不登录（游客模式出口）：回教练首页游客态 */
+  onSkipTap(): void;
   onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
   onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onSwitchTab(e: WechatMiniprogram.TouchEvent): void;
@@ -324,5 +326,12 @@ Page<LoginPageData, LoginPageHandlers>({
 
   onToggleAgreement() {
     this.setData({ agreed: !this.data.agreed, errorMsg: '' });
+  },
+
+  // --- 暂不登录（游客模式出口，微信审核：登录可拒绝） ---
+  // 统一 switchTab 回教练首页游客态：冷启动 reLaunch 进来时页面栈为空没有可退
+  // 页面；从业务页 navigateTo 进来时 switchTab 会一并关闭非 tab 页面，行为一致。
+  onSkipTap() {
+    wx.switchTab({ url: '/pages/coach/coach' });
   },
 });

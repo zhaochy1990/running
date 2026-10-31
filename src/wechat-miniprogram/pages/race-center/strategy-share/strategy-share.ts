@@ -10,6 +10,7 @@ import { ApiError } from '../../../services/request';
 import { getSharedRaceStrategy } from '../../../services/race-strategy';
 import { raceDayLabel, toStrategyView, type StrategyView } from '../../../utils/raceStrategyRows';
 import { userStore } from '../../../store/index';
+import { currentRouteForRedirect, openLogin } from '../../../utils/authGate';
 
 interface StrategySharePageData {
   statusBarHeight: number;
@@ -108,6 +109,8 @@ Page<StrategySharePageData, StrategySharePageHandlers>({
       wx.navigateTo({ url: `/pages/race-center/detail?id=${this._raceId}` });
       return;
     }
-    wx.reLaunch({ url: '/pages/login/login' });
+    // 游客点「生成策略」才要求登录：落地页本身可匿名浏览（审核合规）；
+    // 登录成功 reLaunch 回本落地页。
+    openLogin(currentRouteForRedirect());
   },
 });
