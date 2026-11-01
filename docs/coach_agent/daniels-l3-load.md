@@ -66,7 +66,7 @@ foundation=递进块（量主变量）｜early_quality=递进块 R 占位｜tran
 
 ## 6. 测试策略
 
-**冻结 L2 真实产出为 L3 fixture**（层间解耦、离线回放）：38 案例三档（短 5/6/7/8/9、中 10/12/14/16、长 22/24/26 × 三运动员，含伤退/改期）。spike 参考实现 `src/tests/spikeLoadLayer.ts`（throwaway untracked）、切片 `spike-out/load-*.json` ×38、L2 切片 `spike-out/phase-intent-*.json` ×50——实现票回收清单。
+**冻结 L2 真实产出为 L3 fixture**（层间解耦、离线回放）：38 案例三档（短 5/6/7/8/9、中 10/12/14/16、长 22/24/26 × 三运动员，含伤退/改期），已随实现票（#793/#806/#809）固化为 `phasing/fixtures/` fixture；spike 参考实现与切片按 throwaway 约定于 2026-10-31 清理。
 
 ## 7. 待实现/待拍板
 
