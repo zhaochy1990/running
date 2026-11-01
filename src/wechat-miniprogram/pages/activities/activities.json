@@ -7,7 +7,6 @@
   "enablePullDownRefresh": true,
   "backgroundTextStyle": "dark",
   "usingComponents": {
-    "route-thumb": "/components/route-thumb/index",
-    "login-gate": "/components/login-gate/index"
+    "route-thumb": "/components/route-thumb/index"
   }
 }

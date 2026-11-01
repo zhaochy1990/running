@@ -13,14 +13,6 @@
 
   <!-- 内容 -->
   <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
-    <!-- 游客态：可浏览页面，数据登录后可见（微信审核：不强制登录） -->
-    <login-gate
-      wx:if="{{guest}}"
-      title="登录后查看训练记录"
-      subtitle="同步手表 / 手机运动数据，按月回顾你的每一次训练"
-      bindlogin="onGateLoginTap"
-    />
-    <block wx:else>
     <!-- 按月折叠的活动记录（合并「本月概览 + 活动列表」为一张卡片） -->
     <view wx:if="{{monthGroups.length}}" class="card month-list">
       <view wx:for="{{monthGroups}}" wx:key="monthKey" class="month-group">
@@ -85,6 +77,5 @@
     <view wx:if="{{hasMore && monthGroups.length}}" class="load-more" bindtap="onLoadMore">
       {{loadingMore ? '加载中...' : '加载更早的记录'}}
     </view>
-    </block>
   </view>
 </view>

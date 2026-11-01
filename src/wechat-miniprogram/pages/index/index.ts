@@ -20,7 +20,6 @@ import {
 import { fmtDose, fmtDurationShort, fmtKm, fmtPace } from '../../utils/format';
 import { theme } from '../../utils/theme';
 import { userStore } from '../../store/index';
-import { openLogin } from '../../utils/authGate';
 import type { Activity } from '../../types/activity';
 import type {
   PlanSessionRow,
@@ -119,7 +118,6 @@ interface IndexPageHandlers {
   /** open-type=share 按钮的 catchtap：转发由 open-type 触发，这里只拦向卡片的冒泡 */
   onShareTap(): void;
   onDayTap(e: WechatMiniprogram.TouchEvent): void;
-  onGateLoginTap(): void;
   onContentTouchStart(e: WechatMiniprogram.TouchEvent): void;
   onContentTouchEnd(e: WechatMiniprogram.TouchEvent): void;
   shiftSelectedDay(delta: number): void;
@@ -231,8 +229,8 @@ Page<IndexPageData, IndexPageHandlers>({
     userStore.waitForAuth().then(() => {
       const { user, isAuthenticated } = userStore.getState();
       if (!isAuthenticated || !user) {
-        // 游客态：展示登录引导空态，不强制跳登录页（微信审核合规）。
-        this.setData({ guest: true });
+        // 游客态：周历+空态卡片（无登录元素，fetchPlan 的 !userId 早退兜底）。
+        this.setData({ guest: true, loading: false });
         return;
       }
       userId = user.id;
@@ -348,11 +346,6 @@ Page<IndexPageData, IndexPageHandlers>({
     wx.navigateTo({
       url: `/pages/workout-detail/workout-detail?date=${workout.date}&workoutId=${encodeURIComponent(workout.workoutId)}&title=${encodeURIComponent(workout.title)}`,
     });
-  },
-
-  onGateLoginTap() {
-    // 登录成功后 reLaunch 回本 tab。
-    openLogin('/pages/index/index');
   },
 
   onDayTap(e: WechatMiniprogram.TouchEvent) {

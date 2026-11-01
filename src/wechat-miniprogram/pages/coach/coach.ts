@@ -263,7 +263,6 @@ interface CoachPageHandlers {
   /** 卡片次级 CTA（custom-workout 推送到手表）。 */
   onCardSecondary(e: WechatMiniprogram.TouchEvent): void;
   onMenuTap(): void;
-  onGuestLoginTap(): void;
   onCloseDrawer(): void;
   onSearchTap(): void;
   onClearContext(): void;
@@ -351,6 +350,52 @@ function welcomeMessages(): CoachMessage[] {
     '你好，我是你的 AI 教练。可以问我今天的训练安排、疲劳状态、配速建议，或复盘某次训练。';
   // 欢迎语不在服务端投影里（历史为空时的本地兜底）：shareIndex 缺省 → 不可多选转发。
   return [{ id: ++seq, role: 'assistant', content, html: markdownToHtml(content), selectable: false }];
+}
+
+// 游客态欢迎语（审核合规：先体验后自行登录）：以真对话形态主动介绍产品能力，
+// 第一屏零登录元素；想深入提问时由 guestReply 引导登录。纯本地消息，不投影。
+function guestWelcomeMessages(): CoachMessage[] {
+  const intro =
+    '你好，我是 StrideWise 的 AI 跑步教练 👋';
+  const features = [
+    '**我能帮你做什么**',
+    '- 制定周期化训练计划：从基础期到赛前减量，每天安排具体课表',
+    '- 赛前策略：目标配速分段、补给清单、路线难度提醒',
+    '- 训练复盘：结合手表同步的数据分析负荷、疲劳与进步',
+    '- 课表推送：训练安排直接推送到你的运动手表',
+    '',
+    '你可以直接问我任何跑步训练相关的问题，先随便聊聊～',
+  ].join('\n');
+  const mk = (c: string): CoachMessage => ({
+    id: ++seq, role: 'assistant', content: c, html: markdownToHtml(c), selectable: false,
+  });
+  return [mk(intro), mk(features)];
+}
+
+// 游客提问后的本地回复：不调后端（无 token 会 401 触发会话失效兜底，反而把
+// 用户甩去登录页），直接以对话告知未登录拿不到运动数据，并附登录引导卡。
+function guestReplyCard(): CoachCardView {
+  return {
+    type: 'guest-login',
+    icon: '/assets/icons/person.svg',
+    title: '登录后解锁完整教练服务',
+    subtitle: '登录注册后我可以读取你的运动数据，给出专属的个性化指导',
+    badge: '',
+    buttonText: '去登录',
+    secondaryButtonText: '',
+    url: '',
+    data: null,
+    inlineBody: false,
+  };
+}
+
+function guestReplyMessages(): CoachMessage[] {
+  const reply =
+    '你现在还没有登录，我获取不到你的运动数据 📊\n\n登录注册后，我可以结合你的训练记录、手表数据和比赛目标，给出个性化的训练安排与建议。通用的问题我现在也可以聊～';
+  return [
+    { id: ++seq, role: 'assistant', content: reply, html: markdownToHtml(reply), selectable: false },
+    { id: ++seq, role: 'assistant', content: '登录引导', card: guestReplyCard(), selectable: false },
+  ];
 }
 
 /** 卡片消息的气泡内容：inlineBody 产物（master-plan 摘要即卡片）正文摘要
@@ -523,9 +568,10 @@ Page<CoachPageData, CoachPageHandlers>({
     userStore.waitForAuth().then(() => {
       const { isAuthenticated } = userStore.getState();
       if (!isAuthenticated) {
-        // 未绑定/会话失效：游客态展示欢迎页，不强制登录（微信审核合规）；
-        // 登录成功 switchTab 回来时由 onShow 恢复加载。
-        this.setData({ guest: true });
+        // 未绑定/会话失效：游客态进入真对话（欢迎语即产品介绍，提问时引导
+        // 登录），第一屏无登录元素（微信审核：先体验后自行选择登录）；
+        // 登录成功 switchTab 回来时由 onShow 恢复加载并覆盖游客消息。
+        this.setData({ guest: true, messages: guestWelcomeMessages() });
         return;
       }
       void this.loadSessions();
@@ -896,6 +942,11 @@ Page<CoachPageData, CoachPageHandlers>({
       }
       return;
     }
+    if (message.card.type === 'guest-login') {
+      // 游客登录引导卡：用户主动点击才进登录页（可返回/可跳过）。
+      openLogin();
+      return;
+    }
     this.onCardOpen(e);
   },
 
@@ -1249,13 +1300,23 @@ Page<CoachPageData, CoachPageHandlers>({
   },
 
   async onSend() {
-    // 游客态兜底（输入栏已换成登录引导，正常不可达）
-    if (this.data.guest) {
-      openLogin();
-      return;
-    }
     const text = this.data.input.trim();
     if (!text || this.data.sending) return;
+    // 游客态：本地对话——不调后端（无 token 的 401 会触发会话失效兜底把
+    // 用户甩去登录页），以对话告知未登录拿不到运动数据并引导登录注册。
+    if (this.data.guest) {
+      const replies = guestReplyMessages();
+      this.setData({
+        messages: [
+          ...this.data.messages,
+          { id: ++seq, role: 'user', content: text, ts: nowHhmm() },
+          ...replies.map((m) => ({ ...m, ts: nowHhmm() })),
+        ],
+        input: '',
+        scrollIntoId: `msg-${replies[replies.length - 1].id}`,
+      });
+      return;
+    }
     await this.sendText(text);
   },
 
@@ -1580,14 +1641,10 @@ Page<CoachPageData, CoachPageHandlers>({
     });
   },
 
-  onGuestLoginTap() {
-    openLogin();
-  },
-
   onMenuTap() {
-    // 游客态：历史会话需登录，引导去登录页（可返回/可跳过，不强制）。
+    // 游客态：历史会话需登录，toast 提示（不跳登录页，弱化引导）。
     if (this.data.guest) {
-      openLogin();
+      wx.showToast({ title: '登录后可查看历史对话', icon: 'none' });
       return;
     }
     // 与会话抽屉互斥（#623 决议）：进抽屉先退出选择模式。

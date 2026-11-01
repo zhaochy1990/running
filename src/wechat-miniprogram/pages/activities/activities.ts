@@ -2,7 +2,6 @@ import { getActivities } from '../../services/activities';
 import { fmtDurationShort, fmtKm, fmtPace, fmtDose } from '../../utils/format';
 import { shanghaiToday, shanghaiWeekdayLabel } from '../../utils/date';
 import { userStore } from '../../store/index';
-import { openLogin } from '../../utils/authGate';
 import type { Activity, ActivitiesListResponse } from '../../types/activity';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
@@ -67,7 +66,6 @@ interface ActivitiesPageHandlers {
   onActivityTap(e: WechatMiniprogram.TouchEvent): void;
   onMonthHeaderTap(e: WechatMiniprogram.TouchEvent): void;
   onLoadMore(): void;
-  onGateLoginTap(): void;
   onPullDownRefresh(): void;
 }
 
@@ -292,8 +290,8 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
     userStore.waitForAuth().then(() => {
       const { user, isAuthenticated } = userStore.getState();
       if (!isAuthenticated || !user) {
-        // 游客态：展示登录引导空态，不强制跳登录页（微信审核合规）。
-        this.setData({ guest: true });
+        // 游客态：纯空态页面（无登录元素，审核要求先体验后自行登录）。
+        this.setData({ guest: true, loading: false });
         return;
       }
       userId = user.id;
@@ -341,11 +339,6 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
 
   onPullDownRefresh() {
     this.fetch().finally(() => wx.stopPullDownRefresh());
-  },
-
-  onGateLoginTap() {
-    // 登录成功后 reLaunch 回本 tab（redirect 支持 tab 页）。
-    openLogin('/pages/activities/activities');
   },
 
   onActivityTap(e: WechatMiniprogram.TouchEvent) {

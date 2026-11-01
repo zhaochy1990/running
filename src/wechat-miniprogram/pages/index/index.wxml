@@ -33,14 +33,6 @@
       </view>
     </view>
 
-    <!-- 游客态：周历可浏览，训练数据登录后可见（微信审核：不强制登录） -->
-    <login-gate
-      wx:if="{{guest}}"
-      title="登录后查看训练计划"
-      subtitle="教练为你安排每日课表，同步执行与完成情况"
-      bindlogin="onGateLoginTap"
-    />
-    <block wx:else>
     <!-- 今日活动：仅当天有实际运动记录时展示，位于「今日安排」上方 -->
     <view wx:if="{{todayActivities.length}}" class="section-title">今日活动 · {{todayLabel}}</view>
     <view wx:if="{{todayActivities.length}}" class="card">
@@ -192,7 +184,6 @@
         <view class="note-box__text">{{nutrition.note}}</view>
       </view>
     </view>
-    </block>
     <view class="content__tail"></view>
   </view>
 

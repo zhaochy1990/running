@@ -119,13 +119,13 @@ Page<ProfilePageData, ProfilePageHandlers>({
 
     const state = userStore.getState();
     const user = state.user;
-    // 游客态（未登录）：保留页面结构与菜单可浏览，操作时再引导登录（微信审核合规）。
-    // 登录成功 switchTab 回来时这里会自动切回已登录展示。
+    // 游客态（未登录）：资料卡即登录按钮（唯一的登录入口，用户自行选择），
+    // 菜单操作 toast 提示。登录成功 switchTab 回来时自动切回已登录展示。
     this.setData({
       guest: !state.isAuthenticated,
       user,
-      name: user?.name || (state.isAuthenticated ? '跑步爱好者' : '未登录'),
-      email: user?.email || '',
+      name: state.isAuthenticated ? (user?.name || '跑步爱好者') : '登录 / 注册',
+      email: state.isAuthenticated ? (user?.email || '') : '登录后同步你的训练数据',
       avatarUrl: user?.avatar_url || '',
     });
     void this.refreshLastSync();
@@ -180,9 +180,9 @@ Page<ProfilePageData, ProfilePageHandlers>({
   },
 
   onRowTap(e: WechatMiniprogram.TouchEvent) {
-    // 游客态：菜单功能均需登录，引导去登录页（可返回/可跳过，不强制）。
+    // 游客态：菜单功能均需登录，toast 提示（登录入口在上方资料卡，自行选择）。
     if (this.data.guest) {
-      openLogin('/pages/profile/profile');
+      wx.showToast({ title: '请先登录', icon: 'none' });
       return;
     }
     const key = e.currentTarget.dataset.key as string;
@@ -210,7 +210,7 @@ Page<ProfilePageData, ProfilePageHandlers>({
   },
 
   onOpenProfileEdit() {
-    // 游客态：资料卡即登录入口。
+    // 游客态：资料卡即登录按钮（本页唯一登录入口）。
     if (this.data.guest) {
       openLogin('/pages/profile/profile');
       return;
@@ -224,7 +224,7 @@ Page<ProfilePageData, ProfilePageHandlers>({
     const state = userStore.getState();
     const userId = state.user?.id;
     if (!userId || this.data.guest) {
-      openLogin('/pages/profile/profile');
+      wx.showToast({ title: '请先登录', icon: 'none' });
       return;
     }
 
