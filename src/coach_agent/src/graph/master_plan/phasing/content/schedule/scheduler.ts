@@ -170,11 +170,13 @@ const easyMidOf = (row: ContentWeekRow): number => {
 type EFlavor = "normal" | "interval" | "lrEve" | "shake" | "regen";
 
 /** LR 前日 E 最低有效时长（分钟，2026-11-01 拍板）：单独 E 课 <30min 生理刺激
- * 边际趋零（心肺/线粒体适应未开始累积）——低于此宁可使周六量由 water-fill
- * 挪去间隔日/周一，也不产 14-20min 的无意义短课；30min shakeout 是保底形态。 */
+ * 边际趋零。处置=整课置休并把这份量摊回周内其他 E 槽（间隔日/周一带内上涨），
+ * 而不是拉长到 30min 保课——用户拍板「量平均分配到周内其他课」；water-fill
+ * 能分到 ≥30min 时保留（30-60min shakeout 是合法形态）。 */
 const LR_EVE_MIN_MINUTES = 30;
 
-/** 落位时长带（分钟）：间隔日/再生周=短带；LR 前日=[30min, km 帽]；赛周激活窗=短帽。 */
+/** 落位时长带（分钟）：间隔日/再生周=短带；LR 前日=km 帽（下限 0，有效性由
+ * 置休摊量仲裁保证）；赛周激活窗=短帽。 */
 function eBandOf(flavor: EFlavor, row: ContentWeekRow): [number, number] {
   const eMid = easyMidOf(row);
   switch (flavor) {
@@ -184,7 +186,7 @@ function eBandOf(flavor: EFlavor, row: ContentWeekRow): [number, number] {
     case "shake":
       return [0, E_DURATION_INTERVAL_BAND[1]];
     case "lrEve":
-      return [LR_EVE_MIN_MINUTES, Math.max(LR_EVE_MIN_MINUTES, Math.min(E_DURATION_INTERVAL_BAND[1], (LR_EVE_MAX_KM * eMid) / 60))];
+      return [0, Math.min(E_DURATION_INTERVAL_BAND[1], (LR_EVE_MAX_KM * eMid) / 60)];
     case "normal":
       return [...E_DURATION_NORMAL_BAND] as [number, number];
   }
@@ -495,6 +497,19 @@ export function scheduleWeek(
     }
   };
   fill();
+  // 仲裁⓪：LR 前日 E 低于最低有效时长 → 整课置休、量摊回周内其他 E 槽（fill
+  // 重灌）——周六 14-20min 的独立短课刺激趋零，摊给间隔日/周一比保课更有意义
+  // （2026-11-01 拍板）。赛周周六=shake 激活窗不在本列；剪后其他槽顶格仍缺量
+  // 则走 C1 失败上浮（课包槽数不足的正确信号）。
+  if (raceWd == null) {
+    const sat = instantiated.find((x) => x.di === 5);
+    if (sat != null && sat.minutes < LR_EVE_MIN_MINUTES) {
+      instantiated.splice(instantiated.indexOf(sat), 1);
+      repairs.push(`W${row.week} 周六 E ${Math.round(sat.minutes)}min<${LR_EVE_MIN_MINUTES}min 无效剂量——置休，量摊至周内其他课`);
+      gap = c1Target - structuredKm - eKm();
+      fill();
+    }
+  }
   // 仲裁①：超量 → 周六轻量 E 缩短/置休优先回收（轻量帽方向弹性最大）
   if (gap < -tol) {
     const sat = instantiated.find((x) => x.di === 5);

@@ -267,17 +267,19 @@ test("P5 双练准入：周量 ≤110km 槽位溢出 → 剪不加双练日；>1
   assert.ok(heavy.weeks[0]!.checks.find((c) => c.id.startsWith("P5"))!.pass);
 });
 
-test("LR 前日 E 下限 30min（2026-11-01 拍板）：周六 E 课要么 ≥30min 要么置休——不产 14-20min 无意义短课", () => {
+test("LR 前日 E 最低有效时长（2026-11-01 拍板·置休摊量）：周六 E 要么 ≥30min 要么置休且量摊回周内其他课（C1 仍收敛）", () => {
   const bags = ROWS.map((row) => (row.role === "race" ? raceBag() : normalBag(row)));
   const result = scheduleWeeks(bags, CTX);
   assert.ok(result.ok, result.failures.join(";"));
   for (const week of result.weeks) {
-    if (week.week === 6) continue; // 赛周周六=赛前激活（shake 帽语义），不在本带
+    if (week.week === 6) continue; // 赛周周六=赛前激活（shake 帽语义），不在本列
     const sat = week.calendar[5]!;
     for (const s of sat.sessions.filter((w) => w.type === "E")) {
       const m = /E (\d+)min/.exec(s.name);
       assert.ok(m, `周六课名无分钟: ${s.name}`);
       assert.ok(Number(m[1]) >= 30, `周六 E ${m[1]}min < 30min 最低有效时长`);
     }
+    // 周量守恒不因置休摊量破坏：C1 排位后终检仍绿
+    assert.ok(week.checks.every((c) => c.id !== "C1 周量守恒" || c.pass), `W${week.week} C1 挂`);
   }
 });
