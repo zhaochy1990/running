@@ -102,14 +102,25 @@ function normalWeekCourses(row: ContentWeekRow, input: ContentGeneratorInput, re
   const eBand = easyBand(row);
   const alloc = allocateWeek(row, input.athlete.weeklyRunDaysMax, regeneration);
   // #837+C14：final_quality 进展周长跑须含 goal_pace 段（专项化周期原则）——
-  // 模板简版=前 70% E + 后 30% goal_pace（渐加速形态）
-    const courses: WeekBag["courses"] = [
+  // 模板简版=前 70% E + 后 30% goal_pace±5s（渐加速形态；P7 遗留实现 2026-11-01 补齐）
+  const goalSeg = row.phase === "final_quality" && row.role === "progress";
+  const frontKm = Math.round(alloc.lr * 1000 * (goalSeg ? 0.7 : 1));
+  const backKm = Math.round(alloc.lr * 1000) - frontKm;
+  const goalBand: readonly [number, number] = [input.race.goalPaceSKm - 5, input.race.goalPaceSKm + 5];
+  const courses: WeekBag["courses"] = [
     course(
-      `长跑 ${r1(alloc.lr)}km`,
+      `长跑 ${r1(alloc.lr)}km${goalSeg ? "（渐加速）" : ""}`,
       "LR",
-      `长跑课：${r1(alloc.lr)}km E 配速积累耐力，全程可交谈配速，注意补给节奏。`,
-      "每 5km 少量补水；后半程配速不快于 E 带上沿。",
-      [{ repeat: 1, steps: [step("work", { kind: "distance_m", value: Math.round(alloc.lr * 1000) }, pace(eBand))] }],
+      goalSeg
+        ? `渐加速长跑课：前 ${r1(frontKm / 1000)}km E 配速积累耐力，后 ${r1(backKm / 1000)}km 提到比赛配速——专项期长跑带专项段。`
+        : `长跑课：${r1(alloc.lr)}km E 配速积累耐力，全程可交谈配速，注意补给节奏。`,
+      goalSeg ? "前段可交谈；后段按 goal 配速执行，不追不冒。" : "每 5km 少量补水；后半程配速不快于 E 带上沿。",
+      backKm > 0
+        ? [
+            { repeat: 1, steps: [step("work", { kind: "distance_m", value: frontKm }, pace(eBand))] },
+            { repeat: 1, steps: [step("work", { kind: "distance_m", value: backKm }, pace(goalBand))] },
+          ]
+        : [{ repeat: 1, steps: [step("work", { kind: "distance_m", value: frontKm }, pace(eBand))] }],
     ),
   ];
 for (let i = 0; i < alloc.qualitySessions; i++) {
@@ -136,9 +147,10 @@ for (let i = 0; i < alloc.qualitySessions; i++) {
   for (const e of alloc.eSessions) {
     // purpose 一律 null（#824 拍板）：说明由 L4b ePurpose 按实际落位生成——构造
     // 侧的 lrEve/regeneration 提示与排位结果可能错位，不自写
+    // taper 周 E 全 interval 短带（2026-11-01 原书校准，与 C9/调度器同口径）
     courses.push({
       kind: "e-slot",
-      band: e.intervalDay || e.lrEve || regeneration ? "interval" : "normal",
+      band: e.intervalDay || e.lrEve || regeneration || row.role === "taper" ? "interval" : "normal",
       strides: false,
       purpose: null,
     });

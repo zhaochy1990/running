@@ -49,7 +49,9 @@ const LR_FLOOR_KM = 22;
 const LR_MIN_KM = 12;
 /** taper 周 LR 削减（#809，真人教练 8 周对比拍板）：首 taper 周 25、每深一周 −5（带 20-25，由 taperW≤3 不变量保证）；race 周 lr=null 不变。 */
 const TAPER_LR_MAX_KM = 25;
-/** Q 配额（spec §2.4）：recovery=0｜foundation km≥60→1 否则 0｜其余建设 km≥70→2 否则 1｜taper=1｜赛周=2（#825：比赛课+M 激活）。 */
+/** taper 周 2Q 量级门槛（km）：低于此保持 1Q——伤退/低量跑者减量周塞不下两节质量课（injury 36.5km 案例实证）。 */
+const TAPER_Q2_MIN_KM = 60;
+/** Q 配额（spec §2.4）：recovery=0｜foundation km≥60→1 否则 0｜其余建设 km≥70→2 否则 1｜taper km≥60→2 否则 1（2026-11-01 原书校准）｜赛周=2（#825：比赛课+激活短课）。 */
 const Q_FOUNDATION_KM = 60;
 const Q_BUILD_KM = 70;
 
@@ -281,9 +283,25 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
       const base = Math.max(Math.min(LR_MIN_KM, km * lrCap), lrTarget);
       lr = r1(role === "taper" ? Math.min(base, TAPER_LR_MAX_KM - 5 * (taperW - fromEnd - 1)) : base);
     }
-    // 赛周 q=2（#825）：比赛课+赛前 M 配速激活短课各算一节（规则③⑧维持原则）
+    // 赛周 q=2（#825）：比赛课+赛前激活短课各算一节（规则③⑧维持原则）；taper 周
+    // q=2（2026-11-01 丹尼尔斯原书口径校准）：倒数第二周仍 2Q 足量（原书 2Q 计划
+    // W17 两节质量课合计约 17mi 阈值跑），减量从 E 里程里出而非砍质量课
     const q =
-      p.canonical === "recovery" ? 0 : isRace ? 2 : inTaper ? 1 : p.canonical === "foundation" ? (km >= Q_FOUNDATION_KM ? 1 : 0) : km >= Q_BUILD_KM ? 2 : 1;
+      p.canonical === "recovery"
+        ? 0
+        : isRace
+          ? 2
+          : inTaper
+            ? km >= TAPER_Q2_MIN_KM
+              ? 2
+              : 1
+            : p.canonical === "foundation"
+              ? km >= Q_FOUNDATION_KM
+                ? 1
+                : 0
+              : km >= Q_BUILD_KM
+                ? 2
+                : 1;
     weeks.push({ week: w, canonical: p.canonical, block: blockId, role, km: r1(km), lr, q });
   }
 

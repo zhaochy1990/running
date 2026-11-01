@@ -275,9 +275,9 @@ function placeRaceWeek(bag: WeekBag, row: ContentWeekRow, coefficients: DoseCoef
   )[0];
   if (raceCourse == null) throw new Error(`schedule: 第${row.week}周赛周无结构课（比赛课缺失）`);
   dayCourses[raceWd]!.push(raceCourse);
-  const activationWd = [raceWd - 2, raceWd - 3].find((wd) => wd >= 0) ?? null;
+  // 激活课=原书周二位优先（2026-11-01 校准，raceWd-5 起最早空日；#825 偏 2 天口径由原书取代）
+  const activationWd = [raceWd - 5, raceWd - 4, raceWd - 3, raceWd - 2].find((wd) => wd >= 0) ?? null;
   const others = structured.filter((c) => c !== raceCourse);
-  // 激活课=赛前 2 天优先（#825 激活窗偏 2 天）；多余结构课（罕见）由近及远填空日
   if (activationWd != null && others.length > 0) dayCourses[activationWd]!.push(others.shift()!);
   const earlyDays = Array.from({ length: raceWd }, (_, i) => raceWd - 1 - i).filter((wd) => wd !== activationWd);
   for (const course of others) {
@@ -418,6 +418,8 @@ function eFlavorOf(di: number, qualityWds: Set<number>, row: ContentWeekRow, rac
   if (raceWd != null && di < raceWd && raceWd - di <= 3) return "shake";
   if (di === 5) return "lrEve";
   if (row.phase === "recovery") return "regen";
+  // taper 周 E 全短带（2026-11-01 原书校准）：减量从单课体积出——E 多而短、保持频率
+  if (row.role === "taper") return "interval";
   const between = [...qualityWds].some((a) => a < di) && [...qualityWds].some((b) => b > di);
   return between ? "interval" : "normal";
 }
@@ -499,15 +501,24 @@ export function scheduleWeek(
   fill();
   // 仲裁⓪：LR 前日 E 低于最低有效时长 → 整课置休、量摊回周内其他 E 槽（fill
   // 重灌）——周六 14-20min 的独立短课刺激趋零，摊给间隔日/周一比保课更有意义
-  // （2026-11-01 拍板）。赛周周六=shake 激活窗不在本列；剪后其他槽顶格仍缺量
-  // 则走 C1 失败上浮（课包槽数不足的正确信号）。
+  // （2026-11-01 拍板）。可回滚：其他槽顶格吸收不了（低量周周六帽天然小）时恢复
+  // 原课——短课无益但 C1 守恒优先，结构性缺量的正确出口是排位无解上浮而非静默丢量。
   if (raceWd == null) {
-    const sat = instantiated.find((x) => x.di === 5);
-    if (sat != null && sat.minutes < LR_EVE_MIN_MINUTES) {
-      instantiated.splice(instantiated.indexOf(sat), 1);
-      repairs.push(`W${row.week} 周六 E ${Math.round(sat.minutes)}min<${LR_EVE_MIN_MINUTES}min 无效剂量——置休，量摊至周内其他课`);
+    const satIdx = instantiated.findIndex((x) => x.di === 5);
+    if (satIdx >= 0 && instantiated[satIdx]!.minutes < LR_EVE_MIN_MINUTES) {
+      const sat = instantiated[satIdx]!;
+      const satMinutes = sat.minutes;
+      instantiated.splice(satIdx, 1);
       gap = c1Target - structuredKm - eKm();
       fill();
+      if (Math.abs(gap) > tol) {
+        instantiated.push(sat);
+        sat.minutes = satMinutes;
+        gap = c1Target - structuredKm - eKm();
+        fill();
+      } else {
+        repairs.push(`W${row.week} 周六 E ${Math.round(satMinutes)}min<${LR_EVE_MIN_MINUTES}min 无效剂量——置休，量摊至周内其他课`);
+      }
     }
   }
   // 仲裁①：超量 → 周六轻量 E 缩短/置休优先回收（轻量帽方向弹性最大）

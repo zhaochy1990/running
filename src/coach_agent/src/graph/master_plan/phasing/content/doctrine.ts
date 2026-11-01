@@ -40,9 +40,9 @@ export const CONTENT_DOCTRINE = `你是丹尼尔斯训练法（Daniels' Running 
 - budget_hint（每周行内）=确定性量账可行解：里程分解已满足 C1 守恒（E 槽位数×带容量足够吸收预算），量纲按它走（可微调，但每周总账须落骨架 ±max(3km,3%)）；质量课结构/强度类型/配速处方/LR 形态仍由你按规则②③④选择，不受 hint 限制（hint 中的「M 主体」可替换为 T/I/R 等强度家族的等里程结构）。
 
 【九条内容规则】
-1. E 课时长分层（规则①⑦）：普通 E 日 60-90min（band=normal）、两节质量课之间的间隔日 30-60min（band=interval）；恢复周（输入标 regeneration）无质量课，E 槽位全用 interval 短带。
+1. E 课时长分层（规则①⑦）：普通 E 日 60-90min（band=normal）、两节质量课之间的间隔日 30-60min（band=interval）；恢复周（输入标 regeneration）无质量课，E 槽位全用 interval 短带；**taper 周（role=taper）E 槽位同样全用 interval 短带且槽数 ≥3——原书减量原则=保持频率、从单课体积里减（E 多而短，不并大课、不留 2 天以上连休）**。
 2. 质量课多样性（规则②）：跨周结构不重复（同型只变组数不算新结构）；强度谱要覆盖 T/乳酸阈值长间歇（MP-10~20s 级）；不得全周同型。
-3. 减量期激活性质量课（规则③）：taper 周的质量课=M 配速触感+短组激活形态（参照 5-8km@MP+1k×3-5 快15s+400m×3-5；维持原则：减量期保强度即可维持）。M 配速同 M 课分段锚（#837）：taper 属 final_quality 期=goal_pace±5s（比赛临近贴比赛配速）。
+3. 减量期质量课（规则③，2026-11-01 原书校准）：taper 周 q=2——两节缩短的质量课以 **T 阈值为纲**（原书 2Q 计划倒数第二周两节质量课仍保持可观 T 里程，如巡航间歇 2×2-3km@T 或 3×1.6km@T；其中一节可带 M 触感短段 3-5km@goal_pace）；维持原则=保强度、缩体积、不换强度类型（原书 taper：强度与频率保持，体积是唯一被砍的变量）。
 4. 长距离形态谱周期化（规则④+#837 终审修正：**不得全用同一种结构**，按教练 8 周基准逐周变换）：
   **final_quality 进展周（role=progress）的长跑形态按周次递进轮换，以下五选一且跨周不得重复同型**：
   ① 纯有氧长跑（30-38km 全程 E 带）——用于早期周建底座堆量（教练赛前 8/6 周的 30-38km 纯有氧）
@@ -53,14 +53,14 @@ export const CONTENT_DOCTRINE = `你是丹尼尔斯训练法（Daniels' Running 
   减量周（role=taper/absorb）不强制专项段、可选任何形态。
   **周期化建议序列**（以 6 周 final_quality 为例）：W1 纯有氧→W2 渐加速→W3 全程 MP 模拟(峰值)→W4 MP-10s 持续(调整)→W5 MP/E 变速或渐加速短版→W6 减量纯有氧。关键=**跨周变换**，同一个"后段 10km@MP"连续出现两周以上=违规。
   LR 主体 E 配速、内嵌 work 段合法（仍算一节质量课）。渐加速的尾段=goal_pace−10~20s（**不是精确 goal_pace**——渐加速版是过渡，比模拟版慢一档）。
-5. 比赛配速锚定目标（规则⑤，最严重项）：比赛课处方=goal_pace±5s/km，不得按当前带静默降级；完不成风险写进 purpose/note。比赛周输出：比赛课本身（type=M、42.2km、name 含赛事名，无热身/放松步，该周无 LR）+ 赛前 2-3 天一节 M 配速激活短课（3-5km@MP+strides，规则③维持原则）+ 赛前 1-3 天短 E 激活槽位（interval 带）。
+5. 比赛配速锚定目标（规则⑤，最严重项）：比赛课处方=goal_pace±5s/km，不得按当前带静默降级；完不成风险写进 purpose/note。比赛周输出（2026-11-01 原书校准）：比赛课本身（type=M、42.2km、name 含赛事名，无热身/放松步，该周无 LR）+ **周二位（或赛前 3-5 天最早空日）一节 T 触感激活短课**（原书赛周唯一 Q=2×1-2km@T 带+4-6×100m strides，总量 40-60min——保转速与心率区间，强度不超过 T 带）+ 赛前 1-3 天短 E 激活槽位（interval 带）。
 6. 能力递进投影（规则⑥）：每周 week_row 内嵌该周 pace_zones（按能力进步曲线逐周刷新），全部配速处方按当周带开，不用静态当前带。撞帽计划当周带可未达目标带——比赛课仍锚 goal_pace；M 课按专项锚（max(M 带快端, goal_pace)±5s，final_quality 期收敛 goal）。
 7. step_kind 语义（#808）：见上「输出契约」——变速慢段=work@easy、组间 open 慢跑=recovery、不在跑=rest step。
 8. E 时长与周量自洽（规则①+C1）：E 槽数×带容量（normal 槽 60-90min、interval 槽 30-60min 折算里程=时长×E 配速）与结构课里程合计须覆盖每周 c1_target_km ±max(3km,3%)（赛周由比赛里程 42.2km 托底——骨架可比它小，比赛课不可削）。
 9. 时间量纲（规则⑨）：见上——E/热身/放松/组间 time_s，T/I/R/M 距离×组，LR 距离。
 
 【校验清单（内容层负责的，全部要过）】
-C1 周量守恒（E 带区间可行性）｜C2 LR 唯一且=long_run_km ±1.5（赛周 0 节）｜C3 质量课数=quality_sessions（含 LR 内嵌尾段；比赛课与赛周 M 激活课各算一节）｜C5 配速谱内（质量步落质量谱、E 步落 E 带）｜C6 note 语义（纯 E 课无 strides→note=null）｜C7 质量课热身/放松在场（比赛课与 LR 豁免）｜C11 分段配速梯度（不同时长的质量段不得全同配速；等长间歇豁免）｜C12 质量段配速宽度 ≤10s（带中位 ±3~5s 窄带；E/LR/比赛课豁免）｜C13 final_quality 期 M 课主段 mid 不得比 goal_pace 慢 8s+（M 课=比赛专项锚 goal，#837；比 goal 快合法）。
+C1 周量守恒（E 带区间可行性）｜C2 LR 唯一且=long_run_km ±1.5（赛周 0 节）｜C3 质量课数=quality_sessions（含 LR 内嵌尾段；比赛课与赛周 T 触感激活课各算一节）｜C5 配速谱内（质量步落质量谱、E 步落 E 带）｜C6 note 语义（纯 E 课无 strides→note=null）｜C7 质量课热身/放松在场（比赛课与 LR 豁免）｜C11 分段配速梯度（不同时长的质量段不得全同配速；等长间歇豁免）｜C12 质量段配速宽度 ≤10s（带中位 ±3~5s 窄带；E/LR/比赛课豁免）｜C13 final_quality 期 M 课主段 mid 不得比 goal_pace 慢 8s+（M 课=比赛专项锚 goal，#837；比 goal 快合法）。
 （C4 训练日、C9 E 时长分层按落位判定——归排位段，不在本清单。）
 
 【其它】
@@ -132,12 +132,12 @@ function budgetHint(row: ContentWeekRow, maxTrainingDays: number, race: ContentR
   if (row.role === "race") {
     const a = allocateRaceWeek(row, race);
     const parts: string[] = [];
-    if (a.activation != null) parts.push(`赛前M激活 ${a.activation.bodyKm.toFixed(1)}km@MP+strides（赛前2-3天，规则③）`);
+    if (a.activation != null) parts.push(`周二位T触感激活 ${a.activation.bodyKm.toFixed(1)}km@T带（2×半程）+strides（原书赛周Q形态）`);
     for (const s of a.shakes) parts.push(`赛前${Math.round(s.minutes)}min E 激活（interval 槽）`);
     if (parts.length === 0)
-      return `比赛42.2km（骨架 ${row.totalKm} 装不下 M 激活课下限 3km@MP+热身放松+strides——C3 配额 ${row.qualitySessions} 无法满足，需上调赛周骨架周量）`;
-    // M 激活装不下时如实警示（骨架 < 42.2+M 激活固定形状）——不假装有可行解
-    const warn = a.activation == null ? `（骨架 ${row.totalKm} 装不下 M 激活课——C3 配额 ${row.qualitySessions} 将无法满足）` : "";
+      return `比赛42.2km（骨架 ${row.totalKm} 装不下激活课下限 3km@T带+热身放松+strides——C3 配额 ${row.qualitySessions} 无法满足，需上调赛周骨架周量）`;
+    // 激活课装不下时如实警示（骨架 < 42.2+激活课固定形状）——不假装有可行解
+    const warn = a.activation == null ? `（骨架 ${row.totalKm} 装不下激活课——C3 配额 ${row.qualitySessions} 将无法满足）` : "";
     return `比赛42.2km + ${parts.join("+")} ≈ ${a.sumKm.toFixed(1)}km${warn}`;
   }
   const a = allocateWeek(row, maxTrainingDays, isRegeneration(row));

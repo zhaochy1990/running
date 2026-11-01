@@ -21,7 +21,7 @@ const ROWS: ContentWeekRow[] = [
   { week: 2, phase: "final_quality", role: "progress", totalKm: 87.5, longRunKm: 31.5, qualitySessions: 2, qualityFamily: "M 配速比赛专项", zones: ZONES },
   { week: 3, phase: "final_quality", role: "absorb", totalKm: 65.6, longRunKm: 24, qualitySessions: 1, qualityFamily: "M 配速比赛专项", zones: ZONES },
   { week: 4, phase: "final_quality", role: "progress", totalKm: 84.9, longRunKm: 30.6, qualitySessions: 2, qualityFamily: "M 配速比赛专项", zones: ZONES },
-  { week: 5, phase: "final_quality", role: "taper", totalKm: 72.2, longRunKm: 25, qualitySessions: 1, qualityFamily: "M 配速比赛专项", zones: ZONES },
+  { week: 5, phase: "final_quality", role: "taper", totalKm: 72.2, longRunKm: 25, qualitySessions: 2, qualityFamily: "M 配速比赛专项", zones: ZONES }, // q=2（2026-11-01 原书校准：taper 周 2Q；E 全短带容量下 q=2 恰好自洽）
   { week: 6, phase: "final_quality", role: "race", totalKm: 54.9, longRunKm: null, qualitySessions: 2, qualityFamily: "M 配速比赛专项", zones: ZONES },
 ];
 
@@ -131,9 +131,9 @@ test("六周全链：P 门全绿 + C1 全周命中 + LR 周日 + 周六轻量 + 
       );
       const race = week.sessions.find((w) => w.date === RACE_DATE)!;
       assert.ok(race, "比赛课钉比赛日");
-      const act = week.sessions.find((w) => w.date !== RACE_DATE && w.type === "M")!;
+      const act = week.sessions.find((w) => w.date !== RACE_DATE && w.type !== "E" && w.type !== "LR")!;
       const gap = (new Date(`${RACE_DATE}T00:00:00Z`).getTime() - new Date(`${act.date}T00:00:00Z`).getTime()) / 86400_000;
-      assert.ok(gap === 2 || gap === 3, `激活课距赛 ${gap} 天`);
+      assert.ok(gap >= 2 && gap <= 5, `激活课距赛 ${gap} 天（周二位=5 原书口径，窗内回退 4/3/2）`);
       // 赛周周六 E=赛前激活 flavor（#824 抽查回归：shake 优先于 lrEve——赛周无 LR，
       // 「为明日长跑蓄力」模板落在比赛前日是 purpose 与落位错位）
       const satE = week.calendar[5]!.sessions.find((w) => w.type === "E");

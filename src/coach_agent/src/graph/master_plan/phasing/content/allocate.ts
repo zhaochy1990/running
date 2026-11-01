@@ -60,7 +60,9 @@ export function allocateWeek(row: ContentWeekRow, maxTrainingDays: number, regen
   const eSlots = [2, 3, 5, 0]
     .map((wd) => {
       const intervalDay = qualityWds.some((a) => a < wd) && qualityWds.some((b) => b > wd);
-      const band: readonly [number, number] = wd === 5 ? lrEveBand : intervalDay || regeneration ? E_DURATION_INTERVAL_BAND : E_DURATION_NORMAL_BAND;
+      // taper 周 E 全短带（2026-11-01 原书校准，与 C9/调度器同口径）：槽数按短带容量自洽
+      const band: readonly [number, number] =
+        wd === 5 ? lrEveBand : intervalDay || regeneration || row.role === "taper" ? E_DURATION_INTERVAL_BAND : E_DURATION_NORMAL_BAND;
       return { wd, band, intervalDay, lrEve: wd === 5 };
     })
     .sort((a, b) => a.band[0] - b.band[0]); // 短带槽位优先装填（预算紧时先落间隔日）
@@ -148,27 +150,29 @@ export interface RaceWeekAllocation {
   sumKm: number;
 }
 
-/** 赛周 M 激活课简版形状（#825）：主体 3-5km 带内 + 4×100m strides；热身/放松 E 时长（min）。 */
+/** 赛周激活课简版形状（2026-11-01 原书校准）：主体=T 触感 2×1.6-2km@T（量级带 3-5km）+ 4×100m strides；热身/放松 E 时长（min）。 */
 const M_ACTIVATION_BODY_KM_DEFAULT = 4;
 const M_ACTIVATION_BODY_KM_MIN = 3;
 const M_ACTIVATION_STRIDES_M = 400;
 
-/** 比赛周分配：比赛 42.195km + 赛前 M 配速激活短课（2-3 天前，简版）+ 窗内短 E 激活。 */
+/** 比赛周分配（2026-11-01 原书校准）：比赛 42.195km + 周二位 T 触感激活短课
+ * （原书 2Q 计划赛周唯一 Q=2×1-2km@T+strides；窗=raceWd-5 起最早空日，周二优先）
+ * + 窗内短 E 激活。主体量级带 [3,5] 不变（2×1.6-2km@T 形态），配速口径 T 带。 */
 export function allocateRaceWeek(row: ContentWeekRow, race: ContentGeneratorInput["race"]): RaceWeekAllocation {
   const eMid = easyMidOf(row);
   const kmOf = (minutes: number) => (minutes * 60) / eMid;
   const raceWd = (new Date(`${race.date}T00:00:00Z`).getUTCDay() + 6) % 7;
   const remaining = row.totalKm - 42.195;
 
-  // M 激活窗=赛前 2-3 天（偏 2 天；raceWd≥2 由 generateWeekContent 入口保证）；E 激活=窗内其余日子（偏赛前 1 天起）
-  const activationWd = [raceWd - 2, raceWd - 3].find((wd) => wd >= 0) ?? null;
+  // T 触感激活窗=原书周二位优先（raceWd-5 起最早空日；raceWd≥2 入口保证）；E 激活=窗内其余日子（偏赛前 1 天起）
+  const activationWd = [raceWd - 5, raceWd - 4, raceWd - 3, raceWd - 2].find((wd) => wd >= 0) ?? null;
   let left = remaining;
-  // 热身 15min+放松 10min（E 折算）+strides 400m 的固定形状；主体取拍板带 [3,5] 缺省 4、按预算向下收
+  // 热身 15min+放松 10min（E 折算）+strides 400m 的固定形状；主体=T 触感（2×1.6-2km@T 形态）量级带 [3,5] 缺省 4、按预算向下收
   const fixedKm = kmOf(15 + 10) + M_ACTIVATION_STRIDES_M / 1000;
   let activation: RaceWeekActivation | null = null;
   let activationKm = 0;
   if (activationWd != null) {
-    // 主体 <3km=预算装不下 M 激活下限（精英带 + 低平台赛周触底 52.2 的包络边界，
+    // 主体 <3km=预算装不下激活课下限（精英带 + 低平台赛周触底 52.2 的包络边界，
     // 需 eMid≲227s/km），置 null 由 C3 如实挂出——不破拍板下限换过门
     const bodyKm = Math.min(M_ACTIVATION_BODY_KM_DEFAULT, left - fixedKm);
     if (bodyKm >= M_ACTIVATION_BODY_KM_MIN) {
@@ -188,7 +192,7 @@ export function allocateRaceWeek(row: ContentWeekRow, race: ContentGeneratorInpu
     shakes.push({ weekday: wd, minutes: seconds / 60 });
     left -= seconds / eMid;
   }
-  // 未铺完的残量（窗口耗尽）由 C1 容差吸收；Σ 按 30s 取整后的实际处方计（M 激活按课形状计）
+  // 未铺完的残量（窗口耗尽）由 C1 容差吸收；Σ 按 30s 取整后的实际处方计（激活课按课形状计）
   const sumKm = 42.195 + activationKm + shakes.reduce((s, x) => s + (x.minutes * 60) / eMid, 0);
   return { activation, shakes, sumKm };
 }

@@ -430,10 +430,12 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
       else lrEveSumKm += km;
       continue;
     }
-    const band = isIntervalDay(wd) || input.regeneration ? E_DURATION_INTERVAL_BAND : E_DURATION_NORMAL_BAND;
+    // taper 周 E 全短带（2026-11-01 原书校准）：减量从单课体积出、保持频率——多而短
+    const taperShort = row.role === "taper";
+    const band = isIntervalDay(wd) || input.regeneration || taperShort ? E_DURATION_INTERVAL_BAND : E_DURATION_NORMAL_BAND;
     if (durationMin < band[0] - 1e-6 || durationMin > band[1] + 1e-6) {
       eBad.push(
-        `${workout.name} ${durationMin.toFixed(0)}min ∉ ${input.regeneration && !isIntervalDay(wd) ? "再生周" : isIntervalDay(wd) ? "间隔日" : "普通日"}[${band[0]}-${band[1]}]`,
+        `${workout.name} ${durationMin.toFixed(0)}min ∉ ${taperShort && !isIntervalDay(wd) ? "减量周短带" : input.regeneration && !isIntervalDay(wd) ? "再生周" : isIntervalDay(wd) ? "间隔日" : "普通日"}[${band[0]}-${band[1]}]`,
       );
     }
   }
