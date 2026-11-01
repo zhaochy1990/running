@@ -169,7 +169,12 @@ const easyMidOf = (row: ContentWeekRow): number => {
 /** E 课落位语素（时长带与 purpose 模板一一对应；C9 分层口径单源）。 */
 type EFlavor = "normal" | "interval" | "lrEve" | "shake" | "regen";
 
-/** 落位时长带（分钟）：间隔日/再生周=短带；LR 前日=km 帽无下限；赛周激活窗=短帽。 */
+/** LR 前日 E 最低有效时长（分钟，2026-11-01 拍板）：单独 E 课 <30min 生理刺激
+ * 边际趋零（心肺/线粒体适应未开始累积）——低于此宁可使周六量由 water-fill
+ * 挪去间隔日/周一，也不产 14-20min 的无意义短课；30min shakeout 是保底形态。 */
+const LR_EVE_MIN_MINUTES = 30;
+
+/** 落位时长带（分钟）：间隔日/再生周=短带；LR 前日=[30min, km 帽]；赛周激活窗=短帽。 */
 function eBandOf(flavor: EFlavor, row: ContentWeekRow): [number, number] {
   const eMid = easyMidOf(row);
   switch (flavor) {
@@ -179,7 +184,7 @@ function eBandOf(flavor: EFlavor, row: ContentWeekRow): [number, number] {
     case "shake":
       return [0, E_DURATION_INTERVAL_BAND[1]];
     case "lrEve":
-      return [0, Math.min(E_DURATION_INTERVAL_BAND[1], (LR_EVE_MAX_KM * eMid) / 60)];
+      return [LR_EVE_MIN_MINUTES, Math.max(LR_EVE_MIN_MINUTES, Math.min(E_DURATION_INTERVAL_BAND[1], (LR_EVE_MAX_KM * eMid) / 60))];
     case "normal":
       return [...E_DURATION_NORMAL_BAND] as [number, number];
   }
