@@ -57,6 +57,21 @@ const BAND_TOLERANCE_KM = 0.5;
 const weeksOf = (p: PhaseDivisionIntent["phases"][number]) => p.end_week - p.start_week + 1;
 
 /**
+ * I3 赛后恢复硬门判定（分级，2026-11-01 拍板）：只对恢复需求确实成立的比赛量级硬制——
+ * 全马量级（≥32km）≤14d；半马量级（≥16km）≤7d 且仅长跑道（≥12w，有冗余可让）；
+ * 更短比赛不硬制。半马级恢复语义交 L2 裁量（短跑道专项优先、首周 absorb/低起点
+ * 承接）与 L3 post_race 起跳折扣。N<2 豁免（唯一一周给了 recovery 就没有
+ * final_quality，两门数学互斥）。fallback 查表与 I3 门共用本判定。
+ */
+export function postRaceRecoveryGate(lastRace: PhaseEvidence["last_race"], runwayWeeks: number): boolean {
+  if (runwayWeeks < 2 || lastRace == null) return false;
+  const { days_ago: days, distance_km: km } = lastRace;
+  if (km >= 32) return days <= 14;
+  if (km >= 16) return days <= 7 && runwayWeeks >= 12;
+  return false;
+}
+
+/**
  * 峰值体量帽（I8，daniels.md 教义）：min(120, max(近8周×1.6, 近期峰值×1.3))。
  * 下限 30：零史/极低量跑者的帽不为 0——训练计划永远给（daniels.md §2.4），
  * 帽是护栏不是课表，0 帽会令任何合法体量带都无法通过 I8。
@@ -87,13 +102,15 @@ export function validatePhaseIntent(intent: PhaseDivisionIntent, runwayWeeks: nu
   const seqOk = idx.every((i, k) => i === -1 || idx.slice(0, k).every((j) => j === -1 || j < i));
   checks.push({ id: "I2 顺序律", pass: seqOk && uniq, detail: names.join("→") });
 
-  // I3 赛后先恢复：距上场比赛 ≤14 天时首阶段必须是 recovery（N=1 退化跑道豁免：
-  // 唯一一周给了 recovery 就没有 final_quality，两门数学互斥，意图退化为赛前微周期）
+  // I3 赛后先恢复：分级硬门（postRaceRecoveryGate，2026-11-01 拍板）——全马级
+  // ≤14d 强制、半马级 ≤7d 且长跑道强制、更短不硬制；半马级短跑道交 L2 裁量。
+  const needsRecovery = postRaceRecoveryGate(evidence.last_race, N);
   const daysSince = evidence.last_race?.days_ago ?? 999;
+  const lastRaceKm = evidence.last_race?.distance_km ?? 0;
   checks.push({
     id: "I3 赛后先恢复",
-    pass: daysSince > 14 || N < 2 || names[0] === "recovery",
-    detail: `距赛${daysSince}d 首${names[0] ?? "无"}`,
+    pass: !needsRecovery || names[0] === "recovery",
+    detail: `距赛${daysSince}d/${lastRaceKm}km 首${names[0] ?? "无"}`,
   });
 
   // I4 专项在场：final_quality 在场且 N≥16 时 ≥4 周、否则 ≥2 周（N=2 且赛后先恢复时只余 1 周，豁免为 ≥1）

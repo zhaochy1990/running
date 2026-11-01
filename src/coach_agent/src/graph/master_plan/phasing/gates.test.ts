@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { peakVolumeCapKm, validatePhaseIntent } from "./gates.js";
+import { peakVolumeCapKm, postRaceRecoveryGate, validatePhaseIntent } from "./gates.js";
 import { allPass, failing, makeEvidence, makeIntent, phase } from "./testSupport.js";
 
 test("I1 闭合：基底 22 周跑道全绿；挖洞则挂", () => {
@@ -96,6 +96,26 @@ test("I3 赛后先恢复：14 天内完赛而首阶段非 recovery 挂；首阶�
       .concat([phase("final_quality", 21, 24)]),
   });
   assert.equal(failing(validatePhaseIntent(withRecovery, 24, raced), "I3")?.pass, true);
+});
+
+test("I3 分级硬门（2026-11-01 拍板）：半马短跑道不硬制、长跑道 7 天内硬制；更短比赛与全马 14 天各自成立", () => {
+  const race = (km: number, daysAgo: number) => ({ date: "2026-10-31", distance_km: km, days_ago: daysAgo });
+  // 半马量级：短跑道（<12w）从不硬制——chaoyi 上马 5 周场景，专项优先
+  assert.equal(postRaceRecoveryGate(race(21.1, 1), 5), false);
+  assert.equal(postRaceRecoveryGate(race(21.1, 6), 5), false);
+  // 半马量级：长跑道（≥12w）7 天内硬制（有冗余可让）、8 天起放行
+  assert.equal(postRaceRecoveryGate(race(21.1, 1), 16), true);
+  assert.equal(postRaceRecoveryGate(race(21.1, 7), 16), true);
+  assert.equal(postRaceRecoveryGate(race(21.1, 8), 16), false);
+  // 更短比赛（10K）：任何跑道都不硬制
+  assert.equal(postRaceRecoveryGate(race(10, 1), 24), false);
+  // 全马量级：14 天内保留硬门（含短跑道）；15 天放行
+  assert.equal(postRaceRecoveryGate(race(42.2, 13), 5), true);
+  assert.equal(postRaceRecoveryGate(race(42.2, 13), 24), true);
+  assert.equal(postRaceRecoveryGate(race(42.2, 15), 24), false);
+  // 豁免：无比赛史 / N<2 退化跑道
+  assert.equal(postRaceRecoveryGate(null, 24), false);
+  assert.equal(postRaceRecoveryGate(race(42.2, 2), 1), false);
 });
 
 test("I4 专项在场：N=16 需 final≥4 周；N=15 时 3 周即可", () => {

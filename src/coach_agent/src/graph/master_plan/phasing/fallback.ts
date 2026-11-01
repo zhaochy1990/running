@@ -1,5 +1,5 @@
 import type { PhaseEvidence } from "./evidence.js";
-import { peakVolumeCapKm, reachabilitySeed } from "./gates.js";
+import { peakVolumeCapKm, postRaceRecoveryGate, reachabilitySeed } from "./gates.js";
 import type { PhaseCanonical, PhaseDivisionIntent } from "./intent.js";
 import { DEFAULT_PRIMARY_GOAL, EXPECTED_BLOCK_MODE, MIN_PHASE_WEEKS, PHASE_DISPLAY_NAME, PhaseDivisionIntentSchema } from "./intent.js";
 import { envelopeReachedKm } from "./load/reachability.js";
@@ -16,8 +16,8 @@ const f = (canonical: PhaseCanonical, weeks: number): PhaseWeeks => ({ canonical
 
 /**
  * 主跑道查表（daniels.md §2.4 坍缩阶梯的确定性缺省；各档已满足 I11 下限，
- * 7-9 周档先砍 early_quality）。recovery 不占查表预算：14 天内完赛时从跑道头
- * 切 1 周前置，余下按 effectiveN 查表。
+ * 7-9 周档先砍 early_quality）。recovery 不占查表预算：分级恢复门判定需要前置时
+ * （全马级 ≤14d / 半马级 ≤7d 且长跑道）从跑道头切 1 周前置，余下按 effectiveN 查表。
  */
 function baseLayout(effectiveN: number): PhaseWeeks[] {
   if (effectiveN >= 23) return [f("foundation", 6), f("early_quality", 3), f("transition_quality", 6), f("final_quality", 8)];
@@ -232,7 +232,7 @@ function rationaleFor(canonical: PhaseCanonical, weeks: number, taperWeeks: numb
   const { avg_8wk_km } = evidence.recent_volume;
   switch (canonical) {
     case "recovery":
-      return `距上场比赛 ${evidence.last_race?.days_ago ?? "?"} 天（≤14 天），先卸疲劳：纯 E 跑 ${weeks} 周，周量 ≤ 近期峰值的 60%`;
+      return `距上场比赛 ${evidence.last_race?.days_ago ?? "?"} 天（${(evidence.last_race?.distance_km ?? 0).toFixed(0)}km），先卸疲劳：纯 E 跑 ${weeks} 周，周量 ≤ 近期峰值的 60%`;
     case "foundation":
       return `近 8 周均值 ${avg_8wk_km}km/周、月度有氧学分 ${evidence.phase_credit.sustained_volume_months_ge40wk} 个月 ≥40km/周，基础期 ${weeks} 周打底有氧与防伤`;
     case "early_quality":
@@ -258,7 +258,10 @@ const TRAINING_GOAL: Record<PhaseCanonical, string> = {
  */
 export function tableFallback(evidence: PhaseEvidence, runwayWeeks: number): PhaseDivisionIntent {
   const N = runwayWeeks;
-  const racedRecently = (evidence.last_race?.days_ago ?? 999) <= 14 && N >= 2;
+  // 分级恢复门（postRaceRecoveryGate，与 I3 同口径）：全马级 ≤14d、半马级 ≤7d 且
+  // 长跑道、更短不前置——半马后短跑道直接进查表形态（首周低起点由 L3 post_race
+  // 起跳折扣承接）。
+  const racedRecently = postRaceRecoveryGate(evidence.last_race, N);
   // N≥7 按总跑道判档：7-9 周档的 foundation≥2 底线不因 recovery 前置被挤掉
   // （daniels.md §2.4「foundation≥2 与 final_quality≥3 底线不可再砍」）；超支的
   // 1 周由 closeToRunway 从尾段收割。N≤6 走 final-only 档，recovery 直接占预算。
