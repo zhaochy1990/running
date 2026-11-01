@@ -101,7 +101,9 @@ function raceWeekCourses(row: ContentWeekRow, input: ContentGeneratorInput): Wee
 function normalWeekCourses(row: ContentWeekRow, input: ContentGeneratorInput, regeneration: boolean): WeekBag["courses"] {
   const eBand = easyBand(row);
   const alloc = allocateWeek(row, input.athlete.weeklyRunDaysMax, regeneration);
-  const courses: WeekBag["courses"] = [
+  // #837+C14：final_quality 进展周长跑须含 goal_pace 段（专项化周期原则）——
+  // 模板简版=前 70% E + 后 30% goal_pace（渐加速形态）
+    const courses: WeekBag["courses"] = [
     course(
       `长跑 ${r1(alloc.lr)}km`,
       "LR",
@@ -110,7 +112,7 @@ function normalWeekCourses(row: ContentWeekRow, input: ContentGeneratorInput, re
       [{ repeat: 1, steps: [step("work", { kind: "distance_m", value: Math.round(alloc.lr * 1000) }, pace(eBand))] }],
     ),
   ];
-  for (let i = 0; i < alloc.qualitySessions; i++) {
+for (let i = 0; i < alloc.qualitySessions; i++) {
     const m = mNarrow(row, input.race.goalPaceSKm);
     courses.push(
       course(

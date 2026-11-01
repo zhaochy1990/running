@@ -24,22 +24,28 @@ export interface GateInput {
   daysMax: number;
   raceDate: string | null;
   coefficients: DoseCoefficients;
+  /** 离赛周数（本周=1，赛前一周=2；final_quality P7 动态下限用）。 */
+  weeksToRace?: number | null;
 }
 
 /**
- * P7 有氧份额按阶段下限（分段核算口径=判定表）：校准基线=38 案例 L3 golden
- * 周骨架 × 模板构型全量实测包络下缘（foundation 78.5%/early_quality 82.4%/
- * transition_quality 71.1%/final_quality 66-67%），下限=包络下缘留 ~1-2pct 余量
- * ——紧过包络会拒掉 L3 已批准的体量分配（质量 km 预算=软目标，硬门只留份额下限）。
- * 角色削减：吸收周=保强度削有氧 ~25%（丹氏 3+1），下限 −9pct；taper −2pct。
+ * P7 有氧份额·阶段递进动态下限（2026-11-01 用户拍板专项化周期原则）：
+ * 有氧份额随比赛临近单调递减——专项性原则（SAID）+ 教练 8 周基准实证
+ * （前期 ~75-80% → 峰值 MP 周 ~45% → 赛周 ~30%）。绝对下限 35%。
  */
 const AEROBIC_FLOOR: Record<string, number> = {
   recovery: 0.85,
-  foundation: 0.76,
-  early_quality: 0.8,
-  transition_quality: 0.7,
-  final_quality: 0.65,
+  foundation: 0.76,   // 38 案例包络校准值（实测下缘 78.5%−2pct 余量）
+  early_quality: 0.75,
+  transition_quality: 0.65,
+  final_quality: 0.55, // 前半段（≥4 周离赛）——专项过渡，仍保有氧底座
 };
+/** final_quality 后半段（<4 周离赛）的递减下限——MP 主导，全程模拟合法。 */
+const FQ_LATE_FLOOR = 0.40;
+/** 绝对下限：任何阶段不低于此（有氧跑的恢复/防伤功能不可替代）。 */
+const AEROBIC_ABS_FLOOR = 0.35;
+/** final_quality 前后半段分界（离赛周数）。 */
+const FQ_LATE_WEEKS = 4;
 const AEROBIC_FLOOR_ROLE_CUT: Record<string, number> = { progress: 0, absorb: 0.09, taper: 0.02, race: 0 };
 
 /** P2 相邻判定容差（无——相邻=周内位差恰 1）。 */
@@ -122,13 +128,22 @@ export function scheduleGates(input: GateInput): ScheduleCheck[] {
     detail: overs.length === 0 ? `max=${worst?.ratio ?? "—"}` : `${overs[0]!.date} r=${overs[0]!.ratio}`,
   });
 
-  // P7 有氧份额按阶段下限（赛周豁免——比赛课主导是设计事实；里程不可知=挂）。
-  // 吸收/taper 周=保强度削有氧（丹氏 3+1 与减量期教义），下限随之放松。
-  const base = AEROBIC_FLOOR[row.phase] ?? 0.66;
-  const floor = base - (AEROBIC_FLOOR_ROLE_CUT[row.role] ?? 0);
+  // P7 有氧份额·阶段递进动态下限（2026-11-01 专项化周期拍板）：
+  // 阶段基础下限 × final_quality 内离赛周数递减（≥4 周=前半段 55%，<4 周=后半段 40%）
+  // × 角色微调（absorb +5pct 回弹）。绝对下限 35%。赛周豁免。
   if (row.role === "race") {
     checks.push({ id: "P7 有氧份额", pass: true, detail: "赛周豁免" });
   } else {
+    const phaseFloor = AEROBIC_FLOOR[row.phase] ?? 0.66;
+    let floor = phaseFloor;
+    // final_quality 内按离赛周数递减
+    if (row.phase === "final_quality" && input.weeksToRace != null && input.weeksToRace < FQ_LATE_WEEKS) {
+      floor = FQ_LATE_FLOOR;
+    }
+    // 角色微调（absorb 周有氧略回弹）
+    floor = floor - (AEROBIC_FLOOR_ROLE_CUT[row.role] ?? 0);
+    // 绝对下限
+    floor = Math.max(floor, AEROBIC_ABS_FLOOR);
     let aero = 0;
     let total = 0;
     let unknown = false;
@@ -142,7 +157,7 @@ export function scheduleGates(input: GateInput): ScheduleCheck[] {
       total += d.km;
     }
     const share = total > 0 ? aero / total : 0;
-    checks.push({ id: "P7 有氧份额", pass: !unknown && share >= floor, detail: unknown ? "里程不可知" : `${(share * 100).toFixed(0)}% vs ≥${floor * 100}%` });
+    checks.push({ id: "P7 有氧份额", pass: !unknown && share >= floor, detail: unknown ? "里程不可知" : `${(share * 100).toFixed(0)}% vs ≥${(floor * 100).toFixed(0)}%${row.phase === "final_quality" ? (input.weeksToRace != null && input.weeksToRace < FQ_LATE_WEEKS ? "（后半段递减）" : "（前半段）") : ""}` });
   }
 
   return checks;

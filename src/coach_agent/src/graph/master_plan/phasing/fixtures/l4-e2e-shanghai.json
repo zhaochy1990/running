@@ -7,7 +7,7 @@
     "role": "progress",
     "total_km": 77.6,
     "long_run_km": 27.9,
-    "quality_sessions": 2,
+    "quality_sessions": 1,
     "quality_family": "M 配速比赛专项",
     "block_position": "块1第1周"
    },
@@ -17,7 +17,7 @@
     "role": "progress",
     "total_km": 80,
     "long_run_km": 28.8,
-    "quality_sessions": 2,
+    "quality_sessions": 1,
     "quality_family": "M 配速比赛专项",
     "block_position": "块1第2周"
    },
@@ -27,7 +27,7 @@
     "role": "progress",
     "total_km": 82.4,
     "long_run_km": 29.7,
-    "quality_sessions": 2,
+    "quality_sessions": 1,
     "quality_family": "M 配速比赛专项",
     "block_position": "块1第3周"
    },
@@ -37,7 +37,7 @@
     "role": "absorb",
     "total_km": 58.2,
     "long_run_km": 24.4,
-    "quality_sessions": 1,
+    "quality_sessions": 0,
     "quality_family": "M 配速比赛专项",
     "block_position": "块2第1周"
    },

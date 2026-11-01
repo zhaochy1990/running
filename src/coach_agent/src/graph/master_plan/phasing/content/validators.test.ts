@@ -66,7 +66,7 @@ function weekInput(sessions: SessionUnderTest[], over: Partial<WeekContentInput>
   return {
     sessions,
     // E 60min@E 带中点 312s/km 派生 11.5km + M 课 10km + LR 15km
-    row: { total_km: 36.5, long_run_km: 15, quality_sessions: 2 },
+    row: { total_km: 36.5, long_run_km: 15, quality_sessions: 1 },
     zones: ZONES,
     maxTrainingDays: 6,
     ...over,
@@ -81,7 +81,7 @@ const byId = (checks: ReturnType<typeof validateWeekContent>, id: string) => {
 
 test("绿色基线：一致性 + C1-C13 全过（E time 处方派生里程参与 C1；无 goal 上下文 C13 跳过）", () => {
   const checks = validateWeekContent(weekInput(greenSessions()));
-  assert.equal(checks.length, 14);
+  assert.equal(checks.length, 15);
   for (const c of checks) assert.equal(c.pass, true, `${c.id}: ${c.detail}`);
 });
 
@@ -115,10 +115,10 @@ test("C2 长跑唯一：双 LR 挂、里程偏差 >1.5km 挂、赛周 lr=null �
   assert.equal(byId(validateWeekContent(raceWeekOk), "C2 长跑唯一").pass, true);
 });
 
-test("C3 Q配额：质量课数对不上挂（去掉 LR 尾段）", () => {
+test("C3 Q配额：质量课数对不上挂（去掉 LR 尾段——新口径 LR 不占配额，非 LR 质量课数对不上挂）", () => {
   const pure = greenSessions();
   pure[2] = { workout: { ...pure[2]!.workout, name: "长跑 15km", blocks: [{ repeat: 1, steps: [s("work", km(14), EASY), s("cooldown", km(1), EASY)] }] } };
-  const g3 = byId(validateWeekContent(weekInput(pure)), "C3 Q配额");
+  const g3 = byId(validateWeekContent(weekInput(pure, { row: { total_km: 36.5, long_run_km: 15, quality_sessions: 2 } })), "C3 Q配额");
   assert.equal(g3.pass, false);
   assert.match(g3.detail, /1 节质量课 vs 配额2/);
 });
@@ -655,7 +655,7 @@ test("sessionKm recovery 折算（#824 修复1）：time+open recovery 步按 E 
     },
   };
   // E 11.5 + I 课 4×(1+90/312)=5.15 + wu/cd 4 + LR 15 ≈ 35.7；row 对齐后 C1 过且无「不可知」
-  const g1 = byId(validateWeekContent(weekInput(week, { row: { total_km: 35.7, long_run_km: 15, quality_sessions: 2 } })), "C1 周量守恒");
+  const g1 = byId(validateWeekContent(weekInput(week, { row: { total_km: 35.7, long_run_km: 15, quality_sessions: 1 } })), "C1 周量守恒");
   assert.equal(g1.pass, true, g1.detail);
   assert.doesNotMatch(g1.detail, /不可知/);
 });

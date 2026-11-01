@@ -621,7 +621,8 @@ export function scheduleWeek(
   }
 
   const sessions = byDay.flat();
-  const checks = scheduleGates({ calendar, loadSeries, row, daysMax: ctx.athlete.weeklyRunDaysMax, raceDate, coefficients });
+  const weeksToRace = ctx.race ? Math.max(1, Math.ceil((new Date(ctx.race.date).getTime() - new Date(mondayOf(weekMonday)).getTime()) / (7 * 86400000)) - 0) : null;
+  const checks = scheduleGates({ calendar, loadSeries, row, daysMax: ctx.athlete.weeklyRunDaysMax, raceDate, coefficients, weeksToRace });
   if (checks.some((c) => !c.pass)) {
     return { failures: checks.filter((c) => !c.pass).map((c) => `W${row.week} ${c.id}：${c.detail}`) };
   }

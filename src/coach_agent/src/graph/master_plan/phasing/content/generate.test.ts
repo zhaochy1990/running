@@ -12,9 +12,9 @@ import { type ContentDraft, ContentDraftSchema, generateWeekContent } from "./ge
 
 const ZONES = { easy: [288, 336], m: [249, 288], t: [235, 249], i: [218, 235], r: [null, 218] } as const;
 const ROWS: ContentWeekRow[] = [
-  { week: 1, phase: "final_quality", role: "progress", totalKm: 60, longRunKm: 21, qualitySessions: 1, qualityFamily: "M 配速比赛专项", zones: ZONES },
+  { week: 1, phase: "transition_quality", role: "progress", totalKm: 60, longRunKm: 21, qualitySessions: 1, qualityFamily: "M 配速比赛专项", zones: ZONES },
   // 赛周行取 L3 契约形（≥42.2+激活带、q=2 比赛课+M 激活，#825）——模板 M 激活课（≈9km）在 45.3 旧骨架下 C1 数学无解
-  { week: 2, phase: "final_quality", role: "race", totalKm: 52.2, longRunKm: null, qualitySessions: 2, qualityFamily: "M 配速比赛专项", zones: ZONES },
+  { week: 2, phase: "transition_quality", role: "race", totalKm: 52.2, longRunKm: null, qualitySessions: 2, qualityFamily: "M 配速比赛专项", zones: ZONES },
 ];
 const INPUT: ContentGeneratorInput = {
   rows: ROWS,

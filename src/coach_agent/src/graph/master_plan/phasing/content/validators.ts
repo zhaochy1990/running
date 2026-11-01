@@ -37,12 +37,14 @@ export interface SessionUnderTest {
 export interface WeekContentInput {
   sessions: SessionUnderTest[];
   /** L3 周骨架行（load 层 LoadWeek 的 {km, lr, q} 投影）。 */
-  row: { total_km: number; long_run_km: number | null; quality_sessions: number };
+  row: { total_km: number; long_run_km: number | null; quality_sessions: number; role?: string };
   zones: PaceZones;
   /** 运动员每周跑步日上限（C4 按 date 去重）。 */
   maxTrainingDays: number;
   /** 比赛日（ISO date）：该日课=比赛课——C7 热身/放松豁免、罩带豁免（规则⑤处方锚 goal_pace），且本身按一节质量课计。 */
   raceDate?: string;
+  /** 模板兜底路径（C14 豁免——模板永远合法是底线，专项化归 LLM 路径）。 */
+  templatePath?: boolean;
   /** 新生成的课必填 purpose（默认 true）；存量回放传 false 视为 legacy。 */
   requirePurpose?: boolean;
   /** C9 开关（默认 true=按⑨量纲校验 E 课时长分层）；⑨ 之前的存量样本（spike 迁移）传 true 豁免。 */
@@ -220,7 +222,9 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
   checks.push({ id: "C2 长跑唯一", pass: lrOk, detail: lrDetail });
 
   // C3 Q 配额：含 ≥1 质量段的课数 vs 配额；比赛课本身按一节质量课计。
-  const quality = sessions.filter((s) => hasQualitySegment(s.workout, zones) || isRace(s.workout));
+  // C3 Q配额：含 ≥1 质量段的课数 vs 配额。LR 不算——长跑是位型课（C2 独立守恒），
+  // 内嵌 work 尾段是长跑的专项化（#837 拍板），不占独立质量课配额（教练 2Q+1L=Q 归 Q、L 归 L）。
+  const quality = sessions.filter((s) => s.workout.type !== "LR" && (hasQualitySegment(s.workout, zones) || isRace(s.workout)));
   checks.push({ id: "C3 Q配额", pass: quality.length === row.quality_sessions, detail: `${quality.length} 节质量课 vs 配额${row.quality_sessions}` });
 
   // C4 训练日 ≤上限（按 date 去重）；课包阶段不查——落位归 L4b（P1 同判据）。
@@ -350,6 +354,22 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
     detail:
       input.finalQuality !== true ? "非 final_quality 期，跳过" : input.goalPaceSKm == null ? "无 goal 上下文，跳过" : mGoalBad.slice(0, 3).join(";") || "全过",
   });
+
+  // C14 final_quality 进展周长跑非纯有氧（2026-11-01 专项化周期拍板）：临近比赛
+  // 长跑必须含 goal_pace 段（渐加速/全程 MP/MP-10s/变速），纯有氧只留给
+  // recovery/absorb/taper 周。依据=教练 8 周基准（W7 渐加速→W4 全程 MP→W5 MP-10s→W3 MP/E 变速）。
+  {
+    const lrs = sessions.filter((s) => s.workout.type === "LR");
+    const pureAerobic = lrs.filter((s) => !hasQualitySegment(s.workout, zones));
+    const fq = input.finalQuality === true;
+    const isProgress = row.role === "progress";
+    const c14Fail = input.bagStage == null && !input.templatePath && fq && isProgress && lrs.length > 0 && pureAerobic.length === lrs.length;
+    checks.push({
+      id: "C14 长跑专项段",
+      pass: !c14Fail,
+      detail: input.bagStage != null ? "bag 阶段跳过" : input.templatePath ? "模板兜底豁免" : !fq || !isProgress ? "非 FQ 进展周，跳过" : lrs.length === 0 ? "无 LR" : c14Fail ? "FQ 进展周 LR 纯有氧——须含 goal_pace 段（渐加速/全程 MP/MP-10s/变速）" : "含专项段",
+    });
+  }
 
   // C9 E 课时长分层（①⑦⑨，devops#811）：type=E 的课 duration 必填（非 strides
   // 跑步步一律 time_s 处方——⑨ E/REC 量纲=时间）且落带——质量课间隔日 30-60min、

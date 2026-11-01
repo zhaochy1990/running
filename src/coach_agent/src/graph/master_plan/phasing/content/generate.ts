@@ -168,7 +168,7 @@ function bagValidationInput(bag: WeekBag, row: ContentWeekRow, input: ContentGen
     });
   return {
     sessions: dated.map(({ workout }) => ({ workout })),
-    row: { total_km: row.totalKm, long_run_km: row.longRunKm, quality_sessions: row.qualitySessions },
+    row: { total_km: row.totalKm, long_run_km: row.longRunKm, quality_sessions: row.qualitySessions, role: row.role },
     zones: row.zones,
     maxTrainingDays: input.athlete.weeklyRunDaysMax,
     goalPaceSKm: input.race.goalPaceSKm,
@@ -180,13 +180,14 @@ function bagValidationInput(bag: WeekBag, row: ContentWeekRow, input: ContentGen
 }
 
 /** 排位后全量校验（真实日期+E 实例化——C1/C4/C9 按日判定）。 */
-function finalValidation(weeks: Array<{ week: number; sessions: RunWorkout[] }>, input: ContentGeneratorInput): ContentValidation[][] {
+function finalValidation(weeks: Array<{ week: number; sessions: RunWorkout[] }>, input: ContentGeneratorInput, templatePath = false): ContentValidation[][] {
   const rowOfWeek = new Map(input.rows.map((row) => [row.week, row]));
   return weeks.map(({ week, sessions }) => {
     const row = rowOfWeek.get(week)!;
     return validateWeekContent({
+      templatePath,
       sessions: sessions.map((workout) => ({ workout })),
-      row: { total_km: row.totalKm, long_run_km: row.longRunKm, quality_sessions: row.qualitySessions },
+      row: { total_km: row.totalKm, long_run_km: row.longRunKm, quality_sessions: row.qualitySessions, role: row.role },
       zones: row.zones,
       maxTrainingDays: input.athlete.weeklyRunDaysMax,
       goalPaceSKm: input.race.goalPaceSKm,
@@ -214,6 +215,7 @@ function runSchedule(
   bags: WeekBag[],
   input: ContentGeneratorInput,
   coefficients: DoseCoefficients,
+  templatePath = false,
 ): { violations: string[]; scheduleFailures: string[]; outcome?: Omit<ScheduledOutcome, "source" | "attempts" | "attemptsDetail"> } {
   const bagChecks = bags.map((bag) => {
     const row = input.rows.find((r) => r.week === bag.week)!;
@@ -224,7 +226,7 @@ function runSchedule(
   if (!scheduled.ok) return { violations: [...bagViolations, ...scheduled.failures], scheduleFailures: scheduled.failures };
 
   const weeks = scheduled.weeks.map(({ week, sessions }) => ({ week, sessions }));
-  const finalChecks = finalValidation(weeks, input);
+  const finalChecks = finalValidation(weeks, input, templatePath);
   const finalViolations = finalChecks.flatMap((weekChecks, i) => weekChecks.filter((c) => !c.pass).map((c) => `第${weeks[i]!.week}周 ${c.id}：${c.detail}`));
   const violations = [...bagViolations, ...finalViolations];
   if (violations.length > 0) return { violations, scheduleFailures: [] };
@@ -328,7 +330,7 @@ export async function generateWeekContent(
   if (bagViolations.length > 0) {
     throw new Error(`L4 兜底产物挂门（实现缺陷）：${bagViolations.join(";")}`);
   }
-  const { violations, outcome, scheduleFailures } = runSchedule(bags, input, coefficients);
+  const { violations, outcome, scheduleFailures } = runSchedule(bags, input, coefficients, true);
   if (outcome == null || violations.length > 0) {
     if (scheduleFailures.length > 0) {
       throw new Error(`L4 结构性无解（输入超排位包络，P 门上浮）：${scheduleFailures.join(";")}`);

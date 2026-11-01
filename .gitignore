@@ -114,3 +114,12 @@ docs/~$CoachAgent.drawio.dtmp
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# 一次性 spike 脚本/用户数据快照/输出物——不合入（曾随 98e4d49b 误扫）
+# tests/ 下只跟踪三个正式 replay 工具，其余（spike*/plan*/快照/输出物）一律只留本地
+src/coach_agent/src/tests/*
+!src/coach_agent/src/tests/contentReplay.ts
+!src/coach_agent/src/tests/masterPlan.ts
+!src/coach_agent/src/tests/phasingReplay.ts
+src/coach_agent_api/scripts/spike*.ts
+prototypes/
