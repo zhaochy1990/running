@@ -581,9 +581,10 @@ export function scheduleWeek(
     for (const { di, slot, flavor, minutes } of inst) {
       const workout = materializeE(slot, flavor, minutes, dateOf(weekMonday, di), row, ctx.race?.name ?? null);
       if (isRaceWeek && travelWdE != null && flavor === "shake" && di === (travelWdE === 5 ? 4 : 5)) {
+        const dayCn = (wd: number) => "一二三四五六"[wd];
         workout.note =
-          `通勤日（周${"一二三四五六"[travelWdE]}）不安排跑步——赶路+领物+早点休息，注意补水与晚餐碳水。` +
-          `本课为通勤前一天的状态保持；若实际周${"五六"[travelWdE === 5 ? 1 : 0]}通勤，则当天完全不跑，把本课挪到周${"五六"[travelWdE === 5 ? 0 : 1]}执行。`;
+          `默认按周${dayCn(travelWdE)}通勤设计：周${dayCn(travelWdE)}不安排跑步——赶路+领物+早点休息，注意补水与晚餐碳水（通勤本身是消耗）。` +
+          `本课在通勤前一天保持状态；若实际周${dayCn(travelWdE === 5 ? 4 : 5)}通勤，则当天完全不跑，把本课挪到周${dayCn(travelWdE)}执行。`;
       }
       byDay[di]!.push(workout);
     }
