@@ -367,9 +367,9 @@ interface LoadWeek {                      // 周骨架行（实测定型结构�
   block: number;                          // 所属块号
   role: "progress" | "absorb" | "taper" | "race";
                                           // 建设周/吸收周（每第 4 周 ×0.75）/减量周/赛周
-  km: number;                             // 本周总跑量目标（赛周=max(42.2+10, min(42.2+激活, 0.7×final_quality 平台参照))，#809）
+  km: number;                             // 本周总跑量目标（赛周=42.2+日常量 clamp(平台×0.25,14,28)，2026-11-01 日常量口径；演进自 #806/#809）
   lr: number | null;                      // 长跑 km（赛周 null——比赛本身不算训练长跑；G2 豁免依据）
-  q: number;                              // 质量课配额（recovery=0｜foundation km≥60→1 否则 0｜建设段 km≥70→2 否则 1｜taper km≥60→2 否则 1（2026-11-01 原书校准）｜赛周=2=比赛课+T 触感激活，#825）
+  q: number;                              // 质量课配额（recovery=0｜foundation km≥60→1 否则 0｜建设段 km≥70→2 否则 1｜taper km≥60→2 否则 1（2026-11-01 原书校准）｜赛周=2=比赛课+T 触感激活，#825；赛周量=42.2+日常 clamp(平台×0.25,14,28)——日常量口径）
 }
 
 interface LoadBlock {

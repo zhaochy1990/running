@@ -92,7 +92,7 @@ export const LR_EVE_MAX_KM = 8;
 /** LR 前日里程帽容差（km）：30s 时长取整粒度折算 ≈0.05km，留 0.1。 */
 const LR_EVE_KM_TOL = 0.1;
 /** 赛周激活课豁免窗：比赛日前 1-3 天（①唯一例外；weekday 差 ≤3 且不跨周）——窗内豁免下限（短激活可 <30min）但仍受短带上限 60min 约束（①原文=「短」E 激活）。 */
-const RACE_WEEK_ACTIVATION_DAYS = 3;
+const RACE_WEEK_ACTIVATION_DAYS = 4; // 赛周每日 shake 窗（2026-11-01 原书校准：赛前 1-4 天每天短 E）
 /** C12 质量段配速处方宽度上限（s/km，#824）：带中位 ±3~5s 的窄带——整条投影带复制（15s+）会让慢端刺激滑到下一带。 */
 const QUALITY_PRECISION_S = 10;
 /** C11 分段梯度判据（s/km，#824）：不同时长质量段的配速中位差 ≤此值视为「全同配速」（等长刺激=形状像但梯度缺位）。 */

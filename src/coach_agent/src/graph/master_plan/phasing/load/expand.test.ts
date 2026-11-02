@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { ACTIVATION_MAX_KM } from "./reachability.js";
 import type { PhaseDivisionIntent } from "../intent.js";
 import { phase } from "../testSupport.js";
 import type { HabitualBaseline } from "./baseline.js";
@@ -89,11 +90,11 @@ test("taper：段内递减、赛周=比赛+激活（字面 52-57 且落在削减
     taper.every((x, i) => i === 0 || x <= taper[i - 1]! + 0.5),
     `taper=${taper}`,
   );
-  // 性质断言（不复制实现公式）：高平台走丹尼尔斯字面账 52-57（含比赛里程），
-  // 且始终在削减深度门带 [0.5, 0.7]×平台参照内（构造与门不自挂）
-  assert.ok(race.km >= 52 && race.km <= 57, `race=${race.km} 不在 52-57 带内`);
+  // 性质断言（不复制实现公式）：高平台走原书字面账 64-70（42.2+激活课~10+每日
+  // shake 4 天≈12-16，2026-11-01 校准），且始终在赛周总量帽 0.86×平台参照内
+  assert.ok(race.km >= 61 && race.km <= 64, `race=${race.km} 不在 61-64 带内（42.2+clamp(峰×0.25,14,28)）`);
   const ref = Math.max(...weeks.filter((w) => w.canonical === "final_quality" && w.role !== "race").map((w) => w.km));
-  assert.ok(race.km >= ref * 0.5 - 0.6 && race.km <= ref * 0.7 + 0.6, `race=${race.km} ref=${ref}`);
+  assert.ok(race.km >= ref * 0.62 - 0.6 && race.km <= ref * 0.8 + 0.6, `race=${race.km} ref=${ref}`);
 });
 
 test("赛周低量档字面最小值优先（#809）：0.7×平台上限不得把赛周压到比赛里程之下", () => {
@@ -114,15 +115,15 @@ test("赛周低量档字面最小值优先（#809）：0.7×平台上限不得�
   const { weeks } = expandLoad({ intent, runwayWeeks: 6, baseline: base, recentWeeksKm: [0, 0, 0, 0] });
   const plateau = weeks.filter((w) => w.role === "progress").at(-1)!.km;
   const race = weeks.at(-1)!;
-  // 赛周含 FM 本身：总里程 ≥42.2+激活下限 10（字面最小值 52.2 反超 0.7×平台上限——
-  // 旧双侧夹取会产出 37.8<42.2 的物理不可能赛周）
-  assert.ok(plateau * 0.7 < 52.2, `plateau=${plateau}（用例未进入低量域）`);
-  assert.ok(Math.abs(race.km - 52.2) < 0.1, `race=${race.km}`);
+  // 赛周含 FM 本身：总里程 ≥42.2+非比赛预算下限 22=64.2（字面最小值反超 0.86×
+  // 平台上限——旧双侧夹取会产出 <42.2 的物理不可能赛周）
+  assert.ok(plateau * 0.25 < ACTIVATION_MAX_KM, `plateau=${plateau}（用例未进入低量域）`);
+  assert.ok(Math.abs(race.km - 56.2) < 0.1, `race=${race.km}（42.2+日常下限 14）`);
 });
 
-test("赛周高平台分支（#809）：回归纯字面账 ≤57.2，不再被 0.5×ref 下界抬升", () => {
-  // 高量档（band 100-120）：平台爬到 115+ 后旧公式赛周=0.5×平台（60+）——激活
-  // 原教义上限 15km，字面账封顶 57.2；量值合法性由 L4 门左支/激活量右支兜底
+test("赛周高平台分支（#809）：回归纯字面账 64-70（42.2+预算带），不再被下界抬升", () => {
+  // 高量档（band 100-120）：预算带 22-28（激活课+每日 shake，2026-11-01 校准）
+  // 封顶 70.2；量值合法性由 L4 门左支/激活量右支兜底
   const high: HabitualBaseline = { ...baseline, week_km: 105, avg4_km: 105, pre_peak_km: 118 };
   const plan = buildLoadPlan({
     intent: makeIntent({
@@ -137,8 +138,8 @@ test("赛周高平台分支（#809）：回归纯字面账 ≤57.2，不再被 0
   const race = plan.weeks.at(-1)!;
   const ref = Math.max(...plan.weeks.filter((w) => w.role !== "race").map((w) => w.km));
   assert.ok(ref > 114, `ref=${ref}（用例未进入高平台域）`);
-  assert.ok(Math.abs(race.km - 57.2) < 0.1, `race=${race.km}`);
-  assert.ok(race.km < ref * 0.5, `race=${race.km} ref=${ref}（旧 0.5×ref 下界已随 #809 双侧夹取移除）`);
+  assert.ok(Math.abs(race.km - 70.2) < 0.1, `race=${race.km}`);
+  assert.ok(race.km < ref * 0.62, `race=${race.km} ref=${ref}（日常 clamp 28 封顶）`);
   assert.ok(plan.checks.find((c) => c.id.startsWith("L4"))!.pass, plan.checks.find((c) => c.id.startsWith("L4"))!.detail);
 });
 
@@ -181,14 +182,17 @@ test("吸收放位（#806）：距赛周 < taper+1 不落吸收；≤8 周短跑
     [5],
   );
   assert.equal(z11.weeks.find((w) => w.week === 9)!.role, "progress");
-  // 峰后弧单调：末平台顶（最后一个 final_quality progress 周）起至赛周不升
+  // 峰后弧单调（2026-11-01 语义限定）：末平台顶起至 taper 末周不升——赛周不含在
+  // 日常减量弧内（42.2 比赛里程必然主导整周，#809 既定事实）；赛周另受 0.86 帽
   for (const z of [z7, z8, z9, z11]) {
     const arcStart = z.weeks.findLastIndex((w) => w.canonical === "final_quality" && w.role === "progress");
-    const arc = z.weeks.slice(arcStart).map((w) => w.km);
+    const arc = z.weeks.slice(arcStart, -1).map((w) => w.km);
     assert.ok(
       arc.every((x, i) => i === 0 || x <= arc[i - 1]! + 0.5),
       `arc=${arc}`,
     );
+    const peak = z.weeks[arcStart]!.km;
+    assert.ok(z.weeks.at(-1)!.km <= peak * 0.88 + 0.6, `race=${z.weeks.at(-1)!.km} peak=${peak}`);
   }
 });
 
@@ -277,7 +281,7 @@ test("低量/断练播种自洽（评审回归 + #809 语义更新）：建设�
     plan.weeks.every((w) => w.km > 0),
     `weeks=${plan.weeks.map((w) => w.km)}`,
   );
-  assert.ok(Math.abs(plan.weeks.at(-1)!.km - 52.2) < 0.1);
+  assert.ok(Math.abs(plan.weeks.at(-1)!.km - 56.2) < 0.1);
   // LR 下限让位份额：低量周 lr ≤ km×cap+0.5（不硬顶 12）
   for (const w of plan.weeks) {
     if (w.lr == null) continue;

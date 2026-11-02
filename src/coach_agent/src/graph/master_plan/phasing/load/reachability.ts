@@ -19,9 +19,18 @@ export const RECOVERY_FLOOR_KM = 15;
 export const RECOVERY_FACTOR = 0.7;
 /** 比赛里程（km）：FM（判断层教义只验证 FM；距离 profile 化另票，spec §7）——赛周公式与 L4 门激活量判据共用。 */
 export const RACE_KM = 42.195;
-/** FM 赛周激活带（km，丹尼尔斯原教义 10-15km@MP）：展开器赛周公式与 L4 门低量档判据同源。 */
-export const ACTIVATION_MIN_KM = 10;
-export const ACTIVATION_MAX_KM = 15;
+/**
+ * FM 赛周日常训练量预算带（km，不含比赛，2026-11-01 原书校准·二次修正）：
+ * =赛前激活课（~9km 周二位 T 触感）+ 赛前 1-4 天每天短 E shake（15-20min/天）。
+ * 丹尼尔斯 2Q 原书口径（71-85mph 档实证）：赛周总量≈40mi（含比赛）≈峰值 0.5×，
+ * 即日常部分≈14mi≈峰值 0.17-0.25×——**减量曲线管的是不含比赛的日常量**，
+ * 含比赛总账只是衍生物（8weeks 教练 72-85 含比赛≈峰值 0.86 是高维持型教练
+ * 风格，非丹系口径，不作缺省）。L4 门激活量右支同源。
+ */
+export const ACTIVATION_MIN_KM = 14;
+export const ACTIVATION_MAX_KM = 28;
+/** 赛周日常量份额（×平台位）：丹尼尔斯 2Q 实证带 0.17-0.25 取中。 */
+export const RACE_DAILY_SHARE = 0.25;
 /** 与 L3 带贴合门一致的 lo 容差（km）。 */
 const LO_TOLERANCE_KM = 2;
 

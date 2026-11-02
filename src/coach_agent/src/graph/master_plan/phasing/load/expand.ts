@@ -33,8 +33,7 @@ const TAPER_CURVE = 0.45;
  * 周最大 km，含 taper 周——fq≤taperW 的退化布局下无 progress 周，锚回退平
  * 台会劈叉）。
  */
-const ACTIVATION_SHARE = 0.15;
-const RACE_CAP_RATIO = 0.7;
+import { RACE_DAILY_SHARE } from "./reachability.js";
 /** 短跑道（≤8 周）禁用吸收周（#806 拍板①）：短块峰值后单调递减至赛周，全局 3+1 计数不注入短块。 */
 const SHORT_ABSORB_MAX_WEEKS = 8;
 /** 块内微阶梯（质感项）：三周 0.97/1/1.03 微递进而非平台直排。 */
@@ -251,12 +250,12 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
       const plateau = weeks.filter((x) => x.canonical === "final_quality" && x.role === "progress").at(-1)?.km ?? Math.min(hi, rollMean);
       // 夹取参照=削减深度门的 plateauRef 同款（FQ 非赛周最大 km，含 taper 周）
       const ref = Math.max(plateau, ...weeks.filter((x) => x.canonical === "final_quality" && x.role !== "race").map((x) => x.km));
-      const activation = Math.min(ACTIVATION_MAX_KM, Math.max(ACTIVATION_MIN_KM, plateau * ACTIVATION_SHARE));
-      // 赛周=字面账 42.2+激活（#809）：字面最小值优先——低量档上限夹持不得
-      // 把赛周压到比赛里程之下；0.7×ref 仅在高于字面最小值时修剪高激活
-      km = isRace
-        ? Math.max(RACE_KM + ACTIVATION_MIN_KM, Math.min(RACE_KM + activation, ref * RACE_CAP_RATIO))
-        : plateau * (1 - (TAPER_CURVE * tIdx) / (taperW + 1));
+      // 赛周=比赛里程+日常量 clamp(平台×0.25, 14, 28)（2026-11-01 原书口径）：
+      // 减量曲线主体=不含比赛的日常量（丹尼尔斯 2Q 实证日常≈峰值 0.17-0.25×），
+      // 含比赛总账是衍生物；低量档日常下限 14 保证每日 shake 有预算（#809 的
+      // 「不得低于比赛里程」由公式形态天然保证）
+      const raceDaily = Math.min(ACTIVATION_MAX_KM, Math.max(ACTIVATION_MIN_KM, plateau * RACE_DAILY_SHARE));
+      km = isRace ? RACE_KM + raceDaily : plateau * (1 - (TAPER_CURVE * tIdx) / (taperW + 1));
       role = isRace ? "race" : "taper";
     } else {
       const stair = STAIR[(phaseWeekIdx - 1) % STAIR.length]!;

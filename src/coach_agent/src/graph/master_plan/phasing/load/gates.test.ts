@@ -240,8 +240,9 @@ test("L4 taper：taper 段递增挂（单调公式方向反例——写反会把
 });
 
 test("L4 激活量右支（#809）：低量档非比赛日里程∈[10,15] 过（赛周高于 taper 曲线不进弧）；出带挂", () => {
-  // 峰 54（0.72×54=38.9 < 52.2）：比值/削减深度左支在低量档数学不可过——
-  // 比赛主导整周时激活量本身合规即合法 taper（pan/5v2 修复后实测形态）
+  // 峰 54（日常 54×0.25=13.5 触下限 14）：比值/削减深度左支在低量档数学不可过——
+  // 比赛主导整周时日常量本身合规即合法 taper（pan/5v2 修复后实测形态）；
+  // 日常预算带 14-28（2026-11-01 原书口径：不含比赛的日常量）
   const intent = makeIntent({
     phases: [phase("final_quality", 1, 4)],
     taperWeeks: 1,
@@ -251,14 +252,14 @@ test("L4 激活量右支（#809）：低量档非比赛日里程∈[10,15] 过�
     [1, "final_quality", 1, "progress", 52.4, 22, 1],
     [2, "final_quality", 1, "progress", 54, 22.7, 1],
     [3, "final_quality", 1, "taper", 45.9, 19.3, 1],
-    [4, "final_quality", 1, "race", 52.2, null, 1], // 非比赛日 10.0 ∈ [10,15]
+    [4, "final_quality", 1, "race", 56.2, null, 1], // 非比赛日 14 ∈ [14,28]
   ]);
   const checks = validateLoad(intent, ok, seed);
   assert.ok(failOf(checks, "L4")!.pass, failOf(checks, "L4")!.detail);
 
-  const over = ok.map((w) => (w.role === "race" ? { ...w, km: 58 } : w)); // 非比赛日 15.8 > 15：右支挂（左支 58 > 38.9 同挂）
+  const over = ok.map((w) => (w.role === "race" ? { ...w, km: 71 } : w)); // 非比赛日 28.8 > 28：右支挂
   assert.ok(!failOf(validateLoad(intent, over, seed), "L4")!.pass);
-  const under = ok.map((w) => (w.role === "race" ? { ...w, km: 50 } : w)); // 非比赛日 7.8 < 10：右支挂；左支 50 > 38.9 同挂
+  const under = ok.map((w) => (w.role === "race" ? { ...w, km: 50 } : w)); // 非比赛日 7.8 < 14：右支挂
   assert.ok(!failOf(validateLoad(intent, under, seed), "L4")!.pass);
 });
 

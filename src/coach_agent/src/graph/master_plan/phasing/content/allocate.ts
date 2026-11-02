@@ -181,14 +181,21 @@ export function allocateRaceWeek(row: ContentWeekRow, race: ContentGeneratorInpu
       left -= activationKm;
     }
   }
-  const shakeWindow = [raceWd - 1, raceWd - 3, raceWd - 2].filter((wd) => wd >= 0 && (activation == null || wd !== activation.weekday));
+  // 每日 shake（2026-11-01 原书校准）：赛前 1-4 天每天短 E（保频率——完全停跑
+  // 3 天体能流失+腿僵；原书赛周每天 20-30min）。铺法=先保天数（每天 ≥15min），
+  // 余量均摊（≤30min/天）；预算不足时逐日递减但不断天（≥10min）。
+  const shakeWindow = [raceWd - 1, raceWd - 2, raceWd - 3, raceWd - 4].filter((wd) => wd >= 0 && (activation == null || wd !== activation.weekday));
 
   const shakes: RaceWeekShake[] = [];
-  for (const wd of shakeWindow) {
-    if (left < 2) break;
-    const capMin = E_DURATION_INTERVAL_BAND[1]; // 赛周激活=短 E（①拍板），上限 60min
-    const minutes = Math.min((left * eMid) / 60, capMin);
-    const seconds = Math.round((minutes * 60) / 30) * 30; // 取整 30s
+  for (let i = 0; i < shakeWindow.length; i++) {
+    const wd = shakeWindow[i]!;
+    const remainDays = shakeWindow.length - i;
+    if (left < 1.5) break;
+    const capMin = 30; // 每日 shake 帽（原书 20-30min）
+    const floorMin = 15;
+    const evenMin = ((left * eMid) / 60) / remainDays; // 均摊保天数
+    const minutes = Math.min(capMin, Math.max(evenMin, Math.min(floorMin, (left * eMid) / 60)));
+    const seconds = Math.max(10 * 60, Math.round((minutes * 60) / 30) * 30); // 下限 10min、取整 30s
     shakes.push({ weekday: wd, minutes: seconds / 60 });
     left -= seconds / eMid;
   }
