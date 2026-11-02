@@ -402,29 +402,31 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
     });
   }
 
-  // C15 taper 周长跑禁提速（2026-11-02 用户拍板）：减量周 LR 的 work 段 mid 不得
-  // 比 goal_pace 快——「MP-10s」等提速形态只属于 progress 的调整/吸收周；赛前
-  // 一周多的长跑只允许纯有氧或比 goal 慢 10-20s 的渐加速短版（25km 贴 T 带快端
-  // =赛前 8 天的半程节奏赛，与减量原则冲突）。
+  // C15 taper 周长跑限提速块（2026-11-02 用户拍板·v2 原书调和）：禁的是「MP-10s 型
+  // 全程大块提速」（25km 贴 T 带快端=赛前 8 天半程节奏赛）；允许原书 W17 的
+  // 「9E+6T」嵌段形态——快于 goal 的 work 段合计 ≤12km（原书 6T=9.6km）。
   {
     const lrs = sessions.filter((s) => s.workout.type === "LR");
+    let fastKm = 0;
     const fastBad: string[] = [];
     if (row.role === "taper" && input.goalPaceSKm != null && input.bagStage == null) {
       for (const { workout } of lrs) {
         for (const block of workout.blocks) {
-          for (const step of block.steps) {
-            if (step.step_kind !== "work" || step.target.kind !== "pace_s_km") continue;
-            const mid = (step.target.low + step.target.high) / 2;
-            if (mid < input.goalPaceSKm - 1e-6)
-              fastBad.push(`${workout.name} 段@${step.target.low}-${step.target.high}（mid ${Math.round(mid)} 比 goal ${Math.round(input.goalPaceSKm)} 快 ${(input.goalPaceSKm - mid).toFixed(1)}s）`);
+          for (let r = 0; r < block.repeat; r++) {
+            for (const step of block.steps) {
+              if (step.step_kind !== "work" || step.target.kind !== "pace_s_km" || step.duration.kind !== "distance_m" || step.duration.value == null) continue;
+              const mid = (step.target.low + step.target.high) / 2;
+              if (mid < input.goalPaceSKm - 1e-6) fastKm += step.duration.value / 1000;
+            }
           }
         }
       }
+      if (fastKm > 12 + 1e-6) fastBad.push(`快于 goal 的段合计 ${fastKm.toFixed(1)}km >12km（MP-10s 型大块提速，原书只允许 ≤12km 的 T 嵌段）`);
     }
     checks.push({
-      id: "C15 taper长跑禁提速",
+      id: "C15 taper长跑限提速",
       pass: fastBad.length === 0,
-      detail: input.bagStage != null ? "bag 阶段跳过" : row.role !== "taper" ? "非 taper 周，跳过" : fastBad.slice(0, 2).join(";") || "全过",
+      detail: input.bagStage != null ? "bag 阶段跳过" : row.role !== "taper" ? "非 taper 周，跳过" : fastBad.slice(0, 2).join(";") || fastKm > 0.05 ? `嵌 ${fastKm.toFixed(1)}km 快段（≤12 原书 9E+6T 形态）` : "纯有氧/慢渐加速",
     });
   }
 

@@ -725,14 +725,14 @@ test("C15 taper 长跑禁提速：LR work 段 mid 快于 goal 挂；纯有氧过
   const fastSeg = { kind: "pace_s_km" as const, low: 234, high: 238 };
   const lrFast = W({ name: "MP-10s 持续跑 24km", date: "2026-11-29", type: "LR", blocks: [{ repeat: 1, steps: [s("work", km(24), fastSeg)] }] });
   const fast = validateWeekContent({ sessions: [{ workout: lrFast }], row, zones: ZONES, maxTrainingDays: 6, goalPaceSKm: 248.8, finalQuality: true });
-  assert.equal(byId(fast, "C15 taper长跑禁提速")?.pass, false);
+  assert.equal(byId(fast, "C15 taper长跑限提速")?.pass, false);
 
   const lrEasy = W({ name: "纯有氧长跑 24km", date: "2026-11-29", type: "LR", blocks: [{ repeat: 1, steps: [s("work", km(24), EASY)] }] });
   const easy = validateWeekContent({ sessions: [{ workout: lrEasy }], row, zones: ZONES, maxTrainingDays: 6, goalPaceSKm: 248.8, finalQuality: true });
-  assert.equal(byId(easy, "C15 taper长跑禁提速")?.pass, true);
+  assert.equal(byId(easy, "C15 taper长跑限提速")?.pass, true);
 
   const progress = validateWeekContent({ sessions: [{ workout: lrFast }], row: { ...row, role: "progress" as const }, zones: ZONES, maxTrainingDays: 6, goalPaceSKm: 248.8, finalQuality: true });
-  assert.equal(byId(progress, "C15 taper长跑禁提速")?.detail, "非 taper 周，跳过");
+  assert.equal(byId(progress, "C15 taper长跑限提速")?.detail, "非 taper 周，跳过");
 });
 
 test("C17/C3 轻量 M 段位（2026-11-02 E 压缩拍板）：q+1 轻量 M 段课合法；高 E 份额 progress 周挂", () => {
