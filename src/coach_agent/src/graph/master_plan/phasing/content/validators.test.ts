@@ -81,7 +81,7 @@ const byId = (checks: ReturnType<typeof validateWeekContent>, id: string) => {
 
 test("绿色基线：一致性 + C1-C13 全过（E time 处方派生里程参与 C1；无 goal 上下文 C13 跳过）", () => {
   const checks = validateWeekContent(weekInput(greenSessions()));
-  assert.equal(checks.length, 17);
+  assert.equal(checks.length, 18);
   for (const c of checks) assert.equal(c.pass, true, `${c.id}: ${c.detail}`);
 });
 
@@ -733,4 +733,24 @@ test("C15 taper 长跑禁提速：LR work 段 mid 快于 goal 挂；纯有氧过
 
   const progress = validateWeekContent({ sessions: [{ workout: lrFast }], row: { ...row, role: "progress" as const }, zones: ZONES, maxTrainingDays: 6, goalPaceSKm: 248.8, finalQuality: true });
   assert.equal(byId(progress, "C15 taper长跑禁提速")?.detail, "非 taper 周，跳过");
+});
+
+test("C17/C3 轻量 M 段位（2026-11-02 E 压缩拍板）：q+1 轻量 M 段课合法；高 E 份额 progress 周挂", () => {
+  const row = { total_km: 75, long_run_km: 27, quality_sessions: 2, role: "progress" as const };
+  const mSeg = { kind: "pace_s_km" as const, low: 247, high: 257 };
+  const light = W({ name: "E+M 段轻课", date: "2026-11-04", type: "M", blocks: [{ repeat: 1, steps: [s("work", km(3), EASY), s("work", km(5), mSeg), s("cooldown", km(2), EASY)] }] });
+  // q+1 轻量位：C3 过（2 节常规 + 1 轻量）
+  const quality1 = W({ name: "M 6km", date: "2026-11-03", type: "M", note: null, blocks: [{ repeat: 1, steps: [s("warmup", km(2), EASY), s("work", km(6), mSeg), s("cooldown", km(2), EASY)] }] });
+  const lr = W({ name: "长跑 27km", date: "2026-11-08", type: "LR", note: null, blocks: [{ repeat: 1, steps: [s("work", km(27), EASY)] }] });
+  const e1 = W({ name: "E 70min", date: "2026-11-05", type: "E", note: null, blocks: [{ repeat: 1, steps: [s("work", { kind: "time_s", value: 4200 }, EASY)] }] });
+  const input = (ss: RunWorkout[]) => validateWeekContent({ sessions: ss.map((workout) => ({ workout })), row, zones: ZONES, maxTrainingDays: 6, goalPaceSKm: 251.7, finalQuality: true });
+  const withLight = input([quality1, light, lr, e1]);
+  assert.equal(byId(withLight, "C3 Q配额")?.pass, true, byId(withLight, "C3 Q配额")?.detail);
+  // C17：纯 E+LR 高份额挂；加轻量 M 段后份额降
+  const heavyE = input([quality1, lr, e1, W({ name: "E 60min", date: "2026-11-06", type: "E", note: null, blocks: [{ repeat: 1, steps: [s("work", { kind: "time_s", value: 3600 }, EASY)] }] })]);
+  assert.equal(byId(heavyE, "C17 有氧份额上限")?.pass, false, byId(heavyE, "C17 有氧份额上限")?.detail);
+  // 真实合规形态：LR 带渐加速 M 尾段（C14）+2Q+轻量位——份额压进带内
+  const lrProgressive = W({ name: "渐加速长跑 27km", date: "2026-11-08", type: "LR", note: null, blocks: [{ repeat: 1, steps: [s("work", km(18), EASY), s("work", km(9), mSeg)] }] });
+  const spread = input([quality1, light, lrProgressive]);
+  assert.equal(byId(spread, "C17 有氧份额上限")?.pass, true, byId(spread, "C17 有氧份额上限")?.detail);
 });

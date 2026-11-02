@@ -157,6 +157,9 @@ export function scheduleGates(input: GateInput): ScheduleCheck[] {
       total += d.km;
     }
     const share = total > 0 ? aero / total : 0;
+    // 上限归内容层 C17（2026-11-02 拍板后挪层）：排位层改不了课包成分，份额上限
+    // 在 P 门挂=结构性无解上浮（模板兜底被误伤实证）；C17 在课包阶段查、LLM 带
+    // 违规重试可修。
     checks.push({ id: "P7 有氧份额", pass: !unknown && share >= floor, detail: unknown ? "里程不可知" : `${(share * 100).toFixed(0)}% vs ≥${(floor * 100).toFixed(0)}%${row.phase === "final_quality" ? (input.weeksToRace != null && input.weeksToRace < FQ_LATE_WEEKS ? "（后半段递减）" : "（前半段）") : ""}` });
   }
 

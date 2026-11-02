@@ -87,6 +87,22 @@ const EXPAND_KM_TOL = 0.5;
 /** C9 E 课时长分层带（min，⑦）：[下限, 上限]；间隔日/再生周=短带。分配器（allocate.ts）同源 import。 */
 export const E_DURATION_INTERVAL_BAND: readonly [number, number] = [30, 60];
 export const E_DURATION_NORMAL_BAND: readonly [number, number] = [60, 90];
+
+/** 轻量 M 段课（2026-11-02 拍板「E 压缩与 M 段铺开」）：E 槽升级形态=热身/放松 E
+ * + 单段 3.2-6.5km@goal 的 M 段、课总里程 ≤16km——作为第三质量位合法（C3 的
+ * q+1 位、C16 段长谱豁免），段长按能力映射见 prompt 规则②。 */
+export const isLightMSegmentCourse = (workout: RunWorkout): boolean => {
+  if (workout.type !== "M") return false;
+  const mSegs: number[] = [];
+  for (const b of workout.blocks) for (let r = 0; r < b.repeat; r++) for (const st of b.steps) {
+    if (st.step_kind === "work" && st.target.kind === "pace_s_km" && st.duration.kind === "distance_m" && st.duration.value != null && st.duration.value >= 1000) mSegs.push(st.duration.value);
+  }
+  if (mSegs.length === 0) return false;
+  const totalM = mSegs.reduce((a, b) => a + b, 0);
+  const total = workout.blocks.reduce((t, b) => t + b.repeat * b.steps.reduce((u, st) => u + (st.duration.kind === "distance_m" ? (st.duration.value ?? 0) : 0), 0), 0);
+  return totalM >= 3200 - 1e-6 && totalM <= 6500 + 1e-6 && Math.max(...mSegs) <= 6500 + 1e-6 && total <= 16000 + 1e-6;
+};
+
 /** LR 前日轻量帽（#825，#814 附带修复拍板）：长跑前一日的 E 课 ≤8km 或休——按课实际里程判（V1 事实），不设时长下限。 */
 export const LR_EVE_MAX_KM = 8;
 /** LR 前日里程帽容差（km）：30s 时长取整粒度折算 ≈0.05km，留 0.1。 */
@@ -225,7 +241,13 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
   // C3 Q配额：含 ≥1 质量段的课数 vs 配额。LR 不算——长跑是位型课（C2 独立守恒），
   // 内嵌 work 尾段是长跑的专项化（#837 拍板），不占独立质量课配额（教练 2Q+1L=Q 归 Q、L 归 L）。
   const quality = sessions.filter((s) => s.workout.type !== "LR" && (hasQualitySegment(s.workout, zones) || isRace(s.workout)));
-  checks.push({ id: "C3 Q配额", pass: quality.length === row.quality_sessions, detail: `${quality.length} 节质量课 vs 配额${row.quality_sessions}` });
+  // q+1 位=轻量 M 段课（2026-11-02「E 压缩与 M 段铺开」：E 槽升级的第三质量位，
+  // 每周至多一节且必须为轻量形态）；其余超额照挂
+  const extra = quality.filter((s) => !isRace(s.workout) && isLightMSegmentCourse(s.workout));
+  const qOk =
+    quality.length === row.quality_sessions ||
+    (quality.length === row.quality_sessions + 1 && extra.length === 1 && quality.length - extra.length >= row.quality_sessions - 1);
+  checks.push({ id: "C3 Q配额", pass: qOk, detail: `${quality.length} 节质量课 vs 配额${row.quality_sessions}${extra.length ? `（+${extra.length} 轻量 M 段位）` : ""}` });
 
   // C4 训练日 ≤上限（按 date 去重）；课包阶段不查——落位归 L4b（P1 同判据）。
   if (input.bagStage == null) {
@@ -437,7 +459,7 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
           const segs = workSegsOf(workout);
           if (segs.length > 0 && Math.min(...segs) < 1950) bad.push(`${workout.name} T 段 <2km`);
         }
-        if (workout.type === "M" && !isRace && (input.raceDate == null || workout.date !== input.raceDate)) {
+        if (workout.type === "M" && !isRace && !isLightMSegmentCourse(workout) && (input.raceDate == null || workout.date !== input.raceDate)) {
           const mSegs = workSegsOf(workout).filter((v) => v >= 1000);
           if (mSegs.length > 0) {
             const totalM = mSegs.reduce((t, v) => t + v, 0) / 1000;
@@ -452,6 +474,52 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
       id: "C16 段长谱",
       pass: bad.length === 0,
       detail: input.bagStage != null ? "bag 阶段跳过" : input.templatePath ? "模板豁免" : input.finalQuality !== true ? "非 final_quality，跳过" : isRaceCtx ? "赛周豁免段长（激活课带内即可）" : bad.slice(0, 3).join(";") || "全过",
+    });
+  }
+
+  // C17 final_quality 有氧份额上限（2026-11-02「E 压缩与 M 段铺开」拍板）：progress
+  // 周有氧里程占比 ≤65%——2Q+LR+轻量 M 段位后 E 不得仍占大头（教练基准峰值 MP
+  // 周 ~45%，65% 宽带上限给早期周递进留空间）。归课包阶段（LLM 带违规可修），
+  // 排位层 P7 只管下限。模板兜底豁免（构造保证底线，mBody 受预算约束）。
+  {
+    let aero = 0;
+    let totalM = 0;
+    let unknownShare = false;
+    const easyLo = zones.easy?.[0] ?? null;
+    const kmOfStep = (st: { step_kind: string; duration: { kind: string; value: number | null }; target: { kind: string; low: number | null; high: number | null } }): number | null => {
+      if (st.duration.kind === "distance_m") return st.duration.value ?? 0;
+      if (st.duration.kind !== "time_s" || st.duration.value == null) return null;
+      const lo = st.target.low;
+      const hi = st.target.high ?? lo;
+      const paceSec: number = st.target.kind === "pace_s_km" && lo != null && hi != null ? (lo + hi) / 2 : (eMid as number);
+      return paceSec > 0 ? st.duration.value / paceSec : null;
+    };
+    if (input.finalQuality === true && row.role === "progress" && input.bagStage == null && !input.templatePath) {
+      for (const { workout } of sessions) {
+        for (const b of workout.blocks) {
+          for (let r = 0; r < b.repeat; r++) {
+            for (const st of b.steps) {
+              if (st.step_kind === "rest") continue;
+              const km = kmOfStep(st as never);
+              if (km == null) { unknownShare = true; break; }
+              totalM += km;
+              const lo = st.target.low;
+              const hi = st.target.high ?? lo;
+              const mid = st.target.kind === "pace_s_km" && lo != null && hi != null ? (lo + hi) / 2 : null;
+              // 有氧=不快于 E 带慢端（mid ≥ easy 慢端；快于它=质量步。与 courseDose 口径同向）
+              const aerobic = mid == null || easyLo == null || mid >= easyLo - 0.5;
+              if (aerobic) aero += km;
+            }
+          }
+        }
+      }
+    }
+    const share = totalM > 0 ? aero / totalM : 0;
+    const c17Applies = input.finalQuality === true && row.role === "progress" && input.bagStage == null && !input.templatePath && !unknownShare;
+    checks.push({
+      id: "C17 有氧份额上限",
+      pass: !c17Applies || share <= 0.65 + 1e-6,
+      detail: input.bagStage != null ? "bag 阶段跳过" : input.templatePath ? "模板豁免" : input.finalQuality !== true || row.role !== "progress" ? "非 FQ progress 周，跳过" : unknownShare ? "里程不可知" : `${(share * 100).toFixed(0)}% vs ≤65%`,
     });
   }
 
