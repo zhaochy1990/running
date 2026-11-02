@@ -1,5 +1,6 @@
 import { normalizeRunWorkout, type RunWorkout } from "@stride/contract";
 import { hasQualitySegment } from "../derive.js";
+import { allocateRaceWeek } from "../allocate.js";
 import type { ContentRaceContext, ContentWeekRow } from "../doctrine.js";
 import { E_DURATION_INTERVAL_BAND, E_DURATION_NORMAL_BAND, LR_EVE_MAX_KM, weekdayOf } from "../validators.js";
 import { COEFFICIENT_VERSION, courseDose, DEFAULT_DOSE_COEFFICIENTS, type DoseCoefficients } from "./dose.js";
@@ -264,7 +265,7 @@ interface Placement {
 }
 
 /** 比赛周：比赛课（最大里程结构课）钉比赛日（P4）、其余结构课=M 激活（赛前 2-3 天）、E 槽填赛前窗。 */
-function placeRaceWeek(bag: WeekBag, row: ContentWeekRow, coefficients: DoseCoefficients, raceWd: number, daysMax: number): Placement {
+function placeRaceWeek(bag: WeekBag, row: ContentWeekRow, ctx: SingleWeekContext, coefficients: DoseCoefficients, raceWd: number, daysMax: number): Placement {
   const dayCourses: PlannedCourse[][] = Array.from({ length: 7 }, (): PlannedCourse[] => []);
   const repairs: string[] = [];
   const failures: string[] = [];
@@ -285,11 +286,23 @@ function placeRaceWeek(bag: WeekBag, row: ContentWeekRow, coefficients: DoseCoef
     if (wd == null) failures.push(`W${row.week} 赛周结构课 ${course.name} 无空日（daysMax=${daysMax}）——课包超训练日容量`);
     else dayCourses[wd]!.push(course);
   }
+  // 通勤感知落位（2026-11-01 拍板，与 allocateRaceWeek 同源）：默认周六通勤=周六休、
+  // 周五 shakeout；周五通勤（travelDay=friday）=周五休、周六 shakeout。E 槽优先落
+  // allocate 的确定性 weekday（通勤日前一天=shakeout 主课、周四=赛前 3 天短 E），
+  // 多余槽（LLM 多给）按早空日、通勤日必空。
+  const raceCtxLike = { ...ctx.race, travelDay: ctx.race?.travelDay ?? ("saturday" as const) };
+  const allocShakes = allocateRaceWeek(row, raceCtxLike as never).shakes;
+  const travelWd = raceCtxLike.travelDay === "friday" ? 4 : 5;
   const shakeBudget = Math.max(0, daysMax - 2);
+  const placed: number[] = [];
   for (const slot of slots.slice(0, shakeBudget)) {
-    const wd = earlyDays.find((d) => dayCourses[d]!.length === 0);
-    if (wd == null) repairs.push(`W${row.week} 赛周 E 槽位无空日——剪除`);
-    else dayCourses[wd]!.push(slot);
+    const hint = allocShakes.find((x) => !placed.includes(x.weekday))?.weekday;
+    const wd = hint ?? earlyDays.find((d) => d !== travelWd && dayCourses[d]!.length === 0);
+    if (wd == null || wd === travelWd) repairs.push(`W${row.week} 赛周 E 槽位无空日——剪除`);
+    else {
+      dayCourses[wd]!.push(slot);
+      placed.push(wd);
+    }
   }
   for (const slot of slots.slice(shakeBudget)) repairs.push(`W${row.week} 赛周 E 槽位剪除（P1 训练日帽）`);
   return { dayCourses, repairs, failures };
@@ -452,7 +465,7 @@ export function scheduleWeek(
 
   const repairs: string[] = [];
   const placement =
-    raceWd != null ? placeRaceWeek(bag, row, coefficients, raceWd, ctx.athlete.weeklyRunDaysMax) : placeNormalWeek(bag, row, ctx, coefficients, pmc, repairs);
+    raceWd != null ? placeRaceWeek(bag, row, ctx, coefficients, raceWd, ctx.athlete.weeklyRunDaysMax) : placeNormalWeek(bag, row, ctx, coefficients, pmc, repairs);
   if (placement.failures.length > 0) return { failures: placement.failures };
   repairs.push(...placement.repairs);
   const dayCourses = placement.dayCourses;
@@ -561,8 +574,21 @@ export function scheduleWeek(
   // 物化 + 逐日剂量 → load_series（PMC 逐日推进，休日剂量 0）
   const byDay: Array<RunWorkout[]> = Array.from({ length: 7 }, () => []);
   for (const { di, workout } of structuredAt) byDay[di]!.push(workout);
-  for (const { di, slot, flavor, minutes } of instantiated)
-    byDay[di]!.push(materializeE(slot, flavor, minutes, dateOf(weekMonday, di), row, ctx.race?.name ?? null));
+  // 通勤消耗与调整说明（2026-11-01 拍板）：默认周六通勤=周六休、周五（通勤前一天）
+  // shakeout 保持状态；notes 写明周五通勤的调整法（周五完全不跑、本课挪周六）。
+  const travelWdE = ctx.race != null ? (ctx.race.travelDay === "friday" ? 4 : 5) : null;
+  const instantiateWithNotes = (inst: Array<{ di: number; slot: ESlotCourse; flavor: EFlavor; minutes: number }>) => {
+    for (const { di, slot, flavor, minutes } of inst) {
+      const workout = materializeE(slot, flavor, minutes, dateOf(weekMonday, di), row, ctx.race?.name ?? null);
+      if (isRaceWeek && travelWdE != null && flavor === "shake" && di === (travelWdE === 5 ? 4 : 5)) {
+        workout.note =
+          `通勤日（周${"一二三四五六"[travelWdE]}）不安排跑步——赶路+领物+早点休息，注意补水与晚餐碳水。` +
+          `本课为通勤前一天的状态保持；若实际周${"五六"[travelWdE === 5 ? 1 : 0]}通勤，则当天完全不跑，把本课挪到周${"五六"[travelWdE === 5 ? 0 : 1]}执行。`;
+      }
+      byDay[di]!.push(workout);
+    }
+  };
+  instantiateWithNotes(instantiated);
 
   const calendar: CalendarDay[] = [];
   let loadSeries: LoadSeriesPoint[] = [];
@@ -612,8 +638,7 @@ export function scheduleWeek(
         byDay.length = 0;
         for (let d = 0; d < 7; d++) byDay.push([]);
         for (const { di: d, workout } of structuredAt) byDay[d]!.push(workout);
-        for (const { di: d, slot, flavor, minutes } of instantiated)
-          byDay[d]!.push(materializeE(slot, flavor, minutes, dateOf(weekMonday, d), row, ctx.race?.name ?? null));
+        instantiateWithNotes(instantiated);
         recompute();
         continue;
       }

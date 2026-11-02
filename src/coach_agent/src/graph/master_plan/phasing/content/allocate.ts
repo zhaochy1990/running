@@ -181,24 +181,26 @@ export function allocateRaceWeek(row: ContentWeekRow, race: ContentGeneratorInpu
       left -= activationKm;
     }
   }
-  // 每日 shake（2026-11-01 原书校准）：赛前 1-4 天每天短 E（保频率——完全停跑
-  // 3 天体能流失+腿僵；原书赛周每天 20-30min）。铺法=先保天数（每天 ≥15min），
-  // 余量均摊（≤30min/天）；预算不足时逐日递减但不断天（≥10min）。
-  const shakeWindow = [raceWd - 1, raceWd - 2, raceWd - 3, raceWd - 4].filter((wd) => wd >= 0 && (activation == null || wd !== activation.weekday));
+  // 通勤感知 shake（2026-11-01 用户拍板）：通勤日（travelDay，缺省周六）不跑；
+  // 通勤前一晚一次 25-30min shakeout 保持状态；赛前 3 天（周四）再一节 20-30min
+  // 短 E。不铺每日 10-15min 碎课（无有效刺激且被通勤打乱）。
+  const travelWd = race.travelDay === "friday" ? 4 : 5;
+  const shakeoutWd = travelWd === 5 ? 4 : 5; // 通勤前一天
+  const pre3Wd = 3; // 周四（赛前 3 天）
 
   const shakes: RaceWeekShake[] = [];
-  for (let i = 0; i < shakeWindow.length; i++) {
-    const wd = shakeWindow[i]!;
-    const remainDays = shakeWindow.length - i;
-    if (left < 1.5) break;
-    const capMin = 30; // 每日 shake 帽（原书 20-30min）
-    const floorMin = 15;
-    const evenMin = ((left * eMid) / 60) / remainDays; // 均摊保天数
-    const minutes = Math.min(capMin, Math.max(evenMin, Math.min(floorMin, (left * eMid) / 60)));
-    const seconds = Math.max(10 * 60, Math.round((minutes * 60) / 30) * 30); // 下限 10min、取整 30s
+  const pushShake = (wd: number, capMin: number, floorMin: number) => {
+    if (wd < 0 || wd === travelWd || (activation != null && wd === activation.weekday)) return;
+    if (left < 1.5) return;
+    const availMin = (left * eMid) / 60;
+    const minutes = Math.max(floorMin, Math.min(capMin, availMin));
+    if (minutes > availMin + 1e-6) return; // 下限强制会超预算→不铺（C1 优先）
+    const seconds = Math.round((minutes * 60) / 30) * 30;
     shakes.push({ weekday: wd, minutes: seconds / 60 });
     left -= seconds / eMid;
-  }
+  };
+  pushShake(shakeoutWd, 30, 20); // 通勤前一天 shakeout（20-30min，保状态的主课）
+  pushShake(pre3Wd, 25, 15); // 赛前 3 天短 E（15-25min，预算不足时整课让位）
   // 未铺完的残量（窗口耗尽）由 C1 容差吸收；Σ 按 30s 取整后的实际处方计（激活课按课形状计）
   const sumKm = 42.195 + activationKm + shakes.reduce((s, x) => s + (x.minutes * 60) / eMid, 0);
   return { activation, shakes, sumKm };

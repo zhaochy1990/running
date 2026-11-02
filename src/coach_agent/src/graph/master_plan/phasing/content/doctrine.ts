@@ -53,7 +53,7 @@ export const CONTENT_DOCTRINE = `你是丹尼尔斯训练法（Daniels' Running 
   减量周（role=taper/absorb）不强制专项段、可选任何形态。
   **周期化建议序列**（以 6 周 final_quality 为例）：W1 纯有氧→W2 渐加速→W3 全程 MP 模拟(峰值)→W4 MP-10s 持续(调整)→W5 MP/E 变速或渐加速短版→W6 减量纯有氧。关键=**跨周变换**，同一个"后段 10km@MP"连续出现两周以上=违规。
   LR 主体 E 配速、内嵌 work 段合法（仍算一节质量课）。渐加速的尾段=goal_pace−10~20s（**不是精确 goal_pace**——渐加速版是过渡，比模拟版慢一档）。
-5. 比赛配速锚定目标（规则⑤，最严重项）：比赛课处方=goal_pace±5s/km，不得按当前带静默降级；完不成风险写进 purpose/note。比赛周输出（2026-11-01 原书校准）：比赛课本身（type=M、42.2km、name 含赛事名，无热身/放松步，该周无 LR）+ **周二位（或赛前 3-5 天最早空日）一节 T 触感激活短课**（原书赛周唯一 Q=2×1-2km@T 带+4-6×100m strides，总量 40-60min——保转速与心率区间，强度不超过 T 带）+ 赛前 1-4 天**每天**短 E shake（15-30min，interval 带——保频率：完全停跑数天会造成体能流失与腿僵，原书赛周每天 20-30min）。
+5. 比赛配速锚定目标（规则⑤，最严重项）：比赛课处方=goal_pace±5s/km，不得按当前带静默降级；完不成风险写进 purpose/note。比赛周输出（2026-11-01 原书校准）：比赛课本身（type=M、42.2km、name 含赛事名，无热身/放松步，该周无 LR）+ **周二位（或赛前 3-5 天最早空日）一节 T 触感激活短课**（原书赛周唯一 Q=2×1-2km@T 带+4-6×100m strides，总量 40-60min——保转速与心率区间，强度不超过 T 带）+ 赛前日常=通勤感知形态（2026-11-01 拍板）：通勤日（周五或周六，缺省周六）不跑步；通勤前一天一节 **25-30min shakeout** 保持状态（interval 带）；赛前 3 天（周四）可再一节 20-30min 短 E——宁可少而实，不铺每天 10-15min 的碎课（无有效刺激且被通勤打乱）。比赛课 note 写入通勤消耗提示（通勤日补水/碳水/早睡——通勤本身是消耗，比赛周恢复优先于训练）。
 6. 能力递进投影（规则⑥）：每周 week_row 内嵌该周 pace_zones（按能力进步曲线逐周刷新），全部配速处方按当周带开，不用静态当前带。撞帽计划当周带可未达目标带——比赛课仍锚 goal_pace；M 课按专项锚（max(M 带快端, goal_pace)±5s，final_quality 期收敛 goal）。
 7. step_kind 语义（#808）：见上「输出契约」——变速慢段=work@easy、组间 open 慢跑=recovery、不在跑=rest step。
 8. E 时长与周量自洽（规则①+C1）：E 槽数×带容量（normal 槽 60-90min、interval 槽 30-60min 折算里程=时长×E 配速）与结构课里程合计须覆盖每周 c1_target_km ±max(3km,3%)（赛周由比赛里程 42.2km 托底——骨架可比它小，比赛课不可削）。
@@ -96,6 +96,13 @@ export interface ContentRaceContext {
   name: string;
   /** 比赛日 ISO date。 */
   date: string;
+  /**
+   * 比赛周通勤日（2026-11-01 用户拍板）：运动员通常周五或周六从生活城市赶往
+   * 比赛城市——通勤日不安排跑步（赶路+领物+适应），通勤前一天跑一次 25-30min
+   * shakeout 保持状态。friday=周五通勤（周五休/周六 shakeout）、saturday=周六
+   * 通勤（周五 shakeout/周六休）；缺省 saturday（赛前一天休整是更保守形态）。
+   */
+  travelDay?: "friday" | "saturday";
   /** "2:50:00"。 */
   targetTime: string;
   /** 目标配速（s/km，数值）。 */

@@ -264,9 +264,18 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
   }
   checks.push({ id: "C5 配速谱内", pass: paceBad.length === 0, detail: paceBad.slice(0, 3).join(";") || "全过" });
 
-  // C6 note 语义：无质量段且无短加速步的课 note=null（strides 要点/LR 补给要点合法）。
+  // C6 note 语义：无质量段且无短加速步的课 note=null（strides 要点/LR 补给要点合法；
+  // 赛周豁免——E 槽位课包本就不收 note，赛周 E 的 note 只可能来自 L4b 的通勤
+  // 调整说明（2026-11-01 拍板），拦它=拦自己人）。
   const noteBad = sessions
-    .filter((s) => !hasQualitySegment(s.workout, zones) && !hasStrideStep(s.workout) && s.workout.type !== "LR" && s.workout.note != null)
+    .filter(
+      (s) =>
+        raceDate == null &&
+        !hasQualitySegment(s.workout, zones) &&
+        !hasStrideStep(s.workout) &&
+        s.workout.type !== "LR" &&
+        s.workout.note != null,
+    )
     .map((s) => `${s.workout.name} note应null`);
   checks.push({ id: "C6 note语义", pass: noteBad.length === 0, detail: noteBad.join(";") || "全过" });
 
