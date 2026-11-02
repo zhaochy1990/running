@@ -443,7 +443,7 @@ interface MilestoneAlignment {
 
 ### 5.2 L4a 输出：课包（`WeekBag`；无 day、E=槽位+时长带——#799 两段制）
 
-课包=结构课（M/T/I/R/LR，blocks 与 v1 同形、**无日期**）+ E 槽位（`{band: normal 60-90min | interval 30-60min, strides}`——分钟数与落位归 L4b 实例化；**purpose 字段已废除（#824 拍板）**：说明统一由 L4b ePurpose 按实际落位生成，模型自写会与落位错位、draft schema 已删字段）。day 字段废除（2026-10-29）：落位归 L4b（LR 周日位型先验/谷排刺激/间隔日短带）；**C4（训练日）与 C9（E 时长分层按位判定）随 day 移入排位段**（P1/实例化定带），L4a 课包校验=C2/C3/C5-C8+一致性+C1 带区间可行性+C11/C12/C13（分段梯度与配速宽度、final_quality 期 M 课锚 goal 两阶段都判，#837）。E 课最终物化（work time_s@E 带 + strides 独立块）与日期由 L4b 产出；终检 C1-C13 在排位后的日历上全量复跑。
+课包=结构课（M/T/I/R/LR，blocks 与 v1 同形、**无日期**）+ E 槽位（`{band: normal 60-90min | interval 30-60min, strides}`——分钟数与落位归 L4b 实例化；**purpose 字段已废除（#824 拍板）**：说明统一由 L4b ePurpose 按实际落位生成，模型自写会与落位错位、draft schema 已删字段）。day 字段废除（2026-10-29）：落位归 L4b（LR 周日位型先验/谷排刺激/间隔日短带）；**C4（训练日）与 C9（E 时长分层按位判定）随 day 移入排位段**（P1/实例化定带），L4a 课包校验=C2/C3/C5-C8+一致性+C1 带区间可行性+C11/C12/C13（分段梯度与配速宽度、final_quality 期 M 课锚 goal 两阶段都判，#837）。E 课最终物化（work time_s@E 带 + strides 独立块）与日期由 L4b 产出；终检 C1-C13 在排位后的日历上全量复跑。｜C15 taper 周长跑禁提速（LR work 段 mid 不得快于 goal_pace——提速形态仅限 progress 调整周，2026-11-02 拍板）｜C16 final_quality 段长谱（原书 Phase 4：T 段 ≥2km、独立 M 课 M 段合计 ≥6km 且最长段 ≥3km 连续段优先、I 仅 progress 周每周 ≤1 节段 ≥1km 且 taper/race 禁 I；模板兜底豁免，2026-11-02 拍板）
 
 ### 5.2a L4b 物化输出：`RunWorkout`（**现网 run-workout/v1 + 两个可选字段**，2026-10-27 终审；排位后外层带日历 calendar[]）
 

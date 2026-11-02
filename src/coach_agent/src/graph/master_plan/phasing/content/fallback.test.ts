@@ -91,6 +91,7 @@ test("38 案例 × 投影带：模板课包→排位全链 课包校验+P 门+C1
         maxTrainingDays: spec.weeklyRunDaysMax,
         goalPaceSKm: input.race.goalPaceSKm,
         finalQuality: row.phase === "final_quality",
+        templatePath: true, // 模板兜底终检豁免 C14/C16（专项化归 LLM 路径；模板 mBody 受预算约束不卡段长谱）
         ...(row.role === "race" ? { raceDate: input.race.date } : {}),
         ...(row.phase === "recovery" ? { regeneration: true } : {}),
       });

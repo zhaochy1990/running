@@ -406,6 +406,53 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
     });
   }
 
+
+  const workSegsOf = (workout: { blocks: Array<{ repeat: number; steps: Array<{ step_kind: string; target: { kind: string }; duration: { kind: string; value: number | null } }> }> }): number[] => {
+    const out: number[] = [];
+    for (const b of workout.blocks) for (let r = 0; r < b.repeat; r++) for (const st of b.steps) {
+      if (st.step_kind === "work" && st.target.kind === "pace_s_km" && st.duration.kind === "distance_m" && st.duration.value != null && st.duration.value >= 400) out.push(st.duration.value);
+    }
+    return out;
+  };
+  // C16 final_quality 段长谱（2026-11-02 原书校准）：Phase 4 的质量课段长下限——
+  // T 巡航单段 ≥2km（原书 2-3mi）、独立 M 课 M 段合计 ≥6km 且最长段 ≥3km（原书
+  // 3×2mi/2×4mi/连续，短段间歇不是 M 课形态）、I 仅 progress 周且单段 ≥1km（taper/
+  // race 周禁 I）。taper 周 T 段豁免下限（质量课缩短不换类型的 taper 语义）。
+  {
+    const bad: string[] = [];
+    if (input.finalQuality === true && input.bagStage == null && !input.templatePath) {
+      const isTaper = row.role === "taper";
+      const isRace = row.role === "race";
+      const iCount = sessions.filter((s) => s.workout.type === "I").length;
+      if ((isTaper || isRace) && iCount > 0) bad.push(`taper/赛周出现 I 课 ×${iCount}`);
+      if (row.role === "progress" && iCount > 1) bad.push(`I 课 ${iCount} 节 >1/周`);
+      for (const { workout } of sessions) {
+        if (workout.type === "I" && row.role === "progress") {
+          const segs = workSegsOf(workout);
+          if (segs.length > 0 && Math.min(...segs) < 950) bad.push(`${workout.name} I 段 <1km`);
+        }
+        if (workout.type === "T" && !isTaper) {
+          const segs = workSegsOf(workout);
+          if (segs.length > 0 && Math.min(...segs) < 1950) bad.push(`${workout.name} T 段 <2km`);
+        }
+        if (workout.type === "M" && (input.raceDate == null || workout.date !== input.raceDate)) {
+          const mSegs = workSegsOf(workout).filter((v) => v >= 1000);
+          if (mSegs.length > 0) {
+            const totalM = mSegs.reduce((t, v) => t + v, 0) / 1000;
+            const longest = Math.max(...mSegs) / 1000;
+            if (totalM < 6 - 1e-6) bad.push(`${workout.name} M 段合计 ${totalM.toFixed(1)}km <6km`);
+            else if (longest < 3 - 1e-6) bad.push(`${workout.name} M 最长段 ${longest.toFixed(1)}km <3km`);
+          }
+        }
+      }
+    }
+    checks.push({
+      id: "C16 段长谱",
+      pass: bad.length === 0,
+      detail: input.bagStage != null ? "bag 阶段跳过" : input.templatePath ? "模板豁免" : input.finalQuality !== true ? "非 final_quality，跳过" : bad.slice(0, 3).join(";") || "全过",
+    });
+  }
+
   // C9 E 课时长分层（①⑦⑨，devops#811）：type=E 的课 duration 必填（非 strides
   // 跑步步一律 time_s 处方——⑨ E/REC 量纲=时间）且落带——质量课间隔日 30-60min、
   // 普通日 60-90min。间隔日=周内两节质量课（含比赛课）之间的日子，从 date 周内

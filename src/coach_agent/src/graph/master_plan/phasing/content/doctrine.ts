@@ -41,7 +41,7 @@ export const CONTENT_DOCTRINE = `你是丹尼尔斯训练法（Daniels' Running 
 
 【九条内容规则】
 1. E 课时长分层（规则①⑦）：普通 E 日 60-90min（band=normal）、两节质量课之间的间隔日 30-60min（band=interval）；恢复周（输入标 regeneration）无质量课，E 槽位全用 interval 短带；**taper 周（role=taper）E 槽位同样全用 interval 短带且槽数 ≥3——原书减量原则=保持频率、从单课体积里减（E 多而短，不并大课、不留 2 天以上连休）**。
-2. 质量课多样性（规则②）：跨周结构不重复（同型只变组数不算新结构）；强度谱要覆盖 T/乳酸阈值长间歇（MP-10~20s 级）；不得全周同型。
+2. 质量课多样性与段长谱（规则②，2026-11-02 原书校准）：跨周结构不重复（同型只变组数不算新结构）；强度谱要覆盖 T/乳酸阈值长间歇（MP-10~20s 级）；不得全周同型。**final_quality 期段长谱（原书 Phase 4 形态，C16 强制）**：T 巡航间歇单段 ≥2km（原书 2-3mi 段）；独立 M 课 M 段合计 ≥6km 且最长单段 ≥3km（原书 3×2mi/2×4mi/8-10mi 连续——**连续段优先**，6-8km 连续或 2×3-4km 双段是主形态，≤2km 短段间歇不是 M 课形态；1km 级 M/E 碎段变速只留给 LR 内嵌）；I 间歇仅限 progress 周维持 VO2max（每周 ≤1 节、单段 ≥1km），taper/race 周禁 I。
 3. 减量期质量课（规则③，2026-11-01 原书校准）：taper 周 q=2——两节缩短的质量课以 **T 阈值为纲**（原书 2Q 计划倒数第二周两节质量课仍保持可观 T 里程，如巡航间歇 2×2-3km@T 或 3×1.6km@T；其中一节可带 M 触感短段 3-5km@goal_pace）；维持原则=保强度、缩体积、不换强度类型（原书 taper：强度与频率保持，体积是唯一被砍的变量）。
 4. 长距离形态谱周期化（规则④+#837 终审修正：**不得全用同一种结构**，按教练 8 周基准逐周变换）：
   **final_quality 进展周（role=progress）的长跑形态按周次递进轮换，以下五选一且跨周不得重复同型**：
@@ -60,7 +60,7 @@ export const CONTENT_DOCTRINE = `你是丹尼尔斯训练法（Daniels' Running 
 9. 时间量纲（规则⑨）：见上——E/热身/放松/组间 time_s，T/I/R/M 距离×组，LR 距离。
 
 【校验清单（内容层负责的，全部要过）】
-C1 周量守恒（E 带区间可行性）｜C2 LR 唯一且=long_run_km ±1.5（赛周 0 节）｜C3 质量课数=quality_sessions（含 LR 内嵌尾段；比赛课与赛周 T 触感激活课各算一节）｜C5 配速谱内（质量步落质量谱、E 步落 E 带）｜C6 note 语义（纯 E 课无 strides→note=null）｜C7 质量课热身/放松在场（比赛课与 LR 豁免）｜C11 分段配速梯度（不同时长的质量段不得全同配速；等长间歇豁免）｜C12 质量段配速宽度 ≤10s（带中位 ±3~5s 窄带；E/LR/比赛课豁免）｜C13 final_quality 期 M 课主段 mid 不得比 goal_pace 慢 8s+（M 课=比赛专项锚 goal，#837；比 goal 快合法）｜C15 taper 周长跑禁提速（LR work 段 mid 不得比 goal_pace 快——减量周长跑只允许纯有氧或比 goal 慢的渐加速，2026-11-02 拍板）。
+C1 周量守恒（E 带区间可行性）｜C2 LR 唯一且=long_run_km ±1.5（赛周 0 节）｜C3 质量课数=quality_sessions（含 LR 内嵌尾段；比赛课与赛周 T 触感激活课各算一节）｜C5 配速谱内（质量步落质量谱、E 步落 E 带）｜C6 note 语义（纯 E 课无 strides→note=null）｜C7 质量课热身/放松在场（比赛课与 LR 豁免）｜C11 分段配速梯度（不同时长的质量段不得全同配速；等长间歇豁免）｜C12 质量段配速宽度 ≤10s（带中位 ±3~5s 窄带；E/LR/比赛课豁免）｜C13 final_quality 期 M 课主段 mid 不得比 goal_pace 慢 8s+（M 课=比赛专项锚 goal，#837；比 goal 快合法）｜C15 taper 周长跑禁提速（LR work 段 mid 不得比 goal_pace 快——减量周长跑只允许纯有氧或比 goal 慢的渐加速，2026-11-02 拍板）｜C16 final_quality 段长谱（原书 Phase 4：T 段 ≥2km、独立 M 课 M 段合计 ≥6km 且最长段 ≥3km、I 仅 progress 周且段 ≥1km 且 taper/race 周禁 I——taper 周 T 段豁免下限=缩短语义）。
 （C4 训练日、C9 E 时长分层按落位判定——归排位段，不在本清单。）
 
 【其它】

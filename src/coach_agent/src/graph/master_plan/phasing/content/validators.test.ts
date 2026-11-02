@@ -81,7 +81,7 @@ const byId = (checks: ReturnType<typeof validateWeekContent>, id: string) => {
 
 test("绿色基线：一致性 + C1-C13 全过（E time 处方派生里程参与 C1；无 goal 上下文 C13 跳过）", () => {
   const checks = validateWeekContent(weekInput(greenSessions()));
-  assert.equal(checks.length, 16);
+  assert.equal(checks.length, 17);
   for (const c of checks) assert.equal(c.pass, true, `${c.id}: ${c.detail}`);
 });
 
