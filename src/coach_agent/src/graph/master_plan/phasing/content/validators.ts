@@ -420,6 +420,7 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
   // race 周禁 I）。taper 周 T 段豁免下限（质量课缩短不换类型的 taper 语义）。
   {
     const bad: string[] = [];
+    const isRaceCtx = row.role === "race";
     if (input.finalQuality === true && input.bagStage == null && !input.templatePath) {
       const isTaper = row.role === "taper";
       const isRace = row.role === "race";
@@ -431,11 +432,12 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
           const segs = workSegsOf(workout);
           if (segs.length > 0 && Math.min(...segs) < 950) bad.push(`${workout.name} I 段 <1km`);
         }
-        if (workout.type === "T" && !isTaper) {
+        // 赛周激活课豁免段长下限（原书 2×1mi=1.6km 形态；规则⑤ T 触感 2×1-2km 带）
+        if (workout.type === "T" && !isTaper && !isRace) {
           const segs = workSegsOf(workout);
           if (segs.length > 0 && Math.min(...segs) < 1950) bad.push(`${workout.name} T 段 <2km`);
         }
-        if (workout.type === "M" && (input.raceDate == null || workout.date !== input.raceDate)) {
+        if (workout.type === "M" && !isRace && (input.raceDate == null || workout.date !== input.raceDate)) {
           const mSegs = workSegsOf(workout).filter((v) => v >= 1000);
           if (mSegs.length > 0) {
             const totalM = mSegs.reduce((t, v) => t + v, 0) / 1000;
@@ -449,7 +451,7 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
     checks.push({
       id: "C16 段长谱",
       pass: bad.length === 0,
-      detail: input.bagStage != null ? "bag 阶段跳过" : input.templatePath ? "模板豁免" : input.finalQuality !== true ? "非 final_quality，跳过" : bad.slice(0, 3).join(";") || "全过",
+      detail: input.bagStage != null ? "bag 阶段跳过" : input.templatePath ? "模板豁免" : input.finalQuality !== true ? "非 final_quality，跳过" : isRaceCtx ? "赛周豁免段长（激活课带内即可）" : bad.slice(0, 3).join(";") || "全过",
     });
   }
 
