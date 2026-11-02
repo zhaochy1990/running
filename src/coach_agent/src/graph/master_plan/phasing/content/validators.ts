@@ -380,6 +380,32 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
     });
   }
 
+  // C15 taper 周长跑禁提速（2026-11-02 用户拍板）：减量周 LR 的 work 段 mid 不得
+  // 比 goal_pace 快——「MP-10s」等提速形态只属于 progress 的调整/吸收周；赛前
+  // 一周多的长跑只允许纯有氧或比 goal 慢 10-20s 的渐加速短版（25km 贴 T 带快端
+  // =赛前 8 天的半程节奏赛，与减量原则冲突）。
+  {
+    const lrs = sessions.filter((s) => s.workout.type === "LR");
+    const fastBad: string[] = [];
+    if (row.role === "taper" && input.goalPaceSKm != null && input.bagStage == null) {
+      for (const { workout } of lrs) {
+        for (const block of workout.blocks) {
+          for (const step of block.steps) {
+            if (step.step_kind !== "work" || step.target.kind !== "pace_s_km") continue;
+            const mid = (step.target.low + step.target.high) / 2;
+            if (mid < input.goalPaceSKm - 1e-6)
+              fastBad.push(`${workout.name} 段@${step.target.low}-${step.target.high}（mid ${Math.round(mid)} 比 goal ${Math.round(input.goalPaceSKm)} 快 ${(input.goalPaceSKm - mid).toFixed(1)}s）`);
+          }
+        }
+      }
+    }
+    checks.push({
+      id: "C15 taper长跑禁提速",
+      pass: fastBad.length === 0,
+      detail: input.bagStage != null ? "bag 阶段跳过" : row.role !== "taper" ? "非 taper 周，跳过" : fastBad.slice(0, 2).join(";") || "全过",
+    });
+  }
+
   // C9 E 课时长分层（①⑦⑨，devops#811）：type=E 的课 duration 必填（非 strides
   // 跑步步一律 time_s 处方——⑨ E/REC 量纲=时间）且落带——质量课间隔日 30-60min、
   // 普通日 60-90min。间隔日=周内两节质量课（含比赛课）之间的日子，从 date 周内

@@ -81,7 +81,7 @@ const byId = (checks: ReturnType<typeof validateWeekContent>, id: string) => {
 
 test("绿色基线：一致性 + C1-C13 全过（E time 处方派生里程参与 C1；无 goal 上下文 C13 跳过）", () => {
   const checks = validateWeekContent(weekInput(greenSessions()));
-  assert.equal(checks.length, 15);
+  assert.equal(checks.length, 16);
   for (const c of checks) assert.equal(c.pass, true, `${c.id}: ${c.detail}`);
 });
 
@@ -718,4 +718,19 @@ test("C13 罩带豁免（#837）：M 课主段锚 goal（快于投影 M 带快�
   // 无 goal 上下文时同一处方（主段快于 M 带 249-288 超 10s 容差）仍挂罩带——豁免只认 M 课 goal 锚
   const noGoal = validateWeekContent(weekInput(anchored));
   assert.equal(byId(noGoal, "一致性 type罩主段").pass, false);
+});
+
+test("C15 taper 长跑禁提速：LR work 段 mid 快于 goal 挂；纯有氧过；非 taper 周跳过（2026-11-02 拍板）", () => {
+  const row = { total_km: 65, long_run_km: 24, quality_sessions: 2, role: "taper" as const };
+  const fastSeg = { kind: "pace_s_km" as const, low: 234, high: 238 };
+  const lrFast = W({ name: "MP-10s 持续跑 24km", date: "2026-11-29", type: "LR", blocks: [{ repeat: 1, steps: [s("work", km(24), fastSeg)] }] });
+  const fast = validateWeekContent({ sessions: [{ workout: lrFast }], row, zones: ZONES, maxTrainingDays: 6, goalPaceSKm: 248.8, finalQuality: true });
+  assert.equal(byId(fast, "C15 taper长跑禁提速")?.pass, false);
+
+  const lrEasy = W({ name: "纯有氧长跑 24km", date: "2026-11-29", type: "LR", blocks: [{ repeat: 1, steps: [s("work", km(24), EASY)] }] });
+  const easy = validateWeekContent({ sessions: [{ workout: lrEasy }], row, zones: ZONES, maxTrainingDays: 6, goalPaceSKm: 248.8, finalQuality: true });
+  assert.equal(byId(easy, "C15 taper长跑禁提速")?.pass, true);
+
+  const progress = validateWeekContent({ sessions: [{ workout: lrFast }], row: { ...row, role: "progress" as const }, zones: ZONES, maxTrainingDays: 6, goalPaceSKm: 248.8, finalQuality: true });
+  assert.equal(byId(progress, "C15 taper长跑禁提速")?.detail, "非 taper 周，跳过");
 });
