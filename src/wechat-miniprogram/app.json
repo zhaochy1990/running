@@ -25,6 +25,7 @@
     "pages/race-center/strategy-share/strategy-share",
     "pages/watch/watch",
     "pages/lottery/lottery",
+    "pages/lottery-verify/lottery-verify",
     "pages/onboarding/onboarding",
     "pages/privacy/privacy",
     "pages/declaration/declaration"

@@ -95,3 +95,47 @@ export function reportLotteryEvent(id: string, stage: LotteryEventStage, scene?:
 export function getLotteryMyResult(id: string): Promise<LotteryMyResult> {
   return http.get<LotteryMyResult>(`/api/lottery/activities/${id}/my-result`);
 }
+
+// ── 核销域（devops#869，Epic #862 P6；契约源 #866 verify 路由） ──────────
+
+/** 核销端点响应（lookup / redeem 同形；lookup 保证 prize 非空——中奖记录必有奖品档）。 */
+export interface LotteryVerifyEntry {
+  code: string;
+  /** 'drawn'=待核销；'verified'=已核销。 */
+  status: string;
+  prize: LotteryPrizeView;
+  won_at: string;
+  verified_at: string | null;
+  /** 核销人 openid（已核销时非空）。 */
+  verified_by: string | null;
+}
+
+/** redeem 响应额外字段：并发核销（另一台设备先核了）时为 true，body 仍是已核销态。 */
+export interface LotteryRedeemResult extends LotteryVerifyEntry {
+  already_verified: boolean;
+}
+
+/** 取一枚新鲜 wx.login code（#866 鉴权链：code 一次性，每次查询/核销都要重新换
+ * openid，不能复用启动登录那枚）。 */
+async function freshWxLoginCode(): Promise<string> {
+  const { code } = await wx.login();
+  if (!code) throw new Error('wx.login 返回空 code');
+  return code;
+}
+
+/** 查询/核销共用请求体 {code, wx_code}（403 not_staff 由页面按 ApiError 分流：
+ * err.body.openid 是后端回显的请求者自己的 openid，展示+复制用）。 */
+async function postVerify<T>(action: 'lookup' | 'redeem', activityId: string, code: string): Promise<T> {
+  const wxCode = await freshWxLoginCode();
+  return http.post<T>(`/api/lottery/activities/${activityId}/verify/${action}`, { code, wx_code: wxCode });
+}
+
+/** 查询中奖详情（输 3 位编号后的详情卡数据）。404 code_not_found = 编号不存在。 */
+export function lookupLotteryWinning(activityId: string, code: string): Promise<LotteryVerifyEntry> {
+  return postVerify<LotteryVerifyEntry>('lookup', activityId, code);
+}
+
+/** 确认核销（待核销→已核销，后端落核销人 openid+时间）；并发核销幂等返回已核销态。 */
+export function redeemLotteryWinning(activityId: string, code: string): Promise<LotteryRedeemResult> {
+  return postVerify<LotteryRedeemResult>('redeem', activityId, code);
+}

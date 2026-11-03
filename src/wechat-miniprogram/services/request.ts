@@ -218,6 +218,9 @@ export class ApiError extends Error {
   public statusCode: number;
   public code?: string;
   public detail: string;
+  /** 原始错误响应体（含 detail/code/error/message 之外的业务扩展字段，如核销
+   * 403 not_staff 回显的请求者 openid —— #866/#869，页面要展示+复制它）。 */
+  public body: Record<string, unknown>;
 
   constructor(statusCode: number, body: ApiErrorResponse) {
     // STRIDE 数据面错误体为 {detail, code}；auth-service 错误体为 {error, message}。
@@ -226,6 +229,7 @@ export class ApiError extends Error {
     this.statusCode = statusCode;
     this.code = body.code || body.error;
     this.detail = body.detail || body.message || '';
+    this.body = body as Record<string, unknown>;
   }
 }
 

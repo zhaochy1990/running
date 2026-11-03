@@ -1,0 +1,91 @@
+<view class="page">
+  <!-- 顶栏（fixed）：home + 页名（工作页不带活动名：lookup 响应不含它，避免误导） -->
+  <view class="top" style="padding-top: {{statusBarHeight}}px;">
+    <image class="top__home" src="/assets/icons/home.svg" mode="aspectFit" bindtap="onBack" />
+    <view class="top__title">抽奖核销</view>
+  </view>
+
+  <view class="body" style="padding-top: calc({{statusBarHeight}}px + 100rpx);">
+    <!-- ============ 认证判定中 ============ -->
+    <view wx:if="{{pageState === 'loading'}}" class="state">
+      <view class="state__spinner"></view>
+      <view class="state__text">正在进入核销…</view>
+    </view>
+
+    <!-- ============ 工作码无效（无活动 ID）============ -->
+    <view wx:elif="{{pageState === 'notfound'}}" class="state">
+      <view class="state__logo">砺</view>
+      <view class="state__title">核销链接无效</view>
+      <view class="state__text">请重新扫描现场工作码</view>
+    </view>
+
+    <!-- ============ 未登录（核销端点用户级 JWT）============ -->
+    <view wx:elif="{{pageState === 'gate'}}" class="state">
+      <view class="state__title">需要登录</view>
+      <view class="state__text">核销需工作人员账号登录后使用</view>
+      <view class="state__cta" bindtap="onLoginTap">去登录</view>
+    </view>
+
+    <!-- ============ 核销工作台 ============ -->
+    <block wx:else>
+      <!-- 编号输入：3 位数字 + 查询 -->
+      <view class="card">
+        <view class="card__title">中奖编号</view>
+        <view class="lookup">
+          <input
+            class="lookup__input"
+            type="number"
+            maxlength="3"
+            value="{{codeInput}}"
+            placeholder="输入用户中奖页的 3 位编号"
+            confirm-type="search"
+            bindinput="onCodeInput"
+            bindconfirm="onLookupTap"
+          />
+          <view
+            class="lookup__btn {{canLookup && !looking ? '' : 'lookup__btn--disabled'}}"
+            bindtap="onLookupTap"
+          >
+            {{looking ? '查询中…' : '查询'}}
+          </view>
+        </view>
+        <view wx:if="{{errorHint}}" class="lookup__error">{{errorHint}}</view>
+      </view>
+
+      <!-- 白名单未命中：展示自己的 openid 引导后台添加（复制按钮 + 加白后重查） -->
+      <view wx:if="{{staffBlocked}}" class="card blocked">
+        <view class="blocked__title">暂无核销权限</view>
+        <view class="blocked__text">你的微信不在核销白名单内。请把下面的 openid 发给管理员添加，添加后回到本页重新查询即可。</view>
+        <view class="blocked__openid" user-select>{{blockedOpenid}}</view>
+        <view class="blocked__copy" bindtap="onCopyOpenidTap">复制 openid</view>
+      </view>
+
+      <!-- 中奖详情卡：奖品名/图/中奖时间/状态；待核销才有「确认核销」 -->
+      <view wx:if="{{entryState !== 'none'}}" class="card entry">
+        <view class="entry__head">
+          <view class="entry__code">{{entryCode}}</view>
+          <view class="entry__badge {{entryState === 'verified' ? 'entry__badge--verified' : ''}}">
+            {{entryState === 'verified' ? '已核销' : '待核销'}}
+          </view>
+        </view>
+        <view class="entry__prize">
+          <image wx:if="{{prizeImage}}" class="entry__img" src="{{prizeImage}}" mode="aspectFill" />
+          <view wx:else class="entry__img entry__img--fallback">礼</view>
+          <view class="entry__titles">
+            <view class="entry__name">{{prizeName}}</view>
+            <view class="entry__meta">中奖时间 {{wonTimeText}}</view>
+            <view wx:if="{{entryState === 'verified'}}" class="entry__meta entry__verified">核销时间 {{verifiedTimeText}}</view>
+          </view>
+        </view>
+        <!-- 二步确认第二步：核对奖品与用户手机中奖页一致后确认（不可逆） -->
+        <view
+          wx:if="{{entryState === 'drawn'}}"
+          class="entry__cta {{redeeming ? 'entry__cta--disabled' : ''}}"
+          bindtap="onRedeemTap"
+        >
+          {{redeeming ? '核销中…' : '确认核销'}}
+        </view>
+      </view>
+    </block>
+  </view>
+</view>
