@@ -63,16 +63,17 @@ class FakeConnection {
   }
 }
 
-test("setup 幂等建 4 张表；lottery_participations 三处唯一约束齐全", async () => {
+test("setup 幂等建 5 张表；lottery_participations 三处唯一约束齐全", async () => {
   const pool = new FakePool();
   await new MySqlLotteryStore(pool as never).setup();
-  assert.equal(pool.statements.length, 4);
+  assert.equal(pool.statements.length, 5);
 
   const ddl = pool.statements.map((statement) => statement.sql);
   assert.match(ddl[0] ?? "", /CREATE TABLE IF NOT EXISTS lottery_activities/);
   assert.match(ddl[1] ?? "", /CREATE TABLE IF NOT EXISTS lottery_prizes/);
   assert.match(ddl[2] ?? "", /CREATE TABLE IF NOT EXISTS lottery_participations/);
   assert.match(ddl[3] ?? "", /CREATE TABLE IF NOT EXISTS lottery_staff/);
+  assert.match(ddl[4] ?? "", /CREATE TABLE IF NOT EXISTS lottery_verification_logs/);
 
   const participations = ddl[2] ?? "";
   assert.match(participations, /UNIQUE KEY uk_user_activity \(user_id, activity_id\)/);
@@ -84,6 +85,14 @@ test("setup 幂等建 4 张表；lottery_participations 三处唯一约束齐全
 
   // 奖池表为 P2 行锁扣库存预留 remaining 列。
   assert.match(ddl[1] ?? "", /remaining INT NOT NULL DEFAULT 0/);
+
+  // #866 留痕表：查询/核销全量留痕，按活动+时间与 openid 双索引可查。
+  const logs = ddl[4] ?? "";
+  assert.match(logs, /action VARCHAR\(16\) NOT NULL/);
+  assert.match(logs, /outcome VARCHAR\(24\) NOT NULL/);
+  assert.match(logs, /participation_id BIGINT UNSIGNED NULL/);
+  assert.match(logs, /KEY idx_activity_created \(activity_id, created_at\)/);
+  assert.match(logs, /KEY idx_openid \(openid\)/);
 });
 
 test("createActivity：INSERT 后回读；解析 snake_case 行", async () => {
@@ -420,6 +429,138 @@ test("drawParticipation：扣减 affectedRows=0（库存消失，防御分支）
     }),
     /ran out of stock/,
   );
+  assert.deepEqual(
+    pool.connection.calls.filter((call) => call !== "execute"),
+    ["begin", "rollback", "release"],
+  );
+});
+
+// ── #866 核销域：白名单 / 编号查询 / 核销状态机与留痕 ─────────────────
+
+test("isStaffOpenid：全局行（activity_id NULL）或活动级行命中即 true；SQL 形状固定", async () => {
+  const pool = new FakePool([
+    () => [[1]], // 命中
+    () => [[]], // 未命中
+  ]);
+  const store = new MySqlLotteryStore(pool as never);
+  assert.equal(await store.isStaffOpenid("staff-openid", 5), true);
+  assert.equal(await store.isStaffOpenid("other-openid", 5), false);
+  assert.match(pool.statements[0]?.sql ?? "", /SELECT 1 FROM lottery_staff WHERE openid=\? AND \(activity_id IS NULL OR activity_id=\?\) LIMIT 1/);
+  assert.deepEqual(pool.statements[0]?.values, ["staff-openid", 5]);
+});
+
+test("findWinningByCode：命中返回行并留痕 found；未命中返回 null 并留痕 not_found", async () => {
+  const foundPool = new FakePool([
+    () => [[drawnParticipationRow()]], // SELECT by code
+    () => [{ insertId: 900, affectedRows: 1 }], // 留痕 INSERT
+  ]);
+  const found = await new MySqlLotteryStore(foundPool as never).findWinningByCode({
+    activityId: 5,
+    openid: "staff-openid",
+    code: "042",
+  });
+  assert.equal(found?.id, 11);
+  assert.equal(found?.status, "drawn");
+  assert.match(foundPool.statements[0]?.sql ?? "", /SELECT \* FROM lottery_participations WHERE activity_id=\? AND code=\?/);
+  assert.deepEqual(foundPool.statements[0]?.values, [5, "042"]);
+  // 留痕在读取之后无条件落（found / not_found 由命中与否决定），命中时带上参与记录 id。
+  assert.match(foundPool.statements[1]?.sql ?? "", /INSERT INTO lottery_verification_logs \(activity_id, openid, action, code, outcome, participation_id\)/);
+  assert.deepEqual(foundPool.statements[1]?.values, [5, "staff-openid", "lookup", "042", "found", 11]);
+
+  const missingPool = new FakePool([
+    () => [[]],
+    () => [{ insertId: 901, affectedRows: 1 }],
+  ]);
+  const missing = await new MySqlLotteryStore(missingPool as never).findWinningByCode({
+    activityId: 5,
+    openid: "staff-openid",
+    code: "999",
+  });
+  assert.equal(missing, null);
+  assert.deepEqual(missingPool.statements[1]?.values, [5, "staff-openid", "lookup", "999", "not_found", null]);
+});
+
+test("redeemParticipation：待核销 → 行锁下迁移 drawn→verified，留痕同事务提交", async () => {
+  const pool = new FakePool([
+    () => [[drawnParticipationRow()]], // SELECT ... FOR UPDATE
+    () => [{ affectedRows: 1 }], // UPDATE 迁移
+    () => [{ insertId: 902, affectedRows: 1 }], // 留痕 INSERT（同事务）
+  ]);
+  const verifiedAt = new Date("2026-11-03T12:00:00Z");
+  const result = await new MySqlLotteryStore(pool as never).redeemParticipation({
+    activityId: 5,
+    code: "042",
+    verifiedBy: "staff-openid",
+    verifiedAt,
+  });
+  assert.equal(result.outcome, "redeemed");
+  if (result.outcome === "redeemed") {
+    assert.equal(result.participation.status, "verified");
+    assert.equal(result.participation.verifiedBy, "staff-openid");
+    assert.equal(result.participation.verifiedAt, verifiedAt);
+  }
+  assert.match(pool.statements[0]?.sql ?? "", /SELECT \* FROM lottery_participations WHERE activity_id=\? AND code=\? FOR UPDATE/);
+  assert.match(pool.statements[1]?.sql ?? "", /UPDATE lottery_participations SET status='verified', verified_by=\?, verified_at=\? WHERE id=\? AND status='drawn'/);
+  assert.deepEqual(pool.statements[1]?.values, ["staff-openid", verifiedAt, 11]);
+  assert.deepEqual(pool.statements[2]?.values, [5, "staff-openid", "redeem", "042", "redeemed", 11]);
+  assert.deepEqual(
+    pool.connection.calls.filter((call) => call !== "execute"),
+    ["begin", "commit", "release"],
+  );
+});
+
+test("redeemParticipation：已核销 → 不变更，回显既有核销结果并留痕 already_verified", async () => {
+  const pool = new FakePool([
+    () => [[drawnParticipationRow({ status: "verified", verified_by: "first-staff", verified_at: new Date("2026-11-03T11:00:00Z") })]],
+    () => [{ insertId: 903, affectedRows: 1 }], // 留痕
+  ]);
+  const result = await new MySqlLotteryStore(pool as never).redeemParticipation({
+    activityId: 5,
+    code: "042",
+    verifiedBy: "second-staff",
+    verifiedAt: new Date("2026-11-03T12:00:00Z"),
+  });
+  assert.equal(result.outcome, "already_verified");
+  if (result.outcome === "already_verified") {
+    // 回显首次核销人+时间，second-staff 的核销被拒绝。
+    assert.equal(result.participation.verifiedBy, "first-staff");
+    assert.equal(result.participation.verifiedAt?.getTime(), new Date("2026-11-03T11:00:00Z").getTime());
+  }
+  // 无 UPDATE 语句——状态机拒绝二次迁移。
+  assert.equal(pool.statements.some((statement) => /UPDATE lottery_participations/.test(statement.sql)), false);
+  assert.deepEqual(pool.statements[1]?.values, [5, "second-staff", "redeem", "042", "already_verified", 11]);
+});
+
+test("redeemParticipation：编号不存在 → 留痕 not_found 后提交，无 UPDATE", async () => {
+  const pool = new FakePool([
+    () => [[]], // FOR UPDATE 空
+    () => [{ insertId: 904, affectedRows: 1 }],
+  ]);
+  const result = await new MySqlLotteryStore(pool as never).redeemParticipation({
+    activityId: 5,
+    code: "999",
+    verifiedBy: "staff-openid",
+    verifiedAt: new Date(),
+  });
+  assert.equal(result.outcome, "not_found");
+  assert.equal(pool.statements.some((statement) => /UPDATE lottery_participations/.test(statement.sql)), false);
+  assert.deepEqual(pool.statements[1]?.values, [5, "staff-openid", "redeem", "999", "not_found", null]);
+  assert.deepEqual(
+    pool.connection.calls.filter((call) => call !== "execute"),
+    ["begin", "commit", "release"],
+  );
+});
+
+test("redeemParticipation：UPDATE 未命中（防御分支）→ rollback 抛错，不留半迁移", async () => {
+  const pool = new FakePool([
+    () => [[drawnParticipationRow()]],
+    () => [{ affectedRows: 0 }], // FOR UPDATE 下不可达的防御分支
+  ]);
+  await assert.rejects(
+    new MySqlLotteryStore(pool as never).redeemParticipation({ activityId: 5, code: "042", verifiedBy: "staff-openid", verifiedAt: new Date() }),
+    /not in drawn state/,
+  );
+  assert.equal(pool.statements.some((statement) => /INSERT INTO lottery_verification_logs/.test(statement.sql)), false);
   assert.deepEqual(
     pool.connection.calls.filter((call) => call !== "execute"),
     ["begin", "rollback", "release"],
