@@ -396,6 +396,25 @@ export const OPENAPI_DOCUMENT = {
             schema: { type: "string", pattern: "^[0-9]{1,15}$" },
           },
         ],
+        requestBody: {
+          required: false,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  scene: {
+                    type: "string",
+                    pattern: "^[\\x21-\\x7e]{1,32}$",
+                    description:
+                      "Optional 点位渠道号 (the QR scene `s` parameter) for the #867 funnel grouping; an invalid value is ignored, never a draw failure.",
+                  },
+                },
+                additionalProperties: false,
+              },
+            },
+          },
+        },
         responses: {
           "201": {
             description: "The fresh draw result.",
@@ -748,6 +767,152 @@ export const OPENAPI_DOCUMENT = {
           "401": errorResponse("The bearer token is missing or invalid."),
           "403": errorResponse("A non-admin token cannot configure lottery activities."),
           "404": errorResponse("The activity does not exist."),
+        },
+      },
+    },
+    "/api/admin/lottery/activities/{id}/funnel": {
+      get: {
+        tags: ["Lottery"],
+        operationId: "getLotteryFunnel",
+        summary: "Participation funnel grouped by scene channel (admin)",
+        description:
+          "The #867 live dashboard read. Pre-draw stages (enter/login/bind) are ping counts from the public event endpoint; post-draw stages (draw/win/verified) are people counted from lottery_participations — win means a physical tier (code assigned), verified counts committed redemptions via verified_at. Rows are grouped by the scene `s` parameter baked into each QR stand; null scene = direct links / no channel.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", pattern: "^[0-9]{1,15}$" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Funnel per scene + totals + per-tier remaining stock.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LotteryFunnelResponse" },
+              },
+            },
+          },
+          "400": errorResponse("The activity id is invalid."),
+          "401": errorResponse("The bearer token is missing or invalid."),
+          "403": errorResponse("A non-admin token cannot read lottery dashboards."),
+          "404": errorResponse("The activity does not exist."),
+        },
+      },
+    },
+    "/api/lottery/activities/{id}/events": {
+      post: {
+        tags: ["Lottery"],
+        operationId: "recordLotteryEvent",
+        summary: "Funnel stage ping from the landing page (public)",
+        description:
+          "Best-effort funnel analytics for the #867 dashboard: the mini-program landing page pings `{stage: enter|login|bind, scene?}` at each stage transition. Public (no auth); a bearer, when present and valid, is used for user attribution only. Per-IP fixed-window rate limited (60/min per activity); the client fire-and-forgets and ignores the outcome.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", pattern: "^[0-9]{1,15}$" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/LotteryEventRequest" },
+            },
+          },
+        },
+        responses: {
+          "204": { description: "Recorded." },
+          "400": errorResponse("The body or activity id is invalid."),
+          "404": errorResponse("The activity does not exist."),
+          "429": errorResponse("Per-IP rate limit exceeded."),
+        },
+      },
+    },
+    "/api/admin/lottery/staff": {
+      get: {
+        tags: ["Lottery"],
+        operationId: "listLotteryStaff",
+        summary: "List the verification staff whitelist (admin)",
+        description:
+          "All whitelist rows (global rows with activity_id null plus activity-scoped rows). `?activity_id=` filters to that activity's rows plus the global ones.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "activity_id",
+            in: "query",
+            required: false,
+            schema: { type: "string", pattern: "^[0-9]{1,15}$" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "The whitelist rows.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LotteryStaffListResponse" },
+              },
+            },
+          },
+          "400": errorResponse("The activity_id query param is invalid."),
+          "401": errorResponse("The bearer token is missing or invalid."),
+          "403": errorResponse("A non-admin token cannot manage the whitelist."),
+        },
+      },
+      post: {
+        tags: ["Lottery"],
+        operationId: "addLotteryStaff",
+        summary: "Add a verification staff member (admin)",
+        description:
+          "Adds one whitelist row. activity_id omitted = global (may verify every activity); note is free-form (e.g. 现场值班人姓名). The openid comes from the mini-program verification page's not-whitelisted hint, which shows the requester's own openid for copy-paste.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/LotteryStaffRequest" },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "The created whitelist row.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LotteryStaffResponse" },
+              },
+            },
+          },
+          "400": errorResponse("The body is structurally invalid."),
+          "401": errorResponse("The bearer token is missing or invalid."),
+          "403": errorResponse("A non-admin token cannot manage the whitelist."),
+        },
+      },
+    },
+    "/api/admin/lottery/staff/{id}": {
+      delete: {
+        tags: ["Lottery"],
+        operationId: "removeLotteryStaff",
+        summary: "Remove a verification staff member (admin)",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", pattern: "^[0-9]{1,15}$" },
+          },
+        ],
+        responses: {
+          "204": { description: "Removed." },
+          "400": errorResponse("The staff id is invalid."),
+          "401": errorResponse("The bearer token is missing or invalid."),
+          "403": errorResponse("A non-admin token cannot manage the whitelist."),
+          "404": errorResponse("The whitelist row does not exist."),
         },
       },
     },
@@ -1287,6 +1452,100 @@ export const OPENAPI_DOCUMENT = {
           verified_at: { type: "string", description: "When the entry was verified (ISO-8601)." },
           verified_by: { type: "string", description: "The verifier openid that committed this redemption." },
           already_verified: { type: "boolean" },
+        },
+        additionalProperties: false,
+      },
+      LotteryEventRequest: {
+        type: "object",
+        required: ["stage"],
+        properties: {
+          stage: { type: "string", enum: ["enter", "login", "bind"] },
+          scene: {
+            type: ["string", "null"],
+            pattern: "^[\\x21-\\x7e]{1,32}$",
+            description: "点位渠道号 (the scene `s` parameter); null/omitted for direct links.",
+          },
+        },
+        additionalProperties: false,
+      },
+      LotteryFunnelSceneRow: {
+        type: "object",
+        required: ["scene", "enter", "login", "bind", "draw", "win", "verified"],
+        properties: {
+          scene: { type: ["string", "null"], description: "null = direct links / no channel." },
+          enter: { type: "integer", description: "Landing-page views (pings)." },
+          login: { type: "integer", description: "Login-stage pings." },
+          bind: { type: "integer", description: "Watch-binding-stage pings." },
+          draw: { type: "integer", description: "Participations (people)." },
+          win: { type: "integer", description: "Physical wins — a code was assigned (people)." },
+          verified: { type: "integer", description: "Redeemed participations via verified_at (people)." },
+        },
+        additionalProperties: false,
+      },
+      LotteryFunnelResponse: {
+        type: "object",
+        required: ["activity", "scenes", "totals", "prizes"],
+        properties: {
+          activity: {
+            type: "object",
+            required: ["id", "name", "start_at", "end_at", "enabled"],
+            properties: {
+              id: { type: "integer" },
+              name: { type: "string" },
+              start_at: { type: "string" },
+              end_at: { type: "string" },
+              enabled: { type: "boolean" },
+            },
+            additionalProperties: false,
+          },
+          scenes: { type: "array", items: { $ref: "#/components/schemas/LotteryFunnelSceneRow" } },
+          totals: { $ref: "#/components/schemas/LotteryFunnelSceneRow" },
+          prizes: {
+            type: "array",
+            description: "Per-tier remaining stock alongside the funnel (live 库存余量).",
+            items: {
+              type: "object",
+              required: ["name", "image_url", "stock", "remaining", "is_fallback"],
+              properties: {
+                name: { type: "string" },
+                image_url: { type: ["string", "null"] },
+                stock: { type: "integer" },
+                remaining: { type: "integer" },
+                is_fallback: { type: "boolean" },
+              },
+              additionalProperties: false,
+            },
+          },
+        },
+        additionalProperties: false,
+      },
+      LotteryStaffRequest: {
+        type: "object",
+        required: ["openid"],
+        properties: {
+          openid: nonBlankString(128),
+          activity_id: { type: "integer", minimum: 1, description: "Omitted = global whitelist row." },
+          note: { type: "string", maxLength: 255 },
+        },
+        additionalProperties: false,
+      },
+      LotteryStaffResponse: {
+        type: "object",
+        required: ["id", "openid", "activity_id", "note", "created_at"],
+        properties: {
+          id: { type: "integer" },
+          openid: { type: "string" },
+          activity_id: { type: ["integer", "null"] },
+          note: { type: ["string", "null"] },
+          created_at: { type: "string" },
+        },
+        additionalProperties: false,
+      },
+      LotteryStaffListResponse: {
+        type: "object",
+        required: ["staff"],
+        properties: {
+          staff: { type: "array", items: { $ref: "#/components/schemas/LotteryStaffResponse" } },
         },
         additionalProperties: false,
       },

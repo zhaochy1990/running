@@ -3,6 +3,8 @@ import type { MySqlConfig } from "../dto/config.js";
 import { CoordinatedTurnRunner } from "../turn/coordinator.js";
 import { MySqlSaver } from "./checkpointer.js";
 import { MySqlLotteryStore } from "./lottery.js";
+import { MySqlLotteryFunnelStore } from "./lotteryFunnel.js";
+import { MySqlLotteryStaffStore } from "./lotteryStaff.js";
 import { createPool, ensureDatabase } from "./mysql.js";
 import { MySqlCoachShareStore } from "./shares.js";
 import { MySqlStore } from "./store.js";
@@ -15,6 +17,10 @@ export interface Persistence {
   shares: MySqlCoachShareStore;
   /** Lottery activity configuration domain (#863). */
   lottery: MySqlLotteryStore;
+  /** Lottery staff whitelist admin CRUD (#867). */
+  lotteryStaff: MySqlLotteryStaffStore;
+  /** Lottery funnel event log + aggregation (#867). */
+  lotteryFunnel: MySqlLotteryFunnelStore;
   turnCoordinator: CoordinatedTurnRunner;
   pool: Pool;
   close(): Promise<void>;
@@ -28,17 +34,23 @@ export async function createPersistence(config: MySqlConfig): Promise<Persistenc
     const store = new MySqlStore(pool);
     const shares = new MySqlCoachShareStore(pool);
     const lottery = new MySqlLotteryStore(pool);
+    const lotteryStaff = new MySqlLotteryStaffStore(pool);
+    const lotteryFunnel = new MySqlLotteryFunnelStore(pool);
     const turnReceipts = new MySqlTurnReceiptStore(pool, checkpointer);
     await checkpointer.setup();
     await store.setup();
     await shares.setup();
     await lottery.setup();
+    await lotteryStaff.setup();
+    await lotteryFunnel.setup();
     await turnReceipts.setup();
     return {
       checkpointer,
       store,
       shares,
       lottery,
+      lotteryStaff,
+      lotteryFunnel,
       turnCoordinator: new CoordinatedTurnRunner(turnReceipts, new MySqlThreadLock(config)),
       pool,
       close: () => pool.end(),
@@ -51,5 +63,7 @@ export async function createPersistence(config: MySqlConfig): Promise<Persistenc
 
 export { MySqlSaver } from "./checkpointer.js";
 export { MySqlLotteryStore } from "./lottery.js";
+export { MySqlLotteryFunnelStore } from "./lotteryFunnel.js";
+export { MySqlLotteryStaffStore } from "./lotteryStaff.js";
 export { MySqlCoachShareStore } from "./shares.js";
 export { MySqlStore } from "./store.js";

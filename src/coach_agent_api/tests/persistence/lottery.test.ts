@@ -63,10 +63,19 @@ class FakeConnection {
   }
 }
 
-test("setup 幂等建 5 张表；lottery_participations 三处唯一约束齐全", async () => {
-  const pool = new FakePool();
+test("setup 幂等建 5 张表 + #867 scene 列探测；lottery_participations 三处唯一约束齐全", async () => {
+  // 前 5 条是 DDL（#866 加了 verification_logs），第 6 条是 #867 的 scene 列
+  // 探测（information_schema）；已有列时不再 ALTER。
+  const pool = new FakePool([
+    () => undefined,
+    () => undefined,
+    () => undefined,
+    () => undefined,
+    () => undefined,
+    () => [[{ 1: 1 }]],
+  ]);
   await new MySqlLotteryStore(pool as never).setup();
-  assert.equal(pool.statements.length, 5);
+  assert.equal(pool.statements.length, 6);
 
   const ddl = pool.statements.map((statement) => statement.sql);
   assert.match(ddl[0] ?? "", /CREATE TABLE IF NOT EXISTS lottery_activities/);
@@ -79,6 +88,7 @@ test("setup 幂等建 5 张表；lottery_participations 三处唯一约束齐全
   assert.match(participations, /UNIQUE KEY uk_user_activity \(user_id, activity_id\)/);
   assert.match(participations, /UNIQUE KEY uk_activity_provider \(activity_id, provider_key\)/);
   assert.match(participations, /UNIQUE KEY uk_activity_code \(activity_id, code\)/);
+  assert.match(participations, /scene VARCHAR\(32\) NULL/);
   assert.match(participations, /prize_id BIGINT UNSIGNED NULL/);
   assert.match(participations, /code CHAR\(3\) NULL/);
   assert.match(participations, /verified_by VARCHAR\(128\) NULL/);
@@ -93,6 +103,23 @@ test("setup 幂等建 5 张表；lottery_participations 三处唯一约束齐全
   assert.match(logs, /participation_id BIGINT UNSIGNED NULL/);
   assert.match(logs, /KEY idx_activity_created \(activity_id, created_at\)/);
   assert.match(logs, /KEY idx_openid \(openid\)/);
+
+  // #867 迁移探测语句。
+  assert.match(ddl[5] ?? "", /information_schema\.columns/);
+});
+
+test("setup：旧部署（无 scene 列）→ 探测为空后补 ALTER", async () => {
+  const pool = new FakePool([
+    () => undefined,
+    () => undefined,
+    () => undefined,
+    () => undefined,
+    () => undefined,
+    () => [[]],
+  ]);
+  await new MySqlLotteryStore(pool as never).setup();
+  assert.equal(pool.statements.length, 7);
+  assert.match(pool.statements[6]?.sql ?? "", /ALTER TABLE lottery_participations ADD COLUMN scene VARCHAR\(32\) NULL AFTER provider_key/);
 });
 
 test("createActivity：INSERT 后回读；解析 snake_case 行", async () => {
@@ -240,6 +267,7 @@ test("drawParticipation：锁序 + INSERT 先于扣减 + commit 的 SQL 形状�
     activityId: 5,
     userId: "user-1",
     providerKey: "coros:runner@example.com",
+    scene: "booth-03",
     allocate: allocator.allocate as never,
   });
 
@@ -254,9 +282,9 @@ test("drawParticipation：锁序 + INSERT 先于扣减 + commit 的 SQL 形状�
   assert.match(sql[0] ?? "", /SELECT \* FROM lottery_participations WHERE activity_id=\? AND user_id=\? FOR UPDATE/);
   assert.match(sql[1] ?? "", /SELECT \* FROM lottery_prizes WHERE activity_id=\? FOR UPDATE/);
   assert.match(sql[2] ?? "", /SELECT code FROM lottery_participations WHERE activity_id=\? AND code IS NOT NULL FOR UPDATE/);
-  // INSERT 先于扣减（失败尝试不在事务里留副作用）。
-  assert.match(sql[3] ?? "", /INSERT INTO lottery_participations \(activity_id, user_id, provider_key, prize_id, code\) VALUES \(\?, \?, \?, \?, \?\)/);
-  assert.deepEqual(pool.statements[3]?.values, [5, "user-1", "coros:runner@example.com", 1, "042"]);
+  // INSERT 先于扣减（失败尝试不在事务里留副作用）；#867 scene 一并落列。
+  assert.match(sql[3] ?? "", /INSERT INTO lottery_participations \(activity_id, user_id, provider_key, scene, prize_id, code\) VALUES \(\?, \?, \?, \?, \?, \?\)/);
+  assert.deepEqual(pool.statements[3]?.values, [5, "user-1", "coros:runner@example.com", "booth-03", 1, "042"]);
   assert.match(sql[4] ?? "", /UPDATE lottery_prizes SET remaining = remaining - 1 WHERE id=\? AND remaining > 0/);
   assert.deepEqual(pool.statements[4]?.values, [1]);
   assert.deepEqual(
@@ -387,7 +415,7 @@ test("drawParticipation：兜底档中奖 → code 落 null、不扣库存", asy
     assert.equal(result.prize.isFallback, true);
   }
   assert.equal(pool.statements.some((statement) => /UPDATE lottery_prizes/.test(statement.sql)), false);
-  assert.deepEqual(pool.statements[3]?.values, [5, "user-1", "coros:runner@example.com", 2, null]);
+  assert.deepEqual(pool.statements[3]?.values, [5, "user-1", "coros:runner@example.com", null, 2, null]);
 });
 
 test("drawParticipation：实物档码空间耗尽（allocate 返回 null code）→ rollback 抛错", async () => {

@@ -12,6 +12,8 @@ import {
   drawLottery,
   getLotteryActivity,
   getLotteryMyResult,
+  reportLotteryEvent,
+  type LotteryEventStage,
   type LotteryPrizeView,
   type LotteryStatus,
 } from '../../services/lottery';
@@ -96,6 +98,10 @@ interface LotteryPageHandlers {
   /** 入口参数（onLoad 解析；retry 复用） */
   _a: string;
   _s: string;
+  /** #867 漏斗埋点：fire-and-forget 上报（失败静默）。 */
+  _report(stage: LotteryEventStage): void;
+  /** #867 漏斗阶段标记的 storage key（跨 reLaunch 实例传递）。 */
+  _stageMarkKey(stage: 'login' | 'bind'): string;
   /** onLoad 时刻快照的认证态：onShow 发现变化（登录页返回 / silentLogin 完成）时重跑预取。 */
   _authedSeen: boolean;
   _gate: GateState;
@@ -142,6 +148,13 @@ Page<LotteryPageData, LotteryPageHandlers>({
   _participated: false,
   _status: 'active',
 
+  // #867 漏斗「登录/绑表」计数：watch 页绑定成功是 reLaunch 回来（全新实例），
+  // 内存态存不住「上一个阶段」，用 storage 标记跨实例传递；上报后即清。
+  _report(stage) {
+    if (!this._a) return;
+    reportLotteryEvent(this._a, stage, this._s || undefined);
+  },
+
   onLoad(options) {
     const entry = parseLotteryEntry(options);
     this.setData({ statusBarHeight: statusBarHeight() });
@@ -152,6 +165,8 @@ Page<LotteryPageData, LotteryPageHandlers>({
     this._a = entry.a;
     this._s = entry.s;
     this._authedSeen = userStore.getState().isAuthenticated;
+    // #867 漏斗「进入」计数：每次有效进页计一次（直链 _s 为空 → 服务端记直链行）。
+    this._report('enter');
     void this.load();
     void this.prefetch();
   },
@@ -212,15 +227,37 @@ Page<LotteryPageData, LotteryPageHandlers>({
     }
   },
 
+  // #867 漏斗阶段标记（跨 reLaunch 实例）：到达某阶段时落标记，完成后上报并清。
+  _stageMarkKey(stage: 'login' | 'bind'): string {
+    return `lottery:funnel:${stage}:${this._a}`;
+  },
+
   async prefetch() {
     await userStore.waitForAuth();
     const authed = userStore.getState().isAuthenticated;
     this._authedSeen = authed;
     if (!authed) {
       this._gate = 'need_login';
+      // 登录漏斗：先落「待登录」标记；登录回跳后（本实例或新实例）prefetch 发现
+      // 已登录 → 计一次 login 并清标记。
+      try {
+        wx.setStorageSync(this._stageMarkKey('login'), 1);
+      } catch {
+        // storage 异常不拦流程。
+      }
       this.setData({ gateHint: '登录并绑定运动手表即可参与' });
       this.refreshCta();
       return;
+    }
+    // 登录完成（含登录页回跳 / 新实例）：pending 标记在 → 计一次 login。
+    try {
+      const loginKey = this._stageMarkKey('login');
+      if (wx.getStorageSync(loginKey)) {
+        wx.removeStorageSync(loginKey);
+        this._report('login');
+      }
+    } catch {
+      // storage 异常不拦流程（漏斗少一条计数而已）。
     }
     try {
       // my-result 是参与判定源；watch 状态只影响引导文案，失败不阻塞（unknown 走 draw 兜底）。
@@ -229,6 +266,19 @@ Page<LotteryPageData, LotteryPageHandlers>({
         getWatchInfo().catch(() => null),
       ]);
       this._gate = watch ? (watch.logged_in ? 'ready' : 'need_watch') : 'unknown';
+      // 绑表漏斗：到达 need_watch 落标记；标记在而 gate 已 ready（watch 页 reLaunch
+      // 回来的新实例）→ 计一次 bind 并清标记。
+      try {
+        const bindKey = this._stageMarkKey('bind');
+        if (this._gate === 'need_watch' && !mine.participated) {
+          wx.setStorageSync(bindKey, 1);
+        } else if (this._gate === 'ready' && wx.getStorageSync(bindKey)) {
+          wx.removeStorageSync(bindKey);
+          this._report('bind');
+        }
+      } catch {
+        // storage 异常不拦流程。
+      }
       if (mine.participated) {
         this.applyResult(mine);
         return;
@@ -274,7 +324,7 @@ Page<LotteryPageData, LotteryPageHandlers>({
     this.setData({ drawing: true });
     try {
       const [result] = await Promise.all([
-        drawLottery(this._a),
+        drawLottery(this._a, this._s || undefined),
         new Promise((resolve) => setTimeout(resolve, DRAW_MIN_ANIMATION_MS)),
       ]);
       this.applyResult(result);
