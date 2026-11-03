@@ -1,9 +1,11 @@
 import { getLogger } from "@stride/common";
 import { Hono } from "hono";
 import { requestId } from "hono/request-id";
-import { type AuthEnv, createAuthMiddleware, type JwtVerifier } from "./auth.js";
+import { type AuthEnv, createAuthMiddleware, createOptionalAuthMiddleware, type JwtVerifier } from "./auth.js";
 import type { CoachInvoker } from "./coach/coachInvoker.js";
 import type { CoachDataDeleter } from "./persistence/deletion.js";
+import type { LotteryFunnelStore } from "./persistence/lotteryFunnel.js";
+import type { LotteryStaffStore } from "./persistence/lotteryStaff.js";
 import { registerAdminUserRoutes } from "./routes/adminUsers.js";
 import { registerChatRoutes } from "./routes/chat.js";
 import { registerHealthRoutes } from "./routes/health.js";
@@ -17,6 +19,8 @@ import {
   registerLotteryPublicRoute,
   registerLotteryVerifyRoutes,
 } from "./routes/lottery.js";
+import { registerLotteryDashboardRoutes } from "./routes/lotteryDashboard.js";
+import { registerLotteryStaffRoutes } from "./routes/lotteryStaff.js";
 import { type PlanJobsService, registerPlanJobRoutes } from "./routes/planJobs.js";
 import { type CoachShareCreateDeps, type CoachShareReadDeps, registerCoachShareReadRoute, registerShareCreateRoute } from "./routes/shares.js";
 import { registerSwaggerRoutes } from "./routes/swagger.js";
@@ -41,6 +45,10 @@ export interface AppDependencies {
   lotteryDraw?: LotteryDrawRouteDeps;
   /** When provided, exposes the lottery verify domain (#866): staff lookup + redeem (user-tier auth). */
   lotteryVerify?: LotteryVerifyRouteDeps;
+  /** When provided, exposes the #867 admin staff-whitelist management endpoints. */
+  lotteryStaff?: LotteryStaffStore;
+  /** When provided (with `lottery`), exposes the #867 funnel dashboard read and the public funnel ping. */
+  lotteryFunnel?: LotteryFunnelStore;
 }
 
 const httpLogger = getLogger("http");
@@ -140,6 +148,24 @@ export function createApp(dependencies: AppDependencies): Hono<AuthEnv> {
     registerLotteryVerifyRoutes(app, {
       ...dependencies.lotteryVerify,
       auth: createAuthMiddleware(dependencies.jwtVerifier),
+    });
+  }
+
+  // staff 白名单管理（#867）：增删查全部 admin 双门。
+  if (dependencies.lotteryStaff) {
+    registerLotteryStaffRoutes(app, {
+      store: dependencies.lotteryStaff,
+      auth: createAuthMiddleware(dependencies.jwtVerifier),
+    });
+  }
+
+  // 数据看板（#867）：漏斗读 admin 双门；埋点 ping 公开 + 可选归因。
+  if (dependencies.lottery && dependencies.lotteryFunnel) {
+    registerLotteryDashboardRoutes(app, {
+      store: dependencies.lottery,
+      events: dependencies.lotteryFunnel,
+      auth: createAuthMiddleware(dependencies.jwtVerifier),
+      optionalAuth: createOptionalAuthMiddleware(dependencies.jwtVerifier),
     });
   }
 

@@ -48,7 +48,7 @@ class FakeLotteryStore implements LotteryStore {
   participations = new Set<number>();
   /** #865 draw 参与记录（内存版，含三重唯一约束语义）。 */
   participationRows: LotteryParticipationRow[] = [];
-  drawCalls: { activityId: number; userId: string; providerKey: string }[] = [];
+  drawCalls: { activityId: number; userId: string; providerKey: string; scene?: string }[] = [];
   /** #866 staff 白名单（内存版）：全局行 + 活动级行。 */
   readonly staffGlobal = new Set<string>();
   readonly staffByActivity = new Map<string, number>();
@@ -144,9 +144,10 @@ class FakeLotteryStore implements LotteryStore {
     activityId: number;
     userId: string;
     providerKey: string;
+    scene?: string;
     allocate(prizes: LotteryPrizeRow[], occupiedCodes: ReadonlySet<string>): DrawAllocation;
   }) {
-    this.drawCalls.push({ activityId: input.activityId, userId: input.userId, providerKey: input.providerKey });
+    this.drawCalls.push({ activityId: input.activityId, userId: input.userId, providerKey: input.providerKey, ...(input.scene !== undefined ? { scene: input.scene } : {}) });
     const existing = this.participationRows.find((row) => row.activityId === input.activityId && row.userId === input.userId);
     if (existing !== undefined) {
       return { outcome: "duplicate" as const, participation: { ...existing }, prize: await this.prizeOf(existing) };
@@ -167,6 +168,7 @@ class FakeLotteryStore implements LotteryStore {
       userId: input.userId,
       openid: null,
       providerKey: input.providerKey,
+      scene: input.scene ?? null,
       prizeId: allocation.prize.id,
       code: allocation.prize.isFallback ? null : allocation.code,
       status: "drawn",
@@ -665,6 +667,7 @@ test("draw：同一手表账号绑到另一账号已抽过 → 409 watch_already
     userId: "someone-else",
     openid: null,
     providerKey: "coros:runner@example.com",
+    scene: null,
     prizeId: 1,
     code: "077",
     status: "drawn",
@@ -782,6 +785,7 @@ async function verifyFixture() {
     userId: "winner-1",
     openid: null,
     providerKey: "coros:winner@example.com",
+    scene: null,
     prizeId: physical.id,
     code: WINNER_CODE,
     status: "drawn",
@@ -1009,4 +1013,35 @@ test("verify 限速：同 openid 第 31 次 → 429（查询+核销共享预算�
     body: verifyBody(),
   });
   assert.equal(otherStaff.status, 200);
+});
+
+// ── draw 透传点位渠道号（#867 漏斗分组）──────────────────────────────
+
+test("draw：body 带 scene → 落参与记录；非法 scene 按未带处理不拒绝", async () => {
+  const { app, store } = lotteryApp({ adminVerifier: false });
+  const id = await activeActivity(store);
+
+  const drawn = await app.request(`/api/lottery/activities/${id}/draw`, {
+    method: "POST",
+    headers: AUTH,
+    body: JSON.stringify({ scene: "booth-03" }),
+  });
+  assert.equal(drawn.status, 201);
+  assert.equal(store.drawCalls[0]?.scene, "booth-03");
+  assert.equal(store.participationRows[0]?.scene, "booth-03");
+
+  // 无 body / 非法 scene（含中文、空格）不阻塞抽奖，scene 落 undefined。
+  const second = await activeActivity(store);
+  const noBody = await app.request(`/api/lottery/activities/${second}/draw`, { method: "POST", headers: AUTH });
+  assert.equal(noBody.status, 201);
+
+  const third = await activeActivity(store);
+  const badScene = await app.request(`/api/lottery/activities/${third}/draw`, {
+    method: "POST",
+    headers: AUTH,
+    body: JSON.stringify({ scene: "三 号 位" }),
+  });
+  assert.equal(badScene.status, 201);
+  assert.equal(store.drawCalls[2]?.scene, undefined);
+  assert.equal(store.participationRows[2]?.scene, null);
 });

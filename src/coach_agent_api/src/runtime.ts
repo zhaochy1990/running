@@ -120,6 +120,9 @@ export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: C
               }
             : {}),
         },
+        // #867 staff 白名单管理 + 数据看板（漏斗读 + 公开埋点 ping）。
+        lotteryStaff: persistence.lotteryStaff,
+        lotteryFunnel: persistence.lotteryFunnel,
         // #715 分享服务：wxacode 未配置（base_url 为空）时不挂客户端——创建
         // 端 fail-soft 落 wxacode_url NULL，P1 auth 端点上线后配置即生效。
         coachShares: {

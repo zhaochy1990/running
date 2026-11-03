@@ -79,6 +79,11 @@ export interface LotteryParticipationRow {
   openid: string | null;
   /** `${provider}:${account}` anti-fraud key; always set by the #865 draw (watch binding is a hard gate). */
   providerKey: string | null;
+  /**
+   * 点位渠道号（scene 的 s 参数，#867 看板漏斗分组键）；小程序 draw 时透传，
+   * 直链/未带点位为 null。P2 建表后新增列——setup() 对既有部署幂等补列。
+   */
+  scene: string | null;
   /** Winning tier id — the fallback tier for "谢谢参与" results. */
   prizeId: number | null;
   /** 3-digit zero-padded winning code (000-999); null for fallback results. */
@@ -148,6 +153,8 @@ export interface LotteryStore {
     activityId: number;
     userId: string;
     providerKey: string;
+    /** 点位渠道号（scene s 参数），漏斗分组用；未透传为 undefined。 */
+    scene?: string;
     allocate(prizes: LotteryPrizeRow[], occupiedCodes: ReadonlySet<string>): DrawAllocation;
   }): Promise<DrawOutcome>;
   /** #866 staff gate: true when the openid is whitelisted globally (activity_id NULL) or for this activity. */
@@ -208,6 +215,7 @@ export class MySqlLotteryStore implements LotteryStore {
         user_id VARCHAR(255) NOT NULL,
         openid VARCHAR(128) NULL,
         provider_key VARCHAR(255) NULL,
+        scene VARCHAR(32) NULL,
         prize_id BIGINT UNSIGNED NULL,
         code CHAR(3) NULL,
         status VARCHAR(16) NOT NULL DEFAULT 'drawn',
@@ -246,6 +254,14 @@ export class MySqlLotteryStore implements LotteryStore {
         KEY idx_openid (openid)
       ) ENGINE=InnoDB
     `);
+    // #867：participations 补 scene 列（点位渠道号）。CREATE TABLE IF NOT EXISTS
+    // 对已建表（P1 起部署）不生效，按 INFORMATION_SCHEMA 探测后幂等 ALTER。
+    const [columns] = await this.pool.query<RowDataPacket[]>(
+      `SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'lottery_participations' AND column_name = 'scene'`,
+    );
+    if (columns.length === 0) {
+      await this.pool.query(`ALTER TABLE lottery_participations ADD COLUMN scene VARCHAR(32) NULL AFTER provider_key`);
+    }
   }
 
   async createActivity(input: LotteryActivityInput): Promise<LotteryActivityRow> {
@@ -352,6 +368,7 @@ export class MySqlLotteryStore implements LotteryStore {
     activityId: number;
     userId: string;
     providerKey: string;
+    scene?: string;
     allocate(prizes: LotteryPrizeRow[], occupiedCodes: ReadonlySet<string>): DrawAllocation;
   }): Promise<DrawOutcome> {
     const connection = await this.pool.getConnection();
@@ -391,8 +408,8 @@ export class MySqlLotteryStore implements LotteryStore {
         }
         try {
           const [insert] = await connection.execute<ResultSetHeader>(
-            `INSERT INTO lottery_participations (activity_id, user_id, provider_key, prize_id, code) VALUES (?, ?, ?, ?, ?)`,
-            [input.activityId, input.userId, input.providerKey, allocation.prize.id, allocation.prize.isFallback ? null : allocation.code],
+            `INSERT INTO lottery_participations (activity_id, user_id, provider_key, scene, prize_id, code) VALUES (?, ?, ?, ?, ?, ?)`,
+            [input.activityId, input.userId, input.providerKey, input.scene ?? null, allocation.prize.id, allocation.prize.isFallback ? null : allocation.code],
           );
           insertedId = insert.insertId;
         } catch (error) {
@@ -574,6 +591,7 @@ function participationRow(row: RowDataPacket): LotteryParticipationRow {
     userId: row.user_id as string,
     openid: (row.openid as string | null) ?? null,
     providerKey: (row.provider_key as string | null) ?? null,
+    scene: (row.scene as string | null) ?? null,
     prizeId: row.prize_id === null || row.prize_id === undefined ? null : Number(row.prize_id),
     code: (row.code as string | null) ?? null,
     status: row.status as string,

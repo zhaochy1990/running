@@ -67,6 +67,29 @@ export function createAdminMiddleware(): MiddlewareHandler<AuthEnv> {
   };
 }
 
+/**
+ * Best-effort identity for public endpoints that still want user attribution
+ * when a token happens to be present (#867 lottery funnel pings): a valid
+ * bearer sets the identity, a missing or invalid one continues anonymously.
+ * Unlike createAuthMiddleware this never rejects — the endpoint itself is
+ * public; the identity is analytics metadata, not authorization.
+ */
+export function createOptionalAuthMiddleware(jwtVerifier: JwtVerifier): MiddlewareHandler<AuthEnv> {
+  return async (context, next) => {
+    const authorization = context.req.header("authorization");
+    if (authorization !== undefined) {
+      try {
+        const identity = await jwtVerifier.verify(authorization);
+        context.set("userId", identity.userId);
+        context.set("isAdmin", identity.isAdmin);
+      } catch (error) {
+        if (!(error instanceof AuthError)) throw error;
+      }
+    }
+    await next();
+  };
+}
+
 export function createJwtVerifier(options: { publicKeyPem: string; issuer: string; audience?: string | string[]; adminAudience?: string }): JwtVerifier {
   return {
     async verify(authorization) {

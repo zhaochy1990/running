@@ -44,6 +44,8 @@ const MAX_PRIZE_TIERS = 50;
 const MAX_WEIGHT = 1_000_000;
 /** Path ids are numeric activity ids (scene `a=<活动ID>`); cap length, not value. */
 const ACTIVITY_ID_RE = /^\d{1,15}$/;
+/** 点位渠道号（scene 的 s 参数）：≤32 个可见非空格 ASCII（epic 约束，无中文），#867 看板漏斗分组键。 */
+export const SCENE_VALUE_RE = /^[\x21-\x7e]{1,32}$/;
 /** 小程序图片仅支持 https；无 schema 的相对路径在公网落地页无法展示。 */
 const HTTPS_URL_RE = /^https:\/\/\S+$/;
 /** 时间窗必须带显式时区（Z 或 ±HH:MM）——「2026-11-10 10:00:00」这类本地时间歧义输入直接拒绝。 */
@@ -441,10 +443,17 @@ export function registerLotteryDrawRoutes(app: Hono<AuthEnv>, dependencies: Lott
       return context.json({ error: "watch_not_bound" }, 403);
     }
 
+    // 点位渠道号（#867 漏斗分组）：可选透传，非法值按未带处理而非拒绝抽奖
+    // ——draw 本身的成功不该被埋点参数卡住。
+    const body = (await readJsonBody(context.req.raw)) ?? {};
+    const sceneRaw = (body as { scene?: unknown }).scene;
+    const scene = typeof sceneRaw === "string" && SCENE_VALUE_RE.test(sceneRaw) ? sceneRaw : undefined;
+
     const result = await store.drawParticipation({
       activityId: id,
       userId,
       providerKey: watchCredential.providerKey,
+      ...(scene !== undefined ? { scene } : {}),
       allocate: (prizes, occupiedCodes) => {
         const prize = pickWeightedPrize(prizes, randomInt);
         const code = prize.isFallback ? null : pickFreeCode(occupiedCodes, randomInt);

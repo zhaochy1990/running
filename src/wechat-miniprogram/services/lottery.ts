@@ -64,9 +64,31 @@ export function getLotteryActivity(id: string): Promise<LotteryPublicActivity> {
   return http.get<LotteryPublicActivity>(`/api/lottery/activities/${id}`, { auth: false });
 }
 
-/** 抽奖（服务端硬校验时间窗 / 登录态 / 绑表；重复参与返回已有结果）。 */
-export function drawLottery(id: string): Promise<LotteryDrawResult> {
-  return http.post<LotteryDrawResult>(`/api/lottery/activities/${id}/draw`);
+/** 抽奖（服务端硬校验时间窗 / 登录态 / 绑表；重复参与返回已有结果）。
+ * scene=点位渠道号（易拉宝 scene 的 s 参数）可选透传——#867 看板漏斗按点位分组；
+ * 非法值后端按未带处理，不阻塞抽奖。 */
+export function drawLottery(id: string, scene?: string): Promise<LotteryDrawResult> {
+  return http.post<LotteryDrawResult>(`/api/lottery/activities/${id}/draw`, scene ? { scene } : undefined);
+}
+
+/** 漏斗埋点阶段（#867 看板）：enter=进页（免登录）login=登录完成 bind=绑表完成。 */
+export type LotteryEventStage = 'enter' | 'login' | 'bind';
+
+/**
+ * 漏斗埋点 ping（POST /api/lottery/activities/:id/events，公开端点——#867 看板）。
+ * fire-and-forget：内部吞掉一切错误（埋点失败绝不打扰页面）；有 token 时带上
+ * 供服务端可选归因（登录/绑表阶段），无 token 匿名（enter 阶段）。
+ */
+export function reportLotteryEvent(id: string, stage: LotteryEventStage, scene?: string): void {
+  http
+    .post<void>(
+      `/api/lottery/activities/${id}/events`,
+      { stage, ...(scene ? { scene } : {}) },
+      { auth: true, timeout: 5_000 },
+    )
+    .catch(() => {
+      // 埋点失败静默：看板少一条计数，不影响任何页面行为。
+    });
 }
 
 /** 预取本账号参与结果（落地页结果态渲染用）。 */
