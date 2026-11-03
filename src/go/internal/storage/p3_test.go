@@ -53,8 +53,35 @@ func TestUpsertActivity_Phase3FreezesRowsButKeepsChildTables(t *testing.T) {
 func TestDeleteUserData_SweepsTSBlobPrefix(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()
-	if err := st.AutoMigrateWatch(ctx); err != nil {
-		t.Fatalf("automigrate watch: %v", err)
+	// The erasure sweeps every user-owned table, so the schema must be complete:
+	// the api process's boot migration set (minus legal documents, which are
+	// not user-owned) — this test must not depend on other files' migrations.
+	for _, migrate := range []func(context.Context) error{
+		st.AutoMigrateWatch,
+		st.AutoMigrateUsers,
+		st.AutoMigrateInjuries,
+		st.AutoMigrateBodyComposition,
+		st.AutoMigrateGoals,
+		st.AutoMigrateMasterPlan,
+		st.AutoMigrateWeeklyPlan,
+		st.AutoMigrateWorkout,
+		st.AutoMigrateWeeklyFeedback,
+		st.AutoMigrateTeamLikes,
+		st.AutoMigrateUserDeletionAudit,
+		st.AutoMigrateHomeCity,
+		st.AutoMigrateScheduledWorkout,
+		st.AutoMigrateRaceCalendar,
+		st.AutoMigrateRaceFavorites,
+		st.AutoMigrateRacePlans,
+		st.AutoMigrateRaceStrategies,
+		st.AutoMigrateUserCustomRaces,
+		st.AutoMigrateRoadmap,
+		st.AutoMigrateFeedback,
+		st.AutoMigrateProviderEvents,
+	} {
+		if err := migrate(ctx); err != nil {
+			t.Fatalf("migrate: %v", err)
+		}
 	}
 	erased, bystander := uuid.NewString(), uuid.NewString()
 	lat := 31.1
