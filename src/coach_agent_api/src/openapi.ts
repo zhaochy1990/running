@@ -427,7 +427,7 @@ export const OPENAPI_DOCUMENT = {
         operationId: "getLotteryMyResult",
         summary: "Read the caller's draw result for an activity",
         description:
-          "The landing page prefetch: logged-in users who already drew render the result state directly. Returns participated=false for users who have not drawn; the participation record otherwise — prize view fields, the 3-digit code (null for「谢谢参与」), status (drawn / verified once P3 ships) and verification timestamps. Weights are never exposed.",
+          "The landing page prefetch: logged-in users who already drew render the result state directly. Returns participated=false for users who have not drawn; the participation record otherwise — prize view fields, the 3-digit code (null for「谢谢参与」), status (drawn / verified) and verification timestamps. Weights are never exposed.",
         security: [{ bearerAuth: [] }],
         parameters: [
           {
@@ -448,6 +448,86 @@ export const OPENAPI_DOCUMENT = {
           },
           "400": errorResponse("The activity id is malformed."),
           "401": errorResponse("The bearer token is missing or invalid."),
+        },
+      },
+    },
+    "/api/lottery/activities/{id}/verify/lookup": {
+      post: {
+        tags: ["Lottery"],
+        operationId: "lookupLotteryWinningCode",
+        summary: "Look up a winning entry by its 3-digit code (staff)",
+        description:
+          "The #866 verify domain, first half. The caller authenticates with a user token and proves their staff identity by a fresh wx.login() code, which the server resolves to the requester's openid (auth-service internal endpoint) and checks against the lottery_staff whitelist (global rows or activity-scoped rows). A whitelisted miss is impossible to probe around: 403 not_staff carries the requester's own openid back, so the mini-program can display/copy it for the admin to whitelist. Lookups and redeems share one per-openid budget (30/minute) — the 3-digit code space only has 1000 entries. Every lookup is audit-logged (found / not_found).「谢谢参与」entries carry no code, so an unknown code is a definitive code_not_found.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", pattern: "^[0-9]{1,15}$" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": { schema: { $ref: "#/components/schemas/LotteryVerifyRequest" } },
+          },
+        },
+        responses: {
+          "200": {
+            description: "The winning entry details for on-site cross-checking.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LotteryVerifyResponse" },
+              },
+            },
+          },
+          "400": errorResponse("The activity id, code (exactly 3 digits) or wx_code is malformed."),
+          "401": errorResponse("The bearer token is missing or invalid."),
+          "403": errorResponse("The resolved openid is not whitelisted (not_staff; the body carries the requester's own openid)."),
+          "404": errorResponse("The activity does not exist / is not enabled, or the code does not exist (code_not_found)."),
+          "429": errorResponse("Per-openid lookup/redeem rate limit exceeded; retry after the indicated delay."),
+          "503": errorResponse("The staff-openid resolver is not configured or the auth-service endpoint failed (verify_openid_unavailable)."),
+        },
+      },
+    },
+    "/api/lottery/activities/{id}/verify/redeem": {
+      post: {
+        tags: ["Lottery"],
+        operationId: "redeemLotteryWinningCode",
+        summary: "Redeem a winning entry (staff)",
+        description:
+          "The #866 verify domain, second half: 待核销 (drawn) → 已核销 (verified) under a row lock, recording the verifier's openid and timestamp. Re-redeeming an already-verified entry changes nothing: the response is 200 with already_verified=true and the committed verifier + time (拒绝变更). The audit row is written in the same transaction as the state transition, so a committed redeem never lacks its trail. The activity time window is intentionally not enforced here — prize redemption continues after the draw window; enabled is the only switch.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", pattern: "^[0-9]{1,15}$" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": { schema: { $ref: "#/components/schemas/LotteryVerifyRequest" } },
+          },
+        },
+        responses: {
+          "200": {
+            description: "The redeem result (already_verified=true when the entry was verified before).",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LotteryVerifyRedeemResponse" },
+              },
+            },
+          },
+          "400": errorResponse("The activity id, code (exactly 3 digits) or wx_code is malformed."),
+          "401": errorResponse("The bearer token is missing or invalid."),
+          "403": errorResponse("The resolved openid is not whitelisted (not_staff; the body carries the requester's own openid)."),
+          "404": errorResponse("The activity does not exist / is not enabled, or the code does not exist (code_not_found)."),
+          "429": errorResponse("Per-openid lookup/redeem rate limit exceeded; retry after the indicated delay."),
+          "503": errorResponse("The staff-openid resolver is not configured or the auth-service endpoint failed (verify_openid_unavailable)."),
         },
       },
     },
@@ -1124,7 +1204,7 @@ export const OPENAPI_DOCUMENT = {
             additionalProperties: false,
           },
           code: { type: ["string", "null"], pattern: "^[0-9]{3}$", description: "3-digit zero-padded winning code; null for「谢谢参与」." },
-          status: { type: "string", enum: ["drawn"] },
+          status: { type: "string", enum: ["drawn", "verified"], description: "verified after the #866 staff redeem." },
           created_at: { type: "string" },
         },
         additionalProperties: false,
@@ -1146,9 +1226,67 @@ export const OPENAPI_DOCUMENT = {
             additionalProperties: false,
           },
           code: { type: ["string", "null"], pattern: "^[0-9]{3}$" },
-          status: { type: "string", enum: ["drawn"] },
-          verified_at: { type: ["string", "null"], description: "Filled by the P3 verification domain." },
+          status: { type: "string", enum: ["drawn", "verified"], description: "verified after the #866 staff redeem." },
+          verified_at: { type: ["string", "null"], description: "Set by the #866 staff redeem." },
           created_at: { type: "string" },
+        },
+        additionalProperties: false,
+      },
+      LotteryVerifyRequest: {
+        type: "object",
+        required: ["code", "wx_code"],
+        description:
+          "#866 verify endpoints: the 3-digit winning code plus a fresh wx.login() code the server resolves to the requester's openid (single-use at WeChat's side — fetch a new one per request).",
+        properties: {
+          code: { type: "string", pattern: "^[0-9]{3}$", description: "3-digit zero-padded winning code printed on the winner's page." },
+          wx_code: { type: "string", minLength: 1, maxLength: 128, description: "A fresh wx.login() code; resolved server-side to the staff openid." },
+        },
+        additionalProperties: false,
+      },
+      LotteryVerifyResponse: {
+        type: "object",
+        required: ["code", "status", "prize", "won_at", "verified_at", "verified_by"],
+        description: "The winning entry as the staff sees it before confirming the redeem.",
+        properties: {
+          code: { type: "string", pattern: "^[0-9]{3}$" },
+          status: { type: "string", enum: ["drawn", "verified"] },
+          prize: {
+            type: "object",
+            required: ["name", "image_url", "is_fallback"],
+            properties: {
+              name: { type: "string" },
+              image_url: { type: ["string", "null"] },
+              is_fallback: { type: "boolean" },
+            },
+            additionalProperties: false,
+          },
+          won_at: { type: "string", description: "When the winner drew (ISO-8601)." },
+          verified_at: { type: ["string", "null"] },
+          verified_by: { type: ["string", "null"], description: "The verifier openid, set by the redeem." },
+        },
+        additionalProperties: false,
+      },
+      LotteryVerifyRedeemResponse: {
+        type: "object",
+        required: ["code", "status", "prize", "won_at", "verified_at", "verified_by", "already_verified"],
+        description: "The redeem outcome; already_verified=true means the committed verification was returned unchanged.",
+        properties: {
+          code: { type: "string", pattern: "^[0-9]{3}$" },
+          status: { type: "string", const: "verified" },
+          prize: {
+            type: "object",
+            required: ["name", "image_url", "is_fallback"],
+            properties: {
+              name: { type: "string" },
+              image_url: { type: ["string", "null"] },
+              is_fallback: { type: "boolean" },
+            },
+            additionalProperties: false,
+          },
+          won_at: { type: "string" },
+          verified_at: { type: "string", description: "When the entry was verified (ISO-8601)." },
+          verified_by: { type: "string", description: "The verifier openid that committed this redemption." },
+          already_verified: { type: "boolean" },
         },
         additionalProperties: false,
       },

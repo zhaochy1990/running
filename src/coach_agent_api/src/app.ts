@@ -11,9 +11,11 @@ import { registerHistoryRoutes, registerSessionListRoutes, type ThreadHistoryRea
 import {
   type LotteryDrawRouteDeps,
   type LotteryRouteDeps,
+  type LotteryVerifyRouteDeps,
   registerLotteryAdminRoutes,
   registerLotteryDrawRoutes,
   registerLotteryPublicRoute,
+  registerLotteryVerifyRoutes,
 } from "./routes/lottery.js";
 import { type PlanJobsService, registerPlanJobRoutes } from "./routes/planJobs.js";
 import { type CoachShareCreateDeps, type CoachShareReadDeps, registerCoachShareReadRoute, registerShareCreateRoute } from "./routes/shares.js";
@@ -37,6 +39,8 @@ export interface AppDependencies {
   lottery?: LotteryRouteDeps["store"];
   /** When provided, exposes the lottery draw core (#865): POST draw + GET my-result (user-tier auth). */
   lotteryDraw?: LotteryDrawRouteDeps;
+  /** When provided, exposes the lottery verify domain (#866): staff lookup + redeem (user-tier auth). */
+  lotteryVerify?: LotteryVerifyRouteDeps;
 }
 
 const httpLogger = getLogger("http");
@@ -126,6 +130,15 @@ export function createApp(dependencies: AppDependencies): Hono<AuthEnv> {
   if (dependencies.lotteryDraw) {
     registerLotteryDrawRoutes(app, {
       ...dependencies.lotteryDraw,
+      auth: createAuthMiddleware(dependencies.jwtVerifier),
+    });
+  }
+
+  // 核销域（#866）：staff 查询/核销走用户级 auth；openid resolver 未配置时
+  // 端点挂载但整体 503（配置即生效，无需发版）。
+  if (dependencies.lotteryVerify) {
+    registerLotteryVerifyRoutes(app, {
+      ...dependencies.lotteryVerify,
       auth: createAuthMiddleware(dependencies.jwtVerifier),
     });
   }

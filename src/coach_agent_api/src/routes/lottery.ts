@@ -1,5 +1,5 @@
 /**
- * Lottery endpoints (#863 activity configuration, #865 draw core).
+ * Lottery endpoints (#863 activity configuration, #865 draw core, #866 verify).
  *
  * Admin CRUD (`/api/admin/lottery/...`) sits behind the auth middleware plus
  * the admin gate — the运营 dashboard's only configuration surface. The landing
@@ -25,9 +25,12 @@
 import { randomInt } from "node:crypto";
 import type { Hono, MiddlewareHandler } from "hono";
 import { type AuthEnv, createAdminMiddleware } from "../auth.js";
+import type { LotteryOpenidResolver } from "../coach/lotteryOpenid.js";
 import type { LotterySyncTrigger } from "../coach/lotterySyncTrigger.js";
 import type { DrawOutcome, LotteryActivityRow, LotteryParticipationRow, LotteryPrizeRow, LotteryStore } from "../persistence/lottery.js";
 import type { WatchCredentialReader } from "../persistence/watchCredentials.js";
+// IpRateLimiter 是通用固定窗口计数器（key 任意），这里以 openid 为 key 复用。
+import { IpRateLimiter } from "./shares.js";
 
 export type LotteryPhase = "not_started" | "active" | "ended";
 
@@ -469,4 +472,131 @@ export function registerLotteryDrawRoutes(app: Hono<AuthEnv>, dependencies: Lott
     const prize = participation.prizeId === null ? null : await store.getPrize(participation.prizeId);
     return context.json(myResultResponse(participation, prize));
   });
+}
+
+// ── #866 核销域 ─────────────────────────────────────────────────────────
+
+/** 中奖编号固定 3 位数字（000-999，补零展示）。 */
+const WINNING_CODE_RE = /^\d{3}$/;
+/** wx.login code：非空、有上限（正常 32 位）即可，形状由 auth-service 校验。 */
+const MAX_WX_CODE_CHARS = 128;
+/** 防爆破（#866）：3 位码空间仅 1000，查询+核销合并按 openid 每分钟 30 次。 */
+const VERIFY_RATE_LIMIT = { limit: 30, windowMs: 60_000 };
+
+export interface LotteryVerifyRouteDeps {
+  store: LotteryStore;
+  /** wx.login code → openid（auth-service 内部端点）。未配置时核销域整体 503。 */
+  openid?: LotteryOpenidResolver;
+}
+
+interface VerifyRequestBody {
+  code: string;
+  wxCode: string;
+}
+
+function parseVerifyRequest(body: unknown): { ok: true; value: VerifyRequestBody } | { ok: false; error: string } {
+  if (!isRecord(body)) return { ok: false, error: "invalid_request" };
+  const code = body.code;
+  if (typeof code !== "string" || !WINNING_CODE_RE.test(code)) return { ok: false, error: "invalid_code" };
+  const wxCode = body.wx_code;
+  if (typeof wxCode !== "string" || wxCode.length === 0 || wxCode.length > MAX_WX_CODE_CHARS) {
+    return { ok: false, error: "invalid_wx_code" };
+  }
+  return { ok: true, value: { code, wxCode } };
+}
+
+function verifyEntryResponse(participation: LotteryParticipationRow, prize: LotteryPrizeRow): Record<string, unknown> {
+  return {
+    code: participation.code,
+    status: participation.status,
+    prize: prizeView(prize),
+    won_at: participation.createdAt.toISOString(),
+    verified_at: participation.verifiedAt === null ? null : participation.verifiedAt.toISOString(),
+    verified_by: participation.verifiedBy,
+  };
+}
+
+/**
+ * 核销域（#866）：现场工作人员在小程序核销页凭 3 位中奖编号核对并核销。
+ *
+ *   POST /api/lottery/activities/:id/verify/lookup — 查询中奖详情
+ *   POST /api/lottery/activities/:id/verify/redeem  — 核销（待核销→已核销）
+ *
+ * 鉴权链（顺序固定）：登录 JWT → wx.login code 换 openid（未配置/上游失败
+ * 503）→ 活动存在且启用（404，与公开端点同口径）→ staff 白名单（未命中 403
+ * 且响应体带回请求者自己的 openid 供小程序展示+复制，后台添加后即可用）→
+ * 按 openid 限速（429，查询与核销共享预算）→ 落库操作。每次查询与核销均
+ * 全量留痕（lottery_verification_logs）。时间窗不设限：兑奖常在开奖窗结束
+ * 后继续，enabled 是唯一开关。
+ */
+export function registerLotteryVerifyRoutes(app: Hono<AuthEnv>, dependencies: LotteryVerifyRouteDeps & { auth: MiddlewareHandler<AuthEnv> }): void {
+  const { store } = dependencies;
+  const limiter = new IpRateLimiter(VERIFY_RATE_LIMIT);
+
+  for (const [path, action] of [["verify/lookup", "lookup"] as const, ["verify/redeem", "redeem"] as const]) {
+    app.post(`/api/lottery/activities/:id/${path}`, dependencies.auth, async (context) => {
+      const id = activityIdParam(context);
+      if (id === null) return context.json({ error: "invalid_activity_id" }, 400);
+      const body = await readJsonBody(context.req.raw);
+      if (body === null) return context.json({ error: "invalid_json" }, 400);
+      const parsed = parseVerifyRequest(body);
+      if (!parsed.ok) return context.json({ error: parsed.error }, 400);
+
+      // wx code 一次性：先完成全部结构校验再消费它。
+      const resolver = dependencies.openid;
+      if (resolver === undefined) {
+        return context.json({ error: "verify_openid_unavailable" }, 503);
+      }
+      const resolution = await resolver.resolve(parsed.value.wxCode);
+      if (resolution.status === "unavailable") {
+        return context.json({ error: "verify_openid_unavailable" }, 503);
+      }
+
+      const activity = await store.getActivity(id);
+      if (activity === null || !activity.enabled) {
+        return context.json({ error: "not_found" }, 404);
+      }
+
+      if (!(await store.isStaffOpenid(resolution.openid, id))) {
+        // 回显请求者自己的 openid：页面展示+复制，后台加白后刷新可用。
+        return context.json({ error: "not_staff", openid: resolution.openid }, 403);
+      }
+
+      if (!limiter.allow(resolution.openid)) {
+        return context.json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
+      }
+
+      if (action === "lookup") {
+        const participation = await store.findWinningByCode({
+          activityId: id,
+          openid: resolution.openid,
+          code: parsed.value.code,
+        });
+        if (participation === null) {
+          // 「谢谢参与」不占编号：编号只存在于中奖记录，查无即明确语义。
+          return context.json({ error: "code_not_found" }, 404);
+        }
+        const prize = participation.prizeId === null ? null : await store.getPrize(participation.prizeId);
+        if (prize === null) {
+          throw new Error(`lottery verify lookup: prize ${participation.prizeId} missing for participation ${participation.id}`);
+        }
+        return context.json(verifyEntryResponse(participation, prize));
+      }
+
+      const result = await store.redeemParticipation({
+        activityId: id,
+        code: parsed.value.code,
+        verifiedBy: resolution.openid,
+        verifiedAt: new Date(),
+      });
+      if (result.outcome === "not_found") {
+        return context.json({ error: "code_not_found" }, 404);
+      }
+      const prize = result.participation.prizeId === null ? null : await store.getPrize(result.participation.prizeId);
+      if (prize === null) {
+        throw new Error(`lottery verify redeem: prize missing for participation ${result.participation.id}`);
+      }
+      return context.json({ ...verifyEntryResponse(result.participation, prize), already_verified: result.outcome === "already_verified" });
+    });
+  }
 }

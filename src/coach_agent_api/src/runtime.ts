@@ -13,6 +13,7 @@ import { createApp } from "./app.js";
 import { createJwtVerifier, fetchAuthPublicKey } from "./auth.js";
 import { createActivityFeelWriter } from "./coach/activityFeelWriter.js";
 import { CoachInvokerImpl } from "./coach/coachInvoker.js";
+import { createAuthOpenidResolver } from "./coach/lotteryOpenid.js";
 import { createLotterySyncTrigger } from "./coach/lotterySyncTrigger.js";
 import type { ApiConfig } from "./dto/config.js";
 import { MySqlCoachDataDeleter } from "./persistence/deletion.js";
@@ -105,6 +106,19 @@ export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: C
           store: persistence.lottery,
           watch: new MySqlWatchCredentialReader(watchPool),
           sync: createLotterySyncTrigger(apiConfig.goApi),
+        },
+        // #866 核销域：staff openid resolver 未配置（endpoint 为空）时不挂——
+        // 端点整体 503，auth-service 内部端点上线后配置即生效。
+        lotteryVerify: {
+          store: persistence.lottery,
+          ...(apiConfig.lottery.staffOpenidEndpoint !== "" && apiConfig.lottery.staffOpenidInternalToken !== ""
+            ? {
+                openid: createAuthOpenidResolver({
+                  endpoint: apiConfig.lottery.staffOpenidEndpoint,
+                  internalToken: apiConfig.lottery.staffOpenidInternalToken,
+                }),
+              }
+            : {}),
         },
         // #715 分享服务：wxacode 未配置（base_url 为空）时不挂客户端——创建
         // 端 fail-soft 落 wxacode_url NULL，P1 auth 端点上线后配置即生效。

@@ -22,6 +22,11 @@ export interface RawApiConfig {
     wxacode_page: string;
     wxacode_env_version: "trial" | "develop" | "release";
   };
+  /** Lottery verify domain (#866). Empty endpoint disables staff verify (503 until configured). */
+  lottery: {
+    staff_openid_endpoint: string;
+    staff_openid_internal_token: string;
+  };
   logging: { file: string };
 }
 
@@ -40,6 +45,8 @@ export interface ApiConfig {
     wxacodePage: string;
     wxacodeEnvVersion: "trial" | "develop" | "release";
   };
+  /** Lottery verify domain (#866); staffOpenidEndpoint empty = staff verify disabled (503). */
+  lottery: { staffOpenidEndpoint: string; staffOpenidInternalToken: string };
   auth: { publicKeyPem: string; authServiceUrl: string; issuer: string; audience?: string | string[]; adminAudience?: string };
   /** Local-only debug log file (absolute); empty = log to stdout only. */
   logFile: string;

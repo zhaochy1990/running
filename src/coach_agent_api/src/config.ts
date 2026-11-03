@@ -141,6 +141,21 @@ const schema: convict.Schema<RawApiConfig> = {
       env: "STRIDE_COACH_SHARE_WXACODE_ENV_VERSION",
     },
   },
+  lottery: {
+    staff_openid_endpoint: {
+      doc: "Auth-service internal endpoint (full URL) resolving a wx.login code to the requester's openid for the #866 staff verify domain (X-Internal-Token POST {code}); empty disables the verify endpoints (they answer 503 until configured)",
+      format: String,
+      default: "",
+      env: "STRIDE_COACH_LOTTERY_STAFF_OPENID_ENDPOINT",
+    },
+    staff_openid_internal_token: {
+      doc: "X-Internal-Token for staff_openid_endpoint",
+      format: String,
+      default: "",
+      env: "STRIDE_COACH_LOTTERY_STAFF_OPENID_INTERNAL_TOKEN",
+      sensitive: true,
+    },
+  },
   logging: {
     file: {
       doc: "Local-only debug log file (pretty text, tee'd alongside stdout). Empty disables it; relative paths resolve against the config directory",
@@ -171,6 +186,10 @@ export function loadApiConfig(options: LoadApiConfigOptions): ApiConfig {
       wxacodeInternalToken: raw.share.wxacode_internal_token,
       wxacodePage: raw.share.wxacode_page,
       wxacodeEnvVersion: raw.share.wxacode_env_version,
+    },
+    lottery: {
+      staffOpenidEndpoint: raw.lottery.staff_openid_endpoint,
+      staffOpenidInternalToken: raw.lottery.staff_openid_internal_token,
     },
     logFile: raw.logging.file ? resolve(configDir, raw.logging.file) : "",
     auth: {

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createApp } from "../src/app.js";
 import { AuthError, type JwtVerifier } from "../src/auth.js";
+import type { LotteryOpenidResolver, OpenidResolution } from "../src/coach/lotteryOpenid.js";
 import type {
   DrawAllocation,
   LotteryActivityInput,
@@ -10,6 +11,8 @@ import type {
   LotteryPrizeInput,
   LotteryPrizeRow,
   LotteryStore,
+  LotteryVerificationLogInput,
+  RedeemOutcome,
 } from "../src/persistence/lottery.js";
 import type { WatchCredentialReader } from "../src/persistence/watchCredentials.js";
 import type { LotterySyncTrigger } from "../src/coach/lotterySyncTrigger.js";
@@ -46,6 +49,11 @@ class FakeLotteryStore implements LotteryStore {
   /** #865 draw 参与记录（内存版，含三重唯一约束语义）。 */
   participationRows: LotteryParticipationRow[] = [];
   drawCalls: { activityId: number; userId: string; providerKey: string }[] = [];
+  /** #866 staff 白名单（内存版）：全局行 + 活动级行。 */
+  readonly staffGlobal = new Set<string>();
+  readonly staffByActivity = new Map<string, number>();
+  /** #866 核销留痕（内存版）。 */
+  readonly verificationLogs: LotteryVerificationLogInput[] = [];
 
   async setup(): Promise<void> {}
 
@@ -176,6 +184,40 @@ class FakeLotteryStore implements LotteryStore {
   private async prizeOf(participation: LotteryParticipationRow): Promise<LotteryPrizeRow | null> {
     return participation.prizeId === null ? null : this.getPrize(participation.prizeId);
   }
+
+  async isStaffOpenid(openid: string, activityId: number): Promise<boolean> {
+    return this.staffGlobal.has(openid) || this.staffByActivity.get(openid) === activityId;
+  }
+
+  async findWinningByCode(input: { activityId: number; openid: string; code: string }): Promise<LotteryParticipationRow | null> {
+    const row = this.participationRows.find((candidate) => candidate.activityId === input.activityId && candidate.code === input.code);
+    this.verificationLogs.push({
+      activityId: input.activityId,
+      openid: input.openid,
+      action: "lookup",
+      code: input.code,
+      outcome: row === undefined ? "not_found" : "found",
+      participationId: row?.id ?? null,
+    });
+    return row === undefined ? null : { ...row };
+  }
+
+  async redeemParticipation(input: { activityId: number; code: string; verifiedBy: string; verifiedAt: Date }): Promise<RedeemOutcome> {
+    const row = this.participationRows.find((candidate) => candidate.activityId === input.activityId && candidate.code === input.code);
+    if (row === undefined) {
+      this.verificationLogs.push({ activityId: input.activityId, openid: input.verifiedBy, action: "redeem", code: input.code, outcome: "not_found", participationId: null });
+      return { outcome: "not_found" };
+    }
+    if (row.status === "verified") {
+      this.verificationLogs.push({ activityId: input.activityId, openid: input.verifiedBy, action: "redeem", code: input.code, outcome: "already_verified", participationId: row.id });
+      return { outcome: "already_verified", participation: { ...row } };
+    }
+    row.status = "verified";
+    row.verifiedBy = input.verifiedBy;
+    row.verifiedAt = input.verifiedAt;
+    this.verificationLogs.push({ activityId: input.activityId, openid: input.verifiedBy, action: "redeem", code: input.code, outcome: "redeemed", participationId: row.id });
+    return { outcome: "redeemed", participation: { ...row } };
+  }
 }
 
 /** 服务端绑表硬校验假件：credential 为 null 模拟未绑/未登录。 */
@@ -194,8 +236,25 @@ class FakeSyncTrigger implements LotterySyncTrigger {
   }
 }
 
+/** #866 openid 解析假件：按预设结果回放，记录收到的 wx code。 */
+class FakeOpenidResolver implements LotteryOpenidResolver {
+  readonly calls: string[] = [];
+  constructor(private readonly resolution: OpenidResolution) {}
+  async resolve(wxCode: string): Promise<OpenidResolution> {
+    this.calls.push(wxCode);
+    return this.resolution;
+  }
+}
+
 function lotteryApp(
-  options: { store?: FakeLotteryStore; adminVerifier?: boolean; watch?: FakeWatchReader; sync?: FakeSyncTrigger } = {},
+  options: {
+    store?: FakeLotteryStore;
+    adminVerifier?: boolean;
+    watch?: FakeWatchReader;
+    sync?: FakeSyncTrigger;
+    /** #866 核销域的 openid resolver；缺省不挂（端点 503）。 */
+    verifyOpenid?: LotteryOpenidResolver;
+  } = {},
 ) {
   const store = options.store ?? new FakeLotteryStore();
   const sync = options.sync ?? new FakeSyncTrigger();
@@ -212,6 +271,7 @@ function lotteryApp(
       },
       lottery: store,
       lotteryDraw: { store, watch: options.watch ?? new FakeWatchReader(), sync },
+      lotteryVerify: { store, ...(options.verifyOpenid !== undefined ? { openid: options.verifyOpenid } : {}) },
     }),
   };
 }
@@ -698,4 +758,255 @@ test("my-result：未参与 200 participated:false；参与后返回编号+奖�
   assert.equal((await app.request(`/api/lottery/activities/${id}/my-result`)).status, 401);
   // 非法 id → 400。
   assert.equal((await app.request(`/api/lottery/activities/x/my-result`, { headers: AUTH })).status, 400);
+});
+
+// ── #866 核销域：staff 查询/核销端点 ──────────────────────────────────
+
+const STAFF_OPENID = "staff-openid-ABC";
+const WINNER_CODE = "042";
+
+/** 核销测试台：启用中的活动 + 实物奖池 + 一条 042 待核销中奖记录。 */
+async function verifyFixture() {
+  const store = new FakeLotteryStore();
+  const activity = await store.createActivity({
+    name: "核销场",
+    startAt: new Date(Date.now() - 3_600_000),
+    endAt: new Date(Date.now() + 3_600_000),
+  });
+  store.activities.get(activity.id)!.enabled = true;
+  await store.replacePrizes(activity.id, DRAW_POOL);
+  const physical = (await store.listPrizes(activity.id)).find((prize) => !prize.isFallback)!;
+  store.participationRows.push({
+    id: 501,
+    activityId: activity.id,
+    userId: "winner-1",
+    openid: null,
+    providerKey: "coros:winner@example.com",
+    prizeId: physical.id,
+    code: WINNER_CODE,
+    status: "drawn",
+    verifiedBy: null,
+    verifiedAt: null,
+    createdAt: new Date("2026-11-03T10:00:00Z"),
+  });
+  return { store, activityId: activity.id };
+}
+
+function verifyBody(code: string = WINNER_CODE): string {
+  return JSON.stringify({ code, wx_code: "fresh-wx-login-code" });
+}
+
+test("verify：resolver 未配置 / 上游不可用 → 503，不触达活动与白名单", async () => {
+  const { store, activityId } = await verifyFixture();
+
+  const unconfigured = lotteryApp({ adminVerifier: false, store });
+  for (const path of ["verify/lookup", "verify/redeem"] as const) {
+    const response = await unconfigured.app.request(`/api/lottery/activities/${activityId}/${path}`, {
+      method: "POST",
+      headers: AUTH,
+      body: verifyBody(),
+    });
+    assert.equal(response.status, 503, `${path} 未配置 resolver 应 503`);
+    assert.equal(((await response.json()) as { error: string }).error, "verify_openid_unavailable");
+  }
+
+  const upstreamDown = lotteryApp({ adminVerifier: false, store, verifyOpenid: new FakeOpenidResolver({ status: "unavailable" }) });
+  const failed = await upstreamDown.app.request(`/api/lottery/activities/${activityId}/verify/lookup`, {
+    method: "POST",
+    headers: AUTH,
+    body: verifyBody(),
+  });
+  assert.equal(failed.status, 503);
+  // 上游失败同样不触达白名单/留痕。
+  assert.equal(store.verificationLogs.length, 0);
+});
+
+test("verify：非白名单 → 403 not_staff 且响应体回显请求者自己的 openid", async () => {
+  const { store, activityId } = await verifyFixture();
+  const { app } = lotteryApp({
+    adminVerifier: false,
+    store,
+    verifyOpenid: new FakeOpenidResolver({ status: "ok", openid: "random-visitor-openid" }),
+  });
+
+  for (const path of ["verify/lookup", "verify/redeem"] as const) {
+    const response = await app.request(`/api/lottery/activities/${activityId}/${path}`, {
+      method: "POST",
+      headers: AUTH,
+      body: verifyBody(),
+    });
+    assert.equal(response.status, 403, `${path} 非白名单应 403`);
+    const body = (await response.json()) as { error: string; openid: string };
+    assert.equal(body.error, "not_staff");
+    assert.equal(body.openid, "random-visitor-openid");
+  }
+  // 被拒的请求不产生查询/核销留痕。
+  assert.equal(store.verificationLogs.length, 0);
+});
+
+test("verify lookup：白名单（全局行/活动级行）→ 200 中奖详情；查无编号 → 404 code_not_found", async () => {
+  const { store, activityId } = await verifyFixture();
+  store.staffGlobal.add(STAFF_OPENID);
+  const { app } = lotteryApp({ adminVerifier: false, store, verifyOpenid: new FakeOpenidResolver({ status: "ok", openid: STAFF_OPENID }) });
+
+  const found = await app.request(`/api/lottery/activities/${activityId}/verify/lookup`, { method: "POST", headers: AUTH, body: verifyBody() });
+  assert.equal(found.status, 200);
+  const entry = (await found.json()) as Record<string, unknown>;
+  assert.equal(entry.code, WINNER_CODE);
+  assert.equal(entry.status, "drawn");
+  assert.equal(entry.verified_at, null);
+  assert.equal(entry.verified_by, null);
+  assert.equal(entry.won_at, "2026-11-03T10:00:00.000Z");
+  const prize = entry.prize as Record<string, unknown>;
+  assert.equal(prize.name, "一等奖 运动手表");
+  assert.equal(prize.image_url, "https://cos.example.com/p1.png");
+  assert.equal("weight" in prize, false);
+
+  // 查无编号：「谢谢参与」不占编号，编号只存在于中奖记录。
+  const missing = await app.request(`/api/lottery/activities/${activityId}/verify/lookup`, {
+    method: "POST",
+    headers: AUTH,
+    body: verifyBody("999"),
+  });
+  assert.equal(missing.status, 404);
+  assert.equal(((await missing.json()) as { error: string }).error, "code_not_found");
+
+  // 全量留痕：found + not_found 各一行。
+  assert.deepEqual(
+    store.verificationLogs.map((log) => `${log.action}:${log.outcome}:${log.code}`),
+    ["lookup:found:042", "lookup:not_found:999"],
+  );
+
+  // 活动级白名单行同样命中（全局集合清空后仅靠活动级行放行）。
+  store.staffGlobal.clear();
+  store.staffByActivity.set("activity-staff-openid", activityId);
+  const activityScoped = lotteryApp({
+    adminVerifier: false,
+    store,
+    verifyOpenid: new FakeOpenidResolver({ status: "ok", openid: "activity-staff-openid" }),
+  });
+  const scoped = await activityScoped.app.request(`/api/lottery/activities/${activityId}/verify/lookup`, {
+    method: "POST",
+    headers: AUTH,
+    body: verifyBody(),
+  });
+  assert.equal(scoped.status, 200);
+});
+
+test("verify lookup：非法 code / 缺 wx_code / 非法活动 id / 未登录 / 活动未启用或不存在", async () => {
+  const { store, activityId } = await verifyFixture();
+  store.staffGlobal.add(STAFF_OPENID);
+  const { app } = lotteryApp({ adminVerifier: false, store, verifyOpenid: new FakeOpenidResolver({ status: "ok", openid: STAFF_OPENID }) });
+
+  for (const badCode of ["42", "0042", "abc", ""]) {
+    const response = await app.request(`/api/lottery/activities/${activityId}/verify/lookup`, {
+      method: "POST",
+      headers: AUTH,
+      body: verifyBody(badCode),
+    });
+    assert.equal(response.status, 400, `code=${badCode} 应 400`);
+    assert.equal(((await response.json()) as { error: string }).error, "invalid_code");
+  }
+  const noWxCode = await app.request(`/api/lottery/activities/${activityId}/verify/lookup`, {
+    method: "POST",
+    headers: AUTH,
+    body: JSON.stringify({ code: WINNER_CODE }),
+  });
+  assert.equal(((await noWxCode.json()) as { error: string }).error, "invalid_wx_code");
+
+  assert.equal((await app.request("/api/lottery/activities/x/verify/lookup", { method: "POST", headers: AUTH, body: verifyBody() })).status, 400);
+  assert.equal((await app.request(`/api/lottery/activities/${activityId}/verify/lookup`, { method: "POST", body: verifyBody() })).status, 401);
+
+  // 活动不存在 / 未启用 → 404（与公开端点同口径）。
+  assert.equal((await app.request("/api/lottery/activities/999/verify/lookup", { method: "POST", headers: AUTH, body: verifyBody() })).status, 404);
+  store.activities.get(activityId)!.enabled = false;
+  const disabled = await app.request(`/api/lottery/activities/${activityId}/verify/lookup`, { method: "POST", headers: AUTH, body: verifyBody() });
+  assert.equal(disabled.status, 404);
+  // 结构校验先于 resolver：非法 code 不消费 wx code。
+  assert.equal(store.verificationLogs.length, 0);
+});
+
+test("verify redeem：待核销 → 200 首次核销（already_verified:false，落核销人+时间）；再核销回显既有结果拒绝变更", async () => {
+  const { store, activityId } = await verifyFixture();
+  store.staffGlobal.add(STAFF_OPENID);
+  const { app } = lotteryApp({ adminVerifier: false, store, verifyOpenid: new FakeOpenidResolver({ status: "ok", openid: STAFF_OPENID }) });
+
+  const first = await app.request(`/api/lottery/activities/${activityId}/verify/redeem`, { method: "POST", headers: AUTH, body: verifyBody() });
+  assert.equal(first.status, 200);
+  const firstBody = (await first.json()) as Record<string, unknown>;
+  assert.equal(firstBody.already_verified, false);
+  assert.equal(firstBody.status, "verified");
+  assert.equal(firstBody.verified_by, STAFF_OPENID);
+  assert.equal(typeof firstBody.verified_at, "string");
+  const firstVerifiedAt = firstBody.verified_at as string;
+  const prize = firstBody.prize as Record<string, unknown>;
+  assert.equal(prize.name, "一等奖 运动手表");
+
+  // 核销后 lookup 也呈已核销态。
+  const after = await app.request(`/api/lottery/activities/${activityId}/verify/lookup`, { method: "POST", headers: AUTH, body: verifyBody() });
+  const afterBody = (await after.json()) as Record<string, unknown>;
+  assert.equal(afterBody.status, "verified");
+  assert.equal(afterBody.verified_by, STAFF_OPENID);
+
+  // 另一位 staff 再次核销同一编号：回显首次核销人+时间，状态不变。
+  const second = await app.request(`/api/lottery/activities/${activityId}/verify/redeem`, { method: "POST", headers: AUTH, body: verifyBody() });
+  assert.equal(second.status, 200);
+  const secondBody = (await second.json()) as Record<string, unknown>;
+  assert.equal(secondBody.already_verified, true);
+  assert.equal(secondBody.verified_by, STAFF_OPENID);
+  assert.equal(secondBody.verified_at, firstVerifiedAt);
+
+  // 核销编号不存在 → 404。
+  const missing = await app.request(`/api/lottery/activities/${activityId}/verify/redeem`, {
+    method: "POST",
+    headers: AUTH,
+    body: verifyBody("999"),
+  });
+  assert.equal(((await missing.json()) as { error: string }).error, "code_not_found");
+
+  assert.deepEqual(
+    store.verificationLogs.map((log) => `${log.action}:${log.outcome}`),
+    ["redeem:redeemed", "lookup:found", "redeem:already_verified", "redeem:not_found"],
+  );
+});
+
+test("verify 限速：同 openid 第 31 次 → 429（查询+核销共享预算）；不同 openid 互不影响", async () => {
+  const { store, activityId } = await verifyFixture();
+  store.staffGlobal.add(STAFF_OPENID);
+  store.staffGlobal.add("staff-openid-B");
+  const staffA = lotteryApp({ adminVerifier: false, store, verifyOpenid: new FakeOpenidResolver({ status: "ok", openid: STAFF_OPENID }) });
+  const staffB = lotteryApp({ adminVerifier: false, store, verifyOpenid: new FakeOpenidResolver({ status: "ok", openid: "staff-openid-B" }) });
+
+  // 30 次（预算上限）全部放行。
+  for (let i = 0; i < 30; i++) {
+    const response = await staffA.app.request(`/api/lottery/activities/${activityId}/verify/lookup`, {
+      method: "POST",
+      headers: AUTH,
+      body: verifyBody("999"),
+    });
+    assert.equal(response.status, 404, `第 ${i + 1} 次不应被限速`);
+  }
+  const throttled = await staffA.app.request(`/api/lottery/activities/${activityId}/verify/lookup`, {
+    method: "POST",
+    headers: AUTH,
+    body: verifyBody("999"),
+  });
+  assert.equal(throttled.status, 429);
+  assert.equal(((await throttled.json()) as { error: string }).error, "rate_limited");
+  assert.equal(throttled.headers.get("retry-after"), "60");
+  // 共享预算：同 openid 的 redeem 也一并被限。
+  const throttledRedeem = await staffA.app.request(`/api/lottery/activities/${activityId}/verify/redeem`, {
+    method: "POST",
+    headers: AUTH,
+    body: verifyBody(),
+  });
+  assert.equal(throttledRedeem.status, 429);
+
+  // 另一个 openid 不受影响（限速键是 openid，非活动/编号）。
+  const otherStaff = await staffB.app.request(`/api/lottery/activities/${activityId}/verify/lookup`, {
+    method: "POST",
+    headers: AUTH,
+    body: verifyBody(),
+  });
+  assert.equal(otherStaff.status, 200);
 });

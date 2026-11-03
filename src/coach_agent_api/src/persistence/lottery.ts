@@ -1,15 +1,19 @@
 /**
- * Lottery persistence (#863 activities + prize pools, #865 draw).
+ * Lottery persistence (#863 activities + prize pools, #865 draw, #866 verify).
  *
  * Lays the full four-table foundation for the offline QR lottery domain:
  * `lottery_participations` (draw, #865) and `lottery_staff` (verification
- * whitelist, P3) were created with #863 so their unique constraints ship with
+ * whitelist, #866) were created with #863 so their unique constraints ship with
  * the schema from day one:
  *
  *   uk_user_activity  (user_id, activity_id)     — one draw per athlete
  *   uk_activity_provider (activity_id, provider_key) — one draw per provider account
  *     (provider_credentials has no such uniqueness — the lottery layer self-guards)
  *   uk_activity_code  (activity_id, code)        — 3-digit winning code uniqueness
+ *
+ * The #866 verify domain adds `lottery_verification_logs`: every staff lookup
+ * and redeem is audit-logged (全量留痕) in the same transaction as the redeem
+ * state transition, so a committed verify never exists without its trail.
  *
  * The #865 draw runs in ONE transaction with a fixed lock order
  * (participation row → prize rows → code rows → insert): concurrent draws of
@@ -79,11 +83,28 @@ export interface LotteryParticipationRow {
   prizeId: number | null;
   /** 3-digit zero-padded winning code (000-999); null for fallback results. */
   code: string | null;
+  /** drawn (待核销) → verified (已核销); the #866 redeem is the only writer of the transition. */
   status: string;
   verifiedBy: string | null;
   verifiedAt: Date | null;
   createdAt: Date;
 }
+
+/** One #866 verification-domain audit row (全量留痕). */
+export interface LotteryVerificationLogInput {
+  activityId: number;
+  openid: string;
+  action: "lookup" | "redeem";
+  code: string;
+  outcome: "found" | "not_found" | "redeemed" | "already_verified";
+  participationId: number | null;
+}
+
+export type RedeemOutcome =
+  | { outcome: "not_found" }
+  | { outcome: "redeemed"; participation: LotteryParticipationRow }
+  /** The row is already verified — return the committed verification, refuse any change. */
+  | { outcome: "already_verified"; participation: LotteryParticipationRow };
 
 /** One allocation decision made inside the draw transaction (#865). */
 export interface DrawAllocation {
@@ -129,6 +150,18 @@ export interface LotteryStore {
     providerKey: string;
     allocate(prizes: LotteryPrizeRow[], occupiedCodes: ReadonlySet<string>): DrawAllocation;
   }): Promise<DrawOutcome>;
+  /** #866 staff gate: true when the openid is whitelisted globally (activity_id NULL) or for this activity. */
+  isStaffOpenid(openid: string, activityId: number): Promise<boolean>;
+  /** #866 lookup by 3-digit code; audit-logs the query (found / not_found) whoever asks. */
+  findWinningByCode(input: { activityId: number; openid: string; code: string }): Promise<LotteryParticipationRow | null>;
+  /**
+   * The #866 redeem: 待核销 (drawn) → 已核销 (verified) under a row lock, the
+   * winner's openid + timestamp persisted, and the audit row written in the
+   * SAME transaction so a committed redeem never lacks its trail. An
+   * already-verified row is returned as-is — the committed verification
+   * (verifier + time) is immutable.
+   */
+  redeemParticipation(input: { activityId: number; code: string; verifiedBy: string; verifiedAt: Date }): Promise<RedeemOutcome>;
 }
 
 export class MySqlLotteryStore implements LotteryStore {
@@ -191,6 +224,21 @@ export class MySqlLotteryStore implements LotteryStore {
         note VARCHAR(255) NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (id),
+        KEY idx_openid (openid)
+      ) ENGINE=InnoDB
+    `);
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS lottery_verification_logs (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        activity_id BIGINT UNSIGNED NOT NULL,
+        openid VARCHAR(128) NOT NULL,
+        action VARCHAR(16) NOT NULL,
+        code CHAR(3) NOT NULL,
+        outcome VARCHAR(24) NOT NULL,
+        participation_id BIGINT UNSIGNED NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY idx_activity_created (activity_id, created_at),
         KEY idx_openid (openid)
       ) ENGINE=InnoDB
     `);
@@ -398,6 +446,94 @@ export class MySqlLotteryStore implements LotteryStore {
   private async prizeOf(participation: LotteryParticipationRow): Promise<LotteryPrizeRow | null> {
     return participation.prizeId === null ? null : this.getPrize(participation.prizeId);
   }
+
+  async isStaffOpenid(openid: string, activityId: number): Promise<boolean> {
+    // activity_id NULL = 全局白名单；其余为活动级行。二者命中其一即 staff。
+    const [rows] = await this.pool.query<RowDataPacket[]>(`SELECT 1 FROM lottery_staff WHERE openid=? AND (activity_id IS NULL OR activity_id=?) LIMIT 1`, [
+      openid,
+      activityId,
+    ]);
+    return rows.length > 0;
+  }
+
+  async findWinningByCode(input: { activityId: number; openid: string; code: string }): Promise<LotteryParticipationRow | null> {
+    const [rows] = await this.pool.query<RowDataPacket[]>(`SELECT * FROM lottery_participations WHERE activity_id=? AND code=?`, [
+      input.activityId,
+      input.code,
+    ]);
+    const row = rows[0];
+    const participation = row === undefined ? null : participationRow(row);
+    // 全量留痕：查询无论命中与否都落一行（audit 是契约的一部分，失败即 500）。
+    await this.insertVerificationLog({
+      activityId: input.activityId,
+      openid: input.openid,
+      action: "lookup",
+      code: input.code,
+      outcome: participation === null ? "not_found" : "found",
+      participationId: participation?.id ?? null,
+    });
+    return participation;
+  }
+
+  async redeemParticipation(input: { activityId: number; code: string; verifiedBy: string; verifiedAt: Date }): Promise<RedeemOutcome> {
+    const connection = await this.pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      // 行锁串行化同一编号的并发核销：第一个事务完成迁移，后续读取已提交结果。
+      const [rows] = await connection.execute<RowDataPacket[]>(`SELECT * FROM lottery_participations WHERE activity_id=? AND code=? FOR UPDATE`, [
+        input.activityId,
+        input.code,
+      ]);
+      const existing = rows[0];
+      if (existing === undefined) {
+        await connection.execute(verificationLogSql(), [input.activityId, input.verifiedBy, "redeem", input.code, "not_found", null]);
+        await connection.commit();
+        return { outcome: "not_found" };
+      }
+      const participation = participationRow(existing);
+      if (participation.status === "verified") {
+        // 拒绝变更：已核销记录再次核销只回显既有核销人+时间。
+        await connection.execute(verificationLogSql(), [input.activityId, input.verifiedBy, "redeem", input.code, "already_verified", participation.id]);
+        await connection.commit();
+        return { outcome: "already_verified", participation };
+      }
+      const [update] = await connection.execute<ResultSetHeader>(
+        `UPDATE lottery_participations SET status='verified', verified_by=?, verified_at=? WHERE id=? AND status='drawn'`,
+        [input.verifiedBy, input.verifiedAt, participation.id],
+      );
+      if (update.affectedRows !== 1) {
+        // FOR UPDATE 行锁下不可达；防御性保持事务一致（回滚而非半迁移）。
+        throw new Error(`lottery redeem: participation ${participation.id} not in drawn state inside the transaction`);
+      }
+      await connection.execute(verificationLogSql(), [input.activityId, input.verifiedBy, "redeem", input.code, "redeemed", participation.id]);
+      await connection.commit();
+      return {
+        outcome: "redeemed",
+        participation: { ...participation, status: "verified", verifiedBy: input.verifiedBy, verifiedAt: input.verifiedAt },
+      };
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
+  private async insertVerificationLog(entry: LotteryVerificationLogInput): Promise<void> {
+    await this.pool.execute<ResultSetHeader>(verificationLogSql(), [
+      entry.activityId,
+      entry.openid,
+      entry.action,
+      entry.code,
+      entry.outcome,
+      entry.participationId,
+    ]);
+  }
+}
+
+/** INSERT shape shared by the transactional redeem and the plain lookup audit. */
+function verificationLogSql(): string {
+  return `INSERT INTO lottery_verification_logs (activity_id, openid, action, code, outcome, participation_id) VALUES (?, ?, ?, ?, ?, ?)`;
 }
 
 function activityRow(row: RowDataPacket): LotteryActivityRow {
