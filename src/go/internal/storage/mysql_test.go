@@ -11,10 +11,15 @@ import (
 	gomysql "github.com/go-sql-driver/mysql"
 
 	"github.com/zhaochy1990/stride/internal/job"
+	"github.com/zhaochy1990/stride/internal/tsstore"
 )
 
 // openTestStore connects to a real MySQL if STRIDE_WORKER_TEST_MYSQL_DSN is set,
 // otherwise the test is skipped. Run locally against docker-compose MySQL.
+// Every test store gets an in-memory blob backend: since Phase 3 (devops#787)
+// the blob is the only timeseries write path, so a backend-less store would
+// reject point-carrying upserts. Tests that need a different backend (or none)
+// replace it with SetTSBlobStore afterwards.
 func openTestStore(t *testing.T) *Store {
 	t.Helper()
 	dsn := os.Getenv("STRIDE_WORKER_TEST_MYSQL_DSN")
@@ -25,6 +30,7 @@ func openTestStore(t *testing.T) *Store {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
+	st.SetTSBlobStore(tsstore.NewMemStore())
 	if err := st.AutoMigrate(context.Background()); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}

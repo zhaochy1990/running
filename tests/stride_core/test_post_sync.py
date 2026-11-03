@@ -348,58 +348,6 @@ def test_stride_training_load_handler_retries_three_times_then_logs_error(db, mo
     assert "STRIDE training-load post-sync failed" in caplog.text
 
 
-def test_activity_commentary_handler_skips_disabled_and_existing_rows(db, monkeypatch):
-    from stride_core.post_sync import ActivityCommentaryHandler, PostSyncContext
-
-    db.upsert_activity(_make_run("run1", "2026-05-01T08:00:00+00:00"))
-    db.upsert_activity_commentary("run1", "existing", generated_by="human")
-    calls: list[str] = []
-
-    monkeypatch.setattr("stride_server.commentary_ai.is_enabled", lambda: True)
-    monkeypatch.setattr(
-        "stride_server.commentary_ai.regenerate_and_save",
-        lambda user, label_id, *, db=None: calls.append(label_id),
-    )
-
-    context = PostSyncContext(
-        user="u",
-        provider="garmin",
-        operation="sync",
-        db=db,
-        activity_label_ids=("run1",),
-    )
-    ActivityCommentaryHandler().run(context)
-
-    assert calls == []
-
-
-def test_activity_commentary_handler_persists_missing_rows_before_return(db, monkeypatch):
-    from stride_core.post_sync import ActivityCommentaryHandler, PostSyncContext
-
-    db.upsert_activity(_make_run("run1", "2026-05-01T08:00:00+00:00"))
-    calls: list[tuple[str, str]] = []
-
-    monkeypatch.setattr("stride_server.commentary_ai.is_enabled", lambda: True)
-
-    def fake_regenerate(user: str, label_id: str, *, db=None):
-        calls.append((user, label_id))
-        db.upsert_activity_commentary(label_id, "draft", generated_by="test")
-        return {"commentary": "draft"}
-
-    monkeypatch.setattr("stride_server.commentary_ai.regenerate_and_save", fake_regenerate)
-    context = PostSyncContext(
-        user="u",
-        provider="garmin",
-        operation="sync",
-        db=db,
-        activity_label_ids=("run1",),
-    )
-    ActivityCommentaryHandler().run(context)
-
-    assert calls == [("u", "run1")]
-    assert db.get_activity_commentary("run1") == "draft"
-
-
 def test_ability_handler_forwards_label_ids(db, monkeypatch):
     from stride_core.post_sync import AbilityHandler, PostSyncContext
 

@@ -16,7 +16,6 @@ Ten migrations live here:
 | `npm run migrate:weekly-plans` (`src/migrate-weekly-plans.js`) | Azure Table canonical weekly plans, with Blob `plan.md` fallback | `weekly_plan` |
 | `npm run migrate:running-age` (`src/migrate-running-age.js`) | local `data/<uuid>/running_profile.json` | existing `user_profile` rows |
 | `npm run migrate:weekly-feedback` (`src/migrate-weekly-feedback.js`) | local SQLite `weekly_feedback`, with `feedback.md` fallback | `weekly_feedback` |
-| `npm run migrate:activity-start-gps` (`src/activity-start-gps-backfill.js`) | first valid GPS pair from each activity's MySQL `timeseries` rows | existing `activities.start_gps_lat`, `activities.start_gps_lon` |
 | `npm run migrate:master-plan-phase-enum` (`src/migrate-master-plan-phase-enum.js`) | existing `master_plan` rows (in-place normalization) | `master_plan.content` phase names → `base/build/speed/marathon/taper/recovery` + `weeks[].phase_name` back-fill |
 
 ## Production migration status
@@ -49,32 +48,7 @@ groups or aggregates the full `timeseries` table.
 
 ```bash
 # Preview one real user without writing.
-npm run migrate:activity-start-gps -- \
-  --user f10bc353-01ab-4db1-af9f-d9305ea9a532 --limit 25
-
 # Apply a bounded validation batch, then run without --limit after review.
-npm run migrate:activity-start-gps -- \
-  --commit --user f10bc353-01ab-4db1-af9f-d9305ea9a532 --limit 25
-npm run migrate:activity-start-gps -- --commit
-```
-
-`--batch-size` controls activity keyset pages (default `25`, maximum `500`), and
-`--delay-ms` throttles after each timeseries lookup (default `25`). `--limit` is
-a total activity cap for the run; it is intended for validation, not as a resume
-cursor. Commit mode updates only rows whose two cache
-columns are still `NULL`, immediately reads each updated row back, continues past
-per-activity failures, and exits non-zero when any failures occurred. Re-running
-is safe: already cached activities never query `timeseries` and are never
-overwritten.
-
-Production should start with a small `--limit` and the default delay while MySQL
-CPU and query latency are monitored. Increase scope only while database load
-remains healthy. MySQL uses `STRIDE_WORKER_MYSQL_DSN` or the discrete `MYSQL_*`
-variables; credentials and coordinates are never printed. This one-off script is
-the `src/migration/` exception to the repository SQL ownership rule.
-
----
-
 ## Weekly-feedback backfill — local history → `weekly_feedback`
 
 Dry-run writes a redacted review manifest; SQLite wins over Markdown for each

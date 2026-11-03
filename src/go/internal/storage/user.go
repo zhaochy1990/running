@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"github.com/zhaochy1990/stride/internal/tsstore"
 )
 
 // AutoMigrateUsers creates/updates the user_profile and user_onboarding tables
@@ -304,7 +307,7 @@ func (s *Store) DeleteUserData(ctx context.Context, userID string) error {
 
 	models := userOwnedDeletionModels
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// The body-composition segment table has no user_id column, so it must be
 		// deleted through the scan it belongs to. Order matters: resolve the
 		// user's scan ids first, then delete the child segments, then the scans
@@ -350,7 +353,44 @@ func (s *Store) DeleteUserData(ctx context.Context, userID string) error {
 			return fmt.Errorf("storage: delete user pipeline runs: %w", err)
 		}
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	// The user's timeseries blobs live outside the transaction's reach — the
+	// blob store is not part of the DB (devops#787). Sweep the user prefix
+	// AFTER the row delete committed; the orphan GC is the documented backstop
+	// (tsblob/gc.go), so a transient failure here leaves objects for GC's next
+	// run rather than failing an erasure whose DB half already committed.
+	return s.deleteUserTSBlobs(ctx, uid)
+}
+
+// deleteUserTSBlobs removes every ts/v1/{uid}/ object. A user's blob count is
+// their activity count (hundreds at most), so one collected Delete call is
+// enough; the orphan GC is the backstop when even this sweep fails. Timeseries
+// rows themselves stay in the userOwnedDeletionModels list: the table is a
+// frozen baseline for live traffic, but a deleted account's rows are PII and
+// erasure must clear them with everything else.
+func (s *Store) deleteUserTSBlobs(ctx context.Context, uid string) error {
+	if s.tsBlob == nil {
+		return nil
+	}
+	var keys []string
+	if err := s.tsBlob.List(ctx, tsstore.KeyPrefix+uid+"/", func(info tsstore.ObjectInfo) error {
+		keys = append(keys, info.Key)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("storage: list user timeseries blobs for erasure: %w", err)
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	if err := s.tsBlob.Delete(ctx, keys...); err != nil {
+		return fmt.Errorf("storage: delete user timeseries blobs: %w", err)
+	}
+	slog.Info("tsblob: account erasure deleted blobs",
+		slog.String("event", "tsblob_erasure_delete"),
+		slog.String("user_id", uid), slog.Int("deleted", len(keys)))
+	return nil
 }
 
 // SetProfileReady marks the user's basic profile as saved (POST profile). It

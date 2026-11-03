@@ -171,17 +171,27 @@ func validGPSFix(lat, lon float64) bool {
 // sample cannot become an unusable activity start.
 func (a *Activity) SetStartGPSFromTimeseries(points []TimeseriesPoint) {
 	a.StartGPSLat, a.StartGPSLon = nil, nil
+	if lat, lon, ok := firstValidGPSFix(points); ok {
+		a.StartGPSLat, a.StartGPSLon = &lat, &lon
+	}
+}
+
+// firstValidGPSFix returns the first usable coordinate pair in point order.
+// Since Phase 3 (devops#787) it serves both the sync-time cache above
+// (provider-parsed points) and the race-detection start-coordinate backfill
+// (points read back from the timeseries store), so the two paths cannot drift
+// on what counts as a usable fix.
+func firstValidGPSFix(points []TimeseriesPoint) (lat, lon float64, ok bool) {
 	for _, point := range points {
 		if point.GPSLat == nil || point.GPSLon == nil {
 			continue
 		}
 		lat, lon := *point.GPSLat, *point.GPSLon
-		if !validGPSFix(lat, lon) {
-			continue
+		if validGPSFix(lat, lon) {
+			return lat, lon, true
 		}
-		a.StartGPSLat, a.StartGPSLon = &lat, &lon
-		return
 	}
+	return 0, 0, false
 }
 
 // ActivityWatchZone is a WATCH-REPORTED zone bucket (table "activity_watch_zones",

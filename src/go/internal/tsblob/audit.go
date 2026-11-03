@@ -1,10 +1,13 @@
 // audit.go is the timeseries migration's reconciliation (devops#785 AC3), the
-// check the ~2-day soak window re-runs daily (#778 decision 3). Three parts:
+// check the soak window re-runs daily (#778 decision 3). Three parts, all
+// valid before and after Phase 3 froze the row table (devops#787):
 //
 //  1. per user, COUNT(*) of timeseries rows vs SUM(ts_point_count) of stamped
-//     activities — equal means migrated blobs account for every stored row;
-//  2. a deterministic sample of stamped activities whose sha256 is recomputed
-//     from the rows AND cross-checked against the bucket blob's envelope;
+//     activities that still have rows — the one-sided invariant
+//     rows <= stamped points means no stored row is unaccounted for;
+//  2. a deterministic sample of stamped activities, checked against the rows
+//     where rows survive (checksum re-encode + envelope) and blob-internally
+//     where they do not (envelope vs pointer columns);
 //  3. bucket object count vs pointer count — plus the exact set diff, so a
 //     missing blob or an orphan is named, not just counted.
 //
@@ -50,10 +53,12 @@ func NewAuditor(store AuditStore, ts tsstore.Store) *Auditor {
 // AuditReport carries each part's verdict; OK is their conjunction.
 type AuditReport struct {
 	Users []storage.TSBlobUserAudit `json:"users"`
-	// PointSumOK: every user's timeseries row count equals its stamped
-	// ts_point_count sum.
+	// PointSumOK: every user's timeseries row count is accounted for by its
+	// stamped blobs (rows <= SUM(ts_point_count) over stamped activities with
+	// rows; equality holds while dual-write pairs are intact).
 	PointSumOK bool `json:"point_sum_ok"`
-	// CompleteOK: no activity is left unstamped (backfill fully drained).
+	// CompleteOK: no activity with timeseries rows is left unstamped — nothing
+	// that Phase 4's DROP would lose.
 	CompleteOK bool `json:"complete_ok"`
 	Sample     struct {
 		Sampled  int      `json:"sampled"`
@@ -118,9 +123,14 @@ func (a *Auditor) Run(ctx context.Context) (AuditReport, error) {
 	return report, nil
 }
 
-// auditSample recomputes checksums for the deterministic sample: re-encode
-// the row set, compare with the row's ts_sha256, then fetch and decode the
-// bucket blob and compare its envelope checksum and point count too.
+// auditSample recomputes checksums for the deterministic sample, conditioned
+// on whether the activity still has rows. With rows (the pre-Phase-3 stock):
+// re-encode the row set, compare with the row's ts_sha256, then fetch and
+// decode the bucket blob and compare its envelope checksum and point count
+// too. Without rows (zero-point stock, or anything synced after Phase 3 froze
+// the row table): the pointer columns are the only record, so the check is
+// blob-internal — decode must succeed, the envelope checksum must equal
+// ts_sha256, and the envelope count must equal ts_point_count.
 func (a *Auditor) auditSample(ctx context.Context, pointers []storage.TSBlobPointer, report *AuditReport) error {
 	rate := a.SampleRate
 	if rate <= 0 {
@@ -148,15 +158,17 @@ func (a *Auditor) auditSample(ctx context.Context, pointers []storage.TSBlobPoin
 			problem("%s/%s: read rows: %v", p.UserID, p.Label, err)
 			continue
 		}
-		_, recomputed, err := tsstore.EncodePoints(p.UserID, p.Label, storage.TSBlobPoints(rows))
-		if err != nil {
-			problem("%s/%s: re-encode: %v", p.UserID, p.Label, err)
-			continue
-		}
-		if recomputed != p.SHA256 {
-			problem("%s/%s: row ts_sha256 %s != recomputed %s (rows drifted from the stamped blob)",
-				p.UserID, p.Label, p.SHA256, recomputed)
-			continue
+		if len(rows) > 0 {
+			_, recomputed, err := tsstore.EncodePoints(p.UserID, p.Label, storage.TSBlobPoints(rows))
+			if err != nil {
+				problem("%s/%s: re-encode: %v", p.UserID, p.Label, err)
+				continue
+			}
+			if recomputed != p.SHA256 {
+				problem("%s/%s: row ts_sha256 %s != recomputed %s (rows drifted from the stamped blob)",
+					p.UserID, p.Label, p.SHA256, recomputed)
+				continue
+			}
 		}
 		payload, err := a.ts.Get(ctx, tsstore.BlobKey(p.UserID, p.Label))
 		if err != nil {
@@ -168,9 +180,15 @@ func (a *Auditor) auditSample(ctx context.Context, pointers []storage.TSBlobPoin
 			problem("%s/%s: blob decode: %v (corrupt object)", p.UserID, p.Label, err)
 			continue
 		}
-		if blob.SHA256 != p.SHA256 || blob.PointCount != len(rows) {
-			problem("%s/%s: blob (%s, %d pts) != row (%s, %d rows)",
-				p.UserID, p.Label, blob.SHA256, blob.PointCount, p.SHA256, len(rows))
+		if len(rows) > 0 {
+			if blob.SHA256 != p.SHA256 || blob.PointCount != len(rows) {
+				problem("%s/%s: blob (%s, %d pts) != row (%s, %d rows)",
+					p.UserID, p.Label, blob.SHA256, blob.PointCount, p.SHA256, len(rows))
+				continue
+			}
+		} else if blob.SHA256 != p.SHA256 || int64(blob.PointCount) != p.PointCount {
+			problem("%s/%s: blob (%s, %d pts) != pointer (%s, %d pts)",
+				p.UserID, p.Label, blob.SHA256, blob.PointCount, p.SHA256, p.PointCount)
 			continue
 		}
 		report.Sample.OK++

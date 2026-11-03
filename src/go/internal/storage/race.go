@@ -418,7 +418,10 @@ func (s *Store) LongRunStarts(ctx context.Context, userID string) ([]LongRunStar
 
 // BackfillActivityStartCoordinates fills missing activity-level start GPS
 // columns for a user's half/full marathon band activities from the first
-// valid timeseries fix. It reports how many rows were filled.
+// valid fix in the activity's timeseries. It reports how many rows were filled.
+// Since Phase 3 (devops#787) the points come from the timeseries store —
+// pointer-first with row fallback, the same read every consumer uses — instead
+// of the retired ROW_NUMBER window over the frozen row table.
 func (s *Store) BackfillActivityStartCoordinates(ctx context.Context, userID string) (int, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
@@ -434,30 +437,19 @@ func (s *Store) BackfillActivityStartCoordinates(ctx context.Context, userID str
 		Pluck("label_id", &labels).Error; err != nil {
 		return 0, err
 	}
-	if len(labels) == 0 {
-		return 0, nil
-	}
-	var fixes []struct {
-		LabelID   string  `gorm:"column:label_id"`
-		Latitude  float64 `gorm:"column:latitude"`
-		Longitude float64 `gorm:"column:longitude"`
-	}
-	if err := s.db.WithContext(ctx).Raw(`
-        SELECT label_id, latitude, longitude FROM (
-            SELECT label_id, gps_lat AS latitude, gps_lon AS longitude,
-                   ROW_NUMBER() OVER (PARTITION BY label_id ORDER BY timestamp) AS rn
-            FROM timeseries
-            WHERE user_id = ? AND label_id IN ? AND gps_lat IS NOT NULL AND gps_lon IS NOT NULL
-              AND gps_lat BETWEEN -90 AND 90 AND gps_lon BETWEEN -180 AND 180
-              AND NOT (gps_lat = 0 AND gps_lon = 0)
-        ) ranked WHERE rn = 1`, uid, labels).Scan(&fixes).Error; err != nil {
-		return 0, err
-	}
 	filled := 0
-	for _, fix := range fixes {
+	for _, label := range labels {
+		points, err := s.ActivityTimeseries(ctx, uid, label)
+		if err != nil {
+			return filled, err
+		}
+		lat, lon, ok := firstValidGPSFix(points)
+		if !ok {
+			continue
+		}
 		if err := s.db.WithContext(ctx).Model(&Activity{}).
-			Where("user_id = ? AND label_id = ?", uid, fix.LabelID).
-			Updates(map[string]any{"start_gps_lat": fix.Latitude, "start_gps_lon": fix.Longitude}).Error; err != nil {
+			Where("user_id = ? AND label_id = ?", uid, label).
+			Updates(map[string]any{"start_gps_lat": lat, "start_gps_lon": lon}).Error; err != nil {
 			return filled, err
 		}
 		filled++

@@ -112,23 +112,28 @@ func (s *Store) upsertActivity(ctx context.Context, a *Activity, laps []Lap, ts 
 		zones[i].UserID, zones[i].LabelID = uid, a.LabelID
 	}
 
-	// --- Phase 1 dual-write (devops#785): blob first, then the transaction ---
+	// --- Phase 3 (devops#787): the blob is the only timeseries write path ---
 	//
-	// Whenever this upsert owns the timeseries payload (points present, or the
-	// replace-children semantics of a non-preserving upsert — a COROS empty-ts
-	// payload legitimately rewrites the activity to zero points), the blob is
-	// written BEFORE the row transaction and the four pointer columns are
-	// stamped on `a` so UpdateAll persists them with the rest. A Put failure
-	// fails the whole upsert so MQ retries it; the deterministic key makes the
-	// retry an idempotent overwrite. The row half (replaceChildren below) is
-	// untouched — rows keep being written until Phase 3 drops them.
+	// Rows stopped being written when the migration's soak window closed; the
+	// timeseries table is a frozen baseline that Phase 4 drops. An upsert that
+	// owns a payload (points present, or the replace-children semantics of a
+	// non-preserving upsert — a COROS empty-ts payload legitimately rewrites
+	// the activity to zero points) writes the blob BEFORE the row transaction
+	// and stamps the four pointer columns on `a` so UpdateAll persists them
+	// with the rest. A Put failure fails the whole upsert so MQ retries it; the
+	// deterministic key makes the retry an idempotent overwrite.
 	//
-	// The one path that must NOT touch the blob is the Garmin empty-details
-	// preserve-upsert (preserveEmpty && len(ts)==0): it replaces nothing, so
-	// it must not overwrite the blob a fuller sync wrote, and it must not
-	// clobber the row's pointer columns either — all four are omitted below
-	// (the same mechanism the start-GPS preservation uses). A Store with no
-	// injected blob backend takes the same omit path.
+	// With no injected blob backend there is nowhere for points to go — rows
+	// no longer backstop a misconfigured deployment, so carrying points is an
+	// error, not a silent drop. The one path that must not touch the blob is
+	// the Garmin empty-details preserve-upsert (preserveEmpty && len(ts)==0):
+	// it replaces nothing, so it must not overwrite the blob a fuller sync
+	// wrote, and it must not clobber the row's pointer columns either — all
+	// four are omitted below (the same mechanism the start-GPS preservation
+	// uses).
+	if s.tsBlob == nil && len(ts) > 0 {
+		return fmt.Errorf("storage: upsert activity %s/%s: %d timeseries points and no blob backend injected — refusing to drop them (devops#787)", uid, a.LabelID, len(ts))
+	}
 	blobWritten := false
 	if s.tsBlob != nil && (len(ts) > 0 || !preserveEmpty) {
 		key, count, sum, hasGPS, err := s.WriteActivityBlob(ctx, uid, a.LabelID, ts)
@@ -183,11 +188,10 @@ func (s *Store) upsertActivity(ctx context.Context, a *Activity, laps []Lap, ts 
 				return err
 			}
 		}
-		if !preserveEmpty || len(ts) > 0 {
-			if err := replaceChildren(tx, uid, a.LabelID, &TimeseriesPoint{}, ts); err != nil {
-				return err
-			}
-		}
+		// timeseries rows are deliberately NOT written here: Phase 3 (devops#787)
+		// froze the row table as the migration's pre-drop baseline, and the blob
+		// above is the only write path. Laps and watch zones remain row-backed
+		// children (they are tiny and still relational).
 		if !preserveEmpty || len(zones) > 0 {
 			if err := replaceChildren(tx, uid, a.LabelID, &ActivityWatchZone{}, zones); err != nil {
 				return err

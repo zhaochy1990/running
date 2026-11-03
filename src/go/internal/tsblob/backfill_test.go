@@ -68,19 +68,39 @@ func backfillActivity(uid, label string) *storage.Activity {
 }
 
 // seedPendingActivity writes an activity whose rows exist but whose pointer is
-// NULL — the pre-Phase-1 stock shape — by upserting with the blob backend
-// detached.
+// NULL — the pre-Phase-1 stock shape. Since Phase 3 froze the row table the
+// only way rows appear is a direct insert, so both the activity row and its
+// points go in over a raw handle (an upsert would stamp or refuse).
 func seedPendingActivity(t *testing.T, st *storage.Store, uid, label string, points int) {
 	t.Helper()
-	st.SetTSBlobStore(nil)
-	rows := make([]storage.TimeseriesPoint, points)
-	for i := range rows {
+	db := rawTestHandle(t)
+	defer db.Close()
+	a := backfillActivity(uid, label)
+	if _, err := db.Exec("INSERT INTO activities (user_id, label_id, sport_type, date, provider, synced_at) VALUES (?, ?, ?, ?, ?, ?)",
+		a.UserID, a.LabelID, a.SportType, a.Date, a.Provider, a.SyncedAt); err != nil {
+		t.Fatalf("seed activity %s: %v", label, err)
+	}
+	for i := 0; i < points; i++ {
 		sec := int64(i + 1)
-		rows[i].Timestamp = &sec
+		if _, err := db.Exec("INSERT INTO timeseries (user_id, label_id, timestamp) VALUES (?, ?, ?)", uid, label, sec); err != nil {
+			t.Fatalf("seed row %s#%d: %v", label, i, err)
+		}
 	}
-	if err := st.UpsertActivity(context.Background(), backfillActivity(uid, label), nil, rows, nil); err != nil {
-		t.Fatalf("seed %s: %v", label, err)
+}
+
+// rawTestHandle opens a throwaway database/sql connection for direct stock
+// seeding — the same DSN openBackfillTestStore gates on.
+func rawTestHandle(t *testing.T) *sql.DB {
+	t.Helper()
+	dsn := os.Getenv("STRIDE_WORKER_TEST_MYSQL_DSN")
+	if dsn == "" {
+		t.Skip("set STRIDE_WORKER_TEST_MYSQL_DSN to run tsblob integration tests")
 	}
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		t.Fatalf("open raw handle: %v", err)
+	}
+	return db
 }
 
 func TestBackfill_MigratesStockAndResumes(t *testing.T) {
@@ -91,7 +111,9 @@ func TestBackfill_MigratesStockAndResumes(t *testing.T) {
 	// Pending stock: rows exist, pointers NULL (the pre-Phase-1 shape). A
 	// single user keeps the world simple; the worker pool still fans the pages.
 	seedPendingActivity(t, st, uid, "p1", 3)
-	seedPendingActivity(t, st, uid, "p2", 0) // zero-point activity: empty blob
+	// p2 has no rows (zero-point stock): since devops#787 paging is rowful-only
+	// — there is nothing to migrate, so it stays legitimately unstamped.
+	seedPendingActivity(t, st, uid, "p2", 0)
 	seedPendingActivity(t, st, uid, "p3", 2)
 	st.SetTSBlobStore(ts)
 
@@ -101,8 +123,8 @@ func TestBackfill_MigratesStockAndResumes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("backfill: %v", err)
 	}
-	if !report.OK || report.Migrated != 3 || report.Failed != 0 || report.Points != 5 {
-		t.Fatalf("first run = %+v, want migrated=3 points=5 green", report)
+	if !report.OK || report.Migrated != 2 || report.Failed != 0 || report.Points != 5 {
+		t.Fatalf("first run = %+v, want migrated=2 (p1+p3; rowless p2 skipped) points=5 green", report)
 	}
 
 	// Resumability: a second run finds nothing left.
@@ -124,14 +146,15 @@ func TestBackfill_MigratesStockAndResumes(t *testing.T) {
 		t.Fatalf("post-backfill audit not green: %+v", audit)
 	}
 
-	// A stock row edited out-of-band (rows changed, pointer stale) must fail
-	// the sample — the audit is the safety net the soak window watches.
-	sec := int64(99)
-	st.SetTSBlobStore(nil)
-	if err := st.UpsertActivity(ctx, backfillActivity(uid, "p1"), nil, []storage.TimeseriesPoint{{Timestamp: &sec}}, nil); err != nil {
+	// A stock row edited out-of-band (rows grew, pointer stale) must fail the
+	// one-sided point sum — the audit is the safety net the soak window
+	// watches. The edit is a direct insert: since Phase 3 the upsert can no
+	// longer change rows.
+	db := rawTestHandle(t)
+	if _, err := db.Exec("INSERT INTO timeseries (user_id, label_id, timestamp) VALUES (?, 'p1', 99)", uid); err != nil {
 		t.Fatalf("out-of-band edit: %v", err)
 	}
-	st.SetTSBlobStore(ts)
+	db.Close()
 	drifted, err := auditor.Run(ctx)
 	if err != nil {
 		t.Fatalf("drift audit: %v", err)
