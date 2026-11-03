@@ -58,7 +58,6 @@ WHITELIST: dict[str, str] = {
     "stride_server/notifications/plan_reminder_job.py": "uses explicit SHANGHAI_TZ throughout",
     # Sync writes — these convert COROS UTC API → UTC ISO for storage.
     "coros_sync/sync.py": "writes raw UTC timestamps from the COROS API",
-    "stride_server/commentary_ai.py": "uses datetime(date, '+8 hours') in SQL where needed",
 }
 
 

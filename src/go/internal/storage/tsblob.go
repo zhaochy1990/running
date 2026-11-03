@@ -97,6 +97,13 @@ func anyValidGPS(rows []TimeseriesPoint) bool {
 // on Store (rather than raw gorm handles handed to another package) so the
 // SQL stays with the models it touches.
 
+// rowfulActivityExpr restricts an activities scan to rows that actually have
+// timeseries rows: post-Phase-3 zero-point activities (Garmin strength
+// training without per-second data) are legitimately unstamped — there is
+// nothing to migrate — so backfill paging and the audit's Unmigrated counter
+// must both skip them rather than report phantom pending work.
+const rowfulActivityExpr = "EXISTS (SELECT 1 FROM timeseries t WHERE t.user_id = activities.user_id AND t.label_id = activities.label_id)"
+
 // UnmigratedActivityUsers lists the distinct user_ids that still have
 // activities with a NULL ts_blob_key, sorted. The backfill fans users out to
 // its worker pool from this list.
@@ -105,6 +112,7 @@ func (s *Store) UnmigratedActivityUsers(ctx context.Context) ([]string, error) {
 	err := s.db.WithContext(ctx).Model(&Activity{}).
 		Distinct().
 		Where("ts_blob_key IS NULL").
+		Where(rowfulActivityExpr).
 		Order("user_id").
 		Pluck("user_id", &ids).Error
 	if err != nil {
@@ -122,7 +130,8 @@ func (s *Store) PageUserActivitiesWithoutTSBlob(ctx context.Context, userID, aft
 	var rows []Activity
 	q := s.db.WithContext(ctx).Model(&Activity{}).
 		Select("user_id", "label_id").
-		Where("user_id = ? AND ts_blob_key IS NULL", userID)
+		Where("user_id = ? AND ts_blob_key IS NULL", userID).
+		Where(rowfulActivityExpr)
 	if afterLabel != "" {
 		q = q.Where("label_id > ?", afterLabel)
 	}
@@ -156,21 +165,28 @@ func (s *Store) StampTSBlobColumns(ctx context.Context, userID, labelID, key str
 type TSBlobUserAudit struct {
 	UserID string
 	// RowPoints is COUNT(*) of the user's timeseries rows; BlobPoints is
-	// SUM(ts_point_count) over the user's blob-stamped activities. The
-	// reconciliation passes when they are equal for every user.
+	// SUM(ts_point_count) over the user's stamped activities that still have
+	// rows. PointSumOK is one-sided (RowPoints <= BlobPoints): equality holds
+	// while dual-write pairs are intact, and after Phase 3 a blob rewrite can
+	// legitimately leave BlobPoints above the frozen rows — what must never
+	// happen is rows the stamped blobs fail to account for.
 	RowPoints  int64
 	BlobPoints int64
-	Migrated   int64 // activities with a blob pointer
-	Unmigrated int64 // activities still pending backfill
-	PointSumOK bool  // RowPoints == BlobPoints
-	CompleteOK bool  // Unmigrated == 0
+	Migrated   int64 // activities with a blob pointer (rowful or not)
+	// Unmigrated counts activities that still have timeseries rows but no
+	// blob pointer — the rows Phase 4's DROP would lose. Zero-point activities
+	// (Garmin strength training without per-second data) have nothing to
+	// migrate and do not count (devops#787).
+	Unmigrated int64
+	PointSumOK bool // RowPoints <= BlobPoints
+	CompleteOK bool // Unmigrated == 0
 }
 
 // TSBlobUserAudits returns the per-user reconciliation counters for every user
-// that has timeseries rows, blob pointers, or pending activities (union of the
-// three), sorted by user_id. Three GROUP BY queries, merged in Go — the
-// timeseries scan walks the (user_id, label_id) index, the other two touch
-// only the small activities table.
+// that has timeseries rows, blob pointers, or rowful-but-unstamped activities
+// (union of the three), sorted by user_id. Three GROUP BY queries, merged in
+// Go — the timeseries EXISTS probe walks the (user_id, label_id) index, the
+// other two touch only the small activities table.
 func (s *Store) TSBlobUserAudits(ctx context.Context) ([]TSBlobUserAudit, error) {
 	byUser := map[string]*TSBlobUserAudit{}
 	var order []string
@@ -204,7 +220,7 @@ func (s *Store) TSBlobUserAudits(ctx context.Context) ([]TSBlobUserAudit, error)
 		Pts    int64  `gorm:"column:pts"`
 	}
 	if err := s.db.WithContext(ctx).Model(&Activity{}).
-		Select("user_id, COUNT(*) AS cnt, COALESCE(SUM(ts_point_count), 0) AS pts").
+		Select("user_id, COUNT(*) AS cnt, COALESCE(SUM(CASE WHEN " + rowfulActivityExpr + " THEN ts_point_count ELSE 0 END), 0) AS pts").
 		Where("ts_blob_key IS NOT NULL").
 		Group("user_id").
 		Scan(&blobAggs).Error; err != nil {
@@ -222,6 +238,7 @@ func (s *Store) TSBlobUserAudits(ctx context.Context) ([]TSBlobUserAudit, error)
 	if err := s.db.WithContext(ctx).Model(&Activity{}).
 		Select("user_id, COUNT(*) AS n").
 		Where("ts_blob_key IS NULL").
+		Where(rowfulActivityExpr).
 		Group("user_id").
 		Scan(&pending).Error; err != nil {
 		return nil, fmt.Errorf("storage: count pending activities per user: %w", err)
@@ -233,29 +250,30 @@ func (s *Store) TSBlobUserAudits(ctx context.Context) ([]TSBlobUserAudit, error)
 	out := make([]TSBlobUserAudit, 0, len(order))
 	for _, id := range order {
 		a := byUser[id]
-		a.PointSumOK = a.RowPoints == a.BlobPoints
+		a.PointSumOK = a.RowPoints <= a.BlobPoints
 		a.CompleteOK = a.Unmigrated == 0
 		out = append(out, *a)
 	}
 	return out, nil
 }
 
-// TSBlobPointer is one stamped activity's identity + checksum, the audit's
-// sampling frame.
+// TSBlobPointer is one stamped activity's identity + checksum + declared
+// point count, the audit's sampling frame.
 type TSBlobPointer struct {
-	UserID string `gorm:"column:user_id"`
-	Label  string `gorm:"column:label_id"`
-	SHA256 string `gorm:"column:ts_sha256"`
+	UserID     string `gorm:"column:user_id"`
+	Label      string `gorm:"column:label_id"`
+	SHA256     string `gorm:"column:ts_sha256"`
+	PointCount int64  `gorm:"column:ts_point_count"`
 }
 
-// ListTSBlobPointers returns every blob-stamped (user_id, label_id, ts_sha256)
-// triple, ordered. The activities table is small (tens of thousands of rows);
-// the audit samples its 5% from this list and diff-checks the bucket's key set
-// against it.
+// ListTSBlobPointers returns every blob-stamped (user_id, label_id,
+// ts_sha256, ts_point_count) tuple, ordered. The activities table is small
+// (tens of thousands of rows); the audit samples its 5% from this list and
+// diff-checks the bucket's key set against it.
 func (s *Store) ListTSBlobPointers(ctx context.Context) ([]TSBlobPointer, error) {
 	var rows []TSBlobPointer
 	err := s.db.WithContext(ctx).Model(&Activity{}).
-		Select("user_id, label_id, ts_sha256").
+		Select("user_id, label_id, ts_sha256, ts_point_count").
 		Where("ts_blob_key IS NOT NULL").
 		Order("user_id, label_id").
 		Scan(&rows).Error

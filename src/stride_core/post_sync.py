@@ -2,7 +2,7 @@
 
 Watch adapters write normalized rows and return the labels they changed.
 This module owns the derived work that should happen after a successful sync:
-STRIDE objective load, ability snapshots, and activity commentary drafts.
+STRIDE objective load and ability snapshots.
 Each handler is isolated so post-sync failures never turn a successful watch
 sync into a failed sync.
 """
@@ -287,48 +287,6 @@ class AbilityHandler:
         run_ability_hook(context.db, label_ids)
 
 
-class ActivityCommentaryHandler:
-    name = "activity_commentary"
-
-    def applies_to(self, context: PostSyncContext) -> bool:
-        return bool(context.activity_label_ids)
-
-    def run(self, context: PostSyncContext) -> None:
-        if not context.user:
-            logger.debug("commentary post-sync skipped: no user in context")
-            return
-        label_ids = _unique_labels(context.activity_label_ids)
-        if not label_ids:
-            return
-        try:
-            from stride_server.commentary_ai import is_enabled, regenerate_and_save
-        except Exception as exc:  # pragma: no cover - optional server deps
-            logger.debug("commentary module unavailable: %s", exc)
-            return
-        if not is_enabled():
-            return
-
-        _emit(
-            context.progress,
-            phase="commentary",
-            message="正在准备活动解读草稿",
-            activity_label_count=len(label_ids),
-        )
-        for label_id in label_ids:
-            try:
-                if context.db.activity_commentary_exists(label_id):
-                    logger.debug("commentary already exists for %s, skipping auto-gen", label_id)
-                    continue
-                regenerate_and_save(context.user, label_id, db=context.db)
-                logger.info("auto-generated commentary for %s (user=%s)", label_id, context.user)
-            except Exception:
-                logger.exception(
-                    "activity commentary post-sync failed for %s (user=%s)",
-                    label_id,
-                    context.user,
-                )
-
-
 class PersonalBestsHandler:
     name = "personal_bests"
 
@@ -355,7 +313,6 @@ DEFAULT_POST_SYNC_HANDLERS: tuple[PostSyncHandler, ...] = (
     ActivityZonesHandler(),
     AbilityHandler(),
     PersonalBestsHandler(),
-    ActivityCommentaryHandler(),
 )
 
 
@@ -439,7 +396,6 @@ def run_post_sync_for_result(
 
 __all__ = [
     "AbilityHandler",
-    "ActivityCommentaryHandler",
     "ActivityZonesHandler",
     "DEFAULT_POST_SYNC_HANDLERS",
     "PostSyncContext",

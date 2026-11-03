@@ -104,10 +104,17 @@ func TestUpsertActivity_DualWriteStampsPointerColumns(t *testing.T) {
 		t.Fatalf("blob count = %d/%d, want 3/3", blob.PointCount, len(blob.Points))
 	}
 
-	// Rows are still written — the migration is a dual-write, not a cutover.
-	rows, err := st.ActivityTimeseriesRows(ctx, uid, "a1")
-	if err != nil || len(rows) != 3 {
-		t.Fatalf("timeseries rows after upsert = %d (err %v), want 3", len(rows), err)
+	// Phase 3 (devops#787): rows are frozen — the upsert must NOT write any,
+	// and the read surface serves the same points from the blob.
+	if rows, err := st.ActivityTimeseriesRows(ctx, uid, "a1"); err != nil || len(rows) != 0 {
+		t.Fatalf("timeseries rows after upsert = %d (err %v), want 0 — the row table is frozen", len(rows), err)
+	}
+	served, err := st.ActivityTimeseries(ctx, uid, "a1")
+	if err != nil || len(served) != 3 {
+		t.Fatalf("ActivityTimeseries after upsert = %d points (err %v), want 3 from the blob", len(served), err)
+	}
+	if served[2].HeartRate == nil || *served[2].HeartRate != 150 {
+		t.Fatalf("served point data mismatch: %+v", served[2])
 	}
 }
 
@@ -175,8 +182,8 @@ func TestUpsertActivity_GarminEmptyDetailsPreservesPointer(t *testing.T) {
 	if got := mustGetBlob(t, ts, *stamped.TsBlobKey); string(got) != string(payloadBefore) {
 		t.Fatal("blob payload changed by preserve-empty upsert")
 	}
-	if rows, _ := st.ActivityTimeseriesRows(ctx, uid, "g1"); len(rows) != 2 {
-		t.Fatalf("rows after preserve-empty = %d, want 2 (preserved)", len(rows))
+	if rows, _ := st.ActivityTimeseriesRows(ctx, uid, "g1"); len(rows) != 0 {
+		t.Fatalf("rows after preserve-empty = %d, want 0 — the row table is frozen", len(rows))
 	}
 }
 
@@ -216,13 +223,26 @@ func TestUpsertActivity_NoBlobStoreOmitsPointer(t *testing.T) {
 	before := readActivity(t, st, uid, "a1")
 
 	st.SetTSBlobStore(nil)
-	// Point-carrying upsert without a backend: rows update, pointer survives.
-	if err := st.UpsertActivity(ctx, blobActivity(uid, "a1"), nil, []TimeseriesPoint{tsPoint(2, &lat, &lat)}, nil); err != nil {
-		t.Fatalf("upsert without blob store: %v", err)
+	// Point-carrying upsert without a backend: Phase 3 refuses — rows no
+	// longer backstop a missing backend, so dropping points silently would be
+	// data loss. The refusal must leave the stamped pointer untouched.
+	if err := st.UpsertActivity(ctx, blobActivity(uid, "a1"), nil, []TimeseriesPoint{tsPoint(2, &lat, &lat)}, nil); err == nil {
+		t.Fatal("point-carrying upsert without a blob backend succeeded, want refusal")
 	}
 	after := readActivity(t, st, uid, "a1")
 	if after.TsBlobKey == nil || *after.TsBlobKey != *before.TsBlobKey {
-		t.Fatalf("ts_blob_key = %v after backend-less upsert, want preserved %v", after.TsBlobKey, before.TsBlobKey)
+		t.Fatalf("ts_blob_key = %v after refused upsert, want preserved %v", after.TsBlobKey, before.TsBlobKey)
+	}
+	// A summary-only (no points) backend-less upsert — the CLI/legacy path —
+	// still succeeds and preserves the pointer columns.
+	summary := blobActivity(uid, "a1")
+	summary.Name = strptr("summary-only refresh")
+	if err := st.UpsertActivity(ctx, summary, nil, nil, nil); err != nil {
+		t.Fatalf("summary-only upsert without blob store: %v", err)
+	}
+	after2 := readActivity(t, st, uid, "a1")
+	if after2.TsBlobKey == nil || *after2.TsBlobKey != *before.TsBlobKey || after2.Name == nil || *after2.Name != "summary-only refresh" {
+		t.Fatalf("summary-only backend-less upsert = %+v, want refreshed row with preserved pointer", after2)
 	}
 }
 
@@ -253,12 +273,15 @@ func TestTSBlobBackfillQuerySurface(t *testing.T) {
 	if err := st.UpsertActivity(ctx, blobActivity(uid, "l3"), nil, nil, nil); err != nil {
 		t.Fatalf("upsert l3: %v", err)
 	}
-	// l2 is pending: stamped rows can also come from a backend-less upsert.
-	st.SetTSBlobStore(nil)
-	if err := st.UpsertActivity(ctx, blobActivity(uid, "l2"), nil, []TimeseriesPoint{tsPoint(1, &lat, &lat)}, nil); err != nil {
-		t.Fatalf("upsert l2: %v", err)
+	// l2 is pending stock: row and rows both predate the migration and are
+	// seeded directly — an upsert would stamp the pointer, and after Phase 3
+	// froze the row table this is the only shape a rowful-but-unstamped
+	// activity can have.
+	l2 := blobActivity(uid, "l2")
+	if err := st.db.WithContext(ctx).Create(l2).Error; err != nil {
+		t.Fatalf("create l2 row: %v", err)
 	}
-	st.SetTSBlobStore(tsstore.NewMemStore())
+	seedStockRows(t, st, uid, "l2", []TimeseriesPoint{{Timestamp: i64ptr(1), GPSLat: &lat, GPSLon: &lat}})
 
 	users, err := st.UnmigratedActivityUsers(ctx)
 	if err != nil {
@@ -317,10 +340,12 @@ func TestTSBlobBackfillQuerySurface(t *testing.T) {
 	if a == nil {
 		t.Fatalf("audits had no row for %s: %+v", uid, audits)
 	}
-	// l1: 2 points; l2: 1 point stamped; l3: 0 points (empty blob stamped by
-	// its own dual-write upsert). Rows = 3 (l1's 2 + l2's 1), blob sum = 3.
-	if a.RowPoints != 3 || a.BlobPoints != 3 || a.Migrated != 3 || a.Unmigrated != 0 {
-		t.Fatalf("audit counters = %+v, want rows=3 blob=3 migrated=3 pending=0", a)
+	// Rowful-only counters (devops#787): rows = 1 (l2's stock row), blob sum
+	// over stamped-and-rowful = 1 (l2), Migrated counts every pointer (l1, l2,
+	// l3 — l1's blob has 2 points but no rows since Phase 3), Unmigrated = 0
+	// after the stamp. One-sided point sum: 1 <= 1.
+	if a.RowPoints != 1 || a.BlobPoints != 1 || a.Migrated != 3 || a.Unmigrated != 0 {
+		t.Fatalf("audit counters = %+v, want rows=1 blob=1 migrated=3 pending=0", a)
 	}
 	if !a.PointSumOK || !a.CompleteOK {
 		t.Fatalf("audit verdicts = pointSum:%v complete:%v, want both true", a.PointSumOK, a.CompleteOK)

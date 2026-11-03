@@ -128,7 +128,8 @@ func TestActivityTimeseriesServesFromBlobWithLRU(t *testing.T) {
 	if err := st.UpsertActivity(ctx, blobActivity(uid, "r1"), nil, rows, nil); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	for i := 1; i <= 3; i++ { // calibration/ability/load/PB all re-read the same activity
+	seedStockRows(t, st, uid, "r1", blobTestRows(31.13, 121.4)) // pre-Phase-3 stock: rows under a stamped pointer
+	for i := 1; i <= 3; i++ {                                   // calibration/ability/load/PB all re-read the same activity
 		got, err := st.ActivityTimeseries(ctx, uid, "r1")
 		if err != nil {
 			t.Fatalf("read %d: %v", i, err)
@@ -199,6 +200,9 @@ func TestActivityTimeseriesFallsBackToRows(t *testing.T) {
 		if err := st.UpsertActivity(ctx, blobActivity(uid, "f1"), nil, rows, nil); err != nil {
 			t.Fatalf("upsert: %v", err)
 		}
+		// Fallback reads rows: since Phase 3 froze the row table, rows only
+		// exist as pre-migration stock seeded directly under the stamped pointer.
+		seedStockRows(t, st, uid, "f1", blobTestRows(31.13, 121.4))
 		return st, counting, uid, rows
 	}
 	ctx := context.Background()

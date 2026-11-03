@@ -504,18 +504,23 @@ func TestLongRunStartsAndCoordinateBackfill(t *testing.T) {
 		{UserID: uid, LabelID: "short", Name: strptr("easy"), SportType: 100, Sport: strptr("run_outdoor"), DistanceM: fptr(10_000), Date: time.Now().UTC().Add(2 * time.Hour), Provider: "test", SyncedAt: time.Now().UTC(), StartGPSLat: fptr(31.2), StartGPSLon: fptr(121.2)},
 	}
 	for i := range activities {
-		if err := st.UpsertActivity(ctx, &activities[i], nil, nil, nil); err != nil {
-			t.Fatalf("upsert %s: %v", activities[i].LabelID, err)
+		if i != 0 { // no-coords is upserted with its points below
+			if err := st.UpsertActivity(ctx, &activities[i], nil, nil, nil); err != nil {
+				t.Fatalf("upsert %s: %v", activities[i].LabelID, err)
+			}
 		}
 	}
 	// First fix for the coordinate-less HM is preceded by a zero/invalid fix.
+	// Seeded through the upsert so the points live in the timeseries store —
+	// since Phase 3 (devops#787) the backfill reads the store, and the row
+	// table only holds pre-migration stock.
 	points := []TimeseriesPoint{
-		{UserID: uid, LabelID: "no-coords", Timestamp: i64ptr(1), GPSLat: &zero, GPSLon: &zero},
-		{UserID: uid, LabelID: "no-coords", Timestamp: i64ptr(2), GPSLat: fptr(first), GPSLon: fptr(121.055)},
-		{UserID: uid, LabelID: "no-coords", Timestamp: i64ptr(3), GPSLat: fptr(31.13), GPSLon: fptr(121.06)},
+		{Timestamp: i64ptr(1), GPSLat: &zero, GPSLon: &zero},
+		{Timestamp: i64ptr(2), GPSLat: fptr(first), GPSLon: fptr(121.055)},
+		{Timestamp: i64ptr(3), GPSLat: fptr(31.13), GPSLon: fptr(121.06)},
 	}
-	if err := st.db.WithContext(ctx).Create(&points).Error; err != nil {
-		t.Fatalf("seed timeseries: %v", err)
+	if err := st.UpsertActivity(ctx, &activities[0], nil, points, nil); err != nil {
+		t.Fatalf("upsert no-coords with points: %v", err)
 	}
 
 	filled, err := st.BackfillActivityStartCoordinates(ctx, uid)

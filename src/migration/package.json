@@ -16,8 +16,7 @@
     "migrate-weekly-plans": "src/migrate-weekly-plans.js",
     "migrate-running-age": "src/migrate-running-age.js",
     "migrate-weekly-feedback": "src/migrate-weekly-feedback.js",
-    "migrate-workout-materialization": "src/migrate-workout-materialization.js",
-    "backfill-activity-start-gps": "src/activity-start-gps-backfill.js"
+    "migrate-workout-materialization": "src/migrate-workout-materialization.js"
   },
   "scripts": {
     "migrate": "node src/index.js",
@@ -31,7 +30,6 @@
     "migrate:weekly-feedback": "node src/migrate-weekly-feedback.js",
     "migrate:workout-materialization": "node src/migrate-workout-materialization.js",
     "migrate:master-plan-phase-enum": "node src/migrate-master-plan-phase-enum.js",
-    "migrate:activity-start-gps": "node src/activity-start-gps-backfill.js",
     "test": "node --test"
   },
   "dependencies": {

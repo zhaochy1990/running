@@ -393,33 +393,10 @@ def regenerate_commentary(
     label_id: str,
     _claims: dict = Depends(require_bearer),
 ):
-    """Force AOAI to (re)generate commentary for an activity, overwriting any existing row.
-
-    Returns 503 if AOAI is disabled or not configured.
+    """Retired with the commentary pipeline (devops#787): the generator
+    (commentary_ai.py) was never deployed to production and is deleted.
     """
-    from ..commentary_ai import AOAIUnavailable, regenerate_and_save
-
-    db = get_db(user)
-    try:
-        try:
-            row = regenerate_and_save(user, label_id, db=db)
-        except AOAIUnavailable as e:
-            raise HTTPException(status_code=503, detail=f"AOAI unavailable: {e}")
-        except LookupError as e:
-            raise HTTPException(status_code=404, detail=str(e))
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"AOAI call failed: {e}")
-    finally:
-        db.close()
-
-    return {
-        "success": True,
-        "commentary": row.get("commentary"),
-        "generated_by": row.get("generated_by"),
-        "generated_at": row.get("generated_at"),
-    }
+    raise HTTPException(status_code=410, detail="commentary generation retired")
 
 
 @router.post("/api/{user}/activities/{label_id}/resync")
