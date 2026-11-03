@@ -135,12 +135,16 @@ export class MySqlLotteryStore implements LotteryStore {
   constructor(private readonly pool: Pool) {}
 
   async setup(): Promise<void> {
+    // start_at/end_at are DATETIME, not TIMESTAMP: prod runs explicit_defaults_for_timestamp=OFF,
+    // where a bare `TIMESTAMP NOT NULL` either gets an implicit zero-date default that
+    // NO_ZERO_DATE rejects (non-first column, ER_INVALID_DEFAULT) or an implicit
+    // ON UPDATE CURRENT_TIMESTAMP that silently rewrites it on every UPDATE (first column).
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS lottery_activities (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
         name VARCHAR(128) NOT NULL,
-        start_at TIMESTAMP NOT NULL,
-        end_at TIMESTAMP NOT NULL,
+        start_at DATETIME NOT NULL,
+        end_at DATETIME NOT NULL,
         enabled TINYINT(1) NOT NULL DEFAULT 0,
         rules_text TEXT NULL,
         hero_image VARCHAR(512) NULL,
