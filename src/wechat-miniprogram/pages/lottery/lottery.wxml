@@ -1,0 +1,106 @@
+<view class="page">
+  <!-- 顶栏（fixed）：home + 活动名 -->
+  <view class="top" style="padding-top: {{statusBarHeight}}px;">
+    <image class="top__home" src="/assets/icons/home.svg" mode="aspectFit" bindtap="onBack" />
+    <view class="top__title">{{name || '抽奖活动'}}</view>
+  </view>
+
+  <!-- 主体：活动陈列 / 结果态 / 各空态 -->
+  <view class="body" style="padding-top: calc({{statusBarHeight}}px + 100rpx);">
+    <!-- ============ 加载中 ============ -->
+    <view wx:if="{{loadState === 'loading'}}" class="state">
+      <view class="state__spinner"></view>
+      <view class="state__text">正在加载活动…</view>
+    </view>
+
+    <!-- ============ 404 / 缺参（活动不存在或未启用） ============ -->
+    <view wx:elif="{{loadState === 'notfound'}}" class="state">
+      <view class="state__logo">砺</view>
+      <view class="state__title">活动不存在</view>
+      <view class="state__text">链接可能已失效，请现场工作人员协助</view>
+    </view>
+
+    <!-- ============ 失败（网络 / 5xx / 429，可重试） ============ -->
+    <view wx:elif="{{loadState === 'error'}}" class="state">
+      <view class="state__title">加载失败</view>
+      <view class="state__text">网络开小差了，请重试</view>
+      <view class="state__cta" bindtap="onRetryTap">重试</view>
+    </view>
+
+    <block wx:else>
+      <!-- ============ 落地陈列（免登录可看） ============ -->
+      <block wx:if="{{pageMode === 'landing'}}">
+        <!-- 头图卡：活动名 + 状态章 + 时间窗 -->
+        <view class="hero">
+          <image wx:if="{{heroImage}}" class="hero__img" src="{{heroImage}}" mode="aspectFill" />
+          <view class="hero__titles">
+            <view class="hero__name">{{name}}</view>
+            <view class="hero__meta">
+              <view class="hero__status hero__status--{{status}}">{{phaseLabel}}</view>
+              <view class="hero__hint">{{phaseHint}}</view>
+            </view>
+          </view>
+        </view>
+
+        <!-- 奖品池陈列：图 + 名称 + 剩余库存 -->
+        <view class="card" wx:if="{{prizes.length > 0}}">
+          <view class="card__title">奖品池</view>
+          <view class="prize" wx:for="{{prizes}}" wx:key="key">
+            <image wx:if="{{item.imageUrl}}" class="prize__img" src="{{item.imageUrl}}" mode="aspectFill" />
+            <view wx:else class="prize__img prize__img--fallback">礼</view>
+            <view class="prize__titles">
+              <view class="prize__name">{{item.name}}</view>
+              <view class="prize__remaining {{item.out ? 'prize__remaining--out' : ''}}">{{item.remainingText}}</view>
+            </view>
+          </view>
+        </view>
+
+        <!-- 活动规则（合规公示文案，admin 配置原文） -->
+        <view class="card" wx:if="{{rulesText}}">
+          <view class="card__title">活动规则</view>
+          <text class="rules" user-select>{{rulesText}}</text>
+        </view>
+      </block>
+
+      <!-- ============ 结果态 ============ -->
+      <block wx:else>
+        <!-- 中奖：3 位编号大字 + 奖品 + 出示提示 -->
+        <view wx:if="{{resultWon}}" class="result">
+          <view class="result__banner">恭喜中奖</view>
+          <view class="result__code">{{resultCode}}</view>
+          <view class="result__tip">请向工作人员出示此编号领取礼品</view>
+          <view class="result-card">
+            <image wx:if="{{resultPrizeImage}}" class="result-card__img" src="{{resultPrizeImage}}" mode="aspectFill" />
+            <view wx:else class="result-card__img result-card__img--fallback">礼</view>
+            <view class="result-card__titles">
+              <view class="result-card__name">{{resultPrizeName}}</view>
+              <view class="result-card__meta">中奖时间 {{resultTimeText}}</view>
+              <view wx:if="{{resultVerified}}" class="result-card__verified">已核销</view>
+            </view>
+          </view>
+        </view>
+
+        <!-- 谢谢参与 -->
+        <view wx:else class="result">
+          <view class="result__banner result__banner--thanks">谢谢参与</view>
+          <view class="result__thanks-code">···</view>
+          <view class="result__tip">差一点点就抽中了，感谢你的参与</view>
+        </view>
+
+        <view class="result__back" bindtap="onBackToLandingTap">返回活动页</view>
+      </block>
+    </block>
+  </view>
+
+  <!-- 底部 CTA（landing 常驻）：门槛提示 + 主按钮 -->
+  <view wx:if="{{loadState === 'ready' && pageMode === 'landing'}}" class="foot">
+    <view wx:if="{{gateHint}}" class="foot__hint">{{gateHint}}</view>
+    <view class="foot__cta {{ctaDisabled ? 'foot__cta--disabled' : ''}}" bindtap="onCtaTap">{{ctaLabel}}</view>
+  </view>
+
+  <!-- 抽奖动效遮罩：转环 + 抽奖中（DRAW_MIN_ANIMATION_MS 保证可感知） -->
+  <view wx:if="{{drawing}}" class="draw-mask" catchtouchmove="noop">
+    <view class="draw-mask__ring"></view>
+    <view class="draw-mask__text">抽奖中…</view>
+  </view>
+</view>
