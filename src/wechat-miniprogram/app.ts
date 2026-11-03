@@ -14,6 +14,9 @@ const PUBLIC_ENTRY_PAGES: ReadonlySet<string> = new Set([
   // 抽奖活动落地页（#868，Epic #862）：扫易拉宝小程序码直达，奖档陈列 / 规则 /
   // 时间窗免登录可看；登录 / 绑表 / 抽奖由页面内三态引导触发。
   'pages/lottery/lottery',
+  // 工作人员核销页（#869）：扫「工作码」小程序码直达的隐藏工作页（无常规入口）。
+  // 免登录冷开放行只是不拽 onboarding；核销端点用户级 JWT，由页面内门槛引导登录。
+  'pages/lottery-verify/lottery-verify',
 ]);
 
 // 免密登录：用 wx.login() 的 code 换 JWT。微信已绑定 → 存好 token/user 返回 true；
