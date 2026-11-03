@@ -10,6 +10,7 @@ import { ApiError } from '../../services/request';
 import { ensureSync } from '../../services/onboarding';
 import { userStore } from '../../store/index';
 import { fmtShanghaiMdHm } from '../../utils/format';
+import { sanitizeRedirect } from '../../utils/redirect';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 interface WatchPageData {
@@ -52,6 +53,8 @@ interface WatchPageHandlers {
   onDisconnectTap(): void;
   onCancelDisconnect(): void;
   onConfirmDisconnect(): Promise<void>;
+  /** 绑定成功后的回跳目标（sanitizeRedirect 已校验的完整 path+query），空串 = 无回跳，走默认 onboarding */
+  _redirect?: string;
 }
 
 function statusBarHeight(): number {
@@ -128,6 +131,10 @@ Page<WatchPageData, WatchPageHandlers>({
       canBack: getCurrentPages().length > 1,
       contentPaddingTop: contentPaddingTopRpx(),
     });
+    // 绑定成功后的回跳目标（issue #864）：来源页（如抽奖活动页）把自己的完整
+    // path+query encodeURIComponent 后经 redirect 传入；经 sanitizeRedirect 校验，
+    // 空串 = 无回跳（既有入口），绑定成功后维持原状跳 onboarding。
+    this._redirect = sanitizeRedirect(query.redirect);
     // 从 onboarding 引导页带 provider 进来：用户已经选过品牌了，直接进登录表单，
     // 不再让他对着 provider-grid 选第二遍。
     const provider = query.provider;
@@ -199,16 +206,24 @@ Page<WatchPageData, WatchPageHandlers>({
       wx.showToast({ title: '绑定成功', icon: 'success' });
       await this.fetchWatch();
       // 绑表后触发同步 —— 服务端的 watchLogin 自己不触发（它只置 watch_ready），
-      // 所以这一步得由客户端补上；然后去 onboarding 页看进度。
+      // 所以这一步得由客户端补上；默认路径随后去 onboarding 页看进度。
       // 这里不等 ensureSync 的结果再跳：绑表是用户可见动作，不值得为它加一次往返延迟 ——
-      // onboarding 页自己的 onShow 会重算落点并接着续跑。
+      // onboarding 页自己的 onShow 会重算落点并接着续跑（带 redirect 时用户直接回
+      // 来源页，同步在后台继续，不再有页面盯着它，失败仅 console 记录）。
       const userId = userStore.getState().user?.id;
       if (userId) {
         void ensureSync(userId).catch((err) => {
           console.warn('[onboarding] 绑表后触发同步失败（同步页会重试）:', err);
         });
-        wx.redirectTo({ url: '/pages/onboarding/onboarding' });
-        // 已经 replace 走了，绑定成功横幅不用再清，也就不会在已卸载的页面上 setData。
+        // 带 redirect 进来（issue #864）：绑定成功回来源页（如抽奖活动页），
+        // reLaunch 与登录/onboarding 的回跳方式一致（tab 页也能落）；
+        // 不带则维持既有行为 —— redirectTo 去 onboarding 看同步进度。
+        if (this._redirect) {
+          wx.reLaunch({ url: this._redirect });
+        } else {
+          wx.redirectTo({ url: '/pages/onboarding/onboarding' });
+        }
+        // 已经跳走了，绑定成功横幅不用再清，也就不会在已卸载的页面上 setData。
         return;
       }
       setTimeout(() => this.setData({ success: '' }), 3000);
