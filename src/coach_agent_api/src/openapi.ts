@@ -380,6 +380,77 @@ export const OPENAPI_DOCUMENT = {
         },
       },
     },
+    "/api/lottery/activities/{id}/draw": {
+      post: {
+        tags: ["Lottery"],
+        operationId: "drawLotteryActivity",
+        summary: "Draw a lottery activity (login + bound watch required)",
+        description:
+          "The #865 draw core. Every gate is re-derived server-side: the activity must exist and be enabled (404 otherwise, same as the public read), the time window must be active (403 activity_not_active with the phase), and the caller must have a logged-in bound watch (403 watch_not_bound; presence-only secret semantics, same as GET /api/users/me/watch). The draw itself is one transaction: stock-aware weighted pick (zero-stock tiers skipped and re-normalized; the「谢谢参与」fallback tier when all physical tiers are empty), row-locked stock decrement (no oversell), and a random unoccupied 3-digit code (000-999) for physical wins. The three unique constraints are the anti-replay backstop: a repeat draw by the same user returns the committed result (200, deduplicated=true) instead of an error, and the same watch account re-drawing through another stride account is a 409 watch_already_drawn. After a fresh draw the server fires a fail-soft full-sync trigger in the background (skipped for users who already have pipeline runs; never affects the draw result).",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", pattern: "^[0-9]{1,15}$" },
+          },
+        ],
+        responses: {
+          "201": {
+            description: "The fresh draw result.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LotteryDrawResponse" },
+              },
+            },
+          },
+          "200": {
+            description: "The user already drew this activity; the committed result is returned (deduplicated=true).",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LotteryDrawResponse" },
+              },
+            },
+          },
+          "400": errorResponse("The activity id is malformed."),
+          "401": errorResponse("The bearer token is missing or invalid."),
+          "403": errorResponse("The activity window is not active (activity_not_active) or no logged-in watch is bound (watch_not_bound)."),
+          "404": errorResponse("The activity does not exist or is not enabled."),
+          "409": errorResponse("This watch account already drew the activity through another stride account (watch_already_drawn)."),
+        },
+      },
+    },
+    "/api/lottery/activities/{id}/my-result": {
+      get: {
+        tags: ["Lottery"],
+        operationId: "getLotteryMyResult",
+        summary: "Read the caller's draw result for an activity",
+        description:
+          "The landing page prefetch: logged-in users who already drew render the result state directly. Returns participated=false for users who have not drawn; the participation record otherwise — prize view fields, the 3-digit code (null for「谢谢参与」), status (drawn / verified once P3 ships) and verification timestamps. Weights are never exposed.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", pattern: "^[0-9]{1,15}$" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "The participation state (participated=false when the user has not drawn).",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LotteryMyResultResponse" },
+              },
+            },
+          },
+          "400": errorResponse("The activity id is malformed."),
+          "401": errorResponse("The bearer token is missing or invalid."),
+        },
+      },
+    },
     "/api/admin/lottery/activities": {
       post: {
         tags: ["Lottery"],
@@ -1032,6 +1103,52 @@ export const OPENAPI_DOCUMENT = {
               additionalProperties: false,
             },
           },
+        },
+        additionalProperties: false,
+      },
+      LotteryDrawResponse: {
+        type: "object",
+        required: ["participated", "deduplicated", "prize", "code", "status", "created_at"],
+        description: "Draw result (201 fresh, 200 repeat). Weights and configured stock are never exposed.",
+        properties: {
+          participated: { type: "boolean" },
+          deduplicated: { type: "boolean", description: "true when the unique constraints resolved a replay to the committed result." },
+          prize: {
+            type: ["object", "null"],
+            required: ["name", "image_url", "is_fallback"],
+            properties: {
+              name: { type: "string" },
+              image_url: { type: ["string", "null"] },
+              is_fallback: { type: "boolean" },
+            },
+            additionalProperties: false,
+          },
+          code: { type: ["string", "null"], pattern: "^[0-9]{3}$", description: "3-digit zero-padded winning code; null for「谢谢参与」." },
+          status: { type: "string", enum: ["drawn"] },
+          created_at: { type: "string" },
+        },
+        additionalProperties: false,
+      },
+      LotteryMyResultResponse: {
+        type: "object",
+        required: ["participated"],
+        description: "The caller's participation state; everything but participated is present only after drawing.",
+        properties: {
+          participated: { type: "boolean" },
+          prize: {
+            type: ["object", "null"],
+            required: ["name", "image_url", "is_fallback"],
+            properties: {
+              name: { type: "string" },
+              image_url: { type: ["string", "null"] },
+              is_fallback: { type: "boolean" },
+            },
+            additionalProperties: false,
+          },
+          code: { type: ["string", "null"], pattern: "^[0-9]{3}$" },
+          status: { type: "string", enum: ["drawn"] },
+          verified_at: { type: ["string", "null"], description: "Filled by the P3 verification domain." },
+          created_at: { type: "string" },
         },
         additionalProperties: false,
       },
