@@ -92,6 +92,8 @@ export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: C
         checkpointer: persistence.checkpointer,
         planJobs,
         coachDataDeleter: new MySqlCoachDataDeleter(persistence.pool),
+        // #863 抽奖活动配置域：admin CRUD + 落地页公开读取。
+        lottery: persistence.lottery,
         // #715 分享服务：wxacode 未配置（base_url 为空）时不挂客户端——创建
         // 端 fail-soft 落 wxacode_url NULL，P1 auth 端点上线后配置即生效。
         coachShares: {
