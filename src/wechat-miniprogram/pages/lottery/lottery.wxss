@@ -1,0 +1,441 @@
+/* 抽奖活动落地页 + 结果页 —— devops#868（Epic #862 P5）。
+   浅色营销落地页（coach-share 同风格）：底 / 卡 / 文字全引全局令牌（#816），
+   accent 族用 --color-accent / --color-accent-tint；中奖编号大字与状态章的
+   强调底 / 白字一律令牌取色。 */
+
+page {
+  background: var(--color-bg);
+}
+
+.page {
+  min-height: 100vh;
+  /* 给固定 CTA 条留出高度 */
+  padding-bottom: calc(220rpx + env(safe-area-inset-bottom));
+}
+
+/* ---------- 顶栏（fixed） ---------- */
+
+.top {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 20rpx 32rpx;
+  background: rgba(255, 255, 255, 0.97);
+  border-bottom: 1rpx solid var(--color-border-soft);
+}
+
+.top__home {
+  width: 44rpx;
+  height: 44rpx;
+  padding: 12rpx;
+  flex-shrink: 0;
+}
+
+.top__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 空态 / 加载（coach-share 同款骨架） ---------- */
+
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 160rpx 64rpx 0;
+}
+
+.state__spinner {
+  width: 56rpx;
+  height: 56rpx;
+  border: 5rpx solid var(--color-bg-sunken);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.state__logo {
+  width: 128rpx;
+  height: 128rpx;
+  border-radius: 32rpx;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 48rpx;
+  font-weight: 700;
+  text-align: center;
+  line-height: 128rpx;
+  margin-bottom: 32rpx;
+}
+
+.state__title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--color-text-bright);
+}
+
+.state__text {
+  font-size: 24rpx;
+  color: var(--color-text-secondary);
+  margin-top: 12rpx;
+  text-align: center;
+}
+
+.state__cta {
+  margin-top: 40rpx;
+  padding: 0 64rpx;
+  line-height: 80rpx;
+  border-radius: 40rpx;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 26rpx;
+  font-weight: 600;
+}
+
+/* ---------- 落地陈列 ---------- */
+
+.hero {
+  margin: 24rpx 32rpx 0;
+  border-radius: 24rpx;
+  overflow: hidden;
+  background: var(--color-card);
+  border: 1rpx solid var(--color-border-soft);
+}
+
+.hero__img {
+  width: 100%;
+  height: 320rpx;
+  display: block;
+}
+
+.hero__titles {
+  padding: 28rpx 32rpx;
+}
+
+.hero__name {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.hero__meta {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-top: 16rpx;
+}
+
+/* 状态章基样 = 进行中（accent 浅衬底）；未开始 / 已结束在下方各自覆盖。 */
+.hero__status {
+  flex-shrink: 0;
+  padding: 4rpx 20rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  font-weight: 600;
+  background: var(--color-accent-tint);
+  color: var(--color-accent-deep);
+}
+
+.hero__status--not_started {
+  background: var(--color-chip);
+  color: var(--color-text-cool);
+}
+
+.hero__status--ended {
+  background: var(--color-bg-dim);
+  color: var(--color-text-muted);
+}
+
+.hero__hint {
+  font-size: 22rpx;
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card {
+  margin: 24rpx 32rpx 0;
+  padding: 28rpx 32rpx;
+  border-radius: 24rpx;
+  background: var(--color-card);
+  border: 1rpx solid var(--color-border-soft);
+}
+
+.card__title {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: var(--color-text-bright);
+  margin-bottom: 20rpx;
+}
+
+.prize {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  padding: 16rpx 0;
+}
+
+.prize__img {
+  width: 112rpx;
+  height: 112rpx;
+  border-radius: 16rpx;
+  flex-shrink: 0;
+  background: var(--color-bg-sunken);
+}
+
+.prize__img--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40rpx;
+  font-weight: 700;
+  color: var(--color-accent-deep);
+  background: var(--color-accent-tint);
+}
+
+.prize__titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.prize__name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.prize__remaining {
+  font-size: 22rpx;
+  color: var(--color-text-secondary);
+  margin-top: 8rpx;
+}
+
+.prize__remaining--out {
+  color: var(--color-text-muted);
+}
+
+.rules {
+  display: block;
+  font-size: 24rpx;
+  line-height: 40rpx;
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ---------- 结果态 ---------- */
+
+.result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 48rpx 32rpx 0;
+  padding: 56rpx 32rpx 48rpx;
+  border-radius: 24rpx;
+  background: var(--color-card);
+  border: 1rpx solid var(--color-border-soft);
+  animation: pop-in 0.45s ease-out;
+}
+
+.result__banner {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--color-accent-deep);
+  letter-spacing: 8rpx;
+}
+
+.result__banner--thanks {
+  color: var(--color-text-bright);
+}
+
+/* 3 位中奖编号大字：等宽数字 + 字距，现场出示可读性优先。 */
+.result__code {
+  margin-top: 24rpx;
+  font-size: 160rpx;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 16rpx;
+  font-family: 'DIN Alternate', 'Helvetica Neue', monospace;
+  color: var(--color-text-primary);
+}
+
+.result__thanks-code {
+  margin-top: 24rpx;
+  font-size: 120rpx;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 16rpx;
+  color: var(--color-text-tertiary);
+}
+
+.result__tip {
+  margin-top: 16rpx;
+  font-size: 26rpx;
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.result-card {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 40rpx;
+  padding: 24rpx;
+  border-radius: 16rpx;
+  background: var(--color-bg);
+}
+
+.result-card__img {
+  width: 112rpx;
+  height: 112rpx;
+  border-radius: 16rpx;
+  flex-shrink: 0;
+  background: var(--color-bg-sunken);
+}
+
+.result-card__img--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40rpx;
+  font-weight: 700;
+  color: var(--color-accent-deep);
+  background: var(--color-accent-tint);
+}
+
+.result-card__titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.result-card__name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.result-card__meta {
+  font-size: 22rpx;
+  color: var(--color-text-secondary);
+  margin-top: 8rpx;
+}
+
+.result-card__verified {
+  display: inline-block;
+  margin-top: 12rpx;
+  padding: 4rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  background: rgba(var(--color-success-rgb), 0.12);
+  color: var(--color-success);
+}
+
+.result__back {
+  margin: 32rpx auto 0;
+  padding: 0 56rpx;
+  line-height: 76rpx;
+  border-radius: 38rpx;
+  font-size: 26rpx;
+  color: var(--color-text-secondary);
+  background: var(--color-chip);
+  width: fit-content;
+}
+
+/* ---------- 底部 CTA（fixed） ---------- */
+
+.foot {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+  padding: 24rpx 32rpx calc(24rpx + env(safe-area-inset-bottom));
+  background: rgba(255, 255, 255, 0.97);
+  border-top: 1rpx solid var(--color-border-soft);
+}
+
+.foot__hint {
+  font-size: 22rpx;
+  color: var(--color-text-secondary);
+}
+
+.foot__cta {
+  width: 100%;
+  line-height: 92rpx;
+  border-radius: 46rpx;
+  text-align: center;
+  font-size: 30rpx;
+  font-weight: 700;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.foot__cta--disabled {
+  background: var(--color-bg-dim);
+  color: var(--color-text-muted);
+}
+
+/* ---------- 抽奖动效遮罩 ---------- */
+
+.draw-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.draw-mask__ring {
+  width: 120rpx;
+  height: 120rpx;
+  border: 10rpx solid rgba(255, 255, 255, 0.25);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.draw-mask__text {
+  margin-top: 32rpx;
+  font-size: 28rpx;
+  color: #ffffff;
+  letter-spacing: 4rpx;
+}
+
+/* ---------- 动画 ---------- */
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
