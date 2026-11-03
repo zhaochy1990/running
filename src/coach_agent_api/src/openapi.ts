@@ -9,6 +9,7 @@ export const OPENAPI_DOCUMENT = {
     { name: "System", description: "Service lifecycle endpoints." },
     { name: "Coach", description: "Authenticated Coach conversations." },
     { name: "Shares", description: "Coach chat sharing: authenticated snapshot creation, public read (#715)." },
+    { name: "Lottery", description: "Lottery activity configuration: admin CRUD for activities/prize pools, public landing read (#863)." },
   ],
   paths: {
     "/health": {
@@ -351,6 +352,254 @@ export const OPENAPI_DOCUMENT = {
         },
       },
     },
+    "/api/lottery/activities/{id}": {
+      get: {
+        tags: ["Lottery"],
+        operationId: "getLotteryActivityPublic",
+        summary: "Read lottery landing-page display data (public)",
+        description:
+          "Public, unauthenticated read for the mini-program lottery landing page (#863): tier name/image/remaining stock, rules copy and the time-window phase. Weights and other internal configuration are never exposed. Unknown and not-yet-enabled activities are the same 404.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", pattern: "^[0-9]{1,15}$" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Display data for the activity.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LotteryActivityPublicResponse" },
+              },
+            },
+          },
+          "404": errorResponse("The activity does not exist or is not enabled."),
+        },
+      },
+    },
+    "/api/admin/lottery/activities": {
+      post: {
+        tags: ["Lottery"],
+        operationId: "createLotteryActivity",
+        summary: "Create a lottery activity (admin)",
+        description: "Creates a disabled activity; enable it with the enable endpoint once the prize pool and物料 are ready.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/LotteryActivityRequest" },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "The created activity.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LotteryActivityResponse" },
+              },
+            },
+          },
+          "400": errorResponse("The body is structurally invalid."),
+          "401": errorResponse("The bearer token is missing or invalid."),
+          "403": errorResponse("A non-admin token cannot configure lottery activities."),
+          "422": errorResponse("The time window is empty (start must be before end)."),
+        },
+      },
+      get: {
+        tags: ["Lottery"],
+        operationId: "listLotteryActivities",
+        summary: "List lottery activities (admin)",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": {
+            description: "All activities, newest first.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LotteryActivityListResponse" },
+              },
+            },
+          },
+          "401": errorResponse("The bearer token is missing or invalid."),
+          "403": errorResponse("A non-admin token cannot configure lottery activities."),
+        },
+      },
+    },
+    "/api/admin/lottery/activities/{id}": {
+      get: {
+        tags: ["Lottery"],
+        operationId: "getLotteryActivity",
+        summary: "Read one lottery activity with its prize pool (admin)",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", pattern: "^[0-9]{1,15}$" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "The activity including internal fields (weights, configured stock).",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LotteryActivityDetailResponse" },
+              },
+            },
+          },
+          "400": errorResponse("The activity id is invalid."),
+          "401": errorResponse("The bearer token is missing or invalid."),
+          "403": errorResponse("A non-admin token cannot configure lottery activities."),
+          "404": errorResponse("The activity does not exist."),
+        },
+      },
+      put: {
+        tags: ["Lottery"],
+        operationId: "updateLotteryActivity",
+        summary: "Full update of a lottery activity (admin)",
+        description: "PUT semantics: the activity scalar fields (name, time window, rules, hero image) are replaced wholesale.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", pattern: "^[0-9]{1,15}$" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/LotteryActivityRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "The updated activity.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LotteryActivityResponse" },
+              },
+            },
+          },
+          "400": errorResponse("The body is structurally invalid."),
+          "401": errorResponse("The bearer token is missing or invalid."),
+          "403": errorResponse("A non-admin token cannot configure lottery activities."),
+          "404": errorResponse("The activity does not exist."),
+          "422": errorResponse("The time window is empty (start must be before end)."),
+        },
+      },
+    },
+    "/api/admin/lottery/activities/{id}/prizes": {
+      put: {
+        tags: ["Lottery"],
+        operationId: "replaceLotteryPrizes",
+        summary: "Replace a lottery prize pool (admin)",
+        description:
+          "Wholesale replacement validated as a whole pool: exactly one「谢谢参与」fallback tier (stock 0), every weight > 0, total stock ≤ 999 (the 3-digit winning-code space). Rejected with 409 once any participation exists (#862 draw, P2).",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", pattern: "^[0-9]{1,15}$" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/LotteryPrizesRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "The stored prize pool, insertion order = display order.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LotteryPrizeListResponse" },
+              },
+            },
+          },
+          "400": errorResponse("The body is structurally invalid."),
+          "401": errorResponse("The bearer token is missing or invalid."),
+          "403": errorResponse("A non-admin token cannot configure lottery activities."),
+          "404": errorResponse("The activity does not exist."),
+          "409": errorResponse("The activity already has participations; the pool can no longer be replaced."),
+          "422": errorResponse("Pool rule violation: fallback tier count/stock or total stock > 999."),
+        },
+      },
+    },
+    "/api/admin/lottery/activities/{id}/enable": {
+      post: {
+        tags: ["Lottery"],
+        operationId: "enableLotteryActivity",
+        summary: "Enable a lottery activity (admin)",
+        description: "启停 toggle: only enabled activities are served by the public landing endpoint.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", pattern: "^[0-9]{1,15}$" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "The updated activity.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LotteryActivityResponse" },
+              },
+            },
+          },
+          "400": errorResponse("The activity id is invalid."),
+          "401": errorResponse("The bearer token is missing or invalid."),
+          "403": errorResponse("A non-admin token cannot configure lottery activities."),
+          "404": errorResponse("The activity does not exist."),
+        },
+      },
+    },
+    "/api/admin/lottery/activities/{id}/disable": {
+      post: {
+        tags: ["Lottery"],
+        operationId: "disableLotteryActivity",
+        summary: "Disable a lottery activity (admin)",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string", pattern: "^[0-9]{1,15}$" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "The updated activity.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LotteryActivityResponse" },
+              },
+            },
+          },
+          "400": errorResponse("The activity id is invalid."),
+          "401": errorResponse("The bearer token is missing or invalid."),
+          "403": errorResponse("A non-admin token cannot configure lottery activities."),
+          "404": errorResponse("The activity does not exist."),
+        },
+      },
+    },
   },
   components: {
     securitySchemes: {
@@ -659,6 +908,130 @@ export const OPENAPI_DOCUMENT = {
           progress_pct: { type: "integer", minimum: 0, maximum: 100 },
           error_code: { type: ["string", "null"] },
           result_draft_id: { type: ["string", "null"] },
+        },
+        additionalProperties: false,
+      },
+      LotteryActivityRequest: {
+        type: "object",
+        required: ["name", "start_at", "end_at"],
+        properties: {
+          name: nonBlankString(128),
+          start_at: { type: "string", description: "ISO-8601 with explicit timezone (Z or ±HH:MM)." },
+          end_at: { type: "string", description: "ISO-8601 with explicit timezone; must be after start_at." },
+          rules_text: { type: "string", maxLength: 20000 },
+          hero_image: { type: "string", maxLength: 512, pattern: "^https://\\S+$" },
+        },
+        additionalProperties: false,
+      },
+      LotteryActivityResponse: {
+        type: "object",
+        required: ["id", "name", "start_at", "end_at", "enabled", "rules_text", "hero_image", "status", "created_at", "updated_at"],
+        properties: {
+          id: { type: "integer" },
+          name: { type: "string" },
+          start_at: { type: "string" },
+          end_at: { type: "string" },
+          enabled: { type: "boolean" },
+          rules_text: { type: ["string", "null"] },
+          hero_image: { type: ["string", "null"] },
+          status: { type: "string", enum: ["not_started", "active", "ended"], description: "Time-window phase derived at read time." },
+          created_at: { type: "string" },
+          updated_at: { type: "string" },
+        },
+        additionalProperties: false,
+      },
+      LotteryActivityListResponse: {
+        type: "object",
+        required: ["activities"],
+        properties: {
+          activities: { type: "array", items: { $ref: "#/components/schemas/LotteryActivityResponse" } },
+        },
+        additionalProperties: false,
+      },
+      LotteryActivityDetailResponse: {
+        allOf: [
+          { $ref: "#/components/schemas/LotteryActivityResponse" },
+          {
+            type: "object",
+            required: ["prizes"],
+            properties: {
+              prizes: { type: "array", items: { $ref: "#/components/schemas/LotteryPrizeResponse" } },
+            },
+          },
+        ],
+      },
+      LotteryPrizesRequest: {
+        type: "object",
+        required: ["prizes"],
+        properties: {
+          prizes: {
+            type: "array",
+            minItems: 1,
+            maxItems: 50,
+            items: {
+              type: "object",
+              required: ["name", "stock", "weight", "is_fallback"],
+              properties: {
+                name: nonBlankString(128),
+                image_url: { type: "string", maxLength: 512, pattern: "^https://\\S+$" },
+                stock: { type: "integer", minimum: 0, maximum: 999 },
+                weight: { type: "integer", minimum: 1, maximum: 1000000 },
+                is_fallback: { type: "boolean", description: "Exactly one tier per activity must set this." },
+              },
+              additionalProperties: false,
+            },
+          },
+        },
+        additionalProperties: false,
+      },
+      LotteryPrizeResponse: {
+        type: "object",
+        required: ["id", "name", "image_url", "stock", "remaining", "weight", "is_fallback"],
+        properties: {
+          id: { type: "integer" },
+          name: { type: "string" },
+          image_url: { type: ["string", "null"] },
+          stock: { type: "integer" },
+          remaining: { type: "integer" },
+          weight: { type: "integer" },
+          is_fallback: { type: "boolean" },
+        },
+        additionalProperties: false,
+      },
+      LotteryPrizeListResponse: {
+        type: "object",
+        required: ["prizes"],
+        properties: {
+          prizes: { type: "array", items: { $ref: "#/components/schemas/LotteryPrizeResponse" } },
+        },
+        additionalProperties: false,
+      },
+      LotteryActivityPublicResponse: {
+        type: "object",
+        required: ["id", "name", "hero_image", "rules_text", "start_at", "end_at", "status", "prizes"],
+        description: "Display fields only — weights and internal configuration are never exposed.",
+        properties: {
+          id: { type: "integer" },
+          name: { type: "string" },
+          hero_image: { type: ["string", "null"] },
+          rules_text: { type: ["string", "null"] },
+          start_at: { type: "string" },
+          end_at: { type: "string" },
+          status: { type: "string", enum: ["not_started", "active", "ended"] },
+          prizes: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["name", "image_url", "remaining", "is_fallback"],
+              properties: {
+                name: { type: "string" },
+                image_url: { type: ["string", "null"] },
+                remaining: { type: ["integer", "null"], description: "null for the fallback tier (never runs out)." },
+                is_fallback: { type: "boolean" },
+              },
+              additionalProperties: false,
+            },
+          },
         },
         additionalProperties: false,
       },

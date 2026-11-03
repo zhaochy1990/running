@@ -8,6 +8,7 @@ import { registerAdminUserRoutes } from "./routes/adminUsers.js";
 import { registerChatRoutes } from "./routes/chat.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerHistoryRoutes, registerSessionListRoutes, type ThreadHistoryReader, type ThreadSessionReader } from "./routes/history.js";
+import { type LotteryRouteDeps, registerLotteryAdminRoutes, registerLotteryPublicRoute } from "./routes/lottery.js";
 import { type PlanJobsService, registerPlanJobRoutes } from "./routes/planJobs.js";
 import { type CoachShareCreateDeps, type CoachShareReadDeps, registerCoachShareReadRoute, registerShareCreateRoute } from "./routes/shares.js";
 import { registerSwaggerRoutes } from "./routes/swagger.js";
@@ -26,6 +27,8 @@ export interface AppDependencies {
   coachDataDeleter?: CoachDataDeleter;
   /** When provided, exposes coach chat sharing (#715): the authed create route (requires `checkpointer`) and the public read route. */
   coachShares?: Omit<CoachShareCreateDeps, "checkpointer"> & CoachShareReadDeps;
+  /** When provided, exposes the lottery configuration domain (#863): admin CRUD plus the public landing read. */
+  lottery?: LotteryRouteDeps["store"];
 }
 
 const httpLogger = getLogger("http");
@@ -62,6 +65,11 @@ export function createApp(dependencies: AppDependencies): Hono<AuthEnv> {
     registerCoachShareReadRoute(app, dependencies.coachShares);
   }
 
+  // 抽奖落地页公开读取（#863）：同样注册在 auth 前缀之外，免登录只读展示数据。
+  if (dependencies.lottery) {
+    registerLotteryPublicRoute(app, { store: dependencies.lottery });
+  }
+
   app.use("/api/users/me/coach/chat", createAuthMiddleware(dependencies.jwtVerifier));
 
   registerChatRoutes(app, {
@@ -94,6 +102,14 @@ export function createApp(dependencies: AppDependencies): Hono<AuthEnv> {
   if (dependencies.coachDataDeleter) {
     registerAdminUserRoutes(app, {
       deleter: dependencies.coachDataDeleter,
+      auth: createAuthMiddleware(dependencies.jwtVerifier),
+    });
+  }
+
+  // 抽奖活动配置域（#863）：admin CRUD 一律 auth + admin 双门。
+  if (dependencies.lottery) {
+    registerLotteryAdminRoutes(app, {
+      store: dependencies.lottery,
       auth: createAuthMiddleware(dependencies.jwtVerifier),
     });
   }
