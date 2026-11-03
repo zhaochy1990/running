@@ -8,7 +8,13 @@ import { registerAdminUserRoutes } from "./routes/adminUsers.js";
 import { registerChatRoutes } from "./routes/chat.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerHistoryRoutes, registerSessionListRoutes, type ThreadHistoryReader, type ThreadSessionReader } from "./routes/history.js";
-import { type LotteryRouteDeps, registerLotteryAdminRoutes, registerLotteryPublicRoute } from "./routes/lottery.js";
+import {
+  type LotteryDrawRouteDeps,
+  type LotteryRouteDeps,
+  registerLotteryAdminRoutes,
+  registerLotteryDrawRoutes,
+  registerLotteryPublicRoute,
+} from "./routes/lottery.js";
 import { type PlanJobsService, registerPlanJobRoutes } from "./routes/planJobs.js";
 import { type CoachShareCreateDeps, type CoachShareReadDeps, registerCoachShareReadRoute, registerShareCreateRoute } from "./routes/shares.js";
 import { registerSwaggerRoutes } from "./routes/swagger.js";
@@ -29,6 +35,8 @@ export interface AppDependencies {
   coachShares?: Omit<CoachShareCreateDeps, "checkpointer"> & CoachShareReadDeps;
   /** When provided, exposes the lottery configuration domain (#863): admin CRUD plus the public landing read. */
   lottery?: LotteryRouteDeps["store"];
+  /** When provided, exposes the lottery draw core (#865): POST draw + GET my-result (user-tier auth). */
+  lotteryDraw?: LotteryDrawRouteDeps;
 }
 
 const httpLogger = getLogger("http");
@@ -110,6 +118,14 @@ export function createApp(dependencies: AppDependencies): Hono<AuthEnv> {
   if (dependencies.lottery) {
     registerLotteryAdminRoutes(app, {
       store: dependencies.lottery,
+      auth: createAuthMiddleware(dependencies.jwtVerifier),
+    });
+  }
+
+  // 抽奖核心（#865）：draw / my-result 走用户级 auth（无需 admin）。
+  if (dependencies.lotteryDraw) {
+    registerLotteryDrawRoutes(app, {
+      ...dependencies.lotteryDraw,
       auth: createAuthMiddleware(dependencies.jwtVerifier),
     });
   }

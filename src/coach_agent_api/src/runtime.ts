@@ -1,5 +1,6 @@
 import type { CoachAgentConfig } from "@stride/coach-agent";
 import {
+  createStridePool,
   GoJobClient,
   MySqlDataProvider,
   PLAN_JOB_ESTIMATED_DURATIONS_SECONDS,
@@ -12,9 +13,11 @@ import { createApp } from "./app.js";
 import { createJwtVerifier, fetchAuthPublicKey } from "./auth.js";
 import { createActivityFeelWriter } from "./coach/activityFeelWriter.js";
 import { CoachInvokerImpl } from "./coach/coachInvoker.js";
+import { createLotterySyncTrigger } from "./coach/lotterySyncTrigger.js";
 import type { ApiConfig } from "./dto/config.js";
 import { MySqlCoachDataDeleter } from "./persistence/deletion.js";
 import { createPersistence, type Persistence } from "./persistence/index.js";
+import { MySqlWatchCredentialReader } from "./persistence/watchCredentials.js";
 import type { PlanJobsService } from "./routes/planJobs.js";
 import { AuthWxacodeClient } from "./routes/shares.js";
 
@@ -37,6 +40,9 @@ async function resolvePublicKeyPem(auth: ApiConfig["auth"]): Promise<string> {
 /** Compose API-owned adapters and release partial resources if startup fails. */
 export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: CoachAgentConfig): Promise<CoachApiRuntime> {
   const dataProvider = MySqlDataProvider.create(apiConfig.strideDatabase);
+  // 抽奖绑表硬校验（#865）直读 stride 库 provider_credentials（只读），
+  // 与 dataProvider 同一配置源；独立小池，关闭时一并释放。
+  const watchPool = createStridePool(apiConfig.strideDatabase);
   let persistence: Persistence | undefined;
   // connectWithRetry (#726): a pod (re)built during a rabbitmq Recreate gap
   // must wait out the broker instead of exiting into CrashLoopBackOff — this
@@ -94,6 +100,12 @@ export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: C
         coachDataDeleter: new MySqlCoachDataDeleter(persistence.pool),
         // #863 抽奖活动配置域：admin CRUD + 落地页公开读取。
         lottery: persistence.lottery,
+        // #865 抽奖核心：draw / my-result（绑表硬校验 + fail-soft 全量同步触发）。
+        lotteryDraw: {
+          store: persistence.lottery,
+          watch: new MySqlWatchCredentialReader(watchPool),
+          sync: createLotterySyncTrigger(apiConfig.goApi),
+        },
         // #715 分享服务：wxacode 未配置（base_url 为空）时不挂客户端——创建
         // 端 fail-soft 落 wxacode_url NULL，P1 auth 端点上线后配置即生效。
         coachShares: {
@@ -110,10 +122,17 @@ export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: C
             : {}),
         },
       }),
-      close: () => Promise.all([dataProvider.close(), persistence?.close(), planJobPublisher?.close(), planJobQueue.close()]).then(() => undefined),
+      close: () =>
+        Promise.all([dataProvider.close(), watchPool.end(), persistence?.close(), planJobPublisher?.close(), planJobQueue.close()]).then(() => undefined),
     };
   } catch (error) {
-    await Promise.allSettled([dataProvider.close(), ...(persistence ? [persistence.close()] : []), planJobPublisher?.close(), planJobQueue.close()]);
+    await Promise.allSettled([
+      dataProvider.close(),
+      watchPool.end(),
+      ...(persistence ? [persistence.close()] : []),
+      planJobPublisher?.close(),
+      planJobQueue.close(),
+    ]);
     throw error;
   }
 }

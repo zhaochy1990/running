@@ -3,13 +3,25 @@ import test from "node:test";
 import { createApp } from "../src/app.js";
 import { AuthError, type JwtVerifier } from "../src/auth.js";
 import type {
+  DrawAllocation,
   LotteryActivityInput,
   LotteryActivityRow,
+  LotteryParticipationRow,
   LotteryPrizeInput,
   LotteryPrizeRow,
   LotteryStore,
 } from "../src/persistence/lottery.js";
-import { lotteryPhase, parseActivityRequest, parsePrizesRequest, prizeConfigError, timeWindowError } from "../src/routes/lottery.js";
+import type { WatchCredentialReader } from "../src/persistence/watchCredentials.js";
+import type { LotterySyncTrigger } from "../src/coach/lotterySyncTrigger.js";
+import {
+  lotteryPhase,
+  parseActivityRequest,
+  parsePrizesRequest,
+  pickFreeCode,
+  pickWeightedPrize,
+  prizeConfigError,
+  timeWindowError,
+} from "../src/routes/lottery.js";
 
 /** streamEvents stub for tests that must never stream. */
 const neverStream = () => {
@@ -31,6 +43,9 @@ class FakeLotteryStore implements LotteryStore {
   readonly activities = new Map<number, LotteryActivityRow>();
   prizesByActivity = new Map<number, LotteryPrizeRow[]>();
   participations = new Set<number>();
+  /** #865 draw 参与记录（内存版，含三重唯一约束语义）。 */
+  participationRows: LotteryParticipationRow[] = [];
+  drawCalls: { activityId: number; userId: string; providerKey: string }[] = [];
 
   async setup(): Promise<void> {}
 
@@ -100,15 +115,93 @@ class FakeLotteryStore implements LotteryStore {
     return (this.prizesByActivity.get(activityId) ?? []).map((row) => ({ ...row }));
   }
 
+  async getPrize(id: number): Promise<LotteryPrizeRow | null> {
+    for (const prizes of this.prizesByActivity.values()) {
+      const prize = prizes.find((row) => row.id === id);
+      if (prize !== undefined) return { ...prize };
+    }
+    return null;
+  }
+
   async hasParticipations(activityId: number): Promise<boolean> {
-    return this.participations.has(activityId);
+    return this.participations.has(activityId) || this.participationRows.some((row) => row.activityId === activityId);
+  }
+
+  async getParticipation(activityId: number, userId: string): Promise<LotteryParticipationRow | null> {
+    const row = this.participationRows.find((candidate) => candidate.activityId === activityId && candidate.userId === userId);
+    return row === undefined ? null : { ...row };
+  }
+
+  async drawParticipation(input: {
+    activityId: number;
+    userId: string;
+    providerKey: string;
+    allocate(prizes: LotteryPrizeRow[], occupiedCodes: ReadonlySet<string>): DrawAllocation;
+  }) {
+    this.drawCalls.push({ activityId: input.activityId, userId: input.userId, providerKey: input.providerKey });
+    const existing = this.participationRows.find((row) => row.activityId === input.activityId && row.userId === input.userId);
+    if (existing !== undefined) {
+      return { outcome: "duplicate" as const, participation: { ...existing }, prize: await this.prizeOf(existing) };
+    }
+    // uk_activity_provider：同一手表账号（provider_key）已抽过本活动。
+    const providerHit = this.participationRows.find((row) => row.activityId === input.activityId && row.providerKey === input.providerKey);
+    if (providerHit !== undefined) {
+      return { outcome: "provider_conflict" as const };
+    }
+    const prizes = this.prizesByActivity.get(input.activityId) ?? [];
+    const occupied = new Set(
+      this.participationRows.filter((row) => row.activityId === input.activityId && row.code !== null).map((row) => row.code as string),
+    );
+    const allocation = input.allocate(prizes, occupied);
+    const row: LotteryParticipationRow = {
+      id: this.nextId++,
+      activityId: input.activityId,
+      userId: input.userId,
+      openid: null,
+      providerKey: input.providerKey,
+      prizeId: allocation.prize.id,
+      code: allocation.prize.isFallback ? null : allocation.code,
+      status: "drawn",
+      verifiedBy: null,
+      verifiedAt: null,
+      createdAt: new Date("2026-11-03T10:00:00Z"),
+    };
+    if (!allocation.prize.isFallback) {
+      allocation.prize.remaining -= 1;
+    }
+    this.participationRows.push(row);
+    return { outcome: "created" as const, participation: { ...row }, prize: { ...allocation.prize } };
+  }
+
+  private async prizeOf(participation: LotteryParticipationRow): Promise<LotteryPrizeRow | null> {
+    return participation.prizeId === null ? null : this.getPrize(participation.prizeId);
   }
 }
 
-function lotteryApp(options: { store?: FakeLotteryStore; adminVerifier?: boolean } = {}) {
+/** 服务端绑表硬校验假件：credential 为 null 模拟未绑/未登录。 */
+class FakeWatchReader implements WatchCredentialReader {
+  constructor(readonly credential: { providerKey: string } | null = { providerKey: "coros:runner@example.com" }) {}
+  async getLoggedInWatch(): Promise<{ providerKey: string } | null> {
+    return this.credential;
+  }
+}
+
+/** fail-soft 同步触发假件：只记调用。 */
+class FakeSyncTrigger implements LotterySyncTrigger {
+  readonly calls: { activityId: number; userId: string }[] = [];
+  async triggerFullSyncIfNewUser(activityId: number, userId: string): Promise<void> {
+    this.calls.push({ activityId, userId });
+  }
+}
+
+function lotteryApp(
+  options: { store?: FakeLotteryStore; adminVerifier?: boolean; watch?: FakeWatchReader; sync?: FakeSyncTrigger } = {},
+) {
   const store = options.store ?? new FakeLotteryStore();
+  const sync = options.sync ?? new FakeSyncTrigger();
   return {
     store,
+    sync,
     app: createApp({
       jwtVerifier: verifierFor(options.adminVerifier ?? true),
       coachInvoker: {
@@ -118,6 +211,7 @@ function lotteryApp(options: { store?: FakeLotteryStore; adminVerifier?: boolean
         streamEvents: neverStream,
       },
       lottery: store,
+      lotteryDraw: { store, watch: options.watch ?? new FakeWatchReader(), sync },
     }),
   };
 }
@@ -405,4 +499,203 @@ test("公开端点：未知 id / 非法 id / 已结束活动 → 404 / 404 / sta
   const read = await app.request(`/api/lottery/activities/${ended.id}`);
   assert.equal(read.status, 200);
   assert.equal(((await read.json()) as { status: string }).status, "ended");
+});
+
+// ── #865 纯函数：库存感知权重抽取 + 3 位编号 ──────────────────────────
+
+test("pickWeightedPrize：零库存档跳过并重新归一化；实物全空落兜底档", () => {
+  const physicalA: LotteryPrizeRow = { id: 1, activityId: 5, name: "A", imageUrl: null, stock: 1, remaining: 0, weight: 99, isFallback: false };
+  const physicalB: LotteryPrizeRow = { id: 2, activityId: 5, name: "B", imageUrl: null, stock: 1, remaining: 1, weight: 1, isFallback: false };
+  const fallback: LotteryPrizeRow = { id: 3, activityId: 5, name: "谢谢参与", imageUrl: null, stock: 0, remaining: 0, weight: 5, isFallback: true };
+
+  // A 零库存：可掷域只剩 B 的权重 1（randomInt(1) 恒 0），必落 B——权重 99:1 被库存归零。
+  assert.equal(pickWeightedPrize([physicalA, physicalB, fallback], () => 0).id, 2);
+  // 实物全空 → 兜底档。
+  assert.equal(pickWeightedPrize([{ ...physicalA }, { ...physicalB, remaining: 0 }, fallback], () => 0).isFallback, true);
+});
+
+test("pickWeightedPrize：权重边界——掷 0 落首档、掷 total-1 落末档、跨档游标正确", () => {
+  const a: LotteryPrizeRow = { id: 1, activityId: 5, name: "A", imageUrl: null, stock: 3, remaining: 3, weight: 3, isFallback: false };
+  const b: LotteryPrizeRow = { id: 2, activityId: 5, name: "B", imageUrl: null, stock: 3, remaining: 3, weight: 7, isFallback: false };
+  const fallback: LotteryPrizeRow = { id: 3, activityId: 5, name: "谢谢参与", imageUrl: null, stock: 0, remaining: 0, weight: 5, isFallback: true };
+  assert.equal(pickWeightedPrize([a, b, fallback], () => 0).id, 1);
+  assert.equal(pickWeightedPrize([a, b, fallback], () => 2).id, 1);
+  assert.equal(pickWeightedPrize([a, b, fallback], () => 3).id, 2);
+  assert.equal(pickWeightedPrize([a, b, fallback], () => 9).id, 2);
+});
+
+test("pickFreeCode：000-999 补零、避开已占、全满返回 null", () => {
+  const free = pickFreeCode(new Set(["000"]), () => 0);
+  assert.equal(free, "001"); // 000 已占 → 首个空闲 001
+  assert.equal(pickFreeCode(new Set(), () => 6), "006"); // 补零 3 位
+  // 占用 042：其前面的编号索引不动（free[41]="041"），后面的整体前移（free[42]="043"）。
+  assert.equal(pickFreeCode(new Set(["042"]), () => 41), "041");
+  assert.equal(pickFreeCode(new Set(["042"]), () => 42), "043");
+  // 全满（000-999 全占）→ null。
+  const all = new Set<string>();
+  for (let n = 0; n <= 999; n++) all.add(n.toString().padStart(3, "0"));
+  assert.equal(pickFreeCode(all, () => 0), null);
+});
+
+// ── #865 路由：POST draw ──────────────────────────────────────────────
+
+/** draw 测试用的内存层奖池（LotteryPrizeInput 驼峰形态）。 */
+const DRAW_POOL: LotteryPrizeInput[] = [
+  { name: "一等奖 运动手表", imageUrl: "https://cos.example.com/p1.png", stock: 2, weight: 1, isFallback: false },
+  { name: "谢谢参与", stock: 0, weight: 5, isFallback: true },
+];
+
+/** 时间窗覆盖当前时刻的活动（enabled + 奖池配齐），返回活动 id。 */
+async function activeActivity(store: FakeLotteryStore, prizes: LotteryPrizeInput[] = DRAW_POOL): Promise<number> {
+  const activity = await store.createActivity({
+    name: "进行中",
+    startAt: new Date(Date.now() - 60 * 60 * 1000),
+    endAt: new Date(Date.now() + 60 * 60 * 1000),
+  });
+  store.activities.get(activity.id)!.enabled = true;
+  await store.replacePrizes(activity.id, prizes);
+  return activity.id;
+}
+
+test("draw：登录+绑表+进行中 → 201 中奖结果（3 位编号、不泄漏权重）；扣库存；触发同步", async () => {
+  const { app, store, sync } = lotteryApp({ adminVerifier: false });
+  const id = await activeActivity(store);
+
+  const draw = await app.request(`/api/lottery/activities/${id}/draw`, { method: "POST", headers: AUTH });
+  assert.equal(draw.status, 201);
+  const body = (await draw.json()) as Record<string, unknown>;
+  assert.equal(body.deduplicated, false);
+  assert.equal(body.status, "drawn");
+  assert.match(String(body.code), /^[0-9]{3}$/);
+  const prize = body.prize as Record<string, unknown>;
+  assert.equal("weight" in prize, false);
+  assert.equal("stock" in prize, false);
+  assert.equal("remaining" in prize, false);
+
+  // 中奖档库存被扣减。
+  const physical = store.prizesByActivity.get(id)!.find((row) => !row.isFallback)!;
+  assert.equal(physical.remaining, physical.stock - 1);
+  // 首次开奖触发全量同步（fail-soft 端口被调用一次）。
+  assert.deepEqual(sync.calls, [{ activityId: id, userId: "athlete-1" }]);
+});
+
+test("draw：重复参与 → 200 返回已有结果（deduplicated）且不再触发同步", async () => {
+  const { app, store, sync } = lotteryApp({ adminVerifier: false });
+  const id = await activeActivity(store);
+  const first = await app.request(`/api/lottery/activities/${id}/draw`, { method: "POST", headers: AUTH });
+  assert.equal(first.status, 201);
+
+  const replay = await app.request(`/api/lottery/activities/${id}/draw`, { method: "POST", headers: AUTH });
+  assert.equal(replay.status, 200);
+  const body = (await replay.json()) as Record<string, unknown>;
+  assert.equal(body.deduplicated, true);
+  assert.equal(body.code, ((await first.json()) as { code: string }).code);
+  // 只有一次存储层 draw 调用被幂等收敛；同步触发不重复。
+  assert.equal(store.drawCalls.length, 2);
+  assert.equal(sync.calls.length, 1);
+});
+
+test("draw：同一手表账号绑到另一账号已抽过 → 409 watch_already_drawn", async () => {
+  const { app, store } = lotteryApp({ adminVerifier: false });
+  const id = await activeActivity(store);
+  // 另一个 stride 账号已用同一 provider_key 抽过本活动。
+  store.participationRows.push({
+    id: 99,
+    activityId: id,
+    userId: "someone-else",
+    openid: null,
+    providerKey: "coros:runner@example.com",
+    prizeId: 1,
+    code: "077",
+    status: "drawn",
+    verifiedBy: null,
+    verifiedAt: null,
+    createdAt: new Date("2026-11-03T09:00:00Z"),
+  });
+
+  const draw = await app.request(`/api/lottery/activities/${id}/draw`, { method: "POST", headers: AUTH });
+  assert.equal(draw.status, 409);
+  assert.equal(((await draw.json()) as { error: string }).error, "watch_already_drawn");
+});
+
+test("draw：服务端硬校验——未登录 401 / 未绑表 403 / 未开始或已结束 403 / 未启用 404 / 非法 id 400", async () => {
+  const { app, store } = lotteryApp({ adminVerifier: false });
+
+  const anonymous = await app.request(`/api/lottery/activities/1/draw`, { method: "POST" });
+  assert.equal(anonymous.status, 401);
+
+  const id = await activeActivity(store);
+
+  // 未绑表（或绑定但 secret 为空）：watch 读取返回 null → 403。
+  const unbound = lotteryApp({ adminVerifier: false, watch: new FakeWatchReader(null), store });
+  const unboundDraw = await unbound.app.request(`/api/lottery/activities/${id}/draw`, { method: "POST", headers: AUTH });
+  assert.equal(unboundDraw.status, 403);
+  assert.equal(((await unboundDraw.json()) as { error: string }).error, "watch_not_bound");
+  assert.equal(store.drawCalls.length, 0, "watch 未过门不得进 draw 事务");
+
+  // 未开始 / 已结束：phase 403。
+  const future = await store.createActivity({ name: "未开始", startAt: new Date(Date.now() + 3600_000), endAt: new Date(Date.now() + 7200_000) });
+  store.activities.get(future.id)!.enabled = true;
+  await store.replacePrizes(future.id, DRAW_POOL);
+  const notStarted = await app.request(`/api/lottery/activities/${future.id}/draw`, { method: "POST", headers: AUTH });
+  assert.equal(notStarted.status, 403);
+  const notStartedBody = (await notStarted.json()) as { error: string; phase: string };
+  assert.equal(notStartedBody.error, "activity_not_active");
+  assert.equal(notStartedBody.phase, "not_started");
+
+  const past = await store.createActivity({ name: "已结束", startAt: new Date(Date.now() - 7200_000), endAt: new Date(Date.now() - 3600_000) });
+  store.activities.get(past.id)!.enabled = true;
+  await store.replacePrizes(past.id, DRAW_POOL);
+  const ended = await app.request(`/api/lottery/activities/${past.id}/draw`, { method: "POST", headers: AUTH });
+  assert.equal(((await ended.json()) as { phase: string }).phase, "ended");
+
+  // 未启用与不存在同口径 404。
+  const disabled = await store.createActivity({ name: "未启用", startAt: new Date(Date.now() - 3600_000), endAt: new Date(Date.now() + 3600_000) });
+  await store.replacePrizes(disabled.id, DRAW_POOL);
+  assert.equal((await app.request(`/api/lottery/activities/${disabled.id}/draw`, { method: "POST", headers: AUTH })).status, 404);
+  assert.equal((await app.request("/api/lottery/activities/999/draw", { method: "POST", headers: AUTH })).status, 404);
+
+  // 非法活动 id → 400。
+  assert.equal((await app.request("/api/lottery/activities/x/draw", { method: "POST", headers: AUTH })).status, 400);
+});
+
+test("draw：实物全空 → 落「谢谢参与」（code=null），不触发扣减", async () => {
+  const { app, store } = lotteryApp({ adminVerifier: false });
+  const id = await activeActivity(store);
+  // 先把实物库存抽空。
+  store.prizesByActivity.get(id)!.find((row) => !row.isFallback)!.remaining = 0;
+
+  const draw = await app.request(`/api/lottery/activities/${id}/draw`, { method: "POST", headers: AUTH });
+  assert.equal(draw.status, 201);
+  const body = (await draw.json()) as Record<string, unknown>;
+  assert.equal((body.prize as { is_fallback: boolean }).is_fallback, true);
+  assert.equal(body.code, null);
+});
+
+// ── #865 路由：GET my-result ──────────────────────────────────────────
+
+test("my-result：未参与 200 participated:false；参与后返回编号+奖品+核销状态", async () => {
+  const { app, store } = lotteryApp({ adminVerifier: false });
+  const id = await activeActivity(store);
+
+  const before = await app.request(`/api/lottery/activities/${id}/my-result`, { headers: AUTH });
+  assert.equal(before.status, 200);
+  assert.deepEqual(await before.json(), { participated: false });
+
+  const drawBody = (await (await app.request(`/api/lottery/activities/${id}/draw`, { method: "POST", headers: AUTH })).json()) as {
+    code: string;
+  };
+  const after = await app.request(`/api/lottery/activities/${id}/my-result`, { headers: AUTH });
+  assert.equal(after.status, 200);
+  const result = (await after.json()) as Record<string, unknown>;
+  assert.equal(result.participated, true);
+  assert.equal(result.code, drawBody.code);
+  assert.equal(result.status, "drawn");
+  assert.equal(result.verified_at, null);
+  assert.equal("weight" in (result.prize as Record<string, unknown>), false);
+
+  // my-result 也要求登录态。
+  assert.equal((await app.request(`/api/lottery/activities/${id}/my-result`)).status, 401);
+  // 非法 id → 400。
+  assert.equal((await app.request(`/api/lottery/activities/x/my-result`, { headers: AUTH })).status, 400);
 });
