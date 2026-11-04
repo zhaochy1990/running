@@ -287,6 +287,10 @@ var userOwnedDeletionModels = []any{
 	// Check-in + points ledger (devops#883): plain user-owned rows, the
 	// append-only ledger included — account erasure removes the whole history.
 	&CheckInRecord{}, &PointTransaction{}, &UserPoint{},
+	// Redemption orders + address book (devops#884): plain user-owned rows.
+	// point_products is deliberately absent — global content (same standing
+	// as roadmap_features) that erasure never touches.
+	&PointRedemption{}, &UserAddress{},
 }
 
 // deletionTableName resolves a deletion model's table name for error

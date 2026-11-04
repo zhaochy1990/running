@@ -1,0 +1,629 @@
+// points.go is the points-shop + redemption surface (devops#884; contract per
+// devops#850 resolution): the user-side product list, redeem call and order
+// list, plus the two admin blocks — product maintenance (GET/POST/PATCH,
+// deliberately no DELETE: products delist via status=inactive) and order
+// shipping (list + terminal ship).
+//
+//	User:  GET   /api/users/me/points/products     (active only + own redeemed_count)
+//	       POST  /api/users/me/points/redemptions  {product_id, address_id, idempotency_key}
+//	       GET   /api/users/me/points/redemptions  (?limit&cursor)
+//	Admin: GET   /api/admin/points/products
+//	       POST  /api/admin/points/products
+//	       PATCH /api/admin/points/products/:id    (改价/改库存=绝对值; no DELETE)
+//	       GET   /api/admin/points/redemptions     (?status=&limit&cursor)
+//	       PATCH /api/admin/points/redemptions/:id/ship {tracking_no}
+package api
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+
+	"github.com/zhaochy1990/stride/internal/logging"
+	"github.com/zhaochy1990/stride/internal/storage"
+)
+
+// PointsStore is the redemption persistence port (devops#884). Satisfied by
+// *storage.Store.
+type PointsStore interface {
+	ListActiveProducts(ctx context.Context, userID string) ([]storage.PointProductWithCount, error)
+	CreateRedemption(ctx context.Context, userID string, req storage.RedemptionRequest) (*storage.RedemptionResult, error)
+	ListUserRedemptions(ctx context.Context, userID, cursor string, limit int) (*storage.RedemptionPage, error)
+	AdminListProducts(ctx context.Context) ([]storage.PointProduct, error)
+	AdminCreateProduct(ctx context.Context, row *storage.PointProduct) error
+	AdminPatchProduct(ctx context.Context, id uint64, patch storage.ProductPatch) (*storage.PointProduct, error)
+	AdminListRedemptions(ctx context.Context, status, cursor string, limit int) (*storage.AdminRedemptionPage, error)
+	AdminShipRedemption(ctx context.Context, id, trackingNo string, now time.Time) (*storage.PointRedemption, error)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Registrar
+// ─────────────────────────────────────────────────────────────────────────────
+
+type pointsRoutes struct {
+	store PointsStore
+	log   *zap.Logger
+}
+
+func newPointsRoutes(store PointsStore, log *zap.Logger) *pointsRoutes {
+	if log == nil {
+		log = logging.Default()
+	}
+	return &pointsRoutes{store: store, log: log}
+}
+
+// registerUser mounts the user-tier surface on the default-deny group (the
+// admin tier has its own surface below).
+func (p *pointsRoutes) registerUser(rg *gin.RouterGroup) {
+	if p.store == nil {
+		return
+	}
+	rg.GET("/api/users/me/points/products", p.listProducts)
+	rg.POST("/api/users/me/points/redemptions", p.createRedemption)
+	rg.GET("/api/users/me/points/redemptions", p.listRedemptions)
+}
+
+// registerAdmin mounts the administrator surface on the parent authenticated
+// group; every handler re-checks TierAdmin (same pattern as the roadmap admin
+// tab).
+func (p *pointsRoutes) registerAdmin(rg *gin.RouterGroup) {
+	if p.store == nil {
+		return
+	}
+	rg.GET("/api/admin/points/products", p.adminListProducts)
+	rg.POST("/api/admin/points/products", p.adminCreateProduct)
+	rg.PATCH("/api/admin/points/products/:id", p.adminPatchProduct)
+	rg.GET("/api/admin/points/redemptions", p.adminListRedemptions)
+	rg.PATCH("/api/admin/points/redemptions/:id/ship", p.adminShipRedemption)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DTOs
+// ─────────────────────────────────────────────────────────────────────────────
+
+// productResponse is one shop card: the stored fields plus the caller's own
+// redeemed count (the UI grays out limit-reached cards with it).
+type productResponse struct {
+	ID            uint64  `json:"id"`
+	Name          string  `json:"name"`
+	Description   *string `json:"description"`
+	ImageURL      *string `json:"image_url"`
+	PointsPrice   int     `json:"points_price"`
+	Stock         int     `json:"stock"`
+	PerUserLimit  int     `json:"per_user_limit"`
+	RedeemedCount int     `json:"redeemed_count"`
+}
+
+type productsResponse struct {
+	Products []productResponse `json:"products"`
+}
+
+// redemptionResponse is one order. The receiver block is the redeem-time
+// snapshot; status walks pending_shipment → shipped (terminal).
+type redemptionResponse struct {
+	ID            string  `json:"id"`
+	ProductID     uint64  `json:"product_id"`
+	ProductName   string  `json:"product_name"`
+	PointsCost    int     `json:"points_cost"`
+	Status        string  `json:"status"`
+	TrackingNo    *string `json:"tracking_no"`
+	ShippedAt     *string `json:"shipped_at"`
+	ReceiverName  string  `json:"receiver_name"`
+	ReceiverPhone string  `json:"receiver_phone"`
+	Province      string  `json:"province"`
+	City          string  `json:"city"`
+	District      string  `json:"district"`
+	AddressDetail string  `json:"address_detail"`
+	CreatedAt     string  `json:"created_at"`
+}
+
+type redemptionsResponse struct {
+	Redemptions []redemptionResponse `json:"redemptions"`
+	NextCursor  *string              `json:"next_cursor"`
+}
+
+// redemptionCreateResponse is the POST body: the created (or idempotently
+// replayed) order plus the post-redeem balance.
+type redemptionCreateResponse struct {
+	Order    redemptionResponse `json:"order"`
+	Balance  int                `json:"balance"`
+	Replayed bool               `json:"replayed"`
+}
+
+// adminProductResponse is the admin projection: every stored field.
+type adminProductResponse struct {
+	ID           uint64  `json:"id"`
+	Name         string  `json:"name"`
+	Description  *string `json:"description"`
+	ImageURL     *string `json:"image_url"`
+	PointsPrice  int     `json:"points_price"`
+	Stock        int     `json:"stock"`
+	PerUserLimit int     `json:"per_user_limit"`
+	Status       string  `json:"status"`
+	SortOrder    int     `json:"sort_order"`
+	CreatedAt    string  `json:"created_at"`
+	UpdatedAt    string  `json:"updated_at"`
+}
+
+type adminProductsResponse struct {
+	Products []adminProductResponse `json:"products"`
+}
+
+// adminRedemptionResponse adds the owner to the user projection — the admin
+// list answers "whose order is this".
+type adminRedemptionResponse struct {
+	redemptionResponse
+	UserID string `json:"user_id"`
+}
+
+type adminRedemptionsResponse struct {
+	Redemptions []adminRedemptionResponse `json:"redemptions"`
+	NextCursor  *string                   `json:"next_cursor"`
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Projections
+// ─────────────────────────────────────────────────────────────────────────────
+
+func formatOptionalTime(t *time.Time) *string {
+	if t == nil {
+		return nil
+	}
+	s := t.UTC().Format(timeFormat)
+	return &s
+}
+
+func redemptionDTO(r *storage.PointRedemption) redemptionResponse {
+	return redemptionResponse{
+		ID: r.ID, ProductID: r.ProductID, ProductName: r.ProductName,
+		PointsCost: r.PointsCost, Status: r.Status,
+		TrackingNo: r.TrackingNo, ShippedAt: formatOptionalTime(r.ShippedAt),
+		ReceiverName: r.ReceiverName, ReceiverPhone: r.ReceiverPhone,
+		Province: r.Province, City: r.City, District: r.District,
+		AddressDetail: r.AddressDetail,
+		CreatedAt:     r.CreatedAt.UTC().Format(timeFormat),
+	}
+}
+
+func adminProductDTO(p *storage.PointProduct) adminProductResponse {
+	return adminProductResponse{
+		ID: p.ID, Name: p.Name, Description: p.Description, ImageURL: p.ImageURL,
+		PointsPrice: p.PointsPrice, Stock: p.Stock, PerUserLimit: p.PerUserLimit,
+		Status: p.Status, SortOrder: p.SortOrder,
+		CreatedAt: p.CreatedAt.UTC().Format(timeFormat),
+		UpdatedAt: p.UpdatedAt.UTC().Format(timeFormat),
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// User handlers
+// ─────────────────────────────────────────────────────────────────────────────
+
+// listProducts serves GET /api/users/me/points/products — the active shop,
+// sort_order ASC, each card carrying the caller's own redeemed count.
+//
+//	@Summary		List the points shop
+//	@Description	Returns the active products (sort_order ASC) with the caller's own redeemed count per product. Inactive products never appear.
+//	@Tags			points
+//	@Produce		json
+//	@Success		200	{object}	productsResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/me/points/products [get]
+func (p *pointsRoutes) listProducts(c *gin.Context) {
+	uid, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	rows, err := p.store.ListActiveProducts(c.Request.Context(), uid)
+	if err != nil {
+		p.log.Error("list active products failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	resp := productsResponse{Products: make([]productResponse, 0, len(rows))}
+	for i := range rows {
+		resp.Products = append(resp.Products, productResponse{
+			ID: rows[i].Product.ID, Name: rows[i].Product.Name,
+			Description: rows[i].Product.Description, ImageURL: rows[i].Product.ImageURL,
+			PointsPrice: rows[i].Product.PointsPrice, Stock: rows[i].Product.Stock,
+			PerUserLimit: rows[i].Product.PerUserLimit, RedeemedCount: rows[i].RedeemedCount,
+		})
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// redemptionCreateRequest is the POST body; idempotency_key is the client's
+// double-click/retry anchor (one key = one order).
+type redemptionCreateRequest struct {
+	ProductID      uint64 `json:"product_id" binding:"required"`
+	AddressID      uint64 `json:"address_id" binding:"required"`
+	IdempotencyKey string `json:"idempotency_key" binding:"required,max=64"`
+}
+
+// createRedemption serves POST /api/users/me/points/redemptions — the single
+// transaction redeem (#850 authoritative order). Business rejections map onto
+// their stable codes (404 address_not_found; 409 product_inactive /
+// out_of_stock / limit_reached / insufficient_points); a replayed
+// idempotency_key returns the stored order with 200.
+//
+//	@Summary		Redeem a product with points
+//	@Description	Runs the redemption transaction: idempotency replay check, guarded stock decrement, per-user limit count, guarded points deduction, then order + ledger rows in one commit. Repeating an idempotency_key returns the stored order with zero side effects.
+//	@Tags			points
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body	redemptionCreateRequest	true	"Redeem request"
+//	@Success		200		{object}	redemptionCreateResponse
+//	@Failure		400		{object}	errorResponse
+//	@Failure		401		{object}	errorResponse
+//	@Failure		404		{object}	errorResponse
+//	@Failure		409		{object}	errorResponse
+//	@Failure		413		{object}	errorResponse
+//	@Failure		500		{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/me/points/redemptions [post]
+func (p *pointsRoutes) createRedemption(c *gin.Context) {
+	uid, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	var body redemptionCreateRequest
+	if !bindRaceCalendarJSON(c, &body, "invalid_body") {
+		return
+	}
+	// binding:"required" rejects zero values, and a zero uint64 is never a
+	// real product/address id (parseUintParam enforces the same floor).
+	req := storage.RedemptionRequest{
+		ProductID:      body.ProductID,
+		AddressID:      body.AddressID,
+		IdempotencyKey: body.IdempotencyKey,
+	}
+	res, err := p.store.CreateRedemption(c.Request.Context(), uid, req)
+	if err != nil {
+		writeRedemptionError(c, p.log, err)
+		return
+	}
+	c.JSON(http.StatusOK, redemptionCreateResponse{
+		Order: redemptionDTO(res.Order), Balance: res.Balance, Replayed: res.Replayed,
+	})
+}
+
+// listRedemptions serves GET /api/users/me/points/redemptions?limit&cursor —
+// the caller's orders newest-first with keyset cursor pagination.
+//
+//	@Summary		List my redemption orders
+//	@Description	Returns the caller's orders newest-first (receiver snapshot included) with an opaque next_cursor.
+//	@Tags			points
+//	@Produce		json
+//	@Param			limit	query	int		false	"Page size (1-50; default 50)"
+//	@Param			cursor	query	string	false	"Opaque page cursor"
+//	@Success		200	{object}	redemptionsResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		422	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/me/points/redemptions [get]
+func (p *pointsRoutes) listRedemptions(c *gin.Context) {
+	uid, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	limit, ok := parseLimitQuery(c)
+	if !ok {
+		return
+	}
+	page, err := p.store.ListUserRedemptions(c.Request.Context(), uid, c.Query("cursor"), limit)
+	if err != nil {
+		var cursorErr *storage.PointCursorError
+		var validationErr *storage.PointValidationError
+		switch {
+		case errors.As(err, &cursorErr):
+			c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid cursor"})
+		case errors.As(err, &validationErr):
+			c.JSON(http.StatusUnprocessableEntity, validationErrorResponse{Detail: []validationDetailItem{{Loc: []string{"query", "limit"}, Msg: validationErr.Error()}}})
+		default:
+			p.log.Error("list user redemptions failed", zapErr(err))
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		}
+		return
+	}
+	items := make([]redemptionResponse, len(page.Items))
+	for i, row := range page.Items {
+		items[i] = redemptionDTO(row)
+	}
+	var next *string
+	if page.NextCursor != "" {
+		next = &page.NextCursor
+	}
+	c.JSON(http.StatusOK, redemptionsResponse{Redemptions: items, NextCursor: next})
+}
+
+// parseLimitQuery reads the shared `limit` page-size query parameter (0 =
+// default; 422 on a non-integer), matching the ledger endpoint's shape.
+func parseLimitQuery(c *gin.Context) (int, bool) {
+	raw := c.Query("limit")
+	if raw == "" {
+		return 0, true
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, validationErrorResponse{Detail: []validationDetailItem{{Loc: []string{"query", "limit"}, Msg: "must be an integer"}}})
+		return 0, false
+	}
+	return parsed, true
+}
+
+// writeRedemptionError maps the redemption vocabulary onto status codes: the
+// missing-address case is a 404, the four business rejections are 409
+// conflicts whose envelope carries the #850 error code verbatim.
+func writeRedemptionError(c *gin.Context, log *zap.Logger, err error) {
+	var redemptionErr *storage.RedemptionError
+	var cursorErr *storage.PointCursorError
+	var validationErr *storage.PointValidationError
+	switch {
+	case errors.As(err, &redemptionErr):
+		if redemptionErr.Code == storage.RedemptionAddressNotFound {
+			c.JSON(http.StatusNotFound, errorResponse{Error: string(redemptionErr.Code)})
+			return
+		}
+		c.JSON(http.StatusConflict, errorResponse{Error: string(redemptionErr.Code)})
+	case errors.Is(err, storage.ErrPointProductNotFound):
+		c.JSON(http.StatusNotFound, errorResponse{Error: "product_not_found"})
+	case errors.Is(err, storage.ErrPointRedemptionNotFound):
+		c.JSON(http.StatusNotFound, errorResponse{Error: "redemption_not_found"})
+	case errors.As(err, &cursorErr):
+		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid cursor"})
+	case errors.As(err, &validationErr):
+		c.JSON(http.StatusUnprocessableEntity, validationErrorResponse{Detail: []validationDetailItem{{Loc: []string{"query", "limit"}, Msg: validationErr.Error()}}})
+	default:
+		log.Error("points: storage error", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin handlers: products
+// ─────────────────────────────────────────────────────────────────────────────
+
+// adminProductCreateRequest is the POST body: name + points_price required,
+// status defaults to active.
+type adminProductCreateRequest struct {
+	Name         string  `json:"name" binding:"required,max=128"`
+	Description  *string `json:"description" binding:"omitempty,max=1024"`
+	ImageURL     *string `json:"image_url" binding:"omitempty,max=512"`
+	PointsPrice  int     `json:"points_price" binding:"required,gt=0"`
+	Stock        int     `json:"stock" binding:"gte=0"`
+	PerUserLimit int     `json:"per_user_limit" binding:"gte=0"`
+	Status       string  `json:"status" binding:"omitempty,max=16"`
+	SortOrder    int     `json:"sort_order"`
+}
+
+// adminProductPatchRequest is the PATCH body: every field optional (absent =
+// unchanged); price/stock/limit are absolute values.
+type adminProductPatchRequest struct {
+	Name         *string `json:"name" binding:"omitempty,max=128"`
+	Description  *string `json:"description" binding:"omitempty,max=1024"`
+	ImageURL     *string `json:"image_url" binding:"omitempty,max=512"`
+	PointsPrice  *int    `json:"points_price" binding:"omitempty,gt=0"`
+	Stock        *int    `json:"stock" binding:"omitempty,gte=0"`
+	PerUserLimit *int    `json:"per_user_limit" binding:"omitempty,gte=0"`
+	Status       *string `json:"status" binding:"omitempty,max=16"`
+	SortOrder    *int    `json:"sort_order"`
+}
+
+// adminListProducts serves GET /api/admin/points/products — every product,
+// active and inactive, for the maintenance list.
+//
+//	@Summary		List all products (admin)
+//	@Description	Returns every product including inactive ones, sort_order ASC.
+//	@Tags			points-admin
+//	@Produce		json
+//	@Success		200	{object}	adminProductsResponse
+//	@Failure		403	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/admin/points/products [get]
+func (p *pointsRoutes) adminListProducts(c *gin.Context) {
+	if !requireAdmin(c) {
+		return
+	}
+	rows, err := p.store.AdminListProducts(c.Request.Context())
+	if err != nil {
+		p.log.Error("admin list products failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	resp := adminProductsResponse{Products: make([]adminProductResponse, 0, len(rows))}
+	for i := range rows {
+		resp.Products = append(resp.Products, adminProductDTO(&rows[i]))
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// adminCreateProduct serves POST /api/admin/points/products.
+//
+//	@Summary		Create a product (admin)
+//	@Description	Creates one product; status defaults to active. There is no DELETE — delist via PATCH status=inactive.
+//	@Tags			points-admin
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body	adminProductCreateRequest	true	"Product"
+//	@Success		201		{object}	adminProductResponse
+//	@Failure		400		{object}	errorResponse
+//	@Failure		403		{object}	errorResponse
+//	@Failure		422		{object}	errorResponse
+//	@Failure		500		{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/admin/points/products [post]
+func (p *pointsRoutes) adminCreateProduct(c *gin.Context) {
+	if !requireAdmin(c) {
+		return
+	}
+	var body adminProductCreateRequest
+	if !bindRaceCalendarJSON(c, &body, "invalid_body") {
+		return
+	}
+	status := body.Status
+	if status == "" {
+		status = storage.PointProductStatusActive
+	}
+	if !storage.IsPointProductStatus(status) {
+		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_status"})
+		return
+	}
+	row := &storage.PointProduct{
+		Name: body.Name, Description: body.Description, ImageURL: body.ImageURL,
+		PointsPrice: body.PointsPrice, Stock: body.Stock,
+		PerUserLimit: body.PerUserLimit, Status: status, SortOrder: body.SortOrder,
+	}
+	if err := p.store.AdminCreateProduct(c.Request.Context(), row); err != nil {
+		p.log.Error("admin create product failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	c.JSON(http.StatusCreated, adminProductDTO(row))
+}
+
+// adminPatchProduct serves PATCH /api/admin/points/products/:id — the single
+// entry for 改价/改库存/改限购/上下架 (absolute values; no DELETE by design).
+//
+//	@Summary		Update a product (admin)
+//	@Description	Applies partial updates: price/stock/limit as absolute values, status active|inactive for shelf control. Products are never hard-deleted.
+//	@Tags			points-admin
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path	int							true	"Product id"
+//	@Param			body	body	adminProductPatchRequest	true	"Fields"
+//	@Success		200		{object}	adminProductResponse
+//	@Failure		400		{object}	errorResponse
+//	@Failure		403		{object}	errorResponse
+//	@Failure		404		{object}	errorResponse
+//	@Failure		422		{object}	errorResponse
+//	@Failure		500		{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/admin/points/products/{id} [patch]
+func (p *pointsRoutes) adminPatchProduct(c *gin.Context) {
+	if !requireAdmin(c) {
+		return
+	}
+	id, ok := parseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	var body adminProductPatchRequest
+	if !bindRaceCalendarJSON(c, &body, "invalid_body") {
+		return
+	}
+	if body.Status != nil && !storage.IsPointProductStatus(*body.Status) {
+		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_status"})
+		return
+	}
+	patch := storage.ProductPatch{
+		Name: body.Name, Description: body.Description, ImageURL: body.ImageURL,
+		PointsPrice: body.PointsPrice, Stock: body.Stock,
+		PerUserLimit: body.PerUserLimit, Status: body.Status, SortOrder: body.SortOrder,
+	}
+	row, err := p.store.AdminPatchProduct(c.Request.Context(), id, patch)
+	if err != nil {
+		writeRedemptionError(c, p.log, err)
+		return
+	}
+	c.JSON(http.StatusOK, adminProductDTO(row))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin handlers: orders
+// ─────────────────────────────────────────────────────────────────────────────
+
+// adminListRedemptions serves GET /api/admin/points/redemptions?status=&limit&cursor
+// — the fulfillment queue, newest first, optionally filtered to one state.
+//
+//	@Summary		List redemption orders (admin)
+//	@Description	Returns redemption orders newest-first with an opaque next_cursor, optionally filtered by status (pending_shipment|shipped).
+//	@Tags			points-admin
+//	@Produce		json
+//	@Param			status	query	string	false	"Status filter (pending_shipment|shipped)"
+//	@Param			limit	query	int		false	"Page size (1-50; default 50)"
+//	@Param			cursor	query	string	false	"Opaque page cursor"
+//	@Success		200		{object}	adminRedemptionsResponse
+//	@Failure		400		{object}	errorResponse
+//	@Failure		403		{object}	errorResponse
+//	@Failure		422		{object}	errorResponse
+//	@Failure		500		{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/admin/points/redemptions [get]
+func (p *pointsRoutes) adminListRedemptions(c *gin.Context) {
+	if !requireAdmin(c) {
+		return
+	}
+	status := c.Query("status")
+	if status != "" && !storage.IsRedemptionStatus(status) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_status"})
+		return
+	}
+	limit, ok := parseLimitQuery(c)
+	if !ok {
+		return
+	}
+	page, err := p.store.AdminListRedemptions(c.Request.Context(), status, c.Query("cursor"), limit)
+	if err != nil {
+		writeRedemptionError(c, p.log, err)
+		return
+	}
+	items := make([]adminRedemptionResponse, len(page.Items))
+	for i, row := range page.Items {
+		items[i] = adminRedemptionResponse{redemptionResponse: redemptionDTO(row), UserID: row.UserID}
+	}
+	var next *string
+	if page.NextCursor != "" {
+		next = &page.NextCursor
+	}
+	c.JSON(http.StatusOK, adminRedemptionsResponse{Redemptions: items, NextCursor: next})
+}
+
+// adminShipRequest is the PATCH ship body.
+type adminShipRequest struct {
+	TrackingNo string `json:"tracking_no" binding:"required,max=64"`
+}
+
+// adminShipRedemption serves PATCH /api/admin/points/redemptions/:id/ship —
+// the terminal pending_shipment → shipped transition. Re-shipping an already
+// shipped order is idempotent: the stored order (original tracking number)
+// comes back with 200.
+//
+//	@Summary		Ship a redemption order (admin)
+//	@Description	Moves a pending_shipment order to shipped with its tracking number (terminal). Shipping an already shipped order idempotently returns its current state.
+//	@Tags			points-admin
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path	string						true	"Order id"
+//	@Param			body	body	adminShipRequest			true	"Tracking number"
+//	@Success		200		{object}	adminRedemptionResponse
+//	@Failure		400		{object}	errorResponse
+//	@Failure		403		{object}	errorResponse
+//	@Failure		404		{object}	errorResponse
+//	@Failure		500		{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/admin/points/redemptions/{id}/ship [patch]
+func (p *pointsRoutes) adminShipRedemption(c *gin.Context) {
+	if !requireAdmin(c) {
+		return
+	}
+	id := c.Param("id")
+	var body adminShipRequest
+	if !bindRaceCalendarJSON(c, &body, "invalid_body") {
+		return
+	}
+	row, err := p.store.AdminShipRedemption(c.Request.Context(), id, body.TrackingNo, time.Now().UTC())
+	if err != nil {
+		writeRedemptionError(c, p.log, err)
+		return
+	}
+	c.JSON(http.StatusOK, adminRedemptionResponse{redemptionResponse: redemptionDTO(row), UserID: row.UserID})
+}

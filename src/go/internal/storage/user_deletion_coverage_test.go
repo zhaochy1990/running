@@ -36,6 +36,7 @@ func TestDeleteUserData_CoversEveryUserOwnedTable(t *testing.T) {
 		st.AutoMigrateProviderEvents,
 		st.AutoMigrateCheckIn,
 		st.AutoMigratePoints,
+		st.AutoMigrateAddresses,
 	} {
 		if err := migrate(ctx); err != nil {
 			t.Fatalf("migrate: %v", err)

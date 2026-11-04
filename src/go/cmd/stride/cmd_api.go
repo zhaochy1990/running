@@ -89,6 +89,11 @@ func runAPI() error {
 	if err := store.AutoMigratePoints(ctx); err != nil {
 		return err
 	}
+	// user_addresses backs the address-book surface (devops#884). Only the API
+	// touches it; the worker does not migrate it.
+	if err := store.AutoMigrateAddresses(ctx); err != nil {
+		return err
+	}
 	// user_body_composition_scan + user_body_composition_segment tables for
 	// the body-composition read/write surface. User-entered (OCR/manual), not
 	// watch-synced. The worker does not need these.
@@ -277,6 +282,8 @@ func runAPI() error {
 		UserStore:               store,
 		InjuryStore:             store,
 		CheckInStore:            store,
+		PointsStore:             store,
+		AddressStore:            store,
 		ProviderLogin:           providerLogin,
 		ProviderInfo:            providerInfo,
 		AuthNameSync:            authClient,

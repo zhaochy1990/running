@@ -132,9 +132,13 @@ type Config struct {
 
 	// User/onboarding surface (ADR 0013) — a sibling registrar sharing the auth
 	// path. Leave zero to run the job/pipeline API only (e.g. in tests).
-	UserStore      UserStore
-	InjuryStore    InjuryStore
-	CheckInStore   CheckInStore
+	UserStore    UserStore
+	InjuryStore  InjuryStore
+	CheckInStore CheckInStore
+	// PointsStore and AddressStore back the points-shop/redemption and
+	// address-book surfaces (devops#884). Leave zero to run without them.
+	PointsStore    PointsStore
+	AddressStore   AddressStore
 	ProviderLogin  ProviderLogin
 	ProviderInfo   ProviderInfo
 	AuthNameSync   AuthNameSync
@@ -348,6 +352,8 @@ type Service struct {
 	customRaces     *customRaceRoutes
 	roadmap         *roadmapRoutes
 	feedback        *feedbackRoutes
+	points          *pointsRoutes
+	addresses       *addressRoutes
 	raceStrategy    *raceStrategyRoutes
 	raceContent     *raceContentRoutes
 	raceCatalog     *raceCatalogRoutes
@@ -425,6 +431,8 @@ func NewService(cfg Config) *Service {
 		customRaces:             newCustomRaceRoutes(cfg.CustomRaceStore, cfg.RacePlanStore, log),
 		roadmap:                 newRoadmapRoutes(cfg.RoadmapStore, log),
 		feedback:                newFeedbackRoutes(cfg.FeedbackStore, cfg.FeedbackImages, cfg.RoadmapStore, log),
+		points:                  newPointsRoutes(cfg.PointsStore, log),
+		addresses:               newAddressRoutes(cfg.AddressStore, log),
 		raceStrategy:            newRaceStrategyRoutes(cfg.RaceStrategyStore, log),
 		raceContent:             newRaceContentRoutes(cfg.RaceContentStore, cfg.CityAIDraft, log),
 		raceCatalog:             newRaceCatalogRoutes(cfg.RaceCatalogStore, log),
@@ -506,6 +514,9 @@ func (s *Service) Router() *gin.Engine {
 	s.roadmap.registerAdmin(authenticated)
 	// Feedback admin queue is administrator-only for the same reason.
 	s.feedback.registerAdmin(authenticated)
+	// Points-shop product maintenance + order shipping are administrator-only
+	// (same tier guard); handlers re-check.
+	s.points.registerAdmin(authenticated)
 	// Feedback image upload carries a larger body cap than the shared
 	// authenticated group (10MB contract), so it mounts its own chain.
 	s.feedback.registerUpload(r, s.auth)
@@ -538,6 +549,10 @@ func (s *Service) Router() *gin.Engine {
 	// the same rows through /api/admin/races.
 	s.raceCatalog.register(authed)
 	s.users.register(authed)
+	// Points shop + redemption orders + the address book: user-tier surface
+	// (devops#884), mounted default-deny like the rest of the user surface.
+	s.points.registerUser(authed)
+	s.addresses.register(authed)
 	s.activities.register(authed)
 	s.teams.register(authed)
 	s.goals.register(authed)
