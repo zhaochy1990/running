@@ -1,0 +1,154 @@
+<view class="page">
+  <!-- 粉渐变头：顶栏与 hero 同一渐变（原型 navbar 粉底白字），右上常驻「兑换记录」 -->
+  <view class="hero-wrap">
+    <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
+      <view class="top-bar__inner">
+        <view class="top-bar__btn" bindtap="onBack">
+          <image wx:if="{{canBack}}" class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right_white.svg" mode="aspectFit" />
+          <image wx:else class="top-bar__icon" src="/assets/icons/home_white.svg" mode="aspectFit" />
+        </view>
+        <view class="top-bar__title-wrap">
+          <view class="top-bar__title">积分商城</view>
+        </view>
+        <view class="top-bar__btn top-bar__btn--link" bindtap="onNavOrders">兑换记录</view>
+      </view>
+    </view>
+
+    <!-- hero：积分余额大数字 + 四链接（明细/兑换记录/地址管理/签到赚分） -->
+    <view class="hero">
+      <view class="hero__left">
+        <view class="hero__lab">我的积分</view>
+        <view class="hero__num">{{balance}}<text class="hero__unit">分</text></view>
+      </view>
+      <view class="hero__links">
+        <view class="hero__link" bindtap="onHeroDetail">明细 ›</view>
+        <view class="hero__link" bindtap="onNavOrders">兑换记录 ›</view>
+        <view class="hero__link" bindtap="onHeroAddr">地址管理 ›</view>
+        <view class="hero__link" bindtap="onHeroCheckin">签到赚分 ›</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="content">
+    <!-- 首屏加载 -->
+    <view wx:if="{{loading}}" class="page-loading">加载中…</view>
+
+    <!-- 加载失败（首次进入）：hero 保留，卡片区给重试 -->
+    <view wx:elif="{{loadFailed}}" class="card load-failed">
+      <view class="load-failed__txt">商城加载失败，请检查网络后重试</view>
+      <button class="load-failed__btn" hover-class="none" bindtap="onRetry">重新加载</button>
+    </view>
+
+    <block wx:else>
+      <!-- 商品列表（变体 A 横排大卡：图左 192rpx 文右），白卡压 hero 边 -->
+      <view wx:if="{{products.length === 0}}" class="empty">商城筹备中，敬请期待</view>
+      <view
+        wx:for="{{products}}"
+        wx:key="id"
+        class="pcard"
+        data-pid="{{item.id}}"
+      >
+        <view class="prow">
+          <!-- 商品图：COS 直链；V1 无图先占位色块 -->
+          <image wx:if="{{item.imageUrl}}" class="pimg" src="{{item.imageUrl}}" mode="aspectFill" />
+          <view wx:else class="pimg pimg--ph"></view>
+          <view class="pinfo">
+            <view class="pname">{{item.name}}</view>
+            <view class="pdesc">{{item.description}}</view>
+            <view class="ptags">
+              <view wx:if="{{item.limit > 0}}" class="ptag">每人限{{item.limit}}件</view>
+              <view wx:if="{{item.limitHit}}" class="ptag ptag--gray">已兑 {{item.redeemed}}/{{item.limit}}</view>
+              <view wx:if="{{item.soldOut}}" class="ptag ptag--gray">售罄</view>
+            </view>
+            <view class="pbottom">
+              <view class="price"><text class="price__n">{{item.price}}</text><text class="price__u">积分</text></view>
+              <!-- 原生 button 三坑逐一复位（显式尺寸/自绘底色/::after 去除），同 coach.wxss 约定 -->
+              <button
+                class="buy {{item.soldOut || item.limitHit ? 'buy--disabled' : ''}}"
+                hover-class="none"
+                disabled="{{item.soldOut || item.limitHit}}"
+                data-pid="{{item.id}}"
+                bindtap="onRedeemTap"
+              >{{item.soldOut ? '已售罄' : item.limitHit ? '已达限购' : '兑换'}}</button>
+            </view>
+          </view>
+        </view>
+        <!-- 售罄蒙层 -->
+        <view wx:if="{{item.soldOut}}" class="soldout-mask"><view class="soldout-mask__stamp">已售罄</view></view>
+      </view>
+    </block>
+  </view>
+
+  <!-- 兑换确认抽屉（底部 sheet）：商品行/地址单选/余额预览/确认 -->
+  <view wx:if="{{sheetVisible}}" class="mask" bindtap="onSheetClose">
+    <view class="sheet" catchtap="noop">
+      <view class="sheet__title">确认兑换</view>
+      <view class="sprod">
+        <view class="sprod__img"></view>
+        <view class="sprod__name">{{sheetName}}</view>
+        <view class="sprod__price">{{sheetPrice}} 分</view>
+      </view>
+      <view class="sec">
+        <text>寄到哪</text>
+        <text wx:if="{{!sheetNoAddress}}" class="sec__mg" catchtap="onSheetManageAddr">管理地址 ›</text>
+      </view>
+      <block wx:if="{{!sheetNoAddress}}">
+        <view
+          wx:for="{{sheetAddresses}}"
+          wx:key="id"
+          class="aradio {{sheetSelectedId === item.id ? 'aradio--sel' : ''}}"
+          data-aid="{{item.id}}"
+          bindtap="onSheetSelectAddr"
+        >
+          <view class="aradio__dot"></view>
+          <view class="aradio__t">{{item.text}}</view>
+        </view>
+      </block>
+      <view wx:else class="noaddr">
+        <text>还没有收货地址　</text><text class="noaddr__add" catchtap="onSheetAddAddr">去添加 ›</text>
+      </view>
+      <view class="bal-line">
+        <text>当前 {{balance}} 分</text>
+        <text wx:if="{{!sheetInsufficient}}" class="bal-line__after">兑换后剩余 <text class="bal-line__b">{{sheetAfter}}</text> 分</text>
+        <text wx:else class="bal-line__lack">积分不足，还差 <text class="bal-line__b">{{sheetLack}}</text> 分</text>
+      </view>
+      <!-- 充足=确认兑换（无地址置灰）；不足=去签到赚 N 分（关抽屉回签到闭环） -->
+      <button
+        wx:if="{{!sheetInsufficient}}"
+        class="sbtn {{sheetNoAddress ? 'sbtn--disabled' : ''}}"
+        hover-class="none"
+        disabled="{{sheetNoAddress || sheetSubmitting}}"
+        catchtap="onSheetConfirm"
+      >{{sheetSubmitting ? '兑换中…' : '确认兑换'}}</button>
+      <button
+        wx:else
+        class="sbtn"
+        hover-class="none"
+        catchtap="onSheetCheckin"
+      >去签到赚 {{sheetLack}} 分 ›</button>
+      <button class="sbtn sbtn--ghost" hover-class="none" catchtap="onSheetClose">再想想</button>
+    </view>
+  </view>
+
+  <!-- 兑换成功居中弹卡 -->
+  <view wx:if="{{okVisible}}" class="okmask">
+    <view class="okcard">
+      <view class="okcard__ic">✓</view>
+      <view class="okcard__h">兑换成功</view>
+      <view class="okcard__p">{{okName}}　<text class="okcard__b">-{{okCost}} 分</text></view>
+      <view class="okcard__p">剩余 {{okBalance}} 分，可在「兑换记录」查看进度</view>
+      <button class="sbtn" hover-class="none" catchtap="onOkOrders">查看订单</button>
+      <button class="sbtn sbtn--ghost" hover-class="none" catchtap="onOkContinue">继续逛逛</button>
+    </view>
+  </view>
+
+  <!-- 游客态：登录引导弹层（沿用 checkin/profile 游客范式） -->
+  <view wx:if="{{guest}}" class="guest-mask">
+    <view class="guest-card">
+      <view class="guest-card__ic">🛍️</view>
+      <view class="guest-card__h">积分商城</view>
+      <view class="guest-card__p">签到攒积分，兑换周边好礼</view>
+      <button class="guest-card__btn" hover-class="none" bindtap="onGuestLogin">微信一键登录</button>
+    </view>
+  </view>
+</view>

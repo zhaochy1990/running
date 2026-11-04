@@ -1,0 +1,617 @@
+/* ============================================================
+   积分商城页 —— UI 权威 = devops#852 resolution + 原型
+   prototypes/852-redeem-spike.html（变体 A 横排大卡）。
+   像素值按 375 设计稿 ×2 转 rpx；一次性灰阶沿用原型字面量，
+   主题色一律走 styles/theme.wxss 令牌（白底 accent 文字用 accent-deep 阶）。
+   ============================================================ */
+
+.page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: var(--color-bg);
+}
+
+/* ---------- 粉渐变头（顶栏 + hero 同一渐变） ---------- */
+
+.hero-wrap {
+  background: linear-gradient(170deg, #ff7d6e, var(--color-accent));
+}
+
+.top-bar__inner {
+  height: 128rpx;
+  display: flex;
+  align-items: center;
+  padding: 0 40rpx;
+}
+
+.top-bar__btn {
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* 右上常驻「兑换记录」链接（原型 navlink） */
+.top-bar__btn--link {
+  width: auto;
+  padding: 0 8rpx;
+  font-size: 26rpx;
+  color: var(--color-on-accent);
+  opacity: 0.92;
+}
+
+.top-bar__icon {
+  width: 48rpx;
+  height: 48rpx;
+}
+
+/* 顶栏返回小房子约定：栈内=返回箭头（白），栈底=小房子，fail 兜底 switchTab coach */
+.top-bar__icon--back {
+  transform: rotate(180deg);
+}
+
+.top-bar__title-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.top-bar__title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: var(--color-on-accent);
+}
+
+.hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24rpx 32rpx 104rpx;
+}
+
+.hero__lab {
+  font-size: 24rpx;
+  color: var(--color-on-accent);
+  opacity: 0.85;
+}
+
+.hero__num {
+  font-size: 64rpx;
+  font-weight: 700;
+  color: var(--color-on-accent);
+  line-height: 1.15;
+}
+
+.hero__unit {
+  font-size: 26rpx;
+  font-weight: 400;
+  opacity: 0.85;
+  margin-left: 6rpx;
+}
+
+.hero__links {
+  text-align: right;
+}
+
+.hero__link {
+  font-size: 26rpx;
+  color: var(--color-on-accent);
+  opacity: 0.92;
+  margin-top: 12rpx;
+}
+
+.hero__link:first-child {
+  margin-top: 0;
+}
+
+.content {
+  padding-bottom: 48rpx;
+}
+
+.page-loading {
+  padding: 64rpx 0 240rpx;
+  text-align: center;
+  font-size: 26rpx;
+  color: var(--color-text-secondary);
+}
+
+.empty {
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 26rpx;
+  padding: 120rpx 0;
+}
+
+/* ---------- 商品列表（变体 A 横排大卡，压 hero 边） ---------- */
+
+.content .pcard:first-child {
+  margin-top: -64rpx;
+}
+
+.pcard {
+  position: relative;
+  background: var(--color-card);
+  border-radius: 32rpx;
+  padding: 24rpx;
+  margin: 0 28rpx 20rpx;
+  box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.04);
+}
+
+.prow {
+  display: flex;
+  gap: 24rpx;
+}
+
+.pimg {
+  width: 192rpx;
+  height: 192rpx;
+  border-radius: 24rpx;
+  flex: none;
+}
+
+/* 无图占位色块（COS 直链未接时的 V1 策略） */
+.pimg--ph {
+  background: #ffe9e6;
+}
+
+.pinfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pname {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.pdesc {
+  font-size: 24rpx;
+  color: var(--color-text-secondary);
+  margin-top: 6rpx;
+  /* 描述两行截断（原型 -webkit-line-clamp:2） */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ptags {
+  display: flex;
+  gap: 10rpx;
+  margin-top: 8rpx;
+  flex-wrap: wrap;
+}
+
+.ptag {
+  font-size: 20rpx;
+  padding: 4rpx 12rpx;
+  border-radius: 10rpx;
+  background: rgba(var(--color-accent-rgb), 0.08);
+  color: var(--color-accent-deep);
+}
+
+.ptag--gray {
+  background: #f0f0f3;
+  color: var(--color-text-secondary);
+}
+
+.pbottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: auto;
+  padding-top: 12rpx;
+}
+
+.price__n {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.price__u {
+  font-size: 22rpx;
+  font-weight: 400;
+  color: var(--color-accent);
+  margin-left: 4rpx;
+}
+
+/* 右侧兑换按钮：原生 button 三坑逐一复位（显式尺寸/自绘底色/::after 描边
+   去除/行高与盒模型对齐，同 coach.wxss 约定） */
+
+.buy {
+  width: 160rpx;
+  height: 64rpx;
+  padding: 0;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 32rpx;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 26rpx;
+  font-weight: 600;
+  line-height: 64rpx;
+  flex: none;
+}
+
+.buy::after {
+  border: none;
+}
+
+.buy--disabled {
+  background: #e7e7ec;
+  color: var(--color-text-secondary);
+}
+
+/* 售罄蒙层（与达限是两种置灰原因，视觉区分：蒙层+描边戳） */
+
+.soldout-mask {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 32rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.soldout-mask__stamp {
+  border: 4rpx solid var(--color-text-secondary);
+  color: var(--color-text-secondary);
+  border-radius: 16rpx;
+  padding: 10rpx 28rpx;
+  font-size: 28rpx;
+  font-weight: 700;
+  letter-spacing: 6rpx;
+  background: rgba(255, 255, 255, 0.85);
+}
+
+/* ---------- 加载失败 ---------- */
+
+.card {
+  background: var(--color-card);
+  border-radius: 32rpx;
+  padding: 32rpx;
+  margin: 0 28rpx 24rpx;
+}
+
+.content .card:first-child {
+  margin-top: -24rpx;
+}
+
+.load-failed {
+  text-align: center;
+}
+
+.load-failed__txt {
+  font-size: 26rpx;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.load-failed__btn {
+  margin: 24rpx auto 0;
+  width: 320rpx;
+  height: 80rpx;
+  padding: 0;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 40rpx;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 28rpx;
+  font-weight: 600;
+  line-height: 80rpx;
+}
+
+.load-failed__btn::after {
+  border: none;
+}
+
+/* ---------- 兑换确认抽屉（底部 sheet） ---------- */
+
+.mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(20, 20, 25, 0.45);
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+}
+
+.sheet {
+  background: var(--color-card);
+  border-radius: 40rpx 40rpx 0 0;
+  width: 100%;
+  padding: 36rpx 32rpx 48rpx;
+  max-height: 78vh;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.sheet__title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: 28rpx;
+}
+
+.sprod {
+  display: flex;
+  gap: 20rpx;
+  align-items: center;
+  background: var(--color-bg-sunken);
+  border-radius: 24rpx;
+  padding: 20rpx;
+}
+
+.sprod__img {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 20rpx;
+  background: #ffe9e6;
+  flex: none;
+}
+
+.sprod__name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  flex: 1;
+  min-width: 0;
+}
+
+.sprod__price {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.sec {
+  font-size: 24rpx;
+  color: var(--color-text-secondary);
+  margin: 28rpx 0 16rpx;
+  display: flex;
+  justify-content: space-between;
+}
+
+.sec__mg {
+  color: var(--color-accent-deep);
+}
+
+.aradio {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  border: 2rpx solid #f0f0f3;
+  border-radius: 20rpx;
+  padding: 18rpx 20rpx;
+  margin-bottom: 12rpx;
+}
+
+/* 选中粉描边 + 浅粉衬底 */
+.aradio--sel {
+  border-color: var(--color-accent);
+  background: rgba(var(--color-accent-rgb), 0.08);
+}
+
+.aradio__dot {
+  width: 28rpx;
+  height: 28rpx;
+  border-radius: 50%;
+  border: 4rpx solid #d5d5db;
+  box-sizing: border-box;
+  flex: none;
+}
+
+.aradio--sel .aradio__dot {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  box-shadow: inset 0 0 0 5rpx #ffffff;
+}
+
+.aradio__t {
+  font-size: 26rpx;
+  color: var(--color-text-primary);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.noaddr {
+  background: var(--color-bg-sunken);
+  border-radius: 20rpx;
+  padding: 28rpx;
+  text-align: center;
+  font-size: 26rpx;
+  color: var(--color-text-secondary);
+}
+
+.noaddr__add {
+  color: var(--color-accent-deep);
+  font-weight: 600;
+}
+
+.bal-line {
+  display: flex;
+  justify-content: space-between;
+  font-size: 26rpx;
+  color: var(--color-text-primary);
+  margin-top: 28rpx;
+  padding-top: 24rpx;
+  border-top: 2rpx solid #f0f0f3;
+}
+
+.bal-line__b {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+/* 不足态：橙字（原型 var(--warn) #f5a623） */
+.bal-line__lack {
+  color: #f5a623;
+}
+
+.sbtn {
+  display: block;
+  width: 100%;
+  height: 92rpx;
+  padding: 0;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 46rpx;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 32rpx;
+  font-weight: 600;
+  line-height: 92rpx;
+  text-align: center;
+  margin-top: 24rpx;
+}
+
+.sbtn::after {
+  border: none;
+}
+
+.sbtn--disabled {
+  background: #e7e7ec;
+  color: var(--color-text-secondary);
+}
+
+.sbtn--ghost {
+  background: var(--color-card);
+  color: var(--color-text-primary);
+  border: 2rpx solid #e7e7ec;
+}
+
+/* ---------- 兑换成功居中弹卡 ---------- */
+
+.okmask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(20, 20, 25, 0.45);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.okcard {
+  background: var(--color-card);
+  border-radius: 40rpx;
+  width: 560rpx;
+  padding: 52rpx 44rpx 40rpx;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.okcard__ic {
+  width: 116rpx;
+  height: 116rpx;
+  border-radius: 50%;
+  background: rgba(var(--color-accent-rgb), 0.08);
+  color: var(--color-accent);
+  font-size: 56rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+}
+
+.okcard__h {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 24rpx 0 8rpx;
+}
+
+.okcard__p {
+  font-size: 26rpx;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.okcard__b {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+/* ---------- 游客态登录引导弹层 ---------- */
+
+.guest-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(246, 246, 248, 0.86);
+  backdrop-filter: blur(6rpx);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+.guest-card {
+  background: var(--color-card);
+  border-radius: 36rpx;
+  padding: 52rpx 48rpx;
+  text-align: center;
+  width: 540rpx;
+  box-shadow: 0 16rpx 60rpx rgba(0, 0, 0, 0.08);
+}
+
+.guest-card__ic {
+  font-size: 68rpx;
+}
+
+.guest-card__h {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 16rpx 0 8rpx;
+}
+
+.guest-card__p {
+  font-size: 24rpx;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+  margin-bottom: 28rpx;
+}
+
+.guest-card__btn {
+  width: 100%;
+  height: 92rpx;
+  padding: 0;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 46rpx;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 32rpx;
+  font-weight: 600;
+  line-height: 92rpx;
+}
+
+.guest-card__btn::after {
+  border: none;
+}

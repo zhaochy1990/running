@@ -1,0 +1,66 @@
+<view class="page">
+  <!-- 粉渐变顶栏（原型 navbar 粉底白字） -->
+  <view class="nav-wrap" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn" bindtap="onBack">
+        <image wx:if="{{canBack}}" class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right_white.svg" mode="aspectFit" />
+        <image wx:else class="top-bar__icon" src="/assets/icons/home_white.svg" mode="aspectFit" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">我的兑换</view>
+      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
+  </view>
+
+  <view class="content">
+    <view wx:if="{{loading}}" class="page-loading">加载中…</view>
+
+    <view wx:elif="{{loadFailed}}" class="ocard load-failed">
+      <view class="load-failed__txt">兑换记录加载失败，请检查网络后重试</view>
+      <button class="load-failed__btn" hover-class="none" bindtap="onRetry">重新加载</button>
+    </view>
+
+    <!-- 空态文案（原型 .empty） -->
+    <view wx:elif="{{orders.length === 0}}" class="empty">
+      <view>还没有兑换记录</view>
+      <view>去商城挑点喜欢的吧</view>
+    </view>
+
+    <block wx:else>
+      <view class="olist">
+        <view wx:for="{{orders}}" wx:key="id" class="ocard">
+          <view class="otop">
+            <view class="otop__no">订单号 R-{{item.id}} · {{item.date}}</view>
+            <view class="ost {{item.shipped ? 'ost--shipped' : 'ost--pending'}}">{{item.shipped ? '已发货' : '待发货'}}</view>
+          </view>
+          <view class="obody">
+            <view class="obody__img"></view>
+            <view class="obody__tx">
+              <view class="obody__n">{{item.name}}</view>
+              <view class="obody__m">寄到 {{item.destination}}</view>
+            </view>
+            <view class="obody__cost">-{{item.cost}}</view>
+          </view>
+          <!-- 已发货追加运单号行 + 复制 -->
+          <view wx:if="{{item.shipped}}" class="otrack" data-no="{{item.trackingNo}}" bindtap="onCopyTracking">
+            <text>运单号　</text><text class="otrack__no">{{item.trackingNo}}</text><text class="otrack__copy">　·　复制</text>
+          </view>
+        </view>
+      </view>
+      <view wx:if="{{loadingMore}}" class="more">加载中…</view>
+      <view wx:elif="{{hasMore}}" class="more" bindtap="loadMore">加载更多</view>
+      <view wx:else class="more">— 到底啦 —</view>
+    </block>
+  </view>
+
+  <!-- 游客态：登录引导弹层（沿用 checkin/profile 游客范式） -->
+  <view wx:if="{{guest}}" class="guest-mask">
+    <view class="guest-card">
+      <view class="guest-card__ic">📦</view>
+      <view class="guest-card__h">我的兑换</view>
+      <view class="guest-card__p">登录后查看你的兑换订单</view>
+      <button class="guest-card__btn" hover-class="none" bindtap="onGuestLogin">微信一键登录</button>
+    </view>
+  </view>
+</view>

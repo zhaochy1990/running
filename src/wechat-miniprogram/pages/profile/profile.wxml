@@ -55,6 +55,7 @@
         </view>
         <view wx:if="{{item.key === 'feedback' && feedbackUnread > 0}}" class="menu-row__badge">{{feedbackUnread > 99 ? '99+' : feedbackUnread}}</view>
         <text wx:if="{{item.key === 'checkin' && checkinRight}}" class="menu-row__checkin-right {{checkinSigned ? 'menu-row__checkin-right--signed' : ''}}">{{checkinRight}}</text>
+        <text wx:if="{{item.key === 'points-mall' && mallRight}}" class="menu-row__checkin-right">{{mallRight}}</text>
         <image class="menu-row__chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
       </view>
     </view>

@@ -250,13 +250,17 @@ Page<CheckinPageData, CheckinPageHandlers>({
     void this.load();
   },
 
-  // 明细 / 商城：目标页未上线（T4 未合并），toast 占位。
+  // 明细：目标页未上线，toast 占位；商城已上线（#886），接管原占位 toast。
   onDetailTap() {
     wx.showToast({ title: '积分明细建设中', icon: 'none' });
   },
 
   onMallTap() {
-    wx.showToast({ title: '积分商城即将开放', icon: 'none' });
+    // 商城已上线（#886）。checkin↔mall 互为 navigateTo 会单向涨栈，fail 兜底 redirectTo。
+    wx.navigateTo({
+      url: '/pages/points-mall/points-mall',
+      fail: () => wx.redirectTo({ url: '/pages/points-mall/points-mall' }),
+    });
   },
 
   /** 浮动 +N 入场（原型 floatUp：1.4s 上飘淡出，之后复位）。 */
