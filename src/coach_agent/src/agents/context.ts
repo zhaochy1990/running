@@ -7,6 +7,8 @@ export const CoachContext = z
   .object({
     userId: z.string().min(1),
     asof: z.iso.date(),
+    /** API 层按 thread_id 计算后注入（#891 聊天内绑赛的线程定位），非客户端输入。 */
+    threadId: z.string().min(1).optional(),
     target: CoachTurnScope.shape.target,
     reviewContext: CoachTurnScope.shape.reviewContext,
   })

@@ -313,6 +313,17 @@ interface CoachPageHandlers {
 }
 
 let seq = 0;
+
+/**
+ * 业务性失败（确定性复现，重试无意义）与临时失败（网络/服务端抖动，可重试）的
+ * 分界（devops#891）：前者展示原因不给重试按钮，后者维持失败标记 + 重试按钮。
+ * SSE 路径的业务码只有 client_turn_id_conflict；coach_turn_failed 是服务端对所有
+ * 内部异常的兜底码（多为上游抖动），保持可重试。429 带 Retry-After，可重试。
+ */
+function isBusinessTurnError(code: string): boolean {
+  if (code === 'client_turn_id_conflict') return true;
+  return /^http_4(?!29)/.test(code);
+}
 let turnSeq = 0;
 function nextClientTurnId(): string {
   return `mini-${Date.now()}-${++turnSeq}`;
@@ -1515,8 +1526,14 @@ Page<CoachPageData, CoachPageHandlers>({
     streamBuffer = '';
     streamRawText = '';
     const messages = this.data.messages.map((m) =>
-      m.id === userMsgId ? { ...m, failed: true } : m,
+      m.id === userMsgId ? { ...m, failed: !isBusinessTurnError(error.code) } : m,
     );
+    // 业务性拒绝（如 client_turn_id 冲突）：原因落一条教练气泡让人读得见，
+    // 不给重试按钮——确定性失败重试必然复现（devops#891 的重试风暴教训）。
+    if (isBusinessTurnError(error.code)) {
+      const reason = error.message || '本轮未完成：请调整后再试';
+      messages.push({ id: ++seq, role: 'assistant', content: reason, html: markdownToHtml(reason), selectable: false });
+    }
     this.setData({
       messages,
       sending: false,
@@ -1524,7 +1541,7 @@ Page<CoachPageData, CoachPageHandlers>({
       streamPhase: '',
       streamNarration: '',
       streamText: '',
-      scrollIntoId: `msg-${userMsgId}`,
+      scrollIntoId: `msg-${messages[messages.length - 1].id}`,
     });
   },
 

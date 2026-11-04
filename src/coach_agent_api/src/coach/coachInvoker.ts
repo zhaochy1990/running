@@ -86,6 +86,7 @@ export class CoachInvokerImpl implements CoachInvoker {
     const coach = await createCoachAgent(this.dataProvider, this.coachConfig, {
       checkpointer: this.persistence.checkpointer,
       store: this.persistence.store,
+      raceTargetGateway: this.persistence.threadRaceTargets,
       ...(this.activityFeelWriter ? { activityFeelWriter: this.activityFeelWriter } : {}),
     });
     this.agent = coach as unknown as CoachGraph;

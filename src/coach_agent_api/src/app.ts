@@ -1,3 +1,4 @@
+import type { RaceTargetBindingGateway } from "@stride/coach-agent";
 import { getLogger } from "@stride/common";
 import { Hono } from "hono";
 import { requestId } from "hono/request-id";
@@ -31,6 +32,8 @@ export interface AppDependencies {
   jwtVerifier: JwtVerifier;
   coachInvoker: CoachInvoker;
   turnCoordinator?: TurnCoordinator;
+  /** When provided, chat turns fall back to the thread-persisted race target (#891). */
+  threadRaceTargets?: RaceTargetBindingGateway;
   /** When provided, exposes per-session conversation history (GET .../sessions/{id}/messages). */
   checkpointer?: ThreadHistoryReader;
   /** When provided, exposes the deterministic plan-job enqueue/poll endpoints. */
@@ -95,6 +98,7 @@ export function createApp(dependencies: AppDependencies): Hono<AuthEnv> {
   registerChatRoutes(app, {
     coach: dependencies.coachInvoker,
     turnCoordinator,
+    ...(dependencies.threadRaceTargets ? { raceTargets: dependencies.threadRaceTargets } : {}),
   });
 
   if (dependencies.planJobs) {

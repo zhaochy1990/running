@@ -25,6 +25,7 @@ export type {
   CoachToolRuntime,
 } from "./agents/coachAgent.js";
 export { CoachContext, createCoachAgent } from "./agents/coachAgent.js";
+export type { CoachRaceTargetRef, RaceTargetBindingGateway, RaceTargetCandidate } from "./tools/raceStrategyContext.js";
 export { flushLangfuse, isLangfuseEnabled } from "./agents/langfuse.js";
 export { assertWeeksLinkedToPhases, masterPlanToContent } from "./agents/training/content.js";
 export type { CoachTurnScopeValue } from "./agents/turnScope.js";

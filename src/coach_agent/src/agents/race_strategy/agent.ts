@@ -4,7 +4,7 @@ import { RaceStrategyDirectResponseSchema } from "@stride/contract";
 import { createAgent, ToolStrategy } from "langchain";
 import type { ModelConfig } from "../../config/config.js";
 import type { DataProvider } from "../../data/dataProvider.js";
-import { createRaceStrategyContextTools } from "../../tools/raceStrategyContext.js";
+import { type RaceTargetBindingGateway, createRaceStrategyContextTools } from "../../tools/raceStrategyContext.js";
 import { CoachContext } from "../context.js";
 import { createLoggingMiddleware } from "../middleware.js";
 import { RACE_STRATEGY_PROMPT } from "../prompts.js";
@@ -25,10 +25,10 @@ const logger = getLogger("coachAgent:race_strategy");
  * 会直接抛错；且客户端对追问的下一条消息走新 message 而非 resume，中断语义
  * 两头都不成立。追问一律用普通文本回复。
  */
-export function getRaceStrategyAgent(store: DataProvider, config: ModelConfig) {
+export function getRaceStrategyAgent(store: DataProvider, config: ModelConfig, raceTargets?: RaceTargetBindingGateway) {
   logger.info(`creating race_strategy agent with model ${config.name} (${config.model})`);
 
-  const tools: StructuredTool[] = [...createRaceStrategyContextTools(store)];
+  const tools: StructuredTool[] = [...createRaceStrategyContextTools(store, raceTargets ?? null)];
 
   // 补给领域口径与补给品规格台账以内联技能文档附在系统提示末尾（与
   // generate-master-plan 同模式）：prompt 保留流程与输出契约，领域细节归 skill。
