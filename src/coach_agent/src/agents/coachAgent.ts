@@ -3,6 +3,7 @@ import type { BaseCheckpointSaver, BaseStore } from "@langchain/langgraph-checkp
 import { getLogger } from "@stride/common";
 import { type CoachAgentConfig, getAgentConfig } from "../config/config.js";
 import type { DataProvider } from "../data/dataProvider.js";
+import type { RaceTargetBindingGateway } from "../tools/raceStrategyContext.js";
 import type { ActivityFeelWriter } from "../tools/feel.js";
 import { getAgentNode } from "./agents.js";
 import { withLangfuseInvokeTracing } from "./langfuse.js";
@@ -20,6 +21,8 @@ export interface CoachAgentOptions {
   store?: BaseStore;
   /** #508 体感写端口（走 Go API PATCH）；缺省时 qa agent 纯只读，不采集体感。 */
   activityFeelWriter?: ActivityFeelWriter;
+  /** #891 聊天内绑赛的 per-thread race target 持久化 seam；缺省时 bind_race_target 不可用。 */
+  raceTargetGateway?: RaceTargetBindingGateway;
 }
 
 export interface CoachAgent {
@@ -44,7 +47,7 @@ export async function createCoachAgent(dataProvider: DataProvider, config: Coach
     })
     .addNode("qa", getAgentNode("qa", config, dataProvider, options.activityFeelWriter))
     .addNode("training", trainingNode)
-    .addNode("race_strategy", getAgentNode("race_strategy", config, dataProvider))
+    .addNode("race_strategy", getAgentNode("race_strategy", config, dataProvider, undefined, options.raceTargetGateway))
     .addNode("custom_workout", getAgentNode("custom_workout", config, dataProvider))
     .addNode("workout_manage", getAgentNode("workout_manage", config, dataProvider))
     .addEdge(START, "orchestrator")

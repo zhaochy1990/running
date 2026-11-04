@@ -11,6 +11,7 @@ import { normalizeMessageContent } from "./messages.js";
 import { getOrchestratorNode } from "./orchestrator.js";
 import { getOtherAgent } from "./other/agent.js";
 import { getQaAgent } from "./qa/agent.js";
+import { type RaceTargetBindingGateway } from "../tools/raceStrategyContext.js";
 import { getRaceStrategyAgent } from "./race_strategy/agent.js";
 import { makeRaceStrategyNode } from "./race_strategy/node.js";
 import type { AgentsState } from "./state.js";
@@ -43,6 +44,7 @@ export function getAgentNode(
   config: CoachAgentConfig,
   dataProvider: DataProvider,
   feelWriter?: ActivityFeelWriter,
+  raceTargetGateway?: RaceTargetBindingGateway,
 ): GraphNode<typeof AgentsState> {
   if (agentName === "orchestrator") {
     const agentConfig = getAgentConfig(config, "orchestrator");
@@ -68,7 +70,7 @@ export function getAgentNode(
 
   if (agentName === "race_strategy") {
     const agentConfig = getAgentConfig(config, "race_strategy");
-    const raceAgent = getRaceStrategyAgent(dataProvider, agentConfig);
+    const raceAgent = getRaceStrategyAgent(dataProvider, agentConfig, raceTargetGateway);
     return makeRaceStrategyNode(raceAgent);
   }
 

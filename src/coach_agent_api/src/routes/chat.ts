@@ -1,4 +1,4 @@
-import { CoachTurnScope, Command } from "@stride/coach-agent";
+import { type CoachRaceTargetRef, CoachTurnScope, Command, type RaceTargetBindingGateway } from "@stride/coach-agent";
 import { getLogger } from "@stride/common";
 import { shanghaiDay, shanghaiIso } from "@stride/contract";
 import type { Hono } from "hono";
@@ -20,6 +20,8 @@ const ISO_TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{
 interface ChatDependencies {
   coach: CoachInvoker;
   turnCoordinator: TurnCoordinator;
+  /** #891 聊天内绑赛：请求未带 target 时回填线程持久层的 race target。 */
+  raceTargets?: RaceTargetBindingGateway;
 }
 
 export function registerChatRoutes(app: Hono<AuthEnv>, dependencies: ChatDependencies): void {
@@ -40,7 +42,8 @@ export function registerChatRoutes(app: Hono<AuthEnv>, dependencies: ChatDepende
     try {
       const response = await runTurn(dependencies, body.value, threadId, async (resumeFromCheckpoint, turn) => {
         const input = buildInput(body.value, resumeFromCheckpoint);
-        const config = buildConfig(body.value, userId, threadId, turn.fingerprint);
+        const target = await resolveTarget(dependencies, body.value, threadId);
+        const config = buildConfig(body.value, userId, threadId, turn.fingerprint, target);
         const result = await dependencies.coach.invoke(input, config);
         return toPublicResponse(result);
       });
@@ -120,7 +123,8 @@ async function streamChat(dependencies: ChatDependencies, stream: SSEStreamingAp
   try {
     const response = await runTurn(dependencies, body, threadId, async (resumeFromCheckpoint, turn) => {
       const input = buildInput(body, resumeFromCheckpoint);
-      const config = buildConfig(body, userId, threadId, turn.fingerprint);
+      const target = await resolveTarget(dependencies, body, threadId);
+      const config = buildConfig(body, userId, threadId, turn.fingerprint, target);
       const run = await dependencies.coach.streamEvents(input, config);
       return await collectCoachStream(run, emitStreamEvent);
     });
@@ -134,6 +138,21 @@ async function streamChat(dependencies: ChatDependencies, stream: SSEStreamingAp
   } finally {
     clearInterval(keepalive);
   }
+}
+
+/**
+ * Turn scope target: the request-provided one wins; otherwise fall back to the
+ * thread-persisted binding (#891 chat-native race strategy) so follow-up turns
+ * after an in-chat bind keep their race target.
+ */
+async function resolveTarget(
+  dependencies: ChatDependencies,
+  body: ChatRequest,
+  threadId: string,
+): Promise<Record<string, unknown> | CoachRaceTargetRef | undefined> {
+  if (body.target !== undefined) return body.target;
+  const persisted = (await dependencies.raceTargets?.get(threadId)) ?? undefined;
+  return persisted;
 }
 
 /** Same turn input for the sync and streaming invocations (shared lock/idempotency semantics). */
@@ -153,12 +172,19 @@ function buildInput(body: ChatRequest, resumeFromCheckpoint: boolean): unknown {
   };
 }
 
-function buildConfig(body: ChatRequest, userId: string, threadId: string, fingerprint: string): Record<string, unknown> {
+function buildConfig(
+  body: ChatRequest,
+  userId: string,
+  threadId: string,
+  fingerprint: string,
+  target: Record<string, unknown> | CoachRaceTargetRef | undefined,
+): Record<string, unknown> {
   return {
     context: {
       userId,
       asof: shanghaiDay(new Date().toISOString()),
-      ...(body.target ? { target: body.target } : {}),
+      threadId,
+      ...(target !== undefined ? { target } : {}),
       ...(body.reviewContext ? { reviewContext: body.reviewContext } : {}),
     },
     configurable: {

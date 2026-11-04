@@ -97,6 +97,8 @@ export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: C
         turnCoordinator: persistence.turnCoordinator,
         coachInvoker: coachInvoker,
         checkpointer: persistence.checkpointer,
+        // #891 聊天内绑赛：续轮从线程持久层回填 race target。
+        threadRaceTargets: persistence.threadRaceTargets,
         planJobs,
         coachDataDeleter: new MySqlCoachDataDeleter(persistence.pool),
         // #863 抽奖活动配置域：admin CRUD + 落地页公开读取。

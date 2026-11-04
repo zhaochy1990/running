@@ -8,6 +8,7 @@ import { MySqlLotteryStaffStore } from "./lotteryStaff.js";
 import { createPool, ensureDatabase } from "./mysql.js";
 import { MySqlCoachShareStore } from "./shares.js";
 import { MySqlStore } from "./store.js";
+import { MySqlThreadRaceTargetStore } from "./threadRaceTargets.js";
 import { MySqlThreadLock, MySqlTurnReceiptStore } from "./turns.js";
 
 export interface Persistence {
@@ -21,6 +22,8 @@ export interface Persistence {
   lotteryStaff: MySqlLotteryStaffStore;
   /** Lottery funnel event log + aggregation (#867). */
   lotteryFunnel: MySqlLotteryFunnelStore;
+  /** Per-thread race target binding (#891 chat-native race strategy). */
+  threadRaceTargets: MySqlThreadRaceTargetStore;
   turnCoordinator: CoordinatedTurnRunner;
   pool: Pool;
   close(): Promise<void>;
@@ -36,6 +39,7 @@ export async function createPersistence(config: MySqlConfig): Promise<Persistenc
     const lottery = new MySqlLotteryStore(pool);
     const lotteryStaff = new MySqlLotteryStaffStore(pool);
     const lotteryFunnel = new MySqlLotteryFunnelStore(pool);
+    const threadRaceTargets = new MySqlThreadRaceTargetStore(pool);
     const turnReceipts = new MySqlTurnReceiptStore(pool, checkpointer);
     await checkpointer.setup();
     await store.setup();
@@ -43,6 +47,7 @@ export async function createPersistence(config: MySqlConfig): Promise<Persistenc
     await lottery.setup();
     await lotteryStaff.setup();
     await lotteryFunnel.setup();
+    await threadRaceTargets.setup();
     await turnReceipts.setup();
     return {
       checkpointer,
@@ -51,6 +56,7 @@ export async function createPersistence(config: MySqlConfig): Promise<Persistenc
       lottery,
       lotteryStaff,
       lotteryFunnel,
+      threadRaceTargets,
       turnCoordinator: new CoordinatedTurnRunner(turnReceipts, new MySqlThreadLock(config)),
       pool,
       close: () => pool.end(),

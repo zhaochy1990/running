@@ -136,6 +136,7 @@ test("chat derives user and thread identity from the verified token", async () =
           month: "2-digit",
           day: "2-digit",
         }).format(new Date()),
+        threadId: "athlete-1:coach:session-1",
       },
       configurable: {
         thread_id: "athlete-1:coach:session-1",
@@ -419,6 +420,43 @@ test("chat replays an identical client turn and conflicts on changed input", asy
   const conflict = await request("changed");
   assert.equal(conflict.status, 409);
   assert.equal(calls, 1);
+});
+
+test("chat without target falls back to the thread-persisted race binding (#891)", async () => {
+  let invocation: { input: unknown; config: Record<string, unknown> } | undefined;
+  const persisted = { kind: "race" as const, race_event_id: 61, item_type: "HalfMarathon" };
+  const app = createApp({
+    jwtVerifier: {
+      async verify() {
+        return { userId: "athlete-1", isAdmin: false };
+      },
+    },
+    coachInvoker: {
+      async invoke(input, config) {
+        invocation = { input, config };
+        return { messages: [{ type: "ai", content: "bound" }] };
+      },
+      streamEvents: neverStream,
+    },
+    threadRaceTargets: {
+      async get(threadId) {
+        return threadId === "athlete-1:coach:session-1" ? persisted : null;
+      },
+      async bind() {},
+      async rememberCandidates() {},
+      async candidates() {
+        return null;
+      },
+    },
+  });
+  const response = await app.request("/api/users/me/coach/chat", {
+    method: "POST",
+    headers: { authorization: "Bearer signed", "content-type": "application/json" },
+    body: JSON.stringify({ session_id: "session-1", client_turn_id: "turn-race", message: "南通马怎么跑" }),
+  });
+  assert.equal(response.status, 200);
+  const runtimeContext = invocation?.config.context as Record<string, unknown>;
+  assert.deepEqual(runtimeContext.target, persisted);
 });
 
 test("chat carries validated target and review context into request identity and runtime", async () => {
