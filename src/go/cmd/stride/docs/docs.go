@@ -3132,6 +3132,80 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/users/me/check-ins": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Records today's check-in and its earn_checkin points in one transaction. A same-day duplicate returns 200 with already_checked_in=true, zero side effects and zero extra points. d7_completed marks the moment a 7-day cycle completes (client easter egg).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "checkins"
+                ],
+                "summary": "Check in for today",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.checkInResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/check-ins/status": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns today's check-in state (can_check_in, reward preview, would-start-new-cycle), the 7-slot cycle grid, the current-month checked days with earned points, the streak, and the points balance.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "checkins"
+                ],
+                "summary": "Get the check-in page state",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.checkInStatusResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/users/me/custom-races": {
             "post": {
                 "security": [
@@ -4101,6 +4175,57 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/points": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the points balance and a newest-first page of point transactions. Cursor pagination is opaque and limited to 50 entries per page.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "checkins"
+                ],
+                "summary": "List the current user's points balance and ledger",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page size (1-50; default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Opaque page cursor",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.pointsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
                         }
@@ -8142,7 +8267,7 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "thumb_url": {
-                    "description": "ThumbURL is the public URL of the pre-rendered route-thumbnail PNG clients\ncan drop straight into an \u003cimage\u003e. Null for indoor activities and until the\nthumbnail job has run.",
+                    "description": "ThumbURL is the legacy pre-rendered route-thumbnail PNG URL from the\nretired rendering pipeline (devops#829). Deprecated: nothing writes\nroute_thumb_url anymore and no new COS objects are produced — the value\nis the stock URL frozen at retirement, returned read-only as a long-tail\nfallback for old clients that still load the image. New clients draw\nroute_thumb themselves. Null for indoor activities and rows that never\ngot a PNG. Full removal waits for the next contract-cleanup ticket.",
                     "type": "string"
                 },
                 "train_type": {
@@ -8653,6 +8778,110 @@ const docTemplate = `{
                 },
                 "latest": {
                     "$ref": "#/definitions/api.bodyCompositionScanDTO"
+                }
+            }
+        },
+        "api.checkInCycleCell": {
+            "type": "object",
+            "properties": {
+                "points": {
+                    "type": "integer"
+                },
+                "position": {
+                    "type": "integer"
+                },
+                "status": {
+                    "description": "checked | today | upcoming",
+                    "type": "string"
+                }
+            }
+        },
+        "api.checkInMonthBlock": {
+            "type": "object",
+            "properties": {
+                "checked": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.checkInMonthEntry"
+                    }
+                },
+                "label": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.checkInMonthEntry": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "points": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.checkInResponse": {
+            "type": "object",
+            "properties": {
+                "already_checked_in": {
+                    "type": "boolean"
+                },
+                "balance": {
+                    "type": "integer"
+                },
+                "cycle_position": {
+                    "type": "integer"
+                },
+                "d7_completed": {
+                    "description": "D7Completed feeds the cycle-completion easter egg (#851).",
+                    "type": "boolean"
+                },
+                "points_earned": {
+                    "type": "integer"
+                },
+                "streak_days": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.checkInStatusResponse": {
+            "type": "object",
+            "properties": {
+                "balance": {
+                    "type": "integer"
+                },
+                "cycle": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.checkInCycleCell"
+                    }
+                },
+                "month": {
+                    "$ref": "#/definitions/api.checkInMonthBlock"
+                },
+                "streak_days": {
+                    "type": "integer"
+                },
+                "today": {
+                    "$ref": "#/definitions/api.checkInTodayBlock"
+                }
+            }
+        },
+        "api.checkInTodayBlock": {
+            "type": "object",
+            "properties": {
+                "can_check_in": {
+                    "type": "boolean"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "reward_preview": {
+                    "type": "integer"
+                },
+                "would_start_new_cycle": {
+                    "type": "boolean"
                 }
             }
         },
@@ -10113,6 +10342,46 @@ const docTemplate = `{
                 },
                 "date": {
                     "type": "string"
+                }
+            }
+        },
+        "api.pointTransactionResponse": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ref": {
+                    "type": "string"
+                },
+                "remark": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.pointsResponse": {
+            "type": "object",
+            "properties": {
+                "balance": {
+                    "type": "integer"
+                },
+                "next_cursor": {
+                    "type": "string"
+                },
+                "transactions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.pointTransactionResponse"
+                    }
                 }
             }
         },

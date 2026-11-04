@@ -176,6 +176,20 @@ jobs:
           go test ./internal/api/...
           -run 'TestE2E_LegalDeclarations'
           -count=1 -v
+      # The check-in idempotency anchor (uk_user_date), the balance upsert, the
+      # multi-day state machine, and the ledger cursor pagination are
+      # SQL-level behaviours (devops#883): the API E2E drives the HTTP seam,
+      # the storage tests drive the state machine with a controlled clock.
+      # -p 1 serializes the two packages: both automigrate the same
+      # check-in/points schema and a fresh database cannot take two concurrent
+      # CREATE TABLE runs.
+      - name: Check-in + points ledger tests (MySQL)
+        env:
+          STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
+        run: >-
+          go test -p 1 ./internal/api/... ./internal/storage/...
+          -run 'TestE2E_CheckIns|TestCheckIn|TestListPointTransactions'
+          -count=1 -v
       - name: Account-erasure storage tests (MySQL)
         env:
           STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"

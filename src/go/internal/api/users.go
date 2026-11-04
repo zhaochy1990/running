@@ -130,6 +130,7 @@ func (f FeatureConfig) forUser(uid string) featureFlags {
 type userRoutes struct {
 	store         UserStore
 	injuries      InjuryStore
+	checkins      CheckInStore
 	providerLogin ProviderLogin
 	providerInfo  ProviderInfo
 	authName      AuthNameSync
@@ -139,11 +140,11 @@ type userRoutes struct {
 	log           *zap.Logger
 }
 
-func newUserRoutes(store UserStore, injuries InjuryStore, pl ProviderLogin, pi ProviderInfo, an AuthNameSync, eraser *accountEraser, features FeatureConfig, runs RunGetter, log *zap.Logger) *userRoutes {
+func newUserRoutes(store UserStore, injuries InjuryStore, checkins CheckInStore, pl ProviderLogin, pi ProviderInfo, an AuthNameSync, eraser *accountEraser, features FeatureConfig, runs RunGetter, log *zap.Logger) *userRoutes {
 	if log == nil {
 		log = logging.Default()
 	}
-	return &userRoutes{store: store, injuries: injuries, providerLogin: pl, providerInfo: pi, authName: an, eraser: eraser, features: features, runs: runs, log: log}
+	return &userRoutes{store: store, injuries: injuries, checkins: checkins, providerLogin: pl, providerInfo: pi, authName: an, eraser: eraser, features: features, runs: runs, log: log}
 }
 
 // register mounts the routes on the (already authenticated) group. Paths mirror
@@ -158,6 +159,10 @@ func (u *userRoutes) register(rg *gin.RouterGroup) {
 	rg.POST("/api/users/me/injuries", u.createInjury)
 	rg.PUT("/api/users/me/injuries/:injuryId", u.updateInjury)
 	rg.DELETE("/api/users/me/injuries/:injuryId", u.deleteInjury)
+	// Daily check-in + points ledger surface (devops#883).
+	rg.POST("/api/users/me/check-ins", u.createCheckIn)
+	rg.GET("/api/users/me/check-ins/status", u.getCheckInStatus)
+	rg.GET("/api/users/me/points", u.listPoints)
 	rg.GET("/api/users/me/watch", u.getWatch)
 	rg.DELETE("/api/users/me/watch", u.deleteWatch)
 	rg.POST("/api/users/me/watch/login", u.watchLogin)
