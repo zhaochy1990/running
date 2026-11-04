@@ -80,6 +80,15 @@ func runAPI() error {
 	if err := store.AutoMigrateInjuries(ctx); err != nil {
 		return err
 	}
+	// check_in_records + point_transactions + user_points back the daily
+	// check-in / points-ledger surface (devops#883). Only the API writes them,
+	// so the worker does not migrate these.
+	if err := store.AutoMigrateCheckIn(ctx); err != nil {
+		return err
+	}
+	if err := store.AutoMigratePoints(ctx); err != nil {
+		return err
+	}
 	// user_body_composition_scan + user_body_composition_segment tables for
 	// the body-composition read/write surface. User-entered (OCR/manual), not
 	// watch-synced. The worker does not need these.
@@ -267,6 +276,7 @@ func runAPI() error {
 		PipelineCatalog:         apiPipelineCatalog(),
 		UserStore:               store,
 		InjuryStore:             store,
+		CheckInStore:            store,
 		ProviderLogin:           providerLogin,
 		ProviderInfo:            providerInfo,
 		AuthNameSync:            authClient,

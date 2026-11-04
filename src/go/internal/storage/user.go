@@ -284,6 +284,9 @@ var userOwnedDeletionModels = []any{
 	// payloads (devops#287) — erased with the account; unbound rows (NULL
 	// user_id) are not user-attributable and stay as provider audit records.
 	&ProviderEvent{},
+	// Check-in + points ledger (devops#883): plain user-owned rows, the
+	// append-only ledger included — account erasure removes the whole history.
+	&CheckInRecord{}, &PointTransaction{}, &UserPoint{},
 }
 
 // deletionTableName resolves a deletion model's table name for error

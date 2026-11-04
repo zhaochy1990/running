@@ -209,9 +209,13 @@ definitions:
         type: number
       thumb_url:
         description: |-
-          ThumbURL is the public URL of the pre-rendered route-thumbnail PNG clients
-          can drop straight into an <image>. Null for indoor activities and until the
-          thumbnail job has run.
+          ThumbURL is the legacy pre-rendered route-thumbnail PNG URL from the
+          retired rendering pipeline (devops#829). Deprecated: nothing writes
+          route_thumb_url anymore and no new COS objects are produced — the value
+          is the stock URL frozen at retirement, returned read-only as a long-tail
+          fallback for old clients that still load the image. New clients draw
+          route_thumb themselves. Null for indoor activities and rows that never
+          got a PNG. Full removal waits for the next contract-cleanup ticket.
         type: string
       train_type:
         type: string
@@ -551,6 +555,74 @@ definitions:
         $ref: '#/definitions/api.bodyCompositionDeltasDTO'
       latest:
         $ref: '#/definitions/api.bodyCompositionScanDTO'
+    type: object
+  api.checkInCycleCell:
+    properties:
+      points:
+        type: integer
+      position:
+        type: integer
+      status:
+        description: checked | today | upcoming
+        type: string
+    type: object
+  api.checkInMonthBlock:
+    properties:
+      checked:
+        items:
+          $ref: '#/definitions/api.checkInMonthEntry'
+        type: array
+      label:
+        type: string
+    type: object
+  api.checkInMonthEntry:
+    properties:
+      date:
+        type: string
+      points:
+        type: integer
+    type: object
+  api.checkInResponse:
+    properties:
+      already_checked_in:
+        type: boolean
+      balance:
+        type: integer
+      cycle_position:
+        type: integer
+      d7_completed:
+        description: D7Completed feeds the cycle-completion easter egg (#851).
+        type: boolean
+      points_earned:
+        type: integer
+      streak_days:
+        type: integer
+    type: object
+  api.checkInStatusResponse:
+    properties:
+      balance:
+        type: integer
+      cycle:
+        items:
+          $ref: '#/definitions/api.checkInCycleCell'
+        type: array
+      month:
+        $ref: '#/definitions/api.checkInMonthBlock'
+      streak_days:
+        type: integer
+      today:
+        $ref: '#/definitions/api.checkInTodayBlock'
+    type: object
+  api.checkInTodayBlock:
+    properties:
+      can_check_in:
+        type: boolean
+      date:
+        type: string
+      reward_preview:
+        type: integer
+      would_start_new_cycle:
+        type: boolean
     type: object
   api.createInternalJobRequest:
     properties:
@@ -1521,6 +1593,32 @@ definitions:
         type: string
       date:
         type: string
+    type: object
+  api.pointTransactionResponse:
+    properties:
+      amount:
+        type: integer
+      created_at:
+        type: string
+      id:
+        type: string
+      ref:
+        type: string
+      remark:
+        type: string
+      type:
+        type: string
+    type: object
+  api.pointsResponse:
+    properties:
+      balance:
+        type: integer
+      next_cursor:
+        type: string
+      transactions:
+        items:
+          $ref: '#/definitions/api.pointTransactionResponse'
+        type: array
     type: object
   api.profileCore:
     properties:
@@ -7325,6 +7423,57 @@ paths:
       summary: Delete the current user's account and data
       tags:
       - users
+  /api/users/me/check-ins:
+    post:
+      description: Records today's check-in and its earn_checkin points in one transaction.
+        A same-day duplicate returns 200 with already_checked_in=true, zero side effects
+        and zero extra points. d7_completed marks the moment a 7-day cycle completes
+        (client easter egg).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.checkInResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Check in for today
+      tags:
+      - checkins
+  /api/users/me/check-ins/status:
+    get:
+      description: Returns today's check-in state (can_check_in, reward preview, would-start-new-cycle),
+        the 7-slot cycle grid, the current-month checked days with earned points,
+        the streak, and the points balance.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.checkInStatusResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get the check-in page state
+      tags:
+      - checkins
   /api/users/me/custom-races:
     post:
       consumes:
@@ -7971,6 +8120,39 @@ paths:
       summary: Finalize the current user's onboarding
       tags:
       - users
+  /api/users/me/points:
+    get:
+      description: Returns the points balance and a newest-first page of point transactions.
+        Cursor pagination is opaque and limited to 50 entries per page.
+      parameters:
+      - description: Page size (1-50; default 50)
+        in: query
+        name: limit
+        type: integer
+      - description: Opaque page cursor
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.pointsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List the current user's points balance and ledger
+      tags:
+      - checkins
   /api/users/me/profile:
     get:
       produces:
