@@ -27,6 +27,10 @@
     "pages/watch/watch",
     "pages/lottery/lottery",
     "pages/lottery-verify/lottery-verify",
+    "pages/points-mall/points-mall",
+    "pages/points-orders/points-orders",
+    "pages/addresses/addresses",
+    "pages/address-form/address-form",
     "pages/onboarding/onboarding",
     "pages/privacy/privacy",
     "pages/declaration/declaration"

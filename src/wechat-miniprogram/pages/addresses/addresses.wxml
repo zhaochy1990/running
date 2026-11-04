@@ -1,0 +1,72 @@
+<view class="page">
+  <!-- 粉渐变顶栏；单选模式标题「选择地址」（原型） -->
+  <view class="nav-wrap" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn" bindtap="onBack">
+        <image wx:if="{{canBack}}" class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right_white.svg" mode="aspectFit" />
+        <image wx:else class="top-bar__icon" src="/assets/icons/home_white.svg" mode="aspectFit" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">{{pickMode ? '选择地址' : '收货地址'}}</view>
+      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
+  </view>
+
+  <view class="content">
+    <view wx:if="{{loading}}" class="page-loading">加载中…</view>
+
+    <view wx:elif="{{loadFailed}}" class="card load-failed">
+      <view class="load-failed__txt">地址簿加载失败，请检查网络后重试</view>
+      <button class="load-failed__btn" hover-class="none" bindtap="onRetry">重新加载</button>
+    </view>
+
+    <!-- 空态 -->
+    <view wx:elif="{{addresses.length === 0}}" class="empty">
+      <view>还没有收货地址</view>
+      <view wx:if="{{!pickMode}}">点下方按钮添加第一个地址</view>
+    </view>
+
+    <block wx:else>
+      <view class="alist">
+        <view
+          wx:for="{{addresses}}"
+          wx:key="id"
+          class="acard {{pickMode && item.selected ? 'acard--sel' : ''}}"
+          data-id="{{item.id}}"
+          bindtap="onAddressTap"
+        >
+          <view class="aline1">
+            <text class="aline1__n">{{item.name}}</text>
+            <text class="aline1__p">{{item.phone}}</text>
+            <text wx:if="{{item.isDefault}}" class="adef">默认</text>
+          </view>
+          <view class="aaddr">{{item.addr}}</view>
+          <!-- 操作行仅管理模式显示（单选模式无操作行） -->
+          <view wx:if="{{!pickMode}}" class="aacts">
+            <text
+              wx:if="{{!item.isDefault}}"
+              class="aacts__pri"
+              data-id="{{item.id}}"
+              catchtap="onSetDefault"
+            >设为默认</text>
+            <text class="aacts__op" data-id="{{item.id}}" catchtap="onEdit">编辑</text>
+            <text class="aacts__op" data-id="{{item.id}}" catchtap="onDelete">删除</text>
+          </view>
+        </view>
+      </view>
+      <!-- 底部虚线新增（单选模式不显示，原型一致） -->
+      <button wx:if="{{!pickMode}}" class="addbtn" hover-class="none" bindtap="onAdd">＋ 新增收货地址（上限 10 条）</button>
+    </block>
+  </view>
+
+  <!-- 游客态：登录引导弹层（沿用 checkin/profile 游客范式） -->
+  <view wx:if="{{guest}}" class="guest-mask">
+    <view class="guest-card">
+      <view class="guest-card__ic">📍</view>
+      <view class="guest-card__h">收货地址</view>
+      <view class="guest-card__p">登录后管理你的收货地址</view>
+      <button class="guest-card__btn" hover-class="none" bindtap="onGuestLogin">微信一键登录</button>
+    </view>
+  </view>
+</view>

@@ -31,6 +31,8 @@ interface ProfilePageData {
   /** 每日签到行右侧：可签=「今日 +N 分」（粉），已签=「已签」（灰），加载失败留空 */
   checkinRight: string;
   checkinSigned: boolean;
+  /** 积分商城行右侧：积分余额（粉），加载失败留空（#886） */
+  mallRight: string;
   syncing: boolean;
   lastSyncText: string;
 }
@@ -92,6 +94,8 @@ function contentPaddingTopRpx(): number {
 const MENU_ROWS: MenuRow[] = [
   // 每日签到（devops#885 一步签到）：点行即签到，右侧今日 +N 分 / 已签
   { key: 'checkin', title: '每日签到', iconPath: '/assets/icons/calendar_month.svg' },
+  // 积分商城（devops#886）：右侧显示积分余额
+  { key: 'points-mall', title: '积分商城', iconPath: '/assets/icons/shopping_bag.svg' },
   { key: 'plan', title: '我的训练计划', iconPath: '/assets/icons/calendar_month.svg' },
   { key: 'training-status', title: '训练状态', iconPath: '/assets/icons/trend_up.svg' },
   { key: 'race-center', title: '赛事中心', iconPath: '/assets/icons/sprint.svg' },
@@ -121,6 +125,7 @@ Page<ProfilePageData, ProfilePageHandlers>({
     feedbackUnread: 0,
     checkinRight: '',
     checkinSigned: false,
+    mallRight: '',
     syncing: false,
     lastSyncText: '未同步',
   },
@@ -158,7 +163,8 @@ Page<ProfilePageData, ProfilePageHandlers>({
     }
   },
 
-  // 每日签到行右侧 = 今日 +N 分（可签）/ 已签（灰）；失败静默保留现值
+  // 每日签到行右侧 = 今日 +N 分（可签）/ 已签（灰）；同响应顺带喂积分商城行右侧
+  // 余额（#886），一次请求两处展示；失败静默保留现值
   async refreshCheckinRight() {
     if (!this.data.user?.id) return;
     try {
@@ -166,6 +172,7 @@ Page<ProfilePageData, ProfilePageHandlers>({
       this.setData({
         checkinRight: st.today.can_check_in ? `今日 +${st.today.reward_preview} 分` : '已签',
         checkinSigned: !st.today.can_check_in,
+        mallRight: `${st.balance} 分`,
       });
     } catch {
       // 保留现值；临时网络错误不弹窗
@@ -238,6 +245,10 @@ Page<ProfilePageData, ProfilePageHandlers>({
     // 游客态：菜单功能均需登录，toast 提示（登录入口在上方资料卡，自行选择）。
     if (this.data.guest) {
       wx.showToast({ title: '请先登录', icon: 'none' });
+      return;
+    }
+    if (key === 'points-mall') {
+      wx.navigateTo({ url: '/pages/points-mall/points-mall' });
       return;
     }
     if (key === 'plan') {
