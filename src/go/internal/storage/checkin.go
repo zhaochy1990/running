@@ -54,9 +54,11 @@ func (s *Store) AutoMigrateCheckIn(ctx context.Context) error {
 }
 
 // AutoMigratePoints creates or reconciles the point_transactions + user_points
-// tables.
+// tables plus the redemption-side point_products + point_redemptions tables
+// (devops#850 resolution extends this migration over the #883 ledger pair).
 func (s *Store) AutoMigratePoints(ctx context.Context) error {
-	if err := s.db.WithContext(ctx).AutoMigrate(&PointTransaction{}, &UserPoint{}); err != nil {
+	if err := s.db.WithContext(ctx).AutoMigrate(&PointTransaction{}, &UserPoint{},
+		&PointProduct{}, &PointRedemption{}); err != nil {
 		return fmt.Errorf("storage: automigrate points: %w", err)
 	}
 	return nil

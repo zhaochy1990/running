@@ -1062,6 +1062,319 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/admin/points/products": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns every product including inactive ones, sort_order ASC.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "points-admin"
+                ],
+                "summary": "List all products (admin)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.adminProductsResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates one product; status defaults to active. There is no DELETE — delist via PATCH status=inactive.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "points-admin"
+                ],
+                "summary": "Create a product (admin)",
+                "parameters": [
+                    {
+                        "description": "Product",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.adminProductCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.adminProductResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/points/products/{id}": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Applies partial updates: price/stock/limit as absolute values, status active|inactive for shelf control. Products are never hard-deleted.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "points-admin"
+                ],
+                "summary": "Update a product (admin)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Product id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.adminProductPatchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.adminProductResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/points/redemptions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns redemption orders newest-first with an opaque next_cursor, optionally filtered by status (pending_shipment|shipped).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "points-admin"
+                ],
+                "summary": "List redemption orders (admin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Status filter (pending_shipment|shipped)",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (1-50; default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Opaque page cursor",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.adminRedemptionsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/points/redemptions/{id}/ship": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Moves a pending_shipment order to shipped with its tracking number (terminal). Shipping an already shipped order idempotently returns its current state.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "points-admin"
+                ],
+                "summary": "Ship a redemption order (admin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Order id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Tracking number",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.adminShipRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.adminRedemptionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/admin/races": {
             "get": {
                 "security": [
@@ -3132,6 +3445,282 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/users/me/addresses": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the caller's addresses, default first, newest within each group.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "addresses"
+                ],
+                "summary": "List my address book",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.addressesResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates one address book entry (≤10 per user). The first entry a user creates becomes their default; an explicit is_default clears the previous default.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "addresses"
+                ],
+                "summary": "Add an address",
+                "parameters": [
+                    {
+                        "description": "Address",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.addressCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.addressResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/addresses/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Hard-deletes one owned address. Redemption orders keep their receiver snapshot, so history is unaffected.",
+                "tags": [
+                    "addresses"
+                ],
+                "summary": "Delete an address",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Address id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Applies a partial edit to one owned address; absent fields stay unchanged.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "addresses"
+                ],
+                "summary": "Update an address",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Address id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.addressPatchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.addressResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/addresses/{id}/default": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Makes one owned address the default; the previous default is cleared in the same transaction.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "addresses"
+                ],
+                "summary": "Set the default address",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Address id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.addressResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/users/me/check-ins": {
             "post": {
                 "security": [
@@ -4226,6 +4815,173 @@ const docTemplate = `{
                     },
                     "422": {
                         "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/points/products": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the active products (sort_order ASC) with the caller's own redeemed count per product. Inactive products never appear.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "points"
+                ],
+                "summary": "List the points shop",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.productsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/points/redemptions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the caller's orders newest-first (receiver snapshot included) with an opaque next_cursor.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "points"
+                ],
+                "summary": "List my redemption orders",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page size (1-50; default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Opaque page cursor",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.redemptionsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Runs the redemption transaction: idempotency replay check, guarded stock decrement, per-user limit count, guarded points deduction, then order + ledger rows in one commit. Repeating an idempotency_key returns the stored order with zero side effects.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "points"
+                ],
+                "summary": "Redeem a product with points",
+                "parameters": [
+                    {
+                        "description": "Redeem request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.redemptionCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.redemptionCreateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
                         }
@@ -8284,6 +9040,124 @@ const docTemplate = `{
                 }
             }
         },
+        "api.addressCreateRequest": {
+            "type": "object",
+            "required": [
+                "address_detail",
+                "city",
+                "district",
+                "province",
+                "receiver_name",
+                "receiver_phone"
+            ],
+            "properties": {
+                "address_detail": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "city": {
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "district": {
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "is_default": {
+                    "type": "boolean"
+                },
+                "province": {
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "receiver_name": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "receiver_phone": {
+                    "type": "string",
+                    "maxLength": 32
+                }
+            }
+        },
+        "api.addressPatchRequest": {
+            "type": "object",
+            "properties": {
+                "address_detail": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "city": {
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "district": {
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "is_default": {
+                    "type": "boolean"
+                },
+                "province": {
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "receiver_name": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "receiver_phone": {
+                    "type": "string",
+                    "maxLength": 32
+                }
+            }
+        },
+        "api.addressResponse": {
+            "type": "object",
+            "properties": {
+                "address_detail": {
+                    "type": "string"
+                },
+                "city": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "district": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_default": {
+                    "type": "boolean"
+                },
+                "province": {
+                    "type": "string"
+                },
+                "receiver_name": {
+                    "type": "string"
+                },
+                "receiver_phone": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.addressesResponse": {
+            "type": "object",
+            "properties": {
+                "addresses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.addressResponse"
+                    }
+                }
+            }
+        },
         "api.adminDeclarationEntry": {
             "type": "object",
             "properties": {
@@ -8306,6 +9180,205 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/api.adminDeclarationEntry"
                     }
+                }
+            }
+        },
+        "api.adminProductCreateRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "points_price"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 1024
+                },
+                "image_url": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "per_user_limit": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "points_price": {
+                    "type": "integer"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string",
+                    "maxLength": 16
+                },
+                "stock": {
+                    "type": "integer",
+                    "minimum": 0
+                }
+            }
+        },
+        "api.adminProductPatchRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 1024
+                },
+                "image_url": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "per_user_limit": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "points_price": {
+                    "type": "integer"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string",
+                    "maxLength": 16
+                },
+                "stock": {
+                    "type": "integer",
+                    "minimum": 0
+                }
+            }
+        },
+        "api.adminProductResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "image_url": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "per_user_limit": {
+                    "type": "integer"
+                },
+                "points_price": {
+                    "type": "integer"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "stock": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.adminProductsResponse": {
+            "type": "object",
+            "properties": {
+                "products": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.adminProductResponse"
+                    }
+                }
+            }
+        },
+        "api.adminRedemptionResponse": {
+            "type": "object",
+            "properties": {
+                "address_detail": {
+                    "type": "string"
+                },
+                "city": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "district": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "points_cost": {
+                    "type": "integer"
+                },
+                "product_id": {
+                    "type": "integer"
+                },
+                "product_name": {
+                    "type": "string"
+                },
+                "province": {
+                    "type": "string"
+                },
+                "receiver_name": {
+                    "type": "string"
+                },
+                "receiver_phone": {
+                    "type": "string"
+                },
+                "shipped_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tracking_no": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.adminRedemptionsResponse": {
+            "type": "object",
+            "properties": {
+                "next_cursor": {
+                    "type": "string"
+                },
+                "redemptions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.adminRedemptionResponse"
+                    }
+                }
+            }
+        },
+        "api.adminShipRequest": {
+            "type": "object",
+            "required": [
+                "tracking_no"
+            ],
+            "properties": {
+                "tracking_no": {
+                    "type": "string",
+                    "maxLength": 64
                 }
             }
         },
@@ -10385,6 +11458,46 @@ const docTemplate = `{
                 }
             }
         },
+        "api.productResponse": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "image_url": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "per_user_limit": {
+                    "type": "integer"
+                },
+                "points_price": {
+                    "type": "integer"
+                },
+                "redeemed_count": {
+                    "type": "integer"
+                },
+                "stock": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.productsResponse": {
+            "type": "object",
+            "properties": {
+                "products": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.productResponse"
+                    }
+                }
+            }
+        },
         "api.profileCore": {
             "type": "object",
             "properties": {
@@ -11713,6 +12826,101 @@ const docTemplate = `{
                 },
                 "user_id": {
                     "type": "string"
+                }
+            }
+        },
+        "api.redemptionCreateRequest": {
+            "type": "object",
+            "required": [
+                "address_id",
+                "idempotency_key",
+                "product_id"
+            ],
+            "properties": {
+                "address_id": {
+                    "type": "integer"
+                },
+                "idempotency_key": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "product_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.redemptionCreateResponse": {
+            "type": "object",
+            "properties": {
+                "balance": {
+                    "type": "integer"
+                },
+                "order": {
+                    "$ref": "#/definitions/api.redemptionResponse"
+                },
+                "replayed": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.redemptionResponse": {
+            "type": "object",
+            "properties": {
+                "address_detail": {
+                    "type": "string"
+                },
+                "city": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "district": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "points_cost": {
+                    "type": "integer"
+                },
+                "product_id": {
+                    "type": "integer"
+                },
+                "product_name": {
+                    "type": "string"
+                },
+                "province": {
+                    "type": "string"
+                },
+                "receiver_name": {
+                    "type": "string"
+                },
+                "receiver_phone": {
+                    "type": "string"
+                },
+                "shipped_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tracking_no": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.redemptionsResponse": {
+            "type": "object",
+            "properties": {
+                "next_cursor": {
+                    "type": "string"
+                },
+                "redemptions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.redemptionResponse"
+                    }
                 }
             }
         },
