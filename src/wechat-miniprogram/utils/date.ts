@@ -16,7 +16,8 @@ export interface ShanghaiWeekday {
 const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000; // UTC+8，无 DST
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function pad2(n: number): string {
+/** 两位数补零（日期标签 MM.DD 等展示拼装共用）。 */
+export function pad2(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
 }
 
@@ -49,7 +50,8 @@ export function shanghaiShiftDays(ymd: string, days: number): string {
   return epochToShanghaiYmd(shanghaiYmdToEpoch(ymd) + days * DAY_MS);
 }
 
-function shanghaiDowOfYmd(ymd: string): number {
+/** 上海 YYYY-MM-DD → 星期几（0=周日 … 6=周六）。 */
+export function shanghaiDowOfYmd(ymd: string): number {
   return epochToShanghaiDow(shanghaiYmdToEpoch(ymd));
 }
 

@@ -1,0 +1,590 @@
+/* ============================================================
+   每日签到页 —— UI 权威 = devops#851 resolution + 原型
+   prototypes/851-checkin-spike.html（变体 A，RQ 方案）。
+   像素值按 375 设计稿 ×2 转 rpx；一次性灰阶/米色沿用原型字面量，
+   主题色一律走 styles/theme.wxss 令牌（白底 accent 文字用 accent-deep 阶）。
+   ============================================================ */
+
+.page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: var(--color-bg);
+}
+
+/* ---------- 粉渐变头（顶栏 + hero 同一渐变） ---------- */
+
+.hero-wrap {
+  background: linear-gradient(170deg, #ff7d6e, var(--color-accent));
+}
+
+.top-bar__inner {
+  height: 128rpx;
+  display: flex;
+  align-items: center;
+  padding: 0 40rpx;
+}
+
+.top-bar__btn {
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.top-bar__btn--spacer {
+  width: 88rpx;
+}
+
+.top-bar__icon {
+  width: 48rpx;
+  height: 48rpx;
+}
+
+/* 顶栏返回小房子约定：栈内=返回箭头（白），栈底=小房子，fail 兜底 switchTab coach */
+.top-bar__icon--back {
+  transform: rotate(180deg);
+}
+
+.top-bar__title-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.top-bar__title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: var(--color-on-accent);
+}
+
+.hero {
+  display: flex;
+  align-items: center;
+  gap: 28rpx;
+  padding: 24rpx 32rpx 104rpx;
+}
+
+.hero__ava {
+  width: 112rpx;
+  height: 112rpx;
+  border-radius: 50%;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  overflow: hidden;
+  box-shadow: 0 0 0 6rpx rgba(255, 255, 255, 0.35);
+}
+
+.hero__ava-img {
+  width: 112rpx;
+  height: 112rpx;
+}
+
+.hero__ava-placeholder {
+  width: 56rpx;
+  height: 56rpx;
+}
+
+.hero__tx {
+  color: var(--color-on-accent);
+  min-width: 0;
+}
+
+.hero__l1 {
+  font-size: 32rpx;
+}
+
+.hero__n {
+  font-size: 60rpx;
+  font-weight: 700;
+  margin: 0 12rpx;
+}
+
+.hero__l2 {
+  font-size: 24rpx;
+  opacity: 0.85;
+  margin-top: 6rpx;
+}
+
+.content {
+  padding-bottom: 48rpx;
+}
+
+.page-loading {
+  padding: 64rpx 0 240rpx;
+  text-align: center;
+  font-size: 26rpx;
+  color: var(--color-text-secondary);
+}
+
+/* ---------- 通用白卡（无边框卡片约定：纯色卡 + 圆角，无描边） ---------- */
+
+.card {
+  background: var(--color-card);
+  border-radius: 32rpx;
+  padding: 32rpx;
+  margin: 0 28rpx 24rpx;
+}
+
+/* ---------- 签到日程卡（压 hero 边） ---------- */
+
+.sched {
+  margin-top: -64rpx;
+  position: relative;
+  box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.05);
+}
+
+.sche-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 28rpx;
+}
+
+.sche-head__t {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.sche-head__r {
+  font-size: 24rpx;
+  color: var(--color-text-secondary);
+}
+
+.banner {
+  border-radius: 24rpx;
+  padding: 20rpx 24rpx;
+  font-size: 26rpx;
+  margin-bottom: 24rpx;
+  line-height: 1.5;
+}
+
+/* 断签重置横幅（米色①） */
+.banner--reset {
+  background: #f7f1ea;
+  color: #8a6d4f;
+}
+
+/* D7 已签彩蛋横幅（粉） */
+.banner--win {
+  background: rgba(var(--color-accent-rgb), 0.08);
+  color: var(--color-accent-deep);
+  font-weight: 600;
+}
+
+/* ---------- 周历 ---------- */
+
+.cal {
+  margin-bottom: 16rpx;
+}
+
+.wk-row {
+  display: flex;
+  position: relative;
+  margin-bottom: 16rpx;
+}
+
+/* 行内连线：圆心高度处一根细线（原型 #e4e4ea） */
+.wk-row::before {
+  content: '';
+  position: absolute;
+  left: 7.15%;
+  right: 7.15%;
+  top: 32rpx;
+  height: 4rpx;
+  background: #e4e4ea;
+}
+
+.wcell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+  position: relative;
+  z-index: 1;
+}
+
+.wcirc {
+  width: 68rpx;
+  height: 68rpx;
+  border-radius: 50%;
+  background: #f0f0f3;
+  box-shadow: 0 0 0 6rpx #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wcirc__check {
+  color: var(--color-on-accent);
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+/* 今天未签：白底粉描边 + 内部小粉点 */
+.wcell--today .wcirc {
+  background: #ffffff;
+  border: 4rpx solid var(--color-accent);
+  box-sizing: border-box;
+}
+
+.wcirc__dot {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 50%;
+  background: var(--color-accent);
+}
+
+.wcell--future .wcirc {
+  background: #f7f7fa;
+}
+
+.wcell--other .wcirc {
+  background: #fafafb;
+}
+
+.wcell--checked .wcirc {
+  background: var(--color-accent);
+}
+
+.wpts {
+  font-size: 18rpx;
+  color: var(--color-accent-deep);
+  font-weight: 600;
+  min-height: 22rpx;
+  line-height: 1;
+}
+
+.wdate {
+  font-size: 20rpx;
+  color: var(--color-text-secondary);
+}
+
+.wcell--checked .wdate {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.wcell--today .wdate {
+  color: var(--color-accent-deep);
+  font-weight: 700;
+}
+
+.wcell--other .wdate {
+  color: #d5d5db;
+}
+
+/* D7 集齐彩蛋：整排圆圈 pulse 两轮 */
+.cal--win .wcirc {
+  animation: winPulse 0.9s 2;
+}
+
+@keyframes winPulse {
+  50% {
+    transform: scale(1.15);
+  }
+}
+
+/* ---------- 卡底居中圆形箭头钮 ---------- */
+
+.chev-btn {
+  margin: 8rpx auto 0;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  background: #f0f0f3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chev-btn__icon {
+  width: 36rpx;
+  height: 24rpx;
+  transition: transform 0.25s;
+}
+
+.chev-btn__icon--open {
+  transform: rotate(180deg);
+}
+
+/* ---------- CTA（原生 button 三坑逐一复位：显式尺寸 / 自绘底色 / ::after 描边
+   去除 / 行高与盒模型对齐，同 coach.wxss 约定） ---------- */
+
+.cta {
+  display: block;
+  width: 100%;
+  height: 92rpx;
+  margin: 28rpx 0 0;
+  padding: 0;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 46rpx;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 32rpx;
+  font-weight: 600;
+  line-height: 92rpx;
+  text-align: center;
+  overflow: visible;
+}
+
+.cta::after {
+  border: none;
+}
+
+.cta--disabled {
+  background: #e7e7ec;
+  color: var(--color-text-secondary);
+}
+
+/* ---------- 通用卡头（我的积分 / 签到成就） ---------- */
+
+.chead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.chead__t {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.chead__s {
+  font-size: 24rpx;
+  color: var(--color-text-secondary);
+}
+
+.chead__b {
+  color: var(--color-accent-deep);
+  font-weight: 700;
+}
+
+.chead__links {
+  display: flex;
+  gap: 28rpx;
+}
+
+.chead__link {
+  font-size: 24rpx;
+  color: var(--color-text-secondary);
+}
+
+/* 积分两栏 */
+
+.stats {
+  display: flex;
+  margin-top: 28rpx;
+}
+
+.stat {
+  flex: 1;
+  text-align: center;
+}
+
+.stat + .stat {
+  border-left: 1rpx solid #f0f0f3;
+}
+
+.stat__v-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.stat__v {
+  font-size: 52rpx;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.2;
+}
+
+.stat__l {
+  font-size: 24rpx;
+  color: var(--color-text-secondary);
+  margin-top: 4rpx;
+}
+
+/* 浮动 +N（原型 floatUp：上飘淡出 1.4s） */
+
+.float-pt {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  margin-left: -28rpx;
+  font-size: 36rpx;
+  font-weight: 700;
+  color: var(--color-accent-deep);
+  animation: floatUp 1.4s forwards;
+  pointer-events: none;
+  z-index: 30;
+}
+
+@keyframes floatUp {
+  0% {
+    opacity: 0;
+    transform: translateY(12rpx);
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-92rpx);
+  }
+}
+
+/* 成就里程碑 7 圆点（圆内累计分值） */
+
+.ms-row {
+  display: flex;
+  margin-top: 28rpx;
+}
+
+.ms {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.ms__c {
+  width: 76rpx;
+  height: 76rpx;
+  border-radius: 50%;
+  background: #f0f0f3;
+  color: #c3c3ca;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24rpx;
+  font-weight: 700;
+}
+
+.ms--hit .ms__c {
+  background: rgba(var(--color-accent-rgb), 0.08);
+  color: var(--color-accent-deep);
+  box-shadow: inset 0 0 0 4rpx var(--color-accent);
+}
+
+.ms__l {
+  font-size: 20rpx;
+  color: var(--color-text-secondary);
+}
+
+.ms--hit .ms__l {
+  color: var(--color-accent-deep);
+  font-weight: 600;
+}
+
+/* 规则脚注（常显） */
+
+.foot-rule {
+  color: var(--color-text-secondary);
+  font-size: 22rpx;
+  line-height: 1.7;
+  text-align: center;
+  padding: 8rpx 32rpx 0;
+}
+
+/* ---------- 加载失败 ---------- */
+
+.load-failed {
+  text-align: center;
+}
+
+.load-failed__txt {
+  font-size: 26rpx;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.load-failed__btn {
+  margin: 24rpx auto 0;
+  width: 320rpx;
+  height: 80rpx;
+  padding: 0;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 40rpx;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 28rpx;
+  font-weight: 600;
+  line-height: 80rpx;
+}
+
+.load-failed__btn::after {
+  border: none;
+}
+
+/* ---------- 游客态登录引导弹层 ---------- */
+
+.guest-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(246, 246, 248, 0.86);
+  backdrop-filter: blur(6rpx);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+.guest-card {
+  background: var(--color-card);
+  border-radius: 36rpx;
+  padding: 52rpx 48rpx;
+  text-align: center;
+  width: 540rpx;
+  box-shadow: 0 16rpx 60rpx rgba(0, 0, 0, 0.08);
+}
+
+.guest-card__ic {
+  font-size: 68rpx;
+}
+
+.guest-card__h {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 16rpx 0 8rpx;
+}
+
+.guest-card__p {
+  font-size: 24rpx;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+  margin-bottom: 28rpx;
+}
+
+.guest-card__btn {
+  width: 100%;
+  height: 92rpx;
+  padding: 0;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 46rpx;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 32rpx;
+  font-weight: 600;
+  line-height: 92rpx;
+}
+
+.guest-card__btn::after {
+  border: none;
+}

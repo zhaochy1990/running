@@ -218,6 +218,19 @@
   flex-shrink: 0;
 }
 
+/* 每日签到行右侧：今日 +N 分（粉）/ 已签（灰） */
+.menu-row__checkin-right {
+  font-size: 22rpx;
+  font-weight: 600;
+  color: var(--color-accent-deep);
+  flex-shrink: 0;
+}
+
+.menu-row__checkin-right--signed {
+  color: var(--color-text-secondary);
+  font-weight: 400;
+}
+
 .menu-row--disabled {
   opacity: 0.6;
 }
