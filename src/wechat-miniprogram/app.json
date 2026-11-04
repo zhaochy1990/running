@@ -9,6 +9,7 @@
     "pages/activities/activities",
     "pages/activity-detail/activity-detail",
     "pages/profile/profile",
+    "pages/checkin/checkin",
     "pages/profile-edit/profile-edit",
     "pages/training-status/training-status",
     "pages/training-plan/training-plan",

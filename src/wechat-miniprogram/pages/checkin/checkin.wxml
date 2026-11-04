@@ -1,0 +1,132 @@
+<view class="page">
+  <!-- 粉渐变头：顶栏与 hero 同一渐变（原型 navbar 粉底白字） -->
+  <view class="hero-wrap">
+    <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
+      <view class="top-bar__inner">
+        <view class="top-bar__btn" bindtap="onBack">
+          <image wx:if="{{canBack}}" class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right_white.svg" mode="aspectFit" />
+          <image wx:else class="top-bar__icon" src="/assets/icons/home_white.svg" mode="aspectFit" />
+        </view>
+        <view class="top-bar__title-wrap">
+          <view class="top-bar__title">每日签到</view>
+        </view>
+        <view class="top-bar__btn top-bar__btn--spacer"></view>
+      </view>
+    </view>
+
+    <!-- hero：头像圈 + 连签大数字 + 副文案 -->
+    <view class="hero">
+      <view class="hero__ava">
+        <image wx:if="{{avatarUrl}}" class="hero__ava-img" src="{{avatarUrl}}" mode="aspectFill" />
+        <image wx:else class="hero__ava-placeholder" src="/assets/icons/person.svg" mode="aspectFit" />
+      </view>
+      <view class="hero__tx">
+        <view class="hero__l1">我已经连续签到 <text class="hero__n">{{streak}}</text> 天</view>
+        <view class="hero__l2">{{heroSub}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="content">
+    <!-- 首屏加载 -->
+    <view wx:if="{{loading}}" class="page-loading">加载中…</view>
+
+    <!-- 加载失败（首次进入）：hero 保留，卡片区给重试 -->
+    <view wx:elif="{{loadFailed}}" class="card load-failed">
+      <view class="load-failed__txt">签到状态加载失败，请检查网络后重试</view>
+      <button class="load-failed__btn" hover-class="none" bindtap="onRetry">重新加载</button>
+    </view>
+
+    <block wx:else>
+      <!-- 签到日程卡：白卡压 hero 边 -->
+      <view class="card sched">
+        <view class="sche-head">
+          <view class="sche-head__t">签到日程</view>
+          <view class="sche-head__r">本月已签 {{monthCheckedCount}} 天</view>
+        </view>
+
+        <!-- 断签重置横幅（米色①，仅 streak 归零的今天） -->
+        <view wx:if="{{showResetBanner}}" class="banner banner--reset">新周期开启 · 今天签到即第 1 天，连签 7 天可得 11 分</view>
+        <!-- D7 已签彩蛋横幅（粉，常驻） -->
+        <view wx:if="{{showWinBanner}}" class="banner banner--win">🎉 连签 7 天达成，+3 分已入账！新周期明天开启</view>
+
+        <!-- 周历：收起=今天所在行；展开=整月（前后月补位灰格 + 已签格 +N） -->
+        <view class="cal {{winPulse ? 'cal--win' : ''}}">
+          <view class="wk-row" wx:for="{{visibleRows}}" wx:for-item="row">
+            <view class="wcell wcell--{{cell.state}}" wx:for="{{row}}" wx:for-item="cell" wx:key="label">
+              <view class="wcirc">
+                <text wx:if="{{cell.state === 'checked'}}" class="wcirc__check">✓</text>
+                <view wx:elif="{{cell.state === 'today'}}" class="wcirc__dot"></view>
+              </view>
+              <view class="wpts">{{monthOpen && cell.pts > 0 ? '+' + cell.pts : ''}}</view>
+              <view class="wdate">{{cell.label}}</view>
+            </view>
+          </view>
+        </view>
+
+        <!-- 卡底居中圆形箭头钮：收起▾ / 展开▴（180° 旋转） -->
+        <view class="chev-btn" bindtap="onToggleMonth">
+          <image class="chev-btn__icon {{monthOpen ? 'chev-btn__icon--open' : ''}}" src="/assets/icons/chevron_down_round.svg" mode="aspectFit" />
+        </view>
+
+        <!-- 卡内 CTA -->
+        <button
+          class="cta {{canCheck ? '' : 'cta--disabled'}}"
+          hover-class="none"
+          disabled="{{!canCheck || checking}}"
+          bindtap="onCheckIn"
+        >{{ctaText}}</button>
+      </view>
+
+      <!-- 我的积分卡 -->
+      <view class="card">
+        <view class="chead">
+          <view class="chead__t">我的积分</view>
+          <view class="chead__links">
+            <text class="chead__link" bindtap="onDetailTap">明细 ›</text>
+            <text class="chead__link" bindtap="onMallTap">去商城 ›</text>
+          </view>
+        </view>
+        <view class="stats">
+          <view class="stat">
+            <view class="stat__v-wrap">
+              <view class="stat__v">{{balance}}</view>
+              <view wx:if="{{justGained > 0}}" class="float-pt">+{{justGained}}</view>
+            </view>
+            <view class="stat__l">积分余额</view>
+          </view>
+          <view class="stat">
+            <view class="stat__v">{{cycleEarned}}</view>
+            <view class="stat__l">本轮已得</view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 签到成就卡：本轮里程碑 7 圆点（累计分值） -->
+      <view class="card">
+        <view class="chead">
+          <view class="chead__t">签到成就</view>
+          <view class="chead__s">本轮签满 7 天共得 <text class="chead__b">11</text> 分</view>
+        </view>
+        <view class="ms-row">
+          <view class="ms {{item.hit ? 'ms--hit' : ''}}" wx:for="{{milestones}}" wx:key="label">
+            <view class="ms__c">{{item.cum}}</view>
+            <view class="ms__l">{{item.label}}</view>
+          </view>
+        </view>
+      </view>
+
+      <view class="foot-rule">连续签到 7 天一轮：第 1–4 天每天 1 分，第 5–6 天每天 2 分，第 7 天 3 分；中断后从第 1 天重新开始，积分永久有效。</view>
+    </block>
+  </view>
+
+  <!-- 游客态：登录引导弹层（沿用 profile 游客范式） -->
+  <view wx:if="{{guest}}" class="guest-mask">
+    <view class="guest-card">
+      <view class="guest-card__ic">📅</view>
+      <view class="guest-card__h">签到领积分</view>
+      <view class="guest-card__p">连续签到 7 天一轮，每天得积分，可兑换周边好礼</view>
+      <button class="guest-card__btn" hover-class="none" bindtap="onGuestLogin">微信一键登录</button>
+    </view>
+  </view>
+</view>

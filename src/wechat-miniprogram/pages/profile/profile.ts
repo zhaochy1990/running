@@ -3,6 +3,7 @@ import { openLogin } from '../../utils/authGate';
 import { triggerSync, pollPipeline } from '../../services/sync';
 import { getWatchInfo } from '../../services/watch';
 import { listFeedbacks } from '../../services/feedback';
+import { createCheckIn, getCheckInStatus } from '../../services/checkin';
 import type { UserProfile } from '../../types/api';
 import type { PollPipelineHandle } from '../../services/sync';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
@@ -27,6 +28,9 @@ interface ProfilePageData {
   rows: MenuRow[];
   /** 意见反馈入口红点（total_unread，99+ 截断），0/隐藏 */
   feedbackUnread: number;
+  /** 每日签到行右侧：可签=「今日 +N 分」（粉），已签=「已签」（灰），加载失败留空 */
+  checkinRight: string;
+  checkinSigned: boolean;
   syncing: boolean;
   lastSyncText: string;
 }
@@ -41,8 +45,14 @@ interface ProfilePageHandlers {
   startSync(userId: string): Promise<void>;
   refreshLastSync(): Promise<void>;
   refreshFeedbackUnread(): Promise<void>;
+  /** 每日签到行右侧状态（今日 +N 分 / 已签），失败静默保留现值 */
+  refreshCheckinRight(): Promise<void>;
+  /** 一步签到：点行即 POST /api/users/me/check-ins（幂等），成功带 gained 进签到页 */
+  checkinTap(): Promise<void>;
   /** 当前同步任务的轮询句柄，存实例上以避免模块级状态在多实例间串扰。 */
   _pollHandle?: PollPipelineHandle;
+  /** 一步签到在途 guard（防双击重复 POST）。 */
+  _checkinBusy?: boolean;
 }
 
 function statusBarHeight(): number {
@@ -80,6 +90,8 @@ function contentPaddingTopRpx(): number {
 }
 
 const MENU_ROWS: MenuRow[] = [
+  // 每日签到（devops#885 一步签到）：点行即签到，右侧今日 +N 分 / 已签
+  { key: 'checkin', title: '每日签到', iconPath: '/assets/icons/calendar_month.svg' },
   { key: 'plan', title: '我的训练计划', iconPath: '/assets/icons/calendar_month.svg' },
   { key: 'training-status', title: '训练状态', iconPath: '/assets/icons/trend_up.svg' },
   { key: 'race-center', title: '赛事中心', iconPath: '/assets/icons/sprint.svg' },
@@ -107,6 +119,8 @@ Page<ProfilePageData, ProfilePageHandlers>({
     avatarUrl: '',
     rows: MENU_ROWS,
     feedbackUnread: 0,
+    checkinRight: '',
+    checkinSigned: false,
     syncing: false,
     lastSyncText: '未同步',
   },
@@ -130,6 +144,7 @@ Page<ProfilePageData, ProfilePageHandlers>({
     });
     void this.refreshLastSync();
     void this.refreshFeedbackUnread();
+    void this.refreshCheckinRight();
   },
 
   // 意见反馈入口红点 = total_unread；未登录/失败静默保留现值
@@ -140,6 +155,35 @@ Page<ProfilePageData, ProfilePageHandlers>({
       this.setData({ feedbackUnread: res.total_unread });
     } catch {
       // 保留现值；临时网络错误不弹窗
+    }
+  },
+
+  // 每日签到行右侧 = 今日 +N 分（可签）/ 已签（灰）；失败静默保留现值
+  async refreshCheckinRight() {
+    if (!this.data.user?.id) return;
+    try {
+      const st = await getCheckInStatus();
+      this.setData({
+        checkinRight: st.today.can_check_in ? `今日 +${st.today.reward_preview} 分` : '已签',
+        checkinSigned: !st.today.can_check_in,
+      });
+    } catch {
+      // 保留现值；临时网络错误不弹窗
+    }
+  },
+
+  // 一步签到（#851 改判）：点行即 POST（幂等），成功带 gained redirect 进签到页
+  // 以刚签到态呈现；POST 失败仍进页（可签态），页内 CTA 兜底重试。
+  async checkinTap() {
+    if (this._checkinBusy) return;
+    this._checkinBusy = true;
+    try {
+      const res = await createCheckIn();
+      wx.navigateTo({ url: `/pages/checkin/checkin?gained=${res.points_earned}` });
+    } catch {
+      wx.navigateTo({ url: '/pages/checkin/checkin' });
+    } finally {
+      this._checkinBusy = false;
     }
   },
 
@@ -180,12 +224,22 @@ Page<ProfilePageData, ProfilePageHandlers>({
   },
 
   onRowTap(e: WechatMiniprogram.TouchEvent) {
+    const key = e.currentTarget.dataset.key as string;
+    if (key === 'checkin') {
+      // 游客点「每日签到」= 登录引导弹层，登录成功 reLaunch 回签到页续接流程；
+      // 其余菜单行维持「toast 提示、资料卡登录」的游客范式。
+      if (this.data.guest) {
+        openLogin('/pages/checkin/checkin');
+        return;
+      }
+      void this.checkinTap();
+      return;
+    }
     // 游客态：菜单功能均需登录，toast 提示（登录入口在上方资料卡，自行选择）。
     if (this.data.guest) {
       wx.showToast({ title: '请先登录', icon: 'none' });
       return;
     }
-    const key = e.currentTarget.dataset.key as string;
     if (key === 'plan') {
       wx.navigateTo({ url: '/pages/training-plan/training-plan' });
       return;
