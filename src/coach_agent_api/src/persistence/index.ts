@@ -8,8 +8,8 @@ import { MySqlLotteryStaffStore } from "./lotteryStaff.js";
 import { createPool, ensureDatabase } from "./mysql.js";
 import { MySqlCoachShareStore } from "./shares.js";
 import { MySqlStore } from "./store.js";
-import { MySqlThreadLock, MySqlTurnReceiptStore } from "./turns.js";
 import { MySqlThreadRaceTargetStore } from "./threadRaceTargets.js";
+import { MySqlThreadLock, MySqlTurnReceiptStore } from "./turns.js";
 
 export interface Persistence {
   checkpointer: MySqlSaver;
