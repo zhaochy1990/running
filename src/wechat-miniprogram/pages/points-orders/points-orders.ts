@@ -1,8 +1,9 @@
 // 我的兑换页（devops#886，UI 权威 = devops#852 resolution + 原型）。
-// 订单卡：订单号 R-xxxx + 日期 / 商品行（占位图/名/寄达地/-N 分）/ 运费行（包邮/¥N，
-// devops#905）/ 四态 chip（橙待支付 / 橙黄待发货 / 绿已发货 / 灰已取消）/ 已发货追加
-// 运单号行+复制；待支付卡带「去支付」（重新 prepay 唤起收银台）；已取消卡带超时取消
-// 说明（积分已退回，明细页见 adjust +N 流水）。
+// 订单卡：订单号 R-xxxx + 日期 / 商品行（占位图/名/尺码快照/寄达地/-N 分）/ 运费行
+// （包邮/¥N，devops#905）/ 四态 chip（橙待支付 / 橙黄待发货 / 绿已发货 / 灰已取消）/
+// 已发货追加运单号行+复制；待支付卡带「去支付」（重新 prepay 唤起收银台）；已取消卡
+// 带超时取消说明（积分已退回，明细页见 adjust +N 流水）。
+// 尺码快照（devops#910）：by_sku 订单展示 sku_label，single/旧单缺省 = 不渲染。
 // cursor 分页倒序（#884 契约，服务端已按 id DESC）。
 import { userStore } from '../../store/index';
 import { currentRouteForRedirect, openLogin } from '../../utils/authGate';
@@ -32,6 +33,8 @@ interface OrderRow {
   name: string;
   /** 寄达地「省 市 区」。 */
   destination: string;
+  /** 尺码快照（devops#910）：by_sku 订单非空展示，single/旧单空 = 不渲染。 */
+  skuLabel: string;
   cost: number;
   /** chip class 后缀 + 文案（四态，未知状态回落已取消灰 —— 展示层不瞎猜绿色）。 */
   chipCls: string;
@@ -97,6 +100,7 @@ function toOrderRow(r: PointRedemption): OrderRow {
     // 多件订单在名称后缀 ×N（旧后端无 quantity 字段时自然回退单件展示）。
     name: r.quantity > 1 ? `${r.product_name} ×${r.quantity}` : r.product_name,
     destination: `${r.province} ${r.city} ${r.district}`,
+    skuLabel: r.sku_label || '',
     cost: r.points_cost,
     chipCls: chip.cls,
     chipLabel: chip.label,

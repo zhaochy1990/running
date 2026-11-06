@@ -5,6 +5,14 @@
 import { ApiError, http } from './request';
 import type { ShippingPolicy } from '../utils/shipping';
 
+/** by_sku 商品的一条规格行（devops#909）：尺码选择器要的三件套。 */
+export interface PointProductSku {
+  id: number;
+  /** 尺码文案（如 M / L），订单 sku_label 快照的来源。 */
+  spec_value: string;
+  stock: number;
+}
+
 /** GET /api/users/me/points/products 单项（仅 active 商品；redeemed_count 喂限购态）。 */
 export interface PointProduct {
   id: number;
@@ -13,10 +21,15 @@ export interface PointProduct {
   /** COS 直链；V1 admin 上传管道未建时为空 → 页面渲染占位色块。 */
   image_url?: string | null;
   points_price: number;
+  /** by_sku 商品 = SKU 合计（仅展示，devops#909）；single = 真库存。旧后端必返回。 */
   stock: number;
   /** 0 = 不限购（#849 改判）。 */
   per_user_limit: number;
   redeemed_count: number;
+  /** 规格模式（devops#910）：by_sku = 抽屉选尺码；旧后端无此字段 → undefined 视同 single。 */
+  spec_mode?: 'single' | 'by_sku';
+  /** by_sku 才带（sort_order ASC）；single/旧后端缺省 → 页面不渲染尺码区。 */
+  skus?: PointProductSku[];
   /** 运费策略 + 运费（分），jzsh_fee 对江浙沪外地址收 shipping_fee（devops#904）。 */
   shipping_policy: ShippingPolicy;
   shipping_fee: number;
@@ -46,6 +59,8 @@ export interface PointRedemption {
   /** 数量（旧客户端缺省=1；成本=单价×数量）。 */
   quantity: number;
   status: RedemptionStatus;
+  /** 尺码快照（devops#909/910）：by_sku 订单 = 下单时的 spec_value；single/旧单缺省 → 不展示。 */
+  sku_label?: string | null;
   tracking_no?: string | null;
   shipped_at?: string | null;
   /** 运费快照（分）与策略快照：兑换事务与扣分同一提交冻结（devops#904）。 */
@@ -109,11 +124,13 @@ export function listPointProducts(): Promise<PointProductsResponse> {
 
 /** 兑换（服务端幂等：idempotency_key 命中重放已有订单，零副作用）。
  * key 由页面在打开确认抽屉时生成、整个尝试过程（含网络失败重试）复用，
- * 成功/业务拒绝后才换新——断网重试不会双扣。 */
-export function createRedemption(productId: number, addressId: number, idempotencyKey: string, quantity = 1): Promise<RedemptionCreateResult> {
-  return http.post<RedemptionCreateResult, { product_id: number; address_id: number; idempotency_key: string; quantity: number }>(
+ * 成功/业务拒绝后才换新——断网重试不会双扣。
+ * skuId（devops#910）：by_sku 商品必传（缺 → 409 sku_required），
+ * single 传 0；旧后端不识别该字段，JSON 解码忽略，线上兼容。 */
+export function createRedemption(productId: number, addressId: number, idempotencyKey: string, quantity = 1, skuId = 0): Promise<RedemptionCreateResult> {
+  return http.post<RedemptionCreateResult, { product_id: number; address_id: number; idempotency_key: string; quantity: number; sku_id: number }>(
     '/api/users/me/points/redemptions',
-    { product_id: productId, address_id: addressId, idempotency_key: idempotencyKey, quantity },
+    { product_id: productId, address_id: addressId, idempotency_key: idempotencyKey, quantity, sku_id: skuId },
   );
 }
 
@@ -179,6 +196,10 @@ const REDEEM_ERROR_COPY: Record<string, string> = {
   insufficient_points: '积分不足，去签到赚积分吧',
   limit_reached: '已达每人限购上限',
   out_of_stock: '手慢了，商品已售罄',
+  // by_sku 尺码相关（devops#910）：sku_required 是未选尺码提交的服务端兜底
+  // （客户端按钮已拦，正常到不了）；sku_invalid = 尺码行被删/换货，本地数据过期。
+  sku_required: '请先选择尺码',
+  sku_invalid: '商品规格有变化，请重新选择',
   product_inactive: '商品已下架',
   address_not_found: '收货地址不存在，请重新选择',
   address_limit_reached: '收货地址最多 10 条',

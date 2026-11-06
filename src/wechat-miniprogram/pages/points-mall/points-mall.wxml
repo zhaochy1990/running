@@ -88,6 +88,25 @@
         <view class="sprod__name">{{sheetName}}</view>
         <view class="sprod__price">{{sheetPrice}} 分</view>
       </view>
+      <!-- 尺码区（devops#910）：仅 by_sku 商品渲染（sheetSkus 非空）；售罄码置灰不可点，
+           未选码在标题行提示，提交钮同步置灰（single 商品整块不出现，现网行为） -->
+      <block wx:if="{{sheetSkus.length}}">
+        <view class="sec">
+          <text>尺码</text>
+          <text wx:if="{{!sheetSkuId}}" class="sec__hint">请选择尺码</text>
+        </view>
+        <view class="skus">
+          <view
+            wx:for="{{sheetSkus}}"
+            wx:key="id"
+            class="sku {{sheetSkuId === item.id ? 'sku--sel' : ''}} {{item.stock <= 0 ? 'sku--off' : ''}}"
+            data-sid="{{item.id}}"
+            aria-role="button"
+            hover-class="none"
+            catchtap="onSkuTap"
+          >{{item.spec_value}}</view>
+        </view>
+      </block>
       <!-- 数量步进：右列合计 = 单价 × 数量 + 运费口径（步进样式沿用抖音口径：−/数字/+） -->
       <view class="qtyrow">
         <text class="qtyrow__label">数量</text>
@@ -137,10 +156,10 @@
         <text wx:if="{{!sheetInsufficient}}" class="bal-line__after">兑换后剩余 <text class="bal-line__b">{{sheetAfter}}</text> 分</text>
         <text wx:else class="bal-line__lack">积分不足，还差 <text class="bal-line__b">{{sheetLack}}</text> 分</text>
       </view>
-      <!-- 确认兑换：无地址/积分不足/提交中一律置灰（文案不变，不换去签到分支）
+      <!-- 确认兑换：无地址/积分不足/by_sku 未选尺码/提交中一律置灰（文案不变，不换去签到分支）
            view 自绘：原生 button 内置固定宽反压类样式（同地址页坑） -->
       <view
-        class="sbtn {{sheetNoAddress || sheetSubmitting || sheetInsufficient ? 'sbtn--disabled' : ''}}"
+        class="sbtn {{sheetNoAddress || sheetSubmitting || sheetInsufficient || (sheetSkus.length && !sheetSkuId) ? 'sbtn--disabled' : ''}}"
         aria-role="button"
         hover-class="none"
         catchtap="onSheetConfirm"
@@ -187,6 +206,8 @@
       <view class="okcard__ic">✓</view>
       <view class="okcard__h">兑换成功</view>
       <view class="okcard__p">{{okName}}　<text class="okcard__b">-{{okCost}} 分</text></view>
+      <!-- 尺码快照（devops#910）：by_sku 订单展示，single/旧单空 = 不渲染 -->
+      <view wx:if="{{okSku}}" class="okcard__p">尺码 {{okSku}}</view>
       <view class="okcard__p">剩余 {{okBalance}} 分，可在「兑换记录」查看进度</view>
       <button class="sbtn" hover-class="none" catchtap="onOkOrders">查看订单</button>
       <button class="sbtn sbtn--ghost" hover-class="none" catchtap="onOkContinue">继续逛逛</button>
