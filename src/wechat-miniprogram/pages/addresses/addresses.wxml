@@ -1,5 +1,5 @@
 <view class="page">
-  <!-- 粉渐变顶栏；单选模式标题「选择地址」（原型） -->
+  <!-- 粉渐变顶栏；单选模式标题「可选择地址」 -->
   <view class="nav-wrap" style="padding-top: {{statusBarHeight}}px;">
     <view class="top-bar__inner">
       <view class="top-bar__btn" bindtap="onBack">
@@ -18,45 +18,63 @@
 
     <view wx:elif="{{loadFailed}}" class="card load-failed">
       <view class="load-failed__txt">地址簿加载失败，请检查网络后重试</view>
-      <button class="load-failed__btn" hover-class="none" bindtap="onRetry">重新加载</button>
-    </view>
-
-    <!-- 空态 -->
-    <view wx:elif="{{addresses.length === 0}}" class="empty">
-      <view>还没有收货地址</view>
-      <view wx:if="{{!pickMode}}">点下方按钮添加第一个地址</view>
+      <!-- 纯点击入口用 view 自绘：原生 button 内置样式反压页面类样式 -->
+      <view class="load-failed__btn" hover-class="load-failed__btn--hover" bindtap="onRetry">重新加载</view>
     </view>
 
     <block wx:else>
-      <view class="alist">
+      <!-- 分节头：标题 + 右侧「＋新建地址」文字链（抖音式，两种模式都给入口） -->
+      <!-- hover-class 仅 view/button 支持，文字链一律用 view -->
+      <view class="sechead">
+        <text class="sechead__title">{{pickMode ? '可选择地址' : '收货地址'}}</text>
+        <view class="sechead__add" hover-class="sechead__add--hover" bindtap="onAdd">＋ 新建地址</view>
+      </view>
+
+      <!-- 空态 -->
+      <view wx:if="{{addresses.length === 0}}" class="empty">
+        <view>还没有收货地址</view>
+        <view>点右上角「新建地址」添加第一个地址</view>
+      </view>
+
+      <view wx:else class="alist">
         <view
           wx:for="{{addresses}}"
           wx:key="id"
-          class="acard {{pickMode && item.selected ? 'acard--sel' : ''}}"
+          class="acard"
           data-id="{{item.id}}"
           bindtap="onAddressTap"
         >
-          <view class="aline1">
-            <text class="aline1__n">{{item.name}}</text>
-            <text class="aline1__p">{{item.phone}}</text>
-            <text wx:if="{{item.isDefault}}" class="adef">默认</text>
+          <view class="acard__main">
+            <view class="acard__body">
+              <view class="acard__region">{{item.region}}</view>
+              <view class="acard__detail">{{item.detail}}</view>
+              <view class="acard__owner">{{item.name}} {{item.phone}}</view>
+            </view>
+            <!-- 单选模式 radio 放右侧垂直居中（抖音式：内容在左、圆圈在右） -->
+            <view wx:if="{{pickMode}}" class="radio {{item.selected ? 'radio--on' : ''}}">
+              <text wx:if="{{item.selected}}" class="radio__check">✓</text>
+            </view>
           </view>
-          <view class="aaddr">{{item.addr}}</view>
-          <!-- 操作行仅管理模式显示（单选模式无操作行） -->
-          <view wx:if="{{!pickMode}}" class="aacts">
-            <text
-              wx:if="{{!item.isDefault}}"
-              class="aacts__pri"
+          <!-- 操作行（抖音式：选择页也带管理操作；catchtap 防误触点卡回传） -->
+          <view class="acard__acts" catchtap="onActsTap">
+            <view
+              wx:if="{{item.isDefault}}"
+              class="acard__def acard__def--on"
+            >已设为默认</view>
+            <view
+              wx:else
+              class="acard__def"
               data-id="{{item.id}}"
+              hover-class="acard__def--hover"
               catchtap="onSetDefault"
-            >设为默认</text>
-            <text class="aacts__op" data-id="{{item.id}}" catchtap="onEdit">编辑</text>
-            <text class="aacts__op" data-id="{{item.id}}" catchtap="onDelete">删除</text>
+            >设为默认</view>
+            <view class="acard__spacer"></view>
+            <view class="acard__op" data-id="{{item.id}}" hover-class="acard__op--hover" catchtap="onCopy">复制</view>
+            <view class="acard__op" data-id="{{item.id}}" hover-class="acard__op--hover" catchtap="onEdit">编辑</view>
+            <view class="acard__op" data-id="{{item.id}}" hover-class="acard__op--hover" catchtap="onDelete">删除</view>
           </view>
         </view>
       </view>
-      <!-- 底部虚线新增（单选模式不显示，原型一致） -->
-      <button wx:if="{{!pickMode}}" class="addbtn" hover-class="none" bindtap="onAdd">＋ 新增收货地址（上限 10 条）</button>
     </block>
   </view>
 
@@ -66,7 +84,7 @@
       <view class="guest-card__ic">📍</view>
       <view class="guest-card__h">收货地址</view>
       <view class="guest-card__p">登录后管理你的收货地址</view>
-      <button class="guest-card__btn" hover-class="none" bindtap="onGuestLogin">微信一键登录</button>
+      <view class="guest-card__btn" aria-role="button" hover-class="none" bindtap="onGuestLogin">微信一键登录</view>
     </view>
   </view>
 </view>

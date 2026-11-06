@@ -183,6 +183,70 @@ func TestPointRedemption_IdempotentReplay_Sequential(t *testing.T) {
 	}
 }
 
+// TestPointRedemption_Quantity_MultiUnit proves the quantity semantics: cost
+// = price × quantity, stock decrements by quantity, and per_user_limit counts
+// UNITS (SUM(quantity)) not orders — one qty-3 order eats three of the
+// allowance.
+func TestPointRedemption_Quantity_MultiUnit(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	migrateRedemptionTables(t, st)
+	uid := redemptionUser(t)
+	seedUserBalance(t, st, uid, 200)
+	productID := seedProduct(t, st, "毛巾-qty", 50, 5, 3, PointProductStatusActive)
+	addr := seedAddress(t, st, uid, true)
+
+	req := redeemReq(productID, addr.ID, "key-q1")
+	req.Quantity = 3
+	res, err := st.CreateRedemption(ctx, uid, req)
+	if err != nil {
+		t.Fatalf("redeem qty=3: %v", err)
+	}
+	if res.Order.Quantity != 3 || res.Order.PointsCost != 150 {
+		t.Fatalf("order = %+v, want quantity 3 cost 150", res.Order)
+	}
+	if res.Balance != 50 {
+		t.Fatalf("balance = %d, want 50", res.Balance)
+	}
+	var product PointProduct
+	if err := st.db.Where("id = ?", productID).First(&product).Error; err != nil {
+		t.Fatal(err)
+	}
+	if product.Stock != 2 {
+		t.Fatalf("stock = %d, want 2", product.Stock)
+	}
+
+	// Units semantics: 3 units already redeemed against limit 3 — one more
+	// unit (a second ORDER) must breach, same as a third qty-1 order would.
+	if _, err := st.CreateRedemption(ctx, uid, redeemReq(productID, addr.ID, "key-q2")); err != nil {
+		if code := mustRedeemCode(t, err); code != RedemptionLimitReached {
+			t.Fatalf("code = %s, want limit_reached", code)
+		}
+	} else {
+		t.Fatal("second order unexpectedly succeeded past unit limit")
+	}
+
+	// Stock overshoot on an unlimited product: stock 2, ask 3 → out_of_stock,
+	// stock untouched by the rolled-back tx.
+	p2 := seedProduct(t, st, "水壶-qty", 10, 2, 0, PointProductStatusActive)
+	req3 := redeemReq(p2, addr.ID, "key-q3")
+	req3.Quantity = 3
+	if _, err := st.CreateRedemption(ctx, uid, req3); err != nil {
+		if code := mustRedeemCode(t, err); code != RedemptionOutOfStock {
+			t.Fatalf("code = %s, want out_of_stock", code)
+		}
+	} else {
+		t.Fatal("overshoot redeem unexpectedly succeeded")
+	}
+	var p2row PointProduct
+	if err := st.db.Where("id = ?", p2).First(&p2row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if p2row.Stock != 2 {
+		t.Fatalf("stock after failed overshoot = %d, want 2", p2row.Stock)
+	}
+}
+
 func TestPointRedemption_LimitReached_Sequential(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()

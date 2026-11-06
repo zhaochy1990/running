@@ -430,6 +430,8 @@ definitions:
         type: string
       province:
         type: string
+      quantity:
+        type: integer
       receiver_name:
         type: string
       receiver_phone:
@@ -2814,6 +2816,10 @@ definitions:
         type: string
       product_id:
         type: integer
+      quantity:
+        maximum: 99
+        minimum: 1
+        type: integer
     required:
     - address_id
     - idempotency_key
@@ -2848,6 +2854,8 @@ definitions:
         type: string
       province:
         type: string
+      quantity:
+        type: integer
       receiver_name:
         type: string
       receiver_phone:
@@ -8956,8 +8964,9 @@ paths:
       consumes:
       - application/json
       description: 'Runs the redemption transaction: idempotency replay check, guarded
-        stock decrement, per-user limit count, guarded points deduction, then order
-        + ledger rows in one commit. Repeating an idempotency_key returns the stored
+        stock decrement (by quantity), per-user limit sum (in units), guarded points
+        deduction (price × quantity), then order + ledger rows in one commit. quantity
+        is optional (1-99, default 1). Repeating an idempotency_key returns the stored
         order with zero side effects.'
       parameters:
       - description: Redeem request

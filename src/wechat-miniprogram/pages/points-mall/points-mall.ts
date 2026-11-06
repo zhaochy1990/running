@@ -50,6 +50,11 @@ interface PointsMallPageData {
   sheetVisible: boolean;
   sheetName: string;
   sheetPrice: number;
+  /** 兑换数量（步进器）；合计 = price × qty。 */
+  sheetQty: number;
+  sheetTotal: number;
+  /** 步进上限：限购商品 = 余量，不限 = 99。 */
+  sheetMaxQty: number;
   sheetAddresses: SheetAddress[];
   sheetSelectedId: number;
   /** 抽屉三态文案：兑换后剩余 / 积分不足还差 N 分。 */
@@ -63,6 +68,8 @@ interface PointsMallPageData {
   okName: string;
   okCost: number;
   okBalance: number;
+  /** 兑换规则弹窗（hero「兑换规则」唤起）。 */
+  rulesVisible: boolean;
 }
 
 interface PointsMallPageHandlers {
@@ -76,6 +83,8 @@ interface PointsMallPageHandlers {
   onHeroCheckin(): void;
   onRedeemTap(e: WechatMiniprogram.TouchEvent): void;
   onSheetClose(): void;
+  onQtyMinus(): void;
+  onQtyPlus(): void;
   onSheetSelectAddr(e: WechatMiniprogram.TouchEvent): void;
   onSheetManageAddr(): void;
   onSheetAddAddr(): void;
@@ -83,6 +92,8 @@ interface PointsMallPageHandlers {
   onSheetConfirm(): void;
   onOkOrders(): void;
   onOkContinue(): void;
+  onRulesTap(): void;
+  onRulesClose(): void;
   /** 阻断抽屉内点按冒泡到遮罩（遮罩 bindtap=关闭）。 */
   noop(): void;
   load(silent?: boolean): Promise<void>;
@@ -140,6 +151,9 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
     sheetVisible: false,
     sheetName: '',
     sheetPrice: 0,
+    sheetQty: 1,
+    sheetTotal: 0,
+    sheetMaxQty: 99,
     sheetAddresses: [],
     sheetSelectedId: 0,
     sheetAfter: 0,
@@ -151,6 +165,7 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
     okName: '',
     okCost: 0,
     okBalance: 0,
+    rulesVisible: false,
   },
 
   onLoad() {
@@ -249,6 +264,9 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
       sheetVisible: true,
       sheetName: product.name,
       sheetPrice: product.price,
+      sheetQty: 1,
+      // 限购商品按余量封顶（redeemed 服务端已按件数 SUM）；不限购 99。
+      sheetMaxQty: product.limit > 0 ? Math.max(1, product.limit - product.redeemed) : 99,
       sheetSubmitting: false,
       okVisible: false,
     });
@@ -267,12 +285,14 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
       const dflt = addresses.find((a) => a.is_default);
       selectedId = dflt ? dflt.id : 0;
     }
-    const after = this.data.balance - product.price;
+    const total = product.price * this.data.sheetQty;
+    const after = this.data.balance - total;
     const insufficient = after < 0;
     this.setData({
       sheetAddresses,
       sheetSelectedId: selectedId,
       sheetNoAddress: sheetAddresses.length === 0,
+      sheetTotal: total,
       sheetAfter: insufficient ? 0 : after,
       sheetLack: insufficient ? -after : 0,
       sheetInsufficient: insufficient,
@@ -283,6 +303,19 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
     if (this.data.sheetSubmitting) return;
     this.setData({ sheetVisible: false });
     this._sheetProduct = undefined;
+  },
+
+  // 数量步进（1..sheetMaxQty）；改完重算合计/不足态。
+  onQtyMinus() {
+    if (this.data.sheetQty <= 1) return;
+    this.setData({ sheetQty: this.data.sheetQty - 1 });
+    this.refreshSheet();
+  },
+
+  onQtyPlus() {
+    if (this.data.sheetQty >= this.data.sheetMaxQty) return;
+    this.setData({ sheetQty: this.data.sheetQty + 1 });
+    this.refreshSheet();
   },
 
   onSheetSelectAddr(e: WechatMiniprogram.TouchEvent) {
@@ -326,7 +359,7 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
     if (this.data.sheetNoAddress || !this.data.sheetSelectedId) return;
     this.setData({ sheetSubmitting: true });
     try {
-      const res = await createRedemption(product.id, this.data.sheetSelectedId, idemKey);
+      const res = await createRedemption(product.id, this.data.sheetSelectedId, idemKey, this.data.sheetQty);
       // 幂等键已消费：重放/replay 也一样，下一次兑换必须换新 key。
       this._idemKey = newIdempotencyKey();
       this.setData({
@@ -369,6 +402,14 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
 
   onOkContinue() {
     this.setData({ okVisible: false });
+  },
+
+  onRulesTap() {
+    this.setData({ rulesVisible: true });
+  },
+
+  onRulesClose() {
+    this.setData({ rulesVisible: false });
   },
 
   noop() {

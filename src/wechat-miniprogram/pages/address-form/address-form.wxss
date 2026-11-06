@@ -1,6 +1,7 @@
 /* ============================================================
-   新增/编辑收货地址表单（devops#886 地址簿配套；原型注明表单略）。
-   像素值按 375 设计稿 ×2 转 rpx；主题色走 styles/theme.wxss 令牌。
+   新增/编辑收货地址表单 —— UI = 抖音商城新建地址页布局（用户
+   11-06 拍板）：白卡表单行 + 默认地址独立卡 + 底部固定全宽渐变
+   保存按钮。保留本 app 粉渐变顶栏与主题令牌；像素按 375 稿 ×2。
    ============================================================ */
 
 .page {
@@ -59,8 +60,9 @@
   color: var(--color-on-accent);
 }
 
+/* 底部固定保存条约占 160rpx + 安全区，content 留出避免遮挡 */
 .content {
-  padding: 28rpx 0 48rpx;
+  padding: 28rpx 0 240rpx;
 }
 
 .page-loading {
@@ -79,6 +81,10 @@
   margin: 0 28rpx;
 }
 
+.defcard {
+  margin-top: 20rpx;
+}
+
 .frow {
   display: flex;
   align-items: center;
@@ -89,6 +95,15 @@
 
 .frow--last {
   border-bottom: none;
+}
+
+/* 默认地址行：label 左、switch 顶到最右（抖音式） */
+.defrow {
+  justify-content: space-between;
+}
+
+.defrow .frow__label {
+  width: auto;
 }
 
 .frow__label {
@@ -109,21 +124,53 @@
   color: var(--color-text-tertiary);
 }
 
-.frow__region {
+/* ---------- 所在地区 picker 行 ---------- */
+
+.frow__picker {
   flex: 1;
   min-width: 0;
+}
+
+.frow__picker-inner {
   display: flex;
-  gap: 16rpx;
+  align-items: center;
+  gap: 8rpx;
 }
 
-.frow__input--region {
+.frow__picker-txt {
   flex: 1;
+  min-width: 0;
+  font-size: 28rpx;
+  color: var(--color-field-text);
 }
 
-/* ---------- 保存按钮（原生 button 三坑复位） ---------- */
+.frow__picker-ph {
+  flex: 1;
+  min-width: 0;
+  font-size: 28rpx;
+  color: var(--color-text-tertiary);
+}
+
+.frow__picker-arrow {
+  width: 32rpx;
+  height: 32rpx;
+  flex: none;
+  opacity: 0.4;
+}
+
+/* ---------- 底部固定全宽保存 ----------
+   view 自绘：原生 button 内置样式（默认宽 184px / size=mini 的
+   inline-block 小字号）会反压页面类样式，纯点击入口直接绕开 */
 
 .form-foot {
-  padding: 32rpx 28rpx 0;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 16rpx 28rpx;
+  padding-bottom: calc(16rpx + env(safe-area-inset-bottom));
+  /* 内容滚过时按钮下方不露出生硬切断 */
+  background: linear-gradient(180deg, rgba(247, 249, 251, 0), var(--color-bg) 30%);
 }
 
 .save-btn {
@@ -132,9 +179,8 @@
   height: 92rpx;
   padding: 0;
   box-sizing: border-box;
-  border: none;
   border-radius: 46rpx;
-  background: var(--color-accent);
+  background: linear-gradient(90deg, #ff8a6e, var(--color-accent));
   color: var(--color-on-accent);
   font-size: 32rpx;
   font-weight: 600;
@@ -142,8 +188,8 @@
   text-align: center;
 }
 
-.save-btn::after {
-  border: none;
+.save-btn--hover {
+  opacity: 0.85;
 }
 
 .save-btn--disabled {
@@ -165,22 +211,23 @@
 }
 
 .load-failed__btn {
+  display: block;
   margin: 24rpx auto 0;
   width: 320rpx;
   height: 80rpx;
   padding: 0;
   box-sizing: border-box;
-  border: none;
   border-radius: 40rpx;
   background: var(--color-accent);
   color: var(--color-on-accent);
   font-size: 28rpx;
   font-weight: 600;
   line-height: 80rpx;
+  text-align: center;
 }
 
-.load-failed__btn::after {
-  border: none;
+.load-failed__btn--hover {
+  opacity: 0.85;
 }
 
 /* ---------- 游客态登录引导弹层 ---------- */
@@ -227,19 +274,16 @@
 }
 
 .guest-card__btn {
+  display: block;
   width: 100%;
   height: 92rpx;
   padding: 0;
   box-sizing: border-box;
-  border: none;
   border-radius: 46rpx;
   background: var(--color-accent);
   color: var(--color-on-accent);
   font-size: 32rpx;
   font-weight: 600;
   line-height: 92rpx;
-}
-
-.guest-card__btn::after {
-  border: none;
+  text-align: center;
 }

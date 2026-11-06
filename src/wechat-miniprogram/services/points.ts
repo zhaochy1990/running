@@ -30,6 +30,8 @@ export interface PointRedemption {
   product_id: number;
   product_name: string;
   points_cost: number;
+  /** 数量（旧客户端缺省=1；成本=单价×数量）。 */
+  quantity: number;
   status: RedemptionStatus;
   tracking_no?: string | null;
   shipped_at?: string | null;
@@ -90,10 +92,10 @@ export function listPointProducts(): Promise<PointProductsResponse> {
 /** 兑换（服务端幂等：idempotency_key 命中重放已有订单，零副作用）。
  * key 由页面在打开确认抽屉时生成、整个尝试过程（含网络失败重试）复用，
  * 成功/业务拒绝后才换新——断网重试不会双扣。 */
-export function createRedemption(productId: number, addressId: number, idempotencyKey: string): Promise<RedemptionCreateResult> {
-  return http.post<RedemptionCreateResult, { product_id: number; address_id: number; idempotency_key: string }>(
+export function createRedemption(productId: number, addressId: number, idempotencyKey: string, quantity = 1): Promise<RedemptionCreateResult> {
+  return http.post<RedemptionCreateResult, { product_id: number; address_id: number; idempotency_key: string; quantity: number }>(
     '/api/users/me/points/redemptions',
-    { product_id: productId, address_id: addressId, idempotency_key: idempotencyKey },
+    { product_id: productId, address_id: addressId, idempotency_key: idempotencyKey, quantity },
   );
 }
 

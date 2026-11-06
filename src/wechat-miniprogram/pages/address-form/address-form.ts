@@ -1,6 +1,6 @@
 // 新增/编辑收货地址（devops#886 地址簿配套表单；原型注明「表单原型略」，
 // 字段 = #884 契约 addressCreateRequest 七项）。?id= 有值即编辑态。
-// 省市区 V1 用纯文本输入（不引地区选择器数据包）。
+// 省市区用原生 <picker mode="region"> 选择（不引数据包，防自由填写脏数据）。
 import { userStore } from '../../store/index';
 import { currentRouteForRedirect, openLogin } from '../../utils/authGate';
 import { createAddress, listAddresses, pointsErrorCopy, updateAddress } from '../../services/points';
@@ -35,9 +35,7 @@ interface AddressFormPageHandlers {
   onRetry(): void;
   onNameInput(e: WechatMiniprogram.Input): void;
   onPhoneInput(e: WechatMiniprogram.Input): void;
-  onProvinceInput(e: WechatMiniprogram.Input): void;
-  onCityInput(e: WechatMiniprogram.Input): void;
-  onDistrictInput(e: WechatMiniprogram.Input): void;
+  onRegionChange(e: WechatMiniprogram.PickerChange): void;
   onDetailInput(e: WechatMiniprogram.Input): void;
   onDefaultToggle(e: WechatMiniprogram.SwitchChange): void;
   onSave(): void;
@@ -148,16 +146,12 @@ Page<AddressFormPageData, AddressFormPageHandlers>({
     this.setData({ 'form.phone': e.detail.value });
   },
 
-  onProvinceInput(e: WechatMiniprogram.Input) {
-    this.setData({ 'form.province': e.detail.value });
-  },
-
-  onCityInput(e: WechatMiniprogram.Input) {
-    this.setData({ 'form.city': e.detail.value });
-  },
-
-  onDistrictInput(e: WechatMiniprogram.Input) {
-    this.setData({ 'form.district': e.detail.value });
+  onRegionChange(e: WechatMiniprogram.PickerChange) {
+    const v = e.detail.value;
+    if (!Array.isArray(v) || v.length < 3) return;
+    const [province, city, district] = v as [string, string, string];
+    // 东莞/中山等不设区的地级市第三列可能为空，回退用市名填充保证契约必填
+    this.setData({ 'form.province': province, 'form.city': city, 'form.district': district || city });
   },
 
   onDetailInput(e: WechatMiniprogram.Input) {

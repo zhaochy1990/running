@@ -126,6 +126,7 @@ type redemptionResponse struct {
 	ProductID     uint64  `json:"product_id"`
 	ProductName   string  `json:"product_name"`
 	PointsCost    int     `json:"points_cost"`
+	Quantity      int     `json:"quantity"`
 	Status        string  `json:"status"`
 	TrackingNo    *string `json:"tracking_no"`
 	ShippedAt     *string `json:"shipped_at"`
@@ -197,7 +198,7 @@ func formatOptionalTime(t *time.Time) *string {
 func redemptionDTO(r *storage.PointRedemption) redemptionResponse {
 	return redemptionResponse{
 		ID: r.ID, ProductID: r.ProductID, ProductName: r.ProductName,
-		PointsCost: r.PointsCost, Status: r.Status,
+		PointsCost: r.PointsCost, Quantity: r.Quantity, Status: r.Status,
 		TrackingNo: r.TrackingNo, ShippedAt: formatOptionalTime(r.ShippedAt),
 		ReceiverName: r.ReceiverName, ReceiverPhone: r.ReceiverPhone,
 		Province: r.Province, City: r.City, District: r.District,
@@ -256,11 +257,14 @@ func (p *pointsRoutes) listProducts(c *gin.Context) {
 }
 
 // redemptionCreateRequest is the POST body; idempotency_key is the client's
-// double-click/retry anchor (one key = one order).
+// double-click/retry anchor (one key = one order). quantity is optional —
+// omitted/zero resolves to 1 server-side (legacy clients stay wire-compatible);
+// cost = product price × quantity.
 type redemptionCreateRequest struct {
 	ProductID      uint64 `json:"product_id" binding:"required"`
 	AddressID      uint64 `json:"address_id" binding:"required"`
 	IdempotencyKey string `json:"idempotency_key" binding:"required,max=64"`
+	Quantity       int    `json:"quantity" binding:"omitempty,min=1,max=99"`
 }
 
 // createRedemption serves POST /api/users/me/points/redemptions — the single
@@ -270,7 +274,7 @@ type redemptionCreateRequest struct {
 // idempotency_key returns the stored order with 200.
 //
 //	@Summary		Redeem a product with points
-//	@Description	Runs the redemption transaction: idempotency replay check, guarded stock decrement, per-user limit count, guarded points deduction, then order + ledger rows in one commit. Repeating an idempotency_key returns the stored order with zero side effects.
+//	@Description	Runs the redemption transaction: idempotency replay check, guarded stock decrement (by quantity), per-user limit sum (in units), guarded points deduction (price × quantity), then order + ledger rows in one commit. quantity is optional (1-99, default 1). Repeating an idempotency_key returns the stored order with zero side effects.
 //	@Tags			points
 //	@Accept			json
 //	@Produce		json
@@ -299,6 +303,7 @@ func (p *pointsRoutes) createRedemption(c *gin.Context) {
 		ProductID:      body.ProductID,
 		AddressID:      body.AddressID,
 		IdempotencyKey: body.IdempotencyKey,
+		Quantity:       body.Quantity,
 	}
 	res, err := p.store.CreateRedemption(c.Request.Context(), uid, req)
 	if err != nil {

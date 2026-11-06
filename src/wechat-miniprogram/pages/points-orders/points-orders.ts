@@ -56,7 +56,8 @@ function toOrderRow(r: PointRedemption): OrderRow {
   return {
     id: r.id,
     date: fmtShanghaiMdHm(r.created_at),
-    name: r.product_name,
+    // 多件订单在名称后缀 ×N（旧后端无 quantity 字段时自然回退单件展示）。
+    name: r.quantity > 1 ? `${r.product_name} ×${r.quantity}` : r.product_name,
     destination: `${r.province} ${r.city} ${r.district}`,
     cost: r.points_cost,
     shipped: r.status === 'shipped',

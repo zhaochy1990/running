@@ -4976,7 +4976,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Runs the redemption transaction: idempotency replay check, guarded stock decrement, per-user limit count, guarded points deduction, then order + ledger rows in one commit. Repeating an idempotency_key returns the stored order with zero side effects.",
+                "description": "Runs the redemption transaction: idempotency replay check, guarded stock decrement (by quantity), per-user limit sum (in units), guarded points deduction (price × quantity), then order + ledger rows in one commit. quantity is optional (1-99, default 1). Repeating an idempotency_key returns the stored order with zero side effects.",
                 "consumes": [
                     "application/json"
                 ],
@@ -9391,6 +9391,9 @@ const docTemplate = `{
                 "province": {
                     "type": "string"
                 },
+                "quantity": {
+                    "type": "integer"
+                },
                 "receiver_name": {
                     "type": "string"
                 },
@@ -12912,6 +12915,11 @@ const docTemplate = `{
                 },
                 "product_id": {
                     "type": "integer"
+                },
+                "quantity": {
+                    "type": "integer",
+                    "maximum": 99,
+                    "minimum": 1
                 }
             }
         },
@@ -12958,6 +12966,9 @@ const docTemplate = `{
                 },
                 "province": {
                     "type": "string"
+                },
+                "quantity": {
+                    "type": "integer"
                 },
                 "receiver_name": {
                     "type": "string"

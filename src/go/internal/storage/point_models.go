@@ -96,10 +96,14 @@ type PointRedemption struct {
 	ID     string `gorm:"column:id;type:char(36);primaryKey;index:idx_point_redemptions_user,priority:2,sort:desc"`
 	UserID string `gorm:"column:user_id;type:char(36);not null;index:idx_point_redemptions_user,priority:1;uniqueIndex:uk_point_redemptions_user_idem,priority:1"`
 	// ProductID + the name/price snapshots. ProductID feeds the per-user
-	// limit COUNT; the snapshot columns feed every render, forever.
+	// limit SUM; the snapshot columns feed every render, forever.
 	ProductID   uint64 `gorm:"column:product_id;not null"`
 	ProductName string `gorm:"column:product_name;type:varchar(128);not null"`
 	PointsCost  int    `gorm:"column:points_cost;not null"`
+	// Quantity is the unit count this order carries; cost = price × quantity.
+	// default:1 keeps pre-quantity rows and legacy clients at one unit, so
+	// SUM(quantity) == the old COUNT(rows) limit semantics.
+	Quantity int `gorm:"column:quantity;not null;default:1"`
 	// IdempotencyKey is client-supplied; UNIQUE(user_id, idempotency_key)
 	// makes one key exactly one order (#850 resolution).
 	IdempotencyKey string `gorm:"column:idempotency_key;type:varchar(64);not null;uniqueIndex:uk_point_redemptions_user_idem,priority:2"`

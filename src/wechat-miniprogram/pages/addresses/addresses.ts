@@ -1,18 +1,25 @@
-// 地址簿页（devops#886，UI 权威 = devops#852 resolution + 原型）。
-// 双模式（#886 scope 4）：管理（默认标/设默认粉字/编辑/删除）与单选
-// （选中粉描边、无操作行，确认抽屉「管理地址 ›」进入，挑完带 id 回商城）。
+// 地址簿页（devops#886；UI = 抖音商城地址页布局，用户 11-06 拍板）。
+// 双模式（#886 scope 4）：管理（标题「收货地址」）与单选（?mode=pick，
+// 标题「选择地址」，右侧 radio 圆圈，点卡即带 id 回商城抽屉）。两种模式
+// 卡片都带操作行（设默认/复制/编辑/删除，抖音式；catchtap 防误触点卡回传）。
 import { userStore } from '../../store/index';
 import { currentRouteForRedirect, openLogin } from '../../utils/authGate';
-import { deleteAddress, listAddresses, pointsErrorCopy, setAddressDefault } from '../../services/points';
+import { createAddress, deleteAddress, listAddresses, pointsErrorCopy, setAddressDefault } from '../../services/points';
 import type { UserAddress } from '../../services/points';
 
-/** 地址卡视图模型。 */
+/** 地址卡视图模型（抖音式分层展示）。 */
 interface AddressRow {
   id: number;
   name: string;
   phone: string;
-  /** 「省 市 区 · 详址」。 */
-  addr: string;
+  /** 「省 市 区」灰行。 */
+  region: string;
+  /** 详细地址（粗体行）。 */
+  detail: string;
+  /** 复制按钮构造 payload 用的独立字段。 */
+  province: string;
+  city: string;
+  district: string;
   isDefault: boolean;
   selected: boolean;
 }
@@ -36,7 +43,11 @@ interface AddressesPageHandlers {
   onAddressTap(e: WechatMiniprogram.TouchEvent): void;
   onSetDefault(e: WechatMiniprogram.TouchEvent): void;
   onEdit(e: WechatMiniprogram.TouchEvent): void;
+  /** 复制：即时克隆一条新地址（不带走默认标记）。 */
+  onCopy(e: WechatMiniprogram.TouchEvent): void;
   onDelete(e: WechatMiniprogram.TouchEvent): void;
+  /** 操作行空白区冒泡拦截（单选模式防误触点卡回传）。 */
+  onActsTap(): void;
   onAdd(): void;
   load(silent?: boolean): Promise<void>;
   _pickSelected?: number;
@@ -105,7 +116,11 @@ Page<AddressesPageData, AddressesPageHandlers>({
           id: a.id,
           name: a.receiver_name,
           phone: a.receiver_phone,
-          addr: `${a.province} ${a.city} ${a.district} · ${a.address_detail}`,
+          region: `${a.province} ${a.city} ${a.district}`,
+          detail: a.address_detail,
+          province: a.province,
+          city: a.city,
+          district: a.district,
           isDefault: a.is_default,
           selected: pickMode && a.id === selected,
         })),
@@ -151,6 +166,39 @@ Page<AddressesPageData, AddressesPageHandlers>({
     wx.navigateTo({ url: `/pages/address-form/address-form?id=${Number(e.currentTarget.dataset.id)}` });
   },
 
+  // 复制（抖音式即时克隆；is_default 恒 false，防抢走原默认位；超 10 条上限由后端报错透出）。
+  async onCopy(e: WechatMiniprogram.TouchEvent) {
+    if (this._busy) return;
+    this._busy = true;
+    const row = this.data.addresses.find((a) => a.id === Number(e.currentTarget.dataset.id));
+    if (!row) {
+      this._busy = false;
+      return;
+    }
+    try {
+      await createAddress({
+        receiver_name: row.name,
+        receiver_phone: row.phone,
+        province: row.province,
+        city: row.city,
+        district: row.district,
+        address_detail: row.detail,
+        is_default: false,
+      });
+      wx.showToast({ title: '已复制', icon: 'none' });
+      void this.load(true);
+    } catch (err: unknown) {
+      wx.showToast({ title: pointsErrorCopy(err, '复制失败，请稍后再试'), icon: 'none' });
+    } finally {
+      this._busy = false;
+    }
+  },
+
+  // 操作行容器级冒泡拦截：catchtap 空实现，缝隙点击不落到卡片上。
+  onActsTap() {
+    // 链接自身的 catchtap 已拦截，这里只兜行内空白区。
+  },
+
   // 删除（原型：直接删 + toast，无二次确认弹层）。
   async onDelete(e: WechatMiniprogram.TouchEvent) {
     if (this._busy) return;
@@ -167,7 +215,7 @@ Page<AddressesPageData, AddressesPageHandlers>({
     }
   },
 
-  // 底部虚线「＋新增收货地址（上限 10 条）」。
+  // 分节头右侧「＋ 新建地址」文字链。
   onAdd() {
     wx.navigateTo({ url: '/pages/address-form/address-form' });
   },

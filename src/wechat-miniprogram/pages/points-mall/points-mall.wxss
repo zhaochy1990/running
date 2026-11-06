@@ -88,19 +88,22 @@
   margin-left: 6rpx;
 }
 
+/* 右上快捷入口：2×2 半透明白胶囊（渐变底上的玻璃 chip），替代旧文字竖排堆叠 */
 .hero__links {
-  text-align: right;
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 14rpx 16rpx;
 }
 
 .hero__link {
-  font-size: 26rpx;
+  font-size: 24rpx;
   color: var(--color-on-accent);
-  opacity: 0.92;
-  margin-top: 12rpx;
-}
-
-.hero__link:first-child {
-  margin-top: 0;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 999rpx;
+  padding: 10rpx 24rpx;
+  text-align: center;
+  white-space: nowrap;
+  line-height: 1.4;
 }
 
 .content {
@@ -222,17 +225,17 @@
    去除/行高与盒模型对齐，同 coach.wxss 约定） */
 
 .buy {
-  width: 160rpx;
-  height: 64rpx;
+  width: 120rpx;
+  height: 52rpx;
   padding: 0;
   box-sizing: border-box;
   border: none;
-  border-radius: 32rpx;
+  border-radius: 26rpx;
   background: var(--color-accent);
   color: var(--color-on-accent);
-  font-size: 26rpx;
+  font-size: 24rpx;
   font-weight: 600;
-  line-height: 64rpx;
+  line-height: 52rpx;
   flex: none;
 }
 
@@ -372,6 +375,64 @@
 
 .sprod__price {
   font-size: 32rpx;
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+/* ---------- 数量步进行 ---------- */
+
+.qtyrow {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  margin-top: 20rpx;
+}
+
+.qtyrow__label {
+  font-size: 28rpx;
+  color: var(--color-text-primary);
+}
+
+.qtyrow__ctrl {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  margin-left: auto;
+}
+
+/* 步进钮：view 自绘（原生 button 内置样式反压，同地址页坑） */
+.stepper {
+  width: 56rpx;
+  height: 56rpx;
+  box-sizing: border-box;
+  border-radius: 16rpx;
+  background: rgba(var(--color-accent-rgb), 0.08);
+  color: var(--color-accent-deep);
+  font-size: 32rpx;
+  line-height: 52rpx;
+  text-align: center;
+}
+
+.stepper--off {
+  background: var(--color-bg-sunken);
+  color: var(--color-text-tertiary);
+}
+
+.stepper__n {
+  min-width: 48rpx;
+  text-align: center;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.qtyrow__total {
+  font-size: 24rpx;
+  color: var(--color-text-secondary);
+}
+
+.qtyrow__sum {
+  font-size: 28rpx;
   font-weight: 700;
   color: var(--color-accent);
 }
@@ -608,5 +669,86 @@
 }
 
 .guest-card__btn::after {
+  border: none;
+}
+
+/* ---------- 兑换规则弹窗（hero「兑换规则」唤起，同 checkin 规则弹窗样式） ---------- */
+
+.rules-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(20, 20, 25, 0.45);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rules-card {
+  background: var(--color-card);
+  border-radius: 36rpx;
+  width: 600rpx;
+  box-sizing: border-box;
+  padding: 44rpx 40rpx 36rpx;
+}
+
+.rules-card__t {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  text-align: center;
+}
+
+/* 规则全文较长，内容区限高滚动，「知道了」常驻卡底 */
+.rules-card__body {
+  max-height: 56vh;
+  overflow-y: auto;
+  margin-top: 20rpx;
+}
+
+.rules-card__h2 {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-top: 28rpx;
+}
+
+.rules-card__p {
+  font-size: 24rpx;
+  color: var(--color-text-secondary);
+  line-height: 1.8;
+  margin-top: 8rpx;
+}
+
+.rules-card__tip {
+  font-size: 22rpx;
+  color: var(--color-accent-deep);
+  background: rgba(var(--color-accent-rgb), 0.08);
+  border-radius: 16rpx;
+  padding: 16rpx 20rpx;
+  margin-top: 16rpx;
+  line-height: 1.7;
+}
+
+/* 原生 button 三坑复位（显式尺寸/自绘底色/::after 去除），同页内既有约定 */
+.rules-card__btn {
+  width: 100%;
+  height: 88rpx;
+  padding: 0;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 44rpx;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 30rpx;
+  font-weight: 600;
+  line-height: 88rpx;
+  margin-top: 32rpx;
+}
+
+.rules-card__btn::after {
   border: none;
 }

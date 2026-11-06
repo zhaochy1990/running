@@ -24,6 +24,7 @@
         <view class="hero__link" bindtap="onHeroDetail">明细 ›</view>
         <view class="hero__link" bindtap="onNavOrders">兑换记录 ›</view>
         <view class="hero__link" bindtap="onHeroCheckin">签到赚分 ›</view>
+        <view class="hero__link" catchtap="onRulesTap">兑换规则 ›</view>
       </view>
     </view>
   </view>
@@ -87,6 +88,26 @@
         <view class="sprod__name">{{sheetName}}</view>
         <view class="sprod__price">{{sheetPrice}} 分</view>
       </view>
+      <!-- 数量步进：右列合计 = 单价 × 数量（步进样式沿用抖音口径：−/数字/+） -->
+      <view class="qtyrow">
+        <text class="qtyrow__label">数量</text>
+        <view class="qtyrow__ctrl">
+          <view
+            class="stepper {{sheetQty <= 1 ? 'stepper--off' : ''}}"
+            aria-role="button"
+            hover-class="none"
+            catchtap="onQtyMinus"
+          >−</view>
+          <text class="stepper__n">{{sheetQty}}</text>
+          <view
+            class="stepper {{sheetQty >= sheetMaxQty ? 'stepper--off' : ''}}"
+            aria-role="button"
+            hover-class="none"
+            catchtap="onQtyPlus"
+          >＋</view>
+        </view>
+        <text class="qtyrow__total">合计 <text class="qtyrow__sum">{{sheetTotal}}</text> 分</text>
+      </view>
       <view class="sec">
         <text>寄到哪</text>
         <text wx:if="{{!sheetNoAddress}}" class="sec__mg" catchtap="onSheetManageAddr">管理地址 ›</text>
@@ -111,20 +132,55 @@
         <text wx:if="{{!sheetInsufficient}}" class="bal-line__after">兑换后剩余 <text class="bal-line__b">{{sheetAfter}}</text> 分</text>
         <text wx:else class="bal-line__lack">积分不足，还差 <text class="bal-line__b">{{sheetLack}}</text> 分</text>
       </view>
-      <!-- 充足=确认兑换（无地址置灰）；不足=去签到赚 N 分（关抽屉回签到闭环） -->
-      <button
+      <!-- 充足=确认兑换（无地址置灰）；不足=去签到赚 N 分（关抽屉回签到闭环）
+           view 自绘：原生 button 内置固定宽反压类样式（同地址页坑） -->
+      <view
         wx:if="{{!sheetInsufficient}}"
-        class="sbtn {{sheetNoAddress ? 'sbtn--disabled' : ''}}"
+        class="sbtn {{sheetNoAddress || sheetSubmitting ? 'sbtn--disabled' : ''}}"
+        aria-role="button"
         hover-class="none"
-        disabled="{{sheetNoAddress || sheetSubmitting}}"
         catchtap="onSheetConfirm"
-      >{{sheetSubmitting ? '兑换中…' : '确认兑换'}}</button>
-      <button
+      >{{sheetSubmitting ? '兑换中…' : '确认兑换'}}</view>
+      <view
         wx:else
         class="sbtn"
+        aria-role="button"
         hover-class="none"
         catchtap="onSheetCheckin"
-      >去签到赚 {{sheetLack}} 分 ›</button>
+      >去签到赚 {{sheetLack}} 分 ›</view>
+    </view>
+  </view>
+
+  <!-- 兑换规则弹窗（hero「兑换规则」唤起，同 checkin 规则弹窗范式）：内容区可滚动，遮罩点按或「知道了」关闭 -->
+  <view wx:if="{{rulesVisible}}" class="rules-mask" bindtap="onRulesClose">
+    <view class="rules-card" catchtap="noop">
+      <view class="rules-card__t">砺跑马拉松助手积分商城兑换规则</view>
+      <view class="rules-card__body">
+        <view class="rules-card__p">参与 砺跑马拉松助手积分商城兑换的用户，可使用账户内积分兑换商城内指定礼品。</view>
+        <view class="rules-card__tip">重要声明：本平台积分仅为本小程序自营福利积分，无现金价值、不可折现、不可转让、不可交易，仅可用于本积分商城兑换指定礼品；积分永久有效，不会到期清零。</view>
+
+        <view class="rules-card__h2">一、积分来源</view>
+        <view class="rules-card__p">商城内用于兑换的积分，来自小程序内签到、任务、活动等官方发放渠道，不支持充值购买积分。</view>
+
+        <view class="rules-card__h2">二、兑换说明</view>
+        <view class="rules-card__p">1. 兑换商品所需积分以商品详情页展示数值为准，兑换时系统自动扣减对应积分；</view>
+        <view class="rules-card__p">2. 商品库存实时更新，先兑先得，库存不足时无法兑换；</view>
+        <view class="rules-card__p">3. 兑换订单提交成功后，积分即时扣除，积分一经扣除不予退回（商品缺货下架、主办方主动取消订单除外）；</view>
+        <view class="rules-card__p">4. 兑换礼品仅限本人使用，禁止倒卖、转售兑换所得礼品。</view>
+
+        <view class="rules-card__h2">三、发货与售后</view>
+        <view class="rules-card__p">1. 实物礼品：兑换成功后，将在公示周期内安排发货，收货信息以用户提交地址为准；地址填写错误造成无法收货，由用户自行承担；</view>
+        <view class="rules-card__p">2. 虚拟礼品（跑步课程、训练计划等）：兑换成功后自动发放至账户；</view>
+        <view class="rules-card__p">3. 福利兑换商品不支持 7 天无理由退换；如存在质量破损，请在签收后指定时限内联系小程序客服核验。</view>
+
+        <view class="rules-card__h2">四、其他说明</view>
+        <view class="rules-card__p">1. 本商城福利仅限 砺跑马拉松助手小程序注册用户参与，同一账号仅限本人使用；</view>
+        <view class="rules-card__p">2. 如对兑换活动有疑问，可通过小程序内客服渠道咨询；</view>
+        <view class="rules-card__p">3. 若用户通过脚本、刷号、系统漏洞、虚假操作等非正常方式获取积分、兑换商品，砺跑马拉松助手有权撤销兑换、收回礼品、扣除违规积分、取消活动参与资格；</view>
+        <view class="rules-card__p">4. 商城商品、库存、兑换规则，主办方可以提前在小程序公告公示后进行调整、下架；</view>
+        <view class="rules-card__p">5. 本积分商城活动由 砺跑马拉松助手独立提供，与微信平台无关；活动最终解释权归 砺跑马拉松助手所有。</view>
+      </view>
+      <button class="rules-card__btn" hover-class="none" catchtap="onRulesClose">知道了</button>
     </view>
   </view>
 

@@ -7,7 +7,7 @@
         <image wx:else class="top-bar__icon" src="/assets/icons/home_white.svg" mode="aspectFit" />
       </view>
       <view class="top-bar__title-wrap">
-        <view class="top-bar__title">{{editing ? '编辑地址' : '新增地址'}}</view>
+        <view class="top-bar__title">{{editing ? '编辑地址' : '新建地址'}}</view>
       </view>
       <view class="top-bar__btn top-bar__btn--spacer"></view>
     </view>
@@ -18,40 +18,62 @@
 
     <view wx:elif="{{loadFailed}}" class="card load-failed">
       <view class="load-failed__txt">地址加载失败，请检查网络后重试</view>
-      <button class="load-failed__btn" hover-class="none" bindtap="onRetry">重新加载</button>
+      <!-- 这几个纯点击入口一律用 view 自绘：原生 button 内置样式（默认宽/mini
+           inline-block 小字号）会反压页面类样式，本项目两次翻车 -->
+      <view class="load-failed__btn" hover-class="load-failed__btn--hover" bindtap="onRetry">重新加载</view>
     </view>
 
-    <view wx:else class="card form">
-      <view class="frow">
-        <text class="frow__label">收货人</text>
-        <input class="frow__input" placeholder="姓名" placeholder-class="frow__ph" value="{{form.name}}" bindinput="onNameInput" />
-      </view>
-      <view class="frow">
-        <text class="frow__label">手机号</text>
-        <input class="frow__input" type="number" placeholder="手机号码" placeholder-class="frow__ph" value="{{form.phone}}" bindinput="onPhoneInput" />
-      </view>
-      <view class="frow">
-        <text class="frow__label">所在地区</text>
-        <view class="frow__region">
-          <input class="frow__input frow__input--region" placeholder="省" placeholder-class="frow__ph" value="{{form.province}}" bindinput="onProvinceInput" />
-          <input class="frow__input frow__input--region" placeholder="市" placeholder-class="frow__ph" value="{{form.city}}" bindinput="onCityInput" />
-          <input class="frow__input frow__input--region" placeholder="区/县" placeholder-class="frow__ph" value="{{form.district}}" bindinput="onDistrictInput" />
+    <block wx:else>
+      <view class="card form">
+        <view class="frow">
+          <text class="frow__label">收货人</text>
+          <input class="frow__input" placeholder="请输入收货人姓名" placeholder-class="frow__ph" value="{{form.name}}" bindinput="onNameInput" />
+        </view>
+        <view class="frow">
+          <text class="frow__label">手机号</text>
+          <input class="frow__input" type="number" placeholder="请输入手机号" placeholder-class="frow__ph" value="{{form.phone}}" bindinput="onPhoneInput" />
+        </view>
+        <view class="frow">
+          <text class="frow__label">所在地区</text>
+          <!-- 省市区用原生 region picker 选择，禁止自由填写（保证数据可校验） -->
+          <picker
+            class="frow__picker"
+            mode="region"
+            value="{{[form.province, form.city, form.district]}}"
+            bindchange="onRegionChange"
+          >
+            <view class="frow__picker-inner">
+              <text wx:if="{{form.province}}" class="frow__picker-txt">{{form.province}} {{form.city}} {{form.district}}</text>
+              <text wx:else class="frow__picker-ph">选择省市区街道</text>
+              <image class="frow__picker-arrow" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+            </view>
+          </picker>
+        </view>
+        <view class="frow frow--last">
+          <text class="frow__label">详细地址</text>
+          <input class="frow__input" placeholder="小区楼栋、门牌号、村等" placeholder-class="frow__ph" value="{{form.detail}}" bindinput="onDetailInput" />
         </view>
       </view>
-      <view class="frow">
-        <text class="frow__label">详细地址</text>
-        <input class="frow__input" placeholder="街道、门牌号、楼栋房号" placeholder-class="frow__ph" value="{{form.detail}}" bindinput="onDetailInput" />
-      </view>
-      <view class="frow frow--last">
-        <text class="frow__label">设为默认地址</text>
-        <switch checked="{{form.isDefault}}" color="#FF6363" bindchange="onDefaultToggle" />
-      </view>
-    </view>
 
-    <view wx:if="{{!loading && !loadFailed}}" class="form-foot">
-      <button class="save-btn {{saving ? 'save-btn--disabled' : ''}}" hover-class="none" disabled="{{saving}}" bindtap="onSave">
-        {{saving ? '保存中…' : '保存'}}
-      </button>
+      <!-- 默认地址独立卡（抖音式） -->
+      <view class="card defcard">
+        <view class="frow frow--last defrow">
+          <text class="frow__label">默认地址</text>
+          <switch checked="{{form.isDefault}}" color="#FF6363" bindchange="onDefaultToggle" />
+        </view>
+      </view>
+    </block>
+  </view>
+
+  <!-- 底部固定全宽保存（抖音式；view 自绘绕开原生 button 内置样式反压） -->
+  <view wx:if="{{!loading && !loadFailed}}" class="form-foot">
+    <view
+      class="save-btn {{saving ? 'save-btn--disabled' : ''}}"
+      aria-role="button"
+      hover-class="save-btn--hover"
+      bindtap="onSave"
+    >
+      {{saving ? '保存中…' : '保存'}}
     </view>
   </view>
 
@@ -61,7 +83,7 @@
       <view class="guest-card__ic">📍</view>
       <view class="guest-card__h">收货地址</view>
       <view class="guest-card__p">登录后管理你的收货地址</view>
-      <button class="guest-card__btn" hover-class="none" bindtap="onGuestLogin">微信一键登录</button>
+      <view class="guest-card__btn" aria-role="button" hover-class="none" bindtap="onGuestLogin">微信一键登录</view>
     </view>
   </view>
 </view>

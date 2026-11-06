@@ -55,12 +55,14 @@ var errRedemptionLostRace = errors.New("storage: redemption lost the idempotency
 // POST /api/users/me/points/redemptions — the single-transaction redemption
 // ─────────────────────────────────────────────────────────────────────────────
 
-// RedemptionRequest carries the caller-chosen product, address book entry and
-// idempotency key of one redeem attempt.
+// RedemptionRequest carries the caller-chosen product, address book entry,
+// idempotency key and unit quantity of one redeem attempt. Quantity ≤ 0 means
+// "unspecified" and resolves to 1 (legacy clients omit the field).
 type RedemptionRequest struct {
 	ProductID      uint64
 	AddressID      uint64
 	IdempotencyKey string
+	Quantity       int
 }
 
 // RedemptionResult is the redeem outcome. Replayed marks the idempotent
@@ -106,6 +108,13 @@ func (s *Store) CreateRedemption(ctx context.Context, userID string, req Redempt
 	if req.IdempotencyKey == "" || len(req.IdempotencyKey) > 64 {
 		return nil, &PointValidationError{Message: "idempotency_key must be 1-64 chars"}
 	}
+	qty := req.Quantity
+	if qty <= 0 {
+		qty = 1 // field omitted (legacy clients) → one unit, the V1 behavior
+	}
+	if qty > 99 {
+		return nil, &PointValidationError{Message: "quantity must be 1-99"}
+	}
 
 	// Step 0 fast path: the key already produced an order — replay it.
 	if existing, err := s.redemptionByIdempotencyKey(ctx, uid, req.IdempotencyKey); err != nil {
@@ -128,8 +137,8 @@ func (s *Store) CreateRedemption(ctx context.Context, userID string, req Redempt
 		// The row lock it takes is the serialization point every same-product
 		// redemption queues on.
 		res := tx.Exec(
-			"UPDATE point_products SET stock = stock - 1 WHERE id = ? AND stock > 0 AND status = ?",
-			req.ProductID, PointProductStatusActive,
+			"UPDATE point_products SET stock = stock - ? WHERE id = ? AND stock >= ? AND status = ?",
+			qty, req.ProductID, qty, PointProductStatusActive,
 		)
 		if res.Error != nil {
 			return res.Error
@@ -158,17 +167,20 @@ func (s *Store) CreateRedemption(ctx context.Context, userID string, req Redempt
 			return err
 		}
 
-		// Step 2: the per-user limit COUNT, strictly after the stock UPDATE so
-		// it runs under the product row lock (#849 revision — the anti-bypass
-		// placement; orders only ever accumulate, no status filtering).
+		// Step 2: the per-user limit SUM of units, strictly after the stock
+		// UPDATE so it runs under the product row lock (#849 revision — the
+		// anti-bypass placement; orders only ever accumulate, no status
+		// filtering). Units, not rows: one qty-3 order eats three of the
+		// allowance (legacy qty-1 rows sum identically to the old COUNT).
 		if p.PerUserLimit > 0 {
-			var count int64
+			var units int64
 			if err := tx.Model(&PointRedemption{}).
 				Where("user_id = ? AND product_id = ?", uid, p.ID).
-				Count(&count).Error; err != nil {
+				Select("COALESCE(SUM(quantity), 0)").
+				Scan(&units).Error; err != nil {
 				return err
 			}
-			if count >= int64(p.PerUserLimit) {
+			if units+int64(qty) > int64(p.PerUserLimit) {
 				return &RedemptionError{Code: RedemptionLimitReached}
 			}
 		}
@@ -184,8 +196,10 @@ func (s *Store) CreateRedemption(ctx context.Context, userID string, req Redempt
 			return err
 		}
 
-		// Step 3: the guarded deduction; users who never earned start from a
-		// zero-balance row so the UPDATE, not a missing row, rejects them.
+		// Step 3: the guarded deduction of price × quantity; users who never
+		// earned start from a zero-balance row so the UPDATE, not a missing
+		// row, rejects them.
+		cost := p.PointsPrice * qty
 		if err := tx.Exec(
 			"INSERT IGNORE INTO user_points (user_id, balance, updated_at) VALUES (?, 0, ?)",
 			uid, now,
@@ -194,7 +208,7 @@ func (s *Store) CreateRedemption(ctx context.Context, userID string, req Redempt
 		}
 		res = tx.Exec(
 			"UPDATE user_points SET balance = balance - ?, updated_at = ? WHERE user_id = ? AND balance >= ?",
-			p.PointsPrice, now, uid, p.PointsPrice,
+			cost, now, uid, cost,
 		)
 		if res.Error != nil {
 			return res.Error
@@ -206,7 +220,7 @@ func (s *Store) CreateRedemption(ctx context.Context, userID string, req Redempt
 		// Step 4: the order (full snapshots) + the redeem ledger row.
 		order := &PointRedemption{
 			ID: uuid.NewString(), UserID: uid,
-			ProductID: p.ID, ProductName: p.Name, PointsCost: p.PointsPrice,
+			ProductID: p.ID, ProductName: p.Name, PointsCost: cost, Quantity: qty,
 			IdempotencyKey: req.IdempotencyKey,
 			ReceiverName:   addr.ReceiverName, ReceiverPhone: addr.ReceiverPhone,
 			Province: addr.Province, City: addr.City, District: addr.District,
@@ -225,7 +239,7 @@ func (s *Store) CreateRedemption(ctx context.Context, userID string, req Redempt
 		}
 		ledger := &PointTransaction{
 			ID: uuid.NewString(), UserID: uid,
-			Type: PointTypeRedeem, Amount: -p.PointsPrice, Ref: order.ID,
+			Type: PointTypeRedeem, Amount: -cost, Ref: order.ID,
 			CreatedAt: now,
 		}
 		if err := tx.Create(ledger).Error; err != nil {
@@ -365,15 +379,16 @@ func (s *Store) ListActiveProducts(ctx context.Context, userID string) ([]PointP
 		Order("sort_order ASC, id ASC").Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	// One grouped COUNT serves the whole page: per-product redeemed counts for
-	// this user only (status filter on the shop, not on history).
+	// One grouped SUM serves the whole page: per-product redeemed UNIT counts
+	// for this user only (status filter on the shop, not on history). Units,
+	// not rows — must match the per_user_limit SUM(quantity) semantics.
 	type countRow struct {
 		ProductID uint64
 		Total     int64
 	}
 	var counts []countRow
 	if err := s.db.WithContext(ctx).Model(&PointRedemption{}).
-		Select("product_id, COUNT(*) AS total").
+		Select("product_id, COALESCE(SUM(quantity), 0) AS total").
 		Where("user_id = ?", uid).
 		Group("product_id").Scan(&counts).Error; err != nil {
 		return nil, err
