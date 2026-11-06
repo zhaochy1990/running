@@ -35,6 +35,7 @@ type Config struct {
 	TSBlob         TSBlob              `mapstructure:"ts-blob"`
 	WorldAthletics WorldAthletics      `mapstructure:"world-athletics"`
 	ChinaAth       ChinaAth            `mapstructure:"china-ath"`
+	WxPay          WxPay               `mapstructure:"wxpay"`
 }
 
 // MySQL holds the datastore connection (secret; env-only).
@@ -153,6 +154,38 @@ type ChinaAth struct {
 	Timeout  time.Duration `mapstructure:"timeout"`
 }
 
+// WxPay configures the WeChat Pay APIv3 module (devops#904, shipping-fee
+// checkout). Every field is optional: with any of them empty the module is
+// inert — fee-charged redemptions answer 503 payment_unavailable, the notify
+// route and the pay endpoint stay unmounted, and the worker skips the timeout
+// sweep. Secrets ride the stride-secrets keys WXPAY_APPID / WXPAY_MCHID /
+// WXPAY_MERCHANT_SERIAL_NO / WXPAY_PRIVATE_KEY_PEM / WXPAY_APIV3_KEY (see
+// k8s/scripts/create-secrets.sh), injected as the STRIDE_WORKER_WXPAY_* env
+// vars below; notify-url is deployment config, not a secret.
+type WxPay struct {
+	// AppID is the miniprogram's appid (JSAPI payer context).
+	AppID string `mapstructure:"app-id"`
+	// MchID is the WeChat Pay merchant id.
+	MchID string `mapstructure:"mch-id"`
+	// MerchantSerialNo is the merchant API certificate serial number.
+	MerchantSerialNo string `mapstructure:"merchant-serial-no"`
+	// PrivateKeyPEM is the merchant API certificate private key, full PEM
+	// text (secret; newlines survive k8s secret env injection).
+	PrivateKeyPEM string `mapstructure:"private-key-pem"`
+	// APIv3Key decrypts callback payloads (secret).
+	APIv3Key string `mapstructure:"apiv3-key"`
+	// NotifyURL is the absolute https callback endpoint the prepay requests
+	// name; no query string.
+	NotifyURL string `mapstructure:"notify-url"`
+}
+
+// Configured reports whether the credentials are complete enough to run the
+// module; anything less keeps it inert rather than half-working.
+func (w WxPay) Configured() bool {
+	return w.AppID != "" && w.MchID != "" && w.MerchantSerialNo != "" &&
+		w.PrivateKeyPEM != "" && w.APIv3Key != "" && w.NotifyURL != ""
+}
+
 // MustLoad resolves the config path (explicit CONFIG_PATH env, else
 // DefaultConfigFile) and loads it, panicking on any error (fail-fast at boot).
 func MustLoad() *Config {
@@ -222,6 +255,9 @@ type APIConfig struct {
 	CityAIDraft CityAIDraft         `mapstructure:"city-ai-draft"`
 	AMap        AMap                `mapstructure:"amap"`
 	Webhook     Webhook             `mapstructure:"webhook"`
+	// WxPay is the WeChat Pay module (devops#904); same section the worker
+	// uses for the timeout-close sweep. Unconfigured = module inert.
+	WxPay WxPay `mapstructure:"wxpay"`
 	// COS is the Tencent bucket the API process needs for the feedback-image
 	// upload endpoint (devops#552); same section the worker uses for route
 	// thumbnails. Leave any field empty and the upload endpoint answers 503.

@@ -5044,6 +5044,88 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/users/me/points/redemptions/{id}/pay": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Starts WeChat Pay JSAPI for one pending_payment order (shipping fee in fen) and returns the five parameters wx.requestPayment needs: timeStamp, nonceStr, package, signType, paySign.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "points"
+                ],
+                "summary": "Pay a redemption order's shipping fee",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Order id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "JSAPI payer",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.wxpayPrepayRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.wxpayPrepayResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/users/me/profile": {
             "get": {
                 "security": [
@@ -9264,6 +9346,14 @@ const docTemplate = `{
                 "points_price": {
                     "type": "integer"
                 },
+                "shipping_fee": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "shipping_policy": {
+                    "type": "string",
+                    "maxLength": 16
+                },
                 "sort_order": {
                     "type": "integer"
                 },
@@ -9298,6 +9388,14 @@ const docTemplate = `{
                 },
                 "points_price": {
                     "type": "integer"
+                },
+                "shipping_fee": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "shipping_policy": {
+                    "type": "string",
+                    "maxLength": 16
                 },
                 "sort_order": {
                     "type": "integer"
@@ -9335,6 +9433,12 @@ const docTemplate = `{
                 },
                 "points_price": {
                     "type": "integer"
+                },
+                "shipping_fee": {
+                    "type": "integer"
+                },
+                "shipping_policy": {
+                    "type": "string"
                 },
                 "sort_order": {
                     "type": "integer"
@@ -9379,6 +9483,12 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "paid_at": {
+                    "type": "string"
+                },
+                "payment_state": {
+                    "type": "string"
+                },
                 "points_cost": {
                     "type": "integer"
                 },
@@ -9401,6 +9511,12 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "shipped_at": {
+                    "type": "string"
+                },
+                "shipping_fee_snapshot": {
+                    "type": "integer"
+                },
+                "shipping_policy_snapshot": {
                     "type": "string"
                 },
                 "status": {
@@ -11551,6 +11667,12 @@ const docTemplate = `{
                 "redeemed_count": {
                     "type": "integer"
                 },
+                "shipping_fee": {
+                    "type": "integer"
+                },
+                "shipping_policy": {
+                    "type": "string"
+                },
                 "stock": {
                     "type": "integer"
                 }
@@ -12955,6 +13077,12 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "paid_at": {
+                    "type": "string"
+                },
+                "payment_state": {
+                    "type": "string"
+                },
                 "points_cost": {
                     "type": "integer"
                 },
@@ -12977,6 +13105,12 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "shipped_at": {
+                    "type": "string"
+                },
+                "shipping_fee_snapshot": {
+                    "type": "integer"
+                },
+                "shipping_policy_snapshot": {
                     "type": "string"
                 },
                 "status": {
@@ -14413,6 +14547,38 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "week_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.wxpayPrepayRequest": {
+            "type": "object",
+            "required": [
+                "openid"
+            ],
+            "properties": {
+                "openid": {
+                    "type": "string",
+                    "maxLength": 64
+                }
+            }
+        },
+        "api.wxpayPrepayResponse": {
+            "type": "object",
+            "properties": {
+                "nonceStr": {
+                    "type": "string"
+                },
+                "package": {
+                    "type": "string"
+                },
+                "paySign": {
+                    "type": "string"
+                },
+                "signType": {
+                    "type": "string"
+                },
+                "timeStamp": {
                     "type": "string"
                 }
             }

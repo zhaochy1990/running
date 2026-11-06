@@ -137,8 +137,16 @@ type Config struct {
 	CheckInStore CheckInStore
 	// PointsStore and AddressStore back the points-shop/redemption and
 	// address-book surfaces (devops#884). Leave zero to run without them.
-	PointsStore    PointsStore
-	AddressStore   AddressStore
+	PointsStore  PointsStore
+	AddressStore AddressStore
+	// WxPayStore backs the shipping-fee payment surface (devops#904): the pay
+	// endpoint's order reads and the notify callback's paid transition.
+	// Leave zero to run without the payment surface.
+	WxPayStore WxPayStore
+	// WxPay is the WeChat Pay module gateway (satisfied by *wxpay.Client).
+	// Nil keeps the module inert: the pay endpoint and the notify route stay
+	// unmounted and a fee-charged redemption answers 503 payment_unavailable.
+	WxPay          WxPayGateway
 	ProviderLogin  ProviderLogin
 	ProviderInfo   ProviderInfo
 	AuthNameSync   AuthNameSync
@@ -354,6 +362,7 @@ type Service struct {
 	roadmap         *roadmapRoutes
 	feedback        *feedbackRoutes
 	points          *pointsRoutes
+	wxpay           *wxpayRoutes
 	addresses       *addressRoutes
 	raceStrategy    *raceStrategyRoutes
 	raceContent     *raceContentRoutes
@@ -432,7 +441,8 @@ func NewService(cfg Config) *Service {
 		customRaces:             newCustomRaceRoutes(cfg.CustomRaceStore, cfg.RacePlanStore, log),
 		roadmap:                 newRoadmapRoutes(cfg.RoadmapStore, log),
 		feedback:                newFeedbackRoutes(cfg.FeedbackStore, cfg.FeedbackImages, cfg.RoadmapStore, log),
-		points:                  newPointsRoutes(cfg.PointsStore, cfg.FeedbackImages, log),
+		points:                  newPointsRoutes(cfg.PointsStore, cfg.FeedbackImages, cfg.WxPay, log),
+		wxpay:                   newWxPayRoutes(cfg.WxPayStore, cfg.WxPay, log),
 		addresses:               newAddressRoutes(cfg.AddressStore, log),
 		raceStrategy:            newRaceStrategyRoutes(cfg.RaceStrategyStore, log),
 		raceContent:             newRaceContentRoutes(cfg.RaceContentStore, cfg.CityAIDraft, log),
@@ -484,6 +494,10 @@ func (s *Service) Router() *gin.Engine {
 	// Watch-provider event-push ingress (devops#287): public, verified by
 	// each provider's own credentials (header constants), never a JWT caller.
 	s.webhook.register(r)
+	// WeChat Pay payment-result notify (devops#904): public like the webhook
+	// ingress, verified by the platform certificate instead of a JWT tier.
+	// Inert (unmounted) while the payment module is unconfigured.
+	s.wxpay.registerNotify(r)
 
 	authenticated := r.Group("", limitBody(maxRequestBytes), s.auth.middleware())
 	// Plan routes explicitly admit the separate admin JWT tier. The master-plan
@@ -557,6 +571,9 @@ func (s *Service) Router() *gin.Engine {
 	// Points shop + redemption orders + the address book: user-tier surface
 	// (devops#884), mounted default-deny like the rest of the user surface.
 	s.points.registerUser(authed)
+	// Shipping-fee prepay for pending orders (devops#904): user-tier, same
+	// default-deny group; unmounted while the payment module is inert.
+	s.wxpay.registerUser(authed)
 	s.addresses.register(authed)
 	s.activities.register(authed)
 	s.teams.register(authed)

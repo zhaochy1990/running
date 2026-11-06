@@ -50,14 +50,18 @@ type PointsStore interface {
 type pointsRoutes struct {
 	store  PointsStore
 	images FeedbackImages
-	log    *zap.Logger
+	// pay is the WeChat Pay module gate (devops#904): nil (module inert) makes
+	// a fee-charged redemption answer 503 payment_unavailable; zero-fee goods
+	// never consult it.
+	pay WxPayGateway
+	log *zap.Logger
 }
 
-func newPointsRoutes(store PointsStore, images FeedbackImages, log *zap.Logger) *pointsRoutes {
+func newPointsRoutes(store PointsStore, images FeedbackImages, pay WxPayGateway, log *zap.Logger) *pointsRoutes {
 	if log == nil {
 		log = logging.Default()
 	}
-	return &pointsRoutes{store: store, images: images, log: log}
+	return &pointsRoutes{store: store, images: images, pay: pay, log: log}
 }
 
 // registerUser mounts the user-tier surface on the default-deny group (the
@@ -102,17 +106,20 @@ func (p *pointsRoutes) registerUpload(r *gin.Engine, auth *Authenticator) {
 // DTOs
 // ─────────────────────────────────────────────────────────────────────────────
 
-// productResponse is one shop card: the stored fields plus the caller's own
-// redeemed count (the UI grays out limit-reached cards with it).
+// productResponse is one shop card: the stored fields (shipping policy and
+// fee included since devops#904) plus the caller's own redeemed count (the UI
+// grays out limit-reached cards with it).
 type productResponse struct {
-	ID            uint64  `json:"id"`
-	Name          string  `json:"name"`
-	Description   *string `json:"description"`
-	ImageURL      *string `json:"image_url"`
-	PointsPrice   int     `json:"points_price"`
-	Stock         int     `json:"stock"`
-	PerUserLimit  int     `json:"per_user_limit"`
-	RedeemedCount int     `json:"redeemed_count"`
+	ID             uint64  `json:"id"`
+	Name           string  `json:"name"`
+	Description    *string `json:"description"`
+	ImageURL       *string `json:"image_url"`
+	PointsPrice    int     `json:"points_price"`
+	Stock          int     `json:"stock"`
+	PerUserLimit   int     `json:"per_user_limit"`
+	ShippingPolicy string  `json:"shipping_policy"`
+	ShippingFee    int     `json:"shipping_fee"`
+	RedeemedCount  int     `json:"redeemed_count"`
 }
 
 type productsResponse struct {
@@ -120,23 +127,31 @@ type productsResponse struct {
 }
 
 // redemptionResponse is one order. The receiver block is the redeem-time
-// snapshot; status walks pending_shipment → shipped (terminal).
+// snapshot; status walks pending_payment → pending_shipment → shipped
+// (terminal) for fee-charged orders, pending_shipment → shipped for zero-fee
+// ones, with cancelled as the timeout-sweep terminal (devops#904). The
+// payment block (fee/policy snapshots, payment_state, paid_at) is the same
+// redeem-time commit as the points deduction.
 type redemptionResponse struct {
-	ID            string  `json:"id"`
-	ProductID     uint64  `json:"product_id"`
-	ProductName   string  `json:"product_name"`
-	PointsCost    int     `json:"points_cost"`
-	Quantity      int     `json:"quantity"`
-	Status        string  `json:"status"`
-	TrackingNo    *string `json:"tracking_no"`
-	ShippedAt     *string `json:"shipped_at"`
-	ReceiverName  string  `json:"receiver_name"`
-	ReceiverPhone string  `json:"receiver_phone"`
-	Province      string  `json:"province"`
-	City          string  `json:"city"`
-	District      string  `json:"district"`
-	AddressDetail string  `json:"address_detail"`
-	CreatedAt     string  `json:"created_at"`
+	ID                     string  `json:"id"`
+	ProductID              uint64  `json:"product_id"`
+	ProductName            string  `json:"product_name"`
+	PointsCost             int     `json:"points_cost"`
+	Quantity               int     `json:"quantity"`
+	Status                 string  `json:"status"`
+	TrackingNo             *string `json:"tracking_no"`
+	ShippedAt              *string `json:"shipped_at"`
+	ShippingFeeSnapshot    int     `json:"shipping_fee_snapshot"`
+	ShippingPolicySnapshot string  `json:"shipping_policy_snapshot"`
+	PaymentState           string  `json:"payment_state"`
+	PaidAt                 *string `json:"paid_at"`
+	ReceiverName           string  `json:"receiver_name"`
+	ReceiverPhone          string  `json:"receiver_phone"`
+	Province               string  `json:"province"`
+	City                   string  `json:"city"`
+	District               string  `json:"district"`
+	AddressDetail          string  `json:"address_detail"`
+	CreatedAt              string  `json:"created_at"`
 }
 
 type redemptionsResponse struct {
@@ -154,17 +169,19 @@ type redemptionCreateResponse struct {
 
 // adminProductResponse is the admin projection: every stored field.
 type adminProductResponse struct {
-	ID           uint64  `json:"id"`
-	Name         string  `json:"name"`
-	Description  *string `json:"description"`
-	ImageURL     *string `json:"image_url"`
-	PointsPrice  int     `json:"points_price"`
-	Stock        int     `json:"stock"`
-	PerUserLimit int     `json:"per_user_limit"`
-	Status       string  `json:"status"`
-	SortOrder    int     `json:"sort_order"`
-	CreatedAt    string  `json:"created_at"`
-	UpdatedAt    string  `json:"updated_at"`
+	ID             uint64  `json:"id"`
+	Name           string  `json:"name"`
+	Description    *string `json:"description"`
+	ImageURL       *string `json:"image_url"`
+	PointsPrice    int     `json:"points_price"`
+	Stock          int     `json:"stock"`
+	PerUserLimit   int     `json:"per_user_limit"`
+	ShippingPolicy string  `json:"shipping_policy"`
+	ShippingFee    int     `json:"shipping_fee"`
+	Status         string  `json:"status"`
+	SortOrder      int     `json:"sort_order"`
+	CreatedAt      string  `json:"created_at"`
+	UpdatedAt      string  `json:"updated_at"`
 }
 
 type adminProductsResponse struct {
@@ -200,7 +217,11 @@ func redemptionDTO(r *storage.PointRedemption) redemptionResponse {
 		ID: r.ID, ProductID: r.ProductID, ProductName: r.ProductName,
 		PointsCost: r.PointsCost, Quantity: r.Quantity, Status: r.Status,
 		TrackingNo: r.TrackingNo, ShippedAt: formatOptionalTime(r.ShippedAt),
-		ReceiverName: r.ReceiverName, ReceiverPhone: r.ReceiverPhone,
+		ShippingFeeSnapshot:    r.ShippingFeeSnapshot,
+		ShippingPolicySnapshot: r.ShippingPolicySnapshot,
+		PaymentState:           r.PaymentState,
+		PaidAt:                 formatOptionalTime(r.PaidAt),
+		ReceiverName:           r.ReceiverName, ReceiverPhone: r.ReceiverPhone,
 		Province: r.Province, City: r.City, District: r.District,
 		AddressDetail: r.AddressDetail,
 		CreatedAt:     r.CreatedAt.UTC().Format(timeFormat),
@@ -211,6 +232,7 @@ func adminProductDTO(p *storage.PointProduct) adminProductResponse {
 	return adminProductResponse{
 		ID: p.ID, Name: p.Name, Description: p.Description, ImageURL: p.ImageURL,
 		PointsPrice: p.PointsPrice, Stock: p.Stock, PerUserLimit: p.PerUserLimit,
+		ShippingPolicy: p.ShippingPolicy, ShippingFee: p.ShippingFee,
 		Status: p.Status, SortOrder: p.SortOrder,
 		CreatedAt: p.CreatedAt.UTC().Format(timeFormat),
 		UpdatedAt: p.UpdatedAt.UTC().Format(timeFormat),
@@ -250,7 +272,9 @@ func (p *pointsRoutes) listProducts(c *gin.Context) {
 			ID: rows[i].Product.ID, Name: rows[i].Product.Name,
 			Description: rows[i].Product.Description, ImageURL: rows[i].Product.ImageURL,
 			PointsPrice: rows[i].Product.PointsPrice, Stock: rows[i].Product.Stock,
-			PerUserLimit: rows[i].Product.PerUserLimit, RedeemedCount: rows[i].RedeemedCount,
+			PerUserLimit:   rows[i].Product.PerUserLimit,
+			ShippingPolicy: rows[i].Product.ShippingPolicy, ShippingFee: rows[i].Product.ShippingFee,
+			RedeemedCount: rows[i].RedeemedCount,
 		})
 	}
 	c.JSON(http.StatusOK, resp)
@@ -304,6 +328,7 @@ func (p *pointsRoutes) createRedemption(c *gin.Context) {
 		AddressID:      body.AddressID,
 		IdempotencyKey: body.IdempotencyKey,
 		Quantity:       body.Quantity,
+		PaymentReady:   wxpayReady(p.pay),
 	}
 	res, err := p.store.CreateRedemption(c.Request.Context(), uid, req)
 	if err != nil {
@@ -393,6 +418,12 @@ func writeRedemptionError(c *gin.Context, log *zap.Logger, err error) {
 			c.JSON(http.StatusNotFound, errorResponse{Error: string(redemptionErr.Code)})
 			return
 		}
+		// payment_unavailable is not a conflict: the fee-charged redeem was
+		// rejected because the WeChat Pay module is unconfigured (devops#904).
+		if redemptionErr.Code == storage.RedemptionPaymentUnavailable {
+			c.JSON(http.StatusServiceUnavailable, errorResponse{Error: string(redemptionErr.Code)})
+			return
+		}
 		c.JSON(http.StatusConflict, errorResponse{Error: string(redemptionErr.Code)})
 	case errors.Is(err, storage.ErrPointProductNotFound):
 		c.JSON(http.StatusNotFound, errorResponse{Error: "product_not_found"})
@@ -416,27 +447,31 @@ func writeRedemptionError(c *gin.Context, log *zap.Logger, err error) {
 // status defaults to draft (devops#896: a new product is pre-publication until
 // an explicit PATCH or create status=active puts it on the shelf).
 type adminProductCreateRequest struct {
-	Name         string  `json:"name" binding:"required,max=128"`
-	Description  *string `json:"description" binding:"omitempty,max=1024"`
-	ImageURL     *string `json:"image_url" binding:"omitempty,max=512"`
-	PointsPrice  int     `json:"points_price" binding:"required,gt=0"`
-	Stock        int     `json:"stock" binding:"gte=0"`
-	PerUserLimit int     `json:"per_user_limit" binding:"gte=0"`
-	Status       string  `json:"status" binding:"omitempty,max=16"`
-	SortOrder    int     `json:"sort_order"`
+	Name           string  `json:"name" binding:"required,max=128"`
+	Description    *string `json:"description" binding:"omitempty,max=1024"`
+	ImageURL       *string `json:"image_url" binding:"omitempty,max=512"`
+	PointsPrice    int     `json:"points_price" binding:"required,gt=0"`
+	Stock          int     `json:"stock" binding:"gte=0"`
+	PerUserLimit   int     `json:"per_user_limit" binding:"gte=0"`
+	ShippingPolicy string  `json:"shipping_policy" binding:"omitempty,max=16"`
+	ShippingFee    int     `json:"shipping_fee" binding:"gte=0"`
+	Status         string  `json:"status" binding:"omitempty,max=16"`
+	SortOrder      int     `json:"sort_order"`
 }
 
 // adminProductPatchRequest is the PATCH body: every field optional (absent =
-// unchanged); price/stock/limit are absolute values.
+// unchanged); price/stock/limit/fee are absolute values.
 type adminProductPatchRequest struct {
-	Name         *string `json:"name" binding:"omitempty,max=128"`
-	Description  *string `json:"description" binding:"omitempty,max=1024"`
-	ImageURL     *string `json:"image_url" binding:"omitempty,max=512"`
-	PointsPrice  *int    `json:"points_price" binding:"omitempty,gt=0"`
-	Stock        *int    `json:"stock" binding:"omitempty,gte=0"`
-	PerUserLimit *int    `json:"per_user_limit" binding:"omitempty,gte=0"`
-	Status       *string `json:"status" binding:"omitempty,max=16"`
-	SortOrder    *int    `json:"sort_order"`
+	Name           *string `json:"name" binding:"omitempty,max=128"`
+	Description    *string `json:"description" binding:"omitempty,max=1024"`
+	ImageURL       *string `json:"image_url" binding:"omitempty,max=512"`
+	PointsPrice    *int    `json:"points_price" binding:"omitempty,gt=0"`
+	Stock          *int    `json:"stock" binding:"omitempty,gte=0"`
+	PerUserLimit   *int    `json:"per_user_limit" binding:"omitempty,gte=0"`
+	ShippingPolicy *string `json:"shipping_policy" binding:"omitempty,max=16"`
+	ShippingFee    *int    `json:"shipping_fee" binding:"omitempty,gte=0"`
+	Status         *string `json:"status" binding:"omitempty,max=16"`
+	SortOrder      *int    `json:"sort_order"`
 }
 
 // adminListProducts serves GET /api/admin/points/products — every product,
@@ -500,10 +535,23 @@ func (p *pointsRoutes) adminCreateProduct(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_status"})
 		return
 	}
+	// Shipping policy is a closed enum too (devops#904); absent means the
+	// stock nationwide_free behaviour. Unknown tokens answer 400
+	// invalid_shipping_policy.
+	policy := body.ShippingPolicy
+	if policy == "" {
+		policy = storage.ShippingPolicyNationwideFree
+	}
+	if !storage.IsShippingPolicy(policy) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_shipping_policy"})
+		return
+	}
 	row := &storage.PointProduct{
 		Name: body.Name, Description: body.Description, ImageURL: body.ImageURL,
 		PointsPrice: body.PointsPrice, Stock: body.Stock,
-		PerUserLimit: body.PerUserLimit, Status: status, SortOrder: body.SortOrder,
+		PerUserLimit:   body.PerUserLimit,
+		ShippingPolicy: policy, ShippingFee: body.ShippingFee,
+		Status: status, SortOrder: body.SortOrder,
 	}
 	if err := p.store.AdminCreateProduct(c.Request.Context(), row); err != nil {
 		p.log.Error("admin create product failed", zapErr(err))
@@ -548,10 +596,16 @@ func (p *pointsRoutes) adminPatchProduct(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_status"})
 		return
 	}
+	// The shipping policy enum is validated the same way (devops#904).
+	if body.ShippingPolicy != nil && !storage.IsShippingPolicy(*body.ShippingPolicy) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_shipping_policy"})
+		return
+	}
 	patch := storage.ProductPatch{
 		Name: body.Name, Description: body.Description, ImageURL: body.ImageURL,
 		PointsPrice: body.PointsPrice, Stock: body.Stock,
 		PerUserLimit: body.PerUserLimit, Status: body.Status, SortOrder: body.SortOrder,
+		ShippingPolicy: body.ShippingPolicy, ShippingFee: body.ShippingFee,
 	}
 	row, err := p.store.AdminPatchProduct(c.Request.Context(), id, patch)
 	if err != nil {

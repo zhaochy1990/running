@@ -27,6 +27,7 @@ import (
 	racehandler "github.com/zhaochy1990/stride/internal/handlers/racedetection"
 	"github.com/zhaochy1990/stride/internal/handlers/routethumbnails"
 	"github.com/zhaochy1990/stride/internal/handlers/watchsync"
+	"github.com/zhaochy1990/stride/internal/handlers/wxpayclose"
 	"github.com/zhaochy1990/stride/internal/health"
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/mq"
@@ -37,11 +38,17 @@ import (
 	"github.com/zhaochy1990/stride/internal/tsblob"
 	"github.com/zhaochy1990/stride/internal/tsstore"
 	"github.com/zhaochy1990/stride/internal/worldathletics"
+	"github.com/zhaochy1990/stride/internal/wxpay"
 )
 
 // heartbeatInterval is how often the worker logs a liveness heartbeat with its
 // running dispatch counters.
 const heartbeatInterval = 30 * time.Second
+
+// wxpaySweepInterval is how often the worker runs the shipping-fee timeout
+// sweep (devops#904: a 30-minute order cutoff serviced at a 5-minute cadence
+// leaves at most ~35 minutes of pending_payment parking).
+const wxpaySweepInterval = 5 * time.Minute
 
 func newWorkerCmd() *cobra.Command {
 	return &cobra.Command{
@@ -116,6 +123,12 @@ func runWorker() error {
 	if err := store.AutoMigrateHomeCity(ctx); err != nil {
 		return err
 	}
+	// point_redemptions/user_points/point_transactions are written by the
+	// wxpay_order_close sweep (devops#904): the API migrates them for its
+	// surface, the worker migrates them for the timeout sweep's writes.
+	if err := store.AutoMigratePoints(ctx); err != nil {
+		return err
+	}
 
 	// --- RabbitMQ ---
 	// Backoff instead of fail-fast: a rabbitmq Recreate roll is a 15-30s
@@ -147,6 +160,22 @@ func runWorker() error {
 
 	// --- wiring ---
 	enq := job.NewStoreEnqueuer(store.Jobs(), pub)
+	// WeChat Pay client (devops#904) for the timeout-close sweep: nil while
+	// the credentials are unconfigured — pending_payment orders cannot exist
+	// without the module, so the sweep then runs as a no-op.
+	var wxClient *wxpay.Client
+	if cfg.WxPay.Configured() {
+		wxClient, err = wxpay.New(ctx, wxpay.Config{
+			AppID: cfg.WxPay.AppID, MchID: cfg.WxPay.MchID,
+			MerchantSerialNo: cfg.WxPay.MerchantSerialNo,
+			PrivateKeyPEM:    cfg.WxPay.PrivateKeyPEM,
+			APIv3Key:         cfg.WxPay.APIv3Key,
+			NotifyURL:        cfg.WxPay.NotifyURL,
+		})
+		if err != nil {
+			return err
+		}
+	}
 	// Pipeline definitions land together with their step handlers (out of scope
 	// for the infra phase), so the worker starts with an empty registry. The
 	// worker only advances/finalizes runs (from stored steps) and never calls
@@ -174,7 +203,7 @@ func runWorker() error {
 		Store:        store,
 		DefaultYears: cfg.ChinaAth.Years,
 		Logger:       log,
-	})
+	}, wxClient)
 	policy := job.RetryPolicy{
 		MaxAttempts: cfg.Retry.MaxAttempts,
 		BaseBackoff: cfg.Retry.BaseBackoff,
@@ -255,6 +284,41 @@ func runWorker() error {
 		}
 	}()
 
+	// Shipping-fee timeout sweeper (devops#904): runs the wxpay_order_close
+	// sweep in-process on a fixed cadence (a nil client — module unconfigured
+	// — skips it; pending_payment orders cannot exist in that deployment).
+	// The sweep itself is idempotent, so a crash or overlap just redoes
+	// zero-row work. Runs once at boot so a predecessor's backlog is serviced
+	// immediately.
+	if wxClient != nil {
+		go func() {
+			runWxpaySweep := func() {
+				summary, err := wxpayclose.Sweep(ctx, store, wxClient, wxpayclose.DefaultAge, time.Now().UTC())
+				if err != nil {
+					log.Warn("wxpay order-close sweep failed", zap.Error(err))
+					return
+				}
+				if summary.Expired > 0 {
+					log.Info("wxpay order-close sweep",
+						zap.Int("expired", summary.Expired),
+						zap.Int("closed", summary.Closed),
+						zap.Int("skipped", summary.Skipped))
+				}
+			}
+			runWxpaySweep()
+			t := time.NewTicker(wxpaySweepInterval)
+			defer t.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					runWxpaySweep()
+				}
+			}
+		}()
+	}
+
 	select {
 	case <-ctx.Done():
 		// SIGTERM: ctx is cancelled, so the in-flight handler unwinds. Wait for
@@ -327,7 +391,7 @@ func newTSBlobStore(cfg config.TSBlob) (tsstore.Store, error) {
 // mirrors the 中国田协 catalogue (caConfig); `homecity_recompute` refreshes
 // every user's resident-city snapshot; `ts_blob_gc` collects orphaned
 // timeseries blobs (devops#785, operator-enqueued).
-func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store, raceDetector *racedetection.Detector, raceConcurrency int, waClient *worldathletics.Client, tsBlobStore tsstore.Store, log *zap.Logger, ccConfig competitioncalendar.Config, caConfig chinaathcalendar.Config) {
+func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store, raceDetector *racedetection.Detector, raceConcurrency int, waClient *worldathletics.Client, tsBlobStore tsstore.Store, log *zap.Logger, ccConfig competitioncalendar.Config, caConfig chinaathcalendar.Config, wxClient *wxpay.Client) {
 	reg.MustRegister("hello", func(_ context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		_ = hb("greeting", 50)
 		return fmt.Sprintf(`{"echo":%q}`, j.InputJSON), nil
@@ -361,4 +425,8 @@ func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *stor
 	// operator via the admin jobs API — the soak-window cadence is a human
 	// decision, not a cron (production runs are the operator's call).
 	reg.MustRegister(tsblob.GCJobType, tsblob.NewGCJobHandler(store, tsBlobStore))
+	// wxpay_order_close (devops#904): close overdue pending_payment orders and
+	// refund their points. The in-process ticker below drives it on a cadence;
+	// the registration keeps it operator-triggerable via the internal jobs API.
+	reg.MustRegister(wxpayclose.JobType, wxpayclose.New(store, wxClient, wxpayclose.DefaultAge))
 }

@@ -33,6 +33,11 @@ const (
 	RedemptionLimitReached       RedemptionErrorCode = "limit_reached"
 	RedemptionInsufficientPoints RedemptionErrorCode = "insufficient_points"
 	RedemptionAddressNotFound    RedemptionErrorCode = "address_not_found"
+	// RedemptionPaymentUnavailable guards the fee-charged path (devops#904):
+	// the product carries a shipping fee but the WeChat Pay module is not
+	// configured. The transaction rolls back with zero side effects — no
+	// points deducted.
+	RedemptionPaymentUnavailable RedemptionErrorCode = "payment_unavailable"
 )
 
 // RedemptionError rejects a redemption with a stable business code.
@@ -51,6 +56,25 @@ var ErrPointRedemptionNotFound = errors.New("storage: point redemption not found
 // back; the winner's committed order is re-read for the idempotent answer.
 var errRedemptionLostRace = errors.New("storage: redemption lost the idempotency race")
 
+// jzshProvinces is the 江浙沪 free-shipping block (devops#904). The address
+// book stores the native region-picker values (suffix included), and the bare
+// forms are matched too so an admin-seeded address book behaves identically.
+var jzshProvinces = map[string]bool{
+	"江苏省": true, "浙江省": true, "上海市": true,
+	"江苏": true, "浙江": true, "上海": true,
+}
+
+// shippingFeeFor returns the shipping fee in fen a product charges to a
+// receiver province (devops#904): jzsh_fee charges the product's fee only
+// outside 江浙沪; nationwide_free (and any unknown policy — the column is
+// admin-gated to the closed enum) always charges 0.
+func shippingFeeFor(p PointProduct, province string) int {
+	if p.ShippingPolicy != ShippingPolicyJZSHFee || jzshProvinces[province] {
+		return 0
+	}
+	return p.ShippingFee
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/users/me/points/redemptions — the single-transaction redemption
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,11 +82,15 @@ var errRedemptionLostRace = errors.New("storage: redemption lost the idempotency
 // RedemptionRequest carries the caller-chosen product, address book entry,
 // idempotency key and unit quantity of one redeem attempt. Quantity ≤ 0 means
 // "unspecified" and resolves to 1 (legacy clients omit the field).
+// PaymentReady tells the transaction whether the WeChat Pay module is
+// configured (devops#904): a shipping-fee product redeemed while it is false
+// is rejected payment_unavailable, zero-fee products never consult it.
 type RedemptionRequest struct {
 	ProductID      uint64
 	AddressID      uint64
 	IdempotencyKey string
 	Quantity       int
+	PaymentReady   bool
 }
 
 // RedemptionResult is the redeem outcome. Replayed marks the idempotent
@@ -100,6 +128,15 @@ func (s *Store) redemptionByIdempotencyKey(ctx context.Context, uid, key string)
 //  3. points UPDATE ... WHERE balance >= X (zero-balance row INSERT IGNOREd
 //     first) → 0 rows = insufficient_points.
 //  4. INSERT order (full snapshots) + INSERT redeem ledger row.
+//
+// devops#904 folds the shipping fee into steps 3-4: the fee is computed from
+// the product's policy + the receiver province snapshot, a fee-charged order
+// with the payment module unconfigured aborts payment_unavailable (the
+// rollback undoes the stock decrement and skips the deduction entirely), and
+// a fee-charged order lands with status=pending_payment / payment_state=pending
+// / the fee+policy snapshots / out_trade_no=order id — all in this same
+// commit. Zero-fee orders keep the #850 shape exactly (pending_shipment,
+// payment_state=free, NULL out_trade_no).
 func (s *Store) CreateRedemption(ctx context.Context, userID string, req RedemptionRequest) (*RedemptionResult, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
@@ -196,6 +233,15 @@ func (s *Store) CreateRedemption(ctx context.Context, userID string, req Redempt
 			return err
 		}
 
+		// devops#904: the receiver snapshot doubles as the shipping-fee input.
+		// The gate fires before the points deduction — an unconfigured payment
+		// module must reject a fee-charged redeem with zero point movement
+		// (the returned error rolls the stock decrement back with it).
+		fee := shippingFeeFor(p, addr.Province)
+		if fee > 0 && !req.PaymentReady {
+			return &RedemptionError{Code: RedemptionPaymentUnavailable}
+		}
+
 		// Step 3: the guarded deduction of price × quantity; users who never
 		// earned start from a zero-balance row so the UPDATE, not a missing
 		// row, rejects them.
@@ -217,7 +263,10 @@ func (s *Store) CreateRedemption(ctx context.Context, userID string, req Redempt
 			return &RedemptionError{Code: RedemptionInsufficientPoints}
 		}
 
-		// Step 4: the order (full snapshots) + the redeem ledger row.
+		// Step 4: the order (full snapshots) + the redeem ledger row. The
+		// shipping-fee detour (devops#904) rides this same commit: fee orders
+		// park in pending_payment until WeChat Pay confirms, zero-fee orders
+		// walk straight to pending_shipment as before.
 		order := &PointRedemption{
 			ID: uuid.NewString(), UserID: uid,
 			ProductID: p.ID, ProductName: p.Name, PointsCost: cost, Quantity: qty,
@@ -226,7 +275,15 @@ func (s *Store) CreateRedemption(ctx context.Context, userID string, req Redempt
 			Province: addr.Province, City: addr.City, District: addr.District,
 			AddressDetail: addr.AddressDetail,
 			Status:        RedemptionStatusPendingShipment,
+			PaymentState:  PaymentStateFree,
 			CreatedAt:     now,
+		}
+		if fee > 0 {
+			order.Status = RedemptionStatusPendingPayment
+			order.PaymentState = PaymentStatePending
+			order.ShippingFeeSnapshot = fee
+			order.ShippingPolicySnapshot = p.ShippingPolicy
+			order.OutTradeNo = &order.ID
 		}
 		if err := tx.Create(order).Error; err != nil {
 			// Lost the unique race against the same key's winner (1213 rides
@@ -428,16 +485,19 @@ func (s *Store) AdminCreateProduct(ctx context.Context, row *PointProduct) error
 
 // ProductPatch is the admin PATCH body mapped onto storage: every field
 // optional, absent = unchanged. PointsPrice/Stock/PerUserLimit are absolute
-// values (#850 resolution: 改价/改库存=绝对值).
+// values (#850 resolution: 改价/改库存=绝对值). ShippingPolicy is the closed
+// enum (devops#904; the API validates it, this layer stores verbatim).
 type ProductPatch struct {
-	Name         *string
-	Description  *string
-	ImageURL     *string
-	PointsPrice  *int
-	Stock        *int
-	PerUserLimit *int
-	Status       *string
-	SortOrder    *int
+	Name           *string
+	Description    *string
+	ImageURL       *string
+	PointsPrice    *int
+	Stock          *int
+	PerUserLimit   *int
+	Status         *string
+	SortOrder      *int
+	ShippingPolicy *string
+	ShippingFee    *int
 }
 
 // AdminPatchProduct applies the partial update; a missing id is
@@ -475,6 +535,12 @@ func (s *Store) AdminPatchProduct(ctx context.Context, id uint64, patch ProductP
 	}
 	if patch.SortOrder != nil {
 		row.SortOrder = *patch.SortOrder
+	}
+	if patch.ShippingPolicy != nil {
+		row.ShippingPolicy = *patch.ShippingPolicy
+	}
+	if patch.ShippingFee != nil {
+		row.ShippingFee = *patch.ShippingFee
 	}
 	row.UpdatedAt = time.Now().UTC()
 	if err := s.db.WithContext(ctx).Save(&row).Error; err != nil {
@@ -527,7 +593,7 @@ func decodeAdminRedemptionCursor(raw string) (adminRedemptionCursor, error) {
 // when status is non-empty.
 func (s *Store) AdminListRedemptions(ctx context.Context, status, cursor string, limit int) (*AdminRedemptionPage, error) {
 	if status != "" && !IsRedemptionStatus(status) {
-		return nil, &PointValidationError{Message: "status must be pending_shipment or shipped"}
+		return nil, &PointValidationError{Message: "status must be pending_payment, pending_shipment, shipped or cancelled"}
 	}
 	if limit == 0 {
 		limit = DefaultPointLimit
