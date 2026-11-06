@@ -166,7 +166,7 @@ Page<CoachSharePageData, CoachSharePageHandlers>({
       return defaultShareAppMessage();
     }
     return {
-      title: `${this._sharerName || 'TA'} 与 StrideWise 的对话 · ${this._count} 条`,
+      title: `${this._sharerName || 'TA'} 与砺跑马拉松助手的对话 · ${this._count} 条`,
       path: `/pages/coach-share/coach-share?sid=${encodeURIComponent(this._sid)}`,
     };
   },

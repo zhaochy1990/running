@@ -367,7 +367,7 @@ function welcomeMessages(): CoachMessage[] {
 // 第一屏零登录元素；想深入提问时由 guestReply 引导登录。纯本地消息，不投影。
 function guestWelcomeMessages(): CoachMessage[] {
   const intro =
-    '你好，我是 StrideWise 的 AI 跑步教练 👋';
+    '你好，我是砺跑马拉松助手的 AI 跑步教练 👋';
   const features = [
     '**我能帮你做什么**',
     '- 制定周期化训练计划：从基础期到赛前减量，每天安排具体课表',
@@ -1615,7 +1615,7 @@ Page<CoachPageData, CoachPageHandlers>({
 
   /**
    * 创建分享快照并产出真转发内容：path 带短 sid（阅读端 P5 落地）、标题
-   * `{昵称} 与 StrideWise 的对话 · N 条`、封面用预生成图。任何失败/超时都回落
+   * `{昵称} 与砺跑马拉松助手的对话 · N 条`、封面用预生成图。任何失败/超时都回落
    * 默认品牌分享并 toast，绝不阻塞转发面板。
    */
   createSelectedShare(): Promise<WechatMiniprogram.Page.ICustomShareContent> {
@@ -1624,8 +1624,8 @@ Page<CoachPageData, CoachPageHandlers>({
     const indices = [...new Set(selected.map((m) => m.shareIndex as number))].sort((a, b) => a - b);
     const name = (userStore.getState().user?.name ?? '').trim().slice(0, 64);
     const title = name
-      ? `${name} 与 StrideWise 的对话 · ${indices.length} 条`
-      : `我与 StrideWise 的对话 · ${indices.length} 条`;
+      ? `${name} 与砺跑马拉松助手的对话 · ${indices.length} 条`
+      : `我与砺跑马拉松助手的对话 · ${indices.length} 条`;
     const fallback = defaultShareAppMessage();
     return new Promise((resolve) => {
       let settled = false;
