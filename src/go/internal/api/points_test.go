@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -104,9 +105,10 @@ func (f *fakePointsStore) AdminShipRedemption(_ context.Context, id, trackingNo 
 // ─────────────────────────────────────────────────────────────────────────────
 
 type pointsHarness struct {
-	svc   *Service
-	store *fakePointsStore
-	key   *rsa.PrivateKey
+	svc    *Service
+	store  *fakePointsStore
+	images *fakeFeedbackImages
+	key    *rsa.PrivateKey
 }
 
 func newPointsHarness(t *testing.T, store PointsStore) *pointsHarness {
@@ -119,11 +121,13 @@ func newPointsHarness(t *testing.T, store PointsStore) *pointsHarness {
 	if err != nil {
 		t.Fatalf("verifier: %v", err)
 	}
+	images := newFakeFeedbackImages()
 	svc := NewService(Config{
-		Auth:        NewAuthenticator(testToken, verifier),
-		PointsStore: store,
+		Auth:           NewAuthenticator(testToken, verifier),
+		PointsStore:    store,
+		FeedbackImages: images,
 	})
-	return &pointsHarness{svc: svc, store: store.(*fakePointsStore), key: key}
+	return &pointsHarness{svc: svc, store: store.(*fakePointsStore), images: images, key: key}
 }
 
 func (h *pointsHarness) token(t *testing.T, audience, sub string) map[string]string {
@@ -351,13 +355,27 @@ func TestPoints_AdminProducts(t *testing.T) {
 		t.Fatalf("list code = %d: %s", w.Code, w.Body.String())
 	}
 
+	// No status on create → defaults to draft (devops#896: pre-publication).
 	w = h.do(t, http.MethodPost, "/api/admin/points/products",
 		map[string]any{"name": "新品", "points_price": 100, "stock": 5, "per_user_limit": 2}, admin)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create code = %d: %s", w.Code, w.Body.String())
 	}
-	if store.adminCreateRow.Status != storage.PointProductStatusActive {
-		t.Fatalf("default status = %q, want active", store.adminCreateRow.Status)
+	if store.adminCreateRow.Status != storage.PointProductStatusDraft {
+		t.Fatalf("default status = %q, want draft", store.adminCreateRow.Status)
+	}
+
+	// Every closed-enum status is accepted explicitly.
+	for _, status := range []string{
+		storage.PointProductStatusDraft, storage.PointProductStatusActive, storage.PointProductStatusInactive,
+	} {
+		if w := h.do(t, http.MethodPost, "/api/admin/points/products",
+			map[string]any{"name": "新品", "points_price": 100, "status": status}, admin); w.Code != http.StatusCreated {
+			t.Fatalf("create status %q: %d", status, w.Code)
+		}
+		if store.adminCreateRow.Status != status {
+			t.Fatalf("create status %q stored as %q", status, store.adminCreateRow.Status)
+		}
 	}
 
 	stock := 9
@@ -371,21 +389,30 @@ func TestPoints_AdminProducts(t *testing.T) {
 	}
 
 	// Validation failures: binding violations → 400 (bindRaceCalendarJSON),
-	// semantic status checks → 422.
+	// unknown statuses → 400 invalid_status (handler-layer closed enum, same
+	// convention as the admin redemption list's status filter).
 	w = h.do(t, http.MethodPost, "/api/admin/points/products",
 		map[string]any{"name": "x", "points_price": 0}, admin)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("price 0: %d, want 400", w.Code)
 	}
-	w = h.do(t, http.MethodPost, "/api/admin/points/products",
-		map[string]any{"name": "x", "points_price": 5, "status": "bogus"}, admin)
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("bogus status: %d, want 422", w.Code)
-	}
-	w = h.do(t, http.MethodPatch, "/api/admin/points/products/1",
-		map[string]any{"status": "bogus"}, admin)
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Errorf("patch bogus status: %d, want 422", w.Code)
+	for _, bad := range []struct{ method, path string }{
+		{http.MethodPost, "/api/admin/points/products"},
+		{http.MethodPatch, "/api/admin/points/products/1"},
+	} {
+		w := h.do(t, bad.method, bad.path,
+			map[string]any{"name": "x", "points_price": 5, "status": "bogus"}, admin)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("%s bogus status: %d, want 400", bad.method, w.Code)
+			continue
+		}
+		var env struct {
+			Error string `json:"error"`
+		}
+		decodePointsJSON(t, w, &env)
+		if env.Error != "invalid_status" {
+			t.Errorf("envelope = %q, want invalid_status", env.Error)
+		}
 	}
 	// Missing id → 404.
 	h2 := newPointsHarness(t, &fakePointsStore{patchErr: storage.ErrPointProductNotFound})
@@ -393,6 +420,70 @@ func TestPoints_AdminProducts(t *testing.T) {
 		map[string]any{"stock": 1}, h2.adminToken(t))
 	if w.Code != http.StatusNotFound {
 		t.Errorf("missing id: %d, want 404", w.Code)
+	}
+}
+
+func TestPoints_ProductImageUpload(t *testing.T) {
+	h := newPointsHarness(t, &fakePointsStore{})
+	admin, user := h.adminToken(t), h.userToken(t, testSub)
+	png := append([]byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}, make([]byte, 64)...)
+
+	doUpload := func(t *testing.T, headers map[string]string, payload []byte) *httptest.ResponseRecorder {
+		t.Helper()
+		raw, ct := multipartImageBody(payload)
+		r := httptest.NewRequest(http.MethodPost, "/api/admin/points/product-images", bytes.NewReader(raw))
+		r.Header.Set("Content-Type", ct)
+		for k, v := range headers {
+			r.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		h.svc.Router().ServeHTTP(w, r)
+		return w
+	}
+
+	// Anonymous → 401; a user JWT is refused by the admin-tier guard on the
+	// bare-engine chain (admin only, never the other way around).
+	if w := doUpload(t, nil, png); w.Code != http.StatusUnauthorized {
+		t.Errorf("anonymous upload: %d, want 401", w.Code)
+	}
+	if w := doUpload(t, user, png); w.Code != http.StatusForbidden {
+		t.Errorf("user upload: %d, want 403", w.Code)
+	}
+
+	// Bucket not configured → 503 cos_not_configured (same envelope as feedback).
+	h.images.configured = false
+	if w := doUpload(t, admin, png); w.Code != http.StatusServiceUnavailable {
+		t.Errorf("unconfigured upload: %d, want 503", w.Code)
+	}
+	h.images.configured = true
+
+	// Oversize → 413 (the shared 10MB feedback-contract boundary); non-image →
+	// 415 (same codes as feedback).
+	if w := doUpload(t, admin, append(png, make([]byte, feedbackImageMaxBytes-len(png)+1)...)); w.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("oversize upload: %d, want 413", w.Code)
+	}
+	if w := doUpload(t, admin, []byte("just text, definitely not an image")); w.Code != http.StatusUnsupportedMediaType {
+		t.Errorf("text upload: %d, want 415", w.Code)
+	}
+
+	// Happy path: global points/products/ namespace (admin content, no per-user
+	// scope) plus the public URL round-trip.
+	w := doUpload(t, admin, png)
+	if w.Code != http.StatusOK {
+		t.Fatalf("upload: %d (body=%s)", w.Code, w.Body.String())
+	}
+	var resp productImageUploadResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !strings.HasPrefix(resp.CosKey, "points/products/") || !strings.HasSuffix(resp.CosKey, ".png") {
+		t.Fatalf("key = %q", resp.CosKey)
+	}
+	if resp.URL == "" || resp.URL != h.images.PublicURL(resp.CosKey) {
+		t.Fatalf("url = %q, want the bucket public URL of %q", resp.URL, resp.CosKey)
+	}
+	if len(h.images.uploaded[resp.CosKey]) != len(png) {
+		t.Fatal("uploaded bytes must round-trip")
 	}
 }
 

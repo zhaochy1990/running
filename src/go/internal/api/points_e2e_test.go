@@ -158,9 +158,12 @@ func TestE2E_PointsShop_RedeemShipAndReplay(t *testing.T) {
 		t.Fatalf("seed balance = %d, want 11", balance)
 	}
 
-	// Admin creates a product through the wire.
+	// Admin creates a product through the wire. The shop must show it, so the
+	// creation names its status explicitly (devops#896: omitted status starts
+	// a product as draft, invisible to users).
 	code, created := e.send(t, http.MethodPost, "/api/admin/points/products", admin, map[string]any{
 		"name": "E2E 勋章", "points_price": 5, "stock": 3, "per_user_limit": 2, "sort_order": 1,
+		"status": storage.PointProductStatusActive,
 	})
 	if code != http.StatusCreated {
 		t.Fatalf("admin create: %d: %v", code, created)
@@ -301,6 +304,120 @@ func TestE2E_PointsShop_RedeemShipAndReplay(t *testing.T) {
 	}
 }
 
+// TestE2E_PointsShop_DraftLifecycle walks the devops#896 status contract
+// against the real store: a product created without a status starts as draft,
+// stays invisible to the shop, refuses redemption with product_inactive, and
+// walks draft → active → draft through PATCH. The product-image upload route
+// is also probed: this E2E service wires no bucket, so the admin gets the
+// 503 cos_not_configured envelope and a user JWT is refused at the tier guard.
+func TestE2E_PointsShop_DraftLifecycle(t *testing.T) {
+	e, _ := newPointsE2EServer(t)
+	user := e.userToken(t)
+	admin := e.adminToken(t)
+
+	// Upload probe on the real wire: the E2E service wires no bucket, so the
+	// admin reaching the handler answers the 503 cos_not_configured envelope
+	// (the nil-images branch the unit harness cannot produce), while a user
+	// JWT is refused at the tier guard.
+	upload := func(t *testing.T, token string) (int, map[string]any) {
+		t.Helper()
+		raw, ct := multipartImageBody([]byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00})
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, e.base+"/api/admin/points/product-images", bytes.NewReader(raw))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", ct)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		w, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = w.Body.Close() }()
+		var resp map[string]any
+		_ = json.NewDecoder(w.Body).Decode(&resp)
+		return w.StatusCode, resp
+	}
+	code, env := upload(t, admin)
+	if code != http.StatusServiceUnavailable || env["error"] != "cos_not_configured" {
+		t.Fatalf("admin upload: %d %v, want 503 cos_not_configured", code, env)
+	}
+	if code, _ = upload(t, user); code != http.StatusForbidden {
+		t.Fatalf("user upload: %d, want 403", code)
+	}
+
+	// Create without a status → draft.
+	code, created := e.send(t, http.MethodPost, "/api/admin/points/products", admin, map[string]any{
+		"name": "E2E 草稿品", "points_price": 5, "stock": 3,
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("admin create: %d: %v", code, created)
+	}
+	if created["status"] != storage.PointProductStatusDraft {
+		t.Fatalf("created status = %v, want draft", created["status"])
+	}
+	productID := int(created["id"].(float64))
+	id := strconv.Itoa(productID)
+	// hasProduct reports whether the products list of a response body carries
+	// the given id (admin list and user shop share the products key).
+	hasProduct := func(body map[string]any) bool {
+		rows, _ := body["products"].([]any)
+		for _, p := range rows {
+			if row, _ := p.(map[string]any); int(row["id"].(float64)) == productID {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Admin list sees the draft; the user shop does not.
+	code, listed := e.send(t, http.MethodGet, "/api/admin/points/products", admin, nil)
+	if code != http.StatusOK {
+		t.Fatalf("admin list: %d: %v", code, listed)
+	}
+	if !hasProduct(listed) {
+		t.Fatalf("draft product %d missing from the admin list: %v", productID, listed)
+	}
+	code, shop := e.send(t, http.MethodGet, "/api/users/me/points/products", user, nil)
+	if code != http.StatusOK {
+		t.Fatalf("shop: %d: %v", code, shop)
+	}
+	if hasProduct(shop) {
+		t.Fatalf("draft product %d leaked into the user shop: %v", productID, shop)
+	}
+
+	// Redemption refuses the draft with product_inactive (the redeem guard
+	// admits active only, regardless of balance).
+	code, redeem := e.send(t, http.MethodPost, "/api/users/me/points/redemptions", user, map[string]any{
+		"product_id": productID, "address_id": 1, "idempotency_key": "e2e-draft-k1",
+	})
+	if code != http.StatusConflict || redeem["error"] != "product_inactive" {
+		t.Fatalf("draft redeem: %d %v, want 409 product_inactive", code, redeem)
+	}
+
+	// Unknown status → 400 invalid_status at the handler layer.
+	code, bad := e.send(t, http.MethodPatch, "/api/admin/points/products/"+id, admin, map[string]any{"status": "bogus"})
+	if code != http.StatusBadRequest || bad["error"] != "invalid_status" {
+		t.Fatalf("bogus patch: %d %v, want 400 invalid_status", code, bad)
+	}
+
+	// Publishing then re-drafting flips shop visibility accordingly.
+	for _, tc := range []struct {
+		status  string
+		visible bool
+	}{{storage.PointProductStatusActive, true}, {storage.PointProductStatusDraft, false}} {
+		code, patched := e.send(t, http.MethodPatch, "/api/admin/points/products/"+id, admin, map[string]any{"status": tc.status})
+		if code != http.StatusOK || patched["status"] != tc.status {
+			t.Fatalf("patch %s: %d %v", tc.status, code, patched)
+		}
+		_, shop = e.send(t, http.MethodGet, "/api/users/me/points/products", user, nil)
+		if hasProduct(shop) != tc.visible {
+			t.Fatalf("product %d visible while %s = %v, want %v", productID, tc.status, hasProduct(shop), tc.visible)
+		}
+	}
+}
+
 func TestE2E_PointsShop_ConcurrentSameKey(t *testing.T) {
 	e, store := newPointsE2EServer(t)
 	user := e.userToken(t)
@@ -310,6 +427,7 @@ func TestE2E_PointsShop_ConcurrentSameKey(t *testing.T) {
 
 	code, created := e.send(t, http.MethodPost, "/api/admin/points/products", e.adminToken(t), map[string]any{
 		"name": "E2E 并发品", "points_price": 5, "stock": 10,
+		"status": storage.PointProductStatusActive,
 	})
 	if code != http.StatusCreated {
 		t.Fatalf("admin create: %d: %v", code, created)

@@ -223,6 +223,18 @@ func (m *fakeFeedbackImages) Delete(_ context.Context, key string) error {
 
 func (m *fakeFeedbackImages) Configured() bool { return m.configured }
 
+// multipartImageBody builds a one-file multipart body (field name `file`)
+// carrying the given payload; shared by the upload-contract tests of the
+// feedback and points image endpoints.
+func multipartImageBody(payload []byte) ([]byte, string) {
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, _ := mw.CreateFormFile("file", "shot.png")
+	_, _ = fw.Write(payload)
+	_ = mw.Close()
+	return buf.Bytes(), mw.FormDataContentType()
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Harness
 // ─────────────────────────────────────────────────────────────────────────────
@@ -433,20 +445,9 @@ func TestFeedback_UploadContract(t *testing.T) {
 	hdr := h.userToken(t)
 	png := append([]byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}, make([]byte, 64)...)
 
-	multipartBody := func(name string, payload []byte, contentType string) ([]byte, string) {
-		var buf bytes.Buffer
-		mw := multipart.NewWriter(&buf)
-		fw, _ := mw.CreateFormFile("file", name)
-		_, _ = fw.Write(payload)
-		_ = mw.Close()
-		if contentType == "" {
-			contentType = mw.FormDataContentType()
-		}
-		return buf.Bytes(), contentType
-	}
 	doUpload := func(t *testing.T, payload []byte) *httptest.ResponseRecorder {
 		t.Helper()
-		raw, ct := multipartBody("shot.png", payload, "")
+		raw, ct := multipartImageBody(payload)
 		r := httptest.NewRequest(http.MethodPost, "/api/users/me/feedback-images", bytes.NewReader(raw))
 		r.Header.Set("Content-Type", ct)
 		for k, v := range hdr {

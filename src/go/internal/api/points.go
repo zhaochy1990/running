@@ -1,14 +1,16 @@
 // points.go is the points-shop + redemption surface (devops#884; contract per
-// devops#850 resolution): the user-side product list, redeem call and order
-// list, plus the two admin blocks — product maintenance (GET/POST/PATCH,
-// deliberately no DELETE: products delist via status=inactive) and order
+// devops#850 resolution, upload per devops#896): the user-side product list,
+// redeem call and order list, plus the two admin blocks — product maintenance
+// (GET/POST/PATCH, deliberately no DELETE: products delist via
+// status=inactive; drafts start hidden) with its image upload, and order
 // shipping (list + terminal ship).
 //
 //	User:  GET   /api/users/me/points/products     (active only + own redeemed_count)
 //	       POST  /api/users/me/points/redemptions  {product_id, address_id, idempotency_key}
 //	       GET   /api/users/me/points/redemptions  (?limit&cursor)
-//	Admin: GET   /api/admin/points/products
-//	       POST  /api/admin/points/products
+//	Admin: GET   /api/admin/points/products        (全量含 draft/inactive)
+//	       POST  /api/admin/points/products        (status 缺省 draft)
+//	       POST  /api/admin/points/product-images  (multipart, ≤10MB, image/*; bare engine)
 //	       PATCH /api/admin/points/products/:id    (改价/改库存=绝对值; no DELETE)
 //	       GET   /api/admin/points/redemptions     (?status=&limit&cursor)
 //	       PATCH /api/admin/points/redemptions/:id/ship {tracking_no}
@@ -46,15 +48,16 @@ type PointsStore interface {
 // ─────────────────────────────────────────────────────────────────────────────
 
 type pointsRoutes struct {
-	store PointsStore
-	log   *zap.Logger
+	store  PointsStore
+	images FeedbackImages
+	log    *zap.Logger
 }
 
-func newPointsRoutes(store PointsStore, log *zap.Logger) *pointsRoutes {
+func newPointsRoutes(store PointsStore, images FeedbackImages, log *zap.Logger) *pointsRoutes {
 	if log == nil {
 		log = logging.Default()
 	}
-	return &pointsRoutes{store: store, log: log}
+	return &pointsRoutes{store: store, images: images, log: log}
 }
 
 // registerUser mounts the user-tier surface on the default-deny group (the
@@ -80,6 +83,19 @@ func (p *pointsRoutes) registerAdmin(rg *gin.RouterGroup) {
 	rg.PATCH("/api/admin/points/products/:id", p.adminPatchProduct)
 	rg.GET("/api/admin/points/redemptions", p.adminListRedemptions)
 	rg.PATCH("/api/admin/points/redemptions/:id/ship", p.adminShipRedemption)
+}
+
+// registerUpload mounts POST /api/admin/points/product-images on the bare
+// engine (devops#896): the shared authenticated group caps bodies at 1 MiB,
+// far below the 10MB image contract, so this route carries its own chain
+// (bigger body cap → auth → admin-tier guard). The handler still re-checks
+// requireAdmin, mirroring the feedback upload's mount. The size constants are
+// the feedback upload's — same contract, one source of truth.
+func (p *pointsRoutes) registerUpload(r *gin.Engine, auth *Authenticator) {
+	if p.store == nil {
+		return
+	}
+	r.POST("/api/admin/points/product-images", limitBody(maxFeedbackUploadBody), auth.middleware(), rejectNonAdminCaller, p.upload)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -392,7 +408,8 @@ func writeRedemptionError(c *gin.Context, log *zap.Logger, err error) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // adminProductCreateRequest is the POST body: name + points_price required,
-// status defaults to active.
+// status defaults to draft (devops#896: a new product is pre-publication until
+// an explicit PATCH or create status=active puts it on the shelf).
 type adminProductCreateRequest struct {
 	Name         string  `json:"name" binding:"required,max=128"`
 	Description  *string `json:"description" binding:"omitempty,max=1024"`
@@ -449,7 +466,7 @@ func (p *pointsRoutes) adminListProducts(c *gin.Context) {
 // adminCreateProduct serves POST /api/admin/points/products.
 //
 //	@Summary		Create a product (admin)
-//	@Description	Creates one product; status defaults to active. There is no DELETE — delist via PATCH status=inactive.
+//	@Description	Creates one product; status defaults to draft (invisible to users until status=active). There is no DELETE — delist via PATCH status=inactive.
 //	@Tags			points-admin
 //	@Accept			json
 //	@Produce		json
@@ -457,7 +474,6 @@ func (p *pointsRoutes) adminListProducts(c *gin.Context) {
 //	@Success		201		{object}	adminProductResponse
 //	@Failure		400		{object}	errorResponse
 //	@Failure		403		{object}	errorResponse
-//	@Failure		422		{object}	errorResponse
 //	@Failure		500		{object}	errorResponse
 //	@Security		BearerAuth
 //	@Router			/api/admin/points/products [post]
@@ -471,10 +487,12 @@ func (p *pointsRoutes) adminCreateProduct(c *gin.Context) {
 	}
 	status := body.Status
 	if status == "" {
-		status = storage.PointProductStatusActive
+		status = storage.PointProductStatusDraft
 	}
+	// Closed enum check at the handler layer, same convention as the admin
+	// redemption list's status filter: unknown tokens answer 400 invalid_status.
 	if !storage.IsPointProductStatus(status) {
-		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_status"})
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_status"})
 		return
 	}
 	row := &storage.PointProduct{
@@ -494,7 +512,7 @@ func (p *pointsRoutes) adminCreateProduct(c *gin.Context) {
 // entry for 改价/改库存/改限购/上下架 (absolute values; no DELETE by design).
 //
 //	@Summary		Update a product (admin)
-//	@Description	Applies partial updates: price/stock/limit as absolute values, status active|inactive for shelf control. Products are never hard-deleted.
+//	@Description	Applies partial updates: price/stock/limit as absolute values, status draft|active|inactive for shelf control. Products are never hard-deleted.
 //	@Tags			points-admin
 //	@Accept			json
 //	@Produce		json
@@ -504,7 +522,6 @@ func (p *pointsRoutes) adminCreateProduct(c *gin.Context) {
 //	@Failure		400		{object}	errorResponse
 //	@Failure		403		{object}	errorResponse
 //	@Failure		404		{object}	errorResponse
-//	@Failure		422		{object}	errorResponse
 //	@Failure		500		{object}	errorResponse
 //	@Security		BearerAuth
 //	@Router			/api/admin/points/products/{id} [patch]
@@ -520,8 +537,10 @@ func (p *pointsRoutes) adminPatchProduct(c *gin.Context) {
 	if !bindRaceCalendarJSON(c, &body, "invalid_body") {
 		return
 	}
+	// Closed enum check at the handler layer, same convention as the admin
+	// redemption list's status filter: unknown tokens answer 400 invalid_status.
 	if body.Status != nil && !storage.IsPointProductStatus(*body.Status) {
-		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_status"})
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_status"})
 		return
 	}
 	patch := storage.ProductPatch{
@@ -535,6 +554,49 @@ func (p *pointsRoutes) adminPatchProduct(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, adminProductDTO(row))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin handler: product image upload
+// ─────────────────────────────────────────────────────────────────────────────
+
+// productImageUploadResponse is the POST /api/admin/points/product-images
+// body: the stored key plus its public URL, ready to feed image_url on
+// create/PATCH.
+type productImageUploadResponse struct {
+	CosKey string `json:"cos_key"`
+	URL    string `json:"url"`
+}
+
+// upload serves POST /api/admin/points/product-images — single-file multipart
+// (field name `file`), ≤10MB, image/* sniffed, stored at points/products/<uuid>.<ext>
+// in the public bucket (devops#896). The mechanics are the shared
+// storeImageUpload helper; admin content is global, so unlike feedback images
+// the key carries no per-user namespace.
+//
+//	@Summary		Upload one product image (admin)
+//	@Description	Stores a single image (multipart field `file`, ≤10MB, image/*) in COS at points/products/<uuid>.<ext> and returns its object key and public URL.
+//	@Tags			points-admin
+//	@Accept			multipart/form-data
+//	@Produce		json
+//	@Param			file	formData	file	true	"Image file"
+//	@Success		200		{object}	productImageUploadResponse
+//	@Failure		400		{object}	errorResponse
+//	@Failure		403		{object}	errorResponse
+//	@Failure		413		{object}	errorResponse
+//	@Failure		415		{object}	errorResponse
+//	@Failure		503		{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/admin/points/product-images [post]
+func (p *pointsRoutes) upload(c *gin.Context) {
+	if !requireAdmin(c) {
+		return
+	}
+	key, ok := storeImageUpload(c, p.images, "points/products/", "points: cos upload failed", p.log)
+	if !ok {
+		return
+	}
+	c.JSON(http.StatusOK, productImageUploadResponse{CosKey: key, URL: p.images.PublicURL(key)})
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

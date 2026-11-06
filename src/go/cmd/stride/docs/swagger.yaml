@@ -1838,6 +1838,13 @@ definitions:
           $ref: '#/definitions/api.pointTransactionResponse'
         type: array
     type: object
+  api.productImageUploadResponse:
+    properties:
+      cos_key:
+        type: string
+      url:
+        type: string
+    type: object
   api.productResponse:
     properties:
       description:
@@ -6070,6 +6077,51 @@ paths:
       summary: Get a pipeline run (admin)
       tags:
       - pipelines
+  /api/admin/points/product-images:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Stores a single image (multipart field `file`, ≤10MB, image/*)
+        in COS at points/products/<uuid>.<ext> and returns its object key and public
+        URL.
+      parameters:
+      - description: Image file
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.productImageUploadResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Upload one product image (admin)
+      tags:
+      - points-admin
   /api/admin/points/products:
     get:
       description: Returns every product including inactive ones, sort_order ASC.
@@ -6096,8 +6148,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Creates one product; status defaults to active. There is no DELETE
-        — delist via PATCH status=inactive.
+      description: Creates one product; status defaults to draft (invisible to users
+        until status=active). There is no DELETE — delist via PATCH status=inactive.
       parameters:
       - description: Product
         in: body
@@ -6120,10 +6172,6 @@ paths:
           description: Forbidden
           schema:
             $ref: '#/definitions/api.errorResponse'
-        "422":
-          description: Unprocessable Entity
-          schema:
-            $ref: '#/definitions/api.errorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -6138,7 +6186,7 @@ paths:
       consumes:
       - application/json
       description: 'Applies partial updates: price/stock/limit as absolute values,
-        status active|inactive for shelf control. Products are never hard-deleted.'
+        status draft|active|inactive for shelf control. Products are never hard-deleted.'
       parameters:
       - description: Product id
         in: path
@@ -6168,10 +6216,6 @@ paths:
             $ref: '#/definitions/api.errorResponse'
         "404":
           description: Not Found
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "422":
-          description: Unprocessable Entity
           schema:
             $ref: '#/definitions/api.errorResponse'
         "500":

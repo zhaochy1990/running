@@ -230,9 +230,10 @@ type Config struct {
 	// thread endpoints and admin queue. Leave zero to run without the
 	// feedback endpoints.
 	FeedbackStore FeedbackStore
-	// FeedbackImages is the bucket surface for the upload endpoint and URL
-	// building (satisfied by *cos.Client); also drives the fail-open COS
-	// sweep during account erasure. Leave zero to answer uploads 503.
+	// FeedbackImages is the bucket surface for the feedback upload and the
+	// points product-image upload (devops#896), plus URL building (satisfied
+	// by *cos.Client); also drives the fail-open COS sweep during account
+	// erasure. Leave zero to answer uploads 503.
 	FeedbackImages FeedbackImages
 	// RaceStrategyStore backs the race-strategy surface (#396): the coach's
 	// structured strategy per (user, race), written by the TS coach API via the
@@ -431,7 +432,7 @@ func NewService(cfg Config) *Service {
 		customRaces:             newCustomRaceRoutes(cfg.CustomRaceStore, cfg.RacePlanStore, log),
 		roadmap:                 newRoadmapRoutes(cfg.RoadmapStore, log),
 		feedback:                newFeedbackRoutes(cfg.FeedbackStore, cfg.FeedbackImages, cfg.RoadmapStore, log),
-		points:                  newPointsRoutes(cfg.PointsStore, log),
+		points:                  newPointsRoutes(cfg.PointsStore, cfg.FeedbackImages, log),
 		addresses:               newAddressRoutes(cfg.AddressStore, log),
 		raceStrategy:            newRaceStrategyRoutes(cfg.RaceStrategyStore, log),
 		raceContent:             newRaceContentRoutes(cfg.RaceContentStore, cfg.CityAIDraft, log),
@@ -520,6 +521,10 @@ func (s *Service) Router() *gin.Engine {
 	// Feedback image upload carries a larger body cap than the shared
 	// authenticated group (10MB contract), so it mounts its own chain.
 	s.feedback.registerUpload(r, s.auth)
+	// The points product-image upload is administrator-only but carries the
+	// same 10MB contract, so it also mounts its own chain off the bare engine
+	// (bigger body cap → auth → admin-tier guard); the handler re-checks.
+	s.points.registerUpload(r, s.auth)
 
 	// Existing routes accept only the original user/internal tiers. Keeping this
 	// default deny prevents an admin-dashboard token from silently inheriting
