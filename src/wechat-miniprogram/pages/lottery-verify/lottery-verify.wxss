@@ -90,8 +90,8 @@ page {
   margin-top: 40rpx;
   padding: 0 64rpx;
   line-height: 80rpx;
-  border-radius: 40rpx;
-  background: var(--color-accent);
+  border-radius: 46rpx;
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 26rpx;
   font-weight: 600;
@@ -146,7 +146,7 @@ page {
   padding: 0 40rpx;
   line-height: 88rpx;
   border-radius: 16rpx;
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 26rpx;
   font-weight: 600;
@@ -278,7 +278,7 @@ page {
   text-align: center;
   line-height: 92rpx;
   border-radius: 46rpx;
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 30rpx;
   font-weight: 700;

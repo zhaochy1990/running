@@ -1,6 +1,5 @@
 /* ============================================================
-   教练页 —— 深色 STRIDE 主题（与 today.html / login 一致）
-   主题令牌由 styles/theme.wxss 唯一定义（app.wxss 全局 @import），
+   教练页 —— 主题令牌由 styles/theme.wxss 唯一定义（app.wxss 全局 @import），
    本页样式直接 var() 引用；换主题改 theme.wxss 一处即可（#816）。
    ============================================================ */
 
@@ -237,7 +236,7 @@
   margin-left: auto;
   font-size: 20rpx;
   line-height: 28rpx;
-  color: #7a7a7b;
+  color: var(--color-text-secondary);
 }
 
 .coach-msg__retry {
@@ -281,8 +280,8 @@
 }
 
 .coach-msg--user .coach-msg__bubble {
-  background: var(--color-accent);
-  color: var(--color-card);
+  background: var(--color-accent-deep);
+  color: var(--color-on-accent);
   font-weight: 500;
   border-top-right-radius: 8rpx;
 }
@@ -411,7 +410,7 @@
 }
 
 .coach-input__placeholder {
-  color: #7a7a7b;
+  color: var(--color-text-secondary);
 }
 
 .coach-input__send {
@@ -419,9 +418,9 @@
   height: 72rpx;
   padding: 0 32rpx;
   line-height: 72rpx;
-  border-radius: 36rpx;
-  background: var(--color-accent);
-  color: var(--color-card);
+  border-radius: 46rpx;
+  background: var(--color-accent-deep);
+  color: var(--color-on-accent);
   font-size: 24rpx;
   font-weight: 600;
 }
@@ -471,9 +470,9 @@
   margin: 0;
   padding: 0 32rpx;
   box-sizing: border-box;
-  border-radius: 36rpx;
-  background: var(--color-accent);
-  color: var(--color-card);
+  border-radius: 46rpx;
+  background: var(--color-accent-deep);
+  color: var(--color-on-accent);
   font-size: 24rpx;
   font-weight: 600;
   line-height: 72rpx;
@@ -567,7 +566,7 @@
 
 .drawer__search-placeholder {
   font-size: 24rpx;
-  color: #7a7a7b;
+  color: var(--color-text-secondary);
 }
 
 .drawer__compose {
@@ -648,6 +647,6 @@
   padding: 64rpx 32rpx;
   text-align: center;
   font-size: 24rpx;
-  color: #7a7a7b;
+  color: var(--color-text-secondary);
 }
 

@@ -75,9 +75,9 @@
 
 .bcard {
   background: var(--color-card);
-  border-radius: 32rpx;
+  border-radius: 24rpx;
   padding: 36rpx 28rpx;
-  margin: 0 28rpx 20rpx;
+  margin: 0 40rpx 20rpx;
   text-align: center;
 }
 
@@ -97,12 +97,12 @@
 /* ---------- 流水行（无边框白卡约定） ---------- */
 
 .tlist {
-  padding: 0 28rpx;
+  padding: 0 40rpx;
 }
 
 .trow {
   background: var(--color-card);
-  border-radius: 32rpx;
+  border-radius: 24rpx;
   padding: 24rpx 28rpx;
   margin-bottom: 16rpx;
   display: flex;
@@ -174,10 +174,10 @@
 }
 
 .load-failed {
-  margin: 0 28rpx;
+  margin: 0 40rpx;
   padding: 28rpx;
   background: var(--color-card);
-  border-radius: 32rpx;
+  border-radius: 24rpx;
   text-align: center;
 }
 
@@ -195,8 +195,8 @@
   padding: 0;
   box-sizing: border-box;
   border: none;
-  border-radius: 40rpx;
-  background: var(--color-accent);
+  border-radius: 46rpx;
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 28rpx;
   font-weight: 600;
@@ -257,7 +257,7 @@
   box-sizing: border-box;
   border: none;
   border-radius: 46rpx;
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 32rpx;
   font-weight: 600;

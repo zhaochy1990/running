@@ -133,9 +133,9 @@
 .pcard {
   position: relative;
   background: var(--color-card);
-  border-radius: 32rpx;
+  border-radius: 24rpx;
   padding: 24rpx;
-  margin: 0 28rpx 20rpx;
+  margin: 0 40rpx 20rpx;
   box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.04);
 }
 
@@ -235,7 +235,7 @@
   padding: 0;
   box-sizing: border-box;
   border-radius: 26rpx;
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 24rpx;
   font-weight: 600;
@@ -258,7 +258,7 @@
   right: 0;
   bottom: 0;
   background: rgba(255, 255, 255, 0.55);
-  border-radius: 32rpx;
+  border-radius: 24rpx; /* 跟随父卡 .pcard 圆角（#913 刻度统一） */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -280,9 +280,9 @@
 
 .card {
   background: var(--color-card);
-  border-radius: 32rpx;
+  border-radius: 24rpx;
   padding: 32rpx;
-  margin: 0 28rpx 24rpx;
+  margin: 0 40rpx 24rpx;
 }
 
 .content .card:first-child {
@@ -306,8 +306,8 @@
   padding: 0;
   box-sizing: border-box;
   border: none;
-  border-radius: 40rpx;
-  background: var(--color-accent);
+  border-radius: 46rpx;
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 28rpx;
   font-weight: 600;
@@ -554,7 +554,7 @@
   box-sizing: border-box;
   border: none;
   border-radius: 46rpx;
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 32rpx;
   font-weight: 600;
@@ -683,7 +683,7 @@
   box-sizing: border-box;
   border: none;
   border-radius: 46rpx;
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 32rpx;
   font-weight: 600;
@@ -762,8 +762,8 @@
   padding: 0;
   box-sizing: border-box;
   border: none;
-  border-radius: 44rpx;
-  background: var(--color-accent);
+  border-radius: 46rpx;
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 30rpx;
   font-weight: 600;

@@ -1,6 +1,5 @@
 /* ============================================================
-   Onboarding 三步页 —— 深色 STRIDE 主题（与登录页同一套配色）
-   令牌见 styles/theme.wxss
+   Onboarding 三步页 —— 浅色主题，令牌见 styles/theme.wxss
    ============================================================ */
 
 .ob-page {
@@ -319,8 +318,8 @@
   padding: 0;
   height: 92rpx;
   line-height: 92rpx;
-  border-radius: 26rpx;
-  background: var(--color-accent);
+  border-radius: 46rpx;
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 32rpx;
   font-weight: 600;

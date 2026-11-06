@@ -71,7 +71,7 @@
   justify-content: center;
   flex: 1;
   padding: 14rpx 0;
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   border-radius: 12rpx;
 }
 

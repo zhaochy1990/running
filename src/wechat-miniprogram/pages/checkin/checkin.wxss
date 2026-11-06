@@ -144,9 +144,9 @@
 
 .card {
   background: var(--color-card);
-  border-radius: 32rpx;
+  border-radius: 24rpx;
   padding: 32rpx;
-  margin: 0 28rpx 24rpx;
+  margin: 0 40rpx 24rpx;
 }
 
 /* ---------- 签到日程卡（压 hero 边） ---------- */
@@ -345,7 +345,7 @@
   box-sizing: border-box;
   border: none;
   border-radius: 46rpx;
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 32rpx;
   font-weight: 600;
@@ -572,8 +572,8 @@
   padding: 0;
   box-sizing: border-box;
   border: none;
-  border-radius: 44rpx;
-  background: var(--color-accent);
+  border-radius: 46rpx;
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 30rpx;
   font-weight: 600;
@@ -604,8 +604,8 @@
   padding: 0;
   box-sizing: border-box;
   border: none;
-  border-radius: 40rpx;
-  background: var(--color-accent);
+  border-radius: 46rpx;
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 28rpx;
   font-weight: 600;
@@ -666,7 +666,7 @@
   box-sizing: border-box;
   border: none;
   border-radius: 46rpx;
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 32rpx;
   font-weight: 600;

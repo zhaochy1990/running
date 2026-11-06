@@ -100,12 +100,12 @@
 /* ---------- 地址卡（抖音式分层：区域/详址/联系人/操作行） ---------- */
 
 .alist {
-  padding: 0 28rpx;
+  padding: 0 40rpx;
 }
 
 .acard {
   background: var(--color-card);
-  border-radius: 32rpx;
+  border-radius: 24rpx;
   padding: 28rpx;
   margin-bottom: 20rpx;
 }
@@ -214,9 +214,9 @@
 
 .card {
   background: var(--color-card);
-  border-radius: 32rpx;
+  border-radius: 24rpx;
   padding: 32rpx;
-  margin: 20rpx 28rpx 24rpx;
+  margin: 20rpx 40rpx 24rpx;
 }
 
 .load-failed {
@@ -238,8 +238,8 @@
   height: 80rpx;
   padding: 0;
   box-sizing: border-box;
-  border-radius: 40rpx;
-  background: var(--color-accent);
+  border-radius: 46rpx;
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 28rpx;
   font-weight: 600;
@@ -301,7 +301,7 @@
   padding: 0;
   box-sizing: border-box;
   border-radius: 46rpx;
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 32rpx;
   font-weight: 600;

@@ -1,5 +1,6 @@
 /* ============================================================
-   今日页 —— 依据 design/today.html 深色 STRIDE 主题
+   今日页 —— 浅色主题（令牌见 styles/theme.wxss；design/today.html
+   为深色时代存档稿，已废弃，仅作布局参考）
    页面/卡片/主色令牌见 styles/theme.wxss
    ============================================================ */
 
@@ -130,16 +131,16 @@
 }
 
 .week-day--today {
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
 }
 
 .week-day--today .week-day__label {
-  color: rgba(16, 17, 17, 0.8);
+  color: var(--color-on-accent);
   font-weight: 700;
 }
 
 .week-day--today .week-day__num {
-  color: var(--color-card);
+  color: var(--color-on-accent);
   font-weight: 700;
 }
 
@@ -290,11 +291,11 @@
   flex: 1 1 0%;
   border-top-left-radius: 4rpx;
   border-top-right-radius: 4rpx;
-  background: #2f97e1;
+  background: var(--color-info);
 }
 
 .workout__bar--dim {
-  background: rgba(47, 151, 225, 0.6);
+  background: rgba(var(--color-info-rgb), 0.6);
 }
 
 .workout__chart-baseline {
@@ -371,7 +372,7 @@
 .note-box__text {
   font-size: 20rpx;
   line-height: 36rpx;
-  color: rgba(227, 226, 229, 0.9);
+  color: var(--color-text-primary);
 }
 
 /* ---------- 教练按钮 ---------- */
@@ -387,9 +388,9 @@
   height: 96rpx;
   line-height: normal;
   border: none;
-  border-radius: 20rpx;
-  background: var(--color-accent);
-  color: var(--color-card);
+  border-radius: 46rpx;
+  background: var(--color-accent-deep);
+  color: var(--color-on-accent);
   box-sizing: border-box;
   transition: opacity 0.15s ease;
 }
@@ -412,7 +413,7 @@
 .workout__cta-text {
   font-size: 24rpx;
   font-weight: 600;
-  color: var(--color-card);
+  color: var(--color-on-accent);
 }
 
 /* ---------- 营养卡片 ---------- */

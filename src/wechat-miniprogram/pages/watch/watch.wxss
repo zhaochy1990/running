@@ -1,5 +1,5 @@
 /* ============================================================
-   手表管理页 —— 深色 STRIDE 主题（与 profile / activity-detail 一致）
+   手表管理页 —— 浅色主题（令牌见 styles/theme.wxss）
    ============================================================ */
 
 .page {
@@ -377,11 +377,11 @@
 
 .btn--primary[disabled] {
   background: rgba(var(--color-success-rgb), 0.4);
-  color: rgba(7, 8, 10, 0.5);
+  color: var(--color-text-secondary);
 }
 
 .btn--danger {
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
 }
 

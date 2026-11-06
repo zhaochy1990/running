@@ -159,7 +159,7 @@ const PHASE_TYPE_META: Record<string, { label: string; color: string }> = {
   peak: { label: '峰值', color: '#d9a45f' },
   taper: { label: '减量', color: '#b395d6' },
   race: { label: '比赛', color: '#ff6363' },
-  recovery: { label: '恢复', color: '#9c9c9d' },
+  recovery: { label: '恢复', color: '#6b7280' },
 };
 
 const PHASE_ORDER = ['base', 'speed', 'build', 'peak', 'taper', 'race', 'recovery'];

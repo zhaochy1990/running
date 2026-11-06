@@ -1,8 +1,8 @@
 /* ============================================================
-   我的比赛页 —— 双 tab（我的赛事 / 我的成绩），深色 STRIDE 主题
-   （与 watch / race-center 一致）。主题令牌统一由 styles/theme.wxss
-   唯一定义（app.wxss 全局 @import，#816）；深色页在页面内
-   重定义 .card / .card__label / banner / spinner（同 watch 页做法）；
+   我的比赛页 —— 双 tab（我的赛事 / 我的成绩）。主题令牌统一由
+   styles/theme.wxss 唯一定义（app.wxss 全局 @import，#816）；
+   .card / .card__label / banner / spinner 在页面内本地定义
+   （同 watch 页做法）；
    .empty-card 为 app.wxss 里的全局类。
    「我的赛事」tab 样式自 race-center/plans 页并入，计划卡类名
    统一 plan- 前缀，避免与成绩列表 .card 冲突。
@@ -100,17 +100,17 @@
 .tabs__item--on {
   color: var(--color-on-accent);
   font-weight: 600;
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   border-color: var(--color-accent);
 }
 
 .content {
-  padding: 0 24rpx calc(140rpx + env(safe-area-inset-bottom));
+  padding: 0 40rpx calc(140rpx + env(safe-area-inset-bottom));
 }
 
 /* ---------- 卡片 ----------
-   app.wxss 的全局 .card 用浅色主题令牌，深色页都在页面内
-   重定义暗卡（与 watch / activities 一致）；
+   app.wxss 的全局 .card 用浅色主题令牌，各页卡片在页面内
+   本地重定义（与 watch / activities 一致）；
    此处 .card 只用于「我的成绩」列表容器。 */
 
 .card {
@@ -267,7 +267,7 @@
 
 .plan-badge--state--lost {
   color: var(--color-text-secondary);
-  background: rgba(156, 156, 157, 0.14);
+  background: var(--color-chip);
 }
 
 .plan-badge--state--confirmed {
@@ -302,7 +302,7 @@
 }
 
 .steps__chip--on {
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-weight: 600;
 }
@@ -405,8 +405,8 @@
   padding: 18rpx 52rpx;
   font-size: 26rpx;
   color: var(--color-on-accent);
-  background: var(--color-accent);
-  border-radius: 36rpx;
+  background: var(--color-accent-deep);
+  border-radius: 46rpx;
   font-weight: 600;
 }
 
@@ -560,7 +560,7 @@
   width: 96rpx;
   height: 96rpx;
   border-radius: 50%;
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 52rpx;
   line-height: 96rpx;

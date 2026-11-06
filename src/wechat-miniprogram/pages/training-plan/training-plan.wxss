@@ -1,8 +1,8 @@
 /* 「我的训练计划」页 —— #436。样式硬口径（用户拍板）：
    1. 所有卡片一律无边框，高亮只靠底色 tint（如当前周 rgba(255,99,99,.12)）；
-   2. 吃满屏宽：页面左右 padding 24rpx、卡片 padding 24rpx、时间轴左轨 36rpx；
+   2. 吃满屏宽：页面左右 padding 24rpx（#913 确认项：用户拍板豁免本页 40rpx 页边距刻度）、卡片 padding 24rpx、时间轴左轨 36rpx；
    3. 全页字号整体 +2rpx（15→17 … 30→32；顶栏 34/20 保持全 app 统一不动）；
-   4. 深色主题（令牌见 styles/theme.wxss）、BEM、rpx。
+   4. 浅色主题（令牌见 styles/theme.wxss）、BEM、rpx。
    阶段配色沿用 Web PHASE_VISUALS 语义降饱和（base 绿/build 青/peak 琥珀/
    taper 紫），与原型 prototype/mp-profile-training-plan 保持一致。 */
 
@@ -135,9 +135,9 @@
   height: 80rpx;
   line-height: 80rpx;
   padding: 0 56rpx;
-  border-radius: 40rpx;
-  background: var(--color-accent);
-  color: var(--color-card);
+  border-radius: 46rpx;
+  background: var(--color-accent-deep);
+  color: var(--color-on-accent);
   font-size: 27rpx;
   font-weight: 700;
 }
@@ -423,7 +423,7 @@
 }
 
 .tl-item--done::before {
-  border-color: rgba(156, 156, 157, 0.6);
+  border-color: var(--color-hairline);
 }
 
 .tl-item--current::before {
@@ -853,9 +853,9 @@
   height: 88rpx;
   line-height: 88rpx;
   text-align: center;
-  border-radius: 20rpx;
-  background: var(--color-accent);
-  color: var(--color-card);
+  border-radius: 46rpx;
+  background: var(--color-accent-deep);
+  color: var(--color-on-accent);
   font-size: 27rpx;
   font-weight: 700;
 }
