@@ -215,6 +215,18 @@ func rejectAdminCaller(c *gin.Context) {
 	c.Next()
 }
 
+// rejectNonAdminCaller is the mirror of rejectAdminCaller for the one route
+// that must mount off the bare engine with a bigger body cap yet stay
+// administrator-only (the points product-image upload): user and internal
+// callers are refused before the handler, which still re-checks requireAdmin.
+func rejectNonAdminCaller(c *gin.Context) {
+	if callerFrom(c).Tier != TierAdmin {
+		c.AbortWithStatusJSON(403, errorResponse{Error: "forbidden"})
+		return
+	}
+	c.Next()
+}
+
 // callerFrom returns the authenticated caller stored by the middleware.
 func callerFrom(c *gin.Context) Caller {
 	v, _ := c.Get(callerContextKey)

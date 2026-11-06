@@ -136,9 +136,10 @@ func (f *feedbackRoutes) registerUpload(r *gin.Engine, auth *Authenticator) {
 // Image upload
 // ─────────────────────────────────────────────────────────────────────────────
 
-// feedbackImageExt maps a sniffed content type to a storage extension; the
-// closed vocabulary of image formats we accept (png/jpg/webp/gif/bmp).
-func feedbackImageExt(contentType string) (string, bool) {
+// sniffedImageExt maps a sniffed content type to a storage extension; the
+// closed vocabulary of image formats we accept (png/jpg/webp/gif/bmp). Shared
+// by the feedback and points product image uploads (devops#519, devops#896).
+func sniffedImageExt(contentType string) (string, bool) {
 	switch contentType {
 	case "image/png":
 		return "png", true
@@ -152,6 +153,56 @@ func feedbackImageExt(contentType string) (string, bool) {
 		return "bmp", true
 	}
 	return "", false
+}
+
+// storeImageUpload validates and stores one multipart image (field name
+// `file`) from the request at <keyPrefix><uuid>.<ext> — the shared mechanics
+// of the feedback and points product image uploads (devops#519, devops#896):
+// bucket-configured check, the 10MB cap, and the 512-byte sniff against the
+// closed format whitelist. It writes the error response itself; ok=false
+// means the caller must stop. The key mixes in no caller input.
+func storeImageUpload(c *gin.Context, images FeedbackImages, keyPrefix, logMessage string, log *zap.Logger) (string, bool) {
+	if images == nil || !images.Configured() {
+		c.JSON(http.StatusServiceUnavailable, errorResponse{Error: "cos_not_configured"})
+		return "", false
+	}
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_file"})
+		return "", false
+	}
+	if file.Size > feedbackImageMaxBytes {
+		c.JSON(http.StatusRequestEntityTooLarge, errorResponse{Error: "image_too_large"})
+		return "", false
+	}
+	src, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_file"})
+		return "", false
+	}
+	defer func() { _ = src.Close() }()
+
+	// Sniff the first 512 bytes, then re-splice them in front of the stream so
+	// the uploader sees the whole file.
+	head := make([]byte, 512)
+	n, err := io.ReadFull(src, head)
+	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_file"})
+		return "", false
+	}
+	contentType := http.DetectContentType(head[:n])
+	ext, ok := sniffedImageExt(contentType)
+	if !ok {
+		c.JSON(http.StatusUnsupportedMediaType, errorResponse{Error: "unsupported_image_type"})
+		return "", false
+	}
+	key := keyPrefix + uuid.NewString() + "." + ext
+	if err := images.Upload(c.Request.Context(), key, io.MultiReader(bytes.NewReader(head[:n]), src), contentType); err != nil {
+		log.Error(logMessage, zapErr(err))
+		c.JSON(http.StatusBadGateway, errorResponse{Error: "upload_failed"})
+		return "", false
+	}
+	return key, true
 }
 
 // upload serves POST /api/users/me/feedback-images — single-file multipart
@@ -178,44 +229,8 @@ func (f *feedbackRoutes) upload(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if f.images == nil || !f.images.Configured() {
-		c.JSON(http.StatusServiceUnavailable, errorResponse{Error: "cos_not_configured"})
-		return
-	}
-	file, err := c.FormFile("file")
-	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_file"})
-		return
-	}
-	if file.Size > feedbackImageMaxBytes {
-		c.JSON(http.StatusRequestEntityTooLarge, errorResponse{Error: "image_too_large"})
-		return
-	}
-	src, err := file.Open()
-	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_file"})
-		return
-	}
-	defer func() { _ = src.Close() }()
-
-	// Sniff the first 512 bytes, then re-splice them in front of the stream so
-	// the uploader sees the whole file.
-	head := make([]byte, 512)
-	n, err := io.ReadFull(src, head)
-	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
-		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_file"})
-		return
-	}
-	contentType := http.DetectContentType(head[:n])
-	ext, ok := feedbackImageExt(contentType)
+	key, ok := storeImageUpload(c, f.images, "feedback/"+uid+"/", "feedback: cos upload failed", f.log)
 	if !ok {
-		c.JSON(http.StatusUnsupportedMediaType, errorResponse{Error: "unsupported_image_type"})
-		return
-	}
-	key := "feedback/" + uid + "/" + uuid.NewString() + "." + ext
-	if err := f.images.Upload(c.Request.Context(), key, io.MultiReader(bytes.NewReader(head[:n]), src), contentType); err != nil {
-		f.log.Error("feedback: cos upload failed", zapErr(err))
-		c.JSON(http.StatusBadGateway, errorResponse{Error: "upload_failed"})
 		return
 	}
 	c.JSON(http.StatusOK, feedbackImageUploadResponse{CosKey: key})

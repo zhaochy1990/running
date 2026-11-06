@@ -1062,6 +1062,73 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/admin/points/product-images": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Stores a single image (multipart field ` + "`" + `file` + "`" + `, ≤10MB, image/*) in COS at points/products/\u003cuuid\u003e.\u003cext\u003e and returns its object key and public URL.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "points-admin"
+                ],
+                "summary": "Upload one product image (admin)",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "Image file",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.productImageUploadResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "415": {
+                        "description": "Unsupported Media Type",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/admin/points/products": {
             "get": {
                 "security": [
@@ -1104,7 +1171,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Creates one product; status defaults to active. There is no DELETE — delist via PATCH status=inactive.",
+                "description": "Creates one product; status defaults to draft (invisible to users until status=active). There is no DELETE — delist via PATCH status=inactive.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1145,12 +1212,6 @@ const docTemplate = `{
                             "$ref": "#/definitions/api.errorResponse"
                         }
                     },
-                    "422": {
-                        "description": "Unprocessable Entity",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -1167,7 +1228,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Applies partial updates: price/stock/limit as absolute values, status active|inactive for shelf control. Products are never hard-deleted.",
+                "description": "Applies partial updates: price/stock/limit as absolute values, status draft|active|inactive for shelf control. Products are never hard-deleted.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1217,12 +1278,6 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
-                    "422": {
-                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
                         }
@@ -11455,6 +11510,17 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/api.pointTransactionResponse"
                     }
+                }
+            }
+        },
+        "api.productImageUploadResponse": {
+            "type": "object",
+            "properties": {
+                "cos_key": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
                 }
             }
         },

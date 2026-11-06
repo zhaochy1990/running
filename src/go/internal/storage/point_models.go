@@ -48,29 +48,41 @@ type PointProduct struct {
 	ID          uint64  `gorm:"column:id;primaryKey;autoIncrement"`
 	Name        string  `gorm:"column:name;type:varchar(128);not null"`
 	Description *string `gorm:"column:description;type:varchar(1024)"`
-	// ImageURL is a COS direct link; the upload pipeline belongs to a later ticket.
-	ImageURL     *string   `gorm:"column:image_url;type:varchar(512)"`
-	PointsPrice  int       `gorm:"column:points_price;not null"`
-	Stock        int       `gorm:"column:stock;not null;default:0"`          // redeem-success deducts, admin restocks; only decrements in V1 (#849)
-	PerUserLimit int       `gorm:"column:per_user_limit;not null;default:0"` // 0 = unlimited (#849 revision)
-	Status       string    `gorm:"column:status;type:varchar(16);not null;default:active"`
-	SortOrder    int       `gorm:"column:sort_order;not null;default:0"`
-	CreatedAt    time.Time `gorm:"column:created_at;type:datetime(6);autoCreateTime:false"`
-	UpdatedAt    time.Time `gorm:"column:updated_at;type:datetime(6);autoUpdateTime:false"`
+	// ImageURL is a COS direct link, uploaded via the admin endpoint POST
+	// /api/admin/points/product-images (devops#896).
+	ImageURL     *string `gorm:"column:image_url;type:varchar(512)"`
+	PointsPrice  int     `gorm:"column:points_price;not null"`
+	Stock        int     `gorm:"column:stock;not null;default:0"`          // redeem-success deducts, admin restocks; only decrements in V1 (#849)
+	PerUserLimit int     `gorm:"column:per_user_limit;not null;default:0"` // 0 = unlimited (#849 revision)
+	// Status carries the closed draft/active/inactive lifecycle (devops#896).
+	// The API defaults new rows to draft; the column default below only
+	// backstops raw INSERTs (seed scripts) that omit the column, and existing
+	// databases keep it as-is — no migration.
+	Status    string    `gorm:"column:status;type:varchar(16);not null;default:active"`
+	SortOrder int       `gorm:"column:sort_order;not null;default:0"`
+	CreatedAt time.Time `gorm:"column:created_at;type:datetime(6);autoCreateTime:false"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:datetime(6);autoUpdateTime:false"`
 }
 
 func (PointProduct) TableName() string { return "point_products" }
 
-// Product lifecycle. Delisting keeps the row (orders snapshot the name/price,
-// but the product row itself is retained history too — #850 resolution).
+// Product lifecycle (devops#896): draft is the pre-publication state — admin
+// uploads and prices a product before it ever hits the shop. Users only ever
+// see active rows, and the redeem guard admits active only, so draft and
+// inactive are both invisible on the user surface. Delisting keeps the row
+// (orders snapshot the name/price, but the product row itself is retained
+// history too — #850 resolution).
 const (
+	PointProductStatusDraft    = "draft"
 	PointProductStatusActive   = "active"
 	PointProductStatusInactive = "inactive"
 )
 
 // IsPointProductStatus reports whether s is a storable product status.
 func IsPointProductStatus(s string) bool {
-	return s == PointProductStatusActive || s == PointProductStatusInactive
+	return s == PointProductStatusDraft ||
+		s == PointProductStatusActive ||
+		s == PointProductStatusInactive
 }
 
 // PointRedemption is one redemption order (devops#850 resolution). The row is
