@@ -153,6 +153,13 @@
   color: var(--color-text-primary);
 }
 
+/* 尺码快照（devops#910）：弱于寄达地一档，仅 by_sku 订单渲染 */
+.obody__sku {
+  font-size: 22rpx;
+  color: var(--color-text-tertiary);
+  margin-top: 4rpx;
+}
+
 .obody__m {
   font-size: 24rpx;
   color: var(--color-text-secondary);

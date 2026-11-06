@@ -4,6 +4,9 @@
 // 商品四态：正常粉「兑换」/ 售罄（蒙层+灰钮）/ 达限（灰钮）/ 积分不足走确认抽屉不足态。
 // 运费（devops#905）：抽屉按选中地址实时算运费（镜像服务端 shippingFeeFor 口径），
 // 带运费订单确认后直接拉起微信支付（取消=静默，成功进订单页）。
+// 尺码（devops#910）：by_sku 商品抽屉必选尺码（售罄码置灰），数量上限 = 
+// min(限购余量, 选中码 stock, 99)；single 商品不渲染尺码区，行为与现网一致；
+// 订单尺码快照（sku_label）在成功弹卡与订单页展示。
 import { userStore } from '../../store/index';
 import { openLogin } from '../../utils/authGate';
 import { getCheckInStatus } from '../../services/checkin';
@@ -18,7 +21,7 @@ import {
   pointsErrorCopy,
   waitOrderSettled,
 } from '../../services/points';
-import type { PointProduct, UserAddress } from '../../services/points';
+import type { PointProduct, PointProductSku, UserAddress } from '../../services/points';
 import { formatFen, shippingFeeFen } from '../../utils/shipping';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
@@ -34,6 +37,10 @@ interface MallProduct {
   redeemed: number;
   soldOut: boolean;
   limitHit: boolean;
+  /** by_sku = 抽屉选尺码（devops#910）；旧后端无 spec_mode → single，现网行为。 */
+  bySku: boolean;
+  /** by_sku 的尺码行（sort_order ASC，服务端原样透传）；single 恒空。 */
+  skus: PointProductSku[];
   /** 运费策略 + 运费（分）：抽屉按地址实时换算（devops#905）。 */
   policy: string;
   feeFen: number;
@@ -62,8 +69,11 @@ interface PointsMallPageData {
   /** 兑换数量（步进器）；合计 = price × qty。 */
   sheetQty: number;
   sheetTotal: number;
-  /** 步进上限：限购商品 = 余量，不限 = 99。 */
+  /** 步进上限：by_sku 选中码 = min(限购余量, 码 stock, 99)，未选/single = min(限购余量, 99)。 */
   sheetMaxQty: number;
+  /** 尺码区数据（devops#910）：by_sku 才非空（渲染 chips）；sheetSkuId=0 表示未选（提交被拦）。 */
+  sheetSkus: PointProductSku[];
+  sheetSkuId: number;
   sheetAddresses: SheetAddress[];
   sheetSelectedId: number;
   /** 抽屉三态文案：兑换后剩余 / 积分不足还差 N 分。 */
@@ -80,6 +90,8 @@ interface PointsMallPageData {
   /** 兑换成功居中弹卡。 */
   okVisible: boolean;
   okName: string;
+  /** 尺码快照（devops#910）：by_sku 订单展示，single/旧单空 = 不渲染该行。 */
+  okSku: string;
   okCost: number;
   okBalance: number;
   /** 兑换规则弹窗（hero「兑换规则」唤起）。 */
@@ -96,6 +108,8 @@ interface PointsMallPageHandlers {
   onHeroDetail(): void;
   onHeroCheckin(): void;
   onRedeemTap(e: WechatMiniprogram.TouchEvent): void;
+  /** 尺码 chip 点选（devops#910）：售罄码拒绝；切换联动步进上限并夹取数量。 */
+  onSkuTap(e: WechatMiniprogram.TouchEvent): void;
   onSheetClose(): void;
   onQtyMinus(): void;
   onQtyPlus(): void;
@@ -130,7 +144,9 @@ function statusBarHeight(): number {
   }
 }
 
-/** 商品卡四态推导：售罄（stock=0）与达限（redeemed≥limit>0）是两种置灰原因，视觉区分。 */
+/** 商品卡四态推导：售罄（stock=0）与达限（redeemed≥limit>0）是两种置灰原因，视觉区分。
+ * by_sku 商品后端返回的 stock = SKU 合计（仅展示，devops#909），全码售罄即 stock=0，
+ * 同一口径喂蒙层+灰钮；旧后端返回商品级真库存，向后兼容。 */
 function toMallProduct(p: PointProduct): MallProduct {
   return {
     id: p.id,
@@ -142,10 +158,21 @@ function toMallProduct(p: PointProduct): MallProduct {
     redeemed: p.redeemed_count,
     soldOut: p.stock <= 0,
     limitHit: p.per_user_limit > 0 && p.redeemed_count >= p.per_user_limit,
+    bySku: p.spec_mode === 'by_sku',
+    skus: p.skus || [],
     // 旧后端无运费字段时 undefined → shippingFeeFen 按免运处理。
     policy: p.shipping_policy,
     feeFen: p.shipping_fee || 0,
   };
+}
+
+/** 步进上限（devops#910）：限购余量封顶（不限购 99）；by_sku 选中码再取码 stock。
+ * 售罄码不可选，min 结果恒 ≥1；未选码时上限只受限购约束（提交另有闸门）。 */
+function calcSheetMaxQty(product: MallProduct, skuId: number): number {
+  const base = product.limit > 0 ? Math.max(1, product.limit - product.redeemed) : 99;
+  if (!product.bySku || !skuId) return base;
+  const sku = product.skus.find((s) => s.id === skuId);
+  return sku ? Math.min(base, sku.stock) : base;
 }
 
 function toSheetAddress(a: UserAddress): SheetAddress {
@@ -172,6 +199,8 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
     sheetQty: 1,
     sheetTotal: 0,
     sheetMaxQty: 99,
+    sheetSkus: [],
+    sheetSkuId: 0,
     sheetAddresses: [],
     sheetSelectedId: 0,
     sheetAfter: 0,
@@ -184,6 +213,7 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
     sheetTotalText: '',
     okVisible: false,
     okName: '',
+    okSku: '',
     okCost: 0,
     okBalance: 0,
     rulesVisible: false,
@@ -229,6 +259,9 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
         products: productsRes.products.map(toMallProduct),
       });
       // 抽屉开着时（管理地址/签到跳转回来）：以最新地址簿/余额重算抽屉态。
+      // 注意 _sheetProduct/sheetSkus 保持打开时刻快照（single 商品同样如此），
+      // 他端买空/改价不实时进抽屉，由提交时 409 业务码关抽屉静默刷新兜底 ——
+      // 这是有意取舍，不是漏校准（devops#910 评审定版）。
       if (this.data.sheetVisible) {
         this.refreshSheet();
       }
@@ -287,9 +320,15 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
       sheetPrice: product.price,
       sheetQty: 1,
       // 限购商品按余量封顶（redeemed 服务端已按件数 SUM）；不限购 99。
-      sheetMaxQty: product.limit > 0 ? Math.max(1, product.limit - product.redeemed) : 99,
+      // by_sku 初始未选尺码（sheetSkuId=0），选中后上限再联动码库存（devops#910）。
+      // 码表渲染看 sheetSkus.length：by_sku 但码表异常为空（后端回归）时视同
+      // single 兜底，提交由服务端 sku_required 拦截 + toast，不留死端抽屉。
+      sheetMaxQty: calcSheetMaxQty(product, 0),
+      sheetSkus: product.bySku ? product.skus : [],
+      sheetSkuId: 0,
       sheetSubmitting: false,
       okVisible: false,
+      okSku: '',
     });
     this.refreshSheet();
   },
@@ -333,6 +372,24 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
     if (this.data.sheetSubmitting) return;
     this.setData({ sheetVisible: false });
     this._sheetProduct = undefined;
+  },
+
+  // 尺码点选（devops#910）：提交中/售罄码（stock=0）/重复点选直接忽略；切换后
+  // 步进上限联动码库存，已点数量超出时夹取，合计/不足态随 refreshSheet 重算。
+  onSkuTap(e: WechatMiniprogram.TouchEvent) {
+    const product = this._sheetProduct;
+    if (!product || !product.bySku || this.data.sheetSubmitting) return;
+    const sid = Number(e.currentTarget.dataset.sid);
+    if (!sid || sid === this.data.sheetSkuId) return;
+    const sku = product.skus.find((s) => s.id === sid);
+    if (!sku || sku.stock <= 0) return;
+    const maxQty = calcSheetMaxQty(product, sid);
+    this.setData({
+      sheetSkuId: sid,
+      sheetMaxQty: maxQty,
+      sheetQty: Math.min(this.data.sheetQty, maxQty),
+    });
+    this.refreshSheet();
   },
 
   // 数量步进（1..sheetMaxQty）；改完重算合计/不足态。
@@ -380,9 +437,12 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
     const idemKey = this._idemKey;
     if (!product || !idemKey || this.data.sheetSubmitting) return;
     if (this.data.sheetNoAddress || this.data.sheetInsufficient || !this.data.sheetSelectedId) return;
+    // by_sku 未选尺码：按钮已置灰，此处兜底拦截（devops#910 AC）。
+    // 码表空（异常兜底态）不拦——放行给服务端 sku_required + toast，不留死端。
+    if (product.bySku && this.data.sheetSkus.length && !this.data.sheetSkuId) return;
     this.setData({ sheetSubmitting: true });
     try {
-      const res = await createRedemption(product.id, this.data.sheetSelectedId, idemKey, this.data.sheetQty);
+      const res = await createRedemption(product.id, this.data.sheetSelectedId, idemKey, this.data.sheetQty, this.data.sheetSkuId);
       // 幂等键已消费：重放/replay 也一样，下一次兑换必须换新 key。
       this._idemKey = newIdempotencyKey();
       // 带运费订单（pending_payment）：关抽屉直接进支付流（devops#905），
@@ -399,6 +459,8 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
         sheetSubmitting: false,
         okVisible: true,
         okName: res.order.product_name,
+        // 尺码快照：by_sku 订单展示，single/旧单缺省空 → 弹卡不渲染该行。
+        okSku: res.order.sku_label || '',
         okCost: res.order.points_cost,
         okBalance: res.balance,
         balance: res.balance,
@@ -411,8 +473,14 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
       const copy = pointsErrorCopy(err, '兑换失败，请稍后再试');
       wx.showToast({ title: copy, icon: 'none' });
       const code = err instanceof ApiError ? err.code : undefined;
-      // 商品态失效（售罄/达限/下架）：关抽屉回列表，静默刷新校准四态。
-      if (code === 'limit_reached' || code === 'out_of_stock' || code === 'product_inactive') {
+      // 商品态失效（售罄/达限/下架/尺码行失效）：关抽屉回列表，静默刷新校准四态。
+      // sku_invalid（devops#910）= 尺码行被删或换货，本地码表已过期，同口径关闭重校准。
+      if (
+        code === 'limit_reached' ||
+        code === 'out_of_stock' ||
+        code === 'product_inactive' ||
+        code === 'sku_invalid'
+      ) {
         this.setData({ sheetVisible: false });
         this._sheetProduct = undefined;
         void this.load(true);

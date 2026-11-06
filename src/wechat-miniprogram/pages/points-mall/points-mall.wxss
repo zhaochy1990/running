@@ -380,6 +380,48 @@
   color: var(--color-accent);
 }
 
+/* ---------- 尺码 chips（devops#910，仅 by_sku 渲染） ---------- */
+
+/* 未选码提示：标题行右侧弱提示（提交钮同步置灰）。
+   橙 #f5a623 = #852 定稿字面量（同下方 bal-line__lack），非主题令牌色，有意不用变量 */
+.sec__hint {
+  color: #f5a623;
+}
+
+/* chip 流式排布：码多时换行（尺码数=admin 配置，不设上限） */
+.skus {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+/* 视自绘 chip：无原生 button（同 buy/stepper 口径，避免内置宽反压）；
+   选中态镜像地址单选 aradio--sel 的粉描边+浅粉衬底 */
+.sku {
+  min-width: 96rpx;
+  box-sizing: border-box;
+  padding: 12rpx 28rpx;
+  border: 2rpx solid #f0f0f3;
+  border-radius: 16rpx;
+  font-size: 26rpx;
+  color: var(--color-text-primary);
+  text-align: center;
+}
+
+.sku--sel {
+  border-color: var(--color-accent);
+  background: rgba(var(--color-accent-rgb), 0.08);
+  color: var(--color-accent-deep);
+  font-weight: 600;
+}
+
+/* 售罄码：灰底灰字不可点（onSkuTap 拦截，视觉与步进 off 态同阶） */
+.sku--off {
+  border-color: var(--color-bg-sunken);
+  background: var(--color-bg-sunken);
+  color: var(--color-text-tertiary);
+}
+
 /* ---------- 数量步进行 ---------- */
 
 .qtyrow {
