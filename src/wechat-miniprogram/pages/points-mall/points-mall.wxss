@@ -438,6 +438,27 @@
   color: var(--color-accent);
 }
 
+/* ---------- 运费行（devops#905）：随选中地址实时刷新 ---------- */
+
+.feeline {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 26rpx;
+  color: var(--color-text-primary);
+  margin-top: 24rpx;
+}
+
+.feeline__v {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+/* 免运：绿字「包邮」（主题 success 令牌，同订单页包邮行） */
+.feeline__v--free {
+  color: var(--color-success);
+}
+
 .sec {
   font-size: 24rpx;
   color: var(--color-text-secondary);

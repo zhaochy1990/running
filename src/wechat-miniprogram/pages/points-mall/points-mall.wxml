@@ -88,7 +88,7 @@
         <view class="sprod__name">{{sheetName}}</view>
         <view class="sprod__price">{{sheetPrice}} 分</view>
       </view>
-      <!-- 数量步进：右列合计 = 单价 × 数量（步进样式沿用抖音口径：−/数字/+） -->
+      <!-- 数量步进：右列合计 = 单价 × 数量 + 运费口径（步进样式沿用抖音口径：−/数字/+） -->
       <view class="qtyrow">
         <text class="qtyrow__label">数量</text>
         <view class="qtyrow__ctrl">
@@ -106,7 +106,7 @@
             catchtap="onQtyPlus"
           >＋</view>
         </view>
-        <text class="qtyrow__total">合计 <text class="qtyrow__sum">{{sheetTotal}}</text> 分</text>
+        <text class="qtyrow__total">合计 <text class="qtyrow__sum">{{sheetTotalText}}</text></text>
       </view>
       <view class="sec">
         <text>寄到哪</text>
@@ -126,6 +126,11 @@
       </block>
       <view wx:else class="noaddr">
         <text>还没有收货地址　</text><text class="noaddr__add" catchtap="onSheetAddAddr">去添加 ›</text>
+      </view>
+      <!-- 运费行（devops#905）：紧贴地址单选，切地址运费即时刷新；免运绿「包邮」/ 应收「¥N」 -->
+      <view wx:if="{{!sheetNoAddress}}" class="feeline">
+        <text>运费</text>
+        <text class="feeline__v {{sheetFeeFree ? 'feeline__v--free' : ''}}">{{sheetFeeText}}</text>
       </view>
       <view class="bal-line">
         <text>当前 {{balance}} 分</text>
