@@ -19,7 +19,7 @@
   height: 128rpx;
   display: flex;
   align-items: center;
-  padding: 0 24rpx;
+  padding: 0 40rpx;
 }
 .top-bar__btn {
   width: 72rpx;
@@ -46,7 +46,7 @@
 }
 
 .content {
-  padding: 24rpx;
+  padding: 24rpx 40rpx;
 }
 
 .state-card {
@@ -167,7 +167,7 @@
 }
 .hero__btn--lead {
   flex: 2;
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-weight: 600;
 }
@@ -343,7 +343,7 @@
   color: var(--color-text-muted);
 }
 .actions__save--on {
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-weight: 600;
 }
@@ -405,7 +405,7 @@
   line-height: 84rpx;
   font-size: 28rpx;
   font-weight: 600;
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
 }
 .actions__apply--busy {

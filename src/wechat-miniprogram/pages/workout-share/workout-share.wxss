@@ -50,7 +50,7 @@
 }
 
 .cta-bar__btn--primary {
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-weight: 600;
 }

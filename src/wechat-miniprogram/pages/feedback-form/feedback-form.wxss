@@ -1,6 +1,6 @@
 /* ============================================================
    意见反馈·全屏表单页（devops#554，原型 518 variant C）——
-   深色 STRIDE 主题，顶栏同 feedback 列表页。
+   浅色主题（令牌见 styles/theme.wxss），顶栏同 feedback 列表页。
    ============================================================ */
 
 .page {
@@ -90,7 +90,7 @@
 }
 
 .seg__item--on {
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-weight: 600;
 }
@@ -176,7 +176,7 @@
   line-height: 92rpx;
   text-align: center;
   border-radius: 46rpx;
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 30rpx;
   font-weight: 600;

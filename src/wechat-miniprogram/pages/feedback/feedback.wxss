@@ -1,6 +1,6 @@
 /* ============================================================
    意见反馈页（devops#554，原型 518 variant C 定稿）——
-   深色 STRIDE 主题。2026-10-18 产品路线并入为二级 tab：
+   浅色主题（令牌见 styles/theme.wxss）。2026-10-18 产品路线并入为二级 tab：
    tab 分段选择器同 my-races；路线内容样式在 components/roadmap-panel。
    ============================================================ */
 
@@ -75,7 +75,7 @@
 
 .content {
   /* 底部留出右下角悬浮 + 的空间，最后一行不被遮 */
-  padding: 0 24rpx calc(180rpx + env(safe-area-inset-bottom));
+  padding: 0 40rpx calc(180rpx + env(safe-area-inset-bottom));
 }
 
 /* 路线 tab 容器：扁平化贴边（拍板），无左右留白，只留底部安全区 */
@@ -138,7 +138,7 @@
   width: 112rpx;
   height: 112rpx;
   border-radius: 50%;
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 56rpx;
   font-weight: 300;
@@ -313,6 +313,6 @@
 .tabs__item--on {
   color: var(--color-on-accent);
   font-weight: 600;
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   border-color: var(--color-accent);
 }

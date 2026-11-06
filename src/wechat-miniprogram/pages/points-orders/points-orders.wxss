@@ -75,12 +75,12 @@
 /* ---------- 订单卡（无边框白卡约定） ---------- */
 
 .olist {
-  padding: 0 28rpx;
+  padding: 0 40rpx;
 }
 
 .ocard {
   background: var(--color-card);
-  border-radius: 32rpx;
+  border-radius: 24rpx;
   padding: 28rpx;
   margin-bottom: 20rpx;
 }
@@ -218,8 +218,8 @@
   min-width: 160rpx;
   box-sizing: border-box;
   padding: 10rpx 32rpx;
-  border-radius: 999rpx;
-  background: var(--color-accent);
+  border-radius: 46rpx;
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 24rpx;
   font-weight: 600;
@@ -259,7 +259,7 @@
 }
 
 .load-failed {
-  margin: 0 28rpx;
+  margin: 0 40rpx;
   text-align: center;
 }
 
@@ -276,8 +276,8 @@
   padding: 0;
   box-sizing: border-box;
   border: none;
-  border-radius: 40rpx;
-  background: var(--color-accent);
+  border-radius: 46rpx;
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 28rpx;
   font-weight: 600;
@@ -338,7 +338,7 @@
   box-sizing: border-box;
   border: none;
   border-radius: 46rpx;
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 32rpx;
   font-weight: 600;

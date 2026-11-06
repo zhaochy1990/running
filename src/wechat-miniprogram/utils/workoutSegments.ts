@@ -48,7 +48,7 @@ const STEP_KIND_META: Record<string, { label: string; color: string; quiet?: boo
   work: { label: '跑步', color: '#ff6363' },
   recovery: { label: '恢复', color: '#6db3cf' },
   cooldown: { label: '冷身', color: '#b395d6' },
-  rest: { label: '休息', color: '#9c9c9d', quiet: true },
+  rest: { label: '休息', color: '#6b7280', quiet: true },
 };
 
 /** 秒 → `M:SS`（段时长/休息用，比 fmtHms 的 00:59:40 形态更适合段落行）。 */
@@ -115,7 +115,7 @@ export function buildRunGroups(spec: NormalizedRunWorkout): SegmentGroupVM[] {
   return spec.blocks.map((block, bi) => {
     const rows: SegmentRowVM[] = [];
     block.steps.forEach((step, si) => {
-      const meta = STEP_KIND_META[step.step_kind] || { label: step.step_kind, color: '#9c9c9d' };
+      const meta = STEP_KIND_META[step.step_kind] || { label: step.step_kind, color: '#6b7280' };
       rows.push({
         key: `s${bi}-${si}`,
         kindLabel: meta.label,

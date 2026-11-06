@@ -95,8 +95,8 @@ page {
   margin-top: 40rpx;
   padding: 0 64rpx;
   line-height: 80rpx;
-  border-radius: 40rpx;
-  background: var(--color-accent);
+  border-radius: 46rpx;
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 26rpx;
   font-weight: 600;
@@ -383,7 +383,7 @@ page {
   text-align: center;
   font-size: 30rpx;
   font-weight: 700;
-  background: var(--color-accent);
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
 }
 

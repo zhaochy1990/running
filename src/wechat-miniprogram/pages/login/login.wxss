@@ -1,6 +1,6 @@
 /* ============================================================
-   登录页 —— 依据 design/login_1.html（邮箱登录）+ login_2.html（手机号登录）
-   深色 STRIDE 主题：令牌见 styles/theme.wxss
+   登录页 —— 浅色主题，令牌见 styles/theme.wxss
+   （design/login_*.html 为深色时代存档稿，已废弃，仅作布局参考）
    ============================================================ */
 
 .login-page {
@@ -188,7 +188,7 @@
 }
 
 .login-placeholder {
-  color: #7a7a7b;
+  color: var(--color-text-secondary);
 }
 
 .login-input-action {
@@ -256,8 +256,8 @@
   line-height: 92rpx;
   margin: 0;
   padding: 0;
-  border-radius: 26rpx;
-  background: var(--color-accent);
+  border-radius: 46rpx;
+  background: var(--color-accent-deep);
   color: var(--color-on-accent);
   font-size: 27rpx;
   font-weight: 500;

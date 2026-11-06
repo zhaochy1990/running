@@ -1,7 +1,7 @@
 /* ============================================================
-   赛事中心页 —— 深色 STRIDE 主题（与 my-races / watch 一致）。
+   赛事中心页 —— 浅色主题（令牌见 styles/theme.wxss）。
    C 紧凑清单版式（#384 定稿）：常驻筛选栏 + 航班式密表行 +
-   月份分组头；app.wxss 全局令牌是浅色，深色类在本页重定义。
+   月份分组头。
    ============================================================ */
 
 .page {
@@ -137,12 +137,12 @@
 }
 
 .content {
-  padding: 0 24rpx 48rpx;
+  padding: 0 40rpx 48rpx;
 }
 
 /* ---------- 提示条 / 加载（同 watch） ---------- */
 
-/* app.wxss 没有 .state-card 全局类，深色页各自本地定义（同 watch /
+/* app.wxss 没有 .state-card 全局类，各页本地定义（同 watch /
    training-status / activity-detail）。 */
 .state-card {
   display: flex;
