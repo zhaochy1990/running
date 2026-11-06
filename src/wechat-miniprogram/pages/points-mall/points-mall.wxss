@@ -33,13 +33,8 @@
   flex-shrink: 0;
 }
 
-/* 右上常驻「兑换记录」链接（原型 navlink） */
-.top-bar__btn--link {
-  width: auto;
-  padding: 0 8rpx;
-  font-size: 26rpx;
-  color: var(--color-on-accent);
-  opacity: 0.92;
+.top-bar__btn--spacer {
+  width: 88rpx;
 }
 
 .top-bar__icon {

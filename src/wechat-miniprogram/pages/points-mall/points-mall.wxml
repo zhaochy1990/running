@@ -10,7 +10,7 @@
         <view class="top-bar__title-wrap">
           <view class="top-bar__title">积分商城</view>
         </view>
-        <view class="top-bar__btn top-bar__btn--link" bindtap="onNavOrders">兑换记录</view>
+        <view class="top-bar__btn top-bar__btn--spacer"></view>
       </view>
     </view>
 
