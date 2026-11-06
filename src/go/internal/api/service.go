@@ -495,7 +495,7 @@ func (s *Service) Router() *gin.Engine {
 	// each provider's own credentials (header constants), never a JWT caller.
 	s.webhook.register(r)
 	// WeChat Pay payment-result notify (devops#904): public like the webhook
-	// ingress, verified by the platform certificate instead of a JWT tier.
+	// ingress, verified by the WeChat Pay public key instead of a JWT tier.
 	// Inert (unmounted) while the payment module is unconfigured.
 	s.wxpay.registerNotify(r)
 

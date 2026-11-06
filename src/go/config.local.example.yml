@@ -23,5 +23,6 @@ ts-blob:
 # inert (fee-charged redemptions answer 503 payment_unavailable, zero-fee
 # goods unaffected). To exercise it, set STRIDE_WORKER_WXPAY_APP_ID,
 # STRIDE_WORKER_WXPAY_MCH_ID, STRIDE_WORKER_WXPAY_MERCHANT_SERIAL_NO,
-# STRIDE_WORKER_WXPAY_PRIVATE_KEY_PEM and STRIDE_WORKER_WXPAY_APIV3_KEY (see
+# STRIDE_WORKER_WXPAY_PRIVATE_KEY_PEM, STRIDE_WORKER_WXPAY_PUBLIC_KEY_ID,
+# STRIDE_WORKER_WXPAY_PUBLIC_KEY_PEM and STRIDE_WORKER_WXPAY_APIV3_KEY (see
 # config.yml for the stride-secrets key names).

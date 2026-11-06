@@ -158,10 +158,13 @@ type ChinaAth struct {
 // checkout). Every field is optional: with any of them empty the module is
 // inert — fee-charged redemptions answer 503 payment_unavailable, the notify
 // route and the pay endpoint stay unmounted, and the worker skips the timeout
-// sweep. Secrets ride the stride-secrets keys WXPAY_APPID / WXPAY_MCHID /
-// WXPAY_MERCHANT_SERIAL_NO / WXPAY_PRIVATE_KEY_PEM / WXPAY_APIV3_KEY (see
-// k8s/scripts/create-secrets.sh), injected as the STRIDE_WORKER_WXPAY_* env
-// vars below; notify-url is deployment config, not a secret.
+// sweep. The merchant runs WeChat Pay's public-key mode: callbacks verify
+// against the platform public key, not a downloaded platform certificate.
+// Secrets ride the stride-secrets keys WXPAY_APPID / WXPAY_MCHID /
+// WXPAY_MERCHANT_SERIAL_NO / WXPAY_PRIVATE_KEY_PEM / WXPAY_PUBLIC_KEY_ID /
+// WXPAY_PUBLIC_KEY_PEM / WXPAY_APIV3_KEY (see k8s/scripts/create-secrets.sh),
+// injected as the STRIDE_WORKER_WXPAY_* env vars below; notify-url is
+// deployment config, not a secret.
 type WxPay struct {
 	// AppID is the miniprogram's appid (JSAPI payer context).
 	AppID string `mapstructure:"app-id"`
@@ -172,6 +175,12 @@ type WxPay struct {
 	// PrivateKeyPEM is the merchant API certificate private key, full PEM
 	// text (secret; newlines survive k8s secret env injection).
 	PrivateKeyPEM string `mapstructure:"private-key-pem"`
+	// PublicKeyID is the WeChat Pay public key id (PUB_KEY_ID_...), the value
+	// the callback Wechatpay-Serial header carries (secret).
+	PublicKeyID string `mapstructure:"public-key-id"`
+	// PublicKeyPEM is the WeChat Pay platform public key, full PEM text
+	// (secret; public-key mode credential — see WxPay doc above).
+	PublicKeyPEM string `mapstructure:"public-key-pem"`
 	// APIv3Key decrypts callback payloads (secret).
 	APIv3Key string `mapstructure:"apiv3-key"`
 	// NotifyURL is the absolute https callback endpoint the prepay requests
@@ -183,7 +192,8 @@ type WxPay struct {
 // module; anything less keeps it inert rather than half-working.
 func (w WxPay) Configured() bool {
 	return w.AppID != "" && w.MchID != "" && w.MerchantSerialNo != "" &&
-		w.PrivateKeyPEM != "" && w.APIv3Key != "" && w.NotifyURL != ""
+		w.PrivateKeyPEM != "" && w.PublicKeyID != "" && w.PublicKeyPEM != "" &&
+		w.APIv3Key != "" && w.NotifyURL != ""
 }
 
 // MustLoad resolves the config path (explicit CONFIG_PATH env, else
