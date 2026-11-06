@@ -125,7 +125,6 @@
         hover-class="none"
         catchtap="onSheetCheckin"
       >去签到赚 {{sheetLack}} 分 ›</button>
-      <button class="sbtn sbtn--ghost" hover-class="none" catchtap="onSheetClose">再想想</button>
     </view>
   </view>
 
