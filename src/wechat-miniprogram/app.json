@@ -29,6 +29,7 @@
     "pages/lottery-verify/lottery-verify",
     "pages/points-mall/points-mall",
     "pages/points-orders/points-orders",
+    "pages/points-detail/points-detail",
     "pages/addresses/addresses",
     "pages/address-form/address-form",
     "pages/onboarding/onboarding",

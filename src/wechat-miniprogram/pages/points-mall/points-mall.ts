@@ -222,9 +222,9 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
     wx.navigateTo({ url: '/pages/points-orders/points-orders' });
   },
 
-  // 积分明细页未上线（归后续票），toast 占位。
+  // 积分明细页已上线（#894），接管原占位 toast（单向跳转，同 onNavOrders 直接 navigateTo）。
   onHeroDetail() {
-    wx.showToast({ title: '积分明细建设中', icon: 'none' });
+    wx.navigateTo({ url: '/pages/points-detail/points-detail' });
   },
 
   onHeroAddr() {

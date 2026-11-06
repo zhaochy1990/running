@@ -250,9 +250,12 @@ Page<CheckinPageData, CheckinPageHandlers>({
     void this.load();
   },
 
-  // 明细：目标页未上线，toast 占位；商城已上线（#886），接管原占位 toast。
+  // 明细页已上线（#894），接管原占位 toast。checkin↔detail 互为 navigateTo 会单向涨栈，fail 兜底 redirectTo。
   onDetailTap() {
-    wx.showToast({ title: '积分明细建设中', icon: 'none' });
+    wx.navigateTo({
+      url: '/pages/points-detail/points-detail',
+      fail: () => wx.redirectTo({ url: '/pages/points-detail/points-detail' }),
+    });
   },
 
   onMallTap() {
