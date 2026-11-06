@@ -103,6 +103,35 @@ export function listRedemptions(cursor?: string): Promise<RedemptionsResponse> {
   return http.get<RedemptionsResponse>(`/api/users/me/points/redemptions${qs}`);
 }
 
+/** 流水类型（storage/point_models.go：earn_checkin/redeem V1 产生，expire/adjust 留位）。 */
+export type PointTransactionType = 'earn_checkin' | 'redeem' | 'expire' | 'adjust';
+
+/** GET /api/users/me/points 流水单项（#883 契约）。 */
+export interface PointTransaction {
+  id: string;
+  type: PointTransactionType;
+  /** 已带符号：earn_checkin 正 / redeem 负（storage/points.go 写入时定号）。 */
+  amount: number;
+  /** redeem = 订单号（UUID，页面渲染 R- 前缀）；其余为空。 */
+  ref: string;
+  remark?: string | null;
+  created_at: string;
+}
+
+/** 明细分页响应：对象信封 {balance, transactions, next_cursor}（#686 契约备注）。 */
+export interface PointsLedgerResponse {
+  balance: number;
+  transactions: PointTransaction[];
+  /** null = 到底（服务端 50 条/页，倒序）。 */
+  next_cursor?: string | null;
+}
+
+/** 积分余额 + 流水倒序分页（cursor 透传即可，next_cursor=null 到底）。 */
+export function listPointsLedger(cursor?: string): Promise<PointsLedgerResponse> {
+  const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
+  return http.get<PointsLedgerResponse>(`/api/users/me/points${qs}`);
+}
+
 /** 地址簿列表（服务端保证至多一条 is_default）。 */
 export function listAddresses(): Promise<AddressesResponse> {
   return http.get<AddressesResponse>('/api/users/me/addresses');

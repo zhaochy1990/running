@@ -1,0 +1,64 @@
+<view class="page">
+  <!-- 粉渐变顶栏（范式对齐 points-orders） -->
+  <view class="nav-wrap" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn" bindtap="onBack">
+        <image wx:if="{{canBack}}" class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right_white.svg" mode="aspectFit" />
+        <image wx:else class="top-bar__icon" src="/assets/icons/home_white.svg" mode="aspectFit" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">积分明细</view>
+      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
+  </view>
+
+  <view class="content">
+    <view wx:if="{{loading}}" class="page-loading">加载中…</view>
+
+    <view wx:elif="{{loadFailed}}" class="load-failed">
+      <view class="load-failed__txt">积分明细加载失败，请检查网络后重试</view>
+      <button class="load-failed__btn" hover-class="none" bindtap="onRetry">重新加载</button>
+    </view>
+
+    <block wx:else>
+      <!-- 余额大数字（浅色主题无边框白卡） -->
+      <view class="bcard">
+        <view class="bcard__l">当前积分</view>
+        <view class="bcard__v">{{balance}}</view>
+      </view>
+
+      <!-- 空态：引导去签到赚分 -->
+      <view wx:if="{{rows.length === 0}}" class="empty">
+        <view>暂无积分明细</view>
+        <view class="empty__go" bindtap="onGoCheckin">去签到赚分 ›</view>
+      </view>
+
+      <block wx:else>
+        <view class="tlist">
+          <view wx:for="{{rows}}" wx:key="id" class="trow">
+            <view class="trow__main">
+              <view class="trow__label">{{item.label}}</view>
+              <view class="trow__time">{{item.time}}</view>
+              <view wx:if="{{item.ref}}" class="trow__ref">{{item.ref}}</view>
+            </view>
+            <view class="trow__delta {{item.positive ? 'trow__delta--plus' : 'trow__delta--minus'}}">{{item.delta}}</view>
+          </view>
+        </view>
+        <view wx:if="{{loadingMore}}" class="more">加载中…</view>
+        <view wx:elif="{{hasMore}}" class="more" bindtap="loadMore">加载更多</view>
+        <view wx:else class="more">— 到底啦 —</view>
+      </block>
+    </block>
+  </view>
+
+  <!-- 游客态：登录引导弹层（沿用 points-orders 游客范式） -->
+  <view wx:if="{{guest}}" class="guest-mask">
+    <view class="guest-card">
+      <view class="guest-card__ic">💰</view>
+      <view class="guest-card__h">积分明细</view>
+      <view class="guest-card__p">登录后查看你的积分流水</view>
+      <button class="guest-card__btn" hover-class="none" bindtap="onGuestLogin">微信一键登录</button>
+    </view>
+  </view>
+</view>

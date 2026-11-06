@@ -1,0 +1,269 @@
+/* ============================================================
+   积分明细页 —— devops#894，范式对齐 points-orders（粉渐变顶栏 /
+   无边框白卡 / cursor 分页脚注 / 游客登录弹层）；像素按 375 设计稿
+   ×2 转 rpx，颜色走 styles/theme.wxss 令牌。
+   ============================================================ */
+
+.page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: var(--color-bg);
+}
+
+/* ---------- 粉渐变顶栏 ---------- */
+
+.nav-wrap {
+  background: linear-gradient(170deg, #ff7d6e, var(--color-accent));
+}
+
+.top-bar__inner {
+  height: 128rpx;
+  display: flex;
+  align-items: center;
+  padding: 0 40rpx;
+}
+
+.top-bar__btn {
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.top-bar__btn--spacer {
+  width: 88rpx;
+}
+
+.top-bar__icon {
+  width: 48rpx;
+  height: 48rpx;
+}
+
+/* 顶栏返回小房子约定：栈内=返回箭头（白），栈底=小房子，fail 兜底 switchTab coach */
+.top-bar__icon--back {
+  transform: rotate(180deg);
+}
+
+.top-bar__title-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.top-bar__title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: var(--color-on-accent);
+}
+
+.content {
+  padding: 28rpx 0 48rpx;
+}
+
+.page-loading {
+  padding: 64rpx 0;
+  text-align: center;
+  font-size: 26rpx;
+  color: var(--color-text-secondary);
+}
+
+/* ---------- 余额大数字卡（无边框白卡约定） ---------- */
+
+.bcard {
+  background: var(--color-card);
+  border-radius: 32rpx;
+  padding: 36rpx 28rpx;
+  margin: 0 28rpx 20rpx;
+  text-align: center;
+}
+
+.bcard__l {
+  font-size: 24rpx;
+  color: var(--color-text-secondary);
+}
+
+.bcard__v {
+  font-size: 72rpx;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.2;
+  margin-top: 8rpx;
+}
+
+/* ---------- 流水行（无边框白卡约定） ---------- */
+
+.tlist {
+  padding: 0 28rpx;
+}
+
+.trow {
+  background: var(--color-card);
+  border-radius: 32rpx;
+  padding: 24rpx 28rpx;
+  margin-bottom: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.trow__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.trow__label {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.trow__time {
+  font-size: 22rpx;
+  color: var(--color-text-secondary);
+  margin-top: 6rpx;
+}
+
+.trow__ref {
+  font-size: 22rpx;
+  color: var(--color-text-tertiary);
+  margin-top: 4rpx;
+}
+
+/* 变动分值：+N 粉（白底 accent 统一阶）/-N 次要色 */
+.trow__delta {
+  font-size: 32rpx;
+  font-weight: 700;
+  flex: none;
+}
+
+.trow__delta--plus {
+  color: var(--color-accent-deep);
+}
+
+.trow__delta--minus {
+  color: var(--color-text-secondary);
+}
+
+/* ---------- 分页脚注 ---------- */
+
+.more {
+  text-align: center;
+  font-size: 24rpx;
+  color: var(--color-text-tertiary);
+  padding: 16rpx 0 8rpx;
+}
+
+/* ---------- 空态 / 加载失败 ---------- */
+
+.empty {
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 26rpx;
+  line-height: 1.8;
+  padding: 80rpx 0 40rpx;
+}
+
+.empty__go {
+  color: var(--color-accent-deep);
+  font-weight: 600;
+}
+
+.load-failed {
+  margin: 0 28rpx;
+  padding: 28rpx;
+  background: var(--color-card);
+  border-radius: 32rpx;
+  text-align: center;
+}
+
+.load-failed__txt {
+  font-size: 26rpx;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+/* 原生 button 三坑：去边框（::after）/ line-height=height / box-sizing */
+.load-failed__btn {
+  margin: 24rpx auto 0;
+  width: 320rpx;
+  height: 80rpx;
+  padding: 0;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 40rpx;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 28rpx;
+  font-weight: 600;
+  line-height: 80rpx;
+}
+
+.load-failed__btn::after {
+  border: none;
+}
+
+/* ---------- 游客态登录引导弹层 ---------- */
+
+.guest-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(246, 246, 248, 0.86);
+  backdrop-filter: blur(6rpx);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+.guest-card {
+  background: var(--color-card);
+  border-radius: 36rpx;
+  padding: 52rpx 48rpx;
+  text-align: center;
+  width: 540rpx;
+  box-shadow: 0 16rpx 60rpx rgba(0, 0, 0, 0.08);
+}
+
+.guest-card__ic {
+  font-size: 68rpx;
+}
+
+.guest-card__h {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 16rpx 0 8rpx;
+}
+
+.guest-card__p {
+  font-size: 24rpx;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+  margin-bottom: 28rpx;
+}
+
+.guest-card__btn {
+  width: 100%;
+  height: 92rpx;
+  padding: 0;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 46rpx;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 32rpx;
+  font-weight: 600;
+  line-height: 92rpx;
+}
+
+.guest-card__btn::after {
+  border: none;
+}
