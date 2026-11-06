@@ -14,7 +14,7 @@
       </view>
     </view>
 
-    <!-- hero：头像圈 + 连签大数字 + 副文案 -->
+    <!-- hero：头像圈 + 连签大数字 + 副文案，右侧「?」唤起积分规则弹窗 -->
     <view class="hero">
       <view class="hero__ava">
         <image wx:if="{{avatarUrl}}" class="hero__ava-img" src="{{avatarUrl}}" mode="aspectFill" />
@@ -24,6 +24,7 @@
         <view class="hero__l1">我已经连续签到 <text class="hero__n">{{streak}}</text> 天</view>
         <view class="hero__l2">{{heroSub}}</view>
       </view>
+      <view class="hero__faq" catchtap="onRulesTap">?</view>
     </view>
   </view>
 
@@ -84,7 +85,7 @@
           <view class="chead__t">我的积分</view>
           <view class="chead__links">
             <text class="chead__link" bindtap="onDetailTap">明细 ›</text>
-            <text class="chead__link" bindtap="onMallTap">去商城 ›</text>
+            <text class="chead__link" bindtap="onMallTap">积分商城 ›</text>
           </view>
         </view>
         <view class="stats">
@@ -115,9 +116,35 @@
           </view>
         </view>
       </view>
-
-      <view class="foot-rule">连续签到 7 天一轮：第 1–4 天每天 1 分，第 5–6 天每天 2 分，第 7 天 3 分；中断后从第 1 天重新开始，积分永久有效。</view>
     </block>
+  </view>
+
+  <!-- 积分规则弹窗（hero「?」唤起）：内容区可滚动，遮罩点按或「知道了」关闭 -->
+  <view wx:if="{{rulesVisible}}" class="rules-mask" bindtap="onRulesClose">
+    <view class="rules-card" catchtap="noop">
+      <view class="rules-card__t">砺跑马拉松助手签到福利规则</view>
+      <view class="rules-card__body">
+        <view class="rules-card__p">参与 砺跑马拉松助手签到福利的用户，可以根据连续签到的天数获得相对应的积分奖励。</view>
+
+        <view class="rules-card__h2">一、签到周期</view>
+        <view class="rules-card__p">以 7 天为一个签到循环轮次。一旦签到中断，连续签到天数立即清零，下一次签到重新从第 1 天开始计算；不间断连续签到满 7 天后，自动开启新一轮 7 天签到循环，奖励规则保持不变。</view>
+
+        <view class="rules-card__h2">二、奖励说明</view>
+        <view class="rules-card__p">常规签到奖励：连续签到第 1–4 天，每日签到可领取 1 积分；连续签到第 5–6 天，每日签到可领取 2 积分；连续签到第 7 天，签到可领取 3 积分。</view>
+        <view class="rules-card__tip">提示：积分仅可在本小程序积分商城兑换指定礼品，积分无现金价值，不能提现、转账、售卖。积分永久有效，不会到期清零。</view>
+
+        <view class="rules-card__h2">三、奖励查看与领取</view>
+        <view class="rules-card__p">1. 签到活动获得的积分奖励，可在【我的】-【积分明细】中查看发放记录。</view>
+        <view class="rules-card__p">2. 签到奖励在当日完成签到后，自动发放到您的登录账户。</view>
+
+        <view class="rules-card__h2">四、其他说明</view>
+        <view class="rules-card__p">1. 本活动福利仅限 砺跑马拉松助手小程序注册用户参与，同一账号仅限本人参与活动。</view>
+        <view class="rules-card__p">2. 对于利用系统漏洞、虚假操作、脚本作弊或任何非正常手段参与活动的用户，砺跑马拉松助手有权单方面取消其参与活动的资格，冻结或撤销已获得的积分权益，禁止其继续参加其他福利活动。</view>
+        <view class="rules-card__p">3. 本活动由 砺跑马拉松助手提供。</view>
+        <view class="rules-card__p">4. 主办方可提前在小程序公告内公示后调整活动规则或下线活动；活动最终解释权归 砺跑马拉松助手所有。</view>
+      </view>
+      <button class="rules-card__btn" hover-class="none" catchtap="onRulesClose">知道了</button>
+    </view>
   </view>
 
   <!-- 游客态：登录引导弹层（沿用 profile 游客范式） -->

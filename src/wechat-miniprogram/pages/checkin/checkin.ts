@@ -43,6 +43,8 @@ interface CheckinPageData {
   milestones: Array<{ cum: number; hit: boolean; label: string }>;
   /** 刚签到的浮动 +N（0 = 不展示）。 */
   justGained: number;
+  /** 积分规则弹窗（hero「?」唤起）。 */
+  rulesVisible: boolean;
 }
 
 interface CheckinPageHandlers {
@@ -55,6 +57,10 @@ interface CheckinPageHandlers {
   onRetry(): void;
   onDetailTap(): void;
   onMallTap(): void;
+  onRulesTap(): void;
+  onRulesClose(): void;
+  /** 阻断规则弹卡内点按冒泡到遮罩（遮罩 bindtap=关闭）。 */
+  noop(): void;
   load(silent?: boolean): Promise<void>;
   /** 浮动 +N 入场（1.4s 上飘淡出，1.6s 后复位）。 */
   floatOnce(points: number): void;
@@ -111,6 +117,7 @@ Page<CheckinPageData, CheckinPageHandlers>({
     monthOpen: false,
     milestones: CYCLE_CUMULATIVE.map((cum, i) => ({ cum, hit: false, label: `第${i + 1}天` })),
     justGained: 0,
+    rulesVisible: false,
   },
 
   onLoad(options: Record<string, string | undefined>) {
@@ -265,6 +272,16 @@ Page<CheckinPageData, CheckinPageHandlers>({
       fail: () => wx.redirectTo({ url: '/pages/points-mall/points-mall' }),
     });
   },
+
+  onRulesTap() {
+    this.setData({ rulesVisible: true });
+  },
+
+  onRulesClose() {
+    this.setData({ rulesVisible: false });
+  },
+
+  noop() {},
 
   /** 浮动 +N 入场（原型 floatUp：1.4s 上飘淡出，之后复位）。 */
   floatOnce(points: number) {
