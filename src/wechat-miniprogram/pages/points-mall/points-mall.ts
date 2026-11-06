@@ -73,7 +73,6 @@ interface PointsMallPageHandlers {
   onRetry(): void;
   onNavOrders(): void;
   onHeroDetail(): void;
-  onHeroAddr(): void;
   onHeroCheckin(): void;
   onRedeemTap(e: WechatMiniprogram.TouchEvent): void;
   onSheetClose(): void;
@@ -225,10 +224,6 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
   // 积分明细页已上线（#894），接管原占位 toast（单向跳转，同 onNavOrders 直接 navigateTo）。
   onHeroDetail() {
     wx.navigateTo({ url: '/pages/points-detail/points-detail' });
-  },
-
-  onHeroAddr() {
-    wx.navigateTo({ url: '/pages/addresses/addresses' });
   },
 
   onHeroCheckin() {

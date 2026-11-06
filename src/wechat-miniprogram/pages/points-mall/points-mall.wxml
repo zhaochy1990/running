@@ -14,7 +14,7 @@
       </view>
     </view>
 
-    <!-- hero：积分余额大数字 + 四链接（明细/兑换记录/地址管理/签到赚分） -->
+    <!-- hero：积分余额大数字 + 三链接（明细/兑换记录/签到赚分） -->
     <view class="hero">
       <view class="hero__left">
         <view class="hero__lab">我的积分</view>
@@ -23,7 +23,6 @@
       <view class="hero__links">
         <view class="hero__link" bindtap="onHeroDetail">明细 ›</view>
         <view class="hero__link" bindtap="onNavOrders">兑换记录 ›</view>
-        <view class="hero__link" bindtap="onHeroAddr">地址管理 ›</view>
         <view class="hero__link" bindtap="onHeroCheckin">签到赚分 ›</view>
       </view>
     </view>

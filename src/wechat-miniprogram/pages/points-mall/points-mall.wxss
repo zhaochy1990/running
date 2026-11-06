@@ -70,7 +70,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 24rpx 32rpx 104rpx;
+  padding: 24rpx 32rpx 36rpx;
 }
 
 .hero__lab {
@@ -129,7 +129,7 @@
 /* ---------- 商品列表（变体 A 横排大卡，压 hero 边） ---------- */
 
 .content .pcard:first-child {
-  margin-top: -64rpx;
+  margin-top: -20rpx;
 }
 
 .pcard {
@@ -287,7 +287,7 @@
 }
 
 .content .card:first-child {
-  margin-top: -24rpx;
+  margin-top: -8rpx;
 }
 
 .load-failed {
