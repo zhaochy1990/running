@@ -1,9 +1,9 @@
 // wxpay_test.go exercises the notify contract offline (devops#904: no real
 // WeChat integration): a throwaway RSA pair stands in for the WeChat Pay
-// platform certificate, signatures and AEAD_AES_256_GCM payloads are crafted
+// platform public key, signatures and AEAD_AES_256_GCM payloads are crafted
 // with test keys, and the verification path runs through the SDK's own
-// notify.Handler + SHA256WithRSAVerifier — the same machinery production
-// uses, pointed at the test certificate instead of a downloaded one.
+// notify.Handler + SHA256WithRSAPubkeyVerifier — the same public-key-mode
+// machinery production uses, pointed at the test key instead of the real one.
 package wxpay
 
 import (
@@ -14,13 +14,11 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
-	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -35,59 +33,52 @@ import (
 )
 
 const (
-	testAPIv3Key    = "0123456789abcdef0123456789abcdef" // exactly 32 bytes
-	testNotifyNonce = "123456789012"                     // AES-GCM nonce size
+	testAPIv3Key = "0123456789abcdef0123456789abcdef" // exactly 32 bytes
+	// testPubKeyID is the Wechatpay-Serial value a callback would carry for
+	// the test public key (the verifier pins the key by it).
+	testPubKeyID    = "PUB_KEY_ID_test0000000000000000000000"
+	testNotifyNonce = "123456789012" // AES-GCM nonce size
 )
-
-// certSerial is the serial string a callback's Wechatpay-Serial header would
-// carry for the test platform certificate (the verifier looks certificates up
-// by it).
-func certSerial(cert *x509.Certificate) string {
-	return fmt.Sprintf("%X", cert.SerialNumber.Bytes())
-}
 
 func testConfig() Config {
 	return Config{
 		AppID: "wx-test-appid", MchID: "1900000001", MerchantSerialNo: "test-mch-serial",
-		PrivateKeyPEM: "placeholder", APIv3Key: testAPIv3Key,
+		PrivateKeyPEM: "placeholder", PublicKeyID: testPubKeyID,
+		PublicKeyPEM: "placeholder", APIv3Key: testAPIv3Key,
 		NotifyURL: "https://api.example.com/api/wxpay/notify",
 	}
 }
 
-// newTestPlatform returns a throwaway self-signed certificate standing in for
-// the WeChat Pay platform certificate.
-func newTestPlatform(t *testing.T) (*rsa.PrivateKey, *x509.Certificate) {
+// newTestPlatform returns a throwaway RSA pair standing in for the WeChat Pay
+// platform key pair, plus the public half as PEM text (what the config ships).
+func newTestPlatform(t *testing.T) (*rsa.PrivateKey, string) {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("gen platform key: %v", err)
 	}
-	tmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(9001),
-		Subject:      pkix.Name{Organization: []string{"wxpay-test-platform"}},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(24 * time.Hour),
-	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	der, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
 	if err != nil {
-		t.Fatalf("create platform cert: %v", err)
+		t.Fatalf("marshal public key: %v", err)
 	}
-	cert, err := x509.ParseCertificate(der)
-	if err != nil {
-		t.Fatalf("parse platform cert: %v", err)
-	}
-	return key, cert
+	pubPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}))
+	return key, pubPEM
 }
 
-// newTestClient builds a Client whose notify path trusts only the test
-// platform certificate. The jsapi half stays nil — the offline suite covers
-// the callback contract and the close-order classification, the pieces real
-// WeChat credentials gate.
-func newTestClient(t *testing.T, cfg Config, platformCert *x509.Certificate) *Client {
+// newTestClient builds a Client whose notify path trusts only the test WeChat
+// Pay public key, parsed through the same utils.LoadPublicKey + pubkey
+// verifier chain production runs. The jsapi half stays nil — the offline
+// suite covers the callback contract and the close-order classification, the
+// pieces real WeChat credentials gate.
+func newTestClient(t *testing.T, cfg Config, platformPubPEM string) *Client {
 	t.Helper()
+	pubKey, err := utils.LoadPublicKey(platformPubPEM)
+	if err != nil {
+		t.Fatalf("load platform public key: %v", err)
+	}
 	handler, err := notify.NewRSANotifyHandler(
 		cfg.APIv3Key,
-		verifiers.NewSHA256WithRSAVerifier(core.NewCertificateMapWithList([]*x509.Certificate{platformCert})),
+		verifiers.NewSHA256WithRSAPubkeyVerifier(cfg.PublicKeyID, *pubKey),
 	)
 	if err != nil {
 		t.Fatalf("notify handler: %v", err)
@@ -176,7 +167,7 @@ func TestConfigured(t *testing.T) {
 	if !cfg.Configured() {
 		t.Fatal("complete config must report configured")
 	}
-	for _, zero := range []func(*Config){func(c *Config) { c.AppID = "" }, func(c *Config) { c.MchID = "" }, func(c *Config) { c.MerchantSerialNo = "" }, func(c *Config) { c.PrivateKeyPEM = "" }, func(c *Config) { c.APIv3Key = "" }, func(c *Config) { c.NotifyURL = "" }} {
+	for _, zero := range []func(*Config){func(c *Config) { c.AppID = "" }, func(c *Config) { c.MchID = "" }, func(c *Config) { c.MerchantSerialNo = "" }, func(c *Config) { c.PrivateKeyPEM = "" }, func(c *Config) { c.PublicKeyID = "" }, func(c *Config) { c.PublicKeyPEM = "" }, func(c *Config) { c.APIv3Key = "" }, func(c *Config) { c.NotifyURL = "" }} {
 		partial := testConfig()
 		zero(&partial)
 		if partial.Configured() {
@@ -186,10 +177,10 @@ func TestConfigured(t *testing.T) {
 }
 
 func TestParseNotifyVerifiedSuccess(t *testing.T) {
-	platformKey, platformCert := newTestPlatform(t)
-	client := newTestClient(t, testConfig(), platformCert)
+	platformKey, platformPubPEM := newTestPlatform(t)
+	client := newTestClient(t, testConfig(), platformPubPEM)
 
-	rec := notifyRequest(t, successNotifyBody(t, TradeStateSuccess, 500), platformKey, certSerial(platformCert))
+	rec := notifyRequest(t, successNotifyBody(t, TradeStateSuccess, 500), platformKey, testPubKeyID)
 	got, err := client.ParseNotify(context.Background(), rec)
 	if err != nil {
 		t.Fatalf("parse verified notify: %v", err)
@@ -200,10 +191,10 @@ func TestParseNotifyVerifiedSuccess(t *testing.T) {
 }
 
 func TestParseNotifyNonSuccessStateStillVerified(t *testing.T) {
-	platformKey, platformCert := newTestPlatform(t)
-	client := newTestClient(t, testConfig(), platformCert)
+	platformKey, platformPubPEM := newTestPlatform(t)
+	client := newTestClient(t, testConfig(), platformPubPEM)
 
-	rec := notifyRequest(t, successNotifyBody(t, "CLOSED", 500), platformKey, certSerial(platformCert))
+	rec := notifyRequest(t, successNotifyBody(t, "CLOSED", 500), platformKey, testPubKeyID)
 	got, err := client.ParseNotify(context.Background(), rec)
 	if err != nil {
 		t.Fatalf("parse closed-state notify: %v", err)
@@ -214,19 +205,32 @@ func TestParseNotifyNonSuccessStateStillVerified(t *testing.T) {
 }
 
 func TestParseNotifyRejectsForeignSignature(t *testing.T) {
-	_, platformCert := newTestPlatform(t)
+	_, platformPubPEM := newTestPlatform(t)
 	foreignKey, _ := newTestPlatform(t)
-	client := newTestClient(t, testConfig(), platformCert)
+	client := newTestClient(t, testConfig(), platformPubPEM)
 
-	rec := notifyRequest(t, successNotifyBody(t, TradeStateSuccess, 500), foreignKey, certSerial(platformCert))
+	rec := notifyRequest(t, successNotifyBody(t, TradeStateSuccess, 500), foreignKey, testPubKeyID)
 	if _, err := client.ParseNotify(context.Background(), rec); err == nil {
 		t.Fatal("a signature from an untrusted key must be rejected")
 	}
 }
 
+func TestParseNotifyRejectsForeignSerial(t *testing.T) {
+	platformKey, platformPubPEM := newTestPlatform(t)
+	client := newTestClient(t, testConfig(), platformPubPEM)
+
+	// The pubkey verifier pins the key by the Wechatpay-Serial header: a
+	// callback naming any other serial (a platform-cert serial, a rotated key
+	// id) must be refused before the signature even matters.
+	rec := notifyRequest(t, successNotifyBody(t, TradeStateSuccess, 500), platformKey, "PUB_KEY_ID_other")
+	if _, err := client.ParseNotify(context.Background(), rec); err == nil {
+		t.Fatal("a callback with a foreign Wechatpay-Serial must be rejected")
+	}
+}
+
 func TestParseNotifyRejectsTamperedBody(t *testing.T) {
-	platformKey, platformCert := newTestPlatform(t)
-	client := newTestClient(t, testConfig(), platformCert)
+	platformKey, platformPubPEM := newTestPlatform(t)
+	client := newTestClient(t, testConfig(), platformPubPEM)
 
 	raw, err := json.Marshal(successNotifyBody(t, TradeStateSuccess, 500))
 	if err != nil {
@@ -234,7 +238,7 @@ func TestParseNotifyRejectsTamperedBody(t *testing.T) {
 	}
 	// Sign the honest bytes, ship a mutated body: the validator must read the
 	// body it verifies and reject the mismatch.
-	req := signedNotifyRequest(t, raw, platformKey, certSerial(platformCert))
+	req := signedNotifyRequest(t, raw, platformKey, testPubKeyID)
 	req.Body = io.NopCloser(bytes.NewReader(append(raw, ' ')))
 	if _, err := client.ParseNotify(context.Background(), req); err == nil {
 		t.Fatal("a body mutated after signing must be rejected")
@@ -242,8 +246,8 @@ func TestParseNotifyRejectsTamperedBody(t *testing.T) {
 }
 
 func TestParseNotifyRejectsForeignCiphertext(t *testing.T) {
-	platformKey, platformCert := newTestPlatform(t)
-	client := newTestClient(t, testConfig(), platformCert)
+	platformKey, platformPubPEM := newTestPlatform(t)
+	client := newTestClient(t, testConfig(), platformPubPEM)
 
 	plaintext, err := json.Marshal(map[string]any{"out_trade_no": "order-1", "trade_state": "SUCCESS"})
 	if err != nil {
@@ -253,7 +257,7 @@ func TestParseNotifyRejectsForeignCiphertext(t *testing.T) {
 	resource := body["resource"].(map[string]any)
 	resource["ciphertext"] = sealResource(t, plaintext, []byte("0123456789abcdef0123456789abcdeX"), "transaction", testNotifyNonce)
 
-	rec := notifyRequest(t, body, platformKey, certSerial(platformCert))
+	rec := notifyRequest(t, body, platformKey, testPubKeyID)
 	if _, err := client.ParseNotify(context.Background(), rec); err == nil {
 		t.Fatal("a payload sealed under another key must be rejected")
 	}

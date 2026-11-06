@@ -2,8 +2,12 @@
 // (github.com/wechatpay-apiv3/wechatpay-go) for the points-shop shipping-fee
 // checkout (devops#904): JSAPI prepay that returns the exact five-parameter
 // payload the miniprogram feeds wx.requestPayment, payment-notify handling
-// (platform-certificate signature verification + AEAD_AES_256_GCM decryption
+// (WeChat Pay public-key signature verification + AEAD_AES_256_GCM decryption
 // via the SDK's notify.Handler), and order close for the timeout sweep.
+//
+// The merchant runs WeChat Pay's public-key mode: callback signatures verify
+// against the platform public key shipped out-of-band (the PUB_KEY_ID_*
+// credential), never against a downloaded platform certificate.
 //
 // The module is inert until fully configured: an empty credential field keeps
 // the client unconstructed, the redeem gate answers 503 payment_unavailable
@@ -18,7 +22,6 @@ import (
 
 	"github.com/wechatpay-apiv3/wechatpay-go/core"
 	"github.com/wechatpay-apiv3/wechatpay-go/core/auth/verifiers"
-	"github.com/wechatpay-apiv3/wechatpay-go/core/downloader"
 	"github.com/wechatpay-apiv3/wechatpay-go/core/notify"
 	"github.com/wechatpay-apiv3/wechatpay-go/core/option"
 	"github.com/wechatpay-apiv3/wechatpay-go/services/payments"
@@ -43,6 +46,12 @@ type Config struct {
 	MerchantSerialNo string
 	// PrivateKeyPEM is the merchant API certificate private key, PEM text.
 	PrivateKeyPEM string
+	// PublicKeyID is the WeChat Pay public key id (PUB_KEY_ID_...): the value
+	// the callback Wechatpay-Serial header carries and the verifier pins to.
+	PublicKeyID string
+	// PublicKeyPEM is the WeChat Pay platform public key, PEM text (public-key
+	// mode merchant — the certificate downloader does not apply).
+	PublicKeyPEM string
 	// APIv3Key decrypts the AEAD_AES_256_GCM callback payloads.
 	APIv3Key string
 	// NotifyURL is the absolute https callback endpoint
@@ -53,7 +62,8 @@ type Config struct {
 // Configured reports whether every credential field is non-empty.
 func (c Config) Configured() bool {
 	return c.AppID != "" && c.MchID != "" && c.MerchantSerialNo != "" &&
-		c.PrivateKeyPEM != "" && c.APIv3Key != "" && c.NotifyURL != ""
+		c.PrivateKeyPEM != "" && c.PublicKeyID != "" && c.PublicKeyPEM != "" &&
+		c.APIv3Key != "" && c.NotifyURL != ""
 }
 
 // PaymentParams is exactly what the miniprogram passes to wx.requestPayment
@@ -75,10 +85,11 @@ type NotifyPayment struct {
 	PaidFen int64
 }
 
-// Client fronts the SDK for the shipping-fee flow. Construction registers the
-// platform-certificate downloader (auto rotation), so New needs network access
-// to api.mch.weixin.qq.com and fails fast when it cannot establish trust —
-// credentials that cannot verify callbacks must not serve prepay either.
+// Client fronts the SDK for the shipping-fee flow. Construction is offline:
+// the public-key mode client verifies everything against the merchant-supplied
+// WeChat Pay public key, so New only parses the two keys and fails fast on
+// unusable credentials — credentials that cannot verify callbacks must not
+// serve prepay either.
 type Client struct {
 	cfg    Config
 	jsapi  *jsapi.JsapiApiService
@@ -94,17 +105,21 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("wxpay: parse merchant private key: %w", err)
 	}
+	pubKey, err := utils.LoadPublicKey(cfg.PublicKeyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("wxpay: parse wechat pay public key: %w", err)
+	}
 	// One client covers request signing / response verification / sensitive
-	// field crypto AND registers the platform-cert downloader behind it; the
-	// notify handler then shares the downloader's certificate visitor.
+	// field crypto against the WeChat Pay public key; the notify handler then
+	// verifies callbacks with the same key (no certificate download anywhere).
 	client, err := core.NewClient(ctx,
-		option.WithWechatPayAutoAuthCipher(cfg.MchID, cfg.MerchantSerialNo, key, cfg.APIv3Key),
+		option.WithWechatPayPublicKeyAuthCipher(cfg.MchID, cfg.MerchantSerialNo, key, cfg.PublicKeyID, pubKey),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("wxpay: build api client: %w", err)
 	}
-	certVisitor := downloader.MgrInstance().GetCertificateVisitor(cfg.MchID)
-	handler, err := notify.NewRSANotifyHandler(cfg.APIv3Key, verifiers.NewSHA256WithRSAVerifier(certVisitor))
+	handler, err := notify.NewRSANotifyHandler(
+		cfg.APIv3Key, verifiers.NewSHA256WithRSAPubkeyVerifier(cfg.PublicKeyID, *pubKey))
 	if err != nil {
 		return nil, fmt.Errorf("wxpay: build notify handler: %w", err)
 	}
@@ -192,10 +207,10 @@ func closeErrClassify(err error) error {
 	return fmt.Errorf("wxpay: close order: %w", err)
 }
 
-// ParseNotify verifies the callback's platform signature and decrypts its
-// AEAD_AES_256_GCM resource into NotifyPayment. A verification or decryption
-// failure is an error — the endpoint must answer non-success so WeChat does
-// not treat the notification as delivered.
+// ParseNotify verifies the callback signature against the WeChat Pay public
+// key and decrypts the AEAD_AES_256_GCM resource into NotifyPayment. A
+// verification or decryption failure is an error — the endpoint must answer
+// non-success so WeChat does not treat the notification as delivered.
 func (c *Client) ParseNotify(ctx context.Context, r *http.Request) (*NotifyPayment, error) {
 	if !c.Configured() {
 		return nil, errors.New("wxpay: client is not configured")

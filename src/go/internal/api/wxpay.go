@@ -5,7 +5,7 @@
 //	        JSAPI prepay for one pending order, answers the five-parameter
 //	        payload wx.requestPayment needs)
 //	Public: POST /api/wxpay/notify  (bare engine, no JWT — the caller is
-//	        WeChat Pay's server; the platform-certificate signature
+//	        WeChat Pay's server; the WeChat Pay public-key signature
 //	        verification + AEAD_AES_256_GCM decryption replace authentication,
 //	        same pattern as the watch-provider webhook ingress)
 //

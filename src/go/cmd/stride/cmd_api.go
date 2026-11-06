@@ -208,17 +208,18 @@ func runAPI() error {
 	orch := pipeline.New(store.Pipelines(), enq, catalog.PipelineRegistry(), pipeline.WithLogger(log))
 
 	// WeChat Pay module (devops#904): built only with a complete credential
-	// set (it registers the platform-certificate downloader at boot, which
-	// needs the upstream reachable — fail fast rather than half-serve).
-	// Unconfigured keeps the module inert: the pay endpoint and the notify
-	// route stay unmounted and a fee-charged redemption answers 503
-	// payment_unavailable.
+	// set (public-key mode — the two keys must parse, fail fast rather than
+	// half-serve). Unconfigured keeps the module inert: the pay endpoint and
+	// the notify route stay unmounted and a fee-charged redemption answers
+	// 503 payment_unavailable.
 	var wxClient *wxpay.Client
 	if cfg.WxPay.Configured() {
 		wxClient, err = wxpay.New(ctx, wxpay.Config{
 			AppID: cfg.WxPay.AppID, MchID: cfg.WxPay.MchID,
 			MerchantSerialNo: cfg.WxPay.MerchantSerialNo,
 			PrivateKeyPEM:    cfg.WxPay.PrivateKeyPEM,
+			PublicKeyID:      cfg.WxPay.PublicKeyID,
+			PublicKeyPEM:     cfg.WxPay.PublicKeyPEM,
 			APIv3Key:         cfg.WxPay.APIv3Key,
 			NotifyURL:        cfg.WxPay.NotifyURL,
 		})

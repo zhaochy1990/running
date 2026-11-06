@@ -127,14 +127,19 @@ world-athletics:
 # fee-charged redemptions answer 503 payment_unavailable (zero-fee goods are
 # unaffected), the notify route and the pay endpoint stay unmounted, and the
 # worker skips the 30-minute timeout-close sweep. Both binaries (stride api +
-# stride worker) read this same section. The secrets come from env:
+# stride worker) read this same section. Public-key mode merchant: callbacks
+# verify against the WeChat Pay platform public key, not a downloaded
+# platform certificate. The secrets come from env:
 #   STRIDE_WORKER_WXPAY_APP_ID              (mp appid)
 #   STRIDE_WORKER_WXPAY_MCH_ID              (merchant id)
 #   STRIDE_WORKER_WXPAY_MERCHANT_SERIAL_NO  (API cert serial)
 #   STRIDE_WORKER_WXPAY_PRIVATE_KEY_PEM     (API cert private key, full PEM text)
+#   STRIDE_WORKER_WXPAY_PUBLIC_KEY_ID       (WeChat Pay public key id, PUB_KEY_ID_...)
+#   STRIDE_WORKER_WXPAY_PUBLIC_KEY_PEM      (WeChat Pay public key, full PEM text)
 #   STRIDE_WORKER_WXPAY_APIV3_KEY           (callback decryption key)
 # Their stride-secrets keys — extend k8s/scripts/create-secrets.sh with:
 #   WXPAY_APPID WXPAY_MCHID WXPAY_MERCHANT_SERIAL_NO WXPAY_PRIVATE_KEY_PEM WXPAY_APIV3_KEY
+#   WXPAY_PUBLIC_KEY_ID WXPAY_PUBLIC_KEY_PEM
 # notify-url is plain deployment config (absolute https URL, no query string;
 # Caddy routes /api to the Go API), so it may live here once the domain is live.
 wxpay:
@@ -142,6 +147,8 @@ wxpay:
   mch-id: ""             # via STRIDE_WORKER_WXPAY_MCH_ID (secret)
   merchant-serial-no: "" # via STRIDE_WORKER_WXPAY_MERCHANT_SERIAL_NO (secret)
   private-key-pem: ""    # via STRIDE_WORKER_WXPAY_PRIVATE_KEY_PEM (secret)
+  public-key-id: ""      # via STRIDE_WORKER_WXPAY_PUBLIC_KEY_ID (secret)
+  public-key-pem: ""     # via STRIDE_WORKER_WXPAY_PUBLIC_KEY_PEM (secret)
   apiv3-key: ""          # via STRIDE_WORKER_WXPAY_APIV3_KEY (secret)
   notify-url: ""         # e.g. https://api.stride-running.cn/api/wxpay/notify
 

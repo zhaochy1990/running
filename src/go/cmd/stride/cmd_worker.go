@@ -169,6 +169,8 @@ func runWorker() error {
 			AppID: cfg.WxPay.AppID, MchID: cfg.WxPay.MchID,
 			MerchantSerialNo: cfg.WxPay.MerchantSerialNo,
 			PrivateKeyPEM:    cfg.WxPay.PrivateKeyPEM,
+			PublicKeyID:      cfg.WxPay.PublicKeyID,
+			PublicKeyPEM:     cfg.WxPay.PublicKeyPEM,
 			APIv3Key:         cfg.WxPay.APIv3Key,
 			NotifyURL:        cfg.WxPay.NotifyURL,
 		})
