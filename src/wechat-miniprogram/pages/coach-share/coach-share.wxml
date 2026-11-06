@@ -4,9 +4,9 @@
     <image class="top__home" src="/assets/icons/home.svg" mode="aspectFit" bindtap="onBack" />
     <view class="top__titles">
       <view class="top__title">{{title}}</view>
-      <view class="top__meta">{{meta}}</view>
+      <!-- AI 生成标识放 meta 行（右侧原 badge 位会被系统胶囊遮挡） -->
+      <view class="top__meta">{{meta ? meta + ' · ' : ''}}内容由 AI 生成</view>
     </view>
-    <view class="top__badge">内容由 AI 生成</view>
   </view>
 
   <!-- 主体：气泡对话流 / 各状态空态 -->

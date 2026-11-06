@@ -57,16 +57,9 @@ page {
   font-size: 20rpx;
   color: var(--color-text-secondary);
   margin-top: 4rpx;
-}
-
-.top__badge {
-  flex-shrink: 0;
-  font-size: 18rpx;
-  line-height: 34rpx;
-  padding: 0 14rpx;
-  border-radius: 10rpx;
-  color: var(--color-text-secondary);
-  background: var(--color-chip);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------- 主体 ---------- */

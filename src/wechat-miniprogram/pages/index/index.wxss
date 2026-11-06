@@ -386,7 +386,8 @@
   margin: 16rpx 0 0;
   padding: 0;
   height: 96rpx;
-  line-height: normal;
+  /* line-height = height：normal 行框下中文字形下沉，视觉不居中（#913 验收走查） */
+  line-height: 96rpx;
   border: none;
   border-radius: 46rpx;
   background: var(--color-accent-deep);
