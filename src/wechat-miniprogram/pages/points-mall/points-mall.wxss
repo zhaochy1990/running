@@ -208,6 +208,11 @@
   padding-top: 12rpx;
 }
 
+.price {
+  flex: none;
+  white-space: nowrap;
+}
+
 .price__n {
   font-size: 36rpx;
   font-weight: 700;
@@ -221,26 +226,22 @@
   margin-left: 4rpx;
 }
 
-/* 右侧兑换按钮：原生 button 三坑逐一复位（显式尺寸/自绘底色/::after 描边
-   去除/行高与盒模型对齐，同 coach.wxss 约定） */
+/* 右侧兑换按钮：view 自绘——原生 button 内置固定宽（184px），类样式压不过
+   （同下方 sbtn/地址页坑）；换 view 后宽度类才真正生效 */
 
 .buy {
-  width: 120rpx;
+  width: 236rpx;
   height: 52rpx;
   padding: 0;
   box-sizing: border-box;
-  border: none;
   border-radius: 26rpx;
   background: var(--color-accent);
   color: var(--color-on-accent);
   font-size: 24rpx;
   font-weight: 600;
   line-height: 52rpx;
+  text-align: center;
   flex: none;
-}
-
-.buy::after {
-  border: none;
 }
 
 .buy--disabled {

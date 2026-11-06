@@ -88,7 +88,6 @@ interface PointsMallPageHandlers {
   onSheetSelectAddr(e: WechatMiniprogram.TouchEvent): void;
   onSheetManageAddr(): void;
   onSheetAddAddr(): void;
-  onSheetCheckin(): void;
   onSheetConfirm(): void;
   onOkOrders(): void;
   onOkContinue(): void;
@@ -342,21 +341,11 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
     wx.navigateTo({ url: '/pages/addresses/addresses' });
   },
 
-  // 去签到赚 N 分 ›：关抽屉引导回签到页，一步签到闭环（fail 兜底 redirectTo 防栈满）。
-  onSheetCheckin() {
-    this.setData({ sheetVisible: false });
-    this._sheetProduct = undefined;
-    wx.navigateTo({
-      url: '/pages/checkin/checkin',
-      fail: () => wx.redirectTo({ url: '/pages/checkin/checkin' }),
-    });
-  },
-
   async onSheetConfirm() {
     const product = this._sheetProduct;
     const idemKey = this._idemKey;
     if (!product || !idemKey || this.data.sheetSubmitting) return;
-    if (this.data.sheetNoAddress || !this.data.sheetSelectedId) return;
+    if (this.data.sheetNoAddress || this.data.sheetInsufficient || !this.data.sheetSelectedId) return;
     this.setData({ sheetSubmitting: true });
     try {
       const res = await createRedemption(product.id, this.data.sheetSelectedId, idemKey, this.data.sheetQty);

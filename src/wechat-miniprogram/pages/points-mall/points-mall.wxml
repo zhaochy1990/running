@@ -62,14 +62,14 @@
             </view>
             <view class="pbottom">
               <view class="price"><text class="price__n">{{item.price}}</text><text class="price__u">积分</text></view>
-              <!-- 原生 button 三坑逐一复位（显式尺寸/自绘底色/::after 去除），同 coach.wxss 约定 -->
-              <button
+              <!-- view 自绘：原生 button 内置固定宽，类样式压不过（同下方 sbtn/地址页坑）；置灰态由 onRedeemTap 拦截 -->
+              <view
                 class="buy {{item.soldOut || item.limitHit ? 'buy--disabled' : ''}}"
+                aria-role="button"
                 hover-class="none"
-                disabled="{{item.soldOut || item.limitHit}}"
                 data-pid="{{item.id}}"
                 bindtap="onRedeemTap"
-              >{{item.soldOut ? '已售罄' : item.limitHit ? '已达限购' : '兑换'}}</button>
+              >{{item.soldOut ? '已售罄' : item.limitHit ? '已达限购' : '兑换'}}</view>
             </view>
           </view>
         </view>
@@ -132,22 +132,14 @@
         <text wx:if="{{!sheetInsufficient}}" class="bal-line__after">兑换后剩余 <text class="bal-line__b">{{sheetAfter}}</text> 分</text>
         <text wx:else class="bal-line__lack">积分不足，还差 <text class="bal-line__b">{{sheetLack}}</text> 分</text>
       </view>
-      <!-- 充足=确认兑换（无地址置灰）；不足=去签到赚 N 分（关抽屉回签到闭环）
+      <!-- 确认兑换：无地址/积分不足/提交中一律置灰（文案不变，不换去签到分支）
            view 自绘：原生 button 内置固定宽反压类样式（同地址页坑） -->
       <view
-        wx:if="{{!sheetInsufficient}}"
-        class="sbtn {{sheetNoAddress || sheetSubmitting ? 'sbtn--disabled' : ''}}"
+        class="sbtn {{sheetNoAddress || sheetSubmitting || sheetInsufficient ? 'sbtn--disabled' : ''}}"
         aria-role="button"
         hover-class="none"
         catchtap="onSheetConfirm"
       >{{sheetSubmitting ? '兑换中…' : '确认兑换'}}</view>
-      <view
-        wx:else
-        class="sbtn"
-        aria-role="button"
-        hover-class="none"
-        catchtap="onSheetCheckin"
-      >去签到赚 {{sheetLack}} 分 ›</view>
     </view>
   </view>
 
