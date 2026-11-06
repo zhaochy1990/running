@@ -1,9 +1,11 @@
 // points.go is the points-shop + redemption surface (devops#884; contract per
 // devops#850 resolution, upload per devops#896, SKU per devops#909): the
-// user-side product list, redeem call and order list, plus the two admin
-// blocks — product maintenance (GET/POST/PATCH, deliberately no DELETE:
-// products delist via status=inactive; drafts start hidden) with its image
-// upload and its SKU-row CRUD, and order shipping (list + terminal ship).
+// user-side product list, redeem call and order list, plus the admin blocks —
+// product maintenance (GET/POST/PATCH, deliberately no DELETE: products
+// delist via status=inactive; drafts start hidden) with its image upload and
+// its SKU-row CRUD, order shipping (list + terminal ship), and the user
+// balances surface (list, adjust, per-user ledger; devops#914, handlers in
+// points_admin.go).
 //
 //	User:  GET   /api/users/me/points/products     (active only + own redeemed_count)
 //	       POST  /api/users/me/points/redemptions  {product_id, address_id, idempotency_key, sku_id?}
@@ -17,6 +19,9 @@
 //	       DELETE /api/admin/points/products/:id/skus/:sku_id
 //	       GET   /api/admin/points/redemptions     (?status=&limit&cursor)
 //	       PATCH /api/admin/points/redemptions/:id/ship {tracking_no}
+//	       GET   /api/admin/points/balances        (?sort=&user_id=&phone=&limit&cursor)
+//	       POST  /api/admin/points/balances/:user_id/adjustments {amount, reason}
+//	       GET   /api/admin/points/balances/:user_id/transactions (?limit&cursor)
 package api
 
 import (
@@ -39,6 +44,7 @@ type PointsStore interface {
 	ListActiveProducts(ctx context.Context, userID string) ([]storage.PointProductListing, error)
 	CreateRedemption(ctx context.Context, userID string, req storage.RedemptionRequest) (*storage.RedemptionResult, error)
 	ListUserRedemptions(ctx context.Context, userID, cursor string, limit int) (*storage.RedemptionPage, error)
+	ListPointTransactions(ctx context.Context, userID, cursor string, limit int) (*storage.PointPage, error)
 	AdminListProducts(ctx context.Context) ([]storage.PointProductListing, error)
 	AdminCreateProduct(ctx context.Context, row *storage.PointProduct) error
 	AdminPatchProduct(ctx context.Context, id uint64, patch storage.ProductPatch) (*storage.PointProduct, error)
@@ -47,6 +53,8 @@ type PointsStore interface {
 	AdminDeleteProductSku(ctx context.Context, productID, skuID uint64) error
 	AdminListRedemptions(ctx context.Context, status, cursor string, limit int) (*storage.AdminRedemptionPage, error)
 	AdminShipRedemption(ctx context.Context, id, trackingNo string, now time.Time) (*storage.PointRedemption, error)
+	AdminListPointBalances(ctx context.Context, sort, cursor string, limit int, userID string, phoneIDs []string) (*storage.AdminPointBalancePage, error)
+	AdminAdjustPointBalance(ctx context.Context, userID string, amount int, reason string, now time.Time) (*storage.PointAdjustmentResult, error)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -60,14 +68,18 @@ type pointsRoutes struct {
 	// a fee-charged redemption answer 503 payment_unavailable; zero-fee goods
 	// never consult it.
 	pay WxPayGateway
-	log *zap.Logger
+	// auth resolves admin-surface user names and phone matches through the
+	// auth service (devops#914). Nil (deployment without auth service)
+	// degrades list names to raw ids and answers phone search with 503.
+	auth authUserLookup
+	log  *zap.Logger
 }
 
-func newPointsRoutes(store PointsStore, images FeedbackImages, pay WxPayGateway, log *zap.Logger) *pointsRoutes {
+func newPointsRoutes(store PointsStore, images FeedbackImages, pay WxPayGateway, auth authUserLookup, log *zap.Logger) *pointsRoutes {
 	if log == nil {
 		log = logging.Default()
 	}
-	return &pointsRoutes{store: store, images: images, pay: pay, log: log}
+	return &pointsRoutes{store: store, images: images, pay: pay, auth: auth, log: log}
 }
 
 // registerUser mounts the user-tier surface on the default-deny group (the
@@ -96,6 +108,10 @@ func (p *pointsRoutes) registerAdmin(rg *gin.RouterGroup) {
 	rg.DELETE("/api/admin/points/products/:id/skus/:sku_id", p.adminDeleteProductSku)
 	rg.GET("/api/admin/points/redemptions", p.adminListRedemptions)
 	rg.PATCH("/api/admin/points/redemptions/:id/ship", p.adminShipRedemption)
+	// User balances surface (devops#914), handlers in points_admin.go.
+	rg.GET("/api/admin/points/balances", p.adminListBalances)
+	rg.POST("/api/admin/points/balances/:user_id/adjustments", p.adminAdjustBalance)
+	rg.GET("/api/admin/points/balances/:user_id/transactions", p.adminListUserTransactions)
 }
 
 // registerUpload mounts POST /api/admin/points/product-images on the bare

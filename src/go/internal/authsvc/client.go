@@ -244,6 +244,46 @@ func newResponseError(resp *http.Response, method, path string) *ResponseError {
 	return out
 }
 
+// AdminUser is the admin-facing profile slice of the auth-service's
+// /admin/users surface: the fields the points admin balances list needs for
+// name resolution and exact phone matching (devops#914).
+type AdminUser struct {
+	ID    string  `json:"id"`
+	Name  *string `json:"name"`
+	Email *string `json:"email"`
+	Phone *string `json:"phone"`
+}
+
+// AdminGetUser reads one user's profile through the auth-service admin
+// endpoint, forwarding the administrator's bearer (the auth-service verifies
+// the admin tier independently). A 404 arrives as a typed ResponseError; the
+// points admin list treats every failure as fail-soft and falls back to the
+// raw user id.
+func (c *Client) AdminGetUser(ctx context.Context, adminBearer, userID string) (*AdminUser, error) {
+	var user AdminUser
+	path := "/admin/users/" + url.PathEscape(userID)
+	if err := c.doJSON(ctx, http.MethodGet, path, adminBearer, nil, &user); err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// AdminListUsers searches the auth-service's admin user list (the shared
+// search parameter LIKE-matches email, name and phone). The caller narrows to
+// an exact match itself — for a full phone number the LIKE is effectively
+// exact, but the client stays honest about what the endpoint guarantees.
+// per_page rides the endpoint's 100 cap: a phone search can never outgrow it.
+func (c *Client) AdminListUsers(ctx context.Context, adminBearer, search string) ([]AdminUser, error) {
+	path := "/admin/users?per_page=100&search=" + url.QueryEscape(search)
+	var page struct {
+		Users []AdminUser `json:"users"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, path, adminBearer, nil, &page); err != nil {
+		return nil, err
+	}
+	return page.Users, nil
+}
+
 // ListTeams returns all open teams. authorizationHeader is forwarded unchanged.
 func (c *Client) ListTeams(ctx context.Context, authorizationHeader string) ([]Team, error) {
 	var raw json.RawMessage

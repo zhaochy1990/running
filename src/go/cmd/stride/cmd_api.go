@@ -305,6 +305,7 @@ func runAPI() error {
 		InjuryStore:             store,
 		CheckInStore:            store,
 		PointsStore:             store,
+		PointsAuth:              authClient,
 		WxPayStore:              store,
 		WxPay:                   wxClient,
 		AddressStore:            store,
