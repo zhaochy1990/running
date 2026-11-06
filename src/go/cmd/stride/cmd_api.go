@@ -36,6 +36,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/storage"
 	"github.com/zhaochy1990/stride/internal/userdata"
 	"github.com/zhaochy1990/stride/internal/webhook"
+	"github.com/zhaochy1990/stride/internal/wxpay"
 )
 
 func newAPICmd() *cobra.Command {
@@ -206,6 +207,26 @@ func runAPI() error {
 	enq := job.NewStoreEnqueuer(store.Jobs(), pub)
 	orch := pipeline.New(store.Pipelines(), enq, catalog.PipelineRegistry(), pipeline.WithLogger(log))
 
+	// WeChat Pay module (devops#904): built only with a complete credential
+	// set (it registers the platform-certificate downloader at boot, which
+	// needs the upstream reachable — fail fast rather than half-serve).
+	// Unconfigured keeps the module inert: the pay endpoint and the notify
+	// route stay unmounted and a fee-charged redemption answers 503
+	// payment_unavailable.
+	var wxClient *wxpay.Client
+	if cfg.WxPay.Configured() {
+		wxClient, err = wxpay.New(ctx, wxpay.Config{
+			AppID: cfg.WxPay.AppID, MchID: cfg.WxPay.MchID,
+			MerchantSerialNo: cfg.WxPay.MerchantSerialNo,
+			PrivateKeyPEM:    cfg.WxPay.PrivateKeyPEM,
+			APIv3Key:         cfg.WxPay.APIv3Key,
+			NotifyURL:        cfg.WxPay.NotifyURL,
+		})
+		if err != nil {
+			return err
+		}
+	}
+
 	verifier, err := api.NewJWTVerifier(cfg.API.Auth.PublicKeyPath, cfg.API.Auth.Issuer, cfg.API.Auth.Audience, cfg.API.Auth.AdminAudience)
 	if err != nil {
 		return err
@@ -283,6 +304,8 @@ func runAPI() error {
 		InjuryStore:             store,
 		CheckInStore:            store,
 		PointsStore:             store,
+		WxPayStore:              store,
+		WxPay:                   wxClient,
 		AddressStore:            store,
 		ProviderLogin:           providerLogin,
 		ProviderInfo:            providerInfo,

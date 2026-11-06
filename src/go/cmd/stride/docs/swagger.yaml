@@ -341,6 +341,12 @@ definitions:
         type: integer
       points_price:
         type: integer
+      shipping_fee:
+        minimum: 0
+        type: integer
+      shipping_policy:
+        maxLength: 16
+        type: string
       sort_order:
         type: integer
       status:
@@ -369,6 +375,12 @@ definitions:
         type: integer
       points_price:
         type: integer
+      shipping_fee:
+        minimum: 0
+        type: integer
+      shipping_policy:
+        maxLength: 16
+        type: string
       sort_order:
         type: integer
       status:
@@ -394,6 +406,10 @@ definitions:
         type: integer
       points_price:
         type: integer
+      shipping_fee:
+        type: integer
+      shipping_policy:
+        type: string
       sort_order:
         type: integer
       status:
@@ -422,6 +438,10 @@ definitions:
         type: string
       id:
         type: string
+      paid_at:
+        type: string
+      payment_state:
+        type: string
       points_cost:
         type: integer
       product_id:
@@ -437,6 +457,10 @@ definitions:
       receiver_phone:
         type: string
       shipped_at:
+        type: string
+      shipping_fee_snapshot:
+        type: integer
+      shipping_policy_snapshot:
         type: string
       status:
         type: string
@@ -1863,6 +1887,10 @@ definitions:
         type: integer
       redeemed_count:
         type: integer
+      shipping_fee:
+        type: integer
+      shipping_policy:
+        type: string
       stock:
         type: integer
     type: object
@@ -2846,6 +2874,10 @@ definitions:
         type: string
       id:
         type: string
+      paid_at:
+        type: string
+      payment_state:
+        type: string
       points_cost:
         type: integer
       product_id:
@@ -2861,6 +2893,10 @@ definitions:
       receiver_phone:
         type: string
       shipped_at:
+        type: string
+      shipping_fee_snapshot:
+        type: integer
+      shipping_policy_snapshot:
         type: string
       status:
         type: string
@@ -3833,6 +3869,27 @@ definitions:
       updated_at:
         type: string
       week_name:
+        type: string
+    type: object
+  api.wxpayPrepayRequest:
+    properties:
+      openid:
+        maxLength: 64
+        type: string
+    required:
+    - openid
+    type: object
+  api.wxpayPrepayResponse:
+    properties:
+      nonceStr:
+        type: string
+      package:
+        type: string
+      paySign:
+        type: string
+      signType:
+        type: string
+      timeStamp:
         type: string
     type: object
   api.zoneDTO:
@@ -9009,6 +9066,61 @@ paths:
       security:
       - BearerAuth: []
       summary: Redeem a product with points
+      tags:
+      - points
+  /api/users/me/points/redemptions/{id}/pay:
+    post:
+      consumes:
+      - application/json
+      description: 'Starts WeChat Pay JSAPI for one pending_payment order (shipping
+        fee in fen) and returns the five parameters wx.requestPayment needs: timeStamp,
+        nonceStr, package, signType, paySign.'
+      parameters:
+      - description: Order id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: JSAPI payer
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.wxpayPrepayRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.wxpayPrepayResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Pay a redemption order's shipping fee
       tags:
       - points
   /api/users/me/profile:

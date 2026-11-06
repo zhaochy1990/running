@@ -165,6 +165,27 @@ candidates. It is not a scheduled job and is unnecessary for newly synced
 activities. The job is partial-success: confirmed rows are committed as they are
 found, while a failed candidate remains absent and causes the job to retry/fail.
 
+#### WeChat Pay module configuration (devops#904)
+
+The points-shop shipping-fee checkout lives in `internal/wxpay` (WeChat Pay
+APIv3, official SDK). The module is INERT until every field of the
+`wxpay:` section in `src/go/config.yml` is set via env — fee-charged
+redemptions answer `503 payment_unavailable` (zero-fee goods unaffected), the
+pay endpoint and the `POST /api/wxpay/notify` callback stay unmounted, and the
+worker skips the 30-minute timeout-close sweep. To go live, extend
+`k8s/scripts/create-secrets.sh` (stride-devops) with the keys
+
+- `WXPAY_APPID`, `WXPAY_MCHID`, `WXPAY_MERCHANT_SERIAL_NO`,
+  `WXPAY_PRIVATE_KEY_PEM` (full PEM text), `WXPAY_APIV3_KEY`
+
+and expose them to BOTH `stride-api` and `stride-worker` as
+`STRIDE_WORKER_WXPAY_APP_ID / _MCH_ID / _MERCHANT_SERIAL_NO /
+_PRIVATE_KEY_PEM / _APIV3_KEY`; `wxpay.notify-url` is plain deployment config
+(absolute https URL, e.g. `https://api.stride-running.cn/api/wxpay/notify`).
+A partially configured section never half-serves: client construction is
+all-or-nothing. Unit tests craft callback signatures/decryptions with test
+keys; no real WeChat integration is exercised in CI.
+
 #### Route shapes（route_thumb_json）与已退役的 PNG 管线
 
 The worker's route step no longer renders or uploads anything: since devops#829

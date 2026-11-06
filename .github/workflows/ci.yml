@@ -194,7 +194,9 @@ jobs:
       # stock guard, limit COUNT after the stock UPDATE, points guard) and the
       # address-book cap/default invariants are SQL-level behaviours
       # (devops#884): the API E2E drives the HTTP seam, the storage tests
-      # drive the transaction with concurrency. -p 1 serializes the two
+      # drive the transaction with concurrency. TestWxpay*/TestE2E_Wxpay* add
+      # the devops#904 shipping-fee state machine (fee gate, notify
+      # idempotency, timeout-sweep cancel + refund). -p 1 serializes the two
       # packages: both automigrate the same points/addresses schema and a
       # fresh database cannot take two concurrent CREATE TABLE runs.
       - name: Points-shop + address book tests (MySQL)
@@ -202,7 +204,7 @@ jobs:
           STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
         run: >-
           go test -p 1 ./internal/api/... ./internal/storage/...
-          -run 'TestE2E_PointsShop|TestPointRedemption|TestPointProduct|TestListUserRedemptions|TestUserAddress|TestAddress_'
+          -run 'TestE2E_PointsShop|TestPointRedemption|TestPointProduct|TestListUserRedemptions|TestUserAddress|TestAddress_|TestWxpay|TestE2E_Wxpay'
           -count=1 -v
       - name: Account-erasure storage tests (MySQL)
         env:

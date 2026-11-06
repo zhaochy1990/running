@@ -93,6 +93,13 @@ const (
 	// is a follow-up task; until it ships the webhook must keep its enqueue
 	// switch off (the dispatcher terminally fails unknown job types).
 	JobTypeProviderActivityFetch = "provider_activity_fetch"
+	// JobTypeWxpayOrderClose sweeps overdue pending_payment redemption orders
+	// (devops#904): closes each upstream via WeChat Pay and refunds the
+	// points as one adjust ledger row + balance credit. A system job (no
+	// subject user): internal-only, driven by the worker's in-process ticker;
+	// the registration keeps it operator-triggerable via the internal jobs
+	// API. No-op when the payment module is unconfigured.
+	JobTypeWxpayOrderClose = "wxpay_order_close"
 )
 
 // Pipeline names (ADR 0020). onboarding and data_sync are fronted by
@@ -151,6 +158,13 @@ func Jobs() []JobSpec {
 			Description:   "Deploy smoke handler: echoes the input back in result_json. Internal-only.",
 			InputSchema:   json.RawMessage(`{"type":"object","description":"Arbitrary JSON; echoed back verbatim in result_json.","additionalProperties":true}`),
 			ExampleInput:  json.RawMessage(`{"message":"hello world"}`),
+		},
+		{
+			Type:          JobTypeWxpayOrderClose,
+			UserInitiable: false,
+			Description:   "Close overdue pending_payment redemption orders (shipping fee unpaid for 30+ minutes) and refund their points as an adjust ledger row. Idempotent; skips orders whose upstream close fails (e.g. already paid). Internal-only; the worker ticker drives it.",
+			InputSchema:   json.RawMessage(`{"type":"object","description":"No input fields; sweeps every expired pending_payment order.","additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{}`),
 		},
 		{
 			Type:          JobTypeWatchSync,

@@ -18,3 +18,10 @@ race-detection:
 ts-blob:
   bucket: "stride-timeseries-1255867366"
   region: "ap-shanghai"
+
+# WeChat Pay module (devops#904): leave unconfigured locally — the module is
+# inert (fee-charged redemptions answer 503 payment_unavailable, zero-fee
+# goods unaffected). To exercise it, set STRIDE_WORKER_WXPAY_APP_ID,
+# STRIDE_WORKER_WXPAY_MCH_ID, STRIDE_WORKER_WXPAY_MERCHANT_SERIAL_NO,
+# STRIDE_WORKER_WXPAY_PRIVATE_KEY_PEM and STRIDE_WORKER_WXPAY_APIV3_KEY (see
+# config.yml for the stride-secrets key names).
