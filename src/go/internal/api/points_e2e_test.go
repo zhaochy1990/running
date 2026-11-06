@@ -474,3 +474,245 @@ func TestE2E_PointsShop_ConcurrentSameKey(t *testing.T) {
 		t.Fatalf("orders after same-key storm = %d rows (code %d), want exactly 1", len(rows), code)
 	}
 }
+
+// TestE2E_PointsShop_SkuRedemption walks the by_sku wire contract end to end
+// (devops#909): the admin builds a by_sku product with SKU rows over HTTP,
+// the shop card carries spec_mode/skus/stock-sum, the redeem call enforces
+// sku_required/sku_invalid/out_of_stock, the order carries the sku_label
+// snapshot through replays, per_user_limit stays product-level across SKUs,
+// and the admin SKU CRUD (absolute stock, delete) rounds out the surface.
+// A legacy single product rides the same run to prove the old wire shape is
+// untouched — no skus field on the card, sku_label absent on its order.
+func TestE2E_PointsShop_SkuRedemption(t *testing.T) {
+	e, store := newPointsE2EServer(t)
+	user := e.userToken(t)
+	admin := e.adminToken(t)
+	// 14 check-in days pay 22 points; the E2E product costs 5 per unit.
+	if balance := earnPoints(t, store, e.userID, 14); balance != 22 {
+		t.Fatalf("seed balance = %d, want 22", balance)
+	}
+
+	// Admin creates the by_sku product and its two SKU rows over the wire.
+	code, created := e.send(t, http.MethodPost, "/api/admin/points/products", admin, map[string]any{
+		"name": "E2E 背心", "points_price": 5, "per_user_limit": 2, "sort_order": 1,
+		"status": storage.PointProductStatusActive, "spec_mode": storage.ProductSpecModeBySku,
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("admin create by_sku: %d: %v", code, created)
+	}
+	if created["spec_mode"] != storage.ProductSpecModeBySku {
+		t.Fatalf("created spec_mode = %v, want by_sku", created["spec_mode"])
+	}
+	productID := int(created["id"].(float64))
+	pid := strconv.Itoa(productID)
+	code, skuL := e.send(t, http.MethodPost, "/api/admin/points/products/"+pid+"/skus", admin, map[string]any{
+		"spec_value": "L", "stock": 2, "sort_order": 1,
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("create sku L: %d: %v", code, skuL)
+	}
+	skuLID := int(skuL["id"].(float64))
+	code, skuXL := e.send(t, http.MethodPost, "/api/admin/points/products/"+pid+"/skus", admin, map[string]any{
+		"spec_value": "XL", "stock": 1, "sort_order": 2,
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("create sku XL: %d: %v", code, skuXL)
+	}
+	skuXLID := int(skuXL["id"].(float64))
+
+	// A second by_sku product supplies the foreign sku_id for the mismatch
+	// probe; a legacy single product rides the same run for compatibility.
+	code, other := e.send(t, http.MethodPost, "/api/admin/points/products", admin, map[string]any{
+		"name": "E2E 背心-女款", "points_price": 5, "stock": 0,
+		"status": storage.PointProductStatusActive, "spec_mode": storage.ProductSpecModeBySku,
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("admin create other: %d: %v", code, other)
+	}
+	otherPID := strconv.Itoa(int(other["id"].(float64)))
+	code, foreignSku := e.send(t, http.MethodPost, "/api/admin/points/products/"+otherPID+"/skus", admin, map[string]any{
+		"spec_value": "S", "stock": 5,
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("create foreign sku: %d: %v", code, foreignSku)
+	}
+	foreignID := int(foreignSku["id"].(float64))
+	code, legacy := e.send(t, http.MethodPost, "/api/admin/points/products", admin, map[string]any{
+		"name": "E2E 毛巾", "points_price": 5, "stock": 3,
+		"status": storage.PointProductStatusActive, // spec_mode omitted → single
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("admin create legacy: %d: %v", code, legacy)
+	}
+	legacyID := int(legacy["id"].(float64))
+
+	// The shop: by_sku card carries spec_mode + skus + the SKU sum in stock;
+	// the legacy card carries neither field.
+	code, shop := e.send(t, http.MethodGet, "/api/users/me/points/products", user, nil)
+	if code != http.StatusOK {
+		t.Fatalf("shop: %d: %v", code, shop)
+	}
+	cards := map[int]map[string]any{}
+	for _, p := range shop["products"].([]any) {
+		row, _ := p.(map[string]any)
+		cards[int(row["id"].(float64))] = row
+	}
+	byCard := cards[productID]
+	if byCard["spec_mode"] != storage.ProductSpecModeBySku || byCard["stock"] != float64(3) {
+		t.Fatalf("by_sku card = %v (want stock 3 = the SKU sum)", byCard)
+	}
+	skus, _ := byCard["skus"].([]any)
+	if len(skus) != 2 {
+		t.Fatalf("by_sku card skus = %v, want 2 rows", skus)
+	}
+	legacyCard := cards[legacyID]
+	if _, hasSkus := legacyCard["skus"]; hasSkus {
+		t.Fatalf("legacy card must carry no skus field: %v", legacyCard)
+	}
+
+	// Address, then the rejection matrix.
+	code, addr := e.send(t, http.MethodPost, "/api/users/me/addresses", user, map[string]any{
+		"receiver_name": "孙六", "receiver_phone": "13500135000",
+		"province": "上海市", "city": "上海市", "district": "徐汇区", "address_detail": "漕溪北路 5 号",
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("create address: %d: %v", code, addr)
+	}
+	addressID := int(addr["id"].(float64))
+
+	code, missing := e.send(t, http.MethodPost, "/api/users/me/points/redemptions", user, map[string]any{
+		"product_id": productID, "address_id": addressID, "idempotency_key": "e2e-sku-k0",
+	})
+	if code != http.StatusConflict || missing["error"] != "sku_required" {
+		t.Fatalf("by_sku redeem without sku_id: %d %v, want 409 sku_required", code, missing)
+	}
+	code, foreign := e.send(t, http.MethodPost, "/api/users/me/points/redemptions", user, map[string]any{
+		"product_id": productID, "address_id": addressID, "idempotency_key": "e2e-sku-k0f", "sku_id": foreignID,
+	})
+	if code != http.StatusConflict || foreign["error"] != "sku_invalid" {
+		t.Fatalf("foreign sku redeem: %d %v, want 409 sku_invalid", code, foreign)
+	}
+	// A single product rejects any sku_id.
+	code, onSingle := e.send(t, http.MethodPost, "/api/users/me/points/redemptions", user, map[string]any{
+		"product_id": legacyID, "address_id": addressID, "idempotency_key": "e2e-sku-k0s", "sku_id": skuLID,
+	})
+	if code != http.StatusConflict || onSingle["error"] != "sku_invalid" {
+		t.Fatalf("single product with sku_id: %d %v, want 409 sku_invalid", code, onSingle)
+	}
+	// Balance untouched by all three rejections: the L redeem below answers
+	// 22 − 5 = 17, exactly one deduction's worth below the seed.
+
+	// Happy path: redeem L; the order carries the size snapshot.
+	code, buyL := e.send(t, http.MethodPost, "/api/users/me/points/redemptions", user, map[string]any{
+		"product_id": productID, "address_id": addressID, "idempotency_key": "e2e-sku-k1", "sku_id": skuLID,
+	})
+	if code != http.StatusOK {
+		t.Fatalf("redeem L: %d: %v", code, buyL)
+	}
+	orderL, _ := buyL["order"].(map[string]any)
+	if orderL["sku_label"] != "L" || orderL["points_cost"] != float64(5) {
+		t.Fatalf("L order = %v", orderL)
+	}
+	if buyL["balance"] != float64(17) {
+		t.Fatalf("balance after L = %v, want 17", buyL["balance"])
+	}
+	// Same key replays the stored order with its snapshot.
+	code, replay := e.send(t, http.MethodPost, "/api/users/me/points/redemptions", user, map[string]any{
+		"product_id": productID, "address_id": addressID, "idempotency_key": "e2e-sku-k1", "sku_id": skuLID,
+	})
+	if code != http.StatusOK {
+		t.Fatalf("replay: %d: %v", code, replay)
+	}
+	replayOrder, _ := replay["order"].(map[string]any)
+	if replay["replayed"] != true || replayOrder["id"] != orderL["id"] || replayOrder["sku_label"] != "L" {
+		t.Fatalf("replay = %v (want the stored order with label L)", replay)
+	}
+
+	// XL has one unit: the first buyer wins, the second answers out_of_stock.
+	code, buyXL := e.send(t, http.MethodPost, "/api/users/me/points/redemptions", user, map[string]any{
+		"product_id": productID, "address_id": addressID, "idempotency_key": "e2e-sku-k2", "sku_id": skuXLID,
+	})
+	if code != http.StatusOK {
+		t.Fatalf("redeem XL: %d: %v", code, buyXL)
+	}
+	// Exactly two deductions landed (22 − 10): the rejection matrix above
+	// never moved points.
+	if buyXL["balance"] != float64(12) {
+		t.Fatalf("balance after L+XL = %v, want 12", buyXL["balance"])
+	}
+	orderXL, _ := buyXL["order"].(map[string]any)
+	if orderXL["sku_label"] != "XL" {
+		t.Fatalf("XL order = %v", orderXL)
+	}
+	code, soldOut := e.send(t, http.MethodPost, "/api/users/me/points/redemptions", user, map[string]any{
+		"product_id": productID, "address_id": addressID, "idempotency_key": "e2e-sku-k3", "sku_id": skuXLID,
+	})
+	if code != http.StatusConflict || soldOut["error"] != "out_of_stock" {
+		t.Fatalf("oversell attempt: %d %v, want 409 out_of_stock", code, soldOut)
+	}
+
+	// per_user_limit 2 is product-level: one unit through L plus one through
+	// XL already saturate it, so the third unit through the OTHER sku still
+	// breaches it — the SUM counts across SKU rows.
+	code, capped := e.send(t, http.MethodPost, "/api/users/me/points/redemptions", user, map[string]any{
+		"product_id": productID, "address_id": addressID, "idempotency_key": "e2e-sku-k4", "sku_id": skuLID,
+	})
+	if code != http.StatusConflict || capped["error"] != "limit_reached" {
+		t.Fatalf("cross-sku limit: %d %v, want 409 limit_reached", code, capped)
+	}
+
+	// Legacy single redeem keeps the old wire: order without sku_label.
+	code, buyLegacy := e.send(t, http.MethodPost, "/api/users/me/points/redemptions", user, map[string]any{
+		"product_id": legacyID, "address_id": addressID, "idempotency_key": "e2e-sku-k5",
+	})
+	if code != http.StatusOK {
+		t.Fatalf("legacy redeem: %d: %v", code, buyLegacy)
+	}
+	legacyOrder, _ := buyLegacy["order"].(map[string]any)
+	if _, hasLabel := legacyOrder["sku_label"]; hasLabel && legacyOrder["sku_label"] != nil {
+		t.Fatalf("legacy order must render sku_label null: %v", legacyOrder)
+	}
+
+	// Admin PATCH sets XL stock to an absolute 0 → the shop stock sum drops
+	// to 1 (L's remaining unit).
+	code, patched := e.send(t, http.MethodPatch, "/api/admin/points/products/"+pid+"/skus/"+strconv.Itoa(skuXLID), admin, map[string]any{"stock": 0})
+	if code != http.StatusOK || patched["stock"] != float64(0) {
+		t.Fatalf("sku patch: %d %v, want absolute 0", code, patched)
+	}
+	code, shop2 := e.send(t, http.MethodGet, "/api/users/me/points/products", user, nil)
+	for _, p := range shop2["products"].([]any) {
+		if row, _ := p.(map[string]any); int(row["id"].(float64)) == productID && row["stock"] != float64(1) {
+			t.Fatalf("shop stock after patch = %v, want 1 (L only)", row["stock"])
+		}
+	}
+
+	// DELETE removes the row; its id no longer redeems (sku_invalid — the
+	// row is gone), and the shop card loses it.
+	code, _ = e.send(t, http.MethodDelete, "/api/admin/points/products/"+pid+"/skus/"+strconv.Itoa(skuXLID), admin, nil)
+	if code != http.StatusNoContent {
+		t.Fatalf("sku delete: %d", code)
+	}
+	code, shop3 := e.send(t, http.MethodGet, "/api/users/me/points/products", user, nil)
+	for _, p := range shop3["products"].([]any) {
+		row, _ := p.(map[string]any)
+		if int(row["id"].(float64)) != productID {
+			continue
+		}
+		rows, _ := row["skus"].([]any)
+		if len(rows) != 1 {
+			t.Fatalf("shop skus after delete = %v, want 1", rows)
+		}
+	}
+	code, gone := e.send(t, http.MethodPost, "/api/users/me/points/redemptions", user, map[string]any{
+		"product_id": productID, "address_id": addressID, "idempotency_key": "e2e-sku-k6", "sku_id": skuXLID,
+	})
+	if code != http.StatusConflict || gone["error"] != "sku_invalid" {
+		t.Fatalf("deleted-sku redeem: %d %v, want 409 sku_invalid", code, gone)
+	}
+
+	// Unknown spec_mode token → 400 invalid_spec_mode at the handler layer.
+	code, badMode := e.send(t, http.MethodPatch, "/api/admin/points/products/"+pid, admin, map[string]any{"spec_mode": "bogus"})
+	if code != http.StatusBadRequest || badMode["error"] != "invalid_spec_mode" {
+		t.Fatalf("bogus spec_mode: %d %v, want 400 invalid_spec_mode", code, badMode)
+	}
+}

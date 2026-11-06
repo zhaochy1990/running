@@ -86,9 +86,13 @@ func (s *Store) ListPaymentExpiredRedemptions(ctx context.Context, cutoff time.T
 // (a callback that paid the order in the meantime matches zero rows and the
 // sweep must not refund it), then the points go back the way they came —
 // the balance credit plus one append-only adjust ledger row (+points,
-// ref=order id), the first production writer of the adjust type (devops#904).
-// Reports false when the claim matched nothing: the order is already paid,
-// shipped or cancelled, and a re-run of the sweep is a no-op.
+// ref=order id), the first production writer of the adjust type (devops#904)
+// — and the inventory comes back too (devops#909): by_sku orders refill
+// their SKU row, single orders the product-level stock. The claim UPDATE is
+// the idempotency gate: a re-run of the sweep matches zero rows and never
+// double-refunds or double-restocks. Reports false when the claim matched
+// nothing: the order is already paid, shipped or cancelled, and the whole
+// call is a no-op.
 func (s *Store) CancelPendingRedemption(ctx context.Context, id string, now time.Time) (bool, error) {
 	refunded := false
 	txErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -105,6 +109,26 @@ func (s *Store) CancelPendingRedemption(ctx context.Context, id string, now time
 		var row PointRedemption
 		if err := tx.Where("id = ?", id).First(&row).Error; err != nil {
 			return err
+		}
+		// Give the redeem-time deduction back (devops#909 — the pre-#909
+		// behaviour cancelled the points but kept the stock reserved
+		// forever). Same transaction as the claim, so claim losers never
+		// touch inventory; a deleted SKU row simply matches zero rows (the
+		// unit is gone with the row, the order keeps its snapshot).
+		if row.SkuID != nil {
+			if err := tx.Exec(
+				"UPDATE point_product_skus SET stock = stock + ? WHERE id = ?",
+				row.Quantity, *row.SkuID,
+			).Error; err != nil {
+				return err
+			}
+		} else {
+			if err := tx.Exec(
+				"UPDATE point_products SET stock = stock + ? WHERE id = ?",
+				row.Quantity, row.ProductID,
+			).Error; err != nil {
+				return err
+			}
 		}
 		// Mirror the deduction's zero-balance guard: a user who never earned
 		// (and was never deducted either) still needs a row to credit.

@@ -544,7 +544,7 @@ func TestPointProduct_AdminCRUD(t *testing.T) {
 	}
 	found := false
 	for i := range rows {
-		if rows[i].ID == row.ID {
+		if rows[i].Product.ID == row.ID {
 			found = true
 		}
 	}

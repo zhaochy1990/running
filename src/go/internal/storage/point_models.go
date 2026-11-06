@@ -68,10 +68,17 @@ type PointProduct struct {
 	// ShippingFee is the flat fee in fen charged under jzsh_fee when the
 	// receiver province sits outside 江苏/浙江/上海. 0 (the default) means the
 	// fee slot is unused; the redemption snapshot freezes whatever it held.
-	ShippingFee int       `gorm:"column:shipping_fee;not null;default:0"`
-	SortOrder   int       `gorm:"column:sort_order;not null;default:0"`
-	CreatedAt   time.Time `gorm:"column:created_at;type:datetime(6);autoCreateTime:false"`
-	UpdatedAt   time.Time `gorm:"column:updated_at;type:datetime(6);autoUpdateTime:false"`
+	ShippingFee int `gorm:"column:shipping_fee;not null;default:0"`
+	// Spec mode (devops#909): single keeps the pre-SKU behaviour — the stock
+	// column above is the redeemable inventory and every existing row gets it
+	// through the column default, so the migration never changes what a
+	// legacy product sells. by_sku moves the redeemable inventory onto the
+	// point_product_skus rows; the stock column stops being decremented and
+	// the lists only ever show the SKU sum in its place (display only).
+	SpecMode  string    `gorm:"column:spec_mode;type:varchar(16);not null;default:single"`
+	SortOrder int       `gorm:"column:sort_order;not null;default:0"`
+	CreatedAt time.Time `gorm:"column:created_at;type:datetime(6);autoCreateTime:false"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:datetime(6);autoUpdateTime:false"`
 }
 
 func (PointProduct) TableName() string { return "point_products" }
@@ -109,6 +116,40 @@ func IsShippingPolicy(s string) bool {
 	return s == ShippingPolicyNationwideFree || s == ShippingPolicyJZSHFee
 }
 
+// Spec modes (devops#909). single is the stock behaviour — one price, one
+// product-level stock column, no size choice. by_sku sells purchasable
+// variants (e.g. apparel sizes), each with its own guarded stock row.
+const (
+	ProductSpecModeSingle = "single"
+	ProductSpecModeBySku  = "by_sku"
+)
+
+// IsProductSpecMode reports whether s is a storable spec mode.
+func IsProductSpecMode(s string) bool {
+	return s == ProductSpecModeSingle || s == ProductSpecModeBySku
+}
+
+// PointProductSku is one purchasable variant of a by_sku product
+// (devops#909): spec_value is the admin-entered size/label (S/M/L/XL…),
+// stock is that variant's own redeemable inventory, and the guarded
+// single-row UPDATE on this row is the by_sku anti-oversell mechanism (the
+// same guarded-decrement discipline as the product-level stock column). Rows
+// are admin inventory
+// lines, not historical facts — orders snapshot sku_id/sku_label and survive
+// a later row deletion.
+type PointProductSku struct {
+	ID uint64 `gorm:"column:id;primaryKey;autoIncrement"`
+	// ProductID + (product_id, id) walks one product's variants sort_order ASC.
+	ProductID uint64    `gorm:"column:product_id;not null;index:idx_point_product_skus_product,priority:1"`
+	SpecValue string    `gorm:"column:spec_value;type:varchar(32);not null"`
+	Stock     int       `gorm:"column:stock;not null;default:0"` // redeem-success deducts, admin restocks; absolute on admin PATCH (#849)
+	SortOrder int       `gorm:"column:sort_order;not null;default:0"`
+	CreatedAt time.Time `gorm:"column:created_at;type:datetime(6);autoCreateTime:false"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:datetime(6);autoUpdateTime:false"`
+}
+
+func (PointProductSku) TableName() string { return "point_product_skus" }
+
 // PointRedemption is one redemption order (devops#850 resolution). The row is
 // a historical fact: product_name/points_cost and the six receiver columns are
 // snapshots taken at redeem time, immune to later product edits and address
@@ -127,6 +168,13 @@ type PointRedemption struct {
 	ProductID   uint64 `gorm:"column:product_id;not null"`
 	ProductName string `gorm:"column:product_name;type:varchar(128);not null"`
 	PointsCost  int    `gorm:"column:points_cost;not null"`
+	// SKU snapshot (devops#909), same snapshot principle as the name/price
+	// pair: sku_id names the bought variant (the cancel refill's address),
+	// sku_label freezes the rendered size text against later renames and row
+	// deletions. single-mode orders — every pre-#909 row through the NULL
+	// default — carry both NULL and render「无尺码」.
+	SkuID    *uint64 `gorm:"column:sku_id"`
+	SkuLabel *string `gorm:"column:sku_label;type:varchar(32)"`
 	// Quantity is the unit count this order carries; cost = price × quantity.
 	// default:1 keeps pre-quantity rows and legacy clients at one unit, so
 	// SUM(quantity) == the old COUNT(rows) limit semantics.

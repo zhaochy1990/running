@@ -2,8 +2,11 @@
 // resolution + devops#849 resolution/revision): the point_products shop read,
 // the single-transaction redemption with its authoritative check order, the
 // user's order list, and the two admin surfaces (product maintenance, order
-// shipping). Product semantics: physical goods only, redeem-success stock
-// deduction, no cancel/refund/reversal — shipped is terminal.
+// shipping). Product semantics: physical goods, redeem-success stock
+// deduction, shipped is terminal. devops#909 adds the by_sku spec mode:
+// point_product_skus rows carry per-variant inventory, the redemption
+// transaction branches on the product's spec_mode while keeping one
+// authoritative order, and the admin gains SKU-row maintenance.
 package storage
 
 import (
@@ -16,6 +19,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -38,6 +42,12 @@ const (
 	// configured. The transaction rolls back with zero side effects — no
 	// points deducted.
 	RedemptionPaymentUnavailable RedemptionErrorCode = "payment_unavailable"
+	// SKU errors (devops#909): a by_sku product redeemed without sku_id, or
+	// with a sku_id that exists but belongs to another product (or the
+	// product is single and carries no skus at all). Both roll the
+	// transaction back with zero side effects.
+	RedemptionSkuRequired RedemptionErrorCode = "sku_required"
+	RedemptionSkuInvalid  RedemptionErrorCode = "sku_invalid"
 )
 
 // RedemptionError rejects a redemption with a stable business code.
@@ -50,6 +60,10 @@ var ErrPointProductNotFound = errors.New("storage: point product not found")
 
 // ErrPointRedemptionNotFound marks a ship on a missing order id.
 var ErrPointRedemptionNotFound = errors.New("storage: point redemption not found")
+
+// ErrPointProductSkuNotFound marks an admin SKU mutation on a missing id (or
+// one that lives under a different product).
+var ErrPointProductSkuNotFound = errors.New("storage: point product sku not found")
 
 // errRedemptionLostRace marks a redemption INSERT that lost the
 // (user_id, idempotency_key) unique race: the tx made no writes and rolled
@@ -85,12 +99,16 @@ func shippingFeeFor(p PointProduct, province string) int {
 // PaymentReady tells the transaction whether the WeChat Pay module is
 // configured (devops#904): a shipping-fee product redeemed while it is false
 // is rejected payment_unavailable, zero-fee products never consult it.
+// SkuID (devops#909) is optional: 0 = unspecified; a by_sku product requires
+// it to name one of its own point_product_skus rows, a single product
+// rejects any non-zero value.
 type RedemptionRequest struct {
 	ProductID      uint64
 	AddressID      uint64
 	IdempotencyKey string
 	Quantity       int
 	PaymentReady   bool
+	SkuID          uint64
 }
 
 // RedemptionResult is the redeem outcome. Replayed marks the idempotent
@@ -120,14 +138,20 @@ func (s *Store) redemptionByIdempotencyKey(ctx context.Context, uid, key string)
 //
 //  0. (user_id, idempotency_key) re-hit → replay the committed order, zero
 //     side effects; a concurrent UNIQUE collision also rolls back and replays.
-//  1. stock UPDATE ... WHERE stock > 0 AND status='active' → 0 rows =
-//     product_inactive or out_of_stock (classified by a follow-up read).
-//  2. per-user limit COUNT — deliberately AFTER the stock UPDATE (#849
-//     revision): the product row lock the UPDATE takes serializes same-product
-//     concurrency, so the COUNT cannot be raced past by parallel double-redeems.
+//  1. the product row's locking read (SELECT ... FOR UPDATE, devops#909) —
+//     the tx's first statement, the serialization point every same-product
+//     redemption queues on. single: guarded stock UPDATE ... WHERE stock > 0
+//     AND status='active' → 0 rows = out_of_stock. by_sku: guarded SKU-row
+//     UPDATE with the same stock guard, preceded by the sku_required /
+//     sku_invalid shape checks.
+//  2. per-user limit COUNT — deliberately AFTER the product row lock (#849
+//     revision): the lock serializes same-product concurrency, so the COUNT
+//     cannot be raced past by parallel double-redeems, whatever mode the
+//     product sells in.
 //  3. points UPDATE ... WHERE balance >= X (zero-balance row INSERT IGNOREd
 //     first) → 0 rows = insufficient_points.
-//  4. INSERT order (full snapshots) + INSERT redeem ledger row.
+//  4. INSERT order (full snapshots, sku_id/sku_label included for by_sku) +
+//     INSERT redeem ledger row.
 //
 // devops#904 folds the shipping fee into steps 3-4: the fee is computed from
 // the product's policy + the receiver province snapshot, a fee-charged order
@@ -164,51 +188,95 @@ func (s *Store) CreateRedemption(ctx context.Context, userID string, req Redempt
 	var result *RedemptionResult
 	txErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Step 1 first, and deliberately as the transaction's FIRST statement:
-		// the guarded stock decrement is a locking read (it never establishes
-		// the tx's read snapshot), so every later consistent read — the limit
-		// COUNT included — sees the orders committed by the same-product
-		// redemption that just released this row lock (#849 revision). A plain
-		// read placed before the UPDATE would pin an older snapshot and let a
-		// parallel double-redeem slip past per_user_limit.
+		// the product row's locking read never establishes the tx's read
+		// snapshot, so every later consistent read — the limit COUNT included
+		// — sees the orders committed by the same-product redemption that just
+		// released this row lock (#849 revision). A plain read placed before
+		// it would pin an older snapshot and let a parallel double-redeem slip
+		// past per_user_limit. devops#909 swaps the old stock UPDATE for
+		// SELECT ... FOR UPDATE: same row lock, same serialization point, but
+		// the mode branch below can classify the product first.
 		//
 		// The row lock it takes is the serialization point every same-product
 		// redemption queues on.
-		res := tx.Exec(
-			"UPDATE point_products SET stock = stock - ? WHERE id = ? AND stock >= ? AND status = ?",
-			qty, req.ProductID, qty, PointProductStatusActive,
-		)
-		if res.Error != nil {
-			return res.Error
+		var p PointProduct
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", req.ProductID).First(&p).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &RedemptionError{Code: RedemptionProductInactive}
 		}
-		if res.RowsAffected == 0 {
-			// Classify the guard failure: inactive/unknown vs sold out. This
-			// read pins a snapshot, but the tx rolls back right after.
-			var p PointProduct
-			err := tx.Where("id = ?", req.ProductID).First(&p).Error
-			switch {
-			case errors.Is(err, gorm.ErrRecordNotFound):
-				return &RedemptionError{Code: RedemptionProductInactive}
-			case err != nil:
+		if err != nil {
+			return err
+		}
+		if p.Status != PointProductStatusActive {
+			return &RedemptionError{Code: RedemptionProductInactive}
+		}
+
+		// The inventory write branches on the spec mode (devops#909). Both
+		// arms share the guarded single-row UPDATE shape: stock >= qty or
+		// nothing happens.
+		var skuID *uint64
+		var skuLabel *string
+		if p.SpecMode == ProductSpecModeBySku {
+			// by_sku: the SKU row is the inventory. The guard names the row
+			// AND its product, so a foreign sku_id can never decrement
+			// anything; the follow-up read classifies foreign/unknown vs
+			// sold out (the tx rolls back right after either way).
+			if req.SkuID == 0 {
+				return &RedemptionError{Code: RedemptionSkuRequired}
+			}
+			res := tx.Exec(
+				"UPDATE point_product_skus SET stock = stock - ? WHERE id = ? AND product_id = ? AND stock >= ?",
+				qty, req.SkuID, p.ID, qty,
+			)
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected == 0 {
+				var sku PointProductSku
+				err := tx.Where("id = ?", req.SkuID).First(&sku).Error
+				switch {
+				case errors.Is(err, gorm.ErrRecordNotFound):
+					return &RedemptionError{Code: RedemptionSkuInvalid}
+				case err != nil:
+					return err
+				case sku.ProductID != p.ID:
+					return &RedemptionError{Code: RedemptionSkuInvalid}
+				default:
+					return &RedemptionError{Code: RedemptionOutOfStock}
+				}
+			}
+			var sku PointProductSku
+			if err := tx.Where("id = ?", req.SkuID).First(&sku).Error; err != nil {
 				return err
-			case p.Status != PointProductStatusActive:
-				return &RedemptionError{Code: RedemptionProductInactive}
-			default:
+			}
+			sid := req.SkuID
+			label := sku.SpecValue
+			skuID, skuLabel = &sid, &label
+		} else {
+			// single: any sku_id names a variant this product does not have.
+			if req.SkuID != 0 {
+				return &RedemptionError{Code: RedemptionSkuInvalid}
+			}
+			res := tx.Exec(
+				"UPDATE point_products SET stock = stock - ? WHERE id = ? AND stock >= ? AND status = ?",
+				qty, req.ProductID, qty, PointProductStatusActive,
+			)
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected == 0 {
+				// We hold the product row lock and just read it active; the
+				// guard can only fail on stock now.
 				return &RedemptionError{Code: RedemptionOutOfStock}
 			}
 		}
-		// Snapshot source: the tx's first consistent read, established only
-		// now — after we hold the product row lock. Only name/price/limit feed
-		// the order, so our own decrement showing up here is irrelevant.
-		var p PointProduct
-		if err := tx.Where("id = ?", req.ProductID).First(&p).Error; err != nil {
-			return err
-		}
 
-		// Step 2: the per-user limit SUM of units, strictly after the stock
-		// UPDATE so it runs under the product row lock (#849 revision — the
-		// anti-bypass placement; orders only ever accumulate, no status
-		// filtering). Units, not rows: one qty-3 order eats three of the
-		// allowance (legacy qty-1 rows sum identically to the old COUNT).
+		// Step 2: the per-user limit SUM of units, strictly after the product
+		// row lock (#849 revision — the anti-bypass placement; orders only
+		// ever accumulate, no status filtering). Units, not rows: one qty-3
+		// order eats three of the allowance, product-level regardless of
+		// which SKU rows the units came through (devops#909).
 		if p.PerUserLimit > 0 {
 			var units int64
 			if err := tx.Model(&PointRedemption{}).
@@ -225,11 +293,10 @@ func (s *Store) CreateRedemption(ctx context.Context, userID string, req Redempt
 		// The receiver snapshot comes from the caller's own address book row;
 		// a bad address rolls the whole transaction back (stock untouched).
 		var addr UserAddress
-		err := tx.Where("id = ? AND user_id = ?", req.AddressID, uid).First(&addr).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return &RedemptionError{Code: RedemptionAddressNotFound}
-		}
-		if err != nil {
+		if err := tx.Where("id = ? AND user_id = ?", req.AddressID, uid).First(&addr).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return &RedemptionError{Code: RedemptionAddressNotFound}
+			}
 			return err
 		}
 
@@ -252,7 +319,7 @@ func (s *Store) CreateRedemption(ctx context.Context, userID string, req Redempt
 		).Error; err != nil {
 			return err
 		}
-		res = tx.Exec(
+		res := tx.Exec(
 			"UPDATE user_points SET balance = balance - ?, updated_at = ? WHERE user_id = ? AND balance >= ?",
 			cost, now, uid, cost,
 		)
@@ -270,6 +337,7 @@ func (s *Store) CreateRedemption(ctx context.Context, userID string, req Redempt
 		order := &PointRedemption{
 			ID: uuid.NewString(), UserID: uid,
 			ProductID: p.ID, ProductName: p.Name, PointsCost: cost, Quantity: qty,
+			SkuID: skuID, SkuLabel: skuLabel,
 			IdempotencyKey: req.IdempotencyKey,
 			ReceiverName:   addr.ReceiverName, ReceiverPhone: addr.ReceiverPhone,
 			Province: addr.Province, City: addr.City, District: addr.District,
@@ -416,16 +484,41 @@ func (s *Store) ListUserRedemptions(ctx context.Context, userID, cursor string, 
 // #850 resolution delists via status=inactive and never hard-deletes)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// PointProductWithCount is one shop row plus how many of it the caller already
-// redeemed (the #852 UI grays out limit-reached cards with this number).
-type PointProductWithCount struct {
+// PointProductListing is one product row as the shop and admin lists carry
+// it: the row itself, the caller's own redeemed unit count (the user surface
+// grays out limit-reached cards with it; the admin surface leaves it 0), and
+// by_sku products' SKU rows sort_order ASC (id ASC tiebreak; devops#909).
+// single products carry no SKU rows.
+type PointProductListing struct {
 	Product       PointProduct
 	RedeemedCount int
+	Skus          []PointProductSku
+}
+
+// loadSkusByProduct fetches the SKU rows of the named products in one query
+// and groups them by product id, sort_order ASC (id ASC tiebreak). Products
+// in other modes keep no entry — the caller only attaches rows to by_sku.
+func (s *Store) loadSkusByProduct(ctx context.Context, ids []uint64) (map[uint64][]PointProductSku, error) {
+	grouped := make(map[uint64][]PointProductSku, len(ids))
+	if len(ids) == 0 {
+		return grouped, nil
+	}
+	var rows []PointProductSku
+	if err := s.db.WithContext(ctx).
+		Where("product_id IN ?", ids).
+		Order("sort_order ASC, id ASC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		grouped[r.ProductID] = append(grouped[r.ProductID], r)
+	}
+	return grouped, nil
 }
 
 // ListActiveProducts returns the active shop, sort_order ASC (id ASC tiebreak),
-// each row carrying the caller's own redeemed count.
-func (s *Store) ListActiveProducts(ctx context.Context, userID string) ([]PointProductWithCount, error) {
+// each row carrying the caller's own redeemed count and, for by_sku products,
+// their SKU rows.
+func (s *Store) ListActiveProducts(ctx context.Context, userID string) ([]PointProductListing, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
 		return nil, err
@@ -454,22 +547,53 @@ func (s *Store) ListActiveProducts(ctx context.Context, userID string) ([]PointP
 	for _, c := range counts {
 		byProduct[c.ProductID] = int(c.Total)
 	}
-	out := make([]PointProductWithCount, len(rows))
+	skus, err := s.loadSkusByProduct(ctx, productIDs(rows))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]PointProductListing, len(rows))
 	for i, r := range rows {
-		out[i] = PointProductWithCount{Product: r, RedeemedCount: byProduct[r.ID]}
+		row := PointProductListing{Product: r, RedeemedCount: byProduct[r.ID]}
+		if r.SpecMode == ProductSpecModeBySku {
+			row.Skus = skus[r.ID]
+		}
+		out[i] = row
 	}
 	return out, nil
 }
 
+// productIDs collects the products' ids in row order (a small IN-list helper
+// for the SKU batch load).
+func productIDs(rows []PointProduct) []uint64 {
+	ids := make([]uint64, len(rows))
+	for i, r := range rows {
+		ids[i] = r.ID
+	}
+	return ids
+}
+
 // AdminListProducts returns every product — active and inactive — for the
-// admin maintenance list, sort_order ASC (id ASC tiebreak).
-func (s *Store) AdminListProducts(ctx context.Context) ([]PointProduct, error) {
+// admin maintenance list, sort_order ASC (id ASC tiebreak), by_sku products
+// with their SKU rows (devops#909).
+func (s *Store) AdminListProducts(ctx context.Context) ([]PointProductListing, error) {
 	var rows []PointProduct
 	if err := s.db.WithContext(ctx).
 		Order("sort_order ASC, id ASC").Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	return rows, nil
+	skus, err := s.loadSkusByProduct(ctx, productIDs(rows))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]PointProductListing, len(rows))
+	for i, r := range rows {
+		row := PointProductListing{Product: r}
+		if r.SpecMode == ProductSpecModeBySku {
+			row.Skus = skus[r.ID]
+		}
+		out[i] = row
+	}
+	return out, nil
 }
 
 // AdminCreateProduct inserts one product row; timestamps are stamped here so
@@ -485,8 +609,9 @@ func (s *Store) AdminCreateProduct(ctx context.Context, row *PointProduct) error
 
 // ProductPatch is the admin PATCH body mapped onto storage: every field
 // optional, absent = unchanged. PointsPrice/Stock/PerUserLimit are absolute
-// values (#850 resolution: 改价/改库存=绝对值). ShippingPolicy is the closed
-// enum (devops#904; the API validates it, this layer stores verbatim).
+// values (#850 resolution: 改价/改库存=绝对值). ShippingPolicy and SpecMode
+// are closed enums (devops#904 / devops#909; the API validates them, this
+// layer stores verbatim).
 type ProductPatch struct {
 	Name           *string
 	Description    *string
@@ -498,6 +623,7 @@ type ProductPatch struct {
 	SortOrder      *int
 	ShippingPolicy *string
 	ShippingFee    *int
+	SpecMode       *string
 }
 
 // AdminPatchProduct applies the partial update; a missing id is
@@ -542,11 +668,91 @@ func (s *Store) AdminPatchProduct(ctx context.Context, id uint64, patch ProductP
 	if patch.ShippingFee != nil {
 		row.ShippingFee = *patch.ShippingFee
 	}
+	if patch.SpecMode != nil {
+		row.SpecMode = *patch.SpecMode
+	}
 	row.UpdatedAt = time.Now().UTC()
 	if err := s.db.WithContext(ctx).Save(&row).Error; err != nil {
 		return nil, err
 	}
 	return &row, nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin: SKU rows (devops#909) — create / patch / delete under one product.
+// Rows are inventory lines, not history: orders snapshot sku_id/sku_label, so
+// a deletion never rewrites existing orders.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// AdminCreateProductSku inserts one SKU row under an existing product; a
+// missing product id is ErrPointProductNotFound. Timestamps are stamped here
+// so the admin list's created_at/updated_at round-trip exactly.
+func (s *Store) AdminCreateProductSku(ctx context.Context, productID uint64, row *PointProductSku) error {
+	var p PointProduct
+	if err := s.db.WithContext(ctx).Where("id = ?", productID).First(&p).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrPointProductNotFound
+		}
+		return err
+	}
+	row.ID = 0
+	row.ProductID = productID
+	now := time.Now().UTC()
+	row.CreatedAt, row.UpdatedAt = now, now
+	if err := s.db.WithContext(ctx).Create(row).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+// SkuPatch is the admin SKU PATCH body: every field optional, absent =
+// unchanged. Stock is an absolute value (#849 / #909 范式).
+type SkuPatch struct {
+	SpecValue *string
+	Stock     *int
+	SortOrder *int
+}
+
+// AdminPatchProductSku applies the partial update; the SKU must exist under
+// the named product, else ErrPointProductSkuNotFound.
+func (s *Store) AdminPatchProductSku(ctx context.Context, productID, skuID uint64, patch SkuPatch) (*PointProductSku, error) {
+	var row PointProductSku
+	if err := s.db.WithContext(ctx).
+		Where("id = ? AND product_id = ?", skuID, productID).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrPointProductSkuNotFound
+		}
+		return nil, err
+	}
+	if patch.SpecValue != nil {
+		row.SpecValue = *patch.SpecValue
+	}
+	if patch.Stock != nil {
+		row.Stock = *patch.Stock
+	}
+	if patch.SortOrder != nil {
+		row.SortOrder = *patch.SortOrder
+	}
+	row.UpdatedAt = time.Now().UTC()
+	if err := s.db.WithContext(ctx).Save(&row).Error; err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+// AdminDeleteProductSku removes one SKU row; a missing or foreign id is
+// ErrPointProductSkuNotFound. Existing orders keep their sku snapshot.
+func (s *Store) AdminDeleteProductSku(ctx context.Context, productID, skuID uint64) error {
+	res := s.db.WithContext(ctx).
+		Where("id = ? AND product_id = ?", skuID, productID).
+		Delete(&PointProductSku{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrPointProductSkuNotFound
+	}
+	return nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

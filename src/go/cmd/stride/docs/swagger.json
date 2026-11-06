@@ -1,10 +1,7 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "HTTP API fronting the STRIDE worker: create and track async jobs and pipeline runs, and manage user profile, onboarding, and watch-provider login.",
-        "title": "STRIDE API",
-        "contact": {},
-        "version": "1.0"
+        "contact": {}
     },
     "paths": {
         "/api/admin/async-runs": {
@@ -1254,6 +1251,204 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/api.adminProductResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/points/products/{id}/skus": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Adds one variant (size) row with its own stock under an existing product.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "points-admin"
+                ],
+                "summary": "Create a product SKU row (admin)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Product id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "SKU row",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.adminSkuCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.adminSkuResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/points/products/{id}/skus/{sku_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes one SKU row of the product. Orders already placed keep their sku_id/sku_label snapshot.",
+                "tags": [
+                    "points-admin"
+                ],
+                "summary": "Delete a product SKU row (admin)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Product id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "SKU id",
+                        "name": "sku_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Applies partial updates to one SKU row of the product; stock is an absolute value. The SKU must belong to the named product.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "points-admin"
+                ],
+                "summary": "Update a product SKU row (admin)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Product id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "SKU id",
+                        "name": "sku_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.adminSkuPatchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.adminSkuResponse"
                         }
                     },
                     "400": {
@@ -4876,7 +5071,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns the active products (sort_order ASC) with the caller's own redeemed count per product. Inactive products never appear.",
+                "description": "Returns the active products (sort_order ASC) with the caller's own redeemed count per product. Inactive products never appear. by_sku products carry their skus array and stock = the SKU sum (display only).",
                 "produces": [
                     "application/json"
                 ],
@@ -4968,7 +5163,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Runs the redemption transaction: idempotency replay check, guarded stock decrement (by quantity), per-user limit sum (in units), guarded points deduction (price × quantity), then order + ledger rows in one commit. quantity is optional (1-99, default 1). Repeating an idempotency_key returns the stored order with zero side effects.",
+                "description": "Runs the redemption transaction: idempotency replay check, guarded stock decrement (by quantity — the SKU row for by_sku products), per-user limit sum (in units, product-level), guarded points deduction (price × quantity), then order + ledger rows in one commit. quantity is optional (1-99, default 1); sku_id is required for by_sku products. Repeating an idempotency_key returns the stored order with zero side effects.",
                 "consumes": [
                     "application/json"
                 ],
@@ -9349,6 +9544,10 @@
                 "sort_order": {
                     "type": "integer"
                 },
+                "spec_mode": {
+                    "type": "string",
+                    "maxLength": 16
+                },
                 "status": {
                     "type": "string",
                     "maxLength": 16
@@ -9392,6 +9591,10 @@
                 "sort_order": {
                     "type": "integer"
                 },
+                "spec_mode": {
+                    "type": "string",
+                    "maxLength": 16
+                },
                 "status": {
                     "type": "string",
                     "maxLength": 16
@@ -9432,8 +9635,17 @@
                 "shipping_policy": {
                     "type": "string"
                 },
+                "skus": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.skuResponse"
+                    }
+                },
                 "sort_order": {
                     "type": "integer"
+                },
+                "spec_mode": {
+                    "type": "string"
                 },
                 "status": {
                     "type": "string"
@@ -9511,6 +9723,9 @@
                 "shipping_policy_snapshot": {
                     "type": "string"
                 },
+                "sku_label": {
+                    "type": "string"
+                },
                 "status": {
                     "type": "string"
                 },
@@ -9545,6 +9760,67 @@
                 "tracking_no": {
                     "type": "string",
                     "maxLength": 64
+                }
+            }
+        },
+        "api.adminSkuCreateRequest": {
+            "type": "object",
+            "required": [
+                "spec_value"
+            ],
+            "properties": {
+                "sort_order": {
+                    "type": "integer"
+                },
+                "spec_value": {
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "stock": {
+                    "type": "integer",
+                    "minimum": 0
+                }
+            }
+        },
+        "api.adminSkuPatchRequest": {
+            "type": "object",
+            "properties": {
+                "sort_order": {
+                    "type": "integer"
+                },
+                "spec_value": {
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "stock": {
+                    "type": "integer",
+                    "minimum": 0
+                }
+            }
+        },
+        "api.adminSkuResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "product_id": {
+                    "type": "integer"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "spec_value": {
+                    "type": "string"
+                },
+                "stock": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },
@@ -11665,6 +11941,15 @@
                 "shipping_policy": {
                     "type": "string"
                 },
+                "skus": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.skuResponse"
+                    }
+                },
+                "spec_mode": {
+                    "type": "string"
+                },
                 "stock": {
                     "type": "integer"
                 }
@@ -13034,6 +13319,9 @@
                     "type": "integer",
                     "maximum": 99,
                     "minimum": 1
+                },
+                "sku_id": {
+                    "type": "integer"
                 }
             }
         },
@@ -13103,6 +13391,9 @@
                     "type": "integer"
                 },
                 "shipping_policy_snapshot": {
+                    "type": "string"
+                },
+                "sku_label": {
                     "type": "string"
                 },
                 "status": {
@@ -13529,6 +13820,20 @@
                     "type": "number"
                 },
                 "total_duration_s": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.skuResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "spec_value": {
+                    "type": "string"
+                },
+                "stock": {
                     "type": "integer"
                 }
             }
@@ -14463,12 +14768,8 @@
                     "x-nullable": true
                 },
                 "structured": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/api.structuredWeekResponse"
-                        }
-                    ],
-                    "x-nullable": true
+                    "x-nullable": true,
+                    "$ref": "#/definitions/api.structuredWeekResponse"
                 },
                 "total_duration_fmt": {
                     "type": "string"
@@ -14839,20 +15140,6 @@
                     "type": "string"
                 }
             }
-        }
-    },
-    "securityDefinitions": {
-        "BearerAuth": {
-            "description": "\"Bearer \u003cJWT\u003e\" for end-user callers (RS256).",
-            "type": "apiKey",
-            "name": "Authorization",
-            "in": "header"
-        },
-        "InternalToken": {
-            "description": "Shared secret for server-to-server callers.",
-            "type": "apiKey",
-            "name": "X-Internal-Token",
-            "in": "header"
         }
     }
 }
