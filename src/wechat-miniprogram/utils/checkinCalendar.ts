@@ -1,6 +1,6 @@
 // 签到月历布局 + 本轮奖励常量（纯函数，node 直接跑 checkinCalendar.check.mts）。
 //
-// 布局规则 = devops#851 resolution 原型变体 A：周日起始、前后月补位灰格、
+// 布局规则 = devops#851 resolution 原型变体 A：周一起始（中国人习惯）、前后月补位灰格、
 // 已签格带 +N 快照；「本月已签 N 天」与周历布局都在客户端算（#885，
 // 数据源 GET .../status 的 month.checked 由后端保证只含当前自然月）。
 // 日期一律上海 YYYY-MM-DD 字符串运算（时区纪律 HARD，复用 utils/date）。
@@ -51,8 +51,8 @@ export function buildMonthBoard(todayYmd: string, checkedPoints: Record<string, 
 
   const cells: MonthCell[] = [];
 
-  // 前月补位：本月 1 号是周几就补前月最后几天（周日起始）。
-  const lead = shanghaiDowOfYmd(`${todayYmd.slice(0, 7)}-01`);
+  // 前月补位：本月 1 号离周一几天就补前月最后几天（周一起始，dow 0=周日 → (dow+6)%7 = 周一0…周日6）。
+  const lead = (shanghaiDowOfYmd(`${todayYmd.slice(0, 7)}-01`) + 6) % 7;
   const prevMonth = month === 1 ? 12 : month - 1;
   const prevLast = daysInMonth(month === 1 ? year - 1 : year, prevMonth);
   for (let i = lead - 1; i >= 0; i--) {
