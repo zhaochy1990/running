@@ -139,6 +139,11 @@ type Config struct {
 	// address-book surfaces (devops#884). Leave zero to run without them.
 	PointsStore  PointsStore
 	AddressStore AddressStore
+	// PointsAuth resolves the admin balances surface's user names and phone
+	// matches through the auth service (devops#914; satisfied by
+	// *authsvc.Client). Nil degrades list names to raw ids and answers phone
+	// search with 503 auth_unavailable.
+	PointsAuth authUserLookup
 	// WxPayStore backs the shipping-fee payment surface (devops#904): the pay
 	// endpoint's order reads and the notify callback's paid transition.
 	// Leave zero to run without the payment surface.
@@ -441,7 +446,7 @@ func NewService(cfg Config) *Service {
 		customRaces:             newCustomRaceRoutes(cfg.CustomRaceStore, cfg.RacePlanStore, log),
 		roadmap:                 newRoadmapRoutes(cfg.RoadmapStore, log),
 		feedback:                newFeedbackRoutes(cfg.FeedbackStore, cfg.FeedbackImages, cfg.RoadmapStore, log),
-		points:                  newPointsRoutes(cfg.PointsStore, cfg.FeedbackImages, cfg.WxPay, log),
+		points:                  newPointsRoutes(cfg.PointsStore, cfg.FeedbackImages, cfg.WxPay, cfg.PointsAuth, log),
 		wxpay:                   newWxPayRoutes(cfg.WxPayStore, cfg.WxPay, log),
 		addresses:               newAddressRoutes(cfg.AddressStore, log),
 		raceStrategy:            newRaceStrategyRoutes(cfg.RaceStrategyStore, log),

@@ -41,6 +41,7 @@
               <view class="trow__label">{{item.label}}</view>
               <view class="trow__time">{{item.time}}</view>
               <view wx:if="{{item.ref}}" class="trow__ref">{{item.ref}}</view>
+              <view wx:if="{{item.remark}}" class="trow__ref">{{item.remark}}</view>
             </view>
             <view class="trow__delta {{item.positive ? 'trow__delta--plus' : 'trow__delta--minus'}}">{{item.delta}}</view>
           </view>

@@ -196,15 +196,17 @@ jobs:
       # (devops#884): the API E2E drives the HTTP seam, the storage tests
       # drive the transaction with concurrency. TestWxpay*/TestE2E_Wxpay* add
       # the devops#904 shipping-fee state machine (fee gate, notify
-      # idempotency, timeout-sweep cancel + refund). -p 1 serializes the two
-      # packages: both automigrate the same points/addresses schema and a
-      # fresh database cannot take two concurrent CREATE TABLE runs.
+      # idempotency, timeout-sweep cancel + refund). TestAdminPointBalances*/
+      # TestAdminPointAdjust* add the devops#914 admin balances surface
+      # (keyset sorts, provider map, unguarded adjustment). -p 1 serializes
+      # the two packages: both automigrate the same points/addresses schema
+      # and a fresh database cannot take two concurrent CREATE TABLE runs.
       - name: Points-shop + address book tests (MySQL)
         env:
           STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
         run: >-
           go test -p 1 ./internal/api/... ./internal/storage/...
-          -run 'TestE2E_PointsShop|TestPointRedemption|TestPointProduct|TestListUserRedemptions|TestUserAddress|TestAddress_|TestWxpay|TestE2E_Wxpay'
+          -run 'TestE2E_PointsShop|TestPointRedemption|TestPointProduct|TestListUserRedemptions|TestUserAddress|TestAddress_|TestWxpay|TestE2E_Wxpay|TestAdminPointBalances|TestAdminPointAdjust'
           -count=1 -v
       - name: Account-erasure storage tests (MySQL)
         env:

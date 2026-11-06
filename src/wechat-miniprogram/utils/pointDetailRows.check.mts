@@ -1,5 +1,6 @@
 // pointDetailRows.ts 自检：`node --import ./utils/ts-resolve-hooks.mjs utils/pointDetailRows.check.mts`。
-// 覆盖类型文案映射（expire/adjust 留位 + 未知兜底）、带符号分值与颜色位、redeem 订单号副行、
+// 覆盖类型文案映射（adjust 按方向分流 + expire 留位 + 未知兜底）、带符号分值与颜色位、
+// redeem 订单号副行、调分原因副行（devops#914）、
 // UTC → 上海墙钟时间（#883 created_at 为 UTC RFC3339）。
 import { toPointDetailRows } from './pointDetailRows.ts';
 import type { PointTransaction } from '../services/points.ts';
@@ -24,7 +25,8 @@ const tx = (over: Partial<PointTransaction>): PointTransaction => ({
 eq(toPointDetailRows([tx({})])[0].label, '签到所得', 'earn_checkin label');
 eq(toPointDetailRows([tx({ type: 'redeem' })])[0].label, '兑换扣除', 'redeem label');
 eq(toPointDetailRows([tx({ type: 'expire' })])[0].label, '过期扣除', 'expire reserved slot');
-eq(toPointDetailRows([tx({ type: 'adjust' })])[0].label, '积分调整', 'adjust reserved slot');
+eq(toPointDetailRows([tx({ type: 'adjust', amount: 5 })])[0].label, '系统增加', 'adjust positive label');
+eq(toPointDetailRows([tx({ type: 'adjust', amount: -5 })])[0].label, '系统扣除', 'adjust negative label');
 eq(toPointDetailRows([tx({ type: 'future_thing' })])[0].label, '积分变动', 'unknown type falls back');
 
 // ── 带符号分值 + 颜色位（amount 服务端已定号）──
@@ -42,7 +44,9 @@ eq(toPointDetailRows([tx({ type: 'redeem', ref: '' })])[0].ref, '', 'empty ref n
 
 // ── UTC → 上海墙钟：UTC 16:02 → 上海次日 00:02（跨日）──
 eq(toPointDetailRows([tx({})])[0].time, '11-06 00:02', 'utc → shanghai wall clock');
-// remark 可空不渲染：视图模型不含 remark，有值也不影响行
-eq(toPointDetailRows([tx({ remark: '运营调整' })]).length, 1, 'remark ignored in view model');
+// ── 调分原因副行（devops#914）：有值进视图模型、可空为空串 ──
+eq(toPointDetailRows([tx({ remark: '违规扣除' })])[0].remark, '违规扣除', 'adjust reason subrow');
+eq(toPointDetailRows([tx({})])[0].remark, '', 'null remark renders nothing');
+eq(toPointDetailRows([tx({ type: 'redeem', remark: '赠言' })])[0].remark, '赠言', 'remark rides any type');
 
 console.log('pointDetailRows.check: all assertions passed');

@@ -15,6 +15,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
+	"github.com/zhaochy1990/stride/internal/authsvc"
 	"github.com/zhaochy1990/stride/internal/storage"
 )
 
@@ -42,6 +43,12 @@ type fakePointsStore struct {
 	adminPageErr   error
 	shipResult     *storage.PointRedemption
 	shipErr        error
+	ledgerPage     *storage.PointPage
+	ledgerErr      error
+	balancesPage   *storage.AdminPointBalancePage
+	balancesErr    error
+	adjustResult   *storage.PointAdjustmentResult
+	adjustErr      error
 
 	// last-call captures
 	uid, cursor, adminStatus, shipID, shipTracking string
@@ -50,6 +57,10 @@ type fakePointsStore struct {
 	req                                            storage.RedemptionRequest
 	patch                                          storage.ProductPatch
 	skuPatchBody                                   storage.SkuPatch
+	balancesSort, balancesUser                     string
+	balancesPhoneIDs                               []string
+	adjustUID, adjustReason                        string
+	adjustAmount                                   int
 }
 
 func (f *fakePointsStore) ListActiveProducts(_ context.Context, userID string) ([]storage.PointProductListing, error) {
@@ -135,6 +146,56 @@ func (f *fakePointsStore) AdminDeleteProductSku(_ context.Context, productID, sk
 	return nil
 }
 
+func (f *fakePointsStore) ListPointTransactions(_ context.Context, userID, cursor string, limit int) (*storage.PointPage, error) {
+	f.uid, f.cursor, f.limit = userID, cursor, limit
+	if f.ledgerErr != nil {
+		return nil, f.ledgerErr
+	}
+	return f.ledgerPage, nil
+}
+
+func (f *fakePointsStore) AdminListPointBalances(_ context.Context, sort, cursor string, limit int, userID string, phoneIDs []string) (*storage.AdminPointBalancePage, error) {
+	f.balancesSort, f.cursor, f.limit = sort, cursor, limit
+	f.balancesUser, f.balancesPhoneIDs = userID, phoneIDs
+	if f.balancesErr != nil {
+		return nil, f.balancesErr
+	}
+	return f.balancesPage, nil
+}
+
+func (f *fakePointsStore) AdminAdjustPointBalance(_ context.Context, userID string, amount int, reason string, _ time.Time) (*storage.PointAdjustmentResult, error) {
+	f.adjustUID, f.adjustAmount, f.adjustReason = userID, amount, reason
+	if f.adjustErr != nil {
+		return nil, f.adjustErr
+	}
+	return f.adjustResult, nil
+}
+
+// fakeAuthLookup is the auth-service double for the balances surface.
+type fakeAuthLookup struct {
+	users     map[string]*authsvc.AdminUser
+	search    []authsvc.AdminUser
+	searchErr error
+
+	gotBearer, gotSearch string
+}
+
+func (f *fakeAuthLookup) AdminGetUser(_ context.Context, adminBearer, userID string) (*authsvc.AdminUser, error) {
+	f.gotBearer = adminBearer
+	if u, ok := f.users[userID]; ok {
+		return u, nil
+	}
+	return nil, &authsvc.ResponseError{StatusCode: http.StatusNotFound, Method: http.MethodGet, Path: "/admin/users/" + userID}
+}
+
+func (f *fakeAuthLookup) AdminListUsers(_ context.Context, adminBearer, search string) ([]authsvc.AdminUser, error) {
+	f.gotBearer, f.gotSearch = adminBearer, search
+	if f.searchErr != nil {
+		return nil, f.searchErr
+	}
+	return f.search, nil
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Harness
 // ─────────────────────────────────────────────────────────────────────────────
@@ -147,6 +208,10 @@ type pointsHarness struct {
 }
 
 func newPointsHarness(t *testing.T, store PointsStore) *pointsHarness {
+	return newPointsHarnessWithAuth(t, store, nil)
+}
+
+func newPointsHarnessWithAuth(t *testing.T, store PointsStore, auth authUserLookup) *pointsHarness {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -161,6 +226,7 @@ func newPointsHarness(t *testing.T, store PointsStore) *pointsHarness {
 		Auth:           NewAuthenticator(testToken, verifier),
 		PointsStore:    store,
 		FeedbackImages: images,
+		PointsAuth:     auth,
 	})
 	return &pointsHarness{svc: svc, store: store.(*fakePointsStore), images: images, key: key}
 }
