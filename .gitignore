@@ -5,6 +5,9 @@ __pycache__/
 # Generated BP artifacts (regenerate via spec/_build_*.py)
 spec/*.pdf
 spec/*.pptx
+spec/StrideWise_BP.md
+spec/roadshow_*.md
+spec/huami_partner_email.md
 spec/STRIDE_COACH_PRODUCT_VISION.html
 *.egg-info/
 dist/
