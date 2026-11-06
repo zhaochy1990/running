@@ -32,7 +32,7 @@
         <view wx:for="{{orders}}" wx:key="id" class="ocard">
           <view class="otop">
             <view class="otop__no">订单号 R-{{item.id}} · {{item.date}}</view>
-            <view class="ost {{item.shipped ? 'ost--shipped' : 'ost--pending'}}">{{item.shipped ? '已发货' : '待发货'}}</view>
+            <view class="ost ost--{{item.chipCls}}">{{item.chipLabel}}</view>
           </view>
           <view class="obody">
             <view class="obody__img"></view>
@@ -42,6 +42,23 @@
             </view>
             <view class="obody__cost">-{{item.cost}}</view>
           </view>
+          <!-- 运费行（devops#905）：兑换时刻快照，免运绿「包邮」/ 应收「¥N」 -->
+          <view class="ofee">
+            <text>运费</text>
+            <text class="ofee__v {{item.feeFree ? 'ofee__v--free' : ''}}">{{item.feeText}}</text>
+          </view>
+          <!-- 待支付：去支付（重新 prepay 唤起收银台；支付中置灰防重复点） -->
+          <view wx:if="{{item.payPending}}" class="oact">
+            <view
+              class="opay {{payingId === item.id ? 'opay--busy' : ''}}"
+              aria-role="button"
+              hover-class="none"
+              data-oid="{{item.id}}"
+              catchtap="onPayTap"
+            >{{payingId === item.id ? '支付中…' : '去支付'}}</view>
+          </view>
+          <!-- 已取消：超时关单说明（积分原路退回，明细页可见 adjust +N 流水） -->
+          <view wx:if="{{item.cancelled}}" class="ohint">超时未支付已自动取消，积分已退回</view>
           <!-- 已发货追加运单号行 + 复制 -->
           <view wx:if="{{item.shipped}}" class="otrack" data-no="{{item.trackingNo}}" bindtap="onCopyTracking">
             <text>运单号　</text><text class="otrack__no">{{item.trackingNo}}</text><text class="otrack__copy">　·　复制</text>

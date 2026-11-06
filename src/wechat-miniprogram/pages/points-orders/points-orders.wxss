@@ -96,12 +96,19 @@
   color: var(--color-text-secondary);
 }
 
-/* 两态 chip：#852 定稿字面量（橙待发货 #f5a623 / 绿已发货 #34b47a） */
+/* 四态 chip：#852 定稿字面量（橙黄待发货 #f5a623 / 绿已发货 #34b47a）+
+   devops#905 新增两态（橙待支付 / 灰已取消——灰走主题令牌）。 */
 .ost {
   font-size: 22rpx;
   font-weight: 600;
   padding: 6rpx 16rpx;
   border-radius: 12rpx;
+}
+
+/* 待支付：橙（比待发货橙黄更深一档，视觉区分两种「等动作」态） */
+.ost--unpaid {
+  background: #ffece3;
+  color: #f2662e;
 }
 
 .ost--pending {
@@ -112,6 +119,12 @@
 .ost--shipped {
   background: #e6f4ee;
   color: #34b47a;
+}
+
+/* 已取消：灰（终态、弱存在感） */
+.ost--cancelled {
+  background: var(--color-bg-dim);
+  color: var(--color-text-muted);
 }
 
 .obody {
@@ -170,6 +183,60 @@
 
 .otrack__copy {
   color: var(--color-accent-deep);
+}
+
+/* ---------- 运费行 / 去支付 / 取消说明（devops#905） ---------- */
+
+/* 运费行：兑换时刻快照，免运绿「包邮」/ 应收「¥N」 */
+.ofee {
+  margin-top: 20rpx;
+  font-size: 24rpx;
+  color: var(--color-text-secondary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ofee__v {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.ofee__v--free {
+  color: var(--color-success);
+}
+
+/* 待支付卡底部动作行 + 去支付钮：view 自绘（原生 button 三坑：内置宽/白底/
+   ::after 描边——同商城页 buy 钮口径），无边框圆角胶囊。 */
+.oact {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 20rpx;
+}
+
+.opay {
+  min-width: 160rpx;
+  box-sizing: border-box;
+  padding: 10rpx 32rpx;
+  border-radius: 999rpx;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 24rpx;
+  font-weight: 600;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.opay--busy {
+  background: #e7e7ec;
+  color: var(--color-text-secondary);
+}
+
+/* 已取消卡说明：超时关单 + 积分原路退回（明细页可见 adjust +N 流水） */
+.ohint {
+  margin-top: 20rpx;
+  font-size: 24rpx;
+  color: var(--color-text-muted);
 }
 
 /* ---------- 分页脚注 ---------- */

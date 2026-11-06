@@ -2,6 +2,8 @@
 // prototypes/852-redeem-spike.html 变体 A 横排大卡）。
 // 数据来自 #884 契约：products / redemptions / addresses + #883 check-ins/status（余额）。
 // 商品四态：正常粉「兑换」/ 售罄（蒙层+灰钮）/ 达限（灰钮）/ 积分不足走确认抽屉不足态。
+// 运费（devops#905）：抽屉按选中地址实时算运费（镜像服务端 shippingFeeFor 口径），
+// 带运费订单确认后直接拉起微信支付（取消=静默，成功进订单页）。
 import { userStore } from '../../store/index';
 import { openLogin } from '../../utils/authGate';
 import { getCheckInStatus } from '../../services/checkin';
@@ -11,9 +13,13 @@ import {
   listAddresses,
   listPointProducts,
   newIdempotencyKey,
+  payErrorCopy,
+  payShippingFee,
   pointsErrorCopy,
+  waitOrderSettled,
 } from '../../services/points';
 import type { PointProduct, UserAddress } from '../../services/points';
+import { formatFen, shippingFeeFen } from '../../utils/shipping';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 /** 商品卡视图模型：服务端字段 + 客户端推导的置灰态。 */
@@ -28,6 +34,9 @@ interface MallProduct {
   redeemed: number;
   soldOut: boolean;
   limitHit: boolean;
+  /** 运费策略 + 运费（分）：抽屉按地址实时换算（devops#905）。 */
+  policy: string;
+  feeFen: number;
 }
 
 /** 确认抽屉里的地址行。 */
@@ -63,6 +72,11 @@ interface PointsMallPageData {
   sheetInsufficient: boolean;
   sheetNoAddress: boolean;
   sheetSubmitting: boolean;
+  /** 运费（devops#905）：sheetFeeText = 「包邮」/「¥N」/未选地址「—」；
+   * 合计 = 「N 积分 + M」。 */
+  sheetFeeText: string;
+  sheetFeeFree: boolean;
+  sheetTotalText: string;
   /** 兑换成功居中弹卡。 */
   okVisible: boolean;
   okName: string;
@@ -89,6 +103,8 @@ interface PointsMallPageHandlers {
   onSheetManageAddr(): void;
   onSheetAddAddr(): void;
   onSheetConfirm(): void;
+  /** 带运费订单的支付流：prepay → wx.requestPayment → 结局分流（订单页/静默）。 */
+  startPayment(orderId: string): Promise<void>;
   onOkOrders(): void;
   onOkContinue(): void;
   onRulesTap(): void;
@@ -126,6 +142,9 @@ function toMallProduct(p: PointProduct): MallProduct {
     redeemed: p.redeemed_count,
     soldOut: p.stock <= 0,
     limitHit: p.per_user_limit > 0 && p.redeemed_count >= p.per_user_limit,
+    // 旧后端无运费字段时 undefined → shippingFeeFen 按免运处理。
+    policy: p.shipping_policy,
+    feeFen: p.shipping_fee || 0,
   };
 }
 
@@ -160,6 +179,9 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
     sheetInsufficient: false,
     sheetNoAddress: false,
     sheetSubmitting: false,
+    sheetFeeText: '—',
+    sheetFeeFree: false,
+    sheetTotalText: '',
     okVisible: false,
     okName: '',
     okCost: 0,
@@ -272,7 +294,7 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
     this.refreshSheet();
   },
 
-  /** 以最新地址簿/余额重算抽屉（默认地址预选、选中粉描边、剩余/不足三态）。 */
+  /** 以最新地址簿/余额重算抽屉（默认地址预选、选中粉描边、剩余/不足三态、运费/合计）。 */
   refreshSheet() {
     const product = this._sheetProduct;
     if (!product || !this.data.sheetVisible) return;
@@ -287,6 +309,12 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
     const total = product.price * this.data.sheetQty;
     const after = this.data.balance - total;
     const insufficient = after < 0;
+    // 运费只与选中地址的省份有关（每单固定，不随数量翻倍，同服务端口径）；
+    // 未选地址显示 —，选中后切换地址即时刷新（devops#905 AC）。
+    const selected = addresses.find((a) => a.id === selectedId);
+    const feeFen = selected ? shippingFeeFen(product.policy, product.feeFen, selected.province) : 0;
+    const free = !selected || feeFen <= 0;
+    const feeText = selected ? (feeFen > 0 ? `¥${formatFen(feeFen)}` : '包邮') : '—';
     this.setData({
       sheetAddresses,
       sheetSelectedId: selectedId,
@@ -295,6 +323,9 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
       sheetAfter: insufficient ? 0 : after,
       sheetLack: insufficient ? -after : 0,
       sheetInsufficient: insufficient,
+      sheetFeeText: feeText,
+      sheetFeeFree: free,
+      sheetTotalText: `${total} 积分 + ${feeText}`,
     });
   },
 
@@ -317,8 +348,10 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
     this.refreshSheet();
   },
 
+  // 切地址：运费随省份即时刷新（devops#905 AC）。
   onSheetSelectAddr(e: WechatMiniprogram.TouchEvent) {
     this.setData({ sheetSelectedId: Number(e.currentTarget.dataset.aid) });
+    this.refreshSheet();
   },
 
   // 管理地址 ›：带当前选中进单选模式，挑完带回继续兑换。
@@ -330,6 +363,7 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
         addressSelected: (payload: { id: number }) => {
           if (payload && payload.id) {
             this.setData({ sheetSelectedId: payload.id });
+            this.refreshSheet();
           }
         },
       },
@@ -351,6 +385,15 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
       const res = await createRedemption(product.id, this.data.sheetSelectedId, idemKey, this.data.sheetQty);
       // 幂等键已消费：重放/replay 也一样，下一次兑换必须换新 key。
       this._idemKey = newIdempotencyKey();
+      // 带运费订单（pending_payment）：关抽屉直接进支付流（devops#905），
+      // 免运订单维持原成功弹卡；旧后端无此状态，自然走原路径。
+      if (res.order.status === 'pending_payment') {
+        this.setData({ sheetVisible: false, sheetSubmitting: false, balance: res.balance });
+        this._sheetProduct = undefined;
+        void this.load(true);
+        await this.startPayment(res.order.id);
+        return;
+      }
       this.setData({
         sheetVisible: false,
         sheetSubmitting: false,
@@ -382,6 +425,29 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
       }
       // 网络错误保留幂等键，重试同一订单不会双扣。
     }
+  },
+
+  /**
+   * 带运费订单支付流（devops#905）：调用时抽屉已关、订单已建（pending_payment）。
+   * 结局分流：
+   * - paid：轮询等回调落账后进订单页（已支付态）；
+   * - cancel（用户取消）：静默返回不弹错，订单留待支付，可去订单页「去支付」重试；
+   * - 真实失败（prepay 业务码 / 收银台非取消错误）：toast 文案，订单同样留待支付。
+   */
+  async startPayment(orderId: string) {
+    let outcome: 'paid' | 'cancel';
+    try {
+      outcome = await payShippingFee(orderId);
+    } catch (err: unknown) {
+      wx.showToast({ title: payErrorCopy(err, '支付未完成，请稍后再试'), icon: 'none' });
+      return;
+    }
+    if (outcome === 'cancel') return; // 用户取消：静默返回
+    await waitOrderSettled(orderId);
+    wx.navigateTo({
+      url: `/pages/points-orders/points-orders?paid=${orderId}`,
+      fail: () => wx.switchTab({ url: '/pages/coach/coach' }),
+    });
   },
 
   onOkOrders() {
