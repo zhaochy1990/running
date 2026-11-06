@@ -427,6 +427,7 @@ func TestE2E_PointsShop_ConcurrentSameKey(t *testing.T) {
 
 	code, created := e.send(t, http.MethodPost, "/api/admin/points/products", e.adminToken(t), map[string]any{
 		"name": "E2E 并发品", "points_price": 5, "stock": 10,
+		"status": storage.PointProductStatusActive,
 	})
 	if code != http.StatusCreated {
 		t.Fatalf("admin create: %d: %v", code, created)
