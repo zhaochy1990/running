@@ -23,15 +23,21 @@ import (
 // ─────────────────────────────────────────────────────────────────────────────
 
 type fakePointsStore struct {
-	products       []storage.PointProductWithCount
+	products       []storage.PointProductListing
 	redeemResult   *storage.RedemptionResult
 	redeemErr      error
 	page           *storage.RedemptionPage
 	pageErr        error
-	adminProducts  []storage.PointProduct
+	adminProducts  []storage.PointProductListing
 	adminCreateRow *storage.PointProduct
 	patchResult    *storage.PointProduct
 	patchErr       error
+	skuCreate      *storage.PointProductSku
+	skuCreateErr   error
+	skuPatch       *storage.PointProductSku
+	skuPatchErr    error
+	skuDeleted     bool
+	skuDeleteErr   error
 	adminPage      *storage.AdminRedemptionPage
 	adminPageErr   error
 	shipResult     *storage.PointRedemption
@@ -40,11 +46,13 @@ type fakePointsStore struct {
 	// last-call captures
 	uid, cursor, adminStatus, shipID, shipTracking string
 	limit, lastPatchID                             int
+	lastSkuProductID, lastSkuID                    uint64
 	req                                            storage.RedemptionRequest
 	patch                                          storage.ProductPatch
+	skuPatchBody                                   storage.SkuPatch
 }
 
-func (f *fakePointsStore) ListActiveProducts(_ context.Context, userID string) ([]storage.PointProductWithCount, error) {
+func (f *fakePointsStore) ListActiveProducts(_ context.Context, userID string) ([]storage.PointProductListing, error) {
 	f.uid = userID
 	return f.products, nil
 }
@@ -65,7 +73,7 @@ func (f *fakePointsStore) ListUserRedemptions(_ context.Context, userID, cursor 
 	return f.page, nil
 }
 
-func (f *fakePointsStore) AdminListProducts(context.Context) ([]storage.PointProduct, error) {
+func (f *fakePointsStore) AdminListProducts(context.Context) ([]storage.PointProductListing, error) {
 	return f.adminProducts, nil
 }
 
@@ -98,6 +106,33 @@ func (f *fakePointsStore) AdminShipRedemption(_ context.Context, id, trackingNo 
 		return nil, f.shipErr
 	}
 	return f.shipResult, nil
+}
+
+func (f *fakePointsStore) AdminCreateProductSku(_ context.Context, productID uint64, row *storage.PointProductSku) error {
+	f.lastSkuProductID = productID
+	if f.skuCreateErr != nil {
+		return f.skuCreateErr
+	}
+	row.ID, row.ProductID, row.CreatedAt, row.UpdatedAt = 42, productID, time.Now().UTC(), time.Now().UTC()
+	f.skuCreate = row
+	return nil
+}
+
+func (f *fakePointsStore) AdminPatchProductSku(_ context.Context, productID, skuID uint64, patch storage.SkuPatch) (*storage.PointProductSku, error) {
+	f.lastSkuProductID, f.lastSkuID, f.skuPatchBody = productID, skuID, patch
+	if f.skuPatchErr != nil {
+		return nil, f.skuPatchErr
+	}
+	return f.skuPatch, nil
+}
+
+func (f *fakePointsStore) AdminDeleteProductSku(_ context.Context, productID, skuID uint64) error {
+	f.lastSkuProductID, f.lastSkuID = productID, skuID
+	if f.skuDeleteErr != nil {
+		return f.skuDeleteErr
+	}
+	f.skuDeleted = true
+	return nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -207,6 +242,9 @@ func TestPoints_TierGuards(t *testing.T) {
 		{http.MethodGet, "/api/admin/points/products"},
 		{http.MethodPost, "/api/admin/points/products"},
 		{http.MethodPatch, "/api/admin/points/products/1"},
+		{http.MethodPost, "/api/admin/points/products/1/skus"},
+		{http.MethodPatch, "/api/admin/points/products/1/skus/2"},
+		{http.MethodDelete, "/api/admin/points/products/1/skus/2"},
 		{http.MethodGet, "/api/admin/points/redemptions"},
 		{http.MethodPatch, "/api/admin/points/redemptions/x/ship"},
 	} {
@@ -225,7 +263,7 @@ func TestPoints_TierGuards(t *testing.T) {
 
 func TestPoints_ListProducts(t *testing.T) {
 	desc := "desc"
-	store := &fakePointsStore{products: []storage.PointProductWithCount{
+	store := &fakePointsStore{products: []storage.PointProductListing{
 		{Product: storage.PointProduct{ID: 3, Name: "毛巾", Description: &desc, PointsPrice: 50, Stock: 4, PerUserLimit: 2}, RedeemedCount: 1},
 	}}
 	h := newPointsHarness(t, store)
@@ -344,7 +382,7 @@ func TestPoints_ListRedemptions_Pagination(t *testing.T) {
 
 func TestPoints_AdminProducts(t *testing.T) {
 	store := &fakePointsStore{
-		adminProducts: []storage.PointProduct{{ID: 1, Name: "p", PointsPrice: 1, Status: storage.PointProductStatusActive}},
+		adminProducts: []storage.PointProductListing{{Product: storage.PointProduct{ID: 1, Name: "p", PointsPrice: 1, Status: storage.PointProductStatusActive}}},
 		patchResult:   &storage.PointProduct{ID: 1, Name: "p2", PointsPrice: 2, Status: storage.PointProductStatusInactive},
 	}
 	h := newPointsHarness(t, store)
@@ -540,5 +578,197 @@ func TestPoints_AdminRedemptionsAndShip(t *testing.T) {
 	decodePointsJSON(t, w, &env)
 	if env.Error != "invalid_status" {
 		t.Errorf("envelope = %q, want invalid_status", env.Error)
+	}
+}
+
+// TestPoints_AdminSkuCRUD walks the SKU-row surface (devops#909): create /
+// patch / delete round-trips, the 404 mapping for foreign or missing rows,
+// and the handler-layer spec_mode enum check.
+func TestPoints_AdminSkuCRUD(t *testing.T) {
+	store := &fakePointsStore{
+		skuPatch: &storage.PointProductSku{ID: 42, ProductID: 1, SpecValue: "XL", Stock: 8},
+	}
+	h := newPointsHarness(t, store)
+	admin := h.adminToken(t)
+
+	// Create: 201 with the full projection, product id taken from the path.
+	w := h.do(t, http.MethodPost, "/api/admin/points/products/1/skus",
+		map[string]any{"spec_value": "XL", "stock": 8, "sort_order": 2}, admin)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create code = %d: %s", w.Code, w.Body.String())
+	}
+	var created adminSkuResponse
+	decodePointsJSON(t, w, &created)
+	if created.ID != 42 || created.ProductID != 1 || created.SpecValue != "XL" || created.Stock != 8 {
+		t.Fatalf("created = %+v", created)
+	}
+	if store.lastSkuProductID != 1 || store.skuCreate.SpecValue != "XL" || store.skuCreate.SortOrder != 2 {
+		t.Fatalf("store create call = %+v", store.skuCreate)
+	}
+
+	// Patch: absolute stock rides SkuPatch verbatim.
+	w = h.do(t, http.MethodPatch, "/api/admin/points/products/1/skus/42",
+		map[string]any{"stock": 8}, admin)
+	if w.Code != http.StatusOK {
+		t.Fatalf("patch code = %d: %s", w.Code, w.Body.String())
+	}
+	if store.lastSkuProductID != 1 || store.lastSkuID != 42 ||
+		store.skuPatchBody.Stock == nil || *store.skuPatchBody.Stock != 8 {
+		t.Fatalf("store patch call = id %d/%d patch %+v", store.lastSkuProductID, store.lastSkuID, store.skuPatchBody)
+	}
+
+	// Delete: 204, scoped to (product, sku).
+	w = h.do(t, http.MethodDelete, "/api/admin/points/products/1/skus/42", nil, admin)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("delete code = %d", w.Code)
+	}
+	if store.lastSkuProductID != 1 || store.lastSkuID != 42 || !store.skuDeleted {
+		t.Fatalf("store delete call = %d/%d deleted=%v", store.lastSkuProductID, store.lastSkuID, store.skuDeleted)
+	}
+
+	// Validation: empty spec_value → 400.
+	w = h.do(t, http.MethodPost, "/api/admin/points/products/1/skus",
+		map[string]any{"stock": 1}, admin)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("empty spec_value: %d, want 400", w.Code)
+	}
+
+	// Missing product / sku → 404 with the right envelope.
+	h2 := newPointsHarness(t, &fakePointsStore{skuCreateErr: storage.ErrPointProductNotFound})
+	w = h2.do(t, http.MethodPost, "/api/admin/points/products/99/skus",
+		map[string]any{"spec_value": "M"}, h2.adminToken(t))
+	if w.Code != http.StatusNotFound {
+		t.Errorf("missing product: %d, want 404", w.Code)
+	}
+	h3 := newPointsHarness(t, &fakePointsStore{skuPatchErr: storage.ErrPointProductSkuNotFound})
+	w = h3.do(t, http.MethodPatch, "/api/admin/points/products/1/skus/42",
+		map[string]any{"stock": 1}, h3.adminToken(t))
+	if w.Code != http.StatusNotFound {
+		t.Errorf("missing sku: %d, want 404", w.Code)
+	}
+	var env struct {
+		Error string `json:"error"`
+	}
+	decodePointsJSON(t, w, &env)
+	if env.Error != "sku_not_found" {
+		t.Errorf("envelope = %q, want sku_not_found", env.Error)
+	}
+}
+
+// TestPoints_SpecModeEnum checks the third closed enum (devops#909): unknown
+// spec_mode tokens answer 400 invalid_spec_mode on create and PATCH, the
+// defaults fill single.
+func TestPoints_SpecModeEnum(t *testing.T) {
+	store := &fakePointsStore{
+		patchResult: &storage.PointProduct{ID: 1},
+	}
+	h := newPointsHarness(t, store)
+	admin := h.adminToken(t)
+
+	for _, mode := range []string{storage.ProductSpecModeSingle, storage.ProductSpecModeBySku} {
+		w := h.do(t, http.MethodPost, "/api/admin/points/products",
+			map[string]any{"name": "新品", "points_price": 5, "spec_mode": mode}, admin)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("create spec_mode %q: %d", mode, w.Code)
+		}
+		if store.adminCreateRow.SpecMode != mode {
+			t.Fatalf("create spec_mode %q stored as %q", mode, store.adminCreateRow.SpecMode)
+		}
+	}
+	// Absent spec_mode defaults to single (the stock behaviour).
+	w := h.do(t, http.MethodPost, "/api/admin/points/products",
+		map[string]any{"name": "新品", "points_price": 5}, admin)
+	if w.Code != http.StatusCreated || store.adminCreateRow.SpecMode != storage.ProductSpecModeSingle {
+		t.Fatalf("default spec_mode = %q, want single", store.adminCreateRow.SpecMode)
+	}
+	// PATCH passes the enum through.
+	w = h.do(t, http.MethodPatch, "/api/admin/points/products/1",
+		map[string]any{"spec_mode": "by_sku"}, admin)
+	if w.Code != http.StatusOK || store.patch.SpecMode == nil || *store.patch.SpecMode != storage.ProductSpecModeBySku {
+		t.Fatalf("patch spec_mode = %+v", store.patch.SpecMode)
+	}
+	// Unknown tokens → 400 invalid_spec_mode.
+	for _, tc := range []struct {
+		method, path string
+	}{
+		{http.MethodPost, "/api/admin/points/products"},
+		{http.MethodPatch, "/api/admin/points/products/1"},
+	} {
+		w := h.do(t, tc.method, tc.path,
+			map[string]any{"name": "x", "points_price": 5, "spec_mode": "bogus"}, admin)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("%s bogus spec_mode: %d, want 400", tc.method, w.Code)
+			continue
+		}
+		var env struct {
+			Error string `json:"error"`
+		}
+		decodePointsJSON(t, w, &env)
+		if env.Error != "invalid_spec_mode" {
+			t.Errorf("envelope = %q, want invalid_spec_mode", env.Error)
+		}
+	}
+}
+
+// TestPoints_ListProductsSkuWire checks the by_sku card wire shape
+// (devops#909): skus rendered for by_sku (stock = the SKU sum), absent for
+// single, sku_label only on orders that carry it.
+func TestPoints_ListProductsSkuWire(t *testing.T) {
+	store := &fakePointsStore{products: []storage.PointProductListing{
+		{Product: storage.PointProduct{
+			ID: 5, Name: "背心", PointsPrice: 50, Stock: 99, SpecMode: storage.ProductSpecModeBySku,
+		}, Skus: []storage.PointProductSku{
+			{ID: 11, ProductID: 5, SpecValue: "S", Stock: 0},
+			{ID: 12, ProductID: 5, SpecValue: "M", Stock: 4},
+		}},
+		{Product: storage.PointProduct{
+			ID: 6, Name: "毛巾", PointsPrice: 20, Stock: 7, SpecMode: storage.ProductSpecModeSingle,
+		}},
+	}}
+	h := newPointsHarness(t, store)
+	w := h.do(t, http.MethodGet, "/api/users/me/points/products", nil, h.userToken(t, testSub))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d: %s", w.Code, w.Body.String())
+	}
+	raw := w.Body.String()
+	// by_sku card: stock is the SKU sum, the skus array is present.
+	if !strings.Contains(raw, `"spec_mode":"by_sku"`) {
+		t.Fatal("by_sku card missing spec_mode")
+	}
+	var got productsResponse
+	decodePointsJSON(t, w, &got)
+	bySku, single := got.Products[0], got.Products[1]
+	if bySku.Stock != 4 || len(bySku.Skus) != 2 || bySku.Skus[0].ID != 11 || bySku.Skus[0].Stock != 0 {
+		t.Fatalf("by_sku card = %+v (want stock 4 = sku sum)", bySku)
+	}
+	// single card: legacy wire shape — no skus field, stock unchanged.
+	if single.SpecMode != storage.ProductSpecModeSingle || single.Stock != 7 {
+		t.Fatalf("single card = %+v", single)
+	}
+	if strings.Count(raw, `"skus":`) != 1 {
+		t.Fatal("exactly the by_sku card must carry a skus field")
+	}
+
+	// Order wire: sku_label present when the order carries it, null/absent
+	// otherwise.
+	label := "M"
+	store2 := &fakePointsStore{page: &storage.RedemptionPage{
+		Items: []*storage.PointRedemption{
+			{ID: "o-by-sku", SkuLabel: &label},
+			{ID: "o-legacy"},
+		},
+	}}
+	h2 := newPointsHarness(t, store2)
+	w = h2.do(t, http.MethodGet, "/api/users/me/points/redemptions", nil, h2.userToken(t, testSub))
+	if w.Code != http.StatusOK {
+		t.Fatalf("orders code = %d: %s", w.Code, w.Body.String())
+	}
+	var orders redemptionsResponse
+	decodePointsJSON(t, w, &orders)
+	if orders.Redemptions[0].SkuLabel == nil || *orders.Redemptions[0].SkuLabel != "M" {
+		t.Fatalf("by_sku order label = %+v", orders.Redemptions[0].SkuLabel)
+	}
+	if orders.Redemptions[1].SkuLabel != nil {
+		t.Fatal("legacy order must render sku_label null")
 	}
 }

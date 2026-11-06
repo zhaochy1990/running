@@ -1,17 +1,20 @@
 // points.go is the points-shop + redemption surface (devops#884; contract per
-// devops#850 resolution, upload per devops#896): the user-side product list,
-// redeem call and order list, plus the two admin blocks — product maintenance
-// (GET/POST/PATCH, deliberately no DELETE: products delist via
-// status=inactive; drafts start hidden) with its image upload, and order
-// shipping (list + terminal ship).
+// devops#850 resolution, upload per devops#896, SKU per devops#909): the
+// user-side product list, redeem call and order list, plus the two admin
+// blocks — product maintenance (GET/POST/PATCH, deliberately no DELETE:
+// products delist via status=inactive; drafts start hidden) with its image
+// upload and its SKU-row CRUD, and order shipping (list + terminal ship).
 //
 //	User:  GET   /api/users/me/points/products     (active only + own redeemed_count)
-//	       POST  /api/users/me/points/redemptions  {product_id, address_id, idempotency_key}
+//	       POST  /api/users/me/points/redemptions  {product_id, address_id, idempotency_key, sku_id?}
 //	       GET   /api/users/me/points/redemptions  (?limit&cursor)
 //	Admin: GET   /api/admin/points/products        (全量含 draft/inactive)
 //	       POST  /api/admin/points/products        (status 缺省 draft)
 //	       POST  /api/admin/points/product-images  (multipart, ≤10MB, image/*; bare engine)
 //	       PATCH /api/admin/points/products/:id    (改价/改库存=绝对值; no DELETE)
+//	       POST  /api/admin/points/products/:id/skus          (by_sku 行)
+//	       PATCH /api/admin/points/products/:id/skus/:sku_id  (改库存=绝对值)
+//	       DELETE /api/admin/points/products/:id/skus/:sku_id
 //	       GET   /api/admin/points/redemptions     (?status=&limit&cursor)
 //	       PATCH /api/admin/points/redemptions/:id/ship {tracking_no}
 package api
@@ -33,12 +36,15 @@ import (
 // PointsStore is the redemption persistence port (devops#884). Satisfied by
 // *storage.Store.
 type PointsStore interface {
-	ListActiveProducts(ctx context.Context, userID string) ([]storage.PointProductWithCount, error)
+	ListActiveProducts(ctx context.Context, userID string) ([]storage.PointProductListing, error)
 	CreateRedemption(ctx context.Context, userID string, req storage.RedemptionRequest) (*storage.RedemptionResult, error)
 	ListUserRedemptions(ctx context.Context, userID, cursor string, limit int) (*storage.RedemptionPage, error)
-	AdminListProducts(ctx context.Context) ([]storage.PointProduct, error)
+	AdminListProducts(ctx context.Context) ([]storage.PointProductListing, error)
 	AdminCreateProduct(ctx context.Context, row *storage.PointProduct) error
 	AdminPatchProduct(ctx context.Context, id uint64, patch storage.ProductPatch) (*storage.PointProduct, error)
+	AdminCreateProductSku(ctx context.Context, productID uint64, row *storage.PointProductSku) error
+	AdminPatchProductSku(ctx context.Context, productID, skuID uint64, patch storage.SkuPatch) (*storage.PointProductSku, error)
+	AdminDeleteProductSku(ctx context.Context, productID, skuID uint64) error
 	AdminListRedemptions(ctx context.Context, status, cursor string, limit int) (*storage.AdminRedemptionPage, error)
 	AdminShipRedemption(ctx context.Context, id, trackingNo string, now time.Time) (*storage.PointRedemption, error)
 }
@@ -85,6 +91,9 @@ func (p *pointsRoutes) registerAdmin(rg *gin.RouterGroup) {
 	rg.GET("/api/admin/points/products", p.adminListProducts)
 	rg.POST("/api/admin/points/products", p.adminCreateProduct)
 	rg.PATCH("/api/admin/points/products/:id", p.adminPatchProduct)
+	rg.POST("/api/admin/points/products/:id/skus", p.adminCreateProductSku)
+	rg.PATCH("/api/admin/points/products/:id/skus/:sku_id", p.adminPatchProductSku)
+	rg.DELETE("/api/admin/points/products/:id/skus/:sku_id", p.adminDeleteProductSku)
 	rg.GET("/api/admin/points/redemptions", p.adminListRedemptions)
 	rg.PATCH("/api/admin/points/redemptions/:id/ship", p.adminShipRedemption)
 }
@@ -107,19 +116,31 @@ func (p *pointsRoutes) registerUpload(r *gin.Engine, auth *Authenticator) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // productResponse is one shop card: the stored fields (shipping policy and
-// fee included since devops#904) plus the caller's own redeemed count (the UI
-// grays out limit-reached cards with it).
+// fee included since devops#904, spec mode + SKU rows since devops#909) plus
+// the caller's own redeemed count (the UI grays out limit-reached cards with
+// it). stock is display-only for by_sku products — the SKU sum, feeding the
+// card's sold-out hint; the redemption never reads it.
 type productResponse struct {
-	ID             uint64  `json:"id"`
-	Name           string  `json:"name"`
-	Description    *string `json:"description"`
-	ImageURL       *string `json:"image_url"`
-	PointsPrice    int     `json:"points_price"`
-	Stock          int     `json:"stock"`
-	PerUserLimit   int     `json:"per_user_limit"`
-	ShippingPolicy string  `json:"shipping_policy"`
-	ShippingFee    int     `json:"shipping_fee"`
-	RedeemedCount  int     `json:"redeemed_count"`
+	ID             uint64        `json:"id"`
+	Name           string        `json:"name"`
+	Description    *string       `json:"description"`
+	ImageURL       *string       `json:"image_url"`
+	PointsPrice    int           `json:"points_price"`
+	Stock          int           `json:"stock"`
+	PerUserLimit   int           `json:"per_user_limit"`
+	SpecMode       string        `json:"spec_mode"`
+	Skus           []skuResponse `json:"skus,omitempty"`
+	ShippingPolicy string        `json:"shipping_policy"`
+	ShippingFee    int           `json:"shipping_fee"`
+	RedeemedCount  int           `json:"redeemed_count"`
+}
+
+// skuResponse is one variant row of a by_sku card (devops#909): exactly the
+// three fields the size picker needs — pick a码, grey out zero stock.
+type skuResponse struct {
+	ID        uint64 `json:"id"`
+	SpecValue string `json:"spec_value"`
+	Stock     int    `json:"stock"`
 }
 
 type productsResponse struct {
@@ -131,13 +152,16 @@ type productsResponse struct {
 // (terminal) for fee-charged orders, pending_shipment → shipped for zero-fee
 // ones, with cancelled as the timeout-sweep terminal (devops#904). The
 // payment block (fee/policy snapshots, payment_state, paid_at) is the same
-// redeem-time commit as the points deduction.
+// redeem-time commit as the points deduction. sku_label (devops#909) is the
+// bought variant's snapshot; NULL (omitted) for single-mode and pre-#909
+// orders, which render「无尺码」.
 type redemptionResponse struct {
 	ID                     string  `json:"id"`
 	ProductID              uint64  `json:"product_id"`
 	ProductName            string  `json:"product_name"`
 	PointsCost             int     `json:"points_cost"`
 	Quantity               int     `json:"quantity"`
+	SkuLabel               *string `json:"sku_label"`
 	Status                 string  `json:"status"`
 	TrackingNo             *string `json:"tracking_no"`
 	ShippedAt              *string `json:"shipped_at"`
@@ -167,21 +191,25 @@ type redemptionCreateResponse struct {
 	Replayed bool               `json:"replayed"`
 }
 
-// adminProductResponse is the admin projection: every stored field.
+// adminProductResponse is the admin projection: every stored field, plus the
+// SKU rows on by_sku products (devops#909; stock there is the SKU sum,
+// display only).
 type adminProductResponse struct {
-	ID             uint64  `json:"id"`
-	Name           string  `json:"name"`
-	Description    *string `json:"description"`
-	ImageURL       *string `json:"image_url"`
-	PointsPrice    int     `json:"points_price"`
-	Stock          int     `json:"stock"`
-	PerUserLimit   int     `json:"per_user_limit"`
-	ShippingPolicy string  `json:"shipping_policy"`
-	ShippingFee    int     `json:"shipping_fee"`
-	Status         string  `json:"status"`
-	SortOrder      int     `json:"sort_order"`
-	CreatedAt      string  `json:"created_at"`
-	UpdatedAt      string  `json:"updated_at"`
+	ID             uint64        `json:"id"`
+	Name           string        `json:"name"`
+	Description    *string       `json:"description"`
+	ImageURL       *string       `json:"image_url"`
+	PointsPrice    int           `json:"points_price"`
+	Stock          int           `json:"stock"`
+	PerUserLimit   int           `json:"per_user_limit"`
+	SpecMode       string        `json:"spec_mode"`
+	Skus           []skuResponse `json:"skus,omitempty"`
+	ShippingPolicy string        `json:"shipping_policy"`
+	ShippingFee    int           `json:"shipping_fee"`
+	Status         string        `json:"status"`
+	SortOrder      int           `json:"sort_order"`
+	CreatedAt      string        `json:"created_at"`
+	UpdatedAt      string        `json:"updated_at"`
 }
 
 type adminProductsResponse struct {
@@ -215,7 +243,8 @@ func formatOptionalTime(t *time.Time) *string {
 func redemptionDTO(r *storage.PointRedemption) redemptionResponse {
 	return redemptionResponse{
 		ID: r.ID, ProductID: r.ProductID, ProductName: r.ProductName,
-		PointsCost: r.PointsCost, Quantity: r.Quantity, Status: r.Status,
+		PointsCost: r.PointsCost, Quantity: r.Quantity, SkuLabel: r.SkuLabel,
+		Status:     r.Status,
 		TrackingNo: r.TrackingNo, ShippedAt: formatOptionalTime(r.ShippedAt),
 		ShippingFeeSnapshot:    r.ShippingFeeSnapshot,
 		ShippingPolicySnapshot: r.ShippingPolicySnapshot,
@@ -228,14 +257,64 @@ func redemptionDTO(r *storage.PointRedemption) redemptionResponse {
 	}
 }
 
-func adminProductDTO(p *storage.PointProduct) adminProductResponse {
+// skuDTO is the admin SKU projection: the full stored row.
+type adminSkuResponse struct {
+	ID        uint64 `json:"id"`
+	ProductID uint64 `json:"product_id"`
+	SpecValue string `json:"spec_value"`
+	Stock     int    `json:"stock"`
+	SortOrder int    `json:"sort_order"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+func adminSkuDTO(s *storage.PointProductSku) adminSkuResponse {
+	return adminSkuResponse{
+		ID: s.ID, ProductID: s.ProductID, SpecValue: s.SpecValue,
+		Stock: s.Stock, SortOrder: s.SortOrder,
+		CreatedAt: s.CreatedAt.UTC().Format(timeFormat),
+		UpdatedAt: s.UpdatedAt.UTC().Format(timeFormat),
+	}
+}
+
+// skuResponses projects a listing's SKU rows onto the card shape. by_sku
+// products always carry an array (empty when the admin has not configured
+// any row yet); single products carry no field at all, keeping their
+// pre-#909 wire shape.
+func skuResponses(l *storage.PointProductListing) []skuResponse {
+	if l.Product.SpecMode != storage.ProductSpecModeBySku {
+		return nil
+	}
+	out := make([]skuResponse, 0, len(l.Skus))
+	for i := range l.Skus {
+		out = append(out, skuResponse{ID: l.Skus[i].ID, SpecValue: l.Skus[i].SpecValue, Stock: l.Skus[i].Stock})
+	}
+	return out
+}
+
+// displayStock is the product-level stock the lists show: the stored column
+// for single products, the SKU sum for by_sku ones (devops#909 — display
+// only, the redemption reads the SKU rows themselves).
+func displayStock(l *storage.PointProductListing) int {
+	if l.Product.SpecMode != storage.ProductSpecModeBySku {
+		return l.Product.Stock
+	}
+	total := 0
+	for i := range l.Skus {
+		total += l.Skus[i].Stock
+	}
+	return total
+}
+
+func adminProductDTO(p *storage.PointProductListing) adminProductResponse {
 	return adminProductResponse{
-		ID: p.ID, Name: p.Name, Description: p.Description, ImageURL: p.ImageURL,
-		PointsPrice: p.PointsPrice, Stock: p.Stock, PerUserLimit: p.PerUserLimit,
-		ShippingPolicy: p.ShippingPolicy, ShippingFee: p.ShippingFee,
-		Status: p.Status, SortOrder: p.SortOrder,
-		CreatedAt: p.CreatedAt.UTC().Format(timeFormat),
-		UpdatedAt: p.UpdatedAt.UTC().Format(timeFormat),
+		ID: p.Product.ID, Name: p.Product.Name, Description: p.Product.Description, ImageURL: p.Product.ImageURL,
+		PointsPrice: p.Product.PointsPrice, Stock: displayStock(p), PerUserLimit: p.Product.PerUserLimit,
+		SpecMode: p.Product.SpecMode, Skus: skuResponses(p),
+		ShippingPolicy: p.Product.ShippingPolicy, ShippingFee: p.Product.ShippingFee,
+		Status: p.Product.Status, SortOrder: p.Product.SortOrder,
+		CreatedAt: p.Product.CreatedAt.UTC().Format(timeFormat),
+		UpdatedAt: p.Product.UpdatedAt.UTC().Format(timeFormat),
 	}
 }
 
@@ -244,10 +323,11 @@ func adminProductDTO(p *storage.PointProduct) adminProductResponse {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // listProducts serves GET /api/users/me/points/products — the active shop,
-// sort_order ASC, each card carrying the caller's own redeemed count.
+// sort_order ASC, each card carrying the caller's own redeemed count, the
+// spec mode and, for by_sku products, the SKU rows (devops#909).
 //
 //	@Summary		List the points shop
-//	@Description	Returns the active products (sort_order ASC) with the caller's own redeemed count per product. Inactive products never appear.
+//	@Description	Returns the active products (sort_order ASC) with the caller's own redeemed count per product. Inactive products never appear. by_sku products carry their skus array and stock = the SKU sum (display only).
 //	@Tags			points
 //	@Produce		json
 //	@Success		200	{object}	productsResponse
@@ -271,8 +351,10 @@ func (p *pointsRoutes) listProducts(c *gin.Context) {
 		resp.Products = append(resp.Products, productResponse{
 			ID: rows[i].Product.ID, Name: rows[i].Product.Name,
 			Description: rows[i].Product.Description, ImageURL: rows[i].Product.ImageURL,
-			PointsPrice: rows[i].Product.PointsPrice, Stock: rows[i].Product.Stock,
+			PointsPrice: rows[i].Product.PointsPrice, Stock: displayStock(&rows[i]),
 			PerUserLimit:   rows[i].Product.PerUserLimit,
+			SpecMode:       rows[i].Product.SpecMode,
+			Skus:           skuResponses(&rows[i]),
 			ShippingPolicy: rows[i].Product.ShippingPolicy, ShippingFee: rows[i].Product.ShippingFee,
 			RedeemedCount: rows[i].RedeemedCount,
 		})
@@ -283,22 +365,24 @@ func (p *pointsRoutes) listProducts(c *gin.Context) {
 // redemptionCreateRequest is the POST body; idempotency_key is the client's
 // double-click/retry anchor (one key = one order). quantity is optional —
 // omitted/zero resolves to 1 server-side (legacy clients stay wire-compatible);
-// cost = product price × quantity.
+// cost = product price × quantity. sku_id is optional (devops#909): required
+// for by_sku products (409 sku_required otherwise), rejected on single ones.
 type redemptionCreateRequest struct {
 	ProductID      uint64 `json:"product_id" binding:"required"`
 	AddressID      uint64 `json:"address_id" binding:"required"`
 	IdempotencyKey string `json:"idempotency_key" binding:"required,max=64"`
 	Quantity       int    `json:"quantity" binding:"omitempty,min=1,max=99"`
+	SkuID          uint64 `json:"sku_id"`
 }
 
 // createRedemption serves POST /api/users/me/points/redemptions — the single
 // transaction redeem (#850 authoritative order). Business rejections map onto
 // their stable codes (404 address_not_found; 409 product_inactive /
-// out_of_stock / limit_reached / insufficient_points); a replayed
-// idempotency_key returns the stored order with 200.
+// out_of_stock / limit_reached / insufficient_points / sku_required /
+// sku_invalid); a replayed idempotency_key returns the stored order with 200.
 //
 //	@Summary		Redeem a product with points
-//	@Description	Runs the redemption transaction: idempotency replay check, guarded stock decrement (by quantity), per-user limit sum (in units), guarded points deduction (price × quantity), then order + ledger rows in one commit. quantity is optional (1-99, default 1). Repeating an idempotency_key returns the stored order with zero side effects.
+//	@Description	Runs the redemption transaction: idempotency replay check, guarded stock decrement (by quantity — the SKU row for by_sku products), per-user limit sum (in units, product-level), guarded points deduction (price × quantity), then order + ledger rows in one commit. quantity is optional (1-99, default 1); sku_id is required for by_sku products. Repeating an idempotency_key returns the stored order with zero side effects.
 //	@Tags			points
 //	@Accept			json
 //	@Produce		json
@@ -329,6 +413,7 @@ func (p *pointsRoutes) createRedemption(c *gin.Context) {
 		IdempotencyKey: body.IdempotencyKey,
 		Quantity:       body.Quantity,
 		PaymentReady:   wxpayReady(p.pay),
+		SkuID:          body.SkuID,
 	}
 	res, err := p.store.CreateRedemption(c.Request.Context(), uid, req)
 	if err != nil {
@@ -427,6 +512,8 @@ func writeRedemptionError(c *gin.Context, log *zap.Logger, err error) {
 		c.JSON(http.StatusConflict, errorResponse{Error: string(redemptionErr.Code)})
 	case errors.Is(err, storage.ErrPointProductNotFound):
 		c.JSON(http.StatusNotFound, errorResponse{Error: "product_not_found"})
+	case errors.Is(err, storage.ErrPointProductSkuNotFound):
+		c.JSON(http.StatusNotFound, errorResponse{Error: "sku_not_found"})
 	case errors.Is(err, storage.ErrPointRedemptionNotFound):
 		c.JSON(http.StatusNotFound, errorResponse{Error: "redemption_not_found"})
 	case errors.As(err, &cursorErr):
@@ -445,7 +532,8 @@ func writeRedemptionError(c *gin.Context, log *zap.Logger, err error) {
 
 // adminProductCreateRequest is the POST body: name + points_price required,
 // status defaults to draft (devops#896: a new product is pre-publication until
-// an explicit PATCH or create status=active puts it on the shelf).
+// an explicit PATCH or create status=active puts it on the shelf); spec_mode
+// defaults to single (devops#909 — the stock behaviour every pre-SKU row has).
 type adminProductCreateRequest struct {
 	Name           string  `json:"name" binding:"required,max=128"`
 	Description    *string `json:"description" binding:"omitempty,max=1024"`
@@ -456,6 +544,7 @@ type adminProductCreateRequest struct {
 	ShippingPolicy string  `json:"shipping_policy" binding:"omitempty,max=16"`
 	ShippingFee    int     `json:"shipping_fee" binding:"gte=0"`
 	Status         string  `json:"status" binding:"omitempty,max=16"`
+	SpecMode       string  `json:"spec_mode" binding:"omitempty,max=16"`
 	SortOrder      int     `json:"sort_order"`
 }
 
@@ -471,6 +560,7 @@ type adminProductPatchRequest struct {
 	ShippingPolicy *string `json:"shipping_policy" binding:"omitempty,max=16"`
 	ShippingFee    *int    `json:"shipping_fee" binding:"omitempty,gte=0"`
 	Status         *string `json:"status" binding:"omitempty,max=16"`
+	SpecMode       *string `json:"spec_mode" binding:"omitempty,max=16"`
 	SortOrder      *int    `json:"sort_order"`
 }
 
@@ -537,7 +627,8 @@ func (p *pointsRoutes) adminCreateProduct(c *gin.Context) {
 	}
 	// Shipping policy is a closed enum too (devops#904); absent means the
 	// stock nationwide_free behaviour. Unknown tokens answer 400
-	// invalid_shipping_policy.
+	// invalid_shipping_policy. Spec mode is the third closed enum
+	// (devops#909); absent means single.
 	policy := body.ShippingPolicy
 	if policy == "" {
 		policy = storage.ShippingPolicyNationwideFree
@@ -546,19 +637,27 @@ func (p *pointsRoutes) adminCreateProduct(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_shipping_policy"})
 		return
 	}
+	specMode := body.SpecMode
+	if specMode == "" {
+		specMode = storage.ProductSpecModeSingle
+	}
+	if !storage.IsProductSpecMode(specMode) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_spec_mode"})
+		return
+	}
 	row := &storage.PointProduct{
 		Name: body.Name, Description: body.Description, ImageURL: body.ImageURL,
 		PointsPrice: body.PointsPrice, Stock: body.Stock,
 		PerUserLimit:   body.PerUserLimit,
 		ShippingPolicy: policy, ShippingFee: body.ShippingFee,
-		Status: status, SortOrder: body.SortOrder,
+		SpecMode: specMode, Status: status, SortOrder: body.SortOrder,
 	}
 	if err := p.store.AdminCreateProduct(c.Request.Context(), row); err != nil {
 		p.log.Error("admin create product failed", zapErr(err))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
-	c.JSON(http.StatusCreated, adminProductDTO(row))
+	c.JSON(http.StatusCreated, adminProductDTO(&storage.PointProductListing{Product: *row}))
 }
 
 // adminPatchProduct serves PATCH /api/admin/points/products/:id — the single
@@ -596,9 +695,14 @@ func (p *pointsRoutes) adminPatchProduct(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_status"})
 		return
 	}
-	// The shipping policy enum is validated the same way (devops#904).
+	// The shipping policy enum is validated the same way (devops#904), the
+	// spec mode enum too (devops#909).
 	if body.ShippingPolicy != nil && !storage.IsShippingPolicy(*body.ShippingPolicy) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_shipping_policy"})
+		return
+	}
+	if body.SpecMode != nil && !storage.IsProductSpecMode(*body.SpecMode) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_spec_mode"})
 		return
 	}
 	patch := storage.ProductPatch{
@@ -606,13 +710,151 @@ func (p *pointsRoutes) adminPatchProduct(c *gin.Context) {
 		PointsPrice: body.PointsPrice, Stock: body.Stock,
 		PerUserLimit: body.PerUserLimit, Status: body.Status, SortOrder: body.SortOrder,
 		ShippingPolicy: body.ShippingPolicy, ShippingFee: body.ShippingFee,
+		SpecMode: body.SpecMode,
 	}
 	row, err := p.store.AdminPatchProduct(c.Request.Context(), id, patch)
 	if err != nil {
 		writeRedemptionError(c, p.log, err)
 		return
 	}
-	c.JSON(http.StatusOK, adminProductDTO(row))
+	c.JSON(http.StatusOK, adminProductDTO(&storage.PointProductListing{Product: *row}))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin handlers: SKU rows (devops#909)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// adminSkuCreateRequest is the POST body of the SKU-row create: spec_value is
+// the admin-entered size/label, stock starts the variant's inventory.
+type adminSkuCreateRequest struct {
+	SpecValue string `json:"spec_value" binding:"required,max=32"`
+	Stock     int    `json:"stock" binding:"gte=0"`
+	SortOrder int    `json:"sort_order"`
+}
+
+// adminSkuPatchRequest is the PATCH body: every field optional; stock is an
+// absolute value (#849 / #909 范式).
+type adminSkuPatchRequest struct {
+	SpecValue *string `json:"spec_value" binding:"omitempty,max=32"`
+	Stock     *int    `json:"stock" binding:"omitempty,gte=0"`
+	SortOrder *int    `json:"sort_order"`
+}
+
+// adminCreateProductSku serves POST /api/admin/points/products/:id/skus —
+// adds one variant row under a by_sku product.
+//
+//	@Summary		Create a product SKU row (admin)
+//	@Description	Adds one variant (size) row with its own stock under an existing product.
+//	@Tags			points-admin
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path	int							true	"Product id"
+//	@Param			body	body	adminSkuCreateRequest		true	"SKU row"
+//	@Success		201		{object}	adminSkuResponse
+//	@Failure		400		{object}	errorResponse
+//	@Failure		403		{object}	errorResponse
+//	@Failure		404		{object}	errorResponse
+//	@Failure		500		{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/admin/points/products/{id}/skus [post]
+func (p *pointsRoutes) adminCreateProductSku(c *gin.Context) {
+	if !requireAdmin(c) {
+		return
+	}
+	id, ok := parseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	var body adminSkuCreateRequest
+	if !bindRaceCalendarJSON(c, &body, "invalid_body") {
+		return
+	}
+	row := &storage.PointProductSku{
+		SpecValue: body.SpecValue, Stock: body.Stock, SortOrder: body.SortOrder,
+	}
+	if err := p.store.AdminCreateProductSku(c.Request.Context(), id, row); err != nil {
+		writeRedemptionError(c, p.log, err)
+		return
+	}
+	c.JSON(http.StatusCreated, adminSkuDTO(row))
+}
+
+// adminPatchProductSku serves PATCH /api/admin/points/products/:id/skus/:sku_id
+// — the single entry for relabel/restock/reorder (absolute stock).
+//
+//	@Summary		Update a product SKU row (admin)
+//	@Description	Applies partial updates to one SKU row of the product; stock is an absolute value. The SKU must belong to the named product.
+//	@Tags			points-admin
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path	int							true	"Product id"
+//	@Param			sku_id	path	int							true	"SKU id"
+//	@Param			body	body	adminSkuPatchRequest		true	"Fields"
+//	@Success		200		{object}	adminSkuResponse
+//	@Failure		400		{object}	errorResponse
+//	@Failure		403		{object}	errorResponse
+//	@Failure		404		{object}	errorResponse
+//	@Failure		500		{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/admin/points/products/{id}/skus/{sku_id} [patch]
+func (p *pointsRoutes) adminPatchProductSku(c *gin.Context) {
+	if !requireAdmin(c) {
+		return
+	}
+	id, ok := parseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	skuID, ok := parseUintParam(c, "sku_id")
+	if !ok {
+		return
+	}
+	var body adminSkuPatchRequest
+	if !bindRaceCalendarJSON(c, &body, "invalid_body") {
+		return
+	}
+	row, err := p.store.AdminPatchProductSku(c.Request.Context(), id, skuID, storage.SkuPatch{
+		SpecValue: body.SpecValue, Stock: body.Stock, SortOrder: body.SortOrder,
+	})
+	if err != nil {
+		writeRedemptionError(c, p.log, err)
+		return
+	}
+	c.JSON(http.StatusOK, adminSkuDTO(row))
+}
+
+// adminDeleteProductSku serves DELETE /api/admin/points/products/:id/skus/:sku_id.
+// Existing orders keep their sku snapshot — rows are inventory lines, not
+// history.
+//
+//	@Summary		Delete a product SKU row (admin)
+//	@Description	Removes one SKU row of the product. Orders already placed keep their sku_id/sku_label snapshot.
+//	@Tags			points-admin
+//	@Param			id		path	int	true	"Product id"
+//	@Param			sku_id	path	int	true	"SKU id"
+//	@Success		204
+//	@Failure		403	{object}	errorResponse
+//	@Failure		404	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/admin/points/products/{id}/skus/{sku_id} [delete]
+func (p *pointsRoutes) adminDeleteProductSku(c *gin.Context) {
+	if !requireAdmin(c) {
+		return
+	}
+	id, ok := parseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	skuID, ok := parseUintParam(c, "sku_id")
+	if !ok {
+		return
+	}
+	if err := p.store.AdminDeleteProductSku(c.Request.Context(), id, skuID); err != nil {
+		writeRedemptionError(c, p.log, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

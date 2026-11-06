@@ -349,6 +349,9 @@ definitions:
         type: string
       sort_order:
         type: integer
+      spec_mode:
+        maxLength: 16
+        type: string
       status:
         maxLength: 16
         type: string
@@ -383,6 +386,9 @@ definitions:
         type: string
       sort_order:
         type: integer
+      spec_mode:
+        maxLength: 16
+        type: string
       status:
         maxLength: 16
         type: string
@@ -410,8 +416,14 @@ definitions:
         type: integer
       shipping_policy:
         type: string
+      skus:
+        items:
+          $ref: '#/definitions/api.skuResponse'
+        type: array
       sort_order:
         type: integer
+      spec_mode:
+        type: string
       status:
         type: string
       stock:
@@ -462,6 +474,8 @@ definitions:
         type: integer
       shipping_policy_snapshot:
         type: string
+      sku_label:
+        type: string
       status:
         type: string
       tracking_no:
@@ -485,6 +499,47 @@ definitions:
         type: string
     required:
     - tracking_no
+    type: object
+  api.adminSkuCreateRequest:
+    properties:
+      sort_order:
+        type: integer
+      spec_value:
+        maxLength: 32
+        type: string
+      stock:
+        minimum: 0
+        type: integer
+    required:
+    - spec_value
+    type: object
+  api.adminSkuPatchRequest:
+    properties:
+      sort_order:
+        type: integer
+      spec_value:
+        maxLength: 32
+        type: string
+      stock:
+        minimum: 0
+        type: integer
+    type: object
+  api.adminSkuResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: integer
+      product_id:
+        type: integer
+      sort_order:
+        type: integer
+      spec_value:
+        type: string
+      stock:
+        type: integer
+      updated_at:
+        type: string
     type: object
   api.applyFromContentMasterPlanRequest:
     properties:
@@ -1891,6 +1946,12 @@ definitions:
         type: integer
       shipping_policy:
         type: string
+      skus:
+        items:
+          $ref: '#/definitions/api.skuResponse'
+        type: array
+      spec_mode:
+        type: string
       stock:
         type: integer
     type: object
@@ -2848,6 +2909,8 @@ definitions:
         maximum: 99
         minimum: 1
         type: integer
+      sku_id:
+        type: integer
     required:
     - address_id
     - idempotency_key
@@ -2897,6 +2960,8 @@ definitions:
       shipping_fee_snapshot:
         type: integer
       shipping_policy_snapshot:
+        type: string
+      sku_label:
         type: string
       status:
         type: string
@@ -3185,6 +3250,15 @@ definitions:
       total_distance_m:
         type: number
       total_duration_s:
+        type: integer
+    type: object
+  api.skuResponse:
+    properties:
+      id:
+        type: integer
+      spec_value:
+        type: string
+      stock:
         type: integer
     type: object
   api.staleRunningRequest:
@@ -3820,8 +3894,7 @@ definitions:
         type: string
         x-nullable: true
       structured:
-        allOf:
-        - $ref: '#/definitions/api.structuredWeekResponse'
+        $ref: '#/definitions/api.structuredWeekResponse'
         x-nullable: true
       total_duration_fmt:
         type: string
@@ -4065,10 +4138,6 @@ definitions:
     type: object
 info:
   contact: {}
-  description: 'HTTP API fronting the STRIDE worker: create and track async jobs and
-    pipeline runs, and manage user profile, onboarding, and watch-provider login.'
-  title: STRIDE API
-  version: "1.0"
 paths:
   /api/{user}/ability/backfill:
     post:
@@ -6290,6 +6359,137 @@ paths:
       security:
       - BearerAuth: []
       summary: Update a product (admin)
+      tags:
+      - points-admin
+  /api/admin/points/products/{id}/skus:
+    post:
+      consumes:
+      - application/json
+      description: Adds one variant (size) row with its own stock under an existing
+        product.
+      parameters:
+      - description: Product id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: SKU row
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.adminSkuCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.adminSkuResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a product SKU row (admin)
+      tags:
+      - points-admin
+  /api/admin/points/products/{id}/skus/{sku_id}:
+    delete:
+      description: Removes one SKU row of the product. Orders already placed keep
+        their sku_id/sku_label snapshot.
+      parameters:
+      - description: Product id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: SKU id
+        in: path
+        name: sku_id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a product SKU row (admin)
+      tags:
+      - points-admin
+    patch:
+      consumes:
+      - application/json
+      description: Applies partial updates to one SKU row of the product; stock is
+        an absolute value. The SKU must belong to the named product.
+      parameters:
+      - description: Product id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: SKU id
+        in: path
+        name: sku_id
+        required: true
+        type: integer
+      - description: Fields
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.adminSkuPatchRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.adminSkuResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update a product SKU row (admin)
       tags:
       - points-admin
   /api/admin/points/redemptions:
@@ -8959,7 +9159,8 @@ paths:
   /api/users/me/points/products:
     get:
       description: Returns the active products (sort_order ASC) with the caller's
-        own redeemed count per product. Inactive products never appear.
+        own redeemed count per product. Inactive products never appear. by_sku products
+        carry their skus array and stock = the SKU sum (display only).
       produces:
       - application/json
       responses:
@@ -9021,10 +9222,11 @@ paths:
       consumes:
       - application/json
       description: 'Runs the redemption transaction: idempotency replay check, guarded
-        stock decrement (by quantity), per-user limit sum (in units), guarded points
-        deduction (price × quantity), then order + ledger rows in one commit. quantity
-        is optional (1-99, default 1). Repeating an idempotency_key returns the stored
-        order with zero side effects.'
+        stock decrement (by quantity — the SKU row for by_sku products), per-user
+        limit sum (in units, product-level), guarded points deduction (price × quantity),
+        then order + ledger rows in one commit. quantity is optional (1-99, default
+        1); sku_id is required for by_sku products. Repeating an idempotency_key returns
+        the stored order with zero side effects.'
       parameters:
       - description: Redeem request
         in: body
@@ -9959,15 +10161,4 @@ paths:
       summary: Get a pipeline run's status
       tags:
       - pipelines
-securityDefinitions:
-  BearerAuth:
-    description: '"Bearer <JWT>" for end-user callers (RS256).'
-    in: header
-    name: Authorization
-    type: apiKey
-  InternalToken:
-    description: Shared secret for server-to-server callers.
-    in: header
-    name: X-Internal-Token
-    type: apiKey
 swagger: "2.0"
