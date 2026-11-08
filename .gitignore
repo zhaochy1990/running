@@ -114,6 +114,8 @@ src/wechat-miniprogram/custom-tab-bar/*.js
 .dispatch/
 docs/~$CoachAgent.drawio.dtmp
 .dsa/
+# impeccable 设计评审技能的本地缓存（critique 快照），不入库
+src/wechat-miniprogram/.impeccable/
 
 # TypeScript incremental build cache
 *.tsbuildinfo
