@@ -78,6 +78,7 @@ jobs:
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'src/go/internal/api/weekly_plan_schema.json'
+              - 'src/go/internal/api/master-plan-v3.schema.json'
               - 'tests/fixtures/weekly_plan_contract.json'
 
   # Did any ARTIFACT change? Drives the docker dry run below via the manifest,

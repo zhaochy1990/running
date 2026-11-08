@@ -1,7 +1,8 @@
-import type { PhaseCanonical, PhaseDivisionIntent } from "../intent.js";
+import type { LoadBlock, LoadPlan, LoadRole, LoadWeek, MilestoneAlignment, RecoveryScenarioPolicy, StrengthPhasePolicy } from "@stride/contract";
+import type { PhaseDivisionIntent } from "../intent.js";
 import { phaseRefMatches } from "../intent.js";
 import type { HabitualBaseline } from "./baseline.js";
-import { type LoadCheck, validateLoad } from "./gates.js";
+import { validateLoad } from "./gates.js";
 import { ACTIVATION_MAX_KM, ACTIVATION_MIN_KM, BUILD_CAP, bandOf, RACE_KM, RECOVERY_FACTOR, RECOVERY_FLOOR_KM } from "./reachability.js";
 
 /**
@@ -56,76 +57,20 @@ const Q_BUILD_KM = 70;
 
 const r1 = (x: number) => Math.round(x * 10) / 10;
 
-export type LoadRole = "progress" | "absorb" | "taper" | "race";
-
-/** 周骨架行（默认轨迹；spec §3 产出物 1，实测定型行结构）。 */
-export interface LoadWeek {
-  week: number;
-  canonical: PhaseCanonical;
-  block: number;
-  role: LoadRole;
-  km: number;
-  /** 长跑（km）；赛周 null（比赛本身不算训练长跑）。 */
-  lr: number | null;
-  /** 质量课配额。 */
-  q: number;
-}
-
-/** 块结构标记（spec §3 产出物 2）：3+1 边界与块角色，R2 校准挂点。 */
-export interface LoadBlock {
-  block: number;
-  canonical: PhaseCanonical;
-  start_week: number;
-  end_week: number;
-  /** 块内吸收周（3+1 的「1」；空=纯相位块）。 */
-  absorb_weeks: number[];
-  /** phase_start=相位切换开块；absorb_cut=吸收周自身开新块。 */
-  boundary: "phase_start" | "absorb_cut";
-}
-
-/** 回补策略场景（spec §3 产出物 3，政策面数据，R2 直接读取）。 */
-export interface RecoveryScenarioPolicy {
-  id: "normal" | "fatigue" | "overshoot";
-  /** 触发信号条件。 */
-  trigger: string;
-  action: string;
-  /** 降周/增量深度。 */
-  depth: string;
-}
-
-/** 力量指导 policy（spec §3 产出物 4，阶段级方向规则；实质课表在 weekly plan）。 */
-export interface StrengthPhasePolicy {
-  canonical: PhaseCanonical;
-  strength_focus: string;
-  /** 强度家族（canonical 直映射；冬季 transition_quality 以 T 为主）。 */
-  quality_family: string;
-  /** strides 副课标记（不算质量课）。 */
-  strides_note: string;
-}
-
-/** 里程碑对齐（spec §3 产出物 5b）：L2 出口里程碑落到周序号。 */
-export interface MilestoneAlignment {
-  phase: string;
-  signal: string;
-  criterion: string;
-  /** 该阶段出口周（end_week）。 */
-  week: number;
-}
-
-export interface LoadPlan {
-  /** 产出物 1：周骨架（默认轨迹）。 */
-  weeks: LoadWeek[];
-  /** 产出物 2：块结构标记。 */
-  blocks: LoadBlock[];
-  /** 产出物 3：回补策略（政策面）。 */
-  recovery_policy: RecoveryScenarioPolicy[];
-  /** 产出物 4：力量指导 policy + 强度家族/strides 标记。 */
-  strength_policy: StrengthPhasePolicy[];
-  /** 产出物 5a：边界检查结果（六条验收门）。 */
-  checks: LoadCheck[];
-  /** 产出物 5b：里程碑对齐。 */
-  milestones: MilestoneAlignment[];
-}
+/**
+ * 产物类型（LoadRole/LoadWeek/LoadBlock/…/LoadPlan）单源在 `@stride/contract`：
+ * 政策包 v3 的 skeleton 段原样落库，schema 与生成侧不能各写一份（devops#855）。
+ * 这里转出它们，phasing 内部与既有 import 不变。
+ */
+export type {
+  LoadBlock,
+  LoadPlan,
+  LoadRole,
+  LoadWeek,
+  MilestoneAlignment,
+  RecoveryScenarioPolicy,
+  StrengthPhasePolicy,
+} from "@stride/contract";
 
 export interface LoadInput {
   intent: PhaseDivisionIntent;

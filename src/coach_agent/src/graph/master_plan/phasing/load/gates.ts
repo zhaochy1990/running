@@ -1,6 +1,5 @@
+import type { LoadCheck, LoadWeek } from "@stride/contract";
 import type { PhaseDivisionIntent } from "../intent.js";
-import { phaseRefMatches } from "../intent.js";
-import type { LoadWeek } from "./expand.js";
 import { ACTIVATION_MAX_KM, ACTIVATION_MIN_KM, bandOf, RACE_KM } from "./reachability.js";
 
 /**
@@ -11,11 +10,8 @@ import { ACTIVATION_MAX_KM, ACTIVATION_MIN_KM, bandOf, RACE_KM } from "./reachab
  * 查带必须用真实阶段行；taper 单调判据方向（削至赛周=递减）。
  */
 
-export interface LoadCheck {
-  id: string;
-  pass: boolean;
-  detail: string;
-}
+/** 门结果单源在 `@stride/contract`（政策包 v3 skeleton.checks 原样落库，#855）。 */
+export type { LoadCheck } from "@stride/contract";
 
 /** 数值容差（km）：ACWR/尖峰/带比较留余量（1 位小数舍入 vs 浮点构造）。 */
 const TOLERANCE_KM = 0.5;
