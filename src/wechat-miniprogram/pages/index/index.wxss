@@ -131,7 +131,7 @@
 }
 
 .week-day--today {
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
 }
 
 .week-day--today .week-day__label {
@@ -390,7 +390,7 @@
   line-height: 96rpx;
   border: none;
   border-radius: 46rpx;
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
   color: var(--color-on-accent);
   box-sizing: border-box;
   transition: opacity 0.15s ease;

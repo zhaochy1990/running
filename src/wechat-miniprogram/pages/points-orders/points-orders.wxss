@@ -226,7 +226,7 @@
   box-sizing: border-box;
   padding: 10rpx 32rpx;
   border-radius: 46rpx;
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
   color: var(--color-on-accent);
   font-size: 24rpx;
   font-weight: 600;
@@ -284,7 +284,7 @@
   box-sizing: border-box;
   border: none;
   border-radius: 46rpx;
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
   color: var(--color-on-accent);
   font-size: 28rpx;
   font-weight: 600;
@@ -345,7 +345,7 @@
   box-sizing: border-box;
   border: none;
   border-radius: 46rpx;
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
   color: var(--color-on-accent);
   font-size: 32rpx;
   font-weight: 600;

@@ -280,7 +280,7 @@
 }
 
 .coach-msg--user .coach-msg__bubble {
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
   color: var(--color-on-accent);
   font-weight: 500;
   border-top-right-radius: 8rpx;
@@ -419,7 +419,7 @@
   padding: 0 32rpx;
   line-height: 72rpx;
   border-radius: 46rpx;
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
   color: var(--color-on-accent);
   font-size: 24rpx;
   font-weight: 600;
@@ -471,7 +471,7 @@
   padding: 0 32rpx;
   box-sizing: border-box;
   border-radius: 46rpx;
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
   color: var(--color-on-accent);
   font-size: 24rpx;
   font-weight: 600;

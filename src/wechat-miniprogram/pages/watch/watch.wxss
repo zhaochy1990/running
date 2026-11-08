@@ -381,7 +381,7 @@
 }
 
 .btn--danger {
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
   color: var(--color-on-accent);
 }
 

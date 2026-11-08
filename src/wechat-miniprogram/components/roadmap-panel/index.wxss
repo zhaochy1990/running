@@ -356,7 +356,7 @@
 }
 
 .vote-btn--on {
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
   box-shadow: 0 8rpx 28rpx rgba(var(--color-accent-rgb), 0.35);
 }
 
