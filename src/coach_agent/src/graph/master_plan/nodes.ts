@@ -181,6 +181,7 @@ class MasterPlanNodes {
   }
 
   readonly initialize = async (state: typeof GraphState.State, runtime: { context?: MasterPlanGraphContext }) => {
+    logger.info("Initialize Coach Agent Graph for request: %s, mode: %s", JSON.stringify(state.request), state.request.requested_mode);
     const request = MasterPlanGraphRequest.parse(state.request);
     const context = MasterPlanGraphContext.parse(runtime.context);
 
@@ -217,7 +218,7 @@ class MasterPlanNodes {
     }
 
     const safetyReasons = explicitAcuteRestrictions(request, snapshot);
-    if (safetyReasons.length > 0)
+    if (safetyReasons.length > 0) {
       return {
         context,
         snapshot,
@@ -229,6 +230,7 @@ class MasterPlanNodes {
           prerequisites: ["Obtain clinical clearance or an explicit return-to-run restriction update"],
         }),
       };
+    }
 
     const facts = deriveAssessmentFacts(snapshot, request);
     const volume = facts.facts.find((fact) => fact.fact_id === "volume.recent_weekly_km")?.value;
