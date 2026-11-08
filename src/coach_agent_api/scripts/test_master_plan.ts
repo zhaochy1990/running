@@ -20,7 +20,8 @@ const AS_OF = new Date("2026-09-27").toISOString();
 
 export const config = loadConfig({ configFiles: coachAgentConfigFiles(import.meta.url) });
 const modelConfig = getAgentConfig(config, "master_plan");
-const reviewerConfig = getAgentConfig(config, "reviewer");
+const phasingConfig = getAgentConfig(config, "phasing");
+const contentConfig = getAgentConfig(config, "master_plan");
 
 const configFiles = coachApiConfigFiles(import.meta.url);
 const store = MySqlDataProvider.create(loadApiConfig({ configFiles }).strideDatabase);
@@ -69,18 +70,36 @@ const request = MasterPlanGraphRequest.parse({
 
 async function main() {
   try {
-    const llmModels = await createMasterPlanLlmModels({
+    const llmModels = createMasterPlanLlmModels({
       masterPlanModel: modelConfig,
-      reviewerModel: reviewerConfig,
+      phasingModel: phasingConfig,
+      contentModel: contentConfig,
     });
-    
-    const graph = createMasterPlanGraph({
-      contextProvider: provider,
-      ...llmModels,
-    });
+    const graph = createMasterPlanGraph({ contextProvider: provider, ...llmModels });
     const generationId = `master-plan-${PROFILE}-${Date.now()}`;
+    const startedAt = Date.now();
     const result = await graph.invoke({ request }, { context: { userId: USER_ID, generationId } });
-    console.log(result.outcome.decision);
+    const elapsed = ((Date.now() - startedAt) / 1000).toFixed(0);
+    const outcome = result.outcome;
+    console.log(`decision=${outcome.decision} elapsed=${elapsed}s`);
+    if (outcome.decision === "completed") {
+      const artifact = outcome.artifact;
+      console.log(`artifact_revision=${artifact.artifact_revision} weeks=${artifact.plan.total_weeks}`);
+      console.log(
+        `phases=${artifact.policy.phases
+          .map((phase) => `${phase.canonical}W${phase.start_week}-${phase.end_week}`)
+          .join(" ")}`,
+      );
+      console.log(`skeleton_km=${artifact.skeleton.weeks.map((week) => week.km).join("/")}`);
+      console.log(`load_gates=${artifact.skeleton.checks.filter((check) => check.pass).length}/${artifact.skeleton.checks.length}`);
+      const { pass, warn, fail } = artifact.audit.summary;
+      console.log(`audit=✅${pass} ⚠️${warn} ❌${fail}`);
+      for (const item of artifact.audit.items.filter((entry) => entry.verdict !== "pass"))
+        console.log(`  ${item.verdict}: ${item.item} — ${item.actual}`);
+      console.log(`warnings=${artifact.warnings.join(",") || "none"}`);
+    } else {
+      console.log(JSON.stringify(outcome.artifact ?? outcome, null, 2).slice(0, 2000));
+    }
   } finally {
     await store.close();
   }

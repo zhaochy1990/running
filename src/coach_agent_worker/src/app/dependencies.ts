@@ -18,10 +18,12 @@ import { toWeeklyPlanGraphShim, type WeeklyPlanGraphShim } from "../kernel/weekl
  * directly and builds its own `weekly_plan` LLM internally.
  */
 
-export async function masterPlanGraph(coachConfig: ReturnType<typeof loadConfig>, dataProvider: MySqlDataProvider): Promise<MasterPlanGraphShim> {
-  const masterPlanModel = getAgentConfig(coachConfig, "master_plan");
-  const reviewerModel = getAgentConfig(coachConfig, "reviewer");
-  const llmModels = await createMasterPlanLlmModels({ masterPlanModel, reviewerModel });
+export function masterPlanGraph(coachConfig: ReturnType<typeof loadConfig>, dataProvider: MySqlDataProvider): MasterPlanGraphShim {
+  const llmModels = createMasterPlanLlmModels({
+    masterPlanModel: getAgentConfig(coachConfig, "master_plan"),
+    phasingModel: getAgentConfig(coachConfig, "phasing"),
+    contentModel: getAgentConfig(coachConfig, "master_plan"),
+  });
   return toMasterPlanGraphShim(createMasterPlanGraph({ contextProvider: new DataProviderMasterPlanContextProvider(dataProvider), ...llmModels }));
 }
 

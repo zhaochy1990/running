@@ -1,4 +1,5 @@
 import { addDays, mondayOnOrBefore as monday, planningStartDate, shanghaiDay } from "@stride/contract";
+import type { PhasingActivityInput } from "../graph/master_plan/phasing/evidence.js";
 import { type ContextSnapshot, ContextSnapshotSchema, type MasterPlanContextProvider } from "../graph/master_plan/index.js";
 import { isQualityRunningActivity, isRunningActivity } from "./activityClassification.js";
 import type {
@@ -31,6 +32,20 @@ type ContextStore = Pick<
 
 export class DataProviderMasterPlanContextProvider implements MasterPlanContextProvider {
   constructor(private readonly store: ContextStore) {}
+
+  /** L1 证据层要逐条活动的月度焦点：#803 起 master plan 不再只看周汇总。 */
+  async loadActivities(userId: string, startDay: string, endDay: string): Promise<PhasingActivityInput[]> {
+    const rows = await this.store.getActivitiesByDateRange(userId, startDay, endDay);
+    return rows
+      .filter(isRunningActivity)
+      .map((activity) => ({
+        date: activityDay(activity),
+        name: activity.name,
+        distanceM: activity.distanceM,
+        strideSessionClass: activity.strideSessionClass,
+        durationS: activity.durationS,
+      }));
+  }
 
   async loadSnapshot(userId: string, asOf = new Date().toISOString()): Promise<ContextSnapshot> {
     const end = shanghaiDay(asOf);

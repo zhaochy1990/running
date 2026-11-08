@@ -1,9 +1,7 @@
 import { z } from "zod/v4";
 import { AssessmentFactsSchema, GoalAssessmentSchema } from "./assessment-schemas.js";
-import { adjudicateMasterPlanReviews, REQUIRED_REVIEWERS, ReviewAdjudicationSchema, ReviewReportSchema, ReviewWorkerErrorSchema } from "./review.js";
-import { RuleReportSchema } from "./rules-schemas.js";
-import { MasterPlanSchema, SelectedStrategySchema, StrategyCandidateSchema, StrategyJudgmentSchema } from "./schemas.js";
-import { SimulationReportSchema } from "./simulation-schemas.js";
+import { DanielsAuditSchema, LoadPlanSchema, MasterPlanAnchorSchema, PhaseDivisionIntentSchema } from "./policy.js";
+import { MasterPlanSchema } from "./schemas.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -133,114 +131,46 @@ const OutcomeIdentitySchema = z.object({
   generation_id: identifier,
 });
 
+/**
+ * completed 产物（#803 kernel 新拓扑）：政策包四段 + 首期课表快照（v2 形状）。
+ * 老 strategies/judges/reviews 三分支证据面随老 kernel 一起删除（2026-11-08 拍板
+ * 直接 breaking，不做双拓扑）；确定性质量证据改由 L3 六门 + L4 C/P 门 + danielsAudit
+ * 承担，审计结果落在 artifact.audit 里（不再是「九次评审的裁决」）。
+ */
 const CompletedOutcomeSchema = OutcomeIdentitySchema.extend({
   decision: z.literal("completed"),
   artifact: z
     .object({
       type: z.literal("master_plan_draft"),
       activation_status: z.literal("inactive"),
+      /** 首期课表快照（v2 形状）：policy/skeleton 的可读投影，落库时进 v3 的 v2 字段。 */
       plan: MasterPlanSchema,
       facts: AssessmentFactsSchema,
       goal_assessment: GoalAssessmentSchema,
-      strategy_candidates: z.array(StrategyCandidateSchema).min(2).max(3),
-      judgments: z.array(StrategyJudgmentSchema).min(6).max(9),
-      selected_strategy: SelectedStrategySchema,
-      simulation_report: SimulationReportSchema,
-      rule_report: RuleReportSchema,
+      policy: PhaseDivisionIntentSchema,
+      skeleton: LoadPlanSchema,
+      anchor: MasterPlanAnchorSchema,
+      audit: DanielsAuditSchema,
       artifact_revision: z.int().positive(),
-      review_reports: z.array(ReviewReportSchema).length(3),
-      adjudication: ReviewAdjudicationSchema,
       warnings: z.array(z.string()),
     })
     .strict(),
 })
   .strict()
   .superRefine((outcome, ctx) => {
-    const ids = outcome.artifact.strategy_candidates.map((candidate) => candidate.candidate_id);
-    if (new Set(ids).size !== ids.length)
-      ctx.addIssue({
-        code: "custom",
-        path: ["artifact", "strategy_candidates"],
-        message: "candidate IDs must be unique",
-      });
-    const judges = ["performance_path", "safety_load", "constraint_feasibility"];
-    for (const id of ids) {
-      const reports = outcome.artifact.judgments.filter((judgment) => judgment.candidate_id === id);
-      if (reports.length !== 3 || new Set(reports.map((report) => report.judge)).size !== judges.length)
-        ctx.addIssue({
-          code: "custom",
-          path: ["artifact", "judgments"],
-          message: `candidate ${id} must have exactly three distinct judges`,
-        });
-    }
-    if (outcome.artifact.judgments.some((judgment) => !ids.includes(judgment.candidate_id)))
-      ctx.addIssue({
-        code: "custom",
-        path: ["artifact", "judgments"],
-        message: "judgments must reference an emitted candidate",
-      });
-    if (!ids.includes(outcome.artifact.selected_strategy.candidate.candidate_id))
-      ctx.addIssue({
-        code: "custom",
-        path: ["artifact", "selected_strategy"],
-        message: "selected strategy must be one of the emitted candidates",
-      });
-    const reviewerTypes = outcome.artifact.review_reports.map((report) => report.reviewer_type);
-    if (
-      outcome.artifact.review_reports.some((report) => report.artifact_revision !== outcome.artifact.artifact_revision) ||
-      REQUIRED_REVIEWERS.some((reviewer) => reviewerTypes.filter((item) => item === reviewer).length !== 1)
-    )
-      ctx.addIssue({
-        code: "custom",
-        path: ["artifact", "review_reports"],
-        message: "completed outcome requires one current report per required reviewer",
-      });
-    try {
-      const expected = adjudicateMasterPlanReviews(outcome.artifact.artifact_revision, outcome.artifact.review_reports, outcome.artifact.facts, {
-        simulation: outcome.artifact.simulation_report,
-        rules: outcome.artifact.rule_report,
-      });
-      const expectedWarnings = expected.issues.filter((item) => item.severity === "warning").map((item) => item.issue_id);
-      if (expected.decision === "revise" || expected.decision === "block" || JSON.stringify(expected) !== JSON.stringify(outcome.artifact.adjudication))
-        ctx.addIssue({
-          code: "custom",
-          path: ["artifact", "adjudication"],
-          message: "completed outcome requires the deterministic current adjudication",
-        });
-      if (JSON.stringify(expectedWarnings) !== JSON.stringify(outcome.artifact.warnings))
-        ctx.addIssue({
-          code: "custom",
-          path: ["artifact", "warnings"],
-          message: "warnings must match adjudicated warning issues",
-        });
-    } catch {
-      ctx.addIssue({
-        code: "custom",
-        path: ["artifact", "adjudication"],
-        message: "completed outcome review evidence is invalid",
-      });
-    }
+    const { plan, policy, skeleton, audit } = outcome.artifact;
+    // 政策包与首期快照是同一份计划的两种视图，三条跨契约不变量任一破 = 组装缺陷。
+    const policyWeeks = Math.max(...policy.phases.map((phase) => phase.end_week));
+    if (plan.total_weeks !== policyWeeks)
+      ctx.addIssue({ code: "custom", path: ["artifact", "plan", "total_weeks"], message: "must equal the last policy phase end_week" });
+    if (skeleton.weeks.length !== policyWeeks)
+      ctx.addIssue({ code: "custom", path: ["artifact", "skeleton", "weeks"], message: "must cover every policy week exactly once" });
+    if (plan.weeks.length !== skeleton.weeks.length)
+      ctx.addIssue({ code: "custom", path: ["artifact", "plan", "weeks"], message: "snapshot must cover every skeleton week" });
+    const { pass, warn, fail } = audit.summary;
+    if (pass + warn + fail !== audit.items.length)
+      ctx.addIssue({ code: "custom", path: ["artifact", "audit", "summary"], message: "must count every audit item" });
   });
-
-const ReviewCompletedOutcomeSchema = OutcomeIdentitySchema.extend({
-  decision: z.literal("review_completed"),
-  artifact: z
-    .object({
-      type: z.enum(["plan_review_report", "revision_proposal"]),
-      summary: z.string().min(1),
-    })
-    .strict(),
-}).strict();
-
-const PreviewCompletedOutcomeSchema = OutcomeIdentitySchema.extend({
-  decision: z.literal("preview_completed"),
-  artifact: z
-    .object({
-      type: z.literal("strategy_comparison"),
-      summary: z.string().min(1),
-    })
-    .strict(),
-}).strict();
 
 const NeedsClarificationOutcomeSchema = OutcomeIdentitySchema.extend({
   decision: z.literal("needs_clarification"),
@@ -312,11 +242,6 @@ const FailedQualityGateOutcomeSchema = OutcomeIdentitySchema.extend({
       type: z.literal("quality_failure_report"),
       unresolved_issues: z.array(z.string().min(1)).min(1),
       attempt_history: z.array(z.string().min(1)),
-      simulation_report: SimulationReportSchema.optional(),
-      rule_report: RuleReportSchema.optional(),
-      review_reports: z.array(ReviewReportSchema).optional(),
-      adjudication: ReviewAdjudicationSchema.optional(),
-      review_worker_errors: z.array(ReviewWorkerErrorSchema).optional(),
     })
     .strict(),
 }).strict();
@@ -329,8 +254,6 @@ const InfrastructureFailureOutcomeSchema = OutcomeIdentitySchema.extend({
 
 export const MasterPlanGraphOutcome = z.discriminatedUnion("decision", [
   CompletedOutcomeSchema,
-  ReviewCompletedOutcomeSchema,
-  PreviewCompletedOutcomeSchema,
   NeedsClarificationOutcomeSchema,
   NeedsBaselineOutcomeSchema,
   GoalConflictOutcomeSchema,

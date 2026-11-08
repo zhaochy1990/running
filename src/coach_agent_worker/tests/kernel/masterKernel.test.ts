@@ -30,31 +30,23 @@ function buildGraph(overrides: GraphOverrides = {}) {
           return createTestGoalAssessment();
         },
       },
-      strategyModel: {
-        async invoke({ archetype }: { archetype: string }) {
-          return createTestStrategyCandidate(archetype as never);
+      phasingModel: {
+        async invoke() {
+          throw new Error("phasing model must not be invoked in kernel wiring tests");
         },
-      },
-      judgmentModel: {
-        async invoke({ judge, candidate }: { judge: string; candidate: ReturnType<typeof createTestStrategyCandidate> }) {
-          return createTestJudgments(candidate.candidate_id).find((item) => item.judge === (judge as never))!;
+      } as never,
+      contentModel: {
+        async invoke() {
+          throw new Error("content model must not be invoked in kernel wiring tests");
         },
-      },
-      reviewModel: {
-        async invoke({ reviewerType }: { reviewerType: string }) {
-          return createTestReviewReport(reviewerType as never);
-        },
-      },
+      } as never,
       contextProvider: {
+        async loadActivities() {
+          return [];
+        },
         async loadSnapshot() {
           if (overrides.snapshotThrows) throw new Error("mysql unavailable");
           return snapshot.loadSnapshot();
-        },
-      },
-      skeletonModel: {
-        async invoke() {
-          if (overrides.skeletonInvalid) return { status: "draft" };
-          return createTestMasterPlan();
         },
       },
     }),
