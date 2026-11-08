@@ -136,7 +136,7 @@
   line-height: 80rpx;
   padding: 0 56rpx;
   border-radius: 46rpx;
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
   color: var(--color-on-accent);
   font-size: 27rpx;
   font-weight: 700;
@@ -854,7 +854,7 @@
   line-height: 88rpx;
   text-align: center;
   border-radius: 46rpx;
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
   color: var(--color-on-accent);
   font-size: 27rpx;
   font-weight: 700;

@@ -167,7 +167,7 @@
 }
 .hero__btn--lead {
   flex: 2;
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
   color: var(--color-on-accent);
   font-weight: 600;
 }
@@ -343,7 +343,7 @@
   color: var(--color-text-muted);
 }
 .actions__save--on {
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
   color: var(--color-on-accent);
   font-weight: 600;
 }
@@ -405,7 +405,7 @@
   line-height: 84rpx;
   font-size: 28rpx;
   font-weight: 600;
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
   color: var(--color-on-accent);
 }
 .actions__apply--busy {

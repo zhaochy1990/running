@@ -90,7 +90,7 @@
 }
 
 .seg__item--on {
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
   color: var(--color-on-accent);
   font-weight: 600;
 }
@@ -176,7 +176,7 @@
   line-height: 92rpx;
   text-align: center;
   border-radius: 46rpx;
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
   color: var(--color-on-accent);
   font-size: 30rpx;
   font-weight: 600;

@@ -138,7 +138,7 @@
   width: 112rpx;
   height: 112rpx;
   border-radius: 50%;
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
   color: var(--color-on-accent);
   font-size: 56rpx;
   font-weight: 300;
@@ -313,6 +313,6 @@
 .tabs__item--on {
   color: var(--color-on-accent);
   font-weight: 600;
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
   border-color: var(--color-accent);
 }

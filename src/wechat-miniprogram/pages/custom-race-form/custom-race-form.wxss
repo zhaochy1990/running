@@ -96,7 +96,7 @@ page {
 }
 
 .chip--on {
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
   color: var(--color-on-accent);
   font-weight: 600;
 }
@@ -142,12 +142,12 @@ page {
   font-size: 30rpx;
   font-weight: 600;
   color: var(--color-on-accent);
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
   border-radius: 46rpx;
 }
 
 .save[disabled] {
   opacity: 0.6;
   color: var(--color-on-accent);
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
 }

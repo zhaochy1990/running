@@ -257,7 +257,7 @@
   margin: 0;
   padding: 0;
   border-radius: 46rpx;
-  background: var(--color-accent-deep);
+  background: var(--color-accent);
   color: var(--color-on-accent);
   font-size: 27rpx;
   font-weight: 500;
