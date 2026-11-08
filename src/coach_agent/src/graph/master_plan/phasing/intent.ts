@@ -1,63 +1,21 @@
-import { z } from "zod/v4";
+import { PHASE_CANONICAL, type PhaseBlockMode, type PhaseCanonical, type PhasePrimaryGoal } from "@stride/contract";
+
+export type { PhaseBlockMode, PhaseCanonical, PhaseDivisionIntent, PhasePrimaryGoal } from "@stride/contract";
 
 /**
- * 阶段划分意图契约（devops#782，daniels.md §1/§2.2）。
+ * 阶段划分意图的**运行时**消费者（devops#782，daniels.md §1/§2.2）。
  *
- * canonical 五值对齐 Daniels' Running Formula：recovery 是本体系对丹尼尔斯的
- * 正式化补充；taper 不是阶段，是 final_quality 的必填属性 taper_weeks（结构
- * 参数归意图层，削减深度归载荷层）。旧枚举 base/speed/build/marathon 弃用。
+ * 契约本体（PhaseDivisionIntentSchema + 三个枚举 + 类型）在
+ * `@stride/contract`——政策包 v3 的 policy 段要与落库 schema 单源
+ * （devops#855）。这里只保留 L2 判断层自己的显示名/块模式/最小周期等
+ * 口径表与匹配工具，并原样转出契约，既有 import 不用改。
  */
-export const PHASE_CANONICAL = z.enum(["recovery", "foundation", "early_quality", "transition_quality", "final_quality"]);
-export type PhaseCanonical = z.infer<typeof PHASE_CANONICAL>;
-
-/** 阶段能力重点（顺序与 canonical 对齐丹尼尔斯 Phase 1-4 职能）。 */
-export const PHASE_PRIMARY_GOAL = z.enum(["recovery", "aerobic_base", "speed", "threshold", "race_specificity"]);
-
-/** 块形状（daniels.md §3.4：阶段目标决定块模式；载荷层按此物化）。 */
-export const PHASE_BLOCK_MODE = z.enum(["light", "progressive", "progressive_quality", "plateau"]);
-
-export const PhaseDivisionIntentSchema = z.object({
-  phases: z
-    .array(
-      z.object({
-        canonical: PHASE_CANONICAL,
-        name: z.string().min(1),
-        start_week: z.number().int().min(1),
-        end_week: z.number().int().min(1),
-        primary_goal: PHASE_PRIMARY_GOAL,
-        training_goal: z.string().min(1),
-        block_mode: PHASE_BLOCK_MODE,
-        rationale: z.string().min(1),
-      }),
-    )
-    .min(1)
-    .max(6),
-  /** final_quality 内的减量周数（削减深度归载荷层）。 */
-  taper_weeks: z.number().int().min(1).max(3),
-  /** 阶段出口里程碑：final_quality 之外每阶段至少 1 条，绑可观察信号。 */
-  milestones: z
-    .array(z.object({ phase: z.string().min(1), signal: z.string().min(1), criterion: z.string().min(1) }))
-    .min(1)
-    .max(8),
-  /** 阶段间 gate 2-3 条，供执行回路在块边界选择回补场景。 */
-  gates: z
-    .array(
-      z.object({
-        phase: z.string().min(1),
-        signal: z.string().min(1),
-        criterion: z.string().min(1),
-        action_if_missed: z.string().min(1),
-      }),
-    )
-    .min(2)
-    .max(3),
-  /** 每阶段周量护栏，由证据推导（I8 门校验），非 LLM 自由发明。 */
-  volume_bands: z
-    .array(z.object({ phase: z.string().min(1), weekly_km_min: z.number().min(0), weekly_km_max: z.number().positive() }))
-    .min(1)
-    .max(6),
-});
-export type PhaseDivisionIntent = z.infer<typeof PhaseDivisionIntentSchema>;
+export {
+  PHASE_BLOCK_MODE,
+  PHASE_CANONICAL,
+  PHASE_PRIMARY_GOAL,
+  PhaseDivisionIntentSchema,
+} from "@stride/contract";
 
 /** canonical → 显示名（daniels.md §1 表）。 */
 export const PHASE_DISPLAY_NAME: Record<PhaseCanonical, string> = {
@@ -69,7 +27,7 @@ export const PHASE_DISPLAY_NAME: Record<PhaseCanonical, string> = {
 };
 
 /** canonical → 块模式（daniels.md §3.4；I9 门按此校验）。 */
-export const EXPECTED_BLOCK_MODE: Record<PhaseCanonical, z.infer<typeof PHASE_BLOCK_MODE>> = {
+export const EXPECTED_BLOCK_MODE: Record<PhaseCanonical, PhaseBlockMode> = {
   recovery: "light",
   foundation: "progressive",
   early_quality: "progressive_quality",
@@ -78,7 +36,7 @@ export const EXPECTED_BLOCK_MODE: Record<PhaseCanonical, z.infer<typeof PHASE_BL
 };
 
 /** canonical → 能力重点缺省（T 兜底用；判断层 LLM 可给出不同但同目的的组合）。 */
-export const DEFAULT_PRIMARY_GOAL: Record<PhaseCanonical, z.infer<typeof PHASE_PRIMARY_GOAL>> = {
+export const DEFAULT_PRIMARY_GOAL: Record<PhaseCanonical, PhasePrimaryGoal> = {
   recovery: "recovery",
   foundation: "aerobic_base",
   early_quality: "speed",
@@ -95,8 +53,8 @@ export const MIN_PHASE_WEEKS: Record<PhaseCanonical, number> = {
   final_quality: 3,
 };
 
-/** 顺序律基准（I2）：可坍缩（跳过）不可倒置、不重复。 */
-export const PHASE_ORDER: readonly PhaseCanonical[] = ["recovery", "foundation", "early_quality", "transition_quality", "final_quality"];
+/** 顺序律基准（I2）：可坍缩（跳过）不可倒置、不重复；取契约枚举声明序，不手抄五值（#855 单源）。 */
+export const PHASE_ORDER: readonly PhaseCanonical[] = PHASE_CANONICAL.options;
 
 /**
  * phase 引用字符串（milestones/gates/volume_bands 的 phase 字段）与阶段行匹配

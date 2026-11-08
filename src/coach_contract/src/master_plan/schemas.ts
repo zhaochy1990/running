@@ -2,7 +2,7 @@ import { z } from "zod/v4";
 import { RunWorkoutLenientSchema, RunWorkoutSchema, type WorkoutTarget } from "../workout/schema.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
-const DaySchema = z
+export const DaySchema = z
   .string()
   .regex(DAY)
   .refine((day) => {

@@ -4,17 +4,9 @@
  * 不拦的取舍）；fail=硬校验挂（引用 C/P 门结果）。独立判定的项不重复实现门
  * 逻辑，只按原书口径重述+引用。
  */
+import type { DanielsAuditItem as AuditItem } from "@stride/contract";
 import type { ContentGeneratorInput } from "./doctrine.js";
 import type { ScheduledOutcome } from "./generate.js";
-
-export interface AuditItem {
-  /** 审计维度（周级带 W 前缀）。 */
-  item: string;
-  verdict: "pass" | "warn" | "fail";
-  /** 原书口径描述。 */
-  expectation: string;
-  actual: string;
-}
 
 const pace = (s: number | null | undefined) => (s == null ? "?" : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`);
 const wdOf = (date: string) => (new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7;

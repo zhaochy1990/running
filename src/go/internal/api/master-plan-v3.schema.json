@@ -1,0 +1,1307 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stride-running.cn/schemas/master-plan-v3.json",
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "const": "draft"
+    },
+    "goal": {
+      "type": "object",
+      "properties": {
+        "race_name": {
+          "type": "string"
+        },
+        "distance": {
+          "type": "string",
+          "enum": [
+            "FM",
+            "HM"
+          ]
+        },
+        "race_date": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "target_time": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string",
+          "const": "Asia/Shanghai"
+        },
+        "location": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "race_name",
+        "distance",
+        "race_date",
+        "target_time",
+        "timezone"
+      ],
+      "additionalProperties": false
+    },
+    "start_date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "end_date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "total_weeks": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "phases": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "base",
+              "build",
+              "speed",
+              "marathon",
+              "taper",
+              "recovery"
+            ]
+          },
+          "start_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "end_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "focus": {
+            "type": "string"
+          },
+          "weekly_distance_km_low": {
+            "type": "number",
+            "minimum": 0
+          },
+          "weekly_distance_km_high": {
+            "type": "number",
+            "minimum": 0
+          },
+          "key_session_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "milestones": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "race",
+                    "test_run",
+                    "long_run",
+                    "strength_test",
+                    "body_composition"
+                  ]
+                },
+                "date": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                "target": {
+                  "type": "string"
+                },
+                "completed_actual": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "date",
+                "target",
+                "completed_actual"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "key_workouts": {
+            "type": "string"
+          },
+          "monitoring_triggers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "coach_note": {
+            "type": "string"
+          },
+          "strength": {
+            "type": "object",
+            "properties": {
+              "sessions_per_week": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "focus": {
+                "type": "string",
+                "minLength": 1
+              },
+              "timing": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "sessions_per_week",
+              "focus",
+              "timing"
+            ],
+            "additionalProperties": false
+          },
+          "recovery": {
+            "type": "object",
+            "properties": {
+              "focus": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sleep_target_hours": {
+                "type": "string",
+                "minLength": 1
+              },
+              "adjustment_trigger": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "focus",
+              "sleep_target_hours",
+              "adjustment_trigger"
+            ],
+            "additionalProperties": false
+          },
+          "is_completed": {
+            "type": "boolean"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "start_date",
+          "end_date",
+          "focus",
+          "weekly_distance_km_low",
+          "weekly_distance_km_high",
+          "key_session_types",
+          "milestones",
+          "key_workouts",
+          "monitoring_triggers",
+          "coach_note",
+          "strength",
+          "recovery",
+          "is_completed",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "weeks": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "week_index": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "week_start": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "phase_name": {
+            "type": "string",
+            "enum": [
+              "base",
+              "build",
+              "speed",
+              "marathon",
+              "taper",
+              "recovery"
+            ]
+          },
+          "target_weekly_km_low": {
+            "type": "number",
+            "minimum": 0
+          },
+          "target_weekly_km_high": {
+            "type": "number",
+            "minimum": 0
+          },
+          "key_sessions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "long_run",
+                    "threshold",
+                    "tempo",
+                    "interval",
+                    "vo2max",
+                    "hill",
+                    "race_pace",
+                    "time_trial",
+                    "tune_up_race",
+                    "race",
+                    "strength_key"
+                  ],
+                  "description": "Classify the complete standalone workout, not an interval or pace segment embedded inside another workout."
+                },
+                "distance_km": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Total distance of this complete workout. Do not put only the distance of its work intervals here."
+                },
+                "duration_min": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Total elapsed duration of this complete workout, including warm-up, recoveries, and cool-down; not only work-interval time."
+                },
+                "intensity": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Describe every component of this one workout here, including any race-pace blocks embedded in a long run."
+                },
+                "purpose": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "workout_structure": {
+                  "description": "Canonical running-workout blocks. Repeated interval work and recovery belong in the same block.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "schema": {
+                          "type": "string",
+                          "const": "run-workout/v1"
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "date": {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                        },
+                        "note": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "type": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "E",
+                                "M",
+                                "T",
+                                "I",
+                                "R",
+                                "LR"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "purpose": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "blocks": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "repeat": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "steps": {
+                                "minItems": 1,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "step_kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "warmup",
+                                        "work",
+                                        "recovery",
+                                        "cooldown",
+                                        "rest"
+                                      ]
+                                    },
+                                    "duration": {
+                                      "oneOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "distance_m",
+                                                "time_s"
+                                              ]
+                                            },
+                                            "value": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "const": "open"
+                                            },
+                                            "value": {
+                                              "type": "null"
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      ]
+                                    },
+                                    "target": {
+                                      "oneOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "pace_s_km",
+                                                "hr_bpm",
+                                                "power_w",
+                                                "cadence_spm"
+                                              ]
+                                            },
+                                            "low": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "high": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "low",
+                                            "high"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "const": "open"
+                                            },
+                                            "low": {
+                                              "type": "null"
+                                            },
+                                            "high": {
+                                              "type": "null"
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "low",
+                                            "high"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      ]
+                                    },
+                                    "note": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "hr_cap_bpm": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "rest": {
+                                      "oneOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "time_s",
+                                                "hr_bpm"
+                                              ]
+                                            },
+                                            "value": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "const": "manual"
+                                            },
+                                            "value": {
+                                              "type": "null"
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "step_kind",
+                                    "duration",
+                                    "target",
+                                    "note",
+                                    "hr_cap_bpm"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              }
+                            },
+                            "required": [
+                              "repeat",
+                              "steps"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "schema",
+                        "name",
+                        "date",
+                        "note",
+                        "blocks"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "distance_km",
+                "duration_min",
+                "intensity",
+                "purpose"
+              ],
+              "additionalProperties": false,
+              "description": "Exactly one independently performed workout. Embedded blocks are components of this object and must not be repeated as sibling key_sessions."
+            }
+          },
+          "is_recovery_week": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "week_index",
+          "week_start",
+          "phase_name",
+          "target_weekly_km_low",
+          "target_weekly_km_high",
+          "key_sessions",
+          "is_recovery_week"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "training_principles": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "generated_by": {
+      "type": "string",
+      "const": "coach_agent"
+    },
+    "version": {
+      "type": "number",
+      "const": 1
+    },
+    "created_at": {
+      "type": "string",
+      "pattern": "(?:Z|[+-]00:00)$"
+    },
+    "updated_at": {
+      "type": "string",
+      "pattern": "(?:Z|[+-]00:00)$"
+    },
+    "schema": {
+      "type": "string",
+      "const": "master-plan/v3"
+    },
+    "policy": {
+      "type": "object",
+      "properties": {
+        "phases": {
+          "minItems": 1,
+          "maxItems": 6,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "canonical": {
+                "type": "string",
+                "enum": [
+                  "recovery",
+                  "foundation",
+                  "early_quality",
+                  "transition_quality",
+                  "final_quality"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "start_week": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "end_week": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "primary_goal": {
+                "type": "string",
+                "enum": [
+                  "recovery",
+                  "aerobic_base",
+                  "speed",
+                  "threshold",
+                  "race_specificity"
+                ]
+              },
+              "training_goal": {
+                "type": "string",
+                "minLength": 1
+              },
+              "block_mode": {
+                "type": "string",
+                "enum": [
+                  "light",
+                  "progressive",
+                  "progressive_quality",
+                  "plateau"
+                ]
+              },
+              "rationale": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "canonical",
+              "name",
+              "start_week",
+              "end_week",
+              "primary_goal",
+              "training_goal",
+              "block_mode",
+              "rationale"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "taper_weeks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "milestones": {
+          "minItems": 1,
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "phase": {
+                "type": "string",
+                "minLength": 1
+              },
+              "signal": {
+                "type": "string",
+                "minLength": 1
+              },
+              "criterion": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "phase",
+              "signal",
+              "criterion"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "gates": {
+          "minItems": 2,
+          "maxItems": 3,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "phase": {
+                "type": "string",
+                "minLength": 1
+              },
+              "signal": {
+                "type": "string",
+                "minLength": 1
+              },
+              "criterion": {
+                "type": "string",
+                "minLength": 1
+              },
+              "action_if_missed": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "phase",
+              "signal",
+              "criterion",
+              "action_if_missed"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "volume_bands": {
+          "minItems": 1,
+          "maxItems": 6,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "phase": {
+                "type": "string",
+                "minLength": 1
+              },
+              "weekly_km_min": {
+                "type": "number",
+                "minimum": 0
+              },
+              "weekly_km_max": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            },
+            "required": [
+              "phase",
+              "weekly_km_min",
+              "weekly_km_max"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "phases",
+        "taper_weeks",
+        "milestones",
+        "gates",
+        "volume_bands"
+      ],
+      "additionalProperties": false
+    },
+    "skeleton": {
+      "type": "object",
+      "properties": {
+        "weeks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "week": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "canonical": {
+                "type": "string",
+                "enum": [
+                  "recovery",
+                  "foundation",
+                  "early_quality",
+                  "transition_quality",
+                  "final_quality"
+                ]
+              },
+              "block": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "progress",
+                  "absorb",
+                  "taper",
+                  "race"
+                ]
+              },
+              "km": {
+                "type": "number",
+                "minimum": 0
+              },
+              "lr": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "q": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "week",
+              "canonical",
+              "block",
+              "role",
+              "km",
+              "lr",
+              "q"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "blocks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "block": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "canonical": {
+                "type": "string",
+                "enum": [
+                  "recovery",
+                  "foundation",
+                  "early_quality",
+                  "transition_quality",
+                  "final_quality"
+                ]
+              },
+              "start_week": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "end_week": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "absorb_weeks": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                }
+              },
+              "boundary": {
+                "type": "string",
+                "enum": [
+                  "phase_start",
+                  "absorb_cut"
+                ]
+              }
+            },
+            "required": [
+              "block",
+              "canonical",
+              "start_week",
+              "end_week",
+              "absorb_weeks",
+              "boundary"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "recovery_policy": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "enum": [
+                  "normal",
+                  "fatigue",
+                  "overshoot"
+                ]
+              },
+              "trigger": {
+                "type": "string",
+                "minLength": 1
+              },
+              "action": {
+                "type": "string",
+                "minLength": 1
+              },
+              "depth": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "id",
+              "trigger",
+              "action",
+              "depth"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "strength_policy": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "canonical": {
+                "type": "string",
+                "enum": [
+                  "recovery",
+                  "foundation",
+                  "early_quality",
+                  "transition_quality",
+                  "final_quality"
+                ]
+              },
+              "strength_focus": {
+                "type": "string",
+                "minLength": 1
+              },
+              "quality_family": {
+                "type": "string",
+                "minLength": 1
+              },
+              "strides_note": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "canonical",
+              "strength_focus",
+              "quality_family",
+              "strides_note"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "pass": {
+                "type": "boolean"
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "pass",
+              "detail"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "milestones": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "phase": {
+                "type": "string",
+                "minLength": 1
+              },
+              "signal": {
+                "type": "string",
+                "minLength": 1
+              },
+              "criterion": {
+                "type": "string",
+                "minLength": 1
+              },
+              "week": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "phase",
+              "signal",
+              "criterion",
+              "week"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "weeks",
+        "blocks",
+        "recovery_policy",
+        "strength_policy",
+        "checks",
+        "milestones"
+      ],
+      "additionalProperties": false
+    },
+    "anchor": {
+      "type": "object",
+      "properties": {
+        "as_of": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "vdot": {
+          "anyOf": [
+            {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "vdot_source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "seed": {
+          "type": "object",
+          "properties": {
+            "ctl": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "atl": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "ctl",
+            "atl"
+          ],
+          "additionalProperties": false
+        },
+        "coefficient_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "projection": {
+          "type": "object",
+          "properties": {
+            "capped": {
+              "type": "boolean"
+            },
+            "residual": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "capped",
+            "residual"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "as_of",
+        "vdot",
+        "vdot_source",
+        "seed",
+        "coefficient_version",
+        "projection"
+      ],
+      "additionalProperties": false
+    },
+    "audit": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item": {
+                "type": "string",
+                "minLength": 1
+              },
+              "verdict": {
+                "type": "string",
+                "enum": [
+                  "pass",
+                  "warn",
+                  "fail"
+                ]
+              },
+              "expectation": {
+                "type": "string"
+              },
+              "actual": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "item",
+              "verdict",
+              "expectation",
+              "actual"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "summary": {
+          "type": "object",
+          "properties": {
+            "pass": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "warn": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "fail": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "pass",
+            "warn",
+            "fail"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "items",
+        "summary"
+      ],
+      "additionalProperties": false
+    },
+    "snapshot_as_of": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    }
+  },
+  "required": [
+    "status",
+    "goal",
+    "start_date",
+    "end_date",
+    "total_weeks",
+    "phases",
+    "weeks",
+    "training_principles",
+    "generated_by",
+    "version",
+    "created_at",
+    "updated_at",
+    "schema",
+    "policy",
+    "skeleton",
+    "anchor",
+    "audit",
+    "snapshot_as_of"
+  ],
+  "additionalProperties": false
+}
