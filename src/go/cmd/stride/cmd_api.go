@@ -308,6 +308,7 @@ func runAPI() error {
 		PointsAuth:              authClient,
 		WxPayStore:              store,
 		WxPay:                   wxClient,
+		WxPayOpenID:             wxpayOpenIDResolver{client: authClient, token: cfg.API.InternalToken},
 		AddressStore:            store,
 		ProviderLogin:           providerLogin,
 		ProviderInfo:            providerInfo,

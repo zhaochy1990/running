@@ -5476,7 +5476,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Starts WeChat Pay JSAPI for one pending_payment order (shipping fee in fen) and returns the five parameters wx.requestPayment needs: timeStamp, nonceStr, package, signType, paySign.",
+                "description": "Starts WeChat Pay JSAPI for one pending_payment order (shipping fee in fen): the body's wx.login() code is exchanged for the payer openid via the auth service, and the response carries the five parameters wx.requestPayment needs: timeStamp, nonceStr, package, signType, paySign.",
                 "consumes": [
                     "application/json"
                 ],
@@ -5496,7 +5496,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "JSAPI payer",
+                        "description": "wx.login code",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -15151,12 +15151,12 @@ const docTemplate = `{
         "api.wxpayPrepayRequest": {
             "type": "object",
             "required": [
-                "openid"
+                "code"
             ],
             "properties": {
-                "openid": {
+                "code": {
                     "type": "string",
-                    "maxLength": 64
+                    "maxLength": 256
                 }
             }
         },

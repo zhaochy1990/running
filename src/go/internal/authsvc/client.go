@@ -2,6 +2,8 @@
 // methods forward the caller's complete Authorization header unchanged. The
 // legacy SyncName method separately accepts a token and adds the Bearer scheme
 // while mirroring a user's display name as a best-effort update (ADR 0013).
+// WeChatCode2Session rides the internal plane instead, authenticating with
+// the X-Internal-Token shared secret (devops#904/#905 prepay fix).
 package authsvc
 
 import (
@@ -285,6 +287,72 @@ func (c *Client) AdminListUsers(ctx context.Context, adminBearer, search string)
 		return nil, err
 	}
 	return page.Users, nil
+}
+
+// code2sessionPath is the auth-service internal endpoint that exchanges a
+// wx.login() code for the payer openid (devops#904/#905 prepay fix: the
+// WeChat appsecret stays in the auth-service, never here).
+const code2sessionPath = "/api/internal/wechat/code2session"
+
+// WeChatCode2Session exchanges a miniprogram wx.login() code for the JSAPI
+// payer openid through the auth-service's internal plane. internalToken is
+// the X-Internal-Token shared secret (the deployment injects the same
+// STRIDE_WORKER_API_INTERNAL_TOKEN value into both services). A 4xx from the
+// auth-service — e.g. wechat_invalid_code for a stale code — arrives as a
+// typed AuthServiceError; transport failures and 5xx as
+// AuthServiceUnavailable. The openid is returned to the caller only; nothing
+// is stored.
+func (c *Client) WeChatCode2Session(ctx context.Context, internalToken, code string) (string, error) {
+	if strings.TrimSpace(c.baseURL) == "" {
+		return "", &AuthServiceUnavailable{Detail: "base URL not configured"}
+	}
+	body, err := json.Marshal(struct {
+		Code string `json:"code"`
+	}{Code: code})
+	if err != nil {
+		return "", fmt.Errorf("authsvc: encode %s: %w", code2sessionPath, err)
+	}
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, strings.TrimRight(c.baseURL, "/")+code2sessionPath, bytes.NewReader(body),
+	)
+	if err != nil {
+		return "", fmt.Errorf("authsvc: build %s: %w", code2sessionPath, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Internal-Token", internalToken)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", &AuthServiceUnavailable{Err: err}
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody+1))
+	if err != nil {
+		return "", &AuthServiceUnavailable{Err: fmt.Errorf("read response: %w", err)}
+	}
+	if len(responseBody) > maxResponseBody {
+		return "", &AuthServiceUnavailable{Detail: "response body exceeds 1 MiB"}
+	}
+	if resp.StatusCode >= http.StatusInternalServerError {
+		return "", &AuthServiceUnavailable{StatusCode: resp.StatusCode, Detail: responseDetailText(responseBody)}
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		return "", &AuthServiceError{StatusCode: resp.StatusCode, Detail: responseDetail(responseBody)}
+	}
+	if len(responseBody) == 0 {
+		return "", &AuthServiceUnavailable{Detail: "malformed successful response: empty body"}
+	}
+	var out struct {
+		OpenID string `json:"openid"`
+	}
+	if err := json.Unmarshal(responseBody, &out); err != nil {
+		return "", unavailableDecodeError(code2sessionPath+" response", err)
+	}
+	if out.OpenID == "" {
+		return "", &AuthServiceUnavailable{Detail: "malformed successful response: missing openid"}
+	}
+	return out.OpenID, nil
 }
 
 // ListTeams returns all open teams. authorizationHeader is forwarded unchanged.
