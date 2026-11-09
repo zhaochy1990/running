@@ -219,6 +219,10 @@ test("块结构标记：吸收周归前块（2026-11-09 拍板）——3+1 完�
   // absorb_cut 边界仍存在（吸收后的下一常规周开新块），但其首周不是吸收周
   const absorbCuts = blocks.filter((b) => b.boundary === "absorb_cut");
   for (const b of absorbCuts) assert.ok(!b.absorb_weeks.includes(b.start_week), `块${b.block} 首周 W${b.start_week} 不应是吸收周`);
+  // 块长 ≥2 不变式（2026-11-09 用户拍板）：单周块禁止（阶段尾溢出周并入同阶段
+  // 相邻块）；例外=recovery（低量平独立语义单独成批，W1 单周合法）
+  for (const b of blocks)
+    assert.ok(b.end_week - b.start_week + 1 >= 2 || b.canonical === "recovery", `块${b.block} W${b.start_week}-W${b.end_week} 仅 1 周`);
 });
 
 test("里程碑对齐：L2 出口里程碑落到对应阶段 end_week", () => {

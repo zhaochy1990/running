@@ -155,7 +155,7 @@
   {
    "week": 6,
    "canonical": "final_quality",
-   "block": 5,
+   "block": 4,
    "role": "progress",
    "km": 94.4,
    "lr": 32,
@@ -164,7 +164,7 @@
   {
    "week": 7,
    "canonical": "final_quality",
-   "block": 5,
+   "block": 4,
    "role": "progress",
    "km": 101.3,
    "lr": 32,
@@ -173,7 +173,7 @@
   {
    "week": 8,
    "canonical": "final_quality",
-   "block": 5,
+   "block": 4,
    "role": "taper",
    "km": 86.1,
    "lr": 25,
@@ -182,7 +182,7 @@
   {
    "week": 9,
    "canonical": "final_quality",
-   "block": 5,
+   "block": 4,
    "role": "race",
    "km": 67.5,
    "lr": null,

@@ -302,7 +302,7 @@
   {
    "week": 19,
    "canonical": "final_quality",
-   "block": 9,
+   "block": 8,
    "role": "progress",
    "km": 97.5,
    "lr": 32,
@@ -311,7 +311,7 @@
   {
    "week": 20,
    "canonical": "final_quality",
-   "block": 9,
+   "block": 8,
    "role": "progress",
    "km": 100.4,
    "lr": 32,
@@ -320,7 +320,7 @@
   {
    "week": 21,
    "canonical": "final_quality",
-   "block": 9,
+   "block": 8,
    "role": "progress",
    "km": 94.6,
    "lr": 32,
@@ -329,7 +329,7 @@
   {
    "week": 22,
    "canonical": "final_quality",
-   "block": 9,
+   "block": 8,
    "role": "progress",
    "km": 97.5,
    "lr": 32,
@@ -338,7 +338,7 @@
   {
    "week": 23,
    "canonical": "final_quality",
-   "block": 9,
+   "block": 8,
    "role": "taper",
    "km": 82.9,
    "lr": 25,
@@ -347,7 +347,7 @@
   {
    "week": 24,
    "canonical": "final_quality",
-   "block": 9,
+   "block": 8,
    "role": "race",
    "km": 66.6,
    "lr": null,

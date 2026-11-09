@@ -260,7 +260,11 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
     if (absorb) blockPendingCut = true;
   }
 
-  // 块结构标记：按块聚合，记录 3+1 边界与吸收周
+  // 块结构标记：按块聚合，记录 3+1 边界与吸收周；随后施加「块长 ≥2」不变式
+  //（2026-11-09 用户拍板）：单周块并入**同阶段**相邻块——向前优先（阶段尾溢出
+  // 周挂回本阶段），阶段首周单块则向后（如 final_quality 首周兼吸收）。跨阶段
+  // 不并（块与阶段对齐：18 周=foundation 5/early 3/transition 4/final 6 四块
+  // 对四阶段）；recovery 块豁免（独立低量平语义单独成批）。
   const blocks: LoadBlock[] = [];
   for (const wk of weeks) {
     const at = blocks.at(-1);
@@ -278,6 +282,39 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
       });
     }
   }
+  for (let i = 0; i < blocks.length; ) {
+    const b = blocks[i]!;
+    const prev = i > 0 ? blocks[i - 1]! : null;
+    const next = i + 1 < blocks.length ? blocks[i + 1]! : null;
+    // recovery 块豁免（独立语义：低量平单独成批，教义 §3.2）；吸收单周已有阶段
+    // 语义豁免之外的普通单周才合并
+    const mergeIntoPrev = prev != null && prev.canonical === b.canonical;
+    const mergeIntoNext = next != null && next.canonical === b.canonical;
+    if (b.end_week - b.start_week + 1 === 1 && blocks.length > 1 && b.canonical !== "recovery" && (mergeIntoPrev || mergeIntoNext)) {
+      if (mergeIntoPrev) {
+        prev!.end_week = b.end_week;
+        prev!.absorb_weeks.push(...b.absorb_weeks);
+      } else {
+        next!.start_week = b.start_week;
+        next!.absorb_weeks.unshift(...b.absorb_weeks);
+        // 阶段首周单块向后并时继承 phase_start 边界（合并块起点=阶段首周）
+        if (b.boundary === "phase_start") next!.boundary = "phase_start";
+      }
+      blocks.splice(i, 1);
+    } else i++;
+  }
+  // 合并后按块序重编号，weeks[].block 与 blocks[].block 同步
+  weeks.forEach((wk) => {
+    const idx = blocks.findIndex((b) => wk.week >= b.start_week && wk.week <= b.end_week);
+    if (idx >= 0) wk.block = blocks[idx]!.block;
+  });
+  blocks.forEach((b, idx) => {
+    b.block = idx + 1;
+  });
+  weeks.forEach((wk) => {
+    const idx = blocks.findIndex((b) => wk.week >= b.start_week && wk.week <= b.end_week);
+    if (idx >= 0) wk.block = idx + 1;
+  });
 
   // 里程碑对齐：L2 里程碑挂到对应阶段的出口周（引用匹配必须用真实阶段行）
   const milestones: MilestoneAlignment[] = intent.milestones.map((m) => {

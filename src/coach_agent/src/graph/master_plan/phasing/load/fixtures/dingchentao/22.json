@@ -204,7 +204,7 @@
   {
    "week": 7,
    "canonical": "foundation",
-   "block": 3,
+   "block": 2,
    "role": "progress",
    "km": 75,
    "lr": 27,
@@ -213,7 +213,7 @@
   {
    "week": 8,
    "canonical": "early_quality",
-   "block": 4,
+   "block": 3,
    "role": "progress",
    "km": 83.4,
    "lr": 30,
@@ -222,7 +222,7 @@
   {
    "week": 9,
    "canonical": "early_quality",
-   "block": 4,
+   "block": 3,
    "role": "progress",
    "km": 86,
    "lr": 31,
@@ -231,7 +231,7 @@
   {
    "week": 10,
    "canonical": "transition_quality",
-   "block": 5,
+   "block": 4,
    "role": "absorb",
    "km": 67.7,
    "lr": 24.4,
@@ -240,7 +240,7 @@
   {
    "week": 11,
    "canonical": "transition_quality",
-   "block": 6,
+   "block": 4,
    "role": "progress",
    "km": 93,
    "lr": 32,
@@ -249,7 +249,7 @@
   {
    "week": 12,
    "canonical": "transition_quality",
-   "block": 6,
+   "block": 4,
    "role": "progress",
    "km": 95.8,
    "lr": 32,
@@ -258,7 +258,7 @@
   {
    "week": 13,
    "canonical": "transition_quality",
-   "block": 6,
+   "block": 4,
    "role": "progress",
    "km": 90.2,
    "lr": 32,
@@ -267,7 +267,7 @@
   {
    "week": 14,
    "canonical": "final_quality",
-   "block": 7,
+   "block": 5,
    "role": "absorb",
    "km": 69.1,
    "lr": 24.9,
@@ -276,7 +276,7 @@
   {
    "week": 15,
    "canonical": "final_quality",
-   "block": 8,
+   "block": 5,
    "role": "progress",
    "km": 95,
    "lr": 32,
@@ -285,7 +285,7 @@
   {
    "week": 16,
    "canonical": "final_quality",
-   "block": 8,
+   "block": 5,
    "role": "progress",
    "km": 97.9,
    "lr": 32,
@@ -294,7 +294,7 @@
   {
    "week": 17,
    "canonical": "final_quality",
-   "block": 8,
+   "block": 5,
    "role": "progress",
    "km": 92.1,
    "lr": 32,
@@ -303,7 +303,7 @@
   {
    "week": 18,
    "canonical": "final_quality",
-   "block": 8,
+   "block": 5,
    "role": "absorb",
    "km": 71.3,
    "lr": 25.7,
@@ -312,7 +312,7 @@
   {
    "week": 19,
    "canonical": "final_quality",
-   "block": 9,
+   "block": 6,
    "role": "progress",
    "km": 97.9,
    "lr": 32,
@@ -321,7 +321,7 @@
   {
    "week": 20,
    "canonical": "final_quality",
-   "block": 9,
+   "block": 6,
    "role": "progress",
    "km": 92.1,
    "lr": 32,
@@ -330,7 +330,7 @@
   {
    "week": 21,
    "canonical": "final_quality",
-   "block": 9,
+   "block": 6,
    "role": "taper",
    "km": 78.3,
    "lr": 25,
@@ -339,7 +339,7 @@
   {
    "week": 22,
    "canonical": "final_quality",
-   "block": 9,
+   "block": 6,
    "role": "race",
    "km": 65.2,
    "lr": null,
