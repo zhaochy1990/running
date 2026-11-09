@@ -46,6 +46,8 @@ export function danielsAudit(outcome: ScheduledOutcome, input: ContentGeneratorI
   // 2. Q 配额
   for (const row of rows) {
     const qs = wkOf(row.week).filter((w) => w.type !== "LR" && w.type !== "E" && w.name !== input.race.name && !(raceDate != null && w.date === raceDate));
+    // recovery 周 q=0 是 L3 设计（纯 E+strides）——不审 Q 配额也不审频率下限
+    if (row.phase === "recovery") continue;
     if (row.role === "progress") items.push({ item: `W${row.week} Q 配额`, verdict: qs.length >= 2 ? "pass" : "warn", expectation: "2Q 体系：progress 周 2 节质量课（+可选轻量 M 段位）", actual: `${qs.length} 节：${qs.map((q) => q.name.slice(0, 12)).join("/")}` });
     if (row.role === "taper") items.push({ item: `W${row.week} Q 配额`, verdict: qs.length === 2 ? "pass" : "warn", expectation: "taper 仍 2Q 足量（原书 W17 两节 T 合计可观阈值里程）", actual: `${qs.length} 节` });
   }
@@ -82,11 +84,19 @@ export function danielsAudit(outcome: ScheduledOutcome, input: ContentGeneratorI
     const okPos = daysToRace != null && daysToRace >= 13 && daysToRace <= 24;
     items.push({ item: "大 MP 彩排位置", verdict: okPos ? "pass" : "warn", expectation: "原书 W16：赛前 3 周 16mi@MP 大彩排（唯一一次）", actual: `W${r0.week} ${mKm(r0.w).toFixed(1)}km@${pace(goal)}/km，距赛 ${daysToRace ?? "?"} 天` });
   } else {
-    items.push({ item: "大 MP 彩排位置", verdict: "warn", expectation: "赛前 3 周应有 ≥18km@goal 的大彩排长跑", actual: "未检出" });
+    // 首块门控（2026-11-09）：赛周不在本次生成窗口（长跑道只生成首块）——彩排属
+    // final_quality 块，到界滚动生成时再审计；短跑道未检出才是真缺失。
+    const deferred = raceDate == null && input.race?.date != null;
+    items.push({
+      item: "大 MP 彩排位置",
+      verdict: deferred ? "pass" : "warn",
+      expectation: "赛前 3 周应有 ≥18km@goal 的大彩排长跑",
+      actual: deferred ? "赛周未在本次生成窗口（首块门控，块界滚动生成时审计）" : "未检出",
+    });
   }
 
   // 7. 频率：非赛周最长连休 ≤2 天
-  for (const row of rows.filter((r) => r.role !== "race")) {
+  for (const row of rows.filter((r) => r.role !== "race" && r.phase !== "recovery")) {
     const days = new Set(wkOf(row.week).map((w) => wdOf(w.date)));
     let maxRun = 0;
     let cur = 0;

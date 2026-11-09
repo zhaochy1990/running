@@ -154,7 +154,12 @@ export function buildV2Snapshot(input: SnapshotInput): MasterPlan {
       .map((workout) => toKeySession(workout, raceDate, easyPace))
       .filter((session) => session != null)
       // 赛周只留比赛课（激活课是 v3 产物，见文件头注释 1）
-      .filter((session) => !isRaceWeek || session.type === "race");
+      .filter((session) => !isRaceWeek || session.type === "race")
+      // v2 兼容快照上限（常规 ≤3/恢复 ≤1）：C3 的 q+1 轻量 M 段位会让一周出现
+      // 2Q+轻量课+LR=4 节（2026-11-09 分批复验实证）——按总里程降序截前 N，被截
+      // 的课只在 v3 content 里（v2 是兼容投影非全量），audit 与 weekly 投影不受影响。
+      .sort((a, b) => (b?.distance_km ?? 0) - (a?.distance_km ?? 0))
+      .slice(0, week.canonical === "recovery" ? 1 : 3);
     return {
       week_index: week.week,
       week_start: weekStart(planStartMonday, week.week),
