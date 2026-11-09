@@ -158,6 +158,7 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
   const weeks: LoadWeek[] = [];
   const phaseStartWeeks = new Set(phases.map((p) => p.start_week));
   let blockId = 0;
+  let blockPendingCut = false;
   let phaseWeekIdx = 0;
   let prevCanonical = "";
   for (let w = 1; w <= N; w++) {
@@ -181,7 +182,16 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
     const buildSoFar = weeks.filter((x) => x.canonical !== "recovery" && (x.role === "progress" || x.role === "absorb")).length;
     const absorb =
       N > SHORT_ABSORB_MAX_WEEKS && !inTaper && p.canonical !== "recovery" && buildSoFar > 0 && (buildSoFar + 1) % ABSORB_EVERY === 0 && N - w >= taperW + 1;
-    if (phaseWeekIdx === 1 || absorb) blockId++;
+    // 块边界（2026-11-09 用户评审拍板：吸收周归前块）：阶段首周开新块；吸收周
+    // **不**开新块——它是前块（3 进展周）的收尾（超代偿单元完整 = daniels.md
+    // §3.2「吸收周需整块连贯」），下一常规周才开新块。旧实现吸收周自增 blockId
+    // 导致「块1=W1-W3 / 块2=吸收+1 进展 / 单周吸收块」的破碎形态（18 周实测
+    // 7 块=3/2/2/1/3/1/6）；修正后=4/1/3/4/6（阶段尾单周碎片另由生成层合并）。
+    if (phaseWeekIdx === 1) blockId++;
+    else if (blockPendingCut) {
+      blockId++;
+      blockPendingCut = false;
+    }
     const prev4 = [...actual4, ...weeks.map((x) => x.km)].slice(-4);
     const rollMean = prev4.reduce((s, x) => s + x, 0) / Math.max(1, prev4.length);
 
@@ -247,6 +257,7 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
                 ? 2
                 : 1;
     weeks.push({ week: w, canonical: p.canonical, block: blockId, role, km: r1(km), lr, q });
+    if (absorb) blockPendingCut = true;
   }
 
   // 块结构标记：按块聚合，记录 3+1 边界与吸收周

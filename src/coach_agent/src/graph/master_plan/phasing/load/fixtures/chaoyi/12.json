@@ -166,7 +166,7 @@
   {
    "week": 5,
    "canonical": "early_quality",
-   "block": 4,
+   "block": 3,
    "role": "absorb",
    "km": 66.8,
    "lr": 24,
@@ -175,7 +175,7 @@
   {
    "week": 6,
    "canonical": "transition_quality",
-   "block": 5,
+   "block": 4,
    "role": "progress",
    "km": 92.6,
    "lr": 32,
@@ -202,7 +202,7 @@
   {
    "week": 9,
    "canonical": "final_quality",
-   "block": 7,
+   "block": 6,
    "role": "absorb",
    "km": 78.8,
    "lr": 28.4,

@@ -155,7 +155,7 @@
   {
    "week": 6,
    "canonical": "foundation",
-   "block": 3,
+   "block": 2,
    "role": "absorb",
    "km": 54.6,
    "lr": 22.9,
@@ -191,7 +191,7 @@
   {
    "week": 10,
    "canonical": "transition_quality",
-   "block": 5,
+   "block": 4,
    "role": "absorb",
    "km": 71.1,
    "lr": 25.6,

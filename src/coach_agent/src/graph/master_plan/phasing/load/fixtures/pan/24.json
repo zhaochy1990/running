@@ -155,7 +155,7 @@
   {
    "week": 6,
    "canonical": "foundation",
-   "block": 3,
+   "block": 2,
    "role": "absorb",
    "km": 37.8,
    "lr": 15.9,
@@ -191,7 +191,7 @@
   {
    "week": 10,
    "canonical": "foundation",
-   "block": 4,
+   "block": 3,
    "role": "absorb",
    "km": 39,
    "lr": 16.4,
@@ -200,7 +200,7 @@
   {
    "week": 11,
    "canonical": "transition_quality",
-   "block": 5,
+   "block": 4,
    "role": "progress",
    "km": 61.1,
    "lr": 22,
@@ -227,7 +227,7 @@
   {
    "week": 14,
    "canonical": "transition_quality",
-   "block": 6,
+   "block": 5,
    "role": "absorb",
    "km": 45.8,
    "lr": 19.2,
@@ -263,7 +263,7 @@
   {
    "week": 18,
    "canonical": "final_quality",
-   "block": 8,
+   "block": 7,
    "role": "absorb",
    "km": 50.3,
    "lr": 21.1,

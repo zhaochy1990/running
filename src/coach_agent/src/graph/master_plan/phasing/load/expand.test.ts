@@ -205,16 +205,20 @@ test("Q 配额：foundation km<60→0 / km≥60→1；其余建设 km≥70→2 �
   }
 });
 
-test("块结构标记：相位首周开 phase_start 块，吸收周开 absorb_cut 块", () => {
-  const { blocks } = run();
+test("块结构标记：吸收周归前块（2026-11-09 拍板）——3+1 完整超代偿单元，吸收不开新块", () => {
+  const { weeks, blocks } = run();
   const phaseStarts = blocks.filter((b) => b.boundary === "phase_start");
-  assert.equal(phaseStarts.length, 5); // 五个相位各一块（w13 既是相位首周又是吸收周，记 phase_start）
+  assert.equal(phaseStarts.length, 5); // 五个相位各一块（相位首周优先记 phase_start）
+  // 吸收周与前一进展周同块（教科书 3+1：吸收=块收尾非块开启）；例外=阶段首周
+  // 兼吸收（如 W13 final_quality 起步周）——阶段切换优先开块，吸收跟随新阶段
+  const phaseStartWeeks = new Set(phaseStarts.map((b) => b.start_week));
+  for (const w of weeks.filter((x) => x.role === "absorb" && !phaseStartWeeks.has(x.week))) {
+    const prev = weeks.find((x) => x.week === w.week - 1);
+    if (prev) assert.equal(w.block, prev.block, `W${w.week} 吸收周与 W${w.week - 1} 不同块`);
+  }
+  // absorb_cut 边界仍存在（吸收后的下一常规周开新块），但其首周不是吸收周
   const absorbCuts = blocks.filter((b) => b.boundary === "absorb_cut");
-  assert.deepEqual(
-    absorbCuts.map((b) => b.start_week),
-    [5, 9],
-  );
-  for (const b of absorbCuts) assert.deepEqual(b.absorb_weeks, [b.start_week]);
+  for (const b of absorbCuts) assert.ok(!b.absorb_weeks.includes(b.start_week), `块${b.block} 首周 W${b.start_week} 不应是吸收周`);
 });
 
 test("里程碑对齐：L2 出口里程碑落到对应阶段 end_week", () => {
