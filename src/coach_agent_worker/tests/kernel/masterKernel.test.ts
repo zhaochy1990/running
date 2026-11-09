@@ -1,17 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createMasterPlanGraph, FrozenMasterPlanContextProvider, MasterPlanGraphRequest } from "@stride/coach-agent";
-import {
-  createAssessmentSnapshot,
-  createTestGoalAssessment,
-  createTestJudgments,
-  createTestMasterPlan,
-  createTestRequest,
-  createTestReviewReport,
-  createTestStrategyCandidate,
-} from "@stride/coach-agent/test-fixtures";
+import { MasterPlanGraphRequest } from "@stride/coach-agent";
+import { createTestCompletedOutcomeV3, createTestRequest } from "@stride/coach-agent/test-fixtures";
 import { asPermanent } from "../../src/job/errors.js";
-import { runMasterKernel, toMasterPlanGraphShim } from "../../src/kernel/master/kernel.js";
+import { runMasterKernel } from "../../src/kernel/master/kernel.js";
 
 const runtime = { userId: "athlete-1", generationId: "plan-job-1" };
 const request = MasterPlanGraphRequest.parse(createTestRequest());
@@ -21,36 +13,32 @@ interface GraphOverrides {
   skeletonInvalid?: boolean;
 }
 
+/**
+ * runner 的测试对象是「node 事件 → 进度/错误映射」，不是 kernel 本身。
+ * 用假 stream 按新拓扑节点名吐事件 + 一份合法 v3 completed 产物。
+ */
+const NODE_SEQUENCE = ["initialize", "assess_goal", "l1_evidence", "l2_phasing", "l3_load", "l4_content", "daniels_audit", "snapshot_plan", "finalize"];
+
 function buildGraph(overrides: GraphOverrides = {}) {
-  const snapshot = new FrozenMasterPlanContextProvider(createAssessmentSnapshot());
-  return toMasterPlanGraphShim(
-    createMasterPlanGraph({
-      goalAssessmentModel: {
-        async invoke() {
-          return createTestGoalAssessment();
-        },
-      },
-      phasingModel: {
-        async invoke() {
-          throw new Error("phasing model must not be invoked in kernel wiring tests");
-        },
-      } as never,
-      contentModel: {
-        async invoke() {
-          throw new Error("content model must not be invoked in kernel wiring tests");
-        },
-      } as never,
-      contextProvider: {
-        async loadActivities() {
-          return [];
-        },
-        async loadSnapshot() {
-          if (overrides.snapshotThrows) throw new Error("mysql unavailable");
-          return snapshot.loadSnapshot();
-        },
-      },
-    }),
-  );
+  const outcome = overrides.snapshotThrows
+    ? { decision: "infrastructure_failure", request_id: "request-342", generation_id: "plan-job-1", code: "context_snapshot_unavailable", retryable: true }
+    : overrides.skeletonInvalid
+      ? {
+          decision: "failed_quality_gate",
+          request_id: "request-342",
+          generation_id: "plan-job-1",
+          artifact: { type: "quality_failure_report", unresolved_issues: ["load_gate:acwr"], attempt_history: [] },
+        }
+      : createTestCompletedOutcomeV3({ totalWeeks: 2 });
+  return {
+    async stream() {
+      const nodes = overrides.snapshotThrows ? ["initialize"] : NODE_SEQUENCE;
+      return (async function* () {
+        for (const node of nodes) yield { [node]: {} };
+        yield { finalize: { outcome } };
+      })();
+    },
+  } as never;
 }
 
 test("completed kernel run streams monotonic node progress and returns the plan", async () => {

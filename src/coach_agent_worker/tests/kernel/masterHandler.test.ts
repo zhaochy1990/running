@@ -1,51 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createMasterPlanGraph, FrozenMasterPlanContextProvider, MasterPlanGraphRequest } from "@stride/coach-agent";
-import {
-  createAssessmentSnapshot,
-  createTestGoalAssessment,
-  createTestJudgments,
-  createTestMasterPlan,
-  createTestRequest,
-  createTestReviewReport,
-  createTestStrategyCandidate,
-} from "@stride/coach-agent/test-fixtures";
+import { MasterPlanGraphRequest } from "@stride/coach-agent";
+import { createTestCompletedOutcomeV3, createTestRequest } from "@stride/coach-agent/test-fixtures";
 import { asPermanent, ERROR_CODES } from "../../src/job/errors.js";
 import { createMasterPlanJobHandler, type MasterPlanHandlerDeps } from "../../src/kernel/master/handler.js";
-import { toMasterPlanGraphShim } from "../../src/kernel/master/kernel.js";
 import { FakePlanJobStore } from "../job/fakes.js";
 
 const GOAL_ID = "11111111-2222-3333-4444-555555555555";
 
+/** handler 的测试对象是「kernel 产物 → job result_json」，用假 stream 图喂合法 v3 产物。 */
 function buildGraph() {
-  const snapshot = new FrozenMasterPlanContextProvider(createAssessmentSnapshot());
-  return toMasterPlanGraphShim(
-    createMasterPlanGraph({
-      goalAssessmentModel: {
-        async invoke() {
-          return createTestGoalAssessment();
-        },
-      },
-      phasingModel: {
-        async invoke() {
-          throw new Error("phasing model must not be invoked in kernel wiring tests");
-        },
-      } as never,
-      contentModel: {
-        async invoke() {
-          throw new Error("content model must not be invoked in kernel wiring tests");
-        },
-      } as never,
-      contextProvider: {
-        async loadActivities() {
-          return [];
-        },
-        async loadSnapshot() {
-          return snapshot.loadSnapshot();
-        },
-      },
-    }),
-  );
+  const outcome = createTestCompletedOutcomeV3({ totalWeeks: 2 });
+  return {
+    async stream() {
+      return (async function* () {
+        yield { initialize: {} };
+        yield { finalize: { outcome } };
+      })();
+    },
+  } as never;
 }
 
 function deps(overrides: Partial<MasterPlanHandlerDeps> = {}): MasterPlanHandlerDeps {
