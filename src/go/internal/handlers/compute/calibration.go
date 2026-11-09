@@ -69,13 +69,16 @@ func NewCalibration(store CalibrationStore) job.Handler {
 		}
 		asOf := timefmt.ShanghaiToday()
 		// Empty-run gate (devops#931): an incremental sync that produced no new
-		// activity and no health day pays the 180-day full-window recompute at
-		// most once per Shanghai day. Once today's snapshot exists, repeated
-		// empty pulls (manual refresh storms) skip straight through. Full mode
-		// (explicit recompute semantics) and standalone runs without a mode
-		// (the force-recalibrate path) always recompute.
+		// activity pays the 180-day full-window recompute at most once per
+		// Shanghai day. Keyed on label_ids only — provider health pulls re-write
+		// the whole daily_health window on every sync (COROS re-delivers ~92
+		// days each pull), so health_dates carries no new-data signal. The RHR
+		// baseline is a smoothed window metric; same-day re-pulls add nothing
+		// the once-per-day recompute misses. Full mode (explicit recompute
+		// semantics) and standalone runs without a mode (the force-recalibrate
+		// path) always recompute.
 		day := asOf.Format("2006-01-02")
-		if in.Mode == string(provider.SyncIncremental) && len(in.LabelIDs) == 0 && len(in.HealthDates) == 0 {
+		if in.Mode == string(provider.SyncIncremental) && len(in.LabelIDs) == 0 {
 			snap, err := store.LatestRunningCalibrationSnapshotForVersion(ctx, user, calibration.ModelVersion, day)
 			if err != nil {
 				return "", err // infra fault -> retryable

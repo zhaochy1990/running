@@ -3,6 +3,7 @@ package compute
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"testing"
 	"time"
 
@@ -168,10 +169,12 @@ func TestCalibration_EchoesSyncBatches(t *testing.T) {
 	}
 }
 
-// The empty-run gate (devops#931): an incremental sync that produced nothing
-// new skips the 180-day recompute once today's snapshot exists; everything
-// else (new batches, full mode, standalone/no mode, missing or stale snapshot)
-// recomputes.
+// The empty-run gate (devops#931): an incremental sync with no new activity
+// skips the 180-day recompute once today's snapshot exists; everything else
+// (new labels, full mode, standalone/no mode, missing or stale snapshot)
+// recomputes. health_dates re-delivery alone does NOT trigger a recompute —
+// providers re-write the whole daily_health window on every pull, so it
+// carries no new-data signal.
 func TestCalibration_EmptyRunGate(t *testing.T) {
 	// snapFor resolves "today"/"yesterday" lazily per case so a run straddling
 	// the Shanghai midnight boundary cannot desync the fixture from the
@@ -192,11 +195,11 @@ func TestCalibration_EmptyRunGate(t *testing.T) {
 		skipped  bool
 		snapWant bool // snapshot write expected
 	}{
-		{"incremental empty batches + today snapshot skips", `{"mode":"incremental"}`, todaySnap, true, false},
-		{"incremental empty batches + no snapshot recomputes", `{"mode":"incremental"}`, func() *storage.RunningCalibrationSnapshot { return nil }, false, true},
-		{"incremental empty batches + yesterday snapshot recomputes", `{"mode":"incremental"}`, yesterdaySnap, false, true},
+		{"incremental no new labels + today snapshot skips", `{"mode":"incremental"}`, todaySnap, true, false},
+		{"incremental no new labels + no snapshot recomputes", `{"mode":"incremental"}`, func() *storage.RunningCalibrationSnapshot { return nil }, false, true},
+		{"incremental no new labels + yesterday snapshot recomputes", `{"mode":"incremental"}`, yesterdaySnap, false, true},
 		{"incremental new labels recomputes", `{"mode":"incremental","label_ids":["a1"]}`, todaySnap, false, true},
-		{"incremental new health dates recomputes", `{"mode":"incremental","health_dates":["2026-11-09"]}`, todaySnap, false, true},
+		{"incremental health-only re-delivery skips (COROS full-window pull)", `{"mode":"incremental","health_dates":["2026-08-18","2026-11-09"]}`, todaySnap, true, false},
 		{"full mode always recomputes", `{"mode":"full"}`, todaySnap, false, true},
 		{"standalone no mode always recomputes", `{}`, todaySnap, false, true},
 	}
@@ -218,6 +221,17 @@ func TestCalibration_EmptyRunGate(t *testing.T) {
 			}
 			if err := json.Unmarshal([]byte(out), &res); err != nil {
 				t.Fatalf("parse result: %v", err)
+			}
+			// Both paths must echo the input batches: on skip, a non-empty
+			// health_dates echo is load-bearing — without it compute noops and a
+			// health-only sync's rest_confirmed/PMC silently stops.
+			var wantLabels, wantHealth []string
+			_ = json.Unmarshal([]byte(tc.input), &struct {
+				LabelIDs    *[]string `json:"label_ids"`
+				HealthDates *[]string `json:"health_dates"`
+			}{&wantLabels, &wantHealth})
+			if !slices.Equal(res.LabelIDs, wantLabels) || !slices.Equal(res.HealthDates, wantHealth) {
+				t.Fatalf("echo = %v/%v, want %v/%v", res.LabelIDs, res.HealthDates, wantLabels, wantHealth)
 			}
 			if tc.skipped {
 				if res.Status != "skipped_no_new_data" {
