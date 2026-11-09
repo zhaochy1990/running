@@ -48,7 +48,15 @@ export function danielsAudit(outcome: ScheduledOutcome, input: ContentGeneratorI
     const qs = wkOf(row.week).filter((w) => w.type !== "LR" && w.type !== "E" && w.name !== input.race.name && !(raceDate != null && w.date === raceDate));
     // recovery 周 q=0 是 L3 设计（纯 E+strides）——不审 Q 配额也不审频率下限
     if (row.phase === "recovery") continue;
-    if (row.role === "progress") items.push({ item: `W${row.week} Q 配额`, verdict: qs.length >= 2 ? "pass" : "warn", expectation: "2Q 体系：progress 周 2 节质量课（+可选轻量 M 段位）", actual: `${qs.length} 节：${qs.map((q) => q.name.slice(0, 12)).join("/")}` });
+    // Q 配额按 L3 骨架对账（权威=qualitySessions：foundation km≥60=1、final_quality=2），
+    // 不硬编码 2Q——2Q 是专项期形态，基础期 1Q 是设计（第六轮验收 foundation 首块实证）
+    if (row.role === "progress")
+      items.push({
+        item: `W${row.week} Q 配额`,
+        verdict: qs.length >= row.qualitySessions ? "pass" : "warn",
+        expectation: `L3 配额 ${row.qualitySessions} 节（${row.phase === "final_quality" ? "2Q 专项期" : row.phase === "foundation" ? "基础期 1Q" : "按骨架"}；+可选轻量 M 段位）`,
+        actual: `${qs.length} 节：${qs.map((q) => q.name.slice(0, 12)).join("/")}`,
+      });
     if (row.role === "taper") items.push({ item: `W${row.week} Q 配额`, verdict: qs.length === 2 ? "pass" : "warn", expectation: "taper 仍 2Q 足量（原书 W17 两节 T 合计可观阈值里程）", actual: `${qs.length} 节` });
   }
 
