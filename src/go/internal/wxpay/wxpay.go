@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/wechatpay-apiv3/wechatpay-go/core"
 	"github.com/wechatpay-apiv3/wechatpay-go/core/auth/verifiers"
@@ -57,6 +58,18 @@ type Config struct {
 	// NotifyURL is the absolute https callback endpoint
 	// (POST /api/wxpay/notify); no query string allowed.
 	NotifyURL string
+}
+
+// OutTradeNoFromOrderID derives the merchant order number every WeChat Pay
+// call sends for a redemption order: the 36-character hyphenated UUID order
+// id with its four hyphens stripped, a 32-character lowercase hex string.
+// WeChat Pay rejects out_trade_no values outside 6-32 characters drawn from
+// letters, digits and the - _ * set, so the raw UUID overshoots the length
+// limit by four characters and every prepay on it failed PARAM_ERROR
+// (devops#904). This is the single derivation: creation persists it, prepay
+// and close send it, and the notify callback echoes it back verbatim.
+func OutTradeNoFromOrderID(orderID string) string {
+	return strings.ReplaceAll(orderID, "-", "")
 }
 
 // Configured reports whether every credential field is non-empty.
@@ -135,7 +148,8 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 func (c *Client) Configured() bool { return c != nil && c.cfg.Configured() }
 
 // PrepayPaymentParams runs the JSAPI prepay for one shipping fee and returns
-// the wx.requestPayment parameters. outTradeNo is the redemption order id;
+// the wx.requestPayment parameters. outTradeNo is the merchant order number
+// as derived by OutTradeNoFromOrderID (never the raw hyphenated UUID);
 // feeFen is the order's shipping_fee_snapshot in fen; description follows the
 // WeChat contract (the shop shows it on the payment sheet).
 func (c *Client) PrepayPaymentParams(ctx context.Context, outTradeNo, description string, feeFen int64, openid string) (*PaymentParams, error) {

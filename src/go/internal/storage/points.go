@@ -20,6 +20,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"github.com/zhaochy1990/stride/internal/wxpay"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -351,7 +353,12 @@ func (s *Store) CreateRedemption(ctx context.Context, userID string, req Redempt
 			order.PaymentState = PaymentStatePending
 			order.ShippingFeeSnapshot = fee
 			order.ShippingPolicySnapshot = p.ShippingPolicy
-			order.OutTradeNo = &order.ID
+			// devops#904: WeChat Pay caps out_trade_no at 32 characters, so the
+			// column stores the hyphen-stripped order id — the same value prepay
+			// and close derive and the notify callback echoes back, keeping the
+			// lookup exact.
+			outTradeNo := wxpay.OutTradeNoFromOrderID(order.ID)
+			order.OutTradeNo = &outTradeNo
 		}
 		if err := tx.Create(order).Error; err != nil {
 			// Lost the unique race against the same key's winner (1213 rides

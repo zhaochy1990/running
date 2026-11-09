@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -38,12 +39,14 @@ import (
 // ─────────────────────────────────────────────────────────────────────────────
 
 // fakeWxPayGateway stands in for *wxpay.Client: canned prepay parameters and a
-// scripted notify answer.
+// scripted notify answer. prepayTradeNo records the merchant order number the
+// handler handed the gateway — the value the real client would send upstream.
 type fakeWxPayGateway struct {
-	prepayCalls int
-	prepayErr   error
-	notify      *wxpay.NotifyPayment
-	notifyErr   error
+	prepayCalls   int
+	prepayTradeNo string
+	prepayErr     error
+	notify        *wxpay.NotifyPayment
+	notifyErr     error
 }
 
 func (f *fakeWxPayGateway) Configured() bool { return true }
@@ -53,6 +56,7 @@ func (f *fakeWxPayGateway) PrepayPaymentParams(_ context.Context, outTradeNo, _ 
 		return nil, f.prepayErr
 	}
 	f.prepayCalls++
+	f.prepayTradeNo = outTradeNo
 	return &wxpay.PaymentParams{
 		TimeStamp: "1793947500", NonceStr: "nonce-str",
 		Package: "prepay_id=" + outTradeNo, SignType: "RSA", PaySign: "paysign",
@@ -280,8 +284,8 @@ func TestWxpayPrepayGate(t *testing.T) {
 		return srv
 	}
 
-	pending := &storage.PointRedemption{ID: "order-p", UserID: "user-1", Status: storage.RedemptionStatusPendingPayment, PaymentState: storage.PaymentStatePending, ShippingFeeSnapshot: 800}
-	code, body := postAuthedJSON(t, srvFor(pending).URL+"/api/users/me/points/redemptions/order-p/pay", signed("user-1"))
+	pending := &storage.PointRedemption{ID: uuid.NewString(), UserID: "user-1", Status: storage.RedemptionStatusPendingPayment, PaymentState: storage.PaymentStatePending, ShippingFeeSnapshot: 800}
+	code, body := postAuthedJSON(t, srvFor(pending).URL+"/api/users/me/points/redemptions/"+pending.ID+"/pay", signed("user-1"))
 	if code != http.StatusOK {
 		t.Fatalf("pending order must pay: %d %v", code, body)
 	}
@@ -289,6 +293,15 @@ func TestWxpayPrepayGate(t *testing.T) {
 		if v, _ := body[k].(string); v == "" {
 			t.Fatalf("prepay response missing %s: %v", k, body)
 		}
+	}
+	// The value sent upstream is the id-derived trade number — a 32-character
+	// hyphen-free string WeChat accepts (the raw UUID failed PARAM_ERROR,
+	// devops#904) — not the raw order id.
+	if gateway.prepayTradeNo != wxpay.OutTradeNoFromOrderID(pending.ID) {
+		t.Fatalf("prepay out_trade_no = %q, want the id-derived %q", gateway.prepayTradeNo, wxpay.OutTradeNoFromOrderID(pending.ID))
+	}
+	if len(gateway.prepayTradeNo) != 32 || strings.Contains(gateway.prepayTradeNo, "-") {
+		t.Fatalf("prepay out_trade_no %q must be 32 hyphen-free characters", gateway.prepayTradeNo)
 	}
 
 	cancelled := &storage.PointRedemption{ID: "order-c", UserID: "user-1", Status: storage.RedemptionStatusCancelled, PaymentState: storage.PaymentStatePending, ShippingFeeSnapshot: 800}
@@ -399,10 +412,18 @@ func TestE2E_WxpayFeeCheckoutFlow(t *testing.T) {
 	if gateway.prepayCalls != 1 {
 		t.Fatalf("prepay calls = %d", gateway.prepayCalls)
 	}
+	// The merchant order number sent upstream is the id-derived 32-character
+	// trade number (devops#904), and it equals what creation stored — the
+	// exact value the notify below echoes back.
+	if gateway.prepayTradeNo != wxpay.OutTradeNoFromOrderID(orderID) ||
+		len(gateway.prepayTradeNo) != 32 || strings.Contains(gateway.prepayTradeNo, "-") {
+		t.Fatalf("prepay out_trade_no = %q, want the 32-char id-derived %q", gateway.prepayTradeNo, wxpay.OutTradeNoFromOrderID(orderID))
+	}
 
 	// The verified SUCCESS callback moves the order pending → paid; a replay
-	// is a 200 no-op that must not change anything.
-	gateway.notify = &wxpay.NotifyPayment{OutTradeNo: orderID, TradeState: wxpay.TradeStateSuccess, PaidFen: 800}
+	// is a 200 no-op that must not change anything. The callback carries the
+	// trade number WeChat knows: the derived value the prepay sent.
+	gateway.notify = &wxpay.NotifyPayment{OutTradeNo: wxpay.OutTradeNoFromOrderID(orderID), TradeState: wxpay.TradeStateSuccess, PaidFen: 800}
 	code, ack := server.send(t, "POST", "/api/wxpay/notify", "", map[string]any{"id": "evt-1"})
 	if code != http.StatusOK || ack["code"] != "SUCCESS" {
 		t.Fatalf("notify: %d %v", code, ack)

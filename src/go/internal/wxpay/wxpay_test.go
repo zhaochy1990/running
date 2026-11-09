@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/wechatpay-apiv3/wechatpay-go/core"
 	"github.com/wechatpay-apiv3/wechatpay-go/core/auth/verifiers"
 	"github.com/wechatpay-apiv3/wechatpay-go/core/consts"
@@ -156,6 +157,32 @@ func successNotifyBody(t *testing.T, tradeState string, totalFen int64) map[stri
 			"associated_data": "transaction",
 			"ciphertext":      sealResource(t, plaintext, []byte(testAPIv3Key), "transaction", testNotifyNonce),
 		},
+	}
+}
+
+func TestOutTradeNoFromOrderID(t *testing.T) {
+	// WeChat Pay accepts out_trade_no of 6-32 characters drawn from letters,
+	// digits and - _ *. The hyphen-stripped UUID is 32 lowercase hex
+	// characters — inside both bounds, where the raw 36-character id overshot
+	// the length limit and failed every prepay with PARAM_ERROR (devops#904).
+	for id, want := range map[string]string{
+		"3f2b8a41-9c0d-4e6f-8a2b-1d3c5e7f9a0b": "3f2b8a419c0d4e6f8a2b1d3c5e7f9a0b",
+		"00000000-0000-0000-0000-000000000000": "00000000000000000000000000000000",
+	} {
+		if got := OutTradeNoFromOrderID(id); got != want {
+			t.Fatalf("OutTradeNoFromOrderID(%q) = %q, want %q", id, got, want)
+		}
+	}
+	for _, id := range []string{uuid.NewString(), uuid.NewString()} {
+		got := OutTradeNoFromOrderID(id)
+		if len(got) != 32 {
+			t.Fatalf("out_trade_no %q: length = %d, want 32 (WeChat caps the field at 32)", got, len(got))
+		}
+		for _, r := range got {
+			if !('0' <= r && r <= '9' || 'a' <= r && r <= 'f') {
+				t.Fatalf("out_trade_no %q carries non-hex character %q", got, r)
+			}
+		}
 	}
 }
 

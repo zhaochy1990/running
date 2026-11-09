@@ -10,7 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/zhaochy1990/stride/internal/storage"
+	"github.com/zhaochy1990/stride/internal/wxpay"
 )
 
 type fakeStore struct {
@@ -64,7 +67,9 @@ func (f *fakeCloser) CloseOrder(_ context.Context, outTradeNo string) error {
 }
 
 func feeOrder(id string, minutesOld int) storage.PointRedemption {
-	tradeNo := id + "-trade"
+	// The stored column carries the raw hyphenated order id — the shape every
+	// pre-normalization fee row has (devops#904 legacy rows).
+	tradeNo := id
 	return storage.PointRedemption{
 		ID: id, Status: storage.RedemptionStatusPendingPayment,
 		PaymentState: storage.PaymentStatePending, PointsCost: 100,
@@ -115,8 +120,9 @@ func TestSweepSkipsFailedCloses(t *testing.T) {
 	closer := &fakeCloser{errByTradeNo: map[string]error{
 		// A paid order surfaces as a generic close failure: the client only
 		// folds never-payable codes into nil, so money already moved upstream
-		// can never be refunded by this sweep.
-		"paid-upstream-trade": errors.New("wxpay: close order: ORDERPAID"),
+		// can never be refunded by this sweep. The key is the id-derived
+		// trade number the sweep actually sends.
+		wxpay.OutTradeNoFromOrderID("paid-upstream"): errors.New("wxpay: close order: ORDERPAID"),
 	}}
 
 	summary, err := Sweep(context.Background(), store, closer, DefaultAge, time.Now().UTC())
@@ -128,6 +134,40 @@ func TestSweepSkipsFailedCloses(t *testing.T) {
 	}
 	if store.closed["paid-upstream"] {
 		t.Fatal("a paid-upstream order must never be cancelled or refunded")
+	}
+}
+
+func TestSweepDerivesTradeNoFromOrderIDNotColumn(t *testing.T) {
+	// Legacy stuck rows carry the raw 36-character hyphenated UUID in the
+	// out_trade_no column — a value WeChat rejects with PARAM_ERROR, so a
+	// sweep reading the column could never close them. The sweep sends the
+	// id-derived 32-character number instead: close answers ORDER_NOT_EXIST
+	// (the prepay on those rows never succeeded), the inert outcome folds
+	// into nil, and the refund + cancel below unsticks the row without any
+	// data migration (devops#904).
+	legacyID := "3f2b8a41-9c0d-4e6f-8a2b-1d3c5e7f9a0b"
+	legacy := feeOrder(legacyID, 45)
+	// A NULL-column row closes the same way: the order id is the only input.
+	nullColumn := feeOrder(uuid.NewString(), 45)
+	nullColumn.OutTradeNo = nil
+	store := newFakeStore(legacy, nullColumn)
+	closer := &fakeCloser{}
+
+	summary, err := Sweep(context.Background(), store, closer, DefaultAge, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+	if summary.Closed != 2 {
+		t.Fatalf("both rows must close, cancel and refund: %+v", summary)
+	}
+	if got := closer.closed[0]; got != wxpay.OutTradeNoFromOrderID(legacyID) {
+		t.Fatalf("close sent %q, want the id-derived %q — never the stored column", got, wxpay.OutTradeNoFromOrderID(legacyID))
+	}
+	if got := closer.closed[0]; len(got) != 32 || strings.Contains(got, "-") {
+		t.Fatalf("close sent %q: want a 32-character hyphen-free trade number", got)
+	}
+	if got := closer.closed[1]; got != wxpay.OutTradeNoFromOrderID(nullColumn.ID) {
+		t.Fatalf("NULL-column row must close on its derived id, got %q", got)
 	}
 }
 
