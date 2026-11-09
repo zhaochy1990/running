@@ -17,6 +17,7 @@ import (
 
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/storage"
+	"github.com/zhaochy1990/stride/internal/wxpay"
 )
 
 // JobType is the worker job carrying one sweep.
@@ -86,14 +87,12 @@ func Sweep(ctx context.Context, store Store, closer Closer, olderThan time.Durat
 		if ctx.Err() != nil {
 			return summary, ctx.Err()
 		}
-		// out_trade_no is always set on pending_payment rows (only fee-charged
-		// orders park there), but the defensive read keeps a NULL row from
-		// closing an empty trade number upstream.
-		if rows[i].OutTradeNo == nil {
-			summary.Skipped++
-			continue
-		}
-		if err := closer.CloseOrder(ctx, *rows[i].OutTradeNo); err != nil {
+		// The trade number derives from the order id, never from the stored
+		// column (devops#904): hyphen-legacy rows carry a 36-character value
+		// WeChat rejects, while the derived 32-character number makes close
+		// answer ORDER_NOT_EXIST — the inert outcome that lets the refund and
+		// cancel below unstick them without any data migration.
+		if err := closer.CloseOrder(ctx, wxpay.OutTradeNoFromOrderID(rows[i].ID)); err != nil {
 			summary.Skipped++ // already paid upstream, transient failure — next sweep retries
 			continue
 		}

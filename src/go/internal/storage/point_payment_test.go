@@ -8,8 +8,11 @@ package storage
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/zhaochy1990/stride/internal/wxpay"
 )
 
 // seedFeeProduct inserts one jzsh_fee product charging feeFen outside 江浙沪.
@@ -89,8 +92,14 @@ func TestWxpayRedeemFeeChargedState(t *testing.T) {
 	if res.Order.ShippingFeeSnapshot != 800 || res.Order.ShippingPolicySnapshot != ShippingPolicyJZSHFee {
 		t.Fatalf("fee snapshot wrong: %+v", res.Order)
 	}
-	if res.Order.OutTradeNo == nil || *res.Order.OutTradeNo != res.Order.ID {
-		t.Fatalf("out_trade_no must equal the order id: %+v", res.Order.OutTradeNo)
+	// devops#904: the column stores the id-derived trade number (hyphens
+	// stripped, 32 hex characters) — the value WeChat accepts, prepay sends
+	// and the notify callback echoes back.
+	if res.Order.OutTradeNo == nil || *res.Order.OutTradeNo != wxpay.OutTradeNoFromOrderID(res.Order.ID) {
+		t.Fatalf("out_trade_no must be the id-derived trade number: %+v", res.Order.OutTradeNo)
+	}
+	if tradeNo := *res.Order.OutTradeNo; len(tradeNo) != 32 || strings.Contains(tradeNo, "-") {
+		t.Fatalf("out_trade_no %q must be 32 hyphen-free characters", tradeNo)
 	}
 	if res.Balance != 50 {
 		t.Fatalf("balance = %d, want 50 (points deducted)", res.Balance)

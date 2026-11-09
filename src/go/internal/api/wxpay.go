@@ -115,9 +115,11 @@ type wxpayPrepayResponse struct {
 }
 
 // prepay serves POST /api/users/me/points/redemptions/:id/pay — JSAPI prepay
-// for one of the caller's own pending orders: out_trade_no = order id,
-// amount = the redeem-time shipping_fee_snapshot in fen, description =
-// product name + shipping-fee suffix, notify_url from env.
+// for one of the caller's own pending orders: out_trade_no = the order id
+// derived through wxpay.OutTradeNoFromOrderID (WeChat's 6-32 limit; the
+// stored column is never read, so hyphen-legacy rows prepay the same number
+// the notify will echo), amount = the redeem-time shipping_fee_snapshot in
+// fen, description = product name + shipping-fee suffix, notify_url from env.
 //
 //	@Summary		Pay a redemption order's shipping fee
 //	@Description	Starts WeChat Pay JSAPI for one pending_payment order (shipping fee in fen) and returns the five parameters wx.requestPayment needs: timeStamp, nonceStr, package, signType, paySign.
@@ -159,7 +161,7 @@ func (w *wxpayRoutes) prepay(c *gin.Context) {
 		return
 	}
 	params, err := w.pay.PrepayPaymentParams(
-		c.Request.Context(), order.ID,
+		c.Request.Context(), wxpay.OutTradeNoFromOrderID(order.ID),
 		order.ProductName+"·运费", int64(order.ShippingFeeSnapshot), body.OpenID,
 	)
 	if err != nil {
