@@ -544,14 +544,23 @@
   box-shadow: inset 0 0 0 5rpx #ffffff;
 }
 
-.aradio__t {
-  font-size: 26rpx;
-  color: var(--color-text-primary);
+/* 首行姓名+手机号，次行完整地址换行不截断（用户确认用） */
+.aradio__body {
   flex: 1;
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.aradio__who {
+  font-size: 26rpx;
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.aradio__addr {
+  margin-top: 6rpx;
+  font-size: 24rpx;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
 }
 
 .noaddr {

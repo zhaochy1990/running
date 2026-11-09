@@ -107,7 +107,7 @@
           >{{item.spec_value}}</view>
         </view>
       </block>
-      <!-- 数量步进：右列合计 = 单价 × 数量 + 运费口径（步进样式沿用抖音口径：−/数字/+） -->
+      <!-- 数量步进：右列合计 = 单价 × 数量（运费只在运费行体现，步进样式沿用抖音口径：−/数字/+） -->
       <view class="qtyrow">
         <text class="qtyrow__label">数量</text>
         <view class="qtyrow__ctrl">
@@ -125,7 +125,7 @@
             catchtap="onQtyPlus"
           >＋</view>
         </view>
-        <text class="qtyrow__total">合计 <text class="qtyrow__sum">{{sheetTotalText}}</text></text>
+        <text class="qtyrow__total">合计 <text class="qtyrow__sum">{{sheetTotal}} 积分</text></text>
       </view>
       <view class="sec">
         <text>寄到哪</text>
@@ -140,7 +140,10 @@
           bindtap="onSheetSelectAddr"
         >
           <view class="aradio__dot"></view>
-          <view class="aradio__t">{{item.text}}</view>
+          <view class="aradio__body">
+            <view class="aradio__who">{{item.name}}　{{item.phone}}</view>
+            <view class="aradio__addr">{{item.addr}}</view>
+          </view>
         </view>
       </block>
       <view wx:else class="noaddr">

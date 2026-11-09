@@ -46,11 +46,12 @@ interface MallProduct {
   feeFen: number;
 }
 
-/** 确认抽屉里的地址行。 */
+/** 确认抽屉里的地址行：首行姓名+手机号、次行完整地址（不截断，方便确认）。 */
 interface SheetAddress {
   id: number;
-  /** 「姓名　省 市 区 · 详址」单行截断。 */
-  text: string;
+  name: string;
+  phone: string;
+  addr: string;
 }
 
 interface PointsMallPageData {
@@ -82,11 +83,10 @@ interface PointsMallPageData {
   sheetInsufficient: boolean;
   sheetNoAddress: boolean;
   sheetSubmitting: boolean;
-  /** 运费（devops#905）：sheetFeeText = 「包邮」/「¥N」/未选地址「—」；
-   * 合计 = 「N 积分」，非「包邮」才追加「+ M」（未选地址保留「+ —」，devops#920）。 */
+  /** 运费（devops#905）：sheetFeeText = 「包邮」/「¥N」/未选地址「—」。
+   * 合计恒为「N 积分」，现金运费只在运费行体现，不进合计。 */
   sheetFeeText: string;
   sheetFeeFree: boolean;
-  sheetTotalText: string;
   /** 兑换成功居中弹卡。 */
   okVisible: boolean;
   okName: string;
@@ -178,7 +178,9 @@ function calcSheetMaxQty(product: MallProduct, skuId: number): number {
 function toSheetAddress(a: UserAddress): SheetAddress {
   return {
     id: a.id,
-    text: `${a.receiver_name}　${a.province} ${a.city} ${a.district} · ${a.address_detail}`,
+    name: a.receiver_name,
+    phone: a.receiver_phone,
+    addr: `${a.province} ${a.city} ${a.district} ${a.address_detail}`,
   };
 }
 
@@ -210,7 +212,6 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
     sheetSubmitting: false,
     sheetFeeText: '—',
     sheetFeeFree: false,
-    sheetTotalText: '',
     okVisible: false,
     okName: '',
     okSku: '',
@@ -364,8 +365,6 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
       sheetInsufficient: insufficient,
       sheetFeeText: feeText,
       sheetFeeFree: free,
-      // 免运不带「+ 包邮」（devops#920，与下方运费行重复）；收现金保留「+ ¥N」。
-      sheetTotalText: feeText === '包邮' ? `${total} 积分` : `${total} 积分 + ${feeText}`,
     });
   },
 
