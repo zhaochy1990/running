@@ -310,19 +310,15 @@ func runSync(profile string, full bool, content string, limit int) error {
 
 // runDerivedComputations runs the same post-sync handlers as the asynchronous
 // data-sync pipelines. The calibration refresh runs on every sync (devops#921,
-// mirroring the data_sync pipeline's calibration step — unlike the pipeline it
-// is a hard failure here, since the CLI is interactive); full syncs then
-// rebuild all derived data, incremental syncs compute from this run's changed
-// activity and health dates.
+// mirroring the data_sync pipeline's calibration step including its empty-run
+// gate — devops#931; unlike the pipeline it is a hard failure here, since the
+// CLI is interactive); full syncs then rebuild all derived data, incremental
+// syncs compute from this run's changed activity and health dates.
 func runDerivedComputations(ctx context.Context, user string, mode provider.SyncMode, labelIDs, healthDates []string, calibration, calculation job.Handler) error {
 	return runDerivedComputationsWithProgress(ctx, user, mode, labelIDs, healthDates, calibration, calculation, func(string, int) error { return nil })
 }
 
 func runDerivedComputationsWithProgress(ctx context.Context, user string, mode provider.SyncMode, labelIDs, healthDates []string, calibration, calculation job.Handler, heartbeat job.Heartbeat) error {
-	if _, err := calibration(ctx, &job.Job{UserID: user}, heartbeat); err != nil {
-		return fmt.Errorf("calibration: %w", err)
-	}
-
 	input, err := json.Marshal(struct {
 		Mode        provider.SyncMode `json:"mode"`
 		LabelIDs    []string          `json:"label_ids,omitempty"`
@@ -330,6 +326,9 @@ func runDerivedComputationsWithProgress(ctx context.Context, user string, mode p
 	}{Mode: mode, LabelIDs: labelIDs, HealthDates: healthDates})
 	if err != nil {
 		return fmt.Errorf("encode compute input: %w", err)
+	}
+	if _, err := calibration(ctx, &job.Job{UserID: user, InputJSON: string(input)}, heartbeat); err != nil {
+		return fmt.Errorf("calibration: %w", err)
 	}
 	if _, err := calculation(ctx, &job.Job{UserID: user, InputJSON: string(input)}, heartbeat); err != nil {
 		return fmt.Errorf("compute: %w", err)

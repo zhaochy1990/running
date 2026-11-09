@@ -168,6 +168,71 @@ func TestCalibration_EchoesSyncBatches(t *testing.T) {
 	}
 }
 
+// The empty-run gate (devops#931): an incremental sync that produced nothing
+// new skips the 180-day recompute once today's snapshot exists; everything
+// else (new batches, full mode, standalone/no mode, missing or stale snapshot)
+// recomputes.
+func TestCalibration_EmptyRunGate(t *testing.T) {
+	// snapFor resolves "today"/"yesterday" lazily per case so a run straddling
+	// the Shanghai midnight boundary cannot desync the fixture from the
+	// handler's own ShanghaiToday() read.
+	snapFor := func(day string) *storage.RunningCalibrationSnapshot {
+		return &storage.RunningCalibrationSnapshot{ID: 77, UserID: testUser, AsOfDate: day}
+	}
+	todaySnap := func() *storage.RunningCalibrationSnapshot {
+		return snapFor(timefmt.ShanghaiToday().Format("2006-01-02"))
+	}
+	yesterdaySnap := func() *storage.RunningCalibrationSnapshot {
+		return snapFor(timefmt.ShanghaiToday().AddDate(0, 0, -1).Format("2006-01-02"))
+	}
+	cases := []struct {
+		name     string
+		input    string
+		snap     func() *storage.RunningCalibrationSnapshot
+		skipped  bool
+		snapWant bool // snapshot write expected
+	}{
+		{"incremental empty batches + today snapshot skips", `{"mode":"incremental"}`, todaySnap, true, false},
+		{"incremental empty batches + no snapshot recomputes", `{"mode":"incremental"}`, func() *storage.RunningCalibrationSnapshot { return nil }, false, true},
+		{"incremental empty batches + yesterday snapshot recomputes", `{"mode":"incremental"}`, yesterdaySnap, false, true},
+		{"incremental new labels recomputes", `{"mode":"incremental","label_ids":["a1"]}`, todaySnap, false, true},
+		{"incremental new health dates recomputes", `{"mode":"incremental","health_dates":["2026-11-09"]}`, todaySnap, false, true},
+		{"full mode always recomputes", `{"mode":"full"}`, todaySnap, false, true},
+		{"standalone no mode always recomputes", `{}`, todaySnap, false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &fakeStore{snap: tc.snap()}
+			out, err := runJob(t, NewCalibration(f), tc.input)
+			if err != nil {
+				t.Fatalf("calibration: %v", err)
+			}
+			if f.snapUpserted != tc.snapWant {
+				t.Fatalf("snapshot write = %v, want %v", f.snapUpserted, tc.snapWant)
+			}
+			var res struct {
+				Status              string   `json:"status"`
+				CalibrationSnapshot uint64   `json:"calibration_snapshot_id"`
+				LabelIDs            []string `json:"label_ids"`
+				HealthDates         []string `json:"health_dates"`
+			}
+			if err := json.Unmarshal([]byte(out), &res); err != nil {
+				t.Fatalf("parse result: %v", err)
+			}
+			if tc.skipped {
+				if res.Status != "skipped_no_new_data" {
+					t.Fatalf("status = %q, want skipped_no_new_data", res.Status)
+				}
+				if res.CalibrationSnapshot != 77 {
+					t.Fatalf("skipped result should point at the existing snapshot 77, got %d", res.CalibrationSnapshot)
+				}
+			} else if res.Status != "ok" {
+				t.Fatalf("status = %q, want ok", res.Status)
+			}
+		})
+	}
+}
+
 // --- compute ---
 
 func TestCompute_NoCalibration_Permanent(t *testing.T) {
