@@ -97,6 +97,12 @@ async function main() {
       for (const item of artifact.audit.items.filter((entry) => entry.verdict !== "pass"))
         console.log(`  ${item.verdict}: ${item.item} — ${item.actual}`);
       console.log(`warnings=${artifact.warnings.join(",") || "none"}`);
+      // 全量产物导出（MP_DUMP=path）：课表细节+政策包+审计，供验收报告渲染
+      if (process.env.MP_DUMP) {
+        const { writeFile } = await import("node:fs/promises");
+        await writeFile(process.env.MP_DUMP, JSON.stringify(artifact, null, 1));
+        console.log(`dumped -> ${process.env.MP_DUMP}`);
+      }
       // 内容层若走了模板兜底，把重试违规打出来——这是「计划能出来但不是模型写的」的唯一现场。
       if (artifact.warnings.includes("content_template_fallback"))
         console.log("L4 走了模板兜底：查 content 节点的 retry violations 日志（level:40）定位违规簇");
