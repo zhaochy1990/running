@@ -49,14 +49,26 @@ type WxPayStore interface {
 	MarkRedemptionPaid(ctx context.Context, outTradeNo string, paidAt time.Time) (bool, error)
 }
 
+// WxPayOpenIDResolver is the auth-service slice the pay endpoint needs
+// (devops#904/#905 prepay fix): exchanging the miniprogram's one-time
+// wx.login() code for the JSAPI payer openid. The appsecret stays in the
+// auth-service; the openid resolved here goes straight into prepay and is
+// never stored. Nil keeps the pay endpoint unmounted (notify needs no
+// resolver); satisfied by the cmd-layer adapter over *authsvc.Client.
+type WxPayOpenIDResolver interface {
+	// WeChatCode2Session exchanges the wx.login() code for the openid.
+	WeChatCode2Session(ctx context.Context, code string) (string, error)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Registrar
 // ─────────────────────────────────────────────────────────────────────────────
 
 type wxpayRoutes struct {
-	store WxPayStore
-	pay   WxPayGateway
-	log   *zap.Logger
+	store  WxPayStore
+	pay    WxPayGateway
+	openid WxPayOpenIDResolver
+	log    *zap.Logger
 }
 
 // wxpayReady guards the module gate: a nil gateway (or a configured-empty
@@ -65,18 +77,18 @@ func wxpayReady(p WxPayGateway) bool {
 	return p != nil && p.Configured()
 }
 
-func newWxPayRoutes(store WxPayStore, pay WxPayGateway, log *zap.Logger) *wxpayRoutes {
+func newWxPayRoutes(store WxPayStore, pay WxPayGateway, openid WxPayOpenIDResolver, log *zap.Logger) *wxpayRoutes {
 	if log == nil {
 		log = logging.Default()
 	}
-	return &wxpayRoutes{store: store, pay: pay, log: log}
+	return &wxpayRoutes{store: store, pay: pay, openid: openid, log: log}
 }
 
 // registerUser mounts POST /api/users/me/points/redemptions/:id/pay on the
-// default-deny group. Nothing mounts when the module is inert or the store is
-// absent (tests running a partial service).
+// default-deny group. Nothing mounts when the module is inert, the store is
+// absent, or the openid resolver is missing (tests running a partial service).
 func (w *wxpayRoutes) registerUser(rg *gin.RouterGroup) {
-	if w.store == nil || !wxpayReady(w.pay) {
+	if w.store == nil || !wxpayReady(w.pay) || w.openid == nil {
 		return
 	}
 	rg.POST("/api/users/me/points/redemptions/:id/pay", w.prepay)
@@ -97,11 +109,12 @@ func (w *wxpayRoutes) registerNotify(r *gin.Engine) {
 // User handler: JSAPI prepay
 // ─────────────────────────────────────────────────────────────────────────────
 
-// wxpayPrepayRequest is the POST pay body: the caller's JSAPI openid, from
-// the miniprogram's own wx.login context (the auth service owns the binding;
-// the pay sheet needs it fresh, never stored here).
+// wxpayPrepayRequest is the POST pay body: the miniprogram's fresh wx.login()
+// one-time code (devops#904/#905 prepay fix — the earlier contract let the
+// caller pose as any openid by sending one; a code can only be resolved by
+// the auth-service, whose answer feeds prepay and is never stored here).
 type wxpayPrepayRequest struct {
-	OpenID string `json:"openid" binding:"required,max=64"`
+	Code string `json:"code" binding:"required,max=256"`
 }
 
 // wxpayPrepayResponse carries exactly the five parameters wx.requestPayment
@@ -120,14 +133,17 @@ type wxpayPrepayResponse struct {
 // stored column is never read, so hyphen-legacy rows prepay the same number
 // the notify will echo), amount = the redeem-time shipping_fee_snapshot in
 // fen, description = product name + shipping-fee suffix, notify_url from env.
+// The body's wx.login() code is first resolved to the payer openid through
+// the auth-service internal plane; the resolved openid feeds prepay only and
+// is never stored.
 //
 //	@Summary		Pay a redemption order's shipping fee
-//	@Description	Starts WeChat Pay JSAPI for one pending_payment order (shipping fee in fen) and returns the five parameters wx.requestPayment needs: timeStamp, nonceStr, package, signType, paySign.
+//	@Description	Starts WeChat Pay JSAPI for one pending_payment order (shipping fee in fen): the body's wx.login() code is exchanged for the payer openid via the auth service, and the response carries the five parameters wx.requestPayment needs: timeStamp, nonceStr, package, signType, paySign.
 //	@Tags			points
 //	@Accept			json
 //	@Produce		json
 //	@Param			id		path	string				true	"Order id"
-//	@Param			body	body	wxpayPrepayRequest	true	"JSAPI payer"
+//	@Param			body	body	wxpayPrepayRequest	true	"wx.login code"
 //	@Success		200		{object}	wxpayPrepayResponse
 //	@Failure		400		{object}	errorResponse
 //	@Failure		401		{object}	errorResponse
@@ -160,9 +176,19 @@ func (w *wxpayRoutes) prepay(c *gin.Context) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "payment_not_pending"})
 		return
 	}
+	// Code → openid before any WeChat call. Every failure shape — the
+	// auth-service down, or a code WeChat refuses (stale/already used) —
+	// maps to the one upstream error the miniprogram already has copy for;
+	// each retry fetches a fresh code, so retry is the right recovery.
+	openid, err := w.openid.WeChatCode2Session(c.Request.Context(), body.Code)
+	if err != nil {
+		w.log.Error("wxpay prepay code2session failed", zapErr(err))
+		c.JSON(http.StatusBadGateway, errorResponse{Error: "wxpay_upstream_error"})
+		return
+	}
 	params, err := w.pay.PrepayPaymentParams(
 		c.Request.Context(), wxpay.OutTradeNoFromOrderID(order.ID),
-		order.ProductName+"·运费", int64(order.ShippingFeeSnapshot), body.OpenID,
+		order.ProductName+"·运费", int64(order.ShippingFeeSnapshot), openid,
 	)
 	if err != nil {
 		w.log.Error("wxpay jsapi prepay failed", zapErr(err))

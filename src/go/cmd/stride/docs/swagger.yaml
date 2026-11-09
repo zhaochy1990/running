@@ -3987,11 +3987,11 @@ definitions:
     type: object
   api.wxpayPrepayRequest:
     properties:
-      openid:
-        maxLength: 64
+      code:
+        maxLength: 256
         type: string
     required:
-    - openid
+    - code
     type: object
   api.wxpayPrepayResponse:
     properties:
@@ -9474,15 +9474,16 @@ paths:
       consumes:
       - application/json
       description: 'Starts WeChat Pay JSAPI for one pending_payment order (shipping
-        fee in fen) and returns the five parameters wx.requestPayment needs: timeStamp,
-        nonceStr, package, signType, paySign.'
+        fee in fen): the body''s wx.login() code is exchanged for the payer openid
+        via the auth service, and the response carries the five parameters wx.requestPayment
+        needs: timeStamp, nonceStr, package, signType, paySign.'
       parameters:
       - description: Order id
         in: path
         name: id
         required: true
         type: string
-      - description: JSAPI payer
+      - description: wx.login code
         in: body
         name: body
         required: true

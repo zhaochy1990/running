@@ -151,7 +151,12 @@ type Config struct {
 	// WxPay is the WeChat Pay module gateway (satisfied by *wxpay.Client).
 	// Nil keeps the module inert: the pay endpoint and the notify route stay
 	// unmounted and a fee-charged redemption answers 503 payment_unavailable.
-	WxPay          WxPayGateway
+	WxPay WxPayGateway
+	// WxPayOpenID resolves the pay body's wx.login() code into the JSAPI
+	// payer openid through the auth-service internal plane (devops#904/#905
+	// prepay fix; satisfied by the cmd-layer adapter over *authsvc.Client).
+	// Nil keeps the pay endpoint unmounted (notify does not need it).
+	WxPayOpenID    WxPayOpenIDResolver
 	ProviderLogin  ProviderLogin
 	ProviderInfo   ProviderInfo
 	AuthNameSync   AuthNameSync
@@ -447,7 +452,7 @@ func NewService(cfg Config) *Service {
 		roadmap:                 newRoadmapRoutes(cfg.RoadmapStore, log),
 		feedback:                newFeedbackRoutes(cfg.FeedbackStore, cfg.FeedbackImages, cfg.RoadmapStore, log),
 		points:                  newPointsRoutes(cfg.PointsStore, cfg.FeedbackImages, cfg.WxPay, cfg.PointsAuth, log),
-		wxpay:                   newWxPayRoutes(cfg.WxPayStore, cfg.WxPay, log),
+		wxpay:                   newWxPayRoutes(cfg.WxPayStore, cfg.WxPay, cfg.WxPayOpenID, log),
 		addresses:               newAddressRoutes(cfg.AddressStore, log),
 		raceStrategy:            newRaceStrategyRoutes(cfg.RaceStrategyStore, log),
 		raceContent:             newRaceContentRoutes(cfg.RaceContentStore, cfg.CityAIDraft, log),

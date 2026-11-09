@@ -40,10 +40,12 @@ import (
 
 // fakeWxPayGateway stands in for *wxpay.Client: canned prepay parameters and a
 // scripted notify answer. prepayTradeNo records the merchant order number the
-// handler handed the gateway — the value the real client would send upstream.
+// handler handed the gateway — the value the real client would send upstream —
+// and prepayOpenID the payer openid it resolved from the body's code.
 type fakeWxPayGateway struct {
 	prepayCalls   int
 	prepayTradeNo string
+	prepayOpenID  string
 	prepayErr     error
 	notify        *wxpay.NotifyPayment
 	notifyErr     error
@@ -51,12 +53,13 @@ type fakeWxPayGateway struct {
 
 func (f *fakeWxPayGateway) Configured() bool { return true }
 
-func (f *fakeWxPayGateway) PrepayPaymentParams(_ context.Context, outTradeNo, _ string, _ int64, _ string) (*wxpay.PaymentParams, error) {
+func (f *fakeWxPayGateway) PrepayPaymentParams(_ context.Context, outTradeNo, _ string, _ int64, openid string) (*wxpay.PaymentParams, error) {
 	if f.prepayErr != nil {
 		return nil, f.prepayErr
 	}
 	f.prepayCalls++
 	f.prepayTradeNo = outTradeNo
+	f.prepayOpenID = openid
 	return &wxpay.PaymentParams{
 		TimeStamp: "1793947500", NonceStr: "nonce-str",
 		Package: "prepay_id=" + outTradeNo, SignType: "RSA", PaySign: "paysign",
@@ -68,6 +71,25 @@ func (f *fakeWxPayGateway) ParseNotify(_ context.Context, _ *http.Request) (*wxp
 		return nil, f.notifyErr
 	}
 	return f.notify, nil
+}
+
+// fakeOpenIDResolver stands in for the authsvc-backed adapter: it records
+// the wx.login() code the prepay handler bound and answers with a scripted
+// openid or error — the two shapes the auth internal endpoint produces.
+type fakeOpenIDResolver struct {
+	calls    int
+	lastCode string
+	openID   string
+	err      error
+}
+
+func (f *fakeOpenIDResolver) WeChatCode2Session(_ context.Context, code string) (string, error) {
+	f.calls++
+	f.lastCode = code
+	if f.err != nil {
+		return "", f.err
+	}
+	return f.openID, nil
 }
 
 // fakeWxPayStore satisfies the notify handler's storage port without MySQL.
@@ -212,12 +234,13 @@ func mustVerifier(t *testing.T, key *rsa.PrivateKey) *JWTVerifier {
 	return verifier
 }
 
-// postAuthedJSON fires one bearer-authenticated JSON request ({openid}) and
-// decodes the envelope.
-func postAuthedJSON(t *testing.T, url, token string) (int, map[string]any) {
+// postAuthedJSON fires one bearer-authenticated JSON request and decodes the
+// envelope. rawBody is the literal request body (the prepay contract: the
+// one-time wx.login() code).
+func postAuthedJSON(t *testing.T, url, token, rawBody string) (int, map[string]any) {
 	t.Helper()
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, url,
-		bytes.NewReader([]byte(`{"openid":"oX-test-openid"}`)))
+		bytes.NewReader([]byte(rawBody)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,6 +283,7 @@ func TestWxpayPrepayGate(t *testing.T) {
 		t.Fatalf("gen key: %v", err)
 	}
 	gateway := &fakeWxPayGateway{}
+	resolver := &fakeOpenIDResolver{openID: "oX-resolved-openid"}
 	signed := func(sub string) string {
 		t.Helper()
 		claims := jwt.MapClaims{
@@ -275,17 +299,24 @@ func TestWxpayPrepayGate(t *testing.T) {
 	srvFor := func(order *storage.PointRedemption) *httptest.Server {
 		t.Helper()
 		svc := NewService(Config{
-			Auth:       NewAuthenticator(testToken, mustVerifier(t, key)),
-			WxPayStore: &fakeWxPayStore{order: order},
-			WxPay:      gateway,
+			Auth:        NewAuthenticator(testToken, mustVerifier(t, key)),
+			WxPayStore:  &fakeWxPayStore{order: order},
+			WxPay:       gateway,
+			WxPayOpenID: resolver,
 		})
 		srv := httptest.NewServer(svc.Router())
 		t.Cleanup(srv.Close)
 		return srv
 	}
+	payURL := func(id string) string {
+		return srvFor(&storage.PointRedemption{
+			ID: id, UserID: "user-1", Status: storage.RedemptionStatusPendingPayment,
+			PaymentState: storage.PaymentStatePending, ShippingFeeSnapshot: 800,
+		}).URL + "/api/users/me/points/redemptions/" + id + "/pay"
+	}
 
 	pending := &storage.PointRedemption{ID: uuid.NewString(), UserID: "user-1", Status: storage.RedemptionStatusPendingPayment, PaymentState: storage.PaymentStatePending, ShippingFeeSnapshot: 800}
-	code, body := postAuthedJSON(t, srvFor(pending).URL+"/api/users/me/points/redemptions/"+pending.ID+"/pay", signed("user-1"))
+	code, body := postAuthedJSON(t, srvFor(pending).URL+"/api/users/me/points/redemptions/"+pending.ID+"/pay", signed("user-1"), `{"code":"wx-login-code-1"}`)
 	if code != http.StatusOK {
 		t.Fatalf("pending order must pay: %d %v", code, body)
 	}
@@ -293,6 +324,16 @@ func TestWxpayPrepayGate(t *testing.T) {
 		if v, _ := body[k].(string); v == "" {
 			t.Fatalf("prepay response missing %s: %v", k, body)
 		}
+	}
+	// The payer upstream is the openid RESOLVED from the body's wx.login()
+	// code (devops#904/#905 fix: the code itself used to be sent as openid,
+	// which WeChat rejects 400「无效的openid」) — the code never reaches the
+	// gateway.
+	if resolver.calls != 1 || resolver.lastCode != "wx-login-code-1" {
+		t.Fatalf("code2session calls=%d code=%q, want the bound code", resolver.calls, resolver.lastCode)
+	}
+	if gateway.prepayOpenID != "oX-resolved-openid" {
+		t.Fatalf("prepay openid = %q, want the resolved openid", gateway.prepayOpenID)
 	}
 	// The value sent upstream is the id-derived trade number — a 32-character
 	// hyphen-free string WeChat accepts (the raw UUID failed PARAM_ERROR,
@@ -304,8 +345,34 @@ func TestWxpayPrepayGate(t *testing.T) {
 		t.Fatalf("prepay out_trade_no %q must be 32 hyphen-free characters", gateway.prepayTradeNo)
 	}
 
+	// Binding: the body must carry the code field. A missing code (and the
+	// legacy {"openid": …} shape, where code is absent) answers 400
+	// invalid_body before the resolver runs.
+	for _, raw := range []string{`{}`, `{"openid":"oX-test-openid"}`} {
+		code, body = postAuthedJSON(t, payURL(uuid.NewString()), signed("user-1"), raw)
+		if code != http.StatusBadRequest || body["error"] != "invalid_body" {
+			t.Fatalf("body %s: got %d %v, want 400 invalid_body", raw, code, body)
+		}
+	}
+	if resolver.calls != 1 {
+		t.Fatalf("an unbound body must never reach the resolver (calls=%d)", resolver.calls)
+	}
+
+	// Resolution failure — the auth-service down or WeChat refusing the code
+	// — answers 502 wxpay_upstream_error without touching the gateway; the
+	// client fetches a fresh code on retry.
+	resolver.err = errors.New("auth-service 503")
+	code, body = postAuthedJSON(t, payURL(uuid.NewString()), signed("user-1"), `{"code":"wx-login-code-2"}`)
+	if code != http.StatusBadGateway || body["error"] != "wxpay_upstream_error" {
+		t.Fatalf("resolution failure: got %d %v, want 502 wxpay_upstream_error", code, body)
+	}
+	if gateway.prepayCalls != 1 {
+		t.Fatalf("a failed resolution must never reach the gateway (calls=%d)", gateway.prepayCalls)
+	}
+	resolver.err = nil
+
 	cancelled := &storage.PointRedemption{ID: "order-c", UserID: "user-1", Status: storage.RedemptionStatusCancelled, PaymentState: storage.PaymentStatePending, ShippingFeeSnapshot: 800}
-	code, body = postAuthedJSON(t, srvFor(cancelled).URL+"/api/users/me/points/redemptions/order-c/pay", signed("user-1"))
+	code, body = postAuthedJSON(t, srvFor(cancelled).URL+"/api/users/me/points/redemptions/order-c/pay", signed("user-1"), `{"code":"wx-login-code-3"}`)
 	if code != http.StatusConflict || body["error"] != "payment_not_pending" {
 		t.Fatalf("cancelled order must refuse prepay: %d %v", code, body)
 	}
@@ -344,11 +411,13 @@ func newWxpayE2E(t *testing.T) (*pointsE2EServer, *storage.Store, *fakeWxPayGate
 		t.Fatalf("gen key: %v", err)
 	}
 	gateway := &fakeWxPayGateway{}
+	resolver := &fakeOpenIDResolver{openID: "oX-e2e-openid"}
 	svc := NewService(Config{
 		Auth:         NewAuthenticator(testToken, mustVerifier(t, key)),
 		PointsStore:  store,
 		WxPayStore:   store,
 		WxPay:        gateway,
+		WxPayOpenID:  resolver,
 		AddressStore: store,
 	})
 	srv := httptest.NewServer(svc.Router())
@@ -397,9 +466,10 @@ func TestE2E_WxpayFeeCheckoutFlow(t *testing.T) {
 	}
 	orderID := order["id"].(string)
 
-	// Prepay returns exactly the five wx.requestPayment parameters.
+	// Prepay takes the fresh wx.login() code and returns exactly the five
+	// wx.requestPayment parameters.
 	code, prepay := server.send(t, "POST", fmt.Sprintf("/api/users/me/points/redemptions/%s/pay", orderID), user, map[string]any{
-		"openid": "oX-test-openid",
+		"code": "wx-login-e2e",
 	})
 	if code != http.StatusOK {
 		t.Fatalf("prepay: %d %v", code, prepay)

@@ -244,11 +244,10 @@ export type PayOutcome = 'paid' | 'cancel';
 /**
  * 应收运费订单的支付流：现取 wx.login 身份令牌 → prepay 拿五参数 → 唤起收银台。
  *
- * openid：prepay 契约要 JSAPI payer openid（wxpay.go 注释「取自小程序自身
- * wx.login 上下文、每次现取、不落存储」）。auth-service 面板暂不透出 openid，
- * 现取的 wx.login code 是客户端唯一的新鲜身份令牌；真实支付联调本身
- * blocked-on-credentials（票面 AC），资质到位后 code→openid 的解析点由
- * 后端/auth-service 落定，客户端「每次现取」约定不变。
+ * code：prepay 契约要 wx.login 一次性 code（devops#904/#905 缺陷修复：此前
+ * 把 code 当 openid 上送，微信 prepay 400「无效的openid」）。后端绑定 code 后
+ * 经 auth 内部端点 code2session 换 openid，code 单次有效、每次现取、换得的
+ * openid 不落存储——客户端「每次现取」约定不变。
  *
  * 取消与失败严格分流：wx.requestPayment errMsg 含 cancel = 用户主动取消，
  * 返回 'cancel' 由调用方静默处理（订单留待支付、可回订单页重试），绝不弹错；
@@ -264,9 +263,9 @@ export async function payShippingFee(orderId: string): Promise<PayOutcome> {
     throw new Error('微信登录态获取失败，请稍后再试');
   }
   if (!code) throw new Error('微信登录态获取失败，请稍后再试');
-  const params = await http.post<WxPayParams, { openid: string }>(
+  const params = await http.post<WxPayParams, { code: string }>(
     `/api/users/me/points/redemptions/${orderId}/pay`,
-    { openid: code },
+    { code },
   );
   try {
     // 五参数契约原样透传；wx 类型把 signType 收成字面量联合（v3 固定 "RSA"），
