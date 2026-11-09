@@ -11,6 +11,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/compute/calibration"
 	"github.com/zhaochy1990/stride/internal/compute/calibrationsource"
 	"github.com/zhaochy1990/stride/internal/job"
+	"github.com/zhaochy1990/stride/internal/provider"
 	"github.com/zhaochy1990/stride/internal/storage"
 	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 )
@@ -21,15 +22,17 @@ const CalibrationJobType = "calibration"
 const calibrationLookbackDays = 180
 
 // CalibrationStore is the read+write surface the calibration job needs: the
-// calibration inputs (activities-in-window + timeseries/laps + daily RHR) and
-// the snapshot/zone writes.
+// calibration inputs (activities-in-window + timeseries/laps + daily RHR), the
+// snapshot/zone writes, and the same-day snapshot read that gates empty runs.
 type CalibrationStore interface {
 	calibrationsource.Reader
 	UpsertRunningCalibrationSnapshot(ctx context.Context, snap *storage.RunningCalibrationSnapshot) (uint64, error)
 	ReplaceCalibrationZones(ctx context.Context, userID string, snapshotID uint64, paceZones []storage.RunningCalibrationPaceZone, hrZones []storage.RunningCalibrationHRZone) error
+	LatestRunningCalibrationSnapshotForVersion(ctx context.Context, userID string, algorithmVersion int, asOf string) (*storage.RunningCalibrationSnapshot, error)
 }
 
 type calibrationInput struct {
+	Mode        string   `json:"mode"`
 	LabelIDs    []string `json:"label_ids"`
 	HealthDates []string `json:"health_dates"`
 }
@@ -65,6 +68,24 @@ func NewCalibration(store CalibrationStore) job.Handler {
 			}
 		}
 		asOf := timefmt.ShanghaiToday()
+		// Empty-run gate (devops#931): an incremental sync that produced no new
+		// activity and no health day pays the 180-day full-window recompute at
+		// most once per Shanghai day. Once today's snapshot exists, repeated
+		// empty pulls (manual refresh storms) skip straight through. Full mode
+		// (explicit recompute semantics) and standalone runs without a mode
+		// (the force-recalibrate path) always recompute.
+		day := asOf.Format("2006-01-02")
+		if in.Mode == string(provider.SyncIncremental) && len(in.LabelIDs) == 0 && len(in.HealthDates) == 0 {
+			snap, err := store.LatestRunningCalibrationSnapshotForVersion(ctx, user, calibration.ModelVersion, day)
+			if err != nil {
+				return "", err // infra fault -> retryable
+			}
+			if snap != nil && snap.AsOfDate == day {
+				_ = hb("calibration", 100)
+				out, _ := json.Marshal(calibrationResult{User: user, Status: "skipped_no_new_data", CalibrationSnapshot: snap.ID, LabelIDs: in.LabelIDs, HealthDates: in.HealthDates})
+				return string(out), nil
+			}
+		}
 		snapID, activities, err := runCalibration(ctx, store, user, asOf)
 		if err != nil {
 			return "", err // infra fault -> retryable

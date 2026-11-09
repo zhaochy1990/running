@@ -23,8 +23,10 @@ func TestRunDerivedComputations_IncrementalCalibratesThenComputesChangedLabels(t
 		LabelIDs    []string `json:"label_ids"`
 		HealthDates []string `json:"health_dates"`
 	}
-	calibration := func(context.Context, *job.Job, job.Heartbeat) (string, error) {
+	var calibrationInput string
+	calibration := func(_ context.Context, j *job.Job, _ job.Heartbeat) (string, error) {
 		calibrationCalls++
+		calibrationInput = j.InputJSON
 		return "", nil
 	}
 	calculation := func(_ context.Context, j *job.Job, _ job.Heartbeat) (string, error) {
@@ -40,6 +42,11 @@ func TestRunDerivedComputations_IncrementalCalibratesThenComputesChangedLabels(t
 	}
 	if calibrationCalls != 1 || computeCalls != 1 {
 		t.Fatalf("calls calibration=%d compute=%d, want 1/1 (devops#921: calibration on every sync)", calibrationCalls, computeCalls)
+	}
+	// The CLI feeds calibration the same {mode,label_ids,health_dates} input as
+	// compute (devops#931) so the empty-run gate applies on this path too.
+	if calibrationInput != `{"mode":"incremental","label_ids":["new-1"],"health_dates":["2026-08-11"]}` {
+		t.Fatalf("calibration input = %q, want the same batch input compute receives", calibrationInput)
 	}
 	if computeInput.Mode != "incremental" || len(computeInput.LabelIDs) != 1 || computeInput.LabelIDs[0] != "new-1" {
 		t.Fatalf("compute input = %+v", computeInput)
