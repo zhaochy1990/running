@@ -46,7 +46,7 @@ import {
 } from "./assessment.js";
 import { type ContextSnapshot, ContextSnapshotSchema, type MasterPlanContextProvider } from "./context.js";
 import { danielsAudit } from "./phasing/content/danielsAudit.js";
-import type { ContentGeneratorInput, ContentWeekRow } from "./phasing/content/doctrine.js";
+import { type ContentGeneratorInput, type ContentWeekRow, QUALITY_FAMILY_OF } from "./phasing/content/doctrine.js";
 import { type ContentModel, generateWeekContent, type ScheduledOutcome } from "./phasing/content/generate.js";
 import { projectZones } from "./phasing/content/project.js";
 import { buildPhaseEvidence, type PhaseEvidence, type PhasingActivityInput } from "./phasing/evidence.js";
@@ -353,7 +353,7 @@ export class MasterPlanNodes {
           totalKm: week.km,
           longRunKm: week.lr,
           qualitySessions: week.q,
-          qualityFamily: skeleton.strength_policy.find((item) => item.canonical === week.canonical)?.quality_family ?? "",
+          qualityFamily: QUALITY_FAMILY_OF[week.canonical] ?? "",
           zones: projected.zones,
         };
       });

@@ -97,6 +97,9 @@ async function main() {
       for (const item of artifact.audit.items.filter((entry) => entry.verdict !== "pass"))
         console.log(`  ${item.verdict}: ${item.item} — ${item.actual}`);
       console.log(`warnings=${artifact.warnings.join(",") || "none"}`);
+      // 内容层若走了模板兜底，把重试违规打出来——这是「计划能出来但不是模型写的」的唯一现场。
+      if (artifact.warnings.includes("content_template_fallback"))
+        console.log("L4 走了模板兜底：查 content 节点的 retry violations 日志（level:40）定位违规簇");
     } else {
       console.log(JSON.stringify(outcome, null, 2).slice(0, 2000));
     }

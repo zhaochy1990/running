@@ -136,6 +136,19 @@ export interface ContentGeneratorInput {
   provenSessions?: ProvenSession[];
 }
 
+/**
+ * L3 canonical → 强度家族提示（ContentWeekRow.qualityFamily 的行构建用）。
+ * 注意与 `strength_policy[].quality_family` 不同：后者是给政策面读的长描述，
+ * 前者是喂 L4 prompt 的短提示，回放（contentReplay）与 kernel 必须用同一份。
+ */
+export const QUALITY_FAMILY_OF: Record<string, string> = {
+  recovery: "无质量课（纯 E + strides 触感）",
+  foundation: "E 为主；速度触感靠 strides 副课",
+  early_quality: "R 重复（速度经济性）",
+  transition_quality: "I/T（冬季以 T 为主）",
+  final_quality: "M 配速比赛专项",
+};
+
 /** 秒→分:秒配速串（秒位四舍五入进位，239.7→「3:60」的进位坑已处理）。 */
 export const fmtPace = (sPerKm: number) => {
   const totalSec = Math.round(sPerKm);
