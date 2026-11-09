@@ -16,7 +16,7 @@ const PROFILE = "prod" as Profile;
 // before any config is loaded below.
 process.env.STRIDE_COACH_ENV = PROFILE;
 const USER_ID = "f10bc353-01ab-4db1-af9f-d9305ea9a532";
-const AS_OF = new Date("2026-09-27").toISOString();
+const AS_OF = new Date().toISOString();
 
 export const config = loadConfig({ configFiles: coachAgentConfigFiles(import.meta.url) });
 const modelConfig = getAgentConfig(config, "master_plan");
@@ -36,8 +36,8 @@ const request = MasterPlanGraphRequest.parse({
     {
       race_name: "上海马拉松",
       distance: "FM",
-      race_date: "2026-10-18",
-      target_time: "2:50:00",
+      race_date: process.env.MP_RACE_DATE ?? "2027-03-21",
+      target_time: process.env.MP_TARGET_TIME ?? "2:57:00",
       finish_only: false,
       priority: "A",
     },
@@ -98,7 +98,7 @@ async function main() {
         console.log(`  ${item.verdict}: ${item.item} — ${item.actual}`);
       console.log(`warnings=${artifact.warnings.join(",") || "none"}`);
     } else {
-      console.log(JSON.stringify(outcome.artifact ?? outcome, null, 2).slice(0, 2000));
+      console.log(JSON.stringify(outcome, null, 2).slice(0, 2000));
     }
   } finally {
     await store.close();

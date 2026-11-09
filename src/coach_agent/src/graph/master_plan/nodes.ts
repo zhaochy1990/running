@@ -29,6 +29,7 @@ import {
   PhaseDivisionIntentSchema,
   addDays,
   planningStartDate,
+  shanghaiDay,
 } from "@stride/contract";
 import { z } from "zod/v4";
 import { measureExecutionTimeAsync } from "../../utils/performance.js";
@@ -471,9 +472,9 @@ const RACE_DISTANCE_M = 42195;
 /** 短于 5 周跑不出丹尼尔斯五阶段（L2 门也会挡，这里早退省一次 LLM 调用）。 */
 const MIN_RUNWAY_WEEKS = 5;
 
-/** 生成时点：请求没带就取今天（上海日历日）。 */
+/** 生成时点：一律归一到上海日历日（请求里可能带的是完整 ISO instant）。 */
 function asOfOf(request: MasterPlanGraphRequest): string {
-  return request.requested_as_of ?? new Date().toISOString().slice(0, 10);
+  return shanghaiDay(request.requested_as_of ?? new Date().toISOString());
 }
 
 function aGoalOf(request: MasterPlanGraphRequest) {

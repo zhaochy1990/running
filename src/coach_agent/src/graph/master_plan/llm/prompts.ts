@@ -1,26 +1,34 @@
-/** master plan kernel 只剩目标评估一个 LLM 提示（策略/评审/骨架四份提示随老拓扑删除，#803）。 */
-import type { AssessmentFacts } from "../assessment.js";
-import type { ContextSnapshot } from "../context.js";
-import { MasterPlanGraphRequest } from "@stride/contract";
+/**
+ * master plan kernel 的目标评估提示（原样保留：它的教义与 validateGoalAssessment*
+ * 的确定性校验一一对应——allowed claims、A/B/C 目标阶梯、gate 必须绑可观测信号、
+ * 每条结论必须引用指定 fact_id。重写这段提示会直接让 assess_goal 被判合同违规）。
+ * 策略/评审/骨架四份提示随老拓扑删除（#803）。
+ */
+import type { PromptMessage } from "@stride/common";
 
-type PromptMessage = ["system" | "user", string];
-
-export interface GoalAssessmentPromptInput {
-  request: MasterPlanGraphRequest;
-  snapshot: ContextSnapshot;
-  facts: AssessmentFacts;
+interface AssessmentPromptInput {
+  request: unknown;
+  facts: unknown;
+  snapshot: unknown;
 }
 
-const GOAL_ASSESSMENT_SYSTEM = `你是马拉松训练可行性评估器。给定运动员的目标、已确认的训练条件与历史证据，判断目标在本赛季是否可达。
-
-只输出 submit_goal_assessment 的结构化结果，不要解释过程。
-- level 四档：reachable / attainable_with_discipline / multi_cycle_required / unsafe_or_incompatible
-- 每条结论必须引用输入里真实存在的 fact_id；不要编造事实
-- 目标明显偏离当前能力时给出多周期路径或冲突选项，不要为了迎合而压低风险`;
+type GoalAssessmentPromptInput = AssessmentPromptInput;
 
 export function goalAssessmentPrompt(input: GoalAssessmentPromptInput): PromptMessage[] {
+  return messages(
+    "You are the race-goal feasibility assessor. Submit only the forced function schema. Treat AssessmentFacts as immutable truth. Assess only goal feasibility. Allowed claims are only goal_requires_improvement, goal_runway_limited, goal_supported_by_history. For a timed goal, A is the confirmed target; B is a strictly slower time or the exact matching PB; C is safe completion or a strictly slower time. Every gate must name an observable signal and a concrete criterion that can be evaluated later, such as a race-specific performance, long-run durability, health readiness, fueling execution, or availability consistency. A gate cannot merely say readiness supports the target or restate a historical fact. Cite fact_ids as the evidence that motivates each future criterion. Each material conclusion must also cite the fact_ids that deterministically back its claim: goal_requires_improvement must cite goal.a.improvement_pct; goal_runway_limited must cite race.a.weeks_to_race; goal_supported_by_history must cite both history.peak_weekly_km and history.longest_road_run_km. The goal level ladder is deterministic: unsafe_or_incompatible only when race.a.weeks_to_race <= 0 or the goal is incompatible; conditional when goal.a.improvement_pct is unavailable; multi_cycle_required when goal.a.improvement_pct > 15 or (goal.a.improvement_pct > 10 and race.a.weeks_to_race < 16); aggressive_but_plausible when goal.a.improvement_pct > 3 or race.a.weeks_to_race < 12; otherwise supported. Do not prescribe training. Use multi_cycle_required only for the deterministic extreme-gap case; otherwise multi_cycle_path must be empty.",
+    {
+      task: "Assess the confirmed race goal against the athlete capability facts",
+      request: input.request,
+      assessment_facts: input.facts,
+      snapshot: input.snapshot,
+    },
+  );
+}
+
+function messages(system: string, user: unknown): PromptMessage[] {
   return [
-    ["system", GOAL_ASSESSMENT_SYSTEM],
-    ["user", JSON.stringify({ request: input.request, facts: input.facts, athlete: input.snapshot })],
+    ["system", system],
+    ["user", JSON.stringify(user)],
   ];
 }

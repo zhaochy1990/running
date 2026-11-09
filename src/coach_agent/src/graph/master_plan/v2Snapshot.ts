@@ -162,7 +162,10 @@ export function buildV2Snapshot(input: SnapshotInput): MasterPlan {
       target_weekly_km_low: week.km,
       target_weekly_km_high: week.km,
       key_sessions: keySessions,
-      is_recovery_week: week.role === "absorb" || week.canonical === "recovery",
+      // v2 的 recovery 周语义 = 无质量课的再生周（契约限制 ≤1 节重点课）。
+      // L3 的 absorb 周是 3+1 的降量周、仍带质量课，映射成 recovery 会被
+      // MasterPlanSchema 判违规（2026-11-08 真模型首跑实证）。
+      is_recovery_week: week.canonical === "recovery",
     };
   });
 
