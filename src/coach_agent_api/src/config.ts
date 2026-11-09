@@ -164,6 +164,14 @@ const schema: convict.Schema<RawApiConfig> = {
       env: "STRIDE_COACH_LOG_FILE",
     },
   },
+  turn_lock: {
+    wait_seconds: {
+      doc: "Seconds a Coach turn waits for its thread lock before failing busy (#836). Slow turns hold the lock for minutes; idempotent retries (same client_turn_id) wait out the holder and replay its receipt. 0 restores fail-fast.",
+      format: "nat",
+      default: 90,
+      env: "STRIDE_COACH_TURN_LOCK_WAIT_SECONDS",
+    },
+  },
 };
 
 export function loadApiConfig(options: LoadApiConfigOptions): ApiConfig {
@@ -192,6 +200,7 @@ export function loadApiConfig(options: LoadApiConfigOptions): ApiConfig {
       staffOpenidInternalToken: raw.lottery.staff_openid_internal_token,
     },
     logFile: raw.logging.file ? resolve(configDir, raw.logging.file) : "",
+    turnLock: { waitSeconds: raw.turn_lock.wait_seconds },
     auth: {
       publicKeyPem,
       authServiceUrl: raw.auth.auth_service_url,

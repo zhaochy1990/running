@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { getLogger } from "@stride/common";
 import type { Connection, Pool, RowDataPacket } from "mysql2/promise";
 import mysql from "mysql2/promise";
 import type { MySqlConfig } from "../dto/config.js";
@@ -6,6 +7,8 @@ import { ThreadBusyError } from "../turn/errors.js";
 import type { TurnReceipt } from "../turn/receipt.js";
 import type { ThreadLock, TurnReceiptStore } from "../turn/receiptStore.js";
 import type { MySqlSaver } from "./checkpointer.js";
+
+const logger = getLogger("persistence/turns");
 
 export class MySqlTurnReceiptStore implements TurnReceiptStore {
   constructor(
@@ -72,15 +75,30 @@ export class MySqlTurnReceiptStore implements TurnReceiptStore {
 }
 
 export class MySqlThreadLock implements ThreadLock {
-  constructor(private readonly config: MySqlConfig) {}
+  /** lockWaitSeconds (#836): slow turns hold the lock for minutes; idempotent
+   * retries wait out the holder instead of failing busy immediately (SSE
+   * keepalive keeps the connection alive while waiting). Always wired from
+   * coach config (turn_lock.wait_seconds, default 90). */
+  constructor(
+    private readonly config: MySqlConfig,
+    private readonly lockWaitSeconds: number,
+    private readonly createConnection: (config: MySqlConfig) => Promise<Connection> = (cfg) => mysql.createConnection(cfg),
+  ) {}
 
   async runExclusive<T>(threadId: string, operation: () => Promise<T>): Promise<T> {
-    const connection = await mysql.createConnection(this.config);
+    const connection = await this.createConnection(this.config);
     const lockName = `coach:${createHash("sha256").update(threadId).digest("hex").slice(0, 58)}`;
     let acquired = false;
     try {
-      await acquire(connection, lockName);
+      const started = Date.now();
+      await acquire(connection, lockName, this.lockWaitSeconds);
       acquired = true;
+      // Observability (#836): a wait means an idempotent retry arrived while
+      // the original turn was still running and lived to replay its receipt.
+      const waitedMs = Date.now() - started;
+      if (waitedMs > 1_000) {
+        logger.info({ threadId, waitedMs }, "coach thread lock was busy; waited for the holder to finish");
+      }
       return await operation();
     } finally {
       if (acquired) await release(connection, lockName);
@@ -89,10 +107,10 @@ export class MySqlThreadLock implements ThreadLock {
   }
 }
 
-async function acquire(connection: Connection, lockName: string): Promise<void> {
-  const [rows] = await connection.query<RowDataPacket[]>(`SELECT GET_LOCK(?, 0) AS acquired`, [lockName]);
+async function acquire(connection: Connection, lockName: string, waitSeconds: number): Promise<void> {
+  const [rows] = await connection.query<RowDataPacket[]>(`SELECT GET_LOCK(?, ?) AS acquired`, [lockName, waitSeconds]);
   if (Number(rows[0]?.acquired) !== 1) {
-    throw new ThreadBusyError("timed out acquiring Coach thread lock");
+    throw new ThreadBusyError(`timed out acquiring Coach thread lock (waited ${waitSeconds}s)`);
   }
 }
 

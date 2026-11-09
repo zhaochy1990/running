@@ -51,7 +51,7 @@ export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: C
   const planJobQueue = await PlanJobQueue.connectWithRetry(apiConfig.planJobs.amqpUrl);
   let planJobPublisher: RabbitPublisher | undefined;
   try {
-    persistence = await createPersistence(apiConfig.persistenceDatabase);
+    persistence = await createPersistence(apiConfig.persistenceDatabase, { turnLockWaitSeconds: apiConfig.turnLock.waitSeconds });
     // #585：master-plan 生成不落库，卡片带 content+apply_token 由用户「应用」
     // 时落库——coach 侧计划写依赖清零。
     // #508：qa agent 的 set_activity_feel 走 Go API 写归一化 feel（fail-loud）。
