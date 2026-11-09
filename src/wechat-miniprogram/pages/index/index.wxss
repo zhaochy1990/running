@@ -545,3 +545,37 @@
 .content__tail {
   height: 24rpx;
 }
+
+/* 加载骨架：loading 期间替代训练卡占位（devops#929），数据到达后由 wx:if/wx:elif 分支接管 */
+.workout-skeleton__line {
+  border-radius: 10rpx;
+  background: rgba(var(--color-overlay-rgb), 0.08);
+  animation: workout-skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.workout-skeleton__line--title {
+  width: 40%;
+  height: 44rpx;
+  margin-bottom: 24rpx;
+}
+
+.workout-skeleton__line--chart {
+  width: 100%;
+  height: 160rpx;
+  margin-bottom: 24rpx;
+}
+
+.workout-skeleton__line--text {
+  width: 60%;
+  height: 28rpx;
+}
+
+@keyframes workout-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}

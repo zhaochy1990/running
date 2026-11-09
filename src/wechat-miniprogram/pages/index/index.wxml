@@ -141,9 +141,15 @@
         <text class="workout__cta-text">和教练聊一聊</text>
       </button>
     </view>
-    <view wx:else class="empty-card">
+    <!-- 空态必须 !loading 门控（devops#929）：加载中渲染骨架，避免慢网先闪「今日无训练安排」假空态 -->
+    <view wx:elif="{{!loading}}" class="empty-card">
       <view class="empty-card__title">今日无训练安排</view>
       <view class="empty-card__sub">好好休息，或查看本周计划</view>
+    </view>
+    <view wx:else class="card workout-skeleton" aria-label="正在加载今日安排">
+      <view class="workout-skeleton__line workout-skeleton__line--title"></view>
+      <view class="workout-skeleton__line workout-skeleton__line--chart"></view>
+      <view class="workout-skeleton__line workout-skeleton__line--text"></view>
     </view>
 
     <!-- 今日营养：无饮食安排时整块隐藏 -->

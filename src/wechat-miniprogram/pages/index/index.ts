@@ -262,6 +262,8 @@ Page<IndexPageData, IndexPageHandlers>({
       this.setData({ loading: false });
       return;
     }
+    // onShow 登录回切路径：补拉期间回骨架，避免 workout=null + loading=false 的假空态闪现（devops#929）
+    this.setData({ loading: true });
     try {
       const plan = await getWeeklyPlan(userId, currentWeekName());
       fetchedPlan = plan;
