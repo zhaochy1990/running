@@ -1,8 +1,8 @@
-// tsblob.go is the storage side of the timeseries→COS Phase 1 dual-write
-// (devops#785): the Store's injected tsstore backend, the row→blob point
-// conversion, and the pointer-column stamping/query surface the backfill,
-// audit, and orphan GC build on. The dependency direction is storage→tsstore
-// only (tsstore never imports storage — see the tsstore package comment).
+// tsblob.go is the storage side of the timeseries→COS migration (devops#785):
+// the Store's injected tsstore backend, the row→blob point conversion, and
+// the pointer query surface the audit and orphan GC build on. The dependency
+// direction is storage→tsstore only (tsstore never imports storage — see the
+// tsstore package comment).
 package storage
 
 import (
@@ -21,11 +21,11 @@ import (
 // right after Open; it is not safe to call concurrently with upserts.
 func (s *Store) SetTSBlobStore(ts tsstore.Store) { s.tsBlob = ts }
 
-// TSBlobPoints mirrors a timeseries row set into the tsstore codec's Point
+// TSBlobPoints mirrors a timeseries point set into the tsstore codec's Point
 // shape. A nil slice maps to a non-nil zero-length slice so encoding an
 // activity without samples produces the "[]" (empty-blob) checksum, matching
-// EncodePoints' own normalisation. Exported because the audit recomputes
-// checksums from rows through the exact same conversion.
+// EncodePoints' own normalisation. Exported because tests round-trip
+// payloads through the exact same conversion.
 func TSBlobPoints(rows []TimeseriesPoint) []tsstore.Point {
 	pts := make([]tsstore.Point, len(rows))
 	for i, r := range rows {
@@ -89,173 +89,16 @@ func anyValidGPS(rows []TimeseriesPoint) bool {
 	return false
 }
 
-// --- backfill / audit / GC query surface ----------------------------------
+// --- audit / GC query surface ----------------------------------------------
 //
-// These methods exist for the Phase 1 tooling (devops#785): the backfill CLI
-// streams unmigrated activities, the audit reads the per-user counters, and
-// the orphan GC checks bucket keys against live rows. They are deliberately
-// on Store (rather than raw gorm handles handed to another package) so the
-// SQL stays with the models it touches.
-
-// rowfulActivityExpr restricts an activities scan to rows that actually have
-// timeseries rows: post-Phase-3 zero-point activities (Garmin strength
-// training without per-second data) are legitimately unstamped — there is
-// nothing to migrate — so backfill paging and the audit's Unmigrated counter
-// must both skip them rather than report phantom pending work.
-const rowfulActivityExpr = "EXISTS (SELECT 1 FROM timeseries t WHERE t.user_id = activities.user_id AND t.label_id = activities.label_id)"
-
-// UnmigratedActivityUsers lists the distinct user_ids that still have
-// activities with a NULL ts_blob_key, sorted. The backfill fans users out to
-// its worker pool from this list.
-func (s *Store) UnmigratedActivityUsers(ctx context.Context) ([]string, error) {
-	var ids []string
-	err := s.db.WithContext(ctx).Model(&Activity{}).
-		Distinct().
-		Where("ts_blob_key IS NULL").
-		Where(rowfulActivityExpr).
-		Order("user_id").
-		Pluck("user_id", &ids).Error
-	if err != nil {
-		return nil, fmt.Errorf("storage: list unmigrated activity users: %w", err)
-	}
-	return ids, nil
-}
-
-// PageUserActivitiesWithoutTSBlob keyset-pages one user's unmigrated
-// activities (label_id > afterLabel, ascending), returning at most limit
-// (user_id, label_id) pairs. Keyset — not OFFSET — so the stream stays cheap
-// at any depth and a re-run resumes naturally: stamped rows drop out of the
-// filter.
-func (s *Store) PageUserActivitiesWithoutTSBlob(ctx context.Context, userID, afterLabel string, limit int) ([]Activity, error) {
-	var rows []Activity
-	q := s.db.WithContext(ctx).Model(&Activity{}).
-		Select("user_id", "label_id").
-		Where("user_id = ? AND ts_blob_key IS NULL", userID).
-		Where(rowfulActivityExpr)
-	if afterLabel != "" {
-		q = q.Where("label_id > ?", afterLabel)
-	}
-	err := q.Order("label_id").Limit(limit).Find(&rows).Error
-	if err != nil {
-		return nil, fmt.Errorf("storage: page unmigrated activities for %s: %w", userID, err)
-	}
-	return rows, nil
-}
-
-// StampTSBlobColumns writes the four pointer columns onto one activity row,
-// guarded by "ts_blob_key IS NULL" so the backfill loses races against the
-// live dual-write path (whoever stamps first wins; the loser sees stamped=false
-// and moves on — both wrote the same deterministic content).
-func (s *Store) StampTSBlobColumns(ctx context.Context, userID, labelID, key string, pointCount int, sha256 string, hasGPS bool) (bool, error) {
-	res := s.db.WithContext(ctx).Model(&Activity{}).
-		Where("user_id = ? AND label_id = ? AND ts_blob_key IS NULL", userID, labelID).
-		Updates(map[string]any{
-			"ts_blob_key":    key,
-			"ts_point_count": pointCount,
-			"ts_sha256":      sha256,
-			"has_gps":        hasGPS,
-		})
-	if res.Error != nil {
-		return false, fmt.Errorf("storage: stamp ts blob columns %s/%s: %w", userID, labelID, res.Error)
-	}
-	return res.RowsAffected > 0, nil
-}
-
-// TSBlobUserAudit is one user's row of the per-user reconciliation counters.
-type TSBlobUserAudit struct {
-	UserID string
-	// RowPoints is COUNT(*) of the user's timeseries rows; BlobPoints is
-	// SUM(ts_point_count) over the user's stamped activities that still have
-	// rows. PointSumOK is one-sided (RowPoints <= BlobPoints): equality holds
-	// while dual-write pairs are intact, and after Phase 3 a blob rewrite can
-	// legitimately leave BlobPoints above the frozen rows — what must never
-	// happen is rows the stamped blobs fail to account for.
-	RowPoints  int64
-	BlobPoints int64
-	Migrated   int64 // activities with a blob pointer (rowful or not)
-	// Unmigrated counts activities that still have timeseries rows but no
-	// blob pointer — the rows Phase 4's DROP would lose. Zero-point activities
-	// (Garmin strength training without per-second data) have nothing to
-	// migrate and do not count (devops#787).
-	Unmigrated int64
-	PointSumOK bool // RowPoints <= BlobPoints
-	CompleteOK bool // Unmigrated == 0
-}
-
-// TSBlobUserAudits returns the per-user reconciliation counters for every user
-// that has timeseries rows, blob pointers, or rowful-but-unstamped activities
-// (union of the three), sorted by user_id. Three GROUP BY queries, merged in
-// Go — the timeseries EXISTS probe walks the (user_id, label_id) index, the
-// other two touch only the small activities table.
-func (s *Store) TSBlobUserAudits(ctx context.Context) ([]TSBlobUserAudit, error) {
-	byUser := map[string]*TSBlobUserAudit{}
-	var order []string
-	merge := func(id string) *TSBlobUserAudit {
-		if a, ok := byUser[id]; ok {
-			return a
-		}
-		a := &TSBlobUserAudit{UserID: id}
-		byUser[id] = a
-		order = append(order, id)
-		return a
-	}
-
-	var rowCounts []struct {
-		UserID string `gorm:"column:user_id"`
-		N      int64  `gorm:"column:n"`
-	}
-	if err := s.db.WithContext(ctx).Model(&TimeseriesPoint{}).
-		Select("user_id, COUNT(*) AS n").
-		Group("user_id").
-		Scan(&rowCounts).Error; err != nil {
-		return nil, fmt.Errorf("storage: count timeseries per user: %w", err)
-	}
-	for _, r := range rowCounts {
-		merge(r.UserID).RowPoints = r.N
-	}
-
-	var blobAggs []struct {
-		UserID string `gorm:"column:user_id"`
-		Cnt    int64  `gorm:"column:cnt"`
-		Pts    int64  `gorm:"column:pts"`
-	}
-	if err := s.db.WithContext(ctx).Model(&Activity{}).
-		Select("user_id, COUNT(*) AS cnt, COALESCE(SUM(CASE WHEN " + rowfulActivityExpr + " THEN ts_point_count ELSE 0 END), 0) AS pts").
-		Where("ts_blob_key IS NOT NULL").
-		Group("user_id").
-		Scan(&blobAggs).Error; err != nil {
-		return nil, fmt.Errorf("storage: sum ts_point_count per user: %w", err)
-	}
-	for _, r := range blobAggs {
-		a := merge(r.UserID)
-		a.Migrated, a.BlobPoints = r.Cnt, r.Pts
-	}
-
-	var pending []struct {
-		UserID string `gorm:"column:user_id"`
-		N      int64  `gorm:"column:n"`
-	}
-	if err := s.db.WithContext(ctx).Model(&Activity{}).
-		Select("user_id, COUNT(*) AS n").
-		Where("ts_blob_key IS NULL").
-		Where(rowfulActivityExpr).
-		Group("user_id").
-		Scan(&pending).Error; err != nil {
-		return nil, fmt.Errorf("storage: count pending activities per user: %w", err)
-	}
-	for _, r := range pending {
-		merge(r.UserID).Unmigrated = r.N
-	}
-
-	out := make([]TSBlobUserAudit, 0, len(order))
-	for _, id := range order {
-		a := byUser[id]
-		a.PointSumOK = a.RowPoints <= a.BlobPoints
-		a.CompleteOK = a.Unmigrated == 0
-		out = append(out, *a)
-	}
-	return out, nil
-}
+// These methods exist for the migration's residual tooling (devops#785/#788):
+// the audit samples stamped pointers and diffs them against the bucket, and
+// the orphan GC checks bucket keys against live activity rows. The backfill
+// surface (unmigrated paging, guarded stamping, the per-user row counters)
+// retired with the dropped timeseries table — there are no rows left to
+// migrate or reconcile. They are deliberately on Store (rather than raw gorm
+// handles handed to another package) so the SQL stays with the models it
+// touches.
 
 // TSBlobPointer is one stamped activity's identity + checksum + declared
 // point count, the audit's sampling frame.

@@ -1,6 +1,6 @@
-// p3_test.go covers the Phase 3 stop-writing-rows behaviors (devops#787):
-// laps and watch zones remain row-backed children while timeseries rows are
-// frozen, and account erasure sweeps the user's blob prefix.
+// p3_test.go covers the post-migration storage behaviors (devops#787/#788):
+// points go to the blob while laps and watch zones remain row-backed
+// children, and account erasure sweeps the user's blob prefix.
 package storage
 
 import (
@@ -13,10 +13,10 @@ import (
 	"github.com/zhaochy1990/stride/internal/tsstore"
 )
 
-// TestUpsertActivity_Phase3FreezesRowsButKeepsChildTables: an upsert with
-// points writes zero timeseries rows, while laps and watch zones — still
-// relational children — are replaced as before.
-func TestUpsertActivity_Phase3FreezesRowsButKeepsChildTables(t *testing.T) {
+// TestUpsertActivity_BlobPointsRowBackedChildren: an upsert with points
+// serves them from the blob (stamped pointer columns), while laps and watch
+// zones — still relational children — are replaced as rows as before.
+func TestUpsertActivity_BlobPointsRowBackedChildren(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()
 	if err := st.AutoMigrateWatch(ctx); err != nil {
@@ -34,14 +34,18 @@ func TestUpsertActivity_Phase3FreezesRowsButKeepsChildTables(t *testing.T) {
 	if err := st.UpsertActivity(ctx, a, laps, points, zones); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	var tsRows, lapRows, zoneRows int64
-	for m, cnt := range map[any]*int64{&TimeseriesPoint{}: &tsRows, &Lap{}: &lapRows, &ActivityWatchZone{}: &zoneRows} {
+	got := readActivity(t, st, uid, label)
+	if got.TsBlobKey == nil || got.TsPointCount == nil || *got.TsPointCount != 2 {
+		t.Fatalf("pointer columns = key:%v count:%v, want a stamped key and 2 points", got.TsBlobKey, got.TsPointCount)
+	}
+	if got.HasGPS == nil || !*got.HasGPS {
+		t.Fatalf("has_gps = %v, want true (the points carry a valid fix)", got.HasGPS)
+	}
+	var lapRows, zoneRows int64
+	for m, cnt := range map[any]*int64{&Lap{}: &lapRows, &ActivityWatchZone{}: &zoneRows} {
 		if err := st.db.WithContext(ctx).Model(m).Where("user_id = ? AND label_id = ?", uid, label).Count(cnt).Error; err != nil {
 			t.Fatalf("count: %v", err)
 		}
-	}
-	if tsRows != 0 {
-		t.Fatalf("timeseries rows = %d, want 0 — the row table is frozen (devops#787)", tsRows)
 	}
 	if lapRows != 1 || zoneRows != 1 {
 		t.Fatalf("lap/zone rows = %d/%d, want 1/1 — child tables stay row-backed", lapRows, zoneRows)
@@ -112,18 +116,5 @@ func TestDeleteUserData_SweepsTSBlobPrefix(t *testing.T) {
 		if _, err := blob.Get(ctx, tsstore.BlobKey(bystander, label)); err != nil {
 			t.Fatalf("bystander blob %s swept by the erasure: %v", label, err)
 		}
-	}
-}
-
-// seedStockRows inserts timeseries rows directly, bypassing the upsert — the
-// only way rows can appear since Phase 3 froze the row table. It simulates
-// pre-migration stock for the fallback and reconciliation tests.
-func seedStockRows(t *testing.T, st *Store, uid, label string, rows []TimeseriesPoint) {
-	t.Helper()
-	for i := range rows {
-		rows[i].UserID, rows[i].LabelID = uid, label
-	}
-	if err := st.db.WithContext(context.Background()).Create(&rows).Error; err != nil {
-		t.Fatalf("seed stock rows %s/%s: %v", uid, label, err)
 	}
 }

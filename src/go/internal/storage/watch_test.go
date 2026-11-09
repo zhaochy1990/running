@@ -44,7 +44,6 @@ func TestWatchModelTableNames(t *testing.T) {
 	cases := map[string]string{
 		Activity{}.TableName():           "activities",
 		Lap{}.TableName():                "laps",
-		TimeseriesPoint{}.TableName():    "timeseries",
 		ActivityWatchZone{}.TableName():  "activity_watch_zones",
 		DailyHealth{}.TableName():        "daily_health",
 		Dashboard{}.TableName():          "dashboard",

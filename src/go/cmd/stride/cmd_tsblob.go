@@ -1,13 +1,13 @@
-// Subcommand `stride tsblob`: the timeseries→COS migration's operational CLIs
-// (devops#785 Phase 1).
+// Subcommand `stride tsblob`: the timeseries→COS migration's residual CLI
+// (devops#785 Phase 1; reshaped by devops#788 when the row table dropped).
 //
-//	stride tsblob backfill   migrate stock activities to blobs (resumable)
-//	stride tsblob audit      run the three-part reconciliation (read-only)
+//	stride tsblob audit      reconcile pointers vs bucket objects (read-only)
 //
-// Both read the worker's config.yml + STRIDE_WORKER_* env namespace (mysql +
-// ts-blob sections only), or --file-store for a local directory backend.
-// Executing them against PRODUCTION is the operator's call — the binary ships
-// the capability, nothing here schedules it.
+// The backfill subcommand retired with the timeseries table — there are no
+// rows left to migrate. Reads the worker's config.yml + STRIDE_WORKER_* env
+// namespace (mysql + ts-blob sections only), or --file-store for a local
+// directory backend. Executing against PRODUCTION is the operator's call —
+// the binary ships the capability, nothing here schedules it.
 package main
 
 import (
@@ -27,12 +27,12 @@ import (
 func newTSBlobCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "tsblob",
-		Short: "Timeseries→COS migration tooling (backfill + audit)",
+		Short: "Timeseries→COS migration tooling (audit)",
 		Long: "tsblob operates on the per-activity timeseries blobs.\n" +
-			"backfill migrates stock activities (WHERE ts_blob_key IS NULL, resumable);\n" +
-			"audit reconciles rows vs pointers vs bucket objects (read-only).",
+			"audit reconciles stamped pointers against bucket objects (read-only);\n" +
+			"the backfill retired with the dropped timeseries table (devops#788).",
 	}
-	c.AddCommand(newTSBlobBackfillCmd(), newTSBlobAuditCmd())
+	c.AddCommand(newTSBlobAuditCmd())
 	return c
 }
 
@@ -69,49 +69,6 @@ func openTSBlobStack(fileStoreDir string) (*storage.Store, tsstore.Store, error)
 	return store, ts, nil
 }
 
-func newTSBlobBackfillCmd() *cobra.Command {
-	var (
-		concurrency int
-		fileStore   string
-	)
-	c := &cobra.Command{
-		Use:   "backfill",
-		Short: "Migrate stock activities to timeseries blobs (resumable)",
-		Long: "Streams activities with a NULL ts_blob_key (keyset pagination per\n" +
-			"user, workers fanned out across users), uploads each activity's blob,\n" +
-			"and stamps the four pointer columns. Re-running resumes where the\n" +
-			"stamped rows left off.",
-		Args: cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			if concurrency < 1 || concurrency > 64 {
-				return fmt.Errorf("--concurrency must be 1..64 (the stock sizing is 4-8)")
-			}
-			store, _, err := openTSBlobStack(fileStore)
-			if err != nil {
-				return err
-			}
-			defer store.Close()
-
-			b := tsblob.NewBackfill(store)
-			b.Concurrency = concurrency
-			b.Log = func(format string, args ...any) { fmt.Printf(format+"\n", args...) }
-			report, err := b.Run(context.Background())
-			out, _ := json.Marshal(report)
-			fmt.Println(string(out))
-			if err != nil {
-				return err
-			}
-			if !report.OK {
-				return fmt.Errorf("backfill completed with %d failed activities (re-run to retry them)", report.Failed)
-			}
-			return nil
-		},
-	}
-	c.Flags().IntVar(&concurrency, "concurrency", 4, "worker pool across users (stock sizing: 4-8)")
-	c.Flags().StringVar(&fileStore, "file-store", "", "use a local directory as the blob backend instead of the configured COS bucket")
-	return c
-}
-
 func newTSBlobAuditCmd() *cobra.Command {
 	var (
 		sampleRate float64
@@ -119,12 +76,13 @@ func newTSBlobAuditCmd() *cobra.Command {
 	)
 	c := &cobra.Command{
 		Use:   "audit",
-		Short: "Reconcile timeseries rows vs blob pointers vs bucket objects (read-only)",
-		Long: "The three-part reconciliation (devops#785 AC3): per-user COUNT(*) vs\n" +
-			"SUM(ts_point_count); a deterministic 5% sample whose sha256 is recomputed\n" +
-			"from rows and cross-checked against the bucket blob; bucket object count\n" +
-			"vs pointer count (with the exact set diff named). Exits non-zero when any\n" +
-			"part fails — cron the daily soak re-run off this.",
+		Short: "Reconcile blob pointers vs bucket objects (read-only)",
+		Long: "The blob-internal reconciliation (devops#785 AC3, reshaped by\n" +
+			"devops#788): a deterministic 5% sample whose envelope checksum and\n" +
+			"point count are cross-checked against the stamped pointer columns;\n" +
+			"bucket object count vs pointer count (with the exact set diff named).\n" +
+			"Exits non-zero when any part fails — cron the daily soak re-run off\n" +
+			"this.",
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if sampleRate <= 0 || sampleRate > 1 {
@@ -146,8 +104,8 @@ func newTSBlobAuditCmd() *cobra.Command {
 				return err
 			}
 			if !report.OK {
-				return fmt.Errorf("audit failed: point_sum_ok=%v complete_ok=%v sample_ok=%v objects_ok=%v",
-					report.PointSumOK, report.CompleteOK, report.Sample.SampleOK, report.Objects.ObjectsOK)
+				return fmt.Errorf("audit failed: sample_ok=%v objects_ok=%v",
+					report.Sample.SampleOK, report.Objects.ObjectsOK)
 			}
 			return nil
 		},

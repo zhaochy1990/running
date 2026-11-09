@@ -33,47 +33,23 @@ func (s *Store) ActivitiesInWindow(ctx context.Context, userID, provider string,
 	return rows, nil
 }
 
-// ActivityTimeseries returns an activity's timeseries points ordered by id
-// (insertion order), matching the Python connector's "ORDER BY id".
+// ActivityTimeseries returns an activity's timeseries points in sample order.
 //
-// Phase 2 (devops#786) reads pointer-first: when the activities row carries a
-// ts_blob_key, the points are served from the blob store — decoded, verified
-// against the row's ts_point_count/ts_sha256, and kept in a process-local LRU
-// so a full compute's four sources GET each activity at most once
-// (readActivityBlob in tsread.go). Any blob-side failure logs and falls back
-// to the row query: during the dual-write window rows are still written, so
-// the read degrades latency, never correctness. Unmigrated activities (NULL
-// pointer) and stores without a blob backend take the row query directly.
-// Every read consumer keeps this signature unchanged.
+// Since Phase 4 (devops#788) the blob is the only copy: when the activities
+// row carries a ts_blob_key, the points are served from the blob store —
+// decoded, verified against the row's ts_point_count/ts_sha256, and kept in a
+// process-local LRU so a full compute's four sources GET each activity at
+// most once (readActivityBlob in tsread.go). A blob-side verification failure
+// returns an error — the row fallback died with the dropped table, and the
+// repair path is a resync, not stale data. An unstamped activity is a
+// zero-point one (Phase 3 semantics) and reads as empty. Every read consumer
+// keeps this signature unchanged.
 func (s *Store) ActivityTimeseries(ctx context.Context, userID, labelID string) ([]TimeseriesPoint, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
 		return nil, err
 	}
-	if pts, ok := s.readActivityBlob(ctx, uid, labelID); ok {
-		return pts, nil
-	}
-	return s.ActivityTimeseriesRows(ctx, userID, labelID)
-}
-
-// ActivityTimeseriesRows is the row-storage read: the activity's points
-// straight from the timeseries table ordered by id. It is what
-// ActivityTimeseries degrades to during the migration, and the explicit read
-// the migration tooling must use — the backfill sources blobs from rows and
-// the audit diffs rows against blobs, so neither may go through the
-// pointer-first path (that would compare a blob with itself).
-func (s *Store) ActivityTimeseriesRows(ctx context.Context, userID, labelID string) ([]TimeseriesPoint, error) {
-	uid, err := canonicalUserID(userID)
-	if err != nil {
-		return nil, err
-	}
-	var rows []TimeseriesPoint
-	if err := s.db.WithContext(ctx).
-		Where("user_id = ? AND label_id = ?", uid, labelID).
-		Order("id").Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	return rows, nil
+	return s.readActivityBlob(ctx, uid, labelID)
 }
 
 // ActivityLaps returns an activity's laps ordered by lap_index.

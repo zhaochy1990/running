@@ -74,7 +74,6 @@ func TestUpsertActivityPreservesRouteThumbColumns(t *testing.T) {
 	st, _, uid := openBlobTestStore(t)
 	ctx := context.Background()
 	t.Cleanup(func() {
-		st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&TimeseriesPoint{})
 		st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&Activity{})
 	})
 
@@ -116,7 +115,6 @@ func TestRouteThumbShapeCandidatesSelectOnlyRowsMissingJSON(t *testing.T) {
 	st, _, uid := openBlobTestStore(t)
 	ctx := context.Background()
 	t.Cleanup(func() {
-		st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&TimeseriesPoint{})
 		st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&Activity{})
 	})
 
@@ -164,7 +162,6 @@ func TestSetActivityRouteThumbJSONPreservesURL(t *testing.T) {
 	st, _, uid := openBlobTestStore(t)
 	ctx := context.Background()
 	t.Cleanup(func() {
-		st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&TimeseriesPoint{})
 		st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&Activity{})
 	})
 	seedThumbActivity(t, st, uid, "png-era", [][2]float64{{31.2, 121.4}})

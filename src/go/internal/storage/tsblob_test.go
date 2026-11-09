@@ -18,10 +18,9 @@ import (
 // openBlobTestStore is openTestStore plus the watch migration and a MemStore
 // injected as the ts blob backend. It also fabricates the test's scratch user
 // id and wipes that user's watch rows on cleanup — the gated MySQL may be a
-// shared scratch database, and whole-world assertions (the tsblob backfill
-// test's audit) need previous runs' users gone. (DeleteUserData is not the
-// tool here: it sweeps every user-owned table in one transaction, and this
-// minimal schema has not migrated them all.)
+// shared scratch database. (DeleteUserData is not the tool here: it sweeps
+// every user-owned table in one transaction, and this minimal schema has not
+// migrated them all.)
 func openBlobTestStore(t *testing.T) (*Store, *tsstore.MemStore, string) {
 	t.Helper()
 	st := openTestStore(t)
@@ -33,7 +32,7 @@ func openBlobTestStore(t *testing.T) (*Store, *tsstore.MemStore, string) {
 	n := time.Now().UnixNano()
 	uid := fmt.Sprintf("b1a2c3d4-%04d-4000-8000-%012d", n%10000, n%1_000_000_000_000)
 	t.Cleanup(func() {
-		for _, model := range []any{&TimeseriesPoint{}, &Lap{}, &ActivityWatchZone{}, &Activity{}} {
+		for _, model := range []any{&Lap{}, &ActivityWatchZone{}, &Activity{}} {
 			_ = st.db.Where("user_id = ?", uid).Delete(model).Error
 		}
 	})
@@ -104,11 +103,7 @@ func TestUpsertActivity_DualWriteStampsPointerColumns(t *testing.T) {
 		t.Fatalf("blob count = %d/%d, want 3/3", blob.PointCount, len(blob.Points))
 	}
 
-	// Phase 3 (devops#787): rows are frozen — the upsert must NOT write any,
-	// and the read surface serves the same points from the blob.
-	if rows, err := st.ActivityTimeseriesRows(ctx, uid, "a1"); err != nil || len(rows) != 0 {
-		t.Fatalf("timeseries rows after upsert = %d (err %v), want 0 — the row table is frozen", len(rows), err)
-	}
+	// The read surface serves the same points from the blob.
 	served, err := st.ActivityTimeseries(ctx, uid, "a1")
 	if err != nil || len(served) != 3 {
 		t.Fatalf("ActivityTimeseries after upsert = %d points (err %v), want 3 from the blob", len(served), err)
@@ -144,9 +139,6 @@ func TestUpsertActivity_COROSEmptyTSWritesEmptyBlob(t *testing.T) {
 	if err != nil || blob.PointCount != 0 {
 		t.Fatalf("blob after empty rewrite = %+v (err %v), want 0 points", blob, err)
 	}
-	if rows, _ := st.ActivityTimeseriesRows(ctx, uid, "a1"); len(rows) != 0 {
-		t.Fatalf("rows after empty rewrite = %d, want 0", len(rows))
-	}
 }
 
 // TestUpsertActivity_GarminEmptyDetailsPreservesPointer: the preserve-empty
@@ -181,9 +173,6 @@ func TestUpsertActivity_GarminEmptyDetailsPreservesPointer(t *testing.T) {
 	}
 	if got := mustGetBlob(t, ts, *stamped.TsBlobKey); string(got) != string(payloadBefore) {
 		t.Fatal("blob payload changed by preserve-empty upsert")
-	}
-	if rows, _ := st.ActivityTimeseriesRows(ctx, uid, "g1"); len(rows) != 0 {
-		t.Fatalf("rows after preserve-empty = %d, want 0 — the row table is frozen", len(rows))
 	}
 }
 
@@ -255,17 +244,16 @@ func mustGetBlob(t *testing.T, ts *tsstore.MemStore, key string) []byte {
 	return b
 }
 
-// TestTSBlobBackfillQuerySurface walks the backfill/audit/GC storage methods
-// through their intended sequence: page unmigrated, stamp (guarded), page
-// again, aggregate counters, list pointers, check existing labels.
-func TestTSBlobBackfillQuerySurface(t *testing.T) {
+// TestTSBlobPointerQuerySurface walks the audit/GC storage methods through
+// their intended sequence: list the stamped pointers, batch-check bucket
+// candidate labels against live activity rows.
+func TestTSBlobPointerQuerySurface(t *testing.T) {
 	st, _, uid := openBlobTestStore(t)
 	ctx := context.Background()
 	// Assertions are scoped to this user: the shared scratch DB may hold other
 	// runs' users (a crashed test leaks its own cleanup).
 
-	// Seed via the dual-write path: two stamped activities, one pending (no
-	// points ever written is fine — the row still exists unmigrated).
+	// Seed via the upsert path: one point-carrying activity, one zero-point.
 	lat := 31.0
 	if err := st.UpsertActivity(ctx, blobActivity(uid, "l1"), nil, []TimeseriesPoint{tsPoint(1, &lat, &lat), tsPoint(2, &lat, &lat)}, nil); err != nil {
 		t.Fatalf("upsert l1: %v", err)
@@ -273,102 +261,25 @@ func TestTSBlobBackfillQuerySurface(t *testing.T) {
 	if err := st.UpsertActivity(ctx, blobActivity(uid, "l3"), nil, nil, nil); err != nil {
 		t.Fatalf("upsert l3: %v", err)
 	}
-	// l2 is pending stock: row and rows both predate the migration and are
-	// seeded directly — an upsert would stamp the pointer, and after Phase 3
-	// froze the row table this is the only shape a rowful-but-unstamped
-	// activity can have.
-	l2 := blobActivity(uid, "l2")
-	if err := st.db.WithContext(ctx).Create(l2).Error; err != nil {
-		t.Fatalf("create l2 row: %v", err)
-	}
-	seedStockRows(t, st, uid, "l2", []TimeseriesPoint{{Timestamp: i64ptr(1), GPSLat: &lat, GPSLon: &lat}})
-
-	users, err := st.UnmigratedActivityUsers(ctx)
-	if err != nil {
-		t.Fatalf("UnmigratedActivityUsers: %v", err)
-	}
-	// Scoped-membership, not whole-list: other suites may share the gated DB.
-	found := false
-	for _, u := range users {
-		if u == uid {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("UnmigratedActivityUsers = %v, want it to contain %s", users, uid)
-	}
-
-	var got []string
-	after := ""
-	for {
-		page, err := st.PageUserActivitiesWithoutTSBlob(ctx, uid, after, 1)
-		if err != nil {
-			t.Fatalf("page: %v", err)
-		}
-		if len(page) == 0 {
-			break
-		}
-		got = append(got, page[0].LabelID)
-		after = page[0].LabelID
-	}
-	if len(got) != 1 || got[0] != "l2" {
-		t.Fatalf("unmigrated page = %v, want [l2] (keyset, ascending)", got)
-	}
-
-	// Stamp l2 the way the backfill would; the guard makes a double stamp lose.
-	key := tsstore.BlobKey(uid, "l2")
-	ok, err := st.StampTSBlobColumns(ctx, uid, "l2", key, 1, "sum", true)
-	if err != nil || !ok {
-		t.Fatalf("first stamp = (%v, %v), want (true, nil)", ok, err)
-	}
-	ok, err = st.StampTSBlobColumns(ctx, uid, "l2", key, 1, "sum", true)
-	if err != nil || ok {
-		t.Fatalf("second stamp = (%v, %v), want (false, nil) — guard must hold", ok, err)
-	}
-
-	audits, err := st.TSBlobUserAudits(ctx)
-	if err != nil {
-		t.Fatalf("TSBlobUserAudits: %v", err)
-	}
-	var a *TSBlobUserAudit
-	for i := range audits {
-		if audits[i].UserID == uid {
-			a = &audits[i]
-			break
-		}
-	}
-	if a == nil {
-		t.Fatalf("audits had no row for %s: %+v", uid, audits)
-	}
-	// Rowful-only counters (devops#787): rows = 1 (l2's stock row), blob sum
-	// over stamped-and-rowful = 1 (l2), Migrated counts every pointer (l1, l2,
-	// l3 — l1's blob has 2 points but no rows since Phase 3), Unmigrated = 0
-	// after the stamp. One-sided point sum: 1 <= 1.
-	if a.RowPoints != 1 || a.BlobPoints != 1 || a.Migrated != 3 || a.Unmigrated != 0 {
-		t.Fatalf("audit counters = %+v, want rows=1 blob=1 migrated=3 pending=0", a)
-	}
-	if !a.PointSumOK || !a.CompleteOK {
-		t.Fatalf("audit verdicts = pointSum:%v complete:%v, want both true", a.PointSumOK, a.CompleteOK)
-	}
 
 	pointers, err := st.ListTSBlobPointers(ctx)
 	if err != nil {
 		t.Fatalf("ListTSBlobPointers: %v", err)
 	}
-	var mine int
+	mine := map[string]int64{}
 	for _, p := range pointers {
 		if p.UserID == uid {
-			mine++
+			mine[p.Label] = p.PointCount
 		}
 	}
-	if mine != 3 {
-		t.Fatalf("pointers for %s = %d, want 3", uid, mine)
+	if len(mine) != 2 || mine["l1"] != 2 || mine["l3"] != 0 {
+		t.Fatalf("pointers for %s = %v, want l1=2 pts and l3=0 pts", uid, mine)
 	}
-	existing, err := st.ExistingLabels(ctx, uid, []string{"l1", "l2", "missing"})
+	existing, err := st.ExistingLabels(ctx, uid, []string{"l1", "l3", "missing"})
 	if err != nil {
 		t.Fatalf("ExistingLabels: %v", err)
 	}
-	if !existing["l1"] || !existing["l2"] || existing["missing"] {
+	if !existing["l1"] || !existing["l3"] || existing["missing"] {
 		t.Fatalf("ExistingLabels = %v", existing)
 	}
 }

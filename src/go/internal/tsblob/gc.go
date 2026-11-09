@@ -1,10 +1,11 @@
 // gc.go is the timeseries bucket's orphan collector (devops#785 AC4): a worker
 // job that deletes blob objects whose activity row no longer exists, once they
-// are older than the grace window. Orphans accrue from the dual-write ordering
-// (a Put whose row transaction failed and was superseded), from account
-// erasure (rows deleted, blobs intentionally left for this job), and from the
-// migration's own aborted runs. The 7-day default swallows every in-flight
-// race — an MQ retry cycle is minutes, not days.
+// are older than the grace window. Orphans accrue from a Put whose row
+// transaction failed and was superseded, from account erasures whose inline
+// prefix sweep missed (a deletion served by a pre-sweep pod — the 2026-11-03
+// 5177ff88 residue was exactly this), and from aborted sync runs. The 7-day
+// default swallows every in-flight race — an MQ retry cycle is minutes, not
+// days.
 //
 // Rule: bucket key parses, activities row absent, ModTime strictly older than
 // the cutoff → delete. Anything else survives: malformed keys, unknown
@@ -17,11 +18,28 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/tsstore"
 )
+
+// Logger is the progress-reporting sink: fmt.Printf in the CLI, anything else
+// in tests. Nil falls back to the standard log package.
+type Logger func(format string, args ...any)
+
+func (l Logger) printf(format string, args ...any) {
+	if l == nil {
+		log.Printf(format, args...)
+		return
+	}
+	l(format, args...)
+}
+
+// maxRecordedErrors caps the retained error samples in the report; the counts
+// stay exact even when the samples are truncated.
+const maxRecordedErrors = 20
 
 // GCJobType is the registered job_type for the orphan collector.
 const GCJobType = "ts_blob_gc"

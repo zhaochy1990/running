@@ -1,9 +1,9 @@
-// tsread_test.go exercises the Phase 2 pointer-first read (devops#786):
-// blob-served reads equal row reads, the LRU collapses repeat reads into one
-// GET, a resync invalidates by checksum, and every blob-side failure falls
-// back to rows. Integration tests gate on STRIDE_WORKER_TEST_MYSQL_DSN like
-// the rest of the storage suite; the blob backend is always in-memory — never
-// a real bucket.
+// tsread_test.go exercises the pointer-first read in its Phase 4 shape
+// (devops#788): blob-served reads, the LRU collapsing repeat reads into one
+// GET, resync invalidation by checksum, and every blob-side failure surfacing
+// as an error (with the row table dropped there is no fallback copy).
+// Integration tests gate on STRIDE_WORKER_TEST_MYSQL_DSN like the rest of the
+// storage suite; the blob backend is always in-memory — never a real bucket.
 package storage
 
 import (
@@ -128,8 +128,7 @@ func TestActivityTimeseriesServesFromBlobWithLRU(t *testing.T) {
 	if err := st.UpsertActivity(ctx, blobActivity(uid, "r1"), nil, rows, nil); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	seedStockRows(t, st, uid, "r1", blobTestRows(31.13, 121.4)) // pre-Phase-3 stock: rows under a stamped pointer
-	for i := 1; i <= 3; i++ {                                   // calibration/ability/load/PB all re-read the same activity
+	for i := 1; i <= 3; i++ { // calibration/ability/load/PB all re-read the same activity
 		got, err := st.ActivityTimeseries(ctx, uid, "r1")
 		if err != nil {
 			t.Fatalf("read %d: %v", i, err)
@@ -138,14 +137,6 @@ func TestActivityTimeseriesServesFromBlobWithLRU(t *testing.T) {
 	}
 	if counting.gets != 1 {
 		t.Fatalf("backend GETs = %d after 3 reads, want 1 (LRU)", counting.gets)
-	}
-	// The row read is untouched and separate.
-	rowRead, err := st.ActivityTimeseriesRows(ctx, uid, "r1")
-	if err != nil || len(rowRead) != len(rows) {
-		t.Fatalf("rows read = %d (err %v), want %d", len(rowRead), err, len(rows))
-	}
-	if counting.gets != 1 {
-		t.Fatalf("backend GETs = %d after the row read, want 1", counting.gets)
 	}
 }
 
@@ -186,86 +177,81 @@ func TestActivityTimeseriesResyncInvalidatesCache(t *testing.T) {
 	}
 }
 
-// TestActivityTimeseriesFallsBackToRows: every blob-side failure — missing
-// object, corrupt payload, checksum drift, count drift — must still answer
-// from the timeseries rows (the dual-write keeps them authoritative), not
-// error.
-func TestActivityTimeseriesFallsBackToRows(t *testing.T) {
-	seed := func(t *testing.T) (*Store, *countingBlobStore, string, []TimeseriesPoint) {
-		st, ts, uid := openBlobTestStore(t)
+// TestActivityTimeseriesBlobFailuresError: every blob-side failure — missing
+// object, corrupt payload, checksum drift, count drift — must return an error
+// (devops#788: with the row table dropped there is no fallback copy; serving
+// anything but the verified blob would be serving wrong data).
+func TestActivityTimeseriesBlobFailuresError(t *testing.T) {
+	seed := func(t *testing.T) (*Store, string) {
+		st, _, uid := openBlobTestStore(t)
 		ctx := context.Background()
-		counting := &countingBlobStore{MemStore: ts}
-		st.SetTSBlobStore(counting)
 		rows := blobTestRows(31.13, 121.4)
 		if err := st.UpsertActivity(ctx, blobActivity(uid, "f1"), nil, rows, nil); err != nil {
 			t.Fatalf("upsert: %v", err)
 		}
-		// Fallback reads rows: since Phase 3 froze the row table, rows only
-		// exist as pre-migration stock seeded directly under the stamped pointer.
-		seedStockRows(t, st, uid, "f1", blobTestRows(31.13, 121.4))
-		return st, counting, uid, rows
+		return st, uid
 	}
 	ctx := context.Background()
 
 	t.Run("missing object", func(t *testing.T) {
-		st, _, uid, rows := seed(t)
+		st, uid := seed(t)
 		a := readActivity(t, st, uid, "f1")
 		if err := st.tsBlob.Delete(ctx, *a.TsBlobKey); err != nil {
 			t.Fatalf("delete blob: %v", err)
 		}
-		got, err := st.ActivityTimeseries(ctx, uid, "f1")
-		if err != nil {
-			t.Fatalf("read after blob delete: %v", err)
+		if _, err := st.ActivityTimeseries(ctx, uid, "f1"); err == nil {
+			t.Fatal("read after blob delete succeeded, want error (dangling pointer)")
 		}
-		assertPointsEqual(t, got, rows)
 	})
 
 	t.Run("corrupt payload", func(t *testing.T) {
-		st, _, uid, rows := seed(t)
+		st, uid := seed(t)
 		a := readActivity(t, st, uid, "f1")
 		if err := st.tsBlob.Put(ctx, *a.TsBlobKey, []byte("not a gzip blob")); err != nil {
 			t.Fatalf("corrupt blob: %v", err)
 		}
-		got, err := st.ActivityTimeseries(ctx, uid, "f1")
-		if err != nil {
-			t.Fatalf("read after corruption: %v", err)
+		if _, err := st.ActivityTimeseries(ctx, uid, "f1"); err == nil {
+			t.Fatal("read after corruption succeeded, want error")
 		}
-		assertPointsEqual(t, got, rows)
 	})
 
 	t.Run("checksum drift", func(t *testing.T) {
-		st, _, uid, rows := seed(t)
+		st, uid := seed(t)
 		if err := st.db.WithContext(ctx).Model(&Activity{}).
 			Where("user_id = ? AND label_id = ?", uid, "f1").
 			Update("ts_sha256", "deadbeef").Error; err != nil {
 			t.Fatalf("tamper sha: %v", err)
 		}
-		got, err := st.ActivityTimeseries(ctx, uid, "f1")
-		if err != nil {
-			t.Fatalf("read after sha tamper: %v", err)
+		if _, err := st.ActivityTimeseries(ctx, uid, "f1"); err == nil {
+			t.Fatal("read after sha tamper succeeded, want error")
 		}
-		assertPointsEqual(t, got, rows)
 	})
 
 	t.Run("point count drift", func(t *testing.T) {
-		st, _, uid, rows := seed(t)
+		st, uid := seed(t)
 		if err := st.db.WithContext(ctx).Model(&Activity{}).
 			Where("user_id = ? AND label_id = ?", uid, "f1").
 			Update("ts_point_count", 999).Error; err != nil {
 			t.Fatalf("tamper count: %v", err)
 		}
-		got, err := st.ActivityTimeseries(ctx, uid, "f1")
-		if err != nil {
-			t.Fatalf("read after count tamper: %v", err)
+		if _, err := st.ActivityTimeseries(ctx, uid, "f1"); err == nil {
+			t.Fatal("read after count tamper succeeded, want error")
 		}
-		assertPointsEqual(t, got, rows)
+	})
+
+	t.Run("no blob backend", func(t *testing.T) {
+		st, uid := seed(t)
+		st.SetTSBlobStore(nil)
+		if _, err := st.ActivityTimeseries(ctx, uid, "f1"); err == nil {
+			t.Fatal("stamped read without a blob backend succeeded, want error")
+		}
 	})
 }
 
-// TestActivityTimeseriesUnmigratedServesFromRows: an activity without a blob
-// pointer (pre-backfill stock, or written by a store with no backend) reads
-// from the rows without touching the blob backend at all.
-func TestActivityTimeseriesUnmigratedServesFromRows(t *testing.T) {
+// TestActivityTimeseriesUnstampedReturnsEmpty: an activity without a blob
+// pointer is the zero-point shape since Phase 3 — it reads as an empty point
+// set without touching the blob backend at all.
+func TestActivityTimeseriesUnstampedReturnsEmpty(t *testing.T) {
 	st, ts, uid := openBlobTestStore(t)
 	ctx := context.Background()
 	counting := &countingBlobStore{MemStore: ts}
@@ -275,21 +261,16 @@ func TestActivityTimeseriesUnmigratedServesFromRows(t *testing.T) {
 	if err := st.db.WithContext(ctx).Create(legacy).Error; err != nil {
 		t.Fatalf("seed legacy activity: %v", err)
 	}
-	rows := blobTestRows(31.13, 121.4)
-	for i := range rows {
-		rows[i].UserID, rows[i].LabelID = uid, "legacy"
-	}
-	if err := st.db.WithContext(ctx).Create(&rows).Error; err != nil {
-		t.Fatalf("seed legacy points: %v", err)
-	}
 
 	got, err := st.ActivityTimeseries(ctx, uid, "legacy")
 	if err != nil {
 		t.Fatalf("read legacy: %v", err)
 	}
-	assertPointsEqual(t, got, rows)
+	if len(got) != 0 {
+		t.Fatalf("points for an unstamped activity = %d, want 0", len(got))
+	}
 	if counting.gets != 0 {
-		t.Fatalf("backend GETs = %d for an unmigrated activity, want 0", counting.gets)
+		t.Fatalf("backend GETs = %d for an unstamped activity, want 0", counting.gets)
 	}
 }
 

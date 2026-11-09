@@ -1,12 +1,14 @@
-// tsread.go is the read half of the timeseries→blob migration, Phase 2
-// (devops#786): pointer-first reads with row fallback. Store.ActivityTimeseries
+// tsread.go is the read half of the timeseries→blob migration, in its Phase 4
+// final shape (devops#788): the blob is the only copy. Store.ActivityTimeseries
 // serves from the blob when the activities row carries a ts_blob_key, verifies
-// what it decoded against the row's ts_point_count/ts_sha256, and falls back to
-// the row query on any failure — during the dual-write window rows are still
-// written, so a blob problem degrades latency, never correctness.
+// what it decoded against the row's ts_point_count/ts_sha256, and returns an
+// error on any failure — with the row table dropped there is no fallback copy,
+// so a failed verified read must fail loudly (the design's §5.1 answer to a
+// dangling pointer is ResyncActivity repair, not stale data). Unstamped
+// activities are the zero-point shape since Phase 3 and read as empty.
 //
 // Observability (devops#786 AC4) is structured log fields via log/slog: one
-// line per blob GET/PUT with key/latency/bytes and one per row-fallback with a
+// line per blob GET with key/latency/bytes and one per failed read with a
 // reason — stable `event` values so log aggregation (Grafana optional, later)
 // can count and percentile them without parsing free text.
 package storage
@@ -15,6 +17,7 @@ import (
 	"container/list"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -111,16 +114,23 @@ type tsBlobPointerRow struct {
 	TsSHA256     *string `gorm:"column:ts_sha256"`
 }
 
-// readActivityBlob returns the activity's points decoded from the blob store
-// when the row carries a usable pointer. ok=false means "serve this read from
-// rows" — either a mundane state (no backend injected, activity absent, or the
-// pointer not stamped yet — pre-backfill stock) or a verified failure, each
-// logged with a reason so the soak window sees every fallback. It never
-// returns an error: falling back IS the error handling (dual-write keeps rows
-// authoritative-equivalent until Phase 3).
-func (s *Store) readActivityBlob(ctx context.Context, uid, labelID string) ([]TimeseriesPoint, bool) {
-	if s.tsBlob == nil {
-		return nil, false
+// readActivityBlob returns the activity's points decoded from the blob store.
+// An absent activity or an unstamped pointer is the empty answer (since Phase 3
+// an unstamped activity is a zero-point one — there is no pre-backfill stock
+// any more), and every blob-side failure is returned as an error with a
+// structured `tsblob_read_failed` line naming the reason — with the row table
+// gone there is no fallback copy, so serving anything but the verified blob
+// would be serving wrong data.
+func (s *Store) readActivityBlob(ctx context.Context, uid, labelID string) ([]TimeseriesPoint, error) {
+	readFailed := func(reason, key string, fields ...any) error {
+		args := append([]any{
+			slog.String("event", "tsblob_read_failed"),
+			slog.String("reason", reason),
+			slog.String("user_id", uid), slog.String("label_id", labelID),
+			slog.String("key", key),
+		}, fields...)
+		slog.Error("tsblob: verified blob read failed", args...)
+		return fmt.Errorf("storage: read ts blob %s/%s: %s", uid, labelID, reason)
 	}
 	var p tsBlobPointerRow
 	err := s.db.WithContext(ctx).Model(&Activity{}).
@@ -128,82 +138,57 @@ func (s *Store) readActivityBlob(ctx context.Context, uid, labelID string) ([]Ti
 		Where("user_id = ? AND label_id = ?", uid, labelID).
 		Take(&p).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		// No activity row → no timeseries rows either (children are keyed the
-		// same way); the row query returns the same empty answer.
-		return nil, false
+		// No activity row → no points; empty keeps the historical read
+		// contract for absent activities.
+		return nil, nil
 	}
 	if err != nil {
-		slog.Error("tsblob: pointer query failed, falling back to rows",
-			slog.String("event", "tsblob_row_fallback"),
-			slog.String("reason", "pointer_query_error"),
-			slog.String("user_id", uid), slog.String("label_id", labelID),
-			slog.String("error", err.Error()))
-		return nil, false
+		return nil, readFailed("pointer_query_error", "", slog.String("error", err.Error()))
 	}
 	if p.TsBlobKey == nil || *p.TsBlobKey == "" {
-		return nil, false // not migrated yet; row storage is the only copy
+		return nil, nil // zero-point activity (Phase 3 semantics): no blob, no data
 	}
 	key := *p.TsBlobKey
+	if s.tsBlob == nil {
+		return nil, readFailed("no_backend", key)
+	}
 	rowSHA := ""
 	if p.TsSHA256 != nil {
 		rowSHA = *p.TsSHA256
 	}
 	if cached, ok := s.tsCache.get(key, rowSHA); ok {
-		return cloneTimeseriesPoints(cached), true
+		return cloneTimeseriesPoints(cached), nil
 	}
 
 	start := time.Now()
 	payload, err := s.tsBlob.Get(ctx, key)
 	if err != nil {
-		slog.Error("tsblob: blob get failed, falling back to rows",
-			slog.String("event", "tsblob_row_fallback"),
-			slog.String("reason", "get_error"),
-			slog.String("key", key),
-			slog.Duration("latency", time.Since(start)),
-			slog.String("error", err.Error()))
-		return nil, false
+		return nil, readFailed("get_error", key,
+			slog.Duration("latency", time.Since(start)), slog.String("error", err.Error()))
 	}
 	blob, err := tsstore.DecodePoints(payload)
 	if err != nil {
-		slog.Error("tsblob: blob decode failed, falling back to rows",
-			slog.String("event", "tsblob_row_fallback"),
-			slog.String("reason", "decode_error"),
-			slog.String("key", key),
-			slog.Duration("latency", time.Since(start)),
-			slog.String("error", err.Error()))
-		return nil, false
+		return nil, readFailed("decode_error", key,
+			slog.Duration("latency", time.Since(start)), slog.String("error", err.Error()))
 	}
 	// Verify the decoded blob against the pointer columns before serving it:
 	// identity (the envelope must be the activity we asked for), the point
-	// count, and the checksum. Any drift means the row and blob disagree —
-	// during dual-write the row half is intact, so serve it and let the
-	// mismatch surface here rather than as wrong data.
+	// count, and the checksum. Any drift means the blob and the stamped
+	// pointer disagree — with no row copy left, error out and let the
+	// ResyncActivity repair path (design §5.1) heal the dangling pointer.
 	if blob.UserID != uid || blob.LabelID != labelID {
-		slog.Error("tsblob: blob identity mismatch, falling back to rows",
-			slog.String("event", "tsblob_row_fallback"),
-			slog.String("reason", "identity_mismatch"),
-			slog.String("key", key),
-			slog.String("blob_user_id", blob.UserID), slog.String("blob_label_id", blob.LabelID),
-			slog.String("want_user_id", uid), slog.String("want_label_id", labelID))
-		return nil, false
+		return nil, readFailed("identity_mismatch", key,
+			slog.String("blob_user_id", blob.UserID), slog.String("blob_label_id", blob.LabelID))
 	}
 	if p.TsPointCount != nil && *p.TsPointCount != blob.PointCount {
-		slog.Error("tsblob: point count mismatch, falling back to rows",
-			slog.String("event", "tsblob_row_fallback"),
-			slog.String("reason", "point_count_mismatch"),
-			slog.String("key", key),
+		return nil, readFailed("point_count_mismatch", key,
 			slog.Int("row_ts_point_count", *p.TsPointCount),
 			slog.Int("blob_point_count", blob.PointCount))
-		return nil, false
 	}
 	if p.TsSHA256 != nil && *p.TsSHA256 != blob.SHA256 {
-		slog.Error("tsblob: checksum mismatch, falling back to rows",
-			slog.String("event", "tsblob_row_fallback"),
-			slog.String("reason", "sha_mismatch"),
-			slog.String("key", key),
+		return nil, readFailed("sha_mismatch", key,
 			slog.String("row_ts_sha256", *p.TsSHA256),
 			slog.String("blob_sha256", blob.SHA256))
-		return nil, false
 	}
 
 	pts := blobRowsFromPoints(uid, labelID, blob.Points)
@@ -214,7 +199,7 @@ func (s *Store) readActivityBlob(ctx context.Context, uid, labelID string) ([]Ti
 		slog.Duration("latency", time.Since(start)),
 		slog.Int("bytes", len(payload)),
 		slog.Int("points", len(pts)))
-	return cloneTimeseriesPoints(pts), true
+	return cloneTimeseriesPoints(pts), nil
 }
 
 // blobRowsFromPoints is the reverse of TSBlobPoints: the codec's Point shape

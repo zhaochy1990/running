@@ -1,6 +1,7 @@
 // audit_test.go drives the reconciliation with an in-memory store fake and a
 // MemStore bucket — no MySQL, no real bucket, exercising exactly the
-// comparison logic (checksum recompute, envelope cross-check, set diff).
+// comparison logic (envelope cross-check against the pointer columns, set
+// diff).
 package tsblob
 
 import (
@@ -12,25 +13,16 @@ import (
 	"github.com/zhaochy1990/stride/internal/tsstore"
 )
 
-// fakeAuditStore serves canned counters, pointers, and row sets.
+// fakeAuditStore serves canned pointers.
 type fakeAuditStore struct {
-	audits   []storage.TSBlobUserAudit
 	pointers []storage.TSBlobPointer
-	rows     map[string][]storage.TimeseriesPoint // "user/label" -> rows
-}
-
-func (f *fakeAuditStore) TSBlobUserAudits(context.Context) ([]storage.TSBlobUserAudit, error) {
-	return f.audits, nil
 }
 
 func (f *fakeAuditStore) ListTSBlobPointers(context.Context) ([]storage.TSBlobPointer, error) {
 	return f.pointers, nil
 }
 
-func (f *fakeAuditStore) ActivityTimeseriesRows(_ context.Context, userID, labelID string) ([]storage.TimeseriesPoint, error) {
-	return f.rows[userID+"/"+labelID], nil
-}
-
+// auditRows builds the point payload the codec encodes.
 func auditRows(n int) []storage.TimeseriesPoint {
 	rows := make([]storage.TimeseriesPoint, n)
 	for i := range rows {
@@ -41,7 +33,7 @@ func auditRows(n int) []storage.TimeseriesPoint {
 }
 
 // putBlob uploads rows through the real codec so the bucket side is exact.
-func putBlob(t *testing.T, ts *tsstore.MemStore, userID, labelID string, rows []storage.TimeseriesPoint) (sha string) {
+func putBlob(t *testing.T, ts *tsstore.MemStore, userID, labelID string, rows []storage.TimeseriesPoint) (sha string, count int) {
 	t.Helper()
 	payload, sum, err := tsstore.EncodePoints(userID, labelID, storage.TSBlobPoints(rows))
 	if err != nil {
@@ -50,22 +42,17 @@ func putBlob(t *testing.T, ts *tsstore.MemStore, userID, labelID string, rows []
 	if err := ts.Put(context.Background(), tsstore.BlobKey(userID, labelID), payload); err != nil {
 		t.Fatalf("put: %v", err)
 	}
-	return sum
+	return sum, len(rows)
 }
 
-// consistentWorld seeds a fully-migrated single-user world: one activity with
-// 3 points, blob uploaded, counters equal, nothing pending.
+// consistentWorld seeds a fully-consistent single-user world: one stamped
+// activity whose blob matches its pointer columns.
 func consistentWorld(t *testing.T, ts *tsstore.MemStore) *fakeAuditStore {
 	t.Helper()
 	rows := auditRows(3)
-	sha := putBlob(t, ts, "u1", "a1", rows)
+	sha, count := putBlob(t, ts, "u1", "a1", rows)
 	return &fakeAuditStore{
-		audits: []storage.TSBlobUserAudit{{
-			UserID: "u1", RowPoints: 3, BlobPoints: 3, Migrated: 1,
-			PointSumOK: true, CompleteOK: true,
-		}},
-		pointers: []storage.TSBlobPointer{{UserID: "u1", Label: "a1", SHA256: sha}},
-		rows:     map[string][]storage.TimeseriesPoint{"u1/a1": rows},
+		pointers: []storage.TSBlobPointer{{UserID: "u1", Label: "a1", SHA256: sha, PointCount: int64(count)}},
 	}
 }
 
@@ -76,7 +63,7 @@ func TestAuditor_ConsistentWorldPasses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if !report.OK || !report.PointSumOK || !report.CompleteOK || !report.Sample.SampleOK || !report.Objects.ObjectsOK {
+	if !report.OK || !report.Sample.SampleOK || !report.Objects.ObjectsOK {
 		t.Fatalf("consistent world report = %+v, want all green", report)
 	}
 	if report.Sample.Sampled != 1 || report.Sample.OK != 1 {
@@ -87,39 +74,37 @@ func TestAuditor_ConsistentWorldPasses(t *testing.T) {
 	}
 }
 
-func TestAuditor_PointSumMismatchFails(t *testing.T) {
+func TestAuditor_ChecksumDriftFailsSample(t *testing.T) {
 	ts := tsstore.NewMemStore()
 	fake := consistentWorld(t, ts)
-	audits := fake.audits
-	audits[0].RowPoints = 4 // a row drifted in without a blob update
-	audits[0].PointSumOK = false
-	a := NewAuditor(fake, ts)
-	report, err := a.Run(context.Background())
-	if err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	if report.PointSumOK || report.OK {
-		t.Fatalf("point-sum mismatch passed: %+v", report)
-	}
-}
-
-func TestAuditor_RowDriftFailsSample(t *testing.T) {
-	ts := tsstore.NewMemStore()
-	fake := consistentWorld(t, ts)
-	// The blob and the row's ts_sha256 still agree; the ROWS have drifted (an
-	// out-of-band write path touched timeseries). Re-encoding the rows must
-	// disagree with the stamped checksum.
-	fake.rows["u1/a1"] = auditRows(4)
+	// The stamped ts_sha256 names content the object no longer carries (a
+	// pointer drifted from its blob) — the envelope cross-check must catch it.
+	fake.pointers[0].SHA256 = "deadbeef"
 	a := NewAuditor(fake, ts)
 	report, err := a.Run(context.Background())
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	if report.Sample.SampleOK || report.Sample.Mismatch != 1 || len(report.Sample.Problems) != 1 {
-		t.Fatalf("row drift not caught: %+v", report.Sample)
+		t.Fatalf("checksum drift not caught: %+v", report.Sample)
 	}
 	if report.OK {
 		t.Fatal("overall OK with a sample mismatch")
+	}
+}
+
+func TestAuditor_CountDriftFailsSample(t *testing.T) {
+	ts := tsstore.NewMemStore()
+	fake := consistentWorld(t, ts)
+	// The stamped ts_point_count disagrees with the envelope's own count.
+	fake.pointers[0].PointCount = 99
+	a := NewAuditor(fake, ts)
+	report, err := a.Run(context.Background())
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if report.Sample.SampleOK || report.Sample.Mismatch != 1 {
+		t.Fatalf("count drift not caught: %+v", report.Sample)
 	}
 }
 
@@ -149,7 +134,7 @@ func TestAuditor_MissingBlobFailsSampleAndObjects(t *testing.T) {
 func TestAuditor_OrphanObjectFailsObjects(t *testing.T) {
 	ts := tsstore.NewMemStore()
 	fake := consistentWorld(t, ts)
-	// A bucket object no row points at (the GC's future work).
+	// A bucket object no pointer names (the GC's work).
 	putBlob(t, ts, "u1", "deleted-activity", auditRows(2))
 	a := NewAuditor(fake, ts)
 	report, err := a.Run(context.Background())
@@ -174,15 +159,13 @@ func TestAuditor_OrphanObjectFailsObjects(t *testing.T) {
 
 func TestAuditor_SampleDeterministicAndSized(t *testing.T) {
 	ts := tsstore.NewMemStore()
-	fake := &fakeAuditStore{rows: map[string][]storage.TimeseriesPoint{}}
+	fake := &fakeAuditStore{}
 	for i := 0; i < 100; i++ {
 		userID := fmt.Sprintf("u%02d", i)
 		rows := auditRows(1)
-		sha := putBlob(t, ts, userID, "a", rows)
-		fake.pointers = append(fake.pointers, storage.TSBlobPointer{UserID: userID, Label: "a", SHA256: sha})
-		fake.rows[userID+"/a"] = rows
+		sha, count := putBlob(t, ts, userID, "a", rows)
+		fake.pointers = append(fake.pointers, storage.TSBlobPointer{UserID: userID, Label: "a", SHA256: sha, PointCount: int64(count)})
 	}
-	fake.audits = []storage.TSBlobUserAudit{{UserID: "many", RowPoints: 100, BlobPoints: 100, Migrated: 100, PointSumOK: true, CompleteOK: true}}
 
 	a := NewAuditor(fake, ts) // 5% of 100
 	first, err := a.Run(context.Background())
