@@ -1,12 +1,7 @@
+/** master plan kernel 的 LLM 依赖装配（目标评估 + L2 判断层 + L4 内容层）。 */
 import { buildModel } from "@stride/common";
-import {
-  MasterPlanLenientSchema,
-  MasterPlanSchema,
-  normalizeRunWorkout,
-  ReviewReportSchema,
-  StrategyCandidateSchema,
-  StrategyJudgmentSchema,
-} from "@stride/contract";
+import { createContentModel, type ContentModel } from "../phasing/content/generate.js";
+import { createPhasingModel, type PhasingModel } from "../phasing/generate.js";
 import type { ModelConfig } from "../../../config/config.js";
 import {
   canonicalizeAssessmentSummary,
@@ -16,22 +11,23 @@ import {
   withAuthoritativeLevel,
   withBackfilledClaimCitations,
 } from "../assessment.js";
-import { type MasterPlanGraphDependencies, validateSkeletonAgainstStrategy } from "../nodes.js";
-import { runMasterPlanRuleFilter } from "../rules.js";
-import { goalAssessmentPrompt, judgmentPrompt, loadMasterPlanPromptAssets, reviewPrompt, skeletonPrompt, strategyPrompt } from "./prompts.js";
+import type { MasterPlanGraphDependencies } from "../nodes.js";
+import { goalAssessmentPrompt } from "./prompts.js";
 
-export type MasterPlanLlmModels = Pick<
-  MasterPlanGraphDependencies,
-  "goalAssessmentModel" | "strategyModel" | "judgmentModel" | "skeletonModel" | "reviewModel"
->;
+export type MasterPlanLlmModels = Pick<MasterPlanGraphDependencies, "goalAssessmentModel" | "phasingModel" | "contentModel">;
 
 export interface MasterPlanLlmOptions {
+  /** 目标评估用的推理模型。 */
   masterPlanModel: ModelConfig;
-  reviewerModel: ModelConfig;
+  /** L2 阶段判断层（低温、结构化输出）。 */
+  phasingModel: ModelConfig;
+  /** L4 内容层（课包生成 + 排位）。 */
+  contentModel: ModelConfig;
 }
 
-export async function createMasterPlanLlmModels({ masterPlanModel, reviewerModel }: MasterPlanLlmOptions): Promise<MasterPlanLlmModels> {
-  const { doctrine, reviewRubrics } = await loadMasterPlanPromptAssets();
+export function createMasterPlanLlmModels({ masterPlanModel, phasingModel, contentModel }: MasterPlanLlmOptions): MasterPlanLlmModels {
+  const content: ContentModel = createContentModel(contentModel);
+  const phasing: PhasingModel = createPhasingModel(phasingModel);
 
   return {
     goalAssessmentModel: {
@@ -51,77 +47,7 @@ export async function createMasterPlanLlmModels({ masterPlanModel, reviewerModel
         }).invoke(goalAssessmentPrompt(input));
       },
     },
-    strategyModel: {
-      async invoke(input) {
-        return buildModel({
-          ...masterPlanModel,
-          structured: { schema: StrategyCandidateSchema, name: `submit_${input.archetype}_strategy` },
-        }).invoke(strategyPrompt(input, doctrine));
-      },
-    },
-    judgmentModel: {
-      async invoke(input) {
-        return buildModel({
-          ...reviewerModel,
-          structured: { schema: StrategyJudgmentSchema, name: `submit_${input.judge}_judgment` },
-        }).invoke(judgmentPrompt(input, doctrine));
-      },
-    },
-    skeletonModel: {
-      async invoke(input) {
-        return buildModel({
-          ...masterPlanModel,
-          structured: {
-            // lenient→normalize→strict：LLM 直出可省略 note/hr_cap_bpm 等
-            // 键，normalizeRunWorkout 补默认后过硬校验，不为缺省键重烧生成。
-            schema: MasterPlanLenientSchema,
-            name: "submit_master_plan_skeleton",
-            validate: (plan) => {
-              const strict = MasterPlanSchema.parse({
-                ...plan,
-                // 未完成的 phase 带 summary 是确定性的契约违规（规则只看
-                // is_completed），服务器端直接置 null，不为它烧掉整次生成。
-                phases: plan.phases.map((phase) => (phase.is_completed ? phase : { ...phase, summary: null })),
-                weeks: plan.weeks.map((week) => ({
-                  ...week,
-                  key_sessions: week.key_sessions.map((session) =>
-                    session.workout_structure ? { ...session, workout_structure: normalizeRunWorkout(session.workout_structure) } : session,
-                  ),
-                })),
-              });
-              const report = runMasterPlanRuleFilter(strict, input.request, input.snapshot);
-              if (report.has_errors) {
-                const errors = report.violations
-                  .filter((item) => item.severity === "error")
-                  .map((item) => {
-                    const issues = (item.evidence as { issues?: Array<{ path: string; message: string }> } | undefined)?.issues;
-                    return `${item.rule_id}:${item.message}${
-                      issues?.length
-                        ? ` (${issues
-                            .slice(0, 4)
-                            .map((issue) => `${issue.path}:${issue.message}`)
-                            .join(" | ")})`
-                        : ""
-                    }`;
-                  })
-                  .join("; ");
-                throw new Error(`deterministic rule errors: ${errors}`);
-              }
-              validateSkeletonAgainstStrategy(strict, input.selectedStrategy);
-              return strict;
-            },
-          },
-        }).invoke(skeletonPrompt(input, doctrine));
-      },
-    },
-    reviewModel: {
-      async invoke(input) {
-        const rubric = reviewRubrics[input.reviewerType];
-        return buildModel({
-          ...reviewerModel,
-          structured: { schema: ReviewReportSchema, name: `submit_${input.reviewerType}_review` },
-        }).invoke(reviewPrompt(input, rubric));
-      },
-    },
+    phasingModel: phasing,
+    contentModel: content,
   };
 }

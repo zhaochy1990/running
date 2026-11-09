@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import type { PhasingActivityInput } from "./phasing/evidence.js";
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const nullableNumber = z.number().nullable();
@@ -217,15 +218,29 @@ export type ContextSnapshot = DeepReadonly<z.infer<typeof ContextSnapshotSchema>
 
 export interface MasterPlanContextProvider {
   loadSnapshot(userId: string, asOf?: string): Promise<ContextSnapshot>;
+  /**
+   * 区间内跑步活动（L1 证据层的 6 个月月度焦点与质量课计数要逐条活动，
+   * snapshot 只带周汇总）。`startDay`/`endDay` 是上海日历日。
+   */
+  loadActivities(userId: string, startDay: string, endDay: string): Promise<PhasingActivityInput[]>;
 }
 
 export class FrozenMasterPlanContextProvider implements MasterPlanContextProvider {
   readonly #snapshot: ContextSnapshot;
-  constructor(snapshot: z.input<typeof ContextSnapshotSchema>) {
+  readonly #activities: PhasingActivityInput[];
+  constructor(snapshot: z.input<typeof ContextSnapshotSchema>, activities: PhasingActivityInput[] = []) {
     this.#snapshot = ContextSnapshotSchema.parse(snapshot);
+    this.#activities = activities;
   }
   async loadSnapshot(): Promise<ContextSnapshot> {
     return this.#snapshot;
+  }
+  async loadActivities(userId: string, startDay: string, endDay: string): Promise<PhasingActivityInput[]> {
+    void userId;
+    return this.#activities.filter((activity) => {
+      const day = typeof activity.date === "string" ? activity.date.slice(0, 10) : activity.date.toISOString().slice(0, 10);
+      return day >= startDay && day <= endDay;
+    });
   }
 }
 

@@ -5,18 +5,14 @@ import { MonotonicProgress, type StageProgress } from "../progress.js";
 
 /** Master-plan kernel nodes → stage/progress anchors (in graph execution order). */
 export const MASTER_PLAN_NODES: Record<string, StageProgress> = {
-  initialize: { stage: "reading_history", progressPct: 10 },
-  assess_goal: { stage: "evaluating", progressPct: 28 },
-  strategy_worker: { stage: "planning_phases", progressPct: 40 },
-  dispatch_judges: { stage: "planning_phases", progressPct: 42 },
-  judge_worker: { stage: "planning_phases", progressPct: 55 },
-  select_strategy: { stage: "planning_phases", progressPct: 60 },
-  expand_skeleton: { stage: "planning_phases", progressPct: 68 },
-  simulate_load: { stage: "rule_filter", progressPct: 72 },
-  filter_rules: { stage: "rule_filter", progressPct: 76 },
-  validate_selected: { stage: "rule_filter", progressPct: 80 },
-  review_worker: { stage: "outputting", progressPct: 88 },
-  adjudicate_reviews: { stage: "outputting", progressPct: 92 },
+  initialize: { stage: "reading_history", progressPct: 8 },
+  assess_goal: { stage: "evaluating", progressPct: 18 },
+  l1_evidence: { stage: "evaluating", progressPct: 26 },
+  l2_phasing: { stage: "planning_phases", progressPct: 38 },
+  l3_load: { stage: "planning_phases", progressPct: 48 },
+  l4_content: { stage: "planning_phases", progressPct: 70 },
+  daniels_audit: { stage: "rule_filter", progressPct: 92 },
+  snapshot_plan: { stage: "outputting", progressPct: 96 },
   finalize: { stage: "outputting", progressPct: 99 },
 };
 

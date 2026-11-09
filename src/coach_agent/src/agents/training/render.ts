@@ -1,12 +1,12 @@
 import { AIMessage } from "@langchain/core/messages";
-import { type MasterPlan, type MasterPlanCard, PHASE_NAME_CN, type SimulationReport } from "@stride/contract";
+import { type MasterPlan, type MasterPlanCard, PHASE_NAME_CN } from "@stride/contract";
 
 /**
  * Athlete-facing text projections for the in-turn master-plan generation (#427:
  * text-form plan content; the `master-plan` card lands in #428).
  */
 
-export function renderMasterPlanMarkdown(plan: MasterPlan, simulation?: SimulationReport): string {
+export function renderMasterPlanMarkdown(plan: MasterPlan): string {
   const goal = plan.goal;
   const goalLine = goal.target_time
     ? `${goal.race_name}（${distanceLabel(goal.distance)}，${goal.race_date}，目标 ${goal.target_time}）`
@@ -34,7 +34,7 @@ export function renderMasterPlanMarkdown(plan: MasterPlan, simulation?: Simulati
       `- 第 ${week.week_index} 周（${week.week_start} 起，${phaseLabel(week.phase_name)}${tags.length > 0 ? `，${tags.join("")}` : ""}）：${week.target_weekly_km_low}-${week.target_weekly_km_high} km${sessions ? `，重点课：${sessions}` : ""}`,
     );
   }
-  const load = loadProjectionLines(plan, simulation);
+  const load = loadProjectionLines(plan);
   if (load.length > 0) {
     lines.push("", "**负荷投影**", ...load);
   }
@@ -42,8 +42,8 @@ export function renderMasterPlanMarkdown(plan: MasterPlan, simulation?: Simulati
   return lines.join("\n");
 }
 
-/** 负荷投影摘要：周跑量曲线的三个锚点 + 模拟期末 CTL（有模拟才给）。 */
-function loadProjectionLines(plan: MasterPlan, simulation?: SimulationReport): string[] {
+/** 负荷投影摘要：周跑量曲线的三个锚点（期末 CTL 随老 simulation 一起删除，见 #803）。 */
+function loadProjectionLines(plan: MasterPlan): string[] {
   const first = plan.weeks[0];
   const final = plan.weeks.at(-1);
   if (first === undefined || final === undefined) return [];
@@ -54,8 +54,6 @@ function loadProjectionLines(plan: MasterPlan, simulation?: SimulationReport): s
   const lines = [
     `- 周跑量 ${first.target_weekly_km_low}-${first.target_weekly_km_high} km 起步，第 ${peak.week_index} 周到峰值 ${peak.target_weekly_km_high} km，最后一周回落到 ${final.target_weekly_km_low}-${final.target_weekly_km_high} km`,
   ];
-  const finalCtl = simulation?.weeks.at(-1)?.end_ctl;
-  if (finalCtl != null) lines.push(`- 模拟到期末的稳态负荷（CTL）约 ${Math.round(finalCtl)}`);
   return lines;
 }
 
@@ -72,9 +70,9 @@ export interface MasterPlanApplyPayload {
  * 不再运行时复验——投影是已校验 plan 的确定性标量挑选，形状由返回类型
  * 编译期钉死，契约由单测对信封 safeParse 把关）。
  */
-export function masterPlanCardMessage(plan: MasterPlan, payload?: MasterPlanApplyPayload, simulation?: SimulationReport): AIMessage {
+export function masterPlanCardMessage(plan: MasterPlan, payload?: MasterPlanApplyPayload): AIMessage {
   return new AIMessage({
-    content: renderMasterPlanMarkdown(plan, simulation),
+    content: renderMasterPlanMarkdown(plan),
     additional_kwargs: { card: { $type: "master-plan", data: projectMasterPlanCard(plan, payload) } },
   });
 }

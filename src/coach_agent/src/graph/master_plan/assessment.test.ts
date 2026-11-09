@@ -12,11 +12,8 @@ import {
 } from "./index.js";
 import {
   createAssessmentSnapshot,
-  createTestJudgments,
   createTestMasterPlan,
   createTestRequest,
-  createTestReviewReport,
-  createTestStrategyCandidate,
 } from "./testFixtures.js";
 
 const context: MasterPlanGraphContext = {
@@ -94,85 +91,29 @@ function dependencies(overrides: Record<string, unknown> = {}) {
       async loadSnapshot() {
         return createAssessmentSnapshot();
       },
+      async loadActivities() {
+        return [];
+      },
     },
     goalAssessmentModel: {
       async invoke() {
         return validGoalAssessment();
       },
     },
-    strategyModel: {
-      async invoke({ archetype }: { archetype: "conservative" | "balanced" | "aggressive_gated" }) {
-        return createTestStrategyCandidate(archetype);
-      },
-    },
-    judgmentModel: {
-      async invoke({
-        judge,
-        candidate,
-      }: {
-        judge: "performance_path" | "safety_load" | "constraint_feasibility";
-        candidate: ReturnType<typeof createTestStrategyCandidate>;
-      }) {
-        return createTestJudgments(candidate.candidate_id).find((item) => item.judge === judge)!;
-      },
-    },
-    reviewModel: {
-      async invoke({ reviewerType }: { reviewerType: "periodization" | "load_progression" | "constraint_grounding" }) {
-        return createTestReviewReport(reviewerType);
-      },
-    },
-    skeletonModel: {
+    // 本文件只验 assess_goal 及之前的决策路径；L2/L4 模型在那些路径上不会被调用。
+    phasingModel: {
       async invoke() {
-        return createTestMasterPlan();
+        throw new Error("phasing model must not be invoked in assessment tests");
       },
-    },
+    } as never,
+    contentModel: {
+      async invoke() {
+        throw new Error("content model must not be invoked in assessment tests");
+      },
+    } as never,
     ...overrides,
   };
 }
-
-test("derives deterministic assessment facts from worked literals and passes them to the skeleton", async () => {
-  const skeletonInputs: unknown[] = [];
-  const graph = createMasterPlanGraph(
-    dependencies({
-      skeletonModel: {
-        async invoke(input: unknown) {
-          skeletonInputs.push(input);
-          return createTestMasterPlan();
-        },
-      },
-    }),
-  );
-
-  const { outcome } = await graph.invoke({ request: createTestRequest() }, { context });
-
-  assert.equal(outcome.decision, "completed");
-  if (outcome.decision !== "completed") assert.fail("expected completed");
-  const values = Object.fromEntries(outcome.artifact.facts.facts.map((fact) => [fact.fact_id, fact.value]));
-  assert.equal(values["volume.stable_weekly_km"], 64);
-  assert.equal(values["volume.recent_weekly_km"], 70);
-  assert.equal(values["frequency.recent_run_days_per_week"], 5.5);
-  assert.equal(values["tolerance.long_run_km"], 25);
-  assert.equal(values["tolerance.quality_sessions_per_week"], 1.5);
-  assert.equal(values["history.peak_weekly_km"], 92);
-  assert.equal(values["history.longest_run_km"], 32);
-  assert.equal(values["history.longest_road_run_km"], 32);
-  assert.equal(values["history.max_gap_days"], 18);
-  assert.equal(values["load.current_ctl"], 68);
-  assert.equal(values["load.current_atl"], 74);
-  assert.equal(values["load.current_form"], -6);
-  assert.equal(values["race.a.weeks_to_race"], 9.86);
-  assert.equal(values["goal.a.matching_pb_seconds"], 10631);
-  assert.equal(values["goal.a.improvement_pct"], 4.05);
-  assert.equal(values["coverage.ratio"], 0.75);
-  assert.equal(values["continuity.days_since_last_run"], 1);
-  assert.equal(values["continuity.current_phase"], "none");
-  const input = skeletonInputs[0] as {
-    facts: unknown;
-    goalAssessment: unknown;
-  };
-  assert.deepEqual(input.facts, outcome.artifact.facts);
-  assert.deepEqual(input.goalAssessment, outcome.artifact.goal_assessment);
-});
 
 test("goal assessment requires operational gate criteria", () => {
   const assessment = validGoalAssessment();
@@ -248,27 +189,6 @@ test("rejects B targets that are faster than the confirmed A target", async () =
   assert.equal(outcome.decision, "failed_quality_gate");
 });
 
-test("canonicalizes free-form explanations from controlled claims", async () => {
-  const assessment = validGoalAssessment();
-  assessment.material_conclusions[0]!.explanation = "The athlete cannot possibly run this fast.";
-  const graph = createMasterPlanGraph(
-    dependencies({
-      goalAssessmentModel: {
-        async invoke() {
-          return assessment;
-        },
-      },
-    }),
-  );
-  const { outcome } = await graph.invoke({ request: createTestRequest() }, { context });
-  assert.equal(outcome.decision, "completed");
-  if (outcome.decision !== "completed") assert.fail("expected completed");
-  assert.equal(
-    outcome.artifact.goal_assessment.material_conclusions[0]?.explanation,
-    "The confirmed goal requires improvement over the matching personal best.",
-  );
-});
-
 test("missing athlete baseline stops before goal assessment", async () => {
   let goalCalls = 0;
   const snapshot = createAssessmentSnapshot();
@@ -278,6 +198,9 @@ test("missing athlete baseline stops before goal assessment", async () => {
       contextProvider: {
         async loadSnapshot() {
           return snapshot;
+        },
+        async loadActivities() {
+          return [];
         },
       },
       goalAssessmentModel: {
@@ -291,32 +214,6 @@ test("missing athlete baseline stops before goal assessment", async () => {
   const { outcome } = await graph.invoke({ request: createTestRequest() }, { context });
   assert.equal(outcome.decision, "needs_baseline");
   assert.equal(goalCalls, 0);
-});
-
-test("assessment facts exclude the current incomplete Shanghai week", async () => {
-  const snapshot = createAssessmentSnapshot();
-  snapshot.recent_history.weeks.push({
-    ...snapshot.recent_history.weeks.at(-1)!,
-    week_start: "2026-08-10",
-    distance_km: 1,
-    run_count: 1,
-    run_day_count: 1,
-    long_run_km: 1,
-  });
-  const graph = createMasterPlanGraph(
-    dependencies({
-      contextProvider: {
-        async loadSnapshot() {
-          return snapshot;
-        },
-      },
-    }),
-  );
-  const { outcome } = await graph.invoke({ request: createTestRequest() }, { context });
-  assert.equal(outcome.decision, "completed");
-  if (outcome.decision !== "completed") assert.fail("expected completed");
-  const recent = outcome.artifact.facts.facts.find((fact) => fact.fact_id === "volume.recent_weekly_km");
-  assert.equal(recent?.value, 70);
 });
 
 test("assessment facts include complete zero-run weeks", async () => {
@@ -343,6 +240,9 @@ test("zero recent running baseline stops before any assessment model", async () 
       contextProvider: {
         async loadSnapshot() {
           return snapshot;
+        },
+        async loadActivities() {
+          return [];
         },
       },
       goalAssessmentModel: {
@@ -390,34 +290,6 @@ test("typed stop outcomes do not invoke the skeleton", async () => {
   const { outcome } = await graph.invoke({ request }, { context });
   assert.equal(outcome.decision, "multi_cycle_required");
   assert.equal(skeletonCalls, 0);
-});
-
-test("canonicalizes a model-declared multi-cycle stop that contradicts deterministic facts", async () => {
-  const goal = {
-    ...validGoalAssessment(),
-    level: "multi_cycle_required" as const,
-    multi_cycle_path: ["Build baseline", "Reassess target"],
-  };
-  let skeletonCalls = 0;
-  const graph = createMasterPlanGraph(
-    dependencies({
-      goalAssessmentModel: {
-        async invoke() {
-          return goal;
-        },
-      },
-      skeletonModel: {
-        async invoke() {
-          skeletonCalls += 1;
-          return createTestMasterPlan();
-        },
-      },
-    }),
-  );
-  const { outcome } = await graph.invoke({ request: createTestRequest() }, { context });
-  assert.notEqual(outcome.decision, "failed_quality_gate");
-  assert.notEqual(outcome.decision, "multi_cycle_required");
-  assert.ok(skeletonCalls >= 1);
 });
 
 test("explicit current acute restrictions stop before any assessment model", async () => {

@@ -1,58 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createMasterPlanGraph, FrozenMasterPlanContextProvider, MasterPlanGraphRequest } from "@stride/coach-agent";
-import {
-  createAssessmentSnapshot,
-  createTestGoalAssessment,
-  createTestJudgments,
-  createTestMasterPlan,
-  createTestRequest,
-  createTestReviewReport,
-  createTestStrategyCandidate,
-} from "@stride/coach-agent/test-fixtures";
+import { MasterPlanGraphRequest } from "@stride/coach-agent";
+import { createTestCompletedOutcomeV3, createTestRequest } from "@stride/coach-agent/test-fixtures";
 import { asPermanent, ERROR_CODES } from "../../src/job/errors.js";
 import { createMasterPlanJobHandler, type MasterPlanHandlerDeps } from "../../src/kernel/master/handler.js";
-import { toMasterPlanGraphShim } from "../../src/kernel/master/kernel.js";
 import { FakePlanJobStore } from "../job/fakes.js";
 
 const GOAL_ID = "11111111-2222-3333-4444-555555555555";
 
+/** handler 的测试对象是「kernel 产物 → job result_json」，用假 stream 图喂合法 v3 产物。 */
 function buildGraph() {
-  const snapshot = new FrozenMasterPlanContextProvider(createAssessmentSnapshot());
-  return toMasterPlanGraphShim(
-    createMasterPlanGraph({
-      goalAssessmentModel: {
-        async invoke() {
-          return createTestGoalAssessment();
-        },
-      },
-      strategyModel: {
-        async invoke({ archetype }: { archetype: string }) {
-          return createTestStrategyCandidate(archetype as never);
-        },
-      },
-      judgmentModel: {
-        async invoke({ judge, candidate }: { judge: string; candidate: ReturnType<typeof createTestStrategyCandidate> }) {
-          return createTestJudgments(candidate.candidate_id).find((item) => item.judge === (judge as never))!;
-        },
-      },
-      reviewModel: {
-        async invoke({ reviewerType }: { reviewerType: string }) {
-          return createTestReviewReport(reviewerType as never);
-        },
-      },
-      contextProvider: {
-        async loadSnapshot() {
-          return snapshot.loadSnapshot();
-        },
-      },
-      skeletonModel: {
-        async invoke() {
-          return createTestMasterPlan();
-        },
-      },
-    }),
-  );
+  const outcome = createTestCompletedOutcomeV3({ totalWeeks: 2 });
+  return {
+    async stream() {
+      return (async function* () {
+        yield { initialize: {} };
+        yield { finalize: { outcome } };
+      })();
+    },
+  } as never;
 }
 
 function deps(overrides: Partial<MasterPlanHandlerDeps> = {}): MasterPlanHandlerDeps {

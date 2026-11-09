@@ -1,3 +1,6 @@
+import { addDays } from "@stride/contract";
+import { deriveAssessmentFacts } from "./assessment.js";
+
 export function createTestRequest() {
   return {
     request_id: "request-342",
@@ -482,93 +485,106 @@ export function createTestGoalAssessment() {
   };
 }
 
-export function createTestStrategyCandidate(archetype: "conservative" | "balanced" | "aggressive_gated" = "balanced") {
-  const loadHigh = archetype === "conservative" ? 70 : archetype === "balanced" ? 75 : 80;
-  const longRun = archetype === "conservative" ? 24 : archetype === "balanced" ? 27 : 30;
-  return {
-    schema_version: 1 as const,
-    candidate_id: `strategy-${archetype.replace("_", "-")}-v1`,
-    archetype,
+/**
+ * v3 completed 产物的最小合法样本（worker runner 测试用）：政策包四段 + 首期快照，
+ * 四条跨契约不变量都成立。故意只有 1 阶段 1 周——runner 只关心 outcome 的搬运。
+ */
+export function createTestCompletedOutcomeV3(overrides: { totalWeeks?: number; revision?: number } = {}) {
+  const weeks = overrides.totalWeeks ?? 1;
+  const plan = createTestMasterPlan();
+  const single = {
+    ...plan,
+    start_date: "2026-08-10",
+    end_date: addDays("2026-08-10", weeks * 7 - 1),
+    total_weeks: weeks,
     phases: [
       {
-        name: "基础",
-        weeks: 1,
-        focus: "巩固容量",
-        weekly_km_low: 60,
-        weekly_km_high: loadHigh,
-      },
-      {
-        name: "比赛",
-        weeks: 1,
-        focus: "目标比赛",
-        weekly_km_low: 42.195,
-        weekly_km_high: 50,
+        ...plan.phases[0]!,
+        start_date: "2026-08-10",
+        end_date: addDays("2026-08-10", weeks * 7 - 1),
       },
     ],
-    weekly_highs_km: [loadHigh, 50],
-    max_long_run_km: longRun,
-    max_quality_sessions_per_week: 2,
-    race_week_index: 2,
-    load_curve: `${archetype} load curve`,
-    recovery_cadence: "3:1",
-    specific_progression: ["MP 8→12→16→20km"],
-    milestones: ["半马检验A目标门槛"],
-    taper: "两周减量",
-    strength: "每周两次下肢耐力",
-    nutrition: "长跑补给演练",
-    risk_tradeoffs: [`${archetype}风险收益`],
-    hard_constraints_satisfied: true,
-    hard_constraint_violations: [] as string[],
-    evidence_fact_ids: ["volume.recent_weekly_km"],
+    weeks: Array.from({ length: weeks }, (_, index) => ({
+      week_index: index + 1,
+      week_start: addDays("2026-08-10", index * 7),
+      phase_name: "base" as const,
+      target_weekly_km_low: 60,
+      target_weekly_km_high: 70,
+      key_sessions: [],
+      is_recovery_week: false,
+    })),
   };
-}
-
-export function createTestJudgments(candidateId: string, scores: [number, number, number] = [4, 4, 4]) {
-  return (["performance_path", "safety_load", "constraint_feasibility"] as const).map((judge, index) => ({
-    schema_version: 1 as const,
-    judge,
-    candidate_id: candidateId,
-    score: scores[index]!,
-    veto: false,
-    rationale: `${judge} rationale`,
-    evidence_fact_ids: ["volume.recent_weekly_km"],
+  const skeletonWeeks = single.weeks.map((week) => ({
+    week: week.week_index,
+    canonical: "foundation" as const,
+    block: 1,
+    role: "progress" as const,
+    km: 65,
+    lr: 24,
+    q: 1,
   }));
+  return {
+    decision: "completed" as const,
+    request_id: "request-342",
+    generation_id: "plan-job-1",
+    artifact: {
+      type: "master_plan_draft" as const,
+      activation_status: "inactive" as const,
+      plan: single,
+      facts: testAssessmentFacts(),
+      goal_assessment: createTestGoalAssessment(),
+      policy: {
+        phases: [
+          {
+            canonical: "foundation" as const,
+            name: "第一阶段·基础期",
+            start_week: 1,
+            end_week: weeks,
+            primary_goal: "aerobic_base" as const,
+            training_goal: "建立有氧基础",
+            block_mode: "progressive" as const,
+            rationale: "赛季初有氧储备不足",
+          },
+        ],
+        taper_weeks: 1,
+        milestones: [{ phase: "第一阶段·基础期", signal: "周量", criterion: "连续 3 周 ≥60km" }],
+        gates: [
+          { phase: "第一阶段·基础期", signal: "RHR", criterion: "周均 ≤ 基线+3", action_if_missed: "降周 15%" },
+          { phase: "第一阶段·基础期", signal: "体感", criterion: "无持续疲劳", action_if_missed: "转吸收周" },
+        ],
+        volume_bands: [{ phase: "第一阶段·基础期", weekly_km_min: 55, weekly_km_max: 75 }],
+      },
+      skeleton: {
+        weeks: skeletonWeeks,
+        blocks: [
+          { block: 1, canonical: "foundation" as const, start_week: 1, end_week: weeks, absorb_weeks: [], boundary: "phase_start" as const },
+        ],
+        recovery_policy: [{ id: "normal" as const, trigger: "体感正常", action: "常规递进", depth: "+3~8%/块" }],
+        strength_policy: [
+          { canonical: "foundation" as const, strength_focus: "基础力量", quality_family: "E 为主", strides_note: "不计质量课" },
+        ],
+        checks: [{ id: "acwr", pass: true, detail: "1.12 ≤ 1.3" }],
+        milestones: [{ phase: "第一阶段·基础期", signal: "周量", criterion: "连续 3 周 ≥60km", week: weeks }],
+      },
+      anchor: {
+        as_of: "2026-08-10",
+        vdot: 52.9,
+        vdot_source: "calibration@2026-08-01",
+        seed: { ctl: 57, atl: 57 },
+        coefficient_version: "lsq-20261029",
+        projection: { capped: false, residual: 0 },
+      },
+      audit: {
+        items: [{ item: "W1 Q 配额", verdict: "pass" as const, expectation: "进度周 1 节 T", actual: "1 节 T" }],
+        summary: { pass: 1, warn: 0, fail: 0 },
+      },
+      artifact_revision: overrides.revision ?? 1,
+      warnings: [],
+    },
+  };
 }
 
-export function createTestReviewReport(reviewerType: "periodization" | "load_progression" | "constraint_grounding", overrides: Record<string, unknown> = {}) {
-  const scores =
-    reviewerType === "periodization"
-      ? {
-          season_structure: 5,
-          peak_timing: 5,
-          recovery_absorption: 5,
-          taper_quality: 5,
-        }
-      : reviewerType === "load_progression"
-        ? {
-            volume_progression: 5,
-            dose_trajectory: 5,
-            hard_stimulus_density: 5,
-            long_run_concentration: 5,
-          }
-        : {
-            goal_fidelity: 5,
-            availability_fit: 5,
-            evidence_grounding: 5,
-            selected_strategy_fidelity: 5,
-          };
-  return {
-    review_task_id: `master-plan:r1:${reviewerType}:rubric-v1:prompt-v1`,
-    reviewer_type: reviewerType,
-    artifact_revision: 1,
-    rubric_version: "rubric-v1",
-    prompt_version: "prompt-v1",
-    verdict: "pass" as const,
-    scores,
-    evidence_refs: ["fact:volume.recent_weekly_km"],
-    issues: [],
-    rationale: `${reviewerType} passed`,
-    confidence: 0.9,
-    ...overrides,
-  };
+/** completed 产物里的 AssessmentFacts：从测试快照确定性推导（与 kernel 同源）。 */
+function testAssessmentFacts() {
+  return deriveAssessmentFacts(createAssessmentSnapshot(), createTestRequest());
 }
