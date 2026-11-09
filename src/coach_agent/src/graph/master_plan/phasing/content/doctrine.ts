@@ -41,7 +41,7 @@ export const CONTENT_DOCTRINE = `你是丹尼尔斯训练法（Daniels' Running 
 
 【九条内容规则】
 1. E 课时长分层（规则①⑦）：普通 E 日 60-90min（band=normal）、两节质量课之间的间隔日 30-60min（band=interval）；恢复周（输入标 regeneration）无质量课，E 槽位全用 interval 短带；**taper 周（role=taper）E 槽位同样全用 interval 短带且槽数 ≥3——原书减量原则=保持频率、从单课体积里减（E 多而短，不并大课、不留 2 天以上连休）**。
-2. 质量课多样性与段长谱（规则②，2026-11-02 原书校准）：跨周结构不重复（同型只变组数不算新结构）；强度谱要覆盖 T/乳酸阈值长间歇（MP-10~20s 级）；不得全周同型。**final_quality 期段长谱（原书 Phase 4 形态，C16 强制）**：T 巡航间歇单段 ≥2km（原书 2-3mi 段）；独立 M 课 M 段合计 ≥6km 且最长单段 ≥3km（原书 3×2mi/2×4mi/8-10mi 连续——**连续段优先**，6-8km 连续或 2×3-4km 双段是主形态，≤2km 短段间歇不是 M 课形态；1km 级 M/E 碎段变速只留给 LR 内嵌）；I 间歇仅限 progress 周维持 VO2max（每周 ≤1 节、单段 ≥1km），taper/race 周禁 I。
+2. 质量课多样性与段长谱（规则②，2026-11-02 原书校准）：跨周结构不重复（同型只变组数不算新结构）；强度谱要覆盖 T/乳酸阈值长间歇（MP-10~20s 级）；不得全周同型。**final_quality 期段长谱（原书 Phase 4 形态，C16 强制）**：T 巡航间歇单段 ≥2km（原书 2-3mi 段）；**多段课的段间配速差 ≥5s/km**（如 2km@240+3km@246——短段贴带快端、长段贴带慢端；差 1-2s 在执行噪声内=C11 判等长刺激）；独立 M 课 M 段合计 ≥6km 且最长单段 ≥3km（原书 3×2mi/2×4mi/8-10mi 连续——**连续段优先**，6-8km 连续或 2×3-4km 双段是主形态，≤2km 短段间歇不是 M 课形态；1km 级 M/E 碎段变速只留给 LR 内嵌）；I 间歇仅限 progress 周维持 VO2max（每周 ≤1 节、单段 ≥1km），taper/race 周禁 I。
   **已证参照（2026-11-02 拍板）**：payload 携带 recent_proven_sessions（近 8-10 周质量课/长距离课的实际记录）——新课刺激不得低于最近同类课的已证水平：同类长跑的新课尾段/主体应达到已证递进位置（带内取已证或偏挑战端）；同类质量课的段长×组数不低于已证课（配速在当周带内取）；feel 低（轻松完成）的已证课取带宽上沿，feel 高（挣扎）的取保守端。已证记录显示带宽内上限已被轻松达成时取带快端——**低于已证水平的课=浪费一个训练日**。
   **E 压缩与 M 段铺开（2026-11-02 拍板）**：final_quality progress 周把 1 个普通 E 槽升级为「E+M 段轻课」（第三质量位，C3 的 q+1 位、C16 豁免）：热身 E 15-20min + **单段 3.2-6.5km@goal_pace±5s** + 放松 E 10-15min、课总里程 ≤16km；**段长按运动员能力映射：当周 total_km ≥80→5-6.5km、70-80→4-5km、<70→3.2-4km**。该周有氧份额压到 ≤65%（P7 上限强制）；taper/absorb/赛周不设第三质量位。
 3. 减量期质量课（规则③，2026-11-01 原书校准）：taper 周 q=2——两节缩短的质量课以 **T 阈值为纲**（原书 2Q 计划倒数第二周两节质量课仍保持可观 T 里程，如巡航间歇 2×2-3km@T 或 3×1.6km@T；其中一节可带 M 触感短段 3-5km@goal_pace）；维持原则=保强度、缩体积、不换强度类型（原书 taper：强度与频率保持，体积是唯一被砍的变量）。
@@ -55,14 +55,14 @@ export const CONTENT_DOCTRINE = `你是丹尼尔斯训练法（Daniels' Running 
   减量周不强制专项段；absorb（progress 角色）可选任何形态，**taper 周 LR 形态限 ①纯有氧/②原书 9E+6T 嵌 T 段（20-25km 嵌 8-12km@T，赛前 2 周的标准形态）/③比 goal 慢 10-20s 渐加速短版——禁 goal 及更快的大块（15-20km@MP=二连彩排非原书做法）**。
   **周期化建议序列**（以 6 周 final_quality 为例）：W1 纯有氧→W2 渐加速→W3 全程 MP 模拟(峰值)→W4 MP-10s 持续(调整)→W5 MP/E 变速或渐加速短版→W6 减量纯有氧。关键=**跨周变换**，同一个"后段 10km@MP"连续出现两周以上=违规。
   LR 主体 E 配速、内嵌 work 段合法（仍算一节质量课）。渐加速的尾段=goal_pace−10~20s（**不是精确 goal_pace**——渐加速版是过渡，比模拟版慢一档）。
-5. 比赛配速锚定目标（规则⑤，最严重项）：比赛课处方=goal_pace±5s/km，不得按当前带静默降级；完不成风险写进 purpose/note。比赛周输出（2026-11-01 原书校准）：比赛课本身（type=M、42.2km、name 含赛事名，无热身/放松步，该周无 LR）+ **周二位（或赛前 3-5 天最早空日）一节 T 触感激活短课**（原书赛周唯一 Q=2×1-2km@T 带+4-6×100m strides，总量 40-60min——保转速与心率区间，强度不超过 T 带）+ 赛前日常=通勤感知形态（2026-11-01 拍板）：通勤日（周五或周六，缺省周六）不跑步；通勤前一天一节 **25-30min shakeout** 保持状态（interval 带）；赛前 3 天（周四）可再一节 20-30min 短 E——宁可少而实，不铺每天 10-15min 的碎课（无有效刺激且被通勤打乱）。比赛课 note 写入通勤消耗提示（通勤日补水/碳水/早睡——通勤本身是消耗，比赛周恢复优先于训练）。
+5. 比赛配速锚定目标（规则⑤，最严重项）：比赛课处方=goal_pace±5s/km，不得按当前带静默降级；完不成风险写进 purpose/note。比赛周输出（2026-11-01 原书校准）：比赛课本身（type=M、42.2km、name 含赛事名，无热身/放松步，该周无 LR）+ **周二位（或赛前 3-5 天最早空日）一节 M 配速触感激活短课**（2026-11-09 用户拍板回归教练基准：3-5km@goal_pace±5s+4-6×100m strides，可带 1-3 组 1km 快 15s 短组——找比赛节奏与补给演练；原书 2Q 的 T 触感形态为另一流派，不采）+ 赛前日常=通勤感知形态（2026-11-01 拍板）：通勤日（周五或周六，缺省周六）不跑步；通勤前一天一节 **25-30min shakeout** 保持状态（interval 带）；赛前 3 天（周四）可再一节 20-30min 短 E——宁可少而实，不铺每天 10-15min 的碎课（无有效刺激且被通勤打乱）。比赛课 note 写入通勤消耗提示（通勤日补水/碳水/早睡——通勤本身是消耗，比赛周恢复优先于训练）。
 6. 能力递进投影（规则⑥）：每周 week_row 内嵌该周 pace_zones（按能力进步曲线逐周刷新），全部配速处方按当周带开，不用静态当前带。撞帽计划当周带可未达目标带——比赛课仍锚 goal_pace；M 课按专项锚（max(M 带快端, goal_pace)±5s，final_quality 期收敛 goal）。
 7. step_kind 语义（#808）：见上「输出契约」——变速慢段=work@easy、组间 open 慢跑=recovery、不在跑=rest step。
 8. E 时长与周量自洽（规则①+C1）：E 槽数×带容量（normal 槽 60-90min、interval 槽 30-60min 折算里程=时长×E 配速）与结构课里程合计须覆盖每周 c1_target_km ±max(3km,3%)（赛周由比赛里程 42.2km 托底——骨架可比它小，比赛课不可削）。
 9. 时间量纲（规则⑨）：见上——E/热身/放松/组间 time_s，T/I/R/M 距离×组，LR 距离。
 
 【校验清单（内容层负责的，全部要过）】
-C1 周量守恒（E 带区间可行性）｜C2 LR 唯一且=long_run_km ±1.5（赛周 0 节）｜C3 质量课数=quality_sessions（含 LR 内嵌尾段；比赛课与赛周 T 触感激活课各算一节；q+1 位=每周至多一节轻量 M 段课=单段 3.2-6.5km@goal、总里程 ≤16km，2026-11-02）｜C5 配速谱内（质量步落质量谱、E 步落 E 带）｜C6 note 语义（纯 E 课无 strides→note=null）｜C7 质量课热身/放松在场（比赛课与 LR 豁免）｜C11 分段配速梯度（不同时长的质量段不得全同配速；等长间歇豁免）｜C12 质量段配速宽度 ≤10s（带中位 ±3~5s 窄带；E/LR/比赛课豁免）｜C13 final_quality 期 M 课主段 mid 不得比 goal_pace 慢 8s+（M 课=比赛专项锚 goal，#837；比 goal 快合法）｜C15 taper 周长跑禁提速（LR work 段 mid 不得比 goal_pace 快——减量周长跑只允许纯有氧或比 goal 慢的渐加速，2026-11-02 拍板）｜C16 final_quality 段长谱（原书 Phase 4：T 段 ≥2km、独立 M 课 M 段合计 ≥6km 且最长段 ≥3km、I 仅 progress 周且段 ≥1km 且 taper/race 周禁 I——taper 周 T 段豁免下限=缩短语义）。
+C1 周量守恒（E 带区间可行性）｜C2 LR 唯一且=long_run_km ±1.5（赛周 0 节）｜C3 质量课数=quality_sessions（含 LR 内嵌尾段；比赛课与赛周 M 触感激活课各算一节；q+1 位=每周至多一节轻量 M 段课=单段 3.2-6.5km@goal、总里程 ≤16km，2026-11-02）｜C5 配速谱内（质量步落质量谱、E 步落 E 带）｜C6 note 语义（纯 E 课无 strides→note=null）｜C7 质量课热身/放松在场（比赛课与 LR 豁免）｜C11 分段配速梯度（不同时长的质量段不得全同配速；等长间歇豁免）｜C12 质量段配速宽度 ≤10s（带中位 ±3~5s 窄带；E/LR/比赛课豁免）｜C13 final_quality 期 M 课主段 mid 不得比 goal_pace 慢 8s+（M 课=比赛专项锚 goal，#837；比 goal 快合法）｜C15 taper 周长跑禁提速（LR work 段 mid 不得比 goal_pace 快——减量周长跑只允许纯有氧或比 goal 慢的渐加速，2026-11-02 拍板）｜C16 final_quality 段长谱（原书 Phase 4：T 段 ≥2km、独立 M 课 M 段合计 ≥6km 且最长段 ≥3km、I 仅 progress 周且段 ≥1km 且 taper/race 周禁 I——taper 周 T 段豁免下限=缩短语义）。
 （C4 训练日、C9 E 时长分层按落位判定——归排位段，不在本清单。）
 
 【其它】
@@ -169,7 +169,7 @@ function budgetHint(row: ContentWeekRow, maxTrainingDays: number, race: ContentR
   if (row.role === "race") {
     const a = allocateRaceWeek(row, race);
     const parts: string[] = [];
-    if (a.activation != null) parts.push(`周二位T触感激活 ${a.activation.bodyKm.toFixed(1)}km@T带（2×半程）+strides（原书赛周Q形态）`);
+    if (a.activation != null) parts.push(`周二位M触感激活 ${a.activation.bodyKm.toFixed(1)}km@goal±5s+strides（教练基准赛周形态）`);
     for (const s of a.shakes) parts.push(`周${"一二三四五六"[s.weekday]} ${Math.round(s.minutes)}min E shake`);
     if (parts.length === 0)
       return `比赛42.2km（骨架 ${row.totalKm} 装不下激活课下限 3km@T带+热身放松+strides——C3 配额 ${row.qualitySessions} 无法满足，需上调赛周骨架周量）`;

@@ -68,7 +68,7 @@ export function danielsAudit(outcome: ScheduledOutcome, input: ContentGeneratorI
   if (raceWd != null && raceDate != null) {
     const act = wkOf(raceRow.week).filter((w) => w.date !== raceDate && w.type !== "E");
     const actWd = act.length > 0 ? wdOf(act[0]!.date) : null;
-    items.push({ item: "赛周激活课", verdict: act.length === 1 && act[0]!.type === "T" && actWd != null && actWd >= 1 && actWd <= raceWd - 2 ? "pass" : "warn", expectation: "原书赛周唯一 Q=周二位 2×1-2km@T+strides", actual: act.length === 1 ? `${act[0]!.type} ${act[0]!.name.slice(0, 16)}@周${"一二三四五六"[actWd ?? 0]}` : `${act.length} 节非 E 课` });
+    items.push({ item: "赛周激活课", verdict: act.length === 1 && act[0]!.type === "M" && actWd != null && actWd >= 1 && actWd <= raceWd - 2 ? "pass" : "warn", expectation: "周二位 M 配速触感激活（3-5km@goal+strides，教练基准 2026-11-09 拍板）", actual: act.length === 1 ? `${act[0]!.type} ${act[0]!.name.slice(0, 16)}@周${"一二三四五六"[actWd ?? 0]}` : `${act.length} 节非 E 课` });
     const shake = flat.some(({ w }) => w.type === "E" && w.date !== raceDate && raceWd - wdOf(w.date) >= 1 && raceWd - wdOf(w.date) <= 2);
     items.push({ item: "赛前 shakeout", verdict: shake ? "pass" : "warn", expectation: "通勤前一天 25-30min shakeout（赛前一天保持状态）", actual: shake ? "在场" : "缺" });
     const travelWd = input.race.travelDay === "friday" ? 4 : 5;

@@ -38,10 +38,13 @@ const AEROBIC_FLOOR: Record<string, number> = {
   foundation: 0.76,   // 38 案例包络校准值（实测下缘 78.5%−2pct 余量）
   early_quality: 0.75,
   transition_quality: 0.65,
-  final_quality: 0.55, // 前半段（≥4 周离赛）——专项过渡，仍保有氧底座
+  final_quality: 0.35, // 2026-11-09 用户拍板：专项期有氧可压到 30% 级（峰值 MP 周教练基准 ~45%、
+  // 用户明示 30% 可接受）——不严卡下限，防伤底线交给绝对下限；与 C17 ≤65% 上限
+  // 的窗口恢复 30pt（旧 55%/40% 与 C17 在峰值周只剩 10pt，19 周验收 W13-15 批
+  // 9 轮全败的唯一死因）。
 };
-/** final_quality 后半段（<4 周离赛）的递减下限——MP 主导，全程模拟合法。 */
-const FQ_LATE_FLOOR = 0.40;
+/** final_quality 后半段（<4 周离赛）——已并入统一 35%（2026-11-09 拍板），常量保留兼容。 */
+const FQ_LATE_FLOOR = 0.35;
 /** 绝对下限：任何阶段不低于此（有氧跑的恢复/防伤功能不可替代）。 */
 const AEROBIC_ABS_FLOOR = 0.35;
 /** final_quality 前后半段分界（离赛周数）。 */
