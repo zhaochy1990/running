@@ -30,7 +30,8 @@ type CalibrationStore interface {
 }
 
 type calibrationInput struct {
-	LabelIDs []string `json:"label_ids"`
+	LabelIDs    []string `json:"label_ids"`
+	HealthDates []string `json:"health_dates"`
 }
 
 type calibrationResult struct {
@@ -38,9 +39,13 @@ type calibrationResult struct {
 	Status              string `json:"status"`
 	CalibrationSnapshot uint64 `json:"calibration_snapshot_id"`
 	Activities          int    `json:"activities"`
-	// Echoes the sync's label_ids so downstream steps (compute → … → ability)
-	// keep seeing which activities this sync produced.
-	LabelIDs []string `json:"label_ids,omitempty"`
+	// Echoes the sync's label_ids/health_dates so downstream steps
+	// (compute → … → ability) keep seeing which batches this sync produced.
+	// Since devops#921 the calibration step also sits in data_sync, where the
+	// echo is load-bearing: incremental compute turns health_dates into
+	// rest_confirmed rows and extends the PMC, and would noop without them.
+	LabelIDs    []string `json:"label_ids,omitempty"`
+	HealthDates []string `json:"health_dates,omitempty"`
 }
 
 // NewCalibration builds the calibration job handler. It estimates the athlete
@@ -65,7 +70,7 @@ func NewCalibration(store CalibrationStore) job.Handler {
 			return "", err // infra fault -> retryable
 		}
 		_ = hb("calibration", 100)
-		out, _ := json.Marshal(calibrationResult{User: user, Status: "ok", CalibrationSnapshot: snapID, Activities: activities, LabelIDs: in.LabelIDs})
+		out, _ := json.Marshal(calibrationResult{User: user, Status: "ok", CalibrationSnapshot: snapID, Activities: activities, LabelIDs: in.LabelIDs, HealthDates: in.HealthDates})
 		return string(out), nil
 	}
 }

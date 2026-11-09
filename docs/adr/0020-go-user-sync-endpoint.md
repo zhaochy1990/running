@@ -44,3 +44,22 @@ Pipelines gained a run-level `InputJSON` (persisted on `pipeline_runs`) that the
 - **Shared payload contract.** The `{mode, content, limit}` schema lives once in `internal/provider` (`SyncOptionsInput` + `ParseSyncOptions`), used by both the API edge (validate → 400) and the `watch_sync` handler.
 - **The API stays decoupled from `internal/catalog`:** the `watch_sync` job-type name and the two pipeline names are injected via `Config` (`WatchSyncJobType`, `SyncPipelineFull`, `SyncPipelineIncremental`), not imported.
 - **Deferred:** the weekly `calibration` trigger, and the incremental PMC's handling of far-backdated activities (an activity dated far in the past widens the recompute window, which is correct but larger than the common recent-activity case).
+
+## Update (2026-11-09, devops#921): calibration runs on every data_sync
+
+The incremental `data_sync` pipeline now includes a `calibration` step —
+`watch_sync(incremental)` → `race_detection` (optional) → `calibration` →
+`compute(incremental)` → route shapes → ability — with `ContinueOnFailure`: a
+failed baseline refresh stays visible on its step while compute falls back to
+the latest existing snapshot. The weekly standalone cadence
+(`weekly-running-calibration.yml`) is deleted: every sync (the daily cron covers
+all bound users) now leaves a same-day snapshot, making the weekly batch
+redundant. The rejected "mode-gated calibration step" option above was about
+*skipping* calibration when incremental; this update is the opposite trade —
+calibration always runs (production median ~17s per user, I/O-bound over the
+180-day window) because baseline freshness (thresholds/zones/VDOT for compute,
+ability, and coach reads) beats the batching. One mechanical consequence: the
+step result feeds the next step's input (`mergeStepInput`), so `calibration`
+now echoes `health_dates` alongside `label_ids` — incremental compute turns
+health dates into `rest_confirmed` rows and extends the PMC, and would noop on
+a health-only sync without the echo.

@@ -111,7 +111,9 @@ const (
 	// any explicit full resync.
 	PipelineOnboarding = "onboarding"
 	// PipelineDataSync is the ongoing incremental path: watch_sync(incremental)
-	// -> optional race_detection -> compute(incremental).
+	// -> optional race_detection -> calibration -> compute(incremental). The
+	// baseline refresh runs on every sync (devops#921), keeping the snapshot
+	// at most one sync stale instead of one week.
 	PipelineDataSync = "data_sync"
 	// PipelineRaceCalendar mirrors the World Athletics label-road-races
 	// calendar into race_calendar. Internal-only (system run, no subject user);
@@ -176,8 +178,8 @@ func Jobs() []JobSpec {
 		{
 			Type:          JobTypeCalibration,
 			UserInitiable: false,
-			Description:   "Compute the 180-day athlete baseline (HRmax/LTHR/threshold pace/RHR/critical power + zones) from synced data. No input body; operates on the job's user_id (subject UUID). Internal-only.",
-			InputSchema:   json.RawMessage(`{"type":"object","description":"No input fields; operates on the job's user_id (subject UUID).","additionalProperties":false}`),
+			Description:   "Compute the 180-day athlete baseline (HRmax/LTHR/threshold pace/RHR/critical power + zones) from synced data and upsert the same-day snapshot + zones. A step of both the onboarding and data_sync pipelines (every sync since devops#921); operates on the job's user_id (subject UUID). Internal-only.",
+			InputSchema:   json.RawMessage(`{"type":"object","description":"No required fields; operates on the job's user_id (subject UUID). As a pipeline step it receives the run input plus the previous step's label_ids/health_dates, which it echoes for the next step.","properties":{"mode":{"type":"string"},"label_ids":{"type":"array","items":{"type":"string"}},"health_dates":{"type":"array","items":{"type":"string"}}},"additionalProperties":true}`),
 			ExampleInput:  json.RawMessage(`{}`),
 		},
 		{
@@ -272,7 +274,8 @@ func Jobs() []JobSpec {
 // triggers a run for its own user_id (the subject; ADR 0012 / 0020). Their step
 // job types MUST be registered as handlers in cmd/worker. The run-level input
 // {mode,content,limit} is threaded into each step (the sync step reads mode;
-// race_detection and compute read mode + the upstream label_ids).
+// race_detection, calibration, and compute read mode + the upstream
+// label_ids/health_dates).
 func Pipelines() []PipelineSpec {
 	syncInputSchema := json.RawMessage(`{"type":"object","properties":{"mode":{"type":"string","enum":["full","incremental"]},"content":{"type":"string","enum":["all","activities","health"]},"limit":{"type":"integer","minimum":0}},"additionalProperties":false}`)
 	return []PipelineSpec{
@@ -299,13 +302,14 @@ func Pipelines() []PipelineSpec {
 				Steps: []pipeline.StepDef{
 					{Name: "sync", JobType: JobTypeWatchSync},
 					{Name: "race_detection", JobType: JobTypeRaceDetection, ContinueOnFailure: true},
+					{Name: "calibration", JobType: JobTypeCalibration, ContinueOnFailure: true},
 					{Name: "compute", JobType: JobTypeCompute},
 					{Name: "route_shapes", JobType: JobTypeRouteShapes, ContinueOnFailure: true},
 					{Name: "ability", JobType: JobTypeAbility, ContinueOnFailure: true},
 				},
 			},
 			UserInitiable: true,
-			Description:   "Ongoing incremental path: an incremental watch sync, optional race detection, an incremental compute over only this sync's new activities, then route shapes for activities still missing their route_thumb_json. Race-detection and shape failures remain visible on their steps but do not fail the pipeline. The run's user_id is the subject athlete.",
+			Description:   "Ongoing incremental path: an incremental watch sync, optional race detection, an athlete-baseline refresh (devops#921) so every sync leaves a same-day calibration snapshot for compute/ability/coach reads, an incremental compute over only this sync's new activities, then route shapes for activities still missing their route_thumb_json. Race-detection, calibration, and shape failures remain visible on their steps but do not fail the pipeline — compute falls back to the latest existing snapshot. The run's user_id is the subject athlete.",
 			InputSchema:   syncInputSchema,
 			ExampleInput:  json.RawMessage(`{"mode":"incremental"}`),
 		},

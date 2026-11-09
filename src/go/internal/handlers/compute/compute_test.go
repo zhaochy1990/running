@@ -2,6 +2,7 @@ package compute
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -141,6 +142,29 @@ func TestCalibration_UpsertsSnapshotAndZones(t *testing.T) {
 	}
 	if !f.snapUpserted || !f.zonesReplaced {
 		t.Fatalf("expected snapshot+zones written, got snap=%v zones=%v", f.snapUpserted, f.zonesReplaced)
+	}
+}
+
+// The calibration step sits between race detection and compute in data_sync
+// (devops#921), so its result must thread both sync batches through: compute
+// noops without them and health_dates drive rest_confirmed rows + the PMC.
+func TestCalibration_EchoesSyncBatches(t *testing.T) {
+	out, err := runJob(t, NewCalibration(&fakeStore{}), `{"label_ids":["a1","a2"],"health_dates":["2026-11-08"]}`)
+	if err != nil {
+		t.Fatalf("calibration: %v", err)
+	}
+	var res struct {
+		LabelIDs    []string `json:"label_ids"`
+		HealthDates []string `json:"health_dates"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("parse result: %v", err)
+	}
+	if len(res.LabelIDs) != 2 || res.LabelIDs[0] != "a1" {
+		t.Fatalf("label_ids echo = %v", res.LabelIDs)
+	}
+	if len(res.HealthDates) != 1 || res.HealthDates[0] != "2026-11-08" {
+		t.Fatalf("health_dates echo = %v", res.HealthDates)
 	}
 }
 

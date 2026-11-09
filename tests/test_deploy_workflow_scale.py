@@ -8,7 +8,6 @@ WORKFLOW_DIR = Path(__file__).parents[1] / ".github" / "workflows"
 WORKFLOW_PATH = WORKFLOW_DIR / "deploy.yml"
 WEB_WORKFLOW_PATH = WORKFLOW_DIR / "deploy-web.yml"
 DAILY_SYNC_PATH = WORKFLOW_DIR / "daily-sync.yml"
-WEEKLY_CALIBRATION_PATH = WORKFLOW_DIR / "weekly-running-calibration.yml"
 WEB_DEPLOY_PATH = WORKFLOW_DIR / "deploy-web.yml"
 WEB_DOCKERFILE_PATH = Path(__file__).parents[1] / "Dockerfile.web"
 
@@ -234,19 +233,3 @@ def test_daily_sync_uses_and_waits_for_go_pipeline() -> None:
     assert "MAX_RETRIES" in workflow
     assert "retrying" in workflow
 
-
-def test_weekly_calibration_enqueues_go_jobs_only() -> None:
-    workflow = WEEKLY_CALIBRATION_PATH.read_text(encoding="utf-8")
-
-    assert 'GO_API_URL: ${{ vars.STRIDE_GO_API_URL }}' in workflow
-    assert 'GO_INTERNAL_TOKEN: ${{ secrets.STRIDE_GO_INTERNAL_TOKEN }}' in workflow
-    assert 'ENDPOINT="/jobs"' in workflow
-    assert '\\"type\\":\\"calibration\\"' in workflow
-    assert '\\"user_id\\":\\"$user\\"' in workflow
-    assert "Idempotency-Key: weekly-calibration-${GITHUB_RUN_ID}-${user}" in workflow
-    assert '-H "X-Internal-Token: $GO_INTERNAL_TOKEN"' in workflow
-    assert '[ "$http" != "200" ] && [ "$http" != "202" ]' in workflow
-    assert "STRIDE_INTERNAL_TOKEN" not in workflow
-    assert "STRIDE_PROD_URL" not in workflow
-    assert "/internal/training-load/backfill" not in workflow
-    assert "workflow_dispatch: {}" in workflow
