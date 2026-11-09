@@ -91,18 +91,56 @@
   align-items: center;
 }
 
-.otop__no {
+.otop__date {
   font-size: 22rpx;
   color: var(--color-text-secondary);
 }
 
 /* 四态 chip：#852 定稿字面量（橙黄待发货 #f5a623 / 绿已发货 #34b47a）+
-   devops#905 新增两态（橙待支付 / 灰已取消——灰走主题令牌）。 */
+   devops#905 新增两态（橙待支付 / 灰已取消——灰走主题令牌）。
+   nowrap + flex-shrink:0：左侧再长也不许把 chip 压弯换行。 */
 .ost {
   font-size: 22rpx;
   font-weight: 600;
   padding: 6rpx 16rpx;
   border-radius: 12rpx;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* 订单号行（独立于时间/chip 行）：超宽省略号兜底，尾部复制钮（灰 copy.svg）。 */
+.ono {
+  display: flex;
+  align-items: center;
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  color: var(--color-text-secondary);
+}
+
+.ono__label {
+  flex: none;
+}
+
+.ono__v {
+  flex: 1;
+  min-width: 0;
+  margin-left: 8rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 复制钮：padding 扩点按区，图标本体 28rpx。 */
+.ono__copy {
+  flex: none;
+  padding: 8rpx;
+  margin-left: 4rpx;
+}
+
+.ono__copy-ic {
+  width: 28rpx;
+  height: 28rpx;
+  display: block;
 }
 
 /* 待支付：橙（比待发货橙黄更深一档，视觉区分两种「等动作」态） */

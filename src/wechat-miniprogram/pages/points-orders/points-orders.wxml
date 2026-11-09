@@ -31,11 +31,20 @@
       <view class="olist">
         <view wx:for="{{orders}}" wx:key="id" class="ocard">
           <view class="otop">
-            <view class="otop__no">订单号 R-{{item.id}} · {{item.date}}</view>
+            <view class="otop__date">{{item.date}}</view>
             <view class="ost ost--{{item.chipCls}}">{{item.chipLabel}}</view>
           </view>
+          <!-- 订单号独立一行：UUID 太长，混排会换行挤压状态 chip；尾部复制钮（含 R- 前缀） -->
+          <view class="ono">
+            <text class="ono__label">订单号</text>
+            <text class="ono__v">R-{{item.id}}</text>
+            <view class="ono__copy" data-oid="{{item.id}}" catchtap="onCopyOrderNo">
+              <image class="ono__copy-ic" src="/assets/icons/copy.svg" mode="aspectFit" />
+            </view>
+          </view>
           <view class="obody">
-            <view class="obody__img"></view>
+            <image wx:if="{{item.imageUrl}}" class="obody__img" src="{{item.imageUrl}}" mode="aspectFill" />
+            <view wx:else class="obody__img"></view>
             <view class="obody__tx">
               <view class="obody__n">{{item.name}}</view>
               <!-- 尺码快照（devops#910）：by_sku 订单展示，single/旧单空 = 不渲染 -->
