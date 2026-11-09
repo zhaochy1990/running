@@ -29,7 +29,7 @@ export interface Persistence {
   close(): Promise<void>;
 }
 
-export async function createPersistence(config: MySqlConfig): Promise<Persistence> {
+export async function createPersistence(config: MySqlConfig, options: { turnLockWaitSeconds: number }): Promise<Persistence> {
   await ensureDatabase(config);
   const pool = createPool(config);
   try {
@@ -57,7 +57,7 @@ export async function createPersistence(config: MySqlConfig): Promise<Persistenc
       lotteryStaff,
       lotteryFunnel,
       threadRaceTargets,
-      turnCoordinator: new CoordinatedTurnRunner(turnReceipts, new MySqlThreadLock(config)),
+      turnCoordinator: new CoordinatedTurnRunner(turnReceipts, new MySqlThreadLock(config, options.turnLockWaitSeconds)),
       pool,
       close: () => pool.end(),
     };

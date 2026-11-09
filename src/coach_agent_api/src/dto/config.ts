@@ -28,6 +28,8 @@ export interface RawApiConfig {
     staff_openid_internal_token: string;
   };
   logging: { file: string };
+  /** Coach turn per-thread lock (#836): GET_LOCK wait budget in seconds; 0 restores fail-fast. */
+  turn_lock: { wait_seconds: number };
 }
 
 export interface ApiConfig {
@@ -50,6 +52,8 @@ export interface ApiConfig {
   auth: { publicKeyPem: string; authServiceUrl: string; issuer: string; audience?: string | string[]; adminAudience?: string };
   /** Local-only debug log file (absolute); empty = log to stdout only. */
   logFile: string;
+  /** Coach turn per-thread lock (#836): how long an idempotent retry waits for the holder. */
+  turnLock: { waitSeconds: number };
 }
 
 export interface LoadApiConfigOptions {

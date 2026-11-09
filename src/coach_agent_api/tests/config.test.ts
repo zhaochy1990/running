@@ -61,6 +61,8 @@ test("loads base YAML when the selected environment has no overlay", () => {
     });
     // The Go internal API is where plan-job rows live now (ADR 0033).
     assert.deepEqual(config.goApi, { baseUrl: "http://go-api-base:8080", internalToken: "base-internal-token" });
+    // #836: the turn lock waits by default; only an explicit config/env sets it.
+    assert.equal(config.turnLock.waitSeconds, 90);
   });
 });
 
@@ -87,12 +89,15 @@ test("environment YAML overrides base and environment variables override both", 
           STRIDE_COACH_API_HOST: "env-host",
           STRIDE_COACH_API_PORT: "9090",
           COACH_AGENT_MYSQL_USER: "env-writer",
+          STRIDE_COACH_TURN_LOCK_WAIT_SECONDS: "0",
         },
       });
       assert.equal(config.host, "env-host");
       assert.equal(config.port, 9090);
       assert.equal(config.auth.issuer, "staging-issuer");
       assert.equal(config.persistenceDatabase.user, "env-writer");
+      // #836: the env knob overrides the config default (0 = fail-fast).
+      assert.equal(config.turnLock.waitSeconds, 0);
     },
   );
 });
