@@ -533,3 +533,43 @@ func TestContextCancellation(t *testing.T) {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// devops#919: the admin endpoints take the *raw* bearer token (bearerFrom
+// strips the scheme) and must add "Bearer " themselves — a scheme-less
+// Authorization header 401s at the auth-service and degraded every balances
+// name to the raw user id.
+func TestAdminUserLookupAddsBearerScheme(t *testing.T) {
+	const rawToken = "jwt"
+	const wantHeader = "Bearer jwt"
+
+	t.Run("AdminGetUser", func(t *testing.T) {
+		client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			assertRequest(t, r, http.MethodGet, "/admin/users/user-1", wantHeader)
+			_, _ = io.WriteString(w, `{"id":"user-1","name":"德华","email":null,"phone":null}`)
+		})
+		user, err := client.AdminGetUser(context.Background(), rawToken, "user-1")
+		if err != nil {
+			t.Fatalf("AdminGetUser() error = %v", err)
+		}
+		if user.ID != "user-1" || user.Name == nil || *user.Name != "德华" {
+			t.Fatalf("user = %#v", user)
+		}
+	})
+
+	t.Run("AdminListUsers", func(t *testing.T) {
+		client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			assertRequest(t, r, http.MethodGet, "/admin/users", wantHeader)
+			if got := r.URL.RawQuery; got != "per_page=100&search=13023227605" {
+				t.Fatalf("query = %q, want %q", got, "per_page=100&search=13023227605")
+			}
+			_, _ = io.WriteString(w, `{"users":[{"id":"user-1","name":"赵超毅","email":null,"phone":"13023227605"}]}`)
+		})
+		users, err := client.AdminListUsers(context.Background(), rawToken, "13023227605")
+		if err != nil {
+			t.Fatalf("AdminListUsers() error = %v", err)
+		}
+		if len(users) != 1 || users[0].ID != "user-1" || users[0].Phone == nil || *users[0].Phone != "13023227605" {
+			t.Fatalf("users = %#v", users)
+		}
+	})
+}
