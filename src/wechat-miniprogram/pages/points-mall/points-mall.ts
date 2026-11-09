@@ -83,7 +83,7 @@ interface PointsMallPageData {
   sheetNoAddress: boolean;
   sheetSubmitting: boolean;
   /** 运费（devops#905）：sheetFeeText = 「包邮」/「¥N」/未选地址「—」；
-   * 合计 = 「N 积分 + M」。 */
+   * 合计 = 「N 积分」，非「包邮」才追加「+ M」（未选地址保留「+ —」，devops#920）。 */
   sheetFeeText: string;
   sheetFeeFree: boolean;
   sheetTotalText: string;
@@ -364,7 +364,8 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
       sheetInsufficient: insufficient,
       sheetFeeText: feeText,
       sheetFeeFree: free,
-      sheetTotalText: `${total} 积分 + ${feeText}`,
+      // 免运不带「+ 包邮」（devops#920，与下方运费行重复）；收现金保留「+ ¥N」。
+      sheetTotalText: feeText === '包邮' ? `${total} 积分` : `${total} 积分 + ${feeText}`,
     });
   },
 
