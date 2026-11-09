@@ -16,7 +16,7 @@ type watchBindingStub struct {
 	found bool
 }
 
-func TestRunDerivedComputations_IncrementalOnlyComputesChangedLabels(t *testing.T) {
+func TestRunDerivedComputations_IncrementalCalibratesThenComputesChangedLabels(t *testing.T) {
 	var calibrationCalls, computeCalls int
 	var computeInput struct {
 		Mode        string   `json:"mode"`
@@ -38,8 +38,8 @@ func TestRunDerivedComputations_IncrementalOnlyComputesChangedLabels(t *testing.
 	if err := runDerivedComputations(context.Background(), "athlete", provider.SyncIncremental, []string{"new-1"}, []string{"2026-08-11"}, calibration, calculation); err != nil {
 		t.Fatalf("run derived computations: %v", err)
 	}
-	if calibrationCalls != 0 || computeCalls != 1 {
-		t.Fatalf("calls calibration=%d compute=%d, want 0/1", calibrationCalls, computeCalls)
+	if calibrationCalls != 1 || computeCalls != 1 {
+		t.Fatalf("calls calibration=%d compute=%d, want 1/1 (devops#921: calibration on every sync)", calibrationCalls, computeCalls)
 	}
 	if computeInput.Mode != "incremental" || len(computeInput.LabelIDs) != 1 || computeInput.LabelIDs[0] != "new-1" {
 		t.Fatalf("compute input = %+v", computeInput)
@@ -96,10 +96,13 @@ func TestRunDerivedComputations_StopsWhenCalibrationFails(t *testing.T) {
 }
 
 func TestRunDerivedComputations_WrapsComputeFailure(t *testing.T) {
+	calibration := func(context.Context, *job.Job, job.Heartbeat) (string, error) {
+		return "", nil
+	}
 	calculation := func(context.Context, *job.Job, job.Heartbeat) (string, error) {
 		return "", errors.New("missing baseline")
 	}
-	err := runDerivedComputations(context.Background(), "athlete", provider.SyncIncremental, nil, nil, nil, calculation)
+	err := runDerivedComputations(context.Background(), "athlete", provider.SyncIncremental, nil, nil, calibration, calculation)
 	if err == nil || !strings.Contains(err.Error(), "compute: missing baseline") {
 		t.Fatalf("error = %v", err)
 	}

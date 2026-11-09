@@ -248,12 +248,13 @@ commit 前必须用已人工审阅 manifest 的 hash 重新核对 Azure 源和 M
 `revision`，禁止直接回滚；必须先人工反向迁移 schema。完整契约见
 [`spec/go-current-season-plan-cutover.md`](../spec/go-current-season-plan-cutover.md) 与 ADR 0024。
 
-### `.github/workflows/weekly-running-calibration.yml` —— 周度运动员基线校准
+### 运动员基线校准（calibration）
 
-每周日触发时，workflow 从 Go API 的 `GET /api/internal/sync-users`（与 daily-sync 同一用户源，devops#661）拉取用户列表，并通过 Go API 的
-`POST /jobs` 入队 internal-only `calibration` job。请求使用
-`STRIDE_GO_API_URL` repository variable、`STRIDE_GO_INTERNAL_TOKEN` secret，以及按
-workflow run 和用户固定的 `Idempotency-Key`；因此网络重试不会重复入队。API 返回 `202`（或幂等重放的 `200`）后完成。该 workflow 只调用 Go API，不提供 Python backfill fallback。Go API 的 `STRIDE_WORKER_API_INTERNAL_TOKEN` 必须与 `STRIDE_GO_INTERNAL_TOKEN` 同值。
+`calibration` 是 `onboarding` 与 `data_sync` 两条同步 pipeline 的内置步骤
+（race_detection 之后、compute 之前，`ContinueOnFailure`）：每次数据同步都会重算
+180 天窗口并 upsert 当天的 `running_calibration_snapshot` + zones（同日多次同步
+原地覆写，行 id 稳定）。独立的周度触发 workflow（`weekly-running-calibration.yml`）
+已随 devops#921 删除——data_sync 每日 cron 覆盖全部绑表用户，周度批完全冗余。
 
 ### `.github/workflows/race-calendar-sync.yml` —— 每日比赛日历同步
 

@@ -75,8 +75,10 @@ func (s *Service) syncUser(c *gin.Context) {
 	}
 
 	// Mode picks the pipeline: full -> onboarding (sync -> calibration ->
-	// compute), incremental -> data_sync (sync -> compute). The {mode,content,
-	// limit} body becomes the run input, threaded into every step.
+	// compute), incremental -> data_sync (sync -> race_detection ->
+	// calibration -> compute) — calibration runs on every sync since
+	// devops#921. The {mode,content,limit} body becomes the run input,
+	// threaded into every step.
 	var pipelineName string
 	switch in.Mode {
 	case string(provider.SyncFull):

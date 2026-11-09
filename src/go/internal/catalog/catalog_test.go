@@ -65,7 +65,8 @@ func TestOnboardingPipelineCataloged(t *testing.T) {
 	}
 }
 
-// TestDataSyncPipelineCataloged checks the incremental path: sync -> race detection -> compute -> route shapes.
+// TestDataSyncPipelineCataloged checks the incremental path: sync -> race
+// detection -> calibration (devops#921) -> compute -> route shapes.
 func TestDataSyncPipelineCataloged(t *testing.T) {
 	if ui, ok := PipelineUserInitiable()[PipelineDataSync]; !ok || !ui {
 		t.Fatalf("data_sync pipeline should be user-initiable, got ok=%v ui=%v", ok, ui)
@@ -74,7 +75,7 @@ func TestDataSyncPipelineCataloged(t *testing.T) {
 	if !ok {
 		t.Fatalf("data_sync pipeline missing from registry")
 	}
-	want := []string{JobTypeWatchSync, JobTypeRaceDetection, JobTypeCompute, JobTypeRouteShapes, JobTypeAbility}
+	want := []string{JobTypeWatchSync, JobTypeRaceDetection, JobTypeCalibration, JobTypeCompute, JobTypeRouteShapes, JobTypeAbility}
 	if len(def.Steps) != len(want) {
 		t.Fatalf("data_sync has %d steps, want %d", len(def.Steps), len(want))
 	}
@@ -86,7 +87,10 @@ func TestDataSyncPipelineCataloged(t *testing.T) {
 	if !def.Steps[1].ContinueOnFailure {
 		t.Fatal("data_sync race detection must continue on terminal failure")
 	}
-	if !def.Steps[3].ContinueOnFailure {
+	if !def.Steps[2].ContinueOnFailure {
+		t.Fatal("data_sync calibration must continue on terminal failure (devops#921)")
+	}
+	if !def.Steps[4].ContinueOnFailure {
 		t.Fatal("data_sync route shapes must continue on terminal failure")
 	}
 }
