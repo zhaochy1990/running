@@ -199,13 +199,14 @@ function finalValidation(weeks: Array<{ week: number; sessions: RunWorkout[] }>,
 }
 
 /** L4b 排位上下文（PMC 种子=athlete.fitness 生产快照直读）。 */
-function scheduleContextOf(input: ContentGeneratorInput, coefficients: DoseCoefficients) {
+function scheduleContextOf(input: ContentGeneratorInput, coefficients: DoseCoefficients, pmcSeed?: PmcState) {
   return {
     rows: input.rows,
     planStartMonday: input.planStartMonday,
     race: input.race,
     athlete: { weeklyRunDaysMax: input.athlete.weeklyRunDaysMax },
-    pmcSeed: { acute: input.athlete.fitness.atl, chronic: input.athlete.fitness.ctl } satisfies PmcState,
+    // 块界分批时由调用方链式传入上批末态；单段生成缺省用生成时点体能快照
+    pmcSeed: pmcSeed ?? { acute: input.athlete.fitness.atl, chronic: input.athlete.fitness.ctl } satisfies PmcState,
     coefficients,
   };
 }
@@ -216,13 +217,14 @@ function runSchedule(
   input: ContentGeneratorInput,
   coefficients: DoseCoefficients,
   templatePath = false,
+  pmcSeed?: PmcState,
 ): { violations: string[]; scheduleFailures: string[]; outcome?: Omit<ScheduledOutcome, "source" | "attempts" | "attemptsDetail"> } {
   const bagChecks = bags.map((bag) => {
     const row = input.rows.find((r) => r.week === bag.week)!;
     return validateWeekContent(bagValidationInput(bag, row, input));
   });
   const bagViolations = bagChecks.flatMap((weekChecks, i) => weekChecks.filter((c) => !c.pass).map((c) => `第${bags[i]!.week}周 ${c.id}：${c.detail}`));
-  const scheduled = scheduleWeeks(bags, scheduleContextOf(input, coefficients));
+  const scheduled = scheduleWeeks(bags, scheduleContextOf(input, coefficients, pmcSeed));
   if (!scheduled.ok) return { violations: [...bagViolations, ...scheduled.failures], scheduleFailures: scheduled.failures };
 
   const weeks = scheduled.weeks.map(({ week, sessions }) => ({ week, sessions }));
@@ -282,7 +284,7 @@ function assertInput(input: ContentGeneratorInput): void {
 export async function generateWeekContent(
   input: ContentGeneratorInput,
   model: ContentModel,
-  options?: { coefficients?: DoseCoefficients },
+  options?: { coefficients?: DoseCoefficients; pmcSeed?: PmcState },
 ): Promise<ScheduledOutcome> {
   assertInput(input);
   const coefficients = options?.coefficients ?? DEFAULT_DOSE_COEFFICIENTS;
@@ -298,7 +300,7 @@ export async function generateWeekContent(
       const rowSet = new Set(input.rows.map((r) => r.week));
       const missing = [...rowSet].filter((w) => !bags.some((x) => x.week === w));
       const dupWeeks = bags.map((x) => x.week).filter((w, i, arr) => arr.indexOf(w) !== i);
-      const { violations, outcome } = runSchedule(bags, input, coefficients);
+      const { violations, outcome } = runSchedule(bags, input, coefficients, false, options?.pmcSeed);
       const all = [...missing.map((w) => `第${w}周缺失（week_rows 每周都要输出）`), ...[...new Set(dupWeeks)].map((w) => `第${w}周重复输出`), ...violations];
       if (all.length === 0 && outcome != null) return { ...outcome, source: "llm", attempts, attemptsDetail };
       lastDraft = draft;

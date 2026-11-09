@@ -4,10 +4,4 @@
  * tests/contentReplay.ts 共享，防三处拷贝漂移。
  */
 
-export const QUALITY_FAMILY_OF: Record<string, string> = {
-  recovery: "无质量课（纯 E + strides 触感）",
-  foundation: "E 为主；速度触感靠 strides 副课",
-  early_quality: "R 重复（速度经济性）",
-  transition_quality: "I/T（冬季以 T 为主）",
-  final_quality: "M 配速比赛专项",
-};
+export { QUALITY_FAMILY_OF } from "./doctrine.js";

@@ -46,7 +46,7 @@ import {
 } from "./assessment.js";
 import { type ContextSnapshot, ContextSnapshotSchema, type MasterPlanContextProvider } from "./context.js";
 import { danielsAudit } from "./phasing/content/danielsAudit.js";
-import type { ContentGeneratorInput, ContentWeekRow } from "./phasing/content/doctrine.js";
+import { type ContentGeneratorInput, type ContentWeekRow, QUALITY_FAMILY_OF } from "./phasing/content/doctrine.js";
 import { type ContentModel, generateWeekContent, type ScheduledOutcome } from "./phasing/content/generate.js";
 import { projectZones } from "./phasing/content/project.js";
 import { buildPhaseEvidence, type PhaseEvidence, type PhasingActivityInput } from "./phasing/evidence.js";
@@ -353,7 +353,7 @@ export class MasterPlanNodes {
           totalKm: week.km,
           longRunKm: week.lr,
           qualitySessions: week.q,
-          qualityFamily: skeleton.strength_policy.find((item) => item.canonical === week.canonical)?.quality_family ?? "",
+          qualityFamily: QUALITY_FAMILY_OF[week.canonical] ?? "",
           zones: projected.zones,
         };
       });
@@ -372,9 +372,87 @@ export class MasterPlanNodes {
         },
         planStartMonday: monday,
       };
-      const scheduled = await generateWeekContent(contentInput, this.dependencies.contentModel);
-      if (scheduled.source === "fallback") logger.warn(`content fell back to the template for ${request.request_id}`);
-      return { contentInput, scheduled, anchor: anchorOf(evidence, projection.meta, scheduled) };
+      // 首块门控（2026-11-09 用户拍板，回归 daniels.md §3.1/3.2 原设计「计划=政策，
+      // 不是预测」）：跑道 >8 周时只生成首个 L3 块（3+1，约 4 周）的课表——用户先看
+      // 到近期要练的内容，后续周期以政策级描述呈现（v2 周骨架=km 目标+phase 归属、
+      // 无 key_sessions），块界到时由 weekly 投影按实际完成状态滚动生成（L3 滚动种
+      // 子已实现）。≤8 周（短跑道坍缩场景）仍全量生成。19 周整段生成 9/9 全败的
+      // 体量问题由此根除——首块 4 周规模的高过门率已被 5 周跑道多轮实证。
+      const FIRST_BLOCK_ONLY_MAX_WEEKS = 8;
+      if (rows.length > FIRST_BLOCK_ONLY_MAX_WEEKS) {
+        const firstBlock = skeleton.weeks.find((week) => week.week === rows[0]!.week)?.block;
+        const firstBlockEnd = skeleton.weeks.filter((week) => week.block === firstBlock).at(-1)!.week;
+        contentInput.rows = rows.filter((row) => row.week <= firstBlockEnd);
+        logger.info(
+          { runwayWeeks: rows.length, generatedWeeks: contentInput.rows.map((row) => row.week), deferredFrom: firstBlockEnd + 1 },
+          "long runway: first block only, later weeks deferred to block-boundary rolling generation",
+        );
+      }
+      // 块界分批（spec §3 生成粒度=块 3+1）：批=L3 block 连续段，PMC 种子批间链传。
+      // 首块门控后 >8 周只剩首块 1 批；≤8 周短跑道按块分 1-2 批。批内模板兜底保留
+      // ——单批连败只污染该批周数（audit 如实警示），不拖垮全计划。
+      const MAX_OUTER_CONTENT_TRIES = 3;
+      const batches: ContentWeekRow[][] = [];
+      for (const row of contentInput.rows) {
+        const block = skeleton.weeks.find((week) => week.week === row.week)?.block ?? 0;
+        const lastBatch = batches.at(-1);
+        const lastBlock = lastBatch && lastBatch.length > 0 ? skeleton.weeks.find((week) => week.week === lastBatch[0]!.week)?.block : null;
+        if (lastBatch && lastBlock === block) lastBatch.push(row);
+        else batches.push([row]);
+      }
+      const merged: ScheduledOutcome = {
+        weeks: [],
+        calendar: [],
+        loadSeries: [],
+        checks: [],
+        scheduleChecks: [],
+        repairs: [],
+        source: "llm",
+        attempts: 0,
+        attemptsDetail: [],
+        loadMeta: {
+          model: "exp-pmc-7-42",
+          seed: { acute: 0, chronic: 0, source: "合并占位（首批生成后覆盖）" },
+          coefficient_version: "",
+        },
+      };
+      let seed: { acute: number; chronic: number } | undefined;
+      let templateBatches = 0;
+      for (const [batchIndex, batchRows] of batches.entries()) {
+        const batchInput: ContentGeneratorInput = { ...contentInput, rows: batchRows };
+        const batchOptions = seed != null ? { pmcSeed: seed } : {};
+        let scheduled = await generateWeekContent(batchInput, this.dependencies.contentModel, batchOptions);
+        for (let outer = 2; outer <= MAX_OUTER_CONTENT_TRIES && scheduled.source === "fallback"; outer++) {
+          logger.warn(
+            { batch: batchIndex + 1, weeks: batchRows.map((row) => row.week), outer, attempts: scheduled.attempts, attemptsDetail: scheduled.attemptsDetail },
+            `content template fallback — batch ${batchIndex + 1}/${batches.length} outer regeneration ${outer}/${MAX_OUTER_CONTENT_TRIES} for ${request.request_id}`,
+          );
+          scheduled = await generateWeekContent(batchInput, this.dependencies.contentModel, batchOptions);
+        }
+        if (scheduled.source === "fallback") {
+          templateBatches++;
+          logger.warn(
+            { batch: batchIndex + 1, weeks: batchRows.map((row) => row.week), attempts: scheduled.attempts, attemptsDetail: scheduled.attemptsDetail },
+            `content fell back to the template for batch ${batchIndex + 1}/${batches.length} (weeks ${batchRows[0]!.week}-${batchRows.at(-1)!.week}) of ${request.request_id} after ${MAX_OUTER_CONTENT_TRIES} outer tries`,
+          );
+        }
+        const lastPoint = scheduled.loadSeries.at(-1);
+        if (lastPoint != null) seed = { acute: lastPoint.atl, chronic: lastPoint.ctl };
+        merged.weeks.push(...scheduled.weeks);
+        merged.calendar.push(...scheduled.calendar);
+        merged.loadSeries.push(...scheduled.loadSeries);
+        merged.checks.push(...scheduled.checks);
+        merged.scheduleChecks.push(...scheduled.scheduleChecks);
+        merged.repairs.push(...scheduled.repairs.map((repair) => `[批${batchIndex + 1}] ${repair}`));
+        merged.attempts += scheduled.attempts;
+        merged.attemptsDetail.push(...scheduled.attemptsDetail);
+        merged.loadMeta = scheduled.loadMeta;
+      }
+      if (templateBatches > 0) {
+        merged.source = "fallback";
+        logger.warn({ templateBatches, batches: batches.length }, `content plan contains ${templateBatches}/${batches.length} template batches for ${request.request_id}`);
+      }
+      return { contentInput, scheduled: merged, anchor: anchorOf(evidence, projection.meta, merged) };
     } catch (error) {
       logSwallowedFailure("content", error);
       return { outcome: qualityFailure(request, context, "content_generation_failed") };
