@@ -493,7 +493,6 @@ func TestLongRunStartsAndCoordinateBackfill(t *testing.T) {
 	}
 	uid := uuid.NewString()
 	defer func() {
-		st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&TimeseriesPoint{})
 		st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&Activity{})
 	}()
 	zero := 0.0

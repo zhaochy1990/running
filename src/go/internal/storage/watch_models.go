@@ -133,31 +133,32 @@ type Lap struct {
 
 func (Lap) TableName() string { return "laps" }
 
-// TimeseriesPoint is one sampled point of an activity (table "timeseries").
+// TimeseriesPoint is one sampled point of an activity — the in-memory shape
+// the sync pipelines parse and the tsstore codec encodes/decodes. Since Phase 4
+// (devops#788) dropped the timeseries table it is a plain DTO: no gorm
+// mapping, no table, nothing relational. Tenant fields are stamped by the
+// blob round-trip (blobRowsFromPoints), never by a row write.
 type TimeseriesPoint struct {
-	ID      uint64 `gorm:"column:id;primaryKey;autoIncrement"`
-	UserID  string `gorm:"column:user_id;type:char(36);not null;index:idx_timeseries_user_label,priority:1"`
-	LabelID string `gorm:"column:label_id;type:varchar(191);not null;index:idx_timeseries_user_label,priority:2"`
+	UserID  string
+	LabelID string
 
-	Timestamp             *int64   `gorm:"column:timestamp"`
-	Distance              *float64 `gorm:"column:distance"`
-	HeartRate             *int     `gorm:"column:heart_rate"`
-	Speed                 *float64 `gorm:"column:speed"`
-	AdjustedPace          *float64 `gorm:"column:adjusted_pace"`
-	Cadence               *int     `gorm:"column:cadence"`
-	Altitude              *float64 `gorm:"column:altitude"`
-	Power                 *int     `gorm:"column:power"`
-	GroundContactTimeMs   *float64 `gorm:"column:ground_contact_time_ms"`
-	VerticalOscillationMm *float64 `gorm:"column:vertical_oscillation_mm"`
-	VerticalRatioPct      *float64 `gorm:"column:vertical_ratio_pct"`
-	CadenceLengthCm       *float64 `gorm:"column:cadence_length_cm"`
-	Slope                 *int     `gorm:"column:slope"`
-	HeartLevel            *int     `gorm:"column:heart_level"`
-	GPSLat                *float64 `gorm:"column:gps_lat"`
-	GPSLon                *float64 `gorm:"column:gps_lon"`
+	Timestamp             *int64
+	Distance              *float64
+	HeartRate             *int
+	Speed                 *float64
+	AdjustedPace          *float64
+	Cadence               *int
+	Altitude              *float64
+	Power                 *int
+	GroundContactTimeMs   *float64
+	VerticalOscillationMm *float64
+	VerticalRatioPct      *float64
+	CadenceLengthCm       *float64
+	Slope                 *int
+	HeartLevel            *int
+	GPSLat                *float64
+	GPSLon                *float64
 }
-
-func (TimeseriesPoint) TableName() string { return "timeseries" }
 
 // validGPSFix reports whether a paired coordinate is a usable fix: inside the
 // geodetic ranges and not the null island (0,0). Shared by the start-GPS cache
@@ -334,7 +335,10 @@ func (ProviderCredential) TableName() string { return "provider_credentials" }
 // watchModels is the full set of watch-domain models, in dependency order.
 func watchModels() []any {
 	return []any{
-		&Activity{}, &Lap{}, &TimeseriesPoint{}, &ActivityWatchZone{},
+		// TimeseriesPoint is deliberately absent: Phase 4 (devops#788) dropped
+		// the timeseries table and the model is a plain DTO — re-adding it here
+		// would resurrect the table on the next boot's AutoMigrate.
+		&Activity{}, &Lap{}, &ActivityWatchZone{},
 		&DailyHealth{}, &Dashboard{}, &DailyHRV{}, &RacePrediction{},
 		&SyncMeta{}, &ProviderCredential{}, &WatchSchedule{},
 	}

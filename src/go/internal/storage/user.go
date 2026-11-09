@@ -262,7 +262,10 @@ func (s *Store) DisconnectWatch(ctx context.Context, userID, providerName string
 var userOwnedDeletionModels = []any{
 	&RunningCalibrationPaceZone{}, &RunningCalibrationHRZone{},
 	&RunningCalibrationSnapshot{}, &ActivityTrainingLoad{}, &DailyTrainingLoad{},
-	&PersonalBest{}, &Race{}, &ActivityWatchZone{}, &ActivityZone{}, &TimeseriesPoint{}, &Lap{}, &Activity{},
+	// TimeseriesPoint is gone from this list with the Phase 4 table drop
+	// (devops#788): its points live in the blob store, swept by the
+	// deleteUserTSBlobs prefix cleanup below, not by a row delete.
+	&PersonalBest{}, &Race{}, &ActivityWatchZone{}, &ActivityZone{}, &Lap{}, &Activity{},
 	&DailyHealth{}, &Dashboard{}, &DailyHRV{}, &RacePrediction{}, &SyncMeta{},
 	&ProviderCredential{}, &WeeklyPlan{}, &WeeklyFeedback{}, &MasterPlan{}, &RaceGoal{},
 	// workout rows (devops#586) — all three sources, archived included.
