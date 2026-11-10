@@ -239,7 +239,8 @@ const MAP_GREEN = '#00a85a';
 const MAX_MAP_PTS = 600; // 抽稀后点上限
 const MAP_CHUNK = 8; // 每段 bin 成多长（条）
 
-// 按 pause 分段的 GCJ 轨迹点（模块级缓存，供着色切换时重建）。
+// 按 pause 分段的 GCJ 轨迹点（模块级缓存，供着色切换时重建；每次
+// buildView 无条件重置，力量训练置空，跨活动不残留）。
 let mapSegments: MapPoint[][] = [];
 
 // 海报数据模型（devops#944）：buildView 时一次派生，renderPoster 只读。
@@ -845,8 +846,10 @@ function buildView(detail: ActivityDetailResponse): Partial<ActivityDetailPageDa
     mapFitPoints: [],
   };
   let mapMarkers: MapMarker[] = [];
+  // 每次构建视图无条件重置模块级轨迹缓存：力量训练（无 GPS）置空，
+  // 否则同会话切活动时残留上一条跑步的轨迹，泄漏进力量海报（E2E 缺陷）。
+  mapSegments = isStrength ? [] : buildMapSegments(detail.timeseries || [], detail.activity.pauses);
   if (!isStrength) {
-    mapSegments = buildMapSegments(detail.timeseries || [], detail.activity.pauses);
     mapView = computeMapView('pace');
     if (mapView.hasMap) {
       // 起终点排数组最前：marker 的 icon 恒在 label 之下，圈号会压在图标上。
@@ -1093,7 +1096,10 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
             // 地图层真图：代理任何失败（含 503 未配 key）→ null 降级占位。
             let mapImage: PosterImage | null = null;
             const size = posterMapRequestSize(aspect);
-            const mapReq = mapSegments.length >= 20 ? buildStaticMapRequest(mapSegments, size.width, size.height) : null;
+            // 门控按总轨迹点数（与 computeMapView 的 <20 口径一致）：曾误用
+            // pause 段数（真实活动典型 1~8 段），代理自然路径永不触发。
+            const trackPoints = mapSegments.reduce((n, seg) => n + seg.length, 0);
+            const mapReq = trackPoints >= 20 ? buildStaticMapRequest(mapSegments, size.width, size.height) : null;
             if (mapReq) {
               const path = await fetchPosterMapImage(mapReq);
               if (path) mapImage = (await loadCanvasImage(canvas, path)) as PosterImage | null;
@@ -1112,6 +1118,10 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
             });
             wx.canvasToTempFilePath({
               canvas,
+              // 导出精确逻辑尺寸：canvas 物理像素是 dpr=2 的 2160 宽，不传
+              // dest* 会导出 2160×2880/2160×3840；票面验收口径 1080×1440/1920。
+              destWidth: width,
+              destHeight: height,
               success: (out) => resolve(out.tempFilePath),
               fail: () => {
                 wx.showToast({ title: '海报生成失败', icon: 'none' });
