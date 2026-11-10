@@ -48,7 +48,7 @@
 | 距离 vs 其他指标 | **2×2 四宫格等权重大数字** | 距离独大+其他小字（用户否「太难看」） |
 | 每公里配速呈现 | 概览卡=细柱节奏条+最快高亮；详情长图=全量表 | 34 行全量表放概览卡（太占位，用户否） |
 | 「训练剂量」 | 改「**训练负荷**」 | 与后端 training_load 生产口径一致 |
-| 地图版权行 | POC 已移除 | ⚠️ OSM 条款要求 attribution；生产走方案 A（腾讯图）或 App 内文案注明 |
+| 地图版权行 | POC 已移除 | ⚠️ OSM 条款要求 attribution；生产走方案 B（腾讯静态图）或 App 内文案注明 |
 | 心率区间数据源 | POC 用 %HRmax 五分法 | 瓦片 blob 的 hlvl 通道仅 0-3 且厂商区间过宽（98% 挤一档）不可用；生产用后端 `activity_zones` 校准数据 |
 
 ## 5. 关键技术结论（POC 实证）
@@ -79,8 +79,8 @@
 
 | 方案 | 说明 | 评估 |
 |---|---|---|
-| **A（推荐先 spike）** | mp 原生 `<map>` + `MapContext.snapshot()` 截图入 canvas | 零 key 零成本；纯中文、GCJ 天然正确；待验证：快照含 polyline、缩放可控、离屏可行 |
-| B | 腾讯位置服务静态图 WebService API | 服务端直出 PNG 最省事；需 key+配额；GCJ-02 用 `utils/coord.ts`；注意路径点数上限 |
+| ~~A~~（**spike 否决**） | mp 原生 `<map>` + `MapContext.snapshot()` 截图入 canvas | ❌ 2026-11-10 spike：**`MapContext.snapshot` API 不存在**（typings 3.17.0 + 运行时 3.18.0 双证；含 polyline 与否无从谈起）；includePoints 确定性 fit 与离屏 region 反而可行——详见 `docs/spike/map-snapshot/README.md` |
+| **B（spike 后采纳）** | 腾讯位置服务静态图 WebService API | ✅ 服务端直出 PNG；path ≤2048 点/256 条（分段彩色可行）、size ≤1680×1200、scale=2；配额 1 万次/日/Key、5 QPS（个人）；GCJ-02 用 `utils/coord.ts`；Key 走后端代理不进前端包 |
 | C | 瓦片自拼（本 POC 方案） | 不推荐生产：高德瓦片非官方授权使用、OSM 国内可达性不稳 |
 
 其余生产要点：mp canvas 绘制（同构先例 workout-detail.ts / strategy.ts）；保存相册 util 需新写（全仓零命中，含权限拒绝引导）；主题色系 token 表沿用 `utils/theme.ts` 单源模式；标题超长 ellipsize；配速分段用后端 segments；attribution 方案随地图方案定。
@@ -97,4 +97,4 @@ v1 纯轨迹 → v2 OSM 真实地图四比例 → v3 guizang skill 双风格（�
 2. 九主题色系库（晨光默认/海盐/薄荷冰/星紫/樱花/蜜柚/墨松/绯红鎏金/夜航）待用户砍调（樱花 vs 星紫区分度弱、夜航去留）
 3. 小程序码是否上海报（拉新入口）未拍板
 4. 抖音 9:16 安全区（右侧按钮栏/底部文案遮挡）未做针对性避让探索
-5. 方案 A 的三个验证点（见 §5.4）需要一次 spike
+5. ~~方案 A 的三个验证点（见 §5.4）需要一次 spike~~ 已完成（2026-11-10，devops#943）：A 否决退 B，结论与证据 `docs/spike/map-snapshot/README.md`

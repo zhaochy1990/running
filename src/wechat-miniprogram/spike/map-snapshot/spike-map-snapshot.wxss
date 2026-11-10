@@ -1,0 +1,81 @@
+.spike {
+  padding: 24rpx;
+}
+
+.spike__hint {
+  font-size: 24rpx;
+  color: #6b7280;
+  margin-bottom: 16rpx;
+}
+
+.section {
+  margin-bottom: 24rpx;
+}
+
+.section__title {
+  font-size: 26rpx;
+  color: #374151;
+  margin-bottom: 12rpx;
+  font-weight: 600;
+}
+
+.map {
+  width: 100%;
+  height: 400rpx;
+  border-radius: 16rpx;
+}
+
+/* 离屏但保持渲染：fixed + 移出视口，不做 display:none / visibility:hidden。 */
+.map--offscreen {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+}
+
+.result {
+  background: #f7f9fb;
+  border-radius: 12rpx;
+  padding: 16rpx;
+  margin-bottom: 12rpx;
+}
+
+.result--pass .result__status {
+  color: #059669;
+}
+
+.result--fail .result__status {
+  color: #dc2626;
+}
+
+.result--info .result__status {
+  color: #6b7280;
+}
+
+.result__head {
+  display: flex;
+  justify-content: space-between;
+}
+
+.result__id {
+  font-size: 24rpx;
+  color: #9ca3af;
+}
+
+.result__status {
+  font-size: 24rpx;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.result__name {
+  font-size: 28rpx;
+  font-weight: 600;
+  margin: 8rpx 0;
+}
+
+.result__detail {
+  font-size: 24rpx;
+  color: #4b5563;
+  word-break: break-all;
+  white-space: pre-wrap;
+}
