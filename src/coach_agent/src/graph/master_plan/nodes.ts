@@ -561,7 +561,9 @@ export class MasterPlanNodes {
 
 const RACE_DISTANCE_M = 42195;
 /** 短于 5 周跑不出丹尼尔斯五阶段（L2 门也会挡，这里早退省一次 LLM 调用）。 */
-const MIN_RUNWAY_WEEKS = 5;
+// 最低跑道=1（2026-11-10 用户拍板）：哪怕只剩一周也不能拒绝用户想训练的意愿——
+// 短跑道自动坍缩为赛前微周期（L2 坍缩阶梯 ≤3 周=final_quality 即 taper+激活）
+const MIN_RUNWAY_WEEKS = 1;
 
 /** 生成时点：一律归一到上海日历日（请求里可能带的是完整 ISO instant）。 */
 function asOfOf(request: MasterPlanGraphRequest): string {
