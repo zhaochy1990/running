@@ -110,6 +110,6 @@ L2 与 L3 的耦合保留机制：**体量带**——阶段划分层给每阶段
 | [daniels-l2-phase-division.md](./daniels-l2-phase-division.md) | L2 阶段划分层 | 已落地（devops#782 / PR #630）；可行性阶梯票待实现 |
 | [daniels-l3-load.md](./daniels-l3-load.md) | L3 载荷层 | 设计定稿+38 案例三档实测全绿；已实现合并（devops#793 / PR #638） |
 | [daniels-l4-content.md](./daniels-l4-content.md) | L4 内容与排位层（L4a 内容生成 + L4b 波浪排位） | 契约定稿（#796 已关）；#807/#811 已合并；#799 两段制+波浪排位+load_series 已实现（2026-10-29）；#798 库×LLM 分工在途 |
-| daniels-r-execution.md | 执行回路 | 骨架已拍板（§3.2：块界生成+每夜复盘+调整分级）；信号阈值表与完成追踪前置待设计 |
+| [daniels-r-execution.md](./daniels-r-execution.md) | 执行回路（滚动内核+夜检+偏差检测+调整同意流+伤病模式） | 已实现（devops#858 / PR #720）；信号阈值表终审挂 devops#800 |
 
 实证背景：spike 六轮结论已蒸馏入本文档与仓库记忆文档；切片等一次性产物 2026-10-31 按 throwaway 约定清理，仅留 21 用户常态基线实测报告 `coach_agent/src/tests/spike-out/habitual-baseline-round2.md`。

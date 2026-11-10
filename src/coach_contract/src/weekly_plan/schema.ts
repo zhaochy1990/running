@@ -276,8 +276,5 @@ export const WeeklyPlanGenerationSchema = z
       }
     }
   });
-
-export const WeeklyPlanDirectResponseSchema = z.strictObject({
-  disposition: z.literal("return_direct"),
-  content: WeeklyPlanSchema,
-});
+// #858 PR-F：WeeklyPlanDirectResponseSchema（聊天 generate_weekly_plan 直出信封）
+// 已随该路径退役删除——周课内容统一经滚动内核落库，不再有 LLM 直出信封消费方。

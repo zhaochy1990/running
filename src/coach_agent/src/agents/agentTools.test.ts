@@ -1,18 +1,17 @@
 import assert from "node:assert/strict";
-import { access, readFile } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath } from "node:url";
 import { AIMessage, ToolMessage } from "@langchain/core/messages";
-import { WeeklyPlanDirectResponseSchema } from "@stride/contract";
 import type { ModelConfig } from "../config/config.js";
 import type { DataProvider } from "../data/dataProvider.js";
 import { CoachContext } from "./coachAgent.js";
 import { getMasterPlanGeneratorParts, getMasterPlanSubagent } from "./master_plan/agent.js";
-import { createPlanPassthroughMiddleware, getDirectPlanTaskResult, getMasterPlanTaskResult } from "./masterPlanPassthrough.js";
-import { MASTER_PLAN_PROMPT } from "./prompts.js";
+import { createPlanPassthroughMiddleware, getMasterPlanTaskResult } from "./masterPlanPassthrough.js";
+import { MASTER_PLAN_PROMPT, WeeklyPlanPrompt } from "./prompts.js";
 import { getQaTools } from "./qa/agent.js";
-import { getCoachSubagent, getWeeklyPlanGeneratorSubagent } from "./weekly_plan/agent.js";
+import { getCoachSubagent } from "./weekly_plan/agent.js";
 
 const TEST_API_KEY_ENV = "COACH_AGENT_TEST_API_KEY";
 const previousTestApiKey = process.env[TEST_API_KEY_ENV];
@@ -71,32 +70,27 @@ test("master-plan generator inlines the skill and skips the deterministic gate",
   assert.ok(reader.tools.length > 0, "只读视图保留自己的工具面");
 });
 
-test("weekly-plan reader and generator keep distinct contracts", () => {
+// #858 PR-F：聊天侧周课生成路径（generate_weekly_plan subagent + 直出
+// responseFormat + /generate-weekly-plan/ skill）退役——周课统一由 master 首批
+// 物化 + 滚动投影产出，weekly_plan 只剩读/讲解 subagent（工具集不动）。
+test("weekly-plan subagent is read-only with the rolling-guidance prompt", () => {
   const store = {} as DataProvider;
   const reader = getCoachSubagent(store, modelConfig);
-  const generator = getWeeklyPlanGeneratorSubagent(store, modelConfig);
-  for (const subagent of [reader, generator]) {
-    const names = subagent.tools.map((tool) => tool.name);
-    assert.ok(names.includes("get_weekly_plan_context"));
-    assert.ok(!names.includes("get_current_time"));
-  }
+  const names = reader.tools.map((tool) => tool.name);
+  assert.ok(names.includes("get_weekly_plan_context"));
+  assert.ok(names.includes("get_weekly_plan"));
+  assert.ok(!names.includes("get_current_time"));
   assert.ok(!reader.tools.some((tool) => tool.name === "simulate_weekly_plan_load"));
-  assert.ok(!generator.tools.some((tool) => tool.name === "simulate_weekly_plan_load"));
-  assert.ok(generator.middleware.every((middleware) => middleware.name !== "WeeklyPlanLoadSimulationMiddleware"));
-  assert.equal(reader.responseFormat, undefined);
-  assert.deepEqual(reader.skills, []);
-  assert.equal(generator.responseFormat, WeeklyPlanDirectResponseSchema);
-  assert.ok(generator.skills.includes("/generate-weekly-plan/"));
-});
-
-test("weekly-plan skill routes every canonical phase name", async () => {
-  const skillsDir = join(dirname(fileURLToPath(import.meta.url)), "..", "skills");
-  const skill = await readFile(join(skillsDir, "generate-weekly-plan", "SKILL.md"), "utf8");
-  for (const phase of ["base", "build", "speed", "marathon", "taper", "recovery"]) assert.match(skill, new RegExp(phase));
-  assert.match(skill, /把前一天设为休息日或不超过周距离目标 10% 的短恢复跑/);
-  assert.match(skill, /不要超过 12%/);
-  assert.match(skill, /把恢复视为一票否决/);
-  assert.match(skill, /80-90%/);
+  assert.equal(reader.name, "weekly_plan");
+  assert.ok(!("responseFormat" in reader), "读 subagent 不再挂直出 responseFormat");
+  assert.ok(reader.middleware.every((middleware) => middleware.name !== "WeeklyPlanLoadSimulationMiddleware"));
+  // 新提示：读周行讲解 + 无计划引导建赛季计划（滚动机制说明）
+  assert.match(WeeklyPlanPrompt, /get_weekly_plan/);
+  assert.match(WeeklyPlanPrompt, /coach_notes/);
+  assert.match(WeeklyPlanPrompt, /phase_goal/);
+  assert.match(WeeklyPlanPrompt, /先建赛季训练计划/);
+  assert.match(WeeklyPlanPrompt, /自动生成下一块/);
+  assert.doesNotMatch(WeeklyPlanPrompt, /generate-weekly-plan/);
 });
 
 const masterPlan = {
@@ -156,65 +150,8 @@ const masterPlan = {
 const weeklyPlan = {
   schema: "weekly-plan/v1" as const,
   week_name: "2026-06-15_06-21",
-  sessions: [
-    {
-      schema: "plan-session/v1" as const,
-      date: "2026-06-15",
-      session_index: 0,
-      summary: "休息",
-      notes_md: null,
-      total_distance_m: null,
-      total_duration_s: null,
-      estimated_dose: null,
-      kind: "rest",
-      spec: null,
-    },
-    {
-      schema: "plan-session/v1" as const,
-      date: "2026-06-16",
-      session_index: 0,
-      summary: "轻松跑",
-      notes_md: null,
-      total_distance_m: 5000,
-      total_duration_s: null,
-      estimated_dose: null,
-      kind: "run",
-      spec: {
-        schema: "run-workout/v1" as const,
-        name: "轻松跑",
-        date: "2026-06-16",
-        note: null,
-        blocks: [
-          {
-            repeat: 1,
-            steps: [
-              {
-                step_kind: "work" as const,
-                duration: { kind: "distance_m" as const, value: 5000 },
-                target: { kind: "pace_s_km" as const, low: 330, high: 360 },
-                note: null,
-                hr_cap_bpm: null,
-              },
-            ],
-          },
-        ],
-      },
-    },
-  ],
-  nutrition: Array.from({ length: 7 }, (_, index) => {
-    const date = `2026-06-${String(15 + index).padStart(2, "0")}`;
-    return {
-      schema: "plan-nutrition/v1" as const,
-      date,
-      kcal_target: null,
-      carbs_g: null,
-      protein_g: null,
-      fat_g: null,
-      water_ml: null,
-      meals: [],
-      notes_md: "按饥饿感正常进食",
-    };
-  }),
+  sessions: [],
+  nutrition: [],
   notes_md: null,
   coach_notes: null,
 };
@@ -247,18 +184,14 @@ test("orchestrator extracts a validated master plan from its direct envelope", (
   assert.equal(result, content);
 });
 
-test("orchestrator extracts a validated weekly plan from its direct envelope", () => {
-  const result = getDirectPlanTaskResult(
-    [
+// #858 PR-F：generate_weekly_plan 直出信封分支已退役——退役后该 subagent 的
+// task 结果不再被 passthrough 识别，必须回落模型（不能凭周课信封直出）。
+test("orchestrator does not bypass the model for a retired weekly-plan task result", () => {
+  assert.equal(
+    getMasterPlanTaskResult([
       {
         type: "ai",
-        tool_calls: [
-          {
-            id: "task-1",
-            name: "task",
-            args: { subagent_type: "generate_weekly_plan" },
-          },
-        ],
+        tool_calls: [{ id: "task-1", name: "task", args: { subagent_type: "generate_weekly_plan" } }],
       },
       {
         type: "tool",
@@ -266,37 +199,9 @@ test("orchestrator extracts a validated weekly plan from its direct envelope", (
         tool_call_id: "task-1",
         content: directResponse(weeklyPlan),
       },
-    ],
-    "2026-06-15",
+    ]),
+    undefined,
   );
-
-  assert.equal(result, JSON.stringify(weeklyPlan));
-});
-
-test("orchestrator rejects an invalid weekly-plan direct envelope", () => {
-  const result = getDirectPlanTaskResult(
-    [
-      {
-        type: "ai",
-        tool_calls: [
-          {
-            id: "task-1",
-            name: "task",
-            args: { subagent_type: "generate_weekly_plan" },
-          },
-        ],
-      },
-      {
-        type: "tool",
-        name: "task",
-        tool_call_id: "task-1",
-        content: directResponse({ sessions: [] }),
-      },
-    ],
-    "2026-06-15",
-  );
-
-  assert.equal(result, undefined);
 });
 
 test("passthrough middleware skips the model only for a direct envelope", async () => {
@@ -339,7 +244,8 @@ test("passthrough middleware skips the model only for a direct envelope", async 
   assert.ok(AIMessage.isInstance(direct));
   assert.equal(direct.content, JSON.stringify(masterPlan));
 
-  const weeklyTaskCall = new AIMessage({
+  // 退役后的 generate_weekly_plan task 结果不再直出，回落模型（#858 PR-F）
+  const retiredWeeklyCall = new AIMessage({
     content: "",
     tool_calls: [
       {
@@ -350,10 +256,10 @@ test("passthrough middleware skips the model only for a direct envelope", async 
       },
     ],
   });
-  const weeklyDirect = await wrapModelCall(
+  const retiredResult = await wrapModelCall(
     {
       messages: [
-        weeklyTaskCall,
+        retiredWeeklyCall,
         new ToolMessage({
           content: directResponse(weeklyPlan),
           tool_call_id: "weekly-task",
@@ -363,9 +269,8 @@ test("passthrough middleware skips the model only for a direct envelope", async 
     } as never,
     handler,
   );
-  assert.equal(handlerCalls, 0);
-  assert.ok(AIMessage.isInstance(weeklyDirect));
-  assert.equal(weeklyDirect.content, JSON.stringify(weeklyPlan));
+  assert.equal(handlerCalls, 1);
+  assert.equal(retiredResult, fallback);
 
   const readerTaskCall = new AIMessage({
     content: "",
@@ -391,7 +296,7 @@ test("passthrough middleware skips the model only for a direct envelope", async 
     } as never,
     handler,
   );
-  assert.equal(handlerCalls, 1);
+  assert.equal(handlerCalls, 2);
   assert.equal(readerResult, fallback);
 
   const delegated = await wrapModelCall(
@@ -407,7 +312,7 @@ test("passthrough middleware skips the model only for a direct envelope", async 
     } as never,
     handler,
   );
-  assert.equal(handlerCalls, 2);
+  assert.equal(handlerCalls, 3);
   assert.equal(delegated, fallback);
 });
 
