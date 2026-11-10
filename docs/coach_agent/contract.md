@@ -43,7 +43,7 @@ interface PhasingGoalInput {
 
 ```typescript
 interface PhasingActivityInput {
-  date: Date | string;              // 活动日期（训练日归属按 UTC+8 折算）
+  shanghaiDay: string;              // 上海日历日 YYYY-MM-DD（devops#936：Provider 读数时统一换算，下游禁止自行 +8h）
   name: string | null;              // 活动名（race_like 记录用，截 30 字）
   sport?: string | null;            // 运动类型；有则走 isRunLikeActivity 防骑行污染
   sportName?: string | null;        // 同上的厂商名字段

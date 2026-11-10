@@ -11,7 +11,7 @@
 | 参数 | 类型 | 说明 |
 |---|---|---|
 | `snapshot` | `ContextSnapshot` | master plan 现有快照（体能/PB/周序列/比赛史/伤病/gap 期），走 DataProvider |
-| `activities` | `PhasingActivityInput[]` | 活动行投影（date/name/sport/sportName/distanceM/strideSessionClass），测试 fixture 直接满足 |
+| `activities` | `PhasingActivityInput[]` | 活动行投影（shanghaiDay/name/sport/sportName/distanceM/strideSessionClass），测试 fixture 直接满足 |
 | `goal` | `PhasingGoalInput` | 目标参数（见下；生产来源=`race_goals` 表 status=active 的 A 赛目标，由调用方转换） |
 | `asOf` | `string` | 锚定日期 YYYY-MM-DD（周一；历史回放/测试用，生产=当天） |
 

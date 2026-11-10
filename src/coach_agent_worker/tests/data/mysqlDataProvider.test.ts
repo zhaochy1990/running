@@ -202,6 +202,37 @@ test("activity reads do not expose vendor-derived metrics to Coach", async () =>
   }
 });
 
+test("activity reads carry the Shanghai calendar day of the UTC instant (#936)", async () => {
+  const provider = new MySqlDataProvider({
+    async query(query: string) {
+      if (query.includes("FROM laps")) return [[], []];
+      return [
+        [
+          {
+            user_id: "athlete",
+            label_id: "hm-morning",
+            // 上海 2026-11-01 早 07:30 = UTC 10-31 深夜：#857 曾把这类课归错日期。
+            date: new Date("2026-10-31T23:30:00Z"),
+            provider: "coros",
+          },
+          {
+            user_id: "athlete",
+            label_id: "utc-noon",
+            date: new Date("2026-11-01T12:00:00Z"),
+            provider: "coros",
+          },
+        ],
+      ];
+    },
+  } as never);
+  const activities = await provider.getActivitiesByDateRange("athlete", "2026-10-31", "2026-11-01");
+  const hm = activities.find((a) => a.labelId === "hm-morning");
+  assert.equal(hm?.shanghaiDay, "2026-11-01");
+  // date 保持 UTC instant 原样（换算只发生在 shanghaiDay 一处，防二次偏移）。
+  assert.equal(hm?.date.toISOString(), "2026-10-31T23:30:00.000Z");
+  assert.equal(activities.find((a) => a.labelId === "utc-noon")?.shanghaiDay, "2026-11-01");
+});
+
 test("activity reads attach laps grouped by label_id", async () => {
   const calls: Array<{ sql: string }> = [];
   const provider = new MySqlDataProvider({

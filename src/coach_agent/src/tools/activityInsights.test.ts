@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { shanghaiDay } from "@stride/contract";
 import type { Activity, DailyTrainingLoad, DataProvider, RunningCalibration, WeeklyPlanDocument } from "../data/dataProvider.js";
 import { createActivityInsightTools } from "./activityInsights.js";
 
@@ -7,13 +8,15 @@ const userId = "athlete-1";
 const asof = "2026-10-09";
 
 function makeActivity(over: Partial<Activity> = {}): Activity {
+  const date = over.date ?? new Date("2026-10-09T10:30:00Z"); // 上海时间 10-09 18:30，日历日仍 10-09
   return {
     userId,
     labelId: "L1",
     name: "Evening Run",
     sportName: null,
-    // 上海时间 2026-10-09 18:30 —— 上海日历日必须还是 2026-10-09。
-    date: new Date("2026-10-09T10:30:00Z"),
+    date,
+    // 测试侧模拟 Provider：随 date 换算上海日历日（devops#936）。
+    shanghaiDay: shanghaiDay(date),
     distanceM: 12000,
     durationS: 3600,
     avgPaceSKm: 300,
@@ -278,12 +281,7 @@ test("insights: degrades per field for a brand-new user", async () => {
 });
 
 test("insights: laps without HR still yield splits, but no drift attribution", async () => {
-  const noHrLaps = [
-    lap(1, 3000, 320, null),
-    lap(2, 3000, 320, null),
-    lap(3, 3000, 300, null),
-    lap(4, 3000, 300, null),
-  ];
+  const noHrLaps = [lap(1, 3000, 320, null), lap(2, 3000, 320, null), lap(3, 3000, 300, null), lap(4, 3000, 300, null)];
   const result = await invoke(makeProvider({ activity: makeActivity({ laps: noHrLaps }) }));
   assert.equal(result.available, true);
   if (!result.available) return;

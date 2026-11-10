@@ -37,6 +37,9 @@ export interface Activity {
   name: string | null;
   sportName: string | null;
   date: Date;
+  /** 活动归属的上海日历日 YYYY-MM-DD（devops#936）：Provider 读数时统一换算，
+   * 下游按日分组/过滤一律用本字段，禁止再对 `date` 自行 +8h。 */
+  shanghaiDay: string;
   distanceM: number | null;
   durationS: number | null;
   avgPaceSKm: number | null;

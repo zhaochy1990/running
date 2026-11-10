@@ -36,15 +36,13 @@ export class DataProviderMasterPlanContextProvider implements MasterPlanContextP
   /** L1 证据层要逐条活动的月度焦点：#803 起 master plan 不再只看周汇总。 */
   async loadActivities(userId: string, startDay: string, endDay: string): Promise<PhasingActivityInput[]> {
     const rows = await this.store.getActivitiesByDateRange(userId, startDay, endDay);
-    return rows
-      .filter(isRunningActivity)
-      .map((activity) => ({
-        date: activityDay(activity),
-        name: activity.name,
-        distanceM: activity.distanceM,
-        strideSessionClass: activity.strideSessionClass,
-        durationS: activity.durationS,
-      }));
+    return rows.filter(isRunningActivity).map((activity) => ({
+      shanghaiDay: activity.shanghaiDay,
+      name: activity.name,
+      distanceM: activity.distanceM,
+      strideSessionClass: activity.strideSessionClass,
+      durationS: activity.durationS,
+    }));
   }
 
   async loadSnapshot(userId: string, asOf = new Date().toISOString()): Promise<ContextSnapshot> {
@@ -78,7 +76,7 @@ export class DataProviderMasterPlanContextProvider implements MasterPlanContextP
         start_date: recentStart,
         end_date: end,
         weeks: weeklyHistory(
-          runs.filter((a) => activityDay(a) >= recentStart),
+          runs.filter((a) => a.shanghaiDay >= recentStart),
           loads,
           recovery,
           recentStart,
@@ -177,14 +175,11 @@ function raceShape(rows: RaceEffort[]) {
     feel,
   }));
 }
-function activityDay(a: Activity): string {
-  return new Date(a.date.getTime() + 8 * 3600_000).toISOString().slice(0, 10);
-}
 function weeklyHistory(runs: Activity[], loads: DailyTrainingLoad[], recovery: DailyRecovery[], start?: string, end?: string) {
-  const keys = new Set([...runs.map((a) => monday(activityDay(a))), ...loads.map((x) => monday(x.date)), ...recovery.map((x) => monday(x.date))]);
+  const keys = new Set([...runs.map((a) => monday(a.shanghaiDay)), ...loads.map((x) => monday(x.date)), ...recovery.map((x) => monday(x.date))]);
   if (start && end) for (let day = monday(start); day <= monday(end); day = addDays(day, 7)) keys.add(day);
   return [...keys].sort().map((week) => {
-    const acts = runs.filter((a) => monday(activityDay(a)) === week);
+    const acts = runs.filter((a) => monday(a.shanghaiDay) === week);
     const ls = loads.filter((x) => monday(x.date) === week);
     const rs = recovery.filter((x) => monday(x.date) === week);
     const latest = ls.at(-1);
@@ -195,9 +190,9 @@ function weeklyHistory(runs: Activity[], loads: DailyTrainingLoad[], recovery: D
       avg_pace_s_km: n(acts.map((a) => a.avgPaceSKm)),
       avg_hr: n(acts.map((a) => a.avgHr)),
       run_count: acts.length,
-      run_day_count: new Set(acts.map(activityDay)).size,
+      run_day_count: new Set(acts.map((a) => a.shanghaiDay)).size,
       long_run_km: acts.length ? round(Math.max(...acts.map((a) => a.distanceM ?? 0)) / 1000) : null,
-      speed_session_count: new Set(acts.filter(isQualityRunningActivity).map(activityDay)).size,
+      speed_session_count: new Set(acts.filter(isQualityRunningActivity).map((a) => a.shanghaiDay)).size,
       race_count: acts.filter((a) => /race|比赛|马拉松/i.test(a.name ?? "")).length,
       training_dose: round(ls.reduce((s, x) => s + x.trainingDose, 0)),
       ctl: latest?.chronicLoad ?? null,
@@ -211,11 +206,11 @@ function weeklyHistory(runs: Activity[], loads: DailyTrainingLoad[], recovery: D
 function macroHistory(runs: Activity[], start: string, end: string) {
   const months = new Map<string, Activity[]>();
   for (const a of runs) {
-    const key = activityDay(a).slice(0, 7);
+    const key = a.shanghaiDay.slice(0, 7);
     months.set(key, [...(months.get(key) ?? []), a]);
   }
   const weeks = weeklyHistory(runs, [], [], start, end);
-  const dates = [...new Set(runs.map(activityDay))].sort();
+  const dates = [...new Set(runs.map((a) => a.shanghaiDay))].sort();
   const intervals = dates.length ? [[start, dates[0]!], ...dates.slice(1).map((date, i) => [dates[i]!, date]), [dates.at(-1)!, end]] : [[start, end]];
   const gaps = intervals
     .map(([from, to]) => ({
@@ -281,7 +276,11 @@ function currentPhase(p: ActiveMasterPlanMetadata | null, day: string) {
     : null;
 }
 function continuity(runs: Activity[], p: ActiveMasterPlanMetadata | null, end: string) {
-  const last = runs.map(activityDay).sort().at(-1) ?? null;
+  const last =
+    runs
+      .map((a) => a.shanghaiDay)
+      .sort()
+      .at(-1) ?? null;
   return {
     active_plan_continuation: p !== null,
     last_activity_date: last,

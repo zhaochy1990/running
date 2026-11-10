@@ -40,10 +40,10 @@ test("fixture evidence: phase_credit 五字段齐全且非负", async () => {
 test("session_class 双值兼容：旧值 tempo/interval 归一为 quality、long 归一为 long_easy", async () => {
   const { snapshot } = await loadAthlete("pan");
   const legacy: PhasingActivityInput[] = [
-    { date: "2026-09-01T01:00:00Z", name: "tempo", distanceM: 12000, strideSessionClass: "tempo" },
-    { date: "2026-09-02T01:00:00Z", name: "interval", distanceM: 8000, strideSessionClass: "interval" },
-    { date: "2026-09-03T01:00:00Z", name: "long", distanceM: 25000, strideSessionClass: "long" },
-    { date: "2026-09-04T01:00:00Z", name: "easy", distanceM: 10000, strideSessionClass: "easy" },
+    { shanghaiDay: "2026-09-01", name: "tempo", distanceM: 12000, strideSessionClass: "tempo" },
+    { shanghaiDay: "2026-09-02", name: "interval", distanceM: 8000, strideSessionClass: "interval" },
+    { shanghaiDay: "2026-09-03", name: "long", distanceM: 25000, strideSessionClass: "long" },
+    { shanghaiDay: "2026-09-04", name: "easy", distanceM: 10000, strideSessionClass: "easy" },
   ];
   const evidence = buildPhaseEvidence(snapshot, legacy, { raceName: "测试", distance: "FM", targetTime: "3:00:00", weeklyRunDaysMax: 6 }, "2026-10-26");
   const september = evidence.monthly_focus.find((m) => m.month === "2026-09");
@@ -58,8 +58,8 @@ test("session_class 双值兼容：旧值 tempo/interval 归一为 quality、lon
 test("窗口外月份不进画像（2026-03 活动被排除）", async () => {
   const { snapshot } = await loadAthlete("pan");
   const early: PhasingActivityInput[] = [
-    { date: "2026-03-15T01:00:00Z", name: "out", distanceM: 30000, strideSessionClass: "long_easy" },
-    { date: "2026-05-15T01:00:00Z", name: "in", distanceM: 10000, strideSessionClass: "easy" },
+    { shanghaiDay: "2026-03-15", name: "out", distanceM: 30000, strideSessionClass: "long_easy" },
+    { shanghaiDay: "2026-05-15", name: "in", distanceM: 10000, strideSessionClass: "easy" },
   ];
   const evidence = buildPhaseEvidence(snapshot, early, { raceName: "测试", distance: "FM", targetTime: "3:00:00", weeklyRunDaysMax: 6 }, "2026-10-26");
   assert.deepEqual(
@@ -212,7 +212,7 @@ test("阶梯第 4 档（#837）：无比赛无校准 + 近 8 周质量课配速�
   const flat = {
     snapshot: noAnchors.snapshot,
     activities: noAnchors.activities.map((a, i) => ({
-      date: a.date,
+      shanghaiDay: a.shanghaiDay,
       name: a.name,
       distanceM: a.distanceM,
       strideSessionClass: a.strideSessionClass,
@@ -223,7 +223,12 @@ test("阶梯第 4 档（#837）：无比赛无校准 + 近 8 周质量课配速�
   // 质量课素材不可得（活动行无时长）→ 阶梯彻底落空 none
   const noMaterial = {
     snapshot: noAnchors.snapshot,
-    activities: noAnchors.activities.map((a) => ({ date: a.date, name: a.name, distanceM: a.distanceM, strideSessionClass: a.strideSessionClass })),
+    activities: noAnchors.activities.map((a) => ({
+      shanghaiDay: a.shanghaiDay,
+      name: a.name,
+      distanceM: a.distanceM,
+      strideSessionClass: a.strideSessionClass,
+    })),
   };
   const evidence = buildPhaseEvidence(noMaterial.snapshot, noMaterial.activities, goal, AS_OF);
   assert.equal(evidence.current_capability.source, "none");

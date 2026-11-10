@@ -133,24 +133,29 @@ export interface ProvenSession {
  * quality，距离线是冗余防御且可能挡掉短而有效的课如 3×1km@MP+放松≈6km）。
  */
 export function buildProvenSessions(
-  activities: ReadonlyArray<{ date: Date | string; name?: string | null; distanceM?: number | null; strideSessionClass?: string | null; durationS?: number | null | undefined }>,
+  activities: ReadonlyArray<{
+    shanghaiDay: string;
+    name?: string | null;
+    distanceM?: number | null;
+    strideSessionClass?: string | null;
+    durationS?: number | null | undefined;
+  }>,
   asOf: string,
 ): ProvenSession[] {
-  // 上海日历日（UTC+8）：activities.date 是 UTC instant，直接 slice 会把
-  // 上海次日凌晨的课归错日期（用户 2026-11-10 评审发现）
-  const dayOf = (d: Date | string) => new Date(new Date(d).getTime() + 8 * 3600_000).toISOString().slice(0, 10);
+  // 日历日归属用 Provider 换算好的 shanghaiDay（devops#936）；此前各处自算 +8h，
+  // #857 曾把上海次日凌晨的课归错日期（用户 2026-11-10 评审发现）。
   const asOfDay = asOf.slice(0, 10);
   const tenWeeksAgo = new Date(new Date(`${asOfDay}T00:00:00Z`).getTime() - 70 * 86400000).toISOString().slice(0, 10);
   return activities
     .filter(
       (a) =>
-        dayOf(a.date) >= tenWeeksAgo &&
-        dayOf(a.date) <= asOfDay &&
+        a.shanghaiDay >= tenWeeksAgo &&
+        a.shanghaiDay <= asOfDay &&
         a.strideSessionClass != null &&
         ["quality", "long_quality", "race", "long_easy"].includes(a.strideSessionClass),
     )
     .map((a) => ({
-      date: dayOf(a.date),
+      date: a.shanghaiDay,
       sessionClass: a.strideSessionClass!,
       name: (a.name ?? "").slice(0, 24),
       distanceKm: Math.round(((a.distanceM ?? 0) / 1000) * 10) / 10,

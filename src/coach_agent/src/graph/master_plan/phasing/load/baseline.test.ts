@@ -85,9 +85,9 @@ test("R5 硬安全门：avg4≥15 时起点 ≤1.3×avg4", () => {
 
 test("R0/R1：周序列补零（周一对齐）、比赛周与赛后 14 天不计入有效周、起点下限 10", () => {
   const acts = [
-    { date: "2026-09-28", distanceM: 30000, name: "课", sport: null, sportName: null, strideSessionClass: "easy" },
-    { date: "2026-10-05", distanceM: 30000, name: "课", sport: null, sportName: null, strideSessionClass: "long" },
-    { date: "2026-10-12", distanceM: 42000, name: "比赛", sport: null, sportName: null, strideSessionClass: "race" },
+    { shanghaiDay: "2026-09-28", distanceM: 30000, name: "课", sport: null, sportName: null, strideSessionClass: "easy" },
+    { shanghaiDay: "2026-10-05", distanceM: 30000, name: "课", sport: null, sportName: null, strideSessionClass: "long" },
+    { shanghaiDay: "2026-10-12", distanceM: 42000, name: "比赛", sport: null, sportName: null, strideSessionClass: "race" },
   ];
   const series = buildWeeklySeries(acts, "2026-10-28"); // 周三 as_of：桶仍按周一对齐
   // 28 周全补零（没跑的周记 0，跳零周会令断练期均值虚高数倍）

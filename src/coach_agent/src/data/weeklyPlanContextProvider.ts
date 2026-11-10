@@ -193,7 +193,7 @@ export class DataProviderWeeklyPlanContextProvider implements WeeklyPlanContextP
       lookback: { start_date: start, end_date: end, days: LOOKBACK_DAYS },
       user_profile: userProfileShape(profile, calibration, hrvBaseline, end),
       training_position: trainingPosition(plan, planStart),
-      recent_activities: activities.filter((activity) => activityDay(activity) >= start).map(activityShape),
+      recent_activities: activities.filter((activity) => activity.shanghaiDay >= start).map(activityShape),
       recent_training_weeks: recentWeeks,
       absorbed_load: absorbedLoadShape(recentWeeks),
       recent_feedback: feedback.map(feedbackShape),
@@ -269,7 +269,7 @@ function recentTrainingWeeks(weekStarts: string[], plans: Array<Record<string, u
   return weekStarts.map((weekStart, index) => {
     const weekEnd = addDays(weekStart, 6);
     const weekActivities = activities.filter((activity) => {
-      const day = activityDay(activity);
+      const day = activity.shanghaiDay;
       return weekStart <= day && day <= weekEnd;
     });
     const runActivities = weekActivities.filter(isRunningActivity);
@@ -297,7 +297,7 @@ function recentTrainingWeeks(weekStarts: string[], plans: Array<Record<string, u
           weekActivities.reduce((sum, activity) => sum + (activity.strideDose ?? 0), 0),
           2,
         ),
-        run_days: new Set(runActivities.map(activityDay)).size,
+        run_days: new Set(runActivities.map((a) => a.shanghaiDay)).size,
         longest_run: longestRunDay,
         quality_stimulus_days: [...qualityByDay.entries()].map(([date, dayActivities]) => ({
           date,
@@ -340,7 +340,7 @@ function plannedWeekShape(plan: Record<string, unknown> | null): PlannedWeekSumm
 function groupActivitiesByDay(activities: Activity[]): Map<string, Activity[]> {
   const groups = new Map<string, Activity[]>();
   for (const activity of activities) {
-    const day = activityDay(activity);
+    const day = activity.shanghaiDay;
     groups.set(day, [...(groups.get(day) ?? []), activity]);
   }
   return groups;
@@ -359,7 +359,7 @@ function unique(values: Array<string | null>): string[] {
 
 function activityShape(activity: Activity) {
   return {
-    date: activityDay(activity),
+    date: activity.shanghaiDay,
     label_id: activity.labelId,
     name: activity.name,
     sport: activity.sport,
@@ -511,10 +511,6 @@ function number(value: unknown): number | null {
 
 function boolean(value: unknown): boolean | null {
   return typeof value === "boolean" ? value : null;
-}
-
-function activityDay(activity: Activity): string {
-  return shanghaiDay(activity.date.toISOString());
 }
 
 function round(value: number, precision = 0): number {

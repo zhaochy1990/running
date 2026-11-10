@@ -14,14 +14,14 @@ export function shanghaiIso(value: string | Date = new Date()): string {
 }
 
 /** Normalize an ISO instant or Shanghai calendar day to YYYY-MM-DD. */
-export function shanghaiDay(value: string): string {
-  if (DAY_RE.test(value)) {
+export function shanghaiDay(value: string | Date): string {
+  if (typeof value === "string" && DAY_RE.test(value)) {
     assertValidDay(value);
     return value;
   }
-  const instant = new Date(value);
+  const instant = new Date(value); // Date 入参走克隆构造，与 shanghaiIso 同构
   if (Number.isNaN(instant.valueOf())) {
-    throw new Error(`invalid asof: ${value}`);
+    throw new Error(`invalid date: ${value}`);
   }
   return new Date(instant.getTime() + 8 * 3_600_000).toISOString().slice(0, 10);
 }
