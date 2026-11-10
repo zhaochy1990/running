@@ -52,7 +52,7 @@ type PointsStore interface {
 	AdminPatchProductSku(ctx context.Context, productID, skuID uint64, patch storage.SkuPatch) (*storage.PointProductSku, error)
 	AdminDeleteProductSku(ctx context.Context, productID, skuID uint64) error
 	AdminListRedemptions(ctx context.Context, status, cursor string, limit int) (*storage.AdminRedemptionPage, error)
-	AdminShipRedemption(ctx context.Context, id, trackingNo string, now time.Time) (*storage.PointRedemption, error)
+	AdminShipRedemption(ctx context.Context, id, courierCompany, trackingNo string, now time.Time) (*storage.PointRedemption, error)
 	AdminListPointBalances(ctx context.Context, sort, cursor string, limit int, userID string, phoneIDs []string) (*storage.AdminPointBalancePage, error)
 	AdminAdjustPointBalance(ctx context.Context, userID string, amount int, reason string, now time.Time) (*storage.PointAdjustmentResult, error)
 }
@@ -179,6 +179,7 @@ type redemptionResponse struct {
 	Quantity               int     `json:"quantity"`
 	SkuLabel               *string `json:"sku_label"`
 	Status                 string  `json:"status"`
+	CourierCompany         *string `json:"courier_company"`
 	TrackingNo             *string `json:"tracking_no"`
 	ShippedAt              *string `json:"shipped_at"`
 	ShippingFeeSnapshot    int     `json:"shipping_fee_snapshot"`
@@ -260,8 +261,9 @@ func redemptionDTO(r *storage.PointRedemption) redemptionResponse {
 	return redemptionResponse{
 		ID: r.ID, ProductID: r.ProductID, ProductName: r.ProductName,
 		PointsCost: r.PointsCost, Quantity: r.Quantity, SkuLabel: r.SkuLabel,
-		Status:     r.Status,
-		TrackingNo: r.TrackingNo, ShippedAt: formatOptionalTime(r.ShippedAt),
+		Status:         r.Status,
+		CourierCompany: r.CourierCompany,
+		TrackingNo:     r.TrackingNo, ShippedAt: formatOptionalTime(r.ShippedAt),
 		ShippingFeeSnapshot:    r.ShippingFeeSnapshot,
 		ShippingPolicySnapshot: r.ShippingPolicySnapshot,
 		PaymentState:           r.PaymentState,
@@ -966,9 +968,11 @@ func (p *pointsRoutes) adminListRedemptions(c *gin.Context) {
 	c.JSON(http.StatusOK, adminRedemptionsResponse{Redemptions: items, NextCursor: next})
 }
 
-// adminShipRequest is the PATCH ship body.
+// adminShipRequest is the PATCH ship body: courier company + tracking number
+// arrive together — a bare number can't be matched to a carrier.
 type adminShipRequest struct {
-	TrackingNo string `json:"tracking_no" binding:"required,max=64"`
+	CourierCompany string `json:"courier_company" binding:"required,max=32"`
+	TrackingNo     string `json:"tracking_no" binding:"required,max=64"`
 }
 
 // adminShipRedemption serves PATCH /api/admin/points/redemptions/:id/ship —
@@ -977,12 +981,12 @@ type adminShipRequest struct {
 // comes back with 200.
 //
 //	@Summary		Ship a redemption order (admin)
-//	@Description	Moves a pending_shipment order to shipped with its tracking number (terminal). Shipping an already shipped order idempotently returns its current state.
+//	@Description	Moves a pending_shipment order to shipped with its courier company and tracking number (terminal). Shipping an already shipped order idempotently returns its current state.
 //	@Tags			points-admin
 //	@Accept			json
 //	@Produce		json
 //	@Param			id		path	string						true	"Order id"
-//	@Param			body	body	adminShipRequest			true	"Tracking number"
+//	@Param			body	body	adminShipRequest			true	"Courier company + tracking number"
 //	@Success		200		{object}	adminRedemptionResponse
 //	@Failure		400		{object}	errorResponse
 //	@Failure		403		{object}	errorResponse
@@ -999,7 +1003,7 @@ func (p *pointsRoutes) adminShipRedemption(c *gin.Context) {
 	if !bindRaceCalendarJSON(c, &body, "invalid_body") {
 		return
 	}
-	row, err := p.store.AdminShipRedemption(c.Request.Context(), id, body.TrackingNo, time.Now().UTC())
+	row, err := p.store.AdminShipRedemption(c.Request.Context(), id, body.CourierCompany, body.TrackingNo, time.Now().UTC())
 	if err != nil {
 		writeRedemptionError(c, p.log, err)
 		return

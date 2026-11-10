@@ -207,9 +207,12 @@ type PointRedemption struct {
 	OutTradeNo             *string    `gorm:"column:out_trade_no;type:varchar(64);uniqueIndex"`
 
 	Status string `gorm:"column:status;type:varchar(16);not null;default:pending_shipment;index:idx_point_redemptions_status,priority:1"`
-	// TrackingNo + ShippedAt arrive together at the terminal ship transition.
-	TrackingNo *string    `gorm:"column:tracking_no;type:varchar(64)"`
-	ShippedAt  *time.Time `gorm:"column:shipped_at;type:datetime(6)"`
+	// CourierCompany + TrackingNo + ShippedAt arrive together at the terminal
+	// ship transition. CourierCompany is NULL for orders shipped before the
+	// column existed — clients then render the bare tracking number.
+	CourierCompany *string    `gorm:"column:courier_company;type:varchar(32)"`
+	TrackingNo     *string    `gorm:"column:tracking_no;type:varchar(64)"`
+	ShippedAt      *time.Time `gorm:"column:shipped_at;type:datetime(6)"`
 
 	CreatedAt time.Time `gorm:"column:created_at;type:datetime(6);autoCreateTime:false;index:idx_point_redemptions_status,priority:2"`
 }

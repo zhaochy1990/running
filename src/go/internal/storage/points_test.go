@@ -584,26 +584,32 @@ func TestAdminShipRedemption_Terminal(t *testing.T) {
 		t.Fatalf("redeem: %v", err)
 	}
 	now := time.Now().UTC()
-	shipped, err := st.AdminShipRedemption(ctx, res.Order.ID, "SF123456", now)
+	shipped, err := st.AdminShipRedemption(ctx, res.Order.ID, "顺丰速运", "SF123456", now)
 	if err != nil {
 		t.Fatalf("ship: %v", err)
 	}
 	if shipped.Status != RedemptionStatusShipped || shipped.TrackingNo == nil || *shipped.TrackingNo != "SF123456" {
 		t.Fatalf("shipped = %+v", shipped)
 	}
+	if shipped.CourierCompany == nil || *shipped.CourierCompany != "顺丰速运" {
+		t.Fatalf("courier = %v, want 顺丰速运", shipped.CourierCompany)
+	}
 	if shipped.ShippedAt == nil {
 		t.Fatal("shipped_at missing")
 	}
-	// Re-ship is idempotent: current state returns, the original tracking
-	// number is not overwritten.
-	again, err := st.AdminShipRedemption(ctx, res.Order.ID, "SF-OTHER", now)
+	// Re-ship is idempotent: current state returns, the original courier and
+	// tracking number are not overwritten.
+	again, err := st.AdminShipRedemption(ctx, res.Order.ID, "京东物流", "JD-OTHER", now)
 	if err != nil {
 		t.Fatalf("re-ship: %v", err)
 	}
 	if again.TrackingNo == nil || *again.TrackingNo != "SF123456" {
 		t.Fatalf("re-ship tracking = %v, want the original SF123456", again.TrackingNo)
 	}
-	if _, err := st.AdminShipRedemption(ctx, uuid.NewString(), "SF", now); err != ErrPointRedemptionNotFound {
+	if again.CourierCompany == nil || *again.CourierCompany != "顺丰速运" {
+		t.Fatalf("re-ship courier = %v, want the original 顺丰速运", again.CourierCompany)
+	}
+	if _, err := st.AdminShipRedemption(ctx, uuid.NewString(), "顺丰速运", "SF", now); err != ErrPointRedemptionNotFound {
 		t.Fatalf("missing order err = %v, want ErrPointRedemptionNotFound", err)
 	}
 }

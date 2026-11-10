@@ -484,6 +484,8 @@ definitions:
         type: string
       city:
         type: string
+      courier_company:
+        type: string
       created_at:
         type: string
       district:
@@ -534,10 +536,14 @@ definitions:
     type: object
   api.adminShipRequest:
     properties:
+      courier_company:
+        maxLength: 32
+        type: string
       tracking_no:
         maxLength: 64
         type: string
     required:
+    - courier_company
     - tracking_no
     type: object
   api.adminSkuCreateRequest:
@@ -2970,6 +2976,8 @@ definitions:
       address_detail:
         type: string
       city:
+        type: string
+      courier_company:
         type: string
       created_at:
         type: string
@@ -6740,16 +6748,16 @@ paths:
     patch:
       consumes:
       - application/json
-      description: Moves a pending_shipment order to shipped with its tracking number
-        (terminal). Shipping an already shipped order idempotently returns its current
-        state.
+      description: Moves a pending_shipment order to shipped with its courier company
+        and tracking number (terminal). Shipping an already shipped order idempotently
+        returns its current state.
       parameters:
       - description: Order id
         in: path
         name: id
         required: true
         type: string
-      - description: Tracking number
+      - description: Courier company + tracking number
         in: body
         name: body
         required: true

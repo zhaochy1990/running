@@ -61,6 +61,8 @@ export interface PointRedemption {
   status: RedemptionStatus;
   /** 尺码快照（devops#909/910）：by_sku 订单 = 下单时的 spec_value；single/旧单缺省 → 不展示。 */
   sku_label?: string | null;
+  /** 快递公司（发货时录入）；字段上线前已发货的旧单缺省 → 只展示单号。 */
+  courier_company?: string | null;
   tracking_no?: string | null;
   shipped_at?: string | null;
   /** 运费快照（分）与策略快照：兑换事务与扣分同一提交冻结（devops#904）。 */

@@ -268,17 +268,17 @@ func TestE2E_PointsShop_RedeemShipAndReplay(t *testing.T) {
 
 	// Ship the first order; the response is the admin projection carrying the
 	// terminal state.
-	code, shipped := e.send(t, http.MethodPatch, "/api/admin/points/redemptions/"+orderID+"/ship", admin, map[string]any{"tracking_no": "E2E-SF-1"})
+	code, shipped := e.send(t, http.MethodPatch, "/api/admin/points/redemptions/"+orderID+"/ship", admin, map[string]any{"courier_company": "顺丰速运", "tracking_no": "E2E-SF-1"})
 	if code != http.StatusOK {
 		t.Fatalf("ship: %d: %v", code, shipped)
 	}
-	if shipped["status"] != "shipped" || shipped["tracking_no"] != "E2E-SF-1" || shipped["user_id"] != e.userID {
+	if shipped["status"] != "shipped" || shipped["tracking_no"] != "E2E-SF-1" || shipped["courier_company"] != "顺丰速运" || shipped["user_id"] != e.userID {
 		t.Fatalf("ship body = %v", shipped)
 	}
 
-	// Repeat ship is idempotent: stored state, original tracking number.
-	code, again := e.send(t, http.MethodPatch, "/api/admin/points/redemptions/"+orderID+"/ship", admin, map[string]any{"tracking_no": "E2E-OTHER"})
-	if code != http.StatusOK || again["tracking_no"] != "E2E-SF-1" || again["status"] != "shipped" {
+	// Repeat ship is idempotent: stored state, original courier + tracking number.
+	code, again := e.send(t, http.MethodPatch, "/api/admin/points/redemptions/"+orderID+"/ship", admin, map[string]any{"courier_company": "京东物流", "tracking_no": "E2E-OTHER"})
+	if code != http.StatusOK || again["tracking_no"] != "E2E-SF-1" || again["courier_company"] != "顺丰速运" || again["status"] != "shipped" {
 		t.Fatalf("re-ship: %d %v, want stored E2E-SF-1/shipped", code, again)
 	}
 
@@ -287,7 +287,7 @@ func TestE2E_PointsShop_RedeemShipAndReplay(t *testing.T) {
 	rows2, _ := mine2["redemptions"].([]any)
 	for _, r := range rows2 {
 		row, _ := r.(map[string]any)
-		if row["id"] == orderID && (row["status"] != "shipped" || row["tracking_no"] != "E2E-SF-1" || row["shipped_at"] == nil) {
+		if row["id"] == orderID && (row["status"] != "shipped" || row["tracking_no"] != "E2E-SF-1" || row["courier_company"] != "顺丰速运" || row["shipped_at"] == nil) {
 			t.Fatalf("order row after ship = %v", row)
 		}
 	}

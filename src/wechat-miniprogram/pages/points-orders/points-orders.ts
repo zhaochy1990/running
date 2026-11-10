@@ -1,8 +1,9 @@
 // 我的兑换页（devops#886，UI 权威 = devops#852 resolution + 原型）。
 // 订单卡：时间 + 状态 chip / 订单号独立行（尾部复制钮，复制含 R- 前缀）/ 商品行
 // （图/名/尺码快照/寄达地/-N 分）/ 运费行（包邮/¥N，devops#905）/ 已发货追加
-// 运单号行+复制；待支付卡带「去支付」（重新 prepay 唤起收银台）；已取消卡带超时
-// 取消说明（积分已退回，明细页见 adjust +N 流水）。
+// 快递公司+快递单号两行（旧单无快递公司只展示单号）+复制；待支付卡带「去支付」
+// （重新 prepay 唤起收银台）；已取消卡带超时取消说明（积分已退回，明细页见
+// adjust +N 流水）。
 // 商品图：兑换接口不回图片，用商品列表建 product_id → image_url 映射；下架/无图
 // 回落占位色块。尺码快照（devops#910）：by_sku 订单展示 sku_label，single/旧单
 // 缺省 = 不渲染。cursor 分页倒序（#884 契约，服务端已按 id DESC）。
@@ -51,6 +52,8 @@ interface OrderRow {
   /** 已取消：显示超时自动取消说明。 */
   cancelled: boolean;
   shipped: boolean;
+  /** 快递公司；旧单（字段上线前发货）为空 → 只渲染快递单号行。 */
+  courier: string;
   trackingNo: string;
 }
 
@@ -127,6 +130,7 @@ function toOrderRow(r: PointRedemption, imgMap: Record<string, string>): OrderRo
     payPending: r.status === 'pending_payment',
     cancelled: r.status === 'cancelled',
     shipped: r.status === 'shipped',
+    courier: r.courier_company || '',
     trackingNo: r.tracking_no || '',
   };
 }
@@ -230,13 +234,13 @@ Page<PointsOrdersPageData, PointsOrdersPageHandlers>({
     void this.load();
   },
 
-  // 已发货订单：复制运单号（#852 resolution 指定 wx.setClipboardData）。
+  // 已发货订单：复制快递单号（#852 resolution 指定 wx.setClipboardData）。
   onCopyTracking(e: WechatMiniprogram.TouchEvent) {
     const no = String(e.currentTarget.dataset.no || '');
     if (!no) return;
     wx.setClipboardData({
       data: no,
-      success: () => wx.showToast({ title: '运单号已复制', icon: 'none' }),
+      success: () => wx.showToast({ title: '快递单号已复制', icon: 'none' }),
     });
   },
 

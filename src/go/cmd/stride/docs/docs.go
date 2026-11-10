@@ -1792,7 +1792,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Moves a pending_shipment order to shipped with its tracking number (terminal). Shipping an already shipped order idempotently returns its current state.",
+                "description": "Moves a pending_shipment order to shipped with its courier company and tracking number (terminal). Shipping an already shipped order idempotently returns its current state.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1812,7 +1812,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Tracking number",
+                        "description": "Courier company + tracking number",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -9978,6 +9978,9 @@ const docTemplate = `{
                 "city": {
                     "type": "string"
                 },
+                "courier_company": {
+                    "type": "string"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -10054,9 +10057,14 @@ const docTemplate = `{
         "api.adminShipRequest": {
             "type": "object",
             "required": [
+                "courier_company",
                 "tracking_no"
             ],
             "properties": {
+                "courier_company": {
+                    "type": "string",
+                    "maxLength": 32
+                },
                 "tracking_no": {
                     "type": "string",
                     "maxLength": 64
@@ -13646,6 +13654,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "city": {
+                    "type": "string"
+                },
+                "courier_company": {
                     "type": "string"
                 },
                 "created_at": {

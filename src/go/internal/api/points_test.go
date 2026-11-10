@@ -51,16 +51,16 @@ type fakePointsStore struct {
 	adjustErr      error
 
 	// last-call captures
-	uid, cursor, adminStatus, shipID, shipTracking string
-	limit, lastPatchID                             int
-	lastSkuProductID, lastSkuID                    uint64
-	req                                            storage.RedemptionRequest
-	patch                                          storage.ProductPatch
-	skuPatchBody                                   storage.SkuPatch
-	balancesSort, balancesUser                     string
-	balancesPhoneIDs                               []string
-	adjustUID, adjustReason                        string
-	adjustAmount                                   int
+	uid, cursor, adminStatus, shipID, shipCourier, shipTracking string
+	limit, lastPatchID                                          int
+	lastSkuProductID, lastSkuID                                 uint64
+	req                                                         storage.RedemptionRequest
+	patch                                                       storage.ProductPatch
+	skuPatchBody                                                storage.SkuPatch
+	balancesSort, balancesUser                                  string
+	balancesPhoneIDs                                            []string
+	adjustUID, adjustReason                                     string
+	adjustAmount                                                int
 }
 
 func (f *fakePointsStore) ListActiveProducts(_ context.Context, userID string) ([]storage.PointProductListing, error) {
@@ -111,8 +111,8 @@ func (f *fakePointsStore) AdminListRedemptions(_ context.Context, status, cursor
 	return f.adminPage, nil
 }
 
-func (f *fakePointsStore) AdminShipRedemption(_ context.Context, id, trackingNo string, _ time.Time) (*storage.PointRedemption, error) {
-	f.shipID, f.shipTracking = id, trackingNo
+func (f *fakePointsStore) AdminShipRedemption(_ context.Context, id, courierCompany, trackingNo string, _ time.Time) (*storage.PointRedemption, error) {
+	f.shipID, f.shipCourier, f.shipTracking = id, courierCompany, trackingNo
 	if f.shipErr != nil {
 		return nil, f.shipErr
 	}
@@ -613,22 +613,26 @@ func TestPoints_AdminRedemptionsAndShip(t *testing.T) {
 	}
 
 	w = h.do(t, http.MethodPatch, "/api/admin/points/redemptions/o1/ship",
-		map[string]any{"tracking_no": "SF123"}, admin)
+		map[string]any{"courier_company": "顺丰速运", "tracking_no": "SF123"}, admin)
 	if w.Code != http.StatusOK {
 		t.Fatalf("ship code = %d: %s", w.Code, w.Body.String())
 	}
-	if store.shipID != "o1" || store.shipTracking != "SF123" {
-		t.Fatalf("ship call = %q %q", store.shipID, store.shipTracking)
+	if store.shipID != "o1" || store.shipCourier != "顺丰速运" || store.shipTracking != "SF123" {
+		t.Fatalf("ship call = %q %q %q", store.shipID, store.shipCourier, store.shipTracking)
 	}
 
-	// Missing tracking_no → 400; missing order → 404; bad status filter → 422.
+	// Missing courier/tracking_no → 400; missing order → 404; bad status filter → 422.
 	w = h.do(t, http.MethodPatch, "/api/admin/points/redemptions/o1/ship", map[string]any{}, admin)
 	if w.Code != http.StatusBadRequest {
-		t.Errorf("no tracking_no: %d, want 400", w.Code)
+		t.Errorf("no body fields: %d, want 400", w.Code)
+	}
+	w = h.do(t, http.MethodPatch, "/api/admin/points/redemptions/o1/ship", map[string]any{"tracking_no": "SF123"}, admin)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("no courier_company: %d, want 400", w.Code)
 	}
 	h2 := newPointsHarness(t, &fakePointsStore{shipErr: storage.ErrPointRedemptionNotFound})
 	w = h2.do(t, http.MethodPatch, "/api/admin/points/redemptions/zz/ship",
-		map[string]any{"tracking_no": "SF"}, h2.adminToken(t))
+		map[string]any{"courier_company": "顺丰速运", "tracking_no": "SF"}, h2.adminToken(t))
 	if w.Code != http.StatusNotFound {
 		t.Errorf("missing order: %d, want 404", w.Code)
 	}

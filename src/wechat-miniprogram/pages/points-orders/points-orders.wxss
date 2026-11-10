@@ -211,7 +211,7 @@
   flex: none;
 }
 
-/* 已发货运单号行：虚线分隔 + 整行点按复制 */
+/* 已发货物流区：虚线分隔 + 快递公司/快递单号两行（旧单无快递公司只有单号行） */
 
 .otrack {
   margin-top: 20rpx;
@@ -221,13 +221,28 @@
   color: var(--color-text-secondary);
 }
 
+.otrack__row + .otrack__row {
+  margin-top: 10rpx;
+}
+
 .otrack__no {
   color: var(--color-text-primary);
   font-weight: 600;
 }
 
+/* 快递单号行：整行点按复制，padding 扩点按区。 */
 .otrack__copy {
-  color: var(--color-accent-deep);
+  padding: 4rpx 0;
+}
+
+/* 复制图标本体 28rpx，与订单号行复制钮同款。 */
+.otrack__copy-ic {
+  width: 28rpx;
+  height: 28rpx;
+  margin-left: 12rpx;
+  flex: none;
+  display: inline-block;
+  vertical-align: -4rpx;
 }
 
 /* ---------- 运费行 / 去支付 / 取消说明（devops#905） ---------- */

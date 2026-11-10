@@ -847,16 +847,16 @@ func (s *Store) AdminListRedemptions(ctx context.Context, status, cursor string,
 }
 
 // AdminShipRedemption runs the terminal pending_shipment → shipped transition.
-// Re-shipping is idempotent: the stored order (original tracking number
-// included) comes back untouched — the guarded UPDATE matches only pending
-// rows. A missing id is ErrPointRedemptionNotFound.
-func (s *Store) AdminShipRedemption(ctx context.Context, id, trackingNo string, now time.Time) (*PointRedemption, error) {
+// Re-shipping is idempotent: the stored order (original courier + tracking
+// number included) comes back untouched — the guarded UPDATE matches only
+// pending rows. A missing id is ErrPointRedemptionNotFound.
+func (s *Store) AdminShipRedemption(ctx context.Context, id, courierCompany, trackingNo string, now time.Time) (*PointRedemption, error) {
 	if _, err := uuid.Parse(id); err != nil {
 		return nil, ErrPointRedemptionNotFound
 	}
 	res := s.db.WithContext(ctx).Exec(
-		"UPDATE point_redemptions SET status = ?, tracking_no = ?, shipped_at = ? WHERE id = ? AND status = ?",
-		RedemptionStatusShipped, trackingNo, now, id, RedemptionStatusPendingShipment,
+		"UPDATE point_redemptions SET status = ?, courier_company = ?, tracking_no = ?, shipped_at = ? WHERE id = ? AND status = ?",
+		RedemptionStatusShipped, courierCompany, trackingNo, now, id, RedemptionStatusPendingShipment,
 	)
 	if res.Error != nil {
 		return nil, res.Error
