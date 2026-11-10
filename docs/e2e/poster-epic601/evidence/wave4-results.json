@@ -1,0 +1,289 @@
+{
+ "a1_inject_a": {
+  "status": "done",
+  "at": "23:05:47",
+  "detail": {
+   "token24": "<redacted>"
+  }
+ },
+ "a2_detail_34k": {
+  "status": "done",
+  "at": "23:07:35",
+  "detail": {
+   "top": "pages/activity-detail/activity-detail",
+   "loading": false,
+   "notFound": false,
+   "name": "[STRIDE] 3km快+2km慢×7（35km）",
+   "hasMap": true,
+   "polyN": 70,
+   "isStrength": false
+  }
+ },
+ "a3_open_sheet": {
+  "status": "done",
+  "at": "23:09:13",
+  "detail": {
+   "sheet": true,
+   "theme": "sunrise",
+   "label": "晨光",
+   "dots": [
+    "sunrise",
+    "ocean",
+    "mint",
+    "lavender",
+    "sakura",
+    "citrus",
+    "forest",
+    "festive",
+    "midnight"
+   ],
+   "platforms": [
+    "小红书 3:4=3:4",
+    "抖音 9:16=9:16",
+    "朋友圈 4:5=4:5",
+    "通用 1:1=1:1"
+   ],
+   "aspect": "3:4",
+   "long": false,
+   "preview": "set"
+  }
+ },
+ "a4_aspect_matrix": {
+  "status": "done",
+  "at": "23:09:59",
+  "detail": {
+   "3:4": {
+    "ihdr": [
+     1080,
+     1440
+    ],
+    "expect": [
+     1080,
+     1440
+    ],
+    "ok": true,
+    "waited": 1.7
+   },
+   "9:16": {
+    "ihdr": [
+     1080,
+     1920
+    ],
+    "expect": [
+     1080,
+     1920
+    ],
+    "ok": true,
+    "waited": 1.7
+   },
+   "4:5": {
+    "ihdr": [
+     1080,
+     1350
+    ],
+    "expect": [
+     1080,
+     1350
+    ],
+    "ok": true,
+    "waited": 1.8
+   },
+   "1:1": {
+    "ihdr": [
+     1080,
+     1080
+    ],
+    "expect": [
+     1080,
+     1080
+    ],
+    "ok": true,
+    "waited": 1.7
+   }
+  }
+ },
+ "a5_theme_switch": {
+  "status": "done",
+  "at": "23:11:09",
+  "detail": {
+   "midnight": {
+    "state": {
+     "theme": "midnight",
+     "label": "夜航",
+     "storage": "midnight",
+     "path": "set"
+    },
+    "ihdr": [
+     1080,
+     1080
+    ],
+    "waited": 1.8
+   },
+   "sakura": {
+    "state": {
+     "theme": "sakura",
+     "label": "樱花",
+     "storage": "sakura",
+     "path": "set"
+    },
+    "ihdr": [
+     1080,
+     1080
+    ],
+    "waited": 1.7
+   },
+   "lavender": {
+    "state": {
+     "theme": "lavender",
+     "label": "星紫",
+     "storage": "lavender",
+     "path": "set"
+    },
+    "ihdr": [
+     1080,
+     1080
+    ],
+    "waited": 1.8
+   },
+   "sunrise": {
+    "state": {
+     "theme": "sunrise",
+     "label": "晨光",
+     "storage": "sunrise",
+     "path": "set"
+    },
+    "ihdr": [
+     1080,
+     1080
+    ],
+    "waited": 1.7
+   },
+   "reopen_persisted": {
+    "expect_theme": "sunrise",
+    "state": {
+     "theme": "sunrise",
+     "storage": "sunrise",
+     "sheet": true
+    }
+   }
+  }
+ },
+ "a6_race": {
+  "status": "done",
+  "at": "23:11:38",
+  "detail": {
+   "logs": [
+    "long-tapped at theme=sunrise",
+    "theme-switched to midnight at t+1200ms"
+   ],
+   "theme": "midnight",
+   "sheet": true,
+   "path": "set",
+   "pathsN": 1,
+   "long": true
+  }
+ },
+ "a7_long_image": {
+  "status": "done",
+  "at": "23:11:56",
+  "detail": {
+   "ihdr": [
+    1080,
+    3526
+   ],
+   "pathsN": 1,
+   "waited": 1.8
+  }
+ },
+ "a8_strength": {
+  "status": "done",
+  "at": "23:12:32",
+  "detail": {
+   "ihdr": [
+    1080,
+    1440
+   ],
+   "waited": 1.9
+  }
+ },
+ "a9_save": {
+  "status": "done",
+  "at": "23:12:47",
+  "detail": {
+   "save": {
+    "filePath": "http://tmp/citQ7EFUhZK55b9677f6205f818062e2ee66a6227e0f.png",
+    "t": 1794323558344,
+    "result": "pending",
+    "calledThrough": true,
+    "errMsg": "saveImageToPhotosAlbum:fail api scope is not declared in the privacy agreement"
+   },
+   "preview": null
+  }
+ },
+ "a10_preview": {
+  "status": "done",
+  "at": "23:12:56",
+  "detail": {
+   "before_preview": null,
+   "after": {
+    "urls": [
+     "http://tmp/citQ7EFUhZK55b9677f6205f818062e2ee66a6227e0f.png"
+    ],
+    "t": 1794323569422
+   }
+  }
+ },
+ "b1_inject_b": {
+  "status": "done",
+  "at": "23:13:24",
+  "detail": {
+   "token24": "<redacted>"
+  }
+ },
+ "b2_list_empty": {
+  "status": "done",
+  "at": "23:13:35",
+  "detail": {
+   "top": "pages/activities/activities",
+   "loading": false,
+   "loadedCount": 0,
+   "emptyTitle": "暂无活动记录",
+   "monthN": 0
+  }
+ },
+ "b3_cross_access": {
+  "status": "done",
+  "at": "23:13:46",
+  "detail": {
+   "top": "pages/activity-detail/activity-detail",
+   "loading": false,
+   "notFound": true,
+   "name": "",
+   "hasMap": false,
+   "polyN": 0,
+   "isStrength": false
+  }
+ },
+ "b4_theme_scoped": {
+  "status": "done",
+  "at": "23:13:48",
+  "detail": {
+   "posterTheme": "midnight"
+  }
+ },
+ "b5_back_to_a": {
+  "status": "done",
+  "at": "23:14:42",
+  "detail": {
+   "sheet": true,
+   "theme": "midnight",
+   "label": "夜航",
+   "storage": "midnight",
+   "aspect": "3:4",
+   "path": "set",
+   "pathsN": 1,
+   "name": "[STRIDE] 3km快+2km慢×7（35km）",
+   "hasMap": true
+  }
+ }
+}

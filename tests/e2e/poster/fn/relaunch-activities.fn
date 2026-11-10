@@ -1,0 +1,9 @@
+function(){ return new Promise((resolve)=>{
+  wx.reLaunch({ url: '/pages/activities/activities',
+    complete: () => setTimeout(() => {
+      const ps = getCurrentPages();
+      const p = ps[ps.length - 1];
+      resolve({ top: p.route, loading: p.data.loading, loadedCount: p.data.loadedCount,
+        emptyTitle: p.data.emptyTitle, monthN: (p.data.monthGroups || []).length });
+    }, 9000) });
+}); }

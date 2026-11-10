@@ -1,0 +1,8 @@
+function(){
+  const ps = getCurrentPages();
+  const p = ps[ps.length - 1];
+  return { sheet: p.data.posterSheetVisible, theme: p.data.posterThemeKey, label: p.data.posterThemeLabel,
+    storage: wx.getStorageSync('poster.theme'), aspect: p.data.posterAspect,
+    path: p.data.posterPreviewPath ? 'set' : '', pathsN: (p.data.posterPreviewPaths || []).length,
+    name: p.data.header && p.data.header.name, hasMap: p.data.hasMap };
+}

@@ -1,0 +1,12 @@
+function(){ return new Promise((resolve)=>{
+  const ps = getCurrentPages();
+  const p = ps[ps.length - 1];
+  p.onSharePoster();
+  setTimeout(() => {
+    const d = p.data;
+    resolve({ sheet: d.posterSheetVisible, theme: d.posterThemeKey, label: d.posterThemeLabel,
+      dots: (d.posterThemeDots || []).map((t) => t.key),
+      platforms: (d.posterPlatforms || []).map((x) => x.label + '=' + x.aspect),
+      aspect: d.posterAspect, long: d.posterLongImage, preview: d.posterPreviewPath ? 'set' : '' });
+  }, 9000);
+}); }

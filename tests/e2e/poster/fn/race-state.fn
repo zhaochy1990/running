@@ -1,0 +1,8 @@
+function(){
+  const app = getApp();
+  const ps = getCurrentPages();
+  const p = ps[ps.length - 1];
+  return { logs: app.__race && app.__race.logs, theme: p.data.posterThemeKey,
+    sheet: p.data.posterSheetVisible, path: p.data.posterPreviewPath ? 'set' : '',
+    pathsN: (p.data.posterPreviewPaths || []).length, long: p.data.posterLongImage };
+}

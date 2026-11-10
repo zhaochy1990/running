@@ -1,0 +1,14 @@
+function() {
+  const app = getApp();
+  app.__race = { logs: [] };
+  const ps = getCurrentPages();
+  const p = ps[ps.length - 1];
+  if (!p.data.posterSheetVisible) return { err: 'no sheet' };
+  p.onPosterLongImageTap();
+  app.__race.logs.push('long-tapped at theme=' + p.data.posterThemeKey);
+  setTimeout(() => {
+    p.onPosterThemeTap({ currentTarget: { dataset: { key: 'midnight' } } });
+    app.__race.logs.push('theme-switched to ' + p.data.posterThemeKey + ' at t+1200ms');
+  }, 1200);
+  return 'race-started';
+}
