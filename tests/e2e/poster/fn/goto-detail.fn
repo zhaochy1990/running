@@ -1,0 +1,10 @@
+function(){ return new Promise((resolve)=>{
+  wx.redirectTo({ url: '/pages/activity-detail/activity-detail?labelId=__LABEL__',
+    complete: () => setTimeout(() => {
+      const ps = getCurrentPages();
+      const p = ps[ps.length - 1];
+      resolve({ top: p.route, loading: p.data.loading, notFound: p.data.notFound,
+        name: p.data.header && p.data.header.name, hasMap: p.data.hasMap,
+        polyN: (p.data.mapPolylines || []).length, isStrength: p.data.isStrength });
+    }, __WAIT__) });
+}); }

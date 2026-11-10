@@ -1,0 +1,28 @@
+function() {
+  const app = getApp();
+  app.__io = app.__io || {};
+  if (!app.__io.previewPatched) {
+    const orig = wx.previewImage.bind(wx);
+    wx.previewImage = (opt) => {
+      try { app.__io.preview = { urls: (opt && opt.urls || []).map(String), t: Date.now() }; } catch (e) {}
+      return orig(opt);
+    };
+    app.__io.previewPatched = true;
+  }
+  if (wx.saveImageToPhotosAlbum && !app.__io.savePatched) {
+    const orig2 = wx.saveImageToPhotosAlbum.bind(wx);
+    wx.saveImageToPhotosAlbum = (opt) => {
+      app.__io.save = { filePath: opt && String(opt.filePath), t: Date.now(), result: 'pending' };
+      const done = (r) => { try { app.__io.save.errMsg = r && r.errMsg; } catch (e) {} };
+      try {
+        const ret = orig2({ ...opt, success: (s) => { done(s); opt && opt.success && opt.success(s); },
+                            fail: (f) => { done(f); opt && opt.fail && opt.fail(f); } });
+        if (ret && ret.then) ret.then(done, done);
+        app.__io.save.calledThrough = true;
+      } catch (e) { app.__io.save.callErr = String(e); }
+      return undefined;
+    };
+    app.__io.savePatched = true;
+  }
+  return { previewPatched: app.__io.previewPatched, savePatched: !!app.__io.savePatched };
+}

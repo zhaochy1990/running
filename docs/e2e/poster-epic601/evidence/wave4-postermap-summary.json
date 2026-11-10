@@ -1,0 +1,170 @@
+[
+ {
+  "type": "HTTP_REQUEST",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "bodyBytes": 19190,
+  "hasPaths": true
+ },
+ {
+  "type": "HTTP_RESPONSE",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "status": 503,
+  "body": "{'type': 'ArrayBuffer', 'byteLength': 36}"
+ },
+ {
+  "type": "HTTP_REQUEST",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "bodyBytes": 19190,
+  "hasPaths": true
+ },
+ {
+  "type": "HTTP_RESPONSE",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "status": 503,
+  "body": "{'type': 'ArrayBuffer', 'byteLength': 36}"
+ },
+ {
+  "type": "HTTP_REQUEST",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "bodyBytes": 19190,
+  "hasPaths": true
+ },
+ {
+  "type": "HTTP_RESPONSE",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "status": 503,
+  "body": "{'type': 'ArrayBuffer', 'byteLength': 36}"
+ },
+ {
+  "type": "HTTP_REQUEST",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "bodyBytes": 19190,
+  "hasPaths": true
+ },
+ {
+  "type": "HTTP_RESPONSE",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "status": 503,
+  "body": "{'type': 'ArrayBuffer', 'byteLength': 36}"
+ },
+ {
+  "type": "HTTP_REQUEST",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "bodyBytes": 19190,
+  "hasPaths": true
+ },
+ {
+  "type": "HTTP_RESPONSE",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "status": 503,
+  "body": "{'type': 'ArrayBuffer', 'byteLength': 36}"
+ },
+ {
+  "type": "HTTP_REQUEST",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "bodyBytes": 19190,
+  "hasPaths": true
+ },
+ {
+  "type": "HTTP_RESPONSE",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "status": 503,
+  "body": "{'type': 'ArrayBuffer', 'byteLength': 36}"
+ },
+ {
+  "type": "HTTP_REQUEST",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "bodyBytes": 19190,
+  "hasPaths": true
+ },
+ {
+  "type": "HTTP_RESPONSE",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "status": 503,
+  "body": "{'type': 'ArrayBuffer', 'byteLength': 36}"
+ },
+ {
+  "type": "HTTP_REQUEST",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "bodyBytes": 19190,
+  "hasPaths": true
+ },
+ {
+  "type": "HTTP_RESPONSE",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "status": 503,
+  "body": "{'type': 'ArrayBuffer', 'byteLength': 36}"
+ },
+ {
+  "type": "HTTP_REQUEST",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "bodyBytes": 19190,
+  "hasPaths": true
+ },
+ {
+  "type": "HTTP_RESPONSE",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "status": 503,
+  "body": "{'type': 'ArrayBuffer', 'byteLength': 36}"
+ },
+ {
+  "type": "HTTP_REQUEST",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "bodyBytes": 19190,
+  "hasPaths": true
+ },
+ {
+  "type": "HTTP_RESPONSE",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "status": 503,
+  "body": "{'type': 'ArrayBuffer', 'byteLength': 36}"
+ },
+ {
+  "type": "HTTP_REQUEST",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "bodyBytes": 19190,
+  "hasPaths": true
+ },
+ {
+  "type": "HTTP_RESPONSE",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "status": 503,
+  "body": "{'type': 'ArrayBuffer', 'byteLength': 36}"
+ },
+ {
+  "type": "HTTP_REQUEST",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "bodyBytes": 19190,
+  "hasPaths": true
+ },
+ {
+  "type": "HTTP_RESPONSE",
+  "method": "POST",
+  "url": "http://127.0.0.1:8082/api/users/me/poster/map",
+  "status": 503,
+  "body": "{'type': 'ArrayBuffer', 'byteLength': 36}"
+ }
+]

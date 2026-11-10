@@ -1,0 +1,6 @@
+function(){
+  const ps = getCurrentPages();
+  const p = ps[ps.length - 1];
+  p.onPosterThemeTap({ currentTarget: { dataset: { key: '__KEY__' } } });
+  return 'tapped-__KEY__';
+}

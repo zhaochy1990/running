@@ -12,6 +12,10 @@ These are intentionally *not* wired into CI:
 
 ## Scripts
 
-_None currently._ The previous prod smoke was retired when the
+- `poster/` — 分享海报 E2E 驱动脚本（Epic #601 / devops#949 收口轮留档，可复跑）。
+  驱动 DevTools 模拟器走 生成→保存→分享 全链路（真实数据双用户），无 mock；前置与
+  边界见 `poster/README.md`，测试报告见 `docs/e2e/poster-epic601/`。
+
+The previous prod smoke was retired when the
 `WatchExtrasSection` it validated was removed from `/health`. HRV trend
 verification is now covered by `frontend/src/pages/__tests__/HealthPage.test.tsx`.

@@ -1,0 +1,6 @@
+function(){
+  const ps = getCurrentPages();
+  const p = ps[ps.length - 1];
+  p.onPosterAspectTap({ currentTarget: { dataset: { aspect: '__ASPECT__' } } });
+  return 'tapped-__ASPECT__';
+}
