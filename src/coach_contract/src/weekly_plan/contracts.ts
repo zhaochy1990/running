@@ -1,27 +1,4 @@
 import { z } from "zod/v4";
-import { PhaseNameSchema } from "../master_plan/schemas.js";
-import { WeeklyPlanSchema } from "./schema.js";
-import { WeeklyPlanSimulationReportSchema } from "./simulation.js";
-
-export type PhaseName = z.infer<typeof PhaseNameSchema>;
-
-const identifier = z.string().min(1);
-
-export const WeeklyPlanGeneratorRequest = z
-  .object({
-    request_id: identifier,
-    requested_as_of: z.string().datetime({ offset: true }).optional(),
-  })
-  .strict();
-export type WeeklyPlanGeneratorRequest = z.infer<typeof WeeklyPlanGeneratorRequest>;
-
-export const WeeklyPlanGeneratorContext = z
-  .object({
-    userId: identifier,
-    generationId: identifier,
-  })
-  .strict();
-export type WeeklyPlanGeneratorContext = z.infer<typeof WeeklyPlanGeneratorContext>;
 
 export const RecoveryTrendSchema = z
   .object({
@@ -91,35 +68,3 @@ export const TargetTrainingLoadSchema = z
   })
   .strict();
 export type TargetTrainingLoad = z.infer<typeof TargetTrainingLoadSchema>;
-
-export const WeeklyPlanGeneratorOutcome = z.discriminatedUnion("decision", [
-  z
-    .object({
-      decision: z.literal("completed"),
-      request_id: identifier,
-      generation_id: identifier,
-      phase: PhaseNameSchema,
-      weekly_plan: WeeklyPlanSchema,
-      target_training_load: TargetTrainingLoadSchema,
-      simulation: WeeklyPlanSimulationReportSchema,
-      generation_attempts: z.int().positive(),
-    })
-    .strict(),
-  z
-    .object({
-      decision: z.literal("infrastructure_failure"),
-      request_id: identifier,
-      generation_id: identifier,
-      reason: z.literal("context_snapshot_unavailable"),
-    })
-    .strict(),
-  z
-    .object({
-      decision: z.literal("quality_failure"),
-      request_id: identifier,
-      generation_id: identifier,
-      reason: z.enum(["phase_unresolvable", "generation_failed", "load_mismatch_unresolved"]),
-    })
-    .strict(),
-]);
-export type WeeklyPlanGeneratorOutcome = z.infer<typeof WeeklyPlanGeneratorOutcome>;

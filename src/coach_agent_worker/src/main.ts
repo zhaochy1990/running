@@ -1,6 +1,6 @@
 import { loadConfig } from "@stride/coach-agent";
 import { getLogger } from "@stride/common";
-import { masterPlanGraph, rollingDeps, weeklyPlanGraph } from "./app/dependencies.js";
+import { masterPlanGraph, rollingDeps } from "./app/dependencies.js";
 import { createPlanJobHandlers } from "./app/handlers.js";
 import { startReconcileTimer } from "./app/reconcile.js";
 import { loadWorkerConfig } from "./config.js";
@@ -38,7 +38,6 @@ async function main(): Promise<void> {
   const dataProvider = new MySqlDataProvider(stridePool);
   const handlers = createPlanJobHandlers({
     masterGraph: await masterPlanGraph(coachConfig, dataProvider),
-    weeklyGraph: weeklyPlanGraph(coachConfig, dataProvider),
     dataProvider,
     rolling: rollingDeps(coachConfig, dataProvider),
     weeklyPlans: new GoWeeklyPlanClient(workerConfig.goApi.baseUrl, workerConfig.goApi.internalToken),

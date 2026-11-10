@@ -16,7 +16,6 @@ export * from "./race_strategy/schema.js";
 export * from "./weekly_plan/contracts.js";
 export * from "./weekly_plan/rolling.js";
 export * from "./weekly_plan/schema.js";
-export * from "./weekly_plan/simulation.js";
 export * from "./workout/schema.js";
 export * from "./workout/summary.js";
 export * from "./workout/totals.js";

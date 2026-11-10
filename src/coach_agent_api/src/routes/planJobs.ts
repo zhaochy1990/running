@@ -4,7 +4,6 @@ import {
   type PlanJob,
   type PlanJobType,
   RollingJobRequest,
-  WeeklyPlanGeneratorRequest,
 } from "@stride/coach-agent-worker";
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import { type AuthEnv, createAdminMiddleware } from "../auth.js";
@@ -111,11 +110,11 @@ async function readEnqueueRequest(
     return { ok: false, error: "invalid_idempotency_key" };
   }
   // Server-side re-validation: never trust the client's kernel request. The
-  // request schema depends on the job type (per-type gate — a `generate_weekly_plan`
-  // job is re-validated against `WeeklyPlanGeneratorRequest`, a `generate_rolling_block`
-  // job against `RollingJobRequest` #858).
-  const schema =
-    jobType === "generate_master_plan" ? MasterPlanGraphRequest : jobType === "generate_weekly_plan" ? WeeklyPlanGeneratorRequest : RollingJobRequest;
+  // request schema depends on the job type (per-type gate — a `generate_master_plan`
+  // job is re-validated against `MasterPlanGraphRequest`, a `generate_rolling_block`
+  // job against `RollingJobRequest` #858; the legacy `generate_weekly_plan` job
+  // type is retired with its five-stage graph).
+  const schema = jobType === "generate_master_plan" ? MasterPlanGraphRequest : RollingJobRequest;
   const parsed = schema.safeParse(value.request);
   if (!parsed.success) {
     return { ok: false, error: "invalid_request" };

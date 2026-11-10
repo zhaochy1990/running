@@ -12,8 +12,7 @@ import { ACTIVATION_MAX_KM, ACTIVATION_MIN_KM, BUILD_CAP, bandOf, RACE_KM, RECOV
  * 构造层次级规则与帽冲突时一律让帽（恢复期后爬坡缓是科学正确形态）。
  *
  * 产出五件（spec §3）：周骨架（默认轨迹）/ 块结构标记 / 回补策略（政策面）/
- * 力量指导 policy / 边界检查+里程碑对齐。不含 kernel/weekly graph 接入（另票）、
- * 不含 L4 内容层与执行回路。
+ * 力量指导 policy / 边界检查+里程碑对齐。不含 L4 内容层与执行回路。
  */
 
 /** 构造物理常量（BUILD_CAP/RECOVERY_*）单源在 reachability.ts（展开器与 L2 可达性包络共用）。 */

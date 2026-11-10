@@ -16,7 +16,7 @@ import { type ContentValidation, E_DURATION_INTERVAL_BAND, E_DURATION_NORMAL_BAN
  * 排位（P 门 + load_series）→ 全量终检（C1-C9 落位后按日判定）→ 带违规清单
  * 重试 ≤2（L2 同款；排位无解=课包问题，同环重生成 L4a——层内仲裁在 L4b 内
  * 先行确定性修复，本环绝不因排位失败跳过修复直触 LLM）→ 模板兜底课包+排位
- * （构造保证合法）。不含 kernel/weekly 接线（#803）。
+ * （构造保证合法）。
  */
 
 /** LLM 直出 draft（结构课无 day；E=槽位+时长带——落位与分钟归 L4b）。 */

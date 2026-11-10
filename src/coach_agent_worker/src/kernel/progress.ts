@@ -5,7 +5,7 @@
  * increasing anchor so stage + progress never regress (issue #437 user story).
  *
  * Node maps live with their kernel (`kernel/master/kernel.ts` exports
- * `MASTER_PLAN_NODES`, `kernel/weekly/kernel.ts` exports `WEEKLY_PLAN_NODES`);
+ * `MASTER_PLAN_NODES`);
  * this module only provides the machinery so a node map never couples the
  * shared code to a specific domain.
  */

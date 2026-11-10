@@ -9,7 +9,6 @@
 export const PLAN_JOB_STATUSES = ["queued", "running", "done", "failed"] as const;
 export type PlanJobStatus = (typeof PLAN_JOB_STATUSES)[number];
 
-/** 生成/结构调整 × 赛季训练计划/本周课表。`generate_master_plan`、`generate_weekly_plan`、`generate_rolling_block`（#858 滚动块）已接入 kernel。 */
 /**
  * The job types (生成/结构调整 × 赛季训练计划/本周课表) share one state machine
  * (ADR 0030); the generate types are wired to kernels, the restructure variants
@@ -18,8 +17,11 @@ export type PlanJobStatus = (typeof PLAN_JOB_STATUSES)[number];
  * per-type request-schema check in the coach route) when its kernel lands. The
  * enqueue endpoint re-validates the request against the per-type schema, so a
  * type that needs a different input is gated until its own validation is wired.
+ * #858 R3: the legacy five-stage LLM weekly graph (`generate_weekly_plan`) is
+ * retired — weekly content is produced by the master first-batch materialization
+ * and the rolling projection (`generate_rolling_block`).
  */
-export const PLAN_JOB_TYPES = ["generate_master_plan", "generate_weekly_plan", "generate_rolling_block"] as const;
+export const PLAN_JOB_TYPES = ["generate_master_plan", "generate_rolling_block"] as const;
 export type PlanJobType = (typeof PLAN_JOB_TYPES)[number];
 
 /**
@@ -28,7 +30,6 @@ export type PlanJobType = (typeof PLAN_JOB_TYPES)[number];
  */
 export const PLAN_JOB_ESTIMATED_DURATIONS_SECONDS: Record<PlanJobType, number> = {
   generate_master_plan: 300,
-  generate_weekly_plan: 300,
   generate_rolling_block: 300,
 };
 

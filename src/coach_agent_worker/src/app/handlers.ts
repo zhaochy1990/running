@@ -6,12 +6,9 @@ import type { PlanJobType } from "../job/model.js";
 import { createMasterPlanJobHandler } from "../kernel/master/handler.js";
 import type { MasterPlanGraphShim } from "../kernel/master/kernel.js";
 import { createRollingJobHandler } from "../kernel/rolling/handler.js";
-import { createWeeklyPlanJobHandler } from "../kernel/weekly/handler.js";
-import type { WeeklyPlanGraphShim } from "../kernel/weekly/kernel.js";
 
 export interface PlanJobHandlerDeps {
   masterGraph: MasterPlanGraphShim;
-  weeklyGraph: WeeklyPlanGraphShim;
   dataProvider: MySqlDataProvider;
   /** 滚动 job 装配（与 master 图同款 provider + LLM models 的 Pick）。 */
   rolling: {
@@ -39,12 +36,6 @@ export function createPlanJobHandlers(deps: PlanJobHandlerDeps): Map<PlanJobType
         // The plan's goal_id references the athlete's active race_goal row.
         resolveGoalId: async (userId) => (await deps.dataProvider.getRaceTarget(userId))?.goal_id ?? null,
         weeklyPlans: deps.weeklyPlans,
-      }),
-    ],
-    [
-      "generate_weekly_plan",
-      createWeeklyPlanJobHandler({
-        graph: deps.weeklyGraph,
       }),
     ],
     [

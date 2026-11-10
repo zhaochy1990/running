@@ -49,7 +49,6 @@ export { createMasterPlanLlmModels } from "./graph/master_plan/llm/index.js";
 export type { MasterPlanLlmModels } from "./graph/master_plan/llm/models.js";
 export type { RollingDeps, RollingOutcome, RollingWindow } from "./graph/rolling/index.js";
 export { buildWeeklyDocs, computeRollingWindow, fromMasterArtifact, fromStoredContent, runRollingProjection } from "./graph/rolling/index.js";
-export { createWeeklyPlanGeneratorGraph } from "./graph/weekly_plan/index.js";
 export type { AskUserQuestionPayload } from "./tools/askUserQuestions.js";
 export { ASK_USER_QUESTION_KIND } from "./tools/askUserQuestions.js";
 export type { ActivityFeelWriter } from "./tools/feel.js";

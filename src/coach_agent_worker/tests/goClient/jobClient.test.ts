@@ -7,7 +7,7 @@ import { JobStateChangedError } from "../../src/job/ports.js";
 const row = (overrides: Record<string, unknown> = {}) => ({
   job_id: "job-1",
   user_id: "user-1",
-  job_type: "generate_weekly_plan",
+  job_type: "generate_rolling_block",
   status: "queued",
   attempts: 0,
   stage: "",
@@ -38,7 +38,7 @@ test("create posts the row to the Go internal endpoint with the internal token",
   const result = await client.create({
     jobId: "job-1",
     userId: "user-1",
-    jobType: "generate_weekly_plan",
+    jobType: "generate_rolling_block",
     status: "queued",
     attempts: 0,
     stage: "",
@@ -60,7 +60,7 @@ test("create posts the row to the Go internal endpoint with the internal token",
   const body = JSON.parse(String(captured.init.body)) as Record<string, unknown>;
   assert.equal(body.job_id, "job-1");
   assert.equal(body.user_id, "user-1");
-  assert.equal(body.job_type, "generate_weekly_plan");
+  assert.equal(body.job_type, "generate_rolling_block");
   assert.equal(body.idempotency_key, "key-1");
 });
 
@@ -69,7 +69,7 @@ test("an idempotent 200 create reports created=false so the caller does not repu
   const result = await client.create({
     jobId: "job-1",
     userId: "user-1",
-    jobType: "generate_weekly_plan",
+    jobType: "generate_rolling_block",
     status: "queued",
     attempts: 0,
     stage: "",
@@ -183,6 +183,6 @@ test("failStaleRunning posts the window and returns the failed count", async () 
   assert.deepEqual(JSON.parse(String(captured.init.body)), {
     older_than: "2026-09-01T00:05:00.000Z",
     error_code: "heartbeat_timeout",
-    job_types: ["generate_master_plan", "generate_weekly_plan", "generate_rolling_block"],
+    job_types: ["generate_master_plan", "generate_rolling_block"],
   });
 });

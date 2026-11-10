@@ -4,8 +4,7 @@
  * C9 E 课时长分层；课包阶段 C4/C9 归排位段）+ 能力递进投影（project，
  * projectZones）+ 生成编排（generate：draft→课包→排位→全量终检统一重试环
  * →模板兜底课包+排位）+ 排位段（schedule/：剂量估算器+波浪调度器+P 门+
- * scheduleOnly）+ spike 样本迁移器（migrate，E2E 回放）。不含 kernel/weekly
- * 接线（#803）。
+ * scheduleOnly）+ spike 样本迁移器（migrate，E2E 回放）。
  *
  * 导出面=接入票（#803 kernel 接线/回放脚本）与 R0（scheduleOnly）的入口；
  * 判定表、迁移器与剂量估算器由模块内部与测试走文件直连（与 load/ 收敛惯例一致）。

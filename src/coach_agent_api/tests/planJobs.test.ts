@@ -185,7 +185,7 @@ test("a rolling-block job is re-validated against the rolling schema and enqueue
   assert.deepEqual(await wrongSchema.json(), { error: "invalid_request" });
 });
 
-test("a weekly-plan job is re-validated against the weekly schema and enqueued", async () => {
+test("the retired weekly-plan job_type is rejected as invalid_job_type (#858 R3)", async () => {
   const { service, enqueued } = fakePlanJobs();
   const app = appFor(service);
   const response = await app.request("/api/users/me/coach/plan-jobs", {
@@ -193,22 +193,8 @@ test("a weekly-plan job is re-validated against the weekly schema and enqueued",
     headers: { authorization: "Bearer x", "content-type": "application/json" },
     body: JSON.stringify({ job_type: "generate_weekly_plan", request: { request_id: "req-1" } }),
   });
-  assert.equal(response.status, 201);
-  assert.equal(enqueued.length, 1);
-  assert.equal(enqueued[0]?.jobType, "generate_weekly_plan");
-  assert.deepEqual(JSON.parse(enqueued[0]!.inputJson), { request_id: "req-1" });
-});
-
-test("a weekly-plan job carrying a master-plan request is rejected by the per-type gate", async () => {
-  const { service, enqueued } = fakePlanJobs();
-  const app = appFor(service);
-  const response = await app.request("/api/users/me/coach/plan-jobs", {
-    method: "POST",
-    headers: { authorization: "Bearer x", "content-type": "application/json" },
-    body: JSON.stringify({ job_type: "generate_weekly_plan", request: REQUEST }),
-  });
   assert.equal(response.status, 400);
-  assert.deepEqual(await response.json(), { error: "invalid_request" });
+  assert.deepEqual(await response.json(), { error: "invalid_job_type" });
   assert.equal(enqueued.length, 0);
 });
 
@@ -349,7 +335,7 @@ test("an admin token enqueues for the path user, not itself", async () => {
   const response = await adminAppFor(service, true).request("/api/admin/users/athlete-9/coach/plan-jobs", {
     method: "POST",
     headers: { authorization: "Bearer x", "content-type": "application/json" },
-    body: JSON.stringify({ job_type: "generate_weekly_plan", request: { request_id: "req-1" } }),
+    body: JSON.stringify({ job_type: "generate_rolling_block", request: { request_id: "req-1", master_plan_id: "11111111-2222-3333-4444-555555555555" } }),
   });
   assert.equal(response.status, 201);
   assert.equal(enqueued.length, 1);
@@ -362,7 +348,7 @@ test("a non-admin token is refused on the admin plan-job surface", async () => {
   const enqueue = await app.request("/api/admin/users/athlete-9/coach/plan-jobs", {
     method: "POST",
     headers: { authorization: "Bearer x", "content-type": "application/json" },
-    body: JSON.stringify({ job_type: "generate_weekly_plan", request: { request_id: "req-1" } }),
+    body: JSON.stringify({ job_type: "generate_rolling_block", request: { request_id: "req-1", master_plan_id: "11111111-2222-3333-4444-555555555555" } }),
   });
   assert.equal(enqueue.status, 403);
   const poll = await app.request("/api/admin/users/athlete-9/coach/plan-jobs/job-1", {
@@ -376,7 +362,7 @@ test("an admin polls another athlete's job", async () => {
   const job: PlanJob = {
     jobId: "job-admin",
     userId: "athlete-9",
-    jobType: "generate_weekly_plan",
+    jobType: "generate_rolling_block",
     status: "done",
     attempts: 1,
     stage: "outputting",
@@ -399,7 +385,7 @@ test("an admin polls another athlete's job", async () => {
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
     job_id: "job-admin",
-    job_type: "generate_weekly_plan",
+    job_type: "generate_rolling_block",
     status: "done",
     stage: "outputting",
     progress_pct: 100,
