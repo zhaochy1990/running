@@ -17,14 +17,14 @@
  *    v2 有独立 taper 阶段名，L2 把 taper 当 final_quality 的属性。
  */
 import {
+  addDays,
+  estimatedTotalDistanceM,
   type LoadPlan,
   type MasterPlan,
   type MasterPlanGraphRequest,
+  normalizeRunWorkout,
   type PhaseDivisionIntent,
   type RunWorkout,
-  addDays,
-  estimatedTotalDistanceM,
-  normalizeRunWorkout,
   workoutTotals,
 } from "@stride/contract";
 import type { ScheduledOutcome } from "./phasing/content/generate.js";
@@ -59,6 +59,33 @@ export interface SnapshotInput {
   generatedAt: string;
 }
 
+/** 阶段区间（v2 形状）：final_quality 按 taper_weeks 劈成 marathon + taper 两段。 */
+export interface PhaseSpan {
+  phase: PhaseDivisionIntent["phases"][number];
+  /** v2 阶段名（枚举冻结在 base/build/speed/marathon/taper/recovery）。 */
+  name: MasterPlan["phases"][number]["name"];
+  start: number;
+  end: number;
+}
+
+/**
+ * 阶段区间劈分（单一真源，#858 提取供 rolling 周课文档复用）：按 start_week
+ * 排序后逐阶段产出区间；final_quality 的 taper 段（末 taper_weeks 周）单列成
+ * v2 的 taper 阶段，前段（若有）仍是 marathon。taper 段吞掉整阶段时不产
+ * marathon 空段。
+ */
+export function phaseSpansOf(policy: PhaseDivisionIntent): PhaseSpan[] {
+  const sorted = [...policy.phases].sort((a, b) => a.start_week - b.start_week);
+  return sorted.flatMap((phase) => {
+    const taperStart = phase.canonical === "final_quality" ? Math.max(phase.start_week, phase.end_week - policy.taper_weeks + 1) : null;
+    if (taperStart === null) return [{ phase, name: V2_PHASE_NAME[phase.canonical], start: phase.start_week, end: phase.end_week }];
+    return [
+      ...(taperStart > phase.start_week ? [{ phase, name: V2_PHASE_NAME[phase.canonical], start: phase.start_week, end: taperStart - 1 }] : []),
+      { phase, name: "taper" as const, start: taperStart, end: phase.end_week },
+    ];
+  });
+}
+
 const weekStart = (monday: string, week: number): string => addDays(monday, (week - 1) * 7);
 const weekEnd = (monday: string, week: number): string => addDays(weekStart(monday, week), 6);
 
@@ -88,19 +115,10 @@ export function buildV2Snapshot(input: SnapshotInput): MasterPlan {
   const sessionsByWeek = new Map(scheduled.weeks.map((week) => [week.week, week.sessions]));
   const easyPace = easyPaceOf(scheduled);
 
-  // 阶段区间：final_quality 按 taper_weeks 劈成 marathon + taper 两段。
+  // 阶段区间：final_quality 按 taper_weeks 劈成 marathon + taper 两段（劈分逻辑
+  // 单源在 phaseSpansOf，rolling 周课文档复用同一份）。
   const sorted = [...policy.phases].sort((a, b) => a.start_week - b.start_week);
-  const spans = sorted.flatMap((phase) => {
-    const taperStart =
-      phase.canonical === "final_quality" ? Math.max(phase.start_week, phase.end_week - policy.taper_weeks + 1) : null;
-    if (taperStart === null) return [{ phase, name: V2_PHASE_NAME[phase.canonical], start: phase.start_week, end: phase.end_week }];
-    return [
-      ...(taperStart > phase.start_week
-        ? [{ phase, name: V2_PHASE_NAME[phase.canonical], start: phase.start_week, end: taperStart - 1 }]
-        : []),
-      { phase, name: "taper" as const, start: taperStart, end: phase.end_week },
-    ];
-  });
+  const spans = phaseSpansOf(policy);
   const phaseNameOfWeek = new Map<number, MasterPlan["weeks"][number]["phase_name"]>();
   for (const span of spans) for (let week = span.start; week <= span.end; week += 1) phaseNameOfWeek.set(week, span.name);
 
@@ -116,9 +134,7 @@ export function buildV2Snapshot(input: SnapshotInput): MasterPlan {
       focus: `${span.phase.training_goal}（${span.phase.rationale}）`,
       weekly_distance_km_low: band?.weekly_km_min ?? Math.min(...km, 0),
       weekly_distance_km_high: band?.weekly_km_max ?? Math.max(...km, 0),
-      key_session_types: [
-        ...new Set(sessions.map((workout) => toKeySession(workout, raceDate, easyPace)?.type).filter((type) => type != null)),
-      ],
+      key_session_types: [...new Set(sessions.map((workout) => toKeySession(workout, raceDate, easyPace)?.type).filter((type) => type != null))],
       milestones: phaseMilestones(
         policy.milestones.filter((milestone) => milestone.phase === span.phase.name),
         weekEnd(planStartMonday, span.end),
@@ -127,16 +143,12 @@ export function buildV2Snapshot(input: SnapshotInput): MasterPlan {
         weekEnd(planStartMonday, span.end),
       ),
       key_workouts: [...new Set(sessions.map((workout) => workout.name))].join("；") || "以有氧课为主",
-      monitoring_triggers: policy.gates
-        .filter((gate) => gate.phase === span.phase.name)
-        .map((gate) => `${gate.signal}：${gate.criterion}`),
+      monitoring_triggers: policy.gates.filter((gate) => gate.phase === span.phase.name).map((gate) => `${gate.signal}：${gate.criterion}`),
       coach_note: `${span.phase.training_goal}；块模式 ${span.phase.block_mode}。`,
       strength: {
         sessions_per_week: request.availability.strength_sessions_per_week,
         focus: skeleton.strength_policy.find((item) => item.canonical === span.phase.canonical)?.strength_focus ?? "基础力量与稳定性",
-        timing: request.availability.strength_available_days.length
-          ? request.availability.strength_available_days.join("、")
-          : "每周两次，避开质量课",
+        timing: request.availability.strength_available_days.length ? request.availability.strength_available_days.join("、") : "每周两次，避开质量课",
       },
       recovery: {
         focus: "睡眠与恢复日优先",
@@ -215,8 +227,7 @@ function phaseMilestones(
     target: `${milestone.signal}：${milestone.criterion}`,
     completed_actual: null,
   }));
-  if (raceDate >= startDate && raceDate <= phaseEndDate)
-    milestones.push({ type: "race", date: raceDate, target: "目标比赛", completed_actual: null });
+  if (raceDate >= startDate && raceDate <= phaseEndDate) milestones.push({ type: "race", date: raceDate, target: "目标比赛", completed_actual: null });
   return milestones;
 }
 
@@ -226,8 +237,7 @@ function easyPaceOf(scheduled: ScheduledOutcome): number | null {
     for (const workout of week.sessions) {
       if (workout.type !== "E") continue;
       const totals = workoutTotals(workout);
-      if (totals.total_distance_m && totals.total_duration_s)
-        return Math.round(totals.total_duration_s / (totals.total_distance_m / 1000));
+      if (totals.total_distance_m && totals.total_duration_s) return Math.round(totals.total_duration_s / (totals.total_distance_m / 1000));
     }
   }
   return null;

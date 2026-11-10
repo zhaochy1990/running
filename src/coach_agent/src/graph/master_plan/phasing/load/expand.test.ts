@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ACTIVATION_MAX_KM } from "./reachability.js";
 import type { PhaseDivisionIntent } from "../intent.js";
 import { phase } from "../testSupport.js";
 import type { HabitualBaseline } from "./baseline.js";
 import { buildLoadPlan, expandLoad } from "./expand.js";
+import { ACTIVATION_MAX_KM, BUILD_CAP } from "./reachability.js";
 
 /** 展开器结构性质（devops#793 B/C/D 节）。 */
 
@@ -221,8 +221,7 @@ test("块结构标记：吸收周归前块（2026-11-09 拍板）——3+1 完�
   for (const b of absorbCuts) assert.ok(!b.absorb_weeks.includes(b.start_week), `块${b.block} 首周 W${b.start_week} 不应是吸收周`);
   // 块长 ≥2 不变式（2026-11-09 用户拍板）：单周块禁止（阶段尾溢出周并入同阶段
   // 相邻块）；例外=recovery（低量平独立语义单独成批，W1 单周合法）
-  for (const b of blocks)
-    assert.ok(b.end_week - b.start_week + 1 >= 2 || b.canonical === "recovery", `块${b.block} W${b.start_week}-W${b.end_week} 仅 1 周`);
+  for (const b of blocks) assert.ok(b.end_week - b.start_week + 1 >= 2 || b.canonical === "recovery", `块${b.block} W${b.start_week}-W${b.end_week} 仅 1 周`);
 });
 
 test("里程碑对齐：L2 出口里程碑落到对应阶段 end_week", () => {
@@ -324,4 +323,73 @@ test("taper 周 LR 削减（#809）：常规目标被 25→20 随深度递减的
   assert.equal(weeks.at(-1)!.lr, null);
   // 反向参照：同级常规建设周不被 taper 带修剪（顶格 32）
   assert.ok(weeks.some((w) => w.role === "progress" && w.canonical !== "recovery" && (w.lr ?? 0) > 25));
+});
+
+// ── historyKm（#858 滚动自适应）：已完成的计划周周量取实际完成值 ──────────────
+
+test("historyKm 等价性：不带（缺省）与带空数组逐位一致——master 首生成路径行为不变", () => {
+  const withoutHistory = expandLoad({ intent: makeIntent(), runwayWeeks: 16, baseline, recentWeeksKm: [58, 62, 55, 60] });
+  const withEmpty = expandLoad({ intent: makeIntent(), runwayWeeks: 16, baseline, recentWeeksKm: [58, 62, 55, 60], historyKm: [] });
+  assert.deepEqual(withEmpty, withoutHistory);
+});
+
+test("historyKm 混合展开：历史周直取实际值（含吸收周位），后续周 prev4 吃到真实历史而非重建计划值", () => {
+  // 对照（无历史）：W2..W7 重建计划值 ≈ 从 60km 种子爬到带中位
+  const control = expandLoad({ intent: makeIntent(), runwayWeeks: 16, baseline, recentWeeksKm: [58, 62, 55, 60] });
+  // 低实际史：前 5 个计划周（W1 recovery + W2-6 foundation，含 W5 吸收位）每周只跑 40km
+  const historyKm = [40, 40, 40, 40, 40];
+  const mixed = expandLoad({ intent: makeIntent(), runwayWeeks: 16, baseline, recentWeeksKm: [58, 62, 55, 60], historyKm });
+
+  // 历史周 km=实际值（吸收位 W5 也取实际量、role 照旧标 absorb）
+  for (const [index, km] of historyKm.entries()) assert.equal(mixed.weeks[index]!.km, km, `W${index + 1} 应取实际值`);
+  assert.equal(mixed.weeks[4]!.role, "absorb", "吸收周位照旧标 absorb");
+  assert.equal(control.weeks[4]!.role, "absorb");
+
+  // prev4 含实际值：W6（history 末周+1）的 km 被 BUILD_CAP×rollMean(40) 压制，
+  // 显著低于无 history 对照（对照的 prev4 已全部是重建计划值 ≈60+）
+  const nextWeek = mixed.weeks[historyKm.length]!;
+  const controlNext = control.weeks[historyKm.length]!;
+  assert.ok(nextWeek.km <= BUILD_CAP * 40 + 0.5, `W${nextWeek.week} km=${nextWeek.km} 应被实际史 rollMean 压制（≤${BUILD_CAP * 40}）`);
+  assert.ok(nextWeek.km < controlNext.km - 8, `混合 W${nextWeek.week}=${nextWeek.km} 应显著低于对照 ${controlNext.km}`);
+  // 自适应传导：批窗周收紧后逐周从实际史位重新爬坡（仍 ≤ 帽）
+  const batch = mixed.weeks.slice(historyKm.length, historyKm.length + 3).map((w) => w.km);
+  const controlBatch = control.weeks.slice(historyKm.length, historyKm.length + 3).map((w) => w.km);
+  assert.ok(batch.reduce((a, b) => a + b, 0) < controlBatch.reduce((a, b) => a + b, 0) * 0.9, `批周量和 mixed=${batch} 应 < 0.9×对照=${controlBatch}`);
+  // canonical/block/lr/q 结构照常：与对照的相位、块序完全一致（量不同、结构同）
+  assert.deepEqual(
+    mixed.weeks.map((w) => [w.canonical, w.block, w.role]),
+    control.weeks.map((w) => [w.canonical, w.block, w.role]),
+  );
+});
+
+test("historyKm 覆盖吸收/taper 位的事实语义：计划量构造规则（×0.75、削减曲线）不适用已发生的事实", () => {
+  // W5=absorb 位、只跑 40：km=40（不是 40×0.75 也不是重建值）；对照不带史时该周为重建×0.75
+  const mixed = expandLoad({ intent: makeIntent(), runwayWeeks: 16, baseline, recentWeeksKm: [58, 62, 55, 60], historyKm: [40, 40, 40, 40, 40] });
+  assert.equal(mixed.weeks[4]!.km, 40);
+});
+
+test("historyKm 门只审计划周（#858）：超带/尖峰/不单调的实际史不是违规对象，六门全过（真实在跑超带场景镜像）", () => {
+  // 镜像 2026-11-10 真实验收现场：用户 W1 实际 104.7（对 actual4≈66 尖峰、超带 60-72）、
+  // W2=81.4 / W3=77.9 超带——全是事实。门若照审 → H1（W1 尖峰）+L1（三周超带）+
+  // L3（LR 单调✗）挂；门只审计划周 → 全过，且 detail 标注事实上下文。
+  const historyKm = [104.7, 81.4, 77.9];
+  const plan = buildLoadPlan({ intent: makeIntent(), runwayWeeks: 16, baseline, recentWeeksKm: [66, 66, 66, 66], historyKm });
+  const failed = plan.checks.filter((c) => !c.pass);
+  assert.deepEqual(failed, [], `failed=${failed.map((c) => `${c.id}:${c.detail}`)}`);
+  for (const check of plan.checks.filter((c) => c.id !== "L4 taper" && c.id !== "L2 节奏3+1"))
+    assert.match(check.detail, /历史3周为事实只作上下文/, `${check.id} detail 应标注事实上下文`);
+  // 计划周仍被门管：构造一个 ACWR 违规的计划周（无历史对照同样挂——门未放松）
+  const noHistory = buildLoadPlan({ intent: makeIntent(), runwayWeeks: 16, baseline, recentWeeksKm: [66, 66, 66, 66] });
+  assert.deepEqual(
+    noHistory.checks.filter((c) => !c.pass).map((c) => c.id),
+    [],
+    "无历史对照基线应全过",
+  );
+});
+
+test("historyKm 门等价性：historyKm=[] 与缺省的 checks 逐位一致（master 首生成不变）", () => {
+  const base = buildLoadPlan({ intent: makeIntent(), runwayWeeks: 16, baseline, recentWeeksKm: [58, 62, 55, 60] });
+  const empty = buildLoadPlan({ intent: makeIntent(), runwayWeeks: 16, baseline, recentWeeksKm: [58, 62, 55, 60], historyKm: [] });
+  assert.deepEqual(empty.checks, base.checks);
+  assert.deepEqual(empty.weeks, base.weeks);
 });

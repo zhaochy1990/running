@@ -22,6 +22,7 @@ const ABSORB_EVERY = 4;
 const ABSORB_FACTOR = 0.75;
 /** taper 曲线削至赛周：缺省削减 40%（30-50% 带内），赛周=比赛+激活。 */
 const TAPER_CURVE = 0.45;
+
 /**
  * 赛周 km=比赛里程+激活（#806 弃 0.55×平台投影）：丹尼尔斯 FM 赛周激活原教义
  * 10-15km@MP（老 kernel skeletonPrompt 同款规则），激活量随平台位在带内缩放。
@@ -35,6 +36,7 @@ const TAPER_CURVE = 0.45;
  * 台会劈叉）。
  */
 import { RACE_DAILY_SHARE } from "./reachability.js";
+
 /** 短跑道（≤8 周）禁用吸收周（#806 拍板①）：短块峰值后单调递减至赛周，全局 3+1 计数不注入短块。 */
 const SHORT_ABSORB_MAX_WEEKS = 8;
 /** 块内微阶梯（质感项）：三周 0.97/1/1.03 微递进而非平台直排。 */
@@ -79,6 +81,16 @@ export interface LoadInput {
   baseline: HabitualBaseline;
   /** 赛前实际完成周序列（补零口径，取末 4 周作滚动均值种子）。 */
   recentWeeksKm: number[];
+  /**
+   * 历史实际完成周（#858 滚动自适应）：下标 i = 计划第 i+1 周的实际完成 km，
+   * 只含已完成整周（不含进行中的当前周）。主循环 w ≤ historyKm.length 时该周
+   * km 直取实际值（canonical/role/block/lr/q 照常按政策位计算——吸收周位照旧
+   * 标 absorb，只是量取实际），后续周的 prev4 滚动均值因此吃到真实历史而非
+   * 展开器自建的重建计划值（否则到第 5 周 actual4 已被重建值完全稀释、
+   * 「量随实际完成度变化」断裂）。缺省（master 首生成路径）不传，行为与
+   * 原实现逐位一致。
+   */
+  historyKm?: number[];
 }
 
 const RECOVERY_POLICY: RecoveryScenarioPolicy[] = [
@@ -148,7 +160,7 @@ export function rollingSeed(baseline: HabitualBaseline, recentWeeksKm: number[])
 
 /** 展开主循环（全局贪心）：逐周前向构造，产出周骨架 + 块标记 + 里程碑对齐。 */
 export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadBlock[]; milestones: MilestoneAlignment[] } {
-  const { intent, runwayWeeks: N, baseline, recentWeeksKm } = input;
+  const { intent, runwayWeeks: N, baseline, recentWeeksKm, historyKm } = input;
   const phases = [...intent.phases].sort((a, b) => a.start_week - b.start_week);
   const phaseAt = (w: number) => phases.find((p) => p.start_week <= w && w <= p.end_week) ?? phases.at(-1)!;
   const taperW = Math.min(intent.taper_weeks, 3);
@@ -220,6 +232,11 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
       role = absorb ? "absorb" : "progress";
       if (absorb) km *= ABSORB_FACTOR;
     }
+    // 历史实际周覆盖（#858）：已完成的计划周周量取实际完成值——role/canonical/
+    // block/lr/q 照常按政策位计算（吸收周位照旧标 absorb），只有量换成事实。
+    // 覆盖必须放在所有分支之后：吸收 ×0.75 与 taper 削减都是「计划量」的构造
+    // 规则，不适用已经发生的事实。
+    if (historyKm != null && w <= historyKm.length) km = historyKm[w - 1]!;
 
     const lrCap = km < LR_LOW_VOLUME_WEEK_KM ? LR_SHARE_LOW_VOLUME : LR_SHARE;
     const lrFloor = Math.max(LR_FLOOR_KM, lr8 * 1.2);
@@ -328,7 +345,7 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
 /** 生成入口：展开 + 六条验收门，产出完整五件套（门用与展开器同源的滚动种子）。 */
 export function buildLoadPlan(input: LoadInput): LoadPlan {
   const { weeks, blocks, milestones } = expandLoad(input);
-  const checks = validateLoad(input.intent, weeks, rollingSeed(input.baseline, input.recentWeeksKm));
+  const checks = validateLoad(input.intent, weeks, rollingSeed(input.baseline, input.recentWeeksKm), input.historyKm?.length ?? 0);
   return {
     weeks,
     blocks,

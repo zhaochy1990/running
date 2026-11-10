@@ -93,6 +93,35 @@ export function normalizeWeeklyPlan(input: unknown): WeeklyPlan {
   });
 }
 
+/**
+ * 滚动投影追加字段（#858 PR-A Round 1）：全部可选——存量 weekly-plan/v1 文档
+ * （LLM 周课图产物）不含这些字段仍合法，Go 侧 json 解码忽略未知字段；滚动
+ * 内核（coach_agent graph/rolling）确定性填充。详见 weekly_plan/rolling.ts。
+ */
+const RollingExtensionFields = {
+  /** 计划内周号（第几周）。 */
+  week_index: z.number().int().positive().optional(),
+  /** v2 阶段名（final_quality 按 taper_weeks 劈 marathon/taper）。 */
+  phase_name: z.string().min(1).optional(),
+  /** 阶段 training_goal+rationale。 */
+  phase_goal: z.string().min(1).optional(),
+  /** 该阶段出口里程碑一句话。 */
+  milestone_note: z.string().min(1).optional(),
+  /** = 骨架周 km（低/高同值——L3 给的是点目标不是带）。 */
+  target_weekly_km_low: z.number().nonnegative().optional(),
+  target_weekly_km_high: z.number().nonnegative().optional(),
+  /** 再生周（L3 canonical=recovery；absorb 是 3+1 降量周不算）。 */
+  is_recovery_week: z.boolean().optional(),
+  /** 周计划剂量（L4b 负荷序列该周 loadPt 求和）。 */
+  planned_dose: z.number().nonnegative().optional(),
+  /** 周日点的 acute/chronic 投影（chronic=0 时 null）。 */
+  load_ratio_projection: z.number().nullable().optional(),
+  /** 新骨架 vs 存量骨架该周偏差（%，1 位小数）。 */
+  km_deviation_pct: z.number().optional(),
+  /** 内容层来源（llm=模型产物；fallback=模板兜底）。 */
+  source: z.enum(["llm", "fallback"]).optional(),
+};
+
 /** Canonical content_version=2 contract for generated weekly plans. */
 export const WeeklyPlanSchema = z
   .strictObject({
@@ -102,6 +131,7 @@ export const WeeklyPlanSchema = z
     nutrition: z.array(PlannedNutritionSchema).length(7),
     notes_md: z.string().nullable(),
     coach_notes: z.string().nullable(),
+    ...RollingExtensionFields,
   })
   .superRefine((plan, context) => {
     const weekStart = plan.week_name.slice(0, 10);

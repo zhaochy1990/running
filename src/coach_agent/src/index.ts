@@ -25,7 +25,6 @@ export type {
   CoachToolRuntime,
 } from "./agents/coachAgent.js";
 export { CoachContext, createCoachAgent } from "./agents/coachAgent.js";
-export type { CoachRaceTargetRef, RaceTargetBindingGateway, RaceTargetCandidate } from "./tools/raceStrategyContext.js";
 export { flushLangfuse, isLangfuseEnabled } from "./agents/langfuse.js";
 export { assertWeeksLinkedToPhases, masterPlanToContent } from "./agents/training/content.js";
 export type { CoachTurnScopeValue } from "./agents/turnScope.js";
@@ -46,10 +45,13 @@ export {
   MasterPlanSchema,
 } from "./graph/master_plan/index.js";
 export { createMasterPlanLlmModels } from "./graph/master_plan/llm/index.js";
+export type { RollingDeps, RollingOutcome, RollingWindow } from "./graph/rolling/index.js";
+export { buildWeeklyDocs, computeRollingWindow, fromMasterArtifact, runRollingProjection } from "./graph/rolling/index.js";
 export { createWeeklyPlanGeneratorGraph } from "./graph/weekly_plan/index.js";
 export type { AskUserQuestionPayload } from "./tools/askUserQuestions.js";
 export { ASK_USER_QUESTION_KIND } from "./tools/askUserQuestions.js";
 export type { ActivityFeelWriter } from "./tools/feel.js";
+export type { CoachRaceTargetRef, RaceTargetBindingGateway, RaceTargetCandidate } from "./tools/raceStrategyContext.js";
 export {
   formatTokenUsageReport,
   LlmTokenUsageTracker,
