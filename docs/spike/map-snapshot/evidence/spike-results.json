@@ -1,0 +1,40 @@
+{
+  "capturedAt": "2026-11-10T07:37:49.241Z",
+  "systemInfo": {
+    "SDKVersion": "3.18.0",
+    "platform": "devtools",
+    "version": "8.0.5"
+  },
+  "results": [
+    {
+      "id": "V0",
+      "name": "环境",
+      "status": "info",
+      "detail": "基础库 3.18.0；平台 devtools；skyline: {\"isSupported\":false,\"reason\":\"a-b test not enabled\",\"version\":\"1.4.23\"}"
+    },
+    {
+      "id": "V1a",
+      "name": "MapContext.snapshot 存在性",
+      "status": "fail",
+      "detail": "typeof ctx.snapshot = undefined；wx.canIUse('MapContext.snapshot') = false；wx.canIUse('Snapshot.takeSnapshot') = true；MapContext 原型链方法: constructor,constructor,__defineGetter__,__defineSetter__,hasOwnProperty,__lookupGetter__,__lookupSetter__,isPrototypeOf,propertyIsEnumerable,toString,valueOf,__proto__,toLocaleString；实例自有键: getCenterLocation,getRegion,getScale,includePoints,moveToLocation,translateMarker,setIndoorFloor,getIndoorFloor,setIndoorMaskColor,getRotate,getSkew,eraseLines,setCenterOffset,addCustomLayer,removeCustomLayer,moveAlong,initMarkerCluster,addMarkers,removeMarkers,on,off,once,toScreenLocation,fromScreenLocation,addGroundOverlay,updateGroundOverlay,removeGroundOverlay,openMapApp,setLocMarkerIcon,addVisualLayer,removeVisualLayer,addArc,removeArc,setBoundary,executeVisualLayerCommand"
+    },
+    {
+      "id": "V2",
+      "name": "includePoints 缩放/中心确定性（禁交互下重复 fit）",
+      "status": "pass",
+      "detail": "两次 fit 后 region 一致: true；region 包含轨迹 bbox: true；run1 SW(31.21565,121.53916) NE(31.22555,121.55953)；run2 SW(31.21565,121.53916) NE(31.22555,121.55953)；目标 bbox lat 31.21660~31.22460 lng 121.54340~121.55529"
+    },
+    {
+      "id": "V3",
+      "name": "离屏地图可行性（仍渲染）",
+      "status": "pass",
+      "detail": "离屏 includePoints+getRegion: 成功 SW(31.21565,121.53849) NE(31.22555,121.56020)；离屏 snapshot: N/A（V1a 已证 API 不存在）"
+    },
+    {
+      "id": "SUM",
+      "name": "方案 A 结论",
+      "status": "fail",
+      "detail": "MapContext.snapshot API 不存在（typings 5.2.3/基础库 3.17.0 亦无此 API，运行时证实）→ 方案 A 前提不成立，退方案 B（腾讯静态图 API）"
+    }
+  ]
+}

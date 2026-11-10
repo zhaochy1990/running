@@ -1,7 +1,12 @@
 {
   "description": "STRIDE 微信小程序",
   "packOptions": {
-    "ignore": [],
+    "ignore": [
+      {
+        "type": "folder",
+        "value": "spike"
+      }
+    ],
     "include": []
   },
   "setting": {

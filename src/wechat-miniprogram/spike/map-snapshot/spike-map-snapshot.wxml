@@ -1,0 +1,54 @@
+<!-- Spike #943（stride-devops）：方案 A 三验证点。
+  map A 在屏可见；map B 用 position:fixed 移出屏幕但保持渲染（离屏可行性）。
+  结论以 results 列表 + 自动化截图为准。 -->
+<view class="spike">
+  <view class="spike__hint">stride-devops#943 · 三验证点跑批页，证据由自动化采集</view>
+
+  <view class="section">
+    <view class="section__title">V1/V2 · 在屏地图（禁交互）</view>
+    <map
+      id="onScreenMap"
+      class="map"
+      latitude="{{center.latitude}}"
+      longitude="{{center.longitude}}"
+      polyline="{{polylines}}"
+      markers="{{markers}}"
+      include-points="{{fitPoints}}"
+      enable-scroll="{{false}}"
+      enable-zoom="{{false}}"
+      enable-rotate="{{false}}"
+      enable-overlooking="{{false}}"
+      show-location="{{false}}"
+    />
+  </view>
+
+  <view class="section">
+    <view class="section__title">V3 · 离屏地图（fixed 移出屏幕，仍渲染）</view>
+    <map
+      id="offscreenMap"
+      class="map map--offscreen"
+      latitude="{{center.latitude}}"
+      longitude="{{center.longitude}}"
+      polyline="{{polylines}}"
+      markers="{{markers}}"
+      include-points="{{fitPoints}}"
+      enable-scroll="{{false}}"
+      enable-zoom="{{false}}"
+      enable-rotate="{{false}}"
+      enable-overlooking="{{false}}"
+      show-location="{{false}}"
+    />
+  </view>
+
+  <view class="section">
+    <view class="section__title">结果</view>
+    <view wx:for="{{results}}" wx:key="id" class="result result--{{item.status}}">
+      <view class="result__head">
+        <text class="result__id">{{item.id}}</text>
+        <text class="result__status">{{item.status}}</text>
+      </view>
+      <view class="result__name">{{item.name}}</view>
+      <view class="result__detail">{{item.detail}}</view>
+    </view>
+  </view>
+</view>
