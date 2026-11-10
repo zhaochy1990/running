@@ -1,6 +1,8 @@
 import {
   createMasterPlanGraph,
   createMasterPlanLlmModels,
+  type MasterPlanContextProvider,
+  type MasterPlanLlmModels,
   createWeeklyPlanGeneratorGraph,
   DataProviderMasterPlanContextProvider,
   DataProviderWeeklyPlanContextProvider,
@@ -18,13 +20,30 @@ import { toWeeklyPlanGraphShim, type WeeklyPlanGraphShim } from "../kernel/weekl
  * directly and builds its own `weekly_plan` LLM internally.
  */
 
-export function masterPlanGraph(coachConfig: ReturnType<typeof loadConfig>, dataProvider: MySqlDataProvider): MasterPlanGraphShim {
-  const llmModels = createMasterPlanLlmModels({
+/** master 与 rolling 共用的 LLM 装配（rolling 只 Pick phasing/content 两件）。 */
+export function masterLlmModels(coachConfig: ReturnType<typeof loadConfig>): MasterPlanLlmModels {
+  return createMasterPlanLlmModels({
     masterPlanModel: getAgentConfig(coachConfig, "master_plan"),
     phasingModel: getAgentConfig(coachConfig, "phasing"),
     contentModel: getAgentConfig(coachConfig, "master_plan"),
   });
-  return toMasterPlanGraphShim(createMasterPlanGraph({ contextProvider: new DataProviderMasterPlanContextProvider(dataProvider), ...llmModels }));
+}
+
+export function masterPlanContextProvider(dataProvider: MySqlDataProvider): MasterPlanContextProvider {
+  return new DataProviderMasterPlanContextProvider(dataProvider);
+}
+
+export function masterPlanGraph(coachConfig: ReturnType<typeof loadConfig>, dataProvider: MySqlDataProvider): MasterPlanGraphShim {
+  const llmModels = masterLlmModels(coachConfig);
+  return toMasterPlanGraphShim(createMasterPlanGraph({ contextProvider: masterPlanContextProvider(dataProvider), ...llmModels }));
+}
+
+/** 滚动 job 装配（#858）：与 master 图同款 provider + models（不重跑 L2，phasing 仅为装配形状保留）。 */
+export function rollingDeps(coachConfig: ReturnType<typeof loadConfig>, dataProvider: MySqlDataProvider): {
+  contextProvider: MasterPlanContextProvider;
+  models: Pick<MasterPlanLlmModels, "phasingModel" | "contentModel">;
+} {
+  return { contextProvider: masterPlanContextProvider(dataProvider), models: masterLlmModels(coachConfig) };
 }
 
 export function weeklyPlanGraph(coachConfig: ReturnType<typeof loadConfig>, dataProvider: MySqlDataProvider): WeeklyPlanGraphShim {

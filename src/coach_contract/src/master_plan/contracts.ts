@@ -2,6 +2,7 @@ import { z } from "zod/v4";
 import { AssessmentFactsSchema, GoalAssessmentSchema } from "./assessment-schemas.js";
 import { DanielsAuditSchema, LoadPlanSchema, MasterPlanAnchorSchema, PhaseDivisionIntentSchema } from "./policy.js";
 import { MasterPlanSchema } from "./schemas.js";
+import { WeeklyPlanSchema } from "../weekly_plan/schema.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -151,6 +152,12 @@ const CompletedOutcomeSchema = OutcomeIdentitySchema.extend({
       skeleton: LoadPlanSchema,
       anchor: MasterPlanAnchorSchema,
       audit: DanielsAuditSchema,
+      /**
+       * 首批每周的周课文档（#858 PR-A：L4 完整产物不再被 v2 快照收缩丢弃）。
+       * 全可选——老产物与 weekly_docs 尚未生成的路径不受影响；rolling job 与
+       * worker 落库通道据此做首批物化（weekly-plan/v1 含滚动扩展字段）。
+       */
+      weekly_docs: z.array(WeeklyPlanSchema).optional(),
       artifact_revision: z.int().positive(),
       warnings: z.array(z.string()),
     })

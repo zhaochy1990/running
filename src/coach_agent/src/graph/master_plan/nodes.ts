@@ -27,6 +27,7 @@ import {
   MasterPlanSchema,
   type PhaseDivisionIntent,
   PhaseDivisionIntentSchema,
+  type WeeklyPlan,
   addDays,
   planningStartDate,
   shanghaiDay,
@@ -55,6 +56,7 @@ import type { GateCheck } from "./phasing/gates.js";
 import { buildWeeklySeries, habitualBaseline } from "./phasing/load/baseline.js";
 import { buildLoadPlan } from "./phasing/load/expand.js";
 import { infrastructureFailure, logSwallowedFailure, logger, modelFailure, qualityFailure } from "./nodes/shared.js";
+import { buildWeeklyDocs } from "../rolling/weeklyDocs.js";
 import { buildV2Snapshot } from "./v2Snapshot.js";
 
 interface GoalAssessmentModel {
@@ -101,6 +103,8 @@ export const GraphState = new StateSchema({
   audit: DanielsAuditSchema.optional(),
   /** 首期课表快照（v2 形状）。 */
   plan: MasterPlanSchema.optional(),
+  /** 首批每周的周课文档（#858 PR-A：完整 L4 产物不再被 v2 快照收缩丢弃）。 */
+  weeklyDocs: z.array(z.custom<WeeklyPlan>()).optional(),
   artifactRevision: z.int().positive().default(1),
   outcome: MasterPlanGraphOutcomeSchema.optional(),
 });
@@ -527,6 +531,7 @@ export class MasterPlanNodes {
           skeleton: state.skeleton!,
           anchor: state.anchor!,
           audit: state.audit!,
+          ...(state.weeklyDocs != null ? { weekly_docs: state.weeklyDocs } : {}),
           artifact_revision: state.artifactRevision,
           warnings: warningsOf(state),
         },
@@ -537,19 +542,32 @@ export class MasterPlanNodes {
   /** 条件边助手：任何节点返回 outcome 即终止整条链。 */
   readonly stopOr = (next: string) => (state: typeof GraphState.State) => (state.outcome ? END : next);
 
-  /** 快照组装（独立节点，finalize 只做终检）。 */
+  /** 快照组装（独立节点，finalize 只做终检）：v2 快照 + 首批周课文档（#858）。 */
   readonly snapshotPlan = (state: typeof GraphState.State) => {
     const { request } = required(state);
     try {
+      const planStartMonday = planningStartDate(asOfOf(request));
       const plan = buildV2Snapshot({
         policy: state.policy!,
         skeleton: state.skeleton!,
         scheduled: state.scheduled!,
         request,
-        planStartMonday: planningStartDate(asOfOf(request)),
+        planStartMonday,
         generatedAt: generatedAtOf(request),
       });
-      return { plan: MasterPlanSchema.parse(plan) };
+      // 首批周课文档（单一真源 buildWeeklyDocs）：scheduled=merged 批产物、
+      // batchRows=首批门控后的 contentInput.rows；首批 skeletonNew=skeletonStored
+      // （无偏差，km_deviation_pct 全 0）；首批全是未来周，不做追赶冻结。
+      const weeklyDocs = buildWeeklyDocs({
+        scheduled: state.scheduled!,
+        batchRows: state.contentInput!.rows,
+        policy: state.policy!,
+        skeletonNew: state.skeleton!,
+        skeletonStored: state.skeleton!,
+        planStartMonday,
+        athlete: { weeklyRunDaysMax: request.availability.weekly_run_days_max },
+      });
+      return { plan: MasterPlanSchema.parse(plan), weeklyDocs };
     } catch (error) {
       logSwallowedFailure("snapshotPlan", error);
       return {

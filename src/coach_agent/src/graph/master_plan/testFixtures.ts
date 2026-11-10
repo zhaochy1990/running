@@ -488,8 +488,71 @@ export function createTestGoalAssessment() {
 /**
  * v3 completed 产物的最小合法样本（worker runner 测试用）：政策包四段 + 首期快照，
  * 四条跨契约不变量都成立。故意只有 1 阶段 1 周——runner 只关心 outcome 的搬运。
+ * `weeklyDocs` > 0 时按 #858 附上首批周课文档（第 1..N 周，planStart=2026-08-10）。
  */
-export function createTestCompletedOutcomeV3(overrides: { totalWeeks?: number; revision?: number } = {}) {
+export function createTestWeeklyPlanDoc(weekIndex: number) {
+  const weekStart = addDays("2026-08-10", (weekIndex - 1) * 7);
+  const weekEnd = addDays(weekStart, 6);
+  const folder = `${weekStart}_${weekEnd.slice(5)}`;
+  const restOfDay = (offset: number) => ({
+    schema: "plan-session/v1" as const,
+    date: addDays(weekStart, offset),
+    session_index: 0,
+    kind: "rest" as const,
+    summary: "休息",
+    notes_md: null,
+    total_distance_m: null,
+    total_duration_s: null,
+    estimated_dose: null,
+    spec: null,
+  });
+  return {
+    schema: "weekly-plan/v1" as const,
+    week_name: folder,
+    sessions: [
+      {
+        schema: "plan-session/v1" as const,
+        date: weekStart,
+        session_index: 0,
+        kind: "run" as const,
+        summary: "有氧跑",
+        notes_md: null,
+        total_distance_m: 8000,
+        total_duration_s: 2880,
+        estimated_dose: 47.2,
+        spec: null,
+      },
+      ...Array.from({ length: 6 }, (_, offset) => restOfDay(offset + 1)),
+    ],
+    nutrition: Array.from({ length: 7 }, (_, offset) => ({
+      schema: "plan-nutrition/v1" as const,
+      date: addDays(weekStart, offset),
+      kcal_target: null,
+      carbs_g: null,
+      protein_g: null,
+      fat_g: null,
+      water_ml: null,
+      meals: [],
+      notes_md: null,
+    })),
+    notes_md: null,
+    coach_notes: `建立有氧基础；第 ${weekIndex} 周（progress）`,
+    week_index: weekIndex,
+    phase_name: "base",
+    phase_goal: "建立有氧基础（赛季初有氧储备不足）",
+    target_weekly_km_low: 65,
+    target_weekly_km_high: 65,
+    is_recovery_week: false,
+    planned_dose: 210.5,
+    load_ratio_projection: null,
+    km_deviation_pct: 0,
+    source: "llm" as const,
+  };
+}
+
+export function createTestCompletedOutcomeV3(
+  overrides: { totalWeeks?: number; revision?: number; weeklyDocs?: number } = {},
+) {
   const weeks = overrides.totalWeeks ?? 1;
   const plan = createTestMasterPlan();
   const single = {
@@ -578,6 +641,9 @@ export function createTestCompletedOutcomeV3(overrides: { totalWeeks?: number; r
         items: [{ item: "W1 Q 配额", verdict: "pass" as const, expectation: "进度周 1 节 T", actual: "1 节 T" }],
         summary: { pass: 1, warn: 0, fail: 0 },
       },
+      ...(overrides.weeklyDocs != null && overrides.weeklyDocs > 0
+        ? { weekly_docs: Array.from({ length: overrides.weeklyDocs }, (_, index) => createTestWeeklyPlanDoc(index + 1)) }
+        : {}),
       artifact_revision: overrides.revision ?? 1,
       warnings: [],
     },

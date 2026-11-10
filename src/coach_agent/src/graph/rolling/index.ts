@@ -8,6 +8,7 @@
 
 export type { MasterPlanArtifact, RollingDeps, RollingOutcome, RollingProjectionInput } from "./projection.js";
 export { fromMasterArtifact, runRollingProjection } from "./projection.js";
+export { fromStoredContent } from "./storedContent.js";
 export type { WeeklyDocsInput } from "./weeklyDocs.js";
 export { buildWeeklyDocs, freezePastSessions } from "./weeklyDocs.js";
 export type { RollingWindow } from "./window.js";

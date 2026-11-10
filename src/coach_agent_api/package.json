@@ -20,6 +20,7 @@
     "test:weekly-plan": "npm run build:all && node dist/scripts/test_weekly_plan.js",
     "test:weekly-plan-graph": "npm run build:all && node dist/scripts/test_weekly_plan_graph.js",
     "test:model": "npm run build:all && node dist/scripts/test_model.js",
+    "test:rolling-e2e": "npm run build && node dist/scripts/test_rolling_e2e.js",
     "format": "biome format --write src scripts tests",
     "check": "biome check src scripts tests",
     "check:fix": "biome check --write src scripts tests",

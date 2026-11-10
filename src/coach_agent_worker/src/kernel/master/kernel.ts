@@ -43,7 +43,7 @@ export function toMasterPlanGraphShim(graph: unknown): MasterPlanGraphShim {
  * stable code; the kernel's own `infrastructure_failure` decision throws a
  * plain (retryable) error so the dispatcher's retry policy applies.
  */
-/** kernel 完整产物（#859）：plan 之外，政策数据一起返回落库。 */
+/** kernel 完整产物（#859）：plan 之外，政策数据一起返回落库；#858 附首批周课文档。 */
 export interface MasterKernelResult {
   plan: MasterPlan;
   revision: number;
@@ -52,6 +52,8 @@ export interface MasterKernelResult {
   skeleton: import("@stride/contract").LoadPlan;
   anchor: import("@stride/contract").MasterPlanAnchor;
   audit: import("@stride/contract").DanielsAudit;
+  /** 首批周课文档（#858 PR-A；老 kernel 产物缺省为空数组）。 */
+  weeklyDocs: import("@stride/contract").WeeklyPlan[];
 }
 
 export async function runMasterKernel(
@@ -99,6 +101,7 @@ export async function runMasterKernel(
     skeleton: outcome.artifact.skeleton,
     anchor: outcome.artifact.anchor,
     audit: outcome.artifact.audit,
+    weeklyDocs: outcome.artifact.weekly_docs ?? [],
   };
 }
 

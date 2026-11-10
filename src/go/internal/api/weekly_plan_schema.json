@@ -1009,6 +1009,58 @@
           "type": "null"
         }
       ]
+    },
+    "week_index": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "phase_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "phase_goal": {
+      "type": "string",
+      "minLength": 1
+    },
+    "milestone_note": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target_weekly_km_low": {
+      "type": "number",
+      "minimum": 0
+    },
+    "target_weekly_km_high": {
+      "type": "number",
+      "minimum": 0
+    },
+    "is_recovery_week": {
+      "type": "boolean"
+    },
+    "planned_dose": {
+      "type": "number",
+      "minimum": 0
+    },
+    "load_ratio_projection": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "km_deviation_pct": {
+      "type": "number"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "llm",
+        "fallback"
+      ]
     }
   },
   "required": [

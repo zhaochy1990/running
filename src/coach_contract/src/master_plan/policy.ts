@@ -204,5 +204,10 @@ export const MasterPlanV3Schema = MasterPlanSchema.extend({
   audit: DanielsAuditSchema,
   /** 首期课表快照的生成日；块界重生成后以 weekly 投影为准（spec §9）。 */
   snapshot_as_of: DaySchema,
+  /**
+   * 训练可用性（#858 PR-A，全可选——v3 写路径落地前的存量行没有该字段）：
+   * 滚动 job 从存量 content 构造 RollingMasterInput 需要 weekly_run_days_max。
+   */
+  availability: z.strictObject({ weekly_run_days_max: z.int().min(1).max(7) }).optional(),
 });
 export type MasterPlanV3 = z.infer<typeof MasterPlanV3Schema>;

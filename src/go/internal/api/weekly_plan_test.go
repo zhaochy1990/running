@@ -32,15 +32,31 @@ type fakeWeeklyPlanStore struct {
 	lastDateFrom     string
 	lastDateTo       string
 	lastWeekStart    string
-	feedback         map[string]storage.WeeklyFeedback
-	now              time.Time
+	// rolling batch channel (#858): the link the fake apply would resolve and
+	// what the last call actually received.
+	currentMasterPlanID    string
+	lastAppliedMasterPlan  string
+	lastAppliedRevision    int64
+	lastAppliedContinueRev bool
+	feedback               map[string]storage.WeeklyFeedback
+	now                    time.Time
 }
 
 func (f *fakeWeeklyPlanStore) ApplyStructuredWeeklyPlan(
-	_ context.Context, userID, weekStart, content string, replacement *storage.WeeklyPlanReplacement,
+	_ context.Context, userID, weekStart, content string, replacement *storage.WeeklyPlanReplacement, opts ...storage.WeeklyPlanApplyOptions,
 ) (*storage.WeeklyPlan, *storage.WeeklyPlan, error) {
 	if f.getErr != nil {
 		return nil, nil, f.getErr
+	}
+	var options storage.WeeklyPlanApplyOptions
+	if len(opts) > 0 {
+		options = opts[0]
+	}
+	f.lastAppliedContinueRev = options.ContinueRevision
+	if options.MasterPlanID != nil {
+		f.lastAppliedMasterPlan = *options.MasterPlanID
+	} else {
+		f.lastAppliedMasterPlan = f.currentMasterPlanID
 	}
 	plans := f.plans[userID]
 	var replaced *storage.WeeklyPlan
@@ -64,12 +80,23 @@ func (f *fakeWeeklyPlanStore) ApplyStructuredWeeklyPlan(
 	if replaced == nil && replacement != nil {
 		return nil, nil, storage.ErrWeeklyPlanConflict
 	}
+	revision := int64(1)
+	if options.ContinueRevision && replaced != nil {
+		revision = replaced.Revision + 1
+	}
+	var masterPlanID *string
+	if f.lastAppliedMasterPlan != "" {
+		id := f.lastAppliedMasterPlan
+		masterPlanID = &id
+	}
 	created := storage.WeeklyPlan{
 		PlanID: "applied-plan", UserID: userID, WeekStart: weekStart,
+		MasterPlanID:   masterPlanID,
 		ContentVersion: storage.WeeklyPlanContentStructured, Content: content,
-		Status: storage.WeeklyPlanStatusActive, Revision: 1,
+		Status: storage.WeeklyPlanStatusActive, Revision: revision,
 		CreatedAt: f.now, UpdatedAt: f.now,
 	}
+	f.lastAppliedRevision = revision
 	f.plans[userID] = append(kept, created)
 	return &created, replaced, nil
 }

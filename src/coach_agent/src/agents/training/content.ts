@@ -12,8 +12,11 @@ import type { MasterPlan } from "@stride/contract";
  * #585: the transformed doc is no longer persisted by the coach — it rides the
  * card (and the plan-job's result_json) and lands in master_plan only when the
  * athlete applies it.
+ *
+ * #858: `availability`（至少 weekly_run_days_max）随 content 落库——滚动 job 从
+ * DB 读 content 构造 RollingMasterInput 时需要；Go 读路径按 map 透传未知字段。
  */
-export function masterPlanToContent(plan: MasterPlan, goalId: string): Record<string, unknown> {
+export function masterPlanToContent(plan: MasterPlan, goalId: string, availability?: { weekly_run_days_max: number }): Record<string, unknown> {
   const phaseIdByIndex = plan.phases.map((_, index) => `phase-${index + 1}`);
 
   const phases = plan.phases.map((phase, phaseIndex) => ({
@@ -54,6 +57,7 @@ export function masterPlanToContent(plan: MasterPlan, goalId: string): Record<st
   return {
     ...plan,
     goal: { ...plan.goal, goal_id: goalId },
+    ...(availability != null ? { availability: { weekly_run_days_max: availability.weekly_run_days_max } } : {}),
     phases,
     milestones,
     weeks,

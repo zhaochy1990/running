@@ -26,6 +26,21 @@ type WeeklyPlanReplacement struct {
 	Revision int64
 }
 
+// WeeklyPlanApplyOptions tunes ApplyStructuredWeeklyPlan for the internal
+// rolling batch channel (#858). The zero value keeps the admin apply path's
+// behaviour: link the row to the user's current master plan (nil when none)
+// and restart the new row's revision at 1.
+type WeeklyPlanApplyOptions struct {
+	// MasterPlanID, when set, overrides the link derived from the user's
+	// current master plan. The internal caller (the rolling worker) already
+	// validated the plan it generated against, so the link is exact.
+	MasterPlanID *string
+	// ContinueRevision makes the replacement row continue the replaced row's
+	// revision (old+1) instead of restarting at 1 — rolling re-deliveries then
+	// surface as a monotonically increasing revision per week.
+	ContinueRevision bool
+}
+
 func (s *Store) AutoMigrateWeeklyPlan(ctx context.Context) error {
 	db := s.db.WithContext(ctx)
 	// #585 convergence on an existing table: the draft intermediate state is
@@ -201,9 +216,11 @@ func (s *Store) GetActiveWeeklyPlan(ctx context.Context, userID, weekStart strin
 // Shanghai week. Replacing an active row requires its exact plan ID and revision;
 // that row is archived in the same transaction before the new active row is
 // inserted. All rows for the user/week are locked so the active transition is
-// serialized. The new plan has its own identity and therefore starts at revision 1.
+// serialized. The new plan has its own identity and therefore starts at revision 1
+// (WeeklyPlanApplyOptions.ContinueRevision opts into old+1 for the rolling batch
+// channel; MasterPlanID overrides the current-master-plan link).
 func (s *Store) ApplyStructuredWeeklyPlan(
-	ctx context.Context, userID, weekStart, content string, replacement *WeeklyPlanReplacement,
+	ctx context.Context, userID, weekStart, content string, replacement *WeeklyPlanReplacement, opts ...WeeklyPlanApplyOptions,
 ) (*WeeklyPlan, *WeeklyPlan, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
@@ -216,6 +233,10 @@ func (s *Store) ApplyStructuredWeeklyPlan(
 	if start.Weekday() != time.Monday {
 		return nil, nil, fmt.Errorf("storage: week_start must be a Monday")
 	}
+	var options WeeklyPlanApplyOptions
+	if len(opts) > 0 {
+		options = opts[0]
+	}
 
 	var created *WeeklyPlan
 	var replaced *WeeklyPlan
@@ -223,15 +244,21 @@ func (s *Store) ApplyStructuredWeeklyPlan(
 		created = nil
 		replaced = nil
 		// Link the new weekly plan to the athlete's active master plan. When the
-		// user has no active master plan the link stays nil by design.
-		masterPlan, err := s.GetCurrentMasterPlan(ctx, uid)
-		if err != nil {
-			return fmt.Errorf("storage: resolve active master plan: %w", err)
-		}
+		// user has no active master plan the link stays nil by design. The
+		// rolling batch channel passes the exact plan id it generated against.
 		var masterPlanID *string
-		if masterPlan != nil {
-			id := masterPlan.PlanID
+		if options.MasterPlanID != nil {
+			id := *options.MasterPlanID
 			masterPlanID = &id
+		} else {
+			masterPlan, err := s.GetCurrentMasterPlan(ctx, uid)
+			if err != nil {
+				return fmt.Errorf("storage: resolve active master plan: %w", err)
+			}
+			if masterPlan != nil {
+				id := masterPlan.PlanID
+				masterPlanID = &id
+			}
 		}
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			var rows []WeeklyPlan
@@ -271,12 +298,16 @@ func (s *Store) ApplyStructuredWeeklyPlan(
 			}
 
 			activeSlot := WeeklyPlanStatusActive
+			revision := int64(1)
+			if options.ContinueRevision && replaced != nil {
+				revision = replaced.Revision + 1
+			}
 			row := &WeeklyPlan{
 				PlanID: uuid.NewString(), UserID: uid, WeekStart: weekStart,
 				MasterPlanID:   masterPlanID,
 				ContentVersion: WeeklyPlanContentStructured, Content: content,
 				Status: WeeklyPlanStatusActive, StatusSlot: &activeSlot,
-				Revision: 1, CreatedAt: now, UpdatedAt: now,
+				Revision: revision, CreatedAt: now, UpdatedAt: now,
 			}
 			if err := tx.Create(row).Error; err != nil {
 				if isDuplicateKey(err) {

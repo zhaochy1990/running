@@ -571,6 +571,9 @@ func (s *Service) Router() *gin.Engine {
 	authed.GET("/api/internal/jobs/:job_id", s.getInternalJob)
 	authed.POST("/api/internal/jobs/:job_id/transition", s.transitionJob)
 	authed.POST("/api/internal/jobs/stale-running", s.failStaleRunningJobs)
+	// Rolling weekly materialization channel (#858 PR-A): the TS worker applies
+	// weekly docs in batches and lists materialized weeks (internal tier only).
+	s.weeklyPlan.registerInternal(authed)
 	// Internal-tier sync user list (devops#661): the daily/weekly GHA
 	// workflows' user source, replacing data/.slug_aliases.json.
 	authed.GET("/api/internal/sync-users", s.listSyncUsers)

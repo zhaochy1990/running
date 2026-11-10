@@ -1174,12 +1174,12 @@ export const OPENAPI_DOCUMENT = {
         properties: {
           job_type: {
             type: "string",
-            enum: ["generate_master_plan", "generate_weekly_plan"],
+            enum: ["generate_master_plan", "generate_weekly_plan", "generate_rolling_block"],
           },
           request: {
             type: "object",
             description:
-              "The kernel request, schema depends on job_type (MasterPlanGraphRequest for generate_master_plan, WeeklyPlanGeneratorRequest for generate_weekly_plan). Re-validated server-side.",
+              "The kernel request, schema depends on job_type (MasterPlanGraphRequest for generate_master_plan, WeeklyPlanGeneratorRequest for generate_weekly_plan, RollingJobRequest for generate_rolling_block). Re-validated server-side.",
             additionalProperties: true,
           },
           idempotency_key: {

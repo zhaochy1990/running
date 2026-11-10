@@ -39,14 +39,16 @@ export type {
 } from "./data/weeklyPlanContextProvider.js";
 export { DataProviderWeeklyPlanContextProvider } from "./data/weeklyPlanContextProvider.js";
 export { FrozenMasterPlanContextProvider } from "./graph/master_plan/context.js";
+export type { MasterPlanContextProvider } from "./graph/master_plan/context.js";
 export {
   createMasterPlanGraph,
   MasterPlanGraphRequest,
   MasterPlanSchema,
 } from "./graph/master_plan/index.js";
 export { createMasterPlanLlmModels } from "./graph/master_plan/llm/index.js";
+export type { MasterPlanLlmModels } from "./graph/master_plan/llm/models.js";
 export type { RollingDeps, RollingOutcome, RollingWindow } from "./graph/rolling/index.js";
-export { buildWeeklyDocs, computeRollingWindow, fromMasterArtifact, runRollingProjection } from "./graph/rolling/index.js";
+export { buildWeeklyDocs, computeRollingWindow, fromMasterArtifact, fromStoredContent, runRollingProjection } from "./graph/rolling/index.js";
 export { createWeeklyPlanGeneratorGraph } from "./graph/weekly_plan/index.js";
 export type { AskUserQuestionPayload } from "./tools/askUserQuestions.js";
 export { ASK_USER_QUESTION_KIND } from "./tools/askUserQuestions.js";

@@ -451,3 +451,123 @@ func TestAutoMigrateMasterPlanConvergesLegacyRows(t *testing.T) {
 		t.Fatalf("statuses=%v, want [active superseded] (draft rows deleted, archived renamed)", statuses)
 	}
 }
+
+// ── 前瞻计划 id 收养（#858 PR-A R2）：master job 把 prospective UUID 写进 content ──
+// 并用它归链首批 weekly 行；apply 收养该 id，三方对齐
+// master_plan.plan_id == weekly_plan.master_plan_id == content.master_plan_id。
+
+func TestApplyStructuredMasterPlanAdoptsProspectivePlanID(t *testing.T) {
+	st := openTestStore(t)
+	migrateMasterPlan(t, st)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	goalID := uuid.NewString()
+	prospective := uuid.NewString()
+	content := `{"master_plan_id":"` + prospective + `","goal":{"goal_id":"` + goalID + `","target_time":"3:30:00"},"phases":[],"milestones":[],"weeks":[]}`
+
+	created, _, err := st.ApplyStructuredMasterPlan(ctx, userID, goalID, content, "", nil)
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if created.PlanID != prospective {
+		t.Fatalf("created plan_id = %s, want adopted %s", created.PlanID, prospective)
+	}
+	// 收养后读路径拿到的是同一个 id（weekly 行归链的也是它）。
+	current, err := st.GetCurrentMasterPlan(ctx, userID)
+	if err != nil {
+		t.Fatalf("get current: %v", err)
+	}
+	if current.PlanID != prospective {
+		t.Fatalf("current plan_id = %s, want %s", current.PlanID, prospective)
+	}
+
+	// 换季重生成：replacement flow 里 content 带新 prospective id 且 != 被替换行
+	// 的 plan_id → 收养新 id，旧 id 行转 superseded。
+	nextProspective := uuid.NewString()
+	nextContent := `{"master_plan_id":"` + nextProspective + `","goal":{"goal_id":"` + goalID + `","target_time":"3:25:00"},"phases":[],"milestones":[],"weeks":[]}`
+	replaced2, replacedRow, err := st.ApplyStructuredMasterPlan(ctx, userID, goalID, nextContent, "", &MasterPlanReplacement{PlanID: prospective, Revision: *current.Revision})
+	if err != nil {
+		t.Fatalf("replace apply: %v", err)
+	}
+	if replaced2.PlanID != nextProspective {
+		t.Fatalf("replacement plan_id = %s, want adopted %s", replaced2.PlanID, nextProspective)
+	}
+	if replacedRow == nil || replacedRow.PlanID != prospective || replacedRow.Status != MasterPlanStatusSuperseded {
+		t.Fatalf("replaced row = %+v", replacedRow)
+	}
+}
+
+func TestApplyStructuredMasterPlanProspectiveIDFallbacks(t *testing.T) {
+	st := openTestStore(t)
+	migrateMasterPlan(t, st)
+	ctx := context.Background()
+
+	goalID := uuid.NewString()
+	base := func(extra string) string {
+		return `{"goal":{"goal_id":"` + goalID + `","target_time":"3:30:00"},` + extra + `,"phases":[],"milestones":[],"weeks":[]}`
+	}
+
+	// 非法 uuid / 缺失 / 非 JSON：全部静默回退到生成 id。
+	userInvalid := uuid.NewString()
+	if created, _, err := st.ApplyStructuredMasterPlan(ctx, userInvalid, goalID, base(`"master_plan_id":"not-a-uuid"`), "", nil); err != nil {
+		t.Fatalf("invalid uuid apply: %v", err)
+	} else if created.PlanID == "not-a-uuid" || created.PlanID == "" {
+		t.Fatalf("invalid uuid must fall back, got %s", created.PlanID)
+	}
+	userMissing := uuid.NewString()
+	if created, _, err := st.ApplyStructuredMasterPlan(ctx, userMissing, goalID, base(`"notes":"none"`), "", nil); err != nil {
+		t.Fatalf("missing id apply: %v", err)
+	} else if created.PlanID == "" {
+		t.Fatalf("missing id must generate one")
+	}
+	userLegacy := uuid.NewString()
+	if created, _, err := st.ApplyStructuredMasterPlan(ctx, userLegacy, goalID, "not-json", "", nil); err != nil {
+		t.Fatalf("non-json apply: %v", err)
+	} else if created.PlanID == "" {
+		t.Fatalf("non-json content must generate an id")
+	}
+
+	// 与已存在行撞号（任意 status，别的用户）：回退生成 id，不收养。
+	userA := uuid.NewString()
+	taken := uuid.NewString()
+	owned, _, err := st.ApplyStructuredMasterPlan(ctx, userA, goalID, `{"master_plan_id":"`+taken+`","goal":{"goal_id":"`+goalID+`"}}`, "", nil)
+	if err != nil {
+		t.Fatalf("owner apply: %v", err)
+	}
+	if owned.PlanID != taken {
+		t.Fatalf("owner should have adopted %s, got %s", taken, owned.PlanID)
+	}
+	userB := uuid.NewString()
+	collide, _, err := st.ApplyStructuredMasterPlan(ctx, userB, goalID, `{"master_plan_id":"`+taken+`","goal":{"goal_id":"`+goalID+`"}}`, "", nil)
+	if err != nil {
+		t.Fatalf("collision apply: %v", err)
+	}
+	if collide.PlanID == taken {
+		t.Fatalf("collision with existing row must fall back to a fresh id, adopted %s", taken)
+	}
+
+	// 与被替换行同号：admin 刚确认 supersede 的 key 不能被新行复活 → 回退
+	//（count 预检先命中 replaced 行本身，adoptProspectiveMasterPlanID 的
+	// replaced 同号判定是同一事实的第二道防线）。
+	userC := uuid.NewString()
+	fresh := uuid.NewString()
+	first, _, err := st.ApplyStructuredMasterPlan(ctx, userC, goalID, `{"master_plan_id":"`+fresh+`","goal":{"goal_id":"`+goalID+`","target_time":"3:30:00"}}`, "", nil)
+	if err != nil {
+		t.Fatalf("userC first apply: %v", err)
+	}
+	if first.PlanID != fresh {
+		t.Fatalf("userC first apply should adopt %s, got %s", fresh, first.PlanID)
+	}
+	// 替换 content 再写同一个 id：它现在指向被替换行 → 必须回退到新 id。
+	second, replacedRow, err := st.ApplyStructuredMasterPlan(ctx, userC, goalID, `{"master_plan_id":"`+fresh+`","goal":{"goal_id":"`+goalID+`","target_time":"3:20:00"}}`, "", &MasterPlanReplacement{PlanID: first.PlanID, Revision: *first.Revision})
+	if err != nil {
+		t.Fatalf("userC replace apply: %v", err)
+	}
+	if replacedRow == nil || replacedRow.PlanID != fresh {
+		t.Fatalf("replaced row = %+v, want the adopted %s", replacedRow, fresh)
+	}
+	if second.PlanID == fresh {
+		t.Fatalf("replacement must not reuse the replaced row's plan_id %s", fresh)
+	}
+}
