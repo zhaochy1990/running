@@ -102,7 +102,9 @@ export function validateLoad(intent: PhaseDivisionIntent, weeks: LoadWeek[], rec
   const lrs = weeks.filter((w) => w.lr != null && w.role !== "taper" && w.role !== "race");
   const lrMax = Math.max(0, ...lrs.map((w) => w.lr ?? 0));
   const shareOk = lrs.every((w) => (w.lr ?? 0) <= w.km * (w.km < 60 ? 0.42 : 0.36) + TOLERANCE_KM);
-  const lrFloor = peak >= LR_LOW_VOLUME_PEAK_KM ? 22 : peak * LR_LOW_VOLUME_FLOOR_RATIO;
+  // 短跑道（≤4 周，2026-11-10 用户拍板）：跳过 LR 递进下限——不是在建长跑能力，
+  // 而是在维持状态去比赛；构造器的 LR 天花板（TAPER_LR_MAX_KM=25）已兜住上限
+  const lrFloor = weeks.length <= 4 ? 0 : peak >= LR_LOW_VOLUME_PEAK_KM ? 22 : peak * LR_LOW_VOLUME_FLOOR_RATIO;
   const monoOk = (() => {
     let seg: number[] = [];
     let prevCanonical = "";
