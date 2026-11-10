@@ -150,6 +150,7 @@ const mockCtx: PosterCtx = {
   lineCap: 'butt',
   font: '',
   globalAlpha: 1,
+  textAlign: 'left',
   fillRect() {},
   strokeRect() {},
   beginPath() {},

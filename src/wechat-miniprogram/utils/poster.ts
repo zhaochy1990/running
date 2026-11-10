@@ -121,29 +121,48 @@ export function z5Threshold(zones: Zone[]): number | null {
   return Math.round(top.range_min as number);
 }
 
-/** 分段 → 配速条：恢复圈不计；最快 = 有配速段里 avg_pace 最小者（≥2 段才标）。 */
-export function buildPaceBars(segments: Segment[]): { bars: PosterBar[]; header: string } | null {
+/** 有配速的非恢复分段（序号 = 剔除后计数；lap_type 随行，详情长图全量表
+ * devops#946 用它判断「每公里 / 分段」口径）。 */
+export interface PacedSplit {
+  secPerKm: number;
+  ordinal: number;
+  lapType: string;
+}
+
+/** 分段共用派生：恢复圈与无配速段剔除；最快 = avg_pace 最小者。
+ * fastestIdx = -1 表示不标最快（<2 段或全部同配速，与 lapPaceMarks 约定一致）。
+ * 概览卡配速条与详情长图全量表同走此处——表头与表内同源派生的单源保证。 */
+export function pacedKmSplits(segments: Segment[]): { splits: PacedSplit[]; fastestIdx: number } {
   const marks = lapPaceMarks(segments);
-  const paced: Array<{ seg: Segment; ordinal: number }> = [];
-  let ordinal = 0;
+  const splits: PacedSplit[] = [];
   segments.forEach((seg, i) => {
     if (marks[i].rest) return;
     if (seg.avg_pace == null || !(seg.avg_pace > 0)) return;
-    ordinal += 1;
-    paced.push({ seg, ordinal });
+    splits.push({ secPerKm: seg.avg_pace as number, ordinal: splits.length + 1, lapType: seg.lap_type });
   });
-  if (paced.length < 2) return null;
-
-  const paces = paced.map((p) => p.seg.avg_pace as number);
+  if (splits.length < 2) return { splits, fastestIdx: -1 };
+  const paces = splits.map((p) => p.secPerKm);
   const min = Math.min(...paces);
   const max = Math.max(...paces);
   // 全部同配速时不分高下（lapPaceMarks 同款约定），不标最快。
-  if (min === max) return { bars: paced.map((p) => ({ secPerKm: min, color: gradient3(0), fastest: false })), header: `${fmtPaceQuote(min)}/km` };
-  const fastestIdx = paced.findIndex((p) => p.seg.avg_pace === min);
+  if (min === max) return { splits, fastestIdx: -1 };
+  return { splits, fastestIdx: splits.findIndex((p) => p.secPerKm === min) };
+}
 
+/** 分段 → 配速条：恢复圈不计；最快 = 有配速段里 avg_pace 最小者（≥2 段才标）。 */
+export function buildPaceBars(segments: Segment[]): { bars: PosterBar[]; header: string } | null {
+  const { splits: paced, fastestIdx } = pacedKmSplits(segments);
+  if (paced.length < 2) return null;
+
+  const paces = paced.map((p) => p.secPerKm);
+  const min = Math.min(...paces);
+  // 全部同配速时不分高下（lapPaceMarks 同款约定），不标最快。
+  if (fastestIdx === -1) return { bars: paced.map((p) => ({ secPerKm: min, color: gradient3(0), fastest: false })), header: `${fmtPaceQuote(min)}/km` };
+
+  const max = Math.max(...paces);
   let bars = paced.map((p) => {
-    const t = max > min ? (max - (p.seg.avg_pace as number)) / (max - min) : 0;
-    return { secPerKm: p.seg.avg_pace as number, color: gradient3(t), fastest: false };
+    const t = max > min ? (max - p.secPerKm) / (max - min) : 0;
+    return { secPerKm: p.secPerKm, color: gradient3(t), fastest: false };
   });
   // 极端段数抽稀（保留最快段的位置语义：抽稀后重算最快）。
   if (bars.length > MAX_BARS) {
@@ -346,6 +365,7 @@ export interface PosterCtx {
   lineCap: CanvasLineCapLike;
   font: string;
   globalAlpha: number;
+  textAlign: 'left' | 'center' | 'right';
   fillRect(x: number, y: number, w: number, h: number): void;
   strokeRect(x: number, y: number, w: number, h: number): void;
   beginPath(): void;
@@ -387,7 +407,7 @@ export function ellipsize(text: string, maxWidth: number, measure: (s: string) =
 }
 
 /** 圆角白卡 + 发丝线描边（§3 风格语言的卡片基元）。 */
-function card(ctx: PosterCtx, t: PosterTheme, r: PosterRect, radius = 24): void {
+export function card(ctx: PosterCtx, t: PosterTheme, r: PosterRect, radius = 24): void {
   roundRect(ctx, r, radius);
   ctx.fillStyle = t.card;
   ctx.fill();
@@ -397,7 +417,7 @@ function card(ctx: PosterCtx, t: PosterTheme, r: PosterRect, radius = 24): void 
   ctx.stroke();
 }
 
-function roundRect(ctx: PosterCtx, r: PosterRect, radius: number): void {
+export function roundRect(ctx: PosterCtx, r: PosterRect, radius: number): void {
   ctx.beginPath();
   ctx.moveTo(r.x + radius, r.y);
   ctx.lineTo(r.x + r.w - radius, r.y);
@@ -411,8 +431,14 @@ function roundRect(ctx: PosterCtx, r: PosterRect, radius: number): void {
   ctx.closePath();
 }
 
-/** 品牌行 + 日期胶囊（底面文字：POC 用 bgInk/bgSub，非强调色）。 */
-function drawBrand(ctx: PosterCtx, t: PosterTheme, layout: PosterLayout, model: PosterModel): void {
+/** 品牌行 + 日期胶囊（底面文字：POC 用 bgInk/bgSub，非强调色）。
+ * posterDetail 长图（devops#946）共用，参数取结构最小集。 */
+export function drawBrand(
+  ctx: PosterCtx,
+  t: PosterTheme,
+  layout: Pick<PosterLayout, 'pad' | 'brandY' | 'contentRight'>,
+  model: Pick<PosterModel, 'dateCapsule'>,
+): void {
   ctx.fillStyle = t.ink;
   ctx.font = 'bold 34px sans-serif';
   ctx.fillText('砺跑 StrideWise', layout.pad, layout.brandY);
@@ -429,8 +455,14 @@ function drawBrand(ctx: PosterCtx, t: PosterTheme, layout: PosterLayout, model: 
   }
 }
 
-/** 课名（超长 ellipsize）+ chips：STRIDE 计划课 / 课型 / 运动类型。 */
-function drawTitle(ctx: PosterCtx, t: PosterTheme, layout: PosterLayout, model: PosterModel): void {
+/** 课名（超长 ellipsize）+ chips：STRIDE 计划课 / 课型 / 运动类型
+ * （posterDetail 长图共用，参数取结构最小集）。 */
+export function drawTitle(
+  ctx: PosterCtx,
+  t: PosterTheme,
+  layout: Pick<PosterLayout, 'pad' | 'titleY' | 'chips' | 'contentRight'>,
+  model: Pick<PosterModel, 'title' | 'isPlanned' | 'trainTypeLabel' | 'sportLabel'>,
+): void {
   ctx.fillStyle = t.ink;
   ctx.font = 'bold 60px sans-serif';
   const title = ellipsize(model.title, layout.contentRight - layout.pad, (s) => ctx.measureText(s).width);
@@ -461,7 +493,12 @@ function drawTitle(ctx: PosterCtx, t: PosterTheme, layout: PosterLayout, model: 
 function drawMap(ctx: PosterCtx, t: PosterTheme, layout: PosterLayout, mapImage: PosterImage | null, track: TrackPoint[][] | null): void {
   if (!layout.map || !layout.mapImage) return; // 无轨迹（力量训练等）：整卡不画
   card(ctx, t, layout.map);
-  const r = layout.mapImage;
+  drawMapLayer(ctx, t, layout.mapImage, mapImage, track);
+}
+
+/** 地图图像层：真图缩放进 r；缺图降级矢量轨迹（配速渐变）+ 起绿/终红点 +
+ * 「地图底图暂未开放」角标。posterDetail 长图（devops#946）与概览卡共用。 */
+export function drawMapLayer(ctx: PosterCtx, t: PosterTheme, r: PosterRect, mapImage: PosterImage | null, track: TrackPoint[][] | null): void {
   if (mapImage) {
     ctx.save();
     roundRect(ctx, r, 16);
@@ -705,12 +742,19 @@ export function drawPoster(
   drawGrid(ctx, t, layout, model);
   drawBars(ctx, t, layout, model);
   drawHr(ctx, t, layout, model);
-  drawFooterSignature(ctx, t, layout, model, o.userName);
+  drawFooterSignatureAt(ctx, t, layout, o.userName, model.dateFull);
 }
 
 /** 页脚署名：署名·日期 在左，品牌 slogan 在右（文档流内，不可能重叠）。
- * 整块收在 contentRight 内（抖音 9:16 上移出底部文案遮挡区）。 */
-function drawFooterSignature(ctx: PosterCtx, t: PosterTheme, layout: PosterLayout, model: PosterModel, userName: string): void {
+ * 整块收在 contentRight 内（抖音 9:16 上移出底部文案遮挡区）。
+ * posterDetail 长图共用，参数取结构最小集。 */
+export function drawFooterSignatureAt(
+  ctx: PosterCtx,
+  t: PosterTheme,
+  layout: Pick<PosterLayout, 'pad' | 'contentRight' | 'footerLineY' | 'footerTextY'>,
+  userName: string,
+  dateFull: string,
+): void {
   ctx.strokeStyle = t.hairline;
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -726,7 +770,7 @@ function drawFooterSignature(ctx: PosterCtx, t: PosterTheme, layout: PosterLayou
 
   ctx.fillStyle = t.ink;
   ctx.font = '28px sans-serif';
-  const parts = [userName, model.dateFull].filter(Boolean).join(' · ');
+  const parts = [userName, dateFull].filter(Boolean).join(' · ');
   const maxW = layout.contentRight - layout.pad * 2 - sloganW - 48;
   const signature = parts ? ellipsize(parts, maxW, (s) => ctx.measureText(s).width) : '';
   if (signature) ctx.fillText(signature, layout.pad, layout.footerTextY);

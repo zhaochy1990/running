@@ -95,6 +95,8 @@
 | **B（spike 后采纳）** | 腾讯位置服务静态图 WebService API | ✅ 服务端直出 PNG；path ≤2048 点/256 条（分段彩色可行）、size ≤1680×1200、scale=2；配额 1 万次/日/Key、5 QPS（个人）；GCJ-02 用 `utils/coord.ts`；Key 走后端代理不进前端包 |
 | C | 瓦片自拼（本 POC 方案） | 不推荐生产：高德瓦片非官方授权使用、OSM 国内可达性不稳 |
 
+**P4 详情长图落地（devops#946，2026-11-10）**：mp `utils/posterDetail.ts` 六节 canvas（01 八格总览/02 轨迹/03 配速曲线 3:30-7:00 快=高/04 心率曲线面积+Z5/05 区间横条/06 每公里全量表），缺节数据整卡跳过、序号顺延、总高自适应；配速分段与概览卡同源（poster.ts pacedKmSplits 单源），区间生产用 activity_zones（%max 五分法兜底，POC zones5 口径 <60/60-70/70-80/80-90/≥90），配速曲线通道优先、无 pace 通道时 dist+ts ±8 点推导兜底（POC build-data 同款）；颜色全走九色系 token（同 #947 纪律，ON_ACCENT 白字为 POC 既定口径）。渲染走「多段 canvas 纵向拼接」：每段 ≤1900 逻辑高按 dpr=2 绘制导出，再在 dpr=1 整幅画布 1:1 合成 1080×H（≤4000，经典 iOS 4096px/边限制内留余量；34km≈3600、全马≈3800 单张），超长课按节边界分多张随图集导出；出口在海报弹层平台行最右「详情长图」（devops#947 弹层内切换）。零 hex/九主题颜色闭包/分段与分张规划断言进 `utils/posterDetail.check.mts`（CI npm test 链）；E2E（微信开发者工具真渲染）挂 devops#949。
+
 **B 的 P2 落地（devops#944，2026-11-10）**：Go API 加静态图代理 `POST /api/users/me/poster/map`（`src/go/internal/api/postermap.go` + `src/go/internal/tencentlbs/`），key 走 `STRIDE_WORKER_TENCENT_LBS_API_KEY`（`tencent-lbs:` 配置节，未配 key 时代理返回 503 `map_proxy_not_configured`）。mp 侧 `utils/posterMap.ts` 组装配速分色 path（GCJ-02）+ 起终点 markers，任何失败降级矢量占位（真轨迹 + 配速渐变 +「地图底图暂未开放」角标），其余节正常出图；真图回归待 key 到位后挂 devops#949。
 
 其余生产要点：mp canvas 绘制（同构先例 workout-detail.ts / strategy.ts）；保存相册 util 需新写（全仓零命中，含权限拒绝引导）；主题色系 token 表沿用 `utils/theme.ts` 单源模式；标题超长 ellipsize；配速分段用后端 segments；attribution 方案随地图方案定。
@@ -107,7 +109,7 @@ v1 纯轨迹 → v2 OSM 真实地图四比例 → v3 guizang skill 双风格（�
 
 ## 7. 遗留与开放问题
 
-1. 详情长图/轨迹艺术卡未接高德源（仍 OSM）；~~4:5、1:1 未铺~~ 已铺（devops#948，2026-11-10：四比例 + 平台矩阵 + 抖音安全区避让 §3.1，同数据四比例回归进 `poster.check.mts`）
+1. ~~详情长图未接高德源~~（P4 devops#946 已走腾讯静态图代理，同 P2）；轨迹艺术卡未实现、未接高德源；~~4:5、1:1 未铺~~ 已铺（devops#948，2026-11-10：四比例 + 平台矩阵 + 抖音安全区避让 §3.1，同数据四比例回归进 `poster.check.mts`）
 2. ~~九主题色系库（晨光默认/海盐/薄荷冰/星紫/樱花/蜜柚/墨松/绯红鎏金/夜航）待用户砍调（樱花 vs 星紫区分度弱、夜航去留）~~ 已落地（2026-11-10，devops#947）：九套全量保留（票面验收=九套全量出图），POC VARIANTS 迁 `src/wechat-miniprogram/utils/posterThemes.ts`，海报弹层色卡圆点横滑选择器 + 偏好 storage 持久化；dark（夜航）切浅字逻辑随迁；`utils/posterThemes.check.mts` 对账进 CI（poster.ts 零 hex、九主题×四比例全量出图颜色闭包断言）
 3. 小程序码是否上海报（拉新入口）未拍板
 4. ~~抖音 9:16 安全区（右侧按钮栏/底部文案遮挡）未做针对性避让探索~~ 已做（devops#948 §3.1：保守实测口径常量 + 全节避让断言；真机校准挂 devops#949）
