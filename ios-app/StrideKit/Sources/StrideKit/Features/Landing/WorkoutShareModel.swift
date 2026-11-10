@@ -70,10 +70,13 @@ public final class WorkoutShareModel {
 
     private var app: AppModel?
     private var started = false
+    /// 选日弹层「今天」基准（测试可注入时钟，防日期依赖脆断）。
+    private let now: Date
 
-    public init(user: String, workout: String) {
+    public init(user: String, workout: String, now: Date = Date()) {
         self.user = user
         self.workout = workout
+        self.now = now
         if user.isEmpty || workout.isEmpty {
             loadState = .dead
         }
@@ -173,7 +176,7 @@ public final class WorkoutShareModel {
         guard ensureLogin() else { return }
         pendingPush = false
         sheetTitle = "保存到哪一天？"
-        sheetOptions = landingBuildPushDateOptions(plannedDate: sourceDate, plannedTag: "（原排期）")
+        sheetOptions = landingBuildPushDateOptions(plannedDate: sourceDate, plannedTag: "（原排期）", now: now)
         sheetVisible = true
     }
 
@@ -187,7 +190,7 @@ public final class WorkoutShareModel {
         // 未保存先走「保存并推送」：选完日先 upsert 再推（coach 卡同款先后链）。
         pendingPush = true
         sheetTitle = "保存并推送到哪一天？"
-        sheetOptions = landingBuildPushDateOptions(plannedDate: sourceDate, plannedTag: "（原排期）")
+        sheetOptions = landingBuildPushDateOptions(plannedDate: sourceDate, plannedTag: "（原排期）", now: now)
         sheetVisible = true
     }
 

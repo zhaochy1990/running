@@ -31,7 +31,11 @@ public struct TrainingHomeView: View {
                 sectionHeader("今日安排 · \(model.todayLabel)")
                 if let workout = model.workout {
                     workoutCard(workout)
-                } else if !model.loading {
+                } else if model.loading {
+                    // 空态判定必须等 loading 结束（devops#929/#941）：加载/跨周补拉
+                    // 期间渲染骨架，避免慢网先闪「今日无训练安排」假空态。
+                    workoutSkeletonCard
+                } else {
                     emptyCard
                 }
                 if let nutrition = model.nutrition {
@@ -43,6 +47,17 @@ public struct TrainingHomeView: View {
             .padding(.top, app.theme.current.space(.xs))
             .padding(.bottom, app.theme.current.space(.xxl))
         }
+        // 内容区左右轻扫切日（左滑=前一天 / 右滑=后一天，mp 7c592c67 同款）：
+        // 横向位移 ≥60pt 且 ≥2 倍纵向位移才判定（不干扰上下滚动），无时间门限。
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 20)
+                .onEnded { value in
+                    let dx = value.translation.width
+                    let dy = value.translation.height
+                    guard abs(dx) >= 60, abs(dx) >= abs(dy) * 2 else { return }
+                    model.shiftDay(dx < 0 ? -1 : 1)
+                }
+        )
         .background(app.theme.current.background)
         .navigationTitle("本周训练")
         .inlineNavigationTitle()
@@ -360,6 +375,21 @@ public struct TrainingHomeView: View {
         .padding(.vertical, app.theme.current.space(.xl))
     }
 
+    // MARK: - 加载骨架（devops#929/#941）
+
+    /// 训练卡加载骨架：标题/图表/文本三条脉冲占位（mp index workout-skeleton
+    /// 同构，6de91c32；loading 期间替代空态，数据到达后由上方分支接管）。
+    private var workoutSkeletonCard: some View {
+        card {
+            VStack(alignment: .leading, spacing: app.theme.current.space(.md)) {
+                SkeletonLine(widthRatio: 0.4, height: 22, theme: app.theme.current)
+                SkeletonLine(widthRatio: 1, height: 80, theme: app.theme.current)
+                SkeletonLine(widthRatio: 0.6, height: 14, theme: app.theme.current)
+            }
+        }
+        .accessibilityLabel("正在加载今日安排")
+    }
+
     @ViewBuilder
     private var toastView: some View {
         if let toast = model.toast {
@@ -375,6 +405,30 @@ public struct TrainingHomeView: View {
                     model.clearToast()
                 }
         }
+    }
+}
+
+// MARK: - 加载骨架占位行
+
+/// 骨架占位行：宽度按卡片内容宽比例，1.4s 呼吸脉冲（mp workout-skeleton-pulse
+/// 同节奏：opacity 1 ↔ 0.45）。
+private struct SkeletonLine: View {
+
+    let widthRatio: CGFloat
+    let height: CGFloat
+    let theme: any Theme
+    @State private var dim = false
+
+    var body: some View {
+        GeometryReader { geo in
+            RoundedRectangle(cornerRadius: 5)
+                .fill(theme.mutedTwo.opacity(0.18))
+                .frame(width: geo.size.width * widthRatio, height: height)
+                .opacity(dim ? 0.45 : 1)
+                .animation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true), value: dim)
+        }
+        .frame(height: height)
+        .onAppear { dim = true }
     }
 }
 

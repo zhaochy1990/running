@@ -26,6 +26,15 @@ import Testing
         return model
     }
 
+    // 上海 2026-10-29 12:00（UTC+8 → UTC 04:00）：对齐 sharedWorkoutBody 的
+    // 计划日，选日窗口（今天起 8 项）稳定含 2026-10-29（原实现取真实今天，
+    // 2026-10-30 起窗口滑出即脆断）。
+    private var plannedNoon: Date {
+        let components = DateComponents(timeZone: TimeZone(identifier: "UTC"),
+                                        year: 2026, month: 10, day: 29, hour: 4, minute: 0)
+        return Calendar(identifier: .gregorian).date(from: components)!
+    }
+
     private func sharedWorkoutBody() -> String {
         """
         {"kind":"run","name":"节奏课","summary":"阈","date":"2026-10-29",
@@ -45,7 +54,7 @@ import Testing
             200, jsonData(#"{"workout_id":"cw-9","date":"2026-10-29","source":"custom","pushed":false}"#)
         )])
 
-        let share = WorkoutShareModel(user: "u1", workout: "w1")
+        let share = WorkoutShareModel(user: "u1", workout: "w1", now: plannedNoon)
         await share.activate(app: app)
         #expect(share.loadState == .ready)
 
@@ -77,7 +86,7 @@ import Testing
             200, jsonData(#"{"provider":null,"provider_display_name":null,"logged_in":false,"email":null,"device":null,"last_sync_at":null,"capabilities":[]}"#)
         )])
 
-        let share = WorkoutShareModel(user: "u1", workout: "w1")
+        let share = WorkoutShareModel(user: "u1", workout: "w1", now: plannedNoon)
         await share.activate(app: app)
 
         share.pushTap()
@@ -115,7 +124,7 @@ import Testing
         let app = await makeApp(transport)
         await app.bootstrap()
 
-        let share = WorkoutShareModel(user: "u1", workout: "w1")
+        let share = WorkoutShareModel(user: "u1", workout: "w1", now: plannedNoon)
         await transport.plan("/api/workouts/shared/u1/w1", responses: [(200, jsonData(sharedWorkoutBody()))])
         await share.activate(app: app)
         share.saveTap()

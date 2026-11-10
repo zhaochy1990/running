@@ -23,6 +23,8 @@
 | D-menu-1 | 长按/更多菜单 | UI | 页面内「···」菜单 + 长按操作 | contextMenu / 显式按钮（iOS 惯例无「···」胶囊） | confirmed | 用户（#749 §8 D-13） | 2026-10-26 | 保留偏差：胶囊菜单移除，操作入口重排归各域票 |
 | D-share-1 | 朋友圈渠道 | 功能 | onShareTimeline 单页模式分享 | 仅单一路分享（ShareLink），timeline 渠道无对等 | confirmed | 用户（#749 §8 D-2） | 2026-10-26 | 放弃该功能：微信生态渠道，iOS 无对等；单一路分享用 universal link 承载 |
 | D-poster-1 | 海报保存交互 | UI | canvas 海报 → previewImage 长按保存 | 声明式海报 View + ImageRenderer + fullScreenCover 预览 + 显式「保存/分享」按钮 | confirmed | 用户（#749 §5 / D-9） | 2026-10-26 | 保留偏差：iOS 无长按保存惯例；需照片库写入权限文案（PR-8 落地） |
+| D-guest-1 | 游客模式 | 架构 | 游客浏览放行（app.ts checkAuth 免密未绑定 → 游客态继续浏览，数据页走各自游客空态；登录页「暂不登录」出口，authGate 微信审核合规链路） | 不做：维持强登录（未登录全屏 Login + redirect 回跳，D-auth-1 链路；公开落地页免登录浏览不受影响，A-share-6） | confirmed | 用户（11-10 拍板） | 2026-11-10 | 保留偏差：iOS 无微信免登身份可借，游客态价值有限；接受 App Store 5.1.1 相关审核风险（注销入口等既有合规增量继续生效，P-pedit-2） |
+| D-brand-1 | 品牌双口径 | UI | 砺跑 · 马拉松训练助手（mp 品牌名，分享文案 utils/share.ts 单源） | StrideWise · 马拉松训练助手（App 品牌，ShareCopy 拉丁优先口径；分流页/AASA 同口径） | confirmed | 用户（11-10 拍板） | 2026-11-10 | 保留偏差：双口径并存为拍板决议——mp 中文品牌面向微信生态、iOS 沿用 StrideWise；页面级默认文案差异已在 D-share-3 登记，本条收口全局品牌口径 |
 
 ## 引导账号域（PR-2 落地，devops#765）
 
