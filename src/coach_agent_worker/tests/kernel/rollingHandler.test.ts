@@ -43,6 +43,9 @@ class FakeWeeklyChannel {
   batches: Array<{ userId: string; masterPlanId: string; weeks: unknown[] }> = [];
   rows: Array<{ week_start: string; master_plan_id: string | null; revision: number }> = [];
   results: WeeklyPlanAppliedWeek[] = [];
+  /** 调整通道占位（rolling 流不触达；接口扩展自 AdjustmentChannel）。 */
+  pendingAdjustment: import("../../src/goClient/weeklyPlanClient.js").PendingAdjustmentRow | null = null;
+  refilled: Array<{ adjustmentId: string; reason: string; payload: string }> = [];
   async listWeeklyPlanWeeks(_userId: string, masterPlanId: string) {
     this.listedFor.push(masterPlanId);
     return this.rows;
@@ -50,6 +53,13 @@ class FakeWeeklyChannel {
   async batchApplyWeeklyPlans(userId: string, masterPlanId: string, weeks: unknown[]) {
     this.batches.push({ userId, masterPlanId, weeks });
     return this.results;
+  }
+  async getPendingAdjustment(): Promise<import("../../src/goClient/weeklyPlanClient.js").PendingAdjustmentRow | null> {
+    return this.pendingAdjustment;
+  }
+  async completeAdjustmentPayload(_userId: string, adjustmentId: string, reason: string, payload: string) {
+    this.refilled.push({ adjustmentId, reason, payload });
+    return this.pendingAdjustment!;
   }
 }
 

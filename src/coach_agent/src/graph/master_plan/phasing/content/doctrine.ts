@@ -67,6 +67,7 @@ C1 周量守恒（E 带区间可行性）｜C2 LR 唯一且=long_run_km ±1.5（
 
 【其它】
 - 每周 long_run_km=null 的周不排 LR（赛周）。
+- week_row 的 adjust_guidance（如有，#858 调整提案）= 本周调整指令（用户反馈原因的配方：降载消化/保课砍量/吸收已完成的训练/配速放缓一档等），本周课表必须按它执行，取舍优先级高于默认周期化形态；周量等量纲仍以行内 total_km 与 budget_hint 为准（配方已折算进骨架），guidance 只约束课表形态与取舍。
 - E 槽位数按 budget_hint 给的可行解走（通常 2-4 个；槽位容量不足会导致周量缺口无解——宁可按 hint 的槽数，不要自减）；不要发明 E 之外的有氧课形态。
 - 低温严格执行：不自由发明结构之外的形态；组数适配向 quality_family 倾斜。
 - purpose 写人话（给用户看），note 只写执行要点（怎么跑），不混 purpose 内容。`;
@@ -85,6 +86,12 @@ export interface ContentWeekRow {
   qualityFamily: string;
   /** 该周训练六带（projectZones 输出，s/km）。 */
   zones: PaceZones;
+  /**
+   * 周级调整指令（#858 PR-C 调整提案，可选）：用户反馈原因的配方语义
+   * （降载/保课/吸收/放缓一档等），进 payload 的 adjust_guidance——只有
+   * 调整投影（runAdjustProjection）填充，master/rolling 首批不传。
+   */
+  guidance?: string;
 }
 
 export interface ContentAthleteContext {
@@ -249,6 +256,7 @@ export function buildContentPayload(input: ContentGeneratorInput): Record<string
         quality_sessions: row.qualitySessions,
         quality_family: row.qualityFamily,
         pace_zones: row.zones,
+        ...(row.guidance != null && row.guidance.length > 0 ? { adjust_guidance: row.guidance } : {}),
         ...(eMid != null ? { e_pace_mid_s_per_km: Math.round(eMid), e_km_per_60min: Math.round((3600 / eMid) * 10) / 10 } : {}),
         budget_hint: budgetHint(row, athlete.weeklyRunDaysMax, race),
       };

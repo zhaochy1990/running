@@ -3,6 +3,7 @@ import {
   PLAN_JOB_TYPES,
   type PlanJob,
   type PlanJobType,
+  AdjustJobRequest,
   RollingJobRequest,
 } from "@stride/coach-agent-worker";
 import type { Context, Hono, MiddlewareHandler } from "hono";
@@ -114,7 +115,7 @@ async function readEnqueueRequest(
   // job is re-validated against `MasterPlanGraphRequest`, a `generate_rolling_block`
   // job against `RollingJobRequest` #858; the legacy `generate_weekly_plan` job
   // type is retired with its five-stage graph).
-  const schema = jobType === "generate_master_plan" ? MasterPlanGraphRequest : RollingJobRequest;
+  const schema = jobType === "generate_master_plan" ? MasterPlanGraphRequest : jobType === "generate_adjustment" ? AdjustJobRequest : RollingJobRequest;
   const parsed = schema.safeParse(value.request);
   if (!parsed.success) {
     return { ok: false, error: "invalid_request" };

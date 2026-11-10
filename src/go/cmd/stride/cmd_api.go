@@ -126,6 +126,9 @@ func runAPI() error {
 	if err := store.AutoMigrateWorkout(ctx); err != nil {
 		return err
 	}
+	if err := store.AutoMigratePlanAdjustment(ctx); err != nil {
+		return err
+	}
 	if err := store.AutoMigrateWeeklyFeedback(ctx); err != nil {
 		return err
 	}

@@ -21,7 +21,7 @@ export type PlanJobStatus = (typeof PLAN_JOB_STATUSES)[number];
  * retired — weekly content is produced by the master first-batch materialization
  * and the rolling projection (`generate_rolling_block`).
  */
-export const PLAN_JOB_TYPES = ["generate_master_plan", "generate_rolling_block"] as const;
+export const PLAN_JOB_TYPES = ["generate_master_plan", "generate_rolling_block", "generate_adjustment"] as const;
 export type PlanJobType = (typeof PLAN_JOB_TYPES)[number];
 
 /**
@@ -31,6 +31,7 @@ export type PlanJobType = (typeof PLAN_JOB_TYPES)[number];
 export const PLAN_JOB_ESTIMATED_DURATIONS_SECONDS: Record<PlanJobType, number> = {
   generate_master_plan: 300,
   generate_rolling_block: 300,
+  generate_adjustment: 300,
 };
 
 export interface PlanJob {

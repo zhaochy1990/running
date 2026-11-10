@@ -1,6 +1,6 @@
 /** Public surface of the plan-job domain — shared by the standalone worker and the coach chat service. */
 
-export { MasterPlanGraphRequest, RollingJobRequest } from "@stride/contract";
+export { AdjustJobRequest, MasterPlanGraphRequest, RollingJobRequest } from "@stride/contract";
 export * from "./config.js";
 export { MySqlDataProvider } from "./data/mysqlDataProvider.js";
 export { createPool, createStridePool, ensureDatabase } from "./db/mysql.js";

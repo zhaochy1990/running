@@ -5,6 +5,7 @@ import type { Handler } from "../job/errors.js";
 import type { PlanJobType } from "../job/model.js";
 import { createMasterPlanJobHandler } from "../kernel/master/handler.js";
 import type { MasterPlanGraphShim } from "../kernel/master/kernel.js";
+import { createAdjustJobHandler } from "../kernel/adjust/handler.js";
 import { createRollingJobHandler } from "../kernel/rolling/handler.js";
 
 export interface PlanJobHandlerDeps {
@@ -45,6 +46,16 @@ export function createPlanJobHandlers(deps: PlanJobHandlerDeps): Map<PlanJobType
         models: deps.rolling.models,
         masterPlans: deps.dataProvider,
         weeklyPlans: deps.weeklyPlans,
+      }),
+    ],
+    [
+      "generate_adjustment",
+      createAdjustJobHandler({
+        contextProvider: deps.rolling.contextProvider,
+        models: deps.rolling.models,
+        masterPlans: deps.dataProvider,
+        weeklyPlans: deps.weeklyPlans,
+        weeklyDocs: deps.dataProvider,
       }),
     ],
   ]);

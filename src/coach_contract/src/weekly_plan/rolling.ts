@@ -1,5 +1,6 @@
 import { z } from "zod/v4";
 import type { LoadPlan, MasterPlanAnchor, PhaseDivisionIntent } from "../master_plan/policy.js";
+import type { WeeklyPlan } from "./schema.js";
 
 /**
  * `generate_rolling_block` job 的请求契约（#858 PR-A Round 2）：滚动 job 不带
@@ -17,6 +18,55 @@ export const RollingJobRequest = z
   })
   .strict();
 export type RollingJobRequest = z.infer<typeof RollingJobRequest>;
+
+// ── #858 PR-C：调整提案（plan_adjustment / generate_adjustment）──────────────
+
+/**
+ * 追问原因六选一（票面 #858 定稿，与 coach_agent detect/detector 的 AskReason
+ * 同枚举——契约包不依赖 agent，此处单源声明、两侧注释互指）。
+ * injured 在本引擎 unsupported（PR-D 伤病模式接管），枚举含它仅为传输完整。
+ */
+export const ADJUST_REASONS = ["pace_unmet", "volume_unmet", "no_time", "injured", "ran_other", "over_delivered"] as const;
+export type AdjustReason = (typeof ADJUST_REASONS)[number];
+
+/**
+ * `generate_adjustment` job 的请求契约（#858 PR-C）：换因重生成通道。夜检/
+ * mp 先经 Go 内部端点建（或刷新）pending 提案行；用户在弹窗改选原因时，
+ * mp 调 coach_api enqueue 本 job（携带最终原因），worker 重跑调整投影并经
+ * 内部端点回填 pending 行 payload。`event_week_start`=触发本次调整的偏差周
+ * （周一 YYYY-MM-DD，与 plan_adjustment 行对齐）；`master_plan_id` 仅一致性
+ * 校验（同 rolling job 语义）。
+ */
+export const AdjustJobRequest = z
+  .object({
+    request_id: z.string().min(1),
+    /** 期望的 active master plan id（校验用，不驱动取数）。 */
+    master_plan_id: z.string().min(1).optional(),
+    /** 偏差事件周周一（YYYY-MM-DD；plan_adjustment.event_week_start 同值）。 */
+    event_week_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "event_week_start 须为 YYYY-MM-DD"),
+    /** 调用方已解析的最终原因（预判或用户改选；injured 由 handler 拦截为 permanent error）。 */
+    reason: z.enum(ADJUST_REASONS),
+    /** 生成时点（ISO instant；缺省=现在，内部归一上海日历日）。 */
+    as_of: z.string().datetime({ offset: true }).optional(),
+  })
+  .strict();
+export type AdjustJobRequest = z.infer<typeof AdjustJobRequest>;
+
+/**
+ * plan_adjustment.payload 的结构（#858 PR-C，TS 侧单源）：Go 存 LONGTEXT 原样
+ * JSON、API 透传，mp 直接消费。weekly_docs 为完整 weekly-plan/v1 文档数组
+ * （含 week_name），accept 时 Go 逐周 batch-apply 覆盖对应周行。
+ */
+export interface AdjustProposalPayload {
+  reason: AdjustReason;
+  window: { start_week: number; end_week: number };
+  weekly_docs: WeeklyPlan[];
+  /** 新周文档 target km vs 现 weekly 行的对照（弹窗展示「怎么改」）。 */
+  diff: Array<{ week: number; old_km: number; new_km: number }>;
+  /** detector 一句话证据（弹窗直接展示）。 */
+  evidence: string;
+  audit_summary: { pass: number; warn: number; fail: number };
+}
 
 /**
  * 滚动投影的 master 侧存量输入（#858 PR-A Round 1）：赛季开始时 master 图落库
