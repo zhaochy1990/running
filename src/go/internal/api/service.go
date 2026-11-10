@@ -226,6 +226,9 @@ type Config struct {
 	// PlanAdjustmentStore powers the #858 deviation consent flow (internal
 	// worker channel + user popup endpoints). Leave zero to run without.
 	PlanAdjustmentStore PlanAdjustmentStore
+	// PlanInjuryStore powers the #858 PR-D injury mode (self JWT lifecycle +
+	// internal scan/worker channel). Leave zero to run without.
+	PlanInjuryStore PlanInjuryStore
 
 	// Compliance declarations (user agreement / privacy policy / …). A public
 	// read surface plus an admin-only maintenance surface. Leave zero to run
@@ -374,6 +377,7 @@ type Service struct {
 	masterPlan      *masterPlanRoutes
 	weeklyPlan      *weeklyPlanRoutes
 	planAdjustment  *planAdjustmentRoutes
+	planInjury      *planInjuryRoutes
 	legalDocuments  *legalDocumentRoutes
 	raceCalendar    *raceCalendarRoutes
 	raceFavorites   *raceFavoriteRoutes
@@ -456,6 +460,7 @@ func NewService(cfg Config) *Service {
 		masterPlan:              newMasterPlanRoutes(cfg.MasterPlanStore, log),
 		weeklyPlan:              newWeeklyPlanRoutes(cfg.WeeklyPlanStore, cfg.WorkoutPusher, cfg.ScheduledWorkoutStore, cfg.BodyCompositionStore, log),
 		planAdjustment:          newPlanAdjustmentRoutes(cfg.PlanAdjustmentStore, log),
+		planInjury:              newPlanInjuryRoutes(cfg.PlanInjuryStore, log),
 		legalDocuments:          newLegalDocumentRoutes(cfg.LegalDocumentStore, log),
 		raceCalendar:            newRaceCalendarRoutes(cfg.RaceCalendarStore, cfg.RaceContentStore, log, cfg.RaceItemGeocoder),
 		raceFavorites:           newRaceFavoriteRoutes(cfg.RaceFavoriteStore, log),
@@ -531,6 +536,7 @@ func (s *Service) Router() *gin.Engine {
 	s.weeklyPlan.registerReads(authenticated)
 	s.weeklyPlan.registerAdminWrites(authenticated)
 	s.planAdjustment.registerUser(authenticated)
+	s.planInjury.registerUser(authenticated)
 	// Admin pipeline-status surface: global list + any-run detail. Mounted on
 	// the authenticated group (NOT the rejectAdminCaller child) so the admin
 	// JWT tier can use them; the handlers admit admin OR internal and deny users.
@@ -581,6 +587,7 @@ func (s *Service) Router() *gin.Engine {
 	// weekly docs in batches and lists materialized weeks (internal tier only).
 	s.weeklyPlan.registerInternal(authed)
 	s.planAdjustment.registerInternal(authed)
+	s.planInjury.registerInternal(authed)
 	// Internal-tier sync user list (devops#661): the daily/weekly GHA
 	// workflows' user source, replacing data/.slug_aliases.json.
 	authed.GET("/api/internal/sync-users", s.listSyncUsers)

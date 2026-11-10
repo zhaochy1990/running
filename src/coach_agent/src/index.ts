@@ -70,16 +70,22 @@ export type {
   RollingOutcome,
   RollingWindow,
 } from "./graph/rolling/index.js";
-// currentWeekOf/evaluateRollingWindow #858 PR-C 起供夜检扫描复用（批窗判定的可观测内核）。
+// currentWeekOf/evaluateRollingWindow #858 PR-C 起供夜检扫描复用（批窗判定的可观测内核）；
+// buildMaintenanceWeek/isMaintenanceWeeklyDoc #858 PR-D 起供伤病维持课（夜检+worker 复用）。
+export type { MaintenanceInput } from "./graph/rolling/index.js";
 export {
+  buildMaintenanceWeek,
   buildWeeklyDocs,
   computeRollingWindow,
   currentWeekOf,
   diffOfWeeks,
   evaluateAdjustWindow,
   evaluateRollingWindow,
+  freezePastSessions,
   fromMasterArtifact,
   fromStoredContent,
+  isMaintenanceWeeklyDoc,
+  MAINTENANCE_COACH_NOTE_PREFIX,
   recipeFor,
   runAdjustProjection,
   runRollingProjection,

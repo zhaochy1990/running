@@ -129,6 +129,11 @@ func runAPI() error {
 	if err := store.AutoMigratePlanAdjustment(ctx); err != nil {
 		return err
 	}
+	// plan_injury_state + plan_injury_checkin power the #858 PR-D injury mode
+	// (self lifecycle + internal scan/worker channel).
+	if err := store.AutoMigratePlanInjury(ctx); err != nil {
+		return err
+	}
 	if err := store.AutoMigrateWeeklyFeedback(ctx); err != nil {
 		return err
 	}
@@ -337,6 +342,8 @@ func runAPI() error {
 		AbilityBackfillJobType:  catalog.JobTypeAbility,
 		MasterPlanStore:         store,
 		WeeklyPlanStore:         store,
+		PlanAdjustmentStore:     store,
+		PlanInjuryStore:         store,
 		LegalDocumentStore:      store,
 		RaceCalendarStore:       store,
 		RaceFavoriteStore:       store,

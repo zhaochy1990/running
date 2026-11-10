@@ -64,6 +64,16 @@ class FakeWeeklyChannel {
   async upsertAdjustment(): Promise<import("../../src/goClient/weeklyPlanClient.js").PendingAdjustmentRow> {
     throw new Error("rolling job never upserts adjustments");
   }
+  /** 伤病通道占位（#858 PR-D；rolling 流不触达）。 */
+  injuryState: import("../../src/goClient/weeklyPlanClient.js").InjuryStateRow | null = null;
+  maintenanceWrites: number[] = [];
+  async getInjuryState(): Promise<import("../../src/goClient/weeklyPlanClient.js").InjuryStateRow | null> {
+    return this.injuryState;
+  }
+  async updateInjuryMaintenance(_userId: string, km: number): Promise<import("../../src/goClient/weeklyPlanClient.js").InjuryStateRow> {
+    this.maintenanceWrites.push(km);
+    return { master_plan_id: "", mode: "reduced", detail: "", maintenance_km: km, needs_verdict: false, last_checkin_day: null, last_checkin_answer: null };
+  }
 }
 
 function deps(overrides: Partial<RollingHandlerDeps> & { content?: Record<string, unknown>; projectionOutcome?: RollingOutcome } = {}): RollingHandlerDeps {

@@ -48,8 +48,8 @@ export const AdjustJobRequest = z
     reason: z.enum(ADJUST_REASONS),
     /**
      * #858 PR-C 夜检通道：true=无匹配 pending 行时**建行**而不是 no-op——
-     * worker 先跑检测+投影，经内部 upsert 端点落 pending 行（payload=投影
-     * 产物、question=检测证据润色的问句）。Go 侧事件已关闭（409）= no-op
+     * worker 先跑检测+投影，经内部 upsert 端点落 pending 行（payload=
+     * 投影产物、question=检测证据润色的问句）。Go 侧事件已关闭（409）= no-op
      * 成功（用户已答过，不重复追问）。mp 换因链路不带此标志。
      */
     create_pending: z.boolean().optional(),
@@ -58,6 +58,25 @@ export const AdjustJobRequest = z
   })
   .strict();
 export type AdjustJobRequest = z.infer<typeof AdjustJobRequest>;
+
+// ── #858 PR-D：伤病维持课（plan_injury / generate_maintenance）───────────────
+
+/**
+ * `generate_maintenance` job 的请求契约（#858 PR-D）：伤病减量模式（mode=reduced）
+ * 的维持周出课通道，零 LLM（buildMaintenanceWeek 确定性构造）。夜检（rolling-scan）
+ * 在伤病态下 enqueue；worker 读 active injury state（Go 内部端点）判定是否出课。
+ * `master_plan_id` 仅作一致性校验（同 rolling job 语义），`as_of` 缺省=现在。
+ */
+export const MaintenanceJobRequest = z
+  .object({
+    request_id: z.string().min(1),
+    /** 期望的 active master plan id（校验用，不驱动取数）。 */
+    master_plan_id: z.string().min(1).optional(),
+    /** 生成时点（ISO instant；缺省=现在，内部归一上海日历日）。 */
+    as_of: z.string().datetime({ offset: true }).optional(),
+  })
+  .strict();
+export type MaintenanceJobRequest = z.infer<typeof MaintenanceJobRequest>;
 
 /**
  * plan_adjustment.payload 的结构（#858 PR-C，TS 侧单源）：Go 存 LONGTEXT 原样

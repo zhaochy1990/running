@@ -6,6 +6,7 @@ import type { PlanJobType } from "../job/model.js";
 import { createMasterPlanJobHandler } from "../kernel/master/handler.js";
 import type { MasterPlanGraphShim } from "../kernel/master/kernel.js";
 import { createAdjustJobHandler } from "../kernel/adjust/handler.js";
+import { createMaintenanceJobHandler } from "../kernel/maintenance/handler.js";
 import { createRollingJobHandler } from "../kernel/rolling/handler.js";
 
 export interface PlanJobHandlerDeps {
@@ -53,6 +54,16 @@ export function createPlanJobHandlers(deps: PlanJobHandlerDeps): Map<PlanJobType
       createAdjustJobHandler({
         contextProvider: deps.rolling.contextProvider,
         models: deps.rolling.models,
+        masterPlans: deps.dataProvider,
+        weeklyPlans: deps.weeklyPlans,
+        weeklyDocs: deps.dataProvider,
+      }),
+    ],
+    [
+      // #858 PR-D 伤病维持课：零 LLM（确定性构造），仅需活动取数面（重估锚）。
+      "generate_maintenance",
+      createMaintenanceJobHandler({
+        contextProvider: deps.rolling.contextProvider,
         masterPlans: deps.dataProvider,
         weeklyPlans: deps.weeklyPlans,
         weeklyDocs: deps.dataProvider,

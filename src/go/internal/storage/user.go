@@ -294,6 +294,11 @@ var userOwnedDeletionModels = []any{
 	// point_products is deliberately absent — global content (same standing
 	// as roadmap_features) that erasure never touches.
 	&PointRedemption{}, &UserAddress{},
+	// #858 plan consent-flow rows: adjustment proposals and the injury-mode
+	// state + checkin history are plain user-owned rows (plan_adjustment was
+	// missing from PR-C — the coverage guard caught it together with the
+	// PR-D tables).
+	&PlanAdjustment{}, &PlanInjuryState{}, &PlanInjuryCheckin{},
 }
 
 // deletionTableName resolves a deletion model's table name for error

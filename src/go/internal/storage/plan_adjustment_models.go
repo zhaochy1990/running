@@ -31,7 +31,7 @@ type PlanAdjustment struct {
 	// refilled it yet (mp shows the generating state).
 	Payload *string `gorm:"column:payload;type:longtext;check:ck_plan_adjustment_payload,status != 'pending' OR JSON_VALID(payload)"`
 	// Question is the popup headline (deviation evidence phrased as a question).
-	Question string `gorm:"column:question;size:512;not null"`
+	Question  string    `gorm:"column:question;size:512;not null"`
 	CreatedAt time.Time `gorm:"column:created_at;type:datetime(3);not null;autoCreateTime:false"`
 	UpdatedAt time.Time `gorm:"column:updated_at;type:datetime(3);not null;autoUpdateTime:false"`
 }

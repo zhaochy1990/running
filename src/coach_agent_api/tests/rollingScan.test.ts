@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { masterPlanToContent, type Activity } from "@stride/coach-agent";
+import { buildMaintenanceWeek, masterPlanToContent, type Activity } from "@stride/coach-agent";
 import { createTestCompletedOutcomeV3, createTestWeeklyPlanDoc } from "@stride/coach-agent/test-fixtures";
-import type { WeeklyPlanWeekRow } from "@stride/coach-agent-worker";
+import type { InjuryStateRow, WeeklyPlanWeekRow } from "@stride/coach-agent-worker";
 import { createApp } from "../src/app.js";
 import {
   assertDecisionConsistent,
@@ -174,6 +174,76 @@ test("判定：最近完整周早于计划起点 → 偏差侧跳过", () => {
   assert.match(decision.deviationNote, /早于计划起点/);
 });
 
+// ── #858 PR-D 伤病前置（有 active 行 → 跳过滚动/偏差，维持课单独驱动）────────
+
+test("伤病判定：mode=reduced → 只投 generate_maintenance，跳过滚动+偏差", () => {
+  const decision = judgeUserScan({
+    plan: scanPlan(),
+    context: { weeklyRows: [], eventWeekDoc: null, eventWeekActivities: [], injury: injuryState({ mode: "reduced" }) },
+    asOf: AS_OF,
+  });
+  assert.equal(decision.injury?.mode, "reduced");
+  assert.equal(decision.injury?.replan_suggest, false);
+  assert.equal(decision.rollingWindow, null);
+  assert.match(decision.rollingNote, /伤病模式（mode=reduced）/);
+  assert.equal(decision.deviation, null);
+  assert.equal(decision.actions.length, 1);
+  const action = decision.actions[0]!;
+  assert.equal(action.kind, "maintenance");
+  assert.equal(action.jobType, "generate_maintenance");
+  // 幂等键=maintenance:{userId}:{当前周周一}:{扫描日}
+  assert.equal(action.idempotencyKey, `maintenance:${USER_ID}:2026-09-14:20260914`);
+  assert.equal(action.input.master_plan_id, CONTENT_MASTER_ID);
+});
+
+test("伤病判定：reduced 且当前周已有维持行 → 不重复投", () => {
+  const decision = judgeUserScan({
+    plan: scanPlan(),
+    context: { weeklyRows: [], eventWeekDoc: null, eventWeekActivities: [], injury: injuryState({ mode: "reduced" }), currentWeekMaintenance: true },
+    asOf: AS_OF,
+  });
+  assert.equal(decision.actions.length, 0);
+  assert.equal(decision.injury?.mode, "reduced");
+});
+
+test("伤病判定：mode=rest + 比赛临近（≤4 周）→ replan_suggest；远期不出标记", () => {
+  // fixture race=2026-10-18；asOf=2026-09-21 → 相距 4 周 → 提示按现状重排
+  const closing = judgeUserScan({
+    plan: scanPlan(),
+    context: { weeklyRows: [], eventWeekDoc: null, eventWeekActivities: [], injury: injuryState({ mode: "rest" }) },
+    asOf: "2026-09-21T21:00:00.000+08:00",
+  });
+  assert.equal(closing.injury?.mode, "rest");
+  assert.equal(closing.injury?.replan_suggest, true);
+  assert.equal(closing.actions.length, 0, "完全停不出课不投 job");
+  // asOf=2026-09-14 → 相距 5 周 → 不提示
+  const far = judgeUserScan({
+    plan: scanPlan(),
+    context: { weeklyRows: [], eventWeekDoc: null, eventWeekActivities: [], injury: injuryState({ mode: "rest" }) },
+    asOf: AS_OF,
+  });
+  assert.equal(far.injury?.replan_suggest, false);
+});
+
+test("伤病判定：pending_doctor 只跳过 / needs_verdict 的 reduced 仍出维持课", () => {
+  const doctor = judgeUserScan({
+    plan: scanPlan(),
+    context: { weeklyRows: [], eventWeekDoc: null, eventWeekActivities: [], injury: injuryState({ mode: "pending_doctor" }) },
+    asOf: AS_OF,
+  });
+  assert.equal(doctor.actions.length, 0, "pending_doctor 不出课");
+  assert.equal(doctor.injury?.mode, "pending_doctor");
+
+  const needsVerdict = judgeUserScan({
+    plan: scanPlan(),
+    context: { weeklyRows: [], eventWeekDoc: null, eventWeekActivities: [], injury: injuryState({ mode: "reduced", needs_verdict: true }) },
+    asOf: AS_OF,
+  });
+  // 等待重新自判期间维持课照常驱动（mode 仍是 reduced）
+  assert.equal(needsVerdict.actions.filter((action) => action.kind === "maintenance").length, 1);
+  assert.equal(needsVerdict.injury?.needs_verdict, true);
+});
+
 // ── 编排（fake store + fake enqueuer）─────────────────────────────────────────
 
 interface EnqueueCall {
@@ -183,13 +253,18 @@ interface EnqueueCall {
   idempotencyKey?: string;
 }
 
-function fakeStore(plans: ScanPlanRef[], activities: Activity[] = [], weeklyDoc: unknown | null = null): RollingScanStore {
+function fakeStore(
+  plans: ScanPlanRef[],
+  activities: Activity[] = [],
+  weeklyDoc: unknown | null = null,
+  docWeek: string = EVENT_WEEK,
+): RollingScanStore {
   return {
     async listActiveMasterPlans() {
       return plans;
     },
-    async getWeeklyPlan() {
-      return weeklyDoc;
+    async getWeeklyPlan(_userId: string, weekStart: string) {
+      return weekStart === docWeek ? weeklyDoc : null;
     },
     async getActivitySummariesByDateRange() {
       return activities;
@@ -208,15 +283,37 @@ function fakeEnqueuer(): { enqueue: PlanJobsService["enqueue"]; calls: EnqueueCa
   };
 }
 
+/** runner 的周课通道 fake（#858 PR-D 起含 getInjuryState）。 */
+function fakeWeeklyChannel(injury: InjuryStateRow | null = null, weeks: WeeklyPlanWeekRow[] = weekRows(EVENT_WEEK)) {
+  return {
+    async listWeeklyPlanWeeks() {
+      return weeks;
+    },
+    async getInjuryState() {
+      return injury;
+    },
+  };
+}
+
+/** active 伤病态 fixture（InjuryStateRow 形状）。 */
+function injuryState(overrides: Partial<{ mode: "reduced" | "rest" | "pending_doctor"; needs_verdict: boolean; maintenance_km: number | null }> = {}): InjuryStateRow {
+  return {
+    master_plan_id: CONTENT_MASTER_ID,
+    mode: "reduced" as const,
+    detail: "左膝髌骨酸痛",
+    maintenance_km: null,
+    needs_verdict: false,
+    last_checkin_day: null,
+    last_checkin_answer: null,
+    ...overrides,
+  };
+}
+
 test("编排：边界+偏差同发（两 job），汇总计数与幂等键落账", async () => {
   const enqueuer = fakeEnqueuer();
   const runner = createRollingScanRunner({
     store: fakeStore([scanPlan()], [], createTestWeeklyPlanDoc(5)),
-    weeklyPlans: {
-      async listWeeklyPlanWeeks() {
-        return weekRows(EVENT_WEEK);
-      },
-    },
+    weeklyPlans: fakeWeeklyChannel(),
     enqueue: enqueuer.enqueue,
   });
   const summary = await runner.runRollingScan({ asOf: AS_OF, dispatch: true });
@@ -235,16 +332,53 @@ test("编排：边界+偏差同发（两 job），汇总计数与幂等键落账
   assert.equal(summary.users[0]?.deviation?.class, "volume_short");
 });
 
+test("编排：伤病 reduced 用户只投 maintenance job（跳过滚动/偏差），汇总带 injury 字段", async () => {
+  const enqueuer = fakeEnqueuer();
+  const runner = createRollingScanRunner({
+    store: fakeStore([scanPlan()], [], createTestWeeklyPlanDoc(5)),
+    weeklyPlans: fakeWeeklyChannel(injuryState({ mode: "reduced", maintenance_km: 39 })),
+    enqueue: enqueuer.enqueue,
+  });
+  const summary = await runner.runRollingScan({ asOf: AS_OF, dispatch: true });
+  assert.equal(summary.rolling_enqueued, 0);
+  assert.equal(summary.adjust_enqueued, 0);
+  assert.equal(summary.maintenance_enqueued, 1);
+  assert.equal(enqueuer.calls.length, 1);
+  assert.equal(enqueuer.calls[0]?.jobType, "generate_maintenance");
+  assert.equal(enqueuer.calls[0]?.idempotencyKey, `maintenance:${USER_ID}:2026-09-14:20260914`);
+  assert.equal(summary.users[0]?.injury?.mode, "reduced");
+  assert.deepEqual(summary.skipped, []);
+});
+
+test("编排：伤病 reduced 且当前周已有维持行（store 返回维持文档）→ 不投", async () => {
+  const enqueuer = fakeEnqueuer();
+  // 当前周行=维持周（coach_notes 标记）——runner 判 currentWeekMaintenance=true
+  const maintenanceRow = buildMaintenanceWeek({
+    planStartMonday: "2026-08-10",
+    weekStart: "2026-09-14",
+    weeklyRunDaysMax: 6,
+    maintenanceKm: 39,
+    strengthPerWeek: 2,
+  });
+  const stripped = { ...maintenanceRow };
+  delete (stripped as Record<string, unknown>).schema;
+  delete (stripped as Record<string, unknown>).week_name;
+  const runner = createRollingScanRunner({
+    store: fakeStore([scanPlan()], [], stripped, "2026-09-14"),
+    weeklyPlans: fakeWeeklyChannel(injuryState({ mode: "reduced" })),
+    enqueue: enqueuer.enqueue,
+  });
+  const summary = await runner.runRollingScan({ asOf: AS_OF, dispatch: true });
+  assert.equal(summary.maintenance_enqueued, 0);
+  assert.equal(enqueuer.calls.length, 0);
+});
+
 test("编排：单用户失败跳过不中断（坏 content 记入 skipped，后续用户照跑）", async () => {
   const enqueuer = fakeEnqueuer();
   const badPlan: ScanPlanRef = { userId: "user-bad", planId: ROW_PLAN_ID, content: { total_weeks: 10 } };
   const runner = createRollingScanRunner({
     store: fakeStore([badPlan, scanPlan()], [], createTestWeeklyPlanDoc(5)),
-    weeklyPlans: {
-      async listWeeklyPlanWeeks() {
-        return weekRows(EVENT_WEEK);
-      },
-    },
+    weeklyPlans: fakeWeeklyChannel(),
     enqueue: enqueuer.enqueue,
   });
   const summary = await runner.runRollingScan({ asOf: AS_OF, dispatch: true });
@@ -259,11 +393,7 @@ test("编排：dispatch=false dry-run 只判定不投", async () => {
   const enqueuer = fakeEnqueuer();
   const runner = createRollingScanRunner({
     store: fakeStore([scanPlan()], [], createTestWeeklyPlanDoc(5)),
-    weeklyPlans: {
-      async listWeeklyPlanWeeks() {
-        return weekRows(EVENT_WEEK);
-      },
-    },
+    weeklyPlans: fakeWeeklyChannel(),
     enqueue: enqueuer.enqueue,
   });
   const summary = await runner.runRollingScan({ asOf: AS_OF, dispatch: false });
@@ -277,11 +407,7 @@ function scanApp(internalToken: string) {
   const enqueuer = fakeEnqueuer();
   const runner = createRollingScanRunner({
     store: fakeStore([scanPlan()], [], createTestWeeklyPlanDoc(5)),
-    weeklyPlans: {
-      async listWeeklyPlanWeeks() {
-        return weekRows(EVENT_WEEK);
-      },
-    },
+    weeklyPlans: fakeWeeklyChannel(),
     enqueue: enqueuer.enqueue,
   });
   const app = createApp({

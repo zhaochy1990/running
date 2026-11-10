@@ -8,6 +8,8 @@
  */
 
 export * from "./adjust/index.js";
+export type { MaintenanceInput } from "./maintenance.js";
+export { buildMaintenanceWeek, isMaintenanceWeeklyDoc, MAINTENANCE_COACH_NOTE_PREFIX } from "./maintenance.js";
 export type {
   CoreCompleted,
   CoreOutcome,

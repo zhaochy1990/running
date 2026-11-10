@@ -21,17 +21,19 @@ export type PlanJobStatus = (typeof PLAN_JOB_STATUSES)[number];
  * retired — weekly content is produced by the master first-batch materialization
  * and the rolling projection (`generate_rolling_block`).
  */
-export const PLAN_JOB_TYPES = ["generate_master_plan", "generate_rolling_block", "generate_adjustment"] as const;
+export const PLAN_JOB_TYPES = ["generate_master_plan", "generate_rolling_block", "generate_adjustment", "generate_maintenance"] as const;
 export type PlanJobType = (typeof PLAN_JOB_TYPES)[number];
 
 /**
  * Estimated duration surfaced by the enqueue endpoint so the client can show
  * "预计 X 分钟". Single source shared with the coach chat service.
+ * #858 PR-D: generate_maintenance（伤病维持课）零 LLM 确定性构造，估时 2 分钟。
  */
 export const PLAN_JOB_ESTIMATED_DURATIONS_SECONDS: Record<PlanJobType, number> = {
   generate_master_plan: 300,
   generate_rolling_block: 300,
   generate_adjustment: 300,
+  generate_maintenance: 120,
 };
 
 export interface PlanJob {

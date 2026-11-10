@@ -56,9 +56,34 @@ export interface AdjustmentChannel {
 }
 
 /** handler 依赖的周课通道面（GoWeeklyPlanClient 即其实现，测试用 fake）。 */
-export interface RollingWeeklyChannel extends AdjustmentChannel {
+export interface RollingWeeklyChannel extends AdjustmentChannel, InjuryChannel {
   batchApplyWeeklyPlans(userId: string, masterPlanId: string, weeks: unknown[]): Promise<WeeklyPlanAppliedWeek[]>;
   listWeeklyPlanWeeks(userId: string, masterPlanId: string): Promise<WeeklyPlanWeekRow[]>;
+}
+
+// ── #858 PR-D：伤病模式内部通道（plan_injury）────────────────────────────────
+
+/**
+ * Go plan_injury_state active 行的 worker 侧形状（无 active 行=null——伤病已
+ * 恢复/从未进入）。maintenance_km 是维持周量单值锚（重估真源在 TS，Go 只存值）；
+ * needs_verdict=真时用户答了「加重」，等待重新四选一。
+ */
+export interface InjuryStateRow {
+  master_plan_id: string;
+  mode: "reduced" | "rest" | "pending_doctor";
+  detail: string;
+  maintenance_km: number | null;
+  needs_verdict: boolean;
+  last_checkin_day: string | null;
+  last_checkin_answer: string | null;
+}
+
+/** 伤病状态内部通道（#858 PR-D）：worker 读 active 态 + 回写重估后的维持周量。 */
+export interface InjuryChannel {
+  /** Go：GET /api/internal/users/:id/plan-injury（无 active 行=null）。 */
+  getInjuryState(userId: string): Promise<InjuryStateRow | null>;
+  /** Go：POST /api/internal/users/:id/plan-injury/maintenance {km}（重估单值锚回写）。 */
+  updateInjuryMaintenance(userId: string, km: number): Promise<InjuryStateRow>;
 }
 
 interface BatchApplyResponse {
@@ -78,6 +103,35 @@ interface AdjustmentResponseShape {
     status?: unknown;
     payload?: unknown;
     question?: unknown;
+  };
+}
+
+interface InjuryStateResponseShape {
+  injury?: {
+    master_plan_id?: unknown;
+    mode?: unknown;
+    detail?: unknown;
+    maintenance_km?: unknown;
+    needs_verdict?: unknown;
+    last_checkin_day?: unknown;
+    last_checkin_answer?: unknown;
+  };
+}
+
+function parseInjuryRow(raw: InjuryStateResponseShape): InjuryStateRow {
+  const row = raw.injury ?? {};
+  const mode = String(row.mode ?? "");
+  if (mode !== "reduced" && mode !== "rest" && mode !== "pending_doctor") {
+    throw new Error(`go injury state returned unknown mode ${mode}`);
+  }
+  return {
+    master_plan_id: String(row.master_plan_id ?? ""),
+    mode,
+    detail: String(row.detail ?? ""),
+    maintenance_km: typeof row.maintenance_km === "number" ? row.maintenance_km : null,
+    needs_verdict: row.needs_verdict === true,
+    last_checkin_day: typeof row.last_checkin_day === "string" ? row.last_checkin_day : null,
+    last_checkin_answer: typeof row.last_checkin_answer === "string" ? row.last_checkin_answer : null,
   };
 }
 
@@ -188,13 +242,32 @@ export class GoWeeklyPlanClient implements RollingWeeklyChannel {
   async getPendingAdjustment(userId: string): Promise<PendingAdjustmentRow | null> {
     let response: Response;
     try {
-      response = await this.call("GET", `/api/internal/users/${encodeURIComponent(userId)}/plan-adjustments/pending`);
+      response = await this.call("GET", `/api/internal/users/${encodeURIComponent(userId)}/plan-adjustment/pending`);
     } catch (error) {
       // Go 用户端点 404 → 内部端点不存在；这里打的是内部前缀，恒 200——防御性归一。
       throw error;
     }
     if (response.status === 404) return null;
     return parseAdjustmentRow((await response.json()) as AdjustmentResponseShape);
+  }
+
+  /** #858 PR-D：读 active 伤病态（无 active 行=null；404 归一为 null）。 */
+  async getInjuryState(userId: string): Promise<InjuryStateRow | null> {
+    const response = await this.call("GET", `/api/internal/users/${encodeURIComponent(userId)}/plan-injury`);
+    if (response.status === 404) return null;
+    if (response.status !== 200) {
+      throw await this.describe("injury state read", response);
+    }
+    return parseInjuryRow((await response.json()) as InjuryStateResponseShape);
+  }
+
+  /** #858 PR-D：回写重估后的维持周量（Go 只存值——重估真源在 TS，见 handler 注释）。 */
+  async updateInjuryMaintenance(userId: string, km: number): Promise<InjuryStateRow> {
+    const response = await this.call("POST", `/api/internal/users/${encodeURIComponent(userId)}/plan-injury/maintenance`, { km });
+    if (response.status !== 200) {
+      throw await this.describe("injury maintenance write", response);
+    }
+    return parseInjuryRow((await response.json()) as InjuryStateResponseShape);
   }
 
   /** 4xx（除 401）确定性 → permanent（重投救不了）；401/5xx 瞬态 → 可重试。 */

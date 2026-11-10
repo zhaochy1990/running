@@ -93,6 +93,12 @@ function fakeDeps(overrides: { outcome?: AdjustOutcome; pending?: object | null;
       async batchApplyWeeklyPlans() {
         throw new Error("adjust job never batch-applies");
       },
+      async getInjuryState() {
+        return null; // adjust 流不触达伤病通道（#858 PR-D）
+      },
+      async updateInjuryMaintenance() {
+        throw new Error("adjust job never writes injury maintenance");
+      },
     },
     weeklyDocs: {
       async getWeeklyPlan(_userId: string, weekStart: string) {

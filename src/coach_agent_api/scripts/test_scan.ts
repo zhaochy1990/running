@@ -329,6 +329,12 @@ async function applyE2e(): Promise<void> {
       async batchApplyWeeklyPlans() {
         throw new Error("adjust job never batch-applies");
       },
+      async getInjuryState() {
+        return null; // scan e2e 无伤病态（#858 PR-D：test_injury.ts 覆盖伤病链）
+      },
+      async updateInjuryMaintenance() {
+        throw new Error("scan e2e never writes injury maintenance");
+      },
     },
     weeklyDocs: {
       async getWeeklyPlan(_userId: string, weekStart: string) {
