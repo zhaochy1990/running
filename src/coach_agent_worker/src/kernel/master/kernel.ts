@@ -43,12 +43,23 @@ export function toMasterPlanGraphShim(graph: unknown): MasterPlanGraphShim {
  * stable code; the kernel's own `infrastructure_failure` decision throws a
  * plain (retryable) error so the dispatcher's retry policy applies.
  */
+/** kernel 完整产物（#859）：plan 之外，政策数据一起返回落库。 */
+export interface MasterKernelResult {
+  plan: MasterPlan;
+  revision: number;
+  warnings: string[];
+  policy: import("@stride/contract").PhaseDivisionIntent;
+  skeleton: import("@stride/contract").LoadPlan;
+  anchor: import("@stride/contract").MasterPlanAnchor;
+  audit: import("@stride/contract").DanielsAudit;
+}
+
 export async function runMasterKernel(
   graph: MasterPlanGraphShim,
   request: MasterPlanGraphRequest,
   runtime: { userId: string; generationId: string },
   hb: Heartbeat,
-): Promise<{ plan: MasterPlan; revision: number }> {
+): Promise<MasterKernelResult> {
   const stream = await graph.stream({ request }, { context: runtime, streamMode: ["updates"] });
   const progress = new MonotonicProgress(MASTER_PLAN_NODES);
   let outcomeRaw: unknown = null;
@@ -80,7 +91,15 @@ export async function runMasterKernel(
   if (outcome.decision !== "completed") {
     throw kernelDecisionError(outcome);
   }
-  return { plan: outcome.artifact.plan, revision: outcome.artifact.artifact_revision };
+  return {
+    plan: outcome.artifact.plan,
+    revision: outcome.artifact.artifact_revision,
+    warnings: outcome.artifact.warnings,
+    policy: outcome.artifact.policy,
+    skeleton: outcome.artifact.skeleton,
+    anchor: outcome.artifact.anchor,
+    audit: outcome.artifact.audit,
+  };
 }
 
 function kernelDecisionError(outcome: { decision: string }): Error {
