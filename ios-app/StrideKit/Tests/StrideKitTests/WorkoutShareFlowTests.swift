@@ -51,7 +51,10 @@ import Testing
 
         share.saveTap()
         #expect(share.sheetVisible)
-        let option = try #require(share.sheetOptions.first { $0.value == "2026-10-29" })
+        // 选项窗是「今天起 8 天」（landingBuildPushDateOptions）：写死历史日期
+        // 会在过窗后让查找失败（2026-10-30 起实证红）。取窗内第三项（今天+2），
+        // 测试与日历解耦；计划日仅影响默认选中，不参与断言。
+        let option = try #require(share.sheetOptions.dropFirst(2).first)
         await share.selectDate(option.value)
 
         #expect(share.saved)
@@ -59,7 +62,7 @@ import Testing
         let call = try #require(await transport.calls(to: "/api/users/me/custom-workouts").last)
         let sent = try JSONSerialization.jsonObject(with: call.body!) as? [String: Any]
         #expect(sent?["save_token"] as? String == "shared-w1")
-        #expect(sent?["date"] as? String == "2026-10-29")
+        #expect(sent?["date"] as? String == option.value)
     }
 
     @Test func pushFlowChecksWatchAndResumesAfterBind() async throws {

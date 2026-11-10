@@ -134,6 +134,18 @@ public struct CoachStreamError: Error, Equatable, Sendable {
         default: message
         }
     }
+
+    /// 业务性失败（确定性复现，重试无意义）与临时失败（网络/服务端抖动，可
+    /// 重试）的分界（devops#891/#939，mp coach.ts isBusinessTurnError 直译）：
+    /// 前者不给重试按钮，后者维持 failed 标记 + 重试。SSE 路径的业务码只有
+    /// client_turn_id_conflict；coach_turn_failed 是服务端对所有内部异常的
+    /// 兜底码（多为上游抖动）、coach_thread_busy 稍后可再发、429 带
+    /// Retry-After——三者都保持可重试；非 2xx 落地码 http_4xx 除 429 外
+    /// 均为业务拒绝。
+    public var isBusiness: Bool {
+        if code == "client_turn_id_conflict" { return true }
+        return code.hasPrefix("http_4") && code != "http_429"
+    }
 }
 
 // MARK: - 结构化产物信封

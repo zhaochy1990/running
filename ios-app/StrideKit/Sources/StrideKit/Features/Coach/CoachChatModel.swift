@@ -170,6 +170,10 @@ public final class CoachChatModel {
     private let sharerNameProvider: () -> String?
     /// race-strategy 卡片草稿交接（写 AppModel.pendingStrategyDraft + 路由）。
     private let openStrategyDraft: @MainActor (_ raceId: Int, _ strategy: RaceStrategy) -> Void
+    /// 策略卡在无会话 race target（#891 聊天内绑赛会话）时的回落跳转——
+    /// 绑定只存服务端线程持久层、无客户端读取面，race_event_id 不可得，
+    /// mp coachCards.ts 同形态回落赛事中心（devops#939）。
+    private let openRaceCenter: @MainActor () -> Void
 
     // 运行态
     private var streamHandle: CoachStreamHandle?
@@ -190,7 +194,8 @@ public final class CoachChatModel {
         clock: @escaping () -> Date = { Date() },
         userIdProvider: @escaping () -> String? = { nil },
         sharerNameProvider: @escaping () -> String? = { nil },
-        openStrategyDraft: @escaping @MainActor (_ raceId: Int, _ strategy: RaceStrategy) -> Void = { _, _ in }
+        openStrategyDraft: @escaping @MainActor (_ raceId: Int, _ strategy: RaceStrategy) -> Void = { _, _ in },
+        openRaceCenter: @escaping @MainActor () -> Void = {}
     ) {
         self.service = service
         self.store = store
@@ -198,6 +203,7 @@ public final class CoachChatModel {
         self.userIdProvider = userIdProvider
         self.sharerNameProvider = sharerNameProvider
         self.openStrategyDraft = openStrategyDraft
+        self.openRaceCenter = openRaceCenter
     }
 
     // MARK: - 启动 / 生命周期
@@ -567,15 +573,27 @@ public final class CoachChatModel {
         clearStreamText()
     }
 
-    /// 流失败：user 消息打 failed 标记展示重试按钮。
+    /// 流失败：临时失败 user 消息打 failed 标记展示重试按钮；业务性失败
+    ///（确定性复现，devops#891/#939）不给重试——原因落一条教练气泡让人读得见
+    ///（mp failStream 同款；确定性失败重试必然复现，#891 的重试风暴教训）。
     func failStream(_ error: CoachStreamError, userMessageId: Int) {
         streamHandle = nil
         sending = false
         streaming = false
-        markMessage(userMessageId) { $0.failed = true }
-        scrollTarget = "msg-\(userMessageId)"
+        if error.isBusiness {
+            markMessage(userMessageId) { $0.failed = false }
+            let reason = error.message.isEmpty ? "本轮未完成：请调整后再试" : error.message
+            let bubble = CoachMessage(id: nextMessageId(), role: .assistant, content: reason, selectable: false)
+            messages.append(bubble)
+            scrollTarget = "msg-\(bubble.id)"
+        } else {
+            markMessage(userMessageId) { $0.failed = true }
+            scrollTarget = "msg-\(userMessageId)"
+        }
         clearStreamText()
-        if error.code != "aborted" { showToast(error.localized) }
+        // 业务错误的原因气泡即展示面，不再叠 toast（且 localized 的「请重试」
+        // 文案与不重试语义相悖）。
+        if error.code != "aborted" && !error.isBusiness { showToast(error.localized) }
     }
 
     func clearStreamText() {
@@ -733,14 +751,18 @@ public final class CoachChatModel {
     // MARK: - 卡片动作
 
     /// 卡片主体 / 导航类 CTA：race-strategy 草稿交接（仅 kind=race 且有
-    /// race_event_id）→ 路由到策略报告页；动作类卡片主体不可跳转。
+    /// race_event_id）→ 路由到策略报告页；会话无 race target（#891 聊天内
+    /// 绑赛会话）回落赛事中心；动作类卡片主体不可跳转。
     public func openCard(messageId: Int) {
         guard let message = messages.first(where: { $0.id == messageId }),
               let card = message.card, card.navigable
         else { return }
-        if case .raceStrategy(let strategy) = card.payload,
-           let target = currentTarget, target.kind == .race, let raceId = target.raceEventId {
-            openStrategyDraft(raceId, strategy)
+        if case .raceStrategy(let strategy) = card.payload {
+            if let target = currentTarget, target.kind == .race, let raceId = target.raceEventId {
+                openStrategyDraft(raceId, strategy)
+            } else {
+                openRaceCenter()
+            }
         }
     }
 
