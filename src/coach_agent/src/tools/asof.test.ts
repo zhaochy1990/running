@@ -34,9 +34,9 @@ test("date-range tools default their inclusive end to context.asof", async () =>
 test("date-range tools cap results and flag truncation", async () => {
   // 3 activities, dates ascending; summaries carry no laps (that is the provider's contract).
   const activities = [
-    { labelId: "a", date: new Date("2026-05-01T01:00:00Z"), distanceM: 1 },
-    { labelId: "b", date: new Date("2026-05-02T01:00:00Z"), distanceM: 2 },
-    { labelId: "c", date: new Date("2026-05-03T01:00:00Z"), distanceM: 3 },
+    { labelId: "a", date: new Date("2026-05-01T01:00:00Z"), shanghaiDay: "2026-05-01", distanceM: 1 },
+    { labelId: "b", date: new Date("2026-05-02T01:00:00Z"), shanghaiDay: "2026-05-02", distanceM: 2 },
+    { labelId: "c", date: new Date("2026-05-03T01:00:00Z"), shanghaiDay: "2026-05-03", distanceM: 3 },
   ] as never[];
   const store = {
     async getActivitySummariesByDateRange() {
