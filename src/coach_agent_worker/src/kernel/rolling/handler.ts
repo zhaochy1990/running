@@ -1,17 +1,17 @@
 import {
   type ActiveMasterPlanMetadata,
   fromStoredContent,
+  type MasterPlanContextProvider,
+  type MasterPlanLlmModels,
   type RollingDeps,
   type RollingOutcome,
   runRollingProjection,
-  type MasterPlanContextProvider,
-  type MasterPlanLlmModels,
 } from "@stride/coach-agent";
 import { RollingJobRequest, type RollingMasterInput, shanghaiDay, type WeeklyPlan } from "@stride/contract";
+import type { RollingWeeklyChannel, WeeklyPlanAppliedWeek } from "../../goClient/weeklyPlanClient.js";
 import { ERROR_CODES, type Handler, newPermanentError } from "../../job/errors.js";
 import type { PlanJob } from "../../job/model.js";
 import type { Heartbeat } from "../../job/ports.js";
-import type { RollingWeeklyChannel, WeeklyPlanAppliedWeek } from "../../goClient/weeklyPlanClient.js";
 
 /** rolling job 的 master 存量读档面（MySqlDataProvider 满足，测试注入 fake）。 */
 export interface RollingMasterPlanSource {
@@ -78,13 +78,15 @@ export function createRollingJobHandler(deps: RollingHandlerDeps): Handler {
       throw newPermanentError("kernel_rolling_no_master_plan", new Error(`user ${job.userId} has no master plan covering ${asOfDay}`));
     }
     if (active.status !== "active") {
-      throw newPermanentError("kernel_rolling_master_plan_not_active", new Error(`master plan ${active.planId} is ${active.status}, rolling needs the active plan`));
+      throw newPermanentError(
+        "kernel_rolling_master_plan_not_active",
+        new Error(`master plan ${active.planId} is ${active.status}, rolling needs the active plan`),
+      );
     }
     // 周课归链 id：master job 物化首批时写进 content 的前瞻计划 id；admin apply
     // 后 Go 侧收养同一 id（master_plan.plan_id == weekly 归链 id == content id
     // 三方对齐），apply 前它就是唯一真源。缺省（老 content 无该字段）回退行 id。
-    const contentMasterId = typeof active.content.master_plan_id === "string" && active.content.master_plan_id.length > 0 ? active.content.master_plan_id : null;
-    const rollingMasterId = contentMasterId ?? active.planId;
+    const rollingMasterId = rollingMasterIdOf(active.content, active.planId);
     if (request.master_plan_id !== undefined && request.master_plan_id !== active.planId && request.master_plan_id !== rollingMasterId) {
       throw newPermanentError(
         "kernel_rolling_master_plan_mismatch",
@@ -99,7 +101,13 @@ export function createRollingJobHandler(deps: RollingHandlerDeps): Handler {
       master = fromStoredContent({
         content: active.content,
         masterPlanId: rollingMasterId,
-        lastGeneratedWeek: Math.max(snapshotLastGeneratedWeek(active.content), weeklyMaxWeek(active.content, weekRows.map((row) => row.week_start))),
+        lastGeneratedWeek: Math.max(
+          snapshotLastGeneratedWeek(active.content),
+          weeklyMaxWeek(
+            active.content,
+            weekRows.map((row) => row.week_start),
+          ),
+        ),
       });
     } catch (error) {
       throw newPermanentError("kernel_rolling_content_invalid", error);
@@ -166,8 +174,8 @@ async function applyWeeklyDocs(channel: RollingWeeklyChannel, userId: string, ma
   return channel.batchApplyWeeklyPlans(userId, masterPlanId, docs);
 }
 
-/** 快照有课周（key_sessions 非空）的最大周号；全空回退 min(6, total_weeks)（与 fromMasterArtifact 同源语义）。 */
-function snapshotLastGeneratedWeek(content: Record<string, unknown>): number {
+/** 快照有课周（key_sessions 非空）的最大周号；全空回退 min(6, total_weeks)（与 fromMasterArtifact 同源语义）。#858 PR-C 提取共享（夜检扫描复用）。 */
+export function snapshotLastGeneratedWeek(content: Record<string, unknown>): number {
   const weeks = Array.isArray(content.weeks) ? (content.weeks as Array<Record<string, unknown>>) : [];
   const totalWeeks = typeof content.total_weeks === "number" ? content.total_weeks : 1;
   const generated = weeks
@@ -177,13 +185,19 @@ function snapshotLastGeneratedWeek(content: Record<string, unknown>): number {
   return generated.length > 0 ? Math.max(...generated) : Math.min(6, totalWeeks);
 }
 
-/** 已落库 weekly 周行 → 计划内周号（第 1 周=planStartMonday 那周）；对不上的行忽略。 */
-function weeklyMaxWeek(content: Record<string, unknown>, weekStarts: string[]): number {
+/** 已落库 weekly 周行 → 计划内周号（第 1 周=planStartMonday 那周）；对不上的行忽略。#858 PR-C 提取共享（夜检扫描复用）。 */
+export function weeklyMaxWeek(content: Record<string, unknown>, weekStarts: string[]): number {
   const planStartMonday = typeof content.start_date === "string" ? content.start_date : null;
   if (planStartMonday === null || weekStarts.length === 0) return 0;
   const base = Date.parse(`${planStartMonday}T00:00:00Z`);
-  const weeks = weekStarts
-    .map((weekStart) => Math.floor((Date.parse(`${weekStart}T00:00:00Z`) - base) / (7 * 86_400_000)) + 1)
-    .filter((week) => week >= 1);
+  const weeks = weekStarts.map((weekStart) => Math.floor((Date.parse(`${weekStart}T00:00:00Z`) - base) / (7 * 86_400_000)) + 1).filter((week) => week >= 1);
   return weeks.length > 0 ? Math.max(...weeks) : 0;
+}
+
+/**
+ * 周课归链 id（#858 PR-C 提取共享，夜检扫描复用）：master job 物化首批时写进
+ * content 的前瞻计划 id；缺省（老 content 无该字段）回退 master_plan 行 id。
+ */
+export function rollingMasterIdOf(content: Record<string, unknown>, rowPlanId: string): string {
+  return typeof content.master_plan_id === "string" && content.master_plan_id.length > 0 ? content.master_plan_id : rowPlanId;
 }

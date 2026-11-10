@@ -1,5 +1,6 @@
 import { z } from "zod/v4";
 import { addDays, mondayOnOrBefore, weekFolder } from "../date.js";
+import { KeySessionSchema } from "../master_plan/schemas.js";
 import { normalizeRunWorkout, RunWorkoutLenientSchema, RunWorkoutSchema, StrengthWorkoutSchema } from "../workout/schema.js";
 
 const DaySchema = z.iso.date();
@@ -120,6 +121,13 @@ const RollingExtensionFields = {
   km_deviation_pct: z.number().optional(),
   /** 内容层来源（llm=模型产物；fallback=模板兜底）。 */
   source: z.enum(["llm", "fallback"]).optional(),
+  /**
+   * v2 快照同款重点课投影（#858 PR-C 下半）：类型复用 MasterPlan
+   * weeks.key_sessions（strict 单源 KeySessionSchema），由 buildWeeklyDocs 的
+   * toKeySession 派生填入——weekly 文档自带 v2 周行后，Go 读合并只做 JSON
+   * 透传（零训练学推导）。存量文档无此字段仍合法。
+   */
+  key_sessions: z.array(KeySessionSchema).optional(),
 };
 
 /** Canonical content_version=2 contract for generated weekly plans. */

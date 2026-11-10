@@ -28,11 +28,31 @@ export interface PendingAdjustmentRow {
   question: string;
 }
 
+/**
+ * Go upsert 端点的确定性拒绝（409 adjustment_event_closed）：该（用户,事件周）
+ * 已达终态（accepted/dismissed）——用户答过的事件永不重问，调用方降级 no-op
+ * 成功而不是报错重试。
+ */
+export class AdjustmentEventClosedError extends Error {
+  constructor() {
+    super("adjustment event already closed");
+  }
+}
+
 export interface AdjustmentChannel {
   /** 夜检/换因后回填 pending 行 payload（Go：POST /plan-adjustments/:id/payload）。 */
   completeAdjustmentPayload(userId: string, adjustmentId: string, reason: string, payload: string): Promise<PendingAdjustmentRow>;
   /** 读用户当前 pending 行（换因 job 定位目标行；无行=null）。 */
   getPendingAdjustment(userId: string): Promise<PendingAdjustmentRow | null>;
+  /**
+   * #858 PR-C 夜检建行：建（或刷新）pending 提案行（Go：POST
+   * /plan-adjustments，payload=投影产物）。事件已关闭时抛
+   * AdjustmentEventClosedError。
+   */
+  upsertAdjustment(
+    userId: string,
+    input: { masterPlanId: string; eventWeekStart: string; reason: string; question: string; payload: string },
+  ): Promise<PendingAdjustmentRow>;
 }
 
 /** handler 依赖的周课通道面（GoWeeklyPlanClient 即其实现，测试用 fake）。 */
@@ -109,10 +129,7 @@ export class GoWeeklyPlanClient implements RollingWeeklyChannel {
   }
 
   async listWeeklyPlanWeeks(userId: string, masterPlanId: string): Promise<WeeklyPlanWeekRow[]> {
-    const response = await this.call(
-      "GET",
-      `/api/internal/users/${encodeURIComponent(userId)}/plan/weeks?master_plan_id=${encodeURIComponent(masterPlanId)}`,
-    );
+    const response = await this.call("GET", `/api/internal/users/${encodeURIComponent(userId)}/plan/weeks?master_plan_id=${encodeURIComponent(masterPlanId)}`);
     if (response.status === 404) return [];
     if (response.status !== 200) {
       throw await this.describe("weekly list weeks", response);
@@ -143,6 +160,27 @@ export class GoWeeklyPlanClient implements RollingWeeklyChannel {
       reason,
       payload,
     });
+    return parseAdjustmentRow((await response.json()) as AdjustmentResponseShape);
+  }
+
+  /** #858 PR-C 夜检建行：upsert pending 提案（payload=投影产物）；409 事件已关闭 → AdjustmentEventClosedError。 */
+  async upsertAdjustment(
+    userId: string,
+    input: { masterPlanId: string; eventWeekStart: string; reason: string; question: string; payload: string },
+  ): Promise<PendingAdjustmentRow> {
+    const response = await this.call("POST", `/api/internal/users/${encodeURIComponent(userId)}/plan-adjustments`, {
+      master_plan_id: input.masterPlanId,
+      event_week_start: input.eventWeekStart,
+      reason: input.reason,
+      question: input.question,
+      payload: input.payload,
+    });
+    if (response.status === 409) {
+      throw new AdjustmentEventClosedError();
+    }
+    if (response.status !== 201) {
+      throw await this.describe("adjustment upsert", response);
+    }
     return parseAdjustmentRow((await response.json()) as AdjustmentResponseShape);
   }
 

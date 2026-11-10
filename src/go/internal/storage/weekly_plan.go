@@ -85,8 +85,8 @@ func (s *Store) AutoMigrateWeeklyPlan(ctx context.Context) error {
 }
 
 // ListActiveWeeklyPlans returns all current weekly plans newest first. Content
-// is loaded because the same row type backs the detail reader, but the API list
-// DTO deliberately omits it.
+// is loaded because the same row type backs the detail reader and the
+// master-plan read merge (#858), but the API list DTO deliberately omits it.
 func (s *Store) ListActiveWeeklyPlans(ctx context.Context, userID string) ([]WeeklyPlan, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
@@ -94,13 +94,38 @@ func (s *Store) ListActiveWeeklyPlans(ctx context.Context, userID string) ([]Wee
 	}
 	var plans []WeeklyPlan
 	if err := s.db.WithContext(ctx).
-		Select("plan_id", "user_id", "master_plan_id", "week_start", "content_version", "status", "revision", "created_at", "updated_at").
+		Select("plan_id", "user_id", "master_plan_id", "week_start", "content_version", "content", "status", "revision", "created_at", "updated_at").
 		Where("user_id = ? AND status = ?", uid, WeeklyPlanStatusActive).
 		Order("week_start DESC").
 		Find(&plans).Error; err != nil {
 		return nil, err
 	}
 	return plans, nil
+}
+
+// ArchiveWeeklyPlansExcept removes the user's weekly rows that are NOT linked
+// to keepMasterPlanID (#858 换计划归档). Despite the name (kept from the
+// ticket's vocabulary), the rows are DELETED, not status-flipped: weekly_plan
+// has converged to a single 'active' status with UNIQUE(user_id, week_start)
+// (#585), so a stale row from the replaced plan is meaningless after the plan
+// change and would block the new plan's rolling batch from writing the same
+// week. Rows with a NULL master_plan_id (legacy unlinked rows) are removed for
+// the same reason. Returns the number of rows removed.
+func (s *Store) ArchiveWeeklyPlansExcept(ctx context.Context, userID, keepMasterPlanID string) (int64, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := uuid.Parse(keepMasterPlanID); err != nil {
+		return 0, fmt.Errorf("storage: invalid keep master plan id: %w", err)
+	}
+	result := s.db.WithContext(ctx).
+		Where("user_id = ? AND (master_plan_id IS NULL OR master_plan_id <> ?)", uid, keepMasterPlanID).
+		Delete(&WeeklyPlan{})
+	if result.Error != nil {
+		return 0, fmt.Errorf("storage: archive weekly plans except %s: %w", keepMasterPlanID, result.Error)
+	}
+	return result.RowsAffected, nil
 }
 
 // WeekSummary is the active-plan metadata and activity rollup needed by the

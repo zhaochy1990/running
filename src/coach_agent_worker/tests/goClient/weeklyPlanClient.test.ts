@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { AdjustmentEventClosedError, GoWeeklyPlanClient } from "../../src/goClient/weeklyPlanClient.js";
 import { asPermanent } from "../../src/job/errors.js";
-import { GoWeeklyPlanClient } from "../../src/goClient/weeklyPlanClient.js";
 
 /**
  * Go 周课内部通道客户端单测（#858）：请求形状（x-internal-token、路径、body）
@@ -72,4 +72,56 @@ test("422 校验失败 = permanent；401/500 = 瞬态（非 PermanentError）", 
       return true;
     });
   }
+});
+
+// ── upsertAdjustment（#858 PR-C 夜检建行通道）─────────────────────────────────
+
+test("upsertAdjustment 打 POST /plan-adjustments、body 形状正确、解析行", async () => {
+  const seen = capture();
+  const go = client(async (request) => {
+    seen.current = request;
+    return new Response(
+      JSON.stringify({
+        adjustment: {
+          id: "adj-9",
+          master_plan_id: "m-1",
+          event_week_start: "2026-08-17",
+          reason: "no_time",
+          status: "pending",
+          payload: "{}",
+          question: "问句",
+        },
+      }),
+      { status: 201 },
+    );
+  });
+  const row = await go.upsertAdjustment("u-1", {
+    masterPlanId: "m-1",
+    eventWeekStart: "2026-08-17",
+    reason: "no_time",
+    question: "上周完成得不理想，主要是？",
+    payload: '{"v":1}',
+  });
+  assert.equal(row.id, "adj-9");
+  assert.equal(row.status, "pending");
+  const request = seen.current!;
+  assert.equal(request.method, "POST");
+  assert.equal(new URL(request.url).pathname, "/api/internal/users/u-1/plan-adjustments");
+  const body = JSON.parse(await request.clone().text()) as Record<string, string>;
+  assert.deepEqual(Object.keys(body).sort(), ["event_week_start", "master_plan_id", "payload", "question", "reason"]);
+  assert.equal(body.question, "上周完成得不理想，主要是？");
+});
+
+test("upsertAdjustment 409 事件已关闭 = AdjustmentEventClosedError；其他 4xx = permanent", async () => {
+  const closed = client(async () => new Response('{"error":"adjustment_event_closed"}', { status: 409 }));
+  await assert.rejects(
+    closed.upsertAdjustment("u-1", { masterPlanId: "m", eventWeekStart: "2026-08-17", reason: "no_time", question: "q", payload: "{}" }),
+    (error: unknown) => error instanceof AdjustmentEventClosedError,
+  );
+
+  const rejected = client(async () => new Response('{"error":"invalid_event"}', { status: 400 }));
+  await assert.rejects(
+    rejected.upsertAdjustment("u-1", { masterPlanId: "m", eventWeekStart: "bad", reason: "no_time", question: "q", payload: "{}" }),
+    (error: unknown) => asPermanent(error) !== null,
+  );
 });

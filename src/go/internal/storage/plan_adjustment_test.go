@@ -3,6 +3,8 @@ package storage
 import (
 	"errors"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 // PlanAdjustment storage invariants (#858 PR-C), DSN-gated like the other
@@ -19,7 +21,7 @@ func TestPlanAdjustmentPendingLifecycle(t *testing.T) {
 	if err := st.AutoMigratePlanAdjustment(ctx); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	user := "adj-lifecycle-user"
+	user := uuid.NewString()
 	defer func() { _ = st.db.Where("user_id = ?", user).Delete(&PlanAdjustment{}).Error }()
 
 	// ① 首个 pending
@@ -88,7 +90,7 @@ func TestPlanAdjustmentDismissClosesEventForGood(t *testing.T) {
 	if err := st.AutoMigratePlanAdjustment(ctx); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	user := "adj-dismiss-user"
+	user := uuid.NewString()
 	defer func() { _ = st.db.Where("user_id = ?", user).Delete(&PlanAdjustment{}).Error }()
 
 	row, err := st.UpsertPendingAdjustment(ctx, user, "11111111-2222-3333-4444-555555555502", "2026-08-17", "ran_other", "问句", `{}`)
@@ -105,7 +107,71 @@ func TestPlanAdjustmentDismissClosesEventForGood(t *testing.T) {
 		t.Fatalf("re-ask dismissed event err=%v want ErrAdjustmentEventClosed", err)
 	}
 	// 不同用户同事件不受影响
-	if _, err := st.UpsertPendingAdjustment(ctx, "adj-other-user", row.MasterPlanID, "2026-08-17", "ran_other", "问句", `{}`); err != nil {
+	if _, err := st.UpsertPendingAdjustment(ctx, uuid.NewString(), row.MasterPlanID, "2026-08-17", "ran_other", "问句", `{}`); err != nil {
 		t.Fatalf("other user upsert: %v", err)
+	}
+}
+
+// #858 换计划归档：pending 提案整体 supersede（锚定旧计划），终态行保留历史。
+func TestSupersedePendingAdjustments(t *testing.T) {
+	st := openTestStore(t)
+	ctx := t.Context()
+	if err := st.AutoMigratePlanAdjustment(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	user := uuid.NewString()
+	other := uuid.NewString()
+	defer func() {
+		_ = st.db.Where("user_id IN ?", []string{user, other}).Delete(&PlanAdjustment{}).Error
+	}()
+
+	// 先铺终态历史行（dismiss）——upsert 的单 pending 不变量会 supersede 旧
+	// pending，所以种子顺序：先 dismiss 候选，再落当前 pending。
+	dismissed, err := st.UpsertPendingAdjustment(ctx, user, "11111111-2222-3333-4444-555555555603", "2026-08-10", "no_time", "问句", `{"v":1}`)
+	if err != nil {
+		t.Fatalf("seed to-dismiss: %v", err)
+	}
+	if err := st.SetAdjustmentStatus(ctx, user, dismissed.ID, PlanAdjustmentStatusDismissed); err != nil {
+		t.Fatalf("dismiss: %v", err)
+	}
+	pending, err := st.UpsertPendingAdjustment(ctx, user, "11111111-2222-3333-4444-555555555601", "2026-08-17", "no_time", "问句", `{"v":1}`)
+	if err != nil {
+		t.Fatalf("seed pending: %v", err)
+	}
+	otherPending, err := st.UpsertPendingAdjustment(ctx, other, "11111111-2222-3333-4444-555555555602", "2026-08-17", "no_time", "问句", `{"v":1}`)
+	if err != nil {
+		t.Fatalf("seed other user pending: %v", err)
+	}
+
+	count, err := st.SupersedePendingAdjustments(ctx, user)
+	if err != nil {
+		t.Fatalf("supersede: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("superseded=%d want 1", count)
+	}
+	row, err := st.GetPendingAdjustment(ctx, user)
+	if err != nil || row != nil {
+		t.Fatalf("user pending after supersede: row=%+v err=%v", row, err)
+	}
+	var status string
+	st.db.Model(&PlanAdjustment{}).Where("id = ?", pending.ID).Pluck("status", &status)
+	if status != PlanAdjustmentStatusSuperseded {
+		t.Fatalf("pending row status=%s want superseded", status)
+	}
+	// 终态行不动
+	st.db.Model(&PlanAdjustment{}).Where("id = ?", dismissed.ID).Pluck("status", &status)
+	if status != PlanAdjustmentStatusDismissed {
+		t.Fatalf("dismissed row status=%s", status)
+	}
+	// 其他用户的 pending 不受影响
+	otherRow, err := st.GetPendingAdjustment(ctx, other)
+	if err != nil || otherRow == nil || otherRow.ID != otherPending.ID {
+		t.Fatalf("other user pending: row=%+v err=%v", otherRow, err)
+	}
+	// 幂等：无 pending 时 0 行
+	again, err := st.SupersedePendingAdjustments(ctx, user)
+	if err != nil || again != 0 {
+		t.Fatalf("idempotent re-run: count=%d err=%v", again, err)
 	}
 }

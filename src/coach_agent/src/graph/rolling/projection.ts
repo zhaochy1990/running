@@ -34,7 +34,7 @@ import { buildPhaseEvidence, type PhaseEvidence, type PhasingActivityInput } fro
 import { buildWeeklySeries, habitualBaseline, type WeeklySeries } from "../master_plan/phasing/load/baseline.js";
 import { buildLoadPlan } from "../master_plan/phasing/load/expand.js";
 import type { AdjustRecipe } from "./adjust/recipes.js";
-import { evaluateAdjustWindow, type ExistingWeekRef } from "./adjust/window.js";
+import { type ExistingWeekRef, evaluateAdjustWindow } from "./adjust/window.js";
 import { buildWeeklyDocs, freezePastSessions } from "./weeklyDocs.js";
 import { currentWeekOf, evaluateRollingWindow, type RollingWindow } from "./window.js";
 
@@ -94,7 +94,10 @@ export interface CoreCompleted {
   evidence: PhaseEvidence;
 }
 
-export type CoreOutcome = CoreCompleted | { decision: "no_op"; reason: string } | { decision: "infeasible"; reason: string; failedChecks: Array<{ id: string; detail: string }> };
+export type CoreOutcome =
+  | CoreCompleted
+  | { decision: "no_op"; reason: string }
+  | { decision: "infeasible"; reason: string; failedChecks: Array<{ id: string; detail: string }> };
 
 /**
  * 调整投影对共享内核的覆写（#858 PR-C）：配方参数（recipeFor 产物）+ 事件周
@@ -145,11 +148,7 @@ export async function runRollingProjection(deps: RollingDeps, input: RollingProj
  * 降载窗口首周骨架 km、guidance 进行）；④diff（现有 weekly 行对照）。其余与
  * 滚动逐行同构。
  */
-export async function runProjectionCore(
-  deps: RollingDeps,
-  input: RollingProjectionInput,
-  adjust?: ProjectionAdjustOverrides,
-): Promise<CoreOutcome> {
+export async function runProjectionCore(deps: RollingDeps, input: RollingProjectionInput, adjust?: ProjectionAdjustOverrides): Promise<CoreOutcome> {
   const { master, userId } = input;
   const asOfDay = shanghaiDay(input.asOf);
   const targetSec = parseHms(master.race.targetTime);
@@ -371,6 +370,7 @@ export async function runProjectionCore(
       skeletonNew: skeletonForBatch,
       skeletonStored: master.skeleton,
       planStartMonday: master.planStartMonday,
+      raceDate: master.race.date,
       athlete: { weeklyRunDaysMax: master.availability.weeklyRunDaysMax },
     });
     if (window.mode === "catch_up" && window.startWeek === currentWeek) weeklyDocs = freezePastSessions(weeklyDocs, asOfDay);

@@ -439,3 +439,59 @@ func TestAutoMigrateWeeklyPlanConvergesLegacyRows(t *testing.T) {
 		t.Fatalf("slot=%v, want active", rows[0].StatusSlot)
 	}
 }
+
+// #858 换计划归档：异链（含 NULL 链）周行直接删除，同链周行保留——
+// 换计划后旧周课无意义，且 uk(user_id, week_start) 会挡新计划滚动批写同周。
+func TestArchiveWeeklyPlansExcept(t *testing.T) {
+	store := openTestStore(t)
+	migrateWeeklyPlan(t, store)
+	userID := uuid.NewString()
+	otherUser := uuid.NewString()
+	newPlan := uuid.NewString()
+	oldPlan := uuid.NewString()
+
+	link := func(plan string) *string { return &plan }
+	sameChain := weeklyPlanRow(userID, "2026-08-10", WeeklyPlanStatusActive)
+	sameChain.MasterPlanID = link(newPlan)
+	crossChain := weeklyPlanRow(userID, "2026-08-17", WeeklyPlanStatusActive)
+	crossChain.MasterPlanID = link(oldPlan)
+	unlinked := weeklyPlanRow(userID, "2026-08-24", WeeklyPlanStatusActive)
+	unlinked.MasterPlanID = nil
+	otherUserRow := weeklyPlanRow(otherUser, "2026-08-17", WeeklyPlanStatusActive)
+	otherUserRow.MasterPlanID = link(oldPlan)
+	for _, row := range []*WeeklyPlan{sameChain, crossChain, unlinked, otherUserRow} {
+		seedWeeklyPlan(t, store, row)
+	}
+
+	removed, err := store.ArchiveWeeklyPlansExcept(context.Background(), userID, newPlan)
+	if err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	if removed != 2 {
+		t.Fatalf("removed=%d want 2 (cross-chain + unlinked)", removed)
+	}
+	var rows []WeeklyPlan
+	if err := store.db.WithContext(context.Background()).Where("user_id = ?", userID).Find(&rows).Error; err != nil {
+		t.Fatalf("read rows: %v", err)
+	}
+	if len(rows) != 1 || rows[0].PlanID != sameChain.PlanID {
+		t.Fatalf("rows=%+v, want only the same-chain row", rows)
+	}
+	// 其他用户的行不受影响
+	var otherRows []WeeklyPlan
+	if err := store.db.WithContext(context.Background()).Where("user_id = ?", otherUser).Find(&otherRows).Error; err != nil {
+		t.Fatalf("read other rows: %v", err)
+	}
+	if len(otherRows) != 1 {
+		t.Fatalf("other user rows=%d want 1", len(otherRows))
+	}
+	// 幂等：重复执行无行可删
+	again, err := store.ArchiveWeeklyPlansExcept(context.Background(), userID, newPlan)
+	if err != nil || again != 0 {
+		t.Fatalf("idempotent re-run: removed=%d err=%v", again, err)
+	}
+	// 非法 keep id 直接报错（防误删）
+	if _, err := store.ArchiveWeeklyPlansExcept(context.Background(), userID, "not-a-uuid"); err == nil {
+		t.Fatalf("invalid keep id must fail")
+	}
+}

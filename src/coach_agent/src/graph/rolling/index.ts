@@ -8,10 +8,17 @@
  */
 
 export * from "./adjust/index.js";
-export type { MasterPlanArtifact, RollingDeps, RollingOutcome, RollingProjectionInput } from "./projection.js";
+export type {
+  CoreCompleted,
+  CoreOutcome,
+  MasterPlanArtifact,
+  ProjectionAdjustOverrides,
+  RollingDeps,
+  RollingOutcome,
+  RollingProjectionInput,
+} from "./projection.js";
 export { diffOfWeeks, fromMasterArtifact, runProjectionCore, runRollingProjection } from "./projection.js";
-export type { CoreCompleted, CoreOutcome, ProjectionAdjustOverrides } from "./projection.js";
-export { fromStoredContent } from "./storedContent.js";
+export { fromStoredContent, storedWeeklyDocOf } from "./storedContent.js";
 export type { WeeklyDocsInput } from "./weeklyDocs.js";
 export { buildWeeklyDocs, freezePastSessions } from "./weeklyDocs.js";
 export type { RollingWindow } from "./window.js";

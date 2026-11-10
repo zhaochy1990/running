@@ -7,13 +7,17 @@
  * error，不静默降级）；race 取 content.goal（distance 透传，target_time 为
  * "finish_only" 时由 runRollingProjection 的目标时间门拦下）。
  */
-import { z } from "zod/v4";
+
 import {
   LoadPlanSchema,
   MasterPlanAnchorSchema,
   PhaseDivisionIntentSchema,
   type RollingMasterInput,
+  type WeeklyPlan,
+  WeeklyPlanSchema,
+  weekFolder,
 } from "@stride/contract";
+import type { z } from "zod/v4";
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -31,14 +35,24 @@ function requiredString(content: Record<string, unknown>, key: string): string {
 }
 
 /**
+ * 存量 weekly_plan 行 content → 周文档（#858 PR-C 下半提取共享）：Go 落库时
+ * （validateAppliedWeeklyPlan）剥掉 `schema`/`week_name` 两个身份键，读回侧
+ * 按行身份（weekStart 周一）回填后再过严格校验——detect/夜检/换因 job 共用。
+ */
+export function storedWeeklyDocOf(raw: unknown, weekStart: string): WeeklyPlan {
+  const record = (typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
+  return WeeklyPlanSchema.parse({
+    schema: "weekly-plan/v1",
+    week_name: weekFolder(weekStart),
+    ...record,
+  });
+}
+
+/**
  * content → RollingMasterInput。`lastGeneratedWeek` 由调用方计算（快照有课周 ∪
  * 已落库 weekly 行的最大周号）——本适配器只见得到 content，不知道 weekly 落库状态。
  */
-export function fromStoredContent(args: {
-  content: Record<string, unknown>;
-  masterPlanId: string;
-  lastGeneratedWeek: number;
-}): RollingMasterInput {
+export function fromStoredContent(args: { content: Record<string, unknown>; masterPlanId: string; lastGeneratedWeek: number }): RollingMasterInput {
   const { content } = args;
   const goal = content.goal;
   if (typeof goal !== "object" || goal === null || Array.isArray(goal)) throw new Error("storedContent.goal 不是对象");

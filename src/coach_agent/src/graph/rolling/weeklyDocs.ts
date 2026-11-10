@@ -14,15 +14,17 @@ import type { ContentWeekRow } from "../master_plan/phasing/content/doctrine.js"
 import type { ScheduledOutcome } from "../master_plan/phasing/content/generate.js";
 import { courseDose, DEFAULT_DOSE_COEFFICIENTS } from "../master_plan/phasing/content/schedule/dose.js";
 import { phaseRefMatches } from "../master_plan/phasing/intent.js";
-import { phaseSpansOf } from "../master_plan/v2Snapshot.js";
+import { deriveWeekKeySessions, easyPaceOf, phaseSpansOf } from "../master_plan/v2Snapshot.js";
 
 /**
  * 滚动周课文档构造（#858 PR-A Round 1，纯函数、单一真源）：把 L4 批产物
  * （ScheduledOutcome）按周映射成 weekly-plan/v1 文档数组，并填滚动扩展字段
  * （week_index、phase_name、里程碑、目标 km、偏差、剂量投影——契约 rolling.ts 段）。
  *
- * key_sessions 不进 weekly 文档（那是 v2 快照概念）；target km、阶段、里程碑进。
- * 营养段是契约必填的空骨架（滚动层不生成营养——那是 weekly 图的职责）。
+ * #858 PR-C 下半：key_sessions 进 weekly 文档（复用 v2 快照的 toKeySession
+ * 派生——deriveWeekKeySessions 单源，排序截断规则同快照），使 Go 读合并可以
+ * 零业务逻辑透传 v2 周行。营养段是契约必填的空骨架（滚动层不生成营养——
+ * 那是 weekly 图的职责）。
  */
 
 const r1 = (x: number) => Math.round(x * 10) / 10;
@@ -36,6 +38,8 @@ export interface WeeklyDocsInput {
   /** 存量骨架（偏差基准）。 */
   skeletonStored: LoadPlan;
   planStartMonday: string;
+  /** 目标比赛日（key_sessions 的 race 判定，同 v2 快照 raceDate）。 */
+  raceDate: string;
   athlete: { weeklyRunDaysMax: number };
 }
 
@@ -92,9 +96,10 @@ export function freezePastSessions(docs: WeeklyPlan[], asOf: string): WeeklyPlan
 
 /** 主入口：批内每周一个 weekly-plan/v1 文档（含滚动扩展字段），逐周过硬校验。 */
 export function buildWeeklyDocs(opts: WeeklyDocsInput): WeeklyPlan[] {
-  const { scheduled, batchRows, policy, skeletonNew, skeletonStored, planStartMonday } = opts;
+  const { scheduled, batchRows, policy, skeletonNew, skeletonStored, planStartMonday, raceDate } = opts;
   const spans = phaseSpansOf(policy);
   const sessionsOfWeek = new Map(scheduled.weeks.map((week) => [week.week, week.sessions]));
+  const easyPace = easyPaceOf(scheduled);
 
   const docs: WeeklyPlan[] = batchRows.map((row) => {
     const week = row.week;
@@ -137,6 +142,12 @@ export function buildWeeklyDocs(opts: WeeklyDocsInput): WeeklyPlan[] {
     const lastPoint = weekPoints.at(-1);
 
     const baseKm = storedWeek?.km ?? 0;
+    // key_sessions：v2 快照同源派生（E 课剔除、赛周只留比赛课、非恢复周 ≤3 /
+    // 恢复周 ≤1 按总里程降序截断）——Go 读合并据此透传 v2 周行，零训练学推导。
+    const keySessions = deriveWeekKeySessions(workouts, raceDate, easyPace, {
+      isRaceWeek: skeletonWeek.role === "race",
+      isRecoveryWeek: skeletonWeek.canonical === "recovery",
+    });
     return WeeklyPlanSchema.parse({
       schema: "weekly-plan/v1",
       week_name: weekFolder(weekStart),
@@ -151,6 +162,7 @@ export function buildWeeklyDocs(opts: WeeklyDocsInput): WeeklyPlan[] {
       target_weekly_km_low: skeletonWeek.km,
       target_weekly_km_high: skeletonWeek.km,
       is_recovery_week: skeletonWeek.canonical === "recovery",
+      key_sessions: keySessions,
       planned_dose: r1(weekPoints.reduce((total, point) => total + point.loadPt, 0)),
       load_ratio_projection: lastPoint != null ? (lastPoint.ratio ?? null) : null,
       km_deviation_pct: baseKm > 0 ? r1(((skeletonWeek.km - baseKm) / baseKm) * 100) : 0,

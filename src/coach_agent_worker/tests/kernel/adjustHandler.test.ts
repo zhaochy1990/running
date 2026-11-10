@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { masterPlanToContent, type AdjustOutcome } from "@stride/coach-agent";
+import { type AdjustOutcome, masterPlanToContent } from "@stride/coach-agent";
 import { createTestCompletedOutcomeV3, createTestWeeklyPlanDoc } from "@stride/coach-agent/test-fixtures";
-import { type AdjustJobRequest } from "@stride/contract";
+import type { AdjustJobRequest } from "@stride/contract";
+import { AdjustmentEventClosedError } from "../../src/goClient/weeklyPlanClient.js";
 import { asPermanent } from "../../src/job/errors.js";
+import { type AdjustHandlerDeps, createAdjustJobHandler } from "../../src/kernel/adjust/handler.js";
 import { FakePlanJobStore } from "../job/fakes.js";
-import { createAdjustJobHandler, type AdjustHandlerDeps } from "../../src/kernel/adjust/handler.js";
 
 /**
  * adjust handler 单测（#858 PR-C）：定位 pending → 事件周检测 → 投影 → payload
@@ -28,16 +29,19 @@ function storedContent(): Record<string, unknown> {
   return content;
 }
 
-function fakeDeps(overrides: { outcome?: AdjustOutcome; pending?: object | null } = {}): AdjustHandlerDeps {
-  const pendingRow = overrides.pending === undefined ? {
-    id: "adj-01",
-    master_plan_id: CONTENT_MASTER_ID,
-    event_week_start: EVENT_WEEK,
-    reason: "no_time",
-    status: "pending",
-    payload: null,
-    question: "上周完成得不理想，主要是？",
-  } : null;
+function fakeDeps(overrides: { outcome?: AdjustOutcome; pending?: object | null; upsertError?: Error } = {}): AdjustHandlerDeps {
+  const pendingRow =
+    overrides.pending === undefined
+      ? {
+          id: "adj-01",
+          master_plan_id: CONTENT_MASTER_ID,
+          event_week_start: EVENT_WEEK,
+          reason: "no_time",
+          status: "pending",
+          payload: null,
+          question: "上周完成得不理想，主要是？",
+        }
+      : null;
   const docs = new Map<string, unknown>([
     [EVENT_WEEK, createTestWeeklyPlanDoc(2)],
     ["2026-08-10", createTestWeeklyPlanDoc(1)],
@@ -73,6 +77,19 @@ function fakeDeps(overrides: { outcome?: AdjustOutcome; pending?: object | null 
         handlerCalls.push({ adjustmentId, reason, payload });
         return pendingRow as never;
       },
+      async upsertAdjustment(userId: string, input: { masterPlanId: string; eventWeekStart: string; reason: string; question: string; payload: string }) {
+        if (overrides.upsertError) throw overrides.upsertError;
+        upsertCalls.push({ userId, ...input });
+        return {
+          id: "adj-02",
+          master_plan_id: input.masterPlanId,
+          event_week_start: input.eventWeekStart,
+          reason: input.reason,
+          status: "pending",
+          payload: input.payload,
+          question: input.question,
+        };
+      },
       async batchApplyWeeklyPlans() {
         throw new Error("adjust job never batch-applies");
       },
@@ -99,9 +116,10 @@ function fakeDeps(overrides: { outcome?: AdjustOutcome; pending?: object | null 
 }
 
 const handlerCalls: Array<{ adjustmentId: string; reason: string; payload: string }> = [];
+const upsertCalls: Array<{ userId: string; masterPlanId: string; eventWeekStart: string; reason: string; question: string; payload: string }> = [];
 const projectionInputs: Array<{ reason: string; deviation: { class: string; severe: boolean } }> = [];
 
-function job(reason: AdjustJobRequest["reason"] = "no_time", eventWeek = EVENT_WEEK) {
+function job(reason: AdjustJobRequest["reason"] = "no_time", eventWeek = EVENT_WEEK, createPending = false) {
   return FakePlanJobStore.fixture({
     userId: USER_ID,
     jobType: "generate_adjustment",
@@ -109,6 +127,7 @@ function job(reason: AdjustJobRequest["reason"] = "no_time", eventWeek = EVENT_W
       request_id: "req-1",
       event_week_start: eventWeek,
       reason,
+      ...(createPending ? { create_pending: true } : {}),
       as_of: "2026-08-24T12:00:00.000+08:00",
     } satisfies AdjustJobRequest),
   });
@@ -177,7 +196,10 @@ test("pending 行 reason 与请求不一致 = permanent", async () => {
 
 test("infeasible（L3 门挂）= permanent 带 failedChecks", async () => {
   await assert.rejects(
-    createAdjustJobHandler(fakeDeps({ outcome: { decision: "infeasible", reason: "L3 门挂", failedChecks: [{ id: "H1", detail: "x" }] } }))(job(), async () => {}),
+    createAdjustJobHandler(fakeDeps({ outcome: { decision: "infeasible", reason: "L3 门挂", failedChecks: [{ id: "H1", detail: "x" }] } }))(
+      job(),
+      async () => {},
+    ),
     (error: unknown) => {
       const permanent = asPermanent(error);
       return permanent?.code === "kernel_adjust_infeasible" && (permanent.message.includes("H1") ?? false);
@@ -192,3 +214,74 @@ test("no_op 窗口（当前周已是批次末）= 成功 no_op，不回填", asy
   assert.equal(handlerCalls.length, before);
 });
 
+// ── create_pending 夜检建行分支（#858 PR-C 下半）──────────────────────────────
+
+test("create_pending：无 pending 行 → 检测+投影 → upsert 建行（payload=投影产物）", async () => {
+  const before = handlerCalls.length;
+  const result = await createAdjustJobHandler(fakeDeps({ pending: null }))(job("no_time", EVENT_WEEK, true), async () => {});
+  const parsed = JSON.parse(result.result);
+  assert.equal(parsed.decision, "completed");
+  assert.equal(parsed.created_pending, true);
+  assert.equal(parsed.adjustment_id, "adj-02");
+  // 检测真实跑过（空活动周 → missed severe）
+  assert.ok(["missed", "volume_short"].includes(projectionInputs.at(-1)!.deviation.class));
+  // upsert 建行被调、回填通道未被调
+  assert.equal(upsertCalls.length, 1);
+  assert.equal(handlerCalls.length, before);
+  const upsert = upsertCalls[0]!;
+  assert.equal(upsert.userId, USER_ID);
+  assert.equal(upsert.masterPlanId, CONTENT_MASTER_ID);
+  assert.equal(upsert.eventWeekStart, EVENT_WEEK);
+  assert.equal(upsert.reason, "no_time");
+  assert.equal(upsert.question, "上周完成得不理想，主要是？");
+  const payload = JSON.parse(upsert.payload);
+  assert.equal(payload.reason, "no_time");
+  assert.equal(payload.weekly_docs.length, 1);
+  assert.ok(payload.evidence.length > 0);
+});
+
+test("create_pending：Go 409 事件已关闭 → no-op 成功（不报错不重试）", async () => {
+  const result = await createAdjustJobHandler(fakeDeps({ pending: null, upsertError: new AdjustmentEventClosedError() }))(
+    job("no_time", EVENT_WEEK, true),
+    async () => {},
+  );
+  const parsed = JSON.parse(result.result);
+  assert.equal(parsed.decision, "no_op");
+  assert.match(parsed.reason, /已关闭/);
+});
+
+test("create_pending：已有同事件 pending → 维持回填路径（不 upsert）", async () => {
+  const upsertsBefore = upsertCalls.length;
+  const result = await createAdjustJobHandler(fakeDeps())(job("no_time", EVENT_WEEK, true), async () => {});
+  const parsed = JSON.parse(result.result);
+  assert.equal(parsed.decision, "completed");
+  assert.equal(parsed.adjustment_id, "adj-01");
+  assert.equal(parsed.created_pending, undefined);
+  assert.equal(upsertCalls.length, upsertsBefore);
+  assert.equal(handlerCalls.at(-1)!.adjustmentId, "adj-01");
+});
+
+test("create_pending：他事件 pending → 建行走 upsert（Go 侧先 supersede 旧行）", async () => {
+  const deps = fakeDeps({
+    pending: {
+      id: "adj-old",
+      master_plan_id: CONTENT_MASTER_ID,
+      event_week_start: "2026-08-10",
+      reason: "no_time",
+      status: "pending",
+      payload: null,
+      question: "旧问句",
+    },
+  });
+  const result = await createAdjustJobHandler(deps)(job("no_time", EVENT_WEEK, true), async () => {});
+  const parsed = JSON.parse(result.result);
+  assert.equal(parsed.decision, "completed");
+  assert.equal(upsertCalls.at(-1)!.eventWeekStart, EVENT_WEEK);
+});
+
+test("无 pending 且非 create_pending：换因链路维持 no-op（不越权建行）", async () => {
+  const upsertsBefore = upsertCalls.length;
+  const result = await createAdjustJobHandler(fakeDeps({ pending: null }))(job(), async () => {});
+  assert.equal(JSON.parse(result.result).decision, "no_op");
+  assert.equal(upsertCalls.length, upsertsBefore);
+});

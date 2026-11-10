@@ -164,6 +164,70 @@ jobs:
             exit 1
           fi
 
+      # ── #858 夜检扫描：数据同步完成后触发 coach_api 的 rolling-scan ──
+      # 按用户循环跑完才扫（判定要读当天的最新活动）。所需的 GitHub 配置
+      # （变量 STRIDE_COACH_API_URL + secret STRIDE_COACH_INTERNAL_TOKEN）尚未
+      # 在 repo settings 配置：缺省只打 warning 跳过、不 fail 本 job，配置即生效。
+      # 注意：secret 必须与 coach_api 部署侧的 STRIDE_COACH_API_INTERNAL_TOKEN
+      # 同值（该端点鉴权的是 coach_api 自己的 inbound token，非 Go 的
+      # STRIDE_GO_INTERNAL_TOKEN）。
+      - name: Trigger coach rolling-scan (nightly)
+        env:
+          STRIDE_COACH_API_URL: ${{ vars.STRIDE_COACH_API_URL }}
+          COACH_INTERNAL_TOKEN: ${{ secrets.STRIDE_COACH_INTERNAL_TOKEN }}
+        run: |
+          set -u
+          if [ -z "$STRIDE_COACH_API_URL" ] || [ -z "$COACH_INTERNAL_TOKEN" ]; then
+            echo "::warning::STRIDE_COACH_API_URL variable or STRIDE_COACH_INTERNAL_TOKEN secret missing — skipping nightly rolling-scan (configure them in repo settings; the secret must equal the coach_api deployment's STRIDE_COACH_API_INTERNAL_TOKEN)"
+            exit 0
+          fi
+          # One retry on a transient failure (cold start / scale-to-zero), same
+          # pattern as the sync-users GET above.
+          scan() {
+            curl -sS -o /tmp/scan.json -w "%{http_code}" --max-time 60 \
+              -X POST \
+              -H "X-Internal-Token: $COACH_INTERNAL_TOKEN" \
+              -H "Content-Type: application/json" \
+              --data '{}' \
+              "${STRIDE_COACH_API_URL%/}/api/internal/coach/rolling-scan"
+          }
+          http=$(scan) || http="000"
+          if [ "$http" != "200" ]; then
+            echo "  retrying rolling-scan after HTTP $http (cold start?)"
+            sleep 15
+            http=$(scan) || http="000"
+          fi
+          if [ "$http" != "200" ]; then
+            echo "::warning::rolling-scan failed (HTTP $http): $(head -c 300 /tmp/scan.json 2>/dev/null | tr '\n' ' ')"
+            exit 0
+          fi
+          echo "## Nightly rolling-scan" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          head -c 2000 /tmp/scan.json >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          python3 -c "
+          import json
+          s = json.load(open('/tmp/scan.json'))
+          print('rolling-scan: scanned=%(scanned)d rolling_enqueued=%(rolling_enqueued)d adjust_enqueued=%(adjust_enqueued)d skipped=%(skipped)d' % {
+            'scanned': s.get('scanned', 0),
+            'rolling_enqueued': s.get('rolling_enqueued', 0),
+            'adjust_enqueued': s.get('adjust_enqueued', 0),
+            'skipped': len(s.get('skipped', [])),
+          })
+          for u in s.get('users', []):
+              roll = u.get('rolling') or {}
+              window = roll.get('window')
+              dev = u.get('deviation')
+              print('  %s: rolling=%s deviation=%s enqueued=%d' % (
+                u.get('user_id'),
+                ('W%d-W%d %s' % (window['start_week'], window['end_week'], window['mode'])) if window else ('skip (%s)' % roll.get('note', '')[:60]),
+                ('%s@%s' % (dev.get('class'), dev.get('week_start'))) if dev else ('skip (%s)' % (u.get('deviation_note') or '')[:60]),
+                len(u.get('enqueued', [])),
+              ))
+          "
+
       # Side-channel to the WeCom group; the action never fails this job.
       - name: Notify WeCom
         if: always()

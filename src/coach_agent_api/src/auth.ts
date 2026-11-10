@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { getLogger } from "@stride/common";
 import type { MiddlewareHandler } from "hono";
 import { verify } from "hono/jwt";
@@ -62,6 +63,24 @@ export function createAdminMiddleware(): MiddlewareHandler<AuthEnv> {
   return async (context, next) => {
     if (!context.get("isAdmin")) {
       return context.json({ error: "forbidden" }, 403);
+    }
+    await next();
+  };
+}
+
+/**
+ * 入站内部端点鉴权（#858 夜检扫描）：X-Internal-Token 与配置常量比较（镜像 Go
+ * ADR 0033 的 x-internal-token 模式；timingSafeEqual 防时序侧信道）。空 token
+ * 时不该被挂载（route 注册前判空）；防御性地拒绝一切请求。
+ */
+export function createInternalTokenMiddleware(internalToken: string): MiddlewareHandler<AuthEnv> {
+  return async (context, next) => {
+    const provided = context.req.header("x-internal-token") ?? "";
+    const expected = internalToken;
+    const matches = provided.length === expected.length && timingSafeEqual(Buffer.from(provided, "utf8"), Buffer.from(expected, "utf8"));
+    if (!matches) {
+      context.header("WWW-Authenticate", "Internal-Token");
+      return context.json({ error: "unauthorized" }, 401);
     }
     await next();
   };

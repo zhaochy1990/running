@@ -1,21 +1,26 @@
 import {
   type ActiveMasterPlanMetadata,
-  assessWeek,
+  type ActivityRef,
+  type AdjustOutcome,
   type AskReason,
+  assessWeek,
+  fromStoredContent,
   type MasterPlanContextProvider,
   type MasterPlanLlmModels,
-  runAdjustProjection,
-  type AdjustOutcome,
   type RollingDeps,
+  runAdjustProjection,
+  storedWeeklyDocOf,
   type WeekDeviation,
-  fromStoredContent,
-  type ActivityRef,
 } from "@stride/coach-agent";
-import { AdjustJobRequest, shanghaiDay, type RollingMasterInput, WeeklyPlanSchema, type WeeklyPlan } from "@stride/contract";
+import { AdjustJobRequest, type RollingMasterInput, shanghaiDay, type WeeklyPlan } from "@stride/contract";
+import { AdjustmentEventClosedError, type RollingWeeklyChannel } from "../../goClient/weeklyPlanClient.js";
 import { ERROR_CODES, type Handler, newPermanentError } from "../../job/errors.js";
 import type { PlanJob } from "../../job/model.js";
 import type { Heartbeat } from "../../job/ports.js";
-import type { RollingWeeklyChannel } from "../../goClient/weeklyPlanClient.js";
+import { rollingMasterIdOf } from "../rolling/handler.js";
+
+/** 夜检建行的固定问句（检测证据在 payload.evidence 里，弹窗另行展示）。 */
+export const ADJUST_PENDING_QUESTION = "上周完成得不理想，主要是？";
 
 /** 调整 job 的存量读档面（与 rolling handler 同源）。 */
 export interface AdjustMasterPlanSource {
@@ -28,10 +33,10 @@ export interface AdjustWeeklyDocSource {
   getWeeklyPlan(userId: string, weekStart: string): Promise<unknown | null>;
 }
 
-/** 宽松行 content → 周文档（滚动落库行即 WeeklyPlan 产物，严格 parse 兜契约）。 */
+/** 宽松行 content → 周文档（Go 落库剥掉 schema/week_name——storedWeeklyDocOf 按行身份回填后严格 parse）。 */
 async function weeklyDocOf(source: AdjustWeeklyDocSource, userId: string, weekStart: string): Promise<WeeklyPlan | null> {
   const raw = await source.getWeeklyPlan(userId, weekStart);
-  return raw === null ? null : WeeklyPlanSchema.parse(raw);
+  return raw === null ? null : storedWeeklyDocOf(raw, weekStart);
 }
 
 /** 调整投影入口签名（=runAdjustProjection；测试注入 fake）。 */
@@ -70,10 +75,15 @@ class StageHeartbeats {
  * runAdjustProjection（按最终原因的配方重生成当前批次剩余周）→ 经内部端点
  * 回填 pending 行 payload（mp 轮询到 payload 恢复即出方案）。
  *
- * 语义：无 pending 行（被拒后的竞态）= no-op 成功；injured 不走本引擎
- * （permanent error，伤病模式 PR-D 接管）；最新数据显示事件周已恢复正常 =
- * permanent error（mp 提示无需调整）；infeasible（L3 门挂）= permanent error
- * （PR-C 夜检升级为重排建议）。
+ * 夜检通道（create_pending=true，PR-C 下半）：无匹配 pending 行时不 no-op，
+ * 而是**建行**——先跑检测+投影，再经内部 upsert 端点落 pending 行（payload=
+ * 投影产物、question=固定问句）；Go 返回 409 事件已关闭 = no-op 成功
+ * （用户答过的事件永不重问）。
+ *
+ * 语义：无 pending 行（被拒后的竞态）且非 create_pending = no-op 成功；
+ * injured 不走本引擎（permanent error，伤病模式 PR-D 接管）；最新数据显示
+ * 事件周已恢复正常 = permanent error（mp 提示无需调整）；infeasible（L3 门挂）
+ * = permanent error（PR-C 夜检升级为重排建议）。
  */
 export function createAdjustJobHandler(deps: AdjustHandlerDeps): Handler {
   return async (job: PlanJob, hb) => {
@@ -90,13 +100,22 @@ export function createAdjustJobHandler(deps: AdjustHandlerDeps): Handler {
       throw newPermanentError("kernel_adjust_injured_unsupported", new Error("受伤不走调整提案引擎（伤病模式另行接管）"));
     }
 
-    // ① 定位 pending 调整行：无行=用户已拒绝（竞态），no-op 成功。
+    // ① 定位 pending 调整行：无行=用户已拒绝（竞态），no-op 成功——夜检
+    // create_pending 模式例外（继续跑检测+投影后经 upsert 建行）。
     await stages.report(STAGE_READING);
-    const pending = await deps.weeklyPlans.getPendingAdjustment(job.userId);
-    if (pending === null || pending.event_week_start !== request.event_week_start) {
+    let pending = await deps.weeklyPlans.getPendingAdjustment(job.userId);
+    if (pending !== null && pending.event_week_start !== request.event_week_start) {
+      // 他事件的 pending：夜检建行路径照走（Go upsert 会先 supersede 它）；
+      // mp 换因链路维持 no-op（不越权动用户的弹窗）。
+      if (!request.create_pending) {
+        return { result: JSON.stringify({ decision: "no_op", reason: "pending 调整行不存在或事件周不匹配（可能已被用户处理）" }) };
+      }
+      pending = null;
+    }
+    if (pending === null && !request.create_pending) {
       return { result: JSON.stringify({ decision: "no_op", reason: "pending 调整行不存在或事件周不匹配（可能已被用户处理）" }) };
     }
-    if (pending.reason !== request.reason) {
+    if (pending !== null && pending.reason !== request.reason) {
       throw newPermanentError("kernel_adjust_reason_mismatch", new Error(`pending 行 reason=${pending.reason} 与请求 ${request.reason} 不一致`));
     }
 
@@ -105,8 +124,7 @@ export function createAdjustJobHandler(deps: AdjustHandlerDeps): Handler {
     if (active === null || active.status !== "active") {
       throw newPermanentError("kernel_adjust_no_active_master_plan", new Error("调整需要 active master plan"));
     }
-    const contentMasterId = typeof active.content.master_plan_id === "string" && active.content.master_plan_id.length > 0 ? active.content.master_plan_id : null;
-    const masterId = contentMasterId ?? active.planId;
+    const masterId = rollingMasterIdOf(active.content, active.planId);
     if (request.master_plan_id !== undefined && request.master_plan_id !== active.planId && request.master_plan_id !== masterId) {
       throw newPermanentError("kernel_adjust_master_plan_mismatch", new Error(`请求期望 ${request.master_plan_id}，active 是 ${active.planId}`));
     }
@@ -137,7 +155,11 @@ export function createAdjustJobHandler(deps: AdjustHandlerDeps): Handler {
     }
     let master: RollingMasterInput;
     try {
-      master = fromStoredContent({ content: active.content, masterPlanId: masterId, lastGeneratedWeek: Math.max(...existingWeeks.map((week) => week.week), 0) });
+      master = fromStoredContent({
+        content: active.content,
+        masterPlanId: masterId,
+        lastGeneratedWeek: Math.max(...existingWeeks.map((week) => week.week), 0),
+      });
     } catch (error) {
       throw newPermanentError("kernel_adjust_content_invalid", error);
     }
@@ -177,7 +199,9 @@ export function createAdjustJobHandler(deps: AdjustHandlerDeps): Handler {
       return { result: JSON.stringify({ decision: "no_op", reason: outcome.reason }) };
     }
 
-    // ⑥ 回填 pending payload（mp 轮询恢复即出方案）。
+    // ⑥ 落 payload（mp 轮询恢复即出方案）：已有 pending 行=回填；夜检
+    // create_pending 无行=upsert 建行（payload=投影产物；事件已关闭 409 降级
+    // no-op 成功——用户答过的事件永不重问）。
     await stages.report(STAGE_OUTPUT);
     const payload = JSON.stringify({
       reason: outcome.reason,
@@ -187,11 +211,34 @@ export function createAdjustJobHandler(deps: AdjustHandlerDeps): Handler {
       evidence: outcome.evidence,
       audit_summary: outcome.audit.summary,
     });
-    await deps.weeklyPlans.completeAdjustmentPayload(job.userId, pending.id, request.reason, payload);
+    let adjustmentId: string;
+    let created = false;
+    if (pending !== null) {
+      await deps.weeklyPlans.completeAdjustmentPayload(job.userId, pending.id, request.reason, payload);
+      adjustmentId = pending.id;
+    } else {
+      try {
+        const row = await deps.weeklyPlans.upsertAdjustment(job.userId, {
+          masterPlanId: masterId,
+          eventWeekStart: request.event_week_start,
+          reason: request.reason,
+          question: ADJUST_PENDING_QUESTION,
+          payload,
+        });
+        adjustmentId = row.id;
+        created = true;
+      } catch (error) {
+        if (error instanceof AdjustmentEventClosedError) {
+          return { result: JSON.stringify({ decision: "no_op", reason: "调整事件已关闭（用户已答过），不重复建提案" }) };
+        }
+        throw error;
+      }
+    }
     return {
       result: JSON.stringify({
         decision: "completed",
-        adjustment_id: pending.id,
+        adjustment_id: adjustmentId,
+        ...(created ? { created_pending: true } : {}),
         reason: outcome.reason,
         window: outcome.window,
         diff: outcome.diff,

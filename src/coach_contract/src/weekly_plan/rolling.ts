@@ -46,6 +46,13 @@ export const AdjustJobRequest = z
     event_week_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "event_week_start 须为 YYYY-MM-DD"),
     /** 调用方已解析的最终原因（预判或用户改选；injured 由 handler 拦截为 permanent error）。 */
     reason: z.enum(ADJUST_REASONS),
+    /**
+     * #858 PR-C 夜检通道：true=无匹配 pending 行时**建行**而不是 no-op——
+     * worker 先跑检测+投影，经内部 upsert 端点落 pending 行（payload=投影
+     * 产物、question=检测证据润色的问句）。Go 侧事件已关闭（409）= no-op
+     * 成功（用户已答过，不重复追问）。mp 换因链路不带此标志。
+     */
+    create_pending: z.boolean().optional(),
     /** 生成时点（ISO instant；缺省=现在，内部归一上海日历日）。 */
     as_of: z.string().datetime({ offset: true }).optional(),
   })

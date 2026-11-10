@@ -67,6 +67,11 @@ function skeleton(kms: Record<number, number>): LoadPlan {
   };
 }
 
+/** key_sessions 用：对指定周覆写 skeleton 周行属性（role/canonical）。 */
+function withWeekOverrides(plan: LoadPlan, overrides: Record<number, Partial<LoadPlan["weeks"][number]>>): LoadPlan {
+  return { ...plan, weeks: plan.weeks.map((week) => ({ ...week, ...(overrides[week.week] ?? {}) })) };
+}
+
 function workout(name: string, date: string, type: RunWorkout["type"], distanceM: number, pace: [number, number]): RunWorkout {
   return {
     schema: "run-workout/v1",
@@ -160,6 +165,7 @@ function buildDocs(scheduled: ScheduledOutcome = scheduledFixture()): WeeklyPlan
     skeletonNew: skeleton({ 1: 50, 2: 55, 3: 60, 4: 66, 5: 70, 6: 72, 7: 68, 8: 64 }),
     skeletonStored: skeleton({ 1: 50, 2: 55, 3: 60, 4: 60, 5: 65, 6: 72, 7: 68, 8: 64 }),
     planStartMonday: PLAN_START,
+    raceDate: "2026-11-28",
     athlete: { weeklyRunDaysMax: 6 },
   });
 }
@@ -232,6 +238,7 @@ test("final_quality 周经 span 劈分映射到 marathon/taper 阶段名", () =>
     skeletonNew: skeleton({ 1: 50, 2: 55, 3: 60, 4: 66, 5: 70, 6: 72, 7: 68, 8: 64 }),
     skeletonStored: skeleton({ 1: 50, 2: 55, 3: 60, 4: 60, 5: 65, 6: 72, 7: 68, 8: 64 }),
     planStartMonday: PLAN_START,
+    raceDate: "2026-11-28",
     athlete: { weeklyRunDaysMax: 6 },
   });
   assert.equal(docs[0]!.phase_name, "marathon");
@@ -257,4 +264,113 @@ test("追赶冻结：删除 date < 明天 的会话并注明；无 run 残留的
   // 第二周不受影响
   assert.equal(w5.sessions.length, 7);
   assert.equal(w5.notes_md, null);
+});
+
+// ── key_sessions 派生（#858 PR-C 下半；口径与 v2 快照同源：E 课剔除、赛周只留
+//    比赛课、非恢复周 ≤3 / 恢复周 ≤1 按总里程降序截断）─────────────────────────
+
+test("key_sessions：T/LR 课进重点课，E 课剔除；按总里程降序", () => {
+  const docs = buildDocs();
+  const [w4] = docs;
+  assert.ok(w4);
+  // 批产物只有 T（5km）+ LR（20km）→ 2 节重点课，LR 在前
+  assert.equal(w4.key_sessions?.length, 2);
+  assert.equal(w4.key_sessions?.[0]?.type, "long_run");
+  assert.equal(w4.key_sessions?.[0]?.distance_km, 20);
+  assert.equal(w4.key_sessions?.[1]?.type, "threshold");
+  assert.equal(w4.key_sessions?.[1]?.distance_km, 5);
+  assert.equal(w4.key_sessions?.[1]?.workout_structure?.name, "T 巡航 5km");
+  // 与 v2 快照同构：同一 scheduled 产物的快照周 key_sessions 与周文档一致
+});
+
+test("key_sessions 截断：非恢复周 >3 节按里程降序截前 3", () => {
+  const docs = buildWeeklyDocs({
+    scheduled: {
+      ...scheduledFixture(),
+      weeks: [
+        {
+          week: 4,
+          sessions: [
+            workout("T 巡航 5km", "2026-10-27", "T", 5000, [235, 249]),
+            workout("I 间歇 8km", "2026-10-28", "I", 8000, [218, 235]),
+            workout("M 轻量 10km", "2026-10-29", "M", 10000, [249, 288]),
+            workout("周末长跑 20km", "2026-11-01", "LR", 20000, [288, 336]),
+            workout("E 有氧 6km", "2026-10-30", "E", 6000, [288, 336]),
+          ],
+        },
+      ],
+      loadSeries: loadPoints(4, "2026-10-26"),
+    },
+    batchRows: BATCH_ROWS.slice(0, 1),
+    policy: policy8(),
+    skeletonNew: skeleton({ 1: 50, 2: 55, 3: 60, 4: 66, 5: 70, 6: 72, 7: 68, 8: 64 }),
+    skeletonStored: skeleton({ 1: 50, 2: 55, 3: 60, 4: 60, 5: 65, 6: 72, 7: 68, 8: 64 }),
+    planStartMonday: PLAN_START,
+    raceDate: "2026-11-28",
+    athlete: { weeklyRunDaysMax: 6 },
+  });
+  const [w4] = docs;
+  assert.ok(w4);
+  // E 剔除后 4 节 → 截前 3（LR 20 > M 10 > I 8；T 5 被截）
+  assert.deepEqual(
+    w4.key_sessions?.map((session) => `${session.type}:${session.distance_km}`),
+    ["long_run:20", "race_pace:10", "interval:8"],
+  );
+});
+
+test("key_sessions 赛周：只留比赛课（激活课不进）", () => {
+  // 第 8 周 = 2026-11-23..2026-11-29（含比赛日 2026-11-28 周六），skeleton 第 8 周 role=race
+  const docs = buildWeeklyDocs({
+    scheduled: {
+      ...scheduledFixture(),
+      weeks: [
+        {
+          week: 8,
+          sessions: [
+            // 赛周激活课（比赛日前 2 天的轻量 M 课，v3 产物不进 v2 快照口径）
+            workout("赛前激活 3km", "2026-11-26", "M", 3000, [249, 288]),
+            workout("上海马拉松", "2026-11-28", "M", 42195, [249, 288]),
+          ],
+        },
+      ],
+      loadSeries: loadPoints(8, "2026-11-23"),
+    },
+    batchRows: [{ ...BATCH_ROWS[0]!, week: 8, role: "race" }],
+    policy: policy8(),
+    skeletonNew: withWeekOverrides(skeleton({ 1: 50, 2: 55, 3: 60, 4: 66, 5: 70, 6: 72, 7: 68, 8: 64 }), { 8: { role: "race" } }),
+    skeletonStored: skeleton({ 1: 50, 2: 55, 3: 60, 4: 60, 5: 65, 6: 72, 7: 68, 8: 64 }),
+    planStartMonday: PLAN_START,
+    raceDate: "2026-11-28",
+    athlete: { weeklyRunDaysMax: 6 },
+  });
+  const [raceWeek] = docs;
+  assert.ok(raceWeek);
+  assert.equal(raceWeek.week_name.slice(0, 10), "2026-11-23");
+  assert.equal(raceWeek.key_sessions?.length, 1);
+  assert.equal(raceWeek.key_sessions?.[0]?.type, "race");
+  assert.equal(raceWeek.key_sessions?.[0]?.distance_km, 42.2);
+});
+
+test("key_sessions 恢复周：≤1 节（只留最长一节）", () => {
+  const docs = buildWeeklyDocs({
+    scheduled: {
+      ...scheduledFixture(),
+      weeks: [
+        { week: 4, sessions: [workout("T 巡航 5km", "2026-10-27", "T", 5000, [235, 249]), workout("周末长跑 20km", "2026-11-01", "LR", 20000, [288, 336])] },
+      ],
+      loadSeries: loadPoints(4, "2026-10-26"),
+    },
+    batchRows: BATCH_ROWS.slice(0, 1),
+    policy: policy8(),
+    skeletonNew: withWeekOverrides(skeleton({ 1: 50, 2: 55, 3: 60, 4: 30, 5: 70, 6: 72, 7: 68, 8: 64 }), { 4: { canonical: "recovery" } }),
+    skeletonStored: skeleton({ 1: 50, 2: 55, 3: 60, 4: 60, 5: 65, 6: 72, 7: 68, 8: 64 }),
+    planStartMonday: PLAN_START,
+    raceDate: "2026-11-28",
+    athlete: { weeklyRunDaysMax: 6 },
+  });
+  const [w4] = docs;
+  assert.ok(w4);
+  assert.equal(w4.is_recovery_week, true);
+  assert.equal(w4.key_sessions?.length, 1);
+  assert.equal(w4.key_sessions?.[0]?.type, "long_run");
 });

@@ -71,13 +71,18 @@ func (s *Store) UpsertPendingAdjustment(
 			First(&row).Error
 		switch {
 		case err == nil:
+			// refresh 只更新业务列：Save 全字段回写会把 gorm 读出的 DATE 列
+			// （parseTime 下被格式化成 RFC3339）写回 event_week_start 而 1292 拒收
+			// （首次真库运行实证，2026-11-10）。
+			if err := tx.Model(&PlanAdjustment{}).Where("id = ?", row.ID).Updates(map[string]any{
+				"reason": reason, "question": question, "payload": payload, "updated_at": now,
+			}).Error; err != nil {
+				return fmt.Errorf("storage: refresh pending adjustment: %w", err)
+			}
 			row.Reason = reason
 			row.Question = question
 			row.Payload = &payload
 			row.UpdatedAt = now
-			if err := tx.Save(&row).Error; err != nil {
-				return fmt.Errorf("storage: refresh pending adjustment: %w", err)
-			}
 			created = &row
 			return nil
 		case errors.Is(err, gorm.ErrRecordNotFound):
@@ -100,6 +105,26 @@ func (s *Store) UpsertPendingAdjustment(
 		return nil, err
 	}
 	return created, nil
+}
+
+// SupersedePendingAdjustments closes every pending proposal of the user
+// (#858 换计划归档): a plan change invalidates the popup's anchored proposal
+// (its payload references the replaced plan's weeks), so all pending rows move
+// to superseded in one statement. Terminal rows (accepted/dismissed) keep
+// their history. Returns the number of rows superseded.
+func (s *Store) SupersedePendingAdjustments(ctx context.Context, userID string) (int64, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return 0, err
+	}
+	result := s.db.WithContext(ctx).
+		Model(&PlanAdjustment{}).
+		Where("user_id = ? AND status = ?", uid, PlanAdjustmentStatusPending).
+		Update("status", PlanAdjustmentStatusSuperseded)
+	if result.Error != nil {
+		return 0, fmt.Errorf("storage: supersede pending adjustments: %w", result.Error)
+	}
+	return result.RowsAffected, nil
 }
 
 // GetPendingAdjustment returns the user's single pending row, if any.

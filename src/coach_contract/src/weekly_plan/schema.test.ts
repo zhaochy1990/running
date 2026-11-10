@@ -93,3 +93,47 @@ test("normalizeWeeklyPlan repairs rest:null, omitted notes and noise keys into a
   assert.deepEqual(normalized.notes_md, null);
   assert.deepEqual(normalized.coach_notes, null);
 });
+
+// ── key_sessions 滚动扩展字段（#858 PR-C 下半；类型复用 MasterPlan weeks.key_sessions）──
+
+const keySession = {
+  type: "threshold",
+  distance_km: 5,
+  duration_min: 25,
+  intensity: "T 配速课：巡航 5km",
+  purpose: null,
+  workout_structure: {
+    schema: "run-workout/v1",
+    name: "T 巡航 5km",
+    date: "2026-08-19",
+    note: null,
+    blocks: [
+      {
+        repeat: 1,
+        steps: [
+          {
+            step_kind: "work",
+            duration: { kind: "distance_m", value: 5000 },
+            target: { kind: "pace_s_km", low: 235, high: 249 },
+            note: null,
+            hr_cap_bpm: null,
+          },
+        ],
+      },
+    ],
+  },
+};
+
+test("key_sessions 可选：带合法重点课的周文档通过，缺字段仍合法", () => {
+  const withKeys = { ...validPlan(), week_index: 2, key_sessions: [keySession] };
+  const parsed = WeeklyPlanSchema.safeParse(withKeys);
+  assert.equal(parsed.success, true);
+  assert.equal(parsed.success && parsed.data.key_sessions?.[0]?.type, "threshold");
+  // 存量文档（无 key_sessions）不受影响
+  assert.equal(WeeklyPlanSchema.safeParse(validPlan()).success, true);
+});
+
+test("key_sessions 元素非法（未知 type / 错类型距离）被拒", () => {
+  assert.equal(WeeklyPlanSchema.safeParse({ ...validPlan(), key_sessions: [{ ...keySession, type: "warmup_junk" }] }).success, false);
+  assert.equal(WeeklyPlanSchema.safeParse({ ...validPlan(), key_sessions: [{ ...keySession, distance_km: "5km" }] }).success, false);
+});

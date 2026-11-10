@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { masterPlanToContent, type RollingOutcome } from "@stride/coach-agent";
 import { createTestCompletedOutcomeV3, createTestWeeklyPlanDoc } from "@stride/coach-agent/test-fixtures";
-import { asPermanent } from "../../src/job/errors.js";
 import type { WeeklyPlanAppliedWeek } from "../../src/goClient/weeklyPlanClient.js";
+import { asPermanent } from "../../src/job/errors.js";
 import { createRollingJobHandler, type RollingHandlerDeps, type RollingProjection } from "../../src/kernel/rolling/handler.js";
 import { FakePlanJobStore } from "../job/fakes.js";
 
@@ -60,6 +60,9 @@ class FakeWeeklyChannel {
   async completeAdjustmentPayload(_userId: string, adjustmentId: string, reason: string, payload: string) {
     this.refilled.push({ adjustmentId, reason, payload });
     return this.pendingAdjustment!;
+  }
+  async upsertAdjustment(): Promise<import("../../src/goClient/weeklyPlanClient.js").PendingAdjustmentRow> {
+    throw new Error("rolling job never upserts adjustments");
   }
 }
 
@@ -125,8 +128,8 @@ test("completed：weeklyDocs 落库调用 + result 带 weekly_weeks；心跳单�
   const handler = createRollingJobHandler(deps({ projectionOutcome: completedOutcome() }));
   const heartbeats: Array<[string, number]> = [];
   const result = await handler(rollingJob(), async (stage, pct) => {
-      heartbeats.push([stage, pct]);
-    });
+    heartbeats.push([stage, pct]);
+  });
 
   const parsed = JSON.parse(result.result) as {
     decision: string;
@@ -140,7 +143,11 @@ test("completed：weeklyDocs 落库调用 + result 带 weekly_weeks；心跳单�
   assert.deepEqual(parsed.weekly_weeks, []);
 
   const pcts = heartbeats.map(([, pct]) => pct);
-  assert.deepEqual(pcts, [...pcts].sort((a, b) => a - b), "progress must be monotonic");
+  assert.deepEqual(
+    pcts,
+    [...pcts].sort((a, b) => a - b),
+    "progress must be monotonic",
+  );
   assert.ok(heartbeats.some(([stage, pct]) => stage === "reading_history" && pct === 10));
   assert.ok(heartbeats.some(([stage, pct]) => stage === "outputting" && pct === 95));
 });
@@ -158,7 +165,10 @@ test("completed：batch-apply 收到全量 weeklyDocs（经通道 fake 校验）
   assert.equal(fake.batches[0]?.masterPlanId, CONTENT_MASTER_ID);
   assert.equal(fake.batches[0]?.weeks.length, 2);
   const parsed = JSON.parse(result.result) as { weekly_weeks: Array<{ week_start: string; revision: number }> };
-  assert.deepEqual(parsed.weekly_weeks.map((row) => row.week_start), ["2026-09-21", "2026-09-28"]);
+  assert.deepEqual(
+    parsed.weekly_weeks.map((row) => row.week_start),
+    ["2026-09-21", "2026-09-28"],
+  );
 });
 
 test("no_op：成功返回 decision=no_op + reason，不落库", async () => {
@@ -225,7 +235,10 @@ test("无 master plan / archived 行 / content 缺段分别给稳定 permanent c
 
   const broken = JSON.parse(JSON.stringify(storedContent({ withContentMasterId: false }))) as Record<string, unknown>;
   delete broken.availability;
-  await assert.rejects(rollingRun(createRollingJobHandler(deps({ content: broken, projectionOutcome: completedOutcome() }))), rejectsWith("kernel_rolling_content_invalid"));
+  await assert.rejects(
+    rollingRun(createRollingJobHandler(deps({ content: broken, projectionOutcome: completedOutcome() }))),
+    rejectsWith("kernel_rolling_content_invalid"),
+  );
 });
 
 test("lastGeneratedWeek=快照有课周 ∪ 已落库 weekly 行的最大值；list 按 content 前瞻 id 查询", async () => {

@@ -156,6 +156,15 @@ const schema: convict.Schema<RawApiConfig> = {
       sensitive: true,
     },
   },
+  internal: {
+    token: {
+      doc: "Inbound X-Internal-Token for this API's own internal endpoints (#858 rolling-scan nightly trigger); empty leaves them unmounted",
+      format: String,
+      default: "",
+      env: "STRIDE_COACH_API_INTERNAL_TOKEN",
+      sensitive: true,
+    },
+  },
   logging: {
     file: {
       doc: "Local-only debug log file (pretty text, tee'd alongside stdout). Empty disables it; relative paths resolve against the config directory",
@@ -199,6 +208,7 @@ export function loadApiConfig(options: LoadApiConfigOptions): ApiConfig {
       staffOpenidEndpoint: raw.lottery.staff_openid_endpoint,
       staffOpenidInternalToken: raw.lottery.staff_openid_internal_token,
     },
+    internal: { token: raw.internal.token },
     logFile: raw.logging.file ? resolve(configDir, raw.logging.file) : "",
     turnLock: { waitSeconds: raw.turn_lock.wait_seconds },
     auth: {

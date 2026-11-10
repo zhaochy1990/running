@@ -2,8 +2,9 @@ import type { RaceTargetBindingGateway } from "@stride/coach-agent";
 import { getLogger } from "@stride/common";
 import { Hono } from "hono";
 import { requestId } from "hono/request-id";
-import { type AuthEnv, createAuthMiddleware, createOptionalAuthMiddleware, type JwtVerifier } from "./auth.js";
+import { type AuthEnv, createAuthMiddleware, createInternalTokenMiddleware, createOptionalAuthMiddleware, type JwtVerifier } from "./auth.js";
 import type { CoachInvoker } from "./coach/coachInvoker.js";
+import type { RollingScanRunner } from "./coach/rollingScan.js";
 import type { CoachDataDeleter } from "./persistence/deletion.js";
 import type { LotteryFunnelStore } from "./persistence/lotteryFunnel.js";
 import type { LotteryStaffStore } from "./persistence/lotteryStaff.js";
@@ -23,6 +24,7 @@ import {
 import { registerLotteryDashboardRoutes } from "./routes/lotteryDashboard.js";
 import { registerLotteryStaffRoutes } from "./routes/lotteryStaff.js";
 import { type PlanJobsService, registerPlanJobRoutes } from "./routes/planJobs.js";
+import { registerRollingScanRoutes } from "./routes/rollingScan.js";
 import { type CoachShareCreateDeps, type CoachShareReadDeps, registerCoachShareReadRoute, registerShareCreateRoute } from "./routes/shares.js";
 import { registerSwaggerRoutes } from "./routes/swagger.js";
 import type { TurnCoordinator } from "./turn/coordinator.js";
@@ -38,6 +40,11 @@ export interface AppDependencies {
   checkpointer?: ThreadHistoryReader;
   /** When provided, exposes the deterministic plan-job enqueue/poll endpoints. */
   planJobs?: PlanJobsService;
+  /**
+   * #858 夜检扫描内部端点（POST /api/internal/coach/rolling-scan）：internalToken
+   * 为空不挂载（secrets 未配置的部署整体跳过，配置即生效）。
+   */
+  rollingScan?: { scan: RollingScanRunner; internalToken: string };
   /** When provided, exposes the admin/self coach-data erasure endpoint. */
   coachDataDeleter?: CoachDataDeleter;
   /** When provided, exposes coach chat sharing (#715): the authed create route (requires `checkpointer`) and the public read route. */
@@ -105,6 +112,14 @@ export function createApp(dependencies: AppDependencies): Hono<AuthEnv> {
     registerPlanJobRoutes(app, {
       planJobs: dependencies.planJobs,
       auth: createAuthMiddleware(dependencies.jwtVerifier),
+    });
+  }
+
+  // #858 夜检扫描内部端点：X-Internal-Token 鉴权（token 未配置不挂载）。
+  if (dependencies.rollingScan && dependencies.rollingScan.internalToken !== "") {
+    registerRollingScanRoutes(app, {
+      scan: dependencies.rollingScan.scan,
+      internalAuth: createInternalTokenMiddleware(dependencies.rollingScan.internalToken),
     });
   }
 

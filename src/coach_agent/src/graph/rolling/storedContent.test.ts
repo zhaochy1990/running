@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { masterPlanToContent } from "../../agents/training/content.js";
-import { createTestCompletedOutcomeV3, createTestMasterPlan } from "../master_plan/testFixtures.js";
-import { fromStoredContent } from "./storedContent.js";
+import { createTestCompletedOutcomeV3, createTestMasterPlan, createTestWeeklyPlanDoc } from "../master_plan/testFixtures.js";
+import { fromStoredContent, storedWeeklyDocOf } from "./storedContent.js";
 
 /**
  * fromStoredContent 适配器单测（#858 PR-A Round 2）：用**真实落库形状**往返——
@@ -61,4 +61,25 @@ test("fromStoredContent：坏 goal（finish_only 目标）在 goal 段就被拦�
   const goal = content.goal as Record<string, unknown>;
   goal.target_time = "finish_only";
   assert.throws(() => fromStoredContent({ content, masterPlanId: "p", lastGeneratedWeek: 1 }), /target_time/);
+});
+
+// ── storedWeeklyDocOf（#858 PR-C 下半：Go 落库剥掉 schema/week_name 的读回适配）──
+
+test("storedWeeklyDocOf：按行身份回填 schema/week_name 后严格 parse 通过", () => {
+  const doc = createTestWeeklyPlanDoc(2); // 2026-08-17 那周（week 2）
+  // Go validateAppliedWeeklyPlan 落库前剥掉两个身份键
+  const stored: Record<string, unknown> = { ...doc };
+  delete stored.schema;
+  delete stored.week_name;
+  const parsed = storedWeeklyDocOf(stored, "2026-08-17");
+  assert.equal(parsed.schema, "weekly-plan/v1");
+  assert.equal(parsed.week_name, "2026-08-17_08-23");
+  assert.equal(parsed.week_index, 2);
+  // 原样带身份键的文档也照常通过（回填不覆盖已有值）
+  assert.equal(storedWeeklyDocOf(doc, "2026-08-17").week_name, doc.week_name);
+});
+
+test("storedWeeklyDocOf：坏形状（缺 sessions）照常被严格层拒绝", () => {
+  assert.throws(() => storedWeeklyDocOf({ notes_md: null }, "2026-08-17"), /sessions/);
+  assert.throws(() => storedWeeklyDocOf("junk", "2026-08-17"));
 });

@@ -34,6 +34,14 @@ type MasterPlanStore interface {
 	TrainingDoseWeekSummaries(ctx context.Context, userID string, windows []storage.WeekWindow) (map[int]storage.TrainingDoseWeekSummary, error)
 	ApplyStructuredMasterPlan(ctx context.Context, userID, goalID, content, applyToken string, replacement *storage.MasterPlanReplacement) (*storage.MasterPlan, *storage.MasterPlan, error)
 	UpdateActiveMasterPlan(ctx context.Context, userID, goalID, content string, expectation *storage.MasterPlanReplacement) (*storage.MasterPlan, error)
+	// ListActiveWeeklyPlans feeds the read merge (#858): the athlete's weekly
+	// rows overlay/extend the snapshot weeks on the current-plan read.
+	ListActiveWeeklyPlans(ctx context.Context, userID string) ([]storage.WeeklyPlan, error)
+	// ArchiveWeeklyPlansExcept / SupersedePendingAdjustments are the
+	// plan-change cleanups (#858): stale weekly rows of the replaced plan and
+	// its anchored pending proposals are removed when a new plan lands.
+	ArchiveWeeklyPlansExcept(ctx context.Context, userID, keepMasterPlanID string) (int64, error)
+	SupersedePendingAdjustments(ctx context.Context, userID string) (int64, error)
 }
 
 type masterPlanRoutes struct {
@@ -170,7 +178,12 @@ func (m *masterPlanRoutes) apply(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
-	envelope, _, _, err := buildCurrentEnvelope(created, timefmt.ShanghaiToday(), m.log)
+	if err := m.archiveReplacedSeason(c.Request.Context(), uid, created.PlanID); err != nil {
+		m.log.Error("archive replaced season artifacts failed", zapErr(err), zap.String("user_id", uid))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	envelope, _, _, err := buildCurrentEnvelope(created, nil, timefmt.ShanghaiToday(), m.log)
 	if err != nil {
 		m.log.Error("applied master plan is invalid", zapErr(err), zap.String("plan_id", created.PlanID))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
@@ -278,7 +291,12 @@ func (m *masterPlanRoutes) applyFromContent(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
-	envelope, _, _, err := buildCurrentEnvelope(created, timefmt.ShanghaiToday(), m.log)
+	if err := m.archiveReplacedSeason(c.Request.Context(), uid, created.PlanID); err != nil {
+		m.log.Error("archive replaced season artifacts failed", zapErr(err), zap.String("user_id", uid))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	envelope, _, _, err := buildCurrentEnvelope(created, nil, timefmt.ShanghaiToday(), m.log)
 	if err != nil {
 		m.log.Error("applied master plan is invalid", zapErr(err), zap.String("plan_id", created.PlanID))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
@@ -373,7 +391,14 @@ func (m *masterPlanRoutes) update(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
-	envelope, _, _, err := buildCurrentEnvelope(updated, timefmt.ShanghaiToday(), m.log)
+	// 同一 plan_id 的原地更新也走归档：keep=本计划 id（同链周行保留），但内容已
+	// 变——异链遗留周行清掉、锚定旧内容的 pending 提案整体 supersede。
+	if err := m.archiveReplacedSeason(c.Request.Context(), uid, updated.PlanID); err != nil {
+		m.log.Error("archive replaced season artifacts failed", zapErr(err), zap.String("user_id", uid))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	envelope, _, _, err := buildCurrentEnvelope(updated, nil, timefmt.ShanghaiToday(), m.log)
 	if err != nil {
 		m.log.Error("updated master plan is invalid", zapErr(err), zap.String("plan_id", updated.PlanID))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
@@ -542,8 +567,16 @@ func (m *masterPlanRoutes) getCurrentForUserID(c *gin.Context, uid string) {
 		c.JSON(http.StatusNotFound, gin.H{"detail": "当前没有激活的赛季训练计划"})
 		return
 	}
+	// #858 读合并：小程序读周行 = 快照周 ∪ 已落库 weekly 行（滚动批/调整提案的
+	// 最新课表覆盖快照同周）。mergeWeeklyPlanWeeks 只做 JSON 字段透传。
+	weeklyRows, err := m.store.ListActiveWeeklyPlans(c.Request.Context(), uid)
+	if err != nil {
+		m.log.Error("list weekly plans for read merge failed", zapErr(err), zap.String("user_id", uid))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
 
-	envelope, windows, weekFinished, err := buildCurrentEnvelope(row, timefmt.ShanghaiToday(), m.log)
+	envelope, windows, weekFinished, err := buildCurrentEnvelope(row, weeklyRows, timefmt.ShanghaiToday(), m.log)
 	if err != nil {
 		m.log.Error("current master plan is invalid", zapErr(err), zap.String("plan_id", row.PlanID))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
@@ -564,6 +597,31 @@ func (m *masterPlanRoutes) getCurrentForUserID(c *gin.Context, uid string) {
 		}
 	}
 	c.JSON(http.StatusOK, envelope)
+}
+
+// archiveReplacedSeason runs the #858 plan-change cleanups once a new plan row
+// landed: weekly rows of any other master plan are deleted (their weeks are
+// meaningless after the switch and UNIQUE(user_id, week_start) would block the
+// new plan from writing the same week), and every pending plan_adjustment is
+// superseded (the popup proposal anchors the replaced plan's weeks).
+//
+// 取舍：归档在 apply 事务提交之后紧随执行（非同事务）——两者都幂等，apply 提交
+// 与归档之间崩溃只会留下旧链行，下次 apply/读合并重放同一清理即可；期间新计划
+// 滚动批写同周会被 409 拒并按批重试，窗口极窄，可接受。
+func (m *masterPlanRoutes) archiveReplacedSeason(ctx context.Context, userID, keepPlanID string) error {
+	weekly, err := m.store.ArchiveWeeklyPlansExcept(ctx, userID, keepPlanID)
+	if err != nil {
+		return err
+	}
+	adjustments, err := m.store.SupersedePendingAdjustments(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if weekly > 0 || adjustments > 0 {
+		m.log.Info("archived replaced season artifacts",
+			zap.String("user_id", userID), zap.Int64("weekly_rows", weekly), zap.Int64("pending_adjustments", adjustments))
+	}
+	return nil
 }
 
 func cmpErr(a, b error) error {
@@ -588,7 +646,7 @@ type currentSeasonPlanEnvelope struct {
 	Plan           any       `json:"plan"`
 }
 
-func buildCurrentEnvelope(row *storage.MasterPlan, today time.Time, log *zap.Logger) (currentSeasonPlanEnvelope, []storage.WeekWindow, map[int]bool, error) {
+func buildCurrentEnvelope(row *storage.MasterPlan, weeklyRows []storage.WeeklyPlan, today time.Time, log *zap.Logger) (currentSeasonPlanEnvelope, []storage.WeekWindow, map[int]bool, error) {
 	if row == nil || strings.TrimSpace(row.Content) == "" {
 		return currentSeasonPlanEnvelope{}, nil, nil, fmt.Errorf("current plan content is empty")
 	}
@@ -620,7 +678,7 @@ func buildCurrentEnvelope(row *storage.MasterPlan, today time.Time, log *zap.Log
 	if row.Revision == nil || *row.Revision < 1 {
 		return currentSeasonPlanEnvelope{}, nil, nil, fmt.Errorf("structured plan revision must be positive")
 	}
-	doc, windows, weekFinished, err := buildCurrentResponse(row, today)
+	doc, windows, weekFinished, err := buildCurrentResponse(row, weeklyRows, today)
 	if err != nil {
 		return currentSeasonPlanEnvelope{}, nil, nil, err
 	}
@@ -641,6 +699,7 @@ func buildCurrentEnvelope(row *storage.MasterPlan, today time.Time, log *zap.Log
 
 type mpPhase struct {
 	ID          string `json:"id"`
+	Name        string `json:"name"`
 	StartDate   string `json:"start_date"`
 	EndDate     string `json:"end_date"`
 	IsCompleted bool   `json:"is_completed"`
@@ -669,7 +728,11 @@ type mpContent struct {
 // date-derived fields are added. It also returns the per-week activity windows to
 // aggregate actuals over, and which of those weeks are already finished (so a
 // still-open current week is never reported as a "complete" dose).
-func buildCurrentResponse(plan *storage.MasterPlan, today time.Time) (map[string]any, []storage.WeekWindow, map[int]bool, error) {
+//
+// #858 read merge: weeklyRows (the athlete's materialized weekly-plan rows, may
+// be nil on non-read paths) overlay the snapshot weeks of the same week_start
+// and extend the list beyond the snapshot — see mergeWeeklyPlanWeeks.
+func buildCurrentResponse(plan *storage.MasterPlan, weeklyRows []storage.WeeklyPlan, today time.Time) (map[string]any, []storage.WeekWindow, map[int]bool, error) {
 	var doc map[string]any
 	if err := json.Unmarshal([]byte(plan.Content), &doc); err != nil {
 		return nil, nil, nil, err
@@ -686,6 +749,7 @@ func buildCurrentResponse(plan *storage.MasterPlan, today time.Time) (map[string
 	if len(rawWeeks) == 0 {
 		rawWeeks = toMapSlice(doc["weekly_key_sessions"])
 	}
+	rawWeeks = mergeWeeklyPlanWeeks(parsed, rawWeeks, weeklyRows)
 
 	weeks, windows, weekFinished := buildWeekRows(parsed, rawWeeks, today)
 	doc["current_phase_id"] = currentPhaseID(parsed.Phases, today)
@@ -694,6 +758,159 @@ func buildCurrentResponse(plan *storage.MasterPlan, today time.Time) (map[string
 	doc["weeks"] = weeks
 	delete(doc, "weekly_key_sessions")
 	return doc, windows, weekFinished, nil
+}
+
+// weeklyDocWeek captures the merge-relevant fields of a weekly-plan/v1 doc
+// stored in a weekly_plan row. A nil pointer means "absent — keep the snapshot
+// value". Go performs NO training-science derivation here: key_sessions and the
+// km targets were pre-computed by the TS rolling layer and are passed through.
+type weeklyDocWeek struct {
+	weekIndex   int
+	phaseName   string
+	kmLow       *float64
+	kmHigh      *float64
+	keySessions []any
+	isRecovery  *bool
+}
+
+func parseWeeklyDocWeek(content string) *weeklyDocWeek {
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(content), &doc); err != nil {
+		return nil
+	}
+	week := &weeklyDocWeek{}
+	if index, ok := asFloat(doc["week_index"]); ok && index > 0 {
+		week.weekIndex = int(index)
+	}
+	week.phaseName = asString(doc["phase_name"])
+	if low, ok := asFloat(doc["target_weekly_km_low"]); ok {
+		week.kmLow = &low
+	}
+	if high, ok := asFloat(doc["target_weekly_km_high"]); ok {
+		week.kmHigh = &high
+	}
+	if sessions, ok := doc["key_sessions"].([]any); ok {
+		week.keySessions = sessions
+	}
+	if recovery, ok := doc["is_recovery_week"].(bool); ok {
+		week.isRecovery = &recovery
+	}
+	return week
+}
+
+// derivedWeekIndex computes the plan-relative 1-based week number of weekStart
+// against the plan's start_date; 0 when weekStart predates the plan.
+func derivedWeekIndex(planStart, weekStart string) int {
+	start, okStart := parseDate(planStart)
+	week, okWeek := parseDate(weekStart)
+	if !okStart || !okWeek || week.Before(start) {
+		return 0
+	}
+	return int(week.Sub(start).Hours()/24)/7 + 1
+}
+
+// mergeWeeklyPlanWeeks overlays the athlete's weekly-plan rows onto the
+// snapshot weeks (#858 read merge, pure function):
+//   - a weekly row whose week_start matches a snapshot week overrides the
+//     merge-relevant fields; absent fields fall back to the snapshot values;
+//   - a weekly row beyond the snapshot appends a new week row (sorted by
+//     week_index);
+//   - a weekly doc missing week_index derives it from week_start relative to
+//     the plan's start_date;
+//   - unreadable rows (bad JSON / unparseable identity) are skipped — the read
+//     degrades to the snapshot instead of failing.
+func mergeWeeklyPlanWeeks(c mpContent, rawWeeks []map[string]any, rows []storage.WeeklyPlan) []map[string]any {
+	if len(rows) == 0 {
+		return rawWeeks
+	}
+	byWeekStart := make(map[string]map[string]any, len(rawWeeks))
+	for _, week := range rawWeeks {
+		if start := asString(week["week_start"]); start != "" {
+			byWeekStart[start] = week
+		}
+	}
+	merged := rawWeeks
+	appended := make([]map[string]any, 0)
+	for _, row := range rows {
+		if row.ContentVersion != storage.WeeklyPlanContentStructured || row.Content == "" {
+			continue
+		}
+		weekStart, err := parseStoredWeekStart(row.WeekStart)
+		if err != nil {
+			continue
+		}
+		start := weekStart.Format("2006-01-02")
+		doc := parseWeeklyDocWeek(row.Content)
+		if doc == nil {
+			continue
+		}
+		// 周行身份一致性：week_start 必须落在计划起点之后（不是本计划的周就不进
+		// 合并）；week_index 缺失时按 week_start 相对 start_date 推算。
+		if derivedWeekIndex(c.StartDate, start) == 0 {
+			continue
+		}
+		index := doc.weekIndex
+		if index == 0 {
+			index = derivedWeekIndex(c.StartDate, start)
+		}
+		if snapshot, ok := byWeekStart[start]; ok {
+			// Overlay: absent weekly fields keep the snapshot value.
+			snapshot["week_index"] = index
+			if doc.phaseName != "" {
+				snapshot["phase_name"] = doc.phaseName
+			}
+			if doc.kmLow != nil {
+				snapshot["target_weekly_km_low"] = *doc.kmLow
+			}
+			if doc.kmHigh != nil {
+				snapshot["target_weekly_km_high"] = *doc.kmHigh
+			}
+			if doc.keySessions != nil {
+				snapshot["key_sessions"] = doc.keySessions
+			}
+			if doc.isRecovery != nil {
+				snapshot["is_recovery_week"] = *doc.isRecovery
+			}
+			continue
+		}
+		// Append beyond the snapshot. phase_id resolves by date containment
+		// (mechanical lookup, not training science); absent fields stay nil.
+		week := map[string]any{
+			"week_index":       index,
+			"week_start":       start,
+			"key_sessions":     []any{},
+			"is_recovery_week": false,
+		}
+		if end, ok := parseDate(start); ok {
+			if phase := phaseForWeek(c.Phases, end, end.AddDate(0, 0, 6)); phase != nil {
+				week["phase_id"] = phase.ID
+				week["phase_name"] = phase.Name
+			}
+		}
+		if doc.phaseName != "" {
+			week["phase_name"] = doc.phaseName
+		}
+		if doc.kmLow != nil {
+			week["target_weekly_km_low"] = *doc.kmLow
+		}
+		if doc.kmHigh != nil {
+			week["target_weekly_km_high"] = *doc.kmHigh
+		}
+		if doc.keySessions != nil {
+			week["key_sessions"] = doc.keySessions
+		}
+		if doc.isRecovery != nil {
+			week["is_recovery_week"] = *doc.isRecovery
+		}
+		appended = append(appended, week)
+	}
+	if len(appended) > 0 {
+		sort.SliceStable(appended, func(i, j int) bool {
+			return asInt(appended[i]["week_index"]) < asInt(appended[j]["week_index"])
+		})
+		merged = append(append([]map[string]any{}, rawWeeks...), appended...)
+	}
+	return merged
 }
 
 func validateStructuredPlanDoc(doc map[string]any, parsed mpContent) error {

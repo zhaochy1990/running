@@ -12,6 +12,7 @@ export * from "./job/errors.js";
 export * from "./job/model.js";
 export * from "./job/ports.js";
 export * from "./job/retry.js";
+export * from "./kernel/adjust/handler.js";
 export * from "./kernel/master/handler.js";
 export * from "./kernel/master/kernel.js";
 export * from "./kernel/progress.js";

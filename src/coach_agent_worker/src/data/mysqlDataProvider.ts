@@ -164,6 +164,39 @@ export class MySqlDataProvider implements DataProvider {
     }));
   }
 
+  /**
+   * 全体 active v3 master 计划行（#858 PR-C 夜检扫描枚举面，只读）：content
+   * 含 policy 段（滚动内核可跑的 v3 形状）才算——老 v2 行没有滚动可用性段，
+   * 扫描对它们无事可做。每用户至多一行 active（master_plan 单 active 不变量）。
+   */
+  async listActiveMasterPlans(): Promise<Array<{ userId: string; planId: string; content: Record<string, unknown> }>> {
+    const [rows] = await this.pool.query<RowDataPacket[]>(
+      `SELECT user_id, plan_id, content
+         FROM master_plan
+        WHERE content_version = 2 AND status = 'active'
+        ORDER BY created_at ASC, plan_id ASC`,
+    );
+    const active: Array<{ userId: string; planId: string; content: Record<string, unknown> }> = [];
+    for (const row of rows) {
+      const content = parsePlanContent(row.content, "master_plan");
+      if (content.policy === undefined || content.policy === null || typeof content.policy !== "object") continue;
+      active.push({ userId: row.user_id as string, planId: row.plan_id as string, content });
+    }
+    return active;
+  }
+
+  /**
+   * 该用户某归链 id 的 active 周行 week_start 列表（#858 扫描 dry-run 用，只读；
+   * 与 Go 内部 list 端点同数据源——脚本模式避免依赖 Go API 部署可达）。
+   */
+  async listWeeklyPlanWeekStarts(userId: string, masterPlanId: string): Promise<string[]> {
+    const [rows] = await this.pool.query<RowDataPacket[]>(
+      `SELECT week_start FROM weekly_plan WHERE user_id = ? AND status = 'active' AND master_plan_id = ? ORDER BY week_start ASC`,
+      [userId, masterPlanId],
+    );
+    return rows.map((row) => mysqlDay(row.week_start));
+  }
+
   async getMasterPlanMetadataForDate(userId: string, day: string): Promise<ActiveMasterPlanMetadata | null> {
     assertDay(day);
     const [rows] = await this.pool.query<RowDataPacket[]>(

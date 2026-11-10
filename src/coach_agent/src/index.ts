@@ -31,8 +31,8 @@ export type { CoachTurnScopeValue } from "./agents/turnScope.js";
 export { CoachTurnScope } from "./agents/turnScope.js";
 export type { CoachAgentConfig, ModelConfig } from "./config/config.js";
 export { getAgentConfig, loadConfig } from "./config/config.js";
-export type * from "./data/dataProvider.js";
 export { isQualityRunningActivity, isRunningActivity } from "./data/activityClassification.js";
+export type * from "./data/dataProvider.js";
 export { DataProviderMasterPlanContextProvider } from "./data/masterPlanContextProvider.js";
 export type {
   WeeklyPlanContext,
@@ -59,11 +59,32 @@ export type {
   WeekMatchResult,
 } from "./graph/rolling/detect/index.js";
 export { assessWeek, assessWeeks, matchWeekSessions, plannedFamilyOf, qualityBandMidpointSPerKm } from "./graph/rolling/detect/index.js";
-export type { RollingDeps, RollingOutcome, RollingWindow } from "./graph/rolling/index.js";
-export { buildWeeklyDocs, computeRollingWindow, fromMasterArtifact, fromStoredContent, runRollingProjection } from "./graph/rolling/index.js";
 // #858 PR-C 调整提案层（滚动内核共享投影链的配方覆写入口）。
-export type { AdjustOutcome, AdjustProjectionInput, AdjustRecipe, AdjustWindowDecision, ExistingWeekRef } from "./graph/rolling/index.js";
-export { diffOfWeeks, evaluateAdjustWindow, recipeFor, runAdjustProjection } from "./graph/rolling/index.js";
+export type {
+  AdjustOutcome,
+  AdjustProjectionInput,
+  AdjustRecipe,
+  AdjustWindowDecision,
+  ExistingWeekRef,
+  RollingDeps,
+  RollingOutcome,
+  RollingWindow,
+} from "./graph/rolling/index.js";
+// currentWeekOf/evaluateRollingWindow #858 PR-C 起供夜检扫描复用（批窗判定的可观测内核）。
+export {
+  buildWeeklyDocs,
+  computeRollingWindow,
+  currentWeekOf,
+  diffOfWeeks,
+  evaluateAdjustWindow,
+  evaluateRollingWindow,
+  fromMasterArtifact,
+  fromStoredContent,
+  recipeFor,
+  runAdjustProjection,
+  runRollingProjection,
+  storedWeeklyDocOf,
+} from "./graph/rolling/index.js";
 export type { AskUserQuestionPayload } from "./tools/askUserQuestions.js";
 export { ASK_USER_QUESTION_KIND } from "./tools/askUserQuestions.js";
 export type { ActivityFeelWriter } from "./tools/feel.js";
