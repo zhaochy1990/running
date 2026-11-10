@@ -216,7 +216,7 @@ extension Route {
         case .addresses(let pick):
             pick ? [URLQueryItem(name: "mode", value: "pick")] : []
         case .addressForm(let id):
-            id.map { [URLQueryItem(name: "id", value: String(id))] } ?? []
+            id.map { [URLQueryItem(name: "id", value: String($0))] } ?? []
         }
     }
 

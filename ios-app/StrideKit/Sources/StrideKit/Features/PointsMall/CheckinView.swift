@@ -19,6 +19,8 @@ public struct CheckinView: View {
             ScrollView {
                 VStack(spacing: theme.space(.lg)) {
                     if home.loadFailed {
+                        // 失败态保留 hero（基线 §14.1「hero 保留+重试」）。
+                        heroCard(theme)
                         failedCard(theme)
                     } else {
                         content(theme)
@@ -63,11 +65,12 @@ public struct CheckinView: View {
         .padding(.vertical, theme.space(.xl))
     }
 
-    // MARK: - hero（连签天数 + 副文案 + 规则「?」）
+    // MARK: - hero（头像圈 + 连签天数 + 副文案 + 规则「?」）
 
     private func heroCard(_ theme: any Theme) -> some View {
         VStack(alignment: .leading, spacing: theme.space(.sm)) {
-            HStack(alignment: .top) {
+            HStack(alignment: .top, spacing: theme.space(.md)) {
+                heroAvatar(theme)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("我已经连续签到")
                         .font(theme.font(.fs13))
@@ -102,6 +105,29 @@ public struct CheckinView: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: theme.radius(.lg)))
         )
+    }
+
+    /// hero 头像圈（白描边；无头像回落占位人像，mp checkin hero 同款）。
+    @ViewBuilder
+    private func heroAvatar(_ theme: any Theme) -> some View {
+        Group {
+            if let url = model.me?.avatarURL.flatMap(URL.init(string:)) {
+                AsyncImage(url: url) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    Circle().fill(theme.onAccent.opacity(0.2))
+                }
+                .frame(width: 44, height: 44)
+                .clipShape(Circle())
+                .overlay(Circle().strokeBorder(theme.onAccent.opacity(0.6), lineWidth: 1.5))
+            } else {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(theme.font(.fsDisplay40))
+                    .foregroundStyle(theme.onAccent.opacity(0.85))
+                    .frame(width: 44, height: 44)
+                    .overlay(Circle().strokeBorder(theme.onAccent.opacity(0.6), lineWidth: 1.5).frame(width: 44, height: 44))
+            }
+        }
     }
 
     // MARK: - 签到日程卡

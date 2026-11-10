@@ -61,6 +61,10 @@ public final class PointsMallModel {
     private var addresses: [UserAddress] = []
     /// 本次兑换尝试的幂等键：抽屉打开生成，网络失败重试复用，成功/业务拒绝后换新。
     private var idemKey = ""
+    /// 地址簿 pick 回传的待生效选中：回调到达时地址列表可能尚未刷新（用户刚
+    /// 新建的地址不在旧列表里，立即重算会把选中回落成默认地址吞掉挑选）——
+    /// 先记下，等 reappear 静默刷新后的 refreshSheet 优先采用并消费。
+    private var pendingPickedAddressID: Int?
     private var started = false
 
     public init() {}
@@ -75,9 +79,10 @@ public final class PointsMallModel {
 
     /// onShow 等价（进页 / 从地址管理·签到页返回）：有数据走静默刷新，
     /// 抽屉开着时以最新地址簿/余额重算（商品快照不实时进抽屉，#910 评审定版，
-    /// 由提交时 409 兜底）。
+    /// 由提交时 409 兜底）。首帧与 activate 的初次 load 可能同拍触发，loading
+    /// 中直接跳过（无并发双载）。
     public func reappear() async {
-        guard started, !products.isEmpty || loadFailed else { return }
+        guard started, !loading, !products.isEmpty || loadFailed else { return }
         await load(silent: true)
     }
 
@@ -141,6 +146,11 @@ public final class PointsMallModel {
             )
         }
         var selectedID = sheetSelectedID
+        // pick 回传优先：地址簿挑中的地址以最新列表为准（可能是刚新建的）。
+        if let pendingPickedAddressID {
+            selectedID = pendingPickedAddressID
+            self.pendingPickedAddressID = nil
+        }
         if !sheetAddresses.contains(where: { $0.id == selectedID }) {
             // 首选默认地址；选中项被删后回落默认；无地址置 0。
             selectedID = addresses.first(where: { $0.isDefault })?.id ?? 0
@@ -186,14 +196,14 @@ public final class PointsMallModel {
     }
 
     /// 「管理地址 ›」：带当前选中进单选模式（AppModel 交接 = mp eventChannel
-    /// addressSelected 等价，同 custom-race-form 先例），挑完回调刷新抽屉。
+    /// addressSelected 等价，同 custom-race-form 先例）。挑完回传先记
+    /// pendingPickedAddressID——返回本页 onShow 静默刷新拿到最新地址簿后由
+    /// refreshSheet 采用（立即重算会被旧列表吞掉刚新建地址的选中）。
     public func manageAddresses() {
         guard let app else { return }
         let selectedID = sheetSelectedID
         app.addressPick = AddressPickHandoff(selectedID: selectedID) { [weak self] id in
-            guard let self else { return }
-            self.sheetSelectedID = id
-            self.refreshSheet()
+            self?.pendingPickedAddressID = id
         }
         app.router.push(.addresses(pick: true))
     }

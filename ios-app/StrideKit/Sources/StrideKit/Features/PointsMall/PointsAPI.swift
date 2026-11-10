@@ -169,7 +169,9 @@ public enum RedemptionStates {
     public static let cancelled = "cancelled"
 }
 
-/// 订单本体（收货六列为兑换时刻快照）。
+/// 订单本体（收货六列为兑换时刻快照）。注：`shippedAt` 等个别字段为 mp
+/// services 层 DTO 面的契约镜像（当前 iOS UI 未消费），保留完整字段对齐契约
+/// 排障；删除不影响解码（服务端多出的键自动忽略）。
 public struct PointRedemption: Decodable, Hashable, Sendable, Identifiable {
     /// 公开订单号（UUID），展示时加 "R-" 前缀。
     public let id: String
