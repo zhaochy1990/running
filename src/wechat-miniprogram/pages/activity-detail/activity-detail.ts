@@ -40,6 +40,14 @@ import {
   type PosterImage,
   type PosterModel,
 } from '../../utils/poster';
+import {
+  isPosterThemeKey,
+  loadPosterThemeKey,
+  posterTheme,
+  posterThemeDots,
+  savePosterThemeKey,
+  type PosterThemeDot,
+} from '../../utils/posterThemes';
 import { buildStaticMapRequest, fetchPosterMapImage } from '../../utils/posterMap';
 
 // ---------------------------------------------------------------------------
@@ -178,6 +186,21 @@ interface ActivityDetailPageData {
   mapMarkers: MapMarker[];
   mapFitPoints: Array<{ latitude: number; longitude: number }>;
   mapColoring: MapColoring;
+  // —— 海报弹层（devops#947 九色系选择器）——
+  /** 弹层可见 */
+  posterSheetVisible: boolean;
+  /** 当前主题 key（utils/posterThemes.ts 九色系之一） */
+  posterThemeKey: string;
+  /** 当前主题中文名（标题行展示） */
+  posterThemeLabel: string;
+  /** 色卡圆点（横滑选择器数据，选中态由 posterThemeKey 在 wxml 比较） */
+  posterThemeDots: PosterThemeDot[];
+  /** 当前比例（平台矩阵 devops#948：小红书 3:4 / 抖音 9:16 / 朋友圈 4:5 / 通用 1:1） */
+  posterAspect: PosterAspect;
+  /** 平台矩阵（utils/poster.ts 单源；比例选择按钮渲染数据） */
+  posterPlatforms: typeof POSTER_PLATFORMS;
+  /** 预览图临时路径；'' = 渲染中占位 */
+  posterPreviewPath: string;
 }
 
 interface ActivityDetailPageHandlers {
@@ -189,10 +212,24 @@ interface ActivityDetailPageHandlers {
   onPaceCurveTouch(e: unknown): void;
   onBack(): void;
   onColoringChange(e: { currentTarget: { dataset: { coloring: MapColoring } } }): void;
-  /** 分享海报出口（devops#944）：定稿版式双比例 × 双路（预览 / 保存相册）。 */
+  /** 分享海报出口（devops#947）：打开海报弹层（九色系圆点横滑 + 平台矩阵 + 预览/保存）。 */
   onSharePoster(): void;
+  /** 关海报弹层。 */
+  onPosterClose(): void;
+  /** 点色卡圆点：切主题 + 持久化 + 重渲预览。 */
+  onPosterThemeTap(e: { currentTarget: { dataset: { key: string } } }): void;
+  /** 切平台比例（devops#948 四比例矩阵）重渲预览。 */
+  onPosterAspectTap(e: { currentTarget: { dataset: { aspect: PosterAspect } } }): void;
+  /** 预览大图（全屏 previewImage，长按可转发/保存）。 */
+  onPosterPreviewTap(): void;
+  /** 保存当前预览图到相册。 */
+  onPosterSaveTap(): void;
+  /** 弹层内拦截滚动穿透（mask touchmove 空处理）。 */
+  noop(): void;
   /** 离屏画海报并导出 tempFilePath，失败返回 null（已 toast）。 */
-  renderPoster(aspect: PosterAspect): Promise<string | null>;
+  renderPoster(aspect: PosterAspect, themeKey: string): Promise<string | null>;
+  /** 按当前弹层选择渲染预览（最新胜出排队：渲染中再点只是替换待渲组合）。 */
+  renderPosterPreview(): void;
   /** 保存海报到相册（utils/saveImage 权限引导收口），按结果 toast。 */
   savePoster(path: string): Promise<void>;
 }
@@ -259,8 +296,12 @@ let paceChart: CurveChart | null = null;
 let hrSpec: CurveChartSpec | null = null;
 let paceSpec: CurveChartSpec | null = null;
 
-// 海报绘制进行中（action sheet 重复点击 / 双出口并发防抖，模块级即可）。
+// 海报绘制进行中（弹层内连点圆点/比例的并发防抖，模块级即可）。
 let posterBusy = false;
+
+// 静态图代理结果缓存（同活动同比例的临时文件路径；主题切换不换地图，
+// 免每次重渲都打一遍代理）。buildView 时随活动重置。
+let posterMapCache: { labelId: string; aspect: PosterAspect; path: string } | null = null;
 
 // ---------------------------------------------------------------------------
 // 纯格式化 helpers
@@ -866,6 +907,8 @@ function buildView(detail: ActivityDetailResponse): Partial<ActivityDetailPageDa
     feelEmoji: feelEmoji(a.feel_type),
   };
   posterModel = buildPosterModel(detail, header, a.date);
+  // 换活动即换轨迹：静态图缓存随模型一起失效。
+  posterMapCache = null;
 
   return {
     isStrength,
@@ -947,6 +990,13 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
     mapMarkers: [],
     mapFitPoints: [],
     mapColoring: 'pace',
+    posterSheetVisible: false,
+    posterThemeKey: 'sunrise',
+    posterThemeLabel: '晨光',
+    posterThemeDots: posterThemeDots(),
+    posterAspect: '3:4',
+    posterPlatforms: POSTER_PLATFORMS,
+    posterPreviewPath: '',
   },
 
   onLoad(options: Record<string, string | undefined>) {
@@ -1049,48 +1099,79 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
     this.setData({ mapColoring: coloring, ...view });
   },
 
-  /** 分享海报出口（devops#944 P2；平台矩阵 devops#948 P6）：先选目标平台
-   * （小红书 3:4 / 抖音 9:16 / 朋友圈 4:5 / 通用 1:1，出对应比例），再选出
-   * 路（预览长按保存 / 直接保存相册）。地图层走腾讯静态图代理，缺 key /
-   * 网络失败自动降级矢量占位，其余节正常出图；9:16 版式收进抖音安全区
-   * （右侧按钮栏 / 底部文案区不压关键数据，见 utils/poster.ts）。 */
+  /** 分享海报出口（devops#947，Epic #601 P5）：打开海报弹层——九色系色卡
+   * 圆点横滑选择器（选择持久化 storage）+ 平台矩阵（devops#948 四比例）
+   * + 预览大图 / 保存相册。首渲用持久化主题；地图层走腾讯静态图代理，
+   * 缺 key / 网络失败自动降级矢量占位，其余节正常出图。 */
   onSharePoster() {
-    if (posterBusy || this.data.loading || this.data.notFound) return;
-    wx.showActionSheet({
-      itemList: POSTER_PLATFORMS.map((p) => p.label),
-      success: (res) => {
-        const platform = POSTER_PLATFORMS[res.tapIndex];
-        if (!platform) return;
-        wx.showActionSheet({
-          itemList: ['预览（长按可保存）', '保存到相册'],
-          success: (out) => {
-            const aspect: PosterAspect = platform.aspect;
-            void this.renderPoster(aspect).then((path) => {
-              if (!path) return; // 生成失败已在 renderPoster 内 toast
-              if (out.tapIndex === 1) {
-                void this.savePoster(path);
-              } else {
-                wx.previewImage({ urls: [path] });
-              }
-            });
-          },
-          fail: () => {
-            // 用户取消 action sheet，静默。
-          },
-        });
-      },
-      fail: () => {
-        // 用户取消 action sheet，静默。
-      },
+    if (this.data.loading || this.data.notFound) return;
+    const themeKey = loadPosterThemeKey();
+    this.setData({
+      posterSheetVisible: true,
+      posterThemeKey: themeKey,
+      posterThemeLabel: posterTheme(themeKey).label,
+      posterPreviewPath: '',
+    });
+    this.renderPosterPreview();
+  },
+
+  onPosterClose() {
+    this.setData({ posterSheetVisible: false });
+  },
+
+  onPosterThemeTap(e: { currentTarget: { dataset: { key: string } } }) {
+    const key = e.currentTarget.dataset.key;
+    if (!isPosterThemeKey(key) || key === this.data.posterThemeKey) return;
+    this.setData({ posterThemeKey: key, posterThemeLabel: posterTheme(key).label });
+    savePosterThemeKey(key); // 偏好持久化（下次任何活动出图直接用）
+    this.renderPosterPreview();
+  },
+
+  onPosterAspectTap(e: { currentTarget: { dataset: { aspect: PosterAspect } } }) {
+    const aspect = e.currentTarget.dataset.aspect;
+    if (!POSTER_PLATFORMS.some((p) => p.aspect === aspect)) return;
+    if (aspect === this.data.posterAspect) return;
+    this.setData({ posterAspect: aspect, posterPreviewPath: '' });
+    this.renderPosterPreview();
+  },
+
+  onPosterPreviewTap() {
+    const path = this.data.posterPreviewPath;
+    if (path) wx.previewImage({ urls: [path] });
+  },
+
+  onPosterSaveTap() {
+    const path = this.data.posterPreviewPath;
+    if (path) void this.savePoster(path);
+  },
+
+  noop() {
+    // mask touchmove 占位：拦滚动穿透，无行为。
+  },
+
+  /** 渲染当前弹层选择的预览图；渲染中再点选择不丢——完成后比对 data，
+   * 组合已变就再渲一轮（最新胜出，无排队状态）。 */
+  renderPosterPreview() {
+    if (posterBusy) return; // 进行中：完成后与本函数收尾的比对负责补渲最新组合
+    const aspect = this.data.posterAspect;
+    const themeKey = this.data.posterThemeKey;
+    void this.renderPoster(aspect, themeKey).then((path) => {
+      if (path && this.data.posterSheetVisible) {
+        this.setData({ posterPreviewPath: path });
+      }
+      // 渲染期间又切了选择：data 已是最新组合，再渲一轮即为所见。
+      if (this.data.posterSheetVisible && (this.data.posterAspect !== aspect || this.data.posterThemeKey !== themeKey)) {
+        this.renderPosterPreview();
+      }
     });
   },
 
   /** 离屏 canvas 画定稿版式概览海报（utils/poster.ts drawPoster）→ 导出临时图。
-   * 地图层：有轨迹时先经后端静态图代理拉真图（fetchPosterMapImage），失败
-   * resolve(null) → drawPoster 内部降级矢量占位（不挡其余节出图）。 */
-  renderPoster(aspect: PosterAspect): Promise<string | null> {
+   * 地图层：有轨迹时先经后端静态图代理拉真图（fetchPosterMapImage，同活动
+   * 同比例结果缓存，主题切换不重打代理），失败 resolve(null) → drawPoster
+   * 内部降级矢量占位（不挡其余节出图）。 */
+  renderPoster(aspect: PosterAspect, themeKey: string): Promise<string | null> {
     posterBusy = true;
-    wx.showLoading({ title: '生成海报中', mask: true });
     return new Promise((resolve) => {
       wx.createSelectorQuery()
         .in(this as never)
@@ -1098,7 +1179,6 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
         .fields({ node: true }, async (res) => {
           const canvas = res?.node;
           if (!canvas || !posterModel) {
-            wx.hideLoading();
             posterBusy = false;
             wx.showToast({ title: '海报生成失败', icon: 'none' });
             resolve(null);
@@ -1113,7 +1193,11 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
             const trackPoints = mapSegments.reduce((n, seg) => n + seg.length, 0);
             const mapReq = trackPoints >= 20 ? buildStaticMapRequest(mapSegments, size.width, size.height) : null;
             if (mapReq) {
-              const path = await fetchPosterMapImage(mapReq);
+              let path = posterMapCache && posterMapCache.labelId === labelId && posterMapCache.aspect === aspect ? posterMapCache.path : null;
+              if (!path) {
+                path = await fetchPosterMapImage(mapReq);
+                if (path) posterMapCache = { labelId, aspect, path };
+              }
               if (path) mapImage = (await loadCanvasImage(canvas, path)) as PosterImage | null;
             }
             const width = POSTER_WIDTH;
@@ -1127,6 +1211,7 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
               mapImage,
               track: mapSegments.length ? mapSegments : null,
               userName: userStore.getState().user?.name || '',
+              themeKey,
             });
             wx.canvasToTempFilePath({
               canvas,
@@ -1145,7 +1230,6 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
             wx.showToast({ title: '海报生成失败', icon: 'none' });
             resolve(null);
           } finally {
-            wx.hideLoading();
             posterBusy = false;
           }
         })

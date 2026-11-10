@@ -547,3 +547,182 @@
   width: 600px;
   height: 640px;
 }
+
+/* ── 分享海报弹层（devops#947）─────────────────────────────────────────
+   九色系色卡圆点横滑选择器 + 双比例 + 预览/保存。弹层本体用 App 主题令牌
+   （page 树内可继承 page{} 变量）；圆点双色是海报主题数据（wxml 内联，
+   单源 utils/posterThemes.ts），与 App 主题无关。 */
+.poster-sheet-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.poster-sheet {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--color-card);
+  border-radius: 32rpx 32rpx 0 0;
+  padding: 24rpx 32rpx calc(24rpx + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  animation: poster-sheet-up 0.2s ease;
+}
+
+@keyframes poster-sheet-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0.6;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.poster-sheet__handle {
+  width: 72rpx;
+  height: 8rpx;
+  border-radius: 999rpx;
+  background: rgba(var(--color-overlay-rgb), 0.2);
+  margin: 0 auto 20rpx;
+}
+
+.poster-sheet__title {
+  font-size: 27rpx;
+  line-height: 44rpx;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  text-align: center;
+  margin-bottom: 16rpx;
+}
+
+/* 色卡圆点横滑行：一屏放不下九个，scroll-x 横滑 */
+.poster-theme-scroll {
+  width: 100%;
+  white-space: nowrap;
+}
+
+.poster-theme-row {
+  display: inline-flex;
+  gap: 20rpx;
+  padding: 8rpx 4rpx 4rpx;
+}
+
+.poster-dot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+  width: 96rpx;
+}
+
+.poster-dot__circle {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 4rpx var(--color-card);
+  transition: transform 0.15s ease;
+}
+
+/* 暗底主题圆点加浅描边，避免深色点融进白卡底 */
+.poster-dot__circle--dark {
+  box-shadow: inset 0 0 0 4rpx var(--color-card), 0 0 0 2rpx rgba(var(--color-overlay-rgb), 0.25);
+}
+
+.poster-dot--on .poster-dot__circle {
+  outline: 4rpx solid var(--color-accent);
+  outline-offset: 4rpx;
+  transform: scale(1.06);
+}
+
+.poster-dot__label {
+  font-size: 20rpx;
+  line-height: 28rpx;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.poster-dot--on .poster-dot__label {
+  color: var(--color-accent-deep);
+  font-weight: 600;
+}
+
+/* 平台矩阵选择（devops#948 四平台，2×2 网格放下四个标签） */
+.poster-aspect {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin: 16rpx 0 20rpx;
+}
+
+.poster-aspect__btn {
+  box-sizing: border-box;
+  width: calc(50% - 6rpx);
+  padding: 16rpx 0;
+  border-radius: 16rpx;
+  text-align: center;
+  font-size: 25rpx;
+  color: var(--color-text-secondary);
+  background: rgba(var(--color-overlay-rgb), 0.05);
+}
+
+.poster-aspect__btn--on {
+  color: var(--color-accent-deep);
+  background: var(--color-accent-tint);
+  font-weight: 600;
+}
+
+/* 预览区：固定高度容器，aspectFit 双比例都装得下；渲染中转圈 */
+.poster-preview-wrap {
+  display: flex;
+  justify-content: center;
+}
+
+.poster-preview {
+  height: 560rpx;
+  max-width: 100%;
+  border-radius: 16rpx;
+  background: var(--color-bg-sunken);
+}
+
+.poster-preview--loading {
+  width: 460rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 双出口按钮 */
+.poster-sheet__actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 24rpx;
+}
+
+.poster-sheet__btn {
+  flex: 1;
+  padding: 24rpx 0;
+  border-radius: 20rpx;
+  text-align: center;
+  font-size: 26rpx;
+  color: var(--color-text-primary);
+  background: rgba(var(--color-overlay-rgb), 0.06);
+}
+
+.poster-sheet__btn--primary {
+  color: var(--color-on-accent);
+  background: var(--color-accent);
+  font-weight: 600;
+}
+
+.poster-sheet__btn:active {
+  opacity: 0.7;
+}

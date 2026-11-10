@@ -171,6 +171,56 @@
     </block>
   </view>
 
-  <!-- 分享海报 canvas（离屏绘制 → previewImage 长按保存 / 保存相册，devops#945） -->
+  <!-- 分享海报 canvas（离屏绘制，devops#945；主题/比例由海报弹层选择，devops#947） -->
   <canvas type="2d" id="poster-canvas" class="poster-canvas"></canvas>
+
+  <!-- 分享海报弹层（devops#947）：九色系色卡圆点横滑选择器（偏好持久化）+
+       双比例 + 预览大图 / 保存相册 -->
+  <view wx:if="{{posterSheetVisible}}" class="poster-sheet-mask" catchtouchmove="noop" bindtap="onPosterClose">
+    <view class="poster-sheet" catchtap="noop">
+      <view class="poster-sheet__handle"></view>
+      <view class="poster-sheet__title">分享海报 · {{posterThemeLabel}}</view>
+
+      <scroll-view scroll-x class="poster-theme-scroll" enhanced show-scrollbar="{{false}}">
+        <view class="poster-theme-row">
+          <view
+            wx:for="{{posterThemeDots}}"
+            wx:key="key"
+            class="poster-dot {{posterThemeKey === item.key ? 'poster-dot--on' : ''}}"
+            data-key="{{item.key}}"
+            bindtap="onPosterThemeTap"
+          >
+            <view class="poster-dot__circle {{item.dark ? 'poster-dot__circle--dark' : ''}}" style="background: linear-gradient(135deg, {{item.colorA}}, {{item.colorB}});"></view>
+            <view class="poster-dot__label">{{item.label}}</view>
+          </view>
+        </view>
+      </scroll-view>
+
+      <view class="poster-aspect">
+        <view
+          wx:for="{{posterPlatforms}}"
+          wx:key="aspect"
+          class="poster-aspect__btn {{posterAspect === item.aspect ? 'poster-aspect__btn--on' : ''}}"
+          data-aspect="{{item.aspect}}"
+          bindtap="onPosterAspectTap"
+        >{{item.label}}</view>
+      </view>
+
+      <view class="poster-preview-wrap">
+        <image
+          wx:if="{{posterPreviewPath}}"
+          class="poster-preview"
+          src="{{posterPreviewPath}}"
+          mode="aspectFit"
+          bindtap="onPosterPreviewTap"
+        />
+        <view wx:else class="poster-preview poster-preview--loading"><view class="spinner"></view></view>
+      </view>
+
+      <view class="poster-sheet__actions">
+        <view class="poster-sheet__btn" bindtap="onPosterPreviewTap">预览大图</view>
+        <view class="poster-sheet__btn poster-sheet__btn--primary" bindtap="onPosterSaveTap">保存到相册</view>
+      </view>
+    </view>
+  </view>
 </view>
