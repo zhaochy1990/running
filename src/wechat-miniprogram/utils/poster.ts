@@ -1,11 +1,14 @@
 /**
- * 活动概览分享海报（devops#944，Epic #601 P2）——设计文档
- * docs/activity-share-poster-design.md §3 定稿版式的 canvas 实现：
- * 小红书 3:4（1080×1440）+ 抖音 9:16（1080×1920）。
+ * 活动概览分享海报（devops#944，Epic #601 P2；四比例铺齐 devops#948 P6）——
+ * 设计文档 docs/activity-share-poster-design.md §3 定稿版式的 canvas 实现：
+ * 小红书 3:4（1080×1440）/ 抖音 9:16（1080×1920）/ 朋友圈 4:5（1080×1350）/
+ * 通用 1:1（1080×1080），平台矩阵见 POSTER_PLATFORMS。
  *
  * 自上而下：品牌行 / 课名+chips / 地图 hero（腾讯静态图，缺图降级矢量占位，
  * 见 utils/posterMap.ts）/ 四宫格大数字（距离渐变字）/ 每公里配速条 /
  * 【仅 9:16】心率曲线卡（面积曲线 + Z5 阈值虚线）/ 文档流页脚。
+ * 9:16 为抖音专属比例，正文整体收进 DOUYIN_SAFE_* 安全区（右侧按钮栏 /
+ * 底部文案区不压关键数据）；1:1 高度只够地图+四宫格最小信息集（§3 策略表）。
  *
  * 数据口径：每公里分段用后端 segments（勿用 ts 自算与厂商 best_km_pace 混搭，
  * 表头与表内同源派生）；心率区间用 activity_zones（Z5 = 最高档 range_min）；
@@ -23,10 +26,33 @@ import { fmtHms, fmtPaceQuote, fmtPaceQuoteParts } from './format';
 import { trackBBox, type TrackPoint } from './posterMap';
 
 /** 海报比例。 */
-export type PosterAspect = '3:4' | '9:16';
+export type PosterAspect = '3:4' | '9:16' | '4:5' | '1:1';
 
 export const POSTER_WIDTH = 1080;
-export const POSTER_HEIGHT: Record<PosterAspect, number> = { '3:4': 1440, '9:16': 1920 };
+export const POSTER_HEIGHT: Record<PosterAspect, number> = { '3:4': 1440, '9:16': 1920, '4:5': 1350, '1:1': 1080 };
+
+/** 平台矩阵（devops#948）：分享页选目标平台 → 出对应比例，用户不手动裁
+ * （设计文档 §2）。label 直接进 wx.showActionSheet 的 itemList。 */
+export interface PosterPlatform {
+  label: string;
+  aspect: PosterAspect;
+}
+export const POSTER_PLATFORMS: readonly PosterPlatform[] = [
+  { label: '小红书 3:4', aspect: '3:4' },
+  { label: '抖音 9:16', aspect: '9:16' },
+  { label: '朋友圈 4:5', aspect: '4:5' },
+  { label: '通用 1:1', aspect: '1:1' },
+];
+
+/** 抖音 9:16 安全区（devops#948 实测口径，保守取整）：
+ * - SAFE_RIGHT 168px：图文 feed 右侧按钮栏（头像/点赞/评论/分享/收藏）横行
+ *   ~x 912-1080，纵向 ~y 340-1500；
+ * - SAFE_BOTTOM 336px：底部文案区（caption + 话题 + 音乐行）整宽压底。
+ * 9:16 版式的正文右缘与页脚底分别退到两界之内（品牌行/标题/chips 在遮挡
+ * 纵向范围之上，但也统一按 contentRight 收口，保持整版单列）。数值待
+ * 真机发布回归校准（挂 devops#949 E2E）。 */
+export const DOUYIN_SAFE_RIGHT = 168;
+export const DOUYIN_SAFE_BOTTOM = 336;
 
 /** 海报纸面留白与卡片间距。 */
 const PAD = 48;
@@ -193,6 +219,10 @@ export interface PosterLayout {
   width: number;
   height: number;
   pad: number;
+  /** 正文右缘 x（width - pad - 安全区右让位）；标题/chips/卡体/页脚统一收口。 */
+  contentRight: number;
+  /** 底部遮挡区上界 y（无避让比例 = height）。 */
+  safeBottomY: number;
   /** 品牌行文字基线。 */
   brandY: number;
   /** 课名基线。 */
@@ -210,25 +240,43 @@ export interface PosterLayout {
   footerTextY: number;
 }
 
+/** 各比例版式策略（§2/§3）：地图卡高 / 是否画配速条 / 心率卡高（null 不画）/
+ * 安全区避让（抖音 9:16 专属）。9:16 收进安全画幅后地图 560→360、心率卡
+ * 316→220；1:1 只够地图 300 + 四宫格的最小信息集（配速条/心率卡不画）。 */
+interface AspectPolicy {
+  mapH: number;
+  bars: boolean;
+  hrH: number | null;
+  safeRight: number;
+  safeBottom: number;
+}
+const ASPECT_POLICY: Record<PosterAspect, AspectPolicy> = {
+  '3:4': { mapH: 440, bars: true, hrH: null, safeRight: 0, safeBottom: 0 },
+  '9:16': { mapH: 360, bars: true, hrH: 220, safeRight: DOUYIN_SAFE_RIGHT, safeBottom: DOUYIN_SAFE_BOTTOM },
+  '4:5': { mapH: 340, bars: true, hrH: null, safeRight: 0, safeBottom: 0 },
+  '1:1': { mapH: 300, bars: false, hrH: null, safeRight: 0, safeBottom: 0 },
+};
+
 /** 定稿版式：固定节序 + 缺卡自动收拢（无地图 / 无分段 / 无心率逐级上移）；
- * 断言内容底不越页脚线、节序不重叠（check.mts）。 */
+ * 断言内容底不越页脚线、节序不重叠、9:16 全节收进安全区（check.mts）。 */
 export function posterLayout(aspect: PosterAspect, o: { hasMap: boolean; hasBars: boolean; hasHr: boolean }): PosterLayout {
+  const p = ASPECT_POLICY[aspect];
   const width = POSTER_WIDTH;
   const height = POSTER_HEIGHT[aspect];
-  const inner = width - PAD * 2;
+  const inner = width - PAD * 2 - p.safeRight;
+  const contentRight = width - PAD - p.safeRight;
 
   const brandY = 76;
   const titleY = 168;
   const chips: PosterRect = { x: PAD, y: 204, w: inner, h: 52 };
-  // 内容顶：chips 底（204+52=276）之下留 16px 呼吸。
+  // 内容顶：chips 底（204+52=256）之下留 16px 呼吸。
   let y = 272;
   let map: PosterRect | null = null;
   let mapImage: PosterRect | null = null;
   if (o.hasMap) {
-    const mapH = aspect === '3:4' ? 440 : 560;
-    map = { x: PAD, y, w: inner, h: mapH };
-    mapImage = { x: PAD + CARD_INSET, y: y + CARD_INSET, w: inner - CARD_INSET * 2, h: mapH - CARD_INSET * 2 };
-    y += mapH + GAP;
+    map = { x: PAD, y, w: inner, h: p.mapH };
+    mapImage = { x: PAD + CARD_INSET, y: y + CARD_INSET, w: inner - CARD_INSET * 2, h: p.mapH - CARD_INSET * 2 };
+    y += p.mapH + GAP;
   }
 
   const gridH = 356; // 2×2：每格 170 高 + 16 间距
@@ -236,24 +284,31 @@ export function posterLayout(aspect: PosterAspect, o: { hasMap: boolean; hasBars
   y += gridH;
 
   let bars: PosterRect | null = null;
-  if (o.hasBars) {
+  if (o.hasBars && p.bars) {
     y += GAP;
     bars = { x: PAD, y, w: inner, h: 200 };
     y += 200;
   }
 
   let hr: PosterRect | null = null;
-  // 心率曲线卡仅 9:16（§3 定稿版式；3:4 版面留给地图/四宫格/配速条）。
-  if (o.hasHr && aspect === '9:16') {
+  // 心率曲线卡仅 9:16（§3 定稿版式；其余比例版面留给地图/四宫格/配速条）。
+  if (o.hasHr && p.hrH != null) {
     y += GAP;
-    hr = { x: PAD, y, w: inner, h: 316 };
-    y += 316;
+    hr = { x: PAD, y, w: inner, h: p.hrH };
+    y += p.hrH;
   }
+
+  // 页脚：常规比例贴底（线 h-108 / 文字 h-56）；抖音 9:16 整体上移出底部
+  // 文案遮挡区（文字基线 ≤ safeBottomY - 16，线仍在其上 52px）。
+  const footerTextY = height - Math.max(56, p.safeBottom + 16);
+  const footerLineY = footerTextY - 52;
 
   return {
     width,
     height,
     pad: PAD,
+    contentRight,
+    safeBottomY: height - p.safeBottom,
     brandY,
     titleY,
     chips,
@@ -262,8 +317,8 @@ export function posterLayout(aspect: PosterAspect, o: { hasMap: boolean; hasBars
     grid,
     bars,
     hr,
-    footerLineY: height - 108,
-    footerTextY: height - 56,
+    footerLineY,
+    footerTextY,
   };
 }
 
@@ -364,7 +419,7 @@ function drawBrand(ctx: PosterCtx, layout: PosterLayout, model: PosterModel): vo
   if (model.dateCapsule) {
     ctx.font = '26px sans-serif';
     const w = ctx.measureText(model.dateCapsule).width;
-    const rect: PosterRect = { x: layout.width - layout.pad - w - 44, y: layout.brandY - 38, w: w + 44, h: 52 };
+    const rect: PosterRect = { x: layout.contentRight - w - 44, y: layout.brandY - 38, w: w + 44, h: 52 };
     roundRect(ctx, rect, 26);
     ctx.fillStyle = theme.chip;
     ctx.fill();
@@ -377,7 +432,7 @@ function drawBrand(ctx: PosterCtx, layout: PosterLayout, model: PosterModel): vo
 function drawTitle(ctx: PosterCtx, layout: PosterLayout, model: PosterModel): void {
   ctx.fillStyle = theme.textPrimary;
   ctx.font = 'bold 60px sans-serif';
-  const title = ellipsize(model.title, layout.width - layout.pad * 2, (s) => ctx.measureText(s).width);
+  const title = ellipsize(model.title, layout.contentRight - layout.pad, (s) => ctx.measureText(s).width);
   ctx.fillText(title, layout.pad, layout.titleY);
 
   const chips: string[] = [];
@@ -390,7 +445,7 @@ function drawTitle(ctx: PosterCtx, layout: PosterLayout, model: PosterModel): vo
   ctx.font = '26px sans-serif';
   for (const label of chips) {
     const w = ctx.measureText(label).width + 40;
-    if (x + w > layout.width - layout.pad) break; // 超宽截断（不画半个 chip）
+    if (x + w > layout.contentRight) break; // 超宽截断（不画半个 chip）
     const rect: PosterRect = { x, y, w, h };
     roundRect(ctx, rect, h / 2);
     ctx.fillStyle = theme.chip;
@@ -626,10 +681,12 @@ export function drawPoster(
   },
 ): void {
   const hasMap = o.track != null && o.track.length > 0;
+  // 节有无由数据决定；各比例画不画（1:1 无配速条、心率卡仅 9:16）由
+  // posterLayout 内的策略表统一裁决。
   const layout = posterLayout(aspect, {
     hasMap,
     hasBars: model.bars != null,
-    hasHr: aspect === '9:16' && model.hr != null,
+    hasHr: model.hr != null,
   });
 
   // 暖粉彩渐变底（accentTint → bg）。
@@ -649,25 +706,26 @@ export function drawPoster(
   drawFooterSignature(ctx, layout, model, o.userName);
 }
 
-/** 页脚署名：署名·日期 在左，品牌 slogan 在右（文档流内，不可能重叠）。 */
+/** 页脚署名：署名·日期 在左，品牌 slogan 在右（文档流内，不可能重叠）。
+ * 整块收在 contentRight 内（抖音 9:16 上移出底部文案遮挡区）。 */
 function drawFooterSignature(ctx: PosterCtx, layout: PosterLayout, model: PosterModel, userName: string): void {
   ctx.strokeStyle = theme.hairline;
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(layout.pad, layout.footerLineY);
-  ctx.lineTo(layout.width - layout.pad, layout.footerLineY);
+  ctx.lineTo(layout.contentRight, layout.footerLineY);
   ctx.stroke();
 
   ctx.fillStyle = theme.textTertiary;
   ctx.font = '26px sans-serif';
   const slogan = 'STRIDE · 用数据陪伴每一次奔跑';
   const sloganW = ctx.measureText(slogan).width;
-  ctx.fillText(slogan, layout.width - layout.pad - sloganW, layout.footerTextY);
+  ctx.fillText(slogan, layout.contentRight - sloganW, layout.footerTextY);
 
   ctx.fillStyle = theme.textPrimary;
   ctx.font = '28px sans-serif';
   const parts = [userName, model.dateFull].filter(Boolean).join(' · ');
-  const maxW = layout.width - layout.pad * 2 - sloganW - 48;
+  const maxW = layout.contentRight - layout.pad * 2 - sloganW - 48;
   const signature = parts ? ellipsize(parts, maxW, (s) => ctx.measureText(s).width) : '';
   if (signature) ctx.fillText(signature, layout.pad, layout.footerTextY);
 }

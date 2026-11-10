@@ -33,6 +33,7 @@ import {
   buildPosterModel,
   drawPoster,
   POSTER_HEIGHT,
+  POSTER_PLATFORMS,
   POSTER_WIDTH,
   posterMapRequestSize,
   type PosterAspect,
@@ -1048,23 +1049,34 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
     this.setData({ mapColoring: coloring, ...view });
   },
 
-  /** 分享海报出口（devops#944，Epic #601 P2）：定稿版式双比例（小红书 3:4 /
-   * 抖音 9:16）× 双路（预览长按保存 / 直接保存相册）。地图层走腾讯静态图
-   * 代理，缺 key / 网络失败自动降级矢量占位，其余节正常出图。 */
+  /** 分享海报出口（devops#944 P2；平台矩阵 devops#948 P6）：先选目标平台
+   * （小红书 3:4 / 抖音 9:16 / 朋友圈 4:5 / 通用 1:1，出对应比例），再选出
+   * 路（预览长按保存 / 直接保存相册）。地图层走腾讯静态图代理，缺 key /
+   * 网络失败自动降级矢量占位，其余节正常出图；9:16 版式收进抖音安全区
+   * （右侧按钮栏 / 底部文案区不压关键数据，见 utils/poster.ts）。 */
   onSharePoster() {
     if (posterBusy || this.data.loading || this.data.notFound) return;
     wx.showActionSheet({
-      itemList: ['小红书 3:4 · 预览', '小红书 3:4 · 保存到相册', '抖音 9:16 · 预览', '抖音 9:16 · 保存到相册'],
+      itemList: POSTER_PLATFORMS.map((p) => p.label),
       success: (res) => {
-        const aspect: PosterAspect = res.tapIndex < 2 ? '3:4' : '9:16';
-        const save = res.tapIndex % 2 === 1;
-        void this.renderPoster(aspect).then((path) => {
-          if (!path) return; // 生成失败已在 renderPoster 内 toast
-          if (save) {
-            void this.savePoster(path);
-          } else {
-            wx.previewImage({ urls: [path] });
-          }
+        const platform = POSTER_PLATFORMS[res.tapIndex];
+        if (!platform) return;
+        wx.showActionSheet({
+          itemList: ['预览（长按可保存）', '保存到相册'],
+          success: (out) => {
+            const aspect: PosterAspect = platform.aspect;
+            void this.renderPoster(aspect).then((path) => {
+              if (!path) return; // 生成失败已在 renderPoster 内 toast
+              if (out.tapIndex === 1) {
+                void this.savePoster(path);
+              } else {
+                wx.previewImage({ urls: [path] });
+              }
+            });
+          },
+          fail: () => {
+            // 用户取消 action sheet，静默。
+          },
         });
       },
       fail: () => {
