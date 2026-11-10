@@ -34,6 +34,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/pipeline"
 	"github.com/zhaochy1990/stride/internal/provider/amap"
 	"github.com/zhaochy1990/stride/internal/storage"
+	"github.com/zhaochy1990/stride/internal/tencentlbs"
 	"github.com/zhaochy1990/stride/internal/userdata"
 	"github.com/zhaochy1990/stride/internal/webhook"
 	"github.com/zhaochy1990/stride/internal/wxpay"
@@ -346,6 +347,11 @@ func runAPI() error {
 		RaceContentStore:        store,
 		RaceCatalogStore:        store,
 		RaceItemGeocoder:        newAMapGeocoder(cfg.AMap),
+		// Share-poster static-map proxy (devops#944): the client is passed
+		// through unconfigured so the endpoint answers 503 and the poster
+		// degrades the map layer until STRIDE_WORKER_TENCENT_LBS_API_KEY
+		// lands (regression rides devops#949).
+		PosterMap: tencentlbs.New(cfg.TencentLBS.APIKey, cfg.TencentLBS.Timeout),
 		CityAIDraft: api.CityAIDraftConfig{
 			Endpoint: cfg.CityAIDraft.Endpoint,
 			APIKey:   cfg.CityAIDraft.APIKey,

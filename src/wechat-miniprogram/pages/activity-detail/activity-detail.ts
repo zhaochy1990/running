@@ -28,7 +28,18 @@ import type {
 } from '../../types/activity';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 import { saveImageToAlbum } from '../../utils/saveImage';
-import { theme } from '../../utils/theme';
+import { gradient3 } from '../../utils/posterGradient';
+import {
+  buildPosterModel,
+  drawPoster,
+  POSTER_HEIGHT,
+  POSTER_WIDTH,
+  posterMapRequestSize,
+  type PosterAspect,
+  type PosterImage,
+  type PosterModel,
+} from '../../utils/poster';
+import { buildStaticMapRequest, fetchPosterMapImage } from '../../utils/posterMap';
 
 // ---------------------------------------------------------------------------
 // 视图模型
@@ -177,10 +188,10 @@ interface ActivityDetailPageHandlers {
   onPaceCurveTouch(e: unknown): void;
   onBack(): void;
   onColoringChange(e: { currentTarget: { dataset: { coloring: MapColoring } } }): void;
-  /** 分享海报出口（devops#945）：action sheet 双路（预览长按保存 / 直接保存）。 */
+  /** 分享海报出口（devops#944）：定稿版式双比例 × 双路（预览 / 保存相册）。 */
   onSharePoster(): void;
   /** 离屏画海报并导出 tempFilePath，失败返回 null（已 toast）。 */
-  renderPoster(): Promise<string | null>;
+  renderPoster(aspect: PosterAspect): Promise<string | null>;
   /** 保存海报到相册（utils/saveImage 权限引导收口），按结果 toast。 */
   savePoster(path: string): Promise<void>;
 }
@@ -225,13 +236,14 @@ let labelId = '';
 
 // —— 轨迹地图常量 / 状态 ——
 const MAP_GREEN = '#00a85a';
-const MAP_AMBER = '#e68a00';
-const MAP_RED = '#d32f2f';
 const MAX_MAP_PTS = 600; // 抽稀后点上限
 const MAP_CHUNK = 8; // 每段 bin 成多长（条）
 
 // 按 pause 分段的 GCJ 轨迹点（模块级缓存，供着色切换时重建）。
 let mapSegments: MapPoint[][] = [];
+
+// 海报数据模型（devops#944）：buildView 时一次派生，renderPoster 只读。
+let posterModel: PosterModel | null = null;
 
 // —— 曲线（区间卡片里的心率 / 配速走势，uCharts 渲染）——
 
@@ -539,28 +551,6 @@ function buildStrengthSegments(segments: Segment[]): ExerciseGroup[] {
 // 轨迹地图：WGS84→GCJ02 + pause 分段 + 配速/心率 bin 着色
 // ---------------------------------------------------------------------------
 
-// 线性插值两个 hex 颜色，t ∈ [0,1]。
-function lerpColor(a: string, b: string, t: number): string {
-  const tt = Math.max(0, Math.min(1, t));
-  const ar = parseInt(a.slice(1, 3), 16);
-  const ag = parseInt(a.slice(3, 5), 16);
-  const ab = parseInt(a.slice(5, 7), 16);
-  const br = parseInt(b.slice(1, 3), 16);
-  const bg = parseInt(b.slice(3, 5), 16);
-  const bb = parseInt(b.slice(5, 7), 16);
-  const r = Math.round(ar + (br - ar) * tt);
-  const g = Math.round(ag + (bg - ag) * tt);
-  const bl = Math.round(ab + (bb - ab) * tt);
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${bl.toString(16).padStart(2, '0')}`;
-}
-
-// 3 停渐变：绿 → 橙 → 红。活动相对——同一原始 HR 值在两次活动里颜色可不同。
-function gradient3(t: number): string {
-  const tt = Math.max(0, Math.min(1, t));
-  if (tt < 0.5) return lerpColor(MAP_GREEN, MAP_AMBER, tt * 2);
-  return lerpColor(MAP_AMBER, MAP_RED, (tt - 0.5) * 2);
-}
-
 // 把 timeseries 按 pause 间隙切成 GCJ 分段。pause 与 timeseries timestamp 同为厘秒。
 function buildMapSegments(timeseries: TimeseriesPoint[], pauses: Pause[] | undefined): MapPoint[][] {
   const windows = (pauses || [])
@@ -864,15 +854,18 @@ function buildView(detail: ActivityDetailResponse): Partial<ActivityDetailPageDa
     }
   }
 
+  const header = {
+    sportLabel: sportNameCN(a.sport_name),
+    name: (a.name && a.name.trim()) || sportNameCN(a.sport_name),
+    dateLabel: dateLabelOf(a.date),
+    trainTypeLabel: trainTypeCN(a.train_type),
+    feelEmoji: feelEmoji(a.feel_type),
+  };
+  posterModel = buildPosterModel(detail, header, a.date);
+
   return {
     isStrength,
-    header: {
-      sportLabel: sportNameCN(a.sport_name),
-      name: (a.name && a.name.trim()) || sportNameCN(a.sport_name),
-      dateLabel: dateLabelOf(a.date),
-      trainTypeLabel: trainTypeCN(a.train_type),
-      feelEmoji: feelEmoji(a.feel_type),
-    },
+    header,
     metrics,
     hrZones,
     paceZones,
@@ -1052,19 +1045,22 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
     this.setData({ mapColoring: coloring, ...view });
   },
 
-  /** 分享海报出口（devops#945，Epic #601 P3）：双路 = 预览长按保存（strategy
-   * 配速卡同款原生能力）+ 直接保存相册（saveImageToAlbum 带权限拒绝引导）。 */
+  /** 分享海报出口（devops#944，Epic #601 P2）：定稿版式双比例（小红书 3:4 /
+   * 抖音 9:16）× 双路（预览长按保存 / 直接保存相册）。地图层走腾讯静态图
+   * 代理，缺 key / 网络失败自动降级矢量占位，其余节正常出图。 */
   onSharePoster() {
     if (posterBusy || this.data.loading || this.data.notFound) return;
     wx.showActionSheet({
-      itemList: ['预览海报（长按可保存）', '保存到相册'],
+      itemList: ['小红书 3:4 · 预览', '小红书 3:4 · 保存到相册', '抖音 9:16 · 预览', '抖音 9:16 · 保存到相册'],
       success: (res) => {
-        void this.renderPoster().then((path) => {
+        const aspect: PosterAspect = res.tapIndex < 2 ? '3:4' : '9:16';
+        const save = res.tapIndex % 2 === 1;
+        void this.renderPoster(aspect).then((path) => {
           if (!path) return; // 生成失败已在 renderPoster 内 toast
-          if (res.tapIndex === 0) {
-            wx.previewImage({ urls: [path] });
-          } else {
+          if (save) {
             void this.savePoster(path);
+          } else {
+            wx.previewImage({ urls: [path] });
           }
         });
       },
@@ -1074,41 +1070,62 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
     });
   },
 
-  /** 离屏 canvas 画活动概览海报 → wx.canvasToTempFilePath 导出临时图。 */
-  renderPoster(): Promise<string | null> {
+  /** 离屏 canvas 画定稿版式概览海报（utils/poster.ts drawPoster）→ 导出临时图。
+   * 地图层：有轨迹时先经后端静态图代理拉真图（fetchPosterMapImage），失败
+   * resolve(null) → drawPoster 内部降级矢量占位（不挡其余节出图）。 */
+  renderPoster(aspect: PosterAspect): Promise<string | null> {
     posterBusy = true;
+    wx.showLoading({ title: '生成海报中', mask: true });
     return new Promise((resolve) => {
-      const header = this.data.header;
-      // 前 6 项主指标（距离/配速/心率 + 负荷/时长/最大心率），三列两行。
-      const metrics = this.data.metrics.slice(0, 6);
       wx.createSelectorQuery()
         .in(this as never)
         .select('#poster-canvas')
-        .fields({ node: true, size: true }, (res) => {
-          posterBusy = false;
+        .fields({ node: true }, async (res) => {
           const canvas = res?.node;
-          if (!canvas || !metrics.length || !header.name) {
+          if (!canvas || !posterModel) {
+            wx.hideLoading();
+            posterBusy = false;
             wx.showToast({ title: '海报生成失败', icon: 'none' });
             resolve(null);
             return;
           }
-          const rows = Math.ceil(metrics.length / 3);
-          const width = 600;
-          const height = POSTER_HEAD_H + rows * (POSTER_BLOCK_H + POSTER_GAP) + POSTER_FOOT_H;
-          const dpr = 2;
-          canvas.width = width * dpr;
-          canvas.height = height * dpr;
-          const ctx = canvas.getContext('2d') as unknown as PosterCtx;
-          ctx.scale(dpr, dpr);
-          drawActivityPoster(ctx, width, height, header, metrics);
-          wx.canvasToTempFilePath({
-            canvas,
-            success: (out) => resolve(out.tempFilePath),
-            fail: () => {
-              wx.showToast({ title: '海报生成失败', icon: 'none' });
-              resolve(null);
-            },
-          });
+          try {
+            // 地图层真图：代理任何失败（含 503 未配 key）→ null 降级占位。
+            let mapImage: PosterImage | null = null;
+            const size = posterMapRequestSize(aspect);
+            const mapReq = mapSegments.length >= 20 ? buildStaticMapRequest(mapSegments, size.width, size.height) : null;
+            if (mapReq) {
+              const path = await fetchPosterMapImage(mapReq);
+              if (path) mapImage = (await loadCanvasImage(canvas, path)) as PosterImage | null;
+            }
+            const width = POSTER_WIDTH;
+            const height = POSTER_HEIGHT[aspect];
+            const dpr = 2;
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            const ctx = canvas.getContext('2d');
+            ctx.scale(dpr, dpr);
+            drawPoster(ctx, aspect, posterModel, {
+              mapImage,
+              track: mapSegments.length ? mapSegments : null,
+              userName: userStore.getState().user?.name || '',
+            });
+            wx.canvasToTempFilePath({
+              canvas,
+              success: (out) => resolve(out.tempFilePath),
+              fail: () => {
+                wx.showToast({ title: '海报生成失败', icon: 'none' });
+                resolve(null);
+              },
+            });
+          } catch (err) {
+            console.error('[poster] 绘制异常', err);
+            wx.showToast({ title: '海报生成失败', icon: 'none' });
+            resolve(null);
+          } finally {
+            wx.hideLoading();
+            posterBusy = false;
+          }
         })
         .exec();
     });
@@ -1126,106 +1143,21 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
 });
 
 // ---------------------------------------------------------------------------
-// 分享海报（devops#945，Epic #601 P3）：活动概览卡——品牌行 + 课名 + 六指标
-// 三列两行白卡 + 页脚，浅色海报规格（同 strategy 配速卡 / workout-detail 分享
-// 封面先例；色值一律引 utils/theme.ts 单源）。版式升级（地图/配速条等 P2 定稿
-// 版式）落 P2 票，此处只挂出口。
+// 海报绘制本体见 utils/poster.ts（devops#944 定稿版式）与 utils/posterMap.ts
+// （地图层代理与降级）。此处只保留 canvas 图片加载这一页侧胶水。
 // ---------------------------------------------------------------------------
 
-/** 海报 canvas 2d 上下文的最小结构（wx typings 不带 DOM Canvas 类型）。 */
-interface PosterCtx {
-  fillStyle: string;
-  strokeStyle: string;
-  font: string;
-  scale(x: number, y: number): void;
-  fillRect(x: number, y: number, w: number, h: number): void;
-  fillText(text: string, x: number, y: number): void;
-  measureText(text: string): { width: number };
-  beginPath(): void;
-  moveTo(x: number, y: number): void;
-  lineTo(x: number, y: number): void;
-  closePath(): void;
-  stroke(): void;
-}
-
-// 版面常量（px，600 宽海报）：头部区高度 / 指标块尺寸与间距 / 页脚区高度。
-const POSTER_HEAD_H = 190;
-const POSTER_BLOCK_H = 150;
-const POSTER_GAP = 20;
-const POSTER_FOOT_H = 110;
-
-/** 画活动概览海报：浅色底 + 藕粉顶线 + 品牌行 + 课名 + 指标白卡网格 + 页脚。 */
-function drawActivityPoster(
-  ctx: PosterCtx,
-  width: number,
-  height: number,
-  header: HeaderView,
-  metrics: Metric[],
-): void {
-  ctx.fillStyle = theme.bg;
-  ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = theme.accent;
-  ctx.fillRect(0, 0, width, 6);
-
-  ctx.fillStyle = theme.textSecondary;
-  ctx.font = '20px sans-serif';
-  ctx.fillText('砺跑 · 训练记录', 36, 60);
-
-  // 课名单行，超宽尾截 …（同 workout-detail 分享封面）
-  ctx.fillStyle = theme.textPrimary;
-  ctx.font = 'bold 36px sans-serif';
-  const maxW = width - 72;
-  let name = Array.from(header.name);
-  if (ctx.measureText(name.join('')).width > maxW) {
-    while (name.length && ctx.measureText(`${name.join('')}…`).width > maxW) name = name.slice(0, -1);
-    name = [...name, '…'];
-  }
-  ctx.fillText(name.join(''), 36, 112);
-
-  ctx.fillStyle = theme.textSecondary;
-  ctx.font = '20px sans-serif';
-  const metaLine = [header.sportLabel, header.dateLabel].filter(Boolean).join(' · ');
-  ctx.fillText(metaLine, 36, 154);
-
-  // 指标白卡：三列两行（距离/配速/心率 + 负荷/时长/最大心率），白卡 + 发丝线描边。
-  const blockW = (width - 72 - POSTER_GAP * 2) / 3;
-  metrics.forEach((m, i) => {
-    const col = i % 3;
-    const row = Math.floor(i / 3);
-    const x = 36 + col * (blockW + POSTER_GAP);
-    const y = POSTER_HEAD_H + row * (POSTER_BLOCK_H + POSTER_GAP);
-    ctx.fillStyle = theme.card;
-    ctx.fillRect(x, y, blockW, POSTER_BLOCK_H);
-    ctx.strokeStyle = theme.hairline;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x + blockW, y);
-    ctx.lineTo(x + blockW, y + POSTER_BLOCK_H);
-    ctx.lineTo(x, y + POSTER_BLOCK_H);
-    ctx.closePath();
-    ctx.stroke();
-
-    ctx.fillStyle = theme.textPrimary;
-    ctx.font = 'bold 32px sans-serif';
-    ctx.fillText(m.value, x + 16, y + 72);
-    if (m.unit) {
-      const vw = ctx.measureText(m.value).width;
-      ctx.fillStyle = theme.textSecondary;
-      ctx.font = '20px sans-serif';
-      ctx.fillText(m.unit, x + 20 + vw, y + 72);
+/** canvas 2d 的 createImage 加载临时文件；失败 resolve(null)（地图层降级）。 */
+function loadCanvasImage(canvas: unknown, src: string): Promise<unknown> {
+  return new Promise((resolve) => {
+    const c = canvas as { createImage?: () => { src: string; onload: (() => void) | null; onerror: (() => void) | null } };
+    if (!c || typeof c.createImage !== 'function') {
+      resolve(null);
+      return;
     }
-    ctx.fillStyle = theme.textSecondary;
-    ctx.font = '20px sans-serif';
-    ctx.fillText(m.label, x + 16, y + 116);
+    const img = c.createImage();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
   });
-
-  // 页脚：发丝线 + 品牌 slogan
-  ctx.strokeStyle = theme.hairline;
-  ctx.beginPath();
-  ctx.moveTo(36, height - 72);
-  ctx.lineTo(width - 36, height - 72);
-  ctx.stroke();
-  ctx.fillStyle = theme.textTertiary;
-  ctx.font = '18px sans-serif';
-  ctx.fillText('STRIDE · 用数据陪伴每一次奔跑', 36, height - 36);
 }

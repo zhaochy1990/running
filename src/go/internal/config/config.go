@@ -264,6 +264,7 @@ type APIConfig struct {
 	API         API                 `mapstructure:"api"`
 	CityAIDraft CityAIDraft         `mapstructure:"city-ai-draft"`
 	AMap        AMap                `mapstructure:"amap"`
+	TencentLBS  TencentLBS          `mapstructure:"tencent-lbs"`
 	Webhook     Webhook             `mapstructure:"webhook"`
 	// WxPay is the WeChat Pay module (devops#904); same section the worker
 	// uses for the timeout-close sweep. Unconfigured = module inert.
@@ -334,6 +335,18 @@ type CityAIDraft struct {
 // config change. The API key is a secret and must be supplied via
 // STRIDE_WORKER_AMAP_API_KEY.
 type AMap struct {
+	APIKey  string        `mapstructure:"api-key"`
+	Timeout time.Duration `mapstructure:"timeout"`
+}
+
+// TencentLBS configures the Tencent LBS static-map client behind the share
+// poster's map layer (devops#943 spike plan B, devops#944). Every field is
+// optional: an empty API key keeps the proxy endpoint mounted but answering
+// 503 map_proxy_not_configured, and the miniprogram degrades the map layer
+// to a placeholder — the key cannot ship in the miniprogram bundle, so the
+// API is its only egress. The key is a secret supplied via
+// STRIDE_WORKER_TENCENT_LBS_API_KEY.
+type TencentLBS struct {
 	APIKey  string        `mapstructure:"api-key"`
 	Timeout time.Duration `mapstructure:"timeout"`
 }

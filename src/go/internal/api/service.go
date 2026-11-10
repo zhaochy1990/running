@@ -178,6 +178,12 @@ type Config struct {
 	// endpoints (e.g. in tests that never hit them).
 	ActivityStore ActivityStore
 
+	// PosterMapFetcher backs the share-poster static-map proxy
+	// (POST /api/users/me/poster/map, devops#944): satisfied by
+	// *tencentlbs.Client. Nil keeps the endpoint mounted but answering 503
+	// map_proxy_not_configured (the miniprogram degrades the map layer).
+	PosterMap PosterMapFetcher
+
 	// TeamAuth and TeamStore back the team/social surface. TeamAuth owns teams and
 	// memberships; TeamStore owns MySQL activity aggregates, profiles, and likes.
 	TeamAuth  TeamAuthService
@@ -375,6 +381,7 @@ type Service struct {
 	wxpay           *wxpayRoutes
 	addresses       *addressRoutes
 	raceStrategy    *raceStrategyRoutes
+	posterMap       *posterMapRoutes
 	raceContent     *raceContentRoutes
 	raceCatalog     *raceCatalogRoutes
 	workouts        *workoutRoutes
@@ -453,6 +460,7 @@ func NewService(cfg Config) *Service {
 		feedback:                newFeedbackRoutes(cfg.FeedbackStore, cfg.FeedbackImages, cfg.RoadmapStore, log),
 		points:                  newPointsRoutes(cfg.PointsStore, cfg.FeedbackImages, cfg.WxPay, cfg.PointsAuth, log),
 		wxpay:                   newWxPayRoutes(cfg.WxPayStore, cfg.WxPay, cfg.WxPayOpenID, log),
+		posterMap:               newPosterMapRoutes(cfg.PosterMap, log),
 		addresses:               newAddressRoutes(cfg.AddressStore, log),
 		raceStrategy:            newRaceStrategyRoutes(cfg.RaceStrategyStore, log),
 		raceContent:             newRaceContentRoutes(cfg.RaceContentStore, cfg.CityAIDraft, log),
@@ -586,6 +594,9 @@ func (s *Service) Router() *gin.Engine {
 	s.wxpay.registerUser(authed)
 	s.addresses.register(authed)
 	s.activities.register(authed)
+	// Share-poster static-map proxy (devops#944): user tier, always mounted —
+	// an unconfigured key answers 503 so the miniprogram can degrade cleanly.
+	s.posterMap.register(authed)
 	s.teams.register(authed)
 	s.goals.register(authed)
 	s.healthMetrics.register(authed)
