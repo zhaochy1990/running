@@ -869,3 +869,126 @@
   flex: none;
   padding: 0 64rpx;
 }
+
+/* ============ #858 PR-E：顶部提示条（pending 调整 / 伤病激活） ============ */
+/* 无边框卡片风格：底色 tint 分区（调整=accent 浅衬底、伤病=次级底），点开弹层。 */
+
+.status-banner {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  padding: 20rpx 24rpx;
+  border-radius: 20rpx;
+  margin-bottom: 20rpx;
+  background: var(--color-bg-sunken);
+}
+
+.status-banner--adjust {
+  background: var(--color-accent-tint);
+}
+
+.status-banner__dot {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  background: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.status-banner--injury .status-banner__dot {
+  background: var(--color-warning);
+}
+
+.status-banner__text {
+  flex: 1;
+  min-width: 0;
+  font-size: 25rpx;
+  line-height: 38rpx;
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.status-banner--adjust .status-banner__text {
+  color: var(--color-accent-deep);
+}
+
+.status-banner__arrow {
+  font-size: 30rpx;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+/* ============ #858 PR-E：周行「每日安排」折叠区 ============ */
+
+.tl-week__days-toggle {
+  margin-top: 12rpx;
+  align-self: flex-start;
+  font-size: 21rpx;
+  line-height: 34rpx;
+  color: var(--color-text-secondary);
+  padding: 6rpx 16rpx;
+  border-radius: 999rpx;
+  background: var(--color-bg-sunken);
+}
+
+.tl-week__days {
+  margin-top: 12rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.tl-week__days-loading {
+  padding: 12rpx 18rpx;
+  font-size: 21rpx;
+  color: var(--color-text-tertiary);
+}
+
+.tl-day {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  padding: 12rpx 18rpx;
+  border-radius: 12rpx;
+  background: var(--color-card);
+}
+
+.tl-day--rest {
+  opacity: 0.65;
+}
+
+.tl-day__icon {
+  width: 34rpx;
+  height: 34rpx;
+  flex-shrink: 0;
+}
+
+.tl-day__date {
+  width: 108rpx;
+  flex-shrink: 0;
+  font-size: 22rpx;
+  color: var(--color-text-secondary);
+}
+
+.tl-day__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.tl-day__summary {
+  font-size: 22rpx;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tl-day__km {
+  font-size: 21rpx;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.tl-day__km--muted {
+  color: var(--color-text-tertiary);
+}

@@ -4,5 +4,9 @@
   "navigationBarBackgroundColor": "#F7F9FB",
   "navigationBarTextStyle": "black",
   "backgroundColor": "#F7F9FB",
-  "backgroundTextStyle": "dark"
+  "backgroundTextStyle": "dark",
+  "usingComponents": {
+    "adjust-dialog": "/components/adjust-dialog/index",
+    "injury-dialog": "/components/injury-dialog/index"
+  }
 }

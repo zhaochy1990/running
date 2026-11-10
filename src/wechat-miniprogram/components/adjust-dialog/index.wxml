@@ -1,0 +1,75 @@
+<!-- 训练调整追问弹窗（#858 PR-E）：Step1 追问 / Step2 方案 / loading / timeout 四态。
+     纯点击入口一律 view 自绘（项目约定）；遮罩 catchtouchmove 防滚动穿透。 -->
+<view wx:if="{{show}}" class="adj-mask" catchtouchmove="noop" bindtap="onClose">
+  <view class="adj-sheet" catchtap="noop">
+    <view class="adj-sheet__handle"></view>
+
+    <!-- ============ Step1：追问原因 ============ -->
+    <block wx:if="{{step === 'ask'}}">
+      <view class="adj-sheet__title">{{question}}</view>
+      <view wx:if="{{evidence}}" class="adj-sheet__sub">{{evidence}}</view>
+      <view class="adj-options">
+        <view
+          wx:for="{{options}}"
+          wx:key="value"
+          class="adj-option {{selected === item.value ? 'adj-option--on' : ''}}"
+          data-value="{{item.value}}"
+          bindtap="onReasonTap"
+        >
+          <view class="adj-option__dot {{selected === item.value ? 'adj-option__dot--on' : ''}}"></view>
+          <text class="adj-option__label">{{item.label}}</text>
+        </view>
+      </view>
+      <view
+        class="adj-cta {{(!selected || submitting) ? 'adj-cta--disabled' : ''}}"
+        bindtap="onViewPlanTap"
+      >{{selected === 'injured' ? '去登记伤情' : '查看方案'}}</view>
+    </block>
+
+    <!-- ============ Step2：方案（diff 表 + 窗口 + 审计） ============ -->
+    <block wx:elif="{{step === 'plan'}}">
+      <view class="adj-sheet__title">按你的情况，建议这样调</view>
+      <view class="adj-window">{{windowLabel}}</view>
+      <view wx:if="{{evidence}}" class="adj-sheet__sub">{{evidence}}</view>
+      <scroll-view scroll-y class="adj-diff-scroll">
+        <view class="adj-diff">
+          <view class="adj-diff__head">
+            <text class="adj-diff__th">周</text>
+            <text class="adj-diff__th adj-diff__th--num">原计划</text>
+            <text class="adj-diff__th adj-diff__th--num">调整为</text>
+            <text class="adj-diff__th adj-diff__th--num">变化</text>
+          </view>
+          <view wx:for="{{diffRows}}" wx:key="key" class="adj-diff__row">
+            <text class="adj-diff__td">{{item.weekLabel}}</text>
+            <text class="adj-diff__td adj-diff__td--num">{{item.oldKm}} km</text>
+            <text class="adj-diff__td adj-diff__td--num adj-diff__td--strong">{{item.newKm}} km</text>
+            <text class="adj-diff__td adj-diff__td--num {{item.isDown ? 'adj-diff__td--down' : ''}}">{{item.deltaText}}</text>
+          </view>
+        </view>
+      </scroll-view>
+      <view wx:if="{{auditLine}}" class="adj-audit">{{auditLine}}</view>
+      <view class="adj-cta-row">
+        <view class="adj-cta adj-cta--ghost {{submitting ? 'adj-cta--disabled' : ''}}" bindtap="onKeepTap">保持原计划</view>
+        <view class="adj-cta adj-cta--fill {{submitting ? 'adj-cta--disabled' : ''}}" bindtap="onAcceptTap">同意调整</view>
+      </view>
+    </block>
+
+    <!-- ============ loading：换因重生成轮询 ============ -->
+    <block wx:elif="{{step === 'loading'}}">
+      <view class="adj-loading">
+        <view class="adj-loading__spinner"></view>
+        <view class="adj-loading__text">{{loadingHint}}</view>
+        <view class="adj-loading__hint">可以先去忙别的，弹窗会自动出结果</view>
+      </view>
+    </block>
+
+    <!-- ============ timeout：超时收提示条 ============ -->
+    <block wx:elif="{{step === 'timeout'}}">
+      <view class="adj-loading">
+        <view class="adj-loading__text">方案还在生成中</view>
+        <view class="adj-loading__hint">稍后在训练计划页查看</view>
+        <view class="adj-cta adj-cta--fill adj-cta--mt" bindtap="onTimeoutCloseTap">知道了</view>
+      </view>
+    </block>
+  </view>
+</view>

@@ -1,0 +1,107 @@
+<!-- 伤病弹层（#858 PR-E）：enter 登记（detail 输入 + 四选一）/ ask 每日轻问
+     （checkin 四键 · doctor 三键 · verdict 重判四选一）/ result 结果文案三态。
+     纯点击入口一律 view 自绘（项目约定）。 -->
+<view wx:if="{{show}}" class="inj-mask" catchtouchmove="noop" bindtap="onClose">
+  <view class="inj-sheet" catchtap="noop">
+    <view class="inj-sheet__handle"></view>
+
+    <!-- ============ enter：伤病登记（四选一 + detail 输入） ============ -->
+    <block wx:if="{{view === 'enter'}}">
+      <view class="inj-sheet__title">{{question || '伤的情况是？'}}</view>
+      <textarea
+        class="inj-input"
+        value="{{detailInput}}"
+        placeholder="{{detailPlaceholder}}"
+        placeholder-class="inj-input__ph"
+        maxlength="200"
+        auto-height
+        bindinput="onDetailInput"
+      ></textarea>
+      <view class="inj-options">
+        <view
+          wx:for="{{verdictOptions}}"
+          wx:key="value"
+          class="inj-option {{selected === item.value ? 'inj-option--on' : ''}}"
+          data-value="{{item.value}}"
+          bindtap="onVerdictTap"
+        >
+          <view class="inj-option__dot {{selected === item.value ? 'inj-option__dot--on' : ''}}"></view>
+          <text class="inj-option__label">{{item.label}}</text>
+        </view>
+      </view>
+      <view class="inj-cta {{submitting ? 'inj-cta--disabled' : ''}}" bindtap="onSubmitEnter">提交</view>
+    </block>
+
+    <!-- ============ ask：每日轻问 ============ -->
+    <block wx:elif="{{view === 'ask'}}">
+      <view class="inj-sheet__title">{{question}}</view>
+      <view wx:if="{{injury && injury.detail && askKind !== 'doctor'}}" class="inj-sheet__sub">（{{injury.detail}}）</view>
+
+      <!-- verdict 分支：加重后重判，复用 enter 表单（detail 预填） -->
+      <block wx:if="{{askKind === 'verdict'}}">
+        <textarea
+          class="inj-input"
+          value="{{detailInput}}"
+          placeholder="{{detailPlaceholder}}"
+          placeholder-class="inj-input__ph"
+          maxlength="200"
+          auto-height
+          bindinput="onDetailInput"
+        ></textarea>
+        <view class="inj-options">
+          <view
+            wx:for="{{verdictOptions}}"
+            wx:key="value"
+            class="inj-option {{selected === item.value ? 'inj-option--on' : ''}}"
+            data-value="{{item.value}}"
+            bindtap="onVerdictTap"
+          >
+            <view class="inj-option__dot {{selected === item.value ? 'inj-option__dot--on' : ''}}"></view>
+            <text class="inj-option__label">{{item.label}}</text>
+          </view>
+        </view>
+        <view class="inj-cta {{submitting ? 'inj-cta--disabled' : ''}}" bindtap="onSubmitEnter">提交</view>
+      </block>
+
+      <!-- doctor 分支：医生怎么说？三键 -->
+      <block wx:elif="{{askKind === 'doctor'}}">
+        <view class="inj-quick">
+          <view
+            wx:for="{{doctorOptions}}"
+            wx:key="value"
+            class="inj-quick__btn {{submitting ? 'inj-quick__btn--disabled' : ''}}"
+            data-value="{{item.value}}"
+            bindtap="onDoctorTap"
+          >{{item.label}}</view>
+        </view>
+      </block>
+
+      <!-- checkin 分支：伤怎么样了？四键 -->
+      <block wx:else>
+        <view class="inj-quick">
+          <view
+            wx:for="{{checkinOptions}}"
+            wx:key="value"
+            class="inj-quick__btn {{submitting ? 'inj-quick__btn--disabled' : ''}}"
+            data-value="{{item.value}}"
+            bindtap="onCheckinTap"
+          >{{item.label}}</view>
+        </view>
+      </block>
+
+      <!-- rest + 比赛临近：附「按现状重排」行 + 教练入口 -->
+      <view wx:if="{{raceClosingSoon}}" class="inj-race">
+        <view class="inj-race__line">比赛临近，也可以按现状重排整个计划</view>
+        <view class="inj-race__cta" catchtap="onCoachTap">找教练聊聊</view>
+      </view>
+    </block>
+
+    <!-- ============ result：结果文案 ============ -->
+    <block wx:elif="{{view === 'result'}}">
+      <view class="inj-result">
+        <view class="inj-result__text">{{resultText}}</view>
+        <view class="inj-cta inj-cta--mt" bindtap="onResultCloseTap">知道了</view>
+      </view>
+    </block>
+  </view>
+</view>
