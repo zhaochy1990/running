@@ -200,10 +200,14 @@
         <view
           wx:for="{{posterPlatforms}}"
           wx:key="aspect"
-          class="poster-aspect__btn {{posterAspect === item.aspect ? 'poster-aspect__btn--on' : ''}}"
+          class="poster-aspect__btn {{!posterLongImage && posterAspect === item.aspect ? 'poster-aspect__btn--on' : ''}}"
           data-aspect="{{item.aspect}}"
           bindtap="onPosterAspectTap"
         >{{item.label}}</view>
+        <view
+          class="poster-aspect__btn {{posterLongImage ? 'poster-aspect__btn--on' : ''}}"
+          bindtap="onPosterLongImageTap"
+        >详情长图</view>
       </view>
 
       <view class="poster-preview-wrap">

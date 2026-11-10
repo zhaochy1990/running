@@ -49,6 +49,16 @@ import {
   type PosterThemeDot,
 } from '../../utils/posterThemes';
 import { buildStaticMapRequest, fetchPosterMapImage } from '../../utils/posterMap';
+import {
+  buildDetailPosterModel,
+  detailLayout,
+  detailMapRequestSize,
+  DETAIL_WIDTH,
+  drawDetailPosterSlice,
+  planDetailParts,
+  planDetailSlices,
+  type DetailPosterModel,
+} from '../../utils/posterDetail';
 
 // ---------------------------------------------------------------------------
 // 视图模型
@@ -201,6 +211,11 @@ interface ActivityDetailPageData {
   posterPlatforms: typeof POSTER_PLATFORMS;
   /** 预览图临时路径；'' = 渲染中占位 */
   posterPreviewPath: string;
+  /** 详情长图模式（devops#946）：弹层比例行最右的「详情长图」开关，true 时
+   * 预览/保存走六节长图管线（超长课可能是多张）。 */
+  posterLongImage: boolean;
+  /** 当前预览的全部图（长图多张时 >1；预览大图/保存逐张用）。 */
+  posterPreviewPaths: string[];
 }
 
 interface ActivityDetailPageHandlers {
@@ -220,6 +235,8 @@ interface ActivityDetailPageHandlers {
   onPosterThemeTap(e: { currentTarget: { dataset: { key: string } } }): void;
   /** 切平台比例（devops#948 四比例矩阵）重渲预览。 */
   onPosterAspectTap(e: { currentTarget: { dataset: { aspect: PosterAspect } } }): void;
+  /** 切详情长图模式（devops#946 六节图表长图）重渲预览。 */
+  onPosterLongImageTap(): void;
   /** 预览大图（全屏 previewImage，长按可转发/保存）。 */
   onPosterPreviewTap(): void;
   /** 保存当前预览图到相册。 */
@@ -228,6 +245,8 @@ interface ActivityDetailPageHandlers {
   noop(): void;
   /** 离屏画海报并导出 tempFilePath，失败返回 null（已 toast）。 */
   renderPoster(aspect: PosterAspect, themeKey: string): Promise<string | null>;
+  /** 离屏画详情长图（分段绘制 + 纵向拼接，超长按节边界分多张），失败 null。 */
+  renderDetailPoster(themeKey: string): Promise<string[] | null>;
   /** 按当前弹层选择渲染预览（最新胜出排队：渲染中再点只是替换待渲组合）。 */
   renderPosterPreview(): void;
   /** 保存海报到相册（utils/saveImage 权限引导收口），按结果 toast。 */
@@ -284,6 +303,9 @@ let mapSegments: MapPoint[][] = [];
 // 海报数据模型（devops#944）：buildView 时一次派生，renderPoster 只读。
 let posterModel: PosterModel | null = null;
 
+// 详情长图模型（devops#946）：同 buildView 一次派生。
+let posterDetailModel: DetailPosterModel | null = null;
+
 // —— 曲线（区间卡片里的心率 / 配速走势，uCharts 渲染）——
 
 // 采集到的序列 / 档位 / 图表实例（模块级，不过 setData）。
@@ -301,7 +323,7 @@ let posterBusy = false;
 
 // 静态图代理结果缓存（同活动同比例的临时文件路径；主题切换不换地图，
 // 免每次重渲都打一遍代理）。buildView 时随活动重置。
-let posterMapCache: { labelId: string; aspect: PosterAspect; path: string } | null = null;
+let posterMapCache: { labelId: string; aspect: PosterAspect | 'detail'; path: string } | null = null;
 
 // ---------------------------------------------------------------------------
 // 纯格式化 helpers
@@ -907,6 +929,7 @@ function buildView(detail: ActivityDetailResponse): Partial<ActivityDetailPageDa
     feelEmoji: feelEmoji(a.feel_type),
   };
   posterModel = buildPosterModel(detail, header, a.date);
+  posterDetailModel = buildDetailPosterModel(detail, header, a.date);
   // 换活动即换轨迹：静态图缓存随模型一起失效。
   posterMapCache = null;
 
@@ -997,6 +1020,8 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
     posterAspect: '3:4',
     posterPlatforms: POSTER_PLATFORMS,
     posterPreviewPath: '',
+    posterLongImage: false,
+    posterPreviewPaths: [],
   },
 
   onLoad(options: Record<string, string | undefined>) {
@@ -1111,6 +1136,8 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
       posterThemeKey: themeKey,
       posterThemeLabel: posterTheme(themeKey).label,
       posterPreviewPath: '',
+      posterLongImage: false,
+      posterPreviewPaths: [],
     });
     this.renderPosterPreview();
   },
@@ -1130,19 +1157,31 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
   onPosterAspectTap(e: { currentTarget: { dataset: { aspect: PosterAspect } } }) {
     const aspect = e.currentTarget.dataset.aspect;
     if (!POSTER_PLATFORMS.some((p) => p.aspect === aspect)) return;
-    if (aspect === this.data.posterAspect) return;
-    this.setData({ posterAspect: aspect, posterPreviewPath: '' });
+    if (aspect === this.data.posterAspect && !this.data.posterLongImage) return;
+    this.setData({ posterAspect: aspect, posterLongImage: false, posterPreviewPath: '' });
+    this.renderPosterPreview();
+  },
+
+  onPosterLongImageTap() {
+    if (this.data.posterLongImage) return;
+    this.setData({ posterLongImage: true, posterPreviewPath: '' });
     this.renderPosterPreview();
   },
 
   onPosterPreviewTap() {
-    const path = this.data.posterPreviewPath;
-    if (path) wx.previewImage({ urls: [path] });
+    const paths = this.data.posterPreviewPaths;
+    if (paths.length) wx.previewImage({ urls: paths.slice() });
   },
 
   onPosterSaveTap() {
-    const path = this.data.posterPreviewPath;
-    if (path) void this.savePoster(path);
+    const paths = this.data.posterPreviewPaths;
+    // 长图多张（超长课分张）逐张保存，串行避免相册权限弹窗并发。
+    if (paths.length) {
+      void paths.reduce(
+        (p, item) => p.then(() => this.savePoster(item)),
+        Promise.resolve(),
+      );
+    }
   },
 
   noop() {
@@ -1155,14 +1194,27 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
     if (posterBusy) return; // 进行中：完成后与本函数收尾的比对负责补渲最新组合
     const aspect = this.data.posterAspect;
     const themeKey = this.data.posterThemeKey;
-    void this.renderPoster(aspect, themeKey).then((path) => {
-      if (path && this.data.posterSheetVisible) {
-        this.setData({ posterPreviewPath: path });
-      }
+    const longImage = this.data.posterLongImage;
+    const settle = () => {
       // 渲染期间又切了选择：data 已是最新组合，再渲一轮即为所见。
-      if (this.data.posterSheetVisible && (this.data.posterAspect !== aspect || this.data.posterThemeKey !== themeKey)) {
+      if (this.data.posterSheetVisible && (this.data.posterAspect !== aspect || this.data.posterThemeKey !== themeKey || this.data.posterLongImage !== longImage)) {
         this.renderPosterPreview();
       }
+    };
+    if (longImage) {
+      void this.renderDetailPoster(themeKey).then((paths) => {
+        if (paths && paths.length && this.data.posterSheetVisible) {
+          this.setData({ posterPreviewPath: paths[0], posterPreviewPaths: paths });
+        }
+        settle();
+      });
+      return;
+    }
+    void this.renderPoster(aspect, themeKey).then((path) => {
+      if (path && this.data.posterSheetVisible) {
+        this.setData({ posterPreviewPath: path, posterPreviewPaths: [path] });
+      }
+      settle();
     });
   },
 
@@ -1237,6 +1289,98 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
     });
   },
 
+  /** 详情长图（devops#946，Epic #601 P4）：1080×auto 六节图表。单超长 canvas
+   * 在 iOS 画布上限内容易爆，走「多段 canvas 纵向拼接」：每段 dpr=2 绘制导出
+   * （utils/posterDetail.drawDetailPosterSlice），再在 dpr=1 整幅画布 1:1 合成
+   * 导出 1080×H；超长课（>DETAIL_MAX_HEIGHT）按节边界分多张，逐张返回。 */
+  renderDetailPoster(themeKey: string): Promise<string[] | null> {
+    if (posterBusy || !posterDetailModel) return Promise.resolve(null);
+    posterBusy = true;
+    return new Promise((resolve) => {
+      wx.createSelectorQuery()
+        .in(this as never)
+        .select('#poster-canvas')
+        .fields({ node: true }, async (res) => {
+          const canvas = res?.node;
+          if (!canvas || !posterDetailModel) {
+            posterBusy = false;
+            wx.showToast({ title: '长图生成失败', icon: 'none' });
+            resolve(null);
+            return;
+          }
+          try {
+            const model = posterDetailModel;
+            const t = posterTheme(themeKey);
+            const trackPoints = mapSegments.reduce((n, seg) => n + seg.length, 0);
+            const layout = detailLayout({
+              hasMap: trackPoints >= 20,
+              hasPace: model.paceCurve != null,
+              hasHr: model.hrCurve != null,
+              zoneRows: model.zones?.rows.length ?? 0,
+              tableRows: model.table?.rows.length ?? 0,
+              tablePerKm: model.table?.perKm ?? true,
+            });
+
+            // 地图层真图（与概览卡同管线，缓存键 'detail'）：任何失败 → null 降级矢量占位。
+            let mapImage: PosterImage | null = null;
+            if (trackPoints >= 20) {
+              const size = detailMapRequestSize(layout);
+              const mapReq = buildStaticMapRequest(mapSegments, size.width, size.height);
+              if (mapReq) {
+                let path = posterMapCache && posterMapCache.labelId === labelId && posterMapCache.aspect === 'detail' ? posterMapCache.path : null;
+                if (!path) {
+                  path = await fetchPosterMapImage(mapReq);
+                  if (path) posterMapCache = { labelId, aspect: 'detail', path };
+                }
+                if (path) mapImage = (await loadCanvasImage(canvas, path)) as PosterImage | null;
+              }
+            }
+
+            const ctx2d = (): DetailCanvasCtx => canvas.getContext('2d') as unknown as DetailCanvasCtx;
+            const out: string[] = [];
+            for (const part of planDetailParts(layout)) {
+              // 每段：dpr=2 画布对准 [part.y+sl.y, +sl.h) 绝对逻辑坐标，导出 1080 宽。
+              const slices: Array<{ y: number; h: number; path: string }> = [];
+              for (const sl of planDetailSlices(part.h)) {
+                canvas.width = DETAIL_WIDTH * 2;
+                canvas.height = sl.h * 2;
+                const ctx = ctx2d();
+                ctx.setTransform(2, 0, 0, 2, 0, -(part.y + sl.y) * 2);
+                drawDetailPosterSlice(ctx, t, { y: part.y + sl.y, h: sl.h }, layout, model, {
+                  mapImage,
+                  track: mapSegments.length ? mapSegments : null,
+                  userName: userStore.getState().user?.name || '',
+                });
+                slices.push({ y: sl.y, h: sl.h, path: await canvasToTempFile(canvas, DETAIL_WIDTH, sl.h) });
+              }
+              if (slices.length === 1) {
+                out.push(slices[0].path); // 单段即成品（段导出已 1080 宽）
+                continue;
+              }
+              // 合成：dpr=1 整幅画布把各段 1:1 贴回，导出 1080×part.h。
+              canvas.width = DETAIL_WIDTH;
+              canvas.height = part.h;
+              const actx = ctx2d();
+              actx.setTransform(1, 0, 0, 1, 0, 0); // 合成走恒等变换（1:1 贴回）
+              for (const sl of slices) {
+                const img = await loadCanvasImage(canvas, sl.path);
+                actx.drawImage(img as PosterImage, 0, sl.y, DETAIL_WIDTH, sl.h);
+              }
+              out.push(await canvasToTempFile(canvas, DETAIL_WIDTH, part.h));
+            }
+            resolve(out);
+          } catch (err) {
+            console.error('[poster-detail] 绘制异常', err);
+            wx.showToast({ title: '长图生成失败', icon: 'none' });
+            resolve(null);
+          } finally {
+            posterBusy = false;
+          }
+        })
+        .exec();
+    });
+  },
+
   async savePoster(path: string) {
     const result = await saveImageToAlbum(path);
     if (result === 'saved') {
@@ -1252,6 +1396,24 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
 // 海报绘制本体见 utils/poster.ts（devops#944 定稿版式）与 utils/posterMap.ts
 // （地图层代理与降级）。此处只保留 canvas 图片加载这一页侧胶水。
 // ---------------------------------------------------------------------------
+
+/** 长图绘制的 canvas 上下文：PosterCtx 结构 + 页侧变换用的 setTransform。 */
+type DetailCanvasCtx = Parameters<typeof drawDetailPosterSlice>[0] & {
+  setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void;
+};
+
+/** wx.canvasToTempFilePath promisify（详情长图分段导出/合成导出共用）。 */
+function canvasToTempFile(canvas: WechatMiniprogram.Canvas, destWidth: number, destHeight: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    wx.canvasToTempFilePath({
+      canvas,
+      destWidth,
+      destHeight,
+      success: (out) => resolve(out.tempFilePath),
+      fail: (err) => reject(err),
+    });
+  });
+}
 
 /** canvas 2d 的 createImage 加载临时文件；失败 resolve(null)（地图层降级）。 */
 function loadCanvasImage(canvas: unknown, src: string): Promise<unknown> {
