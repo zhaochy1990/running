@@ -83,6 +83,8 @@
 | **B（spike 后采纳）** | 腾讯位置服务静态图 WebService API | ✅ 服务端直出 PNG；path ≤2048 点/256 条（分段彩色可行）、size ≤1680×1200、scale=2；配额 1 万次/日/Key、5 QPS（个人）；GCJ-02 用 `utils/coord.ts`；Key 走后端代理不进前端包 |
 | C | 瓦片自拼（本 POC 方案） | 不推荐生产：高德瓦片非官方授权使用、OSM 国内可达性不稳 |
 
+**B 的 P2 落地（devops#944，2026-11-10）**：Go API 加静态图代理 `POST /api/users/me/poster/map`（`src/go/internal/api/postermap.go` + `src/go/internal/tencentlbs/`），key 走 `STRIDE_WORKER_TENCENT_LBS_API_KEY`（`tencent-lbs:` 配置节，未配 key 时代理返回 503 `map_proxy_not_configured`）。mp 侧 `utils/posterMap.ts` 组装配速分色 path（GCJ-02）+ 起终点 markers，任何失败降级矢量占位（真轨迹 + 配速渐变 +「地图底图暂未开放」角标），其余节正常出图；真图回归待 key 到位后挂 devops#949。
+
 其余生产要点：mp canvas 绘制（同构先例 workout-detail.ts / strategy.ts）；保存相册 util 需新写（全仓零命中，含权限拒绝引导）；主题色系 token 表沿用 `utils/theme.ts` 单源模式；标题超长 ellipsize；配速分段用后端 segments；attribution 方案随地图方案定。
 
 ## 6. 迭代史（简要）

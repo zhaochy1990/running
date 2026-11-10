@@ -71,6 +71,17 @@ amap:
   api-key: ""
   timeout: 3s
 
+# Tencent LBS (腾讯位置服务) static map for the share poster's map layer
+# (devops#943 spike plan B, devops#944). The miniprogram asks the API to
+# compose the static map (track paths + start/end markers) and the API adds
+# the key server-side — the key must never ship in the miniprogram bundle.
+# Secret, supplied via STRIDE_WORKER_TENCENT_LBS_API_KEY; until it is set the
+# proxy answers 503 map_proxy_not_configured and the poster degrades the map
+# layer to a placeholder (real-map regression rides devops#949).
+tencent-lbs:
+  api-key: ""
+  timeout: 10s
+
 # Watch-provider event-push receiver (`stride api`, devops#287) —
 # POST /webhook/push/coros. The COROS-issued pair is secret and comes from env:
 #   STRIDE_WORKER_WEBHOOK_COROS_CLIENT / STRIDE_WORKER_WEBHOOK_COROS_SECRET
