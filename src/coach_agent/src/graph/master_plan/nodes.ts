@@ -372,20 +372,28 @@ export class MasterPlanNodes {
         },
         planStartMonday: monday,
       };
-      // 首块门控（2026-11-09 用户拍板，回归 daniels.md §3.1/3.2 原设计「计划=政策，
-      // 不是预测」）：跑道 >8 周时只生成首个 L3 块（3+1，约 4 周）的课表——用户先看
-      // 到近期要练的内容，后续周期以政策级描述呈现（v2 周骨架=km 目标+phase 归属、
-      // 无 key_sessions），块界到时由 weekly 投影按实际完成状态滚动生成（L3 滚动种
-      // 子已实现）。≤8 周（短跑道坍缩场景）仍全量生成。19 周整段生成 9/9 全败的
-      // 体量问题由此根除——首块 4 周规模的高过门率已被 5 周跑道多轮实证。
-      const FIRST_BLOCK_ONLY_MAX_WEEKS = 8;
-      if (rows.length > FIRST_BLOCK_ONLY_MAX_WEEKS) {
-        const firstBlock = skeleton.weeks.find((week) => week.week === rows[0]!.week)?.block;
-        const firstBlockEnd = skeleton.weeks.filter((week) => week.block === firstBlock).at(-1)!.week;
-        contentInput.rows = rows.filter((row) => row.week <= firstBlockEnd);
+      // 首批门控（2026-11-09 用户两轮拍板，回归 daniels.md §3.1/3.2 原设计「计划=
+      // 政策，不是预测」）：跑道 >8 周时首批生成 **min(首阶段周数, 6 周)**——阶段
+      // ≤6 周整阶段一次到位（周期叙事完整），7-12 周长阶段生成前 6 周、剩余按块
+      // 滚动（块=mesocycle 执行层、阶段=叙事层；「根据训练状态调整」与过门率实证
+      // 带 4-5 周稳/19 周全败决定上限 6）。后续批次由 weekly 投影在批次末周进入时
+      // 按实际完成状态滚动生成（L3 滚动种子已实现）。≤8 周短跑道仍全量。
+      const FIRST_BATCH_MAX_WEEKS = 6;
+      const LONG_RUNWAY_THRESHOLD = 8;
+      if (rows.length > LONG_RUNWAY_THRESHOLD) {
+        const firstPhase = rows[0]!.phase;
+        const firstPhaseEnd = rows.filter((row) => row.phase === firstPhase).at(-1)!.week;
+        const firstBatchEnd = Math.min(firstPhaseEnd, rows[0]!.week + FIRST_BATCH_MAX_WEEKS - 1);
+        contentInput.rows = rows.filter((row) => row.week <= firstBatchEnd);
         logger.info(
-          { runwayWeeks: rows.length, generatedWeeks: contentInput.rows.map((row) => row.week), deferredFrom: firstBlockEnd + 1 },
-          "long runway: first block only, later weeks deferred to block-boundary rolling generation",
+          {
+            runwayWeeks: rows.length,
+            firstPhase,
+            firstPhaseEnd,
+            generatedWeeks: contentInput.rows.map((row) => row.week),
+            deferredFrom: firstBatchEnd + 1,
+          },
+          "long runway: first batch = min(first phase, 6 weeks), rest deferred to rolling generation at batch boundaries",
         );
       }
       // 块界分批（spec §3 生成粒度=块 3+1）：批=L3 block 连续段，PMC 种子批间链传。

@@ -158,6 +158,7 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
   const weeks: LoadWeek[] = [];
   const phaseStartWeeks = new Set(phases.map((p) => p.start_week));
   let blockId = 0;
+  let blockPendingCut = false;
   let phaseWeekIdx = 0;
   let prevCanonical = "";
   for (let w = 1; w <= N; w++) {
@@ -181,7 +182,16 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
     const buildSoFar = weeks.filter((x) => x.canonical !== "recovery" && (x.role === "progress" || x.role === "absorb")).length;
     const absorb =
       N > SHORT_ABSORB_MAX_WEEKS && !inTaper && p.canonical !== "recovery" && buildSoFar > 0 && (buildSoFar + 1) % ABSORB_EVERY === 0 && N - w >= taperW + 1;
-    if (phaseWeekIdx === 1 || absorb) blockId++;
+    // 块边界（2026-11-09 用户评审拍板：吸收周归前块）：阶段首周开新块；吸收周
+    // **不**开新块——它是前块（3 进展周）的收尾（超代偿单元完整 = daniels.md
+    // §3.2「吸收周需整块连贯」），下一常规周才开新块。旧实现吸收周自增 blockId
+    // 导致「块1=W1-W3 / 块2=吸收+1 进展 / 单周吸收块」的破碎形态（18 周实测
+    // 7 块=3/2/2/1/3/1/6）；修正后=4/1/3/4/6（阶段尾单周碎片另由生成层合并）。
+    if (phaseWeekIdx === 1) blockId++;
+    else if (blockPendingCut) {
+      blockId++;
+      blockPendingCut = false;
+    }
     const prev4 = [...actual4, ...weeks.map((x) => x.km)].slice(-4);
     const rollMean = prev4.reduce((s, x) => s + x, 0) / Math.max(1, prev4.length);
 
@@ -247,9 +257,14 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
                 ? 2
                 : 1;
     weeks.push({ week: w, canonical: p.canonical, block: blockId, role, km: r1(km), lr, q });
+    if (absorb) blockPendingCut = true;
   }
 
-  // 块结构标记：按块聚合，记录 3+1 边界与吸收周
+  // 块结构标记：按块聚合，记录 3+1 边界与吸收周；随后施加「块长 ≥2」不变式
+  //（2026-11-09 用户拍板）：单周块并入**同阶段**相邻块——向前优先（阶段尾溢出
+  // 周挂回本阶段），阶段首周单块则向后（如 final_quality 首周兼吸收）。跨阶段
+  // 不并（块与阶段对齐：18 周=foundation 5/early 3/transition 4/final 6 四块
+  // 对四阶段）；recovery 块豁免（独立低量平语义单独成批）。
   const blocks: LoadBlock[] = [];
   for (const wk of weeks) {
     const at = blocks.at(-1);
@@ -267,6 +282,39 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
       });
     }
   }
+  for (let i = 0; i < blocks.length; ) {
+    const b = blocks[i]!;
+    const prev = i > 0 ? blocks[i - 1]! : null;
+    const next = i + 1 < blocks.length ? blocks[i + 1]! : null;
+    // recovery 块豁免（独立语义：低量平单独成批，教义 §3.2）；吸收单周已有阶段
+    // 语义豁免之外的普通单周才合并
+    const mergeIntoPrev = prev != null && prev.canonical === b.canonical;
+    const mergeIntoNext = next != null && next.canonical === b.canonical;
+    if (b.end_week - b.start_week + 1 === 1 && blocks.length > 1 && b.canonical !== "recovery" && (mergeIntoPrev || mergeIntoNext)) {
+      if (mergeIntoPrev) {
+        prev!.end_week = b.end_week;
+        prev!.absorb_weeks.push(...b.absorb_weeks);
+      } else {
+        next!.start_week = b.start_week;
+        next!.absorb_weeks.unshift(...b.absorb_weeks);
+        // 阶段首周单块向后并时继承 phase_start 边界（合并块起点=阶段首周）
+        if (b.boundary === "phase_start") next!.boundary = "phase_start";
+      }
+      blocks.splice(i, 1);
+    } else i++;
+  }
+  // 合并后按块序重编号，weeks[].block 与 blocks[].block 同步
+  weeks.forEach((wk) => {
+    const idx = blocks.findIndex((b) => wk.week >= b.start_week && wk.week <= b.end_week);
+    if (idx >= 0) wk.block = blocks[idx]!.block;
+  });
+  blocks.forEach((b, idx) => {
+    b.block = idx + 1;
+  });
+  weeks.forEach((wk) => {
+    const idx = blocks.findIndex((b) => wk.week >= b.start_week && wk.week <= b.end_week);
+    if (idx >= 0) wk.block = idx + 1;
+  });
 
   // 里程碑对齐：L2 里程碑挂到对应阶段的出口周（引用匹配必须用真实阶段行）
   const milestones: MilestoneAlignment[] = intent.milestones.map((m) => {
