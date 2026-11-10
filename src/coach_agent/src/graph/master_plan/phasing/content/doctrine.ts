@@ -134,7 +134,9 @@ export function buildProvenSessions(
   activities: ReadonlyArray<{ date: Date | string; name?: string | null; distanceM?: number | null; strideSessionClass?: string | null; durationS?: number | null | undefined }>,
   asOf: string,
 ): ProvenSession[] {
-  const dayOf = (d: Date | string) => (typeof d === "string" ? d.slice(0, 10) : d.toISOString().slice(0, 10));
+  // 上海日历日（UTC+8）：activities.date 是 UTC instant，直接 slice 会把
+  // 上海次日凌晨的课归错日期（用户 2026-11-10 评审发现）
+  const dayOf = (d: Date | string) => new Date(new Date(d).getTime() + 8 * 3600_000).toISOString().slice(0, 10);
   const asOfDay = asOf.slice(0, 10);
   const tenWeeksAgo = new Date(new Date(`${asOfDay}T00:00:00Z`).getTime() - 70 * 86400000).toISOString().slice(0, 10);
   return activities

@@ -767,7 +767,7 @@ test("buildProvenSessions（#857）：近 10 周质量/长距离课筛选+摘要
   ];
   const out = buildProvenSessions(acts, asOf);
   assert.equal(out.length, 2, `应筛出 2 节（半马+35km），实际 ${out.length}`);
-  assert.equal(out[0]!.date, "2026-11-01");
+  assert.equal(out[0]!.date, "2026-11-02", "半马 UTC 11-01T23:30 = 上海 11-02 早（时区转换生效）");
   assert.equal(out[0]!.distanceKm, 21.1);
   assert.equal(out[0]!.avgPaceSKm, 259.1);
   assert.equal(out[1]!.name, "[STRIDE] 5km 递进×7（4:50→4");
