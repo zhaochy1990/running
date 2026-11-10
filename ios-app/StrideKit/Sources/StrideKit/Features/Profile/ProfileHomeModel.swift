@@ -53,6 +53,19 @@ public final class ProfileHomeModel {
                 subtitle: "产品路线也在这里 · 每条我们都会看", route: .feedback(initialTab: nil)),
     ]
 
+    /// 积分商城域入口两行（devops#938 拍板 1 方案 A，镜像 mp profile 菜单
+    /// 前两行；右侧文案由 check-ins/status 一次请求喂饱）。
+    public static let checkinMenuRow = MenuRow(id: "checkin", title: "每日签到", systemImage: "checkmark.seal", route: .checkin(gained: nil))
+    public static let mallMenuRow = MenuRow(id: "points-mall", title: "积分商城", systemImage: "bag", route: .pointsMall)
+
+    /// 每日签到行右侧文案（可签「今日 +N 分」粉 / 已签「已签」灰）。
+    public internal(set) var checkinRight = ""
+    public internal(set) var checkinSigned = false
+    /// 积分商城行右侧文案（「N 分」余额，粉）。
+    public internal(set) var mallRight = ""
+    /// 一步签到进行中（行禁点防双击）。
+    public private(set) var checkinBusy = false
+
     public private(set) var name: String
     public private(set) var email: String
     public private(set) var avatarURL: String?
@@ -92,7 +105,8 @@ public final class ProfileHomeModel {
         await refresh()
     }
 
-    /// onShow 等价：刷新身份（onboarding/profile-edit 回来可能改名）+ 红点 + 上次同步。
+    /// onShow 等价：刷新身份（onboarding/profile-edit 回来可能改名）+ 红点 + 上次同步
+    /// + 签到/商城两行右侧文案（devops#938）。
     public func refresh() async {
         guard let app else { return }
         if let me = app.me {
@@ -100,6 +114,7 @@ public final class ProfileHomeModel {
         }
         await refreshLastSync()
         await refreshFeedbackUnread()
+        await refreshCheckinRight()
     }
 
     private func applyIdentity(_ me: MeUser) {
@@ -133,6 +148,37 @@ public final class ProfileHomeModel {
         } catch {
             // 保留上次值；临时网络错误不打断页面
         }
+    }
+
+    // MARK: 积分商城域入口（devops#938）
+
+    /// 每日签到/积分商城两行右侧文案：一次 check-ins/status 同响应喂饱
+    /// （今日 +N 分 / 已签；N 分余额）；失败静默保留现值。
+    public func refreshCheckinRight() async {
+        guard let app, app.me?.id != nil else { return }
+        do {
+            let st = try await app.api.checkInStatus()
+            checkinRight = st.today.canCheckIn ? "今日 +\(st.today.rewardPreview) 分" : "已签"
+            checkinSigned = !st.today.canCheckIn
+            mallRight = "\(st.balance) 分"
+        } catch {
+            // 保留现值；临时网络错误不弹窗
+        }
+    }
+
+    /// 一步签到（#851 改判，mp checkinTap 直译）：点行即 POST（按日幂等），
+    /// 成功带 gained 进签到页以刚签到态呈现；POST 失败仍进页（可签态），
+    /// 页内 CTA 兜底重试。
+    public func checkinTap() async {
+        guard !checkinBusy else { return }
+        checkinBusy = true
+        defer { checkinBusy = false }
+        guard let app else { return }
+        var gained: Int?
+        if let res = try? await app.api.createCheckIn() {
+            gained = res.pointsEarned
+        }
+        app.router.push(.checkin(gained: gained))
     }
 
     // MARK: - 手动同步（POST incremental + 轮询 + 卸载取消）

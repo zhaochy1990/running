@@ -3,7 +3,7 @@ import Foundation
 /// 全局路由表（devops#749 §4.1 / #751 决议 3）。
 ///
 /// 单一强类型 `Route` enum 替代小程序 `app.json` 字符串表 + 页内拼 query：
-/// 27 个活跃页逐页入表（关联值承接全部实测 query 面），死页 plan/health 不迁
+/// 33 个活跃页逐页入表（关联值承接全部实测 query 面），死页 plan/health 不迁
 /// （baseline §10）。`Route(url:)` 白名单解析 = `sanitizeRedirect` 等价更严
 /// （只接受白名单 path + 白名单参数，非法返回 nil），分享回流 / 登录回跳共用。
 public enum Route: Hashable, Sendable {
@@ -80,6 +80,22 @@ public enum Route: Hashable, Sendable {
     case profileEdit
     /// pages/privacy/privacy
     case privacy
+
+    // ── 积分商城域（devops#938；全部 homeTab=.profile 登录态普通页）──────
+    /// pages/checkin/checkin；gained = 一步签到成功带刚得分进页（profile.ts
+    /// POST 后 `?gained=N` 的等价承接）
+    case checkin(gained: Int?)
+    /// pages/points-mall/points-mall
+    case pointsMall
+    /// pages/points-orders/points-orders（mp `?paid=` 支付锚点 iOS 免支付不迁）
+    case pointsOrders
+    /// pages/points-detail/points-detail
+    case pointsDetail
+    /// pages/addresses/addresses `?mode=pick`；选中回传走 AppModel.addressPick
+    /// 交接（eventChannel 等价，同 custom-race-form 先例）
+    case addresses(pick: Bool)
+    /// pages/address-form/address-form `?id=` 有值=编辑
+    case addressForm(id: Int?)
 }
 
 /// 声明类型白名单（pages/declaration/declaration ?doc_type=）。
@@ -133,6 +149,12 @@ extension Route {
         case .watch: "/pages/watch/watch"
         case .profileEdit: "/pages/profile-edit/profile-edit"
         case .privacy: "/pages/privacy/privacy"
+        case .checkin: "/pages/checkin/checkin"
+        case .pointsMall: "/pages/points-mall/points-mall"
+        case .pointsOrders: "/pages/points-orders/points-orders"
+        case .pointsDetail: "/pages/points-detail/points-detail"
+        case .addresses: "/pages/addresses/addresses"
+        case .addressForm: "/pages/address-form/address-form"
         }
     }
 
@@ -154,7 +176,8 @@ extension Route {
         switch self {
         case .coach, .activities, .trainingHome, .profile,
              .trainingPlan, .trainingStatus, .raceCenter, .myRaces,
-             .customRaceForm, .feedbackForm, .productRoadmap, .profileEdit, .privacy:
+             .customRaceForm, .feedbackForm, .productRoadmap, .profileEdit, .privacy,
+             .pointsMall, .pointsOrders, .pointsDetail:
             []
         case .login(let redirect):
             redirect.map { [URLQueryItem(name: "redirect", value: $0.pathWithQuery)] } ?? []
@@ -188,6 +211,12 @@ extension Route {
         case .watch(let provider, let redirect):
             (provider.map { [URLQueryItem(name: "provider", value: $0.rawValue)] } ?? [])
                 + (redirect.map { [URLQueryItem(name: "redirect", value: $0.pathWithQuery)] } ?? [])
+        case .checkin(let gained):
+            gained.map { [URLQueryItem(name: "gained", value: String($0))] } ?? []
+        case .addresses(let pick):
+            pick ? [URLQueryItem(name: "mode", value: "pick")] : []
+        case .addressForm(let id):
+            id.map { [URLQueryItem(name: "id", value: String($0))] } ?? []
         }
     }
 
@@ -210,7 +239,8 @@ extension Route {
         case .profile, .profileEdit, .privacy, .trainingPlan, .trainingStatus,
              .raceCenter, .raceDetail, .raceStrategy, .myRaces, .customRaceForm,
              .feedback, .feedbackForm, .feedbackChat, .productRoadmap, .roadmapDetail,
-             .watch, .declaration: .profile
+             .watch, .declaration,
+             .checkin, .pointsMall, .pointsOrders, .pointsDetail, .addresses, .addressForm: .profile
         case .workoutShare, .coachShare, .strategyShare, .login, .onboarding: .coach
         }
     }
@@ -341,6 +371,31 @@ extension Route {
         case "/pages/privacy/privacy":
             guard allowOnly() else { return nil }
             self = .privacy
+        case "/pages/checkin/checkin":
+            guard allowOnly("gained") else { return nil }
+            let gained = query["gained"].flatMap { Int($0) }
+            self = .checkin(gained: gained)
+        case "/pages/points-mall/points-mall":
+            guard allowOnly() else { return nil }
+            self = .pointsMall
+        case "/pages/points-orders/points-orders":
+            guard allowOnly() else { return nil }
+            self = .pointsOrders
+        case "/pages/points-detail/points-detail":
+            guard allowOnly() else { return nil }
+            self = .pointsDetail
+        case "/pages/addresses/addresses":
+            guard allowOnly("mode") else { return nil }
+            self = .addresses(pick: query["mode"] == "pick")
+        case "/pages/address-form/address-form":
+            guard allowOnly("id") else { return nil }
+            if let raw = query["id"] {
+                // 参数值类型不符（非数字）整体拒绝；id=0 与缺省同为新增态（mp 语义）。
+                guard let id = Int(raw) else { return nil }
+                self = .addressForm(id: id > 0 ? id : nil)
+            } else {
+                self = .addressForm(id: nil)
+            }
         default:
             return nil
         }

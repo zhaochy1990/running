@@ -94,6 +94,18 @@ struct RouteShellView: View {
             WatchView(provider: provider, redirect: redirect)
         case .profileEdit:
             ProfileEditView()
+        case .checkin(let gained):
+            CheckinView(gained: gained)
+        case .pointsMall:
+            PointsMallView()
+        case .pointsOrders:
+            PointsOrdersView()
+        case .pointsDetail:
+            PointsDetailView()
+        case .addresses(let pick):
+            AddressesView(pick: pick)
+        case .addressForm(let id):
+            AddressFormView(id: id)
         case .workoutShare(let user, let workout):
             WorkoutShareView(user: user, workout: workout)
         case .coachShare(let sid):
@@ -131,6 +143,12 @@ struct RouteShellView: View {
         case .watch: "手表"
         case .profileEdit: "个人资料"
         case .privacy: "隐私与权限"
+        case .checkin: "每日签到"
+        case .pointsMall: "积分商城"
+        case .pointsOrders: "我的兑换"
+        case .pointsDetail: "积分明细"
+        case .addresses: "收货地址"
+        case .addressForm: "新增地址"
         }
     }
 }
