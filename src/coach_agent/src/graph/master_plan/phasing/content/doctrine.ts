@@ -128,7 +128,9 @@ export interface ProvenSession {
 /**
  * 近期已证训练课构造（#857，2026-11-02 拍板 2026-11-10 上移生产）：近 10 周
  * 质量/长距离课摘要——L4a 已证参照规则的数据源（新课刺激不低于最近同类课
- * 已证水平）。筛选：≥7km 的 quality/long_quality/race/long_easy 类。
+ * 已证水平）。筛选：quality/long_quality/race/long_easy 类，不加距离限制
+ * （2026-11-10 用户拍板：完全信任分类器——strides/触感课分类器本来就不标
+ * quality，距离线是冗余防御且可能挡掉短而有效的课如 3×1km@MP+放松≈6km）。
  */
 export function buildProvenSessions(
   activities: ReadonlyArray<{ date: Date | string; name?: string | null; distanceM?: number | null; strideSessionClass?: string | null; durationS?: number | null | undefined }>,
@@ -144,7 +146,6 @@ export function buildProvenSessions(
       (a) =>
         dayOf(a.date) >= tenWeeksAgo &&
         dayOf(a.date) <= asOfDay &&
-        (a.distanceM ?? 0) >= 7000 &&
         a.strideSessionClass != null &&
         ["quality", "long_quality", "race", "long_easy"].includes(a.strideSessionClass),
     )
