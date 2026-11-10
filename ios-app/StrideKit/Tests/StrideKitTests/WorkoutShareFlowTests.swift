@@ -96,9 +96,11 @@ import Testing
         #expect(share.saved)
         #expect(share.needsWatchBinding)
 
-        // 「去绑定」→ watch 路由入栈
+        // 「去绑定」→ watch 路由入栈，redirect=本页（devops#940 回来源透传）
         share.confirmGoBindWatch()
-        #expect(app.router.paths.values.contains { $0.contains(.watch(provider: nil)) })
+        #expect(app.router.paths.values.contains {
+            $0.contains(.watch(provider: nil, redirect: .workoutShare(user: "u1", workout: "w1")))
+        })
 
         // 绑定后回来：重新 activate 自动续推（绑表 → push 端点）
         await transport.plan("/api/users/me/watch", responses: [(

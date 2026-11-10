@@ -39,8 +39,8 @@ import Testing
         #expect(Route(url: url("/pages/feedback/feedback")) == .feedback(initialTab: nil))
         #expect(Route(url: url("/pages/feedback-chat/feedback-chat?id=88")) == .feedbackChat(id: "88"))
         #expect(Route(url: url("/pages/roadmap-detail/roadmap-detail?id=15")) == .roadmapDetail(id: 15))
-        #expect(Route(url: url("/pages/watch/watch?provider=coros")) == .watch(provider: .coros))
-        #expect(Route(url: url("/pages/watch/watch")) == .watch(provider: nil))
+        #expect(Route(url: url("/pages/watch/watch?provider=coros")) == .watch(provider: .coros, redirect: nil))
+        #expect(Route(url: url("/pages/watch/watch")) == .watch(provider: nil, redirect: nil))
         #expect(Route(url: url("/pages/login/login")) == .login(redirect: nil))
     }
 
@@ -48,6 +48,32 @@ import Testing
         let redirect = "/pages/activity-detail/activity-detail?labelId=xyz".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!
         let route = Route(url: url("/pages/login/login?redirect=\(redirect)"))
         #expect(route == .login(redirect: .activityDetail(labelId: "xyz")))
+    }
+
+    /// watch 页 redirect 透传（devops#940，mp 59dd9d71 watch.ts `_redirect`
+    /// 等价）：来源页完整 path+query 经白名单解析回跳目标。
+    @Test func parsesWatchRedirectPassthrough() {
+        // mp lottery 形态：redirect 值 encodeURIComponent 全转义（%2F/%3F/%3D/%26）
+        let landing = "%2Fpages%2Fworkout-share%2Fworkout-share%3Fuser%3Du1%26workout%3Dw1"
+        #expect(
+            Route(url: url("/pages/watch/watch?redirect=\(landing)"))
+                == .watch(provider: nil, redirect: .workoutShare(user: "u1", workout: "w1"))
+        )
+        // provider 与 redirect 可同时携带（`watch?provider=garmin&redirect=…`）
+        #expect(
+            Route(url: url("/pages/watch/watch?provider=garmin&redirect=\(landing)"))
+                == .watch(provider: .garmin, redirect: .workoutShare(user: "u1", workout: "w1"))
+        )
+        // iOS pathWithQuery 弱转义形态（?、/ 留明文）同样可解析
+        #expect(
+            Route(url: url("/pages/watch/watch?redirect=/pages/profile-edit/profile-edit"))
+                == .watch(provider: nil, redirect: .profileEdit)
+        )
+        // 非法 redirect → 丢弃回跳、页面本身仍可解析（sanitizeRedirect 等价）
+        #expect(
+            Route(url: url("/pages/watch/watch?redirect=%2F%2Fevil.com"))
+                == .watch(provider: nil, redirect: nil)
+        )
     }
 
     @Test func pathWithQueryRoundTrips() {
@@ -67,8 +93,10 @@ import Testing
             .feedback(initialTab: nil),
             .feedbackChat(id: "88"),
             .roadmapDetail(id: 15),
-            .watch(provider: .garmin),
-            .watch(provider: nil),
+            .watch(provider: .garmin, redirect: nil),
+            .watch(provider: nil, redirect: nil),
+            .watch(provider: .coros, redirect: .workoutShare(user: "u1", workout: "w1")),
+            .watch(provider: nil, redirect: .profileEdit),
         ]
         for route in samples {
             #expect(Route(url: url(route.pathWithQuery)) == route, "往返失败：\(route.pathWithQuery)")
@@ -110,7 +138,7 @@ import Testing
         #expect(Route(url: url("/pages/declaration/declaration?doc_type=other")) == nil)
         // 非法可选枚举 → 忽略该参数（沿小程序 options 容错语义：provider/tab
         // 取值不认识即不预选，不废掉整个路由）
-        #expect(Route(url: url("/pages/watch/watch?provider=suunto")) == .watch(provider: nil))
+        #expect(Route(url: url("/pages/watch/watch?provider=suunto")) == .watch(provider: nil, redirect: nil))
         #expect(Route(url: url("/pages/feedback/feedback?tab=other")) == .feedback(initialTab: nil))
         // 非整数 id
         #expect(Route(url: url("/pages/race-center/detail?id=abc")) == nil)

@@ -90,8 +90,8 @@ struct RouteShellView: View {
             ProductRoadmapView()
         case .roadmapDetail(let id):
             RoadmapDetailView(featureId: id)
-        case .watch(let provider):
-            WatchView(provider: provider)
+        case .watch(let provider, let redirect):
+            WatchView(provider: provider, redirect: redirect)
         case .profileEdit:
             ProfileEditView()
         case .workoutShare(let user, let workout):

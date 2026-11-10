@@ -277,9 +277,10 @@ public final class WorkoutShareModel {
     /// 视图层消费一次的「推送手表需先绑定」引导信号。
     public internal(set) var needsWatchBinding = false
 
-    /// 视图确认「去绑定」后调用。
+    /// 视图确认「去绑定」后调用。redirect=本页（devops#940）：绑定成功
+    /// dismiss 回本页，onAppear 续推链（resumeIfNeeded）原样保留。
     public func confirmGoBindWatch() {
         needsWatchBinding = false
-        app?.router.push(.watch(provider: nil))
+        app?.router.push(.watch(provider: nil, redirect: .workoutShare(user: user, workout: workout)))
     }
 }

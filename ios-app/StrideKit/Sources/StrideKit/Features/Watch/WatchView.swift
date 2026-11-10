@@ -9,8 +9,8 @@ public struct WatchView: View {
     @Environment(AppModel.self) private var model
     @State private var watch: WatchModel
 
-    public init(provider: WatchProvider?) {
-        _watch = State(initialValue: WatchModel(provider: provider))
+    public init(provider: WatchProvider?, redirect: Route? = nil) {
+        _watch = State(initialValue: WatchModel(provider: provider, redirect: redirect))
     }
 
     public var body: some View {
