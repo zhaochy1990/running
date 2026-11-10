@@ -1,7 +1,7 @@
 # Parity Ledger — 小程序 vs iOS App
 
 - 铁律与流程：`.agents/skills/mp-ios-parity-check`（stride 工作区）
-- 基线：[baseline.md](baseline.md)（27 活跃页功能对照，devops#747 产物落盘）
+- 基线：[baseline.md](baseline.md)（33 活跃页功能对照，devops#747 产物落盘 + #938 商城域增补 §14）
 - 转译映射：[mapping.md](mapping.md)（devops#749 产物落盘）
 - 状态：`aligned`（一致）/ `pending`（差异待确认）/ `confirmed`（人工确认保留差异）
 - confirmed 必须三选一：**保留偏差**（含平台差异）/ **修 iOS 对齐**（转实施票）/ **放弃该功能**（1.0 不做，注明理由）
@@ -172,3 +172,14 @@
 - 真机走查 27 页（含 SSE 真流、深链回流）：TestFlight 装机后执行（#759 决议一：真机走查合并进内部测试轮）。
 - TestFlight 出包：仓库 ASC 三 secrets（ASC_KEY_ID/ASC_ISSUER_ID/ASC_KEY_P8）未配置，ios-app.yml testflight 作业 notice 跳过（设计如此不红 CI）；配置后 workflow_dispatch 即出包。
 - ICP 备案号：管局流程在途（#750 调研 3-4 周关键路径），下号后填 ASC 简中元数据。
+
+## 积分商城域（devops#938 落地后登记；规格 #937 决议 + #938 拍板纪要）
+
+> 商城域 6 页（checkin/points-mall/points-orders/points-detail/addresses/address-form）+ profile 入口两行 + 11 端点接入，2026-11-10。iOS 实现位于 `StrideKit/Sources/StrideKit/Features/PointsMall/`（baseline §14 逐页对照）。四条偏差按 #937 §七预告登记；其中游客遮罩与品牌口径两条与 #941 全局种子条目（如已先行落盘）语义同源——**去重保留一份，以先落盘者为准**，本节行内已注明互见。
+
+| ID | 检查点 | 维度 | 小程序现状 | iOS 现状 | 状态 | 确认人 | 日期 | 说明 |
+| ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
+| D-pts-1 | 6 页游客遮罩 | 架构 | checkin/mall/orders/detail/addresses/address-form 均有游客态遮罩 + openLogin 回跳（authGate 范式） | 不实现：根视图强登录（AppModel phase 门），6 页登录态页面天然不可达未登录态 | confirmed | 用户（Epic「iOS App 漂移跟进」强登录口径延伸；#937 §七预告） | 2026-11-10 | 保留偏差：与 #941 全局「游客模式」种子条目互见（若彼条先落盘，以彼条为准，本行仅登记域覆盖面=商城域 6 页） |
+| D-pts-2 | WeChat 分享卡 | 功能 | 6 页 onShareAppMessage/onShareTimeline 默认品牌卡（utils/share.ts） | 不适用：iOS 无微信分享渠道（D-share-1 同源推导） | confirmed | 用户（#937 §七预告） | 2026-11-10 | 放弃该功能：分享出向归 ShareOutbound 体系，本域 6 页无分享按钮；默认品牌卡文案的品牌口径已由 D-share-3 覆盖 |
+| D-pts-3 | 免支付口径（运费/待支付） | 功能 | mall 抽屉运费>0 → prepay+wx.requestPayment 支付流；orders 待支付「去支付」+ `?paid=` 落账轮询 | 全链不接：不做 L1 运费闸门（运费行透传展示）；提交响应 pending_payment → 兜底 toast 引导小程序 + 静默刷新；orders chip 四态照显，pending_payment 引导文案替代去支付钮，`?paid=` 锚点不迁 | confirmed | 用户（Epic 免支付口径 + #938 拍板 3/4，2026-11-10） | 2026-11-10 | 保留偏差：运营全国包邮、不支持运费>0 订单，运费>0 属异常由运营侧处理；订单 30 分钟超时自动关单退分（服务端 worker），积分零损失；`POST redemptions/{id}/pay` 物理不可用（wx.login code→openid） |
+| D-pts-4 | 规则弹窗品牌与平台词 | UI | 两份规则弹窗「砺跑马拉松助手」11 处 + 「小程序」平台词 + mall 第 5 条微信无关条款 | 11 处品牌→StrideWise、平台词→App 语境、微信专属句删除改写（PointsRulesCopy.swift；文案初稿随 #938 PR 正文给用户过目，上线前法务复核） | confirmed | 用户（Epic 品牌口径 StrideWise + #938 拍板 5） | 2026-11-10 | 保留偏差：与 #941「品牌双口径」全局条目互见（若彼条先落盘，以彼条为准；本行登记商城域两份弹窗的具体改写落点）；页面标题/按钮/toast 无品牌字样原样 |

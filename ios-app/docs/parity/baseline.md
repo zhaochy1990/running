@@ -12,7 +12,7 @@ parity baseline v0 (devops#747)
 ## 0. 全局骨架（App 级 parity 项）
 
 ### 0.1 注册与 tabBar
-- [ ] app.json 注册 29 页（活跃 27 + 死页 2），主包无分包
+- [ ] app.json 注册 35 页（活跃 33 + 抽奖 2 页属另域；死页 plan/health 已于 2026-10-28 删除），主包无分包
 - [ ] 自定义 tabBar（`custom-tab-bar/index.ts`）：教练 coach / 记录 activities / 训练 index / 我 profile，选中色 `#ff6363`，SVG 图标 on/off 双态
 - [ ] 深色全局主题：导航/背景 `#07080A`，标题 STRIDE，白字
 - [ ] 各 tab 页 onShow 调 `getTabBar().setData({selected:N})` 同步选中态
@@ -298,7 +298,7 @@ parity baseline v0 (devops#747)
 
 ---
 
-## 12. 后端端点总表（64 个）
+## 12. 后端端点总表（75 个）
 
 ### 12.1 auth-service（AUTH_BASE_URL，6 个）
 | 方法 | 路径 | 用途 | 定义 |
@@ -310,7 +310,7 @@ parity baseline v0 (devops#747)
 | PATCH | /api/users/me | 更新身份昵称/头像 URL | services/profile.ts:76 |
 | POST | /api/users/me/avatar | 头像上传（wx.uploadFile multipart → COS） | services/profile.ts:43 |
 
-### 12.2 stride-api 数据面（API_BASE_URL，54 个）
+### 12.2 stride-api 数据面（API_BASE_URL，65 个）
 | 方法 | 路径 | 用途 | 定义 |
 |---|---|---|---|
 | GET | /api/{user}/activities | 活动列表（limit/offset/date_from/date_to，monthly_summaries） | services/activities.ts:18 |
@@ -376,13 +376,35 @@ parity baseline v0 (devops#747)
 | GET | /api/users/me/coach/sessions | 会话列表 | services/coach.ts:337 |
 | POST | /api/users/me/coach/sessions/{id}/share | 创建分享快照（indices ≤30） | services/coach.ts:393 |
 
+### 12.5 积分/签到/商城/订单/地址域（12 个，全 Bearer JWT default-deny 用户组，无公开端点；Go api/points.go:87-97、addresses.go:56-60、checkins.go 同款 auth.middleware；2026-11-10 随 devops#938 落盘）
+
+| 方法 | 路径 | 用途 | 定义 | iOS APIClient |
+|---|---|---|---|---|
+| GET | /api/users/me/check-ins/status | 签到页整页状态（today/cycle/balance/month；**余额唯一读点**，profile 两行右侧文案同源） | services/checkin.ts:62 | PointsAPI.checkInStatus() |
+| POST | /api/users/me/check-ins | 签到（**按日幂等**：重复回 already_checked_in=true 快照 +0 分，非错误） | services/checkin.ts:57 | PointsAPI.createCheckIn() |
+| GET | /api/users/me/points | 余额+流水倒序分页（50 条/页 cursor，信封 {balance,transactions,next_cursor}） | services/points.ts:171 | PointsAPI.pointsLedger(cursor:) |
+| GET | /api/users/me/points/products | active 商品（spec_mode/skus/运费策略/本人 redeemed_count） | services/points.ts:124 | PointsAPI.pointProducts() |
+| POST | /api/users/me/points/redemptions | 兑换（**body idempotency_key**：`(user_id,key)` 唯一约束，命中重放原单 replayed=true 零副作用；quantity 1-99 binding min=1,max=99；by_sku 缺 sku_id → 409 sku_required） | services/points.ts:134 | PointsAPI.createRedemption(...) |
+| GET | /api/users/me/points/redemptions?cursor= | 兑换订单倒序分页 | services/points.ts:142 | PointsAPI.redemptions(cursor:) |
+| GET | /api/users/me/addresses | 地址簿（服务端保证至多一条 is_default） | services/points.ts:176 | PointsAPI.listAddresses() |
+| POST | /api/users/me/addresses | 新建（≤10 条，超限 address_limit_reached） | services/points.ts:180 | PointsAPI.createAddress(_) |
+| PATCH | /api/users/me/addresses/{id} | 更新（Partial，可只传变更字段） | services/points.ts:184 | PointsAPI.updateAddress(id:_) |
+| DELETE | /api/users/me/addresses/{id} | 删除 | services/points.ts:188 | PointsAPI.deleteAddress(id:) |
+| PATCH | /api/users/me/addresses/{id}/default | 设默认（**同事务清同用户其余默认位**，天然收敛） | services/points.ts:193 | PointsAPI.setAddressDefault(id:) |
+| POST | /api/users/me/points/redemptions/{id}/pay | wxpay JSAPI prepay（**wx.login code→openid，iOS 物理不可用，不接**——Epic 免支付口径拍板） | services/points.ts:269 | 不接 |
+
+- **iOS 消费 11 个**（上表除 pay），全部为既有 `APIClient`（Core/Network/APIClient.swift）此前没有的；401 走 APIClient 现有 refresh 单飞链，无需新增处理。幂等键风格沿 mp `newIdempotencyKey()`（iOS `ios-redeem-{uuid}` 前缀区分来源，便于服务端排障；语义不变）。
+- 业务错误码（409/404/503 → ApiError.code）：insufficient_points / limit_reached / out_of_stock / sku_required / sku_invalid / product_inactive / address_not_found / address_limit_reached / payment_unavailable（兑换侧 9 码中文映射 pointsErrorCopy 原样移植至 `PointsAPI.swift`）。
+- 不在 iOS 面的：`POST /api/wxpay/notify`（微信服务端回调，验签即鉴权）；admin 10 端点（/api/admin/points/*，rejectNonAdminCaller）。
+
 ### 12.4 统计与特殊通道
-- 总计 64：GET 30 / POST 21 / PUT 3 / PATCH 3 / DELETE 7
+- 总计 75：GET 35 / POST 24 / PUT 3 / PATCH 5 / DELETE 8（2026-11-10 随 #938 落盘 §12.5：64 → 75，+11 iOS 消费端点）
 - 免登录公开端点 4：workouts/shared、race-strategies/shared、coach-shares/{sid}、declarations/{docType}
 - SSE 流式 1：coach chat（enableChunked + onChunkReceived + utils/sse 解析器；事件 status/narration/text_delta/done/error）
 - 文件上传 2：avatar（auth-service→COS）、feedback-images（cos_key 两段式）
 - 轮询 1：pipelines/{runId}（2s 间隔，60min 上限，可取消）
-- 跨页 storage 交接 3：coach.pendingContext / pendingStrategyDraft / custom-race-form eventChannel
+- 跨页 storage 交接 3：coach.pendingContext / pendingStrategyDraft / custom-race-form eventChannel（iOS 等价物 = AppModel 一次性交接属性）
+- 兑换幂等键 1：POST redemptions body idempotency_key（mp `mp-redeem-*` / iOS `ios-redeem-*`；命中重放原单零副作用）
 
 ---
 
@@ -392,3 +414,68 @@ parity baseline v0 (devops#747)
 2. 任何有意偏差（平台差异/产品决策）记入 `ios-app/docs/parity/LEDGER.md`，不静默漏项。
 3. 端点消费以 §12 总表为准（iOS 复用现有 Go/TS 契约，地图 #746 Out of scope 约定不加新端点）。
 4. 死页（§10）与推送面（§11）是两条已定事实，不需要 iOS 侧找对应实现。
+
+---
+
+## 14. 积分商城域（6 页，devops#938 落盘；规格 = #937 决议评论 + #938 拍板纪要）
+
+> 2026-11-10 快照对照（对照 parity 基线 v0 的 2026-10-25 快照为新增整域）。`文件:行` 相对 `src/wechat-miniprogram/`。带 **[iOS 免支付]** 标记 = 免支付口径下的裁剪/替换点（Epic 拍板：纯积分兑换+包邮、不接 wxpay；#938 拍板 3/4：不做运费闸门、无待支付订单分支）。iOS 实现位于 `StrideKit/Sources/StrideKit/Features/PointsMall/`。
+
+### 14.0 入口（我 tab 菜单顶部两行）
+- mp：profile 菜单第 1/2 行「每日签到」「积分商城」（profile.ts:94-111），右侧文案由一次 `GET check-ins/status` 喂饱（今日 +N 分/已签；N 分余额）；签到行一步签到（点行即 POST 幂等 → `?gained=N` 进页；失败仍进页 CTA 兜底）。
+- iOS：`ProfileHomeView` 菜单卡顶部两行（`pointsEntryRow`）+ `ProfileHomeModel.refreshCheckinRight()/checkinTap()`；6 个新 Route case（checkin(gained:)/pointsMall/pointsOrders/pointsDetail/addresses(pick:)/addressForm(id:)，全 homeTab=.profile，白名单解析与 queryItems 同步）；抽屉 → 地址单选回传走 `AppModel.addressPick` 交接（eventChannel 等价，同 custom-race-form 先例）。
+
+### 14.1 pages/checkin/checkin（每日签到）→ CheckinView/CheckinModel
+- 入口：profile 行（一步签到带 gained）；域内：mall hero「签到赚分 ›」、detail 空态「去签到赚分 ›」
+- UI：粉渐变 hero（连签 N 天/副文案两态[默认 vs 断签新周期]「?」规则弹窗）→ 签到日程卡（「本月已签 N 天」/ 断签重置横幅[streak=0] / D7 彩蛋横幅+2.2s pulse / 周历 7 格收起-月历展开[周一起始、前后月补位灰格、已签 ✓+N] / CTA「签到 +N · 集齐本轮」/「今日已签到」）→ 我的积分卡（余额+浮动 +N 1.6s 上飘、本轮已得、「明细 ›」「积分商城 ›」）→ 签到成就卡（7 圆点 1/2/3/4/6/8/11）→ 积分规则弹窗（**品牌 6 处→StrideWise、平台词→App**，文案见 PointsRulesCopy.swift，初稿在 #938 PR 正文）
+- 端点：`GET /api/users/me/check-ins/status`（整页单读）；`POST /api/users/me/check-ins`（按日幂等）
+- 交互：CTA → floatOnce(+points_earned) → 静默刷新整页；d7_completed 驱动一次彩蛋 pulse；月历布局/「本月已签 N 天」纯客户端算（CheckinCalendar.swift：CYCLE_REWARDS=[1,1,1,1,2,2,3]、CYCLE_CUMULATIVE=[1,2,3,4,6,8,11]，与 Go cycleRewards 逐字对齐，swift test 镜像 mp node 自检）
+- 三态：loading / loadFailed+重试 / 正常；静默刷新失败保留旧值；游客遮罩 **[iOS 强登录偏差不实现 → LEDGER D-pts-1]**
+- 免支付面：零（原样迁移）
+
+### 14.2 pages/points-mall/points-mall（积分商城）→ PointsMallView/PointsMallModel
+- 入口：profile 行；域内：checkin「积分商城 ›」
+- UI：粉渐变 hero（「我的积分 N 分」+ 四链接：明细/兑换记录/签到赚分/兑换规则）→ 商品横排大卡列表（图左[COS 直链或占位色块]/名/描述/tag 行「每人限 N 件」「已兑 n/limit」「售罄」/底行「N 积分」+「兑换」钮；售罄整卡蒙层+戳）→ 空态「商城筹备中，敬请期待」→ **确认抽屉**（商品行 / 尺码区[仅 by_sku：chips、售罄码置灰、未选提示]/ 数量步进 −N＋[上限 min(限购余量, 选中码 stock, 99)] + 合计恒「N 积分」/「寄到哪」地址单选[默认地址预选、粉描边]+「管理地址 ›」/ 无地址「去添加 ›」/ 运费行「包邮」绿｜「¥N」（按选中地址省份实时算，utils/shipping 直译 Shipping.swift）「—」未选 / 余额三态行 / 确认钮[无地址/不足/by_sku 未选码/提交中置灰]）→ 兑换规则弹窗（**品牌 5 处→StrideWise、微信专属条款改写**）→ 兑换成功居中弹卡（✓ 商品名 −N 分 / 尺码快照 / 剩余 N 分 / 查看订单｜继续逛逛）
+- 端点：`GET check-ins/status`（余额，本仓唯一余额读点）；`GET points/products`；`GET addresses`；`POST points/redemptions`（body: product_id/address_id/idempotency_key/quantity/sku_id）。**[iOS 免支付]** mp 的 `POST .../redemptions/{id}/pay` + wx.requestPayment + waitOrderSettled 全链不接
+- 交互：商品四态推导（售罄=stock≤0；达限=redeemed≥limit>0）；**幂等键**：每次开抽屉新生成（`ios-redeem-{uuid}`），网络失败重试复用同一 key，成功/业务拒绝后换新；抽屉打开时从地址管理回来按最新地址簿/余额重算（商品快照不实时进抽屉——#910 评审定版，由提交时 409 兜底）；错误码三分流：`limit_reached`/`out_of_stock`/`product_inactive`/`sku_invalid` → 关抽屉静默刷新；`insufficient_points`/`address_not_found` → 留抽屉静默刷新翻不足态/回落默认地址；其余 toast（pointsErrorCopy 9 码）；SKU：by_sku 未选码提交被拦（服务端兜底 409 sku_required）；码表空视同 single 放行交给服务端拦
+- 三态：loading / loadFailed（hero 保留+重试）/ 空商城 / 正常四态；静默刷新失败保留旧值；抽屉不足态
+- 免支付面 **[#938 拍板 3/4]**：不做 L1 运费闸门（运费行透传展示，正常恒「包邮」）；mp 抽屉 `pending_payment` 分支替换为兜底 toast「本单需支付运费…请前往小程序完成支付」+ 静默刷新（不开成功弹卡）；不接 pay 端点
+
+### 14.3 pages/points-orders/points-orders（我的兑换）→ PointsOrdersView/PointsOrdersModel
+- 入口：mall hero「兑换记录 ›」/ 兑换成功弹卡「查看订单」
+- UI：订单卡列表（时间+状态 chip 四态：待支付橙/待发货橙黄/已发货绿/已取消灰，未知状态回落灰不猜绿；订单号独立行「R-{uuid}」+复制钮；商品行 图[product_id 映射，下架/无图占位色块]+名[×N 多件]+尺码快照+「寄到 省 市 区」+「-N」；运费行[兑换时刻快照：包邮绿｜¥N]；已取消说明「超时未支付已自动取消，积分已退回」；已发货追加快递公司+快递单号两行+复制）→ cursor 分页「加载更多」/「— 到底啦 —」→ 空态「还没有兑换记录 / 去商城挑点喜欢的吧」
+- 端点：`GET points/redemptions?cursor=`；`GET points/products`（仅补图，失败不挡列表）。**[iOS 免支付]** `onPayTap` 去支付、`?paid=` 落账轮询、settleExpected、payShippingFee/waitOrderSettled 全不接
+- 交互：订单号/快递单号复制（UIPasteboard，R- 前缀随展示带走）；加载更多 cursor 追加；商品图映射缓存
+- 三态：loading / loadFailed+重试 / 空态 / 分页加载失败 toast
+- 订单状态机（Go #904）：带运费单 `pending_payment` →（wxpay 回调）`pending_shipment` → `shipped` 终态；免运单直接 `pending_shipment`；`pending_payment` 30 分钟超时 worker 关单 → `cancelled` 终态积分原路退回（明细 adjust +N）。**[iOS 免支付，拍板 4]**：pending_payment 不做专门 UI——chip 照显「待支付」+ 引导文案「请在砺跑马拉松助手小程序完成支付；超时未支付将自动取消并退回积分」（真出现按通用异常态原样展示）
+- 免支付面：`?paid=` 支付落账锚点不迁（→ LEDGER D-pts-3）
+
+### 14.4 pages/points-detail/points-detail（积分明细）→ PointsDetailView/PointsDetailModel
+- 入口：checkin 我的积分卡「明细 ›」；mall hero「明细 ›」
+- UI：余额大数字白卡「当前积分 N」→ 流水倒序列表（类型文案 / MM-DD HH:mm 上海墙钟 / 带符号分值 +N 粉｜-N 灰 / redeem 副行「订单号 R-xxx」/ remark 副行）→ 空态「暂无积分明细 / 去签到赚分 ›」→「加载更多」/「— 到底啦 —」
+- 端点：`GET /api/users/me/points?cursor=`（信封 {balance, transactions, next_cursor}，服务端 50 条/页倒序）
+- 交互：cursor 分页追加；空态 CTA → checkin
+- 类型文案（PointsRows.toPointDetailRows 纯函数，swift test 覆盖）：earn_checkin 签到所得 / redeem 兑换扣除 / expire 过期扣除 / adjust 按方向「系统增加｜系统扣除」/ 未知兜底「积分变动」
+- 三态：loading / loadFailed+重试 / 空态；分页失败 toast
+- 免支付面：零（adjust 正向含超时退分流水，天然覆盖）
+
+### 14.5 pages/addresses/addresses（地址簿 · 双模式）→ AddressesView/AddressesModel
+- 入口：mall 抽屉「管理地址 ›」（?mode=pick&selected=）/ 抽屉无地址「去添加 ›」（管理态）；域内自入口仅此
+- UI：分节头（标题+「＋ 新建地址」文字链，两种模式都给）→ 地址卡（省市区灰行 / 详细地址粗体行 / 姓名手机行 / pick 态右侧 radio 圆圈选中✓ / 操作行：设为默认[粉字，仅非默认]｜复制｜编辑｜删除）→ 空态「还没有收货地址 / 点右上角新建地址」
+- 端点：`GET addresses`；`POST addresses`（复制=即时克隆一条 is_default=false 不抢默认位）；`PATCH addresses/{id}`；`DELETE addresses/{id}`（**无二次确认**，原型拍板）；`PATCH addresses/{id}/default`（服务端同事务清同用户其余默认位）
+- 交互：设默认/复制/删除 → toast + 静默刷新；上限 10 条（后端 address_limit_reached 透出）；busy 实例锁防双击；pick 模式点卡回传（iOS：AppModel.addressPick.onPick + pop）
+- 三态：loading / loadFailed+重试 / 空态；静默刷新失败保留旧值
+- 免支付面：零；省份数据是运费匹配输入（见 14.6 级联选择器）
+
+### 14.6 pages/address-form/address-form（新增/编辑地址）→ AddressFormView/AddressFormModel
+- 入口：addresses「＋ 新建地址」/ 卡操作行「编辑」（?id= 有值即编辑态，标题「编辑地址」）
+- UI：表单卡（收货人 input / 手机号 number input / 所在地区选择器[**#938 拍板 2：iOS 自建省→市→区三级级联选择器**，数据=标准行政区划三级树内嵌（RegionTree.swift，与微信 region picker/后端运费匹配同源；不设区地级市区级回退市名=mp 空第三列同款口径）] / 详细地址 input）→ 默认地址独立卡 switch → 底部固定全宽保存钮（保存中… 置灰）
+- 端点：`POST addresses` / `PATCH addresses/{id}`；**契约无单条 GET**——编辑回填从列表里找本条
+- 交互：前端校验（六项必填、手机 `^1\d{10}$`，AddressFormModel.validate 纯函数）；保存成功 toast→400ms 返回；编辑回填只做一次（防 onShow 重入覆盖输入）
+- 三态：编辑态 loading（回填）/ loadFailed（含他端已删找不到本条）+重试；saving 防双击；错误 toast（pointsErrorCopy）
+- 免支付面：零
+
+### 14.7 域级免支付口径汇总（拍板 3/4）
+- **不做运费闸门**：运营全国包邮、不支持运费>0 订单；iOS 不实现 L1 前置闸门，运费字段按后端原样透传展示（抽屉运费行 + 订单快照行）；若未来运营配出运费>0 属异常，由运营侧处理（提交响应 pending_payment → 兜底 toast 引导 + 静默刷新，订单 30 分钟超时自动关单退分，积分零损失）。
+- **无待支付订单分支**：状态机照 mp 四态实现（pending_payment/pending_shipment/shipped/cancelled），pending_payment 不做专门 UI（去支付钮/落账轮询全裁，chip + 小程序引导文案 + 30 分钟自动取消说明）。
+- WeChat 分享卡（6 页 onShareAppMessage/onShareTimeline 默认品牌卡）不适用 iOS（→ LEDGER D-pts-2）。

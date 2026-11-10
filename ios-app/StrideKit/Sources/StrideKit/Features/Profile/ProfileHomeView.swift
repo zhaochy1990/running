@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// 「我」tab（PR-7 收尾域 devops#770，baseline §2.4 直译）：
+/// 「我」tab（PR-7 收尾域 devops#770，baseline §2.4 直译 + #938 商城域入口）：
 /// 用户卡（头像/昵称/邮箱/会员标 + chevron → profile-edit）→ 手动同步行
-/// （icon 转圈 syncing / 「上次同步 Xm ago」）→ 菜单五行（意见反馈带副标题
-/// + 未读红点）。自定义顶栏升级为系统 inline 标题（mapping §3/D-rec-1 同族）。
+/// （icon 转圈 syncing / 「上次同步 Xm ago」）→ 菜单（顶部「每日签到」「积分
+/// 商城」两行带右侧状态文案，devops#938；其余五行，意见反馈带副标题+未读红点）。
+/// 自定义顶栏升级为系统 inline 标题（mapping §3/D-rec-1 同族）。
 public struct ProfileHomeView: View {
 
     @Environment(AppModel.self) private var model
@@ -91,6 +92,14 @@ public struct ProfileHomeView: View {
 
     private func menuCard(_ theme: any Theme) -> some View {
         VStack(spacing: 0) {
+            pointsEntryRow(ProfileHomeModel.checkinMenuRow, theme: theme) {
+                Task { await home.checkinTap() }
+            }
+            Divider().overlay(theme.borderSoft).padding(.leading, theme.space(.lg))
+            pointsEntryRow(ProfileHomeModel.mallMenuRow, theme: theme) {
+                model.router.push(ProfileHomeModel.mallMenuRow.route)
+            }
+            Divider().overlay(theme.borderSoft).padding(.leading, theme.space(.lg))
             syncRow(theme)
             ForEach(ProfileHomeModel.menuRows) { row in
                 menuRow(row, theme: theme)
@@ -98,6 +107,43 @@ public struct ProfileHomeView: View {
         }
         .background(RoundedRectangle(cornerRadius: theme.radius(.lg)).fill(theme.surface))
         .clipShape(RoundedRectangle(cornerRadius: theme.radius(.lg)))
+    }
+
+    /// 积分商城域入口行（mp profile 菜单前两行镜像）：右侧状态文案由
+    /// check-ins/status 喂（今日 +N 分/已签；N 分余额）；签到行一步签到。
+    private func pointsEntryRow(_ row: ProfileHomeModel.MenuRow, theme: any Theme, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: theme.space(.md)) {
+                Image(systemName: row.systemImage)
+                    .font(theme.font(.fs15))
+                    .foregroundStyle(theme.accent)
+                    .frame(width: 24, height: 24)
+                Text(row.title)
+                    .font(theme.font(.fs15))
+                    .foregroundStyle(theme.foreground)
+                Spacer()
+                if row.id == "checkin" {
+                    if home.checkinBusy {
+                        ProgressView().controlSize(.small)
+                    } else if !home.checkinRight.isEmpty {
+                        Text(home.checkinRight)
+                            .font(theme.font(.fs13))
+                            .foregroundStyle(home.checkinSigned ? theme.muted : theme.accentDeep)
+                    }
+                } else if !home.mallRight.isEmpty {
+                    Text(home.mallRight)
+                        .font(theme.font(.fs13))
+                        .foregroundStyle(theme.accentDeep)
+                }
+                Image(systemName: "chevron.right")
+                    .font(theme.font(.fs13))
+                    .foregroundStyle(theme.mutedTwo)
+            }
+            .padding(theme.space(.lg))
+        }
+        .buttonStyle(.plain)
+        .disabled(row.id == "checkin" && home.checkinBusy)
+        .opacity(home.checkinBusy && row.id == "checkin" ? 0.6 : 1)
     }
 
     private func syncRow(_ theme: any Theme) -> some View {

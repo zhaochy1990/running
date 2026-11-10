@@ -51,6 +51,10 @@ public final class AppModel {
     /// devops#769；Route 表定稿「AppModel 交接，非 query」）。
     public internal(set) var pendingCustomRaceEdit: CustomRace?
 
+    /// 地址簿单选模式交接（商城抽屉 → addresses?mode=pick 的
+    /// eventChannel addressSelected 等价物，devops#938；选中回传后消费清空）。
+    public internal(set) var addressPick: AddressPickHandoff?
+
     private let tokens: any TokenStore
 
     /// coach 通道客户端（SSE 流式 + 会话 JSON；独立 401 单飞，devops#767）。
@@ -352,5 +356,17 @@ public struct PendingStrategyDraft: Hashable, Sendable {
     public init(raceId: Int, payload: Data) {
         self.raceId = raceId
         self.payload = payload
+    }
+}
+
+/// 地址簿单选交接（mp addresses?mode=pick 的 eventChannel 等价物）：
+/// selectedID = 进页初始高亮；onPick = 点卡回传（商城抽屉刷新选中并返回）。
+public struct AddressPickHandoff: Sendable {
+    public let selectedID: Int
+    public let onPick: @MainActor @Sendable (Int) -> Void
+
+    public init(selectedID: Int, onPick: @escaping @MainActor @Sendable (Int) -> Void) {
+        self.selectedID = selectedID
+        self.onPick = onPick
     }
 }
