@@ -34,6 +34,9 @@ public struct CoachView: View {
                 openStrategyDraft: { [weak app] raceId, strategy in
                     app?.pendingStrategyDraft = PendingStrategyDraft(raceId: raceId, payload: strategy.payload)
                     app?.router.push(.raceStrategy(id: raceId, target: nil))
+                },
+                openRaceCenter: { [weak app] in
+                    app?.router.push(.raceCenter)
                 }
             )
             model = chat

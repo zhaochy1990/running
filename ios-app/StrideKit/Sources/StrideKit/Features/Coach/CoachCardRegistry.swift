@@ -66,7 +66,7 @@ public enum CoachCardRegistry {
     public static func build(_ wire: CoachCardWire?, target: CoachTarget?) -> View? {
         guard let wire else { return nil }
         switch wire.type {
-        case "race-strategy": return raceStrategy(wire, target: target)
+        case "race-strategy": return raceStrategy(wire)
         case "master-plan": return masterPlan(wire)
         case "custom-workout": return customWorkout(wire)
         case "workout-op": return workoutOp(wire)
@@ -76,12 +76,11 @@ public enum CoachCardRegistry {
 
     // MARK: - race-strategy（导航类）
 
-    private static func raceStrategy(_ wire: CoachCardWire, target: CoachTarget?) -> View? {
+    private static func raceStrategy(_ wire: CoachCardWire) -> View? {
         guard let strategy = parseRaceStrategy(wire) else { return nil }
-        // 无 race target 时无法定位赛事（策略生成本就依赖 race target，这里
-        // 只是防御）：仍出卡片，navigable=false（目标页归 PR-6 赛事域落地，
-        // 骨架期策略报告页不可达时同样不跳）。
-        let raceId = target?.kind == .race ? target?.raceEventId : nil
+        // 卡片始终可跳（mp coachCards.ts 的 url 恒非空：有会话 race target →
+        // strategy?id=N 草稿交接；无 target——#891 聊天内绑赛会话——落赛事中心
+        // 兜底）。目的地选择在 CoachChatModel.openCard（会话 target 从那边取）。
         return View(
             type: wire.type,
             icon: "flag.fill",
@@ -92,7 +91,7 @@ public enum CoachCardRegistry {
             buttonAction: .navigate,
             secondaryButtonText: "",
             secondaryAction: nil,
-            navigable: raceId != nil,
+            navigable: true,
             payload: .raceStrategy(strategy),
             inlineBody: false
         )

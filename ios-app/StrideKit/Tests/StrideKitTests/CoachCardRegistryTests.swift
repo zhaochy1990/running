@@ -55,10 +55,12 @@ import Testing
         #expect(view.subtitle.contains("1 段配速"))
     }
 
-    @Test func raceStrategyWithoutRaceTargetNotNavigable() throws {
+    @Test func raceStrategyWithoutRaceTargetStillNavigable() throws {
+        // #891 聊天内绑赛会话：无 session target 也可出策略卡，url 恒非空
+        //（mp coachCards.ts 兜底赛事中心）；目的地选择在 CoachChatModel.openCard。
         let card = CoachCardRegistry.build(wire(type: "race-strategy", payload: racePayload), target: nil)
         let view = try #require(card)
-        #expect(!view.navigable)
+        #expect(view.navigable)
     }
 
     @Test func raceStrategyRejectsBadShape() {

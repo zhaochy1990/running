@@ -149,6 +149,16 @@ import Testing
         return { date }
     }
 
+    /// 策略卡跳转接线记录（openCard 草稿交接 / 赛事中心回落分支断言用）。
+    @MainActor
+    final class WiringSpy {
+        private(set) var drafts: [(raceId: Int, strategy: RaceStrategy)] = []
+        private(set) var raceCenterOpens = 0
+
+        func recordDraft(_ raceId: Int, _ strategy: RaceStrategy) { drafts.append((raceId, strategy)) }
+        func recordRaceCenter() { raceCenterOpens += 1 }
+    }
+
     @MainActor
     private func waitUntil(_ condition: @MainActor () -> Bool) async {
         for _ in 0..<250 {
@@ -161,7 +171,8 @@ import Testing
     private func makeModel(
         service: MockService = MockService(),
         userId: String? = "u-1",
-        sharerNameProvider: (() -> String?)? = nil
+        sharerNameProvider: (() -> String?)? = nil,
+        wiring: WiringSpy? = nil
     ) -> (CoachChatModel, MockService) {
         let model = CoachChatModel(
             service: service,
@@ -169,7 +180,8 @@ import Testing
             clock: fixedClock,
             userIdProvider: { userId },
             sharerNameProvider: sharerNameProvider ?? { nil },
-            openStrategyDraft: { _, _ in }
+            openStrategyDraft: { [wiring] raceId, strategy in wiring?.recordDraft(raceId, strategy) },
+            openRaceCenter: { [wiring] in wiring?.recordRaceCenter() }
         )
         return (model, service)
     }
@@ -193,6 +205,25 @@ import Testing
                 {"goal":{"race_name":"上马","distance":"FM","race_date":"2027-01-01","target_time":"3:30:00"},
                  "total_weeks":16,"apply_token":"tok-1","content":{"schema":"v2"}}
                 """.utf8
+            )
+        )
+    }
+
+    /// 策略卡信封的 done（#891 聊天内绑赛链路的终端产物）。
+    private var raceStrategyDone: CoachDone {
+        CoachDone(
+            status: .completed,
+            message: "已为 11月8日 南通马拉松半马 制定策略",
+            interruptText: nil,
+            card: CoachCardWire(
+                type: "race-strategy",
+                data: Data(
+                    """
+                    {"race_name":"南通马拉松","item_type":"HalfMarathon","target_finish_time":"1:45:00",
+                     "pace_segments":[{"segment":"前5km","distance_km":5,"pace":"5:00/km"}],
+                     "fueling_plan":[],"course_tips":[],"weather_tips":[],"basis_note":""}
+                    """.utf8
+                )
             )
         )
     }
@@ -324,6 +355,95 @@ import Testing
         #expect(service.streamCallLog.count == 2)
         #expect(service.streamCallLog[1].clientTurnId == firstTurnId, "重试复用同 client_turn_id（服务端幂等）")
         #expect(service.streamCallLog[1].message == "hi")
+    }
+
+    // MARK: - 业务错误不重试（devops#891/#939，mp isBusinessTurnError 同款）
+
+    @Test @MainActor func businessTurnErrorShowsReasonBubbleWithoutRetry() async {
+        let (model, service) = makeModel()
+        await model.bootstrap()
+        await model.send(text: "hi")
+        await service.fail(CoachStreamError(code: "client_turn_id_conflict", message: "turn fingerprint mismatch"))
+
+        // 业务性失败：user 消息不带重试标记；原因落一条不可转发的教练气泡。
+        #expect(!model.sending)
+        #expect(model.messages[1].failed == false)
+        #expect(model.messages.count == 3)
+        let reason = model.messages[2]
+        #expect(reason.role == .assistant)
+        #expect(reason.content == "turn fingerprint mismatch")
+        #expect(reason.selectable == false)
+        #expect(reason.shareIndex == nil)
+        #expect(model.scrollTarget == "msg-\(reason.id)")
+        #expect(model.toast == nil, "业务错误的原因气泡即展示面，不叠 toast")
+    }
+
+    @Test @MainActor func businessErrorBoundaryIsHttp4xxExcept429() async {
+        let (model, service) = makeModel()
+        await model.bootstrap()
+
+        await model.send(text: "hi")
+        await service.fail(CoachStreamError(code: "http_422", message: "请求失败(422)"))
+        #expect(model.messages[1].failed == false, "http_422 业务拒绝不给重试")
+        #expect(model.messages.last?.role == .assistant)
+
+        await model.send(text: "再来")
+        await service.fail(CoachStreamError(code: "http_429", message: "too many requests"))
+        #expect(model.messages[3].failed, "http_429 限流可重试")
+
+        await model.send(text: "第三轮")
+        await service.fail(CoachStreamError(code: "coach_turn_failed", message: "coach turn failed"))
+        #expect(model.messages[4].failed, "coach_turn_failed 兜底码多为上游抖动，保持可重试")
+    }
+
+    @Test @MainActor func businessErrorEmptyMessageFallsBackToGenericReason() async {
+        let (model, service) = makeModel()
+        await model.bootstrap()
+        await model.send(text: "hi")
+        await service.fail(CoachStreamError(code: "http_409", message: ""))
+
+        #expect(model.messages.last?.content == "本轮未完成：请调整后再试")
+    }
+
+    // MARK: - 策略卡跳转（#891 聊天内绑赛会话的可达性）
+
+    @Test @MainActor func strategyCardFallsBackToRaceCenterWithoutSessionTarget() async {
+        let wiring = WiringSpy()
+        let (model, service) = makeModel(wiring: wiring)
+        await model.bootstrap()
+        await model.send(text: "11月8日南通马拉松半马怎么跑")
+        await service.complete(raceStrategyDone)
+
+        // 聊天内绑赛会话（无 session target）：绑定只在服务端线程持久层，
+        // 客户端拿不到 race_event_id——回落赛事中心（mp coachCards url 兜底）。
+        guard let cardMessage = model.messages.last, cardMessage.card != nil else {
+            Issue.record("策略卡应已落气泡")
+            return
+        }
+        model.openCard(messageId: cardMessage.id)
+        #expect(wiring.raceCenterOpens == 1)
+        #expect(wiring.drafts.isEmpty)
+    }
+
+    @Test @MainActor func strategyCardHandsOffDraftWithSessionRaceTarget() async {
+        let wiring = WiringSpy()
+        let (model, service) = makeModel(wiring: wiring)
+        await model.bootstrap()
+        model.consumePendingContext(PendingCoachContext(
+            target: CoachTarget(kind: .race, raceEventId: 42, itemType: "marathon"),
+            label: "上海马拉松"
+        ))
+        await model.send(text: "出策略")
+        await service.complete(raceStrategyDone)
+
+        guard let cardMessage = model.messages.last, cardMessage.card != nil else {
+            Issue.record("策略卡应已落气泡")
+            return
+        }
+        model.openCard(messageId: cardMessage.id)
+        #expect(wiring.drafts.count == 1)
+        #expect(wiring.drafts[0].raceId == 42)
+        #expect(wiring.raceCenterOpens == 0)
     }
 
     @Test @MainActor func historyFailureKeepsWelcomeAndBlocksMultiSelect() async {
