@@ -36,10 +36,6 @@
   flex-shrink: 0;
 }
 
-.top-bar__btn--spacer {
-  width: 88rpx;
-}
-
 .top-bar__icon {
   width: 44rpx;
   height: 44rpx;
@@ -540,4 +536,14 @@
   color: #00a85a;
   background: rgba(0, 168, 90, 0.14);
   font-weight: 600;
+}
+
+/* 分享海报 canvas（devops#945）：挂在视口外离屏绘制（同 strategy 配速卡），
+   尺寸取海报上限（600×640，dpr=2 时导出 1200 宽），导出后走 preview/保存。 */
+.poster-canvas {
+  position: fixed;
+  left: -4000rpx;
+  top: 0;
+  width: 600px;
+  height: 640px;
 }

@@ -10,7 +10,10 @@
         <view class="top-bar__title">{{header.name || '活动详情'}}</view>
         <view wx:if="{{header.dateLabel}}" class="top-bar__subtitle">{{header.dateLabel}}</view>
       </view>
-      <view class="top-bar__btn top-bar__btn--spacer"></view>
+      <!-- 分享海报出口（devops#945）：与左侧返回位等宽，标题保持居中 -->
+      <view class="top-bar__btn" bindtap="onSharePoster">
+        <image class="top-bar__icon" src="/assets/icons/share.svg" mode="aspectFit" />
+      </view>
     </view>
   </view>
 
@@ -167,4 +170,7 @@
       </view>
     </block>
   </view>
+
+  <!-- 分享海报 canvas（离屏绘制 → previewImage 长按保存 / 保存相册，devops#945） -->
+  <canvas type="2d" id="poster-canvas" class="poster-canvas"></canvas>
 </view>
