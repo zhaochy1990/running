@@ -10,7 +10,7 @@
  * 组装逻辑（抽稀 / 分块配色 / 请求体）是纯函数，`node --import
  * ./utils/ts-resolve-hooks.mjs utils/posterMap.check.mts` 自检进 CI。
  */
-import { API_BASE_URL, CLIENT_ID } from '../constants/config';
+import { API_BASE_URL, CLIENT_ID, STORAGE_KEYS } from '../constants/config';
 import { gradient3 } from './posterGradient';
 
 /** 代理请求体（与 Go internal/tencentlbs.StaticMapRequest 同形）。 */
@@ -171,49 +171,47 @@ export function fetchPosterMapImage(body: PosterMapRequest): Promise<string | nu
   // 顶层零副作用，node 自检链可直接 import 本模块。
   const mapTempFile = `${wx.env.USER_DATA_PATH}/poster-map.png`;
   return new Promise((resolve) => {
-    // getToken 惰性 import：services/request 传递依赖 types/api.ts 的 TS enum，
-    // node 自检链（strip-only）解析不了 enum，静态 import 会炸掉 posterMap.check。
-    void import('../services/request').then(({ getToken }) =>
-      getToken().then((token) => {
-      wx.request({
-        url: `${API_BASE_URL}/api/users/me/poster/map`,
-        method: 'POST',
-        data: body as unknown as Record<string, unknown>,
-        header: {
-          'Content-Type': 'application/json',
-          'X-Client-Id': CLIENT_ID,
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        responseType: 'arraybuffer',
-        timeout: 15000,
-        success: (res) => {
-          if (res.statusCode < 200 || res.statusCode >= 300) {
-            console.warn(`[poster-map] 代理返回 ${res.statusCode}，地图层降级占位`);
-            resolve(null);
-            return;
-          }
-          const buf = res.data as ArrayBuffer;
-          if (!buf || buf.byteLength < 8) {
-            resolve(null);
-            return;
-          }
-          wx.getFileSystemManager().writeFile({
-            filePath: mapTempFile,
-            data: buf,
-            encoding: 'binary',
-            success: () => resolve(mapTempFile),
-            fail: (err) => {
-              console.warn('[poster-map] 写临时文件失败，地图层降级占位', err);
-              resolve(null);
-            },
-          });
-        },
-        fail: (err) => {
-          console.warn('[poster-map] 请求失败，地图层降级占位', err);
+    // token 直读 storage（services/request 的 getToken 即此实现）：原惰性
+    // import('../services/request') 在小程序运行时不 settle，门控修复后
+    // 自然路径首次可达即悬挂整张海报（devops#944 修复轮 E2E 发现）。
+    const token = (wx.getStorageSync(STORAGE_KEYS.TOKEN) as string) || undefined;
+    wx.request({
+      url: `${API_BASE_URL}/api/users/me/poster/map`,
+      method: 'POST',
+      data: body as unknown as Record<string, unknown>,
+      header: {
+        'Content-Type': 'application/json',
+        'X-Client-Id': CLIENT_ID,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      responseType: 'arraybuffer',
+      timeout: 15000,
+      success: (res) => {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          console.warn(`[poster-map] 代理返回 ${res.statusCode}，地图层降级占位`);
           resolve(null);
-        },
-        } as WechatMiniprogram.RequestOption);
-      }),
-    );
+          return;
+        }
+        const buf = res.data as ArrayBuffer;
+        if (!buf || buf.byteLength < 8) {
+          resolve(null);
+          return;
+        }
+        wx.getFileSystemManager().writeFile({
+          filePath: mapTempFile,
+          data: buf,
+          encoding: 'binary',
+          success: () => resolve(mapTempFile),
+          fail: (err) => {
+            console.warn('[poster-map] 写临时文件失败，地图层降级占位', err);
+            resolve(null);
+          },
+        });
+      },
+      fail: (err) => {
+        console.warn('[poster-map] 请求失败，地图层降级占位', err);
+        resolve(null);
+      },
+    } as WechatMiniprogram.RequestOption);
   });
 }
