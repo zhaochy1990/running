@@ -3,7 +3,8 @@ import Observation
 
 // 训练 tab（今日首页）ViewModel（devops#768 PR-5，baseline §2.3 直译）：
 // 周选择条 + 今日活动卡 + 今日训练卡 + 营养建议卡 + 推送日期弹层。
-// 跨周先空渲染再拉取（重入保护）、过期响应丢弃、onShow 静默刷新跳过首帧。
+// 跨周先空渲染再拉取（重入保护）、过期响应丢弃、onShow 静默刷新跳过首帧；
+// 空态判定由 loading 门控（初始与跨周补拉期间走骨架，devops#929/#941）。
 
 // MARK: - 视图模型（展示就绪）
 
@@ -141,8 +142,10 @@ public final class TrainingHomeModel {
         } catch {
             // 拉取失败（未生成计划/网络）保持空态，由界面展示空态卡。
         }
+        // 跨周空渲染（loading 保持 true 走骨架）→ 拉取完成后 fetchWeekSessions 内部
+        // 重渲染收 loading。不再中途置 loading=false：避免 workout=null + loading=false
+        // 的假空态闪现（devops#929/#941，mp 6de91c32 同款门控）。
         renderDay(anchor)
-        loading = false
         await fetchWeekSessions(anchor: anchor)
         planLoaded = true
     }
@@ -168,20 +171,23 @@ public final class TrainingHomeModel {
     }
 
     /// 渲染指定日期（上海 YYYY-MM-DD）并拉取当天实际活动。
+    /// 跨周（尚未拉取的周）：先空渲染并保持 loading（骨架占位），由调用方负责
+    /// 触发 fetchWeekSessions，回来后重渲染收 loading（devops#941 假空态门控）。
     private func renderDay(_ dateYmd: String) {
         selectedDate = dateYmd
         weekDays = Shanghai.buildWeekDays(anchorYmd: dateYmd, todayYmd: todayYmd)
         weekSubtitle = Shanghai.weekSubtitle(weekStartYmd: Shanghai.weekStart(ymd: dateYmd))
         todayLabel = "\(Int(dateYmd.dropFirst(5).prefix(2)))月\(Int(dateYmd.suffix(2)))日"
         if Shanghai.weekStart(ymd: dateYmd) != sessionsWeekStart {
-            // 切到尚未拉取的周：先空渲染，fetchWeekSessions 回来后重渲染。
+            // 切到尚未拉取的周：先空渲染，loading=true 走骨架而非闪「今日无训练安排」。
+            loading = true
             let view = Self.buildDayView(plan: fetchedPlan, rows: [], dateYmd: dateYmd, todayYmd: todayYmd)
             workout = view.workout
             nutrition = view.nutrition
             todayActivities = []
-            Task { await fetchWeekSessions(anchor: dateYmd) }
             return
         }
+        loading = false
         let view = Self.buildDayView(plan: fetchedPlan, rows: weekSessions, dateYmd: dateYmd, todayYmd: todayYmd)
         workout = view.workout
         nutrition = view.nutrition
@@ -204,10 +210,20 @@ public final class TrainingHomeModel {
 
     // MARK: - 交互
 
-    /// 周条点选任意日期（含跨周）。
+    /// 周条点选任意日期（含跨周）：跨周先空渲染（骨架）再拉取，回来后重渲染。
     public func selectDay(_ date: String) {
         guard date != selectedDate else { return }
+        let needsFetch = Shanghai.weekStart(ymd: date) != sessionsWeekStart
         renderDay(date)
+        guard needsFetch else { return }
+        Task { await fetchWeekSessions(anchor: date) }
+    }
+
+    /// 左右轻扫切日（左滑=前一天 / 右滑=后一天），复用周条点选的跨周拉取链路
+    /// （mp 7c592c67 同款交互；阈值判定在视图层手势上）。
+    public func shiftDay(_ delta: Int) {
+        guard !selectedDate.isEmpty else { return }
+        selectDay(Shanghai.addDays(selectedDate, delta))
     }
 
     /// 手表推送：打开日期选择弹层（weekly/custom 可推；watch 源不回推）。
