@@ -304,6 +304,20 @@ public final class AppModel {
         phase = .onboarding
     }
 
+    /// 绑表成功后回来源页（devops#940，watch.ts `_redirect` 分支 `reLaunch`
+    /// 等价）：来源页 push 进绑定的（profile-edit / workout-share 落地页），
+    /// 来源就在栈下 → pop dismiss，来源页状态原样保留（落地页 onAppear
+    /// 续推链不丢）；深链直达 watch 带 redirect 时栈下不是来源 → reset
+    /// 全栈重建落来源（reLaunch 等价）。
+    public func returnFromWatchBind(to source: Route) {
+        let stack = router.paths[router.selectedTab] ?? []
+        if stack.count >= 2, stack[stack.count - 2] == source {
+            router.pop()
+        } else {
+            router.reset(to: source)
+        }
+    }
+
     /// 落地页未登录 CTA → 登录流（login?redirect=本页 等价；#692 回跳白名单
     /// 链路）：记录回跳目标并切全屏 Login。
     public func requestLogin(redirect: Route) {

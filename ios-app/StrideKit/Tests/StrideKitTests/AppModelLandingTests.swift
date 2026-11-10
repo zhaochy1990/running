@@ -119,12 +119,12 @@ import Testing
     @Test func finishOnboardingHonorsRedirect() async throws {
         let transport = MockTransport()
         let model = await makeModel(transport)
-        model.setLoginRedirectForTesting(.watch(provider: .coros))
+        model.setLoginRedirectForTesting(.watch(provider: .coros, redirect: nil))
 
         model.finishOnboarding()
         #expect(model.phase == .loggedIn)
         #expect(model.router.selectedTab == .profile)
-        #expect(model.router.paths[.profile]?.last == .watch(provider: .coros))
+        #expect(model.router.paths[.profile]?.last == .watch(provider: .coros, redirect: nil))
         #expect(model.loginRedirect == nil)
     }
 

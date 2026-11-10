@@ -5,8 +5,8 @@ import Observation
 // 双品牌（COROS/Garmin）绑定/解绑/绑定态展示全复刻；region 选择器仅
 // Garmin 分支显示（cn 默认；COROS 后端 token 自动探测，不让用户选）；
 // Garmin 表单加 MFA 提示；绑定成功 → toast + 回读 + fire-and-forget
-// ensureSync + 跳 onboarding 看进度；解绑内联确认卡（数据保留提示）；
-// ?provider=coros|garmin 直达品牌表单。
+// ensureSync + 回来源页（redirect 透传，devops#940；无来源才跳 onboarding）；
+// 解绑内联确认卡（数据保留提示）；?provider=coros|garmin 直达品牌表单。
 
 @MainActor
 @Observable
@@ -58,9 +58,13 @@ public final class WatchModel {
 
     private var app: AppModel?
     private var started = false
+    /// 绑定成功后的回跳来源（devops#940，watch.ts `_redirect` 等价）：
+    /// 来源页进绑定时自带；nil = 无回跳，维持默认跳 onboarding 看进度。
+    private let redirect: Route?
 
-    public init(provider: WatchProvider?) {
+    public init(provider: WatchProvider?, redirect: Route? = nil) {
         connectProvider = provider
+        self.redirect = redirect
     }
 
     public func activate(app: AppModel) async {
@@ -95,8 +99,9 @@ public final class WatchModel {
     // MARK: - 绑定
 
     /// 绑定成功 → 清表单 + toast + 回读 + ensureSync(fire-and-forget) +
-    /// 跳 onboarding（进度交给 onboarding 页续跑；不等待 ensureSync 结果，
-    /// 不值得为它加一次往返延迟——watch.ts 同款）。
+    /// 回来源页（redirect 透传，devops#940；同步在后台继续，不再有页面盯着
+    /// 它，失败仅静默）或默认跳 onboarding（进度交给 onboarding 页续跑；
+    /// 不等待 ensureSync 结果，不值得为它加一次往返延迟——watch.ts 同款）。
     public func connect() async {
         guard canConnect, let app, let provider = connectProvider else { return }
         connecting = true
@@ -119,7 +124,13 @@ public final class WatchModel {
                     _ = try? await sync.ensureSync(userID: userId)
                 }
             }
-            app.presentOnboardingAfterWatchBind()
+            // 带 redirect 进来（devops#940）：回来源页（profile-edit 原地留、
+            // 落地页 onAppear 续推）；不带则维持既有行为跳 onboarding 看进度。
+            if let redirect {
+                app.returnFromWatchBind(to: redirect)
+            } else {
+                app.presentOnboardingAfterWatchBind()
+            }
         } catch {
             // Go watch/login 失败用 `error` 字段返回可读文案，优先展示避免裸 status。
             let apiError = error as? ApiError

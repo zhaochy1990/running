@@ -334,7 +334,9 @@ public struct ProfileEditView: View {
     private func linkRows(_ theme: any Theme) -> some View {
         VStack(spacing: 0) {
             linkRow(title: "手表绑定", systemImage: "applewatch", theme: theme) {
-                model.router.push(.watch(provider: nil))
+                // redirect=本页（devops#940）：绑定成功 dismiss 回本页续看，
+                // 不再硬跳全屏 onboarding。
+                model.router.push(.watch(provider: nil, redirect: .profileEdit))
             }
             divider(theme)
             linkRow(title: "隐私与权限", systemImage: "lock.shield", theme: theme) {

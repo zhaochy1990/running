@@ -71,8 +71,11 @@ public enum Route: Hashable, Sendable {
     case roadmapDetail(id: Int)
 
     // ── 手表域 / 个人域 ─────────────────────────────────────────────────
-    /// pages/watch/watch；provider 深链 `?provider=coros|garmin`
-    case watch(provider: WatchProvider?)
+    /// pages/watch/watch；provider 深链 `?provider=coros|garmin`；
+    /// redirect = 绑定成功后的回跳来源（devops#940，watch.ts `_redirect`
+    /// 透传对等，mp 59dd9d71）——来源页进绑定时自带，成功后 dismiss 回它
+    /// 而非硬跳 onboarding
+    indirect case watch(provider: WatchProvider?, redirect: Route?)
     /// pages/profile-edit/profile-edit
     case profileEdit
     /// pages/privacy/privacy
@@ -134,11 +137,16 @@ extension Route {
     }
 
     /// 带 query 的完整 path（redirect 回跳 / 分享 path 构造用）。
+    /// 值经 URLComponents 编码：内嵌 redirect（来源页自带多参数 query）时
+    /// `&`/`=` 转义为 %26/%3D，外层解析不会拆错（`.urlQueryAllowed` 不转义
+    /// 这两个分隔符，嵌套 query 会互相污染——devops#940 redirect 透传引入
+    /// watch 嵌套后必须收紧）。
     public var pathWithQuery: String {
-        let items = queryItems
-        let query = items.map { "\($0.name)=\(($0.value ?? "").addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ($0.value ?? ""))" }
-            .joined(separator: "&")
-        return query.isEmpty ? pagePath : pagePath + "?" + query
+        guard !queryItems.isEmpty else { return pagePath }
+        var components = URLComponents()
+        components.path = pagePath
+        components.queryItems = queryItems
+        return components.url?.absoluteString ?? pagePath
     }
 
     /// 关联值 → query 项（`pathWithQuery` 与白名单解析互逆）。
@@ -177,8 +185,9 @@ extension Route {
             [URLQueryItem(name: "id", value: id)]
         case .roadmapDetail(let id):
             [URLQueryItem(name: "id", value: String(id))]
-        case .watch(let provider):
-            provider.map { [URLQueryItem(name: "provider", value: $0.rawValue)] } ?? []
+        case .watch(let provider, let redirect):
+            (provider.map { [URLQueryItem(name: "provider", value: $0.rawValue)] } ?? [])
+                + (redirect.map { [URLQueryItem(name: "redirect", value: $0.pathWithQuery)] } ?? [])
         }
     }
 
@@ -323,9 +332,9 @@ extension Route {
             guard allowOnly("id"), require("id"), let id = Int(query["id"]!) else { return nil }
             self = .roadmapDetail(id: id)
         case "/pages/watch/watch":
-            guard allowOnly("provider") else { return nil }
+            guard allowOnly("provider", "redirect") else { return nil }
             let provider = query["provider"].flatMap(WatchProvider.init(rawValue:))
-            self = .watch(provider: provider)
+            self = .watch(provider: provider, redirect: redirectQuery())
         case "/pages/profile-edit/profile-edit":
             guard allowOnly() else { return nil }
             self = .profileEdit
