@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { shanghaiDay } from "@stride/contract";
 import { type ContextSnapshot, ContextSnapshotSchema } from "../context.js";
 import { buildPhaseEvidence, type PhaseEvidence, type PhasingActivityInput } from "./evidence.js";
 
@@ -37,7 +38,8 @@ export async function loadAthlete(name: AthleteName): Promise<{ snapshot: Contex
   return {
     snapshot,
     activities: rows.map((r) => ({
-      date: r.date,
+      // 夹具行带 UTC instant；此处扮演 Provider 角色，统一换算上海日历日（devops#936）。
+      shanghaiDay: shanghaiDay(r.date),
       name: r.name,
       distanceM: r.distance_m,
       strideSessionClass: r.stride_session_class,

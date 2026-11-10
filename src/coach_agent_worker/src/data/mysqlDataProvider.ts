@@ -31,6 +31,7 @@ import type {
   WeeklyFeedback,
   WeeklyPlanDocument,
 } from "@stride/coach-agent";
+import { shanghaiDay } from "@stride/contract";
 import type { Pool, RowDataPacket } from "mysql2/promise";
 import type { MySqlConfig } from "../config.js";
 import { createStridePool } from "../db/mysql.js";
@@ -799,12 +800,16 @@ function masterPlanContainsDay(content: MasterPlanDocument, day: string): boolea
 }
 
 function rowToActivity(row: RowDataPacket): Activity {
+  // 时区换算唯一落点（devops#936）：上海日历日在此算好，下游只读 shanghaiDay。
+  // 前提：注入的 pool 走 createStridePool（timezone:"Z"），row.date 是 UTC instant。
+  const date = row.date as Date;
   return {
     userId: row.user_id as string,
     labelId: row.label_id as string,
     name: (row.name ?? null) as string | null,
     sportName: (row.sport_name ?? null) as string | null,
-    date: row.date as Date,
+    date,
+    shanghaiDay: shanghaiDay(date),
     distanceM: (row.distance_m ?? null) as number | null,
     durationS: (row.duration_s ?? null) as number | null,
     avgPaceSKm: (row.avg_pace_s_km ?? null) as number | null,

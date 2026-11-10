@@ -237,10 +237,7 @@ export class FrozenMasterPlanContextProvider implements MasterPlanContextProvide
   }
   async loadActivities(userId: string, startDay: string, endDay: string): Promise<PhasingActivityInput[]> {
     void userId;
-    return this.#activities.filter((activity) => {
-      const day = typeof activity.date === "string" ? activity.date.slice(0, 10) : activity.date.toISOString().slice(0, 10);
-      return day >= startDay && day <= endDay;
-    });
+    return this.#activities.filter((activity) => activity.shanghaiDay >= startDay && activity.shanghaiDay <= endDay);
   }
 }
 

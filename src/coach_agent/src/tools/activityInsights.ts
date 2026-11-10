@@ -20,7 +20,7 @@
  */
 
 import type { StructuredTool } from "@langchain/core/tools";
-import { addDays, mondayOnOrBefore, shanghaiDay, weekFolder } from "@stride/contract";
+import { addDays, mondayOnOrBefore, weekFolder } from "@stride/contract";
 import * as z from "zod";
 import type { CoachToolRuntime } from "../agents/coachAgent.js";
 import { isQualityRunningActivity, isRunningActivity, normalizeSessionClass } from "../data/activityClassification.js";
@@ -153,7 +153,7 @@ class ActivityInsightsToolImpl {
     if (!isRunningActivity(activity)) {
       return { available: false, reason: "not_a_running_activity", provenance: PROVENANCE };
     }
-    const day = shanghaiDayOf(activity);
+    const day = activity.shanghaiDay;
 
     const windowStart = addDays(day, -28);
     const [summaries, loads, calibration, plan] = await Promise.all([
@@ -331,7 +331,7 @@ function loadPosition(
   loads: Awaited<ReturnType<DataProvider["getDailyTrainingLoadByDateRange"]>>,
 ): ActivityInsights["load_position"] {
   const weekStart = mondayOnOrBefore(day);
-  const weekActivities = summaries.filter((candidate) => shanghaiDayOf(candidate) >= weekStart);
+  const weekActivities = summaries.filter((candidate) => candidate.shanghaiDay >= weekStart);
   const qualityWeek = [...weekActivities, activity].filter((candidate) => isQualityRunningActivity(candidate));
   const dayRow = loads.find((row) => row.date === day) ?? loads[loads.length - 1] ?? null;
   return {
@@ -401,11 +401,6 @@ function linearFit(points: Array<{ pace: number; hr: number }>): { slope: number
   if (sxx <= 0) return null;
   const slope = sxy / sxx;
   return { slope, intercept: meanHr - slope * meanPace };
-}
-
-function shanghaiDayOf(activity: Pick<Activity, "date">): string {
-  // date 是 UTC instant；活动归属的 Asia/Shanghai 日历日要 +8 后取日期。
-  return shanghaiDay(activity.date.toISOString());
 }
 
 function round(value: number, digits: number): number {

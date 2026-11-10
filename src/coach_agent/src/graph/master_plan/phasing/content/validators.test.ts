@@ -758,17 +758,18 @@ test("C17/C3 轻量 M 段位（2026-11-02 E 压缩拍板）：q+1 轻量 M 段�
 test("buildProvenSessions（#857）：近 10 周质量/长距离课筛选+摘要口径；边界=空/短窗/短课保留", async () => {
   const { buildProvenSessions } = await import("./doctrine.js");
   const asOf = "2026-11-10";
+  // shanghaiDay 由 Provider 换算（devops#936）；半马行 UTC 2026-11-01T23:30 = 上海 11-02 早。
   const acts = [
-    { date: "2026-11-01T23:30:00Z", name: "[STRIDE] 半马测试赛（21.1km）", distanceM: 21135, strideSessionClass: "race", durationS: 5476 },
-    { date: "2026-10-24T07:42:00Z", name: "[STRIDE] 5km 递进×7（4:50→4:00）", distanceM: 35009, strideSessionClass: "long_quality", durationS: 9334 },
-    { date: "2026-10-27T10:36:00Z", name: "上海市 跑步", distanceM: 14724, strideSessionClass: "easy", durationS: 4691 },
-    { date: "2026-08-30T00:00:00Z", name: "太老的课", distanceM: 20000, strideSessionClass: "long_quality", durationS: 7200 },
-    { date: "2026-10-28T08:54:00Z", name: "短间歇课", distanceM: 5000, strideSessionClass: "quality", durationS: 1500 },
+    { shanghaiDay: "2026-11-02", name: "[STRIDE] 半马测试赛（21.1km）", distanceM: 21135, strideSessionClass: "race", durationS: 5476 },
+    { shanghaiDay: "2026-10-24", name: "[STRIDE] 5km 递进×7（4:50→4:00）", distanceM: 35009, strideSessionClass: "long_quality", durationS: 9334 },
+    { shanghaiDay: "2026-10-27", name: "上海市 跑步", distanceM: 14724, strideSessionClass: "easy", durationS: 4691 },
+    { shanghaiDay: "2026-08-30", name: "太老的课", distanceM: 20000, strideSessionClass: "long_quality", durationS: 7200 },
+    { shanghaiDay: "2026-10-28", name: "短间歇课", distanceM: 5000, strideSessionClass: "quality", durationS: 1500 },
   ];
   const out = buildProvenSessions(acts, asOf);
   assert.equal(out.length, 3, `应筛出 3 节（半马+35km+5km 短间歇），实际 ${out.length}`);
   assert.equal(out[2]!.distanceKm, 5.0, "短质量课不再被距离线挡（2026-11-10 拍板）");
-  assert.equal(out[0]!.date, "2026-11-02", "半马 UTC 11-01T23:30 = 上海 11-02 早（时区转换生效）");
+  assert.equal(out[0]!.date, "2026-11-02", "半马 UTC 11-01T23:30 = 上海 11-02 早（Provider 换算的 shanghaiDay 直传）");
   assert.equal(out[0]!.distanceKm, 21.1);
   assert.equal(out[0]!.avgPaceSKm, 259.1);
   assert.equal(out[1]!.name, "[STRIDE] 5km 递进×7（4:50→4");

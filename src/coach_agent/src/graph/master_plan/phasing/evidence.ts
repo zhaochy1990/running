@@ -103,9 +103,10 @@ export interface PhasingGoalInput {
   weeklyRunDaysMax: number;
 }
 
-/** 证据层消费的活动投影：DataProvider.Activity 的结构子集（测试 fixture 直接满足）。 */
+/** 证据层消费的活动投影：DataProvider.Activity 的结构子集（测试 fixture 直接满足）。
+ * 日历日归属统一走 `shanghaiDay`（Provider 已换算，devops#936），投影不再带 UTC instant。 */
 export interface PhasingActivityInput {
-  date: Date | string;
+  shanghaiDay: string;
   name: string | null;
   sport?: string | null;
   sportName?: string | null;
@@ -130,9 +131,6 @@ function monthsBack(asOf: string, count: number): string {
   const total = (Number(yRaw) || 0) * 12 + ((Number(mRaw) || 1) - 1) - count;
   return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, "0")}`;
 }
-
-/** 训练日归属用 UTC+8（与 masterPlanContextProvider 的 activityDay 同口径，中国跑者时区）。 */
-const dayOf = (date: Date | string) => new Date(new Date(date).getTime() + 8 * 3600_000).toISOString().slice(0, 10);
 
 /** 跑步行判定（周画像口径，与 habitual 周序列共用 isRunLikeActivity：骑行等不入画像）。 */
 const isRun = (a: PhasingActivityInput) => isRunLikeActivity(a);
@@ -265,7 +263,7 @@ function deriveTrainingInference(activities: PhasingActivityInput[], asOfMs: num
     .filter(isRun)
     .filter((a) => isQ(normalizeSessionClass(a.strideSessionClass)))
     .map((a) => {
-      const date = dayOf(a.date);
+      const date = a.shanghaiDay;
       const daysAgo = Math.round((asOfMs - new Date(date).getTime()) / 86400_000);
       const vdot = a.distanceM != null && a.durationS != null && a.durationS > 0 ? vdotFromRace(a.distanceM, a.durationS) : Number.NaN;
       return { date, daysAgo, km: (a.distanceM ?? 0) / 1000, vdot };
@@ -394,7 +392,7 @@ export function buildPhaseEvidence(snapshot: ContextSnapshot, activities: Phasin
   const windowStart = monthsBack(asOfDay, 6);
   const byMonth = new Map<string, PhasingActivityInput[]>();
   for (const a of activities.filter(isRun)) {
-    const month = dayOf(a.date).slice(0, 7);
+    const month = a.shanghaiDay.slice(0, 7);
     if (month < windowStart || month > asOfDay.slice(0, 7)) continue;
     byMonth.set(month, [...(byMonth.get(month) ?? []), a]);
   }
@@ -402,7 +400,7 @@ export function buildPhaseEvidence(snapshot: ContextSnapshot, activities: Phasin
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([month, list]) => {
       const km = list.reduce((s, a) => s + (a.distanceM ?? 0), 0) / 1000;
-      const days = new Set(list.map((a) => dayOf(a.date)));
+      const days = new Set(list.map((a) => a.shanghaiDay));
       const cls = (a: PhasingActivityInput) => normalizeSessionClass(a.strideSessionClass);
       const eKm = list.filter((a) => isE(cls(a))).reduce((s, a) => s + (a.distanceM ?? 0), 0) / 1000;
       const qS = list.filter((a) => isQ(cls(a)));
@@ -419,7 +417,7 @@ export function buildPhaseEvidence(snapshot: ContextSnapshot, activities: Phasin
         strides_sessions: list.filter((a) => cls(a) === "strides").length,
         longest_run_km: longs.length ? r1(Math.max(...longs.map((a) => (a.distanceM ?? 0) / 1000))) : 0,
         race_like: races.map((a) => ({
-          date: dayOf(a.date),
+          date: a.shanghaiDay,
           name: (a.name ?? "").slice(0, 30),
           km: Math.round((a.distanceM ?? 0) / 1000),
         })),

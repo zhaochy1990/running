@@ -84,7 +84,8 @@ This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 **Canonical helpers**：
 
 - Python: `src/stride_core/timefmt.py` —— `utc_iso_to_shanghai_iso()`, `today_shanghai()`, `SHANGHAI_DAY_SQL`, `shanghai_day_to_utc_range()`, `shanghai_week_range()`, `SHANGHAI_TZ`
-- TypeScript: `frontend/src/lib/shanghai.ts` —— `shanghaiDate()`, `shanghaiMonthDay()`, `shanghaiTime()`, `shanghaiToday()`, `shanghaiWeekday()`
+- TypeScript (frontend): `frontend/src/lib/shanghai.ts` —— `shanghaiDate()`, `shanghaiMonthDay()`, `shanghaiTime()`, `shanghaiToday()`, `shanghaiWeekday()`
+- TypeScript (coach backend): `@stride/contract` `src/coach_contract/src/date.ts` —— `shanghaiDay()` / `shanghaiIso()`；活动日归属一律读 Provider 算好的 `Activity.shanghaiDay`（devops#936），下游禁止自算 +8h
 
 **禁用 patterns**（由 `tests/test_timezone_invariants.py` 校验）：
 
@@ -94,6 +95,7 @@ This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 | `date.today()` / `datetime.now()`（无 `tz=`） | `today_shanghai()` from `stride_core.timefmt` |
 | `r["date"][:10]` in route serializers | `utc_iso_to_shanghai_iso(r["date"])` 再 slice —— 或 SQL 里 alias `date(datetime(date, '+8 hours')) AS shanghai_date` |
 | `activity.date.slice(0, 10)` in React | `shanghaiDate(activity.date)` from `lib/shanghai` |
+| coach TS 里对 `Activity.date` 自算 +8h 取日 | 读 Provider 字段 `Activity.shanghaiDay`（devops#936；换算只在 `rowToActivity` 一处） |
 | `new Date().getFullYear()` 等表示"今天" | `shanghaiToday()` |
 
 **API 边界规则**：Go API 的 activity 序列化（`src/go/internal/api/`，经 `internal/apifmt`）MUST 在每个 activity 行输出前把 `date` 转成上海 ISO（等价于 Python 的 `utc_iso_to_shanghai_iso()`）。这就是 frontend `.slice(0, 10)` "刚好能用"的原因 —— offset 转过，instant 保留。`stride_server/`（Python FastAPI 客户端 API 层）**标为待删除**，不承担客户端请求。

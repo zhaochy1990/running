@@ -57,9 +57,6 @@ export interface WeeklySeries {
   asOf: string;
 }
 
-/** 训练日归属用 UTC+8（与 evidence.ts 的 dayOf 同口径，中国跑者时区）。 */
-const dayOf = (date: Date | string) => new Date(new Date(date).getTime() + 8 * 3600_000).toISOString().slice(0, 10);
-
 const mondayOf = (day: string) => {
   const x = new Date(`${day}T00:00:00Z`);
   x.setUTCDate(x.getUTCDate() - ((x.getUTCDay() + 6) % 7));
@@ -78,7 +75,7 @@ export function buildWeeklySeries(activities: PhasingActivityInput[], asOf: stri
   for (const a of activities.filter(isRunLikeActivity)) {
     const km = (a.distanceM ?? 0) / 1000;
     if (km < 0.5) continue;
-    const day = dayOf(a.date);
+    const day = a.shanghaiDay;
     if (day >= asOf) continue;
     const wk = mondayOf(day);
     byWeek.set(wk, (byWeek.get(wk) ?? 0) + km);
