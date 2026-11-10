@@ -46,7 +46,7 @@ import {
 } from "./assessment.js";
 import { type ContextSnapshot, ContextSnapshotSchema, type MasterPlanContextProvider } from "./context.js";
 import { danielsAudit } from "./phasing/content/danielsAudit.js";
-import { type ContentGeneratorInput, type ContentWeekRow, QUALITY_FAMILY_OF } from "./phasing/content/doctrine.js";
+import { buildProvenSessions, type ContentGeneratorInput, type ContentWeekRow, QUALITY_FAMILY_OF } from "./phasing/content/doctrine.js";
 import { type ContentModel, generateWeekContent, type ScheduledOutcome } from "./phasing/content/generate.js";
 import { projectZones } from "./phasing/content/project.js";
 import { buildPhaseEvidence, type PhaseEvidence, type PhasingActivityInput } from "./phasing/evidence.js";
@@ -333,6 +333,10 @@ export class MasterPlanNodes {
   /** L4：内容层（课包 + 波浪排位，重试环内建，模板兜底在 generate 内部）。 */
   readonly content = async (state: typeof GraphState.State) => {
     const { request, context, evidence, skeleton } = requiredWithSkeleton(state);
+    // #857：近 10 周已证课喂给 L4a（已证参照规则——新课刺激不低于最近同类课）
+    const provenSessions = buildProvenSessions(state.activities ?? [], asOfOf(request));
+    if (provenSessions.length > 0)
+      logger.info({ count: provenSessions.length, latest: provenSessions[0]!.name }, "proven sessions fed to L4a (#857)");
     const monday = planningStartDate(asOfOf(request));
     const goal = aGoalOf(request);
     const runwayWeeks = weeksBetween(monday, goal.race_date);
@@ -371,6 +375,7 @@ export class MasterPlanNodes {
           goalPaceSKm: targetSec / (RACE_DISTANCE_M / 1000),
         },
         planStartMonday: monday,
+        provenSessions,
       };
       // 首批门控（2026-11-09 用户两轮拍板，回归 daniels.md §3.1/3.2 原设计「计划=
       // 政策，不是预测」）：跑道 >8 周时首批生成 **min(首阶段周数, 6 周)**——阶段

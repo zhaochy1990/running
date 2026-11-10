@@ -754,3 +754,23 @@ test("C17/C3 轻量 M 段位（2026-11-02 E 压缩拍板）：q+1 轻量 M 段�
   const spread = input([quality1, light, lrProgressive]);
   assert.equal(byId(spread, "C17 有氧份额上限")?.pass, true, byId(spread, "C17 有氧份额上限")?.detail);
 });
+
+test("buildProvenSessions（#857）：近 10 周质量/长距离课筛选+摘要口径；边界=空/短窗/小课排除", async () => {
+  const { buildProvenSessions } = await import("./doctrine.js");
+  const asOf = "2026-11-10";
+  const acts = [
+    { date: "2026-11-01T23:30:00Z", name: "[STRIDE] 半马测试赛（21.1km）", distanceM: 21135, strideSessionClass: "race", durationS: 5476 },
+    { date: "2026-10-24T07:42:00Z", name: "[STRIDE] 5km 递进×7（4:50→4:00）", distanceM: 35009, strideSessionClass: "long_quality", durationS: 9334 },
+    { date: "2026-10-27T10:36:00Z", name: "上海市 跑步", distanceM: 14724, strideSessionClass: "easy", durationS: 4691 },
+    { date: "2026-08-30T00:00:00Z", name: "太老的课", distanceM: 20000, strideSessionClass: "long_quality", durationS: 7200 },
+    { date: "2026-10-28T08:54:00Z", name: "小课", distanceM: 5000, strideSessionClass: "quality", durationS: 1800 },
+  ];
+  const out = buildProvenSessions(acts, asOf);
+  assert.equal(out.length, 2, `应筛出 2 节（半马+35km），实际 ${out.length}`);
+  assert.equal(out[0]!.date, "2026-11-02", "半马 UTC 11-01T23:30 = 上海 11-02 早（时区转换生效）");
+  assert.equal(out[0]!.distanceKm, 21.1);
+  assert.equal(out[0]!.avgPaceSKm, 259.1);
+  assert.equal(out[1]!.name, "[STRIDE] 5km 递进×7（4:50→4");
+  assert.deepEqual(buildProvenSessions([], asOf), []);
+  assert.deepEqual(buildProvenSessions(acts, "2026-10-01").map((x) => x.date), ["2026-08-30"], "as_of 更早时窗口左移：11 月课排除、8 月底课进入窗口");
+});

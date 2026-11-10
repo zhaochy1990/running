@@ -125,6 +125,40 @@ export interface ProvenSession {
   feel: number | null;
 }
 
+/**
+ * 近期已证训练课构造（#857，2026-11-02 拍板 2026-11-10 上移生产）：近 10 周
+ * 质量/长距离课摘要——L4a 已证参照规则的数据源（新课刺激不低于最近同类课
+ * 已证水平）。筛选：≥7km 的 quality/long_quality/race/long_easy 类。
+ */
+export function buildProvenSessions(
+  activities: ReadonlyArray<{ date: Date | string; name?: string | null; distanceM?: number | null; strideSessionClass?: string | null; durationS?: number | null | undefined }>,
+  asOf: string,
+): ProvenSession[] {
+  // 上海日历日（UTC+8）：activities.date 是 UTC instant，直接 slice 会把
+  // 上海次日凌晨的课归错日期（用户 2026-11-10 评审发现）
+  const dayOf = (d: Date | string) => new Date(new Date(d).getTime() + 8 * 3600_000).toISOString().slice(0, 10);
+  const asOfDay = asOf.slice(0, 10);
+  const tenWeeksAgo = new Date(new Date(`${asOfDay}T00:00:00Z`).getTime() - 70 * 86400000).toISOString().slice(0, 10);
+  return activities
+    .filter(
+      (a) =>
+        dayOf(a.date) >= tenWeeksAgo &&
+        dayOf(a.date) <= asOfDay &&
+        (a.distanceM ?? 0) >= 7000 &&
+        a.strideSessionClass != null &&
+        ["quality", "long_quality", "race", "long_easy"].includes(a.strideSessionClass),
+    )
+    .map((a) => ({
+      date: dayOf(a.date),
+      sessionClass: a.strideSessionClass!,
+      name: (a.name ?? "").slice(0, 24),
+      distanceKm: Math.round(((a.distanceM ?? 0) / 1000) * 10) / 10,
+      durationMin: Math.round(((a.durationS ?? 0) / 60) * 10) / 10,
+      avgPaceSKm: a.distanceM != null && a.durationS != null && a.durationS > 0 ? Math.round((a.durationS / (a.distanceM / 1000)) * 10) / 10 : null,
+      feel: null,
+    }));
+}
+
 export interface ContentGeneratorInput {
   rows: ContentWeekRow[];
   athlete: ContentAthleteContext;
