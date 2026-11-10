@@ -12,7 +12,8 @@
  *
  * 数据口径：每公里分段用后端 segments（勿用 ts 自算与厂商 best_km_pace 混搭，
  * 表头与表内同源派生）；心率区间用 activity_zones（Z5 = 最高档 range_min）；
- * 视觉 token 引 utils/theme.ts 单源；训练负荷文案；标题超长 ellipsize。
+ * 视觉 token 引 utils/posterThemes.ts 九色系单源（devops#947：绘制函数零
+ * hex，颜色全走 PosterTheme 字段）；训练负荷文案；标题超长 ellipsize。
  *
  * 布局与派生是纯函数（posterLayout / buildPosterModel / resampleSeries），
  * `utils/poster.check.mts` 自检进 CI；canvas 绘制函数保持薄。
@@ -20,7 +21,7 @@
 import type { ActivityDetailResponse, Segment, Zone } from '../types/activity';
 import { buildHrSeries } from './curve';
 import { lapPaceMarks } from './lapRows';
-import { theme } from './theme';
+import { posterTheme, type PosterTheme } from './posterThemes';
 import { gradient3, PACE_SLOW_GREEN, PACE_FAST_RED } from './posterGradient';
 import { fmtHms, fmtPaceQuote, fmtPaceQuoteParts } from './format';
 import { trackBBox, type TrackPoint } from './posterMap';
@@ -386,11 +387,11 @@ export function ellipsize(text: string, maxWidth: number, measure: (s: string) =
 }
 
 /** 圆角白卡 + 发丝线描边（§3 风格语言的卡片基元）。 */
-function card(ctx: PosterCtx, r: PosterRect, radius = 24): void {
+function card(ctx: PosterCtx, t: PosterTheme, r: PosterRect, radius = 24): void {
   roundRect(ctx, r, radius);
-  ctx.fillStyle = theme.card;
+  ctx.fillStyle = t.card;
   ctx.fill();
-  ctx.strokeStyle = theme.hairline;
+  ctx.strokeStyle = t.hairline;
   ctx.lineWidth = 2;
   roundRect(ctx, r, radius);
   ctx.stroke();
@@ -410,9 +411,9 @@ function roundRect(ctx: PosterCtx, r: PosterRect, radius: number): void {
   ctx.closePath();
 }
 
-/** 品牌行 + 日期胶囊。 */
-function drawBrand(ctx: PosterCtx, layout: PosterLayout, model: PosterModel): void {
-  ctx.fillStyle = theme.accent;
+/** 品牌行 + 日期胶囊（底面文字：POC 用 bgInk/bgSub，非强调色）。 */
+function drawBrand(ctx: PosterCtx, t: PosterTheme, layout: PosterLayout, model: PosterModel): void {
+  ctx.fillStyle = t.ink;
   ctx.font = 'bold 34px sans-serif';
   ctx.fillText('砺跑 StrideWise', layout.pad, layout.brandY);
 
@@ -421,16 +422,16 @@ function drawBrand(ctx: PosterCtx, layout: PosterLayout, model: PosterModel): vo
     const w = ctx.measureText(model.dateCapsule).width;
     const rect: PosterRect = { x: layout.contentRight - w - 44, y: layout.brandY - 38, w: w + 44, h: 52 };
     roundRect(ctx, rect, 26);
-    ctx.fillStyle = theme.chip;
+    ctx.fillStyle = t.chip;
     ctx.fill();
-    ctx.fillStyle = theme.textSecondary;
+    ctx.fillStyle = t.sub;
     ctx.fillText(model.dateCapsule, rect.x + 22, layout.brandY - 2);
   }
 }
 
 /** 课名（超长 ellipsize）+ chips：STRIDE 计划课 / 课型 / 运动类型。 */
-function drawTitle(ctx: PosterCtx, layout: PosterLayout, model: PosterModel): void {
-  ctx.fillStyle = theme.textPrimary;
+function drawTitle(ctx: PosterCtx, t: PosterTheme, layout: PosterLayout, model: PosterModel): void {
+  ctx.fillStyle = t.ink;
   ctx.font = 'bold 60px sans-serif';
   const title = ellipsize(model.title, layout.contentRight - layout.pad, (s) => ctx.measureText(s).width);
   ctx.fillText(title, layout.pad, layout.titleY);
@@ -448,18 +449,18 @@ function drawTitle(ctx: PosterCtx, layout: PosterLayout, model: PosterModel): vo
     if (x + w > layout.contentRight) break; // 超宽截断（不画半个 chip）
     const rect: PosterRect = { x, y, w, h };
     roundRect(ctx, rect, h / 2);
-    ctx.fillStyle = theme.chip;
+    ctx.fillStyle = t.chip;
     ctx.fill();
-    ctx.fillStyle = theme.textSecondary;
+    ctx.fillStyle = t.ink;
     ctx.fillText(label, x + 20, y + h / 2 + 9);
     x += w + 16;
   }
 }
 
 /** 地图 hero：真图绘制（缩放进卡片）；缺图降级矢量轨迹占位 + 角标说明。 */
-function drawMap(ctx: PosterCtx, layout: PosterLayout, mapImage: PosterImage | null, track: TrackPoint[][] | null): void {
+function drawMap(ctx: PosterCtx, t: PosterTheme, layout: PosterLayout, mapImage: PosterImage | null, track: TrackPoint[][] | null): void {
   if (!layout.map || !layout.mapImage) return; // 无轨迹（力量训练等）：整卡不画
-  card(ctx, layout.map);
+  card(ctx, t, layout.map);
   const r = layout.mapImage;
   if (mapImage) {
     ctx.save();
@@ -473,7 +474,7 @@ function drawMap(ctx: PosterCtx, layout: PosterLayout, mapImage: PosterImage | n
   ctx.save();
   roundRect(ctx, r, 16);
   ctx.clip();
-  ctx.fillStyle = theme.bgSunken;
+  ctx.fillStyle = t.bgSunken;
   ctx.fillRect(r.x, r.y, r.w, r.h);
   if (track && track.length) {
     const bbox = trackBBox(track);
@@ -529,14 +530,14 @@ function drawMap(ctx: PosterCtx, layout: PosterLayout, mapImage: PosterImage | n
       }
     }
   }
-  ctx.fillStyle = theme.textTertiary;
+  ctx.fillStyle = t.tertiary;
   ctx.font = '24px sans-serif';
   ctx.fillText('地图底图暂未开放', r.x + r.w - 240, r.y + r.h - 24);
   ctx.restore();
 }
 
 /** 四宫格等权重大数字：距离为渐变字（唯一视觉锚点），其余主色。 */
-function drawGrid(ctx: PosterCtx, layout: PosterLayout, model: PosterModel): void {
+function drawGrid(ctx: PosterCtx, t: PosterTheme, layout: PosterLayout, model: PosterModel): void {
   const gap = 16;
   const cellW = (layout.grid.w - gap) / 2;
   const cellH = 170;
@@ -549,38 +550,38 @@ function drawGrid(ctx: PosterCtx, layout: PosterLayout, model: PosterModel): voi
       w: cellW,
       h: cellH,
     };
-    card(ctx, r);
+    card(ctx, t, r);
     const valueY = r.y + 104;
     if (i === 0) {
-      // 距离渐变字：accent → accentDeep（竖向）。
+      // 距离渐变字：accent → accentDeep（竖向，POC numGrad 端点 = trackA/trackB）。
       const grad = ctx.createLinearGradient(r.x, valueY - 56, r.x, valueY + 8);
-      grad.addColorStop(0, theme.accent);
-      grad.addColorStop(1, theme.accentDeep);
+      grad.addColorStop(0, t.accent);
+      grad.addColorStop(1, t.accentDeep);
       ctx.fillStyle = grad;
     } else {
-      ctx.fillStyle = theme.textPrimary;
+      ctx.fillStyle = t.cardInk;
     }
     ctx.font = 'bold 64px sans-serif';
     const label = m.unit ? `${m.value}` : m.value;
     ctx.fillText(label, r.x + 32, valueY);
     if (m.unit) {
       const vw = ctx.measureText(label).width;
-      ctx.fillStyle = theme.textSecondary;
+      ctx.fillStyle = t.cardSub;
       ctx.font = '28px sans-serif';
       ctx.fillText(m.unit, r.x + 36 + vw, valueY);
     }
-    ctx.fillStyle = theme.textSecondary;
+    ctx.fillStyle = t.cardSub;
     ctx.font = '26px sans-serif';
     ctx.fillText(m.label, r.x + 32, r.y + 148);
   });
 }
 
 /** 每公里配速条：细柱，柱色=该段配速（绿慢红快），最快公里红色描边环。 */
-function drawBars(ctx: PosterCtx, layout: PosterLayout, model: PosterModel): void {
+function drawBars(ctx: PosterCtx, t: PosterTheme, layout: PosterLayout, model: PosterModel): void {
   if (!layout.bars || !model.bars || !model.barsHeader) return;
-  card(ctx, layout.bars);
+  card(ctx, t, layout.bars);
 
-  ctx.fillStyle = theme.textSecondary;
+  ctx.fillStyle = t.cardSub;
   ctx.font = '28px sans-serif';
   ctx.fillText(model.barsHeader, layout.bars.x + 32, layout.bars.y + 52);
 
@@ -599,7 +600,7 @@ function drawBars(ctx: PosterCtx, layout: PosterLayout, model: PosterModel): voi
     ctx.fillStyle = b.color;
     ctx.fillRect(x, y, barW, h);
     if (b.fastest) {
-      ctx.strokeStyle = theme.danger;
+      ctx.strokeStyle = t.danger;
       ctx.lineWidth = 4;
       ctx.strokeRect(x - 4, y - 4, barW + 8, h + 8);
     }
@@ -607,11 +608,11 @@ function drawBars(ctx: PosterCtx, layout: PosterLayout, model: PosterModel): voi
 }
 
 /** 【9:16】心率曲线卡：面积曲线 + Z5 阈值虚线。 */
-function drawHr(ctx: PosterCtx, layout: PosterLayout, model: PosterModel): void {
+function drawHr(ctx: PosterCtx, t: PosterTheme, layout: PosterLayout, model: PosterModel): void {
   if (!layout.hr || !model.hr || model.hr.points.length < 2) return;
-  card(ctx, layout.hr);
+  card(ctx, t, layout.hr);
 
-  ctx.fillStyle = theme.textSecondary;
+  ctx.fillStyle = t.cardSub;
   ctx.font = '28px sans-serif';
   ctx.fillText('心率曲线', layout.hr.x + 32, layout.hr.y + 52);
 
@@ -640,7 +641,7 @@ function drawHr(ctx: PosterCtx, layout: PosterLayout, model: PosterModel): void 
   ctx.lineTo(vx(pts[pts.length - 1].t), r.y + r.h);
   ctx.closePath();
   ctx.globalAlpha = 0.15;
-  ctx.fillStyle = theme.accent;
+  ctx.fillStyle = t.accent;
   ctx.fill();
   ctx.globalAlpha = 1;
 
@@ -648,7 +649,7 @@ function drawHr(ctx: PosterCtx, layout: PosterLayout, model: PosterModel): void 
   ctx.beginPath();
   ctx.moveTo(vx(pts[0].t), vy(pts[0].v));
   for (const p of pts) ctx.lineTo(vx(p.t), vy(p.v));
-  ctx.strokeStyle = theme.accent;
+  ctx.strokeStyle = t.accent;
   ctx.lineWidth = 4;
   ctx.stroke();
 
@@ -656,20 +657,21 @@ function drawHr(ctx: PosterCtx, layout: PosterLayout, model: PosterModel): void 
   if (model.hr.z5 != null && model.hr.z5 >= vMin && model.hr.z5 <= vMax) {
     const y = vy(model.hr.z5);
     ctx.setLineDash([12, 10]);
-    ctx.strokeStyle = theme.danger;
+    ctx.strokeStyle = t.danger;
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(r.x, y);
     ctx.lineTo(r.x + r.w, y);
     ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = theme.danger;
+    ctx.fillStyle = t.danger;
     ctx.font = '24px sans-serif';
     ctx.fillText(`Z5 ${model.hr.z5}`, r.x + r.w - 96, y - 10);
   }
 }
 
-/** 海报主入口：暖粉彩底 + 各节绘制。mapImage=null 时地图层走矢量占位。 */
+/** 海报主入口：按传入主题（九色系，utils/posterThemes.ts）绘底渐变与各节。
+ * mapImage=null 时地图层走矢量占位。themeKey 经 posterTheme() 解析（含回落）。 */
 export function drawPoster(
   ctx: PosterCtx,
   aspect: PosterAspect,
@@ -678,8 +680,10 @@ export function drawPoster(
     mapImage: PosterImage | null;
     track: TrackPoint[][] | null;
     userName: string;
+    themeKey: string;
   },
 ): void {
+  const t = posterTheme(o.themeKey);
   const hasMap = o.track != null && o.track.length > 0;
   // 节有无由数据决定；各比例画不画（1:1 无配速条、心率卡仅 9:16）由
   // posterLayout 内的策略表统一裁决。
@@ -689,40 +693,38 @@ export function drawPoster(
     hasHr: model.hr != null,
   });
 
-  // 暖粉彩渐变底（accentTint → bg）。
+  // 主题底渐变（POC bg 多停竖向迁移）。
   const bg = ctx.createLinearGradient(0, 0, 0, layout.height);
-  bg.addColorStop(0, theme.accentTint);
-  bg.addColorStop(0.35, theme.bg);
-  bg.addColorStop(1, theme.bg);
+  for (const [offset, color] of t.bgStops) bg.addColorStop(offset, color);
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, layout.width, layout.height);
 
-  drawBrand(ctx, layout, model);
-  drawTitle(ctx, layout, model);
-  drawMap(ctx, layout, o.mapImage, o.track);
-  drawGrid(ctx, layout, model);
-  drawBars(ctx, layout, model);
-  drawHr(ctx, layout, model);
-  drawFooterSignature(ctx, layout, model, o.userName);
+  drawBrand(ctx, t, layout, model);
+  drawTitle(ctx, t, layout, model);
+  drawMap(ctx, t, layout, o.mapImage, o.track);
+  drawGrid(ctx, t, layout, model);
+  drawBars(ctx, t, layout, model);
+  drawHr(ctx, t, layout, model);
+  drawFooterSignature(ctx, t, layout, model, o.userName);
 }
 
 /** 页脚署名：署名·日期 在左，品牌 slogan 在右（文档流内，不可能重叠）。
  * 整块收在 contentRight 内（抖音 9:16 上移出底部文案遮挡区）。 */
-function drawFooterSignature(ctx: PosterCtx, layout: PosterLayout, model: PosterModel, userName: string): void {
-  ctx.strokeStyle = theme.hairline;
+function drawFooterSignature(ctx: PosterCtx, t: PosterTheme, layout: PosterLayout, model: PosterModel, userName: string): void {
+  ctx.strokeStyle = t.hairline;
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(layout.pad, layout.footerLineY);
   ctx.lineTo(layout.contentRight, layout.footerLineY);
   ctx.stroke();
 
-  ctx.fillStyle = theme.textTertiary;
+  ctx.fillStyle = t.tertiary;
   ctx.font = '26px sans-serif';
   const slogan = 'STRIDE · 用数据陪伴每一次奔跑';
   const sloganW = ctx.measureText(slogan).width;
   ctx.fillText(slogan, layout.contentRight - sloganW, layout.footerTextY);
 
-  ctx.fillStyle = theme.textPrimary;
+  ctx.fillStyle = t.ink;
   ctx.font = '28px sans-serif';
   const parts = [userName, model.dateFull].filter(Boolean).join(' · ');
   const maxW = layout.contentRight - layout.pad * 2 - sloganW - 48;
