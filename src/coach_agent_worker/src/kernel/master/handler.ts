@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { masterPlanToContent } from "@stride/coach-agent";
 import { type DanielsAudit, type LoadPlan, type MasterPlanAnchor, MasterPlanGraphRequest, type PhaseDivisionIntent, type WeeklyPlan } from "@stride/contract";
+import type { RollingWeeklyChannel } from "../../goClient/weeklyPlanClient.js";
 import { ERROR_CODES, type Handler, newPermanentError } from "../../job/errors.js";
 import type { PlanJob } from "../../job/model.js";
-import type { RollingWeeklyChannel } from "../../goClient/weeklyPlanClient.js";
 import { type MasterPlanGraphShim, runMasterKernel } from "./kernel.js";
 
 export interface MasterPlanHandlerDeps {

@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { MasterPlanGraphRequest } from "@stride/coach-agent";
 import { createTestCompletedOutcomeV3, createTestRequest } from "@stride/coach-agent/test-fixtures";
+import type { RollingWeeklyChannel, WeeklyPlanAppliedWeek } from "../../src/goClient/weeklyPlanClient.js";
 import { asPermanent, ERROR_CODES } from "../../src/job/errors.js";
 import { createMasterPlanJobHandler, type MasterPlanHandlerDeps } from "../../src/kernel/master/handler.js";
-import type { RollingWeeklyChannel, WeeklyPlanAppliedWeek } from "../../src/goClient/weeklyPlanClient.js";
 import { FakePlanJobStore } from "../job/fakes.js";
 
 const GOAL_ID = "11111111-2222-3333-4444-555555555555";
@@ -85,7 +85,11 @@ test("master run materializes the first-batch weekly docs through the rolling ch
   // batch-apply 被调用：weekly_docs 全量经通道落库，归链 result 里的前瞻计划 id。
   assert.equal(channel.batches.length, 1);
   assert.equal(channel.batches[0]?.weeks.length, 2);
-  const parsed = JSON.parse(result.result) as { master_plan_id: string; weekly_weeks: Array<{ week_start: string; revision: number }>; content: { master_plan_id: string } };
+  const parsed = JSON.parse(result.result) as {
+    master_plan_id: string;
+    weekly_weeks: Array<{ week_start: string; revision: number }>;
+    content: { master_plan_id: string };
+  };
   assert.ok(/^[0-9a-f-]{36}$/.test(parsed.master_plan_id));
   assert.equal(channel.batches[0]?.masterPlanId, parsed.master_plan_id);
   assert.equal(parsed.content.master_plan_id, parsed.master_plan_id);

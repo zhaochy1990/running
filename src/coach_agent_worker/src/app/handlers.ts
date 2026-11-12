@@ -3,10 +3,10 @@ import type { MySqlDataProvider } from "../data/mysqlDataProvider.js";
 import type { RollingWeeklyChannel } from "../goClient/weeklyPlanClient.js";
 import type { Handler } from "../job/errors.js";
 import type { PlanJobType } from "../job/model.js";
-import { createMasterPlanJobHandler } from "../kernel/master/handler.js";
-import type { MasterPlanGraphShim } from "../kernel/master/kernel.js";
 import { createAdjustJobHandler } from "../kernel/adjust/handler.js";
 import { createMaintenanceJobHandler } from "../kernel/maintenance/handler.js";
+import { createMasterPlanJobHandler } from "../kernel/master/handler.js";
+import type { MasterPlanGraphShim } from "../kernel/master/kernel.js";
 import { createRollingJobHandler } from "../kernel/rolling/handler.js";
 
 export interface PlanJobHandlerDeps {
