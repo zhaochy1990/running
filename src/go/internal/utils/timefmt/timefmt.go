@@ -31,3 +31,12 @@ func ShanghaiToday() time.Time {
 func ShanghaiDayStr(utc time.Time) string {
 	return ShanghaiDay(utc).Format("2006-01-02")
 }
+
+// ShanghaiWeekStart returns the Monday of the Shanghai natural week containing
+// utc, expressed as a UTC-midnight time.Time (the same convention as
+// ShanghaiDay). Weeks are Shanghai-local: a UTC instant on Sunday afternoon is
+// already Monday in Shanghai and belongs to the new week.
+func ShanghaiWeekStart(utc time.Time) time.Time {
+	day := ShanghaiDay(utc)
+	return day.AddDate(0, 0, -int((day.Weekday()+6)%7))
+}

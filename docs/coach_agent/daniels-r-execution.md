@@ -87,7 +87,7 @@
 
 - 执行回路消费的政策包（L2 意图 + L3 周骨架 + 块标记）来自生成侧一次性产出（daniels.md §3.2「一管线两产物」）；滚动投影不改政策，只把政策按实际进度推演成后续周课。
 - master 首批物化（计划生效时先出第一批周课）与滚动投影共用同一周课文档构造单源（`coach_agent/src/graph/rolling/weeklyDocs.ts` 的 `buildWeeklyDocs`，master kernel `nodes.ts` 直接复用）；滚动批生成主入口 `runRollingProjection` 在 `rolling/projection.ts`。
-- 换计划（apply/update 新 master）时旧链周行归档删除、遗留 pending 提案 supersede（`src/go/internal/storage/weekly_plan.go` 的 archiveReplacedSeason）——夜检只扫 active v3 行，不会跨计划串课。
+- 换计划（apply/update 新 master）时只清理当前及未来周的旧链/未归链行，已结束的历史周与历史物化课表保留；遗留 pending 提案 supersede（`src/go/internal/storage/weekly_plan.go` 的 `DeleteStaleFutureWeeklyPlans`）——夜检只扫 active v3 行，不会跨计划串课。
 
 ## 7. 已知边界
 

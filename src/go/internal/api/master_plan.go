@@ -37,10 +37,11 @@ type MasterPlanStore interface {
 	// ListActiveWeeklyPlans feeds the read merge (#858): the athlete's weekly
 	// rows overlay/extend the snapshot weeks on the current-plan read.
 	ListActiveWeeklyPlans(ctx context.Context, userID string) ([]storage.WeeklyPlan, error)
-	// ArchiveWeeklyPlansExcept / SupersedePendingAdjustments are the
-	// plan-change cleanups (#858): stale weekly rows of the replaced plan and
-	// its anchored pending proposals are removed when a new plan lands.
-	ArchiveWeeklyPlansExcept(ctx context.Context, userID, keepMasterPlanID string) (int64, error)
+	// DeleteStaleFutureWeeklyPlans / SupersedePendingAdjustments are the
+	// plan-change cleanups (#858): stale current/future weekly rows of the
+	// replaced plan and its anchored pending proposals are removed when a new
+	// plan lands. Finished weeks are history and stay readable.
+	DeleteStaleFutureWeeklyPlans(ctx context.Context, userID, keepMasterPlanID string, now time.Time) (int64, error)
 	SupersedePendingAdjustments(ctx context.Context, userID string) (int64, error)
 }
 
@@ -178,8 +179,8 @@ func (m *masterPlanRoutes) apply(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
-	if err := m.archiveReplacedSeason(c.Request.Context(), uid, created.PlanID); err != nil {
-		m.log.Error("archive replaced season artifacts failed", zapErr(err), zap.String("user_id", uid))
+	if err := m.cleanupReplacedSeason(c.Request.Context(), uid, created.PlanID); err != nil {
+		m.log.Error("cleanup replaced season artifacts failed", zapErr(err), zap.String("user_id", uid))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
@@ -291,8 +292,8 @@ func (m *masterPlanRoutes) applyFromContent(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
-	if err := m.archiveReplacedSeason(c.Request.Context(), uid, created.PlanID); err != nil {
-		m.log.Error("archive replaced season artifacts failed", zapErr(err), zap.String("user_id", uid))
+	if err := m.cleanupReplacedSeason(c.Request.Context(), uid, created.PlanID); err != nil {
+		m.log.Error("cleanup replaced season artifacts failed", zapErr(err), zap.String("user_id", uid))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
@@ -391,10 +392,11 @@ func (m *masterPlanRoutes) update(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
-	// 同一 plan_id 的原地更新也走归档：keep=本计划 id（同链周行保留），但内容已
-	// 变——异链遗留周行清掉、锚定旧内容的 pending 提案整体 supersede。
-	if err := m.archiveReplacedSeason(c.Request.Context(), uid, updated.PlanID); err != nil {
-		m.log.Error("archive replaced season artifacts failed", zapErr(err), zap.String("user_id", uid))
+	// 同一 plan_id 的原地更新也走清理：keep=本计划 id（同链周行保留），但内容已
+	// 变——当前/未来周的异链遗留行清掉、锚定旧内容的 pending 提案整体 supersede，
+	// 已结束的历史周保持原样。
+	if err := m.cleanupReplacedSeason(c.Request.Context(), uid, updated.PlanID); err != nil {
+		m.log.Error("cleanup replaced season artifacts failed", zapErr(err), zap.String("user_id", uid))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
@@ -599,17 +601,19 @@ func (m *masterPlanRoutes) getCurrentForUserID(c *gin.Context, uid string) {
 	c.JSON(http.StatusOK, envelope)
 }
 
-// archiveReplacedSeason runs the #858 plan-change cleanups once a new plan row
-// landed: weekly rows of any other master plan are deleted (their weeks are
-// meaningless after the switch and UNIQUE(user_id, week_start) would block the
-// new plan from writing the same week), and every pending plan_adjustment is
-// superseded (the popup proposal anchors the replaced plan's weeks).
+// cleanupReplacedSeason runs the #858 plan-change cleanups once a new plan row
+// landed: current/future weekly rows of any other master plan are deleted
+// (their weeks are meaningless after the switch and UNIQUE(user_id, week_start)
+// would block the new plan from writing the same week), while finished weeks
+// remain untouched as training history. Every pending plan_adjustment is
+// superseded (the popup proposal anchors the replaced plan's weeks); accepted
+// and dismissed proposals are history and stay.
 //
-// 取舍：归档在 apply 事务提交之后紧随执行（非同事务）——两者都幂等，apply 提交
-// 与归档之间崩溃只会留下旧链行，下次 apply/读合并重放同一清理即可；期间新计划
+// 取舍：清理在 apply 事务提交之后紧随执行（非同事务）——两者都幂等，apply 提交
+// 与清理之间崩溃只会留下旧链行，下次 apply 重放同一清理即可；期间新计划
 // 滚动批写同周会被 409 拒并按批重试，窗口极窄，可接受。
-func (m *masterPlanRoutes) archiveReplacedSeason(ctx context.Context, userID, keepPlanID string) error {
-	weekly, err := m.store.ArchiveWeeklyPlansExcept(ctx, userID, keepPlanID)
+func (m *masterPlanRoutes) cleanupReplacedSeason(ctx context.Context, userID, keepPlanID string) error {
+	weekly, err := m.store.DeleteStaleFutureWeeklyPlans(ctx, userID, keepPlanID, time.Now())
 	if err != nil {
 		return err
 	}
@@ -618,7 +622,7 @@ func (m *masterPlanRoutes) archiveReplacedSeason(ctx context.Context, userID, ke
 		return err
 	}
 	if weekly > 0 || adjustments > 0 {
-		m.log.Info("archived replaced season artifacts",
+		m.log.Info("cleaned replaced season artifacts",
 			zap.String("user_id", userID), zap.Int64("weekly_rows", weekly), zap.Int64("pending_adjustments", adjustments))
 	}
 	return nil

@@ -29,12 +29,12 @@ type fakeMasterPlanStore struct {
 	dose       map[int]storage.TrainingDoseWeekSummary
 	currentErr error
 	actualsErr error
-	// #858 读合并 + 换计划归档面。
+	// #858 读合并 + 换计划清理面。
 	weeklyRows    map[string][]storage.WeeklyPlan
 	weeklyErr     error
 	weeklyListUID string
-	archiveCalls  []string // 每次 ArchiveWeeklyPlansExcept 的 keepPlanID
-	archiveErr    error
+	cleanupCalls  []string // 每次 DeleteStaleFutureWeeklyPlans 的 keepPlanID
+	cleanupErr    error
 	supersedeUser string
 }
 
@@ -50,22 +50,12 @@ func (f *fakeMasterPlanStore) ListActiveWeeklyPlans(_ context.Context, uid strin
 	return f.weeklyRows[uid], nil
 }
 
-func (f *fakeMasterPlanStore) ArchiveWeeklyPlansExcept(_ context.Context, uid, keepMasterPlanID string) (int64, error) {
-	f.archiveCalls = append(f.archiveCalls, keepMasterPlanID)
-	if f.archiveErr != nil {
-		return 0, f.archiveErr
+func (f *fakeMasterPlanStore) DeleteStaleFutureWeeklyPlans(_ context.Context, _ string, keepMasterPlanID string, _ time.Time) (int64, error) {
+	f.cleanupCalls = append(f.cleanupCalls, keepMasterPlanID)
+	if f.cleanupErr != nil {
+		return 0, f.cleanupErr
 	}
-	var removed int64
-	var kept []storage.WeeklyPlan
-	for _, row := range f.weeklyRows[uid] {
-		if row.MasterPlanID == nil || *row.MasterPlanID != keepMasterPlanID {
-			removed++
-			continue
-		}
-		kept = append(kept, row)
-	}
-	f.weeklyRows[uid] = kept
-	return removed, nil
+	return 0, nil
 }
 
 func (f *fakeMasterPlanStore) SupersedePendingAdjustments(_ context.Context, uid string) (int64, error) {
