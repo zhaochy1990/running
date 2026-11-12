@@ -173,6 +173,18 @@
                 "STRIDE_COACH_ENV":"prod",
             },
             "nodeVersionHint": 24
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "cwd":"${workspaceFolder}/src/playground",
+            "name": "attach to playground",
+            "program": "${file}",
+            "restart": true,
+            "sourceMaps": true,
+            "skipFiles": [
+                "<node_internals>/**"
+            ]
         }
     ]
 }
