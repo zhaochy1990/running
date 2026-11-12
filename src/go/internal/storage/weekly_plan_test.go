@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -306,6 +307,39 @@ func TestApplyStructuredWeeklyPlanNoMasterPlanLeavesNil(t *testing.T) {
 	}
 }
 
+// 管理端（未 pin master plan）替换遗留 NULL/旧链周行时不做归属校验：derive 出
+// 的当前计划只用于给新行打链，不能把历史遗留行挡成 409。
+func TestApplyStructuredWeeklyPlanUnpinnedReplaceIgnoresExistingLink(t *testing.T) {
+	store := openTestStore(t)
+	migrateWeeklyPlan(t, store)
+	migrateMasterPlan(t, store)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	weekStart := "2026-09-07"
+	content := "{\"schema\":\"weekly-plan/v1\",\"week_name\":\"2026-09-07_09-13\",\"sessions\":[],\"nutrition\":[]}"
+
+	// 用户尚无 master plan：第一周落库时 master_plan_id 为 NULL。
+	first, _, err := store.ApplyStructuredWeeklyPlan(ctx, userID, weekStart, content, nil)
+	if err != nil || first == nil || first.MasterPlanID != nil {
+		t.Fatalf("first apply: plan=%+v err=%v", first, err)
+	}
+	// 之后用户有了当前 master plan；未 pin 的替换仍必须成功（旧行为）。
+	seedPlan(t, store, structuredPlan(userID))
+	current, err := store.GetCurrentMasterPlan(ctx, userID)
+	if err != nil || current == nil {
+		t.Fatalf("seed master plan: got=%+v err=%v", current, err)
+	}
+	second, replaced, err := store.ApplyStructuredWeeklyPlan(
+		ctx, userID, weekStart, content, &WeeklyPlanReplacement{PlanID: first.PlanID, Revision: first.Revision},
+	)
+	if err != nil || replaced == nil || replaced.PlanID != first.PlanID {
+		t.Fatalf("unpinned replace: plan=%+v replaced=%+v err=%v", second, replaced, err)
+	}
+	if second.MasterPlanID == nil || *second.MasterPlanID != current.PlanID {
+		t.Fatalf("new row link=%v want %s", second.MasterPlanID, current.PlanID)
+	}
+}
+
 func TestApplyStructuredWeeklyPlanRejectsNonMonday(t *testing.T) {
 	store := openTestStore(t)
 	migrateWeeklyPlan(t, store)
@@ -573,5 +607,173 @@ func TestDeleteStaleFutureWeeklyPlansShanghaiWeekBoundary(t *testing.T) {
 	}
 	if len(rows) != 1 || rows[0].PlanID != historyID {
 		t.Fatalf("rows=%+v, want only the 11-02 history row", rows)
+	}
+}
+
+// ── rolling batch transaction (#951) ────────────────────────────────────────
+
+// batchWeeklyContent builds a minimal structured weekly-plan document with one
+// run session on sessionDate (which must fall inside weekStart's week).
+func batchWeeklyContent(weekStart, sessionDate, name string) string {
+	return fmt.Sprintf(`{
+		"week_name": %q,
+		"sessions": [
+			{"date": %q, "session_index": 0, "kind": "run", "summary": %q,
+			 "spec": {"name": %q}, "total_distance_m": 5000, "total_duration_s": 1800,
+			 "estimated_dose": 42.5}
+		],
+		"nutrition": []
+	}`, weekStart, sessionDate, name, name)
+}
+
+func migrateBatchWeeklyPlans(t *testing.T, st *Store) {
+	t.Helper()
+	ctx := context.Background()
+	if err := st.AutoMigrateWeeklyPlan(ctx); err != nil {
+		t.Fatalf("automigrate weekly_plan: %v", err)
+	}
+	if err := st.AutoMigrateWorkout(ctx); err != nil {
+		t.Fatalf("automigrate workout: %v", err)
+	}
+}
+
+func seedBatchWeek(t *testing.T, st *Store, uid, masterPlanID, weekStart, sessionDate, name string) *WeeklyPlan {
+	t.Helper()
+	created, _, err := st.ApplyStructuredWeeklyPlan(
+		context.Background(), uid, weekStart, batchWeeklyContent(weekStart, sessionDate, name), nil,
+		WeeklyPlanApplyOptions{MasterPlanID: &masterPlanID},
+	)
+	if err != nil {
+		t.Fatalf("seed week %s: %v", weekStart, err)
+	}
+	return created
+}
+
+// 第二周 revision 冲突：第一周内容、revision、workout 行全部不变（整批回滚）。
+func TestApplyStructuredWeeklyPlansBatchRollsBackOnLaterWeekConflict(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	migrateBatchWeeklyPlans(t, st)
+	uid := uuid.NewString()
+	master := uuid.NewString()
+	week1Start, week2Start := "2026-01-19", "2026-01-26"
+
+	week1 := seedBatchWeek(t, st, uid, master, week1Start, "2026-01-19", "原第一周")
+	week2 := seedBatchWeek(t, st, uid, master, week2Start, "2026-01-26", "原第二周")
+	beforeWorkouts, err := st.ListPlanSessions(ctx, uid, week1Start, "2026-01-25")
+	if err != nil || len(beforeWorkouts) != 1 {
+		t.Fatalf("seed workouts=%d err=%v", len(beforeWorkouts), err)
+	}
+
+	items := []WeeklyPlanBatchItem{
+		{WeekStart: week1Start, Content: batchWeeklyContent(week1Start, "2026-01-20", "新第一周"),
+			Replacement: &WeeklyPlanReplacement{PlanID: week1.PlanID, Revision: week1.Revision}},
+		// 期望 revision 过期 → 第二周冲突
+		{WeekStart: week2Start, Content: batchWeeklyContent(week2Start, "2026-01-27", "新第二周"),
+			Replacement: &WeeklyPlanReplacement{PlanID: week2.PlanID, Revision: week2.Revision + 1}},
+	}
+	if _, err := st.ApplyStructuredWeeklyPlansBatch(ctx, uid, items, master); !errors.Is(err, ErrWeeklyPlanConflict) {
+		t.Fatalf("batch err=%v want ErrWeeklyPlanConflict", err)
+	}
+
+	afterPlan, err := st.GetActiveWeeklyPlan(ctx, uid, week1Start)
+	if err != nil || afterPlan == nil {
+		t.Fatalf("week1 after batch=%+v err=%v", afterPlan, err)
+	}
+	if afterPlan.PlanID != week1.PlanID || afterPlan.Revision != week1.Revision || afterPlan.Content != week1.Content {
+		t.Fatalf("week1 changed after rollback: before=%s/%d after=%s/%d", week1.PlanID, week1.Revision, afterPlan.PlanID, afterPlan.Revision)
+	}
+	afterWorkouts, err := st.ListPlanSessions(ctx, uid, week1Start, "2026-01-25")
+	if err != nil || len(afterWorkouts) != 1 || afterWorkouts[0].PlanID == nil || *afterWorkouts[0].PlanID != week1.PlanID {
+		t.Fatalf("week1 workouts changed after rollback: %+v err=%v", afterWorkouts, err)
+	}
+	week2After, err := st.GetActiveWeeklyPlan(ctx, uid, week2Start)
+	if err != nil || week2After == nil || week2After.PlanID != week2.PlanID || week2After.Revision != week2.Revision {
+		t.Fatalf("week2 changed after rollback: %+v err=%v", week2After, err)
+	}
+}
+
+// 中途物化失败（非法 session 日期）：整批回滚，前一整周也不落库。
+func TestApplyStructuredWeeklyPlansBatchRollsBackOnMaterializationFailure(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	migrateBatchWeeklyPlans(t, st)
+	uid := uuid.NewString()
+	master := uuid.NewString()
+
+	items := []WeeklyPlanBatchItem{
+		{WeekStart: "2026-02-02", Content: batchWeeklyContent("2026-02-02", "2026-02-02", "正常周")},
+		{WeekStart: "2026-02-09", Content: `{"week_name":"2026-02-09","sessions":[{"date":"not-a-date"}]}`},
+	}
+	if _, err := st.ApplyStructuredWeeklyPlansBatch(ctx, uid, items, master); err == nil {
+		t.Fatalf("batch must fail on unparsable session date")
+	}
+	plan, err := st.GetActiveWeeklyPlan(ctx, uid, "2026-02-02")
+	if err != nil || plan != nil {
+		t.Fatalf("first week leaked after rollback: %+v err=%v", plan, err)
+	}
+	workouts, err := st.ListPlanSessions(ctx, uid, "2026-02-02", "2026-02-15")
+	if err != nil || len(workouts) != 0 {
+		t.Fatalf("workouts leaked after rollback: %+v err=%v", workouts, err)
+	}
+}
+
+// 锁内异计划拒绝：即使 revision 匹配，别的 master plan 的周也不得替换。
+func TestApplyStructuredWeeklyPlansBatchRejectsOtherMasterPlanWeek(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	migrateBatchWeeklyPlans(t, st)
+	uid := uuid.NewString()
+	master := uuid.NewString()
+	otherMaster := uuid.NewString()
+	weekStart := "2026-03-02"
+	existing := seedBatchWeek(t, st, uid, otherMaster, weekStart, "2026-03-02", "别的计划")
+
+	items := []WeeklyPlanBatchItem{{
+		WeekStart: weekStart, Content: batchWeeklyContent(weekStart, "2026-03-03", "试图替换"),
+		Replacement: &WeeklyPlanReplacement{PlanID: existing.PlanID, Revision: existing.Revision},
+	}}
+	_, err := st.ApplyStructuredWeeklyPlansBatch(ctx, uid, items, master)
+	if !errors.Is(err, ErrWeeklyPlanMasterPlanConflict) {
+		t.Fatalf("batch err=%v want ErrWeeklyPlanMasterPlanConflict", err)
+	}
+	after, err := st.GetActiveWeeklyPlan(ctx, uid, weekStart)
+	if err != nil || after == nil || after.PlanID != existing.PlanID {
+		t.Fatalf("cross-plan week changed: %+v err=%v", after, err)
+	}
+}
+
+// 成功路径：两整周一起提交，各自物化 workout 并归链同一 master plan。
+func TestApplyStructuredWeeklyPlansBatchCommitsAllWeeksTogether(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	migrateBatchWeeklyPlans(t, st)
+	uid := uuid.NewString()
+	master := uuid.NewString()
+	items := []WeeklyPlanBatchItem{
+		{WeekStart: "2026-04-06", Content: batchWeeklyContent("2026-04-06", "2026-04-06", "第一周")},
+		{WeekStart: "2026-04-13", Content: batchWeeklyContent("2026-04-13", "2026-04-13", "第二周")},
+	}
+	results, err := st.ApplyStructuredWeeklyPlansBatch(ctx, uid, items, master)
+	if err != nil {
+		t.Fatalf("batch: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("results=%+v", results)
+	}
+	for index, result := range results {
+		if result.WeekStart != items[index].WeekStart || result.Revision != 1 || result.Replaced || result.PlanID == "" {
+			t.Fatalf("result[%d]=%+v", index, result)
+		}
+	}
+	for _, weekStart := range []string{"2026-04-06", "2026-04-13"} {
+		plan, err := st.GetActiveWeeklyPlan(ctx, uid, weekStart)
+		if err != nil || plan == nil || plan.MasterPlanID == nil || *plan.MasterPlanID != master {
+			t.Fatalf("week %s=%+v err=%v", weekStart, plan, err)
+		}
+	}
+	workouts, err := st.ListPlanSessions(ctx, uid, "2026-04-06", "2026-04-19")
+	if err != nil || len(workouts) != 2 {
+		t.Fatalf("workouts=%d err=%v", len(workouts), err)
 	}
 }

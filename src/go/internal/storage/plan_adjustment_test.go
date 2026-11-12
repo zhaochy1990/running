@@ -1,7 +1,10 @@
 package storage
 
 import (
+	"context"
 	"errors"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/google/uuid"
@@ -173,5 +176,301 @@ func TestSupersedePendingAdjustments(t *testing.T) {
 	again, err := st.SupersedePendingAdjustments(ctx, user)
 	if err != nil || again != 0 {
 		t.Fatalf("idempotent re-run: count=%d err=%v", again, err)
+	}
+}
+
+// ── accept transaction (#951) ───────────────────────────────────────────────
+
+// accept 成功：所有周变更 + workout 物化 + pending → accepted 同一事务提交。
+func TestAcceptPlanAdjustmentAppliesWeeksAndStatusInOneTransaction(t *testing.T) {
+	st := openTestStore(t)
+	ctx := t.Context()
+	if err := st.AutoMigratePlanAdjustment(ctx); err != nil {
+		t.Fatalf("migrate plan_adjustment: %v", err)
+	}
+	migrateBatchWeeklyPlans(t, st)
+	uid := uuid.NewString()
+	master := uuid.NewString()
+	payload := `{"weekly_docs":[{"week_name":"2026-03-09_03-15"}]}`
+	row, err := st.UpsertPendingAdjustment(ctx, uid, master, "2026-02-09", "no_time", "问句", payload)
+	if err != nil {
+		t.Fatalf("upsert pending: %v", err)
+	}
+	replacedWeek := seedBatchWeek(t, st, uid, master, "2026-03-09", "2026-03-09", "原课")
+	items := []WeeklyPlanBatchItem{
+		{WeekStart: "2026-03-09", Content: batchWeeklyContent("2026-03-09", "2026-03-10", "调整后"),
+			Replacement: &WeeklyPlanReplacement{PlanID: replacedWeek.PlanID, Revision: replacedWeek.Revision}},
+		{WeekStart: "2026-03-16", Content: batchWeeklyContent("2026-03-16", "2026-03-16", "新增周")},
+	}
+	results, err := st.AcceptPlanAdjustment(ctx, uid, row.ID, payload, items)
+	if err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+	if len(results) != 2 || results[0].Revision != 2 || !results[0].Replaced || results[1].Revision != 1 {
+		t.Fatalf("results=%+v", results)
+	}
+	accepted, err := st.GetAdjustmentByID(ctx, uid, row.ID)
+	if err != nil || accepted.Status != PlanAdjustmentStatusAccepted {
+		t.Fatalf("status=%+v err=%v", accepted, err)
+	}
+	for _, weekStart := range []string{"2026-03-09", "2026-03-16"} {
+		plan, err := st.GetActiveWeeklyPlan(ctx, uid, weekStart)
+		if err != nil || plan == nil || plan.MasterPlanID == nil || *plan.MasterPlanID != master {
+			t.Fatalf("week %s=%+v err=%v", weekStart, plan, err)
+		}
+	}
+	workouts, err := st.ListPlanSessions(ctx, uid, "2026-03-09", "2026-03-22")
+	if err != nil || len(workouts) != 2 {
+		t.Fatalf("workouts=%d err=%v", len(workouts), err)
+	}
+}
+
+// payload 在用户同意后被并发 choose 改掉：拒绝应用旧提案，周不变、提案仍 pending。
+func TestAcceptPlanAdjustmentRejectsChangedPayload(t *testing.T) {
+	st := openTestStore(t)
+	ctx := t.Context()
+	if err := st.AutoMigratePlanAdjustment(ctx); err != nil {
+		t.Fatalf("migrate plan_adjustment: %v", err)
+	}
+	migrateBatchWeeklyPlans(t, st)
+	uid := uuid.NewString()
+	master := uuid.NewString()
+	row, err := st.UpsertPendingAdjustment(ctx, uid, master, "2026-05-25", "no_time", "问句", `{"v":1}`)
+	if err != nil {
+		t.Fatalf("upsert pending: %v", err)
+	}
+	items := []WeeklyPlanBatchItem{{WeekStart: "2026-06-01", Content: batchWeeklyContent("2026-06-01", "2026-06-01", "旧提案周")}}
+	if _, err := st.AcceptPlanAdjustment(ctx, uid, row.ID, `{"v":2}`, items); !errors.Is(err, ErrAdjustmentState) {
+		t.Fatalf("accept err=%v want ErrAdjustmentState", err)
+	}
+	if plan, err := st.GetActiveWeeklyPlan(ctx, uid, "2026-06-01"); err != nil || plan != nil {
+		t.Fatalf("week leaked: %+v err=%v", plan, err)
+	}
+	stored, err := st.GetAdjustmentByID(ctx, uid, row.ID)
+	if err != nil || stored.Status != PlanAdjustmentStatusPending || stored.Payload == nil || *stored.Payload != `{"v":1}` {
+		t.Fatalf("row changed: %+v err=%v", stored, err)
+	}
+}
+
+// accepted 状态更新失败（DB 触发器模拟）：所有周回滚，提案保持 pending。
+func TestAcceptPlanAdjustmentRollsBackWeeksWhenStatusTransitionFails(t *testing.T) {
+	st := openTestStore(t)
+	ctx := t.Context()
+	if err := st.AutoMigratePlanAdjustment(ctx); err != nil {
+		t.Fatalf("migrate plan_adjustment: %v", err)
+	}
+	migrateBatchWeeklyPlans(t, st)
+	uid := uuid.NewString()
+	master := uuid.NewString()
+	payload := `{"v":1}`
+	row, err := st.UpsertPendingAdjustment(ctx, uid, master, "2026-07-20", "no_time", "问句", payload)
+	if err != nil {
+		t.Fatalf("upsert pending: %v", err)
+	}
+	trigger := "trg_accept_fail_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+	create := "CREATE TRIGGER " + trigger + " BEFORE UPDATE ON plan_adjustment FOR EACH ROW " +
+		"BEGIN IF NEW.status = 'accepted' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'induced accept failure'; END IF; END"
+	// CREATE TRIGGER is unsupported by the prepared-statement protocol, so take
+	// the bare *sql.DB (no GORM PrepareStmt wrapping) for this DDL.
+	sqlDB, err := st.db.DB()
+	if err != nil {
+		t.Fatalf("sql db: %v", err)
+	}
+	if _, err := sqlDB.ExecContext(ctx, create); err != nil {
+		t.Fatalf("create failure trigger: %v", err)
+	}
+	t.Cleanup(func() { _, _ = sqlDB.ExecContext(context.Background(), "DROP TRIGGER IF EXISTS "+trigger) })
+
+	items := []WeeklyPlanBatchItem{{WeekStart: "2026-07-27", Content: batchWeeklyContent("2026-07-27", "2026-07-27", "应回滚周")}}
+	if _, err := st.AcceptPlanAdjustment(ctx, uid, row.ID, payload, items); err == nil {
+		t.Fatalf("accept must fail when the status update is rejected")
+	}
+	if plan, err := st.GetActiveWeeklyPlan(ctx, uid, "2026-07-27"); err != nil || plan != nil {
+		t.Fatalf("week leaked after failed status: %+v err=%v", plan, err)
+	}
+	workouts, err := st.ListPlanSessions(ctx, uid, "2026-07-27", "2026-08-02")
+	if err != nil || len(workouts) != 0 {
+		t.Fatalf("workouts leaked after failed status: %+v err=%v", workouts, err)
+	}
+	stored, err := st.GetAdjustmentByID(ctx, uid, row.ID)
+	if err != nil || stored.Status != PlanAdjustmentStatusPending {
+		t.Fatalf("proposal status=%+v err=%v", stored, err)
+	}
+}
+
+// 并发双 accept：行锁 + 锁内状态校验保证只有一个成功，周只落库一次。
+func TestAcceptPlanAdjustmentConcurrentDoubleAcceptAppliesOnce(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.AutoMigratePlanAdjustment(ctx); err != nil {
+		t.Fatalf("migrate plan_adjustment: %v", err)
+	}
+	migrateBatchWeeklyPlans(t, st)
+	uid := uuid.NewString()
+	master := uuid.NewString()
+	payload := `{"v":1}`
+	row, err := st.UpsertPendingAdjustment(ctx, uid, master, "2026-08-03", "no_time", "问句", payload)
+	if err != nil {
+		t.Fatalf("upsert pending: %v", err)
+	}
+	items := []WeeklyPlanBatchItem{{WeekStart: "2026-08-10", Content: batchWeeklyContent("2026-08-10", "2026-08-10", "并发周")}}
+
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := st.AcceptPlanAdjustment(ctx, uid, row.ID, payload, items)
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	succeeded, conflicts := 0, 0
+	for err := range errs {
+		switch {
+		case err == nil:
+			succeeded++
+		case errors.Is(err, ErrAdjustmentState):
+			conflicts++
+		default:
+			t.Fatalf("unexpected accept error: %v", err)
+		}
+	}
+	if succeeded != 1 || conflicts != 1 {
+		t.Fatalf("succeeded=%d conflicts=%d, want 1/1", succeeded, conflicts)
+	}
+	stored, err := st.GetAdjustmentByID(ctx, uid, row.ID)
+	if err != nil || stored.Status != PlanAdjustmentStatusAccepted {
+		t.Fatalf("status=%+v err=%v", stored, err)
+	}
+	plan, err := st.GetActiveWeeklyPlan(ctx, uid, "2026-08-10")
+	if err != nil || plan == nil || plan.Revision != 1 {
+		t.Fatalf("week=%+v err=%v", plan, err)
+	}
+	workouts, err := st.ListPlanSessions(ctx, uid, "2026-08-10", "2026-08-16")
+	if err != nil || len(workouts) != 1 {
+		t.Fatalf("workouts=%d err=%v", len(workouts), err)
+	}
+}
+
+// 并发 accept vs dismiss：只有一方成功；dismiss 赢了就绝不能留下 accept 的周。
+func TestAcceptPlanAdjustmentConcurrentDismissKeepsOutcomeConsistent(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.AutoMigratePlanAdjustment(ctx); err != nil {
+		t.Fatalf("migrate plan_adjustment: %v", err)
+	}
+	migrateBatchWeeklyPlans(t, st)
+	uid := uuid.NewString()
+	master := uuid.NewString()
+	payload := `{"v":1}`
+	row, err := st.UpsertPendingAdjustment(ctx, uid, master, "2026-08-17", "no_time", "问句", payload)
+	if err != nil {
+		t.Fatalf("upsert pending: %v", err)
+	}
+	items := []WeeklyPlanBatchItem{{WeekStart: "2026-08-24", Content: batchWeeklyContent("2026-08-24", "2026-08-24", "竞态周")}}
+
+	start := make(chan struct{})
+	var acceptErr, dismissErr error
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		<-start
+		_, acceptErr = st.AcceptPlanAdjustment(ctx, uid, row.ID, payload, items)
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		dismissErr = st.SetAdjustmentStatus(ctx, uid, row.ID, PlanAdjustmentStatusDismissed)
+	}()
+	close(start)
+	wg.Wait()
+
+	if !((acceptErr == nil && errors.Is(dismissErr, ErrAdjustmentState)) ||
+		(errors.Is(acceptErr, ErrAdjustmentState) && dismissErr == nil)) {
+		t.Fatalf("accept err=%v dismiss err=%v, want exactly one winner", acceptErr, dismissErr)
+	}
+	stored, err := st.GetAdjustmentByID(ctx, uid, row.ID)
+	if err != nil {
+		t.Fatalf("load row: %v", err)
+	}
+	plan, err := st.GetActiveWeeklyPlan(ctx, uid, "2026-08-24")
+	if err != nil {
+		t.Fatalf("load week: %v", err)
+	}
+	switch stored.Status {
+	case PlanAdjustmentStatusAccepted:
+		if plan == nil || plan.Revision != 1 {
+			t.Fatalf("accepted but week=%+v", plan)
+		}
+	case PlanAdjustmentStatusDismissed:
+		if plan != nil {
+			t.Fatalf("dismissed but proposal week was applied: %+v", plan)
+		}
+	default:
+		t.Fatalf("unexpected final status %s", stored.Status)
+	}
+}
+
+// #952：所有周都被保留（没有可安全替换的周）时，accept 仍只把提案置为
+// accepted，items 为空也必须成功（这是 API 层的正常路径，不是非法批次）。
+func TestAcceptPlanAdjustmentWithNoWeeksStillClosesProposal(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.AutoMigratePlanAdjustment(ctx); err != nil {
+		t.Fatalf("migrate plan_adjustment: %v", err)
+	}
+	migrateBatchWeeklyPlans(t, st)
+	uid := uuid.NewString()
+	master := uuid.NewString()
+	payload := `{"v":1}`
+	row, err := st.UpsertPendingAdjustment(ctx, uid, master, "2026-09-21", "no_time", "问句", payload)
+	if err != nil {
+		t.Fatalf("upsert pending: %v", err)
+	}
+	results, err := st.AcceptPlanAdjustment(ctx, uid, row.ID, payload, nil)
+	if err != nil || len(results) != 0 {
+		t.Fatalf("accept with no weeks: results=%+v err=%v", results, err)
+	}
+	stored, err := st.GetAdjustmentByID(ctx, uid, row.ID)
+	if err != nil || stored.Status != PlanAdjustmentStatusAccepted {
+		t.Fatalf("proposal status=%+v err=%v", stored, err)
+	}
+}
+
+// accept 锁内异计划拒绝：即使 revision 匹配也不得替换别的 master plan 的周。
+func TestAcceptPlanAdjustmentRejectsOtherMasterPlanWeek(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.AutoMigratePlanAdjustment(ctx); err != nil {
+		t.Fatalf("migrate plan_adjustment: %v", err)
+	}
+	migrateBatchWeeklyPlans(t, st)
+	uid := uuid.NewString()
+	master := uuid.NewString()
+	otherMaster := uuid.NewString()
+	payload := `{"v":1}`
+	row, err := st.UpsertPendingAdjustment(ctx, uid, master, "2026-09-07", "no_time", "问句", payload)
+	if err != nil {
+		t.Fatalf("upsert pending: %v", err)
+	}
+	existing := seedBatchWeek(t, st, uid, otherMaster, "2026-09-14", "2026-09-14", "别的计划")
+	items := []WeeklyPlanBatchItem{{
+		WeekStart: "2026-09-14", Content: batchWeeklyContent("2026-09-14", "2026-09-15", "试图替换"),
+		Replacement: &WeeklyPlanReplacement{PlanID: existing.PlanID, Revision: existing.Revision},
+	}}
+	if _, err := st.AcceptPlanAdjustment(ctx, uid, row.ID, payload, items); !errors.Is(err, ErrWeeklyPlanMasterPlanConflict) {
+		t.Fatalf("accept err=%v want ErrWeeklyPlanMasterPlanConflict", err)
+	}
+	after, err := st.GetActiveWeeklyPlan(ctx, uid, "2026-09-14")
+	if err != nil || after == nil || after.PlanID != existing.PlanID {
+		t.Fatalf("cross-plan week changed: %+v err=%v", after, err)
+	}
+	stored, err := st.GetAdjustmentByID(ctx, uid, row.ID)
+	if err != nil || stored.Status != PlanAdjustmentStatusPending {
+		t.Fatalf("proposal status=%+v err=%v", stored, err)
 	}
 }

@@ -37,7 +37,7 @@ export async function chooseAdjustment(
   return res.adjustment;
 }
 
-/** 同意调整：服务端逐周 batch-apply payload 的 weekly docs 并标记 accepted。 */
+/** 同意调整：服务端在同一事务里整批应用 payload 的 weekly docs 并标记 accepted。 */
 export function acceptAdjustment(
   userId: string,
   adjustmentId: string,

@@ -101,6 +101,26 @@ func (f *fakeWeeklyPlanStore) ApplyStructuredWeeklyPlan(
 	return &created, replaced, nil
 }
 
+func (f *fakeWeeklyPlanStore) ApplyStructuredWeeklyPlansBatch(
+	ctx context.Context, userID string, items []storage.WeeklyPlanBatchItem, masterPlanID string,
+) ([]storage.WeeklyPlanBatchResult, error) {
+	saved := append([]storage.WeeklyPlan(nil), f.plans[userID]...)
+	options := storage.WeeklyPlanApplyOptions{MasterPlanID: &masterPlanID, ContinueRevision: true}
+	results := make([]storage.WeeklyPlanBatchResult, 0, len(items))
+	for _, item := range items {
+		created, replaced, err := f.ApplyStructuredWeeklyPlan(ctx, userID, item.WeekStart, item.Content, item.Replacement, options)
+		if err != nil {
+			f.plans[userID] = saved
+			return nil, err
+		}
+		results = append(results, storage.WeeklyPlanBatchResult{
+			WeekStart: created.WeekStart, PlanID: created.PlanID,
+			Revision: created.Revision, Replaced: replaced != nil,
+		})
+	}
+	return results, nil
+}
+
 func (f *fakeWeeklyPlanStore) GetWeeklyFeedback(_ context.Context, userID, weekStart string) (*storage.WeeklyFeedback, error) {
 	if f.feedbackErr != nil {
 		return nil, f.feedbackErr

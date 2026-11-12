@@ -242,6 +242,17 @@ jobs:
           go test ./internal/storage/...
           -run 'TestProviderEvents'
           -count=1 -v
+      # Weekly batch-apply and adjustment-accept roll back as one transaction
+      # (#951): the all-or-nothing guarantee is a SQL-level property, so only a
+      # real MySQL (with rollback on a conflicted week / failed status update)
+      # exercises it.
+      - name: Weekly batch + adjustment accept transaction tests (MySQL)
+        env:
+          STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
+        run: >-
+          go test ./internal/storage/...
+          -run 'TestApplyStructuredWeeklyPlansBatch|TestAcceptPlanAdjustment'
+          -count=1 -v
       # The sync-user enumeration and orphan audit are cross-schema SQL
       # (devops#661/#663) — the audit joins auth.auth_users, so the test
       # creates a minimal auth mirror on this job's empty MySQL.
