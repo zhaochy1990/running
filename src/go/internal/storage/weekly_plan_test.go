@@ -440,42 +440,70 @@ func TestAutoMigrateWeeklyPlanConvergesLegacyRows(t *testing.T) {
 	}
 }
 
-// #858 换计划归档：异链（含 NULL 链）周行直接删除，同链周行保留——
-// 换计划后旧周课无意义，且 uk(user_id, week_start) 会挡新计划滚动批写同周。
-func TestArchiveWeeklyPlansExcept(t *testing.T) {
+// #858 换计划清理：只删当前/未来周的异链（含 NULL 链）行；已经结束的历史周
+// 无论归链还是 legacy 未归链都保留，物化课表也不受清理影响。
+func TestDeleteStaleFutureWeeklyPlansKeepsHistory(t *testing.T) {
 	store := openTestStore(t)
 	migrateWeeklyPlan(t, store)
 	userID := uuid.NewString()
 	otherUser := uuid.NewString()
 	newPlan := uuid.NewString()
 	oldPlan := uuid.NewString()
+	// 2026-11-12 是周四，当前上海自然周从 2026-11-09（周一）起算。
+	now := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
 
 	link := func(plan string) *string { return &plan }
-	sameChain := weeklyPlanRow(userID, "2026-08-10", WeeklyPlanStatusActive)
-	sameChain.MasterPlanID = link(newPlan)
-	crossChain := weeklyPlanRow(userID, "2026-08-17", WeeklyPlanStatusActive)
-	crossChain.MasterPlanID = link(oldPlan)
-	unlinked := weeklyPlanRow(userID, "2026-08-24", WeeklyPlanStatusActive)
-	unlinked.MasterPlanID = nil
-	otherUserRow := weeklyPlanRow(otherUser, "2026-08-17", WeeklyPlanStatusActive)
-	otherUserRow.MasterPlanID = link(oldPlan)
-	for _, row := range []*WeeklyPlan{sameChain, crossChain, unlinked, otherUserRow} {
+	rows := map[string]*WeeklyPlan{}
+	add := func(key, user, weekStart string, plan *string) *WeeklyPlan {
+		row := weeklyPlanRow(user, weekStart, WeeklyPlanStatusActive)
+		row.MasterPlanID = plan
 		seedWeeklyPlan(t, store, row)
+		rows[key] = row
+		return row
+	}
+	// 历史周：旧链、未归链都必须保留。
+	oldHistory := add("oldHistory", userID, "2026-11-02", link(oldPlan))
+	add("legacyHistory", userID, "2026-10-26", nil)
+	// 当前周旧链、未来周未归链：删。
+	add("currentOld", userID, "2026-11-09", link(oldPlan))
+	add("futureLegacy", userID, "2026-11-16", nil)
+	// 新计划的当前/未来周行：保留。
+	newFuture := add("newFuture", userID, "2026-11-23", link(newPlan))
+	// 其他用户的行不受影响。
+	add("otherUser", otherUser, "2026-11-09", link(oldPlan))
+
+	// 历史周已经物化过课表：清理 weekly 行不得连带删除物化数据。
+	if err := store.AutoMigrateWorkout(context.Background()); err != nil {
+		t.Fatalf("automigrate workout: %v", err)
+	}
+	sessionIndex := 0
+	workout := &Workout{
+		WorkoutID: uuid.NewString(), UserID: userID, Date: "2026-11-03",
+		Source: WorkoutSourceWeekly, Kind: "run", Name: "历史课",
+		Status: WorkoutStatusActive, PlanID: link(oldHistory.PlanID),
+		SessionIndex: &sessionIndex, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.db.WithContext(context.Background()).Create(workout).Error; err != nil {
+		t.Fatalf("seed workout: %v", err)
 	}
 
-	removed, err := store.ArchiveWeeklyPlansExcept(context.Background(), userID, newPlan)
+	removed, err := store.DeleteStaleFutureWeeklyPlans(context.Background(), userID, newPlan, now)
 	if err != nil {
-		t.Fatalf("archive: %v", err)
+		t.Fatalf("cleanup: %v", err)
 	}
 	if removed != 2 {
-		t.Fatalf("removed=%d want 2 (cross-chain + unlinked)", removed)
+		t.Fatalf("removed=%d want 2 (current cross-chain + future unlinked)", removed)
 	}
-	var rows []WeeklyPlan
-	if err := store.db.WithContext(context.Background()).Where("user_id = ?", userID).Find(&rows).Error; err != nil {
+	var kept []WeeklyPlan
+	if err := store.db.WithContext(context.Background()).Where("user_id = ?", userID).Find(&kept).Error; err != nil {
 		t.Fatalf("read rows: %v", err)
 	}
-	if len(rows) != 1 || rows[0].PlanID != sameChain.PlanID {
-		t.Fatalf("rows=%+v, want only the same-chain row", rows)
+	keptIDs := map[string]bool{}
+	for _, row := range kept {
+		keptIDs[row.PlanID] = true
+	}
+	if len(kept) != 3 || !keptIDs[rows["oldHistory"].PlanID] || !keptIDs[rows["legacyHistory"].PlanID] || !keptIDs[newFuture.PlanID] {
+		t.Fatalf("kept rows=%+v, want old history + legacy history + new-plan future", kept)
 	}
 	// 其他用户的行不受影响
 	var otherRows []WeeklyPlan
@@ -485,13 +513,65 @@ func TestArchiveWeeklyPlansExcept(t *testing.T) {
 	if len(otherRows) != 1 {
 		t.Fatalf("other user rows=%d want 1", len(otherRows))
 	}
+	// 历史物化安排仍在且保持可用。
+	var sessions []Workout
+	if err := store.db.WithContext(context.Background()).
+		Where("user_id = ? AND workout_id = ? AND status = ?", userID, workout.WorkoutID, WorkoutStatusActive).
+		Find(&sessions).Error; err != nil {
+		t.Fatalf("read workout: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("historical workout removed by weekly cleanup: %+v", sessions)
+	}
 	// 幂等：重复执行无行可删
-	again, err := store.ArchiveWeeklyPlansExcept(context.Background(), userID, newPlan)
+	again, err := store.DeleteStaleFutureWeeklyPlans(context.Background(), userID, newPlan, now)
 	if err != nil || again != 0 {
 		t.Fatalf("idempotent re-run: removed=%d err=%v", again, err)
 	}
 	// 非法 keep id 直接报错（防误删）
-	if _, err := store.ArchiveWeeklyPlansExcept(context.Background(), userID, "not-a-uuid"); err == nil {
+	if _, err := store.DeleteStaleFutureWeeklyPlans(context.Background(), userID, "not-a-uuid", now); err == nil {
 		t.Fatalf("invalid keep id must fail")
+	}
+}
+
+// 周界按 Asia/Shanghai 自然周：UTC 周日 15:59 还是上海周日 23:59（当前周从
+// 11-02 起），UTC 周日 16:00 已是上海周一 00:00（当前周从 11-09 起）。
+func TestDeleteStaleFutureWeeklyPlansShanghaiWeekBoundary(t *testing.T) {
+	store := openTestStore(t)
+	migrateWeeklyPlan(t, store)
+	userID := uuid.NewString()
+	newPlan := uuid.NewString()
+	oldPlan := uuid.NewString()
+
+	seed := func() string {
+		row := weeklyPlanRow(userID, "2026-11-02", WeeklyPlanStatusActive)
+		row.MasterPlanID = &oldPlan
+		seedWeeklyPlan(t, store, row)
+		return row.PlanID
+	}
+
+	// 上海周日 23:59：11-02 仍是当前周，旧链行被清理。
+	seed()
+	removed, err := store.DeleteStaleFutureWeeklyPlans(
+		context.Background(), userID, newPlan, time.Date(2026, 11, 8, 15, 59, 0, 0, time.UTC))
+	if err != nil || removed != 1 {
+		t.Fatalf("sunday 23:59 cleanup: removed=%d err=%v", removed, err)
+	}
+	// 上海周一 00:00：11-02 变成历史周，旧链行保留；11-09 是当前周，被清理。
+	historyID := seed()
+	current := weeklyPlanRow(userID, "2026-11-09", WeeklyPlanStatusActive)
+	current.MasterPlanID = &oldPlan
+	seedWeeklyPlan(t, store, current)
+	removed, err = store.DeleteStaleFutureWeeklyPlans(
+		context.Background(), userID, newPlan, time.Date(2026, 11, 8, 16, 0, 0, 0, time.UTC))
+	if err != nil || removed != 1 {
+		t.Fatalf("monday 00:00 cleanup: removed=%d err=%v", removed, err)
+	}
+	var rows []WeeklyPlan
+	if err := store.db.WithContext(context.Background()).Where("user_id = ?", userID).Find(&rows).Error; err != nil {
+		t.Fatalf("read rows: %v", err)
+	}
+	if len(rows) != 1 || rows[0].PlanID != historyID {
+		t.Fatalf("rows=%+v, want only the 11-02 history row", rows)
 	}
 }

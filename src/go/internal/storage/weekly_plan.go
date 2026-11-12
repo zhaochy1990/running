@@ -9,6 +9,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 )
 
 // ErrWeeklyPlanExists is returned when a caller attempts to apply a plan
@@ -103,15 +105,21 @@ func (s *Store) ListActiveWeeklyPlans(ctx context.Context, userID string) ([]Wee
 	return plans, nil
 }
 
-// ArchiveWeeklyPlansExcept removes the user's weekly rows that are NOT linked
-// to keepMasterPlanID (#858 换计划归档). Despite the name (kept from the
-// ticket's vocabulary), the rows are DELETED, not status-flipped: weekly_plan
-// has converged to a single 'active' status with UNIQUE(user_id, week_start)
-// (#585), so a stale row from the replaced plan is meaningless after the plan
-// change and would block the new plan's rolling batch from writing the same
-// week. Rows with a NULL master_plan_id (legacy unlinked rows) are removed for
-// the same reason. Returns the number of rows removed.
-func (s *Store) ArchiveWeeklyPlansExcept(ctx context.Context, userID, keepMasterPlanID string) (int64, error) {
+// DeleteStaleFutureWeeklyPlans removes the user's weekly rows of the CURRENT
+// AND FUTURE Shanghai weeks that are NOT linked to keepMasterPlanID (#858 换计划
+// 清理). Earlier weeks are finished training history and stay untouched no
+// matter which plan they belong to (including legacy rows with a NULL
+// master_plan_id).
+//
+// The delete is physical, not a status flip: weekly_plan converged to a single
+// 'active' status with UNIQUE(user_id, week_start) (#585), so a stale future
+// row from the replaced plan would block the new plan's rolling batch from
+// writing that week. The week boundary is the Monday of the Shanghai natural
+// week containing now (UTC+8, not UTC and not the server's local zone).
+// Returns the number of rows removed.
+func (s *Store) DeleteStaleFutureWeeklyPlans(
+	ctx context.Context, userID, keepMasterPlanID string, now time.Time,
+) (int64, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
 		return 0, err
@@ -119,11 +127,13 @@ func (s *Store) ArchiveWeeklyPlansExcept(ctx context.Context, userID, keepMaster
 	if _, err := uuid.Parse(keepMasterPlanID); err != nil {
 		return 0, fmt.Errorf("storage: invalid keep master plan id: %w", err)
 	}
+	cutoff := timefmt.ShanghaiWeekStart(now).Format("2006-01-02")
 	result := s.db.WithContext(ctx).
-		Where("user_id = ? AND (master_plan_id IS NULL OR master_plan_id <> ?)", uid, keepMasterPlanID).
+		Where("user_id = ? AND week_start >= ? AND (master_plan_id IS NULL OR master_plan_id <> ?)",
+			uid, cutoff, keepMasterPlanID).
 		Delete(&WeeklyPlan{})
 	if result.Error != nil {
-		return 0, fmt.Errorf("storage: archive weekly plans except %s: %w", keepMasterPlanID, result.Error)
+		return 0, fmt.Errorf("storage: delete stale future weekly plans except %s: %w", keepMasterPlanID, result.Error)
 	}
 	return result.RowsAffected, nil
 }

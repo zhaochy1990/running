@@ -16,8 +16,9 @@ import (
 //   - 读合并（mergeWeeklyPlanWeeks 纯函数 + GET current 端到端）：weekly 行覆盖
 //     快照同周、快照后追加（week_index 排序）、缺失字段回退快照原值、
 //     weekly 行缺 week_index 时按 week_start 相对 start_date 推算；
-//   - 换计划归档（apply / applyFromContent / update）：落新计划后异链 weekly 行
-//     清理（ArchiveWeeklyPlansExcept）+ pending 提案整体 supersede。
+//   - 换计划清理（apply / applyFromContent / update）：落新计划后当前及未来周的
+//     异链 weekly 行清理（DeleteStaleFutureWeeklyPlans）+ pending 提案整体
+//     supersede；历史周不在清理范围。
 
 func weeklyRow(masterPlanID, weekStart, content string) storage.WeeklyPlan {
 	return storage.WeeklyPlan{
@@ -227,7 +228,7 @@ func applyBodyWithGoal(t *testing.T, extra string) string {
 	return `{"content":` + string(raw) + `,` + extra + `}`
 }
 
-func TestApplyFromContent_ArchivesReplacedSeasonArtifacts(t *testing.T) {
+func TestApplyFromContent_CleansReplacedSeasonArtifacts(t *testing.T) {
 	h := newMPHarness(t)
 	uid := uuid.NewString()
 	body := applyBodyWithGoal(t, `"apply_token":"`+uuid.NewString()+`"`)
@@ -236,15 +237,15 @@ func TestApplyFromContent_ArchivesReplacedSeasonArtifacts(t *testing.T) {
 		t.Fatalf("apply status=%d body=%s", w.Code, w.Body.String())
 	}
 	created := h.store.current[uid]
-	if len(h.store.archiveCalls) != 1 || h.store.archiveCalls[0] != created.PlanID {
-		t.Fatalf("archive calls=%v want new plan %s", h.store.archiveCalls, created.PlanID)
+	if len(h.store.cleanupCalls) != 1 || h.store.cleanupCalls[0] != created.PlanID {
+		t.Fatalf("cleanup calls=%v want new plan %s", h.store.cleanupCalls, created.PlanID)
 	}
 	if h.store.supersedeUser != uid {
 		t.Fatalf("supersede user=%s want %s", h.store.supersedeUser, uid)
 	}
 }
 
-func TestAdminApply_ArchivesReplacedSeasonArtifacts(t *testing.T) {
+func TestAdminApply_CleansReplacedSeasonArtifacts(t *testing.T) {
 	h := newMPHarness(t)
 	uid := uuid.NewString()
 	w := h.doBody(http.MethodPost, "/api/users/"+uid+"/master-plan", h.bearerWithClaims(t, uid, testAdminAudience, "admin"), strings.NewReader(applyBodyWithGoal(t, `"replace_existing":false`)))
@@ -252,15 +253,15 @@ func TestAdminApply_ArchivesReplacedSeasonArtifacts(t *testing.T) {
 		t.Fatalf("apply status=%d body=%s", w.Code, w.Body.String())
 	}
 	created := h.store.current[uid]
-	if len(h.store.archiveCalls) != 1 || h.store.archiveCalls[0] != created.PlanID {
-		t.Fatalf("archive calls=%v", h.store.archiveCalls)
+	if len(h.store.cleanupCalls) != 1 || h.store.cleanupCalls[0] != created.PlanID {
+		t.Fatalf("cleanup calls=%v", h.store.cleanupCalls)
 	}
 	if h.store.supersedeUser != uid {
 		t.Fatalf("supersede user=%s", h.store.supersedeUser)
 	}
 }
 
-func TestAdminUpdate_ArchivesReplacedSeasonArtifacts(t *testing.T) {
+func TestAdminUpdate_CleansReplacedSeasonArtifacts(t *testing.T) {
 	h := newMPHarness(t)
 	uid := uuid.NewString()
 	active := &storage.MasterPlan{
@@ -276,18 +277,18 @@ func TestAdminUpdate_ArchivesReplacedSeasonArtifacts(t *testing.T) {
 		t.Fatalf("update status=%d body=%s", w.Code, w.Body.String())
 	}
 	// 原地更新 keep=同一 plan id（同链周行保留），pending 仍整体 supersede
-	if len(h.store.archiveCalls) != 1 || h.store.archiveCalls[0] != active.PlanID {
-		t.Fatalf("archive calls=%v", h.store.archiveCalls)
+	if len(h.store.cleanupCalls) != 1 || h.store.cleanupCalls[0] != active.PlanID {
+		t.Fatalf("cleanup calls=%v", h.store.cleanupCalls)
 	}
 	if h.store.supersedeUser != uid {
 		t.Fatalf("supersede user=%s", h.store.supersedeUser)
 	}
 }
 
-func TestApplyFromContent_ArchiveErrorIs500(t *testing.T) {
+func TestApplyFromContent_CleanupErrorIs500(t *testing.T) {
 	h := newMPHarness(t)
 	uid := uuid.NewString()
-	h.store.archiveErr = errFake
+	h.store.cleanupErr = errFake
 	body := applyBodyWithGoal(t, `"apply_token":"`+uuid.NewString()+`"`)
 	w := h.doBody(http.MethodPost, "/api/users/me/master-plan/apply", h.bearer(t, uid), strings.NewReader(body))
 	if w.Code != http.StatusInternalServerError {
