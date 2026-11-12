@@ -24,12 +24,18 @@ const LR_LOW_VOLUME_FLOOR_RATIO = 0.36;
 const r1 = (x: number) => Math.round(x * 10) / 10;
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 
-export function validateLoad(intent: PhaseDivisionIntent, weeks: LoadWeek[], recentWeeksKm: number[]): LoadCheck[] {
+export function validateLoad(intent: PhaseDivisionIntent, weeks: LoadWeek[], recentWeeksKm: number[], historyWeeks = 0): LoadCheck[] {
   const checks: LoadCheck[] = [];
   const km = weeks.map((w) => w.km);
   const actual4 = recentWeeksKm.slice(-4);
   const phases = [...intent.phases].sort((a, b) => a.start_week - b.start_week);
   const phaseAt = (w: number) => phases.find((p) => p.start_week <= w && w <= p.end_week) ?? phases.at(-1)!;
+  // 门只审计划周（#858）：w ≤ historyWeeks 的周是已发生的**事实**（historyKm 实际
+  // 完成值），没有 planner 决策可否决——超带/尖峰/不单调的过去不是门的对象，
+  // 仍进 roll4/块均值作上下文（自适应爬坡的基准）。阈值一个不改，只是把违规
+  // 对象限定在构造周；缺省 historyWeeks=0（master 首生成）逐位等价原实现。
+  const isPlan = (week: number) => week > historyWeeks;
+  const factNote = historyWeeks > 0 ? `；历史${historyWeeks}周为事实只作上下文` : "";
 
   // 门 1a/1b：ACWR ≤1.3 与单周尖峰 ≤1.5×4 周均值（滚动含赛前实际周）
   const roll4 = (i: number) => [...actual4, ...km.slice(0, i)].slice(-4);
@@ -37,26 +43,31 @@ export function validateLoad(intent: PhaseDivisionIntent, weeks: LoadWeek[], rec
   const spikeBad: number[] = [];
   for (let i = 0; i < km.length; i++) {
     const m = mean(roll4(i));
-    if (km[i]! > 1.3 * m + TOLERANCE_KM) acwrBad.push(i + 1);
-    if (km[i]! > 1.5 * m + TOLERANCE_KM) spikeBad.push(i + 1);
+    if (isPlan(i + 1) && km[i]! > 1.3 * m + TOLERANCE_KM) acwrBad.push(i + 1);
+    if (isPlan(i + 1) && km[i]! > 1.5 * m + TOLERANCE_KM) spikeBad.push(i + 1);
   }
-  checks.push({ id: "H1 ACWR≤1.3", pass: acwrBad.length === 0, detail: acwrBad.length ? `W${acwrBad.join(",")} 超限` : "全过" });
-  checks.push({ id: "H2 单周尖峰≤1.5×滚动均值", pass: spikeBad.length === 0, detail: spikeBad.length ? `W${spikeBad.join(",")} 超限` : "全过" });
+  checks.push({ id: "H1 ACWR≤1.3", pass: acwrBad.length === 0, detail: (acwrBad.length ? `W${acwrBad.join(",")} 超限` : "全过") + factNote });
+  checks.push({ id: "H2 单周尖峰≤1.5×滚动均值", pass: spikeBad.length === 0, detail: (spikeBad.length ? `W${spikeBad.join(",")} 超限` : "全过") + factNote });
 
   // 门 1c：块对块 ≤+25%（块均值；吸收周除外、不跨 recovery 边界——卸载回弹归
   // ACWR 管；豁免「跨阶段进更高带」段——查带必须用真实阶段行，canonical 假行
-  // 永远匹配不上中文显示名引用，spike 实测陷阱）
+  // 永远匹配不上中文显示名引用，spike 实测陷阱）。含历史周的块：均值只取计划
+  // 周（事实混均值会把「从实际位重建」的合法自适应跳变误判为块暴冲），任一
+  // 侧无计划周则跳过该对比。
   const blocks = new Map<number, LoadWeek[]>();
   const recoveryBlocks = new Set(weeks.filter((w) => w.canonical === "recovery").map((w) => w.block));
   for (const w of weeks) {
     if ((w.role === "progress" || w.role === "taper") && !recoveryBlocks.has(w.block)) blocks.set(w.block, [...(blocks.get(w.block) ?? []), w]);
   }
   const blockIds = [...blocks.keys()].sort((a, b) => a - b);
-  const means = blockIds.map((id) => mean(blocks.get(id)!.map((w) => w.km)));
+  const planOfWeeks = (ws: LoadWeek[]) => ws.filter((w) => isPlan(w.week));
+  const means = blockIds.map((id) => mean(planOfWeeks(blocks.get(id)!).map((w) => w.km)));
+  const hasPlanWeeks = blockIds.map((id) => planOfWeeks(blocks.get(id)!).length > 0);
   const blockCanonical = new Map<number, string>();
   for (const id of blockIds) blockCanonical.set(id, blocks.get(id)![0]!.canonical);
   const blockBad: string[] = [];
   for (let i = 1; i < blockIds.length; i++) {
+    if (!hasPlanWeeks[i - 1]! || !hasPlanWeeks[i]!) continue; // 任一侧纯历史块：无计划均值可比
     const pa = blockCanonical.get(blockIds[i - 1]!)!;
     const pb = blockCanonical.get(blockIds[i]!)!;
     const phaseB = phases.find((x) => x.canonical === pb);
@@ -64,14 +75,14 @@ export function validateLoad(intent: PhaseDivisionIntent, weeks: LoadWeek[], rec
     const enteringHigherBand = pa !== pb && bandB != null && means[i - 1]! < bandB.weekly_km_min - 2;
     if (means[i]! > means[i - 1]! * 1.25 + 2 && !enteringHigherBand) blockBad.push(`${i}→${i + 1}(${r1(means[i - 1]!)}→${r1(means[i]!)})`);
   }
-  checks.push({ id: "H3 块对块≤+25%", pass: blockBad.length === 0, detail: blockBad.join(";") || "全过" });
+  checks.push({ id: "H3 块对块≤+25%", pass: blockBad.length === 0, detail: (blockBad.join(";") || "全过") + factNote });
 
   // 门 2：带贴合——建设周（progress）落带内；爬坡期豁免（低于 lo 但逐周递增、
   // 或被 ACWR 帽压制，两种合法形态）；taper/吸收周豁免（带管建设周）
   const outBand: string[] = [];
   for (let i = 0; i < weeks.length; i++) {
     const w = weeks[i]!;
-    if (w.role !== "progress") continue;
+    if (w.role !== "progress" || !isPlan(w.week)) continue;
     const phase = phaseAt(w.week);
     const band = bandOf(intent, phase);
     if (!band) continue;
@@ -82,7 +93,7 @@ export function validateLoad(intent: PhaseDivisionIntent, weeks: LoadWeek[], rec
       outBand.push(`W${w.week}=${w.km}(${band.weekly_km_min}-${band.weekly_km_max})`);
     }
   }
-  checks.push({ id: "L1 带贴合", pass: outBand.length === 0, detail: outBand.slice(0, 4).join(";") || "全过" });
+  checks.push({ id: "L1 带贴合", pass: outBand.length === 0, detail: (outBand.slice(0, 4).join(";") || "全过") + factNote });
 
   // 门 3：节奏——建设周 ≥8 才要求 3+1 吸收周；短跑道/final-only 豁免。
   // 建设计数与展开器同口径（recovery 不计入），否则 rec2+F5 布局会被误判欠吸收
@@ -109,7 +120,7 @@ export function validateLoad(intent: PhaseDivisionIntent, weeks: LoadWeek[], rec
     let seg: number[] = [];
     let prevCanonical = "";
     for (const w of weeks) {
-      if (w.role !== "progress" || w.canonical === "recovery" || w.lr == null) continue;
+      if (w.role !== "progress" || w.canonical === "recovery" || w.lr == null || !isPlan(w.week)) continue;
       if (w.canonical !== prevCanonical) {
         if (seg.length >= 2 && Math.max(...seg) - seg.at(-1)! > LR_MONO_TOLERANCE_KM) return false;
         seg = [];
@@ -122,7 +133,7 @@ export function validateLoad(intent: PhaseDivisionIntent, weeks: LoadWeek[], rec
   checks.push({
     id: "L3 LR曲线",
     pass: lrMax >= lrFloor - TOLERANCE_KM && lrMax <= 34 && shareOk && weeks.at(-1)?.lr == null && monoOk,
-    detail: `峰${lrMax}/下限${r1(lrFloor)} 份额${shareOk ? "✓" : "✗"} 单调${monoOk ? "✓" : "✗"}`,
+    detail: `峰${lrMax}/下限${r1(lrFloor)} 份额${shareOk ? "✓" : "✗"} 单调${monoOk ? "✓" : "✗"}${factNote}`,
   });
 
   // 门 5：taper——赛周物理下限（≥比赛里程）+ 赛周 0.35-0.72×峰 OR 激活量合规、
@@ -147,7 +158,10 @@ export function validateLoad(intent: PhaseDivisionIntent, weeks: LoadWeek[], rec
   const taperKms = weeks.filter((w) => w.role === "taper").map((w) => w.km);
   const monoDown =
     arcStart >= 0
-      ? weeks.slice(arcStart, -1).every((x, i, arr) => i === 0 || x.km <= arr[i - 1]!.km + TOLERANCE_KM)
+      ? weeks
+          .slice(arcStart, -1)
+          .filter((w) => isPlan(w.week))
+          .every((x, i, arr) => i === 0 || x.km <= arr[i - 1]!.km + TOLERANCE_KM)
       : taperKms.every((x, i) => i === 0 || x <= taperKms[i - 1]! + TOLERANCE_KM);
   const plateauRef = Math.max(0, ...weeks.filter((w) => w.canonical === "final_quality" && w.role !== "race").map((w) => w.km));
   const singleWeek = weeks.length < 2;
@@ -162,15 +176,15 @@ export function validateLoad(intent: PhaseDivisionIntent, weeks: LoadWeek[], rec
   });
 
   // 门 6：块内微阶梯存在性——至少一块 ≥3 个建设周呈 0.97/1/1.03 微递进
-  // （非平台直排；全帽压制/短跑道无 3 周块时豁免）
-  const stairBlocks = [...blocks.values()].filter((ws) => ws.filter((w) => w.role === "progress").length >= 3);
+  // （非平台直排；全帽压制/短跑道无 3 周块时豁免）；历史周是平的事实，只数计划周
+  const stairBlocks = [...blocks.values()].filter((ws) => ws.filter((w) => w.role === "progress" && isPlan(w.week)).length >= 3);
   const stairOk =
     stairBlocks.length === 0 ||
     stairBlocks.some((ws) => {
-      const xs = ws.filter((w) => w.role === "progress").map((w) => w.km);
+      const xs = ws.filter((w) => w.role === "progress" && isPlan(w.week)).map((w) => w.km);
       return Math.max(...xs) - Math.min(...xs) >= TOLERANCE_KM;
     });
-  checks.push({ id: "L5 块内微阶梯", pass: stairOk, detail: stairBlocks.length === 0 ? "无 ≥3 周块（豁免）" : stairOk ? "存在" : "全平台直排" });
+  checks.push({ id: "L5 块内微阶梯", pass: stairOk, detail: (stairBlocks.length === 0 ? "无 ≥3 周块（豁免）" : stairOk ? "存在" : "全平台直排") + factNote });
 
   return checks;
 }

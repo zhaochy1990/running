@@ -27,6 +27,8 @@ export interface RawApiConfig {
     staff_openid_endpoint: string;
     staff_openid_internal_token: string;
   };
+  /** 入站内部端点鉴权（#858 夜检扫描）：X-Internal-Token；空 = 不挂内部端点。 */
+  internal: { token: string };
   logging: { file: string };
   /** Coach turn per-thread lock (#836): GET_LOCK wait budget in seconds; 0 restores fail-fast. */
   turn_lock: { wait_seconds: number };
@@ -49,6 +51,8 @@ export interface ApiConfig {
   };
   /** Lottery verify domain (#866); staffOpenidEndpoint empty = staff verify disabled (503). */
   lottery: { staffOpenidEndpoint: string; staffOpenidInternalToken: string };
+  /** 入站内部端点鉴权（#858 夜检扫描）；空 = rolling-scan 等内部端点不挂载。 */
+  internal: { token: string };
   auth: { publicKeyPem: string; authServiceUrl: string; issuer: string; audience?: string | string[]; adminAudience?: string };
   /** Local-only debug log file (absolute); empty = log to stdout only. */
   logFile: string;

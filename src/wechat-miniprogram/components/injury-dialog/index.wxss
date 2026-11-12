@@ -1,0 +1,215 @@
+/* 伤病弹层（#858 PR-E）—— 外壳与 adjust-dialog 同款（mask + sheet + handle），
+   颜色/圆角全走 styles/theme.wxss 令牌；登记表单区（textarea 浅底无边框）。 */
+
+.inj-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.inj-sheet {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--color-card);
+  border-radius: 32rpx 32rpx 0 0;
+  padding: 24rpx 32rpx calc(32rpx + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  animation: inj-sheet-up 0.2s ease;
+}
+
+@keyframes inj-sheet-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0.6;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.inj-sheet__handle {
+  width: 72rpx;
+  height: 8rpx;
+  border-radius: 999rpx;
+  background: rgba(var(--color-overlay-rgb), 0.2);
+  margin: 0 auto 24rpx;
+}
+
+.inj-sheet__title {
+  font-size: 30rpx;
+  line-height: 46rpx;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  text-align: center;
+  margin-bottom: 8rpx;
+}
+
+.inj-sheet__sub {
+  font-size: 24rpx;
+  line-height: 38rpx;
+  color: var(--color-text-tertiary);
+  text-align: center;
+  margin-bottom: 12rpx;
+}
+
+/* —— detail 输入（浅底无边框，placeholder 引导） —— */
+.inj-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 120rpx;
+  padding: 20rpx 24rpx;
+  border-radius: 20rpx;
+  background: var(--color-bg-sunken);
+  font-size: 26rpx;
+  line-height: 40rpx;
+  color: var(--color-field-text);
+  margin: 12rpx 0 20rpx;
+}
+
+.inj-input__ph {
+  color: var(--color-text-tertiary);
+}
+
+/* —— 四选一（与 adjust-dialog 选项同款） —— */
+.inj-options {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  margin-bottom: 28rpx;
+}
+
+.inj-option {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 22rpx 24rpx;
+  border-radius: 20rpx;
+  background: var(--color-bg-sunken);
+}
+
+.inj-option--on {
+  background: var(--color-accent-tint);
+}
+
+.inj-option__dot {
+  width: 28rpx;
+  height: 28rpx;
+  border-radius: 50%;
+  border: 4rpx solid var(--color-text-tertiary);
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.inj-option__dot--on {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  box-shadow: inset 0 0 0 6rpx var(--color-card);
+}
+
+.inj-option__label {
+  font-size: 28rpx;
+  line-height: 42rpx;
+  color: var(--color-text-primary);
+}
+
+.inj-option--on .inj-option__label {
+  color: var(--color-accent-deep);
+  font-weight: 600;
+}
+
+/* —— 轻问快捷键（四键 / 三键横排网格） —— */
+.inj-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+  margin-top: 20rpx;
+}
+
+.inj-quick__btn {
+  flex: 1 1 calc(50% - 8rpx);
+  height: 88rpx;
+  border-radius: 20rpx;
+  background: var(--color-bg-sunken);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  box-sizing: border-box;
+}
+
+.inj-quick__btn--disabled {
+  opacity: 0.5;
+}
+
+/* —— 主 CTA —— */
+.inj-cta {
+  height: 88rpx;
+  border-radius: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30rpx;
+  font-weight: 600;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.inj-cta--disabled {
+  opacity: 0.5;
+}
+
+.inj-cta--mt {
+  margin-top: 28rpx;
+  flex: none;
+}
+
+/* —— rest + 比赛临近附注行 —— */
+.inj-race {
+  margin-top: 28rpx;
+  padding: 20rpx 24rpx;
+  border-radius: 20rpx;
+  background: var(--color-bg-sunken);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.inj-race__line {
+  font-size: 24rpx;
+  line-height: 38rpx;
+  color: var(--color-text-secondary);
+}
+
+.inj-race__cta {
+  font-size: 26rpx;
+  line-height: 42rpx;
+  font-weight: 600;
+  color: var(--color-accent-deep);
+}
+
+/* —— result 结果文案 —— */
+.inj-result {
+  padding: 40rpx 24rpx 24rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.inj-result__text {
+  font-size: 28rpx;
+  line-height: 46rpx;
+  color: var(--color-text-primary);
+  text-align: center;
+}

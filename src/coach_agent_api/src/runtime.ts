@@ -2,6 +2,7 @@ import type { CoachAgentConfig } from "@stride/coach-agent";
 import {
   createStridePool,
   GoJobClient,
+  GoWeeklyPlanClient,
   MySqlDataProvider,
   PLAN_JOB_ESTIMATED_DURATIONS_SECONDS,
   PlanJobEnqueuer,
@@ -15,6 +16,7 @@ import { createActivityFeelWriter } from "./coach/activityFeelWriter.js";
 import { CoachInvokerImpl } from "./coach/coachInvoker.js";
 import { createAuthOpenidResolver } from "./coach/lotteryOpenid.js";
 import { createLotterySyncTrigger } from "./coach/lotterySyncTrigger.js";
+import { createRollingScanRunner } from "./coach/rollingScan.js";
 import type { ApiConfig } from "./dto/config.js";
 import { MySqlCoachDataDeleter } from "./persistence/deletion.js";
 import { createPersistence, type Persistence } from "./persistence/index.js";
@@ -91,6 +93,20 @@ export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: C
       ...(apiConfig.auth.audience ? { audience: apiConfig.auth.audience } : {}),
       ...(apiConfig.auth.adminAudience ? { adminAudience: apiConfig.auth.adminAudience } : {}),
     });
+    // #858 夜检扫描：active v3 枚举走 dataProvider（只读），周行走 Go 内部通道，
+    // 投递复用 planJobs 的 enqueuer（store-first，幂等键防重投）。token 未配置时
+    // 不挂端点（配置即生效）。
+    const rollingScan =
+      apiConfig.internal.token !== ""
+        ? {
+            scan: createRollingScanRunner({
+              store: dataProvider,
+              weeklyPlans: new GoWeeklyPlanClient(apiConfig.goApi.baseUrl, apiConfig.goApi.internalToken),
+              enqueue: planJobs.enqueue,
+            }),
+            internalToken: apiConfig.internal.token,
+          }
+        : undefined;
     return {
       app: createApp({
         jwtVerifier,
@@ -100,6 +116,7 @@ export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: C
         // #891 聊天内绑赛：续轮从线程持久层回填 race target。
         threadRaceTargets: persistence.threadRaceTargets,
         planJobs,
+        ...(rollingScan ? { rollingScan } : {}),
         coachDataDeleter: new MySqlCoachDataDeleter(persistence.pool),
         // #863 抽奖活动配置域：admin CRUD + 落地页公开读取。
         lottery: persistence.lottery,

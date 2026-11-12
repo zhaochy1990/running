@@ -29,10 +29,38 @@ type fakeMasterPlanStore struct {
 	dose       map[int]storage.TrainingDoseWeekSummary
 	currentErr error
 	actualsErr error
+	// #858 读合并 + 换计划清理面。
+	weeklyRows    map[string][]storage.WeeklyPlan
+	weeklyErr     error
+	weeklyListUID string
+	cleanupCalls  []string // 每次 DeleteStaleFutureWeeklyPlans 的 keepPlanID
+	cleanupErr    error
+	supersedeUser string
 }
 
 func newFakeMasterPlanStore() *fakeMasterPlanStore {
-	return &fakeMasterPlanStore{current: map[string]*storage.MasterPlan{}}
+	return &fakeMasterPlanStore{current: map[string]*storage.MasterPlan{}, weeklyRows: map[string][]storage.WeeklyPlan{}}
+}
+
+func (f *fakeMasterPlanStore) ListActiveWeeklyPlans(_ context.Context, uid string) ([]storage.WeeklyPlan, error) {
+	f.weeklyListUID = uid
+	if f.weeklyErr != nil {
+		return nil, f.weeklyErr
+	}
+	return f.weeklyRows[uid], nil
+}
+
+func (f *fakeMasterPlanStore) DeleteStaleFutureWeeklyPlans(_ context.Context, _ string, keepMasterPlanID string, _ time.Time) (int64, error) {
+	f.cleanupCalls = append(f.cleanupCalls, keepMasterPlanID)
+	if f.cleanupErr != nil {
+		return 0, f.cleanupErr
+	}
+	return 0, nil
+}
+
+func (f *fakeMasterPlanStore) SupersedePendingAdjustments(_ context.Context, uid string) (int64, error) {
+	f.supersedeUser = uid
+	return 0, nil
 }
 
 func (f *fakeMasterPlanStore) GetCurrentMasterPlan(_ context.Context, uid string) (*storage.MasterPlan, error) {
@@ -218,7 +246,7 @@ func mustDate(t *testing.T, s string) time.Time {
 
 func TestBuildCurrentResponse_DerivedFields(t *testing.T) {
 	today := mustDate(t, "2026-06-10") // Wed of week 2
-	resp, windows, weekFinished, err := buildCurrentResponse(&storage.MasterPlan{Content: samplePlanJSON}, today)
+	resp, windows, weekFinished, err := buildCurrentResponse(&storage.MasterPlan{Content: samplePlanJSON}, nil, today)
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -296,7 +324,7 @@ func TestBuildCurrentResponse_ExpandsStartedWeeks(t *testing.T) {
       "created_at": "2026-05-01T00:00:00Z", "updated_at": "2026-05-01T00:00:00Z"
     }`
 	today := mustDate(t, "2026-06-10") // within week 2
-	resp, _, _, err := buildCurrentResponse(&storage.MasterPlan{Content: plan}, today)
+	resp, _, _, err := buildCurrentResponse(&storage.MasterPlan{Content: plan}, nil, today)
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -324,7 +352,7 @@ func TestBuildCurrentResponse_EmptyAndOutOfRange(t *testing.T) {
       "phases": [], "milestones": [], "weeks": [], "training_principles": [], "generated_by": "x", "version": 1,
       "created_at": "2026-05-01T00:00:00Z", "updated_at": "2026-05-01T00:00:00Z"}`
 	today := mustDate(t, "2026-01-01") // before the plan
-	resp, _, _, err := buildCurrentResponse(&storage.MasterPlan{Content: plan}, today)
+	resp, _, _, err := buildCurrentResponse(&storage.MasterPlan{Content: plan}, nil, today)
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -343,7 +371,7 @@ func TestBuildCurrentResponse_EmptyAndOutOfRange(t *testing.T) {
 }
 
 func TestBuildCurrentResponse_InvalidJSON(t *testing.T) {
-	if _, _, _, err := buildCurrentResponse(&storage.MasterPlan{Content: "{not json"}, time.Now()); err == nil {
+	if _, _, _, err := buildCurrentResponse(&storage.MasterPlan{Content: "{not json"}, nil, time.Now()); err == nil {
 		t.Fatalf("expected error for invalid plan JSON")
 	}
 }
@@ -355,7 +383,7 @@ func TestBuildCurrentResponse_RejectsMalformedNestedContent(t *testing.T) {
 		strings.Replace(samplePlanJSON, `"week_index": 1`, `"week_index": 0`, 1),
 		strings.Replace(samplePlanJSON, `"type": "long_run"`, `"type": null`, 1),
 	} {
-		if _, _, _, err := buildCurrentResponse(&storage.MasterPlan{Content: content}, time.Now()); err == nil {
+		if _, _, _, err := buildCurrentResponse(&storage.MasterPlan{Content: content}, nil, time.Now()); err == nil {
 			t.Fatalf("expected malformed structured content to be rejected: %s", content)
 		}
 	}

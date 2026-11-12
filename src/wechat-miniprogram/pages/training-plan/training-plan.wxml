@@ -45,6 +45,17 @@
 
     <!-- ============ 方案 B · 备赛旅程（对齐 Web /plan SeasonOverview） ============ -->
     <block wx:elif="{{loadState === 'ready'}}">
+      <!-- #858 PR-E 顶部提示条：pending 调整 / 伤病激活 -->
+      <view
+        wx:if="{{bannerKind !== 'none'}}"
+        class="status-banner status-banner--{{bannerKind}}"
+        bindtap="onBannerTap"
+      >
+        <view class="status-banner__dot"></view>
+        <view class="status-banner__text">{{bannerText}}</view>
+        <view class="status-banner__arrow">›</view>
+      </view>
+
       <!-- 目标条：eyebrow + 名称 + lede（Web hero 的移动端形态） -->
       <view class="card goal-strip">
         <view class="goal-strip__eyebrow">赛季训练计划 · {{eyebrowStatus}}</view>
@@ -185,6 +196,34 @@
                   <view wx:if="{{sess.km}}" class="tl-sess__km">{{sess.km}}</view>
                 </view>
               </view>
+              <!-- #858 PR-E：每日安排折叠区（weekly 行 sessions，懒加载） -->
+              <view
+                wx:if="{{item.week.weekStart}}"
+                class="tl-week__days-toggle"
+                data-key="{{item.week.key}}"
+                data-week-start="{{item.week.weekStart}}"
+                catchtap="onToggleWeekDays"
+              >{{expandedWeekDays[item.week.key] ? '收起每日安排 ▴' : '每日安排 ▾'}}</view>
+              <view wx:if="{{item.week.weekStart && expandedWeekDays[item.week.key]}}" class="tl-week__days">
+                <view wx:if="{{!weekDayPlans[item.week.key]}}" class="tl-week__days-loading">加载中…</view>
+                <block wx:elif="{{weekDayPlans[item.week.key].length}}">
+                  <view
+                    wx:for="{{weekDayPlans[item.week.key]}}"
+                    wx:for-item="dp"
+                    wx:key="key"
+                    class="tl-day {{dp.isRest ? 'tl-day--rest' : ''}}"
+                  >
+                    <image class="tl-day__icon" src="{{dp.iconPath}}" mode="aspectFit" />
+                    <view class="tl-day__date">{{dp.dateLabel}}</view>
+                    <view class="tl-day__body">
+                      <view class="tl-day__summary">{{dp.summary}}</view>
+                    </view>
+                    <view wx:if="{{dp.km}}" class="tl-day__km">{{dp.km}}</view>
+                    <view wx:else class="tl-day__km tl-day__km--muted">休息</view>
+                  </view>
+                </block>
+                <view wx:else class="tl-week__days-loading">该周暂无每日安排</view>
+              </view>
             </view>
           </block>
         </block>
@@ -209,4 +248,31 @@
       </view>
     </block>
   </view>
+
+  <!-- #858 PR-E：调整追问弹窗（提示条入口，同组件复用，不受每天一次限制） -->
+  <adjust-dialog
+    wx:if="{{adjustDialogVisible}}"
+    show="{{adjustDialogVisible}}"
+    userId="{{uid}}"
+    adjustment="{{pendingAdjustment}}"
+    bindaccepted="onAdjustAccepted"
+    binddismissed="onAdjustDismissed"
+    bindclosed="onAdjustClosed"
+    bindinjury="onAdjustInjury"
+  />
+
+  <!-- #858 PR-E：伤病弹层（提示条入口的当日轻问 / 受伤路径登记） -->
+  <injury-dialog
+    wx:if="{{injuryDialogVisible}}"
+    show="{{injuryDialogVisible}}"
+    mode="{{injuryDialogMode}}"
+    injury="{{injuryState}}"
+    race-closing-soon="{{raceClosingSoon}}"
+    result-text="{{injuryResultText}}"
+    bindentered="onInjuryEntered"
+    bindchecked="onInjuryChecked"
+    binddoctored="onInjuryDoctored"
+    bindcoach="onInjuryCoach"
+    bindclosed="onInjuryClosed"
+  />
 </view>

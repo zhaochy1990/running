@@ -6,7 +6,9 @@
   "backgroundColor": "#F7F9FB",
   "usingComponents": {
     "push-date-sheet": "/components/push-date-sheet/index",
-    "route-thumb": "/components/route-thumb/index"
+    "route-thumb": "/components/route-thumb/index",
+    "adjust-dialog": "/components/adjust-dialog/index",
+    "injury-dialog": "/components/injury-dialog/index"
   },
   "componentPlaceholder": {
     "push-date-sheet": "view"

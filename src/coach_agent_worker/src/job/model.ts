@@ -9,26 +9,31 @@
 export const PLAN_JOB_STATUSES = ["queued", "running", "done", "failed"] as const;
 export type PlanJobStatus = (typeof PLAN_JOB_STATUSES)[number];
 
-/** 生成/结构调整 × 赛季训练计划/本周课表。`generate_master_plan` 与 `generate_weekly_plan` 已接入 kernel。 */
 /**
- * The four job types (生成/结构调整 × 赛季训练计划/本周课表) share one state machine
- * (ADR 0030); the two generate types are wired to kernels in this slice, the
- * restructure variants still need their kernels. The enum is intentionally
+ * The job types (生成/结构调整 × 赛季训练计划/本周课表) share one state machine
+ * (ADR 0030); the generate types are wired to kernels, the restructure variants
+ * still need their kernels. The enum is intentionally
  * narrow to match what the worker can actually run: add a type here (plus a
  * per-type request-schema check in the coach route) when its kernel lands. The
  * enqueue endpoint re-validates the request against the per-type schema, so a
  * type that needs a different input is gated until its own validation is wired.
+ * #858 R3: the legacy five-stage LLM weekly graph (`generate_weekly_plan`) is
+ * retired — weekly content is produced by the master first-batch materialization
+ * and the rolling projection (`generate_rolling_block`).
  */
-export const PLAN_JOB_TYPES = ["generate_master_plan", "generate_weekly_plan"] as const;
+export const PLAN_JOB_TYPES = ["generate_master_plan", "generate_rolling_block", "generate_adjustment", "generate_maintenance"] as const;
 export type PlanJobType = (typeof PLAN_JOB_TYPES)[number];
 
 /**
  * Estimated duration surfaced by the enqueue endpoint so the client can show
  * "预计 X 分钟". Single source shared with the coach chat service.
+ * #858 PR-D: generate_maintenance（伤病维持课）零 LLM 确定性构造，估时 2 分钟。
  */
 export const PLAN_JOB_ESTIMATED_DURATIONS_SECONDS: Record<PlanJobType, number> = {
   generate_master_plan: 300,
-  generate_weekly_plan: 300,
+  generate_rolling_block: 300,
+  generate_adjustment: 300,
+  generate_maintenance: 120,
 };
 
 export interface PlanJob {

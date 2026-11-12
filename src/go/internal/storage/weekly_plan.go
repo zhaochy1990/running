@@ -9,6 +9,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 )
 
 // ErrWeeklyPlanExists is returned when a caller attempts to apply a plan
@@ -24,6 +26,21 @@ var ErrWeeklyPlanConflict = errors.New("storage: active weekly plan changed")
 type WeeklyPlanReplacement struct {
 	PlanID   string
 	Revision int64
+}
+
+// WeeklyPlanApplyOptions tunes ApplyStructuredWeeklyPlan for the internal
+// rolling batch channel (#858). The zero value keeps the admin apply path's
+// behaviour: link the row to the user's current master plan (nil when none)
+// and restart the new row's revision at 1.
+type WeeklyPlanApplyOptions struct {
+	// MasterPlanID, when set, overrides the link derived from the user's
+	// current master plan. The internal caller (the rolling worker) already
+	// validated the plan it generated against, so the link is exact.
+	MasterPlanID *string
+	// ContinueRevision makes the replacement row continue the replaced row's
+	// revision (old+1) instead of restarting at 1 — rolling re-deliveries then
+	// surface as a monotonically increasing revision per week.
+	ContinueRevision bool
 }
 
 func (s *Store) AutoMigrateWeeklyPlan(ctx context.Context) error {
@@ -70,8 +87,8 @@ func (s *Store) AutoMigrateWeeklyPlan(ctx context.Context) error {
 }
 
 // ListActiveWeeklyPlans returns all current weekly plans newest first. Content
-// is loaded because the same row type backs the detail reader, but the API list
-// DTO deliberately omits it.
+// is loaded because the same row type backs the detail reader and the
+// master-plan read merge (#858), but the API list DTO deliberately omits it.
 func (s *Store) ListActiveWeeklyPlans(ctx context.Context, userID string) ([]WeeklyPlan, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
@@ -79,13 +96,46 @@ func (s *Store) ListActiveWeeklyPlans(ctx context.Context, userID string) ([]Wee
 	}
 	var plans []WeeklyPlan
 	if err := s.db.WithContext(ctx).
-		Select("plan_id", "user_id", "master_plan_id", "week_start", "content_version", "status", "revision", "created_at", "updated_at").
+		Select("plan_id", "user_id", "master_plan_id", "week_start", "content_version", "content", "status", "revision", "created_at", "updated_at").
 		Where("user_id = ? AND status = ?", uid, WeeklyPlanStatusActive).
 		Order("week_start DESC").
 		Find(&plans).Error; err != nil {
 		return nil, err
 	}
 	return plans, nil
+}
+
+// DeleteStaleFutureWeeklyPlans removes the user's weekly rows of the CURRENT
+// AND FUTURE Shanghai weeks that are NOT linked to keepMasterPlanID (#858 换计划
+// 清理). Earlier weeks are finished training history and stay untouched no
+// matter which plan they belong to (including legacy rows with a NULL
+// master_plan_id).
+//
+// The delete is physical, not a status flip: weekly_plan converged to a single
+// 'active' status with UNIQUE(user_id, week_start) (#585), so a stale future
+// row from the replaced plan would block the new plan's rolling batch from
+// writing that week. The week boundary is the Monday of the Shanghai natural
+// week containing now (UTC+8, not UTC and not the server's local zone).
+// Returns the number of rows removed.
+func (s *Store) DeleteStaleFutureWeeklyPlans(
+	ctx context.Context, userID, keepMasterPlanID string, now time.Time,
+) (int64, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := uuid.Parse(keepMasterPlanID); err != nil {
+		return 0, fmt.Errorf("storage: invalid keep master plan id: %w", err)
+	}
+	cutoff := timefmt.ShanghaiWeekStart(now).Format("2006-01-02")
+	result := s.db.WithContext(ctx).
+		Where("user_id = ? AND week_start >= ? AND (master_plan_id IS NULL OR master_plan_id <> ?)",
+			uid, cutoff, keepMasterPlanID).
+		Delete(&WeeklyPlan{})
+	if result.Error != nil {
+		return 0, fmt.Errorf("storage: delete stale future weekly plans except %s: %w", keepMasterPlanID, result.Error)
+	}
+	return result.RowsAffected, nil
 }
 
 // WeekSummary is the active-plan metadata and activity rollup needed by the
@@ -201,9 +251,11 @@ func (s *Store) GetActiveWeeklyPlan(ctx context.Context, userID, weekStart strin
 // Shanghai week. Replacing an active row requires its exact plan ID and revision;
 // that row is archived in the same transaction before the new active row is
 // inserted. All rows for the user/week are locked so the active transition is
-// serialized. The new plan has its own identity and therefore starts at revision 1.
+// serialized. The new plan has its own identity and therefore starts at revision 1
+// (WeeklyPlanApplyOptions.ContinueRevision opts into old+1 for the rolling batch
+// channel; MasterPlanID overrides the current-master-plan link).
 func (s *Store) ApplyStructuredWeeklyPlan(
-	ctx context.Context, userID, weekStart, content string, replacement *WeeklyPlanReplacement,
+	ctx context.Context, userID, weekStart, content string, replacement *WeeklyPlanReplacement, opts ...WeeklyPlanApplyOptions,
 ) (*WeeklyPlan, *WeeklyPlan, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
@@ -216,6 +268,10 @@ func (s *Store) ApplyStructuredWeeklyPlan(
 	if start.Weekday() != time.Monday {
 		return nil, nil, fmt.Errorf("storage: week_start must be a Monday")
 	}
+	var options WeeklyPlanApplyOptions
+	if len(opts) > 0 {
+		options = opts[0]
+	}
 
 	var created *WeeklyPlan
 	var replaced *WeeklyPlan
@@ -223,15 +279,21 @@ func (s *Store) ApplyStructuredWeeklyPlan(
 		created = nil
 		replaced = nil
 		// Link the new weekly plan to the athlete's active master plan. When the
-		// user has no active master plan the link stays nil by design.
-		masterPlan, err := s.GetCurrentMasterPlan(ctx, uid)
-		if err != nil {
-			return fmt.Errorf("storage: resolve active master plan: %w", err)
-		}
+		// user has no active master plan the link stays nil by design. The
+		// rolling batch channel passes the exact plan id it generated against.
 		var masterPlanID *string
-		if masterPlan != nil {
-			id := masterPlan.PlanID
+		if options.MasterPlanID != nil {
+			id := *options.MasterPlanID
 			masterPlanID = &id
+		} else {
+			masterPlan, err := s.GetCurrentMasterPlan(ctx, uid)
+			if err != nil {
+				return fmt.Errorf("storage: resolve active master plan: %w", err)
+			}
+			if masterPlan != nil {
+				id := masterPlan.PlanID
+				masterPlanID = &id
+			}
 		}
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			var rows []WeeklyPlan
@@ -271,12 +333,16 @@ func (s *Store) ApplyStructuredWeeklyPlan(
 			}
 
 			activeSlot := WeeklyPlanStatusActive
+			revision := int64(1)
+			if options.ContinueRevision && replaced != nil {
+				revision = replaced.Revision + 1
+			}
 			row := &WeeklyPlan{
 				PlanID: uuid.NewString(), UserID: uid, WeekStart: weekStart,
 				MasterPlanID:   masterPlanID,
 				ContentVersion: WeeklyPlanContentStructured, Content: content,
 				Status: WeeklyPlanStatusActive, StatusSlot: &activeSlot,
-				Revision: 1, CreatedAt: now, UpdatedAt: now,
+				Revision: revision, CreatedAt: now, UpdatedAt: now,
 			}
 			if err := tx.Create(row).Error; err != nil {
 				if isDuplicateKey(err) {

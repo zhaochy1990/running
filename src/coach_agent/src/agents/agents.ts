@@ -49,7 +49,8 @@ export function getAgentNode(
   if (agentName === "orchestrator") {
     const agentConfig = getAgentConfig(config, "orchestrator");
     // master_plan 进 training 节点在聊天 turn 内同步跑 master kernel（#427）。
-    // weekly_plan 暂留 qa（只读查看/解释周计划）——周计划的 turn 内生成另立票。
+    // weekly_plan 意图落 qa（只读查看/解释周计划）——#858 PR-F 拍板：周课统一由
+    // master 首批物化 + 滚动产出，聊天不再有周课生成路径。
     const routes = {
       training_question: "qa",
       weekly_plan: "qa",

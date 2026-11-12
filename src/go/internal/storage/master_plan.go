@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -243,8 +244,12 @@ func (s *Store) ApplyStructuredMasterPlan(
 
 			revision := int64(1)
 			activeFlag := int8(1)
+			planID, err := adoptProspectiveMasterPlanID(tx, content, replaced)
+			if err != nil {
+				return err
+			}
 			row := &MasterPlan{
-				PlanID: uuid.NewString(), UserID: uid, GoalID: goalID,
+				PlanID: planID, UserID: uid, GoalID: goalID,
 				ContentVersion: MasterPlanContentStructured, Content: content,
 				Status: MasterPlanStatusActive, ActiveFlag: &activeFlag,
 				Revision: &revision, CreatedAt: now, UpdatedAt: now,
@@ -275,6 +280,47 @@ func (s *Store) ApplyStructuredMasterPlan(
 		return nil, nil, err
 	}
 	return created, replaced, nil
+}
+
+// adoptProspectiveMasterPlanID resolves the plan id for a new active master
+// plan row (#858 PR-A): the TS master job stamps a prospective UUID into the
+// content it generated and links the first-batch weekly rows to it, so adopting
+// that id here keeps master_plan.plan_id == weekly_plan.master_plan_id ==
+// content.master_plan_id once the artifact is applied. Adoption is refused —
+// the caller then falls back to a fresh uuid — unless the embedded id is a
+// valid UUID, no existing row of any status already uses it (checked inside the
+// apply transaction; plan_id is the primary key so the uniqueness is global),
+// and it does not collide with the row being replaced (the same key an admin
+// just confirmed superseding must never be resurrected by the new row).
+func adoptProspectiveMasterPlanID(tx *gorm.DB, content string, replaced *MasterPlan) (string, error) {
+	fallback := uuid.NewString()
+	var document struct {
+		MasterPlanID string `json:"master_plan_id"`
+	}
+	if err := json.Unmarshal([]byte(content), &document); err != nil {
+		// Not JSON (or unreadable): the prospective-id contract is absent, not
+		// violated — silently keep the generated-id behaviour.
+		return fallback, nil
+	}
+	candidate := strings.TrimSpace(document.MasterPlanID)
+	if candidate == "" {
+		return fallback, nil
+	}
+	id, err := uuid.Parse(candidate)
+	if err != nil {
+		return fallback, nil
+	}
+	var collisions int64
+	if err := tx.Model(&MasterPlan{}).Where("plan_id = ?", id.String()).Count(&collisions).Error; err != nil {
+		return "", fmt.Errorf("storage: check prospective master plan id: %w", err)
+	}
+	if collisions > 0 {
+		return fallback, nil
+	}
+	if replaced != nil && id.String() == replaced.PlanID {
+		return fallback, nil
+	}
+	return id.String(), nil
 }
 
 // UpdateActiveMasterPlan revises the athlete's active structured master plan in

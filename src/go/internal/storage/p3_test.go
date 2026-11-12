@@ -82,6 +82,8 @@ func TestDeleteUserData_SweepsTSBlobPrefix(t *testing.T) {
 		st.AutoMigrateRoadmap,
 		st.AutoMigrateFeedback,
 		st.AutoMigrateProviderEvents,
+		st.AutoMigratePlanAdjustment,
+		st.AutoMigratePlanInjury,
 	} {
 		if err := migrate(ctx); err != nil {
 			t.Fatalf("migrate: %v", err)

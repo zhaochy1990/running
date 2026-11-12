@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { MASTER_PLAN_NODES } from "../../src/kernel/master/kernel.js";
 import { MonotonicProgress } from "../../src/kernel/progress.js";
-import { WEEKLY_PLAN_NODES } from "../../src/kernel/weekly/kernel.js";
+
+/** Local fixture map — the machinery is domain-agnostic (ex-weekly kernel). */
+const FANOUT_NODES = {
+  loadContext: { stage: "reading_history", progressPct: 10 },
+  getTargetTrainingLoad: { stage: "evaluating", progressPct: 25 },
+  phase_base: { stage: "planning_phases", progressPct: 55 },
+  finalize: { stage: "outputting", progressPct: 99 },
+};
 
 test("maps each master-plan kernel node to a monotonic stage/progress anchor", () => {
   const progress = new MonotonicProgress(MASTER_PLAN_NODES);
@@ -14,12 +21,11 @@ test("maps each master-plan kernel node to a monotonic stage/progress anchor", (
   assert.deepEqual(progress.observe("finalize"), { stage: "outputting", progressPct: 99 });
 });
 
-test("maps each weekly-plan kernel node to a monotonic stage/progress anchor", () => {
-  const progress = new MonotonicProgress(WEEKLY_PLAN_NODES);
-  assert.deepEqual(progress.observe("loadWeeklyPlanContext"), { stage: "reading_history", progressPct: 10 });
+test("maps each kernel node to a monotonic stage/progress anchor", () => {
+  const progress = new MonotonicProgress(FANOUT_NODES);
+  assert.deepEqual(progress.observe("loadContext"), { stage: "reading_history", progressPct: 10 });
   assert.deepEqual(progress.observe("getTargetTrainingLoad"), { stage: "evaluating", progressPct: 25 });
   assert.deepEqual(progress.observe("phase_base"), { stage: "planning_phases", progressPct: 55 });
-  assert.deepEqual(progress.observe("simulate_load"), { stage: "rule_filter", progressPct: 75 });
   assert.deepEqual(progress.observe("finalize"), { stage: "outputting", progressPct: 99 });
 });
 
@@ -31,8 +37,8 @@ test("never regresses even if the stream reports an earlier node out of order", 
   assert.equal(progress.observe("initialize"), null); // 8 < 99 → ignored
 });
 
-test("weekly fan-out node keys (phase_base:abc) map to their base node", () => {
-  const progress = new MonotonicProgress(WEEKLY_PLAN_NODES);
+test("fan-out node keys (phase_base:abc) map to their base node", () => {
+  const progress = new MonotonicProgress(FANOUT_NODES);
   assert.deepEqual(progress.observe("phase_base:abc"), { stage: "planning_phases", progressPct: 55 });
 });
 

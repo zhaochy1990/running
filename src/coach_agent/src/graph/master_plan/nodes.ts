@@ -12,27 +12,29 @@
 import { END, StateSchema } from "@langchain/langgraph";
 import { ModelContractError } from "@stride/common";
 import {
+  addDays,
   type DanielsAudit,
   DanielsAuditSchema,
   type LoadPlan,
   LoadPlanSchema,
+  type MasterPlan,
   type MasterPlanAnchor,
   MasterPlanAnchorSchema,
-  type MasterPlanGraphOutcome,
   MasterPlanGraphContext,
+  type MasterPlanGraphOutcome,
   MasterPlanGraphOutcome as MasterPlanGraphOutcomeSchema,
   type MasterPlanGraphRequest,
   MasterPlanGraphRequest as MasterPlanGraphRequestSchema,
-  type MasterPlan,
   MasterPlanSchema,
   type PhaseDivisionIntent,
   PhaseDivisionIntentSchema,
-  addDays,
   planningStartDate,
   shanghaiDay,
+  type WeeklyPlan,
 } from "@stride/contract";
 import { z } from "zod/v4";
 import { measureExecutionTimeAsync } from "../../utils/performance.js";
+import { buildWeeklyDocs } from "../rolling/weeklyDocs.js";
 import {
   type AssessmentFacts,
   canonicalizeAssessmentSummary,
@@ -45,16 +47,16 @@ import {
   withBackfilledClaimCitations,
 } from "./assessment.js";
 import { type ContextSnapshot, ContextSnapshotSchema, type MasterPlanContextProvider } from "./context.js";
+import { infrastructureFailure, logger, logSwallowedFailure, modelFailure, qualityFailure } from "./nodes/shared.js";
 import { danielsAudit } from "./phasing/content/danielsAudit.js";
 import { buildProvenSessions, type ContentGeneratorInput, type ContentWeekRow, QUALITY_FAMILY_OF } from "./phasing/content/doctrine.js";
 import { type ContentModel, generateWeekContent, type ScheduledOutcome } from "./phasing/content/generate.js";
 import { projectZones } from "./phasing/content/project.js";
 import { buildPhaseEvidence, type PhaseEvidence, type PhasingActivityInput } from "./phasing/evidence.js";
-import { generatePhaseDivisionIntent, type PhasingModel } from "./phasing/generate.js";
 import type { GateCheck } from "./phasing/gates.js";
+import { generatePhaseDivisionIntent, type PhasingModel } from "./phasing/generate.js";
 import { buildWeeklySeries, habitualBaseline } from "./phasing/load/baseline.js";
 import { buildLoadPlan } from "./phasing/load/expand.js";
-import { infrastructureFailure, logSwallowedFailure, logger, modelFailure, qualityFailure } from "./nodes/shared.js";
 import { buildV2Snapshot } from "./v2Snapshot.js";
 
 interface GoalAssessmentModel {
@@ -101,6 +103,8 @@ export const GraphState = new StateSchema({
   audit: DanielsAuditSchema.optional(),
   /** 首期课表快照（v2 形状）。 */
   plan: MasterPlanSchema.optional(),
+  /** 首批每周的周课文档（#858 PR-A：完整 L4 产物不再被 v2 快照收缩丢弃）。 */
+  weeklyDocs: z.array(z.custom<WeeklyPlan>()).optional(),
   artifactRevision: z.int().positive().default(1),
   outcome: MasterPlanGraphOutcomeSchema.optional(),
 });
@@ -151,9 +155,7 @@ export class MasterPlanNodes {
       });
       snapshot = res.result.snapshot;
       activities = res.result.activities;
-      logger.info(
-        `Loaded context snapshot for user ${context.userId} as of ${snapshot.as_of} (${activities.length} activities) in ${res.time.toFixed(2)} ms`,
-      );
+      logger.info(`Loaded context snapshot for user ${context.userId} as of ${snapshot.as_of} (${activities.length} activities) in ${res.time.toFixed(2)} ms`);
     } catch (e) {
       logger.error(`Failed to load context snapshot for user ${context.userId}: ${e instanceof Error ? e.message : "unknown error"}`);
       return { context, outcome: infrastructureFailure(request, context, "context_snapshot_unavailable") };
@@ -264,8 +266,7 @@ export class MasterPlanNodes {
     const goal = aGoalOf(request);
     // 判断层教义只验证过「带目标的 FM」（daniels.md）；HM 与完赛目标缺配速锚，
     // 与其用编造的目标糊过去，不如让它带着明确原因失败。
-    if (goal.distance !== "FM")
-      return { outcome: qualityFailure(request, context, `unsupported_goal_distance:${goal.distance}`) };
+    if (goal.distance !== "FM") return { outcome: qualityFailure(request, context, `unsupported_goal_distance:${goal.distance}`) };
     if (goal.target_time === null) return { outcome: qualityFailure(request, context, "unsupported_goal:finish_only") };
     try {
       const phaseEvidence = buildPhaseEvidence(
@@ -279,8 +280,7 @@ export class MasterPlanNodes {
         },
         asOfOf(request),
       );
-      if (phaseEvidence.current_capability.vdot === null)
-        return { outcome: qualityFailure(request, context, "no_current_capability_vdot") };
+      if (phaseEvidence.current_capability.vdot === null) return { outcome: qualityFailure(request, context, "no_current_capability_vdot") };
       return { evidence: phaseEvidence };
     } catch (error) {
       logSwallowedFailure("evidence", error);
@@ -294,8 +294,7 @@ export class MasterPlanNodes {
     const monday = planningStartDate(asOfOf(request));
     const goal = aGoalOf(request);
     const runwayWeeks = weeksBetween(monday, goal.race_date);
-    if (runwayWeeks < MIN_RUNWAY_WEEKS)
-      return { outcome: qualityFailure(request, context, `runway_too_short:${runwayWeeks}w`) };
+    if (runwayWeeks < MIN_RUNWAY_WEEKS) return { outcome: qualityFailure(request, context, `runway_too_short:${runwayWeeks}w`) };
     try {
       const outcome = await generatePhaseDivisionIntent({ evidence, runwayWeeks, raceDate: goal.race_date }, this.dependencies.phasingModel);
       if (outcome.source === "fallback") logger.warn(`policy fell back to the T table for ${request.request_id}`);
@@ -321,8 +320,7 @@ export class MasterPlanNodes {
         recentWeeksKm: series.weeks.slice(-4).map((week) => week.km),
       });
       const failed = skeleton.checks.filter((check) => !check.pass);
-      if (failed.length > 0)
-        return { outcome: qualityFailure(request, context, ...failed.map((check) => `load_gate:${check.id}`)) };
+      if (failed.length > 0) return { outcome: qualityFailure(request, context, ...failed.map((check) => `load_gate:${check.id}`)) };
       return { skeleton };
     } catch (error) {
       logSwallowedFailure("load", error);
@@ -335,8 +333,7 @@ export class MasterPlanNodes {
     const { request, context, evidence, skeleton } = requiredWithSkeleton(state);
     // #857：近 10 周已证课喂给 L4a（已证参照规则——新课刺激不低于最近同类课）
     const provenSessions = buildProvenSessions(state.activities ?? [], asOfOf(request));
-    if (provenSessions.length > 0)
-      logger.info({ count: provenSessions.length, latest: provenSessions[0]!.name }, "proven sessions fed to L4a (#857)");
+    if (provenSessions.length > 0) logger.info({ count: provenSessions.length, latest: provenSessions[0]!.name }, "proven sessions fed to L4a (#857)");
     const monday = planningStartDate(asOfOf(request));
     const goal = aGoalOf(request);
     const runwayWeeks = weeksBetween(monday, goal.race_date);
@@ -463,7 +460,10 @@ export class MasterPlanNodes {
       }
       if (templateBatches > 0) {
         merged.source = "fallback";
-        logger.warn({ templateBatches, batches: batches.length }, `content plan contains ${templateBatches}/${batches.length} template batches for ${request.request_id}`);
+        logger.warn(
+          { templateBatches, batches: batches.length },
+          `content plan contains ${templateBatches}/${batches.length} template batches for ${request.request_id}`,
+        );
       }
       return { contentInput, scheduled: merged, anchor: anchorOf(evidence, projection.meta, merged) };
     } catch (error) {
@@ -486,11 +486,7 @@ export class MasterPlanNodes {
       if (audit.summary.fail > 0)
         return {
           audit,
-          outcome: qualityFailure(
-            request,
-            context,
-            ...items.filter((item) => item.verdict === "fail").map((item) => `daniels_audit_fail:${item.item}`),
-          ),
+          outcome: qualityFailure(request, context, ...items.filter((item) => item.verdict === "fail").map((item) => `daniels_audit_fail:${item.item}`)),
         };
       return { audit };
     } catch (error) {
@@ -527,6 +523,7 @@ export class MasterPlanNodes {
           skeleton: state.skeleton!,
           anchor: state.anchor!,
           audit: state.audit!,
+          ...(state.weeklyDocs != null ? { weekly_docs: state.weeklyDocs } : {}),
           artifact_revision: state.artifactRevision,
           warnings: warningsOf(state),
         },
@@ -537,19 +534,34 @@ export class MasterPlanNodes {
   /** 条件边助手：任何节点返回 outcome 即终止整条链。 */
   readonly stopOr = (next: string) => (state: typeof GraphState.State) => (state.outcome ? END : next);
 
-  /** 快照组装（独立节点，finalize 只做终检）。 */
+  /** 快照组装（独立节点，finalize 只做终检）：v2 快照 + 首批周课文档（#858）。 */
   readonly snapshotPlan = (state: typeof GraphState.State) => {
     const { request } = required(state);
     try {
+      const planStartMonday = planningStartDate(asOfOf(request));
       const plan = buildV2Snapshot({
         policy: state.policy!,
         skeleton: state.skeleton!,
         scheduled: state.scheduled!,
         request,
-        planStartMonday: planningStartDate(asOfOf(request)),
+        planStartMonday,
         generatedAt: generatedAtOf(request),
       });
-      return { plan: MasterPlanSchema.parse(plan) };
+      // 首批周课文档（单一真源 buildWeeklyDocs）：scheduled=merged 批产物、
+      // batchRows=首批门控后的 contentInput.rows；首批 skeletonNew=skeletonStored
+      // （无偏差，km_deviation_pct 全 0）；首批全是未来周，不做追赶冻结。
+      // raceDate 同 buildV2Snapshot 的 goal 口径（A 目标比赛日，key_sessions 派生）。
+      const weeklyDocs = buildWeeklyDocs({
+        scheduled: state.scheduled!,
+        batchRows: state.contentInput!.rows,
+        policy: state.policy!,
+        skeletonNew: state.skeleton!,
+        skeletonStored: state.skeleton!,
+        planStartMonday,
+        raceDate: aGoalOf(request).race_date,
+        athlete: { weeklyRunDaysMax: request.availability.weekly_run_days_max },
+      });
+      return { plan: MasterPlanSchema.parse(plan), weeklyDocs };
     } catch (error) {
       logSwallowedFailure("snapshotPlan", error);
       return {
@@ -584,11 +596,7 @@ function generatedAtOf(request: MasterPlanGraphRequest): string {
   return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
-function anchorOf(
-  evidence: PhaseEvidence,
-  projection: { capped: boolean; residual: number },
-  scheduled: ScheduledOutcome,
-): MasterPlanAnchor {
+function anchorOf(evidence: PhaseEvidence, projection: { capped: boolean; residual: number }, scheduled: ScheduledOutcome): MasterPlanAnchor {
   return MasterPlanAnchorSchema.parse({
     as_of: evidence.as_of,
     vdot: evidence.current_capability.vdot,

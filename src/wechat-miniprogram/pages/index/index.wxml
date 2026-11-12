@@ -201,4 +201,31 @@
     bindselect="onPushDateSelect"
     bindclose="onPushDateClose"
   />
+
+  <!-- #858 PR-E：训练调整追问弹窗（每天首次打开时弹） -->
+  <adjust-dialog
+    wx:if="{{adjustDialogVisible}}"
+    show="{{adjustDialogVisible}}"
+    userId="{{uid}}"
+    adjustment="{{pendingAdjustment}}"
+    bindaccepted="onAdjustAccepted"
+    binddismissed="onAdjustDismissed"
+    bindclosed="onAdjustClosed"
+    bindinjury="onAdjustInjury"
+  />
+
+  <!-- #858 PR-E：伤病弹层（每日轻问 / 受伤路径进入的登记表单） -->
+  <injury-dialog
+    wx:if="{{injuryDialogVisible}}"
+    show="{{injuryDialogVisible}}"
+    mode="{{injuryDialogMode}}"
+    injury="{{injuryState}}"
+    race-closing-soon="{{raceClosingSoon}}"
+    result-text="{{injuryResultText}}"
+    bindentered="onInjuryEntered"
+    bindchecked="onInjuryChecked"
+    binddoctored="onInjuryDoctored"
+    bindcoach="onInjuryCoach"
+    bindclosed="onInjuryClosed"
+  />
 </view>

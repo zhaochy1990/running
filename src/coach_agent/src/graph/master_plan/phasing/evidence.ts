@@ -97,8 +97,8 @@ export type PhaseEvidence = z.infer<typeof PhaseEvidenceSchema>;
 
 export interface PhasingGoalInput {
   raceName: string;
-  /** 判断层教义目前只验证过 FM（daniels.md/spike 全量 FM）；HM 需连同教义一起另立。 */
-  distance: "FM";
+  /** 目标距离（master 判断层教义只验证过 FM——HM 由滚动链路透传，教义另立前生产仍只出 FM 计划）。 */
+  distance: "FM" | "HM";
   targetTime: string;
   weeklyRunDaysMax: number;
 }

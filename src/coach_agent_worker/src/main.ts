@@ -1,6 +1,6 @@
 import { loadConfig } from "@stride/coach-agent";
 import { getLogger } from "@stride/common";
-import { masterPlanGraph, weeklyPlanGraph } from "./app/dependencies.js";
+import { masterPlanGraph, rollingDeps } from "./app/dependencies.js";
 import { createPlanJobHandlers } from "./app/handlers.js";
 import { startReconcileTimer } from "./app/reconcile.js";
 import { loadWorkerConfig } from "./config.js";
@@ -8,6 +8,7 @@ import { coachAgentConfigFiles, workerConfigFiles } from "./configPaths.js";
 import { MySqlDataProvider } from "./data/mysqlDataProvider.js";
 import { createStridePool } from "./db/mysql.js";
 import { GoJobClient } from "./goClient/jobClient.js";
+import { GoWeeklyPlanClient } from "./goClient/weeklyPlanClient.js";
 import { PlanJobDispatcher } from "./job/dispatch.js";
 import { PlanJobQueue, RabbitConsumer, RabbitPublisher } from "./queue/rabbit.js";
 
@@ -37,8 +38,9 @@ async function main(): Promise<void> {
   const dataProvider = new MySqlDataProvider(stridePool);
   const handlers = createPlanJobHandlers({
     masterGraph: await masterPlanGraph(coachConfig, dataProvider),
-    weeklyGraph: weeklyPlanGraph(coachConfig, dataProvider),
     dataProvider,
+    rolling: rollingDeps(coachConfig, dataProvider),
+    weeklyPlans: new GoWeeklyPlanClient(workerConfig.goApi.baseUrl, workerConfig.goApi.internalToken),
   });
 
   const dispatcher = new PlanJobDispatcher(store, handlers, publisher, workerConfig.retry, {

@@ -48,6 +48,9 @@ export const STORAGE_KEYS = {
   REFRESH_TOKEN: 'refresh_token',
   TOKEN_EXPIRES_AT: 'token_expires_at',
   USER_INFO: 'user_info',
+  // #858 PR-E 每日一次弹窗门（上海日 YYYY-MM-DD）
+  LAST_ADJUST_POPUP_DAY: 'last_adjust_popup_day',
+  LAST_INJURY_ASK_DAY: 'last_injury_ask_day',
 } as const;
 
 // 网络请求超时（毫秒）

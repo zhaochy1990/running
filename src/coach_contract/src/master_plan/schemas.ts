@@ -97,6 +97,13 @@ const KeySessionStrictSchema = z
   })
   .describe("Exactly one independently performed workout. Embedded blocks are components of this object and must not be repeated as sibling key_sessions.");
 
+/**
+ * 单条重点课（strict 形状）——master plan weeks.key_sessions 的数组元素单源。
+ * #858 PR-C 下半：weekly-plan/v1 的滚动扩展字段 `key_sessions` 复用同一形状
+ * （周课文档带 v2 周行，Go 读合并才可零业务逻辑透传）。
+ */
+export const KeySessionSchema = KeySessionStrictSchema;
+
 /** Phase 形状（字段类型/枚举），不带跨字段确定性规则。 */
 const PhaseShapeSchema = z.object({
   name: PhaseNameSchema,

@@ -10,6 +10,25 @@ import {
 import { getActivities } from '../../services/activities';
 import { setPendingCoachContext } from '../../services/coach';
 import {
+  dismissAdjustment,
+  getPendingAdjustment,
+} from '../../services/plan-adjustment';
+import {
+  answerInjuryDoctor,
+  checkinInjury,
+  enterInjury,
+  getInjuryState,
+} from '../../services/plan-injury';
+import { getCurrentMasterPlan } from '../../services/master-plan';
+import { STORAGE_KEYS } from '../../constants/config';
+import { shouldPopupToday } from '../../utils/adjustFlow';
+import {
+  checkinResultText,
+  doctorResultText,
+  enterResultText,
+  raceClosingWithinWeeks,
+} from '../../utils/injuryFlow';
+import {
   buildPushDateOptions,
   buildWeekDays,
   shanghaiShiftDays,
@@ -21,6 +40,10 @@ import { fmtDose, fmtDurationShort, fmtKm, fmtPace } from '../../utils/format';
 import { theme } from '../../utils/theme';
 import { userStore } from '../../store/index';
 import type { Activity } from '../../types/activity';
+import type {
+  PlanAdjustment,
+  PlanInjuryState,
+} from '../../types/adjustment';
 import type {
   PlanSessionRow,
   TodayNutritionView,
@@ -90,6 +113,8 @@ interface PushDateSelectEvent {
 interface IndexPageData {
   statusBarHeight: number;
   contentPaddingTop: number;
+  /** 当前用户 uid（模块级 userId 的渲染镜像，供弹层组件 property 绑定）。 */
+  uid: string;
   /** 游客态（未登录）：周历可浏览，训练数据区换登录引导 */
   guest: boolean;
   weekDays: TodayWeekDay[];
@@ -105,6 +130,34 @@ interface IndexPageData {
   /** 推送日期弹层可见性（±7 天共 15 个选项，需滚动列表承载） */
   pushSheetVisible: boolean;
   pushOptions: Array<{ label: string; value: string }>;
+  // —— #858 PR-E：调整追问弹窗 / 伤病弹层 ——
+  /** 调整追问弹窗可见性（每天首次 onShow 且有 pending 时弹一次）。 */
+  adjustDialogVisible: boolean;
+  pendingAdjustment: PlanAdjustment | null;
+  /** 伤病弹层可见性（每日轻问 / 调整弹窗「受伤了」进入的登记表单）。 */
+  injuryDialogVisible: boolean;
+  injuryDialogMode: 'enter' | 'ask';
+  injuryState: PlanInjuryState | null;
+  /** 弹层内请求成功后的结果文案（回填即切 result 态）。 */
+  injuryResultText: string;
+  /** rest + 比赛临近（≤4 周）：轻问附「按现状重排」行。 */
+  raceClosingSoon: boolean;
+}
+
+interface AdjustDialogEvent {
+  detail: { adjustmentId: string };
+}
+
+interface InjuryEnteredEvent {
+  detail: { detail: string; verdict: 'continue' | 'reduced' | 'rest' | 'undecided' };
+}
+
+interface InjuryCheckedEvent {
+  detail: { answer: 'better' | 'same' | 'worse' | 'recovered' };
+}
+
+interface InjuryDoctoredEvent {
+  detail: { verdict: 'continue' | 'reduced' | 'rest' };
 }
 
 interface IndexPageHandlers {
@@ -114,6 +167,9 @@ interface IndexPageHandlers {
   fetchWeekSessions(anchorYmd: string): Promise<void>;
   renderDay(dateYmd: string, isToday: boolean): void;
   fetchDayActivities(dateYmd: string): Promise<void>;
+  checkDailyPopups(): Promise<void>;
+  loadRaceClosing(userId: string): Promise<boolean>;
+  refreshInjuryState(): Promise<void>;
   onWorkoutCardTap(): void;
   /** open-type=share 按钮的 catchtap：转发由 open-type 触发，这里只拦向卡片的冒泡 */
   onShareTap(): void;
@@ -128,6 +184,16 @@ interface IndexPageHandlers {
   onPushDateSelect(e: PushDateSelectEvent): void;
   onPushDateClose(): void;
   onDeleteWorkout(): void;
+  // —— #858 PR-E：调整弹窗 / 伤病弹层事件 ——
+  onAdjustClosed(): void;
+  onAdjustAccepted(): void;
+  onAdjustDismissed(): void;
+  onAdjustInjury(e: AdjustDialogEvent): void;
+  onInjuryClosed(): void;
+  onInjuryEntered(e: InjuryEnteredEvent): Promise<void>;
+  onInjuryChecked(e: InjuryCheckedEvent): Promise<void>;
+  onInjuryDoctored(e: InjuryDoctoredEvent): Promise<void>;
+  onInjuryCoach(): void;
 }
 
 // 页面实例上的非渲染状态（模块级避免与 data 串扰，同 login 页 codeTimer 模式）
@@ -143,6 +209,12 @@ let sessionsWeekStart = '';
 // 内容区左右轻扫切日的触摸起点（onContentTouchStart 记录，onContentTouchEnd 判定）。
 let swipeStartX = 0;
 let swipeStartY = 0;
+
+// #858 PR-E 每日弹窗检查防重入：onShow 高频触发（tab 切换），检查本身是异步
+// 并发拉取，重入会导致重复弹层。
+let dailyPopupChecking = false;
+// 调整弹窗「受伤了」路径：伤病登记成功后要 dismiss 的调整行 id（受伤接管）。
+let pendingInjuryAdjustmentId = '';
 
 function todayLabelOf(ymd: string): string {
   return `${Number(ymd.slice(5, 7))}月${Number(ymd.slice(8))}日`;
@@ -195,6 +267,7 @@ Page<IndexPageData, IndexPageHandlers>({
   data: {
     statusBarHeight: 0,
     contentPaddingTop: 232,
+    uid: '',
     // 游客态（未登录）：周历可浏览，训练数据区换登录引导
     guest: false,
     weekDays: [],
@@ -208,6 +281,13 @@ Page<IndexPageData, IndexPageHandlers>({
     loading: true,
     pushSheetVisible: false,
     pushOptions: [],
+    adjustDialogVisible: false,
+    pendingAdjustment: null,
+    injuryDialogVisible: false,
+    injuryDialogMode: 'ask',
+    injuryState: null,
+    injuryResultText: '',
+    raceClosingSoon: false,
   },
 
   onLoad() {
@@ -234,6 +314,7 @@ Page<IndexPageData, IndexPageHandlers>({
         return;
       }
       userId = user.id;
+      this.setData({ uid: userId });
       this.fetchPlan();
     });
   },
@@ -248,12 +329,101 @@ Page<IndexPageData, IndexPageHandlers>({
       this.setData({ guest: false });
       const user = userStore.getState().user;
       userId = user?.id ?? '';
+      this.setData({ uid: userId });
       this.fetchPlan();
     }
     // 静默刷新（devops#698）：教练在对话里删除/改期/保存自建课后切回本 tab，
     // 课表即时反映，无需手动下拉刷新。跳过首帧（onLoad 已拉）与未加载态。
     if (planLoaded && userId) {
       void this.fetchWeekSessions(this.data.selectedDate || shanghaiToday());
+    }
+    // #858 PR-E：每日首次打开的训练调整追问 / 伤病轻问（静默、失败不打扰）。
+    void this.checkDailyPopups();
+  },
+
+  /**
+   * #858 PR-E 每日弹窗门（onShow 触发，静默失败）：
+   * 1. 登录态就绪后并发拉 pending 调整 + 伤病状态；
+   * 2. 有 pending 调整且「今天没弹过」（storage 记上海日）→ 弹追问弹窗；
+   * 3. 否则伤病激活且「今天没问过」→ 弹每日轻问（rest + 比赛临近附重排行）。
+   * 调整弹窗优先于轻问（同屏只弹一个，轻问明天再问）。
+   */
+  async checkDailyPopups() {
+    if (dailyPopupChecking) return;
+    if (this.data.adjustDialogVisible || this.data.injuryDialogVisible) return;
+    dailyPopupChecking = true;
+    try {
+      await userStore.waitForAuth();
+      const { isAuthenticated, user } = userStore.getState();
+      if (!isAuthenticated || !user) return;
+      const today = shanghaiToday();
+      // 两扇门都关着（今天都弹/问过）就不发请求——onShow 高频触发，别白打接口。
+      const adjustGateOpen = shouldPopupToday(wx.getStorageSync(STORAGE_KEYS.LAST_ADJUST_POPUP_DAY), today);
+      const injuryGateOpen = shouldPopupToday(wx.getStorageSync(STORAGE_KEYS.LAST_INJURY_ASK_DAY), today);
+      if (!adjustGateOpen && !injuryGateOpen) return;
+
+      const [pending, injury] = await Promise.all([
+        adjustGateOpen
+          ? getPendingAdjustment(user.id).catch((err) => {
+              console.warn('[index] 拉 pending 调整失败', err);
+              return null;
+            })
+          : Promise.resolve(null),
+        injuryGateOpen
+          ? getInjuryState(user.id).catch((err) => {
+              console.warn('[index] 拉伤病状态失败', err);
+              return null;
+            })
+          : Promise.resolve(null),
+      ]);
+      // 等待期间用户可能已离开本页；仅更新数据态，弹层交给下一次 onShow。
+      const pages = getCurrentPages();
+      const current = pages[pages.length - 1];
+      if (!current || current.route !== 'pages/index/index') return;
+
+      if (pending) {
+        wx.setStorageSync(STORAGE_KEYS.LAST_ADJUST_POPUP_DAY, today);
+        this.setData({ adjustDialogVisible: true, pendingAdjustment: pending });
+        return;
+      }
+      if (injury) {
+        // rest + 比赛临近（≤4 周）：拉当前计划算比赛周距离（无计划/失败不附行）。
+        let closing = false;
+        if (injury.mode === 'rest') closing = await this.loadRaceClosing(user.id);
+        wx.setStorageSync(STORAGE_KEYS.LAST_INJURY_ASK_DAY, today);
+        this.setData({
+          injuryDialogVisible: true,
+          injuryDialogMode: 'ask',
+          injuryState: injury,
+          injuryResultText: '',
+          raceClosingSoon: closing,
+        });
+      }
+    } finally {
+      dailyPopupChecking = false;
+    }
+  },
+
+  /** rest 态下算比赛周是否临近（master-plan/current 的 goal.race_date，≤4 周）。 */
+  async loadRaceClosing(uid: string): Promise<boolean> {
+    try {
+      const envelope = await getCurrentMasterPlan(uid);
+      if (!envelope || envelope.content_version !== 2) return false;
+      return raceClosingWithinWeeks(envelope.plan.goal.race_date, shanghaiToday());
+    } catch (err) {
+      console.warn('[index] 拉当前计划算比赛临近失败', err);
+      return false;
+    }
+  },
+
+  /** 伤病弹层操作后的状态回读（供后续 onShow 的轻问形态判定）。 */
+  async refreshInjuryState() {
+    if (!userId) return;
+    try {
+      const injury = await getInjuryState(userId);
+      this.setData({ injuryState: injury });
+    } catch {
+      // 静默：回读失败保留旧态
     }
   },
 
@@ -494,5 +664,104 @@ Page<IndexPageData, IndexPageHandlers>({
         }
       },
     });
+  },
+
+  // --- #858 PR-E：调整追问弹窗事件 ---
+
+  // 用户直接关闭（未决策）：pending 行保留，收成训练计划页提示条。
+  onAdjustClosed() {
+    this.setData({ adjustDialogVisible: false });
+  },
+
+  // 同意应用成功：toast 已由组件出，这里刷新本周课表（accept 覆盖当前+未来周）。
+  onAdjustAccepted() {
+    this.setData({ adjustDialogVisible: false, pendingAdjustment: null });
+    if (planLoaded && userId) {
+      void this.fetchPlan();
+    }
+  },
+
+  // 保持原计划：事件已关（同一偏差周不再问）。
+  onAdjustDismissed() {
+    this.setData({ adjustDialogVisible: false, pendingAdjustment: null });
+  },
+
+  // 受伤路径：关调整弹窗 → 开伤病登记；登记成功后 dismiss 该调整行（受伤接管）。
+  onAdjustInjury(e: AdjustDialogEvent) {
+    pendingInjuryAdjustmentId = e.detail.adjustmentId || '';
+    this.setData({
+      adjustDialogVisible: false,
+      injuryDialogVisible: true,
+      injuryDialogMode: 'enter',
+      injuryResultText: '',
+    });
+  },
+
+  // --- #858 PR-E：伤病弹层事件 ---
+
+  onInjuryClosed() {
+    this.setData({ injuryDialogVisible: false, injuryResultText: '' });
+  },
+
+  // 登记四选一（enter / 加重后重判共用）：enter → 差异化结果文案；
+  // 若来自调整弹窗受伤路径，同时 dismiss 该调整行（伤病接管）。
+  async onInjuryEntered(e: InjuryEnteredEvent) {
+    if (!userId) return;
+    const { detail, verdict } = e.detail;
+    try {
+      const res = await enterInjury(userId, detail, verdict);
+      // 登记完成即算当天问过（reduced/rest 之后的每日轻问从明天开始）。
+      wx.setStorageSync(STORAGE_KEYS.LAST_INJURY_ASK_DAY, shanghaiToday());
+      if (pendingInjuryAdjustmentId) {
+        const adjustmentId = pendingInjuryAdjustmentId;
+        pendingInjuryAdjustmentId = '';
+        dismissAdjustment(userId, adjustmentId).catch((err) => {
+          console.warn('[index] 受伤接管 dismiss 调整行失败', err);
+        });
+        this.setData({ pendingAdjustment: null });
+      }
+      this.setData({ injuryResultText: enterResultText(verdict, res.closed) });
+      await this.refreshInjuryState();
+    } catch (err) {
+      console.error('[index] 伤病登记失败', err);
+      wx.showToast({ title: '提交失败，请重试', icon: 'none' });
+      this.setData({ injuryDialogVisible: false });
+    }
+  },
+
+  // 每日轻问四键：recovered 关模式文案 / worse 转重判（明天问句变四选一）。
+  async onInjuryChecked(e: InjuryCheckedEvent) {
+    if (!userId) return;
+    try {
+      const res = await checkinInjury(userId, e.detail.answer);
+      this.setData({
+        injuryResultText: checkinResultText(e.detail.answer, res.closed ? null : res.injury),
+      });
+      await this.refreshInjuryState();
+    } catch (err) {
+      console.error('[index] 伤病轻问提交失败', err);
+      wx.showToast({ title: '提交失败，请重试', icon: 'none' });
+      this.setData({ injuryDialogVisible: false });
+    }
+  },
+
+  // 医生结论三键（pending_doctor 态）。
+  async onInjuryDoctored(e: InjuryDoctoredEvent) {
+    if (!userId) return;
+    try {
+      const res = await answerInjuryDoctor(userId, e.detail.verdict);
+      this.setData({ injuryResultText: doctorResultText(e.detail.verdict, res.closed) });
+      await this.refreshInjuryState();
+    } catch (err) {
+      console.error('[index] 医生结论提交失败', err);
+      wx.showToast({ title: '提交失败，请重试', icon: 'none' });
+      this.setData({ injuryDialogVisible: false });
+    }
+  },
+
+  // 「找教练聊聊」：关弹层跳教练 tab。
+  onInjuryCoach() {
+    this.setData({ injuryDialogVisible: false, injuryResultText: '' });
+    wx.switchTab({ url: '/pages/coach/coach' });
   },
 });
