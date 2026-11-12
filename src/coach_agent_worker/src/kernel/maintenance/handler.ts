@@ -5,9 +5,10 @@ import {
   fromStoredContent,
   isMaintenanceWeeklyDoc,
   type MasterPlanContextProvider,
+  mergeAdjustedWeekDocs,
   storedWeeklyDocOf,
 } from "@stride/coach-agent";
-import { addDays, MaintenanceJobRequest, mondayOnOrBefore, shanghaiDay } from "@stride/contract";
+import { addDays, MaintenanceJobRequest, mondayOnOrBefore, shanghaiDay, type WeeklyPlan } from "@stride/contract";
 import type { RollingWeeklyChannel } from "../../goClient/weeklyPlanClient.js";
 import { ERROR_CODES, type Handler, newPermanentError } from "../../job/errors.js";
 import type { PlanJob } from "../../job/model.js";
@@ -70,8 +71,9 @@ export function createMaintenanceJobHandler(deps: MaintenanceHandlerDeps): Handl
     // ③ 目标周=当前周；本周已有维持行（coach_notes 含「伤病维持期」标记——可复现
     // 判据）→ 顺延下一周（夜检正常不 enqueue 该场景，此为手动补投/竞态双护栏）。
     const currentWeekMonday = mondayOnOrBefore(asOfDay);
+    const currentDoc = await storedWeekDoc(deps, job.userId, currentWeekMonday);
     let targetWeek = currentWeekMonday;
-    if (await weekHasMaintenance(deps, job.userId, currentWeekMonday)) {
+    if (currentDoc !== null && isMaintenanceWeeklyDoc(currentDoc)) {
       targetWeek = addDays(currentWeekMonday, 7);
     }
     const targetWeekNumber = weekNumberOf(master.planStartMonday, targetWeek);
@@ -92,7 +94,8 @@ export function createMaintenanceJobHandler(deps: MaintenanceHandlerDeps): Handl
     const startKm = state.maintenance_km ?? preInjuryKm * 0.6; // 进入减量缺省锚=伤前 60%（票面口径）
     const maintenanceKm = r1(clamp(Math.min(startKm * 1.05, actualAvgKm * 1.1), preInjuryKm * 0.5, preInjuryKm * 0.7));
 
-    // ⑤ 确定性构造（零 LLM）+ 已过日期冻结（同 rolling 链口径）。
+    // ⑤ 确定性构造（零 LLM）+ 过去日期保护（#952 同口径）：目标周已有课表
+    // 时按日合并（旧安排截至今天保留、明天起才替换），无存量行才走首次冻结。
     await hb("planning_phases", 60);
     const strengthPerWeek =
       typeof (active.content.availability as Record<string, unknown> | undefined)?.strength_sessions_per_week === "number"
@@ -106,7 +109,12 @@ export function createMaintenanceJobHandler(deps: MaintenanceHandlerDeps): Handl
       strengthPerWeek,
       phaseGoalNote: `伤前骨架第 ${targetWeekNumber} 周（${skeletonWeek.role}）${r1(preInjuryKm)}km，维持带 ${r1(preInjuryKm * 0.5)}-${r1(preInjuryKm * 0.7)}km`,
     });
-    const [doc] = freezePastSessions([built], asOfDay);
+    const existingDoc = targetWeek === currentWeekMonday ? currentDoc : await storedWeekDoc(deps, job.userId, targetWeek);
+    const [doc] = existingDoc === null ? freezePastSessions([built], asOfDay) : mergeAdjustedWeekDocs([built], [existingDoc], asOfDay);
+    if (doc === undefined) {
+      // 本周已无未来 run 可排（如周日）：不发布新课，也不能把过去安排写回。
+      return { result: JSON.stringify({ decision: "no_op", reason: "本周已无未来课程可排（已过日期不重写）" }) };
+    }
 
     // ⑥ 落库（同 master_plan 周期望替换 revision+1）+ 回写单值锚。
     await hb("outputting", 95);
@@ -148,15 +156,15 @@ export interface MaintenanceHandlerDeps {
   weeklyDocs: MaintenanceWeeklyDocSource;
 }
 
-/** 某周是否已有维持行（周文档 coach_notes 含「伤病维持期」标记；无行/解析失败=false）。 */
-async function weekHasMaintenance(deps: MaintenanceHandlerDeps, userId: string, weekStart: string): Promise<boolean> {
+/** 某周已落库文档（宽松行 content → 周文档；无行/解析失败=null）。 */
+async function storedWeekDoc(deps: MaintenanceHandlerDeps, userId: string, weekStart: string): Promise<WeeklyPlan | null> {
   const raw = await deps.weeklyDocs.getWeeklyPlan(userId, weekStart);
-  if (raw === null) return false;
+  if (raw === null) return null;
   try {
-    return isMaintenanceWeeklyDoc(storedWeeklyDocOf(raw, weekStart));
+    return storedWeeklyDocOf(raw, weekStart);
   } catch {
-    // 存量行解析失败（老文档缺字段等）按「非维持行」处理——本轮直接覆盖出维持课。
-    return false;
+    // 存量行解析失败（老文档缺字段等）按无行处理——本轮直接覆盖出维持课。
+    return null;
   }
 }
 

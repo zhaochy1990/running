@@ -118,9 +118,10 @@ async function main() {
     km: doc.target_weekly_km_low ?? 0,
   }));
   console.log(`[step3] runAdjustProjection reason=${reason} existingWeeks=${existingWeeks.map((week) => `W${week.week}(${week.km}km)`).join(",")}`);
+  const existingDocs = artifact.weekly_docs ?? [];
   const outcome = await runAdjustProjection(
     { contextProvider: provider, models: llmModels },
-    { userId: USER_ID, master, asOf: new Date().toISOString(), deviation, reason, existingWeeks },
+    { userId: USER_ID, master, asOf: new Date().toISOString(), deviation, reason, existingWeeks, existingDocs },
   );
   assertOk(outcome.decision === "completed", `adjust 未完成（${outcome.decision}）：${"reason" in outcome ? outcome.reason : JSON.stringify(outcome).slice(0, 300)}`);
   console.log(`[step3] completed：窗口 W${outcome.window.startWeek}-W${outcome.window.endWeek}`);

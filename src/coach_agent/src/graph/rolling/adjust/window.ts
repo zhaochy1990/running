@@ -5,8 +5,8 @@
  *
  * 语义（票面定稿）：窗口=明日 → 当前周所在块末 ∩ 已生成段末（lastGeneratedWeek
  * ∩ 已落库 weekly 行）。起点=事件周+1 与「明日所在周」取大——事件周是完整周
- * （≤当前周−1），正常即当前周；窗口含当前周时，已过日期由追赶冻结
- * （freezePastSessions，date<明天删会话）兜住。终点三重夹：当前周所在块末
+ * （≤当前周−1），正常即当前周；窗口含当前周时，已过日期由按日合并
+ * （mergeAdjustedWeekDocs，旧文档截至今天保留）兜住。终点三重夹：当前周所在块末
  * （3+1 mesocycle 界）、lastGeneratedWeek（不出新周）、已落库 weekly 行最大周
  * （只替换已可见行）。终点<起点 → no_op（当前周已是批次末/无剩余周/赛季结束）。
  */
@@ -80,7 +80,7 @@ export function evaluateAdjustWindow(opts: {
   const window: RollingWindow = {
     startWeek,
     endWeek,
-    // 窗口含当前周（进行中）→ 追赶冻结语义生效（date<明天删会话）。
+    // 窗口含当前周（进行中）→ 调整路径按日合并过去安排（旧文档截至今天）。
     mode: startWeek === currentWeek ? "catch_up" : "boundary",
     reason: `偏差调整（事件周=第 ${eventWeek} 周）：重生成第 ${startWeek}-${endWeek} 周（当前批次剩余周，只改已可见周、不出新周）`,
   };

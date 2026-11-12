@@ -22,6 +22,6 @@ export type {
 export { diffOfWeeks, fromMasterArtifact, runProjectionCore, runRollingProjection } from "./projection.js";
 export { fromStoredContent, storedWeeklyDocOf } from "./storedContent.js";
 export type { WeeklyDocsInput } from "./weeklyDocs.js";
-export { buildWeeklyDocs, freezePastSessions } from "./weeklyDocs.js";
+export { buildWeeklyDocs, freezePastSessions, mergeAdjustedWeekDocs } from "./weeklyDocs.js";
 export type { RollingWindow } from "./window.js";
 export { computeRollingWindow, currentWeekOf, evaluateRollingWindow } from "./window.js";

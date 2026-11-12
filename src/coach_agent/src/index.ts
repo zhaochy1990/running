@@ -86,6 +86,7 @@ export {
   fromStoredContent,
   isMaintenanceWeeklyDoc,
   MAINTENANCE_COACH_NOTE_PREFIX,
+  mergeAdjustedWeekDocs,
   recipeFor,
   runAdjustProjection,
   runRollingProjection,

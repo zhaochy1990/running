@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zhaochy1990/stride/internal/storage"
+	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 )
 
 // Deviation-adjustment consent flow (#858 PR-C): the nightly scan (PR-C 下半)
@@ -37,10 +38,19 @@ type PlanAdjustmentStore interface {
 type planAdjustmentRoutes struct {
 	store PlanAdjustmentStore
 	log   *zap.Logger
+	// now is the accept-time clock. Merging "past arrangements" at write time is
+	// deliberate (#952): a proposal generated yesterday may be accepted today,
+	// and the days in between are past by then.
+	now func() time.Time
 }
 
 func newPlanAdjustmentRoutes(store PlanAdjustmentStore, log *zap.Logger) *planAdjustmentRoutes {
-	return &planAdjustmentRoutes{store: store, log: log}
+	return &planAdjustmentRoutes{store: store, log: log, now: time.Now}
+}
+
+// today is the Shanghai civil day the accept was written on.
+func (p *planAdjustmentRoutes) today() string {
+	return timefmt.ShanghaiDay(p.now()).Format("2006-01-02")
 }
 
 func (p *planAdjustmentRoutes) registerInternal(rg *gin.RouterGroup) {
@@ -408,16 +418,11 @@ func (p *planAdjustmentRoutes) accept(c *gin.Context) {
 	}
 	type appliedWeek = acceptAdjustmentWeek
 	applied := make([]appliedWeek, 0, len(proposal.WeeklyDocs))
+	today := p.today()
 	for _, document := range proposal.WeeklyDocs {
 		weekName, _ := document["week_name"].(string)
 		weekStart, _, ok := weekIdentity(weekName)
 		if !ok {
-			c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
-			return
-		}
-		content, err := validateAppliedWeeklyPlan(document, weekName)
-		if err != nil {
-			p.log.Warn("adjustment accept week content invalid", zapErr(err), zap.String("user_id", userID), zap.String("week_start", weekStart))
 			c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
 			return
 		}
@@ -428,12 +433,37 @@ func (p *planAdjustmentRoutes) accept(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 			return
 		}
+		toApply := document
 		if active != nil {
 			if active.MasterPlanID == nil || *active.MasterPlanID != row.MasterPlanID {
 				c.JSON(http.StatusConflict, errorResponse{Error: "weekly_plan_master_plan_conflict"})
 				return
 			}
 			replacement = &storage.WeeklyPlanReplacement{PlanID: active.PlanID, Revision: active.Revision}
+			// #952：以实际写入日（不是提案生成日）保护过去安排——生成后隔天
+			// 才同意时，这期间已成为过去的安排仍取现存课表。
+			var activeDocument map[string]any
+			if err := json.Unmarshal([]byte(active.Content), &activeDocument); err != nil {
+				p.log.Warn("adjustment accept active week unreadable — keeping it", zapErr(err), zap.String("user_id", userID), zap.String("week_start", weekStart))
+				continue
+			}
+			merged, keep := mergeAdjustedWeeklyPlan(document, activeDocument, today)
+			if !keep {
+				p.log.Info("adjustment accept keeps current week (no safe future replacement)", zap.String("user_id", userID), zap.String("week_start", weekStart))
+				continue
+			}
+			toApply = merged
+		}
+		content, err := validateAppliedWeeklyPlan(toApply, weekName)
+		if err != nil {
+			if active != nil {
+				// 合并后的周不合法：保留原课表，绝不写入未冻结的新文档。
+				p.log.Warn("adjustment accept merged week invalid — keeping active week", zapErr(err), zap.String("user_id", userID), zap.String("week_start", weekStart))
+				continue
+			}
+			p.log.Warn("adjustment accept week content invalid", zapErr(err), zap.String("user_id", userID), zap.String("week_start", weekStart))
+			c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
+			return
 		}
 		link := row.MasterPlanID
 		created, replaced, err := p.store.ApplyStructuredWeeklyPlan(

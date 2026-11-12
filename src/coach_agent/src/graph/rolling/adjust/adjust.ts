@@ -6,7 +6,7 @@
  * 语义（票面定稿）：
  * - 窗口=事件周+1 →（当前周所在块末 ∩ lastGeneratedWeek ∩ 已落库周）——只改
  *   已可见的剩余周，不出新周（边界出新块归 generate_rolling_block）；窗口含
- *   当前周时追赶冻结生效（date<明天删会话）。
+ *   当前周时按日合并存量周文档（旧文档截至今天保留，明天起才替换）。
  * - 配方参数（recipeFor）：vdotShift 投影带偏移 / qualityCap 质量课配额 /
  *   kmDerateFirstWeek 首周降载 / guidance 注入 L4a 的周调整指令。
  * - injured 不走本引擎（PR-D 伤病模式）：recipeFor 抛错，调用方转 permanent
@@ -16,7 +16,7 @@
 import type { DanielsAudit, WeeklyPlan } from "@stride/contract";
 import type { AskReason, WeekDeviation } from "../detect/detector.js";
 import type { RollingDeps, RollingProjectionInput } from "../projection.js";
-import { runProjectionCore, type CoreOutcome } from "../projection.js";
+import { type CoreOutcome, runProjectionCore } from "../projection.js";
 import { recipeFor } from "./recipes.js";
 import type { ExistingWeekRef } from "./window.js";
 
@@ -43,6 +43,8 @@ export interface AdjustProjectionInput extends Pick<RollingProjectionInput, "use
   reason: AskReason;
   /** 现有 weekly 行（diff 基准 + 窗口推导：只改已可见周）。 */
   existingWeeks: ExistingWeekRef[];
+  /** 已落库周文档（窗口内周的合并基准：旧文档截至今天 + 新文档明天起）。 */
+  existingDocs: WeeklyPlan[];
 }
 
 /**
@@ -55,7 +57,7 @@ export async function runAdjustProjection(deps: RollingDeps, input: AdjustProjec
   const core: CoreOutcome = await runProjectionCore(
     deps,
     { userId: input.userId, master: input.master, asOf: input.asOf },
-    { eventWeekStart: input.deviation.weekStart, recipe, existingWeeks: input.existingWeeks },
+    { eventWeekStart: input.deviation.weekStart, recipe, existingWeeks: input.existingWeeks, existingDocs: input.existingDocs },
   );
   if (core.decision !== "completed") return core;
   return {

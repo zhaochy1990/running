@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { type AdjustOutcome, masterPlanToContent } from "@stride/coach-agent";
 import { createTestCompletedOutcomeV3, createTestWeeklyPlanDoc } from "@stride/coach-agent/test-fixtures";
-import type { AdjustJobRequest } from "@stride/contract";
+import type { AdjustJobRequest, WeeklyPlan } from "@stride/contract";
 import { AdjustmentEventClosedError } from "../../src/goClient/weeklyPlanClient.js";
 import { asPermanent } from "../../src/job/errors.js";
 import { type AdjustHandlerDeps, createAdjustJobHandler } from "../../src/kernel/adjust/handler.js";
@@ -123,7 +123,7 @@ function fakeDeps(overrides: { outcome?: AdjustOutcome; pending?: object | null;
 
 const handlerCalls: Array<{ adjustmentId: string; reason: string; payload: string }> = [];
 const upsertCalls: Array<{ userId: string; masterPlanId: string; eventWeekStart: string; reason: string; question: string; payload: string }> = [];
-const projectionInputs: Array<{ reason: string; deviation: { class: string; severe: boolean } }> = [];
+const projectionInputs: Array<{ reason: string; deviation: { class: string; severe: boolean }; existingDocs: WeeklyPlan[] }> = [];
 
 function job(reason: AdjustJobRequest["reason"] = "no_time", eventWeek = EVENT_WEEK, createPending = false) {
   return FakePlanJobStore.fixture({
@@ -159,6 +159,8 @@ test("happy path：检测偏差 → 投影 → 回填 payload", async () => {
   // 检测真实跑过：空活动周 → missed severe，进投影的 deviation
   assert.ok(["missed", "volume_short"].includes(projectionInputs.at(-1)!.deviation.class));
   assert.equal(projectionInputs.at(-1)!.deviation.severe, true);
+  // #952：窗口内已落库周文档一并交给投影（过去安排按日合并的基准）
+  assert.equal(projectionInputs.at(-1)!.existingDocs.length, 2);
   // payload 回填进 Go 内部通道
   assert.equal(handlerCalls.at(-1)!.adjustmentId, "adj-01");
   const payload = JSON.parse(handlerCalls.at(-1)!.payload);

@@ -4,7 +4,7 @@ import type { LoadPlan, PhaseDivisionIntent, RunWorkout, WeeklyPlan } from "@str
 import type { ContentWeekRow } from "../master_plan/phasing/content/doctrine.js";
 import type { ScheduledOutcome } from "../master_plan/phasing/content/generate.js";
 import type { LoadSeriesPoint } from "../master_plan/phasing/content/schedule/scheduler.js";
-import { buildWeeklyDocs, freezePastSessions } from "./weeklyDocs.js";
+import { buildWeeklyDocs, freezePastSessions, mergeAdjustedWeekDocs } from "./weeklyDocs.js";
 
 /**
  * 周课文档构造单测（#858）：字段映射 / coach_notes 模板 / 偏差百分比 / rest 日
@@ -248,7 +248,7 @@ test("final_quality 周经 span 劈分映射到 marathon/taper 阶段名", () =>
   assert.equal(docs[0]!.milestone_note, undefined);
 });
 
-test("追赶冻结：删除 date < 明天 的会话并注明；无 run 残留的周保留原样（防御）", () => {
+test("追赶冻结：删除 date < 明天 的会话并注明；整周无未来 run 时移除该周", () => {
   const docs = buildDocs();
   const frozen = freezePastSessions(docs, "2026-10-28T09:00:00+08:00"); // 第 4 周周三
   const [w4, w5] = frozen;
@@ -264,6 +264,12 @@ test("追赶冻结：删除 date < 明天 的会话并注明；无 run 残留的
   // 第二周不受影响
   assert.equal(w5.sessions.length, 7);
   assert.equal(w5.notes_md, null);
+  // 第 4 周整周都已过（11-01 当天及以前）→ 该周不发布，绝不回退成未冻结文档
+  const afterWeek = freezePastSessions(docs, "2026-11-01T09:00:00+08:00");
+  assert.deepEqual(
+    afterWeek.map((doc) => doc.week_name.slice(0, 10)),
+    ["2026-11-02"],
+  );
 });
 
 // ── key_sessions 派生（#858 PR-C 下半；口径与 v2 快照同源：E 课剔除、赛周只留
@@ -373,4 +379,92 @@ test("key_sessions 恢复周：≤1 节（只留最长一节）", () => {
   assert.equal(w4.is_recovery_week, true);
   assert.equal(w4.key_sessions?.length, 1);
   assert.equal(w4.key_sessions?.[0]?.type, "long_run");
+});
+
+// ── 调整已有课表的按日合并（#952）：旧文档截至今天保留、明天起替换 ─────────────
+
+function withSummaries(doc: WeeklyPlan, prefix: string): WeeklyPlan {
+  return { ...doc, sessions: doc.sessions.map((session) => ({ ...session, summary: `${prefix}-${session.date}` })) };
+}
+
+function withNutritionMarker(doc: WeeklyPlan, kcal: number): WeeklyPlan {
+  return { ...doc, nutrition: doc.nutrition.map((item) => ({ ...item, kcal_target: kcal })) };
+}
+
+function toRest(session: WeeklyPlan["sessions"][number]): WeeklyPlan["sessions"][number] {
+  return {
+    schema: "plan-session/v1",
+    date: session.date,
+    session_index: session.session_index,
+    kind: "rest",
+    summary: "休息",
+    notes_md: null,
+    total_distance_m: null,
+    total_duration_s: null,
+    estimated_dose: null,
+    spec: null,
+  };
+}
+
+test("调整合并：周三接受保留周一至周三旧会话，周四起替换，营养/key_sessions 同步", () => {
+  const [oldW4, oldW5] = buildDocs();
+  const newW4 = withNutritionMarker(withSummaries(oldW4!, "新"), 123);
+  const merged = mergeAdjustedWeekDocs([newW4], [oldW4!, oldW5!], "2026-10-28T09:00:00+08:00");
+  assert.equal(merged.length, 1);
+  const doc = merged[0]!;
+  const cutoff = "2026-10-28";
+  // 截至今天（含今天）逐字段沿用旧文档；明天起取新文档
+  assert.deepEqual(
+    doc.sessions.filter((session) => session.date <= cutoff),
+    oldW4!.sessions.filter((session) => session.date <= cutoff),
+  );
+  assert.deepEqual(
+    doc.sessions.filter((session) => session.date > cutoff),
+    newW4.sessions.filter((session) => session.date > cutoff),
+  );
+  assert.equal(doc.sessions.find((session) => session.date === cutoff)?.summary, "休息");
+  // 营养日期项同样按日合并
+  assert.equal(doc.nutrition.find((item) => item.date === cutoff)?.kcal_target, null);
+  assert.equal(doc.nutrition.find((item) => item.date === "2026-10-29")?.kcal_target, 123);
+  // key_sessions 按日拆分：过去只留 T（10-27），未来只留 LR（11-01）
+  assert.deepEqual(
+    doc.key_sessions?.map((key) => key.workout_structure?.date),
+    ["2026-11-01", "2026-10-27"],
+  );
+  // 日期 + 索引无重复；notes 说明过去安排沿用
+  assert.equal(new Set(doc.sessions.map((session) => `${session.date}:${session.session_index}`)).size, doc.sessions.length);
+  assert.match(doc.notes_md ?? "", /沿用原课表/);
+});
+
+test("调整合并：隔天接受时保护接受当天及以前的安排", () => {
+  const [oldW4] = buildDocs();
+  const newW4 = withSummaries(oldW4!, "新");
+  // 方案周三生成、周五才同意：周四/周五已成为过去，仍取旧文档
+  const [doc] = mergeAdjustedWeekDocs([newW4], [oldW4!], "2026-10-30T09:00:00+08:00");
+  assert.ok(doc);
+  assert.equal(doc.sessions.find((session) => session.date === "2026-10-29")?.summary, "休息");
+  assert.equal(doc.sessions.find((session) => session.date === "2026-10-30")?.summary, "休息");
+  assert.match(doc.sessions.find((session) => session.date === "2026-10-31")?.summary ?? "", /^新-/);
+});
+
+test("调整合并：周日无明日安排、未来无 run 保留原周文档，历史已结束周不更新", () => {
+  const [oldW4] = buildDocs();
+  const newW4 = withSummaries(oldW4!, "新");
+  // 周日：明天起没有任何安排 → 该周保留原课表（不能回退成新文档）
+  assert.deepEqual(mergeAdjustedWeekDocs([newW4], [oldW4!], "2026-11-01T09:00:00+08:00"), [oldW4]);
+  // 合并后没有 run：过去旧课全是 rest、未来新课全是 rest → 保留原课表
+  const oldNoRun: WeeklyPlan = { ...oldW4!, sessions: oldW4!.sessions.map((session) => (session.date === "2026-10-27" ? toRest(session) : session)) };
+  const newNoFutureRun: WeeklyPlan = { ...newW4, sessions: newW4.sessions.map((session) => (session.date === "2026-11-01" ? toRest(session) : session)) };
+  assert.deepEqual(mergeAdjustedWeekDocs([newNoFutureRun], [oldNoRun], "2026-10-31T09:00:00+08:00"), [oldNoRun]);
+  // 历史已结束周不可被此路径更新
+  assert.deepEqual(mergeAdjustedWeekDocs([newW4], [oldW4!], "2026-11-05T09:00:00+08:00"), []);
+});
+
+test("调整合并：未来周整周替换（过去无安排可保留）", () => {
+  const [, oldW5] = buildDocs();
+  const newW5 = withSummaries(oldW5!, "新");
+  const [doc] = mergeAdjustedWeekDocs([newW5], [oldW5!], "2026-10-28T09:00:00+08:00");
+  assert.ok(doc);
+  assert.deepEqual(doc.sessions, newW5.sessions);
+  assert.equal(doc.planned_dose, newW5.planned_dose);
 });

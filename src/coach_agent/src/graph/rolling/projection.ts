@@ -35,7 +35,7 @@ import { buildWeeklySeries, habitualBaseline, type WeeklySeries } from "../maste
 import { buildLoadPlan } from "../master_plan/phasing/load/expand.js";
 import type { AdjustRecipe } from "./adjust/recipes.js";
 import { type ExistingWeekRef, evaluateAdjustWindow } from "./adjust/window.js";
-import { buildWeeklyDocs, freezePastSessions } from "./weeklyDocs.js";
+import { buildWeeklyDocs, freezePastSessions, mergeAdjustedWeekDocs } from "./weeklyDocs.js";
 import { currentWeekOf, evaluateRollingWindow, type RollingWindow } from "./window.js";
 
 /** 全马拉松标准距离（与 master content 节点同源）。 */
@@ -110,6 +110,8 @@ export interface ProjectionAdjustOverrides {
   eventWeekStart: string;
   recipe: AdjustRecipe;
   existingWeeks: ExistingWeekRef[];
+  /** 已落库周文档（窗口内周合并基准：旧文档截至今天 + 新文档明天起）。 */
+  existingDocs: WeeklyPlan[];
 }
 
 export interface RollingDeps {
@@ -357,8 +359,9 @@ export async function runProjectionCore(deps: RollingDeps, input: RollingProject
         "rolling daniels audit has hard failures (returned as-is, caller decides)",
       );
 
-    // ⑨ 偏差 + 周课文档；⑩ 追赶冻结（窗口首周=当前周时，已过日期不排课——
-    // 调整窗口起点=明日所在周，同样经此冻结生效）。
+    // ⑨ 偏差 + 周课文档；⑩ 过去日期处理区分两条路径：调整已有课表=按日合并
+    // （旧文档截至今天逐字段保留、明天起才替换）；首次追赶出课=删除明天前的
+    // 排课（该周尚无存量课表，没有可保留的旧安排）。
     const deviation = batchWeeks.map((week) => {
       const baseKm = master.skeleton.weeks.find((stored) => stored.week === week.week)?.km ?? 0;
       return { week: week.week, newKm: week.km, baseKm, pct: baseKm > 0 ? r1(((week.km - baseKm) / baseKm) * 100) : 0 };
@@ -373,7 +376,14 @@ export async function runProjectionCore(deps: RollingDeps, input: RollingProject
       raceDate: master.race.date,
       athlete: { weeklyRunDaysMax: master.availability.weeklyRunDaysMax },
     });
-    if (window.mode === "catch_up" && window.startWeek === currentWeek) weeklyDocs = freezePastSessions(weeklyDocs, asOfDay);
+    if (adjust !== undefined) {
+      weeklyDocs = mergeAdjustedWeekDocs(weeklyDocs, adjust.existingDocs, asOfDay);
+    } else if (window.mode === "catch_up" && window.startWeek === currentWeek) {
+      weeklyDocs = freezePastSessions(weeklyDocs, asOfDay);
+    }
+    // 无可安全发布的周（未来无 run / 周日 / 跨周）→ 显式 no-op，绝不回退成
+    // 未冻结的新文档重写过去安排。
+    if (weeklyDocs.length === 0) return { decision: "no_op", reason: "批窗内没有可安全发布的未来课程（已过日期不重写）" };
 
     return {
       decision: "completed",

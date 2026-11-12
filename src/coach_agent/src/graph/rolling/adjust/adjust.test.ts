@@ -62,6 +62,7 @@ test("runAdjustProjection：injured 拦截——recipeFor 先行抛错（确定�
         deviation: deviation("2026-11-02"),
         reason: "injured",
         existingWeeks: [{ weekStart: "2026-11-09", week: 6, km: 66 }],
+        existingDocs: [],
       },
     ),
     /injured/,

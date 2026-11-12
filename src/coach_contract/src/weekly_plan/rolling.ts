@@ -81,7 +81,8 @@ export type MaintenanceJobRequest = z.infer<typeof MaintenanceJobRequest>;
 /**
  * plan_adjustment.payload 的结构（#858 PR-C，TS 侧单源）：Go 存 LONGTEXT 原样
  * JSON、API 透传，mp 直接消费。weekly_docs 为完整 weekly-plan/v1 文档数组
- * （含 week_name），accept 时 Go 逐周 batch-apply 覆盖对应周行。
+ * （含 week_name），accept 时 Go 逐周 batch-apply 覆盖对应周行；#952 起 accept
+ * 按**实际写入日**把截至当天的旧安排并回（生成后隔天同意也不抹掉已成过去的课）。
  */
 export interface AdjustProposalPayload {
   reason: AdjustReason;

@@ -183,7 +183,7 @@ test("本周已有维持行（coach_notes 标记）→ 目标周顺延下一周"
   assert.equal(parsed.week_index, 7);
 });
 
-test("本周已有普通滚动周行（非维持标记）→ 覆盖出维持课（同 master 链替换）", async () => {
+test("本周已有普通滚动周行（非维持标记）→ 保留过去安排，明天起覆盖出维持课", async () => {
   const rollingRow = createTestWeeklyPlanDoc(6);
   const existing = { ...rollingRow };
   delete (existing as Record<string, unknown>).schema;
@@ -192,6 +192,11 @@ test("本周已有普通滚动周行（非维持标记）→ 覆盖出维持课�
   const result = await createMaintenanceJobHandler(h.deps)(job(), async () => {});
   assert.equal(JSON.parse(result.result).week_start, CURRENT_WEEK);
   assert.equal(h.applies.length, 1);
+  const doc = h.applies[0]!.weeks[0] as { sessions: Array<{ date: string; summary: string }>; coach_notes: string | null };
+  // #952：本周已过安排（周一旧有氧跑）逐字段保留，明天起才是维持课。
+  assert.equal(doc.sessions.find((session) => session.date === CURRENT_WEEK)?.summary, "有氧跑");
+  assert.equal(isMaintenanceWeeklyDoc({ coach_notes: doc.coach_notes }), true);
+  assert.ok(doc.sessions.filter((session) => session.date > "2026-09-16").length > 0);
 });
 
 test("master_plan_id 不一致 = permanent error", async () => {

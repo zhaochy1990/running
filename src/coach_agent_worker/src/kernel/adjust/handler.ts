@@ -147,11 +147,13 @@ export function createAdjustJobHandler(deps: AdjustHandlerDeps): Handler {
       throw newPermanentError("kernel_adjust_content_invalid", new Error("content 缺 start_date"));
     }
     const existingWeeks: Array<{ weekStart: string; week: number; km: number }> = [];
+    const existingDocs: WeeklyPlan[] = [];
     for (const row of weekRows) {
       const week = weekNumberOf(planStartMonday, row.week_start);
       if (week === null) continue;
       const doc = await weeklyDocOf(deps.weeklyDocs, job.userId, row.week_start);
       existingWeeks.push({ weekStart: row.week_start, week, km: doc?.target_weekly_km_low ?? 0 });
+      if (doc !== null) existingDocs.push(doc);
     }
     let master: RollingMasterInput;
     try {
@@ -190,7 +192,15 @@ export function createAdjustJobHandler(deps: AdjustHandlerDeps): Handler {
     };
     const outcome = await (deps.projection ?? runAdjustProjection)(
       { contextProvider: observedProvider, models: observedModels },
-      { userId: job.userId, master, asOf: request.as_of ?? new Date().toISOString(), deviation, reason: request.reason as AskReason, existingWeeks },
+      {
+        userId: job.userId,
+        master,
+        asOf: request.as_of ?? new Date().toISOString(),
+        deviation,
+        reason: request.reason as AskReason,
+        existingWeeks,
+        existingDocs,
+      },
     );
     if (outcome.decision === "infeasible") {
       throw newPermanentError("kernel_adjust_infeasible", new Error(`${outcome.reason}；failedChecks=${JSON.stringify(outcome.failedChecks)}`));
