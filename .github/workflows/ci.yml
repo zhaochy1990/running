@@ -9,7 +9,10 @@ name: CI
 # broken by a change that cuts no Go artifact at all.
 on:
   pull_request:
-    branches: [master]
+    # master is the release line; feat/858-rolling-kernel is the long-lived
+    # PR #720 integration branch that fix PRs target before it merges — those
+    # PRs need the same checks instead of merging unverified.
+    branches: [master, feat/858-rolling-kernel]
   workflow_call:
     inputs:
       full:
