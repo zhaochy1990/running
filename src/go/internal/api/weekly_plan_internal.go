@@ -58,8 +58,10 @@ func (w *weeklyPlanRoutes) registerInternal(rg *gin.RouterGroup) {
 // batchApply validates and applies a batch of weekly docs for one master plan.
 // A week with an existing active row under the same master plan is replaced
 // with revision+1; a row under a different master plan is a 409 (changing
-// plans goes through the master-plan apply/update path). Any failure rejects
-// the whole batch with a 4xx so a redelivery stays safe.
+// plans goes through the master-plan apply/update path). The whole batch is one
+// storage transaction — validation, replacement and workout materialization
+// commit or roll back together — so any failure leaves every week untouched and
+// a redelivery stays safe.
 //
 //	@Summary		Batch-apply weekly docs (internal, rolling channel)
 //	@Description	Internal-only (#858). Applies a batch of validated weekly-plan docs linked to one master plan. Same-plan weeks replace with revision+1; weeks owned by a different master plan are rejected with 409. Any invalid week rejects the whole batch.
@@ -112,13 +114,8 @@ func (w *weeklyPlanRoutes) batchApply(c *gin.Context) {
 	// Phase 1 validates every week and pre-resolves the replacement
 	// expectation, so content errors and cross-plan conflicts are rejected
 	// before anything is written.
-	type preparedWeek struct {
-		weekStart   string
-		content     string
-		replacement *storage.WeeklyPlanReplacement
-	}
 	seen := make(map[string]bool, len(body.Weeks))
-	prepared := make([]preparedWeek, 0, len(body.Weeks))
+	items := make([]storage.WeeklyPlanBatchItem, 0, len(body.Weeks))
 	for index, document := range body.Weeks {
 		weekName, _ := document["week_name"].(string)
 		weekStart, _, ok := weekIdentity(weekName)
@@ -153,31 +150,37 @@ func (w *weeklyPlanRoutes) batchApply(c *gin.Context) {
 			}
 			replacement = &storage.WeeklyPlanReplacement{PlanID: active.PlanID, Revision: active.Revision}
 		}
-		prepared = append(prepared, preparedWeek{weekStart: weekStart, content: string(content), replacement: replacement})
+		items = append(items, storage.WeeklyPlanBatchItem{
+			WeekStart: weekStart, Content: string(content), Replacement: replacement,
+		})
 	}
 
-	// Phase 2 applies each week. Weeks are independent rows; a storage-level
-	// race mid-batch can still leave a prefix applied, which is safe to retry:
-	// re-delivering the same batch replaces with revision+1 (no duplicates).
-	results := make([]batchApplyWeeklyPlanResult, 0, len(prepared))
-	for _, week := range prepared {
-		link := masterPlanID.String()
-		created, replaced, err := w.store.ApplyStructuredWeeklyPlan(
-			ctx, userID, week.weekStart, week.content, week.replacement,
-			storage.WeeklyPlanApplyOptions{MasterPlanID: &link, ContinueRevision: true},
-		)
-		if errors.Is(err, storage.ErrWeeklyPlanExists) || errors.Is(err, storage.ErrWeeklyPlanConflict) {
-			c.JSON(http.StatusConflict, errorResponse{Error: "weekly_plan_changed"})
-			return
-		}
-		if err != nil {
-			w.log.Error("batch apply week failed", zapErr(err), zap.String("user_id", userID), zap.String("week_start", week.weekStart))
-			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
-			return
-		}
+	// Phase 2 applies the whole batch in one storage transaction: revision
+	// expectations, cross-plan checks and workout materialization commit or
+	// roll back together, so a conflict on any week leaves every week untouched.
+	applied, err := w.store.ApplyStructuredWeeklyPlansBatch(ctx, userID, items, masterPlanID.String())
+	if errors.Is(err, storage.ErrWeeklyPlanInvalidBatch) {
+		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
+		return
+	}
+	if errors.Is(err, storage.ErrWeeklyPlanMasterPlanConflict) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "weekly_plan_master_plan_conflict"})
+		return
+	}
+	if errors.Is(err, storage.ErrWeeklyPlanExists) || errors.Is(err, storage.ErrWeeklyPlanConflict) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "weekly_plan_changed"})
+		return
+	}
+	if err != nil {
+		w.log.Error("batch apply failed", zapErr(err), zap.String("user_id", userID))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	results := make([]batchApplyWeeklyPlanResult, 0, len(applied))
+	for _, week := range applied {
 		results = append(results, batchApplyWeeklyPlanResult{
-			WeekStart: created.WeekStart, PlanID: created.PlanID,
-			Revision: created.Revision, Replaced: replaced != nil,
+			WeekStart: week.WeekStart, PlanID: week.PlanID,
+			Revision: week.Revision, Replaced: week.Replaced,
 		})
 	}
 	c.JSON(http.StatusCreated, batchApplyWeeklyPlansResponse{Results: results})

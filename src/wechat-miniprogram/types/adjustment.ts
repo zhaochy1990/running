@@ -30,7 +30,8 @@ export interface PlanAdjustment {
 /**
  * plan_adjustment.payload 的结构（AdjustProposalPayload 镜像）。
  * weekly_docs 是完整 weekly-plan/v1 文档数组，mp 只消费 diff/窗口/审计行，
- * 应用（accept）由 Go 逐周 batch-apply，客户端不解析 weekly_docs。
+ * 应用（accept）由 Go 在一次事务里整批落库（周替换 + workout 物化 + accepted
+ * 同事务），客户端不解析 weekly_docs。
  */
 export interface AdjustProposalPayload {
   reason: AdjustReason;

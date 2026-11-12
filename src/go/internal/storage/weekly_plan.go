@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,6 +21,15 @@ var ErrWeeklyPlanExists = errors.New("storage: active weekly plan already exists
 // ErrWeeklyPlanConflict means the active plan changed after an administrator
 // confirmed a specific plan revision for replacement.
 var ErrWeeklyPlanConflict = errors.New("storage: active weekly plan changed")
+
+// ErrWeeklyPlanMasterPlanConflict means the active week row belongs to a
+// different master plan than the one the caller pinned: replacing it is a plan
+// change, which the master apply/update path owns.
+var ErrWeeklyPlanMasterPlanConflict = errors.New("storage: active weekly plan belongs to another master plan")
+
+// ErrWeeklyPlanInvalidBatch reports a malformed batch (bad or duplicate
+// week_start) rejected before any row is locked or written.
+var ErrWeeklyPlanInvalidBatch = errors.New("storage: invalid weekly plan batch")
 
 // WeeklyPlanReplacement is the active row revision an administrator reviewed
 // and explicitly confirmed replacing.
@@ -247,6 +257,65 @@ func (s *Store) GetActiveWeeklyPlan(ctx context.Context, userID, weekStart strin
 	return &plan, nil
 }
 
+// WeeklyPlanBatchItem is one week's validated document plus the active row
+// revision the caller reviewed for replacement (nil = the week must be empty).
+type WeeklyPlanBatchItem struct {
+	WeekStart   string
+	Content     string
+	Replacement *WeeklyPlanReplacement
+}
+
+// WeeklyPlanBatchResult reports the active row created for one applied week.
+type WeeklyPlanBatchResult struct {
+	WeekStart string
+	PlanID    string
+	Revision  int64
+	Replaced  bool
+}
+
+// preparedWeeklyPlanBatch orders the batch by week_start so concurrent batches
+// acquire the same row locks in the same order (deadlock avoidance) while the
+// results stay in the caller's order.
+type preparedWeeklyPlanBatch struct {
+	index int
+	item  WeeklyPlanBatchItem
+}
+
+// prepareWeeklyPlanBatch validates and orders the batch by week_start so
+// concurrent batches acquire the same row locks in the same order (deadlock
+// avoidance) while the results stay in the caller's order. An empty batch is
+// allowed: the adjustment accept may legitimately keep every active week
+// (#952) and still close the proposal.
+func prepareWeeklyPlanBatch(items []WeeklyPlanBatchItem) ([]preparedWeeklyPlanBatch, error) {
+	prepared := make([]preparedWeeklyPlanBatch, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for index, item := range items {
+		start, err := time.Parse("2006-01-02", item.WeekStart)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid week_start %q", ErrWeeklyPlanInvalidBatch, item.WeekStart)
+		}
+		if start.Weekday() != time.Monday {
+			return nil, fmt.Errorf("%w: week_start must be a Monday", ErrWeeklyPlanInvalidBatch)
+		}
+		if _, duplicate := seen[item.WeekStart]; duplicate {
+			return nil, fmt.Errorf("%w: duplicate week_start %s", ErrWeeklyPlanInvalidBatch, item.WeekStart)
+		}
+		seen[item.WeekStart] = struct{}{}
+		prepared = append(prepared, preparedWeeklyPlanBatch{index: index, item: item})
+	}
+	sort.Slice(prepared, func(i, j int) bool {
+		return prepared[i].item.WeekStart < prepared[j].item.WeekStart
+	})
+	return prepared, nil
+}
+
+func batchResultOf(created, replaced *WeeklyPlan) WeeklyPlanBatchResult {
+	return WeeklyPlanBatchResult{
+		WeekStart: created.WeekStart, PlanID: created.PlanID,
+		Revision: created.Revision, Replaced: replaced != nil,
+	}
+}
+
 // ApplyStructuredWeeklyPlan inserts a new active structured plan for one
 // Shanghai week. Replacing an active row requires its exact plan ID and revision;
 // that row is archived in the same transaction before the new active row is
@@ -272,6 +341,10 @@ func (s *Store) ApplyStructuredWeeklyPlan(
 	if len(opts) > 0 {
 		options = opts[0]
 	}
+	// Only an explicitly pinned master plan enforces week ownership; the admin
+	// path derives the current plan purely to link the new row (legacy rows with
+	// no/old link stay replaceable by an administrator with the exact revision).
+	pinned := options.MasterPlanID != nil
 
 	var created *WeeklyPlan
 	var replaced *WeeklyPlan
@@ -296,67 +369,11 @@ func (s *Store) ApplyStructuredWeeklyPlan(
 			}
 		}
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			var rows []WeeklyPlan
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-				Where("user_id = ? AND week_start = ?", uid, weekStart).
-				Order("revision DESC, created_at DESC").
-				Find(&rows).Error; err != nil {
-				return fmt.Errorf("storage: lock weekly plans: %w", err)
-			}
-
-			for i := range rows {
-				if rows[i].Status == WeeklyPlanStatusActive {
-					replaced = &rows[i]
-				}
-			}
-			if replaced == nil {
-				if replacement != nil {
-					return ErrWeeklyPlanConflict
-				}
-			} else if replacement == nil {
-				return ErrWeeklyPlanExists
-			} else if replaced.PlanID != replacement.PlanID || replaced.Revision != replacement.Revision {
-				return ErrWeeklyPlanConflict
-			}
-
-			now := time.Now().UTC().Truncate(time.Millisecond)
-			// #585 convergence: same-week apply overwrites — the old row is deleted
-			// (existence = applied, no snapshot history) and the new row inserted.
-			if replaced != nil {
-				result := tx.Where("user_id = ? AND week_start = ?", uid, weekStart).Delete(&WeeklyPlan{})
-				if result.Error != nil {
-					return fmt.Errorf("storage: delete prior weekly plan: %w", result.Error)
-				}
-				if result.RowsAffected < 1 {
-					return ErrWeeklyPlanConflict
-				}
-			}
-
-			activeSlot := WeeklyPlanStatusActive
-			revision := int64(1)
-			if options.ContinueRevision && replaced != nil {
-				revision = replaced.Revision + 1
-			}
-			row := &WeeklyPlan{
-				PlanID: uuid.NewString(), UserID: uid, WeekStart: weekStart,
-				MasterPlanID:   masterPlanID,
-				ContentVersion: WeeklyPlanContentStructured, Content: content,
-				Status: WeeklyPlanStatusActive, StatusSlot: &activeSlot,
-				Revision: revision, CreatedAt: now, UpdatedAt: now,
-			}
-			if err := tx.Create(row).Error; err != nil {
-				if isDuplicateKey(err) {
-					return ErrWeeklyPlanExists
-				}
-				return fmt.Errorf("storage: create weekly plan: %w", err)
-			}
-			created = row
-			// devops#586 materialization: one workout row per session, in the same
-			// transaction so plan + workouts commit (or roll back) atomically.
-			if err := materializeWeeklyWorkouts(tx, uid, row.PlanID, weekStart, content); err != nil {
-				return err
-			}
-			return nil
+			var err error
+			created, replaced, err = applyWeeklyPlanTx(
+				tx, uid, weekStart, content, replacement, masterPlanID, options.ContinueRevision, pinned,
+			)
+			return err
 		})
 	}
 	err = apply()
@@ -364,11 +381,147 @@ func (s *Store) ApplyStructuredWeeklyPlan(
 	// inserts. InnoDB resolves that insert race by deadlocking one transaction.
 	// Retry it once so the loser observes the winner's active row and returns the
 	// stable domain conflict instead of leaking a transient 500 to the caller.
-	if number, ok := mysqlErrNo(err); ok && number == 1213 {
+	if isDeadlock(err) {
 		err = apply()
 	}
 	if err != nil {
 		return nil, nil, err
 	}
 	return created, replaced, nil
+}
+
+// ApplyStructuredWeeklyPlansBatch applies every week in one transaction: all
+// replacement expectations and cross-plan ownership checks run against the
+// locked rows, and each week's workout rows materialize in the same
+// transaction, so any failure (content race, revision mismatch, materialization
+// error) rolls the whole batch back. The caller validates the documents before
+// calling; this method owns every write. The batch is the rolling channel, so
+// every replacement continues the replaced row's revision and the new rows are
+// pinned to masterPlanID.
+//
+// A week owned by another master plan is rejected with
+// ErrWeeklyPlanMasterPlanConflict, and a week whose active revision moved is
+// rejected with ErrWeeklyPlanConflict — in both cases nothing is written.
+func (s *Store) ApplyStructuredWeeklyPlansBatch(
+	ctx context.Context, userID string, items []WeeklyPlanBatchItem, masterPlanID string,
+) ([]WeeklyPlanBatchResult, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := uuid.Parse(masterPlanID); err != nil {
+		return nil, fmt.Errorf("storage: invalid master plan id: %w", err)
+	}
+	if len(items) == 0 {
+		return nil, fmt.Errorf("storage: weekly plan batch requires at least one week")
+	}
+	prepared, err := prepareWeeklyPlanBatch(items)
+	if err != nil {
+		return nil, err
+	}
+	link := masterPlanID
+	results := make([]WeeklyPlanBatchResult, len(items))
+	apply := func() error {
+		clear(results)
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			for _, week := range prepared {
+				created, replaced, err := applyWeeklyPlanTx(
+					tx, uid, week.item.WeekStart, week.item.Content, week.item.Replacement,
+					&link, true, true,
+				)
+				if err != nil {
+					return err
+				}
+				results[week.index] = batchResultOf(created, replaced)
+			}
+			return nil
+		})
+	}
+	err = apply()
+	if isDeadlock(err) {
+		err = apply()
+	}
+	if err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+// applyWeeklyPlanTx is the single-week apply step shared by the admin path, the
+// rolling batch and the adjustment accept. It must run inside a transaction:
+// the week's rows are locked, the replacement expectation is checked against
+// the active row (and, when enforceMasterPlan is set, so is the plan link), the
+// old row is deleted, the new row inserted, and its workouts materialized.
+func applyWeeklyPlanTx(
+	tx *gorm.DB, uid, weekStart, content string, replacement *WeeklyPlanReplacement,
+	masterPlanID *string, continueRevision, enforceMasterPlan bool,
+) (*WeeklyPlan, *WeeklyPlan, error) {
+	var rows []WeeklyPlan
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("user_id = ? AND week_start = ?", uid, weekStart).
+		Order("revision DESC, created_at DESC").
+		Find(&rows).Error; err != nil {
+		return nil, nil, fmt.Errorf("storage: lock weekly plans: %w", err)
+	}
+
+	var replaced *WeeklyPlan
+	for i := range rows {
+		if rows[i].Status == WeeklyPlanStatusActive {
+			replaced = &rows[i]
+		}
+	}
+	if replaced == nil {
+		if replacement != nil {
+			return nil, nil, ErrWeeklyPlanConflict
+		}
+	} else if replacement == nil {
+		return nil, nil, ErrWeeklyPlanExists
+	} else if replaced.PlanID != replacement.PlanID || replaced.Revision != replacement.Revision {
+		return nil, nil, ErrWeeklyPlanConflict
+	}
+	// A pinned master plan must own the week it replaces: changing plans goes
+	// through the master apply/update path, never through a week replacement.
+	if replaced != nil && enforceMasterPlan {
+		if replaced.MasterPlanID == nil || *replaced.MasterPlanID != *masterPlanID {
+			return nil, nil, ErrWeeklyPlanMasterPlanConflict
+		}
+	}
+
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	// #585 convergence: same-week apply overwrites — the old row is deleted
+	// (existence = applied, no snapshot history) and the new row inserted.
+	if replaced != nil {
+		result := tx.Where("user_id = ? AND week_start = ?", uid, weekStart).Delete(&WeeklyPlan{})
+		if result.Error != nil {
+			return nil, nil, fmt.Errorf("storage: delete prior weekly plan: %w", result.Error)
+		}
+		if result.RowsAffected < 1 {
+			return nil, nil, ErrWeeklyPlanConflict
+		}
+	}
+
+	activeSlot := WeeklyPlanStatusActive
+	revision := int64(1)
+	if continueRevision && replaced != nil {
+		revision = replaced.Revision + 1
+	}
+	row := &WeeklyPlan{
+		PlanID: uuid.NewString(), UserID: uid, WeekStart: weekStart,
+		MasterPlanID:   masterPlanID,
+		ContentVersion: WeeklyPlanContentStructured, Content: content,
+		Status: WeeklyPlanStatusActive, StatusSlot: &activeSlot,
+		Revision: revision, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := tx.Create(row).Error; err != nil {
+		if isDuplicateKey(err) {
+			return nil, nil, ErrWeeklyPlanExists
+		}
+		return nil, nil, fmt.Errorf("storage: create weekly plan: %w", err)
+	}
+	// devops#586 materialization: one workout row per session, in the same
+	// transaction so plan + workouts commit (or roll back) atomically.
+	if err := materializeWeeklyWorkouts(tx, uid, row.PlanID, weekStart, content); err != nil {
+		return nil, nil, err
+	}
+	return row, replaced, nil
 }

@@ -125,6 +125,38 @@ func (f *fakeAdjustmentStore) SetAdjustmentStatus(_ context.Context, userID, id,
 	return nil
 }
 
+func (f *fakeAdjustmentStore) AcceptPlanAdjustment(
+	_ context.Context, userID, id, expectedPayload string, items []storage.WeeklyPlanBatchItem,
+) ([]storage.WeeklyPlanBatchResult, error) {
+	row, err := f.GetAdjustmentByID(nil, userID, id)
+	if err != nil {
+		return nil, err
+	}
+	if row.Status != storage.PlanAdjustmentStatusPending {
+		return nil, storage.ErrAdjustmentState
+	}
+	if row.Payload == nil || *row.Payload != expectedPayload {
+		return nil, storage.ErrAdjustmentState
+	}
+	saved := append([]storage.WeeklyPlan(nil), f.plans[userID]...)
+	options := storage.WeeklyPlanApplyOptions{MasterPlanID: &row.MasterPlanID, ContinueRevision: true}
+	results := make([]storage.WeeklyPlanBatchResult, 0, len(items))
+	for _, item := range items {
+		created, replaced, err := f.ApplyStructuredWeeklyPlan(nil, userID, item.WeekStart, item.Content, item.Replacement, options)
+		if err != nil {
+			f.plans[userID] = saved
+			return nil, err
+		}
+		results = append(results, storage.WeeklyPlanBatchResult{
+			WeekStart: created.WeekStart, PlanID: created.PlanID,
+			Revision: created.Revision, Replaced: replaced != nil,
+		})
+	}
+	row.Status = storage.PlanAdjustmentStatusAccepted
+	f.eventLock[userID+"|"+row.EventWeekStart] = true
+	return results, nil
+}
+
 // ── tests ───────────────────────────────────────────────────────────────────
 
 const (

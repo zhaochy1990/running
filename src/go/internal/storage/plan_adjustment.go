@@ -172,7 +172,11 @@ func (s *Store) GetAdjustmentByID(ctx context.Context, userID, id string) (*Plan
 // generate_adjustment job and shows a generating state until the worker
 // refills it via CompleteAdjustmentPayload.
 func (s *Store) ChooseAdjustmentReason(ctx context.Context, userID, id, reason string) (*PlanAdjustment, error) {
-	row, err := s.GetAdjustmentByID(ctx, userID, id)
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	row, err := s.GetAdjustmentByID(ctx, uid, id)
 	if err != nil {
 		return nil, err
 	}
@@ -183,8 +187,16 @@ func (s *Store) ChooseAdjustmentReason(ctx context.Context, userID, id, reason s
 		return row, nil
 	}
 	updates := map[string]any{"reason": reason, "payload": nil, "updated_at": time.Now().UTC()}
-	if err := s.db.WithContext(ctx).Model(&PlanAdjustment{}).Where("id = ?", row.ID).Updates(updates).Error; err != nil {
-		return nil, fmt.Errorf("storage: choose adjustment reason: %w", err)
+	// Conditional on pending: an accept/dismiss that committed after the read
+	// above wins instead of being overwritten by this stale answer.
+	update := s.db.WithContext(ctx).Model(&PlanAdjustment{}).
+		Where("user_id = ? AND id = ? AND status = ?", uid, row.ID, PlanAdjustmentStatusPending).
+		Updates(updates)
+	if update.Error != nil {
+		return nil, fmt.Errorf("storage: choose adjustment reason: %w", update.Error)
+	}
+	if update.RowsAffected != 1 {
+		return nil, ErrAdjustmentState
 	}
 	row.Reason = reason
 	row.Payload = nil
@@ -195,7 +207,11 @@ func (s *Store) ChooseAdjustmentReason(ctx context.Context, userID, id, reason s
 // regeneration job finished (worker internal channel). Only pending rows with
 // the same reason accept the refill — a racing accept/dismiss wins.
 func (s *Store) CompleteAdjustmentPayload(ctx context.Context, userID, id, reason, payload string) (*PlanAdjustment, error) {
-	row, err := s.GetAdjustmentByID(ctx, userID, id)
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	row, err := s.GetAdjustmentByID(ctx, uid, id)
 	if err != nil {
 		return nil, err
 	}
@@ -206,33 +222,138 @@ func (s *Store) CompleteAdjustmentPayload(ctx context.Context, userID, id, reaso
 		return nil, ErrAdjustmentState
 	}
 	updates := map[string]any{"payload": payload, "updated_at": time.Now().UTC()}
-	if err := s.db.WithContext(ctx).Model(&PlanAdjustment{}).Where("id = ?", row.ID).Updates(updates).Error; err != nil {
-		return nil, fmt.Errorf("storage: complete adjustment payload: %w", err)
+	// Conditional on pending + the same reason: a reason change or a terminal
+	// transition that committed after the read above wins over this refill.
+	update := s.db.WithContext(ctx).Model(&PlanAdjustment{}).
+		Where("user_id = ? AND id = ? AND status = ? AND reason = ?", uid, row.ID, PlanAdjustmentStatusPending, reason).
+		Updates(updates)
+	if update.Error != nil {
+		return nil, fmt.Errorf("storage: complete adjustment payload: %w", update.Error)
+	}
+	if update.RowsAffected != 1 {
+		return nil, ErrAdjustmentState
 	}
 	row.Payload = &payload
 	return row, nil
 }
 
+// AcceptPlanAdjustment applies the proposal the athlete agreed to and marks the
+// row accepted in ONE transaction:
+//   - the plan_adjustment row is locked and re-validated: it must still be
+//     pending and its payload must still be the exact JSON the caller parsed
+//     and validated (a concurrent choose/dismiss/accept therefore cannot make
+//     an older, un-agreed payload take effect);
+//   - every weekly document replaces its active row (revision expectation,
+//     cross-master-plan rejection) and materializes its workouts;
+//   - pending → accepted commits together with the weeks, so a failed status
+//     transition rolls every week back and the proposal keeps its state.
+//
+// items may be empty: the accept handler keeps weeks that cannot be safely
+// replaced (#952 — past arrangements / no future session), and the proposal
+// still closes as accepted. A deadlock retries the whole transaction once; the
+// rollback makes that safe.
+func (s *Store) AcceptPlanAdjustment(
+	ctx context.Context, userID, id, expectedPayload string, items []WeeklyPlanBatchItem,
+) ([]WeeklyPlanBatchResult, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := uuid.Parse(id); err != nil {
+		return nil, ErrAdjustmentNotFound
+	}
+	prepared, err := prepareWeeklyPlanBatch(items)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]WeeklyPlanBatchResult, len(items))
+	apply := func() error {
+		clear(results)
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var row PlanAdjustment
+			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("user_id = ? AND id = ?", uid, id).
+				First(&row).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrAdjustmentNotFound
+			}
+			if err != nil {
+				return fmt.Errorf("storage: lock plan adjustment: %w", err)
+			}
+			if row.Status != PlanAdjustmentStatusPending {
+				return ErrAdjustmentState
+			}
+			if row.Payload == nil || *row.Payload != expectedPayload {
+				return ErrAdjustmentState
+			}
+			masterPlanID := row.MasterPlanID
+			for _, week := range prepared {
+				created, replaced, err := applyWeeklyPlanTx(
+					tx, uid, week.item.WeekStart, week.item.Content, week.item.Replacement,
+					&masterPlanID, true, true,
+				)
+				if err != nil {
+					return err
+				}
+				results[week.index] = batchResultOf(created, replaced)
+			}
+			update := tx.Model(&PlanAdjustment{}).
+				Where("id = ? AND user_id = ? AND status = ?", row.ID, uid, PlanAdjustmentStatusPending).
+				Updates(map[string]any{"status": PlanAdjustmentStatusAccepted, "updated_at": time.Now().UTC()})
+			if update.Error != nil {
+				return fmt.Errorf("storage: accept plan adjustment: %w", update.Error)
+			}
+			if update.RowsAffected != 1 {
+				return ErrAdjustmentState
+			}
+			return nil
+		})
+	}
+	err = apply()
+	if isDeadlock(err) {
+		err = apply()
+	}
+	if err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
 // SetAdjustmentStatus moves a pending row to a terminal state (accept /
 // dismiss). Idempotent for the same terminal value; any other transition of a
-// non-pending row is a state violation.
+// non-pending row is a state violation. The update is conditional on the row
+// still being pending, so a concurrent accept and dismiss cannot overwrite each
+// other's terminal state.
+//
+// Accepting a proposal's weeks must go through AcceptPlanAdjustment, which
+// applies them in the same transaction; SetAdjustmentStatus(accepted) only
+// moves the row and is reserved for callers with no weeks to write.
 func (s *Store) SetAdjustmentStatus(ctx context.Context, userID, id, status string) error {
 	if status != PlanAdjustmentStatusAccepted && status != PlanAdjustmentStatusDismissed {
 		return fmt.Errorf("storage: invalid terminal adjustment status %q", status)
 	}
-	row, err := s.GetAdjustmentByID(ctx, userID, id)
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return err
+	}
+	if _, err := uuid.Parse(id); err != nil {
+		return ErrAdjustmentNotFound
+	}
+	update := s.db.WithContext(ctx).Model(&PlanAdjustment{}).
+		Where("user_id = ? AND id = ? AND status = ?", uid, id, PlanAdjustmentStatusPending).
+		Updates(map[string]any{"status": status, "updated_at": time.Now().UTC()})
+	if update.Error != nil {
+		return fmt.Errorf("storage: set adjustment status: %w", update.Error)
+	}
+	if update.RowsAffected == 1 {
+		return nil
+	}
+	row, err := s.GetAdjustmentByID(ctx, uid, id)
 	if err != nil {
 		return err
 	}
 	if row.Status == status {
 		return nil
 	}
-	if row.Status != PlanAdjustmentStatusPending {
-		return ErrAdjustmentState
-	}
-	updates := map[string]any{"status": status, "updated_at": time.Now().UTC()}
-	if err := s.db.WithContext(ctx).Model(&PlanAdjustment{}).Where("id = ?", row.ID).Updates(updates).Error; err != nil {
-		return fmt.Errorf("storage: set adjustment status: %w", err)
-	}
-	return nil
+	return ErrAdjustmentState
 }
