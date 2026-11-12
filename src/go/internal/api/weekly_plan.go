@@ -27,6 +27,7 @@ type WeeklyPlanStore interface {
 	ListWeekActivities(ctx context.Context, userID, dateFrom, dateTo string) ([]storage.Activity, error)
 	GetActiveWeeklyPlan(ctx context.Context, userID, weekStart string) (*storage.WeeklyPlan, error)
 	ApplyStructuredWeeklyPlan(ctx context.Context, userID, weekStart, content string, replacement *storage.WeeklyPlanReplacement, opts ...storage.WeeklyPlanApplyOptions) (*storage.WeeklyPlan, *storage.WeeklyPlan, error)
+	ApplyStructuredWeeklyPlansBatch(ctx context.Context, userID string, items []storage.WeeklyPlanBatchItem, masterPlanID string) ([]storage.WeeklyPlanBatchResult, error)
 	GetWeeklyFeedback(ctx context.Context, userID, weekStart string) (*storage.WeeklyFeedback, error)
 	PutWeeklyFeedback(ctx context.Context, userID, weekStart, content string) (storage.WeeklyFeedback, error)
 }
@@ -178,6 +179,10 @@ func (w *weeklyPlanRoutes) apply(c *gin.Context) {
 	}
 	if errors.Is(err, storage.ErrWeeklyPlanConflict) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "weekly_plan_changed"})
+		return
+	}
+	if errors.Is(err, storage.ErrWeeklyPlanMasterPlanConflict) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "weekly_plan_master_plan_conflict"})
 		return
 	}
 	if err != nil {

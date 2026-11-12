@@ -18,9 +18,9 @@ import (
 // Deviation-adjustment consent flow (#858 PR-C): the nightly scan (PR-C 下半)
 // and the rolling worker record a pending plan_adjustment row; the
 // mini-program popup asks the reason (choose), shows the pre-generated
-// adjusted weeks (payload), then accept applies those weekly docs through the
-// same per-week channel the internal rolling batch-apply uses, or dismiss
-// closes the event for good. Internal endpoints carry the worker↔nightly
+// adjusted weeks (payload), then accept applies those weekly docs and marks the
+// row accepted in one storage transaction (weeks + workouts + status), or
+// dismiss closes the event for good. Internal endpoints carry the worker↔nightly
 // channel; the user endpoints are self-scoped by JWT.
 
 // PlanAdjustmentStore is the storage surface the adjustment routes need.
@@ -31,7 +31,7 @@ type PlanAdjustmentStore interface {
 	ChooseAdjustmentReason(ctx context.Context, userID, id, reason string) (*storage.PlanAdjustment, error)
 	CompleteAdjustmentPayload(ctx context.Context, userID, id, reason, payload string) (*storage.PlanAdjustment, error)
 	SetAdjustmentStatus(ctx context.Context, userID, id, status string) error
-	ApplyStructuredWeeklyPlan(ctx context.Context, userID, weekStart, content string, replacement *storage.WeeklyPlanReplacement, opts ...storage.WeeklyPlanApplyOptions) (*storage.WeeklyPlan, *storage.WeeklyPlan, error)
+	AcceptPlanAdjustment(ctx context.Context, userID, id, expectedPayload string, items []storage.WeeklyPlanBatchItem) ([]storage.WeeklyPlanBatchResult, error)
 	GetActiveWeeklyPlan(ctx context.Context, userID, weekStart string) (*storage.WeeklyPlan, error)
 }
 
@@ -365,12 +365,14 @@ func (p *planAdjustmentRoutes) choose(c *gin.Context) {
 	c.JSON(http.StatusOK, adjustmentResponse{Adjustment: adjustmentOf(row)})
 }
 
-// accept applies the payload's weekly docs (per-week channel: same-plan
-// replace with revision+1, cross-plan 409) and only then marks the row
-// accepted. Dismissal-after-accept is impossible (terminal state).
+// accept applies the payload's weekly docs and marks the row accepted in one
+// storage transaction (same-plan replace with revision+1, cross-plan 409). The
+// adjustment row is locked and its payload re-checked against the exact JSON
+// validated here, so a concurrent choose/dismiss/accept cannot apply an older
+// proposal. Any failure rolls every week back and leaves the proposal pending.
 //
 //	@Summary		Accept the adjustment and apply the adjusted weeks
-//	@Description	#858: applies the payload weekly docs through the rolling per-week channel, then marks the adjustment accepted. Requires a payload (a reason change must finish regenerating first).
+//	@Description	#858: applies the payload weekly docs and marks the adjustment accepted in one transaction (weeks + workouts + status commit or roll back together). Requires a payload (a reason change must finish regenerating first).
 //	@Tags			plan-adjustment
 //	@Produce		json
 //	@Param			user_id	path	string	true	"User UUID (JWT sub; self only)"
@@ -416,9 +418,14 @@ func (p *planAdjustmentRoutes) accept(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_payload"})
 		return
 	}
-	type appliedWeek = acceptAdjustmentWeek
-	applied := make([]appliedWeek, 0, len(proposal.WeeklyDocs))
+	// The payload the athlete is agreeing to. The loop below validates the
+	// documents derived from this exact string; the storage accept re-checks it
+	// under the row lock, so a concurrent choose/dismiss/accept cannot apply an
+	// older proposal.
+	expectedPayload := *row.Payload
 	today := p.today()
+	seen := make(map[string]bool, len(proposal.WeeklyDocs))
+	items := make([]storage.WeeklyPlanBatchItem, 0, len(proposal.WeeklyDocs))
 	for _, document := range proposal.WeeklyDocs {
 		weekName, _ := document["week_name"].(string)
 		weekStart, _, ok := weekIdentity(weekName)
@@ -426,6 +433,11 @@ func (p *planAdjustmentRoutes) accept(c *gin.Context) {
 			c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
 			return
 		}
+		if seen[weekStart] {
+			c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "duplicate_week"})
+			return
+		}
+		seen[weekStart] = true
 		var replacement *storage.WeeklyPlanReplacement
 		active, err := p.store.GetActiveWeeklyPlan(ctx, userID, weekStart)
 		if err != nil {
@@ -465,26 +477,42 @@ func (p *planAdjustmentRoutes) accept(c *gin.Context) {
 			c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
 			return
 		}
-		link := row.MasterPlanID
-		created, replaced, err := p.store.ApplyStructuredWeeklyPlan(
-			ctx, userID, weekStart, string(content), replacement,
-			storage.WeeklyPlanApplyOptions{MasterPlanID: &link, ContinueRevision: true},
-		)
-		if errors.Is(err, storage.ErrWeeklyPlanExists) || errors.Is(err, storage.ErrWeeklyPlanConflict) {
-			c.JSON(http.StatusConflict, errorResponse{Error: "weekly_plan_changed"})
-			return
-		}
-		if err != nil {
-			p.log.Error("adjustment accept apply week failed", zapErr(err), zap.String("user_id", userID), zap.String("week_start", weekStart))
-			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
-			return
-		}
-		applied = append(applied, appliedWeek{WeekStart: created.WeekStart, Revision: created.Revision, Replaced: replaced != nil})
+		items = append(items, storage.WeeklyPlanBatchItem{WeekStart: weekStart, Content: string(content), Replacement: replacement})
 	}
-	if err := p.store.SetAdjustmentStatus(ctx, userID, row.ID, storage.PlanAdjustmentStatusAccepted); err != nil {
-		p.log.Error("adjustment accept status transition failed", zapErr(err), zap.String("user_id", userID))
+	// One transaction: every week, its workouts and pending → accepted commit
+	// or roll back together, so a failed status transition leaves the plan and
+	// the proposal exactly as they were.
+	appliedRows, err := p.store.AcceptPlanAdjustment(ctx, userID, row.ID, expectedPayload, items)
+	if errors.Is(err, storage.ErrAdjustmentNotFound) {
+		c.JSON(http.StatusNotFound, errorResponse{Error: "adjustment_not_found"})
+		return
+	}
+	if errors.Is(err, storage.ErrWeeklyPlanInvalidBatch) {
+		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
+		return
+	}
+	if errors.Is(err, storage.ErrAdjustmentState) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "adjustment_state_conflict"})
+		return
+	}
+	if errors.Is(err, storage.ErrWeeklyPlanMasterPlanConflict) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "weekly_plan_master_plan_conflict"})
+		return
+	}
+	if errors.Is(err, storage.ErrWeeklyPlanExists) || errors.Is(err, storage.ErrWeeklyPlanConflict) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "weekly_plan_changed"})
+		return
+	}
+	if err != nil {
+		p.log.Error("adjustment accept failed", zapErr(err), zap.String("user_id", userID))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
+	}
+	applied := make([]acceptAdjustmentWeek, 0, len(appliedRows))
+	for _, week := range appliedRows {
+		applied = append(applied, acceptAdjustmentWeek{
+			WeekStart: week.WeekStart, Revision: week.Revision, Replaced: week.Replaced,
+		})
 	}
 	c.JSON(http.StatusOK, acceptAdjustmentResponse{Applied: applied})
 }

@@ -228,6 +228,14 @@ func isDuplicateKey(err error) bool {
 	return ok && n == 1062
 }
 
+// isDeadlock reports InnoDB's deadlock (1213) so a transaction can be retried
+// once: after the rollback the loser observes the winner's committed rows and
+// returns a stable domain error instead of a transient 500.
+func isDeadlock(err error) bool {
+	n, ok := mysqlErrNo(err)
+	return ok && n == 1213
+}
+
 // deterministicWriteErrs are MySQL server error numbers where the SAME write
 // fails identically on every retry: the row's data violates the schema, so a
 // retry only burns the job's attempt budget before poisoning. These are
