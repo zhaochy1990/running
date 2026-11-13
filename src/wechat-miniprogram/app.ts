@@ -2,6 +2,7 @@ import { wechatLogin, hasValidToken, validateSession } from './services/auth';
 import { getOnboardingStatus } from './services/onboarding';
 import { ApiError } from './services/request';
 import { userStore } from './store/index';
+import { installMemoryWarningReporter, reportRuntimeError } from './utils/runtimeDiagnostics';
 
 // 免登录入口白名单（issue #702）：深链冷开这些公开落地页时不强制登录 ——
 // silentLogin 照跑（微信已绑者无感升级已登录态），失败不再甩登录页、
@@ -60,6 +61,8 @@ App<IAppOption>({
   },
 
   onLaunch() {
+    installMemoryWarningReporter();
+
     // 获取系统信息（一次即可）
     wx.getSystemInfo({
       success: (res) => {
@@ -69,6 +72,14 @@ App<IAppOption>({
 
     // 启动时执行登录态检查
     this.checkAuth();
+  },
+
+  onError(error) {
+    reportRuntimeError('error', error);
+  },
+
+  onUnhandledRejection(res) {
+    reportRuntimeError('unhandled_rejection', res.reason);
   },
 
   /**

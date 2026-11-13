@@ -40,6 +40,11 @@ const (
 	MaxPaths      = 256
 
 	MaxMarkers = 50
+
+	// Keep the complete upstream URL comfortably below the observed 8 KiB
+	// gateway limit. Tencent's static-map documentation caps each path at 800.
+	maxStaticMapURLBytes  = 7000
+	providerMaxPathPoints = 800
 )
 
 // tileSizePx is the web-mercator tile edge the zoom ladder counts (256px at
@@ -135,6 +140,11 @@ func (r StaticMapRequest) Validate() error {
 		if len(p.Points) < MinPathPoints || len(p.Points) > MaxPathPoints {
 			return fmt.Errorf("path %d has %d points, out of range [%d, %d]", i, len(p.Points), MinPathPoints, MaxPathPoints)
 		}
+		for _, point := range p.Points {
+			if !validCoordinate(point[0], point[1]) {
+				return fmt.Errorf("path %d contains invalid coordinates", i)
+			}
+		}
 	}
 	if len(r.Markers) > MaxMarkers {
 		return fmt.Errorf("%d markers exceed the %d limit", len(r.Markers), MaxMarkers)
@@ -146,8 +156,15 @@ func (r StaticMapRequest) Validate() error {
 		if !markerSizes[m.Size] {
 			return fmt.Errorf("marker %d size %q is not a predefined marker size", i, m.Size)
 		}
+		if !validCoordinate(m.Lat, m.Lng) {
+			return fmt.Errorf("marker %d contains invalid coordinates", i)
+		}
 	}
 	return nil
+}
+
+func validCoordinate(lat, lng float64) bool {
+	return !math.IsNaN(lat) && !math.IsNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180
 }
 
 // FetchStaticMap validates the request, derives center+zoom from the path
@@ -156,23 +173,17 @@ func (c *Client) FetchStaticMap(ctx context.Context, req StaticMapRequest) ([]by
 	if !c.Configured() {
 		return nil, errors.New("tencentlbs: client not configured")
 	}
-	if err := req.Validate(); err != nil {
-		return nil, fmt.Errorf("tencentlbs: %w", err)
-	}
-	query, err := BuildStaticMapQuery(req)
+	requestURL, err := c.staticMapURL(req)
 	if err != nil {
 		return nil, err
 	}
-	// The key is the one parameter BuildStaticMapQuery deliberately leaves
-	// out; it exists only in this process and never crosses the proxy wire.
-	query += "&key=" + url.QueryEscape(c.key)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.endpoint+"?"+query, nil)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("tencentlbs: build request: %w", err)
+		return nil, fmt.Errorf("tencentlbs: build request: %w", withoutRequestURL(err))
 	}
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("tencentlbs: fetch: %w", err)
+		return nil, fmt.Errorf("tencentlbs: fetch: %w", withoutRequestURL(err))
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
@@ -180,12 +191,12 @@ func (c *Client) FetchStaticMap(ctx context.Context, req StaticMapRequest) ([]by
 		return nil, fmt.Errorf("tencentlbs: read response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("tencentlbs: provider returned HTTP %d: %.200s", resp.StatusCode, body)
+		return nil, fmt.Errorf("tencentlbs: provider returned HTTP %d: %s", resp.StatusCode, safeResponsePreview(body, c.key))
 	}
 	// The endpoint answers image/png on success; anything else is the API's
 	// JSON error payload with a 200 (observed shape: {"status":..., "message":...}).
 	if len(body) == 0 || !looksLikePNG(body) {
-		return nil, fmt.Errorf("tencentlbs: provider returned non-image payload: %.200s", body)
+		return nil, fmt.Errorf("tencentlbs: provider returned non-image payload: %s", safeResponsePreview(body, c.key))
 	}
 	return body, nil
 }
@@ -199,18 +210,107 @@ func looksLikePNG(b []byte) bool {
 	return string(b[:len(sig)]) == string(sig)
 }
 
-// BuildStaticMapQuery renders the full query string (key NOT included; the
-// caller's client appends it) for the documented wire format: styles and
-// positions "|" separated, positions "lat,lng", size "width*height".
+// safeResponsePreview removes the key before truncating provider error bodies.
+func safeResponsePreview(body []byte, key string) string {
+	text := strings.ReplaceAll(string(body), key, "<redacted>")
+	if encoded := url.QueryEscape(key); encoded != key {
+		text = strings.ReplaceAll(text, encoded, "<redacted>")
+	}
+	if len(text) > 200 {
+		return text[:200]
+	}
+	return text
+}
+
+// withoutRequestURL strips URL-bearing network errors before they reach logs.
+// The URL contains both the server-held key and the user's track coordinates.
+func withoutRequestURL(err error) error {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return urlErr.Err
+	}
+	return err
+}
+
+// staticMapURL retains the existing wire format for short requests. Longer
+// requests use Tencent's delta encoding and then progressively simplify each
+// independent path until the complete URL fits the conservative budget.
+func (c *Client) staticMapURL(req StaticMapRequest) (string, error) {
+	query, err := BuildStaticMapQuery(req)
+	if err != nil {
+		return "", err
+	}
+	key := "&key=" + url.QueryEscape(c.key)
+	makeURL := func(q string) string { return c.endpoint + "?" + q + key }
+	providerCompatible := true
+	for _, path := range req.Paths {
+		if len(path.Points) > providerMaxPathPoints {
+			providerCompatible = false
+			break
+		}
+	}
+	if providerCompatible && len(makeURL(query)) <= maxStaticMapURLBytes {
+		return makeURL(query), nil
+	}
+
+	// Keep the original framing even when path points must be simplified.
+	lat, lng, zoom, _ := FitCenterZoom(req)
+	paths := make([]StaticPath, len(req.Paths))
+	copy(paths, req.Paths)
+	for i := range paths {
+		paths[i].Points = samplePath(paths[i].Points, providerMaxPathPoints)
+	}
+	req.Paths = paths
+	for {
+		query = buildStaticMapQuery(req, lat, lng, zoom, true)
+		requestURL := makeURL(query)
+		if len(requestURL) <= maxStaticMapURLBytes {
+			return requestURL, nil
+		}
+		reduced := false
+		for i := range paths {
+			if len(paths[i].Points) > MinPathPoints {
+				limit := (len(paths[i].Points) + 1) / 2
+				if limit < MinPathPoints {
+					limit = MinPathPoints
+				}
+				paths[i].Points = samplePath(paths[i].Points, limit)
+				reduced = true
+			}
+		}
+		if !reduced {
+			return "", errors.New("tencentlbs: map request exceeds URL budget after path simplification")
+		}
+	}
+}
+
+// samplePath keeps both endpoints and samples the interior without mutating
+// the caller's points. Independent paths remain separate across pauses.
+func samplePath(points [][2]float64, limit int) [][2]float64 {
+	if len(points) <= limit {
+		return points
+	}
+	out := make([][2]float64, limit)
+	for i := range out {
+		out[i] = points[i*(len(points)-1)/(limit-1)]
+	}
+	return out
+}
+
+// BuildStaticMapQuery renders the original uncompressed query without a key.
 func BuildStaticMapQuery(req StaticMapRequest) (string, error) {
 	if err := req.Validate(); err != nil {
 		return "", fmt.Errorf("tencentlbs: %w", err)
 	}
-	values := url.Values{}
 	lat, lng, zoom, ok := FitCenterZoom(req)
 	if !ok {
 		return "", errors.New("tencentlbs: no path or marker positions to frame")
 	}
+	return buildStaticMapQuery(req, lat, lng, zoom, false), nil
+}
+
+func buildStaticMapQuery(req StaticMapRequest, lat, lng float64, zoom int, compressed bool) string {
+	values := url.Values{}
 	values.Set("center", formatCoord(lat)+","+formatCoord(lng))
 	values.Set("zoom", strconv.Itoa(zoom))
 	values.Set("size", strconv.Itoa(req.Width)+"*"+strconv.Itoa(req.Height))
@@ -221,11 +321,29 @@ func BuildStaticMapQuery(req StaticMapRequest) (string, error) {
 		b.WriteString(p.Color)
 		b.WriteString("|weight:")
 		b.WriteString(strconv.Itoa(p.Weight))
-		for _, pt := range p.Points {
+		if compressed {
+			b.WriteString("|cmp:1")
+		}
+		var prevLat, prevLng int64
+		for i, pt := range p.Points {
 			b.WriteString("|")
-			b.WriteString(formatCoord(pt[0]))
-			b.WriteString(",")
-			b.WriteString(formatCoord(pt[1]))
+			if !compressed {
+				b.WriteString(formatCoord(pt[0]))
+				b.WriteString(",")
+				b.WriteString(formatCoord(pt[1]))
+				continue
+			}
+			latMicro, lngMicro := int64(math.Round(pt[0]*1e6)), int64(math.Round(pt[1]*1e6))
+			if i == 0 {
+				b.WriteString(formatCoord(float64(latMicro) / 1e6))
+				b.WriteString(",")
+				b.WriteString(formatCoord(float64(lngMicro) / 1e6))
+			} else {
+				b.WriteString(strconv.FormatInt(latMicro-prevLat, 10))
+				b.WriteString(",")
+				b.WriteString(strconv.FormatInt(lngMicro-prevLng, 10))
+			}
+			prevLat, prevLng = latMicro, lngMicro
 		}
 		values.Add("path", b.String())
 	}
@@ -241,12 +359,11 @@ func BuildStaticMapQuery(req StaticMapRequest) (string, error) {
 		b.WriteString(formatCoord(m.Lng))
 		values.Add("markers", b.String())
 	}
-	return values.Encode(), nil
+	return values.Encode()
 }
 
-// formatCoord renders a coordinate with 6 decimal places (≈0.1m), the
-// practical precision floor for track points and short enough to keep a
-// 2048-point path URL well under gateway limits.
+// formatCoord renders a coordinate with 6 decimal places (≈0.1m), matching
+// the precision used by Tencent's compressed path deltas.
 func formatCoord(v float64) string {
 	return strconv.FormatFloat(v, 'f', 6, 64)
 }
@@ -292,7 +409,8 @@ func FitCenterZoom(req StaticMapRequest) (lat, lng float64, zoom int, ok bool) {
 
 	// Web-mercator normalized coordinates in [0,1].
 	xMin, xMax := lngToUnit(minLng), lngToUnit(maxLng)
-	yMin, yMax := latToUnit(minLat), latToUnit(maxLat)
+	// Mercator y grows southward, so the northern latitude is the lower y.
+	yMin, yMax := latToUnit(maxLat), latToUnit(minLat)
 	availW := float64(req.Width) * (1 - 2*fitPadding)
 	availH := float64(req.Height) * (1 - 2*fitPadding)
 	fit := 0.0
@@ -305,16 +423,21 @@ func FitCenterZoom(req StaticMapRequest) (lat, lng float64, zoom int, ok bool) {
 			fit = fitY
 		}
 	}
+	// Tencent supports zoom 4–18; high-resolution scale 2 caps it at 17.
+	maxZoom := 18
+	if req.Scale == 2 {
+		maxZoom = 17
+	}
 	if fit <= 0 {
-		// Degenerate bbox (a single point): frame it at street level.
-		return minLat, minLng, 18, true
+		// Degenerate bbox (a single point): frame at the closest supported level.
+		return minLat, minLng, maxZoom, true
 	}
 	z := int(math.Floor(math.Log2(fit)))
-	if z < 3 {
-		z = 3
+	if z < 4 {
+		z = 4
 	}
-	if z > 20 {
-		z = 20
+	if z > maxZoom {
+		z = maxZoom
 	}
 	// Center is the mercator midpoint, converted back to geographic
 	// latitude so high-latitude spans stay centered.

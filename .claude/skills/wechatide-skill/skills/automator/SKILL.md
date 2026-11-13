@@ -52,6 +52,7 @@ wechatide -c <clientName> simulator_screenshot --project <project> --path <local
 - 元素交互只用 `automation_element_action`，不是 `automation_viewport_action`
 - `automation_viewport_action` **不支持** tap/input
 - 不要对小程序项目调用 `automation_game_action`
+- 生成脚本先在项目目录 `npm i miniprogram-automator`，再用 `node <script> [projectPath]` 运行；不传路径时用录制时的项目路径
 
 ### 失败快表
 

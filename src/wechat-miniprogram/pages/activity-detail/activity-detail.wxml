@@ -10,10 +10,8 @@
         <view class="top-bar__title">{{header.name || '活动详情'}}</view>
         <view wx:if="{{header.dateLabel}}" class="top-bar__subtitle">{{header.dateLabel}}</view>
       </view>
-      <!-- 分享海报出口（devops#945）：与左侧返回位等宽，标题保持居中 -->
-      <view class="top-bar__btn" bindtap="onSharePoster">
-        <image class="top-bar__icon" src="/assets/icons/share.svg" mode="aspectFit" />
-      </view>
+      <!-- 右侧仅保留对称占位，避开微信胶囊 -->
+      <view class="top-bar__btn" aria-hidden="true"></view>
     </view>
   </view>
 
@@ -58,7 +56,20 @@
               <view class="map-toggle__btn {{mapColoring === 'hr' ? 'map-toggle__btn--on' : ''}}" data-coloring="hr" bindtap="onColoringChange">HR</view>
               <view class="map-toggle__btn {{mapColoring === 'none' ? 'map-toggle__btn--on' : ''}}" data-coloring="none" bindtap="onColoringChange">无色</view>
             </view>
-          </view>        </view>
+          </view>
+          <button class="map-share" bindtap="onSharePoster" aria-label="分享图片" hover-class="map-share--pressed">
+            <view class="map-share__surface">
+              <image class="map-share__icon" src="/assets/icons/share-poster-white.svg" mode="aspectFit" />
+            </view>
+          </button>
+        </view>
+      </view>
+      <!-- 室内等无轨迹的活动也可以生成分享图片 -->
+      <view wx:else class="poster-entry">
+        <button class="poster-entry__button" bindtap="onSharePoster" aria-label="分享图片" hover-class="poster-entry__button--pressed">
+          <image class="poster-entry__icon" src="/assets/icons/share.svg" mode="aspectFit" />
+          <text>分享图片</text>
+        </button>
       </view>
 
       <!-- 主指标：距离/配速/心率 + 负荷/时长/最大心率 + 步幅/步频/爬升 一卡三行 -->

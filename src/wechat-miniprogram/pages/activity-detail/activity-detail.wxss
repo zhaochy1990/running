@@ -538,6 +538,79 @@
   font-weight: 600;
 }
 
+/* 地图右侧操作：避开上方着色开关，不遮挡地图标识。 */
+.map-share {
+  position: absolute;
+  top: 92rpx;
+  right: 12rpx;
+  width: 88rpx !important;
+  height: 88rpx;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+}
+
+.map-share::after,
+.poster-entry__button::after {
+  border: 0;
+}
+
+/* 视觉缩小，外层保留 88rpx 点击区域。 */
+.map-share__surface {
+  width: 64rpx;
+  height: 64rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12rpx;
+  background: rgba(22, 27, 34, 0.82);
+}
+
+.map-share--pressed .map-share__surface {
+  opacity: 0.75;
+}
+
+.map-share__icon {
+  width: 32rpx;
+  height: 32rpx;
+}
+
+/* 没有地图时，使用首屏右侧的文字入口。 */
+.poster-entry {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 24rpx;
+  background: var(--color-card);
+  border-bottom: 1rpx solid var(--color-border-soft);
+}
+
+.poster-entry__button {
+  width: auto !important;
+  height: 88rpx;
+  margin: 0 0 0 auto !important;
+  padding: 0 16rpx;
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  border: 0;
+  background: transparent;
+  color: var(--color-accent-deep);
+  font-size: 24rpx;
+  line-height: 1;
+}
+
+.poster-entry__button--pressed {
+  opacity: 0.7;
+}
+
+.poster-entry__icon {
+  width: 32rpx;
+  height: 32rpx;
+}
+
 /* 分享海报 canvas（devops#945）：挂在视口外离屏绘制（同 strategy 配速卡），
    尺寸取海报上限（600×640，dpr=2 时导出 1200 宽），导出后走 preview/保存。 */
 .poster-canvas {

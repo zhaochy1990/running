@@ -6,7 +6,7 @@
 
 | id | scene | 摘要 |
 |----|-------|------|
-| `check_wechatide_status` | initializer | 只读获取登录态（loginExpired）、当前用户（loginUser）、skill 版本关系（versionRelation）以及是否启用 CLI 令... |
+| `check_wechatide_status` | initializer | 只读获取登录态（loginExpired）、当前用户（loginUser）、skill 版本关系（versionRelation）、CLI 可选令牌（cl... |
 | `close_project_window` | initializer | 关闭包含模拟器的项目窗口，不等于完全退出微信开发者工具 |
 | `open_project_window` | initializer | 打开包含模拟器的项目窗口。如果之前窗口已存在，则不打开新窗口，直接返回已打开的窗口 ID |
 | `quit` | initializer | 关闭 WechatIDE。 |
@@ -32,7 +32,7 @@
 | `automation_element_action` | automator | 读取或操作 selector 命中的元素；交互 action 会真实触发点击、输入、滚动或触摸事件，支持操作前等待。 |
 | `automation_game_action` | automator | 小游戏画布触摸：tap / swipe / touch*；坐标默认画布空间，可用 coordinateSpace=image + imageWidth/H... |
 | `automation_evaluate` | automator | 在当前小程序或小游戏运行时执行一段 JS 函数字符串并返回结果。该工具会实际执行代码，不是只读查询 |
-| `automation_generate_script` | automator | 把已记录调用生成可运行的 automator 脚本。 |
+| `automation_generate_script` | automator | 把已记录调用生成可用 node 运行的 automator 脚本；不传项目路径时使用录制时的路径。 |
 | `automation_navigate` | automator | 在当前小程序运行时执行页面导航，不负责页面断言；支持 waitForSelector / wait 在导航前等待。 |
 | `automation_page_action` | automator | 针对当前页面实例执行页面级读写。可选 waitForSelector/wait 在操作前等待 |
 | `automation_runtime_info` | initializer（主；亦可 automator, debugger） | 读取当前小程序运行时信息。 |
@@ -51,6 +51,8 @@
 | `cloud_fn_list` | cloudbase-operator | 只读列出指定云环境中的云函数 |
 | `cloud_query_storage` | cloudbase-operator | 只读查询云存储文件列表、文件信息、临时下载链接或文本内容。 |
 | `cloud_manage_storage` | cloudbase-operator | 管理云存储文件（上传/下载/删除）；upload/delete 属于写操作。 |
+| `cloud_query_msg_push` | cloudbase-operator | 只读查询小程序云开发消息推送配置或合法事件约束。 |
+| `cloud_manage_msg_push` | cloudbase-operator | 管理小程序云开发消息推送配置（订阅/退订/启停/确保云函数模式），属于写操作。 |
 
 ## 已废弃（勿调用，且不出现在 `wechatide -h` 默认目录）
 

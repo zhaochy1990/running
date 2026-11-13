@@ -1,6 +1,6 @@
 ---
 name: wechatide-skill
-version: 0.3.9
+version: 0.3.11
 description: >-
   微信开发者工具（wechatide）工作流根入口：小程序/小游戏的创建与导入、编译预览上传、
   登录与项目管理、页面自动化、调试取证、云开发，以及开发者工具的下载安装更新。
@@ -54,7 +54,7 @@ related-skills:
    `wechatide -c <clientName> check_wechatide_status --skill-version <本文件 frontmatter 的 version>`
    → 按运行前检查处理返回。**可继续业务**仅当：`versionRelation` 为 `equal` / `agent_ahead`，且 `loginExpired: false`（再按第 3 步处理 token）
 2. 若上一步（或任意 `wechatide` 调用）命令不存在 / 无法执行 → 安装诊断；命令可用时不要主动跑
-3. `tokenRequired: true` → 复用已记 token，否则问用户（「设置 → 安全」）；禁止猜 / 翻本地
+3. 分入口处理 Token：`wechatide -c` / skill-call 走可选 CLI 令牌，未配置则不验；仅当 `cliTokenRequired` / 兼容字段 `tokenRequired` 为 true 或返回 `cli_token_required` 时才带 CLI 令牌（复用已记 token，否则问用户）。`wechatide mcp` / Inspector 才需要独立 MCP Token（`mcpTokenRequired: true`）；缺 Token / `mcp_token_required` → 请用户到「设置 → 安全」**重新复制 MCP 配置**，不要把 CLI 可选令牌当成 MCP Token。禁止猜 / 翻本地
 
 跳过：`installer`、`project-config`。用户要下载/安装/更新可直接进 `installer`。
 
@@ -102,7 +102,7 @@ wechatide -c <clientName> <toolName> [flags...] [--token <cliAccessToken>]
 | 预览、二维码、上传体验版（预览优先 `auto_preview`；可不打开窗口） | `skills/previewer/SKILL.md` |
 | 点击、输入、滚动、页面断言、自动化脚本 | `skills/automator/SKILL.md` |
 | console / network / 截图取证 / 状态诊断 | `skills/debugger/SKILL.md` |
-| 云环境、云函数、云数据库、云存储 | `skills/cloudbase-operator/SKILL.md` |
+| 云环境、云函数、云数据库、云存储、消息推送 | `skills/cloudbase-operator/SKILL.md` |
 | 小程序地图组件 / 腾讯位置服务 API | 外部 skill：`tencentmap-miniprogram-skill`（前端）/ `tencentmap-webservice-skill`（后端）——本包不处理，需触发主动下载；详见 [map-skill-index](references/map-skill-index.md) |
 
 选择原则：按**当前主目标**进一个 scene；不要跨 scene 混用原子工具。多目标时先完成 blocker，再移交。

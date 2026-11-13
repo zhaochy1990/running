@@ -32,7 +32,7 @@ wechatide -c <clientName> auto_preview --project <project>
 表示目录存在，但 `project.config.json` 缺失、读取失败、JSON 解析失败或内容不合法。
 
 1. **先确认目录存在**（若路径本身不对，应先表现为 `PROJECT_PATH_NOT_FOUND`）。
-2. 确认 `<project>/project.config.json` 是否存在；缺失则创建最小配置（见下）。
+2. 确认 `<project>/project.config.json` 是否存在；缺失则创建最小配置（见下）。但若已有迹象表明该目录体量很大且不像小程序 / 小游戏项目（如未见 `app.json` / `game.json`，却有大量无关工程或数据目录），先停止并让用户确认是否选错项目目录；未经确认不要写入。只做快速判断，勿为此递归扫描超大目录。
 3. 若存在：修复非法 JSON（注释、尾逗号、截断、编码等），保证可被标准 JSON 解析。
 4. 合并写入，保留无关字段；字段语义见 `skills/project-config/SKILL.md`。
 5. **用同一参数重试**；若又得到 `APPID_ERROR`，再走下方流程。

@@ -6,7 +6,7 @@
     {
       "id": "check_wechatide_status",
       "name": "读取微信开发者工具状态",
-      "summary": "只读获取登录态（loginExpired）、当前用户（loginUser）、skill 版本关系（versionRelation）以及是否启用 CLI 令牌（tokenRequired）；不触发登录。tokenRequired 为 true 时后续业务工具须带令牌。",
+      "summary": "只读获取登录态（loginExpired）、当前用户（loginUser）、skill 版本关系（versionRelation）、CLI 可选令牌（cliTokenRequired / 兼容字段 tokenRequired）以及 MCP 是否需要独立 Token（mcpTokenRequired，始终为 true）；不触发登录。wechatide -c / skill-call 走可选 CLI 令牌（未配置则不验，本工具还可跳过 CLI 令牌）；wechatide mcp / Inspector 等 MCP 入口始终需要独立 MCP Token。MCP 缺 Token 时应提示用户重新复制 MCP 配置；仅当 cliTokenRequired 为 true 时后续 CLI / skill-call 命令须带 CLI 令牌。",
       "group": "ide",
       "source": {
         "type": "wechatide"
@@ -963,7 +963,7 @@
     {
       "id": "automation_generate_script",
       "name": "生成 automator 脚本",
-      "summary": "把已记录调用生成可运行的 automator 脚本。",
+      "summary": "把已记录调用生成可用 node 运行的 automator 脚本；不传项目路径时使用录制时的路径。",
       "group": "automation",
       "source": {
         "type": "wechatide"
@@ -1804,6 +1804,112 @@
       "execution": {
         "transport": "skill_call",
         "toolName": "cloud_manage_storage"
+      }
+    },
+    {
+      "id": "cloud_query_msg_push",
+      "name": "查询消息推送",
+      "summary": "只读查询小程序云开发消息推送配置或合法事件约束。",
+      "group": "cloud",
+      "source": {
+        "type": "wechatide"
+      },
+      "scenes": [
+        "cloudbase-operator"
+      ],
+      "inputSchema": {
+        "appid": {
+          "type": "string",
+          "required": true,
+          "description": "小程序 AppID"
+        },
+        "env": {
+          "type": "string",
+          "required": false,
+          "description": "云开发环境 ID；list 时可选，用于仅返回该环境订阅"
+        },
+        "action": {
+          "type": "string",
+          "required": true,
+          "enum": [
+            "list",
+            "listSupportedEvents"
+          ],
+          "description": "list=当前推送配置；listSupportedEvents=全部合法消息类型/事件约束"
+        }
+      },
+      "execution": {
+        "transport": "skill_call",
+        "toolName": "cloud_query_msg_push"
+      }
+    },
+    {
+      "id": "cloud_manage_msg_push",
+      "name": "管理消息推送",
+      "summary": "管理小程序云开发消息推送配置（订阅/退订/启停/确保云函数模式），属于写操作。",
+      "group": "cloud",
+      "source": {
+        "type": "wechatide"
+      },
+      "scenes": [
+        "cloudbase-operator"
+      ],
+      "inputSchema": {
+        "appid": {
+          "type": "string",
+          "required": true,
+          "description": "小程序 AppID"
+        },
+        "env": {
+          "type": "string",
+          "required": true,
+          "description": "云开发环境 ID，请先用 cloud_env_list 获取"
+        },
+        "function_name": {
+          "type": "string",
+          "required": true,
+          "description": "接收消息推送的云函数名"
+        },
+        "action": {
+          "type": "string",
+          "required": true,
+          "enum": [
+            "subscribe",
+            "unsubscribe",
+            "setEnable",
+            "ensureCloudFunctionMode",
+            "ensureContainerMode",
+            "setContainerCallback"
+          ],
+          "description": "subscribe | unsubscribe | setEnable | ensureCloudFunctionMode | ensureContainerMode | setContainerCallback"
+        },
+        "msg_type": {
+          "type": "string",
+          "required": false,
+          "enum": [
+            "event",
+            "text",
+            "image",
+            "voice",
+            "video",
+            "miniprogrampage"
+          ],
+          "description": "消息类型，缺省 event；消息类型条目勿传 event_types"
+        },
+        "event_types": {
+          "type": "array",
+          "required": false,
+          "description": "事件列表（仅 msg_type=event）；subscribe 可缺省为虚拟支付 7 事件"
+        },
+        "enable": {
+          "type": "boolean",
+          "required": false,
+          "description": "setEnable 时：true 启用 / false 停用"
+        }
+      },
+      "execution": {
+        "transport": "skill_call",
+        "toolName": "cloud_manage_msg_push"
       }
     }
   ]

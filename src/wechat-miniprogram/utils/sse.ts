@@ -144,7 +144,8 @@ export class SseParser {
   feed(data: ByteSource): SseEvent[] {
     const bytes = toBytes(data);
     if (bytes.length === 0) return [];
-    this.buffer.push(...bytes);
+    // 大块响应不能展开为函数参数，否则可能触发调用栈溢出。
+    for (const byte of bytes) this.buffer.push(byte);
     const events: SseEvent[] = [];
     for (;;) {
       const end = findEventEnd(this.buffer);
