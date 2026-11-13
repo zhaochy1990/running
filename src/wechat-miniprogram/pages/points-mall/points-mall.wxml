@@ -84,7 +84,8 @@
     <view class="sheet" catchtap="noop">
       <view class="sheet__title">确认兑换</view>
       <view class="sprod">
-        <view class="sprod__img"></view>
+        <image wx:if="{{sheetImageUrl}}" class="sprod__img" src="{{sheetImageUrl}}" mode="aspectFill" />
+        <view wx:else class="sprod__img"></view>
         <view class="sprod__name">{{sheetName}}</view>
         <view class="sprod__price">{{sheetPrice}} 分</view>
       </view>

@@ -66,6 +66,7 @@ interface PointsMallPageData {
   /** 确认抽屉。 */
   sheetVisible: boolean;
   sheetName: string;
+  sheetImageUrl: string;
   sheetPrice: number;
   /** 兑换数量（步进器）；合计 = price × qty。 */
   sheetQty: number;
@@ -197,6 +198,7 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
     products: [],
     sheetVisible: false,
     sheetName: '',
+    sheetImageUrl: '',
     sheetPrice: 0,
     sheetQty: 1,
     sheetTotal: 0,
@@ -318,6 +320,7 @@ Page<PointsMallPageData, PointsMallPageHandlers>({
     this.setData({
       sheetVisible: true,
       sheetName: product.name,
+      sheetImageUrl: product.imageUrl,
       sheetPrice: product.price,
       sheetQty: 1,
       // 限购商品按余量封顶（redeemed 服务端已按件数 SUM）；不限购 99。
