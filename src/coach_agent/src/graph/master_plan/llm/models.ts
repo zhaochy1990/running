@@ -1,17 +1,10 @@
 /** master plan kernel 的 LLM 依赖装配（目标评估 + L2 判断层 + L4 内容层）。 */
 import { buildModel } from "@stride/common";
-import { createContentModel, type ContentModel } from "../phasing/content/generate.js";
-import { createPhasingModel, type PhasingModel } from "../phasing/generate.js";
 import type { ModelConfig } from "../../../config/config.js";
-import {
-  canonicalizeAssessmentSummary,
-  GoalAssessmentSchema,
-  validateAssessmentReferences,
-  validateGoalAssessmentTargets,
-  withAuthoritativeLevel,
-  withBackfilledClaimCitations,
-} from "../assessment.js";
+import { GoalAssessmentSchema } from "../assessment.js";
 import type { MasterPlanGraphDependencies } from "../nodes.js";
+import { type ContentModel, createContentModel } from "../phasing/content/generate.js";
+import { createPhasingModel, type PhasingModel } from "../phasing/generate.js";
 import { goalAssessmentPrompt } from "./prompts.js";
 
 export type MasterPlanLlmModels = Pick<MasterPlanGraphDependencies, "goalAssessmentModel" | "phasingModel" | "contentModel">;
@@ -31,20 +24,14 @@ export function createMasterPlanLlmModels({ masterPlanModel, phasingModel, conte
 
   return {
     goalAssessmentModel: {
-      async invoke(input) {
+      async invoke(input, retry) {
         return buildModel({
           ...masterPlanModel,
           structured: {
             schema: GoalAssessmentSchema,
             name: "submit_goal_assessment",
-            validate: (assessment) => {
-              const canonical = withAuthoritativeLevel(withBackfilledClaimCitations(canonicalizeAssessmentSummary(assessment), input.facts), input.facts);
-              validateAssessmentReferences(canonical, input.facts);
-              validateGoalAssessmentTargets(canonical, input.request, input.facts);
-              return canonical;
-            },
           },
-        }).invoke(goalAssessmentPrompt(input));
+        }).invoke(goalAssessmentPrompt({ ...input, retry }));
       },
     },
     phasingModel: phasing,

@@ -16,7 +16,7 @@ const PROFILE = "prod" as Profile;
 // before any config is loaded below.
 process.env.STRIDE_COACH_ENV = PROFILE;
 const USER_ID = "f10bc353-01ab-4db1-af9f-d9305ea9a532";
-const AS_OF = new Date().toISOString();
+const AS_OF = process.env.MP_AS_OF ?? new Date().toISOString();
 
 export const config = loadConfig({ configFiles: coachAgentConfigFiles(import.meta.url) });
 const modelConfig = getAgentConfig(config, "master_plan");
@@ -107,6 +107,7 @@ async function main() {
       if (artifact.warnings.includes("content_template_fallback"))
         console.log("L4 走了模板兜底：查 content 节点的 retry violations 日志（level:40）定位违规簇");
     } else {
+      process.exitCode = 1;
       console.log(JSON.stringify(outcome, null, 2).slice(0, 2000));
     }
   } finally {

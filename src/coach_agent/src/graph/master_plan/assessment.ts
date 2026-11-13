@@ -80,7 +80,7 @@ export function deriveAssessmentFacts(snapshot: ContextSnapshot, request: Master
       fact("load.current_ctl", snapshot.fitness_state.ctl, "training_dose", "snapshot.fitness_state.ctl"),
       fact("load.current_atl", snapshot.fitness_state.atl, "training_dose", "snapshot.fitness_state.atl"),
       fact("load.current_form", snapshot.fitness_state.form, "training_dose", "snapshot.fitness_state.form"),
-      fact("race.a.weeks_to_race", round(daysBetween(asOfDay, goal.race_date) / 7, 2), "weeks", "request.goals[A].race_date+snapshot.as_of"),
+      fact("race.a.weeks_to_race", daysBetween(asOfDay, goal.race_date) / 7, "weeks", "request.goals[A].race_date+snapshot.as_of"),
       fact("goal.a.target_seconds", targetSeconds, "seconds", "request.goals[A].target_time"),
       fact("goal.a.matching_pb_seconds", matchingPb?.time_sec ?? null, "seconds", "snapshot.personal_bests", matchingPb ? "high" : "unavailable"),
       fact(
@@ -108,6 +108,10 @@ export function deriveAssessmentFacts(snapshot: ContextSnapshot, request: Master
   });
 }
 
+/** Only a finite runway >=12 is a recoverable contradiction; missing facts still fail. */
+export class UnsupportedRunwayClaimError extends Error {}
+export class RunwayTextContradictionError extends Error {}
+
 export function validateAssessmentReferences(assessment: GoalAssessment, facts: AssessmentFacts): void {
   const byId = new Map(facts.facts.map((fact) => [fact.fact_id, fact]));
   const conclusionIds = assessment.material_conclusions.flatMap((item) => item.fact_ids);
@@ -116,7 +120,49 @@ export function validateAssessmentReferences(assessment: GoalAssessment, facts: 
   for (const factId of conclusionIds) if (!byId.has(factId)) throw new Error(`assessment cites unknown fact_id: ${factId}`);
   for (const factId of noteIds) if (!byId.has(factId)) throw new Error(`assessment note cites unknown fact_id: ${factId}`);
   for (const factId of gateIds) if (!byId.has(factId)) throw new Error(`assessment gate cites unknown fact_id: ${factId}`);
-  for (const item of assessment.material_conclusions) validateClaim(item.claim, item.fact_ids, byId);
+  let runwayError: UnsupportedRunwayClaimError | undefined;
+  for (const item of assessment.material_conclusions) {
+    try {
+      validateClaim(item.claim, item.fact_ids, byId);
+    } catch (error) {
+      if (!(error instanceof UnsupportedRunwayClaimError)) throw error;
+      runwayError = error;
+    }
+  }
+  // Do not let a recoverable claim hide another invalid conclusion or citation.
+  validateRunwayText(assessment, byId);
+  if (runwayError) throw runwayError;
+}
+
+function validateRunwayText(assessment: GoalAssessment, facts: Map<string, Fact>): void {
+  const runway = numberFact(facts.get("race.a.weeks_to_race")?.value);
+  if (runway === null || runway < 12) return;
+  const texts = [
+    ...assessment.multi_cycle_path.map((text, i) => ({ site: `multi_cycle_path[${i}]`, text })),
+    ...assessment.conflicts.map((note, i) => ({ site: `conflicts[${i}]`, text: note.description })),
+    ...Object.entries(assessment.abc_gates).flatMap(([gate, value]) => [
+      { site: `abc_gates.${gate}.target`, text: value.target.label },
+      ...value.conditions.map((condition, i) => ({ site: `abc_gates.${gate}.conditions[${i}]`, text: `${condition.criterion};${condition.description}` })),
+    ]),
+  ];
+  // shortcut: recognizes explicit Chinese/English generation-day-to-race assertions only, extend with reviewed examples if other phrasing recurs.
+  const assertion =
+    /(?:从?(?:上海)?生成(?:日|日期)(?:至|到)比赛(?:日|日期)(?:的?(?:精确)?(?:间隔|时间))?(?:为|仅有|只有|剩余|还剩|实际)?\s*(?:不足|少于|小于|<)\s*12\s*周|from (?:the )?(?:shanghai )?generation (?:day|date) to (?:the )?race (?:day|date)(?: is| there (?:are|is)| remains)? (?:less than|under|<) (?:12|twelve) weeks)/gi;
+  for (const { site, text } of texts) {
+    const unquoted = text.replace(/“[^”]*”|「[^」]*」|‘[^’]*’|"[^"]*"|'[^']*'/g, "");
+    for (const match of unquoted.matchAll(assertion)) {
+      const prefix = unquoted.slice(0, match.index).trimEnd();
+      if (
+        /(?:并非|不是|(?:不要|不能|不应|禁止)(?:声称|断言|说|认为|认定)|错误地声称|not true that|incorrect to say|false that|(?:do not|don't|never) (?:say|claim|assert))$/i.test(
+          prefix,
+        )
+      )
+        continue;
+      throw new RunwayTextContradictionError(
+        `assessment ${site} contradicts deterministic facts: generation-day runway ${runway} weeks is not <12; correct the explanation without removing evidence or safety gates`,
+      );
+    }
+  }
 }
 
 /**
@@ -254,13 +300,19 @@ const REQUIRED_CLAIM_FACTS: Record<GoalClaim, string[]> = {
   goal_supported_by_history: ["history.peak_weekly_km", "history.longest_road_run_km"],
 };
 function validateClaim(claim: GoalClaim, factIds: string[], facts: Map<string, Fact>): void {
-  for (const id of REQUIRED_CLAIM_FACTS[claim]) if (!factIds.includes(id) || !facts.has(id)) throw new Error(`assessment claim ${claim} requires fact_id: ${id}`);
+  for (const id of REQUIRED_CLAIM_FACTS[claim])
+    if (!factIds.includes(id) || !facts.has(id)) throw new Error(`assessment claim ${claim} requires fact_id: ${id}`);
   const value = (id: string) => facts.get(id)?.value;
+  const runway = numberFact(value("race.a.weeks_to_race"));
+  if (claim === "goal_runway_limited" && runway !== null && runway >= 12)
+    throw new UnsupportedRunwayClaimError(
+      `assessment claim goal_runway_limited contradicts deterministic facts: generation-day runway ${runway} weeks is not <12; do not use scheduling weeks`,
+    );
   const valid =
     claim === "goal_requires_improvement"
       ? (numberFact(value("goal.a.improvement_pct")) ?? 0) > 0
       : claim === "goal_runway_limited"
-        ? (numberFact(value("race.a.weeks_to_race")) ?? 99) < 12
+        ? (runway ?? 99) < 12
         : positive(value("history.peak_weekly_km")) && positive(value("history.longest_road_run_km"));
   if (!valid) throw new Error(`assessment claim ${claim} contradicts deterministic facts`);
 }
@@ -271,7 +323,7 @@ function claimExplanation(claim: GoalClaim): string {
   return (
     {
       goal_requires_improvement: "The confirmed goal requires improvement over the matching personal best.",
-      goal_runway_limited: "The remaining race runway limits adaptation time.",
+      goal_runway_limited: "The race is less than 12 exact weeks from the Shanghai generation day, limiting adaptation time.",
       goal_supported_by_history: "Historical volume and road-running durability support the goal path.",
     } as const
   )[claim];

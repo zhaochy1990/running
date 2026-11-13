@@ -41,6 +41,8 @@ import {
   deriveAssessmentFacts,
   type GoalAssessment,
   GoalAssessmentSchema,
+  RunwayTextContradictionError,
+  UnsupportedRunwayClaimError,
   validateAssessmentReferences,
   validateGoalAssessmentTargets,
   withAuthoritativeLevel,
@@ -60,7 +62,7 @@ import { buildLoadPlan } from "./phasing/load/expand.js";
 import { buildV2Snapshot } from "./v2Snapshot.js";
 
 interface GoalAssessmentModel {
-  invoke(input: { request: MasterPlanGraphRequest; snapshot: ContextSnapshot; facts: AssessmentFacts }): Promise<unknown>;
+  invoke(input: { request: MasterPlanGraphRequest; snapshot: ContextSnapshot; facts: AssessmentFacts }, retry?: { violations: string[] }): Promise<unknown>;
 }
 
 export interface MasterPlanGraphDependencies {
@@ -211,23 +213,48 @@ export class MasterPlanNodes {
     const facts = state.facts;
     if (snapshot === undefined || facts === undefined) throw new Error("assess_goal: snapshot/facts 缺失（initialize 未铺设）");
     try {
-      const assessment = withAuthoritativeLevel(
-        withBackfilledClaimCitations(
-          canonicalizeAssessmentSummary(
-            GoalAssessmentSchema.parse(
-              await this.dependencies.goalAssessmentModel.invoke({
-                request,
-                snapshot,
-                facts: facts,
-              }),
-            ),
-          ),
-          facts,
-        ),
-        facts,
-      );
-      validateAssessmentReferences(assessment, facts);
-      validateGoalAssessmentTargets(assessment, request, facts);
+      let assessment!: GoalAssessment;
+      let retry: { violations: string[] } | undefined;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        const rawAssessment = await this.dependencies.goalAssessmentModel.invoke({ request, snapshot, facts }, retry);
+        try {
+          assessment = withAuthoritativeLevel(withBackfilledClaimCitations(GoalAssessmentSchema.parse(rawAssessment), facts), facts);
+          validateGoalAssessmentTargets(assessment, request, facts);
+          try {
+            validateAssessmentReferences(assessment, facts);
+          } catch (error) {
+            if (!(error instanceof UnsupportedRunwayClaimError)) throw error;
+            const remaining = assessment.material_conclusions.filter((item) => item.claim !== "goal_runway_limited");
+            if (remaining.length > 0) {
+              assessment = { ...assessment, material_conclusions: remaining };
+              logger.warn(
+                { event: "goal_runway_claim_corrected", attempt, fact_id: "race.a.weeks_to_race" },
+                "Removed unsupported runway claim after validating all other evidence and targets",
+              );
+            } else {
+              if (attempt === 2) throw error;
+              retry = { violations: [error.message, "Return at least one supported conclusion with valid evidence; do not return an empty assessment."] };
+              logger.warn(
+                { event: "goal_runway_claim_retry", attempt, fact_id: "race.a.weeks_to_race" },
+                "Only conclusion contradicts runway facts; retrying assessment once",
+              );
+              continue;
+            }
+          }
+          assessment = GoalAssessmentSchema.parse(canonicalizeAssessmentSummary(assessment));
+          break;
+        } catch (error) {
+          if (error instanceof RunwayTextContradictionError && attempt === 1) {
+            retry = { violations: [error.message] };
+            logger.warn(
+              { event: "goal_runway_text_retry", attempt, fact_id: "race.a.weeks_to_race" },
+              "Explicit generation-day runway text contradicts facts; retrying assessment once",
+            );
+            continue;
+          }
+          throw error instanceof ModelContractError ? error : new ModelContractError(error instanceof Error ? error.message : "invalid goal assessment");
+        }
+      }
       if (assessment.level === "multi_cycle_required")
         return {
           outcome: MasterPlanGraphOutcomeSchema.parse({
