@@ -1,5 +1,5 @@
 import { addDays } from "@stride/contract";
-import { deriveAssessmentFacts } from "./assessment.js";
+import { deriveAssessmentFacts } from "./goalAssessment/assessment.js";
 
 export function createTestRequest() {
   return {

@@ -12,8 +12,8 @@ import {
   MasterPlanGraphRequest,
   validateAssessmentReferences,
   withBackfilledClaimCitations,
-} from "./index.js";
-import { createAssessmentSnapshot, createTestMasterPlan, createTestRequest } from "./testFixtures.js";
+} from "../index.js";
+import { createAssessmentSnapshot, createTestMasterPlan, createTestRequest } from "../testFixtures.js";
 
 const context: MasterPlanGraphContext = {
   userId: "athlete-344",
@@ -583,7 +583,7 @@ test("<12, =12, >12 exact-week claims share a 12-week Monday schedule", async ()
 
 test("6/12/18/24 natural-week paths complete with unchanged confirmed goals after runway correction", async () => {
   const { addDays } = await import("@stride/contract");
-  const { FrozenMasterPlanContextProvider } = await import("./context.js");
+  const { FrozenMasterPlanContextProvider } = await import("../context.js");
   const activities = Array.from({ length: 28 }, (_, i) => ({
     shanghaiDay: addDays("2026-11-09", -7 * i),
     distanceM: 65000,
@@ -722,7 +722,7 @@ test("claim and text contradictions share one retry budget and keep explicit fai
 });
 
 test("Responses adapter decodes a false claim and forwards the single retry feedback", async () => {
-  const { createMasterPlanLlmModels } = await import("./llm/models.js");
+  const { createMasterPlanLlmModels } = await import("../llm/models.js");
   const envName = "RUNWAY_TEST_MODEL_KEY";
   const previousKey = process.env[envName];
   const previousFetch = globalThis.fetch;

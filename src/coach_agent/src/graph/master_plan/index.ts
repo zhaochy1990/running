@@ -5,7 +5,7 @@ export {
   MasterPlanGraphRequest,
   MasterPlanSchema,
 } from "@stride/contract";
-export type { AssessmentFacts, GoalAssessment } from "./assessment.js";
+export type { AssessmentFacts, GoalAssessment } from "./goalAssessment/assessment.js";
 export {
   AssessmentFactsSchema,
   authoritativeGoalLevel,
@@ -16,7 +16,7 @@ export {
   validateGoalAssessmentTargets,
   withAuthoritativeLevel,
   withBackfilledClaimCitations,
-} from "./assessment.js";
+} from "./goalAssessment/assessment.js";
 export type { ContextSnapshot, MasterPlanContextProvider } from "./context.js";
 export { ContextSnapshotSchema, FrozenMasterPlanContextProvider } from "./context.js";
 export { createMasterPlanGraph, ModelContractError } from "./graph.js";

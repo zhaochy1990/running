@@ -47,7 +47,7 @@ import {
   validateGoalAssessmentTargets,
   withAuthoritativeLevel,
   withBackfilledClaimCitations,
-} from "./assessment.js";
+} from "./goalAssessment/assessment.js";
 import { type ContextSnapshot, ContextSnapshotSchema, type MasterPlanContextProvider } from "./context.js";
 import type { GoalAssessmentModel } from "./goalAssessment/GoalAssessmentModel.js";
 import { infrastructureFailure, logger, logSwallowedFailure, modelFailure, qualityFailure } from "./nodes/shared.js";
@@ -212,48 +212,8 @@ export class MasterPlanNodes {
     if (snapshot === undefined || facts === undefined) throw new Error("assess_goal: snapshot/facts 缺失（initialize 未铺设）");
     try {
       logger.info("Invoking goal assessment model for request: %s", request.request_id);
-      let assessment!: GoalAssessment;
       let retry: { violations: string[] } | undefined;
-      for (let attempt = 1; attempt <= 2; attempt++) {
-        const rawAssessment = await this.dependencies.goalAssessmentModel.invoke({ request, snapshot, facts }, retry);
-        try {
-          assessment = withAuthoritativeLevel(withBackfilledClaimCitations(GoalAssessmentSchema.parse(rawAssessment), facts), facts);
-          validateGoalAssessmentTargets(assessment, request, facts);
-          try {
-            validateAssessmentReferences(assessment, facts);
-          } catch (error) {
-            if (!(error instanceof UnsupportedRunwayClaimError)) throw error;
-            const remaining = assessment.material_conclusions.filter((item) => item.claim !== "goal_runway_limited");
-            if (remaining.length > 0) {
-              assessment = { ...assessment, material_conclusions: remaining };
-              logger.warn(
-                { event: "goal_runway_claim_corrected", attempt, fact_id: "race.a.weeks_to_race" },
-                "Removed unsupported runway claim after validating all other evidence and targets",
-              );
-            } else {
-              if (attempt === 2) throw error;
-              retry = { violations: [error.message, "Return at least one supported conclusion with valid evidence; do not return an empty assessment."] };
-              logger.warn(
-                { event: "goal_runway_claim_retry", attempt, fact_id: "race.a.weeks_to_race" },
-                "Only conclusion contradicts runway facts; retrying assessment once",
-              );
-              continue;
-            }
-          }
-          assessment = GoalAssessmentSchema.parse(canonicalizeAssessmentSummary(assessment));
-          break;
-        } catch (error) {
-          if (error instanceof RunwayTextContradictionError && attempt === 1) {
-            retry = { violations: [error.message] };
-            logger.warn(
-              { event: "goal_runway_text_retry", attempt, fact_id: "race.a.weeks_to_race" },
-              "Explicit generation-day runway text contradicts facts; retrying assessment once",
-            );
-            continue;
-          }
-          throw error instanceof ModelContractError ? error : new ModelContractError(error instanceof Error ? error.message : "invalid goal assessment");
-        }
-      }
+      const assessment = await this.dependencies.goalAssessmentModel.invoke({ request, snapshot, facts }, retry);
       logger.info("Goal assessment result: %s", JSON.stringify(assessment));
       if (assessment.level === "multi_cycle_required")
         return {
@@ -287,8 +247,9 @@ export class MasterPlanNodes {
     }
   };
 
-  /** L1：证据（纯函数，零 LLM）。 */
+  /** L1：用户的训练画像（纯函数，零 LLM）。 */
   readonly evidence = (state: typeof GraphState.State) => {
+    logger.info("L1, 生成用户的训练画像, request id: %s", state.request.request_id);
     const { request, context, snapshot, activities } = requiredWithBaseline(state);
     const goal = aGoalOf(request);
     // 判断层教义只验证过「带目标的 FM」（daniels.md）；HM 与完赛目标缺配速锚，
@@ -308,6 +269,7 @@ export class MasterPlanNodes {
         asOfOf(request),
       );
       if (phaseEvidence.current_capability.vdot === null) return { outcome: qualityFailure(request, context, "no_current_capability_vdot") };
+      logger.info("L1, 用户的训练画像生成完毕, request %s: %s", request.request_id, JSON.stringify(phaseEvidence));
       return { evidence: phaseEvidence };
     } catch (error) {
       logSwallowedFailure("evidence", error);
@@ -317,6 +279,7 @@ export class MasterPlanNodes {
 
   /** L2：阶段划分意图（flash 一次 + 结构门 + T 兜底）。 */
   readonly phasing = async (state: typeof GraphState.State) => {
+    logger.info("开始L2阶段划分, request id: %s", state.request.request_id);
     const { request, context, evidence } = requiredWithEvidence(state);
     const monday = planningStartDate(asOfOf(request));
     const goal = aGoalOf(request);

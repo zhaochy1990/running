@@ -1,7 +1,10 @@
 import type { MasterPlanGraphRequest } from "@stride/contract";
 import { type AssessmentFacts, AssessmentFactsSchema, addDays, type Fact, type GoalAssessment, type GoalClaim, shanghaiDay } from "@stride/contract";
-import { median } from "../../utils/statistics.js";
-import type { ContextSnapshot } from "./context.js";
+import { median } from "../../../utils/statistics.js";
+import type { ContextSnapshot } from "../context.js";
+import { getLogger } from "@stride/common";
+
+const logger = getLogger("GoalAssessment");
 
 export type {
   AssessmentFacts,
@@ -197,6 +200,8 @@ export function canonicalizeAssessmentSummary(assessment: GoalAssessment): GoalA
 }
 
 /**
+ * 根据代码中的固定规则重新计算目标等级，覆盖模型返回的 assessment.level
+ *
  * The goal-level ladder is deterministic (authoritativeGoalLevel); the model's
  * own level pick is coherence, not authority — a disagreement is prompt
  * compliance noise, not a capability judgment. Canonicalize to the
@@ -204,7 +209,11 @@ export function canonicalizeAssessmentSummary(assessment: GoalAssessment): GoalA
  */
 export function withAuthoritativeLevel(assessment: GoalAssessment, facts: AssessmentFacts): GoalAssessment {
   const level = authoritativeGoalLevel(facts);
-  if (level === assessment.level && (level === "multi_cycle_required" || assessment.multi_cycle_path.length === 0)) return assessment;
+  logger.info("Goal level changed from %s to: %s", assessment.level, level);
+
+  if (level === assessment.level && (level === "multi_cycle_required" || assessment.multi_cycle_path.length === 0)) {
+    return assessment;
+  }
   return { ...assessment, level, multi_cycle_path: level === "multi_cycle_required" ? assessment.multi_cycle_path : [] };
 }
 
