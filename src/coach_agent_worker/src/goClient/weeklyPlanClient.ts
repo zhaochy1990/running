@@ -150,7 +150,7 @@ function parseAdjustmentRow(raw: AdjustmentResponseShape): PendingAdjustmentRow 
 
 /**
  * Go 周课内部端点客户端（#858）：镜像 jobClient 的 fetch + x-internal-token 模式。
- * - `POST /api/internal/users/:user_id/plan/weeks/batch-apply`：滚动/首批周课文档批量落库
+ * - `POST /api/internal/users/:user_id/plan/weeks/batch-apply`：滚动周课文档批量落库
  *   （同 master_plan 周=期望替换 revision+1；异 master_plan 周=409）。
  * - `GET /api/internal/users/:user_id/plan/weeks?master_plan_id=...`：已落库周行列表。
  *

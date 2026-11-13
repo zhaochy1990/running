@@ -270,6 +270,7 @@ test("poll returns status, stage, progress, error code and, when done, the draft
     progress_pct: 100,
     error_code: null,
     result_draft_id: "draft-9",
+    result_json: job.resultJson,
   });
 });
 
@@ -303,6 +304,7 @@ test("poll of a failed job surfaces the stable error code and no draft", async (
     progress_pct: 60,
     error_code: "kernel_goal_conflict",
     result_draft_id: null,
+    result_json: null,
   });
 });
 
@@ -391,6 +393,7 @@ test("an admin polls another athlete's job", async () => {
     progress_pct: 100,
     error_code: null,
     result_draft_id: "draft-admin",
+    result_json: job.resultJson,
   });
 });
 

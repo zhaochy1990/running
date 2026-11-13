@@ -10,6 +10,7 @@
  * coach_agent）。
  */
 import { z } from "zod/v4";
+import { WeeklyPlanSchema } from "../weekly_plan/schema.js";
 import { DaySchema, MasterPlanSchema } from "./schemas.js";
 
 // ── policy：L2 阶段划分意图（daniels.md §1/§2.2）──────────────────────────────
@@ -198,6 +199,10 @@ export const MASTER_PLAN_V3_SCHEMA = "master-plan/v3" as const;
  */
 export const MasterPlanV3Schema = MasterPlanSchema.extend({
   schema: z.literal(MASTER_PLAN_V3_SCHEMA),
+  master_plan_id: z.uuid().optional(),
+  candidate_job_id: z.uuid().optional(),
+  candidate_user_id: z.uuid().optional(),
+  weekly_docs: z.array(WeeklyPlanSchema).max(6).optional(),
   policy: PhaseDivisionIntentSchema,
   skeleton: LoadPlanSchema,
   anchor: MasterPlanAnchorSchema,

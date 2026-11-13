@@ -79,6 +79,7 @@ function toPollResponse(job: PlanJob): Record<string, unknown> {
     progress_pct: job.progressPct,
     error_code: job.errorCode,
     result_draft_id: draftIdOf(job),
+    result_json: job.status === "done" ? job.resultJson : null,
   };
 }
 

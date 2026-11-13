@@ -17,7 +17,7 @@ export interface PlanJobHandlerDeps {
     contextProvider: MasterPlanContextProvider;
     models: Pick<MasterPlanLlmModels, "phasingModel" | "contentModel">;
   };
-  /** 周课落库通道（master 首批物化 + rolling 批落库共用，Go internal 端点）。 */
+  /** 滚动周课落库通道，Go internal 端点。 */
   weeklyPlans: RollingWeeklyChannel;
 }
 
@@ -37,7 +37,6 @@ export function createPlanJobHandlers(deps: PlanJobHandlerDeps): Map<PlanJobType
         graph: deps.masterGraph,
         // The plan's goal_id references the athlete's active race_goal row.
         resolveGoalId: async (userId) => (await deps.dataProvider.getRaceTarget(userId))?.goal_id ?? null,
-        weeklyPlans: deps.weeklyPlans,
       }),
     ],
     [

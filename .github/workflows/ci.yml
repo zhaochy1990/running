@@ -253,6 +253,18 @@ jobs:
           go test ./internal/storage/...
           -run 'TestApplyStructuredWeeklyPlansBatch|TestAcceptPlanAdjustment'
           -count=1 -v
+      # Season activation (#955): the candidate artifact check, the season
+      # switch, the first batch of weeks/workouts and the old-season cleanup
+      # are one transaction. Rollback on a later week, the apply-token replay,
+      # the concurrent same-token race and the cross-day rejection are SQL-level
+      # behaviours, so they run against this job's real MySQL.
+      - name: Season plan activation tests (MySQL)
+        env:
+          STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
+        run: >-
+          go test -p 1 ./internal/api/... ./internal/storage/...
+          -run 'TestMasterPlanInitialWeeks|TestMasterPlanCurrentWeekReplacementMySQLE2E|TestMasterPlanConcurrentSameToken|TestMasterPlanSwitch|TestMasterPlanRejects|TestCandidateJob|TestCandidate'
+          -count=1 -v
       # The sync-user enumeration and orphan audit are cross-schema SQL
       # (devops#661/#663) — the audit joins auth.auth_users, so the test
       # creates a minimal auth mirror on this job's empty MySQL.

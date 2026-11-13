@@ -21,6 +21,7 @@ import { userStore } from '../../store/index';
 import { openLogin } from '../../utils/authGate';
 import { buildCoachCard, looksLikeJsonText, parseLeakedRaceStrategyEnvelope, shanghaiMonthDayLabel, type CoachCardView } from '../../utils/coachCards';
 import { markdownToHtml } from '../../utils/markdown';
+import { initialWeeksNotice } from '../../utils/masterPlanApplyResult';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 import { theme } from '../../utils/theme';
 
@@ -563,7 +564,7 @@ Page<CoachPageData, CoachPageHandlers>({
     allSelected: false,
   },
 
-  onLoad() {
+  onLoad(options: Record<string, string | undefined> = {}) {
     const sessions = readSessions();
     const currentSessionId = readCurrentSessionId();
     const current = sessions.find((s) => s.id === currentSessionId);
@@ -1169,10 +1170,19 @@ Page<CoachPageData, CoachPageHandlers>({
     expectation?: MasterPlanReplacementExpectation,
   ) {
     try {
-      await applyMasterPlanFromContent(userId, applyToken, content, expectation);
+      const result = await applyMasterPlanFromContent(applyToken, content, expectation);
       this.markMasterPlanCard(messageId, '已应用');
-      wx.showToast({ title: '已应用，可在「我的训练计划」查看', icon: 'none' });
+      const notice = initialWeeksNotice(result.initial_weeks);
+      if (notice) {
+        wx.showModal({ title: '赛季计划已应用', content: notice, showCancel: false });
+      } else {
+        wx.showToast({ title: '已应用，可在「我的训练计划」查看', icon: 'none' });
+      }
     } catch (err) {
+      if (err instanceof ApiError && err.code === 'initial_week_conflict') {
+        wx.showModal({ title: '周课表未更改', content: '现有周课表与待替换的计划不一致，请先查看本周课表。', showCancel: false });
+        return;
+      }
       if (err instanceof ApiError && (err.statusCode === 409 || err.statusCode === 422)) {
         const recheck = await this.fetchCurrentPlanSafely(userId);
         if (recheck === 'unknown') {

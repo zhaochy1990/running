@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/logging"
 	"github.com/zhaochy1990/stride/internal/storage"
 	"github.com/zhaochy1990/stride/internal/utils/timefmt"
@@ -32,7 +33,7 @@ type MasterPlanStore interface {
 	GetCurrentMasterPlan(ctx context.Context, userID string) (*storage.MasterPlan, error)
 	RunningWeekSummaries(ctx context.Context, userID string, windows []storage.WeekWindow) (map[int]storage.RunningWeekSummary, error)
 	TrainingDoseWeekSummaries(ctx context.Context, userID string, windows []storage.WeekWindow) (map[int]storage.TrainingDoseWeekSummary, error)
-	ApplyStructuredMasterPlan(ctx context.Context, userID, goalID, content, applyToken string, replacement *storage.MasterPlanReplacement) (*storage.MasterPlan, *storage.MasterPlan, error)
+	ApplyStructuredMasterPlanWithWeeks(ctx context.Context, userID, goalID, content, applyToken string, replacement *storage.MasterPlanReplacement, items []storage.WeeklyPlanBatchItem, asOf ...string) (*storage.MasterPlan, *storage.MasterPlan, error)
 	UpdateActiveMasterPlan(ctx context.Context, userID, goalID, content string, expectation *storage.MasterPlanReplacement) (*storage.MasterPlan, error)
 	// ListActiveWeeklyPlans feeds the read merge (#858): the athlete's weekly
 	// rows overlay/extend the snapshot weeks on the current-plan read.
@@ -47,14 +48,15 @@ type MasterPlanStore interface {
 
 type masterPlanRoutes struct {
 	store MasterPlanStore
+	jobs  JobGetter
 	log   *zap.Logger
 }
 
-func newMasterPlanRoutes(store MasterPlanStore, log *zap.Logger) *masterPlanRoutes {
+func newMasterPlanRoutes(store MasterPlanStore, jobs JobGetter, log *zap.Logger) *masterPlanRoutes {
 	if log == nil {
 		log = logging.Default()
 	}
-	return &masterPlanRoutes{store: store, log: log}
+	return &masterPlanRoutes{store: store, jobs: jobs, log: log}
 }
 
 // register mounts the current season-plan read endpoints and the user-side
@@ -88,6 +90,7 @@ type applyMasterPlanRequest struct {
 }
 
 type applyMasterPlanResponse struct {
+	InitialWeeks   initialWeekResult         `json:"initial_weeks"`
 	Success        bool                      `json:"success"`
 	Plan           currentSeasonPlanEnvelope `json:"plan"`
 	ReplacedPlanID *string                   `json:"replaced_plan_id"`
@@ -165,22 +168,39 @@ func (m *masterPlanRoutes) apply(c *gin.Context) {
 		return
 	}
 
-	created, replaced, err := m.store.ApplyStructuredMasterPlan(c.Request.Context(), uid, goalID, string(content), "", replacement)
+	if err := m.verifyCandidate(c.Request.Context(), uid, request.Content, ""); err != nil {
+		if errors.Is(err, errInvalidCandidate) {
+			c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_candidate"})
+		} else {
+			m.log.Error("candidate lookup failed", zapErr(err), zap.String("user_id", uid))
+			c.JSON(http.StatusServiceUnavailable, errorResponse{Error: "candidate_unavailable"})
+		}
+		return
+	}
+	today := timefmt.ShanghaiToday().Format("2006-01-02")
+	weeks, skipped, replayed, err := m.prepareInitialWeeks(c.Request.Context(), uid, request.Content, replacement, "", today)
+	if err != nil {
+		m.log.Warn("initial weekly plan preparation failed", zapErr(err), zap.String("user_id", uid))
+		if errors.Is(err, storage.ErrMasterPlanExists) {
+			c.JSON(http.StatusConflict, errorResponse{Error: "master_plan_exists"})
+		} else if errors.Is(err, storage.ErrWeeklyPlanMasterPlanConflict) {
+			c.JSON(http.StatusConflict, errorResponse{Error: "initial_week_conflict"})
+		} else {
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		}
+		return
+	}
+	created, replaced, err := m.store.ApplyStructuredMasterPlanWithWeeks(c.Request.Context(), uid, goalID, string(content), "", replacement, weeks, today)
 	if errors.Is(err, storage.ErrMasterPlanExists) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "master_plan_exists"})
 		return
 	}
-	if errors.Is(err, storage.ErrMasterPlanConflict) {
+	if errors.Is(err, storage.ErrMasterPlanConflict) || errors.Is(err, storage.ErrWeeklyPlanExists) || errors.Is(err, storage.ErrWeeklyPlanConflict) || errors.Is(err, storage.ErrWeeklyPlanMasterPlanConflict) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "master_plan_changed"})
 		return
 	}
 	if err != nil {
 		m.log.Error("apply structured master plan failed", zapErr(err), zap.String("user_id", uid))
-		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
-		return
-	}
-	if err := m.cleanupReplacedSeason(c.Request.Context(), uid, created.PlanID); err != nil {
-		m.log.Error("cleanup replaced season artifacts failed", zapErr(err), zap.String("user_id", uid))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
@@ -195,6 +215,7 @@ func (m *masterPlanRoutes) apply(c *gin.Context) {
 		replacedID = &replaced.PlanID
 	}
 	c.JSON(http.StatusCreated, applyMasterPlanResponse{
+		InitialWeeks:   initialWeeksResult(weeks, skipped, replayed),
 		Success:        true,
 		Plan:           envelope,
 		ReplacedPlanID: replacedID,
@@ -216,6 +237,7 @@ type applyFromContentMasterPlanRequest struct {
 }
 
 type applyFromContentMasterPlanResponse struct {
+	InitialWeeks   initialWeekResult         `json:"initial_weeks"`
 	Success        bool                      `json:"success"`
 	Plan           currentSeasonPlanEnvelope `json:"plan"`
 	PlanID         string                    `json:"plan_id"`
@@ -278,22 +300,39 @@ func (m *masterPlanRoutes) applyFromContent(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
 		return
 	}
-	created, replaced, err := m.store.ApplyStructuredMasterPlan(c.Request.Context(), uid, goalID, string(content), request.ApplyToken, replacement)
+	if err := m.verifyCandidate(c.Request.Context(), uid, request.Content, request.ApplyToken); err != nil {
+		if errors.Is(err, errInvalidCandidate) {
+			c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_candidate"})
+		} else {
+			m.log.Error("candidate lookup failed", zapErr(err), zap.String("user_id", uid))
+			c.JSON(http.StatusServiceUnavailable, errorResponse{Error: "candidate_unavailable"})
+		}
+		return
+	}
+	today := timefmt.ShanghaiToday().Format("2006-01-02")
+	weeks, skipped, replayed, err := m.prepareInitialWeeks(c.Request.Context(), uid, request.Content, replacement, request.ApplyToken, today)
+	if err != nil {
+		m.log.Warn("initial weekly plan preparation failed", zapErr(err), zap.String("user_id", uid))
+		if errors.Is(err, storage.ErrMasterPlanExists) {
+			c.JSON(http.StatusConflict, errorResponse{Error: "master_plan_exists"})
+		} else if errors.Is(err, storage.ErrWeeklyPlanMasterPlanConflict) {
+			c.JSON(http.StatusConflict, errorResponse{Error: "initial_week_conflict"})
+		} else {
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		}
+		return
+	}
+	created, replaced, err := m.store.ApplyStructuredMasterPlanWithWeeks(c.Request.Context(), uid, goalID, string(content), request.ApplyToken, replacement, weeks, today)
 	if errors.Is(err, storage.ErrMasterPlanExists) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "master_plan_exists"})
 		return
 	}
-	if errors.Is(err, storage.ErrMasterPlanConflict) {
+	if errors.Is(err, storage.ErrMasterPlanConflict) || errors.Is(err, storage.ErrWeeklyPlanExists) || errors.Is(err, storage.ErrWeeklyPlanConflict) || errors.Is(err, storage.ErrWeeklyPlanMasterPlanConflict) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "master_plan_changed"})
 		return
 	}
 	if err != nil {
 		m.log.Error("apply master plan from content failed", zapErr(err), zap.String("user_id", uid))
-		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
-		return
-	}
-	if err := m.cleanupReplacedSeason(c.Request.Context(), uid, created.PlanID); err != nil {
-		m.log.Error("cleanup replaced season artifacts failed", zapErr(err), zap.String("user_id", uid))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
@@ -311,6 +350,7 @@ func (m *masterPlanRoutes) applyFromContent(c *gin.Context) {
 	// fresh apply, so callers treat both alike (the store guarantees no second
 	// plan is created).
 	c.JSON(http.StatusCreated, applyFromContentMasterPlanResponse{
+		InitialWeeks:   initialWeeksResult(weeks, skipped, replayed),
 		Success:        true,
 		Plan:           envelope,
 		PlanID:         created.PlanID,
@@ -363,6 +403,16 @@ func (m *masterPlanRoutes) update(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
 		return
 	}
+	// Candidate first-batch documents may only enter through the atomic POST
+	// apply transaction, never through the in-place admin update endpoint.
+	if _, hasWeeks := request.Content["weekly_docs"]; hasWeeks {
+		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "candidate_requires_apply"})
+		return
+	}
+	if _, hasCandidate := request.Content["candidate_job_id"]; hasCandidate {
+		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "candidate_requires_apply"})
+		return
+	}
 	exp, err := parseReplacementExpectation(true, request.ExpectedActivePlanID, request.ExpectedActiveRevision)
 	if err != nil {
 		m.log.Warn("update master plan invalid replacement expectation", zapErr(err), zap.String("user_id", uid))
@@ -409,6 +459,151 @@ func (m *masterPlanRoutes) update(c *gin.Context) {
 	c.JSON(http.StatusOK, updateMasterPlanResponse{Success: true, Plan: envelope})
 }
 
+var errInvalidCandidate = errors.New("invalid plan candidate")
+
+// verifyCandidate binds full weekly documents to the completed, user-owned job
+// result the caller reviewed. Legacy content without a first batch keeps the
+// existing apply path. A changed, foreign or missing artifact fails closed; the
+// rule itself lives in storage so the transaction re-check cannot drift.
+func (m *masterPlanRoutes) verifyCandidate(ctx context.Context, uid string, content map[string]any, token string) error {
+	id, err := storage.CandidateJobID(content, uid, token)
+	if errors.Is(err, storage.ErrCandidateInvalid) {
+		return errInvalidCandidate
+	}
+	if err != nil {
+		return err
+	}
+	if id == "" {
+		return nil
+	}
+	if m.jobs == nil {
+		return fmt.Errorf("candidate job reader is unavailable")
+	}
+	stored, err := m.jobs.Get(ctx, id)
+	if job.IsNotFound(err) {
+		return errInvalidCandidate
+	}
+	if err != nil {
+		return err
+	}
+	if !storage.CandidateArtifactMatches(content, uid, stored) {
+		return errInvalidCandidate
+	}
+	return nil
+}
+
+type initialWeekResult struct {
+	Applied  []string `json:"applied"`
+	Skipped  []string `json:"skipped"`
+	Replayed bool     `json:"replayed"`
+}
+
+func initialWeeksResult(items []storage.WeeklyPlanBatchItem, skipped []string, replayed bool) initialWeekResult {
+	applied := make([]string, 0, len(items))
+	for _, item := range items {
+		applied = append(applied, item.WeekStart)
+	}
+	if skipped == nil {
+		skipped = []string{}
+	}
+	return initialWeekResult{Applied: applied, Skipped: skipped, Replayed: replayed}
+}
+
+// prepareInitialWeeks freezes earlier arrangements against the latest applied
+// rows. Their identity/revision is checked again by the store transaction.
+func (m *masterPlanRoutes) prepareInitialWeeks(ctx context.Context, uid string, content map[string]any, replacement *storage.MasterPlanReplacement, token, today string) ([]storage.WeeklyPlanBatchItem, []string, bool, error) {
+	docs, _ := content["weekly_docs"].([]any)
+	if token != "" {
+		current, err := m.store.GetCurrentMasterPlan(ctx, uid)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		if current != nil && current.ApplyToken != nil && *current.ApplyToken == token {
+			return nil, nil, true, nil
+		}
+	}
+	items := make([]storage.WeeklyPlanBatchItem, 0, len(docs))
+	skipped := make([]string, 0)
+	if len(docs) == 0 {
+		return items, skipped, false, nil
+	}
+	rows, err := m.store.ListActiveWeeklyPlans(ctx, uid)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	byStart := make(map[string]storage.WeeklyPlan, len(rows))
+	for _, row := range rows {
+		start := row.WeekStart
+		if len(start) >= 10 {
+			start = start[:10]
+		}
+		byStart[start] = row
+	}
+	for _, value := range docs {
+		doc := value.(map[string]any) // already validated
+		name := doc["week_name"].(string)
+		start, end, _ := weekIdentity(name)
+		if end.Format("2006-01-02") <= today {
+			skipped = append(skipped, start)
+			continue
+		}
+		active, exists := byStart[start]
+		var expected *storage.WeeklyPlanReplacement
+		if exists {
+			if replacement == nil {
+				// An owned week means an active season is in place; the caller
+				// simply did not confirm replacing it.
+				if active.MasterPlanID != nil {
+					return nil, nil, false, storage.ErrMasterPlanExists
+				}
+				return nil, nil, false, storage.ErrWeeklyPlanMasterPlanConflict
+			}
+			if active.MasterPlanID == nil || *active.MasterPlanID != replacement.PlanID {
+				return nil, nil, false, storage.ErrWeeklyPlanMasterPlanConflict
+			}
+			expected = &storage.WeeklyPlanReplacement{PlanID: active.PlanID, Revision: active.Revision}
+		}
+		toApply := doc
+		cutoff := ""
+		if start <= today {
+			var old map[string]any
+			if !exists {
+				// With no old week there is nothing to publish for past days.
+				// Empty nutrition entries preserve the weekly contract without
+				// manufacturing historical recommendations from the candidate.
+				nutrition := make([]any, 0, 7)
+				for _, value := range doc["nutrition"].([]any) {
+					day := value.(map[string]any)["date"].(string)
+					if day <= today {
+						nutrition = append(nutrition, map[string]any{"schema": "plan-nutrition/v1", "date": day, "kcal_target": nil, "carbs_g": nil, "protein_g": nil, "fat_g": nil, "water_ml": nil, "meals": []any{}, "notes_md": nil})
+					}
+				}
+				old = map[string]any{"sessions": []any{}, "nutrition": nutrition}
+			} else {
+				if active.ContentVersion != storage.WeeklyPlanContentStructured {
+					skipped = append(skipped, start)
+					continue
+				}
+				if err := json.Unmarshal([]byte(active.Content), &old); err != nil {
+					return nil, nil, false, fmt.Errorf("invalid active week %s: %w", start, err)
+				}
+			}
+			merged, ok := mergeAdjustedWeeklyPlan(doc, old, today)
+			if !ok {
+				skipped = append(skipped, start)
+				continue
+			}
+			toApply, cutoff = merged, today
+		}
+		encoded, err := validateAppliedWeeklyPlan(toApply, name)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		items = append(items, storage.WeeklyPlanBatchItem{WeekStart: start, Content: string(encoded), Replacement: expected, ProtectThrough: cutoff})
+	}
+	return items, skipped, false, nil
+}
+
 // validateAppliedMasterPlan enforces the canonical content_version=2 contract
 // at the API seam before anything is written: goal.goal_id must be a UUID and
 // the content must satisfy the same structural rules the current-plan reader
@@ -418,6 +613,39 @@ func (m *masterPlanRoutes) update(c *gin.Context) {
 // A plan that would fail to serve is rejected with 422 instead of being
 // committed and then erroring on read.
 func validateAppliedMasterPlan(content map[string]any) ([]byte, string, error) {
+	if raw, exists := content["weekly_docs"]; exists {
+		docs, ok := raw.([]any)
+		if !ok || len(docs) > 6 {
+			return nil, "", errors.New("invalid initial weekly docs")
+		}
+		seen := map[string]bool{}
+		seasonWeeks := map[string]int{}
+		for _, week := range toMapSlice(content["weeks"]) {
+			seasonWeeks[asString(week["week_start"])] = asInt(week["week_index"])
+		}
+		for _, rawDoc := range docs {
+			doc, ok := rawDoc.(map[string]any)
+			if !ok {
+				return nil, "", errors.New("invalid initial weekly doc")
+			}
+			name, _ := doc["week_name"].(string)
+			start, _, valid := weekIdentity(name)
+			if !valid || seen[start] {
+				return nil, "", errors.New("invalid or duplicate initial week")
+			}
+			seen[start] = true
+			weekIndex, belongs := seasonWeeks[start]
+			if !belongs || weekIndex < 1 || start < asString(content["start_date"]) || start > asString(content["end_date"]) {
+				return nil, "", errors.New("initial week is outside the candidate season")
+			}
+			if _, present := doc["week_index"]; present && asInt(doc["week_index"]) != weekIndex {
+				return nil, "", errors.New("initial week index does not match candidate season")
+			}
+			if _, err := validateAppliedWeeklyPlan(doc, name); err != nil {
+				return nil, "", err
+			}
+		}
+	}
 	goal, ok := content["goal"].(map[string]any)
 	if !ok {
 		return nil, "", errors.New("goal is required")
@@ -601,8 +829,9 @@ func (m *masterPlanRoutes) getCurrentForUserID(c *gin.Context, uid string) {
 	c.JSON(http.StatusOK, envelope)
 }
 
-// cleanupReplacedSeason runs the #858 plan-change cleanups once a new plan row
-// landed: current/future weekly rows of any other master plan are deleted
+// cleanupReplacedSeason is retained for the admin in-place update path.
+// Season applies perform their cleanup in the storage transaction instead.
+// The in-place update cleanup: current/future weekly rows of any other master plan are deleted
 // (their weeks are meaningless after the switch and UNIQUE(user_id, week_start)
 // would block the new plan from writing the same week), while finished weeks
 // remain untouched as training history. Every pending plan_adjustment is
@@ -753,6 +982,17 @@ func buildCurrentResponse(plan *storage.MasterPlan, weeklyRows []storage.WeeklyP
 	if len(rawWeeks) == 0 {
 		rawWeeks = toMapSlice(doc["weekly_key_sessions"])
 	}
+	if _, candidate := doc["weekly_docs"]; candidate {
+		// Current and past candidate sessions are projections. A skipped week
+		// may still belong to the old plan (or have no row), so only an actual
+		// weekly row may supply those summaries.
+		currentWeek := timefmt.ShanghaiWeekStart(today).Format("2006-01-02")
+		for _, week := range rawWeeks {
+			if start := asString(week["week_start"]); start != "" && start <= currentWeek {
+				week["key_sessions"] = []any{}
+			}
+		}
+	}
 	rawWeeks = mergeWeeklyPlanWeeks(parsed, rawWeeks, weeklyRows)
 
 	weeks, windows, weekFinished := buildWeekRows(parsed, rawWeeks, today)
@@ -761,6 +1001,11 @@ func buildCurrentResponse(plan *storage.MasterPlan, weeklyRows []storage.WeeklyP
 	doc["next_milestone"] = nextMilestone(parsed.Milestones, today)
 	doc["weeks"] = weeks
 	delete(doc, "weekly_key_sessions")
+	// Candidate documents may include past or otherwise skipped weeks; current
+	// reads expose applied weekly rows rather than the unapplied candidate.
+	delete(doc, "weekly_docs")
+	delete(doc, "candidate_job_id")
+	delete(doc, "candidate_user_id")
 	return doc, windows, weekFinished, nil
 }
 

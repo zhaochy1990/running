@@ -204,9 +204,17 @@ export async function getCurrentMasterPlan(userId: string): Promise<CurrentSeaso
   }
 }
 
+/** 首批候选周课实际启用结果；重放只返回已应用的赛季。 */
+export interface InitialWeeksResult {
+  applied: string[];
+  skipped: string[];
+  replayed: boolean;
+}
+
 /** POST /master-plan/apply 的响应（Go applyFromContentMasterPlanResponse）。 */
 export interface ApplyMasterPlanResponse {
   success: boolean;
+  initial_weeks?: InitialWeeksResult;
   plan: CurrentSeasonPlan;
   plan_id: string;
   /** 被替换的旧 active 计划 id；首次应用为 null。 */
@@ -226,12 +234,11 @@ export interface MasterPlanReplacementExpectation {
  * 未带替换确认；409 master_plan_changed = 确认的身份已过期；422 = 内容无效。
  */
 export function applyMasterPlanFromContent(
-  userId: string,
   applyToken: string,
   content: Record<string, unknown>,
   expectation?: MasterPlanReplacementExpectation,
 ): Promise<ApplyMasterPlanResponse> {
-  return http.post<ApplyMasterPlanResponse>(`/api/users/${encodeURIComponent(userId)}/master-plan/apply`, {
+  return http.post<ApplyMasterPlanResponse>('/api/users/me/master-plan/apply', {
     apply_token: applyToken,
     content,
     ...(expectation

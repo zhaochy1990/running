@@ -649,6 +649,16 @@ func seedBatchWeek(t *testing.T, st *Store, uid, masterPlanID, weekStart, sessio
 	return created
 }
 
+func seedRollingMaster(t *testing.T, st *Store, uid, master string) {
+	t.Helper()
+	migrateMasterPlan(t, st)
+	content := fmt.Sprintf(`{"master_plan_id":%q}`, master)
+	created, _, err := st.ApplyStructuredMasterPlan(context.Background(), uid, uuid.NewString(), content, "", nil)
+	if err != nil || created.PlanID != master {
+		t.Fatalf("seed rolling master: %+v err=%v", created, err)
+	}
+}
+
 // 第二周 revision 冲突：第一周内容、revision、workout 行全部不变（整批回滚）。
 func TestApplyStructuredWeeklyPlansBatchRollsBackOnLaterWeekConflict(t *testing.T) {
 	st := openTestStore(t)
@@ -656,6 +666,7 @@ func TestApplyStructuredWeeklyPlansBatchRollsBackOnLaterWeekConflict(t *testing.
 	migrateBatchWeeklyPlans(t, st)
 	uid := uuid.NewString()
 	master := uuid.NewString()
+	seedRollingMaster(t, st, uid, master)
 	week1Start, week2Start := "2026-01-19", "2026-01-26"
 
 	week1 := seedBatchWeek(t, st, uid, master, week1Start, "2026-01-19", "原第一周")
@@ -700,6 +711,7 @@ func TestApplyStructuredWeeklyPlansBatchRollsBackOnMaterializationFailure(t *tes
 	migrateBatchWeeklyPlans(t, st)
 	uid := uuid.NewString()
 	master := uuid.NewString()
+	seedRollingMaster(t, st, uid, master)
 
 	items := []WeeklyPlanBatchItem{
 		{WeekStart: "2026-02-02", Content: batchWeeklyContent("2026-02-02", "2026-02-02", "正常周")},
@@ -725,6 +737,7 @@ func TestApplyStructuredWeeklyPlansBatchRejectsOtherMasterPlanWeek(t *testing.T)
 	migrateBatchWeeklyPlans(t, st)
 	uid := uuid.NewString()
 	master := uuid.NewString()
+	seedRollingMaster(t, st, uid, master)
 	otherMaster := uuid.NewString()
 	weekStart := "2026-03-02"
 	existing := seedBatchWeek(t, st, uid, otherMaster, weekStart, "2026-03-02", "别的计划")
@@ -750,6 +763,7 @@ func TestApplyStructuredWeeklyPlansBatchCommitsAllWeeksTogether(t *testing.T) {
 	migrateBatchWeeklyPlans(t, st)
 	uid := uuid.NewString()
 	master := uuid.NewString()
+	seedRollingMaster(t, st, uid, master)
 	items := []WeeklyPlanBatchItem{
 		{WeekStart: "2026-04-06", Content: batchWeeklyContent("2026-04-06", "2026-04-06", "第一周")},
 		{WeekStart: "2026-04-13", Content: batchWeeklyContent("2026-04-13", "2026-04-13", "第二周")},

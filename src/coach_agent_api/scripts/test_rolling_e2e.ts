@@ -29,7 +29,7 @@ import { coachAgentConfigFiles, coachApiConfigFiles } from "../src/configPaths.j
  *   ① master 生成（requested_as_of=现在−35 天的周一，目标 2:50，18 周跑道）→
  *      artifact.weekly_docs 首批 3-6 周文档
  *   ② fromStoredContent(masterPlanToContent 同构 content) 解析成功
- *   ③ 落库验证：env 门控 Go 集成测试直跑 batch-apply（首批 N 周插入 → 同批重投
+ *   ③ 滚动通道验证：env 门控 Go 集成测试模拟已启用计划的 batch-apply（N 周插入 → 同批重投
  *      revision+1 不重复 → list 过滤 master_plan_id），证据写回 /tmp 由脚本打印
  *   ④ runRollingProjection(asOf=现在) 在「list 喂了首批周」的 lastGeneratedWeek
  *      下批窗正确（boundary 触发下一块，跑通 completed 即可）
@@ -201,7 +201,7 @@ async function main(): Promise<void> {
     assert.equal(master.lastGeneratedWeek, lastGeneratedWeek);
     console.log(`[step2] fromStoredContent 解析成功：planStart=${master.planStartMonday} lastGeneratedWeek=${master.lastGeneratedWeek} weeklyRunDaysMax=${master.availability.weeklyRunDaysMax}`);
 
-    // ── 第三步：落库验证（本地/一次性库；Go 测试二进制直跑 batch-apply） ──
+    // ── 第三步：模拟已启用赛季的滚动通道（本地/一次性库） ──
     const docsPath = join(workDir, "docs.json");
     const outPath = join(workDir, "result.json");
     await writeFile(docsPath, JSON.stringify({ user_id: USER_ID, master_plan_id: masterPlanId, weeks: weeklyDocs }));
