@@ -30,6 +30,9 @@ type fakeMasterPlanStore struct {
 	currentErr error
 	actualsErr error
 	// #858 读合并 + 换计划清理面。
+	initialWeeks  []storage.WeeklyPlanBatchItem
+	atomicCalls   int
+	atomicErr     error
 	weeklyRows    map[string][]storage.WeeklyPlan
 	weeklyErr     error
 	weeklyListUID string
@@ -132,6 +135,15 @@ func (f *fakeMasterPlanStore) ApplyStructuredMasterPlan(_ context.Context, userI
 	}
 	f.current[userID] = created
 	return created, replaced, nil
+}
+
+func (f *fakeMasterPlanStore) ApplyStructuredMasterPlanWithWeeks(ctx context.Context, userID, goalID, content, token string, replacement *storage.MasterPlanReplacement, items []storage.WeeklyPlanBatchItem, asOf ...string) (*storage.MasterPlan, *storage.MasterPlan, error) {
+	f.initialWeeks = items
+	f.atomicCalls++
+	if f.atomicErr != nil {
+		return nil, nil, f.atomicErr
+	}
+	return f.ApplyStructuredMasterPlan(ctx, userID, goalID, content, token, replacement)
 }
 
 func (f *fakeMasterPlanStore) UpdateActiveMasterPlan(_ context.Context, userID, goalID, content string, expectation *storage.MasterPlanReplacement) (*storage.MasterPlan, error) {

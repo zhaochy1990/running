@@ -270,7 +270,24 @@ test("poll returns status, stage, progress, error code and, when done, the draft
     progress_pct: 100,
     error_code: null,
     result_draft_id: "draft-9",
+    result_json: job.resultJson,
   });
+});
+
+test("finished master job exposes an apply card with its original candidate and stable token", async () => {
+  const id = "11111111-2222-4333-8444-555555555555";
+  const content = {
+    candidate_job_id: id, candidate_user_id: "athlete-1", weekly_docs: [{ week_name: "2026-08-10_08-16", sessions: [{ summary: "完整训练" }] }],
+    goal: { race_name: "测试比赛", distance: "FM", race_date: "2026-10-18", target_time: "3:00:00" },
+    start_date: "2026-08-10", end_date: "2026-10-18", total_weeks: 10,
+  };
+  const job: PlanJob = { jobId: id, userId: "athlete-1", jobType: "generate_master_plan", status: "done", attempts: 1, stage: "outputting", progressPct: 100, inputJson: "{}", resultJson: JSON.stringify({ content }), errorCode: null, errorMessage: null, idempotencyKey: null, heartbeatAt: null, createdAt: new Date(), updatedAt: new Date(), completedAt: new Date() };
+  const { service } = fakePlanJobs({ async get(userId, jobId) { return userId === job.userId && jobId === id ? job : null; } });
+  const response = await appFor(service).request(`/api/users/me/coach/plan-jobs/${id}`, { headers: { authorization: "Bearer x" } });
+  const body = await response.json() as { candidate_card?: { $type: string; data: { apply_token: string; content: unknown } } };
+  assert.equal(body.candidate_card?.$type, "master-plan");
+  assert.equal(body.candidate_card?.data.apply_token, id);
+  assert.deepEqual(body.candidate_card?.data.content, content);
 });
 
 test("poll of a failed job surfaces the stable error code and no draft", async () => {
@@ -303,6 +320,7 @@ test("poll of a failed job surfaces the stable error code and no draft", async (
     progress_pct: 60,
     error_code: "kernel_goal_conflict",
     result_draft_id: null,
+    result_json: null,
   });
 });
 
@@ -391,6 +409,7 @@ test("an admin polls another athlete's job", async () => {
     progress_pct: 100,
     error_code: null,
     result_draft_id: "draft-admin",
+    result_json: job.resultJson,
   });
 });
 

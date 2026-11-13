@@ -76,6 +76,22 @@ func TestRollingE2EBatchApplyRealDocs(t *testing.T) {
 		t.Fatalf("migrate master_plan: %v", err)
 	}
 
+	// Establish the confirmed active season before exercising the rolling channel.
+	// Adoption alignment (#858 R2): applying a master-plan content that
+	// carries the same prospective master_plan_id the weekly rows are linked to
+	// must adopt it, so master_plan.plan_id == weekly_plan.master_plan_id ==
+	// content.master_plan_id — and the internal list keeps showing the batch
+	// weeks under that very id after the plan row exists.
+	goalID := "11111111-2222-3333-4444-555555555555"
+	masterContent := `{"master_plan_id":` + strconv.Quote(payload.MasterPlanID) + `,"goal":{"goal_id":"` + goalID + `","target_time":"2:50:00"},"phases":[],"milestones":[],"weeks":[]}`
+	created, _, err := store.ApplyStructuredMasterPlan(ctx, payload.UserID, goalID, masterContent, "", nil)
+	if err != nil {
+		t.Fatalf("apply master plan with prospective id: %v", err)
+	}
+	if created.PlanID != payload.MasterPlanID {
+		t.Fatalf("applied plan_id = %s, want adopted %s", created.PlanID, payload.MasterPlanID)
+	}
+
 	svc := NewService(Config{
 		Auth:            NewAuthenticator(testToken, nil),
 		WeeklyPlanStore: store,
@@ -167,20 +183,7 @@ func TestRollingE2EBatchApplyRealDocs(t *testing.T) {
 		t.Fatalf("no materialized weekly workout rows in %s..%s", firstWeek, lastWeek)
 	}
 
-	// 4) Adoption alignment (#858 R2): applying a master-plan content that
-	// carries the same prospective master_plan_id the weekly rows are linked to
-	// must adopt it, so master_plan.plan_id == weekly_plan.master_plan_id ==
-	// content.master_plan_id — and the internal list keeps showing the batch
-	// weeks under that very id after the plan row exists.
-	goalID := "11111111-2222-3333-4444-555555555555"
-	masterContent := `{"master_plan_id":` + strconv.Quote(payload.MasterPlanID) + `,"goal":{"goal_id":"` + goalID + `","target_time":"2:50:00"},"phases":[],"milestones":[],"weeks":[]}`
-	created, _, err := store.ApplyStructuredMasterPlan(ctx, payload.UserID, goalID, masterContent, "", nil)
-	if err != nil {
-		t.Fatalf("apply master plan with prospective id: %v", err)
-	}
-	if created.PlanID != payload.MasterPlanID {
-		t.Fatalf("applied plan_id = %s, want adopted %s", created.PlanID, payload.MasterPlanID)
-	}
+	// Verify the same active season and weekly lineage after the rolling writes.
 	current, err := store.GetCurrentMasterPlan(ctx, payload.UserID)
 	if err != nil {
 		t.Fatalf("get current master plan: %v", err)

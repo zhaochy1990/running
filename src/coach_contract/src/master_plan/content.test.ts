@@ -178,3 +178,18 @@ test("v3 只收政策包的 canonical 枚举与三档判定，旧枚举与自由
   item.verdict = "maybe" as never;
   assert.equal(MasterPlanV3Schema.safeParse(badVerdict).success, false);
 });
+
+test("v3 candidate retains its initial weeks and prospective identity", () => {
+  const candidate = {
+    ...createV3Plan(),
+    master_plan_id: "11111111-2222-4333-8444-555555555555",
+    candidate_job_id: "22222222-2222-4222-8222-222222222222",
+    candidate_user_id: "33333333-3333-4333-8333-333333333333",
+    weekly_docs: [],
+  };
+  const parsed = MasterPlanV3Schema.parse(candidate);
+  assert.deepEqual((parsed as Record<string, unknown>).weekly_docs, []);
+  assert.equal((parsed as Record<string, unknown>).master_plan_id, candidate.master_plan_id);
+  assert.equal(parsed.candidate_job_id, candidate.candidate_job_id);
+  assert.equal(parsed.candidate_user_id, candidate.candidate_user_id);
+});

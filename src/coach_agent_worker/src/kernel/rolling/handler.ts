@@ -83,9 +83,8 @@ export function createRollingJobHandler(deps: RollingHandlerDeps): Handler {
         new Error(`master plan ${active.planId} is ${active.status}, rolling needs the active plan`),
       );
     }
-    // 周课归链 id：master job 物化首批时写进 content 的前瞻计划 id；admin apply
-    // 后 Go 侧收养同一 id（master_plan.plan_id == weekly 归链 id == content id
-    // 三方对齐），apply 前它就是唯一真源。缺省（老 content 无该字段）回退行 id。
+    // 启用事务保证 content、赛季行和首批周课归链 id 对齐；旧内容缺字段时
+    // 回退行 id。
     const rollingMasterId = rollingMasterIdOf(active.content, active.planId);
     if (request.master_plan_id !== undefined && request.master_plan_id !== active.planId && request.master_plan_id !== rollingMasterId) {
       throw newPermanentError(
@@ -176,6 +175,9 @@ async function applyWeeklyDocs(channel: RollingWeeklyChannel, userId: string, ma
 
 /** 快照有课周（key_sessions 非空）的最大周号；全空回退 min(6, total_weeks)（与 fromMasterArtifact 同源语义）。#858 PR-C 提取共享（夜检扫描复用）。 */
 export function snapshotLastGeneratedWeek(content: Record<string, unknown>): number {
+  // New candidate snapshots are not applied weeks. The caller derives the
+  // generated boundary from persisted weekly rows instead.
+  if (Array.isArray(content.weekly_docs)) return 0;
   const weeks = Array.isArray(content.weeks) ? (content.weeks as Array<Record<string, unknown>>) : [];
   const totalWeeks = typeof content.total_weeks === "number" ? content.total_weeks : 1;
   const generated = weeks
@@ -195,8 +197,8 @@ export function weeklyMaxWeek(content: Record<string, unknown>, weekStarts: stri
 }
 
 /**
- * 周课归链 id（#858 PR-C 提取共享，夜检扫描复用）：master job 物化首批时写进
- * content 的前瞻计划 id；缺省（老 content 无该字段）回退 master_plan 行 id。
+ * 周课归链 id（夜检扫描复用）：新启用内容的 id 与行 id 一致，老内容缺省时
+ * 回退 master_plan 行 id。
  */
 export function rollingMasterIdOf(content: Record<string, unknown>, rowPlanId: string): string {
   return typeof content.master_plan_id === "string" && content.master_plan_id.length > 0 ? content.master_plan_id : rowPlanId;

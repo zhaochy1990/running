@@ -215,7 +215,7 @@ func TestGetCurrent_WeeklyListErrorIs500(t *testing.T) {
 	}
 }
 
-// ── 换计划归档：三条写路径都挂清理 ────────────────────────────────────────────
+// ── 赛季启用经原子写入口；原地更新沿用独立清理 ───────────────────────────
 
 /** 422 校验可过的 body：sample plan 注入合法 goal_id 后序列化。 */
 func applyBodyWithGoal(t *testing.T, extra string) string {
@@ -236,12 +236,8 @@ func TestApplyFromContent_CleansReplacedSeasonArtifacts(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("apply status=%d body=%s", w.Code, w.Body.String())
 	}
-	created := h.store.current[uid]
-	if len(h.store.cleanupCalls) != 1 || h.store.cleanupCalls[0] != created.PlanID {
-		t.Fatalf("cleanup calls=%v want new plan %s", h.store.cleanupCalls, created.PlanID)
-	}
-	if h.store.supersedeUser != uid {
-		t.Fatalf("supersede user=%s want %s", h.store.supersedeUser, uid)
+	if h.store.atomicCalls != 1 || len(h.store.cleanupCalls) != 0 {
+		t.Fatalf("atomic calls=%d post-commit cleanup=%v", h.store.atomicCalls, h.store.cleanupCalls)
 	}
 }
 
@@ -252,12 +248,8 @@ func TestAdminApply_CleansReplacedSeasonArtifacts(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("apply status=%d body=%s", w.Code, w.Body.String())
 	}
-	created := h.store.current[uid]
-	if len(h.store.cleanupCalls) != 1 || h.store.cleanupCalls[0] != created.PlanID {
-		t.Fatalf("cleanup calls=%v", h.store.cleanupCalls)
-	}
-	if h.store.supersedeUser != uid {
-		t.Fatalf("supersede user=%s", h.store.supersedeUser)
+	if h.store.atomicCalls != 1 || len(h.store.cleanupCalls) != 0 {
+		t.Fatalf("atomic calls=%d post-commit cleanup=%v", h.store.atomicCalls, h.store.cleanupCalls)
 	}
 }
 
@@ -288,11 +280,11 @@ func TestAdminUpdate_CleansReplacedSeasonArtifacts(t *testing.T) {
 func TestApplyFromContent_CleanupErrorIs500(t *testing.T) {
 	h := newMPHarness(t)
 	uid := uuid.NewString()
-	h.store.cleanupErr = errFake
+	h.store.atomicErr = errFake
 	body := applyBodyWithGoal(t, `"apply_token":"`+uuid.NewString()+`"`)
 	w := h.doBody(http.MethodPost, "/api/users/me/master-plan/apply", h.bearer(t, uid), strings.NewReader(body))
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("status=%d want 500", w.Code)
+	if w.Code != http.StatusInternalServerError || h.store.current[uid] != nil {
+		t.Fatalf("status=%d current=%+v; want 500 and no applied plan", w.Code, h.store.current[uid])
 	}
 }
 
@@ -324,3 +316,49 @@ func asFloatMust(t *testing.T, value any) float64 {
 
 func ptrInt8(v int8) *int8    { return &v }
 func ptrInt64(v int64) *int64 { return &v }
+
+// Candidate snapshots describe proposals, not necessarily materialized weeks.
+// A skipped current week must not be displayed as if its sessions were applied.
+func TestCandidateCurrentReadOnlyShowsPublishedKeySessions(t *testing.T) {
+	doc := mustJSONDoc(t, samplePlanJSON)
+	doc["weekly_docs"] = []any{}
+	snapshots := doc["weeks"].([]any)
+	snapshots[0].(map[string]any)["key_sessions"] = []any{map[string]any{"type": "candidate"}}
+	snapshots[1].(map[string]any)["key_sessions"] = []any{map[string]any{"type": "future-projection"}}
+	content, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := &storage.MasterPlan{Content: string(content)}
+	today := mustDate(t, "2026-06-03")
+	resp, _, _, err := buildCurrentResponse(plan, nil, today)
+	if err != nil {
+		t.Fatal(err)
+	}
+	weeks := resp["weeks"].([]map[string]any)
+	if got := weeks[0]["key_sessions"].([]any); len(got) != 0 {
+		t.Fatalf("unpublished current sessions=%v", got)
+	}
+	if got := weeks[1]["key_sessions"].([]any); len(got) != 1 {
+		t.Fatalf("future season projection=%v", got)
+	}
+	rows := []storage.WeeklyPlan{weeklyRow("old", "2026-06-01", `{"sessions":[]}`)}
+	resp, _, _, err = buildCurrentResponse(plan, rows, today)
+	if err != nil {
+		t.Fatal(err)
+	}
+	weeks = resp["weeks"].([]map[string]any)
+	if got := weeks[0]["key_sessions"].([]any); len(got) != 0 {
+		t.Fatalf("legacy weekly row inherited candidate sessions=%v", got)
+	}
+	rows = []storage.WeeklyPlan{weeklyRow("old", "2026-06-01", `{"key_sessions":[{"type":"old"}]}`)}
+	resp, _, _, err = buildCurrentResponse(plan, rows, today)
+	if err != nil {
+		t.Fatal(err)
+	}
+	weeks = resp["weeks"].([]map[string]any)
+	sessions := weeks[0]["key_sessions"].([]any)
+	if len(sessions) != 1 || sessions[0].(map[string]any)["type"] != "old" {
+		t.Fatalf("published sessions=%v", sessions)
+	}
+}

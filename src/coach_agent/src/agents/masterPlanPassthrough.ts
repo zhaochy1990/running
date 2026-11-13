@@ -21,7 +21,7 @@ type MessageLike = {
  * the orchestrator only honors the declared handoff disposition.
  *
  * #858 PR-F：`generate_weekly_plan` 直出信封分支已随聊天侧周课生成路径
- * 退役——周课由 master 首批物化 + 滚动投影落库，passthrough 只剩 master 一条。
+ * 退役——周课由 master 确认启用后的首批物化 + 滚动投影落库，passthrough 只剩 master 一条。
  */
 function getPlanTaskResult(messages: readonly MessageLike[], acceptedSubagents: readonly string[]): string | undefined {
   const result = messages.at(-1);

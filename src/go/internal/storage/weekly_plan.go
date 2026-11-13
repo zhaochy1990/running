@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -263,6 +264,8 @@ type WeeklyPlanBatchItem struct {
 	WeekStart   string
 	Content     string
 	Replacement *WeeklyPlanReplacement
+	// ProtectThrough preserves already completed workouts during a season switch.
+	ProtectThrough string
 }
 
 // WeeklyPlanBatchResult reports the active row created for one applied week.
@@ -424,6 +427,26 @@ func (s *Store) ApplyStructuredWeeklyPlansBatch(
 	apply := func() error {
 		clear(results)
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// Serialize rolling writes with season switches and reject workers
+			// that computed their batch against a now-superseded season.
+			var masters []MasterPlan
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", uid).Order("revision DESC, created_at DESC").Find(&masters).Error; err != nil {
+				return fmt.Errorf("storage: lock active master plan: %w", err)
+			}
+			matched := false
+			for _, master := range masters {
+				if master.Status != MasterPlanStatusActive || master.ActiveFlag == nil || *master.ActiveFlag != 1 {
+					continue
+				}
+				var embedded struct {
+					MasterPlanID string `json:"master_plan_id"`
+				}
+				_ = json.Unmarshal([]byte(master.Content), &embedded)
+				matched = master.PlanID == masterPlanID || embedded.MasterPlanID == masterPlanID
+			}
+			if !matched {
+				return ErrMasterPlanConflict
+			}
 			for _, week := range prepared {
 				created, replaced, err := applyWeeklyPlanTx(
 					tx, uid, week.item.WeekStart, week.item.Content, week.item.Replacement,
@@ -454,7 +477,7 @@ func (s *Store) ApplyStructuredWeeklyPlansBatch(
 // old row is deleted, the new row inserted, and its workouts materialized.
 func applyWeeklyPlanTx(
 	tx *gorm.DB, uid, weekStart, content string, replacement *WeeklyPlanReplacement,
-	masterPlanID *string, continueRevision, enforceMasterPlan bool,
+	masterPlanID *string, continueRevision, enforceMasterPlan bool, protectThrough ...string,
 ) (*WeeklyPlan, *WeeklyPlan, error) {
 	var rows []WeeklyPlan
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -520,7 +543,11 @@ func applyWeeklyPlanTx(
 	}
 	// devops#586 materialization: one workout row per session, in the same
 	// transaction so plan + workouts commit (or roll back) atomically.
-	if err := materializeWeeklyWorkouts(tx, uid, row.PlanID, weekStart, content); err != nil {
+	cutoff := ""
+	if len(protectThrough) > 0 {
+		cutoff = protectThrough[0]
+	}
+	if err := materializeWeeklyWorkoutsAfter(tx, uid, row.PlanID, weekStart, content, cutoff); err != nil {
 		return nil, nil, err
 	}
 	return row, replaced, nil

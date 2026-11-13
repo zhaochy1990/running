@@ -274,6 +274,19 @@ test("lastGeneratedWeek=快照有课周 ∪ 已落库 weekly 行的最大值；l
   assert.deepEqual(fake.listedFor, [CONTENT_MASTER_ID]);
 });
 
+test("new candidate snapshots do not count unpublished weeks as generated", async () => {
+  const content = storedContent({ totalWeeks: 12 });
+  content.weekly_docs = [];
+  const fake = new FakeWeeklyChannel();
+  let observed = -1;
+  const projection: RollingProjection = async (_deps, input) => {
+    observed = input.master.lastGeneratedWeek;
+    return { decision: "no_op", reason: "probe" };
+  };
+  await createRollingJobHandler(deps({ content, weeklyPlans: fake, projection }))(rollingJob(), async () => {});
+  assert.equal(observed, 0);
+});
+
 function rollingRun(handler: ReturnType<typeof createRollingJobHandler>) {
   return handler(rollingJob(), async () => {});
 }

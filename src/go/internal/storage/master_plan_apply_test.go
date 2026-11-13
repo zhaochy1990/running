@@ -355,31 +355,22 @@ func TestApplyStructuredMasterPlanApplyTokenIsIdempotent(t *testing.T) {
 		t.Fatalf("replay = %+v, want the already-applied row %s", replay, first.PlanID)
 	}
 
-	// Once the token's row is superseded (e.g. an admin applied a newer plan),
-	// replaying the stale token must NOT resurface the dead plan: it falls
-	// through to the normal apply logic and replaces the current active.
+	// A token remains consumed after another season replaces its row.
 	fresh := `{"goal":{"goal_id":"` + goalID + `","target_time":"3:20:00"},"phases":[],"milestones":[],"weeks":[]}`
 	current, _, err := st.ApplyStructuredMasterPlan(ctx, userID, goalID, fresh, "", &MasterPlanReplacement{PlanID: first.PlanID, Revision: *first.Revision})
 	if err != nil {
 		t.Fatalf("admin replace: %v", err)
 	}
-	stale, _, err := st.ApplyStructuredMasterPlan(ctx, userID, goalID, content, token, &MasterPlanReplacement{PlanID: current.PlanID, Revision: *current.Revision})
-	if err != nil {
-		t.Fatalf("stale token replay: %v", err)
+	_, _, err = st.ApplyStructuredMasterPlan(ctx, userID, goalID, content, token, &MasterPlanReplacement{PlanID: current.PlanID, Revision: *current.Revision})
+	if !errors.Is(err, ErrMasterPlanConflict) {
+		t.Fatalf("stale token replay: err=%v, want conflict", err)
 	}
-	if stale == nil || stale.PlanID == first.PlanID {
-		t.Fatalf("stale token replay = %+v, want a fresh apply, not the superseded row", stale)
-	}
-
 	var rows []MasterPlan
-	if err := st.db.WithContext(ctx).Where("user_id = ?", userID).Order("created_at").Find(&rows).Error; err != nil {
+	if err := st.db.WithContext(ctx).Where("user_id = ?", userID).Find(&rows).Error; err != nil {
 		t.Fatalf("list rows: %v", err)
 	}
-	if len(rows) != 3 {
-		t.Fatalf("rows=%d (%+v), want first+admin+stale-replay", len(rows), rows)
-	}
-	if rows[2].Status != MasterPlanStatusActive || rows[1].Status != MasterPlanStatusSuperseded || rows[0].Status != MasterPlanStatusSuperseded {
-		t.Fatalf("statuses=%s/%s/%s, want superseded/superseded/active", rows[0].Status, rows[1].Status, rows[2].Status)
+	if len(rows) != 2 {
+		t.Fatalf("rows=%d, want first and admin replacement only", len(rows))
 	}
 
 	if _, _, err := st.ApplyStructuredMasterPlan(ctx, userID, goalID, content, "not-a-uuid", nil); err == nil {

@@ -80,13 +80,13 @@ type weeklyPlanWorkoutContent struct {
 	} `json:"sessions"`
 }
 
-// materializeWeeklyWorkouts archives the user's active weekly workout rows in
+// materializeWeeklyWorkoutsAfter archives the user's active weekly workout rows in
 // the week window and inserts one workout row per plan session (#523: rows are
 // immutable, a re-apply archives + inserts fresh workout_ids; master-plan
 // generation changes never cascade here). planID is the applied weekly plan's
 // id — the row being created in the same transaction. Must run inside that
 // transaction so plan and workouts commit atomically.
-func materializeWeeklyWorkouts(tx *gorm.DB, uid, planID, weekStart, content string) error {
+func materializeWeeklyWorkoutsAfter(tx *gorm.DB, uid, planID, weekStart, content, protectThrough string) error {
 	var parsed weeklyPlanWorkoutContent
 	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
 		return fmt.Errorf("storage: parse weekly plan content for materialization: %w", err)
@@ -96,10 +96,13 @@ func materializeWeeklyWorkouts(tx *gorm.DB, uid, planID, weekStart, content stri
 		return fmt.Errorf("storage: materialize invalid week_start: %w", err)
 	}
 	weekEnd := start.AddDate(0, 0, 6).Format("2006-01-02")
-	if err := tx.Model(&Workout{}).
+	archive := tx.Model(&Workout{}).
 		Where("user_id = ? AND source = ? AND status = ? AND date BETWEEN ? AND ?",
-			uid, WorkoutSourceWeekly, WorkoutStatusActive, weekStart, weekEnd).
-		Update("status", WorkoutStatusArchived).Error; err != nil {
+			uid, WorkoutSourceWeekly, WorkoutStatusActive, weekStart, weekEnd)
+	if protectThrough != "" {
+		archive = archive.Where("date > ?", protectThrough)
+	}
+	if err := archive.Update("status", WorkoutStatusArchived).Error; err != nil {
 		return fmt.Errorf("storage: archive prior weekly workouts: %w", err)
 	}
 	if len(parsed.Sessions) == 0 {
@@ -109,6 +112,9 @@ func materializeWeeklyWorkouts(tx *gorm.DB, uid, planID, weekStart, content stri
 	rows := make([]Workout, 0, len(parsed.Sessions))
 	for i := range parsed.Sessions {
 		session := &parsed.Sessions[i]
+		if protectThrough != "" && session.Date <= protectThrough {
+			continue
+		}
 		if _, err := time.Parse("2006-01-02", session.Date); err != nil {
 			return fmt.Errorf("storage: materialize session date %q: %w", session.Date, err)
 		}
@@ -148,6 +154,9 @@ func materializeWeeklyWorkouts(tx *gorm.DB, uid, planID, weekStart, content stri
 			PlanID:        stringPtr2(planID), SessionIndex: &sessionIndex,
 			CreatedAt: now, UpdatedAt: now,
 		})
+	}
+	if len(rows) == 0 {
+		return nil
 	}
 	if err := tx.Create(&rows).Error; err != nil {
 		return fmt.Errorf("storage: insert weekly workouts: %w", err)

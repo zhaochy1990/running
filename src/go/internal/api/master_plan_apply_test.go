@@ -218,7 +218,7 @@ func TestApplyMasterPlanHandler(t *testing.T) {
 	t.Run("too large", func(t *testing.T) {
 		userID, goalID := uuid.NewString(), uuid.NewString()
 		body := applyRequestBody(mustAppliedContent(t, goalID), false, nil, nil)
-		body["padding"] = strings.Repeat("x", maxRequestBytes)
+		body["padding"] = strings.Repeat("x", maxPlanCandidateBytes)
 		w := doApply(t, h, admin, userID, body)
 		if w.Code != http.StatusRequestEntityTooLarge {
 			t.Fatalf("code = %d, want 413 (%s)", w.Code, w.Body.String())

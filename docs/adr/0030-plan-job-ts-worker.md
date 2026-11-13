@@ -39,3 +39,19 @@ job/worker architecture above stands.
 - **The coach and worker hold no plan-write clients** (GoDraftClient /
   masterPlanDraftSink deleted): the coach is purely read-only, and the worker's
   only plan-table side effects are the job-state writes described by ADR 0033.
+
+
+## Update (devops#955 — season candidates and first-batch weeks)
+
+A `generate_master_plan` job is side-effect free for formal plans: the job
+result carries the full first-batch `weekly_docs` alongside the season content
+and policy. Only a confirmed user or administrator apply writes the season,
+first-batch weeks, workouts, and old-plan cleanup in one Go transaction. Go
+checks the candidate against the completed job owned by the target athlete;
+for user applications the job UUID is also the stable apply token.
+The apply-time Shanghai day protects finished weeks and earlier arrangements;
+unsafe weeks are reported, and the accepted plan ID is the weekly lineage ID.
+The job poll response exposes a master-plan confirmation card, and the mini
+program can open it via `pages/coach/coach?plan_job_id=<job UUID>`; it remains
+unapplied until the athlete confirms. Rolling and maintenance jobs still write through the Go internal channel,
+but it is not a first-batch candidate-generation path.

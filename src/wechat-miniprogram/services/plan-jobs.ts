@@ -9,6 +9,7 @@
 import { http } from './request';
 import { COACH_BASE_URL } from '../constants/config';
 import type { AdjustReason } from '../types/adjustment';
+import type { CoachCardWire } from '../utils/coachCards';
 
 /** POST /api/users/me/coach/plan-jobs 的响应（201）。 */
 export interface PlanJobEnqueueResponse {
@@ -51,4 +52,17 @@ export function enqueueGenerateAdjustment(input: {
       ...(input.masterPlanId ? { master_plan_id: input.masterPlanId } : {}),
     },
   });
+}
+
+/** 用户仅可读取本人任务；已完成的赛季候选卡片携带完整内容及稳定的 apply_token。 */
+export interface PlanJobPollResponse {
+  job_id: string;
+  job_type: string;
+  status: 'queued' | 'running' | 'done' | 'failed';
+  error_code: string | null;
+  candidate_card?: CoachCardWire;
+}
+
+export function getPlanJob(jobId: string): Promise<PlanJobPollResponse> {
+  return http.get<PlanJobPollResponse>(`${COACH_BASE_URL}/api/users/me/coach/plan-jobs/${encodeURIComponent(jobId)}`);
 }

@@ -14,7 +14,7 @@ import (
 )
 
 // Internal rolling materialization channel (#858 PR-A): the TS plan-job worker
-// applies the weekly docs a master/rolling kernel produced in one batch and
+// applies weekly docs a rolling kernel produced in one batch and
 // lists the weeks already materialized for a master plan. Same X-Internal-Token
 // tier as the internal job surface (ADR 0033); the admin JWT tier and the user
 // tier cannot enter.
@@ -167,7 +167,7 @@ func (w *weeklyPlanRoutes) batchApply(c *gin.Context) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "weekly_plan_master_plan_conflict"})
 		return
 	}
-	if errors.Is(err, storage.ErrWeeklyPlanExists) || errors.Is(err, storage.ErrWeeklyPlanConflict) {
+	if errors.Is(err, storage.ErrMasterPlanConflict) || errors.Is(err, storage.ErrWeeklyPlanExists) || errors.Is(err, storage.ErrWeeklyPlanConflict) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "weekly_plan_changed"})
 		return
 	}

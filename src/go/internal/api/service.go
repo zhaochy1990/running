@@ -25,7 +25,8 @@ import (
 // maxRequestBytes caps authenticated request bodies. The API has a public
 // ingress, so an unbounded body binding into MySQL longtext is a DoS/storage-
 // abuse vector.
-const maxRequestBytes = 1 << 20 // 1 MiB
+const maxRequestBytes = 1 << 20       // 1 MiB
+const maxPlanCandidateBytes = 8 << 20 // full first-batch plan documents
 
 // Enqueuer creates a standalone job and publishes its pointer.
 type Enqueuer interface {
@@ -457,7 +458,7 @@ func NewService(cfg Config) *Service {
 		bodyComposition:         newBodyCompositionRoutes(cfg.BodyCompositionStore, log),
 		ability:                 newAbilityRoutes(cfg.AbilityStore, cfg.Enqueuer, cfg.AbilityBackfillJobType, log),
 		predictions:             newPredictionRoutes(cfg.PredictionStore, log),
-		masterPlan:              newMasterPlanRoutes(cfg.MasterPlanStore, log),
+		masterPlan:              newMasterPlanRoutes(cfg.MasterPlanStore, cfg.Jobs, log),
 		weeklyPlan:              newWeeklyPlanRoutes(cfg.WeeklyPlanStore, cfg.WorkoutPusher, cfg.ScheduledWorkoutStore, cfg.BodyCompositionStore, log),
 		planAdjustment:          newPlanAdjustmentRoutes(cfg.PlanAdjustmentStore, log),
 		planInjury:              newPlanInjuryRoutes(cfg.PlanInjuryStore, log),
@@ -527,7 +528,7 @@ func (s *Service) Router() *gin.Engine {
 	// Inert (unmounted) while the payment module is unconfigured.
 	s.wxpay.registerNotify(r)
 
-	authenticated := r.Group("", limitBody(maxRequestBytes), s.auth.middleware())
+	authenticated := r.Group("", limitAuthenticatedBody(), s.auth.middleware())
 	// Plan routes explicitly admit the separate admin JWT tier. The master-plan
 	// /me handler still rejects it; only the narrow Weekly/Master Plan import
 	// and update routes may mutate data outside the default-deny child group below.
@@ -649,6 +650,22 @@ func (s *Service) healthHandler() gin.HandlerFunc {
 		return health.Endpoint(s.health)
 	}
 	return func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) }
+}
+
+// Candidate content and job result transitions can include six full weekly
+// documents. Keep the default limit for every unrelated endpoint.
+func limitAuthenticatedBody() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		limit := int64(maxRequestBytes)
+		if c.Request.Method == http.MethodPost {
+			switch c.FullPath() {
+			case "/api/users/me/master-plan/apply", "/api/users/:user_id/master-plan", "/api/internal/jobs/:job_id/transition":
+				limit = maxPlanCandidateBytes
+			}
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
+		c.Next()
+	}
 }
 
 // limitBody caps the request body size (public ingress hardening).

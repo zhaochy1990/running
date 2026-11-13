@@ -1202,7 +1202,7 @@ export const OPENAPI_DOCUMENT = {
       },
       PlanJobPollResponse: {
         type: "object",
-        required: ["job_id", "job_type", "status", "stage", "progress_pct", "error_code", "result_draft_id"],
+        required: ["job_id", "job_type", "status", "stage", "progress_pct", "error_code", "result_draft_id", "result_json"],
         properties: {
           job_id: { $ref: "#/components/schemas/TurnIdentifier" },
           job_type: { type: "string" },
@@ -1211,6 +1211,12 @@ export const OPENAPI_DOCUMENT = {
           progress_pct: { type: "integer", minimum: 0, maximum: 100 },
           error_code: { type: ["string", "null"] },
           result_draft_id: { type: ["string", "null"] },
+          result_json: { type: ["string", "null"], description: "Complete candidate artifact for a finished job." },
+          candidate_card: {
+            type: "object",
+            description: "For a completed season job, the master-plan confirmation card and original candidate content.",
+            additionalProperties: true,
+          },
         },
         additionalProperties: false,
       },
