@@ -131,7 +131,7 @@ func TestMasterPlanInitialWeeksCollisionKeepsPlanIDsConsistent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	content := `{"master_plan_id":"` + taken.PlanID + `","goal":{},"weekly_docs":[]}`
+	content := `{"master_plan_id":"` + taken.PlanID + `","goal":{}}`
 	created, _, err := st.ApplyStructuredMasterPlanWithWeeks(ctx, uuid.NewString(), goal, content, "", nil, nil)
 	if err != nil {
 		t.Fatal(err)

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 	"time"
 
@@ -161,29 +160,22 @@ func lockConfirmedCandidate(tx *gorm.DB, uid, content, token string) error {
 	if json.Unmarshal([]byte(content), &candidate) != nil {
 		return nil // Legacy content is validated by its existing path.
 	}
-	rawID, present := candidate["candidate_job_id"]
-	if !present {
-		return nil
-	}
-	id, ok := rawID.(string)
-	if !ok || candidate["candidate_user_id"] != uid || (token != "" && token != id) {
+	id, err := CandidateJobID(candidate, uid, token)
+	if errors.Is(err, ErrCandidateInvalid) {
 		return ErrMasterPlanConflict
+	}
+	if err != nil || id == "" {
+		return err
 	}
 	var row jobModel
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return ErrMasterPlanConflict
-	}
+	err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&row).Error
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrMasterPlanConflict
+		}
 		return fmt.Errorf("storage: lock candidate job: %w", err)
 	}
-	if row.UserID == nil || *row.UserID != uid || row.Type != "generate_master_plan" || row.Status != "done" {
-		return ErrMasterPlanConflict
-	}
-	var result struct {
-		Content map[string]any `json:"content"`
-	}
-	if json.Unmarshal([]byte(row.ResultJSON), &result) != nil || !reflect.DeepEqual(result.Content, candidate) {
+	if !CandidateArtifactMatches(candidate, uid, row.toDomain()) {
 		return ErrMasterPlanConflict
 	}
 	return nil

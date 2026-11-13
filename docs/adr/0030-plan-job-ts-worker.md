@@ -51,7 +51,8 @@ checks the candidate against the completed job owned by the target athlete;
 for user applications the job UUID is also the stable apply token.
 The apply-time Shanghai day protects finished weeks and earlier arrangements;
 unsafe weeks are reported, and the accepted plan ID is the weekly lineage ID.
-The job poll response exposes a master-plan confirmation card, and the mini
-program can open it via `pages/coach/coach?plan_job_id=<job UUID>`; it remains
-unapplied until the athlete confirms. Rolling and maintenance jobs still write through the Go internal channel,
+The job poll response exposes `result_json` so any caller holding the job id can
+retrieve the complete candidate (content plus the job UUID as its apply token);
+nothing is applied until the athlete or administrator confirms through the two
+apply endpoints above. Rolling and maintenance jobs still write through the Go internal channel,
 but it is not a first-batch candidate-generation path.

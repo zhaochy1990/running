@@ -8,7 +8,6 @@ import {
   type MasterPlanReplacementExpectation,
 } from '../../services/master-plan';
 import { ApiError } from '../../services/request';
-import { getPlanJob } from '../../services/plan-jobs';
 import {
   deleteCustomWorkout,
   getPlanSessions,
@@ -23,7 +22,6 @@ import { openLogin } from '../../utils/authGate';
 import { buildCoachCard, looksLikeJsonText, parseLeakedRaceStrategyEnvelope, shanghaiMonthDayLabel, type CoachCardView } from '../../utils/coachCards';
 import { markdownToHtml } from '../../utils/markdown';
 import { initialWeeksNotice } from '../../utils/masterPlanApplyResult';
-import { candidateJobReview } from '../../utils/candidateJobReview';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 import { theme } from '../../utils/theme';
 
@@ -95,8 +93,6 @@ const COACH_SHARE_PAGE = '/pages/coach-share/coach-share';
 // 当前会话已加载的服务端投影长度：历史加载后 = history.messages.length，
 // 之后每条确认落库的新消息（finishStream）递增。本地新气泡按它领投影序号。
 let projectionLength = 0;
-// A task deep-link survives a login round-trip until the candidate is read.
-let pendingCandidateJobId: string | null = null;
 // 最近一次历史加载是否失败。失败时本地投影序号不可信（欢迎语兜底视图缺服务端
 // 前缀），多选入口 toast 拦截，onShow 静默重拉直到同步成功。
 let historySyncFailed = false;
@@ -277,7 +273,6 @@ interface CoachPageHandlers {
   // 内部方法（以 this. 调用，需在接口中声明以便类型收窄）。
   loadSessions(): Promise<void>;
   loadSession(sessionId: string): Promise<void>;
-  showPendingCandidateJob(): Promise<void>;
   sendText(text: string): Promise<void>;
   doSend(text: string, clientTurnId: string, userMsgId: number): Promise<void>;
   startContextSession(pending: PendingCoachContext): void;
@@ -570,7 +565,6 @@ Page<CoachPageData, CoachPageHandlers>({
   },
 
   onLoad(options: Record<string, string | undefined> = {}) {
-    pendingCandidateJobId = options.plan_job_id || null;
     const sessions = readSessions();
     const currentSessionId = readCurrentSessionId();
     const current = sessions.find((s) => s.id === currentSessionId);
@@ -593,28 +587,8 @@ Page<CoachPageData, CoachPageHandlers>({
         return;
       }
       void this.loadSessions();
-      void this.loadSession(currentSessionId).then(() => this.showPendingCandidateJob());
+      void this.loadSession(currentSessionId);
     });
-  },
-
-  /** 从本人已完成任务恢复候选卡片；未确认前不写任何正式课表。 */
-  async showPendingCandidateJob() {
-    const jobId = pendingCandidateJobId;
-    if (!jobId) return;
-    pendingCandidateJobId = null;
-    try {
-      const job = await getPlanJob(jobId);
-      const review = candidateJobReview(job);
-      if (!review) {
-        wx.showToast({ title: job.status === 'queued' || job.status === 'running' ? '计划仍在生成，请稍后再查看' : '计划候选不可用，请重新生成', icon: 'none' });
-        return;
-      }
-      const id = ++seq;
-      const message: CoachMessage = { id, role: 'assistant', content: review.text, html: markdownToHtml(review.text), card: review.card, selectable: false };
-      this.setData({ messages: [...this.data.messages, message], scrollIntoId: `msg-${id}` });
-    } catch {
-      wx.showToast({ title: '计划任务暂时无法读取，请稍后再试', icon: 'none' });
-    }
   },
 
   /**
@@ -664,7 +638,7 @@ Page<CoachPageData, CoachPageHandlers>({
     if (this.data.guest && userStore.getState().isAuthenticated) {
       this.setData({ guest: false });
       void this.loadSessions();
-      void this.loadSession(this.data.currentSessionId).then(() => this.showPendingCandidateJob());
+      void this.loadSession(this.data.currentSessionId);
     }
     // 首页「和教练聊一聊」移交的上下文：新建会话并锚定 target。
     const pending = takePendingCoachContext();

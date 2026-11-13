@@ -1212,11 +1212,6 @@ export const OPENAPI_DOCUMENT = {
           error_code: { type: ["string", "null"] },
           result_draft_id: { type: ["string", "null"] },
           result_json: { type: ["string", "null"], description: "Complete candidate artifact for a finished job." },
-          candidate_card: {
-            type: "object",
-            description: "For a completed season job, the master-plan confirmation card and original candidate content.",
-            additionalProperties: true,
-          },
         },
         additionalProperties: false,
       },

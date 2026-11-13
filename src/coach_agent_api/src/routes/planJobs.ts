@@ -7,7 +7,6 @@ import {
   type PlanJobType,
   RollingJobRequest,
 } from "@stride/coach-agent-worker";
-import { MasterPlanCardSchema } from "@stride/contract";
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import { type AuthEnv, createAdminMiddleware } from "../auth.js";
 
@@ -72,7 +71,6 @@ async function pollFor(context: Context<AuthEnv>, planJobs: PlanJobsService, use
 }
 
 function toPollResponse(job: PlanJob): Record<string, unknown> {
-  const card = candidateCardOf(job);
   return {
     job_id: job.jobId,
     job_type: job.jobType,
@@ -82,29 +80,7 @@ function toPollResponse(job: PlanJob): Record<string, unknown> {
     error_code: job.errorCode,
     result_draft_id: draftIdOf(job),
     result_json: job.status === "done" ? job.resultJson : null,
-    ...(card ? { candidate_card: card } : {}),
   };
-}
-
-function candidateCardOf(job: PlanJob): { $type: "master-plan"; data: import("@stride/contract").MasterPlanCard } | null {
-  if (job.status !== "done" || job.jobType !== "generate_master_plan" || job.resultJson === null) return null;
-  try {
-    const result: unknown = JSON.parse(job.resultJson);
-    if (!isRecord(result) || !isRecord(result.content)) return null;
-    const content = result.content;
-    if (content.candidate_job_id !== job.jobId || content.candidate_user_id !== job.userId || !Array.isArray(content.weekly_docs)) return null;
-    const parsed = MasterPlanCardSchema.safeParse({
-      goal: content.goal,
-      start_date: content.start_date,
-      end_date: content.end_date,
-      total_weeks: content.total_weeks,
-      apply_token: job.jobId,
-      content,
-    });
-    return parsed.success ? { $type: "master-plan", data: parsed.data } : null;
-  } catch {
-    return null;
-  }
 }
 
 function draftIdOf(job: PlanJob): string | null {
