@@ -123,7 +123,7 @@ function normalWeekCourses(row: ContentWeekRow, input: ContentGeneratorInput, re
         : [{ repeat: 1, steps: [step("work", { kind: "distance_m", value: frontKm }, pace(eBand))] }],
     ),
   ];
-for (let i = 0; i < alloc.qualitySessions; i++) {
+  for (let i = 0; i < alloc.qualitySessions; i++) {
     const m = mNarrow(row, input.race.goalPaceSKm);
     courses.push(
       course(

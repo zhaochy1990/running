@@ -206,7 +206,7 @@ function scheduleContextOf(input: ContentGeneratorInput, coefficients: DoseCoeff
     race: input.race,
     athlete: { weeklyRunDaysMax: input.athlete.weeklyRunDaysMax },
     // 块界分批时由调用方链式传入上批末态；单段生成缺省用生成时点体能快照
-    pmcSeed: pmcSeed ?? { acute: input.athlete.fitness.atl, chronic: input.athlete.fitness.ctl } satisfies PmcState,
+    pmcSeed: pmcSeed ?? ({ acute: input.athlete.fitness.atl, chronic: input.athlete.fitness.ctl } satisfies PmcState),
     coefficients,
   };
 }

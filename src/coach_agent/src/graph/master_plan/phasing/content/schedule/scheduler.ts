@@ -465,7 +465,9 @@ export function scheduleWeek(
 
   const repairs: string[] = [];
   const placement =
-    raceWd != null ? placeRaceWeek(bag, row, ctx, coefficients, raceWd, ctx.athlete.weeklyRunDaysMax) : placeNormalWeek(bag, row, ctx, coefficients, pmc, repairs);
+    raceWd != null
+      ? placeRaceWeek(bag, row, ctx, coefficients, raceWd, ctx.athlete.weeklyRunDaysMax)
+      : placeNormalWeek(bag, row, ctx, coefficients, pmc, repairs);
   if (placement.failures.length > 0) return { failures: placement.failures };
   repairs.push(...placement.repairs);
   const dayCourses = placement.dayCourses;
@@ -678,7 +680,9 @@ export function scheduleWeek(
   }
 
   const sessions = byDay.flat();
-  const weeksToRace = ctx.race ? Math.max(1, Math.ceil((new Date(ctx.race.date).getTime() - new Date(mondayOf(weekMonday)).getTime()) / (7 * 86400000)) - 0) : null;
+  const weeksToRace = ctx.race
+    ? Math.max(1, Math.ceil((new Date(ctx.race.date).getTime() - new Date(mondayOf(weekMonday)).getTime()) / (7 * 86400000)) - 0)
+    : null;
   const checks = scheduleGates({ calendar, loadSeries, row, daysMax: ctx.athlete.weeklyRunDaysMax, raceDate, coefficients, weeksToRace });
   if (checks.some((c) => !c.pass)) {
     return { failures: checks.filter((c) => !c.pass).map((c) => `W${row.week} ${c.id}：${c.detail}`) };

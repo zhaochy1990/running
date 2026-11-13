@@ -280,6 +280,9 @@ test("LR 前日 E 最低有效时长（2026-11-01 拍板·置休摊量）：周�
       assert.ok(Number(m[1]) >= 30, `周六 E ${m[1]}min < 30min 最低有效时长`);
     }
     // 周量守恒不因置休摊量破坏：C1 排位后终检仍绿
-    assert.ok(week.checks.every((c) => c.id !== "C1 周量守恒" || c.pass), `W${week.week} C1 挂`);
+    assert.ok(
+      week.checks.every((c) => c.id !== "C1 周量守恒" || c.pass),
+      `W${week.week} C1 挂`,
+    );
   }
 });

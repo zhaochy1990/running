@@ -35,7 +35,7 @@ export interface GateInput {
  */
 const AEROBIC_FLOOR: Record<string, number> = {
   recovery: 0.85,
-  foundation: 0.76,   // 38 案例包络校准值（实测下缘 78.5%−2pct 余量）
+  foundation: 0.76, // 38 案例包络校准值（实测下缘 78.5%−2pct 余量）
   early_quality: 0.75,
   transition_quality: 0.65,
   final_quality: 0.35, // 2026-11-09 用户拍板：专项期有氧可压到 30% 级（峰值 MP 周教练基准 ~45%、
@@ -163,7 +163,13 @@ export function scheduleGates(input: GateInput): ScheduleCheck[] {
     // 上限归内容层 C17（2026-11-02 拍板后挪层）：排位层改不了课包成分，份额上限
     // 在 P 门挂=结构性无解上浮（模板兜底被误伤实证）；C17 在课包阶段查、LLM 带
     // 违规重试可修。
-    checks.push({ id: "P7 有氧份额", pass: !unknown && share >= floor, detail: unknown ? "里程不可知" : `${(share * 100).toFixed(0)}% vs ≥${(floor * 100).toFixed(0)}%${row.phase === "final_quality" ? (input.weeksToRace != null && input.weeksToRace < FQ_LATE_WEEKS ? "（后半段递减）" : "（前半段）") : ""}` });
+    checks.push({
+      id: "P7 有氧份额",
+      pass: !unknown && share >= floor,
+      detail: unknown
+        ? "里程不可知"
+        : `${(share * 100).toFixed(0)}% vs ≥${(floor * 100).toFixed(0)}%${row.phase === "final_quality" ? (input.weeksToRace != null && input.weeksToRace < FQ_LATE_WEEKS ? "（后半段递减）" : "（前半段）") : ""}`,
+    });
   }
 
   return checks;

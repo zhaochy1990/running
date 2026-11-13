@@ -550,9 +550,7 @@ export function createTestWeeklyPlanDoc(weekIndex: number) {
   };
 }
 
-export function createTestCompletedOutcomeV3(
-  overrides: { totalWeeks?: number; revision?: number; weeklyDocs?: number } = {},
-) {
+export function createTestCompletedOutcomeV3(overrides: { totalWeeks?: number; revision?: number; weeklyDocs?: number } = {}) {
   const weeks = overrides.totalWeeks ?? 1;
   const plan = createTestMasterPlan();
   const single = {
@@ -619,13 +617,9 @@ export function createTestCompletedOutcomeV3(
       },
       skeleton: {
         weeks: skeletonWeeks,
-        blocks: [
-          { block: 1, canonical: "foundation" as const, start_week: 1, end_week: weeks, absorb_weeks: [], boundary: "phase_start" as const },
-        ],
+        blocks: [{ block: 1, canonical: "foundation" as const, start_week: 1, end_week: weeks, absorb_weeks: [], boundary: "phase_start" as const }],
         recovery_policy: [{ id: "normal" as const, trigger: "体感正常", action: "常规递进", depth: "+3~8%/块" }],
-        strength_policy: [
-          { canonical: "foundation" as const, strength_focus: "基础力量", quality_family: "E 为主", strides_note: "不计质量课" },
-        ],
+        strength_policy: [{ canonical: "foundation" as const, strength_focus: "基础力量", quality_family: "E 为主", strides_note: "不计质量课" }],
         checks: [{ id: "acwr", pass: true, detail: "1.12 ≤ 1.3" }],
         milestones: [{ phase: "第一阶段·基础期", signal: "周量", criterion: "连续 3 周 ≥60km", week: weeks }],
       },

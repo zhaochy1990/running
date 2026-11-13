@@ -94,12 +94,24 @@ export const E_DURATION_NORMAL_BAND: readonly [number, number] = [60, 90];
 export const isLightMSegmentCourse = (workout: RunWorkout): boolean => {
   if (workout.type !== "M") return false;
   const mSegs: number[] = [];
-  for (const b of workout.blocks) for (let r = 0; r < b.repeat; r++) for (const st of b.steps) {
-    if (st.step_kind === "work" && st.target.kind === "pace_s_km" && st.duration.kind === "distance_m" && st.duration.value != null && st.duration.value >= 1000) mSegs.push(st.duration.value);
-  }
+  for (const b of workout.blocks)
+    for (let r = 0; r < b.repeat; r++)
+      for (const st of b.steps) {
+        if (
+          st.step_kind === "work" &&
+          st.target.kind === "pace_s_km" &&
+          st.duration.kind === "distance_m" &&
+          st.duration.value != null &&
+          st.duration.value >= 1000
+        )
+          mSegs.push(st.duration.value);
+      }
   if (mSegs.length === 0) return false;
   const totalM = mSegs.reduce((a, b) => a + b, 0);
-  const total = workout.blocks.reduce((t, b) => t + b.repeat * b.steps.reduce((u, st) => u + (st.duration.kind === "distance_m" ? (st.duration.value ?? 0) : 0), 0), 0);
+  const total = workout.blocks.reduce(
+    (t, b) => t + b.repeat * b.steps.reduce((u, st) => u + (st.duration.kind === "distance_m" ? (st.duration.value ?? 0) : 0), 0),
+    0,
+  );
   return totalM >= 3200 - 1e-6 && totalM <= 6500 + 1e-6 && Math.max(...mSegs) <= 6500 + 1e-6 && total <= 16000 + 1e-6;
 };
 
@@ -247,7 +259,11 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
   const qOk =
     quality.length === row.quality_sessions ||
     (quality.length === row.quality_sessions + 1 && extra.length === 1 && quality.length - extra.length >= row.quality_sessions - 1);
-  checks.push({ id: "C3 Q配额", pass: qOk, detail: `${quality.length} 节质量课 vs 配额${row.quality_sessions}${extra.length ? `（+${extra.length} 轻量 M 段位）` : ""}` });
+  checks.push({
+    id: "C3 Q配额",
+    pass: qOk,
+    detail: `${quality.length} 节质量课 vs 配额${row.quality_sessions}${extra.length ? `（+${extra.length} 轻量 M 段位）` : ""}`,
+  });
 
   // C4 训练日 ≤上限（按 date 去重）；课包阶段不查——落位归 L4b（P1 同判据）。
   if (input.bagStage == null) {
@@ -290,14 +306,7 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
   // 赛周豁免——E 槽位课包本就不收 note，赛周 E 的 note 只可能来自 L4b 的通勤
   // 调整说明（2026-11-01 拍板），拦它=拦自己人）。
   const noteBad = sessions
-    .filter(
-      (s) =>
-        raceDate == null &&
-        !hasQualitySegment(s.workout, zones) &&
-        !hasStrideStep(s.workout) &&
-        s.workout.type !== "LR" &&
-        s.workout.note != null,
-    )
+    .filter((s) => raceDate == null && !hasQualitySegment(s.workout, zones) && !hasStrideStep(s.workout) && s.workout.type !== "LR" && s.workout.note != null)
     .map((s) => `${s.workout.name} note应null`);
   checks.push({ id: "C6 note语义", pass: noteBad.length === 0, detail: noteBad.join(";") || "全过" });
 
@@ -398,7 +407,18 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
     checks.push({
       id: "C14 长跑专项段",
       pass: !c14Fail,
-      detail: input.bagStage != null ? "bag 阶段跳过" : input.templatePath ? "模板兜底豁免" : !fq || !isProgress ? "非 FQ 进展周，跳过" : lrs.length === 0 ? "无 LR" : c14Fail ? "FQ 进展周 LR 纯有氧——须含 goal_pace 段（渐加速/全程 MP/MP-10s/变速）" : "含专项段",
+      detail:
+        input.bagStage != null
+          ? "bag 阶段跳过"
+          : input.templatePath
+            ? "模板兜底豁免"
+            : !fq || !isProgress
+              ? "非 FQ 进展周，跳过"
+              : lrs.length === 0
+                ? "无 LR"
+                : c14Fail
+                  ? "FQ 进展周 LR 纯有氧——须含 goal_pace 段（渐加速/全程 MP/MP-10s/变速）"
+                  : "含专项段",
     });
   }
 
@@ -426,16 +446,33 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
     checks.push({
       id: "C15 taper长跑限提速",
       pass: fastBad.length === 0,
-      detail: input.bagStage != null ? "bag 阶段跳过" : row.role !== "taper" ? "非 taper 周，跳过" : fastBad.slice(0, 2).join(";") || fastKm > 0.05 ? `嵌 ${fastKm.toFixed(1)}km 快段（≤12 原书 9E+6T 形态）` : "纯有氧/慢渐加速",
+      detail:
+        input.bagStage != null
+          ? "bag 阶段跳过"
+          : row.role !== "taper"
+            ? "非 taper 周，跳过"
+            : fastBad.slice(0, 2).join(";") || fastKm > 0.05
+              ? `嵌 ${fastKm.toFixed(1)}km 快段（≤12 原书 9E+6T 形态）`
+              : "纯有氧/慢渐加速",
     });
   }
 
-
-  const workSegsOf = (workout: { blocks: Array<{ repeat: number; steps: Array<{ step_kind: string; target: { kind: string }; duration: { kind: string; value: number | null } }> }> }): number[] => {
+  const workSegsOf = (workout: {
+    blocks: Array<{ repeat: number; steps: Array<{ step_kind: string; target: { kind: string }; duration: { kind: string; value: number | null } }> }>;
+  }): number[] => {
     const out: number[] = [];
-    for (const b of workout.blocks) for (let r = 0; r < b.repeat; r++) for (const st of b.steps) {
-      if (st.step_kind === "work" && st.target.kind === "pace_s_km" && st.duration.kind === "distance_m" && st.duration.value != null && st.duration.value >= 400) out.push(st.duration.value);
-    }
+    for (const b of workout.blocks)
+      for (let r = 0; r < b.repeat; r++)
+        for (const st of b.steps) {
+          if (
+            st.step_kind === "work" &&
+            st.target.kind === "pace_s_km" &&
+            st.duration.kind === "distance_m" &&
+            st.duration.value != null &&
+            st.duration.value >= 400
+          )
+            out.push(st.duration.value);
+        }
     return out;
   };
   // C16 final_quality 段长谱（2026-11-02 原书校准）：Phase 4 的质量课段长下限——
@@ -475,7 +512,16 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
     checks.push({
       id: "C16 段长谱",
       pass: bad.length === 0,
-      detail: input.bagStage != null ? "bag 阶段跳过" : input.templatePath ? "模板豁免" : input.finalQuality !== true ? "非 final_quality，跳过" : isRaceCtx ? "赛周豁免段长（激活课带内即可）" : bad.slice(0, 3).join(";") || "全过",
+      detail:
+        input.bagStage != null
+          ? "bag 阶段跳过"
+          : input.templatePath
+            ? "模板豁免"
+            : input.finalQuality !== true
+              ? "非 final_quality，跳过"
+              : isRaceCtx
+                ? "赛周豁免段长（激活课带内即可）"
+                : bad.slice(0, 3).join(";") || "全过",
     });
   }
 
@@ -488,7 +534,11 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
     let totalM = 0;
     let unknownShare = false;
     const easyLo = zones.easy?.[0] ?? null;
-    const kmOfStep = (st: { step_kind: string; duration: { kind: string; value: number | null }; target: { kind: string; low: number | null; high: number | null } }): number | null => {
+    const kmOfStep = (st: {
+      step_kind: string;
+      duration: { kind: string; value: number | null };
+      target: { kind: string; low: number | null; high: number | null };
+    }): number | null => {
       if (st.duration.kind === "distance_m") return st.duration.value ?? 0;
       if (st.duration.kind !== "time_s" || st.duration.value == null) return null;
       const lo = st.target.low;
@@ -503,7 +553,10 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
             for (const st of b.steps) {
               if (st.step_kind === "rest") continue;
               const km = kmOfStep(st as never);
-              if (km == null) { unknownShare = true; break; }
+              if (km == null) {
+                unknownShare = true;
+                break;
+              }
               totalM += km;
               const lo = st.target.low;
               const hi = st.target.high ?? lo;
@@ -521,7 +574,16 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
     checks.push({
       id: "C17 有氧份额上限",
       pass: !c17Applies || share <= 0.65 + 1e-6,
-      detail: input.bagStage != null ? "bag 阶段跳过" : input.templatePath ? "模板豁免" : input.finalQuality !== true || row.role !== "progress" ? "非 FQ progress 周，跳过" : unknownShare ? "里程不可知" : `${(share * 100).toFixed(0)}% vs ≤65%`,
+      detail:
+        input.bagStage != null
+          ? "bag 阶段跳过"
+          : input.templatePath
+            ? "模板豁免"
+            : input.finalQuality !== true || row.role !== "progress"
+              ? "非 FQ progress 周，跳过"
+              : unknownShare
+                ? "里程不可知"
+                : `${(share * 100).toFixed(0)}% vs ≤65%`,
     });
   }
 

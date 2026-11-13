@@ -49,6 +49,7 @@ import {
   withBackfilledClaimCitations,
 } from "./assessment.js";
 import { type ContextSnapshot, ContextSnapshotSchema, type MasterPlanContextProvider } from "./context.js";
+import type { GoalAssessmentModel } from "./goalAssessment/GoalAssessmentModel.js";
 import { infrastructureFailure, logger, logSwallowedFailure, modelFailure, qualityFailure } from "./nodes/shared.js";
 import { danielsAudit } from "./phasing/content/danielsAudit.js";
 import { buildProvenSessions, type ContentGeneratorInput, type ContentWeekRow, QUALITY_FAMILY_OF } from "./phasing/content/doctrine.js";
@@ -60,10 +61,6 @@ import { generatePhaseDivisionIntent, type PhasingModel } from "./phasing/genera
 import { buildWeeklySeries, habitualBaseline } from "./phasing/load/baseline.js";
 import { buildLoadPlan } from "./phasing/load/expand.js";
 import { buildV2Snapshot } from "./v2Snapshot.js";
-
-interface GoalAssessmentModel {
-  invoke(input: { request: MasterPlanGraphRequest; snapshot: ContextSnapshot; facts: AssessmentFacts }, retry?: { violations: string[] }): Promise<unknown>;
-}
 
 export interface MasterPlanGraphDependencies {
   contextProvider: MasterPlanContextProvider;
@@ -208,11 +205,13 @@ export class MasterPlanNodes {
   };
 
   readonly assessGoal = async (state: typeof GraphState.State) => {
+    logger.info("Assessing goal for request: %s", JSON.stringify(state.request));
     const { request, context } = required(state);
     const snapshot = state.snapshot;
     const facts = state.facts;
     if (snapshot === undefined || facts === undefined) throw new Error("assess_goal: snapshot/facts 缺失（initialize 未铺设）");
     try {
+      logger.info("Invoking goal assessment model for request: %s", request.request_id);
       let assessment!: GoalAssessment;
       let retry: { violations: string[] } | undefined;
       for (let attempt = 1; attempt <= 2; attempt++) {
@@ -255,6 +254,7 @@ export class MasterPlanNodes {
           throw error instanceof ModelContractError ? error : new ModelContractError(error instanceof Error ? error.message : "invalid goal assessment");
         }
       }
+      logger.info("Goal assessment result: %s", JSON.stringify(assessment));
       if (assessment.level === "multi_cycle_required")
         return {
           outcome: MasterPlanGraphOutcomeSchema.parse({

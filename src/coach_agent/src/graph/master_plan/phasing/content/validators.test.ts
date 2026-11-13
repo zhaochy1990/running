@@ -731,26 +731,62 @@ test("C15 taper 长跑禁提速：LR work 段 mid 快于 goal 挂；纯有氧过
   const easy = validateWeekContent({ sessions: [{ workout: lrEasy }], row, zones: ZONES, maxTrainingDays: 6, goalPaceSKm: 248.8, finalQuality: true });
   assert.equal(byId(easy, "C15 taper长跑限提速")?.pass, true);
 
-  const progress = validateWeekContent({ sessions: [{ workout: lrFast }], row: { ...row, role: "progress" as const }, zones: ZONES, maxTrainingDays: 6, goalPaceSKm: 248.8, finalQuality: true });
+  const progress = validateWeekContent({
+    sessions: [{ workout: lrFast }],
+    row: { ...row, role: "progress" as const },
+    zones: ZONES,
+    maxTrainingDays: 6,
+    goalPaceSKm: 248.8,
+    finalQuality: true,
+  });
   assert.equal(byId(progress, "C15 taper长跑限提速")?.detail, "非 taper 周，跳过");
 });
 
 test("C17/C3 轻量 M 段位（2026-11-02 E 压缩拍板）：q+1 轻量 M 段课合法；高 E 份额 progress 周挂", () => {
   const row = { total_km: 75, long_run_km: 27, quality_sessions: 2, role: "progress" as const };
   const mSeg = { kind: "pace_s_km" as const, low: 247, high: 257 };
-  const light = W({ name: "E+M 段轻课", date: "2026-11-04", type: "M", blocks: [{ repeat: 1, steps: [s("work", km(3), EASY), s("work", km(5), mSeg), s("cooldown", km(2), EASY)] }] });
+  const light = W({
+    name: "E+M 段轻课",
+    date: "2026-11-04",
+    type: "M",
+    blocks: [{ repeat: 1, steps: [s("work", km(3), EASY), s("work", km(5), mSeg), s("cooldown", km(2), EASY)] }],
+  });
   // q+1 轻量位：C3 过（2 节常规 + 1 轻量）
-  const quality1 = W({ name: "M 6km", date: "2026-11-03", type: "M", note: null, blocks: [{ repeat: 1, steps: [s("warmup", km(2), EASY), s("work", km(6), mSeg), s("cooldown", km(2), EASY)] }] });
+  const quality1 = W({
+    name: "M 6km",
+    date: "2026-11-03",
+    type: "M",
+    note: null,
+    blocks: [{ repeat: 1, steps: [s("warmup", km(2), EASY), s("work", km(6), mSeg), s("cooldown", km(2), EASY)] }],
+  });
   const lr = W({ name: "长跑 27km", date: "2026-11-08", type: "LR", note: null, blocks: [{ repeat: 1, steps: [s("work", km(27), EASY)] }] });
-  const e1 = W({ name: "E 70min", date: "2026-11-05", type: "E", note: null, blocks: [{ repeat: 1, steps: [s("work", { kind: "time_s", value: 4200 }, EASY)] }] });
-  const input = (ss: RunWorkout[]) => validateWeekContent({ sessions: ss.map((workout) => ({ workout })), row, zones: ZONES, maxTrainingDays: 6, goalPaceSKm: 251.7, finalQuality: true });
+  const e1 = W({
+    name: "E 70min",
+    date: "2026-11-05",
+    type: "E",
+    note: null,
+    blocks: [{ repeat: 1, steps: [s("work", { kind: "time_s", value: 4200 }, EASY)] }],
+  });
+  const input = (ss: RunWorkout[]) =>
+    validateWeekContent({ sessions: ss.map((workout) => ({ workout })), row, zones: ZONES, maxTrainingDays: 6, goalPaceSKm: 251.7, finalQuality: true });
   const withLight = input([quality1, light, lr, e1]);
   assert.equal(byId(withLight, "C3 Q配额")?.pass, true, byId(withLight, "C3 Q配额")?.detail);
   // C17：纯 E+LR 高份额挂；加轻量 M 段后份额降
-  const heavyE = input([quality1, lr, e1, W({ name: "E 60min", date: "2026-11-06", type: "E", note: null, blocks: [{ repeat: 1, steps: [s("work", { kind: "time_s", value: 3600 }, EASY)] }] })]);
+  const heavyE = input([
+    quality1,
+    lr,
+    e1,
+    W({ name: "E 60min", date: "2026-11-06", type: "E", note: null, blocks: [{ repeat: 1, steps: [s("work", { kind: "time_s", value: 3600 }, EASY)] }] }),
+  ]);
   assert.equal(byId(heavyE, "C17 有氧份额上限")?.pass, false, byId(heavyE, "C17 有氧份额上限")?.detail);
   // 真实合规形态：LR 带渐加速 M 尾段（C14）+2Q+轻量位——份额压进带内
-  const lrProgressive = W({ name: "渐加速长跑 27km", date: "2026-11-08", type: "LR", note: null, blocks: [{ repeat: 1, steps: [s("work", km(18), EASY), s("work", km(9), mSeg)] }] });
+  const lrProgressive = W({
+    name: "渐加速长跑 27km",
+    date: "2026-11-08",
+    type: "LR",
+    note: null,
+    blocks: [{ repeat: 1, steps: [s("work", km(18), EASY), s("work", km(9), mSeg)] }],
+  });
   const spread = input([quality1, light, lrProgressive]);
   assert.equal(byId(spread, "C17 有氧份额上限")?.pass, true, byId(spread, "C17 有氧份额上限")?.detail);
 });
@@ -774,5 +810,9 @@ test("buildProvenSessions（#857）：近 10 周质量/长距离课筛选+摘要
   assert.equal(out[0]!.avgPaceSKm, 259.1);
   assert.equal(out[1]!.name, "[STRIDE] 5km 递进×7（4:50→4");
   assert.deepEqual(buildProvenSessions([], asOf), []);
-  assert.deepEqual(buildProvenSessions(acts, "2026-10-01").map((x) => x.date), ["2026-08-30"], "as_of 更早时窗口左移：11 月课排除、8 月底课进入窗口");
+  assert.deepEqual(
+    buildProvenSessions(acts, "2026-10-01").map((x) => x.date),
+    ["2026-08-30"],
+    "as_of 更早时窗口左移：11 月课排除、8 月底课进入窗口",
+  );
 });

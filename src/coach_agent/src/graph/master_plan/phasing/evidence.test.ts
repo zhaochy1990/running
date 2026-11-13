@@ -343,5 +343,8 @@ test("陈旧短距离比赛锚（#837）：打折赛值胜出融合时保持 rec
   const calibCap = buildPhaseEvidence(calibWins.snapshot, calibWins.activities, goal, AS_OF).current_capability;
   assert.equal(calibCap.source, "calibration");
   const calibPlain = raceTimeSecFromVdot(RACE_DISTANCES_M.FM, calibCap.vdot ?? 0);
-  assert.ok(Math.abs(calibCap.equivalents!.FM - calibPlain) <= 8, `校准锚等效无折扣（${calibCap.equivalents!.FM} vs ${calibPlain}，容差吸收 vdot 1 位小数取整≈FM 5s）`);
+  assert.ok(
+    Math.abs(calibCap.equivalents!.FM - calibPlain) <= 8,
+    `校准锚等效无折扣（${calibCap.equivalents!.FM} vs ${calibPlain}，容差吸收 vdot 1 位小数取整≈FM 5s）`,
+  );
 });

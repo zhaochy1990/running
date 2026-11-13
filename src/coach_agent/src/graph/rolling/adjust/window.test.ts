@@ -41,8 +41,7 @@ function skeleton(): LoadPlan {
   };
 }
 
-const rows = (weeks: number[]): ExistingWeekRef[] =>
-  weeks.map((no) => ({ weekStart: addWeeks(PLAN_START, no - 1), week: no, km: 60 + no }));
+const rows = (weeks: number[]): ExistingWeekRef[] => weeks.map((no) => ({ weekStart: addWeeks(PLAN_START, no - 1), week: no, km: 60 + no }));
 
 function addWeeks(day: string, n: number): string {
   return new Date(Date.parse(`${day}T00:00:00Z`) + n * 7 * 86_400_000).toISOString().slice(0, 10);
