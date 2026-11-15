@@ -39,9 +39,9 @@ PB也要区分历史成绩记录与“目前最好成绩”：前者保留历史
 pnpm install --frozen-lockfile
 pnpm --filter @stride/training-profile... build
 # 从仓库根执行；输出目录必须尚不存在，其父目录应为私人目录。
-pnpm prototype:training-profile /absolute/private/snapshot.json /absolute/private/run-1 /absolute/repo/config/coach.local.yaml deepseekv4pro
+pnpm prototype:training-profile /absolute/private/snapshot.json /absolute/private/run-1 /absolute/repo/config/coach.local.yaml deepseekv4flash
 # 对快照副本更新后重新评估；可传入同一用户的上轮结果。
-pnpm prototype:training-profile /absolute/private/snapshot-copy.json /absolute/private/run-2 /absolute/repo/config/coach.local.yaml deepseekv4pro /absolute/private/run-1/profile.json
+pnpm prototype:training-profile /absolute/private/snapshot-copy.json /absolute/private/run-2 /absolute/repo/config/coach.local.yaml deepseekv4flash /absolute/private/run-1/profile.json
 pnpm --filter @stride/training-profile test
 pnpm exec biome check src/training_profile/src
 ```
@@ -67,3 +67,11 @@ pnpm exec biome check src/training_profile/src
 模型读取对照证据后，给出个人特点、依据和定性规划用途。新关联仍遵守已决用途限制；暂不输出精确修正系数。正文展示认识和用途，原始统计、未成立方向与详细条件保存在 `analysis.json`／画像JSON中。空层不填占位内容，schema通过或条目数不再标为质量目标已达成。
 
 本轮依旧不生成或修改训练计划；`planningUse`用于检验画像将来是否有可引用的内容。
+
+## 模型约束
+
+用户明确要求只用 `deepseek-flash` 做后续模型测试。生成入口在调用共享客户端前拒绝任何其他模型；早先两次Pro试验只作为历史错误与调试记录，不能算Flash效果证据。
+
+本轮默认 `PROFILE_MAX_OUTPUT_TOKENS=32768`、`PROFILE_REASONING_EFFORT=high`；可通过这两个环境变量调整输出预算及low／medium／high推理强度。每轮metrics保存实际model、参数、用量与耗时。参数调整不改变模型。
+
+负荷分析引用已有daily load的完整周与峰值日前后值，比较周内剂量集中，而不是用单日负荷比或HRV范围放行维持／加量。天气正文可查看全部备选，但来源引用覆盖所有可见候选并去重；不复用主分析与共享对照备选分别计数。

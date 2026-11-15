@@ -38,8 +38,15 @@ const registry = z
   );
 const model = registry.models.find((m) => m.name === modelName);
 if (!model) throw new Error(`Unknown model registry name: ${modelName}`);
+const settings = z
+  .object({
+    maxOutputTokens: z.coerce.number().int().positive(),
+    reasoningEffort: z.enum(["low", "medium", "high"]),
+  })
+  .parse({ maxOutputTokens: process.env.PROFILE_MAX_OUTPUT_TOKENS ?? "32768", reasoningEffort: process.env.PROFILE_REASONING_EFFORT ?? "high" });
+const runConfig: ModelConfig = { ...model, max_tokens: settings.maxOutputTokens, reasoning_effort: settings.reasoningEffort, timeout_s: 300 };
 await createRunDirectory(resolve(outputPath));
-const result = await generateProfile(snapshot, model as ModelConfig, previous, (raw) => savePrivate(resolve(outputPath), "model-response.json", raw));
+const result = await generateProfile(snapshot, runConfig, previous, (raw) => savePrivate(resolve(outputPath), "model-response.json", raw));
 await saveProfile(resolve(outputPath), result.profile);
 await savePrivate(resolve(outputPath), "analysis.json", result.analysis);
 await savePrivate(resolve(outputPath), "metrics.json", result.metrics);

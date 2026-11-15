@@ -65,3 +65,51 @@ test("weather pairing does not reuse activities or discard counterexamples", () 
   assert.match(comparison.text, /-20/);
   assert.match(comparison.text, /\+20/);
 });
+
+test("weather dependencies include unselected counterexamples visible to the model", () => {
+  const rows = [
+    activity("hot-closer", { shanghaiDay: "2026-11-01", distanceM: 10000, avgPaceSKm: 300, avgHr: 155, feelsLike: 30, strideSessionClass: "easy" }),
+    activity("hot-counterexample", { shanghaiDay: "2026-11-02", distanceM: 10000, avgPaceSKm: 304, avgHr: 140, feelsLike: 30, strideSessionClass: "easy" }),
+    activity("cool-shared", { shanghaiDay: "2026-11-03", distanceM: 10000, avgPaceSKm: 300, avgHr: 145, feelsLike: 20, strideSessionClass: "easy" }),
+  ];
+  const result = buildComparisons(snapshot(rows));
+  assert.equal(result.diagnostics.selectedWeatherPairs, 1);
+  assert.equal(result.diagnostics.eligibleWeatherPairs, 2);
+  assert.deepEqual(
+    result.observations
+      .find((o) => o.id === "comparison-weather")
+      ?.evidence.map((e) => e.id)
+      .sort(),
+    rows.map((e) => e.id).sort(),
+  );
+});
+
+test("weekly dose concentration uses complete daily coverage and retains before/after load", () => {
+  const loads = Array.from(
+    { length: 7 },
+    (_, i): Evidence => ({
+      id: `load-${i}`,
+      revision: "one",
+      kind: "load",
+      eventTime: null,
+      reportedAt: null,
+      active: true,
+      content: {
+        date: `2026-11-${String(9 + i).padStart(2, "0")}`,
+        trainingDose: i === 6 ? 60 : i === 5 ? 20 : 4,
+        coverageStatus: "complete",
+        acuteLoad: i === 6 ? 60 : 40,
+        loadRatio: 1,
+      },
+    }),
+  );
+  const result = buildComparisons(snapshot(loads));
+  const observation = result.observations.find((o) => o.id === "comparison-load-concentration");
+  assert(observation);
+  assert.match(observation.text, /60/);
+  assert.match(observation.text, /80/);
+  const first = loads[0];
+  assert(first);
+  first.content.coverageStatus = "unknown";
+  assert(!buildComparisons(snapshot(loads)).observations.some((o) => o.id === "comparison-load-concentration"));
+});

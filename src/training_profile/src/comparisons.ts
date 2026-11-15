@@ -66,7 +66,7 @@ export function buildComparisons(snapshot: Snapshot) {
       text,
       dimension,
       lifecycle: "rolling",
-      evidence: refs(rows),
+      evidence: refs([...new Map(rows.map((row) => [row.id, row])).values()]),
       sourceDates: [...new Set(rows.map(day))].sort(),
       conditions,
       limitations: [],
@@ -106,6 +106,57 @@ export function buildComparisons(snapshot: Snapshot) {
       runs,
       { recent, highest },
       "7天区间按窗口结束日对齐；keyDays是已有系统分类，不等于同一种生理强度。四个最高量区间未必连续。",
+    );
+
+  const loadRows = snapshot.evidence.filter((e) => e.active && e.kind === "load");
+  const loadByDay = new Map(loadRows.map((e) => [String(e.content.date), e]));
+  const loadWeeks = [];
+  const loadSources: Evidence[] = [];
+  for (const week of recent) {
+    const rows = loadRows.filter((e) => String(e.content.date) >= week.start && String(e.content.date) <= week.end);
+    if (
+      rows.length !== 7 ||
+      new Set(rows.map((e) => e.content.date)).size !== 7 ||
+      rows.some(
+        (e) =>
+          finite(e.content.trainingDose) === null ||
+          Number(e.content.trainingDose) < 0 ||
+          !["complete", "rest_confirmed"].includes(String(e.content.coverageStatus)),
+      )
+    )
+      continue;
+    const totalDose = rows.reduce((s, e) => s + Number(e.content.trainingDose), 0);
+    if (totalDose <= 0) continue;
+    const ranked = rows.toSorted((a, b) => Number(b.content.trainingDose) - Number(a.content.trainingDose));
+    const peak = ranked[0];
+    if (!peak) continue;
+    const peakDay = String(peak.content.date),
+      prior = loadByDay.get(addDays(peakDay, -1));
+    const peakActivities = runs.filter((e) => day(e) === peakDay);
+    loadSources.push(...rows, ...peakActivities, ...(prior ? [prior] : []));
+    loadWeeks.push({
+      start: week.start,
+      end: week.end,
+      totalDose: round(totalDose),
+      peakDay,
+      peakDayDose: round(Number(peak.content.trainingDose)),
+      peakDaySharePct: round((Number(peak.content.trainingDose) / totalDose) * 100),
+      topTwoDaySharePct: round((ranked.slice(0, 2).reduce((s, e) => s + Number(e.content.trainingDose), 0) / totalDose) * 100),
+      acuteBefore: prior?.content.acuteLoad ?? null,
+      acuteAfter: peak.content.acuteLoad,
+      loadRatioAfter: peak.content.loadRatio,
+      peakActivities: peakActivities.map((e) => ({ sourceId: e.id, name: e.content.name, distanceKm: round(Number(e.content.distanceM) / 1000) })),
+    });
+  }
+  if (loadWeeks.length)
+    add(
+      "comparison-load-concentration",
+      "周内实际剂量的集中程度",
+      `最近覆盖完整的 ${loadWeeks.length} 个7天区间，最高剂量日占全周 ${loadWeeks.map((w) => w.peakDaySharePct).join("、")}% ，最高两日合计占 ${loadWeeks.map((w) => w.topTwoDaySharePct).join("、")}%。`,
+      "周内刺激与恢复布局",
+      loadSources,
+      loadWeeks,
+      "直接引用STRIDE已有daily load，不重算EWMA；仅完整覆盖周参与。集中度描述实际刺激分布，不据此诊断风险或自动放行加量。",
     );
 
   const longRows = runs.filter((e) => day(e) >= addDays(snapshot.endDay, -55) && Number(e.content.distanceM) >= 25000);
@@ -218,7 +269,7 @@ export function buildComparisons(snapshot: Snapshot) {
       "相近配速和距离下的天气对照",
       `找到 ${pairs.length} 对不复用活动的配对，较热一侧的平均心率差为 ${pairs.map((p) => `${p.hrDelta >= 0 ? "+" : ""}${p.hrDelta}`).join("、")} bpm。`,
       "环境与心率反应",
-      pairs.flatMap((p) => [p.hot, p.cool]),
+      eligible.flatMap((p) => [p.hot, p.cool]),
       {
         selected: pairs.map(pairView),
         allEligible: eligible.map(pairView),
