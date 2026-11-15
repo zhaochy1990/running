@@ -1453,7 +1453,9 @@
               "independent_activities": 0,
               "independent_days": 0,
               "reasons": [
-                "no_independent_HR_protocol_support",
+                "no_independent_HR_protocol_support"
+              ],
+              "rejected_reasons": [
                 "stale_HR_support"
               ],
               "limitations": [
@@ -1538,7 +1540,9 @@
               "independent_activities": 0,
               "independent_days": 0,
               "reasons": [
-                "no_independent_HR_protocol_support",
+                "no_independent_HR_protocol_support"
+              ],
+              "rejected_reasons": [
                 "stale_HR_support",
                 "HR_abrupt_spike_or_recovery",
                 "HR_range_suggests_recovery_or_artifact"
@@ -1574,6 +1578,214 @@
         "computed_shanghai": "2026-11-15 00:30",
         "rejected_evidence_day": "2026-11-13",
         "stale_evidence_day": "2026-09-14"
+      }
+    },
+    {
+      "name": "producer-current-hr-with-stale",
+      "response": {
+        "threshold": {
+          "hr_bpm": 170,
+          "pace_per_km_sec": null,
+          "algorithm_version": 4,
+          "as_of_date": "2026-11-15",
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "candidate",
+            "implementation": "hour_capability_v1+independent_hr_v1",
+            "parameter_version": "hour-v1-conservative-research+hr-v1-conservative-research",
+            "data_cutoff_day": "2026-11-15",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "constraints_only",
+              "target_type": "one_hour_running_capability",
+              "measurement_quality": "unknown",
+              "effort_support": "unknown",
+              "support": "none",
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "independent_activities": 0,
+              "independent_days": 0,
+              "reasons": [
+                "no_independent_maximal_anchors"
+              ],
+              "limitations": [
+                "research_parameters_not_independently_calibrated",
+                "environment_not_corrected",
+                "power_law_valid_only_180_to_7200s",
+                "range_is_sensitivity_not_95_percent_ci",
+                "long_duration_uses_monotone_envelope_not_precise_extrapolation"
+              ],
+              "evidence_count": 0
+            },
+            "hr": {
+              "method": "field_30min_last20_v1",
+              "target_type": "field_HR_proxy_not_physiological_LTHR",
+              "measurement_quality": "protocol_quality_gate_passed",
+              "effort_support": "confirmed_maximal",
+              "support": "low",
+              "range_meaning": "unavailable",
+              "evidence_date": "2026-11-14",
+              "latest_rejected_evidence_date": "2026-09-15",
+              "latest_stale_evidence_date": "2026-09-15",
+              "independent_activities": 1,
+              "independent_days": 1,
+              "reasons": [
+                "independent_HR_protocol_support"
+              ],
+              "rejected_reasons": [
+                "stale_HR_support"
+              ],
+              "limitations": [
+                "HR_research_quality_parameters_uncalibrated",
+                "field_proxy_is_not_physiological_LTHR",
+                "missing_cadence_cannot_exclude_cadence_lock"
+              ],
+              "evidence": [
+                {
+                  "activity_id": "synthetic-current-valid",
+                  "root_activity_id": "synthetic-current-valid",
+                  "activity_day": "2026-11-14",
+                  "source_version": "SYNTHETIC-current-with-rejection-v1",
+                  "evidence_ref": "SYNTHETIC-not-accuracy",
+                  "start_s": 600,
+                  "end_s": 1800,
+                  "measurement_quality": "protocol_quality_gate_passed",
+                  "effort_support": "confirmed_maximal"
+                }
+              ],
+              "evidence_count": 1
+            }
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "170",
+        "evidence_day": null,
+        "hr_evidence_day": "2026-11-14",
+        "cutoff_day": "2026-11-15",
+        "computed_shanghai": null,
+        "current_hr_supported": true,
+        "rejected_evidence_day": "2026-09-15",
+        "stale_evidence_day": "2026-09-15"
+      },
+      "server_expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "170",
+        "evidence_day": null,
+        "hr_evidence_day": "2026-11-14",
+        "cutoff_day": "2026-11-15",
+        "computed_shanghai": "2026-11-15 00:30",
+        "current_hr_supported": true,
+        "rejected_evidence_day": "2026-09-15",
+        "stale_evidence_day": "2026-09-15"
+      }
+    },
+    {
+      "name": "producer-current-hr-with-quality",
+      "response": {
+        "threshold": {
+          "hr_bpm": 170,
+          "pace_per_km_sec": null,
+          "algorithm_version": 4,
+          "as_of_date": "2026-11-15",
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "candidate",
+            "implementation": "hour_capability_v1+independent_hr_v1",
+            "parameter_version": "hour-v1-conservative-research+hr-v1-conservative-research",
+            "data_cutoff_day": "2026-11-15",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "constraints_only",
+              "target_type": "one_hour_running_capability",
+              "measurement_quality": "unknown",
+              "effort_support": "unknown",
+              "support": "none",
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "independent_activities": 0,
+              "independent_days": 0,
+              "reasons": [
+                "no_independent_maximal_anchors"
+              ],
+              "limitations": [
+                "research_parameters_not_independently_calibrated",
+                "environment_not_corrected",
+                "power_law_valid_only_180_to_7200s",
+                "range_is_sensitivity_not_95_percent_ci",
+                "long_duration_uses_monotone_envelope_not_precise_extrapolation"
+              ],
+              "evidence_count": 0
+            },
+            "hr": {
+              "method": "field_30min_last20_v1",
+              "target_type": "field_HR_proxy_not_physiological_LTHR",
+              "measurement_quality": "protocol_quality_gate_passed",
+              "effort_support": "confirmed_maximal",
+              "support": "low",
+              "range_meaning": "unavailable",
+              "evidence_date": "2026-11-14",
+              "latest_rejected_evidence_date": "2026-11-15",
+              "independent_activities": 1,
+              "independent_days": 1,
+              "reasons": [
+                "independent_HR_protocol_support"
+              ],
+              "rejected_reasons": [
+                "HR_abrupt_spike_or_recovery",
+                "HR_range_suggests_recovery_or_artifact"
+              ],
+              "limitations": [
+                "HR_research_quality_parameters_uncalibrated",
+                "field_proxy_is_not_physiological_LTHR",
+                "missing_cadence_cannot_exclude_cadence_lock"
+              ],
+              "evidence": [
+                {
+                  "activity_id": "synthetic-current-valid",
+                  "root_activity_id": "synthetic-current-valid",
+                  "activity_day": "2026-11-14",
+                  "source_version": "SYNTHETIC-current-with-rejection-v1",
+                  "evidence_ref": "SYNTHETIC-not-accuracy",
+                  "start_s": 600,
+                  "end_s": 1800,
+                  "measurement_quality": "protocol_quality_gate_passed",
+                  "effort_support": "confirmed_maximal"
+                }
+              ],
+              "evidence_count": 1
+            }
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "170",
+        "evidence_day": null,
+        "hr_evidence_day": "2026-11-14",
+        "cutoff_day": "2026-11-15",
+        "computed_shanghai": null,
+        "current_hr_supported": true,
+        "rejected_evidence_day": "2026-11-15"
+      },
+      "server_expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "170",
+        "evidence_day": null,
+        "hr_evidence_day": "2026-11-14",
+        "cutoff_day": "2026-11-15",
+        "computed_shanghai": "2026-11-15 00:30",
+        "current_hr_supported": true,
+        "rejected_evidence_day": "2026-11-15"
       }
     }
   ]

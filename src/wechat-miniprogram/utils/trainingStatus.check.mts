@@ -185,9 +185,12 @@ for (const vector of displayVectors.cases) {
     const staleDay = vector.expected.stale_evidence_day;
     if (staleDay) eq(display.hr.lines.includes(`最近陈旧协议日 ${staleDay}`), true, `${vector.name} stale date`);
     eq(display.hr.lines.includes(`最近未采用证据日 ${vector.expected.rejected_evidence_day}`), vector.expected.rejected_evidence_day !== staleDay, `${vector.name} distinct rejected date without duplication`);
-    if (vector.name === 'producer-stale-hr-mixed') eq(display.hr.lines.includes('心率存在突变或恢复，协议未采用'), true, 'actual quality rejection explained');
-    eq(display.hr.lines.includes('心率支持证据陈旧'), true, `${vector.name} stale reason`);
-    eq(display.hr.support, '模型支持：不足', `${vector.name} no revived support`);
+    if (vector.name === 'producer-stale-hr-mixed' || vector.name.endsWith('-quality')) eq(display.hr.lines.includes('未采用协议：心率存在突变或恢复'), true, 'historical quality rejection explained');
+    eq(display.hr.lines.includes('未采用历史协议（不参与当前估计）'), true, `${vector.name} explicit historical scope`);
+    if (staleDay) eq(display.hr.lines.includes('未采用协议：协议证据已过期'), true, `${vector.name} historical stale reason`);
+    eq(display.hr.lines.includes('心率支持证据陈旧'), false, `${vector.name} current support not mislabeled stale`);
+    eq(display.hr.support, vector.expected.current_hr_supported ? '模型支持：低' : '模型支持：不足', `${vector.name} current support unchanged`);
+    if (vector.expected.current_hr_supported) eq(display.hr.evidenceDay, vector.expected.hr_evidence_day, `${vector.name} selected evidence unchanged`);
   }
   if (vector.expected.source_unavailable) {
     eq(display.pace.support, '来源信息不可用 · 保守参考', `${vector.name} conservative support`);

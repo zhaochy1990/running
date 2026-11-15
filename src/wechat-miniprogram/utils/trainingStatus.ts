@@ -478,6 +478,7 @@ const CALIBRATION_WORDS: Record<string, string> = {
   conflicting_evidence_robust_fit_low_support: '证据冲突，模型支持降低',
   root_HR_alias_conflict: '同一活动的心率证据存在冲突',
   independent_HR_protocols_disagree_over_6_bpm: '独立心率测试结果不一致',
+  independent_HR_protocol_support: '存在独立心率协议支持',
   HR_abrupt_spike_or_recovery: '心率存在突变或恢复，协议未采用',
   HR_sustained_recovery_drop_over_10_bpm: '心率存在持续恢复下降，协议未采用',
   HR_range_suggests_recovery_or_artifact: '心率范围提示恢复或测量异常，协议未采用',
@@ -555,6 +556,15 @@ export function projectCalibration(zones: import('../types/health').StrideZonesR
       for (const reason of reasons) {
         const text = calibrationWord(reason, '服务端报告其他限制，当前估计需保守参考');
         if (!lines.includes(text)) lines.push(text);
+      }
+      if (detail.rejected_reasons?.length) {
+        lines.push('未采用历史协议（不参与当前估计）');
+        for (const reason of detail.rejected_reasons) {
+          const text = reason.toLowerCase().includes('stale') ? '协议证据已过期'
+            : reason.startsWith('HR_') && CALIBRATION_WORDS[reason] ? CALIBRATION_WORDS[reason].replace('，协议未采用', '') : '其他历史协议未采用原因';
+          const line = `未采用协议：${text}`;
+          if (!lines.includes(line)) lines.push(line);
+        }
       }
       help.push(`独立支持：${detail.independent_activities ?? 0} 次活动 / ${detail.independent_days ?? 0} 天`);
       for (const evidence of (detail.evidence ?? []).slice(0, 3)) {

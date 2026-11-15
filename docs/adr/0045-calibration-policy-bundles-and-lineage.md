@@ -38,7 +38,13 @@ excludes raw observations, samples, coordinates and notes. Speed evidence day
 with a center is the actual maximal anchor day; today's nonbinding easy run
 cannot refresh it. HR uses selected protocol evidence day. A separate
 `latest_rejected_evidence_date`, a distinct `latest_stale_evidence_date`, and bounded categorical rejection/quality reasons
-retain stale or rejected protocol explanations. A newer quality rejection cannot
+retain stale or rejected protocol explanations. `reasons` describes the current
+estimate; optional bounded `rejected_reasons` describes unselected historical
+protocols. A current selected HR center/support/date is not marked stale because
+an older rejected protocol is stale. Clients and the Coach tool label that
+history as non-contributing. Missing current support still has its current
+unavailable reason and retains separate rejection explanations.
+A newer quality rejection cannot
 overwrite the older stale-protocol date; these never contribute a center,
 range, support count or selected-evidence freshness. v3 remains a legacy
 training estimate and is not relabelled independent physiological detection.

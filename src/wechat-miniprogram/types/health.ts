@@ -126,6 +126,7 @@ export interface CalibrationMetricSource {
   evidence_date?: string;
   latest_rejected_evidence_date?: string;
   latest_stale_evidence_date?: string;
+  rejected_reasons?: string[];
   independent_activities: number;
   independent_days: number;
   lab_method?: string;

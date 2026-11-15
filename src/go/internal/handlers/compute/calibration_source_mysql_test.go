@@ -139,7 +139,7 @@ func TestStaleHRProducerPersistsRejectedReasonAndDateMySQL(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, err := st.ReadEffectiveRunningCalibration(ctx, uid, today.Format("2006-01-02"), storage.CalibrationCandidate)
-	if err != nil || b.Snapshot == nil || b.Snapshot.ThresholdHR != nil || b.Source.HR.Support != "none" || b.Source.HR.EvidenceCount != 0 || b.Source.HR.EvidenceDate != "" || b.Source.HR.LatestRejectedEvidenceDate != old.Format("2006-01-02") || !strings.Contains(strings.Join(b.Source.HR.Reasons, ","), "stale_HR_support") {
+	if err != nil || b.Snapshot == nil || b.Snapshot.ThresholdHR != nil || b.Source.HR.Support != "none" || b.Source.HR.EvidenceCount != 0 || b.Source.HR.EvidenceDate != "" || b.Source.HR.LatestRejectedEvidenceDate != old.Format("2006-01-02") || !strings.Contains(strings.Join(b.Source.HR.RejectedReasons, ","), "stale_HR_support") {
 		t.Fatalf("persisted stale protocol revived/lost %+v %v", b.Source.HR, err)
 	}
 	// A recent quality rejection must not overwrite the older stale date.
@@ -167,7 +167,7 @@ func TestStaleHRProducerPersistsRejectedReasonAndDateMySQL(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, err = st.ReadEffectiveRunningCalibration(ctx, uid, today.Format("2006-01-02"), storage.CalibrationCandidate)
-	if err != nil || b.Snapshot == nil || b.Source.HR == nil || b.Snapshot.ThresholdHR != nil || b.Source.HR.Support != "none" || b.Source.HR.EvidenceCount != 0 || b.Source.HR.EvidenceDate != "" || b.Source.HR.LatestStaleEvidenceDate != old.Format("2006-01-02") || b.Source.HR.LatestRejectedEvidenceDate != recent.ActivityDate.Format("2006-01-02") || !strings.Contains(strings.Join(b.Source.HR.Reasons, ","), "HR_abrupt_spike_or_recovery") {
+	if err != nil || b.Snapshot == nil || b.Source.HR == nil || b.Snapshot.ThresholdHR != nil || b.Source.HR.Support != "none" || b.Source.HR.EvidenceCount != 0 || b.Source.HR.EvidenceDate != "" || b.Source.HR.LatestStaleEvidenceDate != old.Format("2006-01-02") || b.Source.HR.LatestRejectedEvidenceDate != recent.ActivityDate.Format("2006-01-02") || !strings.Contains(strings.Join(b.Source.HR.RejectedReasons, ","), "HR_abrupt_spike_or_recovery") {
 		t.Fatalf("mixed persisted rejection date conflated: %+v %v", b.Source.HR, err)
 	}
 	t.Log("actual synthetic producer -> Publish -> real MySQL active-policy candidate reader retains stale reason/rejected date, without HR center/support")
@@ -175,3 +175,65 @@ func TestStaleHRProducerPersistsRejectedReasonAndDateMySQL(t *testing.T) {
 
 func testCalibrationJob(user, input string) *job.Job { return &job.Job{UserID: user, InputJSON: input} }
 func testCalibrationHeartbeat(string, int) error     { return nil }
+
+func TestCurrentHRAndRejectedProtocolSourcesPersistSeparatelyMySQL(t *testing.T) {
+	ctx, st := openCalibrationReviewMySQL(t)
+	uid := uuid.NewString()
+	defer func() {
+		if err := st.DeleteUserData(ctx, uid); err != nil {
+			t.Error(err)
+		}
+	}()
+	day := timefmt.ShanghaiToday()
+	for _, kind := range []string{"stale", "quality"} {
+		var acts []calibration.Activity
+		var metadata []calibration.CandidateMetadata
+		for i := 0; i < 2; i++ {
+			id := "synthetic-valid-current"
+			date := day.AddDate(0, 0, -1)
+			if i == 1 {
+				id = "synthetic-rejected"
+				date = day.AddDate(0, 0, -61)
+				if kind == "quality" {
+					date = day
+				}
+			}
+			duration := 1800.
+			a := calibration.Activity{LabelID: id, ActivityDate: date, Sport: "run", DurationS: &duration}
+			for sec := 0; sec <= 1800; sec += 5 {
+				clock := float64(sec)
+				hr := 170.
+				if i == 1 && kind == "quality" && sec == 900 {
+					hr = 220
+				}
+				a.Samples = append(a.Samples, calibration.Sample{ElapsedS: &clock, HeartRateBpm: &hr})
+			}
+			acts = append(acts, a)
+			metadata = append(metadata, calibration.CandidateMetadata{ActivityID: id, RootActivityID: id, SourceVersion: "SYNTHETIC-current-rejection-v1", EvidenceRef: "SYNTHETIC-not-accuracy", Protocol: "continuous_maximal_test_v1", ProtocolVerified: true, DurationS: 1800, StartS: floatPtr(0), EndS: floatPtr(1800), HR: &calibration.CandidateHRMetadata{Protocol: "field_30min_last20_v1", Verified: true, Sensor: "chest_strap"}})
+		}
+		result, err := calibration.EstimateOfflineWithEvidence(calibration.StrategyCandidate, acts, day, nil, metadata)
+		if err != nil {
+			t.Fatal(err)
+		}
+		source := calibration.SummarizeSource(result)
+		raw, _ := json.Marshal(source)
+		text := string(raw)
+		row := toStorageSnapshot(uid, result.Snapshot)
+		row.SourceJSON = &text
+		if _, err := st.PublishRunningCalibration(ctx, row, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+		b, err := st.ReadEffectiveRunningCalibration(ctx, uid, day.Format("2006-01-02"), storage.CalibrationCandidate)
+		if err != nil || b.Snapshot == nil || b.Snapshot.ThresholdHR == nil || *b.Snapshot.ThresholdHR != 170 || b.Source.HR == nil || b.Source.HR.Support != "low" || b.Source.HR.EvidenceDate != day.AddDate(0, 0, -1).Format("2006-01-02") || b.Source.HR.EvidenceCount != 1 {
+			t.Fatalf("current HR source changed: %+v %v", b.Source.HR, err)
+		}
+		code := "stale_HR_support"
+		if kind == "quality" {
+			code = "HR_abrupt_spike_or_recovery"
+		}
+		if strings.Contains(strings.Join(b.Source.HR.Reasons, ","), code) || !strings.Contains(strings.Join(b.Source.HR.RejectedReasons, ","), code) {
+			t.Fatalf("rejection scope contaminated current: %+v", b.Source.HR)
+		}
+	}
+	t.Log("current170/low/selected date preserved; old stale and quality rejection persist only as rejected_reasons")
+}

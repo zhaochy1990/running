@@ -120,7 +120,7 @@ func TestCalibrationStaleClientProducerVector(t *testing.T) {
 		t.Fatalf("stale protocol revived or lost date: %+v", source.HR)
 	}
 	found := false
-	for _, r := range source.HR.Reasons {
+	for _, r := range source.HR.RejectedReasons {
 		if r == "stale_HR_support" {
 			found = true
 		}
@@ -226,4 +226,93 @@ func TestCalibrationMixedStaleClientProducerVector(t *testing.T) {
 		}
 	}
 	t.Fatal("missing actual mixed producer vector")
+}
+
+func clientCurrentHRWithRejectedResult(t *testing.T, kind string) calibration.OfflineResult {
+	t.Helper()
+	cutoff := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
+	var activities []calibration.Activity
+	var metadata []calibration.CandidateMetadata
+	for i := 0; i < 2; i++ {
+		id := "synthetic-current-valid"
+		day := cutoff.AddDate(0, 0, -1)
+		if i == 1 {
+			id = "synthetic-history-rejected"
+			day = cutoff.AddDate(0, 0, -61)
+			if kind == "quality" {
+				day = cutoff
+			}
+		}
+		duration := 1800.
+		a := calibration.Activity{LabelID: id, ActivityDate: day, Sport: "run", DurationS: &duration}
+		for second := 0; second <= 1800; second += 5 {
+			sec := float64(second)
+			hr := 170.
+			if i == 1 && kind == "quality" && second == 900 {
+				hr = 220
+			}
+			a.Samples = append(a.Samples, calibration.Sample{ElapsedS: &sec, HeartRateBpm: &hr})
+		}
+		activities = append(activities, a)
+		metadata = append(metadata, calibration.CandidateMetadata{ActivityID: id, RootActivityID: id, SourceVersion: "SYNTHETIC-current-with-rejection-v1", EvidenceRef: "SYNTHETIC-not-accuracy", Protocol: "continuous_maximal_test_v1", ProtocolVerified: true, DurationS: 1800, StartS: fptr(0), EndS: fptr(1800), HR: &calibration.CandidateHRMetadata{Protocol: "field_30min_last20_v1", Verified: true, Sensor: "chest_strap"}})
+	}
+	r, err := calibration.EstimateOfflineWithEvidence(calibration.StrategyCandidate, activities, cutoff, nil, metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+func TestCalibrationCurrentHRRejectionProducerVectors(t *testing.T) {
+	raw, err := os.ReadFile("../../../../docs/calibration/fixtures/client-display-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		Cases []struct {
+			Name     string              `json:"name"`
+			Response strideZonesResponse `json:"response"`
+		} `json:"cases"`
+	}
+	if err = json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	var exports []map[string]any
+	for _, kind := range []string{"stale", "quality"} {
+		r := clientCurrentHRWithRejectedResult(t, kind)
+		source := calibration.SummarizeSource(r)
+		encoded, _ := json.Marshal(source)
+		text := string(encoded)
+		source = calibration.ParseSource(&text)
+		if r.Snapshot.ThresholdHR == nil || *r.Snapshot.ThresholdHR != 170 || source.HR.Support != "low" || source.HR.EvidenceDate != "2026-11-14" || source.HR.EvidenceCount != 1 {
+			t.Fatalf("current HR changed %+v", source.HR)
+		}
+		for _, reason := range source.HR.Reasons {
+			if reason == "stale_HR_support" || reason == "HR_abrupt_spike_or_recovery" {
+				t.Fatal("historical rejection contaminated current reasons")
+			}
+		}
+		name := "producer-current-hr-with-" + kind
+		exports = append(exports, map[string]any{"name": name, "source": source})
+	}
+	if output := os.Getenv("STRIDE_990_CURRENT_HR_PRODUCER_OUTPUT"); output != "" {
+		raw, _ := json.MarshalIndent(exports, "", "  ")
+		if err := os.WriteFile(output, raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, item := range exports {
+		found := false
+		for _, c := range fixture.Cases {
+			if c.Name == item["name"] {
+				found = true
+				source := item["source"].(calibration.SourceSummary)
+				if c.Response.Threshold == nil || c.Response.Threshold.HRBpm == nil || *c.Response.Threshold.HRBpm != 170 || !reflect.DeepEqual(c.Response.Threshold.Source, &source) {
+					t.Fatal("current/rejected shared vector differs from actual producer")
+				}
+			}
+		}
+		if !found {
+			t.Fatal("missing current/rejected producer vector", item["name"])
+		}
+	}
 }

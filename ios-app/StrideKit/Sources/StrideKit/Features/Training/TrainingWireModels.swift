@@ -730,11 +730,13 @@ public struct CalibrationMetricSource: Decodable, Hashable, Sendable {
     public let independentDays: Int?
     public let labMethod: String?
     public let reasons: [String]?
+    public let rejectedReasons: [String]?
     public let limitations: [String]?
     public let evidenceCount: Int?
     public let evidence: [CalibrationEvidence]?
     enum CodingKeys: String, CodingKey {
         case method, support, reasons, limitations, evidence
+        case rejectedReasons = "rejected_reasons"
         case targetType = "target_type"
         case measurementQuality = "measurement_quality"
         case effortSupport = "effort_support"

@@ -55,6 +55,7 @@ const metric = z.object({
   independent_days: integer,
   lab_method: optionalText,
   reasons: strings,
+  rejected_reasons: strings.optional(),
   limitations: strings,
   evidence: z
     .array(evidence)

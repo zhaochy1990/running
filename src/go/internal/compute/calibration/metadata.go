@@ -36,6 +36,7 @@ type MetricSource struct {
 	IndependentDays            int               `json:"independent_days"`
 	LabMethod                  string            `json:"lab_method,omitempty"`
 	Reasons                    []string          `json:"reasons"`
+	RejectedReasons            []string          `json:"rejected_reasons,omitempty"`
 	Limitations                []string          `json:"limitations"`
 	Evidence                   []EvidenceSummary `json:"evidence,omitempty"`
 	EvidenceCount              int               `json:"evidence_count"`
@@ -77,8 +78,8 @@ func ParseSource(raw *string) SourceSummary {
 	return out
 }
 
-// SummarizeSource retains only actual model contributors. New ordinary training
-// cannot refresh the evidence day of an older maximal anchor.
+// SummarizeSource separates actual model contributors from bounded rejected
+// protocol history. Ordinary training cannot refresh an older maximal anchor.
 func SummarizeSource(result OfflineResult) SourceSummary {
 	out := SourceSummary{SchemaVersion: 1, State: "available", Strategy: string(result.Strategy), Implementation: result.Implementation, ParameterVersion: result.ParameterVersion, DataCutoffDay: result.Snapshot.AsOfDate.Format("2006-01-02"), AvailabilitySemantics: "event_date_retrospective"}
 	legacy := func(target, support string) *MetricSource {
@@ -137,8 +138,8 @@ func SummarizeSource(result OfflineResult) SourceSummary {
 		}
 		for _, e := range h.Observations {
 			if !e.Selected {
-				// Rejected protocol evidence explains absence without becoming a
-				// contributor or refreshing the selected evidence date/support.
+				// Rejected protocols remain historical records, without changing
+				// current estimate reasons, contributors, support or freshness.
 				if e.Protocol != "" && e.Protocol != "none" {
 					day := e.ActivityDate.Format("2006-01-02")
 					if day > m.LatestRejectedEvidenceDate {
@@ -148,7 +149,7 @@ func SummarizeSource(result OfflineResult) SourceSummary {
 						if reason == "stale_HR_support" && day > m.LatestStaleEvidenceDate {
 							m.LatestStaleEvidenceDate = day
 						}
-						m.Reasons = appendReason(m.Reasons, reason)
+						m.RejectedReasons = appendReason(m.RejectedReasons, reason)
 					}
 				}
 				continue
@@ -174,6 +175,9 @@ func boundSourceMetric(m *MetricSource) {
 	if len(m.Evidence) > 16 {
 		m.Evidence = m.Evidence[:16]
 	}
+	if len(m.RejectedReasons) > 16 {
+		m.RejectedReasons = m.RejectedReasons[:16]
+	}
 	if len(m.Reasons) > 16 {
 		m.Reasons = m.Reasons[:16]
 	}
@@ -183,6 +187,9 @@ func boundSourceMetric(m *MetricSource) {
 	limit := limitSourceString
 	for _, p := range []*string{&m.Method, &m.TargetType, &m.MeasurementQuality, &m.EffortSupport, &m.Support, &m.RangeMeaning, &m.EvidenceDate, &m.LatestRejectedEvidenceDate, &m.LatestStaleEvidenceDate, &m.LabMethod} {
 		limit(p)
+	}
+	for i := range m.RejectedReasons {
+		limit(&m.RejectedReasons[i])
 	}
 	for i := range m.Reasons {
 		limit(&m.Reasons[i])

@@ -49,7 +49,8 @@ export function createRunningCalibrationTools(store: DataProvider): StructuredTo
       name: "get_running_calibration",
       description:
         "获取运动员最新的 STRIDE 跑步校准数据：乳酸阈值心率、乳酸阈值配速（thresholdPaceSPerKm，秒/公里），以及心率区间和配速区间。" +
-        "返回 null 表示校准尚未计算，不能自行估算或假设。",
+        "返回 null 表示校准尚未计算，不能自行估算或假设。" +
+        "source.hr.reasons解释当前估计；rejected_reasons及未采用协议日期仅记录历史拒绝，不参与当前支持，不能据此把仍有有效证据的估计说成过期。",
       schema: getRunningCalibrationSchema,
       handler: (input, runtime) => impl.getRunningCalibration(input, runtime),
     },
