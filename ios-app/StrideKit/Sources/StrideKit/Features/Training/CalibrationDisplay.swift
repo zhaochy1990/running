@@ -90,7 +90,9 @@ public func calibrationDisplay(_ response: StrideZonesResponse?, metric: Calibra
 
 private func calibrationNumber(_ value: Double?) -> String {
     guard let value, value.isFinite, value >= 0, value < Double(Int.max) else { return "—" }
-    return Fmt.intStr(value.rounded(.toNearestOrEven))
+    // HR remains a fractional wire value; use positive ties-up, matching the
+    // Web/MP Math.round display contract. Pace has its own server-integer path.
+    return Fmt.intStr(value.rounded(.toNearestOrAwayFromZero))
 }
 
 private func calibrationPace(_ seconds: Double?) -> String {
@@ -130,7 +132,7 @@ private func calibrationMethod(_ value: String?) -> String {
     case "constraints_only": "仅约束，未形成中心估计"
     case "insufficient_maximal_support": "全力支持不足，未形成中心估计"
     case "field_test_protocol", "field_30min_last20_v1": "场地测试协议（30分钟测试的后20分钟）"
-    case "lab_lthr_report_v1": "实验室方法特定乳酸阈值报告"
+    case "lab_lthr_report_v1": "实验室乳酸阈值报告"
     case "legacy_training_estimate", "legacy_v3_training_estimate": "旧版训练估计"
     default: "未知方法，保守解读"
     }

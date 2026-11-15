@@ -2,7 +2,7 @@
 
 使用 `docs/calibration/fixtures/client-display-v1.json` 的统一工程案例。它们仅验证工程行为，不是准确性或候选上线证据。生产仍 active=v3，候选 release_ready=false。
 
-`CalibrationDisplayTests` 读取同一份 fixture，核对服务端整数秒/km、快慢范围方向、单侧约束、HR、证据日、输入截止日和上海执行时刻；客户端不从 m/s 另算能力。`CalibrationLocalServiceTests` 在显式环境变量存在时，通过真实 URLSession/APIClient、签名 JWT 和隔离 MySQL+Gin 服务逐案验证原始响应 SHA256，并经普通 AppModel.bootstrap → TrainingStatusModel 五端点读取页面模型。不会注册真实用户、读写生产或打印 token。repository 的真实连接拒绝与下方原生 UI 故障恢复分别验证，不互相替代。
+`CalibrationDisplayTests` 读取同一份 fixture，核对服务端整数秒/km、快慢范围方向、单侧约束、HR、证据日、输入截止日和上海执行时刻；客户端不从 m/s 另算能力。HR小数中心与范围以正数最近取整、半点向上展示（166.5→167），与Web/MP相同；不能把服务端配速的half-even规则套到HR。`CalibrationLocalServiceTests` 在显式环境变量存在时，通过真实 URLSession/APIClient、签名 JWT 和隔离 MySQL+Gin 服务逐案验证原始响应 SHA256，并经普通 AppModel.bootstrap → TrainingStatusModel 五端点读取页面模型。不会注册真实用户、读写生产或打印 token。repository 的真实连接拒绝与下方原生 UI 故障恢复分别验证，不互相替代。
 
 ```sh
 cd ios-app/StrideKit
