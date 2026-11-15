@@ -46,3 +46,7 @@ go run ./cmd/stride calibration replay --manifest /tmp/stride-983/private/fresh-
 ```
 
 CLI应以2退出表示 `insufficient`；回放成功不等于准确性门槛通过。生产入口与冻结golden/hash门禁必须继续通过。
+
+合并公共数据工具后的组合验证（代码 `792e4670`）：指定四包普通测试及前三包 race 检查全部通过。CLI固定manifest内容 hash `2bae124b7a22d414a8b3156e5a13ee953d424916fcad16141ab3336a727d924f`，v3源码 hash `1d20459b1d72095d775e69ce928aebde8540753a1c6631d5cf05fb35e0bc5826`；重复两次三版本回放分别8.93/7.76秒，均exit2/insufficient，完整精简证据报告2,023,528字节，SHA256均为 `0423ff3b344f0da52e742f6d5ef63c85ab8236789b1df85a18210086a149005a`。报告约2MB包含两份977候选的质量及活动级原因，不含重复原始Samples/Laps。
+
+[已核查来源与适配](public-datasets.md) 的真实OSF数据也经公开纯函数实跑：21场/75,632个真实时钟点，7种时长共147个候选，21个完整3600s窗口；147个high仅指测量质量，0个距离/积分冲突，最大速度差0.000640m/s，约71ms。输入无绝对日期，直接送纯测量函数，未编造日期、逐点HR或此前训练史；这是真实连续测量smoke，不能当独立历史预测准确性验收。
