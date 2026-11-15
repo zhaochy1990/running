@@ -20,6 +20,9 @@ function reasonText(code: string): string {
   if (code.toLowerCase().includes("stale")) return "证据陈旧，需更新有效证据";
   if (["insufficient_maximal_support", "no_maximal_anchor", "no_independent_maximal_anchors"].includes(code)) return "缺少独立近全力证据";
   if (code === "hour_extrapolation_not_identified_by_independent_recent_anchors") return "近期独立锚点不足，无法推断一小时能力";
+  if (code === "HR_abrupt_spike_or_recovery") return "心率存在突变或恢复，协议未采用";
+  if (code === "HR_sustained_recovery_drop_over_10_bpm") return "心率存在持续恢复下降，协议未采用";
+  if (code === "HR_range_suggests_recovery_or_artifact") return "心率范围提示恢复或测量异常，协议未采用";
   if (code === "no_independent_HR_protocol_support") return "缺少独立心率协议支持";
   if (code === "research_parameters_not_independently_calibrated") return "研究参数尚未独立校准";
   if (code === "environment_not_corrected") return "未校正环境差异";
@@ -61,7 +64,8 @@ export function calibrationDisplay(threshold: StrideThreshold | null | undefined
       else details.push("训练心率估计，不是独立实验室检测值");
     }
     details.push(`证据日 ${m.evidence_date || "未提供"}`);
-    if (m.latest_rejected_evidence_date) details.push(`最近未采用证据日 ${m.latest_rejected_evidence_date}`);
+    if (m.latest_stale_evidence_date) details.push(`最近陈旧协议日 ${m.latest_stale_evidence_date}`);
+    if (m.latest_rejected_evidence_date && m.latest_rejected_evidence_date !== m.latest_stale_evidence_date) details.push(`最近未采用证据日 ${m.latest_rejected_evidence_date}`);
     details.push(`独立活动 ${m.independent_activities ?? 0} 次 · ${m.independent_days ?? 0} 天`);
     const e = m.evidence?.[0];
     if (e) {

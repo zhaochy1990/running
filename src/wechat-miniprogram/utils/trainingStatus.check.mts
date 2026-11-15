@@ -182,7 +182,10 @@ for (const vector of displayVectors.cases) {
   eq(display.pace.range, vector.expected.pace_range, `${vector.name} directional range`);
   eq(display.hr.value, vector.expected.hr, `${vector.name} HR`);
   if (vector.expected.rejected_evidence_day) {
-    eq(display.hr.lines.includes(`最近未采用证据日 ${vector.expected.rejected_evidence_day}`), true, `${vector.name} rejected date`);
+    const staleDay = vector.expected.stale_evidence_day;
+    if (staleDay) eq(display.hr.lines.includes(`最近陈旧协议日 ${staleDay}`), true, `${vector.name} stale date`);
+    eq(display.hr.lines.includes(`最近未采用证据日 ${vector.expected.rejected_evidence_day}`), vector.expected.rejected_evidence_day !== staleDay, `${vector.name} distinct rejected date without duplication`);
+    if (vector.name === 'producer-stale-hr-mixed') eq(display.hr.lines.includes('心率存在突变或恢复，协议未采用'), true, 'actual quality rejection explained');
     eq(display.hr.lines.includes('心率支持证据陈旧'), true, `${vector.name} stale reason`);
     eq(display.hr.support, '模型支持：不足', `${vector.name} no revived support`);
   }

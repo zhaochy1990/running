@@ -18,6 +18,7 @@ import Testing
                 let lab_method: String?
                 let source_unavailable: Bool?
                 let rejected_evidence_day: String?
+                let stale_evidence_day: String?
             }
             let name: String
             let response: StrideZonesResponse
@@ -50,7 +51,9 @@ import Testing
 
     static func assertAdditionalDisplays(_ expected: Fixture.Case.Expected, pace: CalibrationDisplay, hr: CalibrationDisplay) {
         if let day = expected.rejected_evidence_day {
-            #expect(hr.details.contains("最近未采用证据日 \(day)"))
+            if let stale = expected.stale_evidence_day { #expect(hr.details.contains("最近陈旧协议日 \(stale)")) }
+            #expect(hr.details.contains("最近未采用证据日 \(day)") == (day != expected.stale_evidence_day))
+            if let stale = expected.stale_evidence_day, day != stale { #expect(hr.details.contains("心率存在突变或恢复，协议未采用")) }
             #expect(hr.details.contains { $0.contains("陈旧") })
             #expect(hr.support == "能力支持：不足")
         }

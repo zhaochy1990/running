@@ -1449,6 +1449,7 @@
               "support": "none",
               "range_meaning": "unavailable",
               "latest_rejected_evidence_date": "2026-09-14",
+              "latest_stale_evidence_date": "2026-09-14",
               "independent_activities": 0,
               "independent_days": 0,
               "reasons": [
@@ -1474,7 +1475,8 @@
         "evidence_day": "2026-09-14",
         "cutoff_day": "2026-11-14",
         "computed_shanghai": null,
-        "rejected_evidence_day": "2026-09-14"
+        "rejected_evidence_day": "2026-09-14",
+        "stale_evidence_day": "2026-09-14"
       },
       "server_expected": {
         "pace": "—",
@@ -1483,7 +1485,95 @@
         "evidence_day": "2026-09-14",
         "cutoff_day": "2026-11-14",
         "computed_shanghai": "2026-11-15 00:30",
-        "rejected_evidence_day": "2026-09-14"
+        "rejected_evidence_day": "2026-09-14",
+        "stale_evidence_day": "2026-09-14"
+      }
+    },
+    {
+      "name": "producer-stale-hr-mixed",
+      "response": {
+        "threshold": {
+          "pace_per_km_sec": null,
+          "hr_bpm": null,
+          "algorithm_version": 4,
+          "as_of_date": "2026-11-14",
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "candidate",
+            "implementation": "hour_capability_v1+independent_hr_v1",
+            "parameter_version": "hour-v1-conservative-research+hr-v1-conservative-research",
+            "data_cutoff_day": "2026-11-14",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "constraints_only",
+              "target_type": "one_hour_running_capability",
+              "measurement_quality": "unknown",
+              "effort_support": "unknown",
+              "support": "none",
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "independent_activities": 0,
+              "independent_days": 0,
+              "reasons": [
+                "no_independent_maximal_anchors"
+              ],
+              "limitations": [
+                "research_parameters_not_independently_calibrated",
+                "environment_not_corrected",
+                "power_law_valid_only_180_to_7200s",
+                "range_is_sensitivity_not_95_percent_ci",
+                "long_duration_uses_monotone_envelope_not_precise_extrapolation"
+              ],
+              "evidence_count": 0
+            },
+            "hr": {
+              "method": "none",
+              "target_type": "unavailable",
+              "measurement_quality": "unknown",
+              "effort_support": "unknown",
+              "support": "none",
+              "range_meaning": "unavailable",
+              "latest_rejected_evidence_date": "2026-11-13",
+              "latest_stale_evidence_date": "2026-09-14",
+              "independent_activities": 0,
+              "independent_days": 0,
+              "reasons": [
+                "no_independent_HR_protocol_support",
+                "stale_HR_support",
+                "HR_abrupt_spike_or_recovery",
+                "HR_range_suggests_recovery_or_artifact"
+              ],
+              "limitations": [
+                "HR_research_quality_parameters_uncalibrated",
+                "field_proxy_is_not_physiological_LTHR",
+                "missing_cadence_cannot_exclude_cadence_lock"
+              ],
+              "evidence_count": 0
+            }
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "—",
+        "evidence_day": null,
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": null,
+        "rejected_evidence_day": "2026-11-13",
+        "stale_evidence_day": "2026-09-14"
+      },
+      "server_expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "—",
+        "evidence_day": null,
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30",
+        "rejected_evidence_day": "2026-11-13",
+        "stale_evidence_day": "2026-09-14"
       }
     }
   ]

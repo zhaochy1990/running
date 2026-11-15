@@ -25,7 +25,11 @@ describe("calibration explanation projection", () => {
     if ("speed_effort_label" in c.expected) expect(speed.details.join(" ")).toContain(c.expected.speed_effort_label);
     if ("lab_method" in c.expected && c.expected.lab_method) expect(hr.details.join(" ")).toContain(c.expected.lab_method);
     if ("rejected_evidence_day" in c.expected) {
-      expect(hr.details).toContain(`最近未采用证据日 ${c.expected.rejected_evidence_day}`);
+      const stale = "stale_evidence_day" in c.expected ? c.expected.stale_evidence_day : undefined;
+      if (stale) expect(hr.details).toContain(`最近陈旧协议日 ${stale}`);
+      if (c.expected.rejected_evidence_day !== stale) expect(hr.details).toContain(`最近未采用证据日 ${c.expected.rejected_evidence_day}`);
+      else expect(hr.details).not.toContain(`最近未采用证据日 ${stale}`);
+      if (c.name === "producer-stale-hr-mixed") expect(hr.details).toContain("心率存在突变或恢复，协议未采用");
       expect(hr.details).toContain("证据陈旧，需更新有效证据");
       expect(hr.status).toBe("估计支持 不足");
     }

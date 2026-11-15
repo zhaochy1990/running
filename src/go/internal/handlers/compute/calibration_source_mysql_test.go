@@ -142,6 +142,34 @@ func TestStaleHRProducerPersistsRejectedReasonAndDateMySQL(t *testing.T) {
 	if err != nil || b.Snapshot == nil || b.Snapshot.ThresholdHR != nil || b.Source.HR.Support != "none" || b.Source.HR.EvidenceCount != 0 || b.Source.HR.EvidenceDate != "" || b.Source.HR.LatestRejectedEvidenceDate != old.Format("2006-01-02") || !strings.Contains(strings.Join(b.Source.HR.Reasons, ","), "stale_HR_support") {
 		t.Fatalf("persisted stale protocol revived/lost %+v %v", b.Source.HR, err)
 	}
+	// A recent quality rejection must not overwrite the older stale date.
+	recent := a
+	recent.LabelID = "synthetic-recent-quality-rejection"
+	recent.ActivityDate = today.AddDate(0, 0, -1)
+	recent.Samples = append([]calibration.Sample(nil), a.Samples...)
+	for i := range recent.Samples {
+		if *recent.Samples[i].ElapsedS == 900 {
+			recent.Samples[i].HeartRateBpm = floatPtr(220)
+		}
+	}
+	recentMetadata := m
+	recentMetadata.ActivityID = recent.LabelID
+	mixed, err := calibration.EstimateOfflineWithEvidence(calibration.StrategyCandidate, []calibration.Activity{a, recent}, today, nil, []calibration.CandidateMetadata{m, recentMetadata})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mixedSource := calibration.SummarizeSource(mixed)
+	raw, _ = json.Marshal(mixedSource)
+	text = string(raw)
+	row = toStorageSnapshot(uid, mixed.Snapshot)
+	row.SourceJSON = &text
+	if _, err := st.PublishRunningCalibration(ctx, row, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	b, err = st.ReadEffectiveRunningCalibration(ctx, uid, today.Format("2006-01-02"), storage.CalibrationCandidate)
+	if err != nil || b.Snapshot == nil || b.Source.HR == nil || b.Snapshot.ThresholdHR != nil || b.Source.HR.Support != "none" || b.Source.HR.EvidenceCount != 0 || b.Source.HR.EvidenceDate != "" || b.Source.HR.LatestStaleEvidenceDate != old.Format("2006-01-02") || b.Source.HR.LatestRejectedEvidenceDate != recent.ActivityDate.Format("2006-01-02") || !strings.Contains(strings.Join(b.Source.HR.Reasons, ","), "HR_abrupt_spike_or_recovery") {
+		t.Fatalf("mixed persisted rejection date conflated: %+v %v", b.Source.HR, err)
+	}
 	t.Log("actual synthetic producer -> Publish -> real MySQL active-policy candidate reader retains stale reason/rejected date, without HR center/support")
 }
 

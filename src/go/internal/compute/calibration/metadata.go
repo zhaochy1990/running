@@ -31,6 +31,7 @@ type MetricSource struct {
 	RangeMeaning               string            `json:"range_meaning"`
 	EvidenceDate               string            `json:"evidence_date,omitempty"`
 	LatestRejectedEvidenceDate string            `json:"latest_rejected_evidence_date,omitempty"`
+	LatestStaleEvidenceDate    string            `json:"latest_stale_evidence_date,omitempty"`
 	IndependentActivities      int               `json:"independent_activities"`
 	IndependentDays            int               `json:"independent_days"`
 	LabMethod                  string            `json:"lab_method,omitempty"`
@@ -144,6 +145,9 @@ func SummarizeSource(result OfflineResult) SourceSummary {
 						m.LatestRejectedEvidenceDate = day
 					}
 					for _, reason := range append(append([]string(nil), e.Reasons...), e.Quality.Reasons...) {
+						if reason == "stale_HR_support" && day > m.LatestStaleEvidenceDate {
+							m.LatestStaleEvidenceDate = day
+						}
 						m.Reasons = appendReason(m.Reasons, reason)
 					}
 				}
@@ -177,7 +181,7 @@ func boundSourceMetric(m *MetricSource) {
 		m.Limitations = m.Limitations[:16]
 	}
 	limit := limitSourceString
-	for _, p := range []*string{&m.Method, &m.TargetType, &m.MeasurementQuality, &m.EffortSupport, &m.Support, &m.RangeMeaning, &m.EvidenceDate, &m.LatestRejectedEvidenceDate, &m.LabMethod} {
+	for _, p := range []*string{&m.Method, &m.TargetType, &m.MeasurementQuality, &m.EffortSupport, &m.Support, &m.RangeMeaning, &m.EvidenceDate, &m.LatestRejectedEvidenceDate, &m.LatestStaleEvidenceDate, &m.LabMethod} {
 		limit(p)
 	}
 	for i := range m.Reasons {

@@ -49,7 +49,10 @@ async function main() {
    if(c.expected.source_unavailable && (await speed.innerText()).includes('估计支持 高')) throw new Error(c.name+' borrowed unsupported source labels');
    if(c.expected.rejected_evidence_day) {
     await hr.getByText("阈值心率说明",{exact:true}).tap();
-    await hr.getByText("最近未采用证据日 "+c.expected.rejected_evidence_day,{exact:true}).waitFor({state:"visible"});
+    if(c.expected.stale_evidence_day) await hr.getByText("最近陈旧协议日 "+c.expected.stale_evidence_day,{exact:true}).waitFor({state:"visible"});
+    if(c.expected.rejected_evidence_day !== c.expected.stale_evidence_day) await hr.getByText("最近未采用证据日 "+c.expected.rejected_evidence_day,{exact:true}).waitFor({state:"visible"});
+    else if(await hr.getByText("最近未采用证据日 "+c.expected.rejected_evidence_day,{exact:true}).count()) throw new Error(c.name+' duplicated stale/rejected date');
+    if(c.name==='producer-stale-hr-mixed') await hr.getByText("心率存在突变或恢复，协议未采用",{exact:true}).waitFor({state:"visible"});
     await hr.getByText("证据陈旧，需更新有效证据",{exact:true}).waitFor({state:"visible"});
     if ((await hr.innerText()).includes('估计支持 高')) throw new Error(c.name+' stale support revived');
    }

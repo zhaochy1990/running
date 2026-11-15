@@ -13,3 +13,13 @@ test("bounded source retains actual producer stale reason/date without reviving 
   assert.equal(source.hr?.evidence_count, 0);
   assert.equal(source.hr?.evidence_date, undefined);
 });
+
+test("mixed protocol dates remain separate in the bounded Coach contract", () => {
+  const fixture = JSON.parse(readFileSync(new URL("../../../../docs/calibration/fixtures/client-display-v1.json", import.meta.url), "utf8"));
+  const item = fixture.cases.find((item: { name: string }) => item.name === "producer-stale-hr-mixed");
+  const source = CalibrationSourceSchema.parse(item.response.threshold.source);
+  assert.equal(source.hr?.latest_stale_evidence_date, "2026-09-14");
+  assert.equal(source.hr?.latest_rejected_evidence_date, "2026-11-13");
+  assert.equal(source.hr?.support, "none");
+  assert.equal(source.hr?.evidence_count, 0);
+});

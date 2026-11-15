@@ -32,3 +32,10 @@ HR `method=field_30min_last20_v1` 表示30分钟现场测试的后20分钟，不
 三端显示“最近未采用证据日”和陈旧原因。该字段不恢复中心、范围或支持计数，也不刷新
 有效证据日期；不暴露原始 HR、私密备注或完整诊断。共享 `producer-stale-hr` 来自实际
 Go evidence producer → typed summary → 持久化解析；真实隔离 MySQL 另有回读验证。
+
+
+混合未采用协议时，`latest_stale_evidence_date` 单独表示最近陈旧协议日；
+`latest_rejected_evidence_date` 仍表示最近的任何未采用协议日。近期质量拒绝不能覆盖较旧的
+stale日期。两日相同只显示一次日期；不同则分别显示“最近陈旧协议日”和“最近未采用证据日”。
+已知突变/恢复/测量异常的质量原因有具体说明，两日都不能被解释为有效支持或复活中心。
+没有协议的来源不生成该optional字段；旧JSON缺字段保持缺失，不从最近拒绝日推断stale日。

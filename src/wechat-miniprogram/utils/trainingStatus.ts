@@ -478,6 +478,9 @@ const CALIBRATION_WORDS: Record<string, string> = {
   conflicting_evidence_robust_fit_low_support: '证据冲突，模型支持降低',
   root_HR_alias_conflict: '同一活动的心率证据存在冲突',
   independent_HR_protocols_disagree_over_6_bpm: '独立心率测试结果不一致',
+  HR_abrupt_spike_or_recovery: '心率存在突变或恢复，协议未采用',
+  HR_sustained_recovery_drop_over_10_bpm: '心率存在持续恢复下降，协议未采用',
+  HR_range_suggests_recovery_or_artifact: '心率范围提示恢复或测量异常，协议未采用',
   stale_HR_support: '心率支持证据陈旧', stale_speed_support: '配速支持证据陈旧',
   stale_evidence: '支持证据陈旧', evidence_stale: '支持证据陈旧',
   no_independent_HR_protocol_support: '缺少独立心率测试协议支持',
@@ -573,7 +576,9 @@ export function projectCalibration(zones: import('../types/health').StrideZonesR
     if (value === '—' && threshold) lines.push('暂无中心估计，保留已知约束与可用区间');
     if (evidenceDay) lines.push(`证据日期 ${evidenceDay}`);
     const rejectedDay = validDay(detail?.latest_rejected_evidence_date);
-    if (rejectedDay) lines.push(`最近未采用证据日 ${rejectedDay}`);
+    const staleDay = validDay(detail?.latest_stale_evidence_date);
+    if (staleDay) lines.push(`最近陈旧协议日 ${staleDay}`);
+    if (rejectedDay && rejectedDay !== staleDay) lines.push(`最近未采用证据日 ${rejectedDay}`);
     if (cutoffDay) help.push(`数据截止 ${cutoffDay}`);
     if (computedShanghai) help.push(`校准执行 ${computedShanghai}（上海时间）`);
     if (selection?.state === 'fallback') help.push('首选版本缺少快照，使用服务端回退版本');

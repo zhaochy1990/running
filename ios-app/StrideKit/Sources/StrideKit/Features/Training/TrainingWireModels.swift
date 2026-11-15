@@ -725,6 +725,7 @@ public struct CalibrationMetricSource: Decodable, Hashable, Sendable {
     public let rangeMeaning: String?
     public let evidenceDate: String?
     public let latestRejectedEvidenceDate: String?
+    public let latestStaleEvidenceDate: String?
     public let independentActivities: Int?
     public let independentDays: Int?
     public let labMethod: String?
@@ -742,6 +743,7 @@ public struct CalibrationMetricSource: Decodable, Hashable, Sendable {
         case rangeMeaning = "range_meaning"
         case evidenceDate = "evidence_date"
         case latestRejectedEvidenceDate = "latest_rejected_evidence_date"
+        case latestStaleEvidenceDate = "latest_stale_evidence_date"
         case independentActivities = "independent_activities"
         case independentDays = "independent_days"
         case labMethod = "lab_method"
