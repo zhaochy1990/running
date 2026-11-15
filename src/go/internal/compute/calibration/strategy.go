@@ -60,8 +60,8 @@ func estimateOfflineWithEvidenceAt(strategy Strategy, history []Activity, asOf t
 		snapshot, measurements = estimateSegmentsOnly(history, asOf, health)
 		segments = projectCandidateSegments(measurements)
 	case StrategyCandidate:
-		implementation = hourImplementation
-		parameterVersion = hourParameterVersion
+		implementation = hourImplementation + "+independent_hr_v1"
+		parameterVersion = hourParameterVersion + "+" + hrParameterVersion
 		var report CandidateEvidenceReport
 		snapshot, report = estimateEvidenceCandidate(history, asOf, health, metadata, metadataCutoff)
 		evidence = &report

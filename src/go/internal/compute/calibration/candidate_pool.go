@@ -10,29 +10,30 @@ import (
 // held-out outcome. AvailableAt covers ALL fields, not just the watch samples.
 // References are opaque audit identifiers; free text is deliberately not accepted.
 type CandidateMetadata struct {
-	ActivityID                  string     `json:"activity_id"`
-	RootActivityID              string     `json:"root_activity_id,omitempty"`
-	SourceVersion               string     `json:"source_version"`
-	EvidenceRef                 string     `json:"evidence_ref,omitempty"`
-	AvailableAt                 *time.Time `json:"available_at,omitempty"`
-	AvailabilityEvidence        string     `json:"availability_evidence,omitempty"`
-	Protocol                    string     `json:"protocol,omitempty"`
-	ProtocolVerified            bool       `json:"protocol_verified,omitempty"`
-	DurationS                   float64    `json:"duration_s,omitempty"`
-	StartS                      *float64   `json:"start_s,omitempty"`
-	EndS                        *float64   `json:"end_s,omitempty"`
-	RaceIdentity                bool       `json:"race_identity,omitempty"`
-	AthleteReportedMaximal      bool       `json:"athlete_reported_maximal,omitempty"`
-	SustainedEffortCorroborated bool       `json:"sustained_effort_corroborated,omitempty"`
-	Submaximal                  bool       `json:"submaximal,omitempty"`
-	Interrupted                 bool       `json:"interrupted,omitempty"`
-	Device                      string     `json:"device,omitempty"`
-	Terrain                     string     `json:"terrain,omitempty"`
-	TemperatureC                *float64   `json:"temperature_c,omitempty"`
-	HumidityPercent             *float64   `json:"humidity_percent,omitempty"`
-	AscentM                     *float64   `json:"ascent_m,omitempty"`
-	NotePresent                 bool       `json:"note_present,omitempty"`
-	FeelPresent                 bool       `json:"feel_present,omitempty"`
+	HR                          *CandidateHRMetadata `json:"hr,omitempty"`
+	ActivityID                  string               `json:"activity_id"`
+	RootActivityID              string               `json:"root_activity_id,omitempty"`
+	SourceVersion               string               `json:"source_version"`
+	EvidenceRef                 string               `json:"evidence_ref,omitempty"`
+	AvailableAt                 *time.Time           `json:"available_at,omitempty"`
+	AvailabilityEvidence        string               `json:"availability_evidence,omitempty"`
+	Protocol                    string               `json:"protocol,omitempty"`
+	ProtocolVerified            bool                 `json:"protocol_verified,omitempty"`
+	DurationS                   float64              `json:"duration_s,omitempty"`
+	StartS                      *float64             `json:"start_s,omitempty"`
+	EndS                        *float64             `json:"end_s,omitempty"`
+	RaceIdentity                bool                 `json:"race_identity,omitempty"`
+	AthleteReportedMaximal      bool                 `json:"athlete_reported_maximal,omitempty"`
+	SustainedEffortCorroborated bool                 `json:"sustained_effort_corroborated,omitempty"`
+	Submaximal                  bool                 `json:"submaximal,omitempty"`
+	Interrupted                 bool                 `json:"interrupted,omitempty"`
+	Device                      string               `json:"device,omitempty"`
+	Terrain                     string               `json:"terrain,omitempty"`
+	TemperatureC                *float64             `json:"temperature_c,omitempty"`
+	HumidityPercent             *float64             `json:"humidity_percent,omitempty"`
+	AscentM                     *float64             `json:"ascent_m,omitempty"`
+	NotePresent                 bool                 `json:"note_present,omitempty"`
+	FeelPresent                 bool                 `json:"feel_present,omitempty"`
 }
 
 type EffortSupport string
@@ -81,6 +82,7 @@ type CandidateEvidence struct {
 	Contribution              float64        `json:"contribution"`
 }
 type CandidateEvidenceReport struct {
+	HR                    *CandidateHRReport            `json:"hr,omitempty"`
 	Hour                  *HourCapabilityReport         `json:"hour,omitempty"`
 	ParameterVersion      string                        `json:"parameter_version"`
 	Candidates            []CandidateEvidence           `json:"candidates"`
@@ -100,25 +102,9 @@ func BuildCandidateEvidence(history []Activity, metadata []CandidateMetadata, as
 
 func buildCandidateEvidence(history []Activity, metadata []CandidateMetadata, asOf, metadataCutoff time.Time) CandidateEvidenceReport {
 	out := CandidateEvidenceReport{ParameterVersion: evidenceParameterVersion, Excluded: map[string]int{}, Limitations: []string{"research_parameters_not_independently_calibrated", "unlinked_cross_device_duplicates_may_remain", "environment_not_corrected"}}
-	meta := map[string]CandidateMetadata{}
-	conflicting := map[string]bool{}
-	for _, m := range metadata {
-		if m.ActivityID == "" || m.SourceVersion == "" {
-			out.Excluded["metadata_identity_or_version_missing"]++
-			continue
-		}
-		if m.AvailableAt != nil && m.AvailableAt.After(metadataCutoff) {
-			out.Excluded["metadata_late_available"]++
-			continue
-		}
-		if prior, ok := meta[m.ActivityID]; ok && ReplayContentHash(prior) != ReplayContentHash(m) {
-			conflicting[m.ActivityID] = true
-		}
-		meta[m.ActivityID] = m
-	}
-	for id := range conflicting {
-		delete(meta, id)
-		out.Excluded["conflicting_metadata"]++
+	meta, excluded := admittedCandidateMetadata(metadata, metadataCutoff)
+	for reason, n := range excluded {
+		out.Excluded[reason] += n
 	}
 	// Sort identities and content hashes so duplicate handling is input-order independent.
 	activities := append([]Activity(nil), history...)
@@ -413,4 +399,29 @@ func candidateVerifiedWindow(a Activity, m CandidateMetadata) *CandidateSegment 
 		}
 	}
 	return nil
+}
+
+func admittedCandidateMetadata(metadata []CandidateMetadata, metadataCutoff time.Time) (map[string]CandidateMetadata, map[string]int) {
+	excluded := map[string]int{}
+	meta := map[string]CandidateMetadata{}
+	conflicting := map[string]bool{}
+	for _, m := range metadata {
+		if m.ActivityID == "" || m.SourceVersion == "" {
+			excluded["metadata_identity_or_version_missing"]++
+			continue
+		}
+		if m.AvailableAt != nil && m.AvailableAt.After(metadataCutoff) {
+			excluded["metadata_late_available"]++
+			continue
+		}
+		if prior, ok := meta[m.ActivityID]; ok && ReplayContentHash(prior) != ReplayContentHash(m) {
+			conflicting[m.ActivityID] = true
+		}
+		meta[m.ActivityID] = m
+	}
+	for id := range conflicting {
+		delete(meta, id)
+		excluded["conflicting_metadata"]++
+	}
+	return meta, excluded
 }
