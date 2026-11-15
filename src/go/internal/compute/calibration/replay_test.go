@@ -13,8 +13,9 @@ import (
 func replayFixture(t *testing.T) calibration.ReplayManifest {
 	t.Helper()
 	cutoff := time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC)
-	duration, distance := 3600.0, 14400.0
-	a := calibration.Activity{LabelID: "train", ActivityDate: cutoff.AddDate(0, 0, -1), Sport: "run", DurationS: &duration, DistanceM: &distance}
+	// Scoring tests need actual continuous measurements; summary-only inputs
+	// are deliberately noncontinuous observations in the T3 candidate.
+	a := evidenceActivity("train", cutoff.AddDate(0, 0, -1), 3600, 4)
 	available := cutoff.Add(-time.Hour)
 	r := calibration.ReplayActivity{ID: "train", User: "athlete-a", RootActivityID: "train", Split: "train", EventTime: cutoff.AddDate(0, 0, -1), AvailableAt: &available, AvailabilityEvidence: "immutable-export:a", Device: "synthetic", Scenarios: []string{"continuous"}, Activity: a}
 	r.ContentSHA256 = calibration.ReplayContentHash(a)
@@ -337,5 +338,64 @@ func TestReplayStrataPreserveMissingTargetsWithoutChangingPairedErrors(t *testin
 				}
 			}
 		})
+	}
+}
+
+func TestReplayAdmitsEffortMetadataSeparatelyFromReferenceLabels(t *testing.T) {
+	m := replayFixture(t)
+	a := evidenceActivity("train", m.Activities[0].Activity.ActivityDate, 3600, 4)
+	m.Activities[0].Activity = a
+	m.Activities[0].ContentSHA256 = calibration.ReplayContentHash(a)
+	baseline, err := calibration.Replay(m, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A same-day metadata instant is later than domain civil midnight;
+	// Replay must use the exact prediction cutoff rather than the civil day.
+	m.Cases[0].PredictionAsOf = m.Cases[0].PredictionAsOf.Add(12 * time.Hour)
+	baseline, err = calibration.Replay(m, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	refAt := m.Cases[0].PredictionAsOf.Add(-time.Hour)
+	m.Activities[0].Reference = &calibration.ReplayReference{Kind: "direct_60min", EffortSupport: "confirmed_maximal", Protocol: "continuous_maximal_test_v1", AvailableAt: &refAt}
+	refOnly, err := calibration.Replay(m, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(baseline.Cases[0].Versions, refOnly.Cases[0].Versions) || baseline.Cases[0].InputSHA256 != refOnly.Cases[0].InputSHA256 {
+		t.Fatal("reference labels leaked into input effort")
+	}
+	metadata := &calibration.CandidateMetadata{ActivityID: "train", SourceVersion: "protocol-audit-v1", EvidenceRef: "test-protocol", Protocol: "continuous_maximal_test_v1", ProtocolVerified: true, DurationS: 3600, StartS: floatPointer(0), EndS: floatPointer(3600), AvailableAt: &refAt, AvailabilityEvidence: "immutable-protocol"}
+	m.Activities[0].InputEvidence = metadata
+	admitted, err := calibration.Replay(m, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, c := range admitted.Cases[0].Versions[2].Evidence.Candidates {
+		if c.DurationS == 3600 && c.EffortSupport == calibration.EffortConfirmedMaximal {
+			found = true
+		}
+	}
+	if !found || admitted.Cases[0].InputSHA256 == baseline.Cases[0].InputSHA256 {
+		t.Fatal("audited input metadata not admitted/hash-bound")
+	}
+	for _, kind := range []string{"late", "unknown"} {
+		copy := *metadata
+		m.Activities[0].InputEvidence = &copy
+		if kind == "late" {
+			at := m.AsOf.Add(time.Hour)
+			copy.AvailableAt = &at
+		} else {
+			copy.AvailabilityEvidence = ""
+		}
+		got, err := calibration.Replay(m, "test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(got.Cases[0].Versions, baseline.Cases[0].Versions) || got.Cases[0].InputSHA256 != baseline.Cases[0].InputSHA256 {
+			t.Fatalf("%s metadata leaked", kind)
+		}
 	}
 }
