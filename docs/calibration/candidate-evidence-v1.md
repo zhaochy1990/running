@@ -24,3 +24,16 @@ T3暂复用旧速度估计器（包括60min短路）处理已挑选的传统时�
 当前参数是保守研究选择，而非T1训练集已经标定；独立最终留出没有调参。未进行生产写入、切换active或重算。T4仍需替换旧一小时短路与跨时长估计；T5仍需独立HR支持。未知字段与不足样本只阻塞上线，工程可在独立review通过后推进。
 
 最终252活动原manifest三版本重复回放（工作树实现，固定code标签 `T3-final-working-tree`）：8.19/7.40s，均exit2/insufficient，报告两次SHA256均 `e6d0494ebe2d53e8c4cb28f9db924a7f9526a669aa52a113facd9c06f06bd6ee`。v3与T2 `segments_only` 完整结果与T2独立review修复后报告逐字段相同，v3源码hash仍 `1d20459b1d72095d775e69ce928aebde8540753a1c6631d5cf05fb35e0bc5826`，manifest未修改。candidate共1275观测、252完整活动、114条>60min；125条入选、97独立root、72独立日，同日封顶总贡献约72。没有输入努力metadata的原manifest全部unknown；v3/T2阈值3.9914m/s，candidate4.0179m/s，置信度分别high/low/low。新值是候选池变化下的旧估计器输出，绝非准确性改善结论。完整原始数据/报告仍留在受控 `/tmp`，不提交Git。
+
+## T3独立评审修复
+
+两个确定性P2分别经公开seam红→绿复现并修复：
+
+1. 3900s活动前300s较快，但已核验60min协议为 `[300,3900]`。原流程只保留 `[0,3600]` unknown而提前丢掉协议窗；现在candidate在排名之前用同一清洗/覆盖/稳定性/elapsed测量器单独保留协议窗，confirmed窗口可以赢得同root/时长选择，更快unknown窗仍可审计但不入选。测量器也接受非采样点的精确协议端点，按既有线性规则积分。T2默认仍只选最快窗，原duration分母与全部规则不变；没有给最快窗套用别的窗口协议。
+2. 新reader复用 `racedetection.ParsePauseContext` 读取当前camelCase及legacy snake_case的绝对百分秒暂停。可靠记录使metadata的 `Interrupted=true`；由于当前provider adapter可能压缩暂停时间，不能证明它与候选sample clock的一一对应，故保守地把全部窗口标为非连续、不入连续池、不给Vmax下界；完整elapsed观察仍保留。输出只含固定 `activity_interruption_window_mapping_unverified` 原因，不复制暂停JSON或时间原值。未来若有可核验的时钟映射，可在同一域恢复不跨暂停的真实连续片段。
+
+修复后的四包普通test/vet、前三包race全部通过。原252活动manifest重复回放8.50/7.61s，均exit2/insufficient；v3与T2完整结果仍与T2独立review修复后报告逐字段相同，冻结源码hash未变。固定code标签 `T3-reviewed-working-tree` 的两次报告SHA256均 `88b346db63ccbcc1896c4dd54adb649aa4c20db871d4775762c543091bf320e5`；原manifest没有input metadata，候选仍1275条unknown，此回放不能证明暂停反证已覆盖真实输入。
+
+因此另用只读账号实跑修复后的metadata reader与候选seam；新分类文件仅写 `/tmp/stride-983/private/t3-live-metadata-reviewed.json`，早期冻结文件保持不变。252条metadata的备注、feel、环境与比赛计数不变；努力仍全部unknown、阈值置信度low。真实历史可得时间仍未证明，不以该回溯输入做严格历史准确性宣称。暂停反证的端到端确定性保证来自camel/legacy两种公开reader回归。
+
+修复后实际reader读到 **69场可靠暂停**。将这批独立input metadata接入另存的event-date-retrospective manifest，完整CLI回放7.94s、exit2/insufficient：69场对应363条观测全部 `Continuous=false`、未入选且无速度下界，69条完整活动观察仍在；违规数0。其余候选入选122条、93独立root。这是暂停反证的真实端到端工程验证；没有独立全力/严格历史可得时间，不能作为准确性上线证据。原manifest、早期metadata与原始报告未覆盖。

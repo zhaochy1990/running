@@ -227,3 +227,61 @@ func TestOfflineEvidenceCannotAlterComparisonControls(t *testing.T) {
 		}
 	}
 }
+
+func TestCandidateRetainsVerifiedWindowBeforeChoosingFasterUnknownObservation(t *testing.T) {
+	day := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
+	a := evidenceActivity("offset-protocol", day, 3900, 4)
+	for i := range a.Samples {
+		t := *a.Samples[i].ElapsedS
+		if t <= 300 {
+			*a.Samples[i].DistanceM = t * 5
+			*a.Samples[i].SpeedMps = 5
+		} else {
+			*a.Samples[i].DistanceM = 1500 + (t-300)*4
+		}
+	}
+	a.DistanceM = floatPointer(15900)
+	meta := []calibration.CandidateMetadata{{ActivityID: a.LabelID, SourceVersion: "protocol-v1", EvidenceRef: "verified-window", Protocol: "continuous_maximal_test_v1", ProtocolVerified: true, DurationS: 3600, StartS: floatPointer(300), EndS: floatPointer(3900)}}
+	report := calibration.BuildCandidateEvidence([]calibration.Activity{a}, meta, day)
+	var verified, unknown bool
+	for _, c := range report.Candidates {
+		if c.DurationS == 3600 {
+			if c.StartS != nil && *c.StartS == 300 && *c.EndS == 3900 {
+				verified = c.EffortSupport == calibration.EffortConfirmedMaximal && c.Selected && c.AvgSpeedMps == 4
+			}
+			if c.StartS != nil && *c.StartS == 0 {
+				unknown = c.EffortSupport == calibration.EffortUnknown && !c.Selected
+			}
+		}
+	}
+	if !verified || !unknown {
+		t.Fatal("fastest unknown window replaced the verified protocol window before evidence selection")
+	}
+	clean, err := calibration.EstimateOffline(calibration.StrategySegmentsOnly, []calibration.Activity{a}, day, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range clean.Segments.Candidates {
+		if c.DurationS == 3600 && (c.StartS == nil || *c.StartS != 0) {
+			t.Fatal("protocol support changed T2 fastest-window control")
+		}
+	}
+}
+
+func TestCandidateVerifiedWindowUsesMeasuredOffGridEndpoints(t *testing.T) {
+	day := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
+	a := evidenceActivity("fractional-protocol", day, 3900, 4)
+	report := calibration.BuildCandidateEvidence([]calibration.Activity{a}, []calibration.CandidateMetadata{{ActivityID: a.LabelID, SourceVersion: "protocol-v1", EvidenceRef: "fractional-window", Protocol: "continuous_maximal_test_v1", ProtocolVerified: true, DurationS: 3595, StartS: floatPointer(302.5), EndS: floatPointer(3897.5)}}, day)
+	found := false
+	for _, c := range report.Candidates {
+		if c.DurationS == 3595 {
+			found = true
+			if c.AvgSpeedMps != 4 || *c.StartS != 302.5 || *c.EndS != 3897.5 || c.EffortSupport != calibration.EffortConfirmedMaximal || !c.Selected {
+				t.Fatalf("off-grid protocol measured inconsistently: %+v", c)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("exact protocol observation absent")
+	}
+}
