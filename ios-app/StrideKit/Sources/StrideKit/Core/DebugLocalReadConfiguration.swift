@@ -20,7 +20,7 @@ public struct DebugLocalReadConfiguration {
             selectedToken = cases.first { $0.name == (caseName ?? "two-sided") }?.token
         } else { selectedToken = payload.token }
         guard payload.url.scheme == "http", payload.url.host == "127.0.0.1",
-              payload.url.port == 19890, payload.url.user == nil, payload.url.password == nil,
+              [19890, 19891].contains(payload.url.port), payload.url.user == nil, payload.url.password == nil,
               ["", "/"].contains(payload.url.path), payload.url.query == nil, payload.url.fragment == nil,
               let selectedToken, !selectedToken.isEmpty else {
             throw CocoaError(.fileReadCorruptFile)

@@ -86,6 +86,40 @@ final class CalibrationReadUITests: XCTestCase {
         capture(app, "low-support-stale-hr")
     }
 
+    @MainActor func testRealZonesNetworkFailureRecoversAfterRetry() async throws {
+        try requireOptIn()
+        try await Self.setZonesFailure(true)
+        addTeardownBlock { try await Self.setZonesFailure(false) }
+        let app = XCUIApplication()
+        app.launchArguments = ["-StrideLocalRead", "-StrideLocalReadCase", "two-sided"]
+        app.launch()
+        let retry = app.buttons["重试"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts["加载失败"].exists)
+        XCTAssertFalse(app.staticTexts["3:34"].exists)
+        capture(app, "real-network-failure")
+
+        try await Self.setZonesFailure(false)
+        retry.tap()
+        XCTAssertTrue(app.staticTexts["3:34"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts["166"].exists)
+        XCTAssertTrue(app.staticTexts["支持范围 3:34–3:36 /km"].exists)
+        XCTAssertFalse(retry.exists)
+        capture(app, "real-network-retry-recovered")
+    }
+
+    private static func setZonesFailure(_ enabled: Bool) async throws {
+        // Test-owned transparent loopback proxy only. It does not fabricate any
+        // calibration response: enabled zones forwarding connects to closed port1.
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:19891/_test/zones-failure")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["enabled": enabled])
+        request.timeoutInterval = 5
+        let (_, response) = try await URLSession.shared.data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+    }
+
     @MainActor private func launchCase(_ name: String) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-StrideLocalRead", "-StrideLocalReadCase", name]

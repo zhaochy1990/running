@@ -3,10 +3,10 @@
 这些图片来自真实 DEBUG iOS App → APIClient/URLSession → 本地 Gin → 隔离 MySQL 的合成账号，均不含真实用户身份、轨迹、备注或凭据。它们只证明工程展示，不是准确性或候选上线依据。
 
 - 自有 Simulator：iPhone SE3 / iOS18.5，375pt，默认字号及 AccessibilityXXXL。
-- Swift：389 tests / 58 suites 全绿，含八案原始HTTP SHA256、正常 JWT 会话验证与训练状态五端点模型、真实连接拒绝。
-- UI：StridewiseCalibrationSmoke 实际 5 tests / 0 failures / 0 skips：two-sided 帮助与三日期，AccessibilityXXXL 帮助触摸/定义可见且无水平溢出，constraints-only 无中心，missing 无快照，low-stale 心率陈旧原因。
+- Swift：390 tests / 58 suites 全绿，含八案原始HTTP SHA256、正常 JWT 会话验证与训练状态五端点模型、真实连接拒绝。
+- UI：StridewiseCalibrationSmoke 实际 6 tests / 0 failures / 0 skips：two-sided 帮助与三日期，AccessibilityXXXL 帮助触摸/定义可见且无水平溢出，constraints-only 无中心，missing 无快照，low-stale 心率陈旧原因，以及真实 zones 网络故障→错误页→恢复代理→点击重试→真实卡值恢复。
 - 八案都有真实启动卡片截图；upper-only / legacy / unknown / source-unavailable 只完成 API/模型断言和截图查看，没有把它们计为已执行专门按钮交互的 UI case。
-- 真实网络连接拒绝只验证 repository 错误传播；页面网络错误/重试 UI 尚未验收。来源活动不可访问时仅展示有界摘要，不请求详情，完整页面仍可加载。
+- 透明 loopback19891代理只把 zones 上游临时改连关闭的本机端口1，真实连接拒绝映射502；身份与其它请求仍透传19890。XCTest实际验证错误页与点击重试恢复，未生成校准HTTP数据。来源活动不可访问时仅展示有界摘要，不请求详情，完整页面仍可加载。
 - generic iOS Simulator app build 全绿。CUA 因宿主 Mac 锁屏不可用；交互证据来自原生 XCTest，而非伪装的点击记录。
 
 | case | 配速 | 范围 | HR | final 服务原始响应 SHA256 |
@@ -22,6 +22,6 @@
 
 证据日 2026-10-01、截止日 2026-11-14、执行日上海 2026-11-15 00:30 各自保留，缺失时不推造。新 API 的 legacy 源仍可能有执行时刻；旧 API fixture 不含该字段，另测兼容。
 
-`*-cards.png` 是同名合成 case 的阈值卡裁剪；`threshold-help-three-dates.png`、`threshold-accessibility-text.png`、`constraints-only-no-center.png`、`missing-snapshot.png`、`low-support-stale-hr.png` 是 XCTest 原生截图。完整 xcresult、私有 manifest 和 token 不提交。
+`*-cards.png` 是同名合成 case 的阈值卡裁剪；`threshold-help-three-dates.png`、`threshold-accessibility-text.png`、`constraints-only-no-center.png`、`missing-snapshot.png`、`low-support-stale-hr.png` 是 XCTest 原生截图；`real-network-failure.png` 与 `real-network-retry-recovered.png` 记录真实网络故障与重试恢复。完整 xcresult、私有 manifest 和 token 不提交。
 
 本票 parity 增量 5 aligned / 0 confirmed / 1 pending；pending 是既有 iOS 没有小程序 zones 表，未由 agent 擅自确认。它不改变本票阈值语义测试结果，也不构成全域 parity 通过声明。

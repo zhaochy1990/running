@@ -87,7 +87,7 @@
 
 ### 训练状态阈值解释增量（#990，2026-11-15）
 
-仅核对本票变更；下面的既有差异不属于已通过的全域 parity 门槛。真实 API/模型覆盖八案，实际 Simulator UI 交互覆盖 two-sided、constraints-only、missing、low-stale 和 AccessibilityXXXL；其余案例只读截图与 API/模型断言单独列证。
+仅核对本票变更；下面的既有差异不属于已通过的全域 parity 门槛。真实 API/模型覆盖八案，实际 Simulator UI 交互覆盖 two-sided、constraints-only、missing、low-stale、真实网络失败/重试恢复和 AccessibilityXXXL；其余案例只读截图与 API/模型断言单独列证。
 
 | ID | 检查点 | 维度 | 小程序现状 | iOS 现状 | 状态 | 确认人 | 日期 | 说明 |
 | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
@@ -95,7 +95,7 @@
 | P-training-status-2 | 能力支持、测量质量与来源 | 功能 | utils/trainingStatus.ts:499 分开投影支持与质量、方法/原因 | CalibrationDisplay.swift:39 / :48；TrainingStatusView.swift:73 展开有界摘要 | aligned | — | 2026-11-15 | canonical 方法、旧版非独立检测、field HR 非生理 LTHR；未知枚举/未来 schema 保守降级，来源活动不可访问不触发整页失败 |
 | P-training-status-3 | 三种日期 | 功能 | utils/trainingStatus.ts:499；training-status.ts:653 截止日脚注 | CalibrationDisplay.swift:46 / :83；TrainingStatusModel.swift:244 | aligned | — | 2026-11-15 | 证据2026-10-01 / 截止2026-11-14 / 执行上海2026-11-15 00:30，XCTest真实点击、滚动断言；缺字段保持未提供 |
 | P-training-status-4 | 可触摸说明与窄屏 | UI | training-status.wxml:39 button、:50 四卡下整行说明；training-status.ts:545 toggle | TrainingStatusView.swift:73 / :195 按钮展开整行说明，44pt最小触摸高度、辅助字号单列 | aligned | — | 2026-11-15 | SE3 375pt；XCTest实际tap + AccessibilityXXXL换行，非hover说明；合成截图见 docs/walkthrough/devops-990/ios |
-| P-training-status-5 | 缺失与降级状态 | 功能 | utils/trainingStatus.check.mts:173 共用八案 | CalibrationWireDecoding.swift:4；CalibrationLocalServiceTests.swift:46 真实session/模型；CalibrationReadUITests.swift:54 三类缺失/陈旧交互 | aligned | — | 2026-11-15 | no snapshot / constraints-only / low-stale有实际UI断言；旧API、未知枚举、source unavailable有真实API/模型与截图。连接拒绝仅验证repository真实网络错误，不宣称错误页/重试UI已验收 |
+| P-training-status-5 | 缺失与降级状态 | 功能 | utils/trainingStatus.check.mts:173 共用八案 | CalibrationWireDecoding.swift:4；CalibrationLocalServiceTests.swift:46 真实session/模型；CalibrationReadUITests.swift:54 三类缺失/陈旧交互 | aligned | — | 2026-11-15 | no snapshot / constraints-only / low-stale有实际UI断言；旧API、未知枚举、source unavailable有真实API/模型与截图。透明loopback19891上游真实连接拒绝→502错误页→恢复后实际点击重试→卡值恢复，XCTest原生走通；未生成校准HTTP数据 |
 | P-training-status-6 | 既有 zones 表差异（非本票新增） | 功能 | training-status.ts:608 `projectTrainingZones`、training-status.wxml:165 配速/心率zones表 | TrainingStatusView.swift:69 现有内容无zones表 | pending | — | 2026-11-15 | 只记录既有差异；本票未增表，agent不代用户确认。需用户决定保留偏差、修iOS或放弃；不以本票测试通过声称全域parity通过 |
 
 ## 赛事域（PR-6 落地后登记，devops#769）
