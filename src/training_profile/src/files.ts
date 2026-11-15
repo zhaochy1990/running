@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { shanghaiIso } from "@stride/contract";
+import { DimensionId, dimensions, formationLabels, natureLabels } from "./dimensions.js";
 import type { Profile } from "./types.js";
 
 export const layerLabels = { historical: "历史事实、经历与当次陈述", long_term: "相对稳定的长期认识", rolling: "滚动观察与估计", unknown: "生命周期尚不明确" };
@@ -22,6 +23,7 @@ export function layeredView(profile: Profile) {
 }
 
 export function renderMarkdown(profile: Profile): string {
+  if (profile.method.startsWith("ten-dimension-")) return renderDimensions(profile);
   const lines = [
     "# 运动能力与训练特点 · POC",
     `资料窗口：${profile.window.startDay} 至 ${profile.window.endDay}；生成：${shanghaiIso(profile.evaluatedAt)}。`,
@@ -56,6 +58,58 @@ export function renderMarkdown(profile: Profile): string {
   return `${lines.join("\n\n")}\n`;
 }
 
+export function dimensionView(profile: Profile) {
+  return DimensionId.options.map((id) => ({
+    dimensionId: id,
+    title: dimensions[id],
+    items: profile.conclusions.filter((c) => c.metadata?.dimensionId === id),
+  }));
+}
+function renderDimensions(profile: Profile) {
+  const lines = [
+    "# 训练画像 · 十维 POC",
+    `资料窗口：${profile.window.startDay} 至 ${profile.window.endDay}；生成：${shanghaiIso(profile.evaluatedAt)}。`,
+    "本文件为代码与Flash多Agent的原始汇总，内容质量另行审阅。空维度与失败记录见coverage.md；计算、反例与取舍见analysis.json。",
+  ];
+  if (profile.highlights?.length)
+    lines.push(
+      "## 本轮重点",
+      ...profile.highlights.map((id) => {
+        const c = profile.conclusions.find((c) => c.id === id);
+        return `- ${c?.title ?? id}（${id}）`;
+      }),
+    );
+  for (const dimension of dimensionView(profile)) {
+    if (!dimension.items.length) continue;
+    lines.push(`## ${dimension.title}`);
+    for (const c of dimension.items) {
+      const m = c.metadata;
+      if (!m) continue;
+      lines.push(
+        `### ${c.title}`,
+        `性质：${natureLabels[m.nature]}｜来源：${m.sourceTypes.join("、")}｜形成：${formationLabels[m.formation]}｜计算：${m.computation}｜生命周期：${layerLabels[c.lifecycle]}。`,
+        c.text,
+        ...(c.planningUse ? [`计划可引用：${c.planningUse}`] : []),
+        `适用范围：${c.conditions}`,
+        ...(c.support ? [`支持描述：${c.support}；沿用原证据程度。`] : []),
+        ...(c.limitations.length ? [`使用边界：${c.limitations.join("；")}`] : []),
+        `条目：${c.id}；形成者：${m.producer}${m.reviewStatus ? `；历史处理：${m.reviewStatus}` : ""}。实际选用来源 ${m.supportingSources.length} 条；输入依赖 ${c.evidence.length} 条，均不是独立样本数。方法与完整引用见JSON。`,
+      );
+    }
+  }
+  if (profile.previousDecisions?.length)
+    lines.push(
+      "## 旧认识处置",
+      [
+        "|原条目|处置|后续条目|依据|",
+        "|---|---|---|---|",
+        ...profile.previousDecisions.map((d) => `|${d.id}|${d.action}|${d.replacementId ?? "原条目／无替代"}|${d.reason.replaceAll("|", "／")}|`),
+      ].join("\n"),
+    );
+  lines.push("## 变化说明", profile.change.reason);
+  return `${lines.join("\n\n")}\n`;
+}
+
 /** Dedicated private run directory, refuses overwrites of an earlier run. */
 export async function createRunDirectory(path: string) {
   await mkdir(path, { mode: 0o700 });
@@ -66,5 +120,6 @@ export async function savePrivate(path: string, name: string, value: unknown) {
 export async function saveProfile(path: string, profile: Profile) {
   await savePrivate(path, "profile.json", profile);
   await savePrivate(path, "layered.json", layeredView(profile));
+  await savePrivate(path, "dimensions.json", dimensionView(profile));
   await writeFile(join(path, "profile.md"), renderMarkdown(profile), { mode: 0o600, flag: "wx" });
 }

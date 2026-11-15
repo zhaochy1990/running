@@ -1,5 +1,7 @@
 # 训练画像文件 POC
 
+当前入口是[十维混合计算／子Agent POC](TEN-DIMENSION-POC.md)。以下保留前几轮演进记录；当前支持一次输入多个已审阅历史profile文件，逐条保留、复核或显式处置，不再从零覆盖画像。
+
 本分支是供审阅的 throwaway POC，不合并或部署为正式功能。按用户最新范围，独立 `src/training_profile` Node package 以 TS 生成画像，结果只保存本地 JSON／Markdown；不包含 Go 服务、数据库、任务调度或 Coach／训练计划接入。
 
 范围与验收见[训练画像最小闭环 POC：独立 TS 包生成、本地保存与内容质量验证](https://github.com/zhaochy1990/stride-devops/issues/981)。正式 Go／TS 职责和持久化决议仍留待后续落实，本轮文件保存不替代正式方案。
@@ -41,6 +43,8 @@ pnpm --filter @stride/training-profile... build
 pnpm prototype:training-profile /absolute/private/snapshot.json /absolute/private/run-1 /absolute/repo/config/coach.local.yaml deepseekv4flash
 # 对快照副本更新后重新评估；可传入同一用户的上轮结果。
 pnpm prototype:training-profile /absolute/private/snapshot-copy.json /absolute/private/run-2 /absolute/repo/config/coach.local.yaml deepseekv4flash /absolute/private/run-1/profile.json
+# 多轮已有认识可同时输入；输入与输出文件保持独立。
+pnpm prototype:training-profile /absolute/private/snapshot.json /absolute/private/run-3 /absolute/repo/config/coach.local.yaml deepseekv4flash /absolute/private/reviewed-a/profile.json /absolute/private/reviewed-b/profile.json
 pnpm --filter @stride/training-profile test
 pnpm exec biome check src/training_profile/src
 ```

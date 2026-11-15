@@ -1,5 +1,5 @@
 /** Explicit, manually invoked POC. No SQL, HTTP service, jobs, or Coach integration. */
-import { appendFile, readFile } from "node:fs/promises";
+import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { loadConfig, type ModelConfig } from "@stride/common";
 import { z } from "zod/v4";
@@ -7,13 +7,13 @@ import { createRunDirectory, savePrivate, saveProfile } from "./files.js";
 import { generateProfile } from "./generate.js";
 import { ProfileSchema, SnapshotSchema } from "./types.js";
 
-const [snapshotPath, outputPath, configPath, modelName, previousPath] = process.argv.slice(2);
+const [snapshotPath, outputPath, configPath, modelName, ...previousPaths] = process.argv.slice(2);
 if (!snapshotPath || !outputPath || !configPath || !modelName)
   throw new Error(
-    "usage: poc <snapshot.json> <new-private-run-dir> <model-config.yaml> <model-name> [previous-profile.json]; set model API key in environment",
+    "usage: poc <snapshot.json> <new-private-run-dir> <model-config.yaml> <model-name> [previous-profile.json ...]; set model API key in environment",
   );
 const snapshot = SnapshotSchema.parse(JSON.parse(await readFile(resolve(snapshotPath), "utf8")));
-const previous = previousPath ? ProfileSchema.parse(JSON.parse(await readFile(resolve(previousPath), "utf8"))) : null;
+const previous = await Promise.all(previousPaths.map(async (path) => ProfileSchema.parse(JSON.parse(await readFile(resolve(path), "utf8")))));
 const registry = z
   .object({
     models: z.array(
@@ -54,4 +54,20 @@ const result = await generateProfile(snapshot, runConfig, previous, (event) => {
 await saveProfile(resolve(outputPath), result.profile);
 await savePrivate(resolve(outputPath), "analysis.json", result.analysis);
 await savePrivate(resolve(outputPath), "metrics.json", result.metrics);
+await writeFile(
+  resolve(outputPath, "coverage.md"),
+  `${[
+    "# 十维覆盖与处理状态",
+    "空维度是本轮未获得可发布内容，不解释为用户没有相关经历、目标或限制。",
+    [
+      "|维度|条目|代码条目|探索状态|",
+      "|---|---:|---:|---|",
+      ...result.analysis.coverage.map(
+        (c) =>
+          `|${c.title}|${c.entries}|${c.codeEntries}|${c.relevantWorkers.map((w) => `${w.worker}:${w.status}${w.error ? `（${w.error}）` : ""}`).join("；") || "按现有来源直接计算／无可探索来源"}|`,
+      ),
+    ].join("\n"),
+  ].join("\n\n")}\n`,
+  { mode: 0o600, flag: "wx" },
+);
 console.log(JSON.stringify({ output: resolve(outputPath), conclusions: result.profile.conclusions.length, ...result.metrics }));

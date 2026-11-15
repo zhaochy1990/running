@@ -1,5 +1,6 @@
 /** POC only. Input is an already captured, private, read-only source snapshot. */
 import { z } from "zod/v4";
+import { MetadataSchema } from "./dimensions.js";
 
 export const SnapshotSchema = z
   .object({
@@ -44,6 +45,8 @@ export const ConclusionSchema = z.object({
   hypothesisId: z.string().optional(),
   supportingReceiptIds: z.array(z.string()).optional(),
   counterexampleReceiptIds: z.array(z.string()).optional(),
+  metadata: MetadataSchema.optional(),
+  values: z.unknown().optional(),
 });
 export type Conclusion = z.infer<typeof ConclusionSchema>;
 export const ProfileSchema = z.object({
@@ -56,6 +59,8 @@ export const ProfileSchema = z.object({
   conclusions: z.array(ConclusionSchema),
   unknowns: z.array(z.string()),
   change: z.object({ previousInputHash: z.string().nullable(), removedConclusionIds: z.array(z.string()), reason: z.string() }),
+  previousDecisions: z.array(z.object({ id: z.string(), action: z.string(), reason: z.string(), replacementId: z.string().nullable() })).optional(),
+  highlights: z.array(z.string()).optional(),
 });
 export type Profile = z.infer<typeof ProfileSchema>;
 export const refs = (rows: Evidence[]) => rows.map(({ id, revision }) => ({ id, revision }));

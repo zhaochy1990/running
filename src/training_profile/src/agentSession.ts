@@ -2,6 +2,8 @@
 import { createHash } from "node:crypto";
 import { z } from "zod/v4";
 import { calculateSnapshot } from "./calculations.js";
+import { sourceTypesFor } from "./deterministic.js";
+import { DimensionId, dimensions, Nature } from "./dimensions.js";
 import { Lifecycle, type Profile, refs, type Snapshot, validConclusions } from "./types.js";
 
 export const HypothesisSchema = z.object({
@@ -24,9 +26,13 @@ export const SubmissionSchema = z.object({
   insights: z
     .array(
       z.object({
-        hypothesisId: z.string(),
+        hypothesisId: z.string().nullable(),
         title: z.string(),
         kind: z.enum(["fact", "estimate", "user_report", "insight"]),
+        dimensionId: DimensionId,
+        nature: Nature,
+        sourceIds: z.array(z.string()).min(1).max(30),
+        quotes: z.array(z.object({ sourceId: z.string(), text: z.string().min(1) })),
         text: z.string().max(650),
         dimension: z.string(),
         lifecycle: Lifecycle,
@@ -58,6 +64,8 @@ export class ProfileAgentSession {
   constructor(
     readonly snapshot: Snapshot,
     private readonly record: (event: unknown) => Promise<void>,
+    readonly agentId = "explorer",
+    readonly allowedDimensions: readonly DimensionId[] = DimensionId.options,
   ) {}
 
   async receipt(input: Omit<Receipt, "id">) {
@@ -124,7 +132,7 @@ export class ProfileAgentSession {
     if (input.hypothesisId !== null && !this.hypotheses.has(input.hypothesisId)) throw new Error("Record the hypothesis before testing it");
     if (["support", "counterexample"].includes(input.purpose) && !input.hypothesisId) throw new Error("Support and counterexample checks need a hypothesisId");
     const calculated = await calculateSnapshot(this.snapshot, input.code);
-    if (["support", "counterexample"].includes(input.purpose) && !calculated.readInput)
+    if (["support", "counterexample", "validation"].includes(input.purpose) && !calculated.readInput)
       throw new Error("Support and counterexample calculations must read the snapshot input");
     return this.receipt({
       hypothesisId: input.hypothesisId,
@@ -161,11 +169,27 @@ export class ProfileAgentSession {
     if (this.submitted) throw new Error("Already submitted");
     const active = new Map(this.snapshot.evidence.filter((e) => e.active).map((e) => [e.id, e]));
     const conclusions = value.insights.map((insight, i) => {
-      const h = this.hypotheses.get(insight.hypothesisId);
-      if (!h || !["retained", "qualified"].includes(h.status)) throw new Error(`Hypothesis ${insight.hypothesisId} is not retained/qualified`);
-      this.checkEvidence(h);
-      const receipts = [...h.supportReceipts, ...h.challengeReceipts].map((id) => this.receipts.get(id));
-      const sourceIds = [...new Set(receipts.flatMap((r) => r?.sourceIds ?? []))];
+      if (!this.allowedDimensions.includes(insight.dimensionId)) throw new Error(`Dimension ${insight.dimensionId} is outside this agent's scope`);
+      const h = insight.hypothesisId ? this.hypotheses.get(insight.hypothesisId) : null;
+      if (insight.hypothesisId && (!h || !["retained", "qualified"].includes(h.status)))
+        throw new Error(`Hypothesis ${insight.hypothesisId} is not retained/qualified`);
+      if (h) this.checkEvidence(h);
+      const selected = insight.sourceIds.map((id) => {
+        const e = active.get(id);
+        if (!e) throw new Error(`Inactive/unknown supporting source ${id}`);
+        return e;
+      });
+      for (const quote of insight.quotes) {
+        const e = active.get(quote.sourceId);
+        const original = e?.kind === "activity" ? e.content.feelNote : e?.kind === "user_statement" ? e.content.text : null;
+        if (!e || !insight.sourceIds.includes(e.id) || typeof original !== "string" || !original.includes(quote.text))
+          throw new Error("Quotes must be literal text from an active user statement/feelNote, not retrospective coach analysis");
+      }
+      const extraction = ["preference", "goal", "constraint", "subjective"].includes(insight.nature);
+      if (extraction && !insight.quotes.length) throw new Error("User preference, goal, constraint or feeling needs a literal attributed quote");
+      if (!h && !insight.quotes.length) throw new Error("An untested extraction needs literal user quotes; inferred findings need a tested hypothesis");
+      const receipts = h ? [...h.supportReceipts, ...h.challengeReceipts].map((id) => this.receipts.get(id)) : [];
+      const sourceIds = [...new Set([...insight.sourceIds, ...receipts.flatMap((r) => r?.sourceIds ?? [])])];
       const rows = sourceIds.map((id) => {
         const e = active.get(id);
         if (!e) throw new Error(`Inactive/unknown source ${id}`);
@@ -180,17 +204,32 @@ export class ProfileAgentSession {
         kind: insight.kind,
         title: insight.title,
         text: insight.text,
-        dimension: insight.dimension,
+        dimension: dimensions[insight.dimensionId],
         lifecycle: insight.lifecycle,
         planningUse: insight.planningUse,
-        support: insight.support,
+        support: h ? insight.support : undefined,
         conditions: insight.conditions,
         limitations: insight.limitations,
         evidence: refs(rows),
         sourceDates: [...new Set(dates)].sort(),
-        hypothesisId: h.id,
-        supportingReceiptIds: h.supportReceipts,
-        counterexampleReceiptIds: h.challengeReceipts,
+        hypothesisId: h?.id,
+        supportingReceiptIds: h?.supportReceipts ?? [],
+        counterexampleReceiptIds: h?.challengeReceipts ?? [],
+        metadata: {
+          dimensionId: insight.dimensionId,
+          nature: insight.nature,
+          sourceTypes: sourceTypesFor(selected, insight.quotes.length > 0),
+          formation: h ? ("agent_exploration" as const) : ("agent_extraction" as const),
+          methodId: h ? "hypothesis-support-counterexample-v2" : "literal-user-extraction-v1",
+          computation: h
+            ? receipts.some((r) => r?.code && !r.code.startsWith("fixed:"))
+              ? ("agent_authored" as const)
+              : ("predefined" as const)
+            : ("none" as const),
+          supportingSources: refs(selected),
+          quotes: insight.quotes,
+          producer: this.agentId,
+        },
       };
     });
     const valid = new Set(previous ? validConclusions(previous, this.snapshot).map((c) => c.id) : []);
