@@ -12,6 +12,10 @@ import Testing
                 let evidence_day: String?
                 let cutoff_day: String?
                 let computed_shanghai: String?
+                let hr_range: String?
+                let hr_method_label: String?
+                let speed_effort_label: String?
+                let lab_method: String?
             }
             let name: String
             let response: StrideZonesResponse
@@ -36,7 +40,15 @@ import Testing
             #expect(pace.evidenceDay == item.expected.evidence_day)
             #expect(pace.cutoffDay == item.expected.cutoff_day)
             #expect(pace.computedShanghai == item.expected.computed_shanghai)
+            Self.assertAdditionalDisplays(item.expected, pace: pace, hr: hr)
         }
+    }
+
+    static func assertAdditionalDisplays(_ expected: Fixture.Case.Expected, pace: CalibrationDisplay, hr: CalibrationDisplay) {
+        if let range = expected.hr_range { #expect(hr.range == range) }
+        if let method = expected.hr_method_label { #expect(hr.details.contains("方法：\(method)")) }
+        if let effort = expected.speed_effort_label { #expect(pace.details.contains { $0.contains("全力支持：\(effort)") }) }
+        if let method = expected.lab_method { #expect(hr.details.contains { $0.contains("· \(method)") }) }
     }
 
     @Test func productionMethodsAndLegacyDetectionStayHonest() throws {
@@ -94,5 +106,27 @@ import Testing
         #expect(value.details.contains { $0.contains("缺少独立近全力证据") })
         #expect(value.details.contains { $0.contains("近期独立锚点不足，无法推断一小时能力") })
         #expect(value.details.contains("目标：暂无可用心率参考"))
+    }
+
+    @Test func heartRateHalfPointsUsePositiveTiesUpForCenterAndRange() throws {
+        let json = """
+        {"threshold":{"pace_per_km_sec":214,"hr_bpm":166.5,"as_of_date":"2026-11-14","source":{"schema_version":1,"state":"available","hr":{"method":"field_30min_last20_v1","target_type":"field_HR_proxy_not_physiological_LTHR","range_low":166.5,"range_high":168.5,"support":"medium"}}},"pace_zones":[],"hr_zones":[]}
+        """
+        let response = try JSONDecoder().decode(StrideZonesResponse.self, from: Data(json.utf8))
+        let hr = calibrationDisplay(response, metric: .heartRate)
+        #expect(hr.value == "167")
+        #expect(hr.range == "支持范围 167–169 bpm")
+        #expect(calibrationDisplay(response, metric: .pace).value == "3:34")
+    }
+
+    @Test func labProtocolLabelKeepsSpecificMethod() throws {
+        let json = """
+        {"threshold":{"hr_bpm":168.5,"as_of_date":"2026-11-14","source":{"schema_version":1,"state":"available","hr":{"method":"lab_lthr_report_v1","target_type":"lab_method_specific_LTHR","lab_method":"OBLA4.0","support":"medium"}}},"pace_zones":[],"hr_zones":[]}
+        """
+        let response = try JSONDecoder().decode(StrideZonesResponse.self, from: Data(json.utf8))
+        let hr = calibrationDisplay(response, metric: .heartRate)
+        #expect(hr.value == "169")
+        #expect(hr.details.contains("方法：实验室乳酸阈值报告"))
+        #expect(hr.details.contains("目标：实验室方法特定乳酸阈值 · OBLA4.0"))
     }
 }

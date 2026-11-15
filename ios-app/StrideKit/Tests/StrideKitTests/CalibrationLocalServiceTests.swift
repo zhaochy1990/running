@@ -39,6 +39,7 @@ import Testing
             #expect(pace.evidenceDay == item.expected.evidence_day)
             #expect(pace.cutoffDay == item.expected.cutoff_day)
             #expect(pace.computedShanghai == item.expected.computed_shanghai)
+            CalibrationDisplayTests.assertAdditionalDisplays(item.expected, pace: pace, hr: hr)
         }
     }
 
@@ -58,6 +59,9 @@ import Testing
             #expect(model.errorText.isEmpty, "\(item.name)")
             #expect(model.metrics.first { $0.label == "阈值配速" }?.value == item.expected.pace)
             #expect(model.metrics.first { $0.label == "阈值心率" }?.value == item.expected.hr)
+            let pace = try #require(model.metrics.first { $0.label == "阈值配速" }?.explanation)
+            let hr = try #require(model.metrics.first { $0.label == "阈值心率" }?.explanation)
+            CalibrationDisplayTests.assertAdditionalDisplays(item.expected, pace: pace, hr: hr)
         }
     }
 
