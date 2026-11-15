@@ -2,7 +2,7 @@
 import { addDays } from "@stride/contract";
 import { type Conclusion, type Evidence, finite, refs, type Snapshot } from "./types.js";
 
-const day = (e: Evidence) => String(e.content.shanghaiDay);
+const day = (e: Evidence) => String(e.kind === "activity" ? (e.content.shanghaiDay ?? "") : (e.content.date ?? ""));
 const round = (n: number, digits = 1) => Number(n.toFixed(digits));
 const average = (values: number[]) => values.reduce((a, b) => a + b, 0) / values.length;
 
@@ -67,7 +67,7 @@ export function buildComparisons(snapshot: Snapshot) {
       dimension,
       lifecycle: "rolling",
       evidence: refs([...new Map(rows.map((row) => [row.id, row])).values()]),
-      sourceDates: [...new Set(rows.map(day))].sort(),
+      sourceDates: [...new Set(rows.map(day).filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value)))].sort(),
       conditions,
       limitations: [],
       measurements,

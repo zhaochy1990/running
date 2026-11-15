@@ -106,6 +106,10 @@ test("weekly dose concentration uses complete daily coverage and retains before/
   const result = buildComparisons(snapshot(loads));
   const observation = result.observations.find((o) => o.id === "comparison-load-concentration");
   assert(observation);
+  assert(observation.sourceDates.every((day) => /^\d{4}-\d{2}-\d{2}$/.test(day)));
+  assert(Array.isArray(observation.measurements));
+  assert.equal(observation.measurements[0]?.acuteBefore, 40);
+  assert.equal(observation.measurements[0]?.acuteAfter, 60);
   assert.match(observation.text, /60/);
   assert.match(observation.text, /80/);
   const first = loads[0];
