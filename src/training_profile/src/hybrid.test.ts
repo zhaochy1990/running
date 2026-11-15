@@ -298,3 +298,37 @@ test("fixed calculations do not guess the semantic dimension of user prose", () 
   assert(!entries.some((c) => c.metadata?.quotes.length));
   assert(!entries.some((c) => c.text.includes("右膝")));
 });
+
+test("newer explicit withdrawals and merges survive importing older files in either order", async () => {
+  const f = await assemblyFixture();
+  const decision = { id: f.id, action: "withdraw", reason: "较新审阅明确撤回此认识", replacementId: null };
+  const newer: Profile = { ...f.original, evaluatedAt: "2026-11-17T00:00:00Z", conclusions: [], previousDecisions: [decision] };
+  for (const profiles of [
+    [f.original, newer],
+    [newer, f.original],
+  ]) {
+    const h = loadHistory(profiles, f.s);
+    assert.equal(h.length, 1);
+    assert.equal(h[0]?.valid, false);
+    assert.equal(h[0]?.disposition?.action, "withdraw");
+  }
+  const b = structuredClone(f.original.conclusions[0]);
+  assert.ok(b);
+  b.id = "history:canonical-b";
+  b.title = "另一个保留认识";
+  const merged: Profile = { ...newer, conclusions: [b], previousDecisions: [{ ...decision, action: "merge", replacementId: b.id }] };
+  const h = loadHistory([merged, f.original], f.s);
+  assert.equal(h.find((p) => p.id === f.id)?.valid, false);
+  assert.equal(h.find((p) => p.id === f.id)?.disposition?.replacementId, b.id);
+  assert.equal(h.find((p) => p.id === b.id)?.valid, true);
+});
+
+test("same-time contradictory history dispositions fail closed", async () => {
+  const f = await assemblyFixture();
+  const conflict: Profile = {
+    ...f.original,
+    conclusions: [],
+    previousDecisions: [{ id: f.id, action: "withdraw", reason: "相同发布时间的矛盾决定", replacementId: null }],
+  };
+  assert.throws(() => loadHistory([f.original, conflict], f.s), /same publication time/);
+});

@@ -9,16 +9,30 @@ export interface PriorEntry {
   inputHash: string;
   evaluatedAt: string;
   valid: boolean;
+  inactiveReason?: string;
+  disposition?: { action: string; reason: string; replacementId: string | null };
 }
 export function loadHistory(profiles: Profile[], snapshot: Snapshot): PriorEntry[] {
   const result = new Map<string, PriorEntry>();
-  for (const profile of profiles) {
+  const terminal = new Map<string, { time: number; action: string; reason: string; replacementId: string | null }>();
+  if (profiles.some((p) => !Number.isFinite(Date.parse(p.evaluatedAt)))) throw new Error("Historical publication time must be known");
+  for (const profile of profiles.toSorted((a, b) => Date.parse(a.evaluatedAt) - Date.parse(b.evaluatedAt))) {
     if (profile.userId !== snapshot.userId) throw new Error("Previous profile belongs to another user");
     const valid = new Set(validConclusions(profile, snapshot).map((c) => c.id));
+    const time = Date.parse(profile.evaluatedAt),
+      localIds = new Map<string, string>();
+    const updates = new Set((profile.previousDecisions ?? []).filter((d) => d.action === "update").map((d) => d.id));
     for (const c of profile.conclusions) {
       const id = c.id.startsWith("history:")
         ? c.id
         : `history:${createHash("sha256").update(`${profile.userId}:${profile.method}:${profile.inputHash}:${profile.evaluatedAt}:${c.id}`).digest("hex").slice(0, 18)}`;
+      localIds.set(c.id, id);
+      const stopped = terminal.get(id);
+      if (stopped) {
+        if (stopped.time === time) throw new Error(`Conflicting historical disposition ${id} at the same publication time`);
+        if (!updates.has(id)) continue;
+        terminal.delete(id);
+      }
       const existing = result.get(id);
       if (existing) {
         const core = (entry: Conclusion) =>
@@ -38,8 +52,23 @@ export function loadHistory(profiles: Profile[], snapshot: Snapshot): PriorEntry
       }
       result.set(id, { id, conclusion: c, method: profile.method, inputHash: profile.inputHash, evaluatedAt: profile.evaluatedAt, valid: valid.has(c.id) });
     }
+    for (const d of profile.previousDecisions ?? []) {
+      if (!["withdraw", "blocked", "merge"].includes(d.action)) continue;
+      const id = localIds.get(d.id) ?? d.id,
+        existing = result.get(id),
+        old = terminal.get(id);
+      const replacementId = d.replacementId ? (localIds.get(d.replacementId) ?? d.replacementId) : null;
+      if (profile.conclusions.some((c) => c.id === d.id) || (existing && Date.parse(existing.evaluatedAt) === time))
+        throw new Error(`Conflicting historical disposition ${id} at the same publication time`);
+      if (old?.time === time && (old.action !== d.action || old.replacementId !== replacementId))
+        throw new Error(`Conflicting historical disposition ${id} at the same publication time`);
+      terminal.set(id, { time, action: d.action, reason: d.reason, replacementId });
+    }
   }
-  return [...result.values()];
+  return [...result.values()].map((p) => {
+    const d = terminal.get(p.id);
+    return d ? { ...p, valid: false, inactiveReason: d.reason, disposition: { action: d.action, reason: d.reason, replacementId: d.replacementId } } : p;
+  });
 }
 
 export function carryPrior(prior: PriorEntry, dimensionId: DimensionId, nature: Nature, reviewStatus: string): Conclusion {

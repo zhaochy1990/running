@@ -43,7 +43,8 @@ export class ProfileAssembly {
   inspect(id: string) {
     const prior = this.history.find((p) => p.id === id);
     if (prior) {
-      if (!prior.valid) return { id, protected: true, reason: "Underlying source was withdrawn or revised; historical text is not exposed" };
+      if (!prior.valid)
+        return { id, protected: true, reason: prior.inactiveReason ?? "Underlying source was withdrawn or revised; historical text is not exposed" };
       this.inspected.add(id);
       return { ...briefEntry(prior.conclusion), id, priorMethod: prior.method };
     }
@@ -131,7 +132,12 @@ export class ProfileAssembly {
       })),
       ...this.history
         .filter((p) => !p.valid)
-        .map((p) => ({ id: p.id, action: "blocked", reason: "Underlying source revision or active state no longer matches", replacementId: null })),
+        .map((p) => ({
+          id: p.id,
+          action: p.disposition?.action ?? "blocked",
+          reason: p.inactiveReason ?? "Underlying source revision or active state no longer matches",
+          replacementId: p.disposition?.replacementId ?? null,
+        })),
     ];
     this.profile = {
       prototype: true,
