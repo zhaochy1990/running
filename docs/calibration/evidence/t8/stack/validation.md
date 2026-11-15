@@ -1,0 +1,33 @@
+# T8 captured stack validation — actual 2026-11-15 Shanghai run
+
+Stack source commit `266c5437965ce8f33e26c468b14c0984feb5f46a` on `feat/991-calibration-stack-validation`, base `97f29a81`. This is stack-only source identity, not a joint evaluation-engine receipt. Parent coordinates final integration and independent review.
+
+**Covered engineering checks passed. Candidate activation is not validated and remains blocked.** The final source run completed before midnight at 23:59:25 Shanghai: actual Go test PASS217.915s; no clock replacement or date shifting. Earlier two runs PASS260.848s/269.980s are exploratory/follow-up evidence, not substitutes for the final source run.
+
+## Captured inputs and scope
+
+One private NONFINAL source user was mapped to one random UUID, all activity labels to local ordinals. Input gzip SHA256 `e94025d30c3da7afdc83ac1a6880a0578159d4a369da0dada11a72a226e4ab78`. Captured252runs/644425points/300RHR rows;129actual activity/cutoff days. Existing real sample/lap values were preserved exactly after legal storage sync persistence → FileStore codec/object keys → canonical calibrationsource mapping. Manifest civil dates were represented by Shanghai noon, since original intra-day instants are absent from this domain manifest; this is event-date retrospective engineering replay, not strict as-known-at-the-time backtesting.
+
+No final holdout content or outcomes opened/scored. No model, parameter, frozen protocol or production data changes. No registered account or formal plan created. No production reads or writes in this lane.
+
+## Three distinct version statements
+
+1. **Direct bundle consumers:** real storage, GinRS256 zones/health and real mysql2 MySqlDataProvider plus the actual Coach get_running_calibration tool selected3→4→3 consistently by ID/version/asof/source/fingerprint. Query mode/version cannot override active. Candidate speed/HR centers remain null and do not borrow v3. Existing Web/MP projectors and Swift real APIClient/decoder/display all consumed the same per-phase HTTP hash. Three Node passes and three actual Swift host tests (each1pass/0skip; .036/.032/.031s) are new evidence. T7's reviewed real UI/device runs remain inherited evidence, not newly counted UI traversal here.
+2. **Candidate read-only preview:**252load records,0historical missing days, but0paired nonnull doses and252missing doses. All129candidate speed/HR centers are absent; v3speed129/129,HR128/129. Candidate numeric dose median/P90=null and changed_dose0 cannot mean no impact: the numeric comparison is insufficient. Ability preview source was not requested; ability:null is not a measured unavailability result. This verifies missing-state honesty and no writes, not candidate ability accuracy or useful load coverage.
+3. **Existing derived rows:** five tables and ability/current cached results remain frozen v3 while direct bundle consumers select4. active4 compute and ability reject active derived persistence; five tables remain byte/value identical around preview and all external read phases. There is no candidate derived namespace and no evidence that all downstream calculations activated4. Full candidate activation/derived persistence remains unsupported/unvalidated.
+
+## Real pipeline and rollback
+
+Owned RabbitMQ127.0.0.1:13384 with publisher confirms/manual consumer ack, durable MySQL jobs, actual dispatcher/pipeline;7started/7completed/0failed. Test-only captured importer calls real storage.UpsertActivity/UpsertDailyHealth; calibration/compute/ability handlers are production implementations. No fake HTTP or in-memory repository. Not live third-party watch HTTP sync. FileStore is the actual codec/object backend, but normal binary's COS/MQ configuration and full deployment topology are not covered.
+
+Fresh import with only today's snapshot returned unavailable_historical_calibration/derived_rows_written0 and all five tables empty. Explicit historical canonical v3/v4 calibration snapshots then preceded load/classification/zones → full PMC with explicit zero anchor → daily ability/per-activity L1. Persisted counts are252load/366PMC/15ability/80L1/3024zones. L1 coverage follows the actual canonical90-day ability source window and its gates; this is not252L1 results or a full L1 historical backfill claim.
+
+Rollback pointer3 alone was not treated as a derived rollback. Explicit full v3 compute/PMC then ability/L1 ran again. All five persisted output projections reproduced the previous v3 values, excluding generated row IDs/execution timestamps/new frozen policy revision metadata. Every resulting provenance row was re-read, with available digest, version3 and per-activity/date cutoff snapshot ID/fingerprint equality; no future bundle or today's threshold filled history. This is rollback of the supported isolated state. Candidate-derived production activation/rollback is not claimed.
+
+## Local checks and cleanup
+
+Final own source ordinary Go handler suite PASS0.534s; final related vet PASS. Guard observed RED before implementation then GREEN. Earlier focused race PASS4.412s (guard/candidate tests, not real full-pipeline race). Node24 offline frozen install/topological workspace build PASS; Swift fresh build PASS30.98s with the gate disabled, then the three live tests above actually executed. Real localhost403tenant isolation and401missing auth were checked. Origin/master refreshed to a70f0edc and is already ancestor; no rebase needed. No push/PR/issue/merge/deploy operation by this lane.
+
+Own Go session37753/test PID45598 exited normally, Gin19892 and consumer stopped, no listening service/process remains. Controlled driver session49416 exited0. storage.DeleteUserData removed random identity, all five tables and252blobs; final source defer audited all label loads/L1/zones, PMC, ability and active/candidate bundles. Policy values restored3/4/3 (revision may increment). Owned Rabbit container stride991-stack-rabbit (label stride.owner=991-stack) was removed; reused pre-existing Rabbit image was not deleted, no own image created. No Vite/device was started. Root-owned stride983-calibration-mysql remains running. All owned raw logs/control artifacts are private0600. **DB writer window released.**
+
+Public aggregate/hash artifact: docs/calibration/evidence/t8/stack/verified-summary.json. Private logs (not committed): t8-stack-verified-go.log, t8-stack-verified-node-{active3,active4,rollback3}.log and t8-stack-verified-swift-{active3,active4,rollback3}.log; control/preview/summary prefix `/tmp/stride-983/private/t8-stack-verified.json`. Replay commands and gates are in the public stack README. Candidate release_ready=false; accuracy/final holdout belongs to the main evaluator and is not inferred from engineering passes.
