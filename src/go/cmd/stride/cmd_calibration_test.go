@@ -71,3 +71,32 @@ func TestCalibrationCommandRejectsInvalidInputAndDoesNotClaimAccuracy(t *testing
 		t.Fatal("fixed CLI replay is not repeatable")
 	}
 }
+
+func TestPublicDataCommandRunsLocalInputWithoutConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sample.jsonl")
+	if err := os.WriteFile(path, []byte(`{"id":1,"userId":7,"sport":"run","timestamp":[1704067200,1704067203],"heart_rate":[140,150]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	root := newRootCmd()
+	var output bytes.Buffer
+	root.SetOut(&output)
+	root.SetErr(&output)
+	root.SetArgs([]string{"calibration", "public-data", "--format", "fitrec-jsonl", "--input", path, "--code-version", "test"})
+	err := root.Execute()
+	var status interface{ ExitCode() int }
+	if !errors.As(err, &status) || status.ExitCode() != 2 {
+		t.Fatalf("expected insufficient exit, got %v: %s", err, output.String())
+	}
+	var report struct {
+		Status         string `json:"status"`
+		ReleaseReady   bool   `json:"release_ready"`
+		SourceSHA256   string `json:"source_sha256"`
+		Implementation string `json:"implementation"`
+	}
+	if err := json.Unmarshal(output.Bytes(), &report); err != nil {
+		t.Fatalf("report not JSON: %v %s", err, output.String())
+	}
+	if report.Status != "insufficient" || report.ReleaseReady || len(report.SourceSHA256) != 64 || report.Implementation != "v3" {
+		t.Fatalf("unsafe identity: %+v", report)
+	}
+}
