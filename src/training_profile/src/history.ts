@@ -4,13 +4,16 @@ import { type Conclusion, type Profile, type Snapshot, validConclusions } from "
 
 export interface PriorEntry {
   id: string;
-  conclusion: Conclusion;
+  conclusion: Conclusion | null;
   method: string;
   inputHash: string;
   evaluatedAt: string;
   valid: boolean;
   inactiveReason?: string;
   disposition?: { action: string; reason: string; replacementId: string | null };
+}
+export function activePrior(p: PriorEntry): p is PriorEntry & { conclusion: Conclusion } {
+  return p.valid && p.conclusion !== null;
 }
 export function loadHistory(profiles: Profile[], snapshot: Snapshot): PriorEntry[] {
   const result = new Map<string, PriorEntry>();
@@ -46,9 +49,9 @@ export function loadHistory(profiles: Profile[], snapshot: Snapshot): PriorEntry
           });
         const oldTime = Date.parse(existing.evaluatedAt),
           newTime = Date.parse(profile.evaluatedAt);
-        if (core(existing.conclusion) !== core(c) && !(Number.isFinite(oldTime) && Number.isFinite(newTime) && oldTime !== newTime))
+        if (existing.conclusion && core(existing.conclusion) !== core(c) && !(Number.isFinite(oldTime) && Number.isFinite(newTime) && oldTime !== newTime))
           throw new Error(`Conflicting historical identity ${id} at the same publication time`);
-        if (newTime < oldTime || (newTime === oldTime && existing.conclusion.metadata && !c.metadata)) continue;
+        if (newTime < oldTime || (newTime === oldTime && existing.conclusion?.metadata && !c.metadata)) continue;
       }
       result.set(id, { id, conclusion: c, method: profile.method, inputHash: profile.inputHash, evaluatedAt: profile.evaluatedAt, valid: valid.has(c.id) });
     }
@@ -58,11 +61,13 @@ export function loadHistory(profiles: Profile[], snapshot: Snapshot): PriorEntry
         existing = result.get(id),
         old = terminal.get(id);
       const replacementId = d.replacementId ? (localIds.get(d.replacementId) ?? d.replacementId) : null;
-      if (profile.conclusions.some((c) => c.id === d.id) || (existing && Date.parse(existing.evaluatedAt) === time))
+      if (profile.conclusions.some((c) => c.id === d.id) || (existing?.conclusion && Date.parse(existing.evaluatedAt) === time))
         throw new Error(`Conflicting historical disposition ${id} at the same publication time`);
       if (old?.time === time && (old.action !== d.action || old.replacementId !== replacementId))
         throw new Error(`Conflicting historical disposition ${id} at the same publication time`);
       terminal.set(id, { time, action: d.action, reason: d.reason, replacementId });
+      if (!existing)
+        result.set(id, { id, conclusion: null, method: profile.method, inputHash: profile.inputHash, evaluatedAt: profile.evaluatedAt, valid: false });
     }
   }
   return [...result.values()].map((p) => {
@@ -72,7 +77,7 @@ export function loadHistory(profiles: Profile[], snapshot: Snapshot): PriorEntry
 }
 
 export function carryPrior(prior: PriorEntry, dimensionId: DimensionId, nature: Nature, reviewStatus: string): Conclusion {
-  if (!prior.valid) throw new Error("A protected historical conclusion cannot be retained");
+  if (!activePrior(prior)) throw new Error("A protected historical conclusion cannot be retained");
   const c = prior.conclusion;
   if (["preference", "goal", "constraint", "subjective"].includes(nature) && !c.metadata?.quotes.length)
     throw new Error("Cannot relabel an old observation as an explicit user statement without a quote");

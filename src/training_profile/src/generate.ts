@@ -97,7 +97,7 @@ export async function generateProfile(
         plannedWorkers: workers.planned,
         computed: computed.entries.map(briefEntry),
         history: history.map((p) =>
-          p.valid
+          p.valid && p.conclusion
             ? { id: p.id, title: p.conclusion.title, support: p.conclusion.support, previousDimension: p.conclusion.dimension }
             : { id: p.id, protected: true },
         ),

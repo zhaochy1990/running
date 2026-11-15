@@ -256,10 +256,10 @@ test("same generator across independent runs is distinct, while carry-forward hi
   f.assembly.submit(f.review);
   assert.ok(f.assembly.profile);
   const forward = { ...f.assembly.profile, evaluatedAt: "2026-11-17T10:00:00Z" };
-  const combined = loadHistory([f.original, forward], f.s).filter((p) => p.conclusion.title === "热天心率反应");
+  const combined = loadHistory([f.original, forward], f.s).filter((p) => p.conclusion?.title === "热天心率反应");
   assert.equal(combined.length, 1);
   assert.equal(combined[0]?.id, f.id);
-  assert.ok(combined[0]?.conclusion.metadata);
+  assert.ok(combined[0]?.conclusion?.metadata);
 });
 
 test("merging cannot relabel historical dimensions and cannot promote preliminary associations to facts", async () => {
@@ -331,4 +331,24 @@ test("same-time contradictory history dispositions fail closed", async () => {
     previousDecisions: [{ id: f.id, action: "withdraw", reason: "相同发布时间的矛盾决定", replacementId: null }],
   };
   assert.throws(() => loadHistory([f.original, conflict], f.s), /same publication time/);
+});
+
+test("a disposition-only publication carries its tombstone through another generation", async () => {
+  const f = await assemblyFixture();
+  const state: Profile = {
+    ...f.original,
+    evaluatedAt: "2026-11-18T00:00:00Z",
+    conclusions: [],
+    previousDecisions: [{ id: f.id, action: "withdraw", reason: "已明确撤回，不再展示原结论", replacementId: null }],
+  };
+  const history = loadHistory([state], f.s);
+  assert.equal(history.length, 1);
+  assert.equal(history[0]?.conclusion, null);
+  const a = new ProfileAssembly(f.s, [], history, f.workers, f.validation);
+  a.submit({ ...f.review, prior: [], highlights: [] });
+  assert.ok(a.profile);
+  const forward = { ...a.profile, evaluatedAt: "2026-11-19T00:00:00Z" };
+  const final = loadHistory([f.original, forward], f.s);
+  assert.equal(final.find((p) => p.id === f.id)?.valid, false);
+  assert.equal(final.find((p) => p.id === f.id)?.disposition?.action, "withdraw");
 });

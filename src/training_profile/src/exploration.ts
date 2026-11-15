@@ -5,7 +5,7 @@ import { ProfileAgentSession } from "./agentSession.js";
 import { profileAgentTools } from "./agentTools.js";
 import { briefEntry } from "./deterministic.js";
 import { dimensions, type WorkerId, workerScopes } from "./dimensions.js";
-import type { PriorEntry } from "./history.js";
+import { activePrior, type PriorEntry } from "./history.js";
 import type { Conclusion, Snapshot } from "./types.js";
 
 const RULES = `你是训练画像的专项子Agent。只在指定维度提出有个人价值的问题，自主选择比较方法、样本与反例；不必为每个属性凑结论。
@@ -106,7 +106,7 @@ export class Explorations {
           catalog: session.catalog(),
           computedEvidence: this.computed.map((c) => ({ id: c.id, title: c.title, dimensionId: c.metadata?.dimensionId })),
           priorKnowledge: this.history
-            .filter((p) => p.valid)
+            .filter(activePrior)
             .map((p) => ({ id: p.id, title: p.conclusion.title, text: p.conclusion.text, conditions: p.conclusion.conditions, support: p.conclusion.support })),
           revisionOf: previous ? { entries: previous.entries.map(briefEntry), error: previous.error ?? null } : null,
         };

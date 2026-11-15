@@ -4,7 +4,7 @@ import type { ProfileAgentSession } from "./agentSession.js";
 import { briefEntry } from "./deterministic.js";
 import { DimensionId, Nature } from "./dimensions.js";
 import type { Explorations } from "./exploration.js";
-import { carryPrior, type PriorEntry } from "./history.js";
+import { activePrior, carryPrior, type PriorEntry } from "./history.js";
 import type { Conclusion, Profile, Snapshot } from "./types.js";
 
 export const ReviewSchema = z.object({
@@ -43,7 +43,7 @@ export class ProfileAssembly {
   inspect(id: string) {
     const prior = this.history.find((p) => p.id === id);
     if (prior) {
-      if (!prior.valid)
+      if (!activePrior(prior))
         return { id, protected: true, reason: prior.inactiveReason ?? "Underlying source was withdrawn or revised; historical text is not exposed" };
       this.inspected.add(id);
       return { ...briefEntry(prior.conclusion), id, priorMethod: prior.method };
@@ -57,7 +57,7 @@ export class ProfileAssembly {
   submit(review: z.infer<typeof ReviewSchema>) {
     if (this.profile) throw new Error("Master already submitted");
     if (!this.workers.ready()) throw new Error("Complete or explicitly fail all planned dimension explorations before assembly");
-    const prior = this.history.filter((p) => p.valid),
+    const prior = this.history.filter(activePrior),
       candidates = this.workers.entries();
     sameSet(
       review.prior.map((d) => d.id),
