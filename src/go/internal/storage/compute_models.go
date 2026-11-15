@@ -100,29 +100,30 @@ func (PersonalBest) TableName() string { return "personal_bests" }
 // "activity_training_load"). Mirrors stride_core.training_load; PK
 // (user_id, label_id).
 type ActivityTrainingLoad struct {
-	UserID                 string    `gorm:"column:user_id;type:char(36);primaryKey"`
-	LabelID                string    `gorm:"column:label_id;type:varchar(191);primaryKey"`
-	ActivityDate           string    `gorm:"column:activity_date;type:varchar(16);not null;index:idx_atl_user_date,priority:2"`
-	Sport                  *string   `gorm:"column:sport;type:varchar(64)"`
-	SessionClass           *string   `gorm:"column:session_class;type:varchar(32)"`
-	AlgorithmVersion       int       `gorm:"column:algorithm_version;not null"`
-	CalibrationID          *int      `gorm:"column:calibration_id"`
-	CardioLoadRaw          *float64  `gorm:"column:cardio_load_raw"`
-	CardioTSS              *float64  `gorm:"column:cardio_tss"`
-	ExternalTSS            *float64  `gorm:"column:external_tss"`
-	HighIntensityTSS       *float64  `gorm:"column:high_intensity_tss"`
-	MechanicalLoad         *float64  `gorm:"column:mechanical_load"`
-	SubjectiveInternalLoad *float64  `gorm:"column:subjective_internal_load"`
-	TrainingDose           *float64  `gorm:"column:training_dose"`
-	TrainingDoseSource     *string   `gorm:"column:training_dose_source;type:varchar(64)"`
-	CardioCoverage         float64   `gorm:"column:cardio_coverage;not null;default:0"`
-	ExternalCoverage       float64   `gorm:"column:external_coverage;not null;default:0"`
-	HighIntensityCoverage  float64   `gorm:"column:high_intensity_coverage;not null;default:0"`
-	CoverageStatus         string    `gorm:"column:coverage_status;type:varchar(32);not null;default:unknown"`
-	LoadConfidence         *string   `gorm:"column:load_confidence;type:varchar(16)"`
-	ExcludedFromPMC        bool      `gorm:"column:excluded_from_pmc;not null"`
-	ReasonsJSON            *string   `gorm:"column:reasons_json;type:longtext"`
-	ComputedAt             time.Time `gorm:"column:computed_at;type:datetime(6);not null"`
+	CalibrationProvenanceJSON *string   `gorm:"column:calibration_provenance_json;type:longtext"`
+	UserID                    string    `gorm:"column:user_id;type:char(36);primaryKey"`
+	LabelID                   string    `gorm:"column:label_id;type:varchar(191);primaryKey"`
+	ActivityDate              string    `gorm:"column:activity_date;type:varchar(16);not null;index:idx_atl_user_date,priority:2"`
+	Sport                     *string   `gorm:"column:sport;type:varchar(64)"`
+	SessionClass              *string   `gorm:"column:session_class;type:varchar(32)"`
+	AlgorithmVersion          int       `gorm:"column:algorithm_version;not null"`
+	CalibrationID             *int      `gorm:"column:calibration_id"`
+	CardioLoadRaw             *float64  `gorm:"column:cardio_load_raw"`
+	CardioTSS                 *float64  `gorm:"column:cardio_tss"`
+	ExternalTSS               *float64  `gorm:"column:external_tss"`
+	HighIntensityTSS          *float64  `gorm:"column:high_intensity_tss"`
+	MechanicalLoad            *float64  `gorm:"column:mechanical_load"`
+	SubjectiveInternalLoad    *float64  `gorm:"column:subjective_internal_load"`
+	TrainingDose              *float64  `gorm:"column:training_dose"`
+	TrainingDoseSource        *string   `gorm:"column:training_dose_source;type:varchar(64)"`
+	CardioCoverage            float64   `gorm:"column:cardio_coverage;not null;default:0"`
+	ExternalCoverage          float64   `gorm:"column:external_coverage;not null;default:0"`
+	HighIntensityCoverage     float64   `gorm:"column:high_intensity_coverage;not null;default:0"`
+	CoverageStatus            string    `gorm:"column:coverage_status;type:varchar(32);not null;default:unknown"`
+	LoadConfidence            *string   `gorm:"column:load_confidence;type:varchar(16)"`
+	ExcludedFromPMC           bool      `gorm:"column:excluded_from_pmc;not null"`
+	ReasonsJSON               *string   `gorm:"column:reasons_json;type:longtext"`
+	ComputedAt                time.Time `gorm:"column:computed_at;type:datetime(6);not null"`
 }
 
 func (ActivityTrainingLoad) TableName() string { return "activity_training_load" }
@@ -130,19 +131,20 @@ func (ActivityTrainingLoad) TableName() string { return "activity_training_load"
 // DailyTrainingLoad is one calendar day's PMC (table "daily_training_load").
 // Mirrors stride_core.training_load; PK (user_id, date).
 type DailyTrainingLoad struct {
-	UserID               string    `gorm:"column:user_id;type:char(36);primaryKey"`
-	Date                 string    `gorm:"column:date;type:varchar(16);primaryKey"`
-	AlgorithmVersion     int       `gorm:"column:algorithm_version;not null"`
-	CalibrationID        *int      `gorm:"column:calibration_id"`
-	TrainingDose         float64   `gorm:"column:training_dose;not null;default:0"`
-	AcuteLoad            float64   `gorm:"column:acute_load"`
-	ChronicLoad          float64   `gorm:"column:chronic_load"`
-	Form                 float64   `gorm:"column:form"`
-	LoadRatio            *float64  `gorm:"column:load_ratio"`
-	CoverageStatus       string    `gorm:"column:coverage_status;type:varchar(32);not null;default:unknown"`
-	ReadinessGate        *string   `gorm:"column:readiness_gate;type:varchar(16)"`
-	ReadinessReasonsJSON *string   `gorm:"column:readiness_reasons_json;type:longtext"`
-	ComputedAt           time.Time `gorm:"column:computed_at;type:datetime(6);not null"`
+	CalibrationProvenanceJSON *string   `gorm:"column:calibration_provenance_json;type:longtext"`
+	UserID                    string    `gorm:"column:user_id;type:char(36);primaryKey"`
+	Date                      string    `gorm:"column:date;type:varchar(16);primaryKey"`
+	AlgorithmVersion          int       `gorm:"column:algorithm_version;not null"`
+	CalibrationID             *int      `gorm:"column:calibration_id"`
+	TrainingDose              float64   `gorm:"column:training_dose;not null;default:0"`
+	AcuteLoad                 float64   `gorm:"column:acute_load"`
+	ChronicLoad               float64   `gorm:"column:chronic_load"`
+	Form                      float64   `gorm:"column:form"`
+	LoadRatio                 *float64  `gorm:"column:load_ratio"`
+	CoverageStatus            string    `gorm:"column:coverage_status;type:varchar(32);not null;default:unknown"`
+	ReadinessGate             *string   `gorm:"column:readiness_gate;type:varchar(16)"`
+	ReadinessReasonsJSON      *string   `gorm:"column:readiness_reasons_json;type:longtext"`
+	ComputedAt                time.Time `gorm:"column:computed_at;type:datetime(6);not null"`
 }
 
 func (DailyTrainingLoad) TableName() string { return "daily_training_load" }
@@ -152,14 +154,15 @@ func (DailyTrainingLoad) TableName() string { return "daily_training_load" }
 // tenant key. level ∈ {meta,L2,L3,L4}, dimension ∈ {model_version,total,aerobic,
 // lt,vo2max,endurance,economy,recovery,composite,marathon_*_s,hm_*_s}.
 type AbilitySnapshot struct {
-	ID                  uint64    `gorm:"column:id;primaryKey;autoIncrement"`
-	UserID              string    `gorm:"column:user_id;type:char(36);not null;uniqueIndex:uq_ability,priority:1"`
-	Date                string    `gorm:"column:date;type:varchar(16);not null;uniqueIndex:uq_ability,priority:2"`
-	Level               string    `gorm:"column:level;type:varchar(8);not null;uniqueIndex:uq_ability,priority:3"`
-	Dimension           string    `gorm:"column:dimension;type:varchar(32);not null;uniqueIndex:uq_ability,priority:4"`
-	Value               *float64  `gorm:"column:value"`
-	EvidenceActivityIDs *string   `gorm:"column:evidence_activity_ids;type:longtext"`
-	ComputedAt          time.Time `gorm:"column:computed_at;type:datetime(6);not null"`
+	CalibrationProvenanceJSON *string   `gorm:"column:calibration_provenance_json;type:longtext"`
+	ID                        uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	UserID                    string    `gorm:"column:user_id;type:char(36);not null;uniqueIndex:uq_ability,priority:1"`
+	Date                      string    `gorm:"column:date;type:varchar(16);not null;uniqueIndex:uq_ability,priority:2"`
+	Level                     string    `gorm:"column:level;type:varchar(8);not null;uniqueIndex:uq_ability,priority:3"`
+	Dimension                 string    `gorm:"column:dimension;type:varchar(32);not null;uniqueIndex:uq_ability,priority:4"`
+	Value                     *float64  `gorm:"column:value"`
+	EvidenceActivityIDs       *string   `gorm:"column:evidence_activity_ids;type:longtext"`
+	ComputedAt                time.Time `gorm:"column:computed_at;type:datetime(6);not null"`
 }
 
 func (AbilitySnapshot) TableName() string { return "ability_snapshot" }
@@ -167,12 +170,13 @@ func (AbilitySnapshot) TableName() string { return "ability_snapshot" }
 // ActivityAbility is one activity's L1 quality + contribution (table
 // "activity_ability"). PK (user_id, label_id).
 type ActivityAbility struct {
-	UserID       string    `gorm:"column:user_id;type:char(36);primaryKey"`
-	LabelID      string    `gorm:"column:label_id;type:varchar(191);primaryKey"`
-	L1Quality    *float64  `gorm:"column:l1_quality"`
-	L1Breakdown  *string   `gorm:"column:l1_breakdown;type:longtext"`
-	Contribution *string   `gorm:"column:contribution;type:longtext"`
-	ComputedAt   time.Time `gorm:"column:computed_at;type:datetime(6);not null"`
+	CalibrationProvenanceJSON *string   `gorm:"column:calibration_provenance_json;type:longtext"`
+	UserID                    string    `gorm:"column:user_id;type:char(36);primaryKey"`
+	LabelID                   string    `gorm:"column:label_id;type:varchar(191);primaryKey"`
+	L1Quality                 *float64  `gorm:"column:l1_quality"`
+	L1Breakdown               *string   `gorm:"column:l1_breakdown;type:longtext"`
+	Contribution              *string   `gorm:"column:contribution;type:longtext"`
+	ComputedAt                time.Time `gorm:"column:computed_at;type:datetime(6);not null"`
 }
 
 func (ActivityAbility) TableName() string { return "activity_ability" }
@@ -203,16 +207,17 @@ func (Vo2MaxPB) TableName() string { return "vo2max_pb" }
 // user_id tenant key; the zone shape matches ActivityWatchZone so the API can
 // serve either source through the same DTO.
 type ActivityZone struct {
-	ID        uint64   `gorm:"column:id;primaryKey;autoIncrement"`
-	UserID    string   `gorm:"column:user_id;type:char(36);not null;uniqueIndex:uq_activity_zones,priority:1"`
-	LabelID   string   `gorm:"column:label_id;type:varchar(191);not null;uniqueIndex:uq_activity_zones,priority:2"`
-	ZoneType  string   `gorm:"column:zone_type;type:varchar(32);not null;uniqueIndex:uq_activity_zones,priority:3"`
-	ZoneIndex int      `gorm:"column:zone_index;not null;uniqueIndex:uq_activity_zones,priority:4"`
-	RangeMin  *float64 `gorm:"column:range_min"`
-	RangeMax  *float64 `gorm:"column:range_max"`
-	RangeUnit *string  `gorm:"column:range_unit;type:varchar(16)"`
-	DurationS *int     `gorm:"column:duration_s"`
-	Percent   *float64 `gorm:"column:percent"`
+	CalibrationProvenanceJSON *string  `gorm:"column:calibration_provenance_json;type:longtext"`
+	ID                        uint64   `gorm:"column:id;primaryKey;autoIncrement"`
+	UserID                    string   `gorm:"column:user_id;type:char(36);not null;uniqueIndex:uq_activity_zones,priority:1"`
+	LabelID                   string   `gorm:"column:label_id;type:varchar(191);not null;uniqueIndex:uq_activity_zones,priority:2"`
+	ZoneType                  string   `gorm:"column:zone_type;type:varchar(32);not null;uniqueIndex:uq_activity_zones,priority:3"`
+	ZoneIndex                 int      `gorm:"column:zone_index;not null;uniqueIndex:uq_activity_zones,priority:4"`
+	RangeMin                  *float64 `gorm:"column:range_min"`
+	RangeMax                  *float64 `gorm:"column:range_max"`
+	RangeUnit                 *string  `gorm:"column:range_unit;type:varchar(16)"`
+	DurationS                 *int     `gorm:"column:duration_s"`
+	Percent                   *float64 `gorm:"column:percent"`
 }
 
 func (ActivityZone) TableName() string { return "activity_zones" }
