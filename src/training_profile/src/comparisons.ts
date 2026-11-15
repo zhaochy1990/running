@@ -1,6 +1,6 @@
 /** POC exploration: compare sessions and training blocks, not a new baseline estimator. */
 import { addDays } from "@stride/contract";
-import { type Conclusion, type Evidence, finite, refs, type Snapshot } from "./types.js";
+import { type Conclusion, type Evidence, finite, refs, runningEvidence, type Snapshot } from "./types.js";
 
 const day = (e: Evidence) => String(e.kind === "activity" ? (e.content.shanghaiDay ?? "") : (e.content.date ?? ""));
 const round = (n: number, digits = 1) => Number(n.toFixed(digits));
@@ -23,7 +23,7 @@ function segments(e: Evidence): Segment[] {
 }
 
 /** Fixed distance blocks, proportional overlap at lap boundaries; not the existing half-split algorithm. */
-export function distanceBlock(e: Evidence, startM: number, endM: number) {
+export function distanceBlock(e: Evidence, startM: number, endM: number, rounded = true) {
   if (startM < 0 || endM <= startM) return null;
   const laps = segments(e);
   let position = 0,
@@ -44,18 +44,28 @@ export function distanceBlock(e: Evidence, startM: number, endM: number) {
     }
   }
   if (distanceM < (endM - startM) * 0.99) return null;
-  return { startKm: startM / 1000, endKm: endM / 1000, paceSKm: round((durationS / distanceM) * 1000), hr: hrDuration ? round(hrTime / hrDuration) : null };
+  const paceSKm = (durationS / distanceM) * 1000,
+    hr = hrDuration ? hrTime / hrDuration : null;
+  return { startKm: startM / 1000, endKm: endM / 1000, paceSKm: rounded ? round(paceSKm) : paceSKm, hr: hr === null ? null : rounded ? round(hr) : hr };
+}
+
+export function supportsDistanceBlocks(e: Evidence) {
+  const laps = segments(e),
+    distance = finite(e.content.distanceM),
+    duration = finite(e.content.durationS);
+  if (!distance || !duration || laps.length < 3 || laps.some((l) => l.distanceM > 5000.5)) return false;
+  return (
+    Math.abs(laps.reduce((s, l) => s + l.distanceM, 0) - distance) / distance <= 0.02 &&
+    Math.abs(laps.reduce((s, l) => s + l.durationS, 0) - duration) / duration <= 0.1
+  );
+}
+
+export function activityCityLabel(e: Evidence) {
+  return /([^\s]+市)/u.exec(String(e.content.name))?.[1] ?? null;
 }
 
 export function buildComparisons(snapshot: Snapshot) {
-  const runs = snapshot.evidence.filter(
-    (e) =>
-      e.active &&
-      e.kind === "activity" &&
-      ["run_outdoor", "run_track", "run_indoor"].includes(String(e.content.sport)) &&
-      day(e) >= snapshot.startDay &&
-      day(e) <= snapshot.endDay,
-  );
+  const runs = runningEvidence(snapshot);
   const observations: Array<Conclusion & { measurements: unknown }> = [];
   const add = (id: string, title: string, text: string, dimension: string, rows: Evidence[], measurements: unknown, conditions: string) => {
     if (!rows.length) return;
@@ -163,13 +173,8 @@ export function buildComparisons(snapshot: Snapshot) {
   const longRuns = [];
   const longSources: Evidence[] = [];
   for (const e of longRows) {
-    const laps = segments(e),
-      distance = finite(e.content.distanceM),
-      duration = finite(e.content.durationS);
-    if (!distance || !duration || laps.length < 3 || laps.some((l) => l.distanceM > 5000.5)) continue;
-    const lapDistance = laps.reduce((s, l) => s + l.distanceM, 0),
-      lapDuration = laps.reduce((s, l) => s + l.durationS, 0);
-    if (Math.abs(lapDistance - distance) / distance > 0.02 || Math.abs(lapDuration - duration) / duration > 0.1) continue;
+    const distance = finite(e.content.distanceM);
+    if (!distance || !supportsDistanceBlocks(e)) continue;
     const fullDistance = Math.floor(distance / 1000) * 1000;
     const first = distanceBlock(e, 0, 10000),
       last = distanceBlock(e, fullDistance - 10000, fullDistance);
@@ -213,7 +218,7 @@ export function buildComparisons(snapshot: Snapshot) {
       finite(e.content.ascentM) !== null &&
       Number(e.content.ascentM) / Number(e.content.distanceM) < 0.005,
   );
-  const city = (e: Evidence) => /([^\s]+市)/u.exec(String(e.content.name))?.[1] ?? null;
+  const city = activityCityLabel;
   const eligible = [];
   for (let i = 0; i < easy.length; i++)
     for (const b of easy.slice(i + 1)) {

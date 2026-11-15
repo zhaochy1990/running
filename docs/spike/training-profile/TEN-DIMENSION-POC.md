@@ -43,3 +43,13 @@ update／merge／withdraw需要master计算记录；merge指向同维度同性�
 实现依据：[LangChain官方子Agent工具编排](https://docs.langchain.com/oss/javascript/langchain/multi-agent/subagents)。
 
 实测后的编排修复：普通工具校验错误写入journal并作为ToolMessage返回，允许模型自纠；临时探索成功后可以显式reuse绑定假设，不必重算。子任务修订沿用外部假设／计算账本，并收到剩余轮次提醒。禁用客户端隐式重试，成功与失败调用尝试均计数。本人原话交专项提取，不由固定统计猜语义维度。
+
+## 生成后审稿与局部重跑
+
+原稿质量审查发现：master在reason里写了复算数字，却无法修正子报告原文；独立复算自身也会用错分块或混入非跑步。因此仅固定代码保持不可改，新候选可用显式correction修订，必须附master成功验证receipt和实际来源引用，保留原始子报告与修订链。
+
+新增固定校验复用原分段函数，验证真正累计距离首末区块、等距离半程、原始精度分类；时段/间隔统一使用canonical跑步与上海日。个人偏好仍不得从时段推断。
+
+可通过`PROFILE_REVIEW_RUN=/absolute/private/completed-run`和`PROFILE_REVIEW_FEEDBACK=/absolute/private/review.md`只重跑master。要求同一用户、相同快照hash、全部专项报告已完成、来源版本仍有效，且重复传入原运行的全部历史画像参数（历史集或内容不同会在模型调用前拒绝）；恢复已保存的报告/计算并禁止再派研究任务。指标只记本次master调用，探索用量保留在源运行中，不合并冒充一次生成。早期精简analysis的完整来源从原始child_report日志恢复，后续analysis直接保存完整报告。
+
+带人工审核反馈的Flash修订与原始自主输出分开保存。即使格式、来源引用与测试都通过，内容仍需逐条判断，不能宣称无人审阅可直接用于生产计划。

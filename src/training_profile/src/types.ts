@@ -27,6 +27,17 @@ export const SnapshotSchema = z
   });
 export type Snapshot = z.infer<typeof SnapshotSchema>;
 export type Evidence = Snapshot["evidence"][number];
+export function runningEvidence(snapshot: Snapshot) {
+  return snapshot.evidence.filter(
+    (e) =>
+      e.active &&
+      e.kind === "activity" &&
+      ["run_outdoor", "run_track", "run_indoor"].includes(String(e.content.sport)) &&
+      typeof e.content.shanghaiDay === "string" &&
+      e.content.shanghaiDay >= snapshot.startDay &&
+      e.content.shanghaiDay <= snapshot.endDay,
+  );
+}
 export const Lifecycle = z.enum(["historical", "long_term", "rolling", "unknown"]);
 export const ConclusionSchema = z.object({
   id: z.string(),

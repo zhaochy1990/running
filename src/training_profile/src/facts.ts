@@ -1,6 +1,6 @@
 /** Descriptive window summaries only. No new athlete baseline algorithms. */
 import { addDays, shanghaiIso } from "@stride/contract";
-import { type Conclusion, type Evidence, finite, refs, type Snapshot } from "./types.js";
+import { type Conclusion, type Evidence, finite, refs, runningEvidence, type Snapshot } from "./types.js";
 
 const day = (e: Evidence) => String(e.kind === "activity" ? (e.content.shanghaiDay ?? "") : (e.content.date ?? ""));
 function measurement(rows: Evidence[], key: string, divisor: number) {
@@ -18,7 +18,7 @@ export function describeSnapshot(snapshot: Snapshot) {
   const activities = active.filter((e) => e.kind === "activity" && day(e) >= snapshot.startDay && day(e) <= snapshot.endDay);
   // Explicit watch sport codes in this POC's source contract. Unknown sports stay excluded;
   // no distance-based guessing and no dependency on the Coach runtime for classification.
-  const runs = activities.filter((e) => ["run_outdoor", "run_track", "run_indoor"].includes(String(e.content.sport)));
+  const runs = runningEvidence(snapshot);
   const strength = activities.filter((e) => e.content.sport === "strength");
   const conclusions: Conclusion[] = [];
   function add(id: string, title: string, text: string, dimension: string, rows: Evidence[], options: Partial<Conclusion> = {}) {

@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+import { z } from "zod/v4";
 import { type DimensionId, dimensions, type Nature } from "./dimensions.js";
-import { type Conclusion, type Profile, type Snapshot, validConclusions } from "./types.js";
+import { type Conclusion, ConclusionSchema, type Profile, type Snapshot, validConclusions } from "./types.js";
 
 export interface PriorEntry {
   id: string;
@@ -14,6 +16,19 @@ export interface PriorEntry {
 }
 export function activePrior(p: PriorEntry): p is PriorEntry & { conclusion: Conclusion } {
   return p.valid && p.conclusion !== null;
+}
+
+/** A partial re-review must use exactly the historical input of its source run. */
+export function assertSameReviewHistory(input: unknown, current: PriorEntry[]) {
+  const saved = z
+    .object({ history: z.array(z.object({ id: z.string(), valid: z.boolean(), method: z.string(), conclusion: ConclusionSchema.nullable().optional() })) })
+    .parse(input).history;
+  const canonical = (rows: typeof saved) =>
+    rows
+      .map((p) => ({ id: p.id, valid: p.valid, method: p.method, conclusion: p.valid && p.conclusion ? ConclusionSchema.parse(p.conclusion) : null }))
+      .toSorted((a, b) => a.id.localeCompare(b.id));
+  if (new Set(saved.map((p) => p.id)).size !== saved.length || !isDeepStrictEqual(canonical(saved), canonical(current)))
+    throw new Error("Review reuse requires the same complete historical inputs; repeat the original previous-profile arguments");
 }
 export function loadHistory(profiles: Profile[], snapshot: Snapshot): PriorEntry[] {
   const result = new Map<string, PriorEntry>();
@@ -72,7 +87,15 @@ export function loadHistory(profiles: Profile[], snapshot: Snapshot): PriorEntry
   }
   return [...result.values()].map((p) => {
     const d = terminal.get(p.id);
-    return d ? { ...p, valid: false, inactiveReason: d.reason, disposition: { action: d.action, reason: d.reason, replacementId: d.replacementId } } : p;
+    const reason = p.valid && p.conclusion ? d?.reason : "Historical disposition retained; source text/details unavailable or invalid";
+    return d
+      ? {
+          ...p,
+          valid: false,
+          inactiveReason: reason ?? "Historical disposition retained",
+          disposition: { action: d.action, reason: reason ?? "Historical disposition retained", replacementId: d.replacementId },
+        }
+      : p;
   });
 }
 

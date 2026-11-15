@@ -45,16 +45,27 @@ export const SubmissionSchema = z.object({
     .max(10),
   summary: z.string(),
 });
-interface Receipt {
+export const ReceiptSchema = z.object({
+  id: z.string(),
+  hypothesisId: z.string().nullable(),
+  purpose: z.string(),
+  question: z.string(),
+  sourceIds: z.array(z.string()),
+  result: z.unknown(),
+  code: z.string().optional(),
+  reusedFrom: z.string().optional(),
+  inputRead: z.boolean().optional(),
+});
+export interface Receipt {
   id: string;
   hypothesisId: string | null;
   purpose: string;
   question: string;
   sourceIds: string[];
   result: unknown;
-  code?: string;
-  reusedFrom?: string;
-  inputRead?: boolean;
+  code?: string | undefined;
+  reusedFrom?: string | undefined;
+  inputRead?: boolean | undefined;
 }
 
 export class ProfileAgentSession {
@@ -83,6 +94,15 @@ export class ProfileAgentSession {
 
   async toolError(tool: string, input: unknown, error: string) {
     await this.record({ type: "tool_error", tool, input, error });
+  }
+
+  restoreSaved(receipts: Receipt[], hypotheses: Hypothesis[], revisions: Hypothesis[]) {
+    const active = new Set(this.snapshot.evidence.filter((e) => e.active).map((e) => e.id));
+    if (receipts.some((r) => r.sourceIds.some((id) => !active.has(id)))) throw new Error("Saved calculation references a missing/withdrawn source");
+    for (const r of receipts) this.receipts.set(r.id, structuredClone(r));
+    for (const h of hypotheses) this.hypotheses.set(h.id, structuredClone(h));
+    this.revisions.push(...structuredClone(revisions));
+    this.serial = Math.max(0, ...receipts.map((r) => Number(/^evidence-(\d+)$/.exec(r.id)?.[1] ?? 0)));
   }
 
   restoreWorkingState(previous: ProfileAgentSession) {

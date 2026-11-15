@@ -3,7 +3,8 @@ import { addDays } from "@stride/contract";
 import { buildComparisons } from "./comparisons.js";
 import { type DimensionId, dimensions, type Nature } from "./dimensions.js";
 import { describeSnapshot } from "./facts.js";
-import { type Conclusion, ConclusionSchema, type Evidence, refs, type Snapshot } from "./types.js";
+import { activityHabits } from "./measurements.js";
+import { type Conclusion, ConclusionSchema, type Evidence, refs, runningEvidence, type Snapshot } from "./types.js";
 
 export function sourceTypesFor(rows: Evidence[], quoted = false) {
   const labels: Record<string, string> = {
@@ -103,6 +104,37 @@ export function buildDeterministic(snapshot: Snapshot) {
           producer: "code",
         },
       });
+  }
+  const runs = runningEvidence(snapshot);
+  if (runs.length) {
+    const h = activityHabits(snapshot);
+    entries.push({
+      id: "code:execution-habits",
+      kind: "fact",
+      title: "时段分布与同日记录间隔",
+      dimension: dimensions.preferences,
+      lifecycle: "rolling",
+      text: `${h.runs}条跑步分布于${h.runDays}天，其中${h.multipleRecordDays}天有多条记录。${h.pairs}对同日相邻记录的估算间隔中位${h.medianGapMinutes?.toFixed(1)}分钟，${h.gapUnder30Minutes}对不足30分钟；两段均≥2km且相隔≥3小时的有${h.separated2kmPairs.length}对。${h.cities
+        .filter((c) => c.label !== "unknown_label")
+        .map((c) => `${c.label}标签${c.records}条中，04–09时${c.morning4to10}条、18时后${c.evening18plus}条`)
+        .join("；")}。`,
+      conditions: "按记录时长估算结束时间；时间邻近只是疑似拆段线索。城市文字是标签，时段是行为而非本人偏好。",
+      limitations: [],
+      evidence: refs(runs),
+      sourceDates: [...new Set(runs.map((e) => String(e.content.shanghaiDay)))].sort(),
+      values: h,
+      metadata: {
+        dimensionId: "preferences",
+        nature: "observation",
+        sourceTypes: ["activity_record"],
+        formation: "fixed_calculation",
+        methodId: "execution-habits-unrounded-v1",
+        computation: "predefined",
+        supportingSources: refs(runs),
+        quotes: [],
+        producer: "code",
+      },
+    });
   }
   return { entries, facts: facts.context, diagnostics: comparisons.diagnostics };
 }

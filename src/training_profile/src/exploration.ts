@@ -1,12 +1,12 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod/v4";
 import type { FlashRuntime } from "./agentRuntime.js";
-import { ProfileAgentSession } from "./agentSession.js";
+import { HypothesisSchema, ProfileAgentSession, ReceiptSchema } from "./agentSession.js";
 import { profileAgentTools } from "./agentTools.js";
 import { briefEntry } from "./deterministic.js";
-import { dimensions, type WorkerId, workerScopes } from "./dimensions.js";
+import { dimensions, WorkerId, workerScopes } from "./dimensions.js";
 import { activePrior, type PriorEntry } from "./history.js";
-import type { Conclusion, Snapshot } from "./types.js";
+import { type Conclusion, ConclusionSchema, type Snapshot } from "./types.js";
 
 const RULES = `你是训练画像的专项子Agent。只在指定维度提出有个人价值的问题，自主选择比较方法、样本与反例；不必为每个属性凑结论。
 先用现有固定计算，避免重写已验证的分段、天气配对、周结构与负荷统计。必要的新方法才调用calculate_training_data写JS；这是受限只读解释器，sources含原始记录，不含上轮结果。record_hypothesis记录假设；每项推断先有support和不同方法的counterexample，结合反例修订主体或放弃。adopt_computed_evidence可以把固定计算绑定假设，无需重复算。完成后submit_training_profile，每轮最多3条有用认识。
@@ -33,6 +33,7 @@ export interface WorkerReport {
 }
 
 export class Explorations {
+  private reviewOnly = false;
   readonly reports = new Map<WorkerId, WorkerReport>();
   readonly planned: WorkerId[];
   readonly archived: WorkerReport[] = [];
@@ -53,6 +54,7 @@ export class Explorations {
   }
 
   async launch(worker: WorkerId, question: string, revise: boolean) {
+    if (this.reviewOnly) throw new Error("Review-only pass: correct or exclude saved candidates instead of relaunching research");
     if (!this.planned.includes(worker)) throw new Error(`No relevant snapshot source for ${worker}`);
     const previous = this.reports.get(worker);
     if (previous?.status === "running") throw new Error("This dimension is already running");
@@ -128,6 +130,51 @@ export class Explorations {
     }
     await this.runtime.record({ type: "child_report", worker, attempt, status: report.status, error: report.error, entries: report.entries });
     return this.brief(report);
+  }
+  restoreFinished(input: unknown) {
+    const saved = z
+      .object({
+        workers: z.array(
+          z.object({
+            worker: WorkerId,
+            attempt: z.number().int().positive(),
+            status: z.enum(["complete", "failed"]),
+            error: z.string().optional(),
+            entries: z.array(ConclusionSchema),
+            hypotheses: z.array(HypothesisSchema),
+            revisions: z.array(HypothesisSchema),
+            receipts: z.array(ReceiptSchema),
+          }),
+        ),
+      })
+      .parse(input);
+    const versions = new Map(this.snapshot.evidence.filter((e) => e.active).map((e) => [e.id, e.revision]));
+    for (const r of saved.workers) {
+      if (r.entries.some((c) => !c.metadata || !c.id.startsWith(`child:${r.worker}:`) || c.evidence.some((e) => versions.get(e.id) !== e.revision)))
+        throw new Error("Saved report does not match this snapshot's valid sources");
+      const session = new ProfileAgentSession(
+        this.snapshot,
+        (e) => this.runtime.record({ agent: `${r.worker}-${r.attempt}`, event: e }),
+        `${r.worker}-${r.attempt}`,
+        workerScopes[r.worker],
+      );
+      session.restoreSaved(r.receipts, r.hypotheses, r.revisions);
+      const report: WorkerReport = {
+        worker: r.worker,
+        attempt: r.attempt,
+        status: r.status,
+        entries: r.entries,
+        session,
+        ...(r.error ? { error: r.error } : {}),
+      };
+      const current = this.reports.get(r.worker);
+      if (!current || current.attempt < r.attempt) {
+        if (current) this.archived.push(current);
+        this.reports.set(r.worker, report);
+      } else this.archived.push(report);
+    }
+    if (this.planned.some((w) => this.reports.get(w)?.status !== "complete")) throw new Error("Review-only reuse requires all planned reports to be complete");
+    this.reviewOnly = true;
   }
   brief(r: WorkerReport) {
     return { worker: r.worker, attempt: r.attempt, status: r.status, error: r.error, entries: r.entries.map(briefEntry) };

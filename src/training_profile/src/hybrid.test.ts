@@ -7,8 +7,8 @@ import { buildDeterministic } from "./deterministic.js";
 import { dimensions } from "./dimensions.js";
 import { Explorations } from "./exploration.js";
 import { dimensionView } from "./files.js";
-import { loadHistory } from "./history.js";
-import { type Evidence, type Profile, ProfileSchema, type Snapshot } from "./types.js";
+import { assertSameReviewHistory, loadHistory } from "./history.js";
+import { type Evidence, type Profile, ProfileSchema, type Snapshot, validConclusions } from "./types.js";
 
 const row = (id: string, kind: string, content: Record<string, unknown>): Evidence => ({
   id,
@@ -351,4 +351,105 @@ test("a disposition-only publication carries its tombstone through another gener
   const final = loadHistory([f.original, forward], f.s);
   assert.equal(final.find((p) => p.id === f.id)?.valid, false);
   assert.equal(final.find((p) => p.id === f.id)?.disposition?.action, "withdraw");
+});
+
+test("master corrections are explicit, evidence-backed and leave raw candidates and code unchanged", async () => {
+  const f = await assemblyFixture();
+  const original = structuredClone(f.code.find((c) => c.metadata?.nature === "observation"));
+  assert.ok(original?.metadata);
+  const candidate = {
+    ...original,
+    id: "child:ability:1:proposal",
+    text: "错误数值99",
+    evidence: [{ id: "run", revision: "r1" }],
+    metadata: { ...original.metadata, producer: "ability-1", formation: "agent_exploration" as const, computation: "agent_authored" as const },
+  };
+  const report = f.workers.reports.get("ability");
+  assert.ok(report);
+  report.entries = [candidate];
+  f.assembly.inspect(f.id);
+  const receipt = [...f.validation.receipts.keys()][0];
+  assert.ok(receipt);
+  const correction = {
+    title: "更正后的记录",
+    text: "按原始记录核验后的值为10。",
+    planningUse: "只在明确的观察条件下参考这个结果。",
+    conditions: "同一快照",
+    limitations: [],
+    dimensionId: "preferences" as const,
+    sourceIds: ["run"],
+    validationReceiptIds: [receipt],
+  };
+  const selection = { id: candidate.id, include: true, reason: "独立复核后修正错误数值", correction };
+  assert.throws(
+    () => f.assembly.submit({ ...f.review, candidates: [{ ...selection, correction: { ...correction, validationReceiptIds: ["missing"] } }] }),
+    /validation receipts/,
+  );
+  f.assembly.submit({ ...f.review, candidates: [selection] });
+  const final = f.assembly.profile?.conclusions.find((c) => c.id === candidate.id);
+  assert.equal(final?.text, correction.text);
+  assert.equal(final?.metadata?.producer, "master");
+  assert.deepEqual(final?.metadata?.masterReview?.validationReceiptIds, [receipt]);
+  assert.ok(final?.evidence.some((r) => r.id === "coach-text"));
+  const changed = structuredClone(f.s);
+  const dependency = changed.evidence.find((e) => e.id === "coach-text");
+  assert.ok(dependency && f.assembly.profile);
+  dependency.active = false;
+  assert(!validConclusions(f.assembly.profile, changed).some((e) => e.id === candidate.id));
+  assert.equal(candidate.text, "错误数值99");
+  for (const c of f.code)
+    assert.deepEqual(
+      f.assembly.profile?.conclusions.find((e) => e.id === c.id),
+      c,
+    );
+});
+
+test("protected disposition reasons do not re-expose source text after invalidation", async () => {
+  const f = await assemblyFixture(),
+    s = structuredClone(f.s);
+  const activity = s.evidence[0];
+  assert.ok(activity);
+  activity.active = false;
+  const status: Profile = {
+    ...f.original,
+    evaluatedAt: "2026-11-19T00:00:00Z",
+    conclusions: [],
+    previousDecisions: [{ id: f.id, action: "withdraw", reason: "PRIVATE_SOURCE_SENTINEL", replacementId: null }],
+  };
+  const h = loadHistory([f.original, status], s);
+  const a = new ProfileAssembly(s, [], h, f.workers, f.validation);
+  assert(!JSON.stringify(a.inspect(f.id)).includes("PRIVATE_SOURCE_SENTINEL"));
+  a.submit({ ...f.review, prior: [], highlights: [] });
+  assert(!JSON.stringify(a.profile?.previousDecisions).includes("PRIVATE_SOURCE_SENTINEL"));
+});
+
+test("review-only reuse rejects missing or changed historical inputs before assembly", async () => {
+  const f = await assemblyFixture();
+  const saved = { history: f.history.map((p) => ({ id: p.id, valid: p.valid, method: p.method, conclusion: p.conclusion })) };
+  assert.doesNotThrow(() => assertSameReviewHistory(saved, f.history));
+  assert.throws(() => assertSameReviewHistory(saved, []), /same complete historical inputs/);
+  const changed = structuredClone(f.history);
+  assert.ok(changed[0]?.conclusion);
+  changed[0].conclusion.text = "输入历史被替换，不能假装与原运行一致";
+  assert.throws(() => assertSameReviewHistory(saved, changed), /same complete historical inputs/);
+});
+
+test("review-only restores completed reports with full sources and forbids new exploration", async () => {
+  const f = await assemblyFixture();
+  const report = f.workers.reports.get("ability");
+  const entry = f.code.find((c) => c.metadata?.dimensionId === "ability");
+  assert.ok(report && entry);
+  report.entries = [{ ...structuredClone(entry), id: "child:ability:1:kept" }];
+  const saved = {
+    workers: [...f.workers.reports.values()].map((r) => ({ ...f.workers.brief(r), entries: r.entries, hypotheses: [], revisions: [], receipts: [] })),
+  };
+  const restored = new Explorations(f.s, f.code, f.history, f.workers.runtime);
+  restored.restoreFinished(saved);
+  assert.equal(restored.ready(), true);
+  assert.deepEqual(restored.entries()[0]?.evidence, entry.evidence);
+  await assert.rejects(() => restored.launch("ability", "不能重新探索", false), /Review-only pass/);
+  const changed = structuredClone(f.s);
+  assert.ok(changed.evidence[0]);
+  changed.evidence[0].revision = "r2";
+  assert.throws(() => new Explorations(changed, f.code, f.history, f.workers.runtime).restoreFinished(saved), /valid sources/);
 });

@@ -39,6 +39,7 @@ export const MetadataSchema = z.object({
   quotes: z.array(z.object({ sourceId: z.string(), text: z.string().min(1) })),
   producer: z.string(),
   reviewStatus: z.string().optional(),
+  masterReview: z.object({ originalCandidateId: z.string(), validationReceiptIds: z.array(z.string()).min(1) }).optional(),
 });
 
 /** Work is delegated only where the snapshot can support exploration/extraction. */

@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import { z } from "zod/v4";
 import type { ProfileAgentSession } from "./agentSession.js";
-import { briefEntry } from "./deterministic.js";
-import { DimensionId, Nature } from "./dimensions.js";
+import { briefEntry, sourceTypesFor } from "./deterministic.js";
+import { DimensionId, dimensions, Nature } from "./dimensions.js";
 import type { Explorations } from "./exploration.js";
 import { activePrior, carryPrior, type PriorEntry } from "./history.js";
-import type { Conclusion, Profile, Snapshot } from "./types.js";
+import { type Conclusion, type Profile, refs, type Snapshot } from "./types.js";
 
 export const ReviewSchema = z.object({
   prior: z.array(
@@ -19,7 +19,25 @@ export const ReviewSchema = z.object({
       validationReceiptId: z.string().nullable(),
     }),
   ),
-  candidates: z.array(z.object({ id: z.string(), include: z.boolean(), reason: z.string().min(5) })),
+  candidates: z.array(
+    z.object({
+      id: z.string(),
+      include: z.boolean(),
+      reason: z.string().min(5),
+      correction: z
+        .object({
+          title: z.string(),
+          text: z.string().max(1000),
+          planningUse: z.string(),
+          conditions: z.string(),
+          limitations: z.array(z.string()).max(3),
+          dimensionId: DimensionId,
+          sourceIds: z.array(z.string()).min(1).max(40),
+          validationReceiptIds: z.array(z.string()).min(1),
+        })
+        .optional(),
+    }),
+  ),
   highlights: z.array(z.string()).max(10),
   summary: z.string(),
 });
@@ -28,7 +46,7 @@ function sameSet(actual: string[], expected: string[], label: string) {
     throw new Error(`Account for every ${label} exactly once`);
 }
 
-/** The master selects/reconciles immutable entries, rather than rewriting computed values. */
+/** Fixed entries stay immutable; candidate corrections retain their validation dependencies. */
 export class ProfileAssembly {
   profile: Profile | null = null;
   readonly inspected = new Set<string>();
@@ -72,10 +90,48 @@ export class ProfileAssembly {
     if (prior.some((p) => !this.inspected.has(p.id))) throw new Error("Inspect every historical entry before deciding its disposition");
     if (![...this.validation.receipts.values()].some((r) => r.code && r.purpose === "validation"))
       throw new Error("Master must run at least one independent validation calculation");
-    const entries = new Map<string, Conclusion>(
-      [...this.computed, ...candidates.filter((c) => review.candidates.some((d) => d.id === c.id && d.include))].map((c) => [c.id, c]),
-    );
-    const includedChildren = new Map(candidates.filter((c) => review.candidates.some((d) => d.id === c.id && d.include)).map((c) => [c.id, c]));
+    if (review.candidates.some((d) => !d.include && d.correction)) throw new Error("Only included candidates can have corrections");
+    const selected = candidates
+      .filter((c) => review.candidates.some((d) => d.id === c.id && d.include))
+      .map((c) => {
+        const correction = review.candidates.find((d) => d.id === c.id)?.correction;
+        if (!correction) return c;
+        if (!c.metadata) throw new Error("Correction needs original candidate metadata");
+        if (correction.validationReceiptIds.some((id) => this.validation.receipts.get(id)?.purpose !== "validation" || !this.validation.receipts.get(id)?.code))
+          throw new Error("Every master correction needs successful validation receipts");
+        const { validationReceiptIds, dimensionId, sourceIds, ...text } = correction;
+        const rows = [...new Set([...sourceIds, ...c.metadata.quotes.map((q) => q.sourceId)])].map((id) => {
+          const e = this.snapshot.evidence.find((e) => e.id === id && e.active);
+          if (!e) throw new Error("Correction needs active actual source references");
+          return e;
+        });
+        const validationSources = correction.validationReceiptIds.flatMap((id) => this.validation.receipts.get(id)?.sourceIds ?? []);
+        const dependencies = [...new Set(validationSources)].map((id) => {
+          const e = this.snapshot.evidence.find((e) => e.id === id && e.active);
+          if (!e) throw new Error("Correction validation depends on an unavailable source");
+          return e;
+        });
+        const evidence = [...new Map([...c.evidence, ...refs(rows), ...refs(dependencies)].map((r) => [r.id, r])).values()];
+        return {
+          ...c,
+          ...text,
+          evidence,
+          dimension: dimensions[dimensionId],
+          metadata: {
+            ...c.metadata,
+            dimensionId,
+            sourceTypes: sourceTypesFor(rows, c.metadata.quotes.length > 0),
+            supportingSources: refs(rows),
+            producer: "master",
+            computation: "agent_authored" as const,
+            methodId: "master-verified-correction-v1",
+            reviewStatus: "master_corrected",
+            masterReview: { originalCandidateId: c.id, validationReceiptIds },
+          },
+        };
+      });
+    const entries = new Map<string, Conclusion>([...this.computed, ...selected].map((c) => [c.id, c]));
+    const includedChildren = new Map(selected.map((c) => [c.id, c]));
     const aliases = new Map<string, string>();
     for (const decision of review.prior) {
       const p = prior.find((p) => p.id === decision.id);

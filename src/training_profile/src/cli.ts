@@ -45,12 +45,52 @@ const settings = z
   })
   .parse({ maxOutputTokens: process.env.PROFILE_MAX_OUTPUT_TOKENS ?? "32768", reasoningEffort: process.env.PROFILE_REASONING_EFFORT ?? "high" });
 const runConfig: ModelConfig = { ...model, max_tokens: settings.maxOutputTokens, reasoning_effort: settings.reasoningEffort, timeout_s: 300 };
+const reuseDirectory = process.env.PROFILE_REVIEW_RUN;
+const reuse = reuseDirectory
+  ? {
+      profile: ProfileSchema.parse(JSON.parse(await readFile(resolve(reuseDirectory, "profile.json"), "utf8"))),
+      analysis: JSON.parse(await readFile(resolve(reuseDirectory, "analysis.json"), "utf8")) as unknown,
+      feedback: process.env.PROFILE_REVIEW_FEEDBACK
+        ? await readFile(resolve(process.env.PROFILE_REVIEW_FEEDBACK), "utf8")
+        : "独立复查已完成探索，修正数值、分类、来源与越界用途，代码值不可改。",
+      sourceRun: resolve(reuseDirectory),
+    }
+  : undefined;
+if (reuseDirectory) {
+  // Early POC analysis stored model-facing brief entries. Recover their full
+  // immutable references from the original child_report journal, not inference.
+  if (reuse) {
+    const state = z
+      .object({ workers: z.array(z.object({ worker: z.string(), attempt: z.number(), entries: z.array(z.record(z.string(), z.unknown())) }).passthrough()) })
+      .parse(reuse.analysis);
+    if (state.workers.some((w) => w.entries.some((e) => !Array.isArray(e.evidence)))) {
+      const events = (await readFile(resolve(reuseDirectory, "agent-trace.jsonl"), "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+      for (const worker of state.workers) {
+        const event = events.find((e) => e.type === "child_report" && e.worker === worker.worker && e.attempt === worker.attempt);
+        if (!event || !Array.isArray(event.entries)) throw new Error("Full saved child report missing from journal");
+        worker.entries = event.entries;
+      }
+      reuse.analysis = state;
+    }
+  }
+  const metrics = z.object({ model: z.literal("deepseek-flash") }).parse(JSON.parse(await readFile(resolve(reuseDirectory, "metrics.json"), "utf8")));
+  if (!metrics.model) throw new Error("Invalid saved model");
+}
 await createRunDirectory(resolve(outputPath));
 let events = Promise.resolve();
-const result = await generateProfile(snapshot, runConfig, previous, (event) => {
-  events = events.then(() => appendFile(resolve(outputPath, "agent-trace.jsonl"), `${JSON.stringify(event)}\n`, { mode: 0o600 }));
-  return events;
-});
+const result = await generateProfile(
+  snapshot,
+  runConfig,
+  previous,
+  (event) => {
+    events = events.then(() => appendFile(resolve(outputPath, "agent-trace.jsonl"), `${JSON.stringify(event)}\n`, { mode: 0o600 }));
+    return events;
+  },
+  reuse,
+);
 await saveProfile(resolve(outputPath), result.profile);
 await savePrivate(resolve(outputPath), "analysis.json", result.analysis);
 await savePrivate(resolve(outputPath), "metrics.json", result.metrics);
@@ -70,4 +110,13 @@ await writeFile(
   ].join("\n\n")}\n`,
   { mode: 0o600, flag: "wx" },
 );
-console.log(JSON.stringify({ output: resolve(outputPath), conclusions: result.profile.conclusions.length, ...result.metrics }));
+console.log(
+  JSON.stringify({
+    output: resolve(outputPath),
+    conclusions: result.profile.conclusions.length,
+    durationMs: result.metrics.durationMs,
+    model: result.metrics.model,
+    modelCalls: result.metrics.modelCalls,
+    usage: result.metrics.usage,
+  }),
+);
