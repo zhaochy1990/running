@@ -221,6 +221,7 @@ func (ActivityZone) TableName() string { return "activity_zones" }
 // alongside the watch models by AutoMigrateWatch.
 func computeModels() []any {
 	return []any{
+		&RunningCalibrationPolicy{},
 		&RunningCalibrationSnapshot{},
 		&RunningCalibrationPaceZone{},
 		&RunningCalibrationHRZone{},
