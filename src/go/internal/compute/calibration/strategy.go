@@ -15,12 +15,13 @@ const (
 )
 
 // OfflineResult separates requested strategy from the actually implemented code.
-// Snapshot.AlgorithmVersion stays 3 while an implementation is a v3 alias.
+// Snapshot.AlgorithmVersion identifies the offline implementation, never active policy.
 type OfflineResult struct {
-	Strategy         Strategy `json:"strategy"`
-	Implementation   string   `json:"implementation"`
-	ParameterVersion string   `json:"parameter_version"`
-	Snapshot         Snapshot `json:"snapshot"`
+	Strategy         Strategy              `json:"strategy"`
+	Implementation   string                `json:"implementation"`
+	ParameterVersion string                `json:"parameter_version"`
+	Snapshot         Snapshot              `json:"snapshot"`
+	Segments         *OfflineSegmentReport `json:"segments,omitempty"`
 }
 
 // EstimateRunningCalibration is the production entry point. It deliberately has
@@ -33,13 +34,21 @@ func EstimateRunningCalibration(history []Activity, asOf time.Time, health []Hea
 // candidate-specific code in this domain; never change the frozen v3 files to
 // implement a candidate. See docs/calibration/evaluation-protocol-v1.md.
 func EstimateOffline(strategy Strategy, history []Activity, asOf time.Time, health []HealthRow) (OfflineResult, error) {
-	implementation := "v3_alias"
+	implementation := "v3"
+	parameterVersion := "v3-frozen"
+	var snapshot Snapshot
+	var segments *OfflineSegmentReport
 	switch strategy {
 	case StrategyV3:
-		implementation = "v3"
+		snapshot = estimateRunningCalibrationV3(history, asOf, health)
 	case StrategySegmentsOnly, StrategyCandidate:
+		implementation = segmentsImplementation
+		parameterVersion = segmentsParameterVersion
+		var measurements CandidateSegments
+		snapshot, measurements = estimateSegmentsOnly(history, asOf, health)
+		segments = projectCandidateSegments(measurements)
 	default:
 		return OfflineResult{}, fmt.Errorf("unknown calibration strategy %q", strategy)
 	}
-	return OfflineResult{Strategy: strategy, Implementation: implementation, ParameterVersion: "v3-frozen", Snapshot: estimateRunningCalibrationV3(history, asOf, health)}, nil
+	return OfflineResult{Strategy: strategy, Implementation: implementation, ParameterVersion: parameterVersion, Snapshot: snapshot, Segments: segments}, nil
 }
