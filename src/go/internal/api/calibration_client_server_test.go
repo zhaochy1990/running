@@ -152,6 +152,15 @@ func TestCalibrationClientServer(t *testing.T) {
 		if c.Response.Threshold != nil {
 			th := c.Response.Threshold
 			sourceJSON, _ := json.Marshal(th.Source)
+			if strings.HasPrefix(c.Name, "producer-") {
+				snapshot, producedSource := clientProducerSource(t, c.Name == "producer-lab-half")
+				th.SpeedMps, th.HRBpm = snapshot.ThresholdSpeedMps, snapshot.ThresholdHR
+				th.SpeedConfidence, th.HRConfidence = string(snapshot.ThresholdSpeedConfidence), string(snapshot.ThresholdHRConfidence)
+				sourceJSON, err = json.Marshal(producedSource)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
 			source := string(sourceJSON)
 			if c.Name == "legacy" {
 				source = ""
