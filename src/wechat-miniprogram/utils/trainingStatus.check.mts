@@ -205,4 +205,13 @@ const canonicalHour = structuredClone(firstVector.response);
 canonicalHour.threshold.source.speed.method = 'direct_60min_maximal';
 eq(projectCalibration(canonicalHour).pace.help.includes('方法：约一小时全力直接锚点'), true, 'canonical direct hour method');
 
+
+const speedOnlySource = structuredClone(firstVector.response);
+delete speedOnlySource.threshold.source.hr;
+eq(projectCalibration(speedOnlySource).hr.support, '心率证据信息未提供', 'current speed-only source is not legacy');
+const unavailableHrTarget = structuredClone(firstVector.response);
+unavailableHrTarget.threshold.hr_bpm = null;
+unavailableHrTarget.threshold.source.hr.target_type = 'unavailable';
+eq(projectCalibration(unavailableHrTarget).hr.lines.includes('暂无可用心率参考'), true, 'unavailable HR is not an existing estimate');
+
 console.log('trainingStatus.check: OK');

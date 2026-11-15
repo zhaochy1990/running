@@ -524,6 +524,7 @@ export function projectCalibration(zones: import('../types/health').StrideZonesR
       : positive(threshold?.hr_bpm) ? String(Math.round(threshold.hr_bpm)) : '—';
     const evidenceDay = available ? validDay(detail?.evidence_date) : null;
     const support = available ? `模型支持：${calibrationWord(detail?.support, '未知（保守参考）')}`
+      : source?.state === 'available' ? (kind === 'hr' ? '心率证据信息未提供' : '配速证据信息未提供')
       : source?.state === 'source_unavailable' ? '来源信息不可用 · 保守参考'
       : threshold ? '旧版估计 · 来源信息不可用' : '暂无校准数据';
     const lines = [support];
@@ -541,7 +542,7 @@ export function projectCalibration(zones: import('../types/health').StrideZonesR
         const targetLabel = target === 'field_HR_proxy_not_physiological_LTHR'
           ? '现场心率代理，不等于生理乳酸阈值'
           : target === 'lab_method_specific_LTHR' ? `实验室方法特定阈值：${detail.lab_method ?? '方法未提供'}`
-          : '训练心率估计，非独立实验室参考';
+          : target === 'unavailable' ? '暂无可用心率参考' : '训练心率估计，非独立实验室参考';
         lines.push(targetLabel);
       }
       const reasons = [...(detail.reasons ?? []), ...(detail.limitations ?? [])];
@@ -557,6 +558,8 @@ export function projectCalibration(zones: import('../types/health').StrideZonesR
       }
       // The summary carries no verified activity access URL; never invent a link from an ID.
       help.push('来源活动不可查看；此处仅保留安全摘要。');
+    } else if (source?.state === 'available') {
+      lines.push('当前快照未提供该指标证据，无法解释其来源');
     } else if (source?.state === 'source_unavailable') {
       lines.push('来源说明暂不可用，保留已有值供参考');
     } else if (threshold) {
