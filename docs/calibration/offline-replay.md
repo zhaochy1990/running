@@ -26,6 +26,8 @@ go build -o /tmp/stride-calibration-replay ./cmd/stride
 
 报告包含 manifest/input/协议/v3源hash、来源/代码/参数版本、策略真实身份、用户/活动/设备/场景/标签分布及缺失、strict final 与 strict validation 分开评分。配对交集报告用户等权中位数/P90/偏差；各版本另报覆盖与缺失。至少2用户才生成固定seed的用户组bootstrap差值区间。HR与跨时长评分尚未支持，显式记录 unsupported，不据此发布。
 
+每个分层的 `activities` / `users` 计入该层全部 eligible 独立目标活动/用户，包括无预测输出者；各版本 `available` / `missing` / `coverage` 以此为分母。`paired_activities` / `paired_users` 单列三版本共同输出的独立样本数，误差只在该交集评分。完全缺输出的层仍保留，误差为 null。总体 `eligible_activities` / `paired_activities` 分别报告全部目标与交集活动，`users` 为参与配对评分的用户数。同一目标的重复 prediction case 不增加独立计数。
+
 canonical协议在docs，Go内嵌副本只供编译后报告hash；测试强制两者相等。修订必须新建协议版本。
 
 ## 工程验收与缺口

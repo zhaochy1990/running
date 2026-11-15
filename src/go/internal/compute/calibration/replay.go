@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
+	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 )
 
 //go:embed evaluation-protocol-v1.md
@@ -194,7 +196,7 @@ func Replay(m ReplayManifest, codeVersion string) (ReplayReport, error) {
 			AsOf       time.Time
 		}{usedActivities, usedHealth, c.PredictionAsOf})
 		// asOf is a domain civil day, whereas availability above uses exact instants.
-		civilDay := shanghaiCivilDay(c.PredictionAsOf)
+		civilDay := timefmt.ShanghaiDay(c.PredictionAsOf)
 		for _, strategy := range []Strategy{StrategyV3, StrategySegmentsOnly, StrategyCandidate} {
 			v, err := EstimateOffline(strategy, history, civilDay, rows)
 			if err != nil {
@@ -214,11 +216,6 @@ func Replay(m ReplayManifest, codeVersion string) (ReplayReport, error) {
 		out.Reasons = append(out.Reasons, "strict_independent_real_direct_60min_labels_below_30_activities_10_users")
 	}
 	return out, nil
-}
-
-func shanghaiCivilDay(instant time.Time) time.Time {
-	local := instant.In(time.FixedZone("Asia/Shanghai", 8*60*60))
-	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 func inventory(m ReplayManifest) ReplayInventory {
@@ -286,16 +283,19 @@ func validateReplay(m ReplayManifest, code string) error {
 		if root, ok := sourceRoots[sourceKey]; ok && root != a.RootActivityID {
 			return fmt.Errorf("source activity %s changes root across split", a.ID)
 		}
-		sourceRoots[sourceKey] = a.RootActivityID
 		key := a.User + "/" + a.RootActivityID
 		if split, ok := roots[key]; ok && split != a.Split {
 			return fmt.Errorf("activity root %s crosses split", key)
 		}
 		roots[key] = a.Split
+		if _, ok := sourceRoots[sourceKey]; ok {
+			return fmt.Errorf("duplicate source activity %s", a.ID)
+		}
+		sourceRoots[sourceKey] = a.RootActivityID
 		if ReplayContentHash(a.Activity) != a.ContentSHA256 {
 			return fmt.Errorf("activity %s content hash mismatch", a.ID)
 		}
-		if shanghaiCivilDay(a.EventTime) != a.Activity.ActivityDate {
+		if timefmt.ShanghaiDay(a.EventTime) != a.Activity.ActivityDate {
 			return fmt.Errorf("activity %s event/domain civil date mismatch", a.ID)
 		}
 		if a.AvailableAt != nil && a.AvailableAt.Before(a.EventTime) {
@@ -337,7 +337,7 @@ func validateReplay(m ReplayManifest, code string) error {
 		if ReplayContentHash(h.Row) != h.ContentSHA256 {
 			return fmt.Errorf("health %s content hash mismatch", h.ID)
 		}
-		if shanghaiCivilDay(h.EventTime) != h.Row.Date {
+		if timefmt.ShanghaiDay(h.EventTime) != h.Row.Date {
 			return fmt.Errorf("health %s event/domain civil date mismatch", h.ID)
 		}
 		if h.AvailableAt != nil && h.AvailableAt.Before(h.EventTime) {

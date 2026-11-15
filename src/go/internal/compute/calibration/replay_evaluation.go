@@ -32,11 +32,13 @@ type ReplayMetrics struct {
 }
 
 type ReplayStratum struct {
-	Name       string          `json:"name"`
-	Status     string          `json:"status"`
-	Activities int             `json:"activities"`
-	Users      int             `json:"users"`
-	Versions   []ReplayMetrics `json:"versions"`
+	Name             string          `json:"name"`
+	Status           string          `json:"status"`
+	Activities       int             `json:"activities"` // All eligible independent targets.
+	Users            int             `json:"users"`      // Users with eligible targets.
+	PairedActivities int             `json:"paired_activities"`
+	PairedUsers      int             `json:"paired_users"`
+	Versions         []ReplayMetrics `json:"versions"`
 }
 
 type ReplayUncertainty struct {
@@ -50,13 +52,52 @@ type ReplayUncertainty struct {
 type pairedError struct {
 	user   string
 	errors [3]float64
-	strata []string
+}
+
+// Coverage counts every eligible target; errors use only the three-way paired
+// intersection. The same cohort rules apply overall and within each stratum.
+type replayCohort struct {
+	activities int
+	users      map[string]bool
+	available  [3]int
+	pairs      []pairedError
+}
+
+func (cohort *replayCohort) add(p pairedError, available [3]bool) {
+	cohort.activities++
+	if cohort.users == nil {
+		cohort.users = map[string]bool{}
+	}
+	cohort.users[p.user] = true
+	all := true
+	for i, present := range available {
+		if present {
+			cohort.available[i]++
+		} else {
+			all = false
+		}
+	}
+	if all {
+		cohort.pairs = append(cohort.pairs, p)
+	}
+}
+
+func (cohort *replayCohort) metrics() []ReplayMetrics {
+	out := metricsForPairs(cohort.pairs)
+	for i := range out {
+		out[i].Available = cohort.available[i]
+		out[i].Missing = cohort.activities - cohort.available[i]
+		if cohort.activities > 0 {
+			out[i].Coverage = float64(cohort.available[i]) / float64(cohort.activities)
+		}
+	}
+	return out
 }
 
 func evaluateReplay(m ReplayManifest, cases []ReplayCaseResult, split string) ReplayEvaluation {
 	out := ReplayEvaluation{Status: "insufficient"}
-	var pairs []pairedError
-	var availableCounts [3]int
+	var overall replayCohort
+	strata := map[string]*replayCohort{}
 	seen := map[string]bool{}
 	for _, c := range cases {
 		// Retrospective estimates are never pooled into strict historical evidence.
@@ -91,56 +132,42 @@ func evaluateReplay(m ReplayManifest, cases []ReplayCaseResult, split string) Re
 			out.RejectedLabels++
 			continue
 		}
-		out.EligibleActivities++
 		observation := 1000 * ref.DurationS / ref.DistanceM
-		p := pairedError{user: c.User, strata: append([]string{"device:" + target.Device}, target.Scenarios...)}
-		all := len(c.Versions) == 3
+		p := pairedError{user: c.User}
+		var available [3]bool
 		for j, v := range c.Versions {
 			speed := v.Snapshot.ThresholdSpeedMps
 			if speed == nil || *speed <= 0 || math.IsNaN(*speed) || math.IsInf(*speed, 0) {
-				all = false
 				continue
 			}
-			availableCounts[j]++
+			available[j] = true
 			p.errors[j] = 1000/(*speed) - observation
 		}
-		if all {
-			pairs = append(pairs, p)
+		overall.add(p, available)
+		names := map[string]bool{"device:" + target.Device: true}
+		for _, scenario := range target.Scenarios {
+			names[scenario] = true
+		}
+		for name := range names {
+			if strata[name] == nil {
+				strata[name] = &replayCohort{}
+			}
+			strata[name].add(p, available)
 		}
 	}
+	pairs := overall.pairs
+	out.EligibleActivities = overall.activities
 	out.PairedActivities = len(pairs)
 	out.Users = pairUsers(pairs)
-	out.Versions = metricsForPairs(pairs)
-	for i := range out.Versions {
-		v := &out.Versions[i]
-		v.Available = availableCounts[i]
-		v.Missing = out.EligibleActivities - v.Available
-		if out.EligibleActivities > 0 {
-			v.Coverage = float64(v.Available) / float64(out.EligibleActivities)
-		}
-	}
-	names := map[string]bool{}
-	for _, p := range pairs {
-		for _, s := range p.strata {
-			names[s] = true
-		}
-	}
-	ordered := make([]string, 0, len(names))
-	for s := range names {
+	out.Versions = overall.metrics()
+	ordered := make([]string, 0, len(strata))
+	for s := range strata {
 		ordered = append(ordered, s)
 	}
 	sort.Strings(ordered)
 	for _, name := range ordered {
-		var selected []pairedError
-		for _, p := range pairs {
-			for _, s := range p.strata {
-				if s == name {
-					selected = append(selected, p)
-					break
-				}
-			}
-		}
-		out.Strata = append(out.Strata, ReplayStratum{Name: name, Status: "insufficient", Activities: len(selected), Users: pairUsers(selected), Versions: metricsForPairs(selected)})
+		cohort := strata[name]
+		out.Strata = append(out.Strata, ReplayStratum{Name: name, Status: "insufficient", Activities: cohort.activities, Users: len(cohort.users), PairedActivities: len(cohort.pairs), PairedUsers: pairUsers(cohort.pairs), Versions: cohort.metrics()})
 	}
 	if len(pairs) > 0 && out.Users >= 2 {
 		out.Uncertainty = bootstrapPairs(pairs)
@@ -164,7 +191,7 @@ func metricsForPairs(pairs []pairedError) []ReplayMetrics {
 	}
 	out := make([]ReplayMetrics, 3)
 	for j, strategy := range strategies {
-		metric := ReplayMetrics{Strategy: strategy, Available: len(pairs)}
+		metric := ReplayMetrics{Strategy: strategy}
 		if len(pairs) > 0 {
 			weighted := make([][2]float64, 0, len(pairs))
 			bias := 0.0
@@ -177,7 +204,6 @@ func metricsForPairs(pairs []pairedError) []ReplayMetrics {
 			metric.MedianAbsoluteError = &median
 			metric.P90AbsoluteError = &p90
 			metric.SignedBias = &bias
-			metric.Coverage = 1
 		}
 		out[j] = metric
 	}

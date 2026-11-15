@@ -239,3 +239,103 @@ func TestReplayCannotRelabelHeldoutActivityToEvadeRootSplit(t *testing.T) {
 		t.Fatal("same source activity relabelled across split")
 	}
 }
+
+func TestReplayRejectsDuplicateSourceActivityWithDifferentManifestID(t *testing.T) {
+	m := replayFixture(t)
+	duplicate := m.Activities[0]
+	duplicate.ID = "duplicate-record"
+	m.Activities = append(m.Activities, duplicate)
+	if _, err := calibration.Replay(m, "test"); err == nil || !strings.Contains(err.Error(), "duplicate source activity") {
+		t.Fatalf("same source activity accepted twice: %v", err)
+	}
+}
+
+func TestReplayStrataPreserveMissingTargetsWithoutChangingPairedErrors(t *testing.T) {
+	for _, split := range []string{"validation", "final_holdout"} {
+		t.Run(split, func(t *testing.T) {
+			m := replayFixture(t)
+			appendTarget := func(user, root, device string, distance float64) {
+				a := m.Activities[0]
+				a.ID, a.User, a.RootActivityID, a.Split = root, user, root, split
+				a.Device = device
+				a.Scenarios = []string{"continuous", "continuous"}
+				a.Activity.LabelID = root
+				a.EventTime = m.Cases[0].PredictionAsOf.Add(time.Hour)
+				a.Activity.ActivityDate = m.Cases[0].PredictionAsOf
+				at := a.EventTime.Add(time.Hour)
+				a.AvailableAt = &at
+				a.Reference = &calibration.ReplayReference{Kind: "direct_60min", Real: true, EffortSupport: "confirmed_maximal", MeasurementQuality: "high", EvidenceRef: "audited-reference", Protocol: "continuous_60min_v1", AvailableAt: &at, DurationS: 3600, DistanceM: distance}
+				a.ContentSHA256 = calibration.ReplayContentHash(a.Activity)
+				m.Activities = append(m.Activities, a)
+				m.Cases = append(m.Cases, calibration.ReplayCase{ID: "case-" + root, User: user, PredictionAsOf: m.Cases[0].PredictionAsOf, Mode: "strict", TargetRootActivityID: root})
+			}
+			appendTarget("athlete-a", "heldout", "available-device", 14400)
+			appendTarget("athlete-a", "heldout-2", "available-device", 12000)
+			pairedOnly, err := calibration.Replay(m, "test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			appendTarget("no-history", "missing", "missing-device", 18000)
+			// Replaying the same target twice must not increase any independent count.
+			duplicateCase := m.Cases[len(m.Cases)-1]
+			duplicateCase.ID = "repeated-prediction"
+			m.Cases = append(m.Cases, duplicateCase)
+			report, err := calibration.Replay(m, "test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			evaluation, baseline := report.Evaluation, pairedOnly.Evaluation
+			if split == "validation" {
+				evaluation, baseline = report.ValidationEvaluation, pairedOnly.ValidationEvaluation
+			}
+			if evaluation.EligibleActivities != 3 || evaluation.PairedActivities != 2 || evaluation.Users != 1 {
+				t.Fatalf("wrong independent overall counts: %+v", evaluation)
+			}
+			strata := map[string]calibration.ReplayStratum{}
+			for _, s := range evaluation.Strata {
+				strata[s.Name] = s
+			}
+			for _, want := range []struct {
+				name                                  string
+				activities, users, available, missing int
+				coverage                              float64
+			}{
+				{"continuous", 3, 2, 2, 1, 2.0 / 3},
+				{"device:available-device", 2, 1, 2, 0, 1},
+				{"device:missing-device", 1, 1, 0, 1, 0},
+			} {
+				s, exists := strata[want.name]
+				if !exists || s.Activities != want.activities || s.Users != want.users || s.Status != "insufficient" {
+					t.Fatalf("stratum %s lost independent eligible targets: %+v", want.name, s)
+				}
+				pairedUsers := 0
+				if want.available > 0 {
+					pairedUsers = 1
+				}
+				if s.PairedActivities != want.available || s.PairedUsers != pairedUsers {
+					t.Fatalf("stratum %s has wrong paired counts: %+v", want.name, s)
+				}
+				for i, metric := range s.Versions {
+					if metric.Available != want.available || metric.Missing != want.missing || metric.Coverage != want.coverage {
+						t.Fatalf("stratum %s hides missing outputs: %+v", want.name, metric)
+					}
+					if want.available == 0 {
+						if metric.MedianAbsoluteError != nil || metric.P90AbsoluteError != nil || metric.SignedBias != nil {
+							t.Fatalf("unpaired stratum %s received error scores: %+v", want.name, metric)
+						}
+					} else {
+						before := baseline.Versions[i]
+						if !reflect.DeepEqual(metric.MedianAbsoluteError, before.MedianAbsoluteError) || !reflect.DeepEqual(metric.P90AbsoluteError, before.P90AbsoluteError) || !reflect.DeepEqual(metric.SignedBias, before.SignedBias) {
+							t.Fatalf("missing target changed paired errors for %s", want.name)
+						}
+					}
+				}
+			}
+			for _, metric := range evaluation.Versions {
+				if metric.Available != 2 || metric.Missing != 1 || metric.Coverage != 2.0/3 {
+					t.Fatalf("wrong overall coverage: %+v", metric)
+				}
+			}
+		})
+	}
+}
