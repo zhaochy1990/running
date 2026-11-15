@@ -291,3 +291,11 @@ func TestIsUltraShort(t *testing.T) {
 		}
 	}
 }
+
+func (f *fakeAbilityStore) ReadEffectiveRunningCalibration(ctx context.Context, user, day string, mode storage.CalibrationMode) (storage.CalibrationBundle, error) {
+	b := storage.CalibrationBundle{Snapshot: f.snap}
+	if b.Snapshot != nil && b.Snapshot.AsOfDate != "" && b.Snapshot.AsOfDate > day {
+		b.Snapshot = nil
+	}
+	return b, nil
+}

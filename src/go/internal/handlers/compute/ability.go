@@ -35,10 +35,12 @@ const AbilityJobType = "ability"
 // (watch_sync → compute → route_shapes echo it down); without it the L1
 // batch falls back to the anchor day's activities.
 type abilityInput struct {
-	Mode     string   `json:"mode"`
-	Days     int      `json:"days"`
-	RefDate  string   `json:"ref_date"`
-	LabelIDs []string `json:"label_ids"`
+	SelectionMode string   `json:"selection_mode"`
+	CandidateOnly bool     `json:"candidate_only"`
+	Mode          string   `json:"mode"`
+	Days          int      `json:"days"`
+	RefDate       string   `json:"ref_date"`
+	LabelIDs      []string `json:"label_ids"`
 }
 
 // AbilityStore is the read+write surface the ability handler needs:
@@ -82,6 +84,10 @@ func NewAbility(store AbilityStore) job.Handler {
 					fmt.Errorf("ability: bad input: %w", err))
 			}
 		}
+		if in.SelectionMode == "candidate" || in.CandidateOnly {
+			return "", job.NewPermanentError("candidate_derived_write_forbidden", fmt.Errorf("candidate cannot write active ability"))
+		}
+		ctx = storage.WithCalibrationCache(ctx)
 		res, err := runAbility(ctx, store, user, in)
 		if err != nil {
 			return "", err
@@ -157,8 +163,21 @@ func computeAndPersist(ctx context.Context, store AbilityStore, user string, day
 		return 0, 0, err
 	}
 	date := day.Format("2006-01-02")
+	bundle, err := storage.ReadCachedRunningCalibration(ctx, store, user, date, storage.CalibrationActive)
+	if err != nil {
+		return 0, 0, err
+	}
+	if src.HRMax == nil {
+		return 0, len(src.Activities), nil
+	}
 	snap := ability.ComputeAbilitySnapshot(src, date, nil)
 	rows := snapshotToRows(date, snap)
+	for i := range rows {
+		rows[i].UserID = user
+		if err := storage.FreezeCalibrationProvenance(&rows[i], []storage.CalibrationInput{bundle.FrozenInput()}, nil); err != nil {
+			return 0, 0, err
+		}
+	}
 	if err := store.ReplaceAbilitySnapshot(ctx, user, rows); err != nil {
 		return 0, 0, err
 	}
@@ -179,7 +198,19 @@ func computeAndPersist(ctx context.Context, store AbilityStore, user string, day
 			skipped++
 			continue
 		}
-		if err := upsertL1(ctx, store, user, a, *src.HRMax); err != nil {
+		b, err := storage.ReadCachedRunningCalibration(ctx, store, user, a.Date, storage.CalibrationActive)
+		if err != nil {
+			return written, skipped, err
+		}
+		hrMax, err := abilitysource.ResolveHRMax(ctx, store, user, a.Date)
+		if err != nil {
+			return written, skipped, err
+		}
+		if hrMax == nil {
+			skipped++
+			continue
+		}
+		if err := upsertL1(ctx, store, user, a, *hrMax, b); err != nil {
 			return written, skipped, err
 		}
 		written++
@@ -198,17 +229,21 @@ func inL1Batch(a *ability.Activity, date string, labelIDs []string) bool {
 
 // upsertL1 computes one activity's L1 quality and upserts its activity_ability
 // row (contribution stays nil — deferred until prior/posterior L3 exist).
-func upsertL1(ctx context.Context, store AbilityStore, user string, a *ability.Activity, hrMax int) error {
+func upsertL1(ctx context.Context, store AbilityStore, user string, a *ability.Activity, hrMax int, bundle storage.CalibrationBundle) error {
 	l1 := ability.ComputeL1Quality(a, nil, hrMax)
 	breakdown, _ := json.Marshal(l1.Breakdown)
 	bs := string(breakdown)
-	return store.UpsertActivityAbility(ctx, user, &storage.ActivityAbility{
+	row := &storage.ActivityAbility{
 		UserID:      user,
 		LabelID:     a.LabelID,
 		L1Quality:   ptrF(l1.Total),
 		L1Breakdown: &bs,
 		ComputedAt:  time.Now().UTC(),
-	})
+	}
+	if err := storage.FreezeCalibrationProvenance(row, []storage.CalibrationInput{bundle.FrozenInput()}, nil); err != nil {
+		return err
+	}
+	return store.UpsertActivityAbility(ctx, user, row)
 }
 
 // backfillL1 (mode=backfill_l1) walks the user's full running history and fills
@@ -216,13 +251,6 @@ func upsertL1(ctx context.Context, store AbilityStore, user string, a *ability.A
 // ones fail the same gate as the routine path. Needs a calibration HRMax —
 // without one there is nothing to compute.
 func backfillL1(ctx context.Context, store AbilityStore, user string) (written, skipped int, err error) {
-	hrMax, err := abilitysource.ResolveHRMax(ctx, store, user)
-	if err != nil {
-		return 0, 0, err
-	}
-	if hrMax == nil {
-		return 0, 0, nil
-	}
 	existing, err := store.ActivityAbilityLabelIDs(ctx, user)
 	if err != nil {
 		return 0, 0, err
@@ -251,7 +279,19 @@ func backfillL1(ctx context.Context, store AbilityStore, user string) (written, 
 		return 0, skipped, err
 	}
 	for i := range acts {
-		if err := upsertL1(ctx, store, user, &acts[i], *hrMax); err != nil {
+		b, err := storage.ReadCachedRunningCalibration(ctx, store, user, acts[i].Date, storage.CalibrationActive)
+		if err != nil {
+			return written, skipped, err
+		}
+		hrMax, err := abilitysource.ResolveHRMax(ctx, store, user, acts[i].Date)
+		if err != nil {
+			return written, skipped, err
+		}
+		if hrMax == nil {
+			skipped++
+			continue
+		}
+		if err := upsertL1(ctx, store, user, &acts[i], *hrMax, b); err != nil {
 			return written, skipped, err
 		}
 		written++

@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/zhaochy1990/stride/internal/compute/calibration"
 	"github.com/zhaochy1990/stride/internal/compute/trainingload"
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/storage"
@@ -249,11 +251,11 @@ func TestCalibration_EmptyRunGate(t *testing.T) {
 
 // --- compute ---
 
-func TestCompute_NoCalibration_Permanent(t *testing.T) {
-	f := &fakeStore{snap: nil} // no baseline yet
-	_, err := runJob(t, NewCompute(f), `{"mode":"full"}`)
-	if pe, ok := job.AsPermanent(err); !ok || pe.Code != "no_calibration" {
-		t.Fatalf("want permanent no_calibration, got %v", err)
+func TestCompute_NoCalibration_IsExplicitAndPreservesDerivedRows(t *testing.T) {
+	f := &fakeStore{}
+	out, err := runJob(t, NewCompute(f), `{"mode":"full"}`)
+	if err != nil || !strings.Contains(out, "unavailable_historical_calibration") || f.activityUpserts != 0 || f.dailyUpserts != 0 {
+		t.Fatalf("missing history: %s %v", out, err)
 	}
 }
 
@@ -406,5 +408,50 @@ func TestCompute_Incremental_HealthOnlySyncConfirmsRestThroughToday(t *testing.T
 	}
 	if row.AcuteLoad >= f.prior.AcuteLoad || row.ChronicLoad >= f.prior.ChronicLoad {
 		t.Fatalf("rest day must decay ATL/CTL, got acute=%v chronic=%v", row.AcuteLoad, row.ChronicLoad)
+	}
+}
+
+func TestComputeRefusesFutureBaselineWithoutOverwritingHistory(t *testing.T) {
+	f := &fakeStore{snap: &storage.RunningCalibrationSnapshot{ID: 1, AsOfDate: "2099-01-01", AlgorithmVersion: 3}}
+	out, err := NewCompute(f)(context.Background(), &job.Job{UserID: testUser, InputJSON: `{"mode":"full"}`}, func(string, int) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "unavailable_historical_calibration") {
+		t.Fatalf("future calibration accepted: %s", out)
+	}
+}
+
+func (f *fakeStore) CalibrationPolicy(context.Context) (storage.RunningCalibrationPolicy, error) {
+	return storage.DefaultCalibrationPolicy(), nil
+}
+func (f *fakeStore) PublishRunningCalibration(ctx context.Context, s *storage.RunningCalibrationSnapshot, p []storage.RunningCalibrationPaceZone, h []storage.RunningCalibrationHRZone) (uint64, error) {
+	f.snapUpserted = true
+	f.zonesReplaced = true
+	return 7, nil
+}
+func (f *fakeStore) ReadEffectiveRunningCalibration(ctx context.Context, user, day string, mode storage.CalibrationMode) (storage.CalibrationBundle, error) {
+	b := storage.CalibrationBundle{Snapshot: f.snap}
+	if b.Snapshot != nil && b.Snapshot.AsOfDate != "" && b.Snapshot.AsOfDate > day {
+		b.Snapshot = nil
+	}
+	if b.Snapshot != nil {
+		p, h := toStorageZones(calibration.ComputeTrainingZones(toCalibrationSnapshot(b.Snapshot)))
+		b.PaceZones = p
+		b.HRZones = h
+	}
+	return b, nil
+}
+
+func TestCandidatePipelineCannotWriteActiveDerivedTables(t *testing.T) {
+	f := &fakeStore{snap: &storage.RunningCalibrationSnapshot{ID: 7}}
+	for _, h := range []job.Handler{NewCompute(f), NewCalibration(f)} {
+		_, err := runJob(t, h, `{"selection_mode":"candidate"}`)
+		if err == nil {
+			t.Fatal("candidate accepted by production writer")
+		}
+	}
+	if f.activityUpserts != 0 || f.dailyUpserts != 0 || f.snapUpserted || f.zonesReplaced {
+		t.Fatal("candidate polluted active writer")
 	}
 }
