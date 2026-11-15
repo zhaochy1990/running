@@ -33,7 +33,7 @@ STRIDE_990_SCREENSHOTS=/tmp/stride-983/private/client-smoke \
 STRIDE_LOCAL_URL=http://127.0.0.1:5184 node scripts/calibration-client-smoke.cjs
 ```
 
-该脚本不使用 request interception：8 状态实际读取 HTTP body 并与共享 SHA256 比较，在 390px 检查数值／范围／日期、键盘展开说明、无横向溢出，另查桌面及真实断网错误／重试。三端应读取同一最终 manifest；服务重建后必须重测，不能混用旧随机身份的 hash。
+该脚本不使用 request interception：8 状态实际读取 HTTP body 并与共享 SHA256 比较，在 390px 检查数值／范围／日期、Chrome 合成触摸与键盘展开说明、无横向溢出，另查桌面及真实断网错误／重试。三端应读取同一最终 manifest；服务重建后必须重测，不能混用旧随机身份的 hash。
 
 ## 标准邮件 smoke 与证据
 
