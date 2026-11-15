@@ -9,9 +9,8 @@
 ```text
 已有只读资料快照
   → @stride/training-profile
-      → 完整窗口资料 + 既有校准 + 本人原文
-      → 跨训练结构、长跑区块、天气匹配与测试对照
-      → @stride/common buildModel → 候选综合认识
+      → 自主提出假设 → 读取资料／编写计算 → 找反例／修订
+      → @stride/common buildModel（仅Flash）+ 独立假设账本
       → 本地 profile.json / profile.md / layered.json / analysis.json / metrics.json
 ```
 
@@ -78,12 +77,16 @@ pnpm exec biome check src/training_profile/src
 
 ## 第三轮：独立评估Agent
 
-用户认可前轮部分认识，并要求开放自主探索。默认生成入口现改为Deep Agents工具循环，不调用旧的 `describeSnapshot`／`buildComparisons` 来预先选择分析方向，也不把旧画像放进起始上下文。旧对照代码与本地结果仅作为外部比较基线。
+用户认可前轮部分认识，并要求开放自主探索。默认生成入口现改为LangChain `createAgent`工具循环，不调用旧的 `describeSnapshot`／`buildComparisons` 来预先选择分析方向，也不把旧画像放进起始上下文。旧对照代码与本地结果仅作为外部比较基线。首次真实运行使用Deep Agents；独立review后移除了隐式摘要、虚拟文件和委派，仅保留本轮所需的单Agent与显式工具，避免摘要调用绕过调用预算和用量记录。
 
 Agent可查看数据目录、分页读原始记录、读活动分段、编写同步JavaScript计算，以及提出／修订假设。计算在QuickJS WebAssembly解释器内使用只读快照副本，不安装宿主Node、文件、网络或密钥接口，限时限内存。它使用的是同一份固定本地资料，不查询或写入数据库。
+
+计算的来源依赖由宿主保守绑定整份有效快照，不接受Agent代码返回的来源清单。输入依赖条数不是支持样本数；实际筛选、样本和反例在计算代码及结果中。本轮来源变化可能使更多条目失效，这是文件POC的保守选择，不是正式局部失效协议。
 
 `record_hypothesis`保存问题、反证方案、支持／反证计算receipt、状态和修订历史。每条保留认识都必须绑定已完成的支持计算和一次不同代码的反例检查。这个检查证明过程材料存在，不自动证明统计方法或结论正确；本轮仍要审阅内容。
 
 最终通过 `submit_training_profile`提交；成功后由runtime结束循环。结果仍是本地JSON／Markdown；另保存 `agent-trace.jsonl` 和 `analysis.json`，可检查假设如何形成、查了什么、有哪些反例、为什么保留或放弃。日志含私人数据，仅在本地保留，不入Git或外部tracing。默认32个决策轮次、每次计算2.5秒／96MiB、整轮20分钟，达到上限而未提交则失败，不保存成假成功画像。
 
-框架与计算工具参考：[Deep Agents官方说明](https://docs.langchain.com/oss/javascript/deepagents/overview)、[QuickJS-emscripten](https://github.com/justjake/quickjs-emscripten)。模型继续严格限定DeepSeek Flash；本轮沿用high和32768输出预算，可按既有环境变量调整。
+工具失败也写入本地journal，并返回给Agent修正，失败不算反证或成功receipt。不同代码的反证只代表执行了另一项检查，不能自动证明设计独立、统计有效或最终文字忠实；内容审查保留原稿与人工校正副本，不能混为自动生成已通过。
+
+框架与计算工具参考：[LangChain Agents官方说明](https://docs.langchain.com/oss/javascript/langchain/agents)、[QuickJS-emscripten](https://github.com/justjake/quickjs-emscripten)。模型继续严格限定DeepSeek Flash；本轮沿用high和32768输出预算，可按既有环境变量调整。

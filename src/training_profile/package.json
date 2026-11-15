@@ -13,7 +13,6 @@
     "@langchain/core": "^1.2.5",
     "@stride/common": "workspace:*",
     "@stride/contract": "workspace:*",
-    "deepagents": "1.14.2",
     "langchain": "1.5.9",
     "quickjs-emscripten": "0.31.0",
     "zod": "^4.4.3"

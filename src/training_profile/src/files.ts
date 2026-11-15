@@ -4,7 +4,7 @@ import { shanghaiIso } from "@stride/contract";
 import type { Profile } from "./types.js";
 
 export const layerLabels = { historical: "历史事实、经历与当次陈述", long_term: "相对稳定的长期认识", rolling: "滚动观察与估计", unknown: "生命周期尚不明确" };
-const kindLabels = { fact: "记录／统计事实", estimate: "已有算法估计", user_report: "本人原文陈述", candidate: "系统综合观察／候选", insight: "个体认识" };
+const kindLabels = { fact: "记录／统计事实", estimate: "已有算法估计", user_report: "本人原文陈述", candidate: "系统综合观察／候选", insight: "系统综合推断" };
 
 /** Rearranges the same immutable conclusions; layering never changes their meaning. */
 export function layeredView(profile: Profile) {
@@ -43,7 +43,7 @@ export function renderMarkdown(profile: Profile): string {
               ]
             : []),
           `来源日期：${c.sourceDates[0] ?? "未知"}${c.sourceDates.length > 1 ? ` 至 ${c.sourceDates.at(-1)}` : ""}。`,
-          `条目ID：${c.id}；来源 ${c.evidence.length} 条（完整标识与内容修订摘要见JSON）。`,
+          `条目ID：${c.id}；输入依赖范围 ${c.evidence.length} 条（不是支持样本数；实际正反样本与计算见analysis.json，来源标识见JSON）。`,
         );
     }
   }

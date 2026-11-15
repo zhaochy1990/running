@@ -26,6 +26,7 @@ export const SubmissionSchema = z.object({
       z.object({
         hypothesisId: z.string(),
         title: z.string(),
+        kind: z.enum(["fact", "estimate", "user_report", "insight"]),
         text: z.string().max(650),
         dimension: z.string(),
         lifecycle: Lifecycle,
@@ -64,7 +65,11 @@ export class ProfileAgentSession {
     this.receipts.set(receipt.id, receipt);
     await this.record({ type: "tool_result", ...receipt });
     // Full dependencies stay in the local journal, outside the model context.
-    return { receiptId: receipt.id, result: receipt.result, inspectedSourceCount: receipt.sourceIds.length };
+    return { receiptId: receipt.id, result: receipt.result, dependencySourceCount: receipt.sourceIds.length };
+  }
+
+  async toolError(tool: string, input: unknown, error: string) {
+    await this.record({ type: "tool_error", tool, input, error });
   }
 
   catalog() {
@@ -119,6 +124,8 @@ export class ProfileAgentSession {
     if (input.hypothesisId !== null && !this.hypotheses.has(input.hypothesisId)) throw new Error("Record the hypothesis before testing it");
     if (["support", "counterexample"].includes(input.purpose) && !input.hypothesisId) throw new Error("Support and counterexample checks need a hypothesisId");
     const calculated = await calculateSnapshot(this.snapshot, input.code);
+    if (["support", "counterexample"].includes(input.purpose) && !calculated.readInput)
+      throw new Error("Support and counterexample calculations must read the snapshot input");
     return this.receipt({
       hypothesisId: input.hypothesisId,
       purpose: input.purpose,
@@ -145,10 +152,9 @@ export class ProfileAgentSession {
     if (!hypothesis.supportReceipts.some((id) => this.receipts.get(id)?.purpose === "support"))
       throw new Error("A retained insight needs a successful support calculation");
     const challenges = hypothesis.challengeReceipts.map((id) => this.receipts.get(id));
-    if (!challenges.some((r) => r?.purpose === "counterexample" && r.sourceIds.length > 0))
-      throw new Error("Run a separate counterexample calculation before retaining the hypothesis");
     const supportCode = hypothesis.supportReceipts.map((id) => this.receipts.get(id)?.code);
-    if (!challenges.some((r) => r?.code && !supportCode.includes(r.code))) throw new Error("Counterexample check must differ from the support calculation");
+    if (!challenges.some((r) => r?.purpose === "counterexample" && r.sourceIds.length > 0 && r.code && !supportCode.includes(r.code)))
+      throw new Error("Run a separate counterexample calculation with different code before retaining the hypothesis");
   }
 
   submit(value: z.infer<typeof SubmissionSchema>, previous: Profile | null) {
@@ -171,7 +177,7 @@ export class ProfileAgentSession {
         .filter((v) => /^\d{4}-\d{2}-\d{2}$/.test(v));
       return {
         id: `insight-${i + 1}`,
-        kind: "insight" as const,
+        kind: insight.kind,
         title: insight.title,
         text: insight.text,
         dimension: insight.dimension,

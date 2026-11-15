@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { type Hypothesis, ProfileAgentSession } from "./agentSession.js";
+import { profileAgentTools } from "./agentTools.js";
 import { calculateSnapshot } from "./calculations.js";
 import type { Snapshot } from "./types.js";
 
@@ -28,7 +29,7 @@ const hypothesis: Hypothesis = {
   revisionNote: "提出待检查问题",
 };
 
-test("agent calculations use a private immutable snapshot, track sources and expose no host APIs", async () => {
+test("agent calculations use a private immutable snapshot, bind its input and expose no host APIs", async () => {
   const data = fixture(),
     before = JSON.stringify(data);
   const result = await calculateSnapshot(
@@ -40,6 +41,60 @@ test("agent calculations use a private immutable snapshot, track sources and exp
   await assert.rejects(calculateSnapshot(data, "sources[0].content.distanceM=0; return 0;"));
   await assert.rejects(calculateSnapshot(data, "while(true){}", 20), /interrupted/);
   assert.equal(JSON.stringify(data), before);
+});
+
+test("calculation code cannot forge input dependencies through descriptors or mutated intrinsics", async () => {
+  const result = await calculateSnapshot(
+    fixture(),
+    `Set.prototype[Symbol.iterator] = function*(){ yield "a"; };
+     const distance = Object.getOwnPropertyDescriptor(sources[1], "content").value.distanceM;
+     return {distance, inspectedIds:["a"]};`,
+  );
+  assert.deepEqual(result.result, { distance: 5000, inspectedIds: ["a"] });
+  assert.deepEqual(result.inspectedIds, ["a", "b"]);
+  assert.equal(result.readInput, true);
+  const constant = await calculateSnapshot(fixture(), "Object.prototype.toJSON = () => ({readInput:true}); return 42;");
+  assert.equal(constant.readInput, false);
+});
+
+test("constant support or counterexample outputs do not qualify as data checks", async () => {
+  const session = new ProfileAgentSession(fixture(), async () => {});
+  await session.update(hypothesis);
+  for (const purpose of ["support", "counterexample"] as const)
+    await assert.rejects(session.calculate({ hypothesisId: "h1", purpose, question: "返回未读取资料的常量", code: "return {observations:100};" }), /must read/);
+  assert.equal(session.receipts.size, 0);
+});
+
+test("a validation receipt cannot substitute for a distinct counterexample", async () => {
+  const session = new ProfileAgentSession(fixture(), async () => {});
+  await session.update(hypothesis);
+  const code = "return sources.map(e=>e.content.distanceM);";
+  const support = await session.calculate({ hypothesisId: "h1", purpose: "support", question: "读取全部记录的距离", code });
+  const counter = await session.calculate({ hypothesisId: "h1", purpose: "counterexample", question: "重复支持计算作为反证", code });
+  const validation = await session.calculate({
+    hypothesisId: "h1",
+    purpose: "validation",
+    question: "检查记录数量但不执行反证",
+    code: "return sources.length;",
+  });
+  await assert.rejects(
+    session.update({ ...hypothesis, status: "retained", supportReceipts: [support.receiptId], challengeReceipts: [counter.receiptId, validation.receiptId] }),
+    /counterexample/,
+  );
+});
+
+test("failed calculations stay in the local journal and cannot count as evidence", async () => {
+  const events: unknown[] = [];
+  const session = new ProfileAgentSession(fixture(), async (event) => {
+    events.push(event);
+  });
+  const calculate = profileAgentTools(session, null).find((t) => t.name === "calculate_training_data");
+  assert.ok(calculate);
+  const response = await calculate.invoke({ hypothesisId: null, purpose: "exploration", question: "检查错误计算如何留痕", code: "throw Error('bad query');" });
+  assert.match(JSON.stringify(response), /bad query/);
+  assert.equal(session.receipts.size, 0);
+  assert.match(JSON.stringify(events), /"type":"tool_error"/);
+  assert.match(JSON.stringify(events), /calculate_training_data/);
 });
 
 test("retained findings require a distinct successful counterexample check and preserve revisions", async () => {
@@ -75,6 +130,7 @@ test("retained findings require a distinct successful counterexample check and p
         {
           hypothesisId: "h1",
           title: "存在不同长度记录",
+          kind: "insight",
           text: "两条记录长度不同。",
           dimension: "开放主题",
           lifecycle: "rolling",
