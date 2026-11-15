@@ -89,9 +89,12 @@ func BuildCandidateSegments(history []Activity, durationsS []int) CandidateSegme
 					elapsed := float64(duration)
 					quality := SegmentQuality{TimeBasis: "elapsed", DistanceCoverage: (p.distanceTime[right] - dc) / elapsed, SpeedCoverage: (p.speedTime[right] - sc) / elapsed, Reasons: append([]string(nil), diag.Reasons...)}
 					if quality.SpeedCoverage >= 0.8 {
-						mean := (p.speed[right] - sa) / elapsed
+						// Stability describes observed speeds. Missing intervals are
+						// not observed zeros; valid zero-speed intervals are included.
+						observedSpeedTime := p.speedTime[right] - sc
+						mean := (p.speed[right] - sa) / observedSpeedTime
 						if mean > 0 {
-							variance := math.Max(0, (p.speedSquared[right]-p.squareAt(start, left))/elapsed-mean*mean)
+							variance := math.Max(0, (p.speedSquared[right]-p.squareAt(start, left))/observedSpeedTime-mean*mean)
 							quality.SpeedCV = f64(math.Sqrt(variance) / mean)
 						}
 					}
