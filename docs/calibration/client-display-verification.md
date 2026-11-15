@@ -35,6 +35,17 @@ STRIDE_LOCAL_URL=http://127.0.0.1:5184 node scripts/calibration-client-smoke.cjs
 
 该脚本不使用 request interception：8 状态实际读取 HTTP body 并与共享 SHA256 比较，在 390px 检查数值／范围／日期、Chrome 合成触摸与键盘展开说明、无横向溢出，另查桌面及真实断网错误／重试。三端应读取同一最终 manifest；服务重建后必须重测，不能混用旧随机身份的 hash。
 
+## 原生错误／重试网络故障
+
+`TestCalibrationNetworkProxy` 是另一个默认跳过的 `_test.go` 工具，仅监听 loopback19891。它透明转发到上述真实19890服务；`POST /_test/zones-failure` 的 `{"enabled":true}` 只令 zones 请求连接关闭的本机端口1，由真实网络错误产生502，身份/profile等仍转真实服务；`false`恢复正常。它不替换校准数据，恢复前后正文SHA256相同。控制路由不进入生产 API。
+
+```sh
+STRIDE_990_PROXY_CONTROL_FILE=/tmp/stride-983/private/t7-network-proxy.json \
+  go test ./internal/api -run '^TestCalibrationNetworkProxy$' -count=1 -v -timeout 130m
+```
+
+只在 DEBUG Simulator 私有配置使用19891，并用原生 XCTest 操作失败页、关闭故障、点击重试。结束创建 `<proxy-file>.done` 正常退出代理，再完成主服务done清理。两个工具重跑前先移除各自旧done标记，不能把默认skip记作验收。
+
 ## 标准邮件 smoke 与证据
 
 `frontend/scripts/local-smoke.cjs` 在已有邮件登录 → activities → detail → weekly GET 后增加真实 `/training-status` 与说明交互。旧 API/真实账户截图仅存私有目录，不提交。受控合成卡片截图可放 `evidence/t7/`，不含邮箱、真实用户身份、轨迹、备注或 token。
