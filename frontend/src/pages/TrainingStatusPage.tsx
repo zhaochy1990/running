@@ -34,6 +34,7 @@ import { useUser } from "../UserContextValue";
 import { aggregateWeeklyDose } from "../lib/weeklyLoad";
 import { shanghaiDate, shanghaiToday, shanghaiWeekStart, shanghaiWeekday } from "../lib/shanghai";
 import ViewHead from "../components/ViewHead";
+import { calibrationDisplay, type CalibrationDisplay } from "../lib/calibrationDisplay";
 
 // Form (Chronic − Acute) zone palette. Green anchors 提升期 (the productive
 // stress band); race-ready teal, over-taper amber, 维持期 neutral grey,
@@ -167,6 +168,7 @@ export default function TrainingStatusPage() {
   const [load, setLoad] = useState<StrideTrainingLoadResponse | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [retry, setRetry] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -198,8 +200,11 @@ export default function TrainingStatusPage() {
         setLoad(ld);
         setActivities(acts);
       })
-      .catch((e) => {
-        if (!cancelled) setError(String(e));
+      .catch(() => {
+        if (!cancelled) {
+          setError("训练状态更新失败，请重试");
+          setZones(null);
+        }
       })
       .finally(() => {
         if (!cancelled) setLoaded(true);
@@ -207,7 +212,7 @@ export default function TrainingStatusPage() {
     return () => {
       cancelled = true;
     };
-  }, [user, days]);
+  }, [user, days, retry]);
 
   // Group activities by Shanghai-local day so the daily-dose tooltip can list
   // each workout for the hovered date. Multiple activities per day (e.g. AM run
@@ -225,7 +230,7 @@ export default function TrainingStatusPage() {
 
   if (!loaded) {
     return (
-      <div className="flex items-center justify-center py-20">
+      <div role="status" aria-label="正在加载训练状态" className="flex items-center justify-center py-20">
         <div className="w-6 h-6 border-2 border-accent-green/30 border-t-accent-green rounded-full animate-spin" />
       </div>
     );
@@ -238,13 +243,15 @@ export default function TrainingStatusPage() {
         <TimeRangeToggle value={days} onChange={setDays} />
       </div>
 
-      {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 mb-4 text-sm font-mono">加载失败：{error}</div>}
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 mb-4 text-sm font-mono">加载失败：{error}<button type="button" className="ml-3 underline py-2" onClick={() => setRetry((value) => value + 1)}>重新加载</button></div>}
 
+      {!error && <>
       <MetricsRow health={health} hrv={hrv} zones={zones} />
       <TrendsRow health={health} hrv={hrv} days={days} />
       <ZonesRow zones={zones} />
       <TrainingLoadSection load={load} dailyWindowDays={days} activitiesByDate={activitiesByDate} />
       <DataStatusFooter zones={zones} load={load} />
+      </>}
     </div>
   );
 }
@@ -276,6 +283,7 @@ function MetricCard({
   baseline,
   color,
   help,
+  explanation,
 }: {
   label: string;
   sublabel: string;
@@ -284,21 +292,13 @@ function MetricCard({
   baseline?: string | null;
   color: string;
   help?: React.ReactNode;
+  explanation?: CalibrationDisplay;
 }) {
   return (
-    <div className="bg-bg-card border border-border-subtle rounded-2xl p-4 flex flex-col gap-1 overflow-visible">
+    <div className="bg-bg-card border border-border-subtle rounded-2xl p-4 flex flex-col gap-1 min-w-0">
       <div className="flex items-center justify-between gap-2">
         <div className="text-xs font-mono text-text-muted">{label}</div>
-        {help && (
-          <div className="group relative">
-            <div className="w-4 h-4 rounded-full border border-border-subtle text-[10px] font-mono text-text-muted cursor-help flex items-center justify-center hover:border-text-secondary hover:text-text-secondary transition-colors">
-              ?
-            </div>
-            <div className="invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity absolute right-0 top-6 z-50 w-64 bg-bg-card border border-border-subtle rounded-lg p-3 shadow-lg text-xs text-text-primary font-normal leading-relaxed whitespace-pre-line pointer-events-none">
-              {help}
-            </div>
-          </div>
-        )}
+
       </div>
       <div className="text-[10px] font-mono text-text-faint">{sublabel}</div>
       <div className="flex items-baseline gap-1 mt-1">
@@ -308,6 +308,15 @@ function MetricCard({
         <span className="text-xs font-mono text-text-muted">{unit}</span>
       </div>
       {baseline != null && <div className="text-[10px] font-mono text-text-muted mt-0.5">{baseline}</div>}
+      {explanation && <div className="text-sm leading-relaxed text-text-secondary space-y-1 mt-1 break-words">
+        <p>{explanation.status}</p>
+        {explanation.range && <p>{explanation.range}</p>}
+        <p>{explanation.details[0]}</p>
+      </div>}
+      {(help || explanation) && <details className="mt-2 text-sm leading-relaxed text-text-secondary break-words">
+        <summary className="cursor-pointer py-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-green rounded">{label}说明</summary>
+        {explanation ? <div className="space-y-2 pt-1"><p>{explanation.definition}</p>{explanation.details.slice(1).map((line) => <p key={line}>{line}</p>)}</div> : <div className="whitespace-pre-line pt-1">{help}</div>}
+      </details>}
     </div>
   );
 }
@@ -343,9 +352,8 @@ function MetricsRow({
   const hrvBaseline = hrvLow != null && hrvHigh != null ? `正常 ${hrvLow}-${hrvHigh} ms` : null;
   const threshold = zones?.threshold;
 
-  const pacePerKm = threshold?.pace_per_km_sec;
-  const paceStr = pacePerKm != null ? `${Math.floor(pacePerKm / 60)}:${String(pacePerKm % 60).padStart(2, "0")}` : "—";
-  const hrStr = threshold?.hr_bpm != null ? String(Math.round(threshold.hr_bpm)) : "—";
+  const paceDisplay = calibrationDisplay(threshold, "speed");
+  const hrDisplay = calibrationDisplay(threshold, "hr");
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -377,34 +385,8 @@ function MetricsRow({
           </>
         }
       />
-      <MetricCard
-        label="阈值配速"
-        sublabel="STRIDE Threshold Pace"
-        value={paceStr}
-        unit="/km"
-        baseline={threshold?.speed_confidence ? `置信 ${threshold.speed_confidence}` : null}
-        color="#00a85a"
-        help={
-          <>
-            <strong>STRIDE 自研阈值配速</strong>。乳酸阈附近的可持续配速，是所有 6 个配速区间的锚点。{"\n\n"}使用方法：{"\n"}• 节奏跑配速 ≈ 阈值 ± 5 s/km{"\n"}•
-            长距离配速 = 阈值 + 30 ~ 60 s/km{"\n"}• 由近 90 天 HR-pace 回归 + tempo 段落识别得出{"\n"}• 置信度低 = 样本不足，需要更多 tempo / LT 课
-          </>
-        }
-      />
-      <MetricCard
-        label="阈值心率"
-        sublabel="STRIDE Threshold HR"
-        value={hrStr}
-        unit="bpm"
-        baseline={threshold?.hr_confidence ? `置信 ${threshold.hr_confidence}` : null}
-        color="#d97706"
-        help={
-          <>
-            <strong>STRIDE 自研阈值心率</strong>。乳酸阈附近的可持续心率，是 6 个心率区间的锚点。{"\n\n"}使用方法：{"\n"}• 比赛全马目标 HR ≈ 阈值 − 5{"\n"}•
-            节奏跑 HR = 阈值 ± 3{"\n"}• 间歇课 HR 可短暂超过 阈值 + 5{"\n"}• 置信度低 = 缺少结构化课次
-          </>
-        }
-      />
+      <MetricCard label="阈值配速" sublabel="约一小时全力能力" value={paceDisplay.value} unit="/km" color="#00a85a" explanation={paceDisplay} />
+      <MetricCard label="阈值心率" sublabel="心率证据估计" value={hrDisplay.value} unit="bpm" color="#d97706" explanation={hrDisplay} />
     </div>
   );
 }
@@ -559,12 +541,13 @@ function formatZoneRange<T extends string | number>(smaller: T | null, larger: T
 }
 
 function ZonesRow({ zones }: { zones: StrideZonesResponse | null }) {
-  const hasData = !!zones?.threshold && zones.pace_zones.length > 0 && zones.hr_zones.length > 0;
+  const hasPace = !!zones?.pace_zones.length;
+  const hasHr = !!zones?.hr_zones.length;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
       <ChartCard title="配速区间" sublabel="STRIDE-derived from threshold pace">
-        {hasData ? (
+        {hasPace ? (
           <table className="w-full text-xs font-mono">
             <thead>
               <tr className="text-text-faint border-b border-border-subtle">
@@ -589,7 +572,7 @@ function ZonesRow({ zones }: { zones: StrideZonesResponse | null }) {
       </ChartCard>
 
       <ChartCard title="心率区间" sublabel="STRIDE-derived from threshold HR">
-        {hasData ? (
+        {hasHr ? (
           <table className="w-full text-xs font-mono">
             <thead>
               <tr className="text-text-faint border-b border-border-subtle">
@@ -1243,7 +1226,7 @@ function TrainingLoadSection({
 function DataStatusFooter({ zones, load }: { zones: StrideZonesResponse | null; load: StrideTrainingLoadResponse | null }) {
   return (
     <div className="text-[10px] font-mono text-text-faint border-t border-border-subtle pt-3 mt-4 space-y-0.5">
-      <div>Calibration: {zones?.threshold?.as_of_date ?? "—"} · 来源：STRIDE 自研算法</div>
+      <div>数据截止 {zones?.threshold?.source?.data_cutoff_day ?? zones?.threshold?.as_of_date ?? "—"} · 来源：STRIDE 校准</div>
       <div>Training load latest: {load?.current?.date ?? "—"}</div>
       <div>RHR / HRV: 来自手表原始读数（COROS / Garmin）</div>
     </div>

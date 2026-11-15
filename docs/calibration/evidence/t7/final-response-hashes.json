@@ -1,0 +1,101 @@
+{
+  "description": "Final T7 synthetic-only real Go/MySQL/RS256 response hashes. Random fixture identities change on restart; no accuracy claim. All three clients must independently compare this same final response body.",
+  "cases": [
+    {
+      "name": "two-sided",
+      "sha256": "359f851c8764d11146474ccc7565fd3d5ffb3c7beb6774c1c8f951b0b4e460bb",
+      "expected": {
+        "pace": "3:34",
+        "pace_range": "支持范围 3:34–3:36 /km",
+        "hr": "166",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "name": "constraints-only",
+      "sha256": "a6728e88b6f885878b42bb283f2cf6ba61c2597e09c1cf75cc2240d61a14cf4b",
+      "expected": {
+        "pace": "—",
+        "pace_range": "至少可达到 4:10 /km（配速 ≤ 4:10）",
+        "hr": "166",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "name": "upper-only",
+      "sha256": "380dfa1e38bf521f5d4315932a3831c569962b6bd35705453ad6c99b3207f165",
+      "expected": {
+        "pace": "—",
+        "pace_range": "配速 ≥ 4:10 /km（仅单侧约束）",
+        "hr": "166",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "name": "low-stale",
+      "sha256": "49ebf30364e7813f2233aa3921782f13adad65bc9d35e5b3959972a0de587729",
+      "expected": {
+        "pace": "3:34",
+        "pace_range": "支持范围 3:34–3:36 /km",
+        "hr": "—",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "name": "legacy",
+      "sha256": "2f9acdf9c0efb02489ffb248ddfac7fd7fac25cc36bd648c07fe052cebc6f60f",
+      "expected": {
+        "pace": "3:34",
+        "pace_range": null,
+        "hr": "166",
+        "evidence_day": null,
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "name": "missing",
+      "sha256": "ccebde478116a839fbe3a2869e6f6aec2d09c1b92c2b4535ec11df5938492cce",
+      "expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "—",
+        "evidence_day": null,
+        "cutoff_day": null,
+        "computed_shanghai": null
+      }
+    },
+    {
+      "name": "unknown",
+      "sha256": "d4cda968e0139cdf8a62a3a23e42a85fa6b6d42ca13d25cdb4fdaf8b2f030aaf",
+      "expected": {
+        "pace": "3:34",
+        "pace_range": "支持范围 3:34–3:36 /km",
+        "hr": "166",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "name": "source-unavailable",
+      "sha256": "d7b81c3b5a1081d0dd46285e2b4c02a0121823c33cdfee8da32f013cd9875546",
+      "expected": {
+        "pace": "3:34",
+        "pace_range": null,
+        "hr": "166",
+        "evidence_day": null,
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    }
+  ]
+}
