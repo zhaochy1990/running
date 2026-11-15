@@ -151,11 +151,21 @@ func newCalibrationCollectionCmd() *cobra.Command {
 		var results []calibration.ReplayCaseResult
 		var provenance []collectionCaseProvenance
 		seen := map[string]bool{}
+		canonicalUsers := map[string]string{}
+		pseudonyms := map[string]string{}
 		for _, plan := range outcomes.Plans {
 			if plan.ID == "" || filepath.Base(plan.ID) != plan.ID || strings.ContainsAny(plan.ID, "/\\") || seen[plan.ID] || plan.Target.Split != "final_holdout" {
 				return fmt.Errorf("invalid/duplicate frozen target case")
 			}
 			seen[plan.ID] = true
+			if prior, ok := canonicalUsers[plan.Target.User]; ok && prior != plan.Target.UserID {
+				return fmt.Errorf("frozen user pseudonym maps to conflicting canonical users")
+			}
+			if prior, ok := pseudonyms[plan.Target.UserID]; ok && prior != plan.Target.User {
+				return fmt.Errorf("frozen canonical user maps to conflicting pseudonyms")
+			}
+			canonicalUsers[plan.Target.User] = plan.Target.UserID
+			pseudonyms[plan.Target.UserID] = plan.Target.User
 			var base calibration.ReplayManifest
 			name := plan.ID + "-replay-manifest.json.gz"
 			if err := read(name, &base); err != nil {
@@ -170,7 +180,7 @@ func newCalibrationCollectionCmd() *cobra.Command {
 			if len(base.Cases) != 1 || !base.Cases[0].PredictionAsOf.Equal(plan.Cutoff) || !base.AsOf.Equal(plan.Cutoff) {
 				return fmt.Errorf("frozen base cutoff mismatch")
 			}
-			target := calibration.FrozenRaceReplayTarget{CaseID: plan.ID, User: plan.Target.User, RootActivityID: plan.Target.Root, EventAt: plan.Target.Event, DurationS: plan.Target.Duration, DistanceM: plan.Target.Distance, EffortSupport: plan.Target.Effort}
+			target := calibration.FrozenRaceReplayTarget{CaseID: plan.ID, StorageUserID: plan.Target.UserID, StorageLabelID: plan.Target.LabelID, User: plan.Target.User, RootActivityID: plan.Target.Root, EventAt: plan.Target.Event, DurationS: plan.Target.Duration, DistanceM: plan.Target.Distance, EffortSupport: plan.Target.Effort}
 			view, err := calibration.FrozenRaceReplayView(base, target, reportAsOf, observedAt, index.Files[outcomeFile])
 			if err != nil {
 				return err

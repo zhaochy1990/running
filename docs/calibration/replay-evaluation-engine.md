@@ -150,3 +150,13 @@ reject conflicting reference-bearing root contents, gate quality references at
 report time, preserve known engineering failure and classify nonfinite derived
 errors before metrics/JSON. These were synthetic pre-final findings; no final
 outcome or accuracy result was used to make these corrections.
+
+The collector's canonical source root is SHA256(storageUserID + "/" + rawLabelID).
+Domain Activity.LabelID preserves the provider's original label; only the outer
+user name is pseudonymized. The loader therefore verifies target root derivation,
+every base train root against that same raw user/label mapping, exclusion of the
+raw target label as well as its root, and a one-to-one canonical-user/pseudonym
+mapping across cases. The new view retains the original target label rather than
+inventing an alias that could hide a source duplicate. These checks are based on
+collector source assignments and synthetic identity counterexamples, before any
+final outcome was opened.
