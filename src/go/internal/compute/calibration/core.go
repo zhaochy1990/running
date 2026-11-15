@@ -19,7 +19,7 @@ const (
 // EstimateRunningCalibration mirrors core.estimate_running_calibration: the
 // top-level assembly of the calibration snapshot from a running-activity history
 // and daily-RHR rows. Evidence rows are not built (deferred; diagnostic only).
-func EstimateRunningCalibration(history []Activity, asOf time.Time, health []HealthRow) Snapshot {
+func estimateRunningCalibrationV3(history []Activity, asOf time.Time, health []HealthRow) Snapshot {
 	recent := make([]Activity, 0, len(history))
 	windowStart := asOf.AddDate(0, 0, -180)
 	for _, a := range history {
