@@ -1,5 +1,5 @@
 /** Explicit, manually invoked POC. No SQL, HTTP service, jobs, or Coach integration. */
-import { readFile } from "node:fs/promises";
+import { appendFile, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { loadConfig, type ModelConfig } from "@stride/common";
 import { z } from "zod/v4";
@@ -46,7 +46,11 @@ const settings = z
   .parse({ maxOutputTokens: process.env.PROFILE_MAX_OUTPUT_TOKENS ?? "32768", reasoningEffort: process.env.PROFILE_REASONING_EFFORT ?? "high" });
 const runConfig: ModelConfig = { ...model, max_tokens: settings.maxOutputTokens, reasoning_effort: settings.reasoningEffort, timeout_s: 300 };
 await createRunDirectory(resolve(outputPath));
-const result = await generateProfile(snapshot, runConfig, previous, (raw) => savePrivate(resolve(outputPath), "model-response.json", raw));
+let events = Promise.resolve();
+const result = await generateProfile(snapshot, runConfig, previous, (event) => {
+  events = events.then(() => appendFile(resolve(outputPath, "agent-trace.jsonl"), `${JSON.stringify(event)}\n`, { mode: 0o600 }));
+  return events;
+});
 await saveProfile(resolve(outputPath), result.profile);
 await savePrivate(resolve(outputPath), "analysis.json", result.analysis);
 await savePrivate(resolve(outputPath), "metrics.json", result.metrics);

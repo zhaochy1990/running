@@ -41,6 +41,9 @@ export const ConclusionSchema = z.object({
   derivedFromFactIds: z.array(z.string()).optional(),
   planningUse: z.string().optional(),
   support: z.enum(["repeated_observation", "preliminary_association", "single_episode"]).optional(),
+  hypothesisId: z.string().optional(),
+  supportingReceiptIds: z.array(z.string()).optional(),
+  counterexampleReceiptIds: z.array(z.string()).optional(),
 });
 export type Conclusion = z.infer<typeof ConclusionSchema>;
 export const ProfileSchema = z.object({

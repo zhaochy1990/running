@@ -75,3 +75,15 @@ pnpm exec biome check src/training_profile/src
 本轮默认 `PROFILE_MAX_OUTPUT_TOKENS=32768`、`PROFILE_REASONING_EFFORT=high`；可通过这两个环境变量调整输出预算及low／medium／high推理强度。每轮metrics保存实际model、参数、用量与耗时。参数调整不改变模型。
 
 负荷分析引用已有daily load的完整周与峰值日前后值，比较周内剂量集中，而不是用单日负荷比或HRV范围放行维持／加量。天气正文可查看全部备选，但来源引用覆盖所有可见候选并去重；不复用主分析与共享对照备选分别计数。
+
+## 第三轮：独立评估Agent
+
+用户认可前轮部分认识，并要求开放自主探索。默认生成入口现改为Deep Agents工具循环，不调用旧的 `describeSnapshot`／`buildComparisons` 来预先选择分析方向，也不把旧画像放进起始上下文。旧对照代码与本地结果仅作为外部比较基线。
+
+Agent可查看数据目录、分页读原始记录、读活动分段、编写同步JavaScript计算，以及提出／修订假设。计算在QuickJS WebAssembly解释器内使用只读快照副本，不安装宿主Node、文件、网络或密钥接口，限时限内存。它使用的是同一份固定本地资料，不查询或写入数据库。
+
+`record_hypothesis`保存问题、反证方案、支持／反证计算receipt、状态和修订历史。每条保留认识都必须绑定已完成的支持计算和一次不同代码的反例检查。这个检查证明过程材料存在，不自动证明统计方法或结论正确；本轮仍要审阅内容。
+
+最终通过 `submit_training_profile`提交；成功后由runtime结束循环。结果仍是本地JSON／Markdown；另保存 `agent-trace.jsonl` 和 `analysis.json`，可检查假设如何形成、查了什么、有哪些反例、为什么保留或放弃。日志含私人数据，仅在本地保留，不入Git或外部tracing。默认32个决策轮次、每次计算2.5秒／96MiB、整轮20分钟，达到上限而未提交则失败，不保存成假成功画像。
+
+框架与计算工具参考：[Deep Agents官方说明](https://docs.langchain.com/oss/javascript/deepagents/overview)、[QuickJS-emscripten](https://github.com/justjake/quickjs-emscripten)。模型继续严格限定DeepSeek Flash；本轮沿用high和32768输出预算，可按既有环境变量调整。

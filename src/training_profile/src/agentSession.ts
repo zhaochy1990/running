@@ -1,0 +1,208 @@
+/** Per-run working state. Hypotheses, receipts and revisions live here, not in a prompt. */
+import { createHash } from "node:crypto";
+import { z } from "zod/v4";
+import { calculateSnapshot } from "./calculations.js";
+import { Lifecycle, type Profile, refs, type Snapshot, validConclusions } from "./types.js";
+
+export const HypothesisSchema = z.object({
+  id: z.string().min(1),
+  statement: z.string().min(5),
+  refutationPlan: z.string().min(8),
+  status: z.enum(["proposed", "testing", "retained", "qualified", "rejected"]),
+  supportReceipts: z.array(z.string()),
+  challengeReceipts: z.array(z.string()),
+  revisionNote: z.string(),
+});
+export type Hypothesis = z.infer<typeof HypothesisSchema>;
+export const CalculationSchema = z.object({
+  hypothesisId: z.string().nullable(),
+  purpose: z.enum(["exploration", "support", "counterexample", "validation"]),
+  question: z.string().min(5),
+  code: z.string().min(5),
+});
+export const SubmissionSchema = z.object({
+  insights: z
+    .array(
+      z.object({
+        hypothesisId: z.string(),
+        title: z.string(),
+        text: z.string().max(650),
+        dimension: z.string(),
+        lifecycle: Lifecycle,
+        planningUse: z.string().min(12),
+        support: z.enum(["repeated_observation", "preliminary_association", "single_episode"]),
+        conditions: z.string(),
+        limitations: z.array(z.string()).max(3),
+      }),
+    )
+    .max(10),
+  summary: z.string(),
+});
+interface Receipt {
+  id: string;
+  hypothesisId: string | null;
+  purpose: string;
+  question: string;
+  sourceIds: string[];
+  result: unknown;
+  code?: string;
+}
+
+export class ProfileAgentSession {
+  readonly receipts = new Map<string, Receipt>();
+  readonly hypotheses = new Map<string, Hypothesis>();
+  readonly revisions: Hypothesis[] = [];
+  submitted: Profile | null = null;
+  private serial = 0;
+  constructor(
+    readonly snapshot: Snapshot,
+    private readonly record: (event: unknown) => Promise<void>,
+  ) {}
+
+  async receipt(input: Omit<Receipt, "id">) {
+    const receipt = { ...input, id: `evidence-${++this.serial}` };
+    this.receipts.set(receipt.id, receipt);
+    await this.record({ type: "tool_result", ...receipt });
+    // Full dependencies stay in the local journal, outside the model context.
+    return { receiptId: receipt.id, result: receipt.result, inspectedSourceCount: receipt.sourceIds.length };
+  }
+
+  catalog() {
+    const rows = this.snapshot.evidence.filter((e) => e.active);
+    return {
+      window: { start: this.snapshot.startDay, end: this.snapshot.endDay },
+      datasets: [...new Set(rows.map((e) => e.kind))].map((kind) => {
+        const group = rows.filter((e) => e.kind === kind);
+        const keys = [...new Set(group.flatMap((e) => Object.keys(e.content)))];
+        return {
+          kind,
+          count: group.length,
+          fields: keys.map((field) => ({ field, nonNull: group.filter((e) => e.content[field] !== null && e.content[field] !== undefined).length })),
+        };
+      }),
+      conventions:
+        "activity.content.shanghaiDay是上海日；date是UTC瞬间。距离米、durationS秒、avgPaceSKm秒/公里。活动laps已由既有Provider选择canonical分段，不能混合重复分段族。calibration是已有估计；load是已有STRIDE计算。user_report旧周复盘混有教练客观分析，不能自动当本人原话；活动feelNote是本人原文。无记录不等于休息/无伤病，null不是0。标题可能是计划描述，实际数值以字段为准。",
+    };
+  }
+
+  async read(kind: string, fields: string[], startDay: string | null, endDay: string | null, offset: number, limit: number) {
+    const rows = this.snapshot.evidence.filter((e) => {
+      if (!e.active || e.kind !== kind) return false;
+      const date = String(e.content.shanghaiDay ?? e.content.date ?? e.content.as_of_date ?? e.content.weekStart ?? "");
+      return (!startDay || date >= startDay) && (!endDay || date <= endDay);
+    });
+    const selected = rows.slice(offset, offset + limit);
+    return this.receipt({
+      hypothesisId: null,
+      purpose: "read",
+      question: `Read ${kind} ${startDay ?? ""}..${endDay ?? ""} offset ${offset}`,
+      sourceIds: rows.map((e) => e.id),
+      result: {
+        total: rows.length,
+        offset,
+        rows: selected.map((e) => ({
+          id: e.id,
+          revision: e.revision,
+          content: Object.fromEntries(fields.filter((k) => k !== "laps").map((k) => [k, e.content[k] ?? null])),
+        })),
+      },
+    });
+  }
+
+  async activity(sourceId: string) {
+    const e = this.snapshot.evidence.find((e) => e.id === sourceId && e.kind === "activity" && e.active);
+    if (!e) throw new Error("Active activity not found in this user's snapshot");
+    return this.receipt({ hypothesisId: null, purpose: "detail", question: `Read activity ${sourceId}`, sourceIds: [sourceId], result: e });
+  }
+
+  async calculate(input: z.infer<typeof CalculationSchema>) {
+    if (input.hypothesisId !== null && !this.hypotheses.has(input.hypothesisId)) throw new Error("Record the hypothesis before testing it");
+    if (["support", "counterexample"].includes(input.purpose) && !input.hypothesisId) throw new Error("Support and counterexample checks need a hypothesisId");
+    const calculated = await calculateSnapshot(this.snapshot, input.code);
+    return this.receipt({
+      hypothesisId: input.hypothesisId,
+      purpose: input.purpose,
+      question: input.question,
+      code: input.code,
+      sourceIds: calculated.inspectedIds,
+      result: calculated.result,
+    });
+  }
+
+  async update(hypothesis: Hypothesis) {
+    for (const id of [...hypothesis.supportReceipts, ...hypothesis.challengeReceipts]) {
+      const receipt = this.receipts.get(id);
+      if (!receipt || receipt.hypothesisId !== hypothesis.id) throw new Error(`Receipt ${id} was not a calculation for hypothesis ${hypothesis.id}`);
+    }
+    if (["retained", "qualified"].includes(hypothesis.status)) this.checkEvidence(hypothesis);
+    this.hypotheses.set(hypothesis.id, structuredClone(hypothesis));
+    this.revisions.push(structuredClone(hypothesis));
+    await this.record({ type: "hypothesis", ...hypothesis });
+    return { id: hypothesis.id, status: hypothesis.status, revision: this.revisions.filter((h) => h.id === hypothesis.id).length };
+  }
+
+  private checkEvidence(hypothesis: Hypothesis) {
+    if (!hypothesis.supportReceipts.some((id) => this.receipts.get(id)?.purpose === "support"))
+      throw new Error("A retained insight needs a successful support calculation");
+    const challenges = hypothesis.challengeReceipts.map((id) => this.receipts.get(id));
+    if (!challenges.some((r) => r?.purpose === "counterexample" && r.sourceIds.length > 0))
+      throw new Error("Run a separate counterexample calculation before retaining the hypothesis");
+    const supportCode = hypothesis.supportReceipts.map((id) => this.receipts.get(id)?.code);
+    if (!challenges.some((r) => r?.code && !supportCode.includes(r.code))) throw new Error("Counterexample check must differ from the support calculation");
+  }
+
+  submit(value: z.infer<typeof SubmissionSchema>, previous: Profile | null) {
+    if (this.submitted) throw new Error("Already submitted");
+    const active = new Map(this.snapshot.evidence.filter((e) => e.active).map((e) => [e.id, e]));
+    const conclusions = value.insights.map((insight, i) => {
+      const h = this.hypotheses.get(insight.hypothesisId);
+      if (!h || !["retained", "qualified"].includes(h.status)) throw new Error(`Hypothesis ${insight.hypothesisId} is not retained/qualified`);
+      this.checkEvidence(h);
+      const receipts = [...h.supportReceipts, ...h.challengeReceipts].map((id) => this.receipts.get(id));
+      const sourceIds = [...new Set(receipts.flatMap((r) => r?.sourceIds ?? []))];
+      const rows = sourceIds.map((id) => {
+        const e = active.get(id);
+        if (!e) throw new Error(`Inactive/unknown source ${id}`);
+        return e;
+      });
+      if (!rows.length) throw new Error("Insight lacks source evidence");
+      const dates = rows
+        .map((e) => String(e.kind === "activity" ? e.content.shanghaiDay : (e.content.date ?? e.content.as_of_date ?? e.content.weekStart ?? "")))
+        .filter((v) => /^\d{4}-\d{2}-\d{2}$/.test(v));
+      return {
+        id: `insight-${i + 1}`,
+        kind: "insight" as const,
+        title: insight.title,
+        text: insight.text,
+        dimension: insight.dimension,
+        lifecycle: insight.lifecycle,
+        planningUse: insight.planningUse,
+        support: insight.support,
+        conditions: insight.conditions,
+        limitations: insight.limitations,
+        evidence: refs(rows),
+        sourceDates: [...new Set(dates)].sort(),
+        hypothesisId: h.id,
+        supportingReceiptIds: h.supportReceipts,
+        counterexampleReceiptIds: h.challengeReceipts,
+      };
+    });
+    const valid = new Set(previous ? validConclusions(previous, this.snapshot).map((c) => c.id) : []);
+    this.submitted = {
+      prototype: true,
+      userId: this.snapshot.userId,
+      inputHash: createHash("sha256").update(JSON.stringify(this.snapshot)).digest("hex"),
+      evaluatedAt: new Date().toISOString(),
+      window: { startDay: this.snapshot.startDay, endDay: this.snapshot.endDay },
+      method: "independent-profile-agent-v1:open-hypotheses+tools+counterexamples",
+      conclusions,
+      unknowns: [],
+      change: {
+        previousInputHash: previous?.inputHash ?? null,
+        removedConclusionIds: previous?.conclusions.filter((c) => !valid.has(c.id)).map((c) => c.id) ?? [],
+        reason: value.summary,
+      },
+    };
+    return { accepted: true, insights: conclusions.length };
+  }
+}
