@@ -21,8 +21,6 @@ func (f fakeCalibration) ReadEffectiveRunningCalibration(context.Context, string
 	return storage.CalibrationBundle{Snapshot: f.snap}, f.err
 }
 
-
-
 func f64ptr(v float64) *float64 { return &v }
 
 func TestLoadBaselines_MapsSnapshot(t *testing.T) {

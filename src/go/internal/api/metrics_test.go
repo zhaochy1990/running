@@ -74,7 +74,6 @@ func (f *fakeHealthStore) ReadEffectiveRunningCalibration(_ context.Context, _ s
 	return storage.CalibrationBundle{Snapshot: f.snap, Source: calibration.SourceSummary{State: "legacy_source_missing"}}, f.snapErr
 }
 
-
 func (f *fakeHealthStore) DailyTrainingLoadWithPrior(_ context.Context, _ string, days int) ([]storage.DailyLoadWithPrior, error) {
 	f.gotDays = days
 	return f.withPrior, f.withPriorErr
@@ -97,8 +96,8 @@ type fakeStrideStore struct {
 	latestUsable *storage.DailyTrainingLoad
 	latestErr    error
 
-	gotUser     string
-	gotDays     int
+	gotUser string
+	gotDays int
 }
 
 func (f *fakeStrideStore) ReadEffectiveRunningCalibration(_ context.Context, user, cutoff string, mode storage.CalibrationMode) (storage.CalibrationBundle, error) {
@@ -108,8 +107,6 @@ func (f *fakeStrideStore) ReadEffectiveRunningCalibration(_ context.Context, use
 	}
 	return storage.CalibrationBundle{Snapshot: f.snap, PaceZones: f.pace, HRZones: f.hr, Source: calibration.SourceSummary{State: "legacy_source_missing"}}, errors.Join(f.snapErr, f.zonesErr)
 }
-
-
 
 func (f *fakeStrideStore) DailyTrainingLoadSeries(_ context.Context, _ string, days int) ([]storage.DailyTrainingLoad, error) {
 	f.gotDays = days
