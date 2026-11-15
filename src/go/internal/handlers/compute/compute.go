@@ -232,7 +232,7 @@ func runIncremental(ctx context.Context, store ComputeStore, user string, labelI
 	if err != nil {
 		return "", err
 	}
-	daily, err := computeDaily(ctx, store, user, results, minDay, asOf, prior)
+	daily, err := computeDaily(ctx, store, user, results, minDay, asOf, prior.values())
 	if err != nil {
 		return "", err
 	}
@@ -390,7 +390,19 @@ func computeDaily(ctx context.Context, store ComputeStore, user string, results 
 
 // priorLoadState reads the last daily row strictly before minDay as the EWMA seed
 // for an incremental recompute (nil when there is none, e.g. before onboarding).
-func priorLoadState(ctx context.Context, store ComputeStore, user string, minDay time.Time) (*trainingload.PriorLoadState, error) {
+type priorLoadSnapshot struct {
+	trainingload.PriorLoadState
+	seed storage.CalibrationSeed
+}
+
+func (p *priorLoadSnapshot) values() *trainingload.PriorLoadState {
+	if p == nil {
+		return nil
+	}
+	values := p.PriorLoadState
+	return &values
+}
+func priorLoadState(ctx context.Context, store ComputeStore, user string, minDay time.Time) (*priorLoadSnapshot, error) {
 	row, err := store.DailyTrainingLoadBefore(ctx, user, minDay.Format("2006-01-02"))
 	if err != nil {
 		return nil, err
@@ -398,7 +410,12 @@ func priorLoadState(ctx context.Context, store ComputeStore, user string, minDay
 	if row == nil {
 		return nil, nil
 	}
-	return &trainingload.PriorLoadState{AcuteLoad: row.AcuteLoad, ChronicLoad: row.ChronicLoad}, nil
+	seed := storage.CalibrationSeed{Date: row.Date, AcuteLoad: row.AcuteLoad, ChronicLoad: row.ChronicLoad, State: "legacy_seed_lineage_unavailable"}
+	if p, state := storage.ReadCalibrationProvenance(*row); state == "available" {
+		seed.ProvenanceDigest = p.OutputDigest
+		seed.State = "frozen_seed"
+	}
+	return &priorLoadSnapshot{PriorLoadState: trainingload.PriorLoadState{AcuteLoad: row.AcuteLoad, ChronicLoad: row.ChronicLoad}, seed: seed}, nil
 }
 
 // runPersonalBestsFull scans all running activities and replaces the PB set.
@@ -636,21 +653,11 @@ func persistActivityLoad(ctx context.Context, store ComputeStore, user string, r
 	}
 	return store.ReplaceActivityTrainingLoad(ctx, user, rows)
 }
-func persistDailyLoad(ctx context.Context, store ComputeStore, user string, results []trainingload.ActivityLoadResult, daily []trainingload.DailyLoadResult, start time.Time, prior *trainingload.PriorLoadState) error {
+func persistDailyLoad(ctx context.Context, store ComputeStore, user string, results []trainingload.ActivityLoadResult, daily []trainingload.DailyLoadResult, start time.Time, prior *priorLoadSnapshot) error {
 	var seed *storage.CalibrationSeed
 	if prior != nil {
-		old, err := store.DailyTrainingLoadBefore(ctx, user, start.Format("2006-01-02"))
-		if err != nil {
-			return err
-		}
-		seed = &storage.CalibrationSeed{AcuteLoad: prior.AcuteLoad, ChronicLoad: prior.ChronicLoad, State: "legacy_seed_lineage_unavailable"}
-		if old != nil {
-			seed.Date = old.Date
-			if p, state := storage.ReadCalibrationProvenance(*old); state == "available" {
-				seed.ProvenanceDigest = p.OutputDigest
-				seed.State = "frozen_seed"
-			}
-		}
+		frozen := prior.seed
+		seed = &frozen
 	} else {
 		seed = &storage.CalibrationSeed{State: "explicit_zero_anchor", Date: start.Format("2006-01-02")}
 	}

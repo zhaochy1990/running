@@ -84,7 +84,10 @@ The independent evaluation manifest remains the stronger availability gate.
 ## Candidate safety, schema rollout and rollback
 
 Production wiring calls `NewCalibration`, whose candidate persistence gate is
-off. Explicit isolated callers may opt into `NewCalibrationWithOptions`.
+off. Explicit isolated callers may opt into `NewCalibrationWithOptions`. Candidate
+intent requires this opt-in even when its configured version is3; persistence
+also rejects a candidate version equal to active or fallback because it would
+reuse their snapshot key. Read/preview policy still supports these configurations.
 Candidate persistence writes only candidate snapshot/zones. The read-only
 `PreviewCandidateCalibration` seam returns load/ability results in memory;
 it has no writer methods. Compute/ability reject candidate pipeline payloads.
