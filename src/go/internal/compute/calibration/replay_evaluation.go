@@ -145,11 +145,28 @@ func metricsForPairs(pairs []pairedError) []ReplayMetrics {
 		metric := ReplayMetrics{Strategy: strategy}
 		if len(pairs) > 0 {
 			weighted := make([][2]float64, 0, len(pairs))
-			bias := 0.0
+			scale := 0.0
 			for _, p := range pairs {
 				w := 1 / float64(len(counts)*counts[p.user])
 				weighted = append(weighted, [2]float64{math.Abs(p.errors[j]), w})
-				bias += p.errors[j] * w
+				scale = math.Max(scale, math.Abs(p.errors[j]))
+			}
+			// Scale before summing: finite individual errors near MaxFloat must
+			// not overflow an otherwise bounded weighted mean. Normalize by the
+			// actual compensated weight sum, preserving each user's equal weight.
+			scaled, scaledCorrection, total, totalCorrection := 0.0, 0.0, 0.0, 0.0
+			if scale > 0 {
+				for _, p := range pairs {
+					w := 1 / float64(len(counts)*counts[p.user])
+					addCompensated(&scaled, &scaledCorrection, (p.errors[j]/scale)*w)
+					addCompensated(&total, &totalCorrection, w)
+				}
+			}
+			bias := 0.0
+			if scale > 0 {
+				relative := scaled / total
+				relative = math.Max(-1, math.Min(1, relative))
+				bias = scale * relative
 			}
 			median, p90 := errorQuantile(weighted, 0.5), errorQuantile(weighted, 0.9)
 			metric.MedianAbsoluteError = &median
@@ -168,17 +185,11 @@ func errorQuantile(values [][2]float64, q float64) float64 {
 	// contributes many tiny activity weights (e.g. 100 x .001 vs 9 x .1).
 	sum, correction := 0.0, 0.0
 	for _, v := range ordered {
-		y := v[1] - correction
-		t := sum + y
-		correction = (t - sum) - y
-		sum = t
+		addCompensated(&sum, &correction, v[1])
 	}
 	cumulative, correction := 0.0, 0.0
 	for _, v := range ordered {
-		y := v[1] - correction
-		t := cumulative + y
-		correction = (t - cumulative) - y
-		cumulative = t
+		addCompensated(&cumulative, &correction, v[1])
 		if cumulative >= q*sum {
 			return v[0]
 		}
@@ -218,4 +229,11 @@ func bootstrapPairs(pairs []pairedError) *ReplayUncertainty {
 	sort.Float64s(medians)
 	sort.Float64s(p90s)
 	return &ReplayUncertainty{Method: "user_cluster_percentile_95", Seed: seed, Resamples: resamples, MedianCandidateMinusV3: [2]float64{medians[49], medians[1949]}, P90CandidateMinusV3: [2]float64{p90s[49], p90s[1949]}}
+}
+
+func addCompensated(sum, correction *float64, value float64) {
+	y := value - *correction
+	t := *sum + y
+	*correction = (t - *sum) - y
+	*sum = t
 }

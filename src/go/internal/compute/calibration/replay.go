@@ -271,9 +271,42 @@ func replay(m ReplayManifest, codeVersion string, sidecar *ReplayEvaluationSidec
 // ReportReplayOutcomes renders already-fitted, sealed cases with the same
 // scoring and state reduction used by Replay. It never reruns fitting.
 func ReportReplayOutcomes(m ReplayManifest, code string, cases []ReplayCaseResult) (ReplayReport, error) {
+	var err error
+	cases, err = serializableReplayResults(cases)
+	if err != nil {
+		return ReplayReport{}, err
+	}
 	out := ReplayReport{Status: "insufficient", SchemaVersion: 1, AsOf: m.AsOf, CodeVersion: code, SourceVersion: m.SourceVersion, ManifestSHA256: ReplayContentHash(m), V3SourceSHA256: FrozenV3SourceSHA256(), ProtocolSHA256: hashBytes(evaluationProtocol), Inventory: inventory(m), Cases: cases, BaseManifestSHA256: m.BaseManifestSHA256, OutcomeSHA256: m.OutcomeSHA256}
 	return reportReplayOutcomes(m, m, code, out, nil)
 }
+func serializableReplayResults(cases []ReplayCaseResult) ([]ReplayCaseResult, error) {
+	out := append([]ReplayCaseResult(nil), cases...)
+	for i, c := range out {
+		failures := map[Strategy]string{}
+		for strategy, reason := range c.Failures {
+			failures[strategy] = reason
+		}
+		versions := make([]OfflineResult, 0, len(c.Versions))
+		seen := map[Strategy]bool{}
+		for _, v := range c.Versions {
+			if seen[v.Strategy] || failures[v.Strategy] != "" {
+				return nil, fmt.Errorf("duplicate sealed strategy result/failure")
+			}
+			seen[v.Strategy] = true
+			if ReplayContentHash(v) == "" {
+				failures[v.Strategy] = "nonfinite_sealed_output"
+			} else {
+				versions = append(versions, v)
+			}
+		}
+		out[i].Versions = versions
+		if len(failures) > 0 {
+			out[i].Failures = failures
+		}
+	}
+	return out, nil
+}
+
 func reportReplayOutcomes(m, evaluationManifest ReplayManifest, codeVersion string, out ReplayReport, sidecar *ReplayEvaluationSidecar) (ReplayReport, error) {
 	var err error
 	out.EvaluationInputSHA256 = ReplayContentHash(struct {
@@ -393,6 +426,9 @@ func inventory(m ReplayManifest) ReplayInventory {
 }
 
 func validateReplay(m ReplayManifest, code string) error {
+	if ReplayContentHash(m) == "" {
+		return fmt.Errorf("manifest contains invalid nonfinite values")
+	}
 	if m.SchemaVersion != 1 || m.AsOf.IsZero() || m.SourceVersion == "" || code == "" || len(m.Cases) == 0 {
 		return fmt.Errorf("replay requires schema_version=1, as_of, source_version, code_version and cases")
 	}

@@ -145,6 +145,16 @@ func TestReplayOutcomesCountsPredictionStatesOnOneSharedDenominator(t *testing.T
 	if found.EligibleActivities != 4 || found.PairedActivities != 1 {
 		t.Fatalf("counts %+v", found)
 	}
+	sealedReport, sealedErr := calibration.ReportReplayOutcomes(m, "fixed-code", results)
+	if sealedErr != nil {
+		t.Fatal(sealedErr)
+	}
+	if _, marshalErr := json.Marshal(sealedReport); marshalErr != nil {
+		t.Fatalf("nonfinite raw sealed version escaped complete report: %v", marshalErr)
+	}
+	if !math.IsNaN(*results[3].Versions[0].Snapshot.ThresholdSpeedMps) {
+		t.Fatal("caller sealed results mutated")
+	}
 	candidate := found.Versions[2]
 	if candidate.Available != 1 || candidate.MissingCenter != 1 || candidate.Unsupported != 1 || candidate.ComputationFailures != 1 || candidate.Coverage != .25 || candidate.FailureRate != .25 || candidate.Missing != 3 {
 		t.Fatalf("hidden unavailable outputs: %+v", candidate)
@@ -256,6 +266,50 @@ func TestReplayUserEqualWeightsPreventOneAthleteDominatingQuantiles(t *testing.T
 			}
 		}
 	}
+	extremeManifest := m
+	extremeManifest.Activities = nil
+	extremeManifest.Cases = nil
+	var extremeResults []calibration.ReplayCaseResult
+	uniqueUsers := map[string]bool{}
+	for i, r := range results {
+		if uniqueUsers[r.User] {
+			continue
+		}
+		uniqueUsers[r.User] = true
+		a := m.Activities[i]
+		ref := *a.Reference
+		ref.DistanceM = 3600000 / math.MaxFloat64
+		a.Reference = &ref
+		extremeManifest.Activities = append(extremeManifest.Activities, a)
+		extremeManifest.Cases = append(extremeManifest.Cases, m.Cases[i])
+		extremeResults = append(extremeResults, r)
+	}
+	a := extremeManifest.Activities[0]
+	a.ID = "eleventh"
+	a.User = "eleventh"
+	a.RootActivityID = "eleventh"
+	a.Activity.LabelID = "eleventh"
+	a.ContentSHA256 = calibration.ReplayContentHash(a.Activity)
+	c := extremeManifest.Cases[0]
+	c.ID = "eleventh"
+	c.User = "eleventh"
+	c.TargetRootActivityID = "eleventh"
+	r := extremeResults[0]
+	r.ID = c.ID
+	r.User = c.User
+	r.TargetRootActivityID = c.TargetRootActivityID
+	extremeManifest.Activities = append(extremeManifest.Activities, a)
+	extremeManifest.Cases = append(extremeManifest.Cases, c)
+	extremeResults = append(extremeResults, r)
+
+	extreme, _, extremeErr := calibration.EvaluateReplayOutcomes(extremeManifest, extremeResults)
+	if extremeErr != nil {
+		t.Fatal(extremeErr)
+	}
+	if _, marshalErr := json.Marshal(extreme); marshalErr != nil {
+		t.Fatalf("finite per-case errors overflowed weighted statistics: %v", marshalErr)
+	}
+
 }
 
 func TestReplayFieldReferenceUsesFrozenQualityRulesAndFixedLast20Minutes(t *testing.T) {

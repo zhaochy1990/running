@@ -160,3 +160,13 @@ mapping across cases. The new view retains the original target label rather than
 inventing an alias that could hide a source duplicate. These checks are based on
 collector source assignments and synthetic identity counterexamples, before any
 final outcome was opened.
+
+Further pre-final review checks bind source-version tokens by exact unique key
+and value, rejecting prefixes such as expectedSHA+suffix. Sealed report output
+converts a nonserializable per-version result into an isolated failure and removes
+that raw payload from the report; other strategies and the caller's input remain
+intact. Finite individual errors near the floating-point limit also use a scaled,
+compensated weighted mean so signed bias stays finite. Its [-1,1] relative bound
+is the mathematical bound of a normalized weighted mean, not a physiological
+range or clipping of per-case observations/errors. All these corrections were
+validated using synthetic counterexamples before any first final score.

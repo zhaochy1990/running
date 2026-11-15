@@ -103,4 +103,24 @@ func TestCalibrationCollectionKeepsBaseImmutableAndWritesPrivateVersionedReports
 	if err := root.Execute(); err == nil {
 		t.Fatal("existing versioned directory overwritten")
 	}
+	base.SourceVersion = "synthetic;readonly-storage-watchmap-tsstore:source-codeevil;frozen-split-sha256:frozen-split"
+	if err := os.Remove(filepath.Join(dir, "holdout-01-replay-manifest.json.gz")); err != nil {
+		t.Fatal(err)
+	}
+	write("holdout-01-replay-manifest.json.gz", base)
+	index, err = json.Marshal(map[string]any{"format": "sha256-file-inventory/v1", "files": files})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "artifact-sha256.json"), index, 0600); err != nil {
+		t.Fatal(err)
+	}
+	badRoot := newRootCmd()
+	badRoot.SetOut(&stdout)
+	badRoot.SetErr(&stdout)
+	badRoot.SetArgs([]string{"calibration", "replay-collection", "--collection-dir", dir, "--output-dir", filepath.Join(dir, "invalid-source-v2"), "--code-version", "fixed-engine", "--report-as-of", reportTime.Format(time.RFC3339Nano), "--outcome-observed-at", observed.Format(time.RFC3339Nano), "--expected-inventory-sha256", fileSHA256(index), "--expected-split-sha256", "frozen-split", "--expected-source-sha", "source-code", "--expected-cases", "1"})
+	badErr := badRoot.Execute()
+	if badErr == nil || errors.As(badErr, &exit) {
+		t.Fatalf("source token prefix accepted: %v", badErr)
+	}
 }

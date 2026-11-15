@@ -171,7 +171,7 @@ func newCalibrationCollectionCmd() *cobra.Command {
 			if err := read(name, &base); err != nil {
 				return err
 			}
-			if !strings.Contains(base.SourceVersion, "readonly-storage-watchmap-tsstore:"+sourceSHA) || !strings.Contains(base.SourceVersion, "frozen-split-sha256:"+splitHash) {
+			if !exactCollectionSourceToken(base.SourceVersion, "readonly-storage-watchmap-tsstore", sourceSHA) || !exactCollectionSourceToken(base.SourceVersion, "frozen-split-sha256", splitHash) {
 				return fmt.Errorf("frozen base source provenance mismatch")
 			}
 			if strings.Contains(strings.ToLower(base.SourceVersion), "synthetic") && !strings.Contains(aggregate.SourceVersion, "synthetic") {
@@ -263,4 +263,18 @@ func writeCollectionJSON(path string, value any) error {
 		return zipErr
 	}
 	return closeErr
+}
+
+func exactCollectionSourceToken(source, key, value string) bool {
+	count := 0
+	for _, token := range strings.Split(source, ";") {
+		k, v, ok := strings.Cut(token, ":")
+		if ok && k == key {
+			if v != value {
+				return false
+			}
+			count++
+		}
+	}
+	return count == 1
 }
