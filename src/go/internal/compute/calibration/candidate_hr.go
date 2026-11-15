@@ -360,6 +360,12 @@ func selectCandidateHR(out *CandidateHRReport) {
 			o.Reasons = appendReason(o.Reasons, "root_activity_day_conflict")
 		}
 	}
+	// Compare every currently eligible source before any tier/method selection
+	// or root deduplication can discard counterevidence.
+	aliasConflicts := rejectConflictingHRAliases(out)
+	if aliasConflicts {
+		out.Reasons = appendReason(out.Reasons, "root_HR_alias_conflict")
+	}
 	tier := "field_hr_proxy"
 	method := ""
 	var latest time.Time
@@ -380,6 +386,9 @@ func selectCandidateHR(out *CandidateHRReport) {
 	}
 	if len(methods) > 1 {
 		out.Reasons = []string{"latest_lab_method_ambiguous"}
+		if aliasConflicts {
+			out.Reasons = appendReason(out.Reasons, "root_HR_alias_conflict")
+		}
 		for i := range out.Observations {
 			o := &out.Observations[i]
 			if o.Selected {
@@ -409,9 +418,12 @@ func selectCandidateHR(out *CandidateHRReport) {
 		}
 		roots[o.RootActivityID] = true
 		days[o.ActivityDate.Format("2006-01-02")] = true
-		values = append(values, *o.ValueBpm)
+		// Agreeing aliases share this canonical scalar; their ID cannot choose
+		// sub-display floating-point noise that changes a support boundary.
+		rootValue := *round4(o.ValueBpm)
+		values = append(values, rootValue)
 		day := o.ActivityDate.Format("2006-01-02")
-		dayValues[day] = append(dayValues[day], *o.ValueBpm)
+		dayValues[day] = append(dayValues[day], rootValue)
 	}
 	if len(values) > 0 {
 		daily := []float64{}
@@ -441,6 +453,9 @@ func selectCandidateHR(out *CandidateHRReport) {
 		}
 		out.Confidence = ConfidenceLow
 		out.Reasons = []string{"independent_HR_protocol_support"}
+		if aliasConflicts {
+			out.Reasons = appendReason(out.Reasons, "root_HR_alias_conflict")
+		}
 		sort.Float64s(values)
 		if len(roots) >= 2 && len(days) >= 2 {
 			out.Confidence = ConfidenceMedium
@@ -454,4 +469,39 @@ func selectCandidateHR(out *CandidateHRReport) {
 	}
 	out.IndependentActivities = len(roots)
 	out.IndependentDays = len(days)
+}
+
+// Qualified aliases must agree at the scalar's published precision and on the
+// measurement interpretation. Provenance refs may differ across recordings;
+// that is not itself a contradiction. Without a trusted reconciliation source,
+// a disagreement rejects the whole root rather than choosing by activity ID or
+// averaging incompatible reports. Invalid, late or stale sources never enter.
+func rejectConflictingHRAliases(out *CandidateHRReport) bool {
+	type identity struct {
+		value                                      float64
+		tier, protocol, sensor, method, instrument string
+	}
+	seen := map[string]identity{}
+	conflicts := map[string]bool{}
+	for _, o := range out.Observations {
+		if !o.Selected || o.ValueBpm == nil {
+			continue
+		}
+		key := identity{value: *round4(o.ValueBpm), tier: o.ReferenceTier, protocol: o.Protocol, method: o.LabMethod, instrument: o.LabInstrument}
+		if o.ReferenceTier == "field_hr_proxy" {
+			key.sensor = o.Sensor
+		}
+		if prior, ok := seen[o.RootActivityID]; ok && prior != key {
+			conflicts[o.RootActivityID] = true
+		}
+		seen[o.RootActivityID] = key
+	}
+	for i := range out.Observations {
+		o := &out.Observations[i]
+		if conflicts[o.RootActivityID] {
+			o.Selected = false
+			o.Reasons = appendReason(o.Reasons, "root_HR_alias_conflict")
+		}
+	}
+	return len(conflicts) > 0
 }
