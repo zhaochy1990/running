@@ -26,15 +26,17 @@ const calibrationLookbackDays = 180
 // snapshot/zone writes, and the same-day snapshot read that gates empty runs.
 type CalibrationStore interface {
 	calibrationsource.Reader
-	UpsertRunningCalibrationSnapshot(ctx context.Context, snap *storage.RunningCalibrationSnapshot) (uint64, error)
-	ReplaceCalibrationZones(ctx context.Context, userID string, snapshotID uint64, paceZones []storage.RunningCalibrationPaceZone, hrZones []storage.RunningCalibrationHRZone) error
-	LatestRunningCalibrationSnapshotForVersion(ctx context.Context, userID string, algorithmVersion int, asOf string) (*storage.RunningCalibrationSnapshot, error)
+	storage.CalibrationReader
+	CalibrationPolicy(context.Context) (storage.RunningCalibrationPolicy, error)
+	PublishRunningCalibration(context.Context, *storage.RunningCalibrationSnapshot, []storage.RunningCalibrationPaceZone, []storage.RunningCalibrationHRZone) (uint64, error)
+	LatestRunningCalibrationSnapshotForVersion(context.Context, string, int, string) (*storage.RunningCalibrationSnapshot, error)
 }
 
 type calibrationInput struct {
-	Mode        string   `json:"mode"`
-	LabelIDs    []string `json:"label_ids"`
-	HealthDates []string `json:"health_dates"`
+	SelectionMode string   `json:"selection_mode"`
+	Mode          string   `json:"mode"`
+	LabelIDs      []string `json:"label_ids"`
+	HealthDates   []string `json:"health_dates"`
 }
 
 type calibrationResult struct {
@@ -42,6 +44,8 @@ type calibrationResult struct {
 	Status              string `json:"status"`
 	CalibrationSnapshot uint64 `json:"calibration_snapshot_id"`
 	Activities          int    `json:"activities"`
+	AlgorithmVersion    int    `json:"algorithm_version"`
+	CandidateOnly       bool   `json:"candidate_only,omitempty"`
 	// Echoes the sync's label_ids/health_dates so downstream steps
 	// (compute → … → ability) keep seeing which batches this sync produced.
 	// Since devops#921 the calibration step also sits in data_sync, where the
@@ -55,6 +59,14 @@ type calibrationResult struct {
 // baseline over the trailing 180-day window and upserts the snapshot + zones.
 // j.UserID is the subject athlete UUID.
 func NewCalibration(store CalibrationStore) job.Handler {
+	return NewCalibrationWithOptions(store, CalibrationOptions{})
+}
+
+// Candidate persistence requires an explicitly isolated caller. Production wiring
+// always uses NewCalibration; this option does not change the active selector.
+type CalibrationOptions struct{ AllowCandidatePersistence bool }
+
+func NewCalibrationWithOptions(store CalibrationStore, options CalibrationOptions) job.Handler {
 	return func(ctx context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		user := j.UserID
 		if _, err := uuid.Parse(user); err != nil {
@@ -66,6 +78,24 @@ func NewCalibration(store CalibrationStore) job.Handler {
 			if err := json.Unmarshal([]byte(j.InputJSON), &in); err != nil {
 				return "", job.NewPermanentError("bad_payload", fmt.Errorf("calibration: parse input: %w", err))
 			}
+		}
+		policy, err := store.CalibrationPolicy(ctx)
+		if err != nil {
+			return "", err
+		}
+		version := policy.ActiveVersion
+		if in.SelectionMode != "" && in.SelectionMode != "active" && in.SelectionMode != "candidate" {
+			return "", job.NewPermanentError("bad_payload", fmt.Errorf("invalid calibration selection"))
+		}
+		candidateOnly := in.SelectionMode == "candidate"
+		if candidateOnly {
+			if policy.CandidateVersion == nil {
+				return "", job.NewPermanentError("candidate_not_configured", fmt.Errorf("candidate not configured"))
+			}
+			version = *policy.CandidateVersion
+		}
+		if version != calibration.ModelVersion && !options.AllowCandidatePersistence {
+			return "", job.NewPermanentError("candidate_persistence_disabled", fmt.Errorf("candidate persistence requires isolated explicit opt-in"))
 		}
 		asOf := timefmt.ShanghaiToday()
 		// Empty-run gate (devops#931): an incremental sync that produced no new
@@ -79,39 +109,54 @@ func NewCalibration(store CalibrationStore) job.Handler {
 		// path) always recompute.
 		day := asOf.Format("2006-01-02")
 		if in.Mode == string(provider.SyncIncremental) && len(in.LabelIDs) == 0 {
-			snap, err := store.LatestRunningCalibrationSnapshotForVersion(ctx, user, calibration.ModelVersion, day)
+			snap, err := store.LatestRunningCalibrationSnapshotForVersion(ctx, user, version, day)
 			if err != nil {
 				return "", err // infra fault -> retryable
 			}
 			if snap != nil && snap.AsOfDate == day {
 				_ = hb("calibration", 100)
-				out, _ := json.Marshal(calibrationResult{User: user, Status: "skipped_no_new_data", CalibrationSnapshot: snap.ID, LabelIDs: in.LabelIDs, HealthDates: in.HealthDates})
+				out, _ := json.Marshal(calibrationResult{User: user, Status: "skipped_no_new_data", CalibrationSnapshot: snap.ID, AlgorithmVersion: version, CandidateOnly: candidateOnly, LabelIDs: in.LabelIDs, HealthDates: in.HealthDates})
 				return string(out), nil
 			}
 		}
-		snapID, activities, err := runCalibration(ctx, store, user, asOf)
+		snapID, activities, err := runCalibrationVersion(ctx, store, user, asOf, version)
 		if err != nil {
 			return "", err // infra fault -> retryable
 		}
 		_ = hb("calibration", 100)
-		out, _ := json.Marshal(calibrationResult{User: user, Status: "ok", CalibrationSnapshot: snapID, Activities: activities, LabelIDs: in.LabelIDs, HealthDates: in.HealthDates})
+		out, _ := json.Marshal(calibrationResult{User: user, Status: "ok", CalibrationSnapshot: snapID, Activities: activities, AlgorithmVersion: version, CandidateOnly: candidateOnly, LabelIDs: in.LabelIDs, HealthDates: in.HealthDates})
 		return string(out), nil
 	}
 }
 
 func runCalibration(ctx context.Context, store CalibrationStore, user string, asOf time.Time) (uint64, int, error) {
+	return runCalibrationVersion(ctx, store, user, asOf, calibration.ModelVersion)
+}
+func runCalibrationVersion(ctx context.Context, store CalibrationStore, user string, asOf time.Time, version int) (uint64, int, error) {
 	history, health, err := calibrationsource.Load(ctx, store, user, "", asOf, calibrationLookbackDays)
 	if err != nil {
 		return 0, 0, err
 	}
-	snap := calibration.EstimateRunningCalibration(history, asOf, health)
-	snapID, err := store.UpsertRunningCalibrationSnapshot(ctx, toStorageSnapshot(user, snap))
+	strategy := calibration.StrategyV3
+	if version == calibration.CandidateVersion {
+		strategy = calibration.StrategyCandidate
+	}
+	result, err := calibration.EstimateOffline(strategy, history, asOf, health)
 	if err != nil {
 		return 0, 0, err
 	}
-	zones := calibration.ComputeTrainingZones(snap)
-	paceZones, hrZones := toStorageZones(zones)
-	if err := store.ReplaceCalibrationZones(ctx, user, snapID, paceZones, hrZones); err != nil {
+	snap := result.Snapshot
+	row := toStorageSnapshot(user, snap)
+	source := calibration.SummarizeSource(result)
+	raw, err := json.Marshal(source)
+	if err != nil {
+		return 0, 0, err
+	}
+	text := string(raw)
+	row.SourceJSON = &text
+	paceZones, hrZones := toStorageZones(calibration.ComputeTrainingZones(snap))
+	snapID, err := store.PublishRunningCalibration(ctx, row, paceZones, hrZones)
+	if err != nil {
 		return 0, 0, err
 	}
 	return snapID, len(history), nil

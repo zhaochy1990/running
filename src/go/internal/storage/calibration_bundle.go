@@ -113,6 +113,11 @@ func (s *Store) PublishRunningCalibration(ctx context.Context, snapshot *Running
 		return 0, fmt.Errorf("nil calibration snapshot")
 	}
 	snap := *snapshot
+	uid, err := canonicalUserID(snap.UserID)
+	if err != nil {
+		return 0, err
+	}
+	snap.UserID = uid
 	snap.ID = 0
 	if !validCalibrationDay(snap.AsOfDate) || !validCalibrationVersion(snap.AlgorithmVersion) {
 		return 0, fmt.Errorf("invalid calibration identity")
@@ -147,7 +152,7 @@ func (s *Store) PublishRunningCalibration(ctx context.Context, snapshot *Running
 		snap.SourceJSON = &text
 	}
 	var id uint64
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		scoped := *s
 		scoped.db = tx
 		var err error

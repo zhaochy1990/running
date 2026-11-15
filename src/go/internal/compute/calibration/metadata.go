@@ -64,6 +64,14 @@ func ParseSource(raw *string) SourceSummary {
 	if out.SchemaVersion != 1 || out.State != "available" || out.Strategy == "" || out.DataCutoffDay == "" {
 		return SourceSummary{State: "legacy_source_missing"}
 	}
+	limitSourceString(&out.Strategy)
+	limitSourceString(&out.Implementation)
+	limitSourceString(&out.ParameterVersion)
+	limitSourceString(&out.DataCutoffDay)
+	limitSourceString(&out.AvailabilitySemantics)
+	limitSourceString(&out.Fingerprint)
+	boundSourceMetric(out.Speed)
+	boundSourceMetric(out.HR)
 	return out
 }
 
@@ -82,14 +90,18 @@ func SummarizeSource(result OfflineResult) SourceSummary {
 	report := result.Evidence
 	if h := report.Hour; h != nil {
 		m := &MetricSource{Method: h.Method, TargetType: "one_hour_running_capability", MeasurementQuality: "unknown", EffortSupport: "unknown", Support: string(h.Confidence), RangeLow: h.RangeLowMps, RangeHigh: h.RangeHighMps, RangeMeaning: h.RangeMeaning, IndependentActivities: h.AnchorActivities, IndependentDays: h.AnchorDays, Reasons: h.Reasons, Limitations: h.Limitations}
-		contributors := map[string]bool{}
+		type contributorKey struct {
+			id, root string
+			duration float64
+		}
+		contributors := map[contributorKey]bool{}
 		for _, o := range h.Observations {
 			if o.Weight > 0 {
-				contributors[o.ActivityID] = true
+				contributors[contributorKey{o.ActivityID, o.RootActivityID, o.DurationS}] = true
 			}
 		}
 		for _, e := range report.Candidates {
-			if !e.Selected || !contributors[e.ActivityID] {
+			if !e.Selected || (h.CenterMps != nil && !contributors[contributorKey{e.ActivityID, e.RootActivityID, e.DurationS}]) {
 				continue
 			}
 			// With a center, only near-maximal anchors establish freshness. A soft
@@ -136,4 +148,42 @@ func SummarizeSource(result OfflineResult) SourceSummary {
 		out.HR = m
 	}
 	return out
+}
+
+func boundSourceMetric(m *MetricSource) {
+	if m == nil {
+		return
+	}
+	if len(m.Evidence) > 16 {
+		m.Evidence = m.Evidence[:16]
+	}
+	if len(m.Reasons) > 16 {
+		m.Reasons = m.Reasons[:16]
+	}
+	if len(m.Limitations) > 16 {
+		m.Limitations = m.Limitations[:16]
+	}
+	limit := limitSourceString
+	for _, p := range []*string{&m.Method, &m.TargetType, &m.MeasurementQuality, &m.EffortSupport, &m.Support, &m.RangeMeaning, &m.EvidenceDate, &m.LabMethod} {
+		limit(p)
+	}
+	for i := range m.Reasons {
+		limit(&m.Reasons[i])
+	}
+	for i := range m.Limitations {
+		limit(&m.Limitations[i])
+	}
+	for i := range m.Evidence {
+		e := &m.Evidence[i]
+		for _, p := range []*string{&e.ActivityID, &e.RootActivityID, &e.ActivityDay, &e.SourceVersion, &e.EvidenceRef, &e.MeasurementQuality, &e.EffortSupport} {
+			limit(p)
+		}
+	}
+}
+
+func limitSourceString(p *string) {
+	r := []rune(*p)
+	if len(r) > 256 {
+		*p = string(r[:256])
+	}
 }

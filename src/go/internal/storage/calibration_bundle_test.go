@@ -151,3 +151,55 @@ func TestCalibrationSharedPolicyContract(t *testing.T) {
 		}
 	}
 }
+
+func TestCalibrationConcurrentPublicationNeverMixesBundle(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.AutoMigrateWatch(ctx); err != nil {
+		t.Fatal(err)
+	}
+	uid := uuid.NewString()
+	t.Cleanup(func() {
+		for _, m := range []any{&RunningCalibrationPaceZone{}, &RunningCalibrationHRZone{}, &RunningCalibrationSnapshot{}} {
+			st.db.Where("user_id = ?", uid).Delete(m)
+		}
+	})
+	publish := func(n float64) error {
+		_, err := st.PublishRunningCalibration(ctx, &RunningCalibrationSnapshot{UserID: uid, AsOfDate: "2026-11-01", AlgorithmVersion: 3, ThresholdSpeedMps: fptr(n)}, []RunningCalibrationPaceZone{{Name: "easy", MinSpeedMps: fptr(n)}}, []RunningCalibrationHRZone{{Name: "easy", MinBpm: fptr(n * 30)}})
+		return err
+	}
+	if err := publish(4); err != nil {
+		t.Fatal(err)
+	}
+	errs := make(chan error, 3)
+	for worker := 0; worker < 2; worker++ {
+		go func(worker int) {
+			for range 15 {
+				if err := publish(float64(4 + worker)); err != nil {
+					errs <- err
+					return
+				}
+			}
+			errs <- nil
+		}(worker)
+	}
+	go func() {
+		for range 50 {
+			b, err := st.ReadEffectiveRunningCalibration(ctx, uid, "2026-11-01", CalibrationActive)
+			if err != nil {
+				errs <- err
+				return
+			}
+			if b.Snapshot == nil || len(b.PaceZones) != 1 || len(b.HRZones) != 1 || *b.Snapshot.ThresholdSpeedMps != *b.PaceZones[0].MinSpeedMps || *b.HRZones[0].MinBpm != *b.Snapshot.ThresholdSpeedMps*30 {
+				errs <- errors.New("mixed calibration generation")
+				return
+			}
+		}
+		errs <- nil
+	}()
+	for range 3 {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+}
