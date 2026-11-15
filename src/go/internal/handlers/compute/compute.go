@@ -104,6 +104,9 @@ func NewCompute(store ComputeStore) job.Handler {
 			return "", err
 		}
 		snapRow := bundle.Snapshot
+		if snapRow != nil && snapRow.AlgorithmVersion == calibration.CandidateVersion {
+			return "", job.NewPermanentError("candidate_derived_write_forbidden", fmt.Errorf("candidate active-table persistence is not supported; use read-only preview"))
+		}
 		if snapRow == nil {
 			return unavailableCalibrationResult(user, in.Mode), nil
 		}
@@ -266,6 +269,9 @@ func loadAndComputeActivity(ctx context.Context, store ComputeStore, user string
 		}
 		if bundle.Snapshot == nil {
 			return nil, nil, errHistoricalCalibrationMissing
+		}
+		if bundle.Snapshot.AlgorithmVersion == calibration.CandidateVersion {
+			return nil, nil, job.NewPermanentError("candidate_derived_write_forbidden", fmt.Errorf("candidate cannot write active load"))
 		}
 		results[i] = trainingload.ComputeActivityLoad(a, toTrainingLoadCalibration(bundle.Snapshot))
 	}

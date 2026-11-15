@@ -10,6 +10,7 @@ package compute
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/zhaochy1990/stride/internal/compute/ability"
 	"github.com/zhaochy1990/stride/internal/compute/abilitysource"
+	"github.com/zhaochy1990/stride/internal/compute/calibration"
 	"github.com/zhaochy1990/stride/internal/compute/watchmap"
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/storage"
@@ -63,8 +65,10 @@ type abilityResult struct {
 	Days   int    `json:"days,omitempty"`
 	// L1 bookkeeping: how many batch activities got an activity_ability row and
 	// how many were skipped as ultra-short (no row, no score).
-	L1Written int `json:"l1_written,omitempty"`
-	L1Skipped int `json:"l1_skipped,omitempty"`
+	L1Written     int    `json:"l1_written,omitempty"`
+	L1Skipped     int    `json:"l1_skipped,omitempty"`
+	L1Unavailable int    `json:"l1_unavailable,omitempty"`
+	Reason        string `json:"reason,omitempty"`
 }
 
 // NewAbility builds the ability job handler. It computes the current-day snapshot
@@ -89,8 +93,18 @@ func NewAbility(store AbilityStore) job.Handler {
 		}
 		ctx = storage.WithCalibrationCache(ctx)
 		res, err := runAbility(ctx, store, user, in)
+		if errors.Is(err, errHistoricalCalibrationMissing) {
+			res.User = user
+			res.Status = "unavailable_historical_calibration"
+			res.Reason = "explicit_historical_calibration_required"
+			err = nil
+		}
 		if err != nil {
 			return "", err
+		}
+		if res.L1Unavailable > 0 && res.Status == "ok" {
+			res.Status = "partial_historical_calibration"
+			res.Reason = "historical_l1_baseline_missing"
 		}
 		_ = hb("ability", 100)
 		out, _ := json.Marshal(res)
@@ -100,11 +114,11 @@ func NewAbility(store AbilityStore) job.Handler {
 
 func runAbility(ctx context.Context, store AbilityStore, user string, in abilityInput) (abilityResult, error) {
 	if in.Mode == "backfill_l1" {
-		written, skipped, err := backfillL1(ctx, store, user)
+		written, skipped, unavailable, err := backfillL1(ctx, store, user)
 		if err != nil {
 			return abilityResult{}, err
 		}
-		return abilityResult{User: user, Status: "ok", L1Written: written, L1Skipped: skipped}, nil
+		return abilityResult{User: user, Status: "ok", L1Written: written, L1Skipped: skipped, L1Unavailable: unavailable}, nil
 	}
 
 	ref, err := anchorDay(in.RefDate)
@@ -132,24 +146,26 @@ func runAbility(ctx context.Context, store AbilityStore, user string, in ability
 			if i > 0 {
 				labels = nil
 			}
-			written, skipped, err := computeAndPersist(ctx, store, user, day, labels)
+			written, skipped, unavailable, err := computeAndPersist(ctx, store, user, day, labels)
 			if err != nil {
 				return res, err
 			}
 			res.Days++
 			res.L1Written += written
 			res.L1Skipped += skipped
+			res.L1Unavailable += unavailable
 		}
 		return res, nil
 	}
 
-	written, skipped, err := computeAndPersist(ctx, store, user, ref, in.LabelIDs)
+	written, skipped, unavailable, err := computeAndPersist(ctx, store, user, ref, in.LabelIDs)
 	if err != nil {
 		return res, err
 	}
 	res.Days = 1
 	res.L1Written = written
 	res.L1Skipped = skipped
+	res.L1Unavailable = unavailable
 	return res, nil
 }
 
@@ -157,29 +173,32 @@ func runAbility(ctx context.Context, store AbilityStore, user string, in ability
 // its ability_snapshot rows, and persists every batch activity's L1. The batch
 // is the sync's label_ids when the pipeline threaded them, else the anchor day's
 // activities. Ultra-short activities are skipped by ability.IsUltraShort.
-func computeAndPersist(ctx context.Context, store AbilityStore, user string, day time.Time, labelIDs []string) (written, skipped int, err error) {
+func computeAndPersist(ctx context.Context, store AbilityStore, user string, day time.Time, labelIDs []string) (written, skipped, unavailable int, err error) {
 	src, err := abilitysource.Load(ctx, store, user, day, ability.AbilityLookbackDays)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	date := day.Format("2006-01-02")
 	bundle, err := storage.ReadCachedRunningCalibration(ctx, store, user, date, storage.CalibrationActive)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
+	}
+	if bundle.Snapshot != nil && bundle.Snapshot.AlgorithmVersion == calibration.CandidateVersion {
+		return 0, 0, 0, job.NewPermanentError("candidate_derived_write_forbidden", fmt.Errorf("candidate cannot write active ability"))
 	}
 	if src.HRMax == nil {
-		return 0, len(src.Activities), nil
+		return 0, 0, len(src.Activities), errHistoricalCalibrationMissing
 	}
 	snap := ability.ComputeAbilitySnapshot(src, date, nil)
 	rows := snapshotToRows(date, snap)
 	for i := range rows {
 		rows[i].UserID = user
 		if err := storage.FreezeCalibrationProvenance(&rows[i], []storage.CalibrationInput{bundle.FrozenInput()}, nil); err != nil {
-			return 0, 0, err
+			return 0, 0, 0, err
 		}
 	}
 	if err := store.ReplaceAbilitySnapshot(ctx, user, rows); err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 
 	// Persist each batch activity's L1 so /activities/:id/ability has a row for
@@ -187,7 +206,7 @@ func computeAndPersist(ctx context.Context, store AbilityStore, user string, day
 	// prior/posterior L3). Skip entirely when no HRMax resolved (L1 needs it,
 	// and the snapshot is empty anyway).
 	if src.HRMax == nil {
-		return 0, 0, nil
+		return 0, 0, 0, errHistoricalCalibrationMissing
 	}
 	for i := range src.Activities {
 		a := &src.Activities[i]
@@ -200,22 +219,22 @@ func computeAndPersist(ctx context.Context, store AbilityStore, user string, day
 		}
 		b, err := storage.ReadCachedRunningCalibration(ctx, store, user, a.Date, storage.CalibrationActive)
 		if err != nil {
-			return written, skipped, err
+			return written, skipped, unavailable, err
 		}
 		hrMax, err := abilitysource.ResolveHRMax(ctx, store, user, a.Date)
 		if err != nil {
-			return written, skipped, err
+			return written, skipped, unavailable, err
 		}
 		if hrMax == nil {
-			skipped++
+			unavailable++
 			continue
 		}
 		if err := upsertL1(ctx, store, user, a, *hrMax, b); err != nil {
-			return written, skipped, err
+			return written, skipped, unavailable, err
 		}
 		written++
 	}
-	return written, skipped, nil
+	return written, skipped, unavailable, nil
 }
 
 // inL1Batch reports whether an activity belongs to this run's L1 batch: matched
@@ -230,6 +249,9 @@ func inL1Batch(a *ability.Activity, date string, labelIDs []string) bool {
 // upsertL1 computes one activity's L1 quality and upserts its activity_ability
 // row (contribution stays nil — deferred until prior/posterior L3 exist).
 func upsertL1(ctx context.Context, store AbilityStore, user string, a *ability.Activity, hrMax int, bundle storage.CalibrationBundle) error {
+	if bundle.Snapshot != nil && bundle.Snapshot.AlgorithmVersion == calibration.CandidateVersion {
+		return job.NewPermanentError("candidate_derived_write_forbidden", fmt.Errorf("candidate cannot write active L1"))
+	}
 	l1 := ability.ComputeL1Quality(a, nil, hrMax)
 	breakdown, _ := json.Marshal(l1.Breakdown)
 	bs := string(breakdown)
@@ -250,14 +272,14 @@ func upsertL1(ctx context.Context, store AbilityStore, user string, a *ability.A
 // in missing L1 rows: activities that already have one are skipped, ultra-short
 // ones fail the same gate as the routine path. Needs a calibration HRMax —
 // without one there is nothing to compute.
-func backfillL1(ctx context.Context, store AbilityStore, user string) (written, skipped int, err error) {
+func backfillL1(ctx context.Context, store AbilityStore, user string) (written, skipped, unavailable int, err error) {
 	existing, err := store.ActivityAbilityLabelIDs(ctx, user)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	all, err := store.AllRunningActivities(ctx, user)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	// Pre-filter on cheap row fields so the per-activity timeseries loads only
 	// happen for activities that will actually get a row.
@@ -276,27 +298,27 @@ func backfillL1(ctx context.Context, store AbilityStore, user string) (written, 
 	}
 	acts, err := abilitysource.MapActivities(ctx, store, pending)
 	if err != nil {
-		return 0, skipped, err
+		return 0, skipped, unavailable, err
 	}
 	for i := range acts {
 		b, err := storage.ReadCachedRunningCalibration(ctx, store, user, acts[i].Date, storage.CalibrationActive)
 		if err != nil {
-			return written, skipped, err
+			return written, skipped, unavailable, err
 		}
 		hrMax, err := abilitysource.ResolveHRMax(ctx, store, user, acts[i].Date)
 		if err != nil {
-			return written, skipped, err
+			return written, skipped, unavailable, err
 		}
 		if hrMax == nil {
-			skipped++
+			unavailable++
 			continue
 		}
 		if err := upsertL1(ctx, store, user, &acts[i], *hrMax, b); err != nil {
-			return written, skipped, err
+			return written, skipped, unavailable, err
 		}
 		written++
 	}
-	return written, skipped, nil
+	return written, skipped, unavailable, nil
 }
 
 // rowLenAndDuration extracts an activity row's (possibly adjusted) distance and

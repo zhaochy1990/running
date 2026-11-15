@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"os"
 	"testing"
+	"time"
 )
 
 func TestCalibrationBundlePolicyAndHistory(t *testing.T) {
@@ -212,5 +213,64 @@ func TestCalibrationConcurrentPublicationNeverMixesBundle(t *testing.T) {
 		if err := <-errs; err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestCalibrationSameIDRewriteKeepsFrozenDerivedSource(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.AutoMigrateWatch(ctx); err != nil {
+		t.Fatal(err)
+	}
+	uid := uuid.NewString()
+	t.Cleanup(func() {
+		for _, m := range []any{&ActivityTrainingLoad{}, &RunningCalibrationPaceZone{}, &RunningCalibrationHRZone{}, &RunningCalibrationSnapshot{}} {
+			st.db.Where("user_id = ?", uid).Delete(m)
+		}
+	})
+	raw := `{"schema_version":1,"state":"available","strategy":"v3","data_cutoff_day":"2026-11-01"}`
+	snap := &RunningCalibrationSnapshot{UserID: uid, AsOfDate: "2026-11-01", AlgorithmVersion: 3, ThresholdSpeedMps: fptr(4), SourceJSON: &raw}
+	id, err := st.PublishRunningCalibration(ctx, snap, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := st.ReadEffectiveRunningCalibration(ctx, uid, "2026-11-01", CalibrationActive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := ActivityTrainingLoad{UserID: uid, LabelID: "frozen", ActivityDate: "2026-11-01", AlgorithmVersion: 2, CoverageStatus: "complete", TrainingDose: fptr(42)}
+	if err := FreezeCalibrationProvenance(&row, []CalibrationInput{a.FrozenInput()}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ReplaceActivityTrainingLoad(ctx, uid, []ActivityTrainingLoad{row}); err != nil {
+		t.Fatal(err)
+	}
+	snap.ThresholdSpeedMps = fptr(5)
+	id2, err := st.PublishRunningCalibration(ctx, snap, nil, nil)
+	if err != nil || id2 != id {
+		t.Fatal("natural identity", err)
+	}
+	b, err := st.ReadEffectiveRunningCalibration(ctx, uid, "2026-11-01", CalibrationActive)
+	if err != nil || b.Fingerprint == a.Fingerprint {
+		t.Fatal("rewrite did not change fingerprint", err)
+	}
+	old, err := st.ActivityTrainingLoad(ctx, uid, "frozen")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, state := ReadCalibrationProvenance(*old)
+	if state != "available" || *p.Inputs[0].ValuesUsed.ThresholdSpeedMps != 4 || p.Inputs[0].Fingerprint != a.Fingerprint {
+		t.Fatalf("source drift %+v %s", p, state)
+	}
+	// An old writer does not know the additive provenance column.
+	if err := st.db.Model(&ActivityTrainingLoad{}).Where("user_id = ? AND label_id = ?", uid, "frozen").Updates(map[string]any{"training_dose": 43, "computed_at": time.Now().UTC().Truncate(time.Microsecond)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	old, err = st.ActivityTrainingLoad(ctx, uid, "frozen")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, state := ReadCalibrationProvenance(*old); state != "legacy_or_stale_provenance" {
+		t.Fatal("stale source accepted", state)
 	}
 }
