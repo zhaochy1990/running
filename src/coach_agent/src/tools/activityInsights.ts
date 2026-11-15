@@ -20,10 +20,11 @@
  */
 
 import type { StructuredTool } from "@langchain/core/tools";
-import { addDays, mondayOnOrBefore, weekFolder } from "@stride/contract";
+import { addDays, mondayOnOrBefore, shanghaiDay, weekFolder } from "@stride/contract";
 import * as z from "zod";
 import type { CoachToolRuntime } from "../agents/coachAgent.js";
 import { isQualityRunningActivity, isRunningActivity, normalizeSessionClass } from "../data/activityClassification.js";
+import { calibrationMetadataShape } from "../data/calibrationMetadata.js";
 import type { Activity, ActivityLap, DataProvider, WeeklyPlanDocument } from "../data/dataProvider.js";
 import { defineCoachTools } from "./common.js";
 import { toPaceSPerKm } from "./runningCalibration.js";
@@ -75,12 +76,15 @@ export interface ActivityInsights {
     is_quality: boolean;
     weather: { feels_like_c: number | null; humidity_pct: number | null } | null;
   };
-  calibration: {
-    threshold_hr: number | null;
-    threshold_pace_s_per_km: number | null;
-    hr_pct_of_threshold: number | null;
-    pace_pct_of_threshold: number | null;
-  } | null;
+  calibration:
+    | (ReturnType<typeof calibrationMetadataShape> & {
+        as_of_date: string;
+        threshold_hr: number | null;
+        threshold_pace_s_per_km: number | null;
+        hr_pct_of_threshold: number | null;
+        pace_pct_of_threshold: number | null;
+      })
+    | null;
   plan_intent:
     | { available: true; sessions: Array<{ summary: string | null; distance_km: number | null; is_quality: boolean }> }
     | {
@@ -159,7 +163,7 @@ class ActivityInsightsToolImpl {
     const [summaries, loads, calibration, plan] = await Promise.all([
       this.store.getActivitySummariesByDateRange(userId, windowStart, addDays(day, -1)),
       this.store.getDailyTrainingLoadByDateRange(userId, addDays(day, -7), day),
-      this.store.getLatestRunningCalibration(userId, asof),
+      this.store.getLatestRunningCalibration(userId, day < shanghaiDay(asof) ? day : shanghaiDay(asof)),
       this.store.getWeeklyPlan(userId, weekFolder(mondayOnOrBefore(day))),
     ]);
 
@@ -202,6 +206,8 @@ function calibrationView(activity: Activity, calibration: Awaited<ReturnType<Dat
   if (!calibration) return null;
   const thresholdPace = toPaceSPerKm(calibration.thresholdSpeedMps);
   return {
+    ...calibrationMetadataShape(calibration),
+    as_of_date: calibration.asOfDate,
     threshold_hr: calibration.thresholdHr,
     threshold_pace_s_per_km: thresholdPace,
     hr_pct_of_threshold: activity.avgHr !== null && calibration.thresholdHr !== null ? round((activity.avgHr / calibration.thresholdHr) * 100, 1) : null,
