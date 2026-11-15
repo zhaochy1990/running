@@ -69,3 +69,10 @@ measurement 容差并不表示次极限是精确能力。3min 快段只约束 Vm
 与各自 T3 reviewed 报告逐字段对照，**v3 和 segments_only 完整结果相同**，两个 manifest 的内容 hash 未变；冻结 v3源码 hash 仍为 `1d20459b1d72095d775e69ce928aebde8540753a1c6631d5cf05fb35e0bc5826`。v3/T2 的阈值仍3.9914m/s，分别 high/low。candidate 保留1275条观察，因没有独立近全力锚点，方法 `constraints_only`、中心 nil、支持 none。当前唯一 prediction case 的阈值可用覆盖从 T3 候选的1/1降为0/1；这是诚实缺失，不是误差改善。真实资料缺独立可评分目标，不能报告改善的MAE、配对误差或准确性 pass。
 
 原 manifest 没有 metadata，不冒充已经覆盖暂停；含真实 reader metadata 的回放继续把69场暂停对应观察留在非连续域，不选作连续约束。原资料、早期报告和私密标识/原话未提交Git；本轮报告仅存受控 `/tmp/stride-983/private/t4-*-replay-*.json`。没有生产写入、active切换或历史重算，release_ready=false。
+
+## T4 独立评审修复
+
+- 同根跨日别名原先可以让实际拟合用窗口日期重复计算独立日，而预算用该根最早日，制造多个日预算并错误升 high。现在 pool 和纯 `FitHourCapability` 共用日期一致性校验：同 root 的所有已准入观察必须属于同一个领域 civil day。先执行既有180日/非未来日期准入，排除域外别名再检查一致性，不能让未来/过旧输入反向影响已准入历史。现有 metadata 没有独立可信的规范根日期，故矛盾时不任意选最早/最新日，而**整根拒绝参与选择及拟合**。观察和原始日期保留；pool `Excluded.root_activity_day_conflict` 按根计数、所有相关观察标固定原因，`IndependentActivities` / `IndependentDays` / 贡献与实际拟合一致。端到端及纯 seam 红绿回归覆盖三个实际同日根各带不同日别名的已核验窗口，所有冲突根的支持和预算均为0，不能凑出 high。
+- Replay 顶层 Reasons 删除“仍用legacy速度估计器、T4未完成”的过时诊断，改为真实的 `candidate_hour_capability_v1_research_parameters_uncalibrated`、`independent_HR_support_pending_T5`。保留尚未实现的评分限制和不足的准确性门禁；公开 Replay 红绿测试防止实现身份再次与输出相矛盾。
+
+评审修复后的固定真实回放（`T4-independent-reviewfix-working-tree`）原 manifest 两次7.781/7.089秒，报告SHA256均 `ae3d40fe328e423c00f444fc773ee8231cd85f22c91098d5267058928e081b9e`；含69暂停反证的独立manifest耗时7.232秒，SHA256 `6f578e0bec87a06d1418828fac8905f702e55873d0065a01eadd5be0b4d24c69`。均exit2/insufficient；三版本完整cases与评审前T4相同，只更新顶层诊断和code标签，manifest/v3 hash不变。真实输入没有跨日root alias，本次修复的确定性保证来自端到端与纯 seam 回归，不能把这批回放当冲突alias准确性标签。
