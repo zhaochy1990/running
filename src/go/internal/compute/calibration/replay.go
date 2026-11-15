@@ -19,12 +19,13 @@ var evaluationProtocol []byte
 // Activity timestamps retain the domain's Shanghai civil-day representation;
 // EventTime/AvailableAt are actual instants, including all derived content.
 type ReplayManifest struct {
-	SchemaVersion int              `json:"schema_version"`
-	AsOf          time.Time        `json:"as_of"`
-	SourceVersion string           `json:"source_version"`
-	Activities    []ReplayActivity `json:"activities"`
-	Health        []ReplayHealth   `json:"health,omitempty"`
-	Cases         []ReplayCase     `json:"cases"`
+	SchemaVersion  int              `json:"schema_version"`
+	AsOf           time.Time        `json:"as_of"`
+	SourceVersion  string           `json:"source_version"`
+	Activities     []ReplayActivity `json:"activities"`
+	Health         []ReplayHealth   `json:"health,omitempty"`
+	Cases          []ReplayCase     `json:"cases"`
+	RequiredStrata []string         `json:"required_strata,omitempty"`
 }
 
 type ReplayActivity struct {
@@ -56,17 +57,20 @@ type ReplayHealth struct {
 // References are manually audited, independent measured outcomes. Neither
 // activity name, feel_type nor the model's own HR/pace qualifies a reference.
 type ReplayReference struct {
-	Kind               string     `json:"kind"` // direct_60min, race_prediction, constraint_only
-	Real               bool       `json:"real"`
-	EffortSupport      string     `json:"effort_support"`
-	MeasurementQuality string     `json:"measurement_quality"`
-	EvidenceRef        string     `json:"evidence_ref"`
-	Protocol           string     `json:"protocol"`
-	AvailableAt        *time.Time `json:"available_at"`
-	DurationS          float64    `json:"duration_s"`
-	DistanceM          float64    `json:"distance_m"`
-	HRGrade            string     `json:"hr_grade"` // lab_lthr, field_hr_proxy, training_hr
-	HRBpm              *float64   `json:"hr_bpm,omitempty"`
+	Kind                     string         `json:"kind"` // direct_60min, race_prediction, constraint_only
+	Real                     bool           `json:"real"`
+	EffortSupport            string         `json:"effort_support"`
+	MeasurementQuality       string         `json:"measurement_quality"`
+	EvidenceRef              string         `json:"evidence_ref"`
+	Protocol                 string         `json:"protocol"`
+	AvailableAt              *time.Time     `json:"available_at"`
+	DurationS                float64        `json:"duration_s"`
+	DistanceM                float64        `json:"distance_m"`
+	HRGrade                  string         `json:"hr_grade"` // lab_lthr, field_hr_proxy, training_hr
+	HRBpm                    *float64       `json:"hr_bpm,omitempty"`
+	ContinuousVerified       *bool          `json:"continuous_verified,omitempty"`
+	HRAudit                  *ReplayHRAudit `json:"hr_audit,omitempty"`
+	MeasurementRelativeError *float64       `json:"measurement_relative_error,omitempty"`
 }
 
 type ReplayCase struct {
@@ -78,32 +82,44 @@ type ReplayCase struct {
 }
 
 type ReplayCaseResult struct {
-	ID                    string          `json:"id"`
-	User                  string          `json:"user"`
-	Mode                  string          `json:"mode"`
-	PredictionAsOf        time.Time       `json:"prediction_as_of"`
-	TargetRootActivityID  string          `json:"target_root_activity_id,omitempty"`
-	InputSHA256           string          `json:"input_sha256"`
-	Activities            int             `json:"activities"`
-	IndependentActivities int             `json:"independent_activities"`
-	Excluded              map[string]int  `json:"excluded"`
-	Versions              []OfflineResult `json:"versions"`
+	ID                    string              `json:"id"`
+	User                  string              `json:"user"`
+	Mode                  string              `json:"mode"`
+	PredictionAsOf        time.Time           `json:"prediction_as_of"`
+	TargetRootActivityID  string              `json:"target_root_activity_id,omitempty"`
+	InputSHA256           string              `json:"input_sha256"`
+	Activities            int                 `json:"activities"`
+	IndependentActivities int                 `json:"independent_activities"`
+	Excluded              map[string]int      `json:"excluded"`
+	Versions              []OfflineResult     `json:"versions"`
+	Failures              map[Strategy]string `json:"failures,omitempty"`
 }
 
 type ReplayReport struct {
-	Status               string             `json:"status"`
-	Reasons              []string           `json:"reasons"`
-	SchemaVersion        int                `json:"schema_version"`
-	AsOf                 time.Time          `json:"as_of"`
-	CodeVersion          string             `json:"code_version"`
-	SourceVersion        string             `json:"source_version"`
-	ManifestSHA256       string             `json:"manifest_sha256"`
-	V3SourceSHA256       string             `json:"v3_source_sha256"`
-	ProtocolSHA256       string             `json:"protocol_sha256"`
-	Inventory            ReplayInventory    `json:"inventory"`
-	Cases                []ReplayCaseResult `json:"cases"`
-	ValidationEvaluation ReplayEvaluation   `json:"validation_evaluation"`
-	Evaluation           ReplayEvaluation   `json:"evaluation"`
+	Status                  string                   `json:"status"`
+	SidecarSHA256           string                   `json:"sidecar_sha256,omitempty"`
+	EvaluationInputSHA256   string                   `json:"evaluation_input_sha256"`
+	EvaluationEngineVersion string                   `json:"evaluation_engine_version"`
+	EngineeringStatus       string                   `json:"engineering_status"`
+	AccuracyStatus          string                   `json:"accuracy_status"`
+	ReleaseReady            bool                     `json:"release_ready"`
+	ReleaseBlockers         []string                 `json:"release_blockers"`
+	FailureKind             string                   `json:"failure_kind,omitempty"`
+	Cohorts                 []ReplayCohortEvaluation `json:"cohorts"`
+	QualityChecks           []ReplayQualityCheck     `json:"quality_checks"`
+	Gates                   []ReplayGate             `json:"gates"`
+	Reasons                 []string                 `json:"reasons"`
+	SchemaVersion           int                      `json:"schema_version"`
+	AsOf                    time.Time                `json:"as_of"`
+	CodeVersion             string                   `json:"code_version"`
+	SourceVersion           string                   `json:"source_version"`
+	ManifestSHA256          string                   `json:"manifest_sha256"`
+	V3SourceSHA256          string                   `json:"v3_source_sha256"`
+	ProtocolSHA256          string                   `json:"protocol_sha256"`
+	Inventory               ReplayInventory          `json:"inventory"`
+	Cases                   []ReplayCaseResult       `json:"cases"`
+	ValidationEvaluation    ReplayEvaluation         `json:"validation_evaluation"`
+	Evaluation              ReplayEvaluation         `json:"evaluation"`
 }
 
 type ReplayInventory struct {
@@ -146,7 +162,15 @@ func available(event time.Time, at *time.Time, proof string, cutoff time.Time, m
 // Replay compares three strategies against identical frozen inputs. No DB,
 // network, wall clock, random source, storage write or environment setting is used.
 func Replay(m ReplayManifest, codeVersion string) (ReplayReport, error) {
+	return replay(m, codeVersion, nil)
+}
+
+func replay(m ReplayManifest, codeVersion string, sidecar *ReplayEvaluationSidecar) (ReplayReport, error) {
 	if err := validateReplay(m, codeVersion); err != nil {
+		return ReplayReport{}, err
+	}
+	evaluationManifest, err := applyReplaySidecar(m, codeVersion, sidecar)
+	if err != nil {
 		return ReplayReport{}, err
 	}
 	out := ReplayReport{Status: "insufficient", SchemaVersion: 1, AsOf: m.AsOf, CodeVersion: codeVersion, SourceVersion: m.SourceVersion, ManifestSHA256: ReplayContentHash(m), V3SourceSHA256: FrozenV3SourceSHA256(), ProtocolSHA256: hashBytes(evaluationProtocol), Inventory: inventory(m)}
@@ -154,7 +178,9 @@ func Replay(m ReplayManifest, codeVersion string) (ReplayReport, error) {
 	sort.Slice(activities, func(i, j int) bool { return activities[i].ID < activities[j].ID })
 	health := append([]ReplayHealth(nil), m.Health...)
 	sort.Slice(health, func(i, j int) bool { return health[i].ID < health[j].ID })
-	for _, c := range m.Cases {
+	sortedCases := append([]ReplayCase(nil), m.Cases...)
+	sort.Slice(sortedCases, func(i, j int) bool { return sortedCases[i].ID < sortedCases[j].ID })
+	for _, c := range sortedCases {
 		result := ReplayCaseResult{ID: c.ID, User: c.User, Mode: c.Mode, PredictionAsOf: c.PredictionAsOf, TargetRootActivityID: c.TargetRootActivityID, Excluded: map[string]int{}}
 		var history []Activity
 		var inputMetadata []CandidateMetadata
@@ -217,21 +243,86 @@ func Replay(m ReplayManifest, codeVersion string) (ReplayReport, error) {
 		for _, strategy := range []Strategy{StrategyV3, StrategySegmentsOnly, StrategyCandidate} {
 			v, err := estimateOfflineWithEvidenceAt(strategy, history, civilDay, rows, inputMetadata, c.PredictionAsOf)
 			if err != nil {
-				return ReplayReport{}, err
+				if result.Failures == nil {
+					result.Failures = map[Strategy]string{}
+				}
+				result.Failures[strategy] = "offline_estimator_error"
+				continue
+			}
+			if ReplayContentHash(v) == "" {
+				if result.Failures == nil {
+					result.Failures = map[Strategy]string{}
+				}
+				result.Failures[strategy] = "nonfinite_estimator_output"
+				continue
 			}
 			result.Versions = append(result.Versions, v)
 		}
 		out.Cases = append(out.Cases, result)
 	}
-	out.Evaluation = evaluateReplay(m, out.Cases, "final_holdout")
-	out.ValidationEvaluation = evaluateReplay(m, out.Cases, "validation")
-	out.Reasons = []string{"candidate_hour_capability_v1_research_parameters_uncalibrated", "candidate_independent_HR_v1_research_parameters_uncalibrated", "HR_accuracy_and_cross_duration_scoring_not_implemented", "accuracy_release_gate_not_satisfied"}
+	out.EvaluationInputSHA256 = ReplayContentHash(struct {
+		Base    string
+		Sidecar *ReplayEvaluationSidecar
+	}{out.ManifestSHA256, sidecar})
+	if sidecar != nil {
+		out.SidecarSHA256 = ReplayContentHash(sidecar)
+	}
+	out.Cohorts, out.QualityChecks, err = EvaluateReplayOutcomes(evaluationManifest, out.Cases)
+	if err != nil {
+		return ReplayReport{}, err
+	}
+	out.Evaluation = legacyReplayEvaluation(out.Cohorts, "final_holdout")
+	out.ValidationEvaluation = legacyReplayEvaluation(out.Cohorts, "validation")
+	out.EvaluationEngineVersion = "replay_evaluation_v2"
+	var deterministic ReplayGate
+	out.EngineeringStatus, deterministic = replayEngineering(sidecar)
+	out.AccuracyStatus = "passed"
+	for _, cohort := range out.Cohorts {
+		if cohort.Split != "final_holdout" || cohort.Mode != "strict" {
+			continue
+		}
+		for _, g := range cohort.Gates {
+			g.ID = cohort.Family + "." + g.ID
+			out.Gates = append(out.Gates, g)
+		}
+	}
+	if syntheticReplay(m) {
+		out.Gates = append(out.Gates, ReplayGate{ID: "real_reference_provenance", Status: "insufficient", Threshold: "independent real references", Reason: "synthetic_source_cannot_establish_accuracy"})
+	}
+	out.AccuracyStatus = gateReduction(out.Gates)
+	out.Gates = append(out.Gates, deterministic)
+	engineeringGate := ReplayGate{ID: "engineering_acceptance", Status: "insufficient", Threshold: "verified deterministic/E2E/review evidence for exact code version", Unit: "evidence", Observed: out.EngineeringStatus}
+	if out.EngineeringStatus == "passed" {
+		engineeringGate.Status = "pass"
+	}
+	if out.EngineeringStatus == "failed" {
+		engineeringGate.Status = "fail"
+	}
+	out.Gates = append(out.Gates, engineeringGate)
+	out.Status = gateReduction(out.Gates)
+	out.ReleaseReady = out.Status == "passed" && out.EngineeringStatus == "passed"
+	for _, g := range out.Gates {
+		if g.Status != "pass" {
+			out.ReleaseBlockers = append(out.ReleaseBlockers, g.ID+":"+g.Status)
+		}
+	}
+	if out.EngineeringStatus != "passed" {
+		out.ReleaseBlockers = append(out.ReleaseBlockers, "external_engineering_acceptance_not_supplied")
+	}
+	out.Reasons = []string{"candidate_hour_capability_v1_research_parameters_uncalibrated", "candidate_independent_HR_v1_research_parameters_uncalibrated"}
 	if out.Inventory.UnknownAvailability > 0 {
 		out.Reasons = append(out.Reasons, "historical_availability_not_proven_for_all_exported_inputs")
 	}
-	if out.Evaluation.PairedActivities < 30 || out.Evaluation.Users < 10 {
-		out.Reasons = append(out.Reasons, "strict_independent_real_direct_60min_labels_below_30_activities_10_users")
+	if out.Status == "failed" {
+		out.FailureKind = "numeric_gate_failed"
+		for _, c := range out.Cases {
+			if len(c.Failures) > 0 {
+				out.FailureKind = "computation_failed"
+				break
+			}
+		}
 	}
+
 	return out, nil
 }
 
@@ -371,11 +462,35 @@ func validateReplay(m ReplayManifest, code string) error {
 		}
 	}
 	ids = map[string]bool{}
+	targetCases := map[string]time.Time{}
+	targets := map[string]ReplayActivity{}
+	for _, a := range m.Activities {
+		key := a.User + "/" + a.RootActivityID
+		if prior, ok := targets[key]; ok {
+			if !prior.EventTime.Equal(a.EventTime) || ReplayContentHash(prior.Reference) != ReplayContentHash(a.Reference) || prior.Device != a.Device || ReplayContentHash(prior.Scenarios) != ReplayContentHash(a.Scenarios) {
+				return fmt.Errorf("conflicting target root audit %s", key)
+			}
+		} else {
+			targets[key] = a
+		}
+	}
 	for _, c := range m.Cases {
 		if c.ID == "" || c.User == "" || c.PredictionAsOf.IsZero() || c.PredictionAsOf.After(m.AsOf) || ids[c.ID] {
 			return fmt.Errorf("case metadata missing, duplicate or prediction after report as_of")
 		}
 		ids[c.ID] = true
+		if c.TargetRootActivityID != "" {
+			key := c.User + "/" + c.TargetRootActivityID
+			a, ok := targets[key]
+			if !ok || a.Split == "train" || !a.EventTime.After(c.PredictionAsOf) || a.EventTime.After(m.AsOf) {
+				return fmt.Errorf("case %s target missing, not heldout or not after cutoff", c.ID)
+			}
+			modeKey := key + "/" + c.Mode
+			if prior, ok := targetCases[modeKey]; ok && !prior.Equal(c.PredictionAsOf) {
+				return fmt.Errorf("conflicting prediction cutoffs for target %s", key)
+			}
+			targetCases[modeKey] = c.PredictionAsOf
+		}
 		if c.Mode != "strict" && c.Mode != "event_date_retrospective" {
 			return fmt.Errorf("unknown replay mode %q", c.Mode)
 		}
