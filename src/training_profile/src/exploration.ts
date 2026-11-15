@@ -65,6 +65,7 @@ export class Explorations {
       `${worker}-${attempt}`,
       workerScopes[worker],
     );
+    if (previous) session.restoreWorkingState(previous.session);
     const report: WorkerReport = { worker, attempt, status: "running", entries: [], session };
     this.reports.set(worker, report);
     try {
@@ -75,12 +76,14 @@ export class Explorations {
             if (!entry) throw new Error("Unknown computed evidence");
             if (hypothesisId && !session.hypotheses.has(hypothesisId)) throw new Error("Record hypothesis first");
             if (purpose !== "read" && !hypothesisId) throw new Error("Bind support/counterexample to a hypothesis");
+            if (purpose !== "read") session.fixedEvidenceUses++;
             return session.receipt({
               hypothesisId,
               purpose,
               question: entry.title,
               sourceIds: entry.evidence.map((e) => e.id),
               ...(purpose === "read" ? {} : { code: `fixed:${entry.metadata?.methodId}` }),
+              inputRead: true,
               result: briefEntry(entry),
             });
           },
@@ -93,7 +96,11 @@ export class Explorations {
         );
         const input = {
           worker,
-          budgetModelCalls: 12,
+          budgetModelCalls: 18,
+          savedHypotheses: [...session.hypotheses.values()],
+          savedCalculations: [...session.receipts.values()]
+            .filter((r) => r.code)
+            .map((r) => ({ id: r.id, question: r.question, purpose: r.purpose, hypothesisId: r.hypothesisId })),
           allowedDimensions: workerScopes[worker].map((id) => ({ id, title: dimensions[id] })),
           question,
           catalog: session.catalog(),
@@ -110,7 +117,7 @@ export class Explorations {
           `${RULES}\n本次范围：${scopes[worker]}`,
           JSON.stringify(input),
           () => session.submitted !== null,
-          12,
+          18,
         );
       });
       report.entries = (session.submitted?.conclusions ?? []).map((c) => ({ ...c, id: `child:${worker}:${attempt}:${c.id}` }));

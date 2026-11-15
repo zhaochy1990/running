@@ -77,7 +77,7 @@ export function buildComparisons(snapshot: Snapshot) {
   for (let end = snapshot.endDay; addDays(end, -6) >= snapshot.startDay; end = addDays(end, -7)) {
     const start = addDays(end, -6),
       rows = runs.filter((e) => day(e) >= start && day(e) <= end);
-    const known = rows.every((e) => finite(e.content.distanceM) !== null);
+    const known = rows.every((e) => finite(e.content.distanceM) !== null && Number(e.content.distanceM) >= 0);
     const volume = known ? rows.reduce((s, e) => s + Number(e.content.distanceM), 0) / 1000 : null;
     const longest = rows.toSorted((a, b) => Number(b.content.distanceM) - Number(a.content.distanceM))[0];
     const days = [...new Set(rows.map(day))];

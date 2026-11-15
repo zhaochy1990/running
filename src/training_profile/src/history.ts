@@ -7,6 +7,7 @@ export interface PriorEntry {
   conclusion: Conclusion;
   method: string;
   inputHash: string;
+  evaluatedAt: string;
   valid: boolean;
 }
 export function loadHistory(profiles: Profile[], snapshot: Snapshot): PriorEntry[] {
@@ -17,10 +18,25 @@ export function loadHistory(profiles: Profile[], snapshot: Snapshot): PriorEntry
     for (const c of profile.conclusions) {
       const id = c.id.startsWith("history:")
         ? c.id
-        : `history:${createHash("sha256").update(`${profile.userId}:${profile.method}:${c.id}`).digest("hex").slice(0, 18)}`;
+        : `history:${createHash("sha256").update(`${profile.userId}:${profile.method}:${profile.inputHash}:${profile.evaluatedAt}:${c.id}`).digest("hex").slice(0, 18)}`;
       const existing = result.get(id);
-      if (existing && JSON.stringify(existing.conclusion) !== JSON.stringify(c)) throw new Error(`Conflicting historical identity ${id}`);
-      result.set(id, { id, conclusion: c, method: profile.method, inputHash: profile.inputHash, valid: valid.has(c.id) });
+      if (existing) {
+        const core = (entry: Conclusion) =>
+          JSON.stringify({
+            title: entry.title,
+            text: entry.text,
+            conditions: entry.conditions,
+            limitations: entry.limitations,
+            support: entry.support,
+            evidence: entry.evidence,
+          });
+        const oldTime = Date.parse(existing.evaluatedAt),
+          newTime = Date.parse(profile.evaluatedAt);
+        if (core(existing.conclusion) !== core(c) && !(Number.isFinite(oldTime) && Number.isFinite(newTime) && oldTime !== newTime))
+          throw new Error(`Conflicting historical identity ${id} at the same publication time`);
+        if (newTime < oldTime || (newTime === oldTime && existing.conclusion.metadata && !c.metadata)) continue;
+      }
+      result.set(id, { id, conclusion: c, method: profile.method, inputHash: profile.inputHash, evaluatedAt: profile.evaluatedAt, valid: valid.has(c.id) });
     }
   }
   return [...result.values()];

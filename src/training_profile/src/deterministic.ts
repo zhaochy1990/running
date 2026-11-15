@@ -35,7 +35,7 @@ export function buildDeterministic(snapshot: Snapshot) {
   const facts = describeSnapshot(snapshot),
     comparisons = buildComparisons(snapshot);
   const sources = new Map(snapshot.evidence.filter((e) => e.active).map((e) => [e.id, e]));
-  const entries: Conclusion[] = [...facts.conclusions, ...comparisons.observations].map((c) => {
+  const entries: Conclusion[] = [...facts.conclusions.filter((c) => c.kind !== "user_report"), ...comparisons.observations].map((c) => {
     const quoted = c.kind === "user_report";
     const dimensionId = routes[c.id] ?? (c.id.startsWith("calibration-") ? "ability" : c.id.startsWith("event-") || quoted ? "fueling" : "training");
     const rows = c.evidence.flatMap((r) => {

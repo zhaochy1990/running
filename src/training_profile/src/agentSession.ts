@@ -53,6 +53,8 @@ interface Receipt {
   sourceIds: string[];
   result: unknown;
   code?: string;
+  reusedFrom?: string;
+  inputRead?: boolean;
 }
 
 export class ProfileAgentSession {
@@ -60,6 +62,9 @@ export class ProfileAgentSession {
   readonly hypotheses = new Map<string, Hypothesis>();
   readonly revisions: Hypothesis[] = [];
   submitted: Profile | null = null;
+  executedCalculations = 0;
+  fixedEvidenceUses = 0;
+  reusedCalculations = 0;
   private serial = 0;
   constructor(
     readonly snapshot: Snapshot,
@@ -78,6 +83,22 @@ export class ProfileAgentSession {
 
   async toolError(tool: string, input: unknown, error: string) {
     await this.record({ type: "tool_error", tool, input, error });
+  }
+
+  restoreWorkingState(previous: ProfileAgentSession) {
+    if (JSON.stringify(previous.snapshot) !== JSON.stringify(this.snapshot)) throw new Error("Cannot reuse calculations across different snapshots");
+    for (const [id, r] of previous.receipts) this.receipts.set(id, structuredClone(r));
+    for (const [id, h] of previous.hypotheses) this.hypotheses.set(id, structuredClone(h));
+    this.revisions.push(...structuredClone(previous.revisions));
+    this.serial = previous.serial;
+  }
+
+  async reuseCalculation(receiptId: string, hypothesisId: string, purpose: "support" | "counterexample") {
+    const original = this.receipts.get(receiptId);
+    if (!this.hypotheses.has(hypothesisId) || !original?.code || !original.sourceIds.length || !original.inputRead)
+      throw new Error("Reuse needs an existing hypothesis and a successful calculation that read input");
+    this.reusedCalculations++;
+    return this.receipt({ ...original, hypothesisId, purpose, reusedFrom: receiptId });
   }
 
   catalog() {
@@ -99,9 +120,15 @@ export class ProfileAgentSession {
   }
 
   async read(kind: string, fields: string[], startDay: string | null, endDay: string | null, offset: number, limit: number) {
+    if (
+      (startDay || endDay) &&
+      kind === "activity" &&
+      this.snapshot.evidence.some((e) => e.active && e.kind === kind && typeof e.content.shanghaiDay !== "string")
+    )
+      throw new Error("Time-filtered activity reads require provider shanghaiDay; UTC date cannot substitute");
     const rows = this.snapshot.evidence.filter((e) => {
       if (!e.active || e.kind !== kind) return false;
-      const date = String(e.content.shanghaiDay ?? e.content.date ?? e.content.as_of_date ?? e.content.weekStart ?? "");
+      const date = String(e.kind === "activity" ? (e.content.shanghaiDay ?? "") : (e.content.date ?? e.content.as_of_date ?? e.content.weekStart ?? ""));
       return (!startDay || date >= startDay) && (!endDay || date <= endDay);
     });
     const selected = rows.slice(offset, offset + limit);
@@ -132,6 +159,7 @@ export class ProfileAgentSession {
     if (input.hypothesisId !== null && !this.hypotheses.has(input.hypothesisId)) throw new Error("Record the hypothesis before testing it");
     if (["support", "counterexample"].includes(input.purpose) && !input.hypothesisId) throw new Error("Support and counterexample checks need a hypothesisId");
     const calculated = await calculateSnapshot(this.snapshot, input.code);
+    this.executedCalculations++;
     if (["support", "counterexample", "validation"].includes(input.purpose) && !calculated.readInput)
       throw new Error("Support and counterexample calculations must read the snapshot input");
     return this.receipt({
@@ -139,6 +167,7 @@ export class ProfileAgentSession {
       purpose: input.purpose,
       question: input.question,
       code: input.code,
+      inputRead: calculated.readInput,
       sourceIds: calculated.inspectedIds,
       result: calculated.result,
     });

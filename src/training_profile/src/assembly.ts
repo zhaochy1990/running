@@ -74,10 +74,19 @@ export class ProfileAssembly {
     const entries = new Map<string, Conclusion>(
       [...this.computed, ...candidates.filter((c) => review.candidates.some((d) => d.id === c.id && d.include))].map((c) => [c.id, c]),
     );
+    const includedChildren = new Map(candidates.filter((c) => review.candidates.some((d) => d.id === c.id && d.include)).map((c) => [c.id, c]));
     const aliases = new Map<string, string>();
     for (const decision of review.prior) {
       const p = prior.find((p) => p.id === decision.id);
       if (!p) throw new Error("Unknown history");
+      if (
+        decision.action !== "update" &&
+        p.conclusion.metadata &&
+        (p.conclusion.metadata.dimensionId !== decision.dimensionId || p.conclusion.metadata.nature !== decision.nature)
+      )
+        throw new Error("Existing historical dimension/nature cannot change without an explicit verified update");
+      if (p.conclusion.support === "preliminary_association" && !["association", "observation"].includes(decision.nature))
+        throw new Error("A preliminary historical association cannot be relabelled as an objective fact or user preference");
       if (["retain", "pending_review"].includes(decision.action)) {
         if (decision.replacementId) throw new Error("Retained history cannot also have a replacement");
         entries.set(p.id, carryPrior(p, decision.dimensionId, decision.nature, decision.action));
@@ -85,7 +94,7 @@ export class ProfileAssembly {
         const validation = this.validation.receipts.get(decision.validationReceiptId ?? "");
         if (validation?.purpose !== "validation" || !validation.code) throw new Error("Updating/withdrawing prior knowledge needs a master validation receipt");
         if (decision.action === "update") {
-          const replacement = entries.get(decision.replacementId ?? "");
+          const replacement = includedChildren.get(decision.replacementId ?? "");
           if (
             !replacement ||
             replacement.metadata?.producer === "code" ||
@@ -94,18 +103,23 @@ export class ProfileAssembly {
           )
             throw new Error("Update needs an included child candidate with the chosen dimension and nature");
           entries.delete(replacement.id);
+          includedChildren.delete(replacement.id);
           aliases.set(replacement.id, p.id);
           entries.set(p.id, { ...replacement, id: p.id, metadata: { ...replacement.metadata, reviewStatus: "updated" } });
         } else if (decision.replacementId) throw new Error("Withdrawal is not a replacement");
       }
     }
     for (const decision of review.prior.filter((d) => d.action === "merge")) {
+      const verification = this.validation.receipts.get(decision.validationReceiptId ?? "");
+      if (verification?.purpose !== "validation" || !verification.code) throw new Error("Merging historical knowledge needs a master validation receipt");
       const targetId = aliases.get(decision.replacementId ?? "") ?? decision.replacementId;
       const target = targetId ? entries.get(targetId) : null;
       if (!target || target.id === decision.id || target.metadata?.dimensionId !== decision.dimensionId || target.metadata.nature !== decision.nature)
         throw new Error("Merge must point to a retained entry of the same dimension and nature");
       aliases.set(decision.id, target.id);
     }
+    if (review.prior.some((d) => ["retain", "pending_review"].includes(d.action) && !entries.has(d.id)))
+      throw new Error("Every retained/pending historical entry must survive final assembly");
     const highlights = [...new Set(review.highlights.map((id) => aliases.get(id) ?? id))];
     if (highlights.some((id) => !entries.has(id))) throw new Error("Highlights can only reference retained entries");
     const decisions = [

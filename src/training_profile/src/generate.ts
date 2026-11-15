@@ -141,9 +141,12 @@ export async function generateProfile(
       durationMs: Math.round(performance.now() - started),
       model: config.model,
       parameters: { maxOutputTokens: config.max_tokens, reasoningEffort: config.reasoning_effort, timeoutSeconds: config.timeout_s },
-      modelCalls: runtime.calls.length,
-      calculationCalls: sessions.reduce((n, s) => n + [...s.receipts.values()].filter((r) => r.code && !r.code.startsWith("fixed:")).length, 0),
-      fixedEvidenceUses: sessions.reduce((n, s) => n + [...s.receipts.values()].filter((r) => r.code?.startsWith("fixed:")).length, 0),
+      modelCalls: runtime.attemptedCalls,
+      successfulModelCalls: runtime.calls.length,
+      failedModelCalls: runtime.failures,
+      calculationCalls: sessions.reduce((n, s) => n + s.executedCalculations, 0),
+      fixedEvidenceUses: sessions.reduce((n, s) => n + s.fixedEvidenceUses, 0),
+      reusedCalculations: sessions.reduce((n, s) => n + s.reusedCalculations, 0),
       usage: runtime.calls.reduce(
         (n, c) => ({
           input_tokens: n.input_tokens + c.inputTokens,

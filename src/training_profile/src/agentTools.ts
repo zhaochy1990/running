@@ -5,15 +5,25 @@ import { CalculationSchema, HypothesisSchema, type ProfileAgentSession, Submissi
 import type { Profile } from "./types.js";
 
 /** The agent wrapper also sees failures that happen before a tool callback. */
-export async function journalToolCall<T>(session: ProfileAgentSession, call: Pick<ToolCall, "name" | "args">, execute: () => Promise<T> | T): Promise<T> {
+export async function journalToolCall<T>(
+  session: ProfileAgentSession,
+  call: Pick<ToolCall, "name" | "args" | "id">,
+  execute: () => Promise<T> | T,
+): Promise<T | ToolMessage> {
   try {
     const result = await execute();
     if (result instanceof ToolMessage && result.status === "error")
       await session.toolError(call.name, call.args, typeof result.content === "string" ? result.content : JSON.stringify(result.content));
     return result;
   } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw error;
     await session.toolError(call.name, call.args, error instanceof Error ? error.message : String(error));
-    throw error;
+    return new ToolMessage({
+      tool_call_id: call.id ?? "unknown",
+      name: call.name,
+      status: "error",
+      content: `Error: ${error instanceof Error ? error.message : String(error)}. Revise the arguments or method and try again; no result was accepted.`,
+    });
   }
 }
 
@@ -62,6 +72,16 @@ export function profileAgentTools(session: ProfileAgentSession, previous: Profil
         "运行你编写的同步JavaScript，筛选、连接、分组、比较或检验反例。唯一输入sources是只读原始证据数组，每行{id,revision,kind,content,...}，可用所有字段和laps。标准JS/Math/Date/JSON可用，无Node、网络、文件、第三方库。代码必须return一个简洁JSON对象（写方法、窗口、实际样本数/ids、数值和反例）；数组不可原地sort，先slice。缺失不当0。所有算术由此工具执行，不在脑中估算。宿主保守绑定整份有效快照依赖，dependencySourceCount不是支持样本数；receiptId供假设引用。先record_hypothesis，再以support/counterexample测试；探索可hypothesisId:null。",
       schema: CalculationSchema,
     }),
+    tool(
+      ({ receiptId, hypothesisId, purpose }) =>
+        attempt("reuse_calculation", { receiptId, hypothesisId, purpose }, () => session.reuseCalculation(receiptId, hypothesisId, purpose)),
+      {
+        name: "reuse_calculation",
+        description:
+          "将本Agent已有的成功探索/固定计算绑定到已记录假设作为support或counterexample，保留原代码和来源，不重新执行。用于先探索再提出假设；反例仍须与support代码不同。不能引用读取记录或失败计算。",
+        schema: z.object({ receiptId: z.string(), hypothesisId: z.string(), purpose: z.enum(["support", "counterexample"]) }),
+      },
+    ),
     tool((input) => attempt("record_hypothesis", input, () => session.update(input)), {
       name: "record_hypothesis",
       description:

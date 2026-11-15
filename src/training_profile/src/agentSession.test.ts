@@ -106,7 +106,9 @@ test("tool wrapper journals schema failures and preserves error messages for sel
   const detail = profileAgentTools(session, null).find((t) => t.name === "read_activity_detail");
   assert.ok(detail);
   const call = { name: "read_activity_detail", args: {}, id: "invalid-schema", type: "tool_call" as const };
-  await assert.rejects(journalToolCall(session, call, () => detail.invoke(call)));
+  const errorMessage = await journalToolCall(session, call, () => detail.invoke(call));
+  assert.ok(errorMessage instanceof ToolMessage);
+  assert.equal(errorMessage.status, "error");
   assert.equal(events.length, 1);
   assert.match(JSON.stringify(events), /"type":"tool_error"/);
   assert.match(JSON.stringify(events), /sourceId/);
@@ -167,4 +169,41 @@ test("retained findings require a distinct successful counterexample check and p
   );
   assert.deepEqual(session.submitted?.conclusions[0]?.counterexampleReceiptIds, [counter.receiptId]);
   assert(!session.submitted?.conclusions[0]?.evidence.some((e) => e.id === "withdrawn"));
+});
+
+test("successful exploration can be reused after a hypothesis is proposed and survives a bounded revision", async () => {
+  const first = new ProfileAgentSession(fixture(), async () => {});
+  const explored = await first.calculate({
+    hypothesisId: null,
+    purpose: "exploration",
+    question: "先探索记录的实际距离",
+    code: "return sources.map(e=>e.content.distanceM);",
+  });
+  const constant = await first.calculate({ hypothesisId: null, purpose: "exploration", question: "没有读取输入的常量检查", code: "return 42;" });
+  const revised = new ProfileAgentSession(fixture(), async () => {}, "revision");
+  revised.restoreWorkingState(first);
+  await revised.update(hypothesis);
+  await assert.rejects(revised.reuseCalculation(constant.receiptId, "h1", "support"), /read input/);
+  const support = await revised.reuseCalculation(explored.receiptId, "h1", "support");
+  const counter = await revised.calculate({
+    hypothesisId: "h1",
+    purpose: "counterexample",
+    question: "查找与统一距离相反的记录",
+    code: "return sources.filter(e=>e.content.distanceM!==10000).map(e=>e.id);",
+  });
+  await revised.update({ ...hypothesis, status: "qualified", supportReceipts: [support.receiptId], challengeReceipts: [counter.receiptId] });
+  assert.equal(revised.reusedCalculations, 1);
+  assert.equal(revised.executedCalculations, 1);
+  assert.equal(first.executedCalculations, 2);
+  assert.equal(revised.receipts.get(support.receiptId)?.reusedFrom, explored.receiptId);
+});
+
+test("activity date windows require the provider's Shanghai day", async () => {
+  const data = fixture();
+  const source = data.evidence[0];
+  assert.ok(source);
+  delete source.content.shanghaiDay;
+  source.content.date = "2026-11-02T18:00:00Z";
+  const session = new ProfileAgentSession(data, async () => {});
+  await assert.rejects(session.read("activity", ["date"], "2026-11-03", "2026-11-03", 0, 80), /require provider shanghaiDay/);
 });

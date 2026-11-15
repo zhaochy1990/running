@@ -154,7 +154,7 @@ test("old observations cannot be silently relabelled as declared preferences or 
   const first = f.review.prior[0];
   assert.ok(first);
   assert.throws(() => f.assembly.submit({ ...f.review, prior: [{ ...first, action: "withdraw" }] }), /validation receipt/);
-  assert.throws(() => f.assembly.submit({ ...f.review, prior: [{ ...first, nature: "preference" }] }), /without a quote/);
+  assert.throws(() => f.assembly.submit({ ...f.review, prior: [{ ...first, nature: "preference" }] }), /preliminary historical association/);
 });
 
 test("withdrawn source blocks historical text and cannot be retained", async () => {
@@ -217,4 +217,84 @@ test("literal preference extraction needs no statistical hypothesis and cannot q
   assert.equal(c?.metadata?.computation, "none");
   assert.equal(c?.support, undefined);
   assert.equal(c?.metadata?.nature, "preference");
+});
+
+test("an update cannot consume another history entry explicitly retained by the master", async () => {
+  const f = await assemblyFixture();
+  const other = loadHistory([{ ...f.original, method: "another-source" }], f.s)[0];
+  assert.ok(other);
+  f.history.push(other);
+  f.assembly.inspect(f.id);
+  f.assembly.inspect(other.id);
+  const first = f.review.prior[0];
+  assert.ok(first);
+  const receipt = [...f.validation.receipts.keys()][0];
+  assert.ok(receipt);
+  assert.throws(
+    () =>
+      f.assembly.submit({
+        ...f.review,
+        prior: [
+          { ...first, id: other.id, action: "retain" },
+          { ...first, action: "update", replacementId: other.id, validationReceiptId: receipt },
+        ],
+      }),
+    /included child candidate/,
+  );
+  assert.equal(f.assembly.profile, null);
+});
+
+test("same generator across independent runs is distinct, while carry-forward history deduplicates", async () => {
+  const f = await assemblyFixture();
+  const next = structuredClone(f.original);
+  next.evaluatedAt = "2026-11-16T10:00:00Z";
+  const entry = next.conclusions[0];
+  assert.ok(entry);
+  entry.text = "下一轮不同认识";
+  assert.equal(loadHistory([f.original, next], f.s).length, 2);
+  f.assembly.inspect(f.id);
+  f.assembly.submit(f.review);
+  assert.ok(f.assembly.profile);
+  const forward = { ...f.assembly.profile, evaluatedAt: "2026-11-17T10:00:00Z" };
+  const combined = loadHistory([f.original, forward], f.s).filter((p) => p.conclusion.title === "热天心率反应");
+  assert.equal(combined.length, 1);
+  assert.equal(combined[0]?.id, f.id);
+  assert.ok(combined[0]?.conclusion.metadata);
+});
+
+test("merging cannot relabel historical dimensions and cannot promote preliminary associations to facts", async () => {
+  const f = await assemblyFixture();
+  f.assembly.inspect(f.id);
+  f.assembly.submit(f.review);
+  const kept = f.assembly.profile?.conclusions.find((c) => c.id === f.id);
+  assert.ok(kept);
+  const prior = f.history[0];
+  assert.ok(prior);
+  prior.conclusion = kept;
+  const a = new ProfileAssembly(f.s, f.code, f.history, f.workers, f.validation);
+  a.inspect(f.id);
+  const decision = f.review.prior[0];
+  assert.ok(decision);
+  const target = f.code.find((c) => c.metadata?.dimensionId === "training" && c.metadata.nature === "observation");
+  assert.ok(target);
+  const receipt = [...f.validation.receipts.keys()][0];
+  assert.ok(receipt);
+  assert.throws(
+    () =>
+      a.submit({
+        ...f.review,
+        prior: [{ ...decision, action: "merge", dimensionId: "training", nature: "observation", replacementId: target.id, validationReceiptId: receipt }],
+      }),
+    /dimension\/nature/,
+  );
+});
+
+test("fixed calculations do not guess the semantic dimension of user prose", () => {
+  const s = snapshot();
+  const activity = s.evidence[0];
+  assert.ok(activity);
+  activity.content.feelNote = "右膝疼痛，医生让我停跑两周。我喜欢晨跑。";
+  const entries = buildDeterministic(s).entries;
+  assert(!entries.some((c) => c.metadata?.quotes.length));
+  assert(!entries.some((c) => c.text.includes("右膝")));
 });
