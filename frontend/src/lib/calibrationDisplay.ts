@@ -23,12 +23,18 @@ function reasonText(code: string): string {
   if (code === "HR_abrupt_spike_or_recovery") return "心率存在突变或恢复，协议未采用";
   if (code === "HR_sustained_recovery_drop_over_10_bpm") return "心率存在持续恢复下降，协议未采用";
   if (code === "HR_range_suggests_recovery_or_artifact") return "心率范围提示恢复或测量异常，协议未采用";
+  if (code === "independent_HR_protocol_support") return "存在独立心率协议支持";
   if (code === "no_independent_HR_protocol_support") return "缺少独立心率协议支持";
   if (code === "research_parameters_not_independently_calibrated") return "研究参数尚未独立校准";
   if (code === "environment_not_corrected") return "未校正环境差异";
   if (code.includes("not_95") || code.includes("sensitivity")) return "范围未经概率校准";
   if (code === "field_proxy_is_not_physiological_LTHR") return "现场代理不等于实验室生理阈值";
   return "存在其他证据限制，谨慎使用";
+}
+function historicalRejectionText(code: string): string {
+  if (code.toLowerCase().includes("stale")) return "协议证据已过期";
+  if (["HR_abrupt_spike_or_recovery", "HR_sustained_recovery_drop_over_10_bpm", "HR_range_suggests_recovery_or_artifact"].includes(code)) return reasonText(code).replace("，协议未采用", "");
+  return "其他历史协议未采用原因";
 }
 export interface CalibrationDisplay { value: string; range: string | null; status: string; details: string[]; definition: string }
 export function calibrationDisplay(threshold: StrideThreshold | null | undefined, metric: "speed" | "hr"): CalibrationDisplay {
@@ -75,6 +81,10 @@ export function calibrationDisplay(threshold: StrideThreshold | null | undefined
       details.push("来源活动仅保留摘要，当前不可直接查看");
     }
     details.push(...new Set([...(m.reasons ?? []), ...(m.limitations ?? [])].map(reasonText)));
+    if (m.rejected_reasons?.length) {
+      details.push("未采用历史协议（不参与当前估计）");
+      details.push(...new Set(m.rejected_reasons.map(code => `未采用协议：${historicalRejectionText(code)}`)));
+    }
   } else if (threshold) {
     details.push(knownSource ? "测量质量与努力程度未提供，无法判断独立支持" : "旧版训练估计，不能视为独立检测值；测量质量与努力程度未提供");
   }

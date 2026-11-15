@@ -155,6 +155,14 @@ func TestCalibrationClientServer(t *testing.T) {
 			sourceJSON, _ := json.Marshal(th.Source)
 			if strings.HasPrefix(c.Name, "producer-") {
 				snapshot, producedSource := clientProducerSource(t, c.Name == "producer-lab-half")
+				if c.Name == "producer-current-hr-with-stale" || c.Name == "producer-current-hr-with-quality" {
+					kind := "stale"
+					if c.Name == "producer-current-hr-with-quality" {
+						kind = "quality"
+					}
+					result := clientCurrentHRWithRejectedResult(t, kind)
+					snapshot, producedSource = result.Snapshot, calibration.SummarizeSource(result)
+				}
 				if c.Name == "producer-stale-hr-mixed" {
 					result := clientMixedStaleProducerResult(t)
 					snapshot, producedSource = result.Snapshot, calibration.SummarizeSource(result)

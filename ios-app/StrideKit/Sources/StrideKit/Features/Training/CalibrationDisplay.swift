@@ -66,6 +66,10 @@ public func calibrationDisplay(_ response: StrideZonesResponse?, metric: Calibra
         for reason in (s.reasons ?? []) + (s.limitations ?? []) {
             details.append(calibrationReason(reason))
         }
+        if let rejected = s.rejectedReasons, !rejected.isEmpty {
+            details.append("未采用历史协议（不参与当前估计）")
+            for reason in rejected { details.append("未采用协议：\(historicalRejectionReason(reason))") }
+        }
         for evidence in (s.evidence ?? []).prefix(3) {
             var line = "关键来源：\(evidence.activityDay)"
             if let start = evidence.startS, let end = evidence.endS {
@@ -167,5 +171,13 @@ private func calibrationReason(_ value: String) -> String {
     case "power_law_valid_only_180_to_7200s": "跨时长模型仅适用于180–7200秒。"
     case "long_duration_uses_monotone_envelope_not_precise_extrapolation": "长时段仅使用单调边界，不做精确外推。"
     default: "存在其他证据限制，暂按较保守支持解读。"
+    }
+}
+
+private func historicalRejectionReason(_ value: String) -> String {
+    if value.lowercased().contains("stale") { return "协议证据已过期" }
+    switch value {
+    case "HR_abrupt_spike_or_recovery", "HR_sustained_recovery_drop_over_10_bpm", "HR_range_suggests_recovery_or_artifact": return calibrationReason(value).replacingOccurrences(of: "，协议未采用", with: "")
+    default: return "其他历史协议未采用原因"
     }
 }

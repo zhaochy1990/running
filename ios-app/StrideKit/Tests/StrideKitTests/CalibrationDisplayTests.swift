@@ -19,6 +19,8 @@ import Testing
                 let source_unavailable: Bool?
                 let rejected_evidence_day: String?
                 let stale_evidence_day: String?
+                let current_hr_supported: Bool?
+                let hr_evidence_day: String?
             }
             let name: String
             let response: StrideZonesResponse
@@ -53,9 +55,11 @@ import Testing
         if let day = expected.rejected_evidence_day {
             if let stale = expected.stale_evidence_day { #expect(hr.details.contains("最近陈旧协议日 \(stale)")) }
             #expect(hr.details.contains("最近未采用证据日 \(day)") == (day != expected.stale_evidence_day))
-            if let stale = expected.stale_evidence_day, day != stale { #expect(hr.details.contains("心率存在突变或恢复，协议未采用")) }
-            #expect(hr.details.contains { $0.contains("陈旧") })
-            #expect(hr.support == "能力支持：不足")
+            #expect(hr.details.contains("未采用历史协议（不参与当前估计）"))
+            if expected.stale_evidence_day != nil { #expect(hr.details.contains("未采用协议：协议证据已过期")) }
+            #expect(!hr.details.contains("心率支持已陈旧，等待新的有效证据。"))
+            #expect(hr.support == (expected.current_hr_supported == true ? "能力支持：低" : "能力支持：不足"))
+            if expected.current_hr_supported == true { #expect(hr.value == "170"); #expect(hr.evidenceDay == expected.hr_evidence_day) }
         }
         if let range = expected.hr_range { #expect(hr.range == range) }
         if let method = expected.hr_method_label { #expect(hr.details.contains("方法：\(method)")) }

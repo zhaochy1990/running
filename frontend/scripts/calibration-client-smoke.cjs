@@ -52,8 +52,11 @@ async function main() {
     if(c.expected.stale_evidence_day) await hr.getByText("最近陈旧协议日 "+c.expected.stale_evidence_day,{exact:true}).waitFor({state:"visible"});
     if(c.expected.rejected_evidence_day !== c.expected.stale_evidence_day) await hr.getByText("最近未采用证据日 "+c.expected.rejected_evidence_day,{exact:true}).waitFor({state:"visible"});
     else if(await hr.getByText("最近未采用证据日 "+c.expected.rejected_evidence_day,{exact:true}).count()) throw new Error(c.name+' duplicated stale/rejected date');
-    if(c.name==='producer-stale-hr-mixed') await hr.getByText("心率存在突变或恢复，协议未采用",{exact:true}).waitFor({state:"visible"});
-    await hr.getByText("证据陈旧，需更新有效证据",{exact:true}).waitFor({state:"visible"});
+    await hr.getByText("未采用历史协议（不参与当前估计）",{exact:true}).waitFor({state:"visible"});
+    if(c.expected.stale_evidence_day) await hr.getByText("未采用协议：协议证据已过期",{exact:true}).waitFor({state:"visible"});
+    if(c.name==='producer-stale-hr-mixed' || c.name.endsWith('-quality')) await hr.getByText("未采用协议：心率存在突变或恢复",{exact:true}).waitFor({state:"visible"});
+    if(await hr.getByText("证据陈旧，需更新有效证据",{exact:true}).count()) throw new Error(c.name+' historical rejection mislabeled current support');
+    if(c.expected.current_hr_supported) {await hr.getByText('估计支持 低',{exact:true}).waitFor();await hr.getByText('证据日 '+c.expected.hr_evidence_day,{exact:true}).waitFor();}
     if ((await hr.innerText()).includes('估计支持 高')) throw new Error(c.name+' stale support revived');
    }
    if(c.expected.hr_method_label) {

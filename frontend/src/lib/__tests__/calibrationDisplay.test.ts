@@ -29,9 +29,13 @@ describe("calibration explanation projection", () => {
       if (stale) expect(hr.details).toContain(`最近陈旧协议日 ${stale}`);
       if (c.expected.rejected_evidence_day !== stale) expect(hr.details).toContain(`最近未采用证据日 ${c.expected.rejected_evidence_day}`);
       else expect(hr.details).not.toContain(`最近未采用证据日 ${stale}`);
-      if (c.name === "producer-stale-hr-mixed") expect(hr.details).toContain("心率存在突变或恢复，协议未采用");
-      expect(hr.details).toContain("证据陈旧，需更新有效证据");
-      expect(hr.status).toBe("估计支持 不足");
+      expect(hr.details).toContain("未采用历史协议（不参与当前估计）");
+      if (stale) expect(hr.details).toContain("未采用协议：协议证据已过期");
+      if (c.name === "producer-stale-hr-mixed" || c.name.endsWith("-quality")) expect(hr.details).toContain("未采用协议：心率存在突变或恢复");
+      const supported = "current_hr_supported" in c.expected && c.expected.current_hr_supported;
+      expect(hr.status).toBe(supported ? "估计支持 低" : "估计支持 不足");
+      expect(hr.details).not.toContain("证据陈旧，需更新有效证据");
+      if (supported) { expect(hr.value).toBe("170"); expect(hr.details).toContain("证据日 2026-11-14"); }
     }
     if (c.name === "low-stale") expect(hr.details).toContain("证据陈旧，需更新有效证据");
     if (c.name === "constraints-only") expect(speed.details).toContain("无法可靠估计中心值");

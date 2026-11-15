@@ -65,3 +65,48 @@ func TestSourceSummaryKeepsStaleDateSeparateFromRecentQualityRejection(t *testin
 		t.Fatal("specific rejection reasons lost")
 	}
 }
+
+func TestSelectedHRReasonsExcludeHistoricalRejectedProtocols(t *testing.T) {
+	for _, kind := range []string{"stale", "quality"} {
+		t.Run(kind, func(t *testing.T) {
+			recent, rm, day := hrProtocolFixture()
+			recent.LabelID = "new-valid"
+			recent.ActivityDate = day.AddDate(0, 0, -1)
+			rm.ActivityID = recent.LabelID
+			rejected, bm, _ := hrProtocolFixture()
+			rejected.LabelID = "old-rejected"
+			bm.ActivityID = rejected.LabelID
+			code := "stale_HR_support"
+			if kind == "stale" {
+				rejected.ActivityDate = day.AddDate(0, 0, -61)
+			} else {
+				code = "HR_abrupt_spike_or_recovery"
+				for i := range rejected.Samples {
+					if *rejected.Samples[i].ElapsedS == 900 {
+						rejected.Samples[i].HeartRateBpm = floatPointer(220)
+					}
+				}
+			}
+			r, err := calibration.EstimateOfflineWithEvidence(calibration.StrategyCandidate, []calibration.Activity{recent, rejected}, day, nil, []calibration.CandidateMetadata{rm, bm})
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := calibration.SummarizeSource(r)
+			raw, _ := json.Marshal(s)
+			encoded := string(raw)
+			s = calibration.ParseSource(&encoded)
+			if r.Snapshot.ThresholdHR == nil || *r.Snapshot.ThresholdHR != 170 || s.HR.Support != "low" || s.HR.EvidenceDate != "2026-11-14" || s.HR.EvidenceCount != 1 {
+				t.Fatalf("current supported fixture changed %+v", s.HR)
+			}
+			if strings.Contains(strings.Join(s.HR.Reasons, ","), code) {
+				t.Fatalf("historical %s misclassified as current estimate reason: %v", code, s.HR.Reasons)
+			}
+			raw, _ = json.Marshal(s.HR)
+			var fields map[string]json.RawMessage
+			_ = json.Unmarshal(raw, &fields)
+			if !strings.Contains(string(fields["rejected_reasons"]), code) {
+				t.Fatalf("historical rejection lost: %s", raw)
+			}
+		})
+	}
+}
