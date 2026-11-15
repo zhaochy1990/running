@@ -519,3 +519,25 @@ func TestCalibrationCandidateIntentCannotOverwriteActiveOrFallbackKey(t *testing
 		})
 	}
 }
+
+func TestComputeUnavailableHistoryPreservesSyncBatchEcho(t *testing.T) {
+	f := &fakeStore{}
+	out, err := runJob(t, NewCompute(f), `{"mode":"incremental","label_ids":["new-history"],"health_dates":["20261115"]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Status string   `json:"status"`
+		Labels []string `json:"label_ids"`
+		Health []string `json:"health_dates"`
+	}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "unavailable_historical_calibration" || !slices.Equal(result.Labels, []string{"new-history"}) || !slices.Equal(result.Health, []string{"20261115"}) {
+		t.Fatalf("unavailable result lost sync batch %s", out)
+	}
+	if f.activityUpserts != 0 || f.dailyUpserts != 0 {
+		t.Fatal("unavailable history wrote active derived rows")
+	}
+}

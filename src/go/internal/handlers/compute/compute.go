@@ -108,7 +108,7 @@ func NewCompute(store ComputeStore) job.Handler {
 			return "", job.NewPermanentError("candidate_derived_write_forbidden", fmt.Errorf("candidate active-table persistence is not supported; use read-only preview"))
 		}
 		if snapRow == nil {
-			return unavailableCalibrationResult(user, in.Mode), nil
+			return unavailableCalibrationResult(user, in), nil
 		}
 		cal := toTrainingLoadCalibration(snapRow)
 		asOf := timefmt.ShanghaiToday()
@@ -116,13 +116,13 @@ func NewCompute(store ComputeStore) job.Handler {
 		if in.Mode == string(provider.SyncIncremental) {
 			out, err := runIncremental(ctx, store, user, in.LabelIDs, in.HealthDates, cal, asOf, hb)
 			if errors.Is(err, errHistoricalCalibrationMissing) {
-				return unavailableCalibrationResult(user, in.Mode), nil
+				return unavailableCalibrationResult(user, in), nil
 			}
 			return out, err
 		}
 		out, err := runFull(ctx, store, user, in.LabelIDs, cal, asOf, hb)
 		if errors.Is(err, errHistoricalCalibrationMissing) {
-			return unavailableCalibrationResult(user, in.Mode), nil
+			return unavailableCalibrationResult(user, in), nil
 		}
 		return out, err
 	}
@@ -626,10 +626,18 @@ func toLoadHRV(rows []storage.DailyHRV) []trainingload.HrvRow {
 
 var errHistoricalCalibrationMissing = errors.New("historical calibration unavailable")
 
-func unavailableCalibrationResult(user, mode string) string {
-	raw, _ := json.Marshal(map[string]any{"user": user, "mode": mode, "status": "unavailable_historical_calibration", "reason": "explicit_historical_calibration_required", "derived_rows_written": 0})
+func unavailableCalibrationResult(user string, in computeInput) string {
+	result := map[string]any{"user": user, "mode": in.Mode, "status": "unavailable_historical_calibration", "reason": "explicit_historical_calibration_required", "derived_rows_written": 0}
+	if len(in.LabelIDs) > 0 {
+		result["label_ids"] = in.LabelIDs
+	}
+	if len(in.HealthDates) > 0 {
+		result["health_dates"] = in.HealthDates
+	}
+	raw, _ := json.Marshal(result)
 	return string(raw)
 }
+
 func persistedZoneSet(b storage.CalibrationBundle) calibration.ZoneSet {
 	var out calibration.ZoneSet
 	for _, z := range b.PaceZones {
