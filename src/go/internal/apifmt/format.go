@@ -15,6 +15,7 @@ package apifmt
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 )
@@ -71,10 +72,14 @@ func PaceFmt(secPerKm *float64) string {
 // zone serializer's _pace_per_km_sec: int(round(1000/speed)). Note the rounding
 // (round, not truncate) differs from PaceFmt/pace_str, which truncates.
 func PacePerKmSec(speedMps *float64) *int {
-	if speedMps == nil || *speedMps <= 0 {
+	if speedMps == nil || *speedMps <= 0 || math.IsNaN(*speedMps) || math.IsInf(*speedMps, 0) {
 		return nil
 	}
-	n := int(roundTo(1000.0/(*speedMps), 0))
+	seconds := roundTo(1000.0/(*speedMps), 0)
+	if math.IsNaN(seconds) || math.IsInf(seconds, 0) || seconds < 1 || seconds >= float64(math.MaxInt) {
+		return nil
+	}
+	n := int(seconds)
 	return &n
 }
 
