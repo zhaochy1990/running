@@ -20,6 +20,7 @@ const testUser = "f10bc353-01ab-4db1-af9f-d9305ea9a532"
 // fakeStore satisfies both CalibrationStore and ComputeStore with in-memory data
 // and records which write paths ran.
 type fakeStore struct {
+	policy    *storage.RunningCalibrationPolicy
 	loadRows  []storage.ActivityTrainingLoad
 	snapByDay map[string]*storage.RunningCalibrationSnapshot
 	acts      []storage.Activity
@@ -38,6 +39,7 @@ type fakeStore struct {
 	pbReplaced           bool
 	pbUpserted           bool
 	priorReadForDate     string
+	priorReads           int
 	activityZonesWritten []storage.ActivityZone
 }
 
@@ -77,6 +79,7 @@ func (f *fakeStore) AllRunningActivities(_ context.Context, _ string) ([]storage
 }
 func (f *fakeStore) DailyTrainingLoadBefore(_ context.Context, _, date string) (*storage.DailyTrainingLoad, error) {
 	f.priorReadForDate = date
+	f.priorReads++
 	return f.prior, nil
 }
 func (f *fakeStore) AllDailyHealth(_ context.Context, _ string) ([]storage.DailyHealth, error) {
@@ -426,6 +429,9 @@ func TestComputeRefusesFutureBaselineWithoutOverwritingHistory(t *testing.T) {
 }
 
 func (f *fakeStore) CalibrationPolicy(context.Context) (storage.RunningCalibrationPolicy, error) {
+	if f.policy != nil {
+		return *f.policy, nil
+	}
 	return storage.DefaultCalibrationPolicy(), nil
 }
 func (f *fakeStore) PublishRunningCalibration(ctx context.Context, s *storage.RunningCalibrationSnapshot, p []storage.RunningCalibrationPaceZone, h []storage.RunningCalibrationHRZone) (uint64, error) {
@@ -491,5 +497,25 @@ func TestCandidatePolicyCannotWriteUnnamespacedActiveLoad(t *testing.T) {
 	}
 	if f.activityUpserts != 0 || f.dailyUpserts != 0 {
 		t.Fatal("candidate polluted active tables")
+	}
+}
+
+func TestCalibrationCandidateIntentCannotOverwriteActiveOrFallbackKey(t *testing.T) {
+	three, four := 3, 4
+	for _, tc := range []struct {
+		name   string
+		policy storage.RunningCalibrationPolicy
+		allow  bool
+	}{{"default-gate", storage.RunningCalibrationPolicy{ActiveVersion: 3, CandidateVersion: &three, FallbackVersion: 3}, false}, {"isolated-active-alias", storage.RunningCalibrationPolicy{ActiveVersion: 3, CandidateVersion: &three, FallbackVersion: 3}, true}, {"isolated-fallback-alias", storage.RunningCalibrationPolicy{ActiveVersion: 4, CandidateVersion: &three, FallbackVersion: 3}, true}, {"isolated-candidate-active-alias", storage.RunningCalibrationPolicy{ActiveVersion: 4, CandidateVersion: &four, FallbackVersion: 3}, true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &fakeStore{policy: &tc.policy}
+			_, err := runJob(t, NewCalibrationWithOptions(f, CalibrationOptions{AllowCandidatePersistence: tc.allow}), `{"selection_mode":"candidate"}`)
+			if err == nil {
+				t.Fatal("candidate intent reused active or fallback snapshot key")
+			}
+			if f.snapUpserted || f.zonesReplaced {
+				t.Fatal("candidate persistence overwrote active data")
+			}
+		})
 	}
 }

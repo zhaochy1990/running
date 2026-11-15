@@ -89,10 +89,16 @@ func NewCalibrationWithOptions(store CalibrationStore, options CalibrationOption
 		}
 		candidateOnly := in.SelectionMode == "candidate"
 		if candidateOnly {
+			if !options.AllowCandidatePersistence {
+				return "", job.NewPermanentError("candidate_persistence_disabled", fmt.Errorf("candidate mode requires isolated explicit opt-in"))
+			}
 			if policy.CandidateVersion == nil {
 				return "", job.NewPermanentError("candidate_not_configured", fmt.Errorf("candidate not configured"))
 			}
 			version = *policy.CandidateVersion
+			if version == policy.ActiveVersion || version == policy.FallbackVersion {
+				return "", job.NewPermanentError("candidate_aliases_active_snapshot", fmt.Errorf("candidate persistence requires a distinct version from active and fallback"))
+			}
 		}
 		if version != calibration.ModelVersion && !options.AllowCandidatePersistence {
 			return "", job.NewPermanentError("candidate_persistence_disabled", fmt.Errorf("candidate persistence requires isolated explicit opt-in"))
