@@ -7,6 +7,7 @@ import (
 
 	"github.com/zhaochy1990/stride/internal/compute/calibration"
 	"github.com/zhaochy1990/stride/internal/compute/watchmap"
+	"github.com/zhaochy1990/stride/internal/racedetection"
 	"github.com/zhaochy1990/stride/internal/storage"
 	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 )
@@ -61,6 +62,12 @@ func LoadCandidateMetadata(ctx context.Context, r CandidateMetadataReader, user,
 			continue
 		}
 		m := calibration.CandidateMetadata{ActivityID: a.LabelID, RootActivityID: a.LabelID, SourceVersion: "storage-candidate-v1", EvidenceRef: "activity_metadata", TemperatureC: a.Temperature, HumidityPercent: a.Humidity, AscentM: a.AscentM, FeelPresent: a.Feel != nil || a.FeelType != nil}
+		// Reuse canonical current/legacy COROS pause parsing. The adapter
+		// clock may compress pauses, so these absolute intervals cannot safely
+		// be mapped onto every candidate's elapsed clock here.
+		if pauses := racedetection.ParsePauseContext(a.Pauses, timefmt.Shanghai); pauses != nil && pauses.Count > 0 {
+			m.Interrupted = true
+		}
 		if a.Device != nil {
 			m.Device = *a.Device
 		}

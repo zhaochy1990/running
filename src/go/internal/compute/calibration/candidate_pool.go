@@ -154,6 +154,18 @@ func buildCandidateEvidence(history []Activity, metadata []CandidateMetadata, as
 		durations = append(durations, 4500, 5400, 7200)
 		measurements := BuildCandidateSegments([]Activity{a}, durations)
 		out.Diagnostics = append(out.Diagnostics, measurements.Diagnostics...)
+		if protocol := candidateVerifiedWindow(a, m); protocol != nil {
+			duplicate := false
+			for _, c := range measurements.Candidates {
+				if c.StartS != nil && c.EndS != nil && *c.StartS == *protocol.StartS && *c.EndS == *protocol.EndS {
+					duplicate = true
+					break
+				}
+			}
+			if !duplicate {
+				measurements.Candidates = append(measurements.Candidates, *protocol)
+			}
+		}
 		// A complete elapsed observation is kept even when it cannot be a continuous
 		// effort. Never concatenate work repetitions or bypass a continuity rejection.
 		fullDuration := candidateFullDuration(a)
@@ -182,7 +194,9 @@ func buildCandidateEvidence(history []Activity, metadata []CandidateMetadata, as
 		}
 		for index, c := range measurements.Candidates {
 			e := CandidateEvidence{ActivityID: a.LabelID, RootActivityID: root, ActivityDate: a.ActivityDate, DurationS: c.DurationS, AvgSpeedMps: c.AvgSpeedMps, StartS: c.StartS, EndS: c.EndS, MeasurementQuality: c.Confidence, Quality: c.Quality, Source: c.Source, SourceVersion: m.SourceVersion, EvidenceRef: m.EvidenceRef, Device: m.Device, Terrain: m.Terrain, TemperatureC: m.TemperatureC, HumidityPercent: m.HumidityPercent, AscentM: m.AscentM, DeclaredActivityDurationS: a.DurationS, FullActivity: index == fullIndex, Continuous: c.Source == "timeseries", DurationClass: "continuous", AgeDays: float64(dayDiff(asOf, a.ActivityDate))}
-			if m.Interrupted && e.FullActivity {
+			// Without a trustworthy mapping of provider pauses to this sample clock,
+			// none of the windows can claim uninterrupted measurement.
+			if m.Interrupted {
 				e.Continuous = false
 			}
 			if e.Device == "" {
@@ -258,6 +272,9 @@ func candidateClockDuration(a Activity) float64 {
 func classifyCandidateEffort(e *CandidateEvidence, m CandidateMetadata) {
 	e.EffortSupport = EffortUnknown
 	e.CounterReasons = []string{}
+	if m.Interrupted {
+		e.CounterReasons = append(e.CounterReasons, "activity_interruption_window_mapping_unverified")
+	}
 	if m.NotePresent {
 		e.CounterReasons = append(e.CounterReasons, "free_text_not_verified_effort")
 	}
@@ -343,4 +360,21 @@ func selectCandidateEvidence(out *CandidateEvidenceReport) {
 	}
 	out.IndependentActivities = len(rootCounts)
 	out.IndependentDays = len(days)
+}
+
+// Retain the exact verified window BEFORE ranking the same-root/duration pool.
+// A faster unknown window must not erase an activity-bound protocol observation.
+func candidateVerifiedWindow(a Activity, m CandidateMetadata) *CandidateSegment {
+	if !m.ProtocolVerified || m.Protocol != "continuous_maximal_test_v1" || m.EvidenceRef == "" || !candidateFinite(m.StartS) || !candidateFinite(m.EndS) || m.DurationS <= 0 || math.Abs(*m.EndS-*m.StartS-m.DurationS) > 1e-6 {
+		return nil
+	}
+	diag := CandidateActivityDiagnostic{ActivityID: a.LabelID}
+	series := prepareCandidateSeries(a.Samples, &diag)
+	reconcileCandidateActivity(a, series, &diag)
+	for _, p := range series {
+		if len(p.points) >= 2 && *m.StartS >= p.points[0].t && *m.EndS <= p.points[len(p.points)-1].t {
+			return measureCandidateWindow(a, p, *m.StartS, *m.EndS, m.DurationS, &diag)
+		}
+	}
+	return nil
 }

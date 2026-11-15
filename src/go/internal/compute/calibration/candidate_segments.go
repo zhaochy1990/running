@@ -92,59 +92,12 @@ func buildCandidateSegmentsFloat(history []Activity, durationsS []float64) Candi
 					if start < p.points[0].t {
 						continue
 					}
-					left := bisectCandidate(p.points, start)
-					da, sa, dc, sc := p.at(start, left)
-					elapsed := float64(duration)
-					quality := SegmentQuality{TimeBasis: "elapsed", DistanceCoverage: (p.distanceTime[right] - dc) / elapsed, SpeedCoverage: (p.speedTime[right] - sc) / elapsed, Reasons: append([]string(nil), diag.Reasons...)}
-					if quality.SpeedCoverage >= 0.8 {
-						// Stability describes observed speeds. Missing intervals are
-						// not observed zeros; valid zero-speed intervals are included.
-						observedSpeedTime := p.speedTime[right] - sc
-						mean := (p.speed[right] - sa) / observedSpeedTime
-						if mean > 0 {
-							variance := math.Max(0, (p.speedSquared[right]-p.squareAt(start, left))/observedSpeedTime-mean*mean)
-							quality.SpeedCV = f64(math.Sqrt(variance) / mean)
-						}
-					}
-					if duration >= 20*60 && quality.SpeedCV != nil && *quality.SpeedCV > 0.12 {
-						diag.reject("unstable_long_window")
+					c := measureCandidateWindow(a, p, start, end, duration, &diag)
+					if c == nil {
 						continue
 					}
-					if quality.DistanceCoverage >= 0.95 {
-						quality.DistanceSpeedMps = f64((p.distance[right] - da) / elapsed)
-					}
-					if quality.SpeedCoverage >= 0.95 {
-						quality.IntegralSpeedMps = f64((p.speed[right] - sa) / elapsed)
-					}
-					speed := quality.DistanceSpeedMps
-					conf := ConfidenceHigh
-					if speed == nil {
-						speed = quality.IntegralSpeedMps
-						conf = ConfidenceMedium
-						quality.Reasons = appendReason(quality.Reasons, "speed_integral_fallback")
-					}
-					if quality.DistanceSpeedMps != nil && quality.IntegralSpeedMps != nil && candidateConflict(*quality.DistanceSpeedMps, *quality.IntegralSpeedMps) {
-						speed = f64(math.Min(*quality.DistanceSpeedMps, *quality.IntegralSpeedMps))
-						conf = ConfidenceLow
-						quality.Reasons = appendReason(quality.Reasons, "distance_speed_conflict")
-					}
-					if candidateHasConflict(quality.Reasons) {
-						conf = ConfidenceLow
-					}
-					if speed == nil {
-						diag.reject("measurement_coverage_below_95_percent")
-						continue
-					}
-					if quality.DistanceCoverage < 1 || quality.SpeedCoverage < 1 {
-						conf = ConfidenceLow
-						quality.Reasons = appendReason(quality.Reasons, "incomplete_measurement_coverage")
-					}
-					if len(quality.Reasons) > 0 && conf == ConfidenceHigh {
-						conf = ConfidenceMedium
-					}
-					c := CandidateSegment{SpeedCandidate: SpeedCandidate{Activity: a, DurationS: elapsed, AvgSpeedMps: *speed, Source: "timeseries", StartS: f64(start), EndS: f64(end), Confidence: conf}, Quality: quality}
 					if best == nil || c.AvgSpeedMps > best.AvgSpeedMps {
-						best = &c
+						best = c
 					}
 				}
 			}
@@ -483,4 +436,62 @@ func (d *CandidateActivityDiagnostic) reject(reason string) {
 		d.RejectedReasons = map[string]int{}
 	}
 	d.RejectedReasons[reason]++
+}
+
+// measureCandidateWindow is shared by the unchanged fastest-window control and
+// exact protocol observations. Both use the same cleaning, interpolation,
+// elapsed denominator, reconciliation, stability and coverage gates.
+func measureCandidateWindow(a Activity, p candidateSeries, start, end, elapsed float64, diag *CandidateActivityDiagnostic) *CandidateSegment {
+	left := bisectCandidate(p.points, start)
+	da, sa, dc, sc := p.at(start, left)
+	right := bisectCandidate(p.points, end)
+	dr, sr, dcr, scr := p.at(end, right)
+	quality := SegmentQuality{TimeBasis: "elapsed", DistanceCoverage: (dcr - dc) / elapsed, SpeedCoverage: (scr - sc) / elapsed, Reasons: append([]string(nil), diag.Reasons...)}
+	if quality.SpeedCoverage >= 0.8 {
+		// Stability describes observed speeds. Missing intervals are
+		// not observed zeros; valid zero-speed intervals are included.
+		observedSpeedTime := scr - sc
+		mean := (sr - sa) / observedSpeedTime
+		if mean > 0 {
+			variance := math.Max(0, (p.squareAt(end, right)-p.squareAt(start, left))/observedSpeedTime-mean*mean)
+			quality.SpeedCV = f64(math.Sqrt(variance) / mean)
+		}
+	}
+	if elapsed >= 20*60 && quality.SpeedCV != nil && *quality.SpeedCV > 0.12 {
+		diag.reject("unstable_long_window")
+		return nil
+	}
+	if quality.DistanceCoverage >= 0.95 {
+		quality.DistanceSpeedMps = f64((dr - da) / elapsed)
+	}
+	if quality.SpeedCoverage >= 0.95 {
+		quality.IntegralSpeedMps = f64((sr - sa) / elapsed)
+	}
+	speed := quality.DistanceSpeedMps
+	conf := ConfidenceHigh
+	if speed == nil {
+		speed = quality.IntegralSpeedMps
+		conf = ConfidenceMedium
+		quality.Reasons = appendReason(quality.Reasons, "speed_integral_fallback")
+	}
+	if quality.DistanceSpeedMps != nil && quality.IntegralSpeedMps != nil && candidateConflict(*quality.DistanceSpeedMps, *quality.IntegralSpeedMps) {
+		speed = f64(math.Min(*quality.DistanceSpeedMps, *quality.IntegralSpeedMps))
+		conf = ConfidenceLow
+		quality.Reasons = appendReason(quality.Reasons, "distance_speed_conflict")
+	}
+	if candidateHasConflict(quality.Reasons) {
+		conf = ConfidenceLow
+	}
+	if speed == nil {
+		diag.reject("measurement_coverage_below_95_percent")
+		return nil
+	}
+	if quality.DistanceCoverage < 1 || quality.SpeedCoverage < 1 {
+		conf = ConfidenceLow
+		quality.Reasons = appendReason(quality.Reasons, "incomplete_measurement_coverage")
+	}
+	if len(quality.Reasons) > 0 && conf == ConfidenceHigh {
+		conf = ConfidenceMedium
+	}
+	return &CandidateSegment{SpeedCandidate: SpeedCandidate{Activity: a, DurationS: elapsed, AvgSpeedMps: *speed, Source: "timeseries", StartS: f64(start), EndS: f64(end), Confidence: conf}, Quality: quality}
 }
