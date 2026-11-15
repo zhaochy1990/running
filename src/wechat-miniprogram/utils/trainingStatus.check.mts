@@ -251,4 +251,8 @@ const halfIntegerHrDisplay = projectCalibration(halfIntegerHr).hr;
 eq(halfIntegerHrDisplay.value, '167', 'positive HR half integer rounds upward');
 eq(halfIntegerHrDisplay.range, '支持范围 164–170 bpm', 'positive HR range halves round upward');
 
+const unsupportedEffortAlias = structuredClone(firstVector.response);
+unsupportedEffortAlias.threshold.source.speed.effort_support = 'likely_maximal';
+eq(projectCalibration(unsupportedEffortAlias).pace.lines.includes('数据质量：高 · 全力证据：未知'), true, 'unsupported effort alias remains unknown');
+
 console.log('trainingStatus.check: OK');
