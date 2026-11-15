@@ -22,7 +22,7 @@ func (calibrationEvidenceInsufficient) ExitCode() int { return 2 }
 
 func newCalibrationCmd() *cobra.Command {
 	command := &cobra.Command{Use: "calibration", Short: "Calibration diagnostics (offline only)"}
-	var manifest, code string
+	var manifest, code, sidecarPath string
 	replay := &cobra.Command{Use: "replay", Short: "Compare frozen versions from a local manifest; no database or network access", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if manifest == "" || code == "" {
 			return fmt.Errorf("required: --manifest PATH --code-version COMMIT")
@@ -51,7 +51,39 @@ func newCalibrationCmd() *cobra.Command {
 		if err := decoder.Decode(&extra); err != io.EOF {
 			return fmt.Errorf("manifest must contain exactly one JSON value")
 		}
-		report, err := calibration.Replay(input, code)
+		var report calibration.ReplayReport
+		if sidecarPath != "" {
+			sidecarFile, openErr := os.Open(sidecarPath)
+			if openErr != nil {
+				return openErr
+			}
+			defer sidecarFile.Close()
+			sidecarDecoder := json.NewDecoder(sidecarFile)
+			sidecarDecoder.DisallowUnknownFields()
+			var sidecar calibration.ReplayEvaluationSidecar
+			if err := sidecarDecoder.Decode(&sidecar); err != nil {
+				return err
+			}
+			var extra any
+			if err := sidecarDecoder.Decode(&extra); err != io.EOF {
+				return fmt.Errorf("evaluation sidecar must contain exactly one JSON value")
+			}
+			if sidecar.Engineering != nil {
+				artifacts := map[string][]byte{}
+				for _, ref := range []string{sidecar.Engineering.DeterministicEvidenceRef, sidecar.Engineering.E2EEvidenceRef, sidecar.Engineering.ReviewEvidenceRef} {
+					raw, readErr := os.ReadFile(ref)
+					if readErr != nil {
+						return readErr
+					}
+					artifacts[ref] = raw
+				}
+				report, err = calibration.ReplayWithEvaluationEvidence(input, code, sidecar, artifacts)
+			} else {
+				report, err = calibration.ReplayWithEvaluationSidecar(input, code, sidecar)
+			}
+		} else {
+			report, err = calibration.Replay(input, code)
+		}
 		if err != nil {
 			return err
 		}
@@ -60,18 +92,25 @@ func newCalibrationCmd() *cobra.Command {
 		if err := encoder.Encode(report); err != nil {
 			return err
 		}
-		if report.Status == "insufficient" {
-			return calibrationEvidenceInsufficient{}
-		}
-		if report.Status != "passed" {
-			return fmt.Errorf("calibration replay failed")
-		}
-		return nil
+		return calibrationReplayExit(report)
 	}}
 	replay.Flags().StringVar(&manifest, "manifest", "", "local immutable JSON or JSON.gz manifest")
+	replay.Flags().StringVar(&sidecarPath, "evaluation-sidecar", "", "optional immutable heldout audit/acceptance sidecar bound to base manifest hash")
 	replay.Flags().StringVar(&code, "code-version", "", "exact source commit (required provenance)")
-	command.AddCommand(replay, newCalibrationPublicDataCmd())
+	command.AddCommand(replay, newCalibrationPublicDataCmd(), newCalibrationCollectionCmd())
 	return command
+}
+
+// Classification is separate from execution so synthetic reports can verify all
+// exit mappings without pretending synthetic references establish real accuracy.
+func calibrationReplayExit(report calibration.ReplayReport) error {
+	if report.Status == "insufficient" {
+		return calibrationEvidenceInsufficient{}
+	}
+	if report.Status != "passed" {
+		return fmt.Errorf("calibration replay failed: %s", report.FailureKind)
+	}
+	return nil
 }
 
 func newCalibrationPublicDataCmd() *cobra.Command {

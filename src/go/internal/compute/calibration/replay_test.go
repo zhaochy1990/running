@@ -19,7 +19,7 @@ func replayFixture(t *testing.T) calibration.ReplayManifest {
 	available := cutoff.Add(-time.Hour)
 	r := calibration.ReplayActivity{ID: "train", User: "athlete-a", RootActivityID: "train", Split: "train", EventTime: cutoff.AddDate(0, 0, -1), AvailableAt: &available, AvailabilityEvidence: "immutable-export:a", Device: "synthetic", Scenarios: []string{"continuous"}, Activity: a}
 	r.ContentSHA256 = calibration.ReplayContentHash(a)
-	return calibration.ReplayManifest{SchemaVersion: 1, AsOf: cutoff.AddDate(0, 0, 3), SourceVersion: "synthetic-v1", Activities: []calibration.ReplayActivity{r}, Cases: []calibration.ReplayCase{{ID: "prediction", User: "athlete-a", PredictionAsOf: cutoff, Mode: "strict", TargetRootActivityID: "heldout"}}}
+	return calibration.ReplayManifest{SchemaVersion: 1, AsOf: cutoff.AddDate(0, 0, 3), SourceVersion: "synthetic-v1", Activities: []calibration.ReplayActivity{r}, Cases: []calibration.ReplayCase{{ID: "prediction", User: "athlete-a", PredictionAsOf: cutoff, Mode: "strict"}}}
 }
 
 func TestReplayExcludesFutureLateUnknownAndHeldoutActivityDerivatives(t *testing.T) {
@@ -182,6 +182,7 @@ func TestReplaySeparatesRetrospectiveAndIgnoresLateHealthAndLabels(t *testing.T)
 	a.Activity.ActivityDate = cutoff
 	at := a.EventTime.Add(time.Hour)
 	a.AvailableAt = &at
+	m.Cases[0].TargetRootActivityID = "heldout"
 	a.Reference = &calibration.ReplayReference{Kind: "direct_60min", Real: true, EffortSupport: "confirmed_maximal", MeasurementQuality: "high", EvidenceRef: "audited-reference", Protocol: "continuous_60min_v1", AvailableAt: &late, DurationS: 3600, DistanceM: 14400}
 	a.ContentSHA256 = calibration.ReplayContentHash(a.Activity)
 	m.Activities = append(m.Activities, a)

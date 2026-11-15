@@ -94,83 +94,34 @@ func (cohort *replayCohort) metrics() []ReplayMetrics {
 	return out
 }
 
-func evaluateReplay(m ReplayManifest, cases []ReplayCaseResult, split string) ReplayEvaluation {
+func legacyReplayEvaluation(cohorts []ReplayCohortEvaluation, split string) ReplayEvaluation {
 	out := ReplayEvaluation{Status: "insufficient"}
-	var overall replayCohort
-	strata := map[string]*replayCohort{}
-	seen := map[string]bool{}
-	for _, c := range cases {
-		// Retrospective estimates are never pooled into strict historical evidence.
-		if c.Mode != "strict" || c.TargetRootActivityID == "" {
+	for _, c := range cohorts {
+		if c.Split != split || c.Mode != "strict" {
 			continue
 		}
-		key := c.User + "/" + c.TargetRootActivityID
-		if seen[key] {
+		if c.Family != "direct_60min" {
 			continue
 		}
-		seen[key] = true
-		var target *ReplayActivity
-		for i := range m.Activities {
-			a := &m.Activities[i]
-			if a.User == c.User && a.RootActivityID == c.TargetRootActivityID && a.Reference != nil {
-				target = a
-				break
-			}
+		out.Status, out.EligibleActivities, out.PairedActivities, out.Users = c.Status, c.EligibleActivities, c.PairedActivities, c.PairedUsers
+		out.Versions = legacyMetrics(c.Versions)
+		for _, n := range c.RejectedLabels {
+			out.RejectedLabels += n
 		}
-		if target == nil || target.Split != split {
-			continue
+		for _, s := range c.Strata {
+			out.Strata = append(out.Strata, ReplayStratum{Name: s.Name, Status: s.Status, Activities: s.EligibleActivities, Users: s.EligibleUsers, PairedActivities: s.PairedActivities, PairedUsers: s.PairedUsers, Versions: legacyMetrics(s.Versions)})
 		}
-		ref := target.Reference
-		if ref.HRGrade != "" {
-			out.UnsupportedHRLabels++
-		}
-		if ref.Kind == "race_prediction" {
-			out.UnsupportedRaceLabels++
-			continue
-		}
-		if ref.Kind != "direct_60min" || !ref.Real || ref.EffortSupport != "confirmed_maximal" || ref.MeasurementQuality != "high" || ref.EvidenceRef == "" || ref.Protocol != "continuous_60min_v1" || ref.DurationS != 3600 || ref.DistanceM <= 0 || ref.AvailableAt == nil || ref.AvailableAt.After(m.AsOf) || target.EventTime.After(m.AsOf) || !target.EventTime.After(c.PredictionAsOf) || target.Split == "train" {
-			out.RejectedLabels++
-			continue
-		}
-		observation := 1000 * ref.DurationS / ref.DistanceM
-		p := pairedError{user: c.User}
-		var available [3]bool
-		for j, v := range c.Versions {
-			speed := v.Snapshot.ThresholdSpeedMps
-			if speed == nil || *speed <= 0 || math.IsNaN(*speed) || math.IsInf(*speed, 0) {
-				continue
-			}
-			available[j] = true
-			p.errors[j] = 1000/(*speed) - observation
-		}
-		overall.add(p, available)
-		names := map[string]bool{"device:" + target.Device: true}
-		for _, scenario := range target.Scenarios {
-			names[scenario] = true
-		}
-		for name := range names {
-			if strata[name] == nil {
-				strata[name] = &replayCohort{}
-			}
-			strata[name].add(p, available)
+		if c.Uncertainty != nil {
+			u := c.Uncertainty
+			out.Uncertainty = &ReplayUncertainty{Method: u.Method, Seed: u.Seed, Resamples: u.Resamples, MedianCandidateMinusV3: u.MedianCandidateMinusV3, P90CandidateMinusV3: u.P90CandidateMinusV3}
 		}
 	}
-	pairs := overall.pairs
-	out.EligibleActivities = overall.activities
-	out.PairedActivities = len(pairs)
-	out.Users = pairUsers(pairs)
-	out.Versions = overall.metrics()
-	ordered := make([]string, 0, len(strata))
-	for s := range strata {
-		ordered = append(ordered, s)
-	}
-	sort.Strings(ordered)
-	for _, name := range ordered {
-		cohort := strata[name]
-		out.Strata = append(out.Strata, ReplayStratum{Name: name, Status: "insufficient", Activities: cohort.activities, Users: len(cohort.users), PairedActivities: len(cohort.pairs), PairedUsers: pairUsers(cohort.pairs), Versions: cohort.metrics()})
-	}
-	if len(pairs) > 0 && out.Users >= 2 {
-		out.Uncertainty = bootstrapPairs(pairs)
+	return out
+}
+func legacyMetrics(metrics []ReplayScalarMetrics) []ReplayMetrics {
+	out := make([]ReplayMetrics, 0, len(metrics))
+	for _, v := range metrics {
+		out = append(out, ReplayMetrics{Strategy: v.Strategy, Available: v.Available, Missing: v.Missing, ComputationFailures: v.ComputationFailures, Coverage: v.Coverage, FailureRate: v.FailureRate, MedianAbsoluteError: v.MedianAbsoluteError, P90AbsoluteError: v.P90AbsoluteError, SignedBias: v.SignedBias})
 	}
 	return out
 }
@@ -194,11 +145,28 @@ func metricsForPairs(pairs []pairedError) []ReplayMetrics {
 		metric := ReplayMetrics{Strategy: strategy}
 		if len(pairs) > 0 {
 			weighted := make([][2]float64, 0, len(pairs))
-			bias := 0.0
+			scale := 0.0
 			for _, p := range pairs {
 				w := 1 / float64(len(counts)*counts[p.user])
 				weighted = append(weighted, [2]float64{math.Abs(p.errors[j]), w})
-				bias += p.errors[j] * w
+				scale = math.Max(scale, math.Abs(p.errors[j]))
+			}
+			// Scale before summing: finite individual errors near MaxFloat must
+			// not overflow an otherwise bounded weighted mean. Normalize by the
+			// actual compensated weight sum, preserving each user's equal weight.
+			scaled, scaledCorrection, total, totalCorrection := 0.0, 0.0, 0.0, 0.0
+			if scale > 0 {
+				for _, p := range pairs {
+					w := 1 / float64(len(counts)*counts[p.user])
+					addCompensated(&scaled, &scaledCorrection, (p.errors[j]/scale)*w)
+					addCompensated(&total, &totalCorrection, w)
+				}
+			}
+			bias := 0.0
+			if scale > 0 {
+				relative := scaled / total
+				relative = math.Max(-1, math.Min(1, relative))
+				bias = scale * relative
 			}
 			median, p90 := errorQuantile(weighted, 0.5), errorQuantile(weighted, 0.9)
 			metric.MedianAbsoluteError = &median
@@ -213,13 +181,15 @@ func metricsForPairs(pairs []pairedError) []ReplayMetrics {
 func errorQuantile(values [][2]float64, q float64) float64 {
 	ordered := append([][2]float64(nil), values...)
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i][0] < ordered[j][0] })
-	sum := 0.0
+	// Compensated sums preserve the frozen empirical boundary when one user
+	// contributes many tiny activity weights (e.g. 100 x .001 vs 9 x .1).
+	sum, correction := 0.0, 0.0
 	for _, v := range ordered {
-		sum += v[1]
+		addCompensated(&sum, &correction, v[1])
 	}
-	cumulative := 0.0
+	cumulative, correction := 0.0, 0.0
 	for _, v := range ordered {
-		cumulative += v[1]
+		addCompensated(&cumulative, &correction, v[1])
 		if cumulative >= q*sum {
 			return v[0]
 		}
@@ -259,4 +229,11 @@ func bootstrapPairs(pairs []pairedError) *ReplayUncertainty {
 	sort.Float64s(medians)
 	sort.Float64s(p90s)
 	return &ReplayUncertainty{Method: "user_cluster_percentile_95", Seed: seed, Resamples: resamples, MedianCandidateMinusV3: [2]float64{medians[49], medians[1949]}, P90CandidateMinusV3: [2]float64{p90s[49], p90s[1949]}}
+}
+
+func addCompensated(sum, correction *float64, value float64) {
+	y := value - *correction
+	t := *sum + y
+	*correction = (t - *sum) - y
+	*sum = t
 }

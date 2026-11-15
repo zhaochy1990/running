@@ -1,0 +1,75 @@
+// Read-only companion to TestCalibrationCapturedStack. Start Node 24 with
+// --import ./src/wechat-miniprogram/utils/ts-resolve-hooks.mjs.
+import assert from 'node:assert/strict';
+import { readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
+import { MySqlDataProvider } from '../src/coach_agent_worker/dist/src/data/mysqlDataProvider.js';
+import { createRunningCalibrationTools } from '../src/coach_agent/dist/tools/runningCalibration.js';
+import { calibrationDisplay } from '../frontend/src/lib/calibrationDisplay.ts';
+import { projectCalibration } from '../src/wechat-miniprogram/utils/trainingStatus.ts';
+const require = createRequire(new URL('../src/coach_agent_worker/package.json', import.meta.url));
+const mysql = require('mysql2/promise');
+const path = process.env.STRIDE_991_STACK_OUTPUT;
+const uri = process.env.STRIDE_991_MYSQL_URL;
+assert.ok(path?.startsWith('/tmp/stride-983/private/'));
+const parsed = new URL(uri);
+assert.equal(parsed.hostname, '127.0.0.1');
+assert.equal(parsed.port, '13383');
+assert.equal(parsed.pathname, '/stride_983_test');
+const fixture = JSON.parse(await readFile(path, 'utf8'));
+assert.equal(fixture.url, 'http://127.0.0.1:19892');
+assert.ok(['active3','active4','rollback3'].includes(fixture.phase));
+const pool = mysql.createPool({uri, timezone:'Z',connectionLimit:2});
+try {
+ const provider = new MySqlDataProvider(pool);
+ const actual = await provider.getLatestRunningCalibration(fixture.user_id,fixture.cutoff);
+ const b = fixture.bundle;
+ assert.ok(actual);
+ assert.equal(actual.calibrationId,b.snapshot.ID);
+ assert.equal(actual.algorithmVersion,b.snapshot.AlgorithmVersion);
+ assert.equal(actual.asOfDate,b.snapshot.AsOfDate);
+ assert.equal(actual.thresholdHr,b.snapshot.ThresholdHR);
+ assert.equal(actual.thresholdSpeedMps,b.snapshot.ThresholdSpeedMps);
+ assert.equal(actual.rhrBaseline,b.snapshot.RHRBaseline);
+ assert.deepEqual(actual.selection,b.selection);
+ assert.deepEqual(actual.source,b.source);
+ assert.equal(actual.fingerprint,b.fingerprint);
+ assert.deepEqual(actual.paceZones,b.pace_zones.map(z=>({name:z.Name,minPaceSPerKm:z.MinPaceSPerKm,maxPaceSPerKm:z.MaxPaceSPerKm})));
+ assert.deepEqual(actual.heartRateZones,b.hr_zones.map(z=>({name:z.Name,minBpm:z.MinBpm,maxBpm:z.MaxBpm})));
+ const [tool] = createRunningCalibrationTools(provider);
+ const view = await tool.invoke({}, { context: { userId:fixture.user_id,asof:fixture.cutoff } });
+ assert.equal(view.calibrationId,actual.calibrationId);
+ assert.deepEqual(view.selection,actual.selection);
+ assert.deepEqual(view.source,actual.source);
+ assert.equal(view.fingerprint,actual.fingerprint);
+ assert.equal(view.thresholdPaceSPerKm,actual.thresholdSpeedMps===null?null:Math.round(1000/actual.thresholdSpeedMps));
+ const headers={Authorization:`Bearer ${fixture.token}`};
+ const response=await fetch(`${fixture.url}/api/${fixture.user_id}/stride/zones`,{headers});
+ assert.equal(response.status,200);
+ const text=await response.text();
+ assert.equal(createHash('sha256').update(text).digest('hex'),fixture.sha256);
+ const zones=JSON.parse(text);
+ const webPace=calibrationDisplay(zones.threshold,'speed');
+ const webHR=calibrationDisplay(zones.threshold,'hr');
+ const mp=projectCalibration(zones);
+ assert.equal(webPace.value,mp.pace.value);
+ assert.equal(webHR.value,mp.hr.value);
+ assert.equal(webPace.range,mp.pace.range);
+ assert.ok(webPace.details.some(d=>d===`证据日 ${mp.pace.evidenceDay || "未提供"}`));
+ if(fixture.phase==='active4'){
+  assert.equal(actual.thresholdSpeedMps,null);
+  assert.equal(actual.thresholdHr,null);
+  assert.equal(view.thresholdPaceSPerKm,null);
+  assert.equal(webPace.value,'—');assert.equal(webHR.value,'—');
+  if(zones.threshold.speed_range_pace_per_km_sec.bound_kind==='speed_lower_bound') assert.ok(webPace.range?.includes('至少可达到'));
+  else if(zones.threshold.speed_range_pace_per_km_sec.bound_kind==='unavailable') assert.equal(webPace.range,null);
+  assert.equal(zones.threshold.source.speed.method,'constraints_only');
+ }
+ const missing=await provider.getLatestRunningCalibration(fixture.user_id,'2000-01-01');assert.equal(missing,null);
+ const denied=await fetch(`${fixture.url}/api/00000000-0000-4000-8000-000000000000/stride/zones`,{headers});assert.equal(denied.status,403);
+ const noAuth=await fetch(`${fixture.url}/api/${fixture.user_id}/stride/zones`);assert.equal(noAuth.status,401);
+ const summary={phase:fixture.phase,algorithm_version:actual.algorithmVersion,response_sha256:fixture.sha256,web:{pace:webPace.value,hr:webHR.value,range:webPace.range},mp:{pace:mp.pace.value,hr:mp.hr.value,range:mp.pace.range},verified:['mysql_adapter','coach_tool','signed_http_hash','web_projector','mp_projector',...(fixture.phase==='active4'?['nil_centers']:[]),'historical_missing','tenant_denied','auth_required'],readonly:true};
+ await writeFile(`${path}.${fixture.phase}.node.json`,JSON.stringify(summary,null,2),{mode:0o600});
+ console.log(JSON.stringify(summary));
+}finally{await pool.end()}

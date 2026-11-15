@@ -100,3 +100,24 @@ func TestPublicDataCommandRunsLocalInputWithoutConfig(t *testing.T) {
 		t.Fatalf("unsafe identity: %+v", report)
 	}
 }
+
+func TestCalibrationReplayExitPreservesAllThreeStatuses(t *testing.T) {
+	for _, state := range []string{"passed", "failed", "insufficient"} {
+		err := calibrationReplayExit(calibration.ReplayReport{Status: state, FailureKind: "numeric_gate_failed"})
+		var status interface{ ExitCode() int }
+		switch state {
+		case "passed":
+			if err != nil {
+				t.Fatal(err)
+			}
+		case "insufficient":
+			if !errors.As(err, &status) || status.ExitCode() != 2 {
+				t.Fatal(err)
+			}
+		case "failed":
+			if err == nil || errors.As(err, &status) || !strings.Contains(err.Error(), "numeric_gate_failed") {
+				t.Fatal(err)
+			}
+		}
+	}
+}
