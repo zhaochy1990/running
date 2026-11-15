@@ -466,10 +466,11 @@ export interface CalibrationMetricDisplay {
 const CALIBRATION_WORDS: Record<string, string> = {
   high: '高', medium: '中', low: '低', none: '不足', unknown: '未知',
   protocol_quality_gate_passed: '通过协议质量门槛',
-  confirmed_maximal: '已确认全力', likely_maximal: '可能全力', submaximal: '非全力',
+  confirmed_maximal: '已确认全力', probable_maximal: '可能全力', likely_maximal: '可能全力', submaximal: '非全力',
   direct_hour_anchor: '约一小时直接锚点', direct_60min_maximal: '约一小时全力直接锚点', speed_duration_inference: '跨时长模型推断',
   constraints_only: '仅有约束，尚无中心估计', insufficient_maximal_support: '全力证据不足',
-  field_test_protocol: '场地测试协议', legacy_v3: '旧版训练估计', legacy_v3_training_estimate: '旧版训练估计（非独立检测）',
+  lab_lthr_report_v1: '实验室乳酸阈值报告',
+  field_test_protocol: '场地测试协议', field_30min_last20_v1: '场地测试协议（30分钟测试的后20分钟）', legacy_v3: '旧版训练估计', legacy_v3_training_estimate: '旧版训练估计（非独立检测）',
   no_independent_maximal_anchors: '缺少独立近全力证据',
   hour_extrapolation_not_identified_by_independent_recent_anchors: '近期独立锚点不足无法推断一小时能力',
   conflicting_root_activity_days_excluded: '已排除日期冲突的重复活动',

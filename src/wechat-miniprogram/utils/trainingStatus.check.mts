@@ -227,4 +227,28 @@ eq(projectCalibration(missingAnchors).pace.lines.includes('缺少独立近全力
 missingAnchors.threshold.source.speed.reasons = ['hour_extrapolation_not_identified_by_independent_recent_anchors'];
 eq(projectCalibration(missingAnchors).pace.lines.includes('近期独立锚点不足无法推断一小时能力'), true, 'canonical insufficient recent anchors reason');
 
+const probableEffort = structuredClone(firstVector.response);
+probableEffort.threshold.source.speed.effort_support = 'probable_maximal';
+eq(projectCalibration(probableEffort).pace.lines.includes('数据质量：高 · 全力证据：可能全力'), true, 'canonical probable maximal effort is not unknown');
+
+const fieldProtocol = structuredClone(firstVector.response);
+fieldProtocol.threshold.source.hr.method = 'field_30min_last20_v1';
+eq(projectCalibration(fieldProtocol).hr.help.includes('方法：场地测试协议（30分钟测试的后20分钟）'), true, 'canonical field protocol explains the actual window');
+
+const labProtocol = structuredClone(firstVector.response);
+labProtocol.threshold.source.hr.method = 'lab_lthr_report_v1';
+labProtocol.threshold.source.hr.target_type = 'lab_method_specific_LTHR';
+labProtocol.threshold.source.hr.lab_method = 'LT2_4mmol_protocol';
+const labProtocolDisplay = projectCalibration(labProtocol).hr;
+eq(labProtocolDisplay.help.includes('方法：实验室乳酸阈值报告'), true, 'canonical laboratory report protocol');
+eq(labProtocolDisplay.lines.includes('实验室方法特定阈值：LT2_4mmol_protocol'), true, 'laboratory method is preserved');
+
+const halfIntegerHr = structuredClone(firstVector.response);
+halfIntegerHr.threshold.hr_bpm = 166.5;
+halfIntegerHr.threshold.source.hr.range_low = 163.5;
+halfIntegerHr.threshold.source.hr.range_high = 169.5;
+const halfIntegerHrDisplay = projectCalibration(halfIntegerHr).hr;
+eq(halfIntegerHrDisplay.value, '167', 'positive HR half integer rounds upward');
+eq(halfIntegerHrDisplay.range, '支持范围 164–170 bpm', 'positive HR range halves round upward');
+
 console.log('trainingStatus.check: OK');
