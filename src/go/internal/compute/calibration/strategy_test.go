@@ -35,7 +35,7 @@ func TestProductionRemainsV3WhileOfflineSegmentsAreExplicitImplementations(t *te
 	}
 }
 
-func TestOfflineSegmentsOnlyIsRealAndSharedWithCurrentCandidate(t *testing.T) {
+func TestOfflineSegmentsOnlyRemainsT2ControlAgainstEvidenceCandidate(t *testing.T) {
 	asOf := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
 	var samples []calibration.Sample
 	for i := 0; i <= 3600; i++ {
@@ -65,8 +65,8 @@ func TestOfflineSegmentsOnlyIsRealAndSharedWithCurrentCandidate(t *testing.T) {
 	if reflect.DeepEqual(clean.Snapshot, active) {
 		t.Fatal("stationary gap still reaches frozen estimator")
 	}
-	if clean.Implementation != candidate.Implementation || !reflect.DeepEqual(clean.Snapshot, candidate.Snapshot) {
-		t.Fatal("T2 candidate must use the same implemented cleaning and unchanged estimator")
+	if clean.Implementation == candidate.Implementation || candidate.Evidence == nil {
+		t.Fatal("T3 must identify its evidence implementation independently of T2")
 	}
 }
 

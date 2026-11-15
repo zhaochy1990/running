@@ -28,18 +28,19 @@ type ReplayManifest struct {
 }
 
 type ReplayActivity struct {
-	ID                   string           `json:"id"`
-	User                 string           `json:"user"`
-	RootActivityID       string           `json:"root_activity_id"`
-	Split                string           `json:"split"`
-	EventTime            time.Time        `json:"event_time"`
-	AvailableAt          *time.Time       `json:"available_at"`
-	AvailabilityEvidence string           `json:"availability_evidence"`
-	Device               string           `json:"device"`
-	Scenarios            []string         `json:"scenarios"`
-	ContentSHA256        string           `json:"content_sha256"`
-	Activity             Activity         `json:"activity"`
-	Reference            *ReplayReference `json:"reference,omitempty"`
+	ID                   string             `json:"id"`
+	User                 string             `json:"user"`
+	RootActivityID       string             `json:"root_activity_id"`
+	Split                string             `json:"split"`
+	EventTime            time.Time          `json:"event_time"`
+	AvailableAt          *time.Time         `json:"available_at"`
+	AvailabilityEvidence string             `json:"availability_evidence"`
+	Device               string             `json:"device"`
+	Scenarios            []string           `json:"scenarios"`
+	ContentSHA256        string             `json:"content_sha256"`
+	Activity             Activity           `json:"activity"`
+	Reference            *ReplayReference   `json:"reference,omitempty"`
+	InputEvidence        *CandidateMetadata `json:"input_evidence,omitempty"`
 }
 
 type ReplayHealth struct {
@@ -156,6 +157,7 @@ func Replay(m ReplayManifest, codeVersion string) (ReplayReport, error) {
 	for _, c := range m.Cases {
 		result := ReplayCaseResult{ID: c.ID, User: c.User, Mode: c.Mode, PredictionAsOf: c.PredictionAsOf, TargetRootActivityID: c.TargetRootActivityID, Excluded: map[string]int{}}
 		var history []Activity
+		var inputMetadata []CandidateMetadata
 		var rows []HealthRow
 		var usedActivities []ReplayActivity
 		var usedHealth []ReplayHealth
@@ -171,6 +173,21 @@ func Replay(m ReplayManifest, codeVersion string) (ReplayReport, error) {
 				result.Excluded["future_or_unavailable"]++
 			default:
 				history = append(history, a.Activity)
+				// Effort metadata is independent of outcome labels and is admitted
+				// only with its own as-known-at-the-time proof in strict mode.
+				if a.InputEvidence != nil && !available(a.EventTime, a.InputEvidence.AvailableAt, a.InputEvidence.AvailabilityEvidence, c.PredictionAsOf, c.Mode) {
+					a.InputEvidence = nil
+					result.Excluded["metadata_future_or_unavailable"]++
+				}
+				meta := CandidateMetadata{ActivityID: a.Activity.LabelID, RootActivityID: a.RootActivityID, SourceVersion: "replay-root-v1", Device: a.Device}
+				if a.InputEvidence != nil {
+					meta = *a.InputEvidence
+					meta.RootActivityID = a.RootActivityID
+					if meta.Device == "" {
+						meta.Device = a.Device
+					}
+				}
+				inputMetadata = append(inputMetadata, meta)
 				// Reference labels never enter the fitting payload or input hash.
 				a.Reference = nil
 				usedActivities = append(usedActivities, a)
@@ -198,7 +215,7 @@ func Replay(m ReplayManifest, codeVersion string) (ReplayReport, error) {
 		// asOf is a domain civil day, whereas availability above uses exact instants.
 		civilDay := timefmt.ShanghaiDay(c.PredictionAsOf)
 		for _, strategy := range []Strategy{StrategyV3, StrategySegmentsOnly, StrategyCandidate} {
-			v, err := EstimateOffline(strategy, history, civilDay, rows)
+			v, err := estimateOfflineWithEvidenceAt(strategy, history, civilDay, rows, inputMetadata, c.PredictionAsOf)
 			if err != nil {
 				return ReplayReport{}, err
 			}
@@ -208,7 +225,7 @@ func Replay(m ReplayManifest, codeVersion string) (ReplayReport, error) {
 	}
 	out.Evaluation = evaluateReplay(m, out.Cases, "final_holdout")
 	out.ValidationEvaluation = evaluateReplay(m, out.Cases, "validation")
-	out.Reasons = []string{"candidate_uses_segments_only_estimator_pending_T3_T5", "HR_accuracy_and_cross_duration_scoring_not_implemented", "accuracy_release_gate_not_satisfied"}
+	out.Reasons = []string{"candidate_evidence_uses_legacy_estimator_pending_T4_T5", "HR_accuracy_and_cross_duration_scoring_not_implemented", "accuracy_release_gate_not_satisfied"}
 	if out.Inventory.UnknownAvailability > 0 {
 		out.Reasons = append(out.Reasons, "historical_availability_not_proven_for_all_exported_inputs")
 	}
@@ -271,6 +288,15 @@ func validateReplay(m ReplayManifest, code string) error {
 	for _, a := range m.Activities {
 		if a.ID == "" || a.User == "" || a.RootActivityID == "" || a.EventTime.IsZero() || a.Activity.ActivityDate.IsZero() || a.Activity.LabelID == "" {
 			return fmt.Errorf("activity requires id/user/root/event_time/domain date/label")
+		}
+		if a.InputEvidence != nil {
+			meta := a.InputEvidence
+			if meta.ActivityID != a.Activity.LabelID || meta.SourceVersion == "" || meta.RootActivityID != "" && meta.RootActivityID != a.RootActivityID {
+				return fmt.Errorf("activity %s input evidence identity/version/root mismatch", a.ID)
+			}
+			if meta.AvailableAt != nil && meta.AvailableAt.Before(a.EventTime) {
+				return fmt.Errorf("activity %s input evidence available before event", a.ID)
+			}
 		}
 		if ids[a.ID] {
 			return fmt.Errorf("duplicate activity id %s", a.ID)

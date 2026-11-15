@@ -64,6 +64,14 @@ type candidateSeries struct {
 // BuildCandidateSegments is the offline pure measurement boundary for T2+.
 // Production BestSpeedCandidates and every frozen v3 helper remain unchanged.
 func BuildCandidateSegments(history []Activity, durationsS []int) CandidateSegments {
+	durations := make([]float64, len(durationsS))
+	for i, d := range durationsS {
+		durations[i] = float64(d)
+	}
+	return buildCandidateSegmentsFloat(history, durations)
+}
+
+func buildCandidateSegmentsFloat(history []Activity, durationsS []float64) CandidateSegments {
 	out := CandidateSegments{}
 	for _, a := range history {
 		if !isRunning(a) {
@@ -141,12 +149,12 @@ func BuildCandidateSegments(history []Activity, durationsS []int) CandidateSegme
 				}
 			}
 			if best == nil && len(a.Samples) < 2 {
-				best = candidateSummary(a, duration, &diag)
+				best = candidateSummary(a, int(duration), &diag)
 			}
 			if best != nil {
 				out.Candidates = append(out.Candidates, *best)
 			} else {
-				diag.MissingDurationsS = append(diag.MissingDurationsS, duration)
+				diag.MissingDurationsS = append(diag.MissingDurationsS, int(duration))
 			}
 		}
 		out.Diagnostics = append(out.Diagnostics, diag)
