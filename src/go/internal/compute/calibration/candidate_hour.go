@@ -51,11 +51,24 @@ type HourModelObservation struct {
 func FitHourCapability(evidence []CandidateEvidence, asOf time.Time) HourCapabilityReport {
 	out := HourCapabilityReport{ParameterVersion: hourParameterVersion, Method: "constraints_only", Confidence: ConfidenceNone, RangeMeaning: "evidence_support_sensitivity_not_probability_interval", Reasons: []string{}, Limitations: []string{"research_parameters_not_independently_calibrated", "environment_not_corrected", "power_law_valid_only_180_to_7200s", "range_is_sensitivity_not_95_percent_ci", "long_duration_uses_monotone_envelope_not_precise_extrapolation"}}
 	// Stable identity ordering also makes the pure seam insensitive to input order.
+	// Match the existing input date window before checking root consistency:
+	// excluded future/too-old aliases cannot change admitted historical support.
+	datedEvidence := make([]CandidateEvidence, 0, len(evidence))
+	for _, e := range evidence {
+		age := dayDiff(asOf, e.ActivityDate)
+		if !e.ActivityDate.IsZero() && age >= 0 && age <= 180 {
+			datedEvidence = append(datedEvidence, e)
+		}
+	}
+	conflicts := conflictingCandidateRootDays(datedEvidence)
+	if len(conflicts) > 0 {
+		out.Reasons = append(out.Reasons, "conflicting_root_activity_days_excluded")
+	}
 	ordered := append([]CandidateEvidence(nil), evidence...)
 	sort.Slice(ordered, func(i, j int) bool {
 		a, b := ordered[i], ordered[j]
-		if a.RootActivityID != b.RootActivityID {
-			return a.RootActivityID < b.RootActivityID
+		if candidateRootID(a) != candidateRootID(b) {
+			return candidateRootID(a) < candidateRootID(b)
 		}
 		if a.DurationS != b.DurationS {
 			return a.DurationS < b.DurationS
@@ -71,13 +84,12 @@ func FitHourCapability(evidence []CandidateEvidence, asOf time.Time) HourCapabil
 	anchors, bounds := []hourPoint{}, []hourPoint{}
 	seen := map[string]map[float64]bool{}
 	for _, e := range ordered {
-		root := e.RootActivityID
-		if root == "" {
-			root = e.ActivityID
-		}
+		root := candidateRootID(e)
 		age := float64(dayDiff(asOf, e.ActivityDate))
 		obs := HourModelObservation{ActivityID: e.ActivityID, RootActivityID: root, DurationS: e.DurationS, Role: "not_selected"}
 		switch {
+		case conflicts[root]:
+			obs.Role = "root_activity_day_conflict"
 		case !e.Selected:
 		case !e.Continuous:
 			obs.Role = "noncontinuous_observation_only"

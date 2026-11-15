@@ -218,3 +218,59 @@ func TestHourEqualEffortWeightsStillResolveAliasesDeterministically(t *testing.T
 		t.Fatal("equal effort rank made alias selection/input order nondeterministic")
 	}
 }
+
+func TestHourRejectsConflictingRootDaysAcrossAliasesAtBothPublicSeams(t *testing.T) {
+	day := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
+	history := []calibration.Activity{}
+	metadata := []calibration.CandidateMetadata{}
+	pure := []calibration.CandidateEvidence{}
+	for i, root := range []string{"root-a", "root-b", "root-c"} {
+		alias := root + "-alias"
+		aliasDay := day.AddDate(0, 0, -i-1)
+		history = append(history, evidenceActivity(root, day, 3600, 4.5), evidenceActivity(alias, aliasDay, 1800, 4.5))
+		for _, m := range []struct {
+			id       string
+			duration float64
+		}{{root, 3600}, {alias, 1800}} {
+			metadata = append(metadata, calibration.CandidateMetadata{ActivityID: m.id, RootActivityID: root, SourceVersion: "protocol-v1", EvidenceRef: "audit-" + m.id, Protocol: "continuous_maximal_test_v1", ProtocolVerified: true, DurationS: m.duration, StartS: floatPointer(0), EndS: floatPointer(m.duration)})
+		}
+		a := hourEvidence(root, day, 3600, 4.5, calibration.EffortConfirmedMaximal)
+		b := hourEvidence(alias, aliasDay, 1800, 4.5, calibration.EffortConfirmedMaximal)
+		b.RootActivityID = root
+		pure = append(pure, a, b)
+	}
+	got, err := calibration.EstimateOfflineWithEvidence(calibration.StrategyCandidate, history, day, nil, metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Snapshot.ThresholdSpeedMps != nil || got.Evidence.IndependentDays != 0 || got.Evidence.TotalContribution != 0 || got.Evidence.IndependentActivities != 0 || got.Evidence.Excluded["root_activity_day_conflict"] != 3 {
+		t.Fatalf("cross-day aliases invented support/budget: center=%v roots=%d days=%d contribution=%v", got.Snapshot.ThresholdSpeedMps, got.Evidence.IndependentActivities, got.Evidence.IndependentDays, got.Evidence.TotalContribution)
+	}
+	for _, e := range got.Evidence.Candidates {
+		if e.Selected || e.Contribution != 0 || e.SelectionReason != "root_activity_day_conflict" {
+			t.Fatalf("conflicting root entered selection: %+v", e)
+		}
+	}
+	fit := calibration.FitHourCapability(pure, day)
+	if fit.CenterMps != nil || fit.AnchorDays != 0 || fit.AnchorContribution != 0 {
+		t.Fatalf("pure seam accepted conflicting root dates: %+v", fit)
+	}
+	for _, o := range fit.Observations {
+		if o.Weight != 0 || o.Role != "root_activity_day_conflict" {
+			t.Fatalf("pure seam spent contradictory root budget: %+v", o)
+		}
+	}
+}
+
+func TestHourUnadmittedAliasDatesCannotInvalidateAdmittedRoot(t *testing.T) {
+	day := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
+	anchor := hourEvidence("root", day, 3600, 4.5, calibration.EffortConfirmedMaximal)
+	for _, age := range []int{1, -181} {
+		alias := hourEvidence("alias", day.AddDate(0, 0, age), 1800, 4.5, calibration.EffortConfirmedMaximal)
+		alias.RootActivityID = "root"
+		got := calibration.FitHourCapability([]calibration.CandidateEvidence{anchor, alias}, day)
+		if got.CenterMps == nil || math.Abs(*got.CenterMps-4.5) > .001 || got.AnchorActivities != 1 || got.AnchorDays != 1 {
+			t.Fatalf("unadmitted date affected real root: age=%d method=%s roots=%d", age, got.Method, got.AnchorActivities)
+		}
+	}
+}

@@ -309,7 +309,37 @@ func classifyCandidateEffort(e *CandidateEvidence, m CandidateMetadata) {
 func candidateWindowMatches(e CandidateEvidence, m CandidateMetadata) bool {
 	return m.StartS != nil && m.EndS != nil && e.StartS != nil && e.EndS != nil && math.Abs(m.DurationS-e.DurationS) < 1e-6 && math.Abs(*m.StartS-*e.StartS) < 1e-6 && math.Abs(*m.EndS-*e.EndS) < 1e-6
 }
+
+// A root has one domain civil day. Without independently trusted root-day
+// metadata, contradictory aliases cannot be arbitrarily assigned to one date.
+// Keep every observation for audit, but reject that entire root from support.
+func conflictingCandidateRootDays(evidence []CandidateEvidence) map[string]bool {
+	days := map[string]string{}
+	conflicts := map[string]bool{}
+	for _, e := range evidence {
+		root := candidateRootID(e)
+		if root == "" || e.ActivityDate.IsZero() {
+			continue
+		}
+		day := e.ActivityDate.Format("2006-01-02")
+		if prior, ok := days[root]; ok && prior != day {
+			conflicts[root] = true
+		}
+		days[root] = day
+	}
+	return conflicts
+}
+func candidateRootID(e CandidateEvidence) string {
+	if e.RootActivityID != "" {
+		return e.RootActivityID
+	}
+	return e.ActivityID
+}
 func selectCandidateEvidence(out *CandidateEvidenceReport) {
+	conflicts := conflictingCandidateRootDays(out.Candidates)
+	if len(conflicts) > 0 {
+		out.Excluded["root_activity_day_conflict"] = len(conflicts)
+	}
 	sort.Slice(out.Candidates, func(i, j int) bool {
 		a, b := out.Candidates[i], out.Candidates[j]
 		if a.DurationS != b.DurationS {
@@ -327,6 +357,11 @@ func selectCandidateEvidence(out *CandidateEvidenceReport) {
 	for i := range out.Candidates {
 		e := &out.Candidates[i]
 		e.SelectionReason = "duration_pool_limit"
+		if conflicts[candidateRootID(*e)] {
+			e.SelectionReason = "root_activity_day_conflict"
+			e.CounterReasons = append(e.CounterReasons, "root_activity_day_conflict")
+			continue
+		}
 		if !e.Continuous {
 			e.SelectionReason = "noncontinuous_observation_only"
 			continue

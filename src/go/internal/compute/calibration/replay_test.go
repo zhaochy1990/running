@@ -410,3 +410,14 @@ func addHistoricalMaximalEvidence(m *calibration.ReplayManifest) {
 	a := &m.Activities[0]
 	a.InputEvidence = &calibration.CandidateMetadata{ActivityID: a.Activity.LabelID, SourceVersion: "synthetic-historical-protocol-v1", EvidenceRef: "prior-test-audit", AvailableAt: a.AvailableAt, AvailabilityEvidence: "immutable-prior-test", Protocol: "continuous_maximal_test_v1", ProtocolVerified: true, DurationS: 3600, StartS: floatPointer(0), EndS: floatPointer(3600)}
 }
+
+func TestReplayReasonsIdentifyHourModelAndRemainingHRLimitation(t *testing.T) {
+	report, err := calibration.Replay(replayFixture(t), "hour-model-review")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reasons := strings.Join(report.Reasons, " ")
+	if strings.Contains(reasons, "legacy_estimator") || strings.Contains(reasons, "pending_T4") || !strings.Contains(reasons, "candidate_hour_capability_v1") || !strings.Contains(reasons, "independent_HR_support_pending_T5") || report.Status != "insufficient" {
+		t.Fatalf("replay misidentified implementation or release state: %v / %s", report.Reasons, report.Status)
+	}
+}
