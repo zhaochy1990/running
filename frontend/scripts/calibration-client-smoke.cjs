@@ -18,7 +18,7 @@ async function main() {
  const evidence=[];
  try {
   for (const c of manifest.cases) {
-   const context = await browser.newContext({viewport:{width:390,height:844}});
+   const context = await browser.newContext({viewport:{width:390,height:844},hasTouch:true});
    await context.addInitScript(({token})=>{sessionStorage.setItem("access_token",token);sessionStorage.setItem("refresh_token","local-only-unused");},{token:c.token});
    const page = await context.newPage();
    const errors=[];page.on("pageerror",e=>errors.push(e.message));
@@ -36,7 +36,9 @@ async function main() {
    if(c.expected.pace_range) await page.getByText(c.expected.pace_range,{exact:true}).waitFor();
    const publicOut = process.env.STRIDE_990_PUBLIC_SCREENSHOTS;
    if (publicOut && c.name === "two-sided") {fs.mkdirSync(publicOut,{recursive:true});await speed.screenshot({path:path.join(publicOut,"web-threshold-390.png"),animations:"disabled"});}
-   const summary=page.getByText("阈值配速说明",{exact:true});await summary.focus();await page.keyboard.press("Enter");
+   const summary=page.getByText("阈值配速说明",{exact:true});
+   if(c.name === "two-sided") {await summary.tap();await page.getByText("阈值配速估计当前全力可维持约一小时的能力，不是普通训练平均配速。",{exact:true}).waitFor({state:"visible"});await summary.tap();}
+   await summary.focus();await page.keyboard.press("Enter");
    await page.getByText("阈值配速估计当前全力可维持约一小时的能力，不是普通训练平均配速。",{exact:true}).waitFor({state:"visible"});
    if(c.expected.evidence_day) await speed.getByText("证据日 "+c.expected.evidence_day,{exact:true}).waitFor();
    if(c.expected.computed_shanghai) await speed.getByText("校准执行 "+c.expected.computed_shanghai+"（上海）",{exact:true}).waitFor();
@@ -56,7 +58,7 @@ async function main() {
    await context.close();
   }
   fs.writeFileSync(path.join(out,"web-local-evidence.json"),JSON.stringify(evidence,null,2),{mode:0o600});
-  console.log("Real local GIN/MySQL/JWT smoke PASS: "+evidence.length+" states, shared response hashes, 390px, desktop, keyboard help, offline failure/retry");
+  console.log("Real local GIN/MySQL/JWT smoke PASS: "+evidence.length+" states, shared response hashes, 390px, desktop, Chrome synthesized touch and keyboard help, offline failure/retry");
  } finally {await browser.close();}
 }
 main().catch(e=>{console.error(e.message);process.exitCode=1});
