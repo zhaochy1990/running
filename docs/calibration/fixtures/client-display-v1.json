@@ -254,8 +254,8 @@
               "measurement_quality": "high",
               "effort_support": "confirmed_maximal",
               "support": "high",
-              "range_low": 4.62962962962963,
-              "range_high": 4.672897196261682,
+              "range_low": null,
+              "range_high": 4,
               "range_meaning": "evidence_support_sensitivity_not_probability_interval",
               "evidence_date": "2026-10-01",
               "independent_activities": 2,
@@ -465,6 +465,14 @@
         "evidence_day": null,
         "cutoff_day": "2026-11-14",
         "computed_shanghai": null
+      },
+      "server_expected": {
+        "pace": "3:34",
+        "pace_range": null,
+        "hr": "166",
+        "evidence_day": null,
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
       }
     },
     {
@@ -617,12 +625,6 @@
           "source": {
             "schema_version": 0,
             "state": "source_unavailable"
-          },
-          "speed_range_pace_per_km_sec": {
-            "fast": 214,
-            "slow": 216,
-            "bound_kind": "two_sided",
-            "meaning": "evidence_support_sensitivity_not_probability_interval"
           }
         },
         "pace_zones": [],
@@ -630,7 +632,7 @@
       },
       "expected": {
         "pace": "3:34",
-        "pace_range": "支持范围 3:34–3:36 /km",
+        "pace_range": null,
         "hr": "166",
         "evidence_day": null,
         "cutoff_day": "2026-11-14",
