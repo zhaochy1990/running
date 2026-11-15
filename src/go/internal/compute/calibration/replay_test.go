@@ -417,7 +417,79 @@ func TestReplayReasonsIdentifyHourModelAndRemainingHRLimitation(t *testing.T) {
 		t.Fatal(err)
 	}
 	reasons := strings.Join(report.Reasons, " ")
-	if strings.Contains(reasons, "legacy_estimator") || strings.Contains(reasons, "pending_T4") || !strings.Contains(reasons, "candidate_hour_capability_v1") || !strings.Contains(reasons, "independent_HR_support_pending_T5") || report.Status != "insufficient" {
+	if strings.Contains(reasons, "legacy_estimator") || strings.Contains(reasons, "pending_T4") || !strings.Contains(reasons, "candidate_hour_capability_v1") || strings.Contains(reasons, "pending_T5") || !strings.Contains(reasons, "candidate_independent_HR_v1") || report.Status != "insufficient" {
 		t.Fatalf("replay misidentified implementation or release state: %v / %s", report.Reasons, report.Status)
+	}
+}
+
+func TestReplayIndependentHRInputsAreHashBoundButReferencesNeverFit(t *testing.T) {
+	m := replayFixture(t)
+	a, meta, _ := hrProtocolFixture()
+	a.LabelID = "train"
+	a.ActivityDate = m.Activities[0].Activity.ActivityDate
+	meta.ActivityID = a.LabelID
+	meta.AvailableAt = m.Activities[0].AvailableAt
+	meta.AvailabilityEvidence = "immutable-HR-protocol"
+	m.Activities[0].Activity = a
+	m.Activities[0].ContentSHA256 = calibration.ReplayContentHash(a)
+	baseline, err := calibration.Replay(m, "HR-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Activities[0].InputEvidence = &meta
+	admitted, err := calibration.Replay(m, "HR-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if admitted.Cases[0].Versions[2].Snapshot.ThresholdHR == nil || admitted.Cases[0].InputSHA256 == baseline.Cases[0].InputSHA256 {
+		t.Fatal("HR protocol not admitted/hash-bound")
+	}
+	m.Activities[0].Reference = &calibration.ReplayReference{Kind: "constraint_only", HRGrade: "lab_lthr", HRBpm: floatPointer(200), Protocol: "lab-report", AvailableAt: m.Activities[0].AvailableAt}
+	labeled, err := calibration.Replay(m, "HR-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(admitted.Cases[0].Versions, labeled.Cases[0].Versions) || admitted.Cases[0].InputSHA256 != labeled.Cases[0].InputSHA256 {
+		t.Fatal("reference leaked into HR input")
+	}
+	for _, kind := range []string{"late", "unknown"} {
+		copy := meta
+		if kind == "late" {
+			at := m.AsOf.Add(time.Hour)
+			copy.AvailableAt = &at
+		} else {
+			copy.AvailabilityEvidence = ""
+		}
+		m.Activities[0].InputEvidence = &copy
+		got, err := calibration.Replay(m, "HR-test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(got.Cases[0].Versions, baseline.Cases[0].Versions) || got.Cases[0].InputSHA256 != baseline.Cases[0].InputSHA256 {
+			t.Fatalf("%s HR metadata leaked", kind)
+		}
+	}
+	m.Activities[0].InputEvidence = &meta
+	heldout := m.Activities[0]
+	heldout.ID = "heldout"
+	heldout.RootActivityID = "heldout"
+	heldout.Split = "final_holdout"
+	heldout.Activity.LabelID = "heldout"
+	heldout.EventTime = m.Cases[0].PredictionAsOf.Add(time.Hour)
+	heldout.Activity.ActivityDate = m.Cases[0].PredictionAsOf
+	available := heldout.EventTime.Add(time.Hour)
+	heldout.AvailableAt = &available
+	heldout.ContentSHA256 = calibration.ReplayContentHash(heldout.Activity)
+	targetMeta := meta
+	targetMeta.ActivityID = "heldout"
+	targetMeta.AvailableAt = &available
+	heldout.InputEvidence = &targetMeta
+	m.Activities = append(m.Activities, heldout)
+	excluded, err := calibration.Replay(m, "HR-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(excluded.Cases[0].Versions, admitted.Cases[0].Versions) || excluded.Cases[0].InputSHA256 != admitted.Cases[0].InputSHA256 {
+		t.Fatal("heldout HR protocol leaked")
 	}
 }

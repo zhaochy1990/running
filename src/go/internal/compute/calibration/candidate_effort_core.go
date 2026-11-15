@@ -21,29 +21,10 @@ func estimateEvidenceCandidate(history []Activity, asOf time.Time, health []Heal
 	if hour.RiegelK == nil {
 		snapshot.SpeedDurationConfidence = ConfidenceNone
 	}
-	// T5 owns independent HR support. Keep the legacy HR calculation explicit,
-	// never promote it above low merely because the new pace fit is supported.
-	ceiling := ConfidenceLow
-	if speed == nil {
-		ceiling = ConfidenceNone
-	}
-	snapshot.ThresholdHR = nil
-	snapshot.ThresholdHRConfidence = ConfidenceNone
-	if speed != nil {
-		recent := []Activity{}
-		for _, a := range history {
-			if inClosedRange(a.ActivityDate, asOf.AddDate(0, 0, -180), asOf) {
-				recent = append(recent, a)
-			}
-		}
-		hrmax := EstimateHRMaxProfile(recent)
-		hr, conf := estimateThresholdHR(StableThresholdHrCandidates(recent, *speed), hrmax.EstimatedHRMax, hrmax.Confidence)
-		if candidateConfidenceRank(conf) > candidateConfidenceRank(ceiling) {
-			conf = ceiling
-		}
-		snapshot.ThresholdHR = round4(hr)
-		snapshot.ThresholdHRConfidence = conf
-	}
+	hr := buildCandidateHR(history, metadata, asOf, metadataCutoff)
+	report.HR = &hr
+	snapshot.ThresholdHR = round4(hr.ValueBpm)
+	snapshot.ThresholdHRConfidence = hr.Confidence
 	snapshot.AlgorithmVersion = candidateAlgorithmVersion
 	return snapshot, report
 }

@@ -225,7 +225,7 @@ func Replay(m ReplayManifest, codeVersion string) (ReplayReport, error) {
 	}
 	out.Evaluation = evaluateReplay(m, out.Cases, "final_holdout")
 	out.ValidationEvaluation = evaluateReplay(m, out.Cases, "validation")
-	out.Reasons = []string{"candidate_hour_capability_v1_research_parameters_uncalibrated", "independent_HR_support_pending_T5", "HR_accuracy_and_cross_duration_scoring_not_implemented", "accuracy_release_gate_not_satisfied"}
+	out.Reasons = []string{"candidate_hour_capability_v1_research_parameters_uncalibrated", "candidate_independent_HR_v1_research_parameters_uncalibrated", "HR_accuracy_and_cross_duration_scoring_not_implemented", "accuracy_release_gate_not_satisfied"}
 	if out.Inventory.UnknownAvailability > 0 {
 		out.Reasons = append(out.Reasons, "historical_availability_not_proven_for_all_exported_inputs")
 	}

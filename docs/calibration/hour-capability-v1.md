@@ -76,3 +76,5 @@ measurement 容差并不表示次极限是精确能力。3min 快段只约束 Vm
 - Replay 顶层 Reasons 删除“仍用legacy速度估计器、T4未完成”的过时诊断，改为真实的 `candidate_hour_capability_v1_research_parameters_uncalibrated`、`independent_HR_support_pending_T5`。保留尚未实现的评分限制和不足的准确性门禁；公开 Replay 红绿测试防止实现身份再次与输出相矛盾。
 
 评审修复后的固定真实回放（`T4-independent-reviewfix-working-tree`）原 manifest 两次7.781/7.089秒，报告SHA256均 `ae3d40fe328e423c00f444fc773ee8231cd85f22c91098d5267058928e081b9e`；含69暂停反证的独立manifest耗时7.232秒，SHA256 `6f578e0bec87a06d1418828fac8905f702e55873d0065a01eadd5be0b4d24c69`。均exit2/insufficient；三版本完整cases与评审前T4相同，只更新顶层诊断和code标签，manifest/v3 hash不变。真实输入没有跨日root alias，本次修复的确定性保证来自端到端与纯 seam 回归，不能把这批回放当冲突alias准确性标签。
+
+后继 T5 已在 candidate 增加[独立 HR 支持](independent-hr-v1.md)，替换本文历史说明中的旧配速条件 HR；速度模型、v3/T2对照不变。没有独立 HR 协议时仍缺失，不以配速推 HR 再反证配速。
