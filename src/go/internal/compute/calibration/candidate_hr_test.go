@@ -350,3 +350,160 @@ func TestCandidateHRDoesNotChooseArbitraryLabMethodOnTiedLatestDay(t *testing.T)
 		t.Fatal("civil-date tie arbitrarily selected a physiological method")
 	}
 }
+
+func TestCandidateHRConflictingAdmittedAliasesAreRejectedBeforeDeduplication(t *testing.T) {
+	for _, kind := range []string{"value", "lab_method", "lab_instrument", "reference_tier"} {
+		t.Run(kind, func(t *testing.T) {
+			a, m, day := hrProtocolFixture()
+			a.LabelID = "a-low"
+			m.ActivityID = a.LabelID
+			m.RootActivityID = "same-root"
+			b, n := a, m
+			b.LabelID = "z-high"
+			n.ActivityID = b.LabelID
+			copyHR := *m.HR
+			n.HR = &copyHR
+			c, o, _ := hrProtocolFixture()
+			c.LabelID = "independent"
+			c.ActivityDate = day.AddDate(0, 0, -1)
+			o.ActivityID = c.LabelID
+			lab := func(value float64) *calibration.CandidateHRMetadata {
+				return &calibration.CandidateHRMetadata{Protocol: "lab_lthr_report_v1", Verified: true, LabHRBpm: floatPointer(value), LabMethod: "method_a", LabInstrument: "instrument_a", LabReportDate: day}
+			}
+			switch kind {
+			case "value":
+				b.Samples = append([]calibration.Sample(nil), a.Samples...)
+				for i := range b.Samples {
+					if *b.Samples[i].ElapsedS >= 600 {
+						b.Samples[i].HeartRateBpm = floatPointer(190)
+					}
+				}
+			case "lab_method":
+				m.HR = lab(174)
+				n.HR = lab(174)
+				n.HR.LabMethod = "method_b"
+			case "lab_instrument":
+				m.HR = lab(174)
+				n.HR = lab(174)
+				n.HR.LabInstrument = "instrument_b"
+			case "reference_tier":
+				n.HR = lab(174)
+			}
+			for _, swapIDs := range []bool{false, true} {
+				aa, bb, mm, nn := a, b, m, n
+				if swapIDs {
+					aa.LabelID, bb.LabelID = bb.LabelID, aa.LabelID
+					mm.ActivityID = aa.LabelID
+					nn.ActivityID = bb.LabelID
+				}
+				got, err := calibration.EstimateOfflineWithEvidence(calibration.StrategyCandidate, []calibration.Activity{bb, c, aa}, day, nil, []calibration.CandidateMetadata{o, nn, mm})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got.Snapshot.ThresholdHR == nil || *got.Snapshot.ThresholdHR != 170 || got.Evidence.HR.Confidence != calibration.ConfidenceLow || got.Evidence.HR.IndependentActivities != 1 || got.Evidence.HR.IndependentDays != 1 {
+					t.Fatalf("%s conflict hidden by ID order %v: %+v", kind, swapIDs, got.Evidence.HR)
+				}
+				rejected := 0
+				for _, obs := range got.Evidence.HR.Observations {
+					if obs.RootActivityID != "same-root" {
+						continue
+					}
+					if obs.Selected {
+						t.Fatal("conflicting alias selected")
+					}
+					for _, reason := range obs.Reasons {
+						if reason == "root_HR_alias_conflict" {
+							rejected++
+						}
+					}
+				}
+				if rejected != 2 {
+					t.Fatal("alias conflict missing from audit")
+				}
+			}
+		})
+	}
+}
+
+func TestCandidateHRInvalidOrUnavailableAliasDoesNotCreateValueConflict(t *testing.T) {
+	for _, kind := range []string{"bad_quality", "unverified", "late", "invalid_lab_instrument"} {
+		t.Run(kind, func(t *testing.T) {
+			a, m, day := hrProtocolFixture()
+			m.RootActivityID = "same-root"
+			b, n := a, m
+			b.LabelID = "a-invalid"
+			n.ActivityID = b.LabelID
+			b.Samples = append([]calibration.Sample(nil), a.Samples...)
+			copyHR := *m.HR
+			n.HR = &copyHR
+			for i := range b.Samples {
+				if *b.Samples[i].ElapsedS >= 600 {
+					b.Samples[i].HeartRateBpm = floatPointer(190)
+				}
+			}
+			switch kind {
+			case "bad_quality":
+				for i := range b.Samples {
+					if *b.Samples[i].ElapsedS >= 900 && *b.Samples[i].ElapsedS <= 960 {
+						b.Samples[i].HeartRateBpm = nil
+					}
+				}
+			case "unverified":
+				n.HR.Verified = false
+			case "late":
+				at := day.Add(time.Hour)
+				n.AvailableAt = &at
+			case "invalid_lab_instrument":
+				n.HR = &calibration.CandidateHRMetadata{Protocol: "lab_lthr_report_v1", Verified: true, LabHRBpm: floatPointer(190), LabMethod: "method_a", LabReportDate: day}
+			}
+			c, o, _ := hrProtocolFixture()
+			c.LabelID = "independent"
+			c.ActivityDate = day.AddDate(0, 0, -1)
+			o.ActivityID = c.LabelID
+			got, err := calibration.EstimateOfflineWithEvidence(calibration.StrategyCandidate, []calibration.Activity{b, c, a}, day, nil, []calibration.CandidateMetadata{n, o, m})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Snapshot.ThresholdHR == nil || *got.Snapshot.ThresholdHR != 170 || got.Evidence.HR.Confidence != calibration.ConfidenceMedium || got.Evidence.HR.IndependentActivities != 2 {
+				t.Fatalf("invalid alias poisoned valid HR support: %+v", got.Evidence.HR)
+			}
+		})
+	}
+}
+
+func TestCandidateHRAgreeingAliasesUsePublishedPrecisionIndependentOfID(t *testing.T) {
+	a, m, day := hrProtocolFixture()
+	a.LabelID = "a-first"
+	m.ActivityID = a.LabelID
+	m.RootActivityID = "same-root"
+	b, n := a, m
+	b.LabelID = "z-second"
+	n.ActivityID = b.LabelID
+	c, o, _ := hrProtocolFixture()
+	c.LabelID = "independent"
+	c.ActivityDate = day.AddDate(0, 0, -1)
+	o.ActivityID = c.LabelID
+	setHR := func(a *calibration.Activity, hr float64) {
+		a.Samples = append([]calibration.Sample(nil), a.Samples...)
+		for i := range a.Samples {
+			if *a.Samples[i].ElapsedS >= 600 {
+				a.Samples[i].HeartRateBpm = floatPointer(hr)
+			}
+		}
+	}
+	setHR(&a, 170.000041)
+	setHR(&b, 170.000049)
+	setHR(&c, 176.000049)
+	for _, swap := range []bool{false, true} {
+		aa, bb, mm, nn := a, b, m, n
+		if swap {
+			aa.LabelID, bb.LabelID = bb.LabelID, aa.LabelID
+			mm.ActivityID = aa.LabelID
+			nn.ActivityID = bb.LabelID
+		}
+		got, _ := calibration.EstimateOfflineWithEvidence(calibration.StrategyCandidate, []calibration.Activity{aa, bb, c}, day, nil, []calibration.CandidateMetadata{mm, nn, o})
+		if got.Snapshot.ThresholdHR == nil || *got.Snapshot.ThresholdHR != 173 || got.Evidence.HR.Confidence != calibration.ConfidenceMedium || got.Evidence.HR.IndependentActivities != 2 {
+			t.Fatalf("rounding-equivalent aliases changed support: %+v", got.Evidence.HR)
+		}
+	}
+}
