@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { projectCalibration, projectTrainingZones } from './trainingStatus.ts';
+import type { StrideZonesResponse } from '../types/health';
 /**
  * trainingStatus.ts 自检：`node utils/trainingStatus.check.mts`。
  * 只覆盖指标分类 / 图表配置 / 热力图 / 周剂量聚合，不依赖小程序运行时与 uCharts。
@@ -164,5 +167,64 @@ eq(columnGap(2, 300), 3, 'categoryGap caps at 3 for sparse columns');
 eq(columnGap(30, 300), 2, 'categoryGap proportional to slot at 30d');
 eq(columnGap(90, 300), 1, 'categoryGap floors at 1 for dense 90d columns');
 eq((colOpts.extra as { column: { width?: unknown } }).column.width, undefined, 'no fixed width to override the adaptive gap');
+
+
+
+// Public presentation seam: the same API response and independent expected literals as Web/iOS.
+const displayVectors = JSON.parse(readFileSync(new URL('../../../docs/calibration/fixtures/client-display-v1.json', import.meta.url), 'utf8'));
+const firstVector = displayVectors.cases[0];
+const firstDisplay = projectCalibration(firstVector.response as StrideZonesResponse);
+eq(firstDisplay.pace.value, firstVector.expected.pace, 'shared two-sided center');
+eq(firstDisplay.pace.range, firstVector.expected.pace_range, 'shared fast-to-slow range');
+for (const vector of displayVectors.cases) {
+  const display = projectCalibration(vector.response as StrideZonesResponse);
+  eq(display.pace.value, vector.expected.pace, `${vector.name} center`);
+  eq(display.pace.range, vector.expected.pace_range, `${vector.name} directional range`);
+  eq(display.hr.value, vector.expected.hr, `${vector.name} HR`);
+  eq(display.pace.evidenceDay, vector.expected.evidence_day, `${vector.name} evidence day`);
+  eq(display.cutoffDay, vector.expected.cutoff_day, `${vector.name} cutoff day`);
+  eq(display.computedShanghai, vector.expected.computed_shanghai, `${vector.name} execution instant`);
+}
+const weakDisplay = projectCalibration(displayVectors.cases.find((v: { name: string }) => v.name === 'low-stale').response);
+eq(weakDisplay.pace.support, '模型支持：低', 'quality high never upgrades low support');
+eq(weakDisplay.hr.lines.includes('心率支持证据陈旧'), true, 'stale reason remains visible');
+eq(firstDisplay.hr.label, '现场心率参考', 'field proxy is not physiological LTHR');
+eq(firstDisplay.pace.help.includes('来源活动不可查看；此处仅保留安全摘要。'), true, 'unverified source stays summary only');
+eq(projectCalibration(null).pace.value, '—', 'unavailable never becomes zero');
+eq(firstDisplay.hr.range, '支持范围 163–169 bpm', 'HR support range');
+const unavailableDisplay = projectCalibration(displayVectors.cases.find((v: { name: string }) => v.name === 'source-unavailable').response);
+eq(unavailableDisplay.pace.support, '来源信息不可用 · 保守参考', 'broken source is not mislabeled legacy');
+const paceOnlyZones = projectTrainingZones({ threshold: null, pace_zones: [{name:'Z1',label:'轻松',upper_pace:'4:10',lower_pace:'5:00'}], hr_zones:[] });
+eq(paceOnlyZones.hasZones, true, 'pace zones remain available without HR or center');
+eq(paceOnlyZones.paceZones[0].range, '4:10 – 5:00', 'zones retain server fast-to-slow order');
+eq(projectTrainingZones({threshold:null,pace_zones:[],hr_zones:[{name:'Z1',label:'轻松',lower_bpm:null,upper_bpm:140}]}).hasZones, true, 'HR zones remain available alone');
+const canonicalLegacy = structuredClone(firstVector.response);
+canonicalLegacy.threshold.source.speed.method = 'legacy_v3_training_estimate';
+eq(projectCalibration(canonicalLegacy).pace.lines.includes('旧版训练估计，非独立检测或实验室参考'), true, 'available legacy source remains honest');
+const canonicalHour = structuredClone(firstVector.response);
+canonicalHour.threshold.source.speed.method = 'direct_60min_maximal';
+eq(projectCalibration(canonicalHour).pace.help.includes('方法：约一小时全力直接锚点'), true, 'canonical direct hour method');
+
+
+const speedOnlySource = structuredClone(firstVector.response);
+delete speedOnlySource.threshold.source.hr;
+eq(projectCalibration(speedOnlySource).hr.support, '心率证据信息未提供', 'current speed-only source is not legacy');
+const unavailableHrTarget = structuredClone(firstVector.response);
+unavailableHrTarget.threshold.hr_bpm = null;
+unavailableHrTarget.threshold.source.hr.target_type = 'unavailable';
+eq(projectCalibration(unavailableHrTarget).hr.lines.includes('暂无可用心率参考'), true, 'unavailable HR is not an existing estimate');
+
+const protocolQuality = structuredClone(firstVector.response);
+protocolQuality.threshold.source.hr.measurement_quality = 'protocol_quality_gate_passed';
+protocolQuality.threshold.source.hr.support = 'low';
+const protocolQualityDisplay = projectCalibration(protocolQuality).hr;
+eq(protocolQualityDisplay.lines.includes('数据质量：通过协议质量门槛 · 全力证据：已确认全力'), true, 'canonical protocol quality retains its own meaning');
+eq(protocolQualityDisplay.support, '模型支持：低', 'protocol quality gate never upgrades model support');
+
+const missingAnchors = structuredClone(firstVector.response);
+missingAnchors.threshold.source.speed.reasons = ['no_independent_maximal_anchors'];
+eq(projectCalibration(missingAnchors).pace.lines.includes('缺少独立近全力证据'), true, 'canonical missing independent anchors reason');
+missingAnchors.threshold.source.speed.reasons = ['hour_extrapolation_not_identified_by_independent_recent_anchors'];
+eq(projectCalibration(missingAnchors).pace.lines.includes('近期独立锚点不足无法推断一小时能力'), true, 'canonical insufficient recent anchors reason');
 
 console.log('trainingStatus.check: OK');
