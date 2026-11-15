@@ -102,3 +102,31 @@ test("rejects duplicate source identities and impossible input dates", () => {
   assert.throws(() => SnapshotSchema.parse(snapshot), /Duplicate source IDs/);
   assert.throws(() => SnapshotSchema.parse({ ...fixture(), endDay: "2026-02-30" }));
 });
+
+test("missing distance and duration stay unknown rather than zero", () => {
+  const snapshot = fixture();
+  const run = snapshot.evidence.find((e) => e.id === "run");
+  assert(run);
+  run.content.distanceM = null;
+  run.content.durationS = null;
+  const result = describeSnapshot(snapshot);
+  const latest = result.conclusions.find((c) => c.id === "latest-run");
+  assert(latest);
+  assert.match(latest.text, /未知/);
+  assert(!latest.text.includes("0.0"));
+  assert.match(result.conclusions.find((c) => c.id === "recorded-structure")?.text ?? "", /累计 未知/);
+  assert.equal(result.context.weeklyRecordedVolumes.at(-1)?.recordedKm, null);
+  snapshot.evidence.push(row("second-run", "activity", { sport: "run_track", shanghaiDay: "2026-11-14", distanceM: 5000, durationS: 1500 }));
+  assert.match(describeSnapshot(snapshot).conclusions.find((c) => c.id === "recorded-structure")?.text ?? "", /5.0（1条缺失/);
+});
+
+test("latest activity uses the actual instant within the provider's Shanghai date", () => {
+  const snapshot = fixture();
+  snapshot.evidence = [
+    row("later", "activity", { sport: "run_outdoor", date: "2026-11-15T10:00:00Z", shanghaiDay: "2026-11-15", distanceM: 20000, durationS: 5000 }),
+    row("earlier", "activity", { sport: "run_outdoor", date: "2026-11-15T00:00:00Z", shanghaiDay: "2026-11-15", distanceM: 10000, durationS: 2500 }),
+  ];
+  const latest = describeSnapshot(snapshot).conclusions.find((c) => c.id === "latest-run");
+  assert.equal(latest?.evidence[0]?.id, "later");
+  assert.match(latest?.text ?? "", /20.0 公里/);
+});

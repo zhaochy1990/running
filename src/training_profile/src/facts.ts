@@ -2,9 +2,14 @@
 import { addDays, shanghaiIso } from "@stride/contract";
 import { type Conclusion, type Evidence, finite, refs, type Snapshot } from "./types.js";
 
-const day = (e: Evidence) => String(e.content.shanghaiDay ?? e.content.date ?? "");
-const total = (rows: Evidence[], key: string) => rows.reduce((s, e) => s + (finite(e.content[key]) ?? 0), 0);
-const km = (rows: Evidence[]) => (total(rows, "distanceM") / 1000).toFixed(1);
+const day = (e: Evidence) => String(e.kind === "activity" ? (e.content.shanghaiDay ?? "") : (e.content.date ?? ""));
+function measurement(rows: Evidence[], key: string, divisor: number) {
+  const values = rows.map((e) => finite(e.content[key])).filter((v): v is number => v !== null && v >= 0);
+  const missing = rows.length - values.length;
+  const value = missing === rows.length && missing > 0 ? null : values.reduce((a, b) => a + b, 0) / divisor;
+  return { value, missing, text: `${value === null ? "未知" : value.toFixed(1)}${missing ? `（${missing}条缺失，仅合计有值记录）` : ""}` };
+}
+const km = (rows: Evidence[]) => measurement(rows, "distanceM", 1000).text;
 const days = (rows: Evidence[]) => new Set(rows.map(day)).size;
 const sourceDates = (rows: Evidence[]) => [...new Set(rows.map(day).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)))].sort();
 
@@ -34,8 +39,8 @@ export function describeSnapshot(snapshot: Snapshot) {
   }
   add(
     "recorded-structure",
-    "半年训练记录的构成",
-    `取得 ${activities.length} 条活动：其中跑步 ${runs.length} 条，分布在 ${days(runs)} 个上海日期，累计 ${km(runs)} 公里、${(total(runs, "durationS") / 3600).toFixed(1)} 小时；力量 ${strength.length} 条，分布在 ${days(strength)} 天。`,
+    "窗口训练记录的构成",
+    `取得 ${activities.length} 条活动：其中跑步 ${runs.length} 条，分布在 ${days(runs)} 个上海日期，累计 ${km(runs)} 公里、${measurement(runs, "durationS", 3600).text} 小时；力量 ${strength.length} 条，分布在 ${days(strength)} 天。`,
     "训练经历与结构",
     activities,
   );
@@ -90,12 +95,16 @@ export function describeSnapshot(snapshot: Snapshot) {
       },
     );
   }
-  const latest = runs.toSorted((a, b) => day(a).localeCompare(day(b))).at(-1);
+  const instant = (e: Evidence) => {
+    const time = Date.parse(String(e.content.date));
+    return Number.isFinite(time) ? time : 0;
+  };
+  const latest = runs.toSorted((a, b) => day(a).localeCompare(day(b)) || instant(a) - instant(b)).at(-1);
   if (latest)
     add(
       "latest-run",
       "最近一次跑步表现记录",
-      `${day(latest)}：${km([latest])} 公里，${(total([latest], "durationS") / 60).toFixed(1)} 分钟，平均配速 ${String(latest.content.avgPaceSKm ?? "未知")} 秒/公里，平均心率 ${String(latest.content.avgHr ?? "未知")} bpm。`,
+      `${day(latest)}：${km([latest])} 公里，${measurement([latest], "durationS", 60).text} 分钟，平均配速 ${String(latest.content.avgPaceSKm ?? "未知")} 秒/公里，平均心率 ${String(latest.content.avgHr ?? "未知")} bpm。`,
       "近期运动表现",
       [latest],
       { lifecycle: "historical", limitations: ["单次表现不等于长期能力，也不证明某种环境或补给产生了效果。"] },
@@ -153,14 +162,24 @@ export function describeSnapshot(snapshot: Snapshot) {
   for (let end = snapshot.endDay; end >= snapshot.startDay; end = addDays(end, -7)) {
     const start = [snapshot.startDay, addDays(end, -6)].sort().at(-1) ?? snapshot.startDay;
     const rows = runs.filter((e) => day(e) >= start && day(e) <= end);
-    weekly.push({ start, end, recordedKm: Number(km(rows)), runDays: days(rows), records: rows.length });
+    const distance = measurement(rows, "distanceM", 1000);
+    weekly.push({
+      start,
+      end,
+      recordedKm: distance.value === null ? null : Number(distance.value.toFixed(1)),
+      missingDistances: distance.missing,
+      runDays: days(rows),
+      records: rows.length,
+    });
   }
   const fullWeeks = weekly.filter((w) => addDays(w.start, 6) === w.end);
+  const completeDistances = fullWeeks.flatMap((w) => (w.missingDistances === 0 && w.recordedKm !== null ? [w.recordedKm] : []));
+  const weeklyRange = completeDistances.length ? `${Math.min(...completeDistances)}–${Math.max(...completeDistances)} 公里` : "未知";
   if (runs.length && fullWeeks.length)
     add(
       "weekly-recorded-history",
       "训练经历的周序列",
-      `本窗口含 ${fullWeeks.length} 个完整7天区间，其中 ${fullWeeks.filter((w) => w.records > 0).length} 个有跑步记录；各区间记录跑量 ${Math.min(...fullWeeks.map((w) => w.recordedKm))}–${Math.max(...fullWeeks.map((w) => w.recordedKm))} 公里。`,
+      `本窗口含 ${fullWeeks.length} 个完整7天区间，其中 ${fullWeeks.filter((w) => w.records > 0).length} 个有跑步记录；距离字段完整的 ${completeDistances.length} 个区间，记录跑量范围 ${weeklyRange}。`,
       "训练历史与变化",
       runs,
       { limitations: ["7天区间以窗口结束日向前对齐，不保证都是自然周；只比较已记录跑量，不解释变化原因，也不把无记录当作确认休息。"] },

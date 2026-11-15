@@ -45,7 +45,6 @@ export async function generateProfile(snapshot: Snapshot, config: ModelConfig, p
           facts: facts.conclusions.map(({ evidence: _e, ...c }) => c),
           ...facts.context,
           unknowns: facts.unknowns,
-          previousValidConclusions: previous ? validConclusions(previous, snapshot).map(({ evidence: _e, ...c }) => c) : null,
         }),
       ],
     ]);
