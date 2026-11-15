@@ -120,8 +120,8 @@ export interface CalibrationMetricSource {
   measurement_quality: string;
   effort_support: string;
   support: string;
-  range_low?: number;
-  range_high?: number;
+  range_low?: number | null;
+  range_high?: number | null;
   range_meaning: string;
   evidence_date?: string;
   independent_activities: number;

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 
 import * as api from "../../api";
+import fixture from "../../../../docs/calibration/fixtures/client-display-v1.json";
 import { UserContext } from "../../UserContextValue";
 import TrainingStatusPage, { ActivityHeatmap, heatmapBucket } from "../TrainingStatusPage";
 
@@ -138,6 +139,17 @@ beforeEach(() => {
 });
 
 describe("TrainingStatusPage", () => {
+  it("shows server range and accessible explanations within the existing threshold cards", async () => {
+    vi.mocked(api.getStrideZones).mockResolvedValue(fixture.cases[0].response as api.StrideZonesResponse);
+    renderPage();
+    expect(await screen.findByText("支持范围 3:34–3:36 /km")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("阈值配速说明"));
+    expect(screen.getAllByText("证据日 2026-10-01")[0]).toBeVisible();
+    expect(screen.getAllByText("数据截止 2026-11-14").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/校准执行 2026-11-15 00:30/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/HR-pace 回归/)).not.toBeInTheDocument();
+  });
+
   it("renders all sections on happy path", async () => {
     renderPage();
     await waitFor(() => expect(screen.getByText("训练状态")).toBeInTheDocument());
@@ -167,7 +179,7 @@ describe("TrainingStatusPage", () => {
     expect(screen.getByText(/绿灯 · 可进行强度训练/)).toBeInTheDocument();
 
     // Footer contains calibration date
-    expect(screen.getByText(/2026-05-15/)).toBeInTheDocument();
+    expect(screen.getAllByText(/2026-05-15/).length).toBeGreaterThan(0);
   });
 
   it("shows empty-state when zones threshold is null", async () => {
