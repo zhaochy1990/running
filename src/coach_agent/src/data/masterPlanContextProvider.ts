@@ -1,7 +1,8 @@
 import { addDays, mondayOnOrBefore as monday, planningStartDate, shanghaiDay } from "@stride/contract";
-import type { PhasingActivityInput } from "../graph/master_plan/phasing/evidence.js";
 import { type ContextSnapshot, ContextSnapshotSchema, type MasterPlanContextProvider } from "../graph/master_plan/index.js";
+import type { PhasingActivityInput } from "../graph/master_plan/phasing/evidence.js";
 import { isQualityRunningActivity, isRunningActivity } from "./activityClassification.js";
+import { calibrationMetadataShape } from "./calibrationMetadata.js";
 import type {
   ActiveMasterPlanMetadata,
   Activity,
@@ -153,6 +154,7 @@ function pbShape(rows: PersonalBest[]) {
 function calibrationShape(c: RunningCalibration | null) {
   return (
     c && {
+      ...calibrationMetadataShape(c),
       as_of_date: c.asOfDate,
       threshold_hr: c.thresholdHr,
       threshold_speed_mps: c.thresholdSpeedMps,

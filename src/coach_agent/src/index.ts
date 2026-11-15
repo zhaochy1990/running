@@ -32,6 +32,8 @@ export { CoachTurnScope } from "./agents/turnScope.js";
 export type { CoachAgentConfig, ModelConfig } from "./config/config.js";
 export { getAgentConfig, loadConfig } from "./config/config.js";
 export { isQualityRunningActivity, isRunningActivity } from "./data/activityClassification.js";
+export type { CalibrationSelection, CalibrationSource } from "./data/calibrationMetadata.js";
+export { CalibrationSourceSchema } from "./data/calibrationMetadata.js";
 export type * from "./data/dataProvider.js";
 export { DataProviderMasterPlanContextProvider } from "./data/masterPlanContextProvider.js";
 export type {
@@ -60,19 +62,19 @@ export type {
 } from "./graph/rolling/detect/index.js";
 export { assessWeek, assessWeeks, matchWeekSessions, plannedFamilyOf, qualityBandMidpointSPerKm } from "./graph/rolling/detect/index.js";
 // #858 PR-C 调整提案层（滚动内核共享投影链的配方覆写入口）。
+// currentWeekOf/evaluateRollingWindow #858 PR-C 起供夜检扫描复用（批窗判定的可观测内核）；
+// buildMaintenanceWeek/isMaintenanceWeeklyDoc #858 PR-D 起供伤病维持课（夜检+worker 复用）。
 export type {
   AdjustOutcome,
   AdjustProjectionInput,
   AdjustRecipe,
   AdjustWindowDecision,
   ExistingWeekRef,
+  MaintenanceInput,
   RollingDeps,
   RollingOutcome,
   RollingWindow,
 } from "./graph/rolling/index.js";
-// currentWeekOf/evaluateRollingWindow #858 PR-C 起供夜检扫描复用（批窗判定的可观测内核）；
-// buildMaintenanceWeek/isMaintenanceWeeklyDoc #858 PR-D 起供伤病维持课（夜检+worker 复用）。
-export type { MaintenanceInput } from "./graph/rolling/index.js";
 export {
   buildMaintenanceWeek,
   buildWeeklyDocs,

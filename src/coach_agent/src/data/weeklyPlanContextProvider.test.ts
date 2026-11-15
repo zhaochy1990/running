@@ -181,6 +181,12 @@ test("weekly context combines all weekly planning evidence", async () => {
     async getLatestRunningCalibration() {
       return {
         asOfDate: "2026-08-01",
+        calibrationId: 42,
+        algorithmVersion: 3,
+        computedAt: "2026-08-01T12:00:00Z",
+        fingerprint: "go-fingerprint",
+        selection: { mode: "active" as const, policy_revision: 1, requested_version: 3, effective_version: 3, state: "selected" as const },
+        source: { schema_version: 0, state: "legacy_source_missing" },
         thresholdHr: 170,
         thresholdSpeedMps: 4,
         rhrBaseline: 48,
@@ -199,6 +205,7 @@ test("weekly context combines all weekly planning evidence", async () => {
 
   const snapshot = await provider.loadSnapshot("athlete", "2026-08-15");
 
+  assert.equal((snapshot.user_profile as unknown as Record<string, unknown>).calibration_id, 42);
   assert.equal(snapshot.as_of, "2026-08-15");
   assert.equal(snapshot.plan_start, "2026-08-17");
   assert.equal(snapshot.week_name, "2026-08-17_08-23");
@@ -339,6 +346,12 @@ test("weekly context combines all weekly planning evidence", async () => {
   assert.deepEqual(snapshot.recovery.seven_day_average, { rhr: 51, hrv: 58 });
   assert.equal("history" in snapshot.recovery, false);
   assert.deepEqual(snapshot.user_profile, {
+    calibration_id: 42,
+    algorithm_version: 3,
+    computed_at: "2026-08-01T12:00:00Z",
+    fingerprint: "go-fingerprint",
+    selection: { mode: "active", policy_revision: 1, requested_version: 3, effective_version: 3, state: "selected" },
+    source: { schema_version: 0, state: "legacy_source_missing" },
     age: 47,
     gender: "male",
     weight_kg: 68,

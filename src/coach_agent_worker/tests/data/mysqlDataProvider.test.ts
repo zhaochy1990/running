@@ -128,14 +128,30 @@ test("plan reads are scoped to user, active version, and week start", async () =
 
 test("running calibration omits zone confidence and speed details", async () => {
   const calls: Array<{ sql: string; values: unknown[] }> = [];
-  const provider = new MySqlDataProvider({
+  const connection = {
+    async commit() {},
+    async rollback() {},
+    release() {},
     async query(sql: string, values: unknown[]) {
       calls.push({ sql, values });
+      if (sql.includes("running_calibration_policy")) return [[]];
+      if (!sql.startsWith("SELECT")) return [[]];
       if (sql.includes("running_calibration_snapshot")) {
         return [
           [
             {
               id: 42,
+              algorithm_version: 3,
+              computed_at: "2026-08-08T12:00:00.000Z",
+              source_json: JSON.stringify({
+                schema_version: 1,
+                state: "available",
+                strategy: "v3",
+                data_cutoff_day: "2026-08-08",
+                fingerprint: "go-digest",
+                notes: "must-not-leak",
+                coordinates: [1, 2],
+              }),
               as_of_date: "2026-08-08",
               threshold_hr: 168,
               threshold_speed_mps: 3.9,
@@ -157,11 +173,16 @@ test("running calibration omits zone confidence and speed details", async () => 
         ];
       return [[{ name: "threshold", min_bpm: 160, max_bpm: 170 }]];
     },
-  } as never);
+  };
+  const provider = new MySqlDataProvider({ getConnection: async () => connection, query: connection.query } as never);
+  const calibration = await provider.getLatestRunningCalibration("athlete", "2026-08-14");
+  assert.equal(calibration?.algorithmVersion, 3);
+  assert.deepEqual(calibration?.source, { schema_version: 1, state: "available", strategy: "v3", data_cutoff_day: "2026-08-08", fingerprint: "go-digest" });
+  assert.equal(calibration?.fingerprint, "go-digest");
   assert.deepEqual((await provider.getLatestRunningCalibration("athlete", "2026-08-14"))?.paceZones, [
     { name: "threshold", minPaceSPerKm: 270, maxPaceSPerKm: 250 },
   ]);
-  for (const sql of calls.slice(1).map((call) => call.sql)) {
+  for (const sql of calls.filter((call) => call.sql.includes("pace_zone") || call.sql.includes("hr_zone")).map((call) => call.sql)) {
     assert.doesNotMatch(sql, /confidence|min_speed_mps|max_speed_mps/);
   }
 });

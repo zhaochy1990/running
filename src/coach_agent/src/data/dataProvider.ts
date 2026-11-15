@@ -1,3 +1,4 @@
+import type { CalibrationSelection, CalibrationSource } from "./calibrationMetadata.js";
 /** Read-only athlete data needed by the Coach Agent. */
 export interface DataProvider {
   getUserProfile(userId: string): Promise<UserProfile | null>;
@@ -126,6 +127,12 @@ export interface PersonalBest {
   activityLabelId: string;
 }
 export interface RunningCalibration {
+  calibrationId?: number;
+  algorithmVersion?: number;
+  computedAt?: string;
+  selection?: CalibrationSelection;
+  source?: CalibrationSource;
+  fingerprint?: string;
   asOfDate: string;
   thresholdHr: number | null;
   thresholdSpeedMps: number | null;
