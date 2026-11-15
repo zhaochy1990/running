@@ -43,6 +43,7 @@ export function calibrationDisplay(threshold: StrideThreshold | null | undefined
   }
   const details: string[] = [];
   let status = !threshold ? "尚无校准，证据不足" : !m ? "旧版估计 · 来源信息不可用" : `估计支持 ${quality[m.support] ?? "未知"}`;
+  if (source?.state === "available" && !m) status = isSpeed ? "配速证据信息未提供" : "心率证据信息未提供";
   if (m?.method === "legacy_v3_training_estimate" || threshold?.algorithm_version === 3) status = "旧版训练估计 · 非独立检测值";
   if (source?.state === "source_unavailable") status = "来源信息暂不可用";
   if (m) {
@@ -52,6 +53,7 @@ export function calibrationDisplay(threshold: StrideThreshold | null | undefined
     if (!isSpeed) {
       if (m.target_type === "lab_method_specific_LTHR") details.push(`实验室方法特定 LTHR · ${m.lab_method || "具体方法未提供"}`);
       else if (m.target_type === "field_HR_proxy_not_physiological_LTHR") details.push("现场心率代理，不是实验室生理 LTHR");
+      else if (m.target_type === "unavailable") details.push("心率目标不可用，无法可靠估计");
       else details.push("训练心率估计，不是独立实验室检测值");
     }
     details.push(`证据日 ${m.evidence_date || "未提供"}`);
@@ -65,7 +67,7 @@ export function calibrationDisplay(threshold: StrideThreshold | null | undefined
     }
     details.push(...new Set([...(m.reasons ?? []), ...(m.limitations ?? [])].map(reasonText)));
   } else if (threshold) {
-    details.push("旧版训练估计，不能视为独立检测值；测量质量与努力程度未提供");
+    details.push(source?.state === "available" ? "测量质量与努力程度未提供，无法判断独立支持" : "旧版训练估计，不能视为独立检测值；测量质量与努力程度未提供");
   }
   if (range) details.push("支持／敏感性范围，不代表 95% 置信区间或概率");
   if (threshold) {

@@ -31,4 +31,12 @@ describe("calibration explanation projection", () => {
     expect(calibrationDisplay(th, "speed").value).toBe("—");
     expect(calibrationDisplay(th, "speed").range).toBeNull();
   });
+  it("does not call a current snapshot with absent HR evidence a legacy HR estimate", () => {
+    const th = structuredClone(fixture.cases[0].response.threshold) as StrideThreshold;
+    delete th.source!.hr;
+    th.hr_bpm = null;
+    expect(calibrationDisplay(th, "hr").status).toBe("心率证据信息未提供");
+    expect(calibrationDisplay(th, "hr").details.join(" ")).not.toContain("旧版训练估计");
+  });
+
 });
