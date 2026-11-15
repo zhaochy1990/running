@@ -144,6 +144,7 @@
       <textarea
         class="coach-input__field"
         value="{{input}}"
+        maxlength="5000"
         placeholder="问问教练…"
         placeholder-class="coach-input__placeholder"
         auto-height="{{true}}"
