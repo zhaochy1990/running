@@ -1,0 +1,22 @@
+{
+  "name": "@stride/training-profile",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Throwaway training profile POC: snapshot to local review files.",
+  "scripts": {
+    "build": "tsc",
+    "test": "pnpm build && node --test dist/*.test.js",
+    "poc": "node dist/cli.js"
+  },
+  "dependencies": {
+    "@langchain/core": "^1.2.5",
+    "@stride/common": "workspace:*",
+    "@stride/contract": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^7.0.2"
+  }
+}
