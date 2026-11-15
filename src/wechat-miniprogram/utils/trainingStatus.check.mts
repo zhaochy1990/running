@@ -181,6 +181,10 @@ for (const vector of displayVectors.cases) {
   eq(display.pace.value, vector.expected.pace, `${vector.name} center`);
   eq(display.pace.range, vector.expected.pace_range, `${vector.name} directional range`);
   eq(display.hr.value, vector.expected.hr, `${vector.name} HR`);
+  if (vector.expected.hr_range != null) eq(display.hr.range, vector.expected.hr_range, `${vector.name} canonical HR range`);
+  if (vector.expected.hr_method_label != null) eq(display.hr.help.includes(`方法：${vector.expected.hr_method_label}`), true, `${vector.name} canonical HR method`);
+  if (vector.expected.speed_effort_label != null) eq(display.pace.lines.some((line) => line.includes(`全力证据：${vector.expected.speed_effort_label}`)), true, `${vector.name} canonical effort support`);
+  if (vector.expected.lab_method != null) eq(display.hr.lines.includes(`实验室方法特定阈值：${vector.expected.lab_method}`), true, `${vector.name} original lab method`);
   eq(display.pace.evidenceDay, vector.expected.evidence_day, `${vector.name} evidence day`);
   eq(display.cutoffDay, vector.expected.cutoff_day, `${vector.name} cutoff day`);
   eq(display.computedShanghai, vector.expected.computed_shanghai, `${vector.name} execution instant`);
