@@ -145,6 +145,9 @@ func TestReplayOutcomesCountsPredictionStatesOnOneSharedDenominator(t *testing.T
 	if found.EligibleActivities != 4 || found.PairedActivities != 1 {
 		t.Fatalf("counts %+v", found)
 	}
+	if _, err := calibration.ReportReplayOutcomes(m, "", results); err == nil {
+		t.Fatal("sealed report lacks required code provenance")
+	}
 	sealedReport, sealedErr := calibration.ReportReplayOutcomes(m, "fixed-code", results)
 	if sealedErr != nil {
 		t.Fatal(sealedErr)

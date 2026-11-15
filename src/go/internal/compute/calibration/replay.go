@@ -271,6 +271,9 @@ func replay(m ReplayManifest, codeVersion string, sidecar *ReplayEvaluationSidec
 // ReportReplayOutcomes renders already-fitted, sealed cases with the same
 // scoring and state reduction used by Replay. It never reruns fitting.
 func ReportReplayOutcomes(m ReplayManifest, code string, cases []ReplayCaseResult) (ReplayReport, error) {
+	if code == "" {
+		return ReplayReport{}, fmt.Errorf("sealed report requires code_version provenance")
+	}
 	var err error
 	cases, err = serializableReplayResults(cases)
 	if err != nil {
