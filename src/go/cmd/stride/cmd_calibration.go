@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/zhaochy1990/stride/internal/compute/calibration"
+	"github.com/zhaochy1990/stride/internal/compute/calibrationsource"
 )
 
 type calibrationEvidenceInsufficient struct{}
@@ -69,6 +70,42 @@ func newCalibrationCmd() *cobra.Command {
 	}}
 	replay.Flags().StringVar(&manifest, "manifest", "", "local immutable JSON or JSON.gz manifest")
 	replay.Flags().StringVar(&code, "code-version", "", "exact source commit (required provenance)")
-	command.AddCommand(replay)
+	command.AddCommand(replay, newCalibrationPublicDataCmd())
+	return command
+}
+
+func newCalibrationPublicDataCmd() *cobra.Command {
+	var format, input, labels, code, strategy string
+	command := &cobra.Command{Use: "public-data", Short: "Inspect local public research data; no database or network access", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		if format == "" || input == "" || code == "" {
+			return fmt.Errorf("required: --format FORMAT --input PATH --code-version COMMIT")
+		}
+		raw, err := os.ReadFile(input)
+		if err != nil {
+			return err
+		}
+		var annotations []byte
+		if labels != "" {
+			annotations, err = os.ReadFile(labels)
+			if err != nil {
+				return err
+			}
+		}
+		report, err := calibrationsource.InspectPublicData(format, raw, annotations, calibration.Strategy(strategy), code)
+		if err != nil {
+			return err
+		}
+		encoder := json.NewEncoder(cmd.OutOrStdout())
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(report); err != nil {
+			return err
+		}
+		return calibrationEvidenceInsufficient{}
+	}}
+	command.Flags().StringVar(&format, "format", "", "fitrec-jsonl, trinity-stage-csv, or osf-60min-csv")
+	command.Flags().StringVar(&input, "input", "", "local input; never downloaded or persisted by this command")
+	command.Flags().StringVar(&labels, "labels", "", "optional local Trinity author-label JSON")
+	command.Flags().StringVar(&code, "code-version", "", "exact source commit (required provenance)")
+	command.Flags().StringVar(&strategy, "strategy", "v3", "explicit offline calibration strategy")
 	return command
 }
