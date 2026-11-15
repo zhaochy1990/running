@@ -3,6 +3,7 @@ import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { loadConfig, type ModelConfig } from "@stride/common";
 import { z } from "zod/v4";
+import { restoreFullReports } from "./exploration.js";
 import { createRunDirectory, savePrivate, saveProfile } from "./files.js";
 import { generateProfile } from "./generate.js";
 import { ProfileSchema, SnapshotSchema } from "./types.js";
@@ -60,21 +61,7 @@ if (reuseDirectory) {
   // Early POC analysis stored model-facing brief entries. Recover their full
   // immutable references from the original child_report journal, not inference.
   if (reuse) {
-    const state = z
-      .object({ workers: z.array(z.object({ worker: z.string(), attempt: z.number(), entries: z.array(z.record(z.string(), z.unknown())) }).passthrough()) })
-      .parse(reuse.analysis);
-    if (state.workers.some((w) => w.entries.some((e) => !Array.isArray(e.evidence)))) {
-      const events = (await readFile(resolve(reuseDirectory, "agent-trace.jsonl"), "utf8"))
-        .trim()
-        .split("\n")
-        .map((line) => JSON.parse(line) as Record<string, unknown>);
-      for (const worker of state.workers) {
-        const event = events.find((e) => e.type === "child_report" && e.worker === worker.worker && e.attempt === worker.attempt);
-        if (!event || !Array.isArray(event.entries)) throw new Error("Full saved child report missing from journal");
-        worker.entries = event.entries;
-      }
-      reuse.analysis = state;
-    }
+    reuse.analysis = await restoreFullReports(reuse.analysis, () => readFile(resolve(reuseDirectory, "agent-trace.jsonl"), "utf8"));
   }
   const metrics = z.object({ model: z.literal("deepseek-flash") }).parse(JSON.parse(await readFile(resolve(reuseDirectory, "metrics.json"), "utf8")));
   if (!metrics.model) throw new Error("Invalid saved model");

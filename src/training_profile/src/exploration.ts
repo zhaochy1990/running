@@ -32,6 +32,26 @@ export interface WorkerReport {
   error?: string;
 }
 
+/** Early analysis used brief entries; recover full reports without losing history. */
+export async function restoreFullReports(input: unknown, readJournal: () => Promise<string>) {
+  const state = z
+    .object({ workers: z.array(z.object({ worker: z.string(), attempt: z.number(), entries: z.array(z.record(z.string(), z.unknown())) }).passthrough()) })
+    .passthrough()
+    .parse(input);
+  const brief = state.workers.filter((w) => w.entries.some((e) => !Array.isArray(e.evidence)));
+  if (!brief.length) return state;
+  const events = (await readJournal())
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  for (const worker of brief) {
+    const event = events.find((e) => e.type === "child_report" && e.worker === worker.worker && e.attempt === worker.attempt);
+    if (!event || !Array.isArray(event.entries)) throw new Error("Full saved child report missing from journal");
+    worker.entries = event.entries;
+  }
+  return state;
+}
+
 export class Explorations {
   private reviewOnly = false;
   readonly reports = new Map<WorkerId, WorkerReport>();

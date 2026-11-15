@@ -5,7 +5,7 @@ import { ProfileAgentSession, SubmissionSchema } from "./agentSession.js";
 import { ProfileAssembly, ReviewSchema } from "./assembly.js";
 import { buildDeterministic } from "./deterministic.js";
 import { dimensions } from "./dimensions.js";
-import { Explorations } from "./exploration.js";
+import { Explorations, restoreFullReports } from "./exploration.js";
 import { dimensionView } from "./files.js";
 import { assertSameReviewHistory, loadHistory } from "./history.js";
 import { type Evidence, type Profile, ProfileSchema, type Snapshot, validConclusions } from "./types.js";
@@ -452,4 +452,28 @@ test("review-only restores completed reports with full sources and forbids new e
   assert.ok(changed.evidence[0]);
   changed.evidence[0].revision = "r2";
   assert.throws(() => new Explorations(changed, f.code, f.history, f.workers.runtime).restoreFinished(saved), /valid sources/);
+});
+
+test("legacy brief recovery preserves history and full receipt state through review-only restoration", async () => {
+  const f = await assemblyFixture();
+  const report = f.workers.reports.get("ability");
+  const entry = f.code.find((c) => c.metadata?.dimensionId === "ability");
+  assert.ok(report && entry);
+  report.entries = [{ ...structuredClone(entry), id: "child:ability:1:saved" }];
+  const input = {
+    history: f.history,
+    master: { receipts: [] },
+    workers: [...f.workers.reports.values()].map((r) => ({ ...f.workers.brief(r), hypotheses: [], revisions: [], receipts: [] })),
+  };
+  const journal = JSON.stringify({ type: "child_report", worker: "ability", attempt: 1, entries: report.entries });
+  const restored = await restoreFullReports(input, async () => journal);
+  assertSameReviewHistory(restored, f.history);
+  assert.deepEqual(restored.master, input.master);
+  const workers = new Explorations(f.s, f.code, f.history, f.workers.runtime);
+  workers.restoreFinished(restored);
+  assert.deepEqual(workers.entries()[0]?.evidence, entry.evidence);
+  const secondPass = await restoreFullReports(restored, async () => {
+    throw new Error("Complete reports do not require journal recovery");
+  });
+  assert.deepEqual(secondPass, restored);
 });
