@@ -7,6 +7,7 @@ function pace(value: number | null | undefined): string | null {
     ? `${Math.floor(value / 60)}:${String(value % 60).padStart(2, "0")}` : null;
 }
 const quality: Record<string, string> = { high: "高", medium: "中", low: "低", none: "不足", unknown: "未知" };
+const measurementQuality = { ...quality, protocol_quality_gate_passed: "通过协议质量门槛" } as Record<string, string>;
 const effort: Record<string, string> = { confirmed_maximal: "已确认全力", probable_maximal: "可能全力", submaximal: "非全力", unknown: "未知" };
 const methods: Record<string, string> = {
   direct_60min_maximal: "一小时全力表现锚点", speed_duration_inference: "跨时长模型推断", insufficient_maximal_support: "缺少近全力支持", legacy_v3_training_estimate: "旧版训练估计，非独立检测值",
@@ -16,7 +17,8 @@ const methods: Record<string, string> = {
 };
 function reasonText(code: string): string {
   if (code.toLowerCase().includes("stale")) return "证据陈旧，需更新有效证据";
-  if (["insufficient_maximal_support", "no_maximal_anchor"].includes(code)) return "缺少独立近全力证据";
+  if (["insufficient_maximal_support", "no_maximal_anchor", "no_independent_maximal_anchors"].includes(code)) return "缺少独立近全力证据";
+  if (code === "hour_extrapolation_not_identified_by_independent_recent_anchors") return "近期独立锚点不足，无法推断一小时能力";
   if (code === "no_independent_HR_protocol_support") return "缺少独立心率协议支持";
   if (code === "research_parameters_not_independently_calibrated") return "研究参数尚未独立校准";
   if (code === "environment_not_corrected") return "未校正环境差异";
@@ -47,7 +49,7 @@ export function calibrationDisplay(threshold: StrideThreshold | null | undefined
   if (m?.method === "legacy_v3_training_estimate" || threshold?.algorithm_version === 3) status = "旧版训练估计 · 非独立检测值";
   if (source?.state === "source_unavailable") status = "来源信息暂不可用";
   if (m) {
-    details.push(`测量质量 ${quality[m.measurement_quality] ?? "未知"} · 努力程度 ${effort[m.effort_support] ?? "未知"}`);
+    details.push(`测量质量 ${measurementQuality[m.measurement_quality] ?? "未知"} · 努力程度 ${effort[m.effort_support] ?? "未知"}`);
     details.push(methods[m.method] ?? (m.method.includes("model") ? "跨时长模型推断" : "估计方法详见服务端证据"));
     if (value === "—") details.push("无法可靠估计中心值");
     if (!isSpeed) {

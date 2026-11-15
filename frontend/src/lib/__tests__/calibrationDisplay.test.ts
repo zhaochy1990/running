@@ -39,4 +39,15 @@ describe("calibration explanation projection", () => {
     expect(calibrationDisplay(th, "hr").details.join(" ")).not.toContain("旧版训练估计");
   });
 
+  it("explains actual publisher protocol quality and independent-anchor reasons separately from support", () => {
+    const th = structuredClone(fixture.cases[0].response.threshold) as StrideThreshold;
+    th.source!.hr!.measurement_quality = "protocol_quality_gate_passed";
+    th.source!.hr!.support = "low";
+    expect(calibrationDisplay(th, "hr").details[0]).toContain("通过协议质量门槛");
+    expect(calibrationDisplay(th, "hr").status).toBe("估计支持 低");
+    th.source!.speed!.reasons = ["no_independent_maximal_anchors", "hour_extrapolation_not_identified_by_independent_recent_anchors"];
+    expect(calibrationDisplay(th, "speed").details).toContain("缺少独立近全力证据");
+    expect(calibrationDisplay(th, "speed").details).toContain("近期独立锚点不足，无法推断一小时能力");
+  });
+
 });
