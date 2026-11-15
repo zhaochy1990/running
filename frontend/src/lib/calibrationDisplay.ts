@@ -30,7 +30,8 @@ function reasonText(code: string): string {
 export interface CalibrationDisplay { value: string; range: string | null; status: string; details: string[]; definition: string }
 export function calibrationDisplay(threshold: StrideThreshold | null | undefined, metric: "speed" | "hr"): CalibrationDisplay {
   const source = threshold?.source;
-  const m = source?.state === "available" ? source[metric] : undefined;
+  const knownSource = source?.schema_version === 1 && source?.state === "available";
+  const m = knownSource ? source[metric] : undefined;
   const isSpeed = metric === "speed";
   const definition = isSpeed ? "阈值配速估计当前全力可维持约一小时的能力，不是普通训练平均配速。" : "阈值心率需独立的心率质量与持续强度支持，不能用心率反过来独立证明配速。";
   const value = isSpeed ? pace(threshold?.pace_per_km_sec) ?? "—" : threshold?.hr_bpm != null && Number.isFinite(threshold.hr_bpm) && threshold.hr_bpm > 0 && threshold.hr_bpm < 300 ? String(Math.round(threshold.hr_bpm)) : "—";
@@ -46,9 +47,9 @@ export function calibrationDisplay(threshold: StrideThreshold | null | undefined
   }
   const details: string[] = [];
   let status = !threshold ? "尚无校准，证据不足" : !m ? "旧版估计 · 来源信息不可用" : `估计支持 ${quality[m.support] ?? "未知"}`;
-  if (source?.state === "available" && !m) status = isSpeed ? "配速证据信息未提供" : "心率证据信息未提供";
+  if (knownSource && !m) status = isSpeed ? "配速证据信息未提供" : "心率证据信息未提供";
   if (m?.method === "legacy_v3_training_estimate" || threshold?.algorithm_version === 3) status = "旧版训练估计 · 非独立检测值";
-  if (source?.state === "source_unavailable") status = "来源信息暂不可用";
+  if (source && !knownSource && source.state !== "legacy_source_missing") status = "来源信息暂不可用";
   if (m) {
     details.push(`测量质量 ${measurementQuality[m.measurement_quality] ?? "未知"} · 努力程度 ${effort[m.effort_support] ?? "未知"}`);
     details.push(methods[m.method] ?? (m.method.includes("model") ? "跨时长模型推断" : "估计方法详见服务端证据"));
@@ -60,6 +61,7 @@ export function calibrationDisplay(threshold: StrideThreshold | null | undefined
       else details.push("训练心率估计，不是独立实验室检测值");
     }
     details.push(`证据日 ${m.evidence_date || "未提供"}`);
+    if (m.latest_rejected_evidence_date) details.push(`最近未采用证据日 ${m.latest_rejected_evidence_date}`);
     details.push(`独立活动 ${m.independent_activities ?? 0} 次 · ${m.independent_days ?? 0} 天`);
     const e = m.evidence?.[0];
     if (e) {
@@ -70,7 +72,7 @@ export function calibrationDisplay(threshold: StrideThreshold | null | undefined
     }
     details.push(...new Set([...(m.reasons ?? []), ...(m.limitations ?? [])].map(reasonText)));
   } else if (threshold) {
-    details.push(source?.state === "available" ? "测量质量与努力程度未提供，无法判断独立支持" : "旧版训练估计，不能视为独立检测值；测量质量与努力程度未提供");
+    details.push(knownSource ? "测量质量与努力程度未提供，无法判断独立支持" : "旧版训练估计，不能视为独立检测值；测量质量与努力程度未提供");
   }
   if (range) details.push("支持／敏感性范围，不代表 95% 置信区间或概率");
   if (threshold) {

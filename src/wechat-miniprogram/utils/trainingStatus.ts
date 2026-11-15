@@ -520,14 +520,15 @@ export function projectCalibration(zones: import('../types/health').StrideZonesR
     ? `${epochToShanghaiYmd(epoch)} ${fmtShanghaiMdHm(threshold?.computed_at).slice(6)}` : null;
   const selection = threshold?.selection ?? zones?.selection;
   function metric(kind: 'speed' | 'hr'): CalibrationMetricDisplay {
-    const detail = source?.[kind];
-    const available = source?.state === 'available' && !!detail;
+    const knownSource = source?.schema_version === 1 && source?.state === 'available';
+    const detail = knownSource ? source[kind] : undefined;
+    const available = knownSource && !!detail;
     const value = kind === 'speed' ? calibrationPace(threshold?.pace_per_km_sec)
       : positive(threshold?.hr_bpm) ? String(Math.round(threshold.hr_bpm)) : '—';
     const evidenceDay = available ? validDay(detail?.evidence_date) : null;
     const support = available ? `模型支持：${calibrationWord(detail?.support, '未知（保守参考）')}`
-      : source?.state === 'available' ? (kind === 'hr' ? '心率证据信息未提供' : '配速证据信息未提供')
-      : source?.state === 'source_unavailable' ? '来源信息不可用 · 保守参考'
+      : knownSource ? (kind === 'hr' ? '心率证据信息未提供' : '配速证据信息未提供')
+      : source && source.state !== 'legacy_source_missing' ? '来源信息不可用 · 保守参考'
       : threshold ? '旧版估计 · 来源信息不可用' : '暂无校准数据';
     const lines = [support];
     const help = [kind === 'speed'
@@ -560,9 +561,9 @@ export function projectCalibration(zones: import('../types/health').StrideZonesR
       }
       // The summary carries no verified activity access URL; never invent a link from an ID.
       help.push('来源活动不可查看；此处仅保留安全摘要。');
-    } else if (source?.state === 'available') {
+    } else if (knownSource) {
       lines.push('当前快照未提供该指标证据，无法解释其来源');
-    } else if (source?.state === 'source_unavailable') {
+    } else if (source && source.state !== 'legacy_source_missing') {
       lines.push('来源说明暂不可用，保留已有值供参考');
     } else if (threshold) {
       lines.push('旧版支持标签不代表新的全力证据');
@@ -571,6 +572,8 @@ export function projectCalibration(zones: import('../types/health').StrideZonesR
     }
     if (value === '—' && threshold) lines.push('暂无中心估计，保留已知约束与可用区间');
     if (evidenceDay) lines.push(`证据日期 ${evidenceDay}`);
+    const rejectedDay = validDay(detail?.latest_rejected_evidence_date);
+    if (rejectedDay) lines.push(`最近未采用证据日 ${rejectedDay}`);
     if (cutoffDay) help.push(`数据截止 ${cutoffDay}`);
     if (computedShanghai) help.push(`校准执行 ${computedShanghai}（上海时间）`);
     if (selection?.state === 'fallback') help.push('首选版本缺少快照，使用服务端回退版本');

@@ -135,9 +135,16 @@ func TestCalibrationCapturedStack(t *testing.T) {
 	if err = json.NewDecoder(z).Decode(&manifest); err != nil {
 		t.Fatal(err)
 	}
-	if len(manifest.Activities) == 0 || manifest.AsOf.Format("2006-01-02") != timefmt.ShanghaiToday().Format("2006-01-02") {
-		t.Fatal("captured-stack requires nonempty data on current Shanghai cutoff day; do not shift real dates")
+	executionDay := timefmt.ShanghaiToday()
+	if len(manifest.Activities) == 0 {
+		t.Fatal("captured-stack requires nonempty data")
 	}
+	if err := validateCapturedStackDay(manifest.AsOf, executionDay); err != nil {
+		t.Fatal(err)
+	}
+	// Preserve the immutable capture and its dates. Jobs run on the real current
+	// execution day; a past capture is not silently shifted into today's data.
+	t.Logf("capture_asof=%s execution_asof=%s input_sha256=%s", manifest.AsOf.Format("2006-01-02"), executionDay.Format("2006-01-02"), hex.EncodeToString(digest[:]))
 	for _, a := range manifest.Activities {
 		if strings.Contains(strings.ToLower(a.Split), "holdout") || (strings.Contains(strings.ToLower(a.Split), "final") && !strings.Contains(strings.ToLower(a.Split), "nonfinal")) {
 			t.Fatal("final/holdout data forbidden")
@@ -149,7 +156,7 @@ func TestCalibrationCapturedStack(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	for _, migrate := range []func(context.Context) error{st.AutoMigrate, st.AutoMigrateWatch, st.AutoMigrateUsers, st.AutoMigrateGoals, st.AutoMigrateMasterPlan, st.AutoMigrateWeeklyPlan, st.AutoMigrateWeeklyFeedback, st.AutoMigrateBodyComposition, st.AutoMigrateTeamLikes, st.AutoMigrateScheduledWorkout, st.AutoMigrateRaceFavorites, st.AutoMigrateRacePlans, st.AutoMigrateRaceStrategies, st.AutoMigrateUserCustomRaces, st.AutoMigrateHomeCity, st.AutoMigratePlanAdjustment, st.AutoMigratePlanInjury, st.AutoMigrateWorkout, st.AutoMigrateFeedback, st.AutoMigrateRoadmap, st.AutoMigrateProviderEvents, st.AutoMigrateCheckIn, st.AutoMigratePoints, st.AutoMigrateAddresses} {
+	for _, migrate := range []func(context.Context) error{st.AutoMigrate, st.AutoMigrateWatch, st.AutoMigrateUsers, st.AutoMigrateGoals, st.AutoMigrateMasterPlan, st.AutoMigrateWeeklyPlan, st.AutoMigrateWeeklyFeedback, st.AutoMigrateBodyComposition, st.AutoMigrateTeamLikes, st.AutoMigrateScheduledWorkout, st.AutoMigrateRaceFavorites, st.AutoMigrateRacePlans, st.AutoMigrateRaceStrategies, st.AutoMigrateUserCustomRaces, st.AutoMigrateHomeCity, st.AutoMigratePlanAdjustment, st.AutoMigratePlanInjury, st.AutoMigrateWorkout, st.AutoMigrateFeedback, st.AutoMigrateRoadmap, st.AutoMigrateProviderEvents, st.AutoMigrateCheckIn, st.AutoMigratePoints, st.AutoMigrateAddresses, st.AutoMigrateRaceCalendar} {
 		if err := migrate(ctx); err != nil {
 			t.Fatal(err)
 		}
@@ -386,7 +393,9 @@ func TestCalibrationCapturedStack(t *testing.T) {
 			t.Fatal("historical missing wrote derived rows")
 		}
 	}
-	history, health, err := calibrationsource.Load(ctx, st, uid, "", timefmt.ShanghaiToday(), 180)
+	// Validate all immutable captured observations at their original cutoff,
+	// independently of the current job's rolling input window.
+	history, health, err := calibrationsource.Load(ctx, st, uid, "", manifest.AsOf, 180)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -433,7 +442,15 @@ func TestCalibrationCapturedStack(t *testing.T) {
 			}
 		}
 		for _, strategy := range []calibration.Strategy{calibration.StrategyV3, calibration.StrategyCandidate} {
-			result, e := calibration.EstimateOffline(strategy, prior, asof, health)
+			var metadata []calibration.CandidateMetadata
+			if strategy == calibration.StrategyCandidate {
+				var e error
+				metadata, e = calibrationsource.LoadCandidateMetadata(ctx, st, uid, "", asof, 180)
+				if e != nil {
+					t.Fatal(e)
+				}
+			}
+			result, e := calibration.EstimateOfflineWithEvidence(strategy, prior, asof, health, metadata)
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -492,11 +509,19 @@ func TestCalibrationCapturedStack(t *testing.T) {
 					case storage.ActivityZone:
 						cutoff = byLabel[r.LabelID].ActivityDate.Format("2006-01-02")
 					}
-					if in.SnapshotID == 0 || in.AlgorithmVersion != 3 || in.AsOfDate > cutoff {
-						t.Fatal("mixed/future lineage")
-					}
 					expected, e := st.ReadEffectiveRunningCalibration(ctx, uid, cutoff, storage.CalibrationActive)
-					if e != nil || expected.Snapshot == nil || expected.Snapshot.ID != in.SnapshotID || expected.Fingerprint != in.Fingerprint {
+					if e != nil {
+						t.Fatal(e)
+					}
+					if expected.Snapshot == nil {
+						// S2 freezes unavailable day bundles on pre-history rest
+						// days too. Absence must remain explicit, never future-filled.
+						if _, ok := row.Interface().(storage.DailyTrainingLoad); !ok || in.SnapshotID != 0 || in.Selection.State != "unavailable" {
+							t.Fatal("non-daily missing history or fabricated bundle")
+						}
+						continue
+					}
+					if in.SnapshotID == 0 || in.AlgorithmVersion != 3 || in.AsOfDate > cutoff || expected.Snapshot.ID != in.SnapshotID || expected.Fingerprint != in.Fingerprint {
 						t.Fatal("derived input differs from effective historical bundle")
 					}
 				}
@@ -721,7 +746,7 @@ func TestCalibrationCapturedStack(t *testing.T) {
 	for _, rows := range after {
 		counts = append(counts, reflect.ValueOf(rows).Len())
 	}
-	stackWrite(t, output+".summary.json", map[string]any{"input_gzip_sha256": hex.EncodeToString(digest[:]), "activities": len(history), "samples": pointCount, "health": len(health), "historical_days": len(ordered), "derived_rows": counts, "rollback_lineage_checked": true, "center_coverage_by_day": centers, "load_impact": impact, "preview_activities": len(preview.ActivityLoads), "preview_unavailable_days": len(preview.UnavailableDays), "phases": phases, "rabbit_dispatched": dispatch.Stats(), "release_ready": false})
+	stackWrite(t, output+".summary.json", map[string]any{"capture_asof": manifest.AsOf.Format("2006-01-02"), "execution_asof": executionDay.Format("2006-01-02"), "input_gzip_sha256": hex.EncodeToString(digest[:]), "activities": len(history), "samples": pointCount, "health": len(health), "historical_days": len(ordered), "derived_rows": counts, "rollback_lineage_checked": true, "center_coverage_by_day": centers, "load_impact": impact, "preview_activities": len(preview.ActivityLoads), "preview_unavailable_days": len(preview.UnavailableDays), "phases": phases, "rabbit_dispatched": dispatch.Stats(), "release_ready": false})
 	t.Logf("captured-stack PASS activities=%d samples=%d days=%d derived=%v dispatched=%+v", len(history), pointCount, len(ordered), counts, dispatch.Stats())
 }
 
@@ -731,4 +756,22 @@ func stackInt(v *float64) *int {
 	}
 	x := int(math.Round(*v))
 	return &x
+}
+
+func validateCapturedStackDay(capture, execution time.Time) error {
+	if capture.IsZero() || capture.Format("2006-01-02") > execution.Format("2006-01-02") {
+		return fmt.Errorf("capture cutoff must be nonzero and not after execution day")
+	}
+	return nil
+}
+func TestCapturedStackRetainsPastCaptureAndRejectsFuture(t *testing.T) {
+	execution := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		day     time.Time
+		allowed bool
+	}{{execution.AddDate(0, 0, -1), true}, {execution, true}, {execution.AddDate(0, 0, 1), false}, {time.Time{}, false}} {
+		if got := validateCapturedStackDay(tc.day, execution); (got == nil) != tc.allowed {
+			t.Errorf("capture=%s allowed=%v want=%v", tc.day.Format("2006-01-02"), got == nil, tc.allowed)
+		}
+	}
 }

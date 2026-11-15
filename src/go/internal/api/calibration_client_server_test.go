@@ -13,6 +13,7 @@ import (
 	mysql "github.com/go-sql-driver/mysql"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/zhaochy1990/stride/internal/compute/calibration"
 	"github.com/zhaochy1990/stride/internal/storage"
 	"github.com/zhaochy1990/stride/internal/tsstore"
 	"net"
@@ -154,6 +155,10 @@ func TestCalibrationClientServer(t *testing.T) {
 			sourceJSON, _ := json.Marshal(th.Source)
 			if strings.HasPrefix(c.Name, "producer-") {
 				snapshot, producedSource := clientProducerSource(t, c.Name == "producer-lab-half")
+				if c.Name == "producer-stale-hr" {
+					result := clientProducerResult(t, false, time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC))
+					snapshot, producedSource = result.Snapshot, calibration.SummarizeSource(result)
+				}
 				th.SpeedMps, th.HRBpm = snapshot.ThresholdSpeedMps, snapshot.ThresholdHR
 				th.SpeedConfidence, th.HRConfidence = string(snapshot.ThresholdSpeedConfidence), string(snapshot.ThresholdHRConfidence)
 				sourceJSON, err = json.Marshal(producedSource)

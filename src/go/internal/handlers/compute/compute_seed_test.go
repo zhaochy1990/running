@@ -24,7 +24,7 @@ func TestDailyPMCSeedLineageUsesOriginalRead(t *testing.T) {
 	}
 	f.prior = newer
 	daily := []trainingload.DailyLoadResult{{Date: start, AcuteLoad: 9, ChronicLoad: 19}}
-	if err := persistDailyLoad(ctx, f, testUser, nil, daily, start, prior); err != nil {
+	if err := persistDailyLoad(ctx, f, testUser, daily, start, prior); err != nil {
 		t.Fatal(err)
 	}
 	p, state := storage.ReadCalibrationProvenance(f.dailyRows[0])
@@ -64,7 +64,7 @@ func TestDailyPMCSeedSnapshotDoesNotAliasMutableHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	daily := []trainingload.DailyLoadResult{{Date: start, AcuteLoad: 9, ChronicLoad: 19}, {Date: start.AddDate(0, 0, 1), AcuteLoad: 8, ChronicLoad: 18}}
-	if err := persistDailyLoad(ctx, f, testUser, nil, daily, start, prior); err != nil {
+	if err := persistDailyLoad(ctx, f, testUser, daily, start, prior); err != nil {
 		t.Fatal(err)
 	}
 	p, state := storage.ReadCalibrationProvenance(f.dailyRows[0])

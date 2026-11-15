@@ -81,6 +81,7 @@ public func calibrationDisplay(_ response: StrideZonesResponse?, metric: Calibra
     if let selection = t?.selection ?? response?.selection, selection.state == "fallback" {
         details.append("使用回退版本：首选版本缺少历史快照。")
     }
+    if let rejectedDay = s?.latestRejectedEvidenceDate { details.append("最近未采用证据日 \(rejectedDay)") }
     details.append("证据日期：\(s?.evidenceDate ?? "未提供")")
     details.append("数据截止：\(cutoff ?? "未提供")")
     details.append("校准执行：\(computed ?? "未提供")（上海时间）；执行日期不代表新增证据。")

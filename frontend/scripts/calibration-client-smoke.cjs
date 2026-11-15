@@ -46,6 +46,13 @@ async function main() {
    await page.getByText("阈值配速估计当前全力可维持约一小时的能力，不是普通训练平均配速。",{exact:true}).waitFor({state:"visible"});
    if(c.expected.evidence_day) await speed.getByText("证据日 "+c.expected.evidence_day,{exact:true}).waitFor();
    if(c.expected.computed_shanghai) await speed.getByText("校准执行 "+c.expected.computed_shanghai+"（上海）",{exact:true}).waitFor();
+   if(c.expected.source_unavailable && (await speed.innerText()).includes('估计支持 高')) throw new Error(c.name+' borrowed unsupported source labels');
+   if(c.expected.rejected_evidence_day) {
+    await hr.getByText("阈值心率说明",{exact:true}).tap();
+    await hr.getByText("最近未采用证据日 "+c.expected.rejected_evidence_day,{exact:true}).waitFor({state:"visible"});
+    await hr.getByText("证据陈旧，需更新有效证据",{exact:true}).waitFor({state:"visible"});
+    if ((await hr.innerText()).includes('估计支持 高')) throw new Error(c.name+' stale support revived');
+   }
    if(c.expected.hr_method_label) {
     await hr.getByText("阈值心率说明",{exact:true}).tap();
     await hr.getByText(c.expected.hr_method_label,{exact:true}).waitFor({state:"visible"});

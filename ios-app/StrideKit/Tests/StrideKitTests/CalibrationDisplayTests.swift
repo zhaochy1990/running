@@ -16,6 +16,8 @@ import Testing
                 let hr_method_label: String?
                 let speed_effort_label: String?
                 let lab_method: String?
+                let source_unavailable: Bool?
+                let rejected_evidence_day: String?
             }
             let name: String
             let response: StrideZonesResponse
@@ -41,10 +43,17 @@ import Testing
             #expect(pace.cutoffDay == item.expected.cutoff_day)
             #expect(pace.computedShanghai == item.expected.computed_shanghai)
             Self.assertAdditionalDisplays(item.expected, pace: pace, hr: hr)
+            if item.expected.source_unavailable == true { #expect(pace.support == "来源信息不可用"); #expect(hr.support == "来源信息不可用") }
+
         }
     }
 
     static func assertAdditionalDisplays(_ expected: Fixture.Case.Expected, pace: CalibrationDisplay, hr: CalibrationDisplay) {
+        if let day = expected.rejected_evidence_day {
+            #expect(hr.details.contains("最近未采用证据日 \(day)"))
+            #expect(hr.details.contains { $0.contains("陈旧") })
+            #expect(hr.support == "能力支持：不足")
+        }
         if let range = expected.hr_range { #expect(hr.range == range) }
         if let method = expected.hr_method_label { #expect(hr.details.contains("方法：\(method)")) }
         if let effort = expected.speed_effort_label { #expect(pace.details.contains { $0.contains("全力支持：\(effort)") }) }

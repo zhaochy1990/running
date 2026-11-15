@@ -181,6 +181,16 @@ for (const vector of displayVectors.cases) {
   eq(display.pace.value, vector.expected.pace, `${vector.name} center`);
   eq(display.pace.range, vector.expected.pace_range, `${vector.name} directional range`);
   eq(display.hr.value, vector.expected.hr, `${vector.name} HR`);
+  if (vector.expected.rejected_evidence_day) {
+    eq(display.hr.lines.includes(`最近未采用证据日 ${vector.expected.rejected_evidence_day}`), true, `${vector.name} rejected date`);
+    eq(display.hr.lines.includes('心率支持证据陈旧'), true, `${vector.name} stale reason`);
+    eq(display.hr.support, '模型支持：不足', `${vector.name} no revived support`);
+  }
+  if (vector.expected.source_unavailable) {
+    eq(display.pace.support, '来源信息不可用 · 保守参考', `${vector.name} conservative support`);
+    eq(display.hr.support, '来源信息不可用 · 保守参考', `${vector.name} conservative HR support`);
+    eq(display.pace.lines.some(line => line.includes('已确认全力')), false, `${vector.name} no borrowed effort`);
+  }
   if (vector.expected.hr_range != null) eq(display.hr.range, vector.expected.hr_range, `${vector.name} canonical HR range`);
   if (vector.expected.hr_method_label != null) eq(display.hr.help.includes(`方法：${vector.expected.hr_method_label}`), true, `${vector.name} canonical HR method`);
   if (vector.expected.speed_effort_label != null) eq(display.pace.lines.some((line) => line.includes(`全力证据：${vector.expected.speed_effort_label}`)), true, `${vector.name} canonical effort support`);

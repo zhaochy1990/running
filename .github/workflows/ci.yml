@@ -60,6 +60,7 @@ jobs:
               - 'src/go/**'
               - 'docs/calibration/fixtures/client-display-v1.json'
             coach:
+              - 'docs/calibration/fixtures/client-display-v1.json'
               - 'src/coach_agent_api/**'
               - 'src/coach_agent_worker/**'
               - 'src/coach_agent/**'
@@ -334,6 +335,8 @@ jobs:
         run: pnpm --filter coach_agent_api check
       - name: Test
         run: pnpm --filter coach_agent_api test
+      - name: Calibration source contract
+        run: node --test src/coach_agent/dist/data/calibrationMetadata.test.js
       - name: Worker Lint (biome check)
         run: pnpm --filter @stride/coach-agent-worker check
       - name: Worker Test

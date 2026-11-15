@@ -21,22 +21,23 @@ type SourceSummary struct {
 	HR                    *MetricSource `json:"hr,omitempty"`
 }
 type MetricSource struct {
-	Method                string            `json:"method"`
-	TargetType            string            `json:"target_type"`
-	MeasurementQuality    string            `json:"measurement_quality"`
-	EffortSupport         string            `json:"effort_support"`
-	Support               string            `json:"support"`
-	RangeLow              *float64          `json:"range_low,omitempty"`
-	RangeHigh             *float64          `json:"range_high,omitempty"`
-	RangeMeaning          string            `json:"range_meaning"`
-	EvidenceDate          string            `json:"evidence_date,omitempty"`
-	IndependentActivities int               `json:"independent_activities"`
-	IndependentDays       int               `json:"independent_days"`
-	LabMethod             string            `json:"lab_method,omitempty"`
-	Reasons               []string          `json:"reasons"`
-	Limitations           []string          `json:"limitations"`
-	Evidence              []EvidenceSummary `json:"evidence,omitempty"`
-	EvidenceCount         int               `json:"evidence_count"`
+	Method                     string            `json:"method"`
+	TargetType                 string            `json:"target_type"`
+	MeasurementQuality         string            `json:"measurement_quality"`
+	EffortSupport              string            `json:"effort_support"`
+	Support                    string            `json:"support"`
+	RangeLow                   *float64          `json:"range_low,omitempty"`
+	RangeHigh                  *float64          `json:"range_high,omitempty"`
+	RangeMeaning               string            `json:"range_meaning"`
+	EvidenceDate               string            `json:"evidence_date,omitempty"`
+	LatestRejectedEvidenceDate string            `json:"latest_rejected_evidence_date,omitempty"`
+	IndependentActivities      int               `json:"independent_activities"`
+	IndependentDays            int               `json:"independent_days"`
+	LabMethod                  string            `json:"lab_method,omitempty"`
+	Reasons                    []string          `json:"reasons"`
+	Limitations                []string          `json:"limitations"`
+	Evidence                   []EvidenceSummary `json:"evidence,omitempty"`
+	EvidenceCount              int               `json:"evidence_count"`
 }
 type EvidenceSummary struct {
 	ActivityID         string   `json:"activity_id"`
@@ -135,6 +136,17 @@ func SummarizeSource(result OfflineResult) SourceSummary {
 		}
 		for _, e := range h.Observations {
 			if !e.Selected {
+				// Rejected protocol evidence explains absence without becoming a
+				// contributor or refreshing the selected evidence date/support.
+				if e.Protocol != "" && e.Protocol != "none" {
+					day := e.ActivityDate.Format("2006-01-02")
+					if day > m.LatestRejectedEvidenceDate {
+						m.LatestRejectedEvidenceDate = day
+					}
+					for _, reason := range append(append([]string(nil), e.Reasons...), e.Quality.Reasons...) {
+						m.Reasons = appendReason(m.Reasons, reason)
+					}
+				}
 				continue
 			}
 			m.MeasurementQuality = "protocol_quality_gate_passed"
@@ -145,6 +157,7 @@ func SummarizeSource(result OfflineResult) SourceSummary {
 				m.Evidence = append(m.Evidence, EvidenceSummary{ActivityID: e.ActivityID, RootActivityID: e.RootActivityID, ActivityDay: e.ActivityDate.Format("2006-01-02"), SourceVersion: e.SourceVersion, EvidenceRef: e.EvidenceRef, StartS: &start, EndS: &end, MeasurementQuality: m.MeasurementQuality, EffortSupport: string(e.EffortSupport)})
 			}
 		}
+		boundSourceMetric(m)
 		out.HR = m
 	}
 	return out
@@ -164,7 +177,7 @@ func boundSourceMetric(m *MetricSource) {
 		m.Limitations = m.Limitations[:16]
 	}
 	limit := limitSourceString
-	for _, p := range []*string{&m.Method, &m.TargetType, &m.MeasurementQuality, &m.EffortSupport, &m.Support, &m.RangeMeaning, &m.EvidenceDate, &m.LabMethod} {
+	for _, p := range []*string{&m.Method, &m.TargetType, &m.MeasurementQuality, &m.EffortSupport, &m.Support, &m.RangeMeaning, &m.EvidenceDate, &m.LatestRejectedEvidenceDate, &m.LabMethod} {
 		limit(p)
 	}
 	for i := range m.Reasons {

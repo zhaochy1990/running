@@ -19,7 +19,6 @@ import (
 
 	"github.com/zhaochy1990/stride/internal/compute/ability"
 	"github.com/zhaochy1990/stride/internal/compute/abilitysource"
-	"github.com/zhaochy1990/stride/internal/compute/calibration"
 	"github.com/zhaochy1990/stride/internal/compute/watchmap"
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/storage"
@@ -75,6 +74,10 @@ type abilityResult struct {
 // (default), a snapshot backfill over `days`, or an L1-only history backfill, and
 // persists the ability_snapshot rows plus each batch activity's L1.
 func NewAbility(store AbilityStore) job.Handler {
+	return NewAbilityWithOptions(store, ActiveCalibrationOptions{})
+}
+
+func NewAbilityWithOptions(store AbilityStore, options ActiveCalibrationOptions) job.Handler {
 	return func(ctx context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		user := j.UserID
 		if _, err := uuid.Parse(user); err != nil {
@@ -91,7 +94,22 @@ func NewAbility(store AbilityStore) job.Handler {
 		if in.SelectionMode == "candidate" || in.CandidateOnly {
 			return "", job.NewPermanentError("candidate_derived_write_forbidden", fmt.Errorf("candidate cannot write active ability"))
 		}
-		ctx = storage.WithCalibrationCache(ctx)
+		ctx = storage.WithCalibrationCache(withActiveCalibrationOptions(ctx, options))
+		ref, err := anchorDay(in.RefDate)
+		if err != nil {
+			return "", job.NewPermanentError("bad_date", err)
+		}
+		active, err := storage.ReadCachedRunningCalibration(ctx, store, user, ref.Format("2006-01-02"), storage.CalibrationActive)
+		if err != nil {
+			return "", err
+		}
+		if err := checkActiveCalibrationWrite(ctx, active); err != nil {
+			if errors.Is(err, errActiveCalibrationIncomplete) {
+				raw, _ := json.Marshal(abilityResult{User: user, Status: "unavailable_active_calibration", Reason: "candidate_baseline_incomplete"})
+				return string(raw), nil
+			}
+			return "", err
+		}
 		res, err := runAbility(ctx, store, user, in)
 		if errors.Is(err, errHistoricalCalibrationMissing) {
 			res.User = user
@@ -183,8 +201,8 @@ func computeAndPersist(ctx context.Context, store AbilityStore, user string, day
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	if bundle.Snapshot != nil && bundle.Snapshot.AlgorithmVersion == calibration.CandidateVersion {
-		return 0, 0, 0, job.NewPermanentError("candidate_derived_write_forbidden", fmt.Errorf("candidate cannot write active ability"))
+	if err := checkActiveCalibrationWrite(ctx, bundle); err != nil {
+		return 0, 0, 0, err
 	}
 	if src.HRMax == nil {
 		return 0, 0, len(src.Activities), errHistoricalCalibrationMissing
@@ -249,8 +267,8 @@ func inL1Batch(a *ability.Activity, date string, labelIDs []string) bool {
 // upsertL1 computes one activity's L1 quality and upserts its activity_ability
 // row (contribution stays nil — deferred until prior/posterior L3 exist).
 func upsertL1(ctx context.Context, store AbilityStore, user string, a *ability.Activity, hrMax int, bundle storage.CalibrationBundle) error {
-	if bundle.Snapshot != nil && bundle.Snapshot.AlgorithmVersion == calibration.CandidateVersion {
-		return job.NewPermanentError("candidate_derived_write_forbidden", fmt.Errorf("candidate cannot write active L1"))
+	if err := checkActiveCalibrationWrite(ctx, bundle); err != nil {
+		return err
 	}
 	l1 := ability.ComputeL1Quality(a, nil, hrMax)
 	breakdown, _ := json.Marshal(l1.Breakdown)

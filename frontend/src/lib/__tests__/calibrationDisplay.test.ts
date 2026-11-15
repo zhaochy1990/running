@@ -24,9 +24,23 @@ describe("calibration explanation projection", () => {
     if ("hr_method_label" in c.expected) expect(hr.details.join(" ")).toContain(c.expected.hr_method_label);
     if ("speed_effort_label" in c.expected) expect(speed.details.join(" ")).toContain(c.expected.speed_effort_label);
     if ("lab_method" in c.expected && c.expected.lab_method) expect(hr.details.join(" ")).toContain(c.expected.lab_method);
+    if ("rejected_evidence_day" in c.expected) {
+      expect(hr.details).toContain(`最近未采用证据日 ${c.expected.rejected_evidence_day}`);
+      expect(hr.details).toContain("证据陈旧，需更新有效证据");
+      expect(hr.status).toBe("估计支持 不足");
+    }
     if (c.name === "low-stale") expect(hr.details).toContain("证据陈旧，需更新有效证据");
     if (c.name === "constraints-only") expect(speed.details).toContain("无法可靠估计中心值");
     if (c.name === "legacy") expect(hr.details.join(" ")).toContain("不能视为独立检测值");
+  });
+  it("preserves future-schema centers without borrowing known support", () => {
+    const th = fixture.cases.find(c => c.name === "future-source-schema")!.response.threshold as StrideThreshold;
+    expect(calibrationDisplay(th, "speed").value).toBe("3:34");
+    for (const metric of ["speed", "hr"] as const) {
+      const display = calibrationDisplay(th, metric);
+      expect(display.status).toBe("来源信息暂不可用");
+      expect(display.details.join(" ")).not.toContain("已确认全力");
+    }
   });
   it("rejects malformed integer/range values and does not derive a pace from speed", () => {
     const th = structuredClone(fixture.cases[0].response.threshold) as StrideThreshold;
