@@ -92,12 +92,28 @@ func Load(ctx context.Context, r Reader, user string, asOf time.Time, lookbackDa
 		return nil, err
 	}
 
+	bundle, err := storage.ReadCachedRunningCalibration(ctx, r, user, asOf.Format("2006-01-02"), storage.CalibrationActive)
+	if err != nil {
+		return nil, err
+	}
+	var rhr *float64
+	if bundle.Snapshot != nil {
+		rhr = bundle.Snapshot.RHRBaseline
+	}
+	activityHRMax := map[string]*int{}
+	for _, a := range activities {
+		hr, err := ResolveHRMax(ctx, r, user, a.Date)
+		if err != nil {
+			return nil, err
+		}
+		activityHRMax[a.LabelID] = hr
+	}
 	return &ability.Source{
 		Activities: activities,
 		Health28D:  health28d,
 		Dashboard:  abilityDash,
 		Vo2MaxPBs:  pbs,
-		HRMax:      hrMax,
+		HRMax:      hrMax, RHRBaseline: rhr, ActivityHRMax: activityHRMax,
 	}, nil
 }
 

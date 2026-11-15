@@ -16,6 +16,17 @@ func TestCalibrationBundlePolicyAndHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	uid := uuid.NewString()
+	var original []RunningCalibrationPolicy
+	if err := st.db.Find(&original).Error; err != nil {
+		t.Fatal(err)
+	}
+	st.db.Where("policy_key = ?", calibrationPolicyKey).Delete(&RunningCalibrationPolicy{})
+	t.Cleanup(func() {
+		st.db.Where("policy_key = ?", calibrationPolicyKey).Delete(&RunningCalibrationPolicy{})
+		if len(original) > 0 {
+			st.db.Create(&original)
+		}
+	})
 	t.Cleanup(func() {
 		for _, m := range []any{&RunningCalibrationPaceZone{}, &RunningCalibrationHRZone{}, &RunningCalibrationSnapshot{}} {
 			st.db.Where("user_id = ?", uid).Delete(m)

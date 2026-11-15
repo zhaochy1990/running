@@ -31,7 +31,7 @@ func ComputeAbilitySnapshot(src *Source, date string, hrMax *int) *Snapshot {
 		}
 	}
 
-	baselineRHR := baselineRHRFromHealth(health28d)
+	baselineRHR := src.RHRBaseline
 
 	var todayHealth *HealthRow
 	dateCompact := stripDashes(date)
@@ -121,7 +121,13 @@ func ComputeAbilitySnapshot(src *Source, date string, hrMax *int) *Snapshot {
 
 	var latestL1 *L1Result
 	if len(activities) > 0 {
-		latestL1 = ComputeL1Quality(&activities[0], nil, hrMaxInt)
+		latestHR := &hrMaxInt
+		if src.ActivityHRMax != nil {
+			latestHR = src.ActivityHRMax[activities[0].LabelID]
+		}
+		if latestHR != nil {
+			latestL1 = ComputeL1Quality(&activities[0], nil, *latestHR)
+		}
 	}
 
 	allEvidence := dedupeOrdered(append(append(append(append([]string{}, aerEv...), ltEv...), vo2Ev...), endEv...), ecoEv)
@@ -181,24 +187,6 @@ func emptyEstimates() MarathonEstimates {
 	return MarathonEstimates{
 		RaceDayBoostMax: RaceDayBoostMax, BestCaseBoostMax: BestCaseBoostMax,
 	}
-}
-
-// baselineRHRFromHealth mirrors ability._median over 28d RHR, with 0 → nil.
-func baselineRHRFromHealth(health []HealthRow) *float64 {
-	var vals []float64
-	for _, h := range health {
-		if h.RHR != nil {
-			vals = append(vals, float64(*h.RHR))
-		}
-	}
-	if len(vals) == 0 {
-		return nil
-	}
-	m := median(vals)
-	if m == 0 {
-		return nil
-	}
-	return &m
 }
 
 // withinDays mirrors ability._within_days: 0 <= (end - cur).days <= days.
