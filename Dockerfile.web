@@ -12,6 +12,8 @@ WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm install
 COPY frontend/ ./
+# The production tsc build also checks client tests against the canonical shared fixture.
+COPY docs/calibration/fixtures/client-display-v1.json /app/docs/calibration/fixtures/client-display-v1.json
 
 # Vite bakes VITE_*/STRIDE_* into the bundle at build time — no runtime
 # injection path. (AMap key/securityJsCode are gated by the AMap console domain

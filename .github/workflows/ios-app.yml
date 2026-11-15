@@ -22,11 +22,13 @@ on:
     branches: [master]
     paths:
       - 'ios-app/**'
+      - 'docs/calibration/fixtures/client-display-v1.json'
       - '.github/workflows/ios-app.yml'
   push:
     branches: [master]
     paths:
       - 'ios-app/**'
+      - 'docs/calibration/fixtures/client-display-v1.json'
       - '.github/workflows/ios-app.yml'
   workflow_dispatch:
 
