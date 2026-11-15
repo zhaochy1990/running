@@ -2,7 +2,7 @@ import { buildModel, type ModelConfig } from "@stride/common";
 import { createAgent, createMiddleware } from "langchain";
 import { z } from "zod/v4";
 import { ProfileAgentSession } from "./agentSession.js";
-import { profileAgentTools } from "./agentTools.js";
+import { journalToolCall, profileAgentTools } from "./agentTools.js";
 import type { Profile, Snapshot } from "./types.js";
 
 const AGENT_PROMPT = `你是独立的运动员训练画像评估Agent，目标是从本人的真实记录中发现有用的个体特点，让后续训练计划可以引用。你自主决定分析维度、假设、比较方法和资料范围；没有预设特征清单，也没有上一版画像供你照抄。尽量探索不同层次的特点，不停留于活动计数和原始数据目录。
@@ -30,6 +30,7 @@ export async function generateProfile(snapshot: Snapshot, config: ModelConfig, p
   const middleware = createMiddleware({
     name: "ProfileEvaluationLifecycle",
     beforeModel: { canJumpTo: ["end"], hook: () => (session.submitted ? { jumpTo: "end" } : undefined) },
+    wrapToolCall: (request, handler) => journalToolCall(session, request.toolCall, () => handler(request)),
     wrapModelCall: async (request, handler) => {
       if (modelCalls.length >= 32) throw new Error("Agent model-call budget exhausted before submission");
       const index = modelCalls.length + 1,

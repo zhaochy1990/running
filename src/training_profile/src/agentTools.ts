@@ -1,7 +1,21 @@
+import { type ToolCall, ToolMessage } from "@langchain/core/messages";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod/v4";
 import { CalculationSchema, HypothesisSchema, type ProfileAgentSession, SubmissionSchema } from "./agentSession.js";
 import type { Profile } from "./types.js";
+
+/** The agent wrapper also sees failures that happen before a tool callback. */
+export async function journalToolCall<T>(session: ProfileAgentSession, call: Pick<ToolCall, "name" | "args">, execute: () => Promise<T> | T): Promise<T> {
+  try {
+    const result = await execute();
+    if (result instanceof ToolMessage && result.status === "error")
+      await session.toolError(call.name, call.args, typeof result.content === "string" ? result.content : JSON.stringify(result.content));
+    return result;
+  } catch (error) {
+    await session.toolError(call.name, call.args, error instanceof Error ? error.message : String(error));
+    throw error;
+  }
+}
 
 export function profileAgentTools(session: ProfileAgentSession, previous: Profile | null) {
   const attempt = async (name: string, input: unknown, fn: () => unknown) => {

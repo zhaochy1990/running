@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { ToolMessage } from "@langchain/core/messages";
 import { type Hypothesis, ProfileAgentSession } from "./agentSession.js";
-import { profileAgentTools } from "./agentTools.js";
+import { journalToolCall, profileAgentTools } from "./agentTools.js";
 import { calculateSnapshot } from "./calculations.js";
 import type { Snapshot } from "./types.js";
 
@@ -95,6 +96,23 @@ test("failed calculations stay in the local journal and cannot count as evidence
   assert.equal(session.receipts.size, 0);
   assert.match(JSON.stringify(events), /"type":"tool_error"/);
   assert.match(JSON.stringify(events), /calculate_training_data/);
+});
+
+test("tool wrapper journals schema failures and preserves error messages for self-correction", async () => {
+  const events: unknown[] = [];
+  const session = new ProfileAgentSession(fixture(), async (event) => {
+    events.push(event);
+  });
+  const detail = profileAgentTools(session, null).find((t) => t.name === "read_activity_detail");
+  assert.ok(detail);
+  const call = { name: "read_activity_detail", args: {}, id: "invalid-schema", type: "tool_call" as const };
+  await assert.rejects(journalToolCall(session, call, () => detail.invoke(call)));
+  assert.equal(events.length, 1);
+  assert.match(JSON.stringify(events), /"type":"tool_error"/);
+  assert.match(JSON.stringify(events), /sourceId/);
+  const message = new ToolMessage({ content: "Unknown tool", tool_call_id: "unknown", status: "error" });
+  assert.equal(await journalToolCall(session, { name: "missing_tool", args: {} }, () => message), message);
+  assert.equal(events.length, 2);
 });
 
 test("retained findings require a distinct successful counterexample check and preserve revisions", async () => {
