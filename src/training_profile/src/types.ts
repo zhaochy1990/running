@@ -29,7 +29,7 @@ export type Evidence = Snapshot["evidence"][number];
 export const Lifecycle = z.enum(["historical", "long_term", "rolling", "unknown"]);
 export const ConclusionSchema = z.object({
   id: z.string(),
-  kind: z.enum(["fact", "estimate", "user_report", "candidate"]),
+  kind: z.enum(["fact", "estimate", "user_report", "candidate", "insight"]),
   title: z.string(),
   text: z.string(),
   dimension: z.string(),
@@ -39,6 +39,8 @@ export const ConclusionSchema = z.object({
   evidence: z.array(z.object({ id: z.string(), revision: z.string() })).min(1),
   sourceDates: z.array(z.string()),
   derivedFromFactIds: z.array(z.string()).optional(),
+  planningUse: z.string().optional(),
+  support: z.enum(["repeated_observation", "preliminary_association", "single_episode"]).optional(),
 });
 export type Conclusion = z.infer<typeof ConclusionSchema>;
 export const ProfileSchema = z.object({

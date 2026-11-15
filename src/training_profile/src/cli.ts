@@ -41,5 +41,6 @@ if (!model) throw new Error(`Unknown model registry name: ${modelName}`);
 await createRunDirectory(resolve(outputPath));
 const result = await generateProfile(snapshot, model as ModelConfig, previous, (raw) => savePrivate(resolve(outputPath), "model-response.json", raw));
 await saveProfile(resolve(outputPath), result.profile);
+await savePrivate(resolve(outputPath), "analysis.json", result.analysis);
 await savePrivate(resolve(outputPath), "metrics.json", result.metrics);
 console.log(JSON.stringify({ output: resolve(outputPath), conclusions: result.profile.conclusions.length, ...result.metrics }));
