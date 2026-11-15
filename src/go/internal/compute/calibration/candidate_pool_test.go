@@ -131,7 +131,7 @@ func TestOfflineCandidateUsesEvidenceWhileSegmentsOnlyAndProductionStayFrozen(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if candidate.Evidence == nil || candidate.Snapshot.ThresholdSpeedConfidence != calibration.ConfidenceLow {
+	if candidate.Evidence == nil || candidate.Snapshot.ThresholdSpeedMps != nil || candidate.Snapshot.ThresholdSpeedConfidence != calibration.ConfidenceNone {
 		t.Fatal("unknown evidence still high confidence")
 	}
 	if clean.Evidence != nil || clean.Snapshot.ThresholdSpeedConfidence != calibration.ConfidenceHigh {

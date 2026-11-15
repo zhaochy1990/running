@@ -81,6 +81,7 @@ type CandidateEvidence struct {
 	Contribution              float64        `json:"contribution"`
 }
 type CandidateEvidenceReport struct {
+	Hour                  *HourCapabilityReport         `json:"hour,omitempty"`
 	ParameterVersion      string                        `json:"parameter_version"`
 	Candidates            []CandidateEvidence           `json:"candidates"`
 	Diagnostics           []CandidateActivityDiagnostic `json:"diagnostics"`
@@ -98,7 +99,7 @@ func BuildCandidateEvidence(history []Activity, metadata []CandidateMetadata, as
 }
 
 func buildCandidateEvidence(history []Activity, metadata []CandidateMetadata, asOf, metadataCutoff time.Time) CandidateEvidenceReport {
-	out := CandidateEvidenceReport{ParameterVersion: evidenceParameterVersion, Excluded: map[string]int{}, Limitations: []string{"research_parameters_not_independently_calibrated", "unlinked_cross_device_duplicates_may_remain", "legacy_estimator_pending_T4", "environment_not_corrected"}}
+	out := CandidateEvidenceReport{ParameterVersion: evidenceParameterVersion, Excluded: map[string]int{}, Limitations: []string{"research_parameters_not_independently_calibrated", "unlinked_cross_device_duplicates_may_remain", "environment_not_corrected"}}
 	meta := map[string]CandidateMetadata{}
 	conflicting := map[string]bool{}
 	for _, m := range metadata {
