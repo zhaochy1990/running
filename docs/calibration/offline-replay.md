@@ -1,5 +1,7 @@
 # 固定校准离线回放（#984）
 
+推进状态以[工程/上线准入补充](implementation-acceptance.md)为准：真实准确性不足只阻塞候选上线，#984工程已验收，后续代码继续实现；下表中的旧阻塞结论是历史记录。
+
 [冻结评估协议 v1](evaluation-protocol-v1.md) 已先于候选实现提交，且链接到 SPEC #982。T1 的 segments_only / candidate 均明确是 `v3_alias`，默认生产 `ModelVersion=3` 与全部现有调用保持不变。
 
 在 `src/go` 执行：
