@@ -214,4 +214,17 @@ unavailableHrTarget.threshold.hr_bpm = null;
 unavailableHrTarget.threshold.source.hr.target_type = 'unavailable';
 eq(projectCalibration(unavailableHrTarget).hr.lines.includes('暂无可用心率参考'), true, 'unavailable HR is not an existing estimate');
 
+const protocolQuality = structuredClone(firstVector.response);
+protocolQuality.threshold.source.hr.measurement_quality = 'protocol_quality_gate_passed';
+protocolQuality.threshold.source.hr.support = 'low';
+const protocolQualityDisplay = projectCalibration(protocolQuality).hr;
+eq(protocolQualityDisplay.lines.includes('数据质量：通过协议质量门槛 · 全力证据：已确认全力'), true, 'canonical protocol quality retains its own meaning');
+eq(protocolQualityDisplay.support, '模型支持：低', 'protocol quality gate never upgrades model support');
+
+const missingAnchors = structuredClone(firstVector.response);
+missingAnchors.threshold.source.speed.reasons = ['no_independent_maximal_anchors'];
+eq(projectCalibration(missingAnchors).pace.lines.includes('缺少独立近全力证据'), true, 'canonical missing independent anchors reason');
+missingAnchors.threshold.source.speed.reasons = ['hour_extrapolation_not_identified_by_independent_recent_anchors'];
+eq(projectCalibration(missingAnchors).pace.lines.includes('近期独立锚点不足无法推断一小时能力'), true, 'canonical insufficient recent anchors reason');
+
 console.log('trainingStatus.check: OK');
