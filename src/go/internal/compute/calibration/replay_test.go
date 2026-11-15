@@ -171,7 +171,9 @@ func TestReplaySeparatesRetrospectiveAndIgnoresLateHealthAndLabels(t *testing.T)
 	}
 	// Independent labels score only when available by report as_of; they never fit.
 	m = replayFixture(t)
+	addHistoricalMaximalEvidence(&m)
 	a := m.Activities[0]
+	a.InputEvidence = nil
 	a.ID = "target"
 	a.RootActivityID = "heldout"
 	a.Split = "final_holdout"
@@ -255,8 +257,10 @@ func TestReplayStrataPreserveMissingTargetsWithoutChangingPairedErrors(t *testin
 	for _, split := range []string{"validation", "final_holdout"} {
 		t.Run(split, func(t *testing.T) {
 			m := replayFixture(t)
+			addHistoricalMaximalEvidence(&m)
 			appendTarget := func(user, root, device string, distance float64) {
 				a := m.Activities[0]
+				a.InputEvidence = nil
 				a.ID, a.User, a.RootActivityID, a.Split = root, user, root, split
 				a.Device = device
 				a.Scenarios = []string{"continuous", "continuous"}
@@ -398,4 +402,11 @@ func TestReplayAdmitsEffortMetadataSeparatelyFromReferenceLabels(t *testing.T) {
 			t.Fatalf("%s metadata leaked", kind)
 		}
 	}
+}
+
+// Scoring fixtures need an independently admitted historical maximal input;
+// the target Reference is never copied or inferred into that input.
+func addHistoricalMaximalEvidence(m *calibration.ReplayManifest) {
+	a := &m.Activities[0]
+	a.InputEvidence = &calibration.CandidateMetadata{ActivityID: a.Activity.LabelID, SourceVersion: "synthetic-historical-protocol-v1", EvidenceRef: "prior-test-audit", AvailableAt: a.AvailableAt, AvailabilityEvidence: "immutable-prior-test", Protocol: "continuous_maximal_test_v1", ProtocolVerified: true, DurationS: 3600, StartS: floatPointer(0), EndS: floatPointer(3600)}
 }

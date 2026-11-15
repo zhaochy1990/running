@@ -2,51 +2,30 @@ package calibration
 
 import "time"
 
-// T3 changes the input pool and confidence ceiling, not the legacy model's
-// equations. T4 owns cross-duration inference and replacement of the shortcut.
+// The pace model evolves only in the candidate path. Unrelated baselines and
+// the explicitly named segments_only comparison retain frozen v3 mathematics.
 func estimateEvidenceCandidate(history []Activity, asOf time.Time, health []HealthRow, metadata []CandidateMetadata, metadataCutoff time.Time) (Snapshot, CandidateEvidenceReport) {
 	snapshot := estimateRunningCalibrationV3(history, asOf, health)
 	report := buildCandidateEvidence(history, metadata, asOf, metadataCutoff)
-	candidates := []SpeedCandidate{}
-	ceiling := ConfidenceHigh
-	for _, e := range report.Candidates {
-		// Long/full-duration observations are available to T4 but must not be folded
-		// into the legacy nearest-60min bucket by its limited-duration estimator.
-		if !e.Selected || e.DurationS > 3600 || e.AvgSpeedMps < 1.5 {
-			continue
-		}
-		c := SpeedCandidate{Activity: Activity{LabelID: e.ActivityID, ActivityDate: e.ActivityDate, Sport: "run"}, DurationS: e.DurationS, AvgSpeedMps: e.AvgSpeedMps, Source: e.Source, StartS: e.StartS, EndS: e.EndS, Confidence: e.MeasurementQuality}
-		candidates = append(candidates, c)
-		cap := ConfidenceLow
-		if e.EffortSupport == EffortConfirmedMaximal {
-			cap = ConfidenceHigh
-		} else if e.EffortSupport == EffortProbableMaximal {
-			cap = ConfidenceMedium
-		}
-		if candidateConfidenceRank(e.MeasurementQuality) < candidateConfidenceRank(cap) {
-			cap = e.MeasurementQuality
-		}
-		if candidateConfidenceRank(cap) < candidateConfidenceRank(ceiling) {
-			ceiling = cap
-		}
-	}
-	if len(candidates) == 0 {
-		ceiling = ConfidenceNone
-	}
-	speed, confidence, model := estimateThresholdSpeed(candidates, asOf)
-	if candidateConfidenceRank(confidence) > candidateConfidenceRank(ceiling) {
-		confidence = ceiling
-	}
+	hour := FitHourCapability(report.Candidates, asOf)
+	report.Hour = &hour
+	speed, confidence := hour.CenterMps, hour.Confidence
 	snapshot.ThresholdSpeedMps = round4(speed)
 	snapshot.ThresholdSpeedConfidence = confidence
-	snapshot.CriticalSpeedMps = model.CriticalSpeedMps
-	snapshot.DPrimeM = model.DPrimeM
-	snapshot.RiegelK = model.RiegelK
-	snapshot.EnduranceIndex = model.EnduranceIndex
-	snapshot.SpeedIndex = model.SpeedIndex
-	snapshot.SpeedDurationConfidence = model.Confidence
-	if candidateConfidenceRank(snapshot.SpeedDurationConfidence) > candidateConfidenceRank(ceiling) {
-		snapshot.SpeedDurationConfidence = ceiling
+	snapshot.CriticalSpeedMps = nil
+	snapshot.DPrimeM = nil
+	snapshot.RiegelK = roundN(hour.RiegelK, 4)
+	snapshot.EnduranceIndex = enduranceIndex(hour.RiegelK)
+	snapshot.SpeedIndex = nil
+	snapshot.SpeedDurationConfidence = confidence
+	if hour.RiegelK == nil {
+		snapshot.SpeedDurationConfidence = ConfidenceNone
+	}
+	// T5 owns independent HR support. Keep the legacy HR calculation explicit,
+	// never promote it above low merely because the new pace fit is supported.
+	ceiling := ConfidenceLow
+	if speed == nil {
+		ceiling = ConfidenceNone
 	}
 	snapshot.ThresholdHR = nil
 	snapshot.ThresholdHRConfidence = ConfidenceNone

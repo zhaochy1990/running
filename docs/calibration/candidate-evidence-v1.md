@@ -37,3 +37,6 @@ T3暂复用旧速度估计器（包括60min短路）处理已挑选的传统时�
 因此另用只读账号实跑修复后的metadata reader与候选seam；新分类文件仅写 `/tmp/stride-983/private/t3-live-metadata-reviewed.json`，早期冻结文件保持不变。252条metadata的备注、feel、环境与比赛计数不变；努力仍全部unknown、阈值置信度low。真实历史可得时间仍未证明，不以该回溯输入做严格历史准确性宣称。暂停反证的端到端确定性保证来自camel/legacy两种公开reader回归。
 
 修复后实际reader读到 **69场可靠暂停**。将这批独立input metadata接入另存的event-date-retrospective manifest，完整CLI回放7.94s、exit2/insufficient：69场对应363条观测全部 `Continuous=false`、未入选且无速度下界，69条完整活动观察仍在；违规数0。其余候选入选122条、93独立root。这是暂停反证的真实端到端工程验证；没有独立全力/严格历史可得时间，不能作为准确性上线证据。原manifest、早期metadata与原始报告未覆盖。
+
+
+后继 T4 已在候选路径接入 [一小时能力模型](hour-capability-v1.md)，替换本文历史回放所用的旧小时估计器；T3 evidence pool、v3和T2对照身份仍分别保留。最新参数、真实回放与缺失覆盖见该文档。
