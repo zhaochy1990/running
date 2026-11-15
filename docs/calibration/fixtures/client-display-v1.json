@@ -1,0 +1,643 @@
+{
+  "description": "Synthetic engineering behavior only; not accuracy references. Pace integers are server half-even outputs (214.5→214, 215.5→216). No private activity data.",
+  "cases": [
+    {
+      "name": "two-sided",
+      "response": {
+        "threshold": {
+          "speed_mps": 4.672897196261682,
+          "pace_per_km_sec": 214,
+          "hr_bpm": 166,
+          "speed_confidence": "high",
+          "hr_confidence": "medium",
+          "as_of_date": "2026-11-14",
+          "calibration_id": 1,
+          "algorithm_version": 4,
+          "computed_at": "2026-11-14T16:30:00Z",
+          "selection": {
+            "mode": "active",
+            "policy_revision": 1,
+            "requested_version": 4,
+            "effective_version": 4,
+            "state": "selected"
+          },
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "candidate",
+            "implementation": "synthetic-engineering-v1",
+            "data_cutoff_day": "2026-11-14",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "direct_hour_anchor",
+              "target_type": "one_hour_running_capability",
+              "measurement_quality": "high",
+              "effort_support": "confirmed_maximal",
+              "support": "high",
+              "range_low": 4.62962962962963,
+              "range_high": 4.672897196261682,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            },
+            "hr": {
+              "method": "field_test_protocol",
+              "target_type": "field_HR_proxy_not_physiological_LTHR",
+              "measurement_quality": "high",
+              "effort_support": "confirmed_maximal",
+              "support": "high",
+              "range_low": 163,
+              "range_high": 169,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            }
+          },
+          "speed_range_pace_per_km_sec": {
+            "fast": 214,
+            "slow": 216,
+            "bound_kind": "two_sided",
+            "meaning": "evidence_support_sensitivity_not_probability_interval"
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "3:34",
+        "pace_range": "支持范围 3:34–3:36 /km",
+        "hr": "166",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "name": "constraints-only",
+      "response": {
+        "threshold": {
+          "speed_mps": null,
+          "pace_per_km_sec": null,
+          "hr_bpm": 166,
+          "speed_confidence": "high",
+          "hr_confidence": "medium",
+          "as_of_date": "2026-11-14",
+          "calibration_id": 1,
+          "algorithm_version": 4,
+          "computed_at": "2026-11-14T16:30:00Z",
+          "selection": {
+            "mode": "active",
+            "policy_revision": 1,
+            "requested_version": 4,
+            "effective_version": 4,
+            "state": "selected"
+          },
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "candidate",
+            "implementation": "synthetic-engineering-v1",
+            "data_cutoff_day": "2026-11-14",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "constraints_only",
+              "target_type": "one_hour_running_capability",
+              "measurement_quality": "high",
+              "effort_support": "submaximal",
+              "support": "none",
+              "range_low": 4,
+              "range_high": null,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [
+                "insufficient_maximal_support"
+              ],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            },
+            "hr": {
+              "method": "field_test_protocol",
+              "target_type": "field_HR_proxy_not_physiological_LTHR",
+              "measurement_quality": "high",
+              "effort_support": "confirmed_maximal",
+              "support": "high",
+              "range_low": 163,
+              "range_high": 169,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            }
+          },
+          "speed_range_pace_per_km_sec": {
+            "fast": null,
+            "slow": 250,
+            "bound_kind": "speed_lower_bound",
+            "meaning": "evidence_support_sensitivity_not_probability_interval"
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "—",
+        "pace_range": "至少可达到 4:10 /km（配速 ≤ 4:10）",
+        "hr": "166",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "name": "upper-only",
+      "response": {
+        "threshold": {
+          "speed_mps": null,
+          "pace_per_km_sec": null,
+          "hr_bpm": 166,
+          "speed_confidence": "high",
+          "hr_confidence": "medium",
+          "as_of_date": "2026-11-14",
+          "calibration_id": 1,
+          "algorithm_version": 4,
+          "computed_at": "2026-11-14T16:30:00Z",
+          "selection": {
+            "mode": "active",
+            "policy_revision": 1,
+            "requested_version": 4,
+            "effective_version": 4,
+            "state": "selected"
+          },
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "candidate",
+            "implementation": "synthetic-engineering-v1",
+            "data_cutoff_day": "2026-11-14",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "direct_hour_anchor",
+              "target_type": "one_hour_running_capability",
+              "measurement_quality": "high",
+              "effort_support": "confirmed_maximal",
+              "support": "high",
+              "range_low": null,
+              "range_high": 4,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            },
+            "hr": {
+              "method": "field_test_protocol",
+              "target_type": "field_HR_proxy_not_physiological_LTHR",
+              "measurement_quality": "high",
+              "effort_support": "confirmed_maximal",
+              "support": "high",
+              "range_low": 163,
+              "range_high": 169,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            }
+          },
+          "speed_range_pace_per_km_sec": {
+            "fast": 250,
+            "slow": null,
+            "bound_kind": "speed_upper_bound",
+            "meaning": "evidence_support_sensitivity_not_probability_interval"
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "—",
+        "pace_range": "配速 ≥ 4:10 /km（仅单侧约束）",
+        "hr": "166",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "name": "low-stale",
+      "response": {
+        "threshold": {
+          "speed_mps": 4.672897196261682,
+          "pace_per_km_sec": 214,
+          "hr_bpm": null,
+          "speed_confidence": "high",
+          "hr_confidence": "medium",
+          "as_of_date": "2026-11-14",
+          "calibration_id": 1,
+          "algorithm_version": 4,
+          "computed_at": "2026-11-14T16:30:00Z",
+          "selection": {
+            "mode": "active",
+            "policy_revision": 1,
+            "requested_version": 4,
+            "effective_version": 4,
+            "state": "selected"
+          },
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "candidate",
+            "implementation": "synthetic-engineering-v1",
+            "data_cutoff_day": "2026-11-14",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "direct_hour_anchor",
+              "target_type": "one_hour_running_capability",
+              "measurement_quality": "high",
+              "effort_support": "unknown",
+              "support": "low",
+              "range_low": 4.62962962962963,
+              "range_high": 4.672897196261682,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [
+                "insufficient_maximal_support"
+              ],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            },
+            "hr": {
+              "method": "field_test_protocol",
+              "target_type": "field_HR_proxy_not_physiological_LTHR",
+              "measurement_quality": "high",
+              "effort_support": "confirmed_maximal",
+              "support": "none",
+              "range_low": 163,
+              "range_high": 169,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [
+                "stale_HR_support"
+              ],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            }
+          },
+          "speed_range_pace_per_km_sec": {
+            "fast": 214,
+            "slow": 216,
+            "bound_kind": "two_sided",
+            "meaning": "evidence_support_sensitivity_not_probability_interval"
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "3:34",
+        "pace_range": "支持范围 3:34–3:36 /km",
+        "hr": "—",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "name": "legacy",
+      "response": {
+        "threshold": {
+          "speed_mps": 4.672897196261682,
+          "pace_per_km_sec": 214,
+          "hr_bpm": 166,
+          "speed_confidence": "high",
+          "hr_confidence": "medium",
+          "as_of_date": "2026-11-14",
+          "calibration_id": 1
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "3:34",
+        "pace_range": null,
+        "hr": "166",
+        "evidence_day": null,
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": null
+      },
+      "server_expected": {
+        "pace": "3:34",
+        "pace_range": null,
+        "hr": "166",
+        "evidence_day": null,
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "name": "missing",
+      "response": {
+        "threshold": null,
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "—",
+        "evidence_day": null,
+        "cutoff_day": null,
+        "computed_shanghai": null
+      }
+    },
+    {
+      "name": "unknown",
+      "response": {
+        "threshold": {
+          "speed_mps": 4.672897196261682,
+          "pace_per_km_sec": 214,
+          "hr_bpm": 166,
+          "speed_confidence": "high",
+          "hr_confidence": "medium",
+          "as_of_date": "2026-11-14",
+          "calibration_id": 1,
+          "algorithm_version": 4,
+          "computed_at": "2026-11-14T16:30:00Z",
+          "selection": {
+            "mode": "active",
+            "policy_revision": 1,
+            "requested_version": 4,
+            "effective_version": 4,
+            "state": "selected"
+          },
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "candidate",
+            "implementation": "synthetic-engineering-v1",
+            "data_cutoff_day": "2026-11-14",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "future_method",
+              "target_type": "one_hour_running_capability",
+              "measurement_quality": "future_quality",
+              "effort_support": "future_effort",
+              "support": "future_support",
+              "range_low": 4.62962962962963,
+              "range_high": 4.672897196261682,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [
+                "future_reason"
+              ],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            },
+            "hr": {
+              "method": "field_test_protocol",
+              "target_type": "field_HR_proxy_not_physiological_LTHR",
+              "measurement_quality": "high",
+              "effort_support": "confirmed_maximal",
+              "support": "high",
+              "range_low": 163,
+              "range_high": 169,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            }
+          },
+          "speed_range_pace_per_km_sec": {
+            "fast": 214,
+            "slow": 216,
+            "bound_kind": "two_sided",
+            "meaning": "evidence_support_sensitivity_not_probability_interval"
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "3:34",
+        "pace_range": "支持范围 3:34–3:36 /km",
+        "hr": "166",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "name": "source-unavailable",
+      "response": {
+        "threshold": {
+          "speed_mps": 4.672897196261682,
+          "pace_per_km_sec": 214,
+          "hr_bpm": 166,
+          "speed_confidence": "high",
+          "hr_confidence": "medium",
+          "as_of_date": "2026-11-14",
+          "calibration_id": 1,
+          "algorithm_version": 4,
+          "computed_at": "2026-11-14T16:30:00Z",
+          "selection": {
+            "mode": "active",
+            "policy_revision": 1,
+            "requested_version": 4,
+            "effective_version": 4,
+            "state": "selected"
+          },
+          "source": {
+            "schema_version": 0,
+            "state": "source_unavailable"
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "3:34",
+        "pace_range": null,
+        "hr": "166",
+        "evidence_day": null,
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    }
+  ]
+}

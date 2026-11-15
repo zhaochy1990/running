@@ -14,6 +14,7 @@ import {
 } from './date';
 import type { StrideTrainingLoadRecord } from '../types/health';
 import { theme } from './theme';
+import { fmtShanghaiMdHm } from './format';
 
 // ---------------------------------------------------------------------------
 // Form zone —— 阈值按当日慢性负荷 (CTL) 比例划分（与 Web 相同）
@@ -444,4 +445,168 @@ export function formatDateShort(ymd: string): string {
   const d = ymd.length === 8 ? `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}` : ymd;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return ymd;
   return `${parseInt(d.slice(5, 7), 10)}/${parseInt(d.slice(8, 10), 10)}`;
+}
+
+/** Display only: consumes canonical integer seconds/km; never re-estimates speed. */
+function calibrationPace(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isInteger(seconds) || seconds <= 0) return '—';
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+export interface CalibrationMetricDisplay {
+  value: string;
+  range: string | null;
+  evidenceDay: string | null;
+  label: string;
+  support: string;
+  lines: string[];
+  help: string[];
+}
+
+const CALIBRATION_WORDS: Record<string, string> = {
+  high: '高', medium: '中', low: '低', none: '不足', unknown: '未知',
+  protocol_quality_gate_passed: '通过协议质量门槛',
+  confirmed_maximal: '已确认全力', likely_maximal: '可能全力', submaximal: '非全力',
+  direct_hour_anchor: '约一小时直接锚点', direct_60min_maximal: '约一小时全力直接锚点', speed_duration_inference: '跨时长模型推断',
+  constraints_only: '仅有约束，尚无中心估计', insufficient_maximal_support: '全力证据不足',
+  field_test_protocol: '场地测试协议', legacy_v3: '旧版训练估计', legacy_v3_training_estimate: '旧版训练估计（非独立检测）',
+  no_independent_maximal_anchors: '缺少独立近全力证据',
+  hour_extrapolation_not_identified_by_independent_recent_anchors: '近期独立锚点不足无法推断一小时能力',
+  conflicting_root_activity_days_excluded: '已排除日期冲突的重复活动',
+  binding_original_duration_constraints_model_inference: '原时长约束限制了模型推断',
+  conflicting_evidence_robust_fit_low_support: '证据冲突，模型支持降低',
+  root_HR_alias_conflict: '同一活动的心率证据存在冲突',
+  independent_HR_protocols_disagree_over_6_bpm: '独立心率测试结果不一致',
+  stale_HR_support: '心率支持证据陈旧', stale_speed_support: '配速支持证据陈旧',
+  stale_evidence: '支持证据陈旧', evidence_stale: '支持证据陈旧',
+  no_independent_HR_protocol_support: '缺少独立心率测试协议支持',
+  research_parameters_not_independently_calibrated: '研究参数尚未经过独立校准',
+  HR_research_quality_parameters_uncalibrated: '心率研究参数尚未经过独立校准',
+  environment_not_corrected: '未校正环境影响',
+  range_is_sensitivity_not_95_percent_ci: '范围表示支持或敏感性，不是概率区间',
+  power_law_valid_only_180_to_7200s: '跨时长模型仅适用其限定时长',
+  long_duration_uses_monotone_envelope_not_precise_extrapolation: '长时长证据仅提供单调约束',
+  endurance_exponent_unidentified_research_midpoint: '耐力参数尚未被充分识别',
+  field_proxy_is_not_physiological_LTHR: '场地代理不等于生理乳酸阈值',
+  missing_cadence_cannot_exclude_cadence_lock: '缺少步频，无法排除心率与步频锁定',
+};
+const calibrationWord = (value: string | undefined, fallback = '未知') =>
+  value ? (CALIBRATION_WORDS[value] ?? fallback) : fallback;
+const validDay = (value: string | undefined): string | null =>
+  value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+const positive = (value: number | null | undefined): value is number =>
+  value != null && Number.isFinite(value) && value > 0;
+
+export function projectCalibration(zones: import('../types/health').StrideZonesResponse | null): {
+  pace: CalibrationMetricDisplay; hr: CalibrationMetricDisplay;
+  cutoffDay: string | null; computedShanghai: string | null;
+} {
+  const threshold = zones?.threshold;
+  const source = threshold?.source ?? zones?.source;
+  const range = threshold?.speed_range_pace_per_km_sec;
+  let paceRange: string | null = null;
+  if (range?.bound_kind === 'two_sided' && positive(range.fast) && positive(range.slow)) {
+    paceRange = `支持范围 ${calibrationPace(range.fast)}–${calibrationPace(range.slow)} /km`;
+  } else if (range?.bound_kind === 'speed_lower_bound' && positive(range.slow)) {
+    const pace = calibrationPace(range.slow);
+    paceRange = `至少可达到 ${pace} /km（配速 ≤ ${pace}）`;
+  } else if (range?.bound_kind === 'speed_upper_bound' && positive(range.fast)) {
+    paceRange = `配速 ≥ ${calibrationPace(range.fast)} /km（仅单侧约束）`;
+  }
+  const cutoffDay = validDay(source?.data_cutoff_day) ?? validDay(threshold?.as_of_date);
+  const epoch = threshold?.computed_at ? Date.parse(threshold.computed_at) : NaN;
+  const computedShanghai = Number.isFinite(epoch)
+    ? `${epochToShanghaiYmd(epoch)} ${fmtShanghaiMdHm(threshold?.computed_at).slice(6)}` : null;
+  const selection = threshold?.selection ?? zones?.selection;
+  function metric(kind: 'speed' | 'hr'): CalibrationMetricDisplay {
+    const detail = source?.[kind];
+    const available = source?.state === 'available' && !!detail;
+    const value = kind === 'speed' ? calibrationPace(threshold?.pace_per_km_sec)
+      : positive(threshold?.hr_bpm) ? String(Math.round(threshold.hr_bpm)) : '—';
+    const evidenceDay = available ? validDay(detail?.evidence_date) : null;
+    const support = available ? `模型支持：${calibrationWord(detail?.support, '未知（保守参考）')}`
+      : source?.state === 'available' ? (kind === 'hr' ? '心率证据信息未提供' : '配速证据信息未提供')
+      : source?.state === 'source_unavailable' ? '来源信息不可用 · 保守参考'
+      : threshold ? '旧版估计 · 来源信息不可用' : '暂无校准数据';
+    const lines = [support];
+    const help = [kind === 'speed'
+      ? '阈值配速表示约一小时全力跑步能力的估计，不是普通训练平均配速。'
+      : '心率与配速证据可能有关联，不代表独立交叉验证。',
+      '数据质量描述测量可靠性；全力证据与模型支持描述能力估计的依据。高质量训练数据不等于高支持。',
+      '支持范围或敏感性范围不是统计置信区间，不表示精确生理边界。'];
+    if (available && detail) {
+      if (detail.method === 'legacy_v3_training_estimate' || detail.method === 'legacy_v3') lines.push('旧版训练估计，非独立检测或实验室参考');
+      lines.push(`数据质量：${calibrationWord(detail.measurement_quality)} · 全力证据：${calibrationWord(detail.effort_support)}`);
+      help.push(`方法：${calibrationWord(detail.method, '未知方法（保守参考）')}`);
+      if (kind === 'hr') {
+        const target = detail.target_type;
+        const targetLabel = target === 'field_HR_proxy_not_physiological_LTHR'
+          ? '现场心率代理，不等于生理乳酸阈值'
+          : target === 'lab_method_specific_LTHR' ? `实验室方法特定阈值：${detail.lab_method ?? '方法未提供'}`
+          : target === 'unavailable' ? '暂无可用心率参考' : '训练心率估计，非独立实验室参考';
+        lines.push(targetLabel);
+      }
+      const reasons = [...(detail.reasons ?? []), ...(detail.limitations ?? [])];
+      for (const reason of reasons) {
+        const text = calibrationWord(reason, '服务端报告其他限制，当前估计需保守参考');
+        if (!lines.includes(text)) lines.push(text);
+      }
+      help.push(`独立支持：${detail.independent_activities ?? 0} 次活动 / ${detail.independent_days ?? 0} 天`);
+      for (const evidence of (detail.evidence ?? []).slice(0, 3)) {
+        const span = positive(evidence.start_s) && positive(evidence.end_s)
+          ? ` · 片段 ${formatDurationHuman(evidence.start_s)}–${formatDurationHuman(evidence.end_s)}` : '';
+        help.push(`来源 ${validDay(evidence.activity_day) ?? '日期未知'}${positive(evidence.duration_s) ? ` · ${formatDurationHuman(evidence.duration_s)}` : ''}${span}`);
+      }
+      // The summary carries no verified activity access URL; never invent a link from an ID.
+      help.push('来源活动不可查看；此处仅保留安全摘要。');
+    } else if (source?.state === 'available') {
+      lines.push('当前快照未提供该指标证据，无法解释其来源');
+    } else if (source?.state === 'source_unavailable') {
+      lines.push('来源说明暂不可用，保留已有值供参考');
+    } else if (threshold) {
+      lines.push('旧版支持标签不代表新的全力证据');
+    } else {
+      lines.push('缺少可用快照，无法估计');
+    }
+    if (value === '—' && threshold) lines.push('暂无中心估计，保留已知约束与可用区间');
+    if (evidenceDay) lines.push(`证据日期 ${evidenceDay}`);
+    if (cutoffDay) help.push(`数据截止 ${cutoffDay}`);
+    if (computedShanghai) help.push(`校准执行 ${computedShanghai}（上海时间）`);
+    if (selection?.state === 'fallback') help.push('首选版本缺少快照，使用服务端回退版本');
+    if (selection?.effective_version != null) help.push(`有效算法版本 v${selection.effective_version}`);
+    const low = detail?.range_low;
+    const high = detail?.range_high;
+    const hrRange = available && positive(low) && positive(high)
+      ? `支持范围 ${Math.round(low)}–${Math.round(high)} bpm`
+      : available && positive(low) ? `心率 ≥ ${Math.round(low)} bpm（仅单侧约束）`
+      : available && positive(high) ? `心率 ≤ ${Math.round(high)} bpm（仅单侧约束）` : null;
+    return { value, range: kind === 'speed' ? paceRange : hrRange, evidenceDay,
+      label: kind === 'hr' && detail?.target_type === 'field_HR_proxy_not_physiological_LTHR' ? '现场心率参考' : kind === 'hr' ? '阈值心率' : '阈值配速', support, lines, help };
+  }
+  return { pace: metric('speed'), hr: metric('hr'), cutoffDay, computedShanghai };
+}
+
+export function projectTrainingZones(z: import('../types/health').StrideZonesResponse | null): { paceZones: Array<{name: string; label: string; range: string}>; hrZones: Array<{name: string; label: string; range: string}>; hasZones: boolean } {
+  const hasZones = (z?.pace_zones.length ?? 0) > 0 || (z?.hr_zones.length ?? 0) > 0;
+  const fmtPaceRange = (upper: string | null, lower: string | null): string => {
+    if (upper && lower) return `${upper} – ${lower}`;
+    if (upper) return `≥ ${upper}`;
+    if (lower) return `≤ ${lower}`;
+    return '—';
+  };
+  const paceZones: Array<{name: string; label: string; range: string}> = (z?.pace_zones ?? []).map((p) => ({
+    name: p.name,
+    label: p.label,
+    range: fmtPaceRange(p.upper_pace, p.lower_pace),
+  }));
+  const hrZones: Array<{name: string; label: string; range: string}> = (z?.hr_zones ?? []).map((h) => {
+    const lo = h.lower_bpm;
+    const hi = h.upper_bpm;
+    let range = '—';
+    if (lo != null && hi != null) range = `${lo} – ${hi}`;
+    else if (lo != null) range = `≥ ${lo}`;
+    else if (hi != null) range = `≤ ${hi}`;
+    return { name: h.name, label: h.label, range };
+  });
+  return { paceZones, hrZones, hasZones };
 }

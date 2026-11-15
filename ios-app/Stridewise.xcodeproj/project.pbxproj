@@ -15,6 +15,7 @@
 		76400000000000000000000C /* Stridewise.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Stridewise.entitlements; sourceTree = "<group>"; };
 		76400000000000000000000D /* ExportOptions.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = ExportOptions.plist; sourceTree = "<group>"; };
 		764000000000000000000009 /* Stridewise.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Stridewise.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		990000000000000000000001 /* StridewiseUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = StridewiseUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -23,6 +24,7 @@
 			path = App;
 			sourceTree = "<group>";
 		};
+		990000000000000000000002 /* UITests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = UITests; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -41,6 +43,7 @@
 			isa = PBXGroup;
 			children = (
 				764000000000000000000003 /* App */,
+				990000000000000000000002 /* UITests */,
 				76400000000000000000000A /* Support */,
 				764000000000000000000004 /* Products */,
 			);
@@ -50,6 +53,7 @@
 			isa = PBXGroup;
 			children = (
 				764000000000000000000009 /* Stridewise.app */,
+				990000000000000000000001 /* StridewiseUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -90,7 +94,25 @@
 			productReference = 764000000000000000000009 /* Stridewise.app */;
 			productType = "com.apple.product-type.application";
 		};
+		990000000000000000000003 /* StridewiseUITests */ = {
+            isa = PBXNativeTarget;
+            buildConfigurationList = 990000000000000000000004;
+            buildPhases = (990000000000000000000005,);
+            buildRules = ();
+            dependencies = (990000000000000000000006,);
+            fileSystemSynchronizedGroups = (990000000000000000000002,);
+            name = StridewiseUITests;
+            productName = StridewiseUITests;
+            productReference = 990000000000000000000001;
+            productType = "com.apple.product-type.bundle.ui-testing";
+        };
 /* End PBXNativeTarget section */
+/* Begin PBXContainerItemProxy section */
+        990000000000000000000007 = {isa = PBXContainerItemProxy; containerPortal = 764000000000000000000001; proxyType = 1; remoteGlobalIDString = 764000000000000000000005; remoteInfo = Stridewise; };
+/* End PBXContainerItemProxy section */
+/* Begin PBXTargetDependency section */
+        990000000000000000000006 = {isa = PBXTargetDependency; target = 764000000000000000000005; targetProxy = 990000000000000000000007; };
+/* End PBXTargetDependency section */
 
 /* Begin PBXProject section */
 		764000000000000000000001 /* Project object */ = {
@@ -121,6 +143,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+                990000000000000000000003 /* StridewiseUITests */,
 				764000000000000000000005 /* Stridewise */,
 			);
 		};
@@ -144,6 +167,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		990000000000000000000005 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
@@ -242,6 +266,8 @@
 			};
 			name = Release;
 		};
+990000000000000000000008 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = com.lipaotech.stridewise.uitests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = 1; TEST_TARGET_NAME = Stridewise;}; name = Debug; };
+990000000000000000000009 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = com.lipaotech.stridewise.uitests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = 1; TEST_TARGET_NAME = Stridewise;}; name = Release; };
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -263,6 +289,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+990000000000000000000004 = {isa = XCConfigurationList; buildConfigurations = (990000000000000000000008, 990000000000000000000009,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */

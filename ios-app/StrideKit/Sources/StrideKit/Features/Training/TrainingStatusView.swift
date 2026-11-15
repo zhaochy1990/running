@@ -8,6 +8,8 @@ public struct TrainingStatusView: View {
 
     @Environment(AppModel.self) private var app
     @State private var model = TrainingStatusModel()
+    @State private var expandedExplanation: String?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     public init() {}
 
@@ -68,6 +70,21 @@ public struct TrainingStatusView: View {
     private var content: some View {
         sectionTitle("核心指标")
         metricGrid
+        if let metric = model.metrics.first(where: { $0.id == expandedExplanation }), let explanation = metric.explanation {
+            VStack(alignment: .leading, spacing: app.theme.current.space(.sm)) {
+                Text("\(metric.label)依据与日期")
+                    .font(.headline)
+                ForEach(Array(explanation.details.enumerated()), id: \.offset) { _, line in
+                    Text(line).font(.footnote)
+                }
+            }
+            .foregroundStyle(app.theme.current.foreground)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(app.theme.current.space(.md))
+            .background(app.theme.current.surface)
+            .clipShape(RoundedRectangle(cornerRadius: app.theme.current.radius(.md)))
+        }
         sectionTitle("趋势", trailing: AnyView(windowToggle))
         chartCard(label: "静息心率 · 手表读数") {
             if model.hasRhrChart {
@@ -142,8 +159,8 @@ public struct TrainingStatusView: View {
     // MARK: - 指标卡
 
     private var metricGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: app.theme.current.space(.sm)),
-                            GridItem(.flexible(), spacing: app.theme.current.space(.sm))],
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: app.theme.current.space(.sm)),
+                               count: dynamicTypeSize.isAccessibilitySize ? 1 : 2),
                   spacing: app.theme.current.space(.sm)) {
             ForEach(model.metrics) { m in
                 VStack(alignment: .leading, spacing: 3) {
@@ -163,10 +180,35 @@ public struct TrainingStatusView: View {
                     }
                     if !m.baseline.isEmpty {
                         Text(m.baseline)
-                            .font(app.theme.current.font(.fs10))
-                            .foregroundStyle(app.theme.current.mutedTwo)
+                            .font(.footnote)
+                            .foregroundStyle(app.theme.current.muted)
+                    }
+                    if let explanation = m.explanation {
+                        if let range = explanation.range {
+                            Text(range)
+                                .font(.footnote)
+                                .foregroundStyle(app.theme.current.foreground)
+                        }
+                        Text("证据日期：\(explanation.evidenceDay ?? "未提供")")
+                            .font(.caption)
+                            .foregroundStyle(app.theme.current.muted)
+                        Button {
+                            expandedExplanation = expandedExplanation == m.id ? nil : m.id
+                        } label: {
+                            Label(expandedExplanation == m.id ? "收起说明" : "查看依据与日期",
+                                  systemImage: "info.circle")
+                                .font(.footnote)
+                                .frame(minHeight: 44, alignment: .leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(app.theme.current.accentDeep)
+                        .accessibilityLabel("\(m.label)依据与日期")
+                        .accessibilityValue(expandedExplanation == m.id ? "已展开" : "已收起")
                     }
                 }
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(app.theme.current.space(.md))
                 .background(app.theme.current.surface)
