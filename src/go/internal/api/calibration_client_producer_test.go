@@ -13,10 +13,16 @@ import (
 
 // Synthetic inputs exercise the actual candidate and metadata publisher. They
 // establish no accuracy label and never read production or evaluation holdouts.
-func clientProducerResult(t *testing.T, lab bool) calibration.OfflineResult {
+func clientProducerResult(t *testing.T, lab bool, cutoffOverride ...time.Time) calibration.OfflineResult {
 	t.Helper()
 	day := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	cutoff := time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC)
+	if len(cutoffOverride) > 0 {
+		cutoff = cutoffOverride[0]
+	}
+	if len(cutoffOverride) > 1 {
+		day = cutoffOverride[1]
+	}
 	activity := func(id string, seconds int, hr float64) calibration.Activity {
 		duration, distance := float64(seconds), float64(seconds)*4.5
 		a := calibration.Activity{LabelID: id, ActivityDate: day, Sport: "run", DurationS: &duration, DistanceM: &distance}
@@ -103,4 +109,121 @@ func TestCalibrationClientProducerVectors(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+}
+
+// This producer-to-wire fixture is synthetic engineering evidence, never an
+// accuracy label. Old protocol dates explain rejection without reviving HR.
+func TestCalibrationStaleClientProducerVector(t *testing.T) {
+	result := clientProducerResult(t, false, time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC))
+	source := calibration.SummarizeSource(result)
+	if result.Snapshot.ThresholdHR != nil || source.HR.Support != "none" || source.HR.EvidenceCount != 0 || source.HR.EvidenceDate != "" || source.HR.LatestRejectedEvidenceDate != "2026-09-14" {
+		t.Fatalf("stale protocol revived or lost date: %+v", source.HR)
+	}
+	found := false
+	for _, r := range source.HR.Reasons {
+		if r == "stale_HR_support" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("stale reason lost")
+	}
+	// Encode then parse exactly the bounded source that the storage reader serves.
+	persisted, _ := json.Marshal(source)
+	encoded := string(persisted)
+	source = calibration.ParseSource(&encoded)
+	if output := os.Getenv("STRIDE_990_STALE_PRODUCER_OUTPUT"); output != "" {
+		raw, _ := json.MarshalIndent(source, "", "  ")
+		if err := os.WriteFile(output, raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	raw, err := os.ReadFile("../../../../docs/calibration/fixtures/client-display-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		Cases []struct {
+			Name     string              `json:"name"`
+			Response strideZonesResponse `json:"response"`
+		} `json:"cases"`
+	}
+	if err = json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range fixture.Cases {
+		if c.Name == "producer-stale-hr" {
+			if c.Response.Threshold == nil || !reflect.DeepEqual(c.Response.Threshold.Source, &source) || c.Response.Threshold.HRBpm != nil {
+				t.Fatal("shared stale vector differs from persisted producer")
+			}
+			return
+		}
+	}
+	t.Fatal("missing actual stale producer vector")
+}
+
+func clientMixedStaleProducerResult(t *testing.T) calibration.OfflineResult {
+	t.Helper()
+	cutoff := time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC)
+	var history []calibration.Activity
+	var metadata []calibration.CandidateMetadata
+	for i, day := range []time.Time{time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC), time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC)} {
+		id := []string{"synthetic-old-HR-protocol", "synthetic-recent-HR-quality-rejected"}[i]
+		dur := 1800.
+		a := calibration.Activity{LabelID: id, ActivityDate: day, Sport: "run", DurationS: &dur}
+		// HR-only measurements deliberately provide no pace/independent speed anchor.
+		for second := 0; second <= 1800; second += 5 {
+			sec := float64(second)
+			hr := 165.
+			if i == 1 && second == 900 {
+				hr = 220
+			}
+			a.Samples = append(a.Samples, calibration.Sample{ElapsedS: &sec, HeartRateBpm: &hr})
+		}
+		history = append(history, a)
+		metadata = append(metadata, calibration.CandidateMetadata{ActivityID: id, RootActivityID: id, SourceVersion: "SYNTHETIC-mixed-HR-v1", EvidenceRef: "SYNTHETIC-not-accuracy", Protocol: "continuous_maximal_test_v1", ProtocolVerified: true, DurationS: 1800, StartS: fptr(0), EndS: fptr(1800), HR: &calibration.CandidateHRMetadata{Protocol: "field_30min_last20_v1", Verified: true, Sensor: "chest_strap"}})
+	}
+	r, err := calibration.EstimateOfflineWithEvidence(calibration.StrategyCandidate, history, cutoff, nil, metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+func TestCalibrationMixedStaleClientProducerVector(t *testing.T) {
+	r := clientMixedStaleProducerResult(t)
+	source := calibration.SummarizeSource(r)
+	raw, _ := json.Marshal(source)
+	encoded := string(raw)
+	source = calibration.ParseSource(&encoded)
+	if r.Snapshot.ThresholdHR != nil || r.Snapshot.ThresholdSpeedMps != nil || source.HR.Support != "none" || source.HR.EvidenceCount != 0 || source.HR.EvidenceDate != "" || source.HR.LatestStaleEvidenceDate != "2026-09-14" || source.HR.LatestRejectedEvidenceDate != "2026-11-13" {
+		t.Fatalf("mixed rejection/source dates conflated: %+v", source.HR)
+	}
+	if output := os.Getenv("STRIDE_990_MIXED_PRODUCER_OUTPUT"); output != "" {
+		raw, _ := json.MarshalIndent(source, "", "  ")
+		if err := os.WriteFile(output, raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	raw, err := os.ReadFile("../../../../docs/calibration/fixtures/client-display-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		Cases []struct {
+			Name     string              `json:"name"`
+			Response strideZonesResponse `json:"response"`
+		} `json:"cases"`
+	}
+	if err = json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range fixture.Cases {
+		if c.Name == "producer-stale-hr-mixed" {
+			if c.Response.Threshold == nil || !reflect.DeepEqual(c.Response.Threshold.Source, &source) || c.Response.Threshold.HRBpm != nil {
+				t.Fatal("mixed vector differs from persisted producer")
+			}
+			return
+		}
+	}
+	t.Fatal("missing actual mixed producer vector")
 }

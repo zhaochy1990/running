@@ -57,6 +57,10 @@ func (f *fakeStore) DailyHealthWithRHR(_ context.Context, _ string) ([]storage.D
 	return f.health, nil
 }
 
+func (f *fakeStore) UserRaces(context.Context, string) ([]storage.UserRaceRow, error) {
+	return nil, nil
+}
+
 // --- calibration writes ---
 func (f *fakeStore) UpsertRunningCalibrationSnapshot(_ context.Context, _ *storage.RunningCalibrationSnapshot) (uint64, error) {
 	f.snapUpserted = true
@@ -539,5 +543,22 @@ func TestComputeUnavailableHistoryPreservesSyncBatchEcho(t *testing.T) {
 	}
 	if f.activityUpserts != 0 || f.dailyUpserts != 0 {
 		t.Fatal("unavailable history wrote active derived rows")
+	}
+}
+
+func TestShadowPersistenceOptInDoesNotAuthorizeActiveCandidateRefresh(t *testing.T) {
+	four := 4
+	f := &fakeStore{policy: &storage.RunningCalibrationPolicy{ActiveVersion: 4, CandidateVersion: &four, FallbackVersion: 3}}
+	_, err := runJob(t, NewCalibrationWithOptions(f, CalibrationOptions{AllowCandidatePersistence: true}), `{"selection_mode":"active"}`)
+	if err == nil || f.snapUpserted || f.zonesReplaced {
+		t.Fatalf("shadow-only option authorized active refresh: %v", err)
+	}
+}
+
+func TestActiveCandidateMissingCentersPreservesDerivedRows(t *testing.T) {
+	f := &fakeStore{snap: &storage.RunningCalibrationSnapshot{ID: 9, AlgorithmVersion: 4, HRMaxEstimate: floatPtr(184)}}
+	out, err := runJob(t, NewComputeWithOptions(f, ActiveCalibrationOptions{AllowActiveCandidate: true}), `{"mode":"full"}`)
+	if err != nil || !strings.Contains(out, "unavailable_active_calibration") || f.activityUpserts != 0 || f.dailyUpserts != 0 || len(f.activityZonesWritten) != 0 {
+		t.Fatalf("incomplete active candidate overwrote results: %s %v", out, err)
 	}
 }

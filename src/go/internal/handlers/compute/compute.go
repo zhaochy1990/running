@@ -82,6 +82,10 @@ type computeResult struct {
 // and PBs — full over the window, or incrementally over only this sync's new
 // activities. j.UserID is the subject athlete UUID.
 func NewCompute(store ComputeStore) job.Handler {
+	return NewComputeWithOptions(store, ActiveCalibrationOptions{})
+}
+
+func NewComputeWithOptions(store ComputeStore, options ActiveCalibrationOptions) job.Handler {
 	return func(ctx context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		user := j.UserID
 		if _, err := uuid.Parse(user); err != nil {
@@ -98,14 +102,17 @@ func NewCompute(store ComputeStore) job.Handler {
 		if in.SelectionMode == "candidate" || in.CandidateOnly {
 			return "", job.NewPermanentError("candidate_derived_write_forbidden", fmt.Errorf("candidate preview cannot write active derived tables"))
 		}
-		ctx = storage.WithCalibrationCache(ctx)
+		ctx = storage.WithCalibrationCache(withActiveCalibrationOptions(ctx, options))
 		bundle, err := storage.ReadCachedRunningCalibration(ctx, store, user, timefmt.ShanghaiToday().Format("2006-01-02"), storage.CalibrationActive)
 		if err != nil {
 			return "", err
 		}
 		snapRow := bundle.Snapshot
-		if snapRow != nil && snapRow.AlgorithmVersion == calibration.CandidateVersion {
-			return "", job.NewPermanentError("candidate_derived_write_forbidden", fmt.Errorf("candidate active-table persistence is not supported; use read-only preview"))
+		if err := checkActiveCalibrationWrite(ctx, bundle); err != nil {
+			if errors.Is(err, errActiveCalibrationIncomplete) {
+				return unavailableActiveCalibrationResult(user, in), nil
+			}
+			return "", err
 		}
 		if snapRow == nil {
 			return unavailableCalibrationResult(user, in), nil
@@ -115,12 +122,18 @@ func NewCompute(store ComputeStore) job.Handler {
 
 		if in.Mode == string(provider.SyncIncremental) {
 			out, err := runIncremental(ctx, store, user, in.LabelIDs, in.HealthDates, cal, asOf, hb)
+			if errors.Is(err, errActiveCalibrationIncomplete) {
+				return unavailableActiveCalibrationResult(user, in), nil
+			}
 			if errors.Is(err, errHistoricalCalibrationMissing) {
 				return unavailableCalibrationResult(user, in), nil
 			}
 			return out, err
 		}
 		out, err := runFull(ctx, store, user, in.LabelIDs, cal, asOf, hb)
+		if errors.Is(err, errActiveCalibrationIncomplete) {
+			return unavailableActiveCalibrationResult(user, in), nil
+		}
 		if errors.Is(err, errHistoricalCalibrationMissing) {
 			return unavailableCalibrationResult(user, in), nil
 		}
@@ -136,6 +149,10 @@ func runFull(ctx context.Context, store ComputeStore, user string, labelIDs []st
 	if err != nil {
 		return "", err
 	}
+	daily, err := computeDaily(ctx, store, user, results, start, asOf, nil)
+	if err != nil {
+		return "", err
+	}
 	if err := persistActivityLoad(ctx, store, user, results); err != nil {
 		return "", err
 	}
@@ -143,11 +160,7 @@ func runFull(ctx context.Context, store ComputeStore, user string, labelIDs []st
 		return "", err
 	}
 	_ = hb("activity_zones", pctActivityZones)
-	daily, err := computeDaily(ctx, store, user, results, start, asOf, nil)
-	if err != nil {
-		return "", err
-	}
-	if err := persistDailyLoad(ctx, store, user, results, daily, start, nil); err != nil {
+	if err := persistDailyLoad(ctx, store, user, daily, start, nil); err != nil {
 		return "", err
 	}
 	_ = hb("training_load", pctTrainingLoad)
@@ -218,16 +231,7 @@ func runIncremental(ctx context.Context, store ComputeStore, user string, labelI
 	if err != nil {
 		return "", err
 	}
-	if err := persistActivityLoad(ctx, store, user, results); err != nil {
-		return "", err
-	}
-	if err := computeActivityZonesFor(ctx, store, user, acts); err != nil {
-		return "", err
-	}
-	_ = hb("activity_zones", pctActivityZones)
-
-	// Daily PMC: seed from the last computed day before minDay so the EWMA
-	// continues, then recompute only [minDay, asOf] and upsert that tail.
+	// Resolve the actual seed and all day bundles before any derived write.
 	prior, err := priorLoadState(ctx, store, user, minDay)
 	if err != nil {
 		return "", err
@@ -236,7 +240,14 @@ func runIncremental(ctx context.Context, store ComputeStore, user string, labelI
 	if err != nil {
 		return "", err
 	}
-	if err := persistDailyLoad(ctx, store, user, results, daily, minDay, prior); err != nil {
+	if err := persistActivityLoad(ctx, store, user, results); err != nil {
+		return "", err
+	}
+	if err := computeActivityZonesFor(ctx, store, user, acts); err != nil {
+		return "", err
+	}
+	_ = hb("activity_zones", pctActivityZones)
+	if err := persistDailyLoad(ctx, store, user, daily, minDay, prior); err != nil {
 		return "", err
 	}
 	_ = hb("training_load", pctTrainingLoad)
@@ -270,8 +281,8 @@ func loadAndComputeActivity(ctx context.Context, store ComputeStore, user string
 		if bundle.Snapshot == nil {
 			return nil, nil, errHistoricalCalibrationMissing
 		}
-		if bundle.Snapshot.AlgorithmVersion == calibration.CandidateVersion {
-			return nil, nil, job.NewPermanentError("candidate_derived_write_forbidden", fmt.Errorf("candidate cannot write active load"))
+		if err := checkActiveCalibrationWrite(ctx, bundle); err != nil {
+			return nil, nil, err
 		}
 		results[i] = trainingload.ComputeActivityLoad(a, toTrainingLoadCalibration(bundle.Snapshot))
 	}
@@ -296,6 +307,9 @@ func computeActivityZonesFor(ctx context.Context, store ComputeStore, user strin
 		}
 		if bundle.Snapshot == nil {
 			continue
+		}
+		if err := checkActiveCalibrationWrite(ctx, bundle); err != nil {
+			return err
 		}
 		zs := persistedZoneSet(bundle)
 		rows := toStorageActivityZones(user, zones.ComputeActivityTimeInZone(toZoneSamples(a.Samples), zs.PaceZones, zs.HeartRateZones))
@@ -385,7 +399,21 @@ func computeDaily(ctx context.Context, store ComputeStore, user string, results 
 	if err != nil {
 		return nil, err
 	}
-	return trainingload.ComputeDailyLoadSeries(results, toLoadHealth(health), toLoadHRV(hrv), nil, start, end, prior, nil), nil
+	calibrations := map[string]trainingload.CalibrationSnapshot{}
+	for day := start; !day.After(end); day = day.AddDate(0, 0, 1) {
+		date := day.Format("2006-01-02")
+		b, err := storage.ReadCachedRunningCalibration(ctx, store, user, date, storage.CalibrationActive)
+		if err != nil {
+			return nil, err
+		}
+		if err := checkActiveCalibrationWrite(ctx, b); err != nil {
+			return nil, err
+		}
+		if b.Snapshot != nil {
+			calibrations[date] = toTrainingLoadCalibration(b.Snapshot)
+		}
+	}
+	return trainingload.ComputeDailyLoadSeries(results, toLoadHealth(health), toLoadHRV(hrv), nil, start, end, prior, nil, calibrations), nil
 }
 
 // priorLoadState reads the last daily row strictly before minDay as the EWMA seed
@@ -661,7 +689,7 @@ func persistActivityLoad(ctx context.Context, store ComputeStore, user string, r
 	}
 	return store.ReplaceActivityTrainingLoad(ctx, user, rows)
 }
-func persistDailyLoad(ctx context.Context, store ComputeStore, user string, results []trainingload.ActivityLoadResult, daily []trainingload.DailyLoadResult, start time.Time, prior *priorLoadSnapshot) error {
+func persistDailyLoad(ctx context.Context, store ComputeStore, user string, daily []trainingload.DailyLoadResult, start time.Time, prior *priorLoadSnapshot) error {
 	var seed *storage.CalibrationSeed
 	if prior != nil {
 		frozen := prior.seed
@@ -671,20 +699,13 @@ func persistDailyLoad(ctx context.Context, store ComputeStore, user string, resu
 	}
 	rows := mapDailyRows(user, daily)
 	for i := range rows {
-		inputs := []storage.CalibrationInput{}
-		seen := map[string]bool{}
-		for _, r := range results {
-			day := r.ActivityDate.Format("2006-01-02")
-			if day != rows[i].Date || seen[day] {
-				continue
-			}
-			seen[day] = true
-			b, err := storage.ReadCachedRunningCalibration(ctx, store, user, day, storage.CalibrationActive)
-			if err != nil {
-				return err
-			}
-			inputs = append(inputs, b.FrozenInput())
+		// Readiness consumes this day's RHR bundle even with no activities.
+		// Missing history is frozen as unavailable, never replaced by today.
+		b, err := storage.ReadCachedRunningCalibration(ctx, store, user, rows[i].Date, storage.CalibrationActive)
+		if err != nil {
+			return err
 		}
+		inputs := []storage.CalibrationInput{b.FrozenInput()}
 		if err := storage.FreezeCalibrationProvenance(&rows[i], inputs, seed); err != nil {
 			return err
 		}
@@ -693,4 +714,9 @@ func persistDailyLoad(ctx context.Context, store ComputeStore, user string, resu
 		}
 	}
 	return store.ReplaceDailyTrainingLoad(ctx, user, rows)
+}
+
+func unavailableActiveCalibrationResult(user string, in computeInput) string {
+	raw, _ := json.Marshal(map[string]any{"user": user, "status": "unavailable_active_calibration", "reason": "candidate_baseline_incomplete", "derived_rows_written": 0, "label_ids": in.LabelIDs, "health_dates": in.HealthDates})
+	return string(raw)
 }

@@ -93,6 +93,7 @@ func readinessForDay(
 	dayActivities []ActivityLoadResult,
 	feedbackByLabel map[string]FeedbackRow,
 	historyByClass map[classKey][]ReadinessLoadHistory,
+	rhrBaseline *float64,
 ) (string, []string) {
 	yellow, red := 0, 0
 	var reasons []string
@@ -130,32 +131,17 @@ func readinessForDay(
 	}
 
 	todayHealth, hasHealth := healthByDate[day]
-	var rhrHistory []dateValue
-	for _, row := range allHealth {
-		if row.RHR != nil {
-			rhrHistory = append(rhrHistory, dateValue{row.Date, *row.RHR})
-		}
-	}
 	if hasHealth && todayHealth.RHR != nil {
-		baseline := valuesBefore(rhrHistory, day, 90)
-		if len(baseline) >= 14 {
-			sorted := append([]float64(nil), baseline...)
-			sort.Float64s(sorted)
-			idx := int(float64(len(sorted)-1) * 0.1)
-			if idx < 0 {
-				idx = 0
-			}
-			if idx > len(sorted)-1 {
-				idx = len(sorted) - 1
-			}
-			base := sorted[idx]
-			if *todayHealth.RHR >= base+8 {
-				red++
-				reasons = append(reasons, "rhr_elevated")
-			} else if *todayHealth.RHR >= base+5 {
-				yellow++
-				reasons = append(reasons, "rhr_elevated")
-			}
+		// Long-term RHR is owned by the persisted calibration bundle. Local
+		// health history must never manufacture a competing baseline.
+		if rhrBaseline == nil {
+			reasons = append(reasons, "rhr_baseline_unavailable")
+		} else if *todayHealth.RHR >= *rhrBaseline+8 {
+			red++
+			reasons = append(reasons, "rhr_elevated")
+		} else if *todayHealth.RHR >= *rhrBaseline+5 {
+			yellow++
+			reasons = append(reasons, "rhr_elevated")
 		}
 		if todayHealth.SleepTotalS != nil {
 			sleepH := *todayHealth.SleepTotalS / 3600.0
@@ -226,6 +212,7 @@ func ComputeDailyLoadSeries(
 	start, end time.Time,
 	priorState *PriorLoadState,
 	readinessHistory []ReadinessLoadHistory,
+	calibrations map[string]CalibrationSnapshot,
 ) []DailyLoadResult {
 	byDate := map[time.Time][]ActivityLoadResult{}
 	for _, a := range activityResults {
@@ -299,16 +286,17 @@ func ComputeDailyLoadSeries(
 		if coverage != CoverageUnknown {
 			acute, chronic = advanceDailyLoad(acute, chronic, dose, kAcute, kChronic)
 		}
-		gate, readinessReasons := readinessForDay(day, healthByDate, hrvByDate, healthRows, hrvRows, dayActivities, feedbackByLabel, historyByClass)
+		dayCalibration := calibrations[day.Format("2006-01-02")]
+		gate, readinessReasons := readinessForDay(day, healthByDate, hrvByDate, healthRows, hrvRows, dayActivities, feedbackByLabel, historyByClass, dayCalibration.RHRBaseline)
 
 		var ratio *float64
 		if chronic > 0 {
 			r := round4(acute / chronic)
 			ratio = &r
 		}
-		var calID *int
+		calID := dayCalibration.ID
 		for _, a := range dayActivities {
-			if a.CalibrationID != nil {
+			if calID == nil && a.CalibrationID != nil {
 				calID = a.CalibrationID
 				break
 			}

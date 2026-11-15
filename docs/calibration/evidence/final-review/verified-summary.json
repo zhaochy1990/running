@@ -1,0 +1,193 @@
+{
+  "base": "933fc1d4ef98f4509a099ed40bbedc695edf4b51",
+  "run_day_shanghai": "2026-11-16",
+  "synthetic_only": true,
+  "production_access": false,
+  "active4_real_accuracy_claim": false,
+  "active4_derived_rows_checked": 73,
+  "five_tables_checked": 5,
+  "policy_restored": {
+    "active": 3,
+    "candidate": 4,
+    "fallback": 3
+  },
+  "web_browser_cases": 12,
+  "mp_http_projector_cases": 12,
+  "swift_live_tests": {
+    "passed": 3,
+    "skipped": 0
+  },
+  "client_cases": [
+    {
+      "name": "two-sided",
+      "sha256": "1b66d66ff59e5386c4162ce102bb28f56de38a2bfa2835d3b8450e4a80e58c2c",
+      "pace": "3:34",
+      "hr": "166",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "constraints-only",
+      "sha256": "0966b449f7bf0b611bff43735f317d8342de3c91e1f20d1368e364b952381ba1",
+      "pace": "—",
+      "hr": "166",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "upper-only",
+      "sha256": "2889aae321e781d934948ce652146ea00daa8c2733699dc1e895b85476ccb5a4",
+      "pace": "—",
+      "hr": "166",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "low-stale",
+      "sha256": "d9b192a86b325360d4f42099cec32f445b463dec83ee64c05a68de75eac362c2",
+      "pace": "3:34",
+      "hr": "—",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "legacy",
+      "sha256": "6c5e009ba939904a8dd3858848cf11c54c31b074b7de04a7480664011890d726",
+      "pace": "3:34",
+      "hr": "166",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "missing",
+      "sha256": "d38d6825d331cf2d481d1a64d1441ccc4e76ccf977a5eb9d75e501f0ac10786a",
+      "pace": "—",
+      "hr": "—",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "unknown",
+      "sha256": "83b01acdea510b580a5136c3a30e78866d04061dc592c61f2251fbd5d2893723",
+      "pace": "3:34",
+      "hr": "166",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "source-unavailable",
+      "sha256": "1f08fe97962c09d4c0b1fda96943dd9e4072b9c1ad0b4648a8035528497025b7",
+      "pace": "3:34",
+      "hr": "166",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "producer-field-half",
+      "sha256": "1bf83c56bb6f45d0eb9ccbccecb9296f01760dacf36fd3a2076dd7b2889ed85b",
+      "pace": "—",
+      "hr": "167",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "producer-lab-half",
+      "sha256": "baca916857b29bb5df4303ca5bd437894e1854204bbdc7073bb3fb5cda2d03db",
+      "pace": "—",
+      "hr": "169",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "future-source-schema",
+      "sha256": "65895ee5074770344c5132b6ffd036b3b64dfb5491f62a77fe8c81b309f86f1f",
+      "pace": "3:34",
+      "hr": "166",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "producer-stale-hr",
+      "sha256": "71a970f596a2c5a91244bf9ef8a2e66b8ada3e87d0a3d9b3687d0d5ec86957ae",
+      "pace": "—",
+      "hr": "—",
+      "mp_http_projector": "pass"
+    }
+  ],
+  "hr_refactor_snapshot_evidence_sha256_before_and_after": {
+    "valid": "46f9c2b86fa069ea407dc50ff6468a639952ab2559628170cbfd13d3cc20e0b4",
+    "partial-window": "27988609c72ece13294418ef34037d06c6144d91b738a5fce51d5cbd4db013b3",
+    "spike": "b87a2a5f75f95d810fbb2e3d6726bf3a7e569a7c2724ba66a2b3036c3fc620e2",
+    "drift": "e567881f0c700367fa31997292db373e59d053bd7810f9063cae11637c829333",
+    "stale": "50e42f4fab5faada57e160f9e5ce571522eb7e34ba961ce07f293937b13c457b",
+    "missing": "89205b3a4e546f012bf1c5bc1897bb5877bd9df2eefd0ac9525a8b94e3bd126d"
+  },
+  "full_go": "pass",
+  "related_race": "pass",
+  "real_mysql_four_regressions_race": "pass",
+  "broad_api_race": "fail_existing_AdminBalances_List_also_reproduced_origin_a70",
+  "release_ready": false,
+  "accuracy": "insufficient",
+  "captured_nonfinal_stack": {
+    "activities": 252,
+    "capture_asof": "2026-11-15",
+    "center_coverage_by_day": {
+      "candidate_hr": 0,
+      "candidate_speed": 0,
+      "v3_hr": 129,
+      "v3_speed": 130
+    },
+    "derived_rows": [
+      252,
+      366,
+      15,
+      78,
+      3024
+    ],
+    "execution_asof": "2026-11-16",
+    "health": 300,
+    "historical_days": 130,
+    "input_gzip_sha256": "b9c582bf7d0de612f308fd77b2209507715b8cd3ce2a68a78a23621fdaf014d2",
+    "load_impact": {
+      "above_20pct_engineering_inventory": 0,
+      "absolute_relative_change_median": null,
+      "absolute_relative_change_p90": null,
+      "changed_dose": 0,
+      "missing_dose": 252,
+      "paired_loads": 0
+    },
+    "phases": [
+      {
+        "phase": "active3",
+        "algorithm_version": 3,
+        "response_sha256": "d00f392577af6fad5c69ff28ee752fd8832447b554cb5472ab1bd5c5b1a9332f",
+        "pace_zones": 6,
+        "hr_zones": 6
+      },
+      {
+        "phase": "active4",
+        "algorithm_version": 4,
+        "response_sha256": "39a0cb995f2e0d84e2a4bffcead05bb9ad81f1a341b896d1dec2b9a0feddcb88",
+        "pace_zones": 0,
+        "hr_zones": 6
+      },
+      {
+        "phase": "rollback3",
+        "algorithm_version": 3,
+        "response_sha256": "e9ce230cd412153edaeffb72cdf9cfc4d20347c1486b24c6c3cb6f8db88916c7",
+        "pace_zones": 6,
+        "hr_zones": 6
+      }
+    ],
+    "preview_activities": 252,
+    "preview_unavailable_days": 0,
+    "rabbit_dispatched": {
+      "Started": 7,
+      "Completed": 7,
+      "Failed": 0
+    },
+    "release_ready": false,
+    "rollback_lineage_checked": true,
+    "samples": 644425,
+    "runtime_source_commit": "081d045a881070ebeb9eae849bf8681042d61649",
+    "input_name": "fresh-manifest.json.gz",
+    "input_uncompressed_json_bytes_sha256": "6d4164199707f6f761da57e0ee2fa40214bb0bd5dcaecc0b5b9d0574dae61820",
+    "stack_consumed_projection_ReplayContentHash": "ff3bc5984375965b949f75f86cfa1d6810a67126a2d7d4e88567b0100471deb8",
+    "input_identity_before_after_equal": true,
+    "input_projection": "stackManifest: as_of, activities(split/activity), health(row); before local ordinal remapping",
+    "older_run_input_name": "t3-reviewed-input-manifest.json.gz",
+    "older_run_input_gzip_sha256": "e94025d30c3da7afdc83ac1a6880a0578159d4a369da0dada11a72a226e4ab78",
+    "same_input_as_older_run": false,
+    "duration_seconds": 234.69,
+    "new_accuracy_evaluation": false
+  }
+}

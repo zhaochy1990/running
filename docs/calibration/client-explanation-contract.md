@@ -20,3 +20,22 @@ Go API 是此 DTO 的 owner，workout / weekly-plan schema 不承担校准元数
 配速中心与快／慢边界仍由 Go API 用 half-even 生成整秒，三端只拼分钟秒。心率 wire 保留正数小数，中心与有效支持范围端点显示为最接近整数，恰好半点向上（166.5→167、168.5→169）；这与 JavaScript `Math.round`／Swift 正数 `.rounded(.toNearestOrAwayFromZero)` 一致，不采用配速的 half-even。此项仅显示，不改持久化值或算法。
 
 HR `method=field_30min_last20_v1` 表示30分钟现场测试的后20分钟，不等于实验室生理LTHR；`lab_lthr_report_v1` 表示实验室乳酸阈值报告，仍保留具体 `lab_method`。努力等级 canonical 为 `probable_maximal`（可能全力），不能把它当未知，也不因测量质量通过就提高能力估计支持。共享 producer-field-half / producer-lab-half 向量由真实 Go候选计算与 SummarizeSource 产出；其中HR范围端点专用于显示舍入边界，不是算法输出的不确定性。
+
+
+## 兼容和未采用协议（2026-11-16 最终评审修复）
+
+三端只解释 `source.schema_version=1` 且 `state=available` 的支持/质量/努力字段。
+未知未来 schema 保留已有中心值，来源标签保守降级，不借用已知 v1 的高支持语义。
+
+`source.hr.latest_rejected_evidence_date` 是最近未采用协议的上海日期，与实际支持的
+`evidence_date` 分开。具体 stale / rejected / quality 原因沿用有界 categorical reasons；
+三端显示“最近未采用证据日”和陈旧原因。该字段不恢复中心、范围或支持计数，也不刷新
+有效证据日期；不暴露原始 HR、私密备注或完整诊断。共享 `producer-stale-hr` 来自实际
+Go evidence producer → typed summary → 持久化解析；真实隔离 MySQL 另有回读验证。
+
+
+混合未采用协议时，`latest_stale_evidence_date` 单独表示最近陈旧协议日；
+`latest_rejected_evidence_date` 仍表示最近的任何未采用协议日。近期质量拒绝不能覆盖较旧的
+stale日期。两日相同只显示一次日期；不同则分别显示“最近陈旧协议日”和“最近未采用证据日”。
+已知突变/恢复/测量异常的质量原因有具体说明，两日都不能被解释为有效支持或复活中心。
+没有协议的来源不生成该optional字段；旧JSON缺字段保持缺失，不从最近拒绝日推断stale日。

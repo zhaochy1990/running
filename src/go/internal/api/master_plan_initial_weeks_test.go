@@ -95,7 +95,11 @@ func TestMasterPlanApplyNewCurrentWeekPublishesOnlyFutureSessions(t *testing.T) 
 	alignCandidateSeason(content, start)
 	doc := rollingWeeklyPlanDoc(name)
 	doc["week_index"] = 1
-	doc["sessions"].([]any)[0].(map[string]any)["date"] = today.AddDate(0, 0, 1).Format("2006-01-02")
+	firstSession := doc["sessions"].([]any)[0].(map[string]any)
+	firstSession["date"] = today.AddDate(0, 0, 1).Format("2006-01-02")
+	// Moving Monday's session can share a day with an existing index-0 run.
+	// Keep a distinct legal session index while preserving future-only filtering.
+	firstSession["session_index"] = 1
 	content["weekly_docs"] = []any{doc}
 	jobID := registerCandidateFixture(t, h, uid, content)
 	response := doApplyFromContent(t, h, h.bearer(t, uid), map[string]any{"content": content, "apply_token": jobID})

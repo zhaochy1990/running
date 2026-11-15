@@ -230,18 +230,13 @@ func measureCandidateHR(points []candidateHRPoint, start, end float64) (*float64
 	lo, hi := math.Inf(1), math.Inf(-1)
 	for i := 1; i < len(points); i++ {
 		a, b := points[i-1], points[i]
-		left, right := math.Max(start, a.t), math.Min(end, b.t)
-		if right <= left || b.t <= a.t {
+		interval, ok := measureHRInterval(a, b, start, end)
+		if !ok {
 			continue
 		}
-		if b.t-a.t > 5 || a.hr == nil || b.hr == nil {
-			continue
-		}
+		left, right, hl, hr := interval.left, interval.right, interval.hl, interval.hr
 		q.MaxGapS = math.Max(q.MaxGapS, left-lastCovered)
-		dt := b.t - a.t
-		hl := *a.hr + (*b.hr-*a.hr)*(left-a.t)/dt
-		hr := *a.hr + (*b.hr-*a.hr)*(right-a.t)/dt
-		sum += (hl + hr) / 2 * (right - left)
+		sum += interval.area
 		valid += right - left
 		lastCovered = right
 		lo = math.Min(lo, math.Min(hl, hr))
@@ -296,20 +291,33 @@ func candidateHRMean(points []candidateHRPoint, start, end float64) (float64, fl
 	sum, weight := 0.0, 0.0
 	for i := 1; i < len(points); i++ {
 		a, b := points[i-1], points[i]
-		left, right := math.Max(start, a.t), math.Min(end, b.t)
-		if right <= left || b.t-a.t > 5 || a.hr == nil || b.hr == nil {
+		interval, ok := measureHRInterval(a, b, start, end)
+		if !ok {
 			continue
 		}
-		dt := b.t - a.t
-		hl := *a.hr + (*b.hr-*a.hr)*(left-a.t)/dt
-		hr := *a.hr + (*b.hr-*a.hr)*(right-a.t)/dt
-		sum += (hl + hr) / 2 * (right - left)
-		weight += right - left
+		sum += interval.area
+		weight += interval.right - interval.left
 	}
 	if weight == 0 {
 		return 0, 0
 	}
 	return sum / weight, weight
+}
+
+// Adjacent HR interval measurement only. Consumers retain coverage, drift,
+// recovery and quality policy. Preserve the interpolation/integration operation
+// order used by both consumers; this refactor does not change research gates.
+type measuredHRInterval struct{ left, right, hl, hr, area float64 }
+
+func measureHRInterval(a, b candidateHRPoint, start, end float64) (measuredHRInterval, bool) {
+	left, right := math.Max(start, a.t), math.Min(end, b.t)
+	if right <= left || b.t <= a.t || b.t-a.t > 5 || a.hr == nil || b.hr == nil {
+		return measuredHRInterval{}, false
+	}
+	dt := b.t - a.t
+	hl := *a.hr + (*b.hr-*a.hr)*(left-a.t)/dt
+	hr := *a.hr + (*b.hr-*a.hr)*(right-a.t)/dt
+	return measuredHRInterval{left: left, right: right, hl: hl, hr: hr, area: (hl + hr) / 2 * (right - left)}, true
 }
 
 // Auxiliary cadence uses the exact same clock and whole-step/minute units.

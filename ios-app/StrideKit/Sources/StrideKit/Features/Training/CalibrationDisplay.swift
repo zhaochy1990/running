@@ -81,6 +81,8 @@ public func calibrationDisplay(_ response: StrideZonesResponse?, metric: Calibra
     if let selection = t?.selection ?? response?.selection, selection.state == "fallback" {
         details.append("使用回退版本：首选版本缺少历史快照。")
     }
+    if let staleDay = s?.latestStaleEvidenceDate { details.append("最近陈旧协议日 \(staleDay)") }
+    if let rejectedDay = s?.latestRejectedEvidenceDate, rejectedDay != s?.latestStaleEvidenceDate { details.append("最近未采用证据日 \(rejectedDay)") }
     details.append("证据日期：\(s?.evidenceDate ?? "未提供")")
     details.append("数据截止：\(cutoff ?? "未提供")")
     details.append("校准执行：\(computed ?? "未提供")（上海时间）；执行日期不代表新增证据。")
@@ -141,6 +143,9 @@ private func calibrationMethod(_ value: String?) -> String {
 private func calibrationReason(_ value: String) -> String {
     switch value {
     case "insufficient_maximal_support": "全力证据不足，暂不提升能力支持或补造中心值。"
+    case "HR_abrupt_spike_or_recovery": "心率存在突变或恢复，协议未采用"
+    case "HR_sustained_recovery_drop_over_10_bpm": "心率存在持续恢复下降，协议未采用"
+    case "HR_range_suggests_recovery_or_artifact": "心率范围提示恢复或测量异常，协议未采用"
     case "stale_HR_support", "stale_hr_support": "心率支持已陈旧，等待新的有效证据。"
     case "stale_speed_support", "stale_anchor", "stale_evidence": "配速支持已陈旧，等待新的有效证据。"
     case "research_parameters_not_independently_calibrated": "研究参数尚未完成独立校准。"

@@ -49,6 +49,8 @@ const metric = z.object({
   range_high: optionalNumber,
   range_meaning: text,
   evidence_date: optionalText,
+  latest_rejected_evidence_date: optionalText,
+  latest_stale_evidence_date: optionalText,
   independent_activities: integer,
   independent_days: integer,
   lab_method: optionalText,

@@ -18,7 +18,7 @@ func TestComputeDailyLoadSeriesEWMA(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		health = append(health, HealthRow{Date: d1.AddDate(0, 0, i)})
 	}
-	series := ComputeDailyLoadSeries(acts, health, nil, nil, d1, d1.AddDate(0, 0, 4), nil, nil)
+	series := ComputeDailyLoadSeries(acts, health, nil, nil, d1, d1.AddDate(0, 0, 4), nil, nil, nil)
 	if len(series) != 5 {
 		t.Fatalf("series len = %d, want 5", len(series))
 	}

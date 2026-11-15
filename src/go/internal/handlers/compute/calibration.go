@@ -25,7 +25,7 @@ const calibrationLookbackDays = 180
 // calibration inputs (activities-in-window + timeseries/laps + daily RHR), the
 // snapshot/zone writes, and the same-day snapshot read that gates empty runs.
 type CalibrationStore interface {
-	calibrationsource.Reader
+	calibrationsource.CandidateReader
 	storage.CalibrationReader
 	CalibrationPolicy(context.Context) (storage.RunningCalibrationPolicy, error)
 	PublishRunningCalibration(context.Context, *storage.RunningCalibrationSnapshot, []storage.RunningCalibrationPaceZone, []storage.RunningCalibrationHRZone) (uint64, error)
@@ -64,7 +64,11 @@ func NewCalibration(store CalibrationStore) job.Handler {
 
 // Candidate persistence requires an explicitly isolated caller. Production wiring
 // always uses NewCalibration; this option does not change the active selector.
-type CalibrationOptions struct{ AllowCandidatePersistence bool }
+type CalibrationOptions struct {
+	AllowCandidatePersistence bool
+	// Separate from shadow permission: refreshes the selected active-v4 key only.
+	AllowActiveCandidate bool
+}
 
 func NewCalibrationWithOptions(store CalibrationStore, options CalibrationOptions) job.Handler {
 	return func(ctx context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
@@ -100,8 +104,8 @@ func NewCalibrationWithOptions(store CalibrationStore, options CalibrationOption
 				return "", job.NewPermanentError("candidate_aliases_active_snapshot", fmt.Errorf("candidate persistence requires a distinct version from active and fallback"))
 			}
 		}
-		if version != calibration.ModelVersion && !options.AllowCandidatePersistence {
-			return "", job.NewPermanentError("candidate_persistence_disabled", fmt.Errorf("candidate persistence requires isolated explicit opt-in"))
+		if version != calibration.ModelVersion && !candidateOnly && !options.AllowActiveCandidate {
+			return "", job.NewPermanentError("candidate_persistence_disabled", fmt.Errorf("active v4 calibration requires explicit active constructor opt-in"))
 		}
 		asOf := timefmt.ShanghaiToday()
 		// Empty-run gate (devops#931): an incremental sync that produced no new
@@ -139,15 +143,21 @@ func runCalibration(ctx context.Context, store CalibrationStore, user string, as
 	return runCalibrationVersion(ctx, store, user, asOf, calibration.ModelVersion)
 }
 func runCalibrationVersion(ctx context.Context, store CalibrationStore, user string, asOf time.Time, version int) (uint64, int, error) {
-	history, health, err := calibrationsource.Load(ctx, store, user, "", asOf, calibrationLookbackDays)
-	if err != nil {
-		return 0, 0, err
-	}
+	var history []calibration.Activity
+	var health []calibration.HealthRow
+	var metadata []calibration.CandidateMetadata
+	var err error
 	strategy := calibration.StrategyV3
 	if version == calibration.CandidateVersion {
 		strategy = calibration.StrategyCandidate
+		history, health, metadata, err = calibrationsource.LoadCandidate(ctx, store, user, "", asOf, calibrationLookbackDays)
+	} else {
+		history, health, err = calibrationsource.Load(ctx, store, user, "", asOf, calibrationLookbackDays)
 	}
-	result, err := calibration.EstimateOffline(strategy, history, asOf, health)
+	if err != nil {
+		return 0, 0, err
+	}
+	result, err := calibration.EstimateOfflineWithEvidence(strategy, history, asOf, health, metadata)
 	if err != nil {
 		return 0, 0, err
 	}
