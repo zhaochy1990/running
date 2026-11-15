@@ -1,3 +1,5 @@
+当前独立评审修复后的复验见 [review3](review3/README.md)；下文保留旧版合成证据与哈希。
+
 # #990 iOS 合成只读验收
 
 这些图片来自真实 DEBUG iOS App → APIClient/URLSession → 本地 Gin → 隔离 MySQL 的合成账号，均不含真实用户身份、轨迹、备注或凭据。它们只证明工程展示，不是准确性或候选上线依据。

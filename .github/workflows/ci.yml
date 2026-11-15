@@ -54,9 +54,11 @@ jobs:
           filters: |
             frontend:
               - 'frontend/**'
+              - 'docs/calibration/fixtures/client-display-v1.json'
               - 'Dockerfile.web'
             go:
               - 'src/go/**'
+              - 'docs/calibration/fixtures/client-display-v1.json'
             coach:
               - 'src/coach_agent_api/**'
               - 'src/coach_agent_worker/**'
@@ -68,6 +70,7 @@ jobs:
               - 'package.json'
             miniprogram:
               - 'src/wechat-miniprogram/**'
+              - 'docs/calibration/fixtures/client-display-v1.json'
             contract:
               - 'src/go/internal/api/weekly_plan_validation.go'
               - 'src/go/internal/api/weekly_plan_contract_parity_test.go'

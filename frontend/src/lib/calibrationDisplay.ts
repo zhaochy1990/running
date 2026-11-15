@@ -13,6 +13,7 @@ const methods: Record<string, string> = {
   direct_60min_maximal: "一小时全力表现锚点", speed_duration_inference: "跨时长模型推断", insufficient_maximal_support: "缺少近全力支持", legacy_v3_training_estimate: "旧版训练估计，非独立检测值",
   direct_hour_anchor: "一小时表现锚点", direct_60min_anchor: "一小时表现锚点",
   constraints_only: "仅有能力约束，无法可靠估计中心", duration_model: "跨时长模型推断",
+  field_30min_last20_v1: "场地测试协议（30分钟测试的后20分钟）", lab_lthr_report_v1: "实验室乳酸阈值报告",
   independent_duration_model: "跨时长模型推断", field_test_protocol: "现场测试协议",
 };
 function reasonText(code: string): string {

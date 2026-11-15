@@ -1,0 +1,194 @@
+{
+  "version": "review3",
+  "verification": "All actual proxy response hashes match v3 manifest; Swift APIClient and page VM assert expected display literals. No credential or identity fields included.",
+  "cases": [
+    {
+      "case": "two-sided",
+      "sha256": "01f5da2ac894896d07efdc3376c8b5eb9d8a7464636e2c4ec28c3adfc71b704b",
+      "wire_hr_bpm": 166,
+      "wire_hr_range_low": 163,
+      "wire_hr_range_high": 169,
+      "wire_hr_range_meaning": "evidence_support_sensitivity_not_probability_interval",
+      "wire_hr_method": "field_test_protocol",
+      "wire_speed_effort": "confirmed_maximal",
+      "expected": {
+        "pace": "3:34",
+        "pace_range": "支持范围 3:34–3:36 /km",
+        "hr": "166",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "case": "constraints-only",
+      "sha256": "2bdddea2adbcedae7a3ad3dd0f4bcf5017c349594e2c51bff38bee785f92385c",
+      "wire_hr_bpm": 166,
+      "wire_hr_range_low": 163,
+      "wire_hr_range_high": 169,
+      "wire_hr_range_meaning": "evidence_support_sensitivity_not_probability_interval",
+      "wire_hr_method": "field_test_protocol",
+      "wire_speed_effort": "submaximal",
+      "expected": {
+        "pace": "—",
+        "pace_range": "至少可达到 4:10 /km（配速 ≤ 4:10）",
+        "hr": "166",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "case": "upper-only",
+      "sha256": "93c309ef0d20e5e4875ba914703f7ead7bc325735b33cd73d3f27e965543a67a",
+      "wire_hr_bpm": 166,
+      "wire_hr_range_low": 163,
+      "wire_hr_range_high": 169,
+      "wire_hr_range_meaning": "evidence_support_sensitivity_not_probability_interval",
+      "wire_hr_method": "field_test_protocol",
+      "wire_speed_effort": "confirmed_maximal",
+      "expected": {
+        "pace": "—",
+        "pace_range": "配速 ≥ 4:10 /km（仅单侧约束）",
+        "hr": "166",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "case": "low-stale",
+      "sha256": "fe66b008367447621c8db619dc72020944879517b7414413d3bb05de6760d81f",
+      "wire_hr_bpm": null,
+      "wire_hr_range_low": 163,
+      "wire_hr_range_high": 169,
+      "wire_hr_range_meaning": "evidence_support_sensitivity_not_probability_interval",
+      "wire_hr_method": "field_test_protocol",
+      "wire_speed_effort": "unknown",
+      "expected": {
+        "pace": "3:34",
+        "pace_range": "支持范围 3:34–3:36 /km",
+        "hr": "—",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "case": "legacy",
+      "sha256": "613a9055a1a0fe077a87c60e55744a845ac904338f8d6f9ef29bcc2ddb039015",
+      "wire_hr_bpm": 166,
+      "wire_hr_range_low": null,
+      "wire_hr_range_high": null,
+      "wire_hr_range_meaning": null,
+      "wire_hr_method": null,
+      "wire_speed_effort": null,
+      "expected": {
+        "pace": "3:34",
+        "pace_range": null,
+        "hr": "166",
+        "evidence_day": null,
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "case": "missing",
+      "sha256": "92e0b7de42131b8c6054076bf46999cf80325200053f43e605c77f3f610ccaf1",
+      "wire_hr_bpm": null,
+      "wire_hr_range_low": null,
+      "wire_hr_range_high": null,
+      "wire_hr_range_meaning": null,
+      "wire_hr_method": null,
+      "wire_speed_effort": null,
+      "expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "—",
+        "evidence_day": null,
+        "cutoff_day": null,
+        "computed_shanghai": null
+      }
+    },
+    {
+      "case": "unknown",
+      "sha256": "b63d4e01ef467cbef672e5773b2930cb05dbdb21b682eab6fbfd832bc85c206e",
+      "wire_hr_bpm": 166,
+      "wire_hr_range_low": 163,
+      "wire_hr_range_high": 169,
+      "wire_hr_range_meaning": "evidence_support_sensitivity_not_probability_interval",
+      "wire_hr_method": "field_test_protocol",
+      "wire_speed_effort": "future_effort",
+      "expected": {
+        "pace": "3:34",
+        "pace_range": "支持范围 3:34–3:36 /km",
+        "hr": "166",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "case": "source-unavailable",
+      "sha256": "e35df6ea94ea33c69939b7dfcc30b3eaecc64037fa26f5f55e984099288115a4",
+      "wire_hr_bpm": 166,
+      "wire_hr_range_low": null,
+      "wire_hr_range_high": null,
+      "wire_hr_range_meaning": null,
+      "wire_hr_method": null,
+      "wire_speed_effort": null,
+      "expected": {
+        "pace": "3:34",
+        "pace_range": null,
+        "hr": "166",
+        "evidence_day": null,
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "case": "producer-field-half",
+      "sha256": "475a8ba2b870e639c41ba1251e8b4e2b2083426d1f5fd25f782c04b5355462d1",
+      "wire_hr_bpm": 166.5,
+      "wire_hr_range_low": 166.5,
+      "wire_hr_range_high": 168.5,
+      "wire_hr_range_meaning": "synthetic_wire_rounding_boundary_not_model_uncertainty",
+      "wire_hr_method": "field_30min_last20_v1",
+      "wire_speed_effort": "probable_maximal",
+      "expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "167",
+        "hr_range": "支持范围 167–169 bpm",
+        "hr_method_label": "场地测试协议（30分钟测试的后20分钟）",
+        "speed_effort_label": "可能全力",
+        "lab_method": null,
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "case": "producer-lab-half",
+      "sha256": "78308fec3f4e486c1771587e5856e9c074a37707a70ffb3c35490d34492e4dd5",
+      "wire_hr_bpm": 168.5,
+      "wire_hr_range_low": 166.5,
+      "wire_hr_range_high": 168.5,
+      "wire_hr_range_meaning": "synthetic_wire_rounding_boundary_not_model_uncertainty",
+      "wire_hr_method": "lab_lthr_report_v1",
+      "wire_speed_effort": "probable_maximal",
+      "expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "169",
+        "hr_range": "支持范围 167–169 bpm",
+        "hr_method_label": "实验室乳酸阈值报告",
+        "speed_effort_label": "可能全力",
+        "lab_method": "lactate_turnpoint",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    }
+  ]
+}

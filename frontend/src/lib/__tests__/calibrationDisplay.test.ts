@@ -20,6 +20,10 @@ describe("calibration explanation projection", () => {
     expect(speed.value).toBe(c.expected.pace);
     expect(speed.range).toBe(c.expected.pace_range);
     expect(hr.value).toBe(c.expected.hr);
+    if ("hr_range" in c.expected) expect(hr.range).toBe(c.expected.hr_range);
+    if ("hr_method_label" in c.expected) expect(hr.details.join(" ")).toContain(c.expected.hr_method_label);
+    if ("speed_effort_label" in c.expected) expect(speed.details.join(" ")).toContain(c.expected.speed_effort_label);
+    if ("lab_method" in c.expected && c.expected.lab_method) expect(hr.details.join(" ")).toContain(c.expected.lab_method);
     if (c.name === "low-stale") expect(hr.details).toContain("证据陈旧，需更新有效证据");
     if (c.name === "constraints-only") expect(speed.details).toContain("无法可靠估计中心值");
     if (c.name === "legacy") expect(hr.details.join(" ")).toContain("不能视为独立检测值");

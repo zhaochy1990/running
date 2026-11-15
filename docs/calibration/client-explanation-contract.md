@@ -14,3 +14,9 @@ Go API 是此 DTO 的 owner，workout / weekly-plan schema 不承担校准元数
 - 旧行没有来源时 `source.state=legacy_source_missing`，坏 JSON 为 `source_unavailable`。缺快照保持 `threshold:null`、空 zones；响应顶层 `selection` / `source` 解释 `snapshot_unavailable`。不能用未来快照补历史，也不能在 GET 里校准、迁移或补库。
 
 本次仅落可选 wire 类型，T7 负责产品展示及真实 Web／小程序／iOS UI 验收。工程测试通过不改变生产 active=v3 或候选 `release_ready=false`。
+
+## 客户端数值与协议显示
+
+配速中心与快／慢边界仍由 Go API 用 half-even 生成整秒，三端只拼分钟秒。心率 wire 保留正数小数，中心与有效支持范围端点显示为最接近整数，恰好半点向上（166.5→167、168.5→169）；这与 JavaScript `Math.round`／Swift 正数 `.rounded(.toNearestOrAwayFromZero)` 一致，不采用配速的 half-even。此项仅显示，不改持久化值或算法。
+
+HR `method=field_30min_last20_v1` 表示30分钟现场测试的后20分钟，不等于实验室生理LTHR；`lab_lthr_report_v1` 表示实验室乳酸阈值报告，仍保留具体 `lab_method`。努力等级 canonical 为 `probable_maximal`（可能全力），不能把它当未知，也不因测量质量通过就提高能力估计支持。共享 producer-field-half / producer-lab-half 向量由真实 Go候选计算与 SummarizeSource 产出；其中HR范围端点专用于显示舍入边界，不是算法输出的不确定性。

@@ -38,7 +38,7 @@
     },
     {
       "name": "stride-web",
-      "paths": ["frontend/**", "strength_illustrations/**", "Dockerfile.web"]
+      "paths": ["frontend/**", "strength_illustrations/**", "Dockerfile.web", "docs/calibration/fixtures/client-display-v1.json"]
     }
   ]
 }

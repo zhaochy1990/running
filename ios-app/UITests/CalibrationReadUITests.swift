@@ -108,6 +108,46 @@ final class CalibrationReadUITests: XCTestCase {
         capture(app, "real-network-retry-recovered")
     }
 
+    @MainActor func testProducerFieldHalfPointProtocolAndProbableEffort() throws {
+        try requireOptIn()
+        let app = assertProducerHR(name: "producer-field-half", value: "167",
+                                   method: "场地测试协议（30分钟测试的后20分钟）",
+                                   target: "目标：场地心率代理（非生理乳酸阈值）")
+        let paceHelp = app.buttons["阈值配速依据与日期"]
+        for _ in 0..<6 where !paceHelp.isHittable { app.swipeDown() }
+        XCTAssertTrue(paceHelp.isHittable)
+        paceHelp.tap()
+        let effort = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "全力支持：可能全力")).firstMatch
+        XCTAssertTrue(effort.waitForExistence(timeout: 5))
+        for _ in 0..<6 where !effort.isHittable { app.swipeUp() }
+        XCTAssertTrue(effort.isHittable)
+        capture(app, "producer-field-probable-effort")
+    }
+
+    @MainActor func testProducerLabHalfPointKeepsSpecificLabMethod() throws {
+        try requireOptIn()
+        _ = assertProducerHR(name: "producer-lab-half", value: "169",
+                             method: "实验室乳酸阈值报告",
+                             target: "目标：实验室方法特定乳酸阈值 · lactate_turnpoint")
+    }
+
+    @MainActor private func assertProducerHR(name: String, value: String, method: String, target: String) -> XCUIApplication {
+        let app = launchCase(name)
+        XCTAssertTrue(app.staticTexts[value].exists)
+        XCTAssertTrue(app.staticTexts["支持范围 167–169 bpm"].exists)
+        XCTAssertFalse(app.staticTexts["3:34"].exists, "Producer has no pace center; do not borrow legacy values")
+        capture(app, "\(name)-cards")
+        app.buttons["阈值心率依据与日期"].tap()
+        let methodText = app.staticTexts["方法：\(method)"]
+        XCTAssertTrue(methodText.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts[target].exists)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "数据质量：通过协议质量门槛")).firstMatch.exists)
+        for _ in 0..<6 where !methodText.isHittable { app.swipeUp() }
+        XCTAssertTrue(methodText.isHittable)
+        capture(app, "\(name)-protocol")
+        return app
+    }
+
     private static func setZonesFailure(_ enabled: Bool) async throws {
         // Test-owned transparent loopback proxy only. It does not fabricate any
         // calibration response: enabled zones forwarding connects to closed port1.
