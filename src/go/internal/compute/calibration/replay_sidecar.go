@@ -109,7 +109,7 @@ func replayEngineering(sidecar *ReplayEvaluationSidecar) (string, ReplayGate) {
 			g.Reason = ""
 		}
 	}
-	if g.Status == "fail" {
+	if g.Status == "fail" || !e.E2EPassed || !e.ReviewPassed {
 		return "failed", g
 	}
 	if g.Status == "pass" && e.E2EPassed && e.ReviewPassed && e.E2EEvidenceRef != "" && e.ReviewEvidenceRef != "" {

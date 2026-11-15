@@ -19,13 +19,15 @@ var evaluationProtocol []byte
 // Activity timestamps retain the domain's Shanghai civil-day representation;
 // EventTime/AvailableAt are actual instants, including all derived content.
 type ReplayManifest struct {
-	SchemaVersion  int              `json:"schema_version"`
-	AsOf           time.Time        `json:"as_of"`
-	SourceVersion  string           `json:"source_version"`
-	Activities     []ReplayActivity `json:"activities"`
-	Health         []ReplayHealth   `json:"health,omitempty"`
-	Cases          []ReplayCase     `json:"cases"`
-	RequiredStrata []string         `json:"required_strata,omitempty"`
+	SchemaVersion      int              `json:"schema_version"`
+	AsOf               time.Time        `json:"as_of"`
+	SourceVersion      string           `json:"source_version"`
+	Activities         []ReplayActivity `json:"activities"`
+	Health             []ReplayHealth   `json:"health,omitempty"`
+	Cases              []ReplayCase     `json:"cases"`
+	RequiredStrata     []string         `json:"required_strata,omitempty"`
+	BaseManifestSHA256 string           `json:"base_manifest_sha256,omitempty"`
+	OutcomeSHA256      string           `json:"outcome_sha256,omitempty"`
 }
 
 type ReplayActivity struct {
@@ -120,6 +122,8 @@ type ReplayReport struct {
 	Cases                   []ReplayCaseResult       `json:"cases"`
 	ValidationEvaluation    ReplayEvaluation         `json:"validation_evaluation"`
 	Evaluation              ReplayEvaluation         `json:"evaluation"`
+	BaseManifestSHA256      string                   `json:"base_manifest_sha256,omitempty"`
+	OutcomeSHA256           string                   `json:"outcome_sha256,omitempty"`
 }
 
 type ReplayInventory struct {
@@ -134,6 +138,7 @@ type ReplayInventory struct {
 	Scenarios                 map[string]int `json:"scenarios"`
 	Labels                    map[string]int `json:"labels"`
 	HRGrades                  map[string]int `json:"hr_grades"`
+	MeasurementQuality        map[string]int `json:"measurement_quality"`
 }
 
 // ReplayContentHash hashes the decoded domain payload, independent of JSON
@@ -173,7 +178,7 @@ func replay(m ReplayManifest, codeVersion string, sidecar *ReplayEvaluationSidec
 	if err != nil {
 		return ReplayReport{}, err
 	}
-	out := ReplayReport{Status: "insufficient", SchemaVersion: 1, AsOf: m.AsOf, CodeVersion: codeVersion, SourceVersion: m.SourceVersion, ManifestSHA256: ReplayContentHash(m), V3SourceSHA256: FrozenV3SourceSHA256(), ProtocolSHA256: hashBytes(evaluationProtocol), Inventory: inventory(m)}
+	out := ReplayReport{BaseManifestSHA256: m.BaseManifestSHA256, OutcomeSHA256: m.OutcomeSHA256, Status: "insufficient", SchemaVersion: 1, AsOf: m.AsOf, CodeVersion: codeVersion, SourceVersion: m.SourceVersion, ManifestSHA256: ReplayContentHash(m), V3SourceSHA256: FrozenV3SourceSHA256(), ProtocolSHA256: hashBytes(evaluationProtocol), Inventory: inventory(m)}
 	activities := append([]ReplayActivity(nil), m.Activities...)
 	sort.Slice(activities, func(i, j int) bool { return activities[i].ID < activities[j].ID })
 	health := append([]ReplayHealth(nil), m.Health...)
@@ -260,6 +265,17 @@ func replay(m ReplayManifest, codeVersion string, sidecar *ReplayEvaluationSidec
 		}
 		out.Cases = append(out.Cases, result)
 	}
+	return reportReplayOutcomes(m, evaluationManifest, codeVersion, out, sidecar)
+}
+
+// ReportReplayOutcomes renders already-fitted, sealed cases with the same
+// scoring and state reduction used by Replay. It never reruns fitting.
+func ReportReplayOutcomes(m ReplayManifest, code string, cases []ReplayCaseResult) (ReplayReport, error) {
+	out := ReplayReport{Status: "insufficient", SchemaVersion: 1, AsOf: m.AsOf, CodeVersion: code, SourceVersion: m.SourceVersion, ManifestSHA256: ReplayContentHash(m), V3SourceSHA256: FrozenV3SourceSHA256(), ProtocolSHA256: hashBytes(evaluationProtocol), Inventory: inventory(m), Cases: cases, BaseManifestSHA256: m.BaseManifestSHA256, OutcomeSHA256: m.OutcomeSHA256}
+	return reportReplayOutcomes(m, m, code, out, nil)
+}
+func reportReplayOutcomes(m, evaluationManifest ReplayManifest, codeVersion string, out ReplayReport, sidecar *ReplayEvaluationSidecar) (ReplayReport, error) {
+	var err error
 	out.EvaluationInputSHA256 = ReplayContentHash(struct {
 		Base    string
 		Sidecar *ReplayEvaluationSidecar
@@ -315,6 +331,9 @@ func replay(m ReplayManifest, codeVersion string, sidecar *ReplayEvaluationSidec
 	}
 	if out.Status == "failed" {
 		out.FailureKind = "numeric_gate_failed"
+		if out.EngineeringStatus == "failed" {
+			out.FailureKind = "engineering_acceptance_failed"
+		}
 		for _, c := range out.Cases {
 			if len(c.Failures) > 0 {
 				out.FailureKind = "computation_failed"
@@ -327,7 +346,7 @@ func replay(m ReplayManifest, codeVersion string, sidecar *ReplayEvaluationSidec
 }
 
 func inventory(m ReplayManifest) ReplayInventory {
-	out := ReplayInventory{Activities: len(m.Activities), Devices: map[string]int{}, Scenarios: map[string]int{}, Labels: map[string]int{}, HRGrades: map[string]int{}}
+	out := ReplayInventory{Activities: len(m.Activities), Devices: map[string]int{}, Scenarios: map[string]int{}, Labels: map[string]int{}, HRGrades: map[string]int{}, MeasurementQuality: map[string]int{}}
 	users, roots := map[string]bool{}, map[string]bool{}
 	for _, a := range m.Activities {
 		users[a.User] = true
@@ -345,6 +364,11 @@ func inventory(m ReplayManifest) ReplayInventory {
 		}
 		if a.Reference != nil {
 			out.Labels[a.Reference.Kind]++
+			quality := a.Reference.MeasurementQuality
+			if quality == "" {
+				quality = "not_recorded"
+			}
+			out.MeasurementQuality[quality]++
 			if a.Reference.HRGrade != "" {
 				out.HRGrades[a.Reference.HRGrade]++
 			}
@@ -467,7 +491,7 @@ func validateReplay(m ReplayManifest, code string) error {
 	for _, a := range m.Activities {
 		key := a.User + "/" + a.RootActivityID
 		if prior, ok := targets[key]; ok {
-			if !prior.EventTime.Equal(a.EventTime) || ReplayContentHash(prior.Reference) != ReplayContentHash(a.Reference) || prior.Device != a.Device || ReplayContentHash(prior.Scenarios) != ReplayContentHash(a.Scenarios) {
+			if prior.Reference != nil && a.Reference != nil && prior.ContentSHA256 != a.ContentSHA256 || !prior.EventTime.Equal(a.EventTime) || ReplayContentHash(prior.Reference) != ReplayContentHash(a.Reference) || prior.Device != a.Device || ReplayContentHash(prior.Scenarios) != ReplayContentHash(a.Scenarios) {
 				return fmt.Errorf("conflicting target root audit %s", key)
 			}
 		} else {

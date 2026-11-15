@@ -116,7 +116,11 @@ func TestReplayOutcomesCountsPredictionStatesOnOneSharedDenominator(t *testing.T
 		m.Cases = append(m.Cases, c)
 		r := calibration.ReplayCaseResult{ID: id, User: a.User, Mode: c.Mode, PredictionAsOf: cutoff, TargetRootActivityID: id}
 		for _, s := range []calibration.Strategy{calibration.StrategyCandidate, calibration.StrategyV3, calibration.StrategySegmentsOnly} {
-			v := calibration.OfflineResult{Strategy: s, Implementation: "implemented", ParameterVersion: "fixed", Snapshot: calibration.Snapshot{ThresholdSpeedMps: &speed, RiegelK: &k}}
+			v, estimateErr := calibration.EstimateOffline(s, nil, cutoff, nil)
+			if estimateErr != nil {
+				t.Fatal(estimateErr)
+			}
+			v.Snapshot = calibration.Snapshot{ThresholdSpeedMps: &speed, RiegelK: &k}
 			if s == calibration.StrategyCandidate && i == 1 {
 				v.Snapshot.RiegelK = nil
 			}
@@ -147,6 +151,55 @@ func TestReplayOutcomesCountsPredictionStatesOnOneSharedDenominator(t *testing.T
 	}
 	if candidate.MedianAbsoluteError == nil || math.Abs(*candidate.MedianAbsoluteError) > 1e-12 {
 		t.Fatal("unpaired outputs changed shared error")
+	}
+	badCenter := results[3].Versions[0].Snapshot.ThresholdSpeedMps
+	results[3].Versions[0].Snapshot.ThresholdSpeedMps = &speed
+	m.Activities[4].Reference.DurationS = math.SmallestNonzeroFloat64
+	extreme, _, extremeErr := calibration.EvaluateReplayOutcomes(m, results)
+	if extremeErr != nil {
+		t.Fatal(extremeErr)
+	}
+	if _, jsonErr := json.Marshal(extreme); jsonErr != nil {
+		t.Fatalf("nonfinite reference-derived error escaped to report: %v", jsonErr)
+	}
+	m.Activities[4].Reference.DurationS = 3600
+	results[3].Versions[0].Snapshot.ThresholdSpeedMps = badCenter
+	originalVersions := results[0].Versions
+	results[0].Versions = nil
+	results[0].Failures = map[calibration.Strategy]string{calibration.StrategyV3: "isolated", calibration.StrategySegmentsOnly: "isolated", calibration.StrategyCandidate: "isolated"}
+	tolerated, _, failureErr := calibration.EvaluateReplayOutcomes(m, results)
+	if failureErr != nil {
+		t.Fatal(failureErr)
+	}
+	for _, c := range tolerated {
+		if c.Family == "race_prediction" && c.Mode == "strict" && c.Split == "final_holdout" && !c.ImplementationsValid {
+			t.Fatal("isolated calculation failure invalidated implemented strategy")
+		}
+	}
+	results[0].Versions = originalVersions
+	results[0].Failures = nil
+	alias := m.Activities[1]
+	alias.ID = "conflicting-alias"
+	alias.Activity.LabelID = "alias-source"
+	alias.Activity.DistanceM = floatPointer(100)
+	alias.ContentSHA256 = calibration.ReplayContentHash(alias.Activity)
+	m.Activities = append(m.Activities, alias)
+	if _, _, err := calibration.EvaluateReplayOutcomes(m, results); err == nil {
+		t.Fatal("ambiguous same-root target payload accepted")
+	}
+	m.Activities = m.Activities[:len(m.Activities)-1]
+	late := m.AsOf.Add(time.Nanosecond)
+	m.Activities[1].Reference.Kind = "constraint_only"
+	m.Activities[1].Reference.AvailableAt = &late
+	m.Activities[1].Reference.MeasurementRelativeError = floatPointer(0)
+	_, quality, qualityErr := calibration.EvaluateReplayOutcomes(m, results)
+	if qualityErr != nil {
+		t.Fatal(qualityErr)
+	}
+	for _, q := range quality {
+		if q.CaseID == results[0].ID && len(q.Strategies) > 0 {
+			t.Fatal("future constraint reference scored")
+		}
 	}
 	results[0].Versions = append(results[0].Versions, results[0].Versions[0])
 	if _, _, err := calibration.EvaluateReplayOutcomes(m, results); err == nil {
@@ -308,6 +361,21 @@ func TestReplayEngineeringReceiptHashesAreRequiredAndVerified(t *testing.T) {
 	}
 	if report.EngineeringStatus != "passed" || report.ReleaseReady {
 		t.Fatal("receipt not verified or synthetic accuracy released")
+	}
+	e.ReviewPassed = false
+	failedRaw, marshalErr := json.Marshal(calibration.ReplayEngineeringReceipt{Kind: "review", CodeVersion: "fixed-code", Status: "failed", ArtifactRef: "known-failed-review"})
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
+	}
+	artifacts["review.json"] = failedRaw
+	failedHash := sha256.Sum256(failedRaw)
+	e.ReviewEvidenceSHA256 = hex.EncodeToString(failedHash[:])
+	failedReport, failedErr := calibration.ReplayWithEvaluationEvidence(m, "fixed-code", sidecar, artifacts)
+	if failedErr != nil {
+		t.Fatal(failedErr)
+	}
+	if failedReport.EngineeringStatus != "failed" || failedReport.Status != "failed" || failedReport.AccuracyStatus != "insufficient" {
+		t.Fatal("known engineering failure hidden as missing evidence")
 	}
 	artifacts["e2e.json"] = []byte("tampered")
 	if _, err := calibration.ReplayWithEvaluationEvidence(m, "fixed-code", sidecar, artifacts); err == nil {

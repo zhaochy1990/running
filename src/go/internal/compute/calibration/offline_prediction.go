@@ -16,12 +16,12 @@ func PredictOfflineRaceTime(snapshot Snapshot, distanceM float64) OfflineRacePre
 	switch {
 	case !finiteScalar(distanceM) || distanceM <= 0:
 		out.State, out.Reason = "failed", "invalid_distance"
+	case snapshot.ThresholdSpeedMps != nil && (!candidateFinite(snapshot.ThresholdSpeedMps) || *snapshot.ThresholdSpeedMps <= 0) || snapshot.RiegelK != nil && (!candidateFinite(snapshot.RiegelK) || *snapshot.RiegelK < riegelKMin || *snapshot.RiegelK > riegelKMax):
+		out.State, out.Reason = "failed", "invalid_snapshot_v60_or_k"
 	case snapshot.ThresholdSpeedMps == nil || snapshot.RiegelK == nil:
 		out.State, out.Reason = "missing", "snapshot_v60_or_identified_k_missing"
-	case !candidateFinite(snapshot.ThresholdSpeedMps) || *snapshot.ThresholdSpeedMps <= 0 || !candidateFinite(snapshot.RiegelK) || *snapshot.RiegelK < riegelKMin || *snapshot.RiegelK > riegelKMax:
-		out.State, out.Reason = "failed", "invalid_snapshot_v60_or_k"
 	default:
-		seconds := 3600 * math.Exp(math.Log(distanceM/(3600**snapshot.ThresholdSpeedMps))/(1-*snapshot.RiegelK))
+		seconds := 3600 * math.Exp((math.Log(distanceM)-math.Log(3600)-math.Log(*snapshot.ThresholdSpeedMps))/(1-*snapshot.RiegelK))
 		switch {
 		case !finiteScalar(seconds):
 			out.State, out.Reason = "failed", "nonfinite_prediction"

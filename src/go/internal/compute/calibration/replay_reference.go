@@ -62,7 +62,11 @@ func referenceValue(a ReplayActivity, c ReplayCaseResult, m ReplayManifest, fami
 		if r.ContinuousVerified != nil && !*r.ContinuousVerified {
 			return 0, "direct60_not_continuous"
 		}
-		return 3600000 / r.DistanceM, ""
+		pace := 3600000 / r.DistanceM
+		if !finiteScalar(pace) {
+			return 0, "nonfinite_reference_pace"
+		}
+		return pace, ""
 	case "race_prediction":
 		if r.Kind != "race_prediction" || !maximal || !finiteScalar(r.DurationS) || r.DurationS <= 0 || !finiteScalar(r.DistanceM) || r.DistanceM <= 0 {
 			return 0, "race_near_maximal_independent_timing_not_verified"

@@ -215,7 +215,7 @@ func evaluateReplayCohorts(m ReplayManifest, cases []ReplayCaseResult) ([]Replay
 						v, exists := versions[s]
 						if failure := result.Failures[s]; failure != "" {
 							states[j], reasons[j] = "failed", failure
-							c.ImplementationsValid = false
+
 							continue
 						}
 						if !exists {
@@ -233,6 +233,10 @@ func evaluateReplayCohorts(m ReplayManifest, cases []ReplayCaseResult) ([]Replay
 							seconds.errors[j] = p.errors[j]
 							if family == "race_prediction" {
 								p.errors[j] /= observed
+							}
+							if !finiteScalar(p.errors[j]) || !finiteScalar(seconds.errors[j]) {
+								states[j], reasons[j] = "failed", "nonfinite_reference_derived_error"
+								p.errors[j], seconds.errors[j] = 0, 0
 							}
 						}
 					}
@@ -292,10 +296,10 @@ func evaluateReplayCohorts(m ReplayManifest, cases []ReplayCaseResult) ([]Replay
 		}
 		r := a.Reference
 		if r.Kind == "constraint_only" {
-			quality = append(quality, replayConstraintCheck(result, a))
+			quality = append(quality, replayConstraintCheck(result, a, m))
 		}
 		if r.HRGrade == "training_hr" {
-			quality = append(quality, replayTrainingHRCheck(result, a))
+			quality = append(quality, replayTrainingHRCheck(result, a, m))
 		}
 	}
 	return out, quality
@@ -395,8 +399,12 @@ func replayStrata(a ReplayActivity, family string) []string {
 	return out
 }
 
-func replayTrainingHRCheck(c ReplayCaseResult, a ReplayActivity) ReplayQualityCheck {
+func replayTrainingHRCheck(c ReplayCaseResult, a ReplayActivity, m ReplayManifest) ReplayQualityCheck {
 	check := ReplayQualityCheck{CaseID: c.ID, Family: "training_hr", Status: "insufficient", Reason: "quality_only_not_independent_accuracy_label"}
+	if !qualityReferenceObserved(c, a, m) {
+		check.Reason = "reference_not_available_at_report"
+		return check
+	}
 	points, bad := candidateHRPoints(a.Activity)
 	if len(points) >= 2 {
 		_, q := measureCandidateHR(points, points[0].t, points[len(points)-1].t)
@@ -414,9 +422,15 @@ func replayTrainingHRCheck(c ReplayCaseResult, a ReplayActivity) ReplayQualityCh
 	}
 	return check
 }
-func replayConstraintCheck(c ReplayCaseResult, a ReplayActivity) ReplayQualityCheck {
+func replayConstraintCheck(c ReplayCaseResult, a ReplayActivity, m ReplayManifest) ReplayQualityCheck {
 	check := ReplayQualityCheck{CaseID: c.ID, Family: "constraint_only", Status: "descriptive", Reason: "same_duration_constraint_only_not_accuracy_label", Strategies: map[Strategy]string{}}
 	r := a.Reference
+	if !qualityReferenceObserved(c, a, m) {
+		check.Status = "insufficient"
+		check.Reason = "reference_not_available_at_report"
+		check.Strategies = nil
+		return check
+	}
 	for _, v := range c.Versions {
 		state := "insufficient_measurement_error_or_model"
 		if r.DurationS > 7200 {
@@ -443,4 +457,9 @@ func knownReplayImplementation(v OfflineResult) bool {
 		return v.Implementation == hourImplementation+"+independent_hr_v1" && v.ParameterVersion == hourParameterVersion+"+"+hrParameterVersion
 	}
 	return false
+}
+
+func qualityReferenceObserved(c ReplayCaseResult, a ReplayActivity, m ReplayManifest) bool {
+	r := a.Reference
+	return r != nil && r.AvailableAt != nil && !r.AvailableAt.After(m.AsOf) && !r.AvailableAt.Before(a.EventTime) && !a.EventTime.After(m.AsOf) && a.EventTime.After(c.PredictionAsOf) && a.Split != "train"
 }
