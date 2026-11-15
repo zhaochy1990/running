@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/zhaochy1990/stride/internal/compute/calibration"
 	"github.com/zhaochy1990/stride/internal/compute/trainingload"
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/storage"
@@ -18,12 +20,14 @@ const testUser = "f10bc353-01ab-4db1-af9f-d9305ea9a532"
 // fakeStore satisfies both CalibrationStore and ComputeStore with in-memory data
 // and records which write paths ran.
 type fakeStore struct {
-	acts   []storage.Activity
-	health []storage.DailyHealth
-	ts     []storage.TimeseriesPoint           // returned by ActivityTimeseries
-	snap   *storage.RunningCalibrationSnapshot // returned by LatestRunningCalibrationSnapshot
-	prior  *storage.DailyTrainingLoad          // returned by DailyTrainingLoadBefore
-	pbs    []storage.PersonalBest              // existing PBs
+	loadRows  []storage.ActivityTrainingLoad
+	snapByDay map[string]*storage.RunningCalibrationSnapshot
+	acts      []storage.Activity
+	health    []storage.DailyHealth
+	ts        []storage.TimeseriesPoint           // returned by ActivityTimeseries
+	snap      *storage.RunningCalibrationSnapshot // returned by LatestRunningCalibrationSnapshot
+	prior     *storage.DailyTrainingLoad          // returned by DailyTrainingLoadBefore
+	pbs       []storage.PersonalBest              // existing PBs
 
 	// recorded calls
 	snapUpserted         bool
@@ -88,6 +92,7 @@ func (f *fakeStore) PersonalBests(_ context.Context, _ string) ([]storage.Person
 // --- compute writes ---
 func (f *fakeStore) ReplaceActivityTrainingLoad(_ context.Context, _ string, rows []storage.ActivityTrainingLoad) error {
 	f.activityUpserts++
+	f.loadRows = rows
 	return nil
 }
 func (f *fakeStore) ReplaceActivityZones(_ context.Context, _, _ string, rows []storage.ActivityZone) error {
@@ -249,11 +254,11 @@ func TestCalibration_EmptyRunGate(t *testing.T) {
 
 // --- compute ---
 
-func TestCompute_NoCalibration_Permanent(t *testing.T) {
-	f := &fakeStore{snap: nil} // no baseline yet
-	_, err := runJob(t, NewCompute(f), `{"mode":"full"}`)
-	if pe, ok := job.AsPermanent(err); !ok || pe.Code != "no_calibration" {
-		t.Fatalf("want permanent no_calibration, got %v", err)
+func TestCompute_NoCalibration_IsExplicitAndPreservesDerivedRows(t *testing.T) {
+	f := &fakeStore{}
+	out, err := runJob(t, NewCompute(f), `{"mode":"full"}`)
+	if err != nil || !strings.Contains(out, "unavailable_historical_calibration") || f.activityUpserts != 0 || f.dailyUpserts != 0 {
+		t.Fatalf("missing history: %s %v", out, err)
 	}
 }
 
@@ -406,5 +411,85 @@ func TestCompute_Incremental_HealthOnlySyncConfirmsRestThroughToday(t *testing.T
 	}
 	if row.AcuteLoad >= f.prior.AcuteLoad || row.ChronicLoad >= f.prior.ChronicLoad {
 		t.Fatalf("rest day must decay ATL/CTL, got acute=%v chronic=%v", row.AcuteLoad, row.ChronicLoad)
+	}
+}
+
+func TestComputeRefusesFutureBaselineWithoutOverwritingHistory(t *testing.T) {
+	f := &fakeStore{snap: &storage.RunningCalibrationSnapshot{ID: 1, AsOfDate: "2099-01-01", AlgorithmVersion: 3}}
+	out, err := NewCompute(f)(context.Background(), &job.Job{UserID: testUser, InputJSON: `{"mode":"full"}`}, func(string, int) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "unavailable_historical_calibration") {
+		t.Fatalf("future calibration accepted: %s", out)
+	}
+}
+
+func (f *fakeStore) CalibrationPolicy(context.Context) (storage.RunningCalibrationPolicy, error) {
+	return storage.DefaultCalibrationPolicy(), nil
+}
+func (f *fakeStore) PublishRunningCalibration(ctx context.Context, s *storage.RunningCalibrationSnapshot, p []storage.RunningCalibrationPaceZone, h []storage.RunningCalibrationHRZone) (uint64, error) {
+	f.snapUpserted = true
+	f.zonesReplaced = true
+	return 7, nil
+}
+func (f *fakeStore) ReadEffectiveRunningCalibration(ctx context.Context, user, day string, mode storage.CalibrationMode) (storage.CalibrationBundle, error) {
+	b := storage.CalibrationBundle{Snapshot: f.snap}
+	if f.snapByDay != nil {
+		b.Snapshot = f.snapByDay[day]
+	}
+	if b.Snapshot != nil && b.Snapshot.AsOfDate != "" && b.Snapshot.AsOfDate > day {
+		b.Snapshot = nil
+	}
+	if b.Snapshot != nil {
+		p, h := toStorageZones(calibration.ComputeTrainingZones(toCalibrationSnapshot(b.Snapshot)))
+		b.PaceZones = p
+		b.HRZones = h
+	}
+	return b, nil
+}
+
+func TestCandidatePipelineCannotWriteActiveDerivedTables(t *testing.T) {
+	f := &fakeStore{snap: &storage.RunningCalibrationSnapshot{ID: 7}}
+	for _, h := range []job.Handler{NewCompute(f), NewCalibration(f)} {
+		_, err := runJob(t, h, `{"selection_mode":"candidate"}`)
+		if err == nil {
+			t.Fatal("candidate accepted by production writer")
+		}
+	}
+	if f.activityUpserts != 0 || f.dailyUpserts != 0 || f.snapUpserted || f.zonesReplaced {
+		t.Fatal("candidate polluted active writer")
+	}
+}
+
+func TestComputeUsesEachActivityDayAndKeepsMissingHistory(t *testing.T) {
+	today := timefmt.ShanghaiToday()
+	past := today.AddDate(0, 0, -1)
+	current := &storage.RunningCalibrationSnapshot{ID: 2, AsOfDate: today.Format("2006-01-02"), ThresholdSpeedMps: ptrF(5)}
+	previous := &storage.RunningCalibrationSnapshot{ID: 1, AsOfDate: past.Format("2006-01-02"), ThresholdSpeedMps: ptrF(4)}
+	f := &fakeStore{snap: current, acts: []storage.Activity{{LabelID: "old", Date: past.Add(12 * time.Hour), SportType: 100}, {LabelID: "new", Date: today.Add(12 * time.Hour), SportType: 100}}, snapByDay: map[string]*storage.RunningCalibrationSnapshot{today.Format("2006-01-02"): current, past.Format("2006-01-02"): previous}}
+	if _, err := runJob(t, NewCompute(f), `{"mode":"full"}`); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.loadRows) != 2 || *f.loadRows[0].CalibrationID != 1 || *f.loadRows[1].CalibrationID != 2 {
+		t.Fatalf("today baseline leaked into history %+v", f.loadRows)
+	}
+	delete(f.snapByDay, past.Format("2006-01-02"))
+	f.activityUpserts = 0
+	f.dailyUpserts = 0
+	out, err := runJob(t, NewCompute(f), `{"mode":"full"}`)
+	if err != nil || !strings.Contains(out, "unavailable_historical_calibration") || f.activityUpserts != 0 || f.dailyUpserts != 0 {
+		t.Fatalf("missing history overwrote active rows %s %v", out, err)
+	}
+}
+
+func TestCandidatePolicyCannotWriteUnnamespacedActiveLoad(t *testing.T) {
+	f := &fakeStore{snap: &storage.RunningCalibrationSnapshot{ID: 7, AlgorithmVersion: calibration.CandidateVersion}}
+	_, err := runJob(t, NewCompute(f), `{"mode":"full"}`)
+	if pe, ok := job.AsPermanent(err); !ok || pe.Code != "candidate_derived_write_forbidden" {
+		t.Fatalf("policy bypassed candidate write guard: %v", err)
+	}
+	if f.activityUpserts != 0 || f.dailyUpserts != 0 {
+		t.Fatal("candidate polluted active tables")
 	}
 }

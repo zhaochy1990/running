@@ -14,6 +14,8 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
+	"github.com/zhaochy1990/stride/internal/apifmt"
+	"github.com/zhaochy1990/stride/internal/compute/calibration"
 	"github.com/zhaochy1990/stride/internal/storage"
 	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 )
@@ -28,6 +30,8 @@ const (
 // ── fake stores ──────────────────────────────────────────────────────────────
 
 type fakeHealthStore struct {
+	bundle       *storage.CalibrationBundle
+	gotMode      storage.CalibrationMode
 	health       []storage.DailyHealth
 	healthErr    error
 	hrv          []storage.DailyHRV
@@ -62,10 +66,15 @@ func (f *fakeHealthStore) LatestHRVDate(_ context.Context, _ string) (string, er
 func (f *fakeHealthStore) DashboardSnapshot(_ context.Context, _ string) (*storage.Dashboard, error) {
 	return f.dash, f.dashErr
 }
-func (f *fakeHealthStore) LatestRunningCalibrationSnapshotForVersion(_ context.Context, _ string, _ int, asOf string) (*storage.RunningCalibrationSnapshot, error) {
-	f.gotAsOf = asOf
-	return f.snap, f.snapErr
+func (f *fakeHealthStore) ReadEffectiveRunningCalibration(_ context.Context, _ string, cutoff string, mode storage.CalibrationMode) (storage.CalibrationBundle, error) {
+	f.gotAsOf, f.gotMode = cutoff, mode
+	if f.bundle != nil {
+		return *f.bundle, f.snapErr
+	}
+	return storage.CalibrationBundle{Snapshot: f.snap, Source: calibration.SourceSummary{State: "legacy_source_missing"}}, f.snapErr
 }
+
+
 func (f *fakeHealthStore) DailyTrainingLoadWithPrior(_ context.Context, _ string, days int) ([]storage.DailyLoadWithPrior, error) {
 	f.gotDays = days
 	return f.withPrior, f.withPriorErr
@@ -75,6 +84,9 @@ func (f *fakeHealthStore) LatestUsableDailyTrainingLoad(_ context.Context, _ str
 }
 
 type fakeStrideStore struct {
+	bundle       *storage.CalibrationBundle
+	gotMode      storage.CalibrationMode
+	gotAsOf      string
 	snap         *storage.RunningCalibrationSnapshot
 	snapErr      error
 	pace         []storage.RunningCalibrationPaceZone
@@ -87,17 +99,18 @@ type fakeStrideStore struct {
 
 	gotUser     string
 	gotDays     int
-	gotSnapshot uint64
 }
 
-func (f *fakeStrideStore) LatestRunningCalibrationSnapshotForVersion(_ context.Context, userID string, _ int, _ string) (*storage.RunningCalibrationSnapshot, error) {
-	f.gotUser = userID
-	return f.snap, f.snapErr
+func (f *fakeStrideStore) ReadEffectiveRunningCalibration(_ context.Context, user, cutoff string, mode storage.CalibrationMode) (storage.CalibrationBundle, error) {
+	f.gotUser, f.gotAsOf, f.gotMode = user, cutoff, mode
+	if f.bundle != nil {
+		return *f.bundle, f.snapErr
+	}
+	return storage.CalibrationBundle{Snapshot: f.snap, PaceZones: f.pace, HRZones: f.hr, Source: calibration.SourceSummary{State: "legacy_source_missing"}}, errors.Join(f.snapErr, f.zonesErr)
 }
-func (f *fakeStrideStore) CalibrationZonesForSnapshot(_ context.Context, _ string, snapshotID uint64) ([]storage.RunningCalibrationPaceZone, []storage.RunningCalibrationHRZone, error) {
-	f.gotSnapshot = snapshotID
-	return f.pace, f.hr, f.zonesErr
-}
+
+
+
 func (f *fakeStrideStore) DailyTrainingLoadSeries(_ context.Context, _ string, days int) ([]storage.DailyTrainingLoad, error) {
 	f.gotDays = days
 	return f.series, f.seriesErr
@@ -281,9 +294,6 @@ func TestStrideZones_ThresholdAndOrderingAndFormatting(t *testing.T) {
 	w := h.do(http.MethodGet, "/api/"+metricsUserA+"/stride/zones", h.bearer(t, metricsUserA))
 	if w.Code != http.StatusOK {
 		t.Fatalf("code = %d, want 200", w.Code)
-	}
-	if ss.gotSnapshot != 7 {
-		t.Fatalf("zones fetched for snapshot %d, want 7", ss.gotSnapshot)
 	}
 	var resp strideZonesResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
@@ -688,3 +698,120 @@ func TestMetrics_StoreError_500(t *testing.T) {
 		t.Fatalf("code = %d, want 500", w.Code)
 	}
 }
+
+func TestStrideZones_ActiveBundleKeepsConstraintsAndExplainsRange(t *testing.T) {
+	version := 4
+	ss := &fakeStrideStore{bundle: &storage.CalibrationBundle{
+		Selection: storage.CalibrationSelection{Mode: storage.CalibrationActive, EffectiveVersion: &version, RequestedVersion: &version, State: "selected"},
+		Snapshot:  &storage.RunningCalibrationSnapshot{ID: 44, AlgorithmVersion: 4, AsOfDate: "2026-11-14", ComputedAt: time.Date(2026, 11, 15, 1, 2, 3, 0, time.UTC)},
+		Source:    calibration.SourceSummary{SchemaVersion: 1, State: "available", Strategy: "candidate", DataCutoffDay: "2026-11-14", Speed: &calibration.MetricSource{Method: "constraints_only", RangeLow: fptr(4), RangeMeaning: "performance_lower_bound_not_95pct_ci", MeasurementQuality: "high", EffortSupport: "unknown", Support: "insufficient"}},
+	}}
+	h := newMetricsHarness(t, &fakeHealthStore{}, ss)
+	w := h.do(http.MethodGet, "/api/"+metricsUserA+"/stride/zones?mode=candidate&algorithm_version=3", internalHdr())
+	if w.Code != 200 {
+		t.Fatalf("code=%d body=%s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Threshold struct {
+			Speed     *float64                     `json:"speed_mps"`
+			Version   int                          `json:"algorithm_version"`
+			Computed  string                       `json:"computed_at"`
+			Selection storage.CalibrationSelection `json:"selection"`
+			Source    calibration.SourceSummary    `json:"source"`
+			Range     struct {
+				Fast *int   `json:"fast"`
+				Slow *int   `json:"slow"`
+				Kind string `json:"bound_kind"`
+			} `json:"speed_range_pace_per_km_sec"`
+		} `json:"threshold"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Threshold.Version != 4 || body.Threshold.Selection.State != "selected" || body.Threshold.Speed != nil {
+		t.Fatalf("lost constraints-only candidate: %s", w.Body.String())
+	}
+	if body.Threshold.Range.Fast != nil || body.Threshold.Range.Slow == nil || *body.Threshold.Range.Slow != 250 || body.Threshold.Range.Kind != "speed_lower_bound" {
+		t.Fatalf("wrong inverse single-sided range: %s", w.Body.String())
+	}
+	if body.Threshold.Computed != "2026-11-15T01:02:03Z" || body.Threshold.Source.Speed.EffortSupport != "unknown" {
+		t.Fatalf("lost evidence/execution distinction: %s", w.Body.String())
+	}
+	if ss.gotMode != storage.CalibrationActive || ss.gotAsOf != apifmt.TodayShanghai() {
+		t.Fatalf("public query changed selection: mode=%s cutoff=%s", ss.gotMode, ss.gotAsOf)
+	}
+}
+
+func TestHealth_UsesActiveBundleAndReportsSelection(t *testing.T) {
+	version := 4
+	hs := &fakeHealthStore{snap: &storage.RunningCalibrationSnapshot{RHRBaseline: fptr(50)}, bundle: &storage.CalibrationBundle{Snapshot: &storage.RunningCalibrationSnapshot{ID: 44, AlgorithmVersion: 4, RHRBaseline: fptr(47)}, Selection: storage.CalibrationSelection{Mode: storage.CalibrationActive, State: "selected", EffectiveVersion: &version}, Source: calibration.SourceSummary{State: "legacy_source_missing"}}}
+	h := newMetricsHarness(t, hs, &fakeStrideStore{})
+	w := h.do(http.MethodGet, "/api/"+metricsUserA+"/health?mode=candidate", internalHdr())
+	var body struct {
+		RHR         *int `json:"rhr_baseline"`
+		Calibration struct {
+			ID        uint64                       `json:"calibration_id"`
+			Version   int                          `json:"algorithm_version"`
+			Selection storage.CalibrationSelection `json:"selection"`
+		} `json:"calibration"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != 200 || body.RHR == nil || *body.RHR != 47 || body.Calibration.ID != 44 || body.Calibration.Version != 4 || body.Calibration.Selection.State != "selected" {
+		t.Fatalf("health differs from bundle: %s", w.Body.String())
+	}
+	if hs.gotMode != storage.CalibrationActive || hs.gotAsOf != apifmt.TodayShanghai() {
+		t.Fatalf("public selection changed: %s/%s", hs.gotMode, hs.gotAsOf)
+	}
+}
+
+func TestStrideZones_RangeRoundingAndSourceCompatibility(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		raw         *string
+		low, high   *float64
+		fast, slow  *int
+		kind, state string
+	}{
+		{name: "half_even", low: fptr(1000.0 / 302.5), high: fptr(1000.0 / 297.5), fast: iptr(298), slow: iptr(302), kind: "two_sided", state: "available"},
+		{name: "nonpositive", low: fptr(0), high: fptr(-4), kind: "unavailable", state: "available"},
+		{name: "upper_only", high: fptr(5), fast: iptr(200), kind: "speed_upper_bound", state: "available"},
+		{name: "legacy", state: "legacy_source_missing"},
+		{name: "bad_json", raw: strptr("{bad"), state: "source_unavailable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source := calibration.ParseSource(tc.raw)
+			if tc.state == "available" {
+				raw := `{"schema_version":1,"state":"available","strategy":"candidate","data_cutoff_day":"2026-11-14","raw_observations":[{"notes":"PRIVATE_NOTES","coordinates":[1,2]}]}`
+				source = calibration.ParseSource(&raw)
+				source.Speed = &calibration.MetricSource{RangeLow: tc.low, RangeHigh: tc.high, RangeMeaning: "sensitivity_not_95pct_ci"}
+			}
+			ss := &fakeStrideStore{bundle: &storage.CalibrationBundle{Snapshot: &storage.RunningCalibrationSnapshot{ID: 8, AlgorithmVersion: 3}, Source: source}}
+			h := newMetricsHarness(t, &fakeHealthStore{}, ss)
+			w := h.do(http.MethodGet, "/api/"+metricsUserA+"/stride/zones", internalHdr())
+			if w.Code != 200 {
+				t.Fatalf("code=%d: %s", w.Code, w.Body.String())
+			}
+			var out strideZonesResponse
+			if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+				t.Fatal(err)
+			}
+			if out.Threshold == nil || out.Threshold.Source.State != tc.state {
+				t.Fatalf("legacy source changed metric shape: %s", w.Body.String())
+			}
+			if tc.state == "available" {
+				got := out.Threshold.SpeedRange
+				if got == nil || got.BoundKind != tc.kind || !equalInt(got.Fast, tc.fast) || !equalInt(got.Slow, tc.slow) {
+					t.Fatalf("range=%+v want fast=%v slow=%v kind=%s", got, tc.fast, tc.slow, tc.kind)
+				}
+			}
+			for _, secret := range []string{"raw_observations", "PRIVATE_NOTES", "coordinates", "source_json"} {
+				if strings.Contains(w.Body.String(), secret) {
+					t.Fatalf("private diagnostic leaked: %s", secret)
+				}
+			}
+		})
+	}
+}
+func equalInt(a, b *int) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }

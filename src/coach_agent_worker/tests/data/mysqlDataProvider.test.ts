@@ -128,14 +128,30 @@ test("plan reads are scoped to user, active version, and week start", async () =
 
 test("running calibration omits zone confidence and speed details", async () => {
   const calls: Array<{ sql: string; values: unknown[] }> = [];
-  const provider = new MySqlDataProvider({
+  const connection = {
+    async commit() {},
+    async rollback() {},
+    release() {},
     async query(sql: string, values: unknown[]) {
       calls.push({ sql, values });
+      if (sql.includes("running_calibration_policy")) return [[]];
+      if (!sql.startsWith("SELECT")) return [[]];
       if (sql.includes("running_calibration_snapshot")) {
         return [
           [
             {
               id: 42,
+              algorithm_version: 3,
+              computed_at: "2026-08-08T12:00:00.000Z",
+              source_json: JSON.stringify({
+                schema_version: 1,
+                state: "available",
+                strategy: "v3",
+                data_cutoff_day: "2026-08-08",
+                fingerprint: "go-digest",
+                notes: "must-not-leak",
+                coordinates: [1, 2],
+              }),
               as_of_date: "2026-08-08",
               threshold_hr: 168,
               threshold_speed_mps: 3.9,
@@ -157,11 +173,16 @@ test("running calibration omits zone confidence and speed details", async () => 
         ];
       return [[{ name: "threshold", min_bpm: 160, max_bpm: 170 }]];
     },
-  } as never);
+  };
+  const provider = new MySqlDataProvider({ getConnection: async () => connection, query: connection.query } as never);
+  const calibration = await provider.getLatestRunningCalibration("athlete", "2026-08-14");
+  assert.equal(calibration?.algorithmVersion, 3);
+  assert.deepEqual(calibration?.source, { schema_version: 1, state: "available", strategy: "v3", data_cutoff_day: "2026-08-08", fingerprint: "go-digest" });
+  assert.equal(calibration?.fingerprint, "go-digest");
   assert.deepEqual((await provider.getLatestRunningCalibration("athlete", "2026-08-14"))?.paceZones, [
     { name: "threshold", minPaceSPerKm: 270, maxPaceSPerKm: 250 },
   ]);
-  for (const sql of calls.slice(1).map((call) => call.sql)) {
+  for (const sql of calls.filter((call) => call.sql.includes("pace_zone") || call.sql.includes("hr_zone")).map((call) => call.sql)) {
     assert.doesNotMatch(sql, /confidence|min_speed_mps|max_speed_mps/);
   }
 });
@@ -574,4 +595,89 @@ test("searchRaceCalendar 拒绝倒置窗与畸形日期（不查库）", async (
   await assert.rejects(provider.searchRaceCalendar({ asofDate: "2026/11/01" }), /invalid day/);
   await assert.rejects(provider.searchRaceCalendar({ asofDate: "20261027" }), /invalid day/);
   assert.equal(queried, false, "validation failures must reject without hitting the database");
+});
+
+test("legacy sparse source summaries match Go zero values without inventing evidence", async () => {
+  let source: Record<string, unknown> = {
+    schema_version: 1,
+    state: "available",
+    strategy: "candidate",
+    data_cutoff_day: "2026-08-08",
+    speed: { method: "constraints_only", notes: "private" },
+    hr: null,
+  };
+  const connection = {
+    async commit() {},
+    async rollback() {},
+    release() {},
+    async query(sql: string) {
+      if (sql.includes("running_calibration_policy") || !sql.startsWith("SELECT")) return [[]];
+      if (!sql.includes("running_calibration_snapshot")) return [[]];
+      return [
+        [
+          {
+            id: 41,
+            algorithm_version: 3,
+            as_of_date: "2026-08-08",
+            computed_at: "2026-08-08T12:00:00Z",
+            threshold_hr_confidence: "none",
+            threshold_speed_confidence: "none",
+            source_json: JSON.stringify(source),
+          },
+        ],
+      ];
+    },
+  };
+  const provider = new MySqlDataProvider({ getConnection: async () => connection } as never);
+  const actual = await provider.getLatestRunningCalibration("athlete", "2026-08-14");
+  assert.deepEqual(actual?.source, {
+    schema_version: 1,
+    state: "available",
+    strategy: "candidate",
+    data_cutoff_day: "2026-08-08",
+    speed: {
+      method: "constraints_only",
+      target_type: "",
+      measurement_quality: "",
+      effort_support: "",
+      support: "",
+      range_meaning: "",
+      independent_activities: 0,
+      independent_days: 0,
+      reasons: null,
+      limitations: null,
+      evidence_count: 0,
+    },
+  });
+  source = {
+    schema_version: 1,
+    state: "available",
+    strategy: "candidate",
+    data_cutoff_day: "2026-08-08",
+    implementation: "😀".repeat(300),
+    speed: {
+      method: "constraints_only",
+      reasons: Array.from({ length: 20 }, () => "长".repeat(300)),
+      limitations: Array(20).fill("limit"),
+      evidence_count: 20,
+      evidence: Array.from({ length: 20 }, () => ({
+        activity_id: "😀".repeat(300),
+        root_activity_id: "root",
+        activity_day: "2026-08-08",
+        source_version: "fixture",
+        measurement_quality: "q",
+        effort_support: "unknown",
+        notes: "private",
+      })),
+    },
+  };
+  const bounded = await provider.getLatestRunningCalibration("athlete", "2026-08-14");
+  assert.equal(Array.from(bounded?.source?.implementation ?? "").length, 256);
+  assert.equal(bounded?.source?.speed?.evidence?.length, 16);
+  assert.equal(bounded?.source?.speed?.evidence_count, 20);
+  assert.equal(Array.from(bounded?.source?.speed?.evidence?.[0]?.activity_id ?? "").length, 256);
+  assert.equal(Object.hasOwn(bounded?.source?.speed?.evidence?.[0] ?? {}, "notes"), false);
+  assert.equal(bounded?.source?.speed?.reasons?.length, 16);
+  assert.equal(bounded?.source?.speed?.limitations?.length, 16);
+  assert.equal(bounded?.source?.speed?.reasons?.[0]?.length, 256);
 });

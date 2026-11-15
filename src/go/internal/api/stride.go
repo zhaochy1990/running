@@ -15,6 +15,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"time"
@@ -36,8 +37,7 @@ import (
 
 // StrideStore is the read surface the stride zones / training-load endpoints need.
 type StrideStore interface {
-	LatestRunningCalibrationSnapshotForVersion(ctx context.Context, userID string, algorithmVersion int, asOf string) (*storage.RunningCalibrationSnapshot, error)
-	CalibrationZonesForSnapshot(ctx context.Context, userID string, snapshotID uint64) ([]storage.RunningCalibrationPaceZone, []storage.RunningCalibrationHRZone, error)
+	ReadEffectiveRunningCalibration(ctx context.Context, userID, cutoff string, mode storage.CalibrationMode) (storage.CalibrationBundle, error)
 	DailyTrainingLoadSeries(ctx context.Context, userID string, days int) ([]storage.DailyTrainingLoad, error)
 	LatestUsableDailyTrainingLoad(ctx context.Context, userID string) (*storage.DailyTrainingLoad, error)
 }
@@ -88,29 +88,13 @@ func (sr *strideRoutes) zones(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 
-	snap, err := sr.store.LatestRunningCalibrationSnapshotForVersion(ctx, user, calibration.ModelVersion, "")
+	bundle, err := sr.store.ReadEffectiveRunningCalibration(ctx, user, apifmt.TodayShanghai(), storage.CalibrationActive)
 	if err != nil {
-		sr.log.Error("stride zones: snapshot failed", zapErr(err))
+		sr.log.Error("stride zones: calibration bundle failed", zapErr(err))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
-	if snap == nil {
-		c.JSON(http.StatusOK, strideZonesResponse{
-			Threshold: nil,
-			PaceZones: []stridePaceZoneDTO{},
-			HRZones:   []strideHRZoneDTO{},
-		})
-		return
-	}
-
-	pace, hr, err := sr.store.CalibrationZonesForSnapshot(ctx, user, snap.ID)
-	if err != nil {
-		sr.log.Error("stride zones: zone rows failed", zapErr(err))
-		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
-		return
-	}
-
-	c.JSON(http.StatusOK, toStrideZonesResponse(snap, pace, hr))
+	c.JSON(http.StatusOK, toStrideBundleResponse(bundle))
 }
 
 // trainingLoad returns the daily PMC series through Shanghai today. Missing
@@ -173,13 +157,42 @@ func (sr *strideRoutes) trainingLoad(c *gin.Context) {
 
 // strideThresholdDTO is the calibration threshold block.
 type strideThresholdDTO struct {
-	SpeedMps        *float64 `json:"speed_mps"`
-	PacePerKmSec    *int     `json:"pace_per_km_sec"`
-	HRBpm           *float64 `json:"hr_bpm"`
-	SpeedConfidence string   `json:"speed_confidence"`
-	HRConfidence    string   `json:"hr_confidence"`
-	AsOfDate        string   `json:"as_of_date"`
-	CalibrationID   uint64   `json:"calibration_id"`
+	SpeedMps         *float64                      `json:"speed_mps"`
+	PacePerKmSec     *int                          `json:"pace_per_km_sec"`
+	HRBpm            *float64                      `json:"hr_bpm"`
+	SpeedConfidence  string                        `json:"speed_confidence"`
+	HRConfidence     string                        `json:"hr_confidence"`
+	AsOfDate         string                        `json:"as_of_date"`
+	CalibrationID    uint64                        `json:"calibration_id"`
+	AlgorithmVersion int                           `json:"algorithm_version"`
+	ComputedAt       string                        `json:"computed_at,omitempty"`
+	Selection        *storage.CalibrationSelection `json:"selection,omitempty"`
+	Source           *calibration.SourceSummary    `json:"source,omitempty"`
+	Fingerprint      string                        `json:"fingerprint,omitempty"`
+	SpeedRange       *stridePaceRangeDTO           `json:"speed_range_pace_per_km_sec,omitempty"`
+}
+
+// calibrationMetadataDTO lets health expose the same selected source without
+// exposing the storage row or the diagnostic source_json blob.
+type calibrationMetadataDTO struct {
+	CalibrationID    uint64                       `json:"calibration_id,omitempty"`
+	AlgorithmVersion int                          `json:"algorithm_version,omitempty"`
+	AsOfDate         string                       `json:"as_of_date,omitempty"`
+	ComputedAt       string                       `json:"computed_at,omitempty"`
+	Selection        storage.CalibrationSelection `json:"selection"`
+	Source           calibration.SourceSummary    `json:"source"`
+	Fingerprint      string                       `json:"fingerprint,omitempty"`
+}
+
+func toCalibrationMetadata(bundle storage.CalibrationBundle) *calibrationMetadataDTO {
+	out := &calibrationMetadataDTO{Selection: bundle.Selection, Source: bundle.Source, Fingerprint: bundle.Fingerprint}
+	if snap := bundle.Snapshot; snap != nil {
+		out.CalibrationID, out.AlgorithmVersion, out.AsOfDate = snap.ID, snap.AlgorithmVersion, snap.AsOfDate
+		if !snap.ComputedAt.IsZero() {
+			out.ComputedAt = snap.ComputedAt.UTC().Format(time.RFC3339Nano)
+		}
+	}
+	return out
 }
 
 // stridePaceZoneDTO is one pace zone; lower_pace is the slower edge, upper_pace
@@ -199,11 +212,22 @@ type strideHRZoneDTO struct {
 	UpperBpm *int   `json:"upper_bpm"`
 }
 
+// stridePaceRangeDTO preserves inverse speed/pace ordering and absent sides.
+// It is a sensitivity/support range, never an implied statistical confidence interval.
+type stridePaceRangeDTO struct {
+	Fast      *int   `json:"fast"`
+	Slow      *int   `json:"slow"`
+	Meaning   string `json:"meaning"`
+	BoundKind string `json:"bound_kind"`
+}
+
 // strideZonesResponse is the GET /api/{user}/stride/zones body.
 type strideZonesResponse struct {
-	Threshold *strideThresholdDTO `json:"threshold"`
-	PaceZones []stridePaceZoneDTO `json:"pace_zones"`
-	HRZones   []strideHRZoneDTO   `json:"hr_zones"`
+	Selection *storage.CalibrationSelection `json:"selection,omitempty"`
+	Source    *calibration.SourceSummary    `json:"source,omitempty"`
+	Threshold *strideThresholdDTO           `json:"threshold"`
+	PaceZones []stridePaceZoneDTO           `json:"pace_zones"`
+	HRZones   []strideHRZoneDTO             `json:"hr_zones"`
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -271,21 +295,57 @@ func zoneLabel(kind, name string) string {
 // Mappers — /stride/zones
 // ─────────────────────────────────────────────────────────────────────────────
 
+func toStrideBundleResponse(bundle storage.CalibrationBundle) strideZonesResponse {
+	out := strideZonesResponse{PaceZones: []stridePaceZoneDTO{}, HRZones: []strideHRZoneDTO{}, Selection: &bundle.Selection, Source: &bundle.Source}
+	if bundle.Snapshot == nil {
+		return out
+	}
+	out = toStrideZonesResponse(bundle.Snapshot, bundle.PaceZones, bundle.HRZones)
+	out.Selection, out.Source = &bundle.Selection, &bundle.Source
+	out.Threshold.Selection, out.Threshold.Source = &bundle.Selection, &bundle.Source
+	out.Threshold.Fingerprint = bundle.Fingerprint
+	if speed := bundle.Source.Speed; speed != nil {
+		fast, slow := finitePace(speed.RangeHigh), finitePace(speed.RangeLow)
+		kind := "unavailable"
+		switch {
+		case fast != nil && slow != nil:
+			kind = "two_sided"
+		case slow != nil:
+			kind = "speed_lower_bound"
+		case fast != nil:
+			kind = "speed_upper_bound"
+		}
+		out.Threshold.SpeedRange = &stridePaceRangeDTO{Fast: fast, Slow: slow, Meaning: speed.RangeMeaning, BoundKind: kind}
+	}
+	return out
+}
+
+func finitePace(speed *float64) *int {
+	if speed == nil || math.IsNaN(*speed) || math.IsInf(*speed, 0) {
+		return nil
+	}
+	return apifmt.PacePerKmSec(speed)
+}
+
 func toStrideZonesResponse(
 	snap *storage.RunningCalibrationSnapshot,
 	pace []storage.RunningCalibrationPaceZone,
 	hr []storage.RunningCalibrationHRZone,
 ) strideZonesResponse {
 	threshold := &strideThresholdDTO{
-		SpeedMps:        snap.ThresholdSpeedMps,
-		PacePerKmSec:    apifmt.PacePerKmSec(snap.ThresholdSpeedMps),
-		HRBpm:           snap.ThresholdHR,
-		SpeedConfidence: snap.ThresholdSpeedConfidence,
-		HRConfidence:    snap.ThresholdHRConfidence,
-		AsOfDate:        snap.AsOfDate,
-		CalibrationID:   snap.ID,
+		SpeedMps:         snap.ThresholdSpeedMps,
+		PacePerKmSec:     apifmt.PacePerKmSec(snap.ThresholdSpeedMps),
+		HRBpm:            snap.ThresholdHR,
+		SpeedConfidence:  snap.ThresholdSpeedConfidence,
+		HRConfidence:     snap.ThresholdHRConfidence,
+		AsOfDate:         snap.AsOfDate,
+		CalibrationID:    snap.ID,
+		AlgorithmVersion: snap.AlgorithmVersion,
 	}
 
+	if !snap.ComputedAt.IsZero() {
+		threshold.ComputedAt = snap.ComputedAt.UTC().Format(time.RFC3339Nano)
+	}
 	paceZones := make([]stridePaceZoneDTO, len(pace))
 	for i, z := range pace {
 		paceZones[i] = stridePaceZoneDTO{

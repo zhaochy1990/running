@@ -17,6 +17,7 @@ import (
 
 // Reader is the storage read surface Load needs. *storage.Store satisfies it.
 type Reader interface {
+	storage.CalibrationReader
 	ActivitiesInWindow(ctx context.Context, userID, provider string, start, end time.Time) ([]storage.Activity, error)
 	ActivityTimeseries(ctx context.Context, userID, labelID string) ([]storage.TimeseriesPoint, error)
 }
@@ -26,7 +27,6 @@ type Reader interface {
 // satisfies it; readers without it get the degraded classification path.
 type evidenceReader interface {
 	ActivityLaps(ctx context.Context, userID, labelID string) ([]storage.Lap, error)
-	LatestCalibrationPaceZones(ctx context.Context, userID string) (*storage.RunningCalibrationSnapshot, []storage.RunningCalibrationPaceZone, error)
 	LinkedRaceLabels(ctx context.Context, userID string, labelIDs []string) (map[string]bool, error)
 }
 
@@ -55,15 +55,7 @@ func loadEvidence(ctx context.Context, r evidenceReader, user string, rows []sto
 	if r == nil {
 		return ev
 	}
-	if snap, zones, err := r.LatestCalibrationPaceZones(ctx, user); err == nil && snap != nil {
-		ev.zones = sessionclass.ZonesFromStorage(zones)
-		ev.thresholdHR = snap.ThresholdHR
-		if snap.ObservedMaxHR != nil {
-			ev.hrmaxEstimate = snap.ObservedMaxHR
-		} else {
-			ev.hrmaxEstimate = snap.HRMaxEstimate
-		}
-	}
+
 	labelIDs := make([]string, 0, len(rows))
 	for i := range rows {
 		labelIDs = append(labelIDs, rows[i].LabelID)
@@ -94,8 +86,22 @@ func Load(ctx context.Context, r Reader, user, provider string, start, end time.
 		ev = loadEvidence(ctx, er, user, rows)
 	}
 	out := make([]trainingload.ActivityInput, 0, len(rows))
+	ctx = storage.WithCalibrationCache(ctx)
 	for i := range rows {
 		a := rows[i]
+		b, err := storage.ReadCachedRunningCalibration(ctx, r, user, timefmt.ShanghaiDayStr(a.Date), storage.CalibrationActive)
+		if err != nil {
+			return nil, err
+		}
+		activityEvidence := &evidence{}
+		if ev != nil {
+			*activityEvidence = *ev
+		}
+		if b.Snapshot != nil {
+			activityEvidence.zones = sessionclass.ZonesFromStorage(b.PaceZones)
+			activityEvidence.thresholdHR = b.Snapshot.ThresholdHR
+			activityEvidence.hrmaxEstimate = b.Snapshot.HRMaxEstimate
+		}
 		ts, err := r.ActivityTimeseries(ctx, user, a.LabelID)
 		if err != nil {
 			return nil, err
@@ -105,7 +111,7 @@ func Load(ctx context.Context, r Reader, user, provider string, start, end time.
 			LabelID:      a.LabelID,
 			ActivityDate: timefmt.ShanghaiDay(a.Date),
 			Sport:        sportFromRow(a.Sport, a.SportType),
-			SessionClass: SessionClassWithEvidence(ctx, ev, a),
+			SessionClass: SessionClassWithEvidence(ctx, activityEvidence, a),
 			DurationS:    a.DurationS,
 			DistanceM:    distanceM,
 			AscentM:      a.AscentM,

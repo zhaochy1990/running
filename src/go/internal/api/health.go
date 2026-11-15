@@ -22,7 +22,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zhaochy1990/stride/internal/apifmt"
-	"github.com/zhaochy1990/stride/internal/compute/calibration"
 	"github.com/zhaochy1990/stride/internal/logging"
 	"github.com/zhaochy1990/stride/internal/storage"
 )
@@ -38,7 +37,7 @@ type HealthStore interface {
 	DailyHRVWindow(ctx context.Context, userID string, days int) ([]storage.DailyHRV, error)
 	LatestHRVDate(ctx context.Context, userID string) (string, error)
 	DashboardSnapshot(ctx context.Context, userID string) (*storage.Dashboard, error)
-	LatestRunningCalibrationSnapshotForVersion(ctx context.Context, userID string, algorithmVersion int, asOf string) (*storage.RunningCalibrationSnapshot, error)
+	ReadEffectiveRunningCalibration(ctx context.Context, userID, cutoff string, mode storage.CalibrationMode) (storage.CalibrationBundle, error)
 	DailyTrainingLoadWithPrior(ctx context.Context, userID string, days int) ([]storage.DailyLoadWithPrior, error)
 	LatestUsableDailyTrainingLoad(ctx context.Context, userID string) (*storage.DailyTrainingLoad, error)
 }
@@ -121,14 +120,16 @@ func (h *healthRoutes) health(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
-	snap, err := h.store.LatestRunningCalibrationSnapshotForVersion(ctx, user, calibration.ModelVersion, apifmt.TodayShanghai())
+	bundle, err := h.store.ReadEffectiveRunningCalibration(ctx, user, apifmt.TodayShanghai(), storage.CalibrationActive)
 	if err != nil {
 		h.log.Error("health: calibration snapshot failed", zapErr(err))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
 
-	c.JSON(http.StatusOK, toHealthResponse(rows, dash, latestHRVDate, trend, snap))
+	response := toHealthResponse(rows, dash, latestHRVDate, trend, bundle.Snapshot)
+	response.Calibration = toCalibrationMetadata(bundle)
+	c.JSON(http.StatusOK, response)
 }
 
 // hrv returns per-day HRV detail (oldest first) plus a summary for the latest
@@ -298,9 +299,10 @@ type hrvSnapshotDTO struct {
 
 // healthResponse is the GET /api/{user}/health body.
 type healthResponse struct {
-	Health      []healthRecordDTO `json:"health"`
-	HRV         hrvSnapshotDTO    `json:"hrv"`
-	RHRBaseline *int              `json:"rhr_baseline"`
+	Calibration *calibrationMetadataDTO `json:"calibration,omitempty"`
+	Health      []healthRecordDTO       `json:"health"`
+	HRV         hrvSnapshotDTO          `json:"hrv"`
+	RHRBaseline *int                    `json:"rhr_baseline"`
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

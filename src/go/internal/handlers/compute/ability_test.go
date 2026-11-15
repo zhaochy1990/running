@@ -291,3 +291,36 @@ func TestIsUltraShort(t *testing.T) {
 		}
 	}
 }
+
+func (f *fakeAbilityStore) ReadEffectiveRunningCalibration(ctx context.Context, user, day string, mode storage.CalibrationMode) (storage.CalibrationBundle, error) {
+	b := storage.CalibrationBundle{Snapshot: f.snap}
+	if b.Snapshot != nil && b.Snapshot.AsOfDate != "" && b.Snapshot.AsOfDate > day {
+		b.Snapshot = nil
+	}
+	return b, nil
+}
+
+func TestAbilityHistoricalL1KeepsMissingBaselineExplicit(t *testing.T) {
+	f := newFakeAbilityStore(t)
+	f.snap = &storage.RunningCalibrationSnapshot{ID: 1, AsOfDate: "2026-10-20", HRMaxEstimate: ptrF(190)}
+	f.acts, _ = abilityFixtures(testUser, "2026-10-20")
+	_, _, unavailable, err := computeAndPersist(context.Background(), f, testUser, time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC), []string{"otherday", "newest"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unavailable != 1 {
+		t.Fatalf("missing baseline must be separately counted: %d", unavailable)
+	}
+	if _, ok := f.upserts["otherday"]; ok {
+		t.Fatal("today HRmax backfilled historical L1")
+	}
+	if _, ok := f.upserts["newest"]; !ok {
+		t.Fatal("current day L1 missing")
+	}
+	for label, row := range f.upserts {
+		p, state := storage.ReadCalibrationProvenance(row)
+		if state != "available" || p.Inputs[0].AsOfDate > "2026-10-20" {
+			t.Fatalf("missing lineage %s %+v %s", label, p, state)
+		}
+	}
+}
