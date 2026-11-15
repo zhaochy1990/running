@@ -9,13 +9,19 @@ import (
 )
 
 type fakeCalibration struct {
-	snap *storage.RunningCalibrationSnapshot
-	err  error
+	snap   *storage.RunningCalibrationSnapshot
+	err    error
+	bundle *storage.CalibrationBundle
 }
 
-func (f fakeCalibration) LatestRunningCalibrationSnapshotForVersion(context.Context, string, int, string) (*storage.RunningCalibrationSnapshot, error) {
-	return f.snap, f.err
+func (f fakeCalibration) ReadEffectiveRunningCalibration(context.Context, string, string, storage.CalibrationMode) (storage.CalibrationBundle, error) {
+	if f.bundle != nil {
+		return *f.bundle, f.err
+	}
+	return storage.CalibrationBundle{Snapshot: f.snap}, f.err
 }
+
+
 
 func f64ptr(v float64) *float64 { return &v }
 
@@ -70,5 +76,15 @@ func TestLoadBaselines_PropagatesReadError(t *testing.T) {
 	_, err := LoadBaselines(context.Background(), fakeCalibration{err: wantErr}, testUID)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("err = %v, want wrapped read error", err)
+	}
+}
+
+func TestLoadBaselines_KeepsSelectedBundleWithoutCenter(t *testing.T) {
+	got, err := LoadBaselines(context.Background(), fakeCalibration{snap: &storage.RunningCalibrationSnapshot{ThresholdHR: f64ptr(168), ThresholdSpeedMps: f64ptr(4)}, bundle: &storage.CalibrationBundle{Snapshot: &storage.RunningCalibrationSnapshot{AlgorithmVersion: 4, RHRBaseline: f64ptr(47)}}}, testUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.LTHRBPM != nil || got.LTPaceSKM != nil || got.RHRBPM == nil || *got.RHRBPM != 47 {
+		t.Fatalf("used values outside selected bundle: %+v", got)
 	}
 }
