@@ -234,3 +234,29 @@ func TestCandidateCleanConstantSpeedAgreesAcrossDenseAndSparseSampling(t *testin
 		}
 	}
 }
+
+func TestCandidateLongWindowSpeedStabilityDoesNotTreatMissingAsZero(t *testing.T) {
+	a := segmentActivity(nil)
+	for i := 0; i <= 1200; i++ {
+		sample := segmentSample(float64(i), float64(i)*4, 4)
+		if i >= 1 && i <= 20 {
+			sample.SpeedMps = nil
+		}
+		a.Samples = append(a.Samples, sample)
+	}
+	got := calibration.BuildCandidateSegments([]calibration.Activity{a}, []int{1200})
+	if len(got.Candidates) != 1 {
+		t.Fatalf("98.25%% observed constant speed was rejected: %+v", got.Diagnostics)
+	}
+	c := got.Candidates[0]
+	if c.Quality.SpeedCV == nil || math.Abs(*c.Quality.SpeedCV) > 1e-9 {
+		t.Fatalf("missing speed became observed zero variance: %+v", c.Quality)
+	}
+	if c.AvgSpeedMps != 4 || c.Quality.DistanceCoverage != 1 || math.Abs(c.Quality.SpeedCoverage-.9825) > 1e-9 {
+		t.Fatalf("coverage or measured distance changed: %+v", c)
+	}
+	// CV conditions on observations; mean-speed evidence retains all 1200 seconds.
+	if c.Quality.IntegralSpeedMps == nil || math.Abs(*c.Quality.IntegralSpeedMps-3.93) > 1e-9 || c.Confidence != calibration.ConfidenceLow || !hasReason(c.Quality.Reasons, "incomplete_measurement_coverage") {
+		t.Fatalf("missing elapsed time was renormalized away or not downgraded: %+v", c)
+	}
+}
