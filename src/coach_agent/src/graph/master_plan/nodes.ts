@@ -256,6 +256,9 @@ export class MasterPlanNodes {
     // 与其用编造的目标糊过去，不如让它带着明确原因失败。
     if (goal.distance !== "FM") return { outcome: qualityFailure(request, context, `unsupported_goal_distance:${goal.distance}`) };
     if (goal.target_time === null) return { outcome: qualityFailure(request, context, "unsupported_goal:finish_only") };
+    // devops#1013 AC2：无活动证据不建训练画像——哪怕校准/比赛锚侥幸存在，
+    // 零活动窗口的“画像”只是编造，显式失败并说明缺证据。
+    if (activities.length === 0) return { outcome: qualityFailure(request, context, "no_training_evidence:activities") };
     try {
       const phaseEvidence = buildPhaseEvidence(
         snapshot,

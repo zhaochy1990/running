@@ -25,13 +25,18 @@ import type {
   RacePredictionRow,
   RaceTarget,
   RunningCalibration,
+  SyncCoverage,
+  SyncDispatchRow,
+  SyncRecentAnalysisRow,
+  SyncSessionRow,
+  SyncStageCoverageRow,
   UserInjury,
   UserProfile,
   VendorHrvBaseline,
   WeeklyFeedback,
   WeeklyPlanDocument,
 } from "@stride/coach-agent";
-import { CalibrationSourceSchema } from "@stride/coach-agent";
+import { CalibrationSourceSchema, deriveSyncCoverage } from "@stride/coach-agent";
 import { shanghaiDay } from "@stride/contract";
 import type { Pool, RowDataPacket } from "mysql2/promise";
 import type { MySqlConfig } from "../config.js";
@@ -772,6 +777,50 @@ export class MySqlDataProvider implements DataProvider {
       ability_l4: abilityL4,
       running_calibration: calibration,
     };
+  }
+
+  /**
+   * 首次同步覆盖快照（devops#1013）：只读 Go-owned onboarding sync 四张表，
+   * 推导交给 @stride/coach-agent 的 deriveSyncCoverage（与 Go GET view 同语义）。
+   * 无 session（老用户 / 分阶段同步未开）返回 null——null ≠ 数据不存在。
+   */
+  async getSyncCoverage(userId: string): Promise<SyncCoverage | null> {
+    const [sessionRows] = await this.pool.query<RowDataPacket[]>(
+      `SELECT session_id, provider, binding_revision, anchor_day, state, shell_ready, last_error, updated_at
+         FROM onboarding_sync_sessions
+        WHERE user_id = ? AND state <> 'superseded'
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [userId],
+    );
+    const sessionRow = sessionRows[0] as SyncSessionRow | undefined;
+    if (!sessionRow) return null;
+    const sessionId = sessionRow.session_id;
+    const [coverageRows, dispatchRows, analysisRows] = await Promise.all([
+      this.pool.query<RowDataPacket[]>(
+        `SELECT stage, status, target_from, target_to, scanned_from, scanned_to,
+                observed_from, observed_to, gaps_json, last_error
+           FROM onboarding_sync_stage_coverage
+          WHERE session_id = ?
+          ORDER BY stage ASC`,
+        [sessionId],
+      ),
+      this.pool.query<RowDataPacket[]>(`SELECT stage, status FROM onboarding_sync_dispatches WHERE session_id = ?`, [sessionId]),
+      this.pool.query<RowDataPacket[]>(
+        `SELECT as_of_day, status, stale, domains_json, coverage_from, coverage_to, input_fingerprint, computed_at
+           FROM onboarding_recent_analysis
+          WHERE session_id = ?
+          LIMIT 1`,
+        [sessionId],
+      ),
+    ]);
+    const analysisRow = analysisRows[0][0] as SyncRecentAnalysisRow | undefined;
+    return deriveSyncCoverage(
+      sessionRow,
+      coverageRows[0] as unknown as SyncStageCoverageRow[],
+      dispatchRows[0] as unknown as SyncDispatchRow[],
+      analysisRow ?? null,
+    );
   }
 
   /** Release the pool — only if this provider opened it via `create()`. */

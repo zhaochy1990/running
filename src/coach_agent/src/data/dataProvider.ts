@@ -29,6 +29,93 @@ export interface DataProvider {
   searchRaceCalendar(options: RaceCalendarSearchQuery): Promise<RaceCalendarSummary[]>;
   /** 运动员成绩基线（race_predictions + ability L4 + running_calibration）的有界聚合。 */
   getPerformanceBaseline(userId: string, asOfDate: string): Promise<PerformanceBaseline>;
+  /**
+   * 首次同步 session 的覆盖快照（devops#1013）：原始/分析覆盖、as-of、
+   * revision、gaps 与 pending/partial/unavailable。无 session 返回 null——
+   * 老用户或分阶段同步未开（rollout 默认关），null 绝不能当作「数据不存在」。
+   */
+  getSyncCoverage(userId: string): Promise<SyncCoverage | null>;
+}
+
+/** ── 首次同步覆盖（devops#1013，Go-owned onboarding sync 表的只读投影）── */
+
+/** 就绪级别词汇，与 Go onboardingsync.Readiness 一致（唯一事实源，schema/推导共用）。 */
+export const SYNC_READINESS_VALUES = [
+  "not_started",
+  "pending",
+  "running",
+  "ready",
+  "ready_with_gaps",
+  "failed",
+  "partial",
+  "unavailable",
+] as const;
+
+/** 就绪级别，与 Go onboardingsync.Readiness 词汇一致。 */
+export type SyncReadiness = (typeof SYNC_READINESS_VALUES)[number];
+
+/** 一段永久缺口：厂商确认不可获取的区间（上海自然日）。 */
+export interface SyncStageGap {
+  from: string;
+  to: string;
+  reason?: string;
+}
+
+/** 一个同步阶段的覆盖：target / scanned / observed 分离，gaps 显式列出，readiness 派生不假报。 */
+export interface SyncStageCoverage {
+  stage: string;
+  status: string;
+  readiness: SyncReadiness;
+  targetFrom: string;
+  targetTo: string;
+  scannedFrom: string | null;
+  scannedTo: string | null;
+  observedFrom: string | null;
+  observedTo: string | null;
+  gaps: SyncStageGap[];
+  error: string | null;
+}
+
+/** 已发布近期分析结果：真实 as-of、域级可用性、输入 revision（fingerprint）与 stale/refreshing。 */
+export interface SyncRecentAnalysis {
+  asOfDay: string;
+  /** ready | partial | unavailable */
+  status: string;
+  stale: boolean;
+  refreshing: boolean;
+  /** {"calibration|load|zones|ability":{"status":..,"reason":..}} */
+  domains: Record<string, { status: string; reason?: string }>;
+  coverageFrom: string | null;
+  coverageTo: string | null;
+  /** 输入 revision：as-of + binding revision + 校准策略 + 近期数据摘要的指纹。 */
+  inputFingerprint: string;
+  computedAt: Date;
+}
+
+export interface SyncCoverageReadiness {
+  shellReady: boolean;
+  recentData: SyncReadiness;
+  recentAnalysis: SyncReadiness;
+  extendedData: SyncReadiness;
+  historicalData: SyncReadiness;
+  historicalAnalysis: SyncReadiness;
+  auxiliary: SyncReadiness;
+}
+
+/** 用户当前（非 superseded）首次同步 session 的覆盖快照；无 session = null。 */
+export interface SyncCoverage {
+  sessionId: string;
+  /** dispatching | running | waiting_legacy | completed | completed_with_gaps | failed */
+  state: string;
+  provider: string;
+  bindingRevision: number;
+  /** session 固定的扫描锚定日（上海自然日），与分析 as-of 分开。 */
+  anchorDay: string;
+  error: string | null;
+  stages: SyncStageCoverage[];
+  readiness: SyncCoverageReadiness;
+  recentAnalysisDetail: SyncRecentAnalysis | null;
+  updatedAt: Date;
 }
 
 /** One watch-synced activity. `date` is a UTC instant. */
