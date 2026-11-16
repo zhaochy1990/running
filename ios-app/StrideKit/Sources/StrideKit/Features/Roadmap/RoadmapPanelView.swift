@@ -42,33 +42,52 @@ public struct RoadmapPanelView: View {
 
     // MARK: - 三区平铺
 
+    @ViewBuilder
     private func zones(_ theme: any Theme) -> some View {
-        VStack(alignment: .leading, spacing: theme.space(.xl)) {
-            if !panel.releasedRows.isEmpty {
-                zone(title: "最近上线", subtitle: "你的票变成了功能", count: "\(panel.releasedRows.count)", dot: theme.accentDeep, theme: theme) {
-                    ForEach(panel.releasedRows) { row in
-                        releasedRow(row, theme: theme)
-                    }
-                }
-            }
-            if !panel.acceptedRows.isEmpty {
-                zone(title: "正在做", subtitle: "已采纳", count: "\(panel.acceptedRows.count)", dot: theme.warning, theme: theme) {
-                    ForEach(panel.acceptedRows) { row in
-                        acceptedRow(row, theme: theme)
-                    }
-                }
-            }
-            zone(title: "投票池", subtitle: "决定我们接下来做什么", count: "\(panel.poolRows.count) 个想法", dot: theme.accent, theme: theme) {
-                ForEach(panel.poolRows) { row in
-                    poolRow(row, theme: theme)
-                }
-                Text("每人可给多个想法投票，再点一次可撤销；已排期或上线后不可再投。")
-                    .font(theme.font(.fs12))
+        // devops#1018 P2：空区整区隐藏不留白（released/accepted 原有；投票池
+        // 空时连区头带投票规则说明一起收起，不再渲染「0 个想法」空壳）；
+        // 三区全空走 mp 全量空态（roadmap-panel empty 同款文案）。
+        if panel.releasedRows.isEmpty && panel.acceptedRows.isEmpty && panel.poolRows.isEmpty {
+            VStack(spacing: theme.space(.xs)) {
+                Text("产品路线还在筹备中")
+                    .font(theme.font(.fs15, weight: .medium))
+                    .foregroundStyle(theme.muted)
+                Text("上线后在这里投票，决定我们做什么")
+                    .font(theme.font(.fs13))
                     .foregroundStyle(theme.mutedTwo)
-                    .padding(.top, theme.space(.xs))
             }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, theme.space(.xxl))
+        } else {
+            VStack(alignment: .leading, spacing: theme.space(.xl)) {
+                if !panel.releasedRows.isEmpty {
+                    zone(title: "最近上线", subtitle: "你的票变成了功能", count: "\(panel.releasedRows.count)", dot: theme.accentDeep, theme: theme) {
+                        ForEach(panel.releasedRows) { row in
+                            releasedRow(row, theme: theme)
+                        }
+                    }
+                }
+                if !panel.acceptedRows.isEmpty {
+                    zone(title: "正在做", subtitle: "已采纳", count: "\(panel.acceptedRows.count)", dot: theme.warning, theme: theme) {
+                        ForEach(panel.acceptedRows) { row in
+                            acceptedRow(row, theme: theme)
+                        }
+                    }
+                }
+                if !panel.poolRows.isEmpty {
+                    zone(title: "投票池", subtitle: "决定我们接下来做什么", count: "\(panel.poolRows.count) 个想法", dot: theme.accent, theme: theme) {
+                        ForEach(panel.poolRows) { row in
+                            poolRow(row, theme: theme)
+                        }
+                        Text("每人可给多个想法投票，再点一次可撤销；已排期或上线后不可再投。")
+                            .font(theme.font(.fs12))
+                            .foregroundStyle(theme.mutedTwo)
+                            .padding(.top, theme.space(.xs))
+                    }
+                }
+            }
+            .padding(theme.space(.lg))
         }
-        .padding(theme.space(.lg))
     }
 
     /// 区头（mp sec-head 同款：彩色点 + 标题 + 副标题 + 右侧计数徽标；

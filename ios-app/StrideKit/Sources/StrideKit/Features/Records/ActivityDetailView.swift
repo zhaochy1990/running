@@ -349,7 +349,10 @@ struct ZoneCardView: View {
                         Text(zone.duration)
                             .font(app.theme.current.font(.fs11, mono: true))
                             .foregroundStyle(app.theme.current.muted)
-                            .frame(width: 44, alignment: .trailing)
+                            // devops#1018 P3-1：44pt 装不下 H:MM:SS（如 1:59:53
+                            // 断成两行 1:59:5/3）；放宽到 56pt 并锁单行。
+                            .lineLimit(1)
+                            .frame(width: 56, alignment: .trailing)
                     }
                 }
             }
