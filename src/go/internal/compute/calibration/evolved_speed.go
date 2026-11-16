@@ -213,6 +213,26 @@ func FitEvolvedSpeed(evidence []CandidateEvidence, asOf time.Time, priors Evolve
 		}
 		evolvedStampCenter(&out, priors, a, a, a, math.Sqrt(1/curv))
 		out.PriorCurvature, out.DataCurvature, out.EffectiveCurvature, out.PriorCurvatureShare = curv, 0, curv, 1
+		// #998 predict-only state: no new comparable evidence exists, so the
+		// retained estimate IS the aged prediction - stamped with its lineage
+		// and never fabricated time structure.
+		if historical != nil && historical.valid() {
+			trend := math.Max(-evolvedCapabilityTrendClamp, math.Min(evolvedCapabilityTrendClamp, historical.TrendPerDay))
+			prediction := &EvolvedCapabilityPriorPrediction{
+				CenterLog: *histMean, SDLog: *histSD, AgeDays: historical.AgeDays,
+				TrendPerDayUsed: trend, SourceInputFingerprint: historical.InputFingerprint,
+			}
+			if !historical.AsOfDate.IsZero() {
+				prediction.SourceAsOfDay = historical.AsOfDate.Format("2006-01-02")
+			}
+			out.CapabilityState = &EvolvedCapabilityStateStamp{
+				Method:          evolvedStatePriorPredictOnlyMethod,
+				TrendPerDay:     trend,
+				DistinctDays:    0,
+				PriorPrediction: prediction,
+				Reasons:         []string{evolvedStateNoNewDataReason},
+			}
+		}
 		return out
 	}
 
@@ -382,6 +402,15 @@ type evolvedFit struct {
 	// state carries the #998 time-structured capability (a_now, trend, day
 	// shifts); nil keeps the stationary scalar-a behavior bit-for-bit.
 	state *evolvedCapabilityState
+	// classShift (#998) carries the hierarchical per-effort-class common
+	// margin s_c: delta_root ~ N(mean_c + s_c, sd_c) with s_c ~ N(0, sd_c).
+	// It extends the T2 class-prior ceiling ("a runner's class margin is one
+	// research fact, not one per window") from the curvature to the point
+	// estimate: N same-class windows may pull the capability level with one
+	// class prior's precision, not N - so easy-only windows cannot force a
+	// capability downgrade by sheer count. nil keeps the stationary seam
+	// bit-for-bit.
+	classShift map[EffortSupport]float64
 }
 
 type evolvedInputDigest struct {
@@ -602,10 +631,11 @@ type evolvedSolution struct {
 	// the large-input guard so the report can disclose it.
 	gridResolution float64
 	gridCoarsened  bool
-	// trend/dayShift carry the #998 capability state snapshot at the
-	// solution (nil dayShift = stationary scalar a).
-	trend    float64
-	dayShift map[string]float64
+	// trend/dayShift/classShift carry the #998 capability state snapshot at
+	// the solution (nil dayShift = stationary scalar a).
+	trend      float64
+	dayShift   map[string]float64
+	classShift map[EffortSupport]float64
 }
 
 // evolvedGroupDelta minimizes the group's budgeted Huber likelihood plus its
@@ -617,6 +647,10 @@ type evolvedSolution struct {
 func evolvedGroupDelta(fit *evolvedFit, g int, a, k float64, withPrior bool) float64 {
 	grp := &fit.groups[g]
 	aEff := fit.state.capabilityAt(grp.age, grp.day, a)
+	priorMean := grp.prior.Mean
+	if fit.classShift != nil {
+		priorMean += fit.classShift[grp.effort]
+	}
 	deriv := func(d float64) float64 {
 		s := 0.0
 		for _, i := range grp.obsIdx {
@@ -629,7 +663,7 @@ func evolvedGroupDelta(fit *evolvedFit, g int, a, k float64, withPrior bool) flo
 			// dropping the second 1/s factor would apply the margin prior
 			// with weight s and desynchronize the inner solves from the
 			// joint objective.
-			s += (d - grp.prior.Mean) / (grp.prior.SD * grp.prior.SD)
+			s += (d - priorMean) / (grp.prior.SD * grp.prior.SD)
 		}
 		return s
 	}
@@ -674,10 +708,15 @@ func evolvedProfile(fit *evolvedFit, priors EvolvedPriorSet, histMean, histSD *f
 		j += 0.5 * math.Pow((k-priors.EnduranceK.Mean)/priors.EnduranceK.SD, 2)
 		// The effort-margin priors are part of the joint objective: without
 		// them the k comparison would silently prefer exponents that push
-		// margins away from their class means.
+		// margins away from their class means. With the #998 hierarchical
+		// class shift the per-root prior centers on mean_c + s_c.
 		for g := range fit.groups {
 			d := fit.groups[g].delta
-			j += 0.5 * math.Pow((d-fit.groups[g].prior.Mean)/fit.groups[g].prior.SD, 2)
+			mean := fit.groups[g].prior.Mean
+			if fit.classShift != nil {
+				mean += fit.classShift[fit.groups[g].effort]
+			}
+			j += 0.5 * math.Pow((d-mean)/fit.groups[g].prior.SD, 2)
 		}
 	}
 	for i := range fit.obs {
@@ -723,6 +762,19 @@ func evolvedProfile(fit *evolvedFit, priors EvolvedPriorSet, histMean, histSD *f
 			j += 0.5 * math.Pow(fit.state.dayShift[d]/evolvedCapabilityDaySDLog, 2)
 		}
 	}
+	// #998 hierarchical class-shift priors s_c ~ N(0, sd_c): structural
+	// regularization of the class-margin hierarchy, on in both modes.
+	if fit.classShift != nil {
+		classes := make([]EffortSupport, 0, len(fit.classShift))
+		for c := range fit.classShift {
+			classes = append(classes, c)
+		}
+		sort.Slice(classes, func(i, j int) bool { return classes[i] < classes[j] })
+		for _, c := range classes {
+			sd := evolvedEffortPrior(priors, c).SD
+			j += 0.5 * math.Pow(fit.classShift[c]/sd, 2)
+		}
+	}
 	if withPriors {
 		grad += (a - priors.LogV60.Mean) / (priors.LogV60.SD * priors.LogV60.SD)
 		if histMean != nil {
@@ -765,15 +817,10 @@ func evolvedSolveAtK(fit *evolvedFit, priors EvolvedPriorSet, histMean, histSD *
 	}
 	aStar := bisectA()
 	if fit.state != nil {
-		for round := 0; round < evolvedStateRounds; round++ {
-			prevTrend, prevDay := fit.state.trend, fit.state.dayShift
-			prevA := aStar
-			evolvedStateBlocks(fit, priors, k, aStar, true, &probes)
-			aStar = bisectA()
-			if evolvedStateConverged(fit.state, prevTrend, prevDay, math.Abs(aStar-prevA)) {
-				break
-			}
-		}
+		// #998: the stationary anchor warm-starts the joint state solve
+		// (exact conditional blocks; the collinear directions are resolved
+		// inside one linear system - see evolved_state.go).
+		aStar = evolvedStateJointSolve(fit, priors, histMean, histSD, k, aStar, true, &probes)
 	}
 	sol := evolvedSolution{a: aStar, k: k, deltas: make([]float64, len(fit.groups)), probes: probes}
 	sol.objective, _ = evolvedProfile(fit, priors, histMean, histSD, k, sol.a, true)
@@ -783,6 +830,12 @@ func evolvedSolveAtK(fit *evolvedFit, priors EvolvedPriorSet, histMean, histSD *
 		sol.deltas[g] = fit.groups[g].delta
 	}
 	sol.trend, sol.dayShift = fit.state.snapshot()
+	if fit.classShift != nil {
+		sol.classShift = make(map[EffortSupport]float64, len(fit.classShift))
+		for c, v := range fit.classShift {
+			sol.classShift[c] = v
+		}
+	}
 	return sol
 }
 
@@ -842,11 +895,14 @@ func evolvedSolveMAP(fit evolvedFit, priors EvolvedPriorSet, histMean, histSD *f
 func evolvedCurvatures(fit evolvedFit, priors EvolvedPriorSet, histMean, histSD *float64, sol evolvedSolution) (total, dataOnly float64, ok bool) {
 	probes := 0
 	value := func(a float64, withPriors bool) float64 {
-		j, _ := evolvedProfile(&fit, priors, histMean, histSD, sol.k, a, withPriors)
 		if fit.state != nil {
-			evolvedStateBlocks(&fit, priors, sol.k, a, withPriors, &probes)
-			j, _ = evolvedProfile(&fit, priors, histMean, histSD, sol.k, a, withPriors)
+			// The state (trend, days, class shifts) and margins are
+			// re-minimized at the pinned probe anchor: the profile
+			// marginalizes the slow state direction instead of conditioning
+			// on it.
+			return evolvedStateProfileJ(&fit, priors, histMean, histSD, sol.k, a, withPriors, &probes)
 		}
+		j, _ := evolvedProfile(&fit, priors, histMean, histSD, sol.k, a, withPriors)
 		return j
 	}
 	secondSided := func(withPriors bool) (lo, hi float64) {

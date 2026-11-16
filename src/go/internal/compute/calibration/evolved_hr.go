@@ -867,6 +867,65 @@ func (t *evolvedHRTerm) evaluateFull(priors EvolvedPriorSet, a float64, withPrio
 	return j, gA, gTrend, gDay
 }
 
+// rowGradients emits one Gauss-Newton row per counted HR block: the
+// standardized residual and its analytic derivative chain with respect to
+// the shared capability anchor, the state trend and the capability-side day
+// shift of the block's day (the same recursions evaluateFull aggregates).
+func (t *evolvedHRTerm) rowGradients(priors EvolvedPriorSet, a float64) []evolvedHRRowGrad {
+	theta := &t.theta
+	knots := evolvedHRFitKnots(priors, theta.knots)
+	delta := theta.hrMax - theta.hrRest
+	out := []evolvedHRRowGrad{}
+	for i := range t.acts {
+		act := &t.acts[i]
+		if act.Role != "model_series" {
+			continue
+		}
+		aEff := a
+		if t.state != nil {
+			aEff = t.state.capabilityAt(act.AgeDays, act.Day, a)
+		}
+		expEff := math.Exp(-aEff)
+		dayShift := theta.day[act.Day] + theta.drift*act.AgeDays
+		var s, dsda, dsdT float64
+		initialized := false
+		for k := range act.Blocks {
+			b := &act.Blocks[k]
+			r := b.SpeedMps * expEff
+			f, dfdr := evolvedHRShape(knots, r)
+			hss := theta.hrRest + delta*f + dayShift
+			dhss := delta * dfdr * (-r)
+			dhssT := -dhss * act.AgeDays
+			if b.Init || !initialized {
+				s, dsda, dsdT, initialized = b.HRBpm, 0, 0, true
+				if b.Init {
+					continue
+				}
+			}
+			uMean := b.DurationS / theta.tau
+			eMean := math.Exp(-uMean)
+			m := 1.0
+			if uMean > 1e-9 {
+				m = (1 - eMean) / uMean
+			}
+			pred := hss + (s-hss)*m
+			dpred := dhss*(1-m) + m*dsda
+			dpredT := dhssT*(1-m) + m*dsdT
+			res := (b.HRBpm - pred) / evolvedHRSigmaBpm
+			out = append(out, evolvedHRRowGrad{res: res, dpredA: dpred, dpredT: dpredT, w: b.Weight, day: act.Day})
+			uStep := b.DurationS / theta.tau
+			if k+1 < len(act.Blocks) {
+				uStep = (act.Blocks[k+1].tStartS - b.tStartS) / theta.tau
+			}
+			e := math.Exp(-uStep)
+			s = hss + (s-hss)*e
+			dsda = dhss*(1-e) + e*dsda
+			dsdT = dhssT*(1-e) + e*dsdT
+		}
+	}
+	return out
+}
+
 // linearCoefficients computes, per counted block, the exact affine
 // decomposition pred = alpha*hrRest + beta*hrMax + gamma of the response
 // filter under the current knots/tau/day/drift. It is the machinery behind
@@ -1194,6 +1253,44 @@ func evolvedSolveJointK(fit *evolvedFit, priors EvolvedPriorSet, histMean, histS
 // returns the jointly re-stamped speed report (the HR -> capability soft
 // feedback) plus the final theta.
 func evolvedHRJointSolve(evidence []CandidateEvidence, asOf time.Time, priors EvolvedPriorSet, historical *HistoricalCapabilityPrior, term *evolvedHRTerm, speedOut EvolvedSpeedReport, restPrior *float64) (EvolvedSpeedReport, evolvedHRTheta, int, float64, bool) {
+	// #998: attach the time-structured capability state to both domains of
+	// the joint objective (the same state instance - one capability). The
+	// initial theta fit runs at the stationary anchor with a zero state,
+	// then the joint alternation re-optimizes (a_now, trend, day, k, deltas)
+	// together with theta. The state weight policy replaces the stationary
+	// admission's per-age staleness factors (evolvedStateReweight). The
+	// state is an ENHANCEMENT of the proven #997 joint: if its solve fails
+	// numerically, the whole joint re-runs without it (the #997 behavior)
+	// and the fallback is disclosed - a state-extension failure must never
+	// destroy the joint estimate itself.
+	withState := false
+	if speedOut.CenterMps != nil {
+		if _, ok := evolvedAttachCapabilityState(evidence, asOf, priors, false); ok {
+			withState = true
+		}
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		if attempt == 1 {
+			if !withState {
+				return EvolvedSpeedReport{}, evolvedHRTheta{}, 0, 0, false
+			}
+			withState = false
+			speedOut.Limitations = append(speedOut.Limitations, evolvedStateSolveFallbackLimitation)
+		}
+		out, theta, rounds, objective, ok := evolvedHRJointSolveOnce(evidence, asOf, priors, historical, term, speedOut, restPrior, withState)
+		if ok {
+			return out, theta, rounds, objective, true
+		}
+		if attempt == 1 || !withState {
+			// Both attempts exhausted (or nothing to retry): the honest
+			// numerical failure of the #997 joint propagates.
+			return EvolvedSpeedReport{}, evolvedHRTheta{}, 0, 0, false
+		}
+	}
+	return EvolvedSpeedReport{}, evolvedHRTheta{}, 0, 0, false
+}
+
+func evolvedHRJointSolveOnce(evidence []CandidateEvidence, asOf time.Time, priors EvolvedPriorSet, historical *HistoricalCapabilityPrior, term *evolvedHRTerm, speedOut EvolvedSpeedReport, restPrior *float64, withState bool) (EvolvedSpeedReport, evolvedHRTheta, int, float64, bool) {
 	fit := evolvedAdmitObservations(evidence, asOf, priors)
 	histMean, histSD := evolvedHistoricalPriorTerms(priors, historical)
 	speedAnchor := priors.LogV60.Mean
@@ -1201,17 +1298,13 @@ func evolvedHRJointSolve(evidence []CandidateEvidence, asOf time.Time, priors Ev
 	if !speedless {
 		speedAnchor = math.Log(*speedOut.CenterMps)
 	}
-	// #998: attach the time-structured capability state to both domains of
-	// the joint objective (the same state instance - one capability). The
-	// initial theta fit runs at the stationary anchor with a zero state,
-	// then the joint alternation re-optimizes (a_now, trend, day, k, deltas)
-	// together with theta. The state weight policy replaces the stationary
-	// admission's per-age staleness factors (evolvedStateReweight).
-	if !speedless {
-		if stateFit, ok := evolvedAttachCapabilityState(evidence, asOf, priors); ok {
+	if !speedless && withState {
+		if stateFit, ok := evolvedAttachCapabilityState(evidence, asOf, priors, false); ok {
 			fit = stateFit
 			term.state = fit.state
 		}
+	} else {
+		term.state = nil
 	}
 	theta := evolvedFitHRTheta(term, speedAnchor, priors, restPrior)
 	term.theta = theta
@@ -1256,11 +1349,17 @@ func evolvedHRJointSolve(evidence []CandidateEvidence, asOf time.Time, priors Ev
 			theta, term.theta = bestTheta, bestTheta
 			// The published state must pair with the published solution: a
 			// rejected round's solve has already mutated the shared state in
-			// place, so restore it from the keep-best solution snapshot.
+			// place, so restore every state block from the keep-best
+			// solution snapshot.
 			if fit.state != nil && last.dayShift != nil {
 				fit.state.trend = last.trend
 				for d, v := range last.dayShift {
 					fit.state.dayShift[d] = v
+				}
+			}
+			if fit.classShift != nil && last.classShift != nil {
+				for c, v := range last.classShift {
+					fit.classShift[c] = v
 				}
 			}
 		}

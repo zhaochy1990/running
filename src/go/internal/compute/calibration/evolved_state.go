@@ -52,12 +52,11 @@ const (
 	evolvedCapabilityDaySDLog = 0.02
 	evolvedCapabilityDayClamp = 0.15
 
-	// Deterministic alternation caps of the (a_now | trend | day) blocks.
-	evolvedStateRounds       = 4
-	evolvedStateConvergeA    = 1e-4
-	evolvedStateConvergeT   = 1e-6
-	evolvedStateConvergeDay  = 1e-5
-	evolvedStateProbeCapIters = 45
+	// Deterministic iteration caps of the joint state solver (IRLS outer
+	// rounds of the exact linear conditional vs the margin bisections, plus
+	// the halving line search budget per round).
+	evolvedStateIRLSIters    = 25
+	evolvedStateLineHalvings = 8
 	// Bounded day-effect disclosure in the report stamp.
 	evolvedStateDayEffectsCap = 16
 
@@ -91,20 +90,20 @@ type EvolvedCapabilityPriorPrediction struct {
 // speed report: trend, bounded day-effect disclosure, window span and the
 // prior prediction channel.
 type EvolvedCapabilityStateStamp struct {
-	Method           string                               `json:"method"`
-	TrendPerDay      float64                              `json:"trend_per_day_log_v60"`
-	TrendClamped     bool                                 `json:"trend_clamped,omitempty"`
-	DayEffects       []EvolvedDayEffectStamp              `json:"day_effects,omitempty"`
-	DistinctDays     int                                  `json:"distinct_days"`
-	FirstDay         string                               `json:"first_day,omitempty"`
-	LastDay          string                               `json:"last_day,omitempty"`
+	Method       string                  `json:"method"`
+	TrendPerDay  float64                 `json:"trend_per_day_log_v60"`
+	TrendClamped bool                    `json:"trend_clamped,omitempty"`
+	DayEffects   []EvolvedDayEffectStamp `json:"day_effects,omitempty"`
+	DistinctDays int                     `json:"distinct_days"`
+	FirstDay     string                  `json:"first_day,omitempty"`
+	LastDay      string                  `json:"last_day,omitempty"`
 	// WeightPolicy discloses that the state solve drops the stationary
 	// admission's per-age staleness factors (weight decay and sigma age
 	// inflation): with the explicit trend/day structure those factors would
 	// double-count drift and erase the trend signal. Budget semantics stay.
-	WeightPolicy    string                                `json:"weight_policy"`
-	PriorPrediction *EvolvedCapabilityPriorPrediction     `json:"prior_prediction,omitempty"`
-	Reasons         []string                              `json:"reasons,omitempty"`
+	WeightPolicy    string                            `json:"weight_policy"`
+	PriorPrediction *EvolvedCapabilityPriorPrediction `json:"prior_prediction,omitempty"`
+	Reasons         []string                          `json:"reasons,omitempty"`
 }
 
 // evolvedCapabilityState is the mutable solver block attached to evolvedFit
@@ -177,103 +176,394 @@ func (st *evolvedCapabilityState) snapshot() (trend float64, dayShift map[string
 // ---------------------------------------------------------------------------
 // State blocks (exact conditional minimizations; deltas held at their last
 // profile values, priors included - the structural regularization of the
-// time parameterization, on in both objective modes)
+// ---------------------------------------------------------------------------
+// Joint state solver: the exact conditional of (a, trend, day shifts, class
+// shifts) given the effort margins, as one linear-Gaussian system at IRLS
+// weights. The collinear directions (a_now vs the class shift, trend vs day
+// offsets) are resolved inside a single solve instead of a stalling
+// alternation.
 // ---------------------------------------------------------------------------
 
-// evolvedStateGrad evaluates the trend/day subgradients of the joint
-// objective at fixed deltas (speed residuals + constraint hinges + state
-// priors + the HR term when attached). Each day's block touches only that
-// day's observations, so per-day minimization given the trend is exact.
-func evolvedStateGrad(fit *evolvedFit, priors EvolvedPriorSet, k, aNow float64) (gTrend float64, gDay map[string]float64) {
+// evolvedHRRowGrad carries one HR block's residual and analytic Jacobian row
+// for the state Gauss-Newton system (the shared chain of the a-sensitivity
+// recursion; see evolvedHRTerm.evaluateFull).
+type evolvedHRRowGrad struct {
+	res, dpredA, dpredT, w float64
+	day                    string
+}
+
+// evolvedStateUnknowns fixes the deterministic unknown ordering of the joint
+// state system: [a, trend, days sorted, effort classes sorted] (a omitted
+// when pinned for profile probes).
+type evolvedStateUnknowns struct {
+	n          int
+	hasA       bool
+	iA, iTrend int
+	dayIdx     map[string]int
+	clsIdx     map[EffortSupport]int
+}
+
+func evolvedStateUnknownsOf(fit *evolvedFit, hasA bool) evolvedStateUnknowns {
+	u := evolvedStateUnknowns{hasA: hasA, dayIdx: map[string]int{}, clsIdx: map[EffortSupport]int{}}
+	if hasA {
+		u.iA, u.n = 0, 1
+	}
+	u.iTrend = u.n
+	u.n++
+	for _, d := range fit.state.days {
+		u.dayIdx[d] = u.n
+		u.n++
+	}
+	classes := make([]EffortSupport, 0, len(fit.classShift))
+	for c := range fit.classShift {
+		classes = append(classes, c)
+	}
+	sort.Slice(classes, func(i, j int) bool { return classes[i] < classes[j] })
+	for _, c := range classes {
+		u.clsIdx[c] = u.n
+		u.n++
+	}
+	return u
+}
+
+// evolvedStateAddRow accumulates one weighted linearized residual row
+// 0.5*w*(g.x + r)^2 into the normal equations A x = rhs.
+func evolvedStateAddRow(A [][]float64, rhs []float64, g map[int]float64, r, w float64) {
+	for i, gi := range g {
+		rhs[i] -= w * gi * r
+		for j, gj := range g {
+			if j >= i {
+				A[i][j] += w * gi * gj
+			}
+		}
+	}
+}
+
+func evolvedStateAddPrior(A [][]float64, rhs []float64, idx int, theta, mean, sd float64) {
+	inv := 1 / (sd * sd)
+	A[idx][idx] += inv
+	rhs[idx] -= (theta - mean) * inv
+}
+
+// evolvedStateSolveSystem builds and solves the joint state normal equations
+// conditional on the current effort margins: Huber-IRLS rows for the speed
+// observations and active long-duration hinges, Gauss-Newton rows for the HR
+// term (analytic Jacobians through the shared response-filter chain), the
+// hierarchical class-shift coupling (each group's margin prior centers on
+// mean_c + s_c) and every state prior. Returns the proposed increment or
+// nil on a singular system (caller keeps the current point).
+func evolvedStateSolveSystem(fit *evolvedFit, priors EvolvedPriorSet, histMean, histSD *float64, k, aNow float64, u evolvedStateUnknowns, rows []evolvedHRRowGrad) []float64 {
+	n := u.n
+	A := make([][]float64, n)
+	for i := range A {
+		A[i] = make([]float64, n)
+	}
+	rhs := make([]float64, n)
 	st := fit.state
-	gDay = make(map[string]float64, len(st.days))
+	// Per-group margin response factors (Schur): along a state increment the
+	// group margin re-solve follows the increment by W_d/(W_d+W_p) (data
+	// share) and the class shift by W_p/(W_d+W_p) - the hierarchical coupling
+	// enters the linear system through these factors instead of a stalling
+	// alternation between a and the class shift.
+	keep := make([]float64, len(fit.groups))
+	for g := range fit.groups {
+		grp := &fit.groups[g]
+		var wData float64
+		for _, oi := range grp.obsIdx {
+			p := &fit.obs[oi]
+			r := (p.y - st.capabilityAt(p.age, p.day, aNow) + k*p.x + grp.delta) / p.sigma
+			nu := 1.0
+			if math.Abs(r) > 1.5 {
+				nu = 1.5 / math.Abs(r)
+			}
+			wData += p.w * nu / (p.sigma * p.sigma)
+		}
+		wPrior := 1 / (grp.prior.SD * grp.prior.SD)
+		keep[g] = wPrior / (wData + wPrior)
+	}
 	for i := range fit.obs {
 		p := &fit.obs[i]
 		aEff := st.capabilityAt(p.age, p.day, aNow)
+		g := map[int]float64{}
+		var r, nu, keepG float64
 		if p.constraint {
 			v := (p.y - p.sigma - (aEff - k*p.x)) / p.sigma
-			if v > 0 {
-				gTrend += p.w * hourPsi(v) * p.age / p.sigma
-				gDay[p.day] -= p.w * hourPsi(v) / p.sigma
+			if v <= 0 {
+				continue
 			}
+			r, nu, keepG = v, 1, 1
+			if math.Abs(v) > 1.5 {
+				nu = 1.5 / math.Abs(v)
+			}
+		} else {
+			delta := fit.groups[p.group].delta
+			r = (p.y - aEff + k*p.x + delta) / p.sigma
+			nu = 1
+			if math.Abs(r) > 1.5 {
+				nu = 1.5 / math.Abs(r)
+			}
+			keepG = keep[p.group]
+		}
+		if u.hasA {
+			g[u.iA] = -keepG / p.sigma
+		}
+		g[u.iTrend] = p.age * keepG / p.sigma
+		if di, ok := u.dayIdx[p.day]; ok {
+			g[di] = -keepG / p.sigma
+		}
+		if ci, ok := u.clsIdx[fit.groups[p.group].effort]; ok && !p.constraint {
+			g[ci] = keepG / p.sigma
+		}
+		evolvedStateAddRow(A, rhs, g, r, p.w*nu)
+	}
+	// Class coupling rows: the margin prior term (delta_g - mean_c - s_c) as a
+	// linearized row with the same response factors - this is where the
+	// class-mean information (and with it the differential/trend signal)
+	// enters the system. Along the ridge delta_a = delta_s_c the row is
+	// invariant, so the a-vs-s_c split is resolved by their priors alone -
+	// exactly the hierarchical marginal.
+	for gi := range fit.groups {
+		grp := &fit.groups[gi]
+		ci, ok := u.clsIdx[grp.effort]
+		if !ok {
 			continue
 		}
-		delta := fit.groups[p.group].delta
-		r := (p.y - aEff + k*p.x + delta) / p.sigma
-		gTrend += p.w * hourPsi(r) * p.age / p.sigma
-		gDay[p.day] -= p.w * hourPsi(r) / p.sigma
+		fData := 1 - keep[gi]
+		j := map[int]float64{}
+		if u.hasA {
+			j[u.iA] = fData / grp.prior.SD
+		}
+		j[u.iTrend] = -fData * grp.age / grp.prior.SD
+		if di, ok := u.dayIdx[grp.day]; ok {
+			j[di] = fData / grp.prior.SD
+		}
+		j[ci] = (keep[gi] - 1) / grp.prior.SD
+		r := (grp.delta - grp.prior.Mean - fit.classShift[grp.effort]) / grp.prior.SD
+		evolvedStateAddRow(A, rhs, j, r, 1)
 	}
-	if fit.hr != nil {
-		_, _, gTrendHR, gDayHR := fit.hr.evaluateFull(priors, aNow, false)
-		gTrend += gTrendHR
-		for d, g := range gDayHR {
-			gDay[d] += g
+	for _, hr := range rows {
+		nu := 1.0
+		if math.Abs(hr.res) > 1.5 {
+			nu = 1.5 / math.Abs(hr.res)
+		}
+		g := map[int]float64{}
+		if u.hasA {
+			g[u.iA] = -hr.dpredA / evolvedHRSigmaBpm
+		}
+		g[u.iTrend] = -hr.dpredT / evolvedHRSigmaBpm
+		if di, ok := u.dayIdx[hr.day]; ok {
+			g[di] = -hr.dpredA / evolvedHRSigmaBpm
+		}
+		evolvedStateAddRow(A, rhs, g, hr.res, hr.w*nu)
+	}
+	evolvedStateAddPrior(A, rhs, u.iTrend, st.trend, 0, evolvedCapabilityTrendSDPerDay)
+	for _, d := range st.days {
+		evolvedStateAddPrior(A, rhs, u.dayIdx[d], st.dayShift[d], 0, evolvedCapabilityDaySDLog)
+	}
+	for c, idx := range u.clsIdx {
+		// The margin-prior coupling itself rides the response factors above;
+		// only the class shift's own prior centers it at zero.
+		sd := evolvedEffortPrior(priors, c).SD
+		evolvedStateAddPrior(A, rhs, idx, fit.classShift[c], 0, sd)
+	}
+	if u.hasA {
+		evolvedStateAddPrior(A, rhs, u.iA, aNow, priors.LogV60.Mean, priors.LogV60.SD)
+		if histMean != nil {
+			evolvedStateAddPrior(A, rhs, u.iA, aNow, *histMean, *histSD)
 		}
 	}
-	gTrend += st.trend / (evolvedCapabilityTrendSDPerDay * evolvedCapabilityTrendSDPerDay)
-	for _, d := range st.days {
-		gDay[d] += st.dayShift[d] / (evolvedCapabilityDaySDLog * evolvedCapabilityDaySDLog)
+	for i := 0; i < n; i++ {
+		for j := 0; j < i; j++ {
+			A[i][j] = A[j][i]
+		}
 	}
-	return gTrend, gDay
+	x := make([]float64, n)
+	b := append([]float64(nil), rhs...)
+	for col := 0; col < n; col++ {
+		pivot := col
+		for r := col + 1; r < n; r++ {
+			if math.Abs(A[r][col]) > math.Abs(A[pivot][col]) {
+				pivot = r
+			}
+		}
+		if math.Abs(A[pivot][col]) < 1e-12 {
+			return nil
+		}
+		A[col], A[pivot] = A[pivot], A[col]
+		b[col], b[pivot] = b[pivot], b[col]
+		for r := col + 1; r < n; r++ {
+			f := A[r][col] / A[col][col]
+			if f == 0 {
+				continue
+			}
+			for c2 := col; c2 < n; c2++ {
+				A[r][c2] -= f * A[col][c2]
+			}
+			b[r] -= f * b[col]
+		}
+	}
+	for i := n - 1; i >= 0; i-- {
+		s := b[i]
+		for j := i + 1; j < n; j++ {
+			s -= A[i][j] * x[j]
+		}
+		x[i] = s / A[i][i]
+		if !evolvedFinite(x[i]) {
+			return nil
+		}
+	}
+	return x
 }
 
-// evolvedStateBlocks runs one profiled trend bisection (days fixed, the
-// effort margins re-solved at every probe - without that marginalization the
-// per-observation deltas are collinear with the trend and the conditional
-// gradient vanishes at the stationary optimum, stalling the alternation) and
-// one exact per-day pass (trend fixed, deltas held: the (delta, day) pair of
-// one day is a prior-separated 2-d convex problem the rounds converge).
-// Probes counted for the solver audit.
-func evolvedStateBlocks(fit *evolvedFit, priors EvolvedPriorSet, k, aNow float64, withPriors bool, probes *int) {
+// evolvedStateApply writes a solved increment into the state, clamped to the
+// frozen truncation domains; returns the updated a anchor.
+func evolvedStateApply(fit *evolvedFit, u evolvedStateUnknowns, x []float64, aNow, step float64) float64 {
 	st := fit.state
-	solveDeltas := func() {
+	if u.hasA {
+		aNow += step * x[u.iA]
+	}
+	st.trend = math.Max(-evolvedCapabilityTrendClamp, math.Min(evolvedCapabilityTrendClamp, st.trend+step*x[u.iTrend]))
+	for d, idx := range u.dayIdx {
+		v := st.dayShift[d] + step*x[idx]
+		st.dayShift[d] = math.Max(-evolvedCapabilityDayClamp, math.Min(evolvedCapabilityDayClamp, v))
+	}
+	for c, idx := range u.clsIdx {
+		fit.classShift[c] += step * x[idx]
+	}
+	return aNow
+}
+
+// evolvedStateStepSave/restore keep the line search reversible.
+type evolvedStateSave struct {
+	a          float64
+	trend      float64
+	dayShift   map[string]float64
+	classShift map[EffortSupport]float64
+}
+
+func evolvedStateSaveOf(fit *evolvedFit, a float64) evolvedStateSave {
+	s := evolvedStateSave{a: a, trend: fit.state.trend, dayShift: make(map[string]float64, len(fit.state.dayShift)), classShift: make(map[EffortSupport]float64, len(fit.classShift))}
+	for d, v := range fit.state.dayShift {
+		s.dayShift[d] = v
+	}
+	for c, v := range fit.classShift {
+		s.classShift[c] = v
+	}
+	return s
+}
+
+func (fit *evolvedFit) restore(s evolvedStateSave) {
+	fit.state.trend = s.trend
+	for d, v := range s.dayShift {
+		fit.state.dayShift[d] = v
+	}
+	for c, v := range s.classShift {
+		fit.classShift[c] = v
+	}
+}
+
+// evolvedStateJointSolve iterates the exact conditional blocks of the state
+// mode: the joint (a, trend, days, class shifts) linear-Gaussian system at
+// IRLS weights against the per-group margin bisections, damped by a halving
+// line search on the full profile objective. Every block is an exact
+// conditional minimization of the SAME objective; the collinear directions
+// are resolved inside the linear solve, so the iteration cannot stall the
+// way an alternation of collinear scalar blocks does. Returns the a anchor.
+func evolvedStateJointSolve(fit *evolvedFit, priors EvolvedPriorSet, histMean, histSD *float64, k, aNow float64, withPriors bool, probes *int) float64 {
+	u := evolvedStateUnknownsOf(fit, true)
+	jAt := func(a float64) float64 {
+		j, _ := evolvedProfile(fit, priors, histMean, histSD, k, a, withPriors)
+		*probes++
+		return j
+	}
+	for iter := 0; iter < evolvedStateIRLSIters; iter++ {
+		var rows []evolvedHRRowGrad
+		if fit.hr != nil {
+			rows = fit.hr.rowGradients(priors, aNow)
+		}
+		x := evolvedStateSolveSystem(fit, priors, histMean, histSD, k, aNow, u, rows)
+		if x == nil {
+			break
+		}
+		j0 := jAt(aNow)
+		applied, cand := false, aNow
+		step := 1.0
+		for hs := 0; hs < evolvedStateLineHalvings; hs++ {
+			save := evolvedStateSaveOf(fit, aNow)
+			cand = evolvedStateApply(fit, u, x, aNow, step)
+			if j1 := jAt(cand); j1 <= j0+1e-12 {
+				applied = true
+				break
+			}
+			fit.restore(save)
+			step /= 2
+		}
 		for g := range fit.groups {
-			fit.groups[g].delta = evolvedGroupDelta(fit, g, aNow, k, withPriors)
+			fit.groups[g].delta = evolvedGroupDelta(fit, g, cand, k, withPriors)
+		}
+		*probes++
+		if !applied {
+			break
+		}
+		aNow = cand
+		tiny := true
+		for _, v := range x {
+			if math.Abs(v*step) > 1e-6 {
+				tiny = false
+				break
+			}
+		}
+		if tiny {
+			break
 		}
 	}
-	step := func(trend float64) float64 {
-		st.trend = trend
-		*probes++
-		solveDeltas()
-		g, _ := evolvedStateGrad(fit, priors, k, aNow)
-		return g
-	}
-	st.trend = evolvedHRScalarSolve(step, -evolvedCapabilityTrendClamp, evolvedCapabilityTrendClamp)
-	*probes++
-	// The bisection's last probe leaves the deltas at a neighboring trend;
-	// re-solve them at the published trend so the state and the margins stay
-	// a consistent pair.
-	solveDeltas()
-	for _, d := range st.days {
-		cur := st.dayShift[d]
-		gDay := func(shift float64) float64 {
-			st.dayShift[d] = shift
-			*probes++
-			_, g := evolvedStateGrad(fit, priors, k, aNow)
-			return g[d]
-		}
-		st.dayShift[d] = evolvedHRScalarSolve(gDay,
-			math.Max(-evolvedCapabilityDayClamp, math.Min(evolvedCapabilityDayClamp, cur-evolvedCapabilityDayClamp)),
-			math.Max(-evolvedCapabilityDayClamp, math.Min(evolvedCapabilityDayClamp, cur+evolvedCapabilityDayClamp)))
-		*probes++
-	}
+	return aNow
 }
 
-// evolvedStateConverged compares a saved state against the current one.
-func evolvedStateConverged(st *evolvedCapabilityState, trend float64, dayShift map[string]float64, dA float64) bool {
-	if math.Abs(st.trend-trend) > evolvedStateConvergeT {
-		return false
+// evolvedStateProfileJ evaluates the profile objective at a PINNED anchor
+// with the state (trend, days, class shifts) and the margins re-minimized:
+// the honest marginalization used by the sensitivity decomposition (the
+// solve's own machinery, anchored).
+func evolvedStateProfileJ(fit *evolvedFit, priors EvolvedPriorSet, histMean, histSD *float64, k, aPin float64, withPriors bool, probes *int) float64 {
+	u := evolvedStateUnknownsOf(fit, false)
+	jAt := func() float64 {
+		j, _ := evolvedProfile(fit, priors, histMean, histSD, k, aPin, withPriors)
+		*probes++
+		return j
 	}
-	for d, v := range dayShift {
-		if math.Abs(st.dayShift[d]-v) > evolvedStateConvergeDay {
-			return false
+	for iter := 0; iter < evolvedStateIRLSIters; iter++ {
+		var rows []evolvedHRRowGrad
+		if fit.hr != nil {
+			rows = fit.hr.rowGradients(priors, aPin)
+		}
+		x := evolvedStateSolveSystem(fit, priors, histMean, histSD, k, aPin, u, rows)
+		if x == nil {
+			break
+		}
+		j0 := jAt()
+		applied := false
+		step := 1.0
+		for hs := 0; hs < 5; hs++ {
+			save := evolvedStateSaveOf(fit, aPin)
+			evolvedStateApply(fit, u, x, aPin, step)
+			if jAt() <= j0+1e-12 {
+				applied = true
+				break
+			}
+			fit.restore(save)
+			step /= 2
+		}
+		for g := range fit.groups {
+			fit.groups[g].delta = evolvedGroupDelta(fit, g, aPin, k, withPriors)
+		}
+		*probes++
+		if !applied {
+			break
 		}
 	}
-	return dA < evolvedStateConvergeA
+	return jAt()
 }
 
-// ---------------------------------------------------------------------------
-// State-path admission (shared by the standalone resolve and the HR joint
 // solve), standalone speed-only resolve, and report stamping
 // ---------------------------------------------------------------------------
 
@@ -306,13 +596,31 @@ func evolvedStateReweight(fit *evolvedFit) {
 // valid continuous windows - see evolvedAdmitObservationsMode), applies the
 // state weight policy and attaches the state when the window can structure
 // time. Returns false for ineligible windows.
-func evolvedAttachCapabilityState(evidence []CandidateEvidence, asOf time.Time, priors EvolvedPriorSet) (evolvedFit, bool) {
+// evolvedAttachCapabilityState admits the evidence for a state solve (all
+// valid continuous windows - see evolvedAdmitObservationsMode), applies the
+// state weight policy and attaches the state when the window can structure
+// time. withClassHierarchy attaches the per-effort-class common margin
+// s_c: it is the mechanism that keeps easy-only windows from forcing a
+// capability downgrade by sheer count, but it is collinear with the shared
+// capability anchor for EVERY common-mode signal - including the #997 HR
+// bridge feedback - so it is attached ONLY for the speed-only resolve. The
+// HR joint path attaches the state without it, preserving the proven #997
+// soft-feedback channel.
+func evolvedAttachCapabilityState(evidence []CandidateEvidence, asOf time.Time, priors EvolvedPriorSet, withClassHierarchy bool) (evolvedFit, bool) {
 	fit := evolvedAdmitObservationsMode(evidence, asOf, priors, true)
 	if !evolvedStateEligible(&fit) {
 		return fit, false
 	}
 	evolvedStateReweight(&fit)
 	fit.state = newEvolvedCapabilityState(&fit)
+	if withClassHierarchy {
+		fit.classShift = map[EffortSupport]float64{}
+		for g := range fit.groups {
+			if _, ok := fit.classShift[fit.groups[g].effort]; !ok {
+				fit.classShift[fit.groups[g].effort] = 0
+			}
+		}
+	}
 	return fit, true
 }
 
@@ -325,7 +633,7 @@ func evolvedSpeedStateResolve(evidence []CandidateEvidence, asOf time.Time, prio
 	if stationary.CenterMps == nil {
 		return stationary
 	}
-	fit, ok := evolvedAttachCapabilityState(evidence, asOf, priors)
+	fit, ok := evolvedAttachCapabilityState(evidence, asOf, priors, true)
 	if !ok {
 		return stationary
 	}
@@ -388,11 +696,11 @@ func evolvedStampCapabilityState(out *EvolvedSpeedReport, fit evolvedFit, sol ev
 		return
 	}
 	stamp := EvolvedCapabilityStateStamp{
-		Method:        evolvedStateMethodFit,
-		TrendPerDay:   sol.trend,
-		TrendClamped:  math.Abs(sol.trend) >= evolvedCapabilityTrendClamp-1e-9,
-		DistinctDays:  len(fit.state.days),
-		WeightPolicy:  "flat_within_window_age_staleness_divided_out",
+		Method:       evolvedStateMethodFit,
+		TrendPerDay:  sol.trend,
+		TrendClamped: math.Abs(sol.trend) >= evolvedCapabilityTrendClamp-1e-9,
+		DistinctDays: len(fit.state.days),
+		WeightPolicy: "flat_within_window_age_staleness_divided_out",
 	}
 	if len(fit.state.days) > 0 {
 		stamp.FirstDay = fit.state.days[0]
