@@ -58,9 +58,15 @@ const (
 	OnboardingSyncStateSuperseded = "superseded"
 )
 
-// Stage names. T02 owns the recent raw-data stage; later tickets (T03/T04
-// executors, T05 analysis, T06 historical) add stages on the same tables.
-const OnboardingSyncStageRecentRaw = "recent_raw"
+// Stage names. T02 owns the recent raw-data stage; T05 (devops#1009) adds the
+// recent-analysis stage — its dispatch/coverage rows are created by the sweep's
+// advance pass AFTER recent_raw terminalizes (never at claim time), so the
+// analysis executor can never run before the raw data it analyzes. Later
+// tickets (T06 historical) add stages on the same tables.
+const (
+	OnboardingSyncStageRecentRaw      = "recent_raw"
+	OnboardingSyncStageRecentAnalysis = "recent_analysis"
+)
 
 // Dispatch record states.
 const (
@@ -88,6 +94,19 @@ const (
 	OnboardingSyncCoverageCompleted         = "completed"
 	OnboardingSyncCoverageCompletedWithGaps = "completed_with_gaps"
 	OnboardingSyncCoverageFailed            = "failed"
+)
+
+// Recent-analysis published statuses (devops#1009): one row per session holds
+// the LAST published result. ready = every domain landed; partial = at least
+// one domain ready and one unavailable (e.g. calibration ok but load/ zones/
+// L1 unavailable for missing historical calibration); unavailable = every
+// domain unavailable. The row keeps its TRUE as-of day and input fingerprint:
+// a same-day re-run with changed inputs supersedes it, and while a refresh is
+// pending/running it is only flagged stale — never silently rewritten.
+const (
+	OnboardingAnalysisStatusReady       = "ready"
+	OnboardingAnalysisStatusPartial     = "partial"
+	OnboardingAnalysisStatusUnavailable = "unavailable"
 )
 
 // OnboardingSyncSession is one first-sync session for a user's current binding.
@@ -193,11 +212,54 @@ type OnboardingSyncStageCoverage struct {
 
 func (OnboardingSyncStageCoverage) TableName() string { return "onboarding_sync_stage_coverage" }
 
+// OnboardingRecentAnalysis is the published recent-analysis result of one
+// first-sync session (devops#1009): the as-of day it was computed for, the
+// input fingerprint it was computed from, per-domain outcomes, and the
+// stale/refresh bookkeeping. Raw readiness (recent_raw) and analysis readiness
+// are INDEPENDENT: an analysis failure never touches raw rows, and a stale
+// published result keeps its real as-of until the refresh that supersedes it
+// lands.
+type OnboardingRecentAnalysis struct {
+	ID        int64  `gorm:"column:id;primaryKey"`
+	SessionID string `gorm:"column:session_id;type:char(36);not null;uniqueIndex"`
+	UserID    string `gorm:"column:user_id;type:char(36);not null;index"`
+	// AsOfDay is the Shanghai natural day the analysis was computed for — the
+	// executor's run day, deliberately separate from the session's fixed scan
+	// AnchorDay (devops#1009: 固定扫描anchor与analysis_as_of_day分开).
+	AsOfDay string `gorm:"column:as_of_day;type:char(10);not null"`
+	// AnchorDay echoes the session anchor for provenance.
+	AnchorDay string `gorm:"column:anchor_day;type:char(10);not null"`
+	// InputFingerprint is the pinned input revision (see AnalysisFingerprint):
+	// as-of day + binding revision + calibration policy + recent data digest.
+	InputFingerprint string `gorm:"column:input_fingerprint;type:char(64);not null"`
+	// PolicyVersion / PolicyRevision are the calibration policy the pinned
+	// fingerprint captured (a policy bump invalidates even when no snapshot id
+	// changed).
+	PolicyVersion  int    `gorm:"column:policy_version;type:int;not null"`
+	PolicyRevision uint64 `gorm:"column:policy_revision;type:bigint unsigned;not null"`
+	Status         string `gorm:"column:status;type:varchar(32);not null"`
+	// DomainsJSON is {"calibration|load|zones|ability":{"status":..,"reason":..}}.
+	DomainsJSON *string `gorm:"column:domains_json;type:text"`
+	// CoverageFrom/To are the observed Shanghai-day window of the recent
+	// activities the result actually analyzed (nil = none observed).
+	CoverageFrom *string `gorm:"column:coverage_from;type:char(10)"`
+	CoverageTo   *string `gorm:"column:coverage_to;type:char(10)"`
+	// Stale flags that a newer input revision exists and a refresh is
+	// pending/running — the row keeps its true as-of until superseded.
+	Stale      bool      `gorm:"column:stale;not null;default:false"`
+	ComputedAt time.Time `gorm:"column:computed_at;type:datetime(6);not null"`
+	CreatedAt  time.Time `gorm:"column:created_at;type:datetime(6);not null"`
+	UpdatedAt  time.Time `gorm:"column:updated_at;type:datetime(6);not null"`
+}
+
+func (OnboardingRecentAnalysis) TableName() string { return "onboarding_recent_analysis" }
+
 // onboardingSyncModels is the migration set for AutoMigrateOnboardingSync.
 func onboardingSyncModels() []any {
 	return []any{
 		&OnboardingSyncSession{}, &OnboardingSyncDispatch{},
 		&OnboardingSyncWorkItem{}, &OnboardingSyncStageCoverage{},
+		&OnboardingRecentAnalysis{},
 	}
 }
 
@@ -605,6 +667,26 @@ func (s *Store) RequeueOnboardingSyncDispatchForRetry(ctx context.Context, id in
 	return nil
 }
 
+// RequeueOnboardingSyncDispatchForRefresh supersedes a COMPLETED dispatch with
+// one more generation (devops#1009): the changed-input refresh re-arms a done
+// analysis run under a fresh idempotency key. Deliberately separate from
+// RequeueOnboardingSyncDispatchForRetry — the retry path's contract keeps "a
+// done dispatch is never re-armed" (successful raw work is reused through
+// item credentials, never re-fetched); only the analysis refresh supersedes a
+// done run.
+func (s *Store) RequeueOnboardingSyncDispatchForRefresh(ctx context.Context, id int64, idempotencyKey string) error {
+	res := s.db.WithContext(ctx).Model(&OnboardingSyncDispatch{}).
+		Where("id = ? AND status = ?", id, OnboardingSyncDispatchDone).
+		Updates(map[string]any{
+			"status": OnboardingSyncDispatchPending, "idempotency_key": idempotencyKey,
+			"updated_at": time.Now().UTC(),
+		})
+	if res.Error != nil {
+		return fmt.Errorf("storage: requeue onboarding sync dispatch for refresh: %w", res.Error)
+	}
+	return nil
+}
+
 // BumpOnboardingSyncRetryCount increments and returns the session's retry
 // generation (the retry-key input). Idempotent per explicit retry request that
 // actually requeues work.
@@ -730,4 +812,133 @@ func (s *Store) ListOnboardingSyncSessionsInStates(ctx context.Context, states [
 		return nil, fmt.Errorf("storage: list onboarding sync sessions in states: %w", err)
 	}
 	return rows, nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Recent-analysis stage (devops#1009, epic devops#1004 T05)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// EnsureOnboardingSyncStage idempotently creates one stage's dispatch +
+// coverage rows (the sweep's advance pass uses it to arm recent_analysis once
+// recent_raw terminalizes). The (session, stage) unique indexes make a
+// concurrent creator's write win silently.
+func (s *Store) EnsureOnboardingSyncStage(ctx context.Context, sessionID, stage, targetFrom, targetTo, idempotencyKey string) error {
+	now := time.Now().UTC()
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&OnboardingSyncDispatch{
+			SessionID: sessionID, Stage: stage, IdempotencyKey: idempotencyKey,
+			Status: OnboardingSyncDispatchPending, CreatedAt: now, UpdatedAt: now,
+		}).Error; err != nil {
+			return fmt.Errorf("storage: ensure stage dispatch: %w", err)
+		}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&OnboardingSyncStageCoverage{
+			SessionID: sessionID, Stage: stage, Status: OnboardingSyncCoveragePending,
+			TargetFrom: targetFrom, TargetTo: targetTo, CreatedAt: now, UpdatedAt: now,
+		}).Error; err != nil {
+			return fmt.Errorf("storage: ensure stage coverage: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// AppendOnboardingSyncWorkItems idempotently appends range work items the
+// analysis executor's cross-midnight top-up needs (days after the fixed scan
+// anchor): an item with the same (kind, range) is left untouched — its
+// terminal state and credential survive. The stage's coverage TARGET is not
+// touched here: it is extended only after the top-up fetch succeeded, so a
+// failed top-up never retracts the raw stage's readiness.
+func (s *Store) AppendOnboardingSyncWorkItems(ctx context.Context, sessionID, stage string, specs []OnboardingSyncWorkItemSpec) error {
+	now := time.Now().UTC()
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, spec := range specs {
+			var count int64
+			if err := tx.Model(&OnboardingSyncWorkItem{}).
+				Where("session_id = ? AND stage = ? AND kind = ? AND range_from = ? AND range_to = ?",
+					sessionID, stage, spec.Kind, spec.RangeFrom, spec.RangeTo).
+				Count(&count).Error; err != nil {
+				return fmt.Errorf("storage: append work item probe: %w", err)
+			}
+			if count > 0 {
+				continue
+			}
+			if err := tx.Create(&OnboardingSyncWorkItem{
+				SessionID: sessionID, Stage: stage, Kind: spec.Kind,
+				RangeFrom: spec.RangeFrom, RangeTo: spec.RangeTo,
+				Status: OnboardingSyncItemPending, CreatedAt: now, UpdatedAt: now,
+			}).Error; err != nil {
+				return fmt.Errorf("storage: append work item: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
+// ExtendOnboardingSyncStageTarget widens a stage coverage row's target window
+// to newTo (guarded: only forward). The analysis top-up calls it after the
+// extension fetch succeeded, so scanned/observed/target move together.
+func (s *Store) ExtendOnboardingSyncStageTarget(ctx context.Context, sessionID, stage, newTo string) error {
+	res := s.db.WithContext(ctx).Model(&OnboardingSyncStageCoverage{}).
+		Where("session_id = ? AND stage = ? AND target_to < ?", sessionID, stage, newTo).
+		Update("target_to", newTo)
+	if res.Error != nil {
+		return fmt.Errorf("storage: extend stage target: %w", res.Error)
+	}
+	if res.RowsAffected > 0 {
+		return s.db.WithContext(ctx).Model(&OnboardingSyncStageCoverage{}).
+			Where("session_id = ? AND stage = ?", sessionID, stage).
+			Update("updated_at", time.Now().UTC()).Error
+	}
+	return nil
+}
+
+// GetOnboardingRecentAnalysis returns the session's published recent-analysis
+// result row, or nil when none has landed yet.
+func (s *Store) GetOnboardingRecentAnalysis(ctx context.Context, sessionID string) (*OnboardingRecentAnalysis, error) {
+	var row OnboardingRecentAnalysis
+	err := s.db.WithContext(ctx).Where("session_id = ?", sessionID).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("storage: get onboarding recent analysis: %w", err)
+	}
+	return &row, nil
+}
+
+// UpsertOnboardingRecentAnalysis publishes the session's recent-analysis
+// result: an existing row is superseded in place (same session → one live
+// result; the refresh that lands later overwrites as-of/fingerprint/status and
+// clears stale).
+func (s *Store) UpsertOnboardingRecentAnalysis(ctx context.Context, row *OnboardingRecentAnalysis) error {
+	now := time.Now().UTC()
+	row.UpdatedAt = now
+	err := s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "session_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"user_id", "as_of_day", "anchor_day", "input_fingerprint", "policy_version",
+			"policy_revision", "status", "domains_json", "coverage_from", "coverage_to",
+			"stale", "computed_at", "updated_at",
+		}),
+	}).Create(row).Error
+	if err != nil {
+		return fmt.Errorf("storage: upsert onboarding recent analysis: %w", err)
+	}
+	return nil
+}
+
+// MarkOnboardingRecentAnalysisStale flags (or clears) the published result's
+// stale marker. A refresh start sets it while the OLD as-of stays readable;
+// the refresh that lands clears it via UpsertOnboardingRecentAnalysis.
+func (s *Store) MarkOnboardingRecentAnalysisStale(ctx context.Context, sessionID string, stale bool) error {
+	res := s.db.WithContext(ctx).Model(&OnboardingRecentAnalysis{}).
+		Where("session_id = ?", sessionID).
+		Updates(map[string]any{"stale": stale, "updated_at": time.Now().UTC()})
+	if res.Error != nil {
+		return fmt.Errorf("storage: mark onboarding recent analysis stale: %w", res.Error)
+	}
+	return nil
 }

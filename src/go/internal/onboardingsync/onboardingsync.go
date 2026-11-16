@@ -45,6 +45,19 @@ const (
 	DefaultSweepLimit    = 100
 )
 
+// Analysis constants (devops#1009, T05). AnalysisDigestLookbackDays is the
+// input window the fingerprint digests (matches compute's 365-day PMC window;
+// the extra recent day the top-up may add is covered by the day-granular
+// bounds). DefaultAnalysisRefreshHorizon bounds how long after session creation
+// a changed fingerprint still auto-refreshes the published analysis: beyond it
+// the standing sync pipelines (data_sync runs calibration+compute+ability on
+// every sync) own freshness, so the onboarding session cannot become a
+// permanent per-user daily job.
+const (
+	AnalysisDigestLookbackDays    = 364
+	DefaultAnalysisRefreshHorizon = 72 * time.Hour
+)
+
 // StageResult is the executor contract a stage job's ResultJSON carries
 // (defined here in T02; the T03/T04 executors report it, and the sweep
 // persists it into the stage coverage row). Observed/Scanned are Shanghai
@@ -89,6 +102,7 @@ type Store interface {
 	MarkOnboardingSyncDispatchTerminal(ctx context.Context, id int64, status string) error
 	TouchOnboardingSyncDispatch(ctx context.Context, id int64) error
 	RequeueOnboardingSyncDispatchForRetry(ctx context.Context, id int64, idempotencyKey string) error
+	RequeueOnboardingSyncDispatchForRefresh(ctx context.Context, id int64, idempotencyKey string) error
 	BumpOnboardingSyncRetryCount(ctx context.Context, sessionID string) (int, error)
 	ListOnboardingSyncWorkItems(ctx context.Context, sessionID, stage string) ([]*storage.OnboardingSyncWorkItem, error)
 	ResetFailedOnboardingSyncWorkItems(ctx context.Context, sessionID, stage string) (int64, error)
@@ -97,6 +111,13 @@ type Store interface {
 	UpdateOnboardingSyncStageCoverage(ctx context.Context, cov *storage.OnboardingSyncStageCoverage) error
 	ListOnboardingSyncSessionsInStates(ctx context.Context, states []string, limit int) ([]*storage.OnboardingSyncSession, error)
 	JobByIdempotencyKey(ctx context.Context, userID, key string) (*job.Job, error)
+	// T05 (devops#1009): the analysis stage's post-raw advance + the
+	// changed-input refresh sweep.
+	EnsureOnboardingSyncStage(ctx context.Context, sessionID, stage, targetFrom, targetTo, idempotencyKey string) error
+	GetOnboardingRecentAnalysis(ctx context.Context, sessionID string) (*storage.OnboardingRecentAnalysis, error)
+	MarkOnboardingRecentAnalysisStale(ctx context.Context, sessionID string, stale bool) error
+	OnboardingAnalysisDigest(ctx context.Context, userID, fromDay, toDay string) (storage.OnboardingAnalysisDigest, error)
+	CalibrationPolicy(ctx context.Context) (storage.RunningCalibrationPolicy, error)
 }
 
 // RunLister reads pipeline runs: the legacy-full-run detection (list by user)
@@ -117,30 +138,38 @@ type Config struct {
 	Enqueuer job.Enqueuer
 	Jobs     JobGetter
 	Runs     RunLister
-	// JobType is the stage-executor job type (injected from catalog so this
-	// package stays decoupled, mirroring the api package's pattern).
+	// JobType is the recent-raw stage-executor job type (injected from catalog
+	// so this package stays decoupled, mirroring the api package's pattern).
 	JobType string
+	// AnalysisJobType is the recent-analysis stage-executor job type
+	// (devops#1009). Required: the sweep arms the analysis stage as soon as it
+	// arms the raw one.
+	AnalysisJobType string
 	// LegacyFullPipeline is the old full pipeline's name the session waits on
 	// (catalog.PipelineOnboarding).
 	LegacyFullPipeline string
 	// DispatchGrace / SweepLimit override the sweep defaults (tests).
 	DispatchGrace time.Duration
 	SweepLimit    int
-	Logger        *zap.Logger
+	// AnalysisRefreshHorizon overrides DefaultAnalysisRefreshHorizon (tests).
+	AnalysisRefreshHorizon time.Duration
+	Logger                 *zap.Logger
 }
 
 // Service is the first-sync session orchestrator. All mutating entry points
 // are idempotent; the sweep makes every path recoverable.
 type Service struct {
-	store     Store
-	enq       job.Enqueuer
-	jobs      JobGetter
-	runs      RunLister
-	jobType   string
-	legacyPpl string
-	grace     time.Duration
-	limit     int
-	log       *zap.Logger
+	store           Store
+	enq             job.Enqueuer
+	jobs            JobGetter
+	runs            RunLister
+	jobType         string
+	analysisJobType string
+	legacyPpl       string
+	grace           time.Duration
+	limit           int
+	refreshHorizon  time.Duration
+	log             *zap.Logger
 }
 
 // New validates the wiring and returns a Service.
@@ -151,6 +180,9 @@ func New(cfg Config) (*Service, error) {
 	if cfg.JobType == "" || cfg.LegacyFullPipeline == "" {
 		return nil, errors.New("onboardingsync: job type and legacy full pipeline name are required")
 	}
+	if cfg.AnalysisJobType == "" {
+		return nil, errors.New("onboardingsync: analysis job type is required")
+	}
 	grace, limit := cfg.DispatchGrace, cfg.SweepLimit
 	if grace <= 0 {
 		grace = DefaultDispatchGrace
@@ -158,12 +190,26 @@ func New(cfg Config) (*Service, error) {
 	if limit <= 0 {
 		limit = DefaultSweepLimit
 	}
+	horizon := cfg.AnalysisRefreshHorizon
+	if horizon <= 0 {
+		horizon = DefaultAnalysisRefreshHorizon
+	}
 	log := cfg.Logger
 	if log == nil {
 		log = logging.Default()
 	}
 	return &Service{store: cfg.Store, enq: cfg.Enqueuer, jobs: cfg.Jobs, runs: cfg.Runs,
-		jobType: cfg.JobType, legacyPpl: cfg.LegacyFullPipeline, grace: grace, limit: limit, log: log}, nil
+		jobType: cfg.JobType, analysisJobType: cfg.AnalysisJobType,
+		legacyPpl: cfg.LegacyFullPipeline, grace: grace, limit: limit,
+		refreshHorizon: horizon, log: log}, nil
+}
+
+// jobTypeFor maps a stage onto its executor job type.
+func (s *Service) jobTypeFor(stage string) string {
+	if stage == storage.OnboardingSyncStageRecentAnalysis {
+		return s.analysisJobType
+	}
+	return s.jobType
 }
 
 // recentWorkItems derives the server-controlled recent stage windows from the
@@ -370,7 +416,7 @@ func (s *Service) DispatchSession(ctx context.Context, sessionID string) error {
 			return fmt.Errorf("onboardingsync: marshal stage input: %w", err)
 		}
 		jobID, err := s.enq.Enqueue(ctx, job.EnqueueSpec{
-			Type: s.jobType, UserID: sess.UserID,
+			Type: s.jobTypeFor(d.Stage), UserID: sess.UserID,
 			InputJSON: string(input), IdempotencyKey: d.IdempotencyKey,
 		})
 		if errors.Is(err, job.ErrConflict) {
@@ -420,6 +466,12 @@ func (s *Service) DispatchSession(ctx context.Context, sessionID string) error {
 //   - completion boundary: dispatched rows whose job reached a terminal state
 //     are recorded, the executor's coverage report persisted, and the session
 //     advanced to its terminal state;
+//   - stage advance (devops#1009): once recent_raw terminalizes with data, the
+//     recent_analysis stage rows are armed and dispatched — analysis readiness
+//     is independent of raw, but its run strictly follows raw;
+//   - changed-input refresh (devops#1009): a published analysis whose pinned
+//     fingerprint no longer matches the current inputs is superseded by one
+//     merged refresh (stale flag first, then a new-generation dispatch);
 //   - legacy adoption: waiting_legacy sessions whose old full run finished
 //     dispatch their own stages (对账 after the legacy run — never beside it).
 //
@@ -429,6 +481,9 @@ func (s *Service) Sweep(ctx context.Context) {
 	s.reconcileLegacy(ctx)
 	s.sweepPending(ctx)
 	s.sweepDispatched(ctx)
+	s.advanceStages(ctx)
+	s.finalizeSessions(ctx)
+	s.sweepAnalysisRefresh(ctx)
 }
 
 // reconcileLegacy moves waiting_legacy sessions forward once their legacy full
@@ -536,7 +591,6 @@ func (s *Service) sweepDispatched(ctx context.Context) {
 			s.failStage(ctx, d, j.ErrorMessage)
 		}
 	}
-	s.finalizeSessions(ctx)
 }
 
 // applyStageResult persists the executor's coverage report onto the stage
@@ -547,9 +601,28 @@ func (s *Service) sweepDispatched(ctx context.Context) {
 // (devops#1008 D2 — a completed stage never reads as still carrying its
 // first-attempt failure).
 func (s *Service) applyStageResult(ctx context.Context, d *storage.OnboardingSyncDispatch, j *job.Job) {
-	cov, err := s.store.GetOnboardingSyncStageCoverage(ctx, d.SessionID, d.Stage)
+	ApplyStageResult(ctx, s.store, d.SessionID, d.Stage, j.ResultJSON, s.log)
+}
+
+// StageCoverageStore is the minimal surface ApplyStageResult needs; satisfied
+// by Store and by the recent-analysis executor's narrower Store.
+type StageCoverageStore interface {
+	GetOnboardingSyncStageCoverage(ctx context.Context, sessionID, stage string) (*storage.OnboardingSyncStageCoverage, error)
+	UpdateOnboardingSyncStageCoverage(ctx context.Context, cov *storage.OnboardingSyncStageCoverage) error
+}
+
+// ApplyStageResult is the exported form of the sweep's completion-boundary
+// write: it persists an executor's StageResult JSON onto the stage coverage
+// row. The recent-analysis executor (devops#1009) reuses it to apply its
+// cross-midnight raw top-up result — the same idempotent write the sweep
+// performs at the raw stage's own completion boundary.
+func ApplyStageResult(ctx context.Context, store StageCoverageStore, sessionID, stage, resultJSON string, log *zap.Logger) {
+	if log == nil {
+		log = logging.Default()
+	}
+	cov, err := store.GetOnboardingSyncStageCoverage(ctx, sessionID, stage)
 	if err != nil {
-		s.log.Warn("onboardingsync: coverage read failed", zap.String("session", d.SessionID), zap.Error(err))
+		log.Warn("onboardingsync: coverage read failed", zap.String("session", sessionID), zap.Error(err))
 		return
 	}
 	if cov == nil {
@@ -559,7 +632,7 @@ func (s *Service) applyStageResult(ctx context.Context, d *storage.OnboardingSyn
 	cov.LastError = nil
 	cov.GapsJSON = nil
 	var res StageResult
-	if json.Unmarshal([]byte(j.ResultJSON), &res) == nil && res.Stage == d.Stage {
+	if json.Unmarshal([]byte(resultJSON), &res) == nil && res.Stage == stage {
 		if res.Status == storage.OnboardingSyncCoverageCompletedWithGaps {
 			cov.Status = storage.OnboardingSyncCoverageCompletedWithGaps
 		}
@@ -572,8 +645,8 @@ func (s *Service) applyStageResult(ctx context.Context, d *storage.OnboardingSyn
 			}
 		}
 	}
-	if err := s.store.UpdateOnboardingSyncStageCoverage(ctx, cov); err != nil {
-		s.log.Warn("onboardingsync: coverage update failed", zap.String("session", d.SessionID), zap.Error(err))
+	if err := store.UpdateOnboardingSyncStageCoverage(ctx, cov); err != nil {
+		log.Warn("onboardingsync: coverage update failed", zap.String("session", sessionID), zap.Error(err))
 	}
 }
 
@@ -657,6 +730,140 @@ func (s *Service) finalizeSessions(ctx context.Context) {
 	}
 }
 
+// advanceStages arms the recent_analysis stage (devops#1009) for every
+// non-terminal session whose recent_raw coverage terminalized WITH data
+// (completed / completed_with_gaps — a failed raw stage is retried first, the
+// analysis never runs beside an unfinished raw scan). Creating the rows here —
+// not at claim time — makes the dependency structural: no analysis dispatch
+// row can exist while raw is still pending. Idempotent; a crash between the
+// row creation and the dispatch is healed by the pending sweep.
+func (s *Service) advanceStages(ctx context.Context) {
+	sessions, err := s.store.ListOnboardingSyncSessionsInStates(ctx,
+		[]string{storage.OnboardingSyncStateDispatching, storage.OnboardingSyncStateRunning}, s.limit)
+	if err != nil {
+		s.log.Warn("onboardingsync: advance scan failed", zap.Error(err))
+		return
+	}
+	for _, sess := range sessions {
+		disp, err := s.store.ListOnboardingSyncDispatches(ctx, sess.SessionID)
+		if err != nil {
+			continue
+		}
+		hasAnalysis := false
+		for _, d := range disp {
+			if d.Stage == storage.OnboardingSyncStageRecentAnalysis {
+				hasAnalysis = true
+				break
+			}
+		}
+		if hasAnalysis {
+			continue
+		}
+		rawCov, err := s.store.GetOnboardingSyncStageCoverage(ctx, sess.SessionID, storage.OnboardingSyncStageRecentRaw)
+		if err != nil || rawCov == nil {
+			continue
+		}
+		if rawCov.Status != storage.OnboardingSyncCoverageCompleted &&
+			rawCov.Status != storage.OnboardingSyncCoverageCompletedWithGaps {
+			continue
+		}
+		key := stageKey(storage.OnboardingSyncStageRecentAnalysis, sess.SessionID,
+			sess.BindingRevision, sess.RetryCount, nil)
+		if err := s.store.EnsureOnboardingSyncStage(ctx, sess.SessionID,
+			storage.OnboardingSyncStageRecentAnalysis, rawCov.TargetFrom, rawCov.TargetTo, key); err != nil {
+			s.log.Warn("onboardingsync: analysis stage arm failed",
+				zap.String("session", sess.SessionID), zap.Error(err))
+			continue
+		}
+		if err := s.DispatchSession(ctx, sess.SessionID); err != nil {
+			s.log.Warn("onboardingsync: analysis dispatch failed",
+				zap.String("session", sess.SessionID), zap.Error(err))
+		}
+	}
+}
+
+// sweepAnalysisRefresh supersedes published analysis results whose pinned input
+// revision no longer matches reality (devops#1009 AC4/AC5): day rolls, new or
+// re-delivered recent data, or a calibration policy bump each change the
+// fingerprint, and every pending change MERGES into at most one refresh — the
+// dispatch row is single, so concurrent triggers collapse onto the same job.
+// The published row is only flagged stale (its true as-of stays readable)
+// until the refresh lands and overwrites it. Bounded to the refresh horizon
+// after session creation: afterwards the standing sync pipelines own analysis
+// freshness.
+func (s *Service) sweepAnalysisRefresh(ctx context.Context) {
+	sessions, err := s.store.ListOnboardingSyncSessionsInStates(ctx,
+		[]string{storage.OnboardingSyncStateCompleted, storage.OnboardingSyncStateCompletedWithGaps}, s.limit)
+	if err != nil {
+		s.log.Warn("onboardingsync: analysis refresh scan failed", zap.Error(err))
+		return
+	}
+	asOf := timefmt.ShanghaiToday()
+	asOfDay := asOf.Format("2006-01-02")
+	fromDay := asOf.AddDate(0, 0, -AnalysisDigestLookbackDays).Format("2006-01-02")
+	for _, sess := range sessions {
+		if time.Since(sess.CreatedAt) > s.refreshHorizon {
+			continue
+		}
+		published, err := s.store.GetOnboardingRecentAnalysis(ctx, sess.SessionID)
+		if err != nil || published == nil {
+			continue
+		}
+		disp, err := s.store.ListOnboardingSyncDispatches(ctx, sess.SessionID)
+		if err != nil {
+			continue
+		}
+		analysisDispatch := (*storage.OnboardingSyncDispatch)(nil)
+		for _, d := range disp {
+			if d.Stage == storage.OnboardingSyncStageRecentAnalysis {
+				analysisDispatch = d
+				break
+			}
+		}
+		if analysisDispatch == nil || analysisDispatch.Status != storage.OnboardingSyncDispatchDone {
+			continue // refresh already in flight / not yet armed — nothing to supersede
+		}
+		digest, err := s.store.OnboardingAnalysisDigest(ctx, sess.UserID, fromDay, asOfDay)
+		if err != nil {
+			s.log.Warn("onboardingsync: analysis digest failed", zap.String("session", sess.SessionID), zap.Error(err))
+			continue
+		}
+		policy, err := s.store.CalibrationPolicy(ctx)
+		if err != nil {
+			s.log.Warn("onboardingsync: calibration policy read failed", zap.String("session", sess.SessionID), zap.Error(err))
+			continue
+		}
+		fp := storage.AnalysisFingerprint(sess.AnchorDay, asOfDay, sess.BindingRevision, policy, digest)
+		if fp == published.InputFingerprint {
+			continue // inputs unchanged: the published result stays current
+		}
+		if err := s.store.MarkOnboardingRecentAnalysisStale(ctx, sess.SessionID, true); err != nil {
+			s.log.Warn("onboardingsync: analysis stale mark failed", zap.String("session", sess.SessionID), zap.Error(err))
+			continue
+		}
+		gen, err := s.store.BumpOnboardingSyncRetryCount(ctx, sess.SessionID)
+		if err != nil {
+			s.log.Warn("onboardingsync: analysis refresh bump failed", zap.String("session", sess.SessionID), zap.Error(err))
+			continue
+		}
+		key := stageKey(storage.OnboardingSyncStageRecentAnalysis, sess.SessionID,
+			sess.BindingRevision, gen, nil)
+		if err := s.store.RequeueOnboardingSyncDispatchForRefresh(ctx, analysisDispatch.ID, key); err != nil {
+			s.log.Warn("onboardingsync: analysis refresh requeue failed", zap.String("session", sess.SessionID), zap.Error(err))
+			continue
+		}
+		if err := s.store.SetOnboardingSyncSessionState(ctx, sess.SessionID,
+			storage.OnboardingSyncStateDispatching, nil,
+			storage.OnboardingSyncStateCompleted, storage.OnboardingSyncStateCompletedWithGaps); err != nil {
+			s.log.Warn("onboardingsync: analysis refresh state failed", zap.String("session", sess.SessionID), zap.Error(err))
+			continue
+		}
+		if err := s.DispatchSession(ctx, sess.SessionID); err != nil {
+			s.log.Warn("onboardingsync: analysis refresh dispatch failed", zap.String("session", sess.SessionID), zap.Error(err))
+		}
+	}
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Readiness view (GET)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -671,6 +878,14 @@ const (
 	ReadinessReady         Readiness = "ready"
 	ReadinessReadyWithGaps Readiness = "ready_with_gaps"
 	ReadinessFailed        Readiness = "failed"
+	// ReadinessPartial and ReadinessUnavailable are the recent-analysis
+	// levels (devops#1009): the API reports analysis availability EXPLICITLY
+	// from the published per-domain outcomes — never inferred from a
+	// pipeline-done bit. partial = some domains ready, some unavailable
+	// (e.g. calibration ok but load/zones/L1 unavailable for missing
+	// historical calibration); unavailable = no domain produced a result.
+	ReadinessPartial     Readiness = "partial"
+	ReadinessUnavailable Readiness = "unavailable"
 )
 
 // StageView is one stage's GET projection: target / scanned / observed kept
@@ -692,23 +907,49 @@ type StageView struct {
 
 // View is the GET body: the session plus the readiness flags the client polls.
 // shell_ready, recent_data and friends are DERIVED here — nothing upstream may
-// assert them. recent_analysis / historical_* / auxiliary stay not_started
-// until their owning tickets (T05/T06) land executors; an executor-less stage
-// is never reported ready (不假报近期数据ready).
+// assert them. recent_analysis derives from the analysis stage's coverage row
+// plus the published result row (devops#1009); historical_* / auxiliary stay
+// not_started until their owning tickets (T06+) land executors; an
+// executor-less stage is never reported ready (不假报近期数据ready).
 type View struct {
-	SessionID       string        `json:"session_id"`
-	State           string        `json:"state"`
-	ShellReady      bool          `json:"shell_ready"`
-	Provider        string        `json:"provider"`
-	BindingRevision int64         `json:"binding_revision"`
-	AnchorDay       string        `json:"anchor_day"`
-	LegacyRunID     *string       `json:"legacy_run_id,omitempty"`
-	RetryCount      int           `json:"retry_count"`
-	Error           *string       `json:"error,omitempty"`
-	Stages          []StageView   `json:"stages"`
-	Readiness       ViewReadiness `json:"readiness"`
-	CreatedAt       time.Time     `json:"created_at"`
-	UpdatedAt       time.Time     `json:"updated_at"`
+	SessionID       string              `json:"session_id"`
+	State           string              `json:"state"`
+	ShellReady      bool                `json:"shell_ready"`
+	Provider        string              `json:"provider"`
+	BindingRevision int64               `json:"binding_revision"`
+	AnchorDay       string              `json:"anchor_day"`
+	LegacyRunID     *string             `json:"legacy_run_id,omitempty"`
+	RetryCount      int                 `json:"retry_count"`
+	Error           *string             `json:"error,omitempty"`
+	Stages          []StageView         `json:"stages"`
+	Readiness       ViewReadiness       `json:"readiness"`
+	RecentAnalysis  *RecentAnalysisView `json:"recent_analysis_detail,omitempty"`
+	CreatedAt       time.Time           `json:"created_at"`
+	UpdatedAt       time.Time           `json:"updated_at"`
+}
+
+// AnalysisDomainView is one analysis domain's explicit outcome.
+type AnalysisDomainView struct {
+	Status string `json:"status"` // ready | unavailable
+	Reason string `json:"reason,omitempty"`
+}
+
+// RecentAnalysisView is the published recent-analysis result's projection:
+// its TRUE as-of day (deliberately separate from the session's fixed anchor
+// day), per-domain outcomes, the input fingerprint it was computed from, and
+// the stale/refreshing bookkeeping (a stale row keeps its real as-of until the
+// refresh supersedes it — devops#1009).
+type RecentAnalysisView struct {
+	AsOfDay    string                        `json:"as_of_day"`
+	Status     string                        `json:"status"` // ready | partial | unavailable
+	Stale      bool                          `json:"stale"`
+	Refreshing bool                          `json:"refreshing"`
+	Domains    map[string]AnalysisDomainView `json:"domains,omitempty"`
+	// CoverageFrom/To: the observed Shanghai-day window of recent activities
+	// the published result actually analyzed (omitted when none).
+	CoverageFrom *string   `json:"coverage_from,omitempty"`
+	CoverageTo   *string   `json:"coverage_to,omitempty"`
+	ComputedAt   time.Time `json:"computed_at"`
 }
 
 // ViewReadiness is the summary the client surfaces. Each field is one of the
@@ -744,6 +985,10 @@ func (s *Service) View(ctx context.Context, userID string) (*View, error) {
 	for _, d := range disp {
 		dispByStage[d.Stage] = d
 	}
+	analysisRow, err := s.store.GetOnboardingRecentAnalysis(ctx, sess.SessionID)
+	if err != nil {
+		return nil, err
+	}
 	v := &View{
 		SessionID: sess.SessionID, State: sess.State, ShellReady: sess.ShellReady,
 		Provider: sess.Provider, BindingRevision: sess.BindingRevision,
@@ -754,6 +999,18 @@ func (s *Service) View(ctx context.Context, userID string) (*View, error) {
 			RecentData: ReadinessPending, RecentAnalysis: ReadinessNotStarted,
 			HistoricalData: ReadinessNotStarted, HistoricalAnalysis: ReadinessNotStarted,
 			Auxiliary: ReadinessNotStarted},
+	}
+	if analysisRow != nil {
+		detail := &RecentAnalysisView{
+			AsOfDay: analysisRow.AsOfDay, Status: analysisRow.Status,
+			Stale: analysisRow.Stale, Domains: map[string]AnalysisDomainView{},
+			CoverageFrom: analysisRow.CoverageFrom, CoverageTo: analysisRow.CoverageTo,
+			ComputedAt: analysisRow.ComputedAt,
+		}
+		if analysisRow.DomainsJSON != nil {
+			_ = json.Unmarshal([]byte(*analysisRow.DomainsJSON), &detail.Domains)
+		}
+		v.RecentAnalysis = detail
 	}
 	for _, cov := range covs {
 		sv := StageView{
@@ -766,21 +1023,83 @@ func (s *Service) View(ctx context.Context, userID string) (*View, error) {
 		if cov.GapsJSON != nil {
 			_ = json.Unmarshal([]byte(*cov.GapsJSON), &sv.Gaps)
 		}
+		dispatchFailed := false
+		refreshing := false
 		if d, ok := dispByStage[cov.Stage]; ok {
 			if d.Status == storage.OnboardingSyncDispatchFailed {
 				sv.Status = storage.OnboardingSyncCoverageFailed
+				dispatchFailed = true
 			}
+			refreshing = d.Status == storage.OnboardingSyncDispatchDispatched
 		}
-		sv.Readiness = stageReadiness(cov)
-		v.Stages = append(v.Stages, sv)
-		if cov.Stage == storage.OnboardingSyncStageRecentRaw {
+		switch cov.Stage {
+		case storage.OnboardingSyncStageRecentRaw:
+			sv.Readiness = stageReadiness(cov)
 			v.Readiness.RecentData = sv.Readiness
+		case storage.OnboardingSyncStageRecentAnalysis:
+			sv.Readiness = analysisReadiness(cov, dispatchFailed, analysisRow)
+			v.Readiness.RecentAnalysis = sv.Readiness
+			if v.RecentAnalysis != nil {
+				v.RecentAnalysis.Refreshing = refreshing || cov.Status == storage.OnboardingSyncCoverageRunning
+			}
+		default:
+			sv.Readiness = stageReadiness(cov)
 		}
+		v.Stages = append(v.Stages, sv)
 	}
 	if sess.State == storage.OnboardingSyncStateWaitingLegacy {
 		v.Readiness.RecentData = ReadinessPending
 	}
 	return v, nil
+}
+
+// analysisReadiness derives the recent-analysis readiness level EXPLICITLY
+// from the stage coverage plus the published result row (devops#1009 AC5):
+// ready/partial/unavailable come from the row's per-domain outcomes, never
+// from a pipeline-done bit, and a stale published row keeps its own level
+// while its refresh runs.
+func analysisReadiness(cov *storage.OnboardingSyncStageCoverage, dispatchFailed bool, row *storage.OnboardingRecentAnalysis) Readiness {
+	if dispatchFailed {
+		return ReadinessFailed
+	}
+	// A refresh in flight (coverage back to pending/running) does NOT retract
+	// the published result: its level stands and the detail carries
+	// stale/refreshing (devops#1009 AC4). Only a first run with nothing
+	// published reports pending/running.
+	if row != nil && (cov.Status == storage.OnboardingSyncCoveragePending ||
+		cov.Status == storage.OnboardingSyncCoverageRunning) {
+		return analysisRowLevel(row)
+	}
+	switch cov.Status {
+	case storage.OnboardingSyncCoveragePending:
+		return ReadinessPending
+	case storage.OnboardingSyncCoverageRunning:
+		return ReadinessRunning
+	case storage.OnboardingSyncCoverageFailed:
+		return ReadinessFailed
+	case storage.OnboardingSyncCoverageCompleted, storage.OnboardingSyncCoverageCompletedWithGaps:
+		if row == nil {
+			// The job terminalized before its published row landed (a hole
+			// the retry heals): explicitly not ready.
+			return ReadinessPending
+		}
+		return analysisRowLevel(row)
+	default:
+		return ReadinessPending
+	}
+}
+
+// analysisRowLevel maps the published row's status onto a readiness level.
+func analysisRowLevel(row *storage.OnboardingRecentAnalysis) Readiness {
+	switch row.Status {
+	case storage.OnboardingAnalysisStatusReady:
+		return ReadinessReady
+	case storage.OnboardingAnalysisStatusPartial:
+		return ReadinessPartial
+	case storage.OnboardingAnalysisStatusUnavailable:
+		return ReadinessUnavailable
+	}
+	return ReadinessPending
 }
 
 // stageReadiness derives one stage's readiness from its coverage row:

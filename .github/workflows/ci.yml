@@ -272,6 +272,18 @@ jobs:
           go test ./internal/handlers/onboardingrecent/...
           -run 'TestOnboardingRecent'
           -count=1 -v
+      # The recent-analysis executor (devops#1004 T05, devops#1009) drives the
+      # real session/coverage/result tables plus the REAL canonical
+      # calibration/compute/ability handlers over real MySQL: zero-input
+      # explicit unavailability, missing-history old-result protection, the
+      # cross-midnight raw top-up, and fingerprint supersede.
+      - name: Onboarding recent-analysis executor tests (MySQL)
+        env:
+          STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
+        run: >-
+          go test ./internal/handlers/onboardinganalysis/...
+          -run 'TestOnboardingAnalysis'
+          -count=1 -v
       # The provider_events unique index is the webhook push idempotency rule
       # (devops#287) — SQL-level, so only a real MySQL exercises it.
       - name: Provider-event storage tests (MySQL)

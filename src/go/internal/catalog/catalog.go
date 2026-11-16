@@ -112,6 +112,15 @@ const (
 	// session dispatched to a T03-only worker fails with an explicit
 	// permanent error, mirroring the webhook's enqueue gate).
 	JobTypeOnboardingRecentSync = "onboarding_recent_sync"
+	// JobTypeOnboardingRecentAnalysis executes one first-sync session's
+	// recent-analysis stage (devops#1009, epic devops#1004 T05): it reuses the
+	// canonical calibration/compute/ability handlers in-process over the
+	// recently synced window, tops the raw window up to the analysis as-of day
+	// across midnight, publishes the per-domain result row with its true
+	// as-of/input fingerprint, and reports the StageResult coverage contract.
+	// Created exclusively by the session sweep's advance/refresh passes (never
+	// user-initiable), deduplicated by a stable idempotency key.
+	JobTypeOnboardingRecentAnalysis = "onboarding_recent_analysis"
 )
 
 // Pipeline names (ADR 0020). onboarding and data_sync are fronted by
@@ -235,6 +244,13 @@ func Jobs() []JobSpec {
 			Description:   "Derive per-activity training load, daily PMC (CTL/ATL/Form) and personal bests from synced data and the latest calibration snapshot. Mode-aware: full recomputes the window; incremental only touches this sync's new activities (label_ids). Internal-only.",
 			InputSchema:   json.RawMessage(`{"type":"object","properties":{"mode":{"type":"string","enum":["full","incremental"],"default":"full"},"label_ids":{"type":"array","items":{"type":"string"},"description":"Incremental only: the activities this sync produced."}},"additionalProperties":true}`),
 			ExampleInput:  json.RawMessage(`{"mode":"incremental","label_ids":["a1b2"]}`),
+		},
+		{
+			Type:          JobTypeOnboardingRecentAnalysis,
+			UserInitiable: false,
+			Description:   "Execute one first-sync session's recent-analysis stage (devops#1009, epic devops#1004 T05): tops the recent raw window up to the analysis as-of day across midnight (through the onboarding_recent_sync executor), then reuses the canonical calibration/compute/ability handlers in-process and publishes the per-domain result row (as-of day, input fingerprint, coverage, stale/refresh). Analysis readiness is independent of raw; missing historical calibration keeps load/zones/L1 explicitly unavailable. Internal-only: created exclusively by the onboarding-sync sweep's advance/refresh passes, deduplicated by a stable idempotency key.",
+			InputSchema:   json.RawMessage(`{"type":"object","properties":{"session_id":{"type":"string","format":"uuid"},"stage":{"type":"string","enum":["recent_analysis"]}},"required":["session_id","stage"],"additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{"session_id":"00000000-0000-0000-0000-000000000000","stage":"recent_analysis"}`),
 		},
 		{
 			Type:          JobTypeAbility,
