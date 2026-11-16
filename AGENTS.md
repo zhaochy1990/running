@@ -42,8 +42,6 @@ This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 | 写 plan.md 里的力量动作 / 调 strength push | [`docs/strength-training.md`](docs/strength-training.md) |
 | 分析疲劳 / TSB / HRV / 训练负荷 | [`docs/fatigue-metrics.md`](docs/fatigue-metrics.md) |
 | 读 / 写周反馈，引用 RPE 或 feel_type | [`docs/feedback-md.md`](docs/feedback-md.md) |
-| Multi-model A/B/C variants 流程 | [`docs/multi-variant.md`](docs/multi-variant.md) |
-| Commentary 写入 / 推 prod / daily loop | [`docs/working-model.md`](docs/working-model.md) |
 | 跑 coros-sync CLI / 改 sync 代码 / 直查 DB | [`docs/coros-cli.md`](docs/coros-cli.md)（`src/coros_sync/` 待删除，勿新增依赖） |
 | 改 Coach Agent（TS，`src/coach_agent/*`） | [`src/coach_agent/AGENTS.md`](src/coach_agent/AGENTS.md) —— TS Coach Agent 为准；含 DeepSeek Responses API 踩坑清单（LLM 直连/结构化输出/SDK 升级必读） |
 | Auth wiring / Bearer / 401 排障 | [`docs/auth-wiring.md`](docs/auth-wiring.md) |
@@ -127,8 +125,6 @@ This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 - **腾讯云 MySQL** 是生产用户运动、健康和正式训练计划的 canonical data store。
 - **Local machine** 是训练计划的 **author/review** 环境：coding agent 从 prod MySQL 只读获取最新数据，在 `data/{user_id}/logs/` 生成 `plan.md` / `plan.json` 草稿。
 - 生成阶段只允许读取 prod MySQL；本地草稿不得自动写入 MySQL 或同步到其他远端。只有用户明确表示 review 通过并要求发布当前草稿后，才可通过受支持的 MySQL 写接口写入；确认前禁止创建、覆盖、激活或归档远端 weekly plan。
-
-完整 commentary 规则、daily loop bash、prod/local 不一致排障 → [`docs/working-model.md`](docs/working-model.md)。
 
 ### Prod API endpoint（HARD）
 

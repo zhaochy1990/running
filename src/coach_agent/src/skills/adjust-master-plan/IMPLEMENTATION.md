@@ -7,7 +7,7 @@
 - 赛季计划生成走 **deep-agent 子代理路径**（`src/agents/master_plan/agent.ts`），`generate_master_plan` 子代理持有 SKILL `generate-master-plan`、工具集与 `MasterPlanDirectResponseSchema`，通过 `{ disposition: "return_direct", content: MasterPlan }` 信封直出结构化计划。
 - SKILL 文件放在 `src/coach_agent/src/skills/<name>/SKILL.md`，由 `scripts/copy-assets.mjs` 在 `npm run build` 时自动从 `src/` 拷贝到 `dist/`（非 `.ts` 文件全量复制），**新增 SKILL 无需改 copy 脚本**。子代理通过 `skills: ["/adjust-master-plan/"]` 引用（虚拟路径，根为 `src/skills/`）。
 - `get_master_plan`（`src/tools/plan.ts`）已能读取当前激活计划，返回 opaque `MasterPlanDocument`（内含 `goal` / `phases[].is_completed` / `weeks[].week_start` / `milestones[].completed_actual` 等 schema 字段）；`get_master_plan_context`（`src/tools/masterPlanContext.ts`）已提供 `current_phase`、`active_plan`（含 revision）、`plan_start`、`as_of`、`fitness_state`、`recent_history`、`injuries`、`running_calibration` 等调整所需全部信号。
-- 已完成的"draft → 人工 review → apply"门禁（见 `docs/working-model.md` / AGENTS.md）对调整结果同样适用：调整产出的是新 draft，未经 review 不写入 MySQL。
+- 已完成的"draft → 人工 review → apply"门禁（见 AGENTS.md）对调整结果同样适用：调整产出的是新 draft，未经 review 不写入 MySQL。
 
 ## 改动清单（按文件）
 
