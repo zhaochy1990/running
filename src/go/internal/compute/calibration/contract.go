@@ -121,10 +121,22 @@ const (
 
 // HistoricalCapabilityPrior is the weak prior extracted from a prior v3/v4
 // snapshot. It is never a speed cap and is aged with a variance floor
-// (SPEC #993 R1).
+// (SPEC #993 R1). The #998 capability-state fields are the fixed-order
+// predict channel: TrendPerDay extrapolates the recorded slow drift over
+// AgeDays (clamped to the state trend clamp when consumed), and the lineage
+// fields (AsOfDate/InputFingerprint) identify the consumed state for audit.
+// All new fields are optional; zero values keep the #996 aged-center
+// semantics exactly.
 type HistoricalCapabilityPrior struct {
 	V60Mps  float64
 	AgeDays float64
+	// TrendPerDay (#998): the slow log-v60/day drift recorded with the state.
+	TrendPerDay float64
+	// AsOfDate (#998 lineage): the cutoff instant the state was computed at.
+	AsOfDate time.Time
+	// InputFingerprint (#998 lineage): fingerprint of the inputs the state
+	// consumed (e.g. the speed report InputIdentityHash).
+	InputFingerprint string
 }
 
 func (p *HistoricalCapabilityPrior) valid() bool {

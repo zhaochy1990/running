@@ -181,6 +181,14 @@ type evolvedHRTerm struct {
 	acts       []evolvedHRActivity
 	theta      evolvedHRTheta
 	largeInput bool
+	// state (#998) shares the capability state with the speed fit: each
+	// activity's relative intensity uses its own effective capability
+	// a_i = a_now - trend*age_i + dayShift[d_i]. nil keeps the stationary
+	// per-activity anchor (identical to the scalar a of #997). This is the
+	// CAPABILITY-side day channel in log-speed units; theta.day below stays
+	// the separate HR-domain day channel in bpm - the two never fold into
+	// each other.
+	state *evolvedCapabilityState
 	// digest of the admitted series, hashed once at admission.
 	inputDigest interface{}
 }
@@ -245,6 +253,13 @@ func FitEvolvedJoint(evidence []CandidateEvidence, history []Activity, metadata 
 		}
 	}
 
+	// #998: whenever the HR joint stage cannot run (no usable series, no
+	// reference), the speed side still receives its time-structured
+	// capability state through the standalone resolve - the state is a
+	// property of the speed objective, not of the HR stage.
+	if decision.HR.State == StateUnavailable || counted == 0 {
+		speedOut = evolvedSpeedStateResolve(evidence, asOf, priors, historical, speedOut)
+	}
 	if decision.HR.State == StateUnavailable {
 		return speedOut, hrOut
 	}
@@ -740,38 +755,63 @@ func evolvedHRFitKnots(priors EvolvedPriorSet, fractions []float64) []HRShapeKno
 	return out
 }
 
-// evaluate adds the HR block of the joint profile objective at capability a:
-// the deterministic first-order response filter runs per activity, Huber
-// residuals of every non-init block, plus the analytic dJ/da sensitivity (the
-// channel through which HR constrains the shared capability). HR prior terms
-// are constants in a; they are added only when withPriors reports the full
-// objective so reported objective values are the honest joint ones.
+// evaluate adds the HR block of the joint profile objective at capability
+// anchor a (per-activity effective capability when a #998 state is
+// attached): Huber residuals of every non-init block plus the analytic
+// dJ/da sensitivity (the channel through which HR constrains the shared
+// capability). HR prior terms are constants in a; they are added only when
+// withPriors reports the full objective so reported objective values are the
+// honest joint ones.
 func (t *evolvedHRTerm) evaluate(priors EvolvedPriorSet, a float64, withPriors bool) (j, grad float64) {
+	j, grad, _, _ = t.evaluateFull(priors, a, withPriors)
+	return j, grad
+}
+
+// evaluateFull additionally returns the dJ/dtrend and dJ/ddayShift
+// sensitivities of the #998 capability state (zero/nil contributions when no
+// state is attached). The filter sensitivities propagate analytically: the
+// trend enters each activity through a_i = a - trend*age_i + dayShift, so
+// its chain is the a-sensitivity recursion scaled by -age per activity, and
+// the capability-side day shift shares the a-sensitivity chain of its own
+// activity (both are activity-level constants).
+func (t *evolvedHRTerm) evaluateFull(priors EvolvedPriorSet, a float64, withPriors bool) (j, gA, gTrend float64, gDay map[string]float64) {
 	theta := &t.theta
 	knots := evolvedHRFitKnots(priors, theta.knots)
 	delta := theta.hrMax - theta.hrRest
 	expA := math.Exp(-a)
+	if t.state != nil {
+		gDay = make(map[string]float64, len(t.state.days))
+	}
 	for i := range t.acts {
 		act := &t.acts[i]
 		if act.Role != "model_series" {
 			continue
 		}
+		aEff := a
+		if t.state != nil {
+			aEff = t.state.capabilityAt(act.AgeDays, act.Day, a)
+		}
+		expEff := expA
+		if t.state != nil {
+			expEff = math.Exp(-aEff)
+		}
 		dayShift := theta.day[act.Day] + theta.drift*act.AgeDays
-		var s, dsda float64 // filter state and its sensitivity to a
+		var s, dsda, dsdT float64 // filter state, sensitivities to a_eff/trend
 		initialized := false
 		for k := range act.Blocks {
 			b := &act.Blocks[k]
-			r := b.SpeedMps * expA
+			r := b.SpeedMps * expEff
 			f, dfdr := evolvedHRShape(knots, r)
 			hss := theta.hrRest + delta*f + dayShift
 			dhss := delta * dfdr * (-r)
+			dhssT := -dhss * act.AgeDays // d hss / d trend = dhss * (-age)
 			if b.Init {
-				s, dsda, initialized = b.HRBpm, 0, true
+				s, dsda, dsdT, initialized = b.HRBpm, 0, 0, true
 				continue
 			}
 			if !initialized {
 				// Defensive: a series always starts with an init block.
-				s, dsda, initialized = b.HRBpm, 0, true
+				s, dsda, dsdT, initialized = b.HRBpm, 0, 0, true
 			}
 			// Block-mean prediction integrates the response over the block;
 			// the state transition advances over the actual elapsed time to
@@ -785,9 +825,16 @@ func (t *evolvedHRTerm) evaluate(priors EvolvedPriorSet, a float64, withPriors b
 			}
 			pred := hss + (s-hss)*m
 			dpred := dhss*(1-m) + m*dsda
+			dpredT := dhssT*(1-m) + m*dsdT
 			res := (b.HRBpm - pred) / evolvedHRSigmaBpm
 			j += b.Weight * hourHuber(res)
-			grad += -b.Weight * hourPsi(res) * dpred / evolvedHRSigmaBpm
+			gA += -b.Weight * hourPsi(res) * dpred / evolvedHRSigmaBpm
+			if t.state != nil {
+				gTrend += -b.Weight * hourPsi(res) * dpredT / evolvedHRSigmaBpm
+				// The capability-side day shift of this activity's day shares
+				// the a_eff sensitivity chain (d a_eff / d dayShift = 1).
+				gDay[act.Day] += -b.Weight * hourPsi(res) * dpred / evolvedHRSigmaBpm
+			}
 			uStep := b.DurationS / theta.tau
 			if k+1 < len(act.Blocks) {
 				uStep = (act.Blocks[k+1].tStartS - b.tStartS) / theta.tau
@@ -795,6 +842,7 @@ func (t *evolvedHRTerm) evaluate(priors EvolvedPriorSet, a float64, withPriors b
 			e := math.Exp(-uStep)
 			s = hss + (s-hss)*e
 			dsda = dhss*(1-e) + e*dsda
+			dsdT = dhssT*(1-e) + e*dsdT
 		}
 	}
 	if withPriors {
@@ -816,7 +864,7 @@ func (t *evolvedHRTerm) evaluate(priors EvolvedPriorSet, a float64, withPriors b
 			j += 0.5 * math.Pow(theta.day[d]/priors.HRDayEffectBpm.SD, 2)
 		}
 	}
-	return j, grad
+	return j, gA, gTrend, gDay
 }
 
 // linearCoefficients computes, per counted block, the exact affine
@@ -838,12 +886,16 @@ func (t *evolvedHRTerm) linearCoefficients(priors EvolvedPriorSet, theta *evolve
 		if act.Role != "model_series" {
 			continue
 		}
+		aEff := a
+		if t.state != nil {
+			aEff = t.state.capabilityAt(act.AgeDays, act.Day, a)
+		}
 		dayShift := theta.day[act.Day] + theta.drift*act.AgeDays
 		var alpha, beta, gamma float64
 		initialized := false
 		for k := range act.Blocks {
 			b := &act.Blocks[k]
-			f, _ := evolvedHRShape(knots, b.SpeedMps*math.Exp(-a))
+			f, _ := evolvedHRShape(knots, b.SpeedMps*math.Exp(-aEff))
 			uMean := b.DurationS / theta.tau
 			eMean := math.Exp(-uMean)
 			m := 1.0
@@ -1149,6 +1201,18 @@ func evolvedHRJointSolve(evidence []CandidateEvidence, asOf time.Time, priors Ev
 	if !speedless {
 		speedAnchor = math.Log(*speedOut.CenterMps)
 	}
+	// #998: attach the time-structured capability state to both domains of
+	// the joint objective (the same state instance - one capability). The
+	// initial theta fit runs at the stationary anchor with a zero state,
+	// then the joint alternation re-optimizes (a_now, trend, day, k, deltas)
+	// together with theta. The state weight policy replaces the stationary
+	// admission's per-age staleness factors (evolvedStateReweight).
+	if !speedless {
+		if stateFit, ok := evolvedAttachCapabilityState(evidence, asOf, priors); ok {
+			fit = stateFit
+			term.state = fit.state
+		}
+	}
 	theta := evolvedFitHRTheta(term, speedAnchor, priors, restPrior)
 	term.theta = theta
 	rounds := 0
@@ -1190,29 +1254,19 @@ func evolvedHRJointSolve(evidence []CandidateEvidence, asOf time.Time, priors Ev
 		}
 		if bestSet {
 			theta, term.theta = bestTheta, bestTheta
+			// The published state must pair with the published solution: a
+			// rejected round's solve has already mutated the shared state in
+			// place, so restore it from the keep-best solution snapshot.
+			if fit.state != nil && last.dayShift != nil {
+				fit.state.trend = last.trend
+				for d, v := range last.dayShift {
+					fit.state.dayShift[d] = v
+				}
+			}
 		}
 		// Joint re-stamp of the speed report through the shared finalize path.
-		out := EvolvedSpeedReport{
-			ParameterVersion:       EvolvedPriorSetVersion,
-			Method:                 evolvedSpeedMethodFit,
-			State:                  speedOut.State,
-			RangeMeaning:           contractRangeSemantics,
-			PriorsIdentityHash:     priors.IdentityHash(),
-			SolverKGridResolution:  (riegelKMax - riegelKMin) / evolvedKCoarseSteps / (evolvedKFineSteps/2 + 1),
-			Reasons:                append([]string{}, speedOut.Reasons...),
-			Limitations:            evolvedSpeedLimitations(),
-			Observations:           fit.rows,
-			InputIdentityHash:      speedOut.InputIdentityHash,
-			IndependentRoots:       speedOut.IndependentRoots,
-			IndependentDays:        speedOut.IndependentDays,
-			MinDurationS:           speedOut.MinDurationS,
-			MaxDurationS:           speedOut.MaxDurationS,
-			MaximalAnchors:         speedOut.MaximalAnchors,
-			HistoricalPriorMeanLog: speedOut.HistoricalPriorMeanLog,
-			HistoricalPriorSDLog:   speedOut.HistoricalPriorSDLog,
-			HistoricalPriorAgeDays: speedOut.HistoricalPriorAgeDays,
-			JointHRRefit:           true,
-		}
+		out := evolvedJointSpeedOutShell(speedOut, fit, priors)
+		out.JointHRRefit = true
 		out.MapK = last.k
 		out.SolverRounds = last.probes
 		out.SolverConverged = last.converged
@@ -1223,7 +1277,7 @@ func evolvedHRJointSolve(evidence []CandidateEvidence, asOf time.Time, priors Ev
 		if last.gridCoarsened {
 			out.Limitations = append(out.Limitations, evolvedKGridCoarsenedLimitation)
 		}
-		if !evolvedFinalizeSpeedReport(&out, fit, priors, histMean, histSD, last) {
+		if !evolvedFinalizeSpeedReport(&out, fit, priors, histMean, histSD, last, historical) {
 			return speedOut, theta, rounds, 0, false
 		}
 		speedOut = out

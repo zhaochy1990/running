@@ -116,10 +116,15 @@ type EvolvedSpeedReport struct {
 	// JointHRRefit (#997): the reported center/range/curvatures come from the
 	// joint speed+HR objective (the HR soft feedback moved the capability),
 	// not the speed-only MAP.
-	JointHRRefit bool                      `json:"joint_hr_refit,omitempty"`
-	Observations []EvolvedSpeedObservation `json:"observations"`
-	Reasons      []string                  `json:"reasons"`
-	Limitations  []string                  `json:"limitations"`
+	JointHRRefit bool `json:"joint_hr_refit,omitempty"`
+	// CapabilityState (#998): the time-structured capability block (trend +
+	// capability-side day effects + the fixed-order prior prediction). nil
+	// when the window cannot structure time (single-day, speedless or solver
+	// fallback) - the stationary scalar capability is then the honest output.
+	CapabilityState *EvolvedCapabilityStateStamp `json:"capability_state,omitempty"`
+	Observations    []EvolvedSpeedObservation    `json:"observations"`
+	Reasons         []string                     `json:"reasons"`
+	Limitations     []string                     `json:"limitations"`
 }
 
 // FitEvolvedSpeed is the pure offline speed-domain seam of the evolved v4.
@@ -236,17 +241,31 @@ func FitEvolvedSpeed(evidence []CandidateEvidence, asOf time.Time, priors Evolve
 	if sol.gridCoarsened {
 		out.Limitations = append(out.Limitations, evolvedKGridCoarsenedLimitation)
 	}
-	evolvedFinalizeSpeedReport(&out, fit, priors, histMean, histSD, sol)
+	evolvedFinalizeSpeedReport(&out, fit, priors, histMean, histSD, sol, historical)
 	return out
 }
 
 // evolvedFinalizeSpeedReport stamps the solved report: per-observation
 // margins/residuals, the RiegelK publication rule, the one-sided sensitivity
-// decomposition with the class-prior ceiling, the k-envelope range and the
-// prior-share annotation. Shared by the speed-only MAP and the #997 joint
-// re-solve so both paths publish identically structured diagnostics.
-func evolvedFinalizeSpeedReport(out *EvolvedSpeedReport, fit evolvedFit, priors EvolvedPriorSet, histMean, histSD *float64, sol evolvedSolution) bool {
+// decomposition with the class-prior ceiling, the k-envelope range, the
+// prior-share annotation and the #998 capability state block. Shared by the
+// speed-only MAP, the #997 joint re-solve and the #998 state re-solve so all
+// paths publish identically structured diagnostics. The state is saved and
+// restored around the sensitivity/envelope probes: those marginalize a probe
+// copy of the state and must not disturb the published solution.
+func evolvedFinalizeSpeedReport(out *EvolvedSpeedReport, fit evolvedFit, priors EvolvedPriorSet, histMean, histSD *float64, sol evolvedSolution, historical *HistoricalCapabilityPrior) bool {
 	evolvedStampSolved(fit, sol)
+	var savedTrend float64
+	var savedDay map[string]float64
+	if fit.state != nil {
+		savedTrend, savedDay = fit.state.snapshot()
+		defer func() {
+			fit.state.trend = savedTrend
+			for d, v := range savedDay {
+				fit.state.dayShift[d] = v
+			}
+		}()
+	}
 	// RiegelK is published only when duration diversity actually identifies
 	// the exponent (same criteria as the contract's model_estimated rule).
 	if out.IndependentRoots >= ContractSpeedModelMinRoots && out.IndependentDays >= ContractSpeedModelMinDays &&
@@ -310,6 +329,7 @@ func evolvedFinalizeSpeedReport(out *EvolvedSpeedReport, fit evolvedFit, priors 
 	if !sol.converged {
 		out.Limitations = append(out.Limitations, "solver_iteration_cap_reached")
 	}
+	evolvedStampCapabilityState(out, fit, sol, historical, histMean, histSD)
 	return true
 }
 
@@ -327,16 +347,25 @@ func evolvedSpeedLimitations() []string {
 type evolvedObsPoint struct {
 	y, x, sigma, w float64
 	root, day      string
+	age            float64 // days before the as-of instant (#998 state)
 	duration       float64
-	group          int  // index into evolvedFit.groups; -1 for constraints
-	constraint     bool // t > 7200: monotone soft constraint only, no margin
-	effort         EffortSupport
-	quality        Confidence
-	index          int
+	// wAge/ageSigma keep the stationary admission's per-age factors so the
+	// #998 state solve can divide them out exactly (see
+	// evolvedStateReweight): they modeled capability drift through
+	// measurement staleness, which the explicit trend/day state now carries.
+	wAge     float64
+	ageSigma float64
+	group    int // index into evolvedFit.groups; -1 for constraints
+	// constraint: t > 7200 monotone soft constraint only, no margin.
+	constraint bool
+	effort     EffortSupport
+	quality    Confidence
+	index      int
 }
 
 type evolvedGroup struct {
 	root, day string
+	age       float64 // the group's day age (groups are single-root, single-day)
 	effort    EffortSupport
 	prior     PriorNormal
 	delta     float64
@@ -350,6 +379,9 @@ type evolvedFit struct {
 	// hr carries the #997 joint HR term into the profile objective; nil keeps
 	// the pure-speed T2 behavior bit-for-bit.
 	hr *evolvedHRTerm
+	// state carries the #998 time-structured capability (a_now, trend, day
+	// shifts); nil keeps the stationary scalar-a behavior bit-for-bit.
+	state *evolvedCapabilityState
 }
 
 type evolvedInputDigest struct {
@@ -379,6 +411,17 @@ func evolvedInputDigests(obs []evolvedObsPoint) []evolvedInputDigest {
 // one contribution budget and never accumulate as independent support.
 // Repeated root+duration windows are dropped rather than double counted.
 func evolvedAdmitObservations(evidence []CandidateEvidence, asOf time.Time, priors EvolvedPriorSet) evolvedFit {
+	return evolvedAdmitObservationsMode(evidence, asOf, priors, false)
+}
+
+// evolvedAdmitObservationsMode with allValid=true additionally admits valid
+// continuous windows that the v1 duration-pool selection (top-3 per duration
+// by speed x freshness) left unselected: the #998 capability state needs the
+// full time series of comparable evidence, and that pool cap is exactly the
+// PB-hunting plateau this ticket removes. The fitter's own dedup
+// (root+duration) and root/day contribution budgets keep support honest, so
+// the wider pool cannot manufacture certainty.
+func evolvedAdmitObservationsMode(evidence []CandidateEvidence, asOf time.Time, priors EvolvedPriorSet, allValid bool) evolvedFit {
 	ordered := append([]CandidateEvidence(nil), evidence...)
 	sort.Slice(ordered, func(i, j int) bool {
 		a, b := ordered[i], ordered[j]
@@ -417,7 +460,7 @@ func evolvedAdmitObservations(evidence []CandidateEvidence, asOf time.Time, prio
 		switch {
 		case conflicts[root]:
 			row.Role = "root_activity_day_conflict"
-		case !e.Selected:
+		case !e.Selected && !allValid:
 		case !e.Continuous:
 			row.Role = "noncontinuous_observation_only"
 		case root == "" || e.ActivityDate.IsZero() || age < 0 || age > ContractEvidenceWindowDays:
@@ -440,7 +483,8 @@ func evolvedAdmitObservations(evidence []CandidateEvidence, asOf time.Time, prio
 			// Measurement sigma recipe carried over from hour-capability-v1 so
 			// both implementations share one uncertainty vocabulary.
 			sigma := map[Confidence]float64{ConfidenceHigh: .02, ConfidenceMedium: .05, ConfidenceLow: .10}[e.MeasurementQuality]
-			sigma = math.Hypot(sigma, math.Min(.15, age*.001))
+			ageSigma := math.Min(.15, age*.001)
+			sigma = math.Hypot(sigma, ageSigma)
 			if e.DurationS > 3600 {
 				sigma = math.Hypot(sigma, .06*math.Log(math.Min(e.DurationS, 7200)/3600)/math.Log(2))
 			}
@@ -458,7 +502,10 @@ func evolvedAdmitObservations(evidence []CandidateEvidence, asOf time.Time, prio
 				w:          math.Exp2(-age / 90),
 				root:       root,
 				day:        day,
+				age:        age,
 				duration:   e.DurationS,
+				wAge:       math.Exp2(-age / 90),
+				ageSigma:   ageSigma,
 				group:      -1,
 				constraint: longDomain,
 				effort:     e.EffortSupport,
@@ -475,7 +522,7 @@ func evolvedAdmitObservations(evidence []CandidateEvidence, asOf time.Time, prio
 					prior := evolvedEffortPrior(priors, e.EffortSupport)
 					g = len(fit.groups)
 					groupIdx[key] = g
-					fit.groups = append(fit.groups, evolvedGroup{root: root, day: day, effort: e.EffortSupport, prior: prior, delta: prior.Mean})
+					fit.groups = append(fit.groups, evolvedGroup{root: root, day: day, age: age, effort: e.EffortSupport, prior: prior, delta: prior.Mean})
 				}
 				p.group = g
 				fit.groups[g].obsIdx = append(fit.groups[g].obsIdx, len(fit.obs))
@@ -528,7 +575,11 @@ func evolvedHistoricalPriorTerms(priors EvolvedPriorSet, historical *HistoricalC
 	if historical == nil || !historical.valid() {
 		return nil, nil
 	}
-	m, s := math.Log(historical.V60Mps), priors.HistoricalCapabilitySD(historical.AgeDays)
+	// #998 fixed-order predict step: the recorded slow drift (clamped to the
+	// state trend domain) is extrapolated over the age before the new
+	// evidence updates the state. TrendPerDay=0 keeps the #996 semantics.
+	trend := math.Max(-evolvedCapabilityTrendClamp, math.Min(evolvedCapabilityTrendClamp, historical.TrendPerDay))
+	m, s := math.Log(historical.V60Mps)+trend*historical.AgeDays, priors.HistoricalCapabilitySD(historical.AgeDays)
 	return &m, &s
 }
 
@@ -551,19 +602,26 @@ type evolvedSolution struct {
 	// the large-input guard so the report can disclose it.
 	gridResolution float64
 	gridCoarsened  bool
+	// trend/dayShift carry the #998 capability state snapshot at the
+	// solution (nil dayShift = stationary scalar a).
+	trend    float64
+	dayShift map[string]float64
 }
 
 // evolvedGroupDelta minimizes the group's budgeted Huber likelihood plus its
 // truncated quadratic prior over the prior support; convex, so bisection on
 // the monotone subgradient is exact. withPrior=false yields the data-only
-// inner solve used by the sensitivity decomposition.
+// inner solve used by the sensitivity decomposition. With a #998 capability
+// state attached the anchor is the group's per-day effective capability
+// (groups are single-root single-day, so one effective anchor per group).
 func evolvedGroupDelta(fit *evolvedFit, g int, a, k float64, withPrior bool) float64 {
 	grp := &fit.groups[g]
+	aEff := fit.state.capabilityAt(grp.age, grp.day, a)
 	deriv := func(d float64) float64 {
 		s := 0.0
 		for _, i := range grp.obsIdx {
 			p := &fit.obs[i]
-			r := (p.y - a + k*p.x + d) / p.sigma
+			r := (p.y - aEff + k*p.x + d) / p.sigma
 			s += p.w * hourPsi(r) / p.sigma
 		}
 		if withPrior {
@@ -624,8 +682,9 @@ func evolvedProfile(fit *evolvedFit, priors EvolvedPriorSet, histMean, histSD *f
 	}
 	for i := range fit.obs {
 		p := &fit.obs[i]
+		aEff := fit.state.capabilityAt(p.age, p.day, a)
 		if p.constraint {
-			v := (p.y - p.sigma - (a - k*p.x)) / p.sigma
+			v := (p.y - p.sigma - (aEff - k*p.x)) / p.sigma
 			if v > 0 {
 				j += p.w * hourHuber(v)
 				if withPriors {
@@ -635,7 +694,7 @@ func evolvedProfile(fit *evolvedFit, priors EvolvedPriorSet, histMean, histSD *f
 			continue
 		}
 		delta := fit.groups[p.group].delta
-		r := (p.y - a + k*p.x + delta) / p.sigma
+		r := (p.y - aEff + k*p.x + delta) / p.sigma
 		j += p.w * hourHuber(r)
 		if withPriors {
 			grad -= p.w * hourPsi(r) / p.sigma
@@ -652,6 +711,18 @@ func evolvedProfile(fit *evolvedFit, priors EvolvedPriorSet, histMean, histSD *f
 			grad += gHR
 		}
 	}
+	// #998 state priors: structural regularization of the time
+	// parameterization (trend + capability-side day shifts), on in BOTH
+	// objective modes - without them the (trend, dayShift) ridge is
+	// unidentified and the data-only voice degenerates (the same structural
+	// role delta >= 0 plays for the effort margins). Sorted days keep the
+	// float summation deterministic.
+	if fit.state != nil {
+		j += 0.5 * math.Pow(fit.state.trend/evolvedCapabilityTrendSDPerDay, 2)
+		for _, d := range fit.state.days {
+			j += 0.5 * math.Pow(fit.state.dayShift[d]/evolvedCapabilityDaySDLog, 2)
+		}
+	}
 	if withPriors {
 		grad += (a - priors.LogV60.Mean) / (priors.LogV60.SD * priors.LogV60.SD)
 		if histMean != nil {
@@ -662,36 +733,56 @@ func evolvedProfile(fit *evolvedFit, priors EvolvedPriorSet, histMean, histSD *f
 }
 
 // evolvedSolveAtK finds the exact minimizer over a of the convex profile by
-// bisection on its monotone subgradient.
+// bisection on its monotone subgradient. With a #998 capability state
+// attached it alternates the exact (a_now | trend | day) blocks after the
+// anchor bisection - every block is an exact conditional minimization of the
+// same objective, so the alternation decreases J monotonically and is
+// deterministic (sorted days, fixed round cap).
 func evolvedSolveAtK(fit *evolvedFit, priors EvolvedPriorSet, histMean, histSD *float64, k float64) evolvedSolution {
 	probes := 0
-	grad := func(a float64) float64 {
-		probes++
-		_, g := evolvedProfile(fit, priors, histMean, histSD, k, a, true)
-		return g
+	bisectA := func() float64 {
+		grad := func(a float64) float64 {
+			probes++
+			_, g := evolvedProfile(fit, priors, histMean, histSD, k, a, true)
+			return g
+		}
+		lo, hi := priors.LogV60.Low, priors.LogV60.High
+		if grad(lo) >= 0 {
+			hi = lo
+		} else if grad(hi) <= 0 {
+			lo = hi
+		} else {
+			for n := 0; n < evolvedBisectionIters; n++ {
+				mid := (lo + hi) / 2
+				if grad(mid) < 0 {
+					lo = mid
+				} else {
+					hi = mid
+				}
+			}
+		}
+		return (lo + hi) / 2
 	}
-	lo, hi := priors.LogV60.Low, priors.LogV60.High
-	if grad(lo) >= 0 {
-		hi = lo
-	} else if grad(hi) <= 0 {
-		lo = hi
-	} else {
-		for n := 0; n < evolvedBisectionIters; n++ {
-			mid := (lo + hi) / 2
-			if grad(mid) < 0 {
-				lo = mid
-			} else {
-				hi = mid
+	aStar := bisectA()
+	if fit.state != nil {
+		for round := 0; round < evolvedStateRounds; round++ {
+			prevTrend, prevDay := fit.state.trend, fit.state.dayShift
+			prevA := aStar
+			evolvedStateBlocks(fit, priors, k, aStar, true, &probes)
+			aStar = bisectA()
+			if evolvedStateConverged(fit.state, prevTrend, prevDay, math.Abs(aStar-prevA)) {
+				break
 			}
 		}
 	}
-	sol := evolvedSolution{a: (lo + hi) / 2, k: k, deltas: make([]float64, len(fit.groups)), probes: probes}
+	sol := evolvedSolution{a: aStar, k: k, deltas: make([]float64, len(fit.groups)), probes: probes}
 	sol.objective, _ = evolvedProfile(fit, priors, histMean, histSD, k, sol.a, true)
 	sol.probes++
 	sol.converged = evolvedFinite(sol.a) && evolvedFinite(sol.objective)
 	for g := range fit.groups {
 		sol.deltas[g] = fit.groups[g].delta
 	}
+	sol.trend, sol.dayShift = fit.state.snapshot()
 	return sol
 }
 
@@ -739,19 +830,28 @@ func evolvedSolveMAP(fit evolvedFit, priors EvolvedPriorSet, histMean, histSD *f
 
 // evolvedCurvatures returns one-sided second differences of the full profile
 // and of the data-only profile at the MAP point (margins re-optimized at each
-// probe). The optimum often sits on the delta>=0 kink (an all-out window
-// pins the capability from below), so a symmetric second difference would
-// average the two sides and understate sensitivity. The reported basis uses
-// the SMALLER full-profile side (conservative, wider range) and the LARGER
-// data-only side (the side where the data actually speaks).
+// probe; with a #998 capability state attached each probe additionally
+// re-minimizes the state blocks trend/day over a bounded warm-started
+// alternation, so the curvature marginalizes the slow state direction
+// instead of conditioning on it). The optimum often sits on the delta>=0
+// kink (an all-out window pins the capability from below), so a symmetric
+// second difference would average the two sides and understate sensitivity.
+// The reported basis uses the SMALLER full-profile side (conservative, wider
+// range) and the LARGER data-only side (the side where the data actually
+// speaks).
 func evolvedCurvatures(fit evolvedFit, priors EvolvedPriorSet, histMean, histSD *float64, sol evolvedSolution) (total, dataOnly float64, ok bool) {
-	secondSided := func(withPriors bool) (lo, hi float64) {
-		value := func(a float64) float64 {
-			j, _ := evolvedProfile(&fit, priors, histMean, histSD, sol.k, a, withPriors)
-			return j
+	probes := 0
+	value := func(a float64, withPriors bool) float64 {
+		j, _ := evolvedProfile(&fit, priors, histMean, histSD, sol.k, a, withPriors)
+		if fit.state != nil {
+			evolvedStateBlocks(&fit, priors, sol.k, a, withPriors, &probes)
+			j, _ = evolvedProfile(&fit, priors, histMean, histSD, sol.k, a, withPriors)
 		}
+		return j
+	}
+	secondSided := func(withPriors bool) (lo, hi float64) {
 		h := evolvedProfileStepLogA
-		mid, up, down := value(sol.a), value(sol.a+h), value(sol.a-h)
+		mid, up, down := value(sol.a, withPriors), value(sol.a+h, withPriors), value(sol.a-h, withPriors)
 		// One-sided second differences: f'' ~ 2*(J(a+h)-J(a))/h^2 and
 		// 2*(J(a-h)-J(a))/h^2 for the convex profile.
 		lo = 2 * (down - mid) / (h * h)
@@ -786,18 +886,23 @@ func evolvedKEnvelope(fit evolvedFit, priors EvolvedPriorSet, histMean, histSD *
 
 // evolvedStampSolved publishes per-observation fitted margins and standardized
 // residuals from the MAP solution (constraint rows carry their hinge
-// violation).
+// violation; residuals use the per-observation effective capability when a
+// #998 state is present).
 func evolvedStampSolved(fit evolvedFit, sol evolvedSolution) {
 	for i := range fit.obs {
 		p := &fit.obs[i]
+		aEff := sol.a
+		if sol.dayShift != nil {
+			aEff = sol.a - sol.trend*p.age + sol.dayShift[p.day]
+		}
 		var r float64
 		if p.constraint {
-			r = math.Max(0, (p.y-p.sigma-(sol.a-sol.k*p.x))/p.sigma)
+			r = math.Max(0, (p.y-p.sigma-(aEff-sol.k*p.x))/p.sigma)
 		} else {
 			delta := sol.deltas[p.group]
 			d := delta
 			fit.rows[p.index].Delta = &d
-			r = (p.y - sol.a + sol.k*p.x + delta) / p.sigma
+			r = (p.y - aEff + sol.k*p.x + delta) / p.sigma
 		}
 		fit.rows[p.index].Residual = &r
 	}
