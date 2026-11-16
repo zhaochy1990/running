@@ -4,6 +4,7 @@ packages:
   - src/coach_agent_worker
   - src/coach_contract
   - src/stride-common
+  - src/training_profile
 minimumReleaseAgeExclude:
   - '@langfuse/core@5.11.0'
   - '@langfuse/langchain@5.11.0'

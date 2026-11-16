@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Stride monorepo root — pnpm workspace for the TypeScript/Node packages.",
   "scripts": {
+    "prototype:training-profile": "pnpm --filter @stride/training-profile run poc",
     "build": "pnpm -r build",
     "format": "biome format --write",
     "format:check": "biome format",
