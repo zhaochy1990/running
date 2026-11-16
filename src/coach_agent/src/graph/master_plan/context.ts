@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { CalibrationMetadataShape } from "../../data/calibrationMetadata.js";
 import type { PhasingActivityInput } from "./phasing/evidence.js";
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -79,6 +80,7 @@ export const ContextSnapshotSchema = z
     ),
     running_calibration: z
       .object({
+        ...CalibrationMetadataShape,
         as_of_date: day,
         threshold_hr: nullableNumber,
         threshold_speed_mps: nullableNumber,

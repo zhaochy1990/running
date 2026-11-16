@@ -39,7 +39,22 @@ test("context provider exposes PB activity label ID without source", async () =>
       ];
     },
     async getLatestRunningCalibration() {
-      return null;
+      return {
+        asOfDate: "2026-08-08",
+        thresholdHr: null,
+        thresholdSpeedMps: null,
+        rhrBaseline: null,
+        thresholdHrConfidence: "none",
+        thresholdSpeedConfidence: "none",
+        heartRateZones: [],
+        paceZones: [],
+        calibrationId: 42,
+        algorithmVersion: 4,
+        computedAt: "2026-08-08T12:00:00.000000Z",
+        selection: { mode: "active" as const, policy_revision: 2, requested_version: 4, effective_version: 4, state: "selected" as const },
+        source: { schema_version: 1, state: "available", strategy: "candidate", data_cutoff_day: "2026-08-08", fingerprint: "go-value" },
+        fingerprint: "go-value",
+      };
     },
     async getRaceHistory() {
       return [];
@@ -54,6 +69,25 @@ test("context provider exposes PB activity label ID without source", async () =>
 
   const snapshot = await provider.loadSnapshot("athlete", "2026-08-11T00:00:00Z");
 
+  assert.equal(snapshot.running_calibration?.calibration_id, 42);
+  assert.equal(snapshot.running_calibration?.algorithm_version, 4);
+  assert.equal(snapshot.running_calibration?.computed_at, "2026-08-08T12:00:00.000000Z");
+  assert.deepEqual(snapshot.running_calibration?.selection, {
+    mode: "active",
+    policy_revision: 2,
+    requested_version: 4,
+    effective_version: 4,
+    state: "selected",
+  });
+  assert.deepEqual(snapshot.running_calibration?.source, {
+    schema_version: 1,
+    state: "available",
+    strategy: "candidate",
+    data_cutoff_day: "2026-08-08",
+    fingerprint: "go-value",
+  });
+  assert.equal(snapshot.running_calibration?.fingerprint, "go-value");
+  assert.equal(snapshot.running_calibration?.threshold_speed_mps, null);
   assert.deepEqual(snapshot.personal_bests, [
     {
       distance: "5K",

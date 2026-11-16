@@ -1,0 +1,162 @@
+{
+  "base": "8631a8b2",
+  "synthetic_only": true,
+  "current_and_rejected_reasons_separate": true,
+  "new_field": "rejected_reasons",
+  "current_hr": 170,
+  "current_hr_support": "low",
+  "selected_evidence_day": "2026-11-14",
+  "web_browser_states": 15,
+  "mp_http_projector_states": 15,
+  "actual_mysql2_coach_tool_states": 4,
+  "swift_tests": {
+    "passed": 11,
+    "skipped": 0
+  },
+  "web_tests": 37,
+  "coach_tests": 27,
+  "real_mysql_race": "pass",
+  "producer_api_race": "pass",
+  "client_cases": [
+    {
+      "name": "two-sided",
+      "sha256": "424f7fa14da2bb2f8f2a53ee4d5a62caf13e5cf0f0ba258872d1617facd25d72",
+      "hr": "166",
+      "hr_support": "模型支持：高",
+      "selected_evidence_day": "2026-10-01",
+      "mp_http_projector": "pass",
+      "mysql_coach_tool": "not_retested"
+    },
+    {
+      "name": "constraints-only",
+      "sha256": "1375c31415c04d34f38f97c6e8af0ee267804757e222458459a71f4b57e6a782",
+      "hr": "166",
+      "hr_support": "模型支持：高",
+      "selected_evidence_day": "2026-10-01",
+      "mp_http_projector": "pass",
+      "mysql_coach_tool": "not_retested"
+    },
+    {
+      "name": "upper-only",
+      "sha256": "9ce0cdb7f31de45afa34dcf50afc00b43f08bf9daa321fef6781499368955f80",
+      "hr": "166",
+      "hr_support": "模型支持：高",
+      "selected_evidence_day": "2026-10-01",
+      "mp_http_projector": "pass",
+      "mysql_coach_tool": "not_retested"
+    },
+    {
+      "name": "low-stale",
+      "sha256": "00a5c1e5ee93d52f4d9ce337909fb38191e4ecf5a6626a400ee073f1e07ef25c",
+      "hr": "—",
+      "hr_support": "模型支持：不足",
+      "selected_evidence_day": "2026-10-01",
+      "mp_http_projector": "pass",
+      "mysql_coach_tool": "not_retested"
+    },
+    {
+      "name": "legacy",
+      "sha256": "bdc380033f79d1ae5cad147305b4d4aac6114634da8082c0cbb4766a8eb9780d",
+      "hr": "166",
+      "hr_support": "旧版估计 · 来源信息不可用",
+      "selected_evidence_day": null,
+      "mp_http_projector": "pass",
+      "mysql_coach_tool": "not_retested"
+    },
+    {
+      "name": "missing",
+      "sha256": "ac1f8944be4bd54f3e78fcc7e9c29f20775f69b231d7087ac2dc182cbe5792be",
+      "hr": "—",
+      "hr_support": "来源信息不可用 · 保守参考",
+      "selected_evidence_day": null,
+      "mp_http_projector": "pass",
+      "mysql_coach_tool": "not_retested"
+    },
+    {
+      "name": "unknown",
+      "sha256": "c1101f856a5cc96ca6e1df9e9d1b5d02077fc426d0f3451fcb05f51f20ff1cb6",
+      "hr": "166",
+      "hr_support": "模型支持：高",
+      "selected_evidence_day": "2026-10-01",
+      "mp_http_projector": "pass",
+      "mysql_coach_tool": "not_retested"
+    },
+    {
+      "name": "source-unavailable",
+      "sha256": "b406c7da23204f8e0be1c235a7fe4fcb5b202ffc1dd0f16aa3cb2ba531887abf",
+      "hr": "166",
+      "hr_support": "来源信息不可用 · 保守参考",
+      "selected_evidence_day": null,
+      "mp_http_projector": "pass",
+      "mysql_coach_tool": "not_retested"
+    },
+    {
+      "name": "producer-field-half",
+      "sha256": "5923d57e5dc4b668a1b61d8dc94211d558f3161a75c3aefa6c72aebbea564cc1",
+      "hr": "167",
+      "hr_support": "模型支持：低",
+      "selected_evidence_day": "2026-10-01",
+      "mp_http_projector": "pass",
+      "mysql_coach_tool": "not_retested"
+    },
+    {
+      "name": "producer-lab-half",
+      "sha256": "e127b08e67c89fdd9afff57c15dfb9a1eb5adcac82736e249523e98164179345",
+      "hr": "169",
+      "hr_support": "模型支持：低",
+      "selected_evidence_day": "2026-10-01",
+      "mp_http_projector": "pass",
+      "mysql_coach_tool": "not_retested"
+    },
+    {
+      "name": "future-source-schema",
+      "sha256": "a2c843b2a4b9e029d034aca543a5a59e38aee3dec4fc73c9dc40d73654d20dd8",
+      "hr": "166",
+      "hr_support": "旧版估计 · 来源信息不可用",
+      "selected_evidence_day": null,
+      "mp_http_projector": "pass",
+      "mysql_coach_tool": "not_retested"
+    },
+    {
+      "name": "producer-stale-hr",
+      "sha256": "70f0fc617c69df7f1b7dad58da22885055cd801b7b00db4a6fbf280d55ab9e11",
+      "hr": "—",
+      "hr_support": "模型支持：不足",
+      "selected_evidence_day": null,
+      "mp_http_projector": "pass",
+      "mysql_coach_tool": "pass"
+    },
+    {
+      "name": "producer-stale-hr-mixed",
+      "sha256": "219e74beb63331de715a49b84155681527660abe940f79c74d48dfede46cdda5",
+      "hr": "—",
+      "hr_support": "模型支持：不足",
+      "selected_evidence_day": null,
+      "mp_http_projector": "pass",
+      "mysql_coach_tool": "pass"
+    },
+    {
+      "name": "producer-current-hr-with-stale",
+      "sha256": "31c2b70701e35322ada61735899f8103b3d71aa6345c94e8b8d780a5b01bd66d",
+      "hr": "170",
+      "hr_support": "模型支持：低",
+      "selected_evidence_day": "2026-11-14",
+      "mp_http_projector": "pass",
+      "mysql_coach_tool": "pass"
+    },
+    {
+      "name": "producer-current-hr-with-quality",
+      "sha256": "0102b0ef28da3bcd034792e0b398c1f236ef749488c8189b58cc23407d34ad06",
+      "hr": "170",
+      "hr_support": "模型支持：低",
+      "selected_evidence_day": "2026-11-14",
+      "mp_http_projector": "pass",
+      "mysql_coach_tool": "pass"
+    }
+  ],
+  "production_access": false,
+  "new_252_run": false,
+  "new_final_score": false,
+  "accuracy": "insufficient",
+  "release_ready": false
+}

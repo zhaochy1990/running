@@ -1,0 +1,140 @@
+{
+  "input_gzip_sha256": "e94025d30c3da7afdc83ac1a6880a0578159d4a369da0dada11a72a226e4ab78",
+  "activities": 252,
+  "samples": 644425,
+  "health": 300,
+  "historical_days": 129,
+  "derived_rows": [
+    252,
+    366,
+    15,
+    80,
+    3024
+  ],
+  "center_coverage_by_day": {
+    "candidate_hr": 0,
+    "candidate_speed": 0,
+    "v3_hr": 128,
+    "v3_speed": 129
+  },
+  "load_impact": {
+    "above_20pct_engineering_inventory": 0,
+    "absolute_relative_change_median": null,
+    "absolute_relative_change_p90": null,
+    "changed_dose": 0,
+    "missing_dose": 252,
+    "paired_loads": 0
+  },
+  "preview_activities": 252,
+  "preview_unavailable_days": 0,
+  "rollback_lineage_checked": true,
+  "rabbit_dispatched": {
+    "Started": 7,
+    "Completed": 7,
+    "Failed": 0
+  },
+  "release_ready": false,
+  "stack_source_commit": "266c5437965ce8f33e26c468b14c0984feb5f46a",
+  "base_commit": "97f29a814b18f97d90581aba69c48949c35de7ee",
+  "asof_shanghai_day": "2026-11-15",
+  "source_users": 1,
+  "derived_table_order": [
+    "activity_training_load",
+    "daily_training_load",
+    "ability_snapshot",
+    "activity_ability",
+    "activity_zones"
+  ],
+  "candidate_ability_preview": "not_requested",
+  "candidate_active_derived_persistence": "unsupported_guarded",
+  "scope": "captured sync persistence + real FileStore/MySQL/Rabbit handlers/Gin RS256/TS Coach tool/three client projectors; not deployment or candidate activation",
+  "phases": [
+    {
+      "phase": "active3",
+      "algorithm_version": 3,
+      "response_sha256": "6851f029122092e6c8b0c7445de55c942de29b7fa7d9434f581c2f8ebcb4aa90",
+      "web": {
+        "pace": "4:11",
+        "hr": "167",
+        "range": null
+      },
+      "mp": {
+        "pace": "4:11",
+        "hr": "167",
+        "range": null
+      },
+      "verified": [
+        "mysql_adapter",
+        "coach_tool",
+        "signed_http_hash",
+        "web_projector",
+        "mp_projector",
+        "historical_missing",
+        "tenant_denied",
+        "auth_required"
+      ],
+      "readonly": true
+    },
+    {
+      "phase": "active4",
+      "algorithm_version": 4,
+      "response_sha256": "15abb812ea87dcc8501d742c1a5d7878f340a08ff6c16bc7783b490a62f7a6a0",
+      "web": {
+        "pace": "—",
+        "hr": "—",
+        "range": null
+      },
+      "mp": {
+        "pace": "—",
+        "hr": "—",
+        "range": null
+      },
+      "verified": [
+        "mysql_adapter",
+        "coach_tool",
+        "signed_http_hash",
+        "web_projector",
+        "mp_projector",
+        "nil_centers",
+        "historical_missing",
+        "tenant_denied",
+        "auth_required"
+      ],
+      "readonly": true
+    },
+    {
+      "phase": "rollback3",
+      "algorithm_version": 3,
+      "response_sha256": "3b077dd67c583545fd3995e4c05f960a347dcecc21c9c08627317e468cf383ad",
+      "web": {
+        "pace": "4:11",
+        "hr": "167",
+        "range": null
+      },
+      "mp": {
+        "pace": "4:11",
+        "hr": "167",
+        "range": null
+      },
+      "verified": [
+        "mysql_adapter",
+        "coach_tool",
+        "signed_http_hash",
+        "web_projector",
+        "mp_projector",
+        "historical_missing",
+        "tenant_denied",
+        "auth_required"
+      ],
+      "readonly": true
+    }
+  ],
+  "private_log_sha256": {
+    "t8-stack-verified-go.log": "4f2744c3f8a9a9d4a9ffd10c1086572d15edc23f747601f48a7ccbc7104bbf00",
+    "t8-stack-verified-ordinary.log": "7e2e78eaa04cac127eb652dddcd8f41e102c1a613c2ccd807a29ae3c52760b1f",
+    "t8-stack-verified-vet.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "t8-stack-verified-swift-active3.log": "26ec3b598cbb410684554f309079faaf0453dc2f1ead702e46ccda27fe55cee0",
+    "t8-stack-verified-swift-active4.log": "34babea546e76bbbefd6ed4408f56da24cd2eb943e0923fcb9bca831fe257544",
+    "t8-stack-verified-swift-rollback3.log": "c6449f434fcab94f95e2dbc5f81ce7c789413f4d2d5f97a0741538e450fd4a0d"
+  }
+}

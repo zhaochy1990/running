@@ -148,7 +148,7 @@ parity baseline v0 (devops#747)
 
 ### 4.3 pages/training-status/training-status（训练状态）
 - 入口：profile「训练状态」
-- UI（自上而下）：顶栏 → 四指标卡（静息心率+基线 / 心率变异性+正常区间 / 阈值配速+置信度 / 阈值心率+置信度，均带最近日期·手表读数）→ 竞技状态 readiness 条（readiness_gate 色带 + 原因列表）→ 负荷统计 6 格（训练负荷/急性负荷/慢性负荷/竞技状态 form±/负荷比/状态标签）→ 趋势窗口切换（14d/30d/60d/90d segmented）→ RHR 趋势折线（带基线）→ HRV 趋势折线（带正常区间带）→ 每日训练剂量柱图 → 慢性/急性负荷双折线 → Form 竞技状态柱图（五区逐柱配色 + 图例：比赛就绪/维持/提升/过度负荷/减量过多）→ 周剂量折线 → 16 周训练热力图（月分组周×日格子五档色；点格展开当日详情：日期周几+剂量+当天活动摘要行；休息日/无记录/未确认三态）→ 脚注（当前 CTL ±阈值注记 / Calibration 日期·STRIDE 自研算法 / load latest）
+- UI（自上而下）：顶栏 → 四指标卡（静息心率+基线 / 心率变异性+正常区间 / 阈值配速+支持范围/能力支持 / 阈值心率+支持范围/能力支持（证据日期与触摸说明，#990），均带最近日期·手表读数）→ 竞技状态 readiness 条（readiness_gate 色带 + 原因列表）→ 负荷统计 6 格（训练负荷/急性负荷/慢性负荷/竞技状态 form±/负荷比/状态标签）→ 趋势窗口切换（14d/30d/60d/90d segmented）→ RHR 趋势折线（带基线）→ HRV 趋势折线（带正常区间带）→ 每日训练剂量柱图 → 慢性/急性负荷双折线 → Form 竞技状态柱图（五区逐柱配色 + 图例：比赛就绪/维持/提升/过度负荷/减量过多）→ 周剂量折线 → 16 周训练热力图（月分组周×日格子五档色；点格展开当日详情：日期周几+剂量+当天活动摘要行；休息日/无记录/未确认三态）→ 脚注（当前 CTL ±阈值注记 / 数据截止日·阈值说明区分证据日与校准执行时刻（#990） / load latest）
 - 端点（5 并行）：`GET /api/{user}/health?days=90` services/health.ts:23；`GET /api/{user}/hrv?days=90` health.ts:30；`GET /api/{user}/stride/zones` health.ts:37；`GET /api/{user}/stride/training-load?days=112` health.ts:16；`GET /api/{user}/activities`（200/页循环拉满 16 周窗口）activities.ts:18
 - 交互：窗口切换重渲染（含图表重建）；6 张 uCharts 触摸 tooltip；热力图点选/再点收起
 - 三态：loading；error 行；各图数据不足逐块隐藏（hasXxxChart 门控）；负荷区整体仅 hasLoad 时渲染

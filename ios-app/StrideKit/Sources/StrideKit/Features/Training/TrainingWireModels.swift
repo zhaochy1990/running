@@ -672,12 +672,13 @@ public struct HRVSnapshot: Decodable, Hashable, Sendable {
 }
 
 public struct HealthResponse: Decodable, Hashable, Sendable {
+    public let calibration: CalibrationMetadata?
     public let health: [HealthRecord]
     public let hrv: HRVSnapshot
     public let rhrBaseline: Double?
 
     enum CodingKeys: String, CodingKey {
-        case health, hrv
+        case health, hrv, calibration
         case rhrBaseline = "rhr_baseline"
     }
 }
@@ -696,7 +697,144 @@ public struct HrvResponse: Decodable, Hashable, Sendable {
     public let hrv: [HrvDailyRecord]
 }
 
+// Dates below are Shanghai civil days; computedAt is the UTC execution instant.
+// Range meaning is supplied by the server, and does not imply a statistical CI.
+public struct CalibrationSelection: Decodable, Hashable, Sendable {
+    public let mode: String
+    public let policyRevision: UInt64
+    public let requestedVersion: Int?
+    public let effectiveVersion: Int?
+    public let state: String
+    public let reason: String?
+    enum CodingKeys: String, CodingKey {
+        case mode, state, reason
+        case policyRevision = "policy_revision"
+        case requestedVersion = "requested_version"
+        case effectiveVersion = "effective_version"
+    }
+}
+
+public struct CalibrationMetricSource: Decodable, Hashable, Sendable {
+    public let method: String?
+    public let targetType: String?
+    public let measurementQuality: String?
+    public let effortSupport: String?
+    public let support: String?
+    public let rangeLow: Double?
+    public let rangeHigh: Double?
+    public let rangeMeaning: String?
+    public let evidenceDate: String?
+    public let latestRejectedEvidenceDate: String?
+    public let latestStaleEvidenceDate: String?
+    public let independentActivities: Int?
+    public let independentDays: Int?
+    public let labMethod: String?
+    public let reasons: [String]?
+    public let rejectedReasons: [String]?
+    public let limitations: [String]?
+    public let evidenceCount: Int?
+    public let evidence: [CalibrationEvidence]?
+    enum CodingKeys: String, CodingKey {
+        case method, support, reasons, limitations, evidence
+        case rejectedReasons = "rejected_reasons"
+        case targetType = "target_type"
+        case measurementQuality = "measurement_quality"
+        case effortSupport = "effort_support"
+        case rangeLow = "range_low"
+        case rangeHigh = "range_high"
+        case rangeMeaning = "range_meaning"
+        case evidenceDate = "evidence_date"
+        case latestRejectedEvidenceDate = "latest_rejected_evidence_date"
+        case latestStaleEvidenceDate = "latest_stale_evidence_date"
+        case independentActivities = "independent_activities"
+        case independentDays = "independent_days"
+        case labMethod = "lab_method"
+        case evidenceCount = "evidence_count"
+    }
+}
+
+public struct CalibrationEvidence: Decodable, Hashable, Sendable {
+    public let activityId: String
+    public let rootActivityId: String
+    public let activityDay: String
+    public let sourceVersion: String
+    public let evidenceRef: String?
+    public let durationS: Double?
+    public let startS: Double?
+    public let endS: Double?
+    public let measurementQuality: String
+    public let effortSupport: String
+    enum CodingKeys: String, CodingKey {
+        case activityId = "activity_id"
+        case rootActivityId = "root_activity_id"
+        case activityDay = "activity_day"
+        case sourceVersion = "source_version"
+        case evidenceRef = "evidence_ref"
+        case durationS = "duration_s"
+        case startS = "start_s"
+        case endS = "end_s"
+        case measurementQuality = "measurement_quality"
+        case effortSupport = "effort_support"
+    }
+}
+
+public struct CalibrationSource: Decodable, Hashable, Sendable {
+    public let schemaVersion: Int
+    public let state: String
+    public let strategy: String?
+    public let implementation: String?
+    public let parameterVersion: String?
+    public let dataCutoffDay: String?
+    public let availabilitySemantics: String?
+    public let fingerprint: String?
+    public let speed: CalibrationMetricSource?
+    public let hr: CalibrationMetricSource?
+    enum CodingKeys: String, CodingKey {
+        case state, strategy, implementation, fingerprint, speed, hr
+        case schemaVersion = "schema_version"
+        case parameterVersion = "parameter_version"
+        case dataCutoffDay = "data_cutoff_day"
+        case availabilitySemantics = "availability_semantics"
+    }
+}
+
+public struct CalibrationMetadata: Decodable, Hashable, Sendable {
+    public let calibrationId: UInt64?
+    public let algorithmVersion: Int?
+    public let asOfDate: String?
+    public let computedAt: String?
+    public let selection: CalibrationSelection
+    public let source: CalibrationSource
+    public let fingerprint: String?
+    enum CodingKeys: String, CodingKey {
+        case selection, source, fingerprint
+        case calibrationId = "calibration_id"
+        case algorithmVersion = "algorithm_version"
+        case asOfDate = "as_of_date"
+        case computedAt = "computed_at"
+    }
+}
+
+public struct CalibrationPaceRange: Decodable, Hashable, Sendable {
+    public let fast: Int?
+    public let slow: Int?
+    public let meaning: String
+    public let boundKind: String
+    enum CodingKeys: String, CodingKey {
+        case fast, slow, meaning
+        case boundKind = "bound_kind"
+    }
+}
+
 public struct StrideThreshold: Decodable, Hashable, Sendable {
+    public let speedMps: Double?
+    public let calibrationId: UInt64?
+    public let algorithmVersion: Int?
+    public let computedAt: String?
+    public let selection: CalibrationSelection?
+    public let source: CalibrationSource?
+    public let fingerprint: String?
+    public let speedRangePacePerKmSec: CalibrationPaceRange?
     public let pacePerKmSec: Double?
     public let hrBpm: Double?
     public let speedConfidence: String?
@@ -704,6 +842,12 @@ public struct StrideThreshold: Decodable, Hashable, Sendable {
     public let asOfDate: String
 
     enum CodingKeys: String, CodingKey {
+        case selection, source, fingerprint
+        case speedMps = "speed_mps"
+        case calibrationId = "calibration_id"
+        case algorithmVersion = "algorithm_version"
+        case computedAt = "computed_at"
+        case speedRangePacePerKmSec = "speed_range_pace_per_km_sec"
         case pacePerKmSec = "pace_per_km_sec"
         case hrBpm = "hr_bpm"
         case speedConfidence = "speed_confidence"
@@ -739,12 +883,14 @@ public struct StrideHrZone: Decodable, Hashable, Sendable {
 }
 
 public struct StrideZonesResponse: Decodable, Hashable, Sendable {
+    public let selection: CalibrationSelection?
+    public let source: CalibrationSource?
     public let threshold: StrideThreshold?
     public let paceZones: [StridePaceZone]
     public let hrZones: [StrideHrZone]
 
     enum CodingKeys: String, CodingKey {
-        case threshold
+        case threshold, selection, source
         case paceZones = "pace_zones"
         case hrZones = "hr_zones"
     }

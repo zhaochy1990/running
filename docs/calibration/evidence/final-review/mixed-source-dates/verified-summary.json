@@ -1,0 +1,127 @@
+{
+  "run_day_shanghai": "2026-11-16",
+  "synthetic_only": true,
+  "web_browser_http_cases": 13,
+  "mp_http_projector_cases": 13,
+  "swift_display_and_live_tests": {
+    "passed": 11,
+    "skipped": 0
+  },
+  "coach_tests": 26,
+  "web_tests": 35,
+  "mixed_mysql_race": "pass",
+  "mixed_date_semantics": {
+    "cutoff_day": "2026-11-14",
+    "latest_stale_evidence_date": "2026-09-14",
+    "latest_rejected_evidence_date": "2026-11-13",
+    "hr_center": null,
+    "support": "none",
+    "evidence_count": 0
+  },
+  "same_date_displays_once": true,
+  "client_cases": [
+    {
+      "name": "two-sided",
+      "sha256": "3ca9b87110795733ab0bc91ed18576bd4f69325e2019dbc879e0c05b873a7cfd",
+      "pace": "3:34",
+      "hr": "166",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "constraints-only",
+      "sha256": "260cec3709a4778c26321a7fca9d859f18d5886b146eaa338b01edd2a59cc93a",
+      "pace": "—",
+      "hr": "166",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "upper-only",
+      "sha256": "4e7fbc00bcd2b35b99ff161bd99930e8dca2f94302b9596a4fc1588155e47963",
+      "pace": "—",
+      "hr": "166",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "low-stale",
+      "sha256": "c424e2a61619fcceb18d58761b752c12723cd8170759c3927ad91c5bcb17158a",
+      "pace": "3:34",
+      "hr": "—",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "legacy",
+      "sha256": "686693e8b50fdacd01100c9151cc30bacfbc478db08f3019639e48f279fe576a",
+      "pace": "3:34",
+      "hr": "166",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "missing",
+      "sha256": "9cb3081933d7735160c423e2fceedfa8cddbfbc3ef56bc261a87629dd86b34e3",
+      "pace": "—",
+      "hr": "—",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "unknown",
+      "sha256": "58c456ca495bd3e5f79295ae58285dd64c349fbe2e46fc0895bc0ad32d6bc3df",
+      "pace": "3:34",
+      "hr": "166",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "source-unavailable",
+      "sha256": "19e749458ca5220b7b2dfc86ee214fb3bd29d874438d29e214fb238f7ccc8e93",
+      "pace": "3:34",
+      "hr": "166",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "producer-field-half",
+      "sha256": "396084c8802552ef7e1ce44a34d9982f632745eb9edae92325c6c685555a0bd0",
+      "pace": "—",
+      "hr": "167",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "producer-lab-half",
+      "sha256": "f89e99c6da3191adae4a78c2c4f100620a808dc7fabbe39d7d452e22725a3c5e",
+      "pace": "—",
+      "hr": "169",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "future-source-schema",
+      "sha256": "fb6abb346452ff48fc711c1d40ea25095317ddedec2d5cf13b3abca1cbe81fe5",
+      "pace": "3:34",
+      "hr": "166",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "producer-stale-hr",
+      "sha256": "94d922415693365991a90f5fe7ec608e746bf51dedaec69769ffe8d08ac0ab70",
+      "pace": "—",
+      "hr": "—",
+      "mp_http_projector": "pass"
+    },
+    {
+      "name": "producer-stale-hr-mixed",
+      "sha256": "0e1f487c29148b45edfeaf82f89e4f98e04bbb741209f2f894bd473b53210591",
+      "pace": "—",
+      "hr": "—",
+      "mp_http_projector": "pass"
+    }
+  ],
+  "081d_inheritance": {
+    "runtime_source_commit": "081d045a881070ebeb9eae849bf8681042d61649",
+    "captured_stack_seconds": 234.69,
+    "new_252_run": false,
+    "bounded_source_projections_checked": 3,
+    "bounded_source_semantically_equal": true,
+    "stale_field_omitted_for_unverified_sources": true,
+    "same_http_bytes_with_new_random_ids_claimed": false
+  },
+  "production_access": false,
+  "release_ready": false,
+  "accuracy": "insufficient"
+}

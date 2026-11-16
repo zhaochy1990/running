@@ -1,0 +1,1792 @@
+{
+  "description": "Synthetic engineering behavior only; not accuracy references. Pace integers are server half-even outputs (214.5→214, 215.5→216). No private activity data.",
+  "cases": [
+    {
+      "name": "two-sided",
+      "response": {
+        "threshold": {
+          "speed_mps": 4.672897196261682,
+          "pace_per_km_sec": 214,
+          "hr_bpm": 166,
+          "speed_confidence": "high",
+          "hr_confidence": "medium",
+          "as_of_date": "2026-11-14",
+          "calibration_id": 1,
+          "algorithm_version": 4,
+          "computed_at": "2026-11-14T16:30:00Z",
+          "selection": {
+            "mode": "active",
+            "policy_revision": 1,
+            "requested_version": 4,
+            "effective_version": 4,
+            "state": "selected"
+          },
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "candidate",
+            "implementation": "synthetic-engineering-v1",
+            "data_cutoff_day": "2026-11-14",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "direct_hour_anchor",
+              "target_type": "one_hour_running_capability",
+              "measurement_quality": "high",
+              "effort_support": "confirmed_maximal",
+              "support": "high",
+              "range_low": 4.62962962962963,
+              "range_high": 4.672897196261682,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            },
+            "hr": {
+              "method": "field_test_protocol",
+              "target_type": "field_HR_proxy_not_physiological_LTHR",
+              "measurement_quality": "high",
+              "effort_support": "confirmed_maximal",
+              "support": "high",
+              "range_low": 163,
+              "range_high": 169,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            }
+          },
+          "speed_range_pace_per_km_sec": {
+            "fast": 214,
+            "slow": 216,
+            "bound_kind": "two_sided",
+            "meaning": "evidence_support_sensitivity_not_probability_interval"
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "3:34",
+        "pace_range": "支持范围 3:34–3:36 /km",
+        "hr": "166",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "name": "constraints-only",
+      "response": {
+        "threshold": {
+          "speed_mps": null,
+          "pace_per_km_sec": null,
+          "hr_bpm": 166,
+          "speed_confidence": "high",
+          "hr_confidence": "medium",
+          "as_of_date": "2026-11-14",
+          "calibration_id": 1,
+          "algorithm_version": 4,
+          "computed_at": "2026-11-14T16:30:00Z",
+          "selection": {
+            "mode": "active",
+            "policy_revision": 1,
+            "requested_version": 4,
+            "effective_version": 4,
+            "state": "selected"
+          },
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "candidate",
+            "implementation": "synthetic-engineering-v1",
+            "data_cutoff_day": "2026-11-14",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "constraints_only",
+              "target_type": "one_hour_running_capability",
+              "measurement_quality": "high",
+              "effort_support": "submaximal",
+              "support": "none",
+              "range_low": 4,
+              "range_high": null,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [
+                "insufficient_maximal_support"
+              ],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            },
+            "hr": {
+              "method": "field_test_protocol",
+              "target_type": "field_HR_proxy_not_physiological_LTHR",
+              "measurement_quality": "high",
+              "effort_support": "confirmed_maximal",
+              "support": "high",
+              "range_low": 163,
+              "range_high": 169,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            }
+          },
+          "speed_range_pace_per_km_sec": {
+            "fast": null,
+            "slow": 250,
+            "bound_kind": "speed_lower_bound",
+            "meaning": "evidence_support_sensitivity_not_probability_interval"
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "—",
+        "pace_range": "至少可达到 4:10 /km（配速 ≤ 4:10）",
+        "hr": "166",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "name": "upper-only",
+      "response": {
+        "threshold": {
+          "speed_mps": null,
+          "pace_per_km_sec": null,
+          "hr_bpm": 166,
+          "speed_confidence": "high",
+          "hr_confidence": "medium",
+          "as_of_date": "2026-11-14",
+          "calibration_id": 1,
+          "algorithm_version": 4,
+          "computed_at": "2026-11-14T16:30:00Z",
+          "selection": {
+            "mode": "active",
+            "policy_revision": 1,
+            "requested_version": 4,
+            "effective_version": 4,
+            "state": "selected"
+          },
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "candidate",
+            "implementation": "synthetic-engineering-v1",
+            "data_cutoff_day": "2026-11-14",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "direct_hour_anchor",
+              "target_type": "one_hour_running_capability",
+              "measurement_quality": "high",
+              "effort_support": "confirmed_maximal",
+              "support": "high",
+              "range_low": null,
+              "range_high": 4,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            },
+            "hr": {
+              "method": "field_test_protocol",
+              "target_type": "field_HR_proxy_not_physiological_LTHR",
+              "measurement_quality": "high",
+              "effort_support": "confirmed_maximal",
+              "support": "high",
+              "range_low": 163,
+              "range_high": 169,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            }
+          },
+          "speed_range_pace_per_km_sec": {
+            "fast": 250,
+            "slow": null,
+            "bound_kind": "speed_upper_bound",
+            "meaning": "evidence_support_sensitivity_not_probability_interval"
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "—",
+        "pace_range": "配速 ≥ 4:10 /km（仅单侧约束）",
+        "hr": "166",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "name": "low-stale",
+      "response": {
+        "threshold": {
+          "speed_mps": 4.672897196261682,
+          "pace_per_km_sec": 214,
+          "hr_bpm": null,
+          "speed_confidence": "high",
+          "hr_confidence": "medium",
+          "as_of_date": "2026-11-14",
+          "calibration_id": 1,
+          "algorithm_version": 4,
+          "computed_at": "2026-11-14T16:30:00Z",
+          "selection": {
+            "mode": "active",
+            "policy_revision": 1,
+            "requested_version": 4,
+            "effective_version": 4,
+            "state": "selected"
+          },
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "candidate",
+            "implementation": "synthetic-engineering-v1",
+            "data_cutoff_day": "2026-11-14",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "direct_hour_anchor",
+              "target_type": "one_hour_running_capability",
+              "measurement_quality": "high",
+              "effort_support": "unknown",
+              "support": "low",
+              "range_low": 4.62962962962963,
+              "range_high": 4.672897196261682,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [
+                "insufficient_maximal_support"
+              ],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            },
+            "hr": {
+              "method": "field_test_protocol",
+              "target_type": "field_HR_proxy_not_physiological_LTHR",
+              "measurement_quality": "high",
+              "effort_support": "confirmed_maximal",
+              "support": "none",
+              "range_low": 163,
+              "range_high": 169,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [
+                "stale_HR_support"
+              ],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            }
+          },
+          "speed_range_pace_per_km_sec": {
+            "fast": 214,
+            "slow": 216,
+            "bound_kind": "two_sided",
+            "meaning": "evidence_support_sensitivity_not_probability_interval"
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "3:34",
+        "pace_range": "支持范围 3:34–3:36 /km",
+        "hr": "—",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "name": "legacy",
+      "response": {
+        "threshold": {
+          "speed_mps": 4.672897196261682,
+          "pace_per_km_sec": 214,
+          "hr_bpm": 166,
+          "speed_confidence": "high",
+          "hr_confidence": "medium",
+          "as_of_date": "2026-11-14",
+          "calibration_id": 1
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "3:34",
+        "pace_range": null,
+        "hr": "166",
+        "evidence_day": null,
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": null
+      },
+      "server_expected": {
+        "pace": "3:34",
+        "pace_range": null,
+        "hr": "166",
+        "evidence_day": null,
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "name": "missing",
+      "response": {
+        "threshold": null,
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "—",
+        "evidence_day": null,
+        "cutoff_day": null,
+        "computed_shanghai": null
+      }
+    },
+    {
+      "name": "unknown",
+      "response": {
+        "threshold": {
+          "speed_mps": 4.672897196261682,
+          "pace_per_km_sec": 214,
+          "hr_bpm": 166,
+          "speed_confidence": "high",
+          "hr_confidence": "medium",
+          "as_of_date": "2026-11-14",
+          "calibration_id": 1,
+          "algorithm_version": 4,
+          "computed_at": "2026-11-14T16:30:00Z",
+          "selection": {
+            "mode": "active",
+            "policy_revision": 1,
+            "requested_version": 4,
+            "effective_version": 4,
+            "state": "selected"
+          },
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "candidate",
+            "implementation": "synthetic-engineering-v1",
+            "data_cutoff_day": "2026-11-14",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "future_method",
+              "target_type": "one_hour_running_capability",
+              "measurement_quality": "future_quality",
+              "effort_support": "future_effort",
+              "support": "future_support",
+              "range_low": 4.62962962962963,
+              "range_high": 4.672897196261682,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [
+                "future_reason"
+              ],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            },
+            "hr": {
+              "method": "field_test_protocol",
+              "target_type": "field_HR_proxy_not_physiological_LTHR",
+              "measurement_quality": "high",
+              "effort_support": "confirmed_maximal",
+              "support": "high",
+              "range_low": 163,
+              "range_high": 169,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            }
+          },
+          "speed_range_pace_per_km_sec": {
+            "fast": 214,
+            "slow": 216,
+            "bound_kind": "two_sided",
+            "meaning": "evidence_support_sensitivity_not_probability_interval"
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "3:34",
+        "pace_range": "支持范围 3:34–3:36 /km",
+        "hr": "166",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "name": "source-unavailable",
+      "response": {
+        "threshold": {
+          "speed_mps": 4.672897196261682,
+          "pace_per_km_sec": 214,
+          "hr_bpm": 166,
+          "speed_confidence": "high",
+          "hr_confidence": "medium",
+          "as_of_date": "2026-11-14",
+          "calibration_id": 1,
+          "algorithm_version": 4,
+          "computed_at": "2026-11-14T16:30:00Z",
+          "selection": {
+            "mode": "active",
+            "policy_revision": 1,
+            "requested_version": 4,
+            "effective_version": 4,
+            "state": "selected"
+          },
+          "source": {
+            "schema_version": 0,
+            "state": "source_unavailable"
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "3:34",
+        "pace_range": null,
+        "hr": "166",
+        "evidence_day": null,
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "name": "producer-field-half",
+      "producer": "actual EstimateOfflineWithEvidence + SummarizeSource; HR range endpoints explicitly wire-only, not model uncertainty",
+      "response": {
+        "threshold": {
+          "speed_mps": null,
+          "pace_per_km_sec": null,
+          "hr_bpm": 166.5,
+          "speed_confidence": "none",
+          "hr_confidence": "low",
+          "as_of_date": "2026-11-14",
+          "algorithm_version": 4,
+          "calibration_id": 1,
+          "computed_at": "2026-11-14T16:30:00Z",
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "candidate",
+            "implementation": "hour_capability_v1+independent_hr_v1",
+            "parameter_version": "hour-v1-conservative-research+hr-v1-conservative-research",
+            "data_cutoff_day": "2026-11-14",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "insufficient_maximal_support",
+              "target_type": "one_hour_running_capability",
+              "measurement_quality": "high",
+              "effort_support": "probable_maximal",
+              "support": "none",
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 1,
+              "reasons": [
+                "hour_extrapolation_not_identified_by_independent_recent_anchors"
+              ],
+              "limitations": [
+                "research_parameters_not_independently_calibrated",
+                "environment_not_corrected",
+                "power_law_valid_only_180_to_7200s",
+                "range_is_sensitivity_not_95_percent_ci",
+                "long_duration_uses_monotone_envelope_not_precise_extrapolation"
+              ],
+              "evidence": [
+                {
+                  "activity_id": "synthetic-hr-protocol",
+                  "root_activity_id": "synthetic-hr-protocol",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-hr-evidence",
+                  "duration_s": 180,
+                  "start_s": 0,
+                  "end_s": 180,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-probable-hour",
+                  "root_activity_id": "synthetic-probable-hour",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-race-evidence",
+                  "duration_s": 180,
+                  "start_s": 0,
+                  "end_s": 180,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-hr-protocol",
+                  "root_activity_id": "synthetic-hr-protocol",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-hr-evidence",
+                  "duration_s": 300,
+                  "start_s": 0,
+                  "end_s": 300,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-probable-hour",
+                  "root_activity_id": "synthetic-probable-hour",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-race-evidence",
+                  "duration_s": 300,
+                  "start_s": 0,
+                  "end_s": 300,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-hr-protocol",
+                  "root_activity_id": "synthetic-hr-protocol",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-hr-evidence",
+                  "duration_s": 600,
+                  "start_s": 0,
+                  "end_s": 600,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-probable-hour",
+                  "root_activity_id": "synthetic-probable-hour",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-race-evidence",
+                  "duration_s": 600,
+                  "start_s": 0,
+                  "end_s": 600,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-hr-protocol",
+                  "root_activity_id": "synthetic-hr-protocol",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-hr-evidence",
+                  "duration_s": 1200,
+                  "start_s": 0,
+                  "end_s": 1200,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-probable-hour",
+                  "root_activity_id": "synthetic-probable-hour",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-race-evidence",
+                  "duration_s": 1200,
+                  "start_s": 0,
+                  "end_s": 1200,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-hr-protocol",
+                  "root_activity_id": "synthetic-hr-protocol",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-hr-evidence",
+                  "duration_s": 1800,
+                  "start_s": 0,
+                  "end_s": 1800,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                },
+                {
+                  "activity_id": "synthetic-probable-hour",
+                  "root_activity_id": "synthetic-probable-hour",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-race-evidence",
+                  "duration_s": 1800,
+                  "start_s": 0,
+                  "end_s": 1800,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-probable-hour",
+                  "root_activity_id": "synthetic-probable-hour",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-race-evidence",
+                  "duration_s": 2700,
+                  "start_s": 0,
+                  "end_s": 2700,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-probable-hour",
+                  "root_activity_id": "synthetic-probable-hour",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-race-evidence",
+                  "duration_s": 3600,
+                  "start_s": 0,
+                  "end_s": 3600,
+                  "measurement_quality": "high",
+                  "effort_support": "probable_maximal"
+                }
+              ],
+              "evidence_count": 12
+            },
+            "hr": {
+              "method": "field_30min_last20_v1",
+              "target_type": "field_HR_proxy_not_physiological_LTHR",
+              "measurement_quality": "protocol_quality_gate_passed",
+              "effort_support": "confirmed_maximal",
+              "support": "low",
+              "range_low": 166.5,
+              "range_high": 168.5,
+              "range_meaning": "synthetic_wire_rounding_boundary_not_model_uncertainty",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 1,
+              "independent_days": 1,
+              "reasons": [
+                "independent_HR_protocol_support"
+              ],
+              "limitations": [
+                "HR_research_quality_parameters_uncalibrated",
+                "field_proxy_is_not_physiological_LTHR",
+                "missing_cadence_cannot_exclude_cadence_lock"
+              ],
+              "evidence": [
+                {
+                  "activity_id": "synthetic-hr-protocol",
+                  "root_activity_id": "synthetic-hr-protocol",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-hr-evidence",
+                  "start_s": 600,
+                  "end_s": 1800,
+                  "measurement_quality": "protocol_quality_gate_passed",
+                  "effort_support": "confirmed_maximal"
+                }
+              ],
+              "evidence_count": 1
+            }
+          },
+          "speed_range_pace_per_km_sec": {
+            "fast": null,
+            "slow": null,
+            "bound_kind": "unavailable",
+            "meaning": "evidence_support_sensitivity_not_probability_interval"
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "167",
+        "hr_range": "支持范围 167–169 bpm",
+        "hr_method_label": "场地测试协议（30分钟测试的后20分钟）",
+        "speed_effort_label": "可能全力",
+        "lab_method": null,
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "name": "producer-lab-half",
+      "producer": "actual EstimateOfflineWithEvidence + SummarizeSource; HR range endpoints explicitly wire-only, not model uncertainty",
+      "response": {
+        "threshold": {
+          "speed_mps": null,
+          "pace_per_km_sec": null,
+          "hr_bpm": 168.5,
+          "speed_confidence": "none",
+          "hr_confidence": "low",
+          "as_of_date": "2026-11-14",
+          "algorithm_version": 4,
+          "calibration_id": 1,
+          "computed_at": "2026-11-14T16:30:00Z",
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "candidate",
+            "implementation": "hour_capability_v1+independent_hr_v1",
+            "parameter_version": "hour-v1-conservative-research+hr-v1-conservative-research",
+            "data_cutoff_day": "2026-11-14",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "insufficient_maximal_support",
+              "target_type": "one_hour_running_capability",
+              "measurement_quality": "high",
+              "effort_support": "probable_maximal",
+              "support": "none",
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 1,
+              "reasons": [
+                "hour_extrapolation_not_identified_by_independent_recent_anchors"
+              ],
+              "limitations": [
+                "research_parameters_not_independently_calibrated",
+                "environment_not_corrected",
+                "power_law_valid_only_180_to_7200s",
+                "range_is_sensitivity_not_95_percent_ci",
+                "long_duration_uses_monotone_envelope_not_precise_extrapolation"
+              ],
+              "evidence": [
+                {
+                  "activity_id": "synthetic-hr-protocol",
+                  "root_activity_id": "synthetic-hr-protocol",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-hr-evidence",
+                  "duration_s": 180,
+                  "start_s": 0,
+                  "end_s": 180,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-probable-hour",
+                  "root_activity_id": "synthetic-probable-hour",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-race-evidence",
+                  "duration_s": 180,
+                  "start_s": 0,
+                  "end_s": 180,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-hr-protocol",
+                  "root_activity_id": "synthetic-hr-protocol",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-hr-evidence",
+                  "duration_s": 300,
+                  "start_s": 0,
+                  "end_s": 300,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-probable-hour",
+                  "root_activity_id": "synthetic-probable-hour",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-race-evidence",
+                  "duration_s": 300,
+                  "start_s": 0,
+                  "end_s": 300,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-hr-protocol",
+                  "root_activity_id": "synthetic-hr-protocol",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-hr-evidence",
+                  "duration_s": 600,
+                  "start_s": 0,
+                  "end_s": 600,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-probable-hour",
+                  "root_activity_id": "synthetic-probable-hour",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-race-evidence",
+                  "duration_s": 600,
+                  "start_s": 0,
+                  "end_s": 600,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-hr-protocol",
+                  "root_activity_id": "synthetic-hr-protocol",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-hr-evidence",
+                  "duration_s": 1200,
+                  "start_s": 0,
+                  "end_s": 1200,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-probable-hour",
+                  "root_activity_id": "synthetic-probable-hour",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-race-evidence",
+                  "duration_s": 1200,
+                  "start_s": 0,
+                  "end_s": 1200,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-hr-protocol",
+                  "root_activity_id": "synthetic-hr-protocol",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-hr-evidence",
+                  "duration_s": 1800,
+                  "start_s": 0,
+                  "end_s": 1800,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                },
+                {
+                  "activity_id": "synthetic-probable-hour",
+                  "root_activity_id": "synthetic-probable-hour",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-race-evidence",
+                  "duration_s": 1800,
+                  "start_s": 0,
+                  "end_s": 1800,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-probable-hour",
+                  "root_activity_id": "synthetic-probable-hour",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-race-evidence",
+                  "duration_s": 2700,
+                  "start_s": 0,
+                  "end_s": 2700,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-probable-hour",
+                  "root_activity_id": "synthetic-probable-hour",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-race-evidence",
+                  "duration_s": 3600,
+                  "start_s": 0,
+                  "end_s": 3600,
+                  "measurement_quality": "high",
+                  "effort_support": "probable_maximal"
+                }
+              ],
+              "evidence_count": 12
+            },
+            "hr": {
+              "method": "lab_lthr_report_v1",
+              "target_type": "lab_method_specific_LTHR",
+              "measurement_quality": "protocol_quality_gate_passed",
+              "effort_support": "confirmed_maximal",
+              "support": "low",
+              "range_low": 166.5,
+              "range_high": 168.5,
+              "range_meaning": "synthetic_wire_rounding_boundary_not_model_uncertainty",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 1,
+              "independent_days": 1,
+              "lab_method": "lactate_turnpoint",
+              "reasons": [
+                "independent_HR_protocol_support"
+              ],
+              "limitations": [
+                "HR_research_quality_parameters_uncalibrated",
+                "field_proxy_is_not_physiological_LTHR",
+                "missing_cadence_cannot_exclude_cadence_lock"
+              ],
+              "evidence": [
+                {
+                  "activity_id": "synthetic-hr-protocol",
+                  "root_activity_id": "synthetic-hr-protocol",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-hr-evidence",
+                  "start_s": 0,
+                  "end_s": 1800,
+                  "measurement_quality": "protocol_quality_gate_passed",
+                  "effort_support": "confirmed_maximal"
+                }
+              ],
+              "evidence_count": 1
+            }
+          },
+          "speed_range_pace_per_km_sec": {
+            "fast": null,
+            "slow": null,
+            "bound_kind": "unavailable",
+            "meaning": "evidence_support_sensitivity_not_probability_interval"
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "169",
+        "hr_range": "支持范围 167–169 bpm",
+        "hr_method_label": "实验室乳酸阈值报告",
+        "speed_effort_label": "可能全力",
+        "lab_method": "lactate_turnpoint",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30"
+      }
+    },
+    {
+      "name": "future-source-schema",
+      "response": {
+        "threshold": {
+          "speed_mps": 4.672897196261682,
+          "pace_per_km_sec": 214,
+          "hr_bpm": 166,
+          "speed_confidence": "high",
+          "hr_confidence": "medium",
+          "as_of_date": "2026-11-14",
+          "calibration_id": 1,
+          "algorithm_version": 4,
+          "computed_at": "2026-11-14T16:30:00Z",
+          "selection": {
+            "mode": "active",
+            "policy_revision": 1,
+            "requested_version": 4,
+            "effective_version": 4,
+            "state": "selected"
+          },
+          "source": {
+            "schema_version": 2,
+            "state": "available",
+            "strategy": "candidate",
+            "implementation": "synthetic-engineering-v1",
+            "data_cutoff_day": "2026-11-14",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "direct_hour_anchor",
+              "target_type": "one_hour_running_capability",
+              "measurement_quality": "high",
+              "effort_support": "confirmed_maximal",
+              "support": "high",
+              "range_low": 4.62962962962963,
+              "range_high": 4.672897196261682,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            },
+            "hr": {
+              "method": "field_test_protocol",
+              "target_type": "field_HR_proxy_not_physiological_LTHR",
+              "measurement_quality": "high",
+              "effort_support": "confirmed_maximal",
+              "support": "high",
+              "range_low": 163,
+              "range_high": 169,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            }
+          },
+          "speed_range_pace_per_km_sec": {
+            "fast": 214,
+            "slow": 216,
+            "bound_kind": "two_sided",
+            "meaning": "evidence_support_sensitivity_not_probability_interval"
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "3:34",
+        "pace_range": "支持范围 3:34–3:36 /km",
+        "hr": "166",
+        "evidence_day": null,
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30",
+        "source_unavailable": true
+      },
+      "server_expected": {
+        "pace": "3:34",
+        "pace_range": null,
+        "hr": "166",
+        "evidence_day": null,
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30",
+        "source_unavailable": true
+      }
+    },
+    {
+      "name": "producer-stale-hr",
+      "response": {
+        "threshold": {
+          "pace_per_km_sec": null,
+          "hr_bpm": null,
+          "algorithm_version": 4,
+          "as_of_date": "2026-11-14",
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "candidate",
+            "implementation": "hour_capability_v1+independent_hr_v1",
+            "parameter_version": "hour-v1-conservative-research+hr-v1-conservative-research",
+            "data_cutoff_day": "2026-11-14",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "insufficient_maximal_support",
+              "target_type": "one_hour_running_capability",
+              "measurement_quality": "high",
+              "effort_support": "probable_maximal",
+              "support": "none",
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-09-14",
+              "independent_activities": 2,
+              "independent_days": 1,
+              "reasons": [
+                "hour_extrapolation_not_identified_by_independent_recent_anchors"
+              ],
+              "limitations": [
+                "research_parameters_not_independently_calibrated",
+                "environment_not_corrected",
+                "power_law_valid_only_180_to_7200s",
+                "range_is_sensitivity_not_95_percent_ci",
+                "long_duration_uses_monotone_envelope_not_precise_extrapolation"
+              ],
+              "evidence": [
+                {
+                  "activity_id": "synthetic-hr-protocol",
+                  "root_activity_id": "synthetic-hr-protocol",
+                  "activity_day": "2026-09-14",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-hr-evidence",
+                  "duration_s": 180,
+                  "start_s": 0,
+                  "end_s": 180,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-probable-hour",
+                  "root_activity_id": "synthetic-probable-hour",
+                  "activity_day": "2026-09-14",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-race-evidence",
+                  "duration_s": 180,
+                  "start_s": 0,
+                  "end_s": 180,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-hr-protocol",
+                  "root_activity_id": "synthetic-hr-protocol",
+                  "activity_day": "2026-09-14",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-hr-evidence",
+                  "duration_s": 300,
+                  "start_s": 0,
+                  "end_s": 300,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-probable-hour",
+                  "root_activity_id": "synthetic-probable-hour",
+                  "activity_day": "2026-09-14",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-race-evidence",
+                  "duration_s": 300,
+                  "start_s": 0,
+                  "end_s": 300,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-hr-protocol",
+                  "root_activity_id": "synthetic-hr-protocol",
+                  "activity_day": "2026-09-14",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-hr-evidence",
+                  "duration_s": 600,
+                  "start_s": 0,
+                  "end_s": 600,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-probable-hour",
+                  "root_activity_id": "synthetic-probable-hour",
+                  "activity_day": "2026-09-14",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-race-evidence",
+                  "duration_s": 600,
+                  "start_s": 0,
+                  "end_s": 600,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-hr-protocol",
+                  "root_activity_id": "synthetic-hr-protocol",
+                  "activity_day": "2026-09-14",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-hr-evidence",
+                  "duration_s": 1200,
+                  "start_s": 0,
+                  "end_s": 1200,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-probable-hour",
+                  "root_activity_id": "synthetic-probable-hour",
+                  "activity_day": "2026-09-14",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-race-evidence",
+                  "duration_s": 1200,
+                  "start_s": 0,
+                  "end_s": 1200,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-hr-protocol",
+                  "root_activity_id": "synthetic-hr-protocol",
+                  "activity_day": "2026-09-14",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-hr-evidence",
+                  "duration_s": 1800,
+                  "start_s": 0,
+                  "end_s": 1800,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                },
+                {
+                  "activity_id": "synthetic-probable-hour",
+                  "root_activity_id": "synthetic-probable-hour",
+                  "activity_day": "2026-09-14",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-race-evidence",
+                  "duration_s": 1800,
+                  "start_s": 0,
+                  "end_s": 1800,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-probable-hour",
+                  "root_activity_id": "synthetic-probable-hour",
+                  "activity_day": "2026-09-14",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-race-evidence",
+                  "duration_s": 2700,
+                  "start_s": 0,
+                  "end_s": 2700,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-probable-hour",
+                  "root_activity_id": "synthetic-probable-hour",
+                  "activity_day": "2026-09-14",
+                  "source_version": "synthetic-engineering-v3",
+                  "evidence_ref": "synthetic-race-evidence",
+                  "duration_s": 3600,
+                  "start_s": 0,
+                  "end_s": 3600,
+                  "measurement_quality": "high",
+                  "effort_support": "probable_maximal"
+                }
+              ],
+              "evidence_count": 12
+            },
+            "hr": {
+              "method": "none",
+              "target_type": "unavailable",
+              "measurement_quality": "unknown",
+              "effort_support": "unknown",
+              "support": "none",
+              "range_meaning": "unavailable",
+              "latest_rejected_evidence_date": "2026-09-14",
+              "latest_stale_evidence_date": "2026-09-14",
+              "independent_activities": 0,
+              "independent_days": 0,
+              "reasons": [
+                "no_independent_HR_protocol_support"
+              ],
+              "rejected_reasons": [
+                "stale_HR_support"
+              ],
+              "limitations": [
+                "HR_research_quality_parameters_uncalibrated",
+                "field_proxy_is_not_physiological_LTHR",
+                "missing_cadence_cannot_exclude_cadence_lock"
+              ],
+              "evidence_count": 0
+            }
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "—",
+        "evidence_day": "2026-09-14",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": null,
+        "rejected_evidence_day": "2026-09-14",
+        "stale_evidence_day": "2026-09-14"
+      },
+      "server_expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "—",
+        "evidence_day": "2026-09-14",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30",
+        "rejected_evidence_day": "2026-09-14",
+        "stale_evidence_day": "2026-09-14"
+      }
+    },
+    {
+      "name": "producer-stale-hr-mixed",
+      "response": {
+        "threshold": {
+          "pace_per_km_sec": null,
+          "hr_bpm": null,
+          "algorithm_version": 4,
+          "as_of_date": "2026-11-14",
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "candidate",
+            "implementation": "hour_capability_v1+independent_hr_v1",
+            "parameter_version": "hour-v1-conservative-research+hr-v1-conservative-research",
+            "data_cutoff_day": "2026-11-14",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "constraints_only",
+              "target_type": "one_hour_running_capability",
+              "measurement_quality": "unknown",
+              "effort_support": "unknown",
+              "support": "none",
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "independent_activities": 0,
+              "independent_days": 0,
+              "reasons": [
+                "no_independent_maximal_anchors"
+              ],
+              "limitations": [
+                "research_parameters_not_independently_calibrated",
+                "environment_not_corrected",
+                "power_law_valid_only_180_to_7200s",
+                "range_is_sensitivity_not_95_percent_ci",
+                "long_duration_uses_monotone_envelope_not_precise_extrapolation"
+              ],
+              "evidence_count": 0
+            },
+            "hr": {
+              "method": "none",
+              "target_type": "unavailable",
+              "measurement_quality": "unknown",
+              "effort_support": "unknown",
+              "support": "none",
+              "range_meaning": "unavailable",
+              "latest_rejected_evidence_date": "2026-11-13",
+              "latest_stale_evidence_date": "2026-09-14",
+              "independent_activities": 0,
+              "independent_days": 0,
+              "reasons": [
+                "no_independent_HR_protocol_support"
+              ],
+              "rejected_reasons": [
+                "stale_HR_support",
+                "HR_abrupt_spike_or_recovery",
+                "HR_range_suggests_recovery_or_artifact"
+              ],
+              "limitations": [
+                "HR_research_quality_parameters_uncalibrated",
+                "field_proxy_is_not_physiological_LTHR",
+                "missing_cadence_cannot_exclude_cadence_lock"
+              ],
+              "evidence_count": 0
+            }
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "—",
+        "evidence_day": null,
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": null,
+        "rejected_evidence_day": "2026-11-13",
+        "stale_evidence_day": "2026-09-14"
+      },
+      "server_expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "—",
+        "evidence_day": null,
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30",
+        "rejected_evidence_day": "2026-11-13",
+        "stale_evidence_day": "2026-09-14"
+      }
+    },
+    {
+      "name": "producer-current-hr-with-stale",
+      "response": {
+        "threshold": {
+          "hr_bpm": 170,
+          "pace_per_km_sec": null,
+          "algorithm_version": 4,
+          "as_of_date": "2026-11-15",
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "candidate",
+            "implementation": "hour_capability_v1+independent_hr_v1",
+            "parameter_version": "hour-v1-conservative-research+hr-v1-conservative-research",
+            "data_cutoff_day": "2026-11-15",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "constraints_only",
+              "target_type": "one_hour_running_capability",
+              "measurement_quality": "unknown",
+              "effort_support": "unknown",
+              "support": "none",
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "independent_activities": 0,
+              "independent_days": 0,
+              "reasons": [
+                "no_independent_maximal_anchors"
+              ],
+              "limitations": [
+                "research_parameters_not_independently_calibrated",
+                "environment_not_corrected",
+                "power_law_valid_only_180_to_7200s",
+                "range_is_sensitivity_not_95_percent_ci",
+                "long_duration_uses_monotone_envelope_not_precise_extrapolation"
+              ],
+              "evidence_count": 0
+            },
+            "hr": {
+              "method": "field_30min_last20_v1",
+              "target_type": "field_HR_proxy_not_physiological_LTHR",
+              "measurement_quality": "protocol_quality_gate_passed",
+              "effort_support": "confirmed_maximal",
+              "support": "low",
+              "range_meaning": "unavailable",
+              "evidence_date": "2026-11-14",
+              "latest_rejected_evidence_date": "2026-09-15",
+              "latest_stale_evidence_date": "2026-09-15",
+              "independent_activities": 1,
+              "independent_days": 1,
+              "reasons": [
+                "independent_HR_protocol_support"
+              ],
+              "rejected_reasons": [
+                "stale_HR_support"
+              ],
+              "limitations": [
+                "HR_research_quality_parameters_uncalibrated",
+                "field_proxy_is_not_physiological_LTHR",
+                "missing_cadence_cannot_exclude_cadence_lock"
+              ],
+              "evidence": [
+                {
+                  "activity_id": "synthetic-current-valid",
+                  "root_activity_id": "synthetic-current-valid",
+                  "activity_day": "2026-11-14",
+                  "source_version": "SYNTHETIC-current-with-rejection-v1",
+                  "evidence_ref": "SYNTHETIC-not-accuracy",
+                  "start_s": 600,
+                  "end_s": 1800,
+                  "measurement_quality": "protocol_quality_gate_passed",
+                  "effort_support": "confirmed_maximal"
+                }
+              ],
+              "evidence_count": 1
+            }
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "170",
+        "evidence_day": null,
+        "hr_evidence_day": "2026-11-14",
+        "cutoff_day": "2026-11-15",
+        "computed_shanghai": null,
+        "current_hr_supported": true,
+        "rejected_evidence_day": "2026-09-15",
+        "stale_evidence_day": "2026-09-15"
+      },
+      "server_expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "170",
+        "evidence_day": null,
+        "hr_evidence_day": "2026-11-14",
+        "cutoff_day": "2026-11-15",
+        "computed_shanghai": "2026-11-15 00:30",
+        "current_hr_supported": true,
+        "rejected_evidence_day": "2026-09-15",
+        "stale_evidence_day": "2026-09-15"
+      }
+    },
+    {
+      "name": "producer-current-hr-with-quality",
+      "response": {
+        "threshold": {
+          "hr_bpm": 170,
+          "pace_per_km_sec": null,
+          "algorithm_version": 4,
+          "as_of_date": "2026-11-15",
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "candidate",
+            "implementation": "hour_capability_v1+independent_hr_v1",
+            "parameter_version": "hour-v1-conservative-research+hr-v1-conservative-research",
+            "data_cutoff_day": "2026-11-15",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "constraints_only",
+              "target_type": "one_hour_running_capability",
+              "measurement_quality": "unknown",
+              "effort_support": "unknown",
+              "support": "none",
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "independent_activities": 0,
+              "independent_days": 0,
+              "reasons": [
+                "no_independent_maximal_anchors"
+              ],
+              "limitations": [
+                "research_parameters_not_independently_calibrated",
+                "environment_not_corrected",
+                "power_law_valid_only_180_to_7200s",
+                "range_is_sensitivity_not_95_percent_ci",
+                "long_duration_uses_monotone_envelope_not_precise_extrapolation"
+              ],
+              "evidence_count": 0
+            },
+            "hr": {
+              "method": "field_30min_last20_v1",
+              "target_type": "field_HR_proxy_not_physiological_LTHR",
+              "measurement_quality": "protocol_quality_gate_passed",
+              "effort_support": "confirmed_maximal",
+              "support": "low",
+              "range_meaning": "unavailable",
+              "evidence_date": "2026-11-14",
+              "latest_rejected_evidence_date": "2026-11-15",
+              "independent_activities": 1,
+              "independent_days": 1,
+              "reasons": [
+                "independent_HR_protocol_support"
+              ],
+              "rejected_reasons": [
+                "HR_abrupt_spike_or_recovery",
+                "HR_range_suggests_recovery_or_artifact"
+              ],
+              "limitations": [
+                "HR_research_quality_parameters_uncalibrated",
+                "field_proxy_is_not_physiological_LTHR",
+                "missing_cadence_cannot_exclude_cadence_lock"
+              ],
+              "evidence": [
+                {
+                  "activity_id": "synthetic-current-valid",
+                  "root_activity_id": "synthetic-current-valid",
+                  "activity_day": "2026-11-14",
+                  "source_version": "SYNTHETIC-current-with-rejection-v1",
+                  "evidence_ref": "SYNTHETIC-not-accuracy",
+                  "start_s": 600,
+                  "end_s": 1800,
+                  "measurement_quality": "protocol_quality_gate_passed",
+                  "effort_support": "confirmed_maximal"
+                }
+              ],
+              "evidence_count": 1
+            }
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "170",
+        "evidence_day": null,
+        "hr_evidence_day": "2026-11-14",
+        "cutoff_day": "2026-11-15",
+        "computed_shanghai": null,
+        "current_hr_supported": true,
+        "rejected_evidence_day": "2026-11-15"
+      },
+      "server_expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "170",
+        "evidence_day": null,
+        "hr_evidence_day": "2026-11-14",
+        "cutoff_day": "2026-11-15",
+        "computed_shanghai": "2026-11-15 00:30",
+        "current_hr_supported": true,
+        "rejected_evidence_day": "2026-11-15"
+      }
+    }
+  ]
+}

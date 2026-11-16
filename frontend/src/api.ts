@@ -1180,7 +1180,7 @@ export interface HRVSnapshot {
 }
 
 export function getHealth(user: string, days = 30) {
-  return fetchJSON<{ health: HealthRecord[]; hrv: HRVSnapshot; rhr_baseline: number | null }>(`/${user}/health?days=${days}`);
+  return fetchJSON<{ health: HealthRecord[]; hrv: HRVSnapshot; rhr_baseline: number | null; calibration?: CalibrationMetadata }>(`/${user}/health?days=${days}`);
 }
 
 export interface HrvDailyRecord {
@@ -2099,7 +2099,88 @@ export function overallRating(variant: PlanVariant): RatingScore | null {
 // STRIDE self-developed endpoints (/api/{user}/stride/*)
 // =============================================================
 
+/** Calibration metadata is optional for old servers. Dates are Shanghai civil
+ * days; computed_at is a separate UTC execution instant. Ranges are support or
+ * sensitivity bounds, not a 95% confidence interval. */
+export interface CalibrationSelection {
+  mode: "active" | "candidate";
+  policy_revision: number;
+  requested_version: number | null;
+  effective_version: number | null;
+  state: "selected" | "fallback" | "unavailable";
+  reason?: string;
+}
+
+export interface CalibrationMetricSource {
+  method: string;
+  target_type: string;
+  measurement_quality: string;
+  effort_support: string;
+  support: string;
+  range_low?: number;
+  range_high?: number;
+  range_meaning: string;
+  evidence_date?: string;
+  latest_rejected_evidence_date?: string;
+  latest_stale_evidence_date?: string;
+  rejected_reasons?: string[];
+  independent_activities: number;
+  independent_days: number;
+  lab_method?: string;
+  reasons: string[] | null;
+  limitations: string[] | null;
+  evidence_count: number;
+  evidence?: Array<{
+    activity_id: string;
+    root_activity_id: string;
+    activity_day: string;
+    source_version: string;
+    evidence_ref?: string;
+    duration_s?: number;
+    start_s?: number;
+    end_s?: number;
+    measurement_quality: string;
+    effort_support: string;
+  }>;
+}
+
+export interface CalibrationSource {
+  schema_version: number;
+  state: string;
+  strategy?: string;
+  implementation?: string;
+  parameter_version?: string;
+  data_cutoff_day?: string;
+  availability_semantics?: string;
+  fingerprint?: string;
+  speed?: CalibrationMetricSource;
+  hr?: CalibrationMetricSource;
+}
+
+export interface CalibrationMetadata {
+  calibration_id?: number;
+  algorithm_version?: number;
+  as_of_date?: string;
+  computed_at?: string;
+  selection: CalibrationSelection;
+  source: CalibrationSource;
+  fingerprint?: string;
+}
+
+export interface CalibrationPaceRange {
+  fast: number | null;
+  slow: number | null;
+  meaning: string;
+  bound_kind: "two_sided" | "speed_lower_bound" | "speed_upper_bound" | "unavailable";
+}
+
 export interface StrideThreshold {
+  algorithm_version?: number;
+  computed_at?: string;
+  selection?: CalibrationSelection;
+  source?: CalibrationSource;
+  fingerprint?: string;
+  speed_range_pace_per_km_sec?: CalibrationPaceRange;
   speed_mps: number | null;
   pace_per_km_sec: number | null;
   hr_bpm: number | null;
@@ -2124,6 +2205,8 @@ export interface StrideHrZone {
 }
 
 export interface StrideZonesResponse {
+  selection?: CalibrationSelection;
+  source?: CalibrationSource;
   threshold: StrideThreshold | null;
   pace_zones: StridePaceZone[];
   hr_zones: StrideHrZone[];

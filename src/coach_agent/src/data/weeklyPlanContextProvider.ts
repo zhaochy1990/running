@@ -1,6 +1,7 @@
 import { addDays, mondayOnOrBefore as monday, planningStartDate, shanghaiDay, weekFolder } from "@stride/contract";
 import { median } from "../utils/statistics.js";
 import { isQualityRunningActivity, isRunningActivity } from "./activityClassification.js";
+import { calibrationMetadataShape } from "./calibrationMetadata.js";
 import type {
   ActiveMasterPlanMetadata,
   Activity,
@@ -86,7 +87,7 @@ export interface AbsorbedLoad {
   latest_complete_week: AbsorbedLoadWeek | null;
 }
 
-export interface WeeklyUserProfile {
+export interface WeeklyUserProfile extends ReturnType<typeof calibrationMetadataShape> {
   age: number | null;
   gender: string | null;
   weight_kg: number | null;
@@ -463,6 +464,7 @@ function userProfileShape(
   asOfDay: string,
 ): WeeklyUserProfile {
   return {
+    ...calibrationMetadataShape(calibration),
     age: ageOn(asOfDay, profile?.dob ?? null),
     gender: profile?.sex ?? null,
     weight_kg: profile?.weightKg ?? null,

@@ -1,0 +1,1102 @@
+{
+  "schema_version": "calibration-first-final-public-summary/v1",
+  "scope": "T8 Phase A engineering and first retained final evidence; no rollout authorization",
+  "implementation_code_sha": "1f6a13f2d8d2977a97283400d325781612a41d5c",
+  "binary_sha256": "bc74c54eb57c77458b11c54fec4a1d68f81b86b7743043b7b19a4e9f7544b2d5",
+  "protocol_sha256": "043c5f28690c4db6138983eb95849ca870ce0e3ab2a3f224f6de07d18ab813cc",
+  "v3_source_sha256": "1d20459b1d72095d775e69ce928aebde8540753a1c6631d5cf05fb35e0bc5826",
+  "first_freeze_sha256": "db27c851504f59b1ca6f6cc3e53a4d40ffe9e1c0cd0cd73d38d5fbac03d335c9",
+  "first_report_sha256": "d7b96d7d5e76c6a13e513210e40ee6c744baf365c4f639c092b7e35a52ee7f6c",
+  "first_after_record_sha256": "4f9c7f396f5f78111030d6dcfb23b9c76596b8f3bc44cd0a68e51aa24ed0b2db",
+  "second_after_record_sha256": "7a30e000ba5f5e8e6d4bb7d0ce0124d5d1366596c275523f9f46a0f47e98278d",
+  "inventory_sha256": "c8c9d90a2a53b74774a56cb5d8d49ed1f77f63a711677de714f640249bd96763",
+  "outcome_file_sha256": "89d4e399f9bfb626c5a21013e89bb142c6b98953fec435dd7d44744f5e075f07",
+  "root_split_v1_sha256": "4730e0cab03ee0793b50400bfa5c1142cd3a2f0c52926f6d1d9ef552a688f27e",
+  "root_split_v4_sha256": "4ae97eecb2f48a6b1d6d05576e3a42781a89c1bcc32662ddde6588ea124165ee",
+  "report_as_of": "2026-11-15T23:59:59+08:00",
+  "outcome_observed_at": "2026-11-15T13:48:40.088953Z",
+  "sidecar": "none",
+  "first_run": {
+    "started_at_utc": "2026-11-15T16:13:17.268135+00:00",
+    "finished_at_utc": "2026-11-15T16:14:08.955257+00:00",
+    "elapsed_seconds": 51.68683187500574,
+    "exit_code": 2,
+    "report_status": "insufficient",
+    "accuracy_status": "insufficient",
+    "engineering_status": "unavailable_external_acceptance_evidence_required",
+    "release_ready": false
+  },
+  "determinism_run": {
+    "run_kind": "second_determinism_only",
+    "final_previously_used": true,
+    "started_at_utc": "2026-11-15T16:15:39.363784+00:00",
+    "finished_at_utc": "2026-11-15T16:16:29.537024+00:00",
+    "elapsed_seconds": 50.172733791172504,
+    "exit_code": 2,
+    "file_count": 11,
+    "raw_file_inventories_equal": true,
+    "semantic_json_inventories_equal": true,
+    "stdout_equal_excluding_output_path": true,
+    "code_or_model_or_data_changed": false
+  },
+  "cohorts": [
+    {
+      "split": "final_holdout",
+      "mode": "strict",
+      "family": "direct_60min",
+      "unit": "s/km",
+      "status": "insufficient",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0,
+      "support_grades": {},
+      "versions": [
+        {
+          "strategy": "v3",
+          "available": 0,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 0,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        },
+        {
+          "strategy": "segments_only",
+          "available": 0,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 0,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        },
+        {
+          "strategy": "candidate",
+          "available": 0,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 0,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        }
+      ],
+      "uncertainty": null
+    },
+    {
+      "split": "final_holdout",
+      "mode": "strict",
+      "family": "race_prediction",
+      "unit": "fraction",
+      "status": "insufficient",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0,
+      "support_grades": {},
+      "versions": [
+        {
+          "strategy": "v3",
+          "available": 0,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 0,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        },
+        {
+          "strategy": "segments_only",
+          "available": 0,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 0,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        },
+        {
+          "strategy": "candidate",
+          "available": 0,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 0,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        }
+      ],
+      "uncertainty": null
+    },
+    {
+      "split": "final_holdout",
+      "mode": "strict",
+      "family": "lab_lthr",
+      "unit": "bpm",
+      "status": "insufficient",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0,
+      "support_grades": {},
+      "versions": [
+        {
+          "strategy": "v3",
+          "available": 0,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 0,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        },
+        {
+          "strategy": "segments_only",
+          "available": 0,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 0,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        },
+        {
+          "strategy": "candidate",
+          "available": 0,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 0,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        }
+      ],
+      "uncertainty": null
+    },
+    {
+      "split": "final_holdout",
+      "mode": "strict",
+      "family": "field_hr_proxy",
+      "unit": "bpm",
+      "status": "insufficient",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0,
+      "support_grades": {},
+      "versions": [
+        {
+          "strategy": "v3",
+          "available": 0,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 0,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        },
+        {
+          "strategy": "segments_only",
+          "available": 0,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 0,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        },
+        {
+          "strategy": "candidate",
+          "available": 0,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 0,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        }
+      ],
+      "uncertainty": null
+    },
+    {
+      "split": "final_holdout",
+      "mode": "event_date_retrospective",
+      "family": "direct_60min",
+      "unit": "s/km",
+      "status": "insufficient",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0,
+      "support_grades": {},
+      "versions": [
+        {
+          "strategy": "v3",
+          "available": 0,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 0,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        },
+        {
+          "strategy": "segments_only",
+          "available": 0,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 0,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        },
+        {
+          "strategy": "candidate",
+          "available": 0,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 0,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        }
+      ],
+      "uncertainty": null
+    },
+    {
+      "split": "final_holdout",
+      "mode": "event_date_retrospective",
+      "family": "race_prediction",
+      "unit": "fraction",
+      "status": "insufficient",
+      "eligible_activities": 5,
+      "eligible_users": 4,
+      "paired_activities": 0,
+      "paired_users": 0,
+      "support_grades": {
+        "probable_maximal": 5
+      },
+      "versions": [
+        {
+          "strategy": "v3",
+          "available": 5,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 1,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        },
+        {
+          "strategy": "segments_only",
+          "available": 5,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 1,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        },
+        {
+          "strategy": "candidate",
+          "available": 0,
+          "missing": 5,
+          "missing_center": 5,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 0,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        }
+      ],
+      "uncertainty": null
+    },
+    {
+      "split": "final_holdout",
+      "mode": "event_date_retrospective",
+      "family": "lab_lthr",
+      "unit": "bpm",
+      "status": "insufficient",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0,
+      "support_grades": {},
+      "versions": [
+        {
+          "strategy": "v3",
+          "available": 0,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 0,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        },
+        {
+          "strategy": "segments_only",
+          "available": 0,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 0,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        },
+        {
+          "strategy": "candidate",
+          "available": 0,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 0,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        }
+      ],
+      "uncertainty": null
+    },
+    {
+      "split": "final_holdout",
+      "mode": "event_date_retrospective",
+      "family": "field_hr_proxy",
+      "unit": "bpm",
+      "status": "insufficient",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0,
+      "support_grades": {},
+      "versions": [
+        {
+          "strategy": "v3",
+          "available": 0,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 0,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        },
+        {
+          "strategy": "segments_only",
+          "available": 0,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 0,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        },
+        {
+          "strategy": "candidate",
+          "available": 0,
+          "missing": 0,
+          "missing_center": 0,
+          "unsupported": 0,
+          "computation_failures": 0,
+          "coverage": 0,
+          "failure_rate": 0,
+          "median_absolute_error": null,
+          "p90_absolute_error": null,
+          "signed_bias": null
+        }
+      ],
+      "uncertainty": null
+    }
+  ],
+  "strict_frozen_gate_rows": [
+    {
+      "id": "direct_60min.sample",
+      "status": "insufficient",
+      "observed": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "threshold": "paired activities >= 30, users >= 10",
+      "unit": "count",
+      "reason": "insufficient_independent_paired_evidence",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "direct_60min.implementations",
+      "status": "pass",
+      "observed": true,
+      "threshold": "three distinct implemented strategies",
+      "unit": "identity",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "direct_60min.weight",
+      "status": "insufficient",
+      "observed": 0,
+      "threshold": "<= 0.20",
+      "unit": "fraction",
+      "reason": "insufficient_independent_paired_evidence",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "direct_60min.coverage",
+      "status": "insufficient",
+      "observed": [
+        0,
+        0,
+        0
+      ],
+      "threshold": "candidate >= 0.90 and >= both baselines",
+      "unit": "fraction",
+      "reason": "insufficient_independent_paired_evidence",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "direct_60min.failure",
+      "status": "insufficient",
+      "observed": 0,
+      "threshold": "<= 0.01",
+      "unit": "fraction",
+      "reason": "insufficient_independent_paired_evidence",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "direct_60min.v3.noninferior",
+      "status": "insufficient",
+      "observed": null,
+      "threshold": "three-way paired median and P90",
+      "unit": "s/km",
+      "reason": "insufficient_independent_paired_evidence",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "direct_60min.segments.improvement",
+      "status": "insufficient",
+      "observed": null,
+      "threshold": "three-way paired improvement",
+      "unit": "s/km",
+      "reason": "insufficient_independent_paired_evidence",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "direct_60min.uncertainty",
+      "status": "insufficient",
+      "observed": null,
+      "threshold": "95% paired delta upper endpoints <= 0",
+      "unit": "s/km",
+      "reason": "insufficient_independent_paired_evidence",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "direct_60min.strata.continuous.sample",
+      "status": "insufficient",
+      "observed": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "threshold": ">=10 paired activities/3 users; metadata known",
+      "unit": "count",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "direct_60min.strata.distance:direct_60min.sample",
+      "status": "insufficient",
+      "observed": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "threshold": ">=10 paired activities/3 users; metadata known",
+      "unit": "count",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "direct_60min.strata.gps_abnormal.sample",
+      "status": "insufficient",
+      "observed": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "threshold": ">=10 paired activities/3 users; metadata known",
+      "unit": "count",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "direct_60min.strata.gps_clean.sample",
+      "status": "insufficient",
+      "observed": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "threshold": ">=10 paired activities/3 users; metadata known",
+      "unit": "count",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "direct_60min.strata.pause_recovery.sample",
+      "status": "insufficient",
+      "observed": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "threshold": ">=10 paired activities/3 users; metadata known",
+      "unit": "count",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "direct_60min.strata.quality_sparse.sample",
+      "status": "insufficient",
+      "observed": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "threshold": ">=10 paired activities/3 users; metadata known",
+      "unit": "count",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "direct_60min.strata.quality_sufficient.sample",
+      "status": "insufficient",
+      "observed": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "threshold": ">=10 paired activities/3 users; metadata known",
+      "unit": "count",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "race_prediction.sample",
+      "status": "insufficient",
+      "observed": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "threshold": "paired activities >= 60, users >= 20",
+      "unit": "count",
+      "reason": "insufficient_independent_paired_evidence",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "race_prediction.implementations",
+      "status": "pass",
+      "observed": true,
+      "threshold": "three distinct implemented strategies",
+      "unit": "identity",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "race_prediction.v3.noninferior",
+      "status": "insufficient",
+      "observed": null,
+      "threshold": "three-way paired median and P90",
+      "unit": "fraction",
+      "reason": "insufficient_independent_paired_evidence",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "race_prediction.segments.improvement",
+      "status": "insufficient",
+      "observed": null,
+      "threshold": "three-way paired improvement",
+      "unit": "fraction",
+      "reason": "insufficient_independent_paired_evidence",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "race_prediction.uncertainty",
+      "status": "insufficient",
+      "observed": null,
+      "threshold": "95% paired delta upper endpoints <= 0",
+      "unit": "fraction",
+      "reason": "insufficient_independent_paired_evidence",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "race_prediction.strata.device:unknown.sample",
+      "status": "insufficient",
+      "observed": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "threshold": ">=10 paired activities/3 users; metadata known",
+      "unit": "count",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "race_prediction.strata.distance:frozen_stratum_1.sample",
+      "status": "insufficient",
+      "observed": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "threshold": ">=10 paired activities/3 users; metadata known",
+      "unit": "count",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "race_prediction.strata.distance:frozen_stratum_2.sample",
+      "status": "insufficient",
+      "observed": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "threshold": ">=10 paired activities/3 users; metadata known",
+      "unit": "count",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "race_prediction.strata.distance:frozen_stratum_3.sample",
+      "status": "insufficient",
+      "observed": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "threshold": ">=10 paired activities/3 users; metadata known",
+      "unit": "count",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "race_prediction.strata.distance:frozen_stratum_4.sample",
+      "status": "insufficient",
+      "observed": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "threshold": ">=10 paired activities/3 users; metadata known",
+      "unit": "count",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "race_prediction.strata.distance:frozen_stratum_5.sample",
+      "status": "insufficient",
+      "observed": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "threshold": ">=10 paired activities/3 users; metadata known",
+      "unit": "count",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "race_prediction.strata.distance:other.sample",
+      "status": "insufficient",
+      "observed": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "threshold": ">=10 paired activities/3 users; metadata known",
+      "unit": "count",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "lab_lthr.sample",
+      "status": "insufficient",
+      "observed": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "threshold": "paired activities >= 30, users >= 10",
+      "unit": "count",
+      "reason": "insufficient_independent_paired_evidence",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "lab_lthr.implementations",
+      "status": "pass",
+      "observed": true,
+      "threshold": "three distinct implemented strategies",
+      "unit": "identity",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "lab_lthr.v3.noninferior",
+      "status": "insufficient",
+      "observed": null,
+      "threshold": "three-way paired median and P90",
+      "unit": "bpm",
+      "reason": "insufficient_independent_paired_evidence",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "lab_lthr.absolute_error",
+      "status": "insufficient",
+      "observed": null,
+      "threshold": "median <= 3, P90 <= 6",
+      "unit": "bpm",
+      "reason": "insufficient_independent_paired_evidence",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "lab_lthr.uncertainty",
+      "status": "insufficient",
+      "observed": null,
+      "threshold": "95% paired delta upper endpoints <= 0",
+      "unit": "bpm",
+      "reason": "insufficient_independent_paired_evidence",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "lab_lthr.strata.metadata:unknown.sample",
+      "status": "insufficient",
+      "observed": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "threshold": ">=10 paired activities/3 users; metadata known",
+      "unit": "count",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "field_hr_proxy.sample",
+      "status": "insufficient",
+      "observed": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "threshold": "paired activities >= 30, users >= 10",
+      "unit": "count",
+      "reason": "insufficient_independent_paired_evidence",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "field_hr_proxy.implementations",
+      "status": "pass",
+      "observed": true,
+      "threshold": "three distinct implemented strategies",
+      "unit": "identity",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "field_hr_proxy.v3.noninferior",
+      "status": "insufficient",
+      "observed": null,
+      "threshold": "three-way paired median and P90",
+      "unit": "bpm",
+      "reason": "insufficient_independent_paired_evidence",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "field_hr_proxy.absolute_error",
+      "status": "insufficient",
+      "observed": null,
+      "threshold": "median <= 3, P90 <= 6",
+      "unit": "bpm",
+      "reason": "insufficient_independent_paired_evidence",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "field_hr_proxy.uncertainty",
+      "status": "insufficient",
+      "observed": null,
+      "threshold": "95% paired delta upper endpoints <= 0",
+      "unit": "bpm",
+      "reason": "insufficient_independent_paired_evidence",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "field_hr_proxy.strata.metadata:unknown.sample",
+      "status": "insufficient",
+      "observed": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "threshold": ">=10 paired activities/3 users; metadata known",
+      "unit": "count",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "deterministic",
+      "status": "insufficient",
+      "observed": null,
+      "threshold": "all deterministic regressions passed; legacy pace delta <=0.01",
+      "unit": "s/km",
+      "reason": "external_deterministic_evidence_required",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    },
+    {
+      "id": "engineering_acceptance",
+      "status": "insufficient",
+      "observed": "unavailable_external_acceptance_evidence_required",
+      "threshold": "verified deterministic/E2E/review evidence for exact code version",
+      "unit": "evidence",
+      "eligible_activities": 0,
+      "eligible_users": 0,
+      "paired_activities": 0,
+      "paired_users": 0
+    }
+  ],
+  "candidate_unavailable_reason_counts": {
+    "no_independent_maximal_anchors": 5,
+    "no_independent_HR_protocol_support": 5
+  },
+  "distribution": {
+    "candidate_missing_cases": 5,
+    "affected_unique_users_with_missing_center": 4,
+    "paired_speed_or_race_delta_distribution": null,
+    "large_numeric_change_count": null,
+    "note": "No candidate center; null is unavailable, not zero impact or zero error."
+  },
+  "engineering_evidence": {
+    "pre_final_independent_review": "passed; 0 unresolved findings at exact implementation SHA",
+    "whole_spec_dual_axis_review": "pending after total PR update",
+    "first_report_receipts": "not supplied; engine honestly reports unavailable",
+    "actual_stack_run_source_sha": "266c5437965ce8f33e26c468b14c0984feb5f46a",
+    "stack_evidence_docs_sha": "3baf24d81b970ce879d3bb5178ced957468b23ca",
+    "joint_runtime_tree_or_blob_equal_count": 17,
+    "joint_original_calibration_runtime_files_equal_count": 17,
+    "joint_full_stack_rerun_claimed": false
+  },
+  "publication": {
+    "raw_data_in_git": false,
+    "production_access_or_write": false,
+    "production_active_version": 3,
+    "candidate_activation": false,
+    "formal_plan_generated": false,
+    "phase_b": "pending authorized merge, deployment and production read-only validation",
+    "issues_982_983_991": "remain open; Refs only"
+  },
+  "limitations": [
+    "all five real race references remain probable_maximal, measurement classification not_recorded",
+    "all final cases are event_date_retrospective; strict proof not fabricated",
+    "three-way paired intersection empty; all comparative errors and bootstrap intervals null",
+    "no direct60/lab/field labels; secondary race cannot establish one-hour threshold or physiological LTHR accuracy",
+    "final outcomes used once for first score and once for determinism only; no model, grade, split or cutoff changes",
+    "distance stratum identities pseudonymized in public rows; full original names retained only in private report",
+    "direct stratum regression is insufficient wherever stratum sample or paired metrics are unavailable; no absence is treated as pass"
+  ],
+  "controlled_backup": {
+    "artifact_count": 37,
+    "total_bytes_before_inventory": 150610371,
+    "inventory_sha256": "2ba6dd8d929eebca3e1b952ce94c97c632dff6484dec64c400618d19c6c6b25d",
+    "directories_mode": "0700",
+    "files_mode": "0600",
+    "copied_by": "root; no duplicate backup by implementation agent"
+  }
+}

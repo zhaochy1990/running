@@ -88,11 +88,15 @@ type Vo2MaxPB struct {
 // Source is everything compute_ability_snapshot needs, pre-assembled by the
 // loader (abilitysource). HRMax is the resolved baseline (never recomputed here).
 type Source struct {
-	Activities []Activity
-	Health28D  []HealthRow
-	Dashboard  *Dashboard
-	Vo2MaxPBs  []Vo2MaxPB
-	HRMax      *int
+	Activities  []Activity
+	Health28D   []HealthRow
+	Dashboard   *Dashboard
+	Vo2MaxPBs   []Vo2MaxPB
+	HRMax       *int
+	RHRBaseline *float64
+	// ActivityHRMax is supplied per activity day by the loader. A missing entry
+	// in a nonnil map means unavailable historical evidence, never today fallback.
+	ActivityHRMax map[string]*int
 }
 
 // Snapshot is the full ability snapshot for one date, mirroring the Python dict.

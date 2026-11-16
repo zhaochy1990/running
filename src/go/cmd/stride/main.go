@@ -33,6 +33,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -63,6 +64,10 @@ func appVersion() string {
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
+		var status interface{ ExitCode() int }
+		if errors.As(err, &status) {
+			os.Exit(status.ExitCode())
+		}
 		os.Exit(1)
 	}
 }
@@ -86,6 +91,7 @@ func newRootCmd() *cobra.Command {
 		newWatchCmd(),
 		newHomeCityCmd(),
 		newTSBlobCmd(),
+		newCalibrationCmd(),
 	)
 	return root
 }

@@ -1,0 +1,79 @@
+import { describe, expect, it } from "vitest";
+import fixture from "../../../../docs/calibration/fixtures/client-display-v1.json";
+import { calibrationDisplay } from "../calibrationDisplay";
+import type { StrideThreshold } from "../../api";
+
+describe("calibration explanation projection", () => {
+  it("uses the server integer pace and preserves range direction and three separate dates", () => {
+    const c = fixture.cases[0];
+    const display = calibrationDisplay(c.response.threshold as StrideThreshold, "speed");
+    expect(display.value).toBe(c.expected.pace);
+    expect(display.range).toBe(c.expected.pace_range);
+    expect(display.details).toContain("证据日 2026-10-01");
+    expect(display.details).toContain("数据截止 2026-11-14");
+    expect(display.details).toContain("校准执行 2026-11-15 00:30（上海）");
+  });
+  it.each(fixture.cases)("preserves $name server values without inventing evidence", (c) => {
+    const th = c.response.threshold as StrideThreshold | null;
+    const speed = calibrationDisplay(th, "speed");
+    const hr = calibrationDisplay(th, "hr");
+    expect(speed.value).toBe(c.expected.pace);
+    expect(speed.range).toBe(c.expected.pace_range);
+    expect(hr.value).toBe(c.expected.hr);
+    if ("hr_range" in c.expected) expect(hr.range).toBe(c.expected.hr_range);
+    if ("hr_method_label" in c.expected) expect(hr.details.join(" ")).toContain(c.expected.hr_method_label);
+    if ("speed_effort_label" in c.expected) expect(speed.details.join(" ")).toContain(c.expected.speed_effort_label);
+    if ("lab_method" in c.expected && c.expected.lab_method) expect(hr.details.join(" ")).toContain(c.expected.lab_method);
+    if ("rejected_evidence_day" in c.expected) {
+      const stale = "stale_evidence_day" in c.expected ? c.expected.stale_evidence_day : undefined;
+      if (stale) expect(hr.details).toContain(`最近陈旧协议日 ${stale}`);
+      if (c.expected.rejected_evidence_day !== stale) expect(hr.details).toContain(`最近未采用证据日 ${c.expected.rejected_evidence_day}`);
+      else expect(hr.details).not.toContain(`最近未采用证据日 ${stale}`);
+      expect(hr.details).toContain("未采用历史协议（不参与当前估计）");
+      if (stale) expect(hr.details).toContain("未采用协议：协议证据已过期");
+      if (c.name === "producer-stale-hr-mixed" || c.name.endsWith("-quality")) expect(hr.details).toContain("未采用协议：心率存在突变或恢复");
+      const supported = "current_hr_supported" in c.expected && c.expected.current_hr_supported;
+      expect(hr.status).toBe(supported ? "估计支持 低" : "估计支持 不足");
+      expect(hr.details).not.toContain("证据陈旧，需更新有效证据");
+      if (supported) { expect(hr.value).toBe("170"); expect(hr.details).toContain("证据日 2026-11-14"); }
+    }
+    if (c.name === "low-stale") expect(hr.details).toContain("证据陈旧，需更新有效证据");
+    if (c.name === "constraints-only") expect(speed.details).toContain("无法可靠估计中心值");
+    if (c.name === "legacy") expect(hr.details.join(" ")).toContain("不能视为独立检测值");
+  });
+  it("preserves future-schema centers without borrowing known support", () => {
+    const th = fixture.cases.find(c => c.name === "future-source-schema")!.response.threshold as StrideThreshold;
+    expect(calibrationDisplay(th, "speed").value).toBe("3:34");
+    for (const metric of ["speed", "hr"] as const) {
+      const display = calibrationDisplay(th, metric);
+      expect(display.status).toBe("来源信息暂不可用");
+      expect(display.details.join(" ")).not.toContain("已确认全力");
+    }
+  });
+  it("rejects malformed integer/range values and does not derive a pace from speed", () => {
+    const th = structuredClone(fixture.cases[0].response.threshold) as StrideThreshold;
+    th.pace_per_km_sec = 214.5;
+    th.speed_range_pace_per_km_sec = {fast: 260, slow: 240, meaning: "future", bound_kind: "two_sided"};
+    expect(calibrationDisplay(th, "speed").value).toBe("—");
+    expect(calibrationDisplay(th, "speed").range).toBeNull();
+  });
+  it("does not call a current snapshot with absent HR evidence a legacy HR estimate", () => {
+    const th = structuredClone(fixture.cases[0].response.threshold) as StrideThreshold;
+    delete th.source!.hr;
+    th.hr_bpm = null;
+    expect(calibrationDisplay(th, "hr").status).toBe("心率证据信息未提供");
+    expect(calibrationDisplay(th, "hr").details.join(" ")).not.toContain("旧版训练估计");
+  });
+
+  it("explains actual publisher protocol quality and independent-anchor reasons separately from support", () => {
+    const th = structuredClone(fixture.cases[0].response.threshold) as StrideThreshold;
+    th.source!.hr!.measurement_quality = "protocol_quality_gate_passed";
+    th.source!.hr!.support = "low";
+    expect(calibrationDisplay(th, "hr").details[0]).toContain("通过协议质量门槛");
+    expect(calibrationDisplay(th, "hr").status).toBe("估计支持 低");
+    th.source!.speed!.reasons = ["no_independent_maximal_anchors", "hour_extrapolation_not_identified_by_independent_recent_anchors"];
+    expect(calibrationDisplay(th, "speed").details).toContain("缺少独立近全力证据");
+    expect(calibrationDisplay(th, "speed").details).toContain("近期独立锚点不足，无法推断一小时能力");
+  });
+
+});

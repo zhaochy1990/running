@@ -104,41 +104,13 @@ This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 
 ## Athlete baseline metrics — single source (HARD)
 
-所有"用 N 天用户历史 → 算出一个 athlete-level 常量"的 baseline 指标只能存活在 **`src/stride_core/running_calibration/`** —— 这是 canonical 包，按需扩展，不要新建并行包。覆盖范围（非穷举）：
+生产基线算法的 canonical owner 是 **`src/go/internal/compute/calibration/`**，持久化与版本 policy 由 **`src/go/internal/storage/`** 拥有。Python `src/stride_core/running_calibration/` 是冻结的遗留对照，仅迁移/测试使用；新增基线逻辑在 Go 原域扩展。本文取代 ADR 0015 中“先 Python 后 Go”的基线开发约定；冻结 v3 算法源码和 golden 不改。
 
-- `max_hr` / `observed_max_hr` / `hrmax_estimate` / `high_hr_reference`
-- `rhr_baseline`
-- `threshold_hr` (LTHR)
-- `threshold_speed_mps` / threshold pace
-- `critical_power_w`
-- HR zones / pace zones
-- 任何未来的"长期个体基线"指标
+消费 HRmax、RHR、阈值、CP 与 zones 时，调用 `ReadEffectiveRunningCalibration(user, Shanghai cutoff day, active)` 一次读取同一 snapshot 的完整 bundle；Coach TS adapter 读取同一条 MySQL policy 并遵守同样规则。逐活动计算按活动上海日读，缺历史返回显式 unavailable，保留原派生值，随后由明确历史校准/重算任务处理。普通 GET / Coach 读取保持只读。
 
-**新增 / 改基线指标**：
+默认 active=3、candidate=4、fallback=3；只有首选版本缺行才回退，已有候选行但中心缺失仍保留候选语义。生产候选持久化默认关闭；隔离 preview 仅返回内存结果。校准发布、同日 ID 兼容、冻结派生来源、重算顺序与 rollback 边界，见 [ADR 0045](docs/adr/0045-calibration-policy-bundles-and-lineage.md)。改基线读写、版本、历史消费或来源解释时必须读该 ADR 和 [客户端解释契约](docs/calibration/client-explanation-contract.md)。
 
-1. 纯算法加在 `running_calibration/core.py` 或 `segments.py`（无 DB 依赖，接 `RunningActivity` 序列）
-2. 字段加在 `RunningCalibrationSnapshot`（`types.py`）
-3. SQLite schema 加列在 `running_calibration/sqlite_connector.py` 的 `RUNNING_CALIBRATION_SCHEMA` + `_ensure_columns`
-4. 带 `CalibrationConfidence` + `CalibrationEvidence`，跟现有字段一致
-
-**消费基线指标**：
-
-- 经 `RunningCalibrationRepository.fetch_latest(as_of_date)` 读，**不要** inline 再算一次
-- `compute_ability_snapshot(hr_max=185)` 这种 hard-coded default 视为 bug —— 调用方必须从 reader 取
-- 改老代码遇到 inline 重复（如 routes/coach context 各自 `SELECT rhr FROM daily_health` 算 P10）→ 删掉换 reader
-
-**禁止 patterns**：
-
-| 别这么写 | 用这个 |
-|---|---|
-| `training_load/calibration.py::_estimate_hrmax`（同概念第二实现） | `running_calibration.estimate_hrmax_profile` |
-| route / coach / ability 里 inline 算 RHR P10 | `RunningCalibrationRepository.fetch_latest().rhr_baseline` |
-| `hr_max: int = 185` magic default | reader 取；缺数据时显式 fallback 到 onboarding profile 或抛错 |
-| 新建 `src/stride_core/athlete_baseline/` 等并行包 | 在 `running_calibration/` 原地扩展（后续可改名，但只能有一个） |
-
-**例外**：`routes/onboarding.py::_suggest_rhr_from_health`（P25/30d）是 new-user seed value 占位，数据不足时给前端 prefill，**语义不同**于 trained baseline —— 保留但保持注释清楚。
-
-**历史教训**：`training_load/calibration.py::_estimate_hrmax` 是 running_calibration 抽出来时**没改完的 delegation 残留**，和 `running_calibration/core.py::estimate_hrmax_profile` 算同一指标但更弱（无置信度 / 无邻居支撑度检验）。"两个函数算同一指标"是这类 bug 的典型形态 —— 加新代码前先 grep 现有实现。
+所有长期个体基线都经该 reader 消费，不在 route / Coach / ability 另算 RHR 分位数，不用 magic HRmax=185，不创建平行 baseline 包。onboarding 的新用户 seed prefill 语义不同，仍可保留明确注释。
 
 ## 不要重复造轮子（一般原则）
 

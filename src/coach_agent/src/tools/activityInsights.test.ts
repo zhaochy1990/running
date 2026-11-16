@@ -119,6 +119,12 @@ function baselineSummaries(): Activity[] {
 }
 
 const CALIBRATION: RunningCalibration = {
+  calibrationId: 42,
+  algorithmVersion: 3,
+  computedAt: "2026-10-01T12:00:00.000000Z",
+  fingerprint: "go-digest",
+  selection: { mode: "active", policy_revision: 0, requested_version: 3, effective_version: 3, state: "selected" },
+  source: { schema_version: 0, state: "legacy_source_missing" },
   asOfDate: "2026-10-01",
   thresholdHr: 168,
   thresholdSpeedMps: 3.9,
@@ -194,6 +200,13 @@ test("insights: baseline regression, thermal drift, plan deviation, load positio
 
   // 阈值定位：1000/3.9 m/s = 256 s/km；147/168 = 87.5%；300/256 = 117.2%。
   assert.deepEqual(result.calibration, {
+    as_of_date: "2026-10-01",
+    calibration_id: 42,
+    algorithm_version: 3,
+    computed_at: "2026-10-01T12:00:00.000000Z",
+    fingerprint: "go-digest",
+    selection: { mode: "active", policy_revision: 0, requested_version: 3, effective_version: 3, state: "selected" },
+    source: { schema_version: 0, state: "legacy_source_missing" },
     threshold_hr: 168,
     threshold_pace_s_per_km: 256,
     hr_pct_of_threshold: 87.5,
@@ -313,4 +326,14 @@ test("insights: unavailable paths and runtime guards", async () => {
   assert.ok(tool);
   await assert.rejects(() => tool.invoke({ labelId: "L1" }, {}), /missing userId/);
   await assert.rejects(() => tool.invoke({ labelId: "L1" }, { context: { userId } }), /missing asof/);
+});
+
+test("historical activity uses its Shanghai day calibration rather than today's thresholds", async () => {
+  const provider = makeProvider({ activity: makeActivity({ date: new Date("2026-10-01T23:30:00Z") }) });
+  provider.getLatestRunningCalibration = async (_user, cutoff) => {
+    assert.equal(cutoff, "2026-10-02");
+    return CALIBRATION;
+  };
+  const result = await invoke(provider);
+  assert.equal(result.available, true);
 });

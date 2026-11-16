@@ -12,6 +12,8 @@
 import UCharts from '../../vendor/ucharts/u-charts.min';
 import {
   classifyForm,
+  projectCalibration,
+  projectTrainingZones,
   formColor,
   FORM_ZONE_COLOR,
   FORM_ZONE_LABEL,
@@ -62,6 +64,9 @@ interface MetricCard {
   unit: string;
   baseline: string;
   color: string;
+  range?: string | null;
+  lines?: string[];
+  help?: string[];
 }
 
 interface LoadStat {
@@ -101,6 +106,7 @@ interface TrainingStatusPageData {
   loading: boolean;
   error: string;
   metrics: MetricCard[];
+  expandedMetric: string;
   loadStats: LoadStat[];
   readinessLabel: string;
   readinessColor: string;
@@ -131,6 +137,8 @@ interface TrainingStatusPageHandlers {
   onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
   onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onBack(): void;
+  onMetricHelp(e: WechatMiniprogram.TouchEvent): void;
+  onRetry(): void;
   onWindowChange(e: WechatMiniprogram.TouchEvent): void;
   onHeatTap(e: WechatMiniprogram.TouchEvent): void;
   onRhrTouch(e: WechatMiniprogram.TouchEvent): void;
@@ -354,10 +362,7 @@ function buildMetrics(): MetricCard[] {
   const hrvHigh = healthData?.hrv?.hrv_normal_high ?? null;
   const hrvBaseline = hrvLow != null && hrvHigh != null ? `正常 ${hrvLow}-${hrvHigh} ms` : '';
 
-  const threshold = zonesData?.threshold ?? null;
-  const pacePerKm = threshold?.pace_per_km_sec ?? null;
-  const paceStr = pacePerKm != null ? fmtPace(pacePerKm).replace('/km', '') : '—';
-  const hrStr = threshold?.hr_bpm != null ? String(Math.round(threshold.hr_bpm)) : '—';
+  const calibration = projectCalibration(zonesData);
 
   return [
     {
@@ -378,18 +383,24 @@ function buildMetrics(): MetricCard[] {
     },
     {
       label: '阈值配速',
-      sub: 'STRIDE Threshold Pace',
-      value: paceStr,
+      sub: '约一小时全力能力',
+      value: calibration.pace.value,
       unit: '/km',
-      baseline: threshold?.speed_confidence ? `置信 ${threshold.speed_confidence}` : '',
+      baseline: '',
+      range: calibration.pace.range,
+      lines: calibration.pace.lines,
+      help: calibration.pace.help,
       color: '#00a85a',
     },
     {
-      label: '阈值心率',
-      sub: 'STRIDE Threshold HR',
-      value: hrStr,
+      label: calibration.hr.label,
+      sub: '按来源解释的心率参考',
+      value: calibration.hr.value,
       unit: 'bpm',
-      baseline: threshold?.hr_confidence ? `置信 ${threshold.hr_confidence}` : '',
+      baseline: '',
+      range: calibration.hr.range,
+      lines: calibration.hr.lines,
+      help: calibration.hr.help,
       color: '#d97706',
     },
   ];
@@ -425,32 +436,6 @@ function buildReadiness(cur: StrideTrainingLoadRecord | null): {
     bg: hexToRgba(color, 0.12),
     reasons: (cur?.readiness_reasons ?? []).join(' · '),
   };
-}
-
-function buildZones(): { paceZones: ZoneRow[]; hrZones: ZoneRow[]; hasZones: boolean } {
-  const z = zonesData;
-  const hasZones = !!z?.threshold && z.pace_zones.length > 0 && z.hr_zones.length > 0;
-  const fmtPaceRange = (upper: string | null, lower: string | null): string => {
-    if (upper && lower) return `${upper} – ${lower}`;
-    if (upper) return `≥ ${upper}`;
-    if (lower) return `≤ ${lower}`;
-    return '—';
-  };
-  const paceZones: ZoneRow[] = (z?.pace_zones ?? []).map((p) => ({
-    name: p.name,
-    label: p.label,
-    range: fmtPaceRange(p.upper_pace, p.lower_pace),
-  }));
-  const hrZones: ZoneRow[] = (z?.hr_zones ?? []).map((h) => {
-    const lo = h.lower_bpm;
-    const hi = h.upper_bpm;
-    let range = '—';
-    if (lo != null && hi != null) range = `${lo} – ${hi}`;
-    else if (lo != null) range = `≥ ${lo}`;
-    else if (hi != null) range = `≤ ${hi}`;
-    return { name: h.name, label: h.label, range };
-  });
-  return { paceZones, hrZones, hasZones };
 }
 
 /** 热力图某天的详情（日期 + 剂量 + 当天活动摘要）。 */
@@ -490,6 +475,7 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
     loading: true,
     error: '',
     metrics: [],
+    expandedMetric: '',
     loadStats: [],
     readinessLabel: '',
     readinessColor: '#8888a0',
@@ -556,6 +542,16 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
     wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/coach/coach' }) });
   },
 
+  onMetricHelp(e) {
+    const label = String(e.currentTarget.dataset.label ?? '');
+    this.setData({ expandedMetric: this.data.expandedMetric === label ? '' : label });
+  },
+
+  onRetry() {
+    this.setData({ loading: true, error: '' });
+    void this.fetch();
+  },
+
   async fetch() {
     if (!userId) {
       this.setData({ loading: false });
@@ -609,7 +605,7 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
   render() {
     const cur = loadData?.current ?? null;
     const hasLoad = loaded && !!cur;
-    const { paceZones, hrZones, hasZones } = buildZones();
+    const { paceZones, hrZones, hasZones } = projectTrainingZones(zonesData);
     const readiness = buildReadiness(cur);
 
     const rhr = rhrTrend(trendDays);
@@ -654,7 +650,7 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
           ctl != null && ctl > 0
             ? `当前 CTL ≈ ${ctl.toFixed(0)} · 对应阈值 ±${(ctl * 0.1).toFixed(0)} / ±${(ctl * 0.25).toFixed(0)}`
             : '',
-        calibrationLine: `Calibration: ${zonesData?.threshold?.as_of_date ?? '—'} · 来源：STRIDE 自研算法`,
+        calibrationLine: `数据截止：${projectCalibration(zonesData).cutoffDay ?? '未知'} · 校准执行：${projectCalibration(zonesData).computedShanghai ?? '未知'}（上海时间）`,
         loadDateLine: `Training load latest: ${cur?.date ?? '—'}`,
       },
       // canvas 节点要等 view 层渲染出来才拿得到

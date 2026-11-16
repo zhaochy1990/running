@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { projectCalibration, projectTrainingZones } from './trainingStatus.ts';
+import type { StrideZonesResponse } from '../types/health';
 /**
  * trainingStatus.ts 自检：`node utils/trainingStatus.check.mts`。
  * 只覆盖指标分类 / 图表配置 / 热力图 / 周剂量聚合，不依赖小程序运行时与 uCharts。
@@ -164,5 +167,112 @@ eq(columnGap(2, 300), 3, 'categoryGap caps at 3 for sparse columns');
 eq(columnGap(30, 300), 2, 'categoryGap proportional to slot at 30d');
 eq(columnGap(90, 300), 1, 'categoryGap floors at 1 for dense 90d columns');
 eq((colOpts.extra as { column: { width?: unknown } }).column.width, undefined, 'no fixed width to override the adaptive gap');
+
+
+
+// Public presentation seam: the same API response and independent expected literals as Web/iOS.
+const displayVectors = JSON.parse(readFileSync(new URL('../../../docs/calibration/fixtures/client-display-v1.json', import.meta.url), 'utf8'));
+const firstVector = displayVectors.cases[0];
+const firstDisplay = projectCalibration(firstVector.response as StrideZonesResponse);
+eq(firstDisplay.pace.value, firstVector.expected.pace, 'shared two-sided center');
+eq(firstDisplay.pace.range, firstVector.expected.pace_range, 'shared fast-to-slow range');
+for (const vector of displayVectors.cases) {
+  const display = projectCalibration(vector.response as StrideZonesResponse);
+  eq(display.pace.value, vector.expected.pace, `${vector.name} center`);
+  eq(display.pace.range, vector.expected.pace_range, `${vector.name} directional range`);
+  eq(display.hr.value, vector.expected.hr, `${vector.name} HR`);
+  if (vector.expected.rejected_evidence_day) {
+    const staleDay = vector.expected.stale_evidence_day;
+    if (staleDay) eq(display.hr.lines.includes(`最近陈旧协议日 ${staleDay}`), true, `${vector.name} stale date`);
+    eq(display.hr.lines.includes(`最近未采用证据日 ${vector.expected.rejected_evidence_day}`), vector.expected.rejected_evidence_day !== staleDay, `${vector.name} distinct rejected date without duplication`);
+    if (vector.name === 'producer-stale-hr-mixed' || vector.name.endsWith('-quality')) eq(display.hr.lines.includes('未采用协议：心率存在突变或恢复'), true, 'historical quality rejection explained');
+    eq(display.hr.lines.includes('未采用历史协议（不参与当前估计）'), true, `${vector.name} explicit historical scope`);
+    if (staleDay) eq(display.hr.lines.includes('未采用协议：协议证据已过期'), true, `${vector.name} historical stale reason`);
+    eq(display.hr.lines.includes('心率支持证据陈旧'), false, `${vector.name} current support not mislabeled stale`);
+    eq(display.hr.support, vector.expected.current_hr_supported ? '模型支持：低' : '模型支持：不足', `${vector.name} current support unchanged`);
+    if (vector.expected.current_hr_supported) eq(display.hr.evidenceDay, vector.expected.hr_evidence_day, `${vector.name} selected evidence unchanged`);
+  }
+  if (vector.expected.source_unavailable) {
+    eq(display.pace.support, '来源信息不可用 · 保守参考', `${vector.name} conservative support`);
+    eq(display.hr.support, '来源信息不可用 · 保守参考', `${vector.name} conservative HR support`);
+    eq(display.pace.lines.some(line => line.includes('已确认全力')), false, `${vector.name} no borrowed effort`);
+  }
+  if (vector.expected.hr_range != null) eq(display.hr.range, vector.expected.hr_range, `${vector.name} canonical HR range`);
+  if (vector.expected.hr_method_label != null) eq(display.hr.help.includes(`方法：${vector.expected.hr_method_label}`), true, `${vector.name} canonical HR method`);
+  if (vector.expected.speed_effort_label != null) eq(display.pace.lines.some((line) => line.includes(`全力证据：${vector.expected.speed_effort_label}`)), true, `${vector.name} canonical effort support`);
+  if (vector.expected.lab_method != null) eq(display.hr.lines.includes(`实验室方法特定阈值：${vector.expected.lab_method}`), true, `${vector.name} original lab method`);
+  eq(display.pace.evidenceDay, vector.expected.evidence_day, `${vector.name} evidence day`);
+  eq(display.cutoffDay, vector.expected.cutoff_day, `${vector.name} cutoff day`);
+  eq(display.computedShanghai, vector.expected.computed_shanghai, `${vector.name} execution instant`);
+}
+const weakDisplay = projectCalibration(displayVectors.cases.find((v: { name: string }) => v.name === 'low-stale').response);
+eq(weakDisplay.pace.support, '模型支持：低', 'quality high never upgrades low support');
+eq(weakDisplay.hr.lines.includes('心率支持证据陈旧'), true, 'stale reason remains visible');
+eq(firstDisplay.hr.label, '现场心率参考', 'field proxy is not physiological LTHR');
+eq(firstDisplay.pace.help.includes('来源活动不可查看；此处仅保留安全摘要。'), true, 'unverified source stays summary only');
+eq(projectCalibration(null).pace.value, '—', 'unavailable never becomes zero');
+eq(firstDisplay.hr.range, '支持范围 163–169 bpm', 'HR support range');
+const unavailableDisplay = projectCalibration(displayVectors.cases.find((v: { name: string }) => v.name === 'source-unavailable').response);
+eq(unavailableDisplay.pace.support, '来源信息不可用 · 保守参考', 'broken source is not mislabeled legacy');
+const paceOnlyZones = projectTrainingZones({ threshold: null, pace_zones: [{name:'Z1',label:'轻松',upper_pace:'4:10',lower_pace:'5:00'}], hr_zones:[] });
+eq(paceOnlyZones.hasZones, true, 'pace zones remain available without HR or center');
+eq(paceOnlyZones.paceZones[0].range, '4:10 – 5:00', 'zones retain server fast-to-slow order');
+eq(projectTrainingZones({threshold:null,pace_zones:[],hr_zones:[{name:'Z1',label:'轻松',lower_bpm:null,upper_bpm:140}]}).hasZones, true, 'HR zones remain available alone');
+const canonicalLegacy = structuredClone(firstVector.response);
+canonicalLegacy.threshold.source.speed.method = 'legacy_v3_training_estimate';
+eq(projectCalibration(canonicalLegacy).pace.lines.includes('旧版训练估计，非独立检测或实验室参考'), true, 'available legacy source remains honest');
+const canonicalHour = structuredClone(firstVector.response);
+canonicalHour.threshold.source.speed.method = 'direct_60min_maximal';
+eq(projectCalibration(canonicalHour).pace.help.includes('方法：约一小时全力直接锚点'), true, 'canonical direct hour method');
+
+
+const speedOnlySource = structuredClone(firstVector.response);
+delete speedOnlySource.threshold.source.hr;
+eq(projectCalibration(speedOnlySource).hr.support, '心率证据信息未提供', 'current speed-only source is not legacy');
+const unavailableHrTarget = structuredClone(firstVector.response);
+unavailableHrTarget.threshold.hr_bpm = null;
+unavailableHrTarget.threshold.source.hr.target_type = 'unavailable';
+eq(projectCalibration(unavailableHrTarget).hr.lines.includes('暂无可用心率参考'), true, 'unavailable HR is not an existing estimate');
+
+const protocolQuality = structuredClone(firstVector.response);
+protocolQuality.threshold.source.hr.measurement_quality = 'protocol_quality_gate_passed';
+protocolQuality.threshold.source.hr.support = 'low';
+const protocolQualityDisplay = projectCalibration(protocolQuality).hr;
+eq(protocolQualityDisplay.lines.includes('数据质量：通过协议质量门槛 · 全力证据：已确认全力'), true, 'canonical protocol quality retains its own meaning');
+eq(protocolQualityDisplay.support, '模型支持：低', 'protocol quality gate never upgrades model support');
+
+const missingAnchors = structuredClone(firstVector.response);
+missingAnchors.threshold.source.speed.reasons = ['no_independent_maximal_anchors'];
+eq(projectCalibration(missingAnchors).pace.lines.includes('缺少独立近全力证据'), true, 'canonical missing independent anchors reason');
+missingAnchors.threshold.source.speed.reasons = ['hour_extrapolation_not_identified_by_independent_recent_anchors'];
+eq(projectCalibration(missingAnchors).pace.lines.includes('近期独立锚点不足无法推断一小时能力'), true, 'canonical insufficient recent anchors reason');
+
+const probableEffort = structuredClone(firstVector.response);
+probableEffort.threshold.source.speed.effort_support = 'probable_maximal';
+eq(projectCalibration(probableEffort).pace.lines.includes('数据质量：高 · 全力证据：可能全力'), true, 'canonical probable maximal effort is not unknown');
+
+const fieldProtocol = structuredClone(firstVector.response);
+fieldProtocol.threshold.source.hr.method = 'field_30min_last20_v1';
+eq(projectCalibration(fieldProtocol).hr.help.includes('方法：场地测试协议（30分钟测试的后20分钟）'), true, 'canonical field protocol explains the actual window');
+
+const labProtocol = structuredClone(firstVector.response);
+labProtocol.threshold.source.hr.method = 'lab_lthr_report_v1';
+labProtocol.threshold.source.hr.target_type = 'lab_method_specific_LTHR';
+labProtocol.threshold.source.hr.lab_method = 'LT2_4mmol_protocol';
+const labProtocolDisplay = projectCalibration(labProtocol).hr;
+eq(labProtocolDisplay.help.includes('方法：实验室乳酸阈值报告'), true, 'canonical laboratory report protocol');
+eq(labProtocolDisplay.lines.includes('实验室方法特定阈值：LT2_4mmol_protocol'), true, 'laboratory method is preserved');
+
+const halfIntegerHr = structuredClone(firstVector.response);
+halfIntegerHr.threshold.hr_bpm = 166.5;
+halfIntegerHr.threshold.source.hr.range_low = 163.5;
+halfIntegerHr.threshold.source.hr.range_high = 169.5;
+const halfIntegerHrDisplay = projectCalibration(halfIntegerHr).hr;
+eq(halfIntegerHrDisplay.value, '167', 'positive HR half integer rounds upward');
+eq(halfIntegerHrDisplay.range, '支持范围 164–170 bpm', 'positive HR range halves round upward');
+
+const unsupportedEffortAlias = structuredClone(firstVector.response);
+unsupportedEffortAlias.threshold.source.speed.effort_support = 'likely_maximal';
+eq(projectCalibration(unsupportedEffortAlias).pace.lines.includes('数据质量：高 · 全力证据：未知'), true, 'unsupported effort alias remains unknown');
 
 console.log('trainingStatus.check: OK');

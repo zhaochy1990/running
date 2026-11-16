@@ -7,6 +7,15 @@ import StrideKit
 struct StridewiseApp: App {
 
     @State private var model = AppModel()
+    #if DEBUG
+    private let localRead = DebugLocalReadConfiguration.loadForSimulator()
+    #endif
+
+    init() {
+        #if DEBUG
+        if let localRead { _model = State(initialValue: localRead.makeAppModel()) }
+        #endif
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -14,7 +23,11 @@ struct StridewiseApp: App {
                 .environment(model)
                 .task {
                     GeistFonts.registerIfNeeded()
+                    #if DEBUG
+                    await model.bootstrap(entry: localRead == nil ? nil : .trainingStatus)
+                    #else
                     await model.bootstrap()
+                    #endif
                 }
                 .onOpenURL { url in
                     model.open(url)

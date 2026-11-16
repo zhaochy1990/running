@@ -25,6 +25,7 @@ public struct MetricCardVM: Equatable, Identifiable, Sendable {
     public let unit: String
     public let baseline: String
     public let color: UInt32
+    public var explanation: CalibrationDisplay? = nil
 
     public var id: String { label }
 }
@@ -240,7 +241,7 @@ public final class TrainingStatusModel {
         } else {
             currentCtlNote = ""
         }
-        calibrationLine = "Calibration: \(zonesData?.threshold?.asOfDate ?? "—") · 来源：STRIDE 自研算法"
+        calibrationLine = "数据截止：\(calibrationDisplay(zonesData, metric: .pace).cutoffDay ?? "未提供") · 证据与校准执行日期见阈值说明"
         loadDateLine = "Training load latest: \(cur?.date ?? "—")"
     }
 
@@ -278,14 +279,8 @@ public final class TrainingStatusModel {
             hrvBaseline = "正常 \(Int(low))-\(Int(high)) ms"
         }
 
-        let threshold = zonesData?.threshold
-        let paceStr: String
-        if let pace = threshold?.pacePerKmSec {
-            paceStr = String(format: "%d:%02d", Int(pace) / 60, Int(pace) % 60)
-        } else {
-            paceStr = "—"
-        }
-        let hrStr = threshold?.hrBpm != nil ? String(Int(threshold!.hrBpm!.rounded())) : "—"
+        let pace = calibrationDisplay(zonesData, metric: .pace)
+        let hr = calibrationDisplay(zonesData, metric: .heartRate)
 
         metrics = [
             MetricCardVM(
@@ -306,19 +301,21 @@ public final class TrainingStatusModel {
             ),
             MetricCardVM(
                 label: "阈值配速",
-                sub: "STRIDE Threshold Pace",
-                value: paceStr,
+                sub: "约一小时全力能力估计",
+                value: pace.value,
                 unit: "/km",
-                baseline: threshold?.speedConfidence.map { "置信 \($0)" } ?? "",
-                color: 0x00A85A
+                baseline: pace.support,
+                color: 0x00A85A,
+                explanation: pace
             ),
             MetricCardVM(
                 label: "阈值心率",
-                sub: "STRIDE Threshold HR",
-                value: hrStr,
+                sub: "训练参考 · 按来源解读",
+                value: hr.value,
                 unit: "bpm",
-                baseline: threshold?.hrConfidence.map { "置信 \($0)" } ?? "",
-                color: 0xD97706
+                baseline: hr.support,
+                color: 0xD97706,
+                explanation: hr
             ),
         ]
     }

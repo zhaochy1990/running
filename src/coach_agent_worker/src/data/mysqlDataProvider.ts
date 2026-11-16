@@ -31,10 +31,12 @@ import type {
   WeeklyFeedback,
   WeeklyPlanDocument,
 } from "@stride/coach-agent";
+import { CalibrationSourceSchema } from "@stride/coach-agent";
 import { shanghaiDay } from "@stride/contract";
 import type { Pool, RowDataPacket } from "mysql2/promise";
 import type { MySqlConfig } from "../config.js";
 import { createStridePool } from "../db/mysql.js";
+import policyContract from "./calibrationPolicyContract.json" with { type: "json" };
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -437,49 +439,91 @@ export class MySqlDataProvider implements DataProvider {
     });
   }
 
-  /** Latest canonical running calibration on or before the inclusive cutoff. */
-  async getLatestRunningCalibration(userId: string, asOfDate: string): Promise<RunningCalibration | null> {
-    const [snapshotRows] = await this.pool.query<RowDataPacket[]>(
-      `SELECT id, as_of_date, threshold_hr, threshold_speed_mps, rhr_baseline,
-              threshold_hr_confidence, threshold_speed_confidence
-         FROM running_calibration_snapshot
-	       WHERE user_id = ? AND as_of_date <= ?
-        ORDER BY as_of_date DESC, algorithm_version DESC
-        LIMIT 1`,
-      [userId, asOfDate],
-    );
-    const snapshot = snapshotRows[0];
-    if (!snapshot) {
-      return null;
+  /** Ordinary Coach reads always resolve active; candidate is an explicit offline adapter call. */
+  async getLatestRunningCalibration(userId: string, asOfDate: string, mode: "active" | "candidate" = "active"): Promise<RunningCalibration | null> {
+    if (mode !== "active" && mode !== "candidate") throw new Error("invalid calibration selection mode");
+    const cutoff = assertDay(shanghaiDay(asOfDate));
+    const connection = await this.pool.getConnection();
+    try {
+      await connection.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
+      await connection.query("START TRANSACTION READ ONLY");
+      const [policyRows] = await connection.query<RowDataPacket[]>(
+        "SELECT active_version, candidate_version, fallback_version, revision FROM running_calibration_policy WHERE policy_key = ? LIMIT 1",
+        ["running_baseline"],
+      );
+      const policy = policyRows[0] ?? { ...policyContract, revision: 0 };
+      if (
+        !policyContract.supported_versions.includes(Number(policy.active_version)) ||
+        Number(policy.fallback_version) !== policyContract.fallback_version ||
+        (policy.candidate_version !== null && !policyContract.supported_versions.includes(Number(policy.candidate_version)))
+      ) {
+        throw new Error("unsupported calibration policy versions");
+      }
+      const requested = mode === "active" ? Number(policy.active_version) : policy.candidate_version === null ? null : Number(policy.candidate_version);
+      const fallback = Number(policy.fallback_version);
+      const versions = [...new Set(requested === null ? [fallback] : [requested, fallback])];
+      let snapshot: RowDataPacket | undefined;
+      for (const version of versions) {
+        const [rows] = await connection.query<RowDataPacket[]>(
+          `SELECT id, as_of_date, algorithm_version,
+                  DATE_FORMAT(computed_at, '%Y-%m-%dT%H:%i:%s.%fZ') AS computed_at, source_json,
+                  threshold_hr, threshold_speed_mps, rhr_baseline, threshold_hr_confidence, threshold_speed_confidence
+             FROM running_calibration_snapshot
+            WHERE user_id = ? AND algorithm_version = ? AND as_of_date <= ?
+            ORDER BY as_of_date DESC, id DESC LIMIT 1`,
+          [userId, version, cutoff],
+        );
+        snapshot = rows[0];
+        if (snapshot) break;
+      }
+      if (!snapshot) {
+        await connection.commit();
+        return null;
+      }
+      const [paceRows] = await connection.query<RowDataPacket[]>(
+        `SELECT name, min_pace_s_per_km, max_pace_s_per_km FROM running_calibration_pace_zone
+          WHERE user_id = ? AND snapshot_id = ? ORDER BY name ASC`,
+        [userId, snapshot.id],
+      );
+      const [hrRows] = await connection.query<RowDataPacket[]>(
+        `SELECT name, min_bpm, max_bpm FROM running_calibration_hr_zone
+          WHERE user_id = ? AND snapshot_id = ? ORDER BY name ASC`,
+        [userId, snapshot.id],
+      );
+      const source = calibrationSource(snapshot.source_json);
+      const effective = Number(snapshot.algorithm_version);
+      const isFallback = requested === null || requested !== effective;
+      const result: RunningCalibration = {
+        calibrationId: Number(snapshot.id),
+        algorithmVersion: effective,
+        computedAt: snapshot.computed_at instanceof Date ? snapshot.computed_at.toISOString() : String(snapshot.computed_at),
+        selection: {
+          mode,
+          policy_revision: Number(policy.revision),
+          requested_version: requested,
+          effective_version: effective,
+          state: isFallback ? "fallback" : "selected",
+          ...(isFallback ? { reason: requested === null ? "candidate_not_configured" : "preferred_snapshot_missing" } : {}),
+        },
+        source,
+        ...(source.fingerprint ? { fingerprint: source.fingerprint } : {}),
+        asOfDate: snapshot.as_of_date as string,
+        thresholdHr: (snapshot.threshold_hr ?? null) as number | null,
+        thresholdSpeedMps: (snapshot.threshold_speed_mps ?? null) as number | null,
+        rhrBaseline: (snapshot.rhr_baseline ?? null) as number | null,
+        thresholdHrConfidence: snapshot.threshold_hr_confidence as string,
+        thresholdSpeedConfidence: snapshot.threshold_speed_confidence as string,
+        paceZones: paceRows.map(rowToPaceZone),
+        heartRateZones: hrRows.map(rowToHeartRateZone),
+      };
+      await connection.commit();
+      return result;
+    } catch (error) {
+      await connection.rollback().catch(() => {});
+      throw error;
+    } finally {
+      connection.release();
     }
-
-    const [paceRows, heartRateRows] = await Promise.all([
-      this.pool.query<RowDataPacket[]>(
-        `SELECT name, min_pace_s_per_km, max_pace_s_per_km
-           FROM running_calibration_pace_zone
-          WHERE user_id = ? AND snapshot_id = ?
-          ORDER BY name ASC`,
-        [userId, snapshot.id],
-      ),
-      this.pool.query<RowDataPacket[]>(
-        `SELECT name, min_bpm, max_bpm
-           FROM running_calibration_hr_zone
-          WHERE user_id = ? AND snapshot_id = ?
-          ORDER BY name ASC`,
-        [userId, snapshot.id],
-      ),
-    ]);
-
-    return {
-      asOfDate: snapshot.as_of_date as string,
-      thresholdHr: (snapshot.threshold_hr ?? null) as number | null,
-      thresholdSpeedMps: (snapshot.threshold_speed_mps ?? null) as number | null,
-      rhrBaseline: (snapshot.rhr_baseline ?? null) as number | null,
-      thresholdHrConfidence: snapshot.threshold_hr_confidence as string,
-      thresholdSpeedConfidence: snapshot.threshold_speed_confidence as string,
-      paceZones: paceRows[0].map(rowToPaceZone),
-      heartRateZones: heartRateRows[0].map(rowToHeartRateZone),
-    };
   }
 
   /** Structured season plan covering the requested day, or null. */
@@ -972,4 +1016,23 @@ function rowToHeartRateZone(row: RowDataPacket): HeartRateZone {
     minBpm: (row.min_bpm ?? null) as number | null,
     maxBpm: (row.max_bpm ?? null) as number | null,
   };
+}
+
+/** Decode only Go-owned summary fields; unknown/raw fields never reach model context. */
+function calibrationSource(raw: unknown) {
+  if (raw === null || raw === undefined || raw === "") return { schema_version: 0, state: "legacy_source_missing" };
+  let decoded: unknown;
+  try {
+    decoded = typeof raw === "string" ? JSON.parse(raw) : raw;
+  } catch {
+    return { schema_version: 0, state: "source_unavailable" };
+  }
+  if (decoded === null) return { schema_version: 0, state: "legacy_source_missing" };
+  const parsed = CalibrationSourceSchema.safeParse(decoded);
+  if (!parsed.success) return { schema_version: 0, state: "source_unavailable" };
+  const source = parsed.data;
+  if (source.schema_version !== 1 || source.state !== "available" || !source.strategy || !source.data_cutoff_day) {
+    return { schema_version: 0, state: "legacy_source_missing" };
+  }
+  return source;
 }

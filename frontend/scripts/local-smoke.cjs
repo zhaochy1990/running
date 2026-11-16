@@ -19,7 +19,7 @@ function sanitizeUrl(url) {
 function watchPage(target, issues, responses) {
   target.on("console", (msg) => {
     if (msg.type() === "error") {
-      issues.push(`console error: ${msg.text().slice(0, 300)}`);
+      issues.push(`console error: ${msg.text().slice(0, 300)} ${sanitizeUrl(msg.location().url || "")}`);
     }
   });
   target.on("pageerror", (error) => {
@@ -289,6 +289,17 @@ async function main() {
     }
   }
   await page.screenshot({ path: weeklyScreenshotPath, fullPage: false });
+
+  // Training-status changes require a real read path beyond activity/weekly smoke.
+  const zonesRead = page.waitForResponse((r) => r.url().includes("/stride/zones") && r.request().method() === "GET");
+  await page.goto(`${appUrl}/training-status`, { waitUntil: "domcontentloaded" });
+  const zonesResponse = await zonesRead;
+  if (!zonesResponse.ok()) throw new Error(`training status zones failed: ${zonesResponse.status()}`);
+  await page.getByRole("heading", { name: "训练状态", exact: true }).waitFor({ timeout: 20_000 });
+  await page.getByText("阈值配速说明", { exact: true }).click();
+  await page.getByText("阈值配速估计当前全力可维持约一小时的能力，不是普通训练平均配速。", { exact: true }).waitFor();
+  if (await page.getByText("加载失败：", { exact: false }).count()) throw new Error("training status rendered load error");
+  await page.screenshot({ path: path.join(process.env.TEMP || repoRoot, "stride-training-status-smoke.png"), fullPage: false });
 
   await browser.close();
 

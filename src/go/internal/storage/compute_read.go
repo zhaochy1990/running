@@ -7,6 +7,7 @@ package storage
 
 import (
 	"context"
+	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 	"time"
 )
 
@@ -142,21 +143,8 @@ func (s *Store) AllRunningActivities(ctx context.Context, userID string) ([]Acti
 // has none yet. The compute handler reads the baseline from here rather than
 // recomputing it (single-source rule; the calibration job owns writes).
 func (s *Store) LatestRunningCalibrationSnapshot(ctx context.Context, userID string) (*RunningCalibrationSnapshot, error) {
-	uid, err := canonicalUserID(userID)
-	if err != nil {
-		return nil, err
-	}
-	var rows []RunningCalibrationSnapshot
-	if err := s.db.WithContext(ctx).
-		Where("user_id = ?", uid).
-		Order("as_of_date DESC, algorithm_version DESC").
-		Limit(1).Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	if len(rows) == 0 {
-		return nil, nil
-	}
-	return &rows[0], nil
+	b, err := s.ReadEffectiveRunningCalibration(ctx, userID, timefmt.ShanghaiToday().Format("2006-01-02"), CalibrationActive)
+	return b.Snapshot, err
 }
 
 // DailyTrainingLoadBefore returns the most recent daily-load row strictly before
@@ -202,19 +190,6 @@ func (s *Store) PersonalBests(ctx context.Context, userID string) ([]PersonalBes
 // together with its pace zones (nil snapshot/nil zones when uncalibrated).
 // Session classification derives the M/T/I zone bounds from it (devops #743).
 func (s *Store) LatestCalibrationPaceZones(ctx context.Context, userID string) (*RunningCalibrationSnapshot, []RunningCalibrationPaceZone, error) {
-	snap, err := s.LatestRunningCalibrationSnapshot(ctx, userID)
-	if err != nil || snap == nil {
-		return nil, nil, err
-	}
-	uid, err := canonicalUserID(userID)
-	if err != nil {
-		return nil, nil, err
-	}
-	var rows []RunningCalibrationPaceZone
-	if err := s.db.WithContext(ctx).
-		Where("user_id = ? AND snapshot_id = ?", uid, snap.ID).
-		Find(&rows).Error; err != nil {
-		return nil, nil, err
-	}
-	return snap, rows, nil
+	b, err := s.ReadEffectiveRunningCalibration(ctx, userID, timefmt.ShanghaiToday().Format("2006-01-02"), CalibrationActive)
+	return b.Snapshot, b.PaceZones, err
 }
