@@ -2,6 +2,8 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
+	"math"
 	"os"
 	"reflect"
 	"testing"
@@ -91,6 +93,87 @@ func evolvedClientVector(t *testing.T, name string) (calibration.Snapshot, calib
 	result := evolvedClientScenario(t, name)
 	source := calibration.SummarizeSource(result)
 	return result.Snapshot, source
+}
+
+// marshalSourceForDiff renders a SourceSummary for failure messages: %+v only
+// prints nested Speed/HR pointer addresses, JSON shows the actual drift.
+func marshalSourceForDiff(t *testing.T, s *calibration.SourceSummary) string {
+	t.Helper()
+	raw, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
+// sourceRangeRelTolerance bounds the relative slack for the sensitivity-range
+// floats. The fixture is generated from a real producer on one GOARCH, but the
+// evolved estimator's transcendental math (Riegel/trend-prior logs and powers)
+// differs by a few ULPs between amd64 and arm64, which surfaces in the last
+// bits of range_low/range_high (~1e-15 relative, observed on CI amd64 while
+// arm64 development runs matched bit-for-bit). 1e-9 relative keeps six orders
+// of magnitude of margin against any real prior/contract drift, which shifts
+// these bounds at percentage level.
+const sourceRangeRelTolerance = 1e-9
+
+// evolvedSourceMatches locks the shared vector to the real producer with
+// reflect.DeepEqual semantics for every field except the sensitivity-range
+// floats, which are compared with the relative tolerance above (nil-ness of
+// the pointers stays an exact match).
+func evolvedSourceMatches(fixture, producer *calibration.SourceSummary) error {
+	fc, pc := *fixture, *producer
+	if err := metricSourceMatches(fc.Speed, pc.Speed, "speed"); err != nil {
+		return err
+	}
+	fc.Speed, pc.Speed = nil, nil
+	if err := metricSourceMatches(fc.HR, pc.HR, "hr"); err != nil {
+		return err
+	}
+	fc.HR, pc.HR = nil, nil
+	if !reflect.DeepEqual(fc, pc) {
+		return fmt.Errorf("summary fields drift")
+	}
+	return nil
+}
+
+func metricSourceMatches(fixture, producer *calibration.MetricSource, name string) error {
+	if (fixture == nil) != (producer == nil) {
+		return fmt.Errorf("%s channel presence", name)
+	}
+	if fixture == nil {
+		return nil
+	}
+	fc, pc := *fixture, *producer
+	if !rangeFloatMatches(fc.RangeLow, pc.RangeLow) {
+		return fmt.Errorf("%s.range_low: fixture=%v producer=%v", name, ptrValue(fc.RangeLow), ptrValue(pc.RangeLow))
+	}
+	if !rangeFloatMatches(fc.RangeHigh, pc.RangeHigh) {
+		return fmt.Errorf("%s.range_high: fixture=%v producer=%v", name, ptrValue(fc.RangeHigh), ptrValue(pc.RangeHigh))
+	}
+	fc.RangeLow, pc.RangeLow = nil, nil
+	fc.RangeHigh, pc.RangeHigh = nil, nil
+	if !reflect.DeepEqual(fc, pc) {
+		return fmt.Errorf("%s channel fields drift", name)
+	}
+	return nil
+}
+
+func rangeFloatMatches(a, b *float64) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	x, y := *a, *b
+	if x == y {
+		return true
+	}
+	return math.Abs(x-y) <= sourceRangeRelTolerance*math.Max(math.Abs(x), math.Abs(y))
+}
+
+func ptrValue(v *float64) any {
+	if v == nil {
+		return nil
+	}
+	return *v
 }
 
 // TestCalibrationEvolvedClientVectors pins the scenario states first (the
@@ -193,8 +276,11 @@ func TestCalibrationEvolvedClientVectors(t *testing.T) {
 		snapshot, source := evolvedClientVector(t, name)
 		idx := byName[name]
 		th := fixture.Cases[idx].Response.Threshold
-		if !reflect.DeepEqual(th.Source, &source) {
-			t.Fatalf("%s shared vector differs from real producer:\nfixture=%+v\nproducer=%+v", name, th.Source, source)
+		if err := evolvedSourceMatches(th.Source, &source); err != nil {
+			// Nested Speed/HR pointers make %+v print addresses only; dump
+			// both sides as JSON so the differing field is visible in CI.
+			t.Fatalf("%s shared vector differs from real producer: %v\nfixture=%s\nproducer=%s",
+				name, err, marshalSourceForDiff(t, th.Source), marshalSourceForDiff(t, &source))
 		}
 		wantPace, wantHR := 0, 0.0
 		if snapshot.ThresholdSpeedMps != nil {
