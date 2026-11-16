@@ -88,6 +88,20 @@ type Runtime struct {
 	// new onboarding entry points stay closed until then, per the epic's
 	// rollout order).
 	WriteIsolation WriteIsolation `mapstructure:"write-isolation"`
+	// HistoricalRecompute gates the explicit historical-calibration recompute
+	// capability (devops#1011, epic devops#1004 T07): the auditable,
+	// chunk-resumable per-day baseline run over the 365-day target window.
+	// DEFAULT OFF. The spec authorizes developing the capability, not running
+	// production backfills — a stray job reaching a worker with the flag off
+	// fails permanently (historical_recompute_disabled) instead of executing.
+	HistoricalRecompute HistoricalRecompute `mapstructure:"historical-recompute"`
+}
+
+// HistoricalRecompute configures the explicit historical-calibration recompute
+// executor (devops#1011). Default off.
+type HistoricalRecompute struct {
+	// Enabled turns the executor on. Default false.
+	Enabled bool `mapstructure:"enabled"`
 }
 
 // WriteIsolation configures the activity write-isolation path (devops#1005).

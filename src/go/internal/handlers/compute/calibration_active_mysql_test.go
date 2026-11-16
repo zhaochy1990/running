@@ -123,7 +123,7 @@ func TestActiveCandidateOptInRefreshDerivedAndRollbackMySQL(t *testing.T) {
 	}
 	input, _ := json.Marshal(map[string]any{"mode": "full", "ref_date": today.Format("2006-01-02"), "label_ids": labels, "health_dates": []string{today.Format("20060102")}})
 	for _, day := range dates {
-		if _, _, err := runCalibrationVersion(ctx, st, uid, day, 3); err != nil {
+		if _, err := runCalibrationVersion(ctx, st, uid, day, 3); err != nil {
 			t.Fatal(err)
 		}
 	}

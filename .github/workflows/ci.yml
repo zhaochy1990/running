@@ -284,6 +284,21 @@ jobs:
           go test ./internal/handlers/onboardinganalysis/...
           -run 'TestOnboardingAnalysis'
           -count=1 -v
+      # The explicit historical-calibration recompute executor (devops#1004
+      # T07, devops#1011) drives the real run/ledger tables, the real binding
+      # and policy rows, the real job store and the REAL canonical per-day
+      # calibration seam over real MySQL: event-date cutoff (no future
+      # health/activity leaks into a day's baseline), missing-evidence
+      # honesty (partial/unavailable, never retried as faults), cross-chunk
+      # resume with yield, policy-change and rebind supersede (old chunks
+      # refuse to publish), and merged dispatch of concurrent requests.
+      - name: Historical calibration recompute tests (MySQL)
+        env:
+          STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
+        run: >-
+          go test ./internal/handlers/historicalcalibration/...
+          -run 'TestHistoricalCalibration'
+          -count=1 -v
       # The provider_events unique index is the webhook push idempotency rule
       # (devops#287) — SQL-level, so only a real MySQL exercises it.
       - name: Provider-event storage tests (MySQL)
