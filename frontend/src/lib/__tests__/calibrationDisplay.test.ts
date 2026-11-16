@@ -76,4 +76,116 @@ describe("calibration explanation projection", () => {
     expect(calibrationDisplay(th, "speed").details).toContain("近期独立锚点不足，无法推断一小时能力");
   });
 
+  // T6 (#1000): evolved-v4 five states, per-user override disclosure and the
+  // effective algorithm line share one set of parity literals with mp/iOS.
+  const caseThreshold = (name: string): StrideThreshold => {
+    const found = fixture.cases.find(c => c.name === name);
+    if (!found || !found.response.threshold) throw new Error(`missing fixture case ${name}`);
+    return found.response.threshold as StrideThreshold;
+  };
+  it.each(fixture.cases)("renders shared state/algorithm/override labels for $name", (c) => {
+    const th = c.response.threshold as StrideThreshold | null;
+    const e = c.expected as Record<string, string | null | undefined>;
+    const speed = calibrationDisplay(th, "speed");
+    const hr = calibrationDisplay(th, "hr");
+    if (e.pace_state !== undefined) expect(speed.status).toBe(e.pace_state);
+    if (e.hr_state !== undefined) expect(hr.status).toBe(e.hr_state);
+    if (e.pace_algorithm_label !== undefined) {
+      expect(speed.details).toContain(e.pace_algorithm_label);
+      expect(hr.details).toContain(e.pace_algorithm_label);
+    }
+    if (e.override_label !== undefined) {
+      expect(speed.details).toContain(e.override_label);
+      expect(hr.details).toContain(e.override_label);
+    }
+    if (e.override_fallback_label !== undefined) {
+      expect(speed.details).toContain(e.override_fallback_label);
+      expect(hr.details).toContain(e.override_fallback_label);
+    }
+    if (e.hr_joint_label !== undefined) expect(hr.details).toContain(e.hr_joint_label);
+  });
+
+  it("labels low-evidence model estimates from ordinary training without demanding a test", () => {
+    const th = caseThreshold("evolved-low-evidence");
+    const speed = calibrationDisplay(th, "speed");
+    const hr = calibrationDisplay(th, "hr");
+    expect(speed.status).toBe("模型估计 · 基于你的普通训练估计");
+    expect(hr.status).toBe("模型估计 · 基于你的普通训练估计");
+    expect(speed.value).toBe("4:18");
+    expect(speed.range).toBe("支持范围 4:01–4:52 /km");
+    expect(hr.value).toBe("171");
+    expect(hr.range).toBe("支持范围 160–181 bpm");
+    expect(speed.details.join(" ")).not.toContain("必须先测试");
+    expect(hr.details.join(" ")).not.toContain("必须先测试");
+    expect(hr.details).toContain("联合估计，非独立验证");
+    // Non-probabilistic ranges must never claim a 95% CI; the negated
+    // disclaimer is the required wording, not a claim.
+    expect(speed.range ?? "").not.toContain("95%");
+    expect(hr.range ?? "").not.toContain("95%");
+    expect(hr.details.join(" ")).toContain("不代表 95% 置信区间或概率");
+  });
+
+  it("labels prior-dominated estimates as research priors, never user measurements", () => {
+    const th = caseThreshold("evolved-prior-only");
+    const speed = calibrationDisplay(th, "speed");
+    const hr = calibrationDisplay(th, "hr");
+    expect(speed.status).toBe("先验主导 · 基于研究先验估计");
+    expect(hr.status).toBe("先验主导 · 基于研究先验估计");
+    expect(speed.details.join(" ")).toContain("证据不足以区分能力与余量");
+    expect(hr.details.join(" ")).toContain("心率估计仅来自生理先验");
+    expect(speed.value).not.toBe("—");
+    expect(hr.value).not.toBe("—");
+  });
+
+  it("keeps measured reference distinct from estimated thresholds", () => {
+    const th = caseThreshold("evolved-measured-reference");
+    expect(calibrationDisplay(th, "speed").status).toBe("实测参考");
+    expect(calibrationDisplay(th, "hr").status).toBe("实测参考");
+    const hr = calibrationDisplay(th, "hr");
+    expect(hr.details.join(" ")).toContain("实测参考中位数（已核验协议）");
+    expect(hr.details.join(" ")).not.toContain("联合估计，非独立验证");
+  });
+
+  it("explains unavailable estimates with categorical reasons and no invented values", () => {
+    const th = caseThreshold("evolved-unavailable");
+    const speed = calibrationDisplay(th, "speed");
+    const hr = calibrationDisplay(th, "hr");
+    expect(speed.status).toBe("暂无估计 · 窗口内没有有效跑步输入");
+    expect(hr.status).toBe("暂无估计 · 没有心率序列，也没有可用的静息心率先验");
+    expect(speed.value).toBe("—");
+    expect(hr.value).toBe("—");
+    expect(speed.range).toBeNull();
+    expect(hr.range).toBeNull();
+  });
+
+  it("reads historical v4 rows without borrowing five-state or revision labels", () => {
+    const th = caseThreshold("historical-v4");
+    const speed = calibrationDisplay(th, "speed");
+    expect(speed.status).toBe("估计支持 高");
+    expect(speed.details).toContain("当前有效算法 v4");
+    expect(speed.details.join(" ")).not.toContain("修订");
+    expect(speed.details.join(" ")).not.toContain("模型估计");
+  });
+
+  it("discloses the per-user override pin and its snapshot-missing fallback separately", () => {
+    const pinned = caseThreshold("override-selected");
+    expect(pinned.selection?.override?.algorithm_revision).toBe("v4-rev2-2026-11");
+    expect(calibrationDisplay(pinned, "speed").details).toContain("已按你的选择使用 v4（修订 v4-rev2-2026-11）");
+    expect(calibrationDisplay(pinned, "speed").details).toContain("当前有效算法 v4 · 修订 v4-rev2-2026-11");
+    const fallback = caseThreshold("override-fallback");
+    const speed = calibrationDisplay(fallback, "speed");
+    expect(speed.details).toContain("你选择的版本在该日期无快照，暂用全局有效版本");
+    expect(speed.details).toContain("当前有效算法 v3");
+    expect(speed.details.join(" ")).not.toContain("已按你的选择使用");
+  });
+
+  it("degrades unknown future states conservatively without losing the value", () => {
+    const th = structuredClone(fixture.cases[0].response.threshold) as StrideThreshold;
+    if (!th.source?.speed) throw new Error("missing speed source");
+    th.source.speed.state = "some_future_state";
+    const display = calibrationDisplay(th, "speed");
+    expect(display.value).toBe("3:34");
+    expect(display.status).toBe("来源信息暂不可用");
+  });
+
 });

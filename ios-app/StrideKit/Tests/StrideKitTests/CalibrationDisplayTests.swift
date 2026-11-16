@@ -21,6 +21,13 @@ import Testing
                 let stale_evidence_day: String?
                 let current_hr_supported: Bool?
                 let hr_evidence_day: String?
+                // T6 (#1000) shared parity literals with Web/mp.
+                let pace_state: String?
+                let hr_state: String?
+                let pace_algorithm_label: String?
+                let override_label: String?
+                let override_fallback_label: String?
+                let hr_joint_label: String?
             }
             let name: String
             let response: StrideZonesResponse
@@ -33,6 +40,10 @@ import Testing
         var root = URL(fileURLWithPath: #filePath)
         for _ in 0..<5 { root.deleteLastPathComponent() }
         return try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: root.appendingPathComponent("docs/calibration/fixtures/client-display-v1.json"))).cases
+    }
+
+    static func caseNamed(_ name: String) throws -> Fixture.Case {
+        try cases().first { $0.name == name }!
     }
 
     @Test func sharedServerUnitsRangesAndThreeDates() throws {
@@ -51,6 +62,94 @@ import Testing
         }
     }
 
+    /// T6 (#1000): the five-state labels, joint-HR marker, per-user override
+    /// disclosure and the effective-algorithm line render the same literals as
+    /// Web/mp on the same shared fixture responses.
+    @Test func sharedEvolvedStateAlgorithmAndOverrideLabels() throws {
+        for item in try Self.cases() {
+            let pace = calibrationDisplay(item.response, metric: .pace)
+            let hr = calibrationDisplay(item.response, metric: .heartRate)
+            if let state = item.expected.pace_state { #expect(pace.support == state, "\(item.name)") }
+            if let state = item.expected.hr_state { #expect(hr.support == state, "\(item.name)") }
+            if let label = item.expected.pace_algorithm_label {
+                #expect(pace.details.contains(label), "\(item.name)")
+                #expect(hr.details.contains(label), "\(item.name)")
+            }
+            if let label = item.expected.override_label {
+                #expect(pace.details.contains(label), "\(item.name)")
+                #expect(hr.details.contains(label), "\(item.name)")
+            }
+            if let label = item.expected.override_fallback_label {
+                #expect(pace.details.contains(label), "\(item.name)")
+                #expect(!pace.details.contains { $0.contains("已按你的选择使用") }, "\(item.name)")
+            }
+            if let label = item.expected.hr_joint_label { #expect(hr.details.contains(label), "\(item.name)") }
+        }
+    }
+
+    @Test func evolvedFiveStatesInPlainWords() throws {
+        let low = calibrationDisplay(try Self.caseNamed("evolved-low-evidence").response, metric: .pace)
+        #expect(low.support == "模型估计 · 基于你的普通训练估计")
+        #expect(low.value == "4:18")
+        #expect(low.range == "支持范围 4:01–4:52 /km")
+        let lowHR = calibrationDisplay(try Self.caseNamed("evolved-low-evidence").response, metric: .heartRate)
+        #expect(lowHR.support == "模型估计 · 基于你的普通训练估计")
+        #expect(lowHR.value == "171")
+        #expect(lowHR.range == "支持范围 160–181 bpm")
+        #expect(lowHR.details.contains("联合估计，非独立验证"))
+        #expect(!low.details.joined().contains("必须先测试"))
+        #expect(low.range?.contains("95%") != true)
+
+        let prior = calibrationDisplay(try Self.caseNamed("evolved-prior-only").response, metric: .pace)
+        #expect(prior.support == "先验主导 · 基于研究先验估计")
+        #expect(prior.details.contains { $0.contains("证据不足以区分能力与余量") })
+        let priorHR = calibrationDisplay(try Self.caseNamed("evolved-prior-only").response, metric: .heartRate)
+        #expect(priorHR.support == "先验主导 · 基于研究先验估计")
+        #expect(priorHR.details.contains { $0.contains("心率估计仅来自生理先验") })
+        #expect(prior.value != "—" && priorHR.value != "—")
+
+        let reference = calibrationDisplay(try Self.caseNamed("evolved-measured-reference").response, metric: .heartRate)
+        #expect(reference.support == "实测参考")
+        #expect(reference.details.contains { $0.contains("实测参考中位数（已核验协议）") })
+        #expect(!reference.details.contains("联合估计，非独立验证"))
+
+        let unavailablePace = calibrationDisplay(try Self.caseNamed("evolved-unavailable").response, metric: .pace)
+        #expect(unavailablePace.support == "暂无估计 · 窗口内没有有效跑步输入")
+        #expect(unavailablePace.value == "—")
+        #expect(unavailablePace.range == nil)
+        let unavailableHR = calibrationDisplay(try Self.caseNamed("evolved-unavailable").response, metric: .heartRate)
+        #expect(unavailableHR.support == "暂无估计 · 没有心率序列，也没有可用的静息心率先验")
+        #expect(unavailableHR.value == "—")
+    }
+
+    @Test func historicalV4RowsKeepLegacyWordingWithoutRevision() throws {
+        let pace = calibrationDisplay(try Self.caseNamed("historical-v4").response, metric: .pace)
+        #expect(pace.support == "能力支持：高")
+        #expect(pace.details.contains("当前有效算法 v4"))
+        #expect(!pace.details.contains { $0.contains("修订") })
+        #expect(!pace.details.contains { $0.contains("模型估计") })
+    }
+
+    @Test func overridePinAndSnapshotMissingFallbackDisclosedSeparately() throws {
+        let pinned = calibrationDisplay(try Self.caseNamed("override-selected").response, metric: .pace)
+        #expect(pinned.details.contains("已按你的选择使用 v4（修订 v4-rev2-2026-11）"))
+        #expect(pinned.details.contains("当前有效算法 v4 · 修订 v4-rev2-2026-11"))
+        let fallback = calibrationDisplay(try Self.caseNamed("override-fallback").response, metric: .pace)
+        #expect(fallback.details.contains("你选择的版本在该日期无快照，暂用全局有效版本"))
+        #expect(fallback.details.contains("当前有效算法 v3"))
+        #expect(!fallback.details.contains { $0.contains("已按你的选择使用") })
+    }
+
+    @Test func unknownFutureStateDegradesConservatively() throws {
+        let json = """
+        {"threshold":{"pace_per_km_sec":214,"as_of_date":"2026-11-14","source":{"schema_version":1,"state":"available","speed":{"state":"some_future_state","method":"robust_map_effort_margin_fit","support":"medium"}}},"pace_zones":[],"hr_zones":[]}
+        """
+        let response = try JSONDecoder().decode(StrideZonesResponse.self, from: Data(json.utf8))
+        let display = calibrationDisplay(response, metric: .pace)
+        #expect(display.value == "3:34")
+        #expect(display.support == "来源信息不可用")
+    }
+
     static func assertAdditionalDisplays(_ expected: Fixture.Case.Expected, pace: CalibrationDisplay, hr: CalibrationDisplay) {
         if let day = expected.rejected_evidence_day {
             if let stale = expected.stale_evidence_day { #expect(hr.details.contains("最近陈旧协议日 \(stale)")) }
@@ -65,6 +164,16 @@ import Testing
         if let method = expected.hr_method_label { #expect(hr.details.contains("方法：\(method)")) }
         if let effort = expected.speed_effort_label { #expect(pace.details.contains { $0.contains("全力支持：\(effort)") }) }
         if let method = expected.lab_method { #expect(hr.details.contains { $0.contains("· \(method)") }) }
+        // T6 (#1000) parity keys, shared literals with Web/mp.
+        if let state = expected.pace_state { #expect(pace.support == state) }
+        if let state = expected.hr_state { #expect(hr.support == state) }
+        if let label = expected.pace_algorithm_label { #expect(pace.details.contains(label)); #expect(hr.details.contains(label)) }
+        if let label = expected.override_label { #expect(pace.details.contains(label)); #expect(hr.details.contains(label)) }
+        if let label = expected.override_fallback_label {
+            #expect(pace.details.contains(label))
+            #expect(!pace.details.contains { $0.contains("已按你的选择使用") })
+        }
+        if let label = expected.hr_joint_label { #expect(hr.details.contains(label)) }
     }
 
     @Test func productionMethodsAndLegacyDetectionStayHonest() throws {

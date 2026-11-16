@@ -1,5 +1,5 @@
 {
-  "description": "Synthetic engineering behavior only; not accuracy references. Pace integers are server half-even outputs (214.5→214, 215.5→216). No private activity data.",
+  "description": "Synthetic engineering behavior only; not accuracy references. Pace integers are server half-even outputs (214.5→214, 215.5→216). No private activity data. T6(#1000) adds evolved-v4 five-state vectors (evolved-*), a historical v4 row without revision markers, and the per-user override selection disclosures.",
   "cases": [
     {
       "name": "two-sided",
@@ -1786,6 +1786,1159 @@
         "computed_shanghai": "2026-11-15 00:30",
         "current_hr_supported": true,
         "rejected_evidence_day": "2026-11-15"
+      }
+    },
+    {
+      "name": "evolved-low-evidence",
+      "response": {
+        "threshold": {
+          "speed_mps": 3.8821,
+          "pace_per_km_sec": 258,
+          "hr_bpm": 171.466,
+          "speed_confidence": "medium",
+          "hr_confidence": "medium",
+          "as_of_date": "2026-11-14",
+          "calibration_id": 1,
+          "algorithm_version": 4,
+          "computed_at": "2026-11-14T16:30:00Z",
+          "selection": {
+            "mode": "active",
+            "policy_revision": 3,
+            "requested_version": 4,
+            "effective_version": 4,
+            "state": "selected",
+            "override": {
+              "revision": 2,
+              "algorithm_version": 4,
+              "algorithm_revision": "v4-rev2-2026-11"
+            }
+          },
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "evolved_candidate",
+            "implementation": "evolved_joint_v2",
+            "parameter_version": "rev2-research-2026-11",
+            "algorithm_revision": "v4-rev2-2026-11",
+            "data_cutoff_day": "2026-11-14",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "robust_map_effort_margin_fit",
+              "target_type": "model_one_hour_capability_v60",
+              "state": "model_estimated",
+              "measurement_quality": "high",
+              "effort_support": "unknown",
+              "support": "medium",
+              "range_low": 3.4298023943700424,
+              "range_high": 4.148774074149115,
+              "range_meaning": "model_sensitivity_range_not_probability_interval",
+              "evidence_date": "2026-11-04",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [
+                "prior_share_at_least_half_effective_curvature",
+                "prior_share_at_least_half_effective_curvature"
+              ],
+              "limitations": [
+                "research_uncalibrated_not_population_calibrated",
+                "range_is_sensitivity_not_probability_interval",
+                "environment_temperature_not_corrected",
+                "terrain_gradient_not_corrected",
+                "power_law_valid_only_180_to_7200s",
+                "long_duration_uses_monotone_soft_constraint"
+              ],
+              "evidence": [
+                {
+                  "activity_id": "synthetic-evolved-ordinary-long",
+                  "root_activity_id": "synthetic-evolved-ordinary-long",
+                  "activity_day": "2026-11-04",
+                  "source_version": "",
+                  "duration_s": 180,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-long",
+                  "root_activity_id": "synthetic-evolved-ordinary-long",
+                  "activity_day": "2026-11-04",
+                  "source_version": "",
+                  "duration_s": 300,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-long",
+                  "root_activity_id": "synthetic-evolved-ordinary-long",
+                  "activity_day": "2026-11-04",
+                  "source_version": "",
+                  "duration_s": 600,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-long",
+                  "root_activity_id": "synthetic-evolved-ordinary-long",
+                  "activity_day": "2026-11-04",
+                  "source_version": "",
+                  "duration_s": 1200,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-long",
+                  "root_activity_id": "synthetic-evolved-ordinary-long",
+                  "activity_day": "2026-11-04",
+                  "source_version": "",
+                  "duration_s": 1800,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-long",
+                  "root_activity_id": "synthetic-evolved-ordinary-long",
+                  "activity_day": "2026-11-04",
+                  "source_version": "",
+                  "duration_s": 2700,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-long",
+                  "root_activity_id": "synthetic-evolved-ordinary-long",
+                  "activity_day": "2026-11-04",
+                  "source_version": "",
+                  "duration_s": 3600,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-short",
+                  "root_activity_id": "synthetic-evolved-ordinary-short",
+                  "activity_day": "2026-10-25",
+                  "source_version": "",
+                  "duration_s": 180,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-short",
+                  "root_activity_id": "synthetic-evolved-ordinary-short",
+                  "activity_day": "2026-10-25",
+                  "source_version": "",
+                  "duration_s": 300,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-short",
+                  "root_activity_id": "synthetic-evolved-ordinary-short",
+                  "activity_day": "2026-10-25",
+                  "source_version": "",
+                  "duration_s": 600,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-short",
+                  "root_activity_id": "synthetic-evolved-ordinary-short",
+                  "activity_day": "2026-10-25",
+                  "source_version": "",
+                  "duration_s": 1200,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-short",
+                  "root_activity_id": "synthetic-evolved-ordinary-short",
+                  "activity_day": "2026-10-25",
+                  "source_version": "",
+                  "duration_s": 1800,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                }
+              ],
+              "evidence_count": 12
+            },
+            "hr": {
+              "method": "joint_map_hr_dynamic_fit",
+              "target_type": "model_HRsteady_at_v60_declared_reference_conditions",
+              "state": "model_estimated",
+              "measurement_quality": "",
+              "effort_support": "",
+              "support": "medium",
+              "range_low": 159.75918112729468,
+              "range_high": 180.91948591149358,
+              "range_meaning": "model_sensitivity_range_not_probability_interval",
+              "evidence_date": "2026-11-04",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [
+                "optical_HR_downweighted_not_excluded"
+              ],
+              "limitations": [
+                "research_uncalibrated_not_population_calibrated",
+                "range_is_sensitivity_not_probability_interval",
+                "environment_temperature_not_corrected",
+                "model_prediction_not_lab_LTHR",
+                "hr_shape_knots_monotone_constraint_required",
+                "cadence_lock_suspected_series_excluded"
+              ],
+              "evidence": [
+                {
+                  "activity_id": "synthetic-evolved-ordinary-long",
+                  "root_activity_id": "synthetic-evolved-ordinary-long",
+                  "activity_day": "2026-11-04",
+                  "source_version": "",
+                  "measurement_quality": "sensor_unknown",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-short",
+                  "root_activity_id": "synthetic-evolved-ordinary-short",
+                  "activity_day": "2026-10-25",
+                  "source_version": "",
+                  "measurement_quality": "sensor_unknown",
+                  "effort_support": "unknown"
+                }
+              ],
+              "evidence_count": 2
+            }
+          },
+          "fingerprint": "synthetic-evolved-display-vector",
+          "speed_range_pace_per_km_sec": {
+            "fast": 241,
+            "slow": 292,
+            "meaning": "model_sensitivity_range_not_probability_interval",
+            "bound_kind": "two_sided"
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "4:18",
+        "pace_range": "支持范围 4:01–4:52 /km",
+        "hr": "171",
+        "evidence_day": "2026-11-04",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30",
+        "hr_range": "支持范围 160–181 bpm",
+        "pace_state": "模型估计 · 基于你的普通训练估计",
+        "hr_state": "模型估计 · 基于你的普通训练估计",
+        "pace_algorithm_label": "当前有效算法 v4 · 修订 v4-rev2-2026-11",
+        "override_label": "已按你的选择使用 v4（修订 v4-rev2-2026-11）",
+        "hr_joint_label": "联合估计，非独立验证"
+      }
+    },
+    {
+      "name": "evolved-prior-only",
+      "response": {
+        "threshold": {
+          "speed_mps": 3.3088,
+          "pace_per_km_sec": 302,
+          "hr_bpm": 177.36,
+          "speed_confidence": "low",
+          "hr_confidence": "low",
+          "as_of_date": "2026-11-14",
+          "calibration_id": 1,
+          "algorithm_version": 4,
+          "computed_at": "2026-11-14T16:30:00Z",
+          "selection": {
+            "mode": "active",
+            "policy_revision": 3,
+            "requested_version": 4,
+            "effective_version": 4,
+            "state": "selected",
+            "override": {
+              "revision": 2,
+              "algorithm_version": 4,
+              "algorithm_revision": "v4-rev2-2026-11"
+            }
+          },
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "evolved_candidate",
+            "implementation": "evolved_joint_v2",
+            "parameter_version": "rev2-research-2026-11",
+            "algorithm_revision": "v4-rev2-2026-11",
+            "data_cutoff_day": "2026-11-14",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "robust_map_effort_margin_fit",
+              "target_type": "model_one_hour_capability_v60",
+              "state": "prior_dominated",
+              "measurement_quality": "high",
+              "effort_support": "unknown",
+              "support": "low",
+              "range_low": 2.686537464325791,
+              "range_high": 3.767668759876755,
+              "range_meaning": "model_sensitivity_range_not_probability_interval",
+              "evidence_date": "2026-10-30",
+              "independent_activities": 1,
+              "independent_days": 1,
+              "reasons": [
+                "identifiability_limited_prior_dominated",
+                "single_activity_no_duration_diversity",
+                "prior_share_at_least_half_effective_curvature"
+              ],
+              "limitations": [
+                "research_uncalibrated_not_population_calibrated",
+                "range_is_sensitivity_not_probability_interval",
+                "environment_temperature_not_corrected",
+                "terrain_gradient_not_corrected",
+                "power_law_valid_only_180_to_7200s",
+                "long_duration_uses_monotone_soft_constraint"
+              ],
+              "evidence": [
+                {
+                  "activity_id": "synthetic-evolved-easy-solo",
+                  "root_activity_id": "synthetic-evolved-easy-solo",
+                  "activity_day": "2026-10-30",
+                  "source_version": "",
+                  "duration_s": 180,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-easy-solo",
+                  "root_activity_id": "synthetic-evolved-easy-solo",
+                  "activity_day": "2026-10-30",
+                  "source_version": "",
+                  "duration_s": 300,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-easy-solo",
+                  "root_activity_id": "synthetic-evolved-easy-solo",
+                  "activity_day": "2026-10-30",
+                  "source_version": "",
+                  "duration_s": 600,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-easy-solo",
+                  "root_activity_id": "synthetic-evolved-easy-solo",
+                  "activity_day": "2026-10-30",
+                  "source_version": "",
+                  "duration_s": 1200,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-easy-solo",
+                  "root_activity_id": "synthetic-evolved-easy-solo",
+                  "activity_day": "2026-10-30",
+                  "source_version": "",
+                  "duration_s": 1800,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-easy-solo",
+                  "root_activity_id": "synthetic-evolved-easy-solo",
+                  "activity_day": "2026-10-30",
+                  "source_version": "",
+                  "duration_s": 2400,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                }
+              ],
+              "evidence_count": 6
+            },
+            "hr": {
+              "method": "aged_prior_only_HR",
+              "target_type": "model_HRsteady_at_v60_declared_reference_conditions",
+              "state": "prior_dominated",
+              "measurement_quality": "",
+              "effort_support": "",
+              "support": "low",
+              "range_low": 165.0789576989573,
+              "range_high": 189.64104230104272,
+              "range_meaning": "model_sensitivity_range_not_probability_interval",
+              "independent_activities": 0,
+              "independent_days": 0,
+              "reasons": [
+                "prior_only_HR_estimate"
+              ],
+              "limitations": [
+                "research_uncalibrated_not_population_calibrated",
+                "range_is_sensitivity_not_probability_interval",
+                "environment_temperature_not_corrected",
+                "model_prediction_not_lab_LTHR",
+                "hr_shape_knots_monotone_constraint_required",
+                "cadence_lock_suspected_series_excluded"
+              ],
+              "evidence_count": 0
+            }
+          },
+          "fingerprint": "synthetic-evolved-display-vector",
+          "speed_range_pace_per_km_sec": {
+            "fast": 265,
+            "slow": 372,
+            "meaning": "model_sensitivity_range_not_probability_interval",
+            "bound_kind": "two_sided"
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "5:02",
+        "pace_range": "支持范围 4:25–6:12 /km",
+        "hr": "177",
+        "evidence_day": "2026-10-30",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30",
+        "hr_range": "支持范围 165–190 bpm",
+        "pace_state": "先验主导 · 基于研究先验估计",
+        "hr_state": "先验主导 · 基于研究先验估计",
+        "pace_algorithm_label": "当前有效算法 v4 · 修订 v4-rev2-2026-11",
+        "override_label": "已按你的选择使用 v4（修订 v4-rev2-2026-11）"
+      }
+    },
+    {
+      "name": "evolved-measured-reference",
+      "response": {
+        "threshold": {
+          "speed_mps": 4.4696,
+          "pace_per_km_sec": 224,
+          "hr_bpm": 162,
+          "speed_confidence": "high",
+          "hr_confidence": "medium",
+          "as_of_date": "2026-11-14",
+          "calibration_id": 1,
+          "algorithm_version": 4,
+          "computed_at": "2026-11-14T16:30:00Z",
+          "selection": {
+            "mode": "active",
+            "policy_revision": 3,
+            "requested_version": 4,
+            "effective_version": 4,
+            "state": "selected",
+            "override": {
+              "revision": 2,
+              "algorithm_version": 4,
+              "algorithm_revision": "v4-rev2-2026-11"
+            }
+          },
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "evolved_candidate",
+            "implementation": "evolved_joint_v2",
+            "parameter_version": "rev2-research-2026-11",
+            "algorithm_revision": "v4-rev2-2026-11",
+            "data_cutoff_day": "2026-11-14",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "robust_map_effort_margin_fit",
+              "target_type": "model_one_hour_capability_v60",
+              "state": "measured_reference",
+              "measurement_quality": "high",
+              "effort_support": "unknown",
+              "support": "high",
+              "range_low": 3.839830007246626,
+              "range_high": 4.864906771731347,
+              "range_meaning": "model_sensitivity_range_not_probability_interval",
+              "evidence_date": "2026-11-13",
+              "independent_activities": 2,
+              "independent_days": 1,
+              "reasons": [],
+              "limitations": [
+                "research_uncalibrated_not_population_calibrated",
+                "range_is_sensitivity_not_probability_interval",
+                "environment_temperature_not_corrected",
+                "terrain_gradient_not_corrected",
+                "power_law_valid_only_180_to_7200s",
+                "long_duration_uses_monotone_soft_constraint"
+              ],
+              "evidence": [
+                {
+                  "activity_id": "synthetic-evolved-field-protocol",
+                  "root_activity_id": "synthetic-evolved-field-protocol",
+                  "activity_day": "2026-11-13",
+                  "source_version": "",
+                  "duration_s": 180,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-field-protocol",
+                  "root_activity_id": "synthetic-evolved-field-protocol",
+                  "activity_day": "2026-11-13",
+                  "source_version": "",
+                  "duration_s": 300,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-field-protocol",
+                  "root_activity_id": "synthetic-evolved-field-protocol",
+                  "activity_day": "2026-11-13",
+                  "source_version": "",
+                  "duration_s": 600,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-field-protocol",
+                  "root_activity_id": "synthetic-evolved-field-protocol",
+                  "activity_day": "2026-11-13",
+                  "source_version": "",
+                  "duration_s": 1200,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-field-protocol",
+                  "root_activity_id": "synthetic-evolved-field-protocol",
+                  "activity_day": "2026-11-13",
+                  "source_version": "",
+                  "duration_s": 1800,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                },
+                {
+                  "activity_id": "synthetic-evolved-probable-hour",
+                  "root_activity_id": "synthetic-evolved-probable-hour",
+                  "activity_day": "2026-11-13",
+                  "source_version": "",
+                  "duration_s": 180,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-probable-hour",
+                  "root_activity_id": "synthetic-evolved-probable-hour",
+                  "activity_day": "2026-11-13",
+                  "source_version": "",
+                  "duration_s": 300,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-probable-hour",
+                  "root_activity_id": "synthetic-evolved-probable-hour",
+                  "activity_day": "2026-11-13",
+                  "source_version": "",
+                  "duration_s": 600,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-probable-hour",
+                  "root_activity_id": "synthetic-evolved-probable-hour",
+                  "activity_day": "2026-11-13",
+                  "source_version": "",
+                  "duration_s": 1200,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-probable-hour",
+                  "root_activity_id": "synthetic-evolved-probable-hour",
+                  "activity_day": "2026-11-13",
+                  "source_version": "",
+                  "duration_s": 1800,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-probable-hour",
+                  "root_activity_id": "synthetic-evolved-probable-hour",
+                  "activity_day": "2026-11-13",
+                  "source_version": "",
+                  "duration_s": 2700,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-probable-hour",
+                  "root_activity_id": "synthetic-evolved-probable-hour",
+                  "activity_day": "2026-11-13",
+                  "source_version": "",
+                  "duration_s": 3600,
+                  "measurement_quality": "high",
+                  "effort_support": "probable_maximal"
+                }
+              ],
+              "evidence_count": 12
+            },
+            "hr": {
+              "method": "measured_reference_median",
+              "target_type": "model_HRsteady_at_v60_declared_reference_conditions",
+              "state": "measured_reference",
+              "measurement_quality": "",
+              "effort_support": "",
+              "support": "medium",
+              "range_low": 153.9794308535129,
+              "range_high": 176.33870458099656,
+              "range_meaning": "model_sensitivity_range_not_probability_interval",
+              "evidence_date": "2026-11-13",
+              "independent_activities": 2,
+              "independent_days": 1,
+              "reasons": [],
+              "limitations": [
+                "research_uncalibrated_not_population_calibrated",
+                "range_is_sensitivity_not_probability_interval",
+                "environment_temperature_not_corrected",
+                "model_prediction_not_lab_LTHR",
+                "hr_shape_knots_monotone_constraint_required",
+                "cadence_lock_suspected_series_excluded"
+              ],
+              "evidence": [
+                {
+                  "activity_id": "synthetic-evolved-field-protocol",
+                  "root_activity_id": "synthetic-evolved-field-protocol",
+                  "activity_day": "2026-11-13",
+                  "source_version": "",
+                  "measurement_quality": "sensor_chest_strap",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-probable-hour",
+                  "root_activity_id": "synthetic-evolved-probable-hour",
+                  "activity_day": "2026-11-13",
+                  "source_version": "",
+                  "measurement_quality": "sensor_unknown",
+                  "effort_support": "unknown"
+                }
+              ],
+              "evidence_count": 2
+            }
+          },
+          "fingerprint": "synthetic-evolved-display-vector",
+          "speed_range_pace_per_km_sec": {
+            "fast": 206,
+            "slow": 260,
+            "meaning": "model_sensitivity_range_not_probability_interval",
+            "bound_kind": "two_sided"
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "3:44",
+        "pace_range": "支持范围 3:26–4:20 /km",
+        "hr": "162",
+        "evidence_day": "2026-11-13",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30",
+        "hr_range": "支持范围 154–176 bpm",
+        "pace_state": "实测参考",
+        "hr_state": "实测参考",
+        "pace_algorithm_label": "当前有效算法 v4 · 修订 v4-rev2-2026-11",
+        "override_label": "已按你的选择使用 v4（修订 v4-rev2-2026-11）"
+      }
+    },
+    {
+      "name": "evolved-unavailable",
+      "response": {
+        "threshold": {
+          "speed_mps": null,
+          "pace_per_km_sec": null,
+          "hr_bpm": null,
+          "speed_confidence": "none",
+          "hr_confidence": "none",
+          "as_of_date": "2026-11-14",
+          "calibration_id": 1,
+          "algorithm_version": 4,
+          "computed_at": "2026-11-14T16:30:00Z",
+          "selection": {
+            "mode": "active",
+            "policy_revision": 3,
+            "requested_version": 4,
+            "effective_version": 4,
+            "state": "selected",
+            "override": {
+              "revision": 2,
+              "algorithm_version": 4,
+              "algorithm_revision": "v4-rev2-2026-11"
+            }
+          },
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "evolved_candidate",
+            "implementation": "evolved_joint_v2",
+            "parameter_version": "rev2-research-2026-11",
+            "algorithm_revision": "v4-rev2-2026-11",
+            "data_cutoff_day": "2026-11-14",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "unavailable",
+              "target_type": "model_one_hour_capability_v60",
+              "state": "unavailable",
+              "measurement_quality": "unknown",
+              "effort_support": "unknown",
+              "support": "none",
+              "range_meaning": "model_sensitivity_range_not_probability_interval",
+              "independent_activities": 0,
+              "independent_days": 0,
+              "reasons": [
+                "no_valid_running_input"
+              ],
+              "limitations": [
+                "research_uncalibrated_not_population_calibrated",
+                "range_is_sensitivity_not_probability_interval",
+                "environment_temperature_not_corrected",
+                "terrain_gradient_not_corrected",
+                "power_law_valid_only_180_to_7200s",
+                "long_duration_uses_monotone_soft_constraint"
+              ],
+              "evidence_count": 0
+            },
+            "hr": {
+              "method": "unavailable",
+              "target_type": "model_HRsteady_at_v60_declared_reference_conditions",
+              "state": "unavailable",
+              "measurement_quality": "",
+              "effort_support": "",
+              "support": "none",
+              "range_meaning": "unavailable",
+              "independent_activities": 0,
+              "independent_days": 0,
+              "reasons": [
+                "no_HR_series_or_qualified_physiological_prior"
+              ],
+              "limitations": [
+                "research_uncalibrated_not_population_calibrated",
+                "range_is_sensitivity_not_probability_interval",
+                "environment_temperature_not_corrected",
+                "model_prediction_not_lab_LTHR",
+                "hr_shape_knots_monotone_constraint_required",
+                "cadence_lock_suspected_series_excluded"
+              ],
+              "evidence_count": 0
+            }
+          },
+          "fingerprint": "synthetic-evolved-display-vector",
+          "speed_range_pace_per_km_sec": {
+            "fast": null,
+            "slow": null,
+            "meaning": "model_sensitivity_range_not_probability_interval",
+            "bound_kind": "unavailable"
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "—",
+        "pace_range": null,
+        "hr": "—",
+        "evidence_day": null,
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30",
+        "pace_state": "暂无估计 · 窗口内没有有效跑步输入",
+        "hr_state": "暂无估计 · 没有心率序列，也没有可用的静息心率先验",
+        "pace_algorithm_label": "当前有效算法 v4 · 修订 v4-rev2-2026-11",
+        "override_label": "已按你的选择使用 v4（修订 v4-rev2-2026-11）"
+      }
+    },
+    {
+      "name": "historical-v4",
+      "response": {
+        "threshold": {
+          "speed_mps": 4.672897196261682,
+          "pace_per_km_sec": 214,
+          "hr_bpm": 166,
+          "speed_confidence": "high",
+          "hr_confidence": "medium",
+          "as_of_date": "2026-11-14",
+          "calibration_id": 2,
+          "algorithm_version": 4,
+          "computed_at": "2026-11-14T16:30:00Z",
+          "selection": {
+            "mode": "active",
+            "policy_revision": 1,
+            "requested_version": 4,
+            "effective_version": 4,
+            "state": "selected"
+          },
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "candidate",
+            "implementation": "synthetic-engineering-v1",
+            "data_cutoff_day": "2026-11-14",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "direct_hour_anchor",
+              "target_type": "one_hour_running_capability",
+              "measurement_quality": "high",
+              "effort_support": "confirmed_maximal",
+              "support": "high",
+              "range_low": 4.62962962962963,
+              "range_high": 4.672897196261682,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            },
+            "hr": {
+              "method": "field_test_protocol",
+              "target_type": "field_HR_proxy_not_physiological_LTHR",
+              "measurement_quality": "high",
+              "effort_support": "confirmed_maximal",
+              "support": "high",
+              "range_low": 163,
+              "range_high": 169,
+              "range_meaning": "evidence_support_sensitivity_not_probability_interval",
+              "evidence_date": "2026-10-01",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [],
+              "limitations": [
+                "research_parameters_not_independently_calibrated"
+              ],
+              "evidence_count": 1,
+              "evidence": [
+                {
+                  "activity_id": "synthetic-unavailable",
+                  "root_activity_id": "synthetic-root",
+                  "activity_day": "2026-10-01",
+                  "source_version": "synthetic-engineering-v1",
+                  "duration_s": 3600,
+                  "start_s": 60,
+                  "end_s": 3660,
+                  "measurement_quality": "high",
+                  "effort_support": "confirmed_maximal"
+                }
+              ]
+            }
+          },
+          "speed_range_pace_per_km_sec": {
+            "fast": 214,
+            "slow": 216,
+            "bound_kind": "two_sided",
+            "meaning": "evidence_support_sensitivity_not_probability_interval"
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "3:34",
+        "pace_range": "支持范围 3:34–3:36 /km",
+        "hr": "166",
+        "evidence_day": "2026-10-01",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30",
+        "pace_algorithm_label": "当前有效算法 v4"
+      }
+    },
+    {
+      "name": "override-selected",
+      "response": {
+        "threshold": {
+          "speed_mps": 3.8821,
+          "pace_per_km_sec": 258,
+          "hr_bpm": 171.466,
+          "speed_confidence": "medium",
+          "hr_confidence": "medium",
+          "as_of_date": "2026-11-14",
+          "calibration_id": 1,
+          "algorithm_version": 4,
+          "computed_at": "2026-11-14T16:30:00Z",
+          "selection": {
+            "mode": "active",
+            "policy_revision": 3,
+            "requested_version": 4,
+            "effective_version": 4,
+            "state": "selected",
+            "override": {
+              "revision": 2,
+              "algorithm_version": 4,
+              "algorithm_revision": "v4-rev2-2026-11"
+            }
+          },
+          "source": {
+            "schema_version": 1,
+            "state": "available",
+            "strategy": "evolved_candidate",
+            "implementation": "evolved_joint_v2",
+            "parameter_version": "rev2-research-2026-11",
+            "algorithm_revision": "v4-rev2-2026-11",
+            "data_cutoff_day": "2026-11-14",
+            "availability_semantics": "event_date_retrospective",
+            "speed": {
+              "method": "robust_map_effort_margin_fit",
+              "target_type": "model_one_hour_capability_v60",
+              "state": "model_estimated",
+              "measurement_quality": "high",
+              "effort_support": "unknown",
+              "support": "medium",
+              "range_low": 3.4298023943700424,
+              "range_high": 4.148774074149115,
+              "range_meaning": "model_sensitivity_range_not_probability_interval",
+              "evidence_date": "2026-11-04",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [
+                "prior_share_at_least_half_effective_curvature",
+                "prior_share_at_least_half_effective_curvature"
+              ],
+              "limitations": [
+                "research_uncalibrated_not_population_calibrated",
+                "range_is_sensitivity_not_probability_interval",
+                "environment_temperature_not_corrected",
+                "terrain_gradient_not_corrected",
+                "power_law_valid_only_180_to_7200s",
+                "long_duration_uses_monotone_soft_constraint"
+              ],
+              "evidence": [
+                {
+                  "activity_id": "synthetic-evolved-ordinary-long",
+                  "root_activity_id": "synthetic-evolved-ordinary-long",
+                  "activity_day": "2026-11-04",
+                  "source_version": "",
+                  "duration_s": 180,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-long",
+                  "root_activity_id": "synthetic-evolved-ordinary-long",
+                  "activity_day": "2026-11-04",
+                  "source_version": "",
+                  "duration_s": 300,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-long",
+                  "root_activity_id": "synthetic-evolved-ordinary-long",
+                  "activity_day": "2026-11-04",
+                  "source_version": "",
+                  "duration_s": 600,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-long",
+                  "root_activity_id": "synthetic-evolved-ordinary-long",
+                  "activity_day": "2026-11-04",
+                  "source_version": "",
+                  "duration_s": 1200,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-long",
+                  "root_activity_id": "synthetic-evolved-ordinary-long",
+                  "activity_day": "2026-11-04",
+                  "source_version": "",
+                  "duration_s": 1800,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-long",
+                  "root_activity_id": "synthetic-evolved-ordinary-long",
+                  "activity_day": "2026-11-04",
+                  "source_version": "",
+                  "duration_s": 2700,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-long",
+                  "root_activity_id": "synthetic-evolved-ordinary-long",
+                  "activity_day": "2026-11-04",
+                  "source_version": "",
+                  "duration_s": 3600,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-short",
+                  "root_activity_id": "synthetic-evolved-ordinary-short",
+                  "activity_day": "2026-10-25",
+                  "source_version": "",
+                  "duration_s": 180,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-short",
+                  "root_activity_id": "synthetic-evolved-ordinary-short",
+                  "activity_day": "2026-10-25",
+                  "source_version": "",
+                  "duration_s": 300,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-short",
+                  "root_activity_id": "synthetic-evolved-ordinary-short",
+                  "activity_day": "2026-10-25",
+                  "source_version": "",
+                  "duration_s": 600,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-short",
+                  "root_activity_id": "synthetic-evolved-ordinary-short",
+                  "activity_day": "2026-10-25",
+                  "source_version": "",
+                  "duration_s": 1200,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-short",
+                  "root_activity_id": "synthetic-evolved-ordinary-short",
+                  "activity_day": "2026-10-25",
+                  "source_version": "",
+                  "duration_s": 1800,
+                  "measurement_quality": "high",
+                  "effort_support": "unknown"
+                }
+              ],
+              "evidence_count": 12
+            },
+            "hr": {
+              "method": "joint_map_hr_dynamic_fit",
+              "target_type": "model_HRsteady_at_v60_declared_reference_conditions",
+              "state": "model_estimated",
+              "measurement_quality": "",
+              "effort_support": "",
+              "support": "medium",
+              "range_low": 159.75918112729468,
+              "range_high": 180.91948591149358,
+              "range_meaning": "model_sensitivity_range_not_probability_interval",
+              "evidence_date": "2026-11-04",
+              "independent_activities": 2,
+              "independent_days": 2,
+              "reasons": [
+                "optical_HR_downweighted_not_excluded"
+              ],
+              "limitations": [
+                "research_uncalibrated_not_population_calibrated",
+                "range_is_sensitivity_not_probability_interval",
+                "environment_temperature_not_corrected",
+                "model_prediction_not_lab_LTHR",
+                "hr_shape_knots_monotone_constraint_required",
+                "cadence_lock_suspected_series_excluded"
+              ],
+              "evidence": [
+                {
+                  "activity_id": "synthetic-evolved-ordinary-long",
+                  "root_activity_id": "synthetic-evolved-ordinary-long",
+                  "activity_day": "2026-11-04",
+                  "source_version": "",
+                  "measurement_quality": "sensor_unknown",
+                  "effort_support": "unknown"
+                },
+                {
+                  "activity_id": "synthetic-evolved-ordinary-short",
+                  "root_activity_id": "synthetic-evolved-ordinary-short",
+                  "activity_day": "2026-10-25",
+                  "source_version": "",
+                  "measurement_quality": "sensor_unknown",
+                  "effort_support": "unknown"
+                }
+              ],
+              "evidence_count": 2
+            }
+          },
+          "fingerprint": "synthetic-evolved-display-vector",
+          "speed_range_pace_per_km_sec": {
+            "fast": 241,
+            "slow": 292,
+            "meaning": "model_sensitivity_range_not_probability_interval",
+            "bound_kind": "two_sided"
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "4:18",
+        "pace_range": "支持范围 4:01–4:52 /km",
+        "hr": "171",
+        "evidence_day": "2026-11-04",
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30",
+        "hr_range": "支持范围 160–181 bpm",
+        "pace_state": "模型估计 · 基于你的普通训练估计",
+        "hr_state": "模型估计 · 基于你的普通训练估计",
+        "pace_algorithm_label": "当前有效算法 v4 · 修订 v4-rev2-2026-11",
+        "override_label": "已按你的选择使用 v4（修订 v4-rev2-2026-11）",
+        "hr_joint_label": "联合估计，非独立验证"
+      }
+    },
+    {
+      "name": "override-fallback",
+      "response": {
+        "threshold": {
+          "speed_mps": 4.672897196261682,
+          "pace_per_km_sec": 214,
+          "hr_bpm": 166,
+          "speed_confidence": "high",
+          "hr_confidence": "medium",
+          "as_of_date": "2026-11-14",
+          "calibration_id": 1,
+          "selection": {
+            "mode": "active",
+            "policy_revision": 3,
+            "requested_version": 4,
+            "effective_version": 3,
+            "state": "fallback",
+            "reason": "override_snapshot_missing",
+            "override": {
+              "revision": 2,
+              "algorithm_version": 4,
+              "algorithm_revision": "v4-rev2-2026-11"
+            }
+          }
+        },
+        "pace_zones": [],
+        "hr_zones": []
+      },
+      "expected": {
+        "pace": "3:34",
+        "pace_range": null,
+        "hr": "166",
+        "evidence_day": null,
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": null,
+        "pace_algorithm_label": "当前有效算法 v3",
+        "override_fallback_label": "你选择的版本在该日期无快照，暂用全局有效版本"
+      },
+      "server_expected": {
+        "pace": "3:34",
+        "pace_range": null,
+        "hr": "166",
+        "evidence_day": null,
+        "cutoff_day": "2026-11-14",
+        "computed_shanghai": "2026-11-15 00:30",
+        "pace_algorithm_label": "当前有效算法 v3",
+        "override_fallback_label": "你选择的版本在该日期无快照，暂用全局有效版本"
       }
     }
   ]

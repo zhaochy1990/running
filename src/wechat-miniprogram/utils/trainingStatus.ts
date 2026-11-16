@@ -494,7 +494,57 @@ const CALIBRATION_WORDS: Record<string, string> = {
   endurance_exponent_unidentified_research_midpoint: '耐力参数尚未被充分识别',
   field_proxy_is_not_physiological_LTHR: '场地代理不等于生理乳酸阈值',
   missing_cadence_cannot_exclude_cadence_lock: '缺少步频，无法排除心率与步频锁定',
+  // 演进 v4（#993）估计方法与原因，与 Web/iOS 共用同一组大白话文案。
+  robust_map_effort_margin_fit: '普通训练模型推断',
+  aged_prior_only: '研究先验（随时间老化）', aged_prior_only_HR: '研究先验（随时间老化）',
+  measured_reference_median: '实测参考中位数（已核验协议）',
+  joint_map_hr_dynamic_fit: '配速与心率联合模型推断',
+  prior_predict_only: '先验预测（窗口内无新增可比证据）',
+  unavailable: '无法估计',
+  no_valid_running_input: '窗口内没有有效跑步输入',
+  no_HR_series_or_qualified_physiological_prior: '没有心率序列，也没有可用的静息心率先验',
+  inputs_physically_invalid: '输入超出物理合理范围',
+  current_window_empty_prior_only_aged: '当前窗口无新证据，仅按先验老化更新',
+  identifiability_limited_prior_dominated: '证据不足以区分能力与余量，先验主导',
+  single_activity_no_duration_diversity: '仅一次活动且时长单一，可辨识性不足',
+  supporting_evidence_older_than_staleness_window: '支持证据已超过陈旧窗口',
+  optical_HR_downweighted_not_excluded: '光电腕式心率已降权使用（未排除）',
+  prior_only_HR_estimate: '心率估计仅来自生理先验',
+  HR_series_all_excluded_quality_gates: '心率序列全部被质量门槛排除',
+  all_admitted_rows_rejected_measurement_quality: '全部输入被测量质量门槛拒绝',
+  solver_numerical_failure: '求解器数值失败，未能输出估计',
+  prior_share_at_least_half_effective_curvature: '先验影响占比过半，估计以先验为主',
+  no_new_comparable_evidence_capability_predict_only: '无新增可比证据，仅做先验预测',
+  speed_basis_absent_v60_prior_only: '缺少配速基准，仅用一小时能力先验',
+  capability_day_effects_separated_from_trend: '能力日效应与趋势已分开处理',
+  model_prediction_not_lab_LTHR: '模型预测不等于实验室乳酸阈值',
+  hr_shape_knots_monotone_constraint_required: '心率形状受单调约束',
+  cadence_lock_suspected_series_excluded: '疑似步频锁定的序列已被排除',
+  terrain_gradient_not_corrected: '未校正坡度影响',
+  long_duration_uses_monotone_soft_constraint: '长时长证据仅作单调软约束',
+  k_grid_coarsened_large_input: '大输入量下网格已粗化',
+  HR_tau_grid_coarsened_large_input: '大输入量下心率动态网格已粗化',
 };
+
+/** 五态大白话（#1000）。缺全力测试不要求先测试；先验不写成用户实测。 */
+const CALIBRATION_STATES: Record<string, string> = {
+  measured_reference: '实测参考',
+  model_estimated: '模型估计 · 基于你的普通训练估计',
+  prior_dominated: '先验主导 · 基于研究先验估计',
+  stale: '已过期 · 保留历史估计',
+  unavailable: '暂无估计',
+};
+
+function unavailableStateLabel(reasons: string[] | null | undefined, kind: 'speed' | 'hr'): string {
+  const codes = reasons ?? [];
+  if (codes.includes('no_valid_running_input')) return '暂无估计 · 窗口内没有有效跑步输入';
+  if (codes.includes('no_HR_series_or_qualified_physiological_prior')) return '暂无估计 · 没有心率序列，也没有可用的静息心率先验';
+  if (codes.includes('inputs_physically_invalid')) return '暂无估计 · 输入超出物理合理范围';
+  if (codes.includes('solver_numerical_failure')) return '暂无估计 · 求解器数值失败，未能输出估计';
+  if (kind === 'hr' && codes.includes('HR_series_all_excluded_quality_gates')) return '暂无估计 · 心率序列全部被质量门槛排除';
+  return '暂无估计 · 未能形成有效估计';
+}
+
 const calibrationWord = (value: string | undefined, fallback = '未知') =>
   value ? (CALIBRATION_WORDS[value] ?? fallback) : fallback;
 const validDay = (value: string | undefined): string | null =>
@@ -530,10 +580,16 @@ export function projectCalibration(zones: import('../types/health').StrideZonesR
     const value = kind === 'speed' ? calibrationPace(threshold?.pace_per_km_sec)
       : positive(threshold?.hr_bpm) ? String(Math.round(threshold.hr_bpm)) : '—';
     const evidenceDay = available ? validDay(detail?.evidence_date) : null;
-    const support = available ? `模型支持：${calibrationWord(detail?.support, '未知（保守参考）')}`
+    let support = available ? `模型支持：${calibrationWord(detail?.support, '未知（保守参考）')}`
       : knownSource ? (kind === 'hr' ? '心率证据信息未提供' : '配速证据信息未提供')
       : source && source.state !== 'legacy_source_missing' ? '来源信息不可用 · 保守参考'
       : threshold ? '旧版估计 · 来源信息不可用' : '暂无校准数据';
+    // 五态（#993）：带状态的行以状态行开头；未知状态保守降级不借标签。
+    if (available && detail?.state) {
+      support = detail.state === 'unavailable'
+        ? unavailableStateLabel(detail.reasons, kind)
+        : CALIBRATION_STATES[detail.state] ?? '来源信息不可用 · 保守参考';
+    }
     const lines = [support];
     const help = [kind === 'speed'
       ? '阈值配速表示约一小时全力跑步能力的估计，不是普通训练平均配速。'
@@ -548,9 +604,11 @@ export function projectCalibration(zones: import('../types/health').StrideZonesR
         const target = detail.target_type;
         const targetLabel = target === 'field_HR_proxy_not_physiological_LTHR'
           ? '现场心率代理，不等于生理乳酸阈值'
+          : target === 'model_HRsteady_at_v60_declared_reference_conditions' ? '模型推算稳态心率（参考条件下的一小时能力配速，非生理乳酸阈值）'
           : target === 'lab_method_specific_LTHR' ? `实验室方法特定阈值：${detail.lab_method ?? '方法未提供'}`
           : target === 'unavailable' ? '暂无可用心率参考' : '训练心率估计，非独立实验室参考';
         lines.push(targetLabel);
+        if (detail.method === 'joint_map_hr_dynamic_fit') lines.push('联合估计，非独立验证');
       }
       const reasons = [...(detail.reasons ?? []), ...(detail.limitations ?? [])];
       for (const reason of reasons) {
@@ -591,8 +649,19 @@ export function projectCalibration(zones: import('../types/health').StrideZonesR
     if (rejectedDay && rejectedDay !== staleDay) lines.push(`最近未采用证据日 ${rejectedDay}`);
     if (cutoffDay) help.push(`数据截止 ${cutoffDay}`);
     if (computedShanghai) help.push(`校准执行 ${computedShanghai}（上海时间）`);
-    if (selection?.state === 'fallback') help.push('首选版本缺少快照，使用服务端回退版本');
-    if (selection?.effective_version != null) help.push(`有效算法版本 v${selection.effective_version}`);
+    // 当前有效算法（#999/#1000）：只描述本人当前读到的版本，已部署不等于所有人已启用。
+    const effectiveVersion = selection?.effective_version ?? threshold?.algorithm_version;
+    if (effectiveVersion != null) {
+      const revision = source?.algorithm_revision;
+      help.push(`当前有效算法 v${effectiveVersion}${revision ? ` · 修订 ${revision}` : ''}`);
+    }
+    const overrideMissing = selection?.reason === 'override_snapshot_missing';
+    if (selection?.override) {
+      const identity = `v${selection.override.algorithm_version}${selection.override.algorithm_revision ? `（修订 ${selection.override.algorithm_revision}）` : ''}`;
+      help.push(overrideMissing ? `你的选择：${identity}` : `已按你的选择使用 ${identity}`);
+    }
+    if (overrideMissing) help.push('你选择的版本在该日期无快照，暂用全局有效版本');
+    else if (selection?.state === 'fallback') help.push('首选版本缺少快照，使用服务端回退版本');
     const low = detail?.range_low;
     const high = detail?.range_high;
     const hrRange = available && positive(low) && positive(high)

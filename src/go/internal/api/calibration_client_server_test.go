@@ -195,12 +195,33 @@ func TestCalibrationClientServer(t *testing.T) {
 				source = string(vraw)
 			}
 			version := 4
-			if c.Name == "legacy" {
+			if c.Name == "legacy" || c.Name == "override-fallback" {
 				version = 3
 			}
+			// T6 (#1000): the evolved-v4 vectors carry the in-place revision
+			// marker in their natural key so the real resolver can pin them.
+			revision := ""
+			switch c.Name {
+			case "evolved-low-evidence", "evolved-prior-only", "evolved-measured-reference", "evolved-unavailable", "override-selected":
+				revision = calibration.EvolvedCandidateAlgorithmRevision
+			}
 			computed, _ := time.Parse(time.RFC3339, "2026-11-14T16:30:00Z")
-			if _, err = st.PublishRunningCalibration(ctx, &storage.RunningCalibrationSnapshot{UserID: user, AsOfDate: th.AsOfDate, AlgorithmVersion: version, ThresholdSpeedMps: th.SpeedMps, ThresholdHR: th.HRBpm, ThresholdSpeedConfidence: th.SpeedConfidence, ThresholdHRConfidence: th.HRConfidence, ComputedAt: computed, SourceJSON: &source}, nil, nil); err != nil {
+			if _, err = st.PublishRunningCalibration(ctx, &storage.RunningCalibrationSnapshot{UserID: user, AsOfDate: th.AsOfDate, AlgorithmVersion: version, AlgorithmRevision: revision, ThresholdSpeedMps: th.SpeedMps, ThresholdHR: th.HRBpm, ThresholdSpeedConfidence: th.SpeedConfidence, ThresholdHRConfidence: th.HRConfidence, ComputedAt: computed, SourceJSON: &source}, nil, nil); err != nil {
 				t.Fatal(err)
+			}
+			// Real per-user override rows (#999): evolved-v4 vectors and
+			// override-selected pin (4, rev2) so the real resolver mirrors the
+			// fixture's selection disclosure; override-fallback pins an
+			// identity with no row at this cutoff so the read falls back with
+			// override_snapshot_missing (global v3 row only).
+			if c.Name == "override-selected" || c.Name == "override-fallback" || strings.HasPrefix(c.Name, "evolved-") {
+				override := storage.RunningCalibrationUserOverride{UserID: user, AlgorithmVersion: 4, AlgorithmRevision: calibration.EvolvedCandidateAlgorithmRevision, Actor: "stride-local-t6"}
+				if _, err = st.ReplaceUserCalibrationOverride(ctx, 0, override); err != nil {
+					t.Fatal(err)
+				}
+				if _, err = st.ReplaceUserCalibrationOverride(ctx, 1, override); err != nil {
+					t.Fatal(err)
+				}
 			}
 		}
 		token, err := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{"sub": user, "iss": "stride-local-t7", "aud": "stride-local-client", "exp": time.Now().Add(3 * time.Hour).Unix()}).SignedString(key)
