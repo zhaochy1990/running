@@ -369,6 +369,41 @@ func (s *Store) DeleteUserData(ctx context.Context, userID string) error {
 			}
 		}
 
+		// First-sync onboarding tables (devops#1006 / devops#1009, epic devops#1004
+		// erasure leftover): sessions and the published recent-analysis rows are
+		// user-owned; the dispatch / work-item / coverage tables are session-scoped
+		// (no user_id) and are swept through the session subquery BEFORE the session
+		// delete empties it. Guarded on presence for the same reason as the
+		// historical-recompute block above: `stride api` and `stride worker` migrate
+		// them, but partial test schemas and a pre-migration deployment may not —
+		// erasure must not fail on tables that cannot hold rows.
+		if tx.Migrator().HasTable(&OnboardingSyncSession{}) {
+			if err := tx.Exec(
+				"DELETE FROM onboarding_sync_dispatches WHERE session_id IN (SELECT session_id FROM onboarding_sync_sessions WHERE user_id = ?)",
+				uid,
+			).Error; err != nil {
+				return fmt.Errorf("storage: delete onboarding sync dispatch intents: %w", err)
+			}
+			if err := tx.Exec(
+				"DELETE FROM onboarding_sync_work_items WHERE session_id IN (SELECT session_id FROM onboarding_sync_sessions WHERE user_id = ?)",
+				uid,
+			).Error; err != nil {
+				return fmt.Errorf("storage: delete onboarding sync work items: %w", err)
+			}
+			if err := tx.Exec(
+				"DELETE FROM onboarding_sync_stage_coverage WHERE session_id IN (SELECT session_id FROM onboarding_sync_sessions WHERE user_id = ?)",
+				uid,
+			).Error; err != nil {
+				return fmt.Errorf("storage: delete onboarding sync stage coverage: %w", err)
+			}
+			if err := tx.Where("user_id = ?", uid).Delete(&OnboardingRecentAnalysis{}).Error; err != nil {
+				return fmt.Errorf("storage: delete user data from onboarding_recent_analysis: %w", err)
+			}
+			if err := tx.Where("user_id = ?", uid).Delete(&OnboardingSyncSession{}).Error; err != nil {
+				return fmt.Errorf("storage: delete user data from onboarding_sync_sessions: %w", err)
+			}
+		}
+
 		// team_likes has no user_id column either. A user is referenced in two
 		// directions: as the activity owner (likes received) and as the liker
 		// (likes given). Delete both, otherwise the redundant liker_display_name
