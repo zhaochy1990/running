@@ -237,6 +237,53 @@ jobs:
           go test ./internal/storage/...
           -run 'TestLeaseRenewalAndListStaleRunning|TestTransitionJobCompareAndSet'
           -count=1 -v
+      # The activity write-isolation fence (binding revision, exec lease,
+      # immutable v2 publish) is transactional SQL + a real FileStore — the
+      # stale-worker/rebind/takeover races only reproduce against real MySQL
+      # (devops#1005 AC5).
+      - name: Activity write-isolation storage tests (MySQL + FileStore)
+        env:
+          STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
+        run: >-
+          go test ./internal/storage/...
+          -run 'TestWriteIsolation'
+          -count=1 -v
+      # The first-sync session claim/claim-race/rebind isolation plus the
+      # create→dispatch→completion crash-boundary recovery are transactional
+      # SQL over the real job store (devops#1006 AC7). -p 1 serializes the
+      # two packages: both automigrate the onboarding-sync schema and a
+      # fresh database cannot take two concurrent CREATE TABLE runs.
+      - name: Onboarding-sync session tests (MySQL)
+        env:
+          STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
+        run: >-
+          go test -p 1 ./internal/storage/... ./internal/onboardingsync/...
+          -run 'TestOnboardingSync'
+          -count=1 -v
+      # The COROS recent-range executor (devops#1004 T04, devops#1008) drives
+      # the real session/work-item/lease state machines over real MySQL: the
+      # credential-reuse retry semantics, the fenced publish session (lease
+      # release + stale-write refusal), and the create->dispatch->execute->
+      # sweep->readiness end-to-end path (AC5).
+      - name: Onboarding recent-range executor tests (MySQL)
+        env:
+          STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
+        run: >-
+          go test ./internal/handlers/onboardingrecent/...
+          -run 'TestOnboardingRecent'
+          -count=1 -v
+      # The recent-analysis executor (devops#1004 T05, devops#1009) drives the
+      # real session/coverage/result tables plus the REAL canonical
+      # calibration/compute/ability handlers over real MySQL: zero-input
+      # explicit unavailability, missing-history old-result protection, the
+      # cross-midnight raw top-up, and fingerprint supersede.
+      - name: Onboarding recent-analysis executor tests (MySQL)
+        env:
+          STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
+        run: >-
+          go test ./internal/handlers/onboardinganalysis/...
+          -run 'TestOnboardingAnalysis'
+          -count=1 -v
       # The provider_events unique index is the webhook push idempotency rule
       # (devops#287) — SQL-level, so only a real MySQL exercises it.
       - name: Provider-event storage tests (MySQL)

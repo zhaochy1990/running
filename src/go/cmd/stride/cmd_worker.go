@@ -17,6 +17,7 @@ import (
 	"github.com/zhaochy1990/x/logger"
 	"go.uber.org/zap"
 
+	"github.com/zhaochy1990/stride/internal/catalog"
 	"github.com/zhaochy1990/stride/internal/chinaath"
 	"github.com/zhaochy1990/stride/internal/config"
 	"github.com/zhaochy1990/stride/internal/cos"
@@ -24,6 +25,8 @@ import (
 	"github.com/zhaochy1990/stride/internal/handlers/competitioncalendar"
 	"github.com/zhaochy1990/stride/internal/handlers/compute"
 	"github.com/zhaochy1990/stride/internal/handlers/homecitysync"
+	"github.com/zhaochy1990/stride/internal/handlers/onboardinganalysis"
+	"github.com/zhaochy1990/stride/internal/handlers/onboardingrecent"
 	racehandler "github.com/zhaochy1990/stride/internal/handlers/racedetection"
 	"github.com/zhaochy1990/stride/internal/handlers/routethumbnails"
 	"github.com/zhaochy1990/stride/internal/handlers/watchsync"
@@ -31,7 +34,9 @@ import (
 	"github.com/zhaochy1990/stride/internal/health"
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/mq"
+	"github.com/zhaochy1990/stride/internal/onboardingsync"
 	"github.com/zhaochy1990/stride/internal/pipeline"
+	"github.com/zhaochy1990/stride/internal/provider"
 	"github.com/zhaochy1990/stride/internal/racedetection"
 	"github.com/zhaochy1990/stride/internal/registry"
 	"github.com/zhaochy1990/stride/internal/storage"
@@ -49,6 +54,12 @@ const heartbeatInterval = 30 * time.Second
 // sweep (devops#904: a 30-minute order cutoff serviced at a 5-minute cadence
 // leaves at most ~35 minutes of pending_payment parking).
 const wxpaySweepInterval = 5 * time.Minute
+
+// onboardingSweepInterval is how often the worker runs the first-sync session
+// reconcile (devops#1006): re-enqueue crash-stranded stage dispatches after
+// their 2-minute grace window and record terminal stage jobs, so the worst-case
+// recovery latency is ~2.5 minutes.
+const onboardingSweepInterval = 30 * time.Second
 
 func newWorkerCmd() *cobra.Command {
 	return &cobra.Command{
@@ -129,6 +140,13 @@ func runWorker() error {
 	if err := store.AutoMigratePoints(ctx); err != nil {
 		return err
 	}
+	// First-sync session tables (devops#1006): the worker's reconcile sweep
+	// re-dispatches crash-stranded stages and records terminal outcomes, so
+	// existing sessions keep advancing even after the creation switch is
+	// turned back off (compat-worker semantics, epic devops#1004 rollout).
+	if err := store.AutoMigrateOnboardingSync(ctx); err != nil {
+		return err
+	}
 
 	// --- RabbitMQ ---
 	// Backoff instead of fail-fast: a rabbitmq Recreate roll is a 15-30s
@@ -193,7 +211,26 @@ func runWorker() error {
 		}
 		return registry.Build(name, store, watchRequestDelay)
 	}
-	registerHandlers(reg, resolve, store, racedetection.New(raceClassifier), cfg.RaceDetection.MaxConcurrency, waClient, tsBlobStore, log, competitioncalendar.Config{
+	// First-sync session reconcile (devops#1006, epic devops#1004 T02 + the
+	// devops#1010 T06 stage chain): the onboarding-sync sweep closes the
+	// session lifecycle's crash windows — pending dispatch rows older than
+	// the grace window are re-enqueued (idempotency-key deduped), terminal
+	// stage jobs are recorded onto their sessions, chunked backfill stages
+	// are continued, the next stage of the chain is appended when its
+	// predecessor completes, and waiting_legacy sessions resume after their
+	// old full run finishes. Always on: no sessions → a no-op pass, and
+	// turning the creation switch off must never strand in-flight sessions.
+	onboardingSyncSvc, err := onboardingsync.New(onboardingsync.Config{
+		Store: store, Enqueuer: enq, Jobs: store, Runs: store,
+		JobType:            catalog.JobTypeOnboardingRecentSync,
+		AnalysisJobType:    catalog.JobTypeOnboardingRecentAnalysis,
+		LegacyFullPipeline: catalog.PipelineOnboarding,
+		Logger:             log,
+	})
+	if err != nil {
+		return err
+	}
+	registerHandlers(reg, resolve, store, racedetection.New(raceClassifier), cfg.RaceDetection.MaxConcurrency, waClient, tsBlobStore, log, cfg.Runtime.WriteIsolation, onboardingSyncSvc, competitioncalendar.Config{
 		Client:                waClient,
 		Store:                 store,
 		CompetitionGroupID:    cfg.WorldAthletics.CompetitionGroupID,
@@ -282,6 +319,23 @@ func runWorker() error {
 					zap.Int64("completed", s.Completed),
 					zap.Int64("failed", s.Failed),
 				)
+			}
+		}
+	}()
+
+	// The onboarding-sync service itself is wired before registerHandlers
+	// (the watch_sync gap check and the stage executors all consume it); this
+	// is only its sweep ticker.
+	go func() {
+		onboardingSyncSvc.Sweep(ctx) // boot pass: a crashed predecessor's backlog first
+		t := time.NewTicker(onboardingSweepInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				onboardingSyncSvc.Sweep(ctx)
 			}
 		}
 	}()
@@ -393,17 +447,79 @@ func newTSBlobStore(cfg config.TSBlob) (tsstore.Store, error) {
 // mirrors the 中国田协 catalogue (caConfig); `homecity_recompute` refreshes
 // every user's resident-city snapshot; `ts_blob_gc` collects orphaned
 // timeseries blobs (devops#785, operator-enqueued).
-func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store, raceDetector *racedetection.Detector, raceConcurrency int, waClient *worldathletics.Client, tsBlobStore tsstore.Store, log *zap.Logger, ccConfig competitioncalendar.Config, caConfig chinaathcalendar.Config, wxClient *wxpay.Client) {
+func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store, raceDetector *racedetection.Detector, raceConcurrency int, waClient *worldathletics.Client, tsBlobStore tsstore.Store, log *zap.Logger, isolation config.WriteIsolation, onboardingSyncSvc *onboardingsync.Service, ccConfig competitioncalendar.Config, caConfig chinaathcalendar.Config, wxClient *wxpay.Client) {
 	reg.MustRegister("hello", func(_ context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		_ = hb("greeting", 50)
 		return fmt.Sprintf(`{"echo":%q}`, j.InputJSON), nil
 	})
-	reg.MustRegister(watchsync.JobType, watchsync.New(resolve, store, watchJobs))
+	// watch_sync: when write-isolation is enabled (devops#1005), each run
+	// begins a per-user binding-revision + execution-lease session and
+	// publishes through the fenced immutable-key path. Default off — the
+	// flag may only be turned on once the old fixed-key writers are drained
+	// (see config.WriteIsolation). The gap-check variant (devops#1010 AC3)
+	// additionally re-checks an unfinished onboarding session's recent
+	// activity window on every incremental run, so the cursor's
+	// stop-at-first-existing rule cannot mask holes.
+	var syncHandler job.Handler
+	if isolation.Enabled {
+		syncHandler = watchsync.NewIsolatedWithGapCheck(resolve, store, watchJobs, store, isolation.LeaseTTL, onboardingSyncSvc)
+	} else {
+		syncHandler = watchsync.New(resolve, store, watchJobs)
+	}
+	reg.MustRegister(watchsync.JobType, syncHandler)
+	// onboarding_recent_sync (devops#1008 T04 + devops#1007 T03 + devops#1010
+	// T06, epic devops#1004): the first-sync session's stage executor — the
+	// recent stage (provider.RecentSyncer) and the chunked background
+	// backfill + auxiliary stages (provider.BackfillSyncer). Always
+	// registered — jobs are only dispatched for sessions created under the
+	// api.features.onboarding-sync-session rollout switch, and a provider
+	// without the range contracts fails the job PERMANENTLY instead of
+	// poisoning the retry queue. Unlike watch_sync, the write-isolation
+	// session is unconditional here: the onboarding path is new (no legacy
+	// fixed-key writers to drain behind it), so every activity publish is
+	// fenced from day one.
+	recentResolve := func(ctx context.Context, user string) (onboardingrecent.Provider, error) {
+		p, err := resolve(ctx, user)
+		if err != nil {
+			return nil, err
+		}
+		rs, ok := p.(provider.RecentSyncer)
+		if !ok {
+			return nil, onboardingrecent.ErrProviderNotRangeCapable
+		}
+		bs, _ := p.(provider.BackfillSyncer) // nil BackfillSyncer: backfill stages fail permanent provider_not_backfill_capable
+		return recentRangeProvider{Provider: p, RecentSyncer: rs, BackfillSyncer: bs}, nil
+	}
+	recentHandler := onboardingrecent.New(onboardingrecent.Config{
+		Resolve: recentResolve, Store: store, Sessions: store,
+		Jobs: watchJobs, LeaseTTL: isolation.LeaseTTL,
+		Aux: &onboardingrecent.AuxiliaryConfig{
+			Race:   racehandler.New(store, raceDetector, raceConcurrency),
+			Shapes: routethumbnails.NewShapes(store),
+		},
+	})
+	reg.MustRegister(onboardingrecent.JobType, recentHandler)
 	reg.MustRegister(racehandler.JobType, racehandler.New(store, raceDetector, raceConcurrency))
 	reg.MustRegister(racehandler.BackfillJobType, racehandler.NewBackfill(store, raceDetector, raceConcurrency))
-	reg.MustRegister(compute.CalibrationJobType, compute.NewCalibration(store))
-	reg.MustRegister(compute.ComputeJobType, compute.NewCompute(store))
-	reg.MustRegister(compute.AbilityJobType, compute.NewAbility(store))
+	calibrationHandler := compute.NewCalibration(store)
+	computeHandler := compute.NewCompute(store)
+	abilityHandler := compute.NewAbility(store)
+	reg.MustRegister(compute.CalibrationJobType, calibrationHandler)
+	reg.MustRegister(compute.ComputeJobType, computeHandler)
+	reg.MustRegister(compute.AbilityJobType, abilityHandler)
+	// onboarding_recent_analysis (devops#1009, epic devops#1004 T05): the
+	// first-sync session's recent-analysis executor. It reuses the raw recent
+	// executor for its cross-midnight top-up and the canonical
+	// calibration/compute/ability handlers for the analysis itself — no second
+	// algorithm, no second tables. Always registered, like the raw executor:
+	// jobs only exist for sessions created under the rollout switch.
+	reg.MustRegister(onboardinganalysis.JobType, onboardinganalysis.New(onboardinganalysis.Config{
+		Store:       store,
+		RawStage:    recentHandler,
+		Calibration: calibrationHandler,
+		Compute:     computeHandler,
+		Ability:     abilityHandler,
+	}))
 	// #999 single-user evolved-v4 closed loop (publish/revoke/recompute):
 	// registered so an authorized internal enqueue can dispatch it; nothing in
 	// any pipeline or cron ever triggers it automatically.
@@ -435,4 +551,15 @@ func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *stor
 	// refund their points. The in-process ticker below drives it on a cadence;
 	// the registration keeps it operator-triggerable via the internal jobs API.
 	reg.MustRegister(wxpayclose.JobType, wxpayclose.New(store, wxClient, wxpayclose.DefaultAge))
+}
+
+// recentRangeProvider pairs the resolved watch provider with its onboarding
+// range contracts (devops#1008 + devops#1010): the watch-sync resolver returns
+// the provider slice watch_sync needs, and this adapter adds the
+// SyncRecentRange half the recent-stage executor dispatches through plus the
+// SyncBackfillRange half the chunked backfill stages dispatch through.
+type recentRangeProvider struct {
+	watchsync.Provider
+	provider.RecentSyncer
+	provider.BackfillSyncer
 }

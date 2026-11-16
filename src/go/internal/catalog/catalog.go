@@ -107,6 +107,27 @@ const (
 	// the registration keeps it operator-triggerable via the internal jobs
 	// API. No-op when the payment module is unconfigured.
 	JobTypeWxpayOrderClose = "wxpay_order_close"
+	// JobTypeOnboardingRecentSync executes one first-sync session's recent
+	// stage (devops#1006, epic devops#1004 T02): it reads the session's work
+	// items (90-day activities / 28-day health windows) and their fetch
+	// credentials, fetches the missing ranges and reports the StageResult
+	// coverage contract. Created exclusively by the session dispatch path
+	// (never user-initiable), deduplicated by a stable idempotency key. The
+	// Garmin executor ships with devops#1007 (T03); the COROS executor is the
+	// T04 follow-up — until workers carry both, the rollout switch
+	// (api.features.onboarding-sync-session) must stay OFF (a non-Garmin
+	// session dispatched to a T03-only worker fails with an explicit
+	// permanent error, mirroring the webhook's enqueue gate).
+	JobTypeOnboardingRecentSync = "onboarding_recent_sync"
+	// JobTypeOnboardingRecentAnalysis executes one first-sync session's
+	// recent-analysis stage (devops#1009, epic devops#1004 T05): it reuses the
+	// canonical calibration/compute/ability handlers in-process over the
+	// recently synced window, tops the raw window up to the analysis as-of day
+	// across midnight, publishes the per-domain result row with its true
+	// as-of/input fingerprint, and reports the StageResult coverage contract.
+	// Created exclusively by the session sweep's advance/refresh passes (never
+	// user-initiable), deduplicated by a stable idempotency key.
+	JobTypeOnboardingRecentAnalysis = "onboarding_recent_analysis"
 )
 
 // Pipeline names (ADR 0020). onboarding and data_sync are fronted by
@@ -232,6 +253,13 @@ func Jobs() []JobSpec {
 			ExampleInput:  json.RawMessage(`{"mode":"incremental","label_ids":["a1b2"]}`),
 		},
 		{
+			Type:          JobTypeOnboardingRecentAnalysis,
+			UserInitiable: false,
+			Description:   "Execute one first-sync session's recent-analysis stage (devops#1009, epic devops#1004 T05): tops the recent raw window up to the analysis as-of day across midnight (through the onboarding_recent_sync executor), then reuses the canonical calibration/compute/ability handlers in-process and publishes the per-domain result row (as-of day, input fingerprint, coverage, stale/refresh). Analysis readiness is independent of raw; missing historical calibration keeps load/zones/L1 explicitly unavailable. Internal-only: created exclusively by the onboarding-sync sweep's advance/refresh passes, deduplicated by a stable idempotency key.",
+			InputSchema:   json.RawMessage(`{"type":"object","properties":{"session_id":{"type":"string","format":"uuid"},"stage":{"type":"string","enum":["recent_analysis"]}},"required":["session_id","stage"],"additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{"session_id":"00000000-0000-0000-0000-000000000000","stage":"recent_analysis"}`),
+		},
+		{
 			Type:          JobTypeAbility,
 			UserInitiable: false,
 			Description:   "Compute + persist the 4-layer ability snapshot (L1 quality / L2 freshness / L3 six dimensions / L4 composite + marathon/half estimates) for the subject athlete, and persist each batch activity's L1 row (label_ids the pipeline threaded through, else the anchor day's activities; ultra-short ones under 1.5 km AND 10 min are skipped). Mode-aware: full computes the current Shanghai day; backfill seeds the last `days` days; backfill_l1 fills missing per-activity L1 rows over the whole history without recomputing snapshots. Internal-only.",
@@ -279,6 +307,13 @@ func Jobs() []JobSpec {
 			Description:   "Fetch one watch-provider activity's full data (FIT download first, open-platform pull on fallback) for an event recorded by the webhook push receiver. Input points at the provider_events row holding the raw push payload. Created exclusively by the webhook receiver (devops#287); not user-initiable.",
 			InputSchema:   json.RawMessage(`{"type":"object","required":["event_id"],"properties":{"event_id":{"type":"integer","description":"provider_events primary key the job reads its payload from"}},"additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{"event_id":1}`),
+		},
+		{
+			Type:          JobTypeOnboardingRecentSync,
+			UserInitiable: false,
+			Description:   "Execute one first-sync session stage (devops#1006, epic devops#1004 T02 + T06 devops#1010): run the session's stage work items — recent_raw (90-day activities / 28-day health / dashboard, Shanghai natural days), extended_raw (180-day activities / 90-day health), historical_raw (all accessible activities; Garmin health up to 365 days — COROS declares only what its batch returns) or auxiliary (race detection + route shapes as independent retryable tasks) — reusing done items' complete-fetch credentials, recording gaps honestly, and returning the StageResult coverage contract the reconcile sweep persists. The backfill stages are CHUNKED: one job run fetches at most ~20 activity details or walks ~7 health days, persists a resume checkpoint and reports in_progress; the sweep requeues the next chunk after the dispatch grace, so the per-user lease is yielded between chunks and recent stages / new trainings / webhooks jump the queue. The recent executors shipped with T03/T04 (devops#1007/#1008); the chunked backfill + stage chain with T06 (devops#1010: existence-skipping historical walks that never stop at stored rows, day-boundary checkpoints, full-list completion reconciliation, storage-derived coverage so a chunk can never fake completion). Both providers implement provider.RecentSyncer + provider.BackfillSyncer; a provider without the contract fails the job permanently as provider_not_capable, and the api.features.onboarding-sync-session rollout switch stays off until operators open it per cohort.",
+			InputSchema:   json.RawMessage(`{"type":"object","required":["session_id","stage"],"properties":{"session_id":{"type":"string","description":"onboarding_sync_sessions row the stage belongs to"},"stage":{"type":"string","description":"stage name: recent_raw | extended_raw | historical_raw | auxiliary"}},"additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{"session_id":"00000000-0000-0000-0000-000000000000","stage":"historical_raw"}`),
 		},
 	}
 }

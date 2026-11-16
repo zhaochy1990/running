@@ -167,15 +167,17 @@ public struct TrainingHomeView: View {
     }
 
     /// 手表推送 icon（已推送高亮；watch 源本就来自手表，不回推）。
+    /// devops#1018 P1：Button 在横扫切日手势（simultaneousGesture DragGesture）下
+    /// 滑动起止点落在按钮内时 touch-up 照常触发（swipeRight 三连复现甩进推送
+    /// sheet）；改 tap 手势——tap 会正确让位给 drag，竖向滚动不受影响。
     private func watchButton(_ workout: TodayWorkoutCard) -> some View {
-        Button {
-            model.openPushSheet()
-        } label: {
-            Image(systemName: "applewatch")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(workout.pushed ? app.theme.current.accent : app.theme.current.mutedTwo)
-        }
-        .buttonStyle(.plain)
+        Image(systemName: "applewatch")
+            .font(.system(size: 16, weight: .medium))
+            .foregroundStyle(workout.pushed ? app.theme.current.accent : app.theme.current.mutedTwo)
+            .contentShape(Rectangle())
+            .onTapGesture { model.openPushSheet() }
+            .accessibilityLabel("推送到手表")
+            .accessibilityAddTraits(.isButton)
     }
 
     /// 自建课分享 icon（#689 仅自建课可分享；PR-8 出向：课名文案 +
@@ -199,23 +201,24 @@ public struct TrainingHomeView: View {
     @State private var showDeleteDialog = false
 
     private func moreButton(_ workout: TodayWorkoutCard) -> some View {
-        Button {
-            if workout.deletable {
-                showDeleteDialog = true
-            } else {
-                model.toast = "暂无更多操作"
+        Image(systemName: "ellipsis")
+            .font(.system(size: 16, weight: .medium))
+            .foregroundStyle(app.theme.current.mutedTwo)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if workout.deletable {
+                    showDeleteDialog = true
+                } else {
+                    model.toast = "暂无更多操作"
+                }
             }
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(app.theme.current.mutedTwo)
-        }
-        .buttonStyle(.plain)
-        .confirmationDialog("删除自建课「\(workout.title)」？", isPresented: $showDeleteDialog, titleVisibility: .visible) {
-            Button("删除", role: .destructive) {
-                Task { await model.deleteCustomWorkout() }
+            .accessibilityLabel("更多操作")
+            .accessibilityAddTraits(.isButton)
+            .confirmationDialog("删除自建课「\(workout.title)」？", isPresented: $showDeleteDialog, titleVisibility: .visible) {
+                Button("删除", role: .destructive) {
+                    Task { await model.deleteCustomWorkout() }
+                }
             }
-        }
     }
 
     /// 强度柱状图：高度=强度、宽度=段估时占比、休息空档占位、首段淡化。
@@ -266,8 +269,23 @@ public struct TrainingHomeView: View {
     }
 
     /// 和教练聊一聊：把当前 session 作为权威 target 交给教练 tab（单次消费交接）。
+    /// devops#1018 P1：全宽 CTA 原为 Button——横扫切日起止点落在按钮内时
+    /// touch-up 照常触发，滑日期被甩进教练 tab（XCUITest app.swipeRight()
+    /// 三连复现）；改 tap 手势排他：tap 正确让位给 drag，滚动/点按不受影响
+    /// （锁定测试 TrainingSwipeExclusivityUITests）。
     private func coachCTA(_ workout: TodayWorkoutCard) -> some View {
-        Button {
+        HStack(spacing: app.theme.current.space(.xs)) {
+            Image(systemName: "bubble.left.and.text.bubble.right")
+                .font(.system(size: 14, weight: .medium))
+            Text("和教练聊一聊")
+        }
+        .font(app.theme.current.font(.fs14, weight: .medium))
+        .foregroundStyle(app.theme.current.accentDeep)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, app.theme.current.space(.sm))
+        .background(Capsule().fill(app.theme.current.accentTint))
+        .contentShape(Capsule())
+        .onTapGesture {
             guard !workout.date.isEmpty else {
                 model.toast = "今日暂无训练安排"
                 return
@@ -276,7 +294,9 @@ public struct TrainingHomeView: View {
             // date + session_index）。仅 weekly 源有 sessionIndex 才建上下文
             // 会话；custom/watch 源纯切 tab（小程序同款：storage 交接只在
             // session_index != null 时写入）。
-            let label = "\(workout.title) · \(Int(workout.date.dropFirst(5).prefix(2)))月\(Int(workout.date.suffix(2)))日"
+            // monthDayLabel 解包兜底（#1003 P1-1 同款；原 Int(substring) 插值
+            // 产生 Optional(...) 警告）。
+            let label = "\(workout.title) · \(TrainingHomeModel.monthDayLabel(workout.date))"
             if let sessionIndex = workout.sessionIndex {
                 app.pendingCoachContext = PendingCoachContext(
                     target: CoachTarget(kind: .session, date: workout.date, sessionIndex: sessionIndex),
@@ -284,19 +304,8 @@ public struct TrainingHomeView: View {
                 )
             }
             app.router.selectedTab = .coach
-        } label: {
-            HStack(spacing: app.theme.current.space(.xs)) {
-                Image(systemName: "bubble.left.and.text.bubble.right")
-                    .font(.system(size: 14, weight: .medium))
-                Text("和教练聊一聊")
-            }
-            .font(app.theme.current.font(.fs14, weight: .medium))
-            .foregroundStyle(app.theme.current.accentDeep)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, app.theme.current.space(.sm))
-            .background(Capsule().fill(app.theme.current.accentTint))
         }
-        .buttonStyle(.plain)
+        .accessibilityAddTraits(.isButton)
     }
 
     // MARK: - 营养建议卡

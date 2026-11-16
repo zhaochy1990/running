@@ -121,4 +121,17 @@ import Testing
             try await Task.sleep(for: .milliseconds(10))
         }
     }
+
+    // MARK: - 今日标签（devops#1003 P1-1：Optional 插值回归）
+
+    @Test func monthDayLabelFormatsWithoutOptionalInterpolation() {
+        #expect(TrainingHomeModel.monthDayLabel("2026-11-16") == "11月16日")
+        #expect(TrainingHomeModel.monthDayLabel("2026-01-05") == "1月5日")
+        #expect(!TrainingHomeModel.monthDayLabel("2026-11-16").contains("Optional("))
+    }
+
+    @Test func buildDayViewTodayLabelHasNoOptionalNoise() {
+        let view = TrainingHomeModel.buildDayView(plan: nil, rows: [], dateYmd: "2026-11-16", todayYmd: "2026-11-16")
+        #expect(view.todayLabel == "11月16日")
+    }
 }

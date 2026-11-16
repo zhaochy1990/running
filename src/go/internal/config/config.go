@@ -79,6 +79,27 @@ type Runtime struct {
 	// DrainTimeout bounds how long shutdown waits for the in-flight job to
 	// unwind before exiting; the lease reclaim covers anything still running.
 	DrainTimeout time.Duration `mapstructure:"drain-timeout" validate:"required"`
+	// WriteIsolation gates the activity write-isolation path (devops#1005):
+	// per-user binding revision + execution lease + immutable revision+hash
+	// curve keys, validated inside the storage publish transaction. DEFAULT
+	// OFF. Enabling is a rollout decision with a hard precondition: every
+	// worker still writing the old fixed ts/v1 keys must be drained first —
+	// a mixed fleet lets an unfenced writer overwrite fenced pointers (the
+	// new onboarding entry points stay closed until then, per the epic's
+	// rollout order).
+	WriteIsolation WriteIsolation `mapstructure:"write-isolation"`
+}
+
+// WriteIsolation configures the activity write-isolation path (devops#1005).
+type WriteIsolation struct {
+	// Enabled turns the isolated publish path on. Default false.
+	Enabled bool `mapstructure:"enabled"`
+	// LeaseTTL is how long an unrenewed per-user execution lease stays valid
+	// before another worker may take it over (the fencing token increments,
+	// fencing the old holder out of its next publish). Zero means
+	// storage.DefaultWatchExecLeaseTTL. Must comfortably exceed the worker's
+	// renewal cadence (TTL/3).
+	LeaseTTL time.Duration `mapstructure:"lease-ttl" validate:"omitempty,gt=0"`
 }
 
 // RaceDetection configures the independent activity classifier. The API key is
@@ -308,7 +329,25 @@ type API struct {
 // are per-user allow-lists (membership = flag true). Mirrors the Python
 // stride_server config; kept in sync manually during coexistence (ADR 0013).
 type APIFeatures struct {
-	SyncDataAtOnboarding      bool     `mapstructure:"sync-data-at-onboarding"`
+	SyncDataAtOnboarding bool `mapstructure:"sync-data-at-onboarding"`
+	// OnboardingSyncSession is the NEW first-sync session rollout switch
+	// (devops#1006, epic devops#1004): it gates the POST/GET
+	// /api/users/me/onboarding/sync entry points TOGETHER with the
+	// sync-data-at-onboarding master switch (both must be on; turning the
+	// master off keeps the original disable semantics). DEFAULT OFF. Rollout
+	// preconditions: the write-isolation fleet gate (devops#1005) enabled
+	// with old fixed-key writers drained, and workers carrying the
+	// onboarding_recent_sync executor deployed. The COROS executor shipped
+	// with T04 (devops#1008) and the Garmin executor with T03 (devops#1007);
+	// T06 (devops#1010) added the chunked background backfill stages
+	// (extended_raw / historical_raw / auxiliary) behind the SAME switch —
+	// sessions created under it get the full stage chain, sessions created
+	// before it are advanced by the always-on sweep, and turning the switch
+	// back off stops new sessions while existing ones finish or safely hang.
+	// Both bound providers are range-capable, so opening the switch is an
+	// operator cohort decision (a provider without the range contracts
+	// still fails its stage job permanently as provider_not_capable).
+	OnboardingSyncSession     bool     `mapstructure:"onboarding-sync-session"`
 	CoachAgentWeeklyPlanUsers []string `mapstructure:"coach-agent-weekly-plan-users"`
 	CoachChatUsers            []string `mapstructure:"coach-chat-users"`
 	CoachChatDebugUsers       []string `mapstructure:"coach-chat-debug-users"`

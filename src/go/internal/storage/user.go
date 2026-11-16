@@ -302,6 +302,10 @@ var userOwnedDeletionModels = []any{
 	// missing from PR-C — the coverage guard caught it together with the
 	// PR-D tables).
 	&PlanAdjustment{}, &PlanInjuryState{}, &PlanInjuryCheckin{},
+	// Activity write-isolation state (devops#1005): the binding revision row
+	// (with its identity pointers), any execution lease, and stranded upload
+	// intents are user-owned rows erased with the account.
+	&WatchBindingState{}, &WatchExecLease{}, &TSUploadIntent{},
 }
 
 // deletionTableName resolves a deletion model's table name for error
@@ -382,22 +386,27 @@ func (s *Store) DeleteUserData(ctx context.Context, userID string) error {
 	return s.deleteUserTSBlobs(ctx, uid)
 }
 
-// deleteUserTSBlobs removes every ts/v1/{uid}/ object. A user's blob count is
-// their activity count (hundreds at most), so one collected Delete call is
-// enough; the orphan GC is the backstop when even this sweep fails. Timeseries
-// rows themselves stay in the userOwnedDeletionModels list: the table is a
-// frozen baseline for live traffic, but a deleted account's rows are PII and
-// erasure must clear them with everything else.
+// deleteUserTSBlobs removes every object under the user's prefix in BOTH
+// layouts — ts/v1/{uid}/ fixed keys and ts/v2/{uid}/ immutable keys
+// (devops#1005). A user's blob count is their activity count (hundreds at
+// most), so one collected Delete call per prefix is enough; the orphan GC is
+// the backstop when even this sweep fails. Timeseries rows themselves stay in
+// the userOwnedDeletionModels list: the table is a frozen baseline for live
+// traffic, but a deleted account's rows are PII and erasure must clear them
+// with everything else.
 func (s *Store) deleteUserTSBlobs(ctx context.Context, uid string) error {
 	if s.tsBlob == nil {
 		return nil
 	}
 	var keys []string
-	if err := s.tsBlob.List(ctx, tsstore.KeyPrefix+uid+"/", func(info tsstore.ObjectInfo) error {
-		keys = append(keys, info.Key)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("storage: list user timeseries blobs for erasure: %w", err)
+	for _, prefix := range tsstore.AllKeyPrefixes() {
+		p := prefix + uid + "/"
+		if err := s.tsBlob.List(ctx, p, func(info tsstore.ObjectInfo) error {
+			keys = append(keys, info.Key)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("storage: list user timeseries blobs for erasure: %w", err)
+		}
 	}
 	if len(keys) == 0 {
 		return nil

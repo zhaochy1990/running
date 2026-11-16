@@ -136,6 +136,12 @@ type Config struct {
 	UserStore    UserStore
 	InjuryStore  InjuryStore
 	CheckInStore CheckInStore
+	// OnboardingSyncService backs the first-sync session endpoints
+	// (devops#1006): POST/GET /api/users/me/onboarding/sync. Nil leaves the
+	// routes mounted but answering 503 onboarding_sync_unavailable (the
+	// endpoints exist only behind the rollout switch, which is off by
+	// default). The provider capability gate reuses UserStore.
+	OnboardingSyncService OnboardingSyncService
 	// PointsStore and AddressStore back the points-shop/redemption and
 	// address-book surfaces (devops#884). Leave zero to run without them.
 	PointsStore  PointsStore
@@ -361,7 +367,9 @@ type Service struct {
 	pipelineCatalog []PipelineCatalogEntry
 
 	users *userRoutes
-	goals *goalRoutes
+	// onboardingSync is the first-sync session surface (devops#1006).
+	onboardingSync *onboardingSyncRoutes
+	goals          *goalRoutes
 
 	adminUsers *adminUserRoutes
 
@@ -447,6 +455,7 @@ func NewService(cfg Config) *Service {
 		jobCatalog:              cfg.JobCatalog,
 		pipelineCatalog:         cfg.PipelineCatalog,
 		users:                   newUserRoutes(cfg.UserStore, cfg.InjuryStore, cfg.CheckInStore, cfg.ProviderLogin, cfg.ProviderInfo, cfg.AuthNameSync, eraser, cfg.Features, cfg.Runs, log),
+		onboardingSync:          newOnboardingSyncRoutes(cfg.OnboardingSyncService, cfg.UserStore, cfg.Features, log),
 		goals:                   newGoalRoutes(cfg.GoalStore, log),
 		adminUsers:              newAdminUserRoutes(eraser, log),
 		activities:              newActivityRoutes(cfg.ActivityStore, log),
@@ -604,6 +613,9 @@ func (s *Service) Router() *gin.Engine {
 	// the same rows through /api/admin/races.
 	s.raceCatalog.register(authed)
 	s.users.register(authed)
+	// First-sync session surface (devops#1006): user-tier "me" endpoints,
+	// gated inside by the master + rollout switches.
+	s.onboardingSync.register(authed)
 	// Points shop + redemption orders + the address book: user-tier surface
 	// (devops#884), mounted default-deny like the rest of the user surface.
 	s.points.registerUser(authed)

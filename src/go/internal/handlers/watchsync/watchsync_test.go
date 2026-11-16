@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	gomysql "github.com/go-sql-driver/mysql"
 
@@ -28,6 +29,10 @@ type fakeProvider struct {
 
 func (f *fakeProvider) IsLoggedIn(user string) (bool, error) {
 	return f.loggedIn, f.loginErr
+}
+
+func (f *fakeProvider) Info() provider.ProviderInfo {
+	return provider.ProviderInfo{Name: "coros"}
 }
 
 func (f *fakeProvider) SyncUser(_ context.Context, user string, opts provider.SyncOptions) (provider.SyncResult, error) {
@@ -314,5 +319,183 @@ func TestHandler_NoStampOnFailedSync(t *testing.T) {
 	}
 	if len(m.set) != 0 {
 		t.Errorf("must not stamp last_sync_time on a failed sync: %v", m.set)
+	}
+}
+
+// --- write-isolation session wiring (devops#1005) ---------------------------
+
+// fakeSessions is a SessionManager recording the session lifecycle and
+// handing the sync a callback so the test can inspect what rode in ctx.
+type fakeSessions struct {
+	beginErr  error
+	renewErr  error
+	released  bool
+	session   *storage.PublishSession
+	sawInSync *storage.PublishSession
+}
+
+func (f *fakeSessions) BeginWatchSyncSession(_ context.Context, userID, providerName, holder string, _ time.Duration) (*storage.PublishSession, error) {
+	if f.beginErr != nil {
+		return nil, f.beginErr
+	}
+	f.session = &storage.PublishSession{UserID: userID, Provider: providerName,
+		Holder: holder, BindingRevision: 3, LeaseToken: 7}
+	return f.session, nil
+}
+
+func (f *fakeSessions) RenewWatchExecLease(context.Context, string, string, int64, time.Duration) error {
+	return f.renewErr
+}
+
+func (f *fakeSessions) ReleaseWatchExecLease(_ context.Context, _, _ string, _ int64) error {
+	f.released = true
+	return nil
+}
+
+type ctxInspectProvider struct {
+	fakeProvider
+	onSync func(ctx context.Context)
+}
+
+func (p *ctxInspectProvider) SyncUser(ctx context.Context, user string, opts provider.SyncOptions) (provider.SyncResult, error) {
+	if p.onSync != nil {
+		p.onSync(ctx)
+	}
+	return p.fakeProvider.SyncUser(ctx, user, opts)
+}
+
+func TestHandler_Isolated_ThreadsSessionThroughSync(t *testing.T) {
+	sessions := &fakeSessions{}
+	f := &ctxInspectProvider{fakeProvider: fakeProvider{loggedIn: true, result: provider.SyncResult{Activities: 1}}}
+	f.onSync = func(ctx context.Context) {
+		sessions.sawInSync = storage.PublishSessionFromContext(ctx)
+	}
+	h := NewIsolated(func(_ context.Context, _ string) (Provider, error) { return f, nil },
+		&fakeMarker{}, testJobs, sessions, 90*time.Millisecond)
+	if _, err := h(context.Background(), &job.Job{ID: "job-9", UserID: "u-iso"}, func(string, int) error { return nil }); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if sessions.sawInSync != sessions.session {
+		t.Fatalf("sync saw session %v, want the begun session %v", sessions.sawInSync, sessions.session)
+	}
+	if sessions.sawInSync == nil || sessions.sawInSync.Provider != "coros" || sessions.sawInSync.Holder != "job-9" {
+		t.Fatalf("session = %+v, want provider coros, holder job-9", sessions.sawInSync)
+	}
+	if !sessions.released {
+		t.Fatal("lease not released after sync")
+	}
+}
+
+func TestHandler_Isolated_LeaseContentionIsRetryable(t *testing.T) {
+	sessions := &fakeSessions{beginErr: storage.ErrLeaseHeld}
+	f := &fakeProvider{loggedIn: true}
+	h := NewIsolated(func(_ context.Context, _ string) (Provider, error) { return f, nil },
+		&fakeMarker{}, testJobs, sessions, time.Minute)
+	_, err := h(context.Background(), &job.Job{ID: "job-10", UserID: "u-iso"}, func(string, int) error { return nil })
+	if !errors.Is(err, storage.ErrLeaseHeld) {
+		t.Fatalf("err = %v, want ErrLeaseHeld", err)
+	}
+	if _, ok := job.AsPermanent(err); ok {
+		t.Fatal("lease contention must stay retryable — the winner finishes and the retry proceeds")
+	}
+	if f.syncCalled {
+		t.Fatal("sync ran despite failing to begin the session")
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Recent-window gap check (devops#1010 AC3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// gapCheckProvider extends fakeProvider with the chunked backfill contract so
+// the handler's gap-check pass can run it.
+type gapCheckProvider struct {
+	fakeProvider
+	backfillCalled int
+	backfillWin    provider.DayWindow
+	backfillErr    error
+}
+
+func (g *gapCheckProvider) SyncBackfillRange(_ context.Context, _ string, opts provider.BackfillRangeOptions, _ provider.ProgressCallback) (provider.BackfillRangeReport, error) {
+	g.backfillCalled++
+	if opts.Activities != nil {
+		g.backfillWin = *opts.Activities
+	}
+	return provider.BackfillRangeReport{}, g.backfillErr
+}
+
+type fakeGapCheck struct {
+	win     provider.DayWindow
+	ok      bool
+	called  bool
+	gotProv string
+}
+
+func (f *fakeGapCheck) UnfinishedRecentActivityWindow(_ context.Context, _, providerName string) (provider.DayWindow, bool) {
+	f.called = true
+	f.gotProv = providerName
+	return f.win, f.ok
+}
+
+// While an onboarding session is unfinished, an INCREMENTAL run first scans
+// the session's recent activities window with the existence-skipping backfill
+// chunk (一次有界查漏), then runs the normal incremental.
+func TestHandler_IncrementalRunsRecentGapCheck(t *testing.T) {
+	f := &gapCheckProvider{fakeProvider: fakeProvider{loggedIn: true, result: provider.SyncResult{Activities: 1}}}
+	gc := &fakeGapCheck{ok: true, win: provider.DayWindow{From: "2026-08-18", To: "2026-11-16"}}
+	h := NewIsolatedWithGapCheck(func(_ context.Context, _ string) (Provider, error) { return f, nil }, &fakeMarker{}, testJobs, nil, 0, gc)
+	if _, err := h(context.Background(), &job.Job{UserID: "u-123", InputJSON: `{"mode":"incremental"}`}, func(string, int) error { return nil }); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if !gc.called || gc.gotProv != "coros" {
+		t.Fatalf("gap check called=%v provider=%q, want called for coros", gc.called, gc.gotProv)
+	}
+	if f.backfillCalled != 1 {
+		t.Fatalf("backfill chunks = %d, want 1", f.backfillCalled)
+	}
+	if f.backfillWin != gc.win {
+		t.Errorf("gap-check window = %+v, want the session's recent window", f.backfillWin)
+	}
+	if !f.syncCalled {
+		t.Error("the normal incremental must still run")
+	}
+}
+
+// A full sync (window scanned anyway) and a finished session (ok=false) skip
+// the extra pass; a failed gap-check chunk is logged and does not fail the
+// incremental (the session executor remains the reliable healer).
+func TestHandler_GapCheckSkipsAndToleratesFailure(t *testing.T) {
+	// Full mode: no gap check even with an unfinished session.
+	f := &gapCheckProvider{fakeProvider: fakeProvider{loggedIn: true}}
+	gc := &fakeGapCheck{ok: true}
+	h := NewIsolatedWithGapCheck(func(_ context.Context, _ string) (Provider, error) { return f, nil }, &fakeMarker{}, testJobs, nil, 0, gc)
+	if _, err := h(context.Background(), &job.Job{UserID: "u-123", InputJSON: `{"mode":"full"}`}, func(string, int) error { return nil }); err != nil {
+		t.Fatalf("full handler: %v", err)
+	}
+	if f.backfillCalled != 0 {
+		t.Error("full sync must not run the gap check")
+	}
+
+	// Finished session: the seam reports ok=false, nothing extra runs.
+	f2 := &gapCheckProvider{fakeProvider: fakeProvider{loggedIn: true}}
+	gc2 := &fakeGapCheck{ok: false}
+	h2 := NewIsolatedWithGapCheck(func(_ context.Context, _ string) (Provider, error) { return f2, nil }, &fakeMarker{}, testJobs, nil, 0, gc2)
+	if _, err := h2(context.Background(), &job.Job{UserID: "u-123", InputJSON: `{"mode":"incremental"}`}, func(string, int) error { return nil }); err != nil {
+		t.Fatalf("incremental handler: %v", err)
+	}
+	if f2.backfillCalled != 0 {
+		t.Error("finished session must not run the gap check")
+	}
+
+	// A failing gap-check chunk must not fail the whole incremental.
+	f3 := &gapCheckProvider{fakeProvider: fakeProvider{loggedIn: true}}
+	f3.backfillErr = errors.New("vendor 5xx")
+	gc3 := &fakeGapCheck{ok: true}
+	h3 := NewIsolatedWithGapCheck(func(_ context.Context, _ string) (Provider, error) { return f3, nil }, &fakeMarker{}, testJobs, nil, 0, gc3)
+	if _, err := h3(context.Background(), &job.Job{UserID: "u-123", InputJSON: `{"mode":"incremental"}`}, func(string, int) error { return nil }); err != nil {
+		t.Fatalf("incremental must tolerate a failed gap-check chunk: %v", err)
+	}
+	if !f3.syncCalled {
+		t.Error("the incremental must still run after a gap-check failure")
 	}
 }

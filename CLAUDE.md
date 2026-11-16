@@ -10,10 +10,9 @@
 
 按任务类型对应的文档入口（见 `AGENTS.md` 的 *Topic-specific docs* 表）：
 
-[`docs/working-model.md`](docs/working-model.md) ·
 [`docs/frontend.md`](docs/frontend.md) ·
 [`docs/deployment.md`](docs/deployment.md) ·
-[`src/coach_agent/AGENTS.md`](src/coach_agent/AGENTS.md)（Coach Agent = TS 版；`docs/coach-agent.md` 已废弃） ·
+[`src/coach_agent/AGENTS.md`](src/coach_agent/AGENTS.md)（Coach Agent = TS 版） ·
 [`docs/plan-json-schema.md`](docs/plan-json-schema.md) ·
 [`docs/strength-training.md`](docs/strength-training.md) ·
 [`frontend/DESIGN.md`](frontend/DESIGN.md) ·

@@ -31,6 +31,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/health"
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/mq"
+	"github.com/zhaochy1990/stride/internal/onboardingsync"
 	"github.com/zhaochy1990/stride/internal/pipeline"
 	"github.com/zhaochy1990/stride/internal/provider/amap"
 	"github.com/zhaochy1990/stride/internal/storage"
@@ -77,6 +78,11 @@ func runAPI() error {
 	// user_profile + user_onboarding tables for the profile/onboarding surface
 	// (ADR 0013). The worker does not need these.
 	if err := store.AutoMigrateUsers(ctx); err != nil {
+		return err
+	}
+	// First-sync session tables (devops#1006): the API creates/claims
+	// sessions; the worker's reconcile sweep advances them.
+	if err := store.AutoMigrateOnboardingSync(ctx); err != nil {
 		return err
 	}
 	if err := store.AutoMigrateInjuries(ctx); err != nil {
@@ -284,10 +290,25 @@ func runAPI() error {
 	workoutPush := workoutPushAdapter{store: store, delay: watchRequestDelay, dataDir: dataDir}
 	features := api.FeatureConfig{
 		SyncDataAtOnboarding:      cfg.API.Features.SyncDataAtOnboarding,
+		OnboardingSyncSession:     cfg.API.Features.OnboardingSyncSession,
 		CoachAgentWeeklyPlanUsers: toUserSet(cfg.API.Features.CoachAgentWeeklyPlanUsers),
 		CoachChatUsers:            toUserSet(cfg.API.Features.CoachChatUsers),
 		CoachChatDebugUsers:       toUserSet(cfg.API.Features.CoachChatDebugUsers),
 		CoachChatMaxMessageChars:  cfg.API.Features.CoachChatMaxMessageChars,
+	}
+
+	// First-sync session orchestration (devops#1006). Always constructed —
+	// the endpoints gate on the master + rollout switches, so a default-off
+	// deployment mounts them answering 403 and never touches the tables.
+	onboardingSyncSvc, err := onboardingsync.New(onboardingsync.Config{
+		Store: store, Enqueuer: enq, Jobs: store, Runs: store,
+		JobType:            catalog.JobTypeOnboardingRecentSync,
+		AnalysisJobType:    catalog.JobTypeOnboardingRecentAnalysis,
+		LegacyFullPipeline: catalog.PipelineOnboarding,
+		Logger:             log,
+	})
+	if err != nil {
+		return err
 	}
 
 	svc := api.NewService(api.Config{
@@ -313,6 +334,7 @@ func runAPI() error {
 		UserStore:               store,
 		InjuryStore:             store,
 		CheckInStore:            store,
+		OnboardingSyncService:   onboardingSyncSvc,
 		PointsStore:             store,
 		PointsAuth:              authClient,
 		WxPayStore:              store,

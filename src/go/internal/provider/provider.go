@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -200,6 +201,188 @@ func ParseSyncOptions(input string) (SyncOptions, error) {
 		}
 	}
 	return in.Options()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Recent-range sync (onboarding first-sync stage, epic devops#1004 T03/T04)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// DayWindow is an inclusive natural-day range (YYYY-MM-DD, Shanghai calendar).
+type DayWindow struct {
+	From string
+	To   string
+}
+
+// Recent-range channel outcome statuses. A channel that reached no terminal
+// outcome is simply absent from the report — the executor treats absence as
+// "still failed/unfinished", never as success.
+const (
+	// RangeChannelDone: the channel's complete fetch succeeded over its window.
+	RangeChannelDone = "done"
+	// RangeChannelGap: the fetch finished, but part of the window is
+	// permanently unobtainable at the provider — recorded, never faked as
+	// success (completed_with_gaps ≠ 完整覆盖).
+	RangeChannelGap = "gap"
+)
+
+// RangeGap is one permanently-unobtainable day range with its reason.
+type RangeGap struct {
+	From   string `json:"from"`
+	To     string `json:"to"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// RangeChannelReport is one data channel's terminal outcome. Scanned* is what
+// the scan walked; Observed* is the window data actually exists for (nil when
+// nothing was observed); Credential is the complete-fetch proof a retry reuses
+// instead of re-fetching (opaque to the caller, written only on done/gap).
+type RangeChannelReport struct {
+	// Status is one of RangeChannelDone / RangeChannelGap.
+	Status       string
+	ScannedFrom  string
+	ScannedTo    string
+	ObservedFrom *string
+	ObservedTo   *string
+	Gaps         []RangeGap
+	Credential   string
+	// Count is a display-only tally (activities written / health days
+	// refreshed / dashboard row written).
+	Count int
+}
+
+// RecentRangeOptions selects which channels a recent-range sync runs, with
+// each channel's server-chosen Shanghai-day window. A nil window skips the
+// channel. The provider may legitimately return MORE data than the window
+// (e.g. a batch health payload covering 90 days against a 28-day target): the
+// extra rows are kept and the report's observed window reflects the actual
+// coverage — never trimmed to the target, never widened beyond what the
+// vendor really returned.
+//
+// Jobs is the detail-fetch concurrency, an infra knob supplied by the caller
+// (CLI/worker) exactly like SyncOptions.Jobs — never client-controlled.
+type RecentRangeOptions struct {
+	Activities *DayWindow
+	Health     *DayWindow
+	Dashboard  *DayWindow
+	Jobs       int
+}
+
+// RecentRangeReport carries the terminal outcomes of a recent-range sync.
+// Only channels that reached a terminal outcome appear; the returned error
+// (if any) explains the first channel that failed non-permanently-skipping.
+type RecentRangeReport struct {
+	Activities *RangeChannelReport
+	Health     *RangeChannelReport
+	Dashboard  *RangeChannelReport
+}
+
+// ErrUnrecoverableRangeData marks range-sync input the provider confirmed
+// exists but whose data cannot be classified — e.g. a Garmin activity whose
+// start date is invalid even in its detail payload (devops#1007: 无效日期需
+// 详情确认或明确阻塞). Retrying cannot fix it; the executor fails the job
+// permanently instead of burning the retry budget.
+var ErrUnrecoverableRangeData = errors.New("provider: unrecoverable range data")
+
+// RecentSyncer is the optional adapter contract the onboarding recent-stage
+// executor consumes (devops#1004 T03/T04). It is deliberately separate from
+// Provider/SyncUser: the full/incremental depth axis cannot express "scan this
+// exact window, do not stop at already-known activities, and report what was
+// actually covered".
+type RecentSyncer interface {
+	// SyncRecentRange fetches the requested channels over their windows and
+	// persists through the adapter's storage.Writer exactly like SyncUser
+	// (ordered commits; a publish session in ctx fences activity writes).
+	// Retryable errors (network, throttling, auth expiry surfaced by the
+	// client) return the error; channels that already reached a terminal
+	// outcome before the failure stay in the report so the caller can record
+	// their credentials. Permanent provider rejections (auth, invalid
+	// request) classify via IsAuthError / IsInvalidRequest as everywhere
+	// else.
+	SyncRecentRange(ctx context.Context, user string, opts RecentRangeOptions, progress ProgressCallback) (RecentRangeReport, error)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Chunked background backfill (onboarding follow-on stages, devops#1010 T06)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Backfill budget defaults (devops#1010 AC2): each chunk fetches at most ~20
+// activity details or walks at most 7 health days, then checkpoints and
+// yields the per-user execution lease so recent stages, new trainings and
+// webhooks can jump the queue between chunks. The soft wall-clock budget is a
+// safety net for pathologically slow fetches — reaching it mid-channel
+// checkpoints what completed and yields exactly like the fetch budget.
+const (
+	DefaultBackfillActivityFetches = 20
+	DefaultBackfillHealthDays      = 7
+	DefaultBackfillSoftBudget      = 2 * time.Minute
+)
+
+// BackfillBudget caps one backfill chunk. Zero fields fall back to the
+// package defaults; Soft <= 0 disables the wall-clock safety net (tests).
+type BackfillBudget struct {
+	MaxActivityFetches int
+	MaxHealthDays      int
+	Soft               time.Duration
+}
+
+// BackfillRangeOptions selects the channels of one backfill chunk. The
+// checkpoints are the OPAQUE cursors the previous chunk of the same channel
+// returned ("" = start from the window's newest day): storage treats them as
+// blobs; only the owning adapter interprets them. A nil window skips the
+// channel.
+type BackfillRangeOptions struct {
+	Activities           *DayWindow
+	Health               *DayWindow
+	ActivitiesCheckpoint string
+	HealthCheckpoint     string
+	Budget               BackfillBudget
+	Jobs                 int
+}
+
+// ChannelBackfillReport is one channel's chunk outcome. Done=true means the
+// channel's window was fully walked AND reconciled this chunk — Checkpoint is
+// empty and the executor derives the terminal coverage from what the store
+// actually holds (observed windows and honest gaps never depend on chunk
+// bookkeeping). Done=false carries the next Checkpoint; a chunk that neither
+// advances the checkpoint nor completes reports Advanced=false so the caller
+// can fail instead of spinning (AC4 不无限空转).
+type ChannelBackfillReport struct {
+	Done       bool
+	Checkpoint string
+	// ScannedThrough is the newest-to-oldest walk's current depth (Shanghai
+	// day, YYYY-MM-DD): everything in (ScannedThrough, window.To] is walked.
+	// The executor surfaces it as the stage's running scanned window.
+	ScannedThrough string
+	// Fetches counts this chunk's activity detail downloads; DaysWalked its
+	// health days (display/telemetry only — the budget enforcement is the
+	// adapter's, the accounting is the caller's).
+	Fetches    int
+	DaysWalked int
+	Advanced   bool
+	// GapEvents are per-item/per-day permanently-unobtainable notes observed
+	// this chunk (rejected activities, undatable entries, honestly-empty
+	// health days) the executor merges into the channel's running gap record.
+	GapEvents []RangeGap
+}
+
+// BackfillRangeReport carries the chunk outcomes; only requested channels
+// appear.
+type BackfillRangeReport struct {
+	Activities *ChannelBackfillReport
+	Health     *ChannelBackfillReport
+}
+
+// BackfillSyncer is the optional chunked-range contract the onboarding
+// extended/historical stages consume (devops#1010). It differs from
+// RecentSyncer in two ways the background path needs and the interactive
+// recent path must not pay: the run is BOUNDED (one chunk per call, budget
+// above) and it RESUMES from an opaque checkpoint instead of restarting the
+// walk. Inside a chunk the semantics match the recent scan: never stop the
+// walk at already-stored activities as a coverage proof (existence only skips
+// the re-fetch), verify ordering before any early stop, and commit through
+// the same fenced ordered publish path.
+type BackfillSyncer interface {
+	SyncBackfillRange(ctx context.Context, user string, opts BackfillRangeOptions, progress ProgressCallback) (BackfillRangeReport, error)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

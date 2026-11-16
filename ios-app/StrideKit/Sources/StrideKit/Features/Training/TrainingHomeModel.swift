@@ -177,7 +177,7 @@ public final class TrainingHomeModel {
         selectedDate = dateYmd
         weekDays = Shanghai.buildWeekDays(anchorYmd: dateYmd, todayYmd: todayYmd)
         weekSubtitle = Shanghai.weekSubtitle(weekStartYmd: Shanghai.weekStart(ymd: dateYmd))
-        todayLabel = "\(Int(dateYmd.dropFirst(5).prefix(2)))月\(Int(dateYmd.suffix(2)))日"
+        todayLabel = Self.monthDayLabel(dateYmd)
         if Shanghai.weekStart(ymd: dateYmd) != sessionsWeekStart {
             // 切到尚未拉取的周：先空渲染，loading=true 走骨架而非闪「今日无训练安排」。
             loading = true
@@ -281,6 +281,12 @@ public final class TrainingHomeModel {
 
     // MARK: - 纯构建（单测面）
 
+    /// 上海 YYYY-MM-DD →「M月D日」标签。Int 解包兜底 0，防 Optional 插值
+    /// （「今日安排 · Optional(11)月…」，devops#1003 P1-1）。
+    public nonisolated static func monthDayLabel(_ ymd: String) -> String {
+        "\(Int(ymd.dropFirst(5).prefix(2)) ?? 0)月\(Int(ymd.suffix(2)) ?? 0)日"
+    }
+
     /// 组装指定日视图：服务端已按 weekly→custom→watch 排序，优先展示可训练的
     /// 课，否则落到休息行；营养无量化目标/餐次/建议时整块隐藏。
     public nonisolated static func buildDayView(plan: WeeklyPlanDetail?, rows: [PlanSessionRow], dateYmd: String, todayYmd: String) -> DayView {
@@ -292,7 +298,7 @@ public final class TrainingHomeModel {
         return DayView(
             weekDays: Shanghai.buildWeekDays(anchorYmd: dateYmd, todayYmd: todayYmd),
             weekSubtitle: Shanghai.weekSubtitle(weekStartYmd: Shanghai.weekStart(ymd: dateYmd)),
-            todayLabel: "\(Int(dateYmd.dropFirst(5).prefix(2)))月\(Int(dateYmd.suffix(2)))日",
+            todayLabel: Self.monthDayLabel(dateYmd),
             workout: workoutRow.flatMap { buildWorkoutCard(row: $0, content: content) },
             nutrition: nutrition
         )

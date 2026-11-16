@@ -8,10 +8,13 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"github.com/zhaochy1990/stride/internal/tsstore"
 )
 
 // Writer is the watch-sync write surface. It is implemented by *Store and
@@ -147,6 +150,16 @@ func (s *Store) upsertActivity(ctx context.Context, a *Activity, laps []Lap, ts 
 		zones[i].UserID, zones[i].LabelID = uid, a.LabelID
 	}
 
+	// Activity write isolation (devops#1005): when the caller carries a
+	// publish session (the watch_sync worker acquires one per run when the
+	// feature is enabled), every activity write — full, incremental, single
+	// re-pull — publishes through the fenced immutable-key path. Without a
+	// session the legacy v1 fixed-key behaviour is unchanged, which is what
+	// keeps a mixed-version fleet and the flag-off default safe.
+	if sess := PublishSessionFromContext(ctx); sess != nil {
+		return s.publishActivity(ctx, sess, a, laps, ts, zones, preserveEmpty)
+	}
+
 	// --- Phase 3 (devops#787): the blob is the only timeseries write path ---
 	//
 	// Rows stopped being written when the migration's soak window closed; the
@@ -180,60 +193,121 @@ func (s *Store) upsertActivity(ctx context.Context, a *Activity, laps []Lap, ts 
 	}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// The thumbnail columns are never written by a provider payload:
-		// route_thumb_json is owned by the route_shapes step, and route_thumb_url
-		// is frozen legacy from the retired PNG pipeline (devops#829). UpdateAll
-		// would write the provider's zero value over them, so every resync of an
-		// activity would wipe its shape (and once resurrected a URL). Omit them
-		// so a sync can only ever add activities, not strip their shape.
-		omits := []string{"RouteThumbJSON", "RouteThumbURL"}
-		// feel_note is athlete-authored free text (coach-chat write path); a
-		// provider payload never carries it, so it is unconditionally omitted:
-		// without this every full resync would wipe the athlete's words (same
-		// mechanism as the thumbnails above, but unconditional — there is no
-		// vendor-side "newer statement" like the numeric feel has).
-		omits = append(omits, "FeelNote")
-		if !blobWritten {
-			omits = append(omits, "TsBlobKey", "TsPointCount", "TsSHA256", "HasGPS")
-		}
-		// Garmin can return an empty details payload while still returning the
-		// summary. In that incomplete-response path, preserve the previously
-		// cached start alongside the preserved timeseries. Omit the two columns
-		// from the upsert rather than adding a read query per activity. A
-		// non-empty details response remains authoritative and may update or
-		// clear the start.
-		if preserveEmpty && len(ts) == 0 && a.StartGPSLat == nil && a.StartGPSLon == nil {
-			omits = append(omits, "StartGPSLat", "StartGPSLon")
-		}
-		// feel (normalized 1–10) is vendor-only data — the athlete's subjective
-		// feel is free text in feel_note. A vendor payload without a feel (most
-		// resyncs) must not erase the value a fuller sync wrote. Omitting the
-		// column (same mechanism as the thumbnails above) keeps it out of the
-		// INSERT and therefore out of the ON DUPLICATE KEY UPDATE list. A
-		// non-NULL vendor feel still overwrites: rating the activity in the
-		// vendor app is the newer statement of the same signal.
-		if a.Feel == nil {
-			omits = append(omits, "Feel")
-		}
-		if err := tx.Omit(omits...).Clauses(clause.OnConflict{UpdateAll: true}).Create(a).Error; err != nil {
-			return fmt.Errorf("storage: upsert activity: %w", err)
-		}
-		if !preserveEmpty || len(laps) > 0 {
-			if err := replaceChildren(tx, uid, a.LabelID, &Lap{}, laps); err != nil {
-				return err
-			}
-		}
-		// timeseries rows are deliberately NOT written here: Phase 3 (devops#787)
-		// froze the row table as the migration's pre-drop baseline, and the blob
-		// above is the only write path. Laps and watch zones remain row-backed
-		// children (they are tiny and still relational).
-		if !preserveEmpty || len(zones) > 0 {
-			if err := replaceChildren(tx, uid, a.LabelID, &ActivityWatchZone{}, zones); err != nil {
-				return err
-			}
-		}
-		return nil
+		return writeActivityInTx(tx, a, laps, len(ts), zones, blobWritten, preserveEmpty)
 	})
+}
+
+// publishActivity is the unified fenced publish path (devops#1005): the blob
+// goes up FIRST at the immutable revision+hash key, then the row transaction
+// validates the execution fence (binding revision + lease token, under row
+// locks) and publishes the activity row, its children, and the blob pointer
+// together. A stale worker — its lease taken over or its binding superseded
+// — fails the fence inside the transaction, so the most it can leave behind
+// is an unreferenced object; it can never overwrite the new binding's row or
+// pointer. A retry of the SAME content under a still-valid session is
+// idempotent: the content-addressed key makes the re-Put an identical-byte
+// overwrite and the pointer stamp a no-op.
+func (s *Store) publishActivity(ctx context.Context, sess *PublishSession, a *Activity, laps []Lap, ts []TimeseriesPoint, zones []ActivityWatchZone, preserveEmpty bool) error {
+	uid := a.UserID // canonicalized by upsertActivity before dispatching here
+	if s.tsBlob == nil && len(ts) > 0 {
+		return fmt.Errorf("storage: publish activity %s/%s: %d timeseries points and no blob backend injected — refusing to drop them (devops#787)", uid, a.LabelID, len(ts))
+	}
+	blobWritten := false
+	var intentKey string
+	if s.tsBlob != nil && (len(ts) > 0 || !preserveEmpty) {
+		payload, sum, err := tsstore.EncodePoints(uid, a.LabelID, TSBlobPoints(ts))
+		if err != nil {
+			return fmt.Errorf("storage: encode ts blob %s/%s: %w", uid, a.LabelID, err)
+		}
+		key := tsstore.V2BlobKey(uid, a.LabelID, sess.BindingRevision, sum)
+		// Register the upload intent before the Put so the GC can tell this
+		// soon-to-exist object from an orphan while the row transaction is
+		// still pending (devops#1005: active-upload judgement).
+		if err := s.recordTSUploadIntent(ctx, key, uid); err != nil {
+			return fmt.Errorf("storage: record upload intent for %s: %w", key, err)
+		}
+		intentKey = key
+		if err := s.tsBlob.Put(ctx, key, payload); err != nil {
+			s.clearTSUploadIntent(ctx, intentKey)
+			return fmt.Errorf("storage: put ts blob %s: %w", key, err)
+		}
+		count, hasGPS := len(ts), anyValidGPS(ts)
+		a.TsBlobKey, a.TsPointCount, a.TsSHA256, a.HasGPS = &key, &count, &sum, &hasGPS
+		blobWritten = true
+	}
+	txErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := validatePublishFence(tx, uid, sess); err != nil {
+			return err
+		}
+		return writeActivityInTx(tx, a, laps, len(ts), zones, blobWritten, preserveEmpty)
+	})
+	if intentKey != "" {
+		// Clear on every outcome — success, fence refusal, SQL failure. A crash
+		// between Put and here strands the row; the GC ignores intents older
+		// than its grace window and sweeps them.
+		s.clearTSUploadIntent(ctx, intentKey)
+	}
+	return txErr
+}
+
+// writeActivityInTx is the row half shared by the legacy upsert and the
+// fenced publish: the activity upsert with its column omissions, then the
+// child replacements. Runs inside the caller's transaction.
+func writeActivityInTx(tx *gorm.DB, a *Activity, laps []Lap, tsLen int, zones []ActivityWatchZone, blobWritten, preserveEmpty bool) error {
+	uid := a.UserID
+	// The thumbnail columns are never written by a provider payload:
+	// route_thumb_json is owned by the route_shapes step, and route_thumb_url
+	// is frozen legacy from the retired PNG pipeline (devops#829). UpdateAll
+	// would write the provider's zero value over them, so every resync of an
+	// activity would wipe its shape (and once resurrected a URL). Omit them
+	// so a sync can only ever add activities, not strip their shape.
+	omits := []string{"RouteThumbJSON", "RouteThumbURL"}
+	// feel_note is athlete-authored free text (coach-chat write path); a
+	// provider payload never carries it, so it is unconditionally omitted:
+	// without this every full resync would wipe the athlete's words (same
+	// mechanism as the thumbnails above, but unconditional — there is no
+	// vendor-side "newer statement" like the numeric feel has).
+	omits = append(omits, "FeelNote")
+	if !blobWritten {
+		omits = append(omits, "TsBlobKey", "TsPointCount", "TsSHA256", "HasGPS")
+	}
+	// Garmin can return an empty details payload while still returning the
+	// summary. In that incomplete-response path, preserve the previously
+	// cached start alongside the preserved timeseries. Omit the two columns
+	// from the upsert rather than adding a read query per activity. A
+	// non-empty details response remains authoritative and may update or
+	// clear the start.
+	if preserveEmpty && tsLen == 0 && a.StartGPSLat == nil && a.StartGPSLon == nil {
+		omits = append(omits, "StartGPSLat", "StartGPSLon")
+	}
+	// feel (normalized 1–10) is vendor-only data — the athlete's subjective
+	// feel is free text in feel_note. A vendor payload without a feel (most
+	// resyncs) must not erase the value a fuller sync wrote. Omitting the
+	// column (same mechanism as the thumbnails above) keeps it out of the
+	// INSERT and therefore out of the ON DUPLICATE KEY UPDATE list. A
+	// non-NULL vendor feel still overwrites: rating the activity in the
+	// vendor app is the newer statement of the same signal.
+	if a.Feel == nil {
+		omits = append(omits, "Feel")
+	}
+	if err := tx.Omit(omits...).Clauses(clause.OnConflict{UpdateAll: true}).Create(a).Error; err != nil {
+		return fmt.Errorf("storage: upsert activity: %w", err)
+	}
+	if !preserveEmpty || len(laps) > 0 {
+		if err := replaceChildren(tx, uid, a.LabelID, &Lap{}, laps); err != nil {
+			return err
+		}
+	}
+	// timeseries rows are deliberately NOT written here: Phase 3 (devops#787)
+	// froze the row table as the migration's pre-drop baseline, and the blob
+	// above is the only write path. Laps and watch zones remain row-backed
+	// children (they are tiny and still relational).
+	if !preserveEmpty || len(zones) > 0 {
+		if err := replaceChildren(tx, uid, a.LabelID, &ActivityWatchZone{}, zones); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // childInsertBatch caps rows per multi-value INSERT for an activity's child
@@ -335,15 +409,55 @@ func (s *Store) UpsertRacePrediction(ctx context.Context, p *RacePrediction) err
 // position cursor.
 const MetaKeyLastSyncTime = "last_sync_time"
 
-// SetMeta upserts a per-user sync cursor.
+// SetMeta upserts a per-user sync cursor. When the caller carries a publish
+// session (devops#1005) the write is fenced: a stale worker must not advance
+// the cursor of a binding that moved on from under it. The fence check is a
+// plain validated read (no row locks) — the cursor is a repairable hint, not
+// the protected dataset; the activity publish path carries the hard,
+// transaction-atomic fence.
 func (s *Store) SetMeta(ctx context.Context, userID, key, value string) error {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
 		return err
 	}
+	if sess := PublishSessionFromContext(ctx); sess != nil {
+		if err := s.validateFenceUnlocked(ctx, uid, sess); err != nil {
+			return err
+		}
+	}
 	v := value
 	row := &SyncMeta{UserID: uid, Key: key, Value: &v}
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{UpdateAll: true}).Create(row).Error
+}
+
+// validateFenceUnlocked is the lock-free fence probe for hint-class writes:
+// same rules as validatePublishFence, without FOR UPDATE (the caller's write
+// is not the protected dataset; a racing takeover costs at most one stale
+// cursor bump that the next legit sync overwrites).
+func (s *Store) validateFenceUnlocked(ctx context.Context, uid string, sess *PublishSession) error {
+	var lease WatchExecLease
+	err := s.db.WithContext(ctx).Where("user_id = ?", uid).First(&lease).Error
+	if err == gorm.ErrRecordNotFound {
+		return &FenceViolationError{Reason: "lease_missing"}
+	}
+	if err != nil {
+		return fmt.Errorf("storage: fence: read exec lease: %w", err)
+	}
+	if lease.Token != sess.LeaseToken {
+		return &FenceViolationError{Reason: "lease_lost"}
+	}
+	var binding WatchBindingState
+	err = s.db.WithContext(ctx).Where("user_id = ?", uid).First(&binding).Error
+	if err == gorm.ErrRecordNotFound {
+		return &FenceViolationError{Reason: "binding_missing"}
+	}
+	if err != nil {
+		return fmt.Errorf("storage: fence: read binding state: %w", err)
+	}
+	if binding.Revision != sess.BindingRevision {
+		return &FenceViolationError{Reason: "binding_changed"}
+	}
+	return nil
 }
 
 // GetMeta reads a per-user sync cursor. ok is false when the key is absent.
@@ -368,14 +482,24 @@ func (s *Store) GetMeta(ctx context.Context, userID, key string) (string, bool, 
 	return *row.Value, true, nil
 }
 
-// SaveCredential upserts a per-user provider credential (ADR 0008).
+// SaveCredential upserts a per-user provider credential (ADR 0008) and
+// maintains the binding revision (devops#1005): the revision moves exactly on
+// the identity events — provider switch, or a different non-empty provider
+// account id — and stays put on a token refresh (same identity, new secret)
+// and on a NULL→value account-id backfill for credentials saved before the
+// account id was captured.
 func (s *Store) SaveCredential(ctx context.Context, c *ProviderCredential) error {
 	uid, err := canonicalUserID(c.UserID)
 	if err != nil {
 		return err
 	}
 	c.UserID = uid
-	return s.db.WithContext(ctx).Clauses(clause.OnConflict{UpdateAll: true}).Create(c).Error
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.OnConflict{UpdateAll: true}).Create(c).Error; err != nil {
+			return err
+		}
+		return maintainWatchBinding(tx, uid, c.Provider, c.ProviderUserID, time.Now().UTC())
+	})
 }
 
 // GetCredential reads a per-user provider credential. It returns
@@ -400,15 +524,24 @@ func (s *Store) GetCredential(ctx context.Context, userID, provider string) (*Pr
 
 // DeleteCredential removes a user's stored credential for a provider (watch
 // disconnect). Deleting a nonexistent row is not an error. Synced watch data is
-// intentionally retained — only the login binding is cleared.
+// intentionally retained — only the login binding is cleared. The binding
+// revision is bumped and the binding state tombstoned (devops#1005): an
+// in-flight sync holding the old revision must not be able to publish after
+// the unbind, and a later rebind continues from a higher revision instead of
+// colliding with a stale writer's number.
 func (s *Store) DeleteCredential(ctx context.Context, userID, providerName string) error {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
 		return err
 	}
-	return s.db.WithContext(ctx).
-		Where("user_id = ? AND provider = ?", uid, providerName).
-		Delete(&ProviderCredential{}).Error
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.
+			Where("user_id = ? AND provider = ?", uid, providerName).
+			Delete(&ProviderCredential{}).Error; err != nil {
+			return err
+		}
+		return tombstoneWatchBinding(tx, uid, time.Now().UTC())
+	})
 }
 
 // ListSyncableUserIDs returns the distinct user_ids holding a provider

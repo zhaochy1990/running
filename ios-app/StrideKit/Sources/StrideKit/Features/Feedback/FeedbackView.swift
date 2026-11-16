@@ -23,14 +23,19 @@ public struct FeedbackView: View {
             VStack(spacing: 0) {
                 tabBar(theme)
                 // 路线 tab hidden 切换不卸载（投票/滚动状态不丢）。
+                // devops#1018 P2：面板必须包 ScrollView——三区内容超高时无滚动
+                // 容器会被 ZStack 居中裁切，顶上「最近上线」「正在做」两区整块
+                // 出屏（mp roadmap-panel 可滚、独立路线页同款）。
                 ZStack {
                     if feedback.activeTab == .feedback {
                         feedbackTab(theme)
                     }
                     if feedback.roadmapMounted {
-                        RoadmapPanelView()
-                            .opacity(feedback.activeTab == .roadmap ? 1 : 0)
-                            .allowsHitTesting(feedback.activeTab == .roadmap)
+                        ScrollView {
+                            RoadmapPanelView()
+                        }
+                        .opacity(feedback.activeTab == .roadmap ? 1 : 0)
+                        .allowsHitTesting(feedback.activeTab == .roadmap)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -127,6 +132,9 @@ public struct FeedbackView: View {
                 privacyFooter(theme)
             }
             .padding(theme.space(.lg))
+            // 底部安全留白：右下悬浮 + 球 CTA 遮不住末条（devops#1003 P2-1；
+            // 72pt = 48pt FAB + 边距，CoachView FAB 让位同款）。
+            .padding(.bottom, 72)
         }
     }
 

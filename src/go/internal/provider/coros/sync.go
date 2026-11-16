@@ -214,7 +214,8 @@ func (p *Provider) syncActivities(ctx context.Context, client *Client, user stri
 	for i, item := range items {
 		ordered[total-1-i] = item
 	}
-	return p.fetchDetailsOrdered(ctx, client, user, ordered, provider.DetailJobs(opts.Jobs), opts.Progress, res)
+	_, err = p.fetchDetailsOrdered(ctx, client, user, ordered, provider.DetailJobs(opts.Jobs), opts.Progress, res, nil)
+	return err
 }
 
 // collectActivities pages the activity list and returns the items to sync,
@@ -288,6 +289,13 @@ type detailResult struct {
 // newest-first and stops at the first activity that already exists, so every
 // not-yet-persisted (newer) activity is re-fetched — no holes.
 //
+// skip, when non-nil, is offered every fetch error that is a PERMANENT
+// provider rejection (provider.IsInvalidRequest): returning normally records
+// the item as skipped-and-continued instead of halting the commit (the
+// onboarding range path turns it into a gap). A nil skip, or a non-permanent
+// error, halts as before. The committed activity rows are returned so callers
+// that derive coverage from actual data (not from intent) can.
+//
 // A feeder hands indices out in order, so workers pull roughly sequentially and
 // at most ~jobs fetched-but-uncommitted results are held in memory at once.
 func (p *Provider) fetchDetailsOrdered(
@@ -298,7 +306,8 @@ func (p *Provider) fetchDetailsOrdered(
 	jobs int,
 	progress provider.ProgressCallback,
 	res *provider.SyncResult,
-) error {
+	skip func(item listItem, err error),
+) ([]*storage.Activity, error) {
 	total := len(ordered)
 	results := make([]detailResult, total)
 	ready := make([]chan struct{}, total)
@@ -339,6 +348,7 @@ func (p *Provider) fetchDetailsOrdered(
 	// Commit in order. Store writes use the caller ctx (not fetchCtx) so an
 	// in-progress upsert is not cancelled by our own fetch-teardown.
 	var commitErr error
+	var committed []*storage.Activity
 	for i := 0; i < total; i++ {
 		select {
 		case <-ready[i]:
@@ -350,6 +360,10 @@ func (p *Provider) fetchDetailsOrdered(
 		}
 		r := results[i]
 		if r.err != nil {
+			if skip != nil && provider.IsInvalidRequest(r.err) {
+				skip(ordered[i], r.err)
+				continue // permanently rejected: gap and keep committing
+			}
 			commitErr = r.err
 			break
 		}
@@ -357,6 +371,7 @@ func (p *Provider) fetchDetailsOrdered(
 			commitErr = err
 			break
 		}
+		committed = append(committed, r.a)
 		res.Activities++
 		res.ActivityLabelIDs = append(res.ActivityLabelIDs, ordered[i].LabelID)
 		if err := p.store.SetMeta(ctx, user, "last_label_id", ordered[i].LabelID); err != nil {
@@ -368,7 +383,7 @@ func (p *Provider) fetchDetailsOrdered(
 
 	cancelFetch()
 	wg.Wait()
-	return commitErr
+	return committed, commitErr
 }
 
 // fetchOneDetail fetches and parses a single activity's detail. It performs no
@@ -398,6 +413,25 @@ type dayItem struct {
 	Fatigue           *float64    `json:"fatigue"`
 }
 
+// analyseDayDate resolves one analyse dayList entry's date label to the ISO
+// YYYY-MM-DD every downstream contract shares (daily_health's date primary
+// key, the range channel's coverage labels, ordering and gap arithmetic): the
+// vendor's date string when present, else the happenDay number, which arrives
+// compact (YYYYMMDD) and is normalized through corosDateToISO — an already-ISO
+// label passes through untouched. ok=false skips a row with neither field
+// usable (devops#1008 D1: a compact label leaking into the coverage chain
+// breaks string ordering and inverts gap ranges).
+func analyseDayDate(d dayItem) (string, bool) {
+	date := d.Date
+	if date == "" {
+		date = d.HappenDay.String()
+	}
+	if date == "" {
+		return "", false
+	}
+	return corosDateToISO(date), true
+}
+
 // syncHealth refreshes daily_health from /analyse/query, then the dashboard
 // singleton, per-day HRV trend, and race predictions from /dashboard/query
 // (+ /dashboard/detail/query for the weekly volume).
@@ -414,26 +448,11 @@ func (p *Provider) syncHealth(ctx context.Context, client *Client, user string, 
 	}
 	total := len(data.DayList)
 	for i, d := range data.DayList {
-		date := d.Date
-		if date == "" {
-			date = d.HappenDay.String()
-		}
-		if date == "" {
+		date, ok := analyseDayDate(d)
+		if !ok {
 			continue
 		}
-		h := &storage.DailyHealth{
-			UserID:            user,
-			Date:              date,
-			ATI:               d.ATI,
-			CTI:               d.CTI,
-			RHR:               firstInt(d.TestRhr, d.Rhr),
-			DistanceM:         d.Distance,
-			DurationS:         d.Duration,
-			TrainingLoadRatio: d.TrainingLoadRatio,
-			Fatigue:           firstFloat(d.TiredRate, d.Fatigue),
-			Provider:          providerName,
-		}
-		if err := p.store.UpsertDailyHealth(ctx, h); err != nil {
+		if err := p.store.UpsertDailyHealth(ctx, dayItemToHealth(user, d, date)); err != nil {
 			return err
 		}
 		res.Health++
@@ -443,32 +462,29 @@ func (p *Provider) syncHealth(ctx context.Context, client *Client, user string, 
 	return p.syncDashboard(ctx, client, user, progress, res)
 }
 
-// syncDashboard writes the dashboard singleton, the per-day HRV rows, and the
-// race predictions from the COROS dashboard payloads. The fetch is best-effort:
-// a dashboard failure must not abort an otherwise-successful daily_health sync
-// (matching the Python narrowed try/except), so a fetch error is logged (WARN)
-// and returns nil rather than propagating. Store errors propagate.
-func (p *Provider) syncDashboard(ctx context.Context, client *Client, user string, progress provider.ProgressCallback, res *provider.SyncResult) error {
-	summaryData, err := client.GetDashboard(ctx)
+// fetchDashboardPayloads pulls the dashboard summary and the optional weekly-
+// volume record. A summary failure is an error; a week-record failure is logged
+// and yields a nil week (the dashboard row is still usable — the missing weekly
+// volume stays traceable in logs).
+func (p *Provider) fetchDashboardPayloads(ctx context.Context, client *Client, user string) (summary, week json.RawMessage, err error) {
+	summary, err = client.GetDashboard(ctx)
 	if err != nil {
-		// Best-effort: a dashboard failure must not abort an otherwise-successful
-		// daily_health sync (matches the Python narrowed try/except). But log a
-		// warning so a transient /dashboard/query failure — which silently drops
-		// the dashboard singleton, daily_hrv, and race predictions — is visible in
-		// prod logs instead of masquerading as an empty-but-successful sync.
-		logging.Default().Warn("coros: fetch dashboard failed; skipping dashboard/daily_hrv/race_predictions",
-			zap.String("user", user), zap.Error(err))
-		return nil
+		return nil, nil, err
 	}
-	// The week record (weekly distance/duration) is optional — a failure here
-	// still yields a usable dashboard row, but log it so the missing weekly
-	// volume is traceable rather than silently absent.
-	weekData, werr := client.GetDashboardDetail(ctx)
+	week, werr := client.GetDashboardDetail(ctx)
 	if werr != nil {
 		logging.Default().Warn("coros: fetch dashboard detail failed; weekly volume will be absent",
 			zap.String("user", user), zap.Error(werr))
+		week = nil
 	}
+	return summary, week, nil
+}
 
+// storeDashboard parses the dashboard payloads and writes the singleton, the
+// per-day HRV rows, and the race predictions. res.Health counts the writes (1
+// singleton + per HRV row) for both the periodic sync and the onboarding range
+// dashboard channel.
+func (p *Provider) storeDashboard(ctx context.Context, user string, summaryData, weekData json.RawMessage, progress provider.ProgressCallback, res *provider.SyncResult) error {
 	dash, hrvRows, preds := parseDashboard(user, summaryData, weekData)
 	if dash != nil {
 		var err error
@@ -496,6 +512,21 @@ func (p *Provider) syncDashboard(ctx context.Context, client *Client, user strin
 	}
 	provider.EmitProgress(progress, "health", 1, 1, 95)
 	return nil
+}
+
+// syncDashboard is the periodic sync's best-effort dashboard pass: a fetch
+// failure must not abort an otherwise-successful daily_health sync (matching
+// the Python narrowed try/except), so it is logged (WARN) and swallowed. The
+// onboarding range channel does NOT use this — its work item must fail loudly
+// (rangeDashboard calls fetchDashboardPayloads directly).
+func (p *Provider) syncDashboard(ctx context.Context, client *Client, user string, progress provider.ProgressCallback, res *provider.SyncResult) error {
+	summaryData, weekData, err := p.fetchDashboardPayloads(ctx, client, user)
+	if err != nil {
+		logging.Default().Warn("coros: fetch dashboard failed; skipping dashboard/daily_hrv/race_predictions",
+			zap.String("user", user), zap.Error(err))
+		return nil
+	}
+	return p.storeDashboard(ctx, user, summaryData, weekData, progress, res)
 }
 
 // ResyncActivity re-fetches and upserts a single activity by label.

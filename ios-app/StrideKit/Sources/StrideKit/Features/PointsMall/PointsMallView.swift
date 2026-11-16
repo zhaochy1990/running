@@ -71,14 +71,18 @@ public struct PointsMallView: View {
             Text("\(home.balance) 分")
                 .font(theme.font(.fsDisplay40, weight: .bold))
                 .foregroundStyle(theme.onAccent)
-            HStack(spacing: theme.space(.lg)) {
-                Button("明细 ›") { model.router.push(.pointsDetail) }
-                Button("兑换记录 ›") { model.router.push(.pointsOrders) }
-                Button("签到赚分 ›") { model.router.push(.checkin(gained: nil)) }
-                Button("兑换规则") { home.showRules() }
+            // 2×2 chip 网格（mp hero__links grid 同款；单行四 chip 在 375pt
+            // 会溢出 hero 内宽）。
+            VStack(alignment: .leading, spacing: theme.space(.sm)) {
+                HStack(spacing: theme.space(.sm)) {
+                    heroLink("明细 ›", theme: theme) { model.router.push(.pointsDetail) }
+                    heroLink("兑换记录 ›", theme: theme) { model.router.push(.pointsOrders) }
+                }
+                HStack(spacing: theme.space(.sm)) {
+                    heroLink("签到赚分 ›", theme: theme) { model.router.push(.checkin(gained: nil)) }
+                    heroLink("兑换规则 ›", theme: theme) { home.showRules() }
+                }
             }
-            .font(theme.font(.fs12, weight: .medium))
-            .foregroundStyle(theme.onAccent.opacity(0.95))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(theme.space(.lg))
@@ -89,6 +93,20 @@ public struct PointsMallView: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: theme.radius(.lg)))
         )
+    }
+
+    /// hero 链接 chip（mp hero__link 同款：渐变底半透明白胶囊 + › 指示；
+    /// devops#1003 P2-4 可点击性强化——chip 底 + 按压缩放/变淡反馈）。
+    private func heroLink(_ title: String, theme: any Theme, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(theme.font(.fs12, weight: .medium))
+                .foregroundStyle(theme.onAccent.opacity(0.95))
+                .padding(.horizontal, theme.space(.md))
+                .padding(.vertical, 5)
+                .background(Capsule().fill(theme.onAccent.opacity(0.18)))
+        }
+        .buttonStyle(HeroChipPressStyle())
     }
 
     // MARK: - 商品横排大卡（四态）
@@ -479,5 +497,15 @@ public struct PointsMallView: View {
             .background(RoundedRectangle(cornerRadius: theme.radius(.lg)).fill(theme.surface))
             .padding(theme.space(.lg))
         }
+    }
+}
+
+/// hero 链接 chip 按压反馈（缩放 + 变淡，120ms easeOut）。
+private struct HeroChipPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .opacity(configuration.isPressed ? 0.7 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
