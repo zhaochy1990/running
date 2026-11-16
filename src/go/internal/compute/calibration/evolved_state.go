@@ -40,8 +40,7 @@ import (
 // the #997 hand-off note.
 
 const (
-	evolvedStateMethodFit        = "trend_day_state_joint_fit"
-	evolvedStateMethodStationary = "stationary_scalar_fallback"
+	evolvedStateMethodFit = "trend_day_state_joint_fit"
 
 	// Capability trend prior: log-v60 per day, zero-mean, wide enough for a
 	// real training-block drift (~+9% over 180 days at the clamp) and tight
@@ -68,7 +67,6 @@ const (
 
 	evolvedStateTrendClampedLimitation    = "capability_trend_prior_clamped"
 	evolvedStateSolveFallbackLimitation   = "capability_state_solve_failed_stationary_center_retained"
-	evolvedStateRangeMarginLimitation     = "capability_state_range_widened_by_day_effects"
 	evolvedStateNoNewDataReason           = "no_new_comparable_evidence_capability_predict_only"
 	evolvedStatePriorPredictOnlyMethod    = "prior_predict_only"
 	evolvedStateDayEffectSeparationReason = "capability_day_effects_separated_from_trend"

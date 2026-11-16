@@ -117,7 +117,17 @@ func (s *Store) ReplaceUserCalibrationOverride(ctx context.Context, expectedRevi
 				return ErrCalibrationOverrideConflict
 			}
 			proposed.CreatedAt, proposed.UpdatedAt = now, now
-			return tx.Create(&proposed).Error
+			if err := tx.Create(&proposed).Error; err != nil {
+				// Two concurrent create-only CAS writes both read "no row" and
+				// collide on the user_id primary key: the loser's raw MySQL
+				// duplicate-key (1062) is classified as the same revision
+				// conflict sentinel the read path already returns.
+				if isDuplicateKey(err) {
+					return ErrCalibrationOverrideConflict
+				}
+				return err
+			}
+			return nil
 		}
 		if err != nil {
 			return err

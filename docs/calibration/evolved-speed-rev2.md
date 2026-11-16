@@ -28,6 +28,7 @@
 - 状态由契约 `AdjudicateEstimationContract(DeriveAdjudicationInput(...))` 决定（fitter 不自造状态）：`measured_reference`（有 confirmed/probable 锚）/ `model_estimated`（≥2 根 ≥2 日 时长比 ≥1.5）/ `prior_dominated` / `stale`（90 天）/ `unavailable`。
 - 快照 legacy 置信映射：measured_reference→high、model_estimated→medium、prior_dominated/stale→low、unavailable→none；未收敛解 high 降 low。缺锚点结构性到不了 high。
 - 输出：中心（m/s 与 s/km=1000/v60）、范围（先验支撑域 [ln1.5, ln8.5] 内钳制）、MAP k 与（可辨识时）RiegelK、剖面 sd、三档曲率与份额、先验/输入 IdentityHash、逐观测角色/权重/份额/余量/残差、求解探针数。
+- **RiegelK 发布判据与五态判据的时长口径差（披露，代码不动）**：RiegelK 发布判据用 fitter 侧时长口径——>7200 s 行只作 `V(t)≤V(7200)` 单调软约束、不计入 Min/MaxDurationS（`evolved_speed.go`）；裁决五态（`AdjudicateEstimationContract`）时长口径计入全部连续行（含 >7200 s，`contract.go`）。长活动独占最大时长时可出现 state=`model_estimated` 而 RiegelK 不发布（保守少发布方向，无诚实性伤害）；两口径对齐会扩大 RiegelK 发布面、属行为变化，留后续票+行为测试收口。
 - 数值失败（非有限、非正曲率、先验集损坏）= `unavailable` + `solver_numerical_failure`，中心为 nil，不伪称证据不足。
 
 ## T3（#997）接缝——已落地

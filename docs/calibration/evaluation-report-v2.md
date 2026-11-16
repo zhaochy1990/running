@@ -49,12 +49,12 @@
 |---|---|---|---|
 | v3（冻结） | **250.539 s/km**（4:10.5，与 11-16 基线 250.539 逐位一致——冻结算法+不同输入快照下复现） | null | high（配速） |
 | 旧 v4 | **null** | **null** | `no_independent_maximal_anchors` / `no_independent_HR_protocol_support`（与基线双 null 锚点一致） |
-| 更新后 v4 (rev2) | **269.43 s/km**（4:29.4），范围 [266.55, 275.25] | **154.4 bpm**，范围 [147.7, 160.5] | 双通道 `model_estimated`；`joint_map_hr_dynamic_fit`，τ=20 s，HRmax 164.4 / RHR 39.2（拟合值，非实测），桥接 0.92；86 根/64 天，maximal_anchors=0，先验曲率份额 0（数据主导） |
+| 更新后 v4 (rev2) | **269.43 s/km**（4:29.4），范围 [266.56, 275.23] | **154.4 bpm**，范围 [147.7, 160.5] | 双通道 `model_estimated`；`joint_map_hr_dynamic_fit`，τ=20 s，HRmax 164.4 / RHR 39.2（拟合值，非实测），桥接 0.92；86 根/64 天，maximal_anchors=0，先验曲率份额 0（数据主导） |
 
 **诚实性声明**：(a) 不以 4′00″ 或任何值作真值——本 manifest 零参考标签，accuracy 家族全部 insufficient；(b) rev2 与 v3 的配速中心差 ~19 s/km 是两个模型对"普通训练+努力余量"与"选拔窗口"的不同解释，无独立参考时**不判断谁更准**；(c) rev2 的范围是模型敏感性范围，不是置信区间；(d) 通道限制披露完整（`research_uncalibrated…`、`cadence_lock_suspected_series_excluded`、`HR_tau_grid_coarsened_large_input`、`capability_state_solve_failed_stationary_center_retained`——后者见 §6 的披露修复）。
 
 - **走时间稳定性**（每 14 天 strict walk-forward，13 个 case）：数据可得性（COROS 9 月补同步）使 2026-09-17 前的 case 输入为空（时间机器如实拒收，非删除）——有效 6 个 case：rev2（链式先验）相邻跳变中位 1.77 s/km、P90/最大 5.87 s/km；v3 对照中位 2.24 s/km。滞后（lag）诊断在本 manifest 为空（无参考标签无法计算——引擎已实现半程漂移代理，仅在 ≥2 个带参考 strict 预测的用户上输出）。
-- **先验敏感性**（有/无个人历史先验双跑，评审 P0-2 修复后为真接线：主跑消费上一 case 快照先验，`HistoricalPriorMeanLog` 进报告 lineage；无先验复跑恒 nil）：5 个链式 case（walk-133…today）主跑 vs 无先验中心差 = −0.141 / +0.114 / −0.028 / −0.190 / 0.000 s/km，**|Δ| 中位 0.114、最大 0.190 s/km、状态翻转 0**；today 的链式先验 = walk-175 主跑中心（log 1.3097，sd 0.15 floor、龄 4 天），当日中心差不落 3 位小数。诚实解释：老化弱先验（sd floor 0.15）在该数据曲率主导的窗口上只把中心移动 ≤0.19 s/km——该结论现在由接线后的真实双跑支撑，而非构造性恒等。
+- **先验敏感性**（有/无个人历史先验双跑，评审 P0-2 修复后为真接线：主跑消费上一 case 快照先验，`HistoricalPriorMeanLog` 进报告 lineage；无先验复跑恒 nil）：5 个链式 case（walk-133…today）主跑 vs 无先验中心差 = −0.141 / +0.114 / −0.028 / −0.190 / 0.000 s/km，**|Δ| 中位 0.114、最大 0.190 s/km、状态翻转 0**；today 的链式先验 = walk-175 主跑中心（log 1.3097，sd 0.15 floor、零龄（引擎链式先验 AgeDays=0；生产路径按快照日老化）），当日中心差不落 3 位小数。诚实解释：老化弱先验（sd floor 0.15）在该数据曲率主导的窗口上只把中心移动 ≤0.19 s/km——该结论现在由接线后的真实双跑支撑，而非构造性恒等。
 - **hash 齐**：manifest SHA、逐 case 输入 SHA（today=`4a8389e1e229…`）、先验 IdentityHash、契约 IdentityHash、协议 v1/v2 hash、v3 源 hash、代码版本全在报告 JSON。
 
 ## 4. T3 推迟项：真实个人 HR 序列动态预测误差

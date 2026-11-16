@@ -2,7 +2,9 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/google/uuid"
@@ -252,5 +254,57 @@ func TestCalibrationUserOverrideConcurrentPublish(t *testing.T) {
 	st.db.Model(&RunningCalibrationUserOverride{}).Where("user_id = ? AND status = ?", uid, OverrideStatusActive).Count(&overrides)
 	if overrides != 1 {
 		t.Fatalf("exactly one active override may exist: %d", overrides)
+	}
+}
+
+// Two create-only CAS writes racing for one user both read "no row" and both
+// INSERT: the user_id primary key guarantees exactly one winner, and the
+// loser's MySQL duplicate-key (1062) must surface as the
+// ErrCalibrationOverrideConflict sentinel — not as a raw driver error.
+func TestCalibrationUserOverrideConcurrentCreateClassifiesConflict(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.AutoMigrateWatch(ctx); err != nil {
+		t.Fatal(err)
+	}
+	uid := uuid.NewString()
+	t.Cleanup(func() {
+		st.db.Where("user_id = ?", uid).Delete(&RunningCalibrationUserOverride{})
+	})
+	const racers = 2
+	errs := make([]error, racers)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range racers {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			_, errs[i] = st.ReplaceUserCalibrationOverride(ctx, 0, RunningCalibrationUserOverride{
+				UserID: uid, AlgorithmVersion: 4, AlgorithmRevision: "v4-rev2-2026-11",
+				Actor: fmt.Sprintf("racer-%d", i),
+			})
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	oks := 0
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			oks++
+		case errors.Is(err, ErrCalibrationOverrideConflict):
+			// classified conflict — the mapping this test pins
+		default:
+			t.Fatalf("unexpected error class: %v", err)
+		}
+	}
+	if oks != 1 {
+		t.Fatalf("want exactly one create winner and one classified conflict, got errs=%v", errs)
+	}
+	var rows int64
+	st.db.Model(&RunningCalibrationUserOverride{}).Where("user_id = ?", uid).Count(&rows)
+	if rows != 1 {
+		t.Fatalf("exactly one override row may exist: %d", rows)
 	}
 }
