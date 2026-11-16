@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>训练计划与运动能力评估 · UI 讨论记录</title>
+<style>
+:root { color-scheme:light dark; --foreground:light-dark(#25282c,#f1f2f4); --muted-foreground:light-dark(#626870,#abb0b8); }
+body { margin:0 auto; padding:24px 16px; max-width:1040px; background:light-dark(#fafafa,#151619); color:var(--foreground); font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif; }
+h1 { font-size:20px; font-weight:500; margin:0 0 8px; }
+.record-note { margin:0 0 24px; color:var(--muted-foreground); }
+.form-label { display:grid; gap:6px; }
+.form-select { box-sizing:border-box; width:100%; min-height:44px; font:inherit; color:inherit; background:light-dark(#fff,#292d33); border:1px solid light-dark(#d9dce0,#51565e); border-radius:8px; padding:8px; }
+.text-small { font-size:12px; }
+.text-muted { color:var(--muted-foreground); }
+</style>
+</head>
+<body>
+<h1>训练计划与运动能力评估</h1>
+<p class="record-note">UI 讨论记录 · 2026-11-16。各卡片表示连续阶段；选择器用于查看场景。按钮仅演示交互，不执行真实操作。重试、恢复等细节仍待确认，详见同目录 README。</p>
+<div id="stride-plan-flow">
+  <style>
+    #stride-plan-flow .controls { display:flex; flex-wrap:wrap; gap:16px; margin-bottom:20px; padding-right:80px; }
+    #stride-plan-flow .controls label { flex:1 1 220px; }
+    #stride-plan-flow .journey { display:grid; grid-template-columns:minmax(0,1fr) 32px minmax(0,1fr) 32px minmax(0,1fr); gap:0; align-items:start; }
+    #stride-plan-flow .journey.exit-flow { grid-template-columns:minmax(0,1fr) 40px minmax(0,1fr); max-width:620px; margin:auto; }
+    #stride-plan-flow .flow-arrow { width:100%; height:18px; align-self:center; color:var(--muted-foreground); }
+    #stride-plan-flow .flow-arrow .down { display:none; }
+    #stride-plan-flow .screen {
+      --p-bg:light-dark(#ffffff,#1c1d20); --p-text:light-dark(#25282c,#f1f2f4);
+      --p-muted:light-dark(#626870,#abb0b8); --p-line:light-dark(#e4e6e9,#3a3d43);
+      --p-soft:light-dark(#f2f4f6,#292d33); --p-accent:light-dark(#d34230,#ff7e68);
+      --p-on-accent:light-dark(#ffffff,#24110e); --p-good:light-dark(#2c7651,#83cda5);
+      box-sizing:border-box; min-width:0; min-height:396px; overflow-wrap:anywhere;
+      background:var(--p-bg); color:var(--p-text); border:1px solid var(--p-line); border-radius:18px;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+      font-size:14px; line-height:1.55; font-weight:400; display:flex; flex-direction:column;
+    }
+    #stride-plan-flow .screen header { padding:14px 15px; border-bottom:1px solid var(--p-line); display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    #stride-plan-flow .screen header span { color:var(--p-muted); font-size:12px; }
+    #stride-plan-flow .screen strong { font-weight:500; }
+    #stride-plan-flow .screen .content { display:flex; flex-direction:column; flex:1; padding:20px 15px 16px; gap:13px; }
+    #stride-plan-flow .screen h3 { font-family:inherit; font-size:17px; line-height:1.45; font-weight:500; margin:0; text-wrap:balance; }
+    #stride-plan-flow .screen p { margin:0; }
+    #stride-plan-flow .screen .muted { color:var(--p-muted); font-size:12px; }
+    #stride-plan-flow .screen .status { color:var(--p-muted); font-size:12px; }
+    #stride-plan-flow .screen .status.done { color:var(--p-good); }
+    #stride-plan-flow .screen .status.error { color:var(--p-accent); }
+    #stride-plan-flow .screen .track { height:5px; background:var(--p-soft); overflow:hidden; border-radius:4px; }
+    #stride-plan-flow .screen .track span { display:block; width:40%; height:100%; border-radius:4px; background:var(--p-accent); transform:translateX(45%); }
+    #stride-plan-flow .screen .track:not(.done) span { animation:spf-progress 1.8s ease-in-out infinite; }
+    @keyframes spf-progress { from { transform:translateX(-100%); } to { transform:translateX(350%); } }
+    @media (prefers-reduced-motion:reduce) { #stride-plan-flow .screen .track:not(.done) span { animation:none; } }
+    #stride-plan-flow .screen .track.done span { width:100%; transform:none; background:var(--p-good); }
+    #stride-plan-flow .screen .completed-stage { display:grid; gap:8px; padding-bottom:15px; margin-bottom:2px; border-bottom:1px solid var(--p-line); }
+    #stride-plan-flow .screen .completed-label { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:12px; color:var(--p-good); }
+    #stride-plan-flow .screen .completed-label span:last-child { font-variant-numeric:tabular-nums; }
+    #stride-plan-flow .screen ul { list-style:none; padding:0; margin:2px 0 0; display:grid; gap:12px; }
+    #stride-plan-flow .screen li { display:flex; gap:8px; align-items:flex-start; font-size:13px; }
+    #stride-plan-flow .screen .dot { width:7px; height:7px; margin-top:6px; flex:0 0 7px; border-radius:50%; background:var(--p-line); }
+    #stride-plan-flow .screen li.active .dot { background:var(--p-accent); }
+    #stride-plan-flow .screen li.complete .dot { background:var(--p-good); }
+    #stride-plan-flow .screen li.pending { color:var(--p-muted); }
+    #stride-plan-flow .screen .actions { margin-top:auto; display:flex; flex-direction:column; gap:8px; padding-top:14px; }
+    #stride-plan-flow .screen button { box-sizing:border-box; width:100%; min-height:40px; border:1px solid var(--p-line); border-radius:9px; padding:9px 10px; font:inherit; font-size:13px; font-weight:500; background:var(--p-bg); color:var(--p-text); }
+    #stride-plan-flow .screen button.primary { background:var(--p-accent); border-color:var(--p-accent); color:var(--p-on-accent); }
+    #stride-plan-flow .screen button.quiet { border-color:transparent; color:var(--p-muted); }
+    #stride-plan-flow .screen button:disabled { opacity:.5; }
+    #stride-plan-flow .screen button:focus-visible { outline:2px solid var(--p-accent); outline-offset:3px; }
+    #stride-plan-flow .screen button:hover:not(:disabled) { filter:brightness(.95); }
+    #stride-plan-flow .screen .plan-preview { border-top:1px solid var(--p-line); border-bottom:1px solid var(--p-line); padding:12px 0; display:grid; gap:8px; }
+    #stride-plan-flow .screen .plan-preview div { display:flex; justify-content:space-between; gap:8px; font-size:12px; }
+    #stride-plan-flow .screen .plan-preview div span:first-child { color:var(--p-muted); }
+    #stride-plan-flow .screen .step-note { font-size:12px; color:var(--p-muted); border-top:1px solid var(--p-line); padding:11px 15px; }
+    #stride-plan-flow .screen.blocked { background:var(--p-soft); }
+    #stride-plan-flow .scene-status { margin-top:12px; min-height:20px; }
+    #stride-plan-flow [hidden] { display:none !important; }
+    @media (max-width:610px) {
+      #stride-plan-flow .controls { padding-right:0; gap:10px; }
+      #stride-plan-flow .controls label { flex-basis:100%; }
+      #stride-plan-flow .journey, #stride-plan-flow .journey.exit-flow { grid-template-columns:1fr; max-width:390px; margin:auto; }
+      #stride-plan-flow .screen { min-height:0; }
+      #stride-plan-flow .screen .content { gap:11px; }
+      #stride-plan-flow .screen .actions { padding-top:8px; }
+      #stride-plan-flow .flow-arrow { height:34px; }
+      #stride-plan-flow .flow-arrow .across { display:none; }
+      #stride-plan-flow .flow-arrow .down { display:inline; }
+    }
+    @media (pointer:coarse) { #stride-plan-flow .screen button { min-height:44px; } }
+  </style>
+  <div class="controls">
+    <label class="form-label">操作
+      <select class="form-select" id="spf-action">
+        <option value="create">创建训练计划</option>
+        <option value="edit">修改或取消单次训练</option>
+        <option value="exit">退出当前训练计划</option>
+      </select>
+    </label>
+    <label class="form-label">查看状态
+      <select class="form-select" id="spf-scene"></select>
+    </label>
+  </div>
+  <div id="spf-journey" class="journey" aria-label="连续页面流程">
+    <section id="spf-first" class="screen" aria-label="运动能力评估阶段"></section>
+    <svg id="spf-link-one" class="flow-arrow" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
+      <defs><marker id="spf-arrowhead" orient="auto" markerUnits="userSpaceOnUse" refX="7" refY="5" markerWidth="9" markerHeight="10"><path d="M1 1L7 5 1 9" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+      <line class="across" x1="5" y1="50%" x2="85%" y2="50%" marker-end="url(#spf-arrowhead)"/>
+      <line class="down" x1="50%" y1="5" x2="50%" y2="28" marker-end="url(#spf-arrowhead)"/>
+    </svg>
+    <section id="spf-second" class="screen" aria-label="计划处理阶段"></section>
+    <svg id="spf-link-two" class="flow-arrow" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
+      <line class="across" x1="5" y1="50%" x2="85%" y2="50%" marker-end="url(#spf-arrowhead)"/>
+      <line class="down" x1="50%" y1="5" x2="50%" y2="28" marker-end="url(#spf-arrowhead)"/>
+    </svg>
+    <section id="spf-third" class="screen" aria-label="查看与确认阶段"></section>
+  </div>
+  <div id="spf-status" class="scene-status text-small text-muted" aria-live="polite"></div>
+  <script>
+    (function () {
+      const root = document.getElementById("stride-plan-flow");
+      const actionSelect = root.querySelector("#spf-action");
+      const sceneSelect = root.querySelector("#spf-scene");
+      const journey = root.querySelector("#spf-journey");
+      const first = root.querySelector("#spf-first");
+      const second = root.querySelector("#spf-second");
+      const third = root.querySelector("#spf-third");
+      const secondLink = root.querySelector("#spf-link-two");
+      const status = root.querySelector("#spf-status");
+      const actions = ["create", "edit", "exit"];
+      const scenes = [
+        ["normal", "完整流程 · 首次评估"],
+        ["ready", "已有可用评估"],
+        ["unbound", "尚未连接手表"],
+        ["empty", "还没有运动记录"],
+        ["assessment_error", "评估未能完成"],
+        ["plan_error", "计划处理未能完成"],
+        ["returning", "离开后返回"],
+        ["disconnected", "网络暂时断开"]
+      ];
+      let state = { action: "create", scene: "normal", notice: "" };
+      function save() {}
+      function button(label, op, primary, disabled) {
+        return '<button type="button" class="' + (primary ? 'primary ' : '') + 'cursor-interaction" data-operation="' + op + '"' + (disabled ? ' disabled' : '') + '>' + label + '</button>';
+      }
+      function progress(done, label) {
+        return '<div class="track' + (done ? ' done' : '') + '" role="progressbar" aria-label="' + (label || (done ? '此阶段已完成' : '此阶段正在进行')) + '"' + (done ? ' aria-valuenow="100" aria-valuemin="0" aria-valuemax="100"' : '') + '><span></span></div>';
+      }
+      function completedAssessment() {
+        return '<div class="completed-stage"><div class="completed-label"><span>运动能力评估已完成</span><span>100%</span></div>' + progress(true, '运动能力评估已完成') + '</div>';
+      }
+      function checklist(items) {
+        return '<ul>' + items.map(function (item) { return '<li class="' + item[1] + '"><span class="dot" aria-hidden="true"></span><span>' + item[0] + '</span></li>'; }).join('') + '</ul>';
+      }
+      function screen(target, step, title, content, buttons, footer, statusType, statusText, prelude) {
+        target.innerHTML = '<header><strong>STRIDE Coach</strong><span>' + step + '</span></header><div class="content">' + (prelude || '') + '<div class="status ' + (statusType || '') + '">' + (statusText || '') + '</div><h3>' + title + '</h3>' + content + (buttons ? '<div class="actions">' + buttons + '</div>' : '') + '</div><div class="step-note">' + footer + '</div>';
+      }
+      function render() {
+        actionSelect.value = state.action;
+        const isExit = state.action === "exit";
+        sceneSelect.innerHTML = (isExit ? [["normal", "确认退出 → 已退出"]] : scenes).map(function (s) { return '<option value="' + s[0] + '">' + s[1] + '</option>'; }).join('');
+        if (isExit) state.scene = "normal";
+        sceneSelect.value = state.scene;
+        sceneSelect.disabled = isExit;
+        journey.classList.toggle("exit-flow", isExit);
+        third.hidden = isExit;
+        secondLink.toggleAttribute("hidden", isExit);
+        first.classList.remove("blocked");
+        second.classList.remove("blocked");
+        third.classList.remove("blocked");
+        status.textContent = state.notice;
+        if (isExit) {
+          first.setAttribute("aria-label", "确认退出当前训练计划");
+          second.setAttribute("aria-label", "退出成功");
+          screen(first, "确认", "退出当前训练计划？",
+            '<p>退出后，不再继续生成后续训练。</p><p class="muted">运动能力与运动习惯仍会持续评估。</p>',
+            button("确认退出", "exit_confirm", true) + button("保留当前计划", "keep", false),
+            "退出当前计划", "", "当前训练计划");
+          screen(second, "完成", "已退出当前训练计划",
+            '<p>后续训练不再自动生成。</p><p class="muted">我们仍会根据新的运动记录，持续了解你的运动能力与习惯。</p>',
+            button("返回训练首页", "home", true),
+            "无需等待运动能力评估", "done", "退出完成");
+          return;
+        }
+        const isEdit = state.action === "edit";
+        first.setAttribute("aria-label", "运动能力评估阶段");
+        second.setAttribute("aria-label", isEdit ? "修改影响评估阶段" : "训练计划生成阶段");
+        screen(first, "第一步", "正在评估你的运动能力",
+          progress(false) + checklist([["整理运动记录", "complete"], ["分析运动能力与习惯", "active"], ["核对评估结果", "pending"]]) +
+          '<p class="muted">完成后，自动' + (isEdit ? '评估这次修改的影响。' : '开始制定训练计划。') + '</p>',
+          "",
+          "离开页面后仍会继续，可回来查看进度。", "", "你的请求已保留");
+        screen(second, "第二步", isEdit ? "正在评估这次修改的影响" : "正在制定你的训练计划",
+          progress(false, isEdit ? "修改影响评估进行中" : "训练计划生成进行中") + checklist(isEdit ?
+            [["读取当前训练计划", "complete"], ["结合运动能力与习惯", "active"], ["检查对后续安排的影响", "pending"]] :
+            [["读取已确认的目标", "complete"], ["安排训练内容", "active"], ["检查训练负荷", "pending"]]) +
+          '<p class="muted">' + (isEdit ? '完成后可查看调整前后的对比。' : '完成后可查看完整计划。') + '</p>',
+          "",
+          "离开页面后仍会继续，可回来查看进度。", "", "正在处理", completedAssessment());
+        screen(third, "第三步", isEdit ? "查看这次修改" : "训练计划已生成",
+          '<div class="plan-preview"><div><span>' + (isEdit ? '本次操作' : '计划依据') + '</span><span>' + (isEdit ? '修改或取消所选训练' : '已确认目标') + '</span></div><div><span>' + (isEdit ? '对比内容' : '训练安排') + '</span><span>' + (isEdit ? '修改前与修改后' : '在完整计划中查看') + '</span></div><div><span>' + (isEdit ? '影响说明' : '应用状态') + '</span><span>' + (isEdit ? '随调整方案展示' : '等待你的确认') + '</span></div></div>',
+          button(isEdit ? "查看方案并确认修改" : "查看计划并确认采用", "review", true) + button("暂不" + (isEdit ? "修改" : "采用"), "decline", false),
+          isEdit ? "确认后才修改所选训练" : "确认后才应用训练计划", "done", "可以查看结果");
+        const scene = state.scene;
+        if (scene === "ready" || scene === "returning" || scene === "plan_error") {
+          screen(first, "已完成", "运动能力评估已就绪",
+            progress(true) + '<p>本次将使用仍然有效、适用的评估结果。</p><p class="muted">近期状态与当前训练限制会单独核对。</p>',
+            "", "直接进入下一阶段", "done", "无需重复等待");
+        }
+        if (scene === "unbound" || scene === "empty") {
+          const unbound = scene === "unbound";
+          screen(first, "准备资料", unbound ? "先连接你的运动手表" : "先同步运动记录",
+            '<p>' + (unbound ? '连接手表并同步运动记录后，就能开始评估运动能力。' : '目前还没有可用于评估的运动记录。同步完成后，再继续评估和' + (isEdit ? '修改。' : '生成计划。')) + '</p>',
+            button(unbound ? "连接手表" : "同步运动记录", "provide_data", true),
+            "资料就绪后继续", "", "还需要运动记录");
+          second.classList.add("blocked"); third.classList.add("blocked");
+          screen(second, "等待", isEdit ? "影响评估尚未开始" : "计划生成尚未开始",
+            '<p class="muted">等待运动记录和能力评估就绪。</p>', "", "不会跳过评估直接生成", "", "等待前置条件");
+          third.hidden = true; secondLink.toggleAttribute("hidden", true);
+          journey.classList.add("exit-flow");
+        }
+        if (scene === "assessment_error") {
+          screen(first, "需要重试", "暂时无法完成运动能力评估",
+            '<p>你的' + (isEdit ? '修改' : '创建') + '请求已保留。</p><p class="muted">可以现在重试，也可以稍后回来重试。</p>',
+            button("重新评估", "retry_assessment", true),
+            "评估成功后自动继续", "error", "评估未完成");
+          second.classList.add("blocked"); third.classList.add("blocked");
+          screen(second, "等待", isEdit ? "影响评估尚未开始" : "计划生成尚未开始",
+            '<p class="muted">评估完成后，这里会自动继续。</p>', "", "不会生成缺少依据的计划", "", "等待评估结果");
+          third.hidden = true; secondLink.toggleAttribute("hidden", true);
+          journey.classList.add("exit-flow");
+        }
+        if (scene === "plan_error") {
+          screen(second, "需要重试", isEdit ? "暂时无法完成影响评估" : "暂时无法完成计划生成",
+            '<p class="muted">重试时会先核对评估结果是否仍然可用。</p>',
+            button(isEdit ? "重试影响评估" : "重试生成计划", "retry_plan", true),
+            "恢复本次请求", "error", "本阶段未完成", completedAssessment());
+          third.classList.add("blocked");
+          screen(third, "等待", "尚无可确认的结果",
+            '<p class="muted">本阶段完成后，才能查看并确认' + (isEdit ? '修改方案。' : '训练计划。') + '</p>',
+            button(isEdit ? "查看修改方案" : "查看训练计划", "review", true, true),
+            "等待处理完成", "", "结果尚未就绪");
+        }
+        if (scene === "returning") {
+          first.querySelector(".status").textContent = "已恢复本次请求";
+          second.querySelector(".status").textContent = "继续显示后台实际进度";
+        }
+        if (scene === "disconnected") {
+          screen(first, "重新连接", "正在恢复任务进度",
+            '<p>网络暂时断开，请求仍然保留。</p><p class="muted">连接恢复后，继续显示实际进度。</p>',
+            button("重新连接", "reconnect", true),
+            "网络断开不等于任务失败", "", "暂时无法获取进度");
+          second.classList.add("blocked"); third.hidden = true; secondLink.toggleAttribute("hidden", true);
+          journey.classList.add("exit-flow");
+          screen(second, "恢复后", "回到当前处理阶段",
+            '<p class="muted">已完成的阶段保留，从实际进度继续显示。</p>', "", "不重复提交创建或修改请求", "", "请求仍是同一次");
+        }
+      }
+      actionSelect.addEventListener("change", function () {
+        state = { action: actionSelect.value, scene: "normal", notice: "" };
+        second.hidden = false; root.querySelector("#spf-link-one").toggleAttribute("hidden", false);
+        render(); save();
+      });
+      sceneSelect.addEventListener("change", function () {
+        state.scene = sceneSelect.value; state.notice = "";
+        render(); save();
+      });
+      root.addEventListener("click", function (event) {
+        const target = event.target.closest("button[data-operation]");
+        if (!target) return;
+        const operation = target.dataset.operation;
+        state.notice = "";
+        if (operation === "retry_assessment" || operation === "provide_data") state.scene = "normal";
+        else if (operation === "retry_plan" || operation === "reconnect") state.scene = "returning";
+        else if (operation === "review") state.notice = "进入完整计划或调整方案预览，确认后才应用。";
+        else if (operation === "decline") state.notice = "保留结果，暂不修改当前训练安排。";
+        else if (operation === "exit_confirm") state.notice = "退出当前计划后，停止后续计划生成；运动能力与习惯评估继续。";
+        else if (operation === "keep") state.notice = "保留当前计划，不执行退出。";
+        else if (operation === "home") state.notice = "返回训练首页，后续计划不再自动生成。";
+        render(); save();
+      });
+      render();
+    })();
+  </script>
+</div>
+
+</body>
+</html>
