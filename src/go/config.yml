@@ -206,6 +206,16 @@ api:
     # Coexistence flag only: Go completion never starts work; it requires a
     # verified successful run_id from generic full sync.
     sync-data-at-onboarding: true
+    # First-sync session rollout switch (devops#1006, epic devops#1004 T02),
+    # DEFAULT OFF. Gates POST/GET /api/users/me/onboarding/sync together with
+    # sync-data-at-onboarding (both must be on; master off keeps the original
+    # disable semantics). Turning it off stops NEW session creation; the
+    # worker's reconcile sweep keeps advancing existing sessions. Rollout
+    # preconditions: runtime.write-isolation.enabled with the old fixed-key
+    # writers drained, and workers carrying the onboarding_recent_sync
+    # executor (T03/T04) deployed — dispatched stage jobs with no handler
+    # poison. Env: STRIDE_WORKER_API_FEATURES_ONBOARDING_SYNC_SESSION.
+    onboarding-sync-session: false
 
 # "dehua": "bef8d1fe-c617-4cc4-9e6f-bf6a8ce79ba9",
 # "dingchentao": "7bd56762-3b04-42a6-9d8b-98f595628430",

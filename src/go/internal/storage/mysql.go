@@ -183,6 +183,18 @@ func (s *Store) PipelineRunsByUser(ctx context.Context, userID string) ([]*job.P
 	return (&pipelineStore{db: s.db}).listByUser(ctx, userID)
 }
 
+// PipelineRunByID returns the run row by id, or a job.ErrNotFound. Used by the
+// onboarding-sync reconcile (devops#1006) to observe an adopted legacy run.
+func (s *Store) PipelineRunByID(ctx context.Context, runID string) (*job.PipelineRun, error) {
+	return (&pipelineStore{db: s.db}).Get(ctx, runID)
+}
+
+// JobByID returns the job row by id, or a job.ErrNotFound. Used by the
+// onboarding-sync reconcile (devops#1006) to observe stage dispatch jobs.
+func (s *Store) JobByID(ctx context.Context, jobID string) (*job.Job, error) {
+	return (&jobStore{db: s.db}).Get(ctx, jobID)
+}
+
 // ListAllPipelineRuns returns pipeline runs across all users (admin surface),
 // newest first, filtered by the non-empty options and paginated. Used by the
 // admin pipeline-status endpoint.

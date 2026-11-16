@@ -17,6 +17,7 @@ import (
 	"github.com/zhaochy1990/x/logger"
 	"go.uber.org/zap"
 
+	"github.com/zhaochy1990/stride/internal/catalog"
 	"github.com/zhaochy1990/stride/internal/chinaath"
 	"github.com/zhaochy1990/stride/internal/config"
 	"github.com/zhaochy1990/stride/internal/cos"
@@ -31,6 +32,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/health"
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/mq"
+	"github.com/zhaochy1990/stride/internal/onboardingsync"
 	"github.com/zhaochy1990/stride/internal/pipeline"
 	"github.com/zhaochy1990/stride/internal/racedetection"
 	"github.com/zhaochy1990/stride/internal/registry"
@@ -49,6 +51,12 @@ const heartbeatInterval = 30 * time.Second
 // sweep (devops#904: a 30-minute order cutoff serviced at a 5-minute cadence
 // leaves at most ~35 minutes of pending_payment parking).
 const wxpaySweepInterval = 5 * time.Minute
+
+// onboardingSweepInterval is how often the worker runs the first-sync session
+// reconcile (devops#1006): re-enqueue crash-stranded stage dispatches after
+// their 2-minute grace window and record terminal stage jobs, so the worst-case
+// recovery latency is ~2.5 minutes.
+const onboardingSweepInterval = 30 * time.Second
 
 func newWorkerCmd() *cobra.Command {
 	return &cobra.Command{
@@ -127,6 +135,13 @@ func runWorker() error {
 	// wxpay_order_close sweep (devops#904): the API migrates them for its
 	// surface, the worker migrates them for the timeout sweep's writes.
 	if err := store.AutoMigratePoints(ctx); err != nil {
+		return err
+	}
+	// First-sync session tables (devops#1006): the worker's reconcile sweep
+	// re-dispatches crash-stranded stages and records terminal outcomes, so
+	// existing sessions keep advancing even after the creation switch is
+	// turned back off (compat-worker semantics, epic devops#1004 rollout).
+	if err := store.AutoMigrateOnboardingSync(ctx); err != nil {
 		return err
 	}
 
@@ -282,6 +297,36 @@ func runWorker() error {
 					zap.Int64("completed", s.Completed),
 					zap.Int64("failed", s.Failed),
 				)
+			}
+		}
+	}()
+
+	// First-sync session reconcile (devops#1006, epic devops#1004 T02): the
+	// onboarding-sync sweep closes the session lifecycle's crash windows —
+	// pending dispatch rows older than the grace window are re-enqueued
+	// (idempotency-key deduped), terminal stage jobs are recorded onto their
+	// sessions, and waiting_legacy sessions resume after their old full run
+	// finishes. Always on: no sessions → a no-op pass, and turning the
+	// creation switch off must never strand in-flight sessions.
+	onboardingSyncSvc, err := onboardingsync.New(onboardingsync.Config{
+		Store: store, Enqueuer: enq, Jobs: store, Runs: store,
+		JobType:            catalog.JobTypeOnboardingRecentSync,
+		LegacyFullPipeline: catalog.PipelineOnboarding,
+		Logger:             log,
+	})
+	if err != nil {
+		return err
+	}
+	go func() {
+		onboardingSyncSvc.Sweep(ctx) // boot pass: a crashed predecessor's backlog first
+		t := time.NewTicker(onboardingSweepInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				onboardingSyncSvc.Sweep(ctx)
 			}
 		}
 	}()

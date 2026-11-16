@@ -100,6 +100,16 @@ const (
 	// the registration keeps it operator-triggerable via the internal jobs
 	// API. No-op when the payment module is unconfigured.
 	JobTypeWxpayOrderClose = "wxpay_order_close"
+	// JobTypeOnboardingRecentSync executes one first-sync session's recent
+	// stage (devops#1006, epic devops#1004 T02): it reads the session's work
+	// items (90-day activities / 28-day health windows) and their fetch
+	// credentials, fetches the missing ranges and reports the StageResult
+	// coverage contract. Created exclusively by the session dispatch path
+	// (never user-initiable), deduplicated by a stable idempotency key. The
+	// provider executors are the T03/T04 follow-ups — the rollout switch
+	// (api.features.onboarding-sync-session) must stay OFF until workers with
+	// those handlers are deployed, mirroring the webhook's enqueue gate.
+	JobTypeOnboardingRecentSync = "onboarding_recent_sync"
 )
 
 // Pipeline names (ADR 0020). onboarding and data_sync are fronted by
@@ -265,6 +275,13 @@ func Jobs() []JobSpec {
 			Description:   "Fetch one watch-provider activity's full data (FIT download first, open-platform pull on fallback) for an event recorded by the webhook push receiver. Input points at the provider_events row holding the raw push payload. Created exclusively by the webhook receiver (devops#287); not user-initiable.",
 			InputSchema:   json.RawMessage(`{"type":"object","required":["event_id"],"properties":{"event_id":{"type":"integer","description":"provider_events primary key the job reads its payload from"}},"additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{"event_id":1}`),
+		},
+		{
+			Type:          JobTypeOnboardingRecentSync,
+			UserInitiable: false,
+			Description:   "Execute one first-sync session's recent stage (devops#1006, epic devops#1004 T02): fetch the session's recent work items (90-day activities / 28-day health / dashboard, Shanghai natural days) whose complete-fetch credentials are missing, reuse done items' credentials, record gaps honestly, and return the StageResult coverage contract (scanned / observed / gaps) the reconcile sweep persists. Created exclusively by the onboarding-sync session dispatch under a stable idempotency key; not user-initiable. The provider executors ship with the T03/T04 tickets — until workers carry those handlers the api.features.onboarding-sync-session rollout switch must stay off (dispatched jobs with no handler poison).",
+			InputSchema:   json.RawMessage(`{"type":"object","required":["session_id","stage"],"properties":{"session_id":{"type":"string","description":"onboarding_sync_sessions row the stage belongs to"},"stage":{"type":"string","description":"stage name; T02 defines recent_raw"}},"additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{"session_id":"00000000-0000-0000-0000-000000000000","stage":"recent_raw"}`),
 		},
 	}
 }
