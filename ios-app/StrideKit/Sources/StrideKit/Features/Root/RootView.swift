@@ -42,6 +42,13 @@ public struct RootView: View {
                 OnboardingView()
             case .loggedIn:
                 MainTabView()
+                    // 首次同步全局 banner（devops#1016）：loggedIn 根容器级挂载，
+                    // 四个 tab 全部页面共享同一份服务端进度；无 session/已隐藏时零占位。
+                    .safeAreaInset(edge: .top, spacing: 0) {
+                        if model.onboardingSyncStatus.shouldShowBanner {
+                            OnboardingSyncBannerView(model: model.onboardingSyncStatus)
+                        }
+                    }
             }
         }
         .animation(.default, value: model.phase)

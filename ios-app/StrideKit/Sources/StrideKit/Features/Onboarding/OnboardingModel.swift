@@ -41,12 +41,32 @@ public final class OnboardingModel {
     public private(set) var connecting = false
     public var watchError: String?
 
-    // ── 同步步 ───────────────────────────────────────────────────────────
+    // ── 同步步（旧 full-run 管线：六步百分比）───────────────────────────
     public private(set) var syncText = "正在准备同步…"
     public private(set) var percent = 0
     public var syncError: String?
     /// 轮询到达 60min 上限但 run 还在跑（不是失败）：让用户先走，下次进来续跑。
     public private(set) var syncPending = false
+
+    // ── 同步步（session 模式，devops#1016：不跑管线、不显示六步百分比）──
+    /// 双开关（sync_data_at_onboarding && onboarding_sync_session）都开才为
+    /// true；提交步据此走 session 入口，关闭时旧 full-run 流程原样保留。
+    public private(set) var sessionMode = false
+    /// session 提交相位（Web SessionSubmitStep 的 Phase 等价）；nil = 旧流程。
+    public enum SessionPhase: Equatable, Sendable {
+        /// POST 创建中。
+        case creating
+        /// 已建未持久化（waiting_legacy 等）：GET 轮询到 shell_ready 再进。
+        case adopting
+        /// shell_ready 已确认，正在 profile-only 完成并进首页。
+        case entering
+        /// 创建失败（后台没有任何任务在跑，不假报运行中）。
+        case createFailed
+        /// 完成标记写入失败（session 已就绪，只差重走进入）。
+        case enterFailed
+    }
+    public private(set) var sessionPhase: SessionPhase?
+    public private(set) var sessionError: String?
 
     /// 完成引导回调（AppModel：redirect 回跳 / coach 首页）。
     public let onFinish: @MainActor () -> Void
@@ -54,7 +74,10 @@ public final class OnboardingModel {
     private let api: APIClient
     private let sync: OnboardingSyncService
     private var pollTask: Task<Void, Never>?
+    private var sessionPollTask: Task<Void, Never>?
     private var deadline: Date?
+    /// session adopting 轮询间隔（Web SESSION_POLL_MS 同款 5s；测试注短）。
+    private let sessionPollInterval: Duration
 
     /// 轮询 2s（devops#418 端点表）；60min 上限（生产实测均值 24min 最长 51min）。
     private static let pollInterval: Duration = .seconds(2)
@@ -63,10 +86,12 @@ public final class OnboardingModel {
     public init(
         api: APIClient,
         runStore: (any OnboardingRunStore)? = nil,
+        sessionPollInterval: Duration = .seconds(5),
         onFinish: @escaping @MainActor () -> Void
     ) {
         self.api = api
         self.sync = OnboardingSyncService(api: api, store: runStore)
+        self.sessionPollInterval = sessionPollInterval
         self.onFinish = onFinish
     }
 
@@ -75,10 +100,12 @@ public final class OnboardingModel {
     /// 每次进页面 / 前台恢复都按服务端状态重算该停在哪一步。
     public func refresh() async {
         cancelPoll()
+        cancelSessionPoll()
         formError = nil
         watchError = nil
         syncError = nil
         syncPending = false
+        sessionError = nil
         step = .loading
 
         let profile: MyProfile
@@ -100,14 +127,24 @@ public final class OnboardingModel {
             try? await sync.markComplete()
         }
         if !profile.watchReady {
+            sessionMode = Self.sessionCapable(profile)
             step = .watch
             return
         }
-        do {
-            try await applySyncOutcome(sync.ensureSync(userID: profile.id))
-        } catch {
-            step = .sync
-            syncError = "同步启动失败，请重试"
+        // 双开关开 → session 提交步（绑表后可靠创建即进首页，进度交全局
+        // banner）；关 → 旧 full-run 流程原样（含本地指针三分与认领）。
+        if Self.sessionCapable(profile) {
+            sessionMode = true
+            await startSessionSubmit(userID: profile.id)
+        } else {
+            sessionMode = false
+            sessionPhase = nil
+            do {
+                try await applySyncOutcome(sync.ensureSync(userID: profile.id))
+            } catch {
+                step = .sync
+                syncError = "同步启动失败，请重试"
+            }
         }
     }
 
@@ -192,10 +229,22 @@ public final class OnboardingModel {
 
         do {
             let userID = try await currentUserID()
-            try await applySyncOutcome(sync.ensureSync(userID: userID))
+            if sessionMode {
+                // session 模式：绑表即创建/认领 session（不触发旧 full-run），
+                // shell_ready 后 profile-only 完成进首页。
+                await startSessionSubmit(userID: userID)
+            } else {
+                try await applySyncOutcome(sync.ensureSync(userID: userID))
+            }
         } catch {
             step = .sync
-            syncError = "同步启动失败，请重试"
+            if sessionMode {
+                // 错误必须落在 session 视图可见的字段上（创建失败不假报运行中）
+                sessionPhase = .createFailed
+                sessionError = "网络异常，请检查网络后重试。"
+            } else {
+                syncError = "同步启动失败，请重试"
+            }
         }
     }
 
@@ -204,7 +253,114 @@ public final class OnboardingModel {
         onFinish()
     }
 
-    // MARK: - 同步
+    // MARK: - 同步（session 提交，devops#1016）
+
+    /// 双开关判定：总同步开关 + session rollout 开关同时开（任一缺失按关，
+    /// 与 Web OnboardingWizard 同口径；能力跟随服务端开关，客户端不自作主张）。
+    private static func sessionCapable(_ profile: MyProfile) -> Bool {
+        profile.syncEnabled && (profile.features?.onboardingSyncSession ?? false)
+    }
+
+    /// session 提交步入口：POST 原子创建/认领（幂等，多端并发同一个
+    /// session）；shell_ready（session 与派发意图均已持久化）确认前**不**
+    /// 宣称后台在同步；确认后 profile-only 完成进首页，进度交全局 banner。
+    private func startSessionSubmit(userID: String) async {
+        step = .sync
+        cancelSessionPoll()
+        sessionPhase = .creating
+        sessionError = nil
+        do {
+            let view = try await api.createOnboardingSyncSession(retry: false)
+            if view.shellReady {
+                await enterAppFromSession()
+            } else {
+                // waiting_legacy 等：服务端正在接管已有任务，不是失败——
+                // 轮只读 GET 到可靠持久化再进。
+                waitForShellReady()
+            }
+        } catch let error as ApiError {
+            if error.statusCode == 403 {
+                // 开关在落位与提交之间被关掉：入口已不存在，回退旧 full-run。
+                sessionMode = false
+                sessionPhase = nil
+                do {
+                    try await applySyncOutcome(sync.ensureSync(userID: userID))
+                } catch {
+                    step = .sync
+                    syncError = "同步启动失败，请重试"
+                }
+                return
+            }
+            sessionPhase = .createFailed
+            sessionError = error.code == "no_watch_provider"
+                ? "尚未绑定手表，请返回上一步完成绑定。"
+                : "同步任务创建失败，请重试。"
+        } catch {
+            sessionPhase = .createFailed
+            sessionError = "网络错误，同步任务创建失败，请重试。"
+        }
+    }
+
+    /// 创建失败后的「重试创建」（视图按钮）：重走同一提交链。
+    public func retrySessionCreate() async {
+        guard sessionMode, sessionPhase == .createFailed else { return }
+        let userID = (try? await currentUserID()) ?? ""
+        await startSessionSubmit(userID: userID)
+    }
+
+    /// 只读 GET 轮到 shell_ready（网络抖动继续等；离开页面/前台恢复由
+    /// refresh 重算接管）。
+    private func waitForShellReady() {
+        sessionPhase = .adopting
+        sessionPollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                if await self.sessionAdoptTick() == false { return }
+                try? await Task.sleep(for: self.sessionPollInterval)
+            }
+        }
+    }
+
+    private func sessionAdoptTick() async -> Bool {
+        do {
+            let view = try await api.onboardingSyncSession()
+            if view.shellReady {
+                await enterAppFromSession()
+                return false
+            }
+            return true
+        } catch {
+            // 网络抖动：保留 adopting 状态继续轮询。
+            return true
+        }
+    }
+
+    /// shell_ready 后的进入：profile-only 完成（空 body，绝不带 run_id——
+    /// session 的 recent run 不喂给旧 finalizer）→ 进首页。
+    private func enterAppFromSession() async {
+        sessionPhase = .entering
+        sessionError = nil
+        do {
+            try await sync.markComplete()
+            onFinish()
+        } catch {
+            sessionPhase = .enterFailed
+            sessionError = "无法完成初始化，请检查网络后重试。"
+        }
+    }
+
+    /// 进入失败的「重试进入」（视图按钮）：只重走完成+进首页，不重建 session。
+    public func retryEnterApp() async {
+        guard sessionMode, sessionPhase == .enterFailed else { return }
+        await enterAppFromSession()
+    }
+
+    private func cancelSessionPoll() {
+        sessionPollTask?.cancel()
+        sessionPollTask = nil
+    }
+
+    // MARK: - 同步（旧 full-run 管线）
 
     public func retrySync() async {
         guard let userID = try? await currentUserID() else { return }
