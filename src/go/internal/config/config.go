@@ -339,8 +339,13 @@ type APIFeatures struct {
 	// with old fixed-key writers drained, and workers carrying the
 	// onboarding_recent_sync executor deployed. The COROS executor shipped
 	// with T04 (devops#1008) and the Garmin executor with T03 (devops#1007);
-	// both bound providers are range-capable, so opening the switch is an
-	// operator cohort decision (a provider without the recent-range contract
+	// T06 (devops#1010) added the chunked background backfill stages
+	// (extended_raw / historical_raw / auxiliary) behind the SAME switch —
+	// sessions created under it get the full stage chain, sessions created
+	// before it are advanced by the always-on sweep, and turning the switch
+	// back off stops new sessions while existing ones finish or safely hang.
+	// Both bound providers are range-capable, so opening the switch is an
+	// operator cohort decision (a provider without the range contracts
 	// still fails its stage job permanently as provider_not_capable).
 	OnboardingSyncSession     bool     `mapstructure:"onboarding-sync-session"`
 	CoachAgentWeeklyPlanUsers []string `mapstructure:"coach-agent-weekly-plan-users"`

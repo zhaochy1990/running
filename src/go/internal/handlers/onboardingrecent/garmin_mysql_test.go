@@ -268,9 +268,16 @@ func TestOnboardingRecent_GarminEndToEndWithSweep(t *testing.T) {
 	svc.Sweep(ctx)
 	finishAnalysisStage(t, st, svc, enq, sess)
 
+	// devops#1010: the analysis completing chains the background backfill
+	// stages, so the SESSION stays non-terminal; the recent coverage row
+	// itself must read completed_with_gaps.
 	got, err := st.GetOnboardingSyncSessionByID(ctx, sess.SessionID)
-	if err != nil || got.State != storage.OnboardingSyncStateCompletedWithGaps {
-		t.Fatalf("session state = %s err=%v, want completed_with_gaps", got.State, err)
+	if err != nil || got.Terminal() || got.State == storage.OnboardingSyncStateFailed {
+		t.Fatalf("session state = %s err=%v, want non-terminal (chain continues)", got.State, err)
+	}
+	recentCov, err := st.GetOnboardingSyncStageCoverage(ctx, sess.SessionID, storage.OnboardingSyncStageRecentRaw)
+	if err != nil || recentCov.Status != storage.OnboardingSyncCoverageCompletedWithGaps {
+		t.Fatalf("recent coverage = %+v err=%v, want completed_with_gaps", recentCov, err)
 	}
 
 	// Work items carry their complete-fetch credentials; the activities item

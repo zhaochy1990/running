@@ -25,6 +25,7 @@ import (
 
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/logging"
+	"github.com/zhaochy1990/stride/internal/provider"
 	"github.com/zhaochy1990/stride/internal/storage"
 	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 )
@@ -36,6 +37,39 @@ const (
 	DefaultRecentActivityDays = 90
 	DefaultRecentHealthDays   = 28
 )
+
+// Background backfill window defaults (devops#1010, epic devops#1004 T06):
+// after the recent stages complete, the extended stage widens activities to
+// 180 and health to 90 obtainable days; the historical stage then walks every
+// activity the provider still serves plus, for Garmin, health up to 365 days
+// (COROS's batch endpoint returns one fixed window — it only declares what it
+// actually returned, so the historical stage carries no COROS health item).
+const (
+	DefaultExtendedActivityDays = 180
+	DefaultExtendedHealthDays   = 90
+	DefaultHistoricalHealthDays = 365
+)
+
+// historyFloorDay is the open-ended activities window's lower bound: consumer
+// GPS history predating it is not plausible (Garmin treats pre-2000 starts as
+// unclassifiable), so the historical activities window is "everything from
+// 2000-01-01 to the extended window's lower edge" — the walk still stops only
+// on the vendor list's end or a proven boundary, never on the floor itself.
+const historyFloorDay = "2000-01-01"
+
+// StageStatusInProgress is the StageResult status a chunked stage's executor
+// returns when its budget ran out with work remaining (devops#1010): the job
+// SUCCEEDED (its chunk's writes are durable), the coverage row stays running,
+// and the sweep requeues the dispatch for the next chunk. A plain "completed"
+// result from a mid-history chunk would be 假完成 — exactly what this status
+// exists to prevent.
+const StageStatusInProgress = "in_progress"
+
+// maxChunkSeq bounds a chunked stage's continuations. Each chunk advances a
+// durable checkpoint or completes, so a healthy stage stays far below this;
+// the bound exists so a pathological no-progress loop surfaces as a failed
+// stage instead of spinning forever (AC4 不无限空转).
+const maxChunkSeq = 5000
 
 // Sweep defaults: dispatch rows pending longer than dispatchGrace are crash
 // leftovers (the enqueue raced a crash) and are re-sent; each sweep pass
@@ -114,6 +148,8 @@ type Store interface {
 	// T05 (devops#1009): the analysis stage's post-raw advance + the
 	// changed-input refresh sweep.
 	EnsureOnboardingSyncStage(ctx context.Context, sessionID, stage, targetFrom, targetTo, idempotencyKey string) error
+	RequeueOnboardingSyncDispatchChunk(ctx context.Context, id int64, idempotencyKey string) error
+	AddOnboardingSyncStage(ctx context.Context, sessionID, stage, idempotencyKey string, items []storage.OnboardingSyncWorkItemSpec) (bool, error)
 	GetOnboardingRecentAnalysis(ctx context.Context, sessionID string) (*storage.OnboardingRecentAnalysis, error)
 	MarkOnboardingRecentAnalysisStale(ctx context.Context, sessionID string, stale bool) error
 	OnboardingAnalysisDigest(ctx context.Context, userID, fromDay, toDay string) (storage.OnboardingAnalysisDigest, error)
@@ -229,17 +265,88 @@ func recentWorkItems(anchor time.Time) map[string][]storage.OnboardingSyncWorkIt
 	}
 }
 
+// StageNames is the session's ordered stage chain (devops#1009 + devops#1010):
+// recent first (T02-T04), then the recent analysis (T05), then the background
+// backfill — extended, historical, auxiliary (T06). recent_analysis's rows are
+// created by the arm pass (advanceStages) once recent_raw terminalizes; each
+// later stage is created by advanceBackfillStages once its predecessor's
+// coverage is terminal, so the interactive recent path is never queued behind
+// the user's whole history and a stage's failure never retracts the stages
+// below it (历史失败不撤回近期数据).
+func StageNames() []string {
+	return []string{
+		storage.OnboardingSyncStageRecentRaw,
+		storage.OnboardingSyncStageRecentAnalysis,
+		storage.OnboardingSyncStageExtendedRaw,
+		storage.OnboardingSyncStageHistoricalRaw,
+		storage.OnboardingSyncStageAuxiliary,
+	}
+}
+
+// chunkedStage reports whether a stage executes in bounded chunks whose
+// in_progress results the backfill advance pass continues (devops#1010). The
+// recent and analysis stages are single-shot; their dispatch lifecycle is
+// owned by the claim and the refresh pass respectively.
+func chunkedStage(stage string) bool {
+	switch stage {
+	case storage.OnboardingSyncStageExtendedRaw, storage.OnboardingSyncStageHistoricalRaw, storage.OnboardingSyncStageAuxiliary:
+		return true
+	}
+	return false
+}
+
+// sessionStageItems builds every follow-on stage's work items for one
+// provider/anchor — the item sets AddOnboardingSyncStage persists when the
+// sweep chains the stage. Windows are the COMPLEMENT of what earlier stages
+// already cover (backfill channels skip already-stored rows, but disjoint
+// windows keep the vendor walk honest and the coverage rows readable).
+func sessionStageItems(providerName string, anchor time.Time) map[string][]storage.OnboardingSyncWorkItemSpec {
+	day := func(n int) string { return anchor.AddDate(0, 0, -n).Format("2006-01-02") }
+	items := map[string][]storage.OnboardingSyncWorkItemSpec{
+		storage.OnboardingSyncStageExtendedRaw: {
+			// anchor-179..anchor-90: the 180-day activity target minus the
+			// recent stage's 90 days.
+			{Kind: storage.OnboardingSyncItemKindActivities, RangeFrom: day(DefaultExtendedActivityDays - 1), RangeTo: day(DefaultRecentActivityDays)},
+			// anchor-89..anchor-28: health to 90 days minus the recent 28.
+			{Kind: storage.OnboardingSyncItemKindHealth, RangeFrom: day(DefaultExtendedHealthDays - 1), RangeTo: day(DefaultRecentHealthDays)},
+		},
+		storage.OnboardingSyncStageHistoricalRaw: {
+			// Every activity the provider still serves below the extended
+			// window (the walk stops at the vendor list's end, not the floor).
+			{Kind: storage.OnboardingSyncItemKindActivities, RangeFrom: historyFloorDay, RangeTo: day(DefaultExtendedActivityDays)},
+		},
+		storage.OnboardingSyncStageAuxiliary: {
+			{Kind: storage.OnboardingSyncItemKindRaceDetection, RangeFrom: historyFloorDay, RangeTo: day(0)},
+			{Kind: storage.OnboardingSyncItemKindRouteShapes, RangeFrom: historyFloorDay, RangeTo: day(0)},
+		},
+	}
+	// Garmin health extends to 365 days (anchor-364..anchor-90). COROS's batch
+	// endpoint has no per-day walk and no year window — it only ever declares
+	// the days its single batch actually returned (COROS 只声明实际可得范围).
+	if providerName == "garmin" {
+		items[storage.OnboardingSyncStageHistoricalRaw] = append(
+			items[storage.OnboardingSyncStageHistoricalRaw],
+			storage.OnboardingSyncWorkItemSpec{Kind: storage.OnboardingSyncItemKindHealth, RangeFrom: day(DefaultHistoricalHealthDays - 1), RangeTo: day(DefaultExtendedHealthDays)},
+		)
+	}
+	return items
+}
+
 // stageKey builds the stable idempotency key: session, stage, every range,
 // and the input (binding) revision are all part of the key, plus the retry
 // generation so an explicit retry creates a new job while crash recovery
 // within a generation still dedupes to the same one.
-func stageKey(stage, sessionID string, bindingRevision int64, retryGen int, items []storage.OnboardingSyncWorkItemSpec) string {
+func stageKey(stage, sessionID string, bindingRevision int64, retryGen, chunk int, items []storage.OnboardingSyncWorkItemSpec) string {
 	ranges := make([]string, len(items))
 	for i, it := range items {
 		ranges[i] = it.Kind + ":" + it.RangeFrom + ".." + it.RangeTo
 	}
 	sort.Strings(ranges)
-	return fmt.Sprintf("onbsync:%s:%s:%s:rev%d:try%d", sessionID, stage, strings.Join(ranges, "|"), bindingRevision, retryGen)
+	key := fmt.Sprintf("onbsync:%s:%s:%s:rev%d:try%d", sessionID, stage, strings.Join(ranges, "|"), bindingRevision, retryGen)
+	if chunk > 0 {
+		key += fmt.Sprintf(":c%d", chunk)
+	}
+	return key
 }
 
 // stageInput is the executor job's InputJSON: the session + stage pointer; the
@@ -261,7 +368,7 @@ func (s *Service) CreateOrClaim(ctx context.Context, userID, provider string) (*
 	items := recentWorkItems(anchor)
 	key0 := func() func(stage, sessionID string, bindingRevision int64) string {
 		return func(stage, sessionID string, rev int64) string {
-			return stageKey(stage, sessionID, rev, 0, items[stage])
+			return stageKey(stage, sessionID, rev, 0, 0, items[stage])
 		}
 	}()
 	spec := storage.OnboardingSyncClaimSpec{
@@ -361,12 +468,18 @@ func (s *Service) Retry(ctx context.Context, userID string) (*storage.Onboarding
 			return nil, err
 		}
 		sess.RetryCount = gen
-		items := recentWorkItems(anchor)
+		// The failed stage may be any stage of the chain (a chunked backfill
+		// stage's dispatch fails terminally only after the job retry budget
+		// burns out) — rebuild every stage's items so the retry key carries
+		// the failed stage's real ranges. Stages without rows simply never
+		// match a dispatch.
+		items := sessionStageItems(sess.Provider, anchor)
+		items[storage.OnboardingSyncStageRecentRaw] = recentWorkItems(anchor)[storage.OnboardingSyncStageRecentRaw]
 		for _, d := range disp {
 			if d.Status != storage.OnboardingSyncDispatchFailed {
 				continue // successful work is reused; in-flight work is left alone
 			}
-			key := stageKey(d.Stage, sess.SessionID, sess.BindingRevision, gen, items[d.Stage])
+			key := stageKey(d.Stage, sess.SessionID, sess.BindingRevision, gen, 0, items[d.Stage])
 			if err := s.store.RequeueOnboardingSyncDispatchForRetry(ctx, d.ID, key); err != nil {
 				return nil, err
 			}
@@ -481,7 +594,8 @@ func (s *Service) Sweep(ctx context.Context) {
 	s.reconcileLegacy(ctx)
 	s.sweepPending(ctx)
 	s.sweepDispatched(ctx)
-	s.advanceStages(ctx)
+	s.advanceStages(ctx)         // arms recent_analysis once recent_raw terminalized (devops#1009)
+	s.advanceBackfillStages(ctx) // chunk continuation + background stage chain (devops#1010)
 	s.finalizeSessions(ctx)
 	s.sweepAnalysisRefresh(ctx)
 }
@@ -628,11 +742,38 @@ func ApplyStageResult(ctx context.Context, store StageCoverageStore, sessionID, 
 	if cov == nil {
 		return
 	}
+	var res StageResult
+	parsed := json.Unmarshal([]byte(resultJSON), &res) == nil && res.Stage == stage
+	if parsed && res.Status == StageStatusInProgress {
+		// A bounded chunk finished with work remaining (devops#1010): the
+		// stage is NOT complete — keep the coverage running with the chunk's
+		// progress visible (scanned/observed so far, gaps so far) and let
+		// the backfill advance pass arm the next chunk. Reporting completed
+		// here would be exactly the 假完成 AC4 forbids.
+		cov.Status = storage.OnboardingSyncCoverageRunning
+		cov.LastError = nil
+		cov.ScannedFrom, cov.ScannedTo = res.ScannedFrom, res.ScannedTo
+		cov.ObservedFrom, cov.ObservedTo = res.ObservedFrom, res.ObservedTo
+		var gaps []StageGap
+		if cov.GapsJSON != nil {
+			_ = json.Unmarshal([]byte(*cov.GapsJSON), &gaps)
+		}
+		gaps = mergeStageGaps(gaps, res.Gaps)
+		if len(gaps) > 0 {
+			if b, err := json.Marshal(gaps); err == nil {
+				str := string(b)
+				cov.GapsJSON = &str
+			}
+		}
+		if err := store.UpdateOnboardingSyncStageCoverage(ctx, cov); err != nil {
+			log.Warn("onboardingsync: coverage update failed", zap.String("session", sessionID), zap.Error(err))
+		}
+		return
+	}
 	cov.Status = storage.OnboardingSyncCoverageCompleted
 	cov.LastError = nil
 	cov.GapsJSON = nil
-	var res StageResult
-	if json.Unmarshal([]byte(resultJSON), &res) == nil && res.Stage == stage {
+	if parsed {
 		if res.Status == storage.OnboardingSyncCoverageCompletedWithGaps {
 			cov.Status = storage.OnboardingSyncCoverageCompletedWithGaps
 		}
@@ -648,6 +789,25 @@ func ApplyStageResult(ctx context.Context, store StageCoverageStore, sessionID, 
 	if err := store.UpdateOnboardingSyncStageCoverage(ctx, cov); err != nil {
 		log.Warn("onboardingsync: coverage update failed", zap.String("session", sessionID), zap.Error(err))
 	}
+}
+
+// mergeStageGaps merges a chunk's gap events into the running set (dedup by
+// from/to/reason identity; chunk retries can legitimately re-observe the same
+// permanent gap, and the running record must not stack duplicates).
+func mergeStageGaps(running, chunk []StageGap) []StageGap {
+	seen := map[string]bool{}
+	for _, g := range running {
+		seen[g.From+".."+g.To+"|"+g.Reason] = true
+	}
+	for _, g := range chunk {
+		k := g.From + ".." + g.To + "|" + g.Reason
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		running = append(running, g)
+	}
+	return running
 }
 
 // failStage records a stage's terminal failure on the coverage row and flags
@@ -720,9 +880,22 @@ func (s *Service) finalizeSessions(ctx context.Context) {
 		}
 		state := storage.OnboardingSyncStateCompleted
 		for _, cov := range covs {
+			if cov.Status != storage.OnboardingSyncCoverageCompleted &&
+				cov.Status != storage.OnboardingSyncCoverageCompletedWithGaps {
+				// A stage whose coverage never reached a terminal outcome must
+				// not be finalized away, even if every dispatch row happens to
+				// read terminal (e.g. a chunk requeue write that failed
+				// transiently) — the advance pass re-arms it. This is the
+				// anti-fake-completion backstop of devops#1010 AC4.
+				state = ""
+				break
+			}
 			if cov.Status == storage.OnboardingSyncCoverageCompletedWithGaps {
 				state = storage.OnboardingSyncStateCompletedWithGaps
 			}
+		}
+		if state == "" {
+			continue
 		}
 		if err := s.store.SetOnboardingSyncSessionState(ctx, sess.SessionID, state, nil); err != nil {
 			s.log.Warn("onboardingsync: session finalize failed", zap.Error(err))
@@ -768,7 +941,7 @@ func (s *Service) advanceStages(ctx context.Context) {
 			continue
 		}
 		key := stageKey(storage.OnboardingSyncStageRecentAnalysis, sess.SessionID,
-			sess.BindingRevision, sess.RetryCount, nil)
+			sess.BindingRevision, sess.RetryCount, 0, nil)
 		if err := s.store.EnsureOnboardingSyncStage(ctx, sess.SessionID,
 			storage.OnboardingSyncStageRecentAnalysis, rawCov.TargetFrom, rawCov.TargetTo, key); err != nil {
 			s.log.Warn("onboardingsync: analysis stage arm failed",
@@ -782,6 +955,137 @@ func (s *Service) advanceStages(ctx context.Context) {
 	}
 }
 
+// advanceBackfillStages is the devops#1010 reconcile pass: it turns
+// stage-terminal state into follow-on work. Two decisions, both derived from
+// durable state (never from in-memory events), so a crash anywhere upstream
+// costs at most one sweep interval:
+//
+//   - chunk continuation: a CHUNKED stage's dispatch that reached its terminal
+//     DONE state while its stage coverage is still non-terminal means an
+//     in_progress chunk result (or a crash between the terminal mark and this
+//     requeue). Requeue the dispatch as the next chunk under a chunk-scoped
+//     key. The row is left pending for the grace-gated sweepPending path —
+//     the deliberate spacing between chunks that yields the per-user lease to
+//     recent stages, new trainings and webhooks (AC2 让权).
+//   - stage chaining: the deepest existing stage's coverage terminal means
+//     its successor stage can be appended (dispatch + items + coverage in
+//     one transaction) and dispatched immediately. recent_analysis is the
+//     arm pass's to create — this pass skips it as a "next" and chains
+//     extended_raw behind it, so the recent analysis settles before the
+//     history walk starts competing for vendor quota.
+//
+// Both are idempotent: the requeue guards on non-pending, the append is
+// unique-keyed on (session, stage).
+func (s *Service) advanceBackfillStages(ctx context.Context) {
+	sessions, err := s.store.ListOnboardingSyncSessionsInStates(ctx,
+		[]string{storage.OnboardingSyncStateRunning, storage.OnboardingSyncStateDispatching}, s.limit)
+	if err != nil {
+		s.log.Warn("onboardingsync: backfill advance scan failed", zap.Error(err))
+		return
+	}
+	for _, sess := range sessions {
+		disp, err := s.store.ListOnboardingSyncDispatches(ctx, sess.SessionID)
+		if err != nil {
+			continue
+		}
+		covs, err := s.store.ListOnboardingSyncStageCoverage(ctx, sess.SessionID)
+		if err != nil {
+			continue
+		}
+		covByStage := map[string]*storage.OnboardingSyncStageCoverage{}
+		for _, c := range covs {
+			covByStage[c.Stage] = c
+		}
+		deepest := -1 // index into StageNames of the deepest chained stage
+		for i, name := range StageNames() {
+			for _, d := range disp {
+				if d.Stage == name {
+					deepest = i
+				}
+			}
+		}
+		for _, d := range disp {
+			if d.Status != storage.OnboardingSyncDispatchDone || !chunkedStage(d.Stage) {
+				continue // pending/dispatched rows and single-shot stages are not chunk continuations
+			}
+			cov := covByStage[d.Stage]
+			if cov == nil || coverageTerminal(cov) {
+				continue // nothing to continue: the stage is finished
+			}
+			if d.ChunkSeq >= maxChunkSeq {
+				// A chunked stage that cannot finish within the bound is a
+				// defect, not a workload — surface it instead of spinning.
+				s.failStage(ctx, d, fmt.Sprintf("stage %s exceeded %d chunk continuations", d.Stage, maxChunkSeq))
+				continue
+			}
+			items, err := s.store.ListOnboardingSyncWorkItems(ctx, sess.SessionID, d.Stage)
+			if err != nil {
+				continue
+			}
+			specs := make([]storage.OnboardingSyncWorkItemSpec, len(items))
+			for i, it := range items {
+				specs[i] = storage.OnboardingSyncWorkItemSpec{Kind: it.Kind, RangeFrom: it.RangeFrom, RangeTo: it.RangeTo}
+			}
+			key := stageKey(d.Stage, sess.SessionID, sess.BindingRevision, sess.RetryCount, d.ChunkSeq+1, specs)
+			if err := s.store.RequeueOnboardingSyncDispatchChunk(ctx, d.ID, key); err != nil {
+				s.log.Warn("onboardingsync: chunk requeue failed",
+					zap.String("session", sess.SessionID), zap.String("stage", d.Stage), zap.Error(err))
+				continue
+			}
+		}
+		if deepest < 0 || deepest >= len(StageNames())-1 {
+			continue // no chain to extend (or the auxiliary stage already exists)
+		}
+		cov := covByStage[StageNames()[deepest]]
+		if cov == nil || !coverageTerminal(cov) {
+			continue // deepest stage still mid-flight; the chain waits its turn
+		}
+		next := StageNames()[deepest+1]
+		if next == storage.OnboardingSyncStageRecentAnalysis {
+			// The arm pass owns creating the analysis stage; until it lands
+			// the backfill chain waits (the analysis settles quickly and the
+			// history walk should not compete with it for vendor quota).
+			continue
+		}
+		anchor, err := time.Parse("2006-01-02", sess.AnchorDay)
+		if err != nil {
+			s.log.Warn("onboardingsync: bad anchor day in backfill advance",
+				zap.String("session", sess.SessionID), zap.String("anchor", sess.AnchorDay))
+			continue
+		}
+		items := sessionStageItems(sess.Provider, anchor)[next]
+		key := stageKey(next, sess.SessionID, sess.BindingRevision, sess.RetryCount, 0, items)
+		created, err := s.store.AddOnboardingSyncStage(ctx, sess.SessionID, next, key, items)
+		if err != nil {
+			s.log.Warn("onboardingsync: stage append failed",
+				zap.String("session", sess.SessionID), zap.String("stage", next), zap.Error(err))
+			continue
+		}
+		if created {
+			if err := s.store.SetOnboardingSyncSessionState(ctx, sess.SessionID,
+				storage.OnboardingSyncStateDispatching, nil,
+				storage.OnboardingSyncStateRunning, storage.OnboardingSyncStateDispatching); err != nil {
+				s.log.Warn("onboardingsync: backfill advance state flip failed", zap.Error(err))
+				continue
+			}
+			if err := s.DispatchSession(ctx, sess.SessionID); err != nil {
+				s.log.Warn("onboardingsync: advanced stage dispatch failed",
+					zap.String("session", sess.SessionID), zap.String("stage", next), zap.Error(err))
+			}
+		}
+	}
+}
+
+// coverageTerminal reports whether a stage coverage row reached a terminal
+// outcome (a failed stage is terminal for chaining purposes only through the
+// session's failed state — failStage already handled it; here terminal means
+// completed or completed_with_gaps, either of which lets the chain advance:
+// permanent gaps are recorded honesty, not a blocker).
+func coverageTerminal(cov *storage.OnboardingSyncStageCoverage) bool {
+	return cov.Status == storage.OnboardingSyncCoverageCompleted ||
+		cov.Status == storage.OnboardingSyncCoverageCompletedWithGaps
+}
+
 // sweepAnalysisRefresh supersedes published analysis results whose pinned input
 // revision no longer matches reality (devops#1009 AC4/AC5): day rolls, new or
 // re-delivered recent data, or a calibration policy bump each change the
@@ -792,8 +1096,12 @@ func (s *Service) advanceStages(ctx context.Context) {
 // after session creation: afterwards the standing sync pipelines own analysis
 // freshness.
 func (s *Service) sweepAnalysisRefresh(ctx context.Context) {
+	// devops#1010: the background backfill keeps sessions open long past the
+	// analysis landing, so the refresh scan covers mid-flight sessions too —
+	// freshness of the recent analysis must not wait for the whole history.
 	sessions, err := s.store.ListOnboardingSyncSessionsInStates(ctx,
-		[]string{storage.OnboardingSyncStateCompleted, storage.OnboardingSyncStateCompletedWithGaps}, s.limit)
+		[]string{storage.OnboardingSyncStateRunning, storage.OnboardingSyncStateDispatching,
+			storage.OnboardingSyncStateCompleted, storage.OnboardingSyncStateCompletedWithGaps}, s.limit)
 	if err != nil {
 		s.log.Warn("onboardingsync: analysis refresh scan failed", zap.Error(err))
 		return
@@ -847,13 +1155,14 @@ func (s *Service) sweepAnalysisRefresh(ctx context.Context) {
 			continue
 		}
 		key := stageKey(storage.OnboardingSyncStageRecentAnalysis, sess.SessionID,
-			sess.BindingRevision, gen, nil)
+			sess.BindingRevision, gen, 0, nil)
 		if err := s.store.RequeueOnboardingSyncDispatchForRefresh(ctx, analysisDispatch.ID, key); err != nil {
 			s.log.Warn("onboardingsync: analysis refresh requeue failed", zap.String("session", sess.SessionID), zap.Error(err))
 			continue
 		}
 		if err := s.store.SetOnboardingSyncSessionState(ctx, sess.SessionID,
 			storage.OnboardingSyncStateDispatching, nil,
+			storage.OnboardingSyncStateRunning, storage.OnboardingSyncStateDispatching,
 			storage.OnboardingSyncStateCompleted, storage.OnboardingSyncStateCompletedWithGaps); err != nil {
 			s.log.Warn("onboardingsync: analysis refresh state failed", zap.String("session", sess.SessionID), zap.Error(err))
 			continue
@@ -862,6 +1171,35 @@ func (s *Service) sweepAnalysisRefresh(ctx context.Context) {
 			s.log.Warn("onboardingsync: analysis refresh dispatch failed", zap.String("session", sess.SessionID), zap.Error(err))
 		}
 	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Incremental gap-check seam (devops#1010 AC3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// UnfinishedRecentActivityWindow reports the user's CURRENT session's recent
+// activities window while the session is unfinished — the window an ordinary
+// incremental sync must re-check for credential gaps because its
+// stop-at-first-existing cursor cannot see holes (devops#1010 AC3). ok=false
+// when the user has no session, the session is terminal (the backfill chain
+// finished or the session failed/superseded — either way the cursor is
+// trustworthy again or the session executor owns recovery), or the bound
+// provider no longer matches the session.
+func (s *Service) UnfinishedRecentActivityWindow(ctx context.Context, userID, providerName string) (provider.DayWindow, bool) {
+	sess, err := s.store.GetOnboardingSyncSession(ctx, userID)
+	if err != nil || sess == nil || sess.Terminal() || sess.Provider != providerName {
+		return provider.DayWindow{}, false
+	}
+	items, err := s.store.ListOnboardingSyncWorkItems(ctx, sess.SessionID, storage.OnboardingSyncStageRecentRaw)
+	if err != nil {
+		return provider.DayWindow{}, false
+	}
+	for _, it := range items {
+		if it.Kind == storage.OnboardingSyncItemKindActivities {
+			return provider.DayWindow{From: it.RangeFrom, To: it.RangeTo}, true
+		}
+	}
+	return provider.DayWindow{}, false
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -958,6 +1296,7 @@ type ViewReadiness struct {
 	ShellReady         bool      `json:"shell_ready"`
 	RecentData         Readiness `json:"recent_data"`
 	RecentAnalysis     Readiness `json:"recent_analysis"`
+	ExtendedData       Readiness `json:"extended_data"`
 	HistoricalData     Readiness `json:"historical_data"`
 	HistoricalAnalysis Readiness `json:"historical_analysis"`
 	Auxiliary          Readiness `json:"auxiliary"`
@@ -1042,6 +1381,20 @@ func (s *Service) View(ctx context.Context, userID string) (*View, error) {
 			if v.RecentAnalysis != nil {
 				v.RecentAnalysis.Refreshing = refreshing || cov.Status == storage.OnboardingSyncCoverageRunning
 			}
+		case storage.OnboardingSyncStageHistoricalRaw:
+			sv.Readiness = stageReadiness(cov)
+			v.Readiness.HistoricalData = sv.Readiness
+		case storage.OnboardingSyncStageExtendedRaw:
+			// The extended window is historical coverage too; once the
+			// historical stage exists it supersedes this level.
+			sv.Readiness = stageReadiness(cov)
+			v.Readiness.ExtendedData = sv.Readiness
+			if v.Readiness.HistoricalData == ReadinessNotStarted {
+				v.Readiness.HistoricalData = sv.Readiness
+			}
+		case storage.OnboardingSyncStageAuxiliary:
+			sv.Readiness = stageReadiness(cov)
+			v.Readiness.Auxiliary = sv.Readiness
 		default:
 			sv.Readiness = stageReadiness(cov)
 		}

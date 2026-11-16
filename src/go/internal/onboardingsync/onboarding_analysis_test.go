@@ -175,9 +175,18 @@ func TestOnboardingSyncAnalysisRefreshOnChangedInputs(t *testing.T) {
 	if row.Stale {
 		t.Fatal("published row must not be stale while inputs are unchanged")
 	}
+	// devops#1010: the backfill chain keeps the session open after the
+	// analysis lands, so "no refresh" is asserted on the dispatch state and
+	// the generation, not on the session state.
+	disp, _ := h.store.ListOnboardingSyncDispatches(ctx, sess.SessionID)
+	for _, d := range disp {
+		if d.Stage == storage.OnboardingSyncStageRecentAnalysis && d.Status != storage.OnboardingSyncDispatchDone {
+			t.Fatalf("analysis dispatch = %s, want done (no refresh)", d.Status)
+		}
+	}
 	got, _ := h.store.GetOnboardingSyncSessionByID(ctx, sess.SessionID)
-	if got.State != storage.OnboardingSyncStateCompleted {
-		t.Fatalf("session state = %s, want completed (no refresh)", got.State)
+	if got.RetryCount != sess.RetryCount {
+		t.Fatalf("retry generation = %d, want unchanged %d (no refresh)", got.RetryCount, sess.RetryCount)
 	}
 	before := h.pub.count()
 
