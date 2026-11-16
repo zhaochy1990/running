@@ -127,6 +127,9 @@ public struct FeedbackView: View {
                 privacyFooter(theme)
             }
             .padding(theme.space(.lg))
+            // 底部安全留白：右下悬浮 + 球 CTA 遮不住末条（devops#1003 P2-1；
+            // 72pt = 48pt FAB + 边距，CoachView FAB 让位同款）。
+            .padding(.bottom, 72)
         }
     }
 

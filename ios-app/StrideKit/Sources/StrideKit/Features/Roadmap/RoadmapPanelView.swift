@@ -45,20 +45,20 @@ public struct RoadmapPanelView: View {
     private func zones(_ theme: any Theme) -> some View {
         VStack(alignment: .leading, spacing: theme.space(.xl)) {
             if !panel.releasedRows.isEmpty {
-                zone(title: "最近上线", theme: theme) {
+                zone(title: "最近上线", subtitle: "你的票变成了功能", count: "\(panel.releasedRows.count)", dot: theme.accentDeep, theme: theme) {
                     ForEach(panel.releasedRows) { row in
                         releasedRow(row, theme: theme)
                     }
                 }
             }
             if !panel.acceptedRows.isEmpty {
-                zone(title: "正在做", theme: theme) {
+                zone(title: "正在做", subtitle: "已采纳", count: "\(panel.acceptedRows.count)", dot: theme.warning, theme: theme) {
                     ForEach(panel.acceptedRows) { row in
                         acceptedRow(row, theme: theme)
                     }
                 }
             }
-            zone(title: "投票池", theme: theme) {
+            zone(title: "投票池", subtitle: "决定我们接下来做什么", count: "\(panel.poolRows.count) 个想法", dot: theme.accent, theme: theme) {
                 ForEach(panel.poolRows) { row in
                     poolRow(row, theme: theme)
                 }
@@ -71,11 +71,27 @@ public struct RoadmapPanelView: View {
         .padding(theme.space(.lg))
     }
 
-    private func zone<Content: View>(title: String, theme: any Theme, @ViewBuilder content: () -> Content) -> some View {
+    /// 区头（mp sec-head 同款：彩色点 + 标题 + 副标题 + 右侧计数徽标；
+    /// devops#1003 P2-5 三区分组强化。点色映射 mp success/info/accent →
+    /// 主题 token accentDeep/warning/accent）。
+    private func zone<Content: View>(title: String, subtitle: String, count: String, dot: Color, theme: any Theme, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: theme.space(.md)) {
-            Text(title)
-                .font(theme.font(.fs14, weight: .bold))
-                .foregroundStyle(theme.foreground)
+            HStack(spacing: theme.space(.sm)) {
+                Circle().fill(dot).frame(width: 6, height: 6)
+                Text(title)
+                    .font(theme.font(.fs14, weight: .bold))
+                    .foregroundStyle(theme.foreground)
+                Text("· \(subtitle)")
+                    .font(theme.font(.fs12))
+                    .foregroundStyle(theme.muted)
+                Spacer()
+                Text(count)
+                    .font(theme.font(.fs11, weight: .medium))
+                    .foregroundStyle(theme.muted)
+                    .padding(.horizontal, theme.space(.sm))
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(theme.borderSoft))
+            }
             VStack(alignment: .leading, spacing: theme.space(.md)) {
                 content()
             }
