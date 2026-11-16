@@ -337,8 +337,10 @@ type APIFeatures struct {
 	// master off keeps the original disable semantics). DEFAULT OFF. Rollout
 	// preconditions: the write-isolation fleet gate (devops#1005) enabled
 	// with old fixed-key writers drained, and workers carrying the
-	// onboarding_recent_sync executor (T03/T04) deployed — a dispatched
-	// session stage with no handler poisons.
+	// onboarding_recent_sync executor deployed. The COROS executor shipped
+	// with T04 (devops#1008); Garmin's is T03 and pending, so until it ships
+	// the switch may only open where COROS bindings are served (a Garmin
+	// session's stage job fails permanently as provider_not_capable).
 	OnboardingSyncSession     bool     `mapstructure:"onboarding-sync-session"`
 	CoachAgentWeeklyPlanUsers []string `mapstructure:"coach-agent-weekly-plan-users"`
 	CoachChatUsers            []string `mapstructure:"coach-chat-users"`
