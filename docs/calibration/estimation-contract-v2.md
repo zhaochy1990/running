@@ -7,7 +7,7 @@
 - `algorithm_version=4` 不变；policy `supported_versions=[3,4]` 不变；生产全局 active 仍为 3；v3 冻结七文件（embed 哈希 + golden 双锁）与 v3 入口、结果、协议 v1、原最终留出一字不改。
 - 新旧 v4 输出以**算法修订标记**区分：历史 v4 行（PR#740 实现）`algorithm_revision=''`；演进后 v4 输出 `algorithm_revision='v4-rev2-2026-11'`（常量 `EvolvedCandidateAlgorithmRevision`）。身份三元组 `EvolvedCandidateIdentity() = ("evolved_joint_v2", "rev2-research-2026-11", "v4-rev2-2026-11")`。
 - 落点：`OfflineResult.AlgorithmRevision`（omitempty，旧策略为空保证 replay hash 不变）、`SourceSummary.AlgorithmRevision`、快照表新列（见 §7）、`EstimationContractDocument`。
-- 新策略入口 `StrategyEvolvedCandidate="evolved_candidate"` 仅存在于离线 seam（`EstimateOffline*`），生产 wiring（`NewCalibration`/active 路径）不接触。#996 起该入口装配速度域估计器（`evolved_speed.go`，见 [evolved-speed-rev2.md](evolved-speed-rev2.md)）：普通训练必出有限中心+范围；#997 起同一入口联合装配个人心率动态拟合（`evolved_hr.go`，见 [evolved-hr-rev2.md](evolved-hr-rev2.md)）：普通光电 HR 序列即参与同一联合目标并输出 `HRsteady(v60)`（`model_estimated`），无序列但有合格生理先验输出 `prior_dominated`，两者皆无才 `unavailable`（必须报原因）；数值失败报 `solver_numerical_failure`，不伪称证据不足。
+- 新策略入口 `StrategyEvolvedCandidate="evolved_candidate"` 仅存在于离线 seam（`EstimateOffline*`），生产 wiring（`NewCalibration`/active 路径）不接触。#998 起同一 seam 在联合装配内求解时间结构化能力状态（速度域全池一次求解 + 含 HR 时条件化 trend 的联合重解；见 [evolved-state-rev2.md](evolved-state-rev2.md)）。#996 起该入口装配速度域估计器（`evolved_speed.go`，见 [evolved-speed-rev2.md](evolved-speed-rev2.md)）：普通训练必出有限中心+范围；#997 起同一入口联合装配个人心率动态拟合（`evolved_hr.go`，见 [evolved-hr-rev2.md](evolved-hr-rev2.md)）：普通光电 HR 序列即参与同一联合目标并输出 `HRsteady(v60)`（`model_estimated`），无序列但有合格生理先验输出 `prior_dominated`，两者皆无才 `unavailable`（必须报原因）；数值失败报 `solver_numerical_failure`，不伪称证据不足。
 
 ## 2. 观测模型与联合观测目标
 
@@ -17,6 +17,7 @@
 
 - `a = log v60`（log m/s），`v60 = exp(a)` 为模型一小时能力，配速中心 = `1000/v60` 秒/km（单位契约：`EstimationUnits`）。
 - `k ∈ [0.02, 0.10]`（沿用冻结 v3 Riegel 域），`delta_i ≥ 0` 是**未观测努力余量**（log 速度单位），不是可从心率百分比机械换算的实测量。
+- **时间结构化能力（#998 实现注记，R3）**：联合装配内每条观测使用其活动时点的能力 `a_i = a_now − trend·age_i + dayShift[d_i]`（`a_now` 为 as-of 时点锚、`trend` 慢变 log-v60/天、`dayShift` 能力侧日效应 log 速度单位）。研究先验（trend 0±0.0005/天钳 ±0.003；日效应 0±0.02 钳 ±0.15；>60 个不同证据日时日效应按 ISO 周聚合）冻结于 `evolved_state.go` 并在报告 stamp 披露——**不在 `contract_priors.go`**，与 `delta ≥ 0` 同类是时间参数化的结构正则，#995 契约先验集与其 IdentityHash 不变。纯 `FitEvolvedSpeed` seam 保持标量 a 位级不变；见 [evolved-state-rev2.md](evolved-state-rev2.md)。
 - 有效时长域 180–7200 s；>7200 s 活动保留原始时长进入单调软约束（`V(t) ≤ V(7200)` + 额外 log 不确定度），不得当无误差一小时换算。已修复的连续片段保留完整时间分母；暂停/恢复不拼接；同活动多时长共享 root，不按独立样本累计支持。
 
 ### 2.2 心率域（R2）
@@ -34,6 +35,7 @@
 - **每条观测只用一次**：HR→相对强度→(a, delta) 软约束与速度→(a, k, delta) 似然在同一联合目标内联合计入，不得先用 HR 推配速再把结果当独立证据增信，也不得把由同一 HR/配速联合推得的阈值 HR 当作独立 LTHR 验证。
 - **范围传播**：v60 的估计范围必须传入 HRsteady(v60) 的范围（与 F(1.0)、Hmax、Hrest 的不确定度合成）；单向 `Hsteady(v)` 预测不冒充联合拟合。
 - **日效应边界**：日间温度/恢复/传感器偏移进入 `Hsteady` 的日效应项（先验 §5），不得全部吸收进能力 `a`；环境无校准数据时不套统一热修正（limitation 如实标注）。
+- **两条日通道边界（#998 实现注记）**：HR 域 `theta.day`（bpm，Hsteady 水平）与速度域能力日效应 `dayShift`（log 速度单位）是同一联合目标的两条**不同**通道：theta.day 移动给定相对强度下的 HR 水平，dayShift 移动能力锚（随之移动 HR 相对强度）；二者互不折算、互不修正。含 HR 序列的联合拟合只条件化**慢结构（trend）**——日级偏移留在速度域求解，theta.day 保持 #997 的自由度。
 - **HR 序列的 Selected 语义（#997 实现注记，澄清 T1 评审 P2-1）**：`CandidateHRObservation.Selected` 只标记「已核验参考等级」（verified `field_30min_last20_v1` / `lab_lthr_report_v1` 且新鲜），**不是**普通序列进入联合目标的开关——普通训练 HR 序列按质量准入（时钟、覆盖、疑似步频锁定）进入联合目标，与其 Selected 值无关；`DeriveAdjudicationInput` 的 HR 事实（`HRSeriesValid`/`HRSensorOpticalOnly`/`HRMeasuredReference`）与该语义一致：序列有效性看观测值域与窗口，参考等级才看 Selected+tier。
 
 ### 2.4 v60 与 HRsteady(v60) 的参考条件（与实验室量的区别）
@@ -83,6 +85,8 @@
 
 历史快照先验规则：`sd = hypot(0.15, 0.002×age_days)`，中心不作上限；同一批输入算出的旧快照不得与原始输入作为两份独立证据反复相乘（同源不双计，T2 实现时按 root 去重）；优先用上一状态或留一活动构造先验。
 
+**状态预测通道（#998 实现注记，固定顺序）**：`HistoricalCapabilityPrior` 增加可选 `TrendPerDay`（消费时钳到 trend 域）与 lineage 字段（`AsOfDate`/`InputFingerprint`，仅审计回显）。先验中心 = `log(V60) + TrendPerDay×AgeDays`（先验预测步），恰计入目标一次，随后新证据更新；零值字段保持 #996 语义位级不变。无新增可比证据时输出 predict-only 状态 stamp（`prior_predict_only` + `no_new_comparable_evidence_capability_predict_only`），不伪造时间结构。
+
 ## 6. 不可辨识与诚实输出
 
 - 全轻松跑：`a` 与 `delta` 仅靠速度不可分 → 先验主导 + 宽范围 + `identifiability_limited_prior_dominated`。
@@ -91,6 +95,7 @@
 - 只有弱历史先验 → `prior_dominated`（中心=老化先验，范围=先验 sd 展开），非 unavailable、非 v3 锁定值。
 - **合格生理先验的可执行定义（#997 实现注记）**：窗口内（≤180 天）至少一行域值合法（35–90 bpm）的静息心率日行（`HealthRow.RHR`）。宽研究先验本身（HRmax 188±12 / Hrest 55±10）**不**单独构成合格生理先验——那是人人皆有的缺省参数，不是该用户的测量来源；RHR 行是真实用户测量。有 RHR 行而无 HR 序列时输出 `prior_only_HR_estimate` 的 `prior_dominated`（中心 = RHR 经桥接组合，范围 = 先验 sd 展开）。
 - **序列全被质量门槛排除**：窗口内有域合法 HR 观测（adjudication 视为有效序列）但每条序列都被质量门（疑似步频锁定、时钟非递增）排除 → 仍输出先验组成估计，reason 附加 `HR_series_all_excluded_quality_gates`，不冒充 model_estimated，也不静默 unavailable。
+- **仅 easy / 缺新数据（#998 实现注记，R3）**：能力状态的时序求解使用**分层课型余量**（每课型一条共同余量 s_c，速度域解内闭式/线性求解——「一个课型余量是一项研究事实」从 T2 的曲率封顶延伸到点估计）：N 条 easy 窗口对能力水平的拉力按**一个**课型先验的精度计，不随窗口数放大；仅 easy 证据不强制下调（预测通道按精度加权保留部分抬升，测试锁定），真实下降（可比证据变慢）不受单向限制，trend 可为负。无新增数据 = predict-only（§5 状态预测通道）。同源 prior 双计防护：先验恰一次、有效曲率增量 ≤ 其自身老化精度、数据曲率不变（测试锁定）。
 - **adjudication 与 fitter 准入的口径差（#996 评审 P2-2，#997 收口）**：契约 adjudication 不检查 MeasurementQuality，`FitEvolvedSpeed` 纯 seam 调用者可传入 quality=none 的 selected 连续行——此时全部收纳行被准入拒绝，报告 `solver_numerical_failure` + `all_admitted_rows_rejected_measurement_quality` 双原因（装配路径 `buildCandidateEvidence` 只产 High/Medium/Low，不可达；差异在契约文档显式声明而非沉默）。
 
 ## 7. 发布与修订标记契约（解决 (user,day,version) 覆盖冲突）

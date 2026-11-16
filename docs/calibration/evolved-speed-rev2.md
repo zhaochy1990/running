@@ -35,3 +35,9 @@
 - `OfflineResult.Evolved.HR`（`EvolvedHRReport`）由 #997 的联合拟合（`evolved_hr.go` / [evolved-hr-rev2.md](evolved-hr-rev2.md)）填充：普通光电 HR 序列进入**同一**联合目标（速度剖面目标经 `evolvedFit.hr` 注入 HR 项与 dJ/da），HR→能力软反馈经 `joint_hr_refit` 标记与联合曲率披露；快照 `ThresholdHR` 携带联合中心。`estimator_implementation_pending_t2` 语义随实现落地移除。
 - 速度侧的 `PosteriorSDLogV60`/范围经 `speed_envelope_low/high_bpm` 条件重解传入 HR 范围（单向传播）；`FitEvolvedSpeed` 仍是纯 seam 且无 HR 时位级不变，求解/曲率/包络段抽为 `evolvedFinalizeSpeedReport` 供联合重解共享（行为不变，T2 测试全绿）。
 - #996 评审 P2 顺手清理落在本票：k 先验失败路径披露实际网格（`evolvedSolveMAP` 失败返回携带 `gridResolution/gridCoarsened`）、adjudication/准入质量口径差以 `all_admitted_rows_rejected_measurement_quality` 双原因显式化、metadata 派生标签替换硬编码、PriorOnce 数值断言（先验-only 中心=闭式精度加权组合）。
+
+## T4（#998）接缝——已落地
+
+- 联合装配（`FitEvolvedJoint`）内每条观测使用活动时点有效能力 `a_i = a_now − trend·age_i + dayShift[d_i]`；纯 `FitEvolvedSpeed` seam 保持标量 a **位级不变**（`evolvedAdmitObservationsMode` 的 allValid 模式仅状态路径使用——v1 top-3/时长池选拔是「挑快挑新」平台机制，状态路径改用全有效池 + fitter 自身去重/预算）。时间结构、求解器、研究先验与诚实边界见 [evolved-state-rev2.md](evolved-state-rev2.md)。
+- `HistoricalCapabilityPrior` 增加可选 `TrendPerDay/AsOfDate/InputFingerprint`（预测通道 + lineage，零值位级不变）；prior-only 分支输出 predict-only 状态 stamp。
+- `evolvedFinalizeSpeedReport` 共享路径增加状态 stamp（`CapabilityState`）并在敏感性/包络探针前后保存-恢复状态；`evolvedSolution` 携带 trend/dayShift/classShift 快照供 keep-best 恢复。
