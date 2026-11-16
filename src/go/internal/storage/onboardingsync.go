@@ -34,6 +34,7 @@ import (
 	"fmt"
 	"time"
 
+	gomysql "github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -266,7 +267,49 @@ var ErrOnboardingSyncStaleBinding = errors.New("storage: onboarding sync claim r
 //     (status=pending — the reliable dispatch intent), work items and coverage
 //     rows, and ShellReady=true. Everything is durable at commit, so a crash
 //     right after the transaction loses nothing the sweep cannot recover.
+//
+// Concurrent first-seen claims (multi-client POST on a brand-new binding) race
+// on the binding-row insert and can trip InnoDB's gap-lock deadlock detector;
+// the whole transaction is retried on MySQL 1213/1205, which is safe — every
+// step is guarded or unique-keyed, so a retried loser either finds the winner's
+// session and claims it or deadlocks again within the bounded attempts.
 func (s *Store) ClaimOrCreateOnboardingSyncSession(ctx context.Context, spec OnboardingSyncClaimSpec) (*OnboardingSyncClaimResult, error) {
+	var out *OnboardingSyncClaimResult
+	err := withDeadlockRetry(func() error {
+		res, err := s.claimOrCreateOnboardingSyncSession(ctx, spec)
+		out = res
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// withDeadlockRetry re-runs fn on MySQL deadlock (1213) and lock-wait-timeout
+// (1205) errors, up to three extra attempts with a short backoff. Both are
+// transient serialization losses the caller's transaction can simply re-run.
+func withDeadlockRetry(fn func() error) error {
+	var err error
+	for attempt := 0; attempt < 4; attempt++ {
+		err = fn()
+		if !isRetryableLockError(err) {
+			return err
+		}
+		time.Sleep(time.Duration(attempt+1) * 10 * time.Millisecond)
+	}
+	return err
+}
+
+func isRetryableLockError(err error) bool {
+	var myerr *gomysql.MySQLError
+	if errors.As(err, &myerr) {
+		return myerr.Number == 1213 || myerr.Number == 1205
+	}
+	return false
+}
+
+func (s *Store) claimOrCreateOnboardingSyncSession(ctx context.Context, spec OnboardingSyncClaimSpec) (*OnboardingSyncClaimResult, error) {
 	uid, err := canonicalUserID(spec.UserID)
 	if err != nil {
 		return nil, err
