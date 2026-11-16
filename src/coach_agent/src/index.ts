@@ -35,6 +35,15 @@ export { isQualityRunningActivity, isRunningActivity } from "./data/activityClas
 export type { CalibrationSelection, CalibrationSource } from "./data/calibrationMetadata.js";
 export { CalibrationSourceSchema } from "./data/calibrationMetadata.js";
 export type * from "./data/dataProvider.js";
+export { deriveSyncCoverage, explainSyncCoverage } from "./data/syncCoverage.js";
+export type {
+  HistoricalAnalysisStatus,
+  SyncCoverageExplanation,
+  SyncDispatchRow,
+  SyncRecentAnalysisRow,
+  SyncSessionRow,
+  SyncStageCoverageRow,
+} from "./data/syncCoverage.js";
 export { DataProviderMasterPlanContextProvider } from "./data/masterPlanContextProvider.js";
 export type {
   WeeklyPlanContext,

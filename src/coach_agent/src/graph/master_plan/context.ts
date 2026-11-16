@@ -1,9 +1,13 @@
 import { z } from "zod/v4";
 import { CalibrationMetadataShape } from "../../data/calibrationMetadata.js";
+import { SYNC_READINESS_VALUES } from "../../data/dataProvider.js";
 import type { PhasingActivityInput } from "./phasing/evidence.js";
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const nullableNumber = z.number().nullable();
+
+/** 就绪级别词汇（Go onboardingsync.Readiness 镜像，devops#1013；值唯一事实源在 dataProvider）。 */
+const SyncReadinessSchema = z.enum(SYNC_READINESS_VALUES);
 
 const ProfileSchema = z
   .object({
@@ -202,6 +206,43 @@ export const ContextSnapshotSchema = z
         })
         .strict(),
     ),
+    /**
+     * 首次同步覆盖（devops#1013）：有 session 的用户才带。计划生成/调整必须
+     * 读取当时的覆盖并声明限制——历史补齐未完成或历史指标待显式重算时，
+     * 长期依据（多年负荷链、历史 PB、训练画像）明确受限，不得声称完整。
+     * null/缺省 = 无 session（老用户或分阶段同步未开），按数据存在性口径。
+     */
+    sync_coverage: z
+      .object({
+        session_state: z.string(),
+        provider: z.string(),
+        anchor_day: day,
+        binding_revision: z.number().int(),
+        recent_data: SyncReadinessSchema,
+        recent_analysis: z
+          .object({
+            as_of_day: day,
+            status: z.string(),
+            stale: z.boolean(),
+            refreshing: z.boolean(),
+            coverage_from: day.nullable(),
+            coverage_to: day.nullable(),
+            input_fingerprint: z.string(),
+            unavailable_domains: z.array(z.object({ domain: z.string(), reason: z.string().nullable() }).strict()),
+          })
+          .strict()
+          .nullable(),
+        historical_data: SyncReadinessSchema,
+        /** 历史指标状态；not_started 映射为 pending_explicit_recompute（显式重算未交付/未启用）。 */
+        historical_analysis: z.enum(["pending_explicit_recompute", "pending", "running", "partial", "ready", "ready_with_gaps", "unavailable", "failed"]),
+        gaps: z.array(z.object({ stage: z.string(), from: day, to: day, reason: z.string().optional() }).strict()),
+        /** 长期结论是否成立（历史补齐 + 历史指标均已就绪）。 */
+        long_term_complete: z.boolean(),
+        notes: z.array(z.string()),
+      })
+      .strict()
+      .nullable()
+      .optional(),
     plan_start: day,
     as_of: z.string().datetime({ offset: true }),
   })

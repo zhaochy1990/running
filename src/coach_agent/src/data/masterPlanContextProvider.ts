@@ -1,4 +1,5 @@
 import { addDays, mondayOnOrBefore as monday, planningStartDate, shanghaiDay } from "@stride/contract";
+import { getLogger } from "@stride/common";
 import { type ContextSnapshot, ContextSnapshotSchema, type MasterPlanContextProvider } from "../graph/master_plan/index.js";
 import type { PhasingActivityInput } from "../graph/master_plan/phasing/evidence.js";
 import { isQualityRunningActivity, isRunningActivity } from "./activityClassification.js";
@@ -13,9 +14,13 @@ import type {
   RaceEffort,
   RaceTarget,
   RunningCalibration,
+  SyncCoverage,
   UserInjury,
   UserProfile,
 } from "./dataProvider.js";
+import { explainSyncCoverage } from "./syncCoverage.js";
+
+const logger = getLogger("coachAgent:masterPlanContext");
 
 type ContextStore = Pick<
   DataProvider,
@@ -29,6 +34,7 @@ type ContextStore = Pick<
   | "getRaceHistory"
   | "getMasterPlanMetadataForDate"
   | "getRaceTarget"
+  | "getSyncCoverage"
 >;
 
 export class DataProviderMasterPlanContextProvider implements MasterPlanContextProvider {
@@ -51,7 +57,7 @@ export class DataProviderMasterPlanContextProvider implements MasterPlanContextP
     // past 2 years
     const macroStart = addDays(end, -730);
     const recentStart = addDays(end, -111);
-    const [profile, injuries, activities, loads, recovery, pbs, calibration, races, activePlan, raceTarget] = await Promise.all([
+    const [profile, injuries, activities, loads, recovery, pbs, calibration, races, activePlan, raceTarget, syncCoverage] = await Promise.all([
       this.store.getUserProfile(userId),
       this.store.getUserInjuries(userId),
       this.store.getActivitiesByDateRange(userId, macroStart, end),
@@ -62,6 +68,11 @@ export class DataProviderMasterPlanContextProvider implements MasterPlanContextP
       this.store.getRaceHistory(userId, { asOfDate: end, limit: 30 }),
       this.store.getMasterPlanMetadataForDate(userId, planningStartDate(end)),
       this.store.getRaceTarget(userId),
+      // devops#1013：fail-soft——覆盖读失败不阻断计划上下文（不因此声称完整，见下方映射）。
+      this.store.getSyncCoverage(userId).catch((error: unknown) => {
+        logger.warn(`sync coverage unavailable for ${userId}: ${error}`);
+        return null;
+      }),
     ]);
     if (!profile) throw new Error(`required user profile not found for ${userId}`);
     const runs = activities.filter(isRunningActivity);
@@ -93,7 +104,8 @@ export class DataProviderMasterPlanContextProvider implements MasterPlanContextP
       active_plan: activePlanShape(activePlan),
       current_phase: currentPhase(activePlan, end),
       continuity: continuity(runs, activePlan, end),
-      coverage: coverage(profile, runs, loads, recovery, calibration, injuries, activePlan),
+      coverage: coverage(profile, runs, loads, recovery, calibration, injuries, activePlan, syncCoverage),
+      ...(syncCoverage ? { sync_coverage: syncCoverageShape(syncCoverage, end) } : {}),
       plan_start: planningStartDate(end),
       as_of: new Date(asOf).toISOString(),
     });
@@ -297,8 +309,9 @@ function coverage(
   c: RunningCalibration | null,
   injuries: UserInjury[],
   plan: ActiveMasterPlanMetadata | null,
+  syncCoverage: SyncCoverage | null,
 ) {
-  return [
+  const domains = [
     { domain: "profile", status: "complete", detail: null },
     {
       domain: "activities",
@@ -335,7 +348,61 @@ function coverage(
       status: "complete",
       detail: plan ? null : "no active plan, expected for new-season generation",
     },
-  ] as const;
+  ] as Array<{ domain: string; status: "complete" | "partial" | "missing"; detail: string | null }>;
+  // devops#1013：有 session 的用户，长期依据的覆盖按同步真实进度声明——
+  // 活动可查不等于历史完整；历史指标在显式重算交付前一律 missing。
+  if (syncCoverage) {
+    const { readiness } = syncCoverage;
+    domains.push({
+      domain: "history_backfill",
+      status:
+        readiness.historicalData === "ready"
+          ? "complete"
+          : readiness.historicalData === "ready_with_gaps"
+            ? "partial"
+            : readiness.historicalData === "failed"
+              ? "missing"
+              : "partial",
+      detail: `historical sync ${readiness.historicalData}`,
+    });
+    domains.push({
+      domain: "historical_analysis",
+      status: "missing",
+      detail: "pending_explicit_recompute",
+    });
+  }
+  return domains;
+}
+
+/** SyncCoverage → snapshot.sync_coverage（devops#1013：计划生成/调整读取当时的覆盖）。 */
+function syncCoverageShape(coverage: SyncCoverage, today: string) {
+  const explanation = explainSyncCoverage(coverage, today);
+  const detail = coverage.recentAnalysisDetail;
+  return {
+    session_state: coverage.state,
+    provider: coverage.provider,
+    anchor_day: coverage.anchorDay,
+    binding_revision: coverage.bindingRevision,
+    recent_data: coverage.readiness.recentData,
+    recent_analysis: detail
+      ? {
+          as_of_day: detail.asOfDay,
+          status: detail.status,
+          stale: explanation.recentAnalysis.stale,
+          refreshing: detail.refreshing,
+          coverage_from: detail.coverageFrom,
+          coverage_to: detail.coverageTo,
+          input_fingerprint: detail.inputFingerprint,
+          unavailable_domains: explanation.recentAnalysis.unavailableDomains.map((d) => ({ domain: d.domain, reason: d.reason ?? null })),
+        }
+      : null,
+    historical_data: coverage.readiness.historicalData,
+    historical_analysis:
+      coverage.readiness.historicalAnalysis === "not_started" ? ("pending_explicit_recompute" as const) : coverage.readiness.historicalAnalysis,
+    gaps: coverage.stages.flatMap((stage) => stage.gaps.map((gap) => ({ stage: stage.stage, from: gap.from, to: gap.to, ...(gap.reason ? { reason: gap.reason } : {}) }))),
+    long_term_complete: explanation.longTermComplete,
+    notes: explanation.notes,
+  };
 }
 function stringOrNull(v: unknown): string | null {
   return typeof v === "string" ? v : null;

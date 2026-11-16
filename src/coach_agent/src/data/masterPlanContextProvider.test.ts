@@ -65,6 +65,9 @@ test("context provider exposes PB activity label ID without source", async () =>
     async getMasterPlanMetadataForDate() {
       return null;
     },
+    async getSyncCoverage() {
+      return null;
+    },
   });
 
   const snapshot = await provider.loadSnapshot("athlete", "2026-08-11T00:00:00Z");
@@ -155,6 +158,9 @@ test("context provider maps canonical injuries and numeric race feel", async () 
       return null;
     },
     async getMasterPlanMetadataForDate() {
+      return null;
+    },
+    async getSyncCoverage() {
       return null;
     },
   });
@@ -295,6 +301,9 @@ test("context provider excludes trail-labelled outdoor activities from road-run 
     async getMasterPlanMetadataForDate() {
       return null;
     },
+    async getSyncCoverage() {
+      return null;
+    },
   });
   const snapshot = await provider.loadSnapshot("athlete", "2026-08-11T00:00:00Z");
   assert.equal(snapshot.macro_history.longest_run_km, 50);
@@ -406,6 +415,9 @@ test("context provider counts STRIDE session class without vendor train kind", a
     async getMasterPlanMetadataForDate() {
       return null;
     },
+    async getSyncCoverage() {
+      return null;
+    },
   });
   const snapshot = await provider.loadSnapshot("athlete", "2026-08-11T00:00:00Z");
   assert.equal(snapshot.recent_history.weeks.at(-1)?.speed_session_count, 1);
@@ -451,9 +463,148 @@ test("context provider materializes complete zero-run weeks", async () => {
     async getMasterPlanMetadataForDate() {
       return null;
     },
+    async getSyncCoverage() {
+      return null;
+    },
   });
   const snapshot = await provider.loadSnapshot("athlete", "2026-08-11T00:00:00Z");
   assert.equal(snapshot.recent_history.weeks.length, 17);
   assert.equal(snapshot.recent_history.weeks.at(-2)?.run_day_count, 0);
   assert.equal(snapshot.recent_history.weeks.at(-2)?.distance_km, 0);
+});
+
+test("sync coverage flows into the snapshot and bounds long-term claims (devops#1013)", async () => {
+  const provider = new DataProviderMasterPlanContextProvider({
+    async getUserProfile() {
+      return { userId: "athlete", displayName: null, dob: null, sex: null, heightCm: null, weightKg: 70, runningAgeRange: null };
+    },
+    async getUserInjuries() {
+      return [];
+    },
+    async getActivitiesByDateRange() {
+      return [];
+    },
+    async getDailyTrainingLoadByDateRange() {
+      return [];
+    },
+    async getDailyRecoveryByDateRange() {
+      return [];
+    },
+    async getPersonalBests() {
+      return [];
+    },
+    async getLatestRunningCalibration() {
+      return null;
+    },
+    async getRaceHistory() {
+      return [];
+    },
+    async getRaceTarget() {
+      return null;
+    },
+    async getMasterPlanMetadataForDate() {
+      return null;
+    },
+    async getSyncCoverage() {
+      return {
+        sessionId: "sess-1",
+        state: "running",
+        provider: "garmin",
+        bindingRevision: 2,
+        anchorDay: "2026-11-10",
+        error: null,
+        stages: [
+          {
+            stage: "recent_raw",
+            status: "completed",
+            readiness: "ready",
+            targetFrom: "2026-08-12",
+            targetTo: "2026-11-10",
+            scannedFrom: "2026-08-12",
+            scannedTo: "2026-11-10",
+            observedFrom: "2026-08-12",
+            observedTo: "2026-11-10",
+            gaps: [],
+            error: null,
+          },
+          {
+            stage: "historical_raw",
+            status: "running",
+            readiness: "running",
+            targetFrom: "2000-01-01",
+            targetTo: "2026-08-11",
+            scannedFrom: "2026-06-01",
+            scannedTo: "2026-08-11",
+            observedFrom: "2026-06-01",
+            observedTo: "2026-08-11",
+            gaps: [],
+            error: null,
+          },
+        ],
+        readiness: {
+          shellReady: true,
+          recentData: "ready",
+          recentAnalysis: "pending",
+          extendedData: "not_started",
+          historicalData: "running",
+          historicalAnalysis: "not_started",
+          auxiliary: "not_started",
+        },
+        recentAnalysisDetail: null,
+        updatedAt: new Date("2026-11-17T08:00:00.000Z"),
+      };
+    },
+  });
+
+  const snapshot = await provider.loadSnapshot("athlete", "2026-11-17T00:00:00Z");
+
+  assert.ok(snapshot.sync_coverage, "sync coverage section is present for session users");
+  assert.equal(snapshot.sync_coverage?.historical_analysis, "pending_explicit_recompute");
+  assert.equal(snapshot.sync_coverage?.historical_data, "running");
+  assert.equal(snapshot.sync_coverage?.long_term_complete, false);
+  assert.ok(snapshot.sync_coverage?.notes.some((note) => note.includes("后台补齐")));
+  const domains = new Map(snapshot.coverage.map((entry) => [entry.domain, entry]));
+  assert.equal(domains.get("history_backfill")?.status, "partial");
+  assert.equal(domains.get("historical_analysis")?.detail, "pending_explicit_recompute");
+});
+
+test("sync coverage read failure is fail-soft and leaves the snapshot without the section", async () => {
+  const provider = new DataProviderMasterPlanContextProvider({
+    async getUserProfile() {
+      return { userId: "athlete", displayName: null, dob: null, sex: null, heightCm: null, weightKg: 70, runningAgeRange: null };
+    },
+    async getUserInjuries() {
+      return [];
+    },
+    async getActivitiesByDateRange() {
+      return [];
+    },
+    async getDailyTrainingLoadByDateRange() {
+      return [];
+    },
+    async getDailyRecoveryByDateRange() {
+      return [];
+    },
+    async getPersonalBests() {
+      return [];
+    },
+    async getLatestRunningCalibration() {
+      return null;
+    },
+    async getRaceHistory() {
+      return [];
+    },
+    async getRaceTarget() {
+      return null;
+    },
+    async getMasterPlanMetadataForDate() {
+      return null;
+    },
+    async getSyncCoverage() {
+      throw new Error("table missing");
+    },
+  });
+
+  const snapshot = await provider.loadSnapshot("athlete", "2026-11-17T00:00:00Z");
+  assert.equal(snapshot.sync_coverage, undefined);
 });

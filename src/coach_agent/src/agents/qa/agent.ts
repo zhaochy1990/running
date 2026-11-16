@@ -10,6 +10,7 @@ import { createRaceCalendarSearchTools } from "../../tools/raceCalendar.js";
 import { createRaceTools } from "../../tools/races.js";
 import { createRecoveryTools } from "../../tools/recovery.js";
 import { createRunningCalibrationTools } from "../../tools/runningCalibration.js";
+import { createSyncCoverageTools } from "../../tools/syncCoverage.js";
 import { createTrainingLoadTools } from "../../tools/trainingLoad.js";
 import { CoachContext } from "../context.js";
 import { createLoggingMiddleware } from "../middleware.js";
@@ -39,6 +40,8 @@ const QA_SUBAGENT_PROMPT = `你是 STRIDE 跑步教练的训练问答专家，�
 
 涉及疲劳、负荷、恢复、状态、能否加量的问题，都必须先调用 get_daily_training_load 拿到近期负荷趋势，并结合 chronic/acute/loadRatio/form 分析后再作答；不要只凭单次跑步的感觉下结论。状态/恢复/HRV/静息心率类问题先调 get_recovery_status（HRV/RHR 日序列+厂商基线，解读口径见 analyze-body-status skill），再与负荷位置交叉验证后下结论。
 
+【数据覆盖（HARD，devops#1013）】近期问答（最近跑得怎么样、近期状态）只依据已获得的证据：回答前用 get_sync_coverage 确认近期证据窗口与分析 as-of，窗口外的日期不要当成已核实。长期结论（长期趋势、历史 PB、多年负荷、训练画像）在下述任一情况必须明确说明受限，且不得声称完整：更早历史还在后台补齐、历史补齐失败、或历史指标待显式重算（pending_explicit_recompute）——活动记录能查到不等于长期数据完整。分析结果带 as-of 时注明「基于 X 月 X 日的数据」，跨日不要说成今天的状态。后台任务失败时如实给出原因和出路（如在同步设置里重试），禁止把失败无限描述成「整理中/还在整理」；没有证据的指标就是不可用，不要用别的数据顶替或编造。get_sync_coverage 返回 hasSession=false 时，说明该用户没有首次同步 session（老用户），按实际查到的数据正常回答，不要因此断言数据缺失。
+
 能查到的事实，先自己查清楚再回答；只有确实不在数据里的东西（比如官方成绩、用户当时的主观感受、天气），才向运动员确认。分段配速、后程掉速、单次训练的细节一定在 get_activity_details 里，不要问运动员。
 
 feel 与 feelNote 均缺失时每次会话最多自然地问一次（量表表格与落库规则见 analyze-activity skill）；运动员回答的原话直接经 set_activity_feel 落库，不做数值映射。任一已有值绝不重问，绝不批量提醒「有 N 次没填体感」。
@@ -58,6 +61,7 @@ export function getQaTools(store: DataProvider, feelWriter?: ActivityFeelWriter)
     ...createRaceCalendarSearchTools(store),
     ...createRecoveryTools(store),
     ...createRunningCalibrationTools(store),
+    ...createSyncCoverageTools(store),
   ];
 }
 
