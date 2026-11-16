@@ -72,7 +72,18 @@ const (
 	ReasonEvidenceStale           = "supporting_evidence_older_than_staleness_window"
 	ReasonOpticalHRDownweighted   = "optical_HR_downweighted_not_excluded"
 	ReasonPriorOnlyHR             = "prior_only_HR_estimate"
-	ReasonSolverPendingT2         = "estimator_implementation_pending_t2"
+	// ReasonHRSeriesQualityExcluded (#997): the window holds HR observations
+	// the contract counts as a valid series, but every series was excluded by
+	// the quality gates (suspected cadence lock, broken clock); the estimate
+	// falls back to the physiological prior instead of a model fit.
+	ReasonHRSeriesQualityExcluded = "HR_series_all_excluded_quality_gates"
+	// ReasonAdmissionQualityGap (#996 review P2-2, resolved with #997): every
+	// selected continuous row was rejected by the fitter's measurement-quality
+	// gate while the contract adjudication still counted it as valid. The
+	// assembled path cannot produce this (buildCandidateEvidence emits only
+	// high/medium/low); pure FitEvolvedSpeed seam callers see the divergence
+	// named explicitly instead of a bare numerical failure.
+	ReasonAdmissionQualityGap = "all_admitted_rows_rejected_measurement_quality"
 	// ReasonSolverNumericalFailure: the deterministic solver produced a
 	// nonfinite or nonpositive-curvature result. This is a failure of the
 	// computation, never a claim of insufficient evidence (#996).

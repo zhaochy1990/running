@@ -1,6 +1,9 @@
 package calibration
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"math"
+)
 
 // CandidateVersion is the explicit offline implementation identity. ModelVersion
 // remains the frozen production default; changing policy is a separate operation.
@@ -181,18 +184,19 @@ func SummarizeSource(result OfflineResult) SourceSummary {
 }
 
 // summarizeEvolvedSource fills the five contract states (#995) for the
-// evolved v4 (#996): schema stays 1 so legacy readers keep working, but every
-// metric now carries State, range and the recomputable reasons. The HR seam
-// reports unavailable with the pending implementation reason instead of a
-// fabricated center.
+// evolved v4 (#996/#997): schema stays 1 so legacy readers keep working, but
+// every metric now carries State, range and the recomputable reasons.
+// MeasurementQuality/EffortSupport are derived from the contributing
+// observations (weakest quality rank, dominant effort class by weight), never
+// hardcoded labels (#996 review P2-1).
 func summarizeEvolvedSource(out *SourceSummary, evolved *EvolvedReport, snapshot Snapshot) {
 	if speed := evolved.Speed; speed != nil {
 		m := &MetricSource{
 			Method:                speed.Method,
 			TargetType:            "model_one_hour_capability_v60",
 			State:                 string(speed.State),
-			MeasurementQuality:    "model_fit",
-			EffortSupport:         "mixed_ordinary_training",
+			MeasurementQuality:    "unknown",
+			EffortSupport:         "unknown",
 			Support:               string(snapshot.ThresholdSpeedConfidence),
 			RangeLow:              speed.RangeLowMps,
 			RangeHigh:             speed.RangeHighMps,
@@ -202,6 +206,8 @@ func summarizeEvolvedSource(out *SourceSummary, evolved *EvolvedReport, snapshot
 			Reasons:               speed.Reasons,
 			Limitations:           speed.Limitations,
 		}
+		effortWeight := map[string]float64{}
+		worstRank := -1
 		for i := range speed.Observations {
 			o := &speed.Observations[i]
 			if o.Weight <= 0 {
@@ -210,25 +216,67 @@ func summarizeEvolvedSource(out *SourceSummary, evolved *EvolvedReport, snapshot
 			if o.ActivityDay > m.EvidenceDate {
 				m.EvidenceDate = o.ActivityDay
 			}
+			rank := candidateConfidenceRank(o.MeasurementQuality)
+			if worstRank < 0 || (rank > 0 && rank < worstRank) {
+				worstRank = rank
+			}
+			effortWeight[string(o.EffortSupport)] += o.Weight
 			m.EvidenceCount++
 			if len(m.Evidence) < 16 {
 				m.Evidence = append(m.Evidence, EvidenceSummary{ActivityID: o.ActivityID, RootActivityID: o.RootActivityID, ActivityDay: o.ActivityDay, DurationS: o.DurationS, MeasurementQuality: string(o.MeasurementQuality), EffortSupport: string(o.EffortSupport)})
 			}
 		}
+		// Honest summary labels: the weakest contributing quality and the
+		// weight-dominant effort class (ties resolved by class order).
+		if worstRank > 0 {
+			m.MeasurementQuality = map[int]string{3: string(ConfidenceHigh), 2: string(ConfidenceMedium), 1: string(ConfidenceLow)}[worstRank]
+		} else if m.EvidenceCount > 0 {
+			m.MeasurementQuality = "none"
+		}
+		if len(effortWeight) > 0 {
+			best, bestW := "", math.Inf(-1)
+			for _, class := range []string{string(EffortConfirmedMaximal), string(EffortProbableMaximal), string(EffortSubmaximal), string(EffortUnknown)} {
+				if w := effortWeight[class]; w > bestW {
+					best, bestW = class, w
+				}
+			}
+			m.EffortSupport = best
+		}
 		boundSourceMetric(m)
 		out.Speed = m
 	}
 	if hr := evolved.HR; hr != nil {
-		out.HR = &MetricSource{
-			Method:       evolvedHRSeamMethod,
-			TargetType:   "one_hour_steady_HR_model_prediction",
+		m := &MetricSource{
+			Method:       hr.Method,
+			TargetType:   hr.TargetType,
 			State:        string(hr.State),
 			Support:      string(snapshot.ThresholdHRConfidence),
 			RangeMeaning: "unavailable",
 			Reasons:      hr.Reasons,
 			Limitations:  hr.Limitations,
 		}
-		boundSourceMetric(out.HR)
+		if hr.CenterBpm != nil {
+			m.RangeLow, m.RangeHigh, m.RangeMeaning = hr.RangeLowBpm, hr.RangeHighBpm, hr.RangeMeaning
+		}
+		m.IndependentActivities = hr.IndependentRoots
+		m.IndependentDays = hr.IndependentDays
+		m.EvidenceDate = hr.EvidenceDate
+		m.LatestRejectedEvidenceDate = hr.LatestRejectedEvidenceDate
+		for i := range hr.Observations {
+			o := &hr.Observations[i]
+			if o.Role != "model_series" || o.Weight <= 0 {
+				continue
+			}
+			if o.ActivityDay > m.EvidenceDate {
+				m.EvidenceDate = o.ActivityDay
+			}
+			m.EvidenceCount++
+			if len(m.Evidence) < 16 {
+				m.Evidence = append(m.Evidence, EvidenceSummary{ActivityID: o.ActivityID, RootActivityID: o.RootActivityID, ActivityDay: o.ActivityDay, MeasurementQuality: "sensor_" + o.Sensor, EffortSupport: "unknown"})
+			}
+		}
+		boundSourceMetric(m)
+		out.HR = m
 	}
 }
 

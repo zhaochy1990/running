@@ -409,8 +409,10 @@ func TestEvolvedCandidateIdentityAndStrategyEntry(t *testing.T) {
 	}
 	asOf := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
 	history := []calibration.Activity{{LabelID: "run", ActivityDate: asOf.AddDate(0, 0, -1), Sport: "run", DurationS: f64p(3600), DistanceM: f64p(11520)}}
-	// Since #996 the entry assembles the speed-domain estimator and stamps the
-	// identity triple; the HR joint fit remains the explicit #997 seam.
+	// Since #996 the entry assembles the speed-domain estimator; since #997
+	// the joint HR fit runs in the same entry. This fixture carries no HR
+	// samples at all, so HR stays honestly unavailable with the categorical
+	// no-series/no-prior reason.
 	result, err := calibration.EstimateOfflineWithEvidence(calibration.StrategyEvolvedCandidate, history, asOf, nil, nil)
 	if err != nil {
 		t.Fatalf("evolved candidate must not error since #996: %v", err)

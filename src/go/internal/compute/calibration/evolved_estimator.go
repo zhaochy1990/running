@@ -4,27 +4,17 @@ import (
 	"time"
 )
 
-// evolved_estimator.go assembles the #996 evolved v4 offline result: the
-// speed-domain latent effort-margin fit of evolved_speed.go, the contract
-// adjudication five states, the honest HR seam left for #997 and the frozen
-// identity triple (evolved_joint_v2 / rev2-research-2026-11 /
+// evolved_estimator.go assembles the evolved v4 offline result: the joint
+// speed (#996, evolved_speed.go) + individual HR dynamic (#997, evolved_hr.go)
+// fit under one objective, the contract adjudication five states and the
+// frozen identity triple (evolved_joint_v2 / rev2-research-2026-11 /
 // v4-rev2-2026-11). It is reachable only through the offline seam
 // (EstimateOffline* / EstimateEvolvedOffline); production wiring never
 // selects it.
 
-// EvolvedHRReport is the #997 seam. T2 stamps the contract adjudication state
-// and refuses to fabricate a center: the joint Hsteady/tau/drift fit (with the
-// F(1.0)=0.92 reserve bridge and the v60 range propagated into the HR range)
-// lands with #997 and will populate this report. Optical-HR series will be
-// down-weighted, never excluded.
-type EvolvedHRReport struct {
-	State       EstimationState `json:"state"`
-	Reasons     []string        `json:"reasons"`
-	Limitations []string        `json:"limitations"`
-}
-
 // EvolvedReport is the evolved candidate's own explanation block: contract
-// and prior identity hashes (lineage anchors), the speed fit and the HR seam.
+// and prior identity hashes (lineage anchors), the speed fit and the joint HR
+// report.
 type EvolvedReport struct {
 	ContractVersion      string              `json:"contract_version"`
 	ContractIdentityHash string              `json:"contract_identity_hash"`
@@ -34,17 +24,7 @@ type EvolvedReport struct {
 	Limitations          []string            `json:"limitations"`
 }
 
-const evolvedHRSeamMethod = "evolved_joint_hr_pending_997"
-
-func evolvedHRSeam() *EvolvedHRReport {
-	return &EvolvedHRReport{
-		State:       StateUnavailable,
-		Reasons:     []string{ReasonSolverPendingT2},
-		Limitations: []string{"joint_HR_fit_lands_with_997", "optical_HR_will_be_downweighted_not_excluded"},
-	}
-}
-
-// EstimateEvolvedOffline runs the evolved v4 speed-domain fit with an explicit
+// EstimateEvolvedOffline runs the evolved v4 joint fit with an explicit
 // weak historical capability prior (aged, variance-floored, never a speed
 // cap). The prior enters the objective exactly once, so a same-source old
 // snapshot can never be multiplied with the raw inputs as a second
@@ -67,9 +47,12 @@ func estimateEvolvedCandidate(history []Activity, asOf time.Time, health []Healt
 	priors := DefaultEvolvedPriors()
 	// Reuse the existing cleaning/pause/recovery pipeline: selection,
 	// continuity verdicts and full-activity elapsed handling all stay upstream
-	// so both candidates share one measurement vocabulary.
+	// so both candidates share one measurement vocabulary. The HR observation
+	// report is the shared v1 vocabulary for series quality, sensors and
+	// verified reference tiers.
 	evidence := buildCandidateEvidence(history, metadata, asOf, metadataCutoff)
-	speed := FitEvolvedSpeed(evidence.Candidates, asOf, priors, prior)
+	hrEvidence := buildCandidateHR(history, metadata, asOf, metadataCutoff)
+	speed, hr := FitEvolvedJoint(evidence.Candidates, history, metadata, &hrEvidence, health, asOf, priors, prior)
 
 	// Unrelated baselines keep their frozen v3 calculation during this
 	// migration; only the pace-side fields move to the evolved fit.
@@ -86,21 +69,36 @@ func estimateEvolvedCandidate(history []Activity, asOf time.Time, health []Healt
 	if speed.RiegelK == nil {
 		snapshot.SpeedDurationConfidence = ConfidenceNone
 	}
-	// No HR center until the #997 joint fit exists; never a v3 backfill
-	// dressed up as the evolved model.
-	snapshot.ThresholdHR = nil
-	snapshot.ThresholdHRConfidence = ConfidenceNone
+	snapshot.ThresholdHR = round4(hr.CenterBpm)
+	snapshot.ThresholdHRConfidence = evolvedHRConfidence(hr)
 
 	contract := EstimationContractDocumentSnapshot()
+	limitations := evolvedSpeedLimitations()
+	limitations = append(limitations, hr.Limitations...)
 	evolved := &EvolvedReport{
 		ContractVersion:      contract.ContractVersion,
 		ContractIdentityHash: contract.IdentityHash(),
 		PriorsIdentityHash:   priors.IdentityHash(),
 		Speed:                &speed,
-		HR:                   evolvedHRSeam(),
-		Limitations:          evolvedSpeedLimitations(),
+		HR:                   &hr,
+		Limitations:          limitations,
 	}
 	return snapshot, evidence, evolved
+}
+
+// evolvedHRConfidence maps the HR five-state onto the legacy confidence
+// vocabulary. Following the v1 principle that no HR estimate reaches high
+// without independent calibration, a verified reference or an identified
+// model fit both cap at medium.
+func evolvedHRConfidence(hr EvolvedHRReport) Confidence {
+	switch hr.State {
+	case StateMeasuredReference, StateModelEstimated:
+		return ConfidenceMedium
+	case StatePriorDominated, StateStale:
+		return ConfidenceLow
+	default:
+		return ConfidenceNone
+	}
 }
 
 // evolvedConfidence maps the five contract states onto the legacy confidence

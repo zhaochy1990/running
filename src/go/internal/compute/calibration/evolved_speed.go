@@ -109,13 +109,17 @@ type EvolvedSpeedReport struct {
 	MaximalAnchors   int     `json:"maximal_anchors"`
 	// Solver diagnostics. The profile bisection is exact for the convex
 	// objective; SolverRounds counts profile probes for audit.
-	SolverRounds          int                       `json:"solver_rounds"`
-	SolverConverged       bool                      `json:"solver_converged"`
-	SolverObjective       float64                   `json:"solver_objective"`
-	SolverKGridResolution float64                   `json:"solver_k_grid_resolution"`
-	Observations          []EvolvedSpeedObservation `json:"observations"`
-	Reasons               []string                  `json:"reasons"`
-	Limitations           []string                  `json:"limitations"`
+	SolverRounds          int     `json:"solver_rounds"`
+	SolverConverged       bool    `json:"solver_converged"`
+	SolverObjective       float64 `json:"solver_objective"`
+	SolverKGridResolution float64 `json:"solver_k_grid_resolution"`
+	// JointHRRefit (#997): the reported center/range/curvatures come from the
+	// joint speed+HR objective (the HR soft feedback moved the capability),
+	// not the speed-only MAP.
+	JointHRRefit bool                      `json:"joint_hr_refit,omitempty"`
+	Observations []EvolvedSpeedObservation `json:"observations"`
+	Reasons      []string                  `json:"reasons"`
+	Limitations  []string                  `json:"limitations"`
 }
 
 // FitEvolvedSpeed is the pure offline speed-domain seam of the evolved v4.
@@ -175,8 +179,18 @@ func FitEvolvedSpeed(evidence []CandidateEvidence, asOf time.Time, priors Evolve
 	if len(fit.obs) == 0 {
 		if histMean == nil {
 			// Adjudication already excluded no-input-no-prior, so this is a
-			// hard failure rather than an invented number.
+			// hard failure rather than an invented number. When every selected
+			// continuous row was rejected by the fitter's measurement-quality
+			// gate while the adjudication still counted it, the categorical
+			// quality-gap reason names the divergence explicitly (the
+			// assembled path cannot produce this; pure-seam callers can).
 			out.Reasons = append(out.Reasons, ReasonSolverNumericalFailure)
+			for _, r := range fit.rows {
+				if r.Role == "measurement_quality_missing" {
+					out.Reasons = append(out.Reasons, ReasonAdmissionQualityGap)
+					break
+				}
+			}
 			return out
 		}
 		// Aged prior only: center = prior combination, range = prior spread
@@ -200,6 +214,14 @@ func FitEvolvedSpeed(evidence []CandidateEvidence, asOf time.Time, priors Evolve
 	sol, ok := evolvedSolveMAP(fit, priors, histMean, histSD)
 	if !ok {
 		out.Reasons = append(out.Reasons, ReasonSolverNumericalFailure)
+		// Disclose the grid actually used even on the failure path (the
+		// default estimate above assumes the full grid; #996 review nit).
+		if sol.gridResolution > 0 {
+			out.SolverKGridResolution = sol.gridResolution
+		}
+		if sol.gridCoarsened {
+			out.Limitations = append(out.Limitations, evolvedKGridCoarsenedLimitation)
+		}
 		return out
 	}
 	out.Method = evolvedSpeedMethodFit
@@ -214,6 +236,16 @@ func FitEvolvedSpeed(evidence []CandidateEvidence, asOf time.Time, priors Evolve
 	if sol.gridCoarsened {
 		out.Limitations = append(out.Limitations, evolvedKGridCoarsenedLimitation)
 	}
+	evolvedFinalizeSpeedReport(&out, fit, priors, histMean, histSD, sol)
+	return out
+}
+
+// evolvedFinalizeSpeedReport stamps the solved report: per-observation
+// margins/residuals, the RiegelK publication rule, the one-sided sensitivity
+// decomposition with the class-prior ceiling, the k-envelope range and the
+// prior-share annotation. Shared by the speed-only MAP and the #997 joint
+// re-solve so both paths publish identically structured diagnostics.
+func evolvedFinalizeSpeedReport(out *EvolvedSpeedReport, fit evolvedFit, priors EvolvedPriorSet, histMean, histSD *float64, sol evolvedSolution) bool {
 	evolvedStampSolved(fit, sol)
 	// RiegelK is published only when duration diversity actually identifies
 	// the exponent (same criteria as the contract's model_estimated rule).
@@ -229,7 +261,7 @@ func FitEvolvedSpeed(evidence []CandidateEvidence, asOf time.Time, priors Evolve
 	curvTotal, curvData, okCurv := evolvedCurvatures(fit, priors, histMean, histSD, sol)
 	if !okCurv {
 		out.Reasons = append(out.Reasons, ReasonSolverNumericalFailure)
-		return out
+		return false
 	}
 	priorCurv := 1 / (priors.LogV60.SD * priors.LogV60.SD)
 	if histMean != nil {
@@ -249,7 +281,7 @@ func FitEvolvedSpeed(evidence []CandidateEvidence, asOf time.Time, priors Evolve
 	curvEff := math.Min(curvTotal, curvData+priorCurv+classCurv)
 	if !(curvEff > 0) {
 		out.Reasons = append(out.Reasons, ReasonSolverNumericalFailure)
-		return out
+		return false
 	}
 	share := 1 - curvData/curvEff
 	if share < 0 {
@@ -263,12 +295,12 @@ func FitEvolvedSpeed(evidence []CandidateEvidence, asOf time.Time, priors Evolve
 	loEdge, hiEdge, okEdges := evolvedKEnvelope(fit, priors, histMean, histSD)
 	if !okEdges {
 		out.Reasons = append(out.Reasons, ReasonSolverNumericalFailure)
-		return out
+		return false
 	}
 	sd := math.Sqrt(1 / curvEff)
 	envLo := math.Min(sol.a, math.Min(loEdge, hiEdge))
 	envHi := math.Max(sol.a, math.Max(loEdge, hiEdge))
-	evolvedStampCenter(&out, priors, sol.a, envLo, envHi, sd)
+	evolvedStampCenter(out, priors, sol.a, envLo, envHi, sd)
 	if share >= evolvedPriorShareDominant {
 		// Recomputable dominance annotation: priors carry at least half the
 		// effective curvature, so identification is prior-limited even when
@@ -278,7 +310,7 @@ func FitEvolvedSpeed(evidence []CandidateEvidence, asOf time.Time, priors Evolve
 	if !sol.converged {
 		out.Limitations = append(out.Limitations, "solver_iteration_cap_reached")
 	}
-	return out
+	return true
 }
 
 func evolvedSpeedLimitations() []string {
@@ -315,6 +347,9 @@ type evolvedFit struct {
 	obs    []evolvedObsPoint
 	groups []evolvedGroup
 	rows   []EvolvedSpeedObservation
+	// hr carries the #997 joint HR term into the profile objective; nil keeps
+	// the pure-speed T2 behavior bit-for-bit.
+	hr *evolvedHRTerm
 }
 
 type evolvedInputDigest struct {
@@ -606,6 +641,17 @@ func evolvedProfile(fit *evolvedFit, priors EvolvedPriorSet, histMean, histSD *f
 			grad -= p.w * hourPsi(r) / p.sigma
 		}
 	}
+	// #997 joint HR term: the HR block of the SAME objective (data residuals
+	// always; HR prior constants only in the full-prior mode). Its dJ/da is
+	// the bounded channel through which HR evidence re-optimizes the shared
+	// capability under the F(1.0) bridge.
+	if fit.hr != nil {
+		jHR, gHR := fit.hr.evaluate(priors, a, withPriors)
+		j += jHR
+		if withPriors {
+			grad += gHR
+		}
+	}
 	if withPriors {
 		grad += (a - priors.LogV60.Mean) / (priors.LogV60.SD * priors.LogV60.SD)
 		if histMean != nil {
@@ -684,7 +730,9 @@ func evolvedSolveMAP(fit evolvedFit, priors EvolvedPriorSet, histMean, histSD *f
 	best.probes = totalProbes
 	best.gridResolution = fineStep
 	if !evolvedFinite(best.a) || !evolvedFinite(best.objective) {
-		return evolvedSolution{}, false
+		// Carry the actual grid diagnostics on the failure path so the
+		// report discloses the coarsened grid it really used (T2 review nit).
+		return best, false
 	}
 	return best, true
 }

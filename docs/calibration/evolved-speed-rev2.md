@@ -30,7 +30,8 @@
 - 输出：中心（m/s 与 s/km=1000/v60）、范围（先验支撑域 [ln1.5, ln8.5] 内钳制）、MAP k 与（可辨识时）RiegelK、剖面 sd、三档曲率与份额、先验/输入 IdentityHash、逐观测角色/权重/份额/余量/残差、求解探针数。
 - 数值失败（非有限、非正曲率、先验集损坏）= `unavailable` + `solver_numerical_failure`，中心为 nil，不伪称证据不足。
 
-## T3（#997）接缝
+## T3（#997）接缝——已落地
 
-- `OfflineResult.Evolved.HR`（`EvolvedHRReport`）是联合心率拟合的落点：T2 只填契约裁决状态与 `estimator_implementation_pending_t2` 原因，不产出任何 HR 中心；快照 `ThresholdHR=nil`。T3 在此装配 Hsteady/tau/漂移联合拟合（F(1.0)=0.92 桥接、v60 范围传播进 HR 范围、光电降权 0.5），替换 `evolvedHRSeam()`。
-- 速度侧的 `PosteriorSDLogV60`/范围是 T3 范围传播的输入；`FitEvolvedSpeed` 是纯 seam，T3 直接复用其报告。
+- `OfflineResult.Evolved.HR`（`EvolvedHRReport`）由 #997 的联合拟合（`evolved_hr.go` / [evolved-hr-rev2.md](evolved-hr-rev2.md)）填充：普通光电 HR 序列进入**同一**联合目标（速度剖面目标经 `evolvedFit.hr` 注入 HR 项与 dJ/da），HR→能力软反馈经 `joint_hr_refit` 标记与联合曲率披露；快照 `ThresholdHR` 携带联合中心。`estimator_implementation_pending_t2` 语义随实现落地移除。
+- 速度侧的 `PosteriorSDLogV60`/范围经 `speed_envelope_low/high_bpm` 条件重解传入 HR 范围（单向传播）；`FitEvolvedSpeed` 仍是纯 seam 且无 HR 时位级不变，求解/曲率/包络段抽为 `evolvedFinalizeSpeedReport` 供联合重解共享（行为不变，T2 测试全绿）。
+- #996 评审 P2 顺手清理落在本票：k 先验失败路径披露实际网格（`evolvedSolveMAP` 失败返回携带 `gridResolution/gridCoarsened`）、adjudication/准入质量口径差以 `all_admitted_rows_rejected_measurement_quality` 双原因显式化、metadata 派生标签替换硬编码、PriorOnce 数值断言（先验-only 中心=闭式精度加权组合）。

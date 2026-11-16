@@ -97,22 +97,26 @@ func TestEvolvedCandidateOrdinarySubmaximalTrainingYieldsFiniteEstimate(t *testi
 	if center <= 3.3 || center >= 6.0 {
 		t.Fatalf("center implausible for submaximal 3.0-3.6 m/s training: %v", center)
 	}
-	// HR is T3's seam: honestly unavailable with the pending reason, never a
-	// fabricated value.
+	// This fixture carries no HR samples at all: since #997 the HR report is
+	// honestly unavailable with the no-series/no-prior categorical reason
+	// (never a fabricated value, and never a pending-implementation marker).
 	if result.Evolved.HR == nil || result.Evolved.HR.State != calibration.StateUnavailable {
-		t.Fatalf("HR seam must be unavailable until #997: %+v", result.Evolved.HR)
+		t.Fatalf("HR must be unavailable without any HR input: %+v", result.Evolved.HR)
 	}
-	foundPending := false
+	foundNoSeries := false
 	for _, r := range result.Evolved.HR.Reasons {
-		if r == calibration.ReasonSolverPendingT2 {
-			foundPending = true
+		if r == calibration.ReasonNoHRSeriesOrPrior {
+			foundNoSeries = true
+		}
+		if strings.Contains(r, "pending") {
+			t.Fatalf("no pending-implementation reason may survive #997: %v", result.Evolved.HR.Reasons)
 		}
 	}
-	if !foundPending {
-		t.Fatalf("HR seam reason must name the pending implementation: %v", result.Evolved.HR.Reasons)
+	if !foundNoSeries {
+		t.Fatalf("unavailable HR must name the missing series/prior: %v", result.Evolved.HR.Reasons)
 	}
 	if result.Snapshot.ThresholdHR != nil {
-		t.Fatal("evolved T2 must not fabricate a threshold HR")
+		t.Fatal("evolved must not fabricate a threshold HR without any HR input")
 	}
 	// SummarizeSource starts filling the five states (schema stays 1).
 	summary := calibration.SummarizeSource(result)

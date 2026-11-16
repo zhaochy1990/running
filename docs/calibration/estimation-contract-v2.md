@@ -7,7 +7,7 @@
 - `algorithm_version=4` 不变；policy `supported_versions=[3,4]` 不变；生产全局 active 仍为 3；v3 冻结七文件（embed 哈希 + golden 双锁）与 v3 入口、结果、协议 v1、原最终留出一字不改。
 - 新旧 v4 输出以**算法修订标记**区分：历史 v4 行（PR#740 实现）`algorithm_revision=''`；演进后 v4 输出 `algorithm_revision='v4-rev2-2026-11'`（常量 `EvolvedCandidateAlgorithmRevision`）。身份三元组 `EvolvedCandidateIdentity() = ("evolved_joint_v2", "rev2-research-2026-11", "v4-rev2-2026-11")`。
 - 落点：`OfflineResult.AlgorithmRevision`（omitempty，旧策略为空保证 replay hash 不变）、`SourceSummary.AlgorithmRevision`、快照表新列（见 §7）、`EstimationContractDocument`。
-- 新策略入口 `StrategyEvolvedCandidate="evolved_candidate"` 仅存在于离线 seam（`EstimateOffline*`），生产 wiring（`NewCalibration`/active 路径）不接触。#996 起该入口装配速度域估计器（`evolved_speed.go`，见 [evolved-speed-rev2.md](evolved-speed-rev2.md)）：普通训练必出有限中心+范围；HR 联合拟合是显式 #997 接缝，在 #997 落地前 HR 五态输出 `unavailable` + `estimator_implementation_pending_t2`，不伪造数字；数值失败报 `solver_numerical_failure`，不伪称证据不足。
+- 新策略入口 `StrategyEvolvedCandidate="evolved_candidate"` 仅存在于离线 seam（`EstimateOffline*`），生产 wiring（`NewCalibration`/active 路径）不接触。#996 起该入口装配速度域估计器（`evolved_speed.go`，见 [evolved-speed-rev2.md](evolved-speed-rev2.md)）：普通训练必出有限中心+范围；#997 起同一入口联合装配个人心率动态拟合（`evolved_hr.go`，见 [evolved-hr-rev2.md](evolved-hr-rev2.md)）：普通光电 HR 序列即参与同一联合目标并输出 `HRsteady(v60)`（`model_estimated`），无序列但有合格生理先验输出 `prior_dominated`，两者皆无才 `unavailable`（必须报原因）；数值失败报 `solver_numerical_failure`，不伪称证据不足。
 
 ## 2. 观测模型与联合观测目标
 
@@ -34,6 +34,7 @@
 - **每条观测只用一次**：HR→相对强度→(a, delta) 软约束与速度→(a, k, delta) 似然在同一联合目标内联合计入，不得先用 HR 推配速再把结果当独立证据增信，也不得把由同一 HR/配速联合推得的阈值 HR 当作独立 LTHR 验证。
 - **范围传播**：v60 的估计范围必须传入 HRsteady(v60) 的范围（与 F(1.0)、Hmax、Hrest 的不确定度合成）；单向 `Hsteady(v)` 预测不冒充联合拟合。
 - **日效应边界**：日间温度/恢复/传感器偏移进入 `Hsteady` 的日效应项（先验 §5），不得全部吸收进能力 `a`；环境无校准数据时不套统一热修正（limitation 如实标注）。
+- **HR 序列的 Selected 语义（#997 实现注记，澄清 T1 评审 P2-1）**：`CandidateHRObservation.Selected` 只标记「已核验参考等级」（verified `field_30min_last20_v1` / `lab_lthr_report_v1` 且新鲜），**不是**普通序列进入联合目标的开关——普通训练 HR 序列按质量准入（时钟、覆盖、疑似步频锁定）进入联合目标，与其 Selected 值无关；`DeriveAdjudicationInput` 的 HR 事实（`HRSeriesValid`/`HRSensorOpticalOnly`/`HRMeasuredReference`）与该语义一致：序列有效性看观测值域与窗口，参考等级才看 Selected+tier。
 
 ### 2.4 v60 与 HRsteady(v60) 的参考条件（与实验室量的区别）
 
@@ -88,6 +89,9 @@
 - 只有 HR 无速度基准：F 桥接约束允许输出 `prior_dominated` HR，但 v60 范围必须完整传入（HR 范围不可能窄于 v60 范围 × F 斜率传播）。
 - 无 HR 序列且无合格生理先验 → HR `unavailable` + `no_HR_series_or_qualified_physiological_prior`（必须报原因，不用默认常数伪装）。
 - 只有弱历史先验 → `prior_dominated`（中心=老化先验，范围=先验 sd 展开），非 unavailable、非 v3 锁定值。
+- **合格生理先验的可执行定义（#997 实现注记）**：窗口内（≤180 天）至少一行域值合法（35–90 bpm）的静息心率日行（`HealthRow.RHR`）。宽研究先验本身（HRmax 188±12 / Hrest 55±10）**不**单独构成合格生理先验——那是人人皆有的缺省参数，不是该用户的测量来源；RHR 行是真实用户测量。有 RHR 行而无 HR 序列时输出 `prior_only_HR_estimate` 的 `prior_dominated`（中心 = RHR 经桥接组合，范围 = 先验 sd 展开）。
+- **序列全被质量门槛排除**：窗口内有域合法 HR 观测（adjudication 视为有效序列）但每条序列都被质量门（疑似步频锁定、时钟非递增）排除 → 仍输出先验组成估计，reason 附加 `HR_series_all_excluded_quality_gates`，不冒充 model_estimated，也不静默 unavailable。
+- **adjudication 与 fitter 准入的口径差（#996 评审 P2-2，#997 收口）**：契约 adjudication 不检查 MeasurementQuality，`FitEvolvedSpeed` 纯 seam 调用者可传入 quality=none 的 selected 连续行——此时全部收纳行被准入拒绝，报告 `solver_numerical_failure` + `all_admitted_rows_rejected_measurement_quality` 双原因（装配路径 `buildCandidateEvidence` 只产 High/Medium/Low，不可达；差异在契约文档显式声明而非沉默）。
 
 ## 7. 发布与修订标记契约（解决 (user,day,version) 覆盖冲突）
 
