@@ -106,7 +106,7 @@ This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 
 生产基线算法的 canonical owner 是 **`src/go/internal/compute/calibration/`**，持久化与版本 policy 由 **`src/go/internal/storage/`** 拥有。Python `src/stride_core/running_calibration/` 是冻结的遗留对照，仅迁移/测试使用；新增基线逻辑在 Go 原域扩展。本文取代 ADR 0015 中“先 Python 后 Go”的基线开发约定；冻结 v3 算法源码和 golden 不改。
 
-消费 HRmax、RHR、阈值、CP 与 zones 时，调用 `ReadEffectiveRunningCalibration(user, Shanghai cutoff day, active)` 一次读取同一 snapshot 的完整 bundle；Coach TS adapter 读取同一条 MySQL policy 并遵守同样规则。逐活动计算按活动上海日读，缺历史返回显式 unavailable，保留原派生值，随后由明确历史校准/重算任务处理。普通 GET / Coach 读取保持只读。
+消费 HRmax、RHR、阈值、CP 与 zones 时，调用 `ReadEffectiveRunningCalibration(user, Shanghai cutoff day, active)` 一次读取同一 snapshot 的完整 bundle；Coach TS adapter 读取同一条 MySQL policy 并遵守同样规则。#999 起该 resolver 先看该用户 active 的 `running_calibration_user_override`（pin (version, revision)，读时 revision 进 WHERE；缺失回落 global 并报 `override_snapshot_missing`；candidate 读不受影响）——Go 与 TS 是同一 policy 的仅有的两个实现，`calibrationPolicyContract.json` 钉住共享常量。单用户发布/回退/重算走内部 `user_calibration` job 或 `stride calibration user *` CLI（三门槛授权另行才有；全局 policy 与其他用户永不被这些入口改动）。逐活动计算按活动上海日读，缺历史返回显式 unavailable，保留原派生值，随后由明确历史校准/重算任务处理。普通 GET / Coach 读取保持只读。
 
 默认 active=3、candidate=4、fallback=3；只有首选版本缺行才回退，已有候选行但中心缺失仍保留候选语义。生产候选持久化默认关闭；隔离 preview 仅返回内存结果。校准发布、同日 ID 兼容、冻结派生来源、重算顺序与 rollback 边界，见 [ADR 0045](docs/adr/0045-calibration-policy-bundles-and-lineage.md)。改基线读写、版本、历史消费或来源解释时必须读该 ADR 和 [客户端解释契约](docs/calibration/client-explanation-contract.md)。
 

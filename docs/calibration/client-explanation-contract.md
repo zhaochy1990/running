@@ -12,7 +12,7 @@ v4 不开新顶层身份：演进后的 v4 输出在 `source.algorithm_revision`
 
 `source.speed.state` / `source.hr.state`（均可选，旧行缺省）是五态估计状态：`measured_reference`（verified 独立参考）、`model_estimated`（普通训练可辨识）、`prior_dominated`（先验主导、必须带有限宽范围）、`stale`（保留估计但支持证据超陈旧窗：speed 90 天 / HR 60 天）、`unavailable`（无有效输入且无合格先验/物理不可能/求解失败，必带原因）。仅缺全力标签或仅光电 HR **不是** unavailable 理由；范围一律称模型敏感性范围，不是概率区间。契约与判定次序见 [estimation-contract-v2.md](estimation-contract-v2.md)；T2 起填充，三端展示归 T6。
 
-- `selection` 表达 requested/effective version、policy revision、selected/fallback/unavailable 与原因。只在 preferred 快照行不存在时允许 fallback；已有中心为 null 的 constraints-only 行仍是有效选择，不能补入 v3 中心。
+- `selection` 表达 requested/effective version、policy revision、selected/fallback/unavailable 与原因。只在 preferred 快照行不存在时允许 fallback；已有中心为 null 的 constraints-only 行仍是有效选择，不能补入 v3 中心。#999 起若该用户有 active 的按 user override，`selection.override` 披露其 {revision, algorithm_version, algorithm_revision}：override pin 的身份优先，pin 行在 as-of 不存在时回落 global 并带 `override_snapshot_missing` 原因（override 仍披露）；无 override 时该字段缺失。
 - `source` 是有界 typed 摘要，含方法、目标语义、measurement quality、effort support、support、证据日期、数据截止日、独立活动/日支持、范围意义及降级原因。不输出原始 SourceJSON、观测曲线、坐标或 notes。
 - `source.speed.evidence_date` / `source.hr.evidence_date` 是实际支持证据的上海日期；`data_cutoff_day` / `as_of_date` 是输入截止日；`computed_at` 是执行时刻，三者不能互相替代。`event_date_retrospective` 不承诺严格历史当时可得性。
 - speed 范围原始单位为 m/s。服务端将高速度转换为 `fast` 配速、低速度转换为 `slow` 配速，整数秒/km 按 `apifmt.PacePerKmSec` 的 half-even 规则舍入；无侧保留 null。`bound_kind` 是 `two_sided` / `speed_lower_bound` / `speed_upper_bound` / `unavailable`。单侧速度下界对应配速慢侧上界，不能展示成双侧范围。这些是支持／敏感性范围，不代表 95% CI。

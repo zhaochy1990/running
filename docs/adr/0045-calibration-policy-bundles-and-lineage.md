@@ -23,6 +23,29 @@ with nil centers remains candidate; fields are never supplemented from v3.
 Selection exposes requested/effective version, revision, state and reason.
 A candidate-not-configured state is explicit. Future rows cannot fill history.
 
+Since #999 a per-user override (table `running_calibration_user_override`,
+one row per user, CAS `revision`, status active|revoked, actor/note audit)
+takes precedence for `active` reads of exactly that user: the active override
+pins one (algorithm_version, algorithm_revision) identity that is read with
+the revision in the WHERE clause, ahead of the global preferred and fallback
+versions. When the pinned identity has no snapshot at/below the cutoff the
+chain falls back to the global selection with reason
+`override_snapshot_missing` — a today-published revision never backfills
+history. Candidate reads never consult the override (they remain the explicit
+global comparison channel). The Go resolver (`ReadEffectiveRunningCalibration`)
+and the TS adapter (`MySqlDataProvider.getLatestRunningCalibration`) are the
+two implementations of this one policy; the shared
+`calibrationPolicyContract.json` pins the table/status/reason strings and a Go
+test locks them against drift. Revoking flips status to revoked under a
+revision CAS: reads immediately restore the global selection while the audit
+row survives; re-activating bumps from the stored revision. The single-user
+publish boundary is one transaction (`PublishUserCalibrationOverride`):
+snapshot + both zone tables + the override commit together or not at all, and
+an identical already-active identity is a no-op so a retried publish never
+bumps the CAS counter. A user override authorizes active-v4 derived writes for
+exactly that user (`checkActiveCalibrationWrite` honors
+`selection.override`); the incomplete-baseline gate still applies.
+
 ## Publication and historical identity
 
 Snapshot and both zone tables publish in one transaction. The natural key is
@@ -36,8 +59,9 @@ not know the column keep defaulting it to '' and stay on their previous
 identity. Revision values are validated ([A-Za-z0-9._-], <= 64 chars) before
 entering the key. Readers keep one connection and an explicit REPEATABLE READ
 readonly transaction for policy, snapshot and zones, and the same
-`as_of_date DESC, id DESC` deterministic tiebreak within a version; per-user
-revision preference arrives with #999. GORM AutoMigrate adds the column but
+`as_of_date DESC, id DESC` deterministic tiebreak within a version; the
+per-user revision preference landed with #999 (see Ownership and selection).
+GORM AutoMigrate adds the column but
 never widens an existing unique index, so `AutoMigrateWatch` additionally runs
 an idempotent `migrateRunningCalibrationRevisionIndex` step (rebuild
 `uq_run_cal` on the four columns when an older three-column variant is
@@ -166,6 +190,17 @@ Explicit recompute order is historical calibration snapshots → per-activity
 load/classification/zones → PMC from an explainable compatible seed or explicit
 zero anchor → daily ability and per-activity L1. No default production history
 recomputation is added. Existing plans and push records are not rewritten.
+#999 ships this order as the internal `user_calibration` job (actions
+publish/revoke/recompute) plus the operator CLI `stride calibration user
+preview|publish|revoke|recompute`: recompute refreshes the effective snapshot,
+then rebuilds load/zones/PMC/ability for a bounded window (default 30 days,
+cap 365) seeded at the window edge — never a zero-seed full-history rewrite,
+and each historical day resolves to its own as-of effective selection, so
+today's new thresholds never backfill history. Revoking the override is not a
+derived-data rollback; the executable recovery is revoke → recompute, which
+rebuilds the affected rows under the restored selection. The job is
+internal-only and part of no pipeline: it runs only when an authorized
+operator enqueues it for one target user (three-gate discipline).
 
 ## Verification
 

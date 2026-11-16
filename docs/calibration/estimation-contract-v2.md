@@ -106,7 +106,7 @@
 - **跨修订不覆写**：不同 revision = 不同行，历史 v4 行（''）对演进 v4（`v4-rev2-2026-11`）不可变。MySQL 测试 `calibration_revision_test.go` 锁定：跨修订两行并存且旧行值不变；同修订同键幂等覆写（同 ID）；读取 tiebreak 维持 `as_of_date DESC, id DESC`（确定性）；revision 字符集校验 `[A-Za-z0-9._-]{0,64}` 拒绝垃圾键值。
 - **迁移**：GORM AutoMigrate 只加列不改既有唯一索引，`AutoMigrateWatch` 内新增幂等步骤 `migrateRunningCalibrationRevisionIndex`（information_schema 检查 `uq_run_cal` 列集，缺 `algorithm_revision` 时 DROP+ADD 重建四列唯一索引；新库直接建四列索引，no-op）。部署序列（ADR 0045 更新）：先加列+重建索引 → 再部署新读写者；本文与代码均不执行生产迁移。
 - 派生表 lineage（五个 `calibration_provenance_json` 列）不受影响：fingerprint 序列化整快照（含 revision），provenance 冻结语义原样。
-- 按用户选择/预览/发布闭环、revision 偏好读取策略 = T5（#999）范围，本契约只保证键空间与历史不可变性。
+- 按用户选择/预览/发布闭环已随 T5（#999）落地（ADR 0045 更新版为权威）：按 user override 行 pin (version, revision) 且读时把 revision 写进 WHERE；active 读优先 override、缺失回落 global 并显式 `override_snapshot_missing`；candidate 读不看 override；发布=snapshot+zones+override 单事务（`PublishUserCalibrationOverride`）、同身份幂等、无效估计（unavailable/非有限中心）拒绝且零写入。
 
 ## 8. 三道门槛（分开验收，不得互替）
 
