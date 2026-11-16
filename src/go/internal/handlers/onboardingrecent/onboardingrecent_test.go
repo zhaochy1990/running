@@ -53,6 +53,31 @@ func openStore(t *testing.T) *storage.Store {
 	return st
 }
 
+// finishAnalysisStage walks the T05 analysis stage to completion: the sweep
+// armed and dispatched it after recent_raw terminalized; this helper persists
+// its job row as done (with the StageResult contract) and lets the sweep
+// finalize the session — the analysis executor itself is devops#1009's suite.
+func finishAnalysisStage(t *testing.T, st *storage.Store, svc *onboardingsync.Service, enq *fakeEnqueuer, sess *storage.OnboardingSyncSession) {
+	t.Helper()
+	ctx := context.Background()
+	spec, jobID := enq.specs[len(enq.specs)-1], enq.ids[len(enq.ids)-1]
+	from, to := sess.AnchorDay, sess.AnchorDay
+	res, _ := json.Marshal(onboardingsync.StageResult{
+		Stage: storage.OnboardingSyncStageRecentAnalysis, Status: "completed",
+		ScannedFrom: &from, ScannedTo: &to, ObservedFrom: &from, ObservedTo: &to,
+	})
+	now := time.Now().UTC()
+	aj := &job.Job{
+		ID: jobID, UserID: sess.UserID, Type: "onboarding_recent_analysis",
+		Status: job.StatusDone, InputJSON: spec.InputJSON, IdempotencyKey: spec.IdempotencyKey,
+		ResultJSON: string(res), CreatedAt: now, UpdatedAt: now, CompletedAt: &now,
+	}
+	if err := st.Jobs().Create(ctx, aj); err != nil {
+		t.Fatalf("analysis job create: %v", err)
+	}
+	svc.Sweep(ctx)
+}
+
 // fakeProvider drives the executor: it records which windows it was asked for
 // and answers from a scripted per-channel behavior.
 type fakeProvider struct {
@@ -436,6 +461,7 @@ func TestOnboardingRecent_EndToEndWithSweep(t *testing.T) {
 	svc, err := onboardingsync.New(onboardingsync.Config{
 		Store: st, Enqueuer: enq, Jobs: st, Runs: st,
 		JobType:            JobType,
+		AnalysisJobType:    "onboarding_recent_analysis",
 		LegacyFullPipeline: "onboarding",
 		Logger:             zap.NewNop(),
 	})
@@ -477,14 +503,17 @@ func TestOnboardingRecent_EndToEndWithSweep(t *testing.T) {
 	}
 
 	svc.Sweep(ctx)
+	finishAnalysisStage(t, st, svc, enq, sess)
 
 	got, err := st.GetOnboardingSyncSessionByID(ctx, sess.SessionID)
 	if err != nil || got.State != storage.OnboardingSyncStateCompleted {
 		t.Fatalf("session state = %s err=%v, want completed", got.State, err)
 	}
 	disp, _ := st.ListOnboardingSyncDispatches(ctx, sess.SessionID)
-	if disp[0].Status != storage.OnboardingSyncDispatchDone {
-		t.Fatalf("dispatch = %s, want done", disp[0].Status)
+	for _, d := range disp {
+		if d.Status != storage.OnboardingSyncDispatchDone {
+			t.Fatalf("dispatch %s = %s, want done", d.Stage, d.Status)
+		}
 	}
 	view, err := svc.View(ctx, uid)
 	if err != nil {
@@ -514,6 +543,7 @@ func TestOnboardingRecent_PartialRetryKeepsFullStageCoverage(t *testing.T) {
 	svc, err := onboardingsync.New(onboardingsync.Config{
 		Store: st, Enqueuer: enq, Jobs: st, Runs: st,
 		JobType:            JobType,
+		AnalysisJobType:    "onboarding_recent_analysis",
 		LegacyFullPipeline: "onboarding",
 		Logger:             zap.NewNop(),
 	})
@@ -610,6 +640,7 @@ func TestOnboardingRecent_PartialRetryKeepsFullStageCoverage(t *testing.T) {
 		t.Fatalf("job done: %v", err)
 	}
 	svc.Sweep(ctx)
+	finishAnalysisStage(t, st, svc, enq, sess)
 	cov, err := st.GetOnboardingSyncStageCoverage(ctx, sess.SessionID, storage.OnboardingSyncStageRecentRaw)
 	if err != nil || cov == nil {
 		t.Fatalf("coverage read: %v %v", cov, err)

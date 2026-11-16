@@ -25,6 +25,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/handlers/competitioncalendar"
 	"github.com/zhaochy1990/stride/internal/handlers/compute"
 	"github.com/zhaochy1990/stride/internal/handlers/homecitysync"
+	"github.com/zhaochy1990/stride/internal/handlers/onboardinganalysis"
 	"github.com/zhaochy1990/stride/internal/handlers/onboardingrecent"
 	racehandler "github.com/zhaochy1990/stride/internal/handlers/racedetection"
 	"github.com/zhaochy1990/stride/internal/handlers/routethumbnails"
@@ -313,6 +314,7 @@ func runWorker() error {
 	onboardingSyncSvc, err := onboardingsync.New(onboardingsync.Config{
 		Store: store, Enqueuer: enq, Jobs: store, Runs: store,
 		JobType:            catalog.JobTypeOnboardingRecentSync,
+		AnalysisJobType:    catalog.JobTypeOnboardingRecentAnalysis,
 		LegacyFullPipeline: catalog.PipelineOnboarding,
 		Logger:             log,
 	})
@@ -478,15 +480,32 @@ func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *stor
 		}
 		return recentRangeProvider{Provider: p, RecentSyncer: rs}, nil
 	}
-	reg.MustRegister(onboardingrecent.JobType, onboardingrecent.New(onboardingrecent.Config{
+	recentHandler := onboardingrecent.New(onboardingrecent.Config{
 		Resolve: recentResolve, Store: store, Sessions: store,
 		Jobs: watchJobs, LeaseTTL: isolation.LeaseTTL,
-	}))
+	})
+	reg.MustRegister(onboardingrecent.JobType, recentHandler)
 	reg.MustRegister(racehandler.JobType, racehandler.New(store, raceDetector, raceConcurrency))
 	reg.MustRegister(racehandler.BackfillJobType, racehandler.NewBackfill(store, raceDetector, raceConcurrency))
-	reg.MustRegister(compute.CalibrationJobType, compute.NewCalibration(store))
-	reg.MustRegister(compute.ComputeJobType, compute.NewCompute(store))
-	reg.MustRegister(compute.AbilityJobType, compute.NewAbility(store))
+	calibrationHandler := compute.NewCalibration(store)
+	computeHandler := compute.NewCompute(store)
+	abilityHandler := compute.NewAbility(store)
+	reg.MustRegister(compute.CalibrationJobType, calibrationHandler)
+	reg.MustRegister(compute.ComputeJobType, computeHandler)
+	reg.MustRegister(compute.AbilityJobType, abilityHandler)
+	// onboarding_recent_analysis (devops#1009, epic devops#1004 T05): the
+	// first-sync session's recent-analysis executor. It reuses the raw recent
+	// executor for its cross-midnight top-up and the canonical
+	// calibration/compute/ability handlers for the analysis itself — no second
+	// algorithm, no second tables. Always registered, like the raw executor:
+	// jobs only exist for sessions created under the rollout switch.
+	reg.MustRegister(onboardinganalysis.JobType, onboardinganalysis.New(onboardinganalysis.Config{
+		Store:       store,
+		RawStage:    recentHandler,
+		Calibration: calibrationHandler,
+		Compute:     computeHandler,
+		Ability:     abilityHandler,
+	}))
 	// The sync pipelines' shape step (devops#829): fills route_thumb_json only —
 	// it deliberately takes no COS client, nothing renders or uploads anymore.
 	reg.MustRegister(routethumbnails.ShapesJobType, routethumbnails.NewShapes(store))

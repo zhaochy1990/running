@@ -171,6 +171,7 @@ func TestOnboardingRecent_GarminEndToEndWithSweep(t *testing.T) {
 	svc, err := onboardingsync.New(onboardingsync.Config{
 		Store: st, Enqueuer: enq, Jobs: st, Runs: st,
 		JobType:            JobType,
+		AnalysisJobType:    "onboarding_recent_analysis",
 		LegacyFullPipeline: "onboarding",
 		Logger:             zap.NewNop(),
 	})
@@ -265,6 +266,7 @@ func TestOnboardingRecent_GarminEndToEndWithSweep(t *testing.T) {
 		t.Fatalf("job done: %v", err)
 	}
 	svc.Sweep(ctx)
+	finishAnalysisStage(t, st, svc, enq, sess)
 
 	got, err := st.GetOnboardingSyncSessionByID(ctx, sess.SessionID)
 	if err != nil || got.State != storage.OnboardingSyncStateCompletedWithGaps {

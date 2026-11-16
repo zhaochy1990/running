@@ -22,6 +22,7 @@ import (
 
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/storage"
+	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 )
 
 // memPublisher is the broker stand-in: it records published pointers so the
@@ -63,6 +64,11 @@ func (h *harness) sweepN(ctx context.Context, n int) {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
+	return newHarnessWithHorizon(t, 72*time.Hour)
+}
+
+func newHarnessWithHorizon(t *testing.T, horizon time.Duration) *harness {
+	t.Helper()
 	dsn := testDSN(t)
 	st, err := storage.Open(dsn)
 	if err != nil {
@@ -84,9 +90,13 @@ func newHarness(t *testing.T) *harness {
 	enq := job.NewStoreEnqueuer(st.Jobs(), pub)
 	svc, err := New(Config{
 		Store: st, Enqueuer: enq, Jobs: st, Runs: st,
-		JobType: "onboarding_recent_sync", LegacyFullPipeline: "onboarding",
-		DispatchGrace: 50 * time.Millisecond, SweepLimit: 50,
-		Logger: zap.NewNop(),
+		JobType:                "onboarding_recent_sync",
+		AnalysisJobType:        "onboarding_recent_analysis",
+		LegacyFullPipeline:     "onboarding",
+		DispatchGrace:          50 * time.Millisecond,
+		SweepLimit:             50,
+		AnalysisRefreshHorizon: horizon,
+		Logger:                 zap.NewNop(),
 	})
 	if err != nil {
 		t.Fatalf("service: %v", err)
@@ -290,9 +300,67 @@ func TestOnboardingSyncSweep_RecordsCompletionWithCoverage(t *testing.T) {
 
 	h.sweepN(ctx, 5)
 	disp2, _ := h.store.ListOnboardingSyncDispatches(ctx, sess.SessionID)
-	if disp2[0].Status != storage.OnboardingSyncDispatchDone {
-		t.Fatalf("dispatch = %s, want done", disp2[0].Status)
+	rawTerminal := false
+	for _, d := range disp2 {
+		if d.Stage == storage.OnboardingSyncStageRecentRaw && d.Status == storage.OnboardingSyncDispatchDone {
+			rawTerminal = true
+		}
 	}
+	if !rawTerminal {
+		t.Fatalf("dispatches = %+v, want recent_raw done", disp2)
+	}
+	// T05 (devops#1009): raw completion arms the analysis stage — the session
+	// is NOT terminal until the analysis dispatch also terminalizes.
+	analysis, err := h.store.GetOnboardingSyncStageCoverage(ctx, sess.SessionID, storage.OnboardingSyncStageRecentAnalysis)
+	if err != nil || analysis == nil {
+		t.Fatalf("analysis coverage = %+v err=%v, want armed by the sweep", analysis, err)
+	}
+	var analysisJobID string
+	for _, d := range disp2 {
+		if d.Stage == storage.OnboardingSyncStageRecentAnalysis {
+			if d.Status != storage.OnboardingSyncDispatchDispatched || d.JobID == nil {
+				t.Fatalf("analysis dispatch = %+v, want dispatched", d)
+			}
+			analysisJobID = *d.JobID
+		}
+	}
+	// The analysis executor terminal-succeeds: its StageResult plus the
+	// published result row (the handler package owns that write in production).
+	aj, _ := h.store.JobByID(ctx, analysisJobID)
+	aFrom, aTo := obsFrom, to
+	aResult := StageResult{
+		Stage: storage.OnboardingSyncStageRecentAnalysis, Status: "completed",
+		ScannedFrom: &aFrom, ScannedTo: &aTo, ObservedFrom: &aFrom, ObservedTo: &aTo,
+	}
+	ab, _ := json.Marshal(aResult)
+	aj.Status = job.StatusDone
+	aj.ResultJSON = string(ab)
+	aj.CompletedAt = &now
+	if err := h.store.Jobs().Update(ctx, aj); err != nil {
+		t.Fatalf("analysis job update: %v", err)
+	}
+	domains := `{"calibration":{"status":"ready"},"load":{"status":"ready"},"zones":{"status":"ready"},"ability":{"status":"ready"}}`
+	// The row's fingerprint must equal the CURRENT inputs' fingerprint, or
+	// the refresh sweep would immediately requeue the analysis (devops#1009).
+	fromDay := timefmt.ShanghaiToday().AddDate(0, 0, -AnalysisDigestLookbackDays).Format("2006-01-02")
+	digest, err := h.store.OnboardingAnalysisDigest(ctx, uid, fromDay, to)
+	if err != nil {
+		t.Fatalf("digest: %v", err)
+	}
+	policy, err := h.store.CalibrationPolicy(ctx)
+	if err != nil {
+		t.Fatalf("policy: %v", err)
+	}
+	fp := storage.AnalysisFingerprint(sess.AnchorDay, to, sess.BindingRevision, policy, digest)
+	if err := h.store.UpsertOnboardingRecentAnalysis(ctx, &storage.OnboardingRecentAnalysis{
+		SessionID: sess.SessionID, UserID: uid, AsOfDay: to, AnchorDay: sess.AnchorDay,
+		InputFingerprint: fp, Status: storage.OnboardingAnalysisStatusReady,
+		DomainsJSON: &domains, ComputedAt: now,
+	}); err != nil {
+		t.Fatalf("analysis row: %v", err)
+	}
+
+	h.sweepN(ctx, 5)
 	got, err := h.store.GetOnboardingSyncSessionByID(ctx, sess.SessionID)
 	if err != nil || got.State != storage.OnboardingSyncStateCompleted {
 		t.Fatalf("session state = %s err=%v, want completed", got.State, err)
@@ -304,6 +372,12 @@ func TestOnboardingSyncSweep_RecordsCompletionWithCoverage(t *testing.T) {
 	if view.Readiness.RecentData != ReadinessReady {
 		t.Errorf("recent_data = %s, want ready (observed covers target)", view.Readiness.RecentData)
 	}
+	if view.Readiness.RecentAnalysis != ReadinessReady {
+		t.Errorf("recent_analysis = %s, want ready", view.Readiness.RecentAnalysis)
+	}
+	if view.RecentAnalysis == nil || view.RecentAnalysis.AsOfDay != to || view.RecentAnalysis.Refreshing {
+		t.Errorf("recent_analysis detail = %+v, want as-of %s not refreshing", view.RecentAnalysis, to)
+	}
 	if view.Readiness.ShellReady != true {
 		t.Error("shell_ready lost")
 	}
@@ -311,8 +385,8 @@ func TestOnboardingSyncSweep_RecordsCompletionWithCoverage(t *testing.T) {
 	if _, err := h.svc.CreateOrClaim(ctx, uid, "coros"); err != nil {
 		t.Fatalf("re-enter completed: %v", err)
 	}
-	if n := h.pub.countFor(uid); n != 1 {
-		t.Errorf("jobs enqueued after re-enter = %d, want 1", n)
+	if n := h.pub.countFor(uid); n != 2 {
+		t.Errorf("jobs enqueued after re-enter = %d, want 2 (raw + analysis)", n)
 	}
 }
 
@@ -534,9 +608,12 @@ func TestOnboardingSyncView_NotReadyWithoutObservation(t *testing.T) {
 	if view.Readiness.RecentData == ReadinessReady || view.Readiness.RecentData == ReadinessReadyWithGaps {
 		t.Fatalf("recent_data = %s with no observation, want not ready", view.Readiness.RecentData)
 	}
-	// Analysis / historical / auxiliary stay not_started until their tickets.
-	if view.Readiness.RecentAnalysis != ReadinessNotStarted ||
-		view.Readiness.HistoricalData != ReadinessNotStarted ||
+	// The raw completion armed the analysis stage (its dispatch is pending),
+	// while historical / auxiliary stay not_started until their tickets.
+	if view.Readiness.RecentAnalysis != ReadinessRunning {
+		t.Errorf("recent_analysis = %s, want running (armed and dispatched, not yet landed)", view.Readiness.RecentAnalysis)
+	}
+	if view.Readiness.HistoricalData != ReadinessNotStarted ||
 		view.Readiness.HistoricalAnalysis != ReadinessNotStarted ||
 		view.Readiness.Auxiliary != ReadinessNotStarted {
 		t.Errorf("later-stage readiness = %+v, want all not_started", view.Readiness)

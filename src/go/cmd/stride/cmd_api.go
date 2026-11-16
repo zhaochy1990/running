@@ -303,6 +303,7 @@ func runAPI() error {
 	onboardingSyncSvc, err := onboardingsync.New(onboardingsync.Config{
 		Store: store, Enqueuer: enq, Jobs: store, Runs: store,
 		JobType:            catalog.JobTypeOnboardingRecentSync,
+		AnalysisJobType:    catalog.JobTypeOnboardingRecentAnalysis,
 		LegacyFullPipeline: catalog.PipelineOnboarding,
 		Logger:             log,
 	})
