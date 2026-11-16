@@ -329,7 +329,17 @@ type API struct {
 // are per-user allow-lists (membership = flag true). Mirrors the Python
 // stride_server config; kept in sync manually during coexistence (ADR 0013).
 type APIFeatures struct {
-	SyncDataAtOnboarding      bool     `mapstructure:"sync-data-at-onboarding"`
+	SyncDataAtOnboarding bool `mapstructure:"sync-data-at-onboarding"`
+	// OnboardingSyncSession is the NEW first-sync session rollout switch
+	// (devops#1006, epic devops#1004): it gates the POST/GET
+	// /api/users/me/onboarding/sync entry points TOGETHER with the
+	// sync-data-at-onboarding master switch (both must be on; turning the
+	// master off keeps the original disable semantics). DEFAULT OFF. Rollout
+	// preconditions: the write-isolation fleet gate (devops#1005) enabled
+	// with old fixed-key writers drained, and workers carrying the
+	// onboarding_recent_sync executor (T03/T04) deployed — a dispatched
+	// session stage with no handler poisons.
+	OnboardingSyncSession     bool     `mapstructure:"onboarding-sync-session"`
 	CoachAgentWeeklyPlanUsers []string `mapstructure:"coach-agent-weekly-plan-users"`
 	CoachChatUsers            []string `mapstructure:"coach-chat-users"`
 	CoachChatDebugUsers       []string `mapstructure:"coach-chat-debug-users"`

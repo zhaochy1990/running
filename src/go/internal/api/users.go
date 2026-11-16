@@ -104,7 +104,13 @@ type AccountDeleter interface {
 // FeatureConfig holds the config-driven feature flags echoed in the profile
 // response. The coach-* maps are user-id allow-lists (membership = flag true).
 type FeatureConfig struct {
-	SyncDataAtOnboarding      bool
+	SyncDataAtOnboarding bool
+	// OnboardingSyncSession is the first-sync session rollout switch
+	// (devops#1006): gates the POST/GET /api/users/me/onboarding/sync entry
+	// points together with SyncDataAtOnboarding. Server-side gating only —
+	// it is deliberately NOT echoed in the profile response (the client
+	// surface lands with the T10-T12 tickets).
+	OnboardingSyncSession     bool
 	CoachAgentWeeklyPlanUsers map[string]bool
 	CoachChatUsers            map[string]bool
 	CoachChatDebugUsers       map[string]bool
