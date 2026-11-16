@@ -54,6 +54,12 @@ func TestDeleteUserData_CoversEveryUserOwnedTable(t *testing.T) {
 		"pipeline_runs": "created_by provenance",
 		// The audit trail is the record OF the deletion and must survive it.
 		"user_deletion_audit": "deletion audit trail",
+		// The explicit historical-recompute run rows are deleted by a
+		// presence-guarded user_id block in DeleteUserData (schema-optional
+		// table; both `stride api` and `stride worker` migrate it) rather than
+		// the plain model loop, so partial schemas do not break account
+		// erasure.
+		"historical_recompute_runs": "guarded user_id delete",
 	}
 
 	covered := map[string]bool{}

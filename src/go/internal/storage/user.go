@@ -303,10 +303,6 @@ var userOwnedDeletionModels = []any{
 	// (with its identity pointers), any execution lease, and stranded upload
 	// intents are user-owned rows erased with the account.
 	&WatchBindingState{}, &WatchExecLease{}, &TSUploadIntent{},
-	// Explicit historical-calibration recompute runs (devops#1011): the run
-	// rows are user-owned; the day ledger has no user_id and is swept through
-	// the run subquery in DeleteUserData (same shape as feedback_replies).
-	&HistoricalRecomputeRun{},
 }
 
 // deletionTableName resolves a deletion model's table name for error
@@ -354,13 +350,23 @@ func (s *Store) DeleteUserData(ctx context.Context, userID string) error {
 			return fmt.Errorf("storage: delete feedback replies: %w", err)
 		}
 
-		// historical_recompute_days has no user_id column (run-scoped ledger):
-		// sweep it through the run subquery BEFORE the run delete empties it.
-		if err := tx.Exec(
-			"DELETE FROM historical_recompute_days WHERE run_id IN (SELECT run_id FROM historical_recompute_runs WHERE user_id = ?)",
-			uid,
-		).Error; err != nil {
-			return fmt.Errorf("storage: delete historical recompute day ledger: %w", err)
+		// Explicit historical-calibration recompute tables (devops#1011): run
+		// rows are user-owned; the day ledger is run-scoped (no user_id) and
+		// is swept through the run subquery BEFORE the run delete empties it.
+		// Both are guarded on presence: `stride api` (this sweep's caller)
+		// and `stride worker` migrate them, but partial test schemas and a
+		// pre-migration deployment may not carry them — and erasure must not
+		// fail on tables that cannot hold rows.
+		if tx.Migrator().HasTable(&HistoricalRecomputeRun{}) {
+			if err := tx.Exec(
+				"DELETE FROM historical_recompute_days WHERE run_id IN (SELECT run_id FROM historical_recompute_runs WHERE user_id = ?)",
+				uid,
+			).Error; err != nil {
+				return fmt.Errorf("storage: delete historical recompute day ledger: %w", err)
+			}
+			if err := tx.Where("user_id = ?", uid).Delete(&HistoricalRecomputeRun{}).Error; err != nil {
+				return fmt.Errorf("storage: delete user data from historical_recompute_runs: %w", err)
+			}
 		}
 
 		// team_likes has no user_id column either. A user is referenced in two
