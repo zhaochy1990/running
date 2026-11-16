@@ -7,7 +7,7 @@ import {
   type WatchProvider,
 } from '../../services/watch';
 import { ApiError } from '../../services/request';
-import { ensureSync } from '../../services/onboarding';
+import { triggerSyncAfterBind } from '../../services/onboarding';
 import { userStore } from '../../store/index';
 import { fmtShanghaiMdHm } from '../../utils/format';
 import { sanitizeRedirect } from '../../utils/redirect';
@@ -207,12 +207,13 @@ Page<WatchPageData, WatchPageHandlers>({
       await this.fetchWatch();
       // 绑表后触发同步 —— 服务端的 watchLogin 自己不触发（它只置 watch_ready），
       // 所以这一步得由客户端补上；默认路径随后去 onboarding 页看进度。
-      // 这里不等 ensureSync 的结果再跳：绑表是用户可见动作，不值得为它加一次往返延迟 ——
-      // onboarding 页自己的 onShow 会重算落点并接着续跑（带 redirect 时用户直接回
-      // 来源页，同步在后台继续，不再有页面盯着它，失败仅 console 记录）。
+      // 这里不等触发结果再跳：绑表是用户可见动作，不值得为它加一次往返延迟 ——
+      // 旧路径 onboarding 页自己的 onShow 会重算落点并接着续跑；session 路径
+      // POST 返回即已可靠持久化（devops#1015），后台由服务端 worker 推进（带
+      // redirect 时用户直接回来源页，不再有页面盯着它，失败仅 console 记录）。
       const userId = userStore.getState().user?.id;
       if (userId) {
-        void ensureSync(userId).catch((err) => {
+        void triggerSyncAfterBind(userId).catch((err) => {
           console.warn('[onboarding] 绑表后触发同步失败（同步页会重试）:', err);
         });
         // 带 redirect 进来（issue #864）：绑定成功回来源页（如抽奖活动页），
