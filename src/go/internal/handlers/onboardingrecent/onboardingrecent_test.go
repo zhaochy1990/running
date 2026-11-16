@@ -613,8 +613,15 @@ func TestOnboardingRecent_PartialRetryKeepsFullStageCoverage(t *testing.T) {
 
 	// The retry job's stage result must merge the reused channels' windows —
 	// not just the dashboard day the fresh report carries. The full stage
-	// window is the target window the claim created the items for.
-	wantFrom, wantTo := "2026-08-19", "2026-11-16" // 90 Shanghai days back from the 2026-11-16 anchor
+	// window is the target window the claim created the items for, derived
+	// from the SESSION's anchor (CreateOrClaim anchors on today's Shanghai
+	// day — hardcoding the date made the test flake across midnight).
+	anchor, err := time.Parse("2006-01-02", sess.AnchorDay)
+	if err != nil {
+		t.Fatalf("anchor day: %v", err)
+	}
+	wantTo := sess.AnchorDay
+	wantFrom := anchor.AddDate(0, 0, -89).Format("2006-01-02")
 	var sr onboardingsync.StageResult
 	if err := json.Unmarshal([]byte(res), &sr); err != nil {
 		t.Fatalf("result parse: %v", err)
