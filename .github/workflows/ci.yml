@@ -260,6 +260,18 @@ jobs:
           go test -p 1 ./internal/storage/... ./internal/onboardingsync/...
           -run 'TestOnboardingSync'
           -count=1 -v
+      # The COROS recent-range executor (devops#1004 T04, devops#1008) drives
+      # the real session/work-item/lease state machines over real MySQL: the
+      # credential-reuse retry semantics, the fenced publish session (lease
+      # release + stale-write refusal), and the create->dispatch->execute->
+      # sweep->readiness end-to-end path (AC5).
+      - name: Onboarding recent-range executor tests (MySQL)
+        env:
+          STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
+        run: >-
+          go test ./internal/handlers/onboardingrecent/...
+          -run 'TestOnboardingRecent'
+          -count=1 -v
       # The provider_events unique index is the webhook push idempotency rule
       # (devops#287) — SQL-level, so only a real MySQL exercises it.
       - name: Provider-event storage tests (MySQL)

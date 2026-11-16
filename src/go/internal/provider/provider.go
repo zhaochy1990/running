@@ -203,6 +203,97 @@ func ParseSyncOptions(input string) (SyncOptions, error) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Recent-range sync (onboarding first-sync stage, epic devops#1004 T03/T04)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// DayWindow is an inclusive natural-day range (YYYY-MM-DD, Shanghai calendar).
+type DayWindow struct {
+	From string
+	To   string
+}
+
+// Recent-range channel outcome statuses. A channel that reached no terminal
+// outcome is simply absent from the report — the executor treats absence as
+// "still failed/unfinished", never as success.
+const (
+	// RangeChannelDone: the channel's complete fetch succeeded over its window.
+	RangeChannelDone = "done"
+	// RangeChannelGap: the fetch finished, but part of the window is
+	// permanently unobtainable at the provider — recorded, never faked as
+	// success (completed_with_gaps ≠ 完整覆盖).
+	RangeChannelGap = "gap"
+)
+
+// RangeGap is one permanently-unobtainable day range with its reason.
+type RangeGap struct {
+	From   string `json:"from"`
+	To     string `json:"to"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// RangeChannelReport is one data channel's terminal outcome. Scanned* is what
+// the scan walked; Observed* is the window data actually exists for (nil when
+// nothing was observed); Credential is the complete-fetch proof a retry reuses
+// instead of re-fetching (opaque to the caller, written only on done/gap).
+type RangeChannelReport struct {
+	// Status is one of RangeChannelDone / RangeChannelGap.
+	Status       string
+	ScannedFrom  string
+	ScannedTo    string
+	ObservedFrom *string
+	ObservedTo   *string
+	Gaps         []RangeGap
+	Credential   string
+	// Count is a display-only tally (activities written / health days
+	// refreshed / dashboard row written).
+	Count int
+}
+
+// RecentRangeOptions selects which channels a recent-range sync runs, with
+// each channel's server-chosen Shanghai-day window. A nil window skips the
+// channel. The provider may legitimately return MORE data than the window
+// (e.g. a batch health payload covering 90 days against a 28-day target): the
+// extra rows are kept and the report's observed window reflects the actual
+// coverage — never trimmed to the target, never widened beyond what the
+// vendor really returned.
+//
+// Jobs is the detail-fetch concurrency, an infra knob supplied by the caller
+// (CLI/worker) exactly like SyncOptions.Jobs — never client-controlled.
+type RecentRangeOptions struct {
+	Activities *DayWindow
+	Health     *DayWindow
+	Dashboard  *DayWindow
+	Jobs       int
+}
+
+// RecentRangeReport carries the terminal outcomes of a recent-range sync.
+// Only channels that reached a terminal outcome appear; the returned error
+// (if any) explains the first channel that failed non-permanently-skipping.
+type RecentRangeReport struct {
+	Activities *RangeChannelReport
+	Health     *RangeChannelReport
+	Dashboard  *RangeChannelReport
+}
+
+// RecentSyncer is the optional adapter contract the onboarding recent-stage
+// executor consumes (devops#1004 T03/T04). It is deliberately separate from
+// Provider/SyncUser: the full/incremental depth axis cannot express "scan this
+// exact window, do not stop at already-known activities, and report what was
+// actually covered".
+type RecentSyncer interface {
+	// SyncRecentRange fetches the requested channels over their windows and
+	// persists through the adapter's storage.Writer exactly like SyncUser
+	// (ordered commits; a publish session in ctx fences activity writes).
+	// Retryable errors (network, throttling, auth expiry surfaced by the
+	// client) return the error; channels that already reached a terminal
+	// outcome before the failure stay in the report so the caller can record
+	// their credentials. Permanent provider rejections (auth, invalid
+	// request) classify via IsAuthError / IsInvalidRequest as everywhere
+	// else.
+	SyncRecentRange(ctx context.Context, user string, opts RecentRangeOptions, progress ProgressCallback) (RecentRangeReport, error)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Capabilities & provider info
 // ─────────────────────────────────────────────────────────────────────────────
 

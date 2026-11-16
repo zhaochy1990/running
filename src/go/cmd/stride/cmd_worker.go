@@ -25,6 +25,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/handlers/competitioncalendar"
 	"github.com/zhaochy1990/stride/internal/handlers/compute"
 	"github.com/zhaochy1990/stride/internal/handlers/homecitysync"
+	"github.com/zhaochy1990/stride/internal/handlers/onboardingrecent"
 	racehandler "github.com/zhaochy1990/stride/internal/handlers/racedetection"
 	"github.com/zhaochy1990/stride/internal/handlers/routethumbnails"
 	"github.com/zhaochy1990/stride/internal/handlers/watchsync"
@@ -34,6 +35,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/mq"
 	"github.com/zhaochy1990/stride/internal/onboardingsync"
 	"github.com/zhaochy1990/stride/internal/pipeline"
+	"github.com/zhaochy1990/stride/internal/provider"
 	"github.com/zhaochy1990/stride/internal/racedetection"
 	"github.com/zhaochy1990/stride/internal/registry"
 	"github.com/zhaochy1990/stride/internal/storage"
@@ -455,6 +457,30 @@ func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *stor
 		syncHandler = watchsync.New(resolve, store, watchJobs)
 	}
 	reg.MustRegister(watchsync.JobType, syncHandler)
+	// onboarding_recent_sync (devops#1008, epic devops#1004 T04): the
+	// first-sync session's recent-stage executor. Always registered — jobs are
+	// only dispatched for sessions created under the
+	// api.features.onboarding-sync-session rollout switch, and a provider
+	// without the recent-range contract (Garmin until its T03 executor ships)
+	// fails the job PERMANENTLY instead of poisoning the retry queue. Unlike
+	// watch_sync, the write-isolation session is unconditional here: the
+	// onboarding path is new (no legacy fixed-key writers to drain behind it),
+	// so every activity publish is fenced from day one.
+	recentResolve := func(ctx context.Context, user string) (onboardingrecent.Provider, error) {
+		p, err := resolve(ctx, user)
+		if err != nil {
+			return nil, err
+		}
+		rs, ok := p.(provider.RecentSyncer)
+		if !ok {
+			return nil, onboardingrecent.ErrProviderNotRangeCapable
+		}
+		return recentRangeProvider{Provider: p, RecentSyncer: rs}, nil
+	}
+	reg.MustRegister(onboardingrecent.JobType, onboardingrecent.New(onboardingrecent.Config{
+		Resolve: recentResolve, Store: store, Sessions: store,
+		Jobs: watchJobs, LeaseTTL: isolation.LeaseTTL,
+	}))
 	reg.MustRegister(racehandler.JobType, racehandler.New(store, raceDetector, raceConcurrency))
 	reg.MustRegister(racehandler.BackfillJobType, racehandler.NewBackfill(store, raceDetector, raceConcurrency))
 	reg.MustRegister(compute.CalibrationJobType, compute.NewCalibration(store))
@@ -487,4 +513,13 @@ func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *stor
 	// refund their points. The in-process ticker below drives it on a cadence;
 	// the registration keeps it operator-triggerable via the internal jobs API.
 	reg.MustRegister(wxpayclose.JobType, wxpayclose.New(store, wxClient, wxpayclose.DefaultAge))
+}
+
+// recentRangeProvider pairs the resolved watch provider with its recent-range
+// contract (devops#1008): the watch-sync resolver returns the provider slice
+// watch_sync needs, and this adapter adds the SyncRecentRange half the
+// onboarding recent-stage executor dispatches through.
+type recentRangeProvider struct {
+	watchsync.Provider
+	provider.RecentSyncer
 }

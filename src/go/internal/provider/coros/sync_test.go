@@ -3,6 +3,7 @@ package coros
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -24,6 +25,9 @@ type fakeWriter struct {
 	meta                map[string]string
 	watchWorkouts       []storage.WatchWorkoutInput
 	watchWindow         [2]string
+	// failUpsertOn, when set, makes UpsertActivity fail where it returns true
+	// (fault injection for the ordered-commit tests).
+	failUpsertOn func(labelID string) bool
 }
 
 func newFakeWriter() *fakeWriter {
@@ -41,6 +45,9 @@ func (f *fakeWriter) ActivityExists(_ context.Context, _, labelID string) (bool,
 	return ok, nil
 }
 func (f *fakeWriter) UpsertActivity(_ context.Context, a *storage.Activity, _ []storage.Lap, _ []storage.TimeseriesPoint, _ []storage.ActivityWatchZone) error {
+	if f.failUpsertOn != nil && f.failUpsertOn(a.LabelID) {
+		return fmt.Errorf("injected store failure for %s", a.LabelID)
+	}
 	f.activities[a.LabelID] = a
 	return nil
 }
