@@ -919,8 +919,10 @@ func evolvedHRPriorFractions(priors EvolvedPriorSet) []float64 {
 // priors, given knots/tau/day/drift. The prediction is affine in the pair, so
 // each iteration is a closed 2x2 solve; iterations are capped deterministically.
 func evolvedHRLevelSolve(term *evolvedHRTerm, priors EvolvedPriorSet, theta *evolvedHRTheta, a float64) {
+	// The affine coefficients depend on (a, tau, knots, day, drift) only, so
+	// they are computed once and the IRLS iterates the closed 2x2 system.
+	coeffs := term.linearCoefficients(priors, theta, a)
 	for it := 0; it < evolvedHRIRLSIters; it++ {
-		coeffs := term.linearCoefficients(priors, theta, a)
 		var aa, bb, cc, dd, ee float64
 		invS2 := 1 / (evolvedHRSigmaBpm * evolvedHRSigmaBpm)
 		for _, c := range coeffs {
@@ -1068,15 +1070,55 @@ func evolvedHRBlockObjective(term *evolvedHRTerm, priors EvolvedPriorSet, theta 
 // Joint alternation and report stamping
 // ---------------------------------------------------------------------------
 
+// evolvedSolveJointK re-solves (a, deltas) of the joint objective on a local
+// deterministic k refinement around the speed-MAP exponent: the HR block has
+// no k dependence, so the joint exponent can only drift by the small a-shift
+// coupling, and the k uncertainty is already carried by the frozen-edge
+// envelope. Coarse +/-0.006 at 0.001 then fine at the coarse resolution.
+func evolvedSolveJointK(fit *evolvedFit, priors EvolvedPriorSet, histMean, histSD *float64, kCenter float64) (evolvedSolution, bool) {
+	coarseStep := 0.001
+	half := 0.006
+	best := evolvedSolution{k: riegelKMin, objective: math.Inf(1)}
+	probes := 0
+	evalK := func(k float64) {
+		if k < riegelKMin || k > riegelKMax {
+			return
+		}
+		sol := evolvedSolveAtK(fit, priors, histMean, histSD, k)
+		probes += sol.probes
+		if sol.objective < best.objective {
+			best = sol
+		}
+	}
+	lo := math.Max(riegelKMin, kCenter-half)
+	for k := lo; k <= math.Min(riegelKMax, kCenter+half)+1e-12; k += coarseStep {
+		evalK(k)
+	}
+	if !evolvedFinite(best.objective) {
+		return best, false
+	}
+	for k := math.Max(riegelKMin, best.k-coarseStep); k <= math.Min(riegelKMax, best.k+coarseStep)+1e-12; k += coarseStep / (evolvedKFineSteps/2 + 1) {
+		evalK(k)
+	}
+	best.probes = probes
+	best.gridResolution = coarseStep / (evolvedKFineSteps/2 + 1)
+	if !evolvedFinite(best.a) || !evolvedFinite(best.objective) {
+		return best, false
+	}
+	return best, true
+}
+
 // evolvedHRJointSolve stages the ONE joint objective: stage zero is the exact
-// T2 speed MAP (fit.hr still nil), then the HR theta block and the (a,k,delta)
-// block alternate through the shared profile objective until the capability
-// anchor converges. It returns the jointly re-stamped speed report (the
-// HR -> capability soft feedback) plus the final theta.
+// T2 speed MAP (already computed by FitEvolvedSpeed), the HR theta block is
+// fitted conditional on that capability anchor, and the (a,k,delta) block is
+// then re-optimized with the HR term attached (local deterministic k
+// refinement around the speed-MAP exponent) until the anchor converges. It
+// returns the jointly re-stamped speed report (the HR -> capability soft
+// feedback) plus the final theta.
 func evolvedHRJointSolve(evidence []CandidateEvidence, asOf time.Time, priors EvolvedPriorSet, historical *HistoricalCapabilityPrior, term *evolvedHRTerm, speedOut EvolvedSpeedReport, restPrior *float64) (EvolvedSpeedReport, evolvedHRTheta, int, float64, bool) {
 	fit := evolvedAdmitObservations(evidence, asOf, priors)
 	histMean, histSD := evolvedHistoricalPriorTerms(priors, historical)
-	speedAnchor, thetaAnchor := priors.LogV60.Mean, priors.LogV60.Mean
+	speedAnchor := priors.LogV60.Mean
 	speedless := speedOut.CenterMps == nil
 	if !speedless {
 		speedAnchor = math.Log(*speedOut.CenterMps)
@@ -1088,7 +1130,7 @@ func evolvedHRJointSolve(evidence []CandidateEvidence, asOf time.Time, priors Ev
 		fit.hr = term
 		var last evolvedSolution
 		for r := 0; r < evolvedHRJointRounds; r++ {
-			sol, ok := evolvedSolveMAP(fit, priors, histMean, histSD)
+			sol, ok := evolvedSolveJointK(&fit, priors, histMean, histSD, speedOut.MapK)
 			rounds++
 			if !ok {
 				if r == 0 {
@@ -1142,10 +1184,9 @@ func evolvedHRJointSolve(evidence []CandidateEvidence, asOf time.Time, priors Ev
 		}
 		speedOut = out
 	} else {
-		// No speed basis: the capability anchor stays the population prior and
-		// is NOT re-optimized on HR alone; the v60 prior spread propagates
-		// into the HR range instead (contract section 6).
-		speedAnchor = thetaAnchor
+		// No speed basis: the capability anchor stays the population prior
+		// (set above) and is NOT re-optimized on HR alone; the v60 prior
+		// spread propagates into the HR range instead (contract section 6).
 	}
 	hrJ, _ := term.evaluate(priors, speedAnchor, true)
 	return speedOut, theta, rounds, hrJ, true

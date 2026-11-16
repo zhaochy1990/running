@@ -10,7 +10,7 @@
 
 ## 联合目标与软反馈（反单向、反循环）
 
-- 联合目标 = T2 速度目标（`evolvedProfile`）**加上** HR 项：`Σ w_k·Huber((y_k − ŷ_k(a,θ))/4bpm)` 及全部 HR 先验项——同一目标、分阶段块状交替优化（`theta | (a,k,delta)`，最多 3 轮，收敛判据 Δa<1e-4 且水平对 <0.01 bpm）。速度侧剖面求解器/曲率/包络机制原样复用（`evolvedFinalizeSpeedReport` 共享），HR 项经 `evolvedFit.hr` 注入剖面目标与 dJ/da（解析灵敏度递推：`dHSS/da = (Hmax−Hrest)·F′(r)·(−r)`）。
+- 联合目标 = T2 速度目标（`evolvedProfile`）**加上** HR 项：`Σ w_k·Huber((y_k − ŷ_k(a,θ))/4bpm)` 及全部 HR 先验项——同一目标、分阶段块状交替优化（`theta | (a,k,delta)`，最多 3 轮，收敛判据 Δa<1e-4 且水平对 <0.01 bpm）。速度侧剖面求解器/曲率/包络机制原样复用（`evolvedFinalizeSpeedReport` 共享），HR 项经 `evolvedFit.hr` 注入剖面目标与 dJ/da（解析灵敏度递推：`dHSS/da = (Hmax−Hrest)·F′(r)·(−r)`）。联合重解在速度 MAP k 附近做**确定性局部 k 精化**（±0.006 粗 0.001 + 细 0.001/21，`evolvedSolveJointK`）：HR 项不含 k，联合最优 k 只能经 a 的小位移耦合漂移，k 的不确定性本就由冻结两端 envelope 承担（实测 200 活动规模与全网格位级同中心）。
 - **HR→能力软反馈的通道与界限**：HR 观测在观测速度 `v_k` 处约束 `F(v_k/e^a)`；因 F(1.0)=0.92±0.04 桥接与各 knot 先验（sd 0.04），HR 只能经该有限宽度通道移动 `a`，且 `Hrest/Hmax`（先验 10/12 bpm）会吸收大部分水平差——反馈是**软的、有界的、方向正确的**（合成对照：同速度输入、更高可信 HR → 联合 v60 下移，速度-only 拟合逐位相同）。报告以 `DataCurvature/PriorCurvatureShare` 可复算解释反馈强度；速度报告盖 `joint_hr_refit` 标记。
 - **每条观测恰好一次**：HR 块只进 HR 残差项（init 块只进初始化）；verified 参考协议值**不进目标函数**（它作为 measured_reference 中心另行发布，模型预测单独出 `model_center_bpm`）；活动按 LabelID 去重、root×day 预算（一活动一个预算单位，块间分摊），重复输入位级同结果、`InputIdentityHash` 不变。
 - **范围传播（单向）**：`HRsteady(v60)` 中心 = `Ĥrest + (Ĥmax−Ĥrest)·F̂(1.0)`；范围 = ①（Hrest,Hmax）信息矩阵（IRLS 权重+先验）在输出方向的 sd 与桥接宽度 `Δ·0.04` 合成，∪ ② v60 范围两端点的条件水平重解（`speed_envelope_low/high_bpm`，公开可查），钳制 [80,230]。速度侧不确定性只会**放大** HR 范围，无反向独立增信。
@@ -24,7 +24,7 @@ tau 在冻结截断域 [10,180] 上 5s 网格（大输入 >4000 块时 10s 网�
 - 活动循环、排序、去重与 `buildCandidateHR` 同构（LabelID/sport/180 天窗）；每活动继承其质量判定：时钟非递增、疑似步频锁定（metadata 标记或步频检测）→ 整根排除（role 记录），root 跨日冲突排除。
 - 块准入：HR 覆盖 ≥15s/30s 且速度覆盖 ≥7.5s/30s，块均值 HR ∈ [80,230]、速度 ∈ (0,8.5]；尖峰经 30s 块均值稀释 + Huber(1.5σ) 鲁棒吸收（±9bpm 块级噪声只放大敏感性不动中心）。
 - 传感器权重：chest_strap=1，其余（光电/未知）= `OpticalHRWeight`(0.5)，**不拒光电**（reason `optical_HR_downweighted_not_excluded`）。
-- 成本护栏：每活动块数确定性封顶 40（保 init 块 + 均匀跨步，预算单位不变；块间转移用真实 Δt）；总块 >4000 时 tau 网格减半披露。生产规模（~250 活动）联合求解秒级。
+- 成本护栏：每活动块数确定性封顶 40（保 init 块 + 均匀跨步，预算单位不变；块间转移用真实 Δt）；总块 >4000 时 tau 网格减半披露；联合重解局部 k 精化 + θ 求解器仿射系数在 IRLS 外一次计算。实测 200 活动（8000 块、护栏全开）端到端 ~10s（离线 seam 可接受；速度-only 基线 ~2.4s）。
 
 ## 状态、输出与失败
 
