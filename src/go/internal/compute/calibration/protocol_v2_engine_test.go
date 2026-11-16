@@ -3,6 +3,8 @@ package calibration_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"math"
 	"os"
 	"strings"
 	"testing"
@@ -353,6 +355,28 @@ func TestReplayV2Direct60ErrorMathWorkedExample(t *testing.T) {
 	}
 }
 
+func v2SnapshotCenter(t *testing.T, c calibration.ReplayV2CaseResult) float64 {
+	t.Helper()
+	for _, v := range c.Versions {
+		if v.Strategy == calibration.StrategyEvolvedCandidate && v.Snapshot.ThresholdSpeedMps != nil {
+			return *v.Snapshot.ThresholdSpeedMps
+		}
+	}
+	t.Fatal("evolved snapshot center missing")
+	return 0
+}
+
+func v2EvolvedSpeedOf(t *testing.T, c calibration.ReplayV2CaseResult) *calibration.EvolvedSpeedReport {
+	t.Helper()
+	for _, v := range c.Versions {
+		if v.Strategy == calibration.StrategyEvolvedCandidate && v.Evolved != nil && v.Evolved.Speed != nil {
+			return v.Evolved.Speed
+		}
+	}
+	t.Fatal("evolved speed report missing")
+	return nil
+}
+
 func v2MetricsFor(f *calibration.ReplayV2Family, s calibration.Strategy) *calibration.ReplayV2VersionMetrics {
 	for i := range f.Versions {
 		if f.Versions[i].Strategy == s {
@@ -476,6 +500,26 @@ func TestReplayV2WalkForwardStabilityAndPriorSensitivity(t *testing.T) {
 	}
 	if byID["c2"].PriorFreeEvolved == nil {
 		t.Fatal("prior-free evolved rerun missing")
+	}
+	// Review P0-2 wiring proof: the chained run must actually consume the
+	// previous snapshot as a historical prior (report-level lineage), while
+	// the prior-free rerun must not carry one.
+	chained := v2EvolvedSpeedOf(t, byID["c2"])
+	free := byID["c2"].PriorFreeEvolved.Evolved.Speed
+	if chained.HistoricalPriorMeanLog == nil {
+		t.Fatal("chained evolved run carries no historical prior lineage (chain not wired)")
+	}
+	if free.HistoricalPriorMeanLog != nil {
+		t.Fatal("prior-free rerun unexpectedly carries a historical prior")
+	}
+	firstCenter := v2SnapshotCenter(t, byID["c1"])
+	if chained.CenterMps == nil {
+		t.Fatal("centers missing")
+	}
+	// The chain carries the previous case's persisted snapshot center (the
+	// round4 production row shape, mirroring T5's prior-from-snapshot path).
+	if math.Abs(*chained.HistoricalPriorMeanLog-math.Log(firstCenter)) > 1e-9 {
+		t.Fatalf("chained prior mean %v does not match the previous snapshot center log %v", *chained.HistoricalPriorMeanLog, math.Log(firstCenter))
 	}
 	if report.TimeStability == nil || report.TimeStability.AdjacentPairs < 1 {
 		t.Fatalf("time stability diagnostics missing: %+v", report.TimeStability)
@@ -745,5 +789,160 @@ func TestReplayV2CommittedFixtureBacktest(t *testing.T) {
 	}
 	if caseCount != 8 {
 		t.Fatalf("migrated v1 scenario predictions=%d want 8", caseCount)
+	}
+}
+
+// v2MultiObservationManifest: four users, each with an eligible training
+// window and three fully audited real direct_60min references at different
+// cutoffs — enough observations that floating-point summation order matters.
+func v2MultiObservationManifest() calibration.ReplayManifest {
+	asOf := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
+	m := calibration.ReplayManifest{SchemaVersion: 2, AsOf: asOf, SourceVersion: "v2-real-shaped"}
+	build := func(user, suffix string, refPaces ...float64) {
+		mk := func(id, root, split string, daysAgo, durationS int, speedMps float64) calibration.ReplayActivity {
+			a := calibration.ReplayActivity{ID: id + suffix, User: user, RootActivityID: root + suffix, Split: split, EventTime: asOf.AddDate(0, 0, -daysAgo), Device: "synthetic"}
+			availableAt := a.EventTime
+			a.AvailableAt = &availableAt
+			a.AvailabilityEvidence = "fixture-upload-receipt"
+			activity := calibration.Activity{LabelID: id + suffix, ActivityDate: a.EventTime, Sport: "run", DurationS: f64p(float64(durationS)), DistanceM: f64p(float64(durationS) * speedMps)}
+			for t := 0; t <= durationS; t += 10 {
+				activity.Samples = append(activity.Samples, calibration.Sample{
+					ElapsedS:     f64p(float64(t)),
+					SpeedMps:     f64p(speedMps),
+					DistanceM:    f64p(float64(t) * speedMps),
+					HeartRateBpm: f64p(150 + float64(t%300)/10),
+				})
+			}
+			a.Activity = activity
+			a.ContentSHA256 = calibration.ReplayContentHash(activity)
+			return a
+		}
+		m.Activities = append(m.Activities,
+			mk("train-1", "r1", "train", 60, 5400, 3.0),
+			mk("train-2", "r2", "train", 40, 3600, 3.3),
+			mk("train-3", "r3", "train", 25, 2700, 3.5),
+			mk("train-4", "r4", "train", 12, 1800, 3.6))
+		for i, pace := range refPaces {
+			hold := mk(fmt.Sprintf("hold-%d", i+1), fmt.Sprintf("r9%d", i+1), "final_holdout", 10-i*3, 3600, 4.0)
+			hold.Reference = &calibration.ReplayReference{Kind: "direct_60min", Real: true, DurationS: 3600, DistanceM: 3600000 / pace, EffortSupport: "confirmed_maximal", MeasurementQuality: "high", Protocol: "continuous_60min_v1", EvidenceRef: "multi-obs-audit", ContinuousVerified: boolPtr(true)}
+			available := hold.EventTime.Add(time.Hour)
+			hold.Reference.AvailableAt = &available
+			m.Activities = append(m.Activities, hold)
+			m.Cases = append(m.Cases, calibration.ReplayCase{ID: fmt.Sprintf("c-%s-%d", user, i+1), User: user, PredictionAsOf: asOf.AddDate(0, 0, -(11 - i*3)), Mode: "strict", TargetRootActivityID: fmt.Sprintf("r9%d%s", i+1, suffix)})
+		}
+	}
+	build("athlete-p", "-p", 245.0, 251.0, 248.0)
+	build("athlete-q", "-q", 258.0, 262.0, 255.0)
+	build("athlete-r", "-r", 233.0, 239.0, 230.0)
+	build("athlete-s", "-s", 271.0, 266.0, 274.0)
+	return m
+}
+
+// TestReplayV2MultiObservationDeterminism (review P0-1): with twelve scored
+// observations across four users, repeated runs must stay byte-identical —
+// map iteration order and naive floating-point summation must not leak ulps
+// into the report.
+func TestReplayV2MultiObservationDeterminism(t *testing.T) {
+	m := v2MultiObservationManifest()
+	baseline, err := calibration.ReplayV2(m, "det-code")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := findV2Family(baseline, "final_holdout", "strict", "direct_60min")
+	if f == nil || f.EligibleActivities != 12 {
+		t.Fatalf("fixture must score 12 eligible observations, got %+v", f)
+	}
+	first, _ := json.Marshal(baseline)
+	for i := 0; i < 40; i++ {
+		report, err := calibration.ReplayV2(m, "det-code")
+		if err != nil {
+			t.Fatal(err)
+		}
+		again, _ := json.Marshal(report)
+		if !bytes.Equal(first, again) {
+			t.Fatalf("run %d differs byte-for-byte from the baseline (map-order or summation nondeterminism)", i)
+		}
+	}
+}
+
+// TestReplayV2FailureRateGateIsMachineReduced (review P1-1): the protocol's
+// "计算失败率 ≤ 1%" must be a real gate on the rev2 strategy inside the
+// strict final_holdout direct_60min family, scored only with real references.
+func TestReplayV2FailureRateGateIsMachineReduced(t *testing.T) {
+	report, err := calibration.ReplayV2(v2TwoUserRealManifest(), "test-code")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := findV2Family(report, "final_holdout", "strict", "direct_60min")
+	if f == nil {
+		t.Fatal("family missing")
+	}
+	found := false
+	for _, g := range f.Gates {
+		if g.ID != "direct_60min.final_holdout.strict.failure_rate" {
+			continue
+		}
+		found = true
+		if g.Status != "pass" {
+			t.Fatalf("zero-failure family must pass the failure-rate gate: %+v", g)
+		}
+	}
+	if !found {
+		t.Fatal("failure-rate gate missing from the strict final_holdout direct_60min family")
+	}
+	// Synthetic references never score the gate.
+	synthetic, err := calibration.ReplayV2(v2HoldoutManifest(false, true), "test-code")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sf := findV2Family(synthetic, "final_holdout", "strict", "direct_60min")
+	for _, g := range sf.Gates {
+		if g.ID == "direct_60min.final_holdout.strict.failure_rate" && g.Status == "pass" {
+			t.Fatal("synthetic manifest must not pass the failure-rate gate")
+		}
+	}
+	// A real-named source with zero eligible activities cannot pass either:
+	// an empty denominator must never print "pass".
+	empty := v2HoldoutManifest(false, true)
+	empty.SourceVersion = "personal-shaped-no-references"
+	emptyReport, err := calibration.ReplayV2(empty, "test-code")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ef := findV2Family(emptyReport, "final_holdout", "strict", "direct_60min")
+	for _, g := range ef.Gates {
+		if g.ID == "direct_60min.final_holdout.strict.failure_rate" && g.Status != "insufficient" {
+			t.Fatalf("empty family failure-rate gate must stay insufficient: %+v", g)
+		}
+	}
+}
+
+// TestReplayV2LagDiagnosticsComputed (review P1-2): users with >=2 referenced
+// strict direct_60min predictions get the half-window signed-drift lag proxy;
+// a manifest without repeated references leaves it nil.
+func TestReplayV2LagDiagnosticsComputed(t *testing.T) {
+	// v2MultiObservationManifest: 4 users x 3 referenced strict predictions.
+	report, err := calibration.ReplayV2(v2MultiObservationManifest(), "test-code")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.TimeStability == nil || report.TimeStability.LagDiagnostics == nil {
+		t.Fatalf("lag diagnostics missing: %+v", report.TimeStability)
+	}
+	lag := report.TimeStability.LagDiagnostics
+	if lag.Users != 4 {
+		t.Fatalf("lag users=%d want 4", lag.Users)
+	}
+	if lag.DriftSPerKm == nil {
+		t.Fatal("lag drift missing")
+	}
+	// Single-reference users (v2TwoUserRealManifest) cannot support a lag
+	// estimate; the diagnostics must stay nil rather than fabricate one.
+	single, err := calibration.ReplayV2(v2TwoUserRealManifest(), "test-code")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if single.TimeStability.LagDiagnostics != nil {
+		t.Fatalf("lag diagnostics fabricated without repeated references: %+v", single.TimeStability.LagDiagnostics)
 	}
 }

@@ -14,14 +14,14 @@
 | 评分引擎 | `calibration.ReplayV2`（`protocol_v2_engine.go`）+ CLI `stride calibration replay-v2`；退出码 0=通过 / 2=insufficient / 1=输入·分割·hash·算法失败 |
 | 引擎门槛常量 | 逐值锁定在 `TestV2FrozenGateConstantsMatchProtocol`（15/30 s/km、+1/+2 非劣、5/10 bpm、失败率≤1%、all-inputs≥90%、≥30 活动/≥10 用户/≤20% 权重、分层≥10/≥3、退化≤1/≤2、bootstrap 2000@seed993994、speed eligible≥3 根） |
 
-引擎确定性：同输入两次运行报告 JSON 逐字节一致（无时钟、无未播种随机源；唯一随机源是冻结 seed 的 bootstrap）；manifest 活动/case 顺序重排不改变逐 case 输入 hash 与版本输出（均有测试锁定）。已知回归（known_regression）单列、无门槛；`event_date_retrospective` 家族单列、不入 strict 门槛；合成来源经 `real_reference_provenance` 门槛永远 insufficient，合成样本不做准确性 bootstrap。
+引擎确定性：同输入重复运行报告 JSON 逐字节一致（无时钟、无未播种随机源；唯一随机源是冻结 seed 的 bootstrap）；观测聚合一律确定序（user+case ID 排序）+ 补偿求和（Kahan），多观测面（4 用户×3 参考共 12 观测的 manifest 连跑 40 次逐字节比对）与单 case 面均有测试锁定；manifest 活动/case 顺序重排不改变逐 case 输入 hash 与版本输出。（评审 P0-1 修复：初版在 map 迭代序+裸浮点求和下 60 跑出 4 份不同 JSON，已修复并加多观测确定性测试。）已知回归（known_regression）单列、无门槛；`event_date_retrospective` 家族单列、不入 strict 门槛；合成来源经 `real_reference_provenance` 门槛永远 insufficient，合成样本不做准确性 bootstrap。
 
 ## 2. 对集成 head 的三版本回测（协议 v2 引擎）
 
 提交的合成回测 fixture `src/go/internal/compute/calibration/testdata/replay-v2.json`（schema 2，由 env-guard 生成器 `TestReplayV2GenerateCommittedFixture` 再生，`STRIDE_T7_FIXTURE_OUTPUT`）：
 
 - **原 v4 已看样本全部迁移为 `known_regression`**：`replay-v1.json` 的 8 个 v1 期合成场景（progressive_60min / submaximal_30km / distance_jump_recovery / distance_reset_fallback / maximal_test / no_quality_sessions / pause_recovery / missing_gps_hr）不再作 train/验证输入，只作行为回归观察（8 个 case 仍产出三版本密封预测，供后续代码变更对比防倒退）。
-- **新增前瞻形状合成用户**：普通混速训练、全 easy、含合成（`Real=false`）final_holdout 参考。三用户 all-inputs 口径 6/6 case 有限+物理合法+带范围，覆盖率 1.0（`all_inputs_coverage` gate PASS）；合成参考被显式拒绝 `non_real_reference`，accuracy 家族全部 insufficient（如实）。
+- **新增前瞻形状合成用户**：普通混速训练、全 easy、含合成（`Real=false`）final_holdout 参考。三用户 all-inputs 口径 3/3 case 有限+物理合法+带范围，覆盖率 1.0（`all_inputs_coverage` gate PASS）；合成参考被显式拒绝 `non_real_reference`，accuracy 家族全部 insufficient（如实）。
 - 运行命令与完整输出：`stride calibration replay-v2 --manifest …/replay-v2.json --code-version 82ff7acd…`，退出码 2（insufficient），报告存 `/tmp/stride-983/private/t7-replay-v2-synthetic.json`。
 - 模拟全力仅存在于合成 fixture（推断分布/合成回归用途）；**没有任何模拟或个人标签回流真实训练标签**。
 
@@ -53,8 +53,8 @@
 
 **诚实性声明**：(a) 不以 4′00″ 或任何值作真值——本 manifest 零参考标签，accuracy 家族全部 insufficient；(b) rev2 与 v3 的配速中心差 ~19 s/km 是两个模型对"普通训练+努力余量"与"选拔窗口"的不同解释，无独立参考时**不判断谁更准**；(c) rev2 的范围是模型敏感性范围，不是置信区间；(d) 通道限制披露完整（`research_uncalibrated…`、`cadence_lock_suspected_series_excluded`、`HR_tau_grid_coarsened_large_input`、`capability_state_solve_failed_stationary_center_retained`——后者见 §6 的披露修复）。
 
-- **走时间稳定性**（每 14 天 strict walk-forward，13 个 case）：数据可得性（COROS 9 月补同步）使 2026-09-17 前的 case 输入为空（时间机器如实拒收，非删除）——有效 6 个 case：rev2 相邻跳变中位 1.91 s/km、P90/最大 6.12 s/km；v3 对照中位 2.24 s/km。
-- **先验敏感性**（有/无个人历史先验双跑）：6 case 中心差中位/最大均 **0.0 s/km**、状态翻转 0——链式弱先验（sd floor 0.15）在数据曲率 8702 主导下不移动中心，符合"先验不作速度帽"的设计。
+- **走时间稳定性**（每 14 天 strict walk-forward，13 个 case）：数据可得性（COROS 9 月补同步）使 2026-09-17 前的 case 输入为空（时间机器如实拒收，非删除）——有效 6 个 case：rev2（链式先验）相邻跳变中位 1.77 s/km、P90/最大 5.87 s/km；v3 对照中位 2.24 s/km。滞后（lag）诊断在本 manifest 为空（无参考标签无法计算——引擎已实现半程漂移代理，仅在 ≥2 个带参考 strict 预测的用户上输出）。
+- **先验敏感性**（有/无个人历史先验双跑，评审 P0-2 修复后为真接线：主跑消费上一 case 快照先验，`HistoricalPriorMeanLog` 进报告 lineage；无先验复跑恒 nil）：5 个链式 case（walk-133…today）主跑 vs 无先验中心差 = −0.141 / +0.114 / −0.028 / −0.190 / 0.000 s/km，**|Δ| 中位 0.114、最大 0.190 s/km、状态翻转 0**；today 的链式先验 = walk-175 主跑中心（log 1.3097，sd 0.15 floor、龄 4 天），当日中心差不落 3 位小数。诚实解释：老化弱先验（sd floor 0.15）在该数据曲率主导的窗口上只把中心移动 ≤0.19 s/km——该结论现在由接线后的真实双跑支撑，而非构造性恒等。
 - **hash 齐**：manifest SHA、逐 case 输入 SHA（today=`4a8389e1e229…`）、先验 IdentityHash、契约 IdentityHash、协议 v1/v2 hash、v3 源 hash、代码版本全在报告 JSON。
 
 ## 4. T3 推迟项：真实个人 HR 序列动态预测误差
@@ -96,7 +96,7 @@
 | 配速中位≤15 / P90≤30 s/km | insufficient | 同上（无标签不可评分） |
 | 对 v3 非劣 +1/+2 | insufficient | 同上 |
 | HR lab/field 各 ≥30/≥10、≤5/≤10 bpm、非劣 v3 | insufficient | 无 lab/field 独立参考 |
-| 失败率 ≤1% | pass（工程口径） | 隔离与合成面 0 失败 |
+| 失败率 ≤1% | **insufficient（机器归约 gate 已接线）** | 个人 manifest：`no_eligible_activities`（零参考无评分面）；合成：`synthetic_source_not_scored`；测试套件隔离/合成面 0 失败仅为工程观察，不作 gate 结果 |
 | all-inputs 覆盖 ≥90% | pass | 合成 3/3、个人 6/6、T1 六类 fixtures（T2-T4 测试） |
 | 分层 ≥10/≥3、退化 ≤1/≤2 | insufficient | 无分层标签 |
 | bootstrap 2000@993994 | n/a→insufficient | 合成不做 bootstrap；无真实配对样本 |
@@ -118,7 +118,7 @@
 | 命令（cwd=src/go 除注明） | 结果 |
 |---|---|
 | `gofmt -l .` / `go vet ./...` | 空 / 通过 |
-| `go test ./internal/compute/calibration/... -count=1` | ok（含 v2 引擎 10+ 新测试、T1-T6 全部原测试、shell 披露修复回归） |
+| `go test ./internal/compute/calibration/... -count=1` | ok（含 v2 引擎测试：三版本 trio、双分母、误差算例、known_regression 单列、单 case 与多观测确定性（12 观测×40 跑）、先验链接线观测、失败率 gate（含空分母防护）、lag 诊断、bootstrap、retrospective、顺序无关、常量锁；T1-T6 全部原测试、shell 披露修复回归） |
 | `go test ./... -count=1`（全模块） | 全 ok |
 | DSN=13383 `go test ./internal/storage/... -count=1` | ok 43.4s（外分支残留表清理后） |
 | DSN+Rabbit 13384 `go test ./internal/handlers/compute/... -count=1` | ok 16.9s（含新增 T7 E2E） |
@@ -127,4 +127,14 @@
 | CLI `calibration replay-v2`（合成 fixture / 个人冻结 manifest） | 退出码 2（insufficient，如实）；个人跑 142 s |
 | cmd/stride 全量 | ok |
 
-本票零 TS/前端/iOS 改动（`git diff --name-only` 过滤为 0），T5/T6 的 TS 测试基线继续有效。本地证据目录：`/tmp/stride-983/private/t7-*`（合成报告、个人报告、冻结数据、drill 日志）；spec993-notes 证据见 `evidence/t7-1001.md`。
+本票零 TS/前端/iOS 改动（`git diff --name-only` 过滤为 0），T5/T6 的 TS 测试基线继续有效。两份存档报告（`t7-replay-v2-synthetic.json`、`t7-personal-replay-v2.json`）由**评审修复后的最终引擎**重新生成（报告级 contract/priors IdentityHash 已填充；个人数值与初版逐位一致，链式 case 主跑因先验接线移动 ≤0.19 s/km）。CI 证据由编排侧在总 PR ready 时附 run 链接（本票证据=本地+隔离栈+独立评审复核）。本地证据目录：`/tmp/stride-983/private/t7-*`；spec993-notes 证据见 `evidence/t7-1001.md`。
+
+## 10. 评审修复记录（2026-11-16，FAIL→修复）
+
+独立评审（`spec993-notes/evidence/t7-1001-review.md`）判定 FAIL（2×P0、2×P1、4×P2；个人重测数值与红线全部核真）。修复：
+
+- **P0-1 字节级确定性**：`v2ScoreFamily`/`v2ScoreKnownRegression` 改用确定序 case 迭代（`v2CasesInScoredOrder`，user+ID 排序）；两处 SignedBias 聚合改 Kahan 补偿求和；walk-forward 排序加 ID 决胜。新测试 `TestReplayV2MultiObservationDeterminism`（4 用户×3 真实参考=12 观测，连跑 40 次逐字节比对；修复前 run 0 即红）。
+- **P0-2 先验链接线**：主 evolved 跑改为 `estimateEvolvedCandidate(..., priorByUser[user])` 真消费链式先验（`EstimateEvolvedOffline` 同款入口形状），无先验复跑保持 nil；`PriorChainApplied` 现反映真实消费（报告带 `HistoricalPriorMeanLog` lineage）。`TestReplayV2WalkForwardStabilityAndPriorSensitivity` 扩展断言：链式 run 带 prior lineage、无先验 run 不带、prior 均值=上一 case 快照中心。个人 manifest 双跑重跑：|Δ| 中位 0.114 / 最大 0.190 s/km（见 §3.2 修正后的先验敏感性节——初版 0.0 系未接线的构造性恒等，解释已改写）。
+- **P1-1 失败率 gate**：strict final_holdout direct_60min 家庭新增 `failure_rate` gate（消费 `v2FailureRateMax`，真实参考才评分，空分母=insufficient）。测试 `TestReplayV2FailureRateGateIsMachineReduced`（真参考 0 失败=pass、合成不评分、真实源零 eligible=insufficient）。
+- **P1-2 lag 诊断**：实现半程漂移代理（≥2 带参考 strict 预测用户，later−earlier 半程均差，补偿求和；描述性、非 gate），删除死变量。测试 `TestReplayV2LagDiagnosticsComputed`（4 用户×3 参考=非空且 Users=4；单参考 manifest=nil 不伪造）。
+- **P2**：§2 6/6→3/3；两份存档报告用修复后引擎重生成（身份 hash 字段补齐）；CI 证据归编排侧（上文注记）；评审 3 条观察项（all-inputs 分母排除零输入 strict case、HR 非劣 margin-0 为引擎侧选择、时长分层 (4320,7200] 落 unclassified）入 evidence 遗留清单。

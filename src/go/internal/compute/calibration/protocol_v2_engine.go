@@ -102,6 +102,10 @@ type ReplayV2Family struct {
 	Strata             []ReplayV2Stratum        `json:"strata"`
 	Uncertainty        *ReplayV2Uncertainty     `json:"uncertainty,omitempty"`
 	Gates              []ReplayGate             `json:"gates"`
+
+	// lagSeries carries (user, as-of, rev2 signed error) points for the lag
+	// proxy; unexported so it never serializes into the report.
+	lagSeries []v2LagPoint `json:"-"`
 }
 
 // ReplayV2Uncertainty is the frozen bootstrap: user-level resampling, 2000
@@ -271,7 +275,18 @@ func ReplayV2(m ReplayManifest, codeVersion string) (ReplayV2Report, error) {
 			return &v, ""
 		}
 		for _, strategy := range v2Strategies {
+			prior := priorByUser[c.User]
 			v, failure := record(strategy, func() (OfflineResult, error) {
+				if strategy == StrategyEvolvedCandidate {
+					// Review P0-2: the walk-forward personal historical prior is
+					// actually consumed here (production refresh semantics — the
+					// same entry shape as EstimateEvolvedOffline), not merely
+					// flagged. The prior-free rerun below stays on nil so the
+					// protocol's double run is a real comparison.
+					snapshot, evidence, evolved := estimateEvolvedCandidate(history, civilDay, rows, inputMetadata, c.PredictionAsOf, prior)
+					implementation, parameterVersion, revision := EvolvedCandidateIdentity()
+					return OfflineResult{Strategy: strategy, Implementation: implementation, ParameterVersion: parameterVersion, AlgorithmRevision: revision, Snapshot: snapshot, Evidence: &evidence, Evolved: evolved}, nil
+				}
 				return estimateOfflineWithEvidenceAt(strategy, history, civilDay, rows, inputMetadata, c.PredictionAsOf)
 			})
 			if failure != "" {
@@ -323,6 +338,14 @@ func ReplayV2(m ReplayManifest, codeVersion string) (ReplayV2Report, error) {
 	out.Families, out.KnownRegression = v2EvaluateFamilies(m, out.Cases)
 	out.TimeStability = v2TimeStability(out.Cases)
 	out.PriorSensitivity = v2PriorSensitivity(out.Cases)
+	if out.TimeStability != nil {
+		for i := range out.Families {
+			f := &out.Families[i]
+			if f.Split == "final_holdout" && f.Mode == "strict" && f.Family == "direct_60min" {
+				out.TimeStability.LagDiagnostics = v2LagDiagnostics(f.lagSeries)
+			}
+		}
+	}
 	for _, f := range out.Families {
 		if f.Split == "final_holdout" && f.Mode == "strict" {
 			out.Gates = append(out.Gates, f.Gates...)
@@ -561,6 +584,7 @@ func v2RangeFor(v OfflineResult, family string) (low, high float64, ok bool) {
 
 type v2Observation struct {
 	user    string
+	asOf    time.Time
 	errors  map[Strategy]float64
 	states  map[Strategy]string
 	widths  map[Strategy]float64
@@ -573,7 +597,9 @@ func v2ScoreFamily(m ReplayManifest, targets map[string]ReplayActivity, caseByID
 	f := &ReplayV2Family{Split: split, Mode: mode, Family: family, Unit: v2FamilyUnit(family), RejectedLabels: map[string]int{}}
 	var observations []v2Observation
 	seen := map[string]bool{}
-	for _, c := range caseByID {
+	// Deterministic observation order (review P0-1): map iteration is random,
+	// and observation order flows into the floating-point bias aggregation.
+	for _, c := range v2CasesInScoredOrder(caseByID) {
 		if c.Mode != mode || c.TargetRootActivityID == "" {
 			continue
 		}
@@ -609,7 +635,7 @@ func v2ScoreFamily(m ReplayManifest, targets map[string]ReplayActivity, caseByID
 			continue
 		}
 		f.EligibleActivities++
-		observation := v2Observation{user: c.User, errors: map[Strategy]float64{}, states: map[Strategy]string{}, widths: map[Strategy]float64{}, inRange: map[Strategy]bool{}}
+		observation := v2Observation{user: c.User, asOf: c.PredictionAsOf, errors: map[Strategy]float64{}, states: map[Strategy]string{}, widths: map[Strategy]float64{}, inRange: map[Strategy]bool{}}
 		for _, v := range c.Versions {
 			value, state, reason := v2ScalarOutcome(v, family, r)
 			observation.states[v.Strategy] = state
@@ -642,7 +668,8 @@ func v2ScoreKnownRegression(m ReplayManifest, targets map[string]ReplayActivity,
 	f := &ReplayV2Family{Split: "known_regression", Mode: mode, Family: family, Unit: v2FamilyUnit(family), RejectedLabels: map[string]int{}, Status: "reported"}
 	var observations []v2Observation
 	seen := map[string]bool{}
-	for _, c := range caseByID {
+	// Deterministic order here too (review P0-1).
+	for _, c := range v2CasesInScoredOrder(caseByID) {
 		if c.Mode != mode {
 			continue
 		}
@@ -668,7 +695,7 @@ func v2ScoreKnownRegression(m ReplayManifest, targets map[string]ReplayActivity,
 				continue
 			}
 			f.EligibleActivities++
-			observation := v2Observation{user: c.User, errors: map[Strategy]float64{}, states: map[Strategy]string{}, widths: map[Strategy]float64{}, inRange: map[Strategy]bool{}}
+			observation := v2Observation{user: c.User, asOf: c.PredictionAsOf, errors: map[Strategy]float64{}, states: map[Strategy]string{}, widths: map[Strategy]float64{}, inRange: map[Strategy]bool{}}
 			for _, v := range c.Versions {
 				value, state, _ := v2ScalarOutcome(v, family, a.Reference)
 				observation.states[v.Strategy] = state
@@ -691,6 +718,23 @@ func v2ScoreKnownRegression(m ReplayManifest, targets map[string]ReplayActivity,
 	f.Gates = nil
 	f.Status = "reported"
 	return f
+}
+
+// v2CasesInScoredOrder returns the sealed case results in the deterministic
+// scored order (user, then case ID) so observation aggregation never depends
+// on Go map iteration (review P0-1).
+func v2CasesInScoredOrder(caseByID map[string]ReplayV2CaseResult) []ReplayV2CaseResult {
+	out := make([]ReplayV2CaseResult, 0, len(caseByID))
+	for _, c := range caseByID {
+		out = append(out, c)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].User != out[j].User {
+			return out[i].User < out[j].User
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
 }
 
 func v2FamilyUnit(family string) string {
@@ -769,11 +813,12 @@ func v2ReduceFamily(f *ReplayV2Family, observations []v2Observation, family, spl
 	}
 
 	type strategyAccumulator struct {
-		errors  [][2]float64 // (abs error, weight)
-		biasSum float64
-		widths  []float64
-		inRange int
-		ranged  int
+		errors         [][2]float64 // (abs error, weight)
+		biasSum        float64
+		biasCorrection float64
+		widths         []float64
+		inRange        int
+		ranged         int
 	}
 	accum := map[Strategy]*strategyAccumulator{}
 	for _, s := range v2Strategies {
@@ -787,8 +832,11 @@ func v2ReduceFamily(f *ReplayV2Family, observations []v2Observation, family, spl
 			if state != "available" {
 				continue
 			}
-			a.errors = append(a.errors, [2]float64{absFloat64(o.errors[s]), userWeight(o.user)})
-			a.biasSum += o.errors[s] * userWeight(o.user)
+			w := userWeight(o.user)
+			a.errors = append(a.errors, [2]float64{absFloat64(o.errors[s]), w})
+			// Compensated (Kahan) accumulation: naive order-sensitive sums leak
+			// ulps into SignedBias (review P0-1), breaking byte determinism.
+			addCompensated(&a.biasSum, &a.biasCorrection, o.errors[s]*w)
 			if w, ok := o.widths[s]; ok {
 				a.widths = append(a.widths, w)
 				a.ranged++
@@ -875,6 +923,12 @@ func v2ReduceFamily(f *ReplayV2Family, observations []v2Observation, family, spl
 		f.Strata = append(f.Strata, sub)
 	}
 
+	// Lag proxy (review P1-2): users with >=2 referenced strict direct_60min
+	// predictions contribute a half-window signed-drift estimate; the series
+	// rides on the family until ReplayV2 lifts it into TimeStability.
+	if split == "final_holdout" && mode == "strict" && family == "direct_60min" {
+		f.lagSeries = v2LagSeries(observations)
+	}
 	// Gates exist only for the strict final_holdout accuracy families.
 	if split == "final_holdout" && mode == "strict" {
 		sample := v2SampleGate(f)
@@ -911,11 +965,12 @@ func v2ReduceMetricsOnly(f *ReplayV2Family, observations []v2Observation) {
 	}
 	userWeight := func(user string) float64 { return 1 / float64(len(users)*counts[user]) }
 	type acc struct {
-		errors  [][2]float64
-		biasSum float64
-		widths  []float64
-		inRange int
-		ranged  int
+		errors         [][2]float64
+		biasSum        float64
+		biasCorrection float64
+		widths         []float64
+		inRange        int
+		ranged         int
 	}
 	accum := map[Strategy]*acc{}
 	for _, s := range v2Strategies {
@@ -929,8 +984,11 @@ func v2ReduceMetricsOnly(f *ReplayV2Family, observations []v2Observation) {
 				continue
 			}
 			a := accum[s]
-			a.errors = append(a.errors, [2]float64{absFloat64(o.errors[s]), userWeight(o.user)})
-			a.biasSum += o.errors[s] * userWeight(o.user)
+			w := userWeight(o.user)
+			a.errors = append(a.errors, [2]float64{absFloat64(o.errors[s]), w})
+			// Compensated (Kahan) accumulation: naive order-sensitive sums leak
+			// ulps into SignedBias (review P0-1), breaking byte determinism.
+			addCompensated(&a.biasSum, &a.biasCorrection, o.errors[s]*w)
 			if w, ok := o.widths[s]; ok {
 				a.widths = append(a.widths, w)
 				a.ranged++
@@ -994,6 +1052,19 @@ func v2PaceGates(f *ReplayV2Family, real bool) []ReplayGate {
 	rev2 := v2Metrics(f, StrategyEvolvedCandidate)
 	v3 := v2Metrics(f, StrategyV3)
 	gates := []ReplayGate{}
+	// Review P1-1: the protocol's frozen "计算失败率 <= 1%" is machine-reduced
+	// here on the rev2 strategy (real references gate the scoring, matching
+	// the pace gates; v2FailureRateMax is constant-locked).
+	failureStatus := "insufficient"
+	failureReason := ""
+	if !real {
+		failureReason = "synthetic_source_not_scored"
+	} else if f.EligibleActivities == 0 {
+		failureReason = "no_eligible_activities"
+	} else {
+		failureStatus = v2ThresholdStatus(rev2FailureRate(f), v2FailureRateMax, false)
+	}
+	gates = append(gates, ReplayGate{ID: prefix + ".failure_rate", Status: failureStatus, Reason: failureReason, Observed: rev2FailureRate(f), Threshold: "<= 0.01 computation failures per eligible activity", Unit: "fraction"})
 	if rev2 == nil || rev2.MedianAbsError == nil || rev2.P90AbsError == nil {
 		return append(gates, ReplayGate{ID: prefix + ".pace_abs_error", Status: "insufficient", Threshold: "median <=15 s/km and P90 <=30 s/km", Reason: "rev2_pace_metrics_unavailable"})
 	}
@@ -1046,6 +1117,16 @@ func v2HRGates(f *ReplayV2Family, family string, real bool) []ReplayGate {
 	}
 }
 
+// rev2FailureRate extracts the evolved revision's failure rate (0 when the
+// strategy has no metrics yet — an empty family cannot pass the sample gate
+// anyway).
+func rev2FailureRate(f *ReplayV2Family) float64 {
+	if m := v2Metrics(f, StrategyEvolvedCandidate); m != nil {
+		return m.FailureRate
+	}
+	return 0
+}
+
 func v2DegradationGate(id string, versions []ReplayV2VersionMetrics) ReplayGate {
 	rev2 := v2MetricsList(versions, StrategyEvolvedCandidate)
 	v3 := v2MetricsList(versions, StrategyV3)
@@ -1090,11 +1171,14 @@ func v2TimeStability(cases []ReplayV2CaseResult) *ReplayV2TimeStability {
 		byUser[c.User] = append(byUser[c.User], c)
 	}
 	var rev2Jumps, v3Jumps []float64
-	lagUsers := 0
-	var drifts []float64
 	for _, user := range sortedCaseUsers(byUser) {
 		list := byUser[user]
-		sort.Slice(list, func(i, j int) bool { return list[i].PredictionAsOf.Before(list[j].PredictionAsOf) })
+		sort.Slice(list, func(i, j int) bool {
+			if !list[i].PredictionAsOf.Equal(list[j].PredictionAsOf) {
+				return list[i].PredictionAsOf.Before(list[j].PredictionAsOf)
+			}
+			return list[i].ID < list[j].ID
+		})
 		for i := 1; i < len(list); i++ {
 			rev2A := v2CenterPace(list[i-1], StrategyEvolvedCandidate)
 			rev2B := v2CenterPace(list[i], StrategyEvolvedCandidate)
@@ -1119,9 +1203,75 @@ func v2TimeStability(cases []ReplayV2CaseResult) *ReplayV2TimeStability {
 		median := v3Jumps[len(v3Jumps)/2]
 		out.V3JumpMedianSPerKm = &median
 	}
-	_ = lagUsers
-	_ = drifts
 	return out
+}
+
+// v2LagPoint is one referenced strict prediction for the lag proxy.
+type v2LagPoint struct {
+	user      string
+	asOf      time.Time
+	signedErr float64
+}
+
+// v2LagSeries collects the rev2 signed errors of available referenced
+// observations (called only for the strict final_holdout direct_60min cell).
+func v2LagSeries(observations []v2Observation) []v2LagPoint {
+	out := []v2LagPoint{}
+	for _, o := range observations {
+		if o.states[StrategyEvolvedCandidate] == "available" {
+			out = append(out, v2LagPoint{user: o.user, asOf: o.asOf, signedErr: o.errors[StrategyEvolvedCandidate]})
+		}
+	}
+	return out
+}
+
+// v2LagDiagnostics computes the honest phase-A lag proxy: per user with >=2
+// referenced strict predictions, mean signed error of the later half minus
+// the earlier half (chronological), averaged over qualifying users. It is a
+// descriptive drift diagnostic, never a gate.
+func v2LagDiagnostics(series []v2LagPoint) *ReplayV2LagDiagnostics {
+	byUser := map[string][]v2LagPoint{}
+	for _, p := range series {
+		byUser[p.user] = append(byUser[p.user], p)
+	}
+	users := make([]string, 0, len(byUser))
+	for u := range byUser {
+		users = append(users, u)
+	}
+	sort.Strings(users)
+	drifts := []float64{}
+	for _, u := range users {
+		pts := byUser[u]
+		if len(pts) < 2 {
+			continue
+		}
+		sort.Slice(pts, func(i, j int) bool {
+			if !pts[i].asOf.Equal(pts[j].asOf) {
+				return pts[i].asOf.Before(pts[j].asOf)
+			}
+			return false
+		})
+		half := len(pts) / 2
+		early, late := 0.0, 0.0
+		for i := 0; i < half; i++ {
+			early += pts[i].signedErr
+		}
+		for i := half; i < len(pts); i++ {
+			late += pts[i].signedErr
+		}
+		early /= float64(half)
+		late /= float64(len(pts) - half)
+		drifts = append(drifts, late-early)
+	}
+	if len(drifts) == 0 {
+		return nil
+	}
+	sum, correction := 0.0, 0.0
+	for _, d := range drifts {
+		addCompensated(&sum, &correction, d)
+	}
+	drift := sum / float64(len(drifts))
+	return &ReplayV2LagDiagnostics{Users: len(drifts), DriftSPerKm: &drift, Note: "later-half minus earlier-half mean signed error per user with >=2 referenced strict predictions; descriptive proxy, never a gate"}
 }
 
 func v2CenterPace(c ReplayV2CaseResult, s Strategy) float64 {
