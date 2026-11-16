@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/zhaochy1990/stride/internal/storage"
 )
 
 const validYAML = `
@@ -217,6 +219,80 @@ race-detection:
 	}
 	if cfg.RaceDetection.Timeout != 45*time.Second || cfg.RaceDetection.MaxConcurrency != 6 {
 		t.Fatalf("race detection runtime = %+v", cfg.RaceDetection)
+	}
+}
+
+func TestMustLoadFrom_WriteIsolationEnvActivation(t *testing.T) {
+	// devops#1005 e2e defect regression: the x/viper loader (AutomaticEnv +
+	// Unmarshal) applies STRIDE_WORKER_* env overrides only to keys the YAML
+	// carries, so runtime.write-isolation must exist in config.yml for the
+	// documented rollout env to work. Default stays off; env flips it (and
+	// the lease TTL).
+	body := `
+mysql: {dsn: d}
+amqp: {url: "amqp://x"}
+queues: {work: w, retry: r, poison: p}
+retry: {max-attempts: 3, base-backoff: 1s, max-backoff: 10s}
+runtime:
+  prefetch: 1
+  health-addr: ":8081"
+  claim-lease: 2m
+  reclaim-interval: 30s
+  drain-timeout: 30s
+  write-isolation:
+    enabled: false
+    lease-ttl: 90s
+race-detection: {api-kind: chat-completions, endpoint: "https://api.deepseek.com", api-key: test, model: deepseek-v4-flash, timeout: 30s, max-concurrency: 8}
+`
+	cfg := MustLoadFrom(writeConfig(t, body))
+	if cfg.Runtime.WriteIsolation.Enabled {
+		t.Fatalf("write-isolation default = true, want false (default off)")
+	}
+	if cfg.Runtime.WriteIsolation.LeaseTTL != 90*time.Second {
+		t.Fatalf("write-isolation lease-ttl = %v, want file default 90s", cfg.Runtime.WriteIsolation.LeaseTTL)
+	}
+
+	t.Setenv("STRIDE_WORKER_RUNTIME_WRITE_ISOLATION_ENABLED", "true")
+	t.Setenv("STRIDE_WORKER_RUNTIME_WRITE_ISOLATION_LEASE_TTL", "15s")
+	cfg = MustLoadFrom(writeConfig(t, body))
+	if !cfg.Runtime.WriteIsolation.Enabled {
+		t.Fatalf("STRIDE_WORKER_RUNTIME_WRITE_ISOLATION_ENABLED=true did not flip the flag — env activation only works when the YAML carries the key")
+	}
+	if cfg.Runtime.WriteIsolation.LeaseTTL != 15*time.Second {
+		t.Fatalf("write-isolation lease-ttl = %v, want env override 15s", cfg.Runtime.WriteIsolation.LeaseTTL)
+	}
+}
+
+func TestMustLoadFrom_ShippedConfigYAML_WriteIsolationEnvActivation(t *testing.T) {
+	// The actual e2e breakage (devops#1005): the config.yml shipped inside
+	// the stride-worker/stride-api images carried no runtime.write-isolation
+	// keys, so injecting STRIDE_WORKER_RUNTIME_WRITE_ISOLATION_ENABLED=true
+	// into the container did nothing (viper overrides only YAML-known keys)
+	// and the worker kept writing v1 fixed keys. Load the real shipped file
+	// and prove the env activation path works on it. Guards against the keys
+	// being dropped from config.yml again.
+	//
+	// The env vars below only satisfy the whole-Config validator's required
+	// secrets (MustLoadFrom validates everything, not just runtime); config.yml
+	// itself never supplies them.
+	t.Setenv("STRIDE_WORKER_MYSQL_DSN", "env-dsn@tcp(h:3306)/db")
+	t.Setenv("STRIDE_WORKER_AMQP_URL", "amqp://guest:guest@h:5672/")
+	t.Setenv("STRIDE_WORKER_RACE_DETECTION_API_KEY", "env-key")
+
+	cfg := MustLoadFrom("../../config.yml")
+	if cfg.Runtime.WriteIsolation.Enabled {
+		t.Fatalf("shipped config.yml write-isolation default = true, want false")
+	}
+	// The YAML default must track the storage constant it mirrors, so the two
+	// cannot silently drift apart.
+	if cfg.Runtime.WriteIsolation.LeaseTTL != storage.DefaultWatchExecLeaseTTL {
+		t.Fatalf("shipped lease-ttl = %v, want %v (storage.DefaultWatchExecLeaseTTL)", cfg.Runtime.WriteIsolation.LeaseTTL, storage.DefaultWatchExecLeaseTTL)
+	}
+
+	t.Setenv("STRIDE_WORKER_RUNTIME_WRITE_ISOLATION_ENABLED", "true")
+	cfg = MustLoadFrom("../../config.yml")
+	if !cfg.Runtime.WriteIsolation.Enabled {
+		t.Fatal("STRIDE_WORKER_RUNTIME_WRITE_ISOLATION_ENABLED=true did not activate on the shipped src/go/config.yml — the runtime.write-isolation keys are missing again")
 	}
 }
 

@@ -5,6 +5,7 @@
 #   queues.work        -> STRIDE_WORKER_QUEUES_WORK
 #   retry.max-attempts -> STRIDE_WORKER_RETRY_MAX_ATTEMPTS
 #   runtime.prefetch   -> STRIDE_WORKER_RUNTIME_PREFETCH
+#   runtime.write-isolation.enabled -> STRIDE_WORKER_RUNTIME_WRITE_ISOLATION_ENABLED
 #   logger.level       -> STRIDE_WORKER_LOGGER_LEVEL
 
 logger:
@@ -41,6 +42,17 @@ runtime:
   claim-lease: 2m
   reclaim-interval: 30s
   drain-timeout: 30s
+  # Activity write-isolation rollout gate (devops#1005), default OFF. These
+  # keys MUST stay in this file even though the defaults are inert: the x/viper
+  # loader (AutomaticEnv + Unmarshal) applies STRIDE_WORKER_*
+  # RUNTIME_WRITE_ISOLATION_* env overrides only to keys the YAML carries, so
+  # removing them re-breaks the env activation path (container env injection)
+  # that the e2e round caught — file mounts keep working either way. Enabling
+  # is a rollout decision with a hard precondition: every worker still writing
+  # the old fixed ts/v1 keys must be drained first (see config.WriteIsolation).
+  write-isolation:
+    enabled: false
+    lease-ttl: 90s        # = storage.DefaultWatchExecLeaseTTL; renewed at TTL/3
 
 # Independent race detector (not Coach Agent). The DeepSeek key is secret and
 # must be supplied via STRIDE_WORKER_RACE_DETECTION_API_KEY.
