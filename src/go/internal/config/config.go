@@ -79,6 +79,27 @@ type Runtime struct {
 	// DrainTimeout bounds how long shutdown waits for the in-flight job to
 	// unwind before exiting; the lease reclaim covers anything still running.
 	DrainTimeout time.Duration `mapstructure:"drain-timeout" validate:"required"`
+	// WriteIsolation gates the activity write-isolation path (devops#1005):
+	// per-user binding revision + execution lease + immutable revision+hash
+	// curve keys, validated inside the storage publish transaction. DEFAULT
+	// OFF. Enabling is a rollout decision with a hard precondition: every
+	// worker still writing the old fixed ts/v1 keys must be drained first —
+	// a mixed fleet lets an unfenced writer overwrite fenced pointers (the
+	// new onboarding entry points stay closed until then, per the epic's
+	// rollout order).
+	WriteIsolation WriteIsolation `mapstructure:"write-isolation"`
+}
+
+// WriteIsolation configures the activity write-isolation path (devops#1005).
+type WriteIsolation struct {
+	// Enabled turns the isolated publish path on. Default false.
+	Enabled bool `mapstructure:"enabled"`
+	// LeaseTTL is how long an unrenewed per-user execution lease stays valid
+	// before another worker may take it over (the fencing token increments,
+	// fencing the old holder out of its next publish). Zero means
+	// storage.DefaultWatchExecLeaseTTL. Must comfortably exceed the worker's
+	// renewal cadence (TTL/3).
+	LeaseTTL time.Duration `mapstructure:"lease-ttl" validate:"omitempty,gt=0"`
 }
 
 // RaceDetection configures the independent activity classifier. The API key is

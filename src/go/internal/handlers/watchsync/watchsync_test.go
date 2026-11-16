@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	gomysql "github.com/go-sql-driver/mysql"
 
@@ -28,6 +29,10 @@ type fakeProvider struct {
 
 func (f *fakeProvider) IsLoggedIn(user string) (bool, error) {
 	return f.loggedIn, f.loginErr
+}
+
+func (f *fakeProvider) Info() provider.ProviderInfo {
+	return provider.ProviderInfo{Name: "coros"}
 }
 
 func (f *fakeProvider) SyncUser(_ context.Context, user string, opts provider.SyncOptions) (provider.SyncResult, error) {
@@ -314,5 +319,86 @@ func TestHandler_NoStampOnFailedSync(t *testing.T) {
 	}
 	if len(m.set) != 0 {
 		t.Errorf("must not stamp last_sync_time on a failed sync: %v", m.set)
+	}
+}
+
+// --- write-isolation session wiring (devops#1005) ---------------------------
+
+// fakeSessions is a SessionManager recording the session lifecycle and
+// handing the sync a callback so the test can inspect what rode in ctx.
+type fakeSessions struct {
+	beginErr  error
+	renewErr  error
+	released  bool
+	session   *storage.PublishSession
+	sawInSync *storage.PublishSession
+}
+
+func (f *fakeSessions) BeginWatchSyncSession(_ context.Context, userID, providerName, holder string, _ time.Duration) (*storage.PublishSession, error) {
+	if f.beginErr != nil {
+		return nil, f.beginErr
+	}
+	f.session = &storage.PublishSession{UserID: userID, Provider: providerName,
+		Holder: holder, BindingRevision: 3, LeaseToken: 7}
+	return f.session, nil
+}
+
+func (f *fakeSessions) RenewWatchExecLease(context.Context, string, string, int64, time.Duration) error {
+	return f.renewErr
+}
+
+func (f *fakeSessions) ReleaseWatchExecLease(_ context.Context, _, _ string, _ int64) error {
+	f.released = true
+	return nil
+}
+
+type ctxInspectProvider struct {
+	fakeProvider
+	onSync func(ctx context.Context)
+}
+
+func (p *ctxInspectProvider) SyncUser(ctx context.Context, user string, opts provider.SyncOptions) (provider.SyncResult, error) {
+	if p.onSync != nil {
+		p.onSync(ctx)
+	}
+	return p.fakeProvider.SyncUser(ctx, user, opts)
+}
+
+func TestHandler_Isolated_ThreadsSessionThroughSync(t *testing.T) {
+	sessions := &fakeSessions{}
+	f := &ctxInspectProvider{fakeProvider: fakeProvider{loggedIn: true, result: provider.SyncResult{Activities: 1}}}
+	f.onSync = func(ctx context.Context) {
+		sessions.sawInSync = storage.PublishSessionFromContext(ctx)
+	}
+	h := NewIsolated(func(_ context.Context, _ string) (Provider, error) { return f, nil },
+		&fakeMarker{}, testJobs, sessions, 90*time.Millisecond)
+	if _, err := h(context.Background(), &job.Job{ID: "job-9", UserID: "u-iso"}, func(string, int) error { return nil }); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if sessions.sawInSync != sessions.session {
+		t.Fatalf("sync saw session %v, want the begun session %v", sessions.sawInSync, sessions.session)
+	}
+	if sessions.sawInSync == nil || sessions.sawInSync.Provider != "coros" || sessions.sawInSync.Holder != "job-9" {
+		t.Fatalf("session = %+v, want provider coros, holder job-9", sessions.sawInSync)
+	}
+	if !sessions.released {
+		t.Fatal("lease not released after sync")
+	}
+}
+
+func TestHandler_Isolated_LeaseContentionIsRetryable(t *testing.T) {
+	sessions := &fakeSessions{beginErr: storage.ErrLeaseHeld}
+	f := &fakeProvider{loggedIn: true}
+	h := NewIsolated(func(_ context.Context, _ string) (Provider, error) { return f, nil },
+		&fakeMarker{}, testJobs, sessions, time.Minute)
+	_, err := h(context.Background(), &job.Job{ID: "job-10", UserID: "u-iso"}, func(string, int) error { return nil })
+	if !errors.Is(err, storage.ErrLeaseHeld) {
+		t.Fatalf("err = %v, want ErrLeaseHeld", err)
+	}
+	if _, ok := job.AsPermanent(err); ok {
+		t.Fatal("lease contention must stay retryable — the winner finishes and the retry proceeds")
+	}
+	if f.syncCalled {
+		t.Fatal("sync ran despite failing to begin the session")
 	}
 }

@@ -15,6 +15,12 @@
 //
 // Read-only: it never writes a blob or a row, so running it cannot disturb
 // what it measures.
+//
+// v2 note (devops#1005): with immutable keys, a re-published activity's old
+// object legitimately stays in the bucket until the orphan GC collects it, so
+// a BucketOnly diff between GC runs is expected noise during the v2
+// transition — read the verdict together with the GC report, not in
+// isolation.
 package tsblob
 
 import (
@@ -101,7 +107,9 @@ func (a *Auditor) Run(ctx context.Context) (AuditReport, error) {
 // auditSample checks the deterministic sample blob-internally: the pointer
 // columns are the only record beside the object itself, so decode must
 // succeed, the envelope checksum must equal ts_sha256, and the envelope count
-// must equal ts_point_count.
+// must equal ts_point_count. The object is fetched at the row's ACTUAL key —
+// a v1 fixed key or a v2 immutable key (devops#1005) — never re-derived from
+// (user, label).
 func (a *Auditor) auditSample(ctx context.Context, pointers []storage.TSBlobPointer, report *AuditReport) error {
 	rate := a.SampleRate
 	if rate <= 0 {
@@ -123,10 +131,16 @@ func (a *Auditor) auditSample(ctx context.Context, pointers []storage.TSBlobPoin
 	}
 	for i := 0; i < len(pointers); i += step {
 		p := pointers[i]
+		key := p.BlobKey
+		if key == "" {
+			// Pre-v2 rows always carry the key; the derive is a defensive
+			// fallback for a NULL stamped between migration phases.
+			key = tsstore.BlobKey(p.UserID, p.Label)
+		}
 		report.Sample.Sampled++
-		payload, err := a.ts.Get(ctx, tsstore.BlobKey(p.UserID, p.Label))
+		payload, err := a.ts.Get(ctx, key)
 		if err != nil {
-			problem("%s/%s: bucket get: %v (pointer points at nothing?)", p.UserID, p.Label, err)
+			problem("%s/%s: bucket get %s: %v (pointer points at nothing?)", p.UserID, p.Label, key, err)
 			continue
 		}
 		blob, err := tsstore.DecodePoints(payload)
@@ -144,21 +158,28 @@ func (a *Auditor) auditSample(ctx context.Context, pointers []storage.TSBlobPoin
 	return nil
 }
 
-// auditObjects lists the bucket and diffs it against the pointer set.
+// auditObjects lists the bucket (both key layouts) and diffs it against the
+// actual pointer key set.
 func (a *Auditor) auditObjects(ctx context.Context, pointers []storage.TSBlobPointer, report *AuditReport) error {
 	pointerKeys := make(map[string]bool, len(pointers))
 	for _, p := range pointers {
+		if p.BlobKey != "" {
+			pointerKeys[p.BlobKey] = true
+			continue
+		}
 		pointerKeys[tsstore.BlobKey(p.UserID, p.Label)] = true
 	}
 	bucketKeys := map[string]bool{}
-	if err := a.ts.List(ctx, tsstore.KeyPrefix, func(info tsstore.ObjectInfo) error {
-		if ctx.Err() != nil {
-			return ctx.Err()
+	for _, prefix := range tsstore.AllKeyPrefixes() {
+		if err := a.ts.List(ctx, prefix, func(info tsstore.ObjectInfo) error {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			bucketKeys[info.Key] = true
+			return nil
+		}); err != nil {
+			return fmt.Errorf("tsblob: list bucket: %w", err)
 		}
-		bucketKeys[info.Key] = true
-		return nil
-	}); err != nil {
-		return fmt.Errorf("tsblob: list bucket: %w", err)
 	}
 	report.Objects.BucketObjects = int64(len(bucketKeys))
 

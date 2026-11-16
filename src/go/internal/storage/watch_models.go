@@ -341,5 +341,10 @@ func watchModels() []any {
 		&Activity{}, &Lap{}, &ActivityWatchZone{},
 		&DailyHealth{}, &Dashboard{}, &DailyHRV{}, &RacePrediction{},
 		&SyncMeta{}, &ProviderCredential{}, &WatchSchedule{},
+		// Activity write-isolation state (devops#1005): per-user binding
+		// revision, per-user execution lease, and the blob upload-intent
+		// registry. Migrated with the watch domain so API and worker both
+		// carry the tables (the API writes credentials → binding revisions).
+		&WatchBindingState{}, &WatchExecLease{}, &TSUploadIntent{},
 	}
 }
