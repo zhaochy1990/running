@@ -97,7 +97,7 @@ func newCalibrationCmd() *cobra.Command {
 	replay.Flags().StringVar(&manifest, "manifest", "", "local immutable JSON or JSON.gz manifest")
 	replay.Flags().StringVar(&sidecarPath, "evaluation-sidecar", "", "optional immutable heldout audit/acceptance sidecar bound to base manifest hash")
 	replay.Flags().StringVar(&code, "code-version", "", "exact source commit (required provenance)")
-	command.AddCommand(replay, newCalibrationPublicDataCmd(), newCalibrationCollectionCmd())
+	command.AddCommand(replay, newCalibrationPublicDataCmd(), newCalibrationCollectionCmd(), newCalibrationUserCmd())
 	return command
 }
 

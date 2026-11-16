@@ -23,13 +23,16 @@ const calibrationLookbackDays = 180
 
 // CalibrationStore is the read+write surface the calibration job needs: the
 // calibration inputs (activities-in-window + timeseries/laps + daily RHR), the
-// snapshot/zone writes, and the same-day snapshot read that gates empty runs.
+// snapshot/zone writes, the same-day snapshot read that gates empty runs, and
+// (#999) the per-user override the daily sync must honor.
 type CalibrationStore interface {
 	calibrationsource.CandidateReader
 	storage.CalibrationReader
 	CalibrationPolicy(context.Context) (storage.RunningCalibrationPolicy, error)
+	UserCalibrationOverride(context.Context, string) (*storage.RunningCalibrationUserOverride, error)
 	PublishRunningCalibration(context.Context, *storage.RunningCalibrationSnapshot, []storage.RunningCalibrationPaceZone, []storage.RunningCalibrationHRZone) (uint64, error)
 	LatestRunningCalibrationSnapshotForVersion(context.Context, string, int, string) (*storage.RunningCalibrationSnapshot, error)
+	LatestRunningCalibrationSnapshotForIdentity(context.Context, string, int, string, string) (*storage.RunningCalibrationSnapshot, error)
 }
 
 type calibrationInput struct {
@@ -87,7 +90,20 @@ func NewCalibrationWithOptions(store CalibrationStore, options CalibrationOption
 		if err != nil {
 			return "", err
 		}
+		// #999: a per-user override redirects this user's daily refresh to the
+		// pinned (version, revision) identity. It is the user's explicit
+		// selection and therefore an authorized active selection for exactly
+		// this user — never a global change and never an option flag.
+		override, err := store.UserCalibrationOverride(ctx, user)
+		if err != nil {
+			return "", err
+		}
 		version := policy.ActiveVersion
+		overrideRevision := ""
+		if override != nil {
+			version = override.AlgorithmVersion
+			overrideRevision = override.AlgorithmRevision
+		}
 		if in.SelectionMode != "" && in.SelectionMode != "active" && in.SelectionMode != "candidate" {
 			return "", job.NewPermanentError("bad_payload", fmt.Errorf("invalid calibration selection"))
 		}
@@ -100,11 +116,12 @@ func NewCalibrationWithOptions(store CalibrationStore, options CalibrationOption
 				return "", job.NewPermanentError("candidate_not_configured", fmt.Errorf("candidate not configured"))
 			}
 			version = *policy.CandidateVersion
+			overrideRevision = ""
 			if version == policy.ActiveVersion || version == policy.FallbackVersion {
 				return "", job.NewPermanentError("candidate_aliases_active_snapshot", fmt.Errorf("candidate persistence requires a distinct version from active and fallback"))
 			}
 		}
-		if version != calibration.ModelVersion && !candidateOnly && !options.AllowActiveCandidate {
+		if version != calibration.ModelVersion && !candidateOnly && !options.AllowActiveCandidate && override == nil {
 			return "", job.NewPermanentError("candidate_persistence_disabled", fmt.Errorf("active v4 calibration requires explicit active constructor opt-in"))
 		}
 		asOf := timefmt.ShanghaiToday()
@@ -119,7 +136,16 @@ func NewCalibrationWithOptions(store CalibrationStore, options CalibrationOption
 		// path) always recompute.
 		day := asOf.Format("2006-01-02")
 		if in.Mode == string(provider.SyncIncremental) && len(in.LabelIDs) == 0 {
-			snap, err := store.LatestRunningCalibrationSnapshotForVersion(ctx, user, version, day)
+			var snap *storage.RunningCalibrationSnapshot
+			var err error
+			if override != nil {
+				// The empty-run gate must check the pinned identity, not just
+				// the version: another revision's same-day row is not this
+				// selection's snapshot.
+				snap, err = store.LatestRunningCalibrationSnapshotForIdentity(ctx, user, version, overrideRevision, day)
+			} else {
+				snap, err = store.LatestRunningCalibrationSnapshotForVersion(ctx, user, version, day)
+			}
 			if err != nil {
 				return "", err // infra fault -> retryable
 			}
@@ -129,9 +155,26 @@ func NewCalibrationWithOptions(store CalibrationStore, options CalibrationOption
 				return string(out), nil
 			}
 		}
-		snapID, activities, err := runCalibrationVersion(ctx, store, user, asOf, version)
-		if err != nil {
-			return "", err // infra fault -> retryable
+		var snapID uint64
+		var activities int
+		if override != nil && override.AlgorithmVersion == calibration.CandidateVersion && overrideRevision == calibration.EvolvedCandidateAlgorithmRevision {
+			evolvedOut, err := runEvolvedCalibration(ctx, store, user, asOf)
+			if err != nil {
+				return "", err
+			}
+			var evolved struct {
+				CalibrationSnapshot uint64 `json:"calibration_snapshot_id"`
+			}
+			if err := json.Unmarshal([]byte(evolvedOut), &evolved); err != nil {
+				return "", err
+			}
+			snapID = evolved.CalibrationSnapshot
+		} else {
+			var err error
+			snapID, activities, err = runCalibrationVersion(ctx, store, user, asOf, version)
+			if err != nil {
+				return "", err // infra fault -> retryable
+			}
 		}
 		_ = hb("calibration", 100)
 		out, _ := json.Marshal(calibrationResult{User: user, Status: "ok", CalibrationSnapshot: snapID, Activities: activities, AlgorithmVersion: version, CandidateOnly: candidateOnly, LabelIDs: in.LabelIDs, HealthDates: in.HealthDates})

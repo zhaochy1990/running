@@ -24,6 +24,11 @@ func withActiveCalibrationOptions(ctx context.Context, options ActiveCalibration
 }
 func checkActiveCalibrationWrite(ctx context.Context, b storage.CalibrationBundle) error {
 	allowed, _ := ctx.Value(activeCalibrationWriteKey{}).(bool)
+	// #999: an active per-user override is the user's explicit selection of the
+	// evolved v4 — it authorizes active-v4 derived writes for exactly this
+	// user, exactly like the constructor option authorizes a global active4.
+	// The incomplete-baseline gate below still applies unconditionally.
+	allowed = allowed || b.Selection.Override != nil
 	if b.Snapshot != nil && b.Snapshot.AlgorithmVersion == calibration.CandidateVersion && !allowed {
 		return job.NewPermanentError("candidate_derived_write_forbidden", fmt.Errorf("active v4 requires explicit constructor opt-in; shadow must use read-only preview"))
 	}

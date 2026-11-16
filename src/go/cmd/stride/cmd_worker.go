@@ -404,6 +404,10 @@ func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *stor
 	reg.MustRegister(compute.CalibrationJobType, compute.NewCalibration(store))
 	reg.MustRegister(compute.ComputeJobType, compute.NewCompute(store))
 	reg.MustRegister(compute.AbilityJobType, compute.NewAbility(store))
+	// #999 single-user evolved-v4 closed loop (publish/revoke/recompute):
+	// registered so an authorized internal enqueue can dispatch it; nothing in
+	// any pipeline or cron ever triggers it automatically.
+	reg.MustRegister(compute.UserCalibrationJobType, compute.NewUserCalibration(store))
 	// The sync pipelines' shape step (devops#829): fills route_thumb_json only —
 	// it deliberately takes no COS client, nothing renders or uploads anymore.
 	reg.MustRegister(routethumbnails.ShapesJobType, routethumbnails.NewShapes(store))

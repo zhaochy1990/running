@@ -34,6 +34,13 @@ const (
 	// Shanghai day. Mode-aware (full|backfill). Internal-only: it is a step of the
 	// sync pipelines (ability failure must not fail the sync).
 	JobTypeAbility = "ability"
+	// JobTypeUserCalibration is the #999 single-user closed loop over the
+	// evolved v4: publish (idempotent snapshot + per-user override activation
+	// in one transaction), revoke (restore the global selection), and a bounded
+	// derived recompute under the currently effective selection. Internal-only;
+	// not part of any pipeline — an authorized operator enqueues it explicitly
+	// for one target user.
+	JobTypeUserCalibration = "user_calibration"
 	// JobTypeRaceDetection classifies synced HM/FM-distance outdoor/track runs.
 	// It is optional inside sync pipelines: terminal failure remains observable
 	// on the step while the pipeline advances to deterministic compute.
@@ -230,6 +237,13 @@ func Jobs() []JobSpec {
 			Description:   "Compute + persist the 4-layer ability snapshot (L1 quality / L2 freshness / L3 six dimensions / L4 composite + marathon/half estimates) for the subject athlete, and persist each batch activity's L1 row (label_ids the pipeline threaded through, else the anchor day's activities; ultra-short ones under 1.5 km AND 10 min are skipped). Mode-aware: full computes the current Shanghai day; backfill seeds the last `days` days; backfill_l1 fills missing per-activity L1 rows over the whole history without recomputing snapshots. Internal-only.",
 			InputSchema:   json.RawMessage(`{"type":"object","properties":{"mode":{"type":"string","enum":["full","backfill","backfill_l1"],"default":"full"},"days":{"type":"integer","minimum":1,"maximum":365},"ref_date":{"type":"string","format":"date"},"label_ids":{"type":"array","items":{"type":"string"},"description":"The activities this sync produced (pipeline-threaded); without it the L1 batch is the anchor day's activities."}},"additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{"mode":"backfill","days":180}`),
+		},
+		{
+			Type:          JobTypeUserCalibration,
+			UserInitiable: false,
+			Description:   "Single-user evolved-v4 closed loop (#999): publish runs the evolved estimator for the job's user and, when the estimate is a declared estimation state (prior_dominated/stale included; unavailable or non-finite refused), writes the pinned (v4, revision) snapshot + zones and activates the per-user override in one transaction — the global policy and every other user never change. revoke deactivates the override (restores the global selection; derived rows are NOT rolled back). recompute refreshes the effective calibration and rebuilds the derived rows (load/zones/PMC/ability) for the last `days` days under the currently effective selection, seeded at the window edge — today's thresholds never backfill history and formal training plans are never touched. Internal-only: an authorized operator enqueues it explicitly (three-gate discipline; not part of any pipeline).",
+			InputSchema:   json.RawMessage(`{"type":"object","required":["action"],"properties":{"action":{"type":"string","enum":["publish","revoke","recompute"],"description":"Closed-loop step to run for the job's user_id."},"as_of_day":{"type":"string","format":"date","description":"Shanghai anchor day; defaults to today."},"days":{"type":"integer","minimum":1,"maximum":365,"default":30,"description":"recompute window."},"actor":{"type":"string","maxLength":191,"description":"Audit: who authorized this operation."},"note":{"type":"string","maxLength":512,"description":"Audit: why."}},"additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{"action":"publish","actor":"operator","note":"single-user trial authorization"}`),
 		},
 		{
 			Type:          JobTypeRaceCalendar,

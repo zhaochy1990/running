@@ -78,6 +78,12 @@ func (f *fakeStore) LatestRunningCalibrationSnapshot(_ context.Context, _ string
 func (f *fakeStore) LatestRunningCalibrationSnapshotForVersion(_ context.Context, _ string, _ int, _ string) (*storage.RunningCalibrationSnapshot, error) {
 	return f.snap, nil
 }
+func (f *fakeStore) LatestRunningCalibrationSnapshotForIdentity(_ context.Context, _ string, _ int, _, _ string) (*storage.RunningCalibrationSnapshot, error) {
+	return f.snap, nil
+}
+func (f *fakeStore) UserCalibrationOverride(_ context.Context, _ string) (*storage.RunningCalibrationUserOverride, error) {
+	return nil, nil
+}
 func (f *fakeStore) AllRunningActivities(_ context.Context, _ string) ([]storage.Activity, error) {
 	return f.acts, nil
 }
