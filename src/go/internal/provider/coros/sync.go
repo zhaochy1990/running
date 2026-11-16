@@ -413,6 +413,25 @@ type dayItem struct {
 	Fatigue           *float64    `json:"fatigue"`
 }
 
+// analyseDayDate resolves one analyse dayList entry's date label to the ISO
+// YYYY-MM-DD every downstream contract shares (daily_health's date primary
+// key, the range channel's coverage labels, ordering and gap arithmetic): the
+// vendor's date string when present, else the happenDay number, which arrives
+// compact (YYYYMMDD) and is normalized through corosDateToISO — an already-ISO
+// label passes through untouched. ok=false skips a row with neither field
+// usable (devops#1008 D1: a compact label leaking into the coverage chain
+// breaks string ordering and inverts gap ranges).
+func analyseDayDate(d dayItem) (string, bool) {
+	date := d.Date
+	if date == "" {
+		date = d.HappenDay.String()
+	}
+	if date == "" {
+		return "", false
+	}
+	return corosDateToISO(date), true
+}
+
 // syncHealth refreshes daily_health from /analyse/query, then the dashboard
 // singleton, per-day HRV trend, and race predictions from /dashboard/query
 // (+ /dashboard/detail/query for the weekly volume).
@@ -429,11 +448,8 @@ func (p *Provider) syncHealth(ctx context.Context, client *Client, user string, 
 	}
 	total := len(data.DayList)
 	for i, d := range data.DayList {
-		date := d.Date
-		if date == "" {
-			date = d.HappenDay.String()
-		}
-		if date == "" {
+		date, ok := analyseDayDate(d)
+		if !ok {
 			continue
 		}
 		if err := p.store.UpsertDailyHealth(ctx, dayItemToHealth(user, d, date)); err != nil {

@@ -541,7 +541,11 @@ func (s *Service) sweepDispatched(ctx context.Context) {
 
 // applyStageResult persists the executor's coverage report onto the stage
 // coverage row (scanned/observed/gaps stay separate; a report that carries no
-// observed window never reads as coverage).
+// observed window never reads as coverage). The job's terminal success
+// supersedes whatever an earlier failed attempt left on the row: the stale
+// error note and gap record must not outlive the retry that replaced them
+// (devops#1008 D2 — a completed stage never reads as still carrying its
+// first-attempt failure).
 func (s *Service) applyStageResult(ctx context.Context, d *storage.OnboardingSyncDispatch, j *job.Job) {
 	cov, err := s.store.GetOnboardingSyncStageCoverage(ctx, d.SessionID, d.Stage)
 	if err != nil {
@@ -552,6 +556,8 @@ func (s *Service) applyStageResult(ctx context.Context, d *storage.OnboardingSyn
 		return
 	}
 	cov.Status = storage.OnboardingSyncCoverageCompleted
+	cov.LastError = nil
+	cov.GapsJSON = nil
 	var res StageResult
 	if json.Unmarshal([]byte(j.ResultJSON), &res) == nil && res.Stage == d.Stage {
 		if res.Status == storage.OnboardingSyncCoverageCompletedWithGaps {

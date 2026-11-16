@@ -312,6 +312,9 @@ func (p *Provider) rangeActivities(ctx context.Context, client *Client, user str
 // it returns — the window is the server's target, not a cap (COROS legitimately
 // answers more than the 28-day target; those days are kept, and the report
 // marks the ACTUAL coverage, never promising days the vendor did not send).
+// Day labels resolve through analyseDayDate so the whole chain (ordering,
+// credential, gaps, the stored daily_health key) speaks ISO dates — a compact
+// vendor label never reaches the coverage contract (devops#1008 D1).
 func (p *Provider) rangeHealth(ctx context.Context, client *Client, user string, win provider.DayWindow) (*provider.RangeChannelReport, error) {
 	raw, err := client.GetAnalyse(ctx)
 	if err != nil {
@@ -325,11 +328,8 @@ func (p *Provider) rangeHealth(ctx context.Context, client *Client, user string,
 	}
 	days := make([]string, 0, len(data.DayList))
 	for _, d := range data.DayList {
-		date := d.Date
-		if date == "" {
-			date = d.HappenDay.String()
-		}
-		if date == "" {
+		date, ok := analyseDayDate(d)
+		if !ok {
 			continue
 		}
 		h := dayItemToHealth(user, d, date)

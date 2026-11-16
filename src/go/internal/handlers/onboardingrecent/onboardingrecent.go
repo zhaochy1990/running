@@ -278,7 +278,17 @@ func New(cfg Config) job.Handler {
 			}
 		}
 
-		return stageResultFromReport(in.Stage, rep), nil
+		// Re-read the work items AFTER the terminal marks above: the result
+		// must cover the FULL item set, not only the channels this run
+		// executed. A partial retry (one channel failed, the rest reused
+		// byte-for-byte) whose report carried only the re-run channel would
+		// otherwise narrow the stage's coverage to that channel's window and
+		// leave readiness disagreeing with the completed state (devops#1008 D2).
+		items, err = cfg.Store.ListOnboardingSyncWorkItems(ctx, sess.SessionID, in.Stage)
+		if err != nil {
+			return "", err
+		}
+		return stageResultFromReport(in.Stage, rep, items), nil
 	}
 }
 
@@ -300,14 +310,25 @@ func gapReason(gaps []provider.RangeGap) string {
 }
 
 // stageResultFromReport builds the job's ResultJSON from the fresh channel
-// reports: scanned = the channels' windows, observed = the merge of actually
+// reports MERGED with the persisted outcomes of every channel this run did not
+// execute: scanned = the union of the windows, observed = the merge of actually
 // observed windows, gaps = every channel's recorded gaps (kind-prefixed).
-func stageResultFromReport(stage string, rep provider.RecentRangeReport) string {
+//
+// The items matter on partial retries (devops#1008 D2): a channel that already
+// holds a complete-fetch credential is reused byte-for-byte and never appears
+// in the fresh report — its window, observed range and gap record still count
+// toward the stage, so a re-run of one channel cannot narrow the stage's
+// coverage to that channel's window. Only TERMINAL items contribute; a
+// non-terminal item in a successful run never happened and must not be
+// reported as coverage.
+func stageResultFromReport(stage string, rep provider.RecentRangeReport, items []*storage.OnboardingSyncWorkItem) string {
 	res := onboardingsync.StageResult{Stage: stage, Status: storage.OnboardingSyncCoverageCompleted}
+	ran := map[string]bool{}
 	merge := func(kind string, r *provider.RangeChannelReport) {
 		if r == nil {
 			return
 		}
+		ran[kind] = true
 		if res.ScannedFrom == nil || r.ScannedFrom < *res.ScannedFrom {
 			s := r.ScannedFrom
 			res.ScannedFrom = &s
@@ -335,6 +356,41 @@ func stageResultFromReport(stage string, rep provider.RecentRangeReport) string 
 	merge(kindActivities, rep.Activities)
 	merge(kindHealth, rep.Health)
 	merge(kindDashboard, rep.Dashboard)
+	for _, it := range items {
+		if ran[it.Kind] {
+			continue // this run's fresh report already carries the channel
+		}
+		switch it.Status {
+		case storage.OnboardingSyncItemDone, storage.OnboardingSyncItemGap:
+		default:
+			continue // never ran to a terminal outcome: no coverage claim
+		}
+		if res.ScannedFrom == nil || it.RangeFrom < *res.ScannedFrom {
+			s := it.RangeFrom
+			res.ScannedFrom = &s
+		}
+		if res.ScannedTo == nil || it.RangeTo > *res.ScannedTo {
+			s := it.RangeTo
+			res.ScannedTo = &s
+		}
+		if it.Status == storage.OnboardingSyncItemGap {
+			reason := "unobtainable at provider"
+			if it.Error != nil && *it.Error != "" {
+				reason = *it.Error
+			}
+			res.Gaps = append(res.Gaps, onboardingsync.StageGap{From: it.RangeFrom, To: it.RangeTo, Reason: it.Kind + ": " + reason})
+		}
+		if from, to, ok := observedFromCredential(it.FetchCredential); ok {
+			if res.ObservedFrom == nil || from < *res.ObservedFrom {
+				s := from
+				res.ObservedFrom = &s
+			}
+			if res.ObservedTo == nil || to > *res.ObservedTo {
+				s := to
+				res.ObservedTo = &s
+			}
+		}
+	}
 	if len(res.Gaps) > 0 {
 		res.Status = storage.OnboardingSyncCoverageCompletedWithGaps
 	}
