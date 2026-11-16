@@ -8,7 +8,8 @@
     "push-date-sheet": "/components/push-date-sheet/index",
     "route-thumb": "/components/route-thumb/index",
     "adjust-dialog": "/components/adjust-dialog/index",
-    "injury-dialog": "/components/injury-dialog/index"
+    "injury-dialog": "/components/injury-dialog/index",
+    "onboarding-sync-status": "/components/onboarding-sync-status/index"
   },
   "componentPlaceholder": {
     "push-date-sheet": "view"

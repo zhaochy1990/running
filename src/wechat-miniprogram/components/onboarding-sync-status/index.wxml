@@ -1,0 +1,45 @@
+<!-- 首次同步 session 状态卡（devops#1015）：只读观察服务端进度。
+     chips = 原始/派生/辅助分开的摘要；展开后逐阶段列目标范围 / 实际覆盖 /
+     缺项（合法缺测，warn 色）/ 错误（待抓取失败，danger 色）。 -->
+<view wx:if="{{visible && vm}}" class="oss oss--{{vm.tone}}">
+  <view class="oss__head" bindtap="onToggle">
+    <view class="oss__dot {{vm.tone === 'muted' ? 'oss__dot--pulse' : ''}}"></view>
+    <view class="oss__title">首次数据同步<text class="oss__state"> · {{vm.stateText}}</text></view>
+    <view class="oss__toggle">{{expanded ? '收起' : '展开'}}</view>
+  </view>
+
+  <view class="oss__chips">
+    <view wx:for="{{vm.chips}}" wx:key="key" class="oss-chip oss-chip--{{item.tone}}">
+      <text class="oss-chip__label">{{item.label}}</text>
+      <text class="oss-chip__text">{{item.text}}</text>
+    </view>
+  </view>
+
+  <view class="oss__actions">
+    <view wx:if="{{vm.recentReady}}" class="oss__link" catchtap="onGoActivities">查看近期活动</view>
+    <view
+      wx:if="{{vm.failed}}"
+      class="oss__btn {{retrying ? 'oss__btn--disabled' : ''}}"
+      catchtap="onRetry"
+    >{{retrying ? '重试中…' : '重试失败项'}}</view>
+    <view wx:if="{{vm.failed || vm.gapsTerminal}}" class="oss__link oss__link--muted" catchtap="onDismiss">忽略</view>
+  </view>
+
+  <view wx:if="{{expanded}}" class="oss__body">
+    <view wx:if="{{vm.errorText}}" class="oss__alert">{{vm.errorText}}</view>
+    <view wx:if="{{retryError}}" class="oss__alert">{{retryError}}</view>
+
+    <view wx:for="{{vm.stages}}" wx:key="key" class="oss-stage">
+      <view class="oss-stage__head">
+        <text class="oss-stage__label">{{item.label}}</text>
+        <text class="oss-stage__readiness oss-stage__readiness--{{item.readinessTone}}">{{item.readinessText}}</text>
+      </view>
+      <view class="oss-stage__meta">{{item.targetText}}</view>
+      <view wx:if="{{item.observedText}}" class="oss-stage__meta">{{item.observedText}}</view>
+      <view wx:if="{{item.gapsText}}" class="oss-stage__gaps">{{item.gapsText}}</view>
+      <view wx:if="{{item.error}}" class="oss-stage__error">{{item.error}}</view>
+    </view>
+
+    <view class="oss__footnote">退出小程序或换设备不会中断同步，进度保持不变。近期训练在“近期数据”就绪后即可查看，历史补齐失败不影响近期数据。</view>
+  </view>
+</view>

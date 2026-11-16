@@ -191,31 +191,53 @@
 
   <!-- ============ 第三步：同步（可跳过） ============ -->
   <block wx:elif="{{step === 'sync'}}">
-    <block wx:if="{{syncPending}}">
+    <!-- session 模式（devops#1015）：创建/认领可靠后即进首页，进度交给首页状态卡 -->
+    <block wx:if="{{syncMode === 'session'}}">
       <view class="ob-hero">
-        <view class="ob-title">还在同步中</view>
-        <view class="ob-subtitle">数据量大时会久一些，下次进来会自动接着同步</view>
+        <view wx:if="{{!syncError}}" class="ob-spinner"></view>
+        <view class="ob-title">{{sessionTitle}}</view>
+        <view class="ob-subtitle">{{sessionSubtitle}}</view>
       </view>
+
+      <view wx:if="{{!syncError}}" class="ob-card ob-progress">
+        <view class="ob-progress__text">{{sessionProgressText}}</view>
+        <view class="ob-progress__hint">可以先退出，同步在服务端继续，首页可随时查看进度</view>
+      </view>
+
+      <view wx:if="{{syncError}}" class="ob-error ob-error--loose">{{syncError}}</view>
+
+      <button wx:if="{{syncError}}" class="ob-cta" bindtap="onRetrySync">{{sessionRetryLabel}}</button>
+      <view class="ob-skip" bindtap="goHome">先进入首页</view>
     </block>
+
+    <!-- 旧 full-run 模式（开关关闭时的兼容行为，语义不变） -->
     <block wx:else>
-      <view class="ob-hero">
-        <view class="ob-spinner"></view>
-        <view class="ob-title">正在准备你的训练数据</view>
-        <view class="ob-subtitle">首次同步会拉取历史训练并计算能力基线，通常需要十几分钟</view>
-      </view>
-      <view class="ob-card ob-progress">
-        <view class="ob-progress__text">{{syncText}}</view>
-        <view class="ob-progress__bar">
-          <view class="ob-progress__fill" style="width: {{percent}}%"></view>
+      <block wx:if="{{syncPending}}">
+        <view class="ob-hero">
+          <view class="ob-title">还在同步中</view>
+          <view class="ob-subtitle">数据量大时会久一些，下次进来会自动接着同步</view>
         </view>
-        <view class="ob-progress__hint">可以先退出，下次进来会接着同步</view>
-      </view>
+      </block>
+      <block wx:else>
+        <view class="ob-hero">
+          <view class="ob-spinner"></view>
+          <view class="ob-title">正在准备你的训练数据</view>
+          <view class="ob-subtitle">首次同步会拉取历史训练并计算能力基线，通常需要十几分钟</view>
+        </view>
+        <view class="ob-card ob-progress">
+          <view class="ob-progress__text">{{syncText}}</view>
+          <view class="ob-progress__bar">
+            <view class="ob-progress__fill" style="width: {{percent}}%"></view>
+          </view>
+          <view class="ob-progress__hint">可以先退出，下次进来会接着同步</view>
+        </view>
+      </block>
+
+      <view wx:if="{{syncError}}" class="ob-error ob-error--loose">{{syncError}}</view>
+
+      <button wx:if="{{syncError}}" class="ob-cta" bindtap="onRetrySync">重试</button>
+      <view class="ob-skip" bindtap="goHome">{{syncError ? '稍后再说，先逛逛' : '先进入首页'}}</view>
     </block>
-
-    <view wx:if="{{syncError}}" class="ob-error ob-error--loose">{{syncError}}</view>
-
-    <button wx:if="{{syncError}}" class="ob-cta" bindtap="onRetrySync">重试</button>
-    <view class="ob-skip" bindtap="goHome">{{syncError ? '稍后再说，先逛逛' : '先进入首页'}}</view>
   </block>
 
   <!-- ============ 完成 ============ -->
