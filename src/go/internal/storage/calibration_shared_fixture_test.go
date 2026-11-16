@@ -28,10 +28,10 @@ func TestCalibrationSharedFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	st.db.Where("policy_key = ?", calibrationPolicyKey).Delete(&RunningCalibrationPolicy{})
-	ids := []string{uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()}
+	ids := []string{uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()}
 	t.Cleanup(func() {
 		for _, uid := range ids {
-			for _, m := range []any{&RunningCalibrationPaceZone{}, &RunningCalibrationHRZone{}, &RunningCalibrationSnapshot{}} {
+			for _, m := range []any{&RunningCalibrationPaceZone{}, &RunningCalibrationHRZone{}, &RunningCalibrationSnapshot{}, &RunningCalibrationUserOverride{}} {
 				st.db.Where("user_id = ?", uid).Delete(m)
 			}
 		}
@@ -76,6 +76,44 @@ func TestCalibrationSharedFixture(t *testing.T) {
 			}
 		}
 	}
+	// #999 per-user override cases: ids[4] holds an active override pinning the
+	// evolved v4 revision (with both v4 identities plus a v3 row seeded),
+	// ids[5] holds a revoked override. Global policy stays untouched, so the
+	// pre-existing cases keep their expected selections.
+	overrideSource := calibration.SourceSummary{SchemaVersion: 1, State: "available", Strategy: "evolved_candidate", Implementation: "evolved_joint_v2", ParameterVersion: "rev2-research-2026-11", AlgorithmRevision: calibration.EvolvedCandidateAlgorithmRevision, DataCutoffDay: "2026-11-16", AvailabilitySemantics: "event_date_retrospective", Speed: &calibration.MetricSource{Method: "evolved_joint_v2", TargetType: "model_one_hour_capability_v60", State: "model_estimated", MeasurementQuality: "low", EffortSupport: "submaximal", Support: "medium", RangeMeaning: "model_sensitivity", Reasons: []string{}, Limitations: []string{}}, HR: &calibration.MetricSource{Method: "evolved_joint_v2", TargetType: "threshold_hr_at_v60_reference", State: "prior_dominated", MeasurementQuality: "unknown", EffortSupport: "unknown", Support: "low", RangeMeaning: "model_sensitivity", Reasons: []string{}, Limitations: []string{}}}
+	overrideRaw, err := json.Marshal(overrideSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	overrideText := string(overrideRaw)
+	for _, seed := range []struct {
+		user     string
+		day      string
+		version  int
+		revision string
+		speed    *float64
+		source   *string
+	}{
+		{ids[4], "2026-11-01", 3, "", fptr(4), nil},
+		{ids[4], "2026-11-16", 4, calibration.EvolvedCandidateAlgorithmRevision, fptr(3.5), &overrideText},
+		{ids[4], "2026-11-16", 4, "", fptr(5), nil},
+		{ids[5], "2026-11-01", 3, "", fptr(4.4), nil},
+		{ids[5], "2026-11-16", 4, calibration.EvolvedCandidateAlgorithmRevision, fptr(3.4), &overrideText},
+	} {
+		if _, err := st.PublishRunningCalibration(ctx, &RunningCalibrationSnapshot{UserID: seed.user, AsOfDate: seed.day, AlgorithmVersion: seed.version, AlgorithmRevision: seed.revision, ThresholdSpeedMps: seed.speed, SourceJSON: seed.source}, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := st.ReplaceUserCalibrationOverride(ctx, 0, RunningCalibrationUserOverride{UserID: ids[4], AlgorithmVersion: 4, AlgorithmRevision: calibration.EvolvedCandidateAlgorithmRevision, Actor: "fixture"}); err != nil {
+		t.Fatal(err)
+	}
+	revoked, err := st.ReplaceUserCalibrationOverride(ctx, 0, RunningCalibrationUserOverride{UserID: ids[5], AlgorithmVersion: 4, AlgorithmRevision: calibration.EvolvedCandidateAlgorithmRevision, Actor: "fixture"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RevokeUserCalibrationOverride(ctx, ids[5], revoked.Revision, "fixture", "trial ended"); err != nil {
+		t.Fatal(err)
+	}
 	type testCase struct {
 		Name   string            `json:"name"`
 		UserID string            `json:"user_id"`
@@ -89,7 +127,7 @@ func TestCalibrationSharedFixture(t *testing.T) {
 		user int
 		day  string
 		mode CalibrationMode
-	}{{"active-v3", 0, "2026-11-03", CalibrationActive}, {"constraints-only", 0, "2026-11-03", CalibrationCandidate}, {"preferred-missing", 0, "2026-11-01", CalibrationCandidate}, {"no-history", 0, "2026-10-01", CalibrationActive}, {"cross-user", 1, "2026-11-03", CalibrationActive}, {"invalid-source", 2, "2026-11-03", CalibrationActive}, {"no-snapshot", 3, "2026-11-03", CalibrationActive}} {
+	}{{"active-v3", 0, "2026-11-03", CalibrationActive}, {"constraints-only", 0, "2026-11-03", CalibrationCandidate}, {"preferred-missing", 0, "2026-11-01", CalibrationCandidate}, {"no-history", 0, "2026-10-01", CalibrationActive}, {"cross-user", 1, "2026-11-03", CalibrationActive}, {"invalid-source", 2, "2026-11-03", CalibrationActive}, {"no-snapshot", 3, "2026-11-03", CalibrationActive}, {"override-selected", 4, "2026-11-16", CalibrationActive}, {"override-historical-fallback", 4, "2026-11-02", CalibrationActive}, {"override-revoked", 5, "2026-11-16", CalibrationActive}} {
 		b, err := st.ReadEffectiveRunningCalibration(ctx, ids[x.user], x.day, x.mode)
 		if err != nil {
 			t.Fatal(err)

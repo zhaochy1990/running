@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { CalibrationSourceSchema } from "./calibrationMetadata.js";
+import { CalibrationSelectionSchema, CalibrationSourceSchema } from "./calibrationMetadata.js";
 
 test("bounded source retains actual producer stale reason/date without reviving support", () => {
   const fixture = JSON.parse(readFileSync(new URL("../../../../docs/calibration/fixtures/client-display-v1.json", import.meta.url), "utf8"));
@@ -71,4 +71,30 @@ test("algorithm revision and estimation state stay optional for evolved v4 (#995
   });
   assert.equal(evolved.algorithm_revision, "v4-rev2-2026-11");
   assert.equal(evolved.speed?.state, "prior_dominated");
+});
+
+test("selection override stays optional and bounded (#999)", () => {
+  // Legacy selections (no per-user override) parse unchanged and never infer
+  // an override block.
+  const legacy = CalibrationSelectionSchema.parse({
+    mode: "active",
+    policy_revision: 0,
+    requested_version: 3,
+    effective_version: 3,
+    state: "selected",
+  });
+  assert.equal(legacy.override, undefined);
+  // An overridden read discloses the pinned identity and the authorizing
+  // override row revision, including on fallback reads.
+  const overridden = CalibrationSelectionSchema.parse({
+    mode: "active",
+    policy_revision: 0,
+    requested_version: 4,
+    effective_version: 3,
+    state: "fallback",
+    reason: "override_snapshot_missing",
+    override: { revision: 2, algorithm_version: 4, algorithm_revision: "v4-rev2-2026-11" },
+  });
+  assert.deepEqual(overridden.override, { revision: 2, algorithm_version: 4, algorithm_revision: "v4-rev2-2026-11" });
+  assert.equal(overridden.state, "fallback");
 });

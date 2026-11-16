@@ -98,6 +98,16 @@ export const CalibrationSelectionSchema = z.object({
   effective_version: z.number().int().nullable(),
   state: z.enum(["selected", "fallback", "unavailable"]),
   reason: z.string().optional(),
+  // #999 per-user override disclosure: present exactly when an active override
+  // row influenced this read (including fallback reads where the pinned
+  // identity had no snapshot at/below the cutoff).
+  override: z
+    .object({
+      revision: z.number().int().nonnegative(),
+      algorithm_version: z.number().int(),
+      algorithm_revision: z.string(),
+    })
+    .optional(),
 });
 export type CalibrationSource = z.infer<typeof CalibrationSourceSchema>;
 export type CalibrationSelection = z.infer<typeof CalibrationSelectionSchema>;

@@ -232,6 +232,7 @@ func (ActivityZone) TableName() string { return "activity_zones" }
 func computeModels() []any {
 	return []any{
 		&RunningCalibrationPolicy{},
+		&RunningCalibrationUserOverride{},
 		&RunningCalibrationSnapshot{},
 		&RunningCalibrationPaceZone{},
 		&RunningCalibrationHRZone{},
