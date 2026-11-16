@@ -193,7 +193,7 @@ func runWorker() error {
 		}
 		return registry.Build(name, store, watchRequestDelay)
 	}
-	registerHandlers(reg, resolve, store, racedetection.New(raceClassifier), cfg.RaceDetection.MaxConcurrency, waClient, tsBlobStore, log, competitioncalendar.Config{
+	registerHandlers(reg, resolve, store, racedetection.New(raceClassifier), cfg.RaceDetection.MaxConcurrency, waClient, tsBlobStore, log, cfg.Runtime.WriteIsolation, competitioncalendar.Config{
 		Client:                waClient,
 		Store:                 store,
 		CompetitionGroupID:    cfg.WorldAthletics.CompetitionGroupID,
@@ -393,12 +393,23 @@ func newTSBlobStore(cfg config.TSBlob) (tsstore.Store, error) {
 // mirrors the 中国田协 catalogue (caConfig); `homecity_recompute` refreshes
 // every user's resident-city snapshot; `ts_blob_gc` collects orphaned
 // timeseries blobs (devops#785, operator-enqueued).
-func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store, raceDetector *racedetection.Detector, raceConcurrency int, waClient *worldathletics.Client, tsBlobStore tsstore.Store, log *zap.Logger, ccConfig competitioncalendar.Config, caConfig chinaathcalendar.Config, wxClient *wxpay.Client) {
+func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store, raceDetector *racedetection.Detector, raceConcurrency int, waClient *worldathletics.Client, tsBlobStore tsstore.Store, log *zap.Logger, isolation config.WriteIsolation, ccConfig competitioncalendar.Config, caConfig chinaathcalendar.Config, wxClient *wxpay.Client) {
 	reg.MustRegister("hello", func(_ context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		_ = hb("greeting", 50)
 		return fmt.Sprintf(`{"echo":%q}`, j.InputJSON), nil
 	})
-	reg.MustRegister(watchsync.JobType, watchsync.New(resolve, store, watchJobs))
+	// watch_sync: when write-isolation is enabled (devops#1005), each run
+	// begins a per-user binding-revision + execution-lease session and
+	// publishes through the fenced immutable-key path. Default off — the
+	// flag may only be turned on once the old fixed-key writers are drained
+	// (see config.WriteIsolation).
+	var syncHandler job.Handler
+	if isolation.Enabled {
+		syncHandler = watchsync.NewIsolated(resolve, store, watchJobs, store, isolation.LeaseTTL)
+	} else {
+		syncHandler = watchsync.New(resolve, store, watchJobs)
+	}
+	reg.MustRegister(watchsync.JobType, syncHandler)
 	reg.MustRegister(racehandler.JobType, racehandler.New(store, raceDetector, raceConcurrency))
 	reg.MustRegister(racehandler.BackfillJobType, racehandler.NewBackfill(store, raceDetector, raceConcurrency))
 	reg.MustRegister(compute.CalibrationJobType, compute.NewCalibration(store))

@@ -100,23 +100,26 @@ func anyValidGPS(rows []TimeseriesPoint) bool {
 // handles handed to another package) so the SQL stays with the models it
 // touches.
 
-// TSBlobPointer is one stamped activity's identity + checksum + declared
-// point count, the audit's sampling frame.
+// TSBlobPointer is one stamped activity's identity + key + checksum +
+// declared point count, the audit's sampling frame. BlobKey is the row's
+// ACTUAL pointer value — a v1 fixed key or a v2 immutable key (devops#1005);
+// consumers must never re-derive the key from (user, label).
 type TSBlobPointer struct {
 	UserID     string `gorm:"column:user_id"`
 	Label      string `gorm:"column:label_id"`
+	BlobKey    string `gorm:"column:ts_blob_key"`
 	SHA256     string `gorm:"column:ts_sha256"`
 	PointCount int64  `gorm:"column:ts_point_count"`
 }
 
 // ListTSBlobPointers returns every blob-stamped (user_id, label_id,
-// ts_sha256, ts_point_count) tuple, ordered. The activities table is small
-// (tens of thousands of rows); the audit samples its 5% from this list and
-// diff-checks the bucket's key set against it.
+// ts_blob_key, ts_sha256, ts_point_count) tuple, ordered. The activities
+// table is small (tens of thousands of rows); the audit samples its 5% from
+// this list and diff-checks the bucket's key set against it.
 func (s *Store) ListTSBlobPointers(ctx context.Context) ([]TSBlobPointer, error) {
 	var rows []TSBlobPointer
 	err := s.db.WithContext(ctx).Model(&Activity{}).
-		Select("user_id, label_id, ts_sha256, ts_point_count").
+		Select("user_id, label_id, ts_blob_key, ts_sha256, ts_point_count").
 		Where("ts_blob_key IS NOT NULL").
 		Order("user_id, label_id").
 		Scan(&rows).Error
@@ -126,25 +129,24 @@ func (s *Store) ListTSBlobPointers(ctx context.Context) ([]TSBlobPointer, error)
 	return rows, nil
 }
 
-// ExistingLabels reports which of labelIDs exist as activities rows for
-// userID. The orphan GC batch-checks listed bucket keys against it.
-func (s *Store) ExistingLabels(ctx context.Context, userID string, labelIDs []string) (map[string]bool, error) {
-	out := map[string]bool{}
-	for len(labelIDs) > 0 {
-		chunk := labelIDs
-		if len(chunk) > 500 {
-			chunk = labelIDs[:500]
-		}
-		labelIDs = labelIDs[len(chunk):]
-		var found []string
-		if err := s.db.WithContext(ctx).Model(&Activity{}).
-			Where("user_id = ? AND label_id IN ?", userID, chunk).
-			Pluck("label_id", &found).Error; err != nil {
-			return nil, fmt.Errorf("storage: existing labels for %s: %w", userID, err)
-		}
-		for _, l := range found {
-			out[l] = true
-		}
+// ListReferencedTSBlobKeys returns the set of object keys the activities
+// rows actually point at (both layouts). This — not label existence — is the
+// GC's liveness rule (devops#1005): an immutable v2 object whose activity
+// was re-published under a different key is an orphan even though the label
+// still exists, and a v1 object left behind by a pointer that moved to v2 is
+// an orphan too.
+func (s *Store) ListReferencedTSBlobKeys(ctx context.Context) (map[string]bool, error) {
+	var keys []string
+	err := s.db.WithContext(ctx).Model(&Activity{}).
+		Where("ts_blob_key IS NOT NULL AND ts_blob_key <> ''").
+		Distinct().
+		Pluck("ts_blob_key", &keys).Error
+	if err != nil {
+		return nil, fmt.Errorf("storage: list referenced ts blob keys: %w", err)
+	}
+	out := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		out[k] = true
 	}
 	return out, nil
 }

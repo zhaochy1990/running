@@ -237,6 +237,17 @@ jobs:
           go test ./internal/storage/...
           -run 'TestLeaseRenewalAndListStaleRunning|TestTransitionJobCompareAndSet'
           -count=1 -v
+      # The activity write-isolation fence (binding revision, exec lease,
+      # immutable v2 publish) is transactional SQL + a real FileStore — the
+      # stale-worker/rebind/takeover races only reproduce against real MySQL
+      # (devops#1005 AC5).
+      - name: Activity write-isolation storage tests (MySQL + FileStore)
+        env:
+          STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
+        run: >-
+          go test ./internal/storage/...
+          -run 'TestWriteIsolation'
+          -count=1 -v
       # The provider_events unique index is the webhook push idempotency rule
       # (devops#287) — SQL-level, so only a real MySQL exercises it.
       - name: Provider-event storage tests (MySQL)

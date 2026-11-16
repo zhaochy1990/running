@@ -275,11 +275,4 @@ func TestTSBlobPointerQuerySurface(t *testing.T) {
 	if len(mine) != 2 || mine["l1"] != 2 || mine["l3"] != 0 {
 		t.Fatalf("pointers for %s = %v, want l1=2 pts and l3=0 pts", uid, mine)
 	}
-	existing, err := st.ExistingLabels(ctx, uid, []string{"l1", "l3", "missing"})
-	if err != nil {
-		t.Fatalf("ExistingLabels: %v", err)
-	}
-	if !existing["l1"] || !existing["l3"] || existing["missing"] {
-		t.Fatalf("ExistingLabels = %v", existing)
-	}
 }
