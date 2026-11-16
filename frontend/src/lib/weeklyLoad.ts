@@ -5,7 +5,7 @@
  * Why this lives here: `daily_training_load` already stores per-day totals
  * (sum of activity-level dose, EWMA acute/chronic, etc.) in Shanghai-local
  * `YYYY-MM-DD`, so weekly rollup is a pure client aggregation — no new
- * schema, no backfill. See `docs/working-model.md` for the wider rationale.
+ * schema, no backfill.
  */
 
 import { shanghaiToday, shanghaiWeekStart } from "./shanghai";
