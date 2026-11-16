@@ -249,20 +249,28 @@ func FitEvolvedJoint(evidence []CandidateEvidence, history []Activity, metadata 
 		return speedOut, hrOut
 	}
 	if counted == 0 && len(refs) == 0 {
-		// No usable series and no measured reference: either a qualified
-		// physiological prior carries a prior_dominated estimate, or (with the
-		// adjudication saying a series was valid) every series row was
-		// excluded by quality - still an honest prior-only output with the
-		// categorical reason, never unavailable without one.
+		// No usable series and no measured reference. When the adjudication
+		// saw a valid series but every row was excluded by the quality gates,
+		// the estimate is a PRIOR composition and must be stamped
+		// prior_dominated - never model_estimated dressed on a prior-only
+		// output (contract section 6, review P1-2); without a qualified prior
+		// it is unavailable with BOTH categorical reasons (the series existed,
+		// the quality gates excluded it).
+		seriesExcluded := in.HRSeriesValid
 		if !hrPriorQualified {
 			hrOut.Reasons = append(hrOut.Reasons, ReasonNoHRSeriesOrPrior)
+			if seriesExcluded {
+				hrOut.Reasons = append(hrOut.Reasons, ReasonHRSeriesQualityExcluded)
+			}
 			hrOut.State = StateUnavailable
 			return speedOut, hrOut
 		}
-		if in.HRSeriesValid {
-			hrOut.Reasons = append(hrOut.Reasons, ReasonHRSeriesQualityExcluded)
+		state := decision.HR.State
+		if seriesExcluded {
+			hrOut.Reasons = append(hrOut.Reasons, ReasonHRSeriesQualityExcluded, ReasonPriorOnlyHR)
+			state = StatePriorDominated
 		}
-		evolvedHRStampPriorOnly(&hrOut, priors, restPrior, decision.HR.State)
+		evolvedHRStampPriorOnly(&hrOut, priors, restPrior, state)
 		return speedOut, hrOut
 	}
 	if len(refs) > 0 && counted == 0 {
@@ -274,6 +282,9 @@ func FitEvolvedJoint(evidence []CandidateEvidence, history []Activity, metadata 
 	}
 
 	// Joint fit: one objective, staged blocks (theta | a,k,delta alternation).
+	// Without a speed basis the v60 prior spread - not a speed-derived range -
+	// is what propagates into the HR envelope; the reason names it.
+	speedless := speedOut.CenterMps == nil
 	hrOut.TauGridCoarsened = term.largeInput
 	speedJoint, theta, rounds, objective, ok := evolvedHRJointSolve(evidence, asOf, priors, historical, term, speedOut, restPrior)
 	if !ok {
@@ -284,6 +295,9 @@ func FitEvolvedJoint(evidence []CandidateEvidence, history []Activity, metadata 
 	speedOut = speedJoint
 	hrOut.Method = evolvedHRMethodJoint
 	hrOut.State = decision.HR.State
+	if speedless {
+		hrOut.Reasons = append(hrOut.Reasons, evolvedHRSpeedMissing)
+	}
 	hrOut.SolverRounds = rounds
 	hrOut.SolverConverged = true
 	hrOut.SolverObjective = objective
@@ -422,9 +436,13 @@ func evolvedAdmitHRSeries(history []Activity, hrEvidence *CandidateHRReport, met
 		}
 	}
 	// Sensor weight and budget: chest straps keep full weight, everything
-	// else (optical or unknown) is down-weighted, never excluded; roots on
-	// the same day share that day's unit exactly like the speed side.
+	// else (optical or unknown) is down-weighted, never excluded. Budget
+	// semantics mirror the speed side exactly (review P1-1): activities of
+	// one root share that root's unit, and roots on the same day share the
+	// day's unit - re-uploading the same content under new activity IDs
+	// (alias rows sharing a root) can never multiply support.
 	rootDay := map[string]string{}
+	rootActs := map[string]int{}
 	for i := range term.acts {
 		act := &term.acts[i]
 		if act.Role != "model_series" {
@@ -434,6 +452,7 @@ func evolvedAdmitHRSeries(history []Activity, hrEvidence *CandidateHRReport, met
 		if act.Sensor == "chest_strap" {
 			act.SensorWeight = 1
 		}
+		rootActs[act.Root]++
 		if d, ok := rootDay[act.Root]; !ok || act.Day < d {
 			rootDay[act.Root] = act.Day
 		}
@@ -449,7 +468,7 @@ func evolvedAdmitHRSeries(history []Activity, hrEvidence *CandidateHRReport, met
 			digests = append(digests, evolvedHRDigest{ActivityID: act.ActivityID, Root: act.Root, Day: act.Day, Role: act.Role})
 			continue
 		}
-		w := math.Exp2(-act.AgeDays/90) * act.SensorWeight / float64(dayRoots[rootDay[act.Root]])
+		w := math.Exp2(-act.AgeDays/90) * act.SensorWeight / float64(rootActs[act.Root]*dayRoots[rootDay[act.Root]])
 		counted := 0
 		for j := range act.Blocks {
 			if !act.Blocks[j].Init {
@@ -786,8 +805,15 @@ func (t *evolvedHRTerm) evaluate(priors EvolvedPriorSet, a float64, withPriors b
 		for i := range theta.knots {
 			j += 0.5 * math.Pow((theta.knots[i]-priors.HRShape[i].HRFractionMean)/priors.HRShape[i].HRFractionSD, 2)
 		}
-		for _, d := range theta.day {
-			j += 0.5 * math.Pow(d/priors.HRDayEffectBpm.SD, 2)
+		// Sorted keys: float summation must not depend on map iteration
+		// order (review P2-1, determinism hygiene).
+		dayKeys := make([]string, 0, len(theta.day))
+		for d := range theta.day {
+			dayKeys = append(dayKeys, d)
+		}
+		sort.Strings(dayKeys)
+		for _, d := range dayKeys {
+			j += 0.5 * math.Pow(theta.day[d]/priors.HRDayEffectBpm.SD, 2)
 		}
 	}
 	return j, grad
@@ -1129,23 +1155,41 @@ func evolvedHRJointSolve(evidence []CandidateEvidence, asOf time.Time, priors Ev
 	if len(fit.obs) > 0 && !speedless {
 		fit.hr = term
 		var last evolvedSolution
+		var bestTheta evolvedHRTheta
+		bestJ := math.Inf(1)
+		bestSet := false
 		for r := 0; r < evolvedHRJointRounds; r++ {
 			sol, ok := evolvedSolveJointK(&fit, priors, histMean, histSD, speedOut.MapK)
 			rounds++
 			if !ok {
-				if r == 0 {
+				if r == 0 && !bestSet {
 					return speedOut, theta, rounds, 0, false
 				}
 				break
 			}
-			last = sol
 			next := evolvedFitHRTheta(term, sol.a, priors, restPrior)
+			// Keep-best guard (review P2-2): block-coordinate descent has no
+			// formal monotonicity guarantee across rounds (theta cold starts,
+			// local k window), so a round is accepted only when the joint
+			// objective does not worsen; the published (solution, theta)
+			// pair is always the best evaluated pair.
+			saved := term.theta
+			term.theta = next
+			jRound, _ := evolvedProfile(&fit, priors, histMean, histSD, sol.k, sol.a, true)
+			term.theta = saved
+			if bestSet && jRound > bestJ {
+				break
+			}
+			last, bestTheta, bestJ, bestSet = sol, next, jRound, true
 			converged := math.Abs(next.hrRest-theta.hrRest) < 0.01 && math.Abs(next.hrMax-theta.hrMax) < 0.01 && math.Abs(sol.a-speedAnchor) < 1e-4
 			theta, term.theta = next, next
 			speedAnchor = sol.a
 			if converged {
 				break
 			}
+		}
+		if bestSet {
+			theta, term.theta = bestTheta, bestTheta
 		}
 		// Joint re-stamp of the speed report through the shared finalize path.
 		out := EvolvedSpeedReport{
@@ -1186,7 +1230,9 @@ func evolvedHRJointSolve(evidence []CandidateEvidence, asOf time.Time, priors Ev
 	} else {
 		// No speed basis: the capability anchor stays the population prior
 		// (set above) and is NOT re-optimized on HR alone; the v60 prior
-		// spread propagates into the HR range instead (contract section 6).
+		// spread propagates into the HR range instead (contract sections
+		// 2.3/6, implemented as the prior-sd envelope in evolvedHRStampJoint;
+		// the caller stamps the speed_basis_absent reason).
 	}
 	hrJ, _ := term.evaluate(priors, speedAnchor, true)
 	return speedOut, theta, rounds, hrJ, true
@@ -1232,10 +1278,20 @@ func evolvedHRStampJoint(out *EvolvedHRReport, term *evolvedHRTerm, theta evolve
 	bridge := priors.HRBridgeAtV60()
 	sdOut := math.Hypot(sdLevel, delta*bridge.HRFractionSD)
 	// Speed-range propagation: conditional level re-solve at the v60 range
-	// edges (knots/tau/day/drift frozen) evaluates the envelope.
+	// edges (knots/tau/day/drift frozen) evaluates the envelope. Without a
+	// speed basis the v60 prior spread must enter instead (contract sections
+	// 2.3/6, review P1-3): the anchor is the population prior mean and the
+	// edges are one prior sd of log v60 away, so the HR range can never be
+	// narrower than the un-identified capability allows.
 	env := [2]float64{modelCenter, modelCenter}
 	if speedOut.RangeLowMps != nil && speedOut.RangeHighMps != nil {
 		for i, edge := range []float64{math.Log(*speedOut.RangeLowMps), math.Log(*speedOut.RangeHighMps)} {
+			t := theta
+			evolvedHRLevelSolve(term, priors, &t, edge)
+			env[i] = t.hrRest + (t.hrMax-t.hrRest)*evolvedHRBridgeFraction(priors, t)
+		}
+	} else {
+		for i, edge := range []float64{a - priors.LogV60.SD, a + priors.LogV60.SD} {
 			t := theta
 			evolvedHRLevelSolve(term, priors, &t, edge)
 			env[i] = t.hrRest + (t.hrMax-t.hrRest)*evolvedHRBridgeFraction(priors, t)

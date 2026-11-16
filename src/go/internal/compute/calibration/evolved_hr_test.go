@@ -694,3 +694,196 @@ func TestEvolvedHRSummaryAndConfidenceWiring(t *testing.T) {
 		t.Fatalf("HR state lost in serialization: %+v", parsed.HR)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Review P1 regressions (2026-11-16 FAIL -> fix round)
+// ---------------------------------------------------------------------------
+
+// TestEvolvedHRSameRootAliasesCannotMultiplySupport (review P1-1): re-uploaded
+// content under new activity IDs sharing one RootActivityID must not multiply
+// the HR support - the HR budget shares one unit per root (mirroring the
+// speed side), so weights, curvature and the joint center all stay put.
+func TestEvolvedHRSameRootAliasesCannotMultiplySupport(t *testing.T) {
+	asOf := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
+	p := evolvedHRDefaultSim()
+	base := []calibration.Activity{
+		evolvedHRSimActivity("solo", asOf.AddDate(0, 0, -3), p, []evolvedHRSpeedStep{{Seconds: 2400, SpeedMps: evolvedHRSimSpeed(2400)}}, 3),
+	}
+	resBase, err := calibration.EstimateOfflineWithEvidence(calibration.StrategyEvolvedCandidate, base, asOf, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Same content twice under alias IDs sharing one root via metadata.
+	aliased := []calibration.Activity{
+		evolvedHRSimActivity("alias-1", asOf.AddDate(0, 0, -3), p, []evolvedHRSpeedStep{{Seconds: 2400, SpeedMps: evolvedHRSimSpeed(2400)}}, 3),
+		evolvedHRSimActivity("alias-2", asOf.AddDate(0, 0, -3), p, []evolvedHRSpeedStep{{Seconds: 2400, SpeedMps: evolvedHRSimSpeed(2400)}}, 3),
+	}
+	meta := []calibration.CandidateMetadata{
+		{ActivityID: "alias-1", RootActivityID: "shared-root", SourceVersion: "audited-v1", EvidenceRef: "r1"},
+		{ActivityID: "alias-2", RootActivityID: "shared-root", SourceVersion: "audited-v1", EvidenceRef: "r2"},
+	}
+	resAlias, err := calibration.EstimateOfflineWithEvidence(calibration.StrategyEvolvedCandidate, aliased, asOf, nil, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hrBase, hrAlias := resBase.Evolved.HR, resAlias.Evolved.HR
+	if hrBase.CenterBpm == nil || hrAlias.CenterBpm == nil {
+		t.Fatal("both fits must produce centers")
+	}
+	totalWeight := func(hr *calibration.EvolvedHRReport) float64 {
+		sum := 0.0
+		for _, o := range hr.Observations {
+			sum += o.Weight
+		}
+		return sum
+	}
+	if math.Abs(totalWeight(hrAlias)-totalWeight(hrBase)) > 1e-9 {
+		t.Fatalf("same-root aliases changed the total HR weight: %v vs %v", totalWeight(hrAlias), totalWeight(hrBase))
+	}
+	if hrAlias.EffectiveCurvature > hrBase.EffectiveCurvature*1.0001 {
+		t.Fatalf("same-root aliases manufactured certainty: %v vs %v", hrAlias.EffectiveCurvature, hrBase.EffectiveCurvature)
+	}
+	// The weighted objective is mathematically identical, but two aliased
+	// activities accumulate float sums in a different order, so equality is
+	// asserted at round-off scale - four orders below the ~0.01 m/s support
+	// inflation this test guards against.
+	if d := math.Abs(*hrAlias.CenterBpm - *hrBase.CenterBpm); d > 1e-8 {
+		t.Fatalf("same-root aliases moved the HR center: %v vs %v (delta %v)", *hrAlias.CenterBpm, *hrBase.CenterBpm, d)
+	}
+	if resAlias.Evolved.Speed.CenterMps == nil || resBase.Evolved.Speed.CenterMps == nil ||
+		math.Abs(*resAlias.Evolved.Speed.CenterMps-*resBase.Evolved.Speed.CenterMps) > 1e-9 {
+		t.Fatalf("same-root aliases moved the joint capability: %v vs %v", resAlias.Evolved.Speed.CenterMps, resBase.Evolved.Speed.CenterMps)
+	}
+}
+
+// TestEvolvedHRAllSeriesQualityExcludedStateIsHonest (review P1-2): when the
+// window holds a valid HR series but every row was excluded by the quality
+// gates, the prior-composed output must be prior_dominated (never
+// model_estimated dressed on a prior), or unavailable with BOTH categorical
+// reasons when no qualified physiological prior exists.
+func TestEvolvedHRAllSeriesQualityExcludedStateIsHonest(t *testing.T) {
+	asOf := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
+	p := evolvedHRDefaultSim()
+	history := evolvedHRSimHistory(asOf, p)
+	lockAll := []calibration.CandidateMetadata{}
+	for _, id := range []string{"constant", "stepup", "recovery", "warmup"} {
+		lockAll = append(lockAll, calibration.CandidateMetadata{
+			ActivityID: id, SourceVersion: "audited-v1", EvidenceRef: "lock-" + id,
+			HR: &calibration.CandidateHRMetadata{Protocol: "none", Sensor: "wrist_optical", SuspectedCadenceLock: true},
+		})
+	}
+	rhr := 52.0
+	health := []calibration.HealthRow{{Date: asOf.AddDate(0, 0, -5), RHR: &rhr}}
+
+	// With a qualified physiological prior: finite prior_dominated estimate
+	// with the quality-exclusion and prior-only reasons; never medium.
+	withPrior, err := calibration.EstimateOfflineWithEvidence(calibration.StrategyEvolvedCandidate, history, asOf, health, lockAll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hr := withPrior.Evolved.HR
+	if hr.State != calibration.StatePriorDominated {
+		t.Fatalf("all-quality-excluded with prior must be prior_dominated, got %s (reasons %v)", hr.State, hr.Reasons)
+	}
+	if hr.CenterBpm == nil {
+		t.Fatal("prior branch must publish a center")
+	}
+	wantPrior := 52.0 + (188.0-52.0)*0.92
+	if math.Abs(*hr.CenterBpm-wantPrior) > 0.01 {
+		t.Fatalf("center must be the RHR-bridged composition: %v want %v", *hr.CenterBpm, wantPrior)
+	}
+	foundExcluded, foundPriorOnly := false, false
+	for _, r := range hr.Reasons {
+		if r == calibration.ReasonHRSeriesQualityExcluded {
+			foundExcluded = true
+		}
+		if r == calibration.ReasonPriorOnlyHR {
+			foundPriorOnly = true
+		}
+	}
+	if !foundExcluded || !foundPriorOnly {
+		t.Fatalf("reasons must name the quality exclusion and the prior-only composition: %v", hr.Reasons)
+	}
+	if withPrior.Snapshot.ThresholdHRConfidence != calibration.ConfidenceLow {
+		t.Fatalf("prior-only confidence must be low, got %s", withPrior.Snapshot.ThresholdHRConfidence)
+	}
+
+	// Without a qualified prior: unavailable with BOTH categorical reasons -
+	// the series existed, the quality gates excluded it, no prior remains.
+	withoutPrior, err := calibration.EstimateOfflineWithEvidence(calibration.StrategyEvolvedCandidate, history, asOf, nil, lockAll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hr2 := withoutPrior.Evolved.HR
+	if hr2.State != calibration.StateUnavailable || hr2.CenterBpm != nil {
+		t.Fatalf("all-quality-excluded without prior must be unavailable without center: %+v", hr2)
+	}
+	foundNoPrior, foundExcluded2 := false, false
+	for _, r := range hr2.Reasons {
+		if r == calibration.ReasonNoHRSeriesOrPrior {
+			foundNoPrior = true
+		}
+		if r == calibration.ReasonHRSeriesQualityExcluded {
+			foundExcluded2 = true
+		}
+	}
+	if !foundNoPrior || !foundExcluded2 {
+		t.Fatalf("unavailable must carry both categorical reasons: %v", hr2.Reasons)
+	}
+}
+
+// TestEvolvedHRSpeedlessPriorSpreadWidensHRRange (review P1-3): with a usable
+// HR series but no admissible speed observation (sub-model-domain durations),
+// the v60 prior spread must propagate into the HR range via the prior-sd
+// envelope - the range may not stay at the level-only ~14 bpm width.
+func TestEvolvedHRSpeedlessPriorSpreadWidensHRRange(t *testing.T) {
+	asOf := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
+	p := evolvedHRDefaultSim()
+	// 150 s activities: enough HR blocks (5 per series), too short for any
+	// speed observation (model domain starts at 180 s) and no historical
+	// prior - the speed side is honestly unavailable.
+	history := []calibration.Activity{
+		evolvedHRSimActivity("short-a", asOf.AddDate(0, 0, -2), p, []evolvedHRSpeedStep{{Seconds: 150, SpeedMps: evolvedHRSimSpeed(150)}}, 2),
+		evolvedHRSimActivity("short-b", asOf.AddDate(0, 0, -6), p, []evolvedHRSpeedStep{{Seconds: 150, SpeedMps: evolvedHRSimSpeed(150)}}, 6),
+		evolvedHRSimActivity("short-c", asOf.AddDate(0, 0, -11), p, []evolvedHRSpeedStep{{Seconds: 150, SpeedMps: evolvedHRSimSpeed(150)}}, 11),
+	}
+	result, err := calibration.EstimateOfflineWithEvidence(calibration.StrategyEvolvedCandidate, history, asOf, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hr := result.Evolved.HR
+	if result.Evolved.Speed.CenterMps != nil {
+		t.Fatal("fixture sanity: sub-180s window must leave the speed side unavailable")
+	}
+	if hr.State != calibration.StateModelEstimated {
+		t.Fatalf("HR series alone is model_estimated for HR: %s (reasons %v)", hr.State, hr.Reasons)
+	}
+	if hr.CenterBpm == nil || hr.RangeLowBpm == nil || hr.RangeHighBpm == nil {
+		t.Fatalf("speedless joint fit must publish center and range: %+v", hr)
+	}
+	foundReason := false
+	for _, r := range hr.Reasons {
+		if r == "speed_basis_absent_v60_prior_only" {
+			foundReason = true
+		}
+	}
+	if !foundReason {
+		t.Fatalf("speedless reason must be stamped: %v", hr.Reasons)
+	}
+	if hr.SpeedEnvelopeLowBpm == nil || hr.SpeedEnvelopeHighBpm == nil {
+		t.Fatal("prior-sd envelope must be published for the speedless case")
+	}
+	spread := math.Abs(*hr.SpeedEnvelopeHighBpm - *hr.SpeedEnvelopeLowBpm)
+	if spread < 5 {
+		t.Fatalf("prior-sd envelope must be non-degenerate: spread %v", spread)
+	}
+	width := *hr.RangeHighBpm - *hr.RangeLowBpm
+	if width < 25 {
+		t.Fatalf("v60 prior spread must widen the HR range beyond the level-only width: %v", width)
+	}
+	if *hr.RangeLowBpm > math.Min(*hr.SpeedEnvelopeLowBpm, *hr.SpeedEnvelopeHighBpm)-1e-9 ||
+		*hr.RangeHighBpm < math.Max(*hr.SpeedEnvelopeLowBpm, *hr.SpeedEnvelopeHighBpm)-1e-9 {
+		t.Fatalf("HR range must cover the prior-sd envelope: [%v,%v] vs [%v,%v]",
+			*hr.RangeLowBpm, *hr.RangeHighBpm, *hr.SpeedEnvelopeLowBpm, *hr.SpeedEnvelopeHighBpm)
+	}
+}
