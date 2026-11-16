@@ -117,11 +117,20 @@ public final class WatchModel {
             connectProvider = nil
             toastMessage = "绑定成功"
             await fetchWatch()
-            if let userId = app.me?.id {
-                let sync = OnboardingSyncService(api: app.api)
-                Task.detached {
-                    // fire-and-forget：同步页会重试（catch 只吞不扰）。
-                    _ = try? await sync.ensureSync(userID: userId)
+            let api = app.api
+            let status = app.onboardingSyncStatus
+            Task.detached {
+                // fire-and-forget 首次同步入口，能力跟随服务端开关（devops#1016）：
+                // session 双开关开 → 幂等创建/认领 session（绝不重复触发旧
+                // full-run；与别端并发解析到同一 session）；关 → 维持旧
+                // ensureSync 五段链。失败只吞不扰，页面/全局 banner 会重试。
+                guard let profile = try? await api.myProfile(), profile.syncEnabled else { return }
+                if profile.features?.onboardingSyncSession == true {
+                    _ = try? await api.createOnboardingSyncSession(retry: false)
+                    // 建好后恢复全局只读观察（404 停轮后的重启点）。
+                    await MainActor.run { status.startPolling() }
+                } else {
+                    _ = try? await OnboardingSyncService(api: api).ensureSync(userID: profile.id)
                 }
             }
             // 带 redirect 进来（devops#940）：回来源页（profile-edit 原地留、

@@ -23,9 +23,13 @@ public struct ProfileFeatureFlags: Decodable, Sendable, Equatable {
     /// config.yml 的 sync-data-at-onboarding：onboarding 时是否同步数据。
     /// 缺失按「关」处理——宁可不动 24 分钟的 pipeline，不在开关未知时乱触发。
     public let syncDataAtOnboarding: Bool?
+    /// 首次同步 session rollout 开关（devops#1006/1016）：与总开关同时开
+    /// 时客户端才选 session 入口（双开关口径与 Web 一致）。
+    public let onboardingSyncSession: Bool?
 
     enum CodingKeys: String, CodingKey {
         case syncDataAtOnboarding = "sync_data_at_onboarding"
+        case onboardingSyncSession = "onboarding_sync_session"
     }
 }
 

@@ -62,7 +62,11 @@ public struct OnboardingView: View {
                 WatchStepView(model: model, theme: theme)
             }
         case .sync:
-            SyncStepView(model: model, theme: theme)
+            if model.sessionMode {
+                SessionSubmitStepView(model: model, theme: theme)
+            } else {
+                SyncStepView(model: model, theme: theme)
+            }
         case .ready:
             ReadyStepView(model: model, theme: theme)
         }
@@ -378,7 +382,150 @@ private struct WatchStepView: View {
     }
 }
 
-// MARK: - 第三步：同步（可跳过）
+// MARK: - 第三步：session 提交（devops#1016，双开关开时的同步步）
+
+/// session 模式的提交步（Web SessionSubmitStep 等价）：不起旧管线、不显示
+/// 六步百分比——只请服务端原子创建/认领 session，shell_ready（session 与
+/// 派发记录均已持久化）确认后 profile-only 完成并自动进首页，进度交给
+/// 全局 banner。确认前不宣称后台在同步（创建失败不假报运行中）。
+private struct SessionSubmitStepView: View {
+    @Bindable var model: OnboardingModel
+    let theme: any Theme
+
+    private var createFailed: Bool { model.sessionPhase == .createFailed }
+    private var enterFailed: Bool { model.sessionPhase == .enterFailed }
+    private var working: Bool {
+        switch model.sessionPhase {
+        case .creating, .adopting, .entering: true
+        case .createFailed, .enterFailed, nil: false
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: theme.space(.xl)) {
+            StepBadge(index: 3, name: "同步", theme: theme)
+
+            VStack(spacing: theme.space(.xs)) {
+                Text(createFailed ? "同步任务创建失败" : "正在准备你的训练数据")
+                    .font(theme.font(.fs22, weight: .bold))
+                    .foregroundStyle(theme.foreground)
+                Text(subtitle)
+                    .font(theme.font(.fs13))
+                    .foregroundStyle(theme.muted)
+                    .multilineTextAlignment(.center)
+            }
+
+            VStack(spacing: theme.space(.md)) {
+                submitRow(
+                    title: "创建首次同步任务",
+                    status: createFailed ? "失败" : (model.sessionPhase == .creating ? "进行中" : "已就绪"),
+                    failed: createFailed,
+                    active: model.sessionPhase == .creating,
+                    detail: "服务端原子创建或复用你当前手表绑定的同步任务",
+                    theme: theme
+                )
+                submitRow(
+                    title: "近期数据与历史补齐",
+                    status: "进入首页后查看",
+                    failed: false,
+                    active: false,
+                    detail: "首页顶部会持续显示同步进度、覆盖范围与缺项，可随时收起",
+                    theme: theme
+                )
+            }
+
+            if let sessionError = model.sessionError {
+                Text(sessionError)
+                    .font(theme.font(.fs13))
+                    .foregroundStyle(theme.danger)
+                    .multilineTextAlignment(.center)
+            }
+
+            if createFailed {
+                Button {
+                    Task { await model.retrySessionCreate() }
+                } label: {
+                    Text("重试创建")
+                        .font(theme.font(.fs15, weight: .medium))
+                        .foregroundStyle(theme.onAccent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, theme.space(.md))
+                        .background(RoundedRectangle(cornerRadius: theme.radius(.md)).fill(theme.accent))
+                }
+                .buttonStyle(.plain)
+            }
+
+            if enterFailed {
+                Button {
+                    Task { await model.retryEnterApp() }
+                } label: {
+                    Text("重试进入")
+                        .font(theme.font(.fs15, weight: .medium))
+                        .foregroundStyle(theme.onAccent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, theme.space(.md))
+                        .background(RoundedRectangle(cornerRadius: theme.radius(.md)).fill(theme.accent))
+                }
+                .buttonStyle(.plain)
+            }
+
+            if createFailed || enterFailed {
+                Button {
+                    model.skipToHome()
+                } label: {
+                    Text("稍后再说，先逛逛")
+                        .font(theme.font(.fs14))
+                        .foregroundStyle(theme.muted)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if working {
+                ProgressView()
+                    .tint(theme.accent)
+            }
+        }
+        .padding(theme.space(.xxl))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var subtitle: String {
+        switch model.sessionPhase {
+        case .createFailed: "后台没有正在运行的同步任务，不会重复导入数据。"
+        case .adopting: "正在接管已有的首次同步任务，进度不会丢失。"
+        default: "已创建可靠的首次同步任务后即进入首页；近期数据会率先可用，历史数据在后台补齐。"
+        }
+    }
+
+    private func submitRow(title: String, status: String, failed: Bool, active: Bool,
+                           detail: String, theme: any Theme) -> some View {
+        HStack(alignment: .top, spacing: theme.space(.sm)) {
+            Image(systemName: failed ? "exclamationmark.circle" : (active ? "dot.circle" : "checkmark.circle"))
+                .font(theme.font(.fs15))
+                .foregroundStyle(failed ? theme.danger : (active ? theme.accent : theme.accentDeep))
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text(title)
+                        .font(theme.font(.fs14, weight: .medium))
+                        .foregroundStyle(theme.foreground)
+                    Text("· \(status)")
+                        .font(theme.font(.fs12))
+                        .foregroundStyle(failed ? theme.danger : theme.muted)
+                }
+                Text(detail)
+                    .font(theme.font(.fs12))
+                    .foregroundStyle(theme.muted)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(theme.space(.md))
+        .background(RoundedRectangle(cornerRadius: theme.radius(.md)).fill(theme.surface))
+        .overlay(RoundedRectangle(cornerRadius: theme.radius(.md)).stroke(theme.border))
+    }
+}
+
+// MARK: - 第三步：同步（可跳过，旧 full-run 管线）
 
 private struct SyncStepView: View {
     @Bindable var model: OnboardingModel
