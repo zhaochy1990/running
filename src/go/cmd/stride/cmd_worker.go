@@ -457,12 +457,13 @@ func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *stor
 		syncHandler = watchsync.New(resolve, store, watchJobs)
 	}
 	reg.MustRegister(watchsync.JobType, syncHandler)
-	// onboarding_recent_sync (devops#1008, epic devops#1004 T04): the
-	// first-sync session's recent-stage executor. Always registered — jobs are
+	// onboarding_recent_sync (devops#1008 T04 + devops#1007 T03, epic
+	// devops#1004): the first-sync session's recent-stage executor — COROS and
+	// Garmin both implement provider.RecentSyncer. Always registered — jobs are
 	// only dispatched for sessions created under the
 	// api.features.onboarding-sync-session rollout switch, and a provider
-	// without the recent-range contract (Garmin until its T03 executor ships)
-	// fails the job PERMANENTLY instead of poisoning the retry queue. Unlike
+	// without the recent-range contract fails the job PERMANENTLY instead of
+	// poisoning the retry queue. Unlike
 	// watch_sync, the write-isolation session is unconditional here: the
 	// onboarding path is new (no legacy fixed-key writers to drain behind it),
 	// so every activity publish is fenced from day one.

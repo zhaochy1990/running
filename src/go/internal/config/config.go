@@ -338,9 +338,10 @@ type APIFeatures struct {
 	// preconditions: the write-isolation fleet gate (devops#1005) enabled
 	// with old fixed-key writers drained, and workers carrying the
 	// onboarding_recent_sync executor deployed. The COROS executor shipped
-	// with T04 (devops#1008); Garmin's is T03 and pending, so until it ships
-	// the switch may only open where COROS bindings are served (a Garmin
-	// session's stage job fails permanently as provider_not_capable).
+	// with T04 (devops#1008) and the Garmin executor with T03 (devops#1007);
+	// both bound providers are range-capable, so opening the switch is an
+	// operator cohort decision (a provider without the recent-range contract
+	// still fails its stage job permanently as provider_not_capable).
 	OnboardingSyncSession     bool     `mapstructure:"onboarding-sync-session"`
 	CoachAgentWeeklyPlanUsers []string `mapstructure:"coach-agent-weekly-plan-users"`
 	CoachChatUsers            []string `mapstructure:"coach-chat-users"`

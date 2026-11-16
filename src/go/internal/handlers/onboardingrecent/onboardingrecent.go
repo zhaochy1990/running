@@ -262,6 +262,11 @@ func New(cfg Config) job.Handler {
 			switch {
 			case provider.IsAuthError(syncErr):
 				return "", job.NewPermanentError("auth_failed", syncErr)
+			case errors.Is(syncErr, provider.ErrUnrecoverableRangeData):
+				// Confirmed-but-unclassifiable provider data (e.g. Garmin's
+				// undatable activities, devops#1007): blocking is the honest
+				// outcome — a retry cannot repair the vendor's data.
+				return "", job.NewPermanentError("unrecoverable_range_data", syncErr)
 			case provider.IsInvalidRequest(syncErr):
 				return "", job.NewPermanentError("provider_invalid_request", syncErr)
 			default:
