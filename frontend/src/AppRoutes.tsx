@@ -24,6 +24,7 @@ import WeeklyPlanAdjustPage from "./pages/WeeklyPlanAdjustPage";
 import MasterPlanAdjustPage from "./pages/MasterPlanAdjustPage";
 import { useUser } from "./UserContextValue";
 import { getMyProfile } from "./api";
+import { OnboardingSyncStatusProvider } from "./onboardingSync/OnboardingSyncStatusProvider";
 import LandingPage from "./pages/landing/LandingPage";
 import DeclarationPage from "./pages/DeclarationPage";
 
@@ -109,53 +110,55 @@ function Dashboard() {
   return (
     <OnboardingGate>
       <UserProvider>
-        <PhoneBindPrompt>
-          <Routes>
-            <Route element={<AppLayout />}>
-              <Route path="/" element={<WeeklyPlanRoute />} />
-              <Route
-                path="/coach"
-                element={
-                  <CoachChatGate>
-                    <CoachChatPage />
-                  </CoachChatGate>
-                }
-              />
-              <Route
-                path="/coach/week/:folder/adjust"
-                element={
-                  <CoachChatGate>
-                    <WeeklyPlanAdjustPage />
-                  </CoachChatGate>
-                }
-              />
-              <Route
-                path="/coach/master/:planId/adjust"
-                element={
-                  <CoachChatGate>
-                    <MasterPlanAdjustPage />
-                  </CoachChatGate>
-                }
-              />
-              <Route path="/week/:folder" element={<WeeklyPlanRoute />} />
-              <Route path="/activity/:id" element={<ActivityDetailPage />} />
-              <Route path="/teams/:teamId/activity/:userId/:labelId" element={<ActivityDetailPage />} />
-              <Route path="/health" element={<HealthPage />} />
-              <Route path="/body-composition" element={<BodyCompositionPage />} />
-              <Route path="/plan" element={<TrainingPlanPage />} />
-              <Route path="/plan/adjust" element={<TrainingPlanAdjustPage />} />
-              <Route path="/activities" element={<ActivitiesPage />} />
-              <Route path="/ability" element={<AbilityPage />} />
-              <Route path="/training-status" element={<TrainingStatusPage />} />
-              <Route path="/teams" element={<TeamsListPage />} />
-              <Route path="/teams/new" element={<CreateTeamPage />} />
-              <Route path="/teams/:id" element={<TeamDetailPage />} />
-              <Route path="/settings" element={<UserCenterPage />} />
-              <Route path="/profile" element={<Navigate to="/settings" replace />} />
-              <Route path="/watch" element={<Navigate to="/settings?tab=watch" replace />} />
-            </Route>
-          </Routes>
-        </PhoneBindPrompt>
+        <OnboardingSyncStatusProvider>
+          <PhoneBindPrompt>
+            <Routes>
+              <Route element={<AppLayout />}>
+                <Route path="/" element={<WeeklyPlanRoute />} />
+                <Route
+                  path="/coach"
+                  element={
+                    <CoachChatGate>
+                      <CoachChatPage />
+                    </CoachChatGate>
+                  }
+                />
+                <Route
+                  path="/coach/week/:folder/adjust"
+                  element={
+                    <CoachChatGate>
+                      <WeeklyPlanAdjustPage />
+                    </CoachChatGate>
+                  }
+                />
+                <Route
+                  path="/coach/master/:planId/adjust"
+                  element={
+                    <CoachChatGate>
+                      <MasterPlanAdjustPage />
+                    </CoachChatGate>
+                  }
+                />
+                <Route path="/week/:folder" element={<WeeklyPlanRoute />} />
+                <Route path="/activity/:id" element={<ActivityDetailPage />} />
+                <Route path="/teams/:teamId/activity/:userId/:labelId" element={<ActivityDetailPage />} />
+                <Route path="/health" element={<HealthPage />} />
+                <Route path="/body-composition" element={<BodyCompositionPage />} />
+                <Route path="/plan" element={<TrainingPlanPage />} />
+                <Route path="/plan/adjust" element={<TrainingPlanAdjustPage />} />
+                <Route path="/activities" element={<ActivitiesPage />} />
+                <Route path="/ability" element={<AbilityPage />} />
+                <Route path="/training-status" element={<TrainingStatusPage />} />
+                <Route path="/teams" element={<TeamsListPage />} />
+                <Route path="/teams/new" element={<CreateTeamPage />} />
+                <Route path="/teams/:id" element={<TeamDetailPage />} />
+                <Route path="/settings" element={<UserCenterPage />} />
+                <Route path="/profile" element={<Navigate to="/settings" replace />} />
+                <Route path="/watch" element={<Navigate to="/settings?tab=watch" replace />} />
+              </Route>
+            </Routes>
+          </PhoneBindPrompt>
+        </OnboardingSyncStatusProvider>
       </UserProvider>
     </OnboardingGate>
   );

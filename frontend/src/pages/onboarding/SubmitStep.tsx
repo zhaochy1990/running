@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getPipelineRun, getJobState, postOnboardingComplete, triggerSync, ApiError, type JobState, type PipelineRun } from "../../api";
+import SessionSubmitStep from "./SessionSubmitStep";
 
 interface Props {
   userId: string;
+  // True when the profile's feature flags enable the first-sync session
+  // entry (sync_data_at_onboarding && onboarding_sync_session, devops#1014).
+  // The legacy full-run flow below stays the default for old deployments.
+  sessionMode?: boolean;
 }
 
 const POLL_INTERVAL_MS = 5000;
@@ -67,7 +72,20 @@ function stateLabel(state: StageState) {
   }
 }
 
-export default function SubmitStep({ userId }: Props) {
+// SubmitStep dispatches between the two onboarding sync entries. The session
+// mode is a runtime choice: if the server turns the switches off between the
+// wizard's profile load and the submit step (403), the session flow calls
+// onDisabled and the legacy full-run flow takes over — the client surface
+// follows the server's capability switches at all times.
+export default function SubmitStep({ userId, sessionMode = false }: Props) {
+  const [legacy, setLegacy] = useState(!sessionMode);
+  if (!legacy) {
+    return <SessionSubmitStep userId={userId} onDisabled={() => setLegacy(true)} />;
+  }
+  return <LegacySubmitStep userId={userId} />;
+}
+
+function LegacySubmitStep({ userId }: { userId: string }) {
   const navigate = useNavigate();
   const [run, setRun] = useState<PipelineRun | null>(null);
   const [activeJob, setActiveJob] = useState<ActiveJob | null>(null);

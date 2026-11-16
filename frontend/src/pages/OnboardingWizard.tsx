@@ -29,6 +29,9 @@ function reconstructProfile(p: Record<string, unknown> | null): ProfileIn | null
 export default function OnboardingWizard() {
   const [step, setStep] = useState<Step>("loading");
   const [profileData, setProfileData] = useState<ProfileIn | null>(null);
+  // First-sync session entry (devops#1014): used only when BOTH server
+  // switches are on; old deployments keep the legacy full-run flow.
+  const [sessionMode, setSessionMode] = useState(false);
   const userId = useAuthStore((s) => s.userId);
   const navigate = useNavigate();
   const logout = useAuthStore((s) => s.logout);
@@ -48,6 +51,7 @@ export default function OnboardingWizard() {
   useEffect(() => {
     getMyProfile()
       .then((p) => {
+        setSessionMode(Boolean(p.features?.sync_data_at_onboarding && p.features?.onboarding_sync_session));
         if (p.onboarding.completed_at) {
           setStep("done");
           return;
@@ -143,7 +147,7 @@ export default function OnboardingWizard() {
 
           {step === "injuries" && <InjuryStep onSuccess={() => setStep("submit")} />}
 
-          {step === "submit" && profileData && userId && <SubmitStep userId={userId} />}
+          {step === "submit" && profileData && userId && <SubmitStep userId={userId} sessionMode={sessionMode} />}
 
           {step === "submit" && !profileData && (
             <div className="text-center py-8 text-text-muted text-sm">
