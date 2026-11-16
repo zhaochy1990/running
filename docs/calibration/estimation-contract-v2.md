@@ -7,7 +7,7 @@
 - `algorithm_version=4` 不变；policy `supported_versions=[3,4]` 不变；生产全局 active 仍为 3；v3 冻结七文件（embed 哈希 + golden 双锁）与 v3 入口、结果、协议 v1、原最终留出一字不改。
 - 新旧 v4 输出以**算法修订标记**区分：历史 v4 行（PR#740 实现）`algorithm_revision=''`；演进后 v4 输出 `algorithm_revision='v4-rev2-2026-11'`（常量 `EvolvedCandidateAlgorithmRevision`）。身份三元组 `EvolvedCandidateIdentity() = ("evolved_joint_v2", "rev2-research-2026-11", "v4-rev2-2026-11")`。
 - 落点：`OfflineResult.AlgorithmRevision`（omitempty，旧策略为空保证 replay hash 不变）、`SourceSummary.AlgorithmRevision`、快照表新列（见 §7）、`EstimationContractDocument`。
-- 新策略入口 `StrategyEvolvedCandidate="evolved_candidate"` 仅存在于离线 seam（`EstimateOffline*`），生产 wiring（`NewCalibration`/active 路径）不接触；在 #996–#998 落地前该入口返回显式错误（`estimator pending, #996`），不伪造数字。
+- 新策略入口 `StrategyEvolvedCandidate="evolved_candidate"` 仅存在于离线 seam（`EstimateOffline*`），生产 wiring（`NewCalibration`/active 路径）不接触。#996 起该入口装配速度域估计器（`evolved_speed.go`，见 [evolved-speed-rev2.md](evolved-speed-rev2.md)）：普通训练必出有限中心+范围；HR 联合拟合是显式 #997 接缝，在 #997 落地前 HR 五态输出 `unavailable` + `estimator_implementation_pending_t2`，不伪造数字；数值失败报 `solver_numerical_failure`，不伪称证据不足。
 
 ## 2. 观测模型与联合观测目标
 

@@ -73,6 +73,10 @@ const (
 	ReasonOpticalHRDownweighted   = "optical_HR_downweighted_not_excluded"
 	ReasonPriorOnlyHR             = "prior_only_HR_estimate"
 	ReasonSolverPendingT2         = "estimator_implementation_pending_t2"
+	// ReasonSolverNumericalFailure: the deterministic solver produced a
+	// nonfinite or nonpositive-curvature result. This is a failure of the
+	// computation, never a claim of insufficient evidence (#996).
+	ReasonSolverNumericalFailure = "solver_numerical_failure"
 )
 
 // neverUnavailabilityReasons are categorical facts that must NOT appear as

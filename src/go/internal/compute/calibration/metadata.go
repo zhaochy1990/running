@@ -95,6 +95,10 @@ func SummarizeSource(result OfflineResult) SourceSummary {
 	}
 	out.Speed = legacy("legacy_training_speed_estimate", string(result.Snapshot.ThresholdSpeedConfidence))
 	out.HR = legacy("legacy_training_estimate_not_independent_LTHR", string(result.Snapshot.ThresholdHRConfidence))
+	if result.Evolved != nil {
+		summarizeEvolvedSource(&out, result.Evolved, result.Snapshot)
+		return out
+	}
 	if result.Evidence == nil {
 		return out
 	}
@@ -174,6 +178,58 @@ func SummarizeSource(result OfflineResult) SourceSummary {
 		out.HR = m
 	}
 	return out
+}
+
+// summarizeEvolvedSource fills the five contract states (#995) for the
+// evolved v4 (#996): schema stays 1 so legacy readers keep working, but every
+// metric now carries State, range and the recomputable reasons. The HR seam
+// reports unavailable with the pending implementation reason instead of a
+// fabricated center.
+func summarizeEvolvedSource(out *SourceSummary, evolved *EvolvedReport, snapshot Snapshot) {
+	if speed := evolved.Speed; speed != nil {
+		m := &MetricSource{
+			Method:                speed.Method,
+			TargetType:            "model_one_hour_capability_v60",
+			State:                 string(speed.State),
+			MeasurementQuality:    "model_fit",
+			EffortSupport:         "mixed_ordinary_training",
+			Support:               string(snapshot.ThresholdSpeedConfidence),
+			RangeLow:              speed.RangeLowMps,
+			RangeHigh:             speed.RangeHighMps,
+			RangeMeaning:          speed.RangeMeaning,
+			IndependentActivities: speed.IndependentRoots,
+			IndependentDays:       speed.IndependentDays,
+			Reasons:               speed.Reasons,
+			Limitations:           speed.Limitations,
+		}
+		for i := range speed.Observations {
+			o := &speed.Observations[i]
+			if o.Weight <= 0 {
+				continue
+			}
+			if o.ActivityDay > m.EvidenceDate {
+				m.EvidenceDate = o.ActivityDay
+			}
+			m.EvidenceCount++
+			if len(m.Evidence) < 16 {
+				m.Evidence = append(m.Evidence, EvidenceSummary{ActivityID: o.ActivityID, RootActivityID: o.RootActivityID, ActivityDay: o.ActivityDay, DurationS: o.DurationS, MeasurementQuality: string(o.MeasurementQuality), EffortSupport: string(o.EffortSupport)})
+			}
+		}
+		boundSourceMetric(m)
+		out.Speed = m
+	}
+	if hr := evolved.HR; hr != nil {
+		out.HR = &MetricSource{
+			Method:       evolvedHRSeamMethod,
+			TargetType:   "one_hour_steady_HR_model_prediction",
+			State:        string(hr.State),
+			Support:      string(snapshot.ThresholdHRConfidence),
+			RangeMeaning: "unavailable",
+			Reasons:      hr.Reasons,
+			Limitations:  hr.Limitations,
+		}
+		boundSourceMetric(out.HR)
+	}
 }
 
 func boundSourceMetric(m *MetricSource) {

@@ -409,12 +409,20 @@ func TestEvolvedCandidateIdentityAndStrategyEntry(t *testing.T) {
 	}
 	asOf := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
 	history := []calibration.Activity{{LabelID: "run", ActivityDate: asOf.AddDate(0, 0, -1), Sport: "run", DurationS: f64p(3600), DistanceM: f64p(11520)}}
-	// The T1 entry point exists, is explicit and honest: the estimator lands
-	// in #996-#998, so today it must refuse rather than fabricate numbers.
-	if _, err := calibration.EstimateOfflineWithEvidence(calibration.StrategyEvolvedCandidate, history, asOf, nil, nil); err == nil {
-		t.Fatal("evolved candidate estimator must be explicit about pending T2-T4 implementation")
-	} else if !strings.Contains(err.Error(), "996") {
-		t.Fatalf("error must point at the implementing ticket: %v", err)
+	// Since #996 the entry assembles the speed-domain estimator and stamps the
+	// identity triple; the HR joint fit remains the explicit #997 seam.
+	result, err := calibration.EstimateOfflineWithEvidence(calibration.StrategyEvolvedCandidate, history, asOf, nil, nil)
+	if err != nil {
+		t.Fatalf("evolved candidate must not error since #996: %v", err)
+	}
+	if result.Implementation != implementation || result.ParameterVersion != parameterVersion || result.AlgorithmRevision != revision {
+		t.Fatalf("evolved identity drift: %+v", result)
+	}
+	if result.Snapshot.AlgorithmVersion != 4 || result.Evolved == nil {
+		t.Fatalf("evolved result must stay v4 with its own report: %+v", result)
+	}
+	if result.Evolved.HR == nil || result.Evolved.HR.State != calibration.StateUnavailable {
+		t.Fatalf("HR seam must stay unavailable until #997: %+v", result.Evolved.HR)
 	}
 	// Production entry stays frozen v3 with no candidate switch.
 	if got := calibration.EstimateRunningCalibration(history, asOf, nil); got.AlgorithmVersion != 3 {
