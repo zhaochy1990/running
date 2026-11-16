@@ -120,8 +120,14 @@ export function calibrationDisplay(threshold: StrideThreshold | null | undefined
     if (value === "—") details.push("无法可靠估计中心值");
     if (!isSpeed) {
       if (m.target_type === "lab_method_specific_LTHR") details.push(`实验室方法特定 LTHR · ${m.lab_method || "具体方法未提供"}`);
-      else if (m.target_type === "field_HR_proxy_not_physiological_LTHR") details.push("现场心率代理，不是实验室生理 LTHR");
-      else if (m.target_type === "model_HRsteady_at_v60_declared_reference_conditions") details.push("模型推算稳态心率（参考条件下的一小时能力配速，非生理 LTHR）");
+      else if (m.target_type === "field_HR_proxy_not_physiological_LTHR") details.push("现场心率代理，不是生理乳酸阈值实测");
+      else if (m.target_type === "model_HRsteady_at_v60_declared_reference_conditions") {
+        // P2-2 (#1000 review): a measured_reference center is the verified
+        // protocol median, not a model prediction — never label it as one.
+        details.push(m.state === "measured_reference"
+          ? "参考条件下预计心率（一小时能力配速）"
+          : "模型推算稳态心率（参考条件下的一小时能力配速，不是生理乳酸阈值实测）");
+      }
       else if (m.target_type === "unavailable") details.push("心率目标不可用，无法可靠估计");
       else details.push("训练心率估计，不是独立实验室检测值");
     }
@@ -137,7 +143,9 @@ export function calibrationDisplay(threshold: StrideThreshold | null | undefined
       details.push(`来源 ${e.activity_day}${duration}${segment}`);
       details.push("来源活动仅保留摘要，当前不可直接查看");
     }
-    details.push(...new Set([...(m.reasons ?? []), ...(m.limitations ?? [])].map(reasonText)));
+      // P2-1 (#1000 review): the same categorical reason can be stamped by both
+      // the speed fit and the joint refit; render each distinct text once.
+      details.push(...new Set([...(m.reasons ?? []), ...(m.limitations ?? [])].map(reasonText)));
     if (m.rejected_reasons?.length) {
       details.push("未采用历史协议（不参与当前估计）");
       details.push(...new Set(m.rejected_reasons.map(code => `未采用协议：${historicalRejectionText(code)}`)));

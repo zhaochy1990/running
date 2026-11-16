@@ -112,7 +112,7 @@ final class CalibrationReadUITests: XCTestCase {
         try requireOptIn()
         let app = assertProducerHR(name: "producer-field-half", value: "167",
                                    method: "场地测试协议（30分钟测试的后20分钟）",
-                                   target: "目标：场地心率代理（非生理乳酸阈值）")
+                                   target: "目标：现场心率代理，不是生理乳酸阈值实测")
         let paceHelp = app.buttons["阈值配速依据与日期"]
         for _ in 0..<6 where !paceHelp.isHittable { app.swipeDown() }
         XCTAssertTrue(paceHelp.isHittable)

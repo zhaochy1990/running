@@ -107,7 +107,8 @@
         "hr": "166",
         "evidence_day": "2026-10-01",
         "cutoff_day": "2026-11-14",
-        "computed_shanghai": "2026-11-15 00:30"
+        "computed_shanghai": "2026-11-15 00:30",
+        "hr_proxy_label": "现场心率代理，不是生理乳酸阈值实测"
       }
     },
     {
@@ -218,7 +219,8 @@
         "hr": "166",
         "evidence_day": "2026-10-01",
         "cutoff_day": "2026-11-14",
-        "computed_shanghai": "2026-11-15 00:30"
+        "computed_shanghai": "2026-11-15 00:30",
+        "hr_proxy_label": "现场心率代理，不是生理乳酸阈值实测"
       }
     },
     {
@@ -327,7 +329,8 @@
         "hr": "166",
         "evidence_day": "2026-10-01",
         "cutoff_day": "2026-11-14",
-        "computed_shanghai": "2026-11-15 00:30"
+        "computed_shanghai": "2026-11-15 00:30",
+        "hr_proxy_label": "现场心率代理，不是生理乳酸阈值实测"
       }
     },
     {
@@ -440,7 +443,8 @@
         "hr": "—",
         "evidence_day": "2026-10-01",
         "cutoff_day": "2026-11-14",
-        "computed_shanghai": "2026-11-15 00:30"
+        "computed_shanghai": "2026-11-15 00:30",
+        "hr_proxy_label": "现场心率代理，不是生理乳酸阈值实测"
       }
     },
     {
@@ -599,7 +603,8 @@
         "hr": "166",
         "evidence_day": "2026-10-01",
         "cutoff_day": "2026-11-14",
-        "computed_shanghai": "2026-11-15 00:30"
+        "computed_shanghai": "2026-11-15 00:30",
+        "hr_proxy_label": "现场心率代理，不是生理乳酸阈值实测"
       }
     },
     {
@@ -885,7 +890,8 @@
         "lab_method": null,
         "evidence_day": "2026-10-01",
         "cutoff_day": "2026-11-14",
-        "computed_shanghai": "2026-11-15 00:30"
+        "computed_shanghai": "2026-11-15 00:30",
+        "hr_proxy_label": "现场心率代理，不是生理乳酸阈值实测"
       }
     },
     {
@@ -1670,7 +1676,8 @@
         "computed_shanghai": null,
         "current_hr_supported": true,
         "rejected_evidence_day": "2026-09-15",
-        "stale_evidence_day": "2026-09-15"
+        "stale_evidence_day": "2026-09-15",
+        "hr_proxy_label": "现场心率代理，不是生理乳酸阈值实测"
       },
       "server_expected": {
         "pace": "—",
@@ -1774,7 +1781,8 @@
         "cutoff_day": "2026-11-15",
         "computed_shanghai": null,
         "current_hr_supported": true,
-        "rejected_evidence_day": "2026-11-15"
+        "rejected_evidence_day": "2026-11-15",
+        "hr_proxy_label": "现场心率代理，不是生理乳酸阈值实测"
       },
       "server_expected": {
         "pace": "—",
@@ -2027,7 +2035,8 @@
         "hr_state": "模型估计 · 基于你的普通训练估计",
         "pace_algorithm_label": "当前有效算法 v4 · 修订 v4-rev2-2026-11",
         "override_label": "已按你的选择使用 v4（修订 v4-rev2-2026-11）",
-        "hr_joint_label": "联合估计，非独立验证"
+        "hr_joint_label": "联合估计，非独立验证",
+        "hr_model_target_label": "模型推算稳态心率（参考条件下的一小时能力配速，不是生理乳酸阈值实测）"
       }
     },
     {
@@ -2196,7 +2205,8 @@
         "pace_state": "先验主导 · 基于研究先验估计",
         "hr_state": "先验主导 · 基于研究先验估计",
         "pace_algorithm_label": "当前有效算法 v4 · 修订 v4-rev2-2026-11",
-        "override_label": "已按你的选择使用 v4（修订 v4-rev2-2026-11）"
+        "override_label": "已按你的选择使用 v4（修订 v4-rev2-2026-11）",
+        "hr_model_target_label": "模型推算稳态心率（参考条件下的一小时能力配速，不是生理乳酸阈值实测）"
       }
     },
     {
@@ -2432,7 +2442,8 @@
         "pace_state": "实测参考",
         "hr_state": "实测参考",
         "pace_algorithm_label": "当前有效算法 v4 · 修订 v4-rev2-2026-11",
-        "override_label": "已按你的选择使用 v4（修订 v4-rev2-2026-11）"
+        "override_label": "已按你的选择使用 v4（修订 v4-rev2-2026-11）",
+        "hr_reference_target_label": "参考条件下预计心率（一小时能力配速）"
       }
     },
     {
@@ -2537,7 +2548,8 @@
         "pace_state": "暂无估计 · 窗口内没有有效跑步输入",
         "hr_state": "暂无估计 · 没有心率序列，也没有可用的静息心率先验",
         "pace_algorithm_label": "当前有效算法 v4 · 修订 v4-rev2-2026-11",
-        "override_label": "已按你的选择使用 v4（修订 v4-rev2-2026-11）"
+        "override_label": "已按你的选择使用 v4（修订 v4-rev2-2026-11）",
+        "hr_model_target_label": "模型推算稳态心率（参考条件下的一小时能力配速，不是生理乳酸阈值实测）"
       }
     },
     {
@@ -2647,7 +2659,8 @@
         "evidence_day": "2026-10-01",
         "cutoff_day": "2026-11-14",
         "computed_shanghai": "2026-11-15 00:30",
-        "pace_algorithm_label": "当前有效算法 v4"
+        "pace_algorithm_label": "当前有效算法 v4",
+        "hr_proxy_label": "现场心率代理，不是生理乳酸阈值实测"
       }
     },
     {
@@ -2889,7 +2902,8 @@
         "hr_state": "模型估计 · 基于你的普通训练估计",
         "pace_algorithm_label": "当前有效算法 v4 · 修订 v4-rev2-2026-11",
         "override_label": "已按你的选择使用 v4（修订 v4-rev2-2026-11）",
-        "hr_joint_label": "联合估计，非独立验证"
+        "hr_joint_label": "联合估计，非独立验证",
+        "hr_model_target_label": "模型推算稳态心率（参考条件下的一小时能力配速，不是生理乳酸阈值实测）"
       }
     },
     {

@@ -294,6 +294,18 @@ for (const vector of displayVectors.cases) {
     eq(display.pace.help.join(' ').includes('已按你的选择使用'), false, `${vector.name} fallback never claims the pin is served`);
   }
   if (exp.hr_joint_label !== undefined) eq(display.hr.lines.includes(exp.hr_joint_label as string), true, `${vector.name} joint HR marker`);
+  if (exp.hr_proxy_label !== undefined) eq(display.hr.lines.includes(exp.hr_proxy_label as string), true, `${vector.name} shared field-proxy wording`);
+  if (exp.hr_model_target_label !== undefined) eq(display.hr.lines.includes(exp.hr_model_target_label as string), true, `${vector.name} shared model-target wording`);
+  if (exp.hr_reference_target_label !== undefined) {
+    eq(display.hr.lines.includes(exp.hr_reference_target_label as string), true, `${vector.name} reference-target wording`);
+    eq(display.hr.lines.join(' ').includes('模型推算稳态心率'), false, `${vector.name} reference never labeled as model prediction`);
+  }
+  // P2-1：同一 categorical 原因可能由速度拟合与联合重解分别计入，文案只渲染一次；
+  // 「来源 …」是证据事实列表（同日多段可合法重复），不参与查重。
+  for (const all of [display.pace.lines, display.hr.lines, display.pace.help, display.hr.help]) {
+    const kept = all.filter((line: string) => !line.startsWith('来源 '));
+    eq(new Set(kept).size === kept.length, true, `${vector.name} no duplicate reason/detail lines`);
+  }
 }
 
 const lowEvidence = projectCalibration(displayVectors.cases.find((v: { name: string }) => v.name === 'evolved-low-evidence').response);
@@ -304,6 +316,7 @@ eq(lowEvidence.pace.range, '支持范围 4:01–4:52 /km', 'low-evidence pace ra
 eq(lowEvidence.hr.value, '171', 'low-evidence HR center');
 eq(lowEvidence.hr.range, '支持范围 160–181 bpm', 'low-evidence HR range');
 eq(lowEvidence.hr.lines.includes('联合估计，非独立验证'), true, 'joint HR not independent validation');
+eq(lowEvidence.hr.lines.includes('模型推算稳态心率（参考条件下的一小时能力配速，不是生理乳酸阈值实测）'), true, 'model-predicted steady HR target line');
 eq([...lowEvidence.pace.lines, ...lowEvidence.pace.help].join('').includes('必须先测试'), false, 'never demand a test first');
 eq(lowEvidence.pace.range?.includes('95%'), false, 'range never claims 95%');
 

@@ -103,6 +103,22 @@ describe("calibration explanation projection", () => {
       expect(hr.details).toContain(e.override_fallback_label);
     }
     if (e.hr_joint_label !== undefined) expect(hr.details).toContain(e.hr_joint_label);
+    if (e.hr_proxy_label !== undefined) expect(hr.details).toContain(e.hr_proxy_label);
+    if (e.hr_model_target_label !== undefined) expect(hr.details).toContain(e.hr_model_target_label);
+    if (e.hr_reference_target_label !== undefined) {
+      expect(hr.details).toContain(e.hr_reference_target_label);
+      expect(hr.details.join(" ")).not.toContain("模型推算稳态心率");
+    }
+    // P2-1: a categorical reason may be stamped by both the speed fit and the
+    // joint refit; reason/limitation texts must render once each. Evidence
+    // source lines are factual lists (same-day entries can legitimately repeat)
+    // and are excluded.
+    const dedupe = (arr: string[], exclude: string) => {
+      const kept = arr.filter(d => d && !d.startsWith(exclude));
+      expect(new Set(kept).size).toBe(kept.length);
+    };
+    dedupe(hr.details, "来源 ");
+    dedupe(speed.details, "来源 ");
   });
 
   it("labels low-evidence model estimates from ordinary training without demanding a test", () => {
@@ -143,7 +159,9 @@ describe("calibration explanation projection", () => {
     expect(calibrationDisplay(th, "hr").status).toBe("实测参考");
     const hr = calibrationDisplay(th, "hr");
     expect(hr.details.join(" ")).toContain("实测参考中位数（已核验协议）");
+    expect(hr.details).toContain("参考条件下预计心率（一小时能力配速）");
     expect(hr.details.join(" ")).not.toContain("联合估计，非独立验证");
+    expect(hr.details.join(" ")).not.toContain("模型推算稳态心率");
   });
 
   it("explains unavailable estimates with categorical reasons and no invented values", () => {

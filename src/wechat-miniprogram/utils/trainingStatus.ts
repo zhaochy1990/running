@@ -602,14 +602,19 @@ export function projectCalibration(zones: import('../types/health').StrideZonesR
       help.push(`方法：${calibrationWord(detail.method, '未知方法（保守参考）')}`);
       if (kind === 'hr') {
         const target = detail.target_type;
+        // P2-2（#1000 评审）：measured_reference 的中心是已核验协议中位数，不是模型预测，不得标注「模型推算」。
         const targetLabel = target === 'field_HR_proxy_not_physiological_LTHR'
-          ? '现场心率代理，不等于生理乳酸阈值'
-          : target === 'model_HRsteady_at_v60_declared_reference_conditions' ? '模型推算稳态心率（参考条件下的一小时能力配速，非生理乳酸阈值）'
+          ? '现场心率代理，不是生理乳酸阈值实测'
+          : target === 'model_HRsteady_at_v60_declared_reference_conditions'
+            ? (detail.state === 'measured_reference'
+              ? '参考条件下预计心率（一小时能力配速）'
+              : '模型推算稳态心率（参考条件下的一小时能力配速，不是生理乳酸阈值实测）')
           : target === 'lab_method_specific_LTHR' ? `实验室方法特定阈值：${detail.lab_method ?? '方法未提供'}`
           : target === 'unavailable' ? '暂无可用心率参考' : '训练心率估计，非独立实验室参考';
         lines.push(targetLabel);
         if (detail.method === 'joint_map_hr_dynamic_fit') lines.push('联合估计，非独立验证');
       }
+      // P2-1（#1000 评审）：同一 categorical 原因可能由速度拟合与联合重解分别计入，同一文案只渲染一次。
       const reasons = [...(detail.reasons ?? []), ...(detail.limitations ?? [])];
       for (const reason of reasons) {
         const text = calibrationWord(reason, '服务端报告其他限制，当前估计需保守参考');

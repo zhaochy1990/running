@@ -28,6 +28,9 @@ import Testing
                 let override_label: String?
                 let override_fallback_label: String?
                 let hr_joint_label: String?
+                let hr_proxy_label: String?
+                let hr_model_target_label: String?
+                let hr_reference_target_label: String?
             }
             let name: String
             let response: StrideZonesResponse
@@ -111,6 +114,8 @@ import Testing
         let reference = calibrationDisplay(try Self.caseNamed("evolved-measured-reference").response, metric: .heartRate)
         #expect(reference.support == "实测参考")
         #expect(reference.details.contains { $0.contains("实测参考中位数（已核验协议）") })
+        #expect(reference.details.contains { $0.hasSuffix("参考条件下预计心率（一小时能力配速）") })
+        #expect(!reference.details.contains { $0.contains("模型推算稳态心率") })
         #expect(!reference.details.contains("联合估计，非独立验证"))
 
         let unavailablePace = calibrationDisplay(try Self.caseNamed("evolved-unavailable").response, metric: .pace)
@@ -174,6 +179,23 @@ import Testing
             #expect(!pace.details.contains { $0.contains("已按你的选择使用") })
         }
         if let label = expected.hr_joint_label { #expect(hr.details.contains(label)) }
+        // P2-3 (#1000 review): one shared proxy/target wording across platforms,
+        // no "LTHR" abbreviation for end users.
+        // iOS renders target lines with a "目标：" field prefix; the shared
+        // parity literal is the suffix after the platform prefix.
+        if let label = expected.hr_proxy_label { #expect(hr.details.contains { $0.hasSuffix(label) }) }
+        if let label = expected.hr_model_target_label { #expect(hr.details.contains { $0.hasSuffix(label) }) }
+        if let label = expected.hr_reference_target_label {
+            #expect(hr.details.contains { $0.hasSuffix(label) })
+            #expect(!hr.details.contains { $0.contains("模型推算稳态心率") })
+        }
+        // P2-1 (#1000 review): the same categorical reason may be stamped by
+        // both the speed fit and the joint refit; render each text once.
+        // Evidence source lines are factual lists and are excluded.
+        for lines in [pace.details, hr.details] {
+            let kept = lines.filter { !$0.isEmpty && !$0.hasPrefix("关键来源：") }
+            #expect(Set(kept).count == kept.count)
+        }
     }
 
     @Test func productionMethodsAndLegacyDetectionStayHonest() throws {

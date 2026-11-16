@@ -56,8 +56,13 @@ public func calibrationDisplay(_ response: StrideZonesResponse?, metric: Calibra
         details.append("方法：\(calibrationMethod(s.method))")
         if metric == .heartRate {
             switch s.targetType {
-            case "field_HR_proxy_not_physiological_LTHR": details.append("目标：场地心率代理（非生理乳酸阈值）")
-            case "model_HRsteady_at_v60_declared_reference_conditions": details.append("目标：模型推算稳态心率（参考条件下的一小时能力配速，非生理乳酸阈值）")
+            case "field_HR_proxy_not_physiological_LTHR": details.append("目标：现场心率代理，不是生理乳酸阈值实测")
+            case "model_HRsteady_at_v60_declared_reference_conditions":
+                // P2-2 (#1000 review): a measured_reference center is the verified
+                // protocol median, not a model prediction — never label it as one.
+                details.append(s.state == "measured_reference"
+                    ? "目标：参考条件下预计心率（一小时能力配速）"
+                    : "目标：模型推算稳态心率（参考条件下的一小时能力配速，不是生理乳酸阈值实测）")
             case "lab_method_specific_LTHR": details.append("目标：实验室方法特定乳酸阈值 · \(s.labMethod ?? "方法未提供")")
             case "legacy_training_estimate", "legacy_training_estimate_not_independent_LTHR": details.append("目标：旧版训练估计，未经独立生理检测")
             case "unavailable": details.append("目标：暂无可用心率参考")
@@ -67,8 +72,11 @@ public func calibrationDisplay(_ response: StrideZonesResponse?, metric: Calibra
         }
         details.append("数据质量：\(calibrationQuality(s.measurementQuality))；全力支持：\(calibrationEffort(s.effortSupport))")
         details.append("独立活动 \(s.independentActivities.map(String.init) ?? "未知") 次 · 独立日期 \(s.independentDays.map(String.init) ?? "未知") 天")
+        // P2-1 (#1000 review): the same categorical reason can be stamped by both
+        // the speed fit and the joint refit; render each distinct text once.
         for reason in (s.reasons ?? []) + (s.limitations ?? []) {
-            details.append(calibrationReason(reason))
+            let text = calibrationReason(reason)
+            if !details.contains(text) { details.append(text) }
         }
         if let rejected = s.rejectedReasons, !rejected.isEmpty {
             details.append("未采用历史协议（不参与当前估计）")
