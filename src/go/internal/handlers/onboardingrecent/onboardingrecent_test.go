@@ -61,6 +61,7 @@ type fakeProvider struct {
 	calls        map[string]int
 	actBehaviour chan behaviour // per-activities-call behaviour (nil = done)
 	healthErr    error          // fails the health channel when set
+	dashErr      error          // fails the dashboard channel when set
 
 	sawPublishSession *storage.PublishSession
 }
@@ -128,11 +129,15 @@ func (f *fakeProvider) SyncRecentRange(ctx context.Context, user string, opts pr
 	}
 	if opts.Dashboard != nil && firstErr == nil {
 		f.calls["dashboard"]++
-		day := opts.Dashboard.To
-		rep.Dashboard = &provider.RangeChannelReport{
-			Status: provider.RangeChannelDone, ScannedFrom: day, ScannedTo: day,
-			ObservedFrom: strPtr(day), ObservedTo: strPtr(day), Count: 1,
-			Credential: fmt.Sprintf("coros:v1:range:dashboard:%s..%s:obs=%s..%s:n=1", day, day, day, day),
+		if f.dashErr != nil {
+			firstErr = f.dashErr
+		} else {
+			day := opts.Dashboard.To
+			rep.Dashboard = &provider.RangeChannelReport{
+				Status: provider.RangeChannelDone, ScannedFrom: day, ScannedTo: day,
+				ObservedFrom: strPtr(day), ObservedTo: strPtr(day), Count: 1,
+				Credential: fmt.Sprintf("coros:v1:range:dashboard:%s..%s:obs=%s..%s:n=1", day, day, day, day),
+			}
 		}
 	}
 	return rep, firstErr
@@ -491,6 +496,148 @@ func TestOnboardingRecent_EndToEndWithSweep(t *testing.T) {
 	}
 	if !view.ShellReady {
 		t.Error("shell_ready must hold from the claim onward")
+	}
+}
+
+// Regression (devops#1008 D2): after a mid-stage transient failure and an
+// explicit session retry, the stage result and the persisted coverage must be
+// computed over the WHOLE work-item set — the byte-level-reused done channels
+// keep contributing their windows — instead of narrowing scanned/observed to
+// the single re-run channel's window, so GET view's state=completed and
+// readiness.recent_data agree.
+func TestOnboardingRecent_PartialRetryKeepsFullStageCoverage(t *testing.T) {
+	st := openStore(t)
+	ctx := context.Background()
+	uid := uuid.NewString()
+
+	enq := &fakeEnqueuer{}
+	svc, err := onboardingsync.New(onboardingsync.Config{
+		Store: st, Enqueuer: enq, Jobs: st, Runs: st,
+		JobType:            JobType,
+		LegacyFullPipeline: "onboarding",
+		Logger:             zap.NewNop(),
+	})
+	if err != nil {
+		t.Fatalf("service: %v", err)
+	}
+	sess, err := svc.CreateOrClaim(ctx, uid, "coros")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// First run: activities + health complete, dashboard dies transiently —
+	// the stage job fails retryably.
+	newJob := func(spec job.EnqueueSpec, id string, now time.Time) *job.Job {
+		return &job.Job{
+			ID: id, UserID: uid, Type: JobType,
+			Status: job.StatusRunning, InputJSON: spec.InputJSON, IdempotencyKey: spec.IdempotencyKey,
+			CreatedAt: now, UpdatedAt: now,
+		}
+	}
+	now := time.Now().UTC()
+	j1 := newJob(enq.specs[0], enq.ids[0], now)
+	if err := st.Jobs().Create(ctx, j1); err != nil {
+		t.Fatalf("job create: %v", err)
+	}
+	fp := newFakeProvider()
+	fp.dashErr = errors.New("coros: GET /dashboard/query: connection reset")
+	if _, err := runHandler(t, handlerWith(t, st, fp), j1); err == nil {
+		t.Fatal("transient dashboard failure must surface as a retryable error")
+	} else if _, permanent := job.AsPermanent(err); permanent {
+		t.Fatalf("transient dashboard failure classified permanent: %v", err)
+	}
+	j1.Status = job.StatusFailed
+	j1.ErrorMessage = "coros: GET /dashboard/query: connection reset"
+	failAt := time.Now().UTC()
+	j1.CompletedAt = &failAt
+	if err := st.Jobs().Update(ctx, j1); err != nil {
+		t.Fatalf("job failed: %v", err)
+	}
+	svc.Sweep(ctx)
+	if got, _ := st.GetOnboardingSyncSessionByID(ctx, sess.SessionID); got.State != storage.OnboardingSyncStateFailed {
+		t.Fatalf("session state after failed stage = %s, want failed", got.State)
+	}
+
+	// The user's POST {"retry":true}: terminally-failed stages re-dispatch.
+	if _, err := svc.Retry(ctx, uid); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if len(enq.specs) != 2 {
+		t.Fatalf("dispatches after retry = %d, want 2", len(enq.specs))
+	}
+
+	// Retry run: ONLY the dashboard channel re-runs; activities/health reuse
+	// their complete-fetch credentials byte-for-byte.
+	fp2 := newFakeProvider()
+	j2 := newJob(enq.specs[1], enq.ids[1], time.Now().UTC())
+	if err := st.Jobs().Create(ctx, j2); err != nil {
+		t.Fatalf("retry job create: %v", err)
+	}
+	res, err := runHandler(t, handlerWith(t, st, fp2), j2)
+	if err != nil {
+		t.Fatalf("retry run: %v", err)
+	}
+	if fp2.calls["activities"] != 0 || fp2.calls["health"] != 0 || fp2.calls["dashboard"] != 1 {
+		t.Errorf("retry re-ran finished channels: %+v (done credentials must be reused)", fp2.calls)
+	}
+
+	// The retry job's stage result must merge the reused channels' windows —
+	// not just the dashboard day the fresh report carries. The full stage
+	// window is the target window the claim created the items for.
+	wantFrom, wantTo := "2026-08-19", "2026-11-16" // 90 Shanghai days back from the 2026-11-16 anchor
+	var sr onboardingsync.StageResult
+	if err := json.Unmarshal([]byte(res), &sr); err != nil {
+		t.Fatalf("result parse: %v", err)
+	}
+	if sr.ScannedFrom == nil || *sr.ScannedFrom != wantFrom || sr.ScannedTo == nil || *sr.ScannedTo != wantTo {
+		t.Errorf("result scanned = %v..%v, want the full stage window %s..%s", sr.ScannedFrom, sr.ScannedTo, wantFrom, wantTo)
+	}
+	if sr.ObservedFrom == nil || *sr.ObservedFrom != wantFrom || sr.ObservedTo == nil || *sr.ObservedTo != wantTo {
+		t.Errorf("result observed = %v..%v, want the full stage window (reused channels keep contributing)", sr.ObservedFrom, sr.ObservedTo)
+	}
+	if sr.Status != storage.OnboardingSyncCoverageCompleted {
+		t.Errorf("result status = %s, want completed", sr.Status)
+	}
+
+	// The sweep persists that merged contract; coverage and readiness must
+	// agree with the session's completed state (the client stops polling on
+	// exactly this pair).
+	j2.Status = job.StatusDone
+	j2.ResultJSON = res
+	done := time.Now().UTC()
+	j2.CompletedAt = &done
+	if err := st.Jobs().Update(ctx, j2); err != nil {
+		t.Fatalf("job done: %v", err)
+	}
+	svc.Sweep(ctx)
+	cov, err := st.GetOnboardingSyncStageCoverage(ctx, sess.SessionID, storage.OnboardingSyncStageRecentRaw)
+	if err != nil || cov == nil {
+		t.Fatalf("coverage read: %v %v", cov, err)
+	}
+	if cov.ScannedFrom == nil || *cov.ScannedFrom != wantFrom || cov.ScannedTo == nil || *cov.ScannedTo != wantTo ||
+		cov.ObservedFrom == nil || *cov.ObservedFrom != wantFrom || cov.ObservedTo == nil || *cov.ObservedTo != wantTo {
+		t.Errorf("coverage windows = scanned %v..%v observed %v..%v, want full stage window %s..%s",
+			cov.ScannedFrom, cov.ScannedTo, cov.ObservedFrom, cov.ObservedTo, wantFrom, wantTo)
+	}
+	if cov.Status != storage.OnboardingSyncCoverageCompleted {
+		t.Errorf("coverage status = %s, want completed", cov.Status)
+	}
+	if cov.LastError != nil {
+		t.Errorf("coverage last_error = %q, want cleared by the successful retry", *cov.LastError)
+	}
+	if cov.GapsJSON != nil {
+		t.Errorf("coverage gaps_json = %q, want none for a fully covered stage", *cov.GapsJSON)
+	}
+	view, err := svc.View(ctx, uid)
+	if err != nil {
+		t.Fatalf("view: %v", err)
+	}
+	if view.State != storage.OnboardingSyncStateCompleted {
+		t.Errorf("session state = %s, want completed", view.State)
+	}
+	if view.Readiness.RecentData != onboardingsync.ReadinessReady {
+		t.Fatalf("recent_data readiness = %s, want ready (state=completed and readiness must agree after a partial retry)",
+			view.Readiness.RecentData)
 	}
 }
 

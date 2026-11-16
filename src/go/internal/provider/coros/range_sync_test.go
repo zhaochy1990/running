@@ -350,6 +350,52 @@ func TestSyncRecentRange_HealthShortWindowRecordsGap(t *testing.T) {
 	}
 }
 
+// Regression (devops#1008 D1): when the vendor leaves dayList's date empty and
+// the happenDay number carries the day as a compact YYYYMMDD, the health
+// channel's day labels must be normalized to ISO across the whole chain —
+// ordering, observed window, credential and the stored daily_health primary
+// key must never leak a compact label or produce an inverted gap range.
+func TestSyncRecentRange_HealthCompactDayLabelsNormalizedToISO(t *testing.T) {
+	fw := newFakeWriter()
+	m := newRangeMux()
+	// Newest, an ISO-labelled day, and a compact-labelled day interleaved: the
+	// mixed formats are exactly what breaks naive string ordering.
+	m.analyse = `{"dayList":[
+		{"happenDay":20261116,"testRhr":52},
+		{"date":"2026-11-05","testRhr":51},
+		{"happenDay":20261020,"testRhr":50}]}`
+
+	rep, err := runRangeSync(t, m, fw, provider.RecentRangeOptions{Health: &healthWin})
+	if err != nil {
+		t.Fatalf("SyncRecentRange: %v", err)
+	}
+	h := rep.Health
+	if h == nil {
+		t.Fatal("health report missing")
+	}
+	if h.ObservedFrom == nil || *h.ObservedFrom != "2026-10-20" ||
+		h.ObservedTo == nil || *h.ObservedTo != "2026-11-16" {
+		t.Errorf("observed = %v..%v, want 2026-10-20..2026-11-16 (compact labels normalized before ordering)",
+			h.ObservedFrom, h.ObservedTo)
+	}
+	if !strings.Contains(h.Credential, "obs=2026-10-20..2026-11-16") {
+		t.Errorf("credential = %q, want ISO observed window inside the credential", h.Credential)
+	}
+	// Only the target prefix 10-19 is missing: no inverted or widened gaps from
+	// mis-ordered labels.
+	if len(h.Gaps) != 1 || h.Gaps[0].From != "2026-10-19" || h.Gaps[0].To != "2026-10-19" {
+		t.Errorf("gaps = %+v, want only the 2026-10-19 missing prefix", h.Gaps)
+	}
+	for _, day := range []string{"2026-10-20", "2026-11-05", "2026-11-16"} {
+		if _, ok := fw.health[day]; !ok {
+			t.Errorf("daily_health row %s not stored under its ISO date", day)
+		}
+	}
+	if len(fw.health) != 3 {
+		t.Errorf("stored health days = %d, want 3", len(fw.health))
+	}
+}
+
 // A fully-walked window with nothing in it is a recorded no-data truth, not a
 // silent full-coverage claim (observed stays nil; the gap carries the reason).
 func TestSyncRecentRange_EmptyWindowsRecordNoDataGaps(t *testing.T) {
