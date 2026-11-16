@@ -37,8 +37,6 @@ h1 { font-size:20px; font-weight:500; margin:0 0 8px; }
       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
       font-size:14px; line-height:1.55; font-weight:400; display:flex; flex-direction:column;
     }
-    #stride-plan-flow .screen header { padding:14px 15px; border-bottom:1px solid var(--p-line); display:flex; align-items:center; justify-content:space-between; gap:8px; }
-    #stride-plan-flow .screen header span { color:var(--p-muted); font-size:12px; }
     #stride-plan-flow .screen strong { font-weight:500; }
     #stride-plan-flow .screen .content { display:flex; flex-direction:column; flex:1; padding:20px 15px 16px; gap:13px; }
     #stride-plan-flow .screen h3 { font-family:inherit; font-size:17px; line-height:1.45; font-weight:500; margin:0; text-wrap:balance; }
@@ -153,7 +151,7 @@ h1 { font-size:20px; font-weight:500; margin:0 0 8px; }
         return '<ul>' + items.map(function (item) { return '<li class="' + item[1] + '"><span class="dot" aria-hidden="true"></span><span>' + item[0] + '</span></li>'; }).join('') + '</ul>';
       }
       function screen(target, step, title, content, buttons, footer, statusType, statusText, prelude) {
-        target.innerHTML = '<header><strong>STRIDE Coach</strong><span>' + step + '</span></header><div class="content">' + (prelude || '') + '<div class="status ' + (statusType || '') + '">' + (statusText || '') + '</div><h3>' + title + '</h3>' + content + (buttons ? '<div class="actions">' + buttons + '</div>' : '') + '</div><div class="step-note">' + footer + '</div>';
+        target.innerHTML = '<div class="content">' + (prelude || '') + '<div class="status ' + (statusType || '') + '">' + (statusText || '') + '</div><h3>' + title + '</h3>' + content + (buttons ? '<div class="actions">' + buttons + '</div>' : '') + '</div>' + (footer ? '<div class="step-note">' + footer + '</div>' : '');
       }
       function render() {
         actionSelect.value = state.action;
@@ -200,7 +198,7 @@ h1 { font-size:20px; font-weight:500; margin:0 0 8px; }
         screen(third, "第三步", isEdit ? "查看这次修改" : "训练计划已生成",
           '<div class="plan-preview"><div><span>' + (isEdit ? '本次操作' : '计划依据') + '</span><span>' + (isEdit ? '修改或取消所选训练' : '已确认目标') + '</span></div><div><span>' + (isEdit ? '对比内容' : '训练安排') + '</span><span>' + (isEdit ? '修改前与修改后' : '在完整计划中查看') + '</span></div><div><span>' + (isEdit ? '影响说明' : '应用状态') + '</span><span>' + (isEdit ? '随调整方案展示' : '等待你的确认') + '</span></div></div>',
           button(isEdit ? "查看方案并确认修改" : "查看计划并确认采用", "review", true) + button("暂不" + (isEdit ? "修改" : "采用"), "decline", false),
-          isEdit ? "确认后才修改所选训练" : "确认后才应用训练计划", "done", "可以查看结果");
+          "", "done", "可以查看结果");
         const scene = state.scene;
         if (scene === "ready" || scene === "returning" || scene === "plan_error") {
           screen(first, "已完成", "运动能力评估已就绪",
