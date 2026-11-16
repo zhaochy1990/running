@@ -300,13 +300,20 @@ func TestOnboardingSyncWorkItemTransitions(t *testing.T) {
 	if rows[1].Status != OnboardingSyncItemPending {
 		t.Errorf("failed item after reset = %s, want pending", rows[1].Status)
 	}
-	_ = st.MarkOnboardingSyncWorkItem(ctx, items[1].ID, OnboardingSyncItemGap, "", strptrTest("vendor lacks hr"))
+	// A gap item keeps its derived credential (devops#1010): the executor
+	// derives a storage-backed observed window even for gap outcomes, and the
+	// stage aggregation reads that window back out of the persisted row.
+	gapCred := "coros:v1:range:health:2026-10-19..2026-11-16:obs=2026-10-26..2026-11-16:n=22"
+	_ = st.MarkOnboardingSyncWorkItem(ctx, items[1].ID, OnboardingSyncItemGap, gapCred, strptrTest("vendor lacks hr"))
 	if _, err := st.ResetFailedOnboardingSyncWorkItems(ctx, res.Session.SessionID, OnboardingSyncStageRecentRaw); err != nil {
 		t.Fatalf("reset again: %v", err)
 	}
 	rows, _ = st.ListOnboardingSyncWorkItems(ctx, res.Session.SessionID, "")
 	if rows[1].Status != OnboardingSyncItemGap {
 		t.Errorf("gap item after reset = %s, want gap (permanent)", rows[1].Status)
+	}
+	if rows[1].FetchCredential == nil || *rows[1].FetchCredential != gapCred {
+		t.Errorf("gap item credential = %v, want the derived credential persisted", rows[1].FetchCredential)
 	}
 }
 

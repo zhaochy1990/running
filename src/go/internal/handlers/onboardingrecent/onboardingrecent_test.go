@@ -688,6 +688,72 @@ func TestOnboardingRecent_PartialRetryKeepsFullStageCoverage(t *testing.T) {
 	}
 }
 
+// devops#1010 defect regression (pure aggregation seam): a terminal gap item
+// whose credential carries a storage-derived observed window must contribute
+// that window AND only its complement as gaps — never a whole-window
+// "no data at provider" gap over days the store actually holds. Items with no
+// observed window keep the honest whole-window gap.
+func TestStageResultFromItems_GapItemsKeepObservedWindowAndComplementGaps(t *testing.T) {
+	strPtr := func(s string) *string { return &s }
+	cred := func(kind, from, to, obsFrom, obsTo string, n int) *string {
+		s := fmt.Sprintf("coros:v1:range:%s:%s..%s:obs=%s..%s:n=%d", kind, from, to, obsFrom, obsTo, n)
+		return &s
+	}
+	items := []*storage.OnboardingSyncWorkItem{
+		{Kind: kindActivities, RangeFrom: "2026-05-22", RangeTo: "2026-08-19", Status: storage.OnboardingSyncItemGap,
+			Error:           strPtr("no activities at provider in range"),
+			FetchCredential: cred(kindActivities, "2026-05-22", "2026-08-19", "2026-06-10", "2026-08-16", 18)},
+		{Kind: kindHealth, RangeFrom: "2026-08-20", RangeTo: "2026-10-20", Status: storage.OnboardingSyncItemGap,
+			Error:           strPtr("provider returned no health rows for range"),
+			FetchCredential: cred(kindHealth, "2026-08-20", "2026-10-20", "2026-08-26", "2026-10-01", 30)},
+	}
+	var res onboardingsync.StageResult
+	if err := json.Unmarshal([]byte(stageResultFromItems(storage.OnboardingSyncStageExtendedRaw, items)), &res); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if res.Status != storage.OnboardingSyncCoverageCompletedWithGaps {
+		t.Errorf("status = %s, want completed_with_gaps", res.Status)
+	}
+	if res.ScannedFrom == nil || *res.ScannedFrom != "2026-05-22" || res.ScannedTo == nil || *res.ScannedTo != "2026-10-20" {
+		t.Errorf("scanned = %v..%v, want 2026-05-22..2026-10-20", res.ScannedFrom, res.ScannedTo)
+	}
+	if res.ObservedFrom == nil || *res.ObservedFrom != "2026-06-10" || res.ObservedTo == nil || *res.ObservedTo != "2026-10-01" {
+		t.Errorf("observed = %v..%v, want the credential-derived union 2026-06-10..2026-10-01", res.ObservedFrom, res.ObservedTo)
+	}
+	wantGaps := []onboardingsync.StageGap{
+		{From: "2026-05-22", To: "2026-06-09", Reason: "no activities at provider in range"},
+		{From: "2026-08-17", To: "2026-08-19", Reason: "no activities at provider in range"},
+		{From: "2026-08-20", To: "2026-08-25", Reason: "provider returned no health rows for range"},
+		{From: "2026-10-02", To: "2026-10-20", Reason: "provider returned no health rows for range"},
+	}
+	if len(res.Gaps) != len(wantGaps) {
+		t.Fatalf("gaps = %+v, want exactly the complements %+v", res.Gaps, wantGaps)
+	}
+	for i, g := range wantGaps {
+		if res.Gaps[i] != g {
+			t.Errorf("gap[%d] = %+v, want %+v", i, res.Gaps[i], g)
+		}
+	}
+
+	// No observed window (nothing stored in the window) keeps the honest
+	// whole-window gap — observed stays empty, never fabricated.
+	empty := []*storage.OnboardingSyncWorkItem{
+		{Kind: kindActivities, RangeFrom: "2026-05-22", RangeTo: "2026-08-19", Status: storage.OnboardingSyncItemGap,
+			Error:           strPtr("no activities at provider in range"),
+			FetchCredential: strPtr("coros:v1:range:activities:2026-05-22..2026-08-19:obs=-..-:n=0")},
+	}
+	res = onboardingsync.StageResult{}
+	if err := json.Unmarshal([]byte(stageResultFromItems(storage.OnboardingSyncStageHistoricalRaw, empty)), &res); err != nil {
+		t.Fatalf("parse empty: %v", err)
+	}
+	if res.ObservedFrom != nil || res.ObservedTo != nil {
+		t.Errorf("observed = %v..%v, want none (nothing stored)", res.ObservedFrom, res.ObservedTo)
+	}
+	if len(res.Gaps) != 1 || res.Gaps[0].From != "2026-05-22" || res.Gaps[0].To != "2026-08-19" {
+		t.Errorf("gaps = %+v, want the single whole-window gap", res.Gaps)
+	}
+}
+
 // fakeEnqueuer captures dispatches without a broker.
 type fakeEnqueuer struct {
 	specs []job.EnqueueSpec

@@ -206,7 +206,10 @@ type OnboardingSyncWorkItem struct {
 	RangeTo   string `gorm:"column:range_to;type:char(10);not null"`
 	Status    string `gorm:"column:status;type:varchar(16);not null"`
 	// FetchCredential is the complete-fetch proof, written ONLY after the
-	// item's full fetch succeeded — the record an explicit retry reuses.
+	// item's terminal outcome was derived — the record an explicit retry
+	// reuses. A gap item keeps its derived credential as well: it carries the
+	// storage-derived observed window stage aggregation reads back out
+	// (devops#1010); it is never a reuse proof (gap items are not re-run).
 	FetchCredential *string `gorm:"column:fetch_credential;type:varchar(191)"`
 	// Checkpoint is the chunked backfill stages' durable resume cursor
 	// (devops#1010): an opaque-to-storage blob the executor writes after each
@@ -854,12 +857,15 @@ func (s *Store) ListOnboardingSyncWorkItems(ctx context.Context, sessionID, stag
 }
 
 // MarkOnboardingSyncWorkItem records a work item outcome. A done item carries
-// its complete-fetch credential; a gap records its reason. Status transitions
-// are one-way out of pending (a done item is never re-fetched by a retry — the
-// credential is reused).
+// its complete-fetch credential; a gap item keeps its credential too — the
+// storage-derived observed window it encodes is what stage aggregation reads
+// back out (devops#1010: a gap whose window holds data must not lose its
+// observed window), while its reason goes to error. Status transitions are
+// one-way out of pending (a done item is never re-fetched by a retry — the
+// credential is reused; a gap item is never re-run at all).
 func (s *Store) MarkOnboardingSyncWorkItem(ctx context.Context, id int64, status string, credential string, errMsg *string) error {
 	updates := map[string]any{"status": status, "updated_at": time.Now().UTC()}
-	if status == OnboardingSyncItemDone && credential != "" {
+	if credential != "" {
 		updates["fetch_credential"] = credential
 	}
 	if errMsg != nil {
@@ -952,7 +958,10 @@ func (s *Store) UpdateOnboardingSyncStageCoverage(ctx context.Context, cov *Onbo
 // instant falls in [from, to] (inclusive, Shanghai calendar). The backfill
 // executor derives a channel's terminal observed window and honest gap set
 // from this — coverage always reads from what the store actually holds, never
-// from chunk bookkeeping (devops#1010).
+// from chunk bookkeeping (devops#1010). The day is DATE_FORMAT-ed to a CHAR
+// label: under parseTime=true a MySQL DATE scans into Go as time.Time and
+// string-converts to RFC3339, which the credential's obs= window (and every
+// day-label comparison downstream) would reject.
 func (s *Store) ActivityShanghaiDaysInRange(ctx context.Context, userID, from, to string) ([]string, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
@@ -960,7 +969,7 @@ func (s *Store) ActivityShanghaiDaysInRange(ctx context.Context, userID, from, t
 	}
 	var days []string
 	err = s.db.WithContext(ctx).Raw(
-		"SELECT DISTINCT DATE(CONVERT_TZ(`date`, '+00:00', '+08:00')) AS day FROM activities "+
+		"SELECT DISTINCT DATE_FORMAT(CONVERT_TZ(`date`, '+00:00', '+08:00'), '%Y-%m-%d') AS day FROM activities "+
 			"WHERE user_id = ? AND CONVERT_TZ(`date`, '+00:00', '+08:00') >= ? "+
 			"AND CONVERT_TZ(`date`, '+00:00', '+08:00') < DATE_ADD(?, INTERVAL 1 DAY) "+
 			"ORDER BY day", uid, from, to).Scan(&days).Error

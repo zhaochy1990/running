@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -141,8 +142,8 @@ func TestOnboardingRecentBackfillExecutor_ChunksToCompletion(t *testing.T) {
 	fb := &fakeBackfillProvider{fakeProvider: fakeProvider{name: "coros", loggedIn: true, calls: map[string]int{}}, st: st,
 		chunks: []fakeChunk{
 			{checkpoint: "coros:v1:cp:act:done=2026-07-01", scanned: "2026-07-01", fetches: 20,
-				days: []string{"2026-08-18", "2026-08-10", "2026-07-01"}, healthDays: healthDays},
-			{done: true, fetches: 5, days: []string{"2026-06-15", "2026-05-20"}},
+				days: []string{"2026-08-10", "2026-07-01", "2026-06-25"}, healthDays: healthDays},
+			{done: true, fetches: 5, days: []string{"2026-06-20", "2026-06-15"}},
 		},
 	}
 	cfg := Config{
@@ -183,19 +184,34 @@ func TestOnboardingRecentBackfillExecutor_ChunksToCompletion(t *testing.T) {
 	if res.Status != storage.OnboardingSyncCoverageCompletedWithGaps {
 		t.Fatalf("chunk 2 status = %s, want completed_with_gaps (window has empty days)", res.Status)
 	}
-	// Observed window derives from storage via the done items' credentials
-	// (the activities item is an honest gap item — holed windows carry no
-	// complete-fetch credential), so the health window anchors observation.
-	if res.ObservedFrom == nil || *res.ObservedFrom != "2026-08-18" || res.ObservedTo == nil || *res.ObservedTo != "2026-11-16" {
-		t.Errorf("observed = %s..%s, want 2026-08-18..2026-11-16", fmtPtr(res.ObservedFrom), fmtPtr(res.ObservedTo))
+	// Observed window derives from storage via the TERMINAL items'
+	// credentials — the gap item keeps its credential too (devops#1010): the
+	// activities channel anchors the window's start with its leading empty
+	// days excluded, the health channel (done) anchors its end.
+	if res.ObservedFrom == nil || *res.ObservedFrom != "2026-06-15" || res.ObservedTo == nil || *res.ObservedTo != "2026-11-16" {
+		t.Errorf("observed = %s..%s, want 2026-06-15..2026-11-16", fmtPtr(res.ObservedFrom), fmtPtr(res.ObservedTo))
 	}
-	if len(res.Gaps) == 0 {
-		t.Error("empty target days must appear as honest gaps")
+	// The gap item's recorded gap is the COMPLEMENT of its observed window —
+	// the leading/trailing vendor-empty days, never the days the store holds.
+	wantGaps := []onboardingsync.StageGap{
+		{From: "2026-05-20", To: "2026-06-14", Reason: "no activities at provider in range"},
+		{From: "2026-08-11", To: "2026-08-18", Reason: "no activities at provider in range"},
+	}
+	if len(res.Gaps) != len(wantGaps) {
+		t.Fatalf("gaps = %+v, want exactly the observed-window complements %+v", res.Gaps, wantGaps)
+	}
+	for i, g := range wantGaps {
+		if res.Gaps[i] != g {
+			t.Errorf("gap[%d] = %+v, want %+v", i, res.Gaps[i], g)
+		}
 	}
 	items = listItems(t, st, sess.SessionID, storage.OnboardingSyncStageExtendedRaw)
 	act = itemOf(items, kindActivities)
 	if act.Status != storage.OnboardingSyncItemGap || act.Error == nil {
 		t.Fatalf("activities item after chunk 2 = %+v, want gap with the empty-day reason", act)
+	}
+	if act.FetchCredential == nil || !strings.Contains(*act.FetchCredential, "obs=2026-06-15..2026-08-10:n=5") {
+		t.Errorf("gap activities credential = %v, want the storage-derived observed window persisted", act.FetchCredential)
 	}
 	// The provider saw chunk 2's cursor = chunk 1's checkpoint.
 	if len(fb.callCursors) != 2 || fb.callCursors[1] != "coros:v1:cp:act:done=2026-07-01" {
@@ -326,6 +342,115 @@ func TestOnboardingRecentAuxiliaryExecutor_Completes(t *testing.T) {
 	}
 	if len(raceSaw) != 2 || len(raceSaw[1]) != 1 {
 		t.Errorf("race handler batches = %v, want the second candidate alone in chunk 2", raceSaw)
+	}
+}
+
+// devops#1010 E2E defect regression (wave-4 run7 w7b): a backfill stage whose
+// channels end as GAP items WITH in-window data and vendor-empty leading /
+// trailing days must report terminal coverage that agrees with STORAGE —
+// observed = the stored days' min/max per channel, gaps = only the empty-day
+// complements — on BOTH the activities and the health channel, and identically
+// on the idempotent re-run (every item already terminal: the crash-recovery
+// aggregation path the live E2E actually hit).
+func TestOnboardingRecentBackfillExecutor_TerminalCoverageMatchesStorage(t *testing.T) {
+	st := openStore(t)
+	uid := mustUUID(t)
+	sess := seedSession(t, st, uid)
+	actWin := provider.DayWindow{From: "2026-05-20", To: "2026-08-18"}
+	healthWin := provider.DayWindow{From: "2026-08-20", To: "2026-10-20"}
+	seedBackfillStage(t, st, sess, actWin, healthWin)
+
+	fb := &fakeBackfillProvider{fakeProvider: fakeProvider{name: "coros", loggedIn: true, calls: map[string]int{}}, st: st,
+		chunks: []fakeChunk{{
+			done: true, fetches: 3,
+			days:       []string{"2026-06-15", "2026-07-01", "2026-08-10"},
+			healthDays: []string{"2026-08-26", "2026-09-15", "2026-10-01"},
+		}},
+	}
+	cfg := Config{
+		Resolve: func(context.Context, string) (Provider, error) { return fb, nil },
+		Store:   st, Sessions: st, Jobs: 2,
+	}
+
+	out, err := runExecutor(t, cfg, backfillJob(sess, storage.OnboardingSyncStageExtendedRaw))
+	if err != nil {
+		t.Fatalf("terminal run: %v", err)
+	}
+	assertTerminalCoverageMatchesStorage(t, st, sess, out, actWin, healthWin)
+
+	// Idempotent re-run: every item terminal — the aggregation is rebuilt
+	// from the persisted outcomes alone and must report the same contract.
+	out2, err := runExecutor(t, cfg, backfillJob(sess, storage.OnboardingSyncStageExtendedRaw))
+	if err != nil {
+		t.Fatalf("idempotent re-run: %v", err)
+	}
+	assertTerminalCoverageMatchesStorage(t, st, sess, out2, actWin, healthWin)
+}
+
+// assertTerminalCoverageMatchesStorage is the w7b E2E probe, in-process: the
+// stage result's observed window equals the min/max day storage actually
+// holds (union across channels), every gap segment is the complement of a
+// channel's observed window, no gap covers a stored day, and the gap items'
+// credentials — the storage-derived observed windows — are persisted.
+func assertTerminalCoverageMatchesStorage(t *testing.T, st *storage.Store, sess *storage.OnboardingSyncSession, out string, actWin, healthWin provider.DayWindow) {
+	t.Helper()
+	ctx := context.Background()
+	var res onboardingsync.StageResult
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("result parse: %v", err)
+	}
+	if res.Status != storage.OnboardingSyncCoverageCompletedWithGaps {
+		t.Errorf("status = %s, want completed_with_gaps (vendor-empty days exist)", res.Status)
+	}
+	actDays, err := st.ActivityShanghaiDaysInRange(ctx, sess.UserID, actWin.From, actWin.To)
+	if err != nil {
+		t.Fatalf("activity days read: %v", err)
+	}
+	healthDays, err := st.DailyHealthDaysInRange(ctx, sess.UserID, healthWin.From, healthWin.To)
+	if err != nil {
+		t.Fatalf("health days read: %v", err)
+	}
+	if len(actDays) == 0 || len(healthDays) == 0 {
+		t.Fatalf("seeded days missing: act=%v health=%v", actDays, healthDays)
+	}
+	union := append(append([]string{}, actDays...), healthDays...)
+	sort.Strings(union)
+	if res.ObservedFrom == nil || *res.ObservedFrom != union[0] || res.ObservedTo == nil || *res.ObservedTo != union[len(union)-1] {
+		t.Errorf("observed = %s..%s, want the storage union %s..%s",
+			fmtPtr(res.ObservedFrom), fmtPtr(res.ObservedTo), union[0], union[len(union)-1])
+	}
+	wantGaps := []onboardingsync.StageGap{
+		{From: actWin.From, To: prevDayLabel(actDays[0]), Reason: "no activities at provider in range"},
+		{From: nextDayLabel(actDays[len(actDays)-1]), To: actWin.To, Reason: "no activities at provider in range"},
+		{From: healthWin.From, To: prevDayLabel(healthDays[0]), Reason: "provider returned no health rows for range"},
+		{From: nextDayLabel(healthDays[len(healthDays)-1]), To: healthWin.To, Reason: "provider returned no health rows for range"},
+	}
+	if len(res.Gaps) != len(wantGaps) {
+		t.Fatalf("gaps = %+v, want the observed-window complements %+v", res.Gaps, wantGaps)
+	}
+	for i, g := range wantGaps {
+		if res.Gaps[i] != g {
+			t.Errorf("gap[%d] = %+v, want %+v", i, res.Gaps[i], g)
+		}
+	}
+	stored := map[string]bool{}
+	for _, d := range union {
+		stored[d] = true
+	}
+	for _, g := range res.Gaps {
+		for d := g.From; d <= g.To; d = nextDayLabel(d) {
+			if stored[d] {
+				t.Errorf("gap [%s..%s] (%q) covers stored day %s", g.From, g.To, g.Reason, d)
+			}
+		}
+	}
+	for _, it := range listItems(t, st, sess.SessionID, storage.OnboardingSyncStageExtendedRaw) {
+		if it.Status != storage.OnboardingSyncItemGap {
+			continue
+		}
+		if it.FetchCredential == nil || !strings.Contains(*it.FetchCredential, "obs=2026") {
+			t.Errorf("gap item %s credential = %v, want the storage-derived observed window persisted", it.Kind, it.FetchCredential)
+		}
 	}
 }
 
