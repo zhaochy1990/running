@@ -106,9 +106,11 @@ const (
 	// credentials, fetches the missing ranges and reports the StageResult
 	// coverage contract. Created exclusively by the session dispatch path
 	// (never user-initiable), deduplicated by a stable idempotency key. The
-	// provider executors are the T03/T04 follow-ups — the rollout switch
-	// (api.features.onboarding-sync-session) must stay OFF until workers with
-	// those handlers are deployed, mirroring the webhook's enqueue gate.
+	// Garmin executor ships with devops#1007 (T03); the COROS executor is the
+	// T04 follow-up — until workers carry both, the rollout switch
+	// (api.features.onboarding-sync-session) must stay OFF (a non-Garmin
+	// session dispatched to a T03-only worker fails with an explicit
+	// permanent error, mirroring the webhook's enqueue gate).
 	JobTypeOnboardingRecentSync = "onboarding_recent_sync"
 )
 
@@ -279,7 +281,7 @@ func Jobs() []JobSpec {
 		{
 			Type:          JobTypeOnboardingRecentSync,
 			UserInitiable: false,
-			Description:   "Execute one first-sync session's recent stage (devops#1006, epic devops#1004 T02): fetch the session's recent work items (90-day activities / 28-day health / dashboard, Shanghai natural days) whose complete-fetch credentials are missing, reuse done items' credentials, record gaps honestly, and return the StageResult coverage contract (scanned / observed / gaps) the reconcile sweep persists. Created exclusively by the onboarding-sync session dispatch under a stable idempotency key; not user-initiable. The COROS executor ships with devops#1004 T04 (devops#1008): an independent 90-Shanghai-day activity window scan (never stopping at known activities), the vendor's full batch-health answer kept whole, the strict dashboard snapshot, ordered fenced commits, and per-channel done/gap outcomes with complete-fetch credentials. Garmin's executor is T03 and still pending — a Garmin session's job fails permanently as provider_not_capable, so the api.features.onboarding-sync-session rollout switch may only open for COROS users until T03 ships.",
+			Description:   "Execute one first-sync session's recent stage (devops#1006, epic devops#1004 T02): fetch the session's recent work items (90-day activities / 28-day health / dashboard, Shanghai natural days) whose complete-fetch credentials are missing, reuse done items' credentials, record gaps honestly, and return the StageResult coverage contract (scanned / observed / gaps) the reconcile sweep persists. Created exclusively by the onboarding-sync session dispatch under a stable idempotency key; not user-initiable. The COROS executor shipped with devops#1004 T04 (devops#1008) and the Garmin executor with T03 (devops#1007: an independent 90-Shanghai-day window scan that never stops at known activities and treats invalid list dates as unclassifiable — detail-confirmed, explicitly blocked when undatable; provider-missing details recorded, never fabricated; ordered fenced commits with resume reuse; the fixed 28-day anchor health walk). Both providers implement provider.RecentSyncer; a provider without the contract fails the job permanently as provider_not_capable, and the api.features.onboarding-sync-session rollout switch stays off until operators open it per cohort.",
 			InputSchema:   json.RawMessage(`{"type":"object","required":["session_id","stage"],"properties":{"session_id":{"type":"string","description":"onboarding_sync_sessions row the stage belongs to"},"stage":{"type":"string","description":"stage name; T02 defines recent_raw"}},"additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{"session_id":"00000000-0000-0000-0000-000000000000","stage":"recent_raw"}`),
 		},

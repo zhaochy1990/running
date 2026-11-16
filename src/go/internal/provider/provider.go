@@ -275,6 +275,13 @@ type RecentRangeReport struct {
 	Dashboard  *RangeChannelReport
 }
 
+// ErrUnrecoverableRangeData marks range-sync input the provider confirmed
+// exists but whose data cannot be classified — e.g. a Garmin activity whose
+// start date is invalid even in its detail payload (devops#1007: 无效日期需
+// 详情确认或明确阻塞). Retrying cannot fix it; the executor fails the job
+// permanently instead of burning the retry budget.
+var ErrUnrecoverableRangeData = errors.New("provider: unrecoverable range data")
+
 // RecentSyncer is the optional adapter contract the onboarding recent-stage
 // executor consumes (devops#1004 T03/T04). It is deliberately separate from
 // Provider/SyncUser: the full/incremental depth axis cannot express "scan this
