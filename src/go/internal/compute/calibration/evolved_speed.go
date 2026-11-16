@@ -228,7 +228,7 @@ func FitEvolvedSpeed(evidence []CandidateEvidence, asOf time.Time, priors Evolve
 			out.CapabilityState = &EvolvedCapabilityStateStamp{
 				Method:          evolvedStatePriorPredictOnlyMethod,
 				TrendPerDay:     trend,
-				DistinctDays:    0,
+				DistinctEffects: 0,
 				PriorPrediction: prediction,
 				Reasons:         []string{evolvedStateNoNewDataReason},
 			}
@@ -954,7 +954,15 @@ func evolvedStampSolved(fit evolvedFit, sol evolvedSolution) {
 		p := &fit.obs[i]
 		aEff := sol.a
 		if sol.dayShift != nil {
-			aEff = sol.a - sol.trend*p.age + sol.dayShift[p.day]
+			// Effect-key lookup: the solution's day shifts are keyed by the
+			// state's effect keys (raw day up to the cap, ISO week beyond) -
+			// a raw-day lookup would silently drop the day effect from the
+			// published residuals in weekly mode (review P1).
+			day := p.day
+			if fit.state != nil {
+				day = fit.state.dayKey[p.day]
+			}
+			aEff = sol.a - sol.trend*p.age + sol.dayShift[day]
 		}
 		var r float64
 		if p.constraint {

@@ -100,12 +100,16 @@ type EvolvedCapabilityStateStamp struct {
 	TrendPerDay  float64                 `json:"trend_per_day_log_v60"`
 	TrendClamped bool                    `json:"trend_clamped,omitempty"`
 	DayEffects   []EvolvedDayEffectStamp `json:"day_effects,omitempty"`
-	DistinctDays int                     `json:"distinct_days"`
-	FirstDay     string                  `json:"first_day,omitempty"`
-	LastDay      string                  `json:"last_day,omitempty"`
-	// EffectResolution discloses the day-effect granularity (day vs ISO week
-	// beyond the deterministic scale cap).
-	EffectResolution string `json:"effect_resolution,omitempty"`
+	// DistinctEffects counts the day-effect UNKNOWN SUPPORTS actually
+	// fitted: distinct days in day mode, distinct ISO weeks in the coarsened
+	// scale-guard mode - the semantics are pinned by EffectResolution, it is
+	// never silently "days" in both.
+	DistinctEffects int    `json:"distinct_effects"`
+	FirstEffect     string `json:"first_effect,omitempty"`
+	LastEffect      string `json:"last_effect,omitempty"`
+	// EffectResolution discloses the day-effect granularity: "day" or
+	// "iso_week_beyond_60_distinct_days" (the deterministic scale cap).
+	EffectResolution string `json:"effect_resolution"`
 	// WeightPolicy discloses that the state solve drops the stationary
 	// admission's per-age staleness factors (weight decay and sigma age
 	// inflation): with the explicit trend/day structure those factors would
@@ -239,14 +243,6 @@ func (st *evolvedCapabilityState) snapshot() (trend float64, dayShift map[string
 // alternation.
 // ---------------------------------------------------------------------------
 
-// evolvedHRRowGrad carries one HR block's residual and analytic Jacobian row
-// for the state Gauss-Newton system (the shared chain of the a-sensitivity
-// recursion; see evolvedHRTerm.evaluateFull).
-type evolvedHRRowGrad struct {
-	res, dpredA, dpredT, w float64
-	day                    string
-}
-
 // evolvedStateUnknowns fixes the deterministic unknown ordering of the joint
 // state system: [a, trend, days sorted, effort classes sorted] (a omitted
 // when pinned for profile probes).
@@ -363,7 +359,11 @@ func evolvedStateSolveSystem(fit *evolvedFit, priors EvolvedPriorSet, histMean, 
 			g[u.iA] = -keepG / p.sigma
 		}
 		g[u.iTrend] = p.age * keepG / p.sigma
-		if di, ok := u.dayIdx[p.day]; ok {
+		// The day column is indexed by EFFECT KEY (the day itself up to the
+		// cap, its ISO week beyond) - the raw civil day would never match
+		// the weekly keys and the day unknowns would lose their data
+		// gradient entirely (review P1).
+		if di, ok := u.dayIdx[st.dayKey[p.day]]; ok {
 			g[di] = -keepG / p.sigma
 		}
 		if ci, ok := u.clsIdx[fit.groups[p.group].effort]; ok && !p.constraint {
@@ -389,7 +389,7 @@ func evolvedStateSolveSystem(fit *evolvedFit, priors EvolvedPriorSet, histMean, 
 			j[u.iA] = fData / grp.prior.SD
 		}
 		j[u.iTrend] = -fData * grp.age / grp.prior.SD
-		if di, ok := u.dayIdx[grp.day]; ok {
+		if di, ok := u.dayIdx[st.dayKey[grp.day]]; ok {
 			j[di] = fData / grp.prior.SD
 		}
 		j[ci] = (keep[gi] - 1) / grp.prior.SD
@@ -739,15 +739,20 @@ func evolvedStampCapabilityState(out *EvolvedSpeedReport, fit evolvedFit, sol ev
 		return
 	}
 	stamp := EvolvedCapabilityStateStamp{
-		Method:       evolvedStateMethodFit,
-		TrendPerDay:  sol.trend,
-		TrendClamped: math.Abs(sol.trend) >= evolvedCapabilityTrendClamp-1e-9,
-		DistinctDays: len(fit.state.days),
-		WeightPolicy: "flat_within_window_age_staleness_divided_out",
+		Method:          evolvedStateMethodFit,
+		TrendPerDay:     sol.trend,
+		TrendClamped:    math.Abs(sol.trend) >= evolvedCapabilityTrendClamp-1e-9,
+		DistinctEffects: len(fit.state.days),
+		WeightPolicy:    "flat_within_window_age_staleness_divided_out",
+	}
+	if fit.state.weekly {
+		stamp.EffectResolution = "iso_week_beyond_60_distinct_days"
+	} else {
+		stamp.EffectResolution = "day"
 	}
 	if len(fit.state.days) > 0 {
-		stamp.FirstDay = fit.state.days[0]
-		stamp.LastDay = fit.state.days[len(fit.state.days)-1]
+		stamp.FirstEffect = fit.state.days[0]
+		stamp.LastEffect = fit.state.days[len(fit.state.days)-1]
 	}
 	effects := make([]EvolvedDayEffectStamp, 0, len(sol.dayShift))
 	for d, v := range sol.dayShift {

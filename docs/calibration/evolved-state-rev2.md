@@ -33,6 +33,6 @@
 
 ## 留给 T5（#999）的接缝
 
-- `EvolvedSpeedReport.CapabilityState`（`*EvolvedCapabilityStateStamp`）是策略/预览/发布入口应携带的时间结构块；`prior_prediction` 的 lineage 字段（`SourceAsOfDay`/`SourceInputFingerprint`）供 T5 组装状态链（上一状态 → 预测 → 更新）。
+- `EvolvedSpeedReport.CapabilityState`（`*EvolvedCapabilityStateStamp`）是策略/预览/发布入口应携带的时间结构块：`trend_per_day_log_v60`、`trend_clamped`、`day_effects`（≤16 条按 |shift| 降序，键=效果键：日或 ISO 周）、`distinct_effects`（**效果支撑数**——日模式的日数/周模式的 ISO 周数，语义由 `effect_resolution` 钉死）、`first/last_effect`（效果键边界）、`effect_resolution`（`day`/`iso_week_beyond_60_distinct_days`）、`weight_policy`、`prior_prediction` 的 lineage 字段（`SourceAsOfDay`/`SourceInputFingerprint`）供 T5 组装状态链（上一状态 → 预测 → 更新）。
 - `HistoricalCapabilityPrior` 新字段由调用方（T5 的重算入口）从上一快照构造；`EstimateEvolvedOffline(history, asOf, health, metadata, prior)` 是按 as-of 重算的幂等入口（同一事件集位级同结果）。
 - 快照/summary 未新增字段（`CapabilityState` 留在 Evolved 报告内）；T6 展示若需要 trend/日效应，读 Evolved 报告而非 summary。

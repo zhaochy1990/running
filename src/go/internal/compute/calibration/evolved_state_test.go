@@ -3,6 +3,7 @@ package calibration_test
 import (
 	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,8 +78,11 @@ func TestEvolvedCapabilityRecentComparableEvidenceMovesEstimate(t *testing.T) {
 		t.Fatalf("trend magnitude implausible: %v (truth %v)", state.TrendPerDay, drift)
 	}
 	// The day effects are disclosed per distinct evidence day, bounded.
-	if state.DistinctDays < 35 {
-		t.Fatalf("distinct evidence days under-reported: %d", state.DistinctDays)
+	if state.DistinctEffects < 35 {
+		t.Fatalf("distinct evidence days under-reported: %d", state.DistinctEffects)
+	}
+	if state.EffectResolution != "day" {
+		t.Fatalf("day-mode fixture must disclose day resolution: %q", state.EffectResolution)
 	}
 	if len(state.DayEffects) == 0 || len(state.DayEffects) > 16 {
 		t.Fatalf("day effects disclosure must be present and bounded: %d", len(state.DayEffects))
@@ -220,7 +224,7 @@ func TestEvolvedCapabilityNoNewDataKeepsPredictOnlyState(t *testing.T) {
 	if state.PriorPrediction == nil || state.PriorPrediction.TrendPerDayUsed != -0.0002 {
 		t.Fatalf("prediction must retain the recorded trend: %+v", state.PriorPrediction)
 	}
-	if state.DistinctDays != 0 || len(state.DayEffects) != 0 {
+	if state.DistinctEffects != 0 || len(state.DayEffects) != 0 {
 		t.Fatalf("predict-only state must not fabricate time structure: %+v", state)
 	}
 	foundNoNew := false
@@ -831,5 +835,78 @@ func TestEvolvedCapabilityDeviceSwitchStaysContinuous(t *testing.T) {
 		if !evolvedFinite(o) {
 			t.Fatal("optical weight must be finite")
 		}
+	}
+}
+
+// TestEvolvedCapabilityWeeklyEffectResolutionBeyondDayCap (#998 review P1):
+// the production mainline for dense runners - more than 60 distinct evidence
+// days - switches the day effects to ISO-week resolution. The weekly
+// unknowns must actually receive their data gradient (week-level offsets
+// fitted, not degenerate), the disclosure must say which resolution ran, the
+// effect count must be honest weeks, and the trend must still be recovered.
+func TestEvolvedCapabilityWeeklyEffectResolutionBeyondDayCap(t *testing.T) {
+	asOf := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
+	const vNow, drift = 4.0, 0.0007
+	history := []calibration.Activity{}
+	meta := []calibration.CandidateMetadata{}
+	durations := []int{1800, 3600, 5400}
+	// One activity per day for 90 days: 90 distinct days > 60 cap -> weekly
+	// effect keys. Deterministic week-level offsets (hot/slow alternate
+	// weeks) land exactly on the weekly keys, so they are identifiable.
+	weeks := map[int]float64{}
+	for age := 0; age < 90; age++ {
+		id := "wk-" + string(rune('a'+age%26)) + "-" + string(rune('0'+age/26))
+		d := durations[age%3]
+		offset := 0.02
+		if (age/7)%2 == 0 {
+			offset = -0.02
+		}
+		speed := vNow * math.Exp(-drift*float64(age)) * math.Exp(-0.18+offset) * math.Pow(float64(d)/3600, -0.06)
+		history = append(history, evolvedRunActivity(id, asOf.AddDate(0, 0, -age), d, speed))
+		meta = append(meta, calibration.CandidateMetadata{ActivityID: id, SourceVersion: "audited-v1", EvidenceRef: "e", Submaximal: true})
+		day := asOf.AddDate(0, 0, -age)
+		y, w := day.ISOWeek()
+		weeks[y*100+w] = offset
+	}
+	res, err := calibration.EstimateOfflineWithEvidence(calibration.StrategyEvolvedCandidate, history, asOf, nil, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	speed := res.Evolved.Speed
+	if speed.CenterMps == nil {
+		t.Fatal("weekly window must produce a center")
+	}
+	state := speed.CapabilityState
+	if state == nil {
+		t.Fatalf("weekly window must produce a state (fallback limitations: %v)", speed.Limitations)
+	}
+	if state.EffectResolution != "iso_week_beyond_60_distinct_days" {
+		t.Fatalf("weekly resolution must be disclosed: %q", state.EffectResolution)
+	}
+	// The effect count is honest WEEKS, not days.
+	if state.DistinctEffects != len(weeks) {
+		t.Fatalf("distinct effects must count ISO weeks: %d want %d", state.DistinctEffects, len(weeks))
+	}
+	if len(state.FirstEffect) > 0 && !strings.Contains(state.FirstEffect, "-W") {
+		t.Fatalf("weekly mode must publish week keys as effect bounds: %q", state.FirstEffect)
+	}
+	// The P1 tooth: weekly unknowns must receive their data gradient - the
+	// alternating week offsets are fitted as non-degenerate week shifts
+	// (pre-fix the raw-day lookup never hit the weekly keys and every shift
+	// collapsed to the prior at zero).
+	best := 0.0
+	for _, e := range state.DayEffects {
+		if !strings.Contains(e.Day, "-W") {
+			t.Fatalf("weekly mode must disclose week keys: %+v", e)
+		}
+		best = math.Max(best, math.Abs(e.ShiftLog))
+	}
+	if best < 0.005 {
+		t.Fatalf("weekly day effects must carry their data gradient: best |shift| %v", best)
+	}
+	// The trend survives the weekly coarsening (differential across ~13
+	// weeks; prior-shrunk but in the order of the truth).
+	if state.TrendPerDay < 0.0003 || state.TrendPerDay > 0.0015 {
+		t.Fatalf("trend must survive weekly resolution: %v (truth %v)", state.TrendPerDay, drift)
 	}
 }
