@@ -9,20 +9,26 @@ import (
 type Strategy string
 
 const (
-	StrategyV3           Strategy = "v3"
-	StrategySegmentsOnly Strategy = "segments_only"
-	StrategyCandidate    Strategy = "candidate"
+	StrategyV3               Strategy = "v3"
+	StrategySegmentsOnly     Strategy = "segments_only"
+	StrategyCandidate        Strategy = "candidate"
+	StrategyEvolvedCandidate Strategy = "evolved_candidate"
 )
 
 // OfflineResult separates requested strategy from the actually implemented code.
 // Snapshot.AlgorithmVersion identifies the offline implementation, never active policy.
+// AlgorithmRevision distinguishes the in-place evolved v4 outputs
+// (EvolvedCandidateAlgorithmRevision) from historical v4 rows (empty), per the
+// 2026-11-16 no-v5 decision; legacy strategies leave it empty so replay
+// hashes and persisted JSON stay byte-identical.
 type OfflineResult struct {
-	Strategy         Strategy                 `json:"strategy"`
-	Implementation   string                   `json:"implementation"`
-	ParameterVersion string                   `json:"parameter_version"`
-	Snapshot         Snapshot                 `json:"snapshot"`
-	Segments         *OfflineSegmentReport    `json:"segments,omitempty"`
-	Evidence         *CandidateEvidenceReport `json:"evidence,omitempty"`
+	Strategy          Strategy                 `json:"strategy"`
+	Implementation    string                   `json:"implementation"`
+	ParameterVersion  string                   `json:"parameter_version"`
+	AlgorithmRevision string                   `json:"algorithm_revision,omitempty"`
+	Snapshot          Snapshot                 `json:"snapshot"`
+	Segments          *OfflineSegmentReport    `json:"segments,omitempty"`
+	Evidence          *CandidateEvidenceReport `json:"evidence,omitempty"`
 }
 
 // EstimateRunningCalibration is the production entry point. It deliberately has
@@ -65,6 +71,12 @@ func estimateOfflineWithEvidenceAt(strategy Strategy, history []Activity, asOf t
 		var report CandidateEvidenceReport
 		snapshot, report = estimateEvidenceCandidate(history, asOf, health, metadata, metadataCutoff)
 		evidence = &report
+	case StrategyEvolvedCandidate:
+		// The evolved v4 stays one offline-only strategy entry (production
+		// wiring never selects it). #995 froze its contract; the estimator
+		// itself lands with #996-#998, so until then this entry refuses
+		// instead of fabricating numbers.
+		return OfflineResult{}, fmt.Errorf("evolved_candidate estimator pending: estimation contract frozen by #995, fitter implemented in #996-#998")
 	default:
 		return OfflineResult{}, fmt.Errorf("unknown calibration strategy %q", strategy)
 	}

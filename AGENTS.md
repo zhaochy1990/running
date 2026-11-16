@@ -110,6 +110,8 @@ This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 
 默认 active=3、candidate=4、fallback=3；只有首选版本缺行才回退，已有候选行但中心缺失仍保留候选语义。生产候选持久化默认关闭；隔离 preview 仅返回内存结果。校准发布、同日 ID 兼容、冻结派生来源、重算顺序与 rollback 边界，见 [ADR 0045](docs/adr/0045-calibration-policy-bundles-and-lineage.md)。改基线读写、版本、历史消费或来源解释时必须读该 ADR 和 [客户端解释契约](docs/calibration/client-explanation-contract.md)。
 
+v4 演进（SPEC #993，2026-11-16 拍板）**不开新顶层身份**：新旧 v4 输出以快照/lineage 中的算法修订标记区分（`algorithm_revision` 列进快照唯一键，历史 v4 行 revision 为空且不覆写），估计契约与评估协议 v2 冻结在 [estimation-contract-v2.md](docs/calibration/estimation-contract-v2.md) / [evaluation-protocol-v2.md](docs/calibration/evaluation-protocol-v2.md)；改 v4 行为必须先读这两份。
+
 所有长期个体基线都经该 reader 消费，不在 route / Coach / ability 另算 RHR 分位数，不用 magic HRmax=185，不创建平行 baseline 包。onboarding 的新用户 seed prefill 语义不同，仍可保留明确注释。
 
 ## 不要重复造轮子（一般原则）

@@ -78,3 +78,5 @@ measurement 容差并不表示次极限是精确能力。3min 快段只约束 Vm
 评审修复后的固定真实回放（`T4-independent-reviewfix-working-tree`）原 manifest 两次7.781/7.089秒，报告SHA256均 `ae3d40fe328e423c00f444fc773ee8231cd85f22c91098d5267058928e081b9e`；含69暂停反证的独立manifest耗时7.232秒，SHA256 `6f578e0bec87a06d1418828fac8905f702e55873d0065a01eadd5be0b4d24c69`。均exit2/insufficient；三版本完整cases与评审前T4相同，只更新顶层诊断和code标签，manifest/v3 hash不变。真实输入没有跨日root alias，本次修复的确定性保证来自端到端与纯 seam 回归，不能把这批回放当冲突alias准确性标签。
 
 后继 T5 已在 candidate 增加[独立 HR 支持](independent-hr-v1.md)，替换本文历史说明中的旧配速条件 HR；速度模型、v3/T2对照不变。没有独立 HR 协议时仍缺失，不以配速推 HR 再反证配速。
+
+> 演进提示（#993/#995，2026-11-16）：本文件描述的 v1 行为是冻结存档；原地演进后 v4 的联合估计契约（先验、状态标签、修订标记）见 [estimation-contract-v2.md](estimation-contract-v2.md)，评估以 [evaluation-protocol-v2.md](evaluation-protocol-v2.md) 为准，v1 协议与留出不改。

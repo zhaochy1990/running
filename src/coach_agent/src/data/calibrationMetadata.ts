@@ -42,6 +42,10 @@ const evidence = z.object({
 const metric = z.object({
   method: text,
   target_type: text,
+  // Five-label estimation state of the evolved v4 (#995):
+  // measured_reference | model_estimated | prior_dominated | stale | unavailable.
+  // Missing on legacy rows until T2 stamps it.
+  state: optionalText,
   measurement_quality: text,
   effort_support: text,
   support: text,
@@ -71,6 +75,9 @@ export const CalibrationSourceSchema = z
     strategy: optionalText,
     implementation: optionalText,
     parameter_version: optionalText,
+    // Algorithm revision marker separating the in-place evolved v4
+    // (v4-rev2-2026-11) from historical v4 rows (#995); missing on legacy rows.
+    algorithm_revision: optionalText,
     data_cutoff_day: optionalText,
     availability_semantics: optionalText,
     fingerprint: optionalText,

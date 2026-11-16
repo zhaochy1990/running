@@ -35,6 +35,24 @@ func validCalibrationDay(day string) bool {
 	return err == nil && d.Format("2006-01-02") == day
 }
 
+// validAlgorithmRevision accepts the historical empty revision and bounded
+// opaque revision markers (charset [A-Za-z0-9._-], <= 64 chars). The revision
+// participates in the snapshot natural key, so junk values must never enter
+// it (#995).
+func validAlgorithmRevision(rev string) bool {
+	if len(rev) > 64 {
+		return false
+	}
+	for _, r := range rev {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // ReadEffectiveRunningCalibration selects version before date, and keeps every
 // read on one REPEATABLE READ connection. A row with nil centers is still a row.
 func (s *Store) ReadEffectiveRunningCalibration(ctx context.Context, user, cutoff string, mode CalibrationMode) (CalibrationBundle, error) {
@@ -106,8 +124,12 @@ func (s *Store) ReadEffectiveRunningCalibration(ctx context.Context, user, cutof
 	return out, err
 }
 
-// PublishRunningCalibration preserves the existing natural key and publishes
-// snapshot plus both zone tables atomically. Copies protect caller-owned inputs.
+// PublishRunningCalibration preserves the natural key (user_id, as_of_date,
+// algorithm_version, algorithm_revision) and publishes snapshot plus both zone
+// tables atomically. Copies protect caller-owned inputs. Same-key republish is
+// an idempotent overwrite (same-day recompute); a different algorithm_revision
+// writes a separate row, so historical v4 rows (revision ”) are never
+// overwritten by the evolved v4 (#995, ADR 0045).
 func (s *Store) PublishRunningCalibration(ctx context.Context, snapshot *RunningCalibrationSnapshot, pace []RunningCalibrationPaceZone, hr []RunningCalibrationHRZone) (uint64, error) {
 	if snapshot == nil {
 		return 0, fmt.Errorf("nil calibration snapshot")
@@ -119,7 +141,7 @@ func (s *Store) PublishRunningCalibration(ctx context.Context, snapshot *Running
 	}
 	snap.UserID = uid
 	snap.ID = 0
-	if !validCalibrationDay(snap.AsOfDate) || !validCalibrationVersion(snap.AlgorithmVersion) {
+	if !validCalibrationDay(snap.AsOfDate) || !validCalibrationVersion(snap.AlgorithmVersion) || !validAlgorithmRevision(snap.AlgorithmRevision) {
 		return 0, fmt.Errorf("invalid calibration identity")
 	}
 	p := append([]RunningCalibrationPaceZone(nil), pace...)

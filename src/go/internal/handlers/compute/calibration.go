@@ -163,6 +163,9 @@ func runCalibrationVersion(ctx context.Context, store CalibrationStore, user str
 	}
 	snap := result.Snapshot
 	row := toStorageSnapshot(user, snap)
+	// The in-place evolved v4 separates its rows from historical v4 by the
+	// algorithm revision marker (#995); legacy strategies keep it empty.
+	row.AlgorithmRevision = result.AlgorithmRevision
 	source := calibration.SummarizeSource(result)
 	raw, err := json.Marshal(source)
 	if err != nil {

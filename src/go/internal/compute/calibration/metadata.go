@@ -9,11 +9,14 @@ const CandidateVersion = candidateAlgorithmVersion
 // SourceSummary is the bounded explanation persisted with a snapshot. It never
 // contains observations, raw samples, notes, coordinates or complete activities.
 type SourceSummary struct {
-	SchemaVersion         int           `json:"schema_version"`
-	State                 string        `json:"state"`
-	Strategy              string        `json:"strategy,omitempty"`
-	Implementation        string        `json:"implementation,omitempty"`
-	ParameterVersion      string        `json:"parameter_version,omitempty"`
+	SchemaVersion    int    `json:"schema_version"`
+	State            string `json:"state"`
+	Strategy         string `json:"strategy,omitempty"`
+	Implementation   string `json:"implementation,omitempty"`
+	ParameterVersion string `json:"parameter_version,omitempty"`
+	// AlgorithmRevision distinguishes in-place evolved v4 outputs from
+	// historical v4 rows (#995; empty on all legacy summaries).
+	AlgorithmRevision     string        `json:"algorithm_revision,omitempty"`
 	DataCutoffDay         string        `json:"data_cutoff_day,omitempty"`
 	AvailabilitySemantics string        `json:"availability_semantics,omitempty"`
 	Fingerprint           string        `json:"fingerprint,omitempty"`
@@ -21,8 +24,12 @@ type SourceSummary struct {
 	HR                    *MetricSource `json:"hr,omitempty"`
 }
 type MetricSource struct {
-	Method                     string            `json:"method"`
-	TargetType                 string            `json:"target_type"`
+	Method     string `json:"method"`
+	TargetType string `json:"target_type"`
+	// State is the five-label estimation state of the evolved v4 contract
+	// (#995): measured_reference / model_estimated / prior_dominated / stale /
+	// unavailable. Empty on all legacy summaries until T2+ stamps it.
+	State                      string            `json:"state,omitempty"`
 	MeasurementQuality         string            `json:"measurement_quality"`
 	EffortSupport              string            `json:"effort_support"`
 	Support                    string            `json:"support"`
@@ -70,6 +77,7 @@ func ParseSource(raw *string) SourceSummary {
 	limitSourceString(&out.Strategy)
 	limitSourceString(&out.Implementation)
 	limitSourceString(&out.ParameterVersion)
+	limitSourceString(&out.AlgorithmRevision)
 	limitSourceString(&out.DataCutoffDay)
 	limitSourceString(&out.AvailabilitySemantics)
 	limitSourceString(&out.Fingerprint)
@@ -81,7 +89,7 @@ func ParseSource(raw *string) SourceSummary {
 // SummarizeSource separates actual model contributors from bounded rejected
 // protocol history. Ordinary training cannot refresh an older maximal anchor.
 func SummarizeSource(result OfflineResult) SourceSummary {
-	out := SourceSummary{SchemaVersion: 1, State: "available", Strategy: string(result.Strategy), Implementation: result.Implementation, ParameterVersion: result.ParameterVersion, DataCutoffDay: result.Snapshot.AsOfDate.Format("2006-01-02"), AvailabilitySemantics: "event_date_retrospective"}
+	out := SourceSummary{SchemaVersion: 1, State: "available", Strategy: string(result.Strategy), Implementation: result.Implementation, ParameterVersion: result.ParameterVersion, AlgorithmRevision: result.AlgorithmRevision, DataCutoffDay: result.Snapshot.AsOfDate.Format("2006-01-02"), AvailabilitySemantics: "event_date_retrospective"}
 	legacy := func(target, support string) *MetricSource {
 		return &MetricSource{Method: "legacy_v3_training_estimate", TargetType: target, MeasurementQuality: "unknown", EffortSupport: "unknown", Support: support, RangeMeaning: "unavailable", Reasons: []string{"legacy_estimate_not_independent_detection"}, Limitations: []string{"event_date_only_not_strict_as_known"}}
 	}
@@ -185,7 +193,7 @@ func boundSourceMetric(m *MetricSource) {
 		m.Limitations = m.Limitations[:16]
 	}
 	limit := limitSourceString
-	for _, p := range []*string{&m.Method, &m.TargetType, &m.MeasurementQuality, &m.EffortSupport, &m.Support, &m.RangeMeaning, &m.EvidenceDate, &m.LatestRejectedEvidenceDate, &m.LatestStaleEvidenceDate, &m.LabMethod} {
+	for _, p := range []*string{&m.Method, &m.TargetType, &m.State, &m.MeasurementQuality, &m.EffortSupport, &m.Support, &m.RangeMeaning, &m.EvidenceDate, &m.LatestRejectedEvidenceDate, &m.LatestStaleEvidenceDate, &m.LabMethod} {
 		limit(p)
 	}
 	for i := range m.RejectedReasons {

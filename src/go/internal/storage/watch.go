@@ -50,7 +50,42 @@ func (s *Store) AutoMigrateWatch(ctx context.Context) error {
 			return fmt.Errorf("storage: drop legacy running_calibration_zone: %w", err)
 		}
 	}
+	// Widen uq_run_cal to include algorithm_revision (#995). GORM AutoMigrate
+	// adds the column but never rewrites an existing unique index, so a
+	// pre-existing database would keep colliding distinct v4 revisions onto
+	// one row. Idempotent: fresh installs already have the 4-column index.
+	if err := s.migrateRunningCalibrationRevisionIndex(ctx); err != nil {
+		return fmt.Errorf("storage: widen uq_run_cal: %w", err)
+	}
 	return nil
+}
+
+// migrateRunningCalibrationRevisionIndex rebuilds uq_run_cal as
+// (user_id, as_of_date, algorithm_version, algorithm_revision) when an older
+// three-column variant is still present. Existing rows keep their identities:
+// the historical v4 rows hold the empty-string column default.
+func (s *Store) migrateRunningCalibrationRevisionIndex(ctx context.Context) error {
+	db := s.db.WithContext(ctx)
+	var columns []string
+	if err := db.Raw(`
+		SELECT column_name FROM information_schema.statistics
+		WHERE table_schema = DATABASE()
+		  AND table_name = 'running_calibration_snapshot'
+		  AND index_name = 'uq_run_cal'
+		ORDER BY seq_in_index`).Scan(&columns).Error; err != nil {
+		return err
+	}
+	if len(columns) == 0 {
+		return nil
+	}
+	for _, c := range columns {
+		if c == "algorithm_revision" {
+			return nil
+		}
+	}
+	return db.Exec(`ALTER TABLE running_calibration_snapshot
+		DROP INDEX uq_run_cal,
+		ADD UNIQUE INDEX uq_run_cal (user_id, as_of_date, algorithm_version, algorithm_revision)`).Error
 }
 
 // canonicalUserID validates that id is a real UUID and returns its canonical

@@ -36,3 +36,39 @@ test("current HR support and rejected historical reasons stay separate", () => {
     assert.equal(source.hr?.evidence_date, "2026-11-14");
   }
 });
+
+test("algorithm revision and estimation state stay optional for evolved v4 (#995)", () => {
+  const fixture = JSON.parse(readFileSync(new URL("../../../../docs/calibration/fixtures/client-display-v1.json", import.meta.url), "utf8"));
+  // Legacy v4 rows never carried the marker: it must stay absent, never inferred.
+  const legacy = CalibrationSourceSchema.parse(fixture.cases[0].response.threshold.source);
+  assert.equal(legacy.algorithm_revision, undefined);
+  assert.equal(legacy.speed?.state, undefined);
+  // Evolved-v4 summaries carry the revision marker and the five-label state.
+  const evolved = CalibrationSourceSchema.parse({
+    schema_version: 1,
+    state: "available",
+    strategy: "evolved_candidate",
+    implementation: "evolved_joint_v2",
+    parameter_version: "rev2-research-2026-11",
+    algorithm_revision: "v4-rev2-2026-11",
+    data_cutoff_day: "2026-11-16",
+    speed: {
+      method: "speed_duration_inference",
+      target_type: "one_hour_running_capability",
+      state: "prior_dominated",
+      measurement_quality: "medium",
+      effort_support: "submaximal",
+      support: "low",
+      range_low: 3.0,
+      range_high: 4.2,
+      range_meaning: "model_sensitivity_range_not_probability_interval",
+      independent_activities: 2,
+      independent_days: 2,
+      reasons: ["identifiability_limited_prior_dominated"],
+      limitations: ["research_uncalibrated_not_population_calibrated"],
+      evidence_count: 0,
+    },
+  });
+  assert.equal(evolved.algorithm_revision, "v4-rev2-2026-11");
+  assert.equal(evolved.speed?.state, "prior_dominated");
+});

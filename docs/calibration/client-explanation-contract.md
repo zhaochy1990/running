@@ -6,6 +6,12 @@ Go API 是此 DTO 的 owner，workout / weekly-plan schema 不承担校准元数
 
 `threshold` 保留原有 speed、pace、HR、confidence、日期和 ID 字段，新增 `algorithm_version`、UTC `computed_at`、`selection`、`source`、`fingerprint` 和 `speed_range_pace_per_km_sec`。`/health` 新增 `calibration`，包含同一选择和来源元数据，不改变 `rhr_baseline` 规则。
 
+## v4 原地演进的修订标记与估计状态（#995，2026-11-16 冻结）
+
+v4 不开新顶层身份：演进后的 v4 输出在 `source.algorithm_revision`（可选字符串，如 `v4-rev2-2026-11`）区分于历史 v4 行（缺省为空）；`algorithm_version` 仍为 4，policy `supported_versions=[3,4]` 不变。快照存储层以 `(user, as_of_date, algorithm_version, algorithm_revision)` 为自然键，历史 v4 行不被覆写（ADR 0045）。
+
+`source.speed.state` / `source.hr.state`（均可选，旧行缺省）是五态估计状态：`measured_reference`（verified 独立参考）、`model_estimated`（普通训练可辨识）、`prior_dominated`（先验主导、必须带有限宽范围）、`stale`（保留估计但支持证据超陈旧窗：speed 90 天 / HR 60 天）、`unavailable`（无有效输入且无合格先验/物理不可能/求解失败，必带原因）。仅缺全力标签或仅光电 HR **不是** unavailable 理由；范围一律称模型敏感性范围，不是概率区间。契约与判定次序见 [estimation-contract-v2.md](estimation-contract-v2.md)；T2 起填充，三端展示归 T6。
+
 - `selection` 表达 requested/effective version、policy revision、selected/fallback/unavailable 与原因。只在 preferred 快照行不存在时允许 fallback；已有中心为 null 的 constraints-only 行仍是有效选择，不能补入 v3 中心。
 - `source` 是有界 typed 摘要，含方法、目标语义、measurement quality、effort support、support、证据日期、数据截止日、独立活动/日支持、范围意义及降级原因。不输出原始 SourceJSON、观测曲线、坐标或 notes。
 - `source.speed.evidence_date` / `source.hr.evidence_date` 是实际支持证据的上海日期；`data_cutoff_day` / `as_of_date` 是输入截止日；`computed_at` 是执行时刻，三者不能互相替代。`event_date_retrospective` 不承诺严格历史当时可得性。

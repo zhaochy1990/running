@@ -25,11 +25,25 @@ A candidate-not-configured state is explicit. Future rows cannot fill history.
 
 ## Publication and historical identity
 
-Snapshot and both zone tables publish in one transaction. The existing
-(user,day,version) natural key and ID remain compatible; concurrent same-key
-writers serialize through that row. Readers use one connection and explicit
-REPEATABLE READ readonly transaction for policy, snapshot and zones. Atomic
-writes alone would not prevent a reader seeing old centers with new zones.
+Snapshot and both zone tables publish in one transaction. The natural key is
+(user, day, version, algorithm_revision): since #995 (2026-11-16 no-v5
+decision) the additive `algorithm_revision` column separates the in-place
+evolved v4 outputs (`v4-rev2-2026-11`) from historical v4 rows (empty
+revision), so a new-revision write can never overwrite an old v4 row.
+Same-(user,day,version,revision) republish remains an idempotent overwrite,
+preserving the original same-day recompute semantics; legacy writers that do
+not know the column keep defaulting it to '' and stay on their previous
+identity. Revision values are validated ([A-Za-z0-9._-], <= 64 chars) before
+entering the key. Readers keep one connection and an explicit REPEATABLE READ
+readonly transaction for policy, snapshot and zones, and the same
+`as_of_date DESC, id DESC` deterministic tiebreak within a version; per-user
+revision preference arrives with #999. GORM AutoMigrate adds the column but
+never widens an existing unique index, so `AutoMigrateWatch` additionally runs
+an idempotent `migrateRunningCalibrationRevisionIndex` step (rebuild
+`uq_run_cal` on the four columns when an older three-column variant is
+detected). Deployment order: apply the column + index change before deploying
+new revision writers. Atomic writes alone would not prevent a reader seeing
+old centers with new zones.
 
 SourceJSON stores schema1 typed summaries: method, parameter version, event
 cutoff, support, measurement quality versus effort, actual evidence dates,
@@ -132,7 +146,9 @@ Deployment sequence (not executed by this change):
 
 1. Apply additive policy table and five nullable columns before new readers and
    writers. Verify schema readiness explicitly; pod AutoMigrate ordering alone
-   does not establish a safe multi-pod rollout.
+   does not establish a safe multi-pod rollout. The #995 revision-key change
+   follows the same rule: `algorithm_revision` column plus the rebuilt
+   `uq_run_cal` index land before any new-revision writer.
 2. Deploy all Go and TS readers, retaining active3 and candidate persistence off.
    Old binaries select highest version: **do not persist candidate into shared
    production while any old reader exists**.
@@ -177,3 +193,15 @@ pause counterevidence and persisted stale HR rejection explanations. See
 [final review evidence](../calibration/evidence/final-review/README.md).
 The original T8 first score/freeze and then-unsupported stack report remain
 historical evidence; they do not claim to cover these later changes.
+
+## Evolved v4 estimation contract (#993 / #995, 2026-11-16)
+
+The v4 algorithm identity evolves in place (no v5). The estimation contract
+(joint objective, conditional independence, HR bridge constraint, five-state
+labels, runnable research priors, revision marker) is frozen in
+[docs/calibration/estimation-contract-v2.md](../calibration/estimation-contract-v2.md)
+with evaluation protocol v2 in
+[docs/calibration/evaluation-protocol-v2.md](../calibration/evaluation-protocol-v2.md).
+Nothing in this ADR changes: policy/bundle/lineage rules above apply unchanged
+to revision-marked v4 rows, and the three-gate release discipline (engineering
+admission / single-user research trial / full rollout) is documented there.
