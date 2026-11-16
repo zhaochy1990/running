@@ -119,7 +119,6 @@ public final class AppModel {
             me = try await api.validateSession()
             phase = .loggedIn
             if let entry { router.reset(to: entry) }
-            _ = try await api.validateSession()
             await resolveLandingAfterSession(entry: entry)
         } catch let error as ApiError {
             if error.statusCode == 401 {

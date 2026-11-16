@@ -10,16 +10,17 @@ import Observation
 private let pipelinePollInterval: Duration = .seconds(2)
 private let pipelineTimeout: Duration = .seconds(60 * 60)
 
-/// 「上次同步 Xm ago」相对时间（profile.ts relativeTime 同口径）。
+/// 「上次同步 X 分钟前」相对时间（profile.ts relativeTime 同分段口径；
+/// 中文本地化为用户批准的确认偏差，mp 保留英文 ago——LEDGER D-locale-1）。
 public func relativeSyncAge(_ iso: String?, now: Date = Date()) -> String {
     guard let iso, let date = RFC3339.parse(iso) else { return "未同步" }
     let ms = max(0, now.timeIntervalSince(date) * 1000)
     let minutes = Int(ms / 60000)
     if minutes < 1 { return "刚刚" }
-    if minutes < 60 { return "\(minutes)m ago" }
+    if minutes < 60 { return "\(minutes) 分钟前" }
     let hours = minutes / 60
-    if hours < 24 { return "\(hours)h ago" }
-    return "\(hours / 24)d ago"
+    if hours < 24 { return "\(hours) 小时前" }
+    return "\(hours / 24) 天前"
 }
 
 @MainActor

@@ -162,13 +162,16 @@ public struct CheckinView: View {
             Button {
                 Task { await home.checkIn() }
             } label: {
+                // 禁用态（已签到/签到中）不再整钮降透明度（白字被洗成不可读），
+                // 改浅粉底 + 深字：foregroundSoft #4A5260 on accentTint #FFECEC
+                // ≈ 6.9:1，AA 达标（devops#1003 P3）。
+                let enabled = home.canCheck && !home.checking
                 Text(home.checking ? "签到中…" : home.ctaText)
                     .font(theme.font(.fs15, weight: .medium))
-                    .foregroundStyle(theme.onAccent)
+                    .foregroundStyle(enabled ? theme.onAccent : theme.foregroundSoft)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, theme.space(.md))
-                    .background(Capsule().fill(theme.accent))
-                    .opacity(home.canCheck && !home.checking ? 1 : 0.55)
+                    .background(Capsule().fill(enabled ? theme.accent : theme.accentTint))
             }
             .buttonStyle(.plain)
             .disabled(!home.canCheck || home.checking)

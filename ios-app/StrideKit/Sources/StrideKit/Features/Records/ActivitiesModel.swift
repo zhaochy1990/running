@@ -70,6 +70,9 @@ public final class ActivitiesModel {
         guard !started else { return }
         started = true
         await app.waitUntilSessionSettled()
+        // 仓库装配（TrainingHomeModel.activate 同款接线）：漏掉会让 fetch 的
+        // guard let repo 永远静默空态（devops#1003 P0 回归锚点）。
+        repo = ActivitiesRepository(api: app.api)
         userId = app.me?.id ?? ""
         guard !userId.isEmpty else {
             loading = false
