@@ -32,6 +32,15 @@ const (
 	evolvedProfileStepLogA      = 0.01
 	evolvedPriorShareDominant   = 0.5
 	evolvedPriorShareReason     = "prior_share_at_least_half_effective_curvature"
+	// Large-input guard (review P2-4): the solver cost is O(k grid x a
+	// bisection x group solves), which reaches seconds at production scale
+	// (~250 roots per 180-day window). Above the observation threshold the k
+	// grid is coarsened deterministically and the report says so; the exact
+	// block solves and all comparisons stay untouched.
+	evolvedLargeObservationThreshold = 400
+	evolvedKCoarseStepsLarge         = 40 // step 0.002
+	evolvedKFineStepsLarge           = 20 // step ~0.0002
+	evolvedKGridCoarsenedLimitation  = "k_grid_coarsened_large_input"
 )
 
 // EvolvedSpeedObservation is one auditable row of the fit: admitted role,
@@ -199,6 +208,12 @@ func FitEvolvedSpeed(evidence []CandidateEvidence, asOf time.Time, priors Evolve
 	out.SolverRounds = sol.probes
 	out.SolverConverged = sol.converged
 	out.SolverObjective = sol.objective
+	if sol.gridResolution > 0 {
+		out.SolverKGridResolution = sol.gridResolution
+	}
+	if sol.gridCoarsened {
+		out.Limitations = append(out.Limitations, evolvedKGridCoarsenedLimitation)
+	}
 	evolvedStampSolved(fit, sol)
 	// RiegelK is published only when duration diversity actually identifies
 	// the exponent (same criteria as the contract's model_estimated rule).
@@ -497,6 +512,10 @@ type evolvedSolution struct {
 	probes    int
 	converged bool
 	objective float64
+	// gridResolution is the k grid step actually used; gridCoarsened marks
+	// the large-input guard so the report can disclose it.
+	gridResolution float64
+	gridCoarsened  bool
 }
 
 // evolvedGroupDelta minimizes the group's budgeted Huber likelihood plus its
@@ -555,6 +574,11 @@ func evolvedProfile(fit *evolvedFit, priors EvolvedPriorSet, histMean, histSD *f
 		if histMean != nil {
 			j += 0.5 * math.Pow((a-*histMean) / *histSD, 2)
 		}
+		// Contract section 5 freezes a truncated quadratic prior on the
+		// endurance exponent too (mean 0.06, sd 0.03 inside the frozen
+		// [0.02, 0.10] grid domain). Without it a weakly identified duration
+		// decline parks the MAP exponent on the domain edge (review P1).
+		j += 0.5 * math.Pow((k-priors.EnduranceK.Mean)/priors.EnduranceK.SD, 2)
 		// The effort-margin priors are part of the joint objective: without
 		// them the k comparison would silently prefer exponents that push
 		// margins away from their class means.
@@ -629,22 +653,28 @@ func evolvedSolveAtK(fit *evolvedFit, priors EvolvedPriorSet, histMean, histSD *
 // over a; k is scanned on a fixed coarse+fine grid with input-order
 // independent comparisons.
 func evolvedSolveMAP(fit evolvedFit, priors EvolvedPriorSet, histMean, histSD *float64) (evolvedSolution, bool) {
-	best := evolvedSolution{k: riegelKMin, objective: math.Inf(1)}
+	coarseSteps, fineSteps := evolvedKCoarseSteps, evolvedKFineSteps
+	gridCoarsened := len(fit.obs) > evolvedLargeObservationThreshold
+	if gridCoarsened {
+		coarseSteps, fineSteps = evolvedKCoarseStepsLarge, evolvedKFineStepsLarge
+	}
+	best := evolvedSolution{k: riegelKMin, objective: math.Inf(1), gridCoarsened: gridCoarsened}
 	totalProbes := 0
 	evalK := func(k float64) {
 		sol := evolvedSolveAtK(&fit, priors, histMean, histSD, k)
 		totalProbes += sol.probes
 		if sol.objective < best.objective {
+			sol.gridCoarsened = gridCoarsened
 			best = sol
 		}
 	}
-	coarseStep := (riegelKMax - riegelKMin) / evolvedKCoarseSteps
-	for step := 0; step <= evolvedKCoarseSteps; step++ {
+	coarseStep := (riegelKMax - riegelKMin) / float64(coarseSteps)
+	for step := 0; step <= coarseSteps; step++ {
 		evalK(math.Min(riegelKMin+coarseStep*float64(step), riegelKMax))
 	}
-	fineStep := coarseStep / (float64(evolvedKFineSteps/2) + 1)
+	fineStep := coarseStep / (float64(fineSteps/2) + 1)
 	fineLo := math.Max(riegelKMin, best.k-coarseStep)
-	for step := 0; step <= evolvedKFineSteps; step++ {
+	for step := 0; step <= fineSteps; step++ {
 		k := fineLo + fineStep*float64(step)
 		if k < riegelKMin || k > riegelKMax {
 			continue
@@ -652,6 +682,7 @@ func evolvedSolveMAP(fit evolvedFit, priors EvolvedPriorSet, histMean, histSD *f
 		evalK(k)
 	}
 	best.probes = totalProbes
+	best.gridResolution = fineStep
 	if !evolvedFinite(best.a) || !evolvedFinite(best.objective) {
 		return evolvedSolution{}, false
 	}

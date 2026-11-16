@@ -2,6 +2,7 @@ package calibration_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -642,4 +643,78 @@ func TestLegacyStrategiesMarshalWithoutEvolvedBlock(t *testing.T) {
 			t.Fatalf("%s produced an evolved report", strategy)
 		}
 	}
+}
+
+// TestEvolvedSpeedKPriorPullsWeaklyIdentifiedExponentFromBoundary: the
+// contract freezes a truncated quadratic prior on k (mean 0.06, sd 0.03 in
+// [0.02, 0.10]) and requires the joint objective to contain every prior
+// term. When the data alone weakly implies k at the domain edge (~0.095),
+// the MAP exponent must be pulled back toward the prior mean rather than
+// parking on the 0.10 boundary.
+func TestEvolvedSpeedKPriorPullsWeaklyIdentifiedExponentFromBoundary(t *testing.T) {
+	asOf := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
+	// Within-root duration decline implies kStar near the domain edge; each
+	// root's windows share its session margin (submaximal).
+	const kStar = 0.095
+	v := func(d float64) float64 { return 3.4 * math.Pow(d/3600, -kStar) }
+	root := func(id string, daysAgo int) []calibration.CandidateEvidence {
+		out := make([]calibration.CandidateEvidence, 0, 3)
+		for _, d := range []float64{1800, 3600, 5400} {
+			out = append(out, evolvedEvidence(asOf, daysAgo, id, d, v(d), calibration.EffortSubmaximal))
+		}
+		return out
+	}
+	evidence := append(append([]calibration.CandidateEvidence{}, root("w1", 3)...), root("w2", 9)...)
+	report := calibration.FitEvolvedSpeed(evidence, asOf, calibration.DefaultEvolvedPriors(), nil)
+	if report.CenterMps == nil {
+		t.Fatal("weakly identified exponent fixture must still produce a center")
+	}
+	// Without the k prior the grid optimum parks at the 0.095-0.10 edge; the
+	// frozen prior (0.06, sd 0.03) must pull the MAP exponent meaningfully
+	// back inside the domain while the data still keeps it above the mean.
+	if report.MapK >= 0.093 {
+		t.Fatalf("MAP k=%v parks at the domain edge; the frozen k prior (0.06, sd 0.03) is missing or inert", report.MapK)
+	}
+	if report.MapK <= 0.06 {
+		t.Fatalf("MAP k=%v collapsed to the prior mean; the duration-decline data must still matter", report.MapK)
+	}
+	// The pull is recomputable: quadratic pool of data precision (within-root
+	// slopes) and the prior precision balances strictly between 0.06 and 0.095.
+	if report.MapK <= 0.065 || report.MapK >= 0.091 {
+		t.Fatalf("MAP k=%v outside the expected prior/data balance band", report.MapK)
+	}
+}
+
+// TestEvolvedSpeedLargeInputCoarsensKGridAndDisclosesIt: above the declared
+// observation threshold the deterministic solver coarsens its k grid to keep
+// production-scale windows (~250 roots/180 days) tractable, discloses the
+// coarsening as a limitation with the actual grid resolution, and still
+// returns a finite deterministic center.
+func TestEvolvedSpeedLargeInputCoarsensKGridAndDisclosesIt(t *testing.T) {
+	asOf := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
+	// 405 single-window roots: just past the 400-observation guard.
+	evidence := make([]calibration.CandidateEvidence, 0, 405)
+	for i := 0; i < 405; i++ {
+		speed := 3.0 + 0.4*float64(i%7)/7
+		evidence = append(evidence, evolvedEvidence(asOf, 1+i%170, fmt.Sprintf("g-%d", i), 3600, speed, calibration.EffortSubmaximal))
+	}
+	report := calibration.FitEvolvedSpeed(evidence, asOf, calibration.DefaultEvolvedPriors(), nil)
+	if report.CenterMps == nil || !evolvedFinite(*report.CenterMps) {
+		t.Fatalf("large input must still produce a finite center: %+v", report.CenterMps)
+	}
+	coarsened := false
+	for _, l := range report.Limitations {
+		if l == "k_grid_coarsened_large_input" {
+			coarsened = true
+		}
+	}
+	if !coarsened {
+		t.Fatalf("guard limitation missing above threshold: %v", report.Limitations)
+	}
+	if !(report.SolverKGridResolution > 0.00015) {
+		t.Fatalf("coarsened grid resolution must be disclosed, got %v", report.SolverKGridResolution)
+	}
+	// Bit-level determinism of the shared code paths is locked by the
+	// order-independence tests; re-fitting a 400+ observation window here
+	// would double an already seconds-scale fixture for no new coverage.
 }
