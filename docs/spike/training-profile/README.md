@@ -2,7 +2,7 @@
 
 当前入口是[十维混合计算／子Agent POC](TEN-DIMENSION-POC.md)。以下保留前几轮演进记录；当前支持一次输入多个已审阅历史profile文件，逐条保留、复核或显式处置，不再从零覆盖画像。
 
-本分支是供审阅的 throwaway POC，不合并或部署为正式功能。按用户最新范围，独立 `src/training_profile` Node package 以 TS 生成画像，结果只保存本地 JSON／Markdown；不包含 Go 服务、数据库、任务调度或 Coach／训练计划接入。
+本包用于 POC 的本地生成与审阅，不作为生产功能部署。独立 `src/training_profile` Node package 以 TS 生成画像，结果只保存本地 JSON／Markdown；不包含 Go 服务、数据库、任务调度或 Coach／训练计划接入。
 
 范围与验收见[训练画像最小闭环 POC：独立 TS 包生成、本地保存与内容质量验证](https://github.com/zhaochy1990/stride-devops/issues/981)。正式 Go／TS 职责和持久化决议仍留待后续落实，本轮文件保存不替代正式方案。
 
