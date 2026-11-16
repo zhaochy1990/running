@@ -24,6 +24,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/handlers/chinaathcalendar"
 	"github.com/zhaochy1990/stride/internal/handlers/competitioncalendar"
 	"github.com/zhaochy1990/stride/internal/handlers/compute"
+	"github.com/zhaochy1990/stride/internal/handlers/historicalcalibration"
 	"github.com/zhaochy1990/stride/internal/handlers/homecitysync"
 	"github.com/zhaochy1990/stride/internal/handlers/onboardinganalysis"
 	"github.com/zhaochy1990/stride/internal/handlers/onboardingrecent"
@@ -147,6 +148,13 @@ func runWorker() error {
 	if err := store.AutoMigrateOnboardingSync(ctx); err != nil {
 		return err
 	}
+	// Explicit historical-calibration recompute run tables (devops#1011, epic
+	// devops#1004 T07): the worker's executor is the only writer. The rollout
+	// flag stays off by default — migrating the schema ships the capability
+	// without authorizing any production backfill.
+	if err := store.AutoMigrateHistoricalRecompute(ctx); err != nil {
+		return err
+	}
 
 	// --- RabbitMQ ---
 	// Backoff instead of fail-fast: a rabbitmq Recreate roll is a 15-30s
@@ -242,7 +250,7 @@ func runWorker() error {
 		Store:        store,
 		DefaultYears: cfg.ChinaAth.Years,
 		Logger:       log,
-	}, wxClient)
+	}, wxClient, enq, cfg.Runtime.HistoricalRecompute)
 	policy := job.RetryPolicy{
 		MaxAttempts: cfg.Retry.MaxAttempts,
 		BaseBackoff: cfg.Retry.BaseBackoff,
@@ -447,7 +455,7 @@ func newTSBlobStore(cfg config.TSBlob) (tsstore.Store, error) {
 // mirrors the 中国田协 catalogue (caConfig); `homecity_recompute` refreshes
 // every user's resident-city snapshot; `ts_blob_gc` collects orphaned
 // timeseries blobs (devops#785, operator-enqueued).
-func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store, raceDetector *racedetection.Detector, raceConcurrency int, waClient *worldathletics.Client, tsBlobStore tsstore.Store, log *zap.Logger, isolation config.WriteIsolation, onboardingSyncSvc *onboardingsync.Service, ccConfig competitioncalendar.Config, caConfig chinaathcalendar.Config, wxClient *wxpay.Client) {
+func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store, raceDetector *racedetection.Detector, raceConcurrency int, waClient *worldathletics.Client, tsBlobStore tsstore.Store, log *zap.Logger, isolation config.WriteIsolation, onboardingSyncSvc *onboardingsync.Service, ccConfig competitioncalendar.Config, caConfig chinaathcalendar.Config, wxClient *wxpay.Client, enq job.Enqueuer, histRecompute config.HistoricalRecompute) {
 	reg.MustRegister("hello", func(_ context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		_ = hb("greeting", 50)
 		return fmt.Sprintf(`{"echo":%q}`, j.InputJSON), nil
@@ -519,6 +527,19 @@ func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *stor
 		Calibration: calibrationHandler,
 		Compute:     computeHandler,
 		Ability:     abilityHandler,
+	}))
+	// historical_calibration_recompute (devops#1011, epic devops#1004 T07):
+	// the explicit historical-calibration recompute executor. Always
+	// registered like the onboarding executors, but the rollout flag
+	// (runtime.historical-recompute.enabled, DEFAULT OFF) keeps it inert — a
+	// stray job on a flag-off worker fails permanently instead of running an
+	// unauthorized production backfill. Operator-dispatched via the internal
+	// jobs API only; never a pipeline step, ordinary-calibration path or
+	// listener.
+	reg.MustRegister(historicalcalibration.JobType, historicalcalibration.New(historicalcalibration.Config{
+		Store:   store,
+		Enq:     enq,
+		Enabled: histRecompute.Enabled,
 	}))
 	// The sync pipelines' shape step (devops#829): fills route_thumb_json only —
 	// it deliberately takes no COS client, nothing renders or uploads anymore.
