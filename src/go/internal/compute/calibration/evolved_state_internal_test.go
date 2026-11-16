@@ -107,3 +107,27 @@ func TestEvolvedStateResearchPriorsLockedToDocumentedValues(t *testing.T) {
 		}
 	}
 }
+
+// TestEvolvedJointShellPreservesStationaryLimitations (#1001 finding): the
+// joint re-stamp shell must carry the stationary report's limitations (e.g.
+// the state-solve fallback disclosure or the large-input k-grid coarsening)
+// instead of silently rebuilding the base list and dropping them.
+func TestEvolvedJointShellPreservesStationaryLimitations(t *testing.T) {
+	stationary := EvolvedSpeedReport{
+		State:        StateModelEstimated,
+		RangeMeaning: contractRangeSemantics,
+		Limitations:  append(evolvedSpeedLimitations(), "capability_state_solve_failed_stationary_center_retained", "k_grid_coarsened_large_input"),
+	}
+	shell := evolvedJointSpeedOutShell(stationary, evolvedFit{}, DefaultEvolvedPriors())
+	for _, want := range []string{"capability_state_solve_failed_stationary_center_retained", "k_grid_coarsened_large_input"} {
+		found := false
+		for _, l := range shell.Limitations {
+			if l == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("shell dropped stationary limitation %q; got %v", want, shell.Limitations)
+		}
+	}
+}

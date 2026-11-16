@@ -709,14 +709,19 @@ func evolvedSpeedStateResolve(evidence []CandidateEvidence, asOf time.Time, prio
 // structured diagnostics).
 func evolvedJointSpeedOutShell(stationary EvolvedSpeedReport, fit evolvedFit, priors EvolvedPriorSet) EvolvedSpeedReport {
 	return EvolvedSpeedReport{
-		ParameterVersion:       EvolvedPriorSetVersion,
-		Method:                 evolvedSpeedMethodFit,
-		State:                  stationary.State,
-		RangeMeaning:           contractRangeSemantics,
-		PriorsIdentityHash:     priors.IdentityHash(),
-		SolverKGridResolution:  (riegelKMax - riegelKMin) / evolvedKCoarseSteps / (evolvedKFineSteps/2 + 1),
-		Reasons:                append([]string{}, stationary.Reasons...),
-		Limitations:            evolvedSpeedLimitations(),
+		ParameterVersion:      EvolvedPriorSetVersion,
+		Method:                evolvedSpeedMethodFit,
+		State:                 stationary.State,
+		RangeMeaning:          contractRangeSemantics,
+		PriorsIdentityHash:    priors.IdentityHash(),
+		SolverKGridResolution: (riegelKMax - riegelKMin) / evolvedKCoarseSteps / (evolvedKFineSteps/2 + 1),
+		Reasons:               append([]string{}, stationary.Reasons...),
+		// Carry the stationary report's limitations instead of rebuilding the
+		// base list: the state-solve fallback disclosure
+		// (capability_state_solve_failed_stationary_center_retained) and the
+		// large-input k-grid coarsening must survive the joint re-stamp
+		// (#1001 finding — dropping them hid why CapabilityState was absent).
+		Limitations:            append([]string{}, stationary.Limitations...),
 		Observations:           fit.rows,
 		InputIdentityHash:      stationary.InputIdentityHash,
 		IndependentRoots:       stationary.IndependentRoots,
