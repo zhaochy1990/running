@@ -1,6 +1,7 @@
 package calibration
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"time"
@@ -59,6 +60,11 @@ const (
 	evolvedStateLineHalvings = 8
 	// Bounded day-effect disclosure in the report stamp.
 	evolvedStateDayEffectsCap = 16
+	// Cost guards at production scale: beyond this many distinct evidence
+	// days the day effects resolve at ISO-week granularity and the IRLS
+	// rounds tighten (disclosed).
+	evolvedStateDayCap         = 60
+	evolvedStateIRLSItersLarge = 8
 
 	evolvedStateTrendClampedLimitation    = "capability_trend_prior_clamped"
 	evolvedStateSolveFallbackLimitation   = "capability_state_solve_failed_stationary_center_retained"
@@ -97,6 +103,9 @@ type EvolvedCapabilityStateStamp struct {
 	DistinctDays int                     `json:"distinct_days"`
 	FirstDay     string                  `json:"first_day,omitempty"`
 	LastDay      string                  `json:"last_day,omitempty"`
+	// EffectResolution discloses the day-effect granularity (day vs ISO week
+	// beyond the deterministic scale cap).
+	EffectResolution string `json:"effect_resolution,omitempty"`
 	// WeightPolicy discloses that the state solve drops the stationary
 	// admission's per-age staleness factors (weight decay and sigma age
 	// inflation): with the explicit trend/day structure those factors would
@@ -110,9 +119,18 @@ type EvolvedCapabilityStateStamp struct {
 // (and referenced by the HR term so both domains see the same per-activity
 // capability). nil keeps the stationary #996/#997 behavior bit-for-bit.
 type evolvedCapabilityState struct {
-	trend    float64
+	trend float64
+	// dayShift holds one effect per effect key (day or ISO week at scale).
 	dayShift map[string]float64
-	days     []string // sorted distinct admitted evidence days
+	days     []string // sorted distinct effect keys
+	dayKey   map[string]string
+	// weekly marks the coarsened resolution (cost guard, disclosed).
+	weekly bool
+	// frozen marks a state solved by the standalone speed resolve and then
+	// conditioned on by the HR joint: the joint re-optimizes only the anchor
+	// a_now (and k, deltas, theta) through the proven #997 machinery, never
+	// the time structure itself.
+	frozen bool
 }
 
 // capabilityAt returns the capability of an observation age days old on day
@@ -121,11 +139,28 @@ func (st *evolvedCapabilityState) capabilityAt(age float64, day string, aNow flo
 	if st == nil {
 		return aNow
 	}
-	return aNow - st.trend*age + st.dayShift[day]
+	return aNow - st.trend*age + st.dayShift[st.dayKey[day]]
+}
+
+// evolvedStateEffectKey maps one civil day to its effect key: the day itself
+// up to the cap, its ISO week beyond (deterministic).
+func evolvedStateEffectKey(day string, weekly bool) string {
+	if !weekly {
+		return day
+	}
+	t, err := time.Parse("2006-01-02", day)
+	if err != nil {
+		return day
+	}
+	year, week := t.ISOWeek()
+	return fmt.Sprintf("%04d-W%02d", year, week)
 }
 
 // newEvolvedCapabilityState collects the distinct evidence days of the
-// admitted model observations (sorted; zero-initialized shifts).
+// admitted model observations and builds the effect keys (per-day up to
+// evolvedStateDayCap distinct days, ISO-weekly beyond - the cost guard that
+// keeps the linear system small at production scale; disclosed on the
+// stamp).
 func newEvolvedCapabilityState(fit *evolvedFit) *evolvedCapabilityState {
 	daySet := map[string]bool{}
 	for i := range fit.obs {
@@ -133,16 +168,24 @@ func newEvolvedCapabilityState(fit *evolvedFit) *evolvedCapabilityState {
 			daySet[fit.obs[i].day] = true
 		}
 	}
-	days := make([]string, 0, len(daySet))
+	weekly := len(daySet) > evolvedStateDayCap
+	keys := map[string]bool{}
+	dayKey := make(map[string]string, len(daySet))
 	for d := range daySet {
-		days = append(days, d)
+		k := evolvedStateEffectKey(d, weekly)
+		dayKey[d] = k
+		keys[k] = true
+	}
+	days := make([]string, 0, len(keys))
+	for k := range keys {
+		days = append(days, k)
 	}
 	sort.Strings(days)
 	shifts := make(map[string]float64, len(days))
 	for _, d := range days {
 		shifts[d] = 0
 	}
-	return &evolvedCapabilityState{dayShift: shifts, days: days}
+	return &evolvedCapabilityState{dayShift: shifts, days: days, dayKey: dayKey, weekly: weekly}
 }
 
 // evolvedStateEligible: the time structure needs model observations on at
@@ -159,6 +202,18 @@ func evolvedStateEligible(fit *evolvedFit) bool {
 		obs++
 	}
 	return obs > 0 && len(days) >= 2
+}
+
+// trendOnlyFrozen returns a frozen copy carrying only the slow structure
+// (trend): the joint objective conditions per-activity capabilities on
+// a_now - trend*age, leaving the day-level offsets to the speed-domain
+// solve (they would fight the HR-domain theta.day channel).
+func (st *evolvedCapabilityState) trendOnlyFrozen() *evolvedCapabilityState {
+	shifts := make(map[string]float64, len(st.dayShift))
+	for k := range st.dayShift {
+		shifts[k] = 0
+	}
+	return &evolvedCapabilityState{trend: st.trend, dayShift: shifts, days: st.days, dayKey: st.dayKey, weekly: st.weekly, frozen: true}
 }
 
 // stateSnapshot copies the current state into the solution for stamping.
@@ -252,7 +307,7 @@ func evolvedStateAddPrior(A [][]float64, rhs []float64, idx int, theta, mean, sd
 // hierarchical class-shift coupling (each group's margin prior centers on
 // mean_c + s_c) and every state prior. Returns the proposed increment or
 // nil on a singular system (caller keeps the current point).
-func evolvedStateSolveSystem(fit *evolvedFit, priors EvolvedPriorSet, histMean, histSD *float64, k, aNow float64, u evolvedStateUnknowns, rows []evolvedHRRowGrad) []float64 {
+func evolvedStateSolveSystem(fit *evolvedFit, priors EvolvedPriorSet, histMean, histSD *float64, k, aNow float64, u evolvedStateUnknowns) []float64 {
 	n := u.n
 	A := make([][]float64, n)
 	for i := range A {
@@ -340,21 +395,6 @@ func evolvedStateSolveSystem(fit *evolvedFit, priors EvolvedPriorSet, histMean, 
 		j[ci] = (keep[gi] - 1) / grp.prior.SD
 		r := (grp.delta - grp.prior.Mean - fit.classShift[grp.effort]) / grp.prior.SD
 		evolvedStateAddRow(A, rhs, j, r, 1)
-	}
-	for _, hr := range rows {
-		nu := 1.0
-		if math.Abs(hr.res) > 1.5 {
-			nu = 1.5 / math.Abs(hr.res)
-		}
-		g := map[int]float64{}
-		if u.hasA {
-			g[u.iA] = -hr.dpredA / evolvedHRSigmaBpm
-		}
-		g[u.iTrend] = -hr.dpredT / evolvedHRSigmaBpm
-		if di, ok := u.dayIdx[hr.day]; ok {
-			g[di] = -hr.dpredA / evolvedHRSigmaBpm
-		}
-		evolvedStateAddRow(A, rhs, g, hr.res, hr.w*nu)
 	}
 	evolvedStateAddPrior(A, rhs, u.iTrend, st.trend, 0, evolvedCapabilityTrendSDPerDay)
 	for _, d := range st.days {
@@ -469,19 +509,25 @@ func (fit *evolvedFit) restore(s evolvedStateSave) {
 // conditional minimization of the SAME objective; the collinear directions
 // are resolved inside the linear solve, so the iteration cannot stall the
 // way an alternation of collinear scalar blocks does. Returns the a anchor.
+// evolvedStateIRLSItersFor scales the IRLS round cap at production scale
+// (deterministic, disclosed via the coarsened effect resolution).
+func evolvedStateIRLSItersFor(fit *evolvedFit) int {
+	if fit.state.weekly || len(fit.obs) > evolvedLargeObservationThreshold {
+		return evolvedStateIRLSItersLarge
+	}
+	return evolvedStateIRLSIters
+}
+
 func evolvedStateJointSolve(fit *evolvedFit, priors EvolvedPriorSet, histMean, histSD *float64, k, aNow float64, withPriors bool, probes *int) float64 {
 	u := evolvedStateUnknownsOf(fit, true)
+	iters := evolvedStateIRLSItersFor(fit)
 	jAt := func(a float64) float64 {
 		j, _ := evolvedProfile(fit, priors, histMean, histSD, k, a, withPriors)
 		*probes++
 		return j
 	}
-	for iter := 0; iter < evolvedStateIRLSIters; iter++ {
-		var rows []evolvedHRRowGrad
-		if fit.hr != nil {
-			rows = fit.hr.rowGradients(priors, aNow)
-		}
-		x := evolvedStateSolveSystem(fit, priors, histMean, histSD, k, aNow, u, rows)
+	for iter := 0; iter < iters; iter++ {
+		x := evolvedStateSolveSystem(fit, priors, histMean, histSD, k, aNow, u)
 		if x == nil {
 			break
 		}
@@ -526,17 +572,14 @@ func evolvedStateJointSolve(fit *evolvedFit, priors EvolvedPriorSet, histMean, h
 // solve's own machinery, anchored).
 func evolvedStateProfileJ(fit *evolvedFit, priors EvolvedPriorSet, histMean, histSD *float64, k, aPin float64, withPriors bool, probes *int) float64 {
 	u := evolvedStateUnknownsOf(fit, false)
+	iters := evolvedStateIRLSItersFor(fit)
 	jAt := func() float64 {
 		j, _ := evolvedProfile(fit, priors, histMean, histSD, k, aPin, withPriors)
 		*probes++
 		return j
 	}
-	for iter := 0; iter < evolvedStateIRLSIters; iter++ {
-		var rows []evolvedHRRowGrad
-		if fit.hr != nil {
-			rows = fit.hr.rowGradients(priors, aPin)
-		}
-		x := evolvedStateSolveSystem(fit, priors, histMean, histSD, k, aPin, u, rows)
+	for iter := 0; iter < iters; iter++ {
+		x := evolvedStateSolveSystem(fit, priors, histMean, histSD, k, aPin, u)
 		if x == nil {
 			break
 		}
@@ -629,19 +672,19 @@ func evolvedAttachCapabilityState(evidence []CandidateEvidence, asOf time.Time, 
 // MAP exponent, same machinery as the joint re-solve). Ineligible windows
 // keep the stationary report; a numerical failure falls back to the
 // stationary center with an explicit limitation - never a fabricated state.
-func evolvedSpeedStateResolve(evidence []CandidateEvidence, asOf time.Time, priors EvolvedPriorSet, historical *HistoricalCapabilityPrior, stationary EvolvedSpeedReport) EvolvedSpeedReport {
+func evolvedSpeedStateResolve(evidence []CandidateEvidence, asOf time.Time, priors EvolvedPriorSet, historical *HistoricalCapabilityPrior, stationary EvolvedSpeedReport) (EvolvedSpeedReport, *evolvedFit) {
 	if stationary.CenterMps == nil {
-		return stationary
+		return stationary, nil
 	}
 	fit, ok := evolvedAttachCapabilityState(evidence, asOf, priors, true)
 	if !ok {
-		return stationary
+		return stationary, nil
 	}
 	histMean, histSD := evolvedHistoricalPriorTerms(priors, historical)
 	sol, ok := evolvedSolveJointK(&fit, priors, histMean, histSD, stationary.MapK)
 	if !ok {
 		stationary.Limitations = append(stationary.Limitations, evolvedStateSolveFallbackLimitation)
-		return stationary
+		return stationary, nil
 	}
 	out := evolvedJointSpeedOutShell(stationary, fit, priors)
 	out.MapK = sol.k
@@ -656,9 +699,9 @@ func evolvedSpeedStateResolve(evidence []CandidateEvidence, asOf time.Time, prio
 	}
 	if !evolvedFinalizeSpeedReport(&out, fit, priors, histMean, histSD, sol, historical) {
 		stationary.Limitations = append(stationary.Limitations, evolvedStateSolveFallbackLimitation)
-		return stationary
+		return stationary, nil
 	}
-	return out
+	return out, &fit
 }
 
 // evolvedJointSpeedOutShell builds the shared re-solved speed report shell

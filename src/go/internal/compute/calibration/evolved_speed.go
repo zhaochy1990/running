@@ -349,7 +349,9 @@ func evolvedFinalizeSpeedReport(out *EvolvedSpeedReport, fit evolvedFit, priors 
 	if !sol.converged {
 		out.Limitations = append(out.Limitations, "solver_iteration_cap_reached")
 	}
-	evolvedStampCapabilityState(out, fit, sol, historical, histMean, histSD)
+	if fit.state == nil || !fit.state.frozen {
+		evolvedStampCapabilityState(out, fit, sol, historical, histMean, histSD)
+	}
 	return true
 }
 
@@ -816,10 +818,12 @@ func evolvedSolveAtK(fit *evolvedFit, priors EvolvedPriorSet, histMean, histSD *
 		return (lo + hi) / 2
 	}
 	aStar := bisectA()
-	if fit.state != nil {
+	if fit.state != nil && !fit.state.frozen {
 		// #998: the stationary anchor warm-starts the joint state solve
 		// (exact conditional blocks; the collinear directions are resolved
-		// inside one linear system - see evolved_state.go).
+		// inside one linear system - see evolved_state.go). A FROZEN state
+		// (the HR joint conditioning on the speed-solved time structure)
+		// skips this: only the anchor re-optimizes.
 		aStar = evolvedStateJointSolve(fit, priors, histMean, histSD, k, aStar, true, &probes)
 	}
 	sol := evolvedSolution{a: aStar, k: k, deltas: make([]float64, len(fit.groups)), probes: probes}
@@ -895,11 +899,12 @@ func evolvedSolveMAP(fit evolvedFit, priors EvolvedPriorSet, histMean, histSD *f
 func evolvedCurvatures(fit evolvedFit, priors EvolvedPriorSet, histMean, histSD *float64, sol evolvedSolution) (total, dataOnly float64, ok bool) {
 	probes := 0
 	value := func(a float64, withPriors bool) float64 {
-		if fit.state != nil {
+		if fit.state != nil && !fit.state.frozen {
 			// The state (trend, days, class shifts) and margins are
 			// re-minimized at the pinned probe anchor: the profile
 			// marginalizes the slow state direction instead of conditioning
-			// on it.
+			// on it. (The standalone state report already marginalized its
+			// own solve; the frozen joint conditions on it.)
 			return evolvedStateProfileJ(&fit, priors, histMean, histSD, sol.k, a, withPriors, &probes)
 		}
 		j, _ := evolvedProfile(&fit, priors, histMean, histSD, sol.k, a, withPriors)

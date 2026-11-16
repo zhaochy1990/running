@@ -253,13 +253,12 @@ func FitEvolvedJoint(evidence []CandidateEvidence, history []Activity, metadata 
 		}
 	}
 
-	// #998: whenever the HR joint stage cannot run (no usable series, no
-	// reference), the speed side still receives its time-structured
-	// capability state through the standalone resolve - the state is a
-	// property of the speed objective, not of the HR stage.
-	if decision.HR.State == StateUnavailable || counted == 0 {
-		speedOut = evolvedSpeedStateResolve(evidence, asOf, priors, historical, speedOut)
-	}
+	// #998: the time-structured capability state is solved ONCE on the
+	// speed objective (standalone resolve - it is a property of the speed
+	// domain, not of the HR stage); the HR joint below conditions on the
+	// frozen time structure and re-optimizes the anchor.
+	var stateFit *evolvedFit
+	speedOut, stateFit = evolvedSpeedStateResolve(evidence, asOf, priors, historical, speedOut)
 	if decision.HR.State == StateUnavailable {
 		return speedOut, hrOut
 	}
@@ -301,7 +300,7 @@ func FitEvolvedJoint(evidence []CandidateEvidence, history []Activity, metadata 
 	// is what propagates into the HR envelope; the reason names it.
 	speedless := speedOut.CenterMps == nil
 	hrOut.TauGridCoarsened = term.largeInput
-	speedJoint, theta, rounds, objective, ok := evolvedHRJointSolve(evidence, asOf, priors, historical, term, speedOut, restPrior)
+	speedJoint, theta, rounds, objective, ok := evolvedHRJointSolve(evidence, asOf, priors, historical, term, speedOut, restPrior, stateFit)
 	if !ok {
 		hrOut.Reasons = append(hrOut.Reasons, ReasonSolverNumericalFailure)
 		hrOut.State = StateUnavailable
@@ -1252,45 +1251,14 @@ func evolvedSolveJointK(fit *evolvedFit, priors EvolvedPriorSet, histMean, histS
 // refinement around the speed-MAP exponent) until the anchor converges. It
 // returns the jointly re-stamped speed report (the HR -> capability soft
 // feedback) plus the final theta.
-func evolvedHRJointSolve(evidence []CandidateEvidence, asOf time.Time, priors EvolvedPriorSet, historical *HistoricalCapabilityPrior, term *evolvedHRTerm, speedOut EvolvedSpeedReport, restPrior *float64) (EvolvedSpeedReport, evolvedHRTheta, int, float64, bool) {
-	// #998: attach the time-structured capability state to both domains of
-	// the joint objective (the same state instance - one capability). The
-	// initial theta fit runs at the stationary anchor with a zero state,
-	// then the joint alternation re-optimizes (a_now, trend, day, k, deltas)
-	// together with theta. The state weight policy replaces the stationary
-	// admission's per-age staleness factors (evolvedStateReweight). The
-	// state is an ENHANCEMENT of the proven #997 joint: if its solve fails
-	// numerically, the whole joint re-runs without it (the #997 behavior)
-	// and the fallback is disclosed - a state-extension failure must never
-	// destroy the joint estimate itself.
-	withState := false
-	if speedOut.CenterMps != nil {
-		if _, ok := evolvedAttachCapabilityState(evidence, asOf, priors, false); ok {
-			withState = true
-		}
-	}
-	for attempt := 0; attempt < 2; attempt++ {
-		if attempt == 1 {
-			if !withState {
-				return EvolvedSpeedReport{}, evolvedHRTheta{}, 0, 0, false
-			}
-			withState = false
-			speedOut.Limitations = append(speedOut.Limitations, evolvedStateSolveFallbackLimitation)
-		}
-		out, theta, rounds, objective, ok := evolvedHRJointSolveOnce(evidence, asOf, priors, historical, term, speedOut, restPrior, withState)
-		if ok {
-			return out, theta, rounds, objective, true
-		}
-		if attempt == 1 || !withState {
-			// Both attempts exhausted (or nothing to retry): the honest
-			// numerical failure of the #997 joint propagates.
-			return EvolvedSpeedReport{}, evolvedHRTheta{}, 0, 0, false
-		}
-	}
-	return EvolvedSpeedReport{}, evolvedHRTheta{}, 0, 0, false
-}
-
-func evolvedHRJointSolveOnce(evidence []CandidateEvidence, asOf time.Time, priors EvolvedPriorSet, historical *HistoricalCapabilityPrior, term *evolvedHRTerm, speedOut EvolvedSpeedReport, restPrior *float64, withState bool) (EvolvedSpeedReport, evolvedHRTheta, int, float64, bool) {
+func evolvedHRJointSolve(evidence []CandidateEvidence, asOf time.Time, priors EvolvedPriorSet, historical *HistoricalCapabilityPrior, term *evolvedHRTerm, speedOut EvolvedSpeedReport, restPrior *float64, stateFit *evolvedFit) (EvolvedSpeedReport, evolvedHRTheta, int, float64, bool) {
+	// #998: the joint conditions on the time-structured capability state
+	// solved by the standalone speed resolve (stateFit, FROZEN): the joint
+	// alternation re-optimizes only the anchor a_now (and k, deltas, theta)
+	// through the proven #997 machinery on its own (#997) admission - the
+	// HR bridge feedback keeps its soft channel on the anchor, and the time
+	// structure stays what the speed evidence identified on the full pool.
+	// Without a state the #997 stationary joint runs exactly as before.
 	fit := evolvedAdmitObservations(evidence, asOf, priors)
 	histMean, histSD := evolvedHistoricalPriorTerms(priors, historical)
 	speedAnchor := priors.LogV60.Mean
@@ -1298,11 +1266,13 @@ func evolvedHRJointSolveOnce(evidence []CandidateEvidence, asOf time.Time, prior
 	if !speedless {
 		speedAnchor = math.Log(*speedOut.CenterMps)
 	}
-	if !speedless && withState {
-		if stateFit, ok := evolvedAttachCapabilityState(evidence, asOf, priors, false); ok {
-			fit = stateFit
-			term.state = fit.state
-		}
+	if !speedless && stateFit != nil {
+		// The joint conditions on the SLOW structure only (the trend): the
+		// day-level offsets stay in the speed-domain solve, so the HR
+		// theta.day channel (bpm) keeps its own per-day freedom exactly as
+		// in #997 - the two day channels never fold into each other.
+		fit.state = stateFit.state.trendOnlyFrozen()
+		term.state = fit.state
 	} else {
 		term.state = nil
 	}
@@ -1362,10 +1332,31 @@ func evolvedHRJointSolveOnce(evidence []CandidateEvidence, asOf time.Time, prior
 					fit.classShift[c] = v
 				}
 			}
+			// Final polish: the keep-best solution was solved at the
+			// PREVIOUS theta; re-solve (a, k, deltas) at the published theta
+			// so the published anchor is the profile argmin of the published
+			// pair (the sensitivity decomposition assumes exactly that).
+			if sol, ok := evolvedSolveJointK(&fit, priors, histMean, histSD, speedOut.MapK); ok {
+				jPolish, _ := evolvedProfile(&fit, priors, histMean, histSD, sol.k, sol.a, true)
+				rounds++
+				if evolvedFinite(jPolish) && jPolish <= bestJ {
+					last, bestJ = sol, jPolish
+					if fit.state != nil && sol.dayShift != nil {
+						fit.state.trend = sol.trend
+						for d, v := range sol.dayShift {
+							fit.state.dayShift[d] = v
+						}
+					}
+				}
+			}
 		}
 		// Joint re-stamp of the speed report through the shared finalize path.
 		out := evolvedJointSpeedOutShell(speedOut, fit, priors)
 		out.JointHRRefit = true
+		// The capability state stamp describes the speed-solved time
+		// structure the joint conditioned on (the finalize below skips
+		// re-stamping frozen states).
+		out.CapabilityState = speedOut.CapabilityState
 		out.MapK = last.k
 		out.SolverRounds = last.probes
 		out.SolverConverged = last.converged
