@@ -58,14 +58,38 @@ const (
 	OnboardingSyncStateSuperseded = "superseded"
 )
 
-// Stage names. T02 owns the recent raw-data stage; T05 (devops#1009) adds the
-// recent-analysis stage — its dispatch/coverage rows are created by the sweep's
-// advance pass AFTER recent_raw terminalizes (never at claim time), so the
-// analysis executor can never run before the raw data it analyzes. Later
-// tickets (T06 historical) add stages on the same tables.
+// Stage names. T02 owns the recent raw-data stage; T05 (devops#1009) adds
+// recent_analysis — its dispatch/coverage rows are created by the sweep's
+// arm pass AFTER recent_raw terminalizes (never at claim time), so the
+// analysis executor can never run before the raw data it analyzes. T06
+// (devops#1010) appends the background backfill chain on the same tables:
+// extended_raw (180-day activities / 90-day health), historical_raw (all
+// accessible activities and, for Garmin, up to 365 health days — COROS only
+// declares what its batch actually returns) and auxiliary (race detection +
+// route shapes as independent retryable tasks). The sweep creates each
+// follow-on stage only once its predecessor's coverage is terminal (阶段完成后
+// reconcile 可靠派发).
 const (
 	OnboardingSyncStageRecentRaw      = "recent_raw"
 	OnboardingSyncStageRecentAnalysis = "recent_analysis"
+	OnboardingSyncStageExtendedRaw    = "extended_raw"
+	OnboardingSyncStageHistoricalRaw  = "historical_raw"
+	OnboardingSyncStageAuxiliary      = "auxiliary"
+)
+
+// Auxiliary work-item kinds (the auxiliary stage's two independent retryable
+// tasks, devops#1010 AC5: race detection must settle before the final analysis
+// it feeds; route shape failure never blocks raw readiness).
+const (
+	OnboardingSyncItemKindRaceDetection = "race_detection"
+	OnboardingSyncItemKindRouteShapes   = "route_shapes"
+)
+
+// Raw-channel work-item kinds (recent/extended/historical stages).
+const (
+	OnboardingSyncItemKindActivities = "activities"
+	OnboardingSyncItemKindHealth     = "health"
+	OnboardingSyncItemKindDashboard  = "dashboard"
 )
 
 // Dispatch record states.
@@ -148,8 +172,13 @@ func (s OnboardingSyncSession) Terminal() bool {
 
 // OnboardingSyncDispatch is the durable intent to run one stage of a session.
 // One row per (session, stage); IdempotencyKey carries the generation's stable
-// key (session + stage + range + binding revision + retry generation) so the
-// crash-recovery re-enqueue dedupes against the original job.
+// key (session + stage + range + binding revision + retry generation + chunk
+// sequence) so the crash-recovery re-enqueue dedupes against the original job.
+// ChunkSeq counts the chunked stages' continuations (devops#1010): a backfill
+// stage's executor finishes one bounded chunk per job and reports in_progress;
+// the sweep bumps ChunkSeq and requeues the row for the next chunk, so each
+// chunk is a distinct job under a distinct key while crash recovery within a
+// chunk still dedupes.
 type OnboardingSyncDispatch struct {
 	ID             int64     `gorm:"column:id;primaryKey"`
 	SessionID      string    `gorm:"column:session_id;type:char(36);not null;uniqueIndex:idx_onbsync_dispatch_stage"`
@@ -158,6 +187,7 @@ type OnboardingSyncDispatch struct {
 	JobID          *string   `gorm:"column:job_id;type:varchar(64)"`
 	Status         string    `gorm:"column:status;type:varchar(16);not null"`
 	Attempts       int       `gorm:"column:attempts;type:int;not null;default:0"`
+	ChunkSeq       int       `gorm:"column:chunk_seq;type:int;not null;default:0"`
 	CreatedAt      time.Time `gorm:"column:created_at;type:datetime(6);not null"`
 	UpdatedAt      time.Time `gorm:"column:updated_at;type:datetime(6);not null"`
 }
@@ -169,17 +199,25 @@ type OnboardingSyncWorkItem struct {
 	ID        int64  `gorm:"column:id;primaryKey"`
 	SessionID string `gorm:"column:session_id;type:char(36);not null;index"`
 	Stage     string `gorm:"column:stage;type:varchar(32);not null"`
-	// Kind selects the data channel: activities | health | dashboard.
+	// Kind selects the data channel: activities | health | dashboard for the
+	// raw stages; race_detection | route_shapes for the auxiliary stage.
 	Kind      string `gorm:"column:kind;type:varchar(16);not null"`
 	RangeFrom string `gorm:"column:range_from;type:char(10);not null"`
 	RangeTo   string `gorm:"column:range_to;type:char(10);not null"`
 	Status    string `gorm:"column:status;type:varchar(16);not null"`
 	// FetchCredential is the complete-fetch proof, written ONLY after the
 	// item's full fetch succeeded — the record an explicit retry reuses.
-	FetchCredential *string   `gorm:"column:fetch_credential;type:varchar(191)"`
-	Error           *string   `gorm:"column:error;type:text"`
-	CreatedAt       time.Time `gorm:"column:created_at;type:datetime(6);not null"`
-	UpdatedAt       time.Time `gorm:"column:updated_at;type:datetime(6);not null"`
+	FetchCredential *string `gorm:"column:fetch_credential;type:varchar(191)"`
+	// Checkpoint is the chunked backfill stages' durable resume cursor
+	// (devops#1010): an opaque-to-storage blob the executor writes after each
+	// bounded chunk (provider scan cursor + the channel's running
+	// observed/gap accounting). It is advisory state on a pending item — a
+	// lost checkpoint costs a conservative re-scan (existence probes skip
+	// already-stored rows), never correctness.
+	Checkpoint *string   `gorm:"column:checkpoint;type:text"`
+	Error      *string   `gorm:"column:error;type:text"`
+	CreatedAt  time.Time `gorm:"column:created_at;type:datetime(6);not null"`
+	UpdatedAt  time.Time `gorm:"column:updated_at;type:datetime(6);not null"`
 }
 
 func (OnboardingSyncWorkItem) TableName() string { return "onboarding_sync_work_items" }
@@ -687,6 +725,99 @@ func (s *Store) RequeueOnboardingSyncDispatchForRefresh(ctx context.Context, id 
 	return nil
 }
 
+// RequeueOnboardingSyncDispatchChunk arms a chunked stage's dispatch for its
+// next chunk (devops#1010): chunk_seq+1, back to pending under a fresh
+// idempotency key (the chunk sequence is part of the key, so the re-enqueue
+// creates a new job while crash recovery within a chunk still dedupes). Used
+// by the sweep both to continue an in_progress chunk result and to rescue a
+// crash between the job's terminal mark and the continuation requeue — the
+// dispatch may be done or (after a vanished job) still dispatched/pending.
+// Deliberately separate from the refresh requeue: a chunk continuation is the
+// SAME generation advancing (chunk_seq), not a superseded generation.
+func (s *Store) RequeueOnboardingSyncDispatchChunk(ctx context.Context, id int64, idempotencyKey string) error {
+	res := s.db.WithContext(ctx).Model(&OnboardingSyncDispatch{}).
+		Where("id = ? AND status <> ?", id, OnboardingSyncDispatchPending).
+		Updates(map[string]any{
+			"status": OnboardingSyncDispatchPending, "idempotency_key": idempotencyKey,
+			"chunk_seq": gorm.Expr("chunk_seq + 1"), "updated_at": time.Now().UTC(),
+		})
+	if res.Error != nil {
+		return fmt.Errorf("storage: requeue onboarding sync dispatch chunk: %w", res.Error)
+	}
+	return nil
+}
+
+// AddOnboardingSyncStage appends one follow-on stage to an existing session
+// (devops#1010 stage chaining): dispatch (status=pending), work items and the
+// coverage row, in one transaction. Idempotent on (session, stage): if the
+// dispatch row already exists nothing is written and created=false, so the
+// sweep's advance pass can race itself harmlessly. The session must be live
+// (non-superseded, non-terminal) — advancing a dead session is a no-op.
+func (s *Store) AddOnboardingSyncStage(ctx context.Context, sessionID, stage, idempotencyKey string, items []OnboardingSyncWorkItemSpec) (bool, error) {
+	now := time.Now().UTC()
+	created := false
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var sess OnboardingSyncSession
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("session_id = ?", sessionID).First(&sess).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return fmt.Errorf("storage: add stage: read session: %w", err)
+		}
+		if sess.State == OnboardingSyncStateSuperseded || sess.Terminal() {
+			return nil // dead session: never append work to it
+		}
+		var n int64
+		if err := tx.Model(&OnboardingSyncDispatch{}).
+			Where("session_id = ? AND stage = ?", sessionID, stage).Count(&n).Error; err != nil {
+			return fmt.Errorf("storage: add stage: probe dispatch: %w", err)
+		}
+		if n > 0 {
+			return nil // already chained (a racing sweep pass won)
+		}
+		if idempotencyKey == "" {
+			return fmt.Errorf("storage: add stage: stage %q has no idempotency key", stage)
+		}
+		disp := OnboardingSyncDispatch{
+			SessionID: sessionID, Stage: stage, IdempotencyKey: idempotencyKey,
+			Status: OnboardingSyncDispatchPending, CreatedAt: now, UpdatedAt: now,
+		}
+		if err := tx.Create(&disp).Error; err != nil {
+			return fmt.Errorf("storage: add stage: create dispatch: %w", err)
+		}
+		cov := OnboardingSyncStageCoverage{
+			SessionID: sessionID, Stage: stage,
+			Status: OnboardingSyncCoveragePending, CreatedAt: now, UpdatedAt: now,
+		}
+		for _, item := range items {
+			row := OnboardingSyncWorkItem{
+				SessionID: sessionID, Stage: stage, Kind: item.Kind,
+				RangeFrom: item.RangeFrom, RangeTo: item.RangeTo,
+				Status: OnboardingSyncItemPending, CreatedAt: now, UpdatedAt: now,
+			}
+			if err := tx.Create(&row).Error; err != nil {
+				return fmt.Errorf("storage: add stage: create work item: %w", err)
+			}
+			if cov.TargetFrom == "" || item.RangeFrom < cov.TargetFrom {
+				cov.TargetFrom = item.RangeFrom
+			}
+			if item.RangeTo > cov.TargetTo {
+				cov.TargetTo = item.RangeTo
+			}
+		}
+		if err := tx.Create(&cov).Error; err != nil {
+			return fmt.Errorf("storage: add stage: create coverage: %w", err)
+		}
+		created = true
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return created, nil
+}
+
 // BumpOnboardingSyncRetryCount increments and returns the session's retry
 // generation (the retry-key input). Idempotent per explicit retry request that
 // actually requeues work.
@@ -739,6 +870,20 @@ func (s *Store) MarkOnboardingSyncWorkItem(ctx context.Context, id int64, status
 		Updates(updates)
 	if res.Error != nil {
 		return fmt.Errorf("storage: mark onboarding sync work item: %w", res.Error)
+	}
+	return nil
+}
+
+// SaveOnboardingSyncWorkItemCheckpoint persists a chunked backfill item's
+// resume cursor (devops#1010). The checkpoint only ever advances a PENDING
+// item — once an item is terminal its credential is the record, and a racing
+// chunk continuation must not resurrect it.
+func (s *Store) SaveOnboardingSyncWorkItemCheckpoint(ctx context.Context, id int64, checkpoint string) error {
+	res := s.db.WithContext(ctx).Model(&OnboardingSyncWorkItem{}).
+		Where("id = ? AND status = ?", id, OnboardingSyncItemPending).
+		Updates(map[string]any{"checkpoint": checkpoint, "updated_at": time.Now().UTC()})
+	if res.Error != nil {
+		return fmt.Errorf("storage: save onboarding sync work item checkpoint: %w", res.Error)
 	}
 	return nil
 }
@@ -800,6 +945,50 @@ func (s *Store) UpdateOnboardingSyncStageCoverage(ctx context.Context, cov *Onbo
 		return fmt.Errorf("storage: update onboarding sync stage coverage: %w", err)
 	}
 	return nil
+}
+
+// ActivityShanghaiDaysInRange returns the sorted distinct Shanghai natural
+// days (YYYY-MM-DD) on which the user has a stored activity whose start
+// instant falls in [from, to] (inclusive, Shanghai calendar). The backfill
+// executor derives a channel's terminal observed window and honest gap set
+// from this — coverage always reads from what the store actually holds, never
+// from chunk bookkeeping (devops#1010).
+func (s *Store) ActivityShanghaiDaysInRange(ctx context.Context, userID, from, to string) ([]string, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var days []string
+	err = s.db.WithContext(ctx).Raw(
+		"SELECT DISTINCT DATE(CONVERT_TZ(`date`, '+00:00', '+08:00')) AS day FROM activities "+
+			"WHERE user_id = ? AND CONVERT_TZ(`date`, '+00:00', '+08:00') >= ? "+
+			"AND CONVERT_TZ(`date`, '+00:00', '+08:00') < DATE_ADD(?, INTERVAL 1 DAY) "+
+			"ORDER BY day", uid, from, to).Scan(&days).Error
+	if err != nil {
+		return nil, fmt.Errorf("storage: activity shanghai days in range: %w", err)
+	}
+	return days, nil
+}
+
+// DailyHealthDaysInRange returns the sorted distinct dates (YYYY-MM-DD) the
+// user holds a daily_health OR daily_hrv row for inside [from, to] — a health
+// day is observed when either signal exists (the Garmin day walk writes
+// whichever channel had signal).
+func (s *Store) DailyHealthDaysInRange(ctx context.Context, userID, from, to string) ([]string, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var days []string
+	err = s.db.WithContext(ctx).Raw(
+		"SELECT DISTINCT t.day FROM ("+
+			"SELECT `date` AS day FROM daily_health WHERE user_id = ? AND `date` >= ? AND `date` <= ? "+
+			"UNION SELECT `date` AS day FROM daily_hrv WHERE user_id = ? AND `date` >= ? AND `date` <= ?"+
+			") t ORDER BY t.day", uid, from, to, uid, from, to).Scan(&days).Error
+	if err != nil {
+		return nil, fmt.Errorf("storage: daily health days in range: %w", err)
+	}
+	return days, nil
 }
 
 // ListOnboardingSyncSessionsInStates returns up to limit sessions in any of

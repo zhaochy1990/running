@@ -21,7 +21,10 @@ import (
 	"fmt"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/zhaochy1990/stride/internal/job"
+	"github.com/zhaochy1990/stride/internal/logging"
 	"github.com/zhaochy1990/stride/internal/provider"
 	"github.com/zhaochy1990/stride/internal/storage"
 )
@@ -60,6 +63,18 @@ type SyncMarker interface {
 	SetMeta(ctx context.Context, userID, key, value string) error
 }
 
+// RecentGapCheck is the devops#1010 AC3 seam: while a user's first-sync
+// session is unfinished, the ordinary INCREMENTAL sync must check the
+// session's recent activity window for credential gaps — the incremental
+// cursor stops at the first already-stored activity, which an earlier failed
+// window fetch could leave masking a hole. The seam returns the session's
+// recent activities window (Shanghai days); ok=false (no session, session
+// finished, or provider mismatch) means the incremental runs unchanged.
+// Implemented by *onboardingsync.Service.
+type RecentGapCheck interface {
+	UnfinishedRecentActivityWindow(ctx context.Context, userID, providerName string) (provider.DayWindow, bool)
+}
+
 // New returns the watch_sync job.Handler backed by resolve. On a successful sync
 // it stamps the user's last-sync time through marker (ADR 0018). jobs is the
 // detail-fetch concurrency threaded into every run's SyncOptions (the adapter
@@ -70,15 +85,21 @@ type SyncMarker interface {
 // runs the sync exactly as before. When non-nil, leaseTTL must be positive
 // (storage.DefaultWatchExecLeaseTTL is the recommended value).
 func New(resolve Resolver, marker SyncMarker, jobs int) job.Handler {
-	return newHandler(resolve, marker, jobs, nil, 0)
+	return newHandler(resolve, marker, jobs, nil, 0, nil)
 }
 
 // NewIsolated additionally wires the per-user write-isolation session.
 func NewIsolated(resolve Resolver, marker SyncMarker, jobs int, sessions SessionManager, leaseTTL time.Duration) job.Handler {
-	return newHandler(resolve, marker, jobs, sessions, leaseTTL)
+	return newHandler(resolve, marker, jobs, sessions, leaseTTL, nil)
 }
 
-func newHandler(resolve Resolver, marker SyncMarker, jobs int, sessions SessionManager, leaseTTL time.Duration) job.Handler {
+// NewIsolatedWithGapCheck is NewIsolated plus the recent-window gap check
+// (devops#1010 AC3). gapCheck may be nil (feature off / tests).
+func NewIsolatedWithGapCheck(resolve Resolver, marker SyncMarker, jobs int, sessions SessionManager, leaseTTL time.Duration, gapCheck RecentGapCheck) job.Handler {
+	return newHandler(resolve, marker, jobs, sessions, leaseTTL, gapCheck)
+}
+
+func newHandler(resolve Resolver, marker SyncMarker, jobs int, sessions SessionManager, leaseTTL time.Duration, gapCheck RecentGapCheck) job.Handler {
 	return func(ctx context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		user := j.UserID
 
@@ -152,6 +173,36 @@ func newHandler(resolve Resolver, marker SyncMarker, jobs int, sessions SessionM
 			stage, _ := pr["phase"].(string)
 			pct, _ := pr["percent"].(int)
 			_ = hb(stage, pct)
+		}
+
+		// --- recent-window gap check (devops#1010 AC3) ----------------------
+		//
+		// While the user's first-sync session is unfinished, the incremental
+		// cursor's stop-at-first-existing rule could mask holes an earlier
+		// failed window fetch left inside the recent window. One bounded
+		// existence-skipping range chunk over the session's recent activities
+		// window (the backfill contract — already-stored rows re-download
+		// nothing) heals what it can; best-effort by design, the session's own
+		// executor remains the reliable healer. Full syncs scan the whole
+		// window anyway and need no extra pass.
+		if gapCheck != nil && opts.Mode == provider.SyncIncremental {
+			if bs, ok := prov.(provider.BackfillSyncer); ok {
+				if win, ok := gapCheck.UnfinishedRecentActivityWindow(ctx, user, prov.Info().Name); ok {
+					budget := provider.BackfillBudget{
+						MaxActivityFetches: 100,
+						Soft:               3 * time.Minute,
+					}
+					if _, err := bs.SyncBackfillRange(ctx, user, provider.BackfillRangeOptions{
+						Activities: &win, Budget: budget, Jobs: jobs,
+					}, opts.Progress); err != nil {
+						// Log and continue with the normal incremental: the
+						// vendor hiccup must not fail the user's whole sync,
+						// and the session executor retries the window anyway.
+						logging.Default().Warn("watchsync: recent-window gap check chunk failed",
+							zap.String("user", user), zap.Error(err))
+					}
+				}
+			}
 		}
 
 		res, err := prov.SyncUser(ctx, user, opts)

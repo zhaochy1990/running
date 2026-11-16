@@ -1,17 +1,23 @@
 // Package onboardingrecent provides the worker job handler for job type
-// "onboarding_recent_sync" (devops#1008, epic devops#1004 T04): it executes
-// one first-sync session's recent stage — the COROS recent-range channels
-// (90-day activities / 28-day health / dashboard) — and returns the
-// onboardingsync.StageResult coverage contract the reconcile sweep persists.
+// "onboarding_recent_sync" (devops#1008, epic devops#1004 T04 + T06
+// devops#1010): it executes one first-sync session stage — the recent stage
+// (COROS/Garmin recent-range channels), the chunked background backfill
+// stages (extended_raw / historical_raw) and the auxiliary stage (race
+// detection + route shapes) — and returns the onboardingsync.StageResult
+// coverage contract the reconcile sweep persists.
 //
 // The handler is the stage executor T02's orchestration dispatches: it reads
 // the session's authoritative work items, skips items whose complete-fetch
 // credential already exists (a retry reuses done work, never re-pulls), runs
-// the rest through the provider's RecentSyncer, and records each item's
-// terminal outcome (done+credential / gap). A per-user write-isolation session
-// (binding revision + execution lease, devops#1005) fences every activity
-// publish exactly like a watch_sync run; a stale lease or rebind surfaces as a
-// retryable error whose retry re-begins the session under the CURRENT binding.
+// the rest through the provider's range contracts, and records each item's
+// terminal outcome (done+credential / gap). The raw stages run under a
+// per-user write-isolation session (binding revision + execution lease,
+// devops#1005) that fences every activity publish exactly like a watch_sync
+// run; the backfill stages hold that lease only for one bounded chunk at a
+// time (devops#1010: ≤20 activity fetches or ≤7 health days, then checkpoint
+// and yield so recent stages, new trainings and webhooks jump the queue). A
+// stale lease or rebind surfaces as a retryable error whose retry re-begins
+// the session under the CURRENT binding.
 package onboardingrecent
 
 import (
@@ -32,11 +38,11 @@ import (
 // kept local so the package is self-contained like watchsync).
 const JobType = "onboarding_recent_sync"
 
-// Work-item kinds (the claim transaction creates them).
+// Work-item kind aliases (the claim/stage transactions create them).
 const (
-	kindActivities = "activities"
-	kindHealth     = "health"
-	kindDashboard  = "dashboard"
+	kindActivities = storage.OnboardingSyncItemKindActivities
+	kindHealth     = storage.OnboardingSyncItemKindHealth
+	kindDashboard  = storage.OnboardingSyncItemKindDashboard
 )
 
 // ErrProviderNotRangeCapable reports that the user's bound provider does not
@@ -86,19 +92,35 @@ type Config struct {
 	Jobs int
 	// LeaseTTL for the per-user execution lease; 0 = storage default.
 	LeaseTTL time.Duration
+	// BackfillBudget caps one backfill chunk (devops#1010); zero fields fall
+	// back to the provider defaults (20 fetches / 7 health days / 2 min soft).
+	BackfillBudget provider.BackfillBudget
+	// Aux wires the auxiliary stage's two independent retryable tasks
+	// (devops#1010 AC5). Nil disables the stage — dispatching it then fails
+	// permanently as aux_not_configured instead of silently no-oping.
+	Aux *AuxiliaryConfig
+}
+
+// knownStage reports whether the executor implements the stage.
+func knownStage(stage string) bool {
+	switch stage {
+	case storage.OnboardingSyncStageRecentRaw,
+		storage.OnboardingSyncStageExtendedRaw,
+		storage.OnboardingSyncStageHistoricalRaw,
+		storage.OnboardingSyncStageAuxiliary:
+		return true
+	}
+	return false
 }
 
 // New returns the onboarding_recent_sync job.Handler.
 func New(cfg Config) job.Handler {
 	return func(ctx context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
-		var in struct {
-			SessionID string `json:"session_id"`
-			Stage     string `json:"stage"`
-		}
+		var in stageJobInput
 		if err := json.Unmarshal([]byte(j.InputJSON), &in); err != nil {
 			return "", job.NewPermanentError("bad_payload", err)
 		}
-		if in.SessionID == "" || in.Stage != storage.OnboardingSyncStageRecentRaw {
+		if in.SessionID == "" || !knownStage(in.Stage) {
 			return "", job.NewPermanentError("bad_payload",
 				fmt.Errorf("onboardingrecent: unexpected stage input session=%q stage=%q", in.SessionID, in.Stage))
 		}
@@ -117,6 +139,11 @@ func New(cfg Config) job.Handler {
 				fmt.Errorf("onboardingrecent: session %s superseded by a rebind", in.SessionID))
 		}
 
+		if in.Stage == storage.OnboardingSyncStageAuxiliary {
+			return runAuxiliary(ctx, cfg, in, sess, hb)
+		}
+
+		// --- provider + write-isolation session (recent + backfill) --------
 		prov, err := cfg.Resolve(ctx, sess.UserID)
 		if err != nil {
 			if errors.Is(err, ErrProviderNotRangeCapable) {
@@ -138,7 +165,6 @@ func New(cfg Config) job.Handler {
 				fmt.Errorf("user %s has no watch credentials", sess.UserID))
 		}
 
-		// --- write-isolation session (same contract as watchsync) -----------
 		ttl := cfg.LeaseTTL
 		if ttl <= 0 {
 			ttl = storage.DefaultWatchExecLeaseTTL
@@ -168,7 +194,11 @@ func New(cfg Config) job.Handler {
 			_ = cfg.Sessions.ReleaseWatchExecLease(context.WithoutCancel(ctx), sess.UserID, ps.Holder, ps.LeaseToken)
 		}()
 
-		// --- run the stage's unfinished work items --------------------------
+		if in.Stage != storage.OnboardingSyncStageRecentRaw {
+			return runBackfill(ctx, cfg, in, sess, prov, hb)
+		}
+
+		// --- run the recent stage's unfinished work items -------------------
 		items, err := cfg.Store.ListOnboardingSyncWorkItems(ctx, sess.SessionID, in.Stage)
 		if err != nil {
 			return "", err
@@ -259,23 +289,7 @@ func New(cfg Config) job.Handler {
 					_ = cfg.Store.MarkOnboardingSyncWorkItem(ctx, it.ID, storage.OnboardingSyncItemFailed, "", &msg)
 				}
 			}
-			switch {
-			case provider.IsAuthError(syncErr):
-				return "", job.NewPermanentError("auth_failed", syncErr)
-			case errors.Is(syncErr, provider.ErrUnrecoverableRangeData):
-				// Confirmed-but-unclassifiable provider data (e.g. Garmin's
-				// undatable activities, devops#1007): blocking is the honest
-				// outcome — a retry cannot repair the vendor's data.
-				return "", job.NewPermanentError("unrecoverable_range_data", syncErr)
-			case provider.IsInvalidRequest(syncErr):
-				return "", job.NewPermanentError("provider_invalid_request", syncErr)
-			default:
-				// Network / throttling / fence refusal: retryable. A fence
-				// refusal re-begins the isolation session on the retry and
-				// re-publishes under the CURRENT binding — the isolation
-				// guarantee (devops#1005).
-				return "", syncErr
-			}
+			return "", classifySyncError(syncErr)
 		}
 
 		// Re-read the work items AFTER the terminal marks above: the result
@@ -289,6 +303,34 @@ func New(cfg Config) job.Handler {
 			return "", err
 		}
 		return stageResultFromReport(in.Stage, rep, items), nil
+	}
+}
+
+// stageJobInput is the stage-executor job's InputJSON (shared by every stage).
+type stageJobInput struct {
+	SessionID string `json:"session_id"`
+	Stage     string `json:"stage"`
+}
+
+// classifySyncError maps a provider sync error onto the job error taxonomy
+// shared by the recent and backfill executors.
+func classifySyncError(syncErr error) error {
+	switch {
+	case provider.IsAuthError(syncErr):
+		return job.NewPermanentError("auth_failed", syncErr)
+	case errors.Is(syncErr, provider.ErrUnrecoverableRangeData):
+		// Confirmed-but-unclassifiable provider data (e.g. Garmin's
+		// undatable activities, devops#1007): blocking is the honest
+		// outcome — a retry cannot repair the vendor's data.
+		return job.NewPermanentError("unrecoverable_range_data", syncErr)
+	case provider.IsInvalidRequest(syncErr):
+		return job.NewPermanentError("provider_invalid_request", syncErr)
+	default:
+		// Network / throttling / fence refusal: retryable. A fence
+		// refusal re-begins the isolation session on the retry and
+		// re-publishes under the CURRENT binding — the isolation
+		// guarantee (devops#1005).
+		return syncErr
 	}
 }
 
@@ -453,14 +495,15 @@ func stageResultFromItems(stage string, items []*storage.OnboardingSyncWorkItem)
 
 // observedFromCredential extracts the observed window recorded inside a
 // complete-fetch credential — the uniform adapter shape
-// coros:v1:range:<kind>:<from>..<to>:obs=<a>..<b>:n=<count> (obs days are "-"
-// when the channel observed nothing). A foreign credential reports none.
+// <provider>:v1:range:<kind>:<from>..<to>:obs=<a>..<b>:n=<count> (obs days
+// are "-" when the channel observed nothing). A foreign credential reports
+// none.
 func observedFromCredential(cred *string) (from, to string, ok bool) {
 	if cred == nil {
 		return "", "", false
 	}
 	parts := strings.Split(*cred, ":")
-	if len(parts) != 7 || parts[0] != "coros" || !strings.HasPrefix(parts[5], "obs=") {
+	if len(parts) != 7 || parts[1] != "v1" || parts[2] != "range" || !strings.HasPrefix(parts[5], "obs=") {
 		return "", "", false
 	}
 	obs := strings.TrimPrefix(parts[5], "obs=")

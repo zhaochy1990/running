@@ -361,9 +361,12 @@ func TestOnboardingSyncSweep_RecordsCompletionWithCoverage(t *testing.T) {
 	}
 
 	h.sweepN(ctx, 5)
+	// devops#1010: the analysis completing chains the background backfill
+	// stages, so the SESSION stays non-terminal while recent data AND
+	// analysis are both ready — the client never waits for the history.
 	got, err := h.store.GetOnboardingSyncSessionByID(ctx, sess.SessionID)
-	if err != nil || got.State != storage.OnboardingSyncStateCompleted {
-		t.Fatalf("session state = %s err=%v, want completed", got.State, err)
+	if err != nil || got.Terminal() {
+		t.Fatalf("session state = %s err=%v, want non-terminal (chain continues)", got.State, err)
 	}
 	view, err := h.svc.View(ctx, uid)
 	if err != nil {
@@ -381,12 +384,19 @@ func TestOnboardingSyncSweep_RecordsCompletionWithCoverage(t *testing.T) {
 	if view.Readiness.ShellReady != true {
 		t.Error("shell_ready lost")
 	}
-	// Repeat POST on a completed session re-pulls nothing.
+	// Repeat POST while the chain runs re-pulls nothing: the raw and
+	// analysis stages' jobs are not re-enqueued under other keys.
 	if _, err := h.svc.CreateOrClaim(ctx, uid, "coros"); err != nil {
-		t.Fatalf("re-enter completed: %v", err)
+		t.Fatalf("re-enter running session: %v", err)
 	}
-	if n := h.pub.countFor(uid); n != 2 {
-		t.Errorf("jobs enqueued after re-enter = %d, want 2 (raw + analysis)", n)
+	disp3, _ := h.store.ListOnboardingSyncDispatches(ctx, sess.SessionID)
+	for _, d := range disp3 {
+		if d.Stage != storage.OnboardingSyncStageRecentRaw && d.Stage != storage.OnboardingSyncStageRecentAnalysis {
+			continue
+		}
+		if n := countJobsForKey(t, h.store, uid, d.IdempotencyKey); n != 1 {
+			t.Errorf("%s jobs after re-enter = %d, want 1", d.Stage, n)
+		}
 	}
 }
 

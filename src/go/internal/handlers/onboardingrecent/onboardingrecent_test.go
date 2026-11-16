@@ -505,12 +505,19 @@ func TestOnboardingRecent_EndToEndWithSweep(t *testing.T) {
 	svc.Sweep(ctx)
 	finishAnalysisStage(t, st, svc, enq, sess)
 
+	// devops#1010: the analysis completing chains the background backfill
+	// stages, so the SESSION stays non-terminal while recent data and
+	// analysis are both ready — the client never waits for the history. The
+	// raw + analysis dispatches themselves are terminal.
 	got, err := st.GetOnboardingSyncSessionByID(ctx, sess.SessionID)
-	if err != nil || got.State != storage.OnboardingSyncStateCompleted {
-		t.Fatalf("session state = %s err=%v, want completed", got.State, err)
+	if err != nil || got.Terminal() {
+		t.Fatalf("session state = %s err=%v, want non-terminal (chain continues)", got.State, err)
 	}
 	disp, _ := st.ListOnboardingSyncDispatches(ctx, sess.SessionID)
 	for _, d := range disp {
+		if d.Stage != storage.OnboardingSyncStageRecentRaw && d.Stage != storage.OnboardingSyncStageRecentAnalysis {
+			continue
+		}
 		if d.Status != storage.OnboardingSyncDispatchDone {
 			t.Fatalf("dispatch %s = %s, want done", d.Stage, d.Status)
 		}
@@ -663,11 +670,13 @@ func TestOnboardingRecent_PartialRetryKeepsFullStageCoverage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("view: %v", err)
 	}
-	if view.State != storage.OnboardingSyncStateCompleted {
-		t.Errorf("session state = %s, want completed", view.State)
+	// devops#1010: the session continues into the chained backfill stages;
+	// the agreement this regression pins is recent coverage + readiness.
+	if view.State == storage.OnboardingSyncStateFailed {
+		t.Errorf("session state = %s, want not failed", view.State)
 	}
 	if view.Readiness.RecentData != onboardingsync.ReadinessReady {
-		t.Fatalf("recent_data readiness = %s, want ready (state=completed and readiness must agree after a partial retry)",
+		t.Fatalf("recent_data readiness = %s, want ready (coverage and readiness must agree after a partial retry)",
 			view.Readiness.RecentData)
 	}
 }
