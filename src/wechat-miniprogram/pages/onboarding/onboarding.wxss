@@ -252,7 +252,7 @@
 .ob-provider-desc {
   margin-top: 8rpx;
   font-size: 24rpx;
-  color: #a0a0a0;
+  color: var(--color-text-secondary);
 }
 
 .ob-provider-check {

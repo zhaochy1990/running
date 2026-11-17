@@ -457,7 +457,7 @@
 .note-text {
   font-size: 24rpx;
   line-height: 44rpx;
-  color: #d5d4d7;
+  color: var(--color-text-secondary);
   white-space: pre-wrap;
 }
 
