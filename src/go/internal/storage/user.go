@@ -369,6 +369,22 @@ func (s *Store) DeleteUserData(ctx context.Context, userID string) error {
 			}
 		}
 
+		// Explicit historical-metrics recompute tables (devops#1012): run rows
+		// are user-owned; the staged artifact ledger is run-scoped (no user_id)
+		// and is swept through the run subquery BEFORE the run delete empties
+		// it. Guarded on presence like the block above.
+		if tx.Migrator().HasTable(&HistoricalMetricsRun{}) {
+			if err := tx.Exec(
+				"DELETE FROM historical_metrics_recompute_staged WHERE run_id IN (SELECT run_id FROM historical_metrics_recompute_runs WHERE user_id = ?)",
+				uid,
+			).Error; err != nil {
+				return fmt.Errorf("storage: delete historical metrics staged ledger: %w", err)
+			}
+			if err := tx.Where("user_id = ?", uid).Delete(&HistoricalMetricsRun{}).Error; err != nil {
+				return fmt.Errorf("storage: delete user data from historical_metrics_recompute_runs: %w", err)
+			}
+		}
+
 		// First-sync onboarding tables (devops#1006 / devops#1009, epic devops#1004
 		// erasure leftover): sessions and the published recent-analysis rows are
 		// user-owned; the dispatch / work-item / coverage tables are session-scoped

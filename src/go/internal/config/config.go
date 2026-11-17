@@ -95,6 +95,20 @@ type Runtime struct {
 	// production backfills — a stray job reaching a worker with the flag off
 	// fails permanently (historical_recompute_disabled) instead of executing.
 	HistoricalRecompute HistoricalRecompute `mapstructure:"historical-recompute"`
+	// HistoricalMetrics gates the explicit historical-metrics recompute
+	// capability (devops#1012, epic devops#1004 T08): the staged,
+	// chunk-resumable rebuild of historical derived metrics (load/zones/PMC/
+	// PB/L1 + the as-of-day ability refresh) consuming a frozen T07
+	// calibration bundle. DEFAULT OFF; a stray job on a flag-off worker fails
+	// permanently (historical_metrics_disabled) instead of executing.
+	HistoricalMetrics HistoricalMetrics `mapstructure:"historical-metrics-recompute"`
+}
+
+// HistoricalMetrics configures the explicit historical-metrics recompute
+// executor (devops#1012). Default off.
+type HistoricalMetrics struct {
+	// Enabled turns the executor on. Default false.
+	Enabled bool `mapstructure:"enabled"`
 }
 
 // HistoricalRecompute configures the explicit historical-calibration recompute

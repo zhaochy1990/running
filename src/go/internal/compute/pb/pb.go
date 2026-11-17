@@ -109,23 +109,60 @@ type TSFetcher func(labelID string) ([]TSPoint, error)
 // date, label_id) and returns the best entry per display distance. Mirrors
 // pb_records.detect_personal_bests with distances = PB_DISPLAY_DISTANCES.
 func DetectPersonalBests(activities []Activity, fetch TSFetcher) (map[string]Entry, error) {
-	best := map[string]float64{}
-	entries := map[string]Entry{}
-	history := map[string][]map[string]any{}
+	s := NewScanner()
+	if err := s.Scan(activities, fetch); err != nil {
+		return nil, err
+	}
+	return s.Entries(), nil
+}
 
+// Scanner is the checkpointable form of DetectPersonalBests (devops#1012): the
+// same chronological best-so-far scan, splittable across chunks so the explicit
+// historical-metrics recompute can yield execution every ~20 activities
+// (PB 每 20 条 checkpoint 让权) and resume from the entries it already holds —
+// chunked scans produce identical entries to the single-pass form.
+type Scanner struct {
+	best    map[string]float64
+	entries map[string]Entry
+	history map[string][]map[string]any
+}
+
+// NewScanner returns an empty scanner.
+func NewScanner() *Scanner {
+	return &Scanner{best: map[string]float64{}, entries: map[string]Entry{}, history: map[string][]map[string]any{}}
+}
+
+// ResumeScanner rebuilds a scanner's accumulated state from previously held
+// entries (the persisted best-so-far set). The best-time map comes from each
+// entry's PBTimeSec; the per-distance progression history is carried inside the
+// entries themselves, so a resumed scan continues the exact best-so-far chain.
+func ResumeScanner(entries map[string]Entry) *Scanner {
+	s := NewScanner()
+	for d, e := range entries {
+		s.best[d] = e.PBTimeSec
+		s.history[d] = append([]map[string]any(nil), e.History...)
+		s.entries[d] = e
+	}
+	return s
+}
+
+// Scan advances the best-so-far state over one chronological chunk of
+// activities (which MUST stay ordered chronologically by date, label_id within
+// and across chunks). It is the single loop DetectPersonalBests always ran.
+func (s *Scanner) Scan(activities []Activity, fetch TSFetcher) error {
 	for _, a := range activities {
 		cands, err := bestEffortCandidatesForActivity(a, fetch)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		sort.SliceStable(cands, func(i, j int) bool {
 			return displayIndex[cands[i].distance] < displayIndex[cands[j].distance]
 		})
 		for _, c := range cands {
-			if prev, ok := best[c.distance]; ok && c.durationS >= prev {
+			if prev, ok := s.best[c.distance]; ok && c.durationS >= prev {
 				continue
 			}
-			best[c.distance] = c.durationS
+			s.best[c.distance] = c.durationS
 			pt := map[string]any{
 				"date":            c.achievedAt,
 				"best_so_far_sec": c.durationS,
@@ -138,8 +175,8 @@ func DetectPersonalBests(activities []Activity, fetch TSFetcher) (map[string]Ent
 			if c.segEnd != nil {
 				pt["segment_end_s"] = *c.segEnd
 			}
-			history[c.distance] = append(history[c.distance], pt)
-			entries[c.distance] = Entry{
+			s.history[c.distance] = append(s.history[c.distance], pt)
+			s.entries[c.distance] = Entry{
 				Distance:      c.distance,
 				RaceType:      c.raceType,
 				PBTimeSec:     c.durationS,
@@ -147,14 +184,18 @@ func DetectPersonalBests(activities []Activity, fetch TSFetcher) (map[string]Ent
 				LabelID:       c.labelID,
 				Source:        c.source,
 				Name:          c.name,
-				History:       history[c.distance],
+				History:       s.history[c.distance],
 				SegmentStartS: c.segStart,
 				SegmentEndS:   c.segEnd,
 			}
 		}
 	}
-	return entries, nil
+	return nil
 }
+
+// Entries returns the current best entry per display distance — the scan's
+// checkpoint state, safe to persist and later resume via ResumeScanner.
+func (s *Scanner) Entries() map[string]Entry { return s.entries }
 
 // EntryJSON serialises an entry the way Python json.dumps(entry) does.
 func EntryJSON(e Entry) string {

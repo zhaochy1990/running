@@ -133,6 +133,19 @@ const (
 	// backfills. Not a pipeline step — it must stay out of ordinary sync,
 	// calibration and listener paths.
 	JobTypeHistoricalCalibrationRecompute = "historical_calibration_recompute"
+	// JobTypeHistoricalMetricsRecompute executes the explicit
+	// historical-metrics recompute run (devops#1012, epic devops#1004 T08):
+	// the staged, chunk-resumable rebuild of the historical DERIVED metrics
+	// (per-activity load/classification/zones, daily PMC from an explainable
+	// seed, full-history PBs, per-activity L1) over the 365-day window whose
+	// calibration baseline a completed historical_calibration_recompute run
+	// froze, followed by the one-transaction publication and the separate
+	// as-of-day four-layer ability refresh. Operator-dispatched via the
+	// internal jobs API (never user-initiable) and gated by the
+	// runtime.historical-metrics-recompute.enabled rollout flag (DEFAULT
+	// OFF). Not a pipeline step — it must stay out of ordinary sync,
+	// compute and listener paths.
+	JobTypeHistoricalMetricsRecompute = "historical_metrics_recompute"
 )
 
 // Pipeline names (ADR 0020). onboarding and data_sync are fronted by
@@ -269,6 +282,13 @@ func Jobs() []JobSpec {
 			UserInitiable: false,
 			Description:   "Execute the explicit historical-calibration recompute run (devops#1011, epic devops#1004 T07): builds/verifies the per-day canonical calibration snapshots over the 365-day target window ending at the declared analysis as-of day, with each day's event cutoff (activities [day-179,day], health [day-89,day]), honest per-day evidence outcomes (ready/partial/unavailable), a pinned binding/data/policy revision fence that supersedes the run on any change, 7-day chunks that yield execution between jobs, and a frozen bundle fingerprint at final publication. A request creates-or-merges the user's single active run; continuations are chained jobs under stable idempotency keys. Internal-only (operator via the internal jobs API) and gated by runtime.historical-recompute.enabled, DEFAULT OFF.",
 			InputSchema:   json.RawMessage(`{"type":"object","properties":{"request":{"type":"boolean","description":"Explicit operator request: resolves current revisions and create-or-merges the user's active run."},"as_of_day":{"type":"string","format":"date","description":"Analysis as-of day the 365-day target window ends on. Defaults to the current Shanghai day."},"run_id":{"type":"string","format":"uuid","description":"Continuation only: the run a chained chunk advances. Set by the executor, not by callers."},"chunk_seq":{"type":"integer","description":"Continuation only: the chunk sequence the chained job advances."}},"additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{"request":true,"as_of_day":"2026-11-17"}`),
+		},
+		{
+			Type:          JobTypeHistoricalMetricsRecompute,
+			UserInitiable: false,
+			Description:   "Execute the explicit historical-metrics recompute run (devops#1012, epic devops#1004 T08): consumes the newest frozen historical-calibration bundle (a completed historical_calibration_recompute run) as one consistent baseline and rebuilds the historical DERIVED metrics over its 365-day window — per-activity load/classification/zones in 20-activity chunks, the daily PMC chain in 30-day chunks from an explainable seed (frozen/legacy prior row or explicit zero anchor), the full-history PB set in 20-activity chunks, then per-activity L1 — all STAGED under the run's pinned binding/data/policy revisions so ordinary API/Coach reads keep the previous consistent results until the final one-transaction publication (fence re-verified), after which the as-of day's four-layer ability is refreshed separately. Missing day baselines stage honest skip markers (existing rows preserved) and the run terminalizes completed_with_gaps; any pinned-revision change supersedes the run and old chunks refuse to publish. A request creates-or-merges the user's single active run; continuations are chained jobs under stable idempotency keys. Internal-only (operator via the internal jobs API) and gated by runtime.historical-metrics-recompute.enabled, DEFAULT OFF.",
+			InputSchema:   json.RawMessage(`{"type":"object","properties":{"request":{"type":"boolean","description":"Explicit operator request: resolves current revisions plus the newest frozen calibration bundle and create-or-merges the user's active run."},"as_of_day":{"type":"string","format":"date","description":"Analysis as-of day the 365-day target window ends on and the ability-refresh anchor. Defaults to the current Shanghai day."},"run_id":{"type":"string","format":"uuid","description":"Continuation only: the run a chained chunk advances. Set by the executor, not by callers."},"chunk_seq":{"type":"integer","description":"Continuation only: the chunk sequence the chained job advances."}},"additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{"request":true,"as_of_day":"2026-11-17"}`),
 		},
 		{

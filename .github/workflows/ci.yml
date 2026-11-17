@@ -299,6 +299,19 @@ jobs:
           go test ./internal/handlers/historicalcalibration/...
           -run 'TestHistoricalCalibration'
           -count=1 -v
+      # The T08 executor suite (devops#1012) drives a completed T07
+      # calibration run first, then the staged metrics rebuild over real
+      # MySQL/FileStore: same-input/same-seed single-segment vs chunked
+      # equivalence, mid-run read-only visibility, input-change supersede
+      # with publish refusal, interruption resume, the explainable PMC seed
+      # chain, and the as-of-day four-layer ability closure.
+      - name: Historical metrics recompute tests (MySQL)
+        env:
+          STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
+        run: >-
+          go test ./internal/handlers/historicalmetrics/...
+          -run 'TestHistoricalMetrics|TestFlagOff|TestBadWiring|TestOutputFingerprint|TestFingerprintPins'
+          -count=1 -v
       # The provider_events unique index is the webhook push idempotency rule
       # (devops#287) — SQL-level, so only a real MySQL exercises it.
       - name: Provider-event storage tests (MySQL)
