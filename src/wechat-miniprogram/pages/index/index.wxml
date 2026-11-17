@@ -19,9 +19,6 @@
     bindtouchstart="onContentTouchStart"
     bindtouchend="onContentTouchEnd"
   >
-    <!-- 首次同步状态卡（devops#1015）：只读观察服务端 session 进度，无 session 时整卡不渲染 -->
-    <onboarding-sync-status />
-
     <!-- 周历 -->
     <view class="card week-card">
       <view

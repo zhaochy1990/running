@@ -160,7 +160,7 @@ export interface SessionStepTexts {
 }
 
 export function sessionStepTexts(
-  phase: 'creating' | 'adopting',
+  phase: 'creating' | 'adopting' | 'preparing',
   errorMode: 'create' | 'sync',
   hasError: boolean,
 ): SessionStepTexts {
@@ -188,9 +188,19 @@ export function sessionStepTexts(
       retryLabel: '',
     };
   }
+  if (phase === 'preparing') {
+    // 用户拍板 11-17：onboarding 内等近 90 天数据再进首页（实测 ~23s，软超时
+    // 90s 放行）；历史/分析后台继续，首页不再有常驻同步卡。
+    return {
+      title: '正在同步近 90 天训练数据',
+      subtitle: '完成后进入首页；更早的历史数据将在后台继续补齐，不影响使用',
+      progressText: '正在同步近 90 天训练数据…',
+      retryLabel: '',
+    };
+  }
   return {
     title: '正在准备你的训练数据',
-    subtitle: '创建可靠的首次同步任务后即进入首页；近期数据率先可用，历史数据在后台补齐',
+    subtitle: '先同步近 90 天数据，完成后进入首页；更早的历史在后台补齐',
     progressText: '正在创建首次同步任务…',
     retryLabel: '',
   };

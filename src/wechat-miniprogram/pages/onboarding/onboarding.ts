@@ -52,8 +52,14 @@ type Step = 'loading' | 'profile' | 'watch' | 'sync' | 'ready';
 /** 同步步的入口模式：session（新，双开关开）或 legacy（旧 full-run，兼容路径）。 */
 type SyncMode = 'legacy' | 'session';
 
-/** session 模式的提交阶段：creating = POST 创建/认领中；adopting = 等 shell_ready（接管在途旧 run）。 */
-type SessionPhase = 'creating' | 'adopting';
+/** session 模式的提交阶段：creating = POST 创建/认领中；adopting = 等 shell_ready
+ * （接管在途旧 run）；preparing = 等 recent_data 就绪（用户拍板 11-17：onboarding
+ * 内等近 90 天数据再进首页，历史继续后台补）。 */
+type SessionPhase = 'creating' | 'adopting' | 'preparing';
+
+/** 等 recent_data（近 90 天活动+健康）就绪的软上限：超时放行进首页，绝不无限等
+ * （厂商慢/数据量大时由后台继续补，实测 3 年历史用户 ~23s）。 */
+const RECENT_DATA_WAIT_MS = 90_000;
 
 const REGION_OPTIONS = ['中国区', '国际区'];
 
@@ -130,6 +136,7 @@ interface OnboardingPageHandlers {
   applySessionSync(retry?: boolean): Promise<void>;
   applyLegacySync(): Promise<void>;
   waitForSessionShellReady(): void;
+  waitForRecentData(): void;
   cancelSessionPoll(): void;
   enterHomeAfterSession(): void;
   applySessionStepTexts(phase: SessionPhase, errorMode: 'create' | 'sync', hasError: boolean): void;
@@ -430,11 +437,12 @@ Page<OnboardingPageData, OnboardingPageHandlers>({
 
   // --- 同步步 ---
 
-  // session 模式（devops#1015）：POST 创建/认领 → shell_ready 后 profile-only 完成
-  // 进首页。没有本地指针与幂等键：同绑定多端并发 POST 解析到同一 session，杀进程 /
-  // 换设备 / 重新登录后再来一次也只是认领，不会重复起 full。创建失败如实报错，
-  // 不假报「后台正在同步」。retry=true 走显式重试：只重新派发失败项，已成功范围
-  // 服务端复用凭据不重拉。
+  // session 模式（devops#1015）：POST 创建/认领 → shell_ready 后等近 90 天数据
+  // （recent_data）就绪再 profile-only 完成进首页（用户拍板 11-17：同步完 90 天
+  // 再进，历史/分析后台补齐且不再有首页常驻同步卡）。没有本地指针与幂等键：同绑定
+  // 多端并发 POST 解析到同一 session，杀进程 / 换设备 / 重新登录后再来一次也只是
+  // 认领，不会重复起 full。创建失败如实报错，不假报「后台正在同步」。retry=true
+  // 走显式重试：只重新派发失败项，已成功范围服务端复用凭据不重拉。
   async applySessionSync(retry = false) {
     this.cancelSessionPoll();
     this.cancelPoll();
@@ -471,11 +479,19 @@ Page<OnboardingPageData, OnboardingPageHandlers>({
     }
 
     if (view.shell_ready) {
-      this.enterHomeAfterSession();
+      // shell_ready 即 session+派发记录已持久化；再等近 90 天数据就绪才进首页
+      // （已就绪——如 retry 场景——直接进）。分析/历史/辅助独立就绪，不在此等。
+      const rd = view.readiness.recent_data;
+      if (rd === 'ready' || rd === 'ready_with_gaps') {
+        this.enterHomeAfterSession();
+        return;
+      }
+      this.applySessionStepTexts('preparing', 'sync', false);
+      this.waitForRecentData();
       return;
     }
     // shell_ready=false（waiting_legacy：服务端在接管在途的旧 full run）不是失败：
-    // 轮询只读视图直到 session 与可靠派发记录都已持久化，再进首页。
+    // 轮询只读视图直到 session 与可靠派发记录都已持久化，再等近期数据。
     this.applySessionStepTexts('adopting', 'create', false);
     this.waitForSessionShellReady();
   },
@@ -519,7 +535,8 @@ Page<OnboardingPageData, OnboardingPageHandlers>({
         const view = await getOnboardingSyncSession();
         if ((this._sessionGen || 0) !== gen) return;
         if (view.shell_ready) {
-          this.enterHomeAfterSession();
+          this.applySessionStepTexts('preparing', 'sync', false);
+          this.waitForRecentData();
           return;
         }
         if (view.state === 'failed') {
@@ -538,6 +555,52 @@ Page<OnboardingPageData, OnboardingPageHandlers>({
           return;
         }
         console.warn('[onboarding] 查询 session 状态暂时失败，继续轮询');
+      }
+      this._sessionTimer = setTimeout(() => void tick(), SESSION_POLL_MS);
+    };
+    void tick();
+  },
+
+  // shell_ready 之后、进首页之前等 recent_data（近 90 天活动+健康）就绪
+  // （ready / ready_with_gaps）。只等这一项：分析/历史/辅助是独立就绪状态，
+  // 后台继续补，不阻塞进入。RECENT_DATA_WAIT_MS 软超时后放行进首页。
+  waitForRecentData() {
+    const gen = this._sessionGen || 0;
+    const deadline = Date.now() + RECENT_DATA_WAIT_MS;
+    const tick = async () => {
+      if ((this._sessionGen || 0) !== gen) return; // 已被新的提交/卸载取代
+      let view: OnboardingSyncView | null = null;
+      try {
+        view = await getOnboardingSyncSession();
+      } catch (err) {
+        if ((this._sessionGen || 0) !== gen) return;
+        if (isSessionEntryUnavailable(err)) {
+          // 入口被关（回滚中）：session 已持久化，服务端 sweep 会继续推进 → 进首页。
+          console.warn('[onboarding] 等 recent_data 期间入口被关闭，直接进首页');
+          this.enterHomeAfterSession();
+          return;
+        }
+        console.warn('[onboarding] 查询 recent_data 状态暂时失败，继续轮询');
+      }
+      if (view && (this._sessionGen || 0) === gen) {
+        const rd = view.readiness.recent_data;
+        if (rd === 'ready' || rd === 'ready_with_gaps') {
+          this.enterHomeAfterSession();
+          return;
+        }
+        if (view.state === 'failed') {
+          // 近期链路判了失败：如实展示并允许重试（只恢复失败项）。
+          console.error('[onboarding] 等 recent_data 期间链路失败:', view.error);
+          this.applySessionStepTexts('preparing', 'sync', true);
+          this.setData({ syncError: friendlyMessage(view.error, '同步失败，请重试') });
+          return;
+        }
+      }
+      if (Date.now() >= deadline) {
+        // 软超时：放行进首页，近期剩余部分与历史数据后台继续补齐，不影响使用。
+        console.warn('[onboarding] 等待 recent_data 超时，放行进首页（后台继续）');
+        this.enterHomeAfterSession();
+        return;
       }
       this._sessionTimer = setTimeout(() => void tick(), SESSION_POLL_MS);
     };

@@ -160,14 +160,33 @@ eq(
   'creating title',
 );
 eq(
-  sessionStepTexts('creating', 'create', false).subtitle.includes('即进入首页'),
+  sessionStepTexts('creating', 'create', false).subtitle.includes('完成后进入首页'),
   true,
-  'creating subtitle promises home entry after reliable creation',
+  'creating subtitle promises home entry after recent data is ready',
 );
 eq(
   sessionStepTexts('adopting', 'create', false).title,
   '正在接管已有同步任务',
   'adopting title',
+);
+// preparing（用户拍板 11-17）：onboarding 内等近 90 天数据，历史明确说后台补。
+const preparing = sessionStepTexts('preparing', 'sync', false);
+eq(preparing.title, '正在同步近 90 天训练数据', 'preparing title');
+eq(
+  preparing.subtitle.includes('后台继续补齐'),
+  true,
+  'preparing subtitle says history continues in background',
+);
+eq(
+  preparing.progressText.includes('90 天'),
+  true,
+  'preparing progress names the 90-day scope',
+);
+eq(preparing.retryLabel, '', 'preparing has no retry label while working');
+eq(
+  sessionStepTexts('preparing', 'sync', true).retryLabel,
+  '重试失败项',
+  'preparing failure keeps single-item retry label',
 );
 const createFailed = sessionStepTexts('creating', 'create', true);
 eq(createFailed.title, '同步任务创建失败', 'create-failed title');
