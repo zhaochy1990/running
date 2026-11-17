@@ -282,12 +282,16 @@ type detailResult struct {
 }
 
 // fetchDetailsOrdered fetches each activity's detail concurrently (bounded by
-// jobs) while committing to the store strictly in the given (oldest-first)
-// order. Commit halts at the first fetch, parse, or store error, so the
-// persisted set is always a contiguous oldest-first prefix of ordered. That is
-// what keeps the incremental cursor safe: a later incremental scan walks
+// jobs) while committing to the store strictly in the given order — callers
+// choose the order (the incremental path passes oldest-first; the onboarding
+// range path passes newest-first since 11-17 so recent activities land first).
+// Commit halts at the first fetch, parse, or store error, so the persisted
+// set is always a contiguous prefix of the input order. For the incremental
+// caller that is what keeps its cursor safe: a later incremental scan walks
 // newest-first and stops at the first activity that already exists, so every
-// not-yet-persisted (newer) activity is re-fetched — no holes.
+// not-yet-persisted (newer) activity is re-fetched — no holes. The range
+// caller never relies on that stop rule: it full-window rescans on retry and
+// RecentGapCheck covers partial runs while the session is incomplete.
 //
 // skip, when non-nil, is offered every fetch error that is a PERMANENT
 // provider rejection (provider.IsInvalidRequest): returning normally records

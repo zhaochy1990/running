@@ -78,9 +78,9 @@ func TestSyncRecentRange_RangeBoundedScanOldToNew(t *testing.T) {
 	if act == nil || act.Count != 4 {
 		t.Fatalf("activities report = %+v, want 4 written (in-range only, multi-year history not traversed)", act)
 	}
-	wantOrder := []string{"9004", "9003", "9002", "9001"} // old→new by Shanghai day
+	wantOrder := []string{"9001", "9002", "9003", "9004"} // new→old by Shanghai day（11-17 拍板：近期先落库）
 	if strings.Join(order, ",") != strings.Join(wantOrder, ",") {
-		t.Errorf("commit order = %v, want %v (旧→新有序提交)", order, wantOrder)
+		t.Errorf("commit order = %v, want %v (新→旧有序提交)", order, wantOrder)
 	}
 	// Days present span the whole window (08-10 … 11-07): observed covers it,
 	// no honest-emptiness gaps, channel done.
@@ -348,16 +348,18 @@ func TestSyncRecentRange_DetailFailureFailsRunResumeSkipsExisting(t *testing.T) 
 	if rep.Activities != nil {
 		t.Error("a failed channel must carry no report (no credential for a partial window)")
 	}
-	if got := len(fw.activities); got != 2 {
-		t.Fatalf("committed prefix = %d activities, want 2 (old→new stops at the gap)", got)
+	// Newest-first（11-17）: the failed item (9007, 10-09, newest) sits at the
+	// head of the commit order, so the commit halts before anything persists.
+	if got := len(fw.activities); got != 0 {
+		t.Fatalf("committed prefix = %d activities, want 0 (新→旧在最新的失败项处立即止步)", got)
 	}
 	hitsBefore := map[string]int{}
 	for k, v := range detailHits {
 		hitsBefore[k] = v
 	}
 
-	// Retry: the 5xx is gone; committed rows are skipped via existence, the
-	// failed one is fetched and written.
+	// Retry: the 5xx is gone; nothing was committed by the failed run, so all
+	// three are fetched fresh and written.
 	p2, fw2 := newTestProvider(t, newList(), loggedInCreds())
 	failID = "" // the retried server is healthy
 	_ = failID
@@ -369,25 +371,21 @@ func TestSyncRecentRange_DetailFailureFailsRunResumeSkipsExisting(t *testing.T) 
 	if err != nil {
 		t.Fatalf("retry: %v", err)
 	}
-	if rep2.Activities.Count != 1 {
-		t.Errorf("retry written = %d, want 1", rep2.Activities.Count)
+	if rep2.Activities.Count != 3 {
+		t.Errorf("retry written = %d, want 3 (nothing reused: failed run committed 0)", rep2.Activities.Count)
 	}
-	if !strings.Contains(rep2.Activities.Credential, "reused=2") {
-		t.Errorf("credential = %q, want the resume-reuse tally", rep2.Activities.Credential)
+	if strings.Contains(rep2.Activities.Credential, "reused=") {
+		t.Errorf("credential = %q, want no reuse tally (failed run committed nothing)", rep2.Activities.Credential)
 	}
 	if len(fw2.activities) != 3 {
 		t.Errorf("stored = %d, want 3", len(fw2.activities))
 	}
-	// The already-committed activities' details were NOT re-downloaded: their
-	// hit counts are unchanged from the first run; only the failed one grows
-	// (the transport may retry the 5xx in place, so "grows" not an exact
-	// count).
+	// Nothing was committed by the failed run, so the retry re-fetches all
+	// three details; counts grow for every id (the transport may retry the
+	// 5xx in place, so "grows" not an exact count).
 	for id := range hitsBefore {
-		if id == "9007" {
-			continue
-		}
-		if detailHits[id] != hitsBefore[id] {
-			t.Errorf("detail hits[%s] = %d, want unchanged %d (existing rows are not re-downloaded)", id, detailHits[id], hitsBefore[id])
+		if detailHits[id] <= hitsBefore[id] {
+			t.Errorf("detail hits[%s] = %d, want > %d (re-fetched fresh after a zero-commit run)", id, detailHits[id], hitsBefore[id])
 		}
 	}
 	if detailHits["9007"] <= hitsBefore["9007"] {

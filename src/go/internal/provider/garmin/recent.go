@@ -22,7 +22,9 @@
 //     (无效日期需详情确认或明确阻塞);
 //   - a mid-run retry first checks for already-stored rows and re-downloads
 //     nothing that previously succeeded (成功详情不重复下载); the window
-//     commits oldest→newest so downstream analysis sees a deterministic order;
+//     commits newest→oldest (11-17: recent activities land first) with label-id
+//     tie-breaking so the commit order stays deterministic; downstream
+//     analysis reads by date from storage after the stage terminal state;
 //   - detail/splits 404s are the vendor legitimately not providing them —
 //     recorded and never fabricated — while any other failure fails the
 //     channel so the job retry resumes;
@@ -147,8 +149,8 @@ type walkOutcome struct {
 
 // recentActivities runs the full activities channel: two walks (scan +
 // backfill reconciliation), unclassifiable-date confirmation, then the
-// oldest→newest ordered commit, and derives the coverage report from what
-// actually landed in the window.
+// newest→oldest ordered commit (近期先落库), and derives the coverage report
+// from what actually landed in the window.
 func (p *Provider) recentActivities(ctx context.Context, client *Client, user string, win provider.DayWindow, jobs int, progress provider.ProgressCallback) (*provider.RangeChannelReport, error) {
 	log := logging.Default().With(zap.String("user", user))
 	first, err := p.walkRecentWindow(ctx, client, win)
@@ -233,11 +235,13 @@ func (p *Provider) recentActivities(ctx context.Context, client *Client, user st
 			len(blocked), blocked[:min(5, len(blocked))], provider.ErrUnrecoverableRangeData)
 	}
 
-	// Old→new for the ordered pipeline; ties (same instant, e.g. same-second
-	// uploads) order by label id for determinism.
+	// New→old for the ordered pipeline（11-17 拍板：近期活动先落库、先对用户
+	// 可见；下游分析在 recent_raw 终态后按日期从库读，提交顺序无计算语义）；
+	// ties (same instant, e.g. same-second uploads) order by label id for
+	// determinism.
 	sort.Slice(collected, func(i, j int) bool {
 		if !collected[i].inst.Equal(collected[j].inst) {
-			return collected[i].inst.Before(collected[j].inst)
+			return collected[i].inst.After(collected[j].inst)
 		}
 		return collected[i].a.labelID() < collected[j].a.labelID()
 	})

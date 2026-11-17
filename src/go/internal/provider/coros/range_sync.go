@@ -8,8 +8,11 @@
 // rows beside it), walks the vendor list newest→oldest until the window's
 // lower boundary is PROVEN crossed (page ordering verified) or the list ends,
 // reconciles backfill that appeared mid-pagination, and then commits details
-// oldest-first through the same ordered path SyncUser uses — a publish session
-// in ctx fences every activity write exactly like a watch_sync run.
+// newest-first through the same ordered path SyncUser uses — a publish session
+// in ctx fences every activity write exactly like a watch_sync run. Newest-
+// first (11-17) puts the user's recent activities in the DB first; downstream
+// analysis reads by date from storage after recent_raw terminal, so commit
+// order carries no computational meaning.
 package coros
 
 import (
@@ -233,11 +236,23 @@ func (p *Provider) rangeActivities(ctx context.Context, client *Client, user str
 	total := len(scan.items)
 	provider.EmitProgress(progress, "activities", 0, total, provider.PercentInBand(0, total, 10, 80))
 
-	// Oldest-first ordered commit (the incremental path's invariant).
-	ordered := make([]listItem, total)
-	for i, item := range scan.items {
-		ordered[total-1-i] = item
-	}
+	// Newest-first ordered commit（11-17 拍板：近期活动先落库、先对用户可见）。
+	// 提交顺序不影响任何下游计算——分析/校准在 recent_raw 终态后按日期从库读；
+	// ordered 指的是「同一 publish session 内按序提交」的隔离语义，不是升序。
+	// 同日多条按 label id 升序保持确定性（与 garmin 侧同一平手规则）；不可定
+	// 日期项（fetch 侧有三级日期恢复/阻塞）稳定沉底。
+	sort.SliceStable(scan.items, func(i, j int) bool {
+		di, oki := listShanghaiDay(scan.items[i])
+		dj, okj := listShanghaiDay(scan.items[j])
+		if oki != okj {
+			return oki
+		}
+		if di != dj {
+			return di > dj
+		}
+		return scan.items[i].LabelID < scan.items[j].LabelID
+	})
+	ordered := scan.items
 	res := &provider.SyncResult{}
 	gaps := []provider.RangeGap{}
 	skip := func(item listItem, err error) {

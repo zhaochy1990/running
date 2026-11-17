@@ -30,7 +30,8 @@ import {
 import { postMyProfile, updateProfile, uploadAvatar } from '../../services/profile';
 import { watchLogin, type WatchProvider } from '../../services/watch';
 import { pollPipeline, type PollPipelineHandle } from '../../services/sync';
-import { SESSION_POLL_MS, sessionStepTexts } from '../../utils/onboardingSession';
+import { SESSION_POLL_MS, recentProgressText, sessionStepTexts } from '../../utils/onboardingSession';
+import { getActivities } from '../../services/activities';
 import { describeRun } from '../../utils/onboardingSteps';
 import {
   AGE_OPTIONS,
@@ -608,6 +609,24 @@ Page<OnboardingPageData, OnboardingPageHandlers>({
         }
         // preparing 进度条：recent_raw 覆盖比例（服务端事实整形，封顶 95）。
         this.setData({ sessionPercent: recentRawPercent(view) });
+        // 进度文案显示同步前锋的具体活动名。提交为新→旧（11-17 拍板）：最新的
+        // 先落库，移动边是最旧已落库日（observed_from）；取该日一条活动展示。
+        const recentStage = view.stages.find((s) => s.stage === 'recent_raw');
+        const frontierDay = recentStage?.observed_from || recentStage?.target_from;
+        if (frontierDay) {
+          const userId = this.currentUserId();
+          if (userId) {
+            getActivities(userId, { limit: 1, dateFrom: frontierDay, dateTo: frontierDay })
+              .then((res) => {
+                if ((this._sessionGen || 0) !== gen) return;
+                const first = res.activities[0];
+                if (first) this.setData({ sessionProgressText: recentProgressText(first) });
+              })
+              .catch(() => {
+                /* 读失败不影响等待：保持阶段级文案即可 */
+              });
+          }
+        }
         if (view.state === 'failed') {
           // 近期链路判了失败：如实展示并允许重试（只恢复失败项）。
           console.error('[onboarding] 等 recent_data 期间链路失败:', view.error);

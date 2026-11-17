@@ -166,9 +166,10 @@ func TestSyncRecentRange_ScanDoesNotStopAtExistingActivity(t *testing.T) {
 		a.Gaps[1].From != "2026-11-11" || a.Gaps[1].To != "2026-11-16" {
 		t.Errorf("status/gaps = %q %+v, want prefix 08-18..08-19 + suffix 11-11..11-16", a.Status, a.Gaps)
 	}
-	// Ordered oldest-first commit: the newest label commits last.
-	if got := fw.meta["last_label_id"]; got != "NEW1" {
-		t.Errorf("cursor = %q, want NEW1", got)
+	// Newest-first ordered commit（11-17 拍板）: the oldest in-window label (MID1,
+	// 08-20) commits last.
+	if got := fw.meta["last_label_id"]; got != "MID1" {
+		t.Errorf("cursor = %q, want MID1", got)
 	}
 }
 
