@@ -1,11 +1,19 @@
-# 校准估计契约 v2（SPEC #993 / 票 #995，冻结 2026-11-16）
+# 校准估计契约 v2（SPEC #993 / 票 #995，冻结 2026-11-16；rev3 修订 2026-11-17）
+
+> **rev3 修订（2026-11-17）**：算法本体自 rev3（`algorithm_revision='v4-rev3-2026-11'`）起以 [v4.md](v4.md) 为唯一算法规范——§3 证据三层准入与前沿池、§4 B_raw/B_repaired/B_eligible 三对照与 `A_floor(k)` **硬可行域约束**、§5 余量表与求解、§6 Hsteady sigmoid 联合模型与退化路径、§8 确定性求解/敏感性范围/失败处理、§9 计算顺序与输出契约。本文件继续冻结身份/发布/门槛/序列化等工程契约（§1、§4、§6-§9），其算法条款（原 §2 观测模型、§3 五态中的 measured_reference 中心语义、§5 rev2 先验表）对 rev3 的对应物如下，冲突处以 v4.md 为准：
+>
+> - **观测模型**：`y_i = a − k·x_i − δ_i + ε_i`，`L_P = Σ w_i ρ1.5((a−k·x_i−y_i−μ_{c_i})/√(σ_{c_i}²+σ_{meas,i}²))` + `L_k = 0.5((k−0.06)/0.02)²`，中心解必须满足 `a ≥ A_floor(k)`（进求解域，禁止有限罚权重替代）；k∈[0.02,0.10] 按 0.0005 网格枚举；v60 数值搜索域 0.5–12 m/s。
+> - **先验表**：见下方 §5 的 rev3 表（v4.md §5.1/§6.2 数值替换 rev2 值；`contract_priors.go` 为可执行对应物）。
+> - **状态标签**：v4.md §8.3 的四输出态（measured_reference 不再作为中心状态——已核验全力参考是证据与冲突诊断来源，不直接充当中心）。
+> - **HR 域**：`Hsteady = R+(M−R)·sigmoid(η+β(log v−a)+u_j+d_j·s)`、一阶滞后 τ、日效应 `Σw_j·u_j=0`、`λ_H=0.5`（必留 λ=0 对照）、HR 域 [80,230] 与 `R<H60<M`、退化路径按 v4.md §6.4。R 必须有真实来源（daily RHR 行），M 为既有 HRmax 估计；光电以 6 bpm 尺度参与（不再用 0.5 权重常数）。
+> - **历史先验**：§5.3 防循环增益——旧 v4 快照仅作 lineage 记录，不进目标函数（无「上次×(1+余量)」）。
 
 本文件冻结原地演进后 v4 的**估计契约**：联合观测目标、共享参数、条件独立关系、参考条件、状态标签、valid/eligible 判定、可运行先验与默认参数、算法修订标记与发布身份、三道门槛。数值门槛与评估方法冻结在 [evaluation-protocol-v2.md](evaluation-protocol-v2.md)。可执行对应物：`src/go/internal/compute/calibration/contract.go`、`contract_priors.go`、`protocol_v2.go`（测试 `contract_test.go`、`protocol_v2_test.go` 锁定行为）。后续票（#996–#998）实现拟合本体时**不得**偏离本契约；如需偏离必须先改本文件与对应测试。
 
 ## 1. 身份与修订标记（不开 v5）
 
 - `algorithm_version=4` 不变；policy `supported_versions=[3,4]` 不变；生产全局 active 仍为 3；v3 冻结七文件（embed 哈希 + golden 双锁）与 v3 入口、结果、协议 v1、原最终留出一字不改。
-- 新旧 v4 输出以**算法修订标记**区分：历史 v4 行（PR#740 实现）`algorithm_revision=''`；演进后 v4 输出 `algorithm_revision='v4-rev2-2026-11'`（常量 `EvolvedCandidateAlgorithmRevision`）。身份三元组 `EvolvedCandidateIdentity() = ("evolved_joint_v2", "rev2-research-2026-11", "v4-rev2-2026-11")`。
+- 新旧 v4 输出以**算法修订标记**区分：历史 v4 行（PR#740 实现）`algorithm_revision=''`；rev3（现行，v4.md 实现）输出 `algorithm_revision='v4-rev3-2026-11'`（常量 `EvolvedCandidateAlgorithmRevision`），身份三元组 `EvolvedCandidateIdentity() = ("evolved_v4md_rev3", "rev3-v4md-2026-11", "v4-rev3-2026-11")`。rev2（`v4-rev2-2026-11`，三元组 `evolved_joint_v2/rev2-research-2026-11`）从未写入生产数据行，rev3 原地改名不并存；rev2 设计文档 [evolved-speed-rev2.md](evolved-speed-rev2.md)/[evolved-hr-rev2.md](evolved-hr-rev2.md)/[evolved-state-rev2.md](evolved-state-rev2.md) 保留为历史记录。
 - 落点：`OfflineResult.AlgorithmRevision`（omitempty，旧策略为空保证 replay hash 不变）、`SourceSummary.AlgorithmRevision`、快照表新列（见 §7）、`EstimationContractDocument`。
 - 新策略入口 `StrategyEvolvedCandidate="evolved_candidate"` 仅存在于离线 seam（`EstimateOffline*`），生产 wiring（`NewCalibration`/active 路径）不接触。#998 起同一 seam 在联合装配内求解时间结构化能力状态（速度域全池一次求解 + 含 HR 时条件化 trend 的联合重解；见 [evolved-state-rev2.md](evolved-state-rev2.md)）。#996 起该入口装配速度域估计器（`evolved_speed.go`，见 [evolved-speed-rev2.md](evolved-speed-rev2.md)）：普通训练必出有限中心+范围；#997 起同一入口联合装配个人心率动态拟合（`evolved_hr.go`，见 [evolved-hr-rev2.md](evolved-hr-rev2.md)）：普通光电 HR 序列即参与同一联合目标并输出 `HRsteady(v60)`（`model_estimated`），无序列但有合格生理先验输出 `prior_dominated`，两者皆无才 `unavailable`（必须报原因）；数值失败报 `solver_numerical_failure`，不伪称证据不足。
 
@@ -64,6 +72,33 @@
 
 ## 5. 可运行先验与默认参数（`DefaultEvolvedPriors()`，全部 research_uncalibrated）
 
+**rev3 现行表（v4.md §5.1/§5.2/§6.2 逐字；可执行对应物 `contract_priors.go`）**：
+
+| 参数 | 中心 | SD | 域 | 单位 | 损失 | 出处 |
+|---|---|---|---|---|---|---|
+| 余量 μ/σ·核验持续全力 | 0 | 0.015 | — | log速度 | Huber 合并尺度 | v4.md §5.1 |
+| 余量 μ/σ·可能全力 | 0 | 0.05 | — | log速度 | 同上 | v4.md §5.1 |
+| 余量 μ/σ·普通训练 | 0 | 0.12 | — | log速度 | 同上 | v4.md §5.1 |
+| 余量 μ/σ·稳态有余力 | log(1.03) | 0.08 | — | log速度 | 同上 | v4.md §5.1（rev3 无输入通道，仅声明） |
+| 余量 μ/σ·明确轻松跑 | log(1.08) | 0.15 | — | log速度 | 同上 | v4.md §5.1 |
+| 测量误差 σ（high/medium/low） | 0.01/0.025/0.06 | — | — | log速度 | 与 σ_c 合并 `hypot` | v4.md §5.1（low 不产生硬下界） |
+| k（L_k 尺度） | 0.06 | 0.02 | [0.02, 0.10] | log速度/log时长 | `0.5((k−0.06)/0.02)²` | v4.md §5.2 |
+| η（q60） | logit(0.85) | 0.6 | q60∈[0.65, 0.98]（∩H60∈[80,230]） | logit | 截断二次 | v4.md §6.2 |
+| log β | log 3 | 0.5 | β∈[1, 8] | log | 截断二次（对数域） | v4.md §6.2 |
+| log τ | log 60 s | 0.5 | τ∈15–180 s | log | 截断二次（对数域） | v4.md §6.2 |
+| u_j 日效应 | 0 | 0.25 | [−0.75, 0.75] | logit 位移 | 二次（对日平均）+ `Σw_j u_j=0` | v4.md §6.2 |
+| d_j 漂移 | 0 | 0.15/小时 | [−0.3, 0.5]/小时 | logit/小时 | 二次（对日平均） | v4.md §6.2 |
+| λ_H | 0.5 | — | [0,1] | — | 联合目标乘权（必留 λ=0 对照） | v4.md §6.3 |
+| HR 误差尺度 | 胸带 3 / 光电·未知 6 | — | — | bpm | Huber | v4.md §6.3 |
+| 回归斜率 b（§6.4） | 60 | 30 | [10, 150] | bpm/log(m/s) | 二次 + Huber；情景 30/60/90 与 ±6 bpm | v4.md §6.4 |
+| ΔL 剖面阈值 | 2 | — | — | — | 目标剖面保持集 | v4.md §8.2 |
+| 主中心先验主导阈 | 配速 3% / HR 5 bpm | — | — | — | §8.3 状态判据 | v4.md §8.3 |
+| v60 搜索域 | 0.5–12 m/s | — | — | m/s | 数值边界（命中必须报告） | v4.md §8.1 |
+
+历史快照先验在 rev3 仅作 lineage（不进目标）；可辨识/诚实输出条款见 §6 与 v4.md §8.3。
+
+<details><summary>rev2 历史先验表（已被上表替换；保留存档）</summary>
+
 先验即代码：数值、截断边界、单位、出处全在 `contract_priors.go`，`Validate()` 强校验（有限、均值在界内、knots 严格单调、桥接 knot 必须在 rel=1.0），`IdentityHash()` = 参数 hash 进 lineage。**没有"以后再研究"的空入口**——群体/个人数据不足时这些宽研究先验就是默认值，且明确携带 `calibration="research_uncalibrated"` 与 limitations。
 
 | 参数 | 均值 | SD | 截断 | 单位 | 损失 | 出处（动机，不证明准确） |
@@ -84,6 +119,8 @@
 | 光电 HR 权重 | 0.5 | — | (0,1) 开区间 | 相对权重 | 联合目标乘权 | R2（降权可用，不排除） |
 
 历史快照先验规则：`sd = hypot(0.15, 0.002×age_days)`，中心不作上限；同一批输入算出的旧快照不得与原始输入作为两份独立证据反复相乘（同源不双计，T2 实现时按 root 去重）；优先用上一状态或留一活动构造先验。
+
+</details>
 
 **状态预测通道（#998 实现注记，固定顺序）**：`HistoricalCapabilityPrior` 增加可选 `TrendPerDay`（消费时钳到 trend 域）与 lineage 字段（`AsOfDate`/`InputFingerprint`，仅审计回显）。先验中心 = `log(V60) + TrendPerDay×AgeDays`（先验预测步），恰计入目标一次，随后新证据更新；零值字段保持 #996 语义位级不变。无新增可比证据时输出 predict-only 状态 stamp（`prior_predict_only` + `no_new_comparable_evidence_capability_predict_only`），不伪造时间结构。
 

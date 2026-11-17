@@ -17,6 +17,7 @@ v4 不开新顶层身份：演进后的 v4 输出在 `source.algorithm_revision`
 - `source.speed.evidence_date` / `source.hr.evidence_date` 是实际支持证据的上海日期；`data_cutoff_day` / `as_of_date` 是输入截止日；`computed_at` 是执行时刻，三者不能互相替代。`event_date_retrospective` 不承诺严格历史当时可得性。
 - speed 范围原始单位为 m/s。服务端将高速度转换为 `fast` 配速、低速度转换为 `slow` 配速，整数秒/km 按 `apifmt.PacePerKmSec` 的 half-even 规则舍入；无侧保留 null。`bound_kind` 是 `two_sided` / `speed_lower_bound` / `speed_upper_bound` / `unavailable`。单侧速度下界对应配速慢侧上界，不能展示成双侧范围。这些是支持／敏感性范围，不代表 95% CI。
 - HR 的 `target_type=field_HR_proxy_not_physiological_LTHR` 表达场地代理，不是生理实验室阈值；`lab_method_specific_LTHR` 需要保留具体方法。旧 v3 训练估计不表示独立实验室参考。
+- rev3（v4.md §6/§9）新增模型稳态语义 `target_type=model_steady_state_HR_at_v60_reference_conditions`：估计一小时速度、参考条件下的模型稳态 HR（H60），不冒称实验室乳酸阈值或一小时比赛平均 HR；方法词 `joint_constrained_hr_fit`（联合）/`regression_H_c_b_logv`（对数速度回归，尺度不可辨识）/`prior_only_R_M_085`（R/M 先验组合）与配速域 `constrained_margin_fit`/`bound_fallback`/`long_training_fallback` 均按字面展示，不做「越高越好」解读。
 - 旧行没有来源时 `source.state=legacy_source_missing`，坏 JSON 为 `source_unavailable`。缺快照保持 `threshold:null`、空 zones；响应顶层 `selection` / `source` 解释 `snapshot_unavailable`。不能用未来快照补历史，也不能在 GET 里校准、迁移或补库。
 
 本次仅落可选 wire 类型，T7 负责产品展示及真实 Web／小程序／iOS UI 验收。工程测试通过不改变生产 active=v3 或候选 `release_ready=false`。
