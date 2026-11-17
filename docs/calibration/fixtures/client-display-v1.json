@@ -1800,11 +1800,11 @@
       "name": "evolved-low-evidence",
       "response": {
         "threshold": {
-          "speed_mps": 3.8821,
-          "pace_per_km_sec": 258,
-          "hr_bpm": 171.466,
+          "speed_mps": 3.4581,
+          "pace_per_km_sec": 289,
+          "hr_bpm": 162.1615,
           "speed_confidence": "medium",
-          "hr_confidence": "medium",
+          "hr_confidence": "low",
           "as_of_date": "2026-11-14",
           "calibration_id": 1,
           "algorithm_version": 4,
@@ -1818,89 +1818,41 @@
             "override": {
               "revision": 2,
               "algorithm_version": 4,
-              "algorithm_revision": "v4-rev2-2026-11"
+              "algorithm_revision": "v4-rev3-2026-11"
             }
           },
           "source": {
             "schema_version": 1,
             "state": "available",
             "strategy": "evolved_candidate",
-            "implementation": "evolved_joint_v2",
-            "parameter_version": "rev2-research-2026-11",
-            "algorithm_revision": "v4-rev2-2026-11",
+            "implementation": "evolved_v4md_rev3",
+            "parameter_version": "rev3-v4md-2026-11",
+            "algorithm_revision": "v4-rev3-2026-11",
             "data_cutoff_day": "2026-11-14",
             "availability_semantics": "event_date_retrospective",
             "speed": {
-              "method": "robust_map_effort_margin_fit",
+              "method": "constrained_margin_fit",
               "target_type": "model_one_hour_capability_v60",
               "state": "model_estimated",
               "measurement_quality": "high",
               "effort_support": "unknown",
               "support": "medium",
-              "range_low": 3.4298023943700424,
-              "range_high": 4.148774074149115,
+              "range_low": 3.3,
+              "range_high": 3.9188326221912306,
               "range_meaning": "model_sensitivity_range_not_probability_interval",
               "evidence_date": "2026-11-04",
               "independent_activities": 2,
               "independent_days": 2,
-              "reasons": [
-                "prior_share_at_least_half_effective_curvature",
-                "prior_share_at_least_half_effective_curvature"
-              ],
+              "reasons": [],
               "limitations": [
                 "research_uncalibrated_not_population_calibrated",
-                "range_is_sensitivity_not_probability_interval",
+                "range_is_model_sensitivity_not_probability_interval",
                 "environment_temperature_not_corrected",
-                "terrain_gradient_not_corrected",
                 "power_law_valid_only_180_to_7200s",
-                "long_duration_uses_monotone_soft_constraint"
+                "long_duration_uses_monotone_envelope",
+                "steady_reserve_margin_class_has_no_input_channel"
               ],
               "evidence": [
-                {
-                  "activity_id": "synthetic-evolved-ordinary-long",
-                  "root_activity_id": "synthetic-evolved-ordinary-long",
-                  "activity_day": "2026-11-04",
-                  "source_version": "",
-                  "duration_s": 180,
-                  "measurement_quality": "high",
-                  "effort_support": "unknown"
-                },
-                {
-                  "activity_id": "synthetic-evolved-ordinary-long",
-                  "root_activity_id": "synthetic-evolved-ordinary-long",
-                  "activity_day": "2026-11-04",
-                  "source_version": "",
-                  "duration_s": 300,
-                  "measurement_quality": "high",
-                  "effort_support": "unknown"
-                },
-                {
-                  "activity_id": "synthetic-evolved-ordinary-long",
-                  "root_activity_id": "synthetic-evolved-ordinary-long",
-                  "activity_day": "2026-11-04",
-                  "source_version": "",
-                  "duration_s": 600,
-                  "measurement_quality": "high",
-                  "effort_support": "unknown"
-                },
-                {
-                  "activity_id": "synthetic-evolved-ordinary-long",
-                  "root_activity_id": "synthetic-evolved-ordinary-long",
-                  "activity_day": "2026-11-04",
-                  "source_version": "",
-                  "duration_s": 1200,
-                  "measurement_quality": "high",
-                  "effort_support": "unknown"
-                },
-                {
-                  "activity_id": "synthetic-evolved-ordinary-long",
-                  "root_activity_id": "synthetic-evolved-ordinary-long",
-                  "activity_day": "2026-11-04",
-                  "source_version": "",
-                  "duration_s": 1800,
-                  "measurement_quality": "high",
-                  "effort_support": "unknown"
-                },
                 {
                   "activity_id": "synthetic-evolved-ordinary-long",
                   "root_activity_id": "synthetic-evolved-ordinary-long",
@@ -1965,45 +1917,44 @@
                   "effort_support": "unknown"
                 }
               ],
-              "evidence_count": 12
+              "evidence_count": 7
             },
             "hr": {
-              "method": "joint_map_hr_dynamic_fit",
-              "target_type": "model_HRsteady_at_v60_declared_reference_conditions",
-              "state": "model_estimated",
+              "method": "regression_H_c_b_logv",
+              "target_type": "model_steady_state_HR_at_v60_reference_conditions",
+              "state": "prior_dominated",
               "measurement_quality": "",
               "effort_support": "",
-              "support": "medium",
-              "range_low": 159.75918112729468,
-              "range_high": 180.91948591149358,
+              "support": "low",
+              "range_low": 156.09909456067015,
+              "range_high": 168.29728368201043,
               "range_meaning": "model_sensitivity_range_not_probability_interval",
               "evidence_date": "2026-11-04",
               "independent_activities": 2,
               "independent_days": 2,
               "reasons": [
-                "optical_HR_downweighted_not_excluded"
+                "regression_H_c_b_logv_scale_unidentified"
               ],
               "limitations": [
                 "research_uncalibrated_not_population_calibrated",
-                "range_is_sensitivity_not_probability_interval",
-                "environment_temperature_not_corrected",
-                "model_prediction_not_lab_LTHR",
-                "hr_shape_knots_monotone_constraint_required",
-                "cadence_lock_suspected_series_excluded"
+                "range_is_model_sensitivity_not_probability_interval",
+                "model_steady_state_hr_not_lab_LTHR",
+                "q60_beta_tau_are_revocable_research_priors",
+                "hr_series_aggregated_to_60s_bins"
               ],
               "evidence": [
                 {
-                  "activity_id": "synthetic-evolved-ordinary-long",
-                  "root_activity_id": "synthetic-evolved-ordinary-long",
-                  "activity_day": "2026-11-04",
+                  "activity_id": "synthetic-evolved-ordinary-short",
+                  "root_activity_id": "synthetic-evolved-ordinary-short",
+                  "activity_day": "2026-10-25",
                   "source_version": "",
                   "measurement_quality": "sensor_unknown",
                   "effort_support": "unknown"
                 },
                 {
-                  "activity_id": "synthetic-evolved-ordinary-short",
-                  "root_activity_id": "synthetic-evolved-ordinary-short",
-                  "activity_day": "2026-10-25",
+                  "activity_id": "synthetic-evolved-ordinary-long",
+                  "root_activity_id": "synthetic-evolved-ordinary-long",
+                  "activity_day": "2026-11-04",
                   "source_version": "",
                   "measurement_quality": "sensor_unknown",
                   "effort_support": "unknown"
@@ -2014,8 +1965,8 @@
           },
           "fingerprint": "synthetic-evolved-display-vector",
           "speed_range_pace_per_km_sec": {
-            "fast": 241,
-            "slow": 292,
+            "fast": 255,
+            "slow": 303,
             "meaning": "model_sensitivity_range_not_probability_interval",
             "bound_kind": "two_sided"
           }
@@ -2024,18 +1975,17 @@
         "hr_zones": []
       },
       "expected": {
-        "pace": "4:18",
-        "pace_range": "支持范围 4:01–4:52 /km",
-        "hr": "171",
+        "pace": "4:49",
+        "pace_range": "支持范围 4:15–5:03 /km",
         "evidence_day": "2026-11-04",
         "cutoff_day": "2026-11-14",
         "computed_shanghai": "2026-11-15 00:30",
-        "hr_range": "支持范围 160–181 bpm",
+        "hr": "162",
+        "hr_range": "支持范围 156–168 bpm",
         "pace_state": "模型估计 · 基于你的普通训练估计",
-        "hr_state": "模型估计 · 基于你的普通训练估计",
-        "pace_algorithm_label": "当前有效算法 v4 · 修订 v4-rev2-2026-11",
-        "override_label": "已按你的选择使用 v4（修订 v4-rev2-2026-11）",
-        "hr_joint_label": "联合估计，非独立验证",
+        "hr_state": "先验主导 · 基于研究先验估计",
+        "pace_algorithm_label": "当前有效算法 v4 · 修订 v4-rev3-2026-11",
+        "override_label": "已按你的选择使用 v4（修订 v4-rev3-2026-11）",
         "hr_model_target_label": "模型推算稳态心率（参考条件下的一小时能力配速，不是生理乳酸阈值实测）"
       }
     },
@@ -2043,11 +1993,11 @@
       "name": "evolved-prior-only",
       "response": {
         "threshold": {
-          "speed_mps": 3.3088,
-          "pace_per_km_sec": 302,
-          "hr_bpm": 177.36,
+          "speed_mps": 2.9321,
+          "pace_per_km_sec": 341,
+          "hr_bpm": null,
           "speed_confidence": "low",
-          "hr_confidence": "low",
+          "hr_confidence": "none",
           "as_of_date": "2026-11-14",
           "calibration_id": 1,
           "algorithm_version": 4,
@@ -2061,43 +2011,41 @@
             "override": {
               "revision": 2,
               "algorithm_version": 4,
-              "algorithm_revision": "v4-rev2-2026-11"
+              "algorithm_revision": "v4-rev3-2026-11"
             }
           },
           "source": {
             "schema_version": 1,
             "state": "available",
             "strategy": "evolved_candidate",
-            "implementation": "evolved_joint_v2",
-            "parameter_version": "rev2-research-2026-11",
-            "algorithm_revision": "v4-rev2-2026-11",
+            "implementation": "evolved_v4md_rev3",
+            "parameter_version": "rev3-v4md-2026-11",
+            "algorithm_revision": "v4-rev3-2026-11",
             "data_cutoff_day": "2026-11-14",
             "availability_semantics": "event_date_retrospective",
             "speed": {
-              "method": "robust_map_effort_margin_fit",
+              "method": "constrained_margin_fit",
               "target_type": "model_one_hour_capability_v60",
               "state": "prior_dominated",
               "measurement_quality": "high",
               "effort_support": "unknown",
               "support": "low",
-              "range_low": 2.686537464325791,
-              "range_high": 3.767668759876755,
+              "range_low": 2.902880471486627,
+              "range_high": 3.6043484166518227,
               "range_meaning": "model_sensitivity_range_not_probability_interval",
               "evidence_date": "2026-10-30",
               "independent_activities": 1,
               "independent_days": 1,
               "reasons": [
-                "identifiability_limited_prior_dominated",
-                "single_activity_no_duration_diversity",
-                "prior_share_at_least_half_effective_curvature"
+                "single_layer_short_or_low_quality_only"
               ],
               "limitations": [
                 "research_uncalibrated_not_population_calibrated",
-                "range_is_sensitivity_not_probability_interval",
+                "range_is_model_sensitivity_not_probability_interval",
                 "environment_temperature_not_corrected",
-                "terrain_gradient_not_corrected",
                 "power_law_valid_only_180_to_7200s",
-                "long_duration_uses_monotone_soft_constraint"
+                "long_duration_uses_monotone_envelope",
+                "steady_reserve_margin_class_has_no_input_channel"
               ],
               "evidence": [
                 {
@@ -2158,35 +2106,32 @@
               "evidence_count": 6
             },
             "hr": {
-              "method": "aged_prior_only_HR",
-              "target_type": "model_HRsteady_at_v60_declared_reference_conditions",
-              "state": "prior_dominated",
+              "method": "unavailable",
+              "target_type": "model_steady_state_HR_at_v60_reference_conditions",
+              "state": "unavailable",
               "measurement_quality": "",
               "effort_support": "",
-              "support": "low",
-              "range_low": 165.0789576989573,
-              "range_high": 189.64104230104272,
-              "range_meaning": "model_sensitivity_range_not_probability_interval",
+              "support": "none",
+              "range_meaning": "unavailable",
               "independent_activities": 0,
               "independent_days": 0,
               "reasons": [
-                "prior_only_HR_estimate"
+                "no_HR_series_or_qualified_physiological_prior"
               ],
               "limitations": [
                 "research_uncalibrated_not_population_calibrated",
-                "range_is_sensitivity_not_probability_interval",
-                "environment_temperature_not_corrected",
-                "model_prediction_not_lab_LTHR",
-                "hr_shape_knots_monotone_constraint_required",
-                "cadence_lock_suspected_series_excluded"
+                "range_is_model_sensitivity_not_probability_interval",
+                "model_steady_state_hr_not_lab_LTHR",
+                "q60_beta_tau_are_revocable_research_priors",
+                "hr_series_aggregated_to_60s_bins"
               ],
               "evidence_count": 0
             }
           },
           "fingerprint": "synthetic-evolved-display-vector",
           "speed_range_pace_per_km_sec": {
-            "fast": 265,
-            "slow": 372,
+            "fast": 277,
+            "slow": 344,
             "meaning": "model_sensitivity_range_not_probability_interval",
             "bound_kind": "two_sided"
           }
@@ -2195,17 +2140,15 @@
         "hr_zones": []
       },
       "expected": {
-        "pace": "5:02",
-        "pace_range": "支持范围 4:25–6:12 /km",
-        "hr": "177",
+        "pace": "5:41",
+        "pace_range": "支持范围 4:37–5:44 /km",
         "evidence_day": "2026-10-30",
         "cutoff_day": "2026-11-14",
         "computed_shanghai": "2026-11-15 00:30",
-        "hr_range": "支持范围 165–190 bpm",
+        "hr": "—",
         "pace_state": "先验主导 · 基于研究先验估计",
-        "hr_state": "先验主导 · 基于研究先验估计",
-        "pace_algorithm_label": "当前有效算法 v4 · 修订 v4-rev2-2026-11",
-        "override_label": "已按你的选择使用 v4（修订 v4-rev2-2026-11）",
+        "hr_state": "暂无估计 · 没有心率序列，也没有可用的静息心率先验",
+        "pace_algorithm_label": "当前有效算法 v4 · 修订 v4-rev3-2026-11",
         "hr_model_target_label": "模型推算稳态心率（参考条件下的一小时能力配速，不是生理乳酸阈值实测）"
       }
     },
@@ -2213,11 +2156,11 @@
       "name": "evolved-measured-reference",
       "response": {
         "threshold": {
-          "speed_mps": 4.4696,
-          "pace_per_km_sec": 224,
-          "hr_bpm": 162,
-          "speed_confidence": "high",
-          "hr_confidence": "medium",
+          "speed_mps": 4.5,
+          "pace_per_km_sec": 222,
+          "hr_bpm": 167.3794,
+          "speed_confidence": "medium",
+          "hr_confidence": "low",
           "as_of_date": "2026-11-14",
           "calibration_id": 1,
           "algorithm_version": 4,
@@ -2231,86 +2174,41 @@
             "override": {
               "revision": 2,
               "algorithm_version": 4,
-              "algorithm_revision": "v4-rev2-2026-11"
+              "algorithm_revision": "v4-rev3-2026-11"
             }
           },
           "source": {
             "schema_version": 1,
             "state": "available",
             "strategy": "evolved_candidate",
-            "implementation": "evolved_joint_v2",
-            "parameter_version": "rev2-research-2026-11",
-            "algorithm_revision": "v4-rev2-2026-11",
+            "implementation": "evolved_v4md_rev3",
+            "parameter_version": "rev3-v4md-2026-11",
+            "algorithm_revision": "v4-rev3-2026-11",
             "data_cutoff_day": "2026-11-14",
             "availability_semantics": "event_date_retrospective",
             "speed": {
-              "method": "robust_map_effort_margin_fit",
+              "method": "constrained_margin_fit",
               "target_type": "model_one_hour_capability_v60",
-              "state": "measured_reference",
+              "state": "model_estimated",
               "measurement_quality": "high",
               "effort_support": "unknown",
-              "support": "high",
-              "range_low": 3.839830007246626,
-              "range_high": 4.864906771731347,
+              "support": "medium",
+              "range_low": 4.455224251871257,
+              "range_high": 5.327874599207208,
               "range_meaning": "model_sensitivity_range_not_probability_interval",
               "evidence_date": "2026-11-13",
-              "independent_activities": 2,
+              "independent_activities": 1,
               "independent_days": 1,
               "reasons": [],
               "limitations": [
                 "research_uncalibrated_not_population_calibrated",
-                "range_is_sensitivity_not_probability_interval",
+                "range_is_model_sensitivity_not_probability_interval",
                 "environment_temperature_not_corrected",
-                "terrain_gradient_not_corrected",
                 "power_law_valid_only_180_to_7200s",
-                "long_duration_uses_monotone_soft_constraint"
+                "long_duration_uses_monotone_envelope",
+                "steady_reserve_margin_class_has_no_input_channel"
               ],
               "evidence": [
-                {
-                  "activity_id": "synthetic-evolved-field-protocol",
-                  "root_activity_id": "synthetic-evolved-field-protocol",
-                  "activity_day": "2026-11-13",
-                  "source_version": "",
-                  "duration_s": 180,
-                  "measurement_quality": "high",
-                  "effort_support": "unknown"
-                },
-                {
-                  "activity_id": "synthetic-evolved-field-protocol",
-                  "root_activity_id": "synthetic-evolved-field-protocol",
-                  "activity_day": "2026-11-13",
-                  "source_version": "",
-                  "duration_s": 300,
-                  "measurement_quality": "high",
-                  "effort_support": "unknown"
-                },
-                {
-                  "activity_id": "synthetic-evolved-field-protocol",
-                  "root_activity_id": "synthetic-evolved-field-protocol",
-                  "activity_day": "2026-11-13",
-                  "source_version": "",
-                  "duration_s": 600,
-                  "measurement_quality": "high",
-                  "effort_support": "unknown"
-                },
-                {
-                  "activity_id": "synthetic-evolved-field-protocol",
-                  "root_activity_id": "synthetic-evolved-field-protocol",
-                  "activity_day": "2026-11-13",
-                  "source_version": "",
-                  "duration_s": 1200,
-                  "measurement_quality": "high",
-                  "effort_support": "unknown"
-                },
-                {
-                  "activity_id": "synthetic-evolved-field-protocol",
-                  "root_activity_id": "synthetic-evolved-field-protocol",
-                  "activity_day": "2026-11-13",
-                  "source_version": "",
-                  "duration_s": 1800,
-                  "measurement_quality": "high",
-                  "effort_support": "confirmed_maximal"
-                },
                 {
                   "activity_id": "synthetic-evolved-probable-hour",
                   "root_activity_id": "synthetic-evolved-probable-hour",
@@ -2375,29 +2273,30 @@
                   "effort_support": "probable_maximal"
                 }
               ],
-              "evidence_count": 12
+              "evidence_count": 7
             },
             "hr": {
-              "method": "measured_reference_median",
-              "target_type": "model_HRsteady_at_v60_declared_reference_conditions",
-              "state": "measured_reference",
+              "method": "regression_H_c_b_logv",
+              "target_type": "model_steady_state_HR_at_v60_reference_conditions",
+              "state": "prior_dominated",
               "measurement_quality": "",
               "effort_support": "",
-              "support": "medium",
-              "range_low": 153.9794308535129,
-              "range_high": 176.33870458099656,
+              "support": "low",
+              "range_low": 158.8267928557532,
+              "range_high": 181.36696570986467,
               "range_meaning": "model_sensitivity_range_not_probability_interval",
               "evidence_date": "2026-11-13",
               "independent_activities": 2,
               "independent_days": 1,
-              "reasons": [],
+              "reasons": [
+                "regression_H_c_b_logv_scale_unidentified"
+              ],
               "limitations": [
                 "research_uncalibrated_not_population_calibrated",
-                "range_is_sensitivity_not_probability_interval",
-                "environment_temperature_not_corrected",
-                "model_prediction_not_lab_LTHR",
-                "hr_shape_knots_monotone_constraint_required",
-                "cadence_lock_suspected_series_excluded"
+                "range_is_model_sensitivity_not_probability_interval",
+                "model_steady_state_hr_not_lab_LTHR",
+                "q60_beta_tau_are_revocable_research_priors",
+                "hr_series_aggregated_to_60s_bins"
               ],
               "evidence": [
                 {
@@ -2422,8 +2321,8 @@
           },
           "fingerprint": "synthetic-evolved-display-vector",
           "speed_range_pace_per_km_sec": {
-            "fast": 206,
-            "slow": 260,
+            "fast": 188,
+            "slow": 224,
             "meaning": "model_sensitivity_range_not_probability_interval",
             "bound_kind": "two_sided"
           }
@@ -2432,18 +2331,17 @@
         "hr_zones": []
       },
       "expected": {
-        "pace": "3:44",
-        "pace_range": "支持范围 3:26–4:20 /km",
-        "hr": "162",
+        "pace": "3:42",
+        "pace_range": "支持范围 3:08–3:44 /km",
         "evidence_day": "2026-11-13",
         "cutoff_day": "2026-11-14",
         "computed_shanghai": "2026-11-15 00:30",
-        "hr_range": "支持范围 154–176 bpm",
-        "pace_state": "实测参考",
-        "hr_state": "实测参考",
-        "pace_algorithm_label": "当前有效算法 v4 · 修订 v4-rev2-2026-11",
-        "override_label": "已按你的选择使用 v4（修订 v4-rev2-2026-11）",
-        "hr_reference_target_label": "参考条件下预计心率（一小时能力配速）"
+        "hr": "167",
+        "hr_range": "支持范围 159–181 bpm",
+        "pace_state": "模型估计 · 基于你的普通训练估计",
+        "hr_state": "先验主导 · 基于研究先验估计",
+        "pace_algorithm_label": "当前有效算法 v4 · 修订 v4-rev3-2026-11",
+        "hr_model_target_label": "模型推算稳态心率（参考条件下的一小时能力配速，不是生理乳酸阈值实测）"
       }
     },
     {
@@ -2468,16 +2366,16 @@
             "override": {
               "revision": 2,
               "algorithm_version": 4,
-              "algorithm_revision": "v4-rev2-2026-11"
+              "algorithm_revision": "v4-rev3-2026-11"
             }
           },
           "source": {
             "schema_version": 1,
             "state": "available",
             "strategy": "evolved_candidate",
-            "implementation": "evolved_joint_v2",
-            "parameter_version": "rev2-research-2026-11",
-            "algorithm_revision": "v4-rev2-2026-11",
+            "implementation": "evolved_v4md_rev3",
+            "parameter_version": "rev3-v4md-2026-11",
+            "algorithm_revision": "v4-rev3-2026-11",
             "data_cutoff_day": "2026-11-14",
             "availability_semantics": "event_date_retrospective",
             "speed": {
@@ -2495,17 +2393,17 @@
               ],
               "limitations": [
                 "research_uncalibrated_not_population_calibrated",
-                "range_is_sensitivity_not_probability_interval",
+                "range_is_model_sensitivity_not_probability_interval",
                 "environment_temperature_not_corrected",
-                "terrain_gradient_not_corrected",
                 "power_law_valid_only_180_to_7200s",
-                "long_duration_uses_monotone_soft_constraint"
+                "long_duration_uses_monotone_envelope",
+                "steady_reserve_margin_class_has_no_input_channel"
               ],
               "evidence_count": 0
             },
             "hr": {
               "method": "unavailable",
-              "target_type": "model_HRsteady_at_v60_declared_reference_conditions",
+              "target_type": "model_steady_state_HR_at_v60_reference_conditions",
               "state": "unavailable",
               "measurement_quality": "",
               "effort_support": "",
@@ -2518,22 +2416,15 @@
               ],
               "limitations": [
                 "research_uncalibrated_not_population_calibrated",
-                "range_is_sensitivity_not_probability_interval",
-                "environment_temperature_not_corrected",
-                "model_prediction_not_lab_LTHR",
-                "hr_shape_knots_monotone_constraint_required",
-                "cadence_lock_suspected_series_excluded"
+                "range_is_model_sensitivity_not_probability_interval",
+                "model_steady_state_hr_not_lab_LTHR",
+                "q60_beta_tau_are_revocable_research_priors",
+                "hr_series_aggregated_to_60s_bins"
               ],
               "evidence_count": 0
             }
           },
-          "fingerprint": "synthetic-evolved-display-vector",
-          "speed_range_pace_per_km_sec": {
-            "fast": null,
-            "slow": null,
-            "meaning": "model_sensitivity_range_not_probability_interval",
-            "bound_kind": "unavailable"
-          }
+          "fingerprint": "synthetic-evolved-display-vector"
         },
         "pace_zones": [],
         "hr_zones": []
@@ -2541,14 +2432,13 @@
       "expected": {
         "pace": "—",
         "pace_range": null,
-        "hr": "—",
         "evidence_day": null,
         "cutoff_day": "2026-11-14",
         "computed_shanghai": "2026-11-15 00:30",
+        "hr": "—",
         "pace_state": "暂无估计 · 窗口内没有有效跑步输入",
         "hr_state": "暂无估计 · 没有心率序列，也没有可用的静息心率先验",
-        "pace_algorithm_label": "当前有效算法 v4 · 修订 v4-rev2-2026-11",
-        "override_label": "已按你的选择使用 v4（修订 v4-rev2-2026-11）",
+        "pace_algorithm_label": "当前有效算法 v4 · 修订 v4-rev3-2026-11",
         "hr_model_target_label": "模型推算稳态心率（参考条件下的一小时能力配速，不是生理乳酸阈值实测）"
       }
     },
@@ -2667,11 +2557,11 @@
       "name": "override-selected",
       "response": {
         "threshold": {
-          "speed_mps": 3.8821,
-          "pace_per_km_sec": 258,
-          "hr_bpm": 171.466,
+          "speed_mps": 3.4581,
+          "pace_per_km_sec": 289,
+          "hr_bpm": 162.1615,
           "speed_confidence": "medium",
-          "hr_confidence": "medium",
+          "hr_confidence": "low",
           "as_of_date": "2026-11-14",
           "calibration_id": 1,
           "algorithm_version": 4,
@@ -2685,89 +2575,41 @@
             "override": {
               "revision": 2,
               "algorithm_version": 4,
-              "algorithm_revision": "v4-rev2-2026-11"
+              "algorithm_revision": "v4-rev3-2026-11"
             }
           },
           "source": {
             "schema_version": 1,
             "state": "available",
             "strategy": "evolved_candidate",
-            "implementation": "evolved_joint_v2",
-            "parameter_version": "rev2-research-2026-11",
-            "algorithm_revision": "v4-rev2-2026-11",
+            "implementation": "evolved_v4md_rev3",
+            "parameter_version": "rev3-v4md-2026-11",
+            "algorithm_revision": "v4-rev3-2026-11",
             "data_cutoff_day": "2026-11-14",
             "availability_semantics": "event_date_retrospective",
             "speed": {
-              "method": "robust_map_effort_margin_fit",
+              "method": "constrained_margin_fit",
               "target_type": "model_one_hour_capability_v60",
               "state": "model_estimated",
               "measurement_quality": "high",
               "effort_support": "unknown",
               "support": "medium",
-              "range_low": 3.4298023943700424,
-              "range_high": 4.148774074149115,
+              "range_low": 3.3,
+              "range_high": 3.9188326221912306,
               "range_meaning": "model_sensitivity_range_not_probability_interval",
               "evidence_date": "2026-11-04",
               "independent_activities": 2,
               "independent_days": 2,
-              "reasons": [
-                "prior_share_at_least_half_effective_curvature",
-                "prior_share_at_least_half_effective_curvature"
-              ],
+              "reasons": [],
               "limitations": [
                 "research_uncalibrated_not_population_calibrated",
-                "range_is_sensitivity_not_probability_interval",
+                "range_is_model_sensitivity_not_probability_interval",
                 "environment_temperature_not_corrected",
-                "terrain_gradient_not_corrected",
                 "power_law_valid_only_180_to_7200s",
-                "long_duration_uses_monotone_soft_constraint"
+                "long_duration_uses_monotone_envelope",
+                "steady_reserve_margin_class_has_no_input_channel"
               ],
               "evidence": [
-                {
-                  "activity_id": "synthetic-evolved-ordinary-long",
-                  "root_activity_id": "synthetic-evolved-ordinary-long",
-                  "activity_day": "2026-11-04",
-                  "source_version": "",
-                  "duration_s": 180,
-                  "measurement_quality": "high",
-                  "effort_support": "unknown"
-                },
-                {
-                  "activity_id": "synthetic-evolved-ordinary-long",
-                  "root_activity_id": "synthetic-evolved-ordinary-long",
-                  "activity_day": "2026-11-04",
-                  "source_version": "",
-                  "duration_s": 300,
-                  "measurement_quality": "high",
-                  "effort_support": "unknown"
-                },
-                {
-                  "activity_id": "synthetic-evolved-ordinary-long",
-                  "root_activity_id": "synthetic-evolved-ordinary-long",
-                  "activity_day": "2026-11-04",
-                  "source_version": "",
-                  "duration_s": 600,
-                  "measurement_quality": "high",
-                  "effort_support": "unknown"
-                },
-                {
-                  "activity_id": "synthetic-evolved-ordinary-long",
-                  "root_activity_id": "synthetic-evolved-ordinary-long",
-                  "activity_day": "2026-11-04",
-                  "source_version": "",
-                  "duration_s": 1200,
-                  "measurement_quality": "high",
-                  "effort_support": "unknown"
-                },
-                {
-                  "activity_id": "synthetic-evolved-ordinary-long",
-                  "root_activity_id": "synthetic-evolved-ordinary-long",
-                  "activity_day": "2026-11-04",
-                  "source_version": "",
-                  "duration_s": 1800,
-                  "measurement_quality": "high",
-                  "effort_support": "unknown"
-                },
                 {
                   "activity_id": "synthetic-evolved-ordinary-long",
                   "root_activity_id": "synthetic-evolved-ordinary-long",
@@ -2832,45 +2674,44 @@
                   "effort_support": "unknown"
                 }
               ],
-              "evidence_count": 12
+              "evidence_count": 7
             },
             "hr": {
-              "method": "joint_map_hr_dynamic_fit",
-              "target_type": "model_HRsteady_at_v60_declared_reference_conditions",
-              "state": "model_estimated",
+              "method": "regression_H_c_b_logv",
+              "target_type": "model_steady_state_HR_at_v60_reference_conditions",
+              "state": "prior_dominated",
               "measurement_quality": "",
               "effort_support": "",
-              "support": "medium",
-              "range_low": 159.75918112729468,
-              "range_high": 180.91948591149358,
+              "support": "low",
+              "range_low": 156.09909456067015,
+              "range_high": 168.29728368201043,
               "range_meaning": "model_sensitivity_range_not_probability_interval",
               "evidence_date": "2026-11-04",
               "independent_activities": 2,
               "independent_days": 2,
               "reasons": [
-                "optical_HR_downweighted_not_excluded"
+                "regression_H_c_b_logv_scale_unidentified"
               ],
               "limitations": [
                 "research_uncalibrated_not_population_calibrated",
-                "range_is_sensitivity_not_probability_interval",
-                "environment_temperature_not_corrected",
-                "model_prediction_not_lab_LTHR",
-                "hr_shape_knots_monotone_constraint_required",
-                "cadence_lock_suspected_series_excluded"
+                "range_is_model_sensitivity_not_probability_interval",
+                "model_steady_state_hr_not_lab_LTHR",
+                "q60_beta_tau_are_revocable_research_priors",
+                "hr_series_aggregated_to_60s_bins"
               ],
               "evidence": [
                 {
-                  "activity_id": "synthetic-evolved-ordinary-long",
-                  "root_activity_id": "synthetic-evolved-ordinary-long",
-                  "activity_day": "2026-11-04",
+                  "activity_id": "synthetic-evolved-ordinary-short",
+                  "root_activity_id": "synthetic-evolved-ordinary-short",
+                  "activity_day": "2026-10-25",
                   "source_version": "",
                   "measurement_quality": "sensor_unknown",
                   "effort_support": "unknown"
                 },
                 {
-                  "activity_id": "synthetic-evolved-ordinary-short",
-                  "root_activity_id": "synthetic-evolved-ordinary-short",
-                  "activity_day": "2026-10-25",
+                  "activity_id": "synthetic-evolved-ordinary-long",
+                  "root_activity_id": "synthetic-evolved-ordinary-long",
+                  "activity_day": "2026-11-04",
                   "source_version": "",
                   "measurement_quality": "sensor_unknown",
                   "effort_support": "unknown"
@@ -2881,8 +2722,8 @@
           },
           "fingerprint": "synthetic-evolved-display-vector",
           "speed_range_pace_per_km_sec": {
-            "fast": 241,
-            "slow": 292,
+            "fast": 255,
+            "slow": 303,
             "meaning": "model_sensitivity_range_not_probability_interval",
             "bound_kind": "two_sided"
           }
@@ -2891,18 +2732,17 @@
         "hr_zones": []
       },
       "expected": {
-        "pace": "4:18",
-        "pace_range": "支持范围 4:01–4:52 /km",
-        "hr": "171",
+        "pace": "4:49",
+        "pace_range": "支持范围 4:15–5:03 /km",
         "evidence_day": "2026-11-04",
         "cutoff_day": "2026-11-14",
         "computed_shanghai": "2026-11-15 00:30",
-        "hr_range": "支持范围 160–181 bpm",
+        "hr": "162",
+        "hr_range": "支持范围 156–168 bpm",
         "pace_state": "模型估计 · 基于你的普通训练估计",
-        "hr_state": "模型估计 · 基于你的普通训练估计",
-        "pace_algorithm_label": "当前有效算法 v4 · 修订 v4-rev2-2026-11",
-        "override_label": "已按你的选择使用 v4（修订 v4-rev2-2026-11）",
-        "hr_joint_label": "联合估计，非独立验证",
+        "hr_state": "先验主导 · 基于研究先验估计",
+        "pace_algorithm_label": "当前有效算法 v4 · 修订 v4-rev3-2026-11",
+        "override_label": "已按你的选择使用 v4（修订 v4-rev3-2026-11）",
         "hr_model_target_label": "模型推算稳态心率（参考条件下的一小时能力配速，不是生理乳酸阈值实测）"
       }
     },
@@ -2927,7 +2767,7 @@
             "override": {
               "revision": 2,
               "algorithm_version": 4,
-              "algorithm_revision": "v4-rev2-2026-11"
+              "algorithm_revision": "v4-rev3-2026-11"
             }
           }
         },

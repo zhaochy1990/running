@@ -155,12 +155,12 @@ func TestUserEvolvedPublishClosedLoopMySQL(t *testing.T) {
 	// A is an existing v3 user: four days of v3 snapshots (the trial starts
 	// from a real production shape, and historical days must keep v3 lineage).
 	for i := 3; i >= 0; i-- {
-		if _, _, err := runCalibrationVersion(ctx, st, userA, today.AddDate(0, 0, -i), 3); err != nil {
+		if _, err := runCalibrationVersion(ctx, st, userA, today.AddDate(0, 0, -i), 3); err != nil {
 			t.Fatal(err)
 		}
 	}
 	// B stays on the global v3 selection the whole time.
-	if _, _, err := runCalibrationVersion(ctx, st, userB, today, 3); err != nil {
+	if _, err := runCalibrationVersion(ctx, st, userB, today, 3); err != nil {
 		t.Fatal(err)
 	}
 	bundleB, err := st.ReadEffectiveRunningCalibration(ctx, userB, day, storage.CalibrationActive)

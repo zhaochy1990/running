@@ -180,13 +180,17 @@ func ptrValue(v *float64) any {
 // display contract depends on them) and then locks the shared fixture to the
 // real producer output.
 func TestCalibrationEvolvedClientVectors(t *testing.T) {
+	// v4.md §8.3 publishes four output states (no measured_reference
+	// centers): the label-free window is model_estimated; the easy-solo
+	// window is prior_dominated; HR without a usable R/M pair walks the §6.4
+	// regression path (prior_dominated) or is unavailable with its reason.
 	expectations := map[string]struct {
 		speedState, hrState string
 		speedMethod, hrReas string
 	}{
-		"evolved-low-evidence":       {speedState: "model_estimated", hrState: "model_estimated"},
-		"evolved-prior-only":         {speedState: "prior_dominated", hrState: "prior_dominated", hrReas: "prior_only_HR_estimate"},
-		"evolved-measured-reference": {speedState: "measured_reference", hrState: "measured_reference"},
+		"evolved-low-evidence":       {speedState: "model_estimated", hrState: "prior_dominated", hrReas: "regression_H_c_b_logv_scale_unidentified"},
+		"evolved-prior-only":         {speedState: "prior_dominated", hrState: "unavailable", hrReas: "no_HR_series_or_qualified_physiological_prior"},
+		"evolved-measured-reference": {speedState: "model_estimated", hrState: "prior_dominated", hrReas: "regression_H_c_b_logv_scale_unidentified"},
 		"evolved-unavailable":        {speedState: "unavailable", hrState: "unavailable", hrReas: "no_HR_series_or_qualified_physiological_prior"},
 	}
 	var exports []map[string]any

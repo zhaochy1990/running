@@ -17,6 +17,8 @@ const methods: Record<string, string> = {
   independent_duration_model: "跨时长模型推断", field_test_protocol: "现场测试协议",
   // evolved-v4 (#993) estimator stamps; plain words, never accuracy claims.
   robust_map_effort_margin_fit: "普通训练模型推断", aged_prior_only: "研究先验（随时间老化）", aged_prior_only_HR: "研究先验（随时间老化）",
+  constrained_margin_fit: "受表现下界约束的余量估计", bound_fallback: "表现下界回退估计", long_training_fallback: "长跑宽先验回退估计",
+  joint_constrained_hr_fit: "配速与心率联合模型推断", regression_H_c_b_logv: "对数速度回归（尺度不可辨识）", prior_only_R_M_085: "静息/最大心率先验（0.85）",
   measured_reference_median: "实测参考中位数（已核验协议）", joint_map_hr_dynamic_fit: "配速与心率联合模型推断",
   prior_predict_only: "先验预测（窗口内无新增可比证据）", unavailable: "无法估计",
 };
@@ -47,6 +49,14 @@ function reasonText(code: string): string {
   if (code === "inputs_physically_invalid") return "输入超出物理合理范围";
   if (code === "current_window_empty_prior_only_aged") return "当前窗口无新证据，仅按先验老化更新";
   if (code === "identifiability_limited_prior_dominated") return "证据不足以区分能力与余量，先验主导";
+  if (code === "single_layer_short_or_low_quality_only") return "仅短时、低质量或单层证据，先验主导";
+  if (code === "prior_scenarios_move_center_beyond_threshold") return "先验情景对中心影响超过阈值，先验主导";
+  if (code === "regression_H_c_b_logv_scale_unidentified") return "心率尺度不可辨识，采用对数速度回归估计";
+  if (code === "current_window_empty_stale_audit_estimate") return "当前窗口内无支持，输出为历史（陈旧）估计";
+  if (code === "hrmax_input_conflict") return "最大心率输入与实测冲突，已切换估计路径";
+  if (code === "no_applicable_duration") return "没有适用时长的跑步证据";
+  if (code === "joint_solver_failed") return "联合求解失败，已保留配速单独解";
+  if (code === "hr_prediction_out_of_domain") return "心率预测超出适用域，不予发布";
   if (code === "single_activity_no_duration_diversity") return "仅一次活动且时长单一，可辨识性不足";
   if (code === "optical_HR_downweighted_not_excluded") return "光电腕式心率已降权使用（未排除）";
   if (code === "prior_only_HR_estimate") return "心率估计仅来自生理先验";
@@ -121,7 +131,7 @@ export function calibrationDisplay(threshold: StrideThreshold | null | undefined
     if (!isSpeed) {
       if (m.target_type === "lab_method_specific_LTHR") details.push(`实验室方法特定 LTHR · ${m.lab_method || "具体方法未提供"}`);
       else if (m.target_type === "field_HR_proxy_not_physiological_LTHR") details.push("现场心率代理，不是生理乳酸阈值实测");
-      else if (m.target_type === "model_HRsteady_at_v60_declared_reference_conditions") {
+      else if (m.target_type === "model_HRsteady_at_v60_declared_reference_conditions" || m.target_type === "model_steady_state_HR_at_v60_reference_conditions") {
         // P2-2 (#1000 review): a measured_reference center is the verified
         // protocol median, not a model prediction — never label it as one.
         details.push(m.state === "measured_reference"
@@ -131,7 +141,7 @@ export function calibrationDisplay(threshold: StrideThreshold | null | undefined
       else if (m.target_type === "unavailable") details.push("心率目标不可用，无法可靠估计");
       else details.push("训练心率估计，不是独立实验室检测值");
     }
-    if (!isSpeed && m.method === "joint_map_hr_dynamic_fit") details.push("联合估计，非独立验证");
+    if (!isSpeed && (m.method === "joint_map_hr_dynamic_fit" || m.method === "joint_constrained_hr_fit")) details.push("联合估计，非独立验证");
     details.push(`证据日 ${m.evidence_date || "未提供"}`);
     if (m.latest_stale_evidence_date) details.push(`最近陈旧协议日 ${m.latest_stale_evidence_date}`);
     if (m.latest_rejected_evidence_date && m.latest_rejected_evidence_date !== m.latest_stale_evidence_date) details.push(`最近未采用证据日 ${m.latest_rejected_evidence_date}`);

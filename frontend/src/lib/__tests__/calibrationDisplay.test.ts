@@ -126,14 +126,16 @@ describe("calibration explanation projection", () => {
     const speed = calibrationDisplay(th, "speed");
     const hr = calibrationDisplay(th, "hr");
     expect(speed.status).toBe("模型估计 · 基于你的普通训练估计");
-    expect(hr.status).toBe("模型估计 · 基于你的普通训练估计");
-    expect(speed.value).toBe("4:18");
-    expect(speed.range).toBe("支持范围 4:01–4:52 /km");
-    expect(hr.value).toBe("171");
-    expect(hr.range).toBe("支持范围 160–181 bpm");
+    // v4 rev3: without a usable R/M pair the HR walks the §6.4 regression
+    // path — an honest prior-dominated model estimate, never a suppression.
+    expect(hr.status).toBe("先验主导 · 基于研究先验估计");
+    expect(speed.value).toBe("4:49");
+    expect(speed.range).toBe("支持范围 4:15–5:03 /km");
+    expect(hr.value).toBe("162");
+    expect(hr.range).toBe("支持范围 156–168 bpm");
     expect(speed.details.join(" ")).not.toContain("必须先测试");
     expect(hr.details.join(" ")).not.toContain("必须先测试");
-    expect(hr.details).toContain("联合估计，非独立验证");
+    expect(hr.details.join(" ")).toContain("对数速度回归");
     // Non-probabilistic ranges must never claim a 95% CI; the negated
     // disclaimer is the required wording, not a claim.
     expect(speed.range ?? "").not.toContain("95%");
@@ -146,22 +148,24 @@ describe("calibration explanation projection", () => {
     const speed = calibrationDisplay(th, "speed");
     const hr = calibrationDisplay(th, "hr");
     expect(speed.status).toBe("先验主导 · 基于研究先验估计");
-    expect(hr.status).toBe("先验主导 · 基于研究先验估计");
-    expect(speed.details.join(" ")).toContain("证据不足以区分能力与余量");
-    expect(hr.details.join(" ")).toContain("心率估计仅来自生理先验");
+    // v4 rev3: HRmax needs a real observed source; with none the HR channel
+    // is unavailable with its categorical reason (§6.4 row 4).
+    expect(hr.status).toBe("暂无估计 · 没有心率序列，也没有可用的静息心率先验");
+    expect(speed.details.join(" ")).toContain("仅短时、低质量或单层证据，先验主导");
     expect(speed.value).not.toBe("—");
-    expect(hr.value).not.toBe("—");
+    expect(hr.value).toBe("—");
   });
 
-  it("keeps measured reference distinct from estimated thresholds", () => {
+  it("keeps the verified reference informative without echoing it as a measured center", () => {
     const th = caseThreshold("evolved-measured-reference");
-    expect(calibrationDisplay(th, "speed").status).toBe("实测参考");
-    expect(calibrationDisplay(th, "hr").status).toBe("实测参考");
+    // v4 rev3 §8.3 publishes four output states: the verified reference
+    // informs the constrained fit (model_estimated), it is never echoed as
+    // a measured_reference center.
+    expect(calibrationDisplay(th, "speed").status).toBe("模型估计 · 基于你的普通训练估计");
+    expect(calibrationDisplay(th, "hr").status).toBe("先验主导 · 基于研究先验估计");
     const hr = calibrationDisplay(th, "hr");
-    expect(hr.details.join(" ")).toContain("实测参考中位数（已核验协议）");
-    expect(hr.details).toContain("参考条件下预计心率（一小时能力配速）");
-    expect(hr.details.join(" ")).not.toContain("联合估计，非独立验证");
-    expect(hr.details.join(" ")).not.toContain("模型推算稳态心率");
+    expect(hr.details.join(" ")).toContain("对数速度回归");
+    expect(hr.details.join(" ")).toContain("模型推算稳态心率");
   });
 
   it("explains unavailable estimates with categorical reasons and no invented values", () => {
@@ -187,9 +191,9 @@ describe("calibration explanation projection", () => {
 
   it("discloses the per-user override pin and its snapshot-missing fallback separately", () => {
     const pinned = caseThreshold("override-selected");
-    expect(pinned.selection?.override?.algorithm_revision).toBe("v4-rev2-2026-11");
-    expect(calibrationDisplay(pinned, "speed").details).toContain("已按你的选择使用 v4（修订 v4-rev2-2026-11）");
-    expect(calibrationDisplay(pinned, "speed").details).toContain("当前有效算法 v4 · 修订 v4-rev2-2026-11");
+    expect(pinned.selection?.override?.algorithm_revision).toBe("v4-rev3-2026-11");
+    expect(calibrationDisplay(pinned, "speed").details).toContain("已按你的选择使用 v4（修订 v4-rev3-2026-11）");
+    expect(calibrationDisplay(pinned, "speed").details).toContain("当前有效算法 v4 · 修订 v4-rev3-2026-11");
     const fallback = caseThreshold("override-fallback");
     const speed = calibrationDisplay(fallback, "speed");
     expect(speed.details).toContain("你选择的版本在该日期无快照，暂用全局有效版本");

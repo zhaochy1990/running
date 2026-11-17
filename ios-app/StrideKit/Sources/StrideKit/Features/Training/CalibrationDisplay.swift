@@ -57,7 +57,7 @@ public func calibrationDisplay(_ response: StrideZonesResponse?, metric: Calibra
         if metric == .heartRate {
             switch s.targetType {
             case "field_HR_proxy_not_physiological_LTHR": details.append("目标：现场心率代理，不是生理乳酸阈值实测")
-            case "model_HRsteady_at_v60_declared_reference_conditions":
+            case "model_HRsteady_at_v60_declared_reference_conditions", "model_steady_state_HR_at_v60_reference_conditions":
                 // P2-2 (#1000 review): a measured_reference center is the verified
                 // protocol median, not a model prediction — never label it as one.
                 details.append(s.state == "measured_reference"
@@ -68,7 +68,7 @@ public func calibrationDisplay(_ response: StrideZonesResponse?, metric: Calibra
             case "unavailable": details.append("目标：暂无可用心率参考")
             default: details.append("目标语义未提供或暂不支持")
             }
-            if s.method == "joint_map_hr_dynamic_fit" { details.append("联合估计，非独立验证") }
+            if s.method == "joint_map_hr_dynamic_fit" || s.method == "joint_constrained_hr_fit" { details.append("联合估计，非独立验证") }
         }
         details.append("数据质量：\(calibrationQuality(s.measurementQuality))；全力支持：\(calibrationEffort(s.effortSupport))")
         details.append("独立活动 \(s.independentActivities.map(String.init) ?? "未知") 次 · 独立日期 \(s.independentDays.map(String.init) ?? "未知") 天")
@@ -199,6 +199,12 @@ private func calibrationMethod(_ value: String?) -> String {
     case "legacy_training_estimate", "legacy_v3_training_estimate": "旧版训练估计"
     // evolved-v4 (#993) estimator stamps; plain words, never accuracy claims.
     case "robust_map_effort_margin_fit": "普通训练模型推断"
+    case "constrained_margin_fit": "受表现下界约束的余量估计"
+    case "bound_fallback": "表现下界回退估计"
+    case "long_training_fallback": "长跑宽先验回退估计"
+    case "joint_constrained_hr_fit": "配速与心率联合模型推断"
+    case "regression_H_c_b_logv": "对数速度回归（尺度不可辨识）"
+    case "prior_only_R_M_085": "静息/最大心率先验（0.85）"
     case "aged_prior_only", "aged_prior_only_HR": "研究先验（随时间老化）"
     case "measured_reference_median": "实测参考中位数（已核验协议）"
     case "joint_map_hr_dynamic_fit": "配速与心率联合模型推断"
@@ -241,6 +247,14 @@ private func calibrationReason(_ value: String) -> String {
     case "inputs_physically_invalid": "输入超出物理合理范围"
     case "current_window_empty_prior_only_aged": "当前窗口无新证据，仅按先验老化更新"
     case "identifiability_limited_prior_dominated": "证据不足以区分能力与余量，先验主导"
+    case "single_layer_short_or_low_quality_only": "仅短时、低质量或单层证据，先验主导"
+    case "prior_scenarios_move_center_beyond_threshold": "先验情景对中心影响超过阈值，先验主导"
+    case "regression_H_c_b_logv_scale_unidentified": "心率尺度不可辨识，采用对数速度回归估计"
+    case "current_window_empty_stale_audit_estimate": "当前窗口内无支持，输出为历史（陈旧）估计"
+    case "hrmax_input_conflict": "最大心率输入与实测冲突，已切换估计路径"
+    case "no_applicable_duration": "没有适用时长的跑步证据"
+    case "joint_solver_failed": "联合求解失败，已保留配速单独解"
+    case "hr_prediction_out_of_domain": "心率预测超出适用域，不予发布"
     case "single_activity_no_duration_diversity": "仅一次活动且时长单一，可辨识性不足"
     case "optical_HR_downweighted_not_excluded": "光电腕式心率已降权使用（未排除）"
     case "prior_only_HR_estimate": "心率估计仅来自生理先验"

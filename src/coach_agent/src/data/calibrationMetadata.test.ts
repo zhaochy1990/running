@@ -50,7 +50,7 @@ test("algorithm revision and estimation state stay optional for evolved v4 (#995
     strategy: "evolved_candidate",
     implementation: "evolved_joint_v2",
     parameter_version: "rev2-research-2026-11",
-    algorithm_revision: "v4-rev2-2026-11",
+    algorithm_revision: "v4-rev3-2026-11",
     data_cutoff_day: "2026-11-16",
     speed: {
       method: "speed_duration_inference",
@@ -69,7 +69,7 @@ test("algorithm revision and estimation state stay optional for evolved v4 (#995
       evidence_count: 0,
     },
   });
-  assert.equal(evolved.algorithm_revision, "v4-rev2-2026-11");
+  assert.equal(evolved.algorithm_revision, "v4-rev3-2026-11");
   assert.equal(evolved.speed?.state, "prior_dominated");
 });
 
@@ -93,8 +93,8 @@ test("selection override stays optional and bounded (#999)", () => {
     effective_version: 3,
     state: "fallback",
     reason: "override_snapshot_missing",
-    override: { revision: 2, algorithm_version: 4, algorithm_revision: "v4-rev2-2026-11" },
+    override: { revision: 2, algorithm_version: 4, algorithm_revision: "v4-rev3-2026-11" },
   });
-  assert.deepEqual(overridden.override, { revision: 2, algorithm_version: 4, algorithm_revision: "v4-rev2-2026-11" });
+  assert.deepEqual(overridden.override, { revision: 2, algorithm_version: 4, algorithm_revision: "v4-rev3-2026-11" });
   assert.equal(overridden.state, "fallback");
 });

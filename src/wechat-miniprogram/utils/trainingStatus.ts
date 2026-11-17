@@ -496,6 +496,8 @@ const CALIBRATION_WORDS: Record<string, string> = {
   missing_cadence_cannot_exclude_cadence_lock: '缺少步频，无法排除心率与步频锁定',
   // 演进 v4（#993）估计方法与原因，与 Web/iOS 共用同一组大白话文案。
   robust_map_effort_margin_fit: '普通训练模型推断',
+  constrained_margin_fit: '受表现下界约束的余量估计', bound_fallback: '表现下界回退估计', long_training_fallback: '长跑宽先验回退估计',
+  joint_constrained_hr_fit: '配速与心率联合模型推断', regression_H_c_b_logv: '对数速度回归（尺度不可辨识）', prior_only_R_M_085: '静息/最大心率先验（0.85）',
   aged_prior_only: '研究先验（随时间老化）', aged_prior_only_HR: '研究先验（随时间老化）',
   measured_reference_median: '实测参考中位数（已核验协议）',
   joint_map_hr_dynamic_fit: '配速与心率联合模型推断',
@@ -506,6 +508,14 @@ const CALIBRATION_WORDS: Record<string, string> = {
   inputs_physically_invalid: '输入超出物理合理范围',
   current_window_empty_prior_only_aged: '当前窗口无新证据，仅按先验老化更新',
   identifiability_limited_prior_dominated: '证据不足以区分能力与余量，先验主导',
+  single_layer_short_or_low_quality_only: '仅短时、低质量或单层证据，先验主导',
+  prior_scenarios_move_center_beyond_threshold: '先验情景对中心影响超过阈值，先验主导',
+  regression_H_c_b_logv_scale_unidentified: '心率尺度不可辨识，采用对数速度回归估计',
+  current_window_empty_stale_audit_estimate: '当前窗口内无支持，输出为历史（陈旧）估计',
+  hrmax_input_conflict: '最大心率输入与实测冲突，已切换估计路径',
+  no_applicable_duration: '没有适用时长的跑步证据',
+  joint_solver_failed: '联合求解失败，已保留配速单独解',
+  hr_prediction_out_of_domain: '心率预测超出适用域，不予发布',
   single_activity_no_duration_diversity: '仅一次活动且时长单一，可辨识性不足',
   supporting_evidence_older_than_staleness_window: '支持证据已超过陈旧窗口',
   optical_HR_downweighted_not_excluded: '光电腕式心率已降权使用（未排除）',
@@ -605,14 +615,14 @@ export function projectCalibration(zones: import('../types/health').StrideZonesR
         // P2-2（#1000 评审）：measured_reference 的中心是已核验协议中位数，不是模型预测，不得标注「模型推算」。
         const targetLabel = target === 'field_HR_proxy_not_physiological_LTHR'
           ? '现场心率代理，不是生理乳酸阈值实测'
-          : target === 'model_HRsteady_at_v60_declared_reference_conditions'
+          : target === 'model_HRsteady_at_v60_declared_reference_conditions' || target === 'model_steady_state_HR_at_v60_reference_conditions'
             ? (detail.state === 'measured_reference'
               ? '参考条件下预计心率（一小时能力配速）'
               : '模型推算稳态心率（参考条件下的一小时能力配速，不是生理乳酸阈值实测）')
           : target === 'lab_method_specific_LTHR' ? `实验室方法特定阈值：${detail.lab_method ?? '方法未提供'}`
           : target === 'unavailable' ? '暂无可用心率参考' : '训练心率估计，非独立实验室参考';
         lines.push(targetLabel);
-        if (detail.method === 'joint_map_hr_dynamic_fit') lines.push('联合估计，非独立验证');
+        if (detail.method === 'joint_map_hr_dynamic_fit' || detail.method === 'joint_constrained_hr_fit') lines.push('联合估计，非独立验证');
       }
       // P2-1（#1000 评审）：同一 categorical 原因可能由速度拟合与联合重解分别计入，同一文案只渲染一次。
       const reasons = [...(detail.reasons ?? []), ...(detail.limitations ?? [])];

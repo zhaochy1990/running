@@ -310,27 +310,27 @@ for (const vector of displayVectors.cases) {
 
 const lowEvidence = projectCalibration(displayVectors.cases.find((v: { name: string }) => v.name === 'evolved-low-evidence').response);
 eq(lowEvidence.pace.support, '模型估计 · 基于你的普通训练估计', 'low-evidence pace state');
-eq(lowEvidence.hr.support, '模型估计 · 基于你的普通训练估计', 'low-evidence HR state');
-eq(lowEvidence.pace.value, '4:18', 'low-evidence center');
-eq(lowEvidence.pace.range, '支持范围 4:01–4:52 /km', 'low-evidence pace range');
-eq(lowEvidence.hr.value, '171', 'low-evidence HR center');
-eq(lowEvidence.hr.range, '支持范围 160–181 bpm', 'low-evidence HR range');
-eq(lowEvidence.hr.lines.includes('联合估计，非独立验证'), true, 'joint HR not independent validation');
+eq(lowEvidence.hr.support, '先验主导 · 基于研究先验估计', 'low-evidence HR state (v4 rev3 regression branch)');
+eq(lowEvidence.pace.value, '4:49', 'low-evidence center');
+eq(lowEvidence.pace.range, '支持范围 4:15–5:03 /km', 'low-evidence pace range');
+eq(lowEvidence.hr.value, '162', 'low-evidence HR center');
+eq(lowEvidence.hr.range, '支持范围 156–168 bpm', 'low-evidence HR range');
+eq(lowEvidence.hr.lines.some((line) => line.includes('对数速度回归')), true, 'regression method in plain words');
 eq(lowEvidence.hr.lines.includes('模型推算稳态心率（参考条件下的一小时能力配速，不是生理乳酸阈值实测）'), true, 'model-predicted steady HR target line');
 eq([...lowEvidence.pace.lines, ...lowEvidence.pace.help].join('').includes('必须先测试'), false, 'never demand a test first');
 eq(lowEvidence.pace.range?.includes('95%'), false, 'range never claims 95%');
 
 const priorOnly = projectCalibration(displayVectors.cases.find((v: { name: string }) => v.name === 'evolved-prior-only').response);
 eq(priorOnly.pace.support, '先验主导 · 基于研究先验估计', 'prior-only pace state');
-eq(priorOnly.hr.support, '先验主导 · 基于研究先验估计', 'prior-only HR state');
-eq(priorOnly.pace.lines.some((line) => line.includes('证据不足以区分能力与余量')), true, 'identifiability reason in plain words');
-eq(priorOnly.hr.lines.some((line) => line.includes('心率估计仅来自生理先验')), true, 'prior-only HR reason');
-eq(priorOnly.pace.value !== '—' && priorOnly.hr.value !== '—', true, 'prior-only still shows values');
+eq(priorOnly.hr.support, '暂无估计 · 没有心率序列，也没有可用的静息心率先验', 'prior-only HR state (no M source)');
+eq(priorOnly.pace.lines.some((line) => line.includes('仅短时、低质量或单层证据')), true, 'identifiability reason in plain words');
+eq(priorOnly.pace.value !== '—', true, 'prior-only still shows pace');
+eq(priorOnly.hr.value, '—', 'prior-only HR stays empty without a source');
 
 const measuredRef = projectCalibration(displayVectors.cases.find((v: { name: string }) => v.name === 'evolved-measured-reference').response);
-eq(measuredRef.pace.support, '实测参考', 'measured reference pace state');
-eq(measuredRef.hr.support, '实测参考', 'measured reference HR state');
-eq(measuredRef.hr.help.includes('方法：实测参考中位数（已核验协议）'), true, 'reference median method');
+eq(measuredRef.pace.support, '模型估计 · 基于你的普通训练估计', 'verified reference informs the constrained fit');
+eq(measuredRef.hr.support, '先验主导 · 基于研究先验估计', 'HR walks the regression branch');
+eq(measuredRef.hr.lines.some((line) => line.includes('对数速度回归')), true, 'regression method in plain words');
 eq(measuredRef.hr.lines.includes('联合估计，非独立验证'), false, 'reference is not a joint estimate');
 
 const evolvedUnavailable = projectCalibration(displayVectors.cases.find((v: { name: string }) => v.name === 'evolved-unavailable').response);
@@ -346,8 +346,8 @@ eq(historicalV4.pace.help.includes('当前有效算法 v4'), true, 'historical v
 eq(historicalV4.pace.help.join(' ').includes('修订'), false, 'historical v4 has no revision marker');
 
 const overrideSelected = projectCalibration(displayVectors.cases.find((v: { name: string }) => v.name === 'override-selected').response);
-eq(overrideSelected.pace.help.includes('已按你的选择使用 v4（修订 v4-rev2-2026-11）'), true, 'override pin wording');
-eq(overrideSelected.pace.help.includes('当前有效算法 v4 · 修订 v4-rev2-2026-11'), true, 'effective algorithm with revision');
+eq(overrideSelected.pace.help.includes('已按你的选择使用 v4（修订 v4-rev3-2026-11）'), true, 'override pin wording');
+eq(overrideSelected.pace.help.includes('当前有效算法 v4 · 修订 v4-rev3-2026-11'), true, 'effective algorithm with revision');
 const overrideFallback = projectCalibration(displayVectors.cases.find((v: { name: string }) => v.name === 'override-fallback').response);
 eq(overrideFallback.pace.help.includes('你选择的版本在该日期无快照，暂用全局有效版本'), true, 'override fallback wording');
 eq(overrideFallback.pace.help.includes('当前有效算法 v3'), true, 'fallback serves global v3');

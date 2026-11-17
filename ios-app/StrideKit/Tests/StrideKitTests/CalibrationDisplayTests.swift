@@ -91,31 +91,32 @@ import Testing
     }
 
     @Test func evolvedFiveStatesInPlainWords() throws {
+        // v4 rev3 (v4.md §6.4/§8.3): without a usable R/M pair the HR walks the
+        // regression path (prior_dominated); no measured_reference centers.
         let low = calibrationDisplay(try Self.caseNamed("evolved-low-evidence").response, metric: .pace)
         #expect(low.support == "模型估计 · 基于你的普通训练估计")
-        #expect(low.value == "4:18")
-        #expect(low.range == "支持范围 4:01–4:52 /km")
+        #expect(low.value == "4:49")
+        #expect(low.range == "支持范围 4:15–5:03 /km")
         let lowHR = calibrationDisplay(try Self.caseNamed("evolved-low-evidence").response, metric: .heartRate)
-        #expect(lowHR.support == "模型估计 · 基于你的普通训练估计")
-        #expect(lowHR.value == "171")
-        #expect(lowHR.range == "支持范围 160–181 bpm")
-        #expect(lowHR.details.contains("联合估计，非独立验证"))
+        #expect(lowHR.support == "先验主导 · 基于研究先验估计")
+        #expect(lowHR.value == "162")
+        #expect(lowHR.range == "支持范围 156–168 bpm")
+        #expect(lowHR.details.contains { $0.contains("对数速度回归") })
         #expect(!low.details.joined().contains("必须先测试"))
         #expect(low.range?.contains("95%") != true)
 
         let prior = calibrationDisplay(try Self.caseNamed("evolved-prior-only").response, metric: .pace)
         #expect(prior.support == "先验主导 · 基于研究先验估计")
-        #expect(prior.details.contains { $0.contains("证据不足以区分能力与余量") })
+        #expect(prior.details.contains { $0.contains("仅短时、低质量或单层证据") })
         let priorHR = calibrationDisplay(try Self.caseNamed("evolved-prior-only").response, metric: .heartRate)
-        #expect(priorHR.support == "先验主导 · 基于研究先验估计")
-        #expect(priorHR.details.contains { $0.contains("心率估计仅来自生理先验") })
-        #expect(prior.value != "—" && priorHR.value != "—")
+        #expect(priorHR.support == "暂无估计 · 没有心率序列，也没有可用的静息心率先验")
+        #expect(prior.value != "—")
+        #expect(priorHR.value == "—")
 
         let reference = calibrationDisplay(try Self.caseNamed("evolved-measured-reference").response, metric: .heartRate)
-        #expect(reference.support == "实测参考")
-        #expect(reference.details.contains { $0.contains("实测参考中位数（已核验协议）") })
-        #expect(reference.details.contains { $0.hasSuffix("参考条件下预计心率（一小时能力配速）") })
-        #expect(!reference.details.contains { $0.contains("模型推算稳态心率") })
+        #expect(reference.support == "先验主导 · 基于研究先验估计")
+        #expect(reference.details.contains { $0.contains("对数速度回归") })
+        #expect(reference.details.contains { $0.contains("模型推算稳态心率") })
         #expect(!reference.details.contains("联合估计，非独立验证"))
 
         let unavailablePace = calibrationDisplay(try Self.caseNamed("evolved-unavailable").response, metric: .pace)
@@ -137,8 +138,8 @@ import Testing
 
     @Test func overridePinAndSnapshotMissingFallbackDisclosedSeparately() throws {
         let pinned = calibrationDisplay(try Self.caseNamed("override-selected").response, metric: .pace)
-        #expect(pinned.details.contains("已按你的选择使用 v4（修订 v4-rev2-2026-11）"))
-        #expect(pinned.details.contains("当前有效算法 v4 · 修订 v4-rev2-2026-11"))
+        #expect(pinned.details.contains("已按你的选择使用 v4（修订 v4-rev3-2026-11）"))
+        #expect(pinned.details.contains("当前有效算法 v4 · 修订 v4-rev3-2026-11"))
         let fallback = calibrationDisplay(try Self.caseNamed("override-fallback").response, metric: .pace)
         #expect(fallback.details.contains("你选择的版本在该日期无快照，暂用全局有效版本"))
         #expect(fallback.details.contains("当前有效算法 v3"))

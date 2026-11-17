@@ -59,11 +59,11 @@ func TestT7IsolatedStackFullChainMySQL(t *testing.T) {
 	// four-day row history so historical activity days resolve a same-day
 	// snapshot during the derived recompute).
 	for i := 3; i >= 0; i-- {
-		if _, _, err := runCalibrationVersion(ctx, st, userA, today.AddDate(0, 0, -i), 3); err != nil {
+		if _, err := runCalibrationVersion(ctx, st, userA, today.AddDate(0, 0, -i), 3); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, _, err := runCalibrationVersion(ctx, st, userB, today, 3); err != nil {
+	if _, err := runCalibrationVersion(ctx, st, userB, today, 3); err != nil {
 		t.Fatal(err)
 	}
 	bundleB0, err := st.ReadEffectiveRunningCalibration(ctx, userB, day, storage.CalibrationActive)
