@@ -250,7 +250,9 @@ jobs:
           -count=1 -v
       # The first-sync session claim/claim-race/rebind isolation plus the
       # create→dispatch→completion crash-boundary recovery are transactional
-      # SQL over the real job store (devops#1006 AC7). -p 1 serializes the
+      # SQL over the real job store (devops#1006 AC7); the devops#1010 T06
+      # stage-chain / chunk-continuation / failure-isolation suites ride the
+      # same TestOnboardingSync* prefix. -p 1 serializes the
       # two packages: both automigrate the onboarding-sync schema and a
       # fresh database cannot take two concurrent CREATE TABLE runs.
       - name: Onboarding-sync session tests (MySQL)
@@ -264,7 +266,10 @@ jobs:
       # the real session/work-item/lease state machines over real MySQL: the
       # credential-reuse retry semantics, the fenced publish session (lease
       # release + stale-write refusal), and the create->dispatch->execute->
-      # sweep->readiness end-to-end path (AC5).
+      # sweep->readiness end-to-end path (AC5). The devops#1010 T06 chunked
+      # backfill + auxiliary executor suites ride the TestOnboardingRecent*
+      # prefix (storage-derived coverage, checkpoint resume, stage
+      # isolation).
       - name: Onboarding recent-range executor tests (MySQL)
         env:
           STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
