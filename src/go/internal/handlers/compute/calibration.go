@@ -170,11 +170,12 @@ func NewCalibrationWithOptions(store CalibrationStore, options CalibrationOption
 			}
 			snapID = evolved.CalibrationSnapshot
 		} else {
-			var err error
-			snapID, activities, err = runCalibrationVersion(ctx, store, user, asOf, version)
+			dayOut, err := runCalibrationVersion(ctx, store, user, asOf, version)
 			if err != nil {
 				return "", err // infra fault -> retryable
 			}
+			snapID = dayOut.SnapshotID
+			activities = dayOut.Activities
 		}
 		_ = hb("calibration", 100)
 		out, _ := json.Marshal(calibrationResult{User: user, Status: "ok", CalibrationSnapshot: snapID, Activities: activities, AlgorithmVersion: version, CandidateOnly: candidateOnly, LabelIDs: in.LabelIDs, HealthDates: in.HealthDates})
@@ -182,10 +183,27 @@ func NewCalibrationWithOptions(store CalibrationStore, options CalibrationOption
 	}
 }
 
-func runCalibration(ctx context.Context, store CalibrationStore, user string, asOf time.Time) (uint64, int, error) {
-	return runCalibrationVersion(ctx, store, user, asOf, calibration.ModelVersion)
+// CalibrationDayOutcome is one day's explicit result of the canonical
+// per-day estimate (devops#1011): what was published, whether any center
+// actually landed, the persisted fingerprint, and whether a pre-existing
+// same-day row's fingerprint matched (验证 instead of rebuild).
+type CalibrationDayOutcome struct {
+	SnapshotID  uint64
+	Activities  int
+	CentersDone bool
+	Fingerprint string
+	Verified    bool
 }
-func runCalibrationVersion(ctx context.Context, store CalibrationStore, user string, asOf time.Time, version int) (uint64, int, error) {
+
+func runCalibration(ctx context.Context, store CalibrationStore, user string, asOf time.Time) (uint64, int, error) {
+	out, err := runCalibrationVersion(ctx, store, user, asOf, calibration.ModelVersion)
+	if err != nil {
+		return 0, 0, err
+	}
+	return out.SnapshotID, out.Activities, err
+}
+
+func runCalibrationVersion(ctx context.Context, store CalibrationStore, user string, asOf time.Time, version int) (CalibrationDayOutcome, error) {
 	var history []calibration.Activity
 	var health []calibration.HealthRow
 	var metadata []calibration.CandidateMetadata
@@ -198,11 +216,11 @@ func runCalibrationVersion(ctx context.Context, store CalibrationStore, user str
 		history, health, err = calibrationsource.Load(ctx, store, user, "", asOf, calibrationLookbackDays)
 	}
 	if err != nil {
-		return 0, 0, err
+		return CalibrationDayOutcome{}, err
 	}
 	result, err := calibration.EstimateOfflineWithEvidence(strategy, history, asOf, health, metadata)
 	if err != nil {
-		return 0, 0, err
+		return CalibrationDayOutcome{}, err
 	}
 	snap := result.Snapshot
 	row := toStorageSnapshot(user, snap)
@@ -212,16 +230,57 @@ func runCalibrationVersion(ctx context.Context, store CalibrationStore, user str
 	source := calibration.SummarizeSource(result)
 	raw, err := json.Marshal(source)
 	if err != nil {
-		return 0, 0, err
+		return CalibrationDayOutcome{}, err
 	}
 	text := string(raw)
 	row.SourceJSON = &text
 	paceZones, hrZones := toStorageZones(calibration.ComputeTrainingZones(snap))
 	snapID, err := store.PublishRunningCalibration(ctx, row, paceZones, hrZones)
 	if err != nil {
-		return 0, 0, err
+		return CalibrationDayOutcome{}, err
 	}
-	return snapID, len(history), nil
+	day := asOf.Format("2006-01-02")
+	out := CalibrationDayOutcome{
+		SnapshotID: snapID,
+		Activities: len(history),
+		CentersDone: snap.ThresholdHR != nil || snap.ThresholdSpeedMps != nil ||
+			snap.RHRBaseline != nil || snap.HRMaxEstimate != nil ||
+			snap.CriticalSpeedMps != nil || snap.CriticalPowerW != nil,
+	}
+	// The persisted fingerprint (SourceJSON) is written inside the publish;
+	// read the row back and parse it so callers fingerprint exactly what
+	// storage holds, never an in-memory recomputation.
+	if after, err := store.LatestRunningCalibrationSnapshotForVersion(ctx, user, version, day); err == nil && after != nil && after.AsOfDate == day {
+		out.Fingerprint = calibration.ParseSource(after.SourceJSON).Fingerprint
+	}
+	return out, nil
+}
+
+// RunCalibrationAsOfDay executes ONE day's canonical calibration estimate with
+// that day's event cutoff and publishes it under the same (user, day, version)
+// natural key as the ordinary same-day path — no second algorithm, no second
+// tables (devops#1011, epic devops#1004 T07: the explicit historical
+// recompute's per-day step). Version must be the v3 model version: candidate
+// historical writes stay unauthorized (ADR 0045/0046). A same-day row that
+// already matches the fresh fingerprint is reported Verified instead of being
+// treated as a rebuild.
+func RunCalibrationAsOfDay(ctx context.Context, store CalibrationStore, user string, asOf time.Time, version int) (CalibrationDayOutcome, error) {
+	if version != calibration.ModelVersion {
+		return CalibrationDayOutcome{}, fmt.Errorf("calibration: historical per-day estimate supports the v3 model version only, got %d", version)
+	}
+	day := asOf.Format("2006-01-02")
+	var priorFingerprint string
+	if prior, err := store.LatestRunningCalibrationSnapshotForVersion(ctx, user, version, day); err == nil && prior != nil && prior.AsOfDate == day {
+		priorFingerprint = calibration.ParseSource(prior.SourceJSON).Fingerprint
+	}
+	out, err := runCalibrationVersion(ctx, store, user, asOf, version)
+	if err != nil {
+		return CalibrationDayOutcome{}, err
+	}
+	if priorFingerprint != "" && out.Fingerprint == priorFingerprint {
+		out.Verified = true
+	}
+	return out, nil
 }
 
 func toStorageSnapshot(user string, s calibration.Snapshot) *storage.RunningCalibrationSnapshot {

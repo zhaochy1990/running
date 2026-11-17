@@ -13,6 +13,9 @@
 
   <!-- 内容 -->
   <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
+    <!-- 首次同步状态卡（devops#1015）：只读观察服务端 session 进度，无 session 时整卡不渲染 -->
+    <onboarding-sync-status />
+
     <!-- 按月折叠的活动记录（合并「本月概览 + 活动列表」为一张卡片） -->
     <view wx:if="{{monthGroups.length}}" class="card month-list">
       <view wx:for="{{monthGroups}}" wx:key="monthKey" class="month-group">

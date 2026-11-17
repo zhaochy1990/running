@@ -420,7 +420,7 @@ func stageResultFromReport(stage string, rep provider.RecentRangeReport, items [
 			if it.Error != nil && *it.Error != "" {
 				reason = *it.Error
 			}
-			res.Gaps = append(res.Gaps, onboardingsync.StageGap{From: it.RangeFrom, To: it.RangeTo, Reason: it.Kind + ": " + reason})
+			res.Gaps = append(res.Gaps, observedComplementGaps(it, it.Kind+": "+reason)...)
 		}
 		if from, to, ok := observedFromCredential(it.FetchCredential); ok {
 			if res.ObservedFrom == nil || from < *res.ObservedFrom {
@@ -447,7 +447,10 @@ func stageResultFromReport(stage string, rep provider.RecentRangeReport, items [
 // idempotent path where every item was already terminal before this run. It is
 // an approximation of the per-day gap granularity the fresh report carries
 // (items only know their whole window), which is why the executor prefers
-// stageResultFromReport whenever it actually ran.
+// stageResultFromReport whenever it actually ran. A gap item's recorded gap is
+// the complement of its credential's observed window (devops#1010): a window
+// that holds data never reads as wholly missing — only its honestly empty
+// leading/trailing ranges do.
 func stageResultFromItems(stage string, items []*storage.OnboardingSyncWorkItem) string {
 	res := onboardingsync.StageResult{Stage: stage, Status: storage.OnboardingSyncCoverageCompleted}
 	anyObserved := false
@@ -460,25 +463,25 @@ func stageResultFromItems(stage string, items []*storage.OnboardingSyncWorkItem)
 			s := it.RangeTo
 			res.ScannedTo = &s
 		}
-		switch it.Status {
-		case storage.OnboardingSyncItemGap:
+		obsFrom, obsTo, hasObs := observedFromCredential(it.FetchCredential)
+		if hasObs {
+			anyObserved = true
+			if res.ObservedFrom == nil || obsFrom < *res.ObservedFrom {
+				s := obsFrom
+				res.ObservedFrom = &s
+			}
+			if res.ObservedTo == nil || obsTo > *res.ObservedTo {
+				s := obsTo
+				res.ObservedTo = &s
+			}
+		}
+		if it.Status == storage.OnboardingSyncItemGap {
 			res.Status = storage.OnboardingSyncCoverageCompletedWithGaps
 			reason := "unobtainable at provider"
 			if it.Error != nil && *it.Error != "" {
 				reason = *it.Error
 			}
-			res.Gaps = append(res.Gaps, onboardingsync.StageGap{From: it.RangeFrom, To: it.RangeTo, Reason: reason})
-		}
-		if from, to, ok := observedFromCredential(it.FetchCredential); ok {
-			anyObserved = true
-			if res.ObservedFrom == nil || from < *res.ObservedFrom {
-				s := from
-				res.ObservedFrom = &s
-			}
-			if res.ObservedTo == nil || to > *res.ObservedTo {
-				s := to
-				res.ObservedTo = &s
-			}
+			res.Gaps = append(res.Gaps, observedComplementGaps(it, reason)...)
 		}
 	}
 	if !anyObserved && len(res.Gaps) == 0 {
@@ -512,4 +515,26 @@ func observedFromCredential(cred *string) (from, to string, ok bool) {
 		return "", "", false
 	}
 	return days[0], days[1], true
+}
+
+// observedComplementGaps narrows a gap item's recorded gap to the complement
+// of its credential's observed window inside the item's range (devops#1010):
+// a channel that ended as a gap but whose window holds data must not claim the
+// observed days as missing — only the honestly empty leading/trailing ranges
+// remain. An item without an observed window (nothing stored, or a foreign
+// credential) keeps its whole-window gap: nothing was observed to contradict
+// it.
+func observedComplementGaps(it *storage.OnboardingSyncWorkItem, reason string) []onboardingsync.StageGap {
+	obsFrom, obsTo, ok := observedFromCredential(it.FetchCredential)
+	if !ok {
+		return []onboardingsync.StageGap{{From: it.RangeFrom, To: it.RangeTo, Reason: reason}}
+	}
+	var out []onboardingsync.StageGap
+	if obsFrom > it.RangeFrom {
+		out = append(out, onboardingsync.StageGap{From: it.RangeFrom, To: prevDayLabel(obsFrom), Reason: reason})
+	}
+	if obsTo < it.RangeTo {
+		out = append(out, onboardingsync.StageGap{From: nextDayLabel(obsTo), To: it.RangeTo, Reason: reason})
+	}
+	return out
 }

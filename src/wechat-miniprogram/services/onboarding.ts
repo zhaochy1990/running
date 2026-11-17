@@ -2,23 +2,31 @@
 //
 //   1. 完成（complete）：只要求基础档案（ADR 0013）。资料保存成功即可标记完成，
 //      不依赖手表绑定，也不依赖任何 pipeline。
-//   2. 数据同步（sync）：绑表之后触发的 full sync。它**不是**完成的前置，纯粹为了
+//   2. 数据同步（sync）：绑表之后触发的数据拉取。它**不是**完成的前置，纯粹为了
 //      把训练数据拉下来。
 //
 // 所以这里没有"等 run 跑完再收尾"的链路：`completeOnboarding()` 与 `ensureSync()`
 // 各管各的，谁也不用等谁。
 //
-// 同步的语义对齐 Web 的 pages/onboarding/SubmitStep.tsx：triggerSync(full) +
+// 同步入口有两套（devops#1015 / epic devops#1004）：
+//   - session 路径（新，services/onboarding-sync.ts）：双开关（sync_data_at_onboarding
+//     && onboarding_sync_session）都开时启用。POST /users/me/onboarding/sync 原子
+//     创建/认领，shell_ready 后 profile-only 完成进首页；没有本地指针，杀进程 /
+//     换设备 / 多端并发都由服务端幂等兜住。
+//   - 旧 full-run 路径（本文件的 ensureSync）：开关任一关闭时的兼容行为，语义不变。
+//
+// 旧路径的语义对齐 Web 的 pages/onboarding/SubmitStep.tsx：triggerSync(full) +
 // Idempotency-Key → 轮询 run。与 Web 的一处差异：触发前会列一次该用户的 run，
 // 认领别端（Web / 换设备）已经起过的那次 —— Web 只信自己的 localStorage 指针，
 // 指针丢了就重复起一个 full sync。
 //
-// 为什么"续跑"是主路径：onboarding pipeline 在生产实测平均 24 分钟（最长 51 分钟），
+// 为什么"续跑"是主路径：旧 onboarding pipeline 在生产实测平均 24 分钟（最长 51 分钟），
 // 小程序必然会在中途被杀掉，所以每次进页面都要能接着上次那次 run 继续。
 
 import { getPipelineRun, listUserPipelines, triggerSync } from './sync';
 import { getMyProfile } from './profile';
 import { ApiError, http } from './request';
+import { createOrClaimOnboardingSyncSession } from './onboarding-sync';
 import type { PipelineRun } from '../types/sync';
 
 /** onboarding pipeline 的名字（Go catalog.PipelineOnboarding）。 */
@@ -35,18 +43,22 @@ export interface OnboardingStatus {
   completed: boolean;
   /** 部署开关：config.yml 的 sync-data-at-onboarding，只关同步、不影响完成。 */
   syncEnabled: boolean;
+  /** 双开关（总开关 + onboarding_sync_session rollout）都开：走 session 入口（devops#1015）。 */
+  sessionMode: boolean;
 }
 
 /** 读 onboarding 状态。复用 GET /api/users/me/profile（后端本来就在返回这两块）。 */
 export async function getOnboardingStatus(): Promise<OnboardingStatus> {
   const p = await getMyProfile();
   const onb = p.onboarding;
+  // 字段缺失按"关"处理：宁可不动 24 分钟的 pipeline，也不要在开关状态未知时乱触发
+  const syncEnabled = p.features?.sync_data_at_onboarding === true;
   return {
     watchReady: onb?.watch_ready === true,
     profileReady: onb?.profile_ready === true,
     completed: !!onb?.completed_at,
-    // 字段缺失按"关"处理：宁可不动 24 分钟的 pipeline，也不要在开关状态未知时乱触发
-    syncEnabled: p.features?.sync_data_at_onboarding === true,
+    syncEnabled,
+    sessionMode: syncEnabled && p.features?.onboarding_sync_session === true,
   };
 }
 
@@ -137,6 +149,20 @@ export async function retrySync(userId: string): Promise<SyncResult> {
   clearPointer(userId);
   clearStartKey(userId);
   return ensureSync(userId);
+}
+
+/**
+ * 绑表成功后的可靠触发（watch 页 fire-and-forget 场景）：按双开关选入口。
+ * session 模式只 POST 一次创建/认领（返回即 shell_ready，后台由服务端 worker
+ * 推进，不需要页面盯着）；旧模式维持 ensureSync 的指针/认领/幂等键全流程。
+ */
+export async function triggerSyncAfterBind(userId: string): Promise<void> {
+  const status = await getOnboardingStatus();
+  if (status.sessionMode) {
+    await createOrClaimOnboardingSyncSession();
+    return;
+  }
+  await ensureSync(userId);
 }
 
 // --- 本地指针 / 幂等键 ---

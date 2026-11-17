@@ -427,7 +427,7 @@ func TestGetProfile_RequiresUserTier(t *testing.T) {
 }
 
 func TestGetProfile_EmptyDefaults(t *testing.T) {
-	h := newUserHarness(t, FeatureConfig{SyncDataAtOnboarding: true, CoachChatMaxMessageChars: 8000})
+	h := newUserHarness(t, FeatureConfig{SyncDataAtOnboarding: true, OnboardingSyncSession: true, CoachChatMaxMessageChars: 8000})
 	w := h.do(http.MethodGet, "/api/users/me/profile", "", h.bearer(t, testSub))
 	if w.Code != http.StatusOK {
 		t.Fatalf("code = %d, want 200: %s", w.Code, w.Body.String())
@@ -448,8 +448,22 @@ func TestGetProfile_EmptyDefaults(t *testing.T) {
 	if resp.Onboarding.WatchReady || resp.Onboarding.ProfileReady || resp.Onboarding.CompletedAt != nil {
 		t.Errorf("onboarding = %+v, want all-zero", resp.Onboarding)
 	}
-	if !resp.Features.SyncDataAtOnboarding || resp.Features.CoachChatMaxMessageChars != 8000 {
-		t.Errorf("features = %+v, want sync=true chars=8000", resp.Features)
+	if !resp.Features.SyncDataAtOnboarding || !resp.Features.OnboardingSyncSession || resp.Features.CoachChatMaxMessageChars != 8000 {
+		t.Errorf("features = %+v, want sync=true session=true chars=8000", resp.Features)
+	}
+	// The rollout switch is deployment-global: when it is off the flag stays
+	// false so clients keep the legacy full-run onboarding entry.
+	off := newUserHarness(t, FeatureConfig{SyncDataAtOnboarding: true})
+	w2 := off.do(http.MethodGet, "/api/users/me/profile", "", off.bearer(t, testSub))
+	if w2.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200: %s", w2.Code, w2.Body.String())
+	}
+	var resp2 profileResponse
+	if err := json.Unmarshal(w2.Body.Bytes(), &resp2); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp2.Features.OnboardingSyncSession {
+		t.Errorf("features = %+v, want session=false when the rollout switch is off", resp2.Features)
 	}
 }
 

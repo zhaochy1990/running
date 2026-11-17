@@ -85,6 +85,13 @@ func runAPI() error {
 	if err := store.AutoMigrateOnboardingSync(ctx); err != nil {
 		return err
 	}
+	// Explicit historical-calibration recompute tables (devops#1011): the
+	// worker is the only writer, but the API's account-erasure sweep must see
+	// the schema (DeleteUserData guards on presence, migrating here keeps
+	// production erasure strict rather than skipped).
+	if err := store.AutoMigrateHistoricalRecompute(ctx); err != nil {
+		return err
+	}
 	if err := store.AutoMigrateInjuries(ctx); err != nil {
 		return err
 	}

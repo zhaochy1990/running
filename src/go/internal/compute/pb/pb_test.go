@@ -1,6 +1,9 @@
 package pb
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestBestDistanceCandidatesConstantSpeed(t *testing.T) {
 	// 4 m/s for 300 s -> 1200 m covered.
@@ -117,5 +120,60 @@ func TestDetectPersonalBestsEndToEnd(t *testing.T) {
 	}
 	if e.Source != "segment" || e.PBTimeSec < 249.9 || e.PBTimeSec > 250.1 {
 		t.Errorf("1K PB = %+v, want ~250 segment", e)
+	}
+}
+
+// TestScannerChunkedMatchesSinglePass (devops#1012): scanning the same
+// chronological activity set in chunks of every size — resuming from the
+// entries held at each checkpoint — must produce identical entries to the
+// single-pass DetectPersonalBests, including each distance's history
+// progression. This is the PB half of the explicit recompute's
+// same-input/same-seed single-segment equivalence guarantee.
+func TestScannerChunkedMatchesSinglePass(t *testing.T) {
+	mk := func(label string, day int, dist, dur float64) Activity {
+		date := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, day)
+		return Activity{LabelID: label, Date: date, DistanceM: &dist, DurationS: &dur}
+	}
+	// A progression of 1K efforts that improve over time, plus a longer run
+	// for the activity-level fallback path, ordered chronologically.
+	acts := []Activity{
+		mk("slow-1", 0, 1000, 300), mk("slow-2", 2, 1000, 295),
+		mk("slow-3", 5, 1000, 290), mk("long-1", 7, 10200, 3100),
+		mk("fast-1", 9, 1000, 280), mk("fast-2", 12, 1000, 270),
+	}
+	single, err := DetectPersonalBests(acts, func(string) ([]TSPoint, error) { return nil, nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(single) == 0 {
+		t.Fatal("fixture unexpectedly produced no PBs")
+	}
+	for _, size := range []int{1, 2, 3, 5, 20} {
+		s := NewScanner()
+		for start := 0; start < len(acts); start += size {
+			end := start + size
+			if end > len(acts) {
+				end = len(acts)
+			}
+			if err := s.Scan(acts[start:end], func(string) ([]TSPoint, error) { return nil, nil }); err != nil {
+				t.Fatalf("chunk %d..%d: %v", start, end, err)
+			}
+			// Checkpoint + resume from the entries held so far, like the
+			// executor does between chained jobs.
+			s = ResumeScanner(s.Entries())
+		}
+		got := s.Entries()
+		if len(got) != len(single) {
+			t.Fatalf("chunk size %d: %d entries, want %d", size, len(got), len(single))
+		}
+		for dist, want := range single {
+			e, ok := got[dist]
+			if !ok {
+				t.Fatalf("chunk size %d: missing %s", size, dist)
+			}
+			if EntryJSON(e) != EntryJSON(want) {
+				t.Fatalf("chunk size %d: %s entry %+v, want %+v", size, dist, e, want)
+			}
+		}
 	}
 }

@@ -427,11 +427,11 @@ func runUserEffectiveCalibration(ctx context.Context, store UserCalibrationStore
 		}
 		version = policy.ActiveVersion
 	}
-	snapID, activities, err := runCalibrationVersion(ctx, store, user, asOf, version)
+	dayOut, err := runCalibrationVersion(ctx, store, user, asOf, version)
 	if err != nil {
 		return "", err
 	}
-	raw, _ := json.Marshal(calibrationResult{User: user, Status: "ok", CalibrationSnapshot: snapID, Activities: activities, AlgorithmVersion: version})
+	raw, _ := json.Marshal(calibrationResult{User: user, Status: "ok", CalibrationSnapshot: dayOut.SnapshotID, Activities: dayOut.Activities, AlgorithmVersion: version})
 	return string(raw), nil
 }
 

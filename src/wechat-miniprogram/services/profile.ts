@@ -110,6 +110,8 @@ export interface OnboardingState {
 export interface FeatureFlags {
   /** config.yml 的 sync-data-at-onboarding：onboarding 时是否同步数据。 */
   sync_data_at_onboarding: boolean;
+  /** 首次同步 session 入口的 rollout 开关（devops#1006）：与总开关同时开才走 session 路径（devops#1015）。旧部署不回显，按关处理。 */
+  onboarding_sync_session?: boolean;
 }
 
 /** GET /api/users/me/profile 响应（只取小程序用到的字段）。 */

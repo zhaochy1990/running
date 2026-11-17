@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation, useNavigate, Outlet } from "react-router-dom";
 import { useUser } from "../UserContextValue";
+import OnboardingSyncBanner from "./OnboardingSyncBanner";
 import TopNav from "./TopNav";
 import NavSection from "./sidebar/NavSection";
 import NavItem from "./sidebar/NavItem";
@@ -104,6 +105,7 @@ export default function AppLayout() {
         </nav>
 
         <main className="flex-1 min-w-0 overflow-y-auto bg-bg-primary">
+          <OnboardingSyncBanner />
           <Outlet />
         </main>
       </div>

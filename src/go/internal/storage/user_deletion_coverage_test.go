@@ -39,6 +39,9 @@ func TestDeleteUserData_CoversEveryUserOwnedTable(t *testing.T) {
 		st.AutoMigrateAddresses,
 		st.AutoMigratePlanAdjustment,
 		st.AutoMigratePlanInjury,
+		st.AutoMigrateHistoricalRecompute,
+		st.AutoMigrateHistoricalMetrics, // metrics runs + staged ledger (devops#1012)
+		st.AutoMigrateOnboardingSync,    // sessions + recent analysis (devops#1006/#1009)
 	} {
 		if err := migrate(ctx); err != nil {
 			t.Fatalf("migrate: %v", err)
@@ -53,6 +56,23 @@ func TestDeleteUserData_CoversEveryUserOwnedTable(t *testing.T) {
 		"pipeline_runs": "created_by provenance",
 		// The audit trail is the record OF the deletion and must survive it.
 		"user_deletion_audit": "deletion audit trail",
+		// The explicit historical-recompute run rows are deleted by a
+		// presence-guarded user_id block in DeleteUserData (schema-optional
+		// table; both `stride api` and `stride worker` migrate it) rather than
+		// the plain model loop, so partial schemas do not break account
+		// erasure.
+		"historical_recompute_runs": "guarded user_id delete",
+		// The explicit historical-metrics recompute (devops#1012) follows the
+		// same guarded-block shape: the block also sweeps the run-scoped
+		// staged artifact ledger through the run subquery.
+		"historical_metrics_recompute_runs": "guarded user_id delete",
+		// The first-sync onboarding sessions (devops#1006) and their published
+		// recent-analysis rows (devops#1009) follow the same guarded-block
+		// shape: the block also sweeps the three session-scoped tables
+		// (dispatches / work items / stage coverage, no user_id) through the
+		// session subquery before the session delete.
+		"onboarding_sync_sessions":   "guarded user_id delete",
+		"onboarding_recent_analysis": "guarded user_id delete",
 	}
 
 	covered := map[string]bool{}

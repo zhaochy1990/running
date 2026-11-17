@@ -60,13 +60,22 @@ public final class AppModel {
     /// coach 通道客户端（SSE 流式 + 会话 JSON；独立 401 单飞，devops#767）。
     public let coach: CoachClient
 
-    public init(api: APIClient? = nil, tokens: (any TokenStore)? = nil, coach: CoachClient? = nil) {
+    /// 首次同步 session 的全局只读观察（devops#1016）：banner 的数据源。
+    /// 只 GET 不建；404/403/终态静默停轮，退出/重启/换设备天然续看同一
+    /// 服务端 session。
+    public let onboardingSyncStatus: OnboardingSyncStatusModel
+
+    public init(api: APIClient? = nil, tokens: (any TokenStore)? = nil, coach: CoachClient? = nil,
+                statusPollInterval: Duration = .seconds(5)) {
         let tokenStore = tokens ?? KeychainTokenStore()
         self.tokens = tokenStore
         let client = api ?? APIClient(tokens: tokenStore)
         self.api = client
         self.auth = AuthService(api: client, tokens: tokenStore)
         self.coach = coach ?? CoachClient(tokens: tokenStore)
+        let status = OnboardingSyncStatusModel(pollInterval: statusPollInterval)
+        status.configure(api: client)
+        self.onboardingSyncStatus = status
         // 初始化完成后装配 401 会话失效回调（切全屏 Login + redirect）。
         // 全链 weak：回调由 api 持有，而 api 由 self 持有，强捕会成环。
         Task { [weak self] in
@@ -157,6 +166,7 @@ public final class AppModel {
     private func enterLoggedIn(entry: Route?) async {
         phase = .loggedIn
         if let entry { router.reset(to: entry) }
+        onboardingSyncStatus.startPolling()
     }
 
     // MARK: - 登录域落点（PR-2，#752 决议 / login.ts navigateAfterLogin）
@@ -171,6 +181,7 @@ public final class AppModel {
             publicLanding = nil
             phase = .loggedIn
             router.reset(to: redirect)
+            onboardingSyncStatus.startPolling()
             return
         }
         if let profile = try? await api.myProfile(), !profile.profileReady {
@@ -192,11 +203,14 @@ public final class AppModel {
             router.reset(to: .coach)
         }
         phase = .loggedIn
+        // session 提交步刚建/认领的 session：进首页即开始只读观察（banner）。
+        onboardingSyncStatus.startPolling()
     }
 
     private func enterHome() {
         router.reset(to: .coach)
         phase = .loggedIn
+        onboardingSyncStatus.startPolling()
     }
 
     /// 登录域离线落位后补 me（数据页 `me.id` 依赖；bootstrap 路径已由
@@ -256,6 +270,7 @@ public final class AppModel {
         me = nil
         prefilledPhone = auth.lastSmsPhone()
         phase = .loggedOut
+        onboardingSyncStatus.reset()
     }
 
     // MARK: - 跨 tab 交接（单次消费）
@@ -291,6 +306,7 @@ public final class AppModel {
         await api.clearTokens()
         me = nil
         phase = .loggedOut
+        onboardingSyncStatus.reset()
     }
 
     /// 注销账号（#759 决议 2：DELETE /api/users/me → 清 Keychain → Login；

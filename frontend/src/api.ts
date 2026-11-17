@@ -100,6 +100,11 @@ export interface MyProfile {
     // When true, onboarding blocks on a full watch-history sync (minutes) before
     // entering the app; when false/undefined, the fast health-only flow is used.
     sync_data_at_onboarding?: boolean;
+    // Rollout switch for the first-sync session entry points
+    // (POST/GET /users/me/onboarding/sync). The session entry is used only when
+    // this AND sync_data_at_onboarding are both true; otherwise the legacy
+    // full-run pipeline flow runs (devops#1014).
+    onboarding_sync_session?: boolean;
   };
 }
 
@@ -227,10 +232,87 @@ export function disconnectWatch() {
   return deleteJSON<{ ok: boolean; provider: string }>("/users/me/watch");
 }
 
-export function postOnboardingComplete(runId: string) {
-  return postJSON<{ state?: string; error?: string; detail?: string }>("/users/me/onboarding/complete", {
-    run_id: runId,
-  });
+// Onboarding completion is profile-derived: a client that just finished a
+// legacy full-run submits the run for verification; a client on the
+// first-sync-session path (or one that skipped the optional watch sync)
+// submits no run at all (devops#1014 — the session's recent run is never
+// handed to the legacy-run finalizer).
+export function postOnboardingComplete(runId?: string) {
+  return postJSON<{ state?: string; error?: string; detail?: string }>("/users/me/onboarding/complete", runId ? { run_id: runId } : {});
+}
+
+// ---------------------------------------------------------------------------
+// First-sync session (devops#1014 / epic devops#1004)
+// ---------------------------------------------------------------------------
+
+// One stage's user-facing readiness level, as derived by the server.
+export type OnboardingSyncReadiness =
+  | "not_started"
+  | "pending"
+  | "running"
+  | "ready"
+  | "ready_with_gaps"
+  | "failed"
+  | "partial"
+  | "unavailable";
+
+export interface OnboardingSyncStageGap {
+  from: string;
+  to: string;
+  reason?: string;
+}
+
+export interface OnboardingSyncStageView {
+  stage: string;
+  status: string;
+  readiness: OnboardingSyncReadiness;
+  target_from: string;
+  target_to: string;
+  scanned_from?: string | null;
+  scanned_to?: string | null;
+  observed_from?: string | null;
+  observed_to?: string | null;
+  gaps?: OnboardingSyncStageGap[];
+  job_id?: string | null;
+  error?: string | null;
+}
+
+export interface OnboardingSyncView {
+  session_id: string;
+  // waiting_legacy | dispatching | running | completed | completed_with_gaps | failed | superseded
+  state: string;
+  shell_ready: boolean;
+  provider: string;
+  binding_revision: number;
+  anchor_day: string;
+  legacy_run_id?: string | null;
+  retry_count: number;
+  error?: string | null;
+  stages: OnboardingSyncStageView[];
+  readiness: {
+    shell_ready: boolean;
+    recent_data: OnboardingSyncReadiness;
+    recent_analysis: OnboardingSyncReadiness;
+    extended_data: OnboardingSyncReadiness;
+    historical_data: OnboardingSyncReadiness;
+    historical_analysis: OnboardingSyncReadiness;
+    auxiliary: OnboardingSyncReadiness;
+  };
+  created_at: string;
+  updated_at: string;
+}
+
+// Read-only session status. Throws ApiError(404) when no session exists yet
+// and ApiError(403) when either rollout switch is off.
+export function getOnboardingSyncSession() {
+  return fetchJSON<OnboardingSyncView>("/users/me/onboarding/sync");
+}
+
+// Create-or-claim the caller's first-sync session (idempotent on the same
+// watch binding). body {"retry":true} re-dispatches only the unfinished work
+// of the existing session. Returns the same read-only view as the GET.
+export function postOnboardingSyncSession(retry = false) {
+  return postJSON<OnboardingSyncView>("/users/me/onboarding/sync", retry ? { retry: true } : {});
 }
 
 export interface SyncProgress {

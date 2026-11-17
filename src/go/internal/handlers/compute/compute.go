@@ -274,17 +274,14 @@ func loadAndComputeActivity(ctx context.Context, store ComputeStore, user string
 	}
 	results := make([]trainingload.ActivityLoadResult, len(acts))
 	for i, a := range acts {
-		bundle, err := storage.ReadCachedRunningCalibration(ctx, store, user, timefmt.ShanghaiDayStr(a.ActivityDate), storage.CalibrationActive)
+		res, ok, err := DeriveActivityLoad(ctx, store, user, a)
 		if err != nil {
 			return nil, nil, err
 		}
-		if bundle.Snapshot == nil {
+		if !ok {
 			return nil, nil, errHistoricalCalibrationMissing
 		}
-		if err := checkActiveCalibrationWrite(ctx, bundle); err != nil {
-			return nil, nil, err
-		}
-		results[i] = trainingload.ComputeActivityLoad(a, toTrainingLoadCalibration(bundle.Snapshot))
+		results[i] = res
 	}
 	return results, acts, nil
 }
@@ -297,33 +294,47 @@ func loadAndComputeActivity(ctx context.Context, store ComputeStore, user string
 // are skipped without error.
 func computeActivityZonesFor(ctx context.Context, store ComputeStore, user string, acts []trainingload.ActivityInput) error {
 	for i := range acts {
-		a := &acts[i]
-		if !watchmap.IsRunningSport(a.Sport) || len(a.Samples) == 0 {
-			continue
-		}
-		bundle, err := storage.ReadCachedRunningCalibration(ctx, store, user, timefmt.ShanghaiDayStr(a.ActivityDate), storage.CalibrationActive)
+		rows, err := DeriveActivityZoneRows(ctx, store, user, &acts[i])
 		if err != nil {
 			return err
 		}
-		if bundle.Snapshot == nil {
+		if rows == nil {
 			continue
 		}
-		if err := checkActiveCalibrationWrite(ctx, bundle); err != nil {
-			return err
-		}
-		zs := persistedZoneSet(bundle)
-		rows := toStorageActivityZones(user, zones.ComputeActivityTimeInZone(toZoneSamples(a.Samples), zs.PaceZones, zs.HeartRateZones))
-		for i := range rows {
-			rows[i].LabelID = a.LabelID
-			if err := storage.FreezeCalibrationProvenance(&rows[i], []storage.CalibrationInput{bundle.FrozenInput()}, nil); err != nil {
-				return err
-			}
-		}
-		if err := store.ReplaceActivityZones(ctx, user, a.LabelID, rows); err != nil {
+		if err := store.ReplaceActivityZones(ctx, user, acts[i].LabelID, rows); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// DeriveActivityZoneRows computes one activity's calibrated zone rows with
+// frozen provenance, or nil for an honest skip (not running, no samples, no
+// as-of snapshot for the activity's day). Shared by the ordinary compute path
+// and the explicit historical-metrics recompute (devops#1012).
+func DeriveActivityZoneRows(ctx context.Context, store ComputeStore, user string, a *trainingload.ActivityInput) ([]storage.ActivityZone, error) {
+	if !watchmap.IsRunningSport(a.Sport) || len(a.Samples) == 0 {
+		return nil, nil
+	}
+	bundle, err := storage.ReadCachedRunningCalibration(ctx, store, user, timefmt.ShanghaiDayStr(a.ActivityDate), storage.CalibrationActive)
+	if err != nil {
+		return nil, err
+	}
+	if bundle.Snapshot == nil {
+		return nil, nil
+	}
+	if err := checkActiveCalibrationWrite(ctx, bundle); err != nil {
+		return nil, err
+	}
+	zs := persistedZoneSet(bundle)
+	rows := toStorageActivityZones(user, zones.ComputeActivityTimeInZone(toZoneSamples(a.Samples), zs.PaceZones, zs.HeartRateZones))
+	for i := range rows {
+		rows[i].LabelID = a.LabelID
+		if err := storage.FreezeCalibrationProvenance(&rows[i], []storage.CalibrationInput{bundle.FrozenInput()}, nil); err != nil {
+			return nil, err
+		}
+	}
+	return rows, nil
 }
 
 // toCalibrationSnapshot maps a persisted snapshot row onto the pure-compute
@@ -423,6 +434,18 @@ type priorLoadSnapshot struct {
 	seed storage.CalibrationSeed
 }
 
+// SeedFromDailyRow rebuilds the explainable EWMA seed from a persisted daily
+// row: a provenance-verifiable row seeds frozen_seed (with digest), anything
+// else seeds legacy_seed_lineage_unavailable. One implementation shared by
+// the ordinary incremental path and the historical recompute's staged chain.
+func SeedFromDailyRow(row storage.DailyTrainingLoad) (trainingload.PriorLoadState, storage.CalibrationSeed) {
+	seed := storage.CalibrationSeed{Date: row.Date, AcuteLoad: row.AcuteLoad, ChronicLoad: row.ChronicLoad, State: "legacy_seed_lineage_unavailable"}
+	if p, state := storage.ReadCalibrationProvenance(row); state == "available" {
+		seed.ProvenanceDigest, seed.State = p.OutputDigest, "frozen_seed"
+	}
+	return trainingload.PriorLoadState{AcuteLoad: row.AcuteLoad, ChronicLoad: row.ChronicLoad}, seed
+}
+
 func (p *priorLoadSnapshot) values() *trainingload.PriorLoadState {
 	if p == nil {
 		return nil
@@ -438,12 +461,8 @@ func priorLoadState(ctx context.Context, store ComputeStore, user string, minDay
 	if row == nil {
 		return nil, nil
 	}
-	seed := storage.CalibrationSeed{Date: row.Date, AcuteLoad: row.AcuteLoad, ChronicLoad: row.ChronicLoad, State: "legacy_seed_lineage_unavailable"}
-	if p, state := storage.ReadCalibrationProvenance(*row); state == "available" {
-		seed.ProvenanceDigest = p.OutputDigest
-		seed.State = "frozen_seed"
-	}
-	return &priorLoadSnapshot{PriorLoadState: trainingload.PriorLoadState{AcuteLoad: row.AcuteLoad, ChronicLoad: row.ChronicLoad}, seed: seed}, nil
+	values, seed := SeedFromDailyRow(*row)
+	return &priorLoadSnapshot{PriorLoadState: values, seed: seed}, nil
 }
 
 // runPersonalBestsFull scans all running activities and replaces the PB set.
@@ -452,13 +471,13 @@ func runPersonalBestsFull(ctx context.Context, store ComputeStore, user string) 
 	if err != nil {
 		return 0, err
 	}
-	entries, err := pb.DetectPersonalBests(toPBActivities(acts), makeFetch(ctx, store, user))
+	entries, err := pb.DetectPersonalBests(PBActivitiesFromRows(acts), PBTimeseriesFetch(ctx, store, user))
 	if err != nil {
 		return 0, err
 	}
 	rows := make([]storage.PersonalBest, 0, len(entries))
 	for _, e := range entries {
-		rows = append(rows, toStoragePB(e))
+		rows = append(rows, PBRawFromEntry(e))
 	}
 	if err := store.ReplacePersonalBests(ctx, user, rows); err != nil {
 		return 0, err
@@ -480,7 +499,7 @@ func runPersonalBestsIncremental(ctx context.Context, store ComputeStore, user s
 	for _, e := range existing {
 		bestByDistance[e.Distance] = e.PBTimeSec
 	}
-	entries, err := pb.DetectPersonalBests(toPBActivities(newActs), makeFetch(ctx, store, user))
+	entries, err := pb.DetectPersonalBests(PBActivitiesFromRows(newActs), PBTimeseriesFetch(ctx, store, user))
 	if err != nil {
 		return 0, err
 	}
@@ -488,7 +507,7 @@ func runPersonalBestsIncremental(ctx context.Context, store ComputeStore, user s
 	for _, e := range entries {
 		prev, ok := bestByDistance[e.Distance]
 		if !ok || e.PBTimeSec < prev {
-			changed = append(changed, toStoragePB(e))
+			changed = append(changed, PBRawFromEntry(e))
 		}
 	}
 	if err := store.UpsertPersonalBests(ctx, user, changed); err != nil {
@@ -497,7 +516,8 @@ func runPersonalBestsIncremental(ctx context.Context, store ComputeStore, user s
 	return len(changed), nil
 }
 
-func makeFetch(ctx context.Context, store ComputeStore, user string) func(string) ([]pb.TSPoint, error) {
+// PBTimeseriesFetch builds the detector's timeseries fetch over the store.
+func PBTimeseriesFetch(ctx context.Context, store ComputeStore, user string) func(string) ([]pb.TSPoint, error) {
 	return func(labelID string) ([]pb.TSPoint, error) {
 		ts, err := store.ActivityTimeseries(ctx, user, labelID)
 		if err != nil {
@@ -511,7 +531,8 @@ func makeFetch(ctx context.Context, store ComputeStore, user string) func(string
 	}
 }
 
-func toPBActivities(acts []storage.Activity) []pb.Activity {
+// PBActivitiesFromRows maps storage activity rows onto the detector inputs.
+func PBActivitiesFromRows(acts []storage.Activity) []pb.Activity {
 	out := make([]pb.Activity, len(acts))
 	for i, a := range acts {
 		out[i] = pb.Activity{
@@ -527,7 +548,8 @@ func toPBActivities(acts []storage.Activity) []pb.Activity {
 	return out
 }
 
-func toStoragePB(e pb.Entry) storage.PersonalBest {
+// PBRawFromEntry maps a detector entry onto the persisted row shape.
+func PBRawFromEntry(e pb.Entry) storage.PersonalBest {
 	achievedAt := e.AchievedAt
 	source := e.Source
 	var achievedPtr, sourcePtr *string
@@ -677,15 +699,9 @@ func persistedZoneSet(b storage.CalibrationBundle) calibration.ZoneSet {
 	return out
 }
 func persistActivityLoad(ctx context.Context, store ComputeStore, user string, results []trainingload.ActivityLoadResult) error {
-	rows := mapActivityRows(user, results)
-	for i := range rows {
-		b, err := storage.ReadCachedRunningCalibration(ctx, store, user, rows[i].ActivityDate, storage.CalibrationActive)
-		if err != nil {
-			return err
-		}
-		if err = storage.FreezeCalibrationProvenance(&rows[i], []storage.CalibrationInput{b.FrozenInput()}, nil); err != nil {
-			return err
-		}
+	rows, err := DeriveActivityLoadRows(ctx, store, user, results)
+	if err != nil {
+		return err
 	}
 	return store.ReplaceActivityTrainingLoad(ctx, user, rows)
 }
@@ -697,21 +713,9 @@ func persistDailyLoad(ctx context.Context, store ComputeStore, user string, dail
 	} else {
 		seed = &storage.CalibrationSeed{State: "explicit_zero_anchor", Date: start.Format("2006-01-02")}
 	}
-	rows := mapDailyRows(user, daily)
-	for i := range rows {
-		// Readiness consumes this day's RHR bundle even with no activities.
-		// Missing history is frozen as unavailable, never replaced by today.
-		b, err := storage.ReadCachedRunningCalibration(ctx, store, user, rows[i].Date, storage.CalibrationActive)
-		if err != nil {
-			return err
-		}
-		inputs := []storage.CalibrationInput{b.FrozenInput()}
-		if err := storage.FreezeCalibrationProvenance(&rows[i], inputs, seed); err != nil {
-			return err
-		}
-		if p, state := storage.ReadCalibrationProvenance(rows[i]); state == "available" {
-			seed = &storage.CalibrationSeed{Date: rows[i].Date, AcuteLoad: rows[i].AcuteLoad, ChronicLoad: rows[i].ChronicLoad, ProvenanceDigest: p.OutputDigest, State: "frozen_seed"}
-		}
+	rows, _, err := DeriveDailyLoadRows(ctx, store, user, daily, seed)
+	if err != nil {
+		return err
 	}
 	return store.ReplaceDailyTrainingLoad(ctx, user, rows)
 }

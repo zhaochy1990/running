@@ -107,9 +107,10 @@ type FeatureConfig struct {
 	SyncDataAtOnboarding bool
 	// OnboardingSyncSession is the first-sync session rollout switch
 	// (devops#1006): gates the POST/GET /api/users/me/onboarding/sync entry
-	// points together with SyncDataAtOnboarding. Server-side gating only —
-	// it is deliberately NOT echoed in the profile response (the client
-	// surface lands with the T10-T12 tickets).
+	// points together with SyncDataAtOnboarding. Echoed in the profile
+	// response so clients pick the session entry over the legacy full-run
+	// pipeline only when BOTH switches are on (the client surface is
+	// devops#1014 T10 and its sibling client tickets).
 	OnboardingSyncSession     bool
 	CoachAgentWeeklyPlanUsers map[string]bool
 	CoachChatUsers            map[string]bool
@@ -120,6 +121,7 @@ type FeatureConfig struct {
 func (f FeatureConfig) forUser(uid string) featureFlags {
 	return featureFlags{
 		SyncDataAtOnboarding:     f.SyncDataAtOnboarding,
+		OnboardingSyncSession:    f.OnboardingSyncSession,
 		CoachAgentWeeklyPlan:     f.CoachAgentWeeklyPlanUsers[uid],
 		CoachChat:                f.CoachChatUsers[uid],
 		CoachChatDebug:           f.CoachChatDebugUsers[uid],
@@ -205,7 +207,11 @@ type onboardingState struct {
 }
 
 type featureFlags struct {
-	SyncDataAtOnboarding     bool `json:"sync_data_at_onboarding"`
+	SyncDataAtOnboarding bool `json:"sync_data_at_onboarding"`
+	// OnboardingSyncSession is the rollout switch for the session entry
+	// points, echoed so a client can pick its onboarding sync entry (the
+	// entry is usable only when SyncDataAtOnboarding is on too).
+	OnboardingSyncSession    bool `json:"onboarding_sync_session"`
 	CoachAgentWeeklyPlan     bool `json:"coach_agent_weekly_plan"`
 	CoachChat                bool `json:"coach_chat"`
 	CoachChatDebug           bool `json:"coach_chat_debug"`

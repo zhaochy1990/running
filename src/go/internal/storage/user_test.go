@@ -599,6 +599,7 @@ func TestDeleteUserData_CoversSensitiveTables(t *testing.T) {
 		st.AutoMigrateHomeCity,
 		st.AutoMigratePlanAdjustment,
 		st.AutoMigratePlanInjury,
+		st.AutoMigrateOnboardingSync, // first-sync tables (devops#1006/#1009)
 	} {
 		if err := migrate(ctx); err != nil {
 			t.Fatalf("migrate: %v", err)
@@ -615,6 +616,27 @@ func TestDeleteUserData_CoversSensitiveTables(t *testing.T) {
 	} {
 		addUserTableCleanup(t, st, table, deletedUID, keptUID)
 	}
+	// Onboarding sync rows: the user-owned tables by user_id; the session-scoped
+	// tables (no user_id column) by this test's session ids.
+	addUserTableCleanup(t, st, "onboarding_sync_sessions", deletedUID, keptUID)
+	addUserTableCleanup(t, st, "onboarding_recent_analysis", deletedUID, keptUID)
+	onbSessions := map[string]string{}
+	t.Cleanup(func() {
+		ids := make([]string, 0, len(onbSessions))
+		for _, id := range onbSessions {
+			ids = append(ids, id)
+		}
+		if len(ids) == 0 {
+			return
+		}
+		for _, table := range []string{
+			"onboarding_sync_dispatches", "onboarding_sync_work_items", "onboarding_sync_stage_coverage",
+		} {
+			if err := st.db.Exec("DELETE FROM "+table+" WHERE session_id IN ?", ids).Error; err != nil {
+				t.Errorf("cleanup %s: %v", table, err)
+			}
+		}
+	})
 	t.Cleanup(func() {
 		if err := st.db.Exec("DELETE FROM team_likes WHERE owner_user_id IN ? OR liker_user_id IN ?",
 			[]string{deletedUID, keptUID}, []string{deletedUID, keptUID}).Error; err != nil {
@@ -657,6 +679,48 @@ func TestDeleteUserData_CoversSensitiveTables(t *testing.T) {
 		}
 		if err := st.db.Create(&UserHomeCityHistory{UserID: uid, ToCity: "上海市", Reason: HomeCityChangeNew, ComputedAt: now}).Error; err != nil {
 			t.Fatalf("seed home city history: %v", err)
+		}
+	}
+
+	// First-sync onboarding rows (devops#1006/#1009): one session per user with
+	// one row in each session-scoped table plus the published recent-analysis
+	// row — the guarded erasure block must sweep all five.
+	for _, uid := range []string{deletedUID, keptUID} {
+		sessID := uuid.NewString()
+		onbSessions[uid] = sessID
+		if err := st.db.Create(&OnboardingSyncSession{
+			SessionID: sessID, UserID: uid, Provider: "coros", BindingRevision: 1,
+			AnchorDay: "2026-01-01", AnchorAtUTC: now, State: OnboardingSyncStateCompleted,
+			ShellReady: true, CreatedAt: now, UpdatedAt: now,
+		}).Error; err != nil {
+			t.Fatalf("seed onboarding session: %v", err)
+		}
+		if err := st.db.Create(&OnboardingSyncDispatch{
+			SessionID: sessID, Stage: OnboardingSyncStageRecentRaw,
+			IdempotencyKey: "onb-del-" + sessID, Status: OnboardingSyncDispatchDone,
+			CreatedAt: now, UpdatedAt: now,
+		}).Error; err != nil {
+			t.Fatalf("seed onboarding dispatch: %v", err)
+		}
+		if err := st.db.Create(&OnboardingSyncWorkItem{
+			SessionID: sessID, Stage: OnboardingSyncStageRecentRaw,
+			Kind: OnboardingSyncItemKindActivities, RangeFrom: "2025-10-04", RangeTo: "2026-01-01",
+			Status: OnboardingSyncItemDone, CreatedAt: now, UpdatedAt: now,
+		}).Error; err != nil {
+			t.Fatalf("seed onboarding work item: %v", err)
+		}
+		if err := st.db.Create(&OnboardingSyncStageCoverage{
+			SessionID: sessID, Stage: OnboardingSyncStageRecentRaw, Status: OnboardingSyncCoverageCompleted,
+			TargetFrom: "2025-10-04", TargetTo: "2026-01-01", CreatedAt: now, UpdatedAt: now,
+		}).Error; err != nil {
+			t.Fatalf("seed onboarding coverage: %v", err)
+		}
+		if err := st.db.Create(&OnboardingRecentAnalysis{
+			SessionID: sessID, UserID: uid, AsOfDay: "2026-01-02", AnchorDay: "2026-01-01",
+			InputFingerprint: strings.Repeat("a", 64), PolicyVersion: 1, PolicyRevision: 1,
+			Status: OnboardingAnalysisStatusReady, ComputedAt: now, CreatedAt: now, UpdatedAt: now,
+		}).Error; err != nil {
+			t.Fatalf("seed onboarding recent analysis: %v", err)
 		}
 	}
 
@@ -749,6 +813,23 @@ func TestDeleteUserData_CoversSensitiveTables(t *testing.T) {
 	if n := count(&TeamLike{}, "owner_user_id = ? OR liker_user_id = ?", deletedUID, deletedUID); n != 0 {
 		t.Errorf("team_likes rows survived: %d", n)
 	}
+	// The deleted user's first-sync onboarding rows are gone, including the
+	// session-scoped children swept through the session subquery.
+	if n := count(&OnboardingSyncSession{}, "user_id = ?", deletedUID); n != 0 {
+		t.Errorf("onboarding_sync_sessions rows survived: %d", n)
+	}
+	if n := count(&OnboardingRecentAnalysis{}, "user_id = ?", deletedUID); n != 0 {
+		t.Errorf("onboarding_recent_analysis rows survived: %d", n)
+	}
+	if n := count(&OnboardingSyncDispatch{}, "session_id = ?", onbSessions[deletedUID]); n != 0 {
+		t.Errorf("onboarding_sync_dispatches rows survived: %d", n)
+	}
+	if n := count(&OnboardingSyncWorkItem{}, "session_id = ?", onbSessions[deletedUID]); n != 0 {
+		t.Errorf("onboarding_sync_work_items rows survived: %d", n)
+	}
+	if n := count(&OnboardingSyncStageCoverage{}, "session_id = ?", onbSessions[deletedUID]); n != 0 {
+		t.Errorf("onboarding_sync_stage_coverage rows survived: %d", n)
+	}
 
 	// The other user's rows must be untouched.
 	if n := count(&AbilitySnapshot{}, "user_id = ?", keptUID); n != 1 {
@@ -765,6 +846,22 @@ func TestDeleteUserData_CoversSensitiveTables(t *testing.T) {
 	}
 	if n := count(&UserHomeCityHistory{}, "user_id = ?", keptUID); n != 1 {
 		t.Errorf("other user's home city history = %d, want 1", n)
+	}
+	// The other user's onboarding rows are untouched.
+	if n := count(&OnboardingSyncSession{}, "user_id = ?", keptUID); n != 1 {
+		t.Errorf("other user's onboarding sessions = %d, want 1", n)
+	}
+	if n := count(&OnboardingRecentAnalysis{}, "user_id = ?", keptUID); n != 1 {
+		t.Errorf("other user's onboarding analyses = %d, want 1", n)
+	}
+	if n := count(&OnboardingSyncDispatch{}, "session_id = ?", onbSessions[keptUID]); n != 1 {
+		t.Errorf("other user's onboarding dispatches = %d, want 1", n)
+	}
+	if n := count(&OnboardingSyncWorkItem{}, "session_id = ?", onbSessions[keptUID]); n != 1 {
+		t.Errorf("other user's onboarding work items = %d, want 1", n)
+	}
+	if n := count(&OnboardingSyncStageCoverage{}, "session_id = ?", onbSessions[keptUID]); n != 1 {
+		t.Errorf("other user's onboarding coverage = %d, want 1", n)
 	}
 }
 
