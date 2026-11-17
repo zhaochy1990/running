@@ -28,7 +28,23 @@ const (
 	evolvedBisectionIters       = 60
 	evolvedKCoarseSteps         = 80 // step 0.001 over the frozen [0.02, 0.10]
 	evolvedKFineSteps           = 40 // step ~0.00005 around the coarse best
-	evolvedLongDomainExtraSigma = 0.15
+	// evolvedLongDomainConstraintSigma is the GPS/course-scale slack of the
+	// >7200s monotone soft constraint: the total measurement-error allowance
+	// of a >=2h continuous average speed, whose relative GPS error is 1-3%
+	// (distance-integrated over 20km+; the upstream coverage/continuity/CV
+	// gates already reject broken windows). Constraint-deadzone defect fix
+	// (#993, 2026-11-17): the old recipe stacked quality + duration(0.06) +
+	// extra 0.15 into a 0.19-0.21 log (~±20%) deadzone that zero-penalized
+	// every near-boundary long run the user actually ran - e.g. a real 7582s
+	// @ 252.7 s/km against the model V(7200) of 273-282 s/km stayed penalty
+	// free, so the fastest long evidence never produced any gradient. The
+	// boundary itself - a pace held for D seconds bounds every t<=D from
+	// below - is effort-independent and model-row uncertainty vocabulary
+	// (effort/duration terms) must not widen it; domain extrapolation past
+	// the 7200s clamp belongs to the frozen k prior, not the deadzone.
+	// Staleness (ageSigma) still applies: an aged performance is a weaker
+	// bound on current capability.
+	evolvedLongDomainConstraintSigma = 0.02
 	evolvedProfileStepLogA      = 0.01
 	evolvedPriorShareDominant   = 0.5
 	evolvedPriorShareReason     = "prior_share_at_least_half_effective_curvature"
@@ -513,18 +529,33 @@ func evolvedAdmitObservationsMode(evidence []CandidateEvidence, asOf time.Time, 
 			seen[root][e.DurationS] = true
 			// Measurement sigma recipe carried over from hour-capability-v1 so
 			// both implementations share one uncertainty vocabulary.
-			sigma := map[Confidence]float64{ConfidenceHigh: .02, ConfidenceMedium: .05, ConfidenceLow: .10}[e.MeasurementQuality]
+			baseSigma := map[Confidence]float64{ConfidenceHigh: .02, ConfidenceMedium: .05, ConfidenceLow: .10}[e.MeasurementQuality]
 			ageSigma := math.Min(.15, age*.001)
-			sigma = math.Hypot(sigma, ageSigma)
-			if e.DurationS > 3600 {
-				sigma = math.Hypot(sigma, .06*math.Log(math.Min(e.DurationS, 7200)/3600)/math.Log(2))
-			}
-			if e.EffortSupport == EffortProbableMaximal {
-				sigma = math.Hypot(sigma, .06)
-			}
 			longDomain := e.DurationS > 7200
+			sigma := baseSigma
 			if longDomain {
-				sigma = math.Hypot(sigma, evolvedLongDomainExtraSigma)
+				// Constraint-deadzone fix (#993, 2026-11-17): constraint rows
+				// get a deadzone at the measurement scale of the monotone
+				// bound, not the model-row vocabulary. The quality map (0.02/
+				// 0.05/ 0.10) prices short-window sample integrity - e.g. a
+				// 95-99% coverage gap downgrades a 2h average to "low" even
+				// though its integrated GPS error is 1-3% - and stacking it
+				// with the removed 0.06/0.15 terms produced a ~0.19 deadzone
+				// that swallowed every real violation. Effort and duration
+				// terms are model-row margin vocabulary the bound does not
+				// carry (the boundary is effort-independent; the comparison
+				// sits at the clamped 7200s so extrapolation is the k prior's
+				// job). Deadzone = GPS-scale slack ⊕ staleness: ~2% fresh,
+				// ~9.5% at the 90-day staleness horizon.
+				sigma = math.Hypot(evolvedLongDomainConstraintSigma, ageSigma)
+			} else {
+				sigma = math.Hypot(sigma, ageSigma)
+				if e.DurationS > 3600 {
+					sigma = math.Hypot(sigma, .06*math.Log(math.Min(e.DurationS, 7200)/3600)/math.Log(2))
+				}
+				if e.EffortSupport == EffortProbableMaximal {
+					sigma = math.Hypot(sigma, .06)
+				}
 			}
 			p := evolvedObsPoint{
 				y:          math.Log(e.AvgSpeedMps),
@@ -578,6 +609,23 @@ func evolvedAdmitObservationsMode(evidence []CandidateEvidence, asOf time.Time, 
 	total := 0.0
 	for i := range fit.obs {
 		fit.obs[i].w /= float64(rootCounts[fit.obs[i].root] * dayCounts[rootDay[fit.obs[i].root]])
+		if fit.obs[i].constraint {
+			// Constraint-row weight floor (#993 constraint-deadzone fix,
+			// 2026-11-17): the >7200 full-duration row carries the activity's
+			// monotone physical bound - a hard fact, not one statistical vote
+			// among its sibling windows. The root/day divisors exist to stop
+			// overlapping content from multiplying SUPPORT; dividing the
+			// physical bound by the activity's window count starved it
+			// exactly on production windows (a 7582s run with 10 sibling
+			// windows entered at w=0.09 while any single-window easy root
+			// votes at ~2^(-age/90)), so the deadzone fix alone moved the
+			// center by <1 s/km on the user's manifest. Floor at the
+			// undivided recency unit - comparable to a single-window
+			// model_observation root, never above it.
+			if fit.obs[i].w < fit.obs[i].wAge {
+				fit.obs[i].w = fit.obs[i].wAge
+			}
+		}
 		fit.rows[fit.obs[i].index].Weight = fit.obs[i].w
 		total += fit.obs[i].w
 	}

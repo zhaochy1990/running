@@ -910,3 +910,49 @@ func TestEvolvedCapabilityWeeklyEffectResolutionBeyondDayCap(t *testing.T) {
 		t.Fatalf("trend must survive weekly resolution: %v (truth %v)", state.TrendPerDay, drift)
 	}
 }
+
+// TestEvolvedCapabilityActiveLongRunConstraintSurvivesStateSolve is the
+// #993 constraint-deadzone companion regression: once the deadzone sits at the
+// measurement scale, a genuinely violated >7200s monotone boundary is ACTIVE
+// during the #998 state solve. Pre-fix, the deadzone swallowed every real
+// violation, so the constraint branch of evolvedStateSolveSystem never ran
+// with v > 0 - and its class-column lookup indexed groups[-1] (constraint rows
+// carry no group), panicking the whole estimator the first time a violated
+// long run met a multi-day state window. The guard must be evaluated before
+// the group lookup, and the active constraint must keep the solve finite and
+// pull the center toward the monotone envelope.
+func TestEvolvedCapabilityActiveLongRunConstraintSurvivesStateSolve(t *testing.T) {
+	asOf := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
+	// Multi-day ordinary (submaximal ~3.3 m/s) window: state-eligible.
+	history, meta := evolvedStateOrdinaryHistory(asOf, 4.2, 0, 3, 0.18)
+	// A 7600s continuous long run ~19% above the pool-implied V(7200): the
+	// monotone boundary is violated well beyond the 2% measurement slack.
+	history = append(history, evolvedRunActivity("long-violated", asOf.AddDate(0, 0, -1), 7600, 3.9))
+	meta = append(meta, calibration.CandidateMetadata{ActivityID: "long-violated", SourceVersion: "audited-v1", EvidenceRef: "e"})
+
+	result, err := calibration.EstimateOfflineWithEvidence(calibration.StrategyEvolvedCandidate, history, asOf, nil, meta)
+	if err != nil {
+		t.Fatalf("active long-run constraint must not panic or fail the estimator: %v", err)
+	}
+	speed := result.Evolved.Speed
+	if speed.CenterMps == nil || !evolvedFinite(*speed.CenterMps) {
+		t.Fatalf("state solve with active constraint must publish a finite center: %+v", speed.CenterMps)
+	}
+	row, found := evolvedFindObservation(*speed, "long-violated")
+	if !found || row.Role != "long_duration_monotone_soft_constraint" {
+		t.Fatalf("long run must be admitted as monotone soft constraint: %+v", row)
+	}
+	// The violated boundary must have pulled the capability up: the with-run
+	// center sits above the same window without the long run (at the solution
+	// the hinge may sit exactly at zero - a fully restored envelope).
+	without, err := calibration.EstimateOfflineWithEvidence(calibration.StrategyEvolvedCandidate, history[:len(history)-1], asOf, nil, meta[:len(meta)-1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if without.Evolved.Speed.CenterMps == nil {
+		t.Fatal("without-run fit must publish a center")
+	}
+	if *speed.CenterMps <= *without.Evolved.Speed.CenterMps {
+		t.Fatalf("active constraint must pull the center up: with %v vs without %v", *speed.CenterMps, *without.Evolved.Speed.CenterMps)
+	}
+}

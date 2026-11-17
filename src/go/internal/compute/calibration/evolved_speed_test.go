@@ -375,6 +375,116 @@ func TestEvolvedSpeedLongActivityUsesMonotoneSoftConstraint(t *testing.T) {
 	}
 }
 
+// TestEvolvedSpeedViolatedLongRunBindsMonotoneEnvelope is the mandated
+// #993 constraint-deadzone regression (user-falsified 2026-11-14 evidence): a
+// real 7582s @ 252.7 s/km continuous long run is a hard monotonicity bound on
+// v60 - a pace held for D seconds bounds every t<=D from below - so an easy
+// pool implying ~290 s/km must NOT keep the center above the long-run pace
+// plus measurement slack. The pre-fix 0.19-0.21 log deadzone (~±20%) zero-
+// penalized exactly this evidence; the fix pins the deadzone at the GPS
+// measurement scale, and the violated boundary must actually pull the center
+// past the envelope: v60 <= 252.7 s/km x (1 + 3%).
+func TestEvolvedSpeedViolatedLongRunBindsMonotoneEnvelope(t *testing.T) {
+	asOf := time.Date(2026, 11, 17, 0, 0, 0, 0, time.UTC)
+	// Easy pool implying ~290 s/km v60 (submaximal ~340 s/km sessions with
+	// the class-consistent ~0.15 margin).
+	easy := []calibration.CandidateEvidence{
+		evolvedEvidence(asOf, 10, "easy-a", 3600, 2.90, calibration.EffortSubmaximal),
+		evolvedEvidence(asOf, 24, "easy-b", 5400, 2.85, calibration.EffortSubmaximal),
+		evolvedEvidence(asOf, 40, "easy-c", 3600, 2.95, calibration.EffortSubmaximal),
+		evolvedEvidence(asOf, 55, "easy-d", 5400, 2.90, calibration.EffortSubmaximal),
+	}
+	easyFit := calibration.FitEvolvedSpeed(easy, asOf, calibration.DefaultEvolvedPriors(), nil)
+	if easyFit.CenterMps == nil {
+		t.Fatal("easy pool alone must produce a center")
+	}
+	// The user's falsifying performance: 30.01 km in 7582 s = 252.7 s/km.
+	const longPaceSPerKm = 252.7
+	longSpeed := 1000 / longPaceSPerKm
+	withLong := append(append([]calibration.CandidateEvidence{}, easy...),
+		evolvedEvidence(asOf, 3, "long-bound", 7582, longSpeed, calibration.EffortSubmaximal),
+	)
+	report := calibration.FitEvolvedSpeed(withLong, asOf, calibration.DefaultEvolvedPriors(), nil)
+	if report.CenterMps == nil || report.PaceCenterSPerKm == nil {
+		t.Fatalf("fit with violated long run must produce a center: %+v", report)
+	}
+	if limit := longPaceSPerKm * 1.03; *report.PaceCenterSPerKm > limit {
+		t.Fatalf("violated long-run monotone boundary did not bind: v60 %.2f s/km stays above the physical envelope %.2f (easy-only %.2f)",
+			*report.PaceCenterSPerKm, limit, 1000/ *easyFit.CenterMps)
+	}
+	// The constraint row is admitted as a constraint and stays active at the
+	// solution (nonzero hinge -> it contributed gradient, not a no-op row).
+	row, found := evolvedFindObservation(report, "long-bound")
+	if !found || row.Role != "long_duration_monotone_soft_constraint" {
+		t.Fatalf("long run must be an active monotone soft constraint: %+v", row)
+	}
+	if row.Residual == nil || *row.Residual <= 0 {
+		t.Fatalf("violated constraint must carry a positive hinge residual at the solution: %+v", row)
+	}
+	// The long run must have made the estimate materially faster than the
+	// easy-only fit (the pre-fix deadzone left these fits identical).
+	if *report.CenterMps <= *easyFit.CenterMps {
+		t.Fatalf("constraint row produced no pull: with %v vs easy-only %v", *report.CenterMps, *easyFit.CenterMps)
+	}
+}
+
+// TestEvolvedSpeedConstraintDeadzoneSensitivity pins the deadzone scale: a
+// long-run observation crossing the constraint's effective boundary (observed
+// speed minus its measurement slack) by just 2% must already produce a nonzero
+// gradient contribution - the row carries a positive hinge residual and pulls
+// the center up. Pre-fix, only >19% crossings registered at all.
+func TestEvolvedSpeedConstraintDeadzoneSensitivity(t *testing.T) {
+	asOf := time.Date(2026, 11, 17, 0, 0, 0, 0, time.UTC)
+	easy := []calibration.CandidateEvidence{
+		evolvedEvidence(asOf, 8, "ez-a", 3600, 3.0, calibration.EffortSubmaximal),
+		evolvedEvidence(asOf, 21, "ez-b", 5400, 2.95, calibration.EffortSubmaximal),
+		evolvedEvidence(asOf, 34, "ez-c", 3600, 3.05, calibration.EffortSubmaximal),
+	}
+	easyFit := calibration.FitEvolvedSpeed(easy, asOf, calibration.DefaultEvolvedPriors(), nil)
+	if easyFit.CenterMps == nil || easyFit.RiegelK == nil {
+		t.Fatalf("easy pool must identify a center and k: %+v %+v", easyFit.CenterMps, easyFit.RiegelK)
+	}
+	a0 := math.Log(*easyFit.CenterMps)
+	v7200 := a0 - *easyFit.RiegelK*math.Log(2)
+	// 3-day-old constraint row: sigma = hypot(0.02, 0.003).
+	sigmaC := math.Hypot(0.02, 0.003)
+	// Observed speed 2% above the effective boundary y - sigma.
+	observed := math.Exp(v7200 + sigmaC + math.Log(1.02))
+	withLong := append(append([]calibration.CandidateEvidence{}, easy...),
+		evolvedEvidence(asOf, 3, "sens-long", 7582, observed, calibration.EffortSubmaximal),
+	)
+	report := calibration.FitEvolvedSpeed(withLong, asOf, calibration.DefaultEvolvedPriors(), nil)
+	if report.CenterMps == nil {
+		t.Fatalf("sensitivity fixture must produce a center: %+v", report)
+	}
+	row, found := evolvedFindObservation(report, "sens-long")
+	if !found || row.Role != "long_duration_monotone_soft_constraint" {
+		t.Fatalf("long row must be admitted as constraint: %+v", row)
+	}
+	if row.Residual == nil || *row.Residual <= 0 {
+		t.Fatalf("2%% boundary crossing must produce a nonzero hinge residual (nonzero gradient contribution): %+v", row)
+	}
+	if *report.CenterMps <= *easyFit.CenterMps {
+		t.Fatalf("2%% boundary crossing must pull the center up: %v vs easy-only %v", *report.CenterMps, *easyFit.CenterMps)
+	}
+}
+
+func evolvedFindObservation(report calibration.EvolvedSpeedReport, id string) (calibration.EvolvedSpeedObservation, bool) {
+	// Prefer the monotone-constraint row: a >7200s activity spawns many
+	// window rows and only the full-duration row carries the constraint role.
+	for _, o := range report.Observations {
+		if o.ActivityID == id && o.Role == "long_duration_monotone_soft_constraint" {
+			return o, true
+		}
+	}
+	for _, o := range report.Observations {
+		if o.ActivityID == id {
+			return o, true
+		}
+	}
+	return calibration.EvolvedSpeedObservation{}, false
+}
+
 // TestEvolvedSpeedDuplicateRootDurationDeduplicated: repeated same-root
 // same-duration windows are dropped (never re-credited), and shuffling the
 // input order does not change the fit.

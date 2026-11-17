@@ -364,8 +364,16 @@ func evolvedStateSolveSystem(fit *evolvedFit, priors EvolvedPriorSet, histMean, 
 		if di, ok := u.dayIdx[st.dayKey[p.day]]; ok {
 			g[di] = -keepG / p.sigma
 		}
-		if ci, ok := u.clsIdx[fit.groups[p.group].effort]; ok && !p.constraint {
-			g[ci] = keepG / p.sigma
+		// Constraint rows carry no group/class (p.group == -1): the !p.constraint
+		// guard must be evaluated BEFORE indexing fit.groups[p.group] - the old
+		// operand order indexed groups[-1] for any ACTIVE constraint row. That
+		// path was unreachable while the pre-#993-fix deadzone swallowed every
+		// real violation (v <= 0 continue above); the first genuine violation
+		// panicked the state solve (#993 constraint-deadzone fix, 2026-11-17).
+		if !p.constraint {
+			if ci, ok := u.clsIdx[fit.groups[p.group].effort]; ok {
+				g[ci] = keepG / p.sigma
+			}
 		}
 		evolvedStateAddRow(A, rhs, g, r, p.w*nu)
 	}
