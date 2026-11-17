@@ -277,6 +277,24 @@ func (s *Store) ActiveHistoricalRecomputeRunByUser(ctx context.Context, userID s
 	return &rows[0], nil
 }
 
+// LatestTerminalHistoricalRecomputeRunByUser returns the user's newest
+// terminal calibration run with a frozen bundle (completed or
+// completed_with_gaps), or nil — the frozen baseline a downstream metrics
+// recompute (devops#1012) consumes as one consistent vintage (ADR 0046).
+func (s *Store) LatestTerminalHistoricalRecomputeRunByUser(ctx context.Context, userID string) (*HistoricalRecomputeRun, error) {
+	var rows []HistoricalRecomputeRun
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ? AND state IN ? AND bundle_fingerprint IS NOT NULL", userID,
+			[]string{HistoricalRecomputeStateCompleted, HistoricalRecomputeStateCompletedWithGaps}).
+		Order("created_at DESC").Limit(1).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	return &rows[0], nil
+}
+
 // ListHistoricalRecomputeDays returns the run's whole evidence ledger, sorted
 // by day (the resume decision reads it once per chunk).
 func (s *Store) ListHistoricalRecomputeDays(ctx context.Context, runID string) ([]*HistoricalRecomputeDay, error) {

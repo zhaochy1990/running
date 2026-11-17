@@ -270,6 +270,17 @@ func upsertL1(ctx context.Context, store AbilityStore, user string, a *ability.A
 	if err := checkActiveCalibrationWrite(ctx, bundle); err != nil {
 		return err
 	}
+	row, err := DeriveL1Row(user, a, hrMax, bundle)
+	if err != nil {
+		return err
+	}
+	return store.UpsertActivityAbility(ctx, user, row)
+}
+
+// DeriveL1Row shapes one activity's provenance-frozen L1 row — the pure form
+// shared by the ordinary upsertL1 and the explicit historical recompute
+// (devops#1012).
+func DeriveL1Row(user string, a *ability.Activity, hrMax int, bundle storage.CalibrationBundle) (*storage.ActivityAbility, error) {
 	l1 := ability.ComputeL1Quality(a, nil, hrMax)
 	breakdown, _ := json.Marshal(l1.Breakdown)
 	bs := string(breakdown)
@@ -281,9 +292,9 @@ func upsertL1(ctx context.Context, store AbilityStore, user string, a *ability.A
 		ComputedAt:  time.Now().UTC(),
 	}
 	if err := storage.FreezeCalibrationProvenance(row, []storage.CalibrationInput{bundle.FrozenInput()}, nil); err != nil {
-		return err
+		return nil, err
 	}
-	return store.UpsertActivityAbility(ctx, user, row)
+	return row, nil
 }
 
 // backfillL1 (mode=backfill_l1) walks the user's full running history and fills

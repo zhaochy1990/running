@@ -62,6 +62,17 @@ runtime:
   # — runs still require an explicit internal jobs-API dispatch per user.
   historical-recompute:
     enabled: false
+  # Explicit historical-metrics recompute rollout gate (devops#1012,
+  # default OFF), kept in this file for the same env-activation reason as
+  # the gates above: runtime.historical-metrics-recompute.enabled ->
+  # STRIDE_WORKER_RUNTIME_HISTORICAL_METRICS_RECOMPUTE_ENABLED only applies
+  # to keys the YAML carries. Enabling authorizes the worker to EXECUTE
+  # operator-dispatched historical-metrics recompute jobs (staged rebuild of
+  # load/zones/PMC/PB/L1 + the as-of-day ability refresh, consuming a frozen
+  # T07 calibration bundle); it is not itself a production backfill — runs
+  # still require an explicit internal jobs-API dispatch per user.
+  historical-metrics-recompute:
+    enabled: false
 
 # Independent race detector (not Coach Agent). The DeepSeek key is secret and
 # must be supplied via STRIDE_WORKER_RACE_DETECTION_API_KEY.
