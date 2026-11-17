@@ -289,9 +289,12 @@ import Testing
         #expect(!status.dismissed)
         #expect(status.retryError == nil)
 
-        // 停轮后不再发请求
-        let hits = await transport.count(path: "/api/users/me/onboarding/sync")
+        // 停轮后不再发请求。先等一个 settle 窗口：stopPolling 是协作式取消，
+        // reset 瞬间已在途的那次 GET 仍会落地记账（CI 慢机上必现），须让它
+        // 落完再记基线，否则在途请求晚落地会被误判为「停轮后仍在发请求」。
         try await Task.sleep(for: .milliseconds(80))
+        let hits = await transport.count(path: "/api/users/me/onboarding/sync")
+        try await Task.sleep(for: .milliseconds(120))
         #expect(await transport.count(path: "/api/users/me/onboarding/sync") == hits)
     }
 }
