@@ -57,6 +57,8 @@ function reasonText(code: string): string {
   if (code === "no_applicable_duration") return "没有适用时长的跑步证据";
   if (code === "joint_solver_failed") return "联合求解失败，已保留配速单独解";
   if (code === "hr_prediction_out_of_domain") return "心率预测超出适用域，不予发布";
+  if (code === "hr_regression_extrapolated_beyond_observed_speed_domain") return "预测外推超过已观测速度域 10%，已降级并扩大范围";
+  if (code === "hr_regression_extrapolated_beyond_observed_hr_range") return "预测越过已观测心率范围，属显式外推";
   if (code === "single_activity_no_duration_diversity") return "仅一次活动且时长单一，可辨识性不足";
   if (code === "optical_HR_downweighted_not_excluded") return "光电腕式心率已降权使用（未排除）";
   if (code === "prior_only_HR_estimate") return "心率估计仅来自生理先验";

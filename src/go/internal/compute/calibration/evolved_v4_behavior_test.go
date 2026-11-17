@@ -454,3 +454,116 @@ func deref(v *float64) float64 {
 }
 
 func v4F64p(v float64) *float64 { return &v }
+
+// §6.4 (P1 fidelity): a regression-branch prediction extrapolated beyond the
+// observed speed domain by more than 10% is downgraded, its scenario range
+// widens, and the extrapolation is reported explicitly — never silently.
+func TestV4RegressionExtrapolationReportedAndWidened(t *testing.T) {
+	steady := func(hr float64) *float64 { v := hr; return &v }
+	thresholdDay := v4RunActivity("reg-day", v4AsOf.AddDate(0, 0, -6), 3600, 3.5, func(int) *float64 { return steady(150) })
+	// A fast short window pushes the hour floor ~18% above the observed HR
+	// segment speed: the regression prediction extrapolates.
+	fast := v4RunActivity("reg-fast", v4AsOf.AddDate(0, 0, -7), 180, 5.0, nil)
+	withExtrapolation, hrExt, _ := v4Estimate(t, []calibration.Activity{thresholdDay, fast}, v4AsOf, nil, nil)
+	if hrExt.Branch != "regression" {
+		t.Fatalf("no R source must take the regression branch, got %s", hrExt.Branch)
+	}
+	if !hrExt.RegressionExtrapolatedSpeedDomain {
+		t.Fatal("extrapolation beyond the observed speed domain not flagged")
+	}
+	found := false
+	for _, r := range hrExt.Reasons {
+		if r == "hr_regression_extrapolated_beyond_observed_speed_domain" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("extrapolation reason missing: %v", hrExt.Reasons)
+	}
+	// Without the fast window the prediction stays inside the observed
+	// domain; the extrapolated range must be strictly wider than it.
+	_, hrIn, _ := v4Estimate(t, []calibration.Activity{thresholdDay}, v4AsOf, nil, nil)
+	if hrIn.RegressionExtrapolatedSpeedDomain {
+		t.Fatal("in-domain prediction wrongly flagged as extrapolated")
+	}
+	if hrExt.RangeLowBpm == nil || hrExt.RangeHighBpm == nil || hrIn.RangeLowBpm == nil || hrIn.RangeHighBpm == nil {
+		t.Fatal("ranges missing")
+	}
+	wExt := *hrExt.RangeHighBpm - *hrExt.RangeLowBpm
+	wIn := *hrIn.RangeHighBpm - *hrIn.RangeLowBpm
+	if wExt <= wIn {
+		t.Fatalf("extrapolated scenario range (%.2f) must be wider than the in-domain family (%.2f)", wExt, wIn)
+	}
+	if hrExt.State != calibration.StatePriorDominated {
+		t.Fatalf("extrapolated regression must stay downgraded, got %s", hrExt.State)
+	}
+	_ = withExtrapolation
+}
+
+// §8.2 item 6 (P2-5): with a single selected day there is explicitly no
+// leave-one-day stability evidence.
+func TestV4SingleDayHasNoLeaveOneEvidence(t *testing.T) {
+	solo := v4RunActivity("solo-day", v4AsOf.AddDate(0, 0, -5), 3600, 3.6, nil)
+	speed, _, _ := v4Estimate(t, []calibration.Activity{solo}, v4AsOf, nil, nil)
+	if speed.LeaveOneDayStatus != "single_day_no_leave_one_evidence" {
+		t.Fatalf("single-day estimate must state the missing stability evidence, got %q", speed.LeaveOneDayStatus)
+	}
+	two := []calibration.Activity{solo, v4RunActivity("other-day", v4AsOf.AddDate(0, 0, -12), 1800, 3.8, nil)}
+	speed2, _, _ := v4Estimate(t, two, v4AsOf, nil, nil)
+	if speed2.LeaveOneDayStatus != "computed" {
+		t.Fatalf("multi-day estimate must compute leave-one-day, got %q", speed2.LeaveOneDayStatus)
+	}
+}
+
+// §6.3 (P2-6): the pace and HR sides each publish their independent-day
+// counts and loss totals.
+func TestV4LossTotalsPublished(t *testing.T) {
+	history := []calibration.Activity{
+		v4RunActivity("loss-a", v4AsOf.AddDate(0, 0, -30), 1800, 3.6, nil),
+		v4RunActivity("loss-b", v4AsOf.AddDate(0, 0, -20), 3600, 3.3, nil),
+		v4RunActivity("loss-c", v4AsOf.AddDate(0, 0, -5), 1200, 3.8, nil),
+	}
+	speed, _, _ := v4Estimate(t, history, v4AsOf, nil, nil)
+	if speed.CenterMps == nil {
+		t.Fatal("center missing")
+	}
+	if !(speed.LossLP > 0) {
+		t.Fatalf("pace-side loss total must be positive with active pool rows, got %v", speed.LossLP)
+	}
+	if !(speed.LossLk >= 0) || speed.LossLk > 0.5*math.Pow((0.10-0.06)/0.02, 2)/2+1e-9 {
+		t.Fatalf("L_k out of its declared range: %v", speed.LossLk)
+	}
+	if speed.HRIndependentDays == 0 && speed.LossLHWeighted != 0 {
+		t.Fatal("HR loss reported without HR days")
+	}
+}
+
+// §6.4 row 2 (P2-7): the prior-only HR range comes from the prior scenarios
+// — the q60 family unioned with the R±3/M±5 research scenarios.
+func TestV4PriorOnlyRangeIncludesRMScenarios(t *testing.T) {
+	rhr := 55.0
+	health := []calibration.HealthRow{}
+	for i := 0; i < 20; i++ {
+		health = append(health, calibration.HealthRow{Date: v4AsOf.AddDate(0, 0, -(i + 1)), RHR: &rhr})
+	}
+	// Easy run without HR (no usable series) + a short hard effort whose HR
+	// spike fixes M ≈ 188 without becoming an HR day (180 s < 8 min).
+	easy := v4RunActivity("prior-easy", v4AsOf.AddDate(0, 0, -15), 2400, 3.0, nil)
+	hard := v4RunActivity("prior-hard", v4AsOf.AddDate(0, 0, -2), 180, 4.0, func(second int) *float64 {
+		v := 150.0 + 38.0*float64(second)/180.0
+		return &v
+	})
+	speed, hr, _ := v4Estimate(t, []calibration.Activity{easy, hard}, v4AsOf, health, nil)
+	if hr.Branch != "prior_only" {
+		t.Fatalf("R/M valid without a usable HR series must take prior_only, got %s (R=%v M=%v)", hr.Branch, hr.RestingHRBpm, hr.HRMaxBpm)
+	}
+	if hr.CenterBpm == nil || hr.RangeLowBpm == nil || hr.RangeHighBpm == nil {
+		t.Fatal("prior-only center/range missing")
+	}
+	span := *hr.RangeHighBpm - *hr.RangeLowBpm
+	q60Only := 0.10 * (*hr.HRMaxBpm - *hr.RestingHRBpm) // 0.90 − 0.80 of reserve
+	if span <= q60Only+1e-9 {
+		t.Fatalf("prior-only range span %.2f must exceed the q60-only family %.2f (R±3/M±5 scenarios joined)", span, q60Only)
+	}
+	_ = speed
+}

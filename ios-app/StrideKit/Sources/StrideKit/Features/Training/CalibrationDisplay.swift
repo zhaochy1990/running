@@ -255,6 +255,8 @@ private func calibrationReason(_ value: String) -> String {
     case "no_applicable_duration": "没有适用时长的跑步证据"
     case "joint_solver_failed": "联合求解失败，已保留配速单独解"
     case "hr_prediction_out_of_domain": "心率预测超出适用域，不予发布"
+    case "hr_regression_extrapolated_beyond_observed_speed_domain": "预测外推超过已观测速度域 10%，已降级并扩大范围"
+    case "hr_regression_extrapolated_beyond_observed_hr_range": "预测越过已观测心率范围，属显式外推"
     case "single_activity_no_duration_diversity": "仅一次活动且时长单一，可辨识性不足"
     case "optical_HR_downweighted_not_excluded": "光电腕式心率已降权使用（未排除）"
     case "prior_only_HR_estimate": "心率估计仅来自生理先验"

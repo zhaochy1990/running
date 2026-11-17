@@ -91,6 +91,14 @@ type EvolvedSpeedReport struct {
 	ScenarioFailures          int                 `json:"scenario_failures"`
 	Scenarios                 []v4ScenarioOutcome `json:"scenarios"`
 	SensitivityIncludesCenter bool                `json:"sensitivity_includes_center"`
+	// LeaveOneDayStatus: "computed" when leave-one-independent-day recomputes
+	// ran; "single_day_no_leave_one_evidence" when only one selected day
+	// exists (§8.2 item 6: 只有一日时明确没有此项稳定性证据).
+	LeaveOneDayStatus string `json:"leave_one_day_status"`
+	// Loss totals (§6.3: 配速和 HR 各自的独立日数及损失总量必须输出).
+	LossLP         float64 `json:"loss_lp,omitempty"`
+	LossLk         float64 `json:"loss_lk,omitempty"`
+	LossLHWeighted float64 `json:"loss_lh_weighted,omitempty"`
 	// Identity.
 	PriorsIdentityHash     string   `json:"priors_identity_hash"`
 	InputIdentityHash      string   `json:"input_identity_hash"`
@@ -139,15 +147,24 @@ type EvolvedHRReport struct {
 	Q60                      *float64        `json:"q60,omitempty"`
 	Beta                     *float64        `json:"beta,omitempty"`
 	TauS                     *float64        `json:"tau_s,omitempty"`
-	DayEffectCount           int             `json:"day_effect_count"`
-	DayEffectMaxAbs          float64         `json:"day_effect_max_abs"`
-	DriftMaxAbsPerHour       float64         `json:"drift_max_abs_per_hour"`
-	SolverRounds             int             `json:"solver_rounds"`
-	SolverConverged          bool            `json:"solver_converged"`
-	SolverObjective          float64         `json:"solver_objective"`
-	IndependentRoots         int             `json:"independent_roots"`
-	IndependentDays          int             `json:"independent_days"`
-	EvidenceDate             string          `json:"evidence_date,omitempty"`
+	// §6.4 regression diagnostics: single speed layer (b fixed at 60) and
+	// extrapolation beyond the observed speed domain (>10%) or across the
+	// observed HR range — both explicit, never silent.
+	RegressionSingleSpeedLayer        bool `json:"regression_single_speed_layer,omitempty"`
+	RegressionExtrapolatedSpeedDomain bool `json:"regression_extrapolated_beyond_observed_speed_domain,omitempty"`
+	RegressionExtrapolatedObservedHR  bool `json:"regression_extrapolated_beyond_observed_hr_range,omitempty"`
+	// LossLH is the raw HR day-weighted Huber total at the solution (the
+	// joint objective carries lambda_H × LossLH).
+	LossLH             float64 `json:"loss_lh,omitempty"`
+	DayEffectCount     int     `json:"day_effect_count"`
+	DayEffectMaxAbs    float64 `json:"day_effect_max_abs"`
+	DriftMaxAbsPerHour float64 `json:"drift_max_abs_per_hour"`
+	SolverRounds       int     `json:"solver_rounds"`
+	SolverConverged    bool    `json:"solver_converged"`
+	SolverObjective    float64 `json:"solver_objective"`
+	IndependentRoots   int     `json:"independent_roots"`
+	IndependentDays    int     `json:"independent_days"`
+	EvidenceDate       string  `json:"evidence_date,omitempty"`
 	// LatestRejectedEvidenceDate keeps rejected protocol history (stale or
 	// unverified tiers) separated from the current estimate.
 	LatestRejectedEvidenceDate string                 `json:"latest_rejected_evidence_date,omitempty"`
@@ -271,8 +288,11 @@ func buildV4Reports(e *v4Estimate, prior *HistoricalCapabilityPrior) (EvolvedSpe
 		leaveOut := v4PoolDayList(e.evidence.Rows, e.evidence.Pool)
 		if len(leaveOut) <= 1 {
 			// Single selected day: no leave-one-day stability evidence
-			// exists (§8.2 item 6) — reported, not faked.
+			// exists (§8.2 item 6) — explicitly stated, not silently absent.
+			speed.LeaveOneDayStatus = "single_day_no_leave_one_evidence"
 			leaveOut = nil
+		} else {
+			speed.LeaveOneDayStatus = "computed"
 		}
 		sens := v4RunSensitivity(e, main, e.mainPace, e.mainJoint, priors, leaveOut)
 		speed.Scenarios = sens.Scenarios
@@ -295,6 +315,18 @@ func buildV4Reports(e *v4Estimate, prior *HistoricalCapabilityPrior) (EvolvedSpe
 		speed.SensitivityIncludesCenter = lo <= *main.CenterMps && *main.CenterMps <= hi
 		// Per-bucket bound diagnostics.
 		speed.Bounds = v4BoundDiagnostics(e, main)
+	}
+
+	// §6.3 loss totals: pace-side L_P/L_k at the solution and the HR-side
+	// day-weighted Huber total (raw; the joint weight is LambdaH).
+	if main.CenterMps != nil && e.mainPace != nil {
+		lp, _ := e.mainPace.evaluate(main.A, main.K)
+		speed.LossLP, speed.LossLk = lp, e.priors.EndurancePenalty(main.K)
+	}
+	if e.mainJoint != nil && e.mainWarmTheta != nil {
+		lh := e.mainJoint.hrLossTotal(main.A, e.mainWarmTheta)
+		hr.LossLH = lh
+		speed.LossLHWeighted = e.mainJoint.lambdaH * lh
 	}
 
 	// Pace state (§8.3).
@@ -434,14 +466,22 @@ func v4AssembleHR(e *v4Estimate, main v4SolveResult, hr *EvolvedHRReport, speed 
 		hr.CenterBpm = main.H60
 		hr.State = StatePriorDominated
 		hr.Reasons = append(hr.Reasons, v4ReasonHRRegression)
-		if e.hrSeries != nil && len(e.hrSeries.RegressionPoints) > 0 {
-			minY, maxY := math.Inf(1), math.Inf(-1)
-			for _, p := range e.hrSeries.RegressionPoints {
-				minY = math.Min(minY, p.LogV)
-				maxY = math.Max(maxY, p.LogV)
-			}
-			if maxY-minY < 0.01 {
+		if fit := e.v4RegressionFit(main.A); fit.H60 != nil || len(e.hrSeries.RegressionPoints) > 0 {
+			hr.RegressionSingleSpeedLayer = fit.SingleSpeedLayer
+			hr.RegressionExtrapolatedSpeedDomain = fit.ExtrapolatedSpeedDomain
+			hr.RegressionExtrapolatedObservedHR = fit.ExtrapolatedObservedHR
+			if fit.SingleSpeedLayer {
 				hr.Reasons = append(hr.Reasons, "regression_single_speed_layer_b_fixed")
+			}
+			// §6.4: extrapolating beyond the observed speed domain by more
+			// than 10% downgrades (already prior_dominated here) and widens
+			// the scenario range; a prediction crossing the observed HR
+			// range is reported explicitly.
+			if fit.ExtrapolatedSpeedDomain {
+				hr.Reasons = append(hr.Reasons, "hr_regression_extrapolated_beyond_observed_speed_domain")
+			}
+			if fit.ExtrapolatedObservedHR {
+				hr.Reasons = append(hr.Reasons, "hr_regression_extrapolated_beyond_observed_hr_range")
 			}
 		}
 	default:
@@ -468,10 +508,30 @@ func v4AssembleHR(e *v4Estimate, main v4SolveResult, hr *EvolvedHRReport, speed 
 		lo, hi := *hr.CenterBpm, *hr.CenterBpm
 		switch e.hrBranch {
 		case "prior_only":
+			// §6.4 row 2: the range comes from the prior scenarios — the
+			// §8.2 prior axes (q60 centers 0.80/0.85/0.90, R±3 bpm,
+			// M±5 bpm) as one scenario envelope (their cross-product), so
+			// the R/M research scenarios genuinely widen the q60 family.
 			r, m := *e.restPrior, *e.phys.M
-			for _, q := range []float64{0.80, 0.90} {
-				v := r + (m-r)*q
-				lo, hi = math.Min(lo, v), math.Max(hi, v)
+			for _, q := range []float64{0.80, 0.85, 0.90} {
+				for _, dr := range []float64{-3, 0, 3} {
+					for _, dm := range []float64{-5, 0, 5} {
+						rr, mm := r+dr, m+dm
+						if !(mm > rr) {
+							continue
+						}
+						v := rr + (mm-rr)*q
+						lo, hi = math.Min(lo, v), math.Max(hi, v)
+					}
+				}
+			}
+			if e.sensitivity != nil {
+				for _, sc := range e.sensitivity.Scenarios {
+					if sc.H60Bpm == nil || !sc.OK {
+						continue
+					}
+					lo, hi = math.Min(lo, *sc.H60Bpm), math.Max(hi, *sc.H60Bpm)
+				}
 			}
 		case "regression":
 			// §6.4/§8.2: slope scenarios 30/60/90 (c re-fitted) plus ±6 bpm

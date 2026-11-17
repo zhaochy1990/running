@@ -320,6 +320,13 @@ func v4BuildHRSeries(history []Activity, metadata []CandidateMetadata, hrEvidenc
 		}
 		series := &v4HRSeriesBins{Root: root, Sensor: sensor, Role: "model_series"}
 		excluded := false
+		if !v4ConditionsComparable(m.Terrain, m.Device) {
+			// §6.1: prefer segments that are continuous >= 8 min with usable
+			// speed AND comparable conditions — known assist/bias terrain
+			// never feeds the reference-condition HR model.
+			series.Role = "conditions_not_comparable"
+			excluded = true
+		}
 		if m.Interrupted {
 			series.Role = "interruption_mapping_unverified"
 			excluded = true
@@ -596,19 +603,18 @@ func v4RegressionPoints(s *v4HRSeries, priors EvolvedPriorSet) []v4RegressionPoi
 				if float64(missing)/float64(len(win)) > 0.05 {
 					continue
 				}
-				// Speed CV (time-weighted).
-				var sum, sumSq, wsum float64
+				// Speed CV (full time-weighted moments in the speed domain —
+				// not a log-domain approximation).
+				var sumV, sumV2, wsum float64
 				for _, b := range win {
-					sum += b.LogV * b.Dt
-					sumSq += b.LogV * b.LogV * b.Dt
+					v := math.Exp(b.LogV)
+					sumV += v * b.Dt
+					sumV2 += v * v * b.Dt
 					wsum += b.Dt
 				}
-				meanL := sum / wsum
-				varL := math.Max(0, sumSq/wsum-meanL*meanL)
-				cv := math.Sqrt(varL) // CV in log space ~ speed CV for small values
-				speedMean := math.Exp(meanL)
-				cvSpeed := cv * speedMean
-				if cvSpeed > 0.12 {
+				meanV := sumV / wsum
+				varV := math.Max(0, sumV2/wsum-meanV*meanV)
+				if meanV > 0 && math.Sqrt(varV)/meanV > 0.12 {
 					continue
 				}
 				// HR first/last 1-minute means.
@@ -633,7 +639,7 @@ func v4RegressionPoints(s *v4HRSeries, priors EvolvedPriorSet) []v4RegressionPoi
 					hr += b.HR * b.Dt
 				}
 				hr /= wsum
-				points = append(points, v4RegressionPoint{Day: d.Day, LogV: meanL, HR: hr, Sigma: win[0].Sigma})
+				points = append(points, v4RegressionPoint{Day: d.Day, LogV: math.Log(meanV), HR: hr, Sigma: win[0].Sigma})
 			}
 		}
 	}
@@ -785,6 +791,19 @@ func (s *v4HRJointSolver) dayLoss(d *v4HRDay, a float64, th *v4HRTheta) float64 
 }
 
 func sigmoid(z float64) float64 { return 1 / (1 + math.Exp(-z)) }
+
+// hrLossTotal is the raw §6.3 HR loss L_H = Σ_j W_j·TimeMean ρ1.5(...) at
+// (a, theta) — the per-side loss total the diagnostics must output.
+func (s *v4HRJointSolver) hrLossTotal(a float64, th *v4HRTheta) float64 {
+	if len(s.days) == 0 {
+		return 0
+	}
+	lh := 0.0
+	for _, d := range s.days {
+		lh += d.Weight * s.dayLoss(d, a, th)
+	}
+	return lh
+}
 
 // v4WithoutDay returns a copy of the series without one independent day
 // (§8.2 leave-one-day), with the §6.3 day weights renormalized over the

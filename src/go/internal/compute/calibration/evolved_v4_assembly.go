@@ -328,7 +328,18 @@ func (e *v4Estimate) runSolve(cfg v4SolveConfig) v4SolveResult {
 		}
 	default:
 		// Empty L_P: the §5.2 fallback ladder.
-		return e.v4FallbackSolve(ev, floor, res, cfg)
+		if cfg.isMain() {
+			e.mainPace = &pace
+		}
+		out := e.v4FallbackSolve(ev, &pace, floor, res, cfg)
+		if cfg.isMain() && out.OK && e.mainPaceSol == nil {
+			// Pace-only contribution view for the non-joint fallback arms
+			// (the bound_fallback joint arm already pinned its pre-joint
+			// minimal solution above).
+			solCopy := *resToSolution(out)
+			e.mainPaceSol = &solCopy
+		}
+		return out
 	}
 	center := math.Exp(res.A)
 	res.CenterMps = &center
@@ -363,16 +374,20 @@ func (c v4SolveConfig) isMain() bool {
 
 // v4FallbackSolve: pool empty — bound_fallback (trusted >7200 s records),
 // long_training_fallback (weak legal long records), or the honest failures.
-func (e *v4Estimate) v4FallbackSolve(ev v4EvidenceSet, floor v4FloorFunction, res v4SolveResult, cfg v4SolveConfig) v4SolveResult {
+// pace carries the (empty-L_P) objective with the same floor: §5.2 lets the
+// bound_fallback branch still enter the §6 joint solve when valid HR exists.
+func (e *v4Estimate) v4FallbackSolve(ev v4EvidenceSet, pace *v4PaceObjective, floor v4FloorFunction, res v4SolveResult, cfg v4SolveConfig) v4SolveResult {
 	k := 0.06
 	if cfg.KFix != nil {
 		k = *cfg.KFix
 	}
 	if len(ev.TrustedConstraintIdx) > 0 {
 		// §5.2: only >7200 s trusted records → k=0.06, minimal a satisfying
-		// every constraint; never a free pick on a flat objective.
+		// every constraint; never a free pick on a flat objective. The
+		// numerical search domain is open here: a fallback touching an edge
+		// is not publishable (§8.3 未触边).
 		f := floor.aFloor(k)
-		if !f.finite() || f.Value > math.Log(e.priors.V60SearchHighMps) || f.Value < math.Log(e.priors.V60SearchLowMps) {
+		if !f.finite() || f.Value >= math.Log(e.priors.V60SearchHighMps) || f.Value <= math.Log(e.priors.V60SearchLowMps) {
 			res.Reason = ReasonSolverNumericalFailure + ":bound_fallback_out_of_domain"
 			return res
 		}
@@ -384,6 +399,52 @@ func (e *v4Estimate) v4FallbackSolve(ev v4EvidenceSet, floor v4FloorFunction, re
 		res.CenterMps = &center
 		res.OK = true
 		res.HRBranch = e.hrBranch
+		// §5.2: 若有有效 HR，仍可进入第 6 节的联合求解 — the joint shares
+		// the hard floor; HR evidence may lift a above the minimal solution.
+		if e.hrBranch == "joint" {
+			pace.solvePace() // flat L_P: per-k a = A_floor(k) (§8.1 flat case)
+			if cfg.KFix != nil {
+				pace.solvePaceFixedK(*cfg.KFix)
+			}
+			if cfg.isMain() {
+				e.mainPace = pace
+				solCopy := *resToSolution(res)
+				e.mainPaceSol = &solCopy
+			}
+			series := e.hrSeries
+			if cfg.LeaveOutDay != "" {
+				series = e.hrSeries.v4WithoutDay(cfg.LeaveOutDay)
+			}
+			joint := newV4HRJointSolver(pace, series, e.phys, e.priors, cfg.HR)
+			var jr v4HRJointResult
+			if cfg.KFix != nil {
+				jr = joint.solveJointAtK(*cfg.KFix)
+			} else {
+				jr = joint.solveJoint()
+			}
+			if jr.Converged && v4Finite(jr.Obj) {
+				res.A, res.K, res.Obj = jr.A, jr.K, jr.Obj
+				center := math.Exp(res.A)
+				res.CenterMps = &center
+				if h := joint.h60Of(&jr.Theta); h != nil {
+					res.H60 = h
+					res.HRBranch = "joint"
+				}
+				if cfg.isMain() {
+					th := jr.Theta
+					e.mainWarmTheta = &th
+					e.mainJoint = joint
+				}
+			} else {
+				// §8.3: keep the pace-only constrained solution; HR walks the
+				// §6.4 path at it; report joint_solver_failed.
+				res.Reason = v4ReasonJointSolverFail
+				if h := e.h60Degraded(res.A, res.K, cfg); h != nil {
+					res.H60 = h
+				}
+			}
+			return res
+		}
 		if h := e.h60Degraded(res.A, res.K, cfg); h != nil {
 			res.H60 = h
 		}
@@ -446,12 +507,21 @@ func (e *v4Estimate) v4FallbackSolve(ev v4EvidenceSet, floor v4FloorFunction, re
 	return res
 }
 
+// resToSolution wraps a fallback (a, k) as the pace-only solution view the
+// report's contribution block reads (PaceOnlyCenterMps).
+func resToSolution(res v4SolveResult) *v4PaceSolution {
+	obj := res.Obj
+	return &v4PaceSolution{A: res.A, K: res.K, Obj: obj, Converged: res.Converged, AnyFeasibleK: true}
+}
+
 // v4PaceFailureFallback applies §8.3: pace solver failed → exp(A_floor(0.06))
 // is publishable only when finite, inside the search domain (not touching an
 // edge) and satisfying every constraint at that k.
 func (e *v4Estimate) v4PaceFailureFallback(floor v4FloorFunction, res v4SolveResult) v4SolveResult {
 	f := floor.aFloor(0.06)
-	if f.finite() && f.Value >= math.Log(e.priors.V60SearchLowMps) && f.Value <= math.Log(e.priors.V60SearchHighMps) && f.HasTrustedTerm {
+	// 未触边 is an open-interval precondition (§8.3): a fallback sitting on
+	// the numerical search edge is not publishable.
+	if f.finite() && f.Value > math.Log(e.priors.V60SearchLowMps) && f.Value < math.Log(e.priors.V60SearchHighMps) && f.HasTrustedTerm {
 		res.A, res.K, res.Obj = f.Value, 0.06, math.NaN()
 		res.Method = v4MethodBoundFallback
 		res.Converged = true
@@ -511,8 +581,16 @@ func (e *v4Estimate) h60Degraded(aLog float64, k float64, cfg v4SolveConfig) *fl
 // v4RegressionH60Range applies the §6.4/§8.2 regression scenario family:
 // slopes 30/60/90 bpm (c re-fitted per slope) and measurement offsets ±6 bpm.
 func (e *v4Estimate) v4RegressionH60Range(aLog float64) (lo, hi float64) {
+	slopes := append([]float64(nil), e.priors.RegressionSlopeScenarios...)
+	if fit := e.v4RegressionFit(aLog); fit.ExtrapolatedSpeedDomain {
+		// §6.4: extrapolation beyond the observed speed domain widens the
+		// scenario range — the slope is effectively unidentified outside the
+		// observed domain, so the declared prior-domain edges join the
+		// 30/60/90 family (all numbers already in the §6.4 table/box).
+		slopes = append(slopes, e.priors.RegressionSlope.Low, e.priors.RegressionSlope.High)
+	}
 	centers := []float64{}
-	for _, b := range e.priors.RegressionSlopeScenarios {
+	for _, b := range slopes {
 		bb := b
 		if h := e.v4RegressionH60FixedB(aLog, &bb); h != nil {
 			centers = append(centers, *h)
@@ -535,6 +613,46 @@ func (e *v4Estimate) v4RegressionH60Range(aLog float64) (lo, hi float64) {
 // than 10% beyond the observed speed domain downgrades and widens.
 func (e *v4Estimate) v4RegressionH60(aLog float64) *float64 {
 	return e.v4RegressionH60FixedB(aLog, nil)
+}
+
+// v4RegressionOutcome carries the §6.4 regression prediction with its
+// explicit extrapolation diagnostics: extrapolating beyond the observed
+// speed domain by more than 10% downgrades (prior_dominated) and widens the
+// scenario range; a prediction crossing the observed HR range must be
+// reported explicitly.
+type v4RegressionOutcome struct {
+	H60                     *float64
+	SingleSpeedLayer        bool
+	ExtrapolatedSpeedDomain bool
+	ExtrapolatedObservedHR  bool
+}
+
+// v4RegressionFit runs the §6.4 regression at the given log(v60) and
+// evaluates both extrapolation flags on the observed regression-point
+// domains.
+func (e *v4Estimate) v4RegressionFit(aLog float64) v4RegressionOutcome {
+	pts := e.hrSeries.RegressionPoints
+	out := v4RegressionOutcome{}
+	if len(pts) == 0 || aLog == 0 {
+		return out
+	}
+	minY, maxY := pts[0].LogV, pts[0].LogV
+	minHR, maxHR := pts[0].HR, pts[0].HR
+	for _, p := range pts {
+		minY = math.Min(minY, p.LogV)
+		maxY = math.Max(maxY, p.LogV)
+		minHR = math.Min(minHR, p.HR)
+		maxHR = math.Max(maxHR, p.HR)
+	}
+	out.SingleSpeedLayer = maxY-minY < 0.01
+	// "超出已观测速度域超过 10%": symmetric in speed ratio on both sides
+	// (v60 > 1.10·v_max or v60 < v_min/1.10), evaluated in the log domain.
+	out.ExtrapolatedSpeedDomain = aLog > maxY+math.Log(1.10) || aLog < minY-math.Log(1.10)
+	out.H60 = e.v4RegressionH60FixedB(aLog, nil)
+	if out.H60 != nil {
+		out.ExtrapolatedObservedHR = *out.H60 < minHR || *out.H60 > maxHR
+	}
+	return out
 }
 
 func (e *v4Estimate) v4RegressionH60FixedB(aLog float64, forcedB *float64) *float64 {
@@ -628,12 +746,6 @@ func (e *v4Estimate) v4RegressionH60FixedB(aLog float64, forcedB *float64) *floa
 	h := c + b*aLog
 	if !(h >= e.priors.HRDomainLowBpm && h <= e.priors.HRDomainHighBpm) {
 		return nil
-	}
-	// Extrapolation beyond the observed speed domain (>10%) widens and
-	// downgrades; the numeric prediction stands but the branch is marked.
-	if aLog > maxY+math.Log(1.10) || aLog < minY-math.Log(1.10) {
-		// keep the center; the caller flags prior_dominated.
-		_ = "extrapolated"
 	}
 	return &h
 }

@@ -1926,14 +1926,15 @@
               "measurement_quality": "",
               "effort_support": "",
               "support": "low",
-              "range_low": 156.09909456067015,
+              "range_low": 156.09909456067012,
               "range_high": 168.29728368201043,
               "range_meaning": "model_sensitivity_range_not_probability_interval",
               "evidence_date": "2026-11-04",
               "independent_activities": 2,
               "independent_days": 2,
               "reasons": [
-                "regression_H_c_b_logv_scale_unidentified"
+                "regression_H_c_b_logv_scale_unidentified",
+                "hr_regression_extrapolated_beyond_observed_hr_range"
               ],
               "limitations": [
                 "research_uncalibrated_not_population_calibrated",
@@ -2289,7 +2290,8 @@
               "independent_activities": 2,
               "independent_days": 1,
               "reasons": [
-                "regression_H_c_b_logv_scale_unidentified"
+                "regression_H_c_b_logv_scale_unidentified",
+                "hr_regression_extrapolated_beyond_observed_hr_range"
               ],
               "limitations": [
                 "research_uncalibrated_not_population_calibrated",
@@ -2683,14 +2685,15 @@
               "measurement_quality": "",
               "effort_support": "",
               "support": "low",
-              "range_low": 156.09909456067015,
+              "range_low": 156.09909456067012,
               "range_high": 168.29728368201043,
               "range_meaning": "model_sensitivity_range_not_probability_interval",
               "evidence_date": "2026-11-04",
               "independent_activities": 2,
               "independent_days": 2,
               "reasons": [
-                "regression_H_c_b_logv_scale_unidentified"
+                "regression_H_c_b_logv_scale_unidentified",
+                "hr_regression_extrapolated_beyond_observed_hr_range"
               ],
               "limitations": [
                 "research_uncalibrated_not_population_calibrated",

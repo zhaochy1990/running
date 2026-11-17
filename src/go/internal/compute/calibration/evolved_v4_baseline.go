@@ -209,9 +209,11 @@ func v4ExplainSlowdown(v60 *float64, base v4Baselines, evidence v4EvidenceSet) [
 	if expired {
 		reasons = append(reasons, v4ReasonEvidenceExpired)
 	}
-	// measurement_corrected: repairing measurements (segments_only control)
-	// materially changed the outcome.
-	if base.BRepairedMps != nil && *base.BRepairedMps > 0 && math.Abs(*base.BRepairedMps-*base.BRawMps) / *base.BRawMps > 0.005 {
+	// measurement_corrected: repairing measurements (the segments_only
+	// control on the same inputs) changed the outcome. The doc names no
+	// tolerance; a visible repair difference in the round4 controls counts
+	// (the epsilon only absorbs float noise, not a semantic threshold).
+	if base.BRepairedMps != nil && *base.BRepairedMps > 0 && math.Abs(*base.BRepairedMps-*base.BRawMps) > 1e-9 {
 		reasons = append(reasons, v4ReasonMeasurementCorrected)
 	}
 	// conditions_not_comparable: explicit terrain/device counter-evidence on
@@ -232,12 +234,16 @@ func v4ExplainSlowdown(v60 *float64, base v4Baselines, evidence v4EvidenceSet) [
 	}
 	// capability_epoch_changed: only a user-confirmed epoch could set this;
 	// rev3 has no epoch input channel, so the code can never fire here.
-	// v3_projection_conflict: a retained verified all-out reference conflicts
-	// with the V3 extrapolation. Reported only; it never auto-releases the
+	// v3_projection_conflict: a retained verified all-out reference whose
+	// model-projected hour bound (its §4.2 constraint term at k=0.06, the
+	// declared prior center) exceeds the frozen V3 output — the reference
+	// contradicts V3's extrapolation. No invented tolerance: any strict
+	// excess is a conflict. Reported only; it never auto-releases the
 	// compatibility floor.
 	for _, i := range evidence.VerifiedReferenceIdx {
 		r := &evidence.Rows[i]
-		if base.BRawMps != nil && r.AvgSpeedMps > *base.BRawMps*1.02 {
+		projected := math.Exp(r.Y + thresholdSpeedRiegelExponent*math.Log(math.Min(r.DurationS, v4LongDomainS)/3600))
+		if projected > *base.BRawMps {
 			reasons = append(reasons, v4ReasonV3ProjectionConflict)
 			break
 		}

@@ -311,3 +311,139 @@ func TestV4FrontierPoolSelection(t *testing.T) {
 		t.Fatal("bucket without trusted rows must select from model_observation")
 	}
 }
+
+// §5.2: bound_fallback with valid HR still enters the §6 joint solve — the
+// shared hard floor stays and HR may lift a above the minimal solution.
+func TestV4BoundFallbackEntersHRJoint(t *testing.T) {
+	asOf := v4InternalAsOf()
+	priors := DefaultEvolvedPriors()
+	long := v4TrustedRow("only-long-hr", 5, 7800, 3.9)
+	ev := v4EvidenceSet{WindowDays: 60}
+	row := v4Observation{
+		ActivityID: long.ActivityID, Root: long.RootActivityID, Day: long.ActivityDate.Format("2006-01-02"),
+		AgeDays: 5, DurationS: 7800, AvgSpeedMps: 3.9, Y: math.Log(3.9), X: math.Log(2),
+		Long: true, Role: v4RoleTrustedBound, Quality: ConfidenceHigh, Effort: EffortUnknown,
+	}
+	ev.Rows = []v4Observation{row}
+	ev.TrustedConstraintIdx = []int{0}
+	// One admitted HR day: 10 bins at constant 3.5 m/s, HR 150, optical.
+	bins := make([]v4HRBin, 10)
+	for i := range bins {
+		bins[i] = v4HRBin{T: float64(i+1) * 60, Dt: 60, LogV: math.Log(3.5), HR: 150, Sigma: 6, S: float64(i) * 60 / 3600, Seg: 0, Init: i == 0}
+	}
+	series := &v4HRSeries{Days: []*v4HRDay{{Day: "d1", AgeDays: 5, Weight: 1, Series: []*v4HRSeriesBins{{Root: "only-long-hr", Sensor: "unknown", Bins: bins}}}}}
+	r, m := 55.0, 190.0
+	est := &v4Estimate{asOf: asOf, priors: priors, evidence: ev, baselines: v4Baselines{},
+		hrSeries: series, hrBranch: "joint",
+		phys: v4HRPhysiology{R: &r, M: &m}, restPrior: &r}
+	res := est.runSolve(v4SolveConfig{})
+	if !res.OK || res.Method != v4MethodBoundFallback {
+		t.Fatalf("long-only trusted evidence must stay bound_fallback: %+v", res)
+	}
+	if res.HRBranch != "joint" || res.H60 == nil {
+		t.Fatalf("§5.2: valid HR must enter the §6 joint solve, got branch=%s h60=%v", res.HRBranch, res.H60)
+	}
+	floor := math.Log(3.9) + 0.06*math.Log(2)
+	if res.A < floor-1e-9 {
+		t.Fatalf("joint dropped below the hard floor: %.6f < %.6f", res.A, floor)
+	}
+	if *res.H60 <= r || *res.H60 >= m {
+		t.Fatalf("H60 must stay inside (R,M): %v", *res.H60)
+	}
+}
+
+// §6.1: HR segment admission requires comparable conditions — treadmill
+// metadata never feeds the reference-condition model.
+func TestV4HRSeriesSkipsNonComparableTerrain(t *testing.T) {
+	asOf := v4InternalAsOf()
+	priors := DefaultEvolvedPriors()
+	mk := func(id string, terrain string) Activity {
+		seconds := 3600
+		speed := 3.5
+		duration, distance := float64(seconds), float64(seconds)*speed
+		a := Activity{LabelID: id, ActivityDate: asOf.AddDate(0, 0, -3), Sport: "run", DurationS: &duration, DistanceM: &distance}
+		hr := 150.0
+		for second := 0; second <= seconds; second += 5 {
+			elapsed, dd, sp := float64(second), float64(second)*speed, speed
+			a.Samples = append(a.Samples, Sample{ElapsedS: &elapsed, DistanceM: &dd, SpeedMps: &sp, HeartRateBpm: &hr})
+		}
+		_ = terrain
+		return a
+	}
+	road := mk("road-hr", "")
+	tread := mk("treadmill-hr", "")
+	meta := []CandidateMetadata{
+		{ActivityID: "road-hr", SourceVersion: "t"},
+		{ActivityID: "treadmill-hr", SourceVersion: "t", Terrain: "treadmill"},
+	}
+	series := v4BuildHRSeries([]Activity{road, tread}, meta, nil, asOf, priors)
+	days := 0
+	for _, d := range series.Days {
+		for _, sr := range d.Series {
+			if sr.Root == "treadmill-hr" {
+				t.Fatal("treadmill series must not be admitted as model HR evidence")
+			}
+			days++
+		}
+	}
+	if days != 1 {
+		t.Fatalf("expected exactly the road series admitted, got %d", days)
+	}
+}
+
+// §4.3: no invented tolerances — a verified reference projecting just above
+// B_raw is a v3_projection_conflict; any visible repair difference is
+// measurement_corrected.
+func TestV4SlowdownCodesWithoutInventedTolerances(t *testing.T) {
+	asOf := v4InternalAsOf()
+	braw := 4.0
+	brep := 4.0001 // a visible repair delta, far below the old 0.5% threshold
+	base := v4Baselines{BRawMps: &braw, BRepairedMps: &brep}
+	// Verified 3600 s reference at 4.0001 m/s: its projection is just above
+	// B_raw — a conflict under the doc's strict reading.
+	day := asOf.AddDate(0, 0, -2)
+	ev := v4EvidenceSet{Rows: []v4Observation{{
+		ActivityID: "ref", Root: "ref", Day: day.Format("2006-01-02"),
+		AgeDays: 2, DurationS: 3600, AvgSpeedMps: 4.0001, Y: math.Log(4.0001), X: 0,
+		Role: v4RoleTrustedBound, Quality: ConfidenceHigh, Effort: EffortProbableMaximal,
+	}}, VerifiedReferenceIdx: []int{0}}
+	v60 := 3.9
+	reasons := v4ExplainSlowdown(&v60, base, ev)
+	want := map[string]bool{v4ReasonMeasurementCorrected: false, v4ReasonV3ProjectionConflict: false}
+	for _, r := range reasons {
+		if _, ok := want[r]; ok {
+			want[r] = true
+		}
+	}
+	for code, seen := range want {
+		if !seen {
+			t.Fatalf("reason %s missing (no-tolerance semantics): %v", code, reasons)
+		}
+	}
+}
+
+// §8.3: the bound_fallback precondition 未触边 is an open interval — a floor
+// sitting exactly on the numerical search edge is not publishable.
+func TestV4BoundFallbackEdgeIsNotPublishable(t *testing.T) {
+	asOf := v4InternalAsOf()
+	priors := DefaultEvolvedPriors()
+	long := v4TrustedRow("edge-long", 5, 7800, 11.9)
+	ev := v4EvidenceSet{WindowDays: 60}
+	row := v4Observation{ActivityID: long.ActivityID, Root: long.RootActivityID, Day: long.ActivityDate.Format("2006-01-02"),
+		AgeDays: 5, DurationS: 7800, AvgSpeedMps: 11.9, Y: math.Log(11.9), X: math.Log(2),
+		Long: true, Role: v4RoleTrustedBound, Quality: ConfidenceHigh, Effort: EffortUnknown}
+	// Force the floor onto the fast search edge via B_eligible = 12 exactly:
+	// floor(0.06) = log(12)·(exact) → touches the edge.
+	ev.Rows = []v4Observation{row}
+	ev.TrustedConstraintIdx = []int{0}
+	b12 := 12.0 / math.Pow(2, -0.06) // undo the k·log2 shift: floor = log 12
+	base := v4Baselines{BEligibleMps: &b12}
+	est := &v4Estimate{asOf: asOf, priors: priors, evidence: ev, baselines: base, hrBranch: "unavailable"}
+	res := est.runSolve(v4SolveConfig{})
+	if res.OK {
+		t.Fatalf("a bound_fallback touching the search edge must not publish: %+v", res)
+	}
+	if res.Reason == "" {
+		t.Fatal("failure must carry a reason")
+	}
+}
