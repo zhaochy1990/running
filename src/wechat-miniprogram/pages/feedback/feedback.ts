@@ -10,6 +10,7 @@
 
 import { listFeedbacks } from '../../services/feedback';
 import { toConvRows, type FeedbackConvRow } from '../../utils/feedbackRows';
+import { friendlyApiError } from '../../utils/friendlyError';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 type TabId = 'feedback' | 'roadmap';
@@ -144,7 +145,7 @@ Page<FeedbackPageData, FeedbackPageHandlers>({
       this.setData({ loading: false, rows: toConvRows(res.items, Date.now()) });
     } catch (err) {
       if (seq !== this._fetchSeq) return;
-      const msg = err instanceof Error ? err.message : '加载失败';
+      const msg = friendlyApiError(err, '加载失败，请稍后重试');
       this.setData({ loading: false, loadError: msg.length > 20 ? '加载失败' : msg });
     }
   },

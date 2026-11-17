@@ -17,6 +17,7 @@ import {
 import { filterRaces, groupByMonth } from '../../utils/raceCenterRows';
 import { PROVINCES } from '../../constants/provinces';
 import { shanghaiToday } from '../../utils/date';
+import { friendlyApiError } from '../../utils/friendlyError';
 import { userStore } from '../../store/index';
 
 /** 筛选栏的项目类型选项：''=全部。token 词汇见 internal/racetypes。 */
@@ -192,7 +193,7 @@ Page<RaceCenterPageData, RaceCenterPageHandlers>({
     } catch (err: unknown) {
       if (seq !== this._fetchSeq) return;
       this._fetchingKey = '';
-      const msg = err instanceof Error ? err.message : '加载失败，请稍后重试';
+      const msg = friendlyApiError(err, '加载失败，请稍后重试');
       // 首拉失败（没有旧列表可显示）：清空视图只留错误条；
       // 静默刷新失败：保留旧列表，banner 说明即可
       const patch: Partial<RaceCenterPageData> = { loading: false, error: msg };

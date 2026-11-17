@@ -1,5 +1,6 @@
 import { sendBindPhoneCode, wechatBindAccount, wechatBindPhone } from '../../services/auth';
 import { userStore } from '../../store/index';
+import { friendlyApiError } from '../../utils/friendlyError';
 import { sanitizeRedirect } from '../../utils/redirect';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
@@ -98,16 +99,21 @@ Page<LoginPageData, LoginPageHandlers>({
     if (this._redirect) console.log(`[login] 带回跳参数：${this._redirect}`);
   },
 
-  // 登录成功后的统一落点（issue #702）：有 redirect 优先 reLaunch 回目标页；
-  // 新注册进 onboarding（透传 redirect，完成后回跳）；否则维持原状进 coach 首页。
+  // 登录成功后的统一落点（issue #702）：新注册一律先进 onboarding（资料必填，
+  // ADR 0013），来源 redirect 透传给 onboarding 页、完成后回跳——游客态注册几乎
+  // 都从 authGate/401 兜底带 redirect 进来，不透传会跳过 onboarding 直接回来源页；
+  // 老用户有 redirect 优先 reLaunch 回目标页，否则进 coach 首页。
   navigateAfterLogin(registered: boolean) {
-    if (this._redirect) {
-      wx.reLaunch({ url: this._redirect });
+    if (registered) {
+      const redirectParam = this._redirect
+        ? `?redirect=${encodeURIComponent(this._redirect)}`
+        : '';
+      // redirectTo 替换登录页：返回键不再回到已登录状态的登录页。
+      wx.redirectTo({ url: `/pages/onboarding/onboarding${redirectParam}` });
       return;
     }
-    if (registered) {
-      // redirectTo 替换登录页：返回键不再回到已登录状态的登录页。
-      wx.redirectTo({ url: '/pages/onboarding/onboarding' });
+    if (this._redirect) {
+      wx.reLaunch({ url: this._redirect });
       return;
     }
     wx.switchTab({ url: '/pages/coach/coach' });
@@ -188,7 +194,7 @@ Page<LoginPageData, LoginPageHandlers>({
         err instanceof Error ? err.message : err,
       );
       this.setData({
-        errorMsg: err instanceof Error ? err.message : '发送失败，请重试',
+        errorMsg: friendlyApiError(err, '发送失败，请重试'),
       });
     } finally {
       this.setData({ loading: false });
@@ -264,7 +270,7 @@ Page<LoginPageData, LoginPageHandlers>({
         err instanceof Error ? err.message : err,
       );
       this.setData({
-        errorMsg: err instanceof Error ? err.message : '登录失败，请重试',
+        errorMsg: friendlyApiError(err, '登录失败，请重试'),
       });
     } finally {
       this.setData({ loading: false });
@@ -306,7 +312,7 @@ Page<LoginPageData, LoginPageHandlers>({
       // 真正的原因看上面 [auth]/[http] 的原始日志。
       console.error('[login] 手机号登录/注册失败，展示给用户的文案：', err instanceof Error ? err.message : err);
       this.setData({
-        errorMsg: err instanceof Error ? err.message : '登录失败，请重试',
+        errorMsg: friendlyApiError(err, '登录失败，请重试'),
       });
     } finally {
       this.setData({ loading: false });

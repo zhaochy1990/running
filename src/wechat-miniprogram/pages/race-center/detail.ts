@@ -30,6 +30,7 @@ import {
 } from '../../utils/raceDetailRows';
 import { typeAbbr } from '../../utils/raceCenterRows';
 import { shanghaiDateFromIso, shanghaiToday } from '../../utils/date';
+import { friendlyApiError } from '../../utils/friendlyError';
 import { setPendingCoachContext } from '../../services/coach';
 import { getRaceStrategies, latestStrategyVersion } from '../../services/race-strategy';
 import { userStore } from '../../store/index';
@@ -177,15 +178,10 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
       detail = await getRaceDetail(this._raceId);
     } catch (err: unknown) {
       if (seq !== this._fetchSeq) return;
-      // 未发布与不存在同为 404（后端不泄漏未发布行的存在）；5xx 的英文错误体不直出
-      const msg =
-        err instanceof ApiError && err.statusCode === 404
-          ? '赛事不存在或已下架'
-          : err instanceof ApiError && err.statusCode >= 500
-            ? '加载失败，请稍后重试'
-            : err instanceof Error
-              ? err.message
-              : '加载失败，请稍后重试';
+      // 未发布与不存在同为 404（后端不泄漏未发布行的存在）；英文错误体一律不直出
+      const msg = friendlyApiError(err, '加载失败，请稍后重试', {
+        statusMessages: { 404: '赛事不存在或已下架' },
+      });
       this.setData({ loading: false, error: msg });
       return;
     }

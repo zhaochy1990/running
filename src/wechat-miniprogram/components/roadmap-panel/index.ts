@@ -21,6 +21,7 @@ import {
 } from '../../services/roadmap';
 import { ApiError } from '../../services/request';
 import { shanghaiDateFromIso } from '../../utils/date';
+import { friendlyApiError } from '../../utils/friendlyError';
 import { roadmapBlurb, togglePoolVote, type PoolVoteRow } from '../../utils/roadmapRows';
 
 /** 最近上线时间线行。blurb=列表概述（概述优先，存量行兜底截断描述）。 */
@@ -196,7 +197,7 @@ Component<RoadmapPanelData, {}, RoadmapPanelMethods, [], RoadmapPanelInstance>({
         if (seq !== this._fetchSeq) return;
         this.setData({
           loading: false,
-          loadError: err instanceof Error ? err.message : '加载失败',
+          loadError: friendlyApiError(err, '加载失败，请稍后重试'),
         });
       }
     },

@@ -41,6 +41,7 @@ import {
   type ProfileInput,
 } from '../../utils/profileFields';
 import { shanghaiToday } from '../../utils/date';
+import { friendlyApiError, friendlyMessage } from '../../utils/friendlyError';
 import { logger } from '../../utils/logger';
 import { sanitizeRedirect } from '../../utils/redirect';
 import { userStore } from '../../store/index';
@@ -280,7 +281,7 @@ Page<OnboardingPageData, OnboardingPageHandlers>({
       logger.error('avatar save fail (onboarding)', err instanceof Error ? err.message : String(err));
       this.setData({
         saving: false,
-        formError: err instanceof Error ? err.message : '头像上传失败',
+        formError: friendlyApiError(err, '头像上传失败，请重试'),
       });
     }
   },
@@ -338,7 +339,7 @@ Page<OnboardingPageData, OnboardingPageHandlers>({
       console.error('[onboarding] 保存资料失败:', err);
       this.setData({
         saving: false,
-        formError: err instanceof Error ? err.message : '保存失败，请重试',
+        formError: friendlyApiError(err, '保存失败，请重试'),
       });
       return;
     }
@@ -411,7 +412,14 @@ Page<OnboardingPageData, OnboardingPageHandlers>({
     } catch (err) {
       this.setData({
         connecting: false,
-        watchError: err instanceof Error ? err.message : '绑定失败，请重试',
+        watchError: friendlyApiError(err, '绑定失败，请重试', {
+          statusMessages: {
+            // 后端为防账号枚举把 provider 认证失败统一塌缩成 400（users.go
+            // watchLogin），400 即「账号/密码/地区不对」的准确信号；上游原始
+            // 英文消息只在服务端日志与 [http] 响应体里。
+            400: '手表账号或密码错误，请核对账号、密码与地区后重试',
+          },
+        }),
       });
     }
   },
@@ -498,7 +506,7 @@ Page<OnboardingPageData, OnboardingPageHandlers>({
       console.error('[onboarding] 启动同步失败:', err);
       this.setData({
         step: 'sync',
-        syncError: err instanceof Error ? err.message : '同步启动失败，请重试',
+        syncError: friendlyApiError(err, '同步启动失败，请重试'),
       });
     }
   },
@@ -518,7 +526,7 @@ Page<OnboardingPageData, OnboardingPageHandlers>({
           // 接管期间链路判了失败：如实展示（区别于创建失败），重试走 retry 只恢复失败项。
           console.error('[onboarding] session 接管期间失败:', view.error);
           this.applySessionStepTexts('adopting', 'sync', true);
-          this.setData({ syncError: view.error || '同步失败，请重试' });
+          this.setData({ syncError: friendlyMessage(view.error, '同步失败，请重试') });
           return;
         }
       } catch (err) {
@@ -556,7 +564,7 @@ Page<OnboardingPageData, OnboardingPageHandlers>({
         if (res.runId) this.startPolling(res.runId);
         return;
       case 'failed':
-        this.setData({ step: 'sync', syncError: res.message || '同步失败' });
+        this.setData({ step: 'sync', syncError: friendlyMessage(res.message, '同步失败，请稍后再试') });
         return;
     }
   },
@@ -586,17 +594,17 @@ Page<OnboardingPageData, OnboardingPageHandlers>({
       .catch((err: unknown) => {
         if (this._pollHandle !== handle) return;
         this._pollHandle = undefined;
-        const msg = err instanceof Error ? err.message : '同步失败';
-        if (msg === 'cancelled') return;
-        // 60 分钟轮询上限不是失败：pipeline 还在跑（生产最长见过 51 分钟）。
-        // 让用户先走，下次进页面靠本地指针接着续跑。
-        if (msg === '同步超时') {
+        // 哨兵先截住（都非失败）：cancelled = 用户主动取消；「同步超时」= 60 分钟
+        // 轮询上限，pipeline 还在跑（生产最长见过 51 分钟），让用户先走，下次进
+        // 页面靠本地指针接着续跑。
+        if (err instanceof Error && err.message === 'cancelled') return;
+        if (err instanceof Error && err.message === '同步超时') {
           console.warn('[onboarding] 轮询到达上限，run 仍在跑，交给下次续跑');
           this.setData({ syncPending: true, syncText: '还在同步中' });
           return;
         }
-        console.error('[onboarding] 同步失败:', msg);
-        this.setData({ syncError: msg });
+        console.error('[onboarding] 同步失败:', err);
+        this.setData({ syncError: friendlyApiError(err, '同步失败，请稍后再试') });
       });
   },
 
@@ -615,7 +623,7 @@ Page<OnboardingPageData, OnboardingPageHandlers>({
     } catch (err) {
       console.error('[onboarding] 重试失败:', err);
       this.setData({
-        syncError: err instanceof Error ? err.message : '重试失败，请稍后再试',
+        syncError: friendlyApiError(err, '重试失败，请稍后再试'),
       });
     }
   },

@@ -38,6 +38,7 @@ import {
 } from '../../utils/myRaceRows';
 import { statePatch, type PlanCardView } from '../../utils/racePlanRows';
 import { shanghaiDateFromIso } from '../../utils/date';
+import { friendlyApiError } from '../../utils/friendlyError';
 import { userStore } from '../../store/index';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 import { theme } from '../../utils/theme';
@@ -291,7 +292,7 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
       this.setData({ loading: false, rows, summary: buildSummary(rows) });
     } catch (err: unknown) {
       if (seq !== this._resultsSeq) return;
-      const msg = err instanceof Error ? err.message : '加载失败，请稍后重试';
+      const msg = friendlyApiError(err, '加载失败，请稍后重试');
       this.setData({ loading: false, error: msg });
     }
   },
@@ -318,7 +319,7 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
       this.setData({ plansLoading: false, mixRows: rows });
     } catch (err: unknown) {
       if (seq !== this._fetchSeq) return;
-      const msg = err instanceof Error ? err.message : '加载失败，请稍后重试';
+      const msg = friendlyApiError(err, '加载失败，请稍后重试');
       this.setData({ plansLoading: false, plansError: msg });
     }
   },

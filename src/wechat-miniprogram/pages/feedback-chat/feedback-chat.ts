@@ -9,6 +9,7 @@ import { getFeedbackDetail, replyFeedback, type FeedbackReply } from '../../serv
 import { getRoadmap } from '../../services/roadmap';
 import { ApiError } from '../../services/request';
 import { feedbackTimeLabel } from '../../utils/feedbackRows';
+import { friendlyApiError } from '../../utils/friendlyError';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 const TYPE_META: Record<string, { emoji: string; label: string; cls: string }> = {
@@ -232,7 +233,7 @@ Page<FeedbackChatPageData, FeedbackChatPageHandlers>({
       });
     } catch (err) {
       if (seq !== this._fetchSeq) return;
-      const msg = err instanceof Error ? err.message : '加载失败';
+      const msg = friendlyApiError(err, '加载失败，请稍后重试');
       this.setData({ loading: false, loadError: msg.length > 20 ? '加载失败' : msg });
     }
   },

@@ -6,6 +6,7 @@ import { listFeedbacks } from '../../services/feedback';
 import { createCheckIn, getCheckInStatus } from '../../services/checkin';
 import type { UserProfile } from '../../types/api';
 import type { PollPipelineHandle } from '../../services/sync';
+import { friendlyApiError } from '../../utils/friendlyError';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 interface MenuRow {
@@ -313,7 +314,7 @@ Page<ProfilePageData, ProfilePageHandlers>({
       if (err instanceof Error && err.message === 'cancelled') {
         return;
       }
-      const msg = err instanceof Error ? err.message : '同步失败';
+      const msg = friendlyApiError(err, '同步失败，请稍后再试');
       wx.showToast({ title: msg.length > 15 ? '同步失败' : msg, icon: 'none' });
     } finally {
       // 只清「自己创建」的句柄：若页面已因卸载/重登进入新实例而替换了 handle，

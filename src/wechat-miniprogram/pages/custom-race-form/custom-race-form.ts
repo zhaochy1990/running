@@ -12,6 +12,7 @@ import {
   type CustomRaceState,
 } from '../../services/custom-races';
 import { CUSTOM_TYPE_CHIPS } from '../../utils/myRaceRows';
+import { friendlyApiError } from '../../utils/friendlyError';
 
 type TypeChips = Array<{ token: string; label: string; on: boolean }>;
 
@@ -189,7 +190,7 @@ Page<CustomRaceFormPageData, CustomRaceFormPageHandlers>({
       wx.navigateBack();
     } catch (err: unknown) {
       this.setData({ saving: false });
-      toast(err instanceof Error ? err.message : '保存失败，请稍后重试');
+      toast(friendlyApiError(err, '保存失败，请稍后重试'));
     }
   },
 });

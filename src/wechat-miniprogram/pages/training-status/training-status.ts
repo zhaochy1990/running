@@ -40,6 +40,7 @@ import {
 import { fmtPace } from '../../utils/format';
 import { epochToShanghaiYmd, shanghaiWeekdayLabel } from '../../utils/date';
 import { toUChartsTouchEvent } from '../../utils/ucharts';
+import { friendlyApiError } from '../../utils/friendlyError';
 import { getHealth, getHrv, getStrideTrainingLoad, getStrideZones } from '../../services/health';
 import { getActivities } from '../../services/activities';
 import { userStore } from '../../store/index';
@@ -582,7 +583,7 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
       loaded = false;
       this.setData({
         loading: false,
-        error: err instanceof Error ? err.message : '请求失败',
+        error: friendlyApiError(err, '加载失败，请稍后重试'),
       });
     }
   },

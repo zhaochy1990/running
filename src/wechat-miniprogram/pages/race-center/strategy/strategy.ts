@@ -9,7 +9,6 @@
 // 赛道/天气提示；hero 次要「分享」（onShareAppMessage）与「配速卡」（canvas
 // 海报）。视图变换在 utils/raceStrategyRows。
 
-import { ApiError } from '../../../services/request';
 import { getRaceDetail, type RaceDetail } from '../../../services/race-center';
 import {
   deleteRaceStrategy,
@@ -29,6 +28,7 @@ import {
 } from '../../../utils/raceStrategyRows';
 import { setPendingCoachContext } from '../../../services/coach';
 import { shanghaiDateFromIso, shanghaiTimeFromIso } from '../../../utils/date';
+import { friendlyApiError } from '../../../utils/friendlyError';
 import { userStore } from '../../../store/index';
 import { theme } from '../../../utils/theme';
 
@@ -197,12 +197,7 @@ Page<StrategyPageData, StrategyPageHandlers>({
         this.applyVersion(initial, listRes.strategies, detail);
       }
     } catch (err: unknown) {
-      const msg =
-        err instanceof ApiError && err.statusCode >= 500
-          ? '加载失败，请稍后重试'
-          : err instanceof Error
-            ? err.message
-            : '加载失败，请稍后重试';
+      const msg = friendlyApiError(err, '加载失败，请稍后重试');
       this.setData({ loading: false, error: msg });
     }
   },

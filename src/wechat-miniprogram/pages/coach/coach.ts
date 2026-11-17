@@ -22,6 +22,7 @@ import { openLogin } from '../../utils/authGate';
 import { buildCoachCard, looksLikeJsonText, parseLeakedRaceStrategyEnvelope, shanghaiMonthDayLabel, type CoachCardView } from '../../utils/coachCards';
 import { markdownToHtml } from '../../utils/markdown';
 import { initialWeeksNotice } from '../../utils/masterPlanApplyResult';
+import { friendlyMessage } from '../../utils/friendlyError';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 import { theme } from '../../utils/theme';
 
@@ -1540,8 +1541,9 @@ Page<CoachPageData, CoachPageHandlers>({
     );
     // 业务性拒绝（如 client_turn_id 冲突）：原因落一条教练气泡让人读得见，
     // 不给重试按钮——确定性失败重试必然复现（devops#891 的重试风暴教训）。
+    // 服务端 message 可能是英文（友好文案归服务端；英文一律兜底）。
     if (isBusinessTurnError(error.code)) {
-      const reason = error.message || '本轮未完成：请调整后再试';
+      const reason = friendlyMessage(error.message, '本轮未完成：请调整后再试');
       messages.push({ id: ++seq, role: 'assistant', content: reason, html: markdownToHtml(reason), selectable: false });
     }
     this.setData({

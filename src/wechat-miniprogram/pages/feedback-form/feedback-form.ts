@@ -5,6 +5,7 @@
 // （client_version 由 services 层静默注入，页面零展示）。上传失败给用户可见提示。
 
 import { submitFeedback, uploadFeedbackImage } from '../../services/feedback';
+import { friendlyApiError } from '../../utils/friendlyError';
 
 /** 单张上限，与后端 feedbackImageMaxBytes 一致 */
 const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
@@ -62,10 +63,6 @@ function contentPaddingTopRpx(): number {
     width = sys.windowWidth || 375;
   }
   return Math.round((statusPx * 750) / width) + 128 + 24;
-}
-
-function errMsg(err: unknown, fallback: string): string {
-  return err instanceof Error && err.message ? err.message : fallback;
 }
 
 Page<FeedbackFormPageData, FeedbackFormPageHandlers>({
@@ -159,7 +156,7 @@ Page<FeedbackFormPageData, FeedbackFormPageHandlers>({
       wx.showToast({ title: '已提交 · 我们会尽快回复', icon: 'none' });
       setTimeout(() => wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/feedback/feedback' }) }), 600);
     } catch (err) {
-      const msg = errMsg(err, '提交失败');
+      const msg = friendlyApiError(err, '提交失败，请重试');
       wx.showToast({ title: msg.length > 15 ? '提交失败，请重试' : msg, icon: 'none' });
     } finally {
       this.setData({ submitting: false });
