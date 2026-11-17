@@ -39,6 +39,7 @@ extension CalibrationSource {
         strategy = try? c.decodeIfPresent(String.self, forKey: .strategy)
         implementation = try? c.decodeIfPresent(String.self, forKey: .implementation)
         parameterVersion = try? c.decodeIfPresent(String.self, forKey: .parameterVersion)
+        algorithmRevision = try? c.decodeIfPresent(String.self, forKey: .algorithmRevision)
         dataCutoffDay = try? c.decodeIfPresent(String.self, forKey: .dataCutoffDay)
         availabilitySemantics = try? c.decodeIfPresent(String.self, forKey: .availabilitySemantics)
         fingerprint = try? c.decodeIfPresent(String.self, forKey: .fingerprint)

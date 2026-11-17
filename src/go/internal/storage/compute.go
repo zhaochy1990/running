@@ -13,9 +13,11 @@ import (
 )
 
 // UpsertRunningCalibrationSnapshot writes one calibration snapshot, upserting on
-// the unique (user_id, as_of_date, algorithm_version) key, and returns its row
-// id (needed later to link daily_training_load.calibration_id). A recompute for
-// the same as_of_date + version overwrites in place.
+// the unique (user_id, as_of_date, algorithm_version, algorithm_revision) key,
+// and returns its row id (needed later to link daily_training_load.calibration_id).
+// A recompute for the same as_of_date + version + revision overwrites in place;
+// a different algorithm_revision is a distinct row and never touches the
+// historical v4 identity (#995).
 func (s *Store) UpsertRunningCalibrationSnapshot(ctx context.Context, snap *RunningCalibrationSnapshot) (uint64, error) {
 	uid, err := canonicalUserID(snap.UserID)
 	if err != nil {
@@ -38,7 +40,7 @@ func (s *Store) UpsertRunningCalibrationSnapshot(ctx context.Context, snap *Runn
 	var out RunningCalibrationSnapshot
 	if err := s.db.WithContext(ctx).
 		Select("id").
-		Where("user_id = ? AND as_of_date = ? AND algorithm_version = ?", uid, snap.AsOfDate, snap.AlgorithmVersion).
+		Where("user_id = ? AND as_of_date = ? AND algorithm_version = ? AND algorithm_revision = ?", uid, snap.AsOfDate, snap.AlgorithmVersion, snap.AlgorithmRevision).
 		First(&out).Error; err != nil {
 		return 0, err
 	}

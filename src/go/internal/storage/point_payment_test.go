@@ -8,6 +8,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -298,14 +299,20 @@ func TestWxpayLegacyRowsBehaveFree(t *testing.T) {
 	uid := redemptionUser(t)
 	seedUserBalance(t, st, uid, 100)
 	now := time.Now().UTC()
+	// The product name is unique per run: this shared isolated test DB
+	// accumulates same-name rows across sessions (no unique index on name),
+	// and fetching by name would then hit a stale stock-0 row from an
+	// earlier session instead of this test's own seed (test-infra fix,
+	// unrelated to any SPEC; T3/T4 review diagnostics).
+	legacyName := "legacy毛巾-" + fmt.Sprintf("%d", now.UnixNano())
 	if err := st.db.Exec(
 		"INSERT INTO point_products (name, points_price, stock, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-		"legacy毛巾", 50, 5, PointProductStatusActive, now, now,
+		legacyName, 50, 5, PointProductStatusActive, now, now,
 	).Error; err != nil {
 		t.Fatalf("seed legacy product: %v", err)
 	}
 	var product PointProduct
-	if err := st.db.Where("name = ?", "legacy毛巾").First(&product).Error; err != nil {
+	if err := st.db.Where("name = ?", legacyName).First(&product).Error; err != nil {
 		t.Fatal(err)
 	}
 	if product.ShippingPolicy != ShippingPolicyNationwideFree || product.ShippingFee != 0 {

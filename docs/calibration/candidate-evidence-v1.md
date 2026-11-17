@@ -40,3 +40,5 @@ T3暂复用旧速度估计器（包括60min短路）处理已挑选的传统时�
 
 
 后继 T4 已在候选路径接入 [一小时能力模型](hour-capability-v1.md)，替换本文历史回放所用的旧小时估计器；T3 evidence pool、v3和T2对照身份仍分别保留。最新参数、真实回放与缺失覆盖见该文档。
+
+> 演进提示（#993/#995，2026-11-16）：本文件描述的 v1 行为是冻结存档；原地演进后 v4 的联合估计契约（先验、状态标签、修订标记）见 [estimation-contract-v2.md](estimation-contract-v2.md)，评估以 [evaluation-protocol-v2.md](evaluation-protocol-v2.md) 为准，v1 协议与留出不改。

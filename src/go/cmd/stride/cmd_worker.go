@@ -537,6 +537,10 @@ func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *stor
 		Compute:     computeHandler,
 		Ability:     abilityHandler,
 	}))
+	// #999 single-user evolved-v4 closed loop (publish/revoke/recompute):
+	// registered so an authorized internal enqueue can dispatch it; nothing in
+	// any pipeline or cron ever triggers it automatically.
+	reg.MustRegister(compute.UserCalibrationJobType, compute.NewUserCalibration(store))
 	// historical_calibration_recompute (devops#1011, epic devops#1004 T07):
 	// the explicit historical-calibration recompute executor. Always
 	// registered like the onboarding executors, but the rollout flag

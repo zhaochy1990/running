@@ -97,8 +97,70 @@ func newCalibrationCmd() *cobra.Command {
 	replay.Flags().StringVar(&manifest, "manifest", "", "local immutable JSON or JSON.gz manifest")
 	replay.Flags().StringVar(&sidecarPath, "evaluation-sidecar", "", "optional immutable heldout audit/acceptance sidecar bound to base manifest hash")
 	replay.Flags().StringVar(&code, "code-version", "", "exact source commit (required provenance)")
-	command.AddCommand(replay, newCalibrationPublicDataCmd(), newCalibrationCollectionCmd())
+	command.AddCommand(replay, newCalibrationReplayV2Cmd(), newCalibrationPublicDataCmd(), newCalibrationCollectionCmd(), newCalibrationUserCmd())
 	return command
+}
+
+// newCalibrationReplayV2Cmd is the #1001 frozen-protocol backtest entry: it
+// scores a schema-2 manifest with the protocol v2 engine (three frozen
+// identities, dual denominators, frozen gates). Exit codes follow the frozen
+// protocol: 0 = all frozen gates passed, 2 = insufficient, 1 = input/split/
+// hash/algorithm failure.
+func newCalibrationReplayV2Cmd() *cobra.Command {
+	var manifest, code string
+	replayV2 := &cobra.Command{
+		Use:   "replay-v2",
+		Short: "Score a schema-2 manifest under the frozen evaluation protocol v2; no database or network access",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if manifest == "" || code == "" {
+				return fmt.Errorf("required: --manifest PATH --code-version COMMIT")
+			}
+			file, err := os.Open(manifest)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
+			var reader io.Reader = file
+			if strings.HasSuffix(manifest, ".gz") {
+				gz, gzErr := gzip.NewReader(file)
+				if gzErr != nil {
+					return gzErr
+				}
+				defer gz.Close()
+				reader = gz
+			}
+			decoder := json.NewDecoder(reader)
+			decoder.DisallowUnknownFields()
+			var input calibration.ReplayManifest
+			if err := decoder.Decode(&input); err != nil {
+				return err
+			}
+			var extra any
+			if err := decoder.Decode(&extra); err != io.EOF {
+				return fmt.Errorf("manifest must contain exactly one JSON value")
+			}
+			report, err := calibration.ReplayV2(input, code)
+			if err != nil {
+				return err
+			}
+			encoder := json.NewEncoder(cmd.OutOrStdout())
+			encoder.SetIndent("", "  ")
+			if err := encoder.Encode(report); err != nil {
+				return err
+			}
+			if report.Status == "insufficient" {
+				return calibrationEvidenceInsufficient{}
+			}
+			if report.Status != "passed" {
+				return fmt.Errorf("calibration replay-v2 failed: %s", report.FailureKind)
+			}
+			return nil
+		},
+	}
+	replayV2.Flags().StringVar(&manifest, "manifest", "", "local immutable schema-2 JSON or JSON.gz manifest")
+	replayV2.Flags().StringVar(&code, "code-version", "", "exact source commit (required provenance)")
+	return replayV2
 }
 
 // Classification is separate from execution so synthetic reports can verify all

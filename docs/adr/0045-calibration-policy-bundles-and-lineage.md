@@ -23,13 +23,51 @@ with nil centers remains candidate; fields are never supplemented from v3.
 Selection exposes requested/effective version, revision, state and reason.
 A candidate-not-configured state is explicit. Future rows cannot fill history.
 
+Since #999 a per-user override (table `running_calibration_user_override`,
+one row per user, CAS `revision`, status active|revoked, actor/note audit)
+takes precedence for `active` reads of exactly that user: the active override
+pins one (algorithm_version, algorithm_revision) identity that is read with
+the revision in the WHERE clause, ahead of the global preferred and fallback
+versions. When the pinned identity has no snapshot at/below the cutoff the
+chain falls back to the global selection with reason
+`override_snapshot_missing` — a today-published revision never backfills
+history. Candidate reads never consult the override (they remain the explicit
+global comparison channel). The Go resolver (`ReadEffectiveRunningCalibration`)
+and the TS adapter (`MySqlDataProvider.getLatestRunningCalibration`) are the
+two implementations of this one policy; the shared
+`calibrationPolicyContract.json` pins the table/status/reason strings and a Go
+test locks them against drift. Revoking flips status to revoked under a
+revision CAS: reads immediately restore the global selection while the audit
+row survives; re-activating bumps from the stored revision. The single-user
+publish boundary is one transaction (`PublishUserCalibrationOverride`):
+snapshot + both zone tables + the override commit together or not at all, and
+an identical already-active identity is a no-op so a retried publish never
+bumps the CAS counter. A user override authorizes active-v4 derived writes for
+exactly that user (`checkActiveCalibrationWrite` honors
+`selection.override`); the incomplete-baseline gate still applies.
+
 ## Publication and historical identity
 
-Snapshot and both zone tables publish in one transaction. The existing
-(user,day,version) natural key and ID remain compatible; concurrent same-key
-writers serialize through that row. Readers use one connection and explicit
-REPEATABLE READ readonly transaction for policy, snapshot and zones. Atomic
-writes alone would not prevent a reader seeing old centers with new zones.
+Snapshot and both zone tables publish in one transaction. The natural key is
+(user, day, version, algorithm_revision): since #995 (2026-11-16 no-v5
+decision) the additive `algorithm_revision` column separates the in-place
+evolved v4 outputs (`v4-rev2-2026-11`) from historical v4 rows (empty
+revision), so a new-revision write can never overwrite an old v4 row.
+Same-(user,day,version,revision) republish remains an idempotent overwrite,
+preserving the original same-day recompute semantics; legacy writers that do
+not know the column keep defaulting it to '' and stay on their previous
+identity. Revision values are validated ([A-Za-z0-9._-], <= 64 chars) before
+entering the key. Readers keep one connection and an explicit REPEATABLE READ
+readonly transaction for policy, snapshot and zones, and the same
+`as_of_date DESC, id DESC` deterministic tiebreak within a version; the
+per-user revision preference landed with #999 (see Ownership and selection).
+GORM AutoMigrate adds the column but
+never widens an existing unique index, so `AutoMigrateWatch` additionally runs
+an idempotent `migrateRunningCalibrationRevisionIndex` step (rebuild
+`uq_run_cal` on the four columns when an older three-column variant is
+detected). Deployment order: apply the column + index change before deploying
+new revision writers. Atomic writes alone would not prevent a reader seeing
+old centers with new zones.
 
 SourceJSON stores schema1 typed summaries: method, parameter version, event
 cutoff, support, measurement quality versus effort, actual evidence dates,
@@ -132,7 +170,9 @@ Deployment sequence (not executed by this change):
 
 1. Apply additive policy table and five nullable columns before new readers and
    writers. Verify schema readiness explicitly; pod AutoMigrate ordering alone
-   does not establish a safe multi-pod rollout.
+   does not establish a safe multi-pod rollout. The #995 revision-key change
+   follows the same rule: `algorithm_revision` column plus the rebuilt
+   `uq_run_cal` index land before any new-revision writer.
 2. Deploy all Go and TS readers, retaining active3 and candidate persistence off.
    Old binaries select highest version: **do not persist candidate into shared
    production while any old reader exists**.
@@ -150,6 +190,17 @@ Explicit recompute order is historical calibration snapshots → per-activity
 load/classification/zones → PMC from an explainable compatible seed or explicit
 zero anchor → daily ability and per-activity L1. No default production history
 recomputation is added. Existing plans and push records are not rewritten.
+#999 ships this order as the internal `user_calibration` job (actions
+publish/revoke/recompute) plus the operator CLI `stride calibration user
+preview|publish|revoke|recompute`: recompute refreshes the effective snapshot,
+then rebuilds load/zones/PMC/ability for a bounded window (default 30 days,
+cap 365) seeded at the window edge — never a zero-seed full-history rewrite,
+and each historical day resolves to its own as-of effective selection, so
+today's new thresholds never backfill history. Revoking the override is not a
+derived-data rollback; the executable recovery is revoke → recompute, which
+rebuilds the affected rows under the restored selection. The job is
+internal-only and part of no pipeline: it runs only when an authorized
+operator enqueues it for one target user (three-gate discipline).
 
 ## Verification
 
@@ -177,3 +228,15 @@ pause counterevidence and persisted stale HR rejection explanations. See
 [final review evidence](../calibration/evidence/final-review/README.md).
 The original T8 first score/freeze and then-unsupported stack report remain
 historical evidence; they do not claim to cover these later changes.
+
+## Evolved v4 estimation contract (#993 / #995, 2026-11-16)
+
+The v4 algorithm identity evolves in place (no v5). The estimation contract
+(joint objective, conditional independence, HR bridge constraint, five-state
+labels, runnable research priors, revision marker) is frozen in
+[docs/calibration/estimation-contract-v2.md](../calibration/estimation-contract-v2.md)
+with evaluation protocol v2 in
+[docs/calibration/evaluation-protocol-v2.md](../calibration/evaluation-protocol-v2.md).
+Nothing in this ADR changes: policy/bundle/lineage rules above apply unchanged
+to revision-marked v4 rows, and the three-gate release discipline (engineering
+admission / single-user research trial / full rollout) is documented there.

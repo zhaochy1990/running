@@ -275,4 +275,87 @@ const unsupportedEffortAlias = structuredClone(firstVector.response);
 unsupportedEffortAlias.threshold.source.speed.effort_support = 'likely_maximal';
 eq(projectCalibration(unsupportedEffortAlias).pace.lines.includes('数据质量：高 · 全力证据：未知'), true, 'unsupported effort alias remains unknown');
 
+// ── T6 (#1000): evolved-v4 five states, override disclosure, revision marker ──
+for (const vector of displayVectors.cases) {
+  const display = projectCalibration(vector.response as StrideZonesResponse);
+  const exp = vector.expected as Record<string, string | null | undefined>;
+  if (exp.pace_state !== undefined) eq(display.pace.support, exp.pace_state, `${vector.name} shared pace state label`);
+  if (exp.hr_state !== undefined) eq(display.hr.support, exp.hr_state, `${vector.name} shared HR state label`);
+  if (exp.pace_algorithm_label !== undefined) {
+    eq(display.pace.help.includes(exp.pace_algorithm_label as string), true, `${vector.name} shared algorithm label`);
+    eq(display.hr.help.includes(exp.pace_algorithm_label as string), true, `${vector.name} shared HR algorithm label`);
+  }
+  if (exp.override_label !== undefined) {
+    eq(display.pace.help.includes(exp.override_label as string), true, `${vector.name} override pin disclosed`);
+    eq(display.hr.help.includes(exp.override_label as string), true, `${vector.name} override pin disclosed (HR)`);
+  }
+  if (exp.override_fallback_label !== undefined) {
+    eq(display.pace.help.includes(exp.override_fallback_label as string), true, `${vector.name} override fallback reason`);
+    eq(display.pace.help.join(' ').includes('已按你的选择使用'), false, `${vector.name} fallback never claims the pin is served`);
+  }
+  if (exp.hr_joint_label !== undefined) eq(display.hr.lines.includes(exp.hr_joint_label as string), true, `${vector.name} joint HR marker`);
+  if (exp.hr_proxy_label !== undefined) eq(display.hr.lines.includes(exp.hr_proxy_label as string), true, `${vector.name} shared field-proxy wording`);
+  if (exp.hr_model_target_label !== undefined) eq(display.hr.lines.includes(exp.hr_model_target_label as string), true, `${vector.name} shared model-target wording`);
+  if (exp.hr_reference_target_label !== undefined) {
+    eq(display.hr.lines.includes(exp.hr_reference_target_label as string), true, `${vector.name} reference-target wording`);
+    eq(display.hr.lines.join(' ').includes('模型推算稳态心率'), false, `${vector.name} reference never labeled as model prediction`);
+  }
+  // P2-1：同一 categorical 原因可能由速度拟合与联合重解分别计入，文案只渲染一次；
+  // 「来源 …」是证据事实列表（同日多段可合法重复），不参与查重。
+  for (const all of [display.pace.lines, display.hr.lines, display.pace.help, display.hr.help]) {
+    const kept = all.filter((line: string) => !line.startsWith('来源 '));
+    eq(new Set(kept).size === kept.length, true, `${vector.name} no duplicate reason/detail lines`);
+  }
+}
+
+const lowEvidence = projectCalibration(displayVectors.cases.find((v: { name: string }) => v.name === 'evolved-low-evidence').response);
+eq(lowEvidence.pace.support, '模型估计 · 基于你的普通训练估计', 'low-evidence pace state');
+eq(lowEvidence.hr.support, '先验主导 · 基于研究先验估计', 'low-evidence HR state (v4 rev3 regression branch)');
+eq(lowEvidence.pace.value, '4:49', 'low-evidence center');
+eq(lowEvidence.pace.range, '支持范围 4:15–5:03 /km', 'low-evidence pace range');
+eq(lowEvidence.hr.value, '162', 'low-evidence HR center');
+eq(lowEvidence.hr.range, '支持范围 156–168 bpm', 'low-evidence HR range');
+eq(lowEvidence.hr.lines.some((line) => line.includes('对数速度回归')), true, 'regression method in plain words');
+eq(lowEvidence.hr.lines.includes('模型推算稳态心率（参考条件下的一小时能力配速，不是生理乳酸阈值实测）'), true, 'model-predicted steady HR target line');
+eq([...lowEvidence.pace.lines, ...lowEvidence.pace.help].join('').includes('必须先测试'), false, 'never demand a test first');
+eq(lowEvidence.pace.range?.includes('95%'), false, 'range never claims 95%');
+
+const priorOnly = projectCalibration(displayVectors.cases.find((v: { name: string }) => v.name === 'evolved-prior-only').response);
+eq(priorOnly.pace.support, '先验主导 · 基于研究先验估计', 'prior-only pace state');
+eq(priorOnly.hr.support, '暂无估计 · 没有心率序列，也没有可用的静息心率先验', 'prior-only HR state (no M source)');
+eq(priorOnly.pace.lines.some((line) => line.includes('仅短时、低质量或单层证据')), true, 'identifiability reason in plain words');
+eq(priorOnly.pace.value !== '—', true, 'prior-only still shows pace');
+eq(priorOnly.hr.value, '—', 'prior-only HR stays empty without a source');
+
+const measuredRef = projectCalibration(displayVectors.cases.find((v: { name: string }) => v.name === 'evolved-measured-reference').response);
+eq(measuredRef.pace.support, '模型估计 · 基于你的普通训练估计', 'verified reference informs the constrained fit');
+eq(measuredRef.hr.support, '先验主导 · 基于研究先验估计', 'HR walks the regression branch');
+eq(measuredRef.hr.lines.some((line) => line.includes('对数速度回归')), true, 'regression method in plain words');
+eq(measuredRef.hr.lines.includes('联合估计，非独立验证'), false, 'reference is not a joint estimate');
+
+const evolvedUnavailable = projectCalibration(displayVectors.cases.find((v: { name: string }) => v.name === 'evolved-unavailable').response);
+eq(evolvedUnavailable.pace.support, '暂无估计 · 窗口内没有有效跑步输入', 'unavailable pace with reason');
+eq(evolvedUnavailable.hr.support, '暂无估计 · 没有心率序列，也没有可用的静息心率先验', 'unavailable HR with reason');
+eq(evolvedUnavailable.pace.value, '—', 'unavailable pace stays empty');
+eq(evolvedUnavailable.hr.value, '—', 'unavailable HR stays empty');
+eq(evolvedUnavailable.pace.range, null, 'no invented pace range');
+
+const historicalV4 = projectCalibration(displayVectors.cases.find((v: { name: string }) => v.name === 'historical-v4').response);
+eq(historicalV4.pace.support, '模型支持：高', 'historical v4 keeps legacy support wording');
+eq(historicalV4.pace.help.includes('当前有效算法 v4'), true, 'historical v4 effective algorithm');
+eq(historicalV4.pace.help.join(' ').includes('修订'), false, 'historical v4 has no revision marker');
+
+const overrideSelected = projectCalibration(displayVectors.cases.find((v: { name: string }) => v.name === 'override-selected').response);
+eq(overrideSelected.pace.help.includes('已按你的选择使用 v4（修订 v4-rev3-2026-11）'), true, 'override pin wording');
+eq(overrideSelected.pace.help.includes('当前有效算法 v4 · 修订 v4-rev3-2026-11'), true, 'effective algorithm with revision');
+const overrideFallback = projectCalibration(displayVectors.cases.find((v: { name: string }) => v.name === 'override-fallback').response);
+eq(overrideFallback.pace.help.includes('你选择的版本在该日期无快照，暂用全局有效版本'), true, 'override fallback wording');
+eq(overrideFallback.pace.help.includes('当前有效算法 v3'), true, 'fallback serves global v3');
+
+const futureState = structuredClone(firstVector.response);
+futureState.threshold.source.speed.state = 'some_future_state';
+const futureStateDisplay = projectCalibration(futureState).pace;
+eq(futureStateDisplay.support, '来源信息不可用 · 保守参考', 'unknown state degrades conservatively');
+eq(futureStateDisplay.value, '3:34', 'unknown state keeps the center');
+
 console.log('trainingStatus.check: OK');

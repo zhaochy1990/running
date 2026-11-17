@@ -444,7 +444,16 @@ export class MySqlDataProvider implements DataProvider {
     });
   }
 
-  /** Ordinary Coach reads always resolve active; candidate is an explicit offline adapter call. */
+  /**
+   * Ordinary Coach reads always resolve active; candidate is an explicit offline adapter call.
+   * Per-user override precedence (#999): an active `running_calibration_user_override`
+   * row pins one (algorithm_version, algorithm_revision) identity that is read — revision
+   * in the WHERE clause — ahead of the global preferred/fallback chain, mirroring Go
+   * `ReadEffectiveRunningCalibration` exactly. A pinned identity with no snapshot at/below
+   * the cutoff falls back to the global selection with reason `override_snapshot_missing`,
+   * so a today-published revision never backfills history. Candidate reads never consult
+   * the override.
+   */
   async getLatestRunningCalibration(userId: string, asOfDate: string, mode: "active" | "candidate" = "active"): Promise<RunningCalibration | null> {
     if (mode !== "active" && mode !== "candidate") throw new Error("invalid calibration selection mode");
     const cutoff = assertDay(shanghaiDay(asOfDate));
@@ -464,22 +473,51 @@ export class MySqlDataProvider implements DataProvider {
       ) {
         throw new Error("unsupported calibration policy versions");
       }
-      const requested = mode === "active" ? Number(policy.active_version) : policy.candidate_version === null ? null : Number(policy.candidate_version);
+      let override: { revision: number; algorithm_version: number; algorithm_revision: string } | undefined;
+      if (mode === "active") {
+        const [overrideRows] = await connection.query<RowDataPacket[]>(
+          `SELECT revision, algorithm_version, algorithm_revision
+             FROM ${policyContract.user_override.table}
+            WHERE user_id = ? AND status = ? LIMIT 1`,
+          [userId, policyContract.user_override.active_status],
+        );
+        const row = overrideRows[0];
+        if (row) {
+          const revision = String(row.algorithm_revision ?? "");
+          if (!/^[A-Za-z0-9._-]{0,64}$/.test(revision) || !policyContract.supported_versions.includes(Number(row.algorithm_version))) {
+            throw new Error("unsupported calibration user override identity");
+          }
+          override = { revision: Number(row.revision), algorithm_version: Number(row.algorithm_version), algorithm_revision: revision };
+        }
+      }
+      const preferred = mode === "active" ? Number(policy.active_version) : policy.candidate_version === null ? null : Number(policy.candidate_version);
+      const requested = override ? override.algorithm_version : preferred;
       const fallback = Number(policy.fallback_version);
-      const versions = [...new Set(requested === null ? [fallback] : [requested, fallback])];
+      // Selection chain mirroring Go: the pinned override identity first, then
+      // the global preferred version, then the global fallback. Pinned targets
+      // filter by algorithm_revision; global targets keep the latest-row tiebreak.
+      const targets: Array<{ version: number; revision?: string }> = [];
+      if (override) targets.push({ version: override.algorithm_version, revision: override.algorithm_revision });
+      if (preferred !== null) targets.push({ version: preferred });
+      if (preferred === null || preferred !== fallback) targets.push({ version: fallback });
       let snapshot: RowDataPacket | undefined;
-      for (const version of versions) {
+      let winner = -1;
+      for (const [index, target] of targets.entries()) {
         const [rows] = await connection.query<RowDataPacket[]>(
-          `SELECT id, as_of_date, algorithm_version,
+          `SELECT id, as_of_date, algorithm_version, algorithm_revision,
                   DATE_FORMAT(computed_at, '%Y-%m-%dT%H:%i:%s.%fZ') AS computed_at, source_json,
                   threshold_hr, threshold_speed_mps, rhr_baseline, threshold_hr_confidence, threshold_speed_confidence
              FROM running_calibration_snapshot
             WHERE user_id = ? AND algorithm_version = ? AND as_of_date <= ?
+              ${target.revision !== undefined ? "AND algorithm_revision = ?" : ""}
             ORDER BY as_of_date DESC, id DESC LIMIT 1`,
-          [userId, version, cutoff],
+          target.revision !== undefined ? [userId, target.version, cutoff, target.revision] : [userId, target.version, cutoff],
         );
         snapshot = rows[0];
-        if (snapshot) break;
+        if (snapshot) {
+          winner = index;
+          break;
+        }
       }
       if (!snapshot) {
         await connection.commit();
@@ -497,7 +535,14 @@ export class MySqlDataProvider implements DataProvider {
       );
       const source = calibrationSource(snapshot.source_json);
       const effective = Number(snapshot.algorithm_version);
-      const isFallback = requested === null || requested !== effective;
+      const isSelected = winner === 0;
+      const reason = isSelected
+        ? undefined
+        : override
+          ? policyContract.user_override.fallback_reason
+          : requested === null
+            ? "candidate_not_configured"
+            : "preferred_snapshot_missing";
       const result: RunningCalibration = {
         calibrationId: Number(snapshot.id),
         algorithmVersion: effective,
@@ -507,8 +552,11 @@ export class MySqlDataProvider implements DataProvider {
           policy_revision: Number(policy.revision),
           requested_version: requested,
           effective_version: effective,
-          state: isFallback ? "fallback" : "selected",
-          ...(isFallback ? { reason: requested === null ? "candidate_not_configured" : "preferred_snapshot_missing" } : {}),
+          state: isSelected ? "selected" : "fallback",
+          ...(reason ? { reason } : {}),
+          ...(override
+            ? { override: { revision: override.revision, algorithm_version: override.algorithm_version, algorithm_revision: override.algorithm_revision } }
+            : {}),
         },
         source,
         ...(source.fingerprint ? { fingerprint: source.fingerprint } : {}),

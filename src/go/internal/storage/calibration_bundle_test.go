@@ -149,6 +149,11 @@ func TestCalibrationSharedPolicyContract(t *testing.T) {
 		Candidate int   `json:"candidate_version"`
 		Fallback  int   `json:"fallback_version"`
 		Supported []int `json:"supported_versions"`
+		Override  struct {
+			Table          string `json:"table"`
+			ActiveStatus   string `json:"active_status"`
+			FallbackReason string `json:"fallback_reason"`
+		} `json:"user_override"`
 	}
 	if err := json.Unmarshal(raw, &p); err != nil {
 		t.Fatal(err)
@@ -161,6 +166,11 @@ func TestCalibrationSharedPolicyContract(t *testing.T) {
 		if !validCalibrationVersion(v) {
 			t.Fatal("unsupported shared version")
 		}
+	}
+	// The #999 user-override surface must stay identical on both sides: same
+	// table, same active status, same fallback reason string.
+	if p.Override.Table != (&RunningCalibrationUserOverride{}).TableName() || p.Override.ActiveStatus != OverrideStatusActive || p.Override.FallbackReason != "override_snapshot_missing" {
+		t.Fatalf("shared user-override contract drift: %+v", p.Override)
 	}
 }
 

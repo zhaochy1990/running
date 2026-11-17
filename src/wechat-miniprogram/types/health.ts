@@ -112,11 +112,19 @@ export interface CalibrationSelection {
   effective_version: number | null;
   state: "selected" | "fallback" | "unavailable";
   reason?: string;
+  /** #999：该读存在按用户覆盖时披露 pin 身份；缺省表示无覆盖。 */
+  override?: {
+    revision: number;
+    algorithm_version: number;
+    algorithm_revision: string;
+  };
 }
 
 export interface CalibrationMetricSource {
   method: string;
   target_type: string;
+  /** #993 演进 v4 五态标签；历史行缺省。 */
+  state?: string;
   measurement_quality: string;
   effort_support: string;
   support: string;
@@ -153,6 +161,8 @@ export interface CalibrationSource {
   strategy?: string;
   implementation?: string;
   parameter_version?: string;
+  /** #995：原地演进 v4 的算法修订标记；历史 v4 行缺省。 */
+  algorithm_revision?: string;
   data_cutoff_day?: string;
   availability_semantics?: string;
   fingerprint?: string;

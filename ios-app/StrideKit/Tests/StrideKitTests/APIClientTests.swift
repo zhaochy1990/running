@@ -20,11 +20,16 @@ import Testing
         private var plan: [String: [(Int, Data)]] = [:]
         private var hits: [String: Int] = [:]
         private var calls: [Call] = []
+        // path|METHOD -> {路径: 最小命中数}：出队该路径响应前先等其它路径命中
+        // 达标——把「响应送达顺序」变成测试可编排的确定性工具。
+        private var waits: [String: [String: Int]] = [:]
 
         init() {}
 
-        func plan(_ path: String, _ method: String = "GET", responses: [(Int, Data)]) {
-            plan["\(path)|\(method)"] = responses
+        func plan(_ path: String, _ method: String = "GET", responses: [(Int, Data)], waitForHits: [String: Int] = [:]) {
+            let key = "\(path)|\(method)"
+            plan[key] = responses
+            if !waitForHits.isEmpty { waits[key] = waitForHits }
         }
 
         func count(path: String) -> Int {
@@ -42,10 +47,29 @@ import Testing
             var headers: [String: String] = [:]
             request.allHTTPHeaderFields.map { headers.merge($0) { _, new in new } }
             calls.append(Call(url: request.url!, method: request.httpMethod ?? "GET", headers: headers))
+            if let wait = waits[key] {
+                // 最多等 10s（1ms 轮询，await 挂起期间不占 actor）：等待的路径
+                // 一直不来就让本次调用抛错，测试红而不是整个 suite 挂死。
+                var waited = 0
+                while wait.contains(where: { hits[$0.key, default: 0] < $0.value }) && waited < 10_000 {
+                    try await Task.sleep(nanoseconds: 1_000_000)
+                    waited += 1
+                }
+                if wait.contains(where: { hits[$0.key, default: 0] < $0.value }) {
+                    throw GateTimeout(key: key, waitingFor: wait)
+                }
+            }
             let responses = plan[key] ?? [(404, Data())]
             let (status, body) = responses[min(n - 1, responses.count - 1)]
             let http = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil)!
             return (body, http)
+        }
+
+        /// waitForHits 超时（10s）：等待的路径始终未命中。
+        struct GateTimeout: Error, CustomStringConvertible {
+            let key: String
+            let waitingFor: [String: Int]
+            var description: String { "MockTransport 闸门超时：\(key) 等待命中 \(waitingFor) 未满足" }
         }
     }
 
@@ -151,9 +175,14 @@ import Testing
         // 两个业务端点各自：首问 401、重试 200；refresh 恒 200
         await transport.plan("/api/a", responses: [(401, Data()), (200, jsonData("[]"))])
         await transport.plan("/api/b", responses: [(401, Data()), (200, jsonData("[]"))])
+        // refresh 响应挂起，直到两个业务端点的首问 401 都已送达再放行：refresh
+        // 完成前 APIClient.refreshTask 不会被清除，所以后到方的 401 处理必然
+        // 落进单飞窗口。不挂闸门时这是纯调度竞速——CI macOS 上 62 套件并行、
+        // 协作线程池饥饿时，b 子任务会整个落在首次 refresh 完成之后，触发第二
+        // 次 refresh（43876513838 真实失败案例）。
         await transport.plan("/api/auth/refresh", "POST", responses: [
             (200, jsonData(#"{"access_token":"acc-2","refresh_token":"ref-2","expires_in":900}"#)),
-        ])
+        ], waitForHits: ["/api/a": 1, "/api/b": 1])
 
         async let a = client.send(APIRequest(path: "/api/a"))
         async let b = client.send(APIRequest(path: "/api/b"))

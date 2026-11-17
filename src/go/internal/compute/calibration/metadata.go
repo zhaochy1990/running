@@ -1,6 +1,9 @@
 package calibration
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"math"
+)
 
 // CandidateVersion is the explicit offline implementation identity. ModelVersion
 // remains the frozen production default; changing policy is a separate operation.
@@ -9,11 +12,14 @@ const CandidateVersion = candidateAlgorithmVersion
 // SourceSummary is the bounded explanation persisted with a snapshot. It never
 // contains observations, raw samples, notes, coordinates or complete activities.
 type SourceSummary struct {
-	SchemaVersion         int           `json:"schema_version"`
-	State                 string        `json:"state"`
-	Strategy              string        `json:"strategy,omitempty"`
-	Implementation        string        `json:"implementation,omitempty"`
-	ParameterVersion      string        `json:"parameter_version,omitempty"`
+	SchemaVersion    int    `json:"schema_version"`
+	State            string `json:"state"`
+	Strategy         string `json:"strategy,omitempty"`
+	Implementation   string `json:"implementation,omitempty"`
+	ParameterVersion string `json:"parameter_version,omitempty"`
+	// AlgorithmRevision distinguishes in-place evolved v4 outputs from
+	// historical v4 rows (#995; empty on all legacy summaries).
+	AlgorithmRevision     string        `json:"algorithm_revision,omitempty"`
 	DataCutoffDay         string        `json:"data_cutoff_day,omitempty"`
 	AvailabilitySemantics string        `json:"availability_semantics,omitempty"`
 	Fingerprint           string        `json:"fingerprint,omitempty"`
@@ -21,8 +27,12 @@ type SourceSummary struct {
 	HR                    *MetricSource `json:"hr,omitempty"`
 }
 type MetricSource struct {
-	Method                     string            `json:"method"`
-	TargetType                 string            `json:"target_type"`
+	Method     string `json:"method"`
+	TargetType string `json:"target_type"`
+	// State is the five-label estimation state of the evolved v4 contract
+	// (#995): measured_reference / model_estimated / prior_dominated / stale /
+	// unavailable. Empty on all legacy summaries until T2+ stamps it.
+	State                      string            `json:"state,omitempty"`
 	MeasurementQuality         string            `json:"measurement_quality"`
 	EffortSupport              string            `json:"effort_support"`
 	Support                    string            `json:"support"`
@@ -70,6 +80,7 @@ func ParseSource(raw *string) SourceSummary {
 	limitSourceString(&out.Strategy)
 	limitSourceString(&out.Implementation)
 	limitSourceString(&out.ParameterVersion)
+	limitSourceString(&out.AlgorithmRevision)
 	limitSourceString(&out.DataCutoffDay)
 	limitSourceString(&out.AvailabilitySemantics)
 	limitSourceString(&out.Fingerprint)
@@ -81,12 +92,16 @@ func ParseSource(raw *string) SourceSummary {
 // SummarizeSource separates actual model contributors from bounded rejected
 // protocol history. Ordinary training cannot refresh an older maximal anchor.
 func SummarizeSource(result OfflineResult) SourceSummary {
-	out := SourceSummary{SchemaVersion: 1, State: "available", Strategy: string(result.Strategy), Implementation: result.Implementation, ParameterVersion: result.ParameterVersion, DataCutoffDay: result.Snapshot.AsOfDate.Format("2006-01-02"), AvailabilitySemantics: "event_date_retrospective"}
+	out := SourceSummary{SchemaVersion: 1, State: "available", Strategy: string(result.Strategy), Implementation: result.Implementation, ParameterVersion: result.ParameterVersion, AlgorithmRevision: result.AlgorithmRevision, DataCutoffDay: result.Snapshot.AsOfDate.Format("2006-01-02"), AvailabilitySemantics: "event_date_retrospective"}
 	legacy := func(target, support string) *MetricSource {
 		return &MetricSource{Method: "legacy_v3_training_estimate", TargetType: target, MeasurementQuality: "unknown", EffortSupport: "unknown", Support: support, RangeMeaning: "unavailable", Reasons: []string{"legacy_estimate_not_independent_detection"}, Limitations: []string{"event_date_only_not_strict_as_known"}}
 	}
 	out.Speed = legacy("legacy_training_speed_estimate", string(result.Snapshot.ThresholdSpeedConfidence))
 	out.HR = legacy("legacy_training_estimate_not_independent_LTHR", string(result.Snapshot.ThresholdHRConfidence))
+	if result.Evolved != nil {
+		summarizeEvolvedSource(&out, result.Evolved, result.Snapshot)
+		return out
+	}
 	if result.Evidence == nil {
 		return out
 	}
@@ -168,6 +183,103 @@ func SummarizeSource(result OfflineResult) SourceSummary {
 	return out
 }
 
+// summarizeEvolvedSource fills the five contract states (#995) for the
+// evolved v4 (#996/#997): schema stays 1 so legacy readers keep working, but
+// every metric now carries State, range and the recomputable reasons.
+// MeasurementQuality/EffortSupport are derived from the contributing
+// observations (weakest quality rank, dominant effort class by weight), never
+// hardcoded labels (#996 review P2-1).
+func summarizeEvolvedSource(out *SourceSummary, evolved *EvolvedReport, snapshot Snapshot) {
+	if speed := evolved.Speed; speed != nil {
+		m := &MetricSource{
+			Method:                speed.Method,
+			TargetType:            "model_one_hour_capability_v60",
+			State:                 string(speed.State),
+			MeasurementQuality:    "unknown",
+			EffortSupport:         "unknown",
+			Support:               string(snapshot.ThresholdSpeedConfidence),
+			RangeLow:              speed.RangeLowMps,
+			RangeHigh:             speed.RangeHighMps,
+			RangeMeaning:          speed.RangeMeaning,
+			IndependentActivities: speed.IndependentRoots,
+			IndependentDays:       speed.IndependentDays,
+			Reasons:               speed.Reasons,
+			Limitations:           speed.Limitations,
+		}
+		effortWeight := map[string]float64{}
+		worstRank := -1
+		for i := range speed.Observations {
+			o := &speed.Observations[i]
+			if o.Weight <= 0 {
+				continue
+			}
+			if o.ActivityDay > m.EvidenceDate {
+				m.EvidenceDate = o.ActivityDay
+			}
+			rank := candidateConfidenceRank(o.MeasurementQuality)
+			if worstRank < 0 || (rank > 0 && rank < worstRank) {
+				worstRank = rank
+			}
+			effortWeight[string(o.EffortSupport)] += o.Weight
+			m.EvidenceCount++
+			if len(m.Evidence) < 16 {
+				m.Evidence = append(m.Evidence, EvidenceSummary{ActivityID: o.ActivityID, RootActivityID: o.RootActivityID, ActivityDay: o.ActivityDay, DurationS: o.DurationS, MeasurementQuality: string(o.MeasurementQuality), EffortSupport: string(o.EffortSupport)})
+			}
+		}
+		// Honest summary labels: the weakest contributing quality and the
+		// weight-dominant effort class (ties resolved by class order).
+		if worstRank > 0 {
+			m.MeasurementQuality = map[int]string{3: string(ConfidenceHigh), 2: string(ConfidenceMedium), 1: string(ConfidenceLow)}[worstRank]
+		} else if m.EvidenceCount > 0 {
+			m.MeasurementQuality = "none"
+		}
+		if len(effortWeight) > 0 {
+			best, bestW := "", math.Inf(-1)
+			for _, class := range []string{string(EffortConfirmedMaximal), string(EffortProbableMaximal), string(EffortSubmaximal), string(EffortUnknown)} {
+				if w := effortWeight[class]; w > bestW {
+					best, bestW = class, w
+				}
+			}
+			m.EffortSupport = best
+		}
+		boundSourceMetric(m)
+		out.Speed = m
+	}
+	if hr := evolved.HR; hr != nil {
+		m := &MetricSource{
+			Method:       hr.Method,
+			TargetType:   hr.TargetType,
+			State:        string(hr.State),
+			Support:      string(snapshot.ThresholdHRConfidence),
+			RangeMeaning: "unavailable",
+			Reasons:      hr.Reasons,
+			Limitations:  hr.Limitations,
+		}
+		if hr.CenterBpm != nil {
+			m.RangeLow, m.RangeHigh, m.RangeMeaning = hr.RangeLowBpm, hr.RangeHighBpm, hr.RangeMeaning
+		}
+		m.IndependentActivities = hr.IndependentRoots
+		m.IndependentDays = hr.IndependentDays
+		m.EvidenceDate = hr.EvidenceDate
+		m.LatestRejectedEvidenceDate = hr.LatestRejectedEvidenceDate
+		for i := range hr.Observations {
+			o := &hr.Observations[i]
+			if o.Role != "model_series" || o.Weight <= 0 {
+				continue
+			}
+			if o.ActivityDay > m.EvidenceDate {
+				m.EvidenceDate = o.ActivityDay
+			}
+			m.EvidenceCount++
+			if len(m.Evidence) < 16 {
+				m.Evidence = append(m.Evidence, EvidenceSummary{ActivityID: o.ActivityID, RootActivityID: o.RootActivityID, ActivityDay: o.ActivityDay, MeasurementQuality: "sensor_" + o.Sensor, EffortSupport: "unknown"})
+			}
+		}
+		boundSourceMetric(m)
+		out.HR = m
+	}
+}
+
 func boundSourceMetric(m *MetricSource) {
 	if m == nil {
 		return
@@ -185,7 +297,7 @@ func boundSourceMetric(m *MetricSource) {
 		m.Limitations = m.Limitations[:16]
 	}
 	limit := limitSourceString
-	for _, p := range []*string{&m.Method, &m.TargetType, &m.MeasurementQuality, &m.EffortSupport, &m.Support, &m.RangeMeaning, &m.EvidenceDate, &m.LatestRejectedEvidenceDate, &m.LatestStaleEvidenceDate, &m.LabMethod} {
+	for _, p := range []*string{&m.Method, &m.TargetType, &m.State, &m.MeasurementQuality, &m.EffortSupport, &m.Support, &m.RangeMeaning, &m.EvidenceDate, &m.LatestRejectedEvidenceDate, &m.LatestStaleEvidenceDate, &m.LabMethod} {
 		limit(p)
 	}
 	for i := range m.RejectedReasons {

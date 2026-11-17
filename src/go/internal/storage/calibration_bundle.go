@@ -20,6 +20,10 @@ type CalibrationSelection struct {
 	EffectiveVersion *int            `json:"effective_version"`
 	State            string          `json:"state"`
 	Reason           string          `json:"reason,omitempty"`
+	// Override (#999) discloses the user's explicit per-user selection when one
+	// is active for this read — including when the read fell back because the
+	// pinned identity has no snapshot at/below the cutoff.
+	Override *CalibrationOverrideSelection `json:"override,omitempty"`
 }
 type CalibrationBundle struct {
 	Selection   CalibrationSelection         `json:"selection"`
@@ -35,8 +39,35 @@ func validCalibrationDay(day string) bool {
 	return err == nil && d.Format("2006-01-02") == day
 }
 
+// validAlgorithmRevision accepts the historical empty revision and bounded
+// opaque revision markers (charset [A-Za-z0-9._-], <= 64 chars). The revision
+// participates in the snapshot natural key, so junk values must never enter
+// it (#995).
+func validAlgorithmRevision(rev string) bool {
+	if len(rev) > 64 {
+		return false
+	}
+	for _, r := range rev {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // ReadEffectiveRunningCalibration selects version before date, and keeps every
 // read on one REPEATABLE READ connection. A row with nil centers is still a row.
+//
+// Since #999 an explicitly authorized per-user override wins for active reads:
+// the override pins one (algorithm_version, algorithm_revision) identity that
+// is read with the revision in the WHERE clause, ahead of the global policy's
+// preferred and fallback versions (which stay unpinned — latest-row tiebreak).
+// When the pinned identity has no snapshot at/below the cutoff the chain falls
+// back to the global selection with reason override_snapshot_missing, so a
+// today-published new revision never backfills history. Candidate reads never
+// consult the override: they remain the explicit global comparison channel.
 func (s *Store) ReadEffectiveRunningCalibration(ctx context.Context, user, cutoff string, mode CalibrationMode) (CalibrationBundle, error) {
 	out := CalibrationBundle{PaceZones: []RunningCalibrationPaceZone{}, HRZones: []RunningCalibrationHRZone{}}
 	uid, err := canonicalUserID(user)
@@ -58,17 +89,47 @@ func (s *Store) ReadEffectiveRunningCalibration(ctx context.Context, user, cutof
 		if mode == CalibrationCandidate {
 			preferred = policy.CandidateVersion
 		}
-		out.Selection = CalibrationSelection{Mode: mode, PolicyRevision: policy.Revision, RequestedVersion: preferred, State: "unavailable", Reason: "no_historical_snapshot"}
-		versions := []int{}
+		var override *RunningCalibrationUserOverride
+		if mode == CalibrationActive {
+			if override, err = readActiveCalibrationOverride(tx, uid); err != nil {
+				return err
+			}
+		}
+		requested := preferred
+		if override != nil {
+			v := override.AlgorithmVersion
+			requested = &v
+		}
+		out.Selection = CalibrationSelection{Mode: mode, PolicyRevision: policy.Revision, RequestedVersion: requested, State: "unavailable", Reason: "no_historical_snapshot"}
+		if override != nil {
+			out.Selection.Override = &CalibrationOverrideSelection{Revision: override.Revision, AlgorithmVersion: override.AlgorithmVersion, AlgorithmRevision: override.AlgorithmRevision}
+		}
+		// Selection chain: the override's pinned identity first, then the global
+		// preferred version, then the global fallback. The first target with a
+		// snapshot row at/below the cutoff wins.
+		type selectionTarget struct {
+			version      int
+			revision     string
+			pinned       bool
+			fromOverride bool
+		}
+		chain := []selectionTarget{}
+		if override != nil {
+			chain = append(chain, selectionTarget{version: override.AlgorithmVersion, revision: override.AlgorithmRevision, pinned: true, fromOverride: true})
+		}
 		if preferred != nil {
-			versions = append(versions, *preferred)
+			chain = append(chain, selectionTarget{version: *preferred})
 		}
 		if preferred == nil || *preferred != policy.FallbackVersion {
-			versions = append(versions, policy.FallbackVersion)
+			chain = append(chain, selectionTarget{version: policy.FallbackVersion})
 		}
-		for _, v := range versions {
+		for i, target := range chain {
+			q := tx.Where("user_id = ? AND algorithm_version = ? AND as_of_date <= ?", uid, target.version, cutoff)
+			if target.pinned {
+				q = q.Where("algorithm_revision = ?", target.revision)
+			}
 			var rows []RunningCalibrationSnapshot
-			if err := tx.Where("user_id = ? AND algorithm_version = ? AND as_of_date <= ?", uid, v, cutoff).Order("as_of_date DESC, id DESC").Limit(1).Find(&rows).Error; err != nil {
+			if err := q.Order("as_of_date DESC, id DESC").Limit(1).Find(&rows).Error; err != nil {
 				return err
 			}
 			if len(rows) == 0 {
@@ -76,13 +137,16 @@ func (s *Store) ReadEffectiveRunningCalibration(ctx context.Context, user, cutof
 			}
 			snap := rows[0]
 			out.Snapshot = &snap
-			effective := v
+			effective := snap.AlgorithmVersion
 			out.Selection.EffectiveVersion = &effective
 			out.Selection.State = "selected"
 			out.Selection.Reason = ""
-			if preferred == nil || v != *preferred {
+			if i > 0 {
 				out.Selection.State = "fallback"
 				out.Selection.Reason = "preferred_snapshot_missing"
+				if chain[0].fromOverride {
+					out.Selection.Reason = "override_snapshot_missing"
+				}
 				if preferred == nil {
 					out.Selection.Reason = "candidate_not_configured"
 				}
@@ -99,6 +163,8 @@ func (s *Store) ReadEffectiveRunningCalibration(ctx context.Context, user, cutof
 		}
 		if preferred == nil {
 			out.Selection.Reason = "candidate_not_configured"
+		} else if override != nil {
+			out.Selection.Reason = "override_snapshot_missing"
 		}
 		out.Source = calibration.SourceSummary{State: "snapshot_unavailable"}
 		return nil
@@ -106,21 +172,85 @@ func (s *Store) ReadEffectiveRunningCalibration(ctx context.Context, user, cutof
 	return out, err
 }
 
-// PublishRunningCalibration preserves the existing natural key and publishes
-// snapshot plus both zone tables atomically. Copies protect caller-owned inputs.
+// PublishRunningCalibration preserves the natural key (user_id, as_of_date,
+// algorithm_version, algorithm_revision) and publishes snapshot plus both zone
+// tables atomically. Copies protect caller-owned inputs. Same-key republish is
+// an idempotent overwrite (same-day recompute); a different algorithm_revision
+// writes a separate row, so historical v4 rows (revision ”) are never
+// overwritten by the evolved v4 (#995, ADR 0045).
 func (s *Store) PublishRunningCalibration(ctx context.Context, snapshot *RunningCalibrationSnapshot, pace []RunningCalibrationPaceZone, hr []RunningCalibrationHRZone) (uint64, error) {
+	snap, p, h, _, err := prepareCalibrationPublication(snapshot, pace, hr)
+	if err != nil {
+		return 0, err
+	}
+	var id uint64
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		scoped := *s
+		scoped.db = tx
+		var err error
+		id, err = scoped.UpsertRunningCalibrationSnapshot(ctx, snap)
+		if err != nil {
+			return err
+		}
+		return scoped.ReplaceCalibrationZones(ctx, snap.UserID, id, p, h)
+	})
+	return id, err
+}
+
+// PublishUserCalibrationOverride is the #999 single-user publish boundary: the
+// pinned-identity snapshot, both zone tables and the user's active override
+// commit in one transaction, so an override never becomes readable without its
+// snapshot and a mid-transaction failure leaves both untouched. The override
+// upsert is idempotent on identity — an already-active identical override is
+// kept as-is (no revision bump, no audit rewrite), which makes a retried
+// publish job safe.
+func (s *Store) PublishUserCalibrationOverride(ctx context.Context, snapshot *RunningCalibrationSnapshot, pace []RunningCalibrationPaceZone, hr []RunningCalibrationHRZone, override RunningCalibrationUserOverride) (uint64, error) {
 	if snapshot == nil {
 		return 0, fmt.Errorf("nil calibration snapshot")
+	}
+	if override.AlgorithmVersion != snapshot.AlgorithmVersion || override.AlgorithmRevision != snapshot.AlgorithmRevision {
+		return 0, fmt.Errorf("override identity must match the published snapshot identity")
+	}
+	snap, p, h, uid, err := prepareCalibrationPublication(snapshot, pace, hr)
+	if err != nil {
+		return 0, err
+	}
+	override.UserID = uid
+	if err := validateCalibrationOverride(override); err != nil {
+		return 0, err
+	}
+	var id uint64
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		scoped := *s
+		scoped.db = tx
+		var err error
+		id, err = scoped.UpsertRunningCalibrationSnapshot(ctx, snap)
+		if err != nil {
+			return err
+		}
+		if err := scoped.ReplaceCalibrationZones(ctx, snap.UserID, id, p, h); err != nil {
+			return err
+		}
+		return upsertOverrideForPublish(tx, override)
+	})
+	return id, err
+}
+
+// prepareCalibrationPublication copies and validates the caller-owned inputs
+// and stamps the source fingerprint, shared by both publish paths.
+func prepareCalibrationPublication(snapshot *RunningCalibrationSnapshot, pace []RunningCalibrationPaceZone, hr []RunningCalibrationHRZone) (*RunningCalibrationSnapshot, []RunningCalibrationPaceZone, []RunningCalibrationHRZone, string, error) {
+	if snapshot == nil {
+		return nil, nil, nil, "", fmt.Errorf("nil calibration snapshot")
 	}
 	snap := *snapshot
 	uid, err := canonicalUserID(snap.UserID)
 	if err != nil {
-		return 0, err
+		return nil, nil, nil, "", err
 	}
 	snap.UserID = uid
 	snap.ID = 0
-	if !validCalibrationDay(snap.AsOfDate) || !validCalibrationVersion(snap.AlgorithmVersion) {
-		return 0, fmt.Errorf("invalid calibration identity")
+	if !validCalibrationDay(snap.AsOfDate) || !validCalibrationVersion(snap.AlgorithmVersion) || !validAlgorithmRevision(snap.AlgorithmRevision) {
+		return nil, nil, nil, "", fmt.Errorf("invalid calibration identity")
 	}
 	p := append([]RunningCalibrationPaceZone(nil), pace...)
 	h := append([]RunningCalibrationHRZone(nil), hr...)
@@ -135,34 +265,23 @@ func (s *Store) PublishRunningCalibration(ctx context.Context, snapshot *Running
 		summary.Fingerprint = ""
 		raw, err := json.Marshal(summary)
 		if err != nil {
-			return 0, err
+			return nil, nil, nil, "", err
 		}
 		text := string(raw)
 		snap.SourceJSON = &text
 		fp, err := calibrationFingerprint(snap, p, h)
 		if err != nil {
-			return 0, err
+			return nil, nil, nil, "", err
 		}
 		summary.Fingerprint = fp
 		raw, err = json.Marshal(summary)
 		if err != nil {
-			return 0, err
+			return nil, nil, nil, "", err
 		}
 		text = string(raw)
 		snap.SourceJSON = &text
 	}
-	var id uint64
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		scoped := *s
-		scoped.db = tx
-		var err error
-		id, err = scoped.UpsertRunningCalibrationSnapshot(ctx, &snap)
-		if err != nil {
-			return err
-		}
-		return scoped.ReplaceCalibrationZones(ctx, snap.UserID, id, p, h)
-	})
-	return id, err
+	return &snap, p, h, uid, nil
 }
 func calibrationFingerprint(snap RunningCalibrationSnapshot, p []RunningCalibrationPaceZone, h []RunningCalibrationHRZone) (string, error) {
 	snap.ID = 0

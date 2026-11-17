@@ -2191,11 +2191,19 @@ export interface CalibrationSelection {
   effective_version: number | null;
   state: "selected" | "fallback" | "unavailable";
   reason?: string;
+  /** #999: discloses the user's explicit per-user pin when active for this read. */
+  override?: {
+    revision: number;
+    algorithm_version: number;
+    algorithm_revision: string;
+  };
 }
 
 export interface CalibrationMetricSource {
   method: string;
   target_type: string;
+  /** #993 evolved-v4 five-state label; absent on all legacy rows. */
+  state?: string;
   measurement_quality: string;
   effort_support: string;
   support: string;
@@ -2232,6 +2240,8 @@ export interface CalibrationSource {
   strategy?: string;
   implementation?: string;
   parameter_version?: string;
+  /** #995: distinguishes in-place evolved v4 outputs from historical v4 rows. */
+  algorithm_revision?: string;
   data_cutoff_day?: string;
   availability_semantics?: string;
   fingerprint?: string;

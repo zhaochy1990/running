@@ -112,7 +112,7 @@ final class CalibrationReadUITests: XCTestCase {
         try requireOptIn()
         let app = assertProducerHR(name: "producer-field-half", value: "167",
                                    method: "场地测试协议（30分钟测试的后20分钟）",
-                                   target: "目标：场地心率代理（非生理乳酸阈值）")
+                                   target: "目标：现场心率代理，不是生理乳酸阈值实测")
         let paceHelp = app.buttons["阈值配速依据与日期"]
         for _ in 0..<6 where !paceHelp.isHittable { app.swipeDown() }
         XCTAssertTrue(paceHelp.isHittable)
@@ -129,6 +129,57 @@ final class CalibrationReadUITests: XCTestCase {
         _ = assertProducerHR(name: "producer-lab-half", value: "169",
                              method: "实验室乳酸阈值报告",
                              target: "目标：实验室方法特定乳酸阈值 · lactate_turnpoint")
+    }
+
+    /// T6 (#1000): evolved-v4 five-state labels, joint-HR marker, revision
+    /// disclosure and the per-user override fallback wording on the real UI.
+    @MainActor func testEvolvedStatesAndOverrideDisclosureRenderPlainWords() throws {
+        try requireOptIn()
+        // v4 rev3: HR walks the §6.4 regression branch in these vectors; no
+        // measured_reference centers are published (v4.md §8.3).
+        let evolved = launchCase("evolved-low-evidence")
+        XCTAssertTrue(evolved.staticTexts["4:49"].exists)
+        XCTAssertTrue(evolved.staticTexts["162"].exists)
+        XCTAssertTrue(evolved.staticTexts["支持范围 4:15–5:03 /km"].exists)
+        XCTAssertTrue(evolved.staticTexts["模型估计 · 基于你的普通训练估计"].exists)
+        let evolvedHRHelp = evolved.buttons["阈值心率依据与日期"]
+        for _ in 0..<4 where !evolvedHRHelp.isHittable { evolved.swipeUp() }
+        evolvedHRHelp.tap()
+        XCTAssertTrue(evolved.staticTexts["对数速度回归（尺度不可辨识）"].waitForExistence(timeout: 5))
+        capture(evolved, "evolved-low-evidence-cards")
+
+        let prior = launchCase("evolved-prior-only")
+        XCTAssertTrue(prior.staticTexts["先验主导 · 基于研究先验估计"].exists)
+        XCTAssertTrue(prior.staticTexts["5:41"].exists)
+        capture(prior, "evolved-prior-only-cards")
+
+        let reference = launchCase("evolved-measured-reference")
+        XCTAssertTrue(reference.staticTexts["模型估计 · 基于你的普通训练估计"].exists)
+        XCTAssertTrue(reference.staticTexts["167"].exists)
+        capture(reference, "evolved-measured-reference-cards")
+
+        let unavailable = launchCase("evolved-unavailable")
+        XCTAssertTrue(unavailable.staticTexts["暂无估计 · 窗口内没有有效跑步输入"].exists)
+        XCTAssertTrue(unavailable.staticTexts["暂无估计 · 没有心率序列，也没有可用的静息心率先验"].exists)
+        XCTAssertFalse(unavailable.staticTexts["3:34"].exists)
+        capture(unavailable, "evolved-unavailable-cards")
+
+        let pinned = launchCase("override-selected")
+        let pinnedHelp = pinned.buttons["阈值配速依据与日期"]
+        for _ in 0..<4 where !pinnedHelp.isHittable { pinned.swipeUp() }
+        pinnedHelp.tap()
+        XCTAssertTrue(pinned.staticTexts["已按你的选择使用 v4（修订 v4-rev3-2026-11）"].waitForExistence(timeout: 5))
+        XCTAssertTrue(pinned.staticTexts["当前有效算法 v4 · 修订 v4-rev3-2026-11"].exists)
+        capture(pinned, "override-selected-cards")
+
+        let fallback = launchCase("override-fallback")
+        XCTAssertTrue(fallback.staticTexts["3:34"].exists)
+        let fallbackHelp = fallback.buttons["阈值配速依据与日期"]
+        for _ in 0..<4 where !fallbackHelp.isHittable { fallback.swipeUp() }
+        fallbackHelp.tap()
+        XCTAssertTrue(fallback.staticTexts["你选择的版本在该日期无快照，暂用全局有效版本"].waitForExistence(timeout: 5))
+        XCTAssertFalse(fallback.staticTexts["已按你的选择使用 v4（修订 v4-rev3-2026-11）"].exists)
+        capture(fallback, "override-fallback-cards")
     }
 
     @MainActor private func assertProducerHR(name: String, value: String, method: String, target: String) -> XCUIApplication {

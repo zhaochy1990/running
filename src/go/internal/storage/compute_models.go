@@ -10,14 +10,19 @@ import "time"
 
 // RunningCalibrationSnapshot is one persisted athlete-baseline snapshot (table
 // "running_calibration_snapshot"). Mirrors stride_core.running_calibration; the
-// surrogate id + unique (user_id, as_of_date, algorithm_version) mirrors the
-// Python autoincrement id + UNIQUE(as_of_date, algorithm_version), scoped per
-// user. Nullable metrics are pointers so "no estimate" stays NULL.
+// surrogate id + unique (user_id, as_of_date, algorithm_version,
+// algorithm_revision) extends the legacy Python key (as_of_date,
+// algorithm_version), scoped per user. algorithm_revision separates the
+// in-place evolved v4 outputs from historical v4 rows (#995, ADR 0045): ” is
+// every pre-993 row, so the additive column keeps old rows and old writers on
+// their previous identity while a different revision can never overwrite them.
+// Nullable metrics are pointers so "no estimate" stays NULL.
 type RunningCalibrationSnapshot struct {
-	ID               uint64 `gorm:"column:id;primaryKey;autoIncrement"`
-	UserID           string `gorm:"column:user_id;type:char(36);not null;uniqueIndex:uq_run_cal,priority:1"`
-	AsOfDate         string `gorm:"column:as_of_date;type:varchar(16);not null;uniqueIndex:uq_run_cal,priority:2"`
-	AlgorithmVersion int    `gorm:"column:algorithm_version;not null;uniqueIndex:uq_run_cal,priority:3"`
+	ID                uint64 `gorm:"column:id;primaryKey;autoIncrement"`
+	UserID            string `gorm:"column:user_id;type:char(36);not null;uniqueIndex:uq_run_cal,priority:1"`
+	AsOfDate          string `gorm:"column:as_of_date;type:varchar(16);not null;uniqueIndex:uq_run_cal,priority:2"`
+	AlgorithmVersion  int    `gorm:"column:algorithm_version;not null;uniqueIndex:uq_run_cal,priority:3"`
+	AlgorithmRevision string `gorm:"column:algorithm_revision;type:varchar(64);not null;default:'';uniqueIndex:uq_run_cal,priority:4"`
 
 	ThresholdHR              *float64 `gorm:"column:threshold_hr"`
 	ThresholdSpeedMps        *float64 `gorm:"column:threshold_speed_mps"`
@@ -227,6 +232,7 @@ func (ActivityZone) TableName() string { return "activity_zones" }
 func computeModels() []any {
 	return []any{
 		&RunningCalibrationPolicy{},
+		&RunningCalibrationUserOverride{},
 		&RunningCalibrationSnapshot{},
 		&RunningCalibrationPaceZone{},
 		&RunningCalibrationHRZone{},

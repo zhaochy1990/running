@@ -706,17 +706,33 @@ public struct CalibrationSelection: Decodable, Hashable, Sendable {
     public let effectiveVersion: Int?
     public let state: String
     public let reason: String?
+    /// #999: discloses the user's explicit per-user pin when active for this read.
+    public let override: CalibrationOverrideSelection?
     enum CodingKeys: String, CodingKey {
-        case mode, state, reason
+        case mode, state, reason, override
         case policyRevision = "policy_revision"
         case requestedVersion = "requested_version"
         case effectiveVersion = "effective_version"
     }
 }
 
+/// The bounded per-user override disclosure embedded in CalibrationSelection.
+public struct CalibrationOverrideSelection: Decodable, Hashable, Sendable {
+    public let revision: UInt64
+    public let algorithmVersion: Int
+    public let algorithmRevision: String
+    enum CodingKeys: String, CodingKey {
+        case revision
+        case algorithmVersion = "algorithm_version"
+        case algorithmRevision = "algorithm_revision"
+    }
+}
+
 public struct CalibrationMetricSource: Decodable, Hashable, Sendable {
     public let method: String?
     public let targetType: String?
+    /// #993 evolved-v4 five-state label; absent on all legacy rows.
+    public let state: String?
     public let measurementQuality: String?
     public let effortSupport: String?
     public let support: String?
@@ -735,7 +751,7 @@ public struct CalibrationMetricSource: Decodable, Hashable, Sendable {
     public let evidenceCount: Int?
     public let evidence: [CalibrationEvidence]?
     enum CodingKeys: String, CodingKey {
-        case method, support, reasons, limitations, evidence
+        case method, support, reasons, limitations, evidence, state
         case rejectedReasons = "rejected_reasons"
         case targetType = "target_type"
         case measurementQuality = "measurement_quality"
@@ -784,6 +800,8 @@ public struct CalibrationSource: Decodable, Hashable, Sendable {
     public let strategy: String?
     public let implementation: String?
     public let parameterVersion: String?
+    /// #995: distinguishes in-place evolved v4 outputs from historical v4 rows.
+    public let algorithmRevision: String?
     public let dataCutoffDay: String?
     public let availabilitySemantics: String?
     public let fingerprint: String?
@@ -793,6 +811,7 @@ public struct CalibrationSource: Decodable, Hashable, Sendable {
         case state, strategy, implementation, fingerprint, speed, hr
         case schemaVersion = "schema_version"
         case parameterVersion = "parameter_version"
+        case algorithmRevision = "algorithm_revision"
         case dataCutoffDay = "data_cutoff_day"
         case availabilitySemantics = "availability_semantics"
     }

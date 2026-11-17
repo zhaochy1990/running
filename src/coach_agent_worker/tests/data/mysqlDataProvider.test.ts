@@ -135,6 +135,9 @@ test("running calibration omits zone confidence and speed details", async () => 
     async query(sql: string, values: unknown[]) {
       calls.push({ sql, values });
       if (sql.includes("running_calibration_policy")) return [[]];
+      // #999: the override row is read before the snapshot chain; this user
+      // has none, so the read must stay on the global selection.
+      if (sql.includes("running_calibration_user_override")) return [[]];
       if (!sql.startsWith("SELECT")) return [[]];
       if (sql.includes("running_calibration_snapshot")) {
         return [

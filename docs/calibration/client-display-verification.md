@@ -8,6 +8,8 @@
 
 向量覆盖双侧范围、仅约束、反向单侧、低支持／服务端陈旧原因、旧 API、缺快照、未知枚举与坏来源。证据日为上海民用日期，数据截止日与 UTC 执行时刻分列；不使用客户端今天或 90 天门限判断陈旧。`legacy.server_expected` 说明：新 API 读取旧来源仍可提供执行时刻，而真正旧 API 响应没有该字段。
 
+T6（#1000，2026-11-16）扩展四类演进 v4 向量（`evolved-low-evidence`／`evolved-prior-only`／`evolved-measured-reference`／`evolved-unavailable`，由真实 `StrategyEvolvedCandidate` 估计器 + `SummarizeSource` 产出并 deep-equal 锁定，含五态标签、`algorithm_revision` 与模型敏感性范围）、历史 v4 行（`historical-v4`：无修订标记、无逐指标状态，三端保持旧读法）与两条按用户覆盖披露（`override-selected`／`override-fallback`：真实 resolver 的 selection 形状，含 `override_snapshot_missing` 回退）。`expected` 新增共享字面量键 `pace_state`／`hr_state`／`pace_algorithm_label`／`override_label`／`override_fallback_label`／`hr_joint_label`，Web／小程序／iOS 断言同一组中文文案（五态大白话、联合估计标注、「当前有效算法」与按用户选择披露）。生产端展示仍只读，不调用 publish/recompute。
+
 ## 真实本地服务
 
 `src/go/internal/api/calibration_client_server_test.go` 是默认跳过的显式测试 harness，使用现有 `api.NewService`、GIN、真实 RS256、MySQL storage 与 `tsstore.FileStore`。DSN 必须是 root / TCP `127.0.0.1:13383` / `stride_983_test`，否则在迁移前拒绝；无生产 fallback。所有 SQL 均在 storage。独立随机用户通过公开 storage API 建立和删除；仅隔离数据库暂设 active4，退出恢复原 policy 值。
