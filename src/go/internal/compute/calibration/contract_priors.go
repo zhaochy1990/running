@@ -5,15 +5,18 @@ import (
 	"math"
 )
 
-// The runnable default prior set of the evolved v4 (#995). Every numeric
-// prior is executable: finite mean/SD, declared truncation bounds, unit,
-// source and the research_uncalibrated marker. There is deliberately no
-// "calibrate later" empty entry; until population calibration exists these
-// wide research priors ARE the defaults. See
-// docs/calibration/estimation-contract-v2.md for losses and the joint
-// objective; SPEC #993 R1/R2 are the modeling source of truth.
+// contract_priors.go carries the runnable default parameter set of the
+// in-place evolved v4 rev3 (docs/calibration/v4.md, 2026-11-17). Every number
+// below is a literal transcription of the v4.md §5.1/§5.2/§6.2/§8 tables:
+// effort-margin (mu, sigma) pairs, log-speed measurement scales, the k
+// regularizer and domain, the Hsteady parameter priors and boxes, the lambda_H
+// feedback weight, HR sensor scales and the sensitivity-scenario constants.
+// They are first-round research initials ("research_uncalibrated"), not
+// calibrated population values; v4.md §11 keeps them revocable.
 
-// PriorNormal is a truncated-normal prior in the named unit.
+// PriorNormal is a bounded normal prior in the named unit. For parameters
+// declared in log space (log beta, log tau) Mean/SD/Low/High live in the log
+// domain and Unit names it.
 type PriorNormal struct {
 	Mean   float64 `json:"mean"`
 	SD     float64 `json:"sd"`
@@ -33,162 +36,213 @@ func (p PriorNormal) validate() error {
 	return nil
 }
 
-// EffortMarginPriors are the per-effort-class weak priors on the log-speed
-// effort margin delta >= 0. They are weak by design: ordinary training enters
-// the likelihood and only nudges delta; a verified all-out test moves the
-// prior mean toward 0 but is never an on/off switch for estimation.
+// EffortMarginPriors are the v4.md §5.1 effort-class margin priors on the
+// log-speed reserve delta >= 0: mu_delta / sigma_delta per sourced class.
 type EffortMarginPriors struct {
+	// ConfirmedMaximal: 核验的持续全力表现 — mu 0, sigma 0.015.
 	ConfirmedMaximal PriorNormal `json:"confirmed_maximal"`
-	ProbableMaximal  PriorNormal `json:"probable_maximal"`
-	Submaximal       PriorNormal `json:"submaximal"`
-	Unknown          PriorNormal `json:"unknown"`
+	// ProbableMaximal: 可能全力、仍有不确定性 — mu 0, sigma 0.05.
+	ProbableMaximal PriorNormal `json:"probable_maximal"`
+	// Ordinary: 普通训练，努力未知 — mu 0, sigma 0.12.
+	Ordinary PriorNormal `json:"ordinary"`
+	// SteadyReserve: 明确连续稳态、报告尚有余力 — mu log(1.03), sigma 0.08.
+	SteadyReserve PriorNormal `json:"steady_reserve"`
+	// Easy: 明确轻松跑 — mu log(1.08), sigma 0.15.
+	Easy PriorNormal `json:"easy"`
 }
 
-// HRShapeKnot is one knot of the monotone Hsteady shape prior: the expected
-// HR fraction of reserve at a relative intensity v/v60. The knot at
-// RelativeIntensity 1.0 is the bridge constraint that stops the HR curve from
-// freely absorbing the capability scale.
-type HRShapeKnot struct {
-	RelativeIntensity float64 `json:"relative_intensity"`
-	HRFractionMean    float64 `json:"hr_fraction_mean"`
-	HRFractionSD      float64 `json:"hr_fraction_sd"`
+// HRDynamicPriors are the v4.md §6.2 Hsteady parameter priors (center, SD and
+// allowed domain). eta is stored in logit space over q60 = sigmoid(eta).
+type HRDynamicPriors struct {
+	// Eta: center logit(0.85), sd 0.6, q60 domain [0.65, 0.98].
+	Eta PriorNormal `json:"eta"`
+	// LogBeta: center log(3), sd 0.5, beta domain [1, 8] (log domain bounds).
+	LogBeta PriorNormal `json:"log_beta"`
+	// LogTauS: center log(60 s), sd 0.5, tau domain 15-180 s (log domain bounds).
+	LogTauS PriorNormal `json:"log_tau_s"`
+	// DayEffectU: u_j center 0, sd 0.25, domain [-0.75, 0.75].
+	DayEffectU PriorNormal `json:"day_effect_u"`
+	// DriftDPerHour: d_j center 0, sd 0.15/hour, domain [-0.3, 0.5]/hour.
+	DriftDPerHour PriorNormal `json:"drift_d_per_hour"`
 }
 
-// EvolvedPriorSet is the complete default parameter set. Fields are part of
-// the serialized contract; IdentityHash pins its identity in every lineage.
+// EvolvedPriorSet is the complete serialized default parameter set of the rev3
+// evolved v4. Its IdentityHash pins the parameter identity in every lineage.
 type EvolvedPriorSet struct {
 	PriorSetVersion string `json:"prior_set_version"`
 	Calibration     string `json:"calibration"`
-	// LogV60: population prior on log(v60) in log(m/s) for recreational
-	// runners; wide research prior, never a per-user cap.
-	LogV60 PriorNormal `json:"log_v60"`
-	// EnduranceK shares the frozen v3 Riegel-k domain [0.02, 0.10].
-	EnduranceK PriorNormal `json:"endurance_k"`
-	// EffortMargin: weak class priors on delta in log-speed units.
+	// EffortMargin: §5.1 margin table (log-speed units).
 	EffortMargin EffortMarginPriors `json:"effort_margin"`
-	// Historical capability prior spread: sd = hypot(floor, slope*age_days)
-	// in log(m/s). The prior center is never a speed cap (SPEC #993 R1).
-	HistoricalSDFloorLogV60 float64 `json:"historical_sd_floor_log_v60"`
-	HistoricalSDSlopePerDay float64 `json:"historical_sd_slope_per_day"`
-	HistoricalSource        string  `json:"historical_source"`
-	// HR domain priors.
-	HRMaxBpm         PriorNormal   `json:"hr_max_bpm"`
-	RestingHRBpm     PriorNormal   `json:"resting_hr_bpm"`
-	HRShape          []HRShapeKnot `json:"hr_shape"`
-	HRTauS           PriorNormal   `json:"hr_tau_s"`
-	HRDayEffectBpm   PriorNormal   `json:"hr_day_effect_bpm"`
-	HRDriftBpmPerDay PriorNormal   `json:"hr_drift_bpm_per_day"`
-	// OpticalHRWeight is the relative weight of wrist optical HR against
-	// chest strap in the joint objective (down-weighted, never excluded).
-	OpticalHRWeight float64  `json:"optical_hr_weight"`
-	Limitations     []string `json:"limitations"`
+	// MeasurementSigma{High,Medium,Low}: §5.1 log-speed measurement error
+	// initials 0.01 / 0.025 / 0.06. Loss scales, not device error rates; low
+	// never produces a hard lower bound.
+	MeasurementSigmaHigh   float64 `json:"measurement_sigma_high"`
+	MeasurementSigmaMedium float64 `json:"measurement_sigma_medium"`
+	MeasurementSigmaLow    float64 `json:"measurement_sigma_low"`
+	// EnduranceK: §5.2 L_k = 0.5*((k-0.06)/0.02)^2 over k in [0.02, 0.10]
+	// (the frozen v3 Riegel domain).
+	EnduranceK PriorNormal `json:"endurance_k"`
+	// V60SearchLow/HighMps: §8.1 numerical search domain 0.5-12 m/s (a
+	// computational bound, not a physiological population limit).
+	V60SearchLowMps  float64 `json:"v60_search_low_mps"`
+	V60SearchHighMps float64 `json:"v60_search_high_mps"`
+	// HR: §6.2 joint Hsteady priors and scales.
+	HR                HRDynamicPriors `json:"hr"`
+	LambdaH           float64         `json:"lambda_h"`             // §6.3 lambda_H = 0.5
+	HRSigmaStrapBpm   float64         `json:"hr_sigma_strap_bpm"`   // 3 bpm chest strap
+	HRSigmaOpticalBpm float64         `json:"hr_sigma_optical_bpm"` // 6 bpm optical/unknown
+	HRDomainLowBpm    float64         `json:"hr_domain_low_bpm"`    // §6.4 [80, 230]
+	HRDomainHighBpm   float64         `json:"hr_domain_high_bpm"`
+	HRMinSegmentS     float64         `json:"hr_min_segment_s"` // §6.1 >= 8 min segments
+	HRSegmentGapS     float64         `json:"hr_segment_gap_s"` // §6.2 > 10 s re-segment
+	// Regression branch (§6.4): H = c + b*log v with b = 60±30 bpm on
+	// [10, 150]; scenario slopes 30/60/90 and measurement offsets ±6 bpm.
+	RegressionSlope          PriorNormal `json:"regression_slope"`
+	RegressionSlopeScenarios []float64   `json:"regression_slope_scenarios"`
+	RegressionOffsetSigmaBpm float64     `json:"regression_offset_sigma_bpm"`
+	// Sensitivity conventions (§8.2): the fixed profile threshold Delta L = 2,
+	// prior-dominance thresholds (pace 3%, HR 5 bpm) and the HR profile grid.
+	ProfileDeltaL         float64  `json:"profile_delta_l"`
+	PriorDominancePaceRel float64  `json:"prior_dominance_pace_rel"`
+	PriorDominanceHRBpm   float64  `json:"prior_dominance_hr_bpm"`
+	HRProfileGridBpm      float64  `json:"hr_profile_grid_bpm"`
+	Limitations           []string `json:"limitations"`
 }
 
-// DefaultEvolvedPriors returns the frozen runnable defaults. Numbers are
-// research choices motivated by the SPEC #993 method references (CS estimation
-// from training/race data, first-order HR dynamics, fixed-intensity anchor
-// error literature) and by the v1 conservative research domain; none of them
-// is population-calibrated for this product.
+// DefaultEvolvedPriors returns the frozen rev3 defaults, transcribed from
+// docs/calibration/v4.md §5-§8. Nothing here is population calibrated.
 func DefaultEvolvedPriors() EvolvedPriorSet {
-	const speedSource = "spec993-R1; doi:10.1249/MSS.0000000000002412 (motivation only); v1 hour-capability domain"
-	const hrSource = "spec993-R2; PMC4687158 first-order HR dynamics (motivation only); doi:10.1007/s00421-025-05748-8 anchor variability"
+	const speedSource = "docs/calibration/v4.md §5.1/§5.2 (2026-11-17); first-round research initials"
+	const hrSource = "docs/calibration/v4.md §6.2/§6.3 (2026-11-17); first-round research initials"
+	logit := func(q float64) float64 { return math.Log(q / (1 - q)) }
 	return EvolvedPriorSet{
 		PriorSetVersion: EvolvedPriorSetVersion,
 		Calibration:     "research_uncalibrated",
-		LogV60:          PriorNormal{Mean: math.Log(3.4), SD: 0.40, Low: math.Log(1.5), High: math.Log(8.5), Unit: "log_mps", Source: speedSource},
-		EnduranceK:      PriorNormal{Mean: 0.06, SD: 0.03, Low: riegelKMin, High: riegelKMax, Unit: "log_speed_per_log_duration", Source: "frozen v3 riegel_k domain; spec993-R1"},
 		EffortMargin: EffortMarginPriors{
-			ConfirmedMaximal: PriorNormal{Mean: 0.01, SD: 0.02, Low: 0, High: 0.25, Unit: "log_speed", Source: speedSource},
-			ProbableMaximal:  PriorNormal{Mean: 0.03, SD: 0.04, Low: 0, High: 0.35, Unit: "log_speed", Source: speedSource},
-			Submaximal:       PriorNormal{Mean: 0.18, SD: 0.10, Low: 0, High: 0.70, Unit: "log_speed", Source: speedSource},
-			Unknown:          PriorNormal{Mean: 0.14, SD: 0.12, Low: 0, High: 0.70, Unit: "log_speed", Source: speedSource},
+			ConfirmedMaximal: PriorNormal{Mean: 0, SD: 0.015, Low: 0, High: 0.5, Unit: "log_speed", Source: speedSource},
+			ProbableMaximal:  PriorNormal{Mean: 0, SD: 0.05, Low: 0, High: 0.5, Unit: "log_speed", Source: speedSource},
+			Ordinary:         PriorNormal{Mean: 0, SD: 0.12, Low: 0, High: 0.5, Unit: "log_speed", Source: speedSource},
+			SteadyReserve:    PriorNormal{Mean: math.Log(1.03), SD: 0.08, Low: 0, High: 0.5, Unit: "log_speed", Source: speedSource},
+			Easy:             PriorNormal{Mean: math.Log(1.08), SD: 0.15, Low: 0, High: 0.5, Unit: "log_speed", Source: speedSource},
 		},
-		HistoricalSDFloorLogV60: 0.15,
-		HistoricalSDSlopePerDay: 0.002,
-		HistoricalSource:        "spec993-R1 aged weak prior; same-source inputs never counted twice",
-		HRMaxBpm:                PriorNormal{Mean: 188, SD: 12, Low: 140, High: 230, Unit: "bpm", Source: hrSource},
-		RestingHRBpm:            PriorNormal{Mean: 55, SD: 10, Low: 35, High: 90, Unit: "bpm", Source: "daily RHR rows when present; else population research prior"},
-		HRShape: []HRShapeKnot{
-			{RelativeIntensity: 0.55, HRFractionMean: 0.68, HRFractionSD: 0.04},
-			{RelativeIntensity: 0.75, HRFractionMean: 0.82, HRFractionSD: 0.04},
-			{RelativeIntensity: 0.90, HRFractionMean: 0.88, HRFractionSD: 0.04},
-			{RelativeIntensity: 1.00, HRFractionMean: 0.92, HRFractionSD: 0.04},
-			{RelativeIntensity: 1.15, HRFractionMean: 0.97, HRFractionSD: 0.04},
+		MeasurementSigmaHigh:   0.01,
+		MeasurementSigmaMedium: 0.025,
+		MeasurementSigmaLow:    0.06,
+		EnduranceK:             PriorNormal{Mean: 0.06, SD: 0.02, Low: riegelKMin, High: riegelKMax, Unit: "log_speed_per_log_duration", Source: speedSource},
+		V60SearchLowMps:        0.5,
+		V60SearchHighMps:       12.0,
+		HR: HRDynamicPriors{
+			Eta:           PriorNormal{Mean: logit(0.85), SD: 0.6, Low: logit(0.65), High: logit(0.98), Unit: "logit_q60", Source: hrSource},
+			LogBeta:       PriorNormal{Mean: math.Log(3), SD: 0.5, Low: math.Log(1), High: math.Log(8), Unit: "log_slope", Source: hrSource},
+			LogTauS:       PriorNormal{Mean: math.Log(60), SD: 0.5, Low: math.Log(15), High: math.Log(180), Unit: "log_seconds", Source: hrSource},
+			DayEffectU:    PriorNormal{Mean: 0, SD: 0.25, Low: -0.75, High: 0.75, Unit: "logit_shift", Source: hrSource},
+			DriftDPerHour: PriorNormal{Mean: 0, SD: 0.15, Low: -0.3, High: 0.5, Unit: "logit_shift_per_hour", Source: hrSource},
 		},
-		HRTauS:           PriorNormal{Mean: 45, SD: 20, Low: 10, High: 180, Unit: "s", Source: "PMC4687158 first-order response timescale (motivation only)"},
-		HRDayEffectBpm:   PriorNormal{Mean: 0, SD: 2, Low: -15, High: 15, Unit: "bpm", Source: hrSource},
-		HRDriftBpmPerDay: PriorNormal{Mean: 0, SD: 0.5, Low: -10, High: 10, Unit: "bpm_per_day", Source: hrSource},
-		OpticalHRWeight:  0.5,
+		LambdaH:                  0.5,
+		HRSigmaStrapBpm:          3,
+		HRSigmaOpticalBpm:        6,
+		HRDomainLowBpm:           80,
+		HRDomainHighBpm:          230,
+		HRMinSegmentS:            480,
+		HRSegmentGapS:            10,
+		RegressionSlope:          PriorNormal{Mean: 60, SD: 30, Low: 10, High: 150, Unit: "bpm_per_log_mps", Source: hrSource},
+		RegressionSlopeScenarios: []float64{30, 60, 90},
+		RegressionOffsetSigmaBpm: 6,
+		ProfileDeltaL:            2,
+		PriorDominancePaceRel:    0.03,
+		PriorDominanceHRBpm:      5,
+		HRProfileGridBpm:         1,
 		Limitations: []string{
 			"research_uncalibrated_not_population_calibrated",
-			"range_is_sensitivity_not_probability_interval",
+			"range_is_model_sensitivity_not_probability_interval",
 			"environment_temperature_not_corrected",
-			"hr_shape_knots_monotone_constraint_required",
+			"q60_beta_tau_are_revocable_research_priors",
 		},
 	}
 }
 
-// HRBridgeAtV60 returns the bridge knot at relative intensity 1.0: the soft
-// constraint pinning HRsteady(v60) near 0.92 of HR reserve. This is what
-// keeps the HR curve from absorbing the capability scale, and it propagates
-// the v60 range into the HR range.
-func (p EvolvedPriorSet) HRBridgeAtV60() *HRShapeKnot {
-	for i, k := range p.HRShape {
-		if k.RelativeIntensity == 1.0 {
-			return &p.HRShape[i]
-		}
+// MarginPriorFor maps an effort support class onto the §5.1 margin prior. The
+// steady-reserve class (明确连续稳态、报告尚有余力) has no input channel in the
+// rev3 metadata vocabulary and is therefore unreachable from live evidence; it
+// stays declared for completeness and scenario use.
+func (p EvolvedPriorSet) MarginPriorFor(e EffortSupport) PriorNormal {
+	switch e {
+	case EffortConfirmedMaximal:
+		return p.EffortMargin.ConfirmedMaximal
+	case EffortProbableMaximal:
+		return p.EffortMargin.ProbableMaximal
+	case EffortSubmaximal:
+		return p.EffortMargin.Easy
+	default:
+		return p.EffortMargin.Ordinary
 	}
-	return nil
 }
 
-// HistoricalCapabilitySD computes the aged prior sd in log(m/s).
-func (p EvolvedPriorSet) HistoricalCapabilitySD(ageDays float64) float64 {
-	if ageDays < 0 {
-		ageDays = 0
+// MeasurementSigma maps a measurement-quality label onto the §5.1 log-speed
+// measurement scale.
+func (p EvolvedPriorSet) MeasurementSigma(q Confidence) float64 {
+	switch q {
+	case ConfidenceHigh:
+		return p.MeasurementSigmaHigh
+	case ConfidenceMedium:
+		return p.MeasurementSigmaMedium
+	default:
+		return p.MeasurementSigmaLow
 	}
-	return math.Hypot(p.HistoricalSDFloorLogV60, p.HistoricalSDSlopePerDay*ageDays)
 }
 
-// Validate enforces finiteness, bound containment and monotone knots so a
-// broken prior set can never silently ship.
+// EndurancePenalty is §5.2 L_k = 0.5*((k-0.06)/0.02)^2.
+func (p EvolvedPriorSet) EndurancePenalty(k float64) float64 {
+	return 0.5 * math.Pow((k-p.EnduranceK.Mean)/p.EnduranceK.SD, 2)
+}
+
+// Validate enforces finiteness, bound containment and the §5.1/§6.2 table
+// shapes so a broken prior set can never silently ship.
 func (p EvolvedPriorSet) Validate() error {
 	if p.PriorSetVersion == "" || p.Calibration != "research_uncalibrated" {
 		return fmt.Errorf("prior set must name its version and research_uncalibrated marker")
 	}
-	for _, prior := range []PriorNormal{p.LogV60, p.EnduranceK, p.EffortMargin.ConfirmedMaximal, p.EffortMargin.ProbableMaximal, p.EffortMargin.Submaximal, p.EffortMargin.Unknown, p.HRMaxBpm, p.RestingHRBpm, p.HRTauS, p.HRDayEffectBpm, p.HRDriftBpmPerDay} {
+	margin := []PriorNormal{p.EffortMargin.ConfirmedMaximal, p.EffortMargin.ProbableMaximal, p.EffortMargin.Ordinary, p.EffortMargin.SteadyReserve, p.EffortMargin.Easy}
+	for _, prior := range margin {
 		if err := prior.validate(); err != nil {
 			return err
 		}
 	}
-	if !(p.EffortMargin.Submaximal.Mean > p.EffortMargin.ConfirmedMaximal.Mean) {
-		return fmt.Errorf("submaximal effort margin must exceed the all-out prior mean")
+	if !(p.EffortMargin.Ordinary.SD > p.EffortMargin.ProbableMaximal.SD && p.EffortMargin.ProbableMaximal.SD > p.EffortMargin.ConfirmedMaximal.SD) {
+		return fmt.Errorf("§5.1 margin sigma ordering 0.015 < 0.05 < 0.12 violated")
 	}
-	if !(p.HistoricalSDFloorLogV60 > 0 && p.HistoricalSDSlopePerDay >= 0) {
-		return fmt.Errorf("historical prior spread must be positive with nonnegative ageing slope")
+	if !(p.EffortMargin.Easy.Mean > p.EffortMargin.SteadyReserve.Mean && p.EffortMargin.SteadyReserve.Mean > p.EffortMargin.Ordinary.Mean) {
+		return fmt.Errorf("§5.1 margin mean ordering 0 < log1.03 < log1.08 violated")
 	}
-	if len(p.HRShape) < 2 {
-		return fmt.Errorf("hr shape needs at least two knots")
-	}
-	for i, k := range p.HRShape {
-		if !(k.RelativeIntensity > 0) || !(k.HRFractionMean > 0 && k.HRFractionMean < 1) || !(k.HRFractionSD > 0) {
-			return fmt.Errorf("hr shape knot %d out of domain", i)
-		}
-		if i > 0 {
-			prev := p.HRShape[i-1]
-			if !(k.RelativeIntensity > prev.RelativeIntensity) || !(k.HRFractionMean > prev.HRFractionMean) {
-				return fmt.Errorf("hr shape must be strictly monotone at knot %d", i)
-			}
+	for _, prior := range append([]PriorNormal{p.EnduranceK, p.HR.Eta, p.HR.LogBeta, p.HR.LogTauS, p.HR.DayEffectU, p.HR.DriftDPerHour, p.RegressionSlope}, margin...) {
+		if err := prior.validate(); err != nil {
+			return err
 		}
 	}
-	if p.HRBridgeAtV60() == nil {
-		return fmt.Errorf("hr shape must pin the bridge knot at relative intensity 1.0")
+	if !(p.MeasurementSigmaHigh > 0 && p.MeasurementSigmaMedium > p.MeasurementSigmaHigh && p.MeasurementSigmaLow > p.MeasurementSigmaMedium) {
+		return fmt.Errorf("§5.1 measurement sigma ordering 0.01 < 0.025 < 0.06 violated")
 	}
-	if !(p.OpticalHRWeight > 0 && p.OpticalHRWeight < 1) {
-		return fmt.Errorf("optical HR weight must down-weight, not exclude or exceed strap weight")
+	if !(p.EnduranceK.Low == riegelKMin && p.EnduranceK.High == riegelKMax && p.EnduranceK.Mean == 0.06 && p.EnduranceK.SD == 0.02) {
+		return fmt.Errorf("endurance prior must keep the §5.2 0.06/0.02 center over [0.02,0.10]")
+	}
+	if !(p.V60SearchLowMps > 0 && p.V60SearchHighMps > p.V60SearchLowMps) {
+		return fmt.Errorf("v60 numerical search domain must be a positive interval")
+	}
+	if !(p.LambdaH >= 0 && p.LambdaH <= 1) {
+		return fmt.Errorf("lambda_H must stay in [0,1]")
+	}
+	if !(p.HRSigmaStrapBpm > 0 && p.HRSigmaOpticalBpm >= p.HRSigmaStrapBpm) {
+		return fmt.Errorf("HR sensor scales must be positive with optical >= strap")
+	}
+	if !(p.HRDomainLowBpm < p.HRDomainHighBpm) {
+		return fmt.Errorf("HR computation domain must be ordered")
+	}
+	if len(p.RegressionSlopeScenarios) == 0 || p.ProfileDeltaL <= 0 || p.PriorDominancePaceRel <= 0 || p.PriorDominanceHRBpm <= 0 || p.HRProfileGridBpm <= 0 {
+		return fmt.Errorf("sensitivity conventions must be positive and nonempty")
 	}
 	return nil
 }
 
-// IdentityHash is the deterministic digest of the serialized prior set. It is
+// IdentityHash is the deterministic digest of the serialized prior set; it is
 // the parameter hash recorded in lineage and evaluation reports.
 func (p EvolvedPriorSet) IdentityHash() string { return ReplayContentHash(p) }

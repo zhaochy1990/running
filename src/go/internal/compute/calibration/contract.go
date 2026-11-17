@@ -17,14 +17,17 @@ const HistoricalCandidateAlgorithmRevision = ""
 
 // EvolvedCandidateAlgorithmRevision marks outputs of the in-place evolved v4.
 // It participates in the snapshot natural key so a new-revision write can
-// never overwrite a historical v4 row (ADR 0045, #995).
-const EvolvedCandidateAlgorithmRevision = "v4-rev2-2026-11"
+// never overwrite a historical v4 row (ADR 0045, #995). rev3 (2026-11-17)
+// replaces the rev2 research line in place: rev2 never reached production
+// data rows, so the revision marker is renamed rather than dual-run.
+// rev3 is the literal implementation of docs/calibration/v4.md.
+const EvolvedCandidateAlgorithmRevision = "v4-rev3-2026-11"
 
 // EvolvedPriorSetVersion names the runnable default parameter set. It is part
 // of the evolved candidate identity and of every lineage serialization.
-const EvolvedPriorSetVersion = "rev2-research-2026-11"
+const EvolvedPriorSetVersion = "rev3-v4md-2026-11"
 
-const evolvedImplementationIdentity = "evolved_joint_v2"
+const evolvedImplementationIdentity = "evolved_v4md_rev3"
 
 // EvolvedCandidateIdentity returns the frozen (implementation, parameter set,
 // algorithm revision) triple that T2-T4 estimators must stamp on every

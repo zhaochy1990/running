@@ -4,17 +4,16 @@ import (
 	"time"
 )
 
-// evolved_estimator.go assembles the evolved v4 offline result: the joint
-// speed (#996, evolved_speed.go) + individual HR dynamic (#997, evolved_hr.go)
-// fit under one objective, the contract adjudication five states and the
-// frozen identity triple (evolved_joint_v2 / rev2-research-2026-11 /
-// v4-rev2-2026-11). It is reachable only through the offline seam
-// (EstimateOffline* / EstimateEvolvedOffline); production wiring never
-// selects it.
+// evolved_estimator.go assembles the evolved v4 rev3 offline result: the
+// v4.md (2026-11-17) constrained margin fit over the proven lower bounds
+// with the joint HR feedback, the frozen identity triple
+// (evolved_v4md_rev3 / rev3-v4md-2026-11 / v4-rev3-2026-11). It is reachable
+// only through the offline seam (EstimateOffline* / EstimateEvolvedOffline);
+// production wiring never selects it.
 
 // EvolvedReport is the evolved candidate's own explanation block: contract
-// and prior identity hashes (lineage anchors), the speed fit and the joint HR
-// report.
+// and prior identity hashes (lineage anchors), the constrained pace fit and
+// the HR report.
 type EvolvedReport struct {
 	ContractVersion      string              `json:"contract_version"`
 	ContractIdentityHash string              `json:"contract_identity_hash"`
@@ -24,11 +23,11 @@ type EvolvedReport struct {
 	Limitations          []string            `json:"limitations"`
 }
 
-// EstimateEvolvedOffline runs the evolved v4 joint fit with an explicit
-// weak historical capability prior (aged, variance-floored, never a speed
-// cap). The prior enters the objective exactly once, so a same-source old
-// snapshot can never be multiplied with the raw inputs as a second
-// independent evidence vote.
+// EstimateEvolvedOffline runs the evolved v4 rev3 fit. The historical
+// capability prior is lineage-only: v4.md §5.3 forbids reusing old snapshots
+// as capability observations, so it is recorded for audit and never enters
+// the objective (batch recompute per explicit as-of; no
+// "last value × (1+margin)" loops).
 func EstimateEvolvedOffline(history []Activity, asOf time.Time, health []HealthRow, metadata []CandidateMetadata, prior *HistoricalCapabilityPrior) (OfflineResult, error) {
 	snapshot, evidence, evolved := estimateEvolvedCandidate(history, asOf, health, metadata, asOf, prior)
 	implementation, parameterVersion, revision := EvolvedCandidateIdentity()
@@ -45,35 +44,55 @@ func EstimateEvolvedOffline(history []Activity, asOf time.Time, health []HealthR
 
 func estimateEvolvedCandidate(history []Activity, asOf time.Time, health []HealthRow, metadata []CandidateMetadata, metadataCutoff time.Time, prior *HistoricalCapabilityPrior) (Snapshot, CandidateEvidenceReport, *EvolvedReport) {
 	priors := DefaultEvolvedPriors()
-	// Reuse the existing cleaning/pause/recovery pipeline: selection,
-	// continuity verdicts and full-activity elapsed handling all stay upstream
-	// so both candidates share one measurement vocabulary. The HR observation
-	// report is the shared v1 vocabulary for series quality, sensors and
-	// verified reference tiers.
-	evidence := buildCandidateEvidence(history, metadata, asOf, metadataCutoff)
-	hrEvidence := buildCandidateHR(history, metadata, asOf, metadataCutoff)
-	speed, hr := FitEvolvedJoint(evidence.Candidates, history, metadata, &hrEvidence, health, asOf, priors, prior)
+	if err := priors.Validate(); err != nil {
+		// A broken prior set is a hard failure of the computation, never an
+		// invented number (the contract rejects the whole revision).
+		snapshot := estimateRunningCalibrationV3(history, asOf, health)
+		snapshot.AlgorithmVersion = CandidateVersion
+		snapshot.ThresholdSpeedMps = nil
+		snapshot.ThresholdSpeedConfidence = ConfidenceNone
+		snapshot.ThresholdHR = nil
+		snapshot.ThresholdHRConfidence = ConfidenceNone
+		evidence := buildCandidateEvidence(history, metadata, asOf, metadataCutoff)
+		contract := EstimationContractDocumentSnapshot()
+		evolved := &EvolvedReport{
+			ContractVersion:      contract.ContractVersion,
+			ContractIdentityHash: contract.IdentityHash(),
+			PriorsIdentityHash:   priors.IdentityHash(),
+			Speed:                &EvolvedSpeedReport{ParameterVersion: EvolvedPriorSetVersion, Method: v4MethodUnavailable, State: StateUnavailable, RangeMeaning: contractRangeSemantics, Reasons: []string{ReasonSolverNumericalFailure, "prior_set_invalid"}, Limitations: v4SpeedLimitations()},
+			HR:                   &EvolvedHRReport{ParameterVersion: EvolvedPriorSetVersion, Method: v4MethodUnavailable, State: StateUnavailable, RangeMeaning: contractRangeSemantics, Reasons: []string{ReasonSolverNumericalFailure, "prior_set_invalid"}, Limitations: v4HRLimitations()},
+			Limitations:          []string{"prior_set_invalid"},
+		}
+		return snapshot, evidence, evolved
+	}
+	// §9 steps 1-7 live in the assembly; the estimate is one batch over the
+	// original evidence at the fixed as-of (§5.3).
+	est := newV4Estimate(history, asOf, health, metadata, metadataCutoff, priors)
+	speed, hr := buildV4Reports(est, prior)
 
 	// Unrelated baselines keep their frozen v3 calculation during this
-	// migration; only the pace-side fields move to the evolved fit.
+	// migration; only the pace/HR/k fields move to the rev3 fit.
 	snapshot := estimateRunningCalibrationV3(history, asOf, health)
 	snapshot.AlgorithmVersion = CandidateVersion
 	snapshot.ThresholdSpeedMps = round4(speed.CenterMps)
-	snapshot.ThresholdSpeedConfidence = evolvedConfidence(speed)
+	snapshot.ThresholdSpeedConfidence = v4ConfidenceForState(speed.State, speed.SolverConverged)
 	snapshot.CriticalSpeedMps = nil
 	snapshot.DPrimeM = nil
 	snapshot.RiegelK = roundN(speed.RiegelK, 4)
-	snapshot.EnduranceIndex = enduranceIndex(speed.RiegelK)
+	snapshot.EnduranceIndex = nil
+	if speed.RiegelK != nil {
+		snapshot.EnduranceIndex = enduranceIndex(speed.RiegelK)
+	}
 	snapshot.SpeedIndex = nil
-	snapshot.SpeedDurationConfidence = evolvedConfidence(speed)
+	snapshot.SpeedDurationConfidence = snapshot.ThresholdSpeedConfidence
 	if speed.RiegelK == nil {
 		snapshot.SpeedDurationConfidence = ConfidenceNone
 	}
 	snapshot.ThresholdHR = round4(hr.CenterBpm)
-	snapshot.ThresholdHRConfidence = evolvedHRConfidence(hr)
+	snapshot.ThresholdHRConfidence = v4ConfidenceForState(hr.State, hr.SolverConverged)
 
 	contract := EstimationContractDocumentSnapshot()
-	limitations := evolvedSpeedLimitations()
+	limitations := v4SpeedLimitations()
 	limitations = append(limitations, hr.Limitations...)
 	evolved := &EvolvedReport{
 		ContractVersion:      contract.ContractVersion,
@@ -83,33 +102,16 @@ func estimateEvolvedCandidate(history []Activity, asOf time.Time, health []Healt
 		HR:                   &hr,
 		Limitations:          limitations,
 	}
-	return snapshot, evidence, evolved
+	return snapshot, est.evidenceReport, evolved
 }
 
-// evolvedHRConfidence maps the HR five-state onto the legacy confidence
-// vocabulary. Following the v1 principle that no HR estimate reaches high
-// without independent calibration, a verified reference or an identified
-// model fit both cap at medium.
-func evolvedHRConfidence(hr EvolvedHRReport) Confidence {
-	switch hr.State {
-	case StateMeasuredReference, StateModelEstimated:
-		return ConfidenceMedium
-	case StatePriorDominated, StateStale:
-		return ConfidenceLow
-	default:
-		return ConfidenceNone
-	}
-}
-
-// evolvedConfidence maps the five contract states onto the legacy confidence
-// vocabulary used by snapshots and zones. A missing all-out label can never
-// reach high: only a measured_reference state (a real confirmed/probable
-// anchor) may, and a non-converged solver caps at low.
-func evolvedConfidence(speed EvolvedSpeedReport) Confidence {
+// v4ConfidenceForState maps the four §8.3 output states onto the legacy
+// confidence vocabulary. No estimate without an independent reference ever
+// reaches high (v4.md publishes no measured_reference centers); a
+// non-converged solver caps at low.
+func v4ConfidenceForState(state EstimationState, converged bool) Confidence {
 	var c Confidence
-	switch speed.State {
-	case StateMeasuredReference:
-		c = ConfidenceHigh
+	switch state {
 	case StateModelEstimated:
 		c = ConfidenceMedium
 	case StatePriorDominated, StateStale:
@@ -117,7 +119,7 @@ func evolvedConfidence(speed EvolvedSpeedReport) Confidence {
 	default:
 		c = ConfidenceNone
 	}
-	if !speed.SolverConverged && speed.CenterMps != nil && c == ConfidenceHigh {
+	if !converged && c == ConfidenceMedium {
 		c = ConfidenceLow
 	}
 	return c

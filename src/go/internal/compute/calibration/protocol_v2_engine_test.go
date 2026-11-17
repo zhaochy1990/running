@@ -14,9 +14,11 @@ import (
 )
 
 // T7 #1001: the protocol v2 scoring engine. It executes the three frozen
-// comparison identities (v3, historical v4 candidate, evolved v4 rev2) on a
+// comparison identities (v3, historical v4 candidate, evolved v4 rev3) on a
 // schema-2 manifest with the same cutoff discipline as v1 replay, and reduces
 // the frozen v2 gates. These tests pin the public seam ReplayV2 only.
+
+func evolvedFinite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
 
 // v2SyntheticManifest builds a small schema-2 manifest: one athlete, three
 // ordinary training roots (train), one v4-v1-used sample (known_regression)

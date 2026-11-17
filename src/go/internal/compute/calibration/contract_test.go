@@ -2,6 +2,7 @@ package calibration_test
 
 import (
 	"encoding/json"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -303,26 +304,47 @@ func TestDefaultEvolvedPriorsValidateAndHash(t *testing.T) {
 		t.Fatal("prior identity hash must be deterministic")
 	}
 	// Every numeric prior is finite and carries a source and the explicit
-	// research_uncalibrated marker.
+	// research_uncalibrated marker; mutating any value must move the hash.
 	mutated := p
-	mutated.LogV60.Mean += 0.01
+	mutated.EffortMargin.Ordinary.SD += 0.001
 	if mutated.IdentityHash() == p.IdentityHash() {
 		t.Fatal("prior identity hash must change with the prior values")
 	}
 	if p.Calibration != "research_uncalibrated" {
 		t.Fatalf("calibration marker=%q", p.Calibration)
 	}
-	if p.LogV60.Unit != "log_mps" || p.EnduranceK.Low != 0.02 || p.EnduranceK.High != 0.10 {
-		t.Fatal("speed-domain prior units/bounds drifted from the frozen v3 k domain")
+	// v4.md §5.1/§5.2 table shapes: measurement sigma ordering, the frozen k
+	// domain and the numerical search domain.
+	if p.EnduranceK.Unit != "log_speed_per_log_duration" || p.EnduranceK.Low != 0.02 || p.EnduranceK.High != 0.10 || p.EnduranceK.Mean != 0.06 || p.EnduranceK.SD != 0.02 {
+		t.Fatal("endurance prior drifted from the §5.2 0.06/0.02 center over [0.02,0.10]")
 	}
-	// The HR bridge pin at v60 must exist, be finite and inside (0,1).
-	bridge := p.HRBridgeAtV60()
-	if bridge == nil || bridge.HRFractionMean <= 0 || bridge.HRFractionMean >= 1 || bridge.HRFractionSD <= 0 {
-		t.Fatalf("bridge knot %+v", bridge)
+	if p.MeasurementSigmaHigh != 0.01 || p.MeasurementSigmaMedium != 0.025 || p.MeasurementSigmaLow != 0.06 {
+		t.Fatal("§5.1 measurement sigma must stay 0.01/0.025/0.06")
 	}
-	// Optical HR is down-weighted, never excluded.
-	if p.OpticalHRWeight <= 0 || p.OpticalHRWeight >= 1 {
-		t.Fatalf("optical weight=%v", p.OpticalHRWeight)
+	if p.V60SearchLowMps != 0.5 || p.V60SearchHighMps != 12 {
+		t.Fatal("§8.1 v60 numerical search domain must stay 0.5-12 m/s")
+	}
+	// §6.2 HR table: q60 center 0.85 with the [0.65,0.98] domain, beta
+	// center 3 on [1,8], tau center 60 s on 15-180 s, u/d scales.
+	logit := func(q float64) float64 { return math.Log(q / (1 - q)) }
+	if math.Abs(p.HR.Eta.Mean-logit(0.85)) > 1e-12 || p.HR.Eta.SD != 0.6 {
+		t.Fatal("§6.2 eta prior must stay logit(0.85)/0.6")
+	}
+	if math.Abs(p.HR.LogBeta.Mean-math.Log(3)) > 1e-12 || p.HR.LogBeta.SD != 0.5 {
+		t.Fatal("§6.2 log beta prior must stay log(3)/0.5")
+	}
+	if math.Abs(p.HR.LogTauS.Mean-math.Log(60)) > 1e-12 || p.HR.LogTauS.SD != 0.5 {
+		t.Fatal("§6.2 log tau prior must stay log(60s)/0.5")
+	}
+	if p.HR.DayEffectU.SD != 0.25 || p.HR.DriftDPerHour.SD != 0.15 {
+		t.Fatal("§6.2 u/d prior scales must stay 0.25/0.15")
+	}
+	if p.LambdaH != 0.5 || p.HRSigmaStrapBpm != 3 || p.HRSigmaOpticalBpm != 6 {
+		t.Fatal("§6.3 lambda_H and HR sensor scales must stay 0.5/3/6")
+	}
+	// Optical HR stays usable at a wider scale, never excluded (6 >= 3).
+	if !(p.HRSigmaOpticalBpm > p.HRSigmaStrapBpm) {
+		t.Fatal("optical HR must be down-weighted by scale, not excluded")
 	}
 	invalid := p
 	invalid.EnduranceK.Mean = 0.5 // outside its own truncation bounds
@@ -330,21 +352,9 @@ func TestDefaultEvolvedPriorsValidateAndHash(t *testing.T) {
 		t.Fatal("out-of-bounds prior mean accepted")
 	}
 	invalid = p
-	invalid.HRShape[2].HRFractionMean = invalid.HRShape[0].HRFractionMean
+	invalid.EffortMargin.Easy.Mean = p.EffortMargin.Ordinary.Mean
 	if err := invalid.Validate(); err == nil {
-		t.Fatal("non-monotone HR shape accepted")
-	}
-}
-
-func TestHistoricalCapabilityPriorSpread(t *testing.T) {
-	p := calibration.DefaultEvolvedPriors()
-	sd0 := p.HistoricalCapabilitySD(0)
-	sd100 := p.HistoricalCapabilitySD(100)
-	if !(sd0 >= 0.15-1e-12) {
-		t.Fatalf("sd floor missing: %v", sd0)
-	}
-	if !(sd100 > sd0) {
-		t.Fatalf("prior sd must widen with age: %v vs %v", sd100, sd0)
+		t.Fatal("§5.1 margin mean ordering violation accepted")
 	}
 }
 
