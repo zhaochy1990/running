@@ -206,6 +206,20 @@ export function sessionStepTexts(
   };
 }
 
+/** preparing 进度文案：有前锋活动时显示具体名称（提交为新→旧，移动边是
+ *  observed_from 那天；调用方取该日一条活动），否则回退到阶段描述。名称截断防溢出。 */
+export function recentProgressText(
+  activity?: { name: string | null; sport_name?: string | null; date: string } | null,
+): string {
+  const fallback = '正在同步近 90 天训练数据…';
+  if (!activity || !activity.date) return fallback;
+  const mmdd = activity.date.slice(5, 10);
+  const rawLabel = activity.name || activity.sport_name || '';
+  const label = rawLabel.length > 12 ? `${rawLabel.slice(0, 12)}…` : rawLabel;
+  if (!label) return `${fallback.slice(0, -1)}（${mmdd}）`;
+  return `正在同步：${mmdd} ${label}…`;
+}
+
 export function toSyncStatusViewModel(view: OnboardingSyncView): SyncStatusViewModel {
   const failed = view.state === 'failed';
   const gapsTerminal = view.state === 'completed_with_gaps';

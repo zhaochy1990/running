@@ -8,6 +8,7 @@ import {
   rangeLabel,
   readinessLabel,
   readinessTone,
+  recentProgressText,
   sessionStateLabel,
   sessionStepTexts,
   shouldHideStatusCard,
@@ -192,6 +193,28 @@ eq(
   sessionStepTexts('preparing', 'sync', true).retryLabel,
   '重试失败项',
   'preparing failure keeps single-item retry label',
+);
+// 前锋活动文案：有名显示「正在同步：MM-DD 名称…」，无名回退日期，全空回退阶段描述。
+eq(recentProgressText(null), '正在同步近 90 天训练数据…', 'frontier text falls back without activity');
+eq(
+  recentProgressText({ name: '上海苗江路轻松跑', sport_name: null, date: '2026-11-16 08:30:00' }),
+  '正在同步：11-16 上海苗江路轻松跑…',
+  'frontier text names the activity with MM-DD',
+);
+eq(
+  recentProgressText({ name: null, sport_name: '跑步', date: '2026-11-16' }),
+  '正在同步：11-16 跑步…',
+  'frontier text falls back to sport_name',
+);
+eq(
+  recentProgressText({ name: null, sport_name: null, date: '2026-11-16' }),
+  '正在同步近 90 天训练数据（11-16）',
+  'frontier text keeps the date when no name exists',
+);
+eq(
+  recentProgressText({ name: '一二三四五六七八九十甲乙丙丁戊', sport_name: null, date: '2026-11-16' }).includes('…'),
+  true,
+  'frontier text truncates long names',
 );
 const createFailed = sessionStepTexts('creating', 'create', true);
 eq(createFailed.title, '同步任务创建失败', 'create-failed title');
