@@ -333,3 +333,10 @@
 .ob-cta--disabled {
   opacity: 0.6;
 }
+
+/* preparing 阶段进度条上的百分比徽标（与 __fill 同色，等宽数字不抖动） */
+.ob-progress__pct {
+  margin-left: 12rpx;
+  color: var(--color-accent);
+  font-variant-numeric: tabular-nums;
+}

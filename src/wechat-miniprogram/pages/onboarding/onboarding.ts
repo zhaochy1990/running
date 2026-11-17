@@ -61,6 +61,20 @@ type SessionPhase = 'creating' | 'adopting' | 'preparing';
  * （厂商慢/数据量大时由后台继续补，实测 3 年历史用户 ~23s）。 */
 const RECENT_DATA_WAIT_MS = 90_000;
 
+/** preparing 进度：recent_raw 实际覆盖天数占目标窗口（90 自然日）的比例。
+ * 未就绪时封顶 95%——不显示满格却还停在等待页；无观察值时 0（条为空）。
+ * 这是服务端上报事实（observed/target 窗口）的整形，不做客户端预估。 */
+function recentRawPercent(view: OnboardingSyncView): number {
+  const stage = view.stages.find((s) => s.stage === 'recent_raw');
+  if (!stage || !stage.target_from || !stage.target_to) return 0;
+  const day = (v: string) => Date.parse(`${v}T00:00:00Z`) / 86_400_000;
+  const total = day(stage.target_to) - day(stage.target_from) + 1;
+  if (total <= 0 || !stage.observed_from || !stage.observed_to) return 0;
+  const covered = Math.min(day(stage.observed_to) - day(stage.observed_from) + 1, total);
+  if (covered <= 0) return 0;
+  return Math.min(95, Math.round((covered / total) * 100));
+}
+
 const REGION_OPTIONS = ['中国区', '国际区'];
 
 interface OnboardingPageData {
@@ -100,6 +114,8 @@ interface OnboardingPageData {
   sessionProgressText: string;
   /** 失败时的重试按钮文案；进行中为空串（按钮不渲染） */
   sessionRetryLabel: string;
+  /** preparing 进度（recent_raw 覆盖比例 0-95，复用 legacy 的进度条样式） */
+  sessionPercent: number;
 }
 
 interface OnboardingPageHandlers {
@@ -184,6 +200,7 @@ Page<OnboardingPageData, OnboardingPageHandlers>({
     sessionSubtitle: '',
     sessionProgressText: '',
     sessionRetryLabel: '',
+    sessionPercent: 0,
   },
 
   onLoad(options: Record<string, string | undefined>) {
@@ -453,6 +470,7 @@ Page<OnboardingPageData, OnboardingPageHandlers>({
       syncPending: false,
       syncText: '',
       percent: 0,
+      sessionPercent: 0,
     });
     this.applySessionStepTexts('creating', retry ? 'sync' : 'create', false);
 
@@ -588,6 +606,8 @@ Page<OnboardingPageData, OnboardingPageHandlers>({
           this.enterHomeAfterSession();
           return;
         }
+        // preparing 进度条：recent_raw 覆盖比例（服务端事实整形，封顶 95）。
+        this.setData({ sessionPercent: recentRawPercent(view) });
         if (view.state === 'failed') {
           // 近期链路判了失败：如实展示并允许重试（只恢复失败项）。
           console.error('[onboarding] 等 recent_data 期间链路失败:', view.error);

@@ -191,7 +191,8 @@
 
   <!-- ============ 第三步：同步（可跳过） ============ -->
   <block wx:elif="{{step === 'sync'}}">
-    <!-- session 模式（devops#1015）：创建/认领可靠后即进首页，进度交给首页状态卡 -->
+    <!-- session 模式（devops#1015）：等近 90 天数据就绪再进首页；进度条走 recent_raw
+         实际覆盖占目标窗口的比例，历史在后台补齐（不再有首页状态卡） -->
     <block wx:if="{{syncMode === 'session'}}">
       <view class="ob-hero">
         <view wx:if="{{!syncError}}" class="ob-spinner"></view>
@@ -200,8 +201,11 @@
       </view>
 
       <view wx:if="{{!syncError}}" class="ob-card ob-progress">
-        <view class="ob-progress__text">{{sessionProgressText}}</view>
-        <view class="ob-progress__hint">可以先退出，同步在服务端继续，首页可随时查看进度</view>
+        <view class="ob-progress__text">{{sessionProgressText}}<text wx:if="{{sessionPercent > 0}}" class="ob-progress__pct">{{sessionPercent}}%</text></view>
+        <view class="ob-progress__bar">
+          <view class="ob-progress__fill" style="width: {{sessionPercent}}%"></view>
+        </view>
+        <view class="ob-progress__hint">可以先退出，同步在服务端继续，稍后会自动完成</view>
       </view>
 
       <view wx:if="{{syncError}}" class="ob-error ob-error--loose">{{syncError}}</view>

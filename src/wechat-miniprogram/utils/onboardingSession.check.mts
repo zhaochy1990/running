@@ -173,6 +173,11 @@ eq(
 const preparing = sessionStepTexts('preparing', 'sync', false);
 eq(preparing.title, '正在同步近 90 天训练数据', 'preparing title');
 eq(
+  preparing.subtitle.includes('预计 1 分钟'),
+  true,
+  'preparing subtitle under-promises (~23s actual, copy says 1 minute)',
+);
+eq(
   preparing.subtitle.includes('后台继续补齐'),
   true,
   'preparing subtitle says history continues in background',
