@@ -6371,7 +6371,7 @@
   function reviewWeek(w) {
     const doc = docFor(w),
       sk = skeletonFor(w);
-    return `<section class="review-week" id="review-week-${w.week_index}"><header><div><h3>第${w.week_index}周 <span>${roleLabels[sk?.role] || ""}</span></h3><p>${shortDate(w.week_start)}—${shortDate(datePlus(w.week_start, 6))}</p></div><div class="review-week-km"><strong>${range(w.target_weekly_km_low, w.target_weekly_km_high)}</strong><span>km 周目标</span></div></header>${doc ? `<div class="review-days">${doc.sessions.map(reviewSessionRow).join("")}</div>` : `<div class="review-future"><div><span>长距离</span><strong>${sk?.lr != null ? num(sk.lr) + " km" : "未提供"}</strong></div><div><span>质量课配额</span><strong>${sk?.q != null ? sk.q + " 次" : "未提供"}</strong></div><p>每日课表尚未生成</p></div>`}</section>`;
+    return `<section class="review-week" id="review-week-${w.week_index}"><header><div><h3>第${w.week_index}周 <span>${roleLabels[sk?.role] || ""}</span></h3><p>${shortDate(w.week_start)}—${shortDate(datePlus(w.week_start, 6))}</p></div><div class="review-week-km"><strong>${range(w.target_weekly_km_low, w.target_weekly_km_high)}</strong><span>km 周目标</span></div></header>${doc ? `<div class="review-days">${doc.sessions.map(reviewSessionRow).join("")}</div>` : `<div class="review-future"><div><span>长距离</span><strong>${sk?.lr != null ? num(sk.lr) + " km" : "未提供"}</strong></div><div><span>质量课配额</span><strong>${sk?.q != null ? sk.q + " 次" : "未提供"}</strong></div><p>${w.week_index === 5 ? "第3周结束后，Coach 会结合你在第一阶段截至当时的训练表现和反馈，制定第5周起的具体课表。" : "具体课表将结合你的训练表现和反馈滚动制定。"}</p></div>`}</section>`;
   }
   function jumpReviewWeek(value) {
     const w = Number(value);
