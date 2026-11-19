@@ -31,3 +31,59 @@ export const MasterPlanCardSchema = z.object({
   content: z.record(z.string(), z.unknown()).optional(),
 });
 export type MasterPlanCard = z.infer<typeof MasterPlanCardSchema>;
+
+/**
+ * 训练计划创建表单卡（`master-plan-form` $type，#1024 R2）——聊天侧创建入口
+ * 的第一张卡：training 节点做一次快 LLM 槽位补全（从对话提取比赛/日期/目标/
+ * 习惯），产出预填表单挂在回复消息上；运动员在卡片上确认/修改后由小程序
+ * 组装 kernel request 直投 plan-jobs（提交即确认 = user_confirmations 全真，
+ * 异步 worker 生成，R1/R3 进度卡由客户端本地渲染轮询）。字段允许空串 = 待
+ * 用户填写；生成时才做完整性校验（MasterPlanGraphRequest zod）。
+ */
+export const WEEKDAY_VALUES = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
+export type Weekday = (typeof WEEKDAY_VALUES)[number];
+
+export const MasterPlanFormCardSchema = z.object({
+  goal: z.object({
+    /** 空串 = 待用户填写（LLM 没提取到比赛名）。 */
+    race_name: z.string().max(60),
+    distance: z.enum(["FM", "HM"]),
+    /** 空串 = 待用户填写；否则 YYYY-MM-DD。 */
+    race_date: z.string(),
+    /** h:mm:ss 目标成绩；空串 = 顺利完赛。 */
+    target_time: z.string(),
+  }),
+  availability: z.object({
+    weekly_days: z.array(z.enum(WEEKDAY_VALUES)),
+    preferred_long_run_day: z.enum(WEEKDAY_VALUES).nullable(),
+  }),
+  /** 近期训练基础（自由文本，可空；进 kernel request preferences）。 */
+  base: z.string().max(200),
+  /** 伤病或其他限制（自由文本，可空；进 kernel request injury/约束面）。 */
+  restriction: z.string().max(200),
+});
+export type MasterPlanFormCard = z.infer<typeof MasterPlanFormCardSchema>;
+
+/**
+ * training 节点槽位补全 LLM 的宽松输出信封（快模型直出 JSON；字符串一律
+ * 宽松收口，规范化（日期斜杠/中文星期/距离词）在节点侧做，解析失败按普通
+ * 文本回复透传，绝不臆造表单。
+ */
+export const MasterPlanFormEnvelopeSchema = z.object({
+  disposition: z.enum(["form", "clarify"]),
+  /** clarify 时给运动员的话；form 时可选附一句话。 */
+  message: z.string().optional(),
+  form: z
+    .object({
+      race_name: z.string().optional(),
+      distance: z.string().optional(),
+      race_date: z.string().optional(),
+      target_time: z.string().optional(),
+      weekly_days: z.array(z.string()).optional(),
+      long_run_day: z.string().optional(),
+      base: z.string().optional(),
+      restriction: z.string().optional(),
+    })
+    .optional(),
+});
+export type MasterPlanFormEnvelope = z.infer<typeof MasterPlanFormEnvelopeSchema>;

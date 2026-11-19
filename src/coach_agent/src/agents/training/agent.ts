@@ -1,29 +1,24 @@
 import type { GraphNode } from "@langchain/langgraph";
-import { getLogger } from "@stride/common";
+import { buildModel, getLogger } from "@stride/common";
 import { type CoachAgentConfig, getAgentConfig } from "../../config/config.js";
 import type { DataProvider } from "../../data/dataProvider.js";
-import { getMasterPlanGeneratorSubagent } from "../master_plan/agent.js";
 import type { AgentsState } from "../state.js";
-import { makeTrainingNode, type RaceGoalIdResolver } from "./node.js";
+import { makeTrainingNode } from "./node.js";
 
 const logger = getLogger("coachAgent:training");
 
-export type { RaceGoalIdResolver } from "./node.js";
-
 /**
- * Build the training node with the deepagent-style generate-master-plan agent
- * in-process（chat 内同步生成，#427）。共用 coach 配置的 `master_plan` 角色，
- * 与 worker 的 kernel（Admin 代生成 job）互不影响。#585：生成不落库——节点
- * 只把 v2 content + apply_token 放进卡片，race goal 由 dataProvider 现查
- * （fail-soft，查不到卡片降级为无 apply 载荷）。
+ * Build the training node（#1024 R2/R7）：master_plan 意图的一次快 LLM 槽位
+ * 补全 → `master-plan-form` 预填表单卡。共用 coach 配置的 `master_plan` 角色
+ * （deepseek-flash 秒级）；计划生成已出聊天管线——运动员确认表单后由小程序
+ * 组装 kernel request 直投 plan-jobs，异步 worker 跑四层引擎（与 Admin 代
+ * 生成同一队列）。旧 deepagent 生成器（#427 turn 内同步 10 分钟）随本改动
+ * 退役。dataProvider 形参保留以维持 orchestrator 组装面不变。
  */
 export function createTrainingNode(dataProvider: DataProvider, config: CoachAgentConfig): GraphNode<typeof AgentsState> {
+  void dataProvider;
   const masterPlanModel = getAgentConfig(config, "master_plan");
-  const agent = getMasterPlanGeneratorSubagent(dataProvider, masterPlanModel);
-  const resolveGoalId: RaceGoalIdResolver = async (userId) => (await dataProvider.getRaceTarget(userId))?.goal_id ?? null;
-  logger.info(`creating training node with generate-master-plan agent (${masterPlanModel.model})`);
-  return makeTrainingNode({
-    agent: agent as unknown as ReturnType<typeof getMasterPlanGeneratorSubagent>,
-    resolveGoalId,
-  });
+  const llm = buildModel(masterPlanModel);
+  logger.info(`creating training node with slot-filling model (${masterPlanModel.model})`);
+  return makeTrainingNode({ llm });
 }

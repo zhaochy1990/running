@@ -1,125 +1,108 @@
-import { randomUUID } from "node:crypto";
-import { AIMessage, type BaseMessage } from "@langchain/core/messages";
+import { AIMessage, type BaseMessage, SystemMessage } from "@langchain/core/messages";
 import type { GraphNode } from "@langchain/langgraph";
 import { getLogger } from "@stride/common";
-import { type MasterPlan, MasterPlanLenientDirectResponseSchema, normalizeRunWorkout } from "@stride/contract";
+import {
+  MasterPlanFormCardSchema,
+  MasterPlanFormEnvelopeSchema,
+  type MasterPlanFormCard,
+  type MasterPlanFormEnvelope,
+  WEEKDAY_VALUES,
+} from "@stride/contract";
 import { normalizeMessageContent } from "../messages.js";
 import type { AgentsState } from "../state.js";
-import { assertWeeksLinkedToPhases, masterPlanToContent } from "./content.js";
-import { masterPlanCardMessage } from "./render.js";
+import { TRAINING_FORM_PROMPT } from "../prompts.js";
 
 const logger = getLogger("coachAgent:training");
 
 /**
- * Wall-clock budget for one in-turn master-plan generation. Each inner model
- * call carries its own `timeout_s`; this guards the *sum* so a pathological
- * turn still answers the athlete instead of hanging the stream. Exceeded →
- * failure copy, never an async job fallback (#427 contract).
+ * Wall-clock budget for one slot-filling call. The node is a single fast LLM
+ * turn (seconds); exceeded → failure copy, never a hang.
  */
-const MASTER_PLAN_TURN_TIMEOUT_MS = 10 * 60_000;
+const FORM_TURN_TIMEOUT_MS = 90_000;
 
-/** Minimal surface of the inner generate-master-plan agent the node drives. */
-export interface TrainingAgent {
-  invoke(input: unknown, config?: unknown): Promise<{ messages: BaseMessage[] } & Record<string, unknown>>;
-}
-
-/** Resolve the athlete's active race-goal id (the apply content needs a real UUID). */
-export type RaceGoalIdResolver = (userId: string) => Promise<string | null>;
-
-export interface TrainingNodeDeps {
-  agent: TrainingAgent;
-  timeoutMs?: number;
-  resolveGoalId?: RaceGoalIdResolver;
+/** Minimal surface of the fast chat model the node drives. */
+export interface TrainingLlm {
+  invoke(input: unknown, config?: unknown): Promise<BaseMessage>;
 }
 
 /**
- * training 业务节点（deepagent 版）：内层 createAgent 生成赛季计划，结构化
- * 信封（return_direct + MasterPlan）经宽松 schema 解析后渲染为 markdown 摘要
- * + master-plan 卡片消息；无信封（目标缺失追问、说明）按普通业务节点写回
- * 文本增量。跨字段确定性质量门暂不启用（临时决策，回归另立票）。
- *
- * #585 apply-from-content：生成不落库。卡片 data 携带完整 v2 content
- * （masterPlanToContent）+ 一次性 apply_token，运动员点「应用」才经 Go
- * 用户端点落库；无 race goal / 变换被拒时整个省略载荷（卡片降级，无 CTA），
- * 绝不打断回复。
+ * training 业务节点（#1024 R2/R7）：master_plan 意图的一次快 LLM 槽位补全——
+ * 从对话提取备赛意图（比赛/日期/目标/习惯），输出 `master-plan-form` 预填
+ * 表单卡。真正的计划生成已出聊天管线：运动员在卡片上确认/修改后由小程序
+ * 组装 kernel request 直投 plan-jobs（异步 worker，R1/R3），旧 deepagent
+ * 生成器退役（R7）。槽位补全失败/解析不出按普通文本回复，绝不臆造表单。
  */
 export function makeTrainingNode(deps: TrainingNodeDeps): GraphNode<typeof AgentsState> {
-  const timeoutMs = deps.timeoutMs ?? MASTER_PLAN_TURN_TIMEOUT_MS;
+  const timeoutMs = deps.timeoutMs ?? FORM_TURN_TIMEOUT_MS;
   return async (state, config) => {
     if (state.intent?.intent !== "master_plan") {
       // The router only sends master_plan here; anything else means a routing
-      // change upstream — answer honestly instead of silently generating.
-      return { messages: [new AIMessage("这部分我还在学习中。你可以问我训练相关的问题，或让我为一场比赛制定赛季训练计划。")] };
+      // change upstream — answer honestly instead of silently continuing.
+      return { messages: [new AIMessage("这部分我还在学习中。你可以告诉我目标比赛（名称/日期/目标成绩），我来为你制定赛季训练计划。")] };
     }
 
-    const startedAt = Date.now();
-    let result: { messages: BaseMessage[] } & Record<string, unknown>;
+    const history = state.messages.slice(-12);
+    const messages: BaseMessage[] = [new SystemMessage(TRAINING_FORM_PROMPT), ...history];
+
+    let reply: BaseMessage;
     try {
-      result = await withDeadline(deps.agent.invoke({ messages: state.messages }, config), timeoutMs);
+      reply = await withDeadline(deps.llm.invoke(messages, config), timeoutMs);
     } catch (error) {
-      if (error instanceof PlanDeadline) {
-        logger.warn({ elapsedMs: Date.now() - startedAt, timeoutMs }, "master-plan generation exceeded in-turn budget; failing the turn");
-        return { messages: [new AIMessage(GENERATION_TIMEOUT_COPY)] };
+      if (error instanceof FormDeadline) {
+        logger.warn({ timeoutMs }, "training slot-filling exceeded budget; failing the turn");
+        return { messages: [new AIMessage(FORM_FAILED_COPY)] };
       }
-      logger.error({ err: error instanceof Error ? error : undefined, elapsedMs: Date.now() - startedAt }, "master-plan agent threw inside chat turn");
-      return { messages: [new AIMessage(GENERATION_FAILED_COPY)] };
+      logger.error({ err: error instanceof Error ? error : undefined }, "training slot-filling LLM threw inside chat turn");
+      return { messages: [new AIMessage(FORM_FAILED_COPY)] };
     }
 
-    const plan = extractMasterPlan(result) ?? leakedPlanFromText(result, state);
-    if (plan !== undefined) {
-      logger.info({ elapsedMs: Date.now() - startedAt, totalWeeks: plan.total_weeks }, "master plan generated in-turn");
-      const payload = await buildApplyPayload(deps.resolveGoalId, plan, config);
-      // markdown 摘要正文 + `master-plan` 卡片信封（#428）。信封挂消息自身随
-      // checkpoint 持久化，done/历史投影按消息读取，跨设备重进免费。
-      return { messages: [masterPlanCardMessage(plan, payload)] };
+    const envelope = extractFormEnvelope(reply) ?? envelopeFromText(reply);
+    if (envelope === undefined) {
+      // 模型没守 JSON 形态：按普通文本回复透传（绝不臆造表单）。
+      return { messages: [normalizeMessageContent(reply)] };
     }
-    // 无信封：目标缺失追问或说明类回复，按普通业务节点写回增量——agent 的
-    // 工具调用轨迹（含 ToolStrategy 伪调用）留在节点内，不进入会话历史。
-    // 数组 content 归一化为字符串再入会话历史（devops#833）。
-    return { messages: result.messages.slice(state.messages.length).map(normalizeMessageContent) };
+    if (envelope.disposition === "clarify") {
+      const text = envelope.message?.trim();
+      return { messages: [new AIMessage(text && text.length > 0 ? text : FORM_FALLBACK_ASK_COPY)] };
+    }
+
+    let form: MasterPlanFormCard;
+    try {
+      form = normalizeForm(envelope.form ?? {});
+    } catch (error) {
+      logger.warn({ err: error instanceof Error ? error : undefined }, "training form normalization rejected; replying as text");
+      const text = envelope.message?.trim();
+      return { messages: [new AIMessage(text && text.length > 0 ? text : FORM_FALLBACK_ASK_COPY)] };
+    }
+    logger.info({ raceName: form.goal.race_name, raceDate: form.goal.race_date }, "training form card emitted");
+    return {
+      messages: [
+        new AIMessage({
+          content:
+            "好，我们一起向目标出发。信息我按你的情况先填好了，你确认或改一改，然后点「生成我的训练计划」。",
+          additional_kwargs: { card: { $type: "master-plan-form", data: form } },
+        }),
+      ],
+    };
   };
 }
 
-const GENERATION_FAILED_COPY = "这次训练计划生成没能完成，请稍后再试一次。";
-const GENERATION_TIMEOUT_COPY = "这次训练计划生成用时超出了限制，已停止。请稍后再试一次。";
+const FORM_FAILED_COPY = "这次没能整理好你的目标信息，请稍后再试一次。";
+const FORM_FALLBACK_ASK_COPY = "说说你的目标比赛（名称、日期、目标成绩），我来为你制定赛季训练计划。";
 
-/**
- * #585 apply 载荷构建（fail-soft）：userId 从 runtime context 读（与内层工具
- * 同源），race goal 经注入的 resolver 查；任何失败（无 userId / 无 goal /
- * 变换被拒）都返回 undefined——卡片降级为无 apply 载荷，不影响回复。
- */
-async function buildApplyPayload(
-  resolveGoalId: RaceGoalIdResolver | undefined,
-  plan: MasterPlan,
-  config: unknown,
-): Promise<{ content: Record<string, unknown>; applyToken: string } | undefined> {
-  const userId = (config as { context?: { userId?: unknown } } | undefined)?.context?.userId;
-  if (resolveGoalId === undefined || typeof userId !== "string" || userId.length === 0) {
-    logger.warn("master-plan apply payload skipped: no resolver or no userId in runtime context; card degrades without apply CTA");
-    return undefined;
-  }
-  try {
-    const goalId = await resolveGoalId(userId);
-    if (goalId === null) {
-      logger.info({ userId }, "master-plan apply payload skipped: no active race goal");
-      return undefined;
-    }
-    const content = masterPlanToContent(plan, goalId);
-    assertWeeksLinkedToPhases(plan, content);
-    return { content, applyToken: randomUUID() };
-  } catch (error) {
-    logger.warn({ err: error instanceof Error ? error : undefined, userId }, "master-plan apply payload rejected; card degrades without apply CTA");
-    return undefined;
-  }
+/** Minimal surface kept for handler typing parity with the orchestrator wiring. */
+export interface TrainingNodeDeps {
+  llm: TrainingLlm;
+  timeoutMs?: number;
 }
 
-/** Rejected by `withDeadline` when the budget runs out before the turn lands. */
-class PlanDeadline extends Error {}
+/** Rejected by `withDeadline` when the budget runs out before the reply lands. */
+class FormDeadline extends Error {}
 
-/** Race the generation against the wall-clock budget. */
+/** Race the slot-filling call against the wall-clock budget. */
 function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new PlanDeadline()), ms);
+    const timer = setTimeout(() => reject(new FormDeadline()), ms);
     promise.then(
       (value) => {
         clearTimeout(timer);
@@ -133,65 +116,95 @@ function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-/**
- * 从内层 agent 的返回里取结构化信封（与 race_strategy 同模式）。信封已在
- * ToolStrategy 解析层按宽松 schema 校验；此处 safeParse 是防御性二次确认。
- * 结构化输出未产生（目标缺失追问、说明）时返回 undefined。
- */
-/**
- * lenient→normalize→strict：聊天侧宽松信封里的 workout_structure 经
- * normalizeRunWorkout 补默认（note/hr_cap_bpm:null 等），得到严格 MasterPlan。
- */
-function normalizeMasterPlanWorkouts(content: ReturnType<typeof MasterPlanLenientDirectResponseSchema.parse>["content"]): MasterPlan {
-  return {
-    ...content,
-    weeks: content.weeks.map((week) => ({
-      ...week,
-      key_sessions: week.key_sessions.map((session) => ({
-        ...session,
-        workout_structure: session.workout_structure ? normalizeRunWorkout(session.workout_structure) : session.workout_structure,
-      })),
-    })),
-  };
+/** 模型回复 → 宽松信封（content 可能是数组/字符串，统一成文本再解析）。 */
+function extractFormEnvelope(reply: BaseMessage): MasterPlanFormEnvelope | undefined {
+  const content = typeof reply.content === "string" ? reply.content : Array.isArray(reply.content) ? reply.content.map((part) => (typeof part === "string" ? part : "")).join("") : "";
+  const unfenced = content
+    .replace(/^```(?:json)?\s*\n?/, "")
+    .replace(/\n?```\s*$/, "")
+    .trim();
+  if (!unfenced.startsWith("{")) return undefined;
+  try {
+    const parsed = MasterPlanFormEnvelopeSchema.safeParse(JSON.parse(unfenced));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
-/**
- * 从内层 agent 的返回里取结构化信封（与 race_strategy 同模式）。信封已在
- * ToolStrategy 解析层按宽松 schema 校验；此处 safeParse 是防御性二次确认。
- * 结构化输出未产生（目标缺失追问、说明）时返回 undefined。
- */
-function extractMasterPlan(result: Record<string, unknown>): MasterPlan | undefined {
-  const structured = result.structuredResponse;
-  if (typeof structured !== "object" || structured === null) return undefined;
-  const envelope = MasterPlanLenientDirectResponseSchema.safeParse(structured);
-  return envelope.success ? normalizeMasterPlanWorkouts(envelope.data.content) : undefined;
-}
-
-/**
- * 防御性信封解析：模型偶发不守 ToolStrategy 格式、把信封 JSON 当正文文本输
- * 出（弱模型上 race_strategy 已观察到同款行为）。只对形似信封的文本尝试，
- * 解析失败按普通回复透传，绝不臆造。
- */
-function leakedPlanFromText(result: { messages: BaseMessage[] }, state: { messages: BaseMessage[] }): MasterPlan | undefined {
-  const delta = result.messages.slice(state.messages.length);
-  for (let index = delta.length - 1; index >= 0; index -= 1) {
-    const message = delta[index];
-    if (message === undefined || message.getType() !== "ai" || typeof message.content !== "string") continue;
-    const unfenced = message.content
-      .replace(/^```(?:json)?\s*\n?/, "")
-      .replace(/\n?```\s*$/, "")
-      .trim();
-    if (!unfenced.startsWith('{"disposition"')) continue;
+/** 防御性兜底：JSON 混在多段 AI 文本里时从后往前找形似信封的段。 */
+function envelopeFromText(reply: BaseMessage): MasterPlanFormEnvelope | undefined {
+  const content = typeof reply.content === "string" ? reply.content : "";
+  for (const line of content.split("\n").reverse()) {
+    const trimmed = line.trim().replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "").trim();
+    if (!trimmed.startsWith("{")) continue;
     try {
-      const envelope = MasterPlanLenientDirectResponseSchema.safeParse(JSON.parse(unfenced));
-      if (envelope.success) {
-        logger.warn({ preview: message.content.slice(0, 120) }, "master-plan envelope leaked as plain text; recovered by defensive parse");
-        return normalizeMasterPlanWorkouts(envelope.data.content);
+      const parsed = MasterPlanFormEnvelopeSchema.safeParse(JSON.parse(trimmed));
+      if (parsed.success) {
+        logger.warn({ preview: trimmed.slice(0, 120) }, "training form envelope recovered from text line");
+        return parsed.data;
       }
       return undefined;
     } catch {
-      return undefined;
+      continue;
     }
   }
   return undefined;
+}
+
+const WEEKDAY_ALIASES: Record<string, (typeof WEEKDAY_VALUES)[number]> = {
+  monday: "monday", tuesday: "tuesday", wednesday: "wednesday", thursday: "thursday", friday: "friday", saturday: "saturday", sunday: "sunday",
+  一: "monday", 二: "tuesday", 三: "wednesday", 四: "thursday", 五: "friday", 六: "saturday", 日: "sunday", 天: "sunday",
+  周一: "monday", 周二: "tuesday", 周三: "wednesday", 周四: "thursday", 周五: "friday", 周六: "saturday", 周日: "sunday", 周天: "sunday",
+};
+
+/** 中文/别名星期 → 枚举；未知的丢弃。 */
+function normalizeWeekdays(input: string[]): (typeof WEEKDAY_VALUES)[number][] {
+  const out: (typeof WEEKDAY_VALUES)[number][] = [];
+  for (const raw of input) {
+    const day = WEEKDAY_ALIASES[raw.trim().toLowerCase()] ?? WEEKDAY_ALIASES[raw.trim()];
+    if (day && !out.includes(day)) out.push(day);
+  }
+  return out;
+}
+
+function normalizeLongDay(input: string | undefined): (typeof WEEKDAY_VALUES)[number] | null {
+  if (!input) return null;
+  return WEEKDAY_ALIASES[input.trim().toLowerCase()] ?? WEEKDAY_ALIASES[input.trim()] ?? null;
+}
+
+/** 日期宽松归一：YYYY/M/D、YYYY.MM.DD → YYYY-MM-DD；非法原样返回（表单可改）。 */
+function normalizeDate(input: string | undefined): string {
+  if (!input) return "";
+  const m = input.trim().match(/^(\d{4})[/\-.年](\d{1,2})[/\-.月](\d{1,2})日?$/);
+  if (!m) return input.trim();
+  return `${m[1]}-${String(m[2]).padStart(2, "0")}-${String(m[3]).padStart(2, "0")}`;
+}
+
+/** 目标宽松归一：h:mm:ss / hh:mm / 带引号皆收；空串=完赛。 */
+function normalizeTarget(input: string | undefined): string {
+  if (!input) return "";
+  const raw = input.trim();
+  if (/^\d{1,2}:[0-5]\d$/.test(raw)) return `${Number(raw.split(":")[0])}:${raw.split(":")[1]}:00`;
+  return raw;
+}
+
+/** 宽松槽位 → 严格表单卡（schema 校验兜底；失败抛错由调用方按文本透传）。 */
+function normalizeForm(form: NonNullable<MasterPlanFormEnvelope["form"]>): MasterPlanFormCard {
+  const weeklyDays = normalizeWeekdays(form.weekly_days ?? []);
+  const candidate = {
+    goal: {
+      race_name: (form.race_name ?? "").trim().slice(0, 60),
+      distance: form.distance === "HM" ? "HM" : "FM",
+      race_date: normalizeDate(form.race_date),
+      target_time: normalizeTarget(form.target_time),
+    },
+    availability: {
+      weekly_days: weeklyDays.length > 0 ? weeklyDays : (["monday", "tuesday", "wednesday", "thursday", "friday"] as const).slice(),
+      preferred_long_run_day: normalizeLongDay(form.long_run_day) ?? weeklyDays.at(-1) ?? "saturday",
+    },
+    base: (form.base ?? "").trim().slice(0, 200),
+    restriction: (form.restriction ?? "").trim().slice(0, 200),
+  };
+  return MasterPlanFormCardSchema.parse(candidate);
 }
