@@ -9,28 +9,64 @@
 //
 // 纯函数 + storage 薄封装（无网络依赖），配套 utils/planJobCards.check.mts。
 
-import type { MasterPlanFormCard } from '../services/master-plan';
+import type { MasterPlanFormCard, Weekday } from '../services/master-plan';
 import type { MasterPlanJobRequest } from '../services/plan-jobs';
 import { shanghaiMonthDayLabel } from './coachCards';
+import { PLAN_JOB_POLL_MS } from './planJobProgress';
 import { WEEKDAY_VALUES } from './weekday';
 
 // ── 表单 → kernel request ────────────────────────────────────────────────────
 
-/** 表单未收集单次训练时长，按 2 小时兜底（kernel 只要求正整数）。 */
-const DEFAULT_MAX_SESSION_MIN = 120;
+/**
+ * 「更多选项」（#1030）：kernel request 里会**实际约束排课**的三项。表单卡
+ * 本身不带这三项（服务端 MasterPlanFormCardSchema 没有），由表单「更多选项」
+ * 折叠区预填并可改。默认值对齐现有代生成口径（150 分钟 / 不允许一天两练 /
+ * 力量 2 次·周一+周四），不是无来源常量。
+ */
+export interface MasterPlanFormOptions {
+  /** 单节课时长上限（分钟）。 */
+  max_session_duration_min: number;
+  /** 是否允许一天两练。 */
+  allows_double_sessions: boolean;
+  /** 每周力量训练次数（0 = 不安排）。 */
+  strength_sessions_per_week: number;
+  /** 力量可用日（力量次数为 0 时为空）。 */
+  strength_available_days: Weekday[];
+}
+
+/** 与 kernel 代生成既有口径一致的默认值（#1030 方案 B）。 */
+export const DEFAULT_MASTER_PLAN_FORM_OPTIONS: MasterPlanFormOptions = {
+  max_session_duration_min: 150,
+  allows_double_sessions: false,
+  strength_sessions_per_week: 2,
+  strength_available_days: ['monday', 'thursday'],
+};
 
 /**
  * 表单卡 → MasterPlanGraphRequest（服务端 zod 严格复验，多余键会被拒）。
  * 表单提交即确认：user_confirmations 全真。目标成绩空 = 顺利完赛
  * （finish_only=true 且 target_time=null，二选一 XOR）。表单的自由文本
  * （训练基础 / 限制）进 preferences，不臆造结构化 injury 声明。
+ * 「更多选项」三项必须由调用方传入（组件预填 + 用户可改），不在这里兜底。
  */
-export function buildMasterPlanJobRequest(form: MasterPlanFormCard, requestId: string): MasterPlanJobRequest {
+export function buildMasterPlanJobRequest(
+  form: MasterPlanFormCard,
+  requestId: string,
+  options: MasterPlanFormOptions,
+): MasterPlanJobRequest {
   const targetTime = form.goal.target_time.trim();
   const finishOnly = targetTime.length === 0;
   const trainingDays = form.availability.weekly_days;
   // 组件已拦空选；这里 fail-fast，绝不投递 weekly_run_days_max=1 却 7 天全不可用的请求。
   if (trainingDays.length === 0) throw new Error('weekly_days is empty');
+  if (!Number.isInteger(options.max_session_duration_min) || options.max_session_duration_min <= 0) {
+    throw new Error('invalid max_session_duration_min');
+  }
+  const strengthPerWeek = options.strength_sessions_per_week;
+  if (!Number.isInteger(strengthPerWeek) || strengthPerWeek < 0) throw new Error('invalid strength_sessions_per_week');
+  if (strengthPerWeek > 0 && options.strength_available_days.length === 0) {
+    throw new Error('strength days required when strength sessions are scheduled');
+  }
   const unavailableDays = WEEKDAY_VALUES.filter((day) => !trainingDays.includes(day));
   const preferences: string[] = [];
   const base = form.base.trim();
@@ -55,11 +91,11 @@ export function buildMasterPlanJobRequest(form: MasterPlanFormCard, requestId: s
       weekly_run_days_max: trainingDays.length,
       available_training_windows: [],
       unavailable_days: [...unavailableDays],
-      max_session_duration_min: DEFAULT_MAX_SESSION_MIN,
-      allows_double_sessions: false,
+      max_session_duration_min: options.max_session_duration_min,
+      allows_double_sessions: options.allows_double_sessions,
       preferred_long_run_day: form.availability.preferred_long_run_day,
-      strength_sessions_per_week: 0,
-      strength_available_days: [],
+      strength_sessions_per_week: strengthPerWeek,
+      strength_available_days: strengthPerWeek > 0 ? [...options.strength_available_days] : [],
     },
     injury_declarations: [],
     environment_constraints: [],
@@ -150,6 +186,33 @@ export function planJobResultView(content: unknown): PlanJobResultView | null {
   return { title, subtitle: parts.join(' · ') };
 }
 
+// ── 轮询恢复语义（#1029）────────────────────────────────────────────────────
+
+/** 连续网络失败到该值只**暂停**轮询（提示恢复入口），绝不本地判 failed。 */
+export const MAX_PLAN_JOB_POLL_FAILURES = 6;
+
+/** 轮询失败后的动作：仍可退避重试 / 暂停等用户或 onShow 恢复。 */
+export function planJobPollFailureAction(failures: number): 'backoff' | 'pause' {
+  return failures >= MAX_PLAN_JOB_POLL_FAILURES ? 'pause' : 'backoff';
+}
+
+/** 指数退避：2.5 → 5 → 10 → 20 → 30s 封顶。 */
+export function planJobPollBackoffMs(failures: number, baseMs: number = PLAN_JOB_POLL_MS): number {
+  return Math.min(baseMs * 2 ** Math.max(0, Math.min(failures - 1, 4)), 30_000);
+}
+
+/** 重试前探到的服务端真实状态（gone = 404 无此单）。 */
+export type PlanJobProbeOutcome = 'queued' | 'running' | 'done' | 'failed' | 'gone';
+
+export type PlanJobRetryAction = 'resume' | 'show-result' | 'repost';
+
+/** 两步重试决策：还在跑 → 继续原单；完成 → 出结果卡；确实失败/无单 → 重投。 */
+export function decideRetryAction(outcome: PlanJobProbeOutcome): PlanJobRetryAction {
+  if (outcome === 'queued' || outcome === 'running') return 'resume';
+  if (outcome === 'done') return 'show-result';
+  return 'repost';
+}
+
 // ── 本地卡持久化 ────────────────────────────────────────────────────────────
 
 export type PlanJobStatus = 'running' | 'done' | 'failed';
@@ -186,12 +249,47 @@ export interface PlanJobCardView {
   subtitle?: string;
   /** done：候选计划已启用（预览页启用后回写）。 */
   applied?: boolean;
+  /** 网络持续失败、轮询暂时停下（卡上显示恢复入口；#1029）。 */
+  pollPaused?: boolean;
 }
 
 const JOB_KEY_PREFIX = 'plan-job:';
 const JOB_INDEX_KEY = 'plan-job:index';
 /** 本地最多保留的 job 卡数量（超出按创建时间淘汰最旧，防 storage 无限长）。 */
 const MAX_STORED_JOBS = 20;
+
+/** 本页内存副本：storage 写失败（配额/隐私模式）时进度卡仍能工作。 */
+const memoryJobs = new Map<string, PlanJobRecord>();
+
+/** 读卡：storage 优先，失败时回落到本页内存副本。 */
+export function readPlanJobCached(jobId: string): PlanJobRecord | null {
+  return readPlanJob(jobId) ?? memoryJobs.get(jobId) ?? null;
+}
+
+/** 更新卡：写内存副本 + best-effort 落 storage（storage 失败不阻断本页进度）。 */
+export function updatePlanJobRecord(jobId: string, patch: Partial<PlanJobRecord>): PlanJobRecord | null {
+  const current = readPlanJobCached(jobId);
+  if (!current) return null;
+  const next: PlanJobRecord = { ...current, ...patch, jobId: current.jobId };
+  memoryJobs.set(next.jobId, next);
+  savePlanJob(next);
+  return next;
+}
+
+/** 本地记录 → 卡片视图（applied/paused 由页面侧状态注入；纯函数）。 */
+export function planJobCardView(record: PlanJobRecord, applied: boolean, pollPaused = false): PlanJobCardView {
+  return {
+    jobId: record.jobId,
+    status: record.status,
+    stage: record.stage,
+    progressPct: record.progressPct,
+    createdAt: record.createdAt,
+    title: record.resultTitle,
+    subtitle: record.resultSubtitle,
+    applied,
+    pollPaused,
+  };
+}
 
 function isPlanJobRecord(value: unknown): value is PlanJobRecord {
   const v = recordOf(value);
@@ -245,6 +343,7 @@ export function listPlanJobs(): PlanJobRecord[] {
 
 /** 写卡（同步）；storage 不可用时返回 false，由调用方提示「进度可能无法恢复」。 */
 export function savePlanJob(job: PlanJobRecord): boolean {
+  memoryJobs.set(job.jobId, job);
   try {
     wx.setStorageSync(JOB_KEY_PREFIX + job.jobId, job);
   } catch {
@@ -265,6 +364,7 @@ export function savePlanJob(job: PlanJobRecord): boolean {
 
 /** 删除一张卡（重试换新 job id / 淘汰旧卡时用）。 */
 export function removePlanJob(jobId: string): void {
+  memoryJobs.delete(jobId);
   try {
     wx.removeStorageSync(JOB_KEY_PREFIX + jobId);
   } catch {

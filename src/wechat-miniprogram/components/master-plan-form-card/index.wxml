@@ -132,6 +132,61 @@
           bindinput="onRestrictionInput"
         />
       </view>
+
+      <!-- 更多选项（#1030）：单课上限/力量频次/双练会实际约束排课，默认按代生成口径预填 -->
+      <view class="mpf-more">
+        <view class="mpf-more__head" bindtap="onToggleOptions">
+          <text class="mpf-more__title">更多选项</text>
+          <text class="mpf-more__summary">{{maxSessionOptions[maxSessionIndex]}} 分钟 · 力量 {{strengthIndex}} 次/周 · {{allowsDoubleSessions ? '允许一天两练' : '不安排双练'}}</text>
+          <image
+            class="mpf-caret {{optionsExpanded ? 'mpf-caret--up' : ''}}"
+            src="/assets/icons/chevron_down_round.svg"
+            mode="aspectFit"
+          />
+        </view>
+        <view wx:if="{{optionsExpanded}}" class="mpf-more__body">
+          <view class="mpf-field">
+            <view class="mpf-label">单次训练时长上限</view>
+            <picker mode="selector" range="{{maxSessionOptions}}" value="{{maxSessionIndex}}" bindchange="onMaxSessionChange">
+              <view class="mpf-input mpf-input--picker">
+                <text>{{maxSessionOptions[maxSessionIndex]}} 分钟</text>
+                <image class="mpf-caret" src="/assets/icons/chevron_down_round.svg" mode="aspectFit" />
+              </view>
+            </picker>
+          </view>
+
+          <view class="mpf-field">
+            <view class="mpf-label">每周力量训练</view>
+            <picker mode="selector" range="{{strengthOptions}}" value="{{strengthIndex}}" bindchange="onStrengthChange">
+              <view class="mpf-input mpf-input--picker">
+                <text>{{strengthOptions[strengthIndex]}}</text>
+                <image class="mpf-caret" src="/assets/icons/chevron_down_round.svg" mode="aspectFit" />
+              </view>
+            </picker>
+          </view>
+
+          <view wx:if="{{strengthIndex > 0}}" class="mpf-field">
+            <view class="mpf-label">力量训练日<text class="mpf-required">必填</text></view>
+            <view class="mpf-days">
+              <view
+                wx:for="{{strengthDayChips}}"
+                wx:key="value"
+                class="mpf-day {{item.selected ? 'mpf-day--on' : ''}} {{strengthDaysError ? 'mpf-day--error' : ''}}"
+                data-value="{{item.value}}"
+                bindtap="onStrengthDayTap"
+              >{{item.label}}</view>
+            </view>
+            <text wx:if="{{strengthDaysError}}" class="mpf-error">{{strengthDaysError}}</text>
+          </view>
+
+          <view class="mpf-field">
+            <view class="mpf-finish" bindtap="onDoubleToggle">
+              <view class="mpf-check {{allowsDoubleSessions ? 'mpf-check--on' : ''}}"></view>
+              <text>允许一天两练</text>
+            </view>
+          </view>
+        </view>
+      </view>
     </view>
 
     <view class="mpf-foot">

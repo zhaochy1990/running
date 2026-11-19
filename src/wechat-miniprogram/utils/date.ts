@@ -21,13 +21,13 @@ export function pad2(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
 }
 
-/** epoch（UTC ms）→ 上海 YYYY-MM-DD */
-/** 时间戳 → 上海时区 HH:mm（本地合成消息的展示时间，HARD 时区规则）。 */
+/** epoch（UTC ms）→ 上海 HH:mm（本地合成消息的展示时间）。 */
 export function epochToShanghaiHm(epochMs: number): string {
-  const shifted = new Date(epochMs + 8 * 60 * 60 * 1000);
+  const shifted = new Date(epochMs + SHANGHAI_OFFSET_MS);
   return `${pad2(shifted.getUTCHours())}:${pad2(shifted.getUTCMinutes())}`;
 }
 
+/** epoch（UTC ms）→ 上海 YYYY-MM-DD */
 export function epochToShanghaiYmd(epochMs: number): string {
   const d = new Date(epochMs + SHANGHAI_OFFSET_MS);
   return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;

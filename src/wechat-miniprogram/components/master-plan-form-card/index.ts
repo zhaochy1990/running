@@ -15,6 +15,7 @@
 //   bindsubmit  detail = { form }   校验通过后的完整表单（MasterPlanFormCard）
 
 import type { MasterPlanFormCard, Weekday } from '../../services/master-plan';
+import { DEFAULT_MASTER_PLAN_FORM_OPTIONS, type MasterPlanFormOptions } from '../../utils/planJobCards';
 import { WEEKDAY_VALUES } from '../../utils/weekday';
 import { pad2, shanghaiToday } from '../../utils/date';
 
@@ -23,6 +24,8 @@ const DISTANCE_OPTIONS = ['全程马拉松（全马）', '半程马拉松（半�
 const LONG_RUN_NO_PREFERENCE = '不指定';
 const HOUR_RANGE = [1, 2, 3, 4, 5, 6];
 const ZERO_TO_59 = Array.from({ length: 60 }, (_, i) => i);
+const MAX_SESSION_OPTIONS = [90, 120, 150, 180, 210];
+const STRENGTH_OPTIONS = ['不安排', '1 次', '2 次', '3 次'];
 
 interface DayChip {
   value: Weekday;
@@ -64,6 +67,15 @@ interface FormCardData {
   errorDays: boolean;
   /** 长跑日必须落在已选训练日里。 */
   longRunError: string;
+  // —— 更多选项（#1030：kernel request 里会实际约束排课的三项）——
+  optionsExpanded: boolean;
+  maxSessionOptions: number[];
+  maxSessionIndex: number;
+  allowsDoubleSessions: boolean;
+  strengthOptions: string[];
+  strengthIndex: number;
+  strengthDayChips: DayChip[];
+  strengthDaysError: string;
   submitted: boolean;
 }
 
@@ -94,6 +106,12 @@ type FormCardMethods = {
   onLongRunChange(e: WechatMiniprogram.PickerChange): void;
   onBaseInput(e: WechatMiniprogram.CustomEvent): void;
   onRestrictionInput(e: WechatMiniprogram.CustomEvent): void;
+  // 更多选项（#1030）
+  onToggleOptions(): void;
+  onMaxSessionChange(e: WechatMiniprogram.PickerChange): void;
+  onStrengthChange(e: WechatMiniprogram.PickerChange): void;
+  onStrengthDayTap(e: WechatMiniprogram.TouchEvent): void;
+  onDoubleToggle(): void;
   onSubmitTap(): void;
   /** 父页投递失败时回退到可编辑态（保留用户已填内容）。 */
   submitFailed(): void;
@@ -144,6 +162,18 @@ Component<FormCardData, FormCardProps, FormCardMethods, [], FormCardInstance>({
     minuteRange: ZERO_TO_59,
     secondRange: ZERO_TO_59,
     dayChips: WEEKDAY_VALUES.map((value, index) => ({ value, label: WEEKDAY_LABELS[index], selected: false })),
+    optionsExpanded: false,
+    maxSessionOptions: MAX_SESSION_OPTIONS,
+    maxSessionIndex: Math.max(0, MAX_SESSION_OPTIONS.indexOf(DEFAULT_MASTER_PLAN_FORM_OPTIONS.max_session_duration_min)),
+    allowsDoubleSessions: DEFAULT_MASTER_PLAN_FORM_OPTIONS.allows_double_sessions,
+    strengthOptions: STRENGTH_OPTIONS,
+    strengthIndex: DEFAULT_MASTER_PLAN_FORM_OPTIONS.strength_sessions_per_week,
+    strengthDayChips: WEEKDAY_VALUES.map((value, index) => ({
+      value,
+      label: WEEKDAY_LABELS[index],
+      selected: (DEFAULT_MASTER_PLAN_FORM_OPTIONS.strength_available_days as readonly Weekday[]).includes(value),
+    })),
+    strengthDaysError: '',
     longRunIndex: 0,
     longRunOptions: [LONG_RUN_NO_PREFERENCE, ...WEEKDAY_VALUES.map((_, index) => `周${WEEKDAY_LABELS[index]}`)],
     base: '',
@@ -261,6 +291,33 @@ Component<FormCardData, FormCardProps, FormCardMethods, [], FormCardInstance>({
       this.setData({ longRunIndex: Number(e.detail.value) || 0, longRunError: '' });
     },
 
+    onToggleOptions() {
+      this.setData({ optionsExpanded: !this.data.optionsExpanded });
+    },
+
+    onMaxSessionChange(e: WechatMiniprogram.PickerChange) {
+      this.setData({ maxSessionIndex: Number(e.detail.value) || 0 });
+    },
+
+    onStrengthChange(e: WechatMiniprogram.PickerChange) {
+      this.setData({ strengthIndex: Number(e.detail.value) || 0, strengthDaysError: '' });
+    },
+
+    onStrengthDayTap(e: WechatMiniprogram.TouchEvent) {
+      const value = e.currentTarget.dataset.value as Weekday | undefined;
+      if (!value) return;
+      this.setData({
+        strengthDayChips: this.data.strengthDayChips.map((chip) =>
+          chip.value === value ? { ...chip, selected: !chip.selected } : chip,
+        ),
+        strengthDaysError: '',
+      });
+    },
+
+    onDoubleToggle() {
+      this.setData({ allowsDoubleSessions: !this.data.allowsDoubleSessions });
+    },
+
     onBaseInput(e: WechatMiniprogram.CustomEvent) {
       this.setData({ base: String(e.detail.value ?? '') });
     },
@@ -288,12 +345,23 @@ Component<FormCardData, FormCardProps, FormCardMethods, [], FormCardInstance>({
       // 长跑日必须落在已选训练日里，否则请求会自相矛盾（unavailable_days 含它）。
       const longRunDay = this.data.longRunIndex > 0 ? WEEKDAY_VALUES[this.data.longRunIndex - 1] : null;
       const longRunError = longRunDay && !trainingDays.includes(longRunDay) ? '长跑日需要选在可训练日里' : '';
-      if (errorRaceName || raceDateError || errorDays || longRunError) {
+      const strengthDays = this.data.strengthDayChips.filter((chip) => chip.selected).map((chip) => chip.value);
+      const strengthDaysError =
+        this.data.strengthIndex === 0
+          ? ''
+          : strengthDays.length === 0
+            ? '请选择力量训练日'
+            : strengthDays.length < this.data.strengthIndex
+              ? '力量训练日数量不少于每周次数'
+              : '';
+      if (errorRaceName || raceDateError || errorDays || longRunError || strengthDaysError) {
         this.setData({
           errorRaceName,
           raceDateError,
           errorDays,
           longRunError,
+          strengthDaysError,
+          optionsExpanded: strengthDaysError ? true : this.data.optionsExpanded,
           activeTab: errorRaceName || raceDateError ? 'goal' : 'train',
         });
         wx.showToast({ title: '请先补齐必填项', icon: 'none' });
@@ -315,8 +383,14 @@ Component<FormCardData, FormCardProps, FormCardMethods, [], FormCardInstance>({
         base: this.data.base.trim(),
         restriction: this.data.restriction.trim(),
       };
+      const options: MasterPlanFormOptions = {
+        max_session_duration_min: this.data.maxSessionOptions[this.data.maxSessionIndex] ?? DEFAULT_MASTER_PLAN_FORM_OPTIONS.max_session_duration_min,
+        allows_double_sessions: this.data.allowsDoubleSessions,
+        strength_sessions_per_week: this.data.strengthIndex,
+        strength_available_days: this.data.strengthIndex > 0 ? strengthDays : [],
+      };
       this.setData({ submitted: true });
-      this.triggerEvent('submit', { form });
+      this.triggerEvent('submit', { form, options });
     },
 
     submitFailed() {

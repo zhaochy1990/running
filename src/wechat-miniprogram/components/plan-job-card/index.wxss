@@ -95,6 +95,17 @@
   }
 }
 
+/* 无障碍：减少动态偏好下停掉脉冲与进度补间（开场不闪）。 */
+@media (prefers-reduced-motion: reduce) {
+  .mpj-pct--holding {
+    animation: none;
+  }
+
+  .mpj-bar__fill {
+    transition: none;
+  }
+}
+
 .mpj-stages {
   display: flex;
   flex-direction: column;
@@ -135,6 +146,11 @@
   font-size: 11px;
   line-height: 18px;
   color: var(--color-text-tertiary);
+}
+
+/* 轮询暂停后的恢复入口（#1029）：整行可点。 */
+.mpj-note--action {
+  color: var(--color-accent-deep);
 }
 
 .mpj-actions {

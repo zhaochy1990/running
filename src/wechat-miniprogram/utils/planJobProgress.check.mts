@@ -26,6 +26,13 @@ assert.equal(phaseIndexForStage('', 0), 0);
   assert.equal(track.holding, false);
 }
 
+// 首锚点到达前不触发 holding 脉冲（#1031）：开场几秒 targetPct=0，预估>0
+{
+  const track = planJobTrack({ elapsedMs: 10_000, targetPct: 0, targetPhase: 0 });
+  assert.equal(track.holding, false);
+  assert.ok(track.percent > 0, 'prediction still advances smoothly');
+}
+
 // 匀速段：第 1 阶段 0→18% 用 45s，22.5s 时约 9%
 {
   const track = planJobTrack({ elapsedMs: 22_500, targetPct: 0, targetPhase: 0 });

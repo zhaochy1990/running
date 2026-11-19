@@ -4,7 +4,17 @@
  */
 import { strict as assert } from 'node:assert';
 import type { MasterPlanFormCard } from '../services/master-plan.ts';
-import { breakthroughNumber, buildMasterPlanJobRequest, planJobResultContent, planJobResultView } from './planJobCards.ts';
+import {
+  breakthroughNumber,
+  buildMasterPlanJobRequest,
+  decideRetryAction,
+  DEFAULT_MASTER_PLAN_FORM_OPTIONS,
+  MAX_PLAN_JOB_POLL_FAILURES,
+  planJobPollBackoffMs,
+  planJobPollFailureAction,
+  planJobResultContent,
+  planJobResultView,
+} from './planJobCards.ts';
 
 const form: MasterPlanFormCard = {
   goal: { race_name: ' 无锡马拉松 ', distance: 'FM', race_date: '2027-03-22', target_time: '2:50:00' },
@@ -15,7 +25,7 @@ const form: MasterPlanFormCard = {
 
 // 表单 → kernel request：目标成绩/完赛 XOR、训练日补集、自由文本进 preferences
 {
-  const request = buildMasterPlanJobRequest(form, 'req-1');
+  const request = buildMasterPlanJobRequest(form, 'req-1', DEFAULT_MASTER_PLAN_FORM_OPTIONS);
   assert.equal(request.request_id, 'req-1');
   assert.equal(request.requested_mode, 'new_season');
   assert.equal(request.goals.length, 1);
@@ -28,7 +38,11 @@ const form: MasterPlanFormCard = {
   assert.equal(request.availability.weekly_run_days_max, 4);
   assert.deepEqual(request.availability.unavailable_days, ['monday', 'wednesday', 'friday']);
   assert.equal(request.availability.preferred_long_run_day, 'sunday');
-  assert.equal(request.availability.max_session_duration_min, 120);
+  // #1030：三项来自「更多选项」（默认值=代生成口径），不是硬编码臆造
+  assert.equal(request.availability.max_session_duration_min, 150);
+  assert.equal(request.availability.allows_double_sessions, false);
+  assert.equal(request.availability.strength_sessions_per_week, 2);
+  assert.deepEqual(request.availability.strength_available_days, ['monday', 'thursday']);
   assert.deepEqual(request.injury_declarations, []);
   assert.equal(request.preferences.length, 2);
   assert.match(request.preferences[0], /每周约 55 公里/);
@@ -44,8 +58,33 @@ const form: MasterPlanFormCard = {
 
 // 训练日空：fail-fast，不投递自相矛盾的请求
 assert.throws(
-  () => buildMasterPlanJobRequest({ ...form, availability: { ...form.availability, weekly_days: [] } }, 'req-x'),
+  () => buildMasterPlanJobRequest({ ...form, availability: { ...form.availability, weekly_days: [] } }, 'req-x', DEFAULT_MASTER_PLAN_FORM_OPTIONS),
   /weekly_days is empty/,
+);
+
+// #1030：更多选项原样进 request（用户改过的值不丢）
+{
+  const request = buildMasterPlanJobRequest(form, 'req-3', {
+    max_session_duration_min: 180,
+    allows_double_sessions: true,
+    strength_sessions_per_week: 1,
+    strength_available_days: ['wednesday'],
+  });
+  assert.equal(request.availability.max_session_duration_min, 180);
+  assert.equal(request.availability.allows_double_sessions, true);
+  assert.equal(request.availability.strength_sessions_per_week, 1);
+  assert.deepEqual(request.availability.strength_available_days, ['wednesday']);
+}
+
+// 力量次数 >0 但没选力量日：fail-fast
+assert.throws(
+  () =>
+    buildMasterPlanJobRequest(form, 'req-4', {
+      ...DEFAULT_MASTER_PLAN_FORM_OPTIONS,
+      strength_sessions_per_week: 2,
+      strength_available_days: [],
+    }),
+  /strength days required/,
 );
 
 // 目标成绩空 = 顺利完赛（target_time null + finish_only true）
@@ -53,6 +92,7 @@ assert.throws(
   const request = buildMasterPlanJobRequest(
     { ...form, goal: { ...form.goal, target_time: '' } },
     'req-2',
+    DEFAULT_MASTER_PLAN_FORM_OPTIONS,
   );
   assert.equal(request.goals[0].target_time, null);
   assert.equal(request.goals[0].finish_only, true);
@@ -107,5 +147,33 @@ assert.equal(breakthroughNumber(''), '');
 
 assert.equal(planJobResultView(null), null, 'null content');
 assert.equal(planJobResultView('nope'), null, 'non-object content');
+
+// #1029：网络连续失败只暂停，绝不等价 failed；恢复后原单继续
+{
+  let failures = 0;
+  let paused = false;
+  let status: 'running' | 'failed' = 'running';
+  for (let i = 0; i < MAX_PLAN_JOB_POLL_FAILURES; i += 1) {
+    failures += 1;
+    if (planJobPollFailureAction(failures) === 'pause') paused = true;
+  }
+  assert.equal(paused, true, 'pauses at the failure cap');
+  assert.equal(status, 'running', 'network failures never flip the job to failed');
+  // 恢复：先探到原单仍在跑 → resume，状态仍 running
+  assert.equal(decideRetryAction('running'), 'resume');
+  assert.equal(status, 'running');
+}
+
+assert.equal(planJobPollFailureAction(1), 'backoff');
+assert.equal(planJobPollFailureAction(MAX_PLAN_JOB_POLL_FAILURES - 1), 'backoff');
+assert.equal(planJobPollFailureAction(MAX_PLAN_JOB_POLL_FAILURES), 'pause');
+
+assert.deepEqual([1, 2, 3, 4, 5, 9].map((n) => planJobPollBackoffMs(n)), [2500, 5000, 10000, 20000, 30000, 30000]);
+
+assert.equal(decideRetryAction('queued'), 'resume');
+assert.equal(decideRetryAction('running'), 'resume');
+assert.equal(decideRetryAction('done'), 'show-result');
+assert.equal(decideRetryAction('failed'), 'repost');
+assert.equal(decideRetryAction('gone'), 'repost');
 
 console.log('plan job cards checks passed');

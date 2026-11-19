@@ -289,7 +289,7 @@ function masterPlanSubtitle(plan: MasterPlanCard): string {
 }
 
 /** 表单卡副标题 = 预填摘要；空字段按「待填写」跳过，全空时给出确认提示。 */
-export function masterPlanFormSubtitle(form: MasterPlanFormCard): string {
+function masterPlanFormSubtitle(form: MasterPlanFormCard): string {
   const parts: string[] = [];
   if (form.goal.race_name.trim()) parts.push(form.goal.race_name.trim());
   parts.push(form.goal.distance === 'FM' ? '全马' : '半马');

@@ -34,6 +34,8 @@ interface JobCardData {
   title: string;
   subtitle: string;
   applied: boolean;
+  /** 网络持续失败，轮询暂停（显示「轻触恢复」）。 */
+  paused: boolean;
 }
 
 type JobCardProps = {
@@ -53,6 +55,7 @@ type JobCardMethods = {
   onRetryTap(): void;
   onViewTap(): void;
   onEditTap(): void;
+  onResumeTap(): void;
 };
 
 function phaseRows(phaseIndex: number, finished: boolean): PhaseRow[] {
@@ -75,6 +78,7 @@ Component<JobCardData, JobCardProps, JobCardMethods, [], JobCardInstance>({
     title: '',
     subtitle: '',
     applied: false,
+    paused: false,
   },
 
   observers: {
@@ -155,15 +159,16 @@ Component<JobCardData, JobCardProps, JobCardMethods, [], JobCardInstance>({
           title: job.title ?? '训练计划已生成',
           subtitle: job.subtitle ?? '',
           applied: job.applied === true,
+          paused: false,
         });
         return;
       }
       if (job.status === 'failed') {
         this.stopTicker();
-        this.setData({ status: 'failed', holding: false, applied: false });
+        this.setData({ status: 'failed', holding: false, applied: false, paused: false });
         return;
       }
-      this.setData({ status: 'running', title: '', subtitle: '', applied: false });
+      this.setData({ status: 'running', title: '', subtitle: '', applied: false, paused: job.pollPaused === true });
       this.tick();
     },
 
@@ -177,6 +182,10 @@ Component<JobCardData, JobCardProps, JobCardMethods, [], JobCardInstance>({
 
     onEditTap() {
       this.triggerEvent('edit');
+    },
+
+    onResumeTap() {
+      this.triggerEvent('resume');
     },
   },
 });

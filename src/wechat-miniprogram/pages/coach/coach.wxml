@@ -48,11 +48,13 @@
             <!-- 赛季计划 job 卡（#1024）：本地合成的进度/结果/失败卡，非 checkpoint 消息 -->
             <plan-job-card
               wx:elif="{{item.planJob}}"
+              id="plan-job-{{item.id}}"
               job="{{item.planJob}}"
               data-id="{{item.id}}"
               bindretry="onPlanJobRetry"
               bindview="onPlanJobView"
               bindedit="onPlanJobEdit"
+              bindresume="onPlanJobResume"
             />
             <!-- 训练计划创建表单卡（#1024）：表单与 CTA 在组件内，提交经 bindsubmit -->
             <block wx:elif="{{item.card && item.card.type === 'master-plan-form'}}">

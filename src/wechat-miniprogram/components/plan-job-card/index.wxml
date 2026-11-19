@@ -17,7 +17,8 @@
         <text class="mpj-stage__label">{{item.label}}</text>
       </view>
     </view>
-    <text class="mpj-note">离开页面后仍会继续，可回来查看进度</text>
+    <text wx:if="{{paused}}" class="mpj-note mpj-note--action" bindtap="onResumeTap">网络不稳定，暂停查询 · 轻触恢复</text>
+    <text wx:else class="mpj-note">离开页面后仍会继续，可回来查看进度</text>
   </block>
 
   <block wx:elif="{{status === 'done'}}">

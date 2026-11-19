@@ -111,7 +111,9 @@ export function planJobTrack(input: PlanJobTrackInput): PlanJobTrackState {
     percent,
     phaseIndex: Math.max(predictedPhase, targetPhase),
     // 真实锚点落后于预估轨道：预估停在本阶段封顶，进度条脉冲提示等待。
-    holding: targetPct + 0.5 < predictedPct,
+    // 第一个锚点（progress>0）到达前不脉冲——开场几秒的预估推进只匀速走，
+    // 否则卡片一出现就闪「等待中」，观感像卡住（#1031）。
+    holding: targetPct > 0 && targetPct + 0.5 < predictedPct,
   };
 }
 
