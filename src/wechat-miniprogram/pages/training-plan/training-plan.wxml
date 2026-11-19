@@ -78,16 +78,23 @@
           <view class="plan-heading__sub">{{planSubtitle}}</view>
         </view>
 
-        <!-- 目标评估（kernel 产物；current 读暂缺则整卡隐藏） -->
+        <!-- 目标评估（kernel 产物 goal_assessment；旧计划缺字段则整卡隐藏） -->
         <view wx:if="{{assessment}}" class="card assess">
-          <view class="assess__title">目标评估 · 有挑战，具备冲击基础</view>
+          <view class="assess__title">目标评估 · {{assessment.levelLabel}}</view>
           <view class="assess__abc">
             <view wx:for="{{assessment.abcTargets}}" wx:key="key" class="assess__abc-item">
               <view class="assess__abc-label">{{item.label}}</view>
               <view class="assess__abc-time">{{item.time}}</view>
             </view>
           </view>
-          <view wx:if="{{assessment.summary}}" class="assess__summary">{{assessment.summary}}</view>
+          <view class="assess__fold" bindtap="onToggleAssess">{{assessExpanded ? '收起评估依据 ▴' : '查看评估依据与备选目标 ▾'}}</view>
+          <view wx:if="{{assessExpanded}}">
+            <view wx:if="{{assessment.summary}}" class="assess__summary">{{assessment.summary}}</view>
+            <view wx:for="{{assessment.abcTargets}}" wx:key="key" class="assess__gate">
+              <view class="assess__gate-label">{{item.label}} · {{item.time}}</view>
+              <view wx:if="{{item.conditionsText}}" class="assess__gate-text">{{item.conditionsText}}</view>
+            </view>
+          </view>
         </view>
 
         <!-- 15周训练节奏（周跑量/长距离切换；柱色=阶段色） -->

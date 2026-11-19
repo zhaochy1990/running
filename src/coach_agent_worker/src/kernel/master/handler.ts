@@ -57,6 +57,9 @@ export function createMasterPlanJobHandler(deps: MasterPlanHandlerDeps): Handler
     content.skeleton = kernelResult.skeleton;
     content.anchor = kernelResult.anchor;
     content.audit = kernelResult.audit;
+    // #1024 详情页评估卡：goal_assessment 与四富字段同模式落库（此前只在
+    // job result_json，current 读拿不到 → 小程序评估卡无数据可渲染）。
+    content.goal_assessment = kernelResult.goalAssessment;
     content.warnings = kernelResult.warnings;
     // 首批完整文档随候选内容传递；只有明确启用时 Go 才能写入正式课表。
     content.weekly_docs = kernelResult.weeklyDocs;

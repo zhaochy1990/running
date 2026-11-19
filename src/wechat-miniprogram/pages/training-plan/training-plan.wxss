@@ -164,9 +164,32 @@ page {
   font-variant-numeric: tabular-nums;
 }
 
+.assess__fold {
+  margin-top: 20rpx;
+  font-size: 23rpx;
+  color: #215d46;
+}
+
 .assess__summary {
   margin-top: 22rpx;
   font-size: 25rpx;
+  line-height: 1.7;
+  color: #42514a;
+}
+
+.assess__gate {
+  margin-top: 20rpx;
+}
+
+.assess__gate-label {
+  font-size: 25rpx;
+  font-weight: 650;
+  color: #215d46;
+}
+
+.assess__gate-text {
+  margin-top: 6rpx;
+  font-size: 23rpx;
   line-height: 1.7;
   color: #42514a;
 }

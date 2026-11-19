@@ -71,13 +71,13 @@ interface AssessmentTargetVM {
   key: string;
   label: string;
   time: string;
+  conditionsText: string;
 }
 
 interface AssessmentVM {
-  title: string;
+  levelLabel: string;
   summary: string;
   abcTargets: AssessmentTargetVM[];
-  gatesText: string;
 }
 
 interface RhythmBarVM {
@@ -189,6 +189,7 @@ interface TrainingPlanPageData {
   planTitle: string;
   planSubtitle: string;
   assessment: AssessmentVM | null;
+  assessExpanded: boolean;
   // 节奏图
   chartMetric: 'km' | 'lr';
   chartHasLr: boolean;
@@ -242,6 +243,7 @@ interface TrainingPlanPageHandlers {
   onBarTap(e: WechatMiniprogram.TouchEvent): void;
   onPhaseTap(e: WechatMiniprogram.TouchEvent): void;
   onToggleFullFocus(): void;
+  onToggleAssess(): void;
   onWeekExpand(e: WechatMiniprogram.TouchEvent): void;
   onDayExpand(e: WechatMiniprogram.TouchEvent): void;
   loadPlan(): Promise<void>;
@@ -490,12 +492,28 @@ function buildReviewDays(sessions: PlannedSession[]): ReviewDayVM[] {
   return out;
 }
 
+/** goal_assessment.level → 用户向中文（P1 文案票可再打磨）。 */
+const ASSESSMENT_LEVEL_LABELS: Record<string, string> = {
+  supported: '有支撑，具备冲击条件',
+  aggressive_but_plausible: '有挑战，具备冲击基础',
+  conditional: '有条件达成，需满足检查点',
+  multi_cycle_required: '建议分多个周期备战',
+  unsafe_or_incompatible: '暂不建议按此目标执行',
+};
+
 function buildAssessment(plan: SeasonPlanContent): AssessmentVM | null {
   const a = (
     plan as SeasonPlanContent & {
       goal_assessment?: {
+        level?: string;
         summary?: string;
-        abc_gates?: Record<string, { target?: { kind?: string; time_seconds?: number | null; label?: string } }>;
+        abc_gates?: Record<
+          string,
+          {
+            target?: { kind?: string; time_seconds?: number | null; label?: string };
+            conditions?: Array<{ criterion?: string }>;
+          }
+        >;
       } | null;
     }
   ).goal_assessment;
@@ -505,18 +523,23 @@ function buildAssessment(plan: SeasonPlanContent): AssessmentVM | null {
     return `${Math.floor(sec / 3600)}:${String(Math.floor((sec % 3600) / 60)).padStart(2, '0')}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
   };
   const abcTargets = ['A', 'B', 'C'].map((key) => {
-    const t = a.abc_gates?.[key]?.target;
+    const gate = a.abc_gates?.[key];
+    const t = gate?.target;
+    const conditionsText = (gate?.conditions ?? [])
+      .map((c) => String(c.criterion || ''))
+      .filter(Boolean)
+      .join('；');
     return {
       key,
       label: `${key}目标`,
       time: t?.kind === 'finish' ? '完赛' : fmt(t?.time_seconds),
+      conditionsText,
     };
   });
   return {
-    title: '目标评估',
+    levelLabel: ASSESSMENT_LEVEL_LABELS[a.level || ''] || '目标评估',
     summary: a.summary || '',
     abcTargets,
-    gatesText: '',
   };
 }
 
@@ -675,6 +698,7 @@ Page<TrainingPlanPageData, TrainingPlanPageHandlers>({
     planTitle: '',
     planSubtitle: '',
     assessment: null,
+    assessExpanded: false,
     chartMetric: 'km',
     chartHasLr: false,
     chartAxis: 100,
@@ -892,6 +916,10 @@ Page<TrainingPlanPageData, TrainingPlanPageHandlers>({
     const stage = this.data.stage;
     if (!stage || !stage.hasFull) return;
     this.setData({ stage: { ...stage, focusExpanded: !stage.focusExpanded } });
+  },
+
+  onToggleAssess() {
+    this.setData({ assessExpanded: !this.data.assessExpanded });
   },
 
   // ---------- 每周安排（懒加载每日课表，#858 PR-E 同源） ----------

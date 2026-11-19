@@ -52,6 +52,8 @@ export interface MasterKernelResult {
   skeleton: import("@stride/contract").LoadPlan;
   anchor: import("@stride/contract").MasterPlanAnchor;
   audit: import("@stride/contract").DanielsAudit;
+  /** 目标评估（#1024 详情页评估卡；finalize 产物本就携带，此前落库被丢）。 */
+  goalAssessment: import("@stride/contract").GoalAssessment;
   /** 首批周课文档（#858 PR-A；老 kernel 产物缺省为空数组）。 */
   weeklyDocs: import("@stride/contract").WeeklyPlan[];
 }
@@ -101,6 +103,7 @@ export async function runMasterKernel(
     skeleton: outcome.artifact.skeleton,
     anchor: outcome.artifact.anchor,
     audit: outcome.artifact.audit,
+    goalAssessment: outcome.artifact.goal_assessment,
     weeklyDocs: outcome.artifact.weekly_docs ?? [],
   };
 }
