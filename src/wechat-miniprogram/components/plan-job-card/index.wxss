@@ -1,0 +1,174 @@
+/* 赛季计划 job 卡（#1024 R3）：卡片外壳与 coach-card 同源（浅色主题令牌，
+   var() 直接引用 styles/theme.wxss，不写兜底值）。 */
+.mpj-card {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 24rpx;
+  background: var(--color-card);
+  border: 1rpx solid rgba(var(--color-overlay-rgb), 0.1);
+  border-radius: 20rpx;
+}
+
+.mpj-head {
+  display: flex;
+  flex-direction: column;
+}
+
+.mpj-badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  font-size: 11px;
+  color: var(--color-accent-deep);
+}
+
+.mpj-badge--error {
+  color: var(--color-warning);
+}
+
+.mpj-dot {
+  width: 12rpx;
+  height: 12rpx;
+  margin-right: 10rpx;
+  background: var(--color-accent);
+  border-radius: 50%;
+}
+
+.mpj-dot--error {
+  background: var(--color-warning);
+}
+
+.mpj-title {
+  margin-top: 12rpx;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 24px;
+  color: var(--color-text-max);
+}
+
+.mpj-subtitle {
+  margin-top: 8rpx;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--color-text-bright);
+}
+
+.mpj-bar-row {
+  display: flex;
+  align-items: center;
+  margin-top: 24rpx;
+}
+
+.mpj-bar {
+  flex: 1;
+  height: 8rpx;
+  background: var(--color-chip);
+  border-radius: 4rpx;
+  overflow: hidden;
+}
+
+.mpj-bar__fill {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: 4rpx;
+  transition: width 0.12s linear;
+}
+
+.mpj-pct {
+  flex-shrink: 0;
+  min-width: 64rpx;
+  margin-left: 16rpx;
+  text-align: right;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 真实进度落后于预估轨道：百分比脉冲提示「还在等真实进度」。 */
+.mpj-pct--holding {
+  animation: mpj-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes mpj-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.mpj-stages {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+  margin-top: 20rpx;
+}
+
+.mpj-stage {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.mpj-stage__dot {
+  width: 12rpx;
+  height: 12rpx;
+  margin-right: 14rpx;
+  border-radius: 50%;
+  background: rgba(var(--color-overlay-rgb), 0.14);
+}
+
+.mpj-stage--active {
+  color: var(--color-text-primary);
+}
+
+.mpj-stage--active .mpj-stage__dot {
+  background: var(--color-accent);
+}
+
+.mpj-stage--done .mpj-stage__dot {
+  background: var(--color-accent-light);
+}
+
+.mpj-note {
+  display: block;
+  margin-top: 20rpx;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--color-text-tertiary);
+}
+
+.mpj-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 24rpx;
+}
+
+.mpj-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1.4;
+  padding: 18rpx 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-on-accent);
+  background: var(--color-accent);
+  border-radius: 14rpx;
+}
+
+.mpj-cta:active {
+  opacity: 0.85;
+}
+
+.mpj-cta__arrow {
+  width: 24rpx;
+  height: 24rpx;
+  margin-left: 4rpx;
+}
+
+.mpj-cta--ghost {
+  flex: 1;
+  color: var(--color-accent-deep);
+  background: rgba(var(--color-accent-rgb), 0.12);
+  border: 1rpx solid rgba(var(--color-accent-rgb), 0.35);
+}

@@ -6,6 +6,8 @@
   "backgroundColor": "#F7F9FB",
   "usingComponents": {
     "mp-html": "/components/mp-html/index",
-    "coach-card": "/components/coach-card/index"
+    "coach-card": "/components/coach-card/index",
+    "master-plan-form-card": "/components/master-plan-form-card/index",
+    "plan-job-card": "/components/plan-job-card/index"
   }
 }

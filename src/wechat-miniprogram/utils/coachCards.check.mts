@@ -211,6 +211,42 @@ const masterPlanCard = {
 // 形状不对 → null（降级 markdown）
 eq(buildCoachCard({ $type: 'master-plan', data: { goal: { race_name: '缺字段' } } }, raceTarget), null, 'master-plan invalid payload');
 
+// 训练计划创建表单卡（#1024 R2）：卡头文案由注册表产出，CTA 在组件内（空按钮）
+{
+  const form = {
+    goal: { race_name: '无锡马拉松', distance: 'FM', race_date: '2027-03-22', target_time: '2:50:00' },
+    availability: { weekly_days: ['tuesday', 'thursday', 'saturday'], preferred_long_run_day: 'saturday' },
+    base: '',
+    restriction: '',
+  };
+  const view = buildCoachCard({ $type: 'master-plan-form', data: form }, raceTarget);
+  eq(view?.title, '创建训练计划', 'master-plan-form title');
+  eq(view?.subtitle, '无锡马拉松 · 全马 · 2027-03-22 · 目标 2:50:00 · 每周 3 练', 'master-plan-form subtitle');
+  eq(view?.badge, '待确认', 'master-plan-form badge');
+  eq(view?.buttonText, '', 'master-plan-form cta lives in the component');
+  eq(view?.url, '', 'master-plan-form is not navigable');
+  eq(view?.inlineBody, false, 'master-plan-form replaces body');
+  eq(view?.data, form, 'master-plan-form data handed to the component');
+
+  // 预填全空：给出确认提示而不是空摘要
+  const blank = buildCoachCard(
+    {
+      $type: 'master-plan-form',
+      data: {
+        goal: { race_name: '', distance: 'HM', race_date: '', target_time: '' },
+        availability: { weekly_days: [], preferred_long_run_day: null },
+        base: '',
+        restriction: '',
+      },
+    },
+    undefined,
+  );
+  eq(blank?.subtitle, '按对话预填，请确认比赛与训练安排', 'master-plan-form blank subtitle');
+
+  // 形状不对 → null（降级 markdown）
+  eq(buildCoachCard({ $type: 'master-plan-form', data: { goal: { race_name: '缺项目' } } }, undefined), null, 'master-plan-form invalid payload');
+}
+
 // 流式 JSON 探测（呈现层占位）：裸 JSON / DeepSeek echo 前缀 / 正文含信封头
 eq(looksLikeJsonText('{"disposition": "return_direct"'), true, 'json prefix detected');
 eq(looksLikeJsonText('Returning structured response: {"disposition":"return_direct",…'), true, 'deepseek echo prefix detected');
