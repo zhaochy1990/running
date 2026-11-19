@@ -8,6 +8,7 @@
 //    （POST /master-plan/apply）在此扩展端点；draft 端点已下线。
 
 import { http, ApiError } from './request';
+import type { Weekday } from '../utils/weekday';
 
 /** 赛季目标（卡片的 goal 摘要）。 */
 export interface MasterPlanCardGoal {
@@ -29,6 +30,92 @@ export interface MasterPlanCard {
    * plan_id），无「应用」CTA。 */
   apply_token?: string;
   content?: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
+// 训练计划创建表单卡（#1024 R2）
+// ---------------------------------------------------------------------------
+
+/** 星期枚举类型（coach_contract WEEKDAY_VALUES 镜像；纯模块在 utils/weekday）。 */
+export type { Weekday } from '../utils/weekday';
+
+/** `master-plan-form` 卡片信封的 data（MasterPlanFormCardSchema 镜像）。
+ * 字段允许空串 = 待用户填写；完整性校验在生成前（提交时）做。 */
+export interface MasterPlanFormCard {
+  goal: {
+    race_name: string;
+    distance: 'FM' | 'HM';
+    /** 空串 = 待用户填写；否则 YYYY-MM-DD。 */
+    race_date: string;
+    /** h:mm:ss 目标成绩；空串 = 顺利完赛。 */
+    target_time: string;
+  };
+  availability: {
+    weekly_days: Weekday[];
+    preferred_long_run_day: Weekday | null;
+  };
+  /** 近期训练基础（自由文本，可空）。 */
+  base: string;
+  /** 伤病或其他限制（自由文本，可空）。 */
+  restriction: string;
+}
+
+/** 预览交接载荷：apply-from-content 的 apply_token + 完整候选 content。 */
+export interface PendingPlanPreview {
+  apply_token: string;
+  content: Record<string, unknown>;
+}
+
+const PENDING_PREVIEW_KEY = 'master-plan.pendingPreview';
+const APPLIED_KEY_PREFIX = 'master-plan.applied.';
+
+/**
+ * 交接候选计划给训练计划页预览（聊天结果卡「查看完整计划」）。content 是
+ * 完整 v2 候选（含首批 weekly_docs，约 100KB），超过 navigateTo URL 的
+ * 现实上限，沿用 setPendingStrategyDraft / setPendingCoachContext 的
+ * storage 交接模式。
+ */
+export function setPendingPlanPreview(payload: PendingPlanPreview): void {
+  try {
+    wx.setStorageSync(PENDING_PREVIEW_KEY, payload);
+  } catch {
+    /* ignore：交接失败由预览页走正常加载兜底 */
+  }
+}
+
+/** 取走预览交接载荷（仅一次）。 */
+export function takePendingPlanPreview(): PendingPlanPreview | null {
+  try {
+    const v = wx.getStorageSync(PENDING_PREVIEW_KEY);
+    if (v && typeof v === 'object') {
+      wx.removeStorageSync(PENDING_PREVIEW_KEY);
+      const payload = v as Partial<PendingPlanPreview>;
+      if (typeof payload.apply_token === 'string' && payload.apply_token && payload.content && typeof payload.content === 'object') {
+        return { apply_token: payload.apply_token, content: payload.content };
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+/** 预览页启用成功后打标（apply_token = 生成该候选的 plan job id）：聊天
+ *  结果卡 onShow 据此把角标回写为「已启用」。 */
+export function markMasterPlanApplied(applyToken: string): void {
+  try {
+    wx.setStorageSync(APPLIED_KEY_PREFIX + applyToken, true);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function isMasterPlanApplied(applyToken: string): boolean {
+  try {
+    return wx.getStorageSync(APPLIED_KEY_PREFIX + applyToken) === true;
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------

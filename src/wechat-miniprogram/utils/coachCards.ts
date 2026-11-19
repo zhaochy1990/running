@@ -11,7 +11,7 @@
 // parseLeakedEnvelope 用同一套形状校验把这类历史文本捞回成卡片信封。
 
 import type { CoachSessionTarget } from '../services/coach';
-import type { MasterPlanCard } from '../services/master-plan';
+import type { MasterPlanCard, MasterPlanFormCard } from '../services/master-plan';
 import type { RaceStrategy } from '../services/race-strategy';
 import type { CustomWorkoutCard, WorkoutOpCard } from '../types/plan';
 
@@ -70,6 +70,27 @@ function isMasterPlanCardLike(value: unknown): value is MasterPlanCard {
     goal != null && typeof goal === 'object' &&
     typeof goal.race_name === 'string' && goal.race_name.length > 0 &&
     typeof v.total_weeks === 'number' && v.total_weeks > 0
+  );
+}
+
+/** 表单卡内容的形状校验（MasterPlanFormCardSchema 的鸭子类型版）：字段允许
+ * 空串（待用户填写），只校验结构与枚举。 */
+function isMasterPlanFormCardLike(value: unknown): value is MasterPlanFormCard {
+  if (value == null || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  const goal = v.goal as Record<string, unknown> | undefined;
+  const availability = v.availability as Record<string, unknown> | undefined;
+  return (
+    goal != null && typeof goal === 'object' &&
+    typeof goal.race_name === 'string' &&
+    (goal.distance === 'FM' || goal.distance === 'HM') &&
+    typeof goal.race_date === 'string' &&
+    typeof goal.target_time === 'string' &&
+    availability != null && typeof availability === 'object' &&
+    Array.isArray(availability.weekly_days) &&
+    // preferred_long_run_day: weekday | null；未给出按 null 容忍（旧信封）。
+    typeof v.base === 'string' &&
+    typeof v.restriction === 'string'
   );
 }
 
@@ -135,6 +156,25 @@ export function buildCoachCard(card: unknown, target: CoachSessionTarget | undef
         ? `/pages/race-center/strategy/strategy?id=${raceId}`
         : '/pages/race-center/race-center',
       data: strategy,
+      inlineBody: false,
+    };
+  }
+  if (wire.$type === 'master-plan-form') {
+    if (!isMasterPlanFormCardLike(wire.data)) return null;
+    const form = wire.data;
+    // 交互表单卡（#1024 R2）：卡头文案由注册表产出，表单本体与「生成我的
+    // 训练计划」CTA 在 components/master-plan-form-card 内（提交不经
+    // onCardCta），聊天页只按 type 换渲染器。
+    return {
+      type: wire.$type,
+      icon: '/assets/icons/calendar_month.svg',
+      title: '创建训练计划',
+      subtitle: masterPlanFormSubtitle(form),
+      badge: '待确认',
+      buttonText: '',
+      secondaryButtonText: '',
+      url: '',
+      data: form,
       inlineBody: false,
     };
   }
@@ -246,6 +286,19 @@ function masterPlanSubtitle(plan: MasterPlanCard): string {
   const distance = plan.goal.distance === 'FM' ? '全马' : '半马';
   const target = plan.goal.target_time ? `，目标 ${plan.goal.target_time}` : '';
   return `${plan.goal.race_name}（${distance}） · ${plan.total_weeks} 周备赛${target}`;
+}
+
+/** 表单卡副标题 = 预填摘要；空字段按「待填写」跳过，全空时给出确认提示。 */
+export function masterPlanFormSubtitle(form: MasterPlanFormCard): string {
+  const parts: string[] = [];
+  if (form.goal.race_name.trim()) parts.push(form.goal.race_name.trim());
+  parts.push(form.goal.distance === 'FM' ? '全马' : '半马');
+  if (form.goal.race_date.trim()) parts.push(form.goal.race_date.trim());
+  if (form.goal.target_time.trim()) parts.push(`目标 ${form.goal.target_time.trim()}`);
+  const weekly = form.availability.weekly_days.length;
+  if (weekly > 0) parts.push(`每周 ${weekly} 练`);
+  if (parts.length <= 1) return '按对话预填，请确认比赛与训练安排';
+  return parts.join(' · ');
 }
 
 /**

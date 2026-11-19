@@ -1,0 +1,147 @@
+<!-- 赛季训练计划创建表单卡（#1024 R2）：卡头由注册表文案驱动，双 tab 表单，
+     提交即确认（生成走异步 plan job，进度/结果卡由 coach 页本地合成）。 -->
+<view class="mpf-card">
+  <view class="mpf-head">
+    <image wx:if="{{icon}}" class="mpf-head__icon" src="{{icon}}" mode="aspectFit" />
+    <view class="mpf-head__body">
+      <view class="mpf-head__row">
+        <text class="mpf-head__title">{{title}}</text>
+        <text wx:if="{{submitted}}" class="mpf-head__badge">已提交</text>
+        <text wx:elif="{{badge}}" class="mpf-head__badge">{{badge}}</text>
+      </view>
+      <text class="mpf-head__subtitle">{{subtitle}}</text>
+    </view>
+  </view>
+
+  <block wx:if="{{!submitted}}">
+    <view class="mpf-tabs">
+      <view class="mpf-tab {{activeTab === 'goal' ? 'mpf-tab--active' : ''}}" data-tab="goal" bindtap="onTabTap">比赛目标</view>
+      <view class="mpf-tab {{activeTab === 'train' ? 'mpf-tab--active' : ''}}" data-tab="train" bindtap="onTabTap">训练安排</view>
+    </view>
+
+    <view wx:if="{{activeTab === 'goal'}}" class="mpf-section">
+      <view class="mpf-field">
+        <view class="mpf-label">赛事名称<text class="mpf-required">必填</text></view>
+        <input
+          class="mpf-input {{errorRaceName ? 'mpf-input--error' : ''}}"
+          value="{{raceName}}"
+          placeholder="如：无锡马拉松"
+          placeholder-class="mpf-placeholder"
+          maxlength="60"
+          cursor-spacing="24"
+          bindinput="onRaceNameInput"
+        />
+        <text wx:if="{{errorRaceName}}" class="mpf-error">请填写赛事名称</text>
+      </view>
+
+      <view class="mpf-field">
+        <view class="mpf-label">项目</view>
+        <picker mode="selector" range="{{distanceOptions}}" value="{{distanceIndex}}" bindchange="onDistanceChange">
+          <view class="mpf-input mpf-input--picker">
+            <text>{{distanceOptions[distanceIndex]}}</text>
+            <image class="mpf-caret" src="/assets/icons/chevron_down_round.svg" mode="aspectFit" />
+          </view>
+        </picker>
+      </view>
+
+      <view class="mpf-field">
+        <view class="mpf-label">比赛日期<text class="mpf-required">必填</text></view>
+        <picker mode="date" value="{{raceDate}}" start="{{todayYmd}}" bindchange="onDateChange">
+          <view class="mpf-input mpf-input--picker {{raceDateError ? 'mpf-input--error' : ''}}">
+            <text class="{{raceDate ? '' : 'mpf-placeholder'}}">{{raceDate || '选择比赛日期'}}</text>
+            <image class="mpf-caret" src="/assets/icons/chevron_down_round.svg" mode="aspectFit" />
+          </view>
+        </picker>
+        <text wx:if="{{raceDateError}}" class="mpf-error">{{raceDateError}}</text>
+      </view>
+
+      <view class="mpf-field">
+        <view class="mpf-label">目标成绩<text class="mpf-label__hint">不设成绩也能生成</text></view>
+        <view wx:if="{{!finishOnly}}" class="mpf-time">
+          <picker class="mpf-time__col" mode="selector" range="{{hourRange}}" value="{{targetHourIndex}}" bindchange="onHourChange">
+            <view class="mpf-time__value">{{targetHour}}</view>
+            <text class="mpf-time__unit">时</text>
+          </picker>
+          <text class="mpf-time__colon">:</text>
+          <picker class="mpf-time__col" mode="selector" range="{{minuteRange}}" value="{{targetMinute}}" bindchange="onMinuteChange">
+            <view class="mpf-time__value">{{targetMinute}}</view>
+            <text class="mpf-time__unit">分</text>
+          </picker>
+          <text class="mpf-time__colon">:</text>
+          <picker class="mpf-time__col" mode="selector" range="{{secondRange}}" value="{{targetSecond}}" bindchange="onSecondChange">
+            <view class="mpf-time__value">{{targetSecond}}</view>
+            <text class="mpf-time__unit">秒</text>
+          </picker>
+        </view>
+        <view class="mpf-finish" bindtap="onFinishOnlyToggle">
+          <view class="mpf-check {{finishOnly ? 'mpf-check--on' : ''}}"></view>
+          <text>不设成绩目标，顺利完赛就好</text>
+        </view>
+      </view>
+    </view>
+
+    <view wx:else class="mpf-section">
+      <view class="mpf-field">
+        <view class="mpf-label">每周可训练日<text class="mpf-required">必填</text></view>
+        <view class="mpf-days">
+          <view
+            wx:for="{{dayChips}}"
+            wx:key="value"
+            class="mpf-day {{item.selected ? 'mpf-day--on' : ''}} {{errorDays ? 'mpf-day--error' : ''}}"
+            data-value="{{item.value}}"
+            bindtap="onDayTap"
+          >{{item.label}}</view>
+        </view>
+        <text wx:if="{{errorDays}}" class="mpf-error">请至少选择一个每周可训练日</text>
+      </view>
+
+      <view class="mpf-field">
+        <view class="mpf-label">长跑日</view>
+        <picker mode="selector" range="{{longRunOptions}}" value="{{longRunIndex}}" bindchange="onLongRunChange">
+          <view class="mpf-input mpf-input--picker {{longRunError ? 'mpf-input--error' : ''}}">
+            <text>{{longRunOptions[longRunIndex]}}</text>
+            <image class="mpf-caret" src="/assets/icons/chevron_down_round.svg" mode="aspectFit" />
+          </view>
+        </picker>
+        <text wx:if="{{longRunError}}" class="mpf-error">{{longRunError}}</text>
+      </view>
+
+      <view class="mpf-field">
+        <view class="mpf-label">近期训练基础</view>
+        <input
+          class="mpf-input"
+          value="{{base}}"
+          placeholder="如：每周约 40 公里，最长跑过 25 公里"
+          placeholder-class="mpf-placeholder"
+          maxlength="200"
+          cursor-spacing="24"
+          bindinput="onBaseInput"
+        />
+      </view>
+
+      <view class="mpf-field">
+        <view class="mpf-label">伤病或其他限制</view>
+        <textarea
+          class="mpf-textarea"
+          value="{{restriction}}"
+          placeholder="如：膝盖旧伤、工作日只能晚上练"
+          placeholder-class="mpf-placeholder"
+          maxlength="200"
+          auto-height
+          cursor-spacing="24"
+          bindinput="onRestrictionInput"
+        />
+      </view>
+    </view>
+
+    <view class="mpf-foot">
+      <view class="mpf-submit" bindtap="onSubmitTap">生成我的训练计划</view>
+      <text class="mpf-note">生成约需 4–7 分钟，离开页面也会继续</text>
+    </view>
+  </block>
+
+  <view wx:else class="mpf-done">
+    <text class="mpf-done__text">信息已提交，正在为你生成训练计划。</text>
+    <text class="mpf-done__hint">想调整目标，可点结果卡上的「修改目标」。</text>
+  </view>
+</view>

@@ -3,10 +3,15 @@ import type { CoachHistoryMessage, CoachSessionTarget, PendingCoachContext, Coac
 import {
   applyMasterPlanFromContent,
   getCurrentMasterPlan,
+  isMasterPlanApplied,
+  setPendingPlanPreview,
   type CurrentSeasonPlan,
   type MasterPlanCard,
+  type MasterPlanFormCard,
   type MasterPlanReplacementExpectation,
 } from '../../services/master-plan';
+import { enqueueGenerateMasterPlan, pollPlanJob, randomRequestId } from '../../services/plan-jobs';
+import type { PlanJobPollResponse } from '../../services/plan-jobs';
 import { ApiError } from '../../services/request';
 import {
   deleteCustomWorkout,
@@ -22,6 +27,19 @@ import { openLogin } from '../../utils/authGate';
 import { buildCoachCard, looksLikeJsonText, parseLeakedRaceStrategyEnvelope, shanghaiMonthDayLabel, type CoachCardView } from '../../utils/coachCards';
 import { markdownToHtml } from '../../utils/markdown';
 import { initialWeeksNotice } from '../../utils/masterPlanApplyResult';
+import {
+  buildMasterPlanJobRequest,
+  listPlanJobs,
+  planJobResultContent,
+  planJobResultView,
+  readPlanJob,
+  removePlanJob,
+  savePlanJob,
+  type PlanJobCardView,
+  type PlanJobRecord,
+} from '../../utils/planJobCards';
+import { PLAN_JOB_POLL_MS } from '../../utils/planJobProgress';
+import { epochToShanghaiHm } from '../../utils/date';
 import { friendlyMessage } from '../../utils/friendlyError';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 import { theme } from '../../utils/theme';
@@ -39,6 +57,10 @@ interface CoachMessage {
   // user 消息：本轮 client_turn_id（重试时复用）；failed 表示发送失败需重试。
   clientTurnId?: string;
   failed?: boolean;
+  // 本地合成的赛季计划 job 卡（进度/结果/失败，非 checkpoint 消息；#1024
+  // R3）。job 状态以 plan-jobs 轮询为真源，卡面由 components/plan-job-card
+  // 渲染；不可多选转发（不在服务端投影里）。
+  planJob?: PlanJobCardView;
   // 该消息在服务端历史投影数组中的序号（分享创建 indices 用，devops#717）。
   // undefined = 不在服务端投影（欢迎语 / 失败 / 生成中），不可多选转发。
   shareIndex?: number;
@@ -86,6 +108,69 @@ let streamScrollTick = 0;
 // master-plan 应用进行中的 apply_token（串行化动作，防双击重复提交）。
 let planActionInFlight = '';
 
+// ── 赛季计划 job 卡（#1024 PR-2）───────────────────────────────────────────
+// job 卡是本地合成消息：轮询定时器按 job 挂在模块级 Map（页面只有一个
+// 实例），页面卸载全部清掉；pageActive 拦住卸载后才返回的请求回调（不能再
+// setData）。表单投递串行化，防双击重复创建 job。
+let coachPageActive = false;
+const planJobTimers = new Map<string, ReturnType<typeof setTimeout>>();
+let planFormSubmitInFlight = false;
+// storage 写失败（配额/隐私模式）时的本页内存副本：进度卡照常工作，重启后才会丢。
+const planJobCache = new Map<string, PlanJobRecord>();
+// 连续轮询失败计数（指数退避 + 上限，避免网络异常时 2.5s 无限重试）。
+const planJobPollFailures = new Map<string, number>();
+const MAX_PLAN_JOB_POLL_FAILURES = 6;
+
+function clearPlanJobTimers(): void {
+  for (const timer of planJobTimers.values()) clearTimeout(timer);
+  planJobTimers.clear();
+}
+
+/** 读卡：storage 优先，失败时回落到本页内存副本。 */
+function readPlanJobCached(jobId: string): PlanJobRecord | null {
+  return readPlanJob(jobId) ?? planJobCache.get(jobId) ?? null;
+}
+
+/** 更新卡：写内存副本 + best-effort 落 storage（storage 失败不阻断本页进度）。 */
+function updatePlanJobRecord(jobId: string, patch: Partial<PlanJobRecord>): PlanJobRecord | null {
+  const current = readPlanJobCached(jobId);
+  if (!current) return null;
+  const next: PlanJobRecord = { ...current, ...patch, jobId: current.jobId };
+  planJobCache.set(jobId, next);
+  savePlanJob(next);
+  return next;
+}
+
+/** 时间戳 → 上海时区 HH:mm（本地合成消息的展示时间，HARD 时区规则）。 */
+function hhmm(date: Date = new Date()): string {
+  return epochToShanghaiHm(date.getTime());
+}
+
+/** 本地 job 记录 → 卡片视图（done 角标按预览页启用标记回写）。 */
+function planJobCardView(record: PlanJobRecord): PlanJobCardView {
+  return {
+    jobId: record.jobId,
+    status: record.status,
+    stage: record.stage,
+    progressPct: record.progressPct,
+    createdAt: record.createdAt,
+    title: record.resultTitle,
+    subtitle: record.resultSubtitle,
+    applied: record.status === 'done' && isMasterPlanApplied(record.jobId),
+  };
+}
+
+function planJobMessage(record: PlanJobRecord): CoachMessage {
+  return {
+    id: ++seq,
+    role: 'assistant',
+    content: '训练计划生成',
+    ts: hhmm(new Date(record.createdAt)),
+    planJob: planJobCardView(record),
+    selectable: false,
+  };
+}
+
 // ── 多选转发（devops#717）────────────────────────────────────────────────────
 // 单次分享条数上限（与服务端 422 口径一致）。
 const MAX_SHARE_MESSAGES = 30;
@@ -113,12 +198,6 @@ function interruptText(interrupt: unknown): string | undefined {
 }
 
 /** 本地消息的展示时间戳（HH:mm）。 */
-function nowHhmm(): string {
-  const d = new Date();
-  const pad = (n: number): string => (n < 10 ? `0${n}` : String(n));
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
 /** 清掉一组消息的勾选态（退出选择模式 / 重新全选前的复位）。 */
 function clearSelectionFlags(messages: CoachMessage[]): CoachMessage[] {
   return messages.map((m) => (m.selected ? { ...m, selected: false } : m));
@@ -297,6 +376,20 @@ interface CoachPageHandlers {
     expectation?: MasterPlanReplacementExpectation,
   ): Promise<void>;
   markMasterPlanCard(messageId: number, badge: string): void;
+  // 赛季计划 job 卡（#1024 PR-2）：表单提交 → plan-jobs 投递 → 轮询刷卡。
+  onPlanFormSubmit(e: WechatMiniprogram.CustomEvent): void;
+  schedulePlanJobPoll(jobId: string, delayMs?: number): void;
+  pollPlanJobOnce(jobId: string): Promise<void>;
+  applyPlanJobUpdate(record: PlanJobRecord): void;
+  /** 把本会话的本地 job 卡同步进消息列表（补卡/刷新/恢复轮询）。 */
+  syncPlanJobCards(sessionId: string, base: CoachMessage[]): CoachMessage[];
+  /** onShow：同步本地 job 卡（补卡 + 回写「已启用」角标 + 恢复在途轮询）。 */
+  refreshPlanJobCards(): void;
+  onPlanJobRetry(e: WechatMiniprogram.TouchEvent): void;
+  onPlanJobView(e: WechatMiniprogram.TouchEvent): void;
+  onPlanJobEdit(e: WechatMiniprogram.TouchEvent): void;
+  /** 当前会话是否有在跑的计划生成任务（提交/重试共用护栏）。 */
+  hasRunningPlanJob(): boolean;
   fetchCurrentPlanSafely(userId: string): Promise<CurrentSeasonPlan | null | 'unknown'>;
   confirmReplacePlan(uncertain: boolean): Promise<boolean>;
   // 流式回调（事件驱动，页面内以 this. 调用）。
@@ -566,6 +659,7 @@ Page<CoachPageData, CoachPageHandlers>({
   },
 
   onLoad(options: Record<string, string | undefined> = {}) {
+    coachPageActive = true;
     const sessions = readSessions();
     const currentSessionId = readCurrentSessionId();
     const current = sessions.find((s) => s.id === currentSessionId);
@@ -650,9 +744,20 @@ Page<CoachPageData, CoachPageHandlers>({
     if (historySyncFailed) {
       void this.loadSession(this.data.currentSessionId);
     }
+    // 赛季计划 job 卡（#1024）：补回本会话的本地卡、回写预览页启用后的
+    // 「已启用」角标、并恢复在途 job 的轮询（离开页面期间状态一直由服务端推进）。
+    this.refreshPlanJobCards();
+  },
+
+  onHide() {
+    // tabBar 页切走只触发 onHide（不卸载）：停掉轮询，避免隐藏页持续请求；
+    // 服务端继续推进，回来 onShow 的 refreshPlanJobCards 会立即拉齐。
+    clearPlanJobTimers();
   },
 
   onUnload() {
+    coachPageActive = false;
+    clearPlanJobTimers();
     // 离开页面时中止在途流式请求，避免后台继续占用连接/接收 chunk。
     this.resetStream();
     if (shareCoverTimer != null) {
@@ -746,6 +851,8 @@ Page<CoachPageData, CoachPageHandlers>({
       } catch {
         // 对账失败按未保存渲染（旧版 Go api 无 save_token 时同样静默降级）。
       }
+      // 本地 job 卡（非 checkpoint 消息）挂在消息尾部，按创建时间序。
+      msgs = this.syncPlanJobCards(sessionId, msgs);
       historySyncFailed = false;
       this.setData({
         messages: msgs,
@@ -818,7 +925,8 @@ Page<CoachPageData, CoachPageHandlers>({
     const id = e.currentTarget.dataset.id as number;
     if (typeof id !== 'number') return;
     const message = this.data.messages.find((m) => m.id === id);
-    if (message?.card) return;
+    // 卡片消息与本地 job 卡无全文可复制（与 wxml 隐藏条件同款闸门）。
+    if (message?.card || message?.planJob) return;
     this.copyMessageText(id);
   },
 
@@ -1321,6 +1429,308 @@ Page<CoachPageData, CoachPageHandlers>({
     });
   },
 
+  // ── 赛季计划 job 卡（#1024 PR-2）─────────────────────────────────────────
+
+  /** 当前会话是否有在跑的计划生成任务（提交/重试共用护栏）。 */
+  hasRunningPlanJob(): boolean {
+    return this.data.messages.some((m) => m.planJob?.status === 'running');
+  },
+
+  /**
+   * 表单卡提交（组件已完成必填校验）：组装 kernel request → 投 plan-jobs
+   * （confirmations 全真 = 提交即确认）→ 本地进度卡 + 轮询。
+   * idempotency_key 每次提交独立；失败重试复用记录里的同一键。
+   */
+  async onPlanFormSubmit(e: WechatMiniprogram.CustomEvent<{ form: MasterPlanFormCard }>) {
+    const messageId = e.currentTarget.dataset.id as number | undefined;
+    const form = e.detail?.form;
+    if (!form) return;
+    const failForm = (): void => {
+      if (typeof messageId !== 'number') return;
+      const component = this.selectComponent(`#plan-form-${messageId}`) as { submitFailed?: () => void } | null;
+      component?.submitFailed?.();
+    };
+    if (planFormSubmitInFlight) {
+      wx.showToast({ title: '正在提交，请稍候', icon: 'none' });
+      failForm();
+      return;
+    }
+    if (this.data.guest) {
+      wx.showToast({ title: '请先登录后再生成计划', icon: 'none' });
+      failForm();
+      return;
+    }
+    const userId = userStore.getState().user?.id;
+    if (!userId) {
+      wx.showToast({ title: '请先登录后再生成计划', icon: 'none' });
+      failForm();
+      return;
+    }
+    // 同会话同时只跑一个生成任务：并发候选会互相争抢 apply，且进度卡会叠堆。
+    if (this.hasRunningPlanJob()) {
+      wx.showToast({ title: '已有训练计划在生成中，请稍候', icon: 'none' });
+      failForm();
+      return;
+    }
+    const sessionId = this.data.currentSessionId;
+    planFormSubmitInFlight = true;
+    try {
+      const idempotencyKey = randomRequestId(`mp-plan-${userId.slice(0, 8)}`);
+      const request = buildMasterPlanJobRequest(form, randomRequestId('mp-plan-req'));
+      const res = await enqueueGenerateMasterPlan({ request, idempotencyKey });
+      const record: PlanJobRecord = {
+        jobId: res.job_id,
+        sessionId,
+        createdAt: Date.now(),
+        status: 'running',
+        stage: '',
+        progressPct: 0,
+        idempotencyKey,
+        request,
+        ...(typeof messageId === 'number' ? { formMessageId: messageId } : {}),
+      };
+      planJobCache.set(record.jobId, record);
+      if (!savePlanJob(record)) {
+        wx.showToast({ title: '本地进度记录保存失败，重启后可能无法恢复', icon: 'none' });
+      }
+      // 投递期间切走了会话：卡只落 storage，回到该会话时 syncPlanJobCards 补回。
+      if (!coachPageActive || this.data.currentSessionId !== sessionId) return;
+      const msg = planJobMessage(record);
+      this.setData({ messages: [...this.data.messages, msg], scrollIntoId: `msg-${msg.id}` });
+      this.schedulePlanJobPoll(record.jobId);
+    } catch (err) {
+      console.error('[coach] 训练计划投递失败', err);
+      wx.showToast({ title: '提交失败，请稍后再试', icon: 'none' });
+      failForm();
+    } finally {
+      planFormSubmitInFlight = false;
+    }
+  },
+
+  /** 轮询接力：默认 2.5s 一次（定时器按 job 挂模块级 Map）。已排程时不重置，
+   *  避免反复 onShow 把下一次 poll 无限后移；网络异常时用退避延迟。 */
+  schedulePlanJobPoll(jobId: string, delayMs: number = PLAN_JOB_POLL_MS) {
+    if (!coachPageActive) return;
+    if (planJobTimers.has(jobId)) return;
+    planJobTimers.set(
+      jobId,
+      setTimeout(() => {
+        planJobTimers.delete(jobId);
+        void this.pollPlanJobOnce(jobId);
+      }, delayMs),
+    );
+  },
+
+  /**
+   * 拉一次 job：running → 刷新锚点继续轮询；done → 结果卡；failed → 失败
+   * 卡（请求保留，重试复用同一 idempotency_key）。网络抖动不算失败——卡面
+   * 按预估值停住，下一轮继续（服务端才是真源）。
+   */
+  async pollPlanJobOnce(jobId: string) {
+    const record = readPlanJobCached(jobId);
+    if (!record || record.status !== 'running') return;
+    let res: PlanJobPollResponse;
+    try {
+      res = await pollPlanJob(jobId);
+    } catch (err) {
+      // 网络抖动：卡面按预估值停住，指数退避（2.5→5→10s 封顶）后继续；
+      // 连续失败到上限或 job 不存在（404，如换账号）则落失败卡，不无限重试。
+      const failures = (planJobPollFailures.get(jobId) ?? 0) + 1;
+      planJobPollFailures.set(jobId, failures);
+      const gone = err instanceof ApiError && err.statusCode === 404;
+      if (gone || failures >= MAX_PLAN_JOB_POLL_FAILURES) {
+        const updated = updatePlanJobRecord(jobId, { status: 'failed' });
+        if (updated) this.applyPlanJobUpdate(updated);
+        return;
+      }
+      console.warn('[coach] plan job 轮询失败，稍后重试', err);
+      this.schedulePlanJobPoll(jobId, Math.min(PLAN_JOB_POLL_MS * 2 ** Math.min(failures, 2), 10_000));
+      return;
+    }
+    if (!coachPageActive) return;
+    planJobPollFailures.delete(jobId);
+    if (res.status === 'done') {
+      const view = planJobResultView(planJobResultContent(res.result_json));
+      const updated = updatePlanJobRecord(jobId, {
+        status: 'done',
+        stage: res.stage || 'outputting',
+        progressPct: 100,
+        resultTitle: view?.title ?? record.resultTitle,
+        resultSubtitle: view?.subtitle ?? record.resultSubtitle,
+      });
+      if (updated) this.applyPlanJobUpdate(updated);
+      return;
+    }
+    if (res.status === 'failed') {
+      const updated = updatePlanJobRecord(jobId, {
+        status: 'failed',
+        stage: res.stage || record.stage,
+        progressPct: res.progress_pct ?? record.progressPct,
+      });
+      if (updated) this.applyPlanJobUpdate(updated);
+      return;
+    }
+    const updated = updatePlanJobRecord(jobId, {
+      status: 'running',
+      stage: res.stage || record.stage,
+      progressPct: res.progress_pct ?? record.progressPct,
+    });
+    if (updated) this.applyPlanJobUpdate(updated);
+    this.schedulePlanJobPoll(jobId);
+  },
+
+  /** 把 storage 里的最新状态刷到当前会话的消息上（别的会话只落 storage）。 */
+  applyPlanJobUpdate(record: PlanJobRecord) {
+    const index = this.data.messages.findIndex((m) => m.planJob?.jobId === record.jobId);
+    if (index < 0) return;
+    const messageId = this.data.messages[index].id;
+    this.setData({
+      [`messages[${index}].planJob`]: planJobCardView(record),
+      ...(record.status !== 'running' ? { scrollIntoId: `msg-${messageId}` } : {}),
+    });
+  },
+
+  /**
+   * 把本会话的本地 job 卡同步进消息列表：缺失的补到尾部（按创建时间序）、
+   * 已有的刷新状态/「已启用」角标、running 的恢复轮询。历史加载与 onShow
+   * 共用这一份实现。
+   */
+  syncPlanJobCards(sessionId: string, base: CoachMessage[]): CoachMessage[] {
+    const records = listPlanJobs().filter((job) => job.sessionId === sessionId);
+    if (records.length === 0) return base;
+    const out = [...base];
+    for (const record of records) {
+      const index = out.findIndex((m) => m.planJob?.jobId === record.jobId);
+      const next = planJobCardView(record);
+      if (index < 0) {
+        out.push(planJobMessage(record));
+      } else if (JSON.stringify(next) !== JSON.stringify(out[index].planJob)) {
+        out[index] = { ...out[index], planJob: next };
+      }
+      if (record.status === 'running') this.schedulePlanJobPoll(record.jobId);
+    }
+    return out;
+  },
+
+  /** onShow：同步本地 job 卡（有变化才 setData）。 */
+  refreshPlanJobCards() {
+    const messages = this.syncPlanJobCards(this.data.currentSessionId, this.data.messages);
+    if (messages.length !== this.data.messages.length || messages.some((m, i) => m !== this.data.messages[i])) {
+      this.setData({ messages });
+    }
+  },
+
+  /**
+   * 失败卡重试：用同一 request **新** idempotency_key 重投。不能用原 key——
+   * 服务端按 (user, key) 去重，终态 failed 行命中后直接返回原 job 且不再
+   * publish（coach_agent_worker job/enqueue），同 key 重试是空操作。
+   */
+  async onPlanJobRetry(e: WechatMiniprogram.TouchEvent) {
+    const id = e.currentTarget.dataset.id as number | undefined;
+    const message = typeof id === 'number' ? this.data.messages.find((m) => m.id === id) : undefined;
+    const jobId = message?.planJob?.jobId;
+    if (!jobId) return;
+    if (planFormSubmitInFlight) {
+      wx.showToast({ title: '正在提交，请稍候', icon: 'none' });
+      return;
+    }
+    if (this.hasRunningPlanJob()) {
+      wx.showToast({ title: '已有训练计划在生成中，请稍候', icon: 'none' });
+      return;
+    }
+    const record = readPlanJobCached(jobId);
+    if (!record) {
+      wx.showToast({ title: '这张卡已失效，请重新填写目标', icon: 'none' });
+      return;
+    }
+    planFormSubmitInFlight = true;
+    try {
+      const idempotencyKey = randomRequestId('mp-plan-retry');
+      const res = await enqueueGenerateMasterPlan({ request: record.request, idempotencyKey });
+      if (res.job_id !== jobId) removePlanJob(jobId);
+      planJobCache.delete(jobId);
+      const next: PlanJobRecord = {
+        ...record,
+        jobId: res.job_id,
+        idempotencyKey,
+        createdAt: Date.now(),
+        status: 'running',
+        stage: '',
+        progressPct: 0,
+        resultTitle: undefined,
+        resultSubtitle: undefined,
+      };
+      planJobCache.set(next.jobId, next);
+      savePlanJob(next);
+      planJobPollFailures.delete(next.jobId);
+      if (!coachPageActive) return;
+      const index = this.data.messages.findIndex((m) => m.id === id);
+      if (index >= 0) {
+        this.setData({
+          [`messages[${index}].planJob`]: planJobCardView(next),
+          scrollIntoId: `msg-${id}`,
+        });
+      }
+      this.schedulePlanJobPoll(next.jobId);
+    } catch (err) {
+      console.error('[coach] 训练计划重试失败', err);
+      wx.showToast({ title: '重试失败，请稍后再试', icon: 'none' });
+    } finally {
+      planFormSubmitInFlight = false;
+    }
+  },
+
+  /**
+   * 查看完整计划：按 job 现取 result_json.content（服务端 done 任务保留结果），
+   * 经 storage 交接给训练计划页预览模式。content 必须原样传递——
+   * Go verifyCandidate 用 DeepEqual 比对 job 结果，且 apply_token 必须等于
+   * 候选 job id（candidate_job_id），否则应用时 422 invalid_candidate。
+   */
+  async onPlanJobView(e: WechatMiniprogram.TouchEvent) {
+    const id = e.currentTarget.dataset.id as number | undefined;
+    const message = typeof id === 'number' ? this.data.messages.find((m) => m.id === id) : undefined;
+    const jobId = message?.planJob?.jobId;
+    if (!jobId) return;
+    wx.showLoading({ title: '加载计划…', mask: true });
+    try {
+      const res = await pollPlanJob(jobId);
+      const content = planJobResultContent(res.result_json);
+      if (!content) {
+        wx.showToast({ title: '计划结果暂不可用，请稍后再试', icon: 'none' });
+        return;
+      }
+      setPendingPlanPreview({ apply_token: jobId, content });
+      wx.navigateTo({ url: '/pages/training-plan/training-plan?preview=1' });
+    } catch (err) {
+      console.error('[coach] 拉取计划结果失败', err);
+      wx.showToast({ title: '计划结果加载失败，请稍后再试', icon: 'none' });
+    } finally {
+      wx.hideLoading();
+    }
+  },
+
+  /**
+   * 修改目标：优先回到生成这张卡的那张表单（record.formMessageId；重启后
+   * 消息 id 会重排，故为 best-effort），找不到再回落最近一张表单卡。
+   */
+  onPlanJobEdit(e: WechatMiniprogram.TouchEvent) {
+    const id = e.currentTarget.dataset.id as number | undefined;
+    const message = typeof id === 'number' ? this.data.messages.find((m) => m.id === id) : undefined;
+    const record = message?.planJob ? readPlanJobCached(message.planJob.jobId) : null;
+    const boundId = record?.formMessageId;
+    const bound = typeof boundId === 'number'
+      ? this.data.messages.find((m) => m.id === boundId && m.card?.type === 'master-plan-form')
+      : undefined;
+    const formMessage = bound ?? [...this.data.messages].reverse().find((m) => m.card?.type === 'master-plan-form');
+    if (!formMessage) {
+      wx.showToast({ title: '当前对话里没有可修改的表单', icon: 'none' });
+      return;
+    }
+    this.setData({ scrollIntoId: `msg-${formMessage.id}` });
+    const component = this.selectComponent(`#plan-form-${formMessage.id}`) as { reopenForm?: () => void } | null;
+    component?.reopenForm?.();
+  },
+
   async onSend() {
     const text = this.data.input.trim();
     if (!text || this.data.sending) return;
@@ -1331,8 +1741,8 @@ Page<CoachPageData, CoachPageHandlers>({
       this.setData({
         messages: [
           ...this.data.messages,
-          { id: ++seq, role: 'user', content: text, ts: nowHhmm() },
-          ...replies.map((m) => ({ ...m, ts: nowHhmm() })),
+          { id: ++seq, role: 'user', content: text, ts: hhmm() },
+          ...replies.map((m) => ({ ...m, ts: hhmm() })),
         ],
         input: '',
         scrollIntoId: `msg-${replies[replies.length - 1].id}`,
@@ -1366,7 +1776,7 @@ Page<CoachPageData, CoachPageHandlers>({
 
     const clientTurnId = nextClientTurnId();
     // user 气泡先占位（无投影序号，流结束确认落库后由 finishStream 领号）。
-    const userMsg: CoachMessage = { id: ++seq, role: 'user', content: text, clientTurnId, ts: nowHhmm() };
+    const userMsg: CoachMessage = { id: ++seq, role: 'user', content: text, clientTurnId, ts: hhmm() };
     this.setData({
       messages: [...this.data.messages, userMsg],
       input: '',
@@ -1470,7 +1880,7 @@ Page<CoachPageData, CoachPageHandlers>({
         // user 消息照常可分享；空 assistant 回复在服务端投影里也占一位（无气泡
         // 渲染）。两处都计入长度，防止后续轮次序号漂移。
         const messages = this.data.messages.map((m) =>
-          m.id === userMsgId ? { ...m, failed: false, shareIndex: projectionLength, selectable: true, ts: nowHhmm() } : m,
+          m.id === userMsgId ? { ...m, failed: false, shareIndex: projectionLength, selectable: true, ts: hhmm() } : m,
         );
         projectionLength += 2;
         this.setData({
@@ -1495,7 +1905,7 @@ Page<CoachPageData, CoachPageHandlers>({
     const userShareIndex = projectionLength;
     projectionLength += 1;
     const assistantShareIndex = done.status === 'completed' ? projectionLength++ : undefined;
-    const ts = nowHhmm();
+    const ts = hhmm();
     const messages = this.data.messages.map((m) =>
       m.id === userMsgId ? { ...m, failed: false, shareIndex: userShareIndex, selectable: true, ts } : m,
     );

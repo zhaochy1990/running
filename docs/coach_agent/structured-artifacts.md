@@ -34,6 +34,7 @@ markdown 渲染）；旧后端 + 新客户端 → 没有 `card`，同样走 mark
 | `race-strategy` | `raceStrategyMessage` 挂 `additional_kwargs.card` | 图标/文案/路由 → 报告页 |
 | `master-plan` | `masterPlanCardMessage`（training 节点，#428/#429） | 图标/标题/角标「初稿」；摘要即卡片——markdown 摘要同泡渲染，无独立详情页；data 带 `plan_id` 时出「启用/放弃」双 CTA（#429） |
 | `custom-workout`（devops#587） | `customWorkoutCardMessage`（custom_workout 节点） | 图标/「训练课已创建」/角标「待保存」；摘要即卡片（课表压缩文案 inlineBody）；双 CTA「保存到X月X日」（save_token 幂等 upsert）+「推送到手表」（未保存先保存再推）。时间制课 `total_distance_m` 由节点按契约⑨估算补齐（#838：easy 带中点、无校准 330s/km 兜底） |
+| `master-plan-form`（#1024） | `training` 节点槽位补全（`agents/training/node.ts`）挂 `additional_kwargs.card` | 图标/「创建训练计划」/副标题=预填摘要/角标「待确认」；**交互表单卡**（`components/master-plan-form-card`）双 tab 预填（比赛目标/训练安排），提交由组件内 CTA 触发（不经 onCardCta）→ coach 页组装 kernel request 投 plan-jobs（提交即确认），进度/结果卡由客户端本地合成（`utils/planJobCards` + `components/plan-job-card`） |
 | `weekly-plan`（未来） | 同上 | → 周计划页草稿态 |
 
 **信封随消息持久化**：业务节点把 `{$type, data}` 挂在产生它的回复消息自身

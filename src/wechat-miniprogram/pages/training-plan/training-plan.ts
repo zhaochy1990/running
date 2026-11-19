@@ -11,6 +11,8 @@
 import {
   applyMasterPlanFromContent,
   getCurrentMasterPlan,
+  markMasterPlanApplied,
+  takePendingPlanPreview,
   type SeasonPlanContent,
   type MasterPlanPhase,
   type MasterPlanWeek,
@@ -729,13 +731,22 @@ Page<TrainingPlanPageData, TrainingPlanPageHandlers>({
       canBack: getCurrentPages().length > 1,
       contentPaddingTop: contentPaddingTopRpx(),
     });
-    // 预览模式（聊天结果卡 → 查看完整计划）：payload 由 coach 页 encodeURIComponent 传入
-    if (options?.preview === '1' && options.payload) {
-      try {
-        this._previewPayload = JSON.parse(decodeURIComponent(options.payload)) as PlanPayload;
+    // 预览模式（聊天结果卡 → 查看完整计划）：候选 content 约 100KB，超过
+    // navigateTo URL 的现实上限，coach 页经 storage 交接（?preview=1 无
+    // payload）；保留 options.payload 解析兼容旧入口/手动跳转。
+    if (options?.preview === '1') {
+      let payload: PlanPayload | null = null;
+      if (options.payload) {
+        try {
+          payload = JSON.parse(decodeURIComponent(options.payload)) as PlanPayload;
+        } catch (err) {
+          console.warn('[training-plan] 预览 payload 解析失败', err);
+        }
+      }
+      if (!payload) payload = takePendingPlanPreview();
+      if (payload?.content) {
+        this._previewPayload = payload;
         this.setData({ isPreview: true });
-      } catch (err) {
-        console.warn('[training-plan] 预览 payload 解析失败', err);
       }
     }
     userStore.waitForAuth().then(() => {
@@ -1013,6 +1024,8 @@ Page<TrainingPlanPageData, TrainingPlanPageHandlers>({
     wx.showLoading({ title: '正在启用…', mask: true });
     try {
       await applyMasterPlanFromContent(payload.apply_token, payload.content, expectation);
+      // 聊天结果卡回写「已启用」：apply_token 即产生该候选的 plan job id。
+      markMasterPlanApplied(payload.apply_token);
       wx.hideLoading();
       this.setData({ previewApplied: true });
       wx.showToast({ title: '已启用', icon: 'success' });

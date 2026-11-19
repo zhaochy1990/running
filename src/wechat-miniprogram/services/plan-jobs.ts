@@ -28,12 +28,15 @@ export interface PlanJobPollResponse {
   stage: string;
   progress_pct: number;
   error_code: string | null;
-  /** done 时为完整 result_json（content/user_id/revision/…）；其余为 null。 */
-  result_json: Record<string, unknown> | null;
+  /** done 时为完整 result_json（content/user_id/revision/…），服务端按原始
+   *  JSON **字符串**下发（coach_agent_api toPollResponse 直出 job.resultJson）；
+   * 其余为 null。解析走 utils/planJobCards.planJobResultContent。 */
+  result_json: string | Record<string, unknown> | null;
 }
 
-/** 随机 request_id：服务端只要求非空字符串（幂等键另算），「adj-」前缀便于日志排障。 */
-function randomRequestId(prefix: string): string {
+/** 随机 id（request_id / idempotency_key 共用）：服务端只要求非空字符串，
+ *  前缀便于日志排障。 */
+export function randomRequestId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
@@ -72,7 +75,9 @@ export function enqueueGenerateAdjustment(input: {
 // #1024：聊天表单卡确认 → generate_master_plan（异步 worker 四层引擎）
 // ---------------------------------------------------------------------------
 
-/** 表单卡提交的 kernel request 形状（MasterPlanGraphRequest 的 mp 侧最小镜像）。 */
+/** 表单卡提交的 kernel request 形状（MasterPlanGraphRequest 的 mp 侧最小镜像）。
+ * 目标成绩二选一：`target_time` 为 null 时 `finish_only` 必须 true（zod
+ * superRefine 的 XOR 口径），反之亦然。 */
 export interface MasterPlanJobRequest {
   request_id: string;
   requested_mode: 'new_season';
@@ -81,7 +86,7 @@ export interface MasterPlanJobRequest {
     race_name: string;
     distance: 'FM' | 'HM';
     race_date: string;
-    target_time: string;
+    target_time: string | null;
     finish_only: boolean;
     priority: 'A';
   }>;

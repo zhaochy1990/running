@@ -1,0 +1,49 @@
+<!-- 赛季计划 job 卡（#1024 R3）：本地合成的进度/结果/失败卡（非 checkpoint 消息）。
+     百分比来自服务端 stage/progress_pct 锚点，帧间按阶段预估匀速补帧。 -->
+<view class="mpj-card">
+  <block wx:if="{{status === 'running'}}">
+    <view class="mpj-head">
+      <view class="mpj-badge"><text class="mpj-dot"></text>第 {{stepIndex}} 步 · 共 {{totalSteps}} 步</view>
+      <text class="mpj-title">正在为你生成训练计划</text>
+      <text class="mpj-subtitle">目标、阶段安排与每周课表一次完成，约需 4–7 分钟。</text>
+    </view>
+    <view class="mpj-bar-row">
+      <view class="mpj-bar"><view class="mpj-bar__fill" style="width: {{percent}}%"></view></view>
+      <text class="mpj-pct {{holding ? 'mpj-pct--holding' : ''}}">{{percent}}%</text>
+    </view>
+    <view class="mpj-stages">
+      <view wx:for="{{phaseRows}}" wx:key="key" class="mpj-stage mpj-stage--{{item.state}}">
+        <view class="mpj-stage__dot"></view>
+        <text class="mpj-stage__label">{{item.label}}</text>
+      </view>
+    </view>
+    <text class="mpj-note">离开页面后仍会继续，可回来查看进度</text>
+  </block>
+
+  <block wx:elif="{{status === 'done'}}">
+    <view class="mpj-head">
+      <view class="mpj-badge"><text class="mpj-dot"></text>{{applied ? '已启用' : '训练计划已生成'}}</view>
+      <text class="mpj-title">{{title}}</text>
+      <text wx:if="{{subtitle}}" class="mpj-subtitle">{{subtitle}}</text>
+    </view>
+    <view class="mpj-actions">
+      <view class="mpj-cta" bindtap="onViewTap">
+        <text>查看完整计划</text>
+        <image class="mpj-cta__arrow" src="/assets/icons/chevron_right_white.svg" mode="aspectFit" />
+      </view>
+      <view class="mpj-cta mpj-cta--ghost" bindtap="onEditTap">修改目标</view>
+    </view>
+  </block>
+
+  <block wx:else>
+    <view class="mpj-head">
+      <view class="mpj-badge mpj-badge--error"><text class="mpj-dot mpj-dot--error"></text>未完成</view>
+      <text class="mpj-title">生成未能完成 · 请求已保留</text>
+      <text class="mpj-subtitle">可以点重试重新提交，同一请求不会重复生成。</text>
+    </view>
+    <view class="mpj-actions">
+      <view class="mpj-cta" bindtap="onRetryTap">重试</view>
+      <view class="mpj-cta mpj-cta--ghost" bindtap="onEditTap">修改目标</view>
+    </view>
+  </block>
+</view>

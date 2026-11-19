@@ -1,0 +1,305 @@
+/* 训练计划创建表单卡（#1024 R2）：与 coach-card 同一套卡片外壳语言
+   （浅色主题令牌，var() 直接引用 styles/theme.wxss，不写兜底值）。 */
+.mpf-card {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(var(--color-overlay-rgb), 0.05);
+  border: 1rpx solid rgba(var(--color-overlay-rgb), 0.1);
+  border-radius: 20rpx;
+  overflow: hidden;
+}
+
+.mpf-head {
+  display: flex;
+  align-items: flex-start;
+  padding: 24rpx 24rpx 0;
+}
+
+.mpf-head__icon {
+  width: 40rpx;
+  height: 40rpx;
+  margin-right: 16rpx;
+  flex-shrink: 0;
+}
+
+.mpf-head__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.mpf-head__row {
+  display: flex;
+  align-items: center;
+}
+
+.mpf-head__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-max);
+}
+
+.mpf-head__badge {
+  margin-left: 12rpx;
+  padding: 2rpx 12rpx;
+  font-size: 10px;
+  color: var(--color-accent-deep);
+  background: rgba(var(--color-accent-rgb), 0.12);
+  border-radius: 8rpx;
+}
+
+.mpf-head__subtitle {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--color-text-bright);
+}
+
+/* 双 tab：白底浮起选中项（设计稿 pill 形态）。 */
+.mpf-tabs {
+  display: flex;
+  margin: 20rpx 24rpx 0;
+  padding: 4rpx;
+  background: var(--color-bg-dim);
+  border-radius: 12rpx;
+}
+
+.mpf-tab {
+  flex: 1;
+  padding: 12rpx 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  border-radius: 10rpx;
+}
+
+.mpf-tab--active {
+  background: var(--color-card);
+  color: var(--color-accent-deep);
+  font-weight: 600;
+  box-shadow: 0 1rpx 3rpx rgba(var(--color-overlay-rgb), 0.08);
+}
+
+.mpf-section {
+  padding: 8rpx 24rpx 0;
+}
+
+.mpf-field {
+  margin-top: 20rpx;
+}
+
+.mpf-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10rpx;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.mpf-required {
+  margin-left: 8rpx;
+  font-size: 10px;
+  color: var(--color-accent-light);
+}
+
+.mpf-label__hint {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+}
+
+/* input 定高 + 行高一致（仓内 custom-race-form 同款做法，保证占位符垂直居中）。 */
+.mpf-input {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  width: 100%;
+  height: 80rpx;
+  padding: 0 20rpx;
+  font-size: 14px;
+  line-height: 80rpx;
+  color: var(--color-field-text);
+  background: var(--color-card);
+  border: 1rpx solid rgba(var(--color-overlay-rgb), 0.06);
+  border-radius: 14rpx;
+}
+
+.mpf-input--error {
+  border-color: var(--color-accent);
+}
+
+.mpf-input--picker text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mpf-caret {
+  width: 24rpx;
+  height: 24rpx;
+  margin-left: 12rpx;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.mpf-placeholder {
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+}
+
+.mpf-error {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 11px;
+  color: var(--color-accent-light);
+}
+
+.mpf-time {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.mpf-time__col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  height: 80rpx;
+  padding: 0 8rpx;
+  background: var(--color-card);
+  border: 1rpx solid rgba(var(--color-overlay-rgb), 0.06);
+  border-radius: 14rpx;
+}
+
+.mpf-time__value {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 80rpx;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.mpf-time__unit {
+  margin-left: 4rpx;
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+}
+
+.mpf-time__colon {
+  font-size: 16px;
+  color: var(--color-text-tertiary);
+}
+
+.mpf-finish {
+  display: flex;
+  align-items: center;
+  margin-top: 14rpx;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.mpf-check {
+  width: 28rpx;
+  height: 28rpx;
+  margin-right: 12rpx;
+  border: 2rpx solid rgba(var(--color-overlay-rgb), 0.2);
+  border-radius: 8rpx;
+  box-sizing: border-box;
+}
+
+.mpf-check--on {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.mpf-days {
+  display: flex;
+  gap: 10rpx;
+}
+
+/* 七天一行（等分）：固定宽会在窄屏换行，用 flex 平分。 */
+.mpf-day {
+  flex: 1;
+  min-width: 0;
+  height: 64rpx;
+  text-align: center;
+  line-height: 64rpx;
+  font-size: 13px;
+  color: var(--color-text-cool);
+  background: var(--color-chip);
+  border: 1rpx solid transparent;
+  border-radius: 14rpx;
+}
+
+.mpf-day--on {
+  background: var(--color-accent-tint);
+  border-color: rgba(var(--color-accent-rgb), 0.5);
+  color: var(--color-accent-deep);
+  font-weight: 600;
+}
+
+.mpf-day--error {
+  border-color: rgba(var(--color-accent-rgb), 0.35);
+}
+
+.mpf-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 120rpx;
+  padding: 18rpx 20rpx;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-field-text);
+  background: var(--color-card);
+  border: 1rpx solid rgba(var(--color-overlay-rgb), 0.06);
+  border-radius: 14rpx;
+}
+
+.mpf-foot {
+  padding: 20rpx 24rpx 24rpx;
+}
+
+.mpf-submit {
+  padding: 20rpx 0;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-on-accent);
+  background: var(--color-accent);
+  border-radius: 14rpx;
+}
+
+.mpf-submit:active {
+  opacity: 0.85;
+}
+
+.mpf-note {
+  display: block;
+  margin-top: 12rpx;
+  text-align: center;
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+}
+
+.mpf-done {
+  padding: 8rpx 24rpx 24rpx;
+}
+
+.mpf-done__text {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.mpf-done__hint {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}

@@ -43,8 +43,30 @@
           <!-- 一切卡片消息（coach-card 自带卡片样式）：去气泡外壳，卡片直接
                落在消息流里避免卡中卡；inlineBody 产物的 markdown 摘要改为跟在
                卡片下方裸渲染（10-23 用户反馈，全卡片统一） -->
-          <view class="coach-msg__bubble {{item.card ? 'coach-msg__bubble--flat' : ''}}">
+          <view class="coach-msg__bubble {{item.card || item.planJob ? 'coach-msg__bubble--flat' : ''}}">
             <text wx:if="{{item.role === 'user'}}" user-select="true">{{item.content}}</text>
+            <!-- 赛季计划 job 卡（#1024）：本地合成的进度/结果/失败卡，非 checkpoint 消息 -->
+            <plan-job-card
+              wx:elif="{{item.planJob}}"
+              job="{{item.planJob}}"
+              data-id="{{item.id}}"
+              bindretry="onPlanJobRetry"
+              bindview="onPlanJobView"
+              bindedit="onPlanJobEdit"
+            />
+            <!-- 训练计划创建表单卡（#1024）：表单与 CTA 在组件内，提交经 bindsubmit -->
+            <block wx:elif="{{item.card && item.card.type === 'master-plan-form'}}">
+              <master-plan-form-card
+                id="plan-form-{{item.id}}"
+                data-id="{{item.id}}"
+                icon="{{item.card.icon}}"
+                title="{{item.card.title}}"
+                subtitle="{{item.card.subtitle}}"
+                badge="{{item.card.badge}}"
+                form="{{item.card.data}}"
+                bindsubmit="onPlanFormSubmit"
+              />
+            </block>
             <!-- 结构化产物（done.card 经 utils/coachCards 翻译）：通知卡片替代 markdown 正文；
                  inlineBody 产物（master-plan 摘要即卡片）卡片头部下方继续渲染 markdown 摘要 -->
             <block wx:elif="{{item.card}}">
@@ -88,7 +110,7 @@
             catchtap="onCopyFooterTap"
           >
             <image
-              wx:if="{{!item.card}}"
+              wx:if="{{!item.card && !item.planJob}}"
               class="coach-msg__copy-icon"
               src="/assets/icons/copy.svg"
               mode="aspectFit"
