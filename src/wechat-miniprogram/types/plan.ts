@@ -35,6 +35,9 @@ export interface NormalizedRunWorkout {
   schema?: 'run-workout/v1';
   name: string;
   date: string;
+  /** 课意图（rolling 投影 weekly-doc session 携带；旧数据可能缺失） */
+  purpose?: string | null;
+  type?: string;
   note: string | null;
   blocks: Array<{ steps: WorkoutStep[]; repeat: number }>;
 }

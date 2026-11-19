@@ -83,6 +83,9 @@ export interface MasterPlanPhase {
   coach_note?: string;
   is_completed?: boolean;
   summary?: CompletedPhaseSummary | null;
+  /** v3 快照阶段附带的力量/恢复安排（kernel 产物；旧计划没有）。 */
+  strength?: { sessions_per_week?: number; focus?: string; timing?: string } | null;
+  recovery?: { focus?: string; sleep_target_hours?: string; adjustment_trigger?: string } | null;
 }
 
 /** 周关键课（KeySessionSchema 镜像；type 为 11 值枚举，宽松收 string）。 */
@@ -99,7 +102,9 @@ export interface MasterPlanWeek {
   week_index: number;
   week_start: string;
   week_end?: string | null;
-  phase_id: string;
+  /** 旧 v2 快照用 phase_id；v3 快照（#859 起）用 canonical phase_name，二选一。 */
+  phase_id?: string;
+  phase_name?: string;
   target_weekly_km_low: number | null;
   target_weekly_km_high: number | null;
   target_training_dose_low?: number | null;
@@ -164,6 +169,78 @@ export interface SeasonPlanContent {
   current_phase_id: string | null;
   current_week_number: number | null;
   next_milestone: MasterPlanNextMilestone | null;
+  // —— v3 富字段（#859 kernel 全量落库，current 读原样透传；旧 v2 计划没有，
+  // 全部可选，UI 逐项判空降级） ——
+  /** L2 阶段划分意图（策略层阶段/里程碑 gate/量带）。 */
+  policy?: MasterPlanPolicy | null;
+  /** L3 周骨架（周角色/长距离/质量课配额/门检查）。 */
+  skeleton?: MasterPlanSkeleton | null;
+  /** VDOT 锚（新鲜度融合结果）。 */
+  anchor?: MasterPlanAnchor | null;
+  /** 丹系审计（items + pass/warn/fail 汇总）。 */
+  audit?: MasterPlanAudit | null;
+}
+
+/** —— v3 富字段类型（wuxi-2027-plan.json artifact 镜像，宽松收口） —— */
+
+/** 策略层阶段（PhaseDivisionIntent 的 phases 投影）。 */
+export interface MasterPlanPolicyPhase {
+  name: string;
+  canonical?: string;
+  start_week: number;
+  end_week: number;
+  [key: string]: unknown;
+}
+
+/** 策略层里程碑 gate（signal + 可观察 criterion）。 */
+export interface MasterPlanPolicyMilestone {
+  phase: string;
+  signal: string;
+  criterion: string;
+  [key: string]: unknown;
+}
+
+/** L2 政策包（milestones.phase 以「第N阶段·XXX」前缀对应 policy.phases[].name）。 */
+export interface MasterPlanPolicy {
+  phases: MasterPlanPolicyPhase[];
+  taper_weeks?: number;
+  milestones: MasterPlanPolicyMilestone[];
+  gates?: Array<Record<string, unknown>>;
+  volume_bands?: Array<Record<string, unknown>>;
+}
+
+/** L3 周骨架行（role: progress/absorb/taper/race）。 */
+export interface MasterPlanSkeletonWeek {
+  week: number;
+  canonical: string;
+  block: number;
+  role: string;
+  km: number;
+  lr: number | null;
+  q: number;
+}
+
+export interface MasterPlanSkeleton {
+  weeks: MasterPlanSkeletonWeek[];
+  blocks?: Array<Record<string, unknown>>;
+  recovery_policy?: Array<Record<string, unknown>>;
+  strength_policy?: Array<Record<string, unknown>>;
+  checks?: Array<Record<string, unknown>>;
+  milestones?: Array<Record<string, unknown>>;
+}
+
+/** VDOT 锚。 */
+export interface MasterPlanAnchor {
+  as_of?: string;
+  vdot?: number;
+  vdot_source?: string;
+  [key: string]: unknown;
+}
+
+/** 丹系审计。 */
+export interface MasterPlanAudit {
+  items: Array<{ verdict: 'pass' | 'warn' | 'fail'; item: string; actual?: string }>;
+  summary: { pass: number; warn: number; fail: number };
 }
 
 interface CurrentSeasonPlanBase {

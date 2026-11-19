@@ -1,9 +1,9 @@
 {
   "navigationStyle": "custom",
-  "navigationBarTitleText": "我的训练计划",
-  "navigationBarBackgroundColor": "#F7F9FB",
+  "navigationBarTitleText": "赛季训练计划",
+  "navigationBarBackgroundColor": "#F5F6F4",
   "navigationBarTextStyle": "black",
-  "backgroundColor": "#F7F9FB",
+  "backgroundColor": "#F5F6F4",
   "backgroundTextStyle": "dark",
   "usingComponents": {
     "adjust-dialog": "/components/adjust-dialog/index",
