@@ -167,10 +167,10 @@ export function buildCoachCard(card: unknown, target: CoachSessionTarget | undef
     // onCardCta），聊天页只按 type 换渲染器。
     return {
       type: wire.$type,
-      icon: '/assets/icons/calendar_month.svg',
-      title: '创建训练计划',
+      icon: '',
+      title: '你的下一程',
       subtitle: masterPlanFormSubtitle(form),
-      badge: '待确认',
+      badge: '',
       buttonText: '',
       secondaryButtonText: '',
       url: '',

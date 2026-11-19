@@ -33,6 +33,10 @@ interface JobCardData {
   phaseRows: PhaseRow[];
   title: string;
   subtitle: string;
+  /** 进度卡标题（带计划名，如「正在为你生成无锡马拉松250的备赛计划」）。 */
+  planTitle: string;
+  /** 提交信息摘要行（项目/日期/目标/每周天数）。 */
+  requestSummary: string;
   applied: boolean;
   /** 网络持续失败，轮询暂停（显示「轻触恢复」）。 */
   paused: boolean;
@@ -77,6 +81,8 @@ Component<JobCardData, JobCardProps, JobCardMethods, [], JobCardInstance>({
     phaseRows: phaseRows(0, false),
     title: '',
     subtitle: '',
+    planTitle: '',
+    requestSummary: '',
     applied: false,
     paused: false,
   },
@@ -168,6 +174,11 @@ Component<JobCardData, JobCardProps, JobCardMethods, [], JobCardInstance>({
         this.setData({ status: 'failed', holding: false, applied: false, paused: false });
         return;
       }
+      // running：标题带计划名 + 提交信息摘要（#1024 用户拍板）。
+      this.setData({
+        planTitle: job.planTitle ?? '正在为你生成训练计划',
+        requestSummary: job.requestSummary ?? '',
+      });
       this.setData({ status: 'running', title: '', subtitle: '', applied: false, paused: job.pollPaused === true });
       this.tick();
     },

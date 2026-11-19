@@ -44,6 +44,8 @@ import {
   type MasterPlanFormOptions,
   type PlanJobCardView,
   type PlanJobRecord,
+  sessionHasLivePlanJob,
+  submittedPlanFormMessageIds,
 } from '../../utils/planJobCards';
 import { PLAN_JOB_POLL_MS } from '../../utils/planJobProgress';
 import { epochToShanghaiHm } from '../../utils/date';
@@ -1619,7 +1621,12 @@ Page<CoachPageData, CoachPageHandlers>({
   syncPlanJobCards(sessionId: string, base: CoachMessage[]): CoachMessage[] {
     const records = listPlanJobs().filter((job) => job.sessionId === sessionId);
     if (records.length === 0) return base;
-    const out = [...base];
+    // 提交过的表单卡不再渲染（#1024 用户拍板）：提交信息已并进进度/结果卡。
+    const hideFormIds = new Set(submittedPlanFormMessageIds(sessionId));
+    const hideAllForms = sessionHasLivePlanJob(sessionId);
+    const out = base.filter(
+      (m) => !(m.card?.type === 'master-plan-form' && (hideAllForms || (typeof m.id === 'number' && hideFormIds.has(m.id)))),
+    );
     for (const record of records) {
       const index = out.findIndex((m) => m.planJob?.jobId === record.jobId);
       const next = jobCardView(record);

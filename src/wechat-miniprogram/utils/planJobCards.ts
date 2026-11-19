@@ -251,6 +251,10 @@ export interface PlanJobCardView {
   applied?: boolean;
   /** 网络持续失败、轮询暂时停下（卡上显示恢复入口；#1029）。 */
   pollPaused?: boolean;
+  /** 进度卡标题（带计划名，#1024 用户拍板：提交信息并进进度卡）。 */
+  planTitle?: string;
+  /** 提交信息摘要行（项目/日期/目标/每周天数）。 */
+  requestSummary?: string;
 }
 
 const JOB_KEY_PREFIX = 'plan-job:';
@@ -288,7 +292,42 @@ export function planJobCardView(record: PlanJobRecord, applied: boolean, pollPau
     subtitle: record.resultSubtitle,
     applied,
     pollPaused,
+    /** 进度卡标题/摘要带提交信息（#1024 用户拍板：提交信息并进进度卡）。 */
+    planTitle: planJobGenerateTitle(record.request),
+    requestSummary: planJobRequestSummary(record.request),
   };
+}
+
+/** 进度卡标题：无锡马拉松250的备赛计划 / 无锡马拉松的备赛计划（完赛）。 */
+export function planJobGenerateTitle(request: MasterPlanJobRequest): string {
+  const goal = request.goals[0];
+  const race = goal?.race_name?.trim() || '赛季训练';
+  const target = goal?.target_time || '';
+  const breakthrough = target ? breakthroughNumber(target) : '';
+  return breakthrough
+    ? `正在为你生成${race}${breakthrough}的备赛计划`
+    : `正在为你生成${race}的备赛计划`;
+}
+
+/** 提交信息摘要行：全程 · 2027-03-07 · 目标 2:50:00 · 每周 5 天。 */
+export function planJobRequestSummary(request: MasterPlanJobRequest): string {
+  const goal = request.goals[0];
+  const distance = goal?.distance === 'HM' ? '半马' : '全马';
+  const target = goal?.target_time ? ` · 目标 ${goal.target_time}` : ' · 顺利完赛';
+  const days = request.availability.weekly_run_days_max;
+  return `${distance} · ${goal?.race_date ?? ''}${target} · 每周 ${days} 天`;
+}
+
+/** 同会话存在进行中（running）的生成单 → 提交过的表单卡应隐藏。 */
+export function sessionHasLivePlanJob(sessionId: string): boolean {
+  return listPlanJobs().some((job) => job.sessionId === sessionId && job.status === 'running');
+}
+
+/** 本会话已提交表单的消息 id 集（failed 单不算——失败后表单要回来改）。 */
+export function submittedPlanFormMessageIds(sessionId: string): number[] {
+  return listPlanJobs()
+    .filter((job) => job.sessionId === sessionId && job.formMessageId != null && job.status !== 'failed')
+    .map((job) => job.formMessageId as number);
 }
 
 function isPlanJobRecord(value: unknown): value is PlanJobRecord {

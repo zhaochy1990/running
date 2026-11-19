@@ -4,8 +4,9 @@
   <block wx:if="{{status === 'running'}}">
     <view class="mpj-head">
       <view class="mpj-badge"><text class="mpj-dot"></text>第 {{stepIndex}} 步 · 共 {{totalSteps}} 步</view>
-      <text class="mpj-title">正在为你生成训练计划</text>
-      <text class="mpj-subtitle">目标、阶段安排与每周课表一次完成，约需 4–7 分钟。</text>
+      <text class="mpj-title">{{planTitle}}</text>
+      <text wx:if="{{requestSummary}}" class="mpj-subtitle">{{requestSummary}}</text>
+      <text wx:else class="mpj-subtitle">目标、阶段安排与每周课表一次完成，约需 4–7 分钟。</text>
     </view>
     <view class="mpj-bar-row">
       <view class="mpj-bar"><view class="mpj-bar__fill" style="width: {{percent}}%"></view></view>
@@ -18,7 +19,7 @@
       </view>
     </view>
     <text wx:if="{{paused}}" class="mpj-note mpj-note--action" bindtap="onResumeTap">网络不稳定，暂停查询 · 轻触恢复</text>
-    <text wx:else class="mpj-note">离开页面后仍会继续，可回来查看进度</text>
+    <text wx:else class="mpj-note">约需 4–7 分钟 · 离开页面后仍会继续，可回来查看进度</text>
   </block>
 
   <block wx:elif="{{status === 'done'}}">
