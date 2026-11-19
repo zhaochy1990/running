@@ -116,10 +116,11 @@ function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-/** 模型回复 → 宽松信封（content 可能是数组/字符串，统一成文本再解析）。 */
+/** 模型回复 → 宽松信封。content 用 .text getter 提取——responses API 的
+ * AIMessage.content 是 content-parts 数组（devops#833 同坑），手拼字符串段
+ * 会得到空串、解析必败、JSON 原样漏给用户。 */
 function extractFormEnvelope(reply: BaseMessage): MasterPlanFormEnvelope | undefined {
-  const content = typeof reply.content === "string" ? reply.content : Array.isArray(reply.content) ? reply.content.map((part) => (typeof part === "string" ? part : "")).join("") : "";
-  const unfenced = content
+  const unfenced = reply.text
     .replace(/^```(?:json)?\s*\n?/, "")
     .replace(/\n?```\s*$/, "")
     .trim();
@@ -134,8 +135,7 @@ function extractFormEnvelope(reply: BaseMessage): MasterPlanFormEnvelope | undef
 
 /** 防御性兜底：JSON 混在多段 AI 文本里时从后往前找形似信封的段。 */
 function envelopeFromText(reply: BaseMessage): MasterPlanFormEnvelope | undefined {
-  const content = typeof reply.content === "string" ? reply.content : "";
-  for (const line of content.split("\n").reverse()) {
+  for (const line of reply.text.split("\n").reverse()) {
     const trimmed = line.trim().replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "").trim();
     if (!trimmed.startsWith("{")) continue;
     try {

@@ -82,6 +82,27 @@ test("non-JSON reply → passed through as text, no fabricated form", async () =
   assert.match(String(reply.content), /聊聊你的目标/);
 });
 
+test("content-parts array reply (responses API, devops#833) → envelope still unwrapped", async () => {
+  // responses API 的 AIMessage.content 是 [{type:"text",text}] 数组；手拼字符串
+  // 段会得到空串、解析失败、原始 JSON 漏给用户（生产 11-19 实测）。
+  const json = JSON.stringify({
+    disposition: "clarify",
+    message: "冬训计划也需要一个目标比赛来定方向和周期，你准备跑哪场比赛、大概什么日期？",
+  });
+  const llm = {
+    async invoke(): Promise<BaseMessage> {
+      const m = new AIMessage(json);
+      Object.defineProperty(m, "content", { value: [{ type: "text", text: json }] });
+      return m;
+    },
+  };
+  const node = makeTrainingNode({ llm });
+  const reply = await replyOf(node);
+  assert.equal(cardOf(reply), undefined);
+  assert.doesNotMatch(String(reply.content), /disposition/);
+  assert.match(String(reply.content), /冬训计划也需要一个目标比赛/);
+});
+
 test("form envelope failing card schema (overlong race name) → fallback ask text", async () => {
   // race_name 截断由 normalize 做（slice 60），这里用「normalize 后仍非法」
   // 的路径验证：distance 之外的意外值被收口，schema 拒绝只会来自未知形状——
