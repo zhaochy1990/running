@@ -36,17 +36,21 @@ import (
 // back-to-back reads.
 const tsReadCacheEntries = 64
 
+// Logical identity is required even for cached empty blobs. The points hash
+// alone does not authenticate the envelope owner.
+type tsCacheKey struct{ userID, labelID, blobKey string }
+
 // tsCacheEntry is one cached activity: the sha256 the points were decoded
 // under, and the decoded rows. points is owned by the cache — callers get a
 // copy (cloneTimeseriesPoints) so no consumer can mutate what the next reader
 // receives.
 type tsCacheEntry struct {
-	key    string
+	key    tsCacheKey
 	sha256 string
 	points []TimeseriesPoint
 }
 
-// tsPointCache is a mutex-guarded LRU keyed by blob key. A get only hits when
+// tsPointCache is a mutex-guarded LRU keyed by tenant, activity and blob key. A get only hits when
 // the row's current ts_sha256 matches the entry's — a resync overwrites the
 // blob at the same deterministic key with new content and a new sha, so the
 // checksum comparison is the invalidation: stale entries miss, get re-GETted,
@@ -55,20 +59,20 @@ type tsPointCache struct {
 	mu    sync.Mutex
 	max   int
 	ll    *list.List // front = most recently used; element.Value is *tsCacheEntry
-	items map[string]*list.Element
+	items map[tsCacheKey]*list.Element
 }
 
 func newTSPointCache(max int) *tsPointCache {
 	return &tsPointCache{
 		max:   max,
 		ll:    list.New(),
-		items: make(map[string]*list.Element, max),
+		items: make(map[tsCacheKey]*list.Element, max),
 	}
 }
 
 // get returns the cached points when key is present AND was decoded under
 // sha256. The returned slice is cache-owned: copy before handing it out.
-func (c *tsPointCache) get(key, sha256 string) ([]TimeseriesPoint, bool) {
+func (c *tsPointCache) get(key tsCacheKey, sha256 string) ([]TimeseriesPoint, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	el, ok := c.items[key]
@@ -89,7 +93,7 @@ func (c *tsPointCache) get(key, sha256 string) ([]TimeseriesPoint, bool) {
 
 // put stores points under (key, sha256) and takes ownership of the slice.
 // It evicts the least recently used entry when full.
-func (c *tsPointCache) put(key, sha256 string, points []TimeseriesPoint) {
+func (c *tsPointCache) put(key tsCacheKey, sha256 string, points []TimeseriesPoint) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if el, ok := c.items[key]; ok {
@@ -156,7 +160,18 @@ func (s *Store) readActivityBlob(ctx context.Context, uid, labelID string) ([]Ti
 	if p.TsSHA256 != nil {
 		rowSHA = *p.TsSHA256
 	}
-	if cached, ok := s.tsCache.get(key, rowSHA); ok {
+	checkCount := func(count int) error {
+		if p.TsPointCount != nil && *p.TsPointCount != count {
+			return readFailed("point_count_mismatch", key, slog.Int("row_ts_point_count", *p.TsPointCount), slog.Int("blob_point_count", count))
+		}
+		return nil
+	}
+	cacheKey := tsCacheKey{userID: uid, labelID: labelID, blobKey: key}
+	if cached, ok := s.tsCache.get(cacheKey, rowSHA); ok {
+		if err := checkCount(len(cached)); err != nil {
+			return nil, err
+		}
+
 		return cloneTimeseriesPoints(cached), nil
 	}
 
@@ -180,10 +195,8 @@ func (s *Store) readActivityBlob(ctx context.Context, uid, labelID string) ([]Ti
 		return nil, readFailed("identity_mismatch", key,
 			slog.String("blob_user_id", blob.UserID), slog.String("blob_label_id", blob.LabelID))
 	}
-	if p.TsPointCount != nil && *p.TsPointCount != blob.PointCount {
-		return nil, readFailed("point_count_mismatch", key,
-			slog.Int("row_ts_point_count", *p.TsPointCount),
-			slog.Int("blob_point_count", blob.PointCount))
+	if err := checkCount(blob.PointCount); err != nil {
+		return nil, err
 	}
 	if p.TsSHA256 != nil && *p.TsSHA256 != blob.SHA256 {
 		return nil, readFailed("sha_mismatch", key,
@@ -192,7 +205,7 @@ func (s *Store) readActivityBlob(ctx context.Context, uid, labelID string) ([]Ti
 	}
 
 	pts := blobRowsFromPoints(uid, labelID, blob.Points)
-	s.tsCache.put(key, blob.SHA256, pts)
+	s.tsCache.put(cacheKey, blob.SHA256, pts)
 	slog.Info("tsblob: blob get ok",
 		slog.String("event", "tsblob_get_ok"),
 		slog.String("key", key),

@@ -31,6 +31,7 @@ type fakeStore struct {
 	pbs       []storage.PersonalBest              // existing PBs
 
 	// recorded calls
+	v3WindowVisited      bool
 	snapUpserted         bool
 	zonesReplaced        bool
 	activityUpserts      int
@@ -243,11 +244,16 @@ func TestCalibration_EmptyRunGate(t *testing.T) {
 			// Both paths must echo the input batches: on skip, a non-empty
 			// health_dates echo is load-bearing — without it compute noops and a
 			// health-only sync's rest_confirmed/PMC silently stops.
-			var wantLabels, wantHealth []string
-			_ = json.Unmarshal([]byte(tc.input), &struct {
-				LabelIDs    *[]string `json:"label_ids"`
-				HealthDates *[]string `json:"health_dates"`
-			}{&wantLabels, &wantHealth})
+			var input calibrationInput
+			if tc.input != "" {
+				if err := json.Unmarshal([]byte(tc.input), &input); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if want := input.Mode == "incremental" && !tc.skipped; f.v3WindowVisited != want {
+				t.Fatalf("incremental evidence used = %t, want %t", f.v3WindowVisited, want)
+			}
+			wantLabels, wantHealth := input.LabelIDs, input.HealthDates
 			if !slices.Equal(res.LabelIDs, wantLabels) || !slices.Equal(res.HealthDates, wantHealth) {
 				t.Fatalf("echo = %v/%v, want %v/%v", res.LabelIDs, res.HealthDates, wantLabels, wantHealth)
 			}
@@ -567,4 +573,16 @@ func TestActiveCandidateMissingCentersPreservesDerivedRows(t *testing.T) {
 	if err != nil || !strings.Contains(out, "unavailable_active_calibration") || f.activityUpserts != 0 || f.dailyUpserts != 0 || len(f.activityZonesWritten) != 0 {
 		t.Fatalf("incomplete active candidate overwrote results: %s %v", out, err)
 	}
+}
+
+func (f *fakeStore) VisitV3CalibrationWindow(ctx context.Context, user string, start, end time.Time, version int, visit storage.V3EvidenceVisitor) ([]storage.DailyHealth, error) {
+	f.v3WindowVisited = true
+	for _, a := range f.acts {
+		if visit.Running(a) {
+			if _, err := visit.Build(a, f.ts, nil); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return f.health, nil
 }

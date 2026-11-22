@@ -63,3 +63,14 @@ step result feeds the next step's input (`mergeStepInput`), so `calibration`
 now echoes `health_dates` alongside `label_ids` — incremental compute turns
 health dates into `rest_confirmed` rows and extends the PMC, and would noop on
 a health-only sync without the echo.
+
+## Update (2026-11-22) — incremental v3 baseline refresh
+
+On incremental sync, v3 reads the current Shanghai-day window in canonical
+activity order. It reuses per-run evidence in MySQL, rebuilding it when the
+activity summary, verified blob identity, lap replacement, or evidence format
+changes. The first incremental refresh fills missing evidence. Each later day
+reapplies window expiry, recency weights, the current threshold-speed HR filter,
+and the daily RHR window before publishing through the existing snapshot and
+zone transaction. The same-day empty-sync gate still runs first. Explicit full
+and historical recalibration continue to use the frozen full estimator.

@@ -156,7 +156,9 @@ cannot refresh an active-v4 key, and active permission cannot bypass candidate
 payload/collision checks. An active refresh preserves label/health echoes and
 does not mark its result candidate-only. Candidate refresh alone uses
 `calibrationsource.LoadCandidate`, preserving storage pause/source/binding/as-of
-metadata; frozen v3 still uses the original loader.
+metadata. Full, historical and standalone v3 recalibrations use the original
+loader. An incremental sync applies equivalent per-activity evidence to the
+same rolling window, as described in [ADR 0020](0020-go-user-sync-endpoint.md).
 
 Active-v4 derived writes require both threshold centers plus RHR/HRmax inputs.
 An incomplete candidate bundle reports `unavailable_active_calibration` /

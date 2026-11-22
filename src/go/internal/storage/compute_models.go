@@ -233,6 +233,7 @@ func computeModels() []any {
 	return []any{
 		&RunningCalibrationPolicy{},
 		&RunningCalibrationUserOverride{},
+		&V3CalibrationEvidence{},
 		&RunningCalibrationSnapshot{},
 		&RunningCalibrationPaceZone{},
 		&RunningCalibrationHRZone{},
