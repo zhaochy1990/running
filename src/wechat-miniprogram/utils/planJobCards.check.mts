@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import type { MasterPlanFormCard } from '../services/master-plan.ts';
+import * as coachCards from './coachCards.ts';
 import * as date from './date.ts';
 import * as planJobCards from './planJobCards.ts';
 import { WEEKDAY_VALUES } from './weekday.ts';
@@ -15,7 +16,6 @@ import {
   buildMasterPlanJobRequest,
   decideRetryAction,
   DEFAULT_MASTER_PLAN_FORM_OPTIONS,
-  isSubmittedPlanFormMessage,
   MAX_PLAN_JOB_POLL_FAILURES,
   planJobPollBackoffMs,
   planJobPollFailureAction,
@@ -184,26 +184,6 @@ assert.equal(decideRetryAction('done'), 'show-result');
 assert.equal(decideRetryAction('failed'), 'repost');
 assert.equal(decideRetryAction('gone'), 'repost');
 
-// 已提交表单的识别：shareIndex（服务端投影行序）优先，重进页面后 id 重排也不会
-// 让已提交表单复活；messageId 仅作旧记录的进程内兜底。
-{
-  const submitted = { shareIndices: new Set([3]), messageIds: new Set([5]) };
-  // 重启后 id 重排：表单卡 id 4 / shareIndex 3 仍被认定已提交
-  assert.equal(isSubmittedPlanFormMessage({ id: 4, shareIndex: 3 }, submitted), true);
-  // 同进程：id 命中
-  assert.equal(isSubmittedPlanFormMessage({ id: 5, shareIndex: 3 }, submitted), true);
-  // 换了一张表单（新 shareIndex、新 id）：不隐藏
-  assert.equal(isSubmittedPlanFormMessage({ id: 9, shareIndex: 8 }, submitted), false);
-  // 消息没有 shareIndex（本地消息）：退回 id 匹配
-  assert.equal(isSubmittedPlanFormMessage({ id: 5 }, submitted), true);
-  assert.equal(isSubmittedPlanFormMessage({ id: 6 }, submitted), false);
-  // 有 shareIndex 时只认 shareIndex：旧 id 被复用也不误伤另一张表单卡
-  assert.equal(isSubmittedPlanFormMessage({ id: 5, shareIndex: 8 }, submitted), false);
-  // 无任何已提交身份
-  const none = { shareIndices: new Set<number>(), messageIds: new Set<number>() };
-  assert.equal(isSubmittedPlanFormMessage({ id: 1, shareIndex: 0 }, none), false);
-}
-
 function loadMiniProgram<T>(path: string, register: 'Page' | 'Component', modules: Record<string, unknown>, wx: object = {}): T {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
   let definition: T | undefined;
@@ -224,6 +204,7 @@ type TestMessage = {
   shareIndex?: number;
   hidden?: boolean;
   selectable?: boolean;
+  editPlanJobId?: string;
   card?: { type: string };
   planJob?: { jobId: string };
 };
@@ -239,24 +220,32 @@ type TestMessage = {
     observers: { form(form: MasterPlanFormCard): void };
   };
   type CoachPage = {
-    data: { currentSessionId: string; messages: TestMessage[] };
+    data: { currentSessionId: string; messages: TestMessage[]; input: string };
     setData(patch: Record<string, unknown>, afterRender?: () => void): void;
     selectComponent(selector: string): { reopenForm(values?: FormValues): void };
     schedulePlanJobPoll(jobId: string): void;
     onLoad(): void;
     onSelectSession(event: Tap): void;
-    loadSession(): Promise<void>;
+    loadSession(sessionId: string): Promise<void>;
+    onSend(): Promise<void>;
     onPlanFormSubmit(event: Tap & { detail: FormValues }): Promise<void>;
     onPlanJobEdit(event: Tap): void;
     syncPlanJobCards(sessionId: string, messages: TestMessage[]): TestMessage[];
+    refreshPlanJobCards(): void;
+    finishStream(done: { status: 'completed'; message: string; card: unknown }, userMsgId: number): void;
   };
   const jobs = new Map<string, Job>();
   const enqueue = Promise.withResolvers<{ job_id: string }>();
+  const history = Promise.withResolvers<null>();
+  const historyRequests: string[] = [];
+  const toasts: string[] = [];
   const page = loadMiniProgram<CoachPage>('../pages/coach/coach.ts', 'Page', {
+    '../../services/coach': { fetchCoachHistory: (id: string) => { historyRequests.push(id); return history.promise; } },
     '../../services/plan-jobs': { randomRequestId: () => 'req-test', enqueueGenerateMasterPlan: () => enqueue.promise },
     '../../services/master-plan': { isMasterPlanApplied: () => false },
     '../../store/index': { userStore: { getState: () => ({ user: { id: 'runner' } }), waitForAuth: () => new Promise(() => {}) } },
     '../../utils/date': date,
+    '../../utils/coachCards': coachCards,
     '../../utils/markdown': { markdownToHtml: (value: string) => value },
     '../../utils/theme': { theme: {} },
     '../../utils/planJobCards': {
@@ -265,7 +254,10 @@ type TestMessage = {
       listPlanJobs: () => [...jobs.values()],
       readPlanJobCached: (id: string) => jobs.get(id),
     },
-  }, { getWindowInfo: () => ({ windowWidth: 375, statusBarHeight: 0 }) });
+  }, {
+    getWindowInfo: () => ({ windowWidth: 375, statusBarHeight: 0 }),
+    showToast: ({ title }: { title: string }) => { toasts.push(title); },
+  });
   const renderCallbacks: Array<() => void> = [];
   page.setData = (patch, callback) => {
     for (const [key, value] of Object.entries(patch)) {
@@ -276,9 +268,10 @@ type TestMessage = {
     if (callback) renderCallbacks.push(callback);
   };
   page.schedulePlanJobPoll = () => {};
+  const loadSession = page.loadSession.bind(page);
   page.loadSession = async () => {};
   const tap = (id: string | number): Tap => ({ currentTarget: { dataset: { id } } });
-  const sourceMessage = { id: 8, shareIndex: 3, card: { type: 'master-plan-form' }, selectable: true };
+  const sourceMessage = { id: 8, shareIndex: 3, card: { type: 'master-plan-form', data: form }, selectable: true };
   const options = { max_session_duration_min: 180, allows_double_sessions: true, strength_sessions_per_week: 1, strength_available_days: ['wednesday'] } satisfies FormValues['options'];
   page.onLoad();
   page.onSelectSession(tap('source'));
@@ -334,6 +327,92 @@ type TestMessage = {
   page.onPlanJobEdit(tap(jobMessage.id));
   renderCallbacks.shift()?.();
   assert.equal(component.data.targetMinute, 45);
+
+  page.onSelectSession(tap('other'));
+  page.onSelectSession(tap('source'));
+  record.status = 'running';
+  page.data.messages = page.syncPlanJobCards('source', [{ ...sourceMessage, id: 17 }]);
+  page.data.messages.push({ id: 40 });
+  const newFormReply = { status: 'completed' as const, message: '', card: { $type: 'master-plan-form', data: form } };
+  page.finishStream(newFormReply, 40);
+  assert.equal(page.data.messages.at(-1)?.hidden, true, '生成中收到的新表单立即隐藏');
+  record.status = 'failed';
+  page.refreshPlanJobCards();
+  assert.equal(page.data.messages[0].hidden, true, '失败任务通过修改目标恢复上次输入');
+  assert.equal(page.data.messages.at(-1)?.hidden, false, '生成结束后尚未提交的新表单恢复');
+
+  const legacy = { ...record, jobId: 'legacy', sessionId: 'legacy', formMessageId: 17, formShareIndex: undefined };
+  jobs.set(legacy.jobId, legacy);
+  page.onSelectSession(tap('legacy'));
+  page.data.messages = page.syncPlanJobCards('legacy', [{ ...sourceMessage, id: 18 }]);
+  assert.equal(page.data.messages[0].hidden, true, '旧任务可匹配历史中唯一且赛事相同的表单');
+  page.data.messages = page.syncPlanJobCards('legacy', [{ ...sourceMessage, id: 17 }, { ...otherMessage, id: 18 }]);
+  assert.equal(page.data.messages[0].hidden, undefined, '旧 id 有歧义时保留历史表单');
+  const legacyMessage = page.data.messages.find((m) => m.planJob?.jobId === legacy.jobId);
+  assert.ok(legacyMessage);
+  page.selectComponent = (selector) => {
+    const draft = page.data.messages.find((m) => m.editPlanJobId === legacy.jobId);
+    assert.ok(draft);
+    assert.equal(selector, `#plan-form-${draft.id}`);
+    assert.equal(draft.selectable, false);
+    return { reopenForm: (values) => assert.deepEqual(values, planJobFormValues(legacy.request)) };
+  };
+  page.onPlanJobEdit(tap(legacyMessage.id));
+  renderCallbacks.shift()?.();
+  assert.ok(page.data.messages.find((m) => m.editPlanJobId === legacy.jobId));
+
+  let loading: Promise<void> | undefined;
+  page.loadSession = (id) => { loading = loadSession(id); return loading; };
+  page.onSelectSession(tap('source'));
+  page.data.input = '我要准备马拉松';
+  await page.onSend();
+  assert.equal(page.data.input, '我要准备马拉松', '历史加载中保留输入');
+  assert.equal(toasts.at(-1), '对话加载中，请稍候');
+  history.reject(new Error('offline'));
+  await loading;
+  assert.ok(page.data.messages.some((m) => m.planJob?.jobId === record.jobId), '历史不可用时保留本地任务卡');
+  page.data.messages.push({ id: 42 });
+  page.finishStream(newFormReply, 42);
+  assert.equal(page.data.messages.at(-1)?.shareIndex, undefined, '历史未知时不猜测新表单的序号');
+  page.onSelectSession(tap('source'));
+  await loading;
+  assert.deepEqual(historyRequests, ['source', 'source']);
+}
+
+// 本地存储部分失败时，列表和轮询仍使用本进程的最新任务状态。
+{
+  const storage = new Map<string, unknown>();
+  let blockedKey = '';
+  Object.defineProperty(globalThis, 'wx', {
+    configurable: true,
+    value: {
+      getStorageSync: (key: string) => storage.get(key),
+      setStorageSync: (key: string, value: unknown) => {
+        if (key === blockedKey) throw new Error('quota');
+        storage.set(key, value);
+      },
+      removeStorageSync: (key: string) => storage.delete(key),
+    },
+  });
+  const record: planJobCards.PlanJobRecord = {
+    jobId: 'storage-test', sessionId: 'source', status: 'running', stage: '', progressPct: 0,
+    createdAt: 1, idempotencyKey: 'storage-test', request: buildMasterPlanJobRequest(form, 'storage', DEFAULT_MASTER_PLAN_FORM_OPTIONS),
+  };
+  try {
+    assert.equal(planJobCards.savePlanJob(record), true);
+    blockedKey = 'plan-job:storage-test';
+    planJobCards.updatePlanJobRecord(record.jobId, { status: 'done' });
+    assert.equal(planJobCards.readPlanJobCached(record.jobId)?.status, 'done');
+    assert.equal(planJobCards.listPlanJobs()[0]?.status, 'done');
+    blockedKey = 'plan-job:index';
+    assert.equal(planJobCards.savePlanJob({ ...record, jobId: 'index-test', createdAt: 2 }), false);
+    assert.deepEqual(planJobCards.listPlanJobs().map(({ jobId }) => jobId), ['storage-test', 'index-test']);
+  } finally {
+    blockedKey = '';
+    planJobCards.removePlanJob(record.jobId);
+    planJobCards.removePlanJob('index-test');
+    Reflect.deleteProperty(globalThis, 'wx');
+  }
 }
 
 console.log('plan job cards checks passed');

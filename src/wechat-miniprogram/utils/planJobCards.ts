@@ -310,9 +310,9 @@ const MAX_STORED_JOBS = 20;
 /** 本页内存副本：storage 写失败（配额/隐私模式）时进度卡仍能工作。 */
 const memoryJobs = new Map<string, PlanJobRecord>();
 
-/** 读卡：storage 优先，失败时回落到本页内存副本。 */
+/** 读卡：本进程的最新更新优先，storage 提供上次运行保存的记录。 */
 export function readPlanJobCached(jobId: string): PlanJobRecord | null {
-  return readPlanJob(jobId) ?? memoryJobs.get(jobId) ?? null;
+  return memoryJobs.get(jobId) ?? readPlanJob(jobId);
 }
 
 /** 更新卡：写内存副本 + best-effort 落 storage（storage 失败不阻断本页进度）。 */
@@ -320,7 +320,6 @@ export function updatePlanJobRecord(jobId: string, patch: Partial<PlanJobRecord>
   const current = readPlanJobCached(jobId);
   if (!current) return null;
   const next: PlanJobRecord = { ...current, ...patch, jobId: current.jobId };
-  memoryJobs.set(next.jobId, next);
   savePlanJob(next);
   return next;
 }
@@ -363,21 +362,6 @@ export function planJobRequestSummary(request: MasterPlanJobRequest): string {
   return `${distance} · ${goal?.race_date ?? ''}${target} · 每周 ${days} 天`;
 }
 
-/**
- * 表单消息是否属于「已提交」（被某张非 failed 的 job 绑定）。
- *
- * 消息带 shareIndex（服务端投影行序）时**只认它**：重进页面后 id 会重排，
- * id 空间被复用，拿旧 id 兜底可能误伤另一张表单卡。没有 shareIndex 的本地
- * 消息（needs_input 追问泡等）才退回 messageId（旧记录/进程内兜底）。
- */
-export function isSubmittedPlanFormMessage(
-  message: { id: number; shareIndex?: number },
-  submitted: { shareIndices: ReadonlySet<number>; messageIds: ReadonlySet<number> },
-): boolean {
-  if (typeof message.shareIndex === 'number') return submitted.shareIndices.has(message.shareIndex);
-  return submitted.messageIds.has(message.id);
-}
-
 function isPlanJobRecord(value: unknown): value is PlanJobRecord {
   const v = recordOf(value);
   return (
@@ -401,11 +385,12 @@ function readIndex(): string[] {
   return [];
 }
 
-function writeIndex(ids: string[]): void {
+function writeIndex(ids: string[]): boolean {
   try {
     wx.setStorageSync(JOB_INDEX_KEY, ids);
+    return true;
   } catch {
-    /* ignore */
+    return false;
   }
 }
 
@@ -421,16 +406,21 @@ export function readPlanJob(jobId: string): PlanJobRecord | null {
 /** 所有本地 job 卡（按创建时间升序）。 */
 export function listPlanJobs(): PlanJobRecord[] {
   const jobs: PlanJobRecord[] = [];
-  for (const id of readIndex()) {
-    const job = readPlanJob(id);
+  for (const id of new Set([...readIndex(), ...memoryJobs.keys()])) {
+    const job = readPlanJobCached(id);
     if (job) jobs.push(job);
   }
-  return jobs.sort((a, b) => a.createdAt - b.createdAt);
+  return jobs.sort((a, b) => a.createdAt - b.createdAt).slice(-MAX_STORED_JOBS);
 }
 
 /** 写卡（同步）；storage 不可用时返回 false，由调用方提示「进度可能无法恢复」。 */
 export function savePlanJob(job: PlanJobRecord): boolean {
+  memoryJobs.delete(job.jobId);
   memoryJobs.set(job.jobId, job);
+  if (memoryJobs.size > MAX_STORED_JOBS) {
+    const oldest = memoryJobs.keys().next().value;
+    if (oldest !== undefined) memoryJobs.delete(oldest);
+  }
   try {
     wx.setStorageSync(JOB_KEY_PREFIX + job.jobId, job);
   } catch {
@@ -439,14 +429,14 @@ export function savePlanJob(job: PlanJobRecord): boolean {
   const ids = [job.jobId, ...readIndex().filter((id) => id !== job.jobId)];
   const kept = ids.slice(0, MAX_STORED_JOBS);
   for (const dropped of ids.slice(MAX_STORED_JOBS)) {
+    memoryJobs.delete(dropped);
     try {
       wx.removeStorageSync(JOB_KEY_PREFIX + dropped);
     } catch {
       /* ignore */
     }
   }
-  writeIndex(kept);
-  return true;
+  return writeIndex(kept);
 }
 
 /** 删除一张卡（重试换新 job id / 淘汰旧卡时用）。 */

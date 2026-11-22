@@ -21,7 +21,7 @@
 
     <view wx:if="{{activeTab === 'goal'}}" class="mpf-section">
       <view class="mpf-field">
-        <view class="mpf-label">赛事名称<text class="mpf-label__hint">已从比赛库带出，可更换</text></view>
+        <view class="mpf-label">赛事名称<text class="mpf-label__hint">请确认或填写赛事名称</text></view>
         <input
           class="mpf-input {{errorRaceName ? 'mpf-input--error' : ''}}"
           value="{{raceName}}"
@@ -56,7 +56,7 @@
       </view>
 
       <view class="mpf-field">
-        <view class="mpf-label">目标成绩<text class="mpf-label__hint">可留空＝顺利完赛 · 按你的水平预填</text></view>
+        <view class="mpf-label">目标成绩<text class="mpf-label__hint">也可以选择顺利完赛</text></view>
         <view wx:if="{{!finishOnly}}" class="mpf-time">
           <picker class="mpf-time__col" mode="selector" range="{{hourRange}}" value="{{targetHourIndex}}" bindchange="onHourChange">
             <view class="mpf-time__value">{{targetHour}}</view>
@@ -82,7 +82,7 @@
 
     <view wx:else class="mpf-section">
       <view class="mpf-field">
-        <view class="mpf-label">每周可训练的日子<text class="mpf-label__hint">按你的运动习惯预填</text></view>
+        <view class="mpf-label">每周可训练的日子<text class="mpf-label__hint">选你有时间训练的日子</text></view>
         <view class="mpf-days">
           <view
             wx:for="{{dayChips}}"

@@ -7,6 +7,7 @@ import {
   setPendingPlanPreview,
   type CurrentSeasonPlan,
   type MasterPlanCard,
+  type MasterPlanFormCard,
   type MasterPlanReplacementExpectation,
 } from '../../services/master-plan';
 import { enqueueGenerateMasterPlan, pollPlanJob, randomRequestId } from '../../services/plan-jobs';
@@ -44,7 +45,6 @@ import {
   type MasterPlanFormValues,
   type PlanJobCardView,
   type PlanJobRecord,
-  isSubmittedPlanFormMessage,
 } from '../../utils/planJobCards';
 import { PLAN_JOB_POLL_MS } from '../../utils/planJobProgress';
 import { epochToShanghaiHm, shanghaiToday } from '../../utils/date';
@@ -78,6 +78,8 @@ interface CoachMessage {
   // 暂不渲染（表单卡提交后由 syncPlanJobCards 打标，#1024）：不删消息，保留给
   // 「修改目标」找回组件实例；渲染层按此跳过。
   hidden?: boolean;
+  // 找不到历史表单时，从已提交任务恢复的本地编辑卡。
+  editPlanJobId?: string;
   // 展示时间戳（HH:mm）。服务端历史无逐条时间，只有本会话内新产生的消息带。
   ts?: string;
 }
@@ -139,25 +141,40 @@ function clearPlanJobTimers(): void {
   planJobTimers.clear();
 }
 
-function sessionPlanJobs(sessionId: string, current?: PlanJobRecord): PlanJobRecord[] {
-  const records = listPlanJobs().filter((job) => job.sessionId === sessionId && job.jobId !== current?.jobId);
-  if (current) records.push(current);
-  return records;
+function sessionPlanJobs(sessionId: string): PlanJobRecord[] {
+  return listPlanJobs().filter((job) => job.sessionId === sessionId);
+}
+
+function findPlanFormMessage(forms: CoachMessage[], record: PlanJobRecord): CoachMessage | undefined {
+  if (typeof record.formShareIndex === 'number') {
+    return forms.find((form) => form.shareIndex === record.formShareIndex);
+  }
+  if (typeof record.formMessageId !== 'number') return undefined;
+  const local = forms.find((form) => form.shareIndex === undefined && form.id === record.formMessageId);
+  if (local) return local;
+  // 旧任务只存过进程内 id。历史只留一张且赛事一致时，才关联这张卡。
+  if (forms.length !== 1 || forms[0].ts) return undefined;
+  const goal = (forms[0].card?.data as MasterPlanFormCard | undefined)?.goal;
+  const submitted = record.request.goals?.[0];
+  if (goal && submitted && goal.race_name.trim() === submitted.race_name &&
+    goal.distance === submitted.distance && goal.race_date === submitted.race_date) return forms[0];
+  return undefined;
+}
+
+function planFormMessages(messages: CoachMessage[]): CoachMessage[] {
+  return messages.filter((message) => message.card?.type === 'master-plan-form' && !message.editPlanJobId);
 }
 
 function syncPlanFormVisibility(base: CoachMessage[], records: PlanJobRecord[]): CoachMessage[] {
-  const submitted = { shareIndices: new Set<number>(), messageIds: new Set<number>() };
-  for (const job of records) {
-    if (job.status === 'failed') continue;
-    if (job.formShareIndex !== undefined) submitted.shareIndices.add(job.formShareIndex);
-    else if (job.formMessageId !== undefined) submitted.messageIds.add(job.formMessageId);
-  }
+  const forms = planFormMessages(base);
+  const submittedIds = new Set(records.map((job) => findPlanFormMessage(forms, job)?.id));
   const hideAllForms = records.some((job) => job.status === 'running');
   return base.map((message) => {
     if (message.card?.type !== 'master-plan-form') return message;
-    const hidden = !reopenedForms.has(message.id) && (hideAllForms || isSubmittedPlanFormMessage(message, submitted));
+    // 失败卡也从「修改目标」回填提交值，避免原始预填值重新出现。
+    const hidden = !reopenedForms.has(message.id) && (hideAllForms || submittedIds.has(message.id));
     if (hidden === Boolean(message.hidden)) return message;
-    return { ...message, hidden, selectable: !hidden, selected: hidden ? false : message.selected };
+    return { ...message, hidden, selectable: !hidden && message.shareIndex !== undefined, selected: hidden ? false : message.selected };
   });
 }
 
@@ -194,6 +211,7 @@ const COACH_SHARE_PAGE = '/pages/coach-share/coach-share';
 // 当前会话已加载的服务端投影长度：历史加载后 = history.messages.length，
 // 之后每条确认落库的新消息（finishStream）递增。本地新气泡按它领投影序号。
 let projectionLength = 0;
+let activeHistoryLoad: { sessionId: string } | undefined;
 // 最近一次历史加载是否失败。失败时本地投影序号不可信（欢迎语兜底视图缺服务端
 // 前缀），多选入口 toast 拦截，onShow 静默重拉直到同步成功。
 let historySyncFailed = false;
@@ -403,8 +421,6 @@ interface CoachPageHandlers {
   onPlanJobRetry(e: WechatMiniprogram.TouchEvent): void;
   onPlanJobView(e: WechatMiniprogram.TouchEvent): void;
   onPlanJobEdit(e: WechatMiniprogram.TouchEvent): void;
-  /** 找回 job 绑定的表单卡。 */
-  findPlanFormMessage(record: PlanJobRecord): CoachMessage | undefined;
   /** 当前会话是否有在跑的计划生成任务（提交/重试共用护栏）。 */
   hasRunningPlanJob(): boolean;
   /** 呈现/刷新一张本地 job 卡并开始轮询（提交与重试共用）。 */
@@ -788,6 +804,7 @@ Page<CoachPageData, CoachPageHandlers>({
 
   onUnload() {
     coachPageActive = false;
+    activeHistoryLoad = undefined;
     clearPlanJobTimers();
     reopenedForms.clear();
     // 离开页面时中止在途流式请求，避免后台继续占用连接/接收 chunk。
@@ -812,6 +829,8 @@ Page<CoachPageData, CoachPageHandlers>({
     writeCurrentSessionId(newSession.id);
     seq = 0;
     projectionLength = 0;
+    activeHistoryLoad = undefined;
+    historySyncFailed = false;
     reopenedForms.clear();
     this.setData({
       sessions,
@@ -859,11 +878,15 @@ Page<CoachPageData, CoachPageHandlers>({
    * 加载失败（后端未配置/网络异常）时也保留欢迎语，便于继续提问。
    */
   async loadSession(sessionId: string) {
+    if (this.data.currentSessionId !== sessionId) return;
+    const load = { sessionId };
+    activeHistoryLoad = load;
+    const isCurrent = () => coachPageActive && activeHistoryLoad === load && this.data.currentSessionId === sessionId;
     this.resetStream();
     try {
       const history = await fetchCoachHistory(sessionId);
       // 等待网络期间用户可能已切换会话（或首页移交新建了会话），丢弃过期结果。
-      if (this.data.currentSessionId !== sessionId) return;
+      if (!isCurrent()) return;
       let msgs = this.data.messages;
       if (history && Array.isArray(history.messages) && history.messages.length) {
         seq = 0;
@@ -887,7 +910,7 @@ Page<CoachPageData, CoachPageHandlers>({
       } catch {
         // 对账失败按未保存渲染（旧版 Go api 无 save_token 时同样静默降级）。
       }
-      if (!coachPageActive || this.data.currentSessionId !== sessionId) return;
+      if (!isCurrent()) return;
       // 本地 job 卡（非 checkpoint 消息）挂在消息尾部，按创建时间序。
       msgs = this.syncPlanJobCards(sessionId, msgs);
       historySyncFailed = false;
@@ -896,8 +919,11 @@ Page<CoachPageData, CoachPageHandlers>({
         scrollIntoId: `msg-${msgs[msgs.length - 1].id}`,
       });
     } catch {
-      // 历史拉取失败时保留欢迎语。
+      if (!isCurrent()) return;
       historySyncFailed = true;
+      this.refreshPlanJobCards();
+    } finally {
+      if (activeHistoryLoad === load) activeHistoryLoad = undefined;
     }
   },
 
@@ -1487,7 +1513,9 @@ Page<CoachPageData, CoachPageHandlers>({
     const options = e.detail?.options;
     if (!form || !options) return;
     const sessionId = this.data.currentSessionId;
-    const formShareIndex = this.data.messages.find((m) => m.id === messageId && m.card?.type === 'master-plan-form')?.shareIndex;
+    const formMessage = this.data.messages.find((m) => m.id === messageId && m.card?.type === 'master-plan-form');
+    if (!formMessage) return;
+    const formShareIndex = formMessage.shareIndex;
     const failForm = (): void => {
       if (!coachPageActive || this.data.currentSessionId !== sessionId || typeof messageId !== 'number') return;
       const component = this.selectComponent(`#plan-form-${messageId}`) as { submitFailed?: () => void } | null;
@@ -1529,7 +1557,7 @@ Page<CoachPageData, CoachPageHandlers>({
         progressPct: 0,
         idempotencyKey,
         request,
-        ...(typeof messageId === 'number' ? { formMessageId: messageId } : {}),
+        ...(!formMessage.editPlanJobId ? { formMessageId: formMessage.id } : {}),
         ...(typeof formShareIndex === 'number' ? { formShareIndex } : {}),
       };
       // 投递期间切走了会话：卡只落 storage，回到该会话时 syncPlanJobCards 补回。
@@ -1537,8 +1565,13 @@ Page<CoachPageData, CoachPageHandlers>({
         savePlanJob(record);
         return;
       }
-      const submittedForm = this.findPlanFormMessage(record);
+      const submittedForm = findPlanFormMessage(planFormMessages(this.data.messages), record);
       if (submittedForm) reopenedForms.delete(submittedForm.id);
+      const editPlanJobId = formMessage.editPlanJobId;
+      if (editPlanJobId) {
+        reopenedForms.delete(formMessage.id);
+        this.setData({ messages: this.data.messages.filter((m) => m.editPlanJobId !== editPlanJobId) });
+      }
       this.presentPlanJobRecord(record);
     } catch (err) {
       console.error('[coach] 训练计划投递失败', err);
@@ -1583,7 +1616,7 @@ Page<CoachPageData, CoachPageHandlers>({
       messages.push(message);
     }
     this.setData({
-      messages: syncPlanFormVisibility(messages, sessionPlanJobs(record.sessionId, record)),
+      messages: syncPlanFormVisibility(messages, sessionPlanJobs(record.sessionId)),
       scrollIntoId: `msg-${message.id}`,
     });
     this.refreshAllSelected();
@@ -1668,7 +1701,7 @@ Page<CoachPageData, CoachPageHandlers>({
     const messages = [...this.data.messages];
     messages[index] = { ...message, planJob: jobCardView(record) };
     this.setData({
-      messages: syncPlanFormVisibility(messages, sessionPlanJobs(record.sessionId, record)),
+      messages: syncPlanFormVisibility(messages, sessionPlanJobs(record.sessionId)),
       ...(record.status !== 'running' ? { scrollIntoId: `msg-${message.id}` } : {}),
     });
     this.refreshAllSelected();
@@ -1846,38 +1879,36 @@ Page<CoachPageData, CoachPageHandlers>({
     }
   },
 
-  /** 有历史投影序号时精确匹配。旧记录只有一张候选表单时可安全回填。 */
-  findPlanFormMessage(record: PlanJobRecord): CoachMessage | undefined {
-    const forms = this.data.messages.filter((m) => m.card?.type === 'master-plan-form');
-    if (typeof record.formShareIndex === 'number') {
-      return forms.find((m) => m.shareIndex === record.formShareIndex);
-    }
-    const localForm = forms.find((m) => m.shareIndex === undefined && m.id === record.formMessageId);
-    return localForm ?? (forms.length === 1 ? forms[0] : undefined);
-  },
-
   /** 修改目标：展开任务对应的表单，从上次提交的输入继续编辑。 */
   onPlanJobEdit(e: WechatMiniprogram.TouchEvent) {
     const id = e.currentTarget.dataset.id as number | undefined;
     const message = typeof id === 'number' ? this.data.messages.find((m) => m.id === id) : undefined;
     const record = message?.planJob ? readPlanJobCached(message.planJob.jobId) : null;
-    const formMessage = record ? this.findPlanFormMessage(record) : undefined;
-    if (!record || !formMessage) {
+    const values = record ? planJobFormValues(record.request) : null;
+    if (!record || !values) {
       wx.showToast({ title: '当前对话里没有可修改的表单', icon: 'none' });
       return;
     }
-    const index = this.data.messages.findIndex((m) => m.id === formMessage.id);
+    const messages = this.data.messages;
+    const existing = messages.find((m) => m.editPlanJobId === record.jobId)
+      ?? findPlanFormMessage(planFormMessages(messages), record);
+    const card = existing?.card ?? buildCoachCard({ $type: 'master-plan-form', data: values.form }, undefined);
+    if (!card) return;
+    const formMessage: CoachMessage = existing ?? {
+      ...cardCoachMessage(card, ''),
+      editPlanJobId: record.jobId,
+    };
+    const opened = { ...formMessage, hidden: false, selectable: formMessage.shareIndex !== undefined };
     const sessionId = this.data.currentSessionId;
-    const values = reopenedForms.get(formMessage.id) === record.jobId ? undefined : planJobFormValues(record.request);
+    const restoreValues = reopenedForms.get(formMessage.id) !== record.jobId;
     reopenedForms.set(formMessage.id, record.jobId);
     // wx:if 隐藏的组件需要等 setData 渲染完成才能回填。
     this.setData({
-      [`messages[${index}].hidden`]: false,
-      [`messages[${index}].selectable`]: true,
+      messages: existing ? messages.map((m) => m.id === existing.id ? opened : m) : [...messages, opened],
     }, () => {
       if (!coachPageActive || this.data.currentSessionId !== sessionId || reopenedForms.get(formMessage.id) !== record.jobId) return;
       const component = this.selectComponent(`#plan-form-${formMessage.id}`) as { reopenForm?: (values?: MasterPlanFormValues) => void } | null;
-      component?.reopenForm?.(values ?? undefined);
+      component?.reopenForm?.(restoreValues ? values : undefined);
       this.setData({ scrollIntoId: `msg-${formMessage.id}` });
       this.refreshAllSelected();
     });
@@ -1907,6 +1938,10 @@ Page<CoachPageData, CoachPageHandlers>({
   /** 发送一条用户消息（输入框发送与入口 kickoff 共用）：刷会话标题、落用户气泡、发起本轮。 */
   async sendText(text: string) {
     if (this.data.sending) return;
+    if (activeHistoryLoad?.sessionId === this.data.currentSessionId) {
+      wx.showToast({ title: '对话加载中，请稍候', icon: 'none' });
+      return;
+    }
     // 新会话用首条消息当标题（覆盖占位标题）。
     const sessions = this.data.sessions;
     let refreshedSessions = sessions;
@@ -1944,7 +1979,7 @@ Page<CoachPageData, CoachPageHandlers>({
       wx.showToast({ title: '发送失败的消息不可转发', icon: 'none' });
       return;
     }
-    if (this.data.sending) return;
+    if (this.data.sending || activeHistoryLoad?.sessionId === this.data.currentSessionId) return;
     const id = e.currentTarget.dataset.id as number;
     const msg = this.data.messages.find((m) => m.id === id);
     if (!msg || msg.role !== 'user' || !msg.clientTurnId) return;
@@ -2026,15 +2061,16 @@ Page<CoachPageData, CoachPageHandlers>({
     // 本轮 intent 命中的结构化产物：翻译成通知卡片替代 markdown 气泡（保存由
     // 用户在报告页「应用」触发，不再生成即落库弹窗）。信封不认识时降级 markdown。
     const card = buildCoachCard(done.card, this.currentSessionTarget());
+    const userShareIndex = historySyncFailed ? undefined : projectionLength;
     if ((!content || !content.trim()) && !card) {
       if (done.status === 'completed') {
         // 空回复降级（服务端实证：reasoning 吃满 output budget）：turn 已完成落库，
         // user 消息照常可分享；空 assistant 回复在服务端投影里也占一位（无气泡
         // 渲染）。两处都计入长度，防止后续轮次序号漂移。
         const messages = this.data.messages.map((m) =>
-          m.id === userMsgId ? { ...m, failed: false, shareIndex: projectionLength, selectable: true, ts: currentTimeHhmm() } : m,
+          m.id === userMsgId ? { ...m, failed: false, shareIndex: userShareIndex, selectable: userShareIndex !== undefined, ts: currentTimeHhmm() } : m,
         );
-        projectionLength += 2;
+        if (userShareIndex !== undefined) projectionLength += 2;
         this.setData({
           messages,
           sending: false,
@@ -2054,19 +2090,18 @@ Page<CoachPageData, CoachPageHandlers>({
     // 本轮确认落库：user 气泡占一个服务端投影位；completed 才有 assistant 回复
     // 占下一个位。needs_input 的追问泡只是本地渲染（服务端 checkpoint 的 AI 消息
     // 带 tool_calls，投影层剔除），不领序号、不可多选。
-    const userShareIndex = projectionLength;
-    projectionLength += 1;
-    const assistantShareIndex = done.status === 'completed' ? projectionLength++ : undefined;
+    if (userShareIndex !== undefined) projectionLength += 1;
+    const assistantShareIndex = userShareIndex !== undefined && done.status === 'completed' ? projectionLength++ : undefined;
     const ts = currentTimeHhmm();
     const messages = this.data.messages.map((m) =>
-      m.id === userMsgId ? { ...m, failed: false, shareIndex: userShareIndex, selectable: true, ts } : m,
+      m.id === userMsgId ? { ...m, failed: false, shareIndex: userShareIndex, selectable: userShareIndex !== undefined, ts } : m,
     );
     const assistantMsg: CoachMessage = {
       id: ++seq,
       role: 'assistant',
       content,
       ts,
-      selectable: true,
+      selectable: assistantShareIndex !== undefined,
       ...(assistantShareIndex !== undefined ? { shareIndex: assistantShareIndex } : {}),
       // 卡片存在时不渲染 markdown 正文（报告页才是完整视图）；inlineBody 产物
       // （master-plan 摘要即卡片）例外——摘要正文跟卡片同泡渲染。
@@ -2076,14 +2111,18 @@ Page<CoachPageData, CoachPageHandlers>({
           ? { card, html: markdownToHtml(content) }
           : { html: markdownToHtml(content) }),
     };
+    const appended = [...messages, assistantMsg];
+    const visibleMessages = card?.type === 'master-plan-form'
+      ? syncPlanFormVisibility(appended, sessionPlanJobs(this.data.currentSessionId))
+      : appended;
     this.setData({
-      messages: [...messages, assistantMsg],
+      messages: visibleMessages,
       sending: false,
       streaming: false,
       streamPhase: '',
       streamNarration: '',
       streamText: '',
-      scrollIntoId: `msg-${assistantMsg.id}`,
+      scrollIntoId: `msg-${visibleMessages[visibleMessages.length - 1].hidden ? userMsgId : assistantMsg.id}`,
     });
     // 选择模式下流结束追加了新消息：全集变了，重算「全选」态（无选择模式时为无害空转）。
     this.refreshAllSelected();
@@ -2266,6 +2305,8 @@ Page<CoachPageData, CoachPageHandlers>({
     writeCurrentSessionId(newSession.id);
     seq = 0;
     projectionLength = 0;
+    activeHistoryLoad = undefined;
+    historySyncFailed = false;
     reopenedForms.clear();
     this.setData({
       sessions,
@@ -2285,12 +2326,14 @@ Page<CoachPageData, CoachPageHandlers>({
     if (!id) return;
     if (id === this.data.currentSessionId) {
       this.setData({ drawerOpen: false });
+      if (historySyncFailed && !activeHistoryLoad) void this.loadSession(id);
       return;
     }
     writeCurrentSessionId(id);
     const selected = this.data.sessions.find((s) => s.id === id);
     seq = 0;
     projectionLength = 0;
+    historySyncFailed = false;
     reopenedForms.clear();
     this.setData({
       currentSessionId: id,
