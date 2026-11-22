@@ -42,6 +42,14 @@ export const DEFAULT_MASTER_PLAN_FORM_OPTIONS: MasterPlanFormOptions = {
   strength_available_days: ['monday', 'thursday'],
 };
 
+export interface MasterPlanFormValues {
+  form: MasterPlanFormCard;
+  options: MasterPlanFormOptions;
+}
+
+const TRAINING_BASE_PREFIX = '近期训练基础：';
+const RESTRICTION_PREFIX = '伤病或其他限制：';
+
 /**
  * 表单卡 → MasterPlanGraphRequest（服务端 zod 严格复验，多余键会被拒）。
  * 表单提交即确认：user_confirmations 全真。目标成绩空 = 顺利完赛
@@ -71,8 +79,8 @@ export function buildMasterPlanJobRequest(
   const preferences: string[] = [];
   const base = form.base.trim();
   const restriction = form.restriction.trim();
-  if (base) preferences.push(`近期训练基础：${base}`);
-  if (restriction) preferences.push(`伤病或其他限制：${restriction}`);
+  if (base) preferences.push(`${TRAINING_BASE_PREFIX}${base}`);
+  if (restriction) preferences.push(`${RESTRICTION_PREFIX}${restriction}`);
   return {
     request_id: requestId,
     requested_mode: 'new_season',
@@ -109,6 +117,40 @@ export function buildMasterPlanJobRequest(
       availability_confirmed: true,
       injury_history_confirmed: true,
       constraints_confirmed: true,
+    },
+  };
+}
+
+/** 「修改目标」从上次投递的请求回填，包括用户手动修改过的更多选项。 */
+export function planJobFormValues(request: MasterPlanJobRequest): MasterPlanFormValues | null {
+  const goal = request.goals?.[0];
+  const availability = request.availability;
+  if (!goal || !availability || !Array.isArray(availability.unavailable_days)) return null;
+  const preference = (prefix: string): string =>
+    request.preferences?.find((value) => value.startsWith(prefix))?.slice(prefix.length) ?? '';
+  const defaults = DEFAULT_MASTER_PLAN_FORM_OPTIONS;
+  return {
+    form: {
+      goal: {
+        race_name: goal.race_name,
+        distance: goal.distance,
+        race_date: goal.race_date,
+        target_time: goal.target_time ?? '',
+      },
+      availability: {
+        weekly_days: WEEKDAY_VALUES.filter((day) => !availability.unavailable_days.includes(day)),
+        preferred_long_run_day: WEEKDAY_VALUES.find((day) => day === availability.preferred_long_run_day) ?? null,
+      },
+      base: preference(TRAINING_BASE_PREFIX),
+      restriction: preference(RESTRICTION_PREFIX),
+    },
+    options: {
+      max_session_duration_min: availability.max_session_duration_min ?? defaults.max_session_duration_min,
+      allows_double_sessions: availability.allows_double_sessions ?? defaults.allows_double_sessions,
+      strength_sessions_per_week: availability.strength_sessions_per_week ?? defaults.strength_sessions_per_week,
+      strength_available_days: WEEKDAY_VALUES.filter((day) =>
+        (availability.strength_available_days ?? defaults.strength_available_days).includes(day),
+      ),
     },
   };
 }
@@ -229,8 +271,13 @@ export interface PlanJobRecord {
   progressPct: number;
   idempotencyKey: string;
   request: MasterPlanJobRequest;
-  /** 提交这张表单的消息 id（本会话内稳定；重启后 id 会重排，仅作 best-effort 关联）。 */
+  /** 旧版本保存过的表单消息 id。历史重载后不能直接按此 id 匹配。 */
   formMessageId?: number;
+  /** 表单消息在服务端历史投影里的行序（CoachMessage.shareIndex，与分享 indices 同源）。
+   *  历史重载后 id 会重排，这个序号不会——跨进程识别「已提交表单」靠它。 */
+  formShareIndex?: number;
+  /** 历史不可用期间提交时保留源卡的预填目标，供历史恢复后识别唯一匹配。 */
+  formSourceGoal?: MasterPlanFormCard['goal'];
   /** done 时结果卡文案（轻量摘要；完整 content 不落 storage，查看时按 job 现取）。 */
   resultTitle?: string;
   resultSubtitle?: string;
@@ -251,6 +298,10 @@ export interface PlanJobCardView {
   applied?: boolean;
   /** 网络持续失败、轮询暂时停下（卡上显示恢复入口；#1029）。 */
   pollPaused?: boolean;
+  /** 进度卡标题（带计划名，#1024 用户拍板：提交信息并进进度卡）。 */
+  planTitle?: string;
+  /** 提交信息摘要行（项目/日期/目标/每周天数）。 */
+  requestSummary?: string;
 }
 
 const JOB_KEY_PREFIX = 'plan-job:';
@@ -261,9 +312,9 @@ const MAX_STORED_JOBS = 20;
 /** 本页内存副本：storage 写失败（配额/隐私模式）时进度卡仍能工作。 */
 const memoryJobs = new Map<string, PlanJobRecord>();
 
-/** 读卡：storage 优先，失败时回落到本页内存副本。 */
+/** 读卡：本进程的最新更新优先，storage 提供上次运行保存的记录。 */
 export function readPlanJobCached(jobId: string): PlanJobRecord | null {
-  return readPlanJob(jobId) ?? memoryJobs.get(jobId) ?? null;
+  return memoryJobs.get(jobId) ?? readPlanJob(jobId);
 }
 
 /** 更新卡：写内存副本 + best-effort 落 storage（storage 失败不阻断本页进度）。 */
@@ -271,7 +322,6 @@ export function updatePlanJobRecord(jobId: string, patch: Partial<PlanJobRecord>
   const current = readPlanJobCached(jobId);
   if (!current) return null;
   const next: PlanJobRecord = { ...current, ...patch, jobId: current.jobId };
-  memoryJobs.set(next.jobId, next);
   savePlanJob(next);
   return next;
 }
@@ -288,7 +338,30 @@ export function planJobCardView(record: PlanJobRecord, applied: boolean, pollPau
     subtitle: record.resultSubtitle,
     applied,
     pollPaused,
+    /** 进度卡标题/摘要带提交信息（#1024 用户拍板：提交信息并进进度卡）。 */
+    planTitle: planJobGenerateTitle(record.request),
+    requestSummary: planJobRequestSummary(record.request),
   };
+}
+
+/** 进度卡标题：无锡马拉松250的备赛计划 / 无锡马拉松的备赛计划（完赛）。 */
+export function planJobGenerateTitle(request: MasterPlanJobRequest): string {
+  const goal = request.goals[0];
+  const race = goal?.race_name?.trim() || '赛季训练';
+  const target = goal?.target_time || '';
+  const breakthrough = target ? breakthroughNumber(target) : '';
+  return breakthrough
+    ? `正在为你生成${race}${breakthrough}的备赛计划`
+    : `正在为你生成${race}的备赛计划`;
+}
+
+/** 提交信息摘要行：全程 · 2027-03-07 · 目标 2:50:00 · 每周 5 天。 */
+export function planJobRequestSummary(request: MasterPlanJobRequest): string {
+  const goal = request.goals[0];
+  const distance = goal?.distance === 'HM' ? '半马' : '全马';
+  const target = goal?.target_time ? ` · 目标 ${goal.target_time}` : ' · 顺利完赛';
+  const days = request.availability.weekly_run_days_max;
+  return `${distance} · ${goal?.race_date ?? ''}${target} · 每周 ${days} 天`;
 }
 
 function isPlanJobRecord(value: unknown): value is PlanJobRecord {
@@ -314,11 +387,12 @@ function readIndex(): string[] {
   return [];
 }
 
-function writeIndex(ids: string[]): void {
+function writeIndex(ids: string[]): boolean {
   try {
     wx.setStorageSync(JOB_INDEX_KEY, ids);
+    return true;
   } catch {
-    /* ignore */
+    return false;
   }
 }
 
@@ -334,16 +408,21 @@ export function readPlanJob(jobId: string): PlanJobRecord | null {
 /** 所有本地 job 卡（按创建时间升序）。 */
 export function listPlanJobs(): PlanJobRecord[] {
   const jobs: PlanJobRecord[] = [];
-  for (const id of readIndex()) {
-    const job = readPlanJob(id);
+  for (const id of new Set([...readIndex(), ...memoryJobs.keys()])) {
+    const job = readPlanJobCached(id);
     if (job) jobs.push(job);
   }
-  return jobs.sort((a, b) => a.createdAt - b.createdAt);
+  return jobs.sort((a, b) => a.createdAt - b.createdAt).slice(-MAX_STORED_JOBS);
 }
 
 /** 写卡（同步）；storage 不可用时返回 false，由调用方提示「进度可能无法恢复」。 */
 export function savePlanJob(job: PlanJobRecord): boolean {
+  memoryJobs.delete(job.jobId);
   memoryJobs.set(job.jobId, job);
+  if (memoryJobs.size > MAX_STORED_JOBS) {
+    const oldest = memoryJobs.keys().next().value;
+    if (oldest !== undefined) memoryJobs.delete(oldest);
+  }
   try {
     wx.setStorageSync(JOB_KEY_PREFIX + job.jobId, job);
   } catch {
@@ -352,14 +431,14 @@ export function savePlanJob(job: PlanJobRecord): boolean {
   const ids = [job.jobId, ...readIndex().filter((id) => id !== job.jobId)];
   const kept = ids.slice(0, MAX_STORED_JOBS);
   for (const dropped of ids.slice(MAX_STORED_JOBS)) {
+    memoryJobs.delete(dropped);
     try {
       wx.removeStorageSync(JOB_KEY_PREFIX + dropped);
     } catch {
       /* ignore */
     }
   }
-  writeIndex(kept);
-  return true;
+  return writeIndex(kept);
 }
 
 /** 删除一张卡（重试换新 job id / 淘汰旧卡时用）。 */

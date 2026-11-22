@@ -220,9 +220,9 @@ eq(buildCoachCard({ $type: 'master-plan', data: { goal: { race_name: '缺字段'
     restriction: '',
   };
   const view = buildCoachCard({ $type: 'master-plan-form', data: form }, raceTarget);
-  eq(view?.title, '创建训练计划', 'master-plan-form title');
+  eq(view?.title, '你的下一程', 'master-plan-form title');
   eq(view?.subtitle, '无锡马拉松 · 全马 · 2027-03-22 · 目标 2:50:00 · 每周 3 练', 'master-plan-form subtitle');
-  eq(view?.badge, '待确认', 'master-plan-form badge');
+  eq(view?.badge, '', 'master-plan-form badge（去待确认改为表单卡头内 badge）');
   eq(view?.buttonText, '', 'master-plan-form cta lives in the component');
   eq(view?.url, '', 'master-plan-form is not navigable');
   eq(view?.inlineBody, false, 'master-plan-form replaces body');

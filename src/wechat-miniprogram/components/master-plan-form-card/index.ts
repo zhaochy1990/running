@@ -12,10 +12,10 @@
 // 键盘遮挡，降级方案见 #1024（摘要行 + 点开半屏面板）。
 //
 // 事件：
-//   bindsubmit  detail = { form }   校验通过后的完整表单（MasterPlanFormCard）
+//   bindsubmit  detail = { form, options }   校验通过后的完整表单
 
 import type { MasterPlanFormCard, Weekday } from '../../services/master-plan';
-import { DEFAULT_MASTER_PLAN_FORM_OPTIONS, type MasterPlanFormOptions } from '../../utils/planJobCards';
+import { DEFAULT_MASTER_PLAN_FORM_OPTIONS, type MasterPlanFormOptions, type MasterPlanFormValues } from '../../utils/planJobCards';
 import { WEEKDAY_VALUES } from '../../utils/weekday';
 import { pad2, shanghaiToday } from '../../utils/date';
 
@@ -93,7 +93,7 @@ interface FormCardInstance {
 }
 
 type FormCardMethods = {
-  hydrate(form: MasterPlanFormCard | null): void;
+  hydrate(form: MasterPlanFormCard | null, rememberSource?: boolean): void;
   onTabTap(e: WechatMiniprogram.TouchEvent): void;
   onRaceNameInput(e: WechatMiniprogram.CustomEvent): void;
   onDistanceChange(e: WechatMiniprogram.PickerChange): void;
@@ -115,8 +115,8 @@ type FormCardMethods = {
   onSubmitTap(): void;
   /** 父页投递失败时回退到可编辑态（保留用户已填内容）。 */
   submitFailed(): void;
-  /** 「修改目标」：重新展开表单（父页滚动到本卡后调用）。 */
-  reopenForm(): void;
+  /** 「修改目标」：从上次提交的值开始编辑。 */
+  reopenForm(values?: MasterPlanFormValues): void;
 };
 
 /** 组件 property 传参时数组可能被序列化成数字键对象（开发者工具实测），
@@ -204,10 +204,10 @@ Component<FormCardData, FormCardProps, FormCardMethods, [], FormCardInstance>({
   methods: {
     /** 卡片 data → 可编辑副本（字段空串按「待填写」保留）。
      *  已提交态不随父页重渲染复位（重填只走 reopenForm，父页显式触发）。 */
-    hydrate(form: MasterPlanFormCard | null) {
+    hydrate(form: MasterPlanFormCard | null, rememberSource = true) {
       if (!form) return;
       const time = parseTargetTime(form.goal.target_time);
-      this._formSignature = formSignature(form);
+      if (rememberSource) this._formSignature = formSignature(form);
       const preferred = form.availability.preferred_long_run_day;
       const weeklyDays = toWeekdayArray(form.availability.weekly_days);
       const selected = new Set(weeklyDays);
@@ -397,7 +397,22 @@ Component<FormCardData, FormCardProps, FormCardMethods, [], FormCardInstance>({
       this.setData({ submitted: false });
     },
 
-    reopenForm() {
+    reopenForm(values?: MasterPlanFormValues) {
+      if (values) {
+        this.hydrate(values.form, false);
+        const { options } = values;
+        const maxSessionIndex = MAX_SESSION_OPTIONS.indexOf(options.max_session_duration_min);
+        this.setData({
+          maxSessionIndex: maxSessionIndex < 0 ? this.data.maxSessionIndex : maxSessionIndex,
+          allowsDoubleSessions: options.allows_double_sessions,
+          strengthIndex: options.strength_sessions_per_week,
+          strengthDayChips: this.data.strengthDayChips.map((chip) => ({
+            ...chip,
+            selected: options.strength_available_days.includes(chip.value),
+          })),
+          strengthDaysError: '',
+        });
+      }
       this.setData({ submitted: false, activeTab: 'goal' });
     },
   },
