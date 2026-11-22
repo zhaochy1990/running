@@ -5,10 +5,12 @@
   gap: 12rpx;
   padding: 0 40rpx;
   color: var(--color-text-primary);
+  white-space: nowrap;
 }
 
 .dynamics-heading {
   display: flex;
+  flex: none;
   align-items: center;
   font-size: 29rpx;
   font-weight: 700;
@@ -18,7 +20,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: none;
+  flex: 0 0 84rpx;
+  min-width: 0;
+  max-width: 84rpx;
   width: 84rpx;
   height: 84rpx;
   margin: 0;

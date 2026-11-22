@@ -95,12 +95,14 @@ func buildRunningDynamics(points []storage.TimeseriesPoint, activity *storage.Ac
 				samples = append(samples, dynamicsSample{float64(*point.Timestamp-origin) / 100, value})
 			}
 		}
-		if len(samples) > 0 {
-			if field.key == "cadence" && activity.Provider == "garmin" {
-				normalizeGarminDynamicsCadence(samples, activity.AvgCadence)
-			}
-			result.Metrics[field.key] = aggregateDynamics(samples, duration, field.filterEdges)
+		if len(samples) == 0 {
+			continue
 		}
+		if field.key == "cadence" && activity.Provider == "garmin" &&
+			!normalizeGarminDynamicsCadence(samples, activity.AvgCadence) {
+			continue
+		}
+		result.Metrics[field.key] = aggregateDynamics(samples, duration, field.filterEdges)
 	}
 	if len(result.Metrics) == 0 {
 		return nil
@@ -115,22 +117,30 @@ func dynamicsValue(value *float64) float64 {
 	return *value
 }
 
-// Older Garmin series can contain one-foot cycles. The Garmin activity
-// summary is already in steps/min and distinguishes these from total cadence.
-func normalizeGarminDynamicsCadence(samples []dynamicsSample, averageSteps *int) {
+// Older Garmin series can contain one-foot cycles, full step counts, or
+// both. Compare against the Garmin summary in steps/min before trusting the
+// units. A mixed or unverifiable series cannot reliably produce step ranges.
+func normalizeGarminDynamicsCadence(samples []dynamicsSample, averageSteps *int) bool {
 	if averageSteps == nil || *averageSteps <= 0 {
-		return
+		return false
 	}
-	var sum float64
+	var half, whole int
 	for _, sample := range samples {
-		sum += sample.value
+		ratio := sample.value / float64(*averageSteps)
+		switch {
+		case ratio >= 0.45 && ratio <= 0.55:
+			half++
+		case ratio >= 0.8 && ratio <= 1.2:
+			whole++
+		}
 	}
-	ratio := sum / float64(len(samples)) / float64(*averageSteps)
-	if ratio >= 0.45 && ratio <= 0.55 {
+	if half > len(samples)/2 && whole == 0 {
 		for i := range samples {
 			samples[i].value *= 2
 		}
+		return true
 	}
+	return whole > len(samples)/2 && half == 0
 }
 
 func aggregateDynamics(samples []dynamicsSample, duration float64, filterEdges bool) runningDynamicsMetric {

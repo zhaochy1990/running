@@ -105,3 +105,20 @@ func TestRunningDynamics_GarminUnitsAndSparseWindows(t *testing.T) {
 		t.Fatal("unrecorded metric should be absent")
 	}
 }
+
+func TestRunningDynamics_SkipsUnverifiableGarminCadence(t *testing.T) {
+	series := []storage.TimeseriesPoint{
+		{Timestamp: i64ptr(0), Cadence: iptr(85), CadenceLengthCm: fptr(120)},
+		{Timestamp: i64ptr(100), Cadence: iptr(85), CadenceLengthCm: fptr(120)},
+		{Timestamp: i64ptr(200), Cadence: iptr(172), CadenceLengthCm: fptr(125)},
+	}
+	for _, average := range []*int{iptr(172), nil} {
+		result := buildRunningDynamics(series, &storage.Activity{Provider: "garmin", AvgCadence: average})
+		if _, present := result.Metrics["cadence"]; present {
+			t.Fatalf("unverifiable cadence returned: %+v", result.Metrics)
+		}
+		if len(result.Metrics["stride_length"].Windows) != 1 {
+			t.Fatal("stride length should remain available")
+		}
+	}
+}
