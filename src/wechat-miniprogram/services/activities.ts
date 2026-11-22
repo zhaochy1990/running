@@ -24,9 +24,12 @@ export function getActivities(
 export function getActivityDetail(
   userId: string,
   labelId: string,
-  opts: { includeTimeseries?: boolean } = {},
+  opts: { includeTimeseries?: boolean; includeRunningDynamics?: boolean } = {},
 ): Promise<ActivityDetailResponse> {
-  const qs = opts.includeTimeseries ? '?include=timeseries' : '';
+  const include: string[] = [];
+  if (opts.includeTimeseries) include.push('timeseries');
+  if (opts.includeRunningDynamics) include.push('running_dynamics');
+  const qs = include.length ? `?include=${include.join(',')}` : '';
   return http.get<ActivityDetailResponse>(
     `/api/${encodeURIComponent(userId)}/activities/${encodeURIComponent(labelId)}${qs}`,
   );

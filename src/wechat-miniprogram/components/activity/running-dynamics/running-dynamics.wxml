@@ -1,0 +1,39 @@
+<view class="dynamics">
+  <view class="dynamics-header">
+    <view class="dynamics-heading">
+      <text>跑姿动态</text>
+      <button class="dynamics-info" bindtap="toggleHelp" aria-label="{{showHelp ? '收起跑姿动态说明' : '展开跑姿动态说明'}}">
+        <text class="dynamics-info-icon" aria-hidden="true">i</text>
+      </button>
+    </view>
+    <text class="dynamics-caption">每 {{summary.window_s}} 秒 · 最小–最大</text>
+  </view>
+  <view wx:if="{{showHelp}}" class="dynamics-help">
+    <view>每根竖线显示这一项指标在 90 秒内的最小值和最大值。<text class="dynamics-emphasis">线越短，这段越稳定。线越长，这段波动越大。</text></view>
+    <view>在配速和坡度相近时，理想情况下，步频、步幅、垂直振幅和触地时间应保持相对稳定。平路匀速跑时，如果连续几个窗口的竖线都短、位置也接近，说明这段跑姿变化较小，跑动效率较高。</view>
+    <view>点按或左右拖动任一图，可对照同一时段的四项数据。再点一次已选窗口，即可回到全程。连续几根短线的位置如果逐渐上移或下移，也说明这项指标在逐段变化。</view>
+  </view>
+
+  <view wx:for="{{cards}}" wx:key="key" class="dynamics-card">
+    <view class="dynamics-card-title">{{item.label}}</view>
+    <view class="dynamics-readings">
+      <view class="dynamics-average">
+        <text class="dynamics-caption">平均</text>
+        <text class="dynamics-value">{{item.average}}</text>
+        <text class="dynamics-caption">{{item.unit}}</text>
+      </view>
+      <view class="dynamics-selection">
+        <view><text class="dynamics-range">{{item.range}}</text> <text wx:if="{{item.range !== '—'}}" class="dynamics-caption">{{item.unit}}</text></view>
+        <view class="dynamics-caption">{{timeLabel}}</view>
+      </view>
+    </view>
+    <canvas type="2d" class="dynamics-chart"
+      aria-label="{{item.label}}每 {{summary.window_s}} 秒最小值和最大值"
+      disable-scroll="{{false}}"
+      bindtouchstart="onChartStart"
+      bindtouchmove="onChartMove"
+      bindtouchend="onChartEnd"
+      bindtouchcancel="onChartCancel"
+    />
+  </view>
+</view>

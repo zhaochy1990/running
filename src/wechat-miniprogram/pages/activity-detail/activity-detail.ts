@@ -180,6 +180,7 @@ interface ActivityDetailPageData {
   /** 区间卡片里的走势曲线是否需要渲染 */
   hasHrCurve: boolean;
   hasPaceCurve: boolean;
+  runningDynamics: ActivityDetailResponse['running_dynamics'] | null;
   laps: LapRow[];
   kilometerRows: LapRow[];
   segments: ExerciseGroup[];
@@ -946,6 +947,7 @@ function buildView(detail: ActivityDetailResponse): Partial<ActivityDetailPageDa
     paceZones,
     hasHrCurve: hrSeries.length > 1,
     hasPaceCurve: paceSeries.length > 1,
+    runningDynamics: detail.running_dynamics ?? null,
     laps,
     kilometerRows,
     segments,
@@ -1004,6 +1006,7 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
     paceZones: [],
     hasHrCurve: false,
     hasPaceCurve: false,
+    runningDynamics: null,
     laps: [],
     kilometerRows: [],
     segments: [],
@@ -1065,7 +1068,7 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
       return;
     }
     try {
-      const detail = await getActivityDetail(userId, labelId, { includeTimeseries: true });
+      const detail = await getActivityDetail(userId, labelId, { includeTimeseries: true, includeRunningDynamics: true });
       this.setData(
         {
           ...buildView(detail),

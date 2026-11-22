@@ -429,7 +429,7 @@ func (t *teamRoutes) activityDetail(c *gin.Context) {
 		return
 	}
 	_ = members
-	resp, found, err := assembleActivityDetail(c.Request.Context(), t.activities, c.Param("userId"), c.Param("labelId"), true)
+	resp, found, err := assembleActivityDetail(c.Request.Context(), t.activities, c.Param("userId"), c.Param("labelId"), activityDetailIncludes{timeseries: true})
 	if err != nil {
 		t.log.Error("assemble team activity detail failed", zapErr(err))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
