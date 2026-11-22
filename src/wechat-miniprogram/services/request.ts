@@ -7,6 +7,7 @@ interface RequestOptions<T = unknown> {
   data?: T;
   header?: Record<string, string>;
   auth?: boolean;
+  redirectOnSessionExpiry?: boolean;
   timeout?: number;
 }
 
@@ -242,6 +243,7 @@ export async function request<TResponse, TData = unknown>(
     data,
     header = {},
     auth = true,
+    redirectOnSessionExpiry = true,
     timeout = REQUEST_TIMEOUT,
   } = options;
 
@@ -301,7 +303,7 @@ export async function request<TResponse, TData = unknown>(
       } catch (err) {
         if (err instanceof ApiError) throw err;
         // 刷新失败 → 清 token 并回登录页（会话已失效），避免停留在业务页面的空态
-        handleSessionExpired();
+        if (redirectOnSessionExpiry) handleSessionExpired();
         throw new ApiError(401, { detail: 'Session expired', code: 'session_expired' });
       }
     }

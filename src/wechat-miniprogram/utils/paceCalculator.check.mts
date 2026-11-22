@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { BUILTIN_PACE_RACE_TEMPLATES } from '../services/pace-race-templates-data.ts';
 import type { PaceRaceTemplate } from '../services/pace-calculator.ts';
 import { applyRaceTemplate, calculate, decodeCalculation, encodeCalculation, type Calculation } from './paceCalculator.ts';
 
@@ -10,6 +11,9 @@ function resultFor(calculation: Calculation) {
 }
 
 assert.equal(resultFor({ mode: 'pace', distance: '42.195', time: '3:30', pace: '' }).pace, '4:59/km');
+assert.equal(resultFor({ mode: 'time', distance: '1.005', time: '', pace: '5:00' }).time, '05:02');
+assert.equal(resultFor({ mode: 'time', distance: '0.001', time: '', pace: '3:00' }).time, '<1 秒');
+assert.equal(resultFor({ mode: 'distance', distance: '', time: '15:00:00', pace: '6:00' }).distance, '150 km');
 assert.equal(resultFor({ mode: 'time', distance: '10', time: '', pace: '5:00' }).time, '50:00');
 assert.equal(resultFor({ mode: 'distance', distance: '', time: '1:00:00', pace: '5:00' }).distance, '12 km');
 assert.equal(resultFor({ mode: 'time', distance: '1.609344', time: '', pace: '5:00' }).time, '08:03');
@@ -45,6 +49,7 @@ const { templates }: { templates: PaceRaceTemplate[] } = JSON.parse(
   readFileSync(new URL('../../go/internal/api/pace_race_templates.json', import.meta.url), 'utf8'),
 );
 assert.equal(templates.length, 7);
+assert.deepEqual(BUILTIN_PACE_RACE_TEMPLATES, templates);
 for (const template of templates) {
   const segments = applyRaceTemplate(template, '03:30:00');
   assert.ok(segments, template.name);

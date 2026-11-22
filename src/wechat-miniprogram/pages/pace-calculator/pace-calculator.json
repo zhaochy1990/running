@@ -1,4 +1,7 @@
 {
   "navigationBarTitleText": "配速计算器",
-  "enableShareAppMessage": true
+  "enableShareAppMessage": true,
+  "usingComponents": {
+    "pace-value-input": "/components/pace-value-input/index"
+  }
 }

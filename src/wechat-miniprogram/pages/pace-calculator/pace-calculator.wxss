@@ -279,7 +279,7 @@
   font-weight: 500;
 }
 
-.favorite {
+.favorite-row {
   display: flex;
   align-items: center;
   gap: 14rpx;
@@ -331,4 +331,17 @@
   top: 0;
   width: 1px;
   height: 1px;
+}
+
+.terrain {
+  display: inline-block;
+  margin-right: 8rpx;
+  padding: 0 8rpx;
+  border-radius: 6rpx;
+  background: var(--color-bg-sunken);
+  color: var(--color-text-bright);
+}
+
+.calculator .favorite-detail {
+  text-align: left;
 }

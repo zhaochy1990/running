@@ -23,14 +23,15 @@ const PUBLIC_ENTRY_PAGES: ReadonlySet<string> = new Set([
 
 // 免密登录：用 wx.login() 的 code 换 JWT。微信已绑定 → 存好 token/user 返回 true；
 // 未绑定或失败 → 返回 false。函数本身不导航，由调用方决定去哪。
-async function silentLogin(): Promise<boolean> {
+async function silentLogin(redirectOnSessionExpiry = true): Promise<boolean> {
   try {
-    const result = await wechatLogin();
+    const result = await wechatLogin(redirectOnSessionExpiry);
     console.log(`[auth] 免密登录结果 ok=${result.ok}`);
     if (!result.ok) return false;
     userStore.setUser(result.user);
     return true;
   } catch (err) {
+    if (!redirectOnSessionExpiry && err instanceof ApiError && err.statusCode === 401) userStore.clear();
     console.error(
       '[auth] silent login failed:',
       err instanceof Error ? err.message : err,
@@ -110,7 +111,7 @@ App<IAppOption>({
       // 本地已有 token：不要仅凭本地 expiresAt 判定有效（它可能是「本地未过期但服务端
       // 已失效/吊销」的 token），主动向服务端验证一次，避免出现假登录态留在首页。
       if (hadToken) {
-        const user = await validateSession();
+        const user = await validateSession(!publicEntry);
         console.log('[auth] 本地 token 仍被服务端接受 → 视为已登录');
         userStore.setUser(user);
         if (publicEntry) return;
@@ -121,7 +122,7 @@ App<IAppOption>({
       // 无本地 token → 免密登录换 JWT；未绑定（新用户）→ 游客态放行（微信审核合规：
       // 不得强制登录，先让用户浏览功能，触发需要账号的操作时再由页面引导去登录页）。
       // 各数据页的 waitForAuth 兜底会同判 isAuthenticated=false 走各自的游客空态。
-      if (await silentLogin()) {
+      if (await silentLogin(!publicEntry)) {
         if (publicEntry) return;
         await routeToOnboardingIfProfileMissing();
       } else {

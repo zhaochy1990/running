@@ -4,6 +4,8 @@ import { formatDuration, formatPace, parseDuration, parsePaceSPerKm } from './ra
 export const MAX_SEGMENTS = 10;
 export const MARATHON_KM = 42.195;
 export const HALF_MARATHON_KM = 21.0975;
+export const MAX_SEGMENT_KM = 100;
+export const MAX_QUICK_KM = 9999;
 const STANDARD_POINTS = [1, 5, 10, 15, 20, HALF_MARATHON_KM, 25, 30, 35, 40, MARATHON_KM];
 
 export type QuickMode = 'pace' | 'time' | 'distance';
@@ -12,6 +14,7 @@ export interface PaceSegment {
   end: string;
   pace: string;
   note?: string;
+  terrain?: string;
 }
 
 export type Calculation =
@@ -25,6 +28,7 @@ interface Split {
   time: string;
   cumulative: string;
   note?: string;
+  terrain?: string;
 }
 
 export interface PaceResult {
@@ -38,16 +42,27 @@ export interface PaceResult {
 }
 
 type Result = { result: PaceResult } | { error: string };
-type Leg = { end: number; pace: number; note?: string };
+type Leg = { end: number; pace: number; note?: string; terrain?: string };
 
 export function parseDistance(value: string): number | null {
-  if (!/^\d{1,3}(?:\.\d{1,6})?$/.test(value.trim())) return null;
+  if (!/^\d{1,4}(?:\.\d{1,6})?$/.test(value.trim())) return null;
   const km = Number(value);
-  return km >= 0.001 && km <= 100 ? km : null;
+  return km >= 0.001 && km <= MAX_QUICK_KM ? km : null;
 }
 
 function distanceLabel(km: number): string {
   return km >= 1 ? `${Number(km.toFixed(6))} km` : `${Number((km * 1000).toFixed(1))} m`;
+}
+
+// Distance arithmetic is decimal in the UI. Remove binary rounding noise
+// before rounding a duration to a whole second (e.g. 1.005 km × 300 s/km).
+function roundSeconds(seconds: number): number {
+  return Math.round(Number(seconds.toFixed(7)));
+}
+
+function displaySeconds(seconds: number): string {
+  const rounded = roundSeconds(seconds);
+  return seconds > 0 && rounded === 0 ? '<1 秒' : formatDuration(rounded);
 }
 
 function splitsAt(legs: Leg[], points: number[], distance: number): Split[] {
@@ -61,12 +76,13 @@ function splitsAt(legs: Leg[], points: number[], distance: number): Split[] {
       start = leg.end;
     }
     const legSeconds = cumulativeSeconds - previousSeconds;
+    const displayDelta = roundSeconds(cumulativeSeconds) - roundSeconds(previousSeconds);
     const row = {
       end,
       label: end === distance ? '终点' : end === HALF_MARATHON_KM ? '半程' : distanceLabel(end),
-      pace: formatPace(Math.round(legSeconds / (end - previousDistance))),
-      time: formatDuration(Math.round(cumulativeSeconds) - Math.round(previousSeconds)),
-      cumulative: formatDuration(Math.round(cumulativeSeconds)),
+      pace: formatPace(roundSeconds(legSeconds / (end - previousDistance))),
+      time: displayDelta === 0 ? '<1 秒' : formatDuration(displayDelta),
+      cumulative: displaySeconds(cumulativeSeconds),
     };
     previousDistance = end;
     previousSeconds = cumulativeSeconds;
@@ -96,13 +112,14 @@ function summarize(legs: Leg[], calculation: Calculation): PaceResult {
       ...row,
       label: `${i === 0 ? 0 : legs[i - 1].end}–${row.end} km`,
       note: legs[i].note || '',
+      terrain: legs[i].terrain || '',
     }))
     : [];
   const seconds = legs.reduce((sum, leg, i) => sum + (leg.end - (legs[i - 1]?.end ?? 0)) * leg.pace, 0);
   return {
     distance: distanceLabel(distance),
-    time: formatDuration(Math.round(seconds)),
-    pace: formatPace(Math.round(seconds / distance)),
+    time: displaySeconds(seconds),
+    pace: formatPace(roundSeconds(seconds / distance)),
     speed: `${(distance * 3600 / seconds).toFixed(2)} km/h`,
     rows,
     checkpoints,
@@ -117,9 +134,9 @@ export function calculate(calc: Calculation): Result {
     for (const [i, segment] of calc.segments.entries()) {
       const end = parseDistance(segment.end);
       const pace = parsePaceSPerKm(segment.pace);
-      if (end === null || end <= (legs[i - 1]?.end ?? 0)) return { error: `第 ${i + 1} 段终点须大于起点，且最多 100 km` };
+      if (end === null || end > MAX_SEGMENT_KM || end <= (legs[i - 1]?.end ?? 0)) return { error: `第 ${i + 1} 段终点须大于起点，且最多 100 km` };
       if (pace === null) return { error: `请输入第 ${i + 1} 段的配速，例如 5:00` };
-      legs.push({ end, pace, note: segment.note });
+      legs.push({ end, pace, note: segment.note, terrain: segment.terrain });
     }
     return { result: summarize(legs, calc) };
   }
@@ -127,7 +144,7 @@ export function calculate(calc: Calculation): Result {
   const distance = parseDistance(calc.distance);
   const time = parseCalculatorTime(calc.time);
   const pace = parsePaceSPerKm(calc.pace);
-  if (calc.mode !== 'distance' && distance === null) return { error: '请输入 0.001 至 100 km 的距离' };
+  if (calc.mode !== 'distance' && distance === null) return { error: `请输入 0.001 至 ${MAX_QUICK_KM} km 的距离` };
   if (calc.mode !== 'time' && time === null) return { error: '请输入有效用时，例如 3:30:00' };
   if (calc.mode !== 'pace' && pace === null) return { error: '请输入有效配速，例如 5:00' };
 
@@ -138,12 +155,18 @@ export function calculate(calc: Calculation): Result {
   } else if (calc.mode === 'time' && distance !== null && pace !== null) {
     leg = { end: distance, pace };
   } else if (time !== null && pace !== null) {
-    leg = { end: time / pace, pace };
+    const end = time / pace;
+    if (end > MAX_QUICK_KM || end < 0.001) return { error: `计算距离超出 0.001 至 ${MAX_QUICK_KM} km 的范围` };
+    leg = { end, pace };
   } else {
     return { error: '请输入有效的距离、用时或配速' };
   }
   return { result: summarize([leg], calc) };
 }
+
+const TERRAIN_LABELS: Record<string, string> = {
+  flat: '平路', uphill: '上坡', downhill: '下坡', rolling: '起伏', steep: '陡坡',
+};
 
 export function applyRaceTemplate(template: PaceRaceTemplate, target: string): PaceSegment[] | null {
   const seconds = parseCalculatorTime(target);
@@ -167,7 +190,7 @@ export function applyRaceTemplate(template: PaceRaceTemplate, target: string): P
   for (let mask = 0; mask < 2 ** options.length; mask++) {
     const paces = options.map(({ pace }, i) => (mask & (1 << i)) ? Math.ceil(pace) : Math.floor(pace));
     const total = options.reduce((sum, { distance }, i) => sum + distance * paces[i], 0);
-    const timeError = Math.abs(Math.round(total) - seconds);
+    const timeError = Math.abs(roundSeconds(total) - seconds);
     const paceError = options.reduce((sum, { pace }, i) => sum + (pace - paces[i]) ** 2, 0);
     if (timeError < bestTimeError || (timeError === bestTimeError && paceError < bestPaceError)) {
       best = paces;
@@ -179,6 +202,7 @@ export function applyRaceTemplate(template: PaceRaceTemplate, target: string): P
     end: String(segment.end_km),
     pace: formatPace(best[i]).replace('/km', ''),
     note: segment.note,
+    terrain: TERRAIN_LABELS[segment.terrain] || segment.terrain,
   }));
 }
 

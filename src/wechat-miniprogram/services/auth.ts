@@ -97,22 +97,22 @@ async function exchangeWechatCode(
 }
 
 // 用刚换到的 access token 拉取当前用户（Bearer 自动附加；401 会走刷新重试）。
-async function fetchMe(): Promise<UserProfile> {
-  return http.get<UserProfile>(ME_ENDPOINT);
+async function fetchMe(redirectOnSessionExpiry = true): Promise<UserProfile> {
+  return http.get<UserProfile>(ME_ENDPOINT, { redirectOnSessionExpiry });
 }
 
 // 启动时主动向 auth-service 验证本地 token 是否仍被服务端接受（GET /api/users/me）。
 // 本地「未过期」但服务端已失效/吊销的 token 会在这里返回 401 —— request.ts 会先尝试
 // refresh，refresh 也失败则清 token 并抛 session_expired。用于启动时确认登录态，
 // 避免「token 已无效却仍停留在首页」的假登录态。
-export function validateSession(): Promise<UserProfile> {
-  return fetchMe();
+export function validateSession(redirectOnSessionExpiry = true): Promise<UserProfile> {
+  return fetchMe(redirectOnSessionExpiry);
 }
 
 // 登录成功后的收尾：存 token + 拉用户信息并缓存。
-async function persistSession(tokens: AuthTokenResponse): Promise<UserProfile> {
+async function persistSession(tokens: AuthTokenResponse, redirectOnSessionExpiry = true): Promise<UserProfile> {
   persistTokens(tokens.access_token, tokens.refresh_token, tokens.expires_in);
-  const user = await fetchMe();
+  const user = await fetchMe(redirectOnSessionExpiry);
   persistUser(user);
   return user;
 }
@@ -121,11 +121,11 @@ async function persistSession(tokens: AuthTokenResponse): Promise<UserProfile> {
 // - 已绑定账号 → ok=true + user
 // - 微信未绑定任何账号 → ok=false + needsBinding=true（上层跳绑定页）
 // - 其它错误 → 抛错（上层统一走绑定页兜底）
-export async function wechatLogin(): Promise<WechatLoginResult> {
+export async function wechatLogin(redirectOnSessionExpiry = true): Promise<WechatLoginResult> {
   console.log('[auth] 免密登录（token_exchange）…');
   try {
     const tokens = await exchangeWechatCode('token_exchange');
-    const user = await persistSession(tokens);
+    const user = await persistSession(tokens, redirectOnSessionExpiry);
     console.log('[auth] 免密登录成功，用户已缓存');
     return { ok: true, user };
   } catch (err) {

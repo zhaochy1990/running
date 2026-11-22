@@ -3,6 +3,8 @@ import {
   applyRaceTemplate, calculate, decodeCalculation, encodeCalculation, HALF_MARATHON_KM,
   MARATHON_KM, MAX_SEGMENTS, type Calculation, type PaceResult, type PaceSegment, type QuickMode,
 } from '../../utils/paceCalculator';
+import { BUILTIN_PACE_RACE_TEMPLATES } from '../../services/pace-race-templates-data';
+import { shanghaiDateFromIso } from '../../utils/date';
 import { renderPaceCard } from '../../utils/paceCard';
 import { saveImageToAlbum } from '../../utils/saveImage';
 
@@ -20,7 +22,8 @@ interface Favorite {
   calculation: Calculation;
 }
 
-type FavoriteRow = Favorite & { summary: string };
+type FavoriteRow = Favorite & { summary: string; date: string; splits: PaceResult['checkpoints'] };
+type SegmentRow = PaceSegment & { id: number };
 type SplitView = 'rows' | 'checkpoints' | 'kilometers';
 type InputEvent = WechatMiniprogram.CustomEvent<{ value: string }>;
 
@@ -29,8 +32,21 @@ function favoriteRows(favorites: Favorite[]): FavoriteRow[] {
     const calculated = calculate(favorite.calculation);
     if ('error' in calculated) return [];
     const { distance, time, pace } = calculated.result;
-    return [{ ...favorite, summary: `${distance} · ${time} · ${pace}` }];
+    const date = shanghaiDateFromIso(new Date(Number(favorite.id)).toISOString());
+    return [{ ...favorite, summary: `${distance} · ${time} · ${pace}`, date, splits: calculated.result.checkpoints }];
   });
+}
+
+let nextSegmentId = 0;
+
+function segmentRows(segments: PaceSegment[]): SegmentRow[] {
+  return segments.map(({ end, pace, note, terrain }) => ({
+    id: nextSegmentId++, end, pace, note: note || '', terrain: terrain || '',
+  }));
+}
+
+function templateOptions(templates: PaceRaceTemplate[]): string[] {
+  return ['请选择赛事', ...templates.map(({ name }) => name)];
 }
 
 function cleanSegments(): PaceSegment[] {
@@ -54,11 +70,11 @@ Page({
     distance: String(MARATHON_KM),
     time: '3:30:00',
     pace: '5:00',
-    segments: cleanSegments(),
+    segments: segmentRows(cleanSegments()),
     maxSegments: MAX_SEGMENTS,
-    templates: [] as PaceRaceTemplate[],
+    templates: BUILTIN_PACE_RACE_TEMPLATES,
     templateIndex: 0,
-    templateOptions: ['请选择赛事'],
+    templateOptions: templateOptions(BUILTIN_PACE_RACE_TEMPLATES),
     selectedTemplate: null as PaceRaceTemplate | null,
     templatesLoading: false,
     templatesError: false,
@@ -70,6 +86,7 @@ Page({
     error: '',
     favorites: [] as FavoriteRow[],
     showFavorites: false,
+    expandedFavoriteId: '',
     showCard: false,
     cardTitle: '',
     cardMessage: '',
@@ -93,12 +110,26 @@ Page({
     void this.loadTemplates();
   },
 
+  onReady() {
+    if (this.data.result) this.scrollToResult();
+  },
+
+  scrollToResult() {
+    wx.nextTick(() => wx.pageScrollTo({ selector: '#pace-result', duration: 200 }));
+  },
+
   async loadTemplates() {
-    if (this.data.templatesLoading || this.data.templates.length) return;
+    if (this.data.templatesLoading) return;
     this.setData({ templatesLoading: true, templatesError: false });
     try {
       const templates = await fetchPaceRaceTemplates();
-      this.setData({ templates, templateOptions: ['请选择赛事', ...templates.map(({ name }) => name)] });
+      const templateIndex = templates.findIndex(({ key }) => key === this.data.selectedTemplate?.key) + 1;
+      this.setData({
+        templates,
+        templateOptions: templateOptions(templates),
+        templateIndex,
+        selectedTemplate: templates[templateIndex - 1] ?? null,
+      });
     } catch {
       this.setData({ templatesError: true });
     } finally {
@@ -149,11 +180,11 @@ Page({
       this.setData({ error: '请输入 2 至 8 小时的目标用时，例如 3:30:00' });
       return;
     }
-    this.updateSegments(segments);
+    this.updateSegments(segmentRows(segments));
     toast('已填充分段，可以调整后计算');
   },
 
-  updateSegments(segments: PaceSegment[]) {
+  updateSegments(segments: SegmentRow[]) {
     this.setData({ segments, result: null, calculation: null, error: '' });
   },
 
@@ -162,13 +193,13 @@ Page({
     const segments = type === 'reset'
       ? cleanSegments()
       : presetSegments(type === 'full' ? MARATHON_KM : HALF_MARATHON_KM);
-    this.updateSegments(segments);
+    this.updateSegments(segmentRows(segments));
   },
 
   onSegmentInput(e: InputEvent) {
     const { index, field } = e.currentTarget.dataset as { index: number; field: 'end' | 'pace' };
     const segments = this.data.segments.map((segment, i) => (
-      i === index ? { ...segment, [field]: e.detail.value, note: field === 'end' ? '' : segment.note } : segment
+      i === index ? { ...segment, [field]: e.detail.value, note: field === 'end' ? '' : segment.note, terrain: field === 'end' ? '' : segment.terrain } : segment
     ));
     this.updateSegments(segments);
   },
@@ -176,7 +207,7 @@ Page({
   onAddSegment() {
     if (this.data.segments.length >= MAX_SEGMENTS) return;
     const last = this.data.segments[this.data.segments.length - 1];
-    this.updateSegments([...this.data.segments, { end: '', pace: last.pace }]);
+    this.updateSegments([...this.data.segments, ...segmentRows([{ end: '', pace: last.pace }])]);
   },
 
   onRemoveSegment(e: WechatMiniprogram.TouchEvent) {
@@ -188,19 +219,19 @@ Page({
     const { tab, quickMode, segments, distance, time, pace } = this.data;
     if (this.restoreCalculation(tab === 'segment'
       ? { mode: 'segment', segments }
-      : { mode: quickMode, distance, time, pace })) {
-      wx.nextTick(() => wx.pageScrollTo({ selector: '#pace-result', duration: 200 }));
+      : { mode: quickMode, distance, time, pace }, true)) {
+      this.scrollToResult();
     }
   },
 
-  restoreCalculation(calculation: Calculation): boolean {
+  restoreCalculation(calculation: Calculation, keepSegmentIds = false): boolean {
     const calculated = calculate(calculation);
     if ('error' in calculated) {
       this.setData({ result: null, calculation: null, error: calculated.error });
       return false;
     }
     if (calculation.mode === 'segment') {
-      this.setData({ tab: 'segment', segments: calculation.segments, splitView: 'rows' });
+      this.setData({ tab: 'segment', segments: keepSegmentIds ? this.data.segments : segmentRows(calculation.segments), splitView: 'rows' });
     } else {
       this.setData({
         tab: 'quick', quickMode: calculation.mode, splitView: 'checkpoints',
@@ -219,6 +250,11 @@ Page({
 
   onToggleFavorites() {
     this.setData({ showFavorites: !this.data.showFavorites });
+  },
+
+  onToggleFavoriteDetails(e: WechatMiniprogram.TouchEvent) {
+    const id = e.currentTarget.dataset.id as string;
+    this.setData({ expandedFavoriteId: this.data.expandedFavoriteId === id ? '' : id });
   },
 
   persistFavorites(favorites: Favorite[]) {
@@ -244,7 +280,7 @@ Page({
       placeholderText: `${result.distance} · ${result.time}`,
       confirmText: '收藏',
       success: (res) => {
-        if (!res.confirm) return;
+        if (!res.confirm || this.data.favorites.length >= MAX_FAVORITES) return;
         const name = Array.from(res.content?.trim() || `${result.distance} · ${result.time}`).slice(0, 24).join('');
         this.persistFavorites([{ id: String(Date.now()), name, calculation }, ...this.data.favorites]);
       },
@@ -254,7 +290,7 @@ Page({
   onLoadFavorite(e: WechatMiniprogram.TouchEvent) {
     const favorite = this.data.favorites.find(({ id }) => id === e.currentTarget.dataset.id);
     if (favorite && this.restoreCalculation(favorite.calculation)) {
-      wx.nextTick(() => wx.pageScrollTo({ selector: '#pace-result', duration: 200 }));
+      this.scrollToResult();
     }
   },
 
