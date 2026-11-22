@@ -3,15 +3,23 @@
  * `node --import ./utils/ts-resolve-hooks.mjs utils/planJobCards.check.mts`。
  */
 import { strict as assert } from 'node:assert';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
+import ts from 'typescript';
 import type { MasterPlanFormCard } from '../services/master-plan.ts';
+import * as date from './date.ts';
+import * as planJobCards from './planJobCards.ts';
+import { WEEKDAY_VALUES } from './weekday.ts';
 import {
   breakthroughNumber,
   buildMasterPlanJobRequest,
   decideRetryAction,
   DEFAULT_MASTER_PLAN_FORM_OPTIONS,
+  isSubmittedPlanFormMessage,
   MAX_PLAN_JOB_POLL_FAILURES,
   planJobPollBackoffMs,
   planJobPollFailureAction,
+  planJobFormValues,
   planJobResultContent,
   planJobResultView,
 } from './planJobCards.ts';
@@ -175,5 +183,157 @@ assert.equal(decideRetryAction('running'), 'resume');
 assert.equal(decideRetryAction('done'), 'show-result');
 assert.equal(decideRetryAction('failed'), 'repost');
 assert.equal(decideRetryAction('gone'), 'repost');
+
+// 已提交表单的识别：shareIndex（服务端投影行序）优先，重进页面后 id 重排也不会
+// 让已提交表单复活；messageId 仅作旧记录的进程内兜底。
+{
+  const submitted = { shareIndices: new Set([3]), messageIds: new Set([5]) };
+  // 重启后 id 重排：表单卡 id 4 / shareIndex 3 仍被认定已提交
+  assert.equal(isSubmittedPlanFormMessage({ id: 4, shareIndex: 3 }, submitted), true);
+  // 同进程：id 命中
+  assert.equal(isSubmittedPlanFormMessage({ id: 5, shareIndex: 3 }, submitted), true);
+  // 换了一张表单（新 shareIndex、新 id）：不隐藏
+  assert.equal(isSubmittedPlanFormMessage({ id: 9, shareIndex: 8 }, submitted), false);
+  // 消息没有 shareIndex（本地消息）：退回 id 匹配
+  assert.equal(isSubmittedPlanFormMessage({ id: 5 }, submitted), true);
+  assert.equal(isSubmittedPlanFormMessage({ id: 6 }, submitted), false);
+  // 有 shareIndex 时只认 shareIndex：旧 id 被复用也不误伤另一张表单卡
+  assert.equal(isSubmittedPlanFormMessage({ id: 5, shareIndex: 8 }, submitted), false);
+  // 无任何已提交身份
+  const none = { shareIndices: new Set<number>(), messageIds: new Set<number>() };
+  assert.equal(isSubmittedPlanFormMessage({ id: 1, shareIndex: 0 }, none), false);
+}
+
+function loadMiniProgram<T>(path: string, register: 'Page' | 'Component', modules: Record<string, unknown>, wx: object = {}): T {
+  const source = readFileSync(new URL(path, import.meta.url), 'utf8');
+  let definition: T | undefined;
+  runInNewContext(ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+  }).outputText, {
+    require: (name: string) => modules[name] ?? {},
+    exports: {},
+    wx,
+    [register]: (value: T) => { definition = value; },
+  });
+  assert.ok(definition);
+  return definition;
+}
+
+type TestMessage = {
+  id: number;
+  shareIndex?: number;
+  hidden?: boolean;
+  selectable?: boolean;
+  card?: { type: string };
+  planJob?: { jobId: string };
+};
+
+// 同一个本地消息 id 在两个会话里对应不同投影序号。请求必须记住发出时的表单。
+{
+  type Job = planJobCards.PlanJobRecord;
+  type FormValues = planJobCards.MasterPlanFormValues;
+  type Tap = { currentTarget: { dataset: { id: number | string } } };
+  type FormComponent = {
+    data: Record<string, unknown>;
+    methods: { hydrate(form: MasterPlanFormCard, rememberSource?: boolean): void; reopenForm(values?: FormValues): void };
+    observers: { form(form: MasterPlanFormCard): void };
+  };
+  type CoachPage = {
+    data: { currentSessionId: string; messages: TestMessage[] };
+    setData(patch: Record<string, unknown>, afterRender?: () => void): void;
+    selectComponent(selector: string): { reopenForm(values?: FormValues): void };
+    schedulePlanJobPoll(jobId: string): void;
+    onLoad(): void;
+    onSelectSession(event: Tap): void;
+    loadSession(): Promise<void>;
+    onPlanFormSubmit(event: Tap & { detail: FormValues }): Promise<void>;
+    onPlanJobEdit(event: Tap): void;
+    syncPlanJobCards(sessionId: string, messages: TestMessage[]): TestMessage[];
+  };
+  const jobs = new Map<string, Job>();
+  const enqueue = Promise.withResolvers<{ job_id: string }>();
+  const page = loadMiniProgram<CoachPage>('../pages/coach/coach.ts', 'Page', {
+    '../../services/plan-jobs': { randomRequestId: () => 'req-test', enqueueGenerateMasterPlan: () => enqueue.promise },
+    '../../services/master-plan': { isMasterPlanApplied: () => false },
+    '../../store/index': { userStore: { getState: () => ({ user: { id: 'runner' } }), waitForAuth: () => new Promise(() => {}) } },
+    '../../utils/date': date,
+    '../../utils/markdown': { markdownToHtml: (value: string) => value },
+    '../../utils/theme': { theme: {} },
+    '../../utils/planJobCards': {
+      ...planJobCards,
+      savePlanJob: (job: Job) => { jobs.set(job.jobId, job); return true; },
+      listPlanJobs: () => [...jobs.values()],
+      readPlanJobCached: (id: string) => jobs.get(id),
+    },
+  }, { getWindowInfo: () => ({ windowWidth: 375, statusBarHeight: 0 }) });
+  const renderCallbacks: Array<() => void> = [];
+  page.setData = (patch, callback) => {
+    for (const [key, value] of Object.entries(patch)) {
+      const path = /^messages\[(\d+)\]\.(\w+)$/.exec(key);
+      if (path) Reflect.set(page.data.messages[Number(path[1])], path[2], value);
+      else Reflect.set(page.data, key, value);
+    }
+    if (callback) renderCallbacks.push(callback);
+  };
+  page.schedulePlanJobPoll = () => {};
+  page.loadSession = async () => {};
+  const tap = (id: string | number): Tap => ({ currentTarget: { dataset: { id } } });
+  const sourceMessage = { id: 8, shareIndex: 3, card: { type: 'master-plan-form' }, selectable: true };
+  const options = { max_session_duration_min: 180, allows_double_sessions: true, strength_sessions_per_week: 1, strength_available_days: ['wednesday'] } satisfies FormValues['options'];
+  page.onLoad();
+  page.onSelectSession(tap('source'));
+  page.data.messages = [sourceMessage];
+  const submitted = page.onPlanFormSubmit({ ...tap(sourceMessage.id), detail: { form, options } });
+  page.onSelectSession(tap('other'));
+  assert.equal(page.data.messages.some((m) => m.card?.type === 'master-plan-form'), false);
+  const otherMessage = { ...sourceMessage, shareIndex: 9 };
+  page.data.messages = [otherMessage];
+  enqueue.resolve({ job_id: 'job-1' });
+  await submitted;
+  const record = jobs.get('job-1');
+  assert.ok(record);
+  assert.equal(record.sessionId, 'source');
+  assert.equal(record.formShareIndex, sourceMessage.shareIndex);
+  assert.deepEqual(page.data.messages, [otherMessage]);
+
+  // 历史重载后使用新消息 id。点击「修改目标」时组件从原始卡片重新挂载。
+  record.status = 'done';
+  page.onSelectSession(tap('source'));
+  page.data.messages = page.syncPlanJobCards('source', [{ ...sourceMessage, id: 17 }]);
+  assert.equal(page.data.messages[0].hidden, true);
+  assert.equal(page.data.messages[0].selectable, false);
+  const component = loadMiniProgram<FormComponent>('../components/master-plan-form-card/index.ts', 'Component', {
+    '../../utils/planJobCards': planJobCards,
+    '../../utils/weekday': { WEEKDAY_VALUES },
+    '../../utils/date': date,
+  });
+  const instance = { ...component.methods, data: component.data, setData: (patch: object) => Object.assign(component.data, patch) };
+  const originalForm = { ...form, goal: { ...form.goal, target_time: '3:30:00' } };
+  instance.hydrate(originalForm);
+  page.selectComponent = (selector) => {
+    assert.equal(selector, '#plan-form-17');
+    assert.equal(page.data.messages[0].hidden, false);
+    return instance;
+  };
+  const jobMessage = page.data.messages.find((m) => m.planJob?.jobId === record.jobId);
+  assert.ok(jobMessage);
+  page.onPlanJobEdit(tap(jobMessage.id));
+  assert.equal(component.data.targetHour, 3);
+  renderCallbacks.shift()?.();
+  assert.equal(component.data.targetHour, 2);
+  assert.equal(component.data.targetMinute, 50);
+  assert.equal(component.data.maxSessionIndex, 3);
+  assert.equal(component.data.allowsDoubleSessions, true);
+  assert.equal(component.data.strengthIndex, 1);
+  assert.deepEqual(planJobFormValues(record.request), { form: { ...form, goal: { ...form.goal, race_name: form.goal.race_name.trim() } }, options });
+  component.observers.form.call(instance, structuredClone(originalForm));
+  assert.equal(component.data.targetMinute, 50);
+
+  // 重复点击同一任务时保留当前编辑中的新值。
+  component.data.targetMinute = 45;
+  page.onPlanJobEdit(tap(jobMessage.id));
+  renderCallbacks.shift()?.();
+  assert.equal(component.data.targetMinute, 45);
+}
 
 console.log('plan job cards checks passed');

@@ -26,9 +26,12 @@
       </view>
     </view>
     <scroll-view class="coach-list" scroll-y scroll-with-animation scroll-into-view="{{scrollIntoId}}">
+      <!-- hidden：已提交的表单卡（#1024）保留在 messages 里供「修改目标」找回，
+           但平时不渲染；隐藏时 selectable 一并置 false，不进多选转发 -->
       <view
         wx:for="{{messages}}"
         wx:key="id"
+        wx:if="{{!item.hidden}}"
         id="msg-{{item.id}}"
         class="coach-msg {{item.role === 'user' ? 'coach-msg--user' : 'coach-msg--assistant'}} {{item.selected ? 'coach-msg--checked' : ''}} {{selectMode && !item.selectable ? 'coach-msg--disabled' : ''}}"
         data-id="{{item.id}}"

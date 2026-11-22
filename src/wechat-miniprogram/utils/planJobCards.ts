@@ -42,6 +42,14 @@ export const DEFAULT_MASTER_PLAN_FORM_OPTIONS: MasterPlanFormOptions = {
   strength_available_days: ['monday', 'thursday'],
 };
 
+export interface MasterPlanFormValues {
+  form: MasterPlanFormCard;
+  options: MasterPlanFormOptions;
+}
+
+const TRAINING_BASE_PREFIX = '近期训练基础：';
+const RESTRICTION_PREFIX = '伤病或其他限制：';
+
 /**
  * 表单卡 → MasterPlanGraphRequest（服务端 zod 严格复验，多余键会被拒）。
  * 表单提交即确认：user_confirmations 全真。目标成绩空 = 顺利完赛
@@ -71,8 +79,8 @@ export function buildMasterPlanJobRequest(
   const preferences: string[] = [];
   const base = form.base.trim();
   const restriction = form.restriction.trim();
-  if (base) preferences.push(`近期训练基础：${base}`);
-  if (restriction) preferences.push(`伤病或其他限制：${restriction}`);
+  if (base) preferences.push(`${TRAINING_BASE_PREFIX}${base}`);
+  if (restriction) preferences.push(`${RESTRICTION_PREFIX}${restriction}`);
   return {
     request_id: requestId,
     requested_mode: 'new_season',
@@ -109,6 +117,40 @@ export function buildMasterPlanJobRequest(
       availability_confirmed: true,
       injury_history_confirmed: true,
       constraints_confirmed: true,
+    },
+  };
+}
+
+/** 「修改目标」从上次投递的请求回填，包括用户手动修改过的更多选项。 */
+export function planJobFormValues(request: MasterPlanJobRequest): MasterPlanFormValues | null {
+  const goal = request.goals?.[0];
+  const availability = request.availability;
+  if (!goal || !availability || !Array.isArray(availability.unavailable_days)) return null;
+  const preference = (prefix: string): string =>
+    request.preferences?.find((value) => value.startsWith(prefix))?.slice(prefix.length) ?? '';
+  const defaults = DEFAULT_MASTER_PLAN_FORM_OPTIONS;
+  return {
+    form: {
+      goal: {
+        race_name: goal.race_name,
+        distance: goal.distance,
+        race_date: goal.race_date,
+        target_time: goal.target_time ?? '',
+      },
+      availability: {
+        weekly_days: WEEKDAY_VALUES.filter((day) => !availability.unavailable_days.includes(day)),
+        preferred_long_run_day: WEEKDAY_VALUES.find((day) => day === availability.preferred_long_run_day) ?? null,
+      },
+      base: preference(TRAINING_BASE_PREFIX),
+      restriction: preference(RESTRICTION_PREFIX),
+    },
+    options: {
+      max_session_duration_min: availability.max_session_duration_min ?? defaults.max_session_duration_min,
+      allows_double_sessions: availability.allows_double_sessions ?? defaults.allows_double_sessions,
+      strength_sessions_per_week: availability.strength_sessions_per_week ?? defaults.strength_sessions_per_week,
+      strength_available_days: WEEKDAY_VALUES.filter((day) =>
+        (availability.strength_available_days ?? defaults.strength_available_days).includes(day),
+      ),
     },
   };
 }
@@ -231,6 +273,9 @@ export interface PlanJobRecord {
   request: MasterPlanJobRequest;
   /** 提交这张表单的消息 id（本会话内稳定；重启后 id 会重排，仅作 best-effort 关联）。 */
   formMessageId?: number;
+  /** 表单消息在服务端历史投影里的行序（CoachMessage.shareIndex，与分享 indices 同源）。
+   *  历史重载后 id 会重排，这个序号不会——跨进程识别「已提交表单」靠它。 */
+  formShareIndex?: number;
   /** done 时结果卡文案（轻量摘要；完整 content 不落 storage，查看时按 job 现取）。 */
   resultTitle?: string;
   resultSubtitle?: string;
@@ -318,16 +363,19 @@ export function planJobRequestSummary(request: MasterPlanJobRequest): string {
   return `${distance} · ${goal?.race_date ?? ''}${target} · 每周 ${days} 天`;
 }
 
-/** 同会话存在进行中（running）的生成单 → 提交过的表单卡应隐藏。 */
-export function sessionHasLivePlanJob(sessionId: string): boolean {
-  return listPlanJobs().some((job) => job.sessionId === sessionId && job.status === 'running');
-}
-
-/** 本会话已提交表单的消息 id 集（failed 单不算——失败后表单要回来改）。 */
-export function submittedPlanFormMessageIds(sessionId: string): number[] {
-  return listPlanJobs()
-    .filter((job) => job.sessionId === sessionId && job.formMessageId != null && job.status !== 'failed')
-    .map((job) => job.formMessageId as number);
+/**
+ * 表单消息是否属于「已提交」（被某张非 failed 的 job 绑定）。
+ *
+ * 消息带 shareIndex（服务端投影行序）时**只认它**：重进页面后 id 会重排，
+ * id 空间被复用，拿旧 id 兜底可能误伤另一张表单卡。没有 shareIndex 的本地
+ * 消息（needs_input 追问泡等）才退回 messageId（旧记录/进程内兜底）。
+ */
+export function isSubmittedPlanFormMessage(
+  message: { id: number; shareIndex?: number },
+  submitted: { shareIndices: ReadonlySet<number>; messageIds: ReadonlySet<number> },
+): boolean {
+  if (typeof message.shareIndex === 'number') return submitted.shareIndices.has(message.shareIndex);
+  return submitted.messageIds.has(message.id);
 }
 
 function isPlanJobRecord(value: unknown): value is PlanJobRecord {
