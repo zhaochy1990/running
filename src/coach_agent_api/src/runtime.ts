@@ -42,7 +42,7 @@ async function resolvePublicKeyPem(auth: ApiConfig["auth"]): Promise<string> {
 
 /** Compose API-owned adapters and release partial resources if startup fails. */
 export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: CoachAgentConfig): Promise<CoachApiRuntime> {
-  const dataProvider = MySqlDataProvider.create(apiConfig.strideDatabase);
+  const dataProvider = MySqlDataProvider.create(apiConfig.strideDatabase, apiConfig.goApi);
   // 抽奖绑表硬校验（#865）直读 stride 库 provider_credentials（只读），
   // 与 dataProvider 同一配置源；独立小池，关闭时一并释放。
   const watchPool = createStridePool(apiConfig.strideDatabase);

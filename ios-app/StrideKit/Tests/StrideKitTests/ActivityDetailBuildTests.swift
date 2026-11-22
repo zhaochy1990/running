@@ -21,7 +21,7 @@ import Testing
 
     private func detail(activity: Activity, segments: [Segment] = [],
                         zones: [Zone] = [], timeseries: [TimeseriesPoint] = []) -> ActivityDetailResponse {
-        ActivityDetailResponse(activity: activity, segments: segments, zones: zones, timeseries: timeseries)
+        ActivityDetailResponse(activity: activity, segments: segments, kilometerSplits: nil, zones: zones, timeseries: timeseries)
     }
 
     @Test func runMetricsNineItemsInOrder() {

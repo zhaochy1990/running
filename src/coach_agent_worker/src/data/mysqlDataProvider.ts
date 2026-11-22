@@ -37,11 +37,19 @@ import type {
   WeeklyPlanDocument,
 } from "@stride/coach-agent";
 import { CalibrationSourceSchema, deriveSyncCoverage } from "@stride/coach-agent";
+import { getLogger } from "@stride/common";
 import { shanghaiDay } from "@stride/contract";
 import type { Pool, RowDataPacket } from "mysql2/promise";
+import { z } from "zod";
 import type { MySqlConfig } from "../config.js";
 import { createStridePool } from "../db/mysql.js";
 import policyContract from "./calibrationPolicyContract.json" with { type: "json" };
+
+const logger = getLogger("coach:activityDetails");
+type GoActivityAPI = { baseUrl: string; internalToken: string };
+const goActivityDetails = z.object({
+  kilometer_splits: z.array(z.record(z.string(), z.unknown())).optional(),
+});
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -53,6 +61,7 @@ function assertDay(day: string): string {
 }
 export class MySqlDataProvider implements DataProvider {
   private readonly ownsPool: boolean;
+  private readonly goAPI: GoActivityAPI | undefined;
 
   /**
    * Wrap an existing pool (inject for tests / reuse), or use {@link MySqlDataProvider.create}
@@ -60,17 +69,18 @@ export class MySqlDataProvider implements DataProvider {
    */
   constructor(
     private readonly pool: Pool,
-    options: { ownsPool?: boolean } = {},
+    options: { ownsPool?: boolean; goAPI?: GoActivityAPI } = {},
   ) {
     this.ownsPool = options.ownsPool ?? false;
+    this.goAPI = options.goAPI;
   }
 
   /**
    * Open a connection pool to the local `stride` MySQL DB and return a store.
    * `config` comes from the API-owned `loadApiConfig().strideDatabase`.
    */
-  static create(config: MySqlConfig): MySqlDataProvider {
-    return new MySqlDataProvider(createStridePool(config), { ownsPool: true });
+  static create(config: MySqlConfig, goAPI?: GoActivityAPI): MySqlDataProvider {
+    return new MySqlDataProvider(createStridePool(config), { ownsPool: true, ...(goAPI && { goAPI }) });
   }
 
   async getUserProfile(userId: string): Promise<UserProfile | null> {
@@ -307,7 +317,7 @@ export class MySqlDataProvider implements DataProvider {
    * 单条运动的完整明细（含 `laps` 分段），按 `label_id` 精确取。列表查询请用
    * `getActivitySummariesByDateRange`；这里只处理一条，避免把整个日期区间的大段数据拉进上下文。
    */
-  async getActivityDetail(userId: string, labelId: string): Promise<Activity | null> {
+  async getActivityDetail(userId: string, labelId: string, options?: { includeKilometerSplits?: boolean }): Promise<Activity | null> {
     const [rows] = await this.pool.query<RowDataPacket[]>(
       `SELECT a.user_id, a.label_id, a.name, a.sport_name, a.date,
               a.distance_m, a.duration_s, a.avg_pace_s_km, a.best_km_pace,
@@ -330,8 +340,33 @@ export class MySqlDataProvider implements DataProvider {
       return null;
     }
     const activity = rowToActivity(row);
-    activity.laps = await this.pickSegments(userId, labelId, isStrengthRow(row));
+    const strength = isStrengthRow(row);
+    [activity.laps, activity.kilometerSplits] = await Promise.all([
+      this.pickSegments(userId, labelId, strength),
+      options?.includeKilometerSplits !== false && !strength ? this.readGoKilometerSplits(userId, labelId) : [],
+    ]);
     return activity;
+  }
+
+  private async readGoKilometerSplits(userId: string, labelId: string): Promise<ActivityLap[]> {
+    if (!this.goAPI?.internalToken) return [];
+    const { baseUrl, internalToken } = this.goAPI;
+    try {
+      const response = await fetch(`${baseUrl}/api/${encodeURIComponent(userId)}/activities/${encodeURIComponent(labelId)}`, {
+        headers: { "x-internal-token": internalToken },
+        redirect: "error",
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) {
+        logger.warn({ status: response.status }, "Go activity detail unavailable for kilometer splits");
+        return [];
+      }
+      const detail = goActivityDetails.parse(await response.json());
+      return (detail.kilometer_splits ?? []).map(rowToActivityLap);
+    } catch (error) {
+      logger.warn({ error }, "Unable to read kilometer splits from Go activity detail");
+      return [];
+    }
   }
 
   /**
@@ -1017,7 +1052,7 @@ function rowToActivity(row: RowDataPacket): Activity {
   };
 }
 
-function rowToActivityLap(row: RowDataPacket): ActivityLap {
+function rowToActivityLap(row: Record<string, unknown>): ActivityLap {
   return {
     lapIndex: row.lap_index as number,
     lapType: (row.lap_type ?? null) as string | null,

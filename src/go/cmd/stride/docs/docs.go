@@ -7255,7 +7255,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Assembles the activity, objective training load, laps, strength segments, watch-reported zones, and (with ?include=timeseries) the downsampled timeseries. A user caller may only read their own activities; an internal caller may read any user.",
+                "description": "Assembles the activity, objective training load, workout laps, kilometer splits, strength segments, watch-reported zones, and (with ?include=timeseries) the downsampled timeseries. A user caller may only read their own activities; an internal caller may read any user.",
                 "produces": [
                     "application/json"
                 ],
@@ -9485,6 +9485,12 @@ const docTemplate = `{
             "properties": {
                 "activity": {
                     "$ref": "#/definitions/api.activityDetailDTO"
+                },
+                "kilometer_splits": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.segmentDTO"
+                    }
                 },
                 "linked_scheduled_workout": {
                     "$ref": "#/definitions/api.linkedScheduledWorkoutDTO"

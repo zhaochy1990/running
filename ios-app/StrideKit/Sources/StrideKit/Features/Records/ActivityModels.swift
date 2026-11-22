@@ -252,6 +252,7 @@ public struct TimeseriesPoint: Decodable, Hashable, Sendable {
 public struct ActivityDetailResponse: Decodable, Hashable, Sendable {
     public let activity: Activity
     public let segments: [Segment]
+    public let kilometerSplits: [Segment]?
     public let zones: [Zone]
     /// 仅在请求 include=timeseries 时返回。
     public let timeseries: [TimeseriesPoint]?
@@ -259,6 +260,7 @@ public struct ActivityDetailResponse: Decodable, Hashable, Sendable {
     enum CodingKeys: String, CodingKey {
         case activity
         case segments
+        case kilometerSplits = "kilometer_splits"
         case zones
         case timeseries
     }

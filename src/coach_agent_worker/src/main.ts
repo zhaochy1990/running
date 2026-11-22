@@ -35,7 +35,7 @@ async function main(): Promise<void> {
   // the Go internal API rather than writing it (ADR 0033).
   const store = new GoJobClient(workerConfig.goApi.baseUrl, workerConfig.goApi.internalToken);
 
-  const dataProvider = new MySqlDataProvider(stridePool);
+  const dataProvider = new MySqlDataProvider(stridePool, { goAPI: workerConfig.goApi });
   const handlers = createPlanJobHandlers({
     masterGraph: await masterPlanGraph(coachConfig, dataProvider),
     dataProvider,

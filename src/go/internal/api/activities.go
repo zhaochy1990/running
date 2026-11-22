@@ -15,6 +15,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -134,7 +135,7 @@ func (a *activityRoutes) list(c *gin.Context) {
 // is included only when `?include=timeseries` is passed (M1 mobile contract).
 //
 //	@Summary		Get one activity's detail
-//	@Description	Assembles the activity, objective training load, laps, strength segments, watch-reported zones, and (with ?include=timeseries) the downsampled timeseries. A user caller may only read their own activities; an internal caller may read any user.
+//	@Description	Assembles the activity, objective training load, workout laps, kilometer splits, strength segments, watch-reported zones, and (with ?include=timeseries) the downsampled timeseries. A user caller may only read their own activities; an internal caller may read any user.
 //	@Tags			activities
 //	@Produce		json
 //	@Param			user		path		string	true	"User id (JWT sub)"
@@ -232,8 +233,8 @@ func (a *activityRoutes) updateFeelNote(c *gin.Context) {
 // lapFamilyLoader fetches one lap family (lap_type) for an activity.
 type lapFamilyLoader func(lapType string) ([]storage.Lap, error)
 
-// pickSegments returns the activity's segment rows — the single table the
-// detail API exposes (the old `laps` array was merged into it).
+// pickSegments returns the existing detail segments and any usable device
+// kilometer splits.
 //
 // `type2` is COROS's own lap table: the watch's laps (1 km / 500 m auto splits),
 // a workout's interval reps (400/800 m), or the exercise groups of a strength
@@ -249,22 +250,74 @@ type lapFamilyLoader func(lapType string) ([]storage.Lap, error)
 // tiers ('autoMile' 5 km, 'type12' 10 km) are never read: they are the same laps
 // re-grouped, their distance/pace come back as 0 on a share of activities, and
 // which tier is filled is not consistent.
-func pickSegments(a *storage.Activity, load lapFamilyLoader) ([]storage.Lap, error) {
-	segs, err := load("type2")
+func pickSegments(a *storage.Activity, load lapFamilyLoader) (segments, kilometerSplits []storage.Lap, err error) {
+	watchLaps, err := load("type2")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if isStrengthActivity(a) || hasDistanceSplits(segs) {
-		return segs, nil
+	if isStrengthActivity(a) {
+		return watchLaps, nil, nil
 	}
-	km, err := load("autoKm")
+	hasWatchSplits := hasDistanceSplits(watchLaps)
+	watchIsKilometerTable := isKilometerSplitTable(watchLaps, a.DistanceM)
+	if hasWatchSplits && watchIsKilometerTable {
+		watchLaps = fillKilometerPace(watchLaps)
+		return watchLaps, watchLaps, nil
+	}
+	autoKm, err := load("autoKm")
 	if err != nil {
-		return nil, err
+		if hasWatchSplits {
+			return watchLaps, nil, nil
+		}
+		return nil, nil, err
 	}
-	if !hasDistanceSplits(km) {
-		return nil, nil
+	if isKilometerSplitTable(autoKm, a.DistanceM) {
+		autoKm = fillKilometerPace(autoKm)
+		kilometerSplits = autoKm
+	} else if watchIsKilometerTable {
+		kilometerSplits = fillKilometerPace(watchLaps)
 	}
-	return km, nil
+	if hasWatchSplits {
+		return watchLaps, kilometerSplits, nil
+	}
+	if hasDistanceSplits(autoKm) {
+		return autoKm, kilometerSplits, nil
+	}
+	return nil, kilometerSplits, nil
+}
+
+// Provider lap labels alone do not guarantee kilometer splits. Allow 15 m
+// of device rounding per full kilometer and a shorter final split.
+func isKilometerSplitTable(laps []storage.Lap, activityDistance *float64) bool {
+	if len(laps) == 0 || laps[0].DistanceM == nil || *laps[0].DistanceM < 985 {
+		return false
+	}
+	var totalDistance float64
+	for i, lap := range laps {
+		minDistance := 0.0
+		if i < len(laps)-1 {
+			minDistance = 985
+		}
+		if lap.DistanceM == nil || !(*lap.DistanceM > 0 && *lap.DistanceM >= minDistance && *lap.DistanceM <= 1015) ||
+			lap.DurationS == nil || !(*lap.DurationS > 0) {
+			return false
+		}
+		totalDistance += *lap.DistanceM
+	}
+	return coversKilometerDistance(totalDistance, activityDistance)
+}
+
+// Valid distance and duration can supply pace if the vendor omitted it.
+func fillKilometerPace(laps []storage.Lap) []storage.Lap {
+	rows := slices.Clone(laps)
+	for i := range rows {
+		lap := &rows[i]
+		if lap.AvgPace == nil || *lap.AvgPace <= 0 {
+			pace := *lap.DurationS * 1000 / *lap.DistanceM
+			lap.AvgPace = &pace
+		}
+	}
+	return rows
 }
 
 // isStrengthActivity reports whether an activity is a strength session, whose
@@ -303,7 +356,7 @@ func assembleActivityDetail(ctx context.Context, store ActivityStore, userID, la
 		return nil, false, nil
 	}
 
-	segs, err := pickSegments(activity,
+	segs, kilometerSplits, err := pickSegments(activity,
 		func(lapType string) ([]storage.Lap, error) {
 			return store.ActivityLapsByType(ctx, userID, labelID, lapType)
 		},
@@ -337,16 +390,24 @@ func assembleActivityDetail(ctx context.Context, store ActivityStore, userID, la
 		Activity:               toActivityDetail(activity),
 		StrideTrainingLoad:     toStrideTrainingLoad(load),
 		Segments:               toSegmentDTOs(segs),
+		KilometerSplits:        toSegmentDTOs(kilometerSplits),
 		Zones:                  zones,
 		LinkedScheduledWorkout: nil,
 	}
-	if includeTimeseries {
+	needsKilometers := len(kilometerSplits) == 0 && !isStrengthActivity(activity) &&
+		activity.DistanceM != nil && *activity.DistanceM >= 1000
+	if includeTimeseries || needsKilometers {
 		ts, err := store.ActivityTimeseries(ctx, userID, labelID)
-		if err != nil {
+		if err != nil && includeTimeseries {
 			return nil, false, err
 		}
-		series := toTimeseriesDTOs(downsampleTimeseries(ts))
-		resp.Timeseries = &series
+		if needsKilometers && err == nil {
+			resp.KilometerSplits = toSegmentDTOs(deriveKilometerSplits(activity, ts))
+		}
+		if includeTimeseries {
+			series := toTimeseriesDTOs(downsampleTimeseries(ts))
+			resp.Timeseries = &series
+		}
 	}
 	return resp, true, nil
 }
@@ -647,6 +708,7 @@ type activityDetailResponse struct {
 	Activity               activityDetailDTO          `json:"activity"`
 	StrideTrainingLoad     *strideTrainingLoadDTO     `json:"stride_training_load"`
 	Segments               []segmentDTO               `json:"segments"`
+	KilometerSplits        []segmentDTO               `json:"kilometer_splits"`
 	Zones                  []zoneDTO                  `json:"zones"`
 	Timeseries             *[]timeseriesDTO           `json:"timeseries,omitempty"`
 	LinkedScheduledWorkout *linkedScheduledWorkoutDTO `json:"linked_scheduled_workout"`

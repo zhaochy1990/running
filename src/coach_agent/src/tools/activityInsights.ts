@@ -150,7 +150,7 @@ class ActivityInsightsToolImpl {
     if (!asof) {
       throw new Error("get_activity_insights: missing asof in runtime context");
     }
-    const activity = await this.store.getActivityDetail(userId, input.labelId);
+    const activity = await this.store.getActivityDetail(userId, input.labelId, { includeKilometerSplits: false });
     if (!activity) {
       return { available: false, reason: "activity_not_found", provenance: PROVENANCE };
     }
@@ -429,7 +429,7 @@ export function createActivityInsightTools(store: DataProvider): StructuredTool[
       name: "get_activity_insights",
       description:
         "单次跑步复盘的确定性洞察（一次调用替代多次拼装）：返回强度定位（对照阈值心率/配速）、同配速心率基线 delta（近 4 周同 class 课，含样本数）、前后半程心率漂移归因（含温湿度）、正/负分割与末段衰减、当日 weekly_plan 意图与偏差、课后负荷位置（form/loadRatio/本周质量课数）。" +
-        "复盘某一次跑步时先调用本工具再作答；available=false 或某字段降级（n=0 / available=false）时回退 get_activities_by_date_range、get_activity_details、get_daily_training_load、get_running_calibration，不要编造数值。",
+        "复盘某一次跑步时先调用本工具；若用户问每公里表现，再调用 get_activity_details 查看 kilometerSplits。available=false 或某字段降级（n=0 / available=false）时回退 get_activities_by_date_range、get_activity_details、get_daily_training_load、get_running_calibration，不要编造数值。",
       schema: getActivityInsightsSchema,
       handler: (input, runtime) => impl.getActivityInsights(input, runtime),
     },

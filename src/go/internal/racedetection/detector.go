@@ -7,7 +7,6 @@ package racedetection
 
 import (
 	"context"
-	"encoding/json"
 	"math"
 	"time"
 
@@ -52,22 +51,12 @@ type PauseContext struct {
 	Intervals      []PauseInterval `json:"intervals"`
 }
 
-type storedPause struct {
-	StartTimestamp *int64 `json:"startTimestamp"`
-	EndTimestamp   *int64 `json:"endTimestamp"`
-	StartTS        *int64 `json:"start_ts"`
-	EndTS          *int64 `json:"end_ts"`
-}
-
 // ParsePauseContext accepts both the current COROS camelCase shape and the
 // legacy snake_case shape. Stored timestamps are absolute centiseconds. Invalid
 // entries are ignored; nil means there is no reliable recorded pause evidence.
 func ParsePauseContext(raw *string, location *time.Location) *PauseContext {
-	if raw == nil || *raw == "" {
-		return nil
-	}
-	var stored []storedPause
-	if err := json.Unmarshal([]byte(*raw), &stored); err != nil {
+	stored, err := normalize.ParsePauseIntervals(raw)
+	if err != nil || len(stored) == 0 {
 		return nil
 	}
 	if location == nil {
@@ -76,26 +65,13 @@ func ParsePauseContext(raw *string, location *time.Location) *PauseContext {
 	intervals := make([]PauseInterval, 0, len(stored))
 	var total float64
 	for _, pause := range stored {
-		start, end := pause.StartTimestamp, pause.EndTimestamp
-		if start == nil {
-			start = pause.StartTS
-		}
-		if end == nil {
-			end = pause.EndTS
-		}
-		if start == nil || end == nil || *end <= *start {
-			continue
-		}
-		durationS := float64(*end-*start) / 100
+		durationS := float64(pause.End-pause.Start) / 100
 		total += durationS
 		intervals = append(intervals, PauseInterval{
-			StartLocal: centisecondEpoch(*start).In(location).Format("2006-01-02 15:04:05"),
-			EndLocal:   centisecondEpoch(*end).In(location).Format("2006-01-02 15:04:05"),
+			StartLocal: centisecondEpoch(pause.Start).In(location).Format("2006-01-02 15:04:05"),
+			EndLocal:   centisecondEpoch(pause.End).In(location).Format("2006-01-02 15:04:05"),
 			DurationS:  durationS,
 		})
-	}
-	if len(intervals) == 0 {
-		return nil
 	}
 	return &PauseContext{Count: len(intervals), TotalDurationS: total, Intervals: intervals}
 }

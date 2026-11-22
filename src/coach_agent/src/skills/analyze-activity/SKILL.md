@@ -230,6 +230,7 @@ description: >-
 | `sportNote` | string \| null | 运动员写的备注，有就引用。 |
 | `pauses` | JSON \| null | 暂停区间，null=无暂停。 |
 | `laps` | `ActivityLap[]` \| undefined | 每次运动的分段（仪表盘/手表自动切的每公里，或间歇课的各 set），很可能为空 `[]`。**只给分段数据，不做厂商训练负荷/类型判断**。 |
+| `kilometerSplits` | `ActivityLap[]` \| undefined | 经距离校验的整场逐公里数据，末段可能不足 1 公里。分析每公里表现时用此字段，缺失时说明数据不可用。 |
 
 **`sport` 取值**（跑步 5 种 + 其它 5 种；跑步分析只看 `sport LIKE 'run%'`）
 

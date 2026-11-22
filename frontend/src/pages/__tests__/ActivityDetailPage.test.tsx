@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
-import { getActivity, getPlanDays } from "../../api";
+import { getActivity, getPlanDays, type Segment } from "../../api";
 import { UserContext } from "../../UserContextValue";
 import ActivityDetailPage from "../ActivityDetailPage";
 
@@ -67,6 +67,36 @@ function renderActivityDetail() {
 describe("ActivityDetailPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("shows kilometer data alongside workout laps without repeating the same table", async () => {
+    const lap = { lap_index: 1, lap_type: "type2", distance_m: 6000, distance_km: 6, duration_fmt: "24:00", pace_fmt: "4:00" } as Segment;
+    const split = { ...lap, lap_type: "timeseriesKm", distance_m: 1000, distance_km: 1, duration_fmt: "03:58", pace_fmt: "3:58" };
+    vi.mocked(getActivity).mockResolvedValue({
+      activity: { ...activity, sport_type: 100, sport_name: "Run" },
+      segments: [lap],
+      kilometer_splits: [split],
+      zones: [],
+      timeseries: [],
+    });
+    vi.mocked(getPlanDays).mockResolvedValue({ days: [] });
+
+    const first = renderActivityDetail();
+    expect(await screen.findByText("每公里数据")).toBeInTheDocument();
+    expect(screen.getByText("分段数据")).toBeInTheDocument();
+    expect(screen.getByText("3:58")).toBeInTheDocument();
+    first.unmount();
+
+    vi.mocked(getActivity).mockResolvedValue({
+      activity: { ...activity, sport_type: 100, sport_name: "Run" },
+      segments: [split],
+      kilometer_splits: [split],
+      zones: [],
+      timeseries: [],
+    });
+    renderActivityDetail();
+    expect(await screen.findByText("分段数据")).toBeInTheDocument();
+    expect(screen.queryByText("每公里数据")).toBeNull();
   });
 
   it("labels provider load as watch load and renders STRIDE load when present", async () => {

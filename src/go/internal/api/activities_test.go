@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -377,7 +378,7 @@ func TestActivityDetail_NotFound_404(t *testing.T) {
 
 func baseDetailStore() *fakeActivityStore {
 	return &fakeActivityStore{
-		activity: &storage.Activity{LabelID: "act-1", SportType: 100, Date: time.Date(2026, 1, 15, 2, 0, 0, 0, time.UTC)},
+		activity: &storage.Activity{LabelID: "act-1", SportType: 100, DistanceM: fptr(2000), Date: time.Date(2026, 1, 15, 2, 0, 0, 0, time.UTC)},
 		// COROS shape: 'type2' is the watch's own lap table (distances filled),
 		// alongside the derived 'autoKm' tier of the same run.
 		laps: map[string][]storage.Lap{
@@ -395,7 +396,7 @@ func baseDetailStore() *fakeActivityStore {
 }
 
 // COROS: the watch's own lap table (type2) is the segment source; the derived
-// autoKm tier is not read at all.
+// autoKm tier is unnecessary when the watch already recorded kilometer laps.
 func TestActivityDetail_SegmentsComeFromType2(t *testing.T) {
 	h := newActivityHarness(t, baseDetailStore())
 	w := h.do(http.MethodGet, "/api/"+activityUserA+"/activities/act-1", h.bearer(t, activityUserA))
@@ -409,6 +410,66 @@ func TestActivityDetail_SegmentsComeFromType2(t *testing.T) {
 	}
 	if got := strings.Join(h.store.gotLapTypes, ","); got != "type2" {
 		t.Fatalf("queried lap types = %q, want only type2", got)
+	}
+}
+
+func TestActivityDetail_IntervalAndKilometerSplits(t *testing.T) {
+	store := baseDetailStore()
+	store.activity.DistanceM = fptr(12000)
+	store.laps["type2"][0].DistanceM = fptr(6000)
+	store.laps["type2"][1].DistanceM = fptr(6000)
+	store.laps["autoKm"] = nil
+	for i := 0; i < 12; i++ {
+		store.laps["autoKm"] = append(store.laps["autoKm"], storage.Lap{
+			LapIndex: i, LapType: "autoKm", DistanceM: fptr(1000), DurationS: fptr(240 + float64(i)),
+		})
+	}
+	h := newActivityHarness(t, store)
+	path := "/api/" + activityUserA + "/activities/act-1"
+	w := h.do(http.MethodGet, path, h.bearer(t, activityUserA))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200", w.Code)
+	}
+	var resp activityDetailResponse
+	mustJSON(t, w, &resp)
+	if len(resp.Segments) != 2 || *resp.Segments[0].DistanceM != 6000 ||
+		len(resp.KilometerSplits) != 12 || (*resp.KilometerSplits[11].DurationS != 251 || *resp.KilometerSplits[11].AvgPace != 251) {
+		t.Fatalf("intervals = %+v, kilometer splits = %+v", resp.Segments, resp.KilometerSplits)
+	}
+
+	store.laps["autoKm"][0].DistanceM = fptr(0)
+	w = h.do(http.MethodGet, path, h.bearer(t, activityUserA))
+	mustJSON(t, w, &resp)
+	if len(resp.KilometerSplits) != 0 {
+		t.Fatalf("invalid kilometer table = %+v, want empty", resp.KilometerSplits)
+	}
+
+	for i := range 241 {
+		timestamp := int64(i * 1200)
+		store.series = append(store.series, storage.TimeseriesPoint{
+			Timestamp: &timestamp, Distance: fptr(float64(i * 50)),
+		})
+	}
+	w = h.do(http.MethodGet, path, h.bearer(t, activityUserA))
+	mustJSON(t, w, &resp)
+	if len(resp.KilometerSplits) != 12 || resp.KilometerSplits[0].LapType != derivedKilometerLapType ||
+		*resp.KilometerSplits[0].AvgPace != 240 || resp.Timeseries != nil {
+		t.Fatalf("estimated splits = %+v, timeseries included = %t", resp.KilometerSplits, resp.Timeseries != nil)
+	}
+}
+
+func TestPickSegments_KeepsWorkoutLapsWhenKilometerLookupFails(t *testing.T) {
+	store := baseDetailStore()
+	store.laps["type2"][0].DistanceM = fptr(6000)
+	store.laps["type2"][1].DistanceM = fptr(6000)
+	segments, splits, err := pickSegments(store.activity, func(lapType string) ([]storage.Lap, error) {
+		if lapType == "autoKm" {
+			return nil, fmt.Errorf("kilometer laps unavailable")
+		}
+		return store.laps[lapType], nil
+	})
+	if err != nil || len(segments) != 2 || len(splits) != 0 {
+		t.Fatalf("segments = %d, kilometer splits = %d, err = %v", len(segments), len(splits), err)
 	}
 }
 

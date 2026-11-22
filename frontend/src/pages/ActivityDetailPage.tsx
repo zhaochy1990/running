@@ -43,6 +43,7 @@ export default function ActivityDetailPage() {
   const activityId = isTeamView ? labelId : id;
   const [activity, setActivity] = useState<Activity | null>(null);
   const [segments, setSegments] = useState<Segment[]>([]);
+  const [kilometerSplits, setKilometerSplits] = useState<Segment[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
   const [timeseries, setTimeseries] = useState<TimeseriesPoint[]>([]);
   const [strideTrainingLoad, setStrideTrainingLoad] = useState<ActivityStrideTrainingLoad | null>(null);
@@ -67,6 +68,7 @@ export default function ActivityDetailPage() {
     fetchDetail().then((data) => {
       setActivity(data.activity);
       setSegments(data.segments || []);
+      setKilometerSplits(data.kilometer_splits || []);
       setZones(data.zones);
       setTimeseries(data.timeseries);
       setStrideTrainingLoad(data.stride_training_load ?? null);
@@ -82,6 +84,7 @@ export default function ActivityDetailPage() {
       .then((data) => {
         setActivity(data.activity);
         setSegments(data.segments || []);
+        setKilometerSplits(data.kilometer_splits || []);
         setZones(data.zones);
         setTimeseries(data.timeseries);
         setStrideTrainingLoad(data.stride_training_load ?? null);
@@ -404,13 +407,15 @@ export default function ActivityDetailPage() {
         </div>
       )}
 
-      {/* Segments */}
-      {segments.length > 0 && (
-        <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-5 opacity-0" style={{ animationFillMode: "forwards" }}>
-          <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">分段数据</h3>
-          {isStrength ? <StrengthView segments={segments} /> : <SegmentView segments={segments} />}
+      {[
+        { title: "分段数据", rows: segments, strength: isStrength },
+        { title: "每公里数据", rows: kilometerSplits[0]?.lap_type !== segments[0]?.lap_type ? kilometerSplits : [], strength: false },
+      ].map(({ title, rows, strength }) => rows.length > 0 && (
+        <div key={title} className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-5 opacity-0" style={{ animationFillMode: "forwards" }}>
+          <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">{title}</h3>
+          {strength ? <StrengthView segments={rows} /> : <SegmentView segments={rows} />}
         </div>
-      )}
+      ))}
     </div>
   );
 }

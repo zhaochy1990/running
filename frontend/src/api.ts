@@ -1927,6 +1927,7 @@ export interface ActivityDetailResponse {
   activity: Activity;
   stride_training_load?: ActivityStrideTrainingLoad | null;
   segments: Segment[];
+  kilometer_splits?: Segment[];
   zones: Zone[];
   timeseries: TimeseriesPoint[];
   linked_scheduled_workout?: LinkedScheduledWorkout | null;

@@ -140,6 +140,7 @@ export interface ActivityDetailResponse {
   activity: Activity;
   stride_training_load?: ActivityStrideTrainingLoad | null;
   segments: Segment[];
+  kilometer_splits?: Segment[];
   zones: Zone[];
   /** 仅在请求 include=timeseries 时返回；否则缺失/空数组。 */
   timeseries?: TimeseriesPoint[];

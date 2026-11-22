@@ -12,7 +12,7 @@ export interface DataProvider {
   /** 全量活动（含 `laps` 分段），供 master/weekly context 等需要完整数据的调用方。 */
   getActivitiesByDateRange(userId: string, startDay: string, endDay: string): Promise<Activity[]>;
   /** 单条运动的完整明细（含 `laps` 分段）；不存在返回 null。列表查询用 getActivitySummariesByDateRange。 */
-  getActivityDetail(userId: string, labelId: string): Promise<Activity | null>;
+  getActivityDetail(userId: string, labelId: string, options?: { includeKilometerSplits?: boolean }): Promise<Activity | null>;
   getDailyTrainingLoadByDateRange(userId: string, startDay: string, endDay: string): Promise<DailyTrainingLoad[]>;
   /** 确认为比赛的跑步记录（races 表 ∪ session_class='race'，devops#790），最近在前；`minDistanceKm` 只是噪音地板（默认 4.5km），不做比赛判定。 */
   getRaceHistory(userId: string, options: { asOfDate: string; minDistanceKm?: number; limit?: number }): Promise<RaceEffort[]>;
@@ -40,16 +40,7 @@ export interface DataProvider {
 /** ── 首次同步覆盖（devops#1013，Go-owned onboarding sync 表的只读投影）── */
 
 /** 就绪级别词汇，与 Go onboardingsync.Readiness 一致（唯一事实源，schema/推导共用）。 */
-export const SYNC_READINESS_VALUES = [
-  "not_started",
-  "pending",
-  "running",
-  "ready",
-  "ready_with_gaps",
-  "failed",
-  "partial",
-  "unavailable",
-] as const;
+export const SYNC_READINESS_VALUES = ["not_started", "pending", "running", "ready", "ready_with_gaps", "failed", "partial", "unavailable"] as const;
 
 /** 就绪级别，与 Go onboardingsync.Readiness 词汇一致。 */
 export type SyncReadiness = (typeof SYNC_READINESS_VALUES)[number];
@@ -163,6 +154,8 @@ export interface Activity {
   provider: string;
   /** Per-activity laps/segments; `[]` when the watch did not record any */
   laps: ActivityLap[];
+  /** Validated kilometer splits for a single activity detail. */
+  kilometerSplits?: ActivityLap[];
 }
 
 /** One lap/segment of a watch activity. Field names mirror the `laps` table. */
