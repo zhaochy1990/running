@@ -276,6 +276,8 @@ export interface PlanJobRecord {
   /** 表单消息在服务端历史投影里的行序（CoachMessage.shareIndex，与分享 indices 同源）。
    *  历史重载后 id 会重排，这个序号不会——跨进程识别「已提交表单」靠它。 */
   formShareIndex?: number;
+  /** 历史不可用期间提交时保留源卡的预填目标，供历史恢复后识别唯一匹配。 */
+  formSourceGoal?: MasterPlanFormCard['goal'];
   /** done 时结果卡文案（轻量摘要；完整 content 不落 storage，查看时按 job 现取）。 */
   resultTitle?: string;
   resultSubtitle?: string;

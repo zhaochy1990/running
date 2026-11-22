@@ -158,15 +158,16 @@ function findPlanFormMessage(forms: CoachMessage[], record: PlanJobRecord): Coac
   const localId = localPlanFormIds.get(record.jobId);
   const local = forms.find((form) => form.shareIndex === undefined && form.id === localId);
   if (local) return local;
-  // 旧任务只存过进程内 id。只在历史中有唯一同赛事表单时自动关联。
-  if (typeof record.formMessageId !== 'number') return undefined;
-  const submitted = record.request.goals?.[0];
-  if (!submitted) return undefined;
+  // 没拿到投影序号时，在历史中找与源卡片唯一匹配的表单。
+  const sourceGoal = record.formSourceGoal;
+  const goalToMatch = sourceGoal ?? (typeof record.formMessageId === 'number' ? record.request.goals?.[0] : undefined);
+  if (!goalToMatch) return undefined;
   const matchingHistory = forms.filter((form) => {
     if (form.ts || form.shareIndex === undefined) return false;
     const goal = (form.card?.data as MasterPlanFormCard | undefined)?.goal;
-    return goal && goal.race_name.trim() === submitted.race_name &&
-      goal.distance === submitted.distance && goal.race_date === submitted.race_date;
+    return goal && goal.race_name.trim() === goalToMatch.race_name.trim() &&
+      goal.distance === goalToMatch.distance && goal.race_date === goalToMatch.race_date &&
+      (!sourceGoal || goal.target_time === sourceGoal.target_time);
   });
   return matchingHistory.length === 1 ? matchingHistory[0] : undefined;
 }
@@ -1526,6 +1527,9 @@ Page<CoachPageData, CoachPageHandlers>({
     const formMessage = this.data.messages.find((m) => m.id === messageId && m.card?.type === 'master-plan-form');
     if (!formMessage) return;
     const formShareIndex = formMessage.shareIndex;
+    const formSourceGoal = formShareIndex === undefined && !formMessage.editPlanJobId
+      ? (formMessage.card?.data as MasterPlanFormCard | undefined)?.goal
+      : undefined;
     const localBindings = localPlanFormIds;
     const failForm = (): void => {
       if (!coachPageActive || this.data.currentSessionId !== sessionId || typeof messageId !== 'number') return;
@@ -1574,6 +1578,7 @@ Page<CoachPageData, CoachPageHandlers>({
         idempotencyKey,
         request,
         ...(typeof formShareIndex === 'number' ? { formShareIndex } : {}),
+        ...(formSourceGoal ? { formSourceGoal } : {}),
       };
       // 投递期间切走了会话：卡只落 storage，回到该会话时 syncPlanJobCards 补回。
       if (!coachPageActive || this.data.currentSessionId !== sessionId) {

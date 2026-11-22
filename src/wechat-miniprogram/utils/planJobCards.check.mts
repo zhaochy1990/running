@@ -388,7 +388,8 @@ type TestMessage = {
   assert.deepEqual(historyRequests, ['source', 'source']);
 
   enqueue = Promise.withResolvers<{ job_id: string }>();
-  const localSubmission = page.onPlanFormSubmit({ ...tap(unprojectedForm.id), detail: { form, options } });
+  const editedForm = { ...form, goal: { ...form.goal, race_name: '我改过的比赛' } };
+  const localSubmission = page.onPlanFormSubmit({ ...tap(unprojectedForm.id), detail: { form: editedForm, options } });
   enqueue.resolve({ job_id: 'current-local-form' });
   await localSubmission;
   const localJob = jobs.get('current-local-form');
@@ -397,6 +398,13 @@ type TestMessage = {
   localJob.status = 'done';
   page.refreshPlanJobCards();
   assert.equal(page.data.messages.find((m) => m.id === unprojectedForm.id)?.hidden, true, '同一批消息内仍绑定已提交的表单');
+  jobs.delete(record.jobId);
+  jobs.delete('old-local-id');
+  page.loadSession = async () => {};
+  page.onSelectSession(tap('other'));
+  page.onSelectSession(tap('source'));
+  page.data.messages = page.syncPlanJobCards('source', [{ ...sourceMessage, id: 25, shareIndex: 11 }]);
+  assert.equal(page.data.messages[0].hidden, true, '历史恢复后仍用提交前的源卡目标匹配');
 }
 
 // 本地存储部分失败时，列表和轮询仍使用本进程的最新任务状态。
