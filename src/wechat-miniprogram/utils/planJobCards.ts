@@ -271,7 +271,7 @@ export interface PlanJobRecord {
   progressPct: number;
   idempotencyKey: string;
   request: MasterPlanJobRequest;
-  /** 提交这张表单的消息 id（本会话内稳定；重启后 id 会重排，仅作 best-effort 关联）。 */
+  /** 旧版本保存过的表单消息 id。历史重载后不能直接按此 id 匹配。 */
   formMessageId?: number;
   /** 表单消息在服务端历史投影里的行序（CoachMessage.shareIndex，与分享 indices 同源）。
    *  历史重载后 id 会重排，这个序号不会——跨进程识别「已提交表单」靠它。 */

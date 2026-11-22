@@ -235,7 +235,7 @@ type TestMessage = {
     finishStream(done: { status: 'completed'; message: string; card: unknown }, userMsgId: number): void;
   };
   const jobs = new Map<string, Job>();
-  const enqueue = Promise.withResolvers<{ job_id: string }>();
+  let enqueue = Promise.withResolvers<{ job_id: string }>();
   const history = Promise.withResolvers<null>();
   const historyRequests: string[] = [];
   const toasts: string[] = [];
@@ -346,6 +346,10 @@ type TestMessage = {
   page.onSelectSession(tap('legacy'));
   page.data.messages = page.syncPlanJobCards('legacy', [{ ...sourceMessage, id: 18 }]);
   assert.equal(page.data.messages[0].hidden, true, '旧任务可匹配历史中唯一且赛事相同的表单');
+  page.data.messages.push({ id: 41 });
+  page.finishStream(newFormReply, 41);
+  assert.equal(page.data.messages[0].hidden, true, '新到达的表单不干扰旧任务的历史匹配');
+  assert.equal(page.data.messages.at(-1)?.hidden, undefined, '新到达的表单可继续填写');
   page.data.messages = page.syncPlanJobCards('legacy', [{ ...sourceMessage, id: 17 }, { ...otherMessage, id: 18 }]);
   assert.equal(page.data.messages[0].hidden, undefined, '旧 id 有歧义时保留历史表单');
   const legacyMessage = page.data.messages.find((m) => m.planJob?.jobId === legacy.jobId);
@@ -373,10 +377,26 @@ type TestMessage = {
   assert.ok(page.data.messages.some((m) => m.planJob?.jobId === record.jobId), '历史不可用时保留本地任务卡');
   page.data.messages.push({ id: 42 });
   page.finishStream(newFormReply, 42);
-  assert.equal(page.data.messages.at(-1)?.shareIndex, undefined, '历史未知时不猜测新表单的序号');
+  const unprojectedForm = page.data.messages.at(-1);
+  assert.ok(unprojectedForm);
+  assert.equal(unprojectedForm.shareIndex, undefined, '历史未知时不猜测新表单的序号');
+  jobs.set('old-local-id', { ...record, jobId: 'old-local-id', formShareIndex: undefined, formMessageId: unprojectedForm.id });
+  page.refreshPlanJobCards();
+  assert.equal(page.data.messages.find((m) => m.id === unprojectedForm.id)?.hidden, undefined, '旧数字 id 不绑定新表单');
   page.onSelectSession(tap('source'));
   await loading;
   assert.deepEqual(historyRequests, ['source', 'source']);
+
+  enqueue = Promise.withResolvers<{ job_id: string }>();
+  const localSubmission = page.onPlanFormSubmit({ ...tap(unprojectedForm.id), detail: { form, options } });
+  enqueue.resolve({ job_id: 'current-local-form' });
+  await localSubmission;
+  const localJob = jobs.get('current-local-form');
+  assert.ok(localJob);
+  assert.equal(localJob.formMessageId, undefined, '无历史序号的表单 id 不写入任务记录');
+  localJob.status = 'done';
+  page.refreshPlanJobCards();
+  assert.equal(page.data.messages.find((m) => m.id === unprojectedForm.id)?.hidden, true, '同一批消息内仍绑定已提交的表单');
 }
 
 // 本地存储部分失败时，列表和轮询仍使用本进程的最新任务状态。

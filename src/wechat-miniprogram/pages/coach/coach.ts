@@ -135,6 +135,12 @@ const planJobPaused = new Set<string>();
 // 记录编辑中的消息和对应任务，切页回来保持展开，重复点击同一任务保留当前输入。
 // 换会话或重载历史时，消息 id 会重排，清空这个映射。
 const reopenedForms = new Map<number, string>();
+let localPlanFormIds = new Map<string, number>();
+
+function resetPlanFormBindings(): void {
+  reopenedForms.clear();
+  localPlanFormIds = new Map();
+}
 
 function clearPlanJobTimers(): void {
   for (const timer of planJobTimers.values()) clearTimeout(timer);
@@ -149,16 +155,20 @@ function findPlanFormMessage(forms: CoachMessage[], record: PlanJobRecord): Coac
   if (typeof record.formShareIndex === 'number') {
     return forms.find((form) => form.shareIndex === record.formShareIndex);
   }
-  if (typeof record.formMessageId !== 'number') return undefined;
-  const local = forms.find((form) => form.shareIndex === undefined && form.id === record.formMessageId);
+  const localId = localPlanFormIds.get(record.jobId);
+  const local = forms.find((form) => form.shareIndex === undefined && form.id === localId);
   if (local) return local;
-  // 旧任务只存过进程内 id。历史只留一张且赛事一致时，才关联这张卡。
-  if (forms.length !== 1 || forms[0].ts) return undefined;
-  const goal = (forms[0].card?.data as MasterPlanFormCard | undefined)?.goal;
+  // 旧任务只存过进程内 id。只在历史中有唯一同赛事表单时自动关联。
+  if (typeof record.formMessageId !== 'number') return undefined;
   const submitted = record.request.goals?.[0];
-  if (goal && submitted && goal.race_name.trim() === submitted.race_name &&
-    goal.distance === submitted.distance && goal.race_date === submitted.race_date) return forms[0];
-  return undefined;
+  if (!submitted) return undefined;
+  const matchingHistory = forms.filter((form) => {
+    if (form.ts || form.shareIndex === undefined) return false;
+    const goal = (form.card?.data as MasterPlanFormCard | undefined)?.goal;
+    return goal && goal.race_name.trim() === submitted.race_name &&
+      goal.distance === submitted.distance && goal.race_date === submitted.race_date;
+  });
+  return matchingHistory.length === 1 ? matchingHistory[0] : undefined;
 }
 
 function planFormMessages(messages: CoachMessage[]): CoachMessage[] {
@@ -806,7 +816,7 @@ Page<CoachPageData, CoachPageHandlers>({
     coachPageActive = false;
     activeHistoryLoad = undefined;
     clearPlanJobTimers();
-    reopenedForms.clear();
+    resetPlanFormBindings();
     // 离开页面时中止在途流式请求，避免后台继续占用连接/接收 chunk。
     this.resetStream();
     if (shareCoverTimer != null) {
@@ -831,7 +841,7 @@ Page<CoachPageData, CoachPageHandlers>({
     projectionLength = 0;
     activeHistoryLoad = undefined;
     historySyncFailed = false;
-    reopenedForms.clear();
+    resetPlanFormBindings();
     this.setData({
       sessions,
       currentSessionId: newSession.id,
@@ -891,7 +901,7 @@ Page<CoachPageData, CoachPageHandlers>({
       if (history && Array.isArray(history.messages) && history.messages.length) {
         seq = 0;
         // 消息 id 重排：进程内按 id 记的「临时展开表单」全部失效。
-        reopenedForms.clear();
+        resetPlanFormBindings();
         // 带上会话 target：历史自愈出的策略卡片需要 race_event_id 定位报告页。
         const target = this.data.sessions.find((s) => s.id === sessionId)?.target;
         msgs = history.messages.map((m, index) => toCoachMessage(m, index, target));
@@ -900,7 +910,7 @@ Page<CoachPageData, CoachPageHandlers>({
       } else {
         seq = 0;
         projectionLength = 0;
-        reopenedForms.clear();
+        resetPlanFormBindings();
         msgs = welcomeMessages();
       }
       // 自建课卡片对账：历史是静态快照，卡片按钮态只活在内存里，刷新即回退
@@ -1516,11 +1526,17 @@ Page<CoachPageData, CoachPageHandlers>({
     const formMessage = this.data.messages.find((m) => m.id === messageId && m.card?.type === 'master-plan-form');
     if (!formMessage) return;
     const formShareIndex = formMessage.shareIndex;
+    const localBindings = localPlanFormIds;
     const failForm = (): void => {
       if (!coachPageActive || this.data.currentSessionId !== sessionId || typeof messageId !== 'number') return;
       const component = this.selectComponent(`#plan-form-${messageId}`) as { submitFailed?: () => void } | null;
       component?.submitFailed?.();
     };
+    if (activeHistoryLoad?.sessionId === sessionId) {
+      wx.showToast({ title: '对话加载中，请稍候', icon: 'none' });
+      failForm();
+      return;
+    }
     if (planFormSubmitInFlight) {
       wx.showToast({ title: '正在提交，请稍候', icon: 'none' });
       failForm();
@@ -1557,13 +1573,16 @@ Page<CoachPageData, CoachPageHandlers>({
         progressPct: 0,
         idempotencyKey,
         request,
-        ...(!formMessage.editPlanJobId ? { formMessageId: formMessage.id } : {}),
         ...(typeof formShareIndex === 'number' ? { formShareIndex } : {}),
       };
       // 投递期间切走了会话：卡只落 storage，回到该会话时 syncPlanJobCards 补回。
       if (!coachPageActive || this.data.currentSessionId !== sessionId) {
         savePlanJob(record);
         return;
+      }
+      // 无历史序号的表单只绑定到发起请求时那一批消息，id 不写入任务记录。
+      if (formShareIndex === undefined && !formMessage.editPlanJobId && localBindings === localPlanFormIds) {
+        localBindings.set(record.jobId, formMessage.id);
       }
       const submittedForm = findPlanFormMessage(planFormMessages(this.data.messages), record);
       if (submittedForm) reopenedForms.delete(submittedForm.id);
@@ -1813,6 +1832,11 @@ Page<CoachPageData, CoachPageHandlers>({
       const idempotencyKey = randomRequestId('mp-plan-retry');
       const res = await enqueueGenerateMasterPlan({ request: record.request, idempotencyKey });
       if (res.job_id !== jobId) {
+        const localFormId = localPlanFormIds.get(jobId);
+        if (localFormId !== undefined) {
+          localPlanFormIds.delete(jobId);
+          localPlanFormIds.set(res.job_id, localFormId);
+        }
         removePlanJob(jobId);
         planJobPaused.delete(jobId);
         planJobPollFailures.delete(jobId);
@@ -2307,7 +2331,7 @@ Page<CoachPageData, CoachPageHandlers>({
     projectionLength = 0;
     activeHistoryLoad = undefined;
     historySyncFailed = false;
-    reopenedForms.clear();
+    resetPlanFormBindings();
     this.setData({
       sessions,
       currentSessionId: newSession.id,
@@ -2334,7 +2358,7 @@ Page<CoachPageData, CoachPageHandlers>({
     seq = 0;
     projectionLength = 0;
     historySyncFailed = false;
-    reopenedForms.clear();
+    resetPlanFormBindings();
     this.setData({
       currentSessionId: id,
       drawerOpen: false,
