@@ -53,3 +53,17 @@ func TestDeriveKilometerSplits_LegacyDistanceAndTruncatedSource(t *testing.T) {
 		t.Fatalf("truncated source returned %d splits", len(got))
 	}
 }
+
+func TestIsKilometerSplitTable_RejectsTruncatedTail(t *testing.T) {
+	var laps []storage.Lap
+	for range 50 {
+		laps = append(laps, storage.Lap{DistanceM: fptr(1000), DurationS: fptr(240)})
+	}
+	laps = append(laps, storage.Lap{DistanceM: fptr(410), DurationS: fptr(94)})
+	if isKilometerSplitTable(laps, fptr(50900)) || isKilometerSplitTable(laps, nil) {
+		t.Fatal("accepted a truncated or unverified kilometer table")
+	}
+	if !isKilometerSplitTable(laps, fptr(50412)) {
+		t.Fatal("rejected device rounding")
+	}
+}

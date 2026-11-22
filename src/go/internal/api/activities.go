@@ -304,8 +304,7 @@ func isKilometerSplitTable(laps []storage.Lap, activityDistance *float64) bool {
 		}
 		totalDistance += *lap.DistanceM
 	}
-	return activityDistance == nil || *activityDistance <= 0 ||
-		coversKilometerDistance(totalDistance, *activityDistance)
+	return coversKilometerDistance(totalDistance, activityDistance)
 }
 
 // Valid distance and duration can supply pace if the vendor omitted it.

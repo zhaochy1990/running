@@ -122,8 +122,7 @@ func deriveKilometerSplits(activity *storage.Activity, points []storage.Timeseri
 		record(point, moving)
 		lastTime, lastDistance = timestamp, distance
 	}
-	if len(splits) == 0 || activity.DistanceM == nil ||
-		math.Abs(lastDistance-*activity.DistanceM) > 20 {
+	if len(splits) == 0 || !coversKilometerDistance(lastDistance, activity.DistanceM) {
 		return nil
 	}
 	if remaining := lastDistance - (nextBoundary - 1000); remaining >= 1 {
@@ -132,12 +131,11 @@ func deriveKilometerSplits(activity *storage.Activity, points []storage.Timeseri
 	return splits
 }
 
-// Allow modest provider rounding, but reject a stream or device table that
-// materially undershoots the last complete kilometer of the activity.
-func coversKilometerDistance(actual, reported float64) bool {
+// Allow modest device rounding without letting the permitted missing
+// distance grow with the length of the activity.
+func coversKilometerDistance(actual float64, reported *float64) bool {
 	const toleranceM = 20
-	return math.Abs(actual-reported) <= max(toleranceM, reported*0.01) &&
-		actual+toleranceM >= math.Floor(reported/1000)*1000
+	return reported != nil && *reported > 0 && math.Abs(actual-*reported) <= toleranceM
 }
 
 // Use a cursor to count overlapping pause records only once.

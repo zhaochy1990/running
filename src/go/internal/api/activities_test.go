@@ -378,7 +378,7 @@ func TestActivityDetail_NotFound_404(t *testing.T) {
 
 func baseDetailStore() *fakeActivityStore {
 	return &fakeActivityStore{
-		activity: &storage.Activity{LabelID: "act-1", SportType: 100, Date: time.Date(2026, 1, 15, 2, 0, 0, 0, time.UTC)},
+		activity: &storage.Activity{LabelID: "act-1", SportType: 100, DistanceM: fptr(2000), Date: time.Date(2026, 1, 15, 2, 0, 0, 0, time.UTC)},
 		// COROS shape: 'type2' is the watch's own lap table (distances filled),
 		// alongside the derived 'autoKm' tier of the same run.
 		laps: map[string][]storage.Lap{
