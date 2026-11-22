@@ -14,8 +14,8 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"math"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -135,7 +135,7 @@ func (a *activityRoutes) list(c *gin.Context) {
 // is included only when `?include=timeseries` is passed (M1 mobile contract).
 //
 //	@Summary		Get one activity's detail
-//	@Description	Assembles the activity, objective training load, laps, strength segments, watch-reported zones, and (with ?include=timeseries) the downsampled timeseries. A user caller may only read their own activities; an internal caller may read any user.
+//	@Description	Assembles the activity, objective training load, workout laps, kilometer splits, strength segments, watch-reported zones, and (with ?include=timeseries) the downsampled timeseries. A user caller may only read their own activities; an internal caller may read any user.
 //	@Tags			activities
 //	@Produce		json
 //	@Param			user		path		string	true	"User id (JWT sub)"
@@ -258,19 +258,26 @@ func pickSegments(a *storage.Activity, load lapFamilyLoader) (segments, kilomete
 	if isStrengthActivity(a) {
 		return watchLaps, nil, nil
 	}
-	if isKilometerSplitTable(watchLaps, a.DistanceM) && hasDistanceSplits(watchLaps) {
+	hasWatchSplits := hasDistanceSplits(watchLaps)
+	watchIsKilometerTable := isKilometerSplitTable(watchLaps, a.DistanceM)
+	if hasWatchSplits && watchIsKilometerTable {
+		watchLaps = fillKilometerPace(watchLaps)
 		return watchLaps, watchLaps, nil
 	}
 	autoKm, err := load("autoKm")
 	if err != nil {
+		if hasWatchSplits {
+			return watchLaps, nil, nil
+		}
 		return nil, nil, err
 	}
 	if isKilometerSplitTable(autoKm, a.DistanceM) {
+		autoKm = fillKilometerPace(autoKm)
 		kilometerSplits = autoKm
-	} else if isKilometerSplitTable(watchLaps, a.DistanceM) {
-		kilometerSplits = watchLaps
+	} else if watchIsKilometerTable {
+		kilometerSplits = fillKilometerPace(watchLaps)
 	}
-	if hasDistanceSplits(watchLaps) {
+	if hasWatchSplits {
 		return watchLaps, kilometerSplits, nil
 	}
 	if hasDistanceSplits(autoKm) {
@@ -298,7 +305,20 @@ func isKilometerSplitTable(laps []storage.Lap, activityDistance *float64) bool {
 		totalDistance += *lap.DistanceM
 	}
 	return activityDistance == nil || *activityDistance <= 0 ||
-		math.Abs(totalDistance-*activityDistance) <= max(20, *activityDistance*0.01)
+		coversKilometerDistance(totalDistance, *activityDistance)
+}
+
+// Valid distance and duration can supply pace if the vendor omitted it.
+func fillKilometerPace(laps []storage.Lap) []storage.Lap {
+	rows := slices.Clone(laps)
+	for i := range rows {
+		lap := &rows[i]
+		if lap.AvgPace == nil || *lap.AvgPace <= 0 {
+			pace := *lap.DurationS * 1000 / *lap.DistanceM
+			lap.AvgPace = &pace
+		}
+	}
+	return rows
 }
 
 // isStrengthActivity reports whether an activity is a strength session, whose

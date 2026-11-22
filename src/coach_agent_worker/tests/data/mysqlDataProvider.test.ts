@@ -346,29 +346,7 @@ test("activity detail reads a single activity with its laps, scoped by user and 
   assert.deepEqual(calls[1]?.values, ["athlete", "run-1", "type2"]);
 });
 
-test("activity detail keeps two interval laps and exposes twelve kilometer splits", async () => {
-  const intervals = [km(1), km(2)].map((lap) => ({ ...lap, distance_m: 6000 }));
-  const splits = Array.from({ length: 12 }, (_, i) => ({
-    ...km(i + 1),
-    lap_type: "autoKm",
-    duration_s: 240 + i,
-  }));
-  const { calls, provider } = detailProvider({}, { type2: intervals, autoKm: splits });
-  const activity = await provider.getActivityDetail("athlete", "run-1");
-  assert.deepEqual(
-    activity?.laps.map((lap) => lap.distanceM),
-    [6000, 6000],
-  );
-  assert.equal(activity?.kilometerSplits?.length, 12);
-  assert.equal(activity?.kilometerSplits?.at(-1)?.durationS, 251);
-  assert.deepEqual(calls[2]?.values, ["athlete", "run-1", "autoKm"]);
-
-  const bad = detailProvider({}, { type2: intervals, autoKm: intervals });
-  const invalid = await bad.provider.getActivityDetail("athlete", "run-1");
-  assert.deepEqual(invalid?.kilometerSplits, []);
-});
-
-test("activity detail reads estimated splits from the Go API when device splits are unavailable", async (t) => {
+test("activity detail keeps interval laps and reads kilometer data from the Go API", async (t) => {
   const intervals = [km(1), km(2)].map((lap) => ({ ...lap, distance_m: 6000 }));
   const splits = Array.from({ length: 12 }, (_, i) => ({ ...km(i + 1), lap_type: "timeseriesKm" }));
   const fallback = t.mock.method(globalThis, "fetch", async (url: string, init?: RequestInit) => {
@@ -387,9 +365,16 @@ test("activity detail reads estimated splits from the Go API when device splits 
 
   const activity = await provider.getActivityDetail("athlete", "interval run");
   assert.equal(fallback.mock.callCount(), 1);
-  assert.equal(activity?.laps.length, 2);
+  assert.deepEqual(
+    activity?.laps.map((lap) => lap.distanceM),
+    [6000, 6000],
+  );
   assert.equal(activity?.kilometerSplits?.length, 12);
   assert.equal(activity?.kilometerSplits?.[0]?.lapType, "timeseriesKm");
+
+  const summary = await provider.getActivityDetail("athlete", "interval run", { includeKilometerSplits: false });
+  assert.equal(fallback.mock.callCount(), 1);
+  assert.deepEqual(summary?.kilometerSplits, []);
 });
 
 test("activity detail prefers type2 and falls back to autoKm only when it is a real split table", async () => {

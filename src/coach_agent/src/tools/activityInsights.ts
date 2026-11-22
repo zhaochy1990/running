@@ -150,7 +150,7 @@ class ActivityInsightsToolImpl {
     if (!asof) {
       throw new Error("get_activity_insights: missing asof in runtime context");
     }
-    const activity = await this.store.getActivityDetail(userId, input.labelId);
+    const activity = await this.store.getActivityDetail(userId, input.labelId, { includeKilometerSplits: false });
     if (!activity) {
       return { available: false, reason: "activity_not_found", provenance: PROVENANCE };
     }

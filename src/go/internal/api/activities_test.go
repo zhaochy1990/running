@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -432,7 +433,7 @@ func TestActivityDetail_IntervalAndKilometerSplits(t *testing.T) {
 	var resp activityDetailResponse
 	mustJSON(t, w, &resp)
 	if len(resp.Segments) != 2 || *resp.Segments[0].DistanceM != 6000 ||
-		len(resp.KilometerSplits) != 12 || *resp.KilometerSplits[11].DurationS != 251 {
+		len(resp.KilometerSplits) != 12 || (*resp.KilometerSplits[11].DurationS != 251 || *resp.KilometerSplits[11].AvgPace != 251) {
 		t.Fatalf("intervals = %+v, kilometer splits = %+v", resp.Segments, resp.KilometerSplits)
 	}
 
@@ -454,6 +455,21 @@ func TestActivityDetail_IntervalAndKilometerSplits(t *testing.T) {
 	if len(resp.KilometerSplits) != 12 || resp.KilometerSplits[0].LapType != derivedKilometerLapType ||
 		*resp.KilometerSplits[0].AvgPace != 240 || resp.Timeseries != nil {
 		t.Fatalf("estimated splits = %+v, timeseries included = %t", resp.KilometerSplits, resp.Timeseries != nil)
+	}
+}
+
+func TestPickSegments_KeepsWorkoutLapsWhenKilometerLookupFails(t *testing.T) {
+	store := baseDetailStore()
+	store.laps["type2"][0].DistanceM = fptr(6000)
+	store.laps["type2"][1].DistanceM = fptr(6000)
+	segments, splits, err := pickSegments(store.activity, func(lapType string) ([]storage.Lap, error) {
+		if lapType == "autoKm" {
+			return nil, fmt.Errorf("kilometer laps unavailable")
+		}
+		return store.laps[lapType], nil
+	})
+	if err != nil || len(segments) != 2 || len(splits) != 0 {
+		t.Fatalf("segments = %d, kilometer splits = %d, err = %v", len(segments), len(splits), err)
 	}
 }
 

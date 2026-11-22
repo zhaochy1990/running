@@ -317,7 +317,7 @@ export class MySqlDataProvider implements DataProvider {
    * 单条运动的完整明细（含 `laps` 分段），按 `label_id` 精确取。列表查询请用
    * `getActivitySummariesByDateRange`；这里只处理一条，避免把整个日期区间的大段数据拉进上下文。
    */
-  async getActivityDetail(userId: string, labelId: string): Promise<Activity | null> {
+  async getActivityDetail(userId: string, labelId: string, options?: { includeKilometerSplits?: boolean }): Promise<Activity | null> {
     const [rows] = await this.pool.query<RowDataPacket[]>(
       `SELECT a.user_id, a.label_id, a.name, a.sport_name, a.date,
               a.distance_m, a.duration_s, a.avg_pace_s_km, a.best_km_pace,
@@ -341,10 +341,10 @@ export class MySqlDataProvider implements DataProvider {
     }
     const activity = rowToActivity(row);
     const strength = isStrengthRow(row);
-    const { laps, kilometerSplits } = await this.pickSegments(userId, labelId, strength, activity.distanceM);
-    activity.laps = laps;
-    activity.kilometerSplits =
-      !strength && (activity.distanceM ?? 0) >= 1000 && kilometerSplits.length === 0 ? await this.readGoKilometerSplits(userId, labelId) : kilometerSplits;
+    [activity.laps, activity.kilometerSplits] = await Promise.all([
+      this.pickSegments(userId, labelId, strength),
+      options?.includeKilometerSplits !== false && !strength ? this.readGoKilometerSplits(userId, labelId) : [],
+    ]);
     return activity;
   }
 
@@ -354,6 +354,7 @@ export class MySqlDataProvider implements DataProvider {
     try {
       const response = await fetch(`${baseUrl}/api/${encodeURIComponent(userId)}/activities/${encodeURIComponent(labelId)}`, {
         headers: { "x-internal-token": internalToken },
+        redirect: "error",
         signal: AbortSignal.timeout(5000),
       });
       if (!response.ok) {
@@ -379,25 +380,13 @@ export class MySqlDataProvider implements DataProvider {
    * (`autoMile` 5 km, `type12` 10 km) are the same laps re-grouped, return zero
    * distance on a share of activities, and are never read.
    */
-  private async pickSegments(
-    userId: string,
-    labelId: string,
-    strength: boolean,
-    activityDistance: number | null,
-  ): Promise<{ laps: ActivityLap[]; kilometerSplits: ActivityLap[] }> {
-    const watchLaps = await this.lapsByType(userId, labelId, "type2");
-    if (strength) {
-      return { laps: watchLaps, kilometerSplits: [] };
+  private async pickSegments(userId: string, labelId: string, strength: boolean): Promise<ActivityLap[]> {
+    const type2 = await this.lapsByType(userId, labelId, "type2");
+    if (strength || hasDistanceSplits(type2)) {
+      return type2;
     }
-    const watchIsKilometerTable = isKilometerSplitTable(watchLaps, activityDistance);
-    if (watchIsKilometerTable && hasDistanceSplits(watchLaps)) {
-      return { laps: watchLaps, kilometerSplits: watchLaps };
-    }
-
     const autoKm = await this.lapsByType(userId, labelId, "autoKm");
-    const kilometerSplits = isKilometerSplitTable(autoKm, activityDistance) ? autoKm : watchIsKilometerTable ? watchLaps : [];
-    const laps = hasDistanceSplits(watchLaps) ? watchLaps : hasDistanceSplits(autoKm) ? autoKm : [];
-    return { laps, kilometerSplits };
+    return hasDistanceSplits(autoKm) ? autoKm : [];
   }
 
   private async lapsByType(userId: string, labelId: string, lapType: string): Promise<ActivityLap[]> {
@@ -1081,21 +1070,6 @@ function rowToActivityLap(row: Record<string, unknown>): ActivityLap {
     exerciseNameKey: (row.exercise_name_key ?? null) as string | null,
     mode: (row.mode ?? null) as number | null,
   };
-}
-
-// Mirrors Go's isKilometerSplitTable. Provider lap labels can also contain
-// interval laps, so require full kilometer distances before the final split.
-function isKilometerSplitTable(laps: ActivityLap[], activityDistance: number | null): boolean {
-  if ((laps[0]?.distanceM ?? 0) < 985) return false;
-  let totalDistance = 0;
-  for (const [index, lap] of laps.entries()) {
-    const distance = lap.distanceM ?? 0;
-    if (!(distance > 0 && distance <= 1015 && (index === laps.length - 1 || distance >= 985) && (lap.durationS ?? 0) > 0)) {
-      return false;
-    }
-    totalDistance += distance;
-  }
-  return activityDistance === null || activityDistance <= 0 || Math.abs(totalDistance - activityDistance) <= Math.max(20, activityDistance * 0.01);
 }
 
 /**

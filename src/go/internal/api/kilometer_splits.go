@@ -1,21 +1,16 @@
 package api
 
 import (
-	"encoding/json"
+	"cmp"
 	"math"
 	"slices"
 
+	"github.com/zhaochy1990/stride/internal/compute/watchmap"
+	"github.com/zhaochy1990/stride/internal/normalize"
 	"github.com/zhaochy1990/stride/internal/storage"
 )
 
 const derivedKilometerLapType = "timeseriesKm"
-
-type splitPause struct {
-	Start       int64 `json:"startTimestamp"`
-	End         int64 `json:"endTimestamp"`
-	LegacyStart int64 `json:"start_ts"`
-	LegacyEnd   int64 `json:"end_ts"`
-}
 
 type splitAverage struct {
 	total, seconds float64
@@ -40,29 +35,12 @@ func (a splitAverage) value() *int {
 // Boundaries between samples are interpolated, and recorded pauses are removed
 // from split times. Incomplete streams and long gaps are left unavailable.
 func deriveKilometerSplits(activity *storage.Activity, points []storage.TimeseriesPoint) []storage.Lap {
-	var pauses []splitPause
-	if activity.Pauses != nil {
-		if err := json.Unmarshal([]byte(*activity.Pauses), &pauses); err != nil {
-			return nil
-		}
+	pauses, err := normalize.ParsePauseIntervals(activity.Pauses)
+	if err != nil {
+		return nil
 	}
-	for i := range pauses {
-		pause := &pauses[i]
-		if pause.Start == 0 {
-			pause.Start = pause.LegacyStart
-		}
-		if pause.End == 0 {
-			pause.End = pause.LegacyEnd
-		}
-	}
-	slices.SortFunc(pauses, func(a, b splitPause) int {
-		if a.Start < b.Start {
-			return -1
-		}
-		if a.Start > b.Start {
-			return 1
-		}
-		return 0
+	slices.SortFunc(pauses, func(a, b normalize.PauseInterval) int {
+		return cmp.Compare(a.Start, b.Start)
 	})
 	var splits []storage.Lap
 	var lastDistance, lastTime, duration float64
@@ -103,12 +81,13 @@ func deriveKilometerSplits(activity *storage.Activity, points []storage.Timeseri
 		}
 	}
 
+	distanceScale := watchmap.DistanceScale(points, activity.DistanceM, activity.Provider)
 	nextBoundary := 1000.0
 	for _, point := range points {
 		if point.Timestamp == nil || point.Distance == nil || !(*point.Distance >= 0) || math.IsInf(*point.Distance, 0) {
 			continue
 		}
-		distance, timestamp := *point.Distance, float64(*point.Timestamp)
+		distance, timestamp := *point.Distance*distanceScale, float64(*point.Timestamp)
 		if !started {
 			if distance > 20 {
 				return nil
@@ -144,7 +123,7 @@ func deriveKilometerSplits(activity *storage.Activity, points []storage.Timeseri
 		lastTime, lastDistance = timestamp, distance
 	}
 	if len(splits) == 0 || activity.DistanceM == nil ||
-		math.Abs(lastDistance-*activity.DistanceM) > max(20, *activity.DistanceM*0.01) {
+		math.Abs(lastDistance-*activity.DistanceM) > 20 {
 		return nil
 	}
 	if remaining := lastDistance - (nextBoundary - 1000); remaining >= 1 {
@@ -153,8 +132,16 @@ func deriveKilometerSplits(activity *storage.Activity, points []storage.Timeseri
 	return splits
 }
 
+// Allow modest provider rounding, but reject a stream or device table that
+// materially undershoots the last complete kilometer of the activity.
+func coversKilometerDistance(actual, reported float64) bool {
+	const toleranceM = 20
+	return math.Abs(actual-reported) <= max(toleranceM, reported*0.01) &&
+		actual+toleranceM >= math.Floor(reported/1000)*1000
+}
+
 // Use a cursor to count overlapping pause records only once.
-func splitMovingSeconds(start, end float64, pauses []splitPause) float64 {
+func splitMovingSeconds(start, end float64, pauses []normalize.PauseInterval) float64 {
 	moving := end - start
 	cursor := start
 	for _, pause := range pauses {
