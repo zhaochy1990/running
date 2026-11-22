@@ -12,6 +12,7 @@ const PUBLIC_ENTRY_PAGES: ReadonlySet<string> = new Set([
   'pages/workout-share/workout-share',
   'pages/race-center/strategy-share/strategy-share',
   'pages/coach-share/coach-share',
+  'pages/pace-calculator/pace-calculator',
   // 抽奖活动落地页（#868，Epic #862）：扫易拉宝小程序码直达，奖档陈列 / 规则 /
   // 时间窗免登录可看；登录 / 绑表 / 抽奖由页面内三态引导触发。
   'pages/lottery/lottery',
