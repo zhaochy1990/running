@@ -47,7 +47,7 @@ import {
   isSubmittedPlanFormMessage,
 } from '../../utils/planJobCards';
 import { PLAN_JOB_POLL_MS } from '../../utils/planJobProgress';
-import { epochToShanghaiHm } from '../../utils/date';
+import { epochToShanghaiHm, shanghaiToday } from '../../utils/date';
 import { friendlyMessage } from '../../utils/friendlyError';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 import { theme } from '../../utils/theme';
@@ -474,9 +474,17 @@ function contentPaddingTopRpx(): number {
   return statusRpx + 128 + 24;
 }
 
+// 欢迎语里的计划入口措辞：11–2 月是冬训季，点明「冬训计划」；其余月份用通用说法，
+// 避免写死「冬训」在换季后过期。月份按上海时区取（见 utils/date）。
+function planCtaLabel(): string {
+  const month = Number(shanghaiToday().slice(5, 7));
+  return month === 11 || month === 12 || month === 1 || month === 2 ? '冬训计划' : '训练计划';
+}
+
 function welcomeMessages(): CoachMessage[] {
   const content =
-    '你好，我是你的 AI 教练。可以问我今天的训练安排、疲劳状态、配速建议，或复盘某次训练。';
+    `你好，我是你的 AI 教练。可以问我今天的训练安排、疲劳状态、配速建议，或复盘某次训练。\n\n` +
+    `想系统备赛，可以让我为你制定${planCtaLabel()}。`;
   // 欢迎语不在服务端投影里（历史为空时的本地兜底）：shareIndex 缺省 → 不可多选转发。
   return [{ id: ++seq, role: 'assistant', content, html: markdownToHtml(content), selectable: false }];
 }
@@ -488,7 +496,7 @@ function guestWelcomeMessages(): CoachMessage[] {
     '你好，我是砺跑马拉松助手的 AI 跑步教练 👋';
   const features = [
     '**我能帮你做什么**',
-    '- 制定周期化训练计划：从基础期到赛前减量，每天安排具体课表',
+    `- 制定系统性${planCtaLabel()}：从基础期到赛前减量，每天安排具体课表`,
     '- 赛前策略：目标配速分段、补给清单、路线难度提醒',
     '- 训练复盘：结合手表同步的数据分析负荷、疲劳与进步',
     '- 课表推送：训练安排直接推送到你的运动手表',
