@@ -37,11 +37,19 @@ import type {
   WeeklyPlanDocument,
 } from "@stride/coach-agent";
 import { CalibrationSourceSchema, deriveSyncCoverage } from "@stride/coach-agent";
+import { getLogger } from "@stride/common";
 import { shanghaiDay } from "@stride/contract";
 import type { Pool, RowDataPacket } from "mysql2/promise";
+import { z } from "zod";
 import type { MySqlConfig } from "../config.js";
 import { createStridePool } from "../db/mysql.js";
 import policyContract from "./calibrationPolicyContract.json" with { type: "json" };
+
+const logger = getLogger("coach:activityDetails");
+type GoActivityAPI = { baseUrl: string; internalToken: string };
+const goActivityDetails = z.object({
+  kilometer_splits: z.array(z.record(z.string(), z.unknown())).optional(),
+});
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -53,6 +61,7 @@ function assertDay(day: string): string {
 }
 export class MySqlDataProvider implements DataProvider {
   private readonly ownsPool: boolean;
+  private readonly goAPI: GoActivityAPI | undefined;
 
   /**
    * Wrap an existing pool (inject for tests / reuse), or use {@link MySqlDataProvider.create}
@@ -60,17 +69,18 @@ export class MySqlDataProvider implements DataProvider {
    */
   constructor(
     private readonly pool: Pool,
-    options: { ownsPool?: boolean } = {},
+    options: { ownsPool?: boolean; goAPI?: GoActivityAPI } = {},
   ) {
     this.ownsPool = options.ownsPool ?? false;
+    this.goAPI = options.goAPI;
   }
 
   /**
    * Open a connection pool to the local `stride` MySQL DB and return a store.
    * `config` comes from the API-owned `loadApiConfig().strideDatabase`.
    */
-  static create(config: MySqlConfig): MySqlDataProvider {
-    return new MySqlDataProvider(createStridePool(config), { ownsPool: true });
+  static create(config: MySqlConfig, goAPI?: GoActivityAPI): MySqlDataProvider {
+    return new MySqlDataProvider(createStridePool(config), { ownsPool: true, ...(goAPI && { goAPI }) });
   }
 
   async getUserProfile(userId: string): Promise<UserProfile | null> {
@@ -330,8 +340,32 @@ export class MySqlDataProvider implements DataProvider {
       return null;
     }
     const activity = rowToActivity(row);
-    activity.laps = await this.pickSegments(userId, labelId, isStrengthRow(row));
+    const strength = isStrengthRow(row);
+    const { laps, kilometerSplits } = await this.pickSegments(userId, labelId, strength, activity.distanceM);
+    activity.laps = laps;
+    activity.kilometerSplits =
+      !strength && (activity.distanceM ?? 0) >= 1000 && kilometerSplits.length === 0 ? await this.readGoKilometerSplits(userId, labelId) : kilometerSplits;
     return activity;
+  }
+
+  private async readGoKilometerSplits(userId: string, labelId: string): Promise<ActivityLap[]> {
+    if (!this.goAPI?.internalToken) return [];
+    const { baseUrl, internalToken } = this.goAPI;
+    try {
+      const response = await fetch(`${baseUrl}/api/${encodeURIComponent(userId)}/activities/${encodeURIComponent(labelId)}`, {
+        headers: { "x-internal-token": internalToken },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) {
+        logger.warn({ status: response.status }, "Go activity detail unavailable for kilometer splits");
+        return [];
+      }
+      const detail = goActivityDetails.parse(await response.json());
+      return (detail.kilometer_splits ?? []).map(rowToActivityLap);
+    } catch (error) {
+      logger.warn({ error }, "Unable to read kilometer splits from Go activity detail");
+      return [];
+    }
   }
 
   /**
@@ -345,13 +379,25 @@ export class MySqlDataProvider implements DataProvider {
    * (`autoMile` 5 km, `type12` 10 km) are the same laps re-grouped, return zero
    * distance on a share of activities, and are never read.
    */
-  private async pickSegments(userId: string, labelId: string, strength: boolean): Promise<ActivityLap[]> {
-    const type2 = await this.lapsByType(userId, labelId, "type2");
-    if (strength || hasDistanceSplits(type2)) {
-      return type2;
+  private async pickSegments(
+    userId: string,
+    labelId: string,
+    strength: boolean,
+    activityDistance: number | null,
+  ): Promise<{ laps: ActivityLap[]; kilometerSplits: ActivityLap[] }> {
+    const watchLaps = await this.lapsByType(userId, labelId, "type2");
+    if (strength) {
+      return { laps: watchLaps, kilometerSplits: [] };
     }
+    const watchIsKilometerTable = isKilometerSplitTable(watchLaps, activityDistance);
+    if (watchIsKilometerTable && hasDistanceSplits(watchLaps)) {
+      return { laps: watchLaps, kilometerSplits: watchLaps };
+    }
+
     const autoKm = await this.lapsByType(userId, labelId, "autoKm");
-    return hasDistanceSplits(autoKm) ? autoKm : [];
+    const kilometerSplits = isKilometerSplitTable(autoKm, activityDistance) ? autoKm : watchIsKilometerTable ? watchLaps : [];
+    const laps = hasDistanceSplits(watchLaps) ? watchLaps : hasDistanceSplits(autoKm) ? autoKm : [];
+    return { laps, kilometerSplits };
   }
 
   private async lapsByType(userId: string, labelId: string, lapType: string): Promise<ActivityLap[]> {
@@ -1017,7 +1063,7 @@ function rowToActivity(row: RowDataPacket): Activity {
   };
 }
 
-function rowToActivityLap(row: RowDataPacket): ActivityLap {
+function rowToActivityLap(row: Record<string, unknown>): ActivityLap {
   return {
     lapIndex: row.lap_index as number,
     lapType: (row.lap_type ?? null) as string | null,
@@ -1035,6 +1081,21 @@ function rowToActivityLap(row: RowDataPacket): ActivityLap {
     exerciseNameKey: (row.exercise_name_key ?? null) as string | null,
     mode: (row.mode ?? null) as number | null,
   };
+}
+
+// Mirrors Go's isKilometerSplitTable. Provider lap labels can also contain
+// interval laps, so require full kilometer distances before the final split.
+function isKilometerSplitTable(laps: ActivityLap[], activityDistance: number | null): boolean {
+  if ((laps[0]?.distanceM ?? 0) < 985) return false;
+  let totalDistance = 0;
+  for (const [index, lap] of laps.entries()) {
+    const distance = lap.distanceM ?? 0;
+    if (!(distance > 0 && distance <= 1015 && (index === laps.length - 1 || distance >= 985) && (lap.durationS ?? 0) > 0)) {
+      return false;
+    }
+    totalDistance += distance;
+  }
+  return activityDistance === null || activityDistance <= 0 || Math.abs(totalDistance - activityDistance) <= Math.max(20, activityDistance * 0.01);
 }
 
 /**

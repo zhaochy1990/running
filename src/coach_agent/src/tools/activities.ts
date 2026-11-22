@@ -145,7 +145,8 @@ export function createActivitiesTools(store: DataProvider): StructuredTool[] {
     },
     {
       name: "get_activity_details",
-      description: "获取单条运动的完整明细，含 `laps` 分段（每公里/每圈）。",
+      description:
+        "获取单条运动明细。`laps` 是手表圈或训练组，`kilometerSplits` 是整场活动的每公里数据（末段可能不足 1 公里）。逐公里分析使用 `kilometerSplits`，lapType=timeseriesKm 表示从采样估算，空数组表示没有可用数据。",
       schema: getActivityDetailSchema,
       handler: (input, runtime) => impl.getActivityDetail(input, runtime),
     },

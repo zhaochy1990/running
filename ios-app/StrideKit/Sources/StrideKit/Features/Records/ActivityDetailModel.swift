@@ -58,6 +58,7 @@ public final class ActivityDetailModel {
     public private(set) var hrBands: [ZoneBand] = []
     public private(set) var paceBands: [ZoneBand] = []
     public private(set) var laps: [LapRow] = []
+    public private(set) var kilometerRows: [LapRow] = []
     public private(set) var strengthGroups: [ExerciseGroup] = []
     /// 圈速表（跑步）/ 力量分组表（力量）有数据才渲染整卡。
     public private(set) var hasSegments = false
@@ -130,6 +131,7 @@ public final class ActivityDetailModel {
         hrBands = view.hrBands
         paceBands = view.paceBands
         laps = view.laps
+        kilometerRows = view.kilometerRows
         strengthGroups = view.strengthGroups
         hasSegments = view.hasSegments
         sportNote = view.sportNote
@@ -155,6 +157,7 @@ public final class ActivityDetailModel {
         var hrBands: [ZoneBand]
         var paceBands: [ZoneBand]
         var laps: [LapRow]
+        var kilometerRows: [LapRow]
         var strengthGroups: [ExerciseGroup]
         var hasSegments: Bool
         var sportNote: String
@@ -173,12 +176,16 @@ public final class ActivityDetailModel {
         let isStrength = a.isStrength
 
         var laps: [LapRow] = []
+        var kilometerRows: [LapRow] = []
         var strengthGroups: [ExerciseGroup] = []
         if isStrength {
             strengthGroups = buildStrengthSegments(detail.segments)
         } else {
             // v1 只展示圈速表；圈速即后端 segments（type2 手表圈/间歇组，回落 autoKm）。
             laps = buildLapRows(detail.segments)
+            if let splits = detail.kilometerSplits, splits.first?.lapType != detail.segments.first?.lapType {
+                kilometerRows = buildLapRows(splits)
+            }
         }
 
         let zones = buildZones(detail.zones)
@@ -207,6 +214,7 @@ public final class ActivityDetailModel {
             hrBands: zones.hrBands,
             paceBands: zones.paceBands,
             laps: laps,
+            kilometerRows: kilometerRows,
             strengthGroups: strengthGroups,
             hasSegments: isStrength ? !strengthGroups.isEmpty : !laps.isEmpty,
             sportNote: a.sportNote ?? "",

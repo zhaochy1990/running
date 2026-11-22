@@ -163,6 +163,8 @@ export interface Activity {
   provider: string;
   /** Per-activity laps/segments; `[]` when the watch did not record any */
   laps: ActivityLap[];
+  /** Validated kilometer splits for a single activity detail. */
+  kilometerSplits?: ActivityLap[];
 }
 
 /** One lap/segment of a watch activity. Field names mirror the `laps` table. */

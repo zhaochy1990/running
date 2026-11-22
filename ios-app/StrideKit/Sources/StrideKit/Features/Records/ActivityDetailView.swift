@@ -93,6 +93,9 @@ public struct ActivityDetailView: View {
                         LapsTableView(laps: model.laps)
                     }
                 }
+                if !model.kilometerRows.isEmpty {
+                    LapsTableView(laps: model.kilometerRows, title: "每公里数据", indexTitle: "公里")
+                }
                 if !model.feelNote.isEmpty || !model.sportNote.isEmpty {
                     FeedbackCardView(
                         feelEmoji: model.header.feelEmoji,
@@ -365,17 +368,19 @@ struct ZoneCardView: View {
 struct LapsTableView: View {
     @Environment(AppModel.self) private var app
     let laps: [LapRow]
+    var title = "分段数据"
+    var indexTitle = "圈数"
 
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: app.theme.current.space(.xs)) {
-                Text("分段数据")
+                Text(title)
                     .font(app.theme.current.font(.fs13, weight: .medium))
                     .foregroundStyle(app.theme.current.foreground)
 
                 // 表头（圈数/时间/距离/平均配速/平均心率/平均步频）
                 lapRow(
-                    index: Text("圈数").font(app.theme.current.font(.fs10)),
+                    index: Text(indexTitle).font(app.theme.current.font(.fs10)),
                     duration: "时间",
                     distance: "距离",
                     pace: "平均配速",

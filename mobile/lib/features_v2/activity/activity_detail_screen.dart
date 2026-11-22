@@ -153,6 +153,13 @@ class _DetailBody extends StatelessWidget {
             const SizedBox(height: StrideTokens.spaceLg),
           ],
 
+          if (detail.kilometerSplits.isNotEmpty) ...[
+            const _SectionHeader(title: '每公里数据'),
+            const SizedBox(height: StrideTokens.spaceSm),
+            _Card(child: LapTable(laps: detail.kilometerSplits, indexTitle: '公里')),
+            const SizedBox(height: StrideTokens.spaceLg),
+          ],
+
           // 7. Training note
           _TrainingNoteSection(sportNote: act.sportNote),
 

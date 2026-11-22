@@ -247,14 +247,18 @@ class ActivityV2 {
 class ActivityDetailV2 {
 
   factory ActivityDetailV2.fromJson(Map<String, dynamic> json) {
+    final segments = (json['segments'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final kilometerSplits =
+        (json['kilometer_splits'] as List?)?.cast<Map<String, dynamic>>() ?? [];
     return ActivityDetailV2(
       activity: ActivityV2.fromJson(
         (json['activity'] as Map<String, dynamic>?) ?? {},
       ),
-      segments: ((json['segments'] as List?) ?? [])
-          .cast<Map<String, dynamic>>()
-          .map(LapV2.fromJson)
-          .toList(growable: false),
+      segments: segments.map(LapV2.fromJson).toList(growable: false),
+      kilometerSplits: kilometerSplits.firstOrNull?['lap_type'] !=
+              segments.firstOrNull?['lap_type']
+          ? kilometerSplits.map(LapV2.fromJson).toList(growable: false)
+          : const [],
       zones: ((json['zones'] as List?) ?? [])
           .cast<Map<String, dynamic>>()
           .map(ZoneV2.fromJson)
@@ -272,12 +276,14 @@ class ActivityDetailV2 {
     required this.activity,
     required this.segments,
     required this.zones,
+    this.kilometerSplits = const [],
     this.trainingDose,
     this.timeseries = const [],
   });
 
   final ActivityV2 activity;
   final List<LapV2> segments;
+  final List<LapV2> kilometerSplits;
   final List<ZoneV2> zones;
   final num? trainingDose;
 

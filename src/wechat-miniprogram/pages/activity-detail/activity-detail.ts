@@ -181,6 +181,7 @@ interface ActivityDetailPageData {
   hasHrCurve: boolean;
   hasPaceCurve: boolean;
   laps: LapRow[];
+  kilometerRows: LapRow[];
   segments: ExerciseGroup[];
   hasSegments: boolean;
   sportNote: string;
@@ -887,14 +888,18 @@ function buildView(detail: ActivityDetailResponse): Partial<ActivityDetailPageDa
   paceBands = paceBandList;
 
   let laps: LapRow[] = [];
+  let kilometerRows: LapRow[] = [];
   let segments: ExerciseGroup[] = [];
   let hasSegments = false;
   if (isStrength) {
     segments = buildStrengthSegments(detail.segments || []);
     hasSegments = segments.length > 0;
   } else {
-    // v1 只展示圈速表；圈速即后端 `segments`（type2 手表圈/间歇组，回落 autoKm）。
     laps = buildLapRows(detail.segments || []);
+    const splits = detail.kilometer_splits || [];
+    if (splits[0]?.lap_type !== detail.segments?.[0]?.lap_type) {
+      kilometerRows = buildLapRows(splits);
+    }
     hasSegments = laps.length > 0;
   }
 
@@ -942,6 +947,7 @@ function buildView(detail: ActivityDetailResponse): Partial<ActivityDetailPageDa
     hasHrCurve: hrSeries.length > 1,
     hasPaceCurve: paceSeries.length > 1,
     laps,
+    kilometerRows,
     segments,
     hasSegments,
     sportNote,
@@ -999,6 +1005,7 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
     hasHrCurve: false,
     hasPaceCurve: false,
     laps: [],
+    kilometerRows: [],
     segments: [],
     hasSegments: false,
     sportNote: '',

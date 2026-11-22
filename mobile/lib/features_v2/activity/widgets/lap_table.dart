@@ -12,9 +12,10 @@ import '../models/activity_detail.dart';
 import '../utils/lap_marks.dart';
 
 class LapTable extends StatelessWidget {
-  const LapTable({super.key, required this.laps});
+  const LapTable({super.key, required this.laps, this.indexTitle = '圈'});
 
   final List<LapV2> laps;
+  final String indexTitle;
 
   @override
   Widget build(BuildContext context) {
@@ -39,8 +40,8 @@ class LapTable extends StatelessWidget {
 
     return Column(
       children: [
-        const _LapRow(
-          index: '圈',
+        _LapRow(
+          index: indexTitle,
           distance: '距离',
           duration: '时长',
           pace: '配速',

@@ -312,20 +312,23 @@ test("date-range reads reject a reversed start>end interval before querying", as
 });
 
 /** Detail-row fake whose `type2` / `autoKm` families are supplied per test. */
-function detailProvider(detail: Record<string, unknown>, families: Record<string, unknown[]>) {
+function detailProvider(detail: Record<string, unknown>, families: Record<string, unknown[]>, goAPI?: { baseUrl: string; internalToken: string }) {
   const calls: Array<{ sql: string; values: unknown[] }> = [];
   return {
     calls,
-    provider: new MySqlDataProvider({
-      async query(query: string, values: unknown[]) {
-        calls.push({ sql: query, values });
-        if (query.includes("FROM laps")) {
-          const lapType = values[2] as string;
-          return [families[lapType] ?? [], []];
-        }
-        return [[{ user_id: "athlete", label_id: "run-1", date: new Date("2026-08-01T00:00:00Z"), provider: "coros", ...detail }], []];
-      },
-    } as never),
+    provider: new MySqlDataProvider(
+      {
+        async query(query: string, values: unknown[]) {
+          calls.push({ sql: query, values });
+          if (query.includes("FROM laps")) {
+            const lapType = values[2] as string;
+            return [families[lapType] ?? [], []];
+          }
+          return [[{ user_id: "athlete", label_id: "run-1", date: new Date("2026-08-01T00:00:00Z"), provider: "coros", ...detail }], []];
+        },
+      } as never,
+      { ...(goAPI && { goAPI }) },
+    ),
   };
 }
 
@@ -341,6 +344,52 @@ test("activity detail reads a single activity with its laps, scoped by user and 
   assert.match(calls[0]?.sql ?? "", /WHERE a\.user_id = \? AND a\.label_id = \?/);
   assert.deepEqual(calls[0]?.values, ["athlete", "run-1"]);
   assert.deepEqual(calls[1]?.values, ["athlete", "run-1", "type2"]);
+});
+
+test("activity detail keeps two interval laps and exposes twelve kilometer splits", async () => {
+  const intervals = [km(1), km(2)].map((lap) => ({ ...lap, distance_m: 6000 }));
+  const splits = Array.from({ length: 12 }, (_, i) => ({
+    ...km(i + 1),
+    lap_type: "autoKm",
+    duration_s: 240 + i,
+  }));
+  const { calls, provider } = detailProvider({}, { type2: intervals, autoKm: splits });
+  const activity = await provider.getActivityDetail("athlete", "run-1");
+  assert.deepEqual(
+    activity?.laps.map((lap) => lap.distanceM),
+    [6000, 6000],
+  );
+  assert.equal(activity?.kilometerSplits?.length, 12);
+  assert.equal(activity?.kilometerSplits?.at(-1)?.durationS, 251);
+  assert.deepEqual(calls[2]?.values, ["athlete", "run-1", "autoKm"]);
+
+  const bad = detailProvider({}, { type2: intervals, autoKm: intervals });
+  const invalid = await bad.provider.getActivityDetail("athlete", "run-1");
+  assert.deepEqual(invalid?.kilometerSplits, []);
+});
+
+test("activity detail reads estimated splits from the Go API when device splits are unavailable", async (t) => {
+  const intervals = [km(1), km(2)].map((lap) => ({ ...lap, distance_m: 6000 }));
+  const splits = Array.from({ length: 12 }, (_, i) => ({ ...km(i + 1), lap_type: "timeseriesKm" }));
+  const fallback = t.mock.method(globalThis, "fetch", async (url: string, init?: RequestInit) => {
+    assert.equal(url, "https://go.test/api/athlete/activities/interval%20run");
+    assert.equal(new Headers(init?.headers).get("x-internal-token"), "test-token");
+    return Response.json({ kilometer_splits: splits });
+  });
+  const { provider } = detailProvider(
+    { distance_m: 12000 },
+    { type2: intervals },
+    {
+      baseUrl: "https://go.test",
+      internalToken: "test-token",
+    },
+  );
+
+  const activity = await provider.getActivityDetail("athlete", "interval run");
+  assert.equal(fallback.mock.callCount(), 1);
+  assert.equal(activity?.laps.length, 2);
+  assert.equal(activity?.kilometerSplits?.length, 12);
+  assert.equal(activity?.kilometerSplits?.[0]?.lapType, "timeseriesKm");
 });
 
 test("activity detail prefers type2 and falls back to autoKm only when it is a real split table", async () => {

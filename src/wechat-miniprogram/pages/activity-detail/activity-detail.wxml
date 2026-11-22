@@ -1,3 +1,38 @@
+<template name="activity-lap-table">
+  <view class="lap-head">
+    <view class="lap-head__cell lap-head__cell--idx">{{indexTitle}}</view>
+    <view class="lap-head__cell">时间</view>
+    <view class="lap-head__cell">距离</view>
+    <view class="lap-head__cell lap-head__cell--pace">平均配速</view>
+    <view class="lap-head__cell lap-head__cell--hr">平均心率</view>
+    <view class="lap-head__cell">平均步频</view>
+  </view>
+  <view wx:for="{{rows}}" wx:key="index" class="lap-row {{item.rowClass}}">
+    <view class="lap-row__cell lap-row__cell--idx">
+      <text class="lap-row__num">{{item.index}}</text>
+      <view class="lap-row__tag-slot">
+        <text wx:if="{{item.tag}}" class="lap-row__tag {{item.tagClass}}">{{item.tag}}</text>
+      </view>
+    </view>
+    <view class="lap-row__cell">{{item.duration}}</view>
+    <view class="lap-row__cell">{{item.distanceKm}}</view>
+    <view class="lap-row__cell lap-row__cell--pace">
+      <text class="lap-row__pace-mm">{{item.paceMin}}</text>
+      <text class="lap-row__pace-ss">{{item.paceSec}}</text>
+      <view class="lap-row__trend-slot">
+        <image wx:if="{{item.paceTrend}}" class="lap-row__trend" src="/assets/icons/trend_{{item.paceTrend}}.svg" mode="aspectFit" />
+      </view>
+    </view>
+    <view class="lap-row__cell lap-row__cell--hr">
+      <text>{{item.hr}}</text>
+      <view class="lap-row__trend-slot">
+        <image wx:if="{{item.hrTrend}}" class="lap-row__trend" src="/assets/icons/trend_hr_{{item.hrTrend}}.svg" mode="aspectFit" />
+      </view>
+    </view>
+    <view class="lap-row__cell">{{item.cadence}}</view>
+  </view>
+</template>
+
 <view class="page">
   <!-- 自定义顶部栏 -->
   <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
@@ -122,38 +157,7 @@
       <view wx:if="{{hasSegments}}" class="card">
         <view class="card-title">{{isStrength ? '动作组' : '分段数据'}}</view>
         <block wx:if="{{!isStrength}}">
-          <view class="lap-head">
-            <view class="lap-head__cell lap-head__cell--idx">圈数</view>
-            <view class="lap-head__cell">时间</view>
-            <view class="lap-head__cell">距离</view>
-            <view class="lap-head__cell lap-head__cell--pace">平均配速</view>
-            <view class="lap-head__cell lap-head__cell--hr">平均心率</view>
-            <view class="lap-head__cell">平均步频</view>
-          </view>
-          <view wx:for="{{laps}}" wx:key="index" class="lap-row {{item.rowClass}}">
-            <view class="lap-row__cell lap-row__cell--idx">
-              <text class="lap-row__num">{{item.index}}</text>
-              <view class="lap-row__tag-slot">
-                <text wx:if="{{item.tag}}" class="lap-row__tag {{item.tagClass}}">{{item.tag}}</text>
-              </view>
-            </view>
-            <view class="lap-row__cell">{{item.duration}}</view>
-            <view class="lap-row__cell">{{item.distanceKm}}</view>
-            <view class="lap-row__cell lap-row__cell--pace">
-              <text class="lap-row__pace-mm">{{item.paceMin}}</text>
-              <text class="lap-row__pace-ss">{{item.paceSec}}</text>
-              <view class="lap-row__trend-slot">
-                <image wx:if="{{item.paceTrend}}" class="lap-row__trend" src="/assets/icons/trend_{{item.paceTrend}}.svg" mode="aspectFit" />
-              </view>
-            </view>
-            <view class="lap-row__cell lap-row__cell--hr">
-              <text>{{item.hr}}</text>
-              <view class="lap-row__trend-slot">
-                <image wx:if="{{item.hrTrend}}" class="lap-row__trend" src="/assets/icons/trend_hr_{{item.hrTrend}}.svg" mode="aspectFit" />
-              </view>
-            </view>
-            <view class="lap-row__cell">{{item.cadence}}</view>
-          </view>
+          <template is="activity-lap-table" data="{{rows: laps, indexTitle: '圈数'}}" />
         </block>
         <block wx:else>
           <view wx:for="{{segments}}" wx:key="key" class="segment-row">
@@ -165,6 +169,11 @@
             </view>
           </view>
         </block>
+      </view>
+
+      <view wx:if="{{kilometerRows.length}}" class="card">
+        <view class="card-title">每公里数据</view>
+        <template is="activity-lap-table" data="{{rows: kilometerRows, indexTitle: '公里'}}" />
       </view>
 
       <!-- 训练反馈 -->
