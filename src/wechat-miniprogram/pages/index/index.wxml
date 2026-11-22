@@ -12,7 +12,7 @@
     </view>
   </view>
 
-  <!-- 内容区左右轻扫切日（左滑=前一天 / 右滑=后一天），判定见 onContentTouchEnd -->
+  <!-- 内容区左右轻扫切日，方向和判定见 onContentTouchEnd -->
   <view
     class="content"
     style="padding-top: {{contentPaddingTop}}rpx;"

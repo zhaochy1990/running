@@ -534,14 +534,14 @@ Page<IndexPageData, IndexPageHandlers>({
   },
 
   // 横向轻扫切日：位移够长且横向显著盖过纵向（不干扰页面上下滚动），无时间门限，
-  // 慢拖也算。左滑（dx<0）→ 前一天，右滑（dx>0）→ 后一天。
+  // 慢拖也算。左滑（dx<0）→ 后一天，右滑（dx>0）→ 前一天。
   onContentTouchEnd(e: WechatMiniprogram.TouchEvent) {
     const t = e.changedTouches[0];
     if (!t) return;
     const dx = t.clientX - swipeStartX;
     const dy = t.clientY - swipeStartY;
     if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 2) return;
-    this.shiftSelectedDay(dx < 0 ? -1 : 1);
+    this.shiftSelectedDay(dx < 0 ? 1 : -1);
   },
 
   shiftSelectedDay(delta: number) {
