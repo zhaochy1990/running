@@ -7280,7 +7280,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Comma list; pass 'timeseries' to inline the series",
+                        "description": "Comma list: timeseries for sampled points, running_dynamics for 90-second running ranges",
                         "name": "include",
                         "in": "query"
                     }
@@ -9494,6 +9494,9 @@ const docTemplate = `{
                 },
                 "linked_scheduled_workout": {
                     "$ref": "#/definitions/api.linkedScheduledWorkoutDTO"
+                },
+                "running_dynamics": {
+                    "$ref": "#/definitions/api.runningDynamicsDTO"
                 },
                 "segments": {
                     "type": "array",
@@ -14053,6 +14056,57 @@ const docTemplate = `{
                 },
                 "user_id": {
                     "type": "string"
+                }
+            }
+        },
+        "api.runningDynamicsDTO": {
+            "type": "object",
+            "properties": {
+                "duration_s": {
+                    "type": "number"
+                },
+                "metrics": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/api.runningDynamicsMetric"
+                    }
+                },
+                "window_s": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.runningDynamicsMetric": {
+            "type": "object",
+            "properties": {
+                "average": {
+                    "type": "number"
+                },
+                "max": {
+                    "type": "number"
+                },
+                "min": {
+                    "type": "number"
+                },
+                "windows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.runningDynamicsRange"
+                    }
+                }
+            }
+        },
+        "api.runningDynamicsRange": {
+            "type": "object",
+            "properties": {
+                "index": {
+                    "type": "integer"
+                },
+                "max": {
+                    "type": "number"
+                },
+                "min": {
+                    "type": "number"
                 }
             }
         },

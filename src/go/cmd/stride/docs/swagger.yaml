@@ -148,6 +148,8 @@ definitions:
         type: array
       linked_scheduled_workout:
         $ref: '#/definitions/api.linkedScheduledWorkoutDTO'
+      running_dynamics:
+        $ref: '#/definitions/api.runningDynamicsDTO'
       segments:
         items:
           $ref: '#/definitions/api.segmentDTO'
@@ -3248,6 +3250,39 @@ definitions:
       user_id:
         type: string
     type: object
+  api.runningDynamicsDTO:
+    properties:
+      duration_s:
+        type: number
+      metrics:
+        additionalProperties:
+          $ref: '#/definitions/api.runningDynamicsMetric'
+        type: object
+      window_s:
+        type: integer
+    type: object
+  api.runningDynamicsMetric:
+    properties:
+      average:
+        type: number
+      max:
+        type: number
+      min:
+        type: number
+      windows:
+        items:
+          $ref: '#/definitions/api.runningDynamicsRange'
+        type: array
+    type: object
+  api.runningDynamicsRange:
+    properties:
+      index:
+        type: integer
+      max:
+        type: number
+      min:
+        type: number
+    type: object
   api.segmentDTO:
     properties:
       adjusted_pace:
@@ -4481,7 +4516,8 @@ paths:
         name: labelId
         required: true
         type: string
-      - description: Comma list; pass 'timeseries' to inline the series
+      - description: 'Comma list: timeseries for sampled points, running_dynamics
+          for 90-second running ranges'
         in: query
         name: include
         type: string

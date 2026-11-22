@@ -140,7 +140,7 @@ func (a *activityRoutes) list(c *gin.Context) {
 //	@Produce		json
 //	@Param			user		path		string	true	"User id (JWT sub)"
 //	@Param			labelId		path		string	true	"Activity label id"
-//	@Param			include		query		string	false	"Comma list; pass 'timeseries' to inline the series"
+//	@Param			include		query		string	false	"Comma list: timeseries for sampled points, running_dynamics for 90-second running ranges"
 //	@Success		200			{object}	activityDetailResponse
 //	@Failure		401			{object}	errorResponse
 //	@Failure		403			{object}	errorResponse
@@ -157,7 +157,10 @@ func (a *activityRoutes) detail(c *gin.Context) {
 	labelID := c.Param("labelId")
 	resp, found, err := assembleActivityDetail(
 		c.Request.Context(), a.store, user, labelID,
-		includeHas(c.Query("include"), "timeseries"),
+		activityDetailIncludes{
+			timeseries:      includeHas(c.Query("include"), "timeseries"),
+			runningDynamics: includeHas(c.Query("include"), "running_dynamics"),
+		},
 	)
 	if err != nil {
 		a.log.Error("assemble activity detail failed", zapErr(err))
@@ -344,10 +347,15 @@ func hasDistanceSplits(laps []storage.Lap) bool {
 	return false
 }
 
+type activityDetailIncludes struct {
+	timeseries      bool
+	runningDynamics bool
+}
+
 // assembleActivityDetail is the shared MySQL-backed detail assembler used by
 // both the owner-scoped activity route and the team-authorized activity route.
 // found=false distinguishes an absent activity from a storage failure.
-func assembleActivityDetail(ctx context.Context, store ActivityStore, userID, labelID string, includeTimeseries bool) (*activityDetailResponse, bool, error) {
+func assembleActivityDetail(ctx context.Context, store ActivityStore, userID, labelID string, include activityDetailIncludes) (*activityDetailResponse, bool, error) {
 	activity, err := store.ActivityByID(ctx, userID, labelID)
 	if err != nil {
 		return nil, false, err
@@ -396,17 +404,23 @@ func assembleActivityDetail(ctx context.Context, store ActivityStore, userID, la
 	}
 	needsKilometers := len(kilometerSplits) == 0 && !isStrengthActivity(activity) &&
 		activity.DistanceM != nil && *activity.DistanceM >= 1000
-	if includeTimeseries || needsKilometers {
+	withDynamics := include.runningDynamics && activity.IsRunning()
+	if include.timeseries || needsKilometers || withDynamics {
 		ts, err := store.ActivityTimeseries(ctx, userID, labelID)
-		if err != nil && includeTimeseries {
+		if err != nil && include.timeseries {
 			return nil, false, err
 		}
-		if needsKilometers && err == nil {
-			resp.KilometerSplits = toSegmentDTOs(deriveKilometerSplits(activity, ts))
-		}
-		if includeTimeseries {
-			series := toTimeseriesDTOs(downsampleTimeseries(ts))
-			resp.Timeseries = &series
+		if err == nil {
+			if needsKilometers {
+				resp.KilometerSplits = toSegmentDTOs(deriveKilometerSplits(activity, ts))
+			}
+			if include.timeseries {
+				series := toTimeseriesDTOs(downsampleTimeseries(ts))
+				resp.Timeseries = &series
+			}
+			if withDynamics {
+				resp.RunningDynamics = buildRunningDynamics(ts, activity)
+			}
 		}
 	}
 	return resp, true, nil
@@ -710,6 +724,7 @@ type activityDetailResponse struct {
 	Segments               []segmentDTO               `json:"segments"`
 	KilometerSplits        []segmentDTO               `json:"kilometer_splits"`
 	Zones                  []zoneDTO                  `json:"zones"`
+	RunningDynamics        *runningDynamicsDTO        `json:"running_dynamics,omitempty"`
 	Timeseries             *[]timeseriesDTO           `json:"timeseries,omitempty"`
 	LinkedScheduledWorkout *linkedScheduledWorkoutDTO `json:"linked_scheduled_workout"`
 }

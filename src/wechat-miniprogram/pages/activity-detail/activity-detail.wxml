@@ -153,6 +153,8 @@
         </view>
       </view>
 
+      <running-dynamics id="running-dynamics" wx:if="{{runningDynamics}}" summary="{{runningDynamics}}" />
+
       <!-- 分段 / 圈速 -->
       <view wx:if="{{hasSegments}}" class="card">
         <view class="card-title">{{isStrength ? '动作组' : '分段数据'}}</view>

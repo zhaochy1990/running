@@ -136,6 +136,27 @@ export interface ActivityStrideTrainingLoad {
   reasons: string[];
 }
 
+export interface RunningDynamicsRange {
+  index: number;
+  min: number;
+  max: number;
+}
+
+export interface RunningDynamicsMetric {
+  average: number;
+  min: number;
+  max: number;
+  windows: RunningDynamicsRange[];
+}
+
+export type RunningDynamicsKey = 'cadence' | 'stride_length' | 'vertical_oscillation' | 'ground_contact_time';
+
+export interface RunningDynamics {
+  duration_s: number;
+  window_s: number;
+  metrics: Partial<Record<RunningDynamicsKey, RunningDynamicsMetric>>;
+}
+
 export interface ActivityDetailResponse {
   activity: Activity;
   stride_training_load?: ActivityStrideTrainingLoad | null;
@@ -144,6 +165,7 @@ export interface ActivityDetailResponse {
   zones: Zone[];
   /** 仅在请求 include=timeseries 时返回；否则缺失/空数组。 */
   timeseries?: TimeseriesPoint[];
+  running_dynamics?: RunningDynamics;
   linked_scheduled_workout?: LinkedScheduledWorkout | null;
 }
 

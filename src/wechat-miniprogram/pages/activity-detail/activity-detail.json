@@ -1,4 +1,5 @@
 {
+  "usingComponents": { "running-dynamics": "../../components/activity/running-dynamics/running-dynamics" },
   "navigationStyle": "custom",
   "navigationBarTitleText": "活动详情",
   "navigationBarBackgroundColor": "#F7F9FB",

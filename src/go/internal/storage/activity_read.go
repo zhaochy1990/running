@@ -16,10 +16,14 @@ package storage
 import (
 	"context"
 	"errors"
+	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
+
+	"github.com/zhaochy1990/stride/internal/normalize"
 )
 
 // runningActivityPredicate is the literal running-sport predicate shared by the
@@ -31,6 +35,20 @@ import (
 const runningActivityPredicate = `(sport_type IN (100,101,102,103,104,600,601,8001,8002,8003,8004,8005) ` +
 	`OR sport IN ('run_outdoor','run_indoor','run_trail','run_track','run_treadmill') ` +
 	`OR lower(coalesce(sport_name, '')) IN ('run','indoor run','trail run','track run','treadmill'))`
+
+// IsRunning mirrors the running filter for already-loaded activity rows.
+func (a *Activity) IsRunning() bool {
+	if slices.Contains(runSportIDs, a.SportType) || a.Sport != nil && normalize.RunningSports[normalize.Sport(*a.Sport)] {
+		return true
+	}
+	if a.SportName != nil {
+		switch strings.ToLower(*a.SportName) {
+		case "run", "indoor run", "trail run", "track run", "treadmill":
+			return true
+		}
+	}
+	return false
+}
 
 // strengthActivityPredicate is the literal strength-sport predicate for the list
 // filter (sport_category=strength). Mirrors the Python _build_activity_list_filter
