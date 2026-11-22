@@ -141,10 +141,9 @@ App<IAppOption>({
       // 走到这里只可能是「本地有 token 且校验抛错」：无 token 那条件分支的失败
       // 已由 silentLogin 自己吞掉并返回 false（不抛）。
       if (authFailure) {
-        // 本地 token 被服务端拒绝：request.ts 已清掉本地 token 并接管导航
-        // （先免密恢复，不行才去登录页），这里仅清理内存态，避免重复导航。
-        // 若免密恢复随后成功，userStore.setUser 会把 isAuthenticated 再置回 true。
+        // 公开入口在原页面静默恢复。其他入口沿用 request.ts 的恢复与导航。
         userStore.clear();
+        if (publicEntry) await silentLogin(false);
       }
       // 本地有 token 且非认证失败（如纯网络错误）→ 保留本地会话，不误登出。
     } finally {

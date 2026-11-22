@@ -103,6 +103,8 @@
 }
 
 .chips .chip {
+  flex: 0 0 auto;
+  width: auto;
   padding: 14rpx 17rpx;
   border-radius: 12rpx;
   background: var(--color-chip);

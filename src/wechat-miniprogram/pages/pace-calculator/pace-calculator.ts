@@ -198,9 +198,16 @@ Page({
 
   onSegmentInput(e: InputEvent) {
     const { index, field } = e.currentTarget.dataset as { index: number; field: 'end' | 'pace' };
-    const segments = this.data.segments.map((segment, i) => (
-      i === index ? { ...segment, [field]: e.detail.value, note: field === 'end' ? '' : segment.note, terrain: field === 'end' ? '' : segment.terrain } : segment
-    ));
+    const value = e.detail.value;
+    const current = this.data.segments[index];
+    if (!current || current[field] === value) return;
+    const segments = this.data.segments.map((segment, i) => {
+      const updated = i === index ? { ...segment, [field]: value } : segment;
+      // Changing an endpoint also moves the start of the following segment.
+      return field === 'end' && (i === index || i === index + 1)
+        ? { ...updated, note: '', terrain: '' }
+        : updated;
+    });
     this.updateSegments(segments);
   },
 
@@ -212,7 +219,11 @@ Page({
 
   onRemoveSegment(e: WechatMiniprogram.TouchEvent) {
     if (this.data.segments.length <= 1) return;
-    this.updateSegments(this.data.segments.filter((_, i) => i !== Number(e.currentTarget.dataset.index)));
+    const index = Number(e.currentTarget.dataset.index);
+    const segments = this.data.segments
+      .filter((_, i) => i !== index)
+      .map((segment, i) => i === index ? { ...segment, note: '', terrain: '' } : segment);
+    this.updateSegments(segments);
   },
 
   onCalculate() {
