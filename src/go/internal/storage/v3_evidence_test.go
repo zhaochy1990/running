@@ -82,6 +82,20 @@ func TestV3EvidenceWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	visit(day, 1, "build")
+	// A full re-pull redelivering identical, nonempty laps keeps its evidence.
+	upsert([]Lap{lap}, nil)
+	visit(day, 1, "reuse")
+	// Storage readers return surrogate IDs. Reusing their slice must still
+	// invalidate evidence when a lap value changes.
+	previous, err := st.ActivityLaps(ctx, uid, activity.LabelID)
+	if err != nil || len(previous) != 1 || previous[0].ID == 0 {
+		t.Fatalf("stored laps %v: %v", previous, err)
+	}
+	previous[0].DurationS = fptr(1900)
+	if err := st.UpsertActivityPreservingEmptyChildren(ctx, &activity, previous, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	visit(day, 1, "build")
 	// Update just the samples, then just the activity summary.
 	if err := st.UpsertActivityPreservingEmptyChildren(ctx, &activity, nil, []TimeseriesPoint{{HeartRate: iptr(180)}}, nil); err != nil {
 		t.Fatal(err)

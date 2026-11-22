@@ -294,7 +294,7 @@ func writeActivityInTx(tx *gorm.DB, a *Activity, laps []Lap, tsLen int, zones []
 		return fmt.Errorf("storage: upsert activity: %w", err)
 	}
 	if !preserveEmpty || len(laps) > 0 {
-		if err := replaceChildren(tx, uid, a.LabelID, &Lap{}, laps); err != nil {
+		if err := replaceActivityLaps(tx, uid, a.LabelID, laps); err != nil {
 			return err
 		}
 	}
@@ -308,6 +308,46 @@ func writeActivityInTx(tx *gorm.DB, a *Activity, laps []Lap, tsLen int, zones []
 		}
 	}
 	return nil
+}
+
+// Preserve the lap revision on an identical provider re-delivery. The parent
+// upsert already locks this activity. Use a current read for the comparison:
+// the fenced writer may have opened a repeatable-read view before that lock.
+func replaceActivityLaps(tx *gorm.DB, userID, labelID string, laps []Lap) error {
+	if len(laps) > 0 {
+		var existing []Lap
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_id=? AND label_id=?", userID, labelID).Order("id").Find(&existing).Error
+		if err != nil {
+			return fmt.Errorf("storage: compare activity laps: %w", err)
+		}
+		if equalLapContent(existing, laps) {
+			for i := range laps {
+				laps[i].ID = existing[i].ID
+			}
+			return nil
+		}
+		// The PK belongs to storage. In particular, a caller can pass back
+		// rows read by ActivityLaps (or a previously written slice).
+		for i := range laps {
+			laps[i].ID = 0
+		}
+	}
+	return replaceChildren(tx, userID, labelID, &Lap{}, laps)
+}
+
+func equalLapContent(stored, incoming []Lap) bool {
+	if len(stored) != len(incoming) {
+		return false
+	}
+	for i, old := range stored {
+		next := incoming[i]
+		old.ID, next.ID = 0, 0
+		if !reflect.DeepEqual(old, next) {
+			return false
+		}
+	}
+	return true
 }
 
 // childInsertBatch caps rows per multi-value INSERT for an activity's child

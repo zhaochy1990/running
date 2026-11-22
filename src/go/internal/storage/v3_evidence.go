@@ -36,8 +36,8 @@ type v3InputRow struct {
 	InputHash, Payload []byte
 }
 
-// Laps are atomically replaced (delete + insert with fresh auto-increment ids)
-// by both watch writers. Their MAX(id) detects a lap-only replacement,
+// Changed laps are replaced with fresh IDs; identical re-deliveries keep their
+// IDs (replaceActivityLaps, shared by both watch writers). Their MAX(id) detects a lap-only replacement,
 // including a transition to an empty collection. Other source fields and the
 // verified blob identity are taken from the same repeatable-read view.
 func (r *v3InputRow) signature(format int) ([]byte, error) {

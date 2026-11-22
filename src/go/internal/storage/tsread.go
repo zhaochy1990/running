@@ -156,7 +156,17 @@ func (s *Store) readActivityBlob(ctx context.Context, uid, labelID string) ([]Ti
 	if p.TsSHA256 != nil {
 		rowSHA = *p.TsSHA256
 	}
+	checkCount := func(count int) error {
+		if p.TsPointCount != nil && *p.TsPointCount != count {
+			return readFailed("point_count_mismatch", key, slog.Int("row_ts_point_count", *p.TsPointCount), slog.Int("blob_point_count", count))
+		}
+		return nil
+	}
 	if cached, ok := s.tsCache.get(key, rowSHA); ok {
+		if err := checkCount(len(cached)); err != nil {
+			return nil, err
+		}
+
 		return cloneTimeseriesPoints(cached), nil
 	}
 
@@ -180,10 +190,8 @@ func (s *Store) readActivityBlob(ctx context.Context, uid, labelID string) ([]Ti
 		return nil, readFailed("identity_mismatch", key,
 			slog.String("blob_user_id", blob.UserID), slog.String("blob_label_id", blob.LabelID))
 	}
-	if p.TsPointCount != nil && *p.TsPointCount != blob.PointCount {
-		return nil, readFailed("point_count_mismatch", key,
-			slog.Int("row_ts_point_count", *p.TsPointCount),
-			slog.Int("blob_point_count", blob.PointCount))
+	if err := checkCount(blob.PointCount); err != nil {
+		return nil, err
 	}
 	if p.TsSHA256 != nil && *p.TsSHA256 != blob.SHA256 {
 		return nil, readFailed("sha_mismatch", key,

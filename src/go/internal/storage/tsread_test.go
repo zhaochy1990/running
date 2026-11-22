@@ -8,6 +8,7 @@ package storage
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/zhaochy1990/stride/internal/tsstore"
@@ -137,6 +138,24 @@ func TestActivityTimeseriesServesFromBlobWithLRU(t *testing.T) {
 	}
 	if counting.gets != 1 {
 		t.Fatalf("backend GETs = %d after 3 reads, want 1 (LRU)", counting.gets)
+	}
+}
+
+func TestActivityTimeseriesCachedPointCountMismatch(t *testing.T) {
+	st, _, uid := openBlobTestStore(t)
+	ctx := t.Context()
+	rows := blobTestRows(31, 121)
+	if err := st.UpsertActivity(ctx, blobActivity(uid, "cached-count"), nil, rows, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ActivityTimeseries(ctx, uid, "cached-count"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.db.Model(&Activity{}).Where("user_id=? AND label_id=?", uid, "cached-count").UpdateColumn("ts_point_count", len(rows)+1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ActivityTimeseries(ctx, uid, "cached-count"); err == nil || !strings.Contains(err.Error(), "point_count_mismatch") {
+		t.Fatalf("corrupt cached count: %v", err)
 	}
 }
 
