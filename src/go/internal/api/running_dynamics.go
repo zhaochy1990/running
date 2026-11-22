@@ -134,7 +134,7 @@ func normalizeGarminDynamicsCadence(samples []dynamicsSample, averageSteps *int)
 			whole++
 		}
 	}
-	if half > len(samples)/2 && whole == 0 {
+	if half == len(samples) {
 		for i := range samples {
 			samples[i].value *= 2
 		}
