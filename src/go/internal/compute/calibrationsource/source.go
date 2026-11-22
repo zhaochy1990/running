@@ -49,26 +49,17 @@ func Load(ctx context.Context, r Reader, user, provider string, asOf time.Time, 
 		if err != nil {
 			return nil, nil, err
 		}
-		distanceM := watchmap.AsActivityDistanceMeters(a.DistanceM)
-		history = append(history, calibration.Activity{
-			LabelID:      a.LabelID,
-			ActivityDate: timefmt.ShanghaiDay(a.Date),
-			Sport:        sport,
-			DurationS:    a.DurationS,
-			DistanceM:    distanceM,
-			AvgHR:        watchmap.IntToFloat(a.AvgHR),
-			MaxHR:        watchmap.IntToFloat(a.MaxHR),
-			AvgPowerW:    watchmap.IntToFloat(a.AvgPower),
-			Samples:      mapSamples(ts, distanceM, provider),
-			Laps:         mapLaps(laps),
-			Source:       strPtr(provider),
-		})
+		history = append(history, mapActivity(a, sport, provider, ts, laps))
 	}
 
 	healthRows, err := r.DailyHealthWithRHR(ctx, user)
 	if err != nil {
 		return nil, nil, err
 	}
+	return history, mapHealth(healthRows), nil
+}
+
+func mapHealth(healthRows []storage.DailyHealth) []calibration.HealthRow {
 	health := make([]calibration.HealthRow, 0, len(healthRows))
 	for i := range healthRows {
 		h := healthRows[i]
@@ -78,7 +69,7 @@ func Load(ctx context.Context, r Reader, user, provider string, asOf time.Time, 
 		}
 		health = append(health, calibration.HealthRow{Date: d, RHR: watchmap.IntToFloat(h.RHR)})
 	}
-	return history, health, nil
+	return health
 }
 
 func mapSamples(rows []storage.TimeseriesPoint, activityDistanceM *float64, provider string) []calibration.Sample {
@@ -149,4 +140,21 @@ func strPtr(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+func mapActivity(a storage.Activity, sport, provider string, ts []storage.TimeseriesPoint, laps []storage.Lap) calibration.Activity {
+	distanceM := watchmap.AsActivityDistanceMeters(a.DistanceM)
+	return calibration.Activity{
+		LabelID:      a.LabelID,
+		ActivityDate: timefmt.ShanghaiDay(a.Date),
+		Sport:        sport,
+		DurationS:    a.DurationS,
+		DistanceM:    distanceM,
+		AvgHR:        watchmap.IntToFloat(a.AvgHR),
+		MaxHR:        watchmap.IntToFloat(a.MaxHR),
+		AvgPowerW:    watchmap.IntToFloat(a.AvgPower),
+		Samples:      mapSamples(ts, distanceM, provider),
+		Laps:         mapLaps(laps),
+		Source:       strPtr(provider),
+	}
 }

@@ -27,6 +27,7 @@ const calibrationLookbackDays = 180
 // (#999) the per-user override the daily sync must honor.
 type CalibrationStore interface {
 	calibrationsource.CandidateReader
+	calibrationsource.V3WindowStore
 	storage.CalibrationReader
 	CalibrationPolicy(context.Context) (storage.RunningCalibrationPolicy, error)
 	UserCalibrationOverride(context.Context, string) (*storage.RunningCalibrationUserOverride, error)
@@ -169,6 +170,12 @@ func NewCalibrationWithOptions(store CalibrationStore, options CalibrationOption
 				return "", err
 			}
 			snapID = evolved.CalibrationSnapshot
+		} else if !candidateOnly && version == calibration.ModelVersion && in.Mode == string(provider.SyncIncremental) {
+			dayOut, err := runIncrementalV3(ctx, store, user, asOf)
+			if err != nil {
+				return "", err
+			}
+			snapID, activities = dayOut.SnapshotID, dayOut.Activities
 		} else {
 			dayOut, err := runCalibrationVersion(ctx, store, user, asOf, version)
 			if err != nil {
@@ -222,6 +229,18 @@ func runCalibrationVersion(ctx context.Context, store CalibrationStore, user str
 	if err != nil {
 		return CalibrationDayOutcome{}, err
 	}
+	return publishCalibration(ctx, store, user, asOf, version, result, len(history))
+}
+
+func runIncrementalV3(ctx context.Context, store CalibrationStore, user string, asOf time.Time) (CalibrationDayOutcome, error) {
+	result, n, err := calibrationsource.EstimateIncrementalV3(ctx, store, user, asOf, calibrationLookbackDays)
+	if err != nil {
+		return CalibrationDayOutcome{}, err
+	}
+	return publishCalibration(ctx, store, user, asOf, calibration.ModelVersion, result, n)
+}
+
+func publishCalibration(ctx context.Context, store CalibrationStore, user string, asOf time.Time, version int, result calibration.OfflineResult, activities int) (CalibrationDayOutcome, error) {
 	snap := result.Snapshot
 	row := toStorageSnapshot(user, snap)
 	// The in-place evolved v4 separates its rows from historical v4 by the
@@ -242,7 +261,7 @@ func runCalibrationVersion(ctx context.Context, store CalibrationStore, user str
 	day := asOf.Format("2006-01-02")
 	out := CalibrationDayOutcome{
 		SnapshotID: snapID,
-		Activities: len(history),
+		Activities: activities,
 		CentersDone: snap.ThresholdHR != nil || snap.ThresholdSpeedMps != nil ||
 			snap.RHRBaseline != nil || snap.HRMaxEstimate != nil ||
 			snap.CriticalSpeedMps != nil || snap.CriticalPowerW != nil,

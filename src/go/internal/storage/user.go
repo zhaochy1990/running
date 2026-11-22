@@ -264,7 +264,7 @@ var userOwnedDeletionModels = []any{
 	// The per-user selection override (#999) is user-owned policy data, erased
 	// with the account like the snapshots it points at.
 	&RunningCalibrationUserOverride{},
-	&RunningCalibrationSnapshot{}, &ActivityTrainingLoad{}, &DailyTrainingLoad{},
+	&V3CalibrationEvidence{}, &RunningCalibrationSnapshot{}, &ActivityTrainingLoad{}, &DailyTrainingLoad{},
 	// TimeseriesPoint is gone from this list with the Phase 4 table drop
 	// (devops#788): its points live in the blob store, swept by the
 	// deleteUserTSBlobs prefix cleanup below, not by a row delete.
