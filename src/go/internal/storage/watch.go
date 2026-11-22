@@ -317,14 +317,11 @@ func replaceActivityLaps(tx *gorm.DB, userID, labelID string, laps []Lap) error 
 	if len(laps) > 0 {
 		var existing []Lap
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("user_id=? AND label_id=?", userID, labelID).Order("id").Find(&existing).Error
+			Where("user_id=? AND label_id=?", userID, labelID).Find(&existing).Error
 		if err != nil {
 			return fmt.Errorf("storage: compare activity laps: %w", err)
 		}
-		if equalLapContent(existing, laps) {
-			for i := range laps {
-				laps[i].ID = existing[i].ID
-			}
+		if matchStoredLaps(existing, laps) {
 			return nil
 		}
 		// The PK belongs to storage. In particular, a caller can pass back
@@ -336,16 +333,32 @@ func replaceActivityLaps(tx *gorm.DB, userID, labelID string, laps []Lap) error 
 	return replaceChildren(tx, userID, labelID, &Lap{}, laps)
 }
 
-func equalLapContent(stored, incoming []Lap) bool {
+// Provider groups and ActivityLaps can enumerate the same set in different
+// orders. Match the unique lap identity, consuming each stored row once.
+func matchStoredLaps(stored, incoming []Lap) bool {
 	if len(stored) != len(incoming) {
 		return false
 	}
-	for i, old := range stored {
-		next := incoming[i]
-		old.ID, next.ID = 0, 0
+	type lapKey struct {
+		index int
+		kind  string
+	}
+	rows := make(map[lapKey]Lap, len(stored))
+	for _, lap := range stored {
+		rows[lapKey{lap.LapIndex, lap.LapType}] = lap
+	}
+	for i, next := range incoming {
+		key := lapKey{next.LapIndex, next.LapType}
+		old, ok := rows[key]
+		if !ok {
+			return false
+		}
+		next.ID = old.ID
 		if !reflect.DeepEqual(old, next) {
 			return false
 		}
+		incoming[i].ID = old.ID
+		delete(rows, key)
 	}
 	return true
 }

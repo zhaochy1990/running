@@ -241,12 +241,12 @@ jobs:
       # immutable v2 publish) is transactional SQL + a real FileStore — the
       # stale-worker/rebind/takeover races only reproduce against real MySQL
       # (devops#1005 AC5).
-      - name: Activity write-isolation storage tests (MySQL + FileStore)
+      - name: Activity write-isolation and v3 evidence tests (MySQL)
         env:
           STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
         run: >-
           go test ./internal/storage/...
-          -run 'TestWriteIsolation'
+          -run 'TestWriteIsolation|TestV3EvidenceWindow|TestActivityTimeseriesCached'
           -count=1 -v
       # The first-sync session claim/claim-race/rebind isolation plus the
       # create→dispatch→completion crash-boundary recovery are transactional

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/zhaochy1990/stride/internal/tsstore"
 )
 
@@ -89,29 +91,29 @@ func TestTSPointCacheHitMissEvict(t *testing.T) {
 	pts := func(n int) []TimeseriesPoint {
 		return []TimeseriesPoint{{Timestamp: i64ptr(int64(n))}}
 	}
-	c.put("k1", "s1", pts(1))
-	if got, ok := c.get("k1", "s1"); !ok || len(got) != 1 {
+	c.put(tsCacheKey{blobKey: "k1"}, "s1", pts(1))
+	if got, ok := c.get(tsCacheKey{blobKey: "k1"}, "s1"); !ok || len(got) != 1 {
 		t.Fatalf("get(k1) after put = (%v, %v), want hit", got, ok)
 	}
 	// A different sha for the same key is a miss (the blob was overwritten)
 	// and drops the entry.
-	if _, ok := c.get("k1", "s2"); ok {
+	if _, ok := c.get(tsCacheKey{blobKey: "k1"}, "s2"); ok {
 		t.Fatal("get(k1) with changed sha hit; want miss")
 	}
-	if _, ok := c.get("k1", "s1"); ok {
+	if _, ok := c.get(tsCacheKey{blobKey: "k1"}, "s1"); ok {
 		t.Fatal("get(k1) with the original sha still hit after invalidation; want miss")
 	}
 	// Capacity 2: k4 evicts the least recently used (k2).
-	c.put("k2", "s2", pts(2))
-	c.put("k3", "s3", pts(3))
-	c.get("k2", "s2") // k2 fresh, k3 is now LRU
-	c.put("k4", "s4", pts(4))
+	c.put(tsCacheKey{blobKey: "k2"}, "s2", pts(2))
+	c.put(tsCacheKey{blobKey: "k3"}, "s3", pts(3))
+	c.get(tsCacheKey{blobKey: "k2"}, "s2") // k2 fresh, k3 is now LRU
+	c.put(tsCacheKey{blobKey: "k4"}, "s4", pts(4))
 	for _, hit := range []string{"k2", "k4"} {
-		if _, ok := c.get(hit, "s"+hit[1:]); !ok {
+		if _, ok := c.get(tsCacheKey{blobKey: hit}, "s"+hit[1:]); !ok {
 			t.Fatalf("get(%s) after eviction = miss, want hit", hit)
 		}
 	}
-	if _, ok := c.get("k3", "s3"); ok {
+	if _, ok := c.get(tsCacheKey{blobKey: "k3"}, "s3"); ok {
 		t.Fatal("get(k3) after eviction hit; want miss (it was the LRU entry)")
 	}
 }
@@ -156,6 +158,33 @@ func TestActivityTimeseriesCachedPointCountMismatch(t *testing.T) {
 	}
 	if _, err := st.ActivityTimeseries(ctx, uid, "cached-count"); err == nil || !strings.Contains(err.Error(), "point_count_mismatch") {
 		t.Fatalf("corrupt cached count: %v", err)
+	}
+}
+
+// Even a zero-point cached entry has a verified owner. A pointer copied to a
+// different activity must take the normal envelope identity check.
+func TestActivityTimeseriesCachedIdentity(t *testing.T) {
+	st, _, uid := openBlobTestStore(t)
+	ctx := t.Context()
+	original := blobActivity(uid, "original")
+	if err := st.UpsertActivity(ctx, original, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ActivityTimeseries(ctx, uid, original.LabelID); err != nil {
+		t.Fatal(err)
+	}
+	otherUser := uuid.NewString()
+	addUserTableCleanup(t, st, "activities", otherUser)
+	for _, other := range []*Activity{blobActivity(uid, "other"), blobActivity(otherUser, "original")} {
+		if err := st.UpsertActivity(ctx, other, nil, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.db.Model(&Activity{}).Where("user_id=? AND label_id=?", other.UserID, other.LabelID).UpdateColumn("ts_blob_key", original.TsBlobKey).Error; err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.ActivityTimeseries(ctx, other.UserID, other.LabelID); err == nil || !strings.Contains(err.Error(), "identity_mismatch") {
+			t.Fatalf("wrong owner: %v", err)
+		}
 	}
 }
 

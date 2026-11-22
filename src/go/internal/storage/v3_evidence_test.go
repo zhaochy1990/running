@@ -96,6 +96,16 @@ func TestV3EvidenceWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	visit(day, 1, "build")
+	// COROS delivers groups; the public reader returns them in lap-index order.
+	groups := []Lap{{LapType: "manual", LapIndex: 1}, {LapType: "manual", LapIndex: 2}, {LapType: "auto", LapIndex: 1}, {LapType: "auto", LapIndex: 2}}
+	upsert(groups, nil)
+	visit(day, 1, "build")
+	readBack, err := st.ActivityLaps(ctx, uid, activity.LabelID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upsert(readBack, nil)
+	visit(day, 1, "reuse")
 	// Update just the samples, then just the activity summary.
 	if err := st.UpsertActivityPreservingEmptyChildren(ctx, &activity, nil, []TimeseriesPoint{{HeartRate: iptr(180)}}, nil); err != nil {
 		t.Fatal(err)
