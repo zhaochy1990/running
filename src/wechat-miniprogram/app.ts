@@ -12,6 +12,7 @@ const PUBLIC_ENTRY_PAGES: ReadonlySet<string> = new Set([
   'pages/workout-share/workout-share',
   'pages/race-center/strategy-share/strategy-share',
   'pages/coach-share/coach-share',
+  'pages/pace-calculator/pace-calculator',
   // 抽奖活动落地页（#868，Epic #862）：扫易拉宝小程序码直达，奖档陈列 / 规则 /
   // 时间窗免登录可看；登录 / 绑表 / 抽奖由页面内三态引导触发。
   'pages/lottery/lottery',
@@ -22,14 +23,15 @@ const PUBLIC_ENTRY_PAGES: ReadonlySet<string> = new Set([
 
 // 免密登录：用 wx.login() 的 code 换 JWT。微信已绑定 → 存好 token/user 返回 true；
 // 未绑定或失败 → 返回 false。函数本身不导航，由调用方决定去哪。
-async function silentLogin(): Promise<boolean> {
+async function silentLogin(redirectOnSessionExpiry = true): Promise<boolean> {
   try {
-    const result = await wechatLogin();
+    const result = await wechatLogin(redirectOnSessionExpiry);
     console.log(`[auth] 免密登录结果 ok=${result.ok}`);
     if (!result.ok) return false;
     userStore.setUser(result.user);
     return true;
   } catch (err) {
+    if (!redirectOnSessionExpiry && err instanceof ApiError && err.statusCode === 401) userStore.clear();
     console.error(
       '[auth] silent login failed:',
       err instanceof Error ? err.message : err,
@@ -109,7 +111,7 @@ App<IAppOption>({
       // 本地已有 token：不要仅凭本地 expiresAt 判定有效（它可能是「本地未过期但服务端
       // 已失效/吊销」的 token），主动向服务端验证一次，避免出现假登录态留在首页。
       if (hadToken) {
-        const user = await validateSession();
+        const user = await validateSession(!publicEntry);
         console.log('[auth] 本地 token 仍被服务端接受 → 视为已登录');
         userStore.setUser(user);
         if (publicEntry) return;
@@ -120,7 +122,7 @@ App<IAppOption>({
       // 无本地 token → 免密登录换 JWT；未绑定（新用户）→ 游客态放行（微信审核合规：
       // 不得强制登录，先让用户浏览功能，触发需要账号的操作时再由页面引导去登录页）。
       // 各数据页的 waitForAuth 兜底会同判 isAuthenticated=false 走各自的游客空态。
-      if (await silentLogin()) {
+      if (await silentLogin(!publicEntry)) {
         if (publicEntry) return;
         await routeToOnboardingIfProfileMissing();
       } else {
@@ -139,10 +141,9 @@ App<IAppOption>({
       // 走到这里只可能是「本地有 token 且校验抛错」：无 token 那条件分支的失败
       // 已由 silentLogin 自己吞掉并返回 false（不抛）。
       if (authFailure) {
-        // 本地 token 被服务端拒绝：request.ts 已清掉本地 token 并接管导航
-        // （先免密恢复，不行才去登录页），这里仅清理内存态，避免重复导航。
-        // 若免密恢复随后成功，userStore.setUser 会把 isAuthenticated 再置回 true。
+        // 公开入口在原页面静默恢复。其他入口沿用 request.ts 的恢复与导航。
         userStore.clear();
+        if (publicEntry) await silentLogin(false);
       }
       // 本地有 token 且非认证失败（如纯网络错误）→ 保留本地会话，不误登出。
     } finally {

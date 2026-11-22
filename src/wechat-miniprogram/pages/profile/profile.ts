@@ -100,6 +100,7 @@ const MENU_ROWS: MenuRow[] = [
   { key: 'plan', title: '我的训练计划', iconPath: '/assets/icons/calendar_month.svg' },
   { key: 'training-status', title: '训练状态', iconPath: '/assets/icons/trend_up.svg' },
   { key: 'race-center', title: '赛事中心', iconPath: '/assets/icons/sprint.svg' },
+  { key: 'pace-calculator', title: '配速计算器', iconPath: '/assets/icons/schedule.svg' },
   { key: 'my-races', title: '我的比赛', iconPath: '/assets/icons/flag.svg' },
   // 2026-10-18 拍板：产品路线并入意见反馈页二级 tab（默认反馈 tab），
   // 菜单只留「意见反馈」一行，副标题带出路线
@@ -233,6 +234,10 @@ Page<ProfilePageData, ProfilePageHandlers>({
 
   onRowTap(e: WechatMiniprogram.TouchEvent) {
     const key = e.currentTarget.dataset.key as string;
+    if (key === 'pace-calculator') {
+      wx.navigateTo({ url: '/pages/pace-calculator/pace-calculator' });
+      return;
+    }
     if (key === 'checkin') {
       // 游客点「每日签到」= 登录引导弹层，登录成功 reLaunch 回签到页续接流程；
       // 其余菜单行维持「toast 提示、资料卡登录」的游客范式。

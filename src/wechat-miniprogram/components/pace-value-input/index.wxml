@@ -1,0 +1,7 @@
+<view class="control">
+  <input class="value" type="{{kind === 'distance' ? 'digit' : 'text'}}" value="{{value}}" placeholder="{{placeholder}}"
+    maxlength="{{kind === 'distance' ? 11 : kind === 'time' ? 8 : 5}}" bindinput="onInput" />
+  <picker mode="multiSelector" range="{{range}}" value="{{indices}}" bindchange="onPick" aria-label="滚轮选择">
+    <view class="picker">⌄</view>
+  </picker>
+</view>

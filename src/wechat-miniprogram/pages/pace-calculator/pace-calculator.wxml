@@ -1,0 +1,153 @@
+<template name="splits">
+  <view class="table">
+    <view class="table-row table-head">
+      <text>{{label}}</text><text>配速</text><text>本段用时</text><text>累计用时</text>
+    </view>
+    <view wx:for="{{rows}}" wx:key="end" class="table-entry">
+      <view class="table-row">
+        <text>{{item.label}}</text><text>{{item.pace}}</text><text>{{item.time}}</text><text>{{item.cumulative}}</text>
+      </view>
+      <view wx:if="{{item.terrain || item.note}}" class="row-note"><text wx:if="{{item.terrain}}" class="terrain">{{item.terrain}}</text>{{item.note}}</view>
+    </view>
+  </view>
+</template>
+
+<view class="calculator">
+  <view class="tabs">
+    <button class="tab {{tab === 'segment' ? 'active' : ''}}" data-tab="segment" bindtap="onTabTap">分段计算</button>
+    <button class="tab {{tab === 'quick' ? 'active' : ''}}" data-tab="quick" bindtap="onTabTap">快速计算</button>
+  </view>
+
+  <block wx:if="{{tab === 'segment'}}">
+    <view class="panel">
+      <view class="section-title">赛事模板</view>
+      <view class="hint">模板按参考赛道预设地形和分段，可自行调整。赛前请核对当届路线。</view>
+      <view wx:if="{{templatesLoading}}" class="hint">正在加载赛事模板…</view>
+      <view wx:if="{{templatesError}}" class="template-error">
+        <text>正在使用内置模板</text>
+        <button class="secondary compact" bindtap="loadTemplates">重试</button>
+      </view>
+      <block wx:if="{{templates.length}}">
+        <picker mode="selector" range="{{templateOptions}}" value="{{templateIndex}}" bindchange="onTemplateChange">
+          <view class="field select">{{selectedTemplate ? selectedTemplate.name : '选择赛事'}} <text>›</text></view>
+        </picker>
+        <view wx:if="{{selectedTemplate}}" class="hint">{{selectedTemplate.difficulty}} · {{selectedTemplate.terrain}} · {{selectedTemplate.description}}</view>
+        <view class="field-label">目标用时（时:分:秒）</view>
+        <pace-value-input kind="time" value="{{targetTime}}" data-field="targetTime" bind:valuechange="onInput" />
+        <view class="chips">
+          <button wx:for="{{targetPresets}}" wx:key="*this" class="chip {{targetTime === item ? 'selected' : ''}}" data-time="{{item}}" bindtap="onTargetTap">{{item}}</button>
+        </view>
+        <button class="secondary" disabled="{{!selectedTemplate}}" bindtap="onApplyTemplate">应用模板</button>
+      </block>
+    </view>
+
+    <view class="panel">
+      <view class="section-title">自定义分段</view>
+      <view class="chips first-chips">
+        <button class="chip" data-type="full" bindtap="onFillSegments">填充全马</button>
+        <button class="chip" data-type="half" bindtap="onFillSegments">填充半马</button>
+        <button class="chip" data-type="reset" bindtap="onFillSegments">重置</button>
+      </view>
+      <view wx:for="{{segments}}" wx:key="id" class="segment">
+        <view class="segment-header">
+          <text>第 {{index + 1}} 段</text>
+          <button wx:if="{{segments.length > 1}}" class="text-action destructive" data-index="{{index}}" bindtap="onRemoveSegment">删除</button>
+        </view>
+        <view class="segment-fields">
+          <view class="field-wrap">
+            <view class="field-label">起点 (km)</view>
+            <view class="field read-only">{{index === 0 ? '0' : (segments[index - 1].end || '—')}}</view>
+          </view>
+          <view class="field-wrap">
+            <view class="field-label">终点 (km)</view>
+            <pace-value-input kind="distance" placeholder="如 10" value="{{item.end}}" data-index="{{index}}" data-field="end" bind:valuechange="onSegmentInput" />
+          </view>
+          <view class="field-wrap">
+            <view class="field-label">配速 (分:秒)</view>
+            <pace-value-input kind="pace" placeholder="如 5:00" value="{{item.pace}}" data-index="{{index}}" data-field="pace" bind:valuechange="onSegmentInput" />
+          </view>
+        </view>
+        <view wx:if="{{item.terrain || item.note}}" class="hint"><text wx:if="{{item.terrain}}" class="terrain">{{item.terrain}}</text>{{item.note}}</view>
+      </view>
+      <button wx:if="{{segments.length < maxSegments}}" class="secondary" bindtap="onAddSegment">添加分段</button>
+    </view>
+  </block>
+
+  <view wx:else class="panel">
+    <view class="tabs inner-tabs">
+      <button wx:for="{{modes}}" wx:key="key" class="tab {{quickMode === item.key ? 'active' : ''}}" data-mode="{{item.key}}" bindtap="onQuickModeTap">{{item.label}}</button>
+    </view>
+    <block wx:if="{{quickMode !== 'distance'}}">
+      <view class="field-label">距离 (km)</view>
+      <pace-value-input kind="distance" value="{{distance}}" data-field="distance" bind:valuechange="onInput" />
+      <view class="chips">
+        <button wx:for="{{presets}}" wx:key="km" class="chip {{distance === item.km ? 'selected' : ''}}" data-km="{{item.km}}" bindtap="onDistanceTap">{{item.label}}</button>
+      </view>
+    </block>
+    <block wx:if="{{quickMode !== 'time'}}">
+      <view class="field-label">用时（时:分:秒）</view>
+      <pace-value-input kind="time" value="{{time}}" placeholder="如 0:50:00" data-field="time" bind:valuechange="onInput" />
+    </block>
+    <block wx:if="{{quickMode !== 'pace'}}">
+      <view class="field-label">配速（分:秒 / km）</view>
+      <pace-value-input kind="pace" value="{{pace}}" placeholder="如 5:00" data-field="pace" bind:valuechange="onInput" />
+    </block>
+  </view>
+
+  <view wx:if="{{error}}" class="error" role="alert">{{error}}</view>
+  <button class="primary" bindtap="onCalculate">计算</button>
+
+  <view wx:if="{{result}}" id="pace-result" class="panel result">
+    <view class="section-title">计算结果</view>
+    <view class="metrics">
+      <view class="metric {{tab === 'quick' && quickMode === 'distance' ? 'emphasis' : ''}}"><text>距离</text><text>{{result.distance}}</text></view>
+      <view class="metric {{tab === 'quick' && quickMode === 'time' ? 'emphasis' : ''}}"><text>用时</text><text>{{result.time}}</text></view>
+      <view class="metric {{tab === 'quick' && quickMode === 'pace' ? 'emphasis' : ''}}"><text>平均配速</text><text>{{result.pace}}</text></view>
+    </view>
+    <view class="hint">平均速度 {{result.speed}}</view>
+    <view wx:if="{{tab === 'segment'}}" class="tabs inner-tabs split-tabs">
+      <button class="tab {{splitView === 'rows' ? 'active' : ''}}" data-split="rows" bindtap="onSplitTap">分段明细</button>
+      <button class="tab {{splitView === 'checkpoints' ? 'active' : ''}}" data-split="checkpoints" bindtap="onSplitTap">关键节点</button>
+      <button class="tab {{splitView === 'kilometers' ? 'active' : ''}}" data-split="kilometers" bindtap="onSplitTap">每公里</button>
+    </view>
+    <template is="splits" data="{{rows: result[splitView], label: splitView === 'rows' ? '分段' : '距离'}}" />
+    <view class="actions">
+      <button class="secondary" bindtap="onSaveFavorite">收藏</button>
+      <button class="secondary" open-type="share">分享</button>
+      <button class="secondary" bindtap="onOpenCard">生成配速卡</button>
+    </view>
+  </view>
+
+  <view class="panel favorites">
+    <button class="favorites-toggle" bindtap="onToggleFavorites"><text>我的收藏（{{favorites.length}}）</text><text>{{showFavorites ? '收起' : '展开'}}</text></button>
+    <block wx:if="{{showFavorites}}">
+      <view wx:if="{{!favorites.length}}" class="hint">收藏计算结果后，可在此加载方案。</view>
+      <view wx:for="{{favorites}}" wx:key="id" class="favorite">
+        <view class="favorite-row">
+          <view class="favorite-info"><text class="favorite-name">{{item.name}}</text><text class="hint">{{item.summary}}</text><text class="hint">{{item.date}}</text></view>
+          <button class="text-action" data-id="{{item.id}}" bindtap="onLoadFavorite">加载</button>
+          <button class="text-action destructive" data-id="{{item.id}}" bindtap="onDeleteFavorite">删除</button>
+        </view>
+        <button class="text-action favorite-detail" data-id="{{item.id}}" bindtap="onToggleFavoriteDetails">{{expandedFavoriteId === item.id ? '收起明细' : '查看明细'}}</button>
+        <template wx:if="{{expandedFavoriteId === item.id}}" is="splits" data="{{rows: item.splits, label: '距离'}}" />
+      </view>
+    </block>
+  </view>
+</view>
+
+<view wx:if="{{showCard}}" class="shade">
+  <scroll-view scroll-y class="card-dialog">
+    <view class="card-header"><text class="section-title">配速卡</text><button class="text-action" bindtap="onCloseCard" disabled="{{cardBusy}}">关闭</button></view>
+    <image wx:if="{{cardImage}}" class="card-preview" src="{{cardImage}}" mode="widthFix" />
+    <view wx:elif="{{cardBusy}}" class="hint">正在生成配速卡…</view>
+    <view class="field-label">标题（选填）</view>
+    <input class="field" value="{{cardTitle}}" maxlength="24" data-field="cardTitle" bindinput="onCardInput" disabled="{{cardBusy}}" />
+    <view class="field-label">寄语（选填）</view>
+    <input class="field" value="{{cardMessage}}" maxlength="80" data-field="cardMessage" bindinput="onCardInput" disabled="{{cardBusy}}" />
+    <view class="actions">
+      <button class="secondary" bindtap="onGenerateCard" disabled="{{cardBusy}}">生成预览</button>
+      <button class="primary" bindtap="onSaveCard" disabled="{{!cardImage || cardBusy}}">保存到相册</button>
+    </view>
+  </scroll-view>
+</view>
+<canvas type="2d" id="pace-card-canvas" class="pace-canvas"></canvas>
