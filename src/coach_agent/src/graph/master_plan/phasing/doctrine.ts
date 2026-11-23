@@ -47,7 +47,7 @@ export function buildIntentPayload(input: PhasingIntentInput): Record<string, un
     evidence,
     runway_weeks: runwayWeeks,
     race_date: raceDate,
-    goal: { distance: "FM", target_time: evidence.target.target_time, goal_pace: evidence.target.goal_pace },
+    goal: { distance: evidence.target.distance, target_time: evidence.target.target_time, goal_pace: evidence.target.goal_pace },
     note_injury: evidence.injury_return
       ? `运动员伤退回归：停训 ${evidence.injury_return.weeks_out} 周，伤前峰值周量 ${evidence.injury_return.pre_injury_peak_week_km}km，起量须 ≤ 其 60-70%。`
       : undefined,
@@ -63,7 +63,13 @@ export function buildIntentMessages(input: PhasingIntentInput, retry?: { previou
       .join("\n")}\n上一版输出（仅供对照，不要原样重复）：${JSON.stringify(retry.previousIntent).slice(0, 4000)}`;
   }
   return [
-    ["system", PHASING_DOCTRINE],
+    [
+      "system",
+      input.evidence.target.distance === "HM"
+        ? PHASING_DOCTRINE.replace("为 FM（全马）目标", "为 HM（半马）目标") +
+          "\n半马专项以 T 巡航和 HMP 分段为主，长跑以 E 为主，上限 24km。默认 taper_weeks=2（含比赛周），短窗口可取 1。里程碑与阶段目标须使用半马项目。"
+        : PHASING_DOCTRINE,
+    ],
     ["user", user],
   ];
 }

@@ -196,6 +196,7 @@ export function validatePhaseIntent(intent: PhaseDivisionIntent, runwayWeeks: nu
   const unreachable = bandLoReachabilityIssues(intent, reachabilitySeed(evidence));
   checks.push({ id: "I12 带下限可达", pass: unreachable.length === 0, detail: unreachable.join(";") || "各阶段 lo 均可达" });
 
+  if (evidence.target.distance === "HM") checks.push({ id: "HM 减量周数", pass: intent.taper_weeks <= 2, detail: "半马减量含比赛周至多2周" });
   return checks;
 }
 

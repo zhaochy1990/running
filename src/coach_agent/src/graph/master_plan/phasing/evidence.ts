@@ -1,3 +1,4 @@
+import { RACE_DISTANCES_M } from "@stride/contract";
 import { z } from "zod/v4";
 import { isRunLikeActivity, normalizeSessionClass } from "../../../data/activityClassification.js";
 import type { ContextSnapshot } from "../context.js";
@@ -61,6 +62,7 @@ export const PhaseEvidenceSchema = z.object({
     race: z.string(),
     target_time: z.string(),
     goal_pace: z.string(),
+    distance: z.enum(["FM", "HM"]).default("FM"),
     /** 相对当前等效水平（current_capability）的提升幅度（%，1 位小数）：正值=目标快于当前水平、负值=慢于、null=无法估计。锚按目标距离取。 */
     improvement_pct: z.number().nullable(),
   }),
@@ -97,7 +99,7 @@ export type PhaseEvidence = z.infer<typeof PhaseEvidenceSchema>;
 
 export interface PhasingGoalInput {
   raceName: string;
-  /** 目标距离（master 判断层教义只验证过 FM——HM 由滚动链路透传，教义另立前生产仍只出 FM 计划）。 */
+  /** 已确认目标的标准项目，新建与滚动共用。 */
   distance: "FM" | "HM";
   targetTime: string;
   weeklyRunDaysMax: number;
@@ -115,8 +117,6 @@ export interface PhasingActivityInput {
   /** 整课时长（s，#837 训练进步推断用；缺省时该课不参与推断）。 */
   durationS?: number | null;
 }
-
-const RACE_DISTANCE_KM = 42.195;
 
 const parseHms = (s: string) => {
   const [h = 0, m = 0, sec = 0] = s.split(":").map(Number);
@@ -429,7 +429,7 @@ export function buildPhaseEvidence(snapshot: ContextSnapshot, activities: Phasin
   const pbs: Record<string, string> = {};
   for (const pb of snapshot.personal_bests) pbs[pb.distance] = `${Math.floor(pb.time_sec / 60)}:${String(Math.round(pb.time_sec % 60)).padStart(2, "0")}`;
   const targetSec = parseHms(goal.targetTime);
-  const goalPaceSPerKm = targetSec / RACE_DISTANCE_KM;
+  const goalPaceSPerKm = targetSec / (RACE_DISTANCES_M[goal.distance] / 1000);
   const capability = deriveCapability(snapshot, activities, asOfDay, targetSec, goal.distance);
   const fmPb = snapshot.personal_bests.find((pb) => pb.distance === "FM") ?? null;
   const habitual: HabitualBaseline = habitualBaseline(buildWeeklySeries(activities, asOfDay));
@@ -437,7 +437,8 @@ export function buildPhaseEvidence(snapshot: ContextSnapshot, activities: Phasin
   return PhaseEvidenceSchema.parse({
     as_of: asOfDay,
     target: {
-      race: `全程马拉松 ${goal.raceName}`,
+      race: `${goal.distance === "HM" ? "半程马拉松" : "全程马拉松"} ${goal.raceName}`,
+      distance: goal.distance,
       target_time: goal.targetTime,
       goal_pace: `${fmtPace(goalPaceSPerKm)}/km`,
       improvement_pct: capability.improvement_pct,

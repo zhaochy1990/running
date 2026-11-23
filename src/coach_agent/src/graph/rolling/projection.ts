@@ -19,6 +19,7 @@ import {
   type LoadPlan,
   type MasterPlanGraphOutcome,
   planningStartDate,
+  RACE_DISTANCES_M,
   type RollingMasterInput,
   shanghaiDay,
   type WeeklyPlan,
@@ -33,13 +34,14 @@ import { projectZones } from "../master_plan/phasing/content/project.js";
 import { buildPhaseEvidence, type PhaseEvidence, type PhasingActivityInput } from "../master_plan/phasing/evidence.js";
 import { buildWeeklySeries, habitualBaseline, type WeeklySeries } from "../master_plan/phasing/load/baseline.js";
 import { buildLoadPlan } from "../master_plan/phasing/load/expand.js";
+import { halfMarathonTrainingPace, runwayWeeks as raceRunwayWeeks } from "../master_plan/phasing/racePolicy.js";
 import type { AdjustRecipe } from "./adjust/recipes.js";
 import { type ExistingWeekRef, evaluateAdjustWindow } from "./adjust/window.js";
 import { buildWeeklyDocs, freezePastSessions, mergeAdjustedWeekDocs } from "./weeklyDocs.js";
 import { currentWeekOf, evaluateRollingWindow, type RollingWindow } from "./window.js";
 
 /** 全马拉松标准距离（与 master content 节点同源）。 */
-const RACE_DISTANCE_M = 42195;
+
 /** 内容层外层重试上限（fallback 后整段再生成，同 master content 节点）。 */
 const MAX_OUTER_CONTENT_TRIES = 3;
 /** L1 活动回看窗（master initialize 同款：月度焦点 6 个月 + 余量）。 */
@@ -232,6 +234,9 @@ export async function runProjectionCore(deps: RollingDeps, input: RollingProject
   // ③ L3 重展开（存量 policy + 新鲜基线 + 历史实际周）→ 全跑道新骨架；六门挂 = infeasible。
   const skeletonNew = buildLoadPlan({
     intent: master.policy,
+    distance: master.race.distance ?? "FM",
+    raceDate: master.race.date,
+    weeklyRunDaysMax: master.availability.weeklyRunDaysMax,
     runwayWeeks: master.totalWeeks,
     baseline,
     recentWeeksKm,
@@ -275,7 +280,7 @@ export async function runProjectionCore(deps: RollingDeps, input: RollingProject
     // 按 recipe.vdotShift 偏移——配速放缓一档=VDOT −1）；kmDerateFirstWeek
     // 在骨架源头上降载窗口首周（行、偏差、周文档 target km 三处同源生效）。
     const vdotShift = adjust?.recipe.vdotShift ?? 0;
-    const projection = projectZones(vdot + vdotShift, targetSec, RACE_DISTANCE_M, master.totalWeeks);
+    const projection = projectZones(vdot + vdotShift, targetSec, RACE_DISTANCES_M[master.race.distance ?? "FM"], master.totalWeeks);
     const derate = adjust?.recipe.kmDerateFirstWeek;
     const skeletonForBatch: LoadPlan =
       derate != null
@@ -296,8 +301,11 @@ export async function runProjectionCore(deps: RollingDeps, input: RollingProject
         totalKm: week.km,
         longRunKm: week.lr,
         qualitySessions: qualityCap != null ? Math.min(week.q, qualityCap) : week.q,
-        qualityFamily: QUALITY_FAMILY_OF[week.canonical] ?? "",
+        qualityFamily: master.race.distance === "HM" && week.canonical === "final_quality" ? "T 巡航与半马配速分段" : (QUALITY_FAMILY_OF[week.canonical] ?? ""),
         zones: projected.zones,
+        ...(master.race.distance === "HM"
+          ? { distance: "HM" as const, specificPaceSKm: halfMarathonTrainingPace(projected.vdot, targetSec / (RACE_DISTANCES_M.HM / 1000)) }
+          : {}),
         ...(adjust != null ? { guidance: adjust.recipe.guidance } : {}),
       };
     });
@@ -312,10 +320,11 @@ export async function runProjectionCore(deps: RollingDeps, input: RollingProject
         fitness: { ctl: evidence.fitness.ctl, atl: evidence.fitness.atl, form: evidence.fitness.form },
       },
       race: {
+        distance: master.race.distance ?? "FM",
         name: master.race.name,
         date: master.race.date,
         targetTime: master.race.targetTime,
-        goalPaceSKm: targetSec / (RACE_DISTANCE_M / 1000),
+        goalPaceSKm: targetSec / (RACE_DISTANCES_M[master.race.distance ?? "FM"] / 1000),
       },
       planStartMonday: master.planStartMonday,
       provenSessions: buildProvenSessions(activities, asOfDay),
@@ -353,6 +362,12 @@ export async function runProjectionCore(deps: RollingDeps, input: RollingProject
         fail: items.filter((item) => item.verdict === "fail").length,
       },
     };
+    if (master.race.distance === "HM" && audit.summary.fail > 0)
+      return {
+        decision: "infeasible",
+        reason: "半马课表硬校验失败",
+        failedChecks: items.filter((item) => item.verdict === "fail").map((item) => ({ id: item.item, detail: item.actual })),
+      };
     if (audit.summary.fail > 0)
       logger.warn(
         { fail: audit.summary.fail, items: items.filter((item) => item.verdict === "fail").map((item) => item.item) },

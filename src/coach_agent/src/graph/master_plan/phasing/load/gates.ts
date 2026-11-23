@@ -24,7 +24,14 @@ const LR_LOW_VOLUME_FLOOR_RATIO = 0.36;
 const r1 = (x: number) => Math.round(x * 10) / 10;
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 
-export function validateLoad(intent: PhaseDivisionIntent, weeks: LoadWeek[], recentWeeksKm: number[], historyWeeks = 0): LoadCheck[] {
+export function validateLoad(
+  intent: PhaseDivisionIntent,
+  weeks: LoadWeek[],
+  recentWeeksKm: number[],
+  historyWeeks = 0,
+  distance: "FM" | "HM" = "FM",
+): LoadCheck[] {
+  const hm = distance === "HM";
   const checks: LoadCheck[] = [];
   const km = weeks.map((w) => w.km);
   const actual4 = recentWeeksKm.slice(-4);
@@ -115,7 +122,7 @@ export function validateLoad(intent: PhaseDivisionIntent, weeks: LoadWeek[], rec
   const shareOk = lrs.every((w) => (w.lr ?? 0) <= w.km * (w.km < 60 ? 0.42 : 0.36) + TOLERANCE_KM);
   // 短跑道（≤4 周，2026-11-10 用户拍板）：跳过 LR 递进下限——不是在建长跑能力，
   // 而是在维持状态去比赛；构造器的 LR 天花板（TAPER_LR_MAX_KM=25）已兜住上限
-  const lrFloor = weeks.length <= 4 ? 0 : peak >= LR_LOW_VOLUME_PEAK_KM ? 22 : peak * LR_LOW_VOLUME_FLOOR_RATIO;
+  const lrFloor = hm ? 0 : weeks.length <= 4 ? 0 : peak >= LR_LOW_VOLUME_PEAK_KM ? 22 : peak * LR_LOW_VOLUME_FLOOR_RATIO;
   const monoOk = (() => {
     let seg: number[] = [];
     let prevCanonical = "";
@@ -132,7 +139,7 @@ export function validateLoad(intent: PhaseDivisionIntent, weeks: LoadWeek[], rec
   })();
   checks.push({
     id: "L3 LR曲线",
-    pass: lrMax >= lrFloor - TOLERANCE_KM && lrMax <= 34 && shareOk && weeks.at(-1)?.lr == null && monoOk,
+    pass: lrMax >= lrFloor - TOLERANCE_KM && lrMax <= (hm ? 24 : 34) && shareOk && weeks.at(-1)?.lr == null && monoOk,
     detail: `峰${lrMax}/下限${r1(lrFloor)} 份额${shareOk ? "✓" : "✗"} 单调${monoOk ? "✓" : "✗"}${factNote}`,
   });
 
@@ -152,8 +159,10 @@ export function validateLoad(intent: PhaseDivisionIntent, weeks: LoadWeek[], rec
   // final_quality 非赛周最大 km；N=1 单周跑道与无平台参照的衰退跑道豁免子判据
   // ——赛周即全计划，无 taper 结构可验）
   const raceKm = km.at(-1)!;
-  const nonRaceKm = raceKm - RACE_KM;
-  const activationOk = nonRaceKm >= ACTIVATION_MIN_KM - TOLERANCE_KM && nonRaceKm <= ACTIVATION_MAX_KM + TOLERANCE_KM;
+  const nonRaceKm = raceKm - (hm ? 21.0975 : RACE_KM);
+  const activationOk = hm
+    ? nonRaceKm >= -TOLERANCE_KM && nonRaceKm <= peak * 0.25 + TOLERANCE_KM
+    : nonRaceKm >= ACTIVATION_MIN_KM - TOLERANCE_KM && nonRaceKm <= ACTIVATION_MAX_KM + TOLERANCE_KM;
   const arcStart = weeks.findLastIndex((w) => w.canonical === "final_quality" && w.role === "progress");
   const taperKms = weeks.filter((w) => w.role === "taper").map((w) => w.km);
   const monoDown =
@@ -166,7 +175,7 @@ export function validateLoad(intent: PhaseDivisionIntent, weeks: LoadWeek[], rec
   const plateauRef = Math.max(0, ...weeks.filter((w) => w.canonical === "final_quality" && w.role !== "race").map((w) => w.km));
   const singleWeek = weeks.length < 2;
   const cutDepthOk = singleWeek || plateauRef <= 0 || (raceKm >= plateauRef * 0.5 - TOLERANCE_KM && raceKm <= plateauRef * 0.7 + TOLERANCE_KM) || activationOk;
-  const bandOk = singleWeek || (raceKm >= RACE_KM - TOLERANCE_KM && ((raceKm <= peak * 0.72 && raceKm >= peak * 0.35) || activationOk));
+  const bandOk = singleWeek || (raceKm >= (hm ? 21.0975 : RACE_KM) - TOLERANCE_KM && ((raceKm <= peak * 0.72 && raceKm >= peak * 0.35) || activationOk));
   checks.push({
     id: "L4 taper",
     pass: bandOk && monoDown && cutDepthOk,

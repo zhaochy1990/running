@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { RACE_DISTANCES_M } from "../raceDistance.js";
 import { RunWorkoutLenientSchema, RunWorkoutSchema, type WorkoutTarget } from "../workout/schema.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -13,7 +14,7 @@ const UTC_ISO = /(?:Z|[+-]00:00)$/;
 const EMBEDDED_RACE_PACE = /(?:\b(?:MP|HMP|RP)\b|race[- ]?pace|target[- ]?pace|比赛配速|目标配速|马拉松配速|半马配速)/i;
 const ORDINARY_FILLER_PURPOSE =
   /^\s*(?:(?:ordinary|easy|recovery|filler|commute)\s+)*(?:easy|recovery|filler|commute)\s+run\s*[.!]?\s*$|^\s*(?:普通)?(?:轻松|恢复|填充|通勤)跑(?:训练)?\s*[。！]?\s*$/i;
-const RACE_DISTANCE_KM = { FM: 42.195, HM: 21.0975 } as const;
+const RACE_DISTANCE_KM = { FM: RACE_DISTANCES_M.FM / 1000, HM: RACE_DISTANCES_M.HM / 1000 } as const;
 const RACE_TIME = /^(\d+):(\d{2}):(\d{2})$/;
 
 /** Canonical phase names, stored in English in master_plan JSON. */

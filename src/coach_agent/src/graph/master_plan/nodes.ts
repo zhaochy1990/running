@@ -29,12 +29,14 @@ import {
   type PhaseDivisionIntent,
   PhaseDivisionIntentSchema,
   planningStartDate,
+  RACE_DISTANCES_M,
   shanghaiDay,
   type WeeklyPlan,
 } from "@stride/contract";
 import { z } from "zod/v4";
 import { measureExecutionTimeAsync } from "../../utils/performance.js";
 import { buildWeeklyDocs } from "../rolling/weeklyDocs.js";
+import { type ContextSnapshot, ContextSnapshotSchema, type MasterPlanContextProvider } from "./context.js";
 import {
   type AssessmentFacts,
   canonicalizeAssessmentSummary,
@@ -48,7 +50,6 @@ import {
   withAuthoritativeLevel,
   withBackfilledClaimCitations,
 } from "./goalAssessment/assessment.js";
-import { type ContextSnapshot, ContextSnapshotSchema, type MasterPlanContextProvider } from "./context.js";
 import type { GoalAssessmentModel } from "./goalAssessment/GoalAssessmentModel.js";
 import { infrastructureFailure, logger, logSwallowedFailure, modelFailure, qualityFailure } from "./nodes/shared.js";
 import { danielsAudit } from "./phasing/content/danielsAudit.js";
@@ -60,6 +61,7 @@ import type { GateCheck } from "./phasing/gates.js";
 import { generatePhaseDivisionIntent, type PhasingModel } from "./phasing/generate.js";
 import { buildWeeklySeries, habitualBaseline } from "./phasing/load/baseline.js";
 import { buildLoadPlan } from "./phasing/load/expand.js";
+import { halfMarathonTrainingPace, runwayWeeks as raceRunwayWeeks } from "./phasing/racePolicy.js";
 import { buildV2Snapshot } from "./v2Snapshot.js";
 
 export interface MasterPlanGraphDependencies {
@@ -107,10 +109,6 @@ export const GraphState = new StateSchema({
   artifactRevision: z.int().positive().default(1),
   outcome: MasterPlanGraphOutcomeSchema.optional(),
 });
-
-/** 第 1 周周一 + n 周。 */
-const weeksBetween = (monday: string, day: string): number =>
-  Math.ceil((Date.parse(`${day}T00:00:00Z`) - Date.parse(`${monday}T00:00:00Z`)) / (7 * 86_400_000));
 
 export class MasterPlanNodes {
   constructor(private readonly dependencies: MasterPlanGraphDependencies) {}
@@ -252,9 +250,7 @@ export class MasterPlanNodes {
     logger.info("L1, 生成用户的训练画像, request id: %s", state.request.request_id);
     const { request, context, snapshot, activities } = requiredWithBaseline(state);
     const goal = aGoalOf(request);
-    // 判断层教义只验证过「带目标的 FM」（daniels.md）；HM 与完赛目标缺配速锚，
-    // 与其用编造的目标糊过去，不如让它带着明确原因失败。
-    if (goal.distance !== "FM") return { outcome: qualityFailure(request, context, `unsupported_goal_distance:${goal.distance}`) };
+    // 时间目标提供比赛配速锚，完赛目标需另行定义训练策略。
     if (goal.target_time === null) return { outcome: qualityFailure(request, context, "unsupported_goal:finish_only") };
     // devops#1013 AC2：无活动证据不建训练画像——哪怕校准/比赛锚侥幸存在，
     // 零活动窗口的“画像”只是编造，显式失败并说明缺证据。
@@ -265,7 +261,7 @@ export class MasterPlanNodes {
         activities,
         {
           raceName: goal.race_name,
-          distance: "FM",
+          distance: goal.distance,
           targetTime: goal.target_time,
           weeklyRunDaysMax: request.availability.weekly_run_days_max,
         },
@@ -286,7 +282,7 @@ export class MasterPlanNodes {
     const { request, context, evidence } = requiredWithEvidence(state);
     const monday = planningStartDate(asOfOf(request));
     const goal = aGoalOf(request);
-    const runwayWeeks = weeksBetween(monday, goal.race_date);
+    const runwayWeeks = raceRunwayWeeks(monday, goal.race_date, goal.distance);
     if (runwayWeeks < MIN_RUNWAY_WEEKS) return { outcome: qualityFailure(request, context, `runway_too_short:${runwayWeeks}w`) };
     try {
       const outcome = await generatePhaseDivisionIntent({ evidence, runwayWeeks, raceDate: goal.race_date }, this.dependencies.phasingModel);
@@ -303,11 +299,14 @@ export class MasterPlanNodes {
     const { request, context, policy, activities } = requiredWithPolicy(state);
     const monday = planningStartDate(asOfOf(request));
     const goal = aGoalOf(request);
-    const runwayWeeks = weeksBetween(monday, goal.race_date);
+    const runwayWeeks = raceRunwayWeeks(monday, goal.race_date, goal.distance);
     try {
       const series = buildWeeklySeries(activities, asOfOf(request));
       const skeleton = buildLoadPlan({
         intent: policy,
+        distance: goal.distance,
+        raceDate: goal.race_date,
+        weeklyRunDaysMax: request.availability.weekly_run_days_max,
         runwayWeeks,
         baseline: habitualBaseline(series),
         recentWeeksKm: series.weeks.slice(-4).map((week) => week.km),
@@ -329,14 +328,14 @@ export class MasterPlanNodes {
     if (provenSessions.length > 0) logger.info({ count: provenSessions.length, latest: provenSessions[0]!.name }, "proven sessions fed to L4a (#857)");
     const monday = planningStartDate(asOfOf(request));
     const goal = aGoalOf(request);
-    const runwayWeeks = weeksBetween(monday, goal.race_date);
+    const runwayWeeks = raceRunwayWeeks(monday, goal.race_date, goal.distance);
     const vdot = evidence.current_capability.vdot;
     if (vdot === null) return { outcome: qualityFailure(request, context, "no_current_capability_vdot") };
     const targetSec = parseHms(goal.target_time!);
     if (targetSec === null) return { outcome: qualityFailure(request, context, "invalid_target_time") };
 
     try {
-      const projection = projectZones(vdot, targetSec, RACE_DISTANCE_M, runwayWeeks);
+      const projection = projectZones(vdot, targetSec, RACE_DISTANCES_M[goal.distance], runwayWeeks);
       const rows: ContentWeekRow[] = skeleton.weeks.map((week, index) => {
         const projected = projection.weeks[index];
         if (projected === undefined) throw new Error(`projectZones 缺第 ${week.week} 周带`);
@@ -347,8 +346,11 @@ export class MasterPlanNodes {
           totalKm: week.km,
           longRunKm: week.lr,
           qualitySessions: week.q,
-          qualityFamily: QUALITY_FAMILY_OF[week.canonical] ?? "",
+          qualityFamily: goal.distance === "HM" && week.canonical === "final_quality" ? "T 巡航与半马配速分段" : (QUALITY_FAMILY_OF[week.canonical] ?? ""),
           zones: projected.zones,
+          ...(goal.distance === "HM"
+            ? { distance: goal.distance, specificPaceSKm: halfMarathonTrainingPace(projected.vdot, targetSec / (RACE_DISTANCES_M.HM / 1000)) }
+            : {}),
         };
       });
       const contentInput: ContentGeneratorInput = {
@@ -359,10 +361,11 @@ export class MasterPlanNodes {
           fitness: { ctl: evidence.fitness.ctl, atl: evidence.fitness.atl, form: evidence.fitness.form },
         },
         race: {
+          distance: goal.distance,
           name: goal.race_name,
           date: goal.race_date,
           targetTime: goal.target_time!,
-          goalPaceSKm: targetSec / (RACE_DISTANCE_M / 1000),
+          goalPaceSKm: targetSec / (RACE_DISTANCES_M[goal.distance] / 1000),
         },
         planStartMonday: monday,
         provenSessions,
@@ -564,7 +567,6 @@ export class MasterPlanNodes {
   };
 }
 
-const RACE_DISTANCE_M = 42195;
 /** 短于 5 周跑不出丹尼尔斯五阶段（L2 门也会挡，这里早退省一次 LLM 调用）。 */
 // 最低跑道=1（2026-11-10 用户拍板）：哪怕只剩一周也不能拒绝用户想训练的意愿——
 // 短跑道自动坍缩为赛前微周期（L2 坍缩阶梯 ≤3 周=final_quality 即 taper+激活）

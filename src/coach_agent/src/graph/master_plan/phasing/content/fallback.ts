@@ -38,6 +38,7 @@ const easyBand = (row: ContentWeekRow): [number, number] => {
  * 取整后复核 mid（round 可使 mid 漂 +0.5s——超 C13 容差时整体下调 1s）。
  */
 const mNarrow = (row: ContentWeekRow, goalPaceSKm: number): [number, number] => {
+  if (row.specificPaceSKm != null) return [Math.round(row.specificPaceSKm - 5), Math.round(row.specificPaceSKm + 5)];
   const [mFast, mSlow] = row.zones.m ?? [null, null];
   if (mFast == null || mSlow == null) throw new Error(`templateFallback: 第${row.week}周 m 带缺失`);
   let anchor = row.phase === "final_quality" ? goalPaceSKm : Math.max(mFast, goalPaceSKm);
@@ -64,11 +65,11 @@ function raceWeekCourses(row: ContentWeekRow, input: ContentGeneratorInput): Wee
   const alloc = allocateRaceWeek(row, race);
   const courses: WeekBag["courses"] = [
     course(
-      `${race.name} 42.2km`,
+      `${race.name} ${race.distance === "HM" ? "21.1" : "42.2"}km`,
       "M",
       `比赛课：${race.name}按目标 ${race.targetTime}（配速 ${fmtPace(goal)}/km）执行，前半程克制兴奋按计划补给，后半程专注动作放松。`,
       "起跑不冲，按配速带下沿跟进；补给按赛前演练节奏执行。",
-      [{ repeat: 1, steps: [step("work", { kind: "distance_m", value: 42195 }, pace(goalBand))] }],
+      [{ repeat: 1, steps: [step("work", { kind: "distance_m", value: race.distance === "HM" ? 21097.5 : 42195 }, pace(goalBand))] }],
     ),
   ];
   if (alloc.activation != null) {
@@ -87,7 +88,9 @@ function raceWeekCourses(row: ContentWeekRow, input: ContentGeneratorInput): Wee
               step("work", { kind: "distance_m", value: Math.round(alloc.activation.bodyKm * 1000) }, pace(mNarrow(row, race.goalPaceSKm))),
             ],
           },
-          { repeat: 4, steps: [step("work", { kind: "distance_m", value: 100 }, { kind: "open", low: null, high: null })] },
+          ...(race.distance === "HM"
+            ? []
+            : [{ repeat: 4, steps: [step("work", { kind: "distance_m", value: 100 }, { kind: "open", low: null, high: null })] }]),
           { repeat: 1, steps: [step("cooldown", { kind: "time_s", value: 10 * 60 }, pace(easyBand(row)))] },
         ],
       ),
@@ -103,7 +106,7 @@ function normalWeekCourses(row: ContentWeekRow, input: ContentGeneratorInput, re
   const alloc = allocateWeek(row, input.athlete.weeklyRunDaysMax, regeneration);
   // #837+C14：final_quality 进展周长跑须含 goal_pace 段（专项化周期原则）——
   // 模板简版=前 70% E + 后 30% goal_pace±5s（渐加速形态；P7 遗留实现 2026-11-01 补齐）
-  const goalSeg = row.phase === "final_quality" && row.role === "progress";
+  const goalSeg = input.race.distance !== "HM" && row.phase === "final_quality" && row.role === "progress";
   const frontKm = Math.round(alloc.lr * 1000 * (goalSeg ? 0.7 : 1));
   const backKm = Math.round(alloc.lr * 1000) - frontKm;
   const goalBand: readonly [number, number] = [input.race.goalPaceSKm - 5, input.race.goalPaceSKm + 5];
@@ -127,9 +130,9 @@ function normalWeekCourses(row: ContentWeekRow, input: ContentGeneratorInput, re
     const m = mNarrow(row, input.race.goalPaceSKm);
     courses.push(
       course(
-        `M ${r1(alloc.mBodyKm)}km`,
+        `${input.race.distance === "HM" ? "半马配速" : "M"} ${r1(alloc.mBodyKm)}km`,
         "M",
-        `马配专项课：M 配速主体 ${r1(alloc.mBodyKm)}km 演练比赛节奏${row.role === "taper" ? "，减量期保持强度触感（维持原则）" : "，专项耐力核心刺激"}。`,
+        `${input.race.distance === "HM" ? "半马专项课：半马配速" : "马配专项课：M 配速"}主体 ${r1(alloc.mBodyKm)}km 演练比赛节奏${row.role === "taper" ? "，减量期保持强度触感（维持原则）" : "，专项耐力核心刺激"}。`,
         "主体按 M 带执行，心率漂移超上限即放 5s/km。",
         [
           {
