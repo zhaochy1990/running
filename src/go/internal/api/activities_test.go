@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -346,6 +347,78 @@ func TestActivityList_MonthlyRoundingAndItem(t *testing.T) {
 	}
 	if it.StrideDose == nil || *it.StrideDose != 72.5 {
 		t.Fatalf("stride_training_dose = %v, want 72.5", it.StrideDose)
+	}
+}
+
+// The route_thumb channel is one field carrying three generations (devops#1037):
+// a legacy v1 single-polyline array, the versioned v2 multi-stroke object with
+// the real endpoints and width metrics, and null for nothing-to-draw. The list
+// must serve whichever is stored unchanged — old clients keep parsing the
+// array rows they see, new clients branch on the "v" marker.
+func TestActivityList_RouteThumbServesAllShapeGenerations(t *testing.T) {
+	v1Shape := `[[5.0,95.0],[50.0,20.0],[95.0,5.0]]`
+	v2Shape := `{"v":2,"strokes":[[[5.0,95.0],[50.0,20.0]],[[50.0,20.0],[95.0,5.0]]],"start":[5.0,95.0],"end":[95.0,5.0],"short":10.0,"long":90.0,"travel":127.3}`
+	h := newActivityHarness(t, &fakeActivityStore{
+		page: &storage.ActivityPage{
+			Total: 3,
+			Rows: []storage.Activity{
+				{LabelID: "legacy", SportType: 100, Date: time.Date(2026, 10, 1, 1, 0, 0, 0, time.UTC), RouteThumbJSON: strptr(v1Shape)},
+				{LabelID: "current", SportType: 100, Date: time.Date(2026, 11, 1, 1, 0, 0, 0, time.UTC), RouteThumbJSON: strptr(v2Shape)},
+				{LabelID: "indoor", SportType: 100, Date: time.Date(2026, 11, 2, 1, 0, 0, 0, time.UTC), RouteThumbJSON: nil},
+			},
+			MonthlySummaries: map[string]storage.ActivityMonthly{},
+		},
+	})
+	w := h.do(http.MethodGet, "/api/"+activityUserA+"/activities", h.bearer(t, activityUserA))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200", w.Code)
+	}
+	var resp activitiesListResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Activities) != 3 {
+		t.Fatalf("activities len = %d, want 3", len(resp.Activities))
+	}
+
+	assertSameJSON := func(t *testing.T, label string, got json.RawMessage, want string) {
+		t.Helper()
+		var gotVal, wantVal any
+		if err := json.Unmarshal(got, &gotVal); err != nil {
+			t.Fatalf("%s route_thumb %s is not JSON: %v", label, got, err)
+		}
+		if err := json.Unmarshal([]byte(want), &wantVal); err != nil {
+			t.Fatalf("want %s is not JSON: %v", want, err)
+		}
+		if !reflect.DeepEqual(gotVal, wantVal) {
+			t.Fatalf("%s route_thumb = %s, want %s", label, got, want)
+		}
+	}
+	assertSameJSON(t, "legacy", resp.Activities[0].RouteThumb, v1Shape)
+	assertSameJSON(t, "current", resp.Activities[1].RouteThumb, v2Shape)
+	if got := string(resp.Activities[2].RouteThumb); got != "null" {
+		t.Fatalf("indoor route_thumb = %q, want JSON null", got)
+	}
+
+	// The v2 object carries the fields a client needs: version marker,
+	// strokes, real endpoints, width metrics.
+	var shape struct {
+		V       int           `json:"v"`
+		Strokes [][][]float64 `json:"strokes"`
+		Start   []float64     `json:"start"`
+		End     []float64     `json:"end"`
+		Short   float64       `json:"short"`
+		Long    float64       `json:"long"`
+		Travel  float64       `json:"travel"`
+	}
+	if err := json.Unmarshal(resp.Activities[1].RouteThumb, &shape); err != nil {
+		t.Fatalf("decode v2 shape: %v", err)
+	}
+	if shape.V != 2 || len(shape.Strokes) != 2 || len(shape.Start) != 2 || len(shape.End) != 2 {
+		t.Fatalf("v2 shape = %+v, want v=2, 2 strokes and paired endpoints", shape)
+	}
+	if shape.Short <= 0 || shape.Long <= 0 || shape.Travel <= 0 {
+		t.Fatalf("v2 width metrics = %+v, want positive", shape)
 	}
 }
 

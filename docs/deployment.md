@@ -196,14 +196,20 @@ have GPS but no stored shape — pure compute, no COS involvement, so the worker
 needs no `cos:` credentials at all anymore (its only remaining bucket client is
 the fail-fast ts-blob store).
 
-`route_thumbnails_shape_backfill` (devops#830) is the operator-triggered
-historical fill of the same column for rows that have GPS but no stored shape
-(`route_thumb_json IS NULL AND has_gps`). Idempotent per athlete: filled rows
-drop out of the candidate query, a rerun reports `{"candidates":0}`; traces
-with too few valid fixes are counted as `no_gps` and left NULL on purpose (the
-client keeps the sport-icon fallback). Enqueue it once per existing user via
-the internal `POST /jobs` after the worker deploys, in athlete batches if the
-gap is large.
+`route_thumbnails_shape_backfill` (devops#830, version-scoped in devops#1037)
+is the operator-triggered historical recompute of the same column: since the
+v2 wiring it selects rows whose stored shape is missing or older than the
+current algorithm version (`has_gps AND COALESCE(JSON_EXTRACT(route_thumb_json,
+'$.v'), 0) < 2`), optionally narrowed to a Shanghai-date window via the
+`date_from`/`date_to` job inputs. Idempotent per athlete and window:
+recomputed rows carry the current version and drop out of the candidate query,
+a rerun reports `{"candidates":0}`; traces with too few valid fixes are
+counted as `no_gps` and left NULL on purpose (the client keeps the sport-icon
+fallback). The sync-pipeline `route_shapes` step stays a gap fill — it never
+upgrades stale versions, so history rewrites happen only through this
+operator-triggered job. Enqueue it once per existing user via the internal
+`POST /jobs` when a recompute is wanted, in athlete batches if the gap is
+large.
 
 Retired surface (devops#829):
 

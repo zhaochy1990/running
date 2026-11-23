@@ -454,11 +454,12 @@ func newTSBlobStore(cfg config.TSBlob) (tsstore.Store, error) {
 // `watch_sync` runs a user's watch-data sync (ADR 0011); `calibration` computes
 // the athlete baseline and `compute` derives load/PMC/PBs from synced data,
 // mode-aware (ADR 0020); `route_shapes` fills the route_thumb_json shape
-// channel for the sync pipelines (devops#829 — the PNG-rendering
-// route_thumbnails step is retired and kept one version as a logged no-op
-// tombstone, and route_thumbnails_backfill is gone entirely), with
-// `route_thumbnails_shape_backfill` as the operator-triggered historical fill
-// (devops#830);
+// channel for the sync pipelines with the version-2 multi-stroke shape
+// (devops#1037; the PNG-rendering route_thumbnails step is retired since
+// devops#829 and kept one version as a logged no-op tombstone, and
+// route_thumbnails_backfill is gone entirely), with
+// `route_thumbnails_shape_backfill` as the operator-triggered, version-scoped
+// and date-windowed historical recompute (devops#830/#1037);
 // `race_calendar_sync` mirrors the World Athletics calendar (ccConfig),
 // preceded by `fetch_wa_api_key` key discovery (waClient); `chinaath_race_calendar_sync`
 // mirrors the 中国田协 catalogue (caConfig); `homecity_recompute` refreshes

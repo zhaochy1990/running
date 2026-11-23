@@ -3,6 +3,8 @@ package storage
 import (
 	"context"
 	"fmt"
+
+	"github.com/zhaochy1990/stride/internal/thumbnail"
 )
 
 // RouteThumbShapeCandidates returns the label IDs of a user's activities that
@@ -29,6 +31,48 @@ func (s *Store) RouteThumbShapeCandidates(ctx context.Context, userID string) ([
 		Order("date DESC").
 		Pluck("label_id", &ids).Error; err != nil {
 		return nil, fmt.Errorf("storage: route thumb shape candidates: %w", err)
+	}
+	return ids, nil
+}
+
+// RouteThumbRecomputeScope bounds the historical shape recompute
+// (devops#1037): optional Shanghai-date bounds on the activity date, the same
+// convention the activity list's date_from/date_to use. Empty strings mean no
+// bound on that side.
+type RouteThumbRecomputeScope struct {
+	DateFrom string // Shanghai YYYY-MM-DD lower bound; "" = none
+	DateTo   string // Shanghai YYYY-MM-DD upper bound; "" = none
+}
+
+// RouteThumbRecomputeCandidates returns the label IDs of a user's activities
+// whose stored shape is older than the algorithm version the pipeline
+// currently writes: a NULL route_thumb_json (never filled) or a v1
+// `[[x,y],...]` array both count as stale, because JSON_EXTRACT of "$.v" on
+// either yields NULL. Rows already carrying the current version drop out,
+// which is what makes the recompute idempotent; the date scope narrows the
+// scan when an operator wants to recompute a window rather than a whole
+// history. This is deliberately NOT the sync step's candidate query: a routine
+// sync must not kick off a bulk historical rewrite (devops#1037 keeps
+// production recompute operator-triggered).
+func (s *Store) RouteThumbRecomputeCandidates(ctx context.Context, userID string, scope RouteThumbRecomputeScope) ([]string, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	q := s.db.WithContext(ctx).
+		Model(&Activity{}).
+		Where("user_id = ?", uid).
+		Where("has_gps = ?", true).
+		Where("COALESCE(JSON_EXTRACT(route_thumb_json, '$.v'), 0) < ?", thumbnail.ShapeVersion)
+	if scope.DateFrom != "" {
+		q = q.Where("DATE(date + INTERVAL 8 HOUR) >= ?", scope.DateFrom)
+	}
+	if scope.DateTo != "" {
+		q = q.Where("DATE(date + INTERVAL 8 HOUR) <= ?", scope.DateTo)
+	}
+	var ids []string
+	if err := q.Order("date DESC").Pluck("label_id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("storage: route thumb recompute candidates: %w", err)
 	}
 	return ids, nil
 }

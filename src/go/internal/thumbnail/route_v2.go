@@ -78,10 +78,15 @@ const (
 	v2AnchorReplaceDistance = 0.18
 	// v2SampleStep densifies polylines for coverage sampling and Hausdorff.
 	v2SampleStep = 0.2
-	// v2ShapeVersion is the serialization marker distinguishing the v2
-	// multi-stroke JSON object from the legacy v1 `[[x,y],...]` array.
-	v2ShapeVersion = 2
 )
+
+// ShapeVersion is the route-shape algorithm version the production pipeline
+// currently writes: the "v" marker EncodeV2 stamps on the serialized object.
+// The recompute side keys its candidate predicate on it (a stored shape whose
+// version is below it is stale), so bumping this is what a future v3 rollout
+// would flip. It equals the v2 format's decoder version — DecodeV2 below still
+// accepts exactly the v2 format.
+const ShapeVersion = 2
 
 // ShapeV2 is the versioned multi-stroke route shape: strokes the client draws
 // as separate paths in time order, the trace's real first and last valid fix
@@ -799,8 +804,8 @@ func DecodeV2(s string) (*ShapeV2, error) {
 	if err := json.Unmarshal([]byte(s), &raw); err != nil {
 		return nil, err
 	}
-	if raw.V != v2ShapeVersion {
-		return nil, errors.New("route shape: version must be 2")
+	if raw.V != ShapeVersion {
+		return nil, errors.New("route shape: version must be " + strconv.Itoa(ShapeVersion))
 	}
 	if len(raw.Strokes) == 0 {
 		return nil, errors.New("route shape: no strokes")
