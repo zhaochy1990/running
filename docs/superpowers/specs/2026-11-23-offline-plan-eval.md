@@ -2,51 +2,51 @@
 
 设计草案 · 2026-11-23 · [查看架构图和实体属性图](2026-11-23-plan-eval-diagrams.html)
 
-一个 **Scenario** 同时定义测试目标和测试数据。创建测评任务时选择 Coach Agent 版本和场景；例如场景内有三份跑者快照，平台就为该任务建立三个独立的快照执行项。每项分别调用生成模型、保存 Artifact、执行双路评分；任务报告汇总三项结果。训练计划是 v1 支持的 Artifact 类型。
+一个 **EvaluationTask** 用一个 Coach Agent 版本运行一个或多个 **Scenario**。每个 Scenario 同时定义测试目标、评分标准和跑者快照。例如，「恢复周排课」有两份快照，「限时训练」有一份。一次选中两个场景，就会创建一个任务、三个独立的快照执行项。每项先生成并保存 Artifact，再用所属场景的标准评分。
 
 ## 1. 工作台与分布式服务
 
 | 工作台入口 | 用户操作 | 平台记录 |
 |---|---|---|
 | 场景库 | 查看、新建、导入、修改场景，在场景内编辑生成请求、预期 Artifact 类型和评分标准，添加或替换跑者快照 | 每个场景包含至少一份脱敏快照 |
-| 发起测评 | 选择 Agent 版本和场景，确认场景内的快照数量后运行 | 创建一个 task_id。任务保存所选 agent_version 及生成和评审模型配置 |
-| 任务详情 | 逐跑者查看 Execute、Evaluate、Artifact、分数和评分理由 | 显示输入快照、任务选择的 Agent 版本、Artifact 类型与摘要。关闭浏览器后任务继续执行 |
-| 历史报告 | 按任务打开或导出，查看汇总和每份快照的原始结果 | 同一批快照换 Agent 版本再测时生成新任务，可分别回看 |
+| 发起测评 | 选择一个 Agent 版本，勾选一个或多个场景，或一键全选场景库；确认场景数、总快照数后运行 | 创建一个 task_id。任务保存所选 agent_version 及生成和评审模型配置 |
+| 任务详情 | 按场景查看进度，展开跑者快照查看 Execute、Evaluate、Artifact、分数和理由 | 显示输入快照、任务选择的 Agent 版本、Artifact 类型与摘要。关闭浏览器后任务继续执行 |
+| 历史报告 | 按任务打开或导出，查看任务汇总、各场景小计和每份快照的结果 | 同一批快照换 Agent 版本再测时生成新任务，可分别回看 |
 
 例如，「下一周排课」场景要检查训练计划是否遵守每周可跑天数。场景内放入两份脱敏快照：跑者 A 每周最多跑两天，跑者 B 最多跑四天。两人使用同一套评分方法，各自的上限来自场景内对应的快照。
 
-场景编辑器分为「测什么」和「用什么数据测」。提交任务时，API 在同一事务中读取场景当前的配置和全部有效快照，冻结配置并按快照创建执行项。更正跑者数据时写入新快照，旧快照退出当前场景的数据集，已有执行项继续引用原快照。补充第三份快照后，下次任务测三份，前一次报告仍展示原来的两份。
+场景编辑器分为「测什么」和「用什么数据测」。提交任务时，API 在同一事务中读取所有选中场景的配置和有效快照，分别冻结每个场景的配置，再为其中每份快照创建执行项。更正跑者数据时写入新快照，旧快照退出当前场景的数据集，已有执行项继续引用原快照。补充第三份快照后，下次任务测三份，前一次报告仍展示原来的两份。
 
 ### 提交、Execute、Evaluate
 
-1. **提交。** 工作台从 Agent 镜像仓库的发布信息展示可选版本。测评 API 将工作台选定的 agent_version 写入测评任务。按场景创建任务和全部快照执行项，校验其快照集合非空且无重复；同一次请求重发取回原 task_id。调度器据已持久化的执行项请求集群启动 worker，可以并行处理不同跑者。
+1. **提交。** 工作台从 Agent 镜像仓库的发布信息展示可选版本。测评 API 将工作台选定的 agent_version 写入测评任务。每次提交创建一个任务。API 校验场景清单，并为每个场景保存一条 TaskScenario 和对应的快照执行项。任一场景不存在、配置无效或缺少有效快照，整次提交返回具体场景的错误。全部提交成功后才调度；同一次请求重发取回原 task_id。调度器据已持久化的执行项请求集群启动 worker，可以并行处理不同场景和不同跑者。
 2. **Execute 调用生成模型。** worker 经内部 API 领取一项，按任务的 agent_version 拉取对应的 Coach Agent，载入这一项的冻结快照、请求和时钟，运行 Coach Agent **调用生成模型 API**。worker 只向 Agent 提供该跑者的数据；评分量表由 Evaluate 使用。生成模型配置与 LLM judge 模型配置分别保存，凭证由服务端注入。
 3. **保存 Artifact。** worker 捕获输出原始字节，按 artifact_type 选择契约校验，连同类型、内容摘要和关联执行项的外键 `Artifact.input_id` 一并持久化。对有效输出，Artifact 保存与该项切换到可评分状态同事务提交。若输出不符合契约则保存原文与校验错误并跳过评分；模型调用失败且无输出则记录 Execute 错误，其他跑者的执行项可以继续。
-4. **Evaluate 双路评分。** worker 按 artifact_id 读取并核验已提交的 Artifact。规则 judge 运行固定检查；LLM judge **调用评审模型 API**，依据同一份 Artifact、对应跑者快照和冻结量表打分。两路独立，各自持久化分数和理由，单路失败保留另一条结果。默认同时提供两类检查，也支持仅启用其中一类。
+4. **Evaluate 双路评分。** worker 按 artifact_id 读取并核验已提交的 Artifact。规则 judge 运行固定检查；LLM judge **调用评审模型 API**，依据同一份 Artifact、对应跑者快照和该项所属场景的冻结量表打分。两路独立，各自持久化分数和理由，单路失败保留另一条结果。默认同时提供两类检查，也支持仅启用其中一类。
 5. **接管与汇总。** 每个快照执行项有独立租约，拒绝过期租约写回。v1 每个执行项至多保存一个 Artifact。保存前中断可能再次调用生成模型；保存后接管者只恢复未完成的评分。结果在 (artifact_id, check_id) 上去重。所有执行项终结后冻结任务明细；用户打开或导出报告时，API 按 task_id 读取并汇总。
 
 平台可用独立测评 MySQL 保存任务、输入、Artifact 原文和逐项结果，Go API 的 storage 层负责写入。worker 通过内部 API 领取、续租和提交。任务读取提交时冻结的场景数据，整个流程独立于生产数据库和在线计划生成服务。部署时必须配置生成模型 API；启用 LLM judge 时还需配置评审模型 API。
 
 ```mermaid
 flowchart LR
-    UI["工作台：选择 Agent 版本和场景"] --> API["测评 API：保存任务并启动 worker"]
+    UI["工作台：选择一个版本，多选或全选场景"] --> API["测评 API：冻结各场景，创建执行项并启动 worker"]
     API --> W["worker：分别领取快照执行项"]
     REG["Agent 镜像仓库"] -->|按 agent_version 拉取| W
     W --> EX["Execute：Agent 调用生成模型 API"]
     EX --> STORE["按快照保存 Artifact"]
     STORE --> RULE["Evaluate：规则 judge"]
     STORE --> LLM["Evaluate：LLM judge 调用评审模型 API"]
-    RULE --> REP["逐快照评分、按任务汇总"]
+    RULE --> REP["逐快照评分，按场景分组汇总任务"]
     LLM --> REP
 ```
 
 ## 2. 输入与 Artifact
 
-**工作台提交示例**。scenario_id 为必填。API 从该场景解析测试配置和数据集。
+**工作台提交示例**。工作台的多选与「全选场景库」都提交明确的 `scenario_ids` 数组。全选覆盖当时整个场景库，包括列表其他分页。用户可在提交前取消勾选。API 要求至少一个 ID，拒绝重复或无效的 ID。后续新增场景会出现在下次全选中。
 
 ```json
 {"agent_version":"example-v2","generation_model":"example-generator","judge_model":"example-judge",
- "scenario_id":"return-week"}
+ "scenario_ids":["return-week","time-budget"]}
 ```
 
 一个场景文件即可完整导入测试定义和测试数据。request、artifact_type、checks 说明测什么；runner_snapshots 包含本场景的跑者快照。
@@ -71,6 +71,8 @@ flowchart LR
   ]
 }
 ```
+
+第二个场景 `time-budget` 的请求是「为本周只有一天能跑步的跑者排课」，预期同为 weekly_plan，仅启用 frequency 规则。它包含一份独立的 snapshot-c，跑步天数上限为 1。两个场景各用自己的输入和检查。
 
 request.instruction 为非空文本，示例 start_week=next 指每位跑者快照截止日所在周的下一个周一。清单字段均必填，`checks` 至少一项。v1 拒绝未知字段、版本、类型和规则。规则通过带版本的名称绑定本地实现；示例规则只适用于周计划，使用其他计划类型属于场景配置错误。LLM 每项只有一个评分问题，五个非空锚点按 1 至 5 分排列。规则门槛固定为 1，LLM 门槛是 1 至 5 的整数。
 
@@ -106,7 +108,7 @@ type LlmJudge = Judge<LlmCheck>;
 
 ## 4. 报告格式与界面状态
 
-报告是任务的只读汇总视图，页面和 JSON 导出共用相同的聚合逻辑。API 从 EvaluationTask 枚举所有 SnapshotExecution，再读取各项的 Artifact 和 CheckResult。一次检查产生一条 CheckResult；若 Execute 失败，对应执行项仍进入报告，检查列表为空。报告顶部按执行项计数，每项从多条检查汇总出一个状态。下例中，同一 Agent 为第一位跑者生成并评完周计划，第二位跑者在 Execute 调用模型 API 时超时。两位跑者各自的结果均被保留。版本与模型标识均为示意值；第一份 Artifact 的摘要对应周计划样本经 `jq '.base'` 导出的字节。
+报告是任务的只读汇总视图，页面和 JSON 导出使用同一份数据。API 从 EvaluationTask 读取本次选中的所有 TaskScenario，再按场景列出 SnapshotExecution、Artifact 和 CheckResult。下例一次运行两个场景：「恢复周排课」的一份快照通过，另一份在生成时超时；「限时训练」的一份快照完成规则评分。报告保留全部三份执行记录。示例的成功 Artifact 内容均取自同一份周计划样本，摘要按 `jq '.base'` 导出的字节计算。
 
 ```json
 {
@@ -117,79 +119,55 @@ type LlmJudge = Judge<LlmCheck>;
   "generation_model": "example-generator",
   "judge_model": "example-judge",
   "status": "error",
-  "summary": {
-    "pass": 1,
-    "fail": 0,
-    "error": 1
-  },
-  "inputs": [
+  "summary": {"pass": 2, "fail": 0, "error": 1},
+  "scenarios": [
     {
-      "id": "input-a",
-      "snapshot_id": "snapshot-a",
-      "status": "pass",
-      "execute": {
-        "status": "pass",
-        "artifact_id": "art-a",
-        "artifact_type": "weekly_plan",
-        "sha256": "a12d6ca3125fc0821704c42121ce645bfa2348d27660b0dada3bb5bb1715c619"
-      },
-      "evaluate": {
-        "status": "pass",
-        "artifact_id": "art-a",
-        "checks": [
-          {
-            "id": "frequency",
-            "kind": "rule",
-            "judge": {
-              "rule": "weekly-run-days/v1"
-            },
-            "status": "pass",
-            "score": 1,
-            "min_score": 1,
-            "reason": "1 个跑步日，上限 2 天。"
-          },
-          {
-            "id": "distance",
-            "kind": "llm",
-            "judge": {
-              "provider": "example",
-              "model": "example-judge",
-              "prompt_version": "plan-grade/v1"
-            },
-            "status": "pass",
-            "score": 5,
-            "min_score": 4,
-            "reason": "周一为 8 公里轻松跑，与近四周最长跑相同，符合本周目标。"
+      "scenario_id": "return-week",
+      "status": "error",
+      "summary": {"pass": 1, "fail": 0, "error": 1},
+      "inputs": [
+        {
+          "id": "input-a", "snapshot_id": "snapshot-a", "status": "pass",
+          "execute": {"status": "pass", "artifact_id": "art-a", "artifact_type": "weekly_plan", "sha256": "a12d6ca3125fc0821704c42121ce645bfa2348d27660b0dada3bb5bb1715c619"},
+          "evaluate": {
+            "status": "pass", "artifact_id": "art-a",
+            "checks": [
+              {"id": "frequency", "kind": "rule", "judge": {"rule": "weekly-run-days/v1"}, "status": "pass", "score": 1, "min_score": 1, "reason": "1 个跑步日，上限 2 天。"},
+              {"id": "distance", "kind": "llm", "judge": {"provider": "example", "model": "example-judge", "prompt_version": "plan-grade/v1"}, "status": "pass", "score": 5, "min_score": 4, "reason": "周一为 8 公里轻松跑，与近四周最长跑相同，符合本周目标。"}
+            ]
           }
-        ]
-      }
+        },
+        {
+          "id": "input-b", "snapshot_id": "snapshot-b", "status": "error",
+          "execute": {"status": "error", "artifact_id": null, "error": {"code": "generation_model_timeout", "message": "生成模型调用超时。"}},
+          "evaluate": {"status": "skipped", "artifact_id": null, "checks": []}
+        }
+      ]
     },
     {
-      "id": "input-b",
-      "snapshot_id": "snapshot-b",
-      "status": "error",
-      "execute": {
-        "status": "error",
-        "artifact_id": null,
-        "error": {
-          "code": "generation_model_timeout",
-          "message": "生成模型调用超时。"
+      "scenario_id": "time-budget",
+      "status": "pass",
+      "summary": {"pass": 1, "fail": 0, "error": 0},
+      "inputs": [
+        {
+          "id": "input-c", "snapshot_id": "snapshot-c", "status": "pass",
+          "execute": {"status": "pass", "artifact_id": "art-c", "artifact_type": "weekly_plan", "sha256": "a12d6ca3125fc0821704c42121ce645bfa2348d27660b0dada3bb5bb1715c619"},
+          "evaluate": {
+            "status": "pass", "artifact_id": "art-c",
+            "checks": [
+              {"id": "frequency", "kind": "rule", "judge": {"rule": "weekly-run-days/v1"}, "status": "pass", "score": 1, "min_score": 1, "reason": "1 个跑步日，上限 1 天。"}
+            ]
+          }
         }
-      },
-      "evaluate": {
-        "status": "skipped",
-        "artifact_id": null,
-        "checks": []
-      }
+      ]
     }
-  ],
-  "scenario_id": "return-week"
+  ]
 }
 ```
 
 - task_id 直接定位一次测评。报告中的 agent_version 来自该任务。输入与 Artifact 的完整性以原始字节的 SHA-256 验证。
 - queued、running 为进行中状态。Execute 的无效输出记 fail，基础设施或模型 API 故障记 error，该项 Evaluate 均为 skipped。有效输出评分时 evaluate.artifact_id 必须等于同项 execute.artifact_id。
-- 评分记录检查 ID、门槛、分数和理由，执行错误保留 judge 信息和错误原因。执行项和整项任务按 error > fail > pass 汇总；skipped 保留前序失败，summary 按快照执行项计数。从该执行项可以打开实际输入快照和 Artifact 核对评分理由。
+- 评分记录检查 ID、门槛、分数和理由，执行错误保留 judge 信息和错误原因。全部执行项结束后，执行项、场景、任务均按 error > fail > pass 汇总。skipped 保留前序失败。场景 summary 按本场景的执行项计数，任务 summary 将各场景的同类计数相加。从该执行项可以打开实际输入快照和 Artifact 核对评分理由。
 
 例如，混合场景中模型服务和模型名均未配置时，该检查的报告记录如下；频率规则仍保留自己的分数。
 
@@ -201,7 +179,7 @@ type LlmJudge = Judge<LlmCheck>;
 
 ## 5. 任务、快照与产物的实体关系
 
-每个 RunnerSnapshot 归属一个 Scenario；每个 EvaluationTask 必须引用一个 Scenario。提交时，EvaluationTask.frozen_config 保存该场景的生成请求、预期类型和评分标准，SnapshotExecution 记录本次实际使用的快照。执行项所引用快照的 scenario_id 必须与任务的 scenario_id 一致，worker 按已创建的执行项读取数据。
+每个 RunnerSnapshot 归属一个 Scenario。一个 EvaluationTask 可选多个 Scenario，同一 Scenario 可被多个任务选中。TaskScenario 表示「本次任务选中的一个场景」，保存该场景提交时的生成请求、Artifact 类型和评分标准。SnapshotExecution 按 TaskScenario 记录实际使用的跑者快照。
 
 ```mermaid
 erDiagram
@@ -232,7 +210,8 @@ erDiagram
     }
     SnapshotExecution {
         string id PK "执行项标识"
-        string task_id FK "所属任务"
+        string task_id FK "任务场景联合外键"
+        string scenario_id FK "任务场景联合外键"
         string snapshot_id FK "本项跑者快照"
         string execute_status "生成状态"
         string evaluate_status "评分状态"
@@ -245,8 +224,11 @@ erDiagram
         json generation_model "生成模型配置"
         json judge_model "评审模型配置"
         enum state "任务状态"
-        string scenario_id FK "所属场景，必填"
-        json frozen_config "生成请求与评分标准"
+    }
+    TaskScenario {
+        string task_id PK,FK "所属任务"
+        string scenario_id PK,FK "所选场景"
+        json frozen_config "请求、类型与检查"
     }
     CheckResult {
         string result_id PK "检查结果标识"
@@ -256,13 +238,16 @@ erDiagram
         int score "分数，可空"
         json detail "门槛、理由或错误"
     }
-    EvaluationTask ||--|{ SnapshotExecution : "包含"
+    EvaluationTask ||--|{ TaskScenario : "选择场景"
+    TaskScenario ||--|{ SnapshotExecution : "包含执行项"
     RunnerSnapshot ||--o{ SnapshotExecution : "作为冻结输入"
     SnapshotExecution ||--o| Artifact : "生成"
     Artifact ||--o{ CheckResult : "接受评分"
-    Scenario ||--o{ EvaluationTask : "用于测评"
+    Scenario ||--o{ TaskScenario : "用于测评"
     Scenario ||--|{ RunnerSnapshot : "包含测试数据"
 ```
+
+`TaskScenario` 的联合主键为 (task_id, scenario_id)，同一场景在一个任务中只入选一次。SnapshotExecution 通过这对字段读取冻结配置，引用的 RunnerSnapshot 必须拥有相同的 scenario_id。
 
 `Artifact.input_id` 引用 `SnapshotExecution.id`。v1 每个执行项预期一种 Artifact。唯一键为 (task_id, snapshot_id)、Artifact.input_id 和 (artifact_id, check_id)。因此不同跑者的结果可以独立重试，两个 judge 始终引用本项的同一 Artifact。后续内容类型沿用相同的内容标识与来源关系，只需注册对应校验器和 judge 能力。
 
@@ -271,7 +256,10 @@ erDiagram
 | 场景 | 可验证结果 |
 |---|---|
 | 一个执行项有两条 CheckResult，另一项生成失败 | API 汇总两条执行项，前者展开两条检查，后者显示生成错误与空检查列表；重新导出同一终态任务得到相同判定 |
-| 为同一 Agent 选择包含两位跑者的场景 | 提交只传场景 ID 和运行设置，任务从场景得到两条独立执行项。两次 Execute 调用生成模型时各自只收到本项数据，成功后生成不同的 artifact_id |
+| 多选两个场景，各含两份和一份快照 | 创建一个任务、两条 TaskScenario 和三条 SnapshotExecution；同一 Agent 分别使用两套场景配置，报告按两个场景显示 2 和 1 条明细 |
+| 全选跨页场景后提交，再新增场景或修改评分标准 | 已提交任务使用原场景清单和原标准；换用新版 Agent 再次全选时，包含新增场景并使用当前标准 |
+| 提交空清单、重复 ID 或含无效场景的清单 | API 返回校验错误，库中无部分任务，worker 未启动 |
+| 为同一 Agent 选择包含两位跑者的场景 | 提交传入一个场景 ID 的数组和运行设置，任务从场景得到两条独立执行项。两次 Execute 调用生成模型时各自只收到本项数据，成功后生成不同的 artifact_id |
 | 导入两份快照的场景并运行，再向场景添加第三份快照 | 新任务有三条执行项，旧任务仍有两条；空数据集或重复的快照标识在保存时提示错误 |
 | 同一场景不作修改，选择两个 Agent 版本分别测评 | 两个任务分别保存各自的 agent_version；worker 按对应版本运行，报告显示该任务所选版本 |
 | 注入生成模型超时与 LLM judge 超时 | 前者跳过本项 Evaluate；后者只使该评分项出错，保留 Artifact 与规则评分。两种情况都继续执行其他快照 |
