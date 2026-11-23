@@ -25,9 +25,10 @@ public final class ActivitiesRepository: Sendable {
         return try await api.send(APIRequest(path: path), as: ActivitiesListResponse.self)
     }
 
-    /// 拉取单个活动详情（include=timeseries：轨迹地图与走势曲线需要）。
+    /// 拉取单个活动详情（include=timeseries：轨迹地图与走势曲线需要；
+    /// include=running_dynamics：跑姿动态卡需要，devops#1041）。
     public func detail(userId: String, labelId: String) async throws -> ActivityDetailResponse {
-        let path = "/api/\(Self.escaped(userId))/activities/\(Self.escaped(labelId))?include=timeseries"
+        let path = "/api/\(Self.escaped(userId))/activities/\(Self.escaped(labelId))?include=timeseries,running_dynamics"
         return try await api.send(APIRequest(path: path), as: ActivityDetailResponse.self)
     }
 

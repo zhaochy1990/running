@@ -60,6 +60,8 @@ public final class ActivityDetailModel {
     public private(set) var laps: [LapRow] = []
     public private(set) var kilometerRows: [LapRow] = []
     public private(set) var strengthGroups: [ExerciseGroup] = []
+    /// 跑姿动态卡（devops#1041）；nil = 隐藏（非跑步 / 无跑姿数据）。
+    public private(set) var runningDynamics: DynamicsSection?
     /// 圈速表（跑步）/ 力量分组表（力量）有数据才渲染整卡。
     public private(set) var hasSegments = false
     public private(set) var sportNote = ""
@@ -133,6 +135,7 @@ public final class ActivityDetailModel {
         laps = view.laps
         kilometerRows = view.kilometerRows
         strengthGroups = view.strengthGroups
+        runningDynamics = view.runningDynamics
         hasSegments = view.hasSegments
         sportNote = view.sportNote
         feelNote = view.feelNote
@@ -159,6 +162,7 @@ public final class ActivityDetailModel {
         var laps: [LapRow]
         var kilometerRows: [LapRow]
         var strengthGroups: [ExerciseGroup]
+        var runningDynamics: DynamicsSection?
         var hasSegments: Bool
         var sportNote: String
         var feelNote: String
@@ -216,6 +220,7 @@ public final class ActivityDetailModel {
             laps: laps,
             kilometerRows: kilometerRows,
             strengthGroups: strengthGroups,
+            runningDynamics: dynamicsSection(detail.runningDynamics),
             hasSegments: isStrength ? !strengthGroups.isEmpty : !laps.isEmpty,
             sportNote: a.sportNote ?? "",
             feelNote: a.feelNote ?? "",

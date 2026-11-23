@@ -247,6 +247,40 @@ public struct TimeseriesPoint: Decodable, Hashable, Sendable {
     }
 }
 
+// MARK: - 跑姿动态（devops#1041）
+
+/// 跑姿动态的一个分窗区间：第 index 个 `window_s` 窗口内的最小–最大值。
+public struct RunningDynamicsRange: Decodable, Hashable, Sendable {
+    public let index: Int
+    public let min: Double
+    public let max: Double
+}
+
+/// 单项跑姿指标：全程平均 / 最小 / 最大 + 分窗区间。
+public struct RunningDynamicsMetric: Decodable, Hashable, Sendable {
+    public let average: Double
+    public let min: Double
+    public let max: Double
+    public let windows: [RunningDynamicsRange]
+}
+
+/// 跑姿动态摘要（对齐 `types/activity.ts` RunningDynamics；仅 include=running_dynamics 返回）。
+/// 数值已是展示单位（步频 步/分、步幅 米/步、垂直振幅 厘米、触地 毫秒）。单位换算与
+/// Garmin 步频口径归一（单脚步频 ×2、无法核实则整项省略）都在 Go API 的
+/// `buildRunningDynamics` 完成，对所有客户端生效——客户端只透传，不再二次换算。
+public struct RunningDynamics: Decodable, Hashable, Sendable {
+    public let durationS: Double
+    public let windowS: Int
+    /// 键 = `RunningDynamicsKey.rawValue`；设备未上报的指标整键省略。
+    public let metrics: [String: RunningDynamicsMetric]
+
+    enum CodingKeys: String, CodingKey {
+        case durationS = "duration_s"
+        case windowS = "window_s"
+        case metrics
+    }
+}
+
 // MARK: - 响应面
 
 public struct ActivityDetailResponse: Decodable, Hashable, Sendable {
@@ -256,6 +290,8 @@ public struct ActivityDetailResponse: Decodable, Hashable, Sendable {
     public let zones: [Zone]
     /// 仅在请求 include=timeseries 时返回。
     public let timeseries: [TimeseriesPoint]?
+    /// 仅在请求 include=running_dynamics 时返回；非跑步或无跑姿数据为 nil。
+    public let runningDynamics: RunningDynamics?
 
     enum CodingKeys: String, CodingKey {
         case activity
@@ -263,6 +299,21 @@ public struct ActivityDetailResponse: Decodable, Hashable, Sendable {
         case kilometerSplits = "kilometer_splits"
         case zones
         case timeseries
+        case runningDynamics = "running_dynamics"
+    }
+}
+
+extension ActivityDetailResponse {
+    /// `running_dynamics` 是可选展示块：形状对不上（后端先发、App 审核还没过）时只隐藏
+    /// 跑姿卡，不让整张详情页落到「未找到」；其余字段维持必解 / 可选语义不变。
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        activity = try container.decode(Activity.self, forKey: .activity)
+        segments = try container.decode([Segment].self, forKey: .segments)
+        kilometerSplits = try container.decodeIfPresent([Segment].self, forKey: .kilometerSplits)
+        zones = try container.decode([Zone].self, forKey: .zones)
+        timeseries = try container.decodeIfPresent([TimeseriesPoint].self, forKey: .timeseries)
+        runningDynamics = (try? container.decodeIfPresent(RunningDynamics.self, forKey: .runningDynamics)) ?? nil
     }
 }
 
