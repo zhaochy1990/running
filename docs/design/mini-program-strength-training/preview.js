@@ -24,6 +24,7 @@ let sheetReturnFocus;
 
 const device = document.querySelector('.device');
 const screen = document.querySelector('#screen');
+const restBanner = document.querySelector('#rest-banner');
 const actions = document.querySelector('#actions');
 const sheet = document.querySelector('#sheet');
 const appTitle = document.querySelector('#app-title');
@@ -142,9 +143,7 @@ function progress() {
 }
 
 function inputFor(index, exercise, label, id = `actual-${index}`) {
-  const draft = session.drafts.get(index);
-  // Drafts contain only digits, including an empty value while editing.
-  return `<input id="${id}" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" autocomplete="off" aria-label="${label}" aria-describedby="input-message-${index}" data-value="${index}" value="${draft ?? exercise.target}">`;
+  return `<input id="${id}" type="text" inputmode="numeric" autocomplete="off" aria-label="${label}" aria-describedby="input-message-${index}" data-value="${index}" value="${exercise.target}">`;
 }
 
 function guided(index) {
@@ -204,7 +203,7 @@ function groupTable(exercise, exerciseId) {
 }
 
 function tableView() {
-  return `${inlineRest()}<h2 class="page-heading" tabindex="-1">训练记录</h2>
+  return `<h2 class="page-heading" tabindex="-1">训练记录</h2>
     ${plan.map((exercise, id) => `<section aria-label="${exercise.name}">
       <div class="table-title"><strong>${exercise.name}</strong><button type="button" class="text-button" data-action="details" data-id="${id}" aria-label="${exercise.name}动作要点" aria-haspopup="dialog">动作要点</button></div>
       ${groupTable(exercise, id)}
@@ -212,7 +211,7 @@ function tableView() {
 }
 
 function panelsView() {
-  return `${inlineRest()}<h2 class="page-heading" tabindex="-1">训练动作</h2>
+  return `<h2 class="page-heading" tabindex="-1">训练动作</h2>
     <ul class="action-panels">${plan.map((exercise, id) => {
       const first = id * setsPerExercise;
       const done = session.records.slice(first, first + setsPerExercise).filter(value => value !== null).length;
@@ -284,7 +283,12 @@ function render() {
   const oldInput = focus?.matches('[data-value]') && screen.contains(focus);
   appTitle.textContent = view.title;
   back.hidden = page === 'schedule';
+  renderRestBanner();
   screen.innerHTML = view.content;
+  screen.querySelectorAll('input[data-value]').forEach(input => {
+    const draft = session.drafts.get(Number(input.dataset.value));
+    if (draft !== undefined) input.value = draft;
+  });
   actions.innerHTML = view.footer;
   screen.scrollTop = scroll;
 
@@ -300,21 +304,49 @@ function render() {
   document.querySelectorAll('[data-variant]').forEach(button => {
     button.setAttribute('aria-pressed', String(button.dataset.variant === variant));
   });
+  updateJourney();
+  renderedPage = page;
+  renderedVariant = variant;
+  updateClocks();
+}
+
+function renderRestBanner() {
+  const visible = page === 'active' && variant !== 'A' && Boolean(session.rest);
+  if (visible && !restBanner.firstElementChild) restBanner.innerHTML = inlineRest();
+  if (!visible) restBanner.replaceChildren();
+}
+
+function updateJourney() {
   const stage = page === 'active' && session.rest ? 'rest' : page === 'schedule' ? 'plan' : page;
   document.querySelectorAll('[data-stage]').forEach(item => {
     if (item.dataset.stage === stage) item.setAttribute('aria-current', 'step');
     else item.removeAttribute('aria-current');
   });
-  renderedPage = page;
-  renderedVariant = variant;
-  updateClocks();
+}
+
+function endRest() {
+  const next = firstMissing();
+  const { exerciseId } = contextFor(session.rest.index);
+  const movePanel = variant === 'C' && session.expanded === exerciseId && next >= 0 &&
+    session.records.slice(exerciseId * setsPerExercise, (exerciseId + 1) * setsPerExercise).every(value => value !== null);
+  const focusWasInBanner = restBanner.contains(document.activeElement);
+  session.rest = null;
+  if (page !== 'active') return;
+  if (variant === 'A' || movePanel) {
+    if (movePanel) session.expanded = contextFor(next).exerciseId;
+    render();
+  } else {
+    renderRestBanner();
+    updateJourney();
+  }
+  if (focusWasInBanner) screen.querySelector('h2')?.focus({ preventScroll: true });
 }
 
 function updateClocks() {
   if (!session) return;
   const elapsed = screen.querySelector('[data-elapsed]');
   if (elapsed) elapsed.textContent = clock((Date.now() - session.started) / 1000);
-  const rest = screen.querySelector('[data-rest]');
+  const rest = device.querySelector('[data-rest]');
   if (rest && session.rest) rest.textContent = clock(remainingRest());
   const rail = screen.querySelector('[data-rail]');
   if (rail && session.rest) rail.style.width = `${remainingRest() / session.rest.seconds * 100}%`;
@@ -341,10 +373,15 @@ function showInputError(input, message = '') {
   else input.removeAttribute('aria-invalid');
 }
 
+function actualValue(value) {
+  const text = value.trim();
+  return /^[0-9]{1,3}$/.test(text) && Number(text) > 0 ? Number(text) : null;
+}
+
 function changeValue(index, step) {
   const { exercise } = contextFor(index);
   const input = screen.querySelector(`[data-value="${index}"]`);
-  const current = input.value ? Number(input.value) : exercise.target;
+  const current = actualValue(input.value) ?? exercise.target;
   const updated = String(Math.min(999, Math.max(1, current + step)));
   input.value = updated;
   showInputError(input);
@@ -353,9 +390,9 @@ function changeValue(index, step) {
 
 function record(index) {
   const input = screen.querySelector(`[data-value="${index}"]`);
-  const actual = Number(input.value);
-  if (!actual) {
-    showInputError(input, '请输入大于 0 的实际完成量。');
+  const actual = actualValue(input.value);
+  if (actual === null) {
+    showInputError(input, '请输入 1–999 的整数。');
     input.focus();
     return;
   }
@@ -461,7 +498,7 @@ document.addEventListener('click', event => {
     case 'record': record(Number(index)); break;
     case 'withdraw': withdraw(Number(index)); break;
     case 'undo': withdraw(session.order.at(-1)); break;
-    case 'skip': session.rest = null; render(); break;
+    case 'skip': endRest(); break;
     case 'finish': finish(); break;
     case 'save': save(); break;
     case 'discard':
@@ -475,7 +512,6 @@ document.addEventListener('click', event => {
 screen.addEventListener('input', event => {
   const input = event.target.closest('input[data-value]');
   if (!input) return;
-  input.value = input.value.replace(/[^0-9]/g, '').slice(0, 3);
   showInputError(input);
   session.drafts.set(Number(input.dataset.value), input.value);
 });
@@ -496,10 +532,7 @@ window.addEventListener('resize', () => {
 });
 
 setInterval(() => {
-  if (session?.rest && !remainingRest()) {
-    session.rest = null;
-    if (page === 'active') render();
-  }
+  if (session?.rest && !remainingRest() && !sheet.open) endRest();
   updateClocks();
 }, 250);
 
