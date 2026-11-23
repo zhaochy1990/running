@@ -6,7 +6,7 @@ import Testing
 @Suite struct ActivitiesModelGroupingTests {
 
     private func activity(_ labelId: String, date: String, distanceM: Double = 10_000,
-                          sportName: String? = "Run", route: [[Double]]? = nil) -> Activity {
+                          sportName: String? = "Run", route: RouteThumbShape? = nil) -> Activity {
         Activity(
             labelId: labelId, name: "晨跑 \(labelId)", sportName: sportName, sportType: 1,
             date: date, distanceM: distanceM, distanceKm: distanceM / 1000, durationS: 3600,
@@ -57,13 +57,13 @@ import Testing
 
     @Test func rowFieldsAndFallbacks() {
         let res = listResponse([
-            activity("a1", date: "2026-10-02", route: [[5, 95], [95, 5]]),
+            activity("a1", date: "2026-10-02", route: .polyline([[5, 95], [95, 5]])),
             Activity(labelId: "a2", name: nil, sportName: nil, sportType: 1, date: "2026-10-03",
                      distanceM: 0, distanceKm: 0, durationS: 0, durationFmt: nil),
         ])
         let rows = ActivitiesModel.monthGroups(from: res, currentMonth: "2026-10")[0].rows
 
-        #expect(rows[0].routeThumb == [[5, 95], [95, 5]])
+        #expect(rows[0].routeThumb == .polyline([[5, 95], [95, 5]]))
         #expect(rows[1].routeThumb == nil)
         #expect(rows[0].distanceKm == "10.00")
         #expect(rows[0].pace == "5:00/km")
@@ -178,10 +178,43 @@ import Testing
         #expect(res.activities[0].sportName == nil)
         #expect(res.activities[0].strideTrainingDose == 61.25)
         // route_thumb 形状解码（devops#828）；null → nil；thumb_url 已弃用忽略。
-        #expect(res.activities[0].routeThumb == [[5, 95], [95, 5]])
+        #expect(res.activities[0].routeThumb == .polyline([[5, 95], [95, 5]]))
         #expect(res.activities[1].routeThumb == nil)
         #expect(res.activities[1].isStrength)
         #expect(res.monthlySummaries?["2026-10"]?.activityCount == 9)
+    }
+
+    /// route_thumb 同一页三代并存（devops#1039）：旧形状、新版多段、无 GPS 各自解出；
+    /// 后端先发而本端不认识的版本只让该行落 nil（回退运动图标），不拖垮整张列表。
+    @Test func decodesAllRouteThumbGenerationsSideBySide() throws {
+        let json = #"""
+        {
+          "total": 4,
+          "activities": [
+            { "label_id": "legacy", "sport_type": 1, "date": "2026-11-20", "distance_m": 10240, "distance_km": 10.24, "duration_s": 3081,
+              "route_thumb": [[5.0,95.0],[50.0,20.0],[95.0,5.0]] },
+            { "label_id": "current", "sport_type": 1, "date": "2026-11-19", "distance_m": 10240, "distance_km": 10.24, "duration_s": 3081,
+              "route_thumb": {"v":2,"strokes":[[[5.0,95.0],[50.0,20.0]],[[50.0,20.0],[95.0,5.0]]],"start":[5.0,95.0],"end":[95.0,5.0],"short":10.0,"long":90.0,"travel":127.3} },
+            { "label_id": "indoor", "sport_type": 402, "date": "2026-11-18", "distance_m": 0, "distance_km": 0, "duration_s": 2400,
+              "route_thumb": null },
+            { "label_id": "future", "sport_type": 1, "date": "2026-11-17", "distance_m": 10240, "distance_km": 10.24, "duration_s": 3081,
+              "route_thumb": {"v":3,"strokes":[[[5.0,95.0],[50.0,20.0]]],"start":[5.0,95.0],"end":[50.0,20.0],"short":10.0,"long":90.0,"travel":127.3} }
+          ]
+        }
+        """#
+        let res = try JSONDecoder().decode(ActivitiesListResponse.self, from: Data(json.utf8))
+        #expect(res.activities.map(\.labelId) == ["legacy", "current", "indoor", "future"])
+        #expect(res.activities[0].routeThumb == .polyline([[5, 95], [50, 20], [95, 5]]))
+        #expect(res.activities[1].routeThumb == .multiStroke(.init(
+            strokes: [[[5, 95], [50, 20]], [[50, 20], [95, 5]]],
+            start: [5, 95], end: [95, 5], short: 10, long: 90, travel: 127.3
+        )))
+        #expect(res.activities[2].routeThumb == nil)   // 无 GPS
+        #expect(res.activities[3].routeThumb == nil)   // 本端不认识的版本：整页照常解出
+
+        // 列表行：可画形状原样透传，其余 nil（行内回退运动图标）。
+        let rows = ActivitiesModel.monthGroups(from: res, currentMonth: "2026-11")[0].rows
+        #expect(rows.map { $0.routeThumb != nil } == [true, true, false, false])
     }
 
     @Test func decodesDetailWithTimeseries() throws {

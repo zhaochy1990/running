@@ -32,10 +32,10 @@ public struct Activity: Decodable, Hashable, Sendable {
     /// STRIDE 自身计算的 PMC 训练剂量；列表页负荷展示优先。
     public let strideTrainingDose: Double?
     public let trainType: String?
-    /// 路线缩略图形状（devops#828）：[[x,y],...] 归一化 0..100 视窗、Y 已翻转
-    /// （屏幕坐标），列表行用 RouteThumbView 原生 Path 绘制；室内/无 GPS/尚未
-    /// 生成时为 null。
-    public let routeThumb: [[Double]]?
+    /// 路线缩略图形状（devops#828/#1039）：归一化 0..100 视窗、Y 已翻转（屏幕
+    /// 坐标），列表行用 RouteThumbView 原生 Path 绘制；室内/无 GPS/尚未生成时为
+    /// null，后端先发而本端解不出的形状同样落 nil（见 init(from:)）。
+    public let routeThumb: RouteThumbShape?
 
     // —— 详情页字段（list 端点可能不返回）——
     public let ascentM: Double?
@@ -70,7 +70,7 @@ public struct Activity: Decodable, Hashable, Sendable {
         trainingLoad: Double? = nil,
         strideTrainingDose: Double? = nil,
         trainType: String? = nil,
-        routeThumb: [[Double]]? = nil,
+        routeThumb: RouteThumbShape? = nil,
         ascentM: Double? = nil,
         temperature: Double? = nil,
         humidity: Double? = nil,
@@ -148,6 +148,141 @@ public struct Activity: Decodable, Hashable, Sendable {
 
     /// 力量活动（sport_type 402/800）：无 GPS，不渲染地图、指标走力量 4 项。
     public var isStrength: Bool { sportType == 402 || sportType == 800 }
+
+    /// 手写解码只为一处容错：`route_thumb` 的形状解不出（后端先发、App 还不认识的
+    /// 版本，或坏数据）时落 nil——该行回退运动图标，不让整张列表落到空态
+    /// （running_dynamics 同款口径）；其余字段维持必解 / 可选语义不变。
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        labelId = try c.decode(String.self, forKey: .labelId)
+        name = try c.decodeIfPresent(String.self, forKey: .name)
+        sportName = try c.decodeIfPresent(String.self, forKey: .sportName)
+        sportType = try c.decode(Int.self, forKey: .sportType)
+        date = try c.decode(String.self, forKey: .date)
+        distanceM = try c.decode(Double.self, forKey: .distanceM)
+        distanceKm = try c.decode(Double.self, forKey: .distanceKm)
+        durationS = try c.decode(Double.self, forKey: .durationS)
+        durationFmt = try c.decodeIfPresent(String.self, forKey: .durationFmt)
+        avgPaceSKm = try c.decodeIfPresent(Double.self, forKey: .avgPaceSKm)
+        avgHr = try c.decodeIfPresent(Double.self, forKey: .avgHr)
+        maxHr = try c.decodeIfPresent(Double.self, forKey: .maxHr)
+        avgCadence = try c.decodeIfPresent(Double.self, forKey: .avgCadence)
+        avgStepLenCm = try c.decodeIfPresent(Double.self, forKey: .avgStepLenCm)
+        trainingLoad = try c.decodeIfPresent(Double.self, forKey: .trainingLoad)
+        strideTrainingDose = try c.decodeIfPresent(Double.self, forKey: .strideTrainingDose)
+        trainType = try c.decodeIfPresent(String.self, forKey: .trainType)
+        routeThumb = (try? c.decodeIfPresent(RouteThumbShape.self, forKey: .routeThumb)) ?? nil
+        ascentM = try c.decodeIfPresent(Double.self, forKey: .ascentM)
+        temperature = try c.decodeIfPresent(Double.self, forKey: .temperature)
+        humidity = try c.decodeIfPresent(Double.self, forKey: .humidity)
+        feelsLike = try c.decodeIfPresent(Double.self, forKey: .feelsLike)
+        windSpeed = try c.decodeIfPresent(Double.self, forKey: .windSpeed)
+        feelType = try c.decodeIfPresent(Int.self, forKey: .feelType)
+        feelNote = try c.decodeIfPresent(String.self, forKey: .feelNote)
+        sportNote = try c.decodeIfPresent(String.self, forKey: .sportNote)
+        pauses = try c.decodeIfPresent([Pause].self, forKey: .pauses)
+        commentary = try c.decodeIfPresent(String.self, forKey: .commentary)
+    }
+}
+
+// MARK: - RouteThumbShape
+
+/// `route_thumb` 路线形状：后端算好的归一化坐标（0..100 视窗、Y 已翻成屏幕坐标），
+/// 客户端自己画。活动列表同一字段三代并存（devops#1037）：旧版单折线数组、新版带
+/// `v` 标记的多段对象、null（无 GPS）。解码按 JSON 形状分支——数组进 polyline，
+/// 对象进 multiStroke，解不出就抛错，由 Activity 吞成 nil（该行回退运动图标）。
+public enum RouteThumbShape: Hashable, Sendable {
+    /// 旧版单折线 `[[x,y],...]`（devops#828）：一段、常规线宽。
+    case polyline([[Double]])
+    /// 第二版多段形状（devops#1036）：各段按时间顺序分别起笔，线宽按随形状下发的
+    /// 指标计算。
+    case multiStroke(MultiStroke)
+
+    public struct MultiStroke: Hashable, Sendable {
+        /// 各段（时间顺序），每段至少 2 点。
+        public let strokes: [[[Double]]]
+        /// 轨迹的真实起终点——属于轨迹而不属于任何一段：终点落在已画过的路上时它
+        /// 不是任何一段的端点，也不能凭距离接到已画线段上（开放端点保持开放）。
+        public let start: [Double]
+        public let end: [Double]
+        /// 线宽指标：旋转包围矩形的短边 / 长边、去重前简化轨迹总长。
+        /// short == 0 是直线轨迹，永不收窄。
+        public let short: Double
+        public let long: Double
+        public let travel: Double
+    }
+
+    /// 可画的各段（旧版单折线即一段）。
+    var strokes: [[[Double]]] {
+        switch self {
+        case .polyline(let points): [points]
+        case .multiStroke(let shape): shape.strokes
+        }
+    }
+
+    /// 逻辑显示边长 displaySize（pt）下的线宽：旧版单折线沿用 size/30；新版按形状
+    /// 自带的指标收窄（见 strokeWidth）。
+    func lineWidth(displaySize: Double) -> Double {
+        switch self {
+        case .polyline: displaySize / 30
+        case .multiStroke(let shape):
+            Self.strokeWidth(displaySize: displaySize, short: shape.short, long: shape.long, travel: shape.travel)
+        }
+    }
+
+    /// Go `thumbnail.StrokeWidth`（devops#1036）的同式移植：只有又窄、又反复跑过的
+    /// 路线才在小尺寸上收窄，边长 ≥ 56 pt 回到常规线宽，直线轨迹（short == 0）不收窄。
+    /// 线宽 = displaySize/30 × (1 − 0.25 × 尺寸权重 × 狭长度 × 往返度)。
+    static func strokeWidth(displaySize: Double, short: Double, long: Double, travel: Double) -> Double {
+        let base = displaySize / 30
+        guard short > 0, long > 0 else { return base }
+        let narrow = clamp01((0.23 - short / long) / 0.10)
+        let repeated = clamp01((travel / long - 1.5) / 0.5)
+        let small = clamp01((56 - displaySize) / 20)
+        return base * (1 - 0.25 * small * narrow * repeated)
+    }
+
+    private static func clamp01(_ v: Double) -> Double { max(0, min(1, v)) }
+}
+
+extension RouteThumbShape: Decodable {
+    /// 对象 → 新版多段；其余（数组）→ 旧版单折线，不足两点画不出线，同样按解不出处理。
+    public init(from decoder: Decoder) throws {
+        if (try? decoder.container(keyedBy: MultiStroke.CodingKeys.self)) != nil {
+            self = .multiStroke(try MultiStroke(from: decoder))
+            return
+        }
+        let c = try decoder.singleValueContainer()
+        let points = try c.decode([[Double]].self)
+        guard points.count >= 2 else {
+            throw DecodingError.dataCorruptedError(in: c, debugDescription: "route_thumb: 不足两个点的折线")
+        }
+        self = .polyline(points)
+    }
+}
+
+extension RouteThumbShape.MultiStroke: Decodable {
+    enum CodingKeys: String, CodingKey {
+        case v, strokes, start, end, short, long, travel
+    }
+
+    /// 只接受画得出来的 v2 形状（结构约束同 Go DecodeV2）：版本标记为 2、至少一段、
+    /// 每段至少 2 点、起终点各是完整的点。
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let version = try c.decode(Int.self, forKey: .v)
+        strokes = try c.decode([[[Double]]].self, forKey: .strokes)
+        start = try c.decode([Double].self, forKey: .start)
+        end = try c.decode([Double].self, forKey: .end)
+        short = try c.decode(Double.self, forKey: .short)
+        long = try c.decode(Double.self, forKey: .long)
+        travel = try c.decode(Double.self, forKey: .travel)
+        guard version == 2, !strokes.isEmpty, strokes.allSatisfy({ $0.count >= 2 }),
+              start.count >= 2, end.count >= 2 else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .v, in: c, debugDescription: "route_thumb: 不是可绘制的 v2 形状")
+        }
+    }
 }
 
 // MARK: - Pause / Segment / Zone / Timeseries

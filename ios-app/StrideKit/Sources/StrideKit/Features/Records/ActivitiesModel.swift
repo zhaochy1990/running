@@ -19,10 +19,10 @@ public final class ActivitiesModel {
         public let name: String
         public let date: String
         public let systemImage: String
-        /// 路线缩略图形状（route_thumb，[[x,y],...] 0..100 视窗，devops#828）；
-        /// nil/不足 2 点回退运动图标。原生 Path 绘制、无网络加载，
-        /// 不存在「加载失败回退」路径（旧 PNG 方案的 clearThumb 已随之删除）。
-        public let routeThumb: [[Double]]?
+        /// 路线缩略图形状（route_thumb，归一化 0..100 视窗；旧版单折线或新版多段，
+        /// devops#828/#1039）；nil（无 GPS / 解不出）回退运动图标。原生 Path 绘制、
+        /// 无网络加载，不存在「加载失败回退」路径（旧 PNG 方案的 clearThumb 已随之删除）。
+        public let routeThumb: RouteThumbShape?
         public let distanceKm: String
         public let duration: String
         public let pace: String

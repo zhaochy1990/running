@@ -194,10 +194,10 @@ struct ActivityRowView: View {
         ZStack {
             RoundedRectangle(cornerRadius: app.theme.current.radius(.sm))
                 .fill(app.theme.current.accentTint)
-            if let route = row.routeThumb, route.count >= 2 {
+            if let shape = row.routeThumb {
                 // 原生 Path 绘制（devops#828）：route_thumb 形状 + 主题墨色，
-                // 无网络加载；nil/单点回退运动图标。
-                RouteThumbView(points: route, ink: app.theme.current.muted, size: 44)
+                // 无网络加载；nil（无 GPS / 本端解不出的形状）回退运动图标。
+                RouteThumbView(shape: shape, ink: app.theme.current.muted, size: 44)
             } else {
                 fallbackIcon
             }
