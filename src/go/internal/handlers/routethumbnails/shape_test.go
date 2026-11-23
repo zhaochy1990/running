@@ -34,9 +34,13 @@ type fakeShapeStore struct {
 	failPersist map[string]error
 
 	gotScope storage.RouteThumbRecomputeScope
+	// calls counts every store method invocation: a payload the backfill
+	// refuses must leave it at zero.
+	calls int
 }
 
 func (f *fakeShapeStore) RouteThumbShapeCandidates(_ context.Context, _ string) ([]string, error) {
+	f.calls++
 	var ids []string
 	for id, shape := range f.rows {
 		if shape == nil {
@@ -50,6 +54,7 @@ func (f *fakeShapeStore) RouteThumbShapeCandidates(_ context.Context, _ string) 
 // when its stored shape's version is below the current one (absent counts),
 // and a date window drops rows outside it.
 func (f *fakeShapeStore) RouteThumbRecomputeCandidates(_ context.Context, _ string, scope storage.RouteThumbRecomputeScope) ([]string, error) {
+	f.calls++
 	f.gotScope = scope
 	var ids []string
 	for id, shape := range f.rows {
@@ -73,10 +78,12 @@ func (f *fakeShapeStore) RouteThumbRecomputeCandidates(_ context.Context, _ stri
 }
 
 func (f *fakeShapeStore) ActivityTimeseries(_ context.Context, _, labelID string) ([]storage.TimeseriesPoint, error) {
+	f.calls++
 	return f.timeseries[labelID], nil
 }
 
 func (f *fakeShapeStore) SetActivityRouteThumbJSON(_ context.Context, _, labelID, thumbJSON string) error {
+	f.calls++
 	if err := f.failPersist[labelID]; err != nil {
 		return err
 	}
@@ -141,6 +148,22 @@ func decodeShapeResult(t *testing.T, result string) shapeResult {
 		t.Fatalf("decode result %s: %v", result, err)
 	}
 	return got
+}
+
+// rejectShapeBackfill runs the backfill over a payload it must refuse: the job
+// has to fail with a permanent bad_payload and must not have touched the store
+// on the way. It returns the permanent error for message assertions.
+func rejectShapeBackfill(t *testing.T, store *fakeShapeStore, inputJSON string) *job.PermanentError {
+	t.Helper()
+	_, err := NewShapeBackfill(store)(context.Background(), &job.Job{UserID: testUser, InputJSON: inputJSON}, noopHeartbeat)
+	pe, ok := job.AsPermanent(err)
+	if !ok || pe.Code != "bad_payload" {
+		t.Fatalf("input %s: err = %v, want permanent bad_payload", inputJSON, err)
+	}
+	if store.calls != 0 {
+		t.Fatalf("input %s: rejected payload reached the store (%d calls)", inputJSON, store.calls)
+	}
+	return pe
 }
 
 // decodeStoredV2 decodes a stored shape with the production decoder and fails
@@ -310,16 +333,98 @@ func TestShapeBackfillHonorsDateWindow(t *testing.T) {
 	if store.gotScope.DateFrom != "2026-11-01" || store.gotScope.DateTo != "2026-11-30" {
 		t.Fatalf("scope forwarded = %+v, want the parsed window", store.gotScope)
 	}
+
+	// Rerunning the very same window is the documented no-op: the November row
+	// now carries the current version and drops out of the candidate set.
+	if got := decodeShapeResult(t, runShapeBackfill(t, store, `{"date_from":"2026-11-01","date_to":"2026-11-30"}`)); got.Candidates != 0 || got.Generated != 0 {
+		t.Fatalf("rerun over the same window = %+v, want a no-op", got)
+	}
+	if store.rows["october"] != nil {
+		t.Fatal("rerun over the same window reached the out-of-window row")
+	}
+}
+
+// Both spellings of the empty payload mean an explicit full recompute of the
+// athlete's stale set: no input at all (what the other empty-payload tests
+// send), and a bare object. {} carries no key the unknown-key guard could
+// refuse, and it must stay the unbounded request rather than become a
+// rejection.
+func TestShapeBackfillEmptyObjectIsAFullRecompute(t *testing.T) {
+	store := &fakeShapeStore{
+		timeseries: map[string][]storage.TimeseriesPoint{"october": gpsTrace(20), "november": gpsTrace(20)},
+		rows:       map[string]*string{"october": nil, "november": nil},
+		dates:      map[string]string{"october": "2026-10-05", "november": "2026-11-20"},
+	}
+
+	got := decodeShapeResult(t, runShapeBackfill(t, store, `{}`))
+	if got.Candidates != 2 || got.Generated != 2 {
+		t.Fatalf("result = %+v, want every stale row recomputed regardless of date", got)
+	}
+	decodeStoredV2(t, "october", store.rows["october"])
+	decodeStoredV2(t, "november", store.rows["november"])
 }
 
 // A malformed window fails permanently instead of quietly matching nothing.
 func TestShapeBackfillRejectsBadDateWindow(t *testing.T) {
-	h := NewShapeBackfill(&fakeShapeStore{})
+	store := &fakeShapeStore{}
 	for _, in := range []string{`{"date_from":"2026/11/01"}`, `{"date_to":"not-a-date"}`, `{"date_from":"2026-13-01"}`, `{"date_from":`} {
-		_, err := h(context.Background(), &job.Job{UserID: testUser, InputJSON: in}, noopHeartbeat)
-		pe, ok := job.AsPermanent(err)
-		if !ok || pe.Code != "bad_payload" {
-			t.Fatalf("input %s: err = %v, want permanent bad_payload", in, err)
+		rejectShapeBackfill(t, store, in)
+	}
+}
+
+// A reversed window (date_from later than date_to) matches no rows, so before
+// the order guard the job "succeeded" with zero candidates — indistinguishable
+// from the documented no-op rerun over the same window. It is an operator error:
+// fail permanently, before anything is read or written.
+func TestShapeBackfillRejectsReversedDateWindow(t *testing.T) {
+	store := &fakeShapeStore{
+		timeseries: map[string][]storage.TimeseriesPoint{"stale-run": gpsTrace(20)},
+		rows:       map[string]*string{"stale-run": nil},
+		dates:      map[string]string{"stale-run": "2026-11-20"},
+	}
+	pe := rejectShapeBackfill(t, store, `{"date_from":"2026-12-31","date_to":"2026-01-01"}`)
+	if pe.Error() != "route shapes: date_from must not be after date_to" {
+		t.Fatalf("err = %q, want the reversed-window message", pe.Error())
+	}
+}
+
+// Equal bounds are a single-day window, not a reversed one: the order guard is
+// strictly greater-than, so a one-day recompute still runs.
+func TestShapeBackfillAcceptsSingleDayWindow(t *testing.T) {
+	store := &fakeShapeStore{
+		timeseries: map[string][]storage.TimeseriesPoint{"that-day": gpsTrace(20), "next-day": gpsTrace(20)},
+		rows:       map[string]*string{"that-day": nil, "next-day": nil},
+		dates:      map[string]string{"that-day": "2026-11-20", "next-day": "2026-11-21"},
+	}
+
+	got := decodeShapeResult(t, runShapeBackfill(t, store, `{"date_from":"2026-11-20","date_to":"2026-11-20"}`))
+	if got.Candidates != 1 || got.Generated != 1 {
+		t.Fatalf("result = %+v, want only the row on 2026-11-20 recomputed", got)
+	}
+	decodeStoredV2(t, "that-day", store.rows["that-day"])
+	if store.rows["next-day"] != nil {
+		t.Fatal("row outside the single-day window was recomputed")
+	}
+}
+
+// Unknown keys are refused, not dropped. A plain Unmarshal ignores them, so a
+// mistyped window (from/to) would decode as the empty payload — whose meaning
+// is "recompute the whole stale set" — and one typo would turn a bounded
+// recompute into an unbounded one. The message names every offending key and
+// only those: the recognized keys next to them are not reported.
+func TestShapeBackfillRejectsUnknownInputKeys(t *testing.T) {
+	for _, tc := range []struct{ input, wantMessage string }{
+		{`{"from":"2026-11-01","to":"2026-11-03"}`, "route shapes: unknown keys: from, to (accepted: date_from, date_to)"},
+		{`{"date_from":"2026-11-01","date_to":"2026-11-03","dry_run":true}`, "route shapes: unknown keys: dry_run (accepted: date_from, date_to)"},
+	} {
+		store := &fakeShapeStore{
+			timeseries: map[string][]storage.TimeseriesPoint{"stale-run": gpsTrace(20)},
+			rows:       map[string]*string{"stale-run": nil},
+			dates:      map[string]string{"stale-run": "2026-11-02"},
+		}
+		pe := rejectShapeBackfill(t, store, tc.input)
+		if pe.Error() != tc.wantMessage {
+			t.Fatalf("input %s: err = %q, want %q", tc.input, pe.Error(), tc.wantMessage)
 		}
 	}
 }
