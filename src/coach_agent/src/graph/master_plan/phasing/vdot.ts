@@ -14,7 +14,9 @@
  * 方程实现，短距离→长距离的高估由调用方的 ×1.03 保守折扣机制吸收。
  */
 
-export const RACE_DISTANCES_M = { "5K": 5000, "10K": 10000, HM: 21097.5, FM: 42195 } as const;
+import { RACE_DISTANCES_M } from "@stride/contract";
+
+export { RACE_DISTANCES_M } from "@stride/contract";
 export type RaceDistanceKey = keyof typeof RACE_DISTANCES_M;
 /** 由短到长；「比源距离更长」的折扣判定用。 */
 const RACE_DISTANCE_ORDER: readonly RaceDistanceKey[] = ["5K", "10K", "HM", "FM"];

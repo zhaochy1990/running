@@ -172,6 +172,8 @@ function bagValidationInput(bag: WeekBag, row: ContentWeekRow, input: ContentGen
     zones: row.zones,
     maxTrainingDays: input.athlete.weeklyRunDaysMax,
     goalPaceSKm: input.race.goalPaceSKm,
+    distance: input.race.distance ?? "FM",
+    ...(row.specificPaceSKm != null ? { specificPaceSKm: row.specificPaceSKm } : {}),
     finalQuality: row.phase === "final_quality",
     ...(row.role === "race" ? { raceDate: input.race.date } : {}),
     ...(isRegeneration(row) ? { regeneration: true } : {}),
@@ -191,6 +193,8 @@ function finalValidation(weeks: Array<{ week: number; sessions: RunWorkout[] }>,
       zones: row.zones,
       maxTrainingDays: input.athlete.weeklyRunDaysMax,
       goalPaceSKm: input.race.goalPaceSKm,
+      distance: input.race.distance ?? "FM",
+      ...(row.specificPaceSKm != null ? { specificPaceSKm: row.specificPaceSKm } : {}),
       finalQuality: row.phase === "final_quality",
       ...(row.role === "race" ? { raceDate: input.race.date } : {}),
       ...(isRegeneration(row) ? { regeneration: true } : {}),
@@ -265,7 +269,7 @@ function assertInput(input: ContentGeneratorInput): void {
     // 比赛的激活窗在上一周、周内模型不可表达（L3 无比赛日期不可先知）——fail fast
     // 逼上游处理，不静默产出 C3 结构性非法的课表
     const raceWd = (new Date(`${input.race.date}T00:00:00Z`).getUTCDay() + 6) % 7;
-    if (raceWd < 2)
+    if (raceWd < 2 && input.race.distance !== "HM")
       throw new Error(`generateWeekContent: 比赛日 ${input.race.date} 落在周一/周二——赛前 2-3 天激活窗跨周，周内模型不可表达（上游须先解决跨周激活）`);
   }
   for (const row of input.rows) {
@@ -332,7 +336,7 @@ export async function generateWeekContent(
   if (bagViolations.length > 0) {
     throw new Error(`L4 兜底产物挂门（实现缺陷）：${bagViolations.join(";")}`);
   }
-  const { violations, outcome, scheduleFailures } = runSchedule(bags, input, coefficients, true);
+  const { violations, outcome, scheduleFailures } = runSchedule(bags, input, coefficients, true, options?.pmcSeed);
   if (outcome == null || violations.length > 0) {
     if (scheduleFailures.length > 0) {
       throw new Error(`L4 结构性无解（输入超排位包络，P 门上浮）：${scheduleFailures.join(";")}`);

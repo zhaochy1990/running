@@ -32,6 +32,16 @@ export function danielsAudit(outcome: ScheduledOutcome, input: ContentGeneratorI
   const mKm = (w: (typeof flat)[number]["w"]) =>
     w.blocks.reduce((t, b) => t + b.repeat * b.steps.reduce((u, st) => u + (st.duration.kind === "distance_m" ? (st.duration.value ?? 0) : 0), 0), 0) / 1000;
 
+  if (input.race.distance === "HM") {
+    items.push({
+      item: "半马项目检查",
+      verdict: failedIds.length === 0 ? "pass" : "fail",
+      expectation: "按半马距离、当周专项配速、长跑上限和周量守恒校验",
+      actual: failedIds.length === 0 ? `${input.rows.length}周全部硬校验通过` : failedIds.join("；"),
+    });
+    return items;
+  }
+
   // 1. 周量弧：taper 递减 + 赛周日常量
   const taperRows = rows.filter((r) => r.role === "taper").sort((a, b) => a.week - b.week);
   for (let i = 1; i < taperRows.length; i++) {

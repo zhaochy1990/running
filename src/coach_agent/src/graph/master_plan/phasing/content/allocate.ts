@@ -70,7 +70,8 @@ export function allocateWeek(row: ContentWeekRow, maxTrainingDays: number, regen
   const wuMin = 15;
   const cdMin = 10;
   const wuCdKm = kmOf(wuMin + cdMin);
-  let mBody = q >= 1 ? Math.min(12, Math.max(4, ((total - lr) * 0.4) / q - wuCdKm)) : 0;
+  const bodyCap = row.distance === "HM" ? (row.phase === "early_quality" ? 2 : row.phase === "transition_quality" ? 4 : 6) : 16;
+  let mBody = q >= 1 ? Math.min(row.distance === "HM" ? Math.min(4, bodyCap) : 12, Math.max(4, ((total - lr) * 0.4) / q - wuCdKm)) : 0;
   let eBudget = total - lr - q * (mBody + wuCdKm);
   if (eBudget < 0 && q >= 1) {
     mBody = Math.max(3, mBody + eBudget / q);
@@ -103,12 +104,12 @@ export function allocateWeek(row: ContentWeekRow, maxTrainingDays: number, regen
   // 容量后，峰值周残量靠 M 主体收口）② LR ±≤1.4（C2 容差 1.5 内留余）
   // ③ 热身/放松 +10min（E 时段不占 C9 分层带）——仍残留由 C1 容差吸收
   if (q >= 1 && Math.abs(rest) > 0.05) {
-    const target = Math.min(16, Math.max(3, mBody + rest / q));
+    const target = Math.min(bodyCap, Math.max(row.distance === "HM" ? 2 : 3, mBody + rest / q));
     rest -= (target - mBody) * q;
     mBody = target;
   }
   if (Math.abs(rest) > 0.05) {
-    const grow = Math.max(-1.4, Math.min(1.4, rest));
+    const grow = Math.max(-1.4, Math.min(1.4, rest, row.distance === "HM" ? (row.role === "taper" ? 15 : 24) - lr : Infinity));
     lr += grow;
     rest -= grow;
   }
@@ -159,6 +160,7 @@ const M_ACTIVATION_STRIDES_M = 400;
  * （原书 2Q 计划赛周唯一 Q=2×1-2km@T+strides；窗=raceWd-5 起最早空日，周二优先）
  * + 窗内短 E 激活。主体量级带 [3,5] 不变（2×1.6-2km@T 形态），配速口径 T 带。 */
 export function allocateRaceWeek(row: ContentWeekRow, race: ContentGeneratorInput["race"]): RaceWeekAllocation {
+  if (race.distance === "HM") return allocateHalfMarathonRaceWeek(row, race);
   const eMid = easyMidOf(row);
   const kmOf = (minutes: number) => (minutes * 60) / eMid;
   const raceWd = (new Date(`${race.date}T00:00:00Z`).getUTCDay() + 6) % 7;
@@ -204,4 +206,23 @@ export function allocateRaceWeek(row: ContentWeekRow, race: ContentGeneratorInpu
   // 未铺完的残量（窗口耗尽）由 C1 容差吸收；Σ 按 30s 取整后的实际处方计（激活课按课形状计）
   const sumKm = 42.195 + activationKm + shakes.reduce((s, x) => s + (x.minutes * 60) / eMid, 0);
   return { activation, shakes, sumKm };
+}
+
+/** Half-marathon race budget and slots share the same date/volume calculation. */
+function allocateHalfMarathonRaceWeek(row: ContentWeekRow, race: ContentGeneratorInput["race"]): RaceWeekAllocation {
+  const eMid = easyMidOf(row);
+  const weekday = (new Date(`${race.date}T00:00:00Z`).getUTCDay() + 6) % 7;
+  let remaining = Math.max(0, row.totalKm - 21.0975);
+  const fixedKm = (25 * 60) / eMid;
+  const bodyKm = Math.min(4, remaining - fixedKm);
+  const activation = weekday >= 3 && row.qualitySessions > 1 && bodyKm >= 2 ? { weekday: weekday - 3, bodyKm } : null;
+  if (activation) remaining -= fixedKm + activation.bodyKm;
+  const shakes: RaceWeekShake[] = [];
+  for (let day = weekday - 1; day >= 0 && remaining > 0.1; day--) {
+    if (day === activation?.weekday) continue;
+    const minutes = Math.min(30, (remaining * eMid) / 60);
+    shakes.push({ weekday: day, minutes });
+    remaining -= (minutes * 60) / eMid;
+  }
+  return { activation, shakes, sumKm: row.totalKm - remaining };
 }

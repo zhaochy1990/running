@@ -74,6 +74,8 @@ C1 周量守恒（E 带区间可行性）｜C2 LR 唯一且=long_run_km ±1.5（
 
 /** L4 周骨架行（L3 LoadWeek + 该周投影带 + E 带折算锚）。 */
 export interface ContentWeekRow {
+  distance?: "FM" | "HM";
+  specificPaceSKm?: number;
   week: number;
   /** L2 canonical（recovery/foundation/early_quality/transition_quality/final_quality）。 */
   phase: string;
@@ -102,6 +104,7 @@ export interface ContentAthleteContext {
 }
 
 export interface ContentRaceContext {
+  distance?: "FM" | "HM";
   name: string;
   /** 比赛日 ISO date。 */
   date: string;
@@ -216,6 +219,8 @@ function budgetHint(row: ContentWeekRow, maxTrainingDays: number, race: ContentR
   if (row.role === "race") {
     const a = allocateRaceWeek(row, race);
     const parts: string[] = [];
+    if (race.distance === "HM")
+      return `比赛21.0975km + ${a.activation ? a.activation.bodyKm.toFixed(1) + "km半马专项激活及热身放松" : "短E或仅比赛"} + ${a.shakes.length}个短E槽 ≈ ${a.sumKm.toFixed(1)}km`;
     if (a.activation != null) parts.push(`周二位M触感激活 ${a.activation.bodyKm.toFixed(1)}km@goal±5s+strides（教练基准赛周形态）`);
     for (const s of a.shakes) parts.push(`周${"一二三四五六"[s.weekday]} ${Math.round(s.minutes)}min E shake`);
     if (parts.length === 0)
@@ -251,11 +256,12 @@ export function buildContentPayload(input: ContentGeneratorInput): Record<string
         regeneration: isRegeneration(row),
         total_km: row.totalKm,
         // 赛周守恒有效目标=max(骨架, 42.195)——低平台赛周骨架可低于比赛里程本身
-        c1_target_km: row.role === "race" ? Math.max(row.totalKm, 42.195) : row.totalKm,
+        c1_target_km: row.role === "race" ? Math.max(row.totalKm, race.distance === "HM" ? 21.0975 : 42.195) : row.totalKm,
         long_run_km: row.longRunKm,
         quality_sessions: row.qualitySessions,
         quality_family: row.qualityFamily,
         pace_zones: row.zones,
+        specific_pace_s_per_km: row.specificPaceSKm,
         ...(row.guidance != null && row.guidance.length > 0 ? { adjust_guidance: row.guidance } : {}),
         ...(eMid != null ? { e_pace_mid_s_per_km: Math.round(eMid), e_km_per_60min: Math.round((3600 / eMid) * 10) / 10 } : {}),
         budget_hint: budgetHint(row, athlete.weeklyRunDaysMax, race),
@@ -264,6 +270,7 @@ export function buildContentPayload(input: ContentGeneratorInput): Record<string
     athlete,
     ...(input.provenSessions && input.provenSessions.length > 0 ? { recent_proven_sessions: input.provenSessions } : {}),
     race: {
+      distance: race.distance ?? "FM",
       name: race.name,
       date: race.date,
       target_time: race.targetTime,
@@ -285,7 +292,15 @@ export function buildContentMessages(input: ContentGeneratorInput, retry?: { pre
       .join("\n")}\n上一版输出（仅供对照，不要原样重复）：${JSON.stringify(retry.previous ?? null).slice(0, 6000)}`;
   }
   return [
-    ["system", CONTENT_DOCTRINE],
+    ["system", input.race.distance === "HM" ? HM_CONTENT_DOCTRINE : CONTENT_DOCTRINE],
     ["user", user],
   ];
 }
+
+const HM_CONTENT_DOCTRINE = `为半马生成 weeks 课包，输出结构沿用 schema。周内日期由排课器决定。
+每周按 total_km、long_run_km、quality_sessions 和 budget_hint 守恒。E 跑用 e-slot，band=normal 或 interval，不写 purpose。结构课用 course，含 type/name/purpose/note/blocks。
+热身15min、放松10min用time_s和E带。主体用distance_m，work步用pace_s_km窄带（中点±5s），恢复用recovery和open。普通T/I/R按当周对应带。
+M类表示半马专项，按该周specific_pace_s_per_km开课，单次专项累计≤10km，短窗口从2-4km起步；不得超前使用更快目标。基础和早期按quality_family安排T/I/R，避免只堆专项。
+LR以E为主，≤24km，独立减量周≤15km。含专项段的LR计入周质量配额。
+赛周比赛课有且仅一节M，主体21097.5米按goal_pace_s_per_km±5s，无热身放松。赛周无LR，其它课全在比赛日前。budget_hint无激活时允许只有比赛，质量配额为1。有激活时至多一节2-4km专项主段，并保留热身放松。减量降低体积。
+每节结构课purpose说明训练作用。`;

@@ -1,5 +1,4 @@
 import type { RunWorkout, RunWorkoutType } from "@stride/contract";
-import { goalMPaceBand } from "./project.js";
 import {
   easyMidOfZones,
   hasCooldown,
@@ -14,6 +13,7 @@ import {
   qualitySpectrum,
   stepKmOf,
 } from "./derive.js";
+import { goalMPaceBand } from "./project.js";
 
 /**
  * L4 内容层校验（devops#807；叫法拍板 2026-10-27：validation，不用 gate）。
@@ -35,6 +35,8 @@ export interface SessionUnderTest {
 }
 
 export interface WeekContentInput {
+  distance?: "FM" | "HM";
+  specificPaceSKm?: number;
   sessions: SessionUnderTest[];
   /** L3 周骨架行（load 层 LoadWeek 的 {km, lr, q} 投影）。 */
   row: { total_km: number; long_run_km: number | null; quality_sessions: number; role?: string };
@@ -181,7 +183,7 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
     const main = mainQualitySegment(workout, zones);
     if (main == null) continue;
     const band = zones[TYPE_BAND[type]];
-    const goalBand = type === "M" && input.goalPaceSKm != null ? goalMPaceBand(input.goalPaceSKm) : null;
+    const goalBand = type === "M" && input.goalPaceSKm != null ? goalMPaceBand(input.specificPaceSKm ?? input.goalPaceSKm) : null;
     const los = [band?.[0], goalBand?.[0]].filter((x): x is number => x != null);
     const his = [band?.[1], goalBand?.[1]].filter((x): x is number => x != null);
     if (los.length === 0 && his.length === 0) {
@@ -209,7 +211,7 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
   // 对低平台运动员可低于 42.195km 本身，而比赛课处方不可削减（规则⑤）——
   // 守恒目标取 max(骨架, FM 里程)。课包阶段（bagStage）：E 槽位以 km 区间
   // 参与可行性（终值由 L4b 实例化后另跑全量）。
-  const c1Target = raceDate != null && row.long_run_km == null ? Math.max(row.total_km, 42.195) : row.total_km;
+  const c1Target = raceDate != null && row.long_run_km == null ? Math.max(row.total_km, input.distance === "HM" ? 21.0975 : 42.195) : row.total_km;
   const unknown = sessions.filter((s) => sessionKm(s.workout, eMid) == null).map((s) => s.workout.name);
   const sumKm = unknown.length === 0 ? sessions.reduce((sum, s) => sum + (sessionKm(s.workout, eMid) ?? 0), 0) : null;
   const tol = Math.max(WEEK_KM_ABS_TOL, c1Target * WEEK_KM_REL_TOL);
@@ -252,7 +254,11 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
   // C3 Q 配额：含 ≥1 质量段的课数 vs 配额；比赛课本身按一节质量课计。
   // C3 Q配额：含 ≥1 质量段的课数 vs 配额。LR 不算——长跑是位型课（C2 独立守恒），
   // 内嵌 work 尾段是长跑的专项化（#837 拍板），不占独立质量课配额（教练 2Q+1L=Q 归 Q、L 归 L）。
-  const quality = sessions.filter((s) => s.workout.type !== "LR" && (hasQualitySegment(s.workout, zones) || isRace(s.workout)));
+  const quality = sessions.filter(
+    (s) =>
+      (input.distance === "HM" || s.workout.type !== "LR") &&
+      (hasQualitySegment(s.workout, zones) || isRace(s.workout) || (input.distance === "HM" && s.workout.type === "M")),
+  );
   // q+1 位=轻量 M 段课（2026-11-02「E 压缩与 M 段铺开」：E 槽升级的第三质量位，
   // 每周至多一节且必须为轻量形态）；其余超额照挂
   const extra = quality.filter((s) => !isRace(s.workout) && isLightMSegmentCourse(s.workout));
@@ -306,7 +312,15 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
   // 赛周豁免——E 槽位课包本就不收 note，赛周 E 的 note 只可能来自 L4b 的通勤
   // 调整说明（2026-11-01 拍板），拦它=拦自己人）。
   const noteBad = sessions
-    .filter((s) => raceDate == null && !hasQualitySegment(s.workout, zones) && !hasStrideStep(s.workout) && s.workout.type !== "LR" && s.workout.note != null)
+    .filter(
+      (s) =>
+        raceDate == null &&
+        !(input.distance === "HM" && s.workout.type === "M") &&
+        !hasQualitySegment(s.workout, zones) &&
+        !hasStrideStep(s.workout) &&
+        s.workout.type !== "LR" &&
+        s.workout.note != null,
+    )
     .map((s) => `${s.workout.name} note应null`);
   checks.push({ id: "C6 note语义", pass: noteBad.length === 0, detail: noteBad.join(";") || "全过" });
 
@@ -374,7 +388,7 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
   // 不在专项域——维持路径的极松目标，M 课照带）；goalPaceSKm/finalQuality
   // 缺省跳过（存量回放无 goal 上下文）。
   const mGoalBad: string[] = [];
-  if (input.finalQuality === true && input.goalPaceSKm != null) {
+  if (input.distance !== "HM" && input.finalQuality === true && input.goalPaceSKm != null) {
     const goalBeyondSpectrum = spectrum != null && input.goalPaceSKm > spectrum.slow - 5;
     for (const { workout } of sessions) {
       if (workout.type !== "M" || isRace(workout)) continue;
@@ -401,9 +415,10 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
   {
     const lrs = sessions.filter((s) => s.workout.type === "LR");
     const pureAerobic = lrs.filter((s) => !hasQualitySegment(s.workout, zones));
-    const fq = input.finalQuality === true;
+    const fq = input.distance !== "HM" && input.finalQuality === true;
     const isProgress = row.role === "progress";
-    const c14Fail = input.bagStage == null && !input.templatePath && fq && isProgress && lrs.length > 0 && pureAerobic.length === lrs.length;
+    const c14Fail =
+      input.distance !== "HM" && input.bagStage == null && !input.templatePath && fq && isProgress && lrs.length > 0 && pureAerobic.length === lrs.length;
     checks.push({
       id: "C14 长跑专项段",
       pass: !c14Fail,
@@ -482,7 +497,7 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
   {
     const bad: string[] = [];
     const isRaceCtx = row.role === "race";
-    if (input.finalQuality === true && input.bagStage == null && !input.templatePath) {
+    if (input.distance !== "HM" && input.finalQuality === true && input.bagStage == null && !input.templatePath) {
       const isTaper = row.role === "taper";
       const isRace = row.role === "race";
       const iCount = sessions.filter((s) => s.workout.type === "I").length;
@@ -546,7 +561,7 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
       const paceSec: number = st.target.kind === "pace_s_km" && lo != null && hi != null ? (lo + hi) / 2 : (eMid as number);
       return paceSec > 0 ? st.duration.value / paceSec : null;
     };
-    if (input.finalQuality === true && row.role === "progress" && input.bagStage == null && !input.templatePath) {
+    if (input.distance !== "HM" && input.finalQuality === true && row.role === "progress" && input.bagStage == null && !input.templatePath) {
       for (const { workout } of sessions) {
         for (const b of workout.blocks) {
           for (let r = 0; r < b.repeat; r++) {
@@ -570,7 +585,8 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
       }
     }
     const share = totalM > 0 ? aero / totalM : 0;
-    const c17Applies = input.finalQuality === true && row.role === "progress" && input.bagStage == null && !input.templatePath && !unknownShare;
+    const c17Applies =
+      input.distance !== "HM" && input.finalQuality === true && row.role === "progress" && input.bagStage == null && !input.templatePath && !unknownShare;
     checks.push({
       id: "C17 有氧份额上限",
       pass: !c17Applies || share <= 0.65 + 1e-6,
@@ -594,6 +610,54 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
   // 调和，injury 周可低至 10km）。两个例外：赛周激活课（①拍板）=比赛日前 1-3
   // 天的短 E 激活/shakeout；LR 前日轻量（#825 拍板）=长跑前一日 E ≤8km（课实际
   // 里程）或休，时长下限豁免。legacyEDuration=⑨ 之前存量样本整条跳过。
+  if (input.distance === "HM") {
+    const issues: string[] = [];
+    for (const { workout } of sessions) {
+      const km = sessionKm(workout, eMid);
+      if (workout.type === "LR" && km != null && km > (row.role === "taper" ? 15 : 24) + 0.01) issues.push("长跑超半马上限");
+      const race = input.raceDate != null && workout.date === input.raceDate;
+      if (race) {
+        const distance = workout.blocks.reduce(
+          (total, block) => total + block.repeat * block.steps.reduce((sum, step) => sum + (step.duration.kind === "distance_m" ? step.duration.value : 0), 0),
+          0,
+        );
+        if (
+          Math.abs(distance - 21097.5) > 0.01 ||
+          workout.blocks.some((block) =>
+            block.steps.some(
+              (step) =>
+                step.duration.kind !== "distance_m" ||
+                step.target.kind !== "pace_s_km" ||
+                Math.abs((step.target.low + step.target.high) / 2 - (input.goalPaceSKm ?? 0)) > 0.51 ||
+                step.target.high - step.target.low > 10,
+            ),
+          )
+        )
+          issues.push("比赛课距离或目标配速错误");
+      } else if (workout.type === "M" || (workout.type === "LR" && hasQualitySegment(workout, zones))) {
+        let specificKm = 0;
+        for (const block of workout.blocks)
+          for (const step of block.steps) {
+            if (step.step_kind !== "work" || (workout.type === "LR" && !isQualityStep(step, zones))) continue;
+            const segmentKm = stepKmOf(step, eMid);
+            if (segmentKm == null) issues.push("半马专项段里程不可知");
+            else specificKm += block.repeat * segmentKm;
+            if (
+              step.target.kind !== "pace_s_km" ||
+              input.specificPaceSKm == null ||
+              Math.abs((step.target.low + step.target.high) / 2 - input.specificPaceSKm) > 1
+            )
+              issues.push("半马专项配速超当周能力锚");
+          }
+        if (specificKm > (row.role === "race" ? 4.01 : 10.01)) issues.push("半马专项段超过项目剂量上限");
+        if (row.role === "race" && specificKm < 1.99) issues.push("半马激活专项段不足2km");
+      }
+      if (input.raceDate && workout.date !== input.raceDate && workout.type !== "E" && workout.type !== "M") issues.push("半马赛周仅允许短E和半马专项激活");
+      if (input.raceDate && workout.date > input.raceDate) issues.push("比赛日之后有课");
+    }
+    if (input.raceDate && sessions.filter(({ workout }) => workout.date === input.raceDate).length !== 1) issues.push("比赛日必须恰一节比赛课");
+    checks.push({ id: "HM 项目硬校验", pass: issues.length === 0, detail: issues.join("；") || "全过" });
+  }
   if (input.bagStage != null) return checks; // C9 归排位段实例化（位置定带），课包阶段不查
   if (input.legacyEDuration) {
     checks.push({ id: "C9 E课时长分层", pass: true, detail: "legacy豁免" });

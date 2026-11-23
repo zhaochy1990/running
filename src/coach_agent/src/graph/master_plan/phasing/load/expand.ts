@@ -1,6 +1,8 @@
 import type { LoadBlock, LoadPlan, LoadRole, LoadWeek, MilestoneAlignment, RecoveryScenarioPolicy, StrengthPhasePolicy } from "@stride/contract";
+import { RACE_DISTANCES_M } from "@stride/contract";
 import type { PhaseDivisionIntent } from "../intent.js";
 import { phaseRefMatches } from "../intent.js";
+import { HM_LONG_RUN_MAX_KM, HM_TAPER_LONG_RUN_MAX_KM, halfMarathonDailyKm } from "../racePolicy.js";
 import type { HabitualBaseline } from "./baseline.js";
 import { validateLoad } from "./gates.js";
 import { ACTIVATION_MAX_KM, ACTIVATION_MIN_KM, BUILD_CAP, bandOf, RACE_KM, RECOVERY_FACTOR, RECOVERY_FLOOR_KM } from "./reachability.js";
@@ -74,6 +76,10 @@ export type {
 } from "@stride/contract";
 
 export interface LoadInput {
+  distance?: "FM" | "HM";
+  raceDate?: string;
+  raceEasyPaceSKm?: number;
+  weeklyRunDaysMax?: number;
   intent: PhaseDivisionIntent;
   runwayWeeks: number;
   /** R0-R5 常态基线（evidence.habitual）。 */
@@ -162,7 +168,9 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
   const { intent, runwayWeeks: N, baseline, recentWeeksKm, historyKm } = input;
   const phases = [...intent.phases].sort((a, b) => a.start_week - b.start_week);
   const phaseAt = (w: number) => phases.find((p) => p.start_week <= w && w <= p.end_week) ?? phases.at(-1)!;
-  const taperW = Math.min(intent.taper_weeks, 3);
+  const hm = input.distance === "HM";
+  if (hm && (!input.raceDate || !Number.isFinite(Date.parse(input.raceDate)))) throw new Error("半马载荷展开缺少有效比赛日");
+  const taperW = Math.min(intent.taper_weeks, hm ? 2 : 3);
   const actual4 = rollingSeed(baseline, recentWeeksKm);
   const lr8 = Math.max(LR_MIN_KM, Math.min(baseline.pre_peak_km * 0.32, 30));
 
@@ -221,7 +229,11 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
       // 含比赛总账是衍生物；低量档日常下限 14 保证每日 shake 有预算（#809 的
       // 「不得低于比赛里程」由公式形态天然保证）
       const raceDaily = Math.min(ACTIVATION_MAX_KM, Math.max(ACTIVATION_MIN_KM, plateau * RACE_DAILY_SHARE));
-      km = isRace ? RACE_KM + raceDaily : plateau * (1 - (TAPER_CURVE * tIdx) / (taperW + 1));
+      km = isRace
+        ? hm
+          ? RACE_DISTANCES_M.HM / 1000 + halfMarathonDailyKm(plateau, input.raceDate!, input.weeklyRunDaysMax)
+          : RACE_KM + raceDaily
+        : plateau * (1 - (TAPER_CURVE * tIdx) / (taperW + 1));
       role = isRace ? "race" : "taper";
     } else {
       const stair = STAIR[(phaseWeekIdx - 1) % STAIR.length]!;
@@ -238,8 +250,8 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
     if (historyKm != null && w <= historyKm.length) km = historyKm[w - 1]!;
 
     const lrCap = km < LR_LOW_VOLUME_WEEK_KM ? LR_SHARE_LOW_VOLUME : LR_SHARE;
-    const lrFloor = Math.max(LR_FLOOR_KM, lr8 * 1.2);
-    const lrTarget = Math.min(LR_MAX_KM, lrFloor, km * lrCap);
+    const lrFloor = hm ? Math.min(HM_LONG_RUN_MAX_KM, Math.max(16, lr8)) : Math.max(LR_FLOOR_KM, lr8 * 1.2);
+    const lrTarget = Math.min(hm ? HM_LONG_RUN_MAX_KM : LR_MAX_KM, lrFloor, km * lrCap);
     // 下限 min(12, km×cap)：低量周（km≲27）份额优先，运行下限不再硬顶破份额门。
     // taper 周独立削减（#809）：常规目标再被随深度递减的带上限修剪（首 taper 周 25、
     // 每深一周 −5；taperW≤3 不变量保证结果恒落 20-25 带，无需下限钳制）；
@@ -251,7 +263,7 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
       lr = r1(Math.min(14, km * 0.3));
     } else {
       const base = Math.max(Math.min(LR_MIN_KM, km * lrCap), lrTarget);
-      lr = r1(role === "taper" ? Math.min(base, TAPER_LR_MAX_KM - 5 * (taperW - fromEnd - 1)) : base);
+      lr = r1(role === "taper" ? Math.min(base, hm ? HM_TAPER_LONG_RUN_MAX_KM : TAPER_LR_MAX_KM - 5 * (taperW - fromEnd - 1)) : base);
     }
     // 赛周 q=2（#825）：比赛课+赛前激活短课各算一节（规则③⑧维持原则）；taper 周
     // q=2（2026-11-01 丹尼尔斯原书口径校准）：倒数第二周仍 2Q 足量（原书 2Q 计划
@@ -260,13 +272,20 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
       p.canonical === "recovery"
         ? 0
         : isRace
-          ? 2
+          ? hm
+            ? input.raceEasyPaceSKm != null &&
+              (new Date(input.raceDate!).getUTCDay() + 6) % 7 >= 3 &&
+              km - 21.0975 >= 2 + 1500 / input.raceEasyPaceSKm &&
+              (input.weeklyRunDaysMax ?? 7) >= 2
+              ? 2
+              : 1
+            : 2
           : inTaper
             ? km >= TAPER_Q2_MIN_KM
               ? 2
               : 1
             : p.canonical === "foundation"
-              ? km >= Q_FOUNDATION_KM
+              ? !hm && km >= Q_FOUNDATION_KM
                 ? 1
                 : 0
               : km >= Q_BUILD_KM
@@ -344,7 +363,7 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
 /** 生成入口：展开 + 六条验收门，产出完整五件套（门用与展开器同源的滚动种子）。 */
 export function buildLoadPlan(input: LoadInput): LoadPlan {
   const { weeks, blocks, milestones } = expandLoad(input);
-  const checks = validateLoad(input.intent, weeks, rollingSeed(input.baseline, input.recentWeeksKm), input.historyKm?.length ?? 0);
+  const checks = validateLoad(input.intent, weeks, rollingSeed(input.baseline, input.recentWeeksKm), input.historyKm?.length ?? 0, input.distance);
   return {
     weeks,
     blocks,

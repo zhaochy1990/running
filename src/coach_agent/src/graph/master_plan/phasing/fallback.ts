@@ -272,7 +272,7 @@ export function tableFallback(evidence: PhaseEvidence, runwayWeeks: number): Pha
   layout = closeToRunway(layout, N);
 
   const fqWeeks = layout.find((p) => p.canonical === "final_quality")?.weeks ?? 0;
-  const taperWeeks = fqWeeks >= 6 ? 3 : fqWeeks >= 2 ? 2 : 1;
+  const taperWeeks = evidence.target.distance === "HM" ? Math.min(2, Math.max(1, fqWeeks)) : fqWeeks >= 6 ? 3 : fqWeeks >= 2 ? 2 : 1;
 
   const phases: PhaseDivisionIntent["phases"] = [];
   let week = 1;
@@ -283,9 +283,12 @@ export function tableFallback(evidence: PhaseEvidence, runwayWeeks: number): Pha
       start_week: week,
       end_week: week + weeks - 1,
       primary_goal: DEFAULT_PRIMARY_GOAL[canonical],
-      training_goal: TRAINING_GOAL[canonical],
+      training_goal: evidence.target.distance === "HM" && canonical === "final_quality" ? "T 巡航与半马配速分段，E 长跑积累耐力" : TRAINING_GOAL[canonical],
       block_mode: EXPECTED_BLOCK_MODE[canonical],
-      rationale: rationaleFor(canonical, weeks, taperWeeks, evidence),
+      rationale:
+        evidence.target.distance === "HM"
+          ? rationaleFor(canonical, weeks, taperWeeks, evidence).replace("M 配速长距离为主", "T 巡航与半马专项为主")
+          : rationaleFor(canonical, weeks, taperWeeks, evidence),
     });
     week += weeks;
   }

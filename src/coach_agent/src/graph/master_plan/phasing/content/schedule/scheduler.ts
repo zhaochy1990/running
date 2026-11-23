@@ -1,6 +1,6 @@
 import { normalizeRunWorkout, type RunWorkout } from "@stride/contract";
-import { hasQualitySegment } from "../derive.js";
 import { allocateRaceWeek } from "../allocate.js";
+import { hasQualitySegment } from "../derive.js";
 import type { ContentRaceContext, ContentWeekRow } from "../doctrine.js";
 import { E_DURATION_INTERVAL_BAND, E_DURATION_NORMAL_BAND, LR_EVE_MAX_KM, weekdayOf } from "../validators.js";
 import { COEFFICIENT_VERSION, courseDose, DEFAULT_DOSE_COEFFICIENTS, type DoseCoefficients } from "./dose.js";
@@ -293,12 +293,12 @@ function placeRaceWeek(bag: WeekBag, row: ContentWeekRow, ctx: SingleWeekContext
   const raceCtxLike = { ...ctx.race, travelDay: ctx.race?.travelDay ?? ("saturday" as const) };
   const allocShakes = allocateRaceWeek(row, raceCtxLike as never).shakes;
   const travelWd = raceCtxLike.travelDay === "friday" ? 4 : 5;
-  const shakeBudget = Math.max(0, daysMax - 2);
+  const shakeBudget = Math.max(0, daysMax - (ctx.race?.distance === "HM" ? structured.length : 2));
   const placed: number[] = [];
   for (const slot of slots.slice(0, shakeBudget)) {
     const hint = allocShakes.find((x) => !placed.includes(x.weekday))?.weekday;
     const wd = hint ?? earlyDays.find((d) => d !== travelWd && dayCourses[d]!.length === 0);
-    if (wd == null || wd === travelWd) repairs.push(`W${row.week} 赛周 E 槽位无空日——剪除`);
+    if (wd == null || (ctx.race?.distance !== "HM" && wd === travelWd)) repairs.push(`W${row.week} 赛周 E 槽位无空日——剪除`);
     else {
       dayCourses[wd]!.push(slot);
       placed.push(wd);
@@ -459,7 +459,7 @@ export function scheduleWeek(
   }
   // 周一/周二比赛：M 激活窗（赛前 2-3 天）跨周不可表达（generateWeekContent 入口
   // 断言同款；scheduleOnly 直调路径同守）——fail fast 不静默产出结构性非法赛周
-  if (raceWd != null && raceWd < 2) {
+  if (raceWd != null && raceWd < 2 && ctx.race?.distance !== "HM") {
     return { failures: [`W${row.week} 比赛日 ${raceDate} 落在周一/周二——赛前激活窗跨周不可表达`] };
   }
 
@@ -484,7 +484,7 @@ export function scheduleWeek(
   const qualityWds = new Set(structuredAt.filter(({ workout }) => hasQualitySegment(workout, row.zones)).map(({ di }) => di));
 
   // C1 目标（赛周托底 max(骨架, 42.195)，与 validators 同口径）
-  const c1Target = isRaceWeek ? Math.max(row.totalKm, 42.195) : row.totalKm;
+  const c1Target = isRaceWeek ? Math.max(row.totalKm, ctx.race?.distance === "HM" ? 21.0975 : 42.195) : row.totalKm;
   const tol = Math.max(3, c1Target * 0.03);
 
   // E 实例化：位置定带 → 中位起步 → water-fill 双向收敛（只动未顶格槽位）
