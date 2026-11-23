@@ -90,8 +90,10 @@ function raceWeekCourses(row: ContentWeekRow, input: ContentGeneratorInput): Wee
       course(
         `赛前激活 ${race.distance === "HM" ? "半马配速" : "M"} ${r1(alloc.activation.bodyKm)}km${race.distance === "HM" ? "" : "+strides"}`,
         "M",
-        `赛前激活：M 配速主体 ${r1(alloc.activation.bodyKm)}km 保持比赛节奏触感（减量期保强度即可维持），加 4×100m strides 唤醒神经肌肉，为${race.name}保持兴奋性。`,
-        "主体按 M 带执行不追强度；每组 strides 后充分恢复再起下一组。",
+        race.distance === "HM"
+          ? `赛前激活：${r1(alloc.activation.bodyKm)}km 半马专项段保持节奏触感，为${race.name}保留状态。`
+          : `赛前激活：M 配速主体 ${r1(alloc.activation.bodyKm)}km 保持比赛节奏触感（减量期保强度即可维持），加 4×100m strides 唤醒神经肌肉，为${race.name}保持兴奋性。`,
+        race.distance === "HM" ? "主体按当周半马专项配速执行，保留热身与放松。" : "主体按 M 带执行不追强度；每组 strides 后充分恢复再起下一组。",
         [
           {
             repeat: 1,
@@ -148,7 +150,9 @@ function normalWeekCourses(row: ContentWeekRow, input: ContentGeneratorInput, re
         `${type === "M" && input.race.distance === "HM" ? "半马配速" : type} ${r1(alloc.mBodyKm)}km`,
         type,
         `${input.race.distance === "HM" ? (type === "M" ? "半马专项课：半马配速" : type + " 配速课：") : "马配专项课：M 配速"}主体 ${r1(alloc.mBodyKm)}km 演练比赛节奏${row.role === "taper" ? "，减量期保持强度触感（维持原则）" : "，专项耐力核心刺激"}。`,
-        input.race.distance === "HM" ? "主体按当周半马专项配速执行，状态下降时减量。" : "主体按 M 带执行，心率漂移超上限即放 5s/km。",
+        input.race.distance === "HM"
+          ? `主体按当周${type === "M" ? "半马专项配速" : type + "训练带"}执行，状态下降时减量。`
+          : "主体按 M 带执行，心率漂移超上限即放 5s/km。",
         [
           {
             repeat: 1,
