@@ -2,64 +2,47 @@
 
 设计草案 · 2026-11-23 · [查看架构图和实体属性图](2026-11-23-plan-eval-diagrams.html)
 
-平台通过浏览器提供训练计划测评。评测人员在界面新建或导入用例，维护脱敏快照、待评计划和评分标准，再运行规则或 LLM 评分。“离线测评”指输入在运行前冻结，整个过程独立于生产数据和计划生成系统。平台内部使用网络通信，LLM 检查可以调用配置的模型 API。
+评测对象是工作台选定的 **Coach Agent 发布版本**。每个用例先执行该版本生成计划（Execute），再对已经保存的同一份计划进行规则和 LLM 评分（Evaluate）。测评使用冻结的用户数据；生成和评分都在独立测评环境内运行。生成模型与评分模型可以分别调用获准的模型 API。
 
-## 1. 界面与分布式运行架构
+## 1. 工作台与分布式服务
 
-Web 界面、可水平扩展的无状态测评 API、可跨机器部署的 worker 池独立运行。所有人通过同一个界面查看有权访问的用例与历史报告。浏览器关闭后任务继续执行，重新打开可凭运行 ID 查看进度。
-
-| 界面 | 用户看到什么 | 可以做什么 |
+| 工作台入口 | 用户操作 | 平台记录 |
 |---|---|---|
-| 用例库 | 用例标识、当前版本、计划类型、已配置的检查 | 查看、新建、导入、修改用例，或选中一个或多个用例发起测评 |
-| 用例详情 | 跑者目标、数据截止日、训练历史、训练约束、待评计划及评分标准 | 核对输入；单用例可为本次运行选择另一份计划文件；点击「运行测评」 |
-| 测评结果 | 运行中显示已完成用例数；结束后显示通过、未通过、执行错误的用例数 | 展开用例查看每项分数、门槛和理由，点击证据定位到本次快照或计划的字段，导出 JSON |
+| 用例库 | 查看、新建、导入和修改用例。选择或填写脱敏快照，指定生成请求、计划类型和检查标准 | 首次保存创建用例；编辑保存为新版本，旧运行继续引用原版本。并发编辑冲突时提示重新加载 |
+| 发起测评 | 选择一个 Coach Agent 版本和一个或多个用例，确认生成模型及评分配置，点击「运行测评」 | 展示版本标签与提交号，提交后返回 run_id。换版本再测会创建新的运行 |
+| 运行详情 | 查看每个用例的 Execute 和 Evaluate 进度；打开生成的计划、两路评分、证据或失败原因 | 记录目标及实际执行的制品摘要、输入版本、生成计划 ID 和内容摘要。浏览器关闭后任务继续 |
+| 历史报告 | 通过运行 ID 查看或导出结果，从证据跳到冻结快照或生成计划的具体字段 | 每次运行保留自己的计划和报告 |
 
-### 工作台内的用例管理
+用例可通过表单直接维护，也可导入包含 case.json、快照及其引用数据的目录。API 只解析上传目录内的引用；保存前校验、保留原始字节并计算摘要。已有标识须明确保存为新版本。维护者可以复用快照；编辑快照生成新版本。新版本的 Coach Agent 对相同用例重新生成计划。
 
-| 操作 | 在界面如何完成 | 保存结果 |
-|---|---|---|
-| 查看 | 从用例库打开详情，可切换版本，查看跑者快照、默认计划，以及每项规则或 LLM 问题、评分量表和门槛 | 浏览时可直接选定该版本发起测评 |
-| 新建 | 填写用例标识和计划类型；选择已有快照或在表单中填写跑者目标、约束和历史；选择或上传默认计划；逐项添加评分标准 | 服务端校验通过后创建首个版本，生成对应清单，用户无需编写 case.json |
-| 导入 | 选择用例目录，预览每条清单引用的快照、计划和检查；逐条显示校验错误 | 新标识可创建用例；已有标识须明确选择「保存为新版本」。任何单条用例均须完整校验后才能入库 |
-| 修改 | 从详情点击「编辑」，修改快照、默认计划或检查项，核对后保存 | 同一用例标识下产生新版本。若另一人已保存更新，界面提示重新载入再编辑。旧版本及引用它的运行仍可查看 |
+工作台内的「新建」表单填写跑者目标、截止日与历史事实，也可选择已有快照；随后填写生成请求、规则、评分问题、五档量表与门槛。导入前预览各项输入及校验错误。详情页可切换历史版本，逐项核对输入和评分标准；详情页与新建表单共用编辑器。创建和修改用例都不需要预先提供一份候选计划。
 
-表单保存与目录导入共用相同的输入契约。编辑已共享的快照会创建新快照版本，只更新当前新用例版本的引用。在运行确认页临时换计划则只影响这次任务。
+### 提交、Execute、Evaluate
 
-### 一次运行如何完成
+1. **提交与启动。** Agent 发布时将可执行制品和版本信息登记到版本目录。建议用 OCI 镜像承载真实 Agent 代码、提示词、资源和离线执行入口；版本记录包含标签、提交号、镜像地址及不可变 digest。API 把选择解析为 digest，在同一事务保存运行、冻结的用例版本、生成/评分配置及待启动任务。提交幂等键关联同一 run_id。API 的调度器根据持久化任务请求集群启动 worker；中断后扫描待启动任务并补调度，多副本按任务租约仲裁。
+2. **Execute · 拉取与生成。** worker 领取用例任务后按运行锁定的 digest 自动拉取或命中已校验的镜像缓存，核对实际 digest 后运行该版 Coach Agent。测评适配器把生成请求、固定时钟和冻结的只读数据提供给真实的计划生成入口；其数据读取限于用例所含资料。运行不使用生产用户凭证、在线计划生成服务或生产写入接口。Agent 需要额外历史记录、目标或既有周计划上下文时，应随用例固化；缺失时显式报错。评分问题和量表只对 Evaluate 可见。
+3. **Execute · 保存产物。** worker 经内部 API 保存 Agent 输出原始字节、类型、SHA-256、任务 ID 和实际镜像 digest。按本地共享计划契约校验。有效产物与任务的「可评分」状态在一个事务内提交；此后才允许领取 Evaluate 工作。候选输出不符合契约时保留原始输出与错误路径，记为产物未通过，跳过评分。拉取失败、digest 不符、进程异常或没有输出时记 Execute 执行错误。
+4. **Evaluate · 两路评分。** worker 按 plan_id 读取已保存的产物并核对摘要。规则 judge 运行固定检查；LLM judge 读取同一份计划与快照，按量表评分。新建用例默认提供规则和 LLM 两类评分项。两路独立，可并行；每个启用的检查分别落分，单路出错保留另一条结果。同时配置两类检查的用例执行两路；只配置一种的用例执行已声明的检查。生成与评分使用各自的模型配置和凭证。
+5. **接管与报告。** 以租约代次拒绝迟到写回，每个任务至多提交一个计划。持久化前中断可能需要再次执行 Agent；持久化成功后接管仅恢复 Evaluate，复用同一 plan_id 并跳过已提交的检查。进程崩溃时外部模型调用可能重复，数据库按产物和检查键去重。所有用例终结后 API 幂等保存最终报告，界面显示每个阶段的状态、质量结论和证据。
 
-1. **准备输入。** 表单保存时将输入序列化为 UTF-8 JSON 并保留这些字节。目录导入时，API 在所选上传目录内解析引用，校验清单与快照，按输入原始字节计算 SHA-256，保存不可变版本和文件内容。缺文件在导入界面报错；修改快照或评分标准产生新用例版本。API 按调用者权限校验用例、上传计划和报告访问。
-2. **提交测评。** API 在同一事务里创建测评运行和每个选中用例对应的一条任务，锁定用例版本、实际计划版本、运行器版本与模型设置。界面获得 run_id 即可离开。一次提交使用唯一请求键，网络重发可取回同一运行，主动再次测评则生成新运行。
-3. **并行执行。** worker 从内部 API 原子领取一条用例任务和租约，读取冻结输入，核对摘要并依据计划类型校验契约。输入可读但候选计划不合法时，任务记为未通过并跳过 judge；冻结输入不可读或摘要不符时记为执行错误。对有效计划，按检查定义的 kind 分派给相应 judge，核验分数范围、理由和证据指针，再按各自门槛判定。单项 judge 执行错误时仍继续其他检查。同一批用例可分给多台机器。worker 只经内部 API 读取与写回测评数据；模型密钥由服务端注入。规则运行只需平台内网，LLM 评分按配置访问模型服务。
-4. **中断与接管。** worker 定期续租。租约过期，其他 worker 可凭新租约接管；写回按租约代次判定，旧持有者的迟到结果被拒绝。每个任务、检查组合最多持久化一份结果；接管时跳过已落库检查。若模型已响应、worker 在保存前中断，接管可能再次调用模型。连续丢失租约达配置上限时任务终结为执行错误。
-5. **查看结果。** 全部任务终结后，API 依据已保存的逐项结果汇总；以 run_id 唯一键保存一份最终报告。终结触发或后续巡检可幂等重试汇总。页面从 API 查询进度及报告，并在点击证据时读取该任务所锁定的输入版本。
-
-第一版建议用独立的**测评 MySQL 库**存储版本、运行状态、任务、检查结果和报告。冻结输入量小时也以原始字节存入该库。任务表同时充当持久队列；由 Go API 的 storage 层负责领取、续租、幂等提交和汇总。各副本共享这一份状态，无需共享磁盘。可以从一个 API 副本与两个 worker 验证跨节点执行；具体副本数按负载配置。
+最小部署建议沿用独立测评 MySQL 存放版本、冻结输入、任务队列、计划原文和报告，Go 测评 API 的 storage 层拥有写入；worker 通过内部 API 领取、续租和提交。集群负责启动 worker，制品仓库负责分发已发布版本。具体容器平台和可并发的 worker 数量留给部署阶段。首次接入需为目标版本发布离线执行入口并验证周计划或总计划能力；版本目录只展示具备相应能力的可执行版本。
 
 ```mermaid
 flowchart LR
-    UI["测评工作台 · 查看、新建、导入、修改用例 · 运行与报告"]
-    subgraph EVAL["分布式测评平台"]
-      API["测评 API 副本 · 用例版本、冻结输入、建任务、汇总"]
-      DB["独立测评库 · 冻结输入、任务队列、结果与报告"]
-      W["worker 池 · 按用例领取、续租、写回"]
-      RULE["规则 judge"]
-      LLM["LLM judge"]
-      API <--> DB
-      W <-->|内部 API| API
-      W --> RULE
-      W --> LLM
-    end
-    UI <-->|提交任务、查询结果| API
-    LLM <-->|按需调用| MODEL["模型 API"]
+    UI["工作台：管理用例、选择 Agent 版本"] --> API["测评 API：锁定 digest、启动 worker"]
+    API --> W["worker：领取用例与冻结输入"]
+    REG["Agent 制品仓库"] -->|按 digest 拉取| W
+    W --> EX["Execute：运行目标版本生成计划"]
+    EX --> STORE["提交生成计划并返回 plan_id"]
+    STORE --> RULE["Evaluate：规则 judge"]
+    STORE --> LLM["Evaluate：LLM judge"]
+    RULE --> REP["汇总结果与证据"]
+    LLM --> REP
 ```
 
-单个用例可仅启用规则、仅启用 LLM，或两者同时启用。每个已配置的检查都要执行。规则用例无需模型配置。缺少模型配置仅使对应 LLM 检查出错，同一用例仍执行规则。
+## 2. 用例输入与生成产物
 
-同类案例可通过新建表单或目录导入加入用例库。多个案例可以通过相对路径引用同一份快照。已用于评测的快照按版本保留，修正事实时新增文件并更新清单。真实数据由维护者预先整理，仅保留评测所需事实；仓库示例使用虚构数据。每次调用外部模型前须确保该用例的数据允许发送给所选服务。
-
-## 2. 用例格式
-
-三个输入均为 UTF-8 JSON。清单中的文件名相对于清单所在目录解析；本次替换的计划使用界面选定的文件。导入时只解析上传包内的文件。用例标识在本次套件内唯一，检查标识在用例内唯一。
+**用例输入**为 UTF-8 JSON 清单和脱敏快照。生成请求保存在清单内；judge 定义由调度器剔除后才向 Agent 传入生成输入。用例 ID 在套件内唯一，检查 ID 在用例内唯一。
 
 **case.json**
 
@@ -68,7 +51,7 @@ flowchart LR
   "schema": "plan-eval-case/v1",
   "id": "return-week",
   "athlete": "athlete.json",
-  "plan": "plan.json",
+  "request": {"instruction": "根据跑者目标制定下周训练计划。", "start_date": "2026-08-17"},
   "plan_type": "weekly",
   "checks": [
     {"id": "frequency", "kind": "rule", "rule": "weekly-run-days/v1", "min_score": 1},
@@ -79,7 +62,7 @@ flowchart LR
 }
 ```
 
-清单字段均必填，`checks` 至少一项。v1 拒绝未知字段、版本、类型和规则。规则通过带版本的名称绑定本地实现；示例规则只适用于周计划，使用其他计划类型属于用例配置错误。LLM 每项只有一个评分问题，五个非空锚点按 1 至 5 分排列。规则门槛固定为 1，LLM 门槛是 1 至 5 的整数。
+request.instruction 为非空文本，start_date 为目标起始日，as_of 使用快照截止日。清单字段均必填，`checks` 至少一项。v1 拒绝未知字段、版本、类型和规则。规则通过带版本的名称绑定本地实现；示例规则只适用于周计划，使用其他计划类型属于用例配置错误。LLM 每项只有一个评分问题，五个非空锚点按 1 至 5 分排列。规则门槛固定为 1，LLM 门槛是 1 至 5 的整数。
 
 **athlete.json**
 
@@ -97,11 +80,9 @@ flowchart LR
 
 快照必填 `schema/as_of/goal/constraints/history`。日期均为跑者当地日历日（YYYY-MM-DD）；`as_of` 表示截至该日末已知。每条历史证据含日期和非空事实，日期不得晚于截止日；数据提供者负责核对事实确为当时可见。`goal` 为非空文本。`history` 可为空，代表无记录；`constraints` 可为 {}，已有上限时填写整数 1–7。频率规则要求上限存在，缺值属于用例错误。其他事实可通过新增有日期的记录补充。
 
-**plan.json** 保存一份原样的待评计划。清单的 `plan_type` 取 `weekly` 或 `master`，分别用服务内随版本发布的 [WeeklyPlanSchema](../../../src/coach_contract/src/weekly_plan/schema.ts) 或 [MasterPlanSchema](../../../src/coach_contract/src/master_plan/schemas.ts) 解析。运行器可使用打包进工具的共享契约，无需加载生成器。示例计划可从[周计划契约样本](../../../tests/fixtures/weekly_plan_contract.json)提取，包含周一 8 公里轻松跑、周二力量训练和周三休息：
+**生成产物**由 Execute 输出。`plan_type` 为 weekly 或 master，分别通过 [WeeklyPlanSchema](../../../src/coach_contract/src/weekly_plan/schema.ts) 或 [MasterPlanSchema](../../../src/coach_contract/src/master_plan/schemas.ts) 校验。执行入口按版本接受「计划类型、生成请求、冻结数据、时钟、生成模型配置」，产生一份计划原文或结构化执行错误。第一版可在隔离适配器中复用 [Coach Agent 核心包](../../../src/coach_agent/package.json)，并以冻结数据实现该版本所需的数据读取接口。平台需要已有训练活动等结构化记录的地方，按版本输入契约校验，不能从文字摘要补造。
 
-```sh
-jq '.base' tests/fixtures/weekly_plan_contract.json > cases/return-week/plan.json
-```
+下方报告使用仓库[周计划样本](../../../tests/fixtures/weekly_plan_contract.json)的 base 对象模拟一次成功输出，以便校验字段和证据路径。该样本仅用于文档验证。
 
 ## 3. Judge 接口
 
@@ -128,7 +109,7 @@ type LlmJudge = Judge<LlmCheck>;
 
 ## 4. 报告格式与界面状态
 
-示例对应上面的用例。模型名称及评分用于说明报告格式。run_id 和 task_id 分别定位本次运行及其用例任务。三个 SHA-256 对应示例文件的实际字节（两个内嵌 JSON 块含末尾换行，计划使用上文 jq 命令导出）。
+以下为示意报告；版本、镜像、模型和运行标识均为虚构值。输入摘要取两个 JSON 文本块含末尾换行的字节；产物摘要取周计划样本经 `jq '.base'` 导出的字节。
 
 ```json
 {
@@ -136,31 +117,98 @@ type LlmJudge = Judge<LlmCheck>;
   "run_id": "run-001",
   "runner_version": "0.1.0",
   "status": "pass",
-  "summary": {"pass": 1, "fail": 0, "error": 0},
+  "summary": {
+    "pass": 1,
+    "fail": 0,
+    "error": 0
+  },
   "errors": [],
-  "cases": [{
-    "task_id": "task-001",
-    "manifest": "return-week/case.json",
-    "case_id": "return-week",
-    "inputs_sha256": {"manifest": "53bcdeaf2a40229184d8c644b5208f100407c9272d7a8bf2ff6f70760f05a4f6", "athlete": "118ee39e356b4a93e1f5f60ad1b09513c02ee0844b5b7bcc2efac291aed6c436", "plan": "a12d6ca3125fc0821704c42121ce645bfa2348d27660b0dada3bb5bb1715c619"},
-    "status": "pass",
-    "errors": [],
-    "checks": [
-      {"id": "frequency", "kind": "rule", "judge": {"rule": "weekly-run-days/v1"},
-       "status": "pass", "score": 1, "min_score": 1, "reason": "1 个跑步日，上限 2 天。",
-       "evidence": [{"source": "athlete", "pointer": "/constraints/max_run_days_per_week"}, {"source": "plan", "pointer": "/sessions"}]},
-      {"id": "distance", "kind": "llm", "judge": {"provider": "example", "model": "example-model", "prompt_version": "plan-grade/v1"},
-       "status": "pass", "score": 5, "min_score": 4, "reason": "周一为 8 公里轻松跑，与近四周最长跑相同，符合本周目标。",
-       "evidence": [{"source": "athlete", "pointer": "/history/0/fact"}, {"source": "athlete", "pointer": "/goal"}, {"source": "plan", "pointer": "/sessions/0"}]}
-    ]
-  }]
+  "cases": [
+    {
+      "task_id": "task-001",
+      "manifest": "return-week/case.json",
+      "case_id": "return-week",
+      "inputs_sha256": {
+        "manifest": "24017f40a66b3d03ad1f3acba253b8535de86d26d5d53566ccc6391e0dad5523",
+        "athlete": "118ee39e356b4a93e1f5f60ad1b09513c02ee0844b5b7bcc2efac291aed6c436"
+      },
+      "status": "pass",
+      "errors": [],
+      "checks": [
+        {
+          "id": "frequency",
+          "kind": "rule",
+          "judge": {
+            "rule": "weekly-run-days/v1"
+          },
+          "status": "pass",
+          "score": 1,
+          "min_score": 1,
+          "reason": "1 个跑步日，上限 2 天。",
+          "evidence": [
+            {
+              "source": "athlete",
+              "pointer": "/constraints/max_run_days_per_week"
+            },
+            {
+              "source": "plan",
+              "pointer": "/sessions"
+            }
+          ]
+        },
+        {
+          "id": "distance",
+          "kind": "llm",
+          "judge": {
+            "provider": "example",
+            "model": "example-model",
+            "prompt_version": "plan-grade/v1"
+          },
+          "status": "pass",
+          "score": 5,
+          "min_score": 4,
+          "reason": "周一为 8 公里轻松跑，与近四周最长跑相同，符合本周目标。",
+          "evidence": [
+            {
+              "source": "athlete",
+              "pointer": "/history/0/fact"
+            },
+            {
+              "source": "athlete",
+              "pointer": "/goal"
+            },
+            {
+              "source": "plan",
+              "pointer": "/sessions/0"
+            }
+          ]
+        }
+      ],
+      "case_version_id": "case-v1",
+      "execute": {
+        "status": "pass",
+        "actual_digest": "sha256:abababababababababababababababababababababababababababababababab",
+        "plan_id": "plan-001",
+        "plan_sha256": "a12d6ca3125fc0821704c42121ce645bfa2348d27660b0dada3bb5bb1715c619"
+      },
+      "evaluate": {
+        "status": "pass",
+        "plan_id": "plan-001"
+      }
+    }
+  ],
+  "agent": {
+    "version": "example-v2",
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "digest": "sha256:abababababababababababababababababababababababababababababababab"
+  },
+  "generation_model": "example-generator"
 }
 ```
 
-- `manifest` 为相对发现根目录的路径。单用例直接指向用例目录时值为 `case.json`。`inputs_sha256` 对实际读取的字节取小写十六进制摘要，在界面替换待评计划时记录替换后的计划。规则版本、模型请求标识和提示词版本用于追溯；模型 API 的同配置重跑可能有波动。
-- 已评分的检查完整保留分数、门槛、理由和证据。检查执行错误时保留标识、kind、judge、门槛，置 `status="error", score=null, evidence=[]`，以 `error:{code,message}` 替代 reason。错误信息经过脱敏；报告省略凭证、原始提示词和模型原始响应。
-- 已入库的清单、快照或计划在执行时无法读取，错误记在用例的 `errors`（元素均为 `{code,message}`），该用例的 `checks=[]`，继续其他有效用例。报告从已提交的任务读取 case_id 和冻结版本摘要。文件可读但候选计划不是合法 JSON 或未通过所声明计划的契约校验，视为候选产物失败，记用例 `fail`，`errors` 记录 `invalid_plan`，跳过该用例所有 judge。先验证清单与快照，确保不会把输入配置错误算在候选头上。
-- 用例内、套件内均按 **error > fail > pass** 汇总，保留各检查原始状态；所有检查均为必过项。summary 按用例最终状态计数。空选择、重复用例 ID 或批量覆盖计划在提交前反馈给界面，不创建运行。顶层 errors 保留运行级错误。界面分别显示「通过」「未通过」「执行错误」。运行中为临时展示状态；报告尚未持久化时显示「汇总中」；保存失败时显示「保存失败，待重试」。
+- run_id 标识一次版本测评，case_version_id 标识冻结用例。execute 记录实际运行的 digest 和生成产物；evaluate.plan_id 必须等于 execute.plan_id。生成及评分模型的调用可能有波动，持久化产物支持复查当时的评分。
+- 阶段在界面上可处于 queued、running；报告记录终态 pass、fail、error 或 skipped。Execute 返回无效产物为 fail，基础设施异常为 error；上述两种情况 Evaluate 都为 skipped，checks 为空。未拉起 Agent 时 actual_digest 为空；未获得持久化产物时 plan_id、plan_sha256 均为空。
+- Evaluate 每个检查输出分数、门槛、理由、证据；执行错误保留 judge 信息、门槛、空证据和错误码，score 为 null。用例和整批按 error > fail > pass 汇总，skipped 不覆盖前序失败。终态报告按用例计数，运行中在界面显示真实阶段。报告保存失败时提示待重试。
 
 例如，混合用例中模型服务和模型名均未配置时，该检查的报告记录如下；频率规则仍保留自己的分数。
 
@@ -188,8 +236,8 @@ erDiagram
         string case_version_id PK "用例版本"
         string case_id "稳定用例标识"
         string snapshot_id FK "跑者快照"
-        string default_plan_id FK "默认计划"
         hash manifest_sha256 "清单摘要"
+        json request "计划类型和生成请求"
     }
     "检查定义" {
         string check_def_id PK "定义标识"
@@ -199,24 +247,27 @@ erDiagram
         json criteria "规则名或问题与量表"
         int min_score "通过门槛"
     }
-    "待评计划" {
-        string plan_id PK "计划版本"
+    "生成计划" {
+        string plan_id PK "产物标识"
+        string task_id FK "唯一所属任务"
         enum plan_type "周计划或总计划"
-        bytes content "上传原文"
-        hash sha256 "原文摘要"
+        bytes content "Agent 原始输出"
+        hash sha256 "产物摘要"
+        enum validation "契约校验结果"
     }
     "用例任务" {
         string task_id PK "任务标识"
         string run_id FK "所属运行"
         string case_version_id FK "冻结用例"
-        string actual_plan_id FK "实际计划"
-        enum state "排队、执行或终态"
         int lease_epoch "租约代次"
         time lease_until "租约截止时间"
+        enum execute_status "生成阶段状态"
+        enum evaluate_status "评分阶段状态"
+        hash actual_digest "实际 Agent 摘要"
     }
     "检查结果" {
         string result_id PK "检查结果"
-        string task_id FK "所属任务"
+        string plan_id FK "实际评分产物"
         string check_def_id FK "评分依据"
         enum status "通过、未通过或错误"
         int score "分数，可空"
@@ -235,6 +286,8 @@ erDiagram
         string runner_version "评分实现版本"
         json model_config "模型和提示词版本"
         enum state "排队、执行、汇总或完成"
+        string release_id FK "锁定 Agent 版本"
+        json generation_config "生成模型设置"
     }
     "证据引用" {
         string result_id PK,FK "所属检查结果"
@@ -242,33 +295,36 @@ erDiagram
         enum source "快照或计划"
         string pointer "JSON Pointer"
     }
-    "跑者快照" ||--o{ "用例版本" : "提供事实"
-    "待评计划" ||--o{ "用例版本" : "默认计划"
+    "Agent 发布版本" {
+        string release_id PK "发布标识"
+        string version_label "工作台版本名"
+        string commit_sha "源代码提交"
+        string image_ref "制品路径"
+        hash image_digest "不可变镜像摘要"
+        json capabilities "计划类型与输入契约"
+    }
+    "跑者快照" ||--o{ "用例版本" : "训练事实"
     "用例版本" ||--|{ "检查定义" : "配置"
-    "用例版本" ||--o{ "用例任务" : "冻结版本"
-    "待评计划" ||--o{ "用例任务" : "实际计划"
+    "用例版本" ||--o{ "用例任务" : "冻结输入"
+    "Agent 发布版本" ||--o{ "测评运行" : "锁定版本"
     "测评运行" ||--|{ "用例任务" : "派发"
-    "用例任务" ||--o{ "检查结果" : "得到"
+    "用例任务" ||--o| "生成计划" : "执行生成"
+    "生成计划" ||--o{ "检查结果" : "作为评分对象"
     "检查定义" ||--o{ "检查结果" : "评分依据"
     "检查结果" ||--o{ "证据引用" : "引用"
     "测评运行" ||--o| "测评报告" : "最终形成"
 ```
 
-同一用例版本锁定快照、默认计划和检查定义。一次运行内每个选中用例创建一个任务；若界面临时换了计划，任务的 actual_plan_id 指向替代版本。每条证据通过所属任务定位输入：source 为 athlete 时读用例版本的 snapshot_id，为 plan 时读任务的 actual_plan_id。更新用例库或更换 worker 后，旧报告仍指向原始证据。
-
-约束：同一提交人的 request_key 唯一；同一运行的用例版本唯一；同一用例版本的 check_id 唯一；每个 (task_id, check_def_id) 只保存一份检查结果，且检查定义必须属于该任务的用例版本。证据以 (result_id, position) 作复合主键。运行中报告数量为零，完成时恰好一份。任务调度状态和计划质量判定分别记录。
+一次运行锁定一个 Agent 版本。每个用例任务绑定一个冻结用例，执行后至多关联一份原始计划。实际 digest 与任务所属运行的目标 digest 必须相等；每个检查结果唯一键为 (plan_id, check_def_id)，且检查须来自该任务的用例版本。证据的 athlete 指向冻结快照，plan 指向结果关联的产物。非法产物仍可查阅，但不会有检查结果。运行终结后生成一份报告。
 
 ## 6. 实现验收
 
-| 操作 | 可观察结果 |
+| 场景 | 可验证结果 |
 |---|---|
-| 仅配置频率规则，移除模型凭证并禁用公网出口，保留平台内网 | 示例通过；再加两个不同日期的跑课，达到 3 个跑步日，分数从 1 变为 0；同日双跑只计一天 |
-| 在界面新建用例、查看首版、修改评分门槛并保存 | 新版本使用新门槛；首版和已生成的报告仍引用原门槛 |
-| 从界面导入用例，临时替换计划，执行后重新打开报告并点击证据 | 定位到本次使用的输入字段，原用例和已有报告保持完整 |
-| 仅配置 LLM，测试适配器依次返回带有效证据的 3 分和 4 分 | 门槛为 4 时分别 fail、pass；适配器收到该用例的快照、候选计划和量表 |
-| 同时配置两种 judge，让规则失败、LLM 通过 | 用例 fail，报告保留两项分数；替换输入只影响本次报告 |
-| 注入 API 超时、缺失证据指针、运行中冻结输入不可读、损坏的候选计划 | 前三种 error，损坏计划 fail；批量继续执行后续有效用例 |
-| 复制用例并换成新的唯一 ID 和快照 | 一次运行报告两个用例，无需改运行器或 judge |
-| 使用允许发给外部服务的虚构用例及已配置的模型 API | 单独验证鉴权和结构化输出，报告记录服务和模型；日常契约测试可使用固定 API 响应 |
-| 两台 worker 领取同一运行里的不同用例，关闭浏览器后从另一客户端打开 run_id | 可查询同一运行的进度与结果，无需原浏览器或上传者的机器在线 |
-| worker 写入一项检查后丢失租约，由另一 worker 接手；随后旧 worker 迟到写回 | 已保存的检查可复用，迟到写回被拒，每项结果和最终报告各一份 |
+| 在工作台创建、导入、查看、修改用例 | 新版本保留生成请求、输入快照和检查定义，历史运行仍引用原版本 |
+| 同一用例分别选择 Agent A、B | 两次运行各自启动 worker，按锁定 digest 拉取对应版本；可查两个任务各自生成的计划、摘要及双路结果，即使计划内容相同也能区分来源 |
+| 拉取镜像失败、digest 不符或 Agent 无输出 | Execute 为 error，Evaluate 为 skipped，两个 judge 均无调用 |
+| Agent 输出不符合计划契约 | 保留原输出，Execute 为 fail，报告指出校验路径，两路评分均跳过 |
+| 在产物提交前阻塞写入；提交后中断 worker | 提交前两个 judge 的调用数均为零；接管时复用已保存的 plan_id，无第二次生成 |
+| 规则评分失败，LLM 通过；另一次注入模型超时 | 分别呈现两路结果、证据与状态；LLM 故障保留规则得分 |
+| 两台 worker 执行不同用例，关闭浏览器后重开 | 通过 run_id 查看 Execute、Evaluate、计划原文及报告；迟到写回不会产生第二份计划或评分 |
