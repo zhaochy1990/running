@@ -287,3 +287,22 @@ test("weekly_docs stays optional and rejects malformed docs", () => {
   malformed.artifact.weekly_docs = [{ schema: "weekly-plan/v1" }];
   assert.equal(MasterPlanGraphOutcome.safeParse(malformed).success, false);
 });
+
+test("availability rejects strength sessions without strength days; explicit off needs no days (#222)", () => {
+  const withStrength = (strengthSessions: number, strengthDays: string[]) => {
+    const request = createTestRequest() as Record<string, unknown> & { availability: Record<string, unknown> };
+    request.availability.strength_sessions_per_week = strengthSessions;
+    request.availability.strength_available_days = strengthDays;
+    return request;
+  };
+  // 次数 > 0 必须给出力量可用日（否则首批「0 节」与滚动「未设置」两种解读会打架）
+  const missingDays = MasterPlanGraphRequest.safeParse(withStrength(2, []));
+  assert.equal(missingDays.success, false);
+  if (!missingDays.success) {
+    const paths = missingDays.error.issues.map((issue) => issue.path.join("."));
+    assert.deepEqual(paths, ["availability.strength_available_days"]);
+  }
+  // 显式关闭（0 次）不需要力量日
+  assert.equal(MasterPlanGraphRequest.safeParse(withStrength(0, [])).success, true);
+  assert.equal(MasterPlanGraphRequest.safeParse(withStrength(2, ["monday", "thursday"])).success, true);
+});

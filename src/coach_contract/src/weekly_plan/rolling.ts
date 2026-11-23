@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import type { Weekday } from "../master_plan/card.js";
 import type { LoadPlan, MasterPlanAnchor, PhaseDivisionIntent } from "../master_plan/policy.js";
 import type { WeeklyPlan } from "./schema.js";
 
@@ -96,6 +97,23 @@ export interface AdjustProposalPayload {
 }
 
 /**
+ * 力量排课偏好（#222）：首批来自表单 request.availability，滚动/调整从 master
+ * content.availability 读回。null/缺省 = 旧计划未设置——继续只出跑课并提示补选。
+ */
+export interface RollingStrengthAvailability {
+  /** 每周力量课数（用户选择；0=显式关闭）。 */
+  sessionsPerWeek: number;
+  /** 用户选择的力量可用日（周一..周日；顺序不保证，消费侧按周内日期归一）。 */
+  availableDays: Weekday[];
+  /** 是否允许同日跑+力量双练（false=力量优先独立日，必要时合法换日挪 E 跑）。 */
+  allowsDoubleSessions: boolean;
+  /** 每周不可训练日（适用于所有训练；力量选日与 E 换日均避开）。 */
+  unavailableDays: Weekday[];
+  /** 单课时长上限（分钟；力量课超限从模板尾部裁剪动作）。 */
+  maxSessionDurationMin: number;
+}
+
+/**
  * 滚动投影的 master 侧存量输入（#858 PR-A Round 1）：赛季开始时 master 图落库
  * 的政策包 + 首批课表末周号。滚动内核据此 + 新鲜 L1 证据重投 L3/L4（**不重跑
  * L2**——阶段政策是赛季意图，块界滚动只重排周量与课表）。
@@ -119,7 +137,7 @@ export interface RollingMasterInput {
     /** 目标距离（master goal 同枚举；缺省 FM——判断层教义目前只验证过 FM）。 */
     distance?: "FM" | "HM";
   };
-  availability: { weeklyRunDaysMax: number };
+  availability: { weeklyRunDaysMax: number; strength?: RollingStrengthAvailability | null };
   policy: PhaseDivisionIntent;
   /** 存量骨架（偏差基准）。 */
   skeleton: LoadPlan;

@@ -29,12 +29,75 @@ test("fromStoredContent：真实 content 形状解析回 RollingMasterInput，�
   assert.equal(master.planStartMonday, content.start_date);
   assert.equal(master.totalWeeks, content.total_weeks);
   assert.deepEqual(master.race, { name: "西安马拉松", date: "2026-10-18", targetTime: "2:50:00", distance: "FM" });
-  assert.deepEqual(master.availability, { weeklyRunDaysMax: 5 });
+  // #222：无力量段（老 content / 未填偏好）→ strength=null（未设置态）
+  assert.deepEqual(master.availability, { weeklyRunDaysMax: 5, strength: null });
   assert.equal(master.lastGeneratedWeek, 6);
   // 政策包三段经 zod 单源解析后与落库前对象逐段相等（无重排/无丢字段）
   assert.deepEqual(master.policy, content.policy);
   assert.deepEqual(master.skeleton, content.skeleton);
   assert.deepEqual(master.anchor, content.anchor);
+});
+
+test("fromStoredContent：#222 力量偏好已设置态读回（五字段齐、星期名去重、经 JSON 往返）", () => {
+  const content = storedContentFixture();
+  content.availability = {
+    weekly_run_days_max: 5,
+    strength_sessions_per_week: 2,
+    strength_available_days: ["thursday", "monday", "monday"],
+    allows_double_sessions: false,
+    max_session_duration_min: 150,
+    unavailable_days: ["sunday", "sunday"],
+  };
+  // DB longtext 往返：对象键序与数组顺序原样保留
+  const roundTripped = JSON.parse(JSON.stringify(content)) as Record<string, unknown>;
+  const master = fromStoredContent({ content: roundTripped, masterPlanId: "p", lastGeneratedWeek: 6 });
+  assert.deepEqual(master.availability, {
+    weeklyRunDaysMax: 5,
+    strength: {
+      sessionsPerWeek: 2,
+      availableDays: ["thursday", "monday"],
+      allowsDoubleSessions: false,
+      unavailableDays: ["sunday"],
+      maxSessionDurationMin: 150,
+    },
+  });
+  // 显式关闭（0 次、力量日空）是合法已设置态，不能被误判成未设置
+  content.availability = {
+    weekly_run_days_max: 5,
+    strength_sessions_per_week: 0,
+    strength_available_days: [],
+    allows_double_sessions: true,
+    max_session_duration_min: 150,
+  };
+  assert.deepEqual(fromStoredContent({ content, masterPlanId: "p", lastGeneratedWeek: 6 }).availability.strength, {
+    sessionsPerWeek: 0,
+    availableDays: [],
+    allowsDoubleSessions: true,
+    unavailableDays: [],
+    maxSessionDurationMin: 150,
+  });
+});
+
+test("fromStoredContent：#222 力量段半残（缺字段/坏星期名/坏数值）一律按未设置（null）处理", () => {
+  const whole = { strength_sessions_per_week: 2, strength_available_days: ["monday"], allows_double_sessions: false, max_session_duration_min: 150 };
+  const broken: Array<Record<string, unknown>> = [
+    { ...whole, allows_double_sessions: undefined },
+    { ...whole, max_session_duration_min: undefined },
+    { ...whole, max_session_duration_min: 0 },
+    { ...whole, strength_sessions_per_week: -1 },
+    { ...whole, strength_sessions_per_week: 1.5 },
+    { ...whole, strength_available_days: ["monday", "funday"] },
+    { ...whole, strength_available_days: "monday" },
+    { ...whole, unavailable_days: [1, 2] }, // 不可用日坏掉只清空该字段，不影响已设置判定
+  ];
+  const content = storedContentFixture();
+  broken.forEach((availability, index) => {
+    content.availability = { weekly_run_days_max: 5, ...availability };
+    const strength = fromStoredContent({ content, masterPlanId: "p", lastGeneratedWeek: 6 }).availability.strength;
+    if (index === broken.length - 1)
+      assert.deepEqual(strength?.unavailableDays, []); // 末条：坏 unavailable_days 仅清空
+    else assert.equal(strength, null, `case ${index}: ${JSON.stringify(availability)} 应判未设置`);
+  });
 });
 
 test("fromStoredContent：JSON 序列化往返（DB longtext 读写路径）后解析结果一致", () => {

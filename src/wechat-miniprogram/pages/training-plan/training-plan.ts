@@ -28,9 +28,11 @@ import {
   getInjuryState,
 } from '../../services/plan-injury';
 import { getWeeklyPlan } from '../../services/plan';
+import { buildExerciseLines } from '../../utils/workoutSegments';
 import { STORAGE_KEYS } from '../../constants/config';
 import type {
   NormalizedRunWorkout,
+  NormalizedStrengthWorkout,
   PlannedSession,
   WeeklyPlanContentStructured,
   WorkoutStep,
@@ -150,6 +152,8 @@ interface ReviewWeekVM {
   roleLabel: string;
   dateRange: string;
   kmLabel: string;
+  /** #222 本周排入的力量课节数（周文档加载后回填；无力量为空串）。 */
+  strengthLabel: string;
   hasDoc: boolean;
   days: ReviewDayVM[];
   /** 未物化周的骨架目标（skeleton.weeks 的 lr/q）。 */
@@ -412,8 +416,13 @@ const STEP_KIND_LABELS: Record<string, string> = {
   rest: '休息',
 };
 
-/** 训练结构（blocks×steps）→ 折叠体行数组（严格按设计稿的块/步中文化）。 */
-function structureLines(spec: NormalizedRunWorkout | { name?: string } | null): string[] {
+/**
+ * 训练结构 → 折叠体行数组：run=blocks×steps（严格按设计稿的块/步中文化）；
+ * #222 strength=动作行（buildExerciseLines，与单课详情 buildExerciseRows 同口径）。
+ */
+function structureLines(spec: NormalizedRunWorkout | NormalizedStrengthWorkout | { name?: string } | null): string[] {
+  const strength = spec as NormalizedStrengthWorkout | null;
+  if (strength?.exercises?.length) return buildExerciseLines(strength);
   const run = spec as NormalizedRunWorkout | null;
   if (!run?.blocks?.length) return [];
   const lines: string[] = [];
@@ -669,6 +678,7 @@ function buildVMs(plan: SeasonPlanContent, chartMetric: 'km' | 'lr', chosenPhase
           roleLabel: ROLE_LABELS[sk?.role ?? ''] || '',
           dateRange: `${shortDate(w.week_start)}—${shortDate(datePlus(w.week_start, 6))}`,
           kmLabel: kmRange(w.target_weekly_km_low, w.target_weekly_km_high),
+          strengthLabel: '',
           hasDoc: false,
           days: [],
           futureLr: sk?.lr != null ? `${fmtNum(sk.lr)} km` : '未提供',
@@ -955,11 +965,18 @@ Page<TrainingPlanPageData, TrainingPlanPageHandlers>({
         detail && typeof detail.content === 'object' && detail.content !== null
           ? (detail.content as WeeklyPlanContentStructured)
           : null;
-      this.patchWeek(key, { loadingDoc: false, hasDoc: !!content?.sessions?.length, days: buildReviewDays(content?.sessions ?? []) });
+      // #222 周课表展示本周排入力量节数（独立统计，不进跑量口径）
+      const strengthCount = (content?.sessions ?? []).filter((s) => s.kind === 'strength').length;
+      this.patchWeek(key, {
+        loadingDoc: false,
+        hasDoc: !!content?.sessions?.length,
+        strengthLabel: strengthCount > 0 ? `力量 ${strengthCount} 节` : '',
+        days: buildReviewDays(content?.sessions ?? []),
+      });
     } catch (err) {
       // 404（该周无 weekly 行）= 尚未生成，走 future 展示；其余失败同样降级
       console.warn('[training-plan] 拉周每日课表失败', err);
-      this.patchWeek(key, { loadingDoc: false, hasDoc: false, days: [] });
+      this.patchWeek(key, { loadingDoc: false, hasDoc: false, strengthLabel: '', days: [] });
     }
   },
 

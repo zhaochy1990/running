@@ -575,6 +575,8 @@ RunWorkout 新增：
 
 **政策包**（master plan 改版后的产物形态）= L2 `PhaseDivisionIntent` + L3 `LoadPlan` 序列化（周骨架+块标记+回补/力量 policy+里程碑对齐），**不含全期课表明细**；weekly plan = 政策包的逐周投影（L4→L5 执行时调用）。两产物生命周期分离理由已拍板（§3.2）：政策/执行变更周期错位、偏差可计算（R2/R3 信号=实际 vs 骨架基准线）、全跑道门只能在整期上验证。**落库 schema、两条真实生成链路（聊天 deepagent 卡片 apply_token + worker kernel Admin 代生成）的替换/嫁接、weekly graph 消费接线与灰度开关** ⏳#803；**前端呈现**（阶段带/周量包络/里程碑 gate/块节奏 3+1 可视/「示意周」=每阶段一个典型周且标注示意非课表承诺/与 #575 v2 卡片线兼容；课表详情页吃 weekly 产物不动）⏳#804。
 
+**v3 content `availability` 段**（存储侧契约，单源 `coach_contract/src/master_plan/policy.ts`）：`weekly_run_days_max` 必填；#222 起追加力量偏好五字段（`strength_sessions_per_week` / `strength_available_days` / `allows_double_sessions` / `max_session_duration_min` / `unavailable_days`，全可选——存量行没有=未设置，滚动继续只出跑课并提示补选）。请求侧（`master_plan/contracts.ts` `AvailabilitySchema`）同步约束：`strength_sessions_per_week > 0` 时 `strength_available_days` 不得为空。滚动/调整/伤病维持经 `rolling/storedContent.ts` 读回；力量排课规则见 daniels-r-execution.md §6a。
+
 ## 9. 层间契约总表（总览 §4 扩展版）
 
 | 上游 → 下游 | 交接物 | 状态 |

@@ -3,6 +3,7 @@ import {
   estimatedTotalDistanceM,
   type LoadPlan,
   type PhaseDivisionIntent,
+  type RollingStrengthAvailability,
   type RunWorkout,
   shanghaiDay,
   type WeeklyPlan,
@@ -13,8 +14,10 @@ import {
 import type { ContentWeekRow } from "../master_plan/phasing/content/doctrine.js";
 import type { ScheduledOutcome } from "../master_plan/phasing/content/generate.js";
 import { courseDose, DEFAULT_DOSE_COEFFICIENTS } from "../master_plan/phasing/content/schedule/dose.js";
+import { c9QualityWeekdays } from "../master_plan/phasing/content/validators.js";
 import { phaseRefMatches } from "../master_plan/phasing/intent.js";
 import { deriveWeekKeySessions, easyPaceOf, phaseSpansOf } from "../master_plan/v2Snapshot.js";
+import { buildStrengthBatchContext, planStrengthWeek, toStrengthSession } from "./strengthSchedule.js";
 
 /**
  * 滚动周课文档构造（#858 PR-A Round 1，纯函数、单一真源）：把 L4 批产物
@@ -41,6 +44,12 @@ export interface WeeklyDocsInput {
   /** 目标比赛日（key_sessions 的 race 判定，同 v2 快照 raceDate）。 */
   raceDate: string;
   athlete: { weeklyRunDaysMax: number };
+  /**
+   * #222 力量偏好：对象=按偏好排力量课（跑课定案后、补休息日前）；null=旧
+   * 计划未设置（不排力量，批内首周 coach_notes 提示补选；0 次=显式关闭，
+   * 不排不提示）。
+   */
+  strength: RollingStrengthAvailability | null;
 }
 
 /** RunWorkout → v1 run 会话（估距/时长/dose 可得则填；dose=L4b 同源剂量系数）。 */
@@ -152,7 +161,22 @@ export function mergeAdjustedWeekDocs(newDocs: WeeklyPlan[], existingDocs: Weekl
     if (oldDoc === undefined) return [doc];
     if (addDays(weekStart, 6) < cutoff) return [];
     const past = oldDoc.sessions.filter((session) => session.date <= cutoff);
-    const future = doc.sessions.filter((session) => session.date > cutoff);
+    let future = doc.sessions.filter((session) => session.date > cutoff);
+    // #222 调整配额：保留的已过力量课计入本周节数——新文档未来力量课至多保留
+    // （新周力量总数 − 已过节数）节，超出部分丢弃（那几天无会话行，读方按缺行处理）。
+    const pastStrength = past.filter((session) => session.kind === "strength").length;
+    let strengthTrimmed = 0;
+    if (pastStrength > 0) {
+      const allowFutureStrength = Math.max(0, doc.sessions.filter((session) => session.kind === "strength").length - pastStrength);
+      let keptStrength = 0;
+      const before = future.length;
+      future = future.filter((session) => {
+        if (session.kind !== "strength") return true;
+        keptStrength += 1;
+        return keptStrength <= allowFutureStrength;
+      });
+      strengthTrimmed = before - future.length;
+    }
     // 无法安全替换时保留原周文档（不是回退成新文档）：周日无明日安排、
     // 未来全 rest/力量、合并后无 run、营养日期不全。
     if (future.length === 0) return [oldDoc];
@@ -161,7 +185,12 @@ export function mergeAdjustedWeekDocs(newDocs: WeeklyPlan[], existingDocs: Weekl
     const nutrition = mergeNutritionDates(oldDoc, doc, cutoff);
     if (nutrition.length !== 7) return [oldDoc];
     const keySessions = mergeKeySessions(oldDoc, doc, cutoff);
-    const note = past.length > 0 && future[0] !== undefined ? `本周已过安排沿用原课表（截至 ${cutoff}），新课自 ${future[0].date} 起生效` : null;
+    const notes = [
+      past.length > 0 && future[0] !== undefined ? `本周已过安排沿用原课表（截至 ${cutoff}），新课自 ${future[0].date} 起生效` : null,
+      // 截留说明：新文档 coach_notes 里的力量节数描述的是整周，截留后按实际课表为准。
+      strengthTrimmed > 0 ? `力量课按本周剩余配额排入（截至 ${cutoff} 已练 ${pastStrength} 节，截留 ${strengthTrimmed} 节）` : null,
+    ].filter((text) => text != null);
+    const note = notes.length > 0 ? notes.join("；") : null;
     return [
       {
         ...doc,
@@ -177,10 +206,14 @@ export function mergeAdjustedWeekDocs(newDocs: WeeklyPlan[], existingDocs: Weekl
 
 /** 主入口：批内每周一个 weekly-plan/v1 文档（含滚动扩展字段），逐周过硬校验。 */
 export function buildWeeklyDocs(opts: WeeklyDocsInput): WeeklyPlan[] {
-  const { scheduled, batchRows, policy, skeletonNew, skeletonStored, planStartMonday, raceDate } = opts;
+  const { scheduled, batchRows, policy, skeletonNew, skeletonStored, planStartMonday, raceDate, strength } = opts;
   const spans = phaseSpansOf(policy);
   const sessionsOfWeek = new Map(scheduled.weeks.map((week) => [week.week, week.sessions]));
   const easyPace = easyPaceOf(scheduled);
+  // #222：批级邻界上下文一次算好（跨周的质量课/长跑前日检查共用；构建廉价，
+  // 无论是否排力量都先算，避免空值守卫）。
+  const strengthBatch = buildStrengthBatchContext(scheduled, raceDate);
+  let legacyStrengthNotified = false;
 
   const docs: WeeklyPlan[] = batchRows.map((row) => {
     const week = row.week;
@@ -193,12 +226,51 @@ export function buildWeeklyDocs(opts: WeeklyDocsInput): WeeklyPlan[] {
 
     // 会话：排位产物（含日期）→ run 会话；按日期排序、同日内 session_index 递增；
     // 无课日补 rest 会话（周计划要表达「这天不跑」而不是缺行）。
-    const workouts = [...(sessionsOfWeek.get(week) ?? [])].sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
+    // #222：力量在跑课定案后、补休息日前排入——禁双练时可能把纯 E 课合法
+    // 换日给独立力量日腾位（同周内非周六空日，不动质量课/长跑，周总量不变）。
+    let workouts = [...(sessionsOfWeek.get(week) ?? [])].sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
+    let strengthSessions: WeeklyPlan["sessions"] = [];
+    let strengthNoteSuffix: string | null = null;
+    if (strength != null) {
+      const outcome = planStrengthWeek({
+        prefs: strength,
+        weekNumber: week,
+        weekStart,
+        canonical: skeletonWeek.canonical,
+        role: skeletonWeek.role,
+        workouts,
+        batch: strengthBatch,
+        // C9 质量课日集（间隔日带别判定的单源输入）：换日合法性据此保证。
+        // 比赛日只在赛周传入——与校验器调用方（generate.ts）同口径。
+        qualityWeekdays: c9QualityWeekdays(
+          workouts.map((workout) => ({ workout })),
+          row.zones,
+          skeletonWeek.role === "race" ? raceDate : undefined,
+        ),
+      });
+      if (outcome.relocations.length > 0) {
+        const moves = new Map(outcome.relocations.map((relocation) => [relocation.from, relocation.to]));
+        workouts = workouts.map((workout) => (moves.has(workout.date) ? { ...workout, date: moves.get(workout.date)! } : workout));
+        workouts.sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
+      }
+      strengthSessions = outcome.placements.map((placement) => toStrengthSession(placement, strength));
+      strengthNoteSuffix = outcome.note;
+    } else if (!legacyStrengthNotified) {
+      // 旧计划未设置力量偏好：不排力量，批内首周 coach_notes 提示补选。
+      legacyStrengthNotified = true;
+      strengthNoteSuffix = "力量偏好未设置：本批次仅排跑步课，可编辑计划补充力量训练偏好";
+    }
     const sessions: WeeklyPlan["sessions"] = workouts.map((workout, index) => toRunSession(workout, index, row.zones));
-    const runDates = new Set(workouts.map((workout) => workout.date));
+    // 力量 session_index：独立日=0；同日双练=该日跑课最大序号+1（跑步在前）。
+    for (const session of strengthSessions) {
+      const runIndexesOnDate = sessions.filter((run) => run.date === session.date).map((run) => run.session_index);
+      session.session_index = runIndexesOnDate.length > 0 ? Math.max(...runIndexesOnDate) + 1 : 0;
+      sessions.push(session);
+    }
+    const busyDates = new Set(sessions.map((session) => session.date));
     for (let offset = 0; offset < 7; offset += 1) {
       const date = addDays(weekStart, offset);
-      if (runDates.has(date)) continue;
+      if (busyDates.has(date)) continue;
       sessions.push({
         schema: "plan-session/v1",
         date,
@@ -235,7 +307,9 @@ export function buildWeeklyDocs(opts: WeeklyDocsInput): WeeklyPlan[] {
       sessions,
       nutrition: emptyNutrition(weekStart),
       notes_md: null,
-      coach_notes: `${span.phase.training_goal}（${span.phase.rationale}）；第 ${week} 周（${skeletonWeek.role}）；出口里程碑：${milestoneNote ?? "无"}`,
+      coach_notes: `${span.phase.training_goal}（${span.phase.rationale}）；第 ${week} 周（${skeletonWeek.role}）；出口里程碑：${milestoneNote ?? "无"}${
+        strengthNoteSuffix != null ? `；${strengthNoteSuffix}` : ""
+      }`,
       week_index: week,
       phase_name: span.name,
       phase_goal: `${span.phase.training_goal}（${span.phase.rationale}）`,

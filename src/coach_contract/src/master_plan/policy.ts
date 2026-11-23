@@ -11,6 +11,7 @@
  */
 import { z } from "zod/v4";
 import { WeeklyPlanSchema } from "../weekly_plan/schema.js";
+import { WEEKDAY_VALUES } from "./card.js";
 import { DaySchema, MasterPlanSchema } from "./schemas.js";
 
 // ── policy：L2 阶段划分意图（daniels.md §1/§2.2）──────────────────────────────
@@ -212,7 +213,18 @@ export const MasterPlanV3Schema = MasterPlanSchema.extend({
   /**
    * 训练可用性（#858 PR-A，全可选——v3 写路径落地前的存量行没有该字段）：
    * 滚动 job 从存量 content 构造 RollingMasterInput 需要 weekly_run_days_max。
+   * #222：力量偏好四字段随 content 落库（可选——存量行没有；读回侧缺省视为
+   * 「未设置」，滚动继续只出跑课并提示补选）。
    */
-  availability: z.strictObject({ weekly_run_days_max: z.int().min(1).max(7) }).optional(),
+  availability: z
+    .strictObject({
+      weekly_run_days_max: z.int().min(1).max(7),
+      strength_sessions_per_week: z.int().nonnegative().optional(),
+      strength_available_days: z.array(z.enum(WEEKDAY_VALUES)).optional(),
+      allows_double_sessions: z.boolean().optional(),
+      max_session_duration_min: z.int().positive().optional(),
+      unavailable_days: z.array(z.enum(WEEKDAY_VALUES)).optional(),
+    })
+    .optional(),
 });
 export type MasterPlanV3 = z.infer<typeof MasterPlanV3Schema>;

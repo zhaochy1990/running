@@ -228,6 +228,7 @@
               <view class="review-week__title">
                 <text class="review-week__no">第{{week.weekIndex}}周</text>
                 <text wx:if="{{week.roleLabel}}" class="review-week__role">{{week.roleLabel}}</text>
+                <text wx:if="{{week.strengthLabel}}" class="review-week__role review-week__role--strength">{{week.strengthLabel}}</text>
               </view>
               <view class="review-week__km">{{week.kmLabel}}<text class="review-week__km-sub">周目标</text></view>
               <view class="review-week__date">{{week.dateRange}}</view>
