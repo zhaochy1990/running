@@ -21,3 +21,10 @@ export function halfMarathonDailyKm(weeklyKm: number, raceDate: string, daysMax 
   const days = Math.min(weekday, Math.max(0, daysMax - 1));
   return weekday < 2 ? 0 : Math.min(weeklyKm * 0.25, days * 5);
 }
+
+/** Fallback quality work follows the phase's primary training stimulus. */
+export function halfMarathonQualityType(phase: string, week: number, index = 0): "R" | "I" | "T" | "M" {
+  if (phase === "early_quality") return "R";
+  if (phase === "transition_quality") return week % 2 === 0 ? "I" : "T";
+  return (week + index) % 2 === 0 ? "T" : "M";
+}

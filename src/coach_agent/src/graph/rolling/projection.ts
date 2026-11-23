@@ -232,10 +232,13 @@ export async function runProjectionCore(deps: RollingDeps, input: RollingProject
   const historyKm = historyRaw.length > 0 ? historyRaw.map((km) => r1(km * scale)) : undefined;
 
   // ③ L3 重展开（存量 policy + 新鲜基线 + 历史实际周）→ 全跑道新骨架；六门挂 = infeasible。
+  const raceEasyBand = projectZones(vdot, targetSec, RACE_DISTANCES_M[master.race.distance ?? "FM"], master.totalWeeks).weeks.at(-1)!.zones.easy!;
+  const raceEasyPaceSKm = (raceEasyBand[0]! + raceEasyBand[1]!) / 2;
   const skeletonNew = buildLoadPlan({
     intent: master.policy,
     distance: master.race.distance ?? "FM",
     raceDate: master.race.date,
+    raceEasyPaceSKm,
     weeklyRunDaysMax: master.availability.weeklyRunDaysMax,
     runwayWeeks: master.totalWeeks,
     baseline,

@@ -1,3 +1,4 @@
+import { halfMarathonQualityType } from "../racePolicy.js";
 import { allocateRaceWeek, allocateWeek } from "./allocate.js";
 import { type ContentGeneratorInput, type ContentWeekRow, fmtPace } from "./doctrine.js";
 import type { ESlotCourse, StructuredCourse, WeekBag } from "./schedule/scheduler.js";
@@ -76,7 +77,7 @@ function raceWeekCourses(row: ContentWeekRow, input: ContentGeneratorInput): Wee
     // 三块结构（主体/strides×4/放松）——C7 看首末块，strides 走 repeat 块展开
     courses.push(
       course(
-        `赛前激活 M ${r1(alloc.activation.bodyKm)}km+strides`,
+        `赛前激活 ${race.distance === "HM" ? "半马配速" : "M"} ${r1(alloc.activation.bodyKm)}km${race.distance === "HM" ? "" : "+strides"}`,
         "M",
         `赛前激活：M 配速主体 ${r1(alloc.activation.bodyKm)}km 保持比赛节奏触感（减量期保强度即可维持），加 4×100m strides 唤醒神经肌肉，为${race.name}保持兴奋性。`,
         "主体按 M 带执行不追强度；每组 strides 后充分恢复再起下一组。",
@@ -127,19 +128,27 @@ function normalWeekCourses(row: ContentWeekRow, input: ContentGeneratorInput, re
     ),
   ];
   for (let i = 0; i < alloc.qualitySessions; i++) {
-    const m = mNarrow(row, input.race.goalPaceSKm);
+    const type = input.race.distance === "HM" ? halfMarathonQualityType(row.phase, row.week, i) : "M";
+    const targetBand = row.zones[type.toLowerCase() as "t" | "i" | "r"];
+    const midpoint = targetBand?.[0] != null && targetBand[1] != null ? (targetBand[0] + targetBand[1]) / 2 : (targetBand?.[1] ?? 250) - 5;
+    const m = type === "M" ? mNarrow(row, input.race.goalPaceSKm) : ([Math.round(midpoint - 5), Math.round(midpoint + 5)] as [number, number]);
     courses.push(
       course(
-        `${input.race.distance === "HM" ? "半马配速" : "M"} ${r1(alloc.mBodyKm)}km`,
-        "M",
-        `${input.race.distance === "HM" ? "半马专项课：半马配速" : "马配专项课：M 配速"}主体 ${r1(alloc.mBodyKm)}km 演练比赛节奏${row.role === "taper" ? "，减量期保持强度触感（维持原则）" : "，专项耐力核心刺激"}。`,
-        "主体按 M 带执行，心率漂移超上限即放 5s/km。",
+        `${type === "M" && input.race.distance === "HM" ? "半马配速" : type} ${r1(alloc.mBodyKm)}km`,
+        type,
+        `${input.race.distance === "HM" ? (type === "M" ? "半马专项课：半马配速" : type + " 配速课：") : "马配专项课：M 配速"}主体 ${r1(alloc.mBodyKm)}km 演练比赛节奏${row.role === "taper" ? "，减量期保持强度触感（维持原则）" : "，专项耐力核心刺激"}。`,
+        input.race.distance === "HM" ? "主体按当周半马专项配速执行，状态下降时减量。" : "主体按 M 带执行，心率漂移超上限即放 5s/km。",
         [
           {
             repeat: 1,
             steps: [
               step("warmup", { kind: "time_s", value: (alloc.warmupMin + alloc.warmupCooldownExtraMin / 2) * 60 }, pace(eBand)),
-              step("work", { kind: "distance_m", value: Math.round(alloc.mBodyKm * 1000) }, pace(m)),
+              ...(type === "R"
+                ? Array.from({ length: Math.max(1, Math.round((alloc.mBodyKm * 1000) / 400)) }, () => [
+                    step("work", { kind: "distance_m", value: 400 }, pace(m)),
+                    step("rest", { kind: "time_s", value: 60 }, { kind: "open", low: null, high: null }),
+                  ]).flat()
+                : [step("work", { kind: "distance_m", value: Math.round(alloc.mBodyKm * 1000) }, pace(m))]),
               step("cooldown", { kind: "time_s", value: (alloc.cooldownMin + alloc.warmupCooldownExtraMin / 2) * 60 }, pace(eBand)),
             ],
           },

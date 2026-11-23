@@ -136,3 +136,73 @@ test("HM long-run dose has a literal project cap even within generic C2 toleranc
     JSON.stringify(checks.filter((check) => !check.pass)),
   );
 });
+
+test("HM time-based specific work cannot evade the ten-kilometre cap", () => {
+  const input = raceInput("2027-02-07");
+  input.rows[0] = { ...input.rows[0]!, role: "progress", totalKm: 65, longRunKm: 23.4 };
+  const bag = templateFallback(input)[0]!;
+  const course = bag.courses.find((item) => item.kind === "course" && item.type === "M");
+  assert.ok(course?.kind === "course");
+  const work = course.blocks.flatMap((block) => block.steps).find((step) => step.step_kind === "work")!;
+  assert.ok(work.target.kind === "pace_s_km");
+  const pace = (work.target.low + work.target.high) / 2;
+  work.duration = { kind: "time_s", value: 12 * pace };
+  assert.ok(validateWeekBag(bag, input.rows[0]!, input).some((check) => check.id === "HM 项目硬校验" && !check.pass));
+});
+
+test("HM fallback quality work follows early, transition, and final phases", () => {
+  const expected = [
+    ["early_quality", 1, "R"],
+    ["transition_quality", 1, "T"],
+    ["transition_quality", 2, "I"],
+    ["final_quality", 1, "M"],
+    ["final_quality", 2, "T"],
+  ] as const;
+  for (const [phase, week, type] of expected) {
+    const input = raceInput("2027-04-04");
+    input.rows[0] = { ...input.rows[0]!, phase, week, role: "progress", totalKm: 50, longRunKm: 18 };
+    const bag = templateFallback(input)[0]!;
+    assert.ok(
+      bag.courses.some((course) => course.kind === "course" && course.type === type),
+      JSON.stringify({ phase, week, type }),
+    );
+  }
+});
+
+test("HM L3 reaches optional activation only when race budget and calendar allow it", async () => {
+  const { loadAthlete } = await import("../fixtureLoader.js");
+  const { tableFallback } = await import("../fallback.js");
+  const { buildLoadPlan } = await import("../load/expand.js");
+  const { buildWeeklySeries, habitualBaseline } = await import("../load/baseline.js");
+  const { snapshot, activities } = await loadAthlete("chaoyi");
+  const evidence = buildPhaseEvidence(
+    snapshot,
+    activities,
+    {
+      raceName: "半马",
+      distance: "HM",
+      targetTime: "1:20:00",
+      weeklyRunDaysMax: 6,
+    },
+    "2026-10-26",
+  );
+  const series = buildWeeklySeries(activities, "2026-10-26");
+  for (const [raceDate, weeks, expectedQ] of [
+    ["2027-02-07", 15, 2],
+    ["2027-02-08", 16, 1],
+  ] as const) {
+    const intent = tableFallback(evidence, weeks);
+    const load = buildLoadPlan({
+      intent,
+      runwayWeeks: weeks,
+      baseline: habitualBaseline(series),
+      recentWeeksKm: series.weeks.slice(-4).map((week) => week.km),
+      distance: "HM",
+      raceDate,
+      raceEasyPaceSKm: 300,
+      weeklyRunDaysMax: 6,
+    });
+    assert.equal(load.weeks.at(-1)!.q, expectedQ);
+    assert.ok(load.weeks.every((week) => week.lr == null || week.lr <= (week.role === "taper" ? 15 : 24)));
+  }
+});

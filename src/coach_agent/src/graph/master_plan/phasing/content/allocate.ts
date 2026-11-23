@@ -70,8 +70,8 @@ export function allocateWeek(row: ContentWeekRow, maxTrainingDays: number, regen
   const wuMin = 15;
   const cdMin = 10;
   const wuCdKm = kmOf(wuMin + cdMin);
-  const bodyCap = row.distance === "HM" ? 10 : 16;
-  let mBody = q >= 1 ? Math.min(row.distance === "HM" ? 4 : 12, Math.max(4, ((total - lr) * 0.4) / q - wuCdKm)) : 0;
+  const bodyCap = row.distance === "HM" ? (row.phase === "early_quality" ? 2 : row.phase === "transition_quality" ? 4 : 6) : 16;
+  let mBody = q >= 1 ? Math.min(row.distance === "HM" ? Math.min(4, bodyCap) : 12, Math.max(4, ((total - lr) * 0.4) / q - wuCdKm)) : 0;
   let eBudget = total - lr - q * (mBody + wuCdKm);
   if (eBudget < 0 && q >= 1) {
     mBody = Math.max(3, mBody + eBudget / q);

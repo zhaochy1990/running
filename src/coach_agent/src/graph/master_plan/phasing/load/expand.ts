@@ -78,6 +78,7 @@ export type {
 export interface LoadInput {
   distance?: "FM" | "HM";
   raceDate?: string;
+  raceEasyPaceSKm?: number;
   weeklyRunDaysMax?: number;
   intent: PhaseDivisionIntent;
   runwayWeeks: number;
@@ -272,14 +273,19 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
         ? 0
         : isRace
           ? hm
-            ? 1
+            ? input.raceEasyPaceSKm != null &&
+              (new Date(input.raceDate!).getUTCDay() + 6) % 7 >= 3 &&
+              km - 21.0975 >= 2 + 1500 / input.raceEasyPaceSKm &&
+              (input.weeklyRunDaysMax ?? 7) >= 2
+              ? 2
+              : 1
             : 2
           : inTaper
             ? km >= TAPER_Q2_MIN_KM
               ? 2
               : 1
             : p.canonical === "foundation"
-              ? km >= Q_FOUNDATION_KM
+              ? !hm && km >= Q_FOUNDATION_KM
                 ? 1
                 : 0
               : km >= Q_BUILD_KM

@@ -639,7 +639,9 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
         for (const block of workout.blocks)
           for (const step of block.steps) {
             if (step.step_kind !== "work" || (workout.type === "LR" && !isQualityStep(step, zones))) continue;
-            if (step.duration.kind === "distance_m") specificKm += (block.repeat * step.duration.value) / 1000;
+            const segmentKm = stepKmOf(step, eMid);
+            if (segmentKm == null) issues.push("半马专项段里程不可知");
+            else specificKm += block.repeat * segmentKm;
             if (
               step.target.kind !== "pace_s_km" ||
               input.specificPaceSKm == null ||
@@ -647,8 +649,10 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
             )
               issues.push("半马专项配速超当周能力锚");
           }
-        if (specificKm > 10.01) issues.push("半马专项段超过10km");
+        if (specificKm > (row.role === "race" ? 4.01 : 10.01)) issues.push("半马专项段超过项目剂量上限");
+        if (row.role === "race" && specificKm < 1.99) issues.push("半马激活专项段不足2km");
       }
+      if (input.raceDate && workout.date !== input.raceDate && workout.type !== "E" && workout.type !== "M") issues.push("半马赛周仅允许短E和半马专项激活");
       if (input.raceDate && workout.date > input.raceDate) issues.push("比赛日之后有课");
     }
     if (input.raceDate && sessions.filter(({ workout }) => workout.date === input.raceDate).length !== 1) issues.push("比赛日必须恰一节比赛课");

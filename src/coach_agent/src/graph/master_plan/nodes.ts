@@ -301,11 +301,19 @@ export class MasterPlanNodes {
     const goal = aGoalOf(request);
     const runwayWeeks = raceRunwayWeeks(monday, goal.race_date, goal.distance);
     try {
+      const raceEasyBand = projectZones(
+        state.evidence!.current_capability.vdot!,
+        parseHms(goal.target_time!)!,
+        RACE_DISTANCES_M[goal.distance],
+        runwayWeeks,
+      ).weeks.at(-1)!.zones.easy!;
+      const raceEasyPaceSKm = (raceEasyBand[0]! + raceEasyBand[1]!) / 2;
       const series = buildWeeklySeries(activities, asOfOf(request));
       const skeleton = buildLoadPlan({
         intent: policy,
         distance: goal.distance,
         raceDate: goal.race_date,
+        raceEasyPaceSKm,
         weeklyRunDaysMax: request.availability.weekly_run_days_max,
         runwayWeeks,
         baseline: habitualBaseline(series),
