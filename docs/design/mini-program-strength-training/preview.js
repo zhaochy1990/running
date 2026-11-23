@@ -296,7 +296,8 @@ function render() {
     const replacement = oldInput
       ? screen.querySelector(`[data-value="${focus.dataset.value}"]`)
       : [...device.querySelectorAll('button[data-action]')].find(button =>
-        ['action', 'index', 'id', 'step'].every(key => button.dataset[key] === focus.dataset[key]));
+        ['action', 'index', 'id', 'step'].every(key => button.dataset[key] === focus.dataset[key])) ||
+        (focus.dataset.action === 'record' && screen.querySelector(`[data-action="withdraw"][data-index="${focus.dataset.index}"]`));
     (replacement || screen.querySelector('h2') || actions.firstElementChild)?.focus({ preventScroll: true });
   }
 
@@ -325,21 +326,32 @@ function updateJourney() {
 }
 
 function endRest() {
+  const { index } = session.rest;
+  const { exerciseId } = contextFor(index);
   const next = firstMissing();
-  const { exerciseId } = contextFor(session.rest.index);
-  const movePanel = variant === 'C' && session.expanded === exerciseId && next >= 0 &&
+  const movePanel = session.expanded === exerciseId && next >= 0 &&
     session.records.slice(exerciseId * setsPerExercise, (exerciseId + 1) * setsPerExercise).every(value => value !== null);
-  const focusWasInBanner = restBanner.contains(document.activeElement);
   session.rest = null;
+  if (movePanel) session.expanded = contextFor(next).exerciseId;
   if (page !== 'active') return;
-  if (variant === 'A' || movePanel) {
-    if (movePanel) session.expanded = contextFor(next).exerciseId;
+
+  const focused = document.activeElement;
+  const focusWasInBanner = restBanner.contains(focused);
+  const openNextPanel = variant === 'C' && movePanel;
+  if (variant === 'A' || openNextPanel) {
     render();
   } else {
     renderRestBanner();
     updateJourney();
   }
-  if (focusWasInBanner) screen.querySelector('h2')?.focus({ preventScroll: true });
+  if (openNextPanel) {
+    const nextPanel = screen.querySelector(`[data-action="panel"][data-id="${session.expanded}"]`);
+    screen.scrollTop += nextPanel.getBoundingClientRect().top - screen.getBoundingClientRect().top - 8;
+    if (focusWasInBanner || !focused.isConnected) nextPanel.focus({ preventScroll: true });
+  } else if (focusWasInBanner) {
+    const recordedGroup = screen.querySelector(`[data-action="withdraw"][data-index="${index}"]`);
+    (recordedGroup || screen.querySelector('h2'))?.focus();
+  }
 }
 
 function updateClocks() {
