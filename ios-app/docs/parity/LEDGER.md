@@ -51,6 +51,18 @@
 | D-rec-5 | 详情头部字段 | UI | 顶栏仅名称+日期；sportLabel/trainTypeLabel/feelEmoji 计算但 wxml 未渲染 | 按 baseline §3.1/票面渲染头部（运动 chip + 训练类型 + 体感 emoji；名称/日期在顶栏 principal） | confirmed | 用户（#773 收官核对归档，待终审） | 2026-10-26 | 保留偏差：收官核对实证（2026-10-26）——MP activity-detail.wxml:8-13 顶栏只渲染 name/dateLabel，sportLabel/trainTypeLabel/feelEmoji 在 .ts:858-861/920 计算但 wxml 零引用；iOS 按 #747 决议基线渲染这组已计算字段。两端数据同源同字段，iOS 多展示、MP 隐藏 |
 | A-rec-1 | 轨迹地图渲染决议 | UI | `<map>` 腾讯底图：wgs84ToGcj02 预转 + include-points + polyline 分段 + marker/label | MKMapView 包装：WGS-84 直传（勿转 GCJ-02）+ 禁旋转/俯仰 + 三色 gradient3 + 共享端点 8 点分段 + pause 分段 + 10% padding + 起终点徽标 + 圈号（TrackMapBuilder/TrackMapView） | aligned | 用户（#754 决议一/二） | 2026-10-26 | 坐标铁律有单测（WGS-84 逐位直传）；中国区加偏实测（外滩地标）留待真机接入时执行并回填本行 |
 
+### 跑姿动态卡增量（devops#1041，2026-11-23）
+
+仅核对本票新增的一块（mp 2026-11-22 fb5a52b5 + bfa636c3 新上的 `components/activity/running-dynamics`）；基线见 baseline §3.1。走查环境：iPhone 16 Pro 模拟器（iOS 18.5）连生产、真账号 XCUI 无头走查（带数据跑步 + 无数据力量训练）。
+
+| ID | 检查点 | 维度 | 小程序现状 | iOS 现状 | 状态 | 确认人 | 日期 | 说明 |
+| ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
+| P-adyn-1 | 跑姿动态卡数据与门控 | 功能 | services/activities.ts:24 `include=timeseries,running_dynamics`；types/activity.ts:139-158 RunningDynamics（duration_s / window_s / metrics，未上报指标整键省略）；activity-detail.wxml:156 `wx:if="{{runningDynamics}}"` | ActivitiesRepository.swift:31 同款 include；ActivityModels.swift:253 三层 wire 解码 + :296 `runningDynamics?`；RunningDynamics.swift:102 dynamicsSection（无可绘指标 / 时长·窗口非法 → nil），ActivityDetailView.swift:92 nil 即整卡不渲染 | aligned | — | 2026-11-23 | devops#1041。解码 / 门控 / 请求参数单测覆盖（RunningDynamicsTests）；走查实证带数据跑步出卡、力量训练不出卡。Garmin 步频口径归一在 Go API `running_dynamics.go` buildRunningDynamics 服务端完成，两端同样只透传（生产实证 11-22 活动 dynamics 步频均值 182.9 = avg_cadence 183），iOS 不做二次换算（单测钉住） |
+| P-adyn-2 | 四指标卡与同步选窗 | 功能 | running-dynamics.ts:4 metrics 表（步频 0 位 / 步幅 2 位 / 垂直振幅 1 位 / 触地 0 位）；:24 cardsFor（全程平均 + 当前时段范围，未选 = 全程 min–max，缺窗口 `—`）；:92 selectAt + :106 手势三态（点按切换 / 横拖选窗 / 竖滑交给页面滚动） | RunningDynamics.swift:66 rangeText / :85 timeLabel / :92 windowIndex 纯函数直译；RunningDynamicsCardView.swift:8 持有唯一 selected 下发四张卡（:77）与四张图（:129），:255 onTapGesture 切换 + simultaneousGesture DragGesture 定向 | aligned | — | 2026-11-23 | 期望值以 mp chart.ts 在 Node 实跑输出为准（位数 / 刻度 / 线宽 / 时段标签）；走查实证：点按 → 四卡同切同一时段，再点回全程；横拖换窗四卡联动；图上竖滑页面滚动且不选窗 |
+| P-adyn-3 | 帮助文案与说明开关 | UI | running-dynamics.wxml:2 标题行（「跑姿动态」+ i 说明钮 aria-label 展开/收起 +「每 N 秒 · 最小–最大」）；:11 帮助三段，强调句「线越短，这段越稳定。线越长，这段波动越大。」 | RunningDynamicsCardView.swift:35 header（同标题 + info.circle 说明钮，accessibilityLabel 同款两态 + 同说明）；:59 help 三段原文逐字，强调句加重（首段窗口秒数取接口值，现 90 与 mp 一致） | aligned | — | 2026-11-23 | 说明钮图标走 SF Symbols（全局 D-icon-1）；走查实证展开 / 收起 |
+| P-adyn-4 | 挂载位置 | UI | activity-detail.wxml:156：配速区间卡之后、「分段 / 圈速」之前 | ActivityDetailView.swift:92：配速区间卡之后、分段 / 圈速之前 | aligned | — | 2026-11-23 | 票面括注「圈速/公里分段之后」与 wxml:156 实际位置不符，按「规格照小程序 + wxml:156」落地；走查实证 frame 顺序 配速区间 < 跑姿动态 < 分段数据 |
+| D-rec-6 | 跑姿动态分窗图实现 | UI | canvas 2D 手绘（chart.ts:34 drawDynamicsChart：:23 axisTicks 右轴刻度、:68 markWidth 线宽随窗口数收窄、选中窗 accentTint 竖带 + 加粗、其余 48% 透明、恒值圆点、:91 首中末三个时刻标签） | Swift Charts（RunningDynamicsCardView.swift:129 DynamicsChartView）：RuleMark / PointMark 逐窗 + RectangleMark 选窗带；axisTicks / markWidth / 窗口中点逐函数直译有单测；纵轴值域 = 刻度首尾（同 mp），时刻标签按锚点钉死 | confirmed | 用户（devops#1041 票面「Swift Charts 或对齐现有图表方案」+ mapping §5 #749 决议「图表归 Charts」，D-rec-4 / D-trn-4 同族；待终审） | 2026-11-23 | 保留偏差：绘图技术栈 mp canvas 手绘 vs iOS Swift Charts（既有决议）；数值口径逐函数直译。容器形态沿本页既有惯例：mp 通栏四卡上下发丝线分隔，iOS 每指标一张圆角 Card（PR-3 起页内统一卡容器，不单列） |
+
 ## 教练域（PR-4 落地后登记，devops#767）
 
 | ID | 检查点 | 维度 | 小程序现状 | iOS 现状 | 状态 | 确认人 | 日期 | 说明 |

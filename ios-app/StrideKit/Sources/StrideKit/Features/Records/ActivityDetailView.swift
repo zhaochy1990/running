@@ -3,6 +3,7 @@ import SwiftUI
 /// 活动详情（devops#766，baseline §3.1 直译）：
 /// 头部（类型 chip/名称/日期/类型/体感）→ 轨迹地图（三色切换/天气浮层）→
 /// 主指标网格（跑步 9 项/力量 4 项）→ 心率/配速区间卡（走势曲线 + 区间条）→
+/// 跑姿动态卡（四指标 + 同步分窗图，有数据才出）→
 /// 圈速表（最快最慢高亮/环比箭头/恢复圈）或力量分组表 → 训练反馈 → AI 点评。
 /// 404 与网络失败统一「未找到」（无重试）；数据不足逐块隐藏。
 public struct ActivityDetailView: View {
@@ -85,6 +86,11 @@ public struct ActivityDetailView: View {
                         isInverted: true,
                         kindLabel: "配速"
                     )
+                }
+                // 跑姿动态（devops#1041）：挂载位置对齐 mp activity-detail.wxml:156
+                // （区间卡之后、分段 / 圈速之前）；无 running_dynamics 整卡不渲染。
+                if let dynamics = model.runningDynamics {
+                    RunningDynamicsCardView(section: dynamics)
                 }
                 if model.hasSegments {
                     if model.laps.isEmpty {

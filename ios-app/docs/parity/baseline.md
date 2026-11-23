@@ -123,9 +123,9 @@ parity baseline v0 (devops#747)
 
 ### 3.1 pages/activity-detail/activity-detail（活动详情）
 - 入口：activities / index 今日活动 / my-races 成绩行（均 navigateTo ?labelId=）；支持分享卡冷开（canBack=false 显示小房子）
-- UI（自上而下）：顶栏 → 头部（运动类型 chip + 活动名 + 日期时间 + 训练类型 + 体感 emoji）→ 轨迹地图（原生 `<map>` 腾讯底图：polyline 三着色切换 无/心率/配速（活动相对绿→橙→红渐变，8 点 chunk 均值）；起终点 marker（绿▶/红■）+ 圈号徽标（RQ 风格，恢复圈不计）；pause 间隙分段；抽稀 ≤600 点；四周 10% padding 自适应视野；<20 有效点不渲染）→ 主指标网格（跑步 9 项：距离/均配/均心率/负荷/时长/最大心率/步幅/步频/爬升；力量 4 项）→ 心率区间卡（区间条%+时长+uCharts 心率走势曲线带基线带，触摸 tooltip）→ 配速区间卡（COROS 7→6 区归一化合并阈值区；走势曲线）→ 圈速表（圈号/时长/距离/配速/心率/步频；最快最慢行高亮；配速·心率环比趋势箭头；恢复圈标记）→ 力量分组表（动作/组数/时长/均心率，力量活动替代圈速表）→ 天气行（温度体感/湿度/风速）→ 运动/体感备注 → AI 点评（commentary，有则显示）
-- 端点：`GET /api/{user}/activities/{labelId}?include=timeseries` services/activities.ts:30
-- 交互：地图着色 segmented 切换（重建 polyline）；曲线触摸 tooltip
+- UI（自上而下）：顶栏 → 头部（运动类型 chip + 活动名 + 日期时间 + 训练类型 + 体感 emoji）→ 轨迹地图（原生 `<map>` 腾讯底图：polyline 三着色切换 无/心率/配速（活动相对绿→橙→红渐变，8 点 chunk 均值）；起终点 marker（绿▶/红■）+ 圈号徽标（RQ 风格，恢复圈不计）；pause 间隙分段；抽稀 ≤600 点；四周 10% padding 自适应视野；<20 有效点不渲染）→ 主指标网格（跑步 9 项：距离/均配/均心率/负荷/时长/最大心率/步幅/步频/爬升；力量 4 项）→ 心率区间卡（区间条%+时长+uCharts 心率走势曲线带基线带，触摸 tooltip）→ 配速区间卡（COROS 7→6 区归一化合并阈值区；走势曲线）→ 跑姿动态（2026-11-22 新增 components/activity/running-dynamics：标题行「跑姿动态」+ 说明开关 +「每 N 秒 · 最小–最大」，说明展开三段帮助；步频/步幅/垂直振幅/触地时间各一张卡，每卡全程平均 + 当前时段最小–最大 + 90 秒分窗竖线图；四图同步选窗；无 running_dynamics 整块不渲染）→ 圈速表（圈号/时长/距离/配速/心率/步频；最快最慢行高亮；配速·心率环比趋势箭头；恢复圈标记）→ 力量分组表（动作/组数/时长/均心率，力量活动替代圈速表）→ 天气行（温度体感/湿度/风速）→ 运动/体感备注 → AI 点评（commentary，有则显示）
+- 端点：`GET /api/{user}/activities/{labelId}?include=timeseries,running_dynamics` services/activities.ts:30
+- 交互：地图着色 segmented 切换（重建 polyline）；曲线触摸 tooltip；跑姿动态图点按 / 左右拖动选窗（四卡联动，再点已选窗口回到全程，纵向拖动仍是页面滚动）
 - 三态：loading；notFound（404 与网络失败统一「未找到」空态，无重试）；室内/无 GPS 隐藏地图；分段/曲线数据不足逐块隐藏
 
 ---
@@ -314,7 +314,7 @@ parity baseline v0 (devops#747)
 | 方法 | 路径 | 用途 | 定义 |
 |---|---|---|---|
 | GET | /api/{user}/activities | 活动列表（limit/offset/date_from/date_to，monthly_summaries） | services/activities.ts:18 |
-| GET | /api/{user}/activities/{labelId} | 活动详情（?include=timeseries） | services/activities.ts:30 |
+| GET | /api/{user}/activities/{labelId} | 活动详情（?include=timeseries,running_dynamics） | services/activities.ts:30 |
 | GET | /api/{user}/races | 已确认比赛成绩列表 | services/races.ts:50 |
 | PATCH | /api/{user}/races/{labelId} | 手输名（空串=清除） | services/races.ts:55 |
 | DELETE | /api/{user}/races/{labelId}/calendar-match | 清除日历识别 | services/races.ts:63 |
