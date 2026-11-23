@@ -784,7 +784,7 @@ function ActivityList({ activities }: { activities: Activity[] }) {
               <Link key={a.label_id} to={`/activity/${a.label_id}`}>
                 <div className="group bg-bg-card border border-border-subtle rounded-xl px-4 sm:px-5 py-3.5 sm:py-4 hover:bg-bg-card-hover hover:border-border transition-all duration-200 cursor-pointer">
                   <div className="flex items-stretch gap-3 sm:gap-4">
-                    <RouteThumbnail polyline={a.route_thumb} sportName={a.sport_name} size={56} color={sportColor(a.sport_name)} />
+                    <RouteThumbnail routeThumb={a.route_thumb} sportName={a.sport_name} size={56} color={sportColor(a.sport_name)} />
 
                     <div className="flex-1 min-w-0">
                       {/* Name + tags row — desktop also has metrics inline */}

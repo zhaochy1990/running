@@ -283,7 +283,7 @@ export default function TeamDetailPage() {
                         className="w-full text-left p-4 pb-2"
                       >
                         <div className="flex items-start gap-3">
-                          <RouteThumbnail polyline={act.route_thumb} sportName={act.sport_name} size={56} />
+                          <RouteThumbnail routeThumb={act.route_thumb} sportName={act.sport_name} size={56} />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between mb-1">
                               <span className="text-sm font-semibold text-text-primary">{act.display_name}</span>

@@ -435,11 +435,38 @@ export interface Activity {
   // Watch-paused intervals (decoded from JSON server-side). Empty list
   // when no pauses or for legacy synced rows.
   pauses?: Pause[];
-  // Pre-computed route polyline for activity-list thumbnails. Each point
-  // is [x, y] in a 0..100 SVG viewport (Y already flipped). Null when
-  // the activity has no GPS (indoor/strength) or hasn't been backfilled.
-  route_thumb?: number[][] | null;
+  // Pre-computed route shape for activity-list thumbnails, in a 0..100 SVG
+  // viewport (Y already flipped). One field carries three generations
+  // (devops#1037): the legacy single polyline `[[x, y], …]`, the versioned v2
+  // multi-stroke object (RouteShapeV2), and null when there is nothing to draw
+  // (no GPS: indoor/strength, or not computed yet). See RouteThumbnail.
+  route_thumb?: RouteThumb | null;
 }
+
+// Second-generation route shape (devops#1036), the wire format of Go
+// `internal/thumbnail` EncodeV2. Coordinates are [x, y] in the same 0..100
+// viewport as the legacy polyline. The leading `v` is what tells the object
+// apart from the legacy array on the same `route_thumb` field.
+export interface RouteShapeV2 {
+  v: 2;
+  // The route as separate strokes in time order; the client starts a new path
+  // for each. Strokes meet only where they share a vertex (a junction), never
+  // across a GPS break or an omitted repeat.
+  strokes: number[][][];
+  // The trace's real first and last valid fix. They are endpoints of the
+  // trace, not of any stroke — an open end stays open.
+  start: number[];
+  end: number[];
+  // Width metrics: short and long side of the minimum-area rectangle around
+  // the trace (short is 0 for a straight-line trace), and the total length of
+  // the simplified trace before repeats were dropped. They are what a client
+  // uses to thin the stroke of a narrow out-and-back at small display sizes.
+  short: number;
+  long: number;
+  travel: number;
+}
+
+export type RouteThumb = number[][] | RouteShapeV2;
 
 export interface Lap {
   lap_index: number;

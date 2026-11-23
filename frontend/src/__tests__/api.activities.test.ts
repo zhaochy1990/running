@@ -107,6 +107,51 @@ describe("getAllActivities", () => {
       body: undefined,
     });
   });
+
+  // route_thumb is one field carrying three generations (devops#1037): a legacy
+  // single-polyline array for rows not yet recomputed, the versioned v2 object
+  // with strokes, real endpoints and width metrics, and null for no GPS. These
+  // are the three rows the Go handler test replays; the client hands each
+  // through untouched and RouteThumbnail tells them apart.
+  it("hands every stored shape generation through route_thumb unchanged", async () => {
+    const legacyShape = [
+      [5.0, 95.0],
+      [50.0, 20.0],
+      [95.0, 5.0],
+    ];
+    const currentShape = {
+      v: 2,
+      strokes: [
+        [
+          [5.0, 95.0],
+          [50.0, 20.0],
+        ],
+        [
+          [50.0, 20.0],
+          [95.0, 5.0],
+        ],
+      ],
+      start: [5.0, 95.0],
+      end: [95.0, 5.0],
+      short: 10.0,
+      long: 90.0,
+      travel: 127.3,
+    };
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          total: 3,
+          offset: 0,
+          limit: 200,
+          activities: [{ ...makeActivity(0), route_thumb: legacyShape }, { ...makeActivity(1), route_thumb: currentShape }, makeActivity(2)],
+        }),
+      ),
+    );
+
+    const result = await getActivities("user-1");
+
+    expect(result.activities.map((activity) => activity.route_thumb)).toEqual([legacyShape, currentShape, null]);
+  });
 });
 
 describe("master plan API clients", () => {
