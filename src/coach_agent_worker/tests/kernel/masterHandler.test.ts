@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { MasterPlanGraphRequest } from "@stride/coach-agent";
 import { createTestCompletedOutcomeV3, createTestRequest } from "@stride/coach-agent/test-fixtures";
+import { MasterPlanV3Schema } from "@stride/contract";
 import { asPermanent, ERROR_CODES } from "../../src/job/errors.js";
 import { createMasterPlanJobHandler, type MasterPlanHandlerDeps } from "../../src/kernel/master/handler.js";
 import { FakePlanJobStore } from "../job/fakes.js";
@@ -31,7 +32,8 @@ function deps(overrides: Partial<MasterPlanHandlerDeps> = {}): MasterPlanHandler
 
 test("completed master run reports the full v2 content in result_json (#585, no draft insert)", async () => {
   const handler = createMasterPlanJobHandler(deps());
-  const job = FakePlanJobStore.fixture({ inputJson: JSON.stringify(MasterPlanGraphRequest.parse(createTestRequest())) });
+  const request = MasterPlanGraphRequest.parse(createTestRequest());
+  const job = FakePlanJobStore.fixture({ inputJson: JSON.stringify(request) });
   const result = await handler(job, async () => {});
 
   const parsed = JSON.parse(result.result) as { content: Record<string, unknown>; revision: number; generated_by: string };
@@ -55,6 +57,18 @@ test("completed master run reports the full v2 content in result_json (#585, no 
   assert.ok(Array.isArray(content.milestones));
   assert.ok(content.weeks[0]?.phase_id);
   assert.ok(content.start_date.length > 0 && content.total_weeks >= 1);
+  // #1043：约束排课的可用度明细随 content 落库，滚动续排据此还原同一份约束
+  //（#222 力量排期项一并落库；preferred_long_run_day 不进排位段，不落库）
+  assert.deepEqual(content.availability, {
+    weekly_run_days_max: 6,
+    available_training_windows: request.availability.available_training_windows,
+    unavailable_days: ["sunday"],
+    max_session_duration_min: 180,
+    allows_double_sessions: false,
+    strength_sessions_per_week: 2,
+    strength_available_days: ["monday", "thursday"],
+  });
+  assert.equal(MasterPlanV3Schema.shape.availability.safeParse(content.availability).success, true, "落库 schema 接受");
 });
 
 test("master generation preserves complete candidate weeks without applying them", async () => {

@@ -2,6 +2,8 @@ import type { PromptMessage } from "@stride/common";
 import { allocateRaceWeek, allocateWeek } from "./allocate.js";
 import type { PaceZones } from "./derive.js";
 import { goalMPaceBand } from "./project.js";
+import type { AvailabilityConstraints } from "./schedule/availability.js";
+import type { DayFact } from "./schedule/distribution.js";
 
 /**
  * L4a 内容生成教义 prompt（devops#811 建立、#799 改两段制）：只管课包内容——
@@ -184,6 +186,13 @@ export interface ContentGeneratorInput {
   /** 近期已证训练课（2026-11-02 拍板）：近 8-10 周质量课/长距离课摘要——新课刺激
    * 须参照已证水平（低于它=浪费训练日），由调用方从 L1 activities 构造。 */
   provenSessions?: ProvenSession[];
+  /**
+   * 排课可用度（devops#1043：可跑日/单课时长上限/双练许可）；缺省=仅天数上限。
+   * 只进排位段，不进 L4a payload。
+   */
+  availability?: AvailabilityConstraints;
+  /** 批次首周之前的已知相邻日历（devops#1043：实绩或生效安排）；缺省=边界未知。 */
+  boundary?: DayFact[];
 }
 
 /**

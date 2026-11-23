@@ -28,7 +28,8 @@
     "check": "biome check src scripts",
     "check:fix": "biome check --write src scripts",
     "replay:phasing": "npm run build && node dist/tests/phasingReplay.js",
-    "replay:content": "npm run build && node dist/tests/contentReplay.js"
+    "replay:content": "npm run build && node dist/tests/contentReplay.js",
+    "replay:distribution": "npm run build && node dist/tests/distributionReplay.js"
   },
   "keywords": [],
   "author": "",

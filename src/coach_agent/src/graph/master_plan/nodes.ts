@@ -26,6 +26,7 @@ import {
   type MasterPlanGraphRequest,
   MasterPlanGraphRequest as MasterPlanGraphRequestSchema,
   MasterPlanSchema,
+  masterPlanAvailabilityDetail,
   type PhaseDivisionIntent,
   PhaseDivisionIntentSchema,
   planningStartDate,
@@ -56,6 +57,9 @@ import { danielsAudit } from "./phasing/content/danielsAudit.js";
 import { buildProvenSessions, type ContentGeneratorInput, type ContentWeekRow, QUALITY_FAMILY_OF } from "./phasing/content/doctrine.js";
 import { type ContentModel, generateWeekContent, type ScheduledOutcome } from "./phasing/content/generate.js";
 import { projectZones } from "./phasing/content/project.js";
+import { schedulingAvailabilityOf } from "./phasing/content/schedule/availability.js";
+import { boundaryBefore } from "./phasing/content/schedule/boundary.js";
+import { factsOfDays } from "./phasing/content/schedule/distribution.js";
 import { buildPhaseEvidence, type PhaseEvidence, type PhasingActivityInput } from "./phasing/evidence.js";
 import type { GateCheck } from "./phasing/gates.js";
 import { generatePhaseDivisionIntent, type PhasingModel } from "./phasing/generate.js";
@@ -334,7 +338,8 @@ export class MasterPlanNodes {
     // #857：近 10 周已证课喂给 L4a（已证参照规则——新课刺激不低于最近同类课）
     const provenSessions = buildProvenSessions(state.activities ?? [], asOfOf(request));
     if (provenSessions.length > 0) logger.info({ count: provenSessions.length, latest: provenSessions[0]!.name }, "proven sessions fed to L4a (#857)");
-    const monday = planningStartDate(asOfOf(request));
+    const asOfDay = asOfOf(request);
+    const monday = planningStartDate(asOfDay);
     const goal = aGoalOf(request);
     const runwayWeeks = raceRunwayWeeks(monday, goal.race_date, goal.distance);
     const vdot = evidence.current_capability.vdot;
@@ -377,6 +382,10 @@ export class MasterPlanNodes {
         },
         planStartMonday: monday,
         provenSessions,
+        // devops#1043：确认请求的具体可用度（禁跑日/日内窗口/单课时长上限/双练许可）
+        // 带到排位段；首周接上已知历史实绩
+        availability: schedulingAvailabilityOf(masterPlanAvailabilityDetail(request.availability)),
+        boundary: boundaryBefore({ startMonday: monday, asOfDay, activities: state.activities ?? [] }),
       };
       // 首批门控（2026-11-09 用户两轮拍板，回归 daniels.md §3.1/3.2 原设计「计划=
       // 政策，不是预测」）：跑道 >8 周时首批生成 **min(首阶段周数, 6 周)**——阶段
@@ -421,6 +430,7 @@ export class MasterPlanNodes {
         checks: [],
         scheduleChecks: [],
         repairs: [],
+        distribution: [],
         source: "llm",
         attempts: 0,
         attemptsDetail: [],
@@ -433,7 +443,23 @@ export class MasterPlanNodes {
       let seed: { acute: number; chronic: number } | undefined;
       let templateBatches = 0;
       for (const [batchIndex, batchRows] of batches.entries()) {
-        const batchInput: ContentGeneratorInput = { ...contentInput, rows: batchRows };
+        // 跨批次边界（devops#1043）：后续批的首周接上一批末周的排位产物——相邻
+        // 日历与负荷种子链式传递，只调整本批的可变日期
+        const previousRow = batchIndex > 0 ? batches[batchIndex - 1]!.at(-1) : undefined;
+        const batchInput: ContentGeneratorInput = {
+          ...contentInput,
+          rows: batchRows,
+          ...(previousRow != null
+            ? {
+                boundary: factsOfDays(
+                  merged.calendar.slice(-7),
+                  merged.loadSeries.slice(-7),
+                  previousRow.zones,
+                  previousRow.role === "race" ? goal.race_date : null,
+                ),
+              }
+            : {}),
+        };
         const batchOptions = seed != null ? { pmcSeed: seed } : {};
         let scheduled = await generateWeekContent(batchInput, this.dependencies.contentModel, batchOptions);
         for (let outer = 2; outer <= MAX_OUTER_CONTENT_TRIES && scheduled.source === "fallback"; outer++) {
@@ -458,6 +484,7 @@ export class MasterPlanNodes {
         merged.checks.push(...scheduled.checks);
         merged.scheduleChecks.push(...scheduled.scheduleChecks);
         merged.repairs.push(...scheduled.repairs.map((repair) => `[批${batchIndex + 1}] ${repair}`));
+        merged.distribution.push(...scheduled.distribution);
         merged.attempts += scheduled.attempts;
         merged.attemptsDetail.push(...scheduled.attemptsDetail);
         merged.loadMeta = scheduled.loadMeta;
@@ -472,7 +499,10 @@ export class MasterPlanNodes {
       return { contentInput, scheduled: merged, anchor: anchorOf(evidence, projection.meta, merged) };
     } catch (error) {
       logSwallowedFailure("content", error);
-      return { outcome: qualityFailure(request, context, "content_generation_failed") };
+      // 硬约束无解（如周日不可跑与长跑位型冲突）把具体冲突随失败上浮，调用方看得到原因
+      const message = error instanceof Error ? error.message : String(error);
+      const conflict = /^L4 (?:结构性无解|兜底构造失败)/.test(message) ? [`content_conflict:${message.slice(0, 200)}`] : [];
+      return { outcome: qualityFailure(request, context, "content_generation_failed", ...conflict) };
     }
   };
 

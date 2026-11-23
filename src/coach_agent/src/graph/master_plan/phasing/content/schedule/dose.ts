@@ -65,6 +65,22 @@ function stepMinutes(step: WorkoutStep): number | null {
   return null;
 }
 
+/**
+ * 课时长估计（分钟；repeat 展开，rest 不计）：可估步求和，不可估步（open 距离
+ * 步如 strides）跳过；没有可估步=null。单课时长上限核对用（devops#1043）。
+ */
+export function courseMinutes(workout: RunWorkout): number | null {
+  let minutes: number | null = null;
+  for (const block of workout.blocks)
+    for (let rep = 0; rep < block.repeat; rep++)
+      for (const step of block.steps) {
+        if (step.step_kind === "rest") continue;
+        const stepMin = stepMinutes(step);
+        if (stepMin != null) minutes = (minutes ?? 0) + stepMin;
+      }
+  return minutes;
+}
+
 /** 课的分段核算：剂量点数 + 有氧/强度里程（判定表口径：质量步=强度、其余=有氧）。 */
 export interface CourseDose {
   /** 处方剂量（Σ步时长×带系数；rest 步不计）。 */

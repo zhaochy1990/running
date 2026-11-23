@@ -4,9 +4,12 @@
  * 不拦的取舍）；fail=硬校验挂（引用 C/P 门结果）。独立判定的项不重复实现门
  * 逻辑，只按原书口径重述+引用。
  */
-import type { DanielsAuditItem as AuditItem } from "@stride/contract";
+import { type DanielsAuditItem as AuditItem, addDays } from "@stride/contract";
+import { hasQualitySegment } from "./derive.js";
 import type { ContentGeneratorInput } from "./doctrine.js";
 import type { ScheduledOutcome } from "./generate.js";
+import { formatDistributionMetrics } from "./schedule/distribution.js";
+import { courseMinutes } from "./schedule/dose.js";
 
 const pace = (s: number | null | undefined) => (s == null ? "?" : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`);
 const wdOf = (date: string) => (new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7;
@@ -25,7 +28,7 @@ export function danielsAudit(outcome: ScheduledOutcome, input: ContentGeneratorI
     ...outcome.scheduleChecks.flatMap((wc) => wc.filter((c) => !c.pass).map((c) => c.id)),
   ];
   if (failedIds.length > 0)
-    items.push({ item: "硬校验门", verdict: "fail", expectation: "C1-C17/P1-P7 全绿（丹系构造约束）", actual: `挂：${failedIds.join(";")}` });
+    items.push({ item: "硬校验门", verdict: "fail", expectation: "C1-C17/P1-P8 全绿（丹系构造约束）", actual: `挂：${failedIds.join(";")}` });
 
   const flat = outcome.weeks.flatMap(({ week, sessions }) => sessions.map((w) => ({ week, w })));
   const wkOf = (n: number) => outcome.weeks.find((x) => x.week === n)?.sessions ?? [];
@@ -141,6 +144,19 @@ export function danielsAudit(outcome: ScheduledOutcome, input: ContentGeneratorI
       expectation: "周二位 M 配速触感激活（3-5km@goal+strides，教练基准 2026-11-09 拍板）",
       actual: act.length === 1 ? `${act[0]!.type} ${act[0]!.name.slice(0, 16)}@周${"一二三四五六"[actWd ?? 0]}` : `${act.length} 节非 E 课`,
     });
+    // 既有赛周例外的可见性（devops#1043）：激活课落周一且上周日长跑带质量尾段
+    // （专项期/减量周形态）——P2 的跨周判定对赛周豁免，这里如实提示
+    if (actWd === 0) {
+      const sundayLr = flat.find(({ w }) => w.date === addDays(raceDate, -raceWd - 1) && w.type === "LR");
+      const sundayZones = rows.find((r) => r.week === raceRow.week - 1)?.zones;
+      if (sundayLr != null && sundayZones != null && hasQualitySegment(sundayLr.w, sundayZones))
+        items.push({
+          item: "赛周激活课接长跑",
+          verdict: "warn",
+          expectation: "质量课之间留恢复日（赛周激活课是既有例外）",
+          actual: `周一激活课紧接上周日长跑 ${sundayLr.w.name.slice(0, 16)}——既有赛周位型，未按跨周背靠背判`,
+        });
+    }
     const shake = wkOf(raceRow.week).some((w) => w.type === "E" && w.date !== raceDate && raceWd - wdOf(w.date) >= 1 && raceWd - wdOf(w.date) <= 2);
     items.push({
       item: "赛前 shakeout",
@@ -194,21 +210,57 @@ export function danielsAudit(outcome: ScheduledOutcome, input: ContentGeneratorI
     });
   }
 
-  // 7. 频率：非赛周最长连休 ≤2 天
-  for (const row of rows.filter((r) => r.role !== "race" && r.phase !== "recovery")) {
-    const days = new Set(wkOf(row.week).map((w) => wdOf(w.date)));
-    let maxRun = 0;
-    let cur = 0;
-    for (let d = 0; d < 7; d++) {
-      cur = days.has(d) ? 0 : cur + 1;
-      maxRun = Math.max(maxRun, cur);
+  // 7. 日期分布（devops#1043）：审计解释最终选择——同约束可行候选中三项分布指标
+  // （最长连跑/最长连休/含关键课三日负荷峰）不被超过；集中若仍在，写明由什么
+  // 约束造成。有明确更优解却没选=分布优化与审计不一致（fail）——不以警告放行
+  // 扎堆安排。没有留痕的产物（#1043 之前）退回周内最长连休提示。
+  const auditsByWeek = new Map(outcome.distribution.map((audit) => [audit.week, audit]));
+  for (const row of rows.filter((r) => r.role !== "race")) {
+    const audit = auditsByWeek.get(row.week);
+    const chosen = audit?.candidates[audit.chosen];
+    // 生产上每个常规周都经日期分布选择（scheduleWeeks）——没有留痕=选择没有发生，不放行
+    if (audit == null || chosen?.metrics == null) {
+      items.push({
+        item: `W${row.week} 日期分布`,
+        verdict: "fail",
+        expectation: "同约束可行候选中三项分布指标不被超过：最长连跑/最长连休/含关键课三日负荷峰；关键课次日留恢复日",
+        actual: "无分布留痕——日期分布优化未运行",
+      });
+      continue;
     }
+    // 指标报最终日历的（finalMetrics）；自检读留痕里的支配关系（选择时已算）：选定解
+    // 出自非被超过前沿，被超过=选择与审计不一致
+    const superseding = chosen.dominatedBy == null ? undefined : audit.candidates[chosen.dominatedBy];
     items.push({
-      item: `W${row.week} 训练频率`,
-      verdict: maxRun <= 2 ? "pass" : "warn",
-      expectation: "减量=保持频率砍单课体积（原书赛前每天 20-30min）",
-      actual: `最长连休 ${maxRun} 天`,
+      item: `W${row.week} 日期分布`,
+      verdict: superseding == null ? "pass" : "fail",
+      expectation: "同约束可行候选中三项分布指标不被超过：最长连跑/最长连休/含关键课三日负荷峰；关键课次日留恢复日",
+      actual:
+        superseding?.metrics == null
+          ? `选定 ${chosen.label}：${formatDistributionMetrics(audit.finalMetrics)}；可行候选 ${audit.candidates.filter((candidate) => candidate.feasible).length}/${audit.candidates.length}；${audit.reason}；${audit.constraints.join("，")}`
+          : `选定 ${chosen.label}（${formatDistributionMetrics(chosen.metrics)}）被候选 ${superseding.label}（${formatDistributionMetrics(superseding.metrics)}）超过——分布优化与审计不一致`,
     });
+  }
+
+  // 8. 单课时长上限（devops#1043）：E 课由排位钳到用户许可值；长跑/质量课时长
+  // 由课包决定、排位不裁剪——超限如实告警（解在 L3 压长跑量或 L4a 改课）
+  const capMin = input.availability?.maxSessionDurationMin;
+  if (capMin != null) {
+    for (const row of rows) {
+      const over = wkOf(row.week).flatMap((workout) => {
+        // 比赛课是目标事件不是训练课，不计
+        if (workout.type === "E" || (row.role === "race" && workout.date === input.race.date)) return [];
+        const minutes = courseMinutes(workout);
+        return minutes != null && minutes > capMin ? [`${workout.name}≈${Math.round(minutes)}min`] : [];
+      });
+      if (over.length > 0)
+        items.push({
+          item: `W${row.week} 单课时长上限`,
+          verdict: "warn",
+          expectation: `单课 ≤${capMin} 分钟（用户可用性）`,
+          actual: `${over.join("、")} 超限（结构课时长由课包决定，排位不裁剪）`,
+        });
+    }
   }
 
   return items;

@@ -27,6 +27,7 @@ const emptyScheduled = (): ScheduledOutcome => ({
   checks: [],
   scheduleChecks: [],
   repairs: [],
+  distribution: [],
   source: "llm",
   attempts: 1,
   attemptsDetail: [],
@@ -94,7 +95,7 @@ test("赛前 shakeout 只审比赛周；前一周周五 E 课不能冒充赛前�
   assert.equal(danielsAudit(scheduled, input).find((item) => item.item === "赛前 shakeout")?.verdict, "pass");
 });
 
-test("部分阶段仍引用 C/P 硬门失败、保留 Q 配额/训练频率 warning", () => {
+test("部分阶段仍引用 C/P 硬门失败、保留 Q 配额 warning；无分布留痕判失败", () => {
   const scheduled = emptyScheduled();
   scheduled.checks = [[{ id: "C16_spectrum", pass: false, detail: "T 段过短" }]];
   scheduled.scheduleChecks = [[{ id: "P1_spacing", pass: false, detail: "质量课相邻" }]];
@@ -103,5 +104,10 @@ test("部分阶段仍引用 C/P 硬门失败、保留 Q 配额/训练频率 warn
   assert.match(items.find((item) => item.item === "硬校验门")?.actual ?? "", /C16_spectrum;P1_spacing/);
   assert.equal(items.find((item) => item.item === "段长谱")?.verdict, "fail");
   assert.equal(items.find((item) => item.item === "W13 Q 配额")?.verdict, "warn");
-  assert.equal(items.find((item) => item.item === "W13 训练频率")?.verdict, "warn");
+  // devops#1043：旧的「训练频率」连休提示已被「日期分布」项取代——产物没有分布留痕
+  // （=日期分布选择没有发生）时审计判失败，不以警告放行
+  const distribution = items.find((item) => item.item === "W13 日期分布");
+  assert.equal(distribution?.verdict, "fail");
+  assert.match(distribution?.actual ?? "", /无分布留痕/);
+  assert.equal(items.some((item) => item.item === "W13 训练频率"), false);
 });

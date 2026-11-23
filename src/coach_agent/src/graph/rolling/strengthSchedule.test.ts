@@ -149,6 +149,7 @@ function scheduledOf(week: number, weekStart: string, sessions: RunWorkout[]): S
     checks: [],
     scheduleChecks: [],
     repairs: [],
+    distribution: [],
     source: "llm",
     attempts: 1,
     attemptsDetail: [],

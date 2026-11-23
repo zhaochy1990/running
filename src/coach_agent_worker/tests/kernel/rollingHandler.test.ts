@@ -97,6 +97,7 @@ function deps(overrides: Partial<RollingHandlerDeps> & { content?: Record<string
     } as unknown as RollingHandlerDeps["models"],
     masterPlans: fakeMasterSource(content),
     weeklyPlans: new FakeWeeklyChannel(),
+    weeklyDocs: { getWeeklyPlan: async () => null },
     projection,
     ...rest,
   };
@@ -123,6 +124,7 @@ function completedOutcome(): RollingOutcome {
       checks: [],
       scheduleChecks: [],
       repairs: [],
+      distribution: [],
       source: "llm",
       attempts: 1,
       attemptsDetail: [],
@@ -285,6 +287,40 @@ test("new candidate snapshots do not count unpublished weeks as generated", asyn
   };
   await createRollingJobHandler(deps({ content, weeklyPlans: fake, projection }))(rollingJob(), async () => {});
   assert.equal(observed, 0);
+});
+
+test("存量 content 的可用度明细（#1043）原样交给滚动投影；边界日历来源读批首周前一周的周文档，缺行/坏行按未知", async () => {
+  const content = storedContent({ totalWeeks: 12 });
+  content.availability = { weekly_run_days_max: 6, unavailable_days: ["thursday"], allows_double_sessions: false };
+  let stored: unknown = null;
+  const asked: string[] = [];
+  const projection: RollingProjection = async (deps, input) => {
+    assert.deepEqual(input.master.availability, {
+      weeklyRunDaysMax: 6,
+      detail: { unavailable_days: ["thursday"], allows_double_sessions: false },
+      strength: null,
+    });
+    assert.ok(deps.existingWeeklyDoc, "滚动投影须拿到存量周文档读档面");
+    assert.equal(await deps.existingWeeklyDoc("2026-08-03"), null, "缺行=未知");
+    stored = { not: "a weekly plan" };
+    assert.equal(await deps.existingWeeklyDoc("2026-08-10"), null, "坏行按未知处理，不拖垮滚动");
+    stored = createTestWeeklyPlanDoc(2);
+    assert.equal((await deps.existingWeeklyDoc("2026-08-17"))?.week_index, 2);
+    return { decision: "no_op", reason: "probe" };
+  };
+  const fake = new FakeWeeklyChannel();
+  const handler = createRollingJobHandler({
+    ...deps({ content, weeklyPlans: fake, projection }),
+    weeklyDocs: {
+      getWeeklyPlan: async (userId, weekStart) => {
+        assert.equal(userId, USER_ID);
+        asked.push(weekStart);
+        return stored;
+      },
+    },
+  });
+  await handler(rollingJob(), async () => {});
+  assert.deepEqual(asked, ["2026-08-03", "2026-08-10", "2026-08-17"]);
 });
 
 function rollingRun(handler: ReturnType<typeof createRollingJobHandler>) {

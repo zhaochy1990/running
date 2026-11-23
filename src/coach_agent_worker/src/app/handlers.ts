@@ -46,6 +46,7 @@ export function createPlanJobHandlers(deps: PlanJobHandlerDeps): Map<PlanJobType
         models: deps.rolling.models,
         masterPlans: deps.dataProvider,
         weeklyPlans: deps.weeklyPlans,
+        weeklyDocs: deps.dataProvider,
       }),
     ],
     [

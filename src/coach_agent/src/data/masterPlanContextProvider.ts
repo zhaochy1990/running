@@ -49,6 +49,7 @@ export class DataProviderMasterPlanContextProvider implements MasterPlanContextP
       distanceM: activity.distanceM,
       strideSessionClass: activity.strideSessionClass,
       durationS: activity.durationS,
+      strideDose: activity.strideDose,
     }));
   }
 

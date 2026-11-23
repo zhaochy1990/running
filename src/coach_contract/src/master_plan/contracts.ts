@@ -1,14 +1,19 @@
 import { z } from "zod/v4";
 import { WeeklyPlanSchema } from "../weekly_plan/schema.js";
 import { AssessmentFactsSchema, GoalAssessmentSchema } from "./assessment-schemas.js";
-import { DanielsAuditSchema, LoadPlanSchema, MasterPlanAnchorSchema, PhaseDivisionIntentSchema } from "./policy.js";
+import {
+  AVAILABILITY_WEEKDAY,
+  DanielsAuditSchema,
+  LoadPlanSchema,
+  MasterPlanAnchorSchema,
+  PhaseDivisionIntentSchema,
+  TRAINING_WINDOW_SCHEMA,
+} from "./policy.js";
 import { MasterPlanSchema } from "./schemas.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
-const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const RACE_TIME = /^\d{1,2}:[0-5]\d:[0-5]\d$/;
 const identifier = z.string().min(1);
-const weekday = z.enum(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]);
 
 const GoalSchema = z
   .object({
@@ -34,21 +39,13 @@ const GoalSchema = z
 const AvailabilitySchema = z
   .object({
     weekly_run_days_max: z.int().min(1).max(7),
-    available_training_windows: z.array(
-      z
-        .object({
-          day: weekday,
-          start_time: z.string().regex(TIME),
-          end_time: z.string().regex(TIME),
-        })
-        .strict(),
-    ),
-    unavailable_days: z.array(weekday),
+    available_training_windows: z.array(TRAINING_WINDOW_SCHEMA),
+    unavailable_days: z.array(AVAILABILITY_WEEKDAY),
     max_session_duration_min: z.int().positive(),
     allows_double_sessions: z.boolean(),
-    preferred_long_run_day: weekday.nullable(),
+    preferred_long_run_day: AVAILABILITY_WEEKDAY.nullable(),
     strength_sessions_per_week: z.int().nonnegative(),
-    strength_available_days: z.array(weekday),
+    strength_available_days: z.array(AVAILABILITY_WEEKDAY),
   })
   .strict()
   .superRefine((availability, ctx) => {
