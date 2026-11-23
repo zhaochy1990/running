@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -47,6 +49,12 @@ type shapeBackfillInput struct {
 	DateTo   string `json:"date_to,omitempty"`   // Shanghai YYYY-MM-DD; "" = no upper bound
 }
 
+// shapeBackfillInputKeys are the keys the backfill payload accepts: the json
+// tags of shapeBackfillInput, kept in sync by hand. decodeShapeBackfillInput
+// enforces here what the catalog's schema promises for this job
+// (additionalProperties:false).
+var shapeBackfillInputKeys = []string{"date_from", "date_to"}
+
 type shapeResult struct {
 	Candidates int `json:"candidates"`
 	Generated  int `json:"generated"`
@@ -65,25 +73,32 @@ type shapeResult struct {
 // or pre-current-version), ComputeV2 the multi-stroke shape and persist it in
 // the versioned serialization, nothing else. The candidate query drops rows
 // once they carry the current version, so the job is idempotent and a rerun
-// over the same athlete and window is a no-op. Like the retired PNG step it
-// is partial-success: per-activity failures are collected and joined so the
-// job reports what did land before failing.
+// over the same athlete and window is a no-op. The payload is checked before
+// anything is read or written: a malformed or reversed window and any unknown
+// key fail permanently as bad_payload. Like the retired PNG step it is
+// partial-success: per-activity failures are collected and joined so the job
+// reports what did land before failing.
 func NewShapeBackfill(store ShapeStore) job.Handler {
 	return func(ctx context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		if err := parseShapeJob(j); err != nil {
 			return "", err
 		}
-		var in shapeBackfillInput
-		if j.InputJSON != "" {
-			if err := json.Unmarshal([]byte(j.InputJSON), &in); err != nil {
-				return "", job.NewPermanentError("bad_payload", fmt.Errorf("route shapes: parse input: %w", err))
-			}
+		in, err := decodeShapeBackfillInput(j.InputJSON)
+		if err != nil {
+			return "", job.NewPermanentError("bad_payload", fmt.Errorf("route shapes: %w", err))
 		}
 		if err := validateScopeDate(in.DateFrom); err != nil {
 			return "", job.NewPermanentError("bad_payload", fmt.Errorf("route shapes: date_from: %w", err))
 		}
 		if err := validateScopeDate(in.DateTo); err != nil {
 			return "", job.NewPermanentError("bad_payload", fmt.Errorf("route shapes: date_to: %w", err))
+		}
+		// A reversed window matches no rows, so without this guard the job
+		// "succeeds" with zero candidates — indistinguishable from the no-op
+		// rerun the candidate query is designed to produce. Both bounds are
+		// validated YYYY-MM-DD by now, so string order is date order.
+		if in.DateFrom != "" && in.DateTo != "" && in.DateFrom > in.DateTo {
+			return "", job.NewPermanentError("bad_payload", errors.New("route shapes: date_from must not be after date_to"))
 		}
 		scope := storage.RouteThumbRecomputeScope{DateFrom: in.DateFrom, DateTo: in.DateTo}
 		candidates, err := store.RouteThumbRecomputeCandidates(ctx, j.UserID, scope)
@@ -99,7 +114,8 @@ func NewShapeBackfill(store ShapeStore) job.Handler {
 // validateScopeDate rejects anything but a real YYYY-MM-DD date: a malformed
 // window would silently match no rows in SQL (string compare against a DATE),
 // and an operator recompute that "succeeds" while touching nothing is worse
-// than a loud permanent failure.
+// than a loud permanent failure. A reversed window is the same failure for the
+// same reason and is refused in NewShapeBackfill once both bounds parse.
 func validateScopeDate(s string) error {
 	if s == "" {
 		return nil
@@ -108,6 +124,40 @@ func validateScopeDate(s string) error {
 		return errors.New("must be YYYY-MM-DD")
 	}
 	return nil
+}
+
+// decodeShapeBackfillInput parses the backfill payload, refusing keys it does
+// not know instead of dropping them. A plain Unmarshal ignores unknown keys,
+// so a mistyped window (from/to instead of date_from/date_to) would decode as
+// the empty payload — whose meaning is "recompute the athlete's whole stale
+// set" — and one typo would widen a bounded recompute into an unbounded one.
+// Keys are matched exactly; a JSON null decodes as the empty payload, like an
+// absent input.
+func decodeShapeBackfillInput(inputJSON string) (shapeBackfillInput, error) {
+	var in shapeBackfillInput
+	if inputJSON == "" {
+		return in, nil
+	}
+	raw := []byte(inputJSON)
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return in, fmt.Errorf("parse input: %w", err)
+	}
+	var unknown []string
+	for key := range fields {
+		if !slices.Contains(shapeBackfillInputKeys, key) {
+			unknown = append(unknown, key)
+		}
+	}
+	if len(unknown) > 0 {
+		slices.Sort(unknown)
+		return in, fmt.Errorf("unknown keys: %s (accepted: %s)",
+			strings.Join(unknown, ", "), strings.Join(shapeBackfillInputKeys, ", "))
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return in, fmt.Errorf("parse input: %w", err)
+	}
+	return in, nil
 }
 
 // parseShapeJob enforces the partition contract both shape fillers share: the

@@ -211,6 +211,16 @@ operator-triggered job. Enqueue it once per existing user via the internal
 `POST /jobs` when a recompute is wanted, in athlete batches if the gap is
 large.
 
+The payload is validated before anything is read or written, and every
+violation fails the job permanently as `bad_payload` (no retry) instead of
+"succeeding" with nothing done: a malformed date (not `YYYY-MM-DD`), a reversed
+window (`date_from` later than `date_to` — it would match no rows and look
+exactly like the no-op rerun above), and any unknown input key (a window sent
+as `from`/`to` would otherwise decode as an empty window and recompute the
+athlete's whole history; the error lists the offending keys). An empty payload
+— no input at all, or `{}` — is the explicit full recompute of the athlete's
+stale set.
+
 Retired surface (devops#829):
 
 - `route_thumbnails_backfill` is deleted from the catalog — the API now rejects
