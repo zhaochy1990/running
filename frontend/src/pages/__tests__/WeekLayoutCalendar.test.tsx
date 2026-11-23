@@ -4,8 +4,9 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import WeekLayout from "../WeekLayout";
 import { buildPlanDaysFromWeekDetail, mergeStructuredIntoPlanDays } from "../../types/plan";
-import type { WeekDetail, WeekSummary, PlannedSessionRow, PlanDay } from "../../api";
+import type { Activity, WeekDetail, WeekSummary, PlannedSessionRow, PlanDay } from "../../api";
 import type { StructuredStatus } from "../../types/plan";
+import { LEGACY_POLYLINE, LOOP_WITH_SIDE_STREET } from "../../test/routeThumbFixtures";
 
 // Hoisted mocks for the api module. The calendar tab now reads entirely from
 // the Go `/weeks` detail response (weekDetail.structured) — there is no
@@ -218,6 +219,59 @@ describe("WeekLayout — calendar tab", () => {
     // The session from the structured payload must be visible.
     await waitFor(() => expect(screen.getByText("Structured Easy 10km")).toBeInTheDocument());
     await waitFor(() => expect(screen.getAllByTestId("day-card")).toHaveLength(7));
+  });
+});
+
+describe("WeekLayout — records tab", () => {
+  function activity(index: number, route_thumb: Activity["route_thumb"]): Activity {
+    return {
+      label_id: `activity-${index}`,
+      name: `Activity ${index}`,
+      sport_type: 100,
+      sport_name: "Run",
+      date: `2026-04-2${index}T06:00:00+08:00`,
+      distance_m: 10000,
+      distance_km: 10,
+      duration_s: 3000,
+      duration_fmt: "00:50:00",
+      avg_pace_s_km: 300,
+      pace_fmt: "5:00/km",
+      avg_hr: 145,
+      max_hr: 170,
+      avg_cadence: 180,
+      calories_kcal: 500,
+      training_load: 120,
+      vo2max: null,
+      train_type: null,
+      ascent_m: null,
+      aerobic_effect: null,
+      anaerobic_effect: null,
+      temperature: null,
+      humidity: null,
+      feels_like: null,
+      wind_speed: null,
+      feel_type: null,
+      sport_note: null,
+      route_thumb,
+    };
+  }
+
+  // route_thumb reaches the week's activity list in three generations
+  // (devops#1037); each row draws whatever its own row holds.
+  it("draws every stored shape generation of the week's activities", async () => {
+    mocks.getWeek.mockResolvedValue({
+      ...buildWeekDetail(null),
+      activities: [activity(0, LEGACY_POLYLINE), activity(1, LOOP_WITH_SIDE_STREET), activity(2, null)],
+    });
+
+    const { container } = renderAt();
+    fireEvent.click(await screen.findByRole("button", { name: "训练记录 (3)" }));
+
+    const rows = Array.from(container.querySelectorAll<HTMLAnchorElement>('a[href^="/activity/"]'));
+    expect(rows.map((row) => row.getAttribute("href"))).toEqual(["/activity/activity-0", "/activity/activity-1", "/activity/activity-2"]);
+    // one stroke for the legacy polyline, one per stroke for the v2 shape, none for no GPS
+    expect(rows.map((row) => row.querySelectorAll("svg polyline").length)).toEqual([1, 2, 0]);
+    expect(rows[2].querySelector("[aria-label='室内活动']")).toBeInTheDocument();
   });
 });
 
