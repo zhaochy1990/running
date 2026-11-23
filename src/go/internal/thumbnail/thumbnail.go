@@ -41,11 +41,14 @@ const (
 
 // Sample is one GPS fix from the activity time series. OK=false marks a missing
 // fix (a NULL gps_lat/gps_lon row); such rows are skipped rather than treated as
-// a position.
+// a position. Ts is the fix time in Unix seconds; 0 means unknown. The v1
+// reduction ignores it; the v2 multi-stroke reduction (ComputeV2) splits the
+// trace into parts where consecutive valid fixes sit more than 30 s apart.
 type Sample struct {
 	Lat float64
 	Lon float64
 	OK  bool
+	Ts  int64
 }
 
 // Point is a normalized thumbnail coordinate in the [0,Viewbox] space, rounded
