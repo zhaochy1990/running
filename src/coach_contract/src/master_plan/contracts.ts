@@ -50,7 +50,18 @@ const AvailabilitySchema = z
     strength_sessions_per_week: z.int().nonnegative(),
     strength_available_days: z.array(weekday),
   })
-  .strict();
+  .strict()
+  .superRefine((availability, ctx) => {
+    // #222：力量次数>0 必须给出力量可用日（表单已保证；服务端同口径拦半残态，
+    // 否则首批「0 节」与滚动「未设置」两种解读会打架）。
+    if (availability.strength_sessions_per_week > 0 && availability.strength_available_days.length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["strength_available_days"],
+        message: "strength_available_days is required when strength_sessions_per_week > 0",
+      });
+    }
+  });
 
 const InjuryDeclarationSchema = z
   .object({

@@ -564,6 +564,14 @@ export class MasterPlanNodes {
         planStartMonday,
         raceDate: aGoalOf(request).race_date,
         athlete: { weeklyRunDaysMax: request.availability.weekly_run_days_max },
+        // #222：首批直接用表单请求里的力量偏好（表单 schema 必填，恒为已设置态）。
+        strength: {
+          sessionsPerWeek: request.availability.strength_sessions_per_week,
+          availableDays: request.availability.strength_available_days,
+          allowsDoubleSessions: request.availability.allows_double_sessions,
+          unavailableDays: request.availability.unavailable_days,
+          maxSessionDurationMin: request.availability.max_session_duration_min,
+        },
       });
       return { plan: MasterPlanSchema.parse(plan), weeklyDocs };
     } catch (error) {

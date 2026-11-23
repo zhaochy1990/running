@@ -27,6 +27,7 @@ import {
   type RunWorkout,
   workoutTotals,
 } from "@stride/contract";
+import { phaseStrengthTarget } from "../rolling/strengthSchedule.js";
 import type { ScheduledOutcome } from "./phasing/content/generate.js";
 
 /** L2 canonical → v2 阶段名（v2 枚举冻结在 base/build/speed/marathon/taper/recovery）。 */
@@ -172,7 +173,9 @@ export function buildV2Snapshot(input: SnapshotInput): MasterPlan {
       monitoring_triggers: policy.gates.filter((gate) => gate.phase === span.phase.name).map((gate) => `${gate.signal}：${gate.criterion}`),
       coach_note: `${span.phase.training_goal}；块模式 ${span.phase.block_mode}。`,
       strength: {
-        sessions_per_week: request.availability.strength_sessions_per_week,
+        // #222：阶段页展示阶段目标频次 = 用户选择 ∩ 阶段上限（周级减量/赛周归零
+        // 在周课表层面表达，见 strengthSchedule）。
+        sessions_per_week: phaseStrengthTarget(request.availability.strength_sessions_per_week, span.phase.canonical),
         focus: skeleton.strength_policy.find((item) => item.canonical === span.phase.canonical)?.strength_focus ?? "基础力量与稳定性",
         timing: request.availability.strength_available_days.length ? request.availability.strength_available_days.join("、") : "每周两次，避开质量课",
       },

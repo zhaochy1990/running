@@ -13,6 +13,9 @@ import {
   MasterPlanAnchorSchema,
   PhaseDivisionIntentSchema,
   type RollingMasterInput,
+  type RollingStrengthAvailability,
+  WEEKDAY_VALUES,
+  type Weekday,
   type WeeklyPlan,
   WeeklyPlanSchema,
   weekFolder,
@@ -76,6 +79,9 @@ export function fromStoredContent(args: { content: Record<string, unknown>; mast
   if (typeof weeklyRunDaysMax !== "number" || !Number.isInteger(weeklyRunDaysMax) || weeklyRunDaysMax < 1 || weeklyRunDaysMax > 7) {
     throw new Error("storedContent.availability.weekly_run_days_max 非法");
   }
+  // #222 力量偏好读回：旧计划缺段=null（继续只出跑课，buildWeeklyDocs 批内首周
+  // 提示补选）；半残段同按未设置处理（宁可少排不排脏课）。
+  const strength = parseStoredStrength(availability as Record<string, unknown>);
 
   const totalWeeks = content.total_weeks;
   if (typeof totalWeeks !== "number" || !Number.isInteger(totalWeeks) || totalWeeks < 1) throw new Error("storedContent.total_weeks 非法");
@@ -94,10 +100,45 @@ export function fromStoredContent(args: { content: Record<string, unknown>; mast
       targetTime,
       distance,
     },
-    availability: { weeklyRunDaysMax },
+    availability: { weeklyRunDaysMax, strength },
     policy,
     skeleton,
     anchor,
     lastGeneratedWeek: args.lastGeneratedWeek,
+  };
+}
+
+const WEEKDAYS = WEEKDAY_VALUES as readonly string[];
+
+/** unknown[] → 星期名数组（去重）；任一元素不是合法星期名返回 null。 */
+function weekdayList(value: unknown): Weekday[] | null {
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string" && WEEKDAYS.includes(item))) return null;
+  return [...new Set(value as Weekday[])];
+}
+
+/**
+ * content.availability 的力量段 → RollingStrengthAvailability；null=未设置（旧
+ * 计划缺段，或半残段——宁可按未设置处理也不排脏课）。四个必填字段齐且合法
+ * 才算已设置；unavailable_days 缺省为空。0 次=显式关闭（合法已设置态，此时
+ * 力量日可为空——表单关闭时清空）。
+ */
+function parseStoredStrength(availability: Record<string, unknown>): RollingStrengthAvailability | null {
+  const {
+    strength_sessions_per_week: sessions,
+    strength_available_days: days,
+    allows_double_sessions: doubles,
+    max_session_duration_min: maxDuration,
+  } = availability;
+  if (typeof sessions !== "number" || !Number.isInteger(sessions) || sessions < 0) return null;
+  if (typeof doubles !== "boolean") return null;
+  if (typeof maxDuration !== "number" || !Number.isInteger(maxDuration) || maxDuration <= 0) return null;
+  const availableDays = weekdayList(days);
+  if (availableDays === null) return null;
+  return {
+    sessionsPerWeek: sessions,
+    availableDays,
+    allowsDoubleSessions: doubles,
+    unavailableDays: weekdayList(availability.unavailable_days) ?? [],
+    maxSessionDurationMin: maxDuration,
   };
 }

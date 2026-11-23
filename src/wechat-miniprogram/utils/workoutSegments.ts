@@ -149,3 +149,11 @@ export function buildExerciseRows(spec: NormalizedStrengthWorkout): ExerciseRowV
     note: (ex.note || '').trim(),
   }));
 }
+
+/**
+ * #222 力量课动作 → 周视图折叠体行字符串（与 buildExerciseRows 同口径的
+ * 字符串投影：`动作名 N 组 × M 次 · 组间休息 X 秒`）。
+ */
+export function buildExerciseLines(spec: NormalizedStrengthWorkout): string[] {
+  return buildExerciseRows(spec).map((row) => `${row.name} ${row.target}${row.rest ? ` · ${row.rest}` : ''}`);
+}

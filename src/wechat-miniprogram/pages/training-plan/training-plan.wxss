@@ -587,6 +587,12 @@ page {
   padding: 4rpx 12rpx;
 }
 
+/* #222 力量节数徽标：同 role 形态、暖色系区分 */
+.review-week__role--strength {
+  color: #8a6d3b;
+  background: #f7f1e3;
+}
+
 .review-week__km {
   margin-top: 10rpx;
   font-size: 42rpx;

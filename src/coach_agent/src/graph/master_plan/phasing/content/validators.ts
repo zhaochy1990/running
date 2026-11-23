@@ -153,6 +153,21 @@ export function sessionKm(workout: RunWorkout, eMidSPerKm?: number | null): numb
 /** date（ISO）→ 周内位（周一=0…周日=6，UTC 口径）。 */
 export const weekdayOf = (date: string) => (new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7;
 
+/**
+ * C9 的「质量课日」集（周内位，周一=0）：含质量段（判定表 derive）或比赛课的课
+ * 所在日。导出供 #222 力量换日复用——换日前后的 C9 带别必须与本判定同口径。
+ */
+export function c9QualityWeekdays(sessions: SessionUnderTest[], zones: PaceZones, raceDate?: string): Set<number> {
+  return new Set(
+    sessions.filter((s) => hasQualitySegment(s.workout, zones) || (raceDate != null && s.workout.date === raceDate)).map((s) => weekdayOf(s.workout.date)),
+  );
+}
+
+/** C9 间隔日判定：周内两节质量课之间的日子（按周内位，不跨周）。 */
+export function c9IsIntervalDay(qualityWeekdays: ReadonlySet<number>, weekday: number): boolean {
+  return [...qualityWeekdays].some((a) => a < weekday) && [...qualityWeekdays].some((b) => b > weekday);
+}
+
 /** 步量标签（违规明细/重试清单用）：<1km 用 m、≥1km 用 km；<60s 用 s、≥60s 用 min。 */
 function fmtStepAmount(value: number, kind: "distance_m" | "time_s"): string {
   if (kind === "distance_m") return value < 1000 ? `${Math.round(value)}m` : `${Math.round(value / 100) / 10}km`;
@@ -663,8 +678,8 @@ export function validateWeekContent(input: WeekContentInput): ContentValidation[
     checks.push({ id: "C9 E课时长分层", pass: true, detail: "legacy豁免" });
     return checks;
   }
-  const qualityWeekdays = new Set(sessions.filter((s) => hasQualitySegment(s.workout, zones) || isRace(s.workout)).map((s) => weekdayOf(s.workout.date)));
-  const isIntervalDay = (wd: number) => [...qualityWeekdays].some((a) => a < wd) && [...qualityWeekdays].some((b) => b > wd);
+  const qualityWeekdays = c9QualityWeekdays(sessions, zones, raceDate);
+  const isIntervalDay = (wd: number) => c9IsIntervalDay(qualityWeekdays, wd);
   const raceWd = raceDate != null ? weekdayOf(raceDate) : null;
   // LR 前日（按周内位 LR−1，不跨周——LR 周一的前日在上周，本层不可判）；赛周无 LR 不适用
   // LR 前日（按 LR 日期−1 天的日期判，LR 周一时前日在上周本层不可判）；帽按日合计

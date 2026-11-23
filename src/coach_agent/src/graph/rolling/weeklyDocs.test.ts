@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { LoadPlan, PhaseDivisionIntent, RunWorkout, WeeklyPlan } from "@stride/contract";
+import type { LoadPlan, PhaseDivisionIntent, RollingStrengthAvailability, RunWorkout, WeeklyPlan } from "@stride/contract";
 import type { ContentWeekRow } from "../master_plan/phasing/content/doctrine.js";
 import type { ScheduledOutcome } from "../master_plan/phasing/content/generate.js";
 import type { LoadSeriesPoint } from "../master_plan/phasing/content/schedule/scheduler.js";
@@ -12,6 +12,14 @@ import { buildWeeklyDocs, freezePastSessions, mergeAdjustedWeekDocs } from "./we
  */
 
 const PLAN_START = "2026-10-05"; // 周一
+/** #222：显式关闭力量（0 次）——不排力量、无提示，本文件全部断言维持纯跑课基线。 */
+const STRENGTH_OFF: RollingStrengthAvailability = {
+  sessionsPerWeek: 0,
+  availableDays: [],
+  allowsDoubleSessions: false,
+  unavailableDays: [],
+  maxSessionDurationMin: 90,
+};
 const ZONES = { easy: [288, 336], m: [249, 288], t: [235, 249], i: [218, 235], r: [null, 218] } as const;
 
 function policy8(): PhaseDivisionIntent {
@@ -167,6 +175,7 @@ function buildDocs(scheduled: ScheduledOutcome = scheduledFixture()): WeeklyPlan
     planStartMonday: PLAN_START,
     raceDate: "2026-11-28",
     athlete: { weeklyRunDaysMax: 6 },
+    strength: STRENGTH_OFF,
   });
 }
 
@@ -240,6 +249,7 @@ test("final_quality 周经 span 劈分映射到 marathon/taper 阶段名", () =>
     planStartMonday: PLAN_START,
     raceDate: "2026-11-28",
     athlete: { weeklyRunDaysMax: 6 },
+    strength: STRENGTH_OFF,
   });
   assert.equal(docs[0]!.phase_name, "marathon");
   assert.equal(docs[1]!.phase_name, "taper");
@@ -314,6 +324,7 @@ test("key_sessions 截断：非恢复周 >3 节按里程降序截前 3", () => {
     planStartMonday: PLAN_START,
     raceDate: "2026-11-28",
     athlete: { weeklyRunDaysMax: 6 },
+    strength: STRENGTH_OFF,
   });
   const [w4] = docs;
   assert.ok(w4);
@@ -348,6 +359,7 @@ test("key_sessions 赛周：只留比赛课（激活课不进）", () => {
     planStartMonday: PLAN_START,
     raceDate: "2026-11-28",
     athlete: { weeklyRunDaysMax: 6 },
+    strength: STRENGTH_OFF,
   });
   const [raceWeek] = docs;
   assert.ok(raceWeek);
@@ -373,6 +385,7 @@ test("key_sessions 恢复周：≤1 节（只留最长一节）", () => {
     planStartMonday: PLAN_START,
     raceDate: "2026-11-28",
     athlete: { weeklyRunDaysMax: 6 },
+    strength: STRENGTH_OFF,
   });
   const [w4] = docs;
   assert.ok(w4);

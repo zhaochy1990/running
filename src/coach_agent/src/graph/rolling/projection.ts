@@ -393,6 +393,9 @@ export async function runProjectionCore(deps: RollingDeps, input: RollingProject
       planStartMonday: master.planStartMonday,
       raceDate: master.race.date,
       athlete: { weeklyRunDaysMax: master.availability.weeklyRunDaysMax },
+      // #222：滚动/调整共用——从落库 availability 读回（旧计划 null=未设置，
+      // 只出跑课并在批内首周提示补选）。
+      strength: master.availability.strength ?? null,
     });
     if (adjust !== undefined) {
       weeklyDocs = mergeAdjustedWeekDocs(weeklyDocs, adjust.existingDocs, asOfDay);
