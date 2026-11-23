@@ -166,6 +166,17 @@ test("HM fallback quality work follows early, transition, and final phases", () 
       bag.courses.some((course) => course.kind === "course" && course.type === type),
       JSON.stringify({ phase, week, type }),
     );
+    if (type === "I" || type === "R") {
+      const course = bag.courses.find((item) => item.kind === "course" && item.type === type)!;
+      assert.ok(course.kind === "course");
+      const steps = course.blocks.flatMap((block) => block.steps);
+      assert.ok(steps.some((step) => step.step_kind === "rest"));
+      assert.ok(
+        steps
+          .filter((step) => step.step_kind === "work")
+          .every((step) => step.duration.kind === "distance_m" && step.duration.value <= (type === "I" ? 1000 : 400)),
+      );
+    }
   }
 });
 

@@ -58,6 +58,17 @@ const course = (name: string, type: StructuredCourse["type"], purpose: string, n
   blocks,
 });
 
+/** R and I prescriptions include complete standing recovery between repetitions. */
+function qualitySteps(type: StructuredCourse["type"], distanceM: number, band: [number, number]): V1Step[] {
+  if (type !== "R" && type !== "I") return [step("work", { kind: "distance_m", value: Math.round(distanceM) }, pace(band))];
+  const repetitionM = type === "R" ? 400 : 1000;
+  const count = Math.ceil(distanceM / repetitionM);
+  return Array.from({ length: count }, (_, index) => {
+    const work = step("work", { kind: "distance_m", value: Math.round(Math.min(repetitionM, distanceM - index * repetitionM)) }, pace(band));
+    return index === count - 1 ? [work] : [work, step("rest", { kind: "time_s", value: type === "R" ? 60 : 120 }, { kind: "open", low: null, high: null })];
+  }).flat();
+}
+
 /** 比赛周课包：比赛课（锚 goal_pace）+ 赛前 2-3 天 M 配速激活短课（#825 简版）+ 赛前 1-3 天短 E 激活槽位。 */
 function raceWeekCourses(row: ContentWeekRow, input: ContentGeneratorInput): WeekBag["courses"] {
   const race = input.race;
@@ -143,12 +154,7 @@ function normalWeekCourses(row: ContentWeekRow, input: ContentGeneratorInput, re
             repeat: 1,
             steps: [
               step("warmup", { kind: "time_s", value: (alloc.warmupMin + alloc.warmupCooldownExtraMin / 2) * 60 }, pace(eBand)),
-              ...(type === "R"
-                ? Array.from({ length: Math.max(1, Math.round((alloc.mBodyKm * 1000) / 400)) }, () => [
-                    step("work", { kind: "distance_m", value: 400 }, pace(m)),
-                    step("rest", { kind: "time_s", value: 60 }, { kind: "open", low: null, high: null }),
-                  ]).flat()
-                : [step("work", { kind: "distance_m", value: Math.round(alloc.mBodyKm * 1000) }, pace(m))]),
+              ...qualitySteps(type, alloc.mBodyKm * 1000, m),
               step("cooldown", { kind: "time_s", value: (alloc.cooldownMin + alloc.warmupCooldownExtraMin / 2) * 60 }, pace(eBand)),
             ],
           },
