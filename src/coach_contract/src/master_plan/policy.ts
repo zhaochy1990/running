@@ -189,6 +189,67 @@ export const DanielsAuditSchema = z.object({
 });
 export type DanielsAudit = z.infer<typeof DanielsAuditSchema>;
 
+// ── availability：训练可用度（devops#1043）──────────────────────────────────
+//
+// 请求契约的 AvailabilitySchema 与落库 availability 共用下面两个 schema（单源）。
+// 落库只存约束排课的四项明细 + 天数上限：首次生成据此排课，滚动续排从存量
+// 还原同一份约束。有明确可用窗口时候选日同时满足窗口与禁跑日；窗口为空数组
+// =未指定日内时段，候选日=一周七天扣除禁跑日。
+
+/** 星期枚举（序=周一..周日；与表单卡的 WEEKDAY_VALUES 同源）。 */
+export const AVAILABILITY_WEEKDAY = z.enum(WEEKDAY_VALUES);
+
+const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** 日内可用时段（本地时间 HH:mm）。 */
+export const TRAINING_WINDOW_SCHEMA = z.strictObject({
+  day: AVAILABILITY_WEEKDAY,
+  start_time: z.string().regex(TIME_OF_DAY),
+  end_time: z.string().regex(TIME_OF_DAY),
+});
+
+/**
+ * 落库 availability：天数上限必填 + 明细（全可选——#1043 之前的存量行只有天数上限）。
+ * #1043 四项约束跑课排位（首次生成直带、滚动续排读回）；#222 力量两项供滚动/
+ * 调整/伤病维持排力量课（读回侧缺省视为「未设置」，继续只出跑课并提示补选）。
+ */
+export const MasterPlanAvailabilitySchema = z.strictObject({
+  weekly_run_days_max: z.int().min(1).max(7),
+  available_training_windows: z.array(TRAINING_WINDOW_SCHEMA).optional(),
+  unavailable_days: z.array(AVAILABILITY_WEEKDAY).optional(),
+  max_session_duration_min: z.int().positive().optional(),
+  allows_double_sessions: z.boolean().optional(),
+  strength_sessions_per_week: z.int().nonnegative().optional(),
+  strength_available_days: z.array(AVAILABILITY_WEEKDAY).optional(),
+});
+export type MasterPlanAvailability = z.infer<typeof MasterPlanAvailabilitySchema>;
+/** 约束跑课排位的可用度明细（不含天数上限与力量项）。 */
+export const AvailabilityDetailSchema = MasterPlanAvailabilitySchema.omit({
+  weekly_run_days_max: true,
+  strength_sessions_per_week: true,
+  strength_available_days: true,
+});
+export type AvailabilityDetail = z.infer<typeof AvailabilityDetailSchema>;
+
+const AVAILABILITY_DETAIL_KEYS = ["available_training_windows", "unavailable_days", "max_session_duration_min", "allows_double_sessions"] as const;
+
+/**
+ * availability 里约束排课的明细（校验后取出）；四项都没有=undefined（仅天数
+ * 上限已知，具体日期未知）。生成入口、落库、存量读取三处共用，避免各自挑字段漂移。
+ * 请求的 availability 还带首选长跑日与力量项（不进排位段）——先挑四项再过严格 schema。
+ */
+export function masterPlanAvailabilityDetail(value: unknown): AvailabilityDetail | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const present = AVAILABILITY_DETAIL_KEYS.filter((key) => record[key] !== undefined);
+  if (present.length === 0) return undefined;
+  const parsed = AvailabilityDetailSchema.safeParse(Object.fromEntries(present.map((key) => [key, record[key]])));
+  if (!parsed.success) throw new Error(`availability 明细非法：${JSON.stringify(parsed.error.issues.slice(0, 3))}`);
+  // 禁跑日去重（请求 schema 不查重；与 #222 力量段读回的星期名去重口径一致）
+  if (parsed.data.unavailable_days != null) parsed.data.unavailable_days = [...new Set(parsed.data.unavailable_days)];
+  return parsed.data;
+}
+
 // ── 政策包 v3 = v2 课表（首期快照）+ 四段政策 ────────────────────────────────
 
 export const MASTER_PLAN_V3_SCHEMA = "master-plan/v3" as const;
@@ -211,20 +272,12 @@ export const MasterPlanV3Schema = MasterPlanSchema.extend({
   /** 首期课表快照的生成日；块界重生成后以 weekly 投影为准（spec §9）。 */
   snapshot_as_of: DaySchema,
   /**
-   * 训练可用性（#858 PR-A，全可选——v3 写路径落地前的存量行没有该字段）：
-   * 滚动 job 从存量 content 构造 RollingMasterInput 需要 weekly_run_days_max。
-   * #222：力量偏好四字段随 content 落库（可选——存量行没有；读回侧缺省视为
-   * 「未设置」，滚动继续只出跑课并提示补选）。
+  /**
+   * 训练可用性（#858 PR-A，整段可选——v3 写路径落地前的存量行没有该字段）：
+   * 滚动 job 从存量 content 构造 RollingMasterInput 需要 weekly_run_days_max；
+   * #1043 起随存约束跑课排位的四项明细（存量行只有天数上限=具体日期未知）；
+   * #222 力量偏好两项随 content 落库（读回侧缺省视为「未设置」，滚动继续只出跑课并提示补选）。
    */
-  availability: z
-    .strictObject({
-      weekly_run_days_max: z.int().min(1).max(7),
-      strength_sessions_per_week: z.int().nonnegative().optional(),
-      strength_available_days: z.array(z.enum(WEEKDAY_VALUES)).optional(),
-      allows_double_sessions: z.boolean().optional(),
-      max_session_duration_min: z.int().positive().optional(),
-      unavailable_days: z.array(z.enum(WEEKDAY_VALUES)).optional(),
-    })
-    .optional(),
+  availability: MasterPlanAvailabilitySchema.optional(),
 });
 export type MasterPlanV3 = z.infer<typeof MasterPlanV3Schema>;

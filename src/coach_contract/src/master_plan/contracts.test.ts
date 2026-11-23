@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MasterPlanGraphOutcome, MasterPlanGraphRequest } from "./contracts.js";
+import { MasterPlanV3Schema, masterPlanAvailabilityDetail } from "./policy.js";
 
 function createTestRequest() {
   return {
@@ -305,4 +306,26 @@ test("availability rejects strength sessions without strength days; explicit off
   // 显式关闭（0 次）不需要力量日
   assert.equal(MasterPlanGraphRequest.safeParse(withStrength(0, [])).success, true);
   assert.equal(MasterPlanGraphRequest.safeParse(withStrength(2, ["monday", "thursday"])).success, true);
+});
+
+test("availability detail: request and stored v3 share the schema; one helper picks what constrains scheduling (#1043)", () => {
+  const request = MasterPlanGraphRequest.parse(createTestRequest());
+  const detail = masterPlanAvailabilityDetail(request.availability);
+  assert.deepEqual(detail, {
+    available_training_windows: request.availability.available_training_windows,
+    unavailable_days: ["sunday"],
+    max_session_duration_min: 180,
+    allows_double_sessions: false,
+  });
+  // 四项都没有（或根本不是对象）= 只有天数上限已知
+  assert.equal(masterPlanAvailabilityDetail({ weekly_run_days_max: 5 }), undefined);
+  assert.equal(masterPlanAvailabilityDetail("junk"), undefined);
+  assert.throws(() => masterPlanAvailabilityDetail({ weekly_run_days_max: 4, unavailable_days: ["funday"] }), /availability 明细非法/);
+
+  // 落库 availability：天数上限必填、明细可选、存量行（只有上限）照常合法、多余键拒绝
+  const stored = MasterPlanV3Schema.shape.availability;
+  assert.equal(stored.safeParse({ weekly_run_days_max: 4 }).success, true);
+  assert.equal(stored.safeParse({ weekly_run_days_max: 4, ...detail }).success, true);
+  assert.equal(stored.safeParse({ weekly_run_days_max: 4, preferred_long_run_day: "sunday" }).success, false);
+  assert.equal(stored.safeParse({ weekly_run_days_max: 4, available_training_windows: [] }).success, true);
 });

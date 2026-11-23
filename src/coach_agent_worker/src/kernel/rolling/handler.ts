@@ -6,16 +6,26 @@ import {
   type RollingDeps,
   type RollingOutcome,
   runRollingProjection,
+  storedWeeklyDocOf,
 } from "@stride/coach-agent";
+import { getLogger } from "@stride/common";
 import { RollingJobRequest, type RollingMasterInput, shanghaiDay, type WeeklyPlan } from "@stride/contract";
 import type { RollingWeeklyChannel, WeeklyPlanAppliedWeek } from "../../goClient/weeklyPlanClient.js";
 import { ERROR_CODES, type Handler, newPermanentError } from "../../job/errors.js";
 import type { PlanJob } from "../../job/model.js";
 import type { Heartbeat } from "../../job/ports.js";
 
+const logger = getLogger("plan-job/rolling");
+
 /** rolling job 的 master 存量读档面（MySqlDataProvider 满足，测试注入 fake）。 */
 export interface RollingMasterPlanSource {
   getMasterPlanMetadataForDate(userId: string, day: string): Promise<ActiveMasterPlanMetadata | null>;
+}
+
+/** 存量周文档读档面（devops#1043 边界日历来源；与 adjust/maintenance handler 同源）。 */
+export interface RollingWeeklyDocSource {
+  /** 返回 weekly_plan 行 content（MySqlDataProvider 的宽松 Record 形状）。 */
+  getWeeklyPlan(userId: string, weekStart: string): Promise<unknown | null>;
 }
 
 /** 滚动投影入口签名（=runRollingProjection；测试注入 fake outcome）。 */
@@ -28,8 +38,21 @@ export interface RollingHandlerDeps {
   models: Pick<MasterPlanLlmModels, "phasingModel" | "contentModel">;
   masterPlans: RollingMasterPlanSource;
   weeklyPlans: RollingWeeklyChannel;
+  /** devops#1043：批首周之前一周的存量周文档——边界日历里仍生效的相邻课程。 */
+  weeklyDocs: RollingWeeklyDocSource;
   /** 测试缝：缺省=runRollingProjection（生产装配不传）。 */
   projection?: RollingProjection;
+}
+
+/** 存量周文档 → 边界日历来源；缺行/坏行按未知日处理（边界是尽力而为的上下文，不拖垮滚动）。 */
+async function boundaryDocOf(source: RollingWeeklyDocSource, userId: string, weekStart: string): Promise<WeeklyPlan | null> {
+  try {
+    const raw = await source.getWeeklyPlan(userId, weekStart);
+    return raw === null ? null : storedWeeklyDocOf(raw, weekStart);
+  } catch (error) {
+    logger.warn({ err: error, weekStart }, "rolling boundary doc unavailable; those days stay unknown");
+    return null;
+  }
 }
 
 /** 滚动阶段心跳锚点（沿用 legacy 五值 stage 枚举；L1 取数起点→L1 完成→L4 生成→落库）。 */
@@ -138,7 +161,7 @@ export function createRollingJobHandler(deps: RollingHandlerDeps): Handler {
       },
     };
     const outcome = await (deps.projection ?? runRollingProjection)(
-      { contextProvider: observedProvider, models: observedModels },
+      { contextProvider: observedProvider, models: observedModels, existingWeeklyDoc: (weekStart) => boundaryDocOf(deps.weeklyDocs, job.userId, weekStart) },
       { userId: job.userId, master, asOf: request.as_of ?? new Date().toISOString() },
     );
 

@@ -76,6 +76,7 @@ for (const [totalWeeks, startWeek] of [
       contextProvider: data.contextProvider,
       models: data.models,
       masterPlans: { getMasterPlanMetadataForDate: async () => ({ planId: "plan-test", revision: 1, status: "active", content: data.content }) },
+      weeklyDocs: { getWeeklyPlan: async () => null },
       weeklyPlans: {
         listWeeklyPlanWeeks: async () => [{ week_start: addDays(data.master.planStartMonday, (startWeek - 2) * 7), master_plan_id: "plan-test", revision: 1 }],
         batchApplyWeeklyPlans: async (_user, _plan, docs) => {

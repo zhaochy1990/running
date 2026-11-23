@@ -136,6 +136,7 @@ function scheduledFixture(): ScheduledOutcome {
     checks: [],
     scheduleChecks: [],
     repairs: [],
+    distribution: [],
     source: "llm",
     attempts: 1,
     attemptsDetail: [],

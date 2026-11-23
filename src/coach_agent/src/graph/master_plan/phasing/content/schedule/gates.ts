@@ -1,14 +1,14 @@
 import type { RunWorkout } from "@stride/contract";
 import { easyMidOfZones, hasQualitySegment, type PaceZones } from "../derive.js";
 import type { ContentWeekRow } from "../doctrine.js";
-import { LR_EVE_MAX_KM, sessionKm } from "../validators.js";
+import { LR_EVE_MAX_KM, sessionKm, weekdayOf } from "../validators.js";
 import { courseDose, type DoseCoefficients } from "./dose.js";
 import type { CalendarDay, LoadSeriesPoint } from "./scheduler.js";
 
 /**
- * L4b 排位门 P1-P7（devops#799 校验节；contract.md §6.3）：对排位后的日历判定，
- * 输入=L4b 构造产物（calendar/load_series/sessions）。门挂=排位无解上浮
- * （调度器已先行确定性修复；到这里仍挂=课包问题，带原因重生成 L4a）。
+ * L4b 排位门 P1-P8（devops#799 校验节 + #1043 P8；contract.md §6.3）：对排位后
+ * 的日历判定，输入=L4b 构造产物（calendar/load_series/sessions）。门挂=排位
+ * 无解上浮（调度器已先行确定性修复；到这里仍挂=课包问题，带原因重生成 L4a）。
  */
 
 export interface ScheduleCheck {
@@ -26,6 +26,10 @@ export interface GateInput {
   coefficients: DoseCoefficients;
   /** 离赛周数（本周=1，赛前一周=2；final_quality P7 动态下限用）。 */
   weeksToRace?: number | null;
+  /** 上周日（批界前的已知边界日）是否含质量课——P2 跨周判定（devops#1043）。 */
+  previousDayQuality?: boolean;
+  /** 用户可跑日（周内位）；null/缺省=具体日期未知，P8 不判（devops#1043）。 */
+  availableWeekdays?: number[] | null;
 }
 
 /**
@@ -73,12 +77,22 @@ export function scheduleGates(input: GateInput): ScheduleCheck[] {
   checks.push({ id: "P1 训练日", pass: daySet.size <= daysMax, detail: `${daySet.size} 天 vs ≤${daysMax}` });
 
   // P2 质量课不相邻日（相邻日独立质量课=违规；LR 内嵌质量按判定表参与）。
+  // 质量课恢复间隔同样检查周界（devops#1043）：上周日质量课/比赛 ↔ 本周一
+  // 质量课背靠背=违规。赛周豁免：周五/周六比赛的赛前激活课落在周一（赛前 5 天
+  // 位），紧接上周日带质量尾段的减量长跑是既有赛周位型（票面「既有赛周例外」，
+  // 激活窗内也没有别的位置）——不按跨周背靠背判，由审计提示。
   const qualityWds = calendar
     .filter((d) => d.sessions.some(quality))
     .map((d) => (new Date(`${d.date}T00:00:00Z`).getUTCDay() + 6) % 7)
     .sort((a, b) => a - b);
   const adjacent = qualityWds.filter((wd, i) => i > 0 && wd - qualityWds[i - 1]! === 1);
-  checks.push({ id: "P2 质量课不相邻", pass: adjacent.length === 0, detail: adjacent.length === 0 ? "全过" : `相邻质量日周内位 ${adjacent.join(",")}` });
+  const crossWeekAdjacent = input.previousDayQuality === true && raceDate == null && qualityWds.includes(0);
+  checks.push({
+    id: "P2 质量课不相邻",
+    pass: adjacent.length === 0 && !crossWeekAdjacent,
+    detail:
+      adjacent.length > 0 ? `相邻质量日周内位 ${adjacent.join(",")}` : crossWeekAdjacent ? "周一质量课与上周日质量课/比赛背靠背（跨周恢复间隔不足）" : "全过",
+  });
 
   // P3 LR 周日 + 前日轻量（周六全 E 且合计 ≤8km 或休）。
   const lrs = sessions.filter((s) => s.type === "LR");
@@ -170,6 +184,15 @@ export function scheduleGates(input: GateInput): ScheduleCheck[] {
         ? "里程不可知"
         : `${(share * 100).toFixed(0)}% vs ≥${(floor * 100).toFixed(0)}%${row.phase === "final_quality" ? (input.weeksToRace != null && input.weeksToRace < FQ_LATE_WEEKS ? "（后半段递减）" : "（前半段）") : ""}`,
     });
+  }
+
+  // P8 可跑日（devops#1043）：全部课落在用户可跑日（禁跑日/可用窗口之外的
+  // 日子无课）；具体日期未知（存量只有天数上限）时不判。比赛日是固定事件，
+  // 不受周内可跑日约束。
+  if (input.availableWeekdays != null) {
+    const allowed = new Set(input.availableWeekdays);
+    const offDays = [...new Set(sessions.filter((s) => s.date !== raceDate && !allowed.has(weekdayOf(s.date))).map((s) => s.date))].sort();
+    checks.push({ id: "P8 可跑日", pass: offDays.length === 0, detail: offDays.length === 0 ? "全过" : `课落在不可跑日：${offDays.join(",")}` });
   }
 
   return checks;

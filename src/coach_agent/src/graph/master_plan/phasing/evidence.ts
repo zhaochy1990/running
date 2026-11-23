@@ -116,6 +116,8 @@ export interface PhasingActivityInput {
   strideSessionClass: string | null;
   /** 整课时长（s，#837 训练进步推断用；缺省时该课不参与推断）。 */
   durationS?: number | null;
+  /** STRIDE 剂量（devops#1043 边界日历的三日负荷用）；缺省=未知。 */
+  strideDose?: number | null;
 }
 
 const parseHms = (s: string) => {

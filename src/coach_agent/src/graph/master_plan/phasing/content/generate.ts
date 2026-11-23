@@ -6,7 +6,16 @@ import { buildContentMessages, type ContentGeneratorInput, type ContentWeekRow, 
 import { templateFallback } from "./fallback.js";
 import { DEFAULT_DOSE_COEFFICIENTS, type DoseCoefficients } from "./schedule/dose.js";
 import type { ScheduleCheck } from "./schedule/gates.js";
-import { type CalendarDay, type LoadMeta, type LoadSeriesPoint, type PmcState, scheduleWeeks, type WeekBag } from "./schedule/scheduler.js";
+import {
+  type CalendarDay,
+  type LoadMeta,
+  type LoadSeriesPoint,
+  type PmcState,
+  scheduleWeeks,
+  type WeekBag,
+  type WeekDistributionAudit,
+  type WeekValidator,
+} from "./schedule/scheduler.js";
 import { type ContentValidation, E_DURATION_INTERVAL_BAND, E_DURATION_NORMAL_BAND, validateWeekContent } from "./validators.js";
 
 /**
@@ -82,9 +91,11 @@ export interface ScheduledOutcome {
   loadMeta: LoadMeta;
   /** 逐周终检（排位后全量 C1-C9）。 */
   checks: ContentValidation[][];
-  /** 逐周排位门（P1-P7）。 */
+  /** 逐周排位门（P1-P8）。 */
   scheduleChecks: ScheduleCheck[][];
   repairs: string[];
+  /** 常规周日期分布选择留痕（devops#1043：候选指标、淘汰关系、原排法对照）。 */
+  distribution: WeekDistributionAudit[];
   /** llm = 校验全绿；fallback = 重试耗尽/调用失败落模板。 */
   source: "llm" | "fallback";
   attempts: number;
@@ -181,12 +192,10 @@ function bagValidationInput(bag: WeekBag, row: ContentWeekRow, input: ContentGen
   };
 }
 
-/** 排位后全量校验（真实日期+E 实例化——C1/C4/C9 按日判定）。 */
-function finalValidation(weeks: Array<{ week: number; sessions: RunWorkout[] }>, input: ContentGeneratorInput, templatePath = false): ContentValidation[][] {
-  const rowOfWeek = new Map(input.rows.map((row) => [row.week, row]));
-  return weeks.map(({ week, sessions }) => {
-    const row = rowOfWeek.get(week)!;
-    return validateWeekContent({
+/** 单周排位后校验器（真实日期+E 实例化——按日/落位判定的 C 门）；终检与排位段的候选逐候选复算共用。 */
+function weekValidatorOf(input: ContentGeneratorInput, templatePath = false): WeekValidator {
+  return (sessions, row) =>
+    validateWeekContent({
       templatePath,
       sessions: sessions.map((workout) => ({ workout })),
       row: { total_km: row.totalKm, long_run_km: row.longRunKm, quality_sessions: row.qualitySessions, role: row.role },
@@ -199,11 +208,17 @@ function finalValidation(weeks: Array<{ week: number; sessions: RunWorkout[] }>,
       ...(row.role === "race" ? { raceDate: input.race.date } : {}),
       ...(isRegeneration(row) ? { regeneration: true } : {}),
     });
-  });
 }
 
-/** L4b 排位上下文（PMC 种子=athlete.fitness 生产快照直读）。 */
-function scheduleContextOf(input: ContentGeneratorInput, coefficients: DoseCoefficients, pmcSeed?: PmcState) {
+/** 排位后全量校验。 */
+function finalValidation(weeks: Array<{ week: number; sessions: RunWorkout[] }>, input: ContentGeneratorInput, templatePath = false): ContentValidation[][] {
+  const validate = weekValidatorOf(input, templatePath);
+  const rowOfWeek = new Map(input.rows.map((row) => [row.week, row]));
+  return weeks.map(({ week, sessions }) => validate(sessions, rowOfWeek.get(week)!));
+}
+
+/** L4b 排位上下文（PMC 种子=athlete.fitness 生产快照直读；可用度与边界日历随输入透传，devops#1043）。 */
+function scheduleContextOf(input: ContentGeneratorInput, coefficients: DoseCoefficients, pmcSeed?: PmcState, templatePath = false) {
   return {
     rows: input.rows,
     planStartMonday: input.planStartMonday,
@@ -212,6 +227,12 @@ function scheduleContextOf(input: ContentGeneratorInput, coefficients: DoseCoeff
     // 块界分批时由调用方链式传入上批末态；单段生成缺省用生成时点体能快照
     pmcSeed: pmcSeed ?? ({ acute: input.athlete.fitness.atl, chronic: input.athlete.fitness.ctl } satisfies PmcState),
     coefficients,
+    // 日期分布候选逐个复算排位后课程校验（devops#1043）：按落位判定的 C 门（如 E
+    // 时长分层 C9——单课时长上限低于 60min 时普通 E 日排不出合法时长）只有过完
+    // 实例化后的真实课表才判得出
+    validateWeek: weekValidatorOf(input, templatePath),
+    ...(input.availability != null ? { availability: input.availability } : {}),
+    ...(input.boundary != null ? { boundary: input.boundary } : {}),
   };
 }
 
@@ -222,23 +243,25 @@ function runSchedule(
   coefficients: DoseCoefficients,
   templatePath = false,
   pmcSeed?: PmcState,
-): { violations: string[]; scheduleFailures: string[]; outcome?: Omit<ScheduledOutcome, "source" | "attempts" | "attemptsDetail"> } {
+): { violations: string[]; scheduleFailures: string[]; conflicts: string[]; outcome?: Omit<ScheduledOutcome, "source" | "attempts" | "attemptsDetail"> } {
   const bagChecks = bags.map((bag) => {
     const row = input.rows.find((r) => r.week === bag.week)!;
     return validateWeekContent(bagValidationInput(bag, row, input));
   });
   const bagViolations = bagChecks.flatMap((weekChecks, i) => weekChecks.filter((c) => !c.pass).map((c) => `第${bags[i]!.week}周 ${c.id}：${c.detail}`));
-  const scheduled = scheduleWeeks(bags, scheduleContextOf(input, coefficients, pmcSeed));
-  if (!scheduled.ok) return { violations: [...bagViolations, ...scheduled.failures], scheduleFailures: scheduled.failures };
+  const scheduled = scheduleWeeks(bags, scheduleContextOf(input, coefficients, pmcSeed, templatePath));
+  if (!scheduled.ok)
+    return { violations: [...bagViolations, ...scheduled.failures], scheduleFailures: scheduled.failures, conflicts: scheduled.conflicts };
 
   const weeks = scheduled.weeks.map(({ week, sessions }) => ({ week, sessions }));
   const finalChecks = finalValidation(weeks, input, templatePath);
   const finalViolations = finalChecks.flatMap((weekChecks, i) => weekChecks.filter((c) => !c.pass).map((c) => `第${weeks[i]!.week}周 ${c.id}：${c.detail}`));
   const violations = [...bagViolations, ...finalViolations];
-  if (violations.length > 0) return { violations, scheduleFailures: [] };
+  if (violations.length > 0) return { violations, scheduleFailures: [], conflicts: [] };
   return {
     violations: [],
     scheduleFailures: [],
+    conflicts: [],
     outcome: {
       weeks,
       calendar: scheduled.weeks.flatMap((w) => w.calendar),
@@ -247,6 +270,7 @@ function runSchedule(
       checks: finalChecks,
       scheduleChecks: scheduled.weeks.map((w) => w.checks),
       repairs: scheduled.weeks.flatMap((w) => w.repairs),
+      distribution: scheduled.distribution,
     },
   };
 }
@@ -295,6 +319,7 @@ export async function generateWeekContent(
   let attempts = 0;
   let lastDraft: unknown;
   let lastViolations: string[] = [];
+  let lastConflicts: string[] = [];
   const attemptsDetail: ContentAttemptDetail[] = [];
   for (let round = 0; round <= MAX_CONTENT_RETRIES; round++) {
     attempts++;
@@ -304,23 +329,28 @@ export async function generateWeekContent(
       const rowSet = new Set(input.rows.map((r) => r.week));
       const missing = [...rowSet].filter((w) => !bags.some((x) => x.week === w));
       const dupWeeks = bags.map((x) => x.week).filter((w, i, arr) => arr.indexOf(w) !== i);
-      const { violations, outcome } = runSchedule(bags, input, coefficients, false, options?.pmcSeed);
+      const { violations, conflicts, outcome } = runSchedule(bags, input, coefficients, false, options?.pmcSeed);
       const all = [...missing.map((w) => `第${w}周缺失（week_rows 每周都要输出）`), ...[...new Set(dupWeeks)].map((w) => `第${w}周重复输出`), ...violations];
       if (all.length === 0 && outcome != null) return { ...outcome, source: "llm", attempts, attemptsDetail };
       lastDraft = draft;
       lastViolations = all;
+      lastConflicts = conflicts;
       // 拷贝隔离：重试载荷数组与落盘明细互不串改（模型端只读，此处防未来包装器污染）
       attemptsDetail.push({ violations: lastViolations.slice() });
     } catch (error) {
       const parseError = error instanceof Error ? error.message.slice(0, 200) : "unknown";
       lastViolations = [`模型调用或契约解析失败（${parseError}），请重新输出完整 weeks`];
+      lastConflicts = [];
       attemptsDetail.push({ violations: [], parseError });
     }
   }
-  // 兜底永不静默吞错，两类失败分开定性：
+  // 兜底永不静默吞错，三类失败分开定性：
   // ① 模板课包挂 C 门/构造抛错=实现缺陷（兜底必须永远合法）；② 课包合法但排位
   // 无解（P6 波形 cap 等）=输入超排位包络的结构性无解——显式上浮给调用方
-  // （#803 接线侧决策：压 L3 周量或调种子），不当缺陷吞掉也不静默降级
+  // （#803 接线侧决策：压 L3 周量或调种子），不当缺陷吞掉也不静默降级；
+  // ③ LLM 各轮已报用户可用度冲突（devops#1043：双练未获许可/可跑日不足等——
+  // 模板的量账分配不感知这些约束）而模板也挂门=输入在用户约束下超包络，同样
+  // 是结构性无解，带具体冲突上浮
   let bags: WeekBag[];
   try {
     bags = templateFallback(input);
@@ -334,6 +364,7 @@ export async function generateWeekContent(
       .map((c) => `第${bag.week}周 ${c.id}：${c.detail}`);
   });
   if (bagViolations.length > 0) {
+    if (lastConflicts.length > 0) throw new Error(`L4 结构性无解（用户可用度与课包冲突）：${lastConflicts.join(";")}`);
     throw new Error(`L4 兜底产物挂门（实现缺陷）：${bagViolations.join(";")}`);
   }
   const { violations, outcome, scheduleFailures } = runSchedule(bags, input, coefficients, true, options?.pmcSeed);

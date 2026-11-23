@@ -1,4 +1,4 @@
-import type { MasterPlan, Weekday } from "@stride/contract";
+import type { MasterPlan, MasterPlanAvailability } from "@stride/contract";
 
 /**
  * Adapt the kernel's `MasterPlan` output into the Go stored content_version=2
@@ -16,18 +16,14 @@ import type { MasterPlan, Weekday } from "@stride/contract";
  * #858: `availability`（至少 weekly_run_days_max）随 content 落库——滚动 job 从
  * DB 读 content 构造 RollingMasterInput 时需要；Go 读路径按 map 透传未知字段。
  *
- * #222: 力量偏好四字段（strength_sessions_per_week / strength_available_days /
+ * #222: 力量偏好（strength_sessions_per_week / strength_available_days /
  * allows_double_sessions / max_session_duration_min / unavailable_days）随
  * availability 一起落库——滚动/调整/伤病维持读回排力量课用。
+ * #1043: 跑课排位的可用度明细（禁跑日/日内窗口/单课时长上限/双练许可）一并
+ * 落库，滚动续排据此还原同一份排课约束（明细由 masterPlanAvailabilityDetail 挑出并校验）。
  */
-export interface MasterPlanContentAvailability {
-  weekly_run_days_max: number;
-  strength_sessions_per_week?: number;
-  strength_available_days?: Weekday[];
-  allows_double_sessions?: boolean;
-  max_session_duration_min?: number;
-  unavailable_days?: Weekday[];
-}
+/** 落库 availability 的类型=契约 schema 推导（不另抄一份接口）。 */
+export type MasterPlanContentAvailability = MasterPlanAvailability;
 
 export function masterPlanToContent(plan: MasterPlan, goalId: string, availability?: MasterPlanContentAvailability): Record<string, unknown> {
   const phaseIdByIndex = plan.phases.map((_, index) => `phase-${index + 1}`);
@@ -76,6 +72,7 @@ export function masterPlanToContent(plan: MasterPlan, goalId: string, availabili
             weekly_run_days_max: availability.weekly_run_days_max,
             ...(availability.strength_sessions_per_week != null ? { strength_sessions_per_week: availability.strength_sessions_per_week } : {}),
             ...(availability.strength_available_days != null ? { strength_available_days: availability.strength_available_days } : {}),
+            ...(availability.available_training_windows != null ? { available_training_windows: availability.available_training_windows } : {}),
             ...(availability.allows_double_sessions != null ? { allows_double_sessions: availability.allows_double_sessions } : {}),
             ...(availability.max_session_duration_min != null ? { max_session_duration_min: availability.max_session_duration_min } : {}),
             ...(availability.unavailable_days != null ? { unavailable_days: availability.unavailable_days } : {}),

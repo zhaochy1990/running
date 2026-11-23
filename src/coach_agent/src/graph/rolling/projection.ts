@@ -14,6 +14,7 @@
  * 传 evaluateAdjustWindow 的窗口 + recipeFor 的配方复用同一条链。
  */
 import {
+  type AvailabilityDetail,
   addDays,
   type DanielsAudit,
   type LoadPlan,
@@ -31,6 +32,8 @@ import { danielsAudit } from "../master_plan/phasing/content/danielsAudit.js";
 import { buildProvenSessions, type ContentGeneratorInput, type ContentWeekRow, QUALITY_FAMILY_OF } from "../master_plan/phasing/content/doctrine.js";
 import { generateWeekContent, type ScheduledOutcome } from "../master_plan/phasing/content/generate.js";
 import { projectZones } from "../master_plan/phasing/content/project.js";
+import { schedulingAvailabilityOf } from "../master_plan/phasing/content/schedule/availability.js";
+import { boundaryBefore } from "../master_plan/phasing/content/schedule/boundary.js";
 import { buildPhaseEvidence, type PhaseEvidence, type PhasingActivityInput } from "../master_plan/phasing/evidence.js";
 import { buildWeeklySeries, habitualBaseline, type WeeklySeries } from "../master_plan/phasing/load/baseline.js";
 import { buildLoadPlan } from "../master_plan/phasing/load/expand.js";
@@ -124,6 +127,11 @@ export interface RollingDeps {
    * rolling 不重跑 L2，phasingModel 仅为装配兼容保留（当前不调用）。
    */
   models: Pick<MasterPlanLlmModels, "phasingModel" | "contentModel">;
+  /**
+   * devops#1043：读批首周之前一周的存量周文档（滚动入口的边界日历来源）。
+   * 缺省=未来日边界未知（调整投影改用 overrides.existingDocs）。
+   */
+  existingWeeklyDoc?: (weekStart: string) => Promise<WeeklyPlan | null>;
 }
 
 export interface RollingProjectionInput {
@@ -314,7 +322,19 @@ export async function runProjectionCore(deps: RollingDeps, input: RollingProject
     });
 
     // ⑥ 批输入：运动员/比赛/起点/已证课（#857）同款；PMC 种子=实际当前体能
-    // （快照直读），不是首批批链的末端种子。
+    // （快照直读），不是首批批链的末端种子。devops#1043：确认请求的可用度
+    // （从存量还原）与批首周的已知相邻日历一并带到排位段。
+    const batchStartMonday = addDays(master.planStartMonday, (window.startWeek - 1) * 7);
+    const previousMonday = addDays(batchStartMonday, -7);
+    const existingDoc =
+      adjust?.existingDocs.find((doc) => doc.week_name.slice(0, 10) === previousMonday) ?? (await deps.existingWeeklyDoc?.(previousMonday)) ?? null;
+    const boundary = boundaryBefore({
+      startMonday: batchStartMonday,
+      asOfDay,
+      activities,
+      existingDoc,
+      zones: projection.weeks[window.startWeek - 2]?.zones ?? null,
+    });
     const batchInput: ContentGeneratorInput = {
       rows,
       athlete: {
@@ -331,6 +351,8 @@ export async function runProjectionCore(deps: RollingDeps, input: RollingProject
       },
       planStartMonday: master.planStartMonday,
       provenSessions: buildProvenSessions(activities, asOfDay),
+      availability: schedulingAvailabilityOf(master.availability.detail),
+      boundary,
     };
 
     // ⑦ L4 批生成：外层重试 ≤3 同 master（fallback 时 warn 日志保留批产物）。
@@ -446,7 +468,8 @@ export type MasterPlanArtifact = Extract<MasterPlanGraphOutcome, { decision: "co
  */
 export function fromMasterArtifact(args: {
   artifact: MasterPlanArtifact;
-  availability: { weeklyRunDaysMax: number };
+  /** devops#1043：确认请求的可用度（明细可缺——仅天数上限）。 */
+  availability: { weeklyRunDaysMax: number; detail?: AvailabilityDetail };
   masterPlanId: string;
   /** 快照周 ∪ 已落库 weekly 行的最大周号（缺省按快照重点课推）。 */
   lastGeneratedWeek?: number;
@@ -463,7 +486,10 @@ export function fromMasterArtifact(args: {
       targetTime: artifact.plan.goal.target_time,
       distance: artifact.plan.goal.distance,
     },
-    availability: { weeklyRunDaysMax: args.availability.weeklyRunDaysMax },
+    availability: {
+      weeklyRunDaysMax: args.availability.weeklyRunDaysMax,
+      ...(args.availability.detail != null ? { detail: args.availability.detail } : {}),
+    },
     policy: artifact.policy,
     skeleton: artifact.skeleton,
     anchor: artifact.anchor,

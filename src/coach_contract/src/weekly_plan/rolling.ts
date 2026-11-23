@@ -1,6 +1,6 @@
 import { z } from "zod/v4";
 import type { Weekday } from "../master_plan/card.js";
-import type { LoadPlan, MasterPlanAnchor, PhaseDivisionIntent } from "../master_plan/policy.js";
+import type { AvailabilityDetail, LoadPlan, MasterPlanAnchor, PhaseDivisionIntent } from "../master_plan/policy.js";
 import type { WeeklyPlan } from "./schema.js";
 
 /**
@@ -137,7 +137,13 @@ export interface RollingMasterInput {
     /** 目标距离（master goal 同枚举；缺省 FM——判断层教义目前只验证过 FM）。 */
     distance?: "FM" | "HM";
   };
-  availability: { weeklyRunDaysMax: number; strength?: RollingStrengthAvailability | null };
+  availability: {
+    weeklyRunDaysMax: number;
+    /** #222：力量排课偏好；null/缺省=旧计划未设置。 */
+    strength?: RollingStrengthAvailability | null;
+    /** #1043：约束跑课排位的可用度明细；存量行只有天数上限时缺省（具体日期未知）。 */
+    detail?: AvailabilityDetail;
+  };
   policy: PhaseDivisionIntent;
   /** 存量骨架（偏差基准）。 */
   skeleton: LoadPlan;

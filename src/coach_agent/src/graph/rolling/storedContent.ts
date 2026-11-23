@@ -11,6 +11,7 @@
 import {
   LoadPlanSchema,
   MasterPlanAnchorSchema,
+  masterPlanAvailabilityDetail,
   PhaseDivisionIntentSchema,
   type RollingMasterInput,
   type RollingStrengthAvailability,
@@ -83,6 +84,9 @@ export function fromStoredContent(args: { content: Record<string, unknown>; mast
   // 提示补选）；半残段同按未设置处理（宁可少排不排脏课）。
   const strength = parseStoredStrength(availability as Record<string, unknown>);
 
+  // devops#1043：约束排课的可用度明细（禁跑日/日内窗口/单课时长上限/双练许可）；
+  // 存量行只有天数上限时 detail 缺省——续排沿用可确认的约束，具体日期按未知处理
+  const detail = masterPlanAvailabilityDetail(availability);
   const totalWeeks = content.total_weeks;
   if (typeof totalWeeks !== "number" || !Number.isInteger(totalWeeks) || totalWeeks < 1) throw new Error("storedContent.total_weeks 非法");
 
@@ -100,7 +104,7 @@ export function fromStoredContent(args: { content: Record<string, unknown>; mast
       targetTime,
       distance,
     },
-    availability: { weeklyRunDaysMax, strength },
+    availability: { weeklyRunDaysMax, strength, ...(detail != null ? { detail } : {}) },
     policy,
     skeleton,
     anchor,

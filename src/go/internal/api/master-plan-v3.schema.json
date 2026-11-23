@@ -2738,12 +2738,41 @@
           "minimum": 1,
           "maximum": 7
         },
-        "strength_sessions_per_week": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
+        "available_training_windows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "day": {
+                "type": "string",
+                "enum": [
+                  "monday",
+                  "tuesday",
+                  "wednesday",
+                  "thursday",
+                  "friday",
+                  "saturday",
+                  "sunday"
+                ]
+              },
+              "start_time": {
+                "type": "string",
+                "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+              },
+              "end_time": {
+                "type": "string",
+                "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+              }
+            },
+            "required": [
+              "day",
+              "start_time",
+              "end_time"
+            ],
+            "additionalProperties": false
+          }
         },
-        "strength_available_days": {
+        "unavailable_days": {
           "type": "array",
           "items": {
             "type": "string",
@@ -2758,15 +2787,20 @@
             ]
           }
         },
-        "allows_double_sessions": {
-          "type": "boolean"
-        },
         "max_session_duration_min": {
           "type": "integer",
           "exclusiveMinimum": 0,
           "maximum": 9007199254740991
         },
-        "unavailable_days": {
+        "allows_double_sessions": {
+          "type": "boolean"
+        },
+        "strength_sessions_per_week": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "strength_available_days": {
           "type": "array",
           "items": {
             "type": "string",

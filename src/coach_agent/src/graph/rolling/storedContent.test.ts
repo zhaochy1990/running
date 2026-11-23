@@ -60,6 +60,12 @@ test("fromStoredContent：#222 力量偏好已设置态读回（五字段齐、�
       unavailableDays: ["sunday"],
       maxSessionDurationMin: 150,
     },
+    // devops#1043：同一份落库值里约束跑课排位的明细（禁跑日同样去重）
+    detail: {
+      unavailable_days: ["sunday"],
+      max_session_duration_min: 150,
+      allows_double_sessions: false,
+    },
   });
   // 显式关闭（0 次、力量日空）是合法已设置态，不能被误判成未设置
   content.availability = {
@@ -83,21 +89,32 @@ test("fromStoredContent：#222 力量段半残（缺字段/坏星期名/坏数�
   const broken: Array<Record<string, unknown>> = [
     { ...whole, allows_double_sessions: undefined },
     { ...whole, max_session_duration_min: undefined },
-    { ...whole, max_session_duration_min: 0 },
     { ...whole, strength_sessions_per_week: -1 },
     { ...whole, strength_sessions_per_week: 1.5 },
     { ...whole, strength_available_days: ["monday", "funday"] },
     { ...whole, strength_available_days: "monday" },
-    { ...whole, unavailable_days: [1, 2] }, // 不可用日坏掉只清空该字段，不影响已设置判定
   ];
   const content = storedContentFixture();
   broken.forEach((availability, index) => {
     content.availability = { weekly_run_days_max: 5, ...availability };
     const strength = fromStoredContent({ content, masterPlanId: "p", lastGeneratedWeek: 6 }).availability.strength;
-    if (index === broken.length - 1)
-      assert.deepEqual(strength?.unavailableDays, []); // 末条：坏 unavailable_days 仅清空
-    else assert.equal(strength, null, `case ${index}: ${JSON.stringify(availability)} 应判未设置`);
+    assert.equal(strength, null, `case ${index}: ${JSON.stringify(availability)} 应判未设置`);
   });
+});
+
+test("fromStoredContent：同时约束跑课排位的字段坏值（单课时长 ≤0 / 禁跑日非星期名）=解析错误，不静默降级（devops#1043）", () => {
+  // 这两个字段还决定跑课落在哪天、单课多长——坏掉后没有安全的降级（当成「没有禁跑日」
+  // 会把课排到用户说了不能跑的日子），与 policy/skeleton/anchor 坏行同样处理
+  const whole = { strength_sessions_per_week: 2, strength_available_days: ["monday"], allows_double_sessions: false, max_session_duration_min: 150 };
+  const content = storedContentFixture();
+  for (const availability of [
+    { ...whole, max_session_duration_min: 0 },
+    { ...whole, unavailable_days: [1, 2] },
+    { ...whole, unavailable_days: ["monday", "funday"] },
+  ]) {
+    content.availability = { weekly_run_days_max: 5, ...availability };
+    assert.throws(() => fromStoredContent({ content, masterPlanId: "p", lastGeneratedWeek: 6 }), /availability 明细非法/, JSON.stringify(availability));
+  }
 });
 
 test("fromStoredContent：JSON 序列化往返（DB longtext 读写路径）后解析结果一致", () => {
@@ -124,6 +141,25 @@ test("fromStoredContent：坏 goal（finish_only 目标）在 goal 段就被拦�
   const goal = content.goal as Record<string, unknown>;
   goal.target_time = "finish_only";
   assert.throws(() => fromStoredContent({ content, masterPlanId: "p", lastGeneratedWeek: 1 }), /target_time/);
+});
+
+test("fromStoredContent：约束排课的可用度明细随 content 往返；坏明细在 availability 段被拦下（devops#1043）", () => {
+  const content = storedContentFixture();
+  content.availability = {
+    weekly_run_days_max: 5,
+    available_training_windows: [],
+    unavailable_days: ["monday"],
+    max_session_duration_min: 150,
+    allows_double_sessions: false,
+  };
+  const master = fromStoredContent({ content: JSON.parse(JSON.stringify(content)) as Record<string, unknown>, masterPlanId: "p", lastGeneratedWeek: 3 });
+  assert.deepEqual(master.availability, {
+    weeklyRunDaysMax: 5,
+    strength: null, // 未设置力量偏好（#222）
+    detail: { available_training_windows: [], unavailable_days: ["monday"], max_session_duration_min: 150, allows_double_sessions: false },
+  });
+  content.availability = { weekly_run_days_max: 5, unavailable_days: ["funday"] };
+  assert.throws(() => fromStoredContent({ content, masterPlanId: "p", lastGeneratedWeek: 3 }), /availability 明细非法/);
 });
 
 // ── storedWeeklyDocOf（#858 PR-C 下半：Go 落库剥掉 schema/week_name 的读回适配）──
