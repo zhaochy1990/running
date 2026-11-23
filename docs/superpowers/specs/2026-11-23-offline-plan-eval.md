@@ -21,7 +21,7 @@
 
 1. **提交。** 工作台从 Agent 镜像仓库的发布信息展示可选版本。测评 API 将工作台选定的 agent_version 写入测评任务。一次事务保存任务和全部快照执行项，要求至少一份快照；同一次请求重发取回原 task_id。调度器据已持久化的执行项请求集群启动 worker，可以并行处理不同跑者。
 2. **Execute 调用生成模型。** worker 经内部 API 领取一项，按任务的 agent_version 拉取对应的 Coach Agent，载入这一项的冻结快照、请求和时钟，运行 Coach Agent **调用生成模型 API**。worker 只向 Agent 提供该跑者的数据；评分量表由 Evaluate 使用。生成模型配置与 LLM judge 模型配置分别保存，凭证由服务端注入。
-3. **保存 Artifact。** worker 捕获输出原始字节，按 artifact_type 选择契约校验，连同类型、内容摘要和 input_id 一并持久化。对有效输出，Artifact 保存与该项切换到可评分状态同事务提交。若输出不符合契约则保存原文与校验错误并跳过评分；模型调用失败且无输出则记录 Execute 错误，其他跑者的执行项可以继续。
+3. **保存 Artifact。** worker 捕获输出原始字节，按 artifact_type 选择契约校验，连同类型、内容摘要和关联执行项的外键 `Artifact.input_id` 一并持久化。对有效输出，Artifact 保存与该项切换到可评分状态同事务提交。若输出不符合契约则保存原文与校验错误并跳过评分；模型调用失败且无输出则记录 Execute 错误，其他跑者的执行项可以继续。
 4. **Evaluate 双路评分。** worker 按 artifact_id 读取并核验已提交的 Artifact。规则 judge 运行固定检查；LLM judge **调用评审模型 API**，依据同一份 Artifact、对应跑者快照和冻结量表打分。两路独立，各自持久化分数和理由，单路失败保留另一条结果。默认同时提供两类检查，也支持仅启用其中一类。
 5. **接管与汇总。** 每个快照执行项有独立租约，拒绝过期租约写回。v1 每个执行项至多保存一个 Artifact。保存前中断可能再次调用生成模型；保存后接管者只恢复未完成的评分。结果在 (artifact_id, check_id) 上去重。所有执行项终结后冻结任务明细；用户打开或导出报告时，API 按 task_id 读取并汇总。
 
@@ -134,7 +134,7 @@ type LlmJudge = Judge<LlmCheck>;
   },
   "inputs": [
     {
-      "input_id": "input-a",
+      "id": "input-a",
       "snapshot_id": "snapshot-a",
       "status": "pass",
       "execute": {
@@ -175,7 +175,7 @@ type LlmJudge = Judge<LlmCheck>;
       }
     },
     {
-      "input_id": "input-b",
+      "id": "input-b",
       "snapshot_id": "snapshot-b",
       "status": "error",
       "execute": {
@@ -239,7 +239,7 @@ erDiagram
         string validation "契约校验结果"
     }
     SnapshotExecution {
-        string input_id PK "执行项标识"
+        string id PK "执行项标识"
         string task_id FK "所属任务"
         string snapshot_id FK "本项跑者快照"
         string execute_status "生成状态"
@@ -271,7 +271,7 @@ erDiagram
     TestCase |o--o{ EvaluationTask : "提供配置"
 ```
 
-v1 每个执行项预期一种 Artifact。唯一键为 (task_id, snapshot_id)、Artifact.input_id 和 (artifact_id, check_id)。因此不同跑者的结果可以独立重试，两个 judge 始终引用本项的同一 Artifact。后续内容类型沿用相同的内容标识与来源关系，只需注册对应校验器和 judge 能力。
+`Artifact.input_id` 引用 `SnapshotExecution.id`。v1 每个执行项预期一种 Artifact。唯一键为 (task_id, snapshot_id)、Artifact.input_id 和 (artifact_id, check_id)。因此不同跑者的结果可以独立重试，两个 judge 始终引用本项的同一 Artifact。后续内容类型沿用相同的内容标识与来源关系，只需注册对应校验器和 judge 能力。
 
 ## 6. 实现验收
 
