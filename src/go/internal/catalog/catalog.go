@@ -259,16 +259,16 @@ func Jobs() []JobSpec {
 		{
 			Type:          JobTypeRouteShapes,
 			UserInitiable: false,
-			Description:   "Fill the subject athlete's route_thumb_json shape column for activities that have GPS but no stored shape: read the timeseries, normalize the trace into a ≤60-point polyline and persist it. No PNG is rendered and COS is not touched (devops#829). Only activities still missing their shape are selected, so the step is a cheap no-op on a routine sync. Internal optional pipeline step.",
+			Description:   "Fill the subject athlete's route_thumb_json shape column for activities that have GPS but no stored shape: read the timeseries, reduce the trace into the version-2 multi-stroke shape and persist it in the versioned serialization (devops#1037). No PNG is rendered and COS is not touched (devops#829). Only activities still missing their shape are selected — stale-version rows wait for the operator-triggered recompute — so the step is a cheap no-op on a routine sync. Internal optional pipeline step.",
 			InputSchema:   json.RawMessage(`{"type":"object","properties":{"label_ids":{"type":"array","items":{"type":"string"},"description":"The sync's threaded batch, echoed through to the downstream ability step."}},"additionalProperties":true}`),
 			ExampleInput:  json.RawMessage(`{"label_ids":["a1b2"]}`),
 		},
 		{
 			Type:          JobTypeRouteThumbnailsShapeBackfill,
 			UserInitiable: false,
-			Description:   "Compute-only shape backfill (devops#830) for one athlete: recomputes the route_thumb_json polyline of every activity that has GPS but no stored shape, without rendering PNGs or touching COS. Idempotent — filled rows drop out of the candidate set, so a rerun is a no-op. Internal-only.",
-			InputSchema:   json.RawMessage(`{"type":"object","description":"No input fields; operates on the job's user_id (subject UUID).","additionalProperties":false}`),
-			ExampleInput:  json.RawMessage(`{}`),
+			Description:   "Compute-only shape recompute (devops#830, version-scoped in devops#1037) for one athlete: recomputes the route_thumb_json of every activity whose stored shape is missing or older than the current algorithm version, optionally narrowed to a Shanghai-date window, without rendering PNGs or touching COS. Idempotent — recomputed rows carry the current version and drop out of the candidate set, so a rerun over the same window is a no-op. Internal-only; production recompute stays operator-triggered.",
+			InputSchema:   json.RawMessage(`{"type":"object","properties":{"date_from":{"type":"string","description":"Shanghai YYYY-MM-DD lower bound on the activity date; omit for no bound."},"date_to":{"type":"string","description":"Shanghai YYYY-MM-DD upper bound on the activity date; omit for no bound."}},"additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{"date_from":"2026-10-01","date_to":"2026-11-30"}`),
 		},
 		{
 			Type:          JobTypeCompute,

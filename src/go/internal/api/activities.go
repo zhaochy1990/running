@@ -522,33 +522,40 @@ func includeHas(include, token string) bool {
 // always present. Commentary and route decoding differ from detail: the list
 // carries route_thumb but not feel_type/sport_note/pauses/commentary.
 type activityListItem struct {
-	LabelID         string          `json:"label_id"`
-	Name            *string         `json:"name"`
-	SportType       int             `json:"sport_type"`
-	SportName       *string         `json:"sport_name"`
-	Date            string          `json:"date"`
-	DistanceM       *float64        `json:"distance_m"`
-	DurationS       *float64        `json:"duration_s"`
-	AvgPaceSKm      *float64        `json:"avg_pace_s_km"`
-	AvgHR           *int            `json:"avg_hr"`
-	MaxHR           *int            `json:"max_hr"`
-	AvgCadence      *int            `json:"avg_cadence"`
-	CaloriesKcal    *int            `json:"calories_kcal"`
-	TrainingLoad    *float64        `json:"training_load"`
-	StrideDose      *float64        `json:"stride_training_dose"`
-	VO2Max          *float64        `json:"vo2max"`
-	TrainType       *string         `json:"train_type"`
-	AscentM         *float64        `json:"ascent_m"`
-	AerobicEffect   *float64        `json:"aerobic_effect"`
-	AnaerobicEffect *float64        `json:"anaerobic_effect"`
-	Temperature     *float64        `json:"temperature"`
-	Humidity        *float64        `json:"humidity"`
-	FeelsLike       *float64        `json:"feels_like"`
-	WindSpeed       *float64        `json:"wind_speed"`
-	DistanceKm      float64         `json:"distance_km"`
-	DurationFmt     string          `json:"duration_fmt"`
-	PaceFmt         string          `json:"pace_fmt"`
-	RouteThumb      json.RawMessage `json:"route_thumb" swaggertype:"object"`
+	LabelID         string   `json:"label_id"`
+	Name            *string  `json:"name"`
+	SportType       int      `json:"sport_type"`
+	SportName       *string  `json:"sport_name"`
+	Date            string   `json:"date"`
+	DistanceM       *float64 `json:"distance_m"`
+	DurationS       *float64 `json:"duration_s"`
+	AvgPaceSKm      *float64 `json:"avg_pace_s_km"`
+	AvgHR           *int     `json:"avg_hr"`
+	MaxHR           *int     `json:"max_hr"`
+	AvgCadence      *int     `json:"avg_cadence"`
+	CaloriesKcal    *int     `json:"calories_kcal"`
+	TrainingLoad    *float64 `json:"training_load"`
+	StrideDose      *float64 `json:"stride_training_dose"`
+	VO2Max          *float64 `json:"vo2max"`
+	TrainType       *string  `json:"train_type"`
+	AscentM         *float64 `json:"ascent_m"`
+	AerobicEffect   *float64 `json:"aerobic_effect"`
+	AnaerobicEffect *float64 `json:"anaerobic_effect"`
+	Temperature     *float64 `json:"temperature"`
+	Humidity        *float64 `json:"humidity"`
+	FeelsLike       *float64 `json:"feels_like"`
+	WindSpeed       *float64 `json:"wind_speed"`
+	DistanceKm      float64  `json:"distance_km"`
+	DurationFmt     string   `json:"duration_fmt"`
+	PaceFmt         string   `json:"pace_fmt"`
+	// RouteThumb is the stored route shape, passed through raw: the versioned
+	// v2 object ({"v":2,"strokes":[...],"start":[x,y],"end":[x,y],"short":s,
+	// "long":l,"travel":t}) for shapes written by the current algorithm
+	// (devops#1037), the legacy `[[x,y],...]` single-polyline array for rows
+	// not yet recomputed, and null when there is nothing to draw (no GPS).
+	// One channel, distinguished by the leading "v" marker — old clients keep
+	// parsing the array rows they get, new clients read the version.
+	RouteThumb json.RawMessage `json:"route_thumb" swaggertype:"object"`
 	// ThumbURL is the legacy pre-rendered route-thumbnail PNG URL from the
 	// retired rendering pipeline (devops#829). Deprecated: nothing writes
 	// route_thumb_url anymore and no new COS objects are produced — the value
@@ -965,7 +972,9 @@ func downsampleTimeseries(points []storage.TimeseriesPoint) []storage.Timeseries
 // value, or nil (→ JSON null) when absent/invalid. Mirrors the Python decode
 // whose non-string / invalid path yields None. The bytes are opaque passthrough
 // (the value is never inspected), so an insignificant whitespace difference from
-// the Python re-encode is possible (ADR 0019).
+// the Python re-encode is possible (ADR 0019) — and it is what lets the same
+// channel serve the v1 array, the v2 versioned object and null unchanged
+// (devops#1037).
 func routeThumbRaw(raw *string) json.RawMessage {
 	if raw == nil || *raw == "" {
 		return nil

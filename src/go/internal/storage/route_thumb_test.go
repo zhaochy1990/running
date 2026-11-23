@@ -36,10 +36,16 @@ func assertJSONColumn(t *testing.T, got *string, want string) {
 // stamps it. A nil lat/lon produces a payload with no GPS fix — the dropped
 // satellite lock case.
 func seedThumbActivity(t *testing.T, st *Store, uid, labelID string, gps [][2]float64) {
+	seedThumbActivityAt(t, st, uid, labelID, gps, time.Now().UTC())
+}
+
+// seedThumbActivityAt is seedThumbActivity with a pinned activity date, for
+// queries that filter on the Shanghai day.
+func seedThumbActivityAt(t *testing.T, st *Store, uid, labelID string, gps [][2]float64, date time.Time) {
 	t.Helper()
 	ctx := context.Background()
 	activity := Activity{
-		UserID: uid, LabelID: labelID, SportType: 100, Date: time.Now().UTC(),
+		UserID: uid, LabelID: labelID, SportType: 100, Date: date,
 		Provider: "test", SyncedAt: time.Now().UTC(),
 	}
 	points := make([]TimeseriesPoint, len(gps))
@@ -182,5 +188,95 @@ func TestSetActivityRouteThumbJSONPreservesURL(t *testing.T) {
 	assertJSONColumn(t, row.RouteThumbJSON, shape)
 	if row.RouteThumbURL == nil || *row.RouteThumbURL != url {
 		t.Fatalf("route_thumb_url = %v, want %q preserved", row.RouteThumbURL, url)
+	}
+}
+
+// A v2 object as the worker writes it (EncodeV2's format). MySQL re-serializes
+// JSON columns on write, so what matters for the recompute predicate is the
+// "v" member, not the byte form.
+const v2ShapeJSON = `{"v":2,"strokes":[[[5.0,95.0],[95.0,5.0]]],"start":[5.0,95.0],"end":[95.0,5.0],"short":10.0,"long":90.0,"travel":127.3}`
+
+// The recompute candidates key on the stored shape's version (devops#1037):
+// a NULL shape and a legacy v1 array are both stale, a current-version object
+// is not, and rows without GPS stay out. Upgrading the stale rows empties the
+// candidate set — the recompute's idempotency contract at the SQL level.
+func TestRouteThumbRecomputeCandidatesSelectStaleVersions(t *testing.T) {
+	st, _, uid := openBlobTestStore(t)
+	ctx := context.Background()
+	t.Cleanup(func() {
+		st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&Activity{})
+	})
+
+	outdoor := [][2]float64{{31.2, 121.4}, {31.2001, 121.4001}}
+	seedThumbActivity(t, st, uid, "never-filled", outdoor)
+	seedThumbActivity(t, st, uid, "legacy-v1", outdoor)
+	seedThumbActivity(t, st, uid, "current-v2", outdoor)
+	seedThumbActivity(t, st, uid, "indoor", nil)
+	if err := st.SetActivityRouteThumbJSON(ctx, uid, "legacy-v1", `[[5,95],[95,5]]`); err != nil {
+		t.Fatalf("seed v1 shape: %v", err)
+	}
+	if err := st.SetActivityRouteThumbJSON(ctx, uid, "current-v2", v2ShapeJSON); err != nil {
+		t.Fatalf("seed v2 shape: %v", err)
+	}
+
+	candidateSet := func() map[string]bool {
+		ids, err := st.RouteThumbRecomputeCandidates(ctx, uid, RouteThumbRecomputeScope{})
+		if err != nil {
+			t.Fatalf("recompute candidates: %v", err)
+		}
+		set := make(map[string]bool, len(ids))
+		for _, id := range ids {
+			set[id] = true
+		}
+		return set
+	}
+
+	if got := candidateSet(); len(got) != 2 || !got["never-filled"] || !got["legacy-v1"] {
+		t.Fatalf("recompute candidates = %v, want {never-filled, legacy-v1}", got)
+	}
+
+	for _, id := range []string{"never-filled", "legacy-v1"} {
+		if err := st.SetActivityRouteThumbJSON(ctx, uid, id, v2ShapeJSON); err != nil {
+			t.Fatalf("upgrade %s: %v", id, err)
+		}
+	}
+	if got := candidateSet(); len(got) != 0 {
+		t.Fatalf("after upgrading, recompute candidates = %v, want none", got)
+	}
+}
+
+// The recompute window narrows the candidate set by Shanghai activity day —
+// the same convention the activity list's date_from/date_to use.
+func TestRouteThumbRecomputeCandidatesHonorDateWindow(t *testing.T) {
+	st, _, uid := openBlobTestStore(t)
+	ctx := context.Background()
+	t.Cleanup(func() {
+		st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&Activity{})
+	})
+
+	outdoor := [][2]float64{{31.2, 121.4}, {31.2001, 121.4001}}
+	// 01:00 UTC = 09:00 Shanghai the same day, so the Shanghai day is the
+	// pinned date regardless of when the test runs.
+	seedThumbActivityAt(t, st, uid, "october", outdoor, time.Date(2026, 10, 5, 1, 0, 0, 0, time.UTC))
+	seedThumbActivityAt(t, st, uid, "november", outdoor, time.Date(2026, 11, 5, 1, 0, 0, 0, time.UTC))
+	seedThumbActivityAt(t, st, uid, "december", outdoor, time.Date(2026, 12, 5, 1, 0, 0, 0, time.UTC))
+
+	ids, err := st.RouteThumbRecomputeCandidates(ctx, uid, RouteThumbRecomputeScope{
+		DateFrom: "2026-11-01", DateTo: "2026-11-30",
+	})
+	if err != nil {
+		t.Fatalf("recompute candidates: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != "november" {
+		t.Fatalf("windowed recompute candidates = %v, want [november]", ids)
+	}
+
+	// One-sided windows bound only the side they name.
+	ids, err = st.RouteThumbRecomputeCandidates(ctx, uid, RouteThumbRecomputeScope{DateFrom: "2026-11-01"})
+	if err != nil {
+		t.Fatalf("recompute candidates: %v", err)
+	}
+	if len(ids) != 2 || ids[0] != "december" || ids[1] != "november" {
+		t.Fatalf("since-November candidates = %v, want [december november] (date DESC)", ids)
 	}
 }
