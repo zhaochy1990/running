@@ -1,6 +1,28 @@
 // 活动 wire 类型 —— 与后端 /api/{user}/activities 响应及 Web 端 frontend/src/api.ts
 // 的 Activity 契约保持一致（字段子集，今日页/活动页用到的部分）。
 
+/** 第二版路线形状（活动列表 `route_thumb` 的 `{"v":2,...}` 对象，devops#1037 下发）。
+ * 坐标同在 [0,100]×[0,100] 视框。语义见 Go `internal/thumbnail/route_v2.go`（EncodeV2），
+ * 解析与绘制见 utils/routeThumb.ts。 */
+export interface RouteShapeV2 {
+  v: 2;
+  /** 各段折线，按时间顺序各自单独起笔；同一坐标出现在两段 = 路口共点。 */
+  strokes: number[][][];
+  /** 定位序列的真实起点 / 终点：是位置，不是任何一段的端点（开放端保持开放，
+   * 不得按距离接到相邻段上）。 */
+  start: [number, number];
+  end: [number, number];
+  /** 旋转包围矩形短边 / 长边（视框单位）；short = 0 表示退化直线。 */
+  short: number;
+  long: number;
+  /** 去重前的简化轨迹总长（视框单位）。 */
+  travel: number;
+}
+
+/** 活动列表行的 `route_thumb`：单通道三代并存（devops#1037）——旧版 `[[x,y],...]`
+ * 单折线（未重算的存量行）/ 第二版多段对象；null（无 GPS / 未算）由字段类型表达。 */
+export type RouteThumb = number[][] | RouteShapeV2;
+
 export interface Activity {
   label_id: string;
   name: string | null;
@@ -30,9 +52,9 @@ export interface Activity {
   /** @deprecated 后端预渲染的路线缩略图 PNG 公开地址（devops#827 起客户端改画
    * route_thumb 矢量折线，本字段不再消费；P3 后端退役缩略图管线后删除）。 */
   thumb_url?: string | null;
-  /** 归一折线 [[x,y],...]（≤60 点，[0,100]×[0,100] 视框，语义见 Go thumbnail 包），
-   * 客户端 canvas 矢量绘制缩略图用（devops#827）；null = 无 GPS / 未算。 */
-  route_thumb?: number[][] | null;
+  /** 路线形状（≤60 点，[0,100]×[0,100] 视框，三代并存见 RouteThumb），客户端 canvas
+   * 矢量绘制缩略图用（devops#827；第二版多段 devops#1038）；null = 无 GPS / 未算。 */
+  route_thumb?: RouteThumb | null;
 
   // —— 以下为详情页字段（list 端点可能不返回，故可选）——
   ascent_m?: number | null;

@@ -39,7 +39,7 @@ import {
 import { fmtDose, fmtDurationShort, fmtKm, fmtPace } from '../../utils/format';
 import { theme } from '../../utils/theme';
 import { userStore } from '../../store/index';
-import type { Activity } from '../../types/activity';
+import type { Activity, RouteThumb } from '../../types/activity';
 import type {
   PlanAdjustment,
   PlanInjuryState,
@@ -61,9 +61,10 @@ interface TodayActivityRow {
   labelId: string;
   name: string;
   iconPath: string;
-  /** 归一折线 [[x,y],...]（route_thumb，devops#827 起客户端 canvas 矢量绘制）；
-   * null 表示回退 iconPath（室内活动、尚未生成、或无 GPS） */
-  routeThumb: number[][] | null;
+  /** 路线形状 route_thumb（旧单折线或第二版多段，原样透传给 route-thumb 组件，由它
+   * 解析绘制，devops#827 / devops#1038）；null 表示回退 iconPath（室内活动、尚未生成、
+   * 或无 GPS） */
+  routeThumb: RouteThumb | null;
   distanceKm: string;
   duration: string;
   pace: string;

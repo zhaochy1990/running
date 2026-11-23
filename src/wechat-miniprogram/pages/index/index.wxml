@@ -44,8 +44,9 @@
         bindtap="onTodayActivityTap"
       >
         <view class="activity__icon">
-          <!-- 有 GPS 折线就 canvas 矢量绘制路线缩略图，否则组件内部回退运动图标
-               （无 GPS / 导图失败同口径，devops#827；不再消费 thumb_url PNG） -->
+          <!-- 有 GPS 路线形状（旧单折线 / 第二版多段）就 canvas 矢量绘制缩略图，否则
+               组件内部回退运动图标（无 GPS / 导图失败同口径，devops#827、devops#1038；
+               不再消费 thumb_url PNG） -->
           <route-thumb
             shape="{{item.routeThumb || []}}"
             size="{{72}}"
