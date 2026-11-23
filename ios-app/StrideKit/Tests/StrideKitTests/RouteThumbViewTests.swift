@@ -55,6 +55,8 @@ import Testing
         "future version": #"{"v":3,"strokes":[[[5.0,95.0],[50.0,50.0]]],"start":[5.0,95.0],"end":[50.0,50.0],"short":1.0,"long":2.0,"travel":3.0}"#,
         "no strokes": #"{"v":2,"strokes":[],"start":[5.0,95.0],"end":[50.0,50.0],"short":1.0,"long":2.0,"travel":3.0}"#,
         "one-point stroke": #"{"v":2,"strokes":[[[5.0,95.0]]],"start":[5.0,95.0],"end":[50.0,50.0],"short":1.0,"long":2.0,"travel":3.0}"#,
+        "one drawable point in stroke": #"{"v":2,"strokes":[[[5.0],[95.0,5.0]]],"start":[5.0,95.0],"end":[50.0,50.0],"short":1.0,"long":2.0,"travel":3.0}"#,
+        "one drawable point in polyline": #"[[5.0,95.0],[20]]"#,
         "one-number endpoint": #"{"v":2,"strokes":[[[5.0,95.0],[50.0,50.0]]],"start":[5.0],"end":[50.0,50.0],"short":1.0,"long":2.0,"travel":3.0}"#,
         "missing metric": #"{"v":2,"strokes":[[[5.0,95.0],[50.0,50.0]]],"start":[5.0,95.0],"end":[50.0,50.0],"short":1.0,"long":2.0}"#,
         "one-point polyline": "[[5.0,95.0]]",
@@ -63,6 +65,25 @@ import Testing
     ])
     func rejectsShapesItCannotDraw(name: String, json: String) {
         #expect(throws: (any Error).self) { try decode(json) }
+    }
+
+    /// 非有限数：默认 JSONDecoder 在文档解析阶段就拒绝不可表示的数（`1e999` 直接报
+    /// Data was corrupted），到不了解码器。这里换一个会把 "Infinity" / "NaN" 字符串解成
+    /// Double 的解码器，证明万一非有限数真的到了，形状照样解不出——坐标与线宽指标
+    /// 都不留。
+    @Test(arguments: [
+        "polyline coordinate": #"[[5.0,95.0],[50.0,"Infinity"]]"#,
+        "stroke coordinate": #"{"v":2,"strokes":[[[5.0,"-Infinity"],[95.0,5.0]]],"start":[5.0,95.0],"end":[95.0,5.0],"short":1.0,"long":2.0,"travel":3.0}"#,
+        "real endpoint": #"{"v":2,"strokes":[[[5.0,95.0],[95.0,5.0]]],"start":[5.0,"NaN"],"end":[95.0,5.0],"short":1.0,"long":2.0,"travel":3.0}"#,
+        "width metric": #"{"v":2,"strokes":[[[5.0,95.0],[95.0,5.0]]],"start":[5.0,95.0],"end":[95.0,5.0],"short":"Infinity","long":2.0,"travel":3.0}"#,
+    ])
+    func rejectsNonFiniteNumbers(name: String, json: String) {
+        let decoder = JSONDecoder()
+        decoder.nonConformingFloatDecodingStrategy = .convertFromString(
+            positiveInfinity: "Infinity", negativeInfinity: "-Infinity", nan: "NaN")
+        #expect(throws: (any Error).self) {
+            _ = try decoder.decode(RouteThumbShape.self, from: Data(json.utf8))
+        }
     }
 
     // MARK: - 分段绘制（各段单独起笔）

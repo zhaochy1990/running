@@ -190,7 +190,8 @@ public struct Activity: Decodable, Hashable, Sendable {
 /// `route_thumb` 路线形状：后端算好的归一化坐标（0..100 视窗、Y 已翻成屏幕坐标），
 /// 客户端自己画。活动列表同一字段三代并存（devops#1037）：旧版单折线数组、新版带
 /// `v` 标记的多段对象、null（无 GPS）。解码按 JSON 形状分支——数组进 polyline，
-/// 对象进 multiStroke，解不出就抛错，由 Activity 吞成 nil（该行回退运动图标）。
+/// 对象进 multiStroke；解不出、或解出来画不了（版本不认识、畸形、可画的点不足、
+/// 数不是有限数）一律抛错，由 Activity 吞成 nil（该行回退运动图标）。
 public enum RouteThumbShape: Hashable, Sendable {
     /// 旧版单折线 `[[x,y],...]`（devops#828）：一段、常规线宽。
     case polyline([[Double]])
@@ -199,7 +200,7 @@ public enum RouteThumbShape: Hashable, Sendable {
     case multiStroke(MultiStroke)
 
     public struct MultiStroke: Hashable, Sendable {
-        /// 各段（时间顺序），每段至少 2 点。
+        /// 各段（时间顺序），每段至少两个可画的点（见 isUsablePoint）。
         public let strokes: [[[Double]]]
         /// 轨迹的真实起终点——属于轨迹而不属于任何一段：终点落在已画过的路上时它
         /// 不是任何一段的端点，也不能凭距离接到已画线段上（开放端点保持开放）。
@@ -243,10 +244,16 @@ public enum RouteThumbShape: Hashable, Sendable {
     }
 
     private static func clamp01(_ v: Double) -> Double { max(0, min(1, v)) }
+
+    /// 坐标点对是否可画：至少两个数，且取作 x、y 的前两个都是有限数。解码按它数
+    /// 「可画的点」，绘制按它取点——两处同一个定义。
+    static func isUsablePoint(_ pair: [Double]) -> Bool {
+        pair.count >= 2 && pair[0].isFinite && pair[1].isFinite
+    }
 }
 
 extension RouteThumbShape: Decodable {
-    /// 对象 → 新版多段；其余（数组）→ 旧版单折线，不足两点画不出线，同样按解不出处理。
+    /// 对象 → 新版多段；其余（数组）→ 旧版单折线。可画的点不足两个同样按解不出处理。
     public init(from decoder: Decoder) throws {
         if (try? decoder.container(keyedBy: MultiStroke.CodingKeys.self)) != nil {
             self = .multiStroke(try MultiStroke(from: decoder))
@@ -254,8 +261,8 @@ extension RouteThumbShape: Decodable {
         }
         let c = try decoder.singleValueContainer()
         let points = try c.decode([[Double]].self)
-        guard points.count >= 2 else {
-            throw DecodingError.dataCorruptedError(in: c, debugDescription: "route_thumb: 不足两个点的折线")
+        guard points.filter(Self.isUsablePoint).count >= 2 else {
+            throw DecodingError.dataCorruptedError(in: c, debugDescription: "route_thumb: 可画的点不足两个")
         }
         self = .polyline(points)
     }
@@ -267,7 +274,7 @@ extension RouteThumbShape.MultiStroke: Decodable {
     }
 
     /// 只接受画得出来的 v2 形状（结构约束同 Go DecodeV2）：版本标记为 2、至少一段、
-    /// 每段至少 2 点、起终点各是完整的点。
+    /// 每段至少两个可画的点、起终点各是一个可画的点，且不含非有限数。
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let version = try c.decode(Int.self, forKey: .v)
@@ -277,8 +284,10 @@ extension RouteThumbShape.MultiStroke: Decodable {
         short = try c.decode(Double.self, forKey: .short)
         long = try c.decode(Double.self, forKey: .long)
         travel = try c.decode(Double.self, forKey: .travel)
-        guard version == 2, !strokes.isEmpty, strokes.allSatisfy({ $0.count >= 2 }),
-              start.count >= 2, end.count >= 2 else {
+        guard version == 2, !strokes.isEmpty,
+              strokes.allSatisfy({ $0.filter(RouteThumbShape.isUsablePoint).count >= 2 }),
+              RouteThumbShape.isUsablePoint(start), RouteThumbShape.isUsablePoint(end),
+              short.isFinite, long.isFinite, travel.isFinite else {
             throw DecodingError.dataCorruptedError(
                 forKey: .v, in: c, debugDescription: "route_thumb: 不是可绘制的 v2 形状")
         }

@@ -36,12 +36,13 @@ struct RouteThumbView: View {
     }
 
     /// [[x,y],...]（0..100 视窗、Y 已翻转）→ 视图坐标（左上原点，线性缩放；
-    /// SwiftUI 与 SVG 同为 y 向下，不再翻 Y）。纯函数，单测覆盖；
-    /// 坏点（元素不足 2 个）跳过不中断。View 在 Swift 6 下整体 @MainActor，
-    /// 纯映射标 nonisolated 供任意执行器调用（同 ActivitiesModel 纯构建函数）。
+    /// SwiftUI 与 SVG 同为 y 向下，不再翻 Y）。纯函数，单测覆盖；不可画的点对
+    /// （不足两个数或非有限数，见 RouteThumbShape.isUsablePoint）跳过不中断。
+    /// View 在 Swift 6 下整体 @MainActor，纯映射标 nonisolated 供任意执行器调用
+    /// （同 ActivitiesModel 纯构建函数）。
     nonisolated static func cgPoints(_ route: [[Double]], in size: CGFloat) -> [CGPoint] {
         route.compactMap { pair in
-            guard pair.count >= 2 else { return nil }
+            guard RouteThumbShape.isUsablePoint(pair) else { return nil }
             return CGPoint(x: pair[0] * size / 100, y: pair[1] * size / 100)
         }
     }
