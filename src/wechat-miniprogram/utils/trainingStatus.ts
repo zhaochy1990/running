@@ -458,6 +458,8 @@ export interface CalibrationMetricDisplay {
   range: string | null;
   evidenceDay: string | null;
   label: string;
+  subtitle: string;
+  confidenceLabel: string;
   support: string;
   lines: string[];
   help: string[];
@@ -685,8 +687,19 @@ export function projectCalibration(zones: import('../types/health').StrideZonesR
       ? `支持范围 ${Math.round(low)}–${Math.round(high)} bpm`
       : available && positive(low) ? `心率 ≥ ${Math.round(low)} bpm（仅单侧约束）`
       : available && positive(high) ? `心率 ≤ ${Math.round(high)} bpm（仅单侧约束）` : null;
-    return { value, range: kind === 'speed' ? paceRange : hrRange, evidenceDay,
-      label: kind === 'hr' && detail?.target_type === 'field_HR_proxy_not_physiological_LTHR' ? '现场心率参考' : kind === 'hr' ? '阈值心率' : '阈值配速', support, lines, help };
+    const fieldReference = detail?.target_type === 'field_HR_proxy_not_physiological_LTHR';
+    const confidence = kind === 'speed' ? threshold?.speed_confidence : threshold?.hr_confidence;
+    return {
+      value,
+      range: kind === 'speed' ? paceRange : hrRange,
+      evidenceDay,
+      label: kind === 'speed' ? '阈值配速' : fieldReference ? '现场心率参考' : '阈值心率',
+      subtitle: kind === 'speed' ? 'STRIDE Threshold Pace' : fieldReference ? '' : 'STRIDE Threshold HR',
+      confidenceLabel: value !== '—' && confidence ? `置信度 ${confidence}` : '',
+      support,
+      lines,
+      help,
+    };
   }
   return { pace: metric('speed'), hr: metric('hr'), cutoffDay, computedShanghai };
 }

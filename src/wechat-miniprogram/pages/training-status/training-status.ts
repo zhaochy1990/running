@@ -358,8 +358,6 @@ function buildMetrics(calibration: ReturnType<typeof projectCalibration>): Metri
   const hrvHigh = healthData?.hrv?.hrv_normal_high ?? null;
   const hrvBaseline = hrvLow != null && hrvHigh != null ? `正常 ${hrvLow}-${hrvHigh} ms` : '';
 
-  const threshold = zonesData?.threshold;
-
   return [
     {
       label: '静息心率',
@@ -378,19 +376,19 @@ function buildMetrics(calibration: ReturnType<typeof projectCalibration>): Metri
       color: '#7a4dd4',
     },
     {
-      label: '阈值配速',
-      sub: 'STRIDE Threshold Pace',
+      label: calibration.pace.label,
+      sub: calibration.pace.subtitle,
       value: calibration.pace.value,
       unit: '/km',
-      baseline: threshold?.speed_confidence ? `置信度 ${threshold.speed_confidence}` : '',
+      baseline: calibration.pace.confidenceLabel,
       color: '#00a85a',
     },
     {
       label: calibration.hr.label,
-      sub: calibration.hr.label === '阈值心率' ? 'STRIDE Threshold HR' : '',
+      sub: calibration.hr.subtitle,
       value: calibration.hr.value,
       unit: 'bpm',
-      baseline: threshold?.hr_confidence ? `置信度 ${threshold.hr_confidence}` : '',
+      baseline: calibration.hr.confidenceLabel,
       color: '#d97706',
     },
   ];
