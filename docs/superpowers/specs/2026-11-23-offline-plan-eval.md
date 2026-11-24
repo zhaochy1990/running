@@ -6,6 +6,10 @@
 
 ## 1. 工作台与分布式服务
 
+v1 测评工作台实现在现有 [Admin Dashboard](https://github.com/zhaochy1990/stride-devops/tree/master/admin-dashboard) 内，供内部管理员使用。侧栏的「训练计划」下进入「训练计划测评」，复用现有布局、导航和登录。工作台默认打开测评任务列表。 [工作台接入工单](https://github.com/zhaochy1990/stride-devops/issues/1056)
+
+Dashboard 使用现有管理员 Bearer，经同源 `/api/admin/plan-eval/*` 路由访问独立测评 API。测评 API 在服务端复用 Admin JWT 验证口径，要求管理员 audience 和 `admin` 角色。Dashboard 的 Vite、本地 nginx 和生产 Caddy 路由将该路径指向测评 API。worker 的领取、续租和回传走独立的内部身份与路由。存储仍使用专属测评库。
+
 | 工作台入口 | 用户操作 |
 |---|---|
 | 测评任务 | 点击任务 ID 进入详情，按场景查看每份快照的 Generate、Artifact 和 Evaluate，打开详情或导出报告 |
@@ -25,7 +29,7 @@
 
 ```mermaid
 flowchart LR
-    UI["工作台 · 选择 Agent 版本和场景"] --> API["测评 API · 冻结规则和逐快照输入"]
+    UI["Admin Dashboard · 内部管理员"] --> API["测评 API · 冻结规则和逐快照输入"]
     API --> W["worker · 领取快照执行项"]
     REG["Agent 镜像仓库"] -->|按 agent_version 拉取| W
     W --> GEN["Generate · Agent 调用生成模型 API"]
@@ -111,7 +115,7 @@ API 按 RabbitMQ 发布确认更新执行项的投递状态。发布或启动失
 
 ## 3. 测评规则存储与 Check 接口
 
-**EvaluationRule** 独立存储规则版本，以 `(check_id, version)` 为主键。每版保存名称、可选多行说明、适用产物类型、规则类型和实现配置。原型使用 JavaScript 的 `run(input)` 实现，版本记录保存语言和源码。试跑和规则执行在隔离的 QuickJS 环境中进行，并限制执行时间和内存。正式运行语言及隔离方式待确认。
+**EvaluationRule** 独立存储规则版本，以 `(check_id, version)` 为主键。每版保存名称、可选多行说明、适用产物类型、规则类型和实现配置。v1 的固定测评规则使用 JavaScript 的 `run(input)`，版本记录保存 JavaScript 源码及配置。规则试跑与批量 Evaluate 调用同一个服务端隔离运行器。运行器读取只读的冻结输入，按输入提供的时点计算，限制执行时间与内存，并校验返回的 `CheckResult`。规则执行权限限于输入数据和计算。原型使用 QuickJS，正式隔离引擎由实施验证选定。 [JavaScript 规则实施工单](https://github.com/zhaochy1990/stride-devops/issues/1057)
 
 ```json
 {
@@ -316,6 +320,8 @@ SnapshotExecution 以 `(task_id, scenario_id, snapshot_id)` 去重。每个执�
 
 | 场景 | 可验证结果 |
 |---|---|
+| 内部管理员通过现有 Admin Dashboard 登录 | 可通过「训练计划测评」进入任务、场景、测试数据和测评规则。测评 API 对普通用户和匿名请求拒绝访问 |
+| 用相同冻结输入试跑并批量运行同一条 JavaScript 规则 | 两个入口使用同一个隔离运行器与同一份 Check 接口，判定一致。超时或返回值不合法的规则记录执行错误，其余规则继续 |
 | 新建并试跑带多行说明的测评规则，从两个场景引用 v1 | 保存一份可复用的版本配置，两个场景均可选中该版本，打开版本详情可回读说明和实现 |
 | 修改规则并将其中一个场景切换到 v2 | 新任务分别读取两个场景选定的版本。在版本切换前已提交、尚未被 worker 领取的任务仍执行 v1 的冻结实现 |
 | 两个场景共用一份跑者快照 | 创建一个任务和分别归入两个场景的执行项。每项使用实际产物类型对应的请求及所属场景的检查 |
