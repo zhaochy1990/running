@@ -4,8 +4,8 @@
 // 周懒加载每日课表，未生成周展示骨架目标）。
 // 数据来自 GET /api/users/{user}/master-plan/current（v2 + #859 富字段
 // policy/skeleton/anchor/audit，全部可选判空降级）；每日课表懒加载走
-// GET /plan/weeks/:week（weekly 行投影，#858 PR-E）。预览模式（options.preview=1
-// + payload）来自聊天结果卡，footer 出「调整计划/启用计划」走 apply-from-content。
+// GET /plan/weeks/:week（weekly 行投影，#858 PR-E）。聊天结果卡打开的预览模式
+// 使用候选内的 weekly_docs，启用计划走 apply-from-content。
 // v1（markdown）计划不渲染，只提示去网页查看。
 
 import {
@@ -256,8 +256,7 @@ interface TrainingPlanPageHandlers {
   loadStatusFlags(): Promise<void>;
   openInjuryAsk(): void;
   applyPlan(plan: SeasonPlanContent): void;
-  _weekStartOf(plan: SeasonPlanContent, weekIndex: number): string;
-  loadWeekDoc(key: string, weekStart: string): Promise<void>;
+  loadWeekDoc(key: string, weekIndex: number): Promise<void>;
   patchWeek(key: string, patch: Partial<ReviewWeekVM>): void;
   onAdjustClosed(): void;
   onAdjustAccepted(): void;
@@ -814,13 +813,8 @@ Page<TrainingPlanPageData, TrainingPlanPageHandlers>({
     // 默认展开第 1 周并预取其每日课表（设计稿首周 open）
     const firstWeek = vms.calendarGroups[0]?.weeks[0];
     if (firstWeek?.expanded) {
-      void this.loadWeekDoc(firstWeek.key, this._weekStartOf(plan, 1));
+      void this.loadWeekDoc(firstWeek.key, firstWeek.weekIndex);
     }
-  },
-
-  /** week_index → week_start（每周安排懒加载用）。 */
-  _weekStartOf(plan: SeasonPlanContent, weekIndex: number): string {
-    return plan.weeks.find((w) => w.week_index === weekIndex)?.week_start || '';
   },
 
   async loadStatusFlags() {
@@ -948,23 +942,30 @@ Page<TrainingPlanPageData, TrainingPlanPageHandlers>({
   onWeekExpand(e: WechatMiniprogram.TouchEvent) {
     const key = String(e.currentTarget.dataset.key);
     const weekIndex = Number(e.currentTarget.dataset.week);
-    const weekStart = this._plan ? this._weekStartOf(this._plan, weekIndex) : '';
     const before = this.data.calendarGroups.flatMap((g) => g.weeks).find((w) => w.key === key);
     if (!before) return;
     const expanding = !before.expanded;
     this.patchWeek(key, { expanded: expanding });
-    if (expanding && weekStart && !before.hasDoc) void this.loadWeekDoc(key, weekStart);
+    if (expanding && !before.hasDoc && !before.loadingDoc) void this.loadWeekDoc(key, weekIndex);
   },
 
-  async loadWeekDoc(key: string, weekStart: string) {
-    if (!this.data.uid || !weekStart) return;
+  async loadWeekDoc(key: string, weekIndex: number) {
+    const plan = this._plan;
+    const weekStart = plan?.weeks.find((week) => week.week_index === weekIndex)?.week_start;
+    if (!plan || !weekStart) return;
+    const weekName = weekFolderName(weekStart);
+    const { isPreview, uid } = this.data;
+    if (!isPreview && !uid) return;
     this.patchWeek(key, { loadingDoc: true });
     try {
-      const detail = await getWeeklyPlan(this.data.uid, weekFolderName(weekStart));
-      const content =
-        detail && typeof detail.content === 'object' && detail.content !== null
-          ? (detail.content as WeeklyPlanContentStructured)
-          : null;
+      let content: WeeklyPlanContentStructured | null;
+      if (isPreview) {
+        content = plan.weekly_docs?.find((doc) => (doc.week_index == null ? doc.week_name === weekName : doc.week_index === weekIndex)) ?? null;
+      } else {
+        const detail = await getWeeklyPlan(uid, weekName);
+        content = detail?.content && typeof detail.content === 'object' ? detail.content : null;
+      }
+      if (this._plan !== plan || this.data.isPreview !== isPreview) return;
       // #222 周课表展示本周排入力量节数（独立统计，不进跑量口径）
       const strengthCount = (content?.sessions ?? []).filter((s) => s.kind === 'strength').length;
       this.patchWeek(key, {
@@ -974,6 +975,7 @@ Page<TrainingPlanPageData, TrainingPlanPageHandlers>({
         days: buildReviewDays(content?.sessions ?? []),
       });
     } catch (err) {
+      if (this._plan !== plan || this.data.isPreview !== isPreview) return;
       // 404（该周无 weekly 行）= 尚未生成，走 future 展示；其余失败同样降级
       console.warn('[training-plan] 拉周每日课表失败', err);
       this.patchWeek(key, { loadingDoc: false, hasDoc: false, strengthLabel: '', days: [] });

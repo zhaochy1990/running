@@ -8,6 +8,7 @@
 //    （POST /master-plan/apply）在此扩展端点；draft 端点已下线。
 
 import { http, ApiError } from './request';
+import type { WeeklyPlanContentStructured } from '../types/plan';
 import type { Weekday } from '../utils/weekday';
 
 /** 赛季目标（卡片的 goal 摘要）。 */
@@ -250,6 +251,8 @@ export interface SeasonPlanContent {
   phases: MasterPlanPhase[];
   milestones: MasterPlanMilestone[];
   weeks: MasterPlanWeek[];
+  /** 生成任务附带的周课表，用于启用前预览。 */
+  weekly_docs?: Array<WeeklyPlanContentStructured & { week_index?: number; week_name?: string }>;
   training_load_projection?: MasterPlanTrainingLoadProjection | null;
   training_principles: string[];
   generated_by: string;
