@@ -38,6 +38,7 @@ import (
 // StrideStore is the read surface the stride zones / training-load endpoints need.
 type StrideStore interface {
 	ReadEffectiveRunningCalibration(ctx context.Context, userID, cutoff string, mode storage.CalibrationMode) (storage.CalibrationBundle, error)
+	ReadEffectiveRunningCalibrationWithHistory(ctx context.Context, userID, from, cutoff string) (storage.CalibrationBundle, []storage.CalibrationThresholdPoint, error)
 	DailyTrainingLoadSeries(ctx context.Context, userID string, days int) ([]storage.DailyTrainingLoad, error)
 	LatestUsableDailyTrainingLoad(ctx context.Context, userID string) (*storage.DailyTrainingLoad, error)
 }
@@ -74,7 +75,9 @@ func (sr *strideRoutes) register(rg *gin.RouterGroup) {
 //	@Tags			metrics
 //	@Produce		json
 //	@Param			user	path		string	true	"User id (JWT sub)"
+//	@Param			history_days	query		int	false	"Include saved thresholds for the current algorithm identity for the last 1–365 Shanghai days, including today"
 //	@Success		200		{object}	strideZonesResponse
+//	@Failure		400		{object}	errorResponse
 //	@Failure		401		{object}	errorResponse
 //	@Failure		403		{object}	errorResponse
 //	@Failure		500		{object}	errorResponse
@@ -86,15 +89,41 @@ func (sr *strideRoutes) zones(c *gin.Context) {
 	if !authorizeUser(c, user) {
 		return
 	}
-	ctx := c.Request.Context()
+	days, includeHistory, err := queryInt(c, "history_days")
+	if includeHistory && (err != nil || days < 1 || days > 365) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "history_days must be an integer between 1 and 365"})
+		return
+	}
 
-	bundle, err := sr.store.ReadEffectiveRunningCalibration(ctx, user, apifmt.TodayShanghai(), storage.CalibrationActive)
+	ctx := c.Request.Context()
+	today := timefmt.ShanghaiToday()
+	cutoff := today.Format(time.DateOnly)
+	var bundle storage.CalibrationBundle
+	var history []storage.CalibrationThresholdPoint
+	if includeHistory {
+		from := today.AddDate(0, 0, 1-days).Format(time.DateOnly)
+		bundle, history, err = sr.store.ReadEffectiveRunningCalibrationWithHistory(ctx, user, from, cutoff)
+	} else {
+		bundle, err = sr.store.ReadEffectiveRunningCalibration(ctx, user, cutoff, storage.CalibrationActive)
+	}
 	if err != nil {
 		sr.log.Error("stride zones: calibration bundle failed", zapErr(err))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
-	c.JSON(http.StatusOK, toStrideBundleResponse(bundle))
+	response := toStrideBundleResponse(bundle)
+	if includeHistory {
+		points := make([]strideThresholdHistoryPoint, len(history))
+		for i, point := range history {
+			points[i] = strideThresholdHistoryPoint{
+				AsOfDate:     point.AsOfDate,
+				PacePerKmSec: apifmt.PacePerKmSec(point.ThresholdSpeedMps),
+				HRBpm:        point.ThresholdHR,
+			}
+		}
+		response.ThresholdHistory = &points
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 // trainingLoad returns the daily PMC series through Shanghai today. Missing
@@ -223,11 +252,18 @@ type stridePaceRangeDTO struct {
 
 // strideZonesResponse is the GET /api/{user}/stride/zones body.
 type strideZonesResponse struct {
-	Selection *storage.CalibrationSelection `json:"selection,omitempty"`
-	Source    *calibration.SourceSummary    `json:"source,omitempty"`
-	Threshold *strideThresholdDTO           `json:"threshold"`
-	PaceZones []stridePaceZoneDTO           `json:"pace_zones"`
-	HRZones   []strideHRZoneDTO             `json:"hr_zones"`
+	Selection        *storage.CalibrationSelection  `json:"selection,omitempty"`
+	Source           *calibration.SourceSummary     `json:"source,omitempty"`
+	Threshold        *strideThresholdDTO            `json:"threshold"`
+	PaceZones        []stridePaceZoneDTO            `json:"pace_zones"`
+	HRZones          []strideHRZoneDTO              `json:"hr_zones"`
+	ThresholdHistory *[]strideThresholdHistoryPoint `json:"threshold_history,omitempty"`
+}
+
+type strideThresholdHistoryPoint struct {
+	AsOfDate     string   `json:"as_of_date" format:"date"`
+	PacePerKmSec *int     `json:"pace_per_km_sec" extensions:"x-nullable"`
+	HRBpm        *float64 `json:"hr_bpm" extensions:"x-nullable"`
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

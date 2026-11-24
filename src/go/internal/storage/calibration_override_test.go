@@ -37,11 +37,14 @@ func TestCalibrationUserOverrideSelectionPrecedence(t *testing.T) {
 	}
 	seed(userA, "2026-11-01", 3, "", 4.0)
 	seed(userB, "2026-11-01", 3, "", 4.2)
+	seed(userA, "2026-11-12", 4, "v4-rev2-2026-11", 3.4)
 	// Both v4 identities exist on the same day for A: the historical v4 row is
 	// written second (higher id), so the unpinned tiebreak would pick it — the
 	// override must read the pinned revision instead.
 	seed(userA, "2026-11-16", 4, "v4-rev2-2026-11", 3.5)
 	seed(userA, "2026-11-16", 4, "", 5.0)
+	seed(userA, "2026-11-17", 4, "v4-rev2-2026-11", 3.6)
+	seed(userB, "2026-11-15", 4, "v4-rev2-2026-11", 4.3)
 
 	// Baseline: no override anywhere — A and B both read the global active v3.
 	a, err := st.ReadEffectiveRunningCalibration(ctx, userA, "2026-11-16", CalibrationActive)
@@ -69,6 +72,17 @@ func TestCalibrationUserOverrideSelectionPrecedence(t *testing.T) {
 	}
 	if a.Selection.State != "selected" || a.Selection.Override == nil || a.Selection.Override.AlgorithmRevision != "v4-rev2-2026-11" {
 		t.Fatalf("override selection: %+v", a.Selection)
+	}
+	bundle, history, err := st.ReadEffectiveRunningCalibrationWithHistory(ctx, userA, "2026-11-01", "2026-11-16")
+	if err != nil || bundle.Snapshot == nil || bundle.Snapshot.ID != a.Snapshot.ID || len(history) != 2 {
+		t.Fatalf("history must share the active bundle identity: %+v, %+v, %v", bundle.Selection, history, err)
+	}
+	if history[0].AsOfDate != "2026-11-12" || history[0].ThresholdSpeedMps == nil || *history[0].ThresholdSpeedMps != 3.4 || history[1].AsOfDate != "2026-11-16" || history[1].ThresholdSpeedMps == nil || *history[1].ThresholdSpeedMps != 3.5 {
+		t.Fatalf("history must be chronological and scoped to the user and revision: %+v", history)
+	}
+	_, history, err = st.ReadEffectiveRunningCalibrationWithHistory(ctx, userA, "2026-11-13", "2026-11-16")
+	if err != nil || len(history) != 1 || history[0].AsOfDate != "2026-11-16" {
+		t.Fatalf("history must respect its lower date bound: %+v %v", history, err)
 	}
 
 	// B is untouched by A's override, and the global policy row is unchanged.

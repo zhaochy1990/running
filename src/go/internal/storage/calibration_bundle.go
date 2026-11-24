@@ -7,10 +7,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/zhaochy1990/stride/internal/compute/calibration"
-	"gorm.io/gorm"
 	"sort"
 	"time"
+
+	"github.com/zhaochy1990/stride/internal/compute/calibration"
+	"gorm.io/gorm"
 )
 
 type CalibrationSelection struct {
@@ -32,6 +33,13 @@ type CalibrationBundle struct {
 	HRZones     []RunningCalibrationHRZone   `json:"hr_zones"`
 	Source      calibration.SourceSummary    `json:"source"`
 	Fingerprint string                       `json:"fingerprint"`
+}
+
+// CalibrationThresholdPoint contains the persisted threshold centers for one snapshot date.
+type CalibrationThresholdPoint struct {
+	AsOfDate          string
+	ThresholdSpeedMps *float64
+	ThresholdHR       *float64
 }
 
 func validCalibrationDay(day string) bool {
@@ -69,16 +77,32 @@ func validAlgorithmRevision(rev string) bool {
 // today-published new revision never backfills history. Candidate reads never
 // consult the override: they remain the explicit global comparison channel.
 func (s *Store) ReadEffectiveRunningCalibration(ctx context.Context, user, cutoff string, mode CalibrationMode) (CalibrationBundle, error) {
+	bundle, _, err := s.readEffectiveRunningCalibration(ctx, user, cutoff, mode, "")
+	return bundle, err
+}
+
+// ReadEffectiveRunningCalibrationWithHistory reads the active bundle and the
+// saved thresholds for its exact algorithm identity, oldest first. The
+// inclusive history range shares the bundle's read-only transaction.
+func (s *Store) ReadEffectiveRunningCalibrationWithHistory(ctx context.Context, user, from, cutoff string) (CalibrationBundle, []CalibrationThresholdPoint, error) {
+	if !validCalibrationDay(from) || from > cutoff {
+		return CalibrationBundle{}, nil, fmt.Errorf("invalid calibration history start day")
+	}
+	return s.readEffectiveRunningCalibration(ctx, user, cutoff, CalibrationActive, from)
+}
+
+func (s *Store) readEffectiveRunningCalibration(ctx context.Context, user, cutoff string, mode CalibrationMode, historyStart string) (CalibrationBundle, []CalibrationThresholdPoint, error) {
 	out := CalibrationBundle{PaceZones: []RunningCalibrationPaceZone{}, HRZones: []RunningCalibrationHRZone{}}
+	var history []CalibrationThresholdPoint
 	uid, err := canonicalUserID(user)
 	if err != nil {
-		return out, err
+		return out, nil, err
 	}
 	if !validCalibrationDay(cutoff) {
-		return out, fmt.Errorf("invalid calibration cutoff day")
+		return out, nil, fmt.Errorf("invalid calibration cutoff day")
 	}
 	if mode != CalibrationActive && mode != CalibrationCandidate {
-		return out, fmt.Errorf("invalid calibration selection mode")
+		return out, nil, fmt.Errorf("invalid calibration selection mode")
 	}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		policy, err := readCalibrationPolicy(tx)
@@ -159,6 +183,13 @@ func (s *Store) ReadEffectiveRunningCalibration(ctx context.Context, user, cutof
 			}
 			out.Source = calibration.ParseSource(snap.SourceJSON)
 			out.Fingerprint = out.Source.Fingerprint
+			if historyStart != "" {
+				return tx.Model(&RunningCalibrationSnapshot{}).
+					Select("as_of_date", "threshold_speed_mps", "threshold_hr").
+					Where("user_id = ? AND algorithm_version = ? AND algorithm_revision = ?", uid, snap.AlgorithmVersion, snap.AlgorithmRevision).
+					Where("as_of_date BETWEEN ? AND ?", historyStart, cutoff).
+					Order("as_of_date ASC").Find(&history).Error
+			}
 			return nil
 		}
 		if preferred == nil {
@@ -169,7 +200,7 @@ func (s *Store) ReadEffectiveRunningCalibration(ctx context.Context, user, cutof
 		out.Source = calibration.SourceSummary{State: "snapshot_unavailable"}
 		return nil
 	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
-	return out, err
+	return out, history, err
 }
 
 // PublishRunningCalibration preserves the natural key (user_id, as_of_date,

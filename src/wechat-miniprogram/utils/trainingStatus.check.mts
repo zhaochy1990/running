@@ -11,6 +11,7 @@ import {
   buildHeatCells,
   buildHeatWeeks,
   buildLineChartOptions,
+  buildThresholdPaceTrend,
   chineseSportName,
   classifyForm,
   formatDateShort,
@@ -169,6 +170,15 @@ eq(columnGap(90, 300), 1, 'categoryGap floors at 1 for dense 90d columns');
 eq((colOpts.extra as { column: { width?: unknown } }).column.width, undefined, 'no fixed width to override the adaptive gap');
 
 
+
+const paceTrend = buildThresholdPaceTrend([
+  { as_of_date: '2026-10-30', pace_per_km_sec: 260, hr_bpm: 160 },
+  { as_of_date: '2026-10-31', pace_per_km_sec: 250, hr_bpm: 161 },
+  { as_of_date: '2026-11-02', pace_per_km_sec: null, hr_bpm: 164 },
+  { as_of_date: '2026-11-03', pace_per_km_sec: 240, hr_bpm: 166 },
+], 4, '2026-11-03');
+eq(JSON.stringify(paceTrend.categories), '["10/31","11/1","11/2","11/3"]', 'trend uses Shanghai calendar days');
+eq(JSON.stringify(paceTrend.series), '[-250,null,null,-240]', 'trend leaves missing estimates empty with faster pace higher');
 
 // Public presentation seam: the same API response and independent expected literals as Web/iOS.
 const displayVectors = JSON.parse(readFileSync(new URL('../../../docs/calibration/fixtures/client-display-v1.json', import.meta.url), 'utf8'));

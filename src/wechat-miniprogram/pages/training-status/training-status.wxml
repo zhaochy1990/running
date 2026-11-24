@@ -54,6 +54,11 @@
           >{{item.label}}</view>
         </view>
       </view>
+      <view wx:if="{{hasThresholdPaceHistory}}" class="card chart-card">
+        <view class="chart-card__label">阈值配速（分/公里）</view>
+        <canvas wx:if="{{hasThresholdPaceChart}}" type="2d" id="threshold-pace-chart" class="chart chart--lg" bindtouchstart="onThresholdPaceTouch" bindtouchmove="onThresholdPaceTouch"></canvas>
+        <view wx:else class="chart-empty">这段时间暂无阈值配速记录</view>
+      </view>
       <view class="card chart-card">
         <view class="chart-card__label">静息心率 · 手表读数</view>
         <canvas wx:if="{{hasRhrChart}}" type="2d" id="rhr-chart" class="chart chart--lg" bindtouchstart="onRhrTouch" bindtouchmove="onRhrTouch"></canvas>

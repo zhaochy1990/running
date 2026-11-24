@@ -6,6 +6,14 @@ Go API 是此 DTO 的 owner，workout / weekly-plan schema 不承担校准元数
 
 `threshold` 保留原有 speed、pace、HR、confidence、日期和 ID 字段，新增 `algorithm_version`、UTC `computed_at`、`selection`、`source`、`fingerprint` 和 `speed_range_pace_per_km_sec`。`/health` 新增 `calibration`，包含同一选择和来源元数据，不改变 `rhr_baseline` 规则。
 
+## 阈值历史
+
+`GET /api/{user}/stride/zones?history_days=90` 在当前阈值和区间之外返回 `threshold_history`。`history_days` 接受 1 至 365，窗口按上海日计算，包含今天。省略参数时沿用原响应。指定窗口但无快照时返回 `[]`。
+
+历史记录按日期升序排列。每条包含 `as_of_date`（上海 `YYYY-MM-DD`）、`pace_per_km_sec`（整数秒/公里或 `null`）和 `hr_bpm`（数值或 `null`）。服务端在同一个只读事务内读取当前 bundle 和其确切算法版本、修订对应的已保存快照。没有快照的日期不会生成记录，已有快照缺失的中心值保持 `null`。
+
+小程序一次请求 90 天历史，按 14、30、60、90 个上海日切换配速趋势。横轴保留缺失日期的位置，触摸已有记录时显示当天配速。
+
 ## v4 原地演进的修订标记与估计状态（#995，2026-11-16 冻结）
 
 v4 不开新顶层身份：演进后的 v4 输出在 `source.algorithm_revision`（可选字符串，如 `v4-rev2-2026-11`）区分于历史 v4 行（缺省为空）；`algorithm_version` 仍为 4，policy `supported_versions=[3,4]` 不变。快照存储层以 `(user, as_of_date, algorithm_version, algorithm_revision)` 为自然键，历史 v4 行不被覆写（ADR 0045）。

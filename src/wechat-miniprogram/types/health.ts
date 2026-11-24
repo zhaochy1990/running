@@ -226,4 +226,11 @@ export interface StrideZonesResponse {
   threshold: StrideThreshold | null;
   pace_zones: StridePaceZone[];
   hr_zones: StrideHrZone[];
+  threshold_history?: StrideThresholdHistoryPoint[];
+}
+
+export interface StrideThresholdHistoryPoint {
+  as_of_date: string;
+  pace_per_km_sec: number | null;
+  hr_bpm: number | null;
 }
