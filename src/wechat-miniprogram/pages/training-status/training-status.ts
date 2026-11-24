@@ -65,9 +65,6 @@ interface MetricCard {
   unit: string;
   baseline: string;
   color: string;
-  range?: string | null;
-  lines?: string[];
-  help?: string[];
 }
 
 interface LoadStat {
@@ -107,7 +104,6 @@ interface TrainingStatusPageData {
   loading: boolean;
   error: string;
   metrics: MetricCard[];
-  expandedMetric: string;
   loadStats: LoadStat[];
   readinessLabel: string;
   readinessColor: string;
@@ -138,7 +134,6 @@ interface TrainingStatusPageHandlers {
   onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
   onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onBack(): void;
-  onMetricHelp(e: WechatMiniprogram.TouchEvent): void;
   onRetry(): void;
   onWindowChange(e: WechatMiniprogram.TouchEvent): void;
   onHeatTap(e: WechatMiniprogram.TouchEvent): void;
@@ -349,7 +344,7 @@ function weekTrend(): {
 // 视图模型
 // ---------------------------------------------------------------------------
 
-function buildMetrics(): MetricCard[] {
+function buildMetrics(calibration: ReturnType<typeof projectCalibration>): MetricCard[] {
   const latestRhrRow = (healthData?.health ?? []).find((r) => r.rhr != null) ?? null;
   const latestRhr = latestRhrRow?.rhr ?? null;
   const latestRhrDate = latestRhrRow ? formatDateShort(normalizeYmd(latestRhrRow.date)) : null;
@@ -363,7 +358,7 @@ function buildMetrics(): MetricCard[] {
   const hrvHigh = healthData?.hrv?.hrv_normal_high ?? null;
   const hrvBaseline = hrvLow != null && hrvHigh != null ? `正常 ${hrvLow}-${hrvHigh} ms` : '';
 
-  const calibration = projectCalibration(zonesData);
+  const threshold = zonesData?.threshold;
 
   return [
     {
@@ -384,24 +379,18 @@ function buildMetrics(): MetricCard[] {
     },
     {
       label: '阈值配速',
-      sub: '约一小时全力能力',
+      sub: 'STRIDE Threshold Pace',
       value: calibration.pace.value,
       unit: '/km',
-      baseline: '',
-      range: calibration.pace.range,
-      lines: calibration.pace.lines,
-      help: calibration.pace.help,
+      baseline: threshold?.speed_confidence ? `置信 ${threshold.speed_confidence}` : '',
       color: '#00a85a',
     },
     {
       label: calibration.hr.label,
-      sub: '按来源解释的心率参考',
+      sub: calibration.hr.label === '阈值心率' ? 'STRIDE Threshold HR' : '',
       value: calibration.hr.value,
       unit: 'bpm',
-      baseline: '',
-      range: calibration.hr.range,
-      lines: calibration.hr.lines,
-      help: calibration.hr.help,
+      baseline: threshold?.hr_confidence ? `置信 ${threshold.hr_confidence}` : '',
       color: '#d97706',
     },
   ];
@@ -476,7 +465,6 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
     loading: true,
     error: '',
     metrics: [],
-    expandedMetric: '',
     loadStats: [],
     readinessLabel: '',
     readinessColor: '#8888a0',
@@ -543,11 +531,6 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
     wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/coach/coach' }) });
   },
 
-  onMetricHelp(e) {
-    const label = String(e.currentTarget.dataset.label ?? '');
-    this.setData({ expandedMetric: this.data.expandedMetric === label ? '' : label });
-  },
-
   onRetry() {
     this.setData({ loading: true, error: '' });
     void this.fetch();
@@ -606,6 +589,7 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
   render() {
     const cur = loadData?.current ?? null;
     const hasLoad = loaded && !!cur;
+    const calibration = projectCalibration(zonesData);
     const { paceZones, hrZones, hasZones } = projectTrainingZones(zonesData);
     const readiness = buildReadiness(cur);
 
@@ -622,7 +606,7 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
       {
         loading: false,
         error: '',
-        metrics: buildMetrics(),
+        metrics: buildMetrics(calibration),
         loadStats: buildLoadStats(cur),
         readinessLabel: readiness.label,
         readinessColor: readiness.color,
@@ -651,7 +635,7 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
           ctl != null && ctl > 0
             ? `当前 CTL ≈ ${ctl.toFixed(0)} · 对应阈值 ±${(ctl * 0.1).toFixed(0)} / ±${(ctl * 0.25).toFixed(0)}`
             : '',
-        calibrationLine: `数据截止：${projectCalibration(zonesData).cutoffDay ?? '未知'} · 校准执行：${projectCalibration(zonesData).computedShanghai ?? '未知'}（上海时间）`,
+        calibrationLine: `数据截止：${calibration.cutoffDay ?? '未知'} · 校准执行：${calibration.computedShanghai ?? '未知'}（上海时间）`,
         loadDateLine: `Training load latest: ${cur?.date ?? '—'}`,
       },
       // canvas 节点要等 view 层渲染出来才拿得到

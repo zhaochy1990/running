@@ -26,7 +26,7 @@
     <view wx:elif="{{error}}" class="empty-card">
       <view class="empty-card__title">加载失败</view>
       <view class="empty-card__sub">{{error}}</view>
-      <button class="metric-help" bindtap="onRetry">重试</button>
+      <button class="retry-button" bindtap="onRetry">重试</button>
     </view>
 
     <block wx:else>
@@ -34,24 +34,12 @@
       <view class="section-title">核心指标</view>
       <view class="metric-grid">
         <view class="metric-card" wx:for="{{metrics}}" wx:key="label">
-          <view class="metric-card__heading">
-            <view class="metric-card__label">{{item.label}}</view>
-            <button wx:if="{{item.help}}" class="metric-help" data-label="{{item.label}}" bindtap="onMetricHelp" aria-label="{{item.label}}说明">{{expandedMetric === item.label ? '收起' : '说明'}}</button>
-          </view>
-          <view class="metric-card__sub">{{item.sub}}</view>
+          <view class="metric-card__label">{{item.label}}</view>
+          <view wx:if="{{item.sub}}" class="metric-card__sub">{{item.sub}}</view>
           <view class="metric-card__value" style="color: {{item.color}};">{{item.value}}<text class="metric-card__unit">{{item.unit}}</text></view>
           <view wx:if="{{item.baseline}}" class="metric-card__baseline">{{item.baseline}}</view>
-          <view wx:if="{{item.range}}" class="metric-card__detail metric-card__range">{{item.range}}</view>
-          <view class="metric-card__detail" wx:for="{{item.lines}}" wx:for-item="line" wx:key="*this">{{line}}</view>
         </view>
       </view>
-
-      <block wx:for="{{metrics}}" wx:key="label">
-        <view wx:if="{{expandedMetric === item.label}}" class="card calibration-help">
-          <view class="chart-card__label">{{item.label}}说明</view>
-          <view class="metric-card__detail" wx:for="{{item.help}}" wx:for-item="line" wx:key="*this">{{line}}</view>
-        </view>
-      </block>
 
       <!-- 趋势 -->
       <view class="section-title section-title--row">
