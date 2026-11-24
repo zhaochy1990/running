@@ -310,20 +310,60 @@
 }
 
 .card-dialog {
+  display: flex;
+  flex-direction: column;
   width: 650rpx;
   max-width: 92vw;
-  max-height: 86vh;
+  height: 82vh;
+  max-height: 1180rpx;
   box-sizing: border-box;
-  padding: 24rpx;
+  overflow: hidden;
   border-radius: 22rpx;
   color: var(--color-text-primary);
   background: var(--color-card);
 }
 
+.card-header,
+.card-actions {
+  flex: 0 0 auto;
+  padding: 12rpx 24rpx;
+}
+
+.card-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 0;
+}
+
+.card-content {
+  padding: 0 24rpx 24rpx;
+}
+
+.card-actions {
+  margin-top: 0;
+  padding-top: 16rpx;
+  padding-bottom: 20rpx;
+  border-top: 1rpx solid var(--color-border-soft);
+}
+
+.card-header .text-action,
+.card-actions .secondary,
+.card-actions .primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 84rpx;
+}
+
+.card-header .text-action {
+  width: auto;
+  padding-right: 0;
+  padding-left: 20rpx;
+}
+
 .card-preview {
   display: block;
   width: 100%;
-  margin-top: 14rpx;
   border-radius: 12rpx;
 }
 
