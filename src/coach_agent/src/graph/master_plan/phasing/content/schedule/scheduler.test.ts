@@ -244,17 +244,14 @@ test("无解上浮：E 带满仍缺量 → failures 带原因（不抛、不静�
   assert.match(result.failures.join(";"), /课包结构课里程或槽数需调整/);
 });
 
-test("P5 双练准入：周量 ≤110km 槽位溢出 → 剪不加双练日；>110km → 双练日准入", () => {
-  // 轻量周（62km ≤110）：5 天帽 + LR+Q+4 槽=6 课 → P1 剪周六槽位，不双练
+test("P5 双练准入：≤110km 槽位溢出不再静默剪除——报「课包装不进训练日」的冲突；>110km → 双练日准入", () => {
+  // 轻量周（62km ≤110）：5 天帽 + LR+Q+4 槽=6 课 → 周量未达双练准入，第 6 节没有合法空日
   const lightRow: ContentWeekRow = { ...ROWS[0]!, totalKm: 62, longRunKm: 22, qualitySessions: 1 };
   const lightBag: WeekBag = { week: 1, courses: [lrCourse(22), mCourse(6), eSlot("interval"), eSlot("interval"), eSlot("normal"), eSlot("interval")] };
   const light = scheduleWeeks([lightBag], { ...CTX, rows: [lightRow], athlete: { weeklyRunDaysMax: 5 } });
-  assert.ok(light.ok, light.failures.join(";"));
-  assert.ok(!light.weeks[0]!.calendar.some((d) => d.sessions.length > 1), "≤110km 不应双练");
-  assert.ok(
-    light.weeks[0]!.repairs.some((r) => r.includes("剪除")),
-    "溢出槽位应剪除留痕",
-  );
+  assert.equal(light.ok, false, "固定课包 6 节装不进 5 天：不剪课换过门");
+  assert.match(light.failures[0]!, /^W1 双练未获许可：课包 6 节超过每周跑步日上限 5——周量 62km 的课包需一天两练才装得下（周量 ≤110km，一天两练未达准入）$/);
+  assert.deepEqual(light.conflicts, [light.failures[0]], "归为用户可用度与课包冲突");
   // 高量周（118km >110）：5 天帽 + LR+2Q+4 槽=7 课 → 双练日准入（P5）
   const heavyRow: ContentWeekRow = { ...ROWS[0]!, totalKm: 118, longRunKm: 32, qualitySessions: 2 };
   const heavyBag: WeekBag = { week: 1, courses: [lrCourse(32), mCourse(12), mCourse(12), eSlot(), eSlot(), eSlot("interval"), eSlot("interval")] };

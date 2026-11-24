@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 import type { ModelConfig } from "../../../../config/config.js";
 import { buildContentMessages, type ContentGeneratorInput, type ContentWeekRow, easyMid, isRegeneration } from "./doctrine.js";
 import { templateFallback } from "./fallback.js";
+import { effectiveDaysMaxOf } from "./schedule/availability.js";
 import { DEFAULT_DOSE_COEFFICIENTS, type DoseCoefficients } from "./schedule/dose.js";
 import type { ScheduleCheck } from "./schedule/gates.js";
 import {
@@ -91,7 +92,7 @@ export interface ScheduledOutcome {
   loadMeta: LoadMeta;
   /** 逐周终检（排位后全量 C1-C9）。 */
   checks: ContentValidation[][];
-  /** 逐周排位门（P1-P8）。 */
+  /** 逐周排位门（P1-P9）。 */
   scheduleChecks: ScheduleCheck[][];
   repairs: string[];
   /** 常规周日期分布选择留痕（devops#1043：候选指标、淘汰关系、原排法对照）。 */
@@ -236,6 +237,29 @@ function scheduleContextOf(input: ContentGeneratorInput, coefficients: DoseCoeff
   };
 }
 
+/**
+ * 模板课包在课包阶段挂了门，是不是「可跑日少于声明上限」造成的（devops#1054）：
+ * 模板与量纲提示按有效训练日构造，E 槽位随之变少；若同一周按声明的每周跑步日上限
+ * 构造就过课包校验，说明量装得进声明的天数、装不进可跑日。是=带原因的冲突文案；
+ * 否（按声明天数也挂）=null，交给调用方按实现缺陷上浮。
+ */
+function daysShortConflictOf(templateBags: WeekBag[], input: ContentGeneratorInput): string | null {
+  const declaredDaysMax = input.athlete.weeklyRunDaysMax;
+  const effectiveDays = effectiveDaysMaxOf(declaredDaysMax, input.availability);
+  if (effectiveDays >= declaredDaysMax) return null;
+  const declaredInput: ContentGeneratorInput = { ...input };
+  delete declaredInput.availability;
+  const byDeclaredDays = templateFallback(declaredInput);
+  const short = templateBags.flatMap((bag, index) => {
+    const row = input.rows.find((r) => r.week === bag.week)!;
+    const failed = (candidate: WeekBag) => validateWeekBag(candidate, row, input).some((check) => !check.pass);
+    return failed(bag) && !failed(byDeclaredDays[index]!)
+      ? [`W${row.week} 每周可跑 ${effectiveDays} 天装不下周量 ${row.totalKm}km——按声明的每周跑步日上限 ${declaredDaysMax} 天排得下，可跑日不够`]
+      : [];
+  });
+  return short.length === 0 ? null : short.join(";");
+}
+
 /** 课包 → 排位+终检（课包违规 ∪ 排位无解 ∪ 终检违规；全绿返回产物）。 */
 function runSchedule(
   bags: WeekBag[],
@@ -365,10 +389,21 @@ export async function generateWeekContent(
   });
   if (bagViolations.length > 0) {
     if (lastConflicts.length > 0) throw new Error(`L4 结构性无解（用户可用度与课包冲突）：${lastConflicts.join(";")}`);
+    const daysShort = daysShortConflictOf(bags, input);
+    if (daysShort != null) throw new Error(`L4 结构性无解（用户可用度与课包冲突）：${daysShort}`);
     throw new Error(`L4 兜底产物挂门（实现缺陷）：${bagViolations.join(";")}`);
   }
-  const { violations, outcome, scheduleFailures } = runSchedule(bags, input, coefficients, true, options?.pmcSeed);
+  const { violations, outcome, scheduleFailures, conflicts } = runSchedule(bags, input, coefficients, true, options?.pmcSeed);
   if (outcome == null || violations.length > 0) {
+    // 模板同样排不出、而课包报过用户可用度冲突（devops#1054：如固定课包装不进可跑日、
+    // 长跑超出可训练时段）——与上面同属用户约束下的结构性无解，带具体冲突上浮，
+    // 不归成「超排位包络」。模板自己的冲突优先于 LLM 课包报过的；借 LLM 课包的冲突
+    // 时把模板的排位失败原因一并带上
+    if (conflicts.length > 0) throw new Error(`L4 结构性无解（用户可用度与课包冲突）：${conflicts.join(";")}`);
+    if (lastConflicts.length > 0)
+      throw new Error(
+        `L4 结构性无解（用户可用度与课包冲突）：${lastConflicts.join(";")}${scheduleFailures.length > 0 ? `；模板兜底同样排不出：${scheduleFailures[0]}` : ""}`,
+      );
     if (scheduleFailures.length > 0) {
       throw new Error(`L4 结构性无解（输入超排位包络，P 门上浮）：${scheduleFailures.join(";")}`);
     }

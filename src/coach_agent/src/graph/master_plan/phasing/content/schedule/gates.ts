@@ -2,12 +2,13 @@ import type { RunWorkout } from "@stride/contract";
 import { easyMidOfZones, hasQualitySegment, type PaceZones } from "../derive.js";
 import type { ContentWeekRow } from "../doctrine.js";
 import { LR_EVE_MAX_KM, sessionKm, weekdayOf } from "../validators.js";
-import { courseDose, type DoseCoefficients } from "./dose.js";
+import { type AvailabilityConstraints, doubleSessionAllowed, sessionLimitLabelOf, sessionLimitOf } from "./availability.js";
+import { courseDose, type DoseCoefficients, elapsedMinutes } from "./dose.js";
 import type { CalendarDay, LoadSeriesPoint } from "./scheduler.js";
 
 /**
- * L4b 排位门 P1-P8（devops#799 校验节 + #1043 P8；contract.md §6.3）：对排位后
- * 的日历判定，输入=L4b 构造产物（calendar/load_series/sessions）。门挂=排位
+ * L4b 排位门 P1-P9（devops#799 校验节 + #1043 P8 + #1054 P9；contract.md §6.3）：对
+ * 排位后的日历判定，输入=L4b 构造产物（calendar/load_series/sessions）。门挂=排位
  * 无解上浮（调度器已先行确定性修复；到这里仍挂=课包问题，带原因重生成 L4a）。
  */
 
@@ -28,8 +29,11 @@ export interface GateInput {
   weeksToRace?: number | null;
   /** 上周日（批界前的已知边界日）是否含质量课——P2 跨周判定（devops#1043）。 */
   previousDayQuality?: boolean;
-  /** 用户可跑日（周内位）；null/缺省=具体日期未知，P8 不判（devops#1043）。 */
-  availableWeekdays?: number[] | null;
+  /**
+   * 用户可用度（devops#1043 可跑日 → P8；devops#1054 双练许可 → P5、单课时长上限与
+   * 日内时窗 → P9）；缺省=未声明（可跑日未知时 P8 不判）。
+   */
+  availability?: AvailabilityConstraints;
 }
 
 /**
@@ -125,13 +129,19 @@ export function scheduleGates(input: GateInput): ScheduleCheck[] {
     });
   }
 
-  // P5 双练准入（>1 节/日 仅当周量 >110km；判定归本段）。
+  // P5 双练准入：>1 节/日 仅当周量 >110km 且用户许可（devops#1054 把许可补进门里——
+  // 此前只在排位阶段查，换日等修复路径造出的双练日会漏过）；判定归本段。
   const doubles = calendar.filter((d) => d.sessions.length > 1);
-  const p5Ok = doubles.length === 0 || row.totalKm > DOUBLE_ADMISSION_KM;
+  const doublesAllowed = doubleSessionAllowed(row.totalKm, DOUBLE_ADMISSION_KM, input.availability);
   checks.push({
     id: "P5 双练准入",
-    pass: p5Ok,
-    detail: doubles.length === 0 ? "无双练日" : `${doubles.length} 个双练日，周量 ${row.totalKm}km${p5Ok ? ">" : "≤"}${DOUBLE_ADMISSION_KM}`,
+    pass: doubles.length === 0 || doublesAllowed,
+    detail:
+      doubles.length === 0
+        ? "无双练日"
+        : `${doubles.length} 个双练日，周量 ${row.totalKm}km${row.totalKm > DOUBLE_ADMISSION_KM ? ">" : "≤"}${DOUBLE_ADMISSION_KM}${
+            input.availability?.allowsDoubleSessions === false ? "，一天两练未获许可" : ""
+          }`,
   });
 
   // P6 比值 cap 1.3（本周逐点；越界=调度无解——调度器修复后仍挂才到这）。
@@ -189,10 +199,31 @@ export function scheduleGates(input: GateInput): ScheduleCheck[] {
   // P8 可跑日（devops#1043）：全部课落在用户可跑日（禁跑日/可用窗口之外的
   // 日子无课）；具体日期未知（存量只有天数上限）时不判。比赛日是固定事件，
   // 不受周内可跑日约束。
-  if (input.availableWeekdays != null) {
-    const allowed = new Set(input.availableWeekdays);
+  const availableWeekdays = input.availability?.availableWeekdays ?? null;
+  if (availableWeekdays != null) {
+    const allowed = new Set(availableWeekdays);
     const offDays = [...new Set(sessions.filter((s) => s.date !== raceDate && !allowed.has(weekdayOf(s.date))).map((s) => s.date))].sort();
     checks.push({ id: "P8 可跑日", pass: offDays.length === 0, detail: offDays.length === 0 ? "全过" : `课落在不可跑日：${offDays.join(",")}` });
+  }
+
+  // P9 单课时长（devops#1054）：每节课的墙钟时长（含休息）≤ 单课时长上限，且装得进
+  // 所在日的最长一段连续时窗。未声明=不限；比赛日是目标事件不是训练课，不受限（同
+  // P6/P8 的豁免）。休息时长不可知的课无法保证装得下，同样挂（须写成 time_s 的 rest 步）。
+  if (input.availability != null) {
+    const availability = input.availability;
+    const over: string[] = [];
+    for (const { date, sessions } of calendar) {
+      if (date === raceDate) continue;
+      const weekday = weekdayOf(date);
+      const limit = sessionLimitOf(availability, weekday);
+      for (const workout of sessions) {
+        const minutes = elapsedMinutes(workout, eMid);
+        if (minutes == null) over.push(`${date} ${workout.name} 休息时长不可知——须写成 time_s 的 rest 步`);
+        else if (limit != null && minutes > limit)
+          over.push(`${date} ${workout.name}≈${Math.round(minutes)}min 超出可训练时段（${sessionLimitLabelOf(availability, weekday)}）`);
+      }
+    }
+    checks.push({ id: "P9 单课时长", pass: over.length === 0, detail: over.length === 0 ? "全过" : over.join("; ") });
   }
 
   return checks;

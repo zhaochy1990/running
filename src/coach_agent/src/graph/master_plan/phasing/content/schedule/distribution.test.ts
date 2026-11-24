@@ -5,7 +5,7 @@ import { danielsAudit } from "../danielsAudit.js";
 import type { ContentWeekRow } from "../doctrine.js";
 import { templateFallback } from "../fallback.js";
 import { generateWeekContent } from "../generate.js";
-import { type DayFact, distributionMetrics, dominates, enumeratePlacements, noWorseBatch, placementLabel, scheduleLabel } from "./distribution.js";
+import { type DayFact, distributionMetrics, dominates, enumeratePlacements, factsOfWeek, noWorseBatch, placementLabel, scheduleLabel } from "./distribution.js";
 import { instantiateWeek, type PmcState, scheduleWeeks, type WeekBag, type WeekSchedule } from "./scheduler.js";
 import {
   availabilityOf,
@@ -72,6 +72,7 @@ test("对照（长轻松挪周四）独立验证：过硬约束（P 门+C 门）
       raceDate: null,
       pmc,
       repairs: [],
+      bagCourses: bag.courses,
     });
     assert.ok("schedule" in result, `对照排位失败：${"failures" in result ? result.failures.join(";") : ""}`);
     if (!("schedule" in result)) return;
@@ -129,6 +130,21 @@ test("实际排位入口：原解必须被淘汰——贪心候选被超过、�
   assert.equal(after.longestRun.days, 2);
   assert.equal(after.longestRest.days, 1);
   for (const week of result.weeks) assert.equal(checksOf(week), "", "最终日历 P 门全过");
+  // 回放口径（devops#1054）：固定课包每周四节课、四个跑步日保留；最终日历过硬约束（P 门 + 课程 C 门）；
+  // 含关键课三日负荷峰 161→98.6（与 npm run replay:distribution 的自检同一口径）
+  for (const [index, week] of result.weeks.entries()) {
+    assert.equal(week.sessions.length, 4, `W${week.week} 课数保留`);
+    assert.deepEqual(
+      cChecksOf(ROWS[index]!, week.sessions).filter((check) => !check.pass),
+      [],
+      `W${week.week} 课程 C 门全过`,
+    );
+  }
+  assert.deepEqual(
+    [2, 3].map((week) => completeMetricsOf(result.weeks, week - 1).maxKey3DayLoad),
+    [98.6, 98.6],
+    "两个完整跨周窗口的三日负荷峰",
+  );
 });
 
 test("正例·真实生成入口：固定课包 + 固定负荷种子 → 强制淘汰旧解且分布改善（无改善即失败）", async () => {
@@ -343,17 +359,42 @@ test("只能在相邻日训练的人：日期组合被可跑日锁死，集中�
   assert.equal(metrics.longestRest.days, 4);
 });
 
-test("分布优化让赛周无解而贪心日历可行：回退贪心日历并在留痕里说明，不把原本可行的批变无解", () => {
-  // 周三比赛：优化后的第一周抬高了进入赛周的 ATL，赛周次日比值 1.32 超 cap；贪心链下恰好过
-  const rows = [normalRow(1), raceRow(2)];
-  const bags = [fourRunBag(1), raceBag(2)];
+/** 双周含赛周夹具（devops#1054）：第一周四跑 + 周三比赛的赛周；种子 6/27 下第一周的最优排法会抬高进入赛周的 ATL，赛周比值越 cap。 */
+function raceWeekFixture() {
+  const rows: ContentWeekRow[] = [normalRow(1), raceRow(2)];
+  const bags: WeekBag[] = [fourRunBag(1), raceBag(2)];
   const race = { ...RACE, date: addDays(mondayOf(2), 3) };
-  const ctx = scheduleCtxOf(rows, { race, pmcSeed: { acute: 6, chronic: 27 } });
+  return { rows, bags, ctx: scheduleCtxOf(rows, { race, pmcSeed: { acute: 6, chronic: 27 } }) };
+}
+
+test("双周含赛周（优先调整可变周，devops#1054）：第一周的最优排法让赛周负荷越 cap 时改选下一个候选，两周全过——淘汰三连跑的旧解，连休与三日峰值不变", () => {
+  const { rows, bags, ctx } = raceWeekFixture();
   const result = scheduleWeeks(bags, ctx);
   assert.ok(result.ok, result.failures.join(";"));
-  assert.deepEqual(result.weeks.map(scheduleLabel), greedyBatch(bags, ctx).map(scheduleLabel), "回退到贪心日历");
-  assert.equal(scheduleLabel(result.weeks[0]!), ORIGINAL);
+  assert.deepEqual(result.weeks.map(scheduleLabel), ["E·T·休·E·休·休·LR", "M·休·E·M·休·休·休"]);
+  for (const week of result.weeks) assert.equal(checksOf(week), "", "两周 P 门全过");
+  // 留痕写明优先候选为什么被否决；被否决的候选如实记为不可执行，选定解不被任何可执行候选超过
   const audit = result.distribution[0]!;
+  assert.match(audit.reason, /优先候选使后续周排位无解（W2 排位无解：P6 日负荷比 1\.32 超 cap 1\.3/);
+  const vetoed = audit.candidates.filter((candidate) => candidate.failures.some((failure) => failure.includes("使后续周排位无解")));
+  assert.equal(vetoed.length, 4);
+  assert.ok(vetoed.every((candidate) => !candidate.feasible && candidate.metrics == null));
+  assert.equal(audit.candidates[audit.chosen]!.dominatedBy, null);
+  // 整批口径（两周连看）：旧解周六短轻松→周日长跑→周一激活课三连跑被淘汰；连休与三日峰由赛周决定，保持不变
+  const metricsOf = (weeks: WeekSchedule[]) => distributionMetrics(weeks.flatMap((week, index) => factsOfWeek(week, rows[index]!.zones, ctx.race.date)));
+  const before = metricsOf(greedyBatch(bags, ctx));
+  const after = metricsOf(result.weeks);
+  assert.deepEqual([before.longestRun.days, before.longestRest.days, before.maxKey3DayLoad], [3, 3, 244.1]);
+  assert.deepEqual([after.longestRun.days, after.longestRest.days, after.maxKey3DayLoad], [2, 3, 244.1]);
+});
+
+test("双周含赛周回归（贪心回退兜底）：回溯改选预算用尽时仍回退贪心日历，不把原本可行的批变无解", () => {
+  const { rows, bags, ctx } = raceWeekFixture();
+  const limited = scheduleWeeks(bags, { ...ctx, backtrackLimit: 0 });
+  assert.ok(limited.ok, limited.failures.join(";"));
+  assert.deepEqual(limited.weeks.map(scheduleLabel), greedyBatch(bags, ctx).map(scheduleLabel), "回退到贪心日历");
+  assert.equal(scheduleLabel(limited.weeks[0]!), ORIGINAL);
+  const audit = limited.distribution[0]!;
   assert.match(audit.reason, /分布优化后的日历排位无解（W2 排位无解：P6 日负荷比 1\.32 超 cap 1\.3/);
   assert.match(audit.reason, /回退到贪心日历/);
   assert.equal(audit.candidates.length, 1);
@@ -408,4 +449,22 @@ test("上周日长跑是纯有氧（不含质量尾段）时，周一激活课�
       false,
     );
   }
+});
+
+test("真实生成入口：赛周因负荷排不出时同样改选第一周，首次就过；审计不把让位的选定解判成「与分布优化不一致」", async () => {
+  const { input, bags } = raceInputOf(3, 0);
+  const outcome = await generateWeekContent(input, modelOf(bags), { pmcSeed: { acute: 3, chronic: 31 } });
+  assert.equal(outcome.source, "llm");
+  assert.equal(outcome.attempts, 1, "不被迫重试或退模板");
+  assert.match(outcome.distribution[0]!.reason, /优先候选使后续周排位无解/);
+  for (const weekChecks of [...outcome.checks, ...outcome.scheduleChecks])
+    for (const check of weekChecks) assert.equal(check.pass, true, `${check.id}: ${check.detail}`);
+  const items = danielsAudit(outcome, input);
+  const distribution = items.find((item) => item.item === "W1 日期分布");
+  assert.equal(distribution?.verdict, "pass", distribution?.actual ?? "");
+  assert.equal(
+    items.some((item) => item.verdict === "fail"),
+    false,
+    "审计无硬失败",
+  );
 });

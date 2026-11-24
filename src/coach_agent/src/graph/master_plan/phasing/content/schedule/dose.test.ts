@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { test } from "node:test";
 import type { RunWorkout } from "@stride/contract";
 import type { PaceZones } from "../derive.js";
-import { type CalibrationRow, courseDose, DEFAULT_DOSE_COEFFICIENTS, doseBandOfPace, fitDoseCoefficients } from "./dose.js";
+import { type CalibrationRow, courseDose, courseMinutes, DEFAULT_DOSE_COEFFICIENTS, doseBandOfPace, elapsedMinutes, fitDoseCoefficients } from "./dose.js";
 
 /**
  * 剂量估算器单测（devops#799）：①标定可复现——进仓快照重跑最小二乘=已发布
@@ -107,4 +107,46 @@ test("recovery 折算（#824）：time+open 组间慢跑按 E 带中点折算计
   // 非 recovery 的 time+open（如 work 步 open）仍不可知
   const openWork = courseDose(singleStepWorkout({ kind: "time_s", value: 1800 }, { kind: "open", low: null, high: null }), ZONES, c);
   assert.equal(openWork.km, null);
+});
+
+test("墙钟时长（devops#1054）：休息步与步后休息照计；open 配速的距离步按 E 带中点估；时长不可知的休息=null", () => {
+  type Step = RunWorkout["blocks"][number]["steps"][number];
+  const step = (step_kind: Step["step_kind"], duration: Step["duration"], target: Step["target"], rest?: Step["rest"]): Step => ({
+    step_kind,
+    duration,
+    target,
+    note: null,
+    hr_cap_bpm: null,
+    ...(rest != null ? { rest } : {}),
+  });
+  const workout = (blocks: RunWorkout["blocks"]): RunWorkout => ({
+    schema: "run-workout/v1",
+    name: "课",
+    date: "2026-11-02",
+    type: "I",
+    note: null,
+    purpose: "p",
+    blocks,
+  });
+  const time = (value: number) => ({ kind: "time_s" as const, value });
+  const open = { kind: "open" as const, low: null, high: null };
+  const pace = { kind: "pace_s_km" as const, low: 220, high: 230 };
+  // I 课：热身 15min + 5×(1000m@225s/km=3.75min + 独立休息步 2min) + 放松 10min = 53.75
+  const interval = workout([
+    { repeat: 1, steps: [step("warmup", time(900), open)] },
+    { repeat: 5, steps: [step("work", { kind: "distance_m", value: 1000 }, pace), step("rest", time(120), open)] },
+    { repeat: 1, steps: [step("cooldown", time(600), open)] },
+  ]);
+  assert.equal(elapsedMinutes(interval, 321), 53.75);
+  assert.equal(courseMinutes(interval), 43.75, "跑步时长口径不含休息");
+  // 步后休息字段同样照计：2×(3.75 + 1)
+  assert.equal(
+    elapsedMinutes(workout([{ repeat: 2, steps: [step("work", { kind: "distance_m", value: 1000 }, pace, { kind: "time_s", value: 60 })] }]), 321),
+    9.5,
+  );
+  // open 配速的距离步（4×100m strides）按 E 带中点估
+  assert.ok(Math.abs((elapsedMinutes(workout([{ repeat: 4, steps: [step("work", { kind: "distance_m", value: 100 }, open)] }]), 321) ?? 0) - 2.14) < 1e-9);
+  // 时长不可知的休息：open 的 rest 步、心率型步后休息 → null
+  assert.equal(elapsedMinutes(workout([{ repeat: 1, steps: [step("work", time(1800), open), step("rest", { kind: "open", value: null }, open)] }]), 321), null);
+  assert.equal(elapsedMinutes(workout([{ repeat: 1, steps: [step("work", time(1800), open, { kind: "hr_bpm", value: 120 })] }]), 321), null);
 });

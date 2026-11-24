@@ -2,7 +2,7 @@ import type { PromptMessage } from "@stride/common";
 import { allocateRaceWeek, allocateWeek } from "./allocate.js";
 import type { PaceZones } from "./derive.js";
 import { goalMPaceBand } from "./project.js";
-import type { AvailabilityConstraints } from "./schedule/availability.js";
+import { type AvailabilityConstraints, effectiveDaysMaxOf } from "./schedule/availability.js";
 import type { DayFact } from "./schedule/distribution.js";
 
 /**
@@ -273,7 +273,9 @@ export function buildContentPayload(input: ContentGeneratorInput): Record<string
         specific_pace_s_per_km: row.specificPaceSKm,
         ...(row.guidance != null && row.guidance.length > 0 ? { adjust_guidance: row.guidance } : {}),
         ...(eMid != null ? { e_pace_mid_s_per_km: Math.round(eMid), e_km_per_60min: Math.round((3600 / eMid) * 10) / 10 } : {}),
-        budget_hint: budgetHint(row, athlete.weeklyRunDaysMax, race),
+        // 量纲按有效训练日给（devops#1054）：声明上限与可跑日数取小——多给的槽位排不进
+        // 可跑日，固定课包装不下=结构性无解，不再是排位阶段悄悄剪掉
+        budget_hint: budgetHint(row, effectiveDaysMaxOf(athlete.weeklyRunDaysMax, input.availability), race),
       };
     }),
     athlete,

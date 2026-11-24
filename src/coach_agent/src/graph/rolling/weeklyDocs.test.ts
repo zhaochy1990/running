@@ -283,6 +283,36 @@ test("追赶冻结：删除 date < 明天 的会话并注明；整周无未来 r
   );
 });
 
+test("追赶冻结后的文档与最终安排一致（devops#1054）：周五冻结只剩周日长跑——周课程、重点课、剂量都只算这一节", () => {
+  const [full] = buildDocs();
+  assert.ok(full);
+  assert.deepEqual(
+    full.key_sessions?.map((key) => key.workout_structure?.date),
+    ["2026-11-01", "2026-10-27"],
+    "整周：长跑 + 周二阈值课",
+  );
+  const [frozen, untouched] = freezePastSessions(buildDocs(), "2026-10-30T18:00:00+08:00"); // 第 4 周周五
+  assert.ok(frozen && untouched);
+  const runs = frozen.sessions.filter((session) => session.kind === "run");
+  assert.deepEqual(
+    runs.map((session) => session.date),
+    ["2026-11-01"],
+    "只剩周日长跑",
+  );
+  // 周课程、重点课、剂量说的是同一份安排
+  assert.deepEqual(
+    frozen.key_sessions?.map((key) => key.workout_structure?.date),
+    ["2026-11-01"],
+    "重点课不再指向已被冻结的周二阈值课",
+  );
+  const longRunDose = runs.reduce((total, session) => total + (session.estimated_dose ?? 0), 0);
+  assert.equal(frozen.planned_dose, Math.round(longRunDose * 10) / 10);
+  assert.notEqual(frozen.planned_dose, full.planned_dose);
+  // 周目标 km 是骨架目标，不随冻结改写；后面的周不受影响
+  assert.equal(frozen.target_weekly_km_low, full.target_weekly_km_low);
+  assert.deepEqual(untouched.sessions, buildDocs()[1]!.sessions);
+});
+
 // ── key_sessions 派生（#858 PR-C 下半；口径与 v2 快照同源：E 课剔除、赛周只留
 //    比赛课、非恢复周 ≤3 / 恢复周 ≤1 按总里程降序截断）─────────────────────────
 

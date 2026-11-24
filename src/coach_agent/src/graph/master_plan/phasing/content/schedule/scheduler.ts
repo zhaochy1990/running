@@ -3,7 +3,7 @@ import { allocateRaceWeek } from "../allocate.js";
 import { hasQualitySegment } from "../derive.js";
 import type { ContentRaceContext, ContentWeekRow } from "../doctrine.js";
 import { type ContentValidation, E_DURATION_INTERVAL_BAND, E_DURATION_NORMAL_BAND, LR_EVE_MAX_KM, sessionKm, weekdayOf } from "../validators.js";
-import { type AvailabilityConstraints, doubleSessionAllowed, effectiveDaysMaxOf, isAvailableDay } from "./availability.js";
+import { type AvailabilityConstraints, doubleSessionAllowed, effectiveDaysMaxOf, isAvailableDay, sessionLimitLabelOf, sessionLimitOf } from "./availability.js";
 import {
   boundaryPrefix,
   compareCandidates,
@@ -21,7 +21,7 @@ import {
   sameFacts,
   scheduleLabel,
 } from "./distribution.js";
-import { COEFFICIENT_VERSION, courseDose, DEFAULT_DOSE_COEFFICIENTS, type DoseCoefficients } from "./dose.js";
+import { COEFFICIENT_VERSION, courseDose, DEFAULT_DOSE_COEFFICIENTS, type DoseCoefficients, elapsedMinutes } from "./dose.js";
 import { DOUBLE_ADMISSION_KM, RATIO_CAP, RATIO_CAP_EPS, type ScheduleCheck, scheduleGates } from "./gates.js";
 
 /**
@@ -35,10 +35,13 @@ import { DOUBLE_ADMISSION_KM, RATIO_CAP, RATIO_CAP_EPS, type ScheduleCheck, sche
  * 枚举「同课数、同跑步日数」的替代落位，逐个走同一条实例化+门禁路径，只用
  * 过门的候选比三项分布指标（最长连跑/最长连休/含关键课三日负荷峰），淘汰被
  * 超过的扎堆安排；跨周接已知边界日历（实绩/生效安排）。交界复核=前向多遍
- * （后一遍带前一遍的下一周），整批分布指标严格改善才采纳、到不动点为止；分布
- * 优化让整批无解而贪心日历可行时回退贪心。排课同时受用户可用度约束：禁跑日/
- * 可用窗口、单课时长上限（E 实例化带）、双练许可——与课包/位型冲突时带具体
- * 冲突上浮（ScheduleResult.conflicts）。
+ * （后一遍带前一遍的下一周），整批分布指标不变差才采纳、到不动点为止。后续周
+ * 因负荷排不出时优先调整可变周（devops#1054：回到最近的常规周改选下一个候选、
+ * 重排其后各周），回溯预算用尽仍无解而贪心日历可行时才回退贪心。排课同时受
+ * 用户可用度硬约束：可跑日、单课时长上限与日内时窗（P9，按含休息的墙钟时长）、
+ * 双练许可——与课包/位型冲突时带具体冲突上浮（ScheduleResult.conflicts）。
+ * 固定课包守恒（devops#1054）：排不下的课不静默剪除，最终课表逐项对账
+ * （bagDeviationOf）。
  *
  * 层内仲裁（修复经济学）：排位失败先确定性局部修复（缩 E 时长/周六置休/剪余量
  * 槽位/双练准入）仍无解才上浮带原因——本段绝不直接触发 LLM 重生成（由 L4 编排
@@ -113,7 +116,7 @@ export interface WeekSchedule {
   sessions: RunWorkout[];
   calendar: CalendarDay[];
   loadSeries: LoadSeriesPoint[];
-  /** P1-P8（gates.ts）。 */
+  /** P1-P9（gates.ts）。 */
   checks: ScheduleCheck[];
   repairs: string[];
 }
@@ -129,8 +132,9 @@ export interface ScheduleResult {
   distribution: WeekDistributionAudit[];
   /**
    * failures 中属于用户可用度与课包/位型硬冲突的部分（devops#1043「返回受冲突的
-   * 日期和约束」；空=无）：长跑周日不可跑、可跑日不足、双练未获许可、单课时长
-   * 上限低于 E 分层带、赛周激活窗无可跑日。编排层据此归类结构性无解。
+   * 日期和约束」；空=无）：长跑周日不可跑、可跑日装不下课包、课包装不进训练日容量
+   * （又不能靠一天两练）、结构课超出可训练时段（单课时长上限/日内时窗）、普通
+   * 轻松课下限容不下、赛周激活窗无可跑日或激活课超时窗。编排层据此归类结构性无解。
    */
   conflicts: string[];
 }
@@ -207,7 +211,7 @@ export interface ScheduleContext {
   /** 生产 PMC 当日快照（fitness_state.atl/ctl）。 */
   pmcSeed: PmcState;
   coefficients?: DoseCoefficients;
-  /** 用户可用度（devops#1043：可跑日/单课时长上限/双练许可）；缺省=未声明。 */
+  /** 用户可用度（devops#1043 可跑日、双练许可；devops#1054 单课时长上限与日内时窗）；缺省=未声明。 */
   availability?: AvailabilityConstraints;
   /**
    * 首周周一之前的已知相邻日历（devops#1043：实绩或生效安排；任意长度，缺的
@@ -219,6 +223,12 @@ export interface ScheduleContext {
    * （如 E 时长分层 C9）；缺省=只判 P 门。
    */
   validateWeek?: WeekValidator;
+  /**
+   * 回溯改选的次数上限（devops#1054「优先调整可变周」）：后续周排不出时回到可变周
+   * 改选下一个候选，超过上限交回贪心回退。缺省 120；留给测试把预算压到 0 复现
+   * 「预算用尽 → 贪心兜底」，不是给调用方调的配置。
+   */
+  backtrackLimit?: number;
 }
 
 /** 排位后课程校验器（C 门）：日期分布候选逐个复算（devops#1043）。 */
@@ -281,9 +291,10 @@ type EFlavor = "normal" | "interval" | "lrEve" | "shake" | "regen";
 const LR_EVE_MIN_MINUTES = 30;
 
 /** 落位时长带（分钟）：间隔日/再生周=短带；LR 前日=km 帽（下限 0，有效性由
- * 置休摊量仲裁保证）；赛周激活窗=短帽。capMin=用户单课时长上限（devops#1043）：
- * 上限钳到许可值，下限随之上移封顶（带不空）。 */
-function eBandOf(flavor: EFlavor, row: ContentWeekRow, capMin: number | null = null): [number, number] {
+ * 置休摊量仲裁保证）；赛周激活窗=短帽。limitMin=该日 E 课可用的分钟上限
+ * （devops#1054：单课时长上限与当日时窗取小，双练日再扣掉同日结构课）：上下限
+ * 都只往下钳、不超过它（上限不够时整带并到上限，再由 C9/P9 判合法性）。 */
+function eBandOf(flavor: EFlavor, row: ContentWeekRow, limitMin: number | null = null): [number, number] {
   const eMid = easyMidOf(row);
   const band: [number, number] = (() => {
     switch (flavor) {
@@ -298,7 +309,7 @@ function eBandOf(flavor: EFlavor, row: ContentWeekRow, capMin: number | null = n
         return [...E_DURATION_NORMAL_BAND] as [number, number];
     }
   })();
-  return capMin == null ? band : [Math.min(band[0], capMin), Math.min(band[1], capMin)];
+  return limitMin == null ? band : [Math.min(band[0], limitMin), Math.min(band[1], limitMin)];
 }
 
 function ePurpose(flavor: EFlavor, minutes: number, strides: boolean, slotPurpose: string | null, raceName: string | null): string {
@@ -384,6 +395,16 @@ function longRunDayConflictOf(row: ContentWeekRow, available: readonly number[] 
   return `W${row.week} 周日为不可跑日——长跑须排周日（P3 位型），与可跑日（${label}）冲突`;
 }
 
+/** 赛周课包里的比赛课=里程最大的结构课（placeRaceWeek 与冲突归因同判据）；没有结构课=null。 */
+function raceCourseOf(structured: readonly StructuredCourse[], row: ContentWeekRow, coefficients: DoseCoefficients): StructuredCourse | null {
+  return (
+    [...structured].sort(
+      (a, b) =>
+        (doseOf(materializeCourse(b, "2000-01-03"), row, coefficients).km ?? 0) - (doseOf(materializeCourse(a, "2000-01-03"), row, coefficients).km ?? 0),
+    )[0] ?? null
+  );
+}
+
 /** 比赛周：比赛课（最大里程结构课）钉比赛日（P4）、其余结构课=M 激活（赛前 2-3 天）、E 槽填赛前窗。 */
 function placeRaceWeek(bag: WeekBag, row: ContentWeekRow, ctx: SingleWeekContext, coefficients: DoseCoefficients, raceWd: number, daysMax: number): Placement {
   const dayCourses: PlannedCourse[][] = Array.from({ length: 7 }, (): PlannedCourse[] => []);
@@ -395,9 +416,7 @@ function placeRaceWeek(bag: WeekBag, row: ContentWeekRow, ctx: SingleWeekContext
   const isAvailable = (wd: number) => isAvailableDay(available, wd);
   const structured = bag.courses.filter((c): c is StructuredCourse => c.kind === "course");
   const slots = bag.courses.filter((c): c is ESlotCourse => c.kind === "e-slot");
-  const raceCourse = [...structured].sort(
-    (a, b) => (doseOf(materializeCourse(b, "2000-01-03"), row, coefficients).km ?? 0) - (doseOf(materializeCourse(a, "2000-01-03"), row, coefficients).km ?? 0),
-  )[0];
+  const raceCourse = raceCourseOf(structured, row, coefficients);
   if (raceCourse == null) throw new Error(`schedule: 第${row.week}周赛周无结构课（比赛课缺失）`);
   dayCourses[raceWd]!.push(raceCourse);
   // 激活课=原书周二位优先（2026-11-01 校准，raceWd-5 起最早空日；#825 偏 2 天口径由原书取代）
@@ -542,7 +561,9 @@ function placeNormalWeek(
   }
   if (lr != null) dayCourses[6]!.push(lr);
 
-  // 余量处置：P5 双练准入（周量 >110km 且用户许可，附到质量课日）否则剪除
+  // 余量处置：P5 双练准入（周量 >110km 且用户许可，附到质量课日）；准入不了的余量课
+  // 没有合法空日——固定课包不静默剪除（devops#1054：此前剪掉 E 槽位后量能收敛就
+  // 少交一节课），带具体冲突上浮
   const surplus = [...qs, ...es];
   if (surplus.length > 0) {
     const doubleOk = doubleSessionAllowed(row.totalKm, DOUBLE_ADMISSION_KM, ctx.availability);
@@ -552,21 +573,42 @@ function placeNormalWeek(
       if (wd >= 0) {
         dayCourses[wd]!.push(course);
         repairs.push(`W${row.week} ${DAY_LABELS[wd]} 双练日（P5 准入 ${row.totalKm.toFixed(0)}km>${DOUBLE_ADMISSION_KM}）`);
-      } else if (course.kind === "course") {
-        // 结构课永不剪：LR/Q 是 L3 硬边界（C2/C3），排不下=无解上浮
-        return {
-          dayCourses,
-          repairs,
-          failures: [`W${row.week} 结构课 ${course.name} 无合法空日（daysMax=${daysMax}${availableNote(available)}）——课包超训练日容量`],
-          conflicts: [],
-        };
-      } else {
-        repairs.push(`W${row.week} E 槽位无合法空日——剪除`);
+        continue;
       }
+      // 课包装不进可跑日（节数超训练日容量且不能一天两练）=用户可用度与课包的硬冲突；
+      // 结构课永不剪：LR/Q 是 L3 硬边界（C2/C3），排不下=无解上浮
+      const conflict = bagCapacityConflictOf(bag.courses.length, row, ctx, daysMax);
+      return {
+        dayCourses,
+        repairs,
+        failures: [
+          conflict ??
+            `W${row.week} ${course.kind === "course" ? `结构课 ${course.name}` : "E 槽位"} 无合法空日（daysMax=${daysMax}${availableNote(available)}）——课包超训练日容量`,
+        ],
+        conflicts: conflict == null ? [] : [conflict],
+      };
     }
   }
   // P1 由 eDayBudget 不变式保证（daysMax−1−q 前置限 E 日）；越界情形 P1 门兜底上浮
   return { dayCourses, repairs, failures: [], conflicts: [] };
+}
+
+/**
+ * 课包装不进训练日容量（devops#1054「固定四课且仅能三天、禁止双练」）：节数超过
+ * 每周跑步日上限、又不能靠一天两练装下（周量 >110km 且用户许可才准入）——归到
+ * 真正的约束上，而不是被它连带出来的周量/时长带违规。装得下=null。
+ */
+function bagCapacityConflictOf(count: number, row: ContentWeekRow, ctx: SingleWeekContext, daysMax: number): string | null {
+  const availability = ctx.availability;
+  const available = availability?.availableWeekdays ?? null;
+  if (count <= daysMax || doubleSessionAllowed(row.totalKm, DOUBLE_ADMISSION_KM, availability)) return null;
+  if (available != null && count > available.length)
+    return `W${row.week} 可跑日不足：${available.length === 0 ? "没有可跑日" : `可跑日 ${available.length} 天（${weekdaysLabel(available)}）`}装不下课包 ${count} 节（${
+      availability?.allowsDoubleSessions === false ? "一天两练未获许可" : "一天两练未达准入（周量 ≤110km）"
+    }）`;
+  return `W${row.week} 双练未获许可：课包 ${count} 节超过每周跑步日上限 ${daysMax}——周量 ${row.totalKm.toFixed(0)}km 的课包需一天两练才装得下（${
+    availability?.allowsDoubleSessions === false ? "allows_double_sessions=false" : `周量 ≤${DOUBLE_ADMISSION_KM}km，一天两练未达准入`
+  }）`;
 }
 
 // ── E 实例化与 C1 收敛 ──
@@ -622,7 +664,7 @@ export function scheduleWeek(
       : placeNormalWeek(bag, row, ctx, coefficients, pmc, repairs);
   if (placement.failures.length > 0) return { failures: placement.failures, conflicts: placement.conflicts };
   repairs.push(...placement.repairs);
-  return instantiateWeek({ dayCourses: placement.dayCourses, row, ctx, weekMonday, raceWd, raceDate, pmc, repairs });
+  return instantiateWeek({ dayCourses: placement.dayCourses, row, ctx, weekMonday, raceWd, raceDate, pmc, repairs, bagCourses: bag.courses });
 }
 
 /**
@@ -640,16 +682,27 @@ export function instantiateWeek(input: {
   pmc: PmcState;
   /** 修复留痕累加器（排位阶段的留痕已在内，本函数继续追加）。 */
   repairs: string[];
+  /** 固定课包的全部课（devops#1054 课包守恒终检：最终物化课表逐项对账，必传）。 */
+  bagCourses: PlannedCourse[];
 }): { schedule: WeekSchedule; pmc: PmcState } | { failures: string[] } {
   const { dayCourses, row, ctx, weekMonday, raceWd, raceDate, pmc, repairs } = input;
   const coefficients = ctx.coefficients ?? DEFAULT_DOSE_COEFFICIENTS;
   const isRaceWeek = raceWd != null;
   const available = ctx.availability?.availableWeekdays ?? null;
   const isAvailable = (di: number) => isAvailableDay(available, di);
-  // 单课时长上限（devops#1043）只钳 E 槽位实例化带（分钟数由本段决定）；结构课
-  // 时长由课包决定、本段不裁剪（超限由审计告警上浮）。上限低于普通 E 日下限
-  // （60min）时普通日排不出合法时长——无解原因由 availabilityConflictOf 归位
-  const bandOf = (flavor: EFlavor): [number, number] => eBandOf(flavor, row, ctx.availability?.maxSessionDurationMin ?? null);
+  const eMid = easyMidOf(row);
+  // E 课可用的分钟上限（devops#1054）钳 E 槽位实例化带：单课上限；声明了时窗时再受
+  // 「当日最长一段时窗 − 同日结构课的墙钟时长」限制——双练日的轻松课只占用结构课剩下
+  // 的时段。结构课时长由课包决定、本段不裁剪——超限由 P9 门拦下，无解原因由
+  // availabilityConflictOf 归位
+  const eLimitOf = (di: number): number | null => {
+    const cap = ctx.availability?.maxSessionDurationMin ?? null;
+    const window = ctx.availability?.windowMinutes?.[di];
+    if (window == null) return cap;
+    const taken = structuredAt.filter((x) => x.di === di).reduce((sum, x) => sum + (elapsedMinutes(x.workout, eMid) ?? 0), 0);
+    return Math.max(0, Math.min(...[cap, window - taken].filter((limit): limit is number => limit != null)));
+  };
+  const bandOf = (flavor: EFlavor, di: number): [number, number] => eBandOf(flavor, row, eLimitOf(di));
 
   // 结构课物化（日期落定）；质量周内位集合=判定表口径（含带质量尾段 LR 与比赛课）
   const structuredAt: Array<{ di: number; course: StructuredCourse; workout: RunWorkout }> = [];
@@ -669,10 +722,9 @@ export function instantiateWeek(input: {
   // E 实例化：位置定带 → 中位起步 → water-fill 双向收敛（只动未顶格槽位）
   const instantiated: Array<{ di: number; slot: ESlotCourse; flavor: EFlavor; minutes: number }> = slotsAt.map(({ di, slot }) => {
     const flavor = eFlavorOf(di, qualityWds, row, raceWd);
-    const band = bandOf(flavor);
+    const band = bandOf(flavor, di);
     return { di, slot, flavor, minutes: (band[0] + band[1]) / 2 };
   });
-  const eMid = easyMidOf(row);
   const eKm = () => instantiated.reduce((s, x) => s + (x.minutes * 60) / eMid, 0);
   const structuredKm = structuredAt.reduce((s, { workout }) => s + (doseOf(workout, row, coefficients).km ?? 0), 0);
   let gap = c1Target - structuredKm - eKm();
@@ -680,13 +732,13 @@ export function instantiateWeek(input: {
   const fill = () => {
     for (let pass = 0; pass < 6 && Math.abs(gap) > 0.05; pass++) {
       const movable = instantiated.filter((x) => {
-        const band = bandOf(x.flavor);
+        const band = bandOf(x.flavor, x.di);
         return gap > 0 ? x.minutes < band[1] - 1e-6 : x.minutes > band[0] + 1e-6;
       });
       if (movable.length === 0) break;
       const perMin = (gap * eMid) / 60 / movable.length;
       for (const x of movable) {
-        const band = bandOf(x.flavor);
+        const band = bandOf(x.flavor, x.di);
         x.minutes = Math.max(band[0], Math.min(band[1], x.minutes + perMin));
       }
       gap = c1Target - structuredKm - eKm();
@@ -719,7 +771,7 @@ export function instantiateWeek(input: {
   if (gap < -tol) {
     const sat = instantiated.find((x) => x.di === 5);
     if (sat != null) {
-      const band = bandOf(sat.flavor);
+      const band = bandOf(sat.flavor, sat.di);
       const cutMin = Math.min(sat.minutes - band[0], ((-gap - tol) * eMid) / 60);
       if (cutMin > 0) {
         sat.minutes -= cutMin;
@@ -738,7 +790,7 @@ export function instantiateWeek(input: {
   while (gap < -tol && instantiated.length > 0) {
     const droppable = instantiated.filter((x) => x.di !== 5);
     if (droppable.length === 0) break;
-    const victim = droppable.reduce((a, b) => (bandOf(a.flavor)[0] >= bandOf(b.flavor)[0] ? a : b));
+    const victim = droppable.reduce((a, b) => (bandOf(a.flavor, a.di)[0] >= bandOf(b.flavor, b.di)[0] ? a : b));
     instantiated.splice(instantiated.indexOf(victim), 1);
     repairs.push(`W${row.week} ${DAY_LABELS[victim.di]} E 槽位剪除（C1 超界：普通带下限垫高）`);
     gap = c1Target - structuredKm - eKm();
@@ -804,20 +856,26 @@ export function instantiateWeek(input: {
   for (let pass = 0; pass < P6_REPAIR_PASSES * 2 && loadSeries.some(overCap); pass++) {
     const over = loadSeries.find(overCap)!;
     const di = weekdayOf(over.date);
-    // ②a 挪日：越界日的质量课挪到更晚的间距合法空平日（让 ATL 多消化一天；
-    // 与已排质量日间隔 ≥2、不占周六、目标日在本周末前、落在可跑日）
+    // ②a 挪日：越界日的质量课挪到更晚的间距合法平日（让 ATL 多消化一天；与已排
+    // 质量日间隔 ≥2、不占周六、目标日在本周末前、落在可跑日）。用户禁止双练时目标日
+    // 必须真的空着——落在已有轻松跑的一天就是造出一个双练日（devops#1054：112km
+    // 周 >110km，此前只查了「不是质量课日」，P5 的周量判据拦不住）；双练获准时可以叠
     const qHere = structuredAt.find((x) => x.di === di);
     if (qHere != null) {
       const qWds = structuredAt.map((x) => x.di);
       const lastBefore = qWds.filter((d) => d < di).at(-1) ?? -10;
       const firstAfter = qWds.filter((d) => d > di).at(0) ?? 7;
+      const mayStack = doubleSessionAllowed(row.totalKm, DOUBLE_ADMISSION_KM, ctx.availability);
       const moveTarget =
-        Array.from({ length: 4 - di }, (_, k) => di + 1 + k).find((d) => isAvailable(d) && !qWds.includes(d) && d - lastBefore >= 2 && firstAfter - d >= 2) ??
-        null;
+        Array.from({ length: 4 - di }, (_, k) => di + 1 + k).find(
+          (d) => isAvailable(d) && !qWds.includes(d) && (mayStack || !instantiated.some((x) => x.di === d)) && d - lastBefore >= 2 && firstAfter - d >= 2,
+        ) ?? null;
       if (moveTarget != null) {
         qHere.di = moveTarget;
         qHere.workout = materializeCourse(qHere.course, dateOf(weekMonday, moveTarget));
         repairs.push(`W${row.week} ${DAY_LABELS[di]} 质量课挪至 ${DAY_LABELS[moveTarget]}（P6 比值收敛）`);
+        // 叠到已有轻松课的日子：轻松课让出结构课占掉的时段
+        for (const slot of instantiated) if (slot.di === moveTarget) slot.minutes = Math.min(slot.minutes, eLimitOf(moveTarget) ?? Infinity);
         byDay.length = 0;
         for (let d = 0; d < 7; d++) byDay.push([]);
         for (const { di: d, workout } of structuredAt) byDay[d]!.push(workout);
@@ -829,7 +887,7 @@ export function instantiateWeek(input: {
     const eIdx = instantiated.findLastIndex((x) => x.di === di);
     if (eIdx < 0) break;
     const x = instantiated[eIdx]!;
-    const band = bandOf(x.flavor);
+    const band = bandOf(x.flavor, x.di);
     if (x.minutes <= band[0] + 1e-6) {
       instantiated.splice(eIdx, 1);
       byDay[di] = byDay[di]!.filter((w) => w.type !== "E");
@@ -884,17 +942,59 @@ export function instantiateWeek(input: {
     coefficients,
     weeksToRace,
     previousDayQuality: ctx.previousDayQuality === true,
-    availableWeekdays: available,
+    ...(ctx.availability != null ? { availability: ctx.availability } : {}),
   });
   if (checks.some((c) => !c.pass)) {
     return { failures: checks.filter((c) => !c.pass).map((c) => `W${row.week} ${c.id}：${c.detail}`) };
   }
+  // 课包守恒终检（devops#1054）：最终物化课表对固定课包逐项对账——贪心落位、
+  // 仲裁修复、模板兜底都经本函数，谁丢了课都在这里拦下
+  const deviation = bagDeviationOf(row.week, input.bagCourses, dayCourses.flat(), sessions, isRaceWeek);
+  if (deviation != null) return { failures: [deviation] };
   return { schedule: { week: row.week, sessions, calendar, loadSeries, checks, repairs }, pmc: state };
+}
+
+/**
+ * 固定课包 vs 落位与最终物化课表（devops#1054）：结构课逐节在案（长跑与质量课配额；
+ * 同型同名的课按节数对账——2Q 周可以有两节一样的课）；E 槽位数与落位一致（常规周
+ * 排位阶段不剪课，E 只会在实例化里经仲裁置休/剪除减少，每一处都有留痕；赛周的赛前
+ * 短 E 是激活点缀不是量载体，排位阶段按训练日帽剪除，不核对 E 账）。未获双练准入时
+ * 课数=跑步日数由 P5 把关。无偏差=null。
+ */
+function bagDeviationOf(
+  week: number,
+  bag: readonly PlannedCourse[],
+  placement: readonly PlannedCourse[],
+  sessions: readonly RunWorkout[],
+  isRaceWeek: boolean,
+): string | null {
+  const countOf = (items: readonly { type?: string | null | undefined; name: string }[]): Map<string, { name: string; count: number }> => {
+    const counts = new Map<string, { name: string; count: number }>();
+    for (const { type, name } of items) {
+      const entry = counts.get(`${type}:${name}`);
+      if (entry) entry.count++;
+      else counts.set(`${type}:${name}`, { name, count: 1 });
+    }
+    return counts;
+  };
+  const expected = countOf(bag.filter((course): course is StructuredCourse => course.kind === "course"));
+  const placed = countOf(sessions.filter((workout) => workout.type !== "E"));
+  for (const key of new Set([...expected.keys(), ...placed.keys()])) {
+    const want = expected.get(key)?.count ?? 0;
+    const got = placed.get(key)?.count ?? 0;
+    if (want !== got) return `W${week} 结构课 ${(expected.get(key) ?? placed.get(key))!.name} 课包 ${want} 节、物化课表 ${got} 节——最终课表与课包不符`;
+  }
+  if (isRaceWeek) return null;
+  const bagSlots = bag.filter((course) => course.kind === "e-slot").length;
+  const placedSlots = placement.filter((course) => course.kind === "e-slot").length;
+  return bagSlots === placedSlots ? null : `W${week} E 槽位与课包不符：课包 ${bagSlots} 个、落位 ${placedSlots} 个——最终课表与课包不符`;
 }
 
 // ── 整段入口：日期分布优化 + 跨周边界 ──
 
 type ScheduledWeek = { schedule: WeekSchedule; pmc: PmcState; distribution: WeekDistributionAudit[] };
+/** 单周排位成功：schedule + 该周选定的候选下标，以及还没试过的可执行候选数（赛周=0）。 */
+type ScheduledChoice = ScheduledWeek & { chosen: number; untried: number };
 type WeekFailure = { failures: string[]; conflicts?: string[] };
 
 type Evaluated = { index: number; dayCourses: PlannedCourse[][]; result: ReturnType<typeof instantiateWeek> };
@@ -942,27 +1042,47 @@ function constraintsOf(weeklyRunDaysMax: number, availability: AvailabilityConst
 /**
  * 用户可用度与课包/位型的硬冲突说明（devops#1043「返回受冲突的日期和约束」）：
  * 全部候选不过门时把原因落在真正的约束上，而不是被它连带出来的周量/时长带
- * 违规。无冲突=null。
+ * 违规。无冲突=null。（课包装不进训练日容量的冲突在排位阶段就上浮，见
+ * bagCapacityConflictOf。）
  */
 function availabilityConflictOf(bag: WeekBag, row: ContentWeekRow, ctx: SingleWeekContext): string | null {
   const availability = ctx.availability;
-  const longRunConflict = longRunDayConflictOf(row, availability?.availableWeekdays ?? null);
-  if (longRunConflict != null) return longRunConflict;
-  if (row.role === "race") return null;
   const available = availability?.availableWeekdays ?? null;
-  const daysMax = effectiveDaysMaxOf(ctx.athlete.weeklyRunDaysMax, availability);
-  const count = bag.courses.length;
-  if (available != null && count > available.length) {
-    const days = available.length === 0 ? "没有可跑日" : `可跑日 ${available.length} 天（${weekdaysLabel(available)}）`;
-    const doubles = availability?.allowsDoubleSessions === false ? "一天两练未获许可" : "一天两练未达准入（周量 ≤110km）";
-    return `W${row.week} 可跑日不足：${days}装不下课包 ${count} 节（${doubles}）`;
+  const structured = bag.courses.filter((course): course is StructuredCourse => course.kind === "course");
+  // 课包里有长跑而周日不可跑（排位阶段已带着同一冲突返回；没带长跑的课包不该报它）
+  if (structured.some((course) => course.type === "LR")) {
+    const longRunConflict = longRunDayConflictOf(row, available);
+    if (longRunConflict != null) return longRunConflict;
   }
-  if (count > daysMax && row.totalKm > DOUBLE_ADMISSION_KM && !doubleSessionAllowed(row.totalKm, DOUBLE_ADMISSION_KM, availability)) {
-    return `W${row.week} 双练未获许可：课包 ${count} 节超过每周跑步日上限 ${daysMax}——周量 ${row.totalKm.toFixed(0)}km 的课包需一天两练才装得下（allows_double_sessions=false）`;
+  if (row.role !== "race") {
+    // 普通轻松课（≥60min）在许可时长内排不出：单课上限或可跑平日最长的一段时窗
+    // 都容不下它的下限（减量/恢复周的 E 走短带，不受此限）
+    const cap = availability?.maxSessionDurationMin ?? null;
+    if (row.role !== "taper" && row.phase !== "recovery" && cap != null && cap < E_DURATION_NORMAL_BAND[0])
+      return `W${row.week} 单课时长上限 ${cap}min 低于普通轻松课下限 ${E_DURATION_NORMAL_BAND[0]}min——普通 E 日无法在许可时长内排课`;
+    const weekdays = [0, 1, 2, 3, 4].filter((di) => isAvailableDay(available, di));
+    const longestWindow = Math.max(0, ...weekdays.map((di) => availability?.windowMinutes?.[di] ?? 0));
+    if (row.role !== "taper" && row.phase !== "recovery" && longestWindow > 0 && longestWindow < E_DURATION_NORMAL_BAND[0])
+      return `W${row.week} 可跑平日的可训练时段最长 ${longestWindow}min，低于普通轻松课下限 ${E_DURATION_NORMAL_BAND[0]}min——普通 E 日无法在许可时长内排课`;
   }
-  const cap = availability?.maxSessionDurationMin ?? null;
-  if (cap != null && cap < E_DURATION_NORMAL_BAND[0] && row.role !== "taper" && row.phase !== "recovery") {
-    return `W${row.week} 单课时长上限 ${cap}min 低于普通轻松课下限 ${E_DURATION_NORMAL_BAND[0]}min——普通 E 日无法在许可时长内排课`;
+  // 结构课装不进可训练时段（devops#1054）：单课时长上限与日内时窗对结构课同样是硬
+  // 约束——长跑固定周日，带日期报；其余结构课在可跑平日里找不到一天容得下。赛周
+  // 只看比赛课以外的课（比赛日是固定事件，不受限）
+  const coefficients = ctx.coefficients ?? DEFAULT_DOSE_COEFFICIENTS;
+  const raceCourse = row.role === "race" ? raceCourseOf(structured, row, coefficients) : null;
+  const eMid = easyMidOf(row);
+  for (const course of structured) {
+    if (course === raceCourse) continue;
+    const minutes = elapsedMinutes(materializeCourse(course, "2000-01-03"), eMid);
+    if (minutes == null) continue;
+    if (course.type === "LR") {
+      if ((sessionLimitOf(availability, 6) ?? Infinity) < minutes)
+        return `W${row.week} ${course.name}≈${Math.round(minutes)}min 超出周日（${dateOf(mondayOf(ctx.weekMonday), 6)}）的可训练时段（${sessionLimitLabelOf(availability, 6)}）`;
+      continue;
+    }
+    const days = [0, 1, 2, 3, 4].filter((di) => isAvailableDay(available, di));
+    if (days.length === 0 || days.some((di) => (sessionLimitOf(availability, di) ?? Infinity) >= minutes)) continue;
+    return `W${row.week} ${course.name}≈${Math.round(minutes)}min 超出可跑日（${weekdaysLabel(days)}）的可训练时段（最长 ${Math.max(...days.map((di) => sessionLimitOf(availability, di) ?? Infinity))}min）`;
   }
   return null;
 }
@@ -972,6 +1092,10 @@ function availabilityConflictOf(bag: WeekBag, row: ContentWeekRow, ctx: SingleWe
  * 同跑步日数的替代落位，逐个走 instantiateWeek（实例化+P 门+C 门），只用过门且与
  * 基准同形态的候选比三项分布指标（被超过的淘汰；有取舍时先保护关键课附近的
  * 恢复，再比日期分布）。全部候选不过门=硬约束无解，带受冲突的约束上浮。
+ *
+ * rejected（devops#1054）=已试过、让后续周排位无解的候选（下标 → 原因）：可执行
+ * =过硬约束且未被否决；只在可执行候选里比分布。返回还没试过的可执行候选数
+ * （untried）——后续周仍排不出时 scheduleWeeks 据此改选。
  */
 function scheduleDistributedWeek(
   bag: WeekBag,
@@ -979,7 +1103,8 @@ function scheduleDistributedWeek(
   ctx: SingleWeekContext,
   pmc: PmcState,
   scope: { prefix: DayFact[]; suffix: DayFact[] | null },
-): ScheduledWeek | WeekFailure {
+  rejected: ReadonlyMap<number, string>,
+): ScheduledChoice | WeekFailure {
   const coefficients = ctx.coefficients ?? DEFAULT_DOSE_COEFFICIENTS;
   const weekMonday = mondayOf(ctx.weekMonday);
   const placementRepairs: string[] = [];
@@ -988,7 +1113,7 @@ function scheduleDistributedWeek(
   const evaluated: Evaluated[] = enumeratePlacements(placement.dayCourses, ctx.availability?.availableWeekdays ?? null).map((dayCourses, index) => ({
     index,
     dayCourses,
-    result: instantiateWeek({ dayCourses, row, ctx, weekMonday, raceWd: null, raceDate: null, pmc, repairs: [...placementRepairs] }),
+    result: instantiateWeek({ dayCourses, row, ctx, weekMonday, raceWd: null, raceDate: null, pmc, repairs: [...placementRepairs], bagCourses: bag.courses }),
   }));
   // 排位后课程校验（C 门）逐候选复算：按落位判定的门（如 E 时长分层 C9）只有过完
   // 实例化后的真实课表才判得出（周量 C1 已在 instantiateWeek 内按物化结果复核）
@@ -997,8 +1122,13 @@ function scheduleDistributedWeek(
     const failed = (ctx.validateWeek?.(candidate.result.schedule.sessions, row) ?? []).filter((check) => !check.pass);
     if (failed.length > 0) candidate.result = { failures: failed.map((check) => `W${row.week} ${check.id}：${check.detail}`) };
   }
-  const feasible = evaluated.filter(isScheduled);
-  if (feasible.length === 0) {
+  const isExecutable = (candidate: Evaluated): candidate is ScheduledCandidate => isScheduled(candidate) && !rejected.has(candidate.index);
+  const rejectionOf = (candidate: Evaluated): string[] => (rejected.has(candidate.index) ? [`使后续周排位无解（${rejected.get(candidate.index)}）`] : []);
+  const executable = evaluated.filter(isExecutable);
+  if (executable.length === 0) {
+    // 过硬约束的候选都被后续周否决：本周排得出，只是没有不连累后面的排法
+    const vetoed = evaluated.find(isScheduled);
+    if (vetoed != null) return { failures: [`W${row.week} 日期分布候选均使后续周排位无解（${rejected.get(vetoed.index)}）`] };
     // 无解原因落在真正的约束上：用户可用度冲突置首位（编排层据此归类结构性无解）
     const conflict = availabilityConflictOf(bag, row, ctx);
     return {
@@ -1006,20 +1136,23 @@ function scheduleDistributedWeek(
       conflicts: conflict == null ? [] : [conflict],
     };
   }
-  // 形态基准：贪心解可行=保持它的课数/跑步日数；不可行=可行候选里保课最多的形态
+  // 形态基准：贪心解可执行=保持它的课数/跑步日数；否则=可执行候选里保课最多的形态
   const base = evaluated[0]!;
-  const reference = isScheduled(base) ? keepRank(base.result.schedule) : Math.max(...feasible.map((candidate) => keepRank(candidate.result.schedule)));
+  const reference = isExecutable(base) ? keepRank(base.result.schedule) : Math.max(...executable.map((candidate) => keepRank(candidate.result.schedule)));
   const metricsOf = (schedule: WeekSchedule): DistributionMetrics => contextMetrics(scope.prefix, factsOfWeek(schedule, row.zones, null), scope.suffix);
-  const scored = feasible
+  const scored = executable
     .filter((candidate) => keepRank(candidate.result.schedule) === reference)
     .map((candidate) => ({ index: candidate.index, metrics: metricsOf(candidate.result.schedule), dominatedBy: null as number | null }));
   for (const entry of scored) entry.dominatedBy = scored.find((other) => other !== entry && dominates(other.metrics, entry.metrics))?.index ?? null;
-  const front = scored.filter((entry) => entry.dominatedBy == null).sort((a, b) => compareCandidates(a.metrics, b.metrics) || a.index - b.index);
-  const chosen = front[0];
+  // 取舍序：非被超过的前沿在前（关键课次日恢复 → 连休 → 连跑），其后是被超过的候选
+  const ranked = scored
+    .slice()
+    .sort((a, b) => Number(a.dominatedBy != null) - Number(b.dominatedBy != null) || compareCandidates(a.metrics, b.metrics) || a.index - b.index);
+  const chosen = ranked[0];
   if (chosen == null) return { failures: [`W${row.week} 排位无解：没有可比较的日期分布候选`] };
-  const chosenCandidate = feasible.find((candidate) => candidate.index === chosen.index)!;
+  const chosenCandidate = executable.find((candidate) => candidate.index === chosen.index)!;
   const baseline = scored.find((entry) => entry.index === base.index) ?? null;
-  const reason =
+  const comparison =
     chosen.index === base.index
       ? "贪心落位在同形态可行候选中未被超过，保持"
       : baseline == null
@@ -1027,14 +1160,16 @@ function scheduleDistributedWeek(
         : dominates(chosen.metrics, baseline.metrics)
           ? `淘汰贪心解：三项均不差且 ${improvementsOf(baseline.metrics, chosen.metrics)} 更好`
           : `有取舍——先保护关键课附近恢复、再比日期分布，选定（${formatDistributionMetrics(chosen.metrics)}）优于贪心解（${formatDistributionMetrics(baseline.metrics)}）`;
+  // 有候选被后续周否决时，先说明这件事，再接原有的比较说明
+  const reason = (rejected.size > 0 ? `优先候选使后续周排位无解（${[...rejected.values()][0]}），只在可执行候选里比较；` : "") + comparison;
   const runDayCount = new Set(chosenCandidate.result.schedule.sessions.map((workout) => workout.date)).size;
   const candidates: DistributionCandidateAudit[] = evaluated.map((candidate) => {
     const entry = scored.find((item) => item.index === candidate.index);
     return {
       label: placementLabel(candidate.dayCourses),
       runDays: runDaysOf(candidate.dayCourses),
-      feasible: isScheduled(candidate),
-      failures: failuresOf(candidate),
+      feasible: isExecutable(candidate),
+      failures: [...failuresOf(candidate), ...rejectionOf(candidate)],
       metrics: entry?.metrics ?? null,
       dominatedBy: entry?.dominatedBy ?? null,
     };
@@ -1042,6 +1177,8 @@ function scheduleDistributedWeek(
   return {
     schedule: chosenCandidate.result.schedule,
     pmc: chosenCandidate.result.pmc,
+    chosen: chosen.index,
+    untried: ranked.length - 1,
     distribution: [
       {
         week: row.week,
@@ -1067,6 +1204,26 @@ interface BatchPass {
 
 /** 交界复核的前向遍数上限：每遍至多把变化往前推一周，批长 +1 遍足以到不动点。 */
 const MAX_DISTRIBUTION_PASSES = 8;
+/**
+ * 回溯改选的次数上限（devops#1054）：改选空间是各周候选数的乘积，不能无界枚举
+ * ——超出的批交回贪心回退（全贪心组合可行时仍能出课表）。单周候选数最多百级
+ * （五跑周 72），120 保证只涉及一个可变周时一定搜得完。
+ */
+const MAX_BACKTRACKS = 120;
+
+/**
+ * 课包集合校验（devops#1054「周课包先校验集合」）：周号须与骨架行一一对应——骨架
+ * 外的周、重复的周、缺课包的周都先报，不带着残缺的集合去排位。
+ */
+function bagSetFailuresOf(bags: readonly WeekBag[], rows: readonly ContentWeekRow[]): string[] {
+  const rowWeeks = new Set(rows.map((row) => row.week));
+  const bagWeeks = bags.map((bag) => bag.week);
+  return [
+    ...bagWeeks.filter((week) => !rowWeeks.has(week)).map((week) => `W${week} 不在骨架行内`),
+    ...[...new Set(bagWeeks.filter((week, index) => bagWeeks.indexOf(week) !== index))].map((week) => `W${week} 课包重复`),
+    ...rows.filter((row) => !bagWeeks.includes(row.week)).map((row) => `W${row.week} 缺课包`),
+  ];
+}
 
 export function scheduleWeeks(bags: WeekBag[], ctx: ScheduleContext): ScheduleResult {
   const coefficients = ctx.coefficients ?? DEFAULT_DOSE_COEFFICIENTS;
@@ -1085,10 +1242,14 @@ export function scheduleWeeks(bags: WeekBag[], ctx: ScheduleContext): ScheduleRe
     ...(ctx.validateWeek != null ? { validateWeek: ctx.validateWeek } : {}),
     ...(ctx.availability != null ? { availability: ctx.availability } : {}),
   });
-  /** 赛周不做分布比较（比赛日固定、激活窗/通勤日是既有赛周例外），无留痕。 */
-  const raceWeekOf = (bag: WeekBag, row: ContentWeekRow, weekCtx: SingleWeekContext, pmc: PmcState): ScheduledWeek | WeekFailure => {
+  /** 赛周不做分布比较（比赛日固定、激活窗/通勤日是既有赛周例外），无留痕、无可改选的候选。 */
+  const raceWeekOf = (bag: WeekBag, row: ContentWeekRow, weekCtx: SingleWeekContext, pmc: PmcState): ScheduledChoice | WeekFailure => {
     const result = scheduleWeek(bag, row, weekCtx, pmc);
-    return "schedule" in result ? { schedule: result.schedule, pmc: result.pmc, distribution: [] } : result;
+    if ("schedule" in result) return { schedule: result.schedule, pmc: result.pmc, distribution: [], chosen: 0, untried: 0 };
+    // 赛周排不出时同样把属于用户可用度的冲突（激活课超时窗等）置首位——编排层据
+    // conflicts 归类结构性无解，否则会被当成「超排位包络」
+    const conflict = result.conflicts?.[0] ?? availabilityConflictOf(bag, row, weekCtx);
+    return conflict == null ? result : { failures: [conflict, ...result.failures], conflicts: [conflict] };
   };
   /** 批首周之前 7 天的边界前缀（整批指标与贪心回退留痕用）。 */
   const firstPrefix = (weeks: WeekSchedule[], index: number, row: ContentWeekRow): DayFact[] => {
@@ -1096,45 +1257,77 @@ export function scheduleWeeks(bags: WeekBag[], ctx: ScheduleContext): ScheduleRe
     const previous = weeks[index - 1];
     return previous != null && previous.week === row.week - 1 ? factsOf(previous) : boundaryPrefix(ctx.boundary, mondayOfWeek(row));
   };
+  const loadMeta: LoadMeta = {
+    model: "exp-pmc-7-42",
+    seed: { acute: ctx.pmcSeed.acute, chronic: ctx.pmcSeed.chronic, source: "生成时点直读生产 PMC 当日快照（daily_training_load.acute_load/chronic_load）" },
+    coefficient_version: coefficients === DEFAULT_DOSE_COEFFICIENTS ? COEFFICIENT_VERSION : "custom",
+  };
 
-  /** 一遍前向；suffixOf=前一遍排出的下一周事实（首遍=下一周未知）。 */
+  // 课包先校验集合，再按周序推进负荷（devops#1054）：传入顺序不决定排位顺序——
+  // 负荷沿日期正向传递，跨周判定（P2 的上周日质量课）看到的才是真正的上一周
+  const bagFailures = bagSetFailuresOf(bags, ctx.rows);
+  if (bagFailures.length > 0) return { weeks: [], distribution: [], loadMeta, ok: false, failures: bagFailures, conflicts: [] };
+  const ordered = [...bags].sort((a, b) => a.week - b.week);
+  const backtrackLimit = ctx.backtrackLimit ?? MAX_BACKTRACKS;
+
+  /**
+   * 一遍前向；suffixOf=前一遍排出的下一周事实（首遍=下一周未知）。某周排不出时
+   * 优先调整可变周（devops#1054）：回到最近的可变周（有分布候选的常规周）改选
+   * 下一个候选、重排其后各周——后续周因负荷轨迹失效时，不再直接整批回退到被
+   * 其他可执行组合超过的排法；回溯预算用尽或没有候选可换才判本遍无解。
+   */
   const run = (suffixOf: ((week: number) => DayFact[] | null) | null): BatchPass => {
     const pass: BatchPass = { weeks: [], distribution: [], failures: [], conflicts: [] };
+    const chosen: Array<ScheduledChoice | undefined> = ordered.map(() => undefined);
+    /** 被后续周否决的候选（下标 → 原因）：只在给定前缀下成立，前缀一改就作废。 */
+    const rejected: Array<Map<number, string>> = ordered.map(() => new Map());
+    let index = 0;
     let pmc: PmcState = { ...ctx.pmcSeed };
-    bags.forEach((bag, index) => {
-      const row = rowOfWeek.get(bag.week);
-      if (row == null) {
-        pass.failures.push(`W${bag.week} 不在骨架行内`);
-        return;
-      }
+    let backtracks = 0;
+    /** 首选组合的失败原因：预算用尽时报它，而不是最后一个被否决组合的。 */
+    let firstFailure: WeekFailure | null = null;
+    while (index < ordered.length) {
+      const bag = ordered[index]!;
+      const row = rowOfWeek.get(bag.week)!;
       // 前缀=上一周排位产物（批内连续周）或已知边界日历（首周接历史/上一批末周）
       const prefix = firstPrefix(pass.weeks, index, row);
       const weekCtx = weekContextOf(row, prefix);
       const result =
         row.role === "race"
           ? raceWeekOf(bag, row, weekCtx, pmc)
-          : scheduleDistributedWeek(bag, row, weekCtx, pmc, { prefix, suffix: suffixOf == null ? null : suffixOf(row.week + 1) });
+          : scheduleDistributedWeek(bag, row, weekCtx, pmc, { prefix, suffix: suffixOf == null ? null : suffixOf(row.week + 1) }, rejected[index]!);
       if ("failures" in result) {
-        pass.failures.push(...result.failures);
-        pass.conflicts.push(...(result.conflicts ?? []));
-        return;
+        firstFailure ??= result;
+        let back = index - 1;
+        while (back >= 0 && (chosen[back]?.untried ?? 0) === 0) back--;
+        if (back < 0 || backtracks >= backtrackLimit) {
+          pass.failures.push(...firstFailure.failures);
+          pass.conflicts.push(...(firstFailure.conflicts ?? []));
+          return pass;
+        }
+        backtracks++;
+        rejected[back]!.set(chosen[back]!.chosen, result.failures[0]!);
+        for (let later = back + 1; later < ordered.length; later++) rejected[later]!.clear();
+        pass.weeks.length = back;
+        pass.distribution = pass.distribution.filter((audit) => audit.week < ordered[back]!.week);
+        pmc = chosen[back - 1]?.pmc ?? { ...ctx.pmcSeed };
+        index = back;
+        continue;
       }
-      pmc = result.pmc;
-      pass.weeks.push(result.schedule);
+      pass.weeks[index] = result.schedule;
       pass.distribution.push(...result.distribution);
-    });
+      chosen[index] = result;
+      pmc = result.pmc;
+      index++;
+    }
     return pass;
   };
-  /** 贪心批（不做分布比较）：分布优化无解时的回退日历；留痕只记贪心候选与回退原因。 */
+  /** 贪心批（不做分布比较）：改选也排不出时的回退日历；留痕只记贪心候选与回退原因。 */
   const greedyPass = (why: string): BatchPass => {
     const pass: BatchPass = { weeks: [], distribution: [], failures: [], conflicts: [] };
     let pmc: PmcState = { ...ctx.pmcSeed };
-    for (const bag of bags) {
-      const row = rowOfWeek.get(bag.week);
-      if (row == null) {
-        pass.failures.push(`W${bag.week} 不在骨架行内`);
-        break;
-      }
+    for (const bag of ordered) {
+      const row = rowOfWeek.get(bag.week)!;
       const result = scheduleWeek(bag, row, weekContextOf(row, firstPrefix(pass.weeks, pass.weeks.length, row)), pmc);
       if ("failures" in result) {
         pass.failures.push(...result.failures);
@@ -1183,8 +1376,8 @@ export function scheduleWeeks(bags: WeekBag[], ctx: ScheduleContext): ScheduleRe
   // 四项均不变差才采纳，否则停在上一遍；选择不再变化=不动点（留痕与最终日历
   // 一致）。任一周不过门同样停在上一遍。
   const metricsOfPass = (pass: BatchPass): DistributionMetrics =>
-    distributionMetrics([...boundaryPrefix(ctx.boundary, mondayOfWeek(rowOfWeek.get(bags[0]!.week)!)), ...pass.weeks.flatMap(factsOf)]);
-  for (let pass = 2; accepted.failures.length === 0 && bags.length > 1 && pass <= Math.min(bags.length + 1, MAX_DISTRIBUTION_PASSES); pass++) {
+    distributionMetrics([...boundaryPrefix(ctx.boundary, mondayOfWeek(rowOfWeek.get(ordered[0]!.week)!)), ...pass.weeks.flatMap(factsOf)]);
+  for (let pass = 2; accepted.failures.length === 0 && ordered.length > 1 && pass <= Math.min(ordered.length + 1, MAX_DISTRIBUTION_PASSES); pass++) {
     const lookahead = new Map(accepted.weeks.map((schedule) => [schedule.week, factsOf(schedule)]));
     const next = run((week) => lookahead.get(week) ?? null);
     if (next.failures.length > 0) break;
@@ -1195,8 +1388,8 @@ export function scheduleWeeks(bags: WeekBag[], ctx: ScheduleContext): ScheduleRe
     if (!noWorseBatch(metricsOfPass(next), metricsOfPass(accepted))) break;
     accepted = next;
   }
-  // 分布优化让整批无解而贪心日历可行：不让优化把原本可行的批变无解（改排后的前
-  // 几周改了进入后续周的负荷轨迹，后续周可能撞 P6 cap）——回退贪心日历并留痕
+  // 改选可变周之后整批仍无解而贪心日历可行：不让优化把原本可行的批变无解——
+  // 回退贪心日历并留痕
   if (accepted.failures.length > 0) {
     const greedy = greedyPass(`分布优化后的日历排位无解（${accepted.failures[0]}）`);
     if (greedy.failures.length === 0) accepted = greedy;
@@ -1211,17 +1404,11 @@ export function scheduleWeeks(bags: WeekBag[], ctx: ScheduleContext): ScheduleRe
     audit.converged = sameFacts(audit.suffix, finalFacts.get(audit.week + 1)?.facts ?? null);
     if (!audit.converged) audit.reason = `${audit.reason}；交界复核未收敛（选择时依据的下一周与最终日历不同）`;
   }
-  const coefficientVersion = coefficients === DEFAULT_DOSE_COEFFICIENTS ? COEFFICIENT_VERSION : "custom";
-  const loadMeta: LoadMeta = {
-    model: "exp-pmc-7-42",
-    seed: { acute: ctx.pmcSeed.acute, chronic: ctx.pmcSeed.chronic, source: "生成时点直读生产 PMC 当日快照（daily_training_load.acute_load/chronic_load）" },
-    coefficient_version: coefficientVersion,
-  };
   return {
     weeks: accepted.weeks,
     distribution: accepted.distribution,
     loadMeta,
-    ok: accepted.weeks.length === bags.length && accepted.failures.length === 0,
+    ok: accepted.weeks.length === ordered.length && accepted.failures.length === 0,
     failures: accepted.failures,
     conflicts: accepted.conflicts,
   };

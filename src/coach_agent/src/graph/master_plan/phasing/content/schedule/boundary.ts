@@ -62,6 +62,24 @@ function plannedFact(date: string, sessions: WeeklyPlan["sessions"], zones: Pace
   };
 }
 
+/** 活动按 Provider 的 shanghaiDay 归组（同日多条合计）。 */
+const activitiesByDayOf = (activities: readonly PhasingActivityInput[]): Map<string, PhasingActivityInput[]> => {
+  const byDay = new Map<string, PhasingActivityInput[]>();
+  for (const activity of activities) byDay.set(activity.shanghaiDay, [...(byDay.get(activity.shanghaiDay) ?? []), activity]);
+  return byDay;
+};
+
+/**
+ * 已发生日期的事实：生成当天之前按实绩（活动没覆盖=未知）；生成当天还没有跑步活动
+ * ≠休息（上午生成、下午的长跑还没发生）——按生效安排，没有安排=未知（返回 null）。
+ */
+function elapsedFact(date: string, asOfDay: string | null | undefined, activities: Map<string, PhasingActivityInput[]> | null): DayFact | null {
+  if (asOfDay == null || date > asOfDay) return null;
+  if (activities == null) return unknownDay(date);
+  const actual = actualFact(date, activities.get(date) ?? []);
+  return date < asOfDay || actual.run === true ? actual : null;
+}
+
 export function boundaryBefore(args: {
   /** 批次首周周一。 */
   startMonday: string;
@@ -74,21 +92,39 @@ export function boundaryBefore(args: {
   /** 存量周所处周的训练带（质量课判定用）；缺省=质量课属性未知。 */
   zones?: PaceZones | null;
 }): DayFact[] {
-  const activitiesByDay = new Map<string, PhasingActivityInput[]>();
-  for (const activity of args.activities ?? []) activitiesByDay.set(activity.shanghaiDay, [...(activitiesByDay.get(activity.shanghaiDay) ?? []), activity]);
+  const activities = args.activities == null ? null : activitiesByDayOf(args.activities);
   return Array.from({ length: 7 }, (_, offset): DayFact => {
     const date = addDays(args.startMonday, offset - 7);
-    if (args.asOfDay != null && date <= args.asOfDay) {
-      const actual = args.activities == null ? unknownDay(date) : actualFact(date, activitiesByDay.get(date) ?? []);
-      // 生成当天还没有跑步活动≠休息（上午生成、下午的长跑还没发生）：按生效安排，
-      // 没有安排=未知
-      if (date < args.asOfDay || actual.run === true) return actual;
-    }
-    if (args.existingDoc == null) return unknownDay(date);
-    return plannedFact(
-      date,
-      args.existingDoc.sessions.filter((session) => session.date === date),
-      args.zones ?? null,
+    return (
+      elapsedFact(date, args.asOfDay, activities) ??
+      (args.existingDoc == null
+        ? unknownDay(date)
+        : plannedFact(
+            date,
+            args.existingDoc.sessions.filter((session) => session.date === date),
+            args.zones ?? null,
+          ))
     );
+  });
+}
+
+/**
+ * 一个发布周的最终日事实（devops#1054：追赶/调整之后按最终可发布日历审计与聚合）：
+ * 文档里有安排的日期按安排（含调整保留下来的已过安排）；文档里没有行的已过日期
+ * ——首次追赶冻结掉的课——是否按计划执行无从而知：有实绩按实绩，活动没覆盖=未知。
+ */
+export function publishedWeekFacts(args: {
+  weekMonday: string;
+  asOfDay: string | null;
+  activities?: readonly PhasingActivityInput[];
+  doc: WeeklyPlan | null;
+  zones?: PaceZones | null;
+}): DayFact[] {
+  const activities = args.activities == null ? null : activitiesByDayOf(args.activities);
+  const sessions = args.doc?.sessions ?? [];
+  return Array.from({ length: 7 }, (_, offset): DayFact => {
+    const date = addDays(args.weekMonday, offset);
+    const onDate = sessions.filter((session) => session.date === date);
+    return onDate.length > 0 ? plannedFact(date, onDate, args.zones ?? null) : (elapsedFact(date, args.asOfDay, activities) ?? unknownDay(date));
   });
 }

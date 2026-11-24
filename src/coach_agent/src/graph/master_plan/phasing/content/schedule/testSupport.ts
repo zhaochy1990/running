@@ -6,6 +6,7 @@ import type { AvailabilityConstraints } from "./availability.js";
 import { contextMetrics, type DistributionMetrics, factsOfWeek } from "./distribution.js";
 import {
   type ESlotCourse,
+  instantiateWeek,
   type PlannedCourse,
   type PmcState,
   type ScheduleContext,
@@ -135,9 +136,43 @@ export const generatorInput = (rows: ContentWeekRow[], overrides: Partial<Conten
 export const placementOf = (byWeekday: Record<number, PlannedCourse[]>): PlannedCourse[][] =>
   Array.from({ length: 7 }, (_, weekday) => byWeekday[weekday] ?? []);
 
-/** 可用度约束（缺省只声明可跑日）。 */
+/**
+ * 按手工落位直接实例化并过全部门（排位修复与课包守恒的单测用）；课包缺省=落位本身。
+ */
+export const instantiatePlacement = (args: {
+  byWeekday: Record<number, PlannedCourse[]>;
+  row: ContentWeekRow;
+  availability?: AvailabilityConstraints;
+  pmc?: PmcState;
+  daysMax?: number;
+  bagCourses?: PlannedCourse[];
+}): ReturnType<typeof instantiateWeek> => {
+  const placement = placementOf(args.byWeekday);
+  return instantiateWeek({
+    dayCourses: placement,
+    row: args.row,
+    ctx: {
+      weekMonday: PLAN_START_MONDAY,
+      race: RACE,
+      athlete: { weeklyRunDaysMax: args.daysMax ?? 4 },
+      ...(args.availability != null ? { availability: args.availability } : {}),
+    },
+    weekMonday: PLAN_START_MONDAY,
+    raceWd: null,
+    raceDate: null,
+    pmc: args.pmc ?? PMC_SEED,
+    repairs: [],
+    bagCourses: args.bagCourses ?? placement.flat(),
+  });
+};
+
+/** 排位失败的原因清单；成功=空数组。 */
+export const failuresOfPlacement = (result: ReturnType<typeof instantiateWeek>): string[] => ("failures" in result ? result.failures : []);
+
+/** 可用度约束（缺省只声明可跑日；未声明日内时窗=不限）。 */
 export const availabilityOf = (availableWeekdays: number[], extra: Partial<AvailabilityConstraints> = {}): AvailabilityConstraints => ({
   availableWeekdays,
+  windowMinutes: null,
   maxSessionDurationMin: null,
   allowsDoubleSessions: null,
   ...extra,
@@ -152,14 +187,6 @@ export const scheduleCtxOf = (rows: ContentWeekRow[], overrides: Partial<Schedul
   pmcSeed: PMC_SEED,
   ...overrides,
 });
-
-/** 课的跑步时长（分钟，time 步直读）——E 时长上限核对用。 */
-export const runMinutesOf = (workout: RunWorkout): number =>
-  workout.blocks.reduce(
-    (total, block) =>
-      total + block.repeat * block.steps.reduce((sum, st) => sum + (st.step_kind === "work" && st.duration.kind === "time_s" ? st.duration.value / 60 : 0), 0),
-    0,
-  );
 
 /** 固定课包当模型输出（零 LLM，走真实编排+排位+门禁）。 */
 export const draftOf = (bags: WeekBag[]): ContentDraft =>

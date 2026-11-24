@@ -9,7 +9,6 @@ import { hasQualitySegment } from "./derive.js";
 import type { ContentGeneratorInput } from "./doctrine.js";
 import type { ScheduledOutcome } from "./generate.js";
 import { formatDistributionMetrics } from "./schedule/distribution.js";
-import { courseMinutes } from "./schedule/dose.js";
 
 const pace = (s: number | null | undefined) => (s == null ? "?" : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`);
 const wdOf = (date: string) => (new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7;
@@ -28,7 +27,7 @@ export function danielsAudit(outcome: ScheduledOutcome, input: ContentGeneratorI
     ...outcome.scheduleChecks.flatMap((wc) => wc.filter((c) => !c.pass).map((c) => c.id)),
   ];
   if (failedIds.length > 0)
-    items.push({ item: "硬校验门", verdict: "fail", expectation: "C1-C17/P1-P8 全绿（丹系构造约束）", actual: `挂：${failedIds.join(";")}` });
+    items.push({ item: "硬校验门", verdict: "fail", expectation: "C1-C17/P1-P9 全绿（丹系构造约束）", actual: `挂：${failedIds.join(";")}` });
 
   const flat = outcome.weeks.flatMap(({ week, sessions }) => sessions.map((w) => ({ week, w })));
   const wkOf = (n: number) => outcome.weeks.find((x) => x.week === n)?.sessions ?? [];
@@ -240,27 +239,6 @@ export function danielsAudit(outcome: ScheduledOutcome, input: ContentGeneratorI
           ? `选定 ${chosen.label}：${formatDistributionMetrics(audit.finalMetrics)}；可行候选 ${audit.candidates.filter((candidate) => candidate.feasible).length}/${audit.candidates.length}；${audit.reason}；${audit.constraints.join("，")}`
           : `选定 ${chosen.label}（${formatDistributionMetrics(chosen.metrics)}）被候选 ${superseding.label}（${formatDistributionMetrics(superseding.metrics)}）超过——分布优化与审计不一致`,
     });
-  }
-
-  // 8. 单课时长上限（devops#1043）：E 课由排位钳到用户许可值；长跑/质量课时长
-  // 由课包决定、排位不裁剪——超限如实告警（解在 L3 压长跑量或 L4a 改课）
-  const capMin = input.availability?.maxSessionDurationMin;
-  if (capMin != null) {
-    for (const row of rows) {
-      const over = wkOf(row.week).flatMap((workout) => {
-        // 比赛课是目标事件不是训练课，不计
-        if (workout.type === "E" || (row.role === "race" && workout.date === input.race.date)) return [];
-        const minutes = courseMinutes(workout);
-        return minutes != null && minutes > capMin ? [`${workout.name}≈${Math.round(minutes)}min`] : [];
-      });
-      if (over.length > 0)
-        items.push({
-          item: `W${row.week} 单课时长上限`,
-          verdict: "warn",
-          expectation: `单课 ≤${capMin} 分钟（用户可用性）`,
-          actual: `${over.join("、")} 超限（结构课时长由课包决定，排位不裁剪）`,
-        });
-    }
   }
 
   return items;

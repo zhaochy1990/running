@@ -80,6 +80,7 @@ test("content 节点：真实形态请求的可用度与历史边界进入排位
   assert.equal(scheduled.distribution.length, update.contentInput!.rows.filter((row) => row.role !== "race").length, "每个常规周一份分布留痕");
   assert.deepEqual(update.contentInput!.availability, {
     availableWeekdays: [0, 1, 2, 3, 4, 5, 6],
+    windowMinutes: null,
     maxSessionDurationMin: 180,
     allowsDoubleSessions: false,
   });

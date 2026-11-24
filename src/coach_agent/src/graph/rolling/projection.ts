@@ -33,7 +33,8 @@ import { buildProvenSessions, type ContentGeneratorInput, type ContentWeekRow, Q
 import { generateWeekContent, type ScheduledOutcome } from "../master_plan/phasing/content/generate.js";
 import { projectZones } from "../master_plan/phasing/content/project.js";
 import { schedulingAvailabilityOf } from "../master_plan/phasing/content/schedule/availability.js";
-import { boundaryBefore } from "../master_plan/phasing/content/schedule/boundary.js";
+import { boundaryBefore, publishedWeekFacts } from "../master_plan/phasing/content/schedule/boundary.js";
+import { contextMetrics, type DayFact } from "../master_plan/phasing/content/schedule/distribution.js";
 import { buildPhaseEvidence, type PhaseEvidence, type PhasingActivityInput } from "../master_plan/phasing/evidence.js";
 import { buildWeeklySeries, habitualBaseline, type WeeklySeries } from "../master_plan/phasing/load/baseline.js";
 import { buildLoadPlan } from "../master_plan/phasing/load/expand.js";
@@ -377,29 +378,7 @@ export async function runProjectionCore(deps: RollingDeps, input: RollingProject
         `rolling content fell back to the template after ${MAX_OUTER_CONTENT_TRIES} outer tries`,
       );
 
-    // ⑧ 审计：原样进 outcome（fail>0 照录 warn、decision 仍 completed，调用方判定）。
-    const items = danielsAudit(scheduled, batchInput);
-    const audit: DanielsAudit = {
-      items,
-      summary: {
-        pass: items.filter((item) => item.verdict === "pass").length,
-        warn: items.filter((item) => item.verdict === "warn").length,
-        fail: items.filter((item) => item.verdict === "fail").length,
-      },
-    };
-    if (master.race.distance === "HM" && audit.summary.fail > 0)
-      return {
-        decision: "infeasible",
-        reason: "半马课表硬校验失败",
-        failedChecks: items.filter((item) => item.verdict === "fail").map((item) => ({ id: item.item, detail: item.actual })),
-      };
-    if (audit.summary.fail > 0)
-      logger.warn(
-        { fail: audit.summary.fail, items: items.filter((item) => item.verdict === "fail").map((item) => item.item) },
-        "rolling daniels audit has hard failures (returned as-is, caller decides)",
-      );
-
-    // ⑨ 偏差 + 周课文档；⑩ 过去日期处理区分两条路径：调整已有课表=按日合并
+    // ⑧ 偏差 + 周课文档；⑨ 过去日期处理区分两条路径：调整已有课表=按日合并
     // （旧文档截至今天逐字段保留、明天起才替换）；首次追赶出课=删除明天前的
     // 排课（该周尚无存量课表，没有可保留的旧安排）。
     const deviation = batchWeeks.map((week) => {
@@ -428,6 +407,33 @@ export async function runProjectionCore(deps: RollingDeps, input: RollingProject
     // 未冻结的新文档重写过去安排。
     if (weeklyDocs.length === 0) return { decision: "no_op", reason: "批窗内没有可安全发布的未来课程（已过日期不重写）" };
 
+    // ⑩ 审计基于最终可发布日历（devops#1054）：追赶冻结、调整合并之后再审——已过日期
+    // 的课不审、不聚合，周文档与审计描述的是同一份课表。fail>0 照录 warn、decision
+    // 仍 completed，调用方判定。
+    const items = danielsAudit(
+      publishedAuditInputOf(scheduled, weeklyDocs, { rows, planStartMonday: master.planStartMonday, asOfDay, activities }),
+      batchInput,
+    );
+    const audit: DanielsAudit = {
+      items,
+      summary: {
+        pass: items.filter((item) => item.verdict === "pass").length,
+        warn: items.filter((item) => item.verdict === "warn").length,
+        fail: items.filter((item) => item.verdict === "fail").length,
+      },
+    };
+    if (master.race.distance === "HM" && audit.summary.fail > 0)
+      return {
+        decision: "infeasible",
+        reason: "半马课表硬校验失败",
+        failedChecks: items.filter((item) => item.verdict === "fail").map((item) => ({ id: item.item, detail: item.actual })),
+      };
+    if (audit.summary.fail > 0)
+      logger.warn(
+        { fail: audit.summary.fail, items: items.filter((item) => item.verdict === "fail").map((item) => item.item) },
+        "rolling daniels audit has hard failures (returned as-is, caller decides)",
+      );
+
     return {
       decision: "completed",
       window,
@@ -446,6 +452,50 @@ export async function runProjectionCore(deps: RollingDeps, input: RollingProject
       failedChecks: [{ id: "rolling_generation_failed", detail: error instanceof Error ? error.message : String(error) }],
     };
   }
+}
+
+/**
+ * 最终可发布日历的审计输入（devops#1054）：各周会话换成发布文档里真正会发布的课
+ * （追赶冻结、调整合并之后）；有周被裁短时，分布留痕的边界与指标按最终日历重算
+ * ——已过日期先看实绩（活动覆盖时），没有覆盖=未知。整批照发的批与排位产物一致。
+ */
+function publishedAuditInputOf(
+  scheduled: ScheduledOutcome,
+  docs: WeeklyPlan[],
+  context: { rows: ContentWeekRow[]; planStartMonday: string; asOfDay: string; activities: readonly PhasingActivityInput[] },
+): ScheduledOutcome {
+  const { rows, planStartMonday, asOfDay, activities } = context;
+  const docOf = new Map(docs.map((doc) => [doc.week_index, doc]));
+  // 真正会发布的课=发布文档里带结构的跑步课：调整合并时已过日期发布的是锁定的旧课，
+  // 力量换日后轻松课的日期也以文档为准——不能拿排位产物按日期去对
+  const published = scheduled.weeks.map(({ week }) => ({
+    week,
+    sessions: (docOf.get(week)?.sessions ?? []).flatMap((session) => (session.kind === "run" && session.spec != null ? [session.spec] : [])),
+  }));
+  // 没有周被裁短（冻结/合并只换掉了同日的课）：分布留痕照旧
+  if (published.every(({ sessions }, index) => sessions.length === scheduled.weeks[index]!.sessions.length)) return { ...scheduled, weeks: published };
+  const factsOf = (index: number): DayFact[] => {
+    const { week } = scheduled.weeks[index]!;
+    const row = rows.find((candidate) => candidate.week === week)!;
+    return publishedWeekFacts({
+      weekMonday: addDays(planStartMonday, (week - 1) * 7),
+      asOfDay,
+      activities,
+      doc: docOf.get(week) ?? null,
+      zones: row.zones,
+    });
+  };
+  const weekIndex = new Map(scheduled.weeks.map(({ week }, index) => [week, index]));
+  return {
+    ...scheduled,
+    weeks: published,
+    distribution: scheduled.distribution.map((audit) => {
+      const index = weekIndex.get(audit.week)!;
+      const prefix = index > 0 ? factsOf(index - 1) : audit.prefix;
+      const suffix = scheduled.weeks[index + 1] == null ? null : factsOf(index + 1);
+      return { ...audit, prefix, suffix, finalMetrics: contextMetrics(prefix, factsOf(index), suffix) };
+    }),
+  };
 }
 
 /** diff：新周文档 target km vs 现 weekly 行（或快照周缺行=0）的对照（r1）。 */
