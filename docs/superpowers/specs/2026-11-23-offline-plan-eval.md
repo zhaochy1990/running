@@ -15,8 +15,8 @@
 
 ### 提交、Generate、Evaluate
 
-1. **提交。** 用户选择一个 Agent 版本、多选或全选场景，填写 worker 副本数和所需的镜像环境变量，然后一键启动。测评 API 校验引用并在同一事务中保存任务和执行项。任一场景不存在、配置无效或缺少有效快照，整次提交返回错误。重试同一提交时按幂等键取回原 task_id。
-2. **Generate。** 调度器按 Agent 版本投递消息并启动或复用对应 worker。worker 领取执行项，用冻结的跑者快照响应 Agent 的数据工具调用，按本项生成请求运行所选版本并调用生成模型 API。工作台支持手动调整并发，生成结束后启动清理。详见 [调度与接管](https://github.com/zhaochy1990/stride-devops/issues/1046)。
+1. **提交。** 用户选择一个 Agent 版本、多选或全选场景，填写 worker 副本数和所需的镜像环境变量，然后一键启动。测评 API 校验引用并在同一事务中保存任务和待投递的执行项。任一场景不存在、配置无效或缺少有效快照，整次提交返回错误。重试同一提交时按幂等键取回原 task_id。
+2. **Generate。** 调度器按 Agent 版本投递消息并启动或复用对应 worker。worker 按消息中的执行项 ID 领取完整的冻结输入，用该跑者快照响应 Agent 的数据工具调用，按本项生成请求运行所选版本并调用生成模型 API。工作台支持手动调整并发，生成结束后启动清理。详见 [调度与接管](https://github.com/zhaochy1990/stride-devops/issues/1046)。
 3. **保存 Artifact。** worker 按预期类型执行 Schema 校验，保存 Artifact 原文、摘要和校验结果。有效产物的持久化与执行项切换到可评分状态在同一事务提交，提交成功后才进入 Evaluate。输出格式无效时保留原文和校验错误，模型调用失败且无输出时记录 Generate 错误。这两种情况均跳过该执行项的 Evaluate，其他执行项继续。
 4. **Evaluate。** 运行器从任务读取冻结的规则版本和实现，逐条构造 Check，使用已保存的 Artifact、跑者快照和生成请求进行检查。v1 运行固定规则。LLM as Judge 复用同一接口，作为后续扩展。
 5. **接管与汇总。** 每个快照执行项有独立租约，API 拒绝过期租约写回。Artifact 保存前中断可能再次调用生成模型，保存后接管者恢复未完成的检查。打开或导出报告时，API 按 task_id 读取明细并汇总。
@@ -61,11 +61,18 @@ flowchart LR
 }
 ```
 
-RunnerSnapshot 在「测试数据」独立维护。每份快照包含脱敏标识、数据截止日、目标、训练约束和历史事实。滚动快照还包含当时的赛季计划与已排课表。历史数据截止日按上海日历日记录。
+RunnerSnapshot 在「测试数据」独立维护，导入文件用 `schema_version` 标识格式。导入时校验快照结构，任务提交时再按所选场景和产物类型校验必要输入。配置错误定位到场景、快照和字段。校验通过后，在同一事务写入任务的冻结规则与各条执行项的数据包。
+
+| 快照部分 | 内容 |
+|---|---|
+| 基础信息 | 脱敏标识、显示名、生成类型和上海数据截止日 |
+| 生成输入 | 比赛目标、训练可用性和生成路径所需的约束，沿用 Coach Agent 的请求字段 |
+| 跑者历史 | Provider 读取的结构化档案、逐条活动、比赛成绩、校准及覆盖信息，区分未覆盖、缺测和已覆盖但无记录 |
+| 滚动输入 | 已启用的赛季计划及其政策包、已排周记录和已有完整周课表 |
 
 新建和导入快照时由平台生成随机 UUID 作为 `snapshot_id`，编辑时保留原 ID。 列表空间不足时缩略显示，详情页展示完整 UUID。列表的用户名使用脱敏显示名，项目和目标成绩分别读取 `goal.distance` 和 `goal.target_time`。生成类型通过可选的 `generation_type` 声明，`new_season` 对应新建赛季，`rolling_continuation` 对应到期接续，`rolling_catch_up` 对应漏排追赶。缺少该字段的历史数据用「—」展示。
 
-生成请求按所选产物类型和快照构造，场景页提供只读请求 JSON，切换快照可核对各份生成输入。新建赛季使用 `MasterPlanGraphRequest`，滚动排课使用 `RollingJobRequest`。每条 SnapshotExecution 保存本次实际使用的请求与快照内容。
+生成请求按所选产物类型和快照构造，场景页提供只读请求 JSON，切换快照可核对各份生成输入。新建赛季使用 `MasterPlanGraphRequest`，滚动排课使用 `RollingJobRequest`。每条 SnapshotExecution 保存本次实际使用的请求、快照内容和冻结执行时点。`request_id` 随执行项固定，重试和接管沿用。滚动的实际起始周由 Agent 根据已排周记录和执行时点推导，规则预期起始周由 Evaluate 读取。
 
 产物统一保存为 **Artifact**。v1 的 `master_plan` 包含赛季计划和首批周课表，`weekly_plan_batch` 包含起止周与该批周课表。Evaluate 对两类产物都通过 `artifact.weekly_docs` 访问周课。
 
@@ -79,6 +86,28 @@ RunnerSnapshot 在「测试数据」独立维护。每份快照包含脱敏标�
 | 滚动排课输入 | 展示已有赛季计划 ID、课表归属计划 ID、状态与起始日，以及阶段策略、负荷骨架和锚点的覆盖。已排周记录（`week_start`）和完整周课表独立展示。[`RollingJobRequest.master_plan_id`](../../../src/coach_contract/src/weekly_plan/rolling.ts#L12) 只校验 Provider 读到的计划。规则预期起始周独立展示，实际出课范围由 [滚动 handler](../../../src/coach_agent_worker/src/kernel/rolling/handler.ts#L76) 从冻结输入推导 |
 
 详情页默认展示结构化概要，原始 JSON 可展开核对，编辑有独立入口。场景页负责展示选择场景与快照后构造的实际请求 JSON。原型示例没有上传的历史和计划应显示缺测或未覆盖。请求预览保留已录入的训练可用性，缺失字段使用演示默认值。正式运行时，导入和任务提交按生成路径校验真实输入，保留具体缺失字段与工具所需数据；可选缺测按快照原值保存。
+
+### 测评 API 与 worker 交接
+
+[测评 API 与冻结输入契约实施工单](https://github.com/zhaochy1990/stride-devops/issues/1055)负责快照导入、冻结和这组内部接口。
+
+API 在提交事务成功后确保对应版本队列存在、发布待投递项并启动或复用 Deployment。RabbitMQ 消息只携带协议版本和执行项 ID。
+
+```json
+{"schema_version": 1, "snapshot_execution_id": "input-a"}
+```
+
+| 操作 | 请求与行为 |
+|---|---|
+| 领取 Generate | worker 发送执行项 ID 和领取请求 ID。API 鉴别 worker 身份并校验版本，在有效租约内，同一领取请求可取回原租约。新领取返回租约代次、期限、预期产物类型、冻结执行时点、完整快照和生成请求。已有其他有效租约时返回可重试时间，Generate 已终结时返回持久化结果摘要 |
+| 续租 | worker 提交执行项 ID 与租约代次。API 按服务端时间检查身份与期限，再延长有效租约。接管仅在原租约失效后发生，服务端递增代次 |
+| 提交 Generate 结果 | worker 提交执行项 ID、租约代次和提交 ID，回传 Artifact 原文字节及 Schema 校验结果，或结构化生成错误。相同提交重发时返回原确认。不同内容冲突或旧租约试图提交新结果时，API 保留已持久化结果 |
+
+worker 领取后一次获得完整冻结数据包，使用本条执行项的只读 Provider 响应多次工具调用。必需数据缺测的错误记录工具名和缺少的数据。目标版本的半马生成错误沿用相同回传接口。同批其他执行项可继续运行。
+
+生成结果持久化成功或 API 确认 Generate 已终结后，worker ACK 消息。有效 Artifact 和 Evaluate 待执行状态同事务提交，Schema 校验失败留存原文并跳过 Evaluate。Evaluate 接管时读取已保存的 Artifact，使用本任务冻结的检查定义。
+
+API 按 RabbitMQ 发布确认更新执行项的投递状态。发布或启动失败时展示失败阶段，用户在原任务上重试，沿用原任务和执行项 ID。确认丢失可再次投递，Generate 已终结的执行项由领取接口返回原结果。浏览器网络重发沿用提交幂等键，主动重测使用新键。首批八份数据固化后，用实测包体和耗时决定是否拆出大数据拉取。 [调度与接管决议](https://github.com/zhaochy1990/stride-devops/issues/1046#issuecomment-7095462890) · [worker 执行契约](https://github.com/zhaochy1990/stride-devops/issues/1047#issuecomment-7095113843)
 
 ## 3. 测评规则存储与 Check 接口
 
@@ -198,7 +227,7 @@ type CheckResult =
 
 ## 5. 场景引用与任务冻结
 
-提交任务时，API 将所选场景直接写入 `EvaluationTask.scenarios`。每项包含场景 ID、名称、产物类型和完整的规则版本配置。每份快照则创建独立的 SnapshotExecution，保存所属场景 ID、来源快照 ID、冻结快照内容和生成请求。Generate 读取该执行项的输入，Evaluate 通过 `task_id` 和 `scenario_id` 定位任务内的冻结规则。
+提交任务时，API 将所选场景直接写入 `EvaluationTask.scenarios`。每项包含场景 ID、名称、产物类型和完整的规则版本配置。每份快照则创建独立的 SnapshotExecution，保存所属场景 ID、来源快照 ID、冻结快照内容、生成请求、执行时点和投递状态。Generate 读取该执行项的输入，Evaluate 通过 `task_id` 和 `scenario_id` 定位任务内的冻结规则。
 
 例如，一个场景绑定规则 v1 和快照 A。场景后来切换到 v2，测试数据也更新了快照 A。已提交的任务继续用 v1 的源码和旧快照，新提交的任务才读取更新后的引用和数据。两个场景同时引用快照 A 时，各创建一条执行项，分别使用所属场景的规则。
 
@@ -222,6 +251,7 @@ erDiagram
     }
     RunnerSnapshot {
         string snapshot_id PK "随机 UUID"
+        int schema_version "快照格式版本"
         string name "脱敏用户名"
         string athlete_ref "脱敏跑者标识"
         date as_of "数据截止日"
@@ -245,6 +275,8 @@ erDiagram
         string snapshot_id FK "来源测试数据"
         json snapshot "冻结快照内容"
         json request "冻结的生成请求"
+        datetime as_of "冻结执行时点"
+        enum dispatch_status "投递状态"
         string execute_status "Generate 状态"
         string evaluate_status "Evaluate 状态"
         json error "阶段错误，可选"
@@ -293,5 +325,8 @@ SnapshotExecution 以 `(task_id, scenario_id, snapshot_id)` 去重。每个执�
 | 提交空清单、重复 ID、不适用的规则版本或无效引用 | API 返回具体配置错误，测评库无部分任务，worker 未启动 |
 | 网络重试和主动重测 | 相同幂等键及参数取回原任务。相同键、不同参数返回 409。主动重测创建新任务 |
 | 同一场景选择两个 Agent 版本分别测评 | 两个任务分别保存所选版本，worker 使用对应 Agent，报告可分别打开 |
+| 一份真实脱敏全马快照，生产数据服务不可达 | 从工作台发起任务，目标版本 worker 领取完整冻结数据包，多次取数来自同一快照，保存 Artifact 后开放固定规则检查 |
+| 发布确认丢失或版本 Deployment 启动失败 | 原任务可重试启动，任务与执行项 ID 稳定，重复消息复用已终结结果 |
+| 保存成功但响应丢失，或 worker 退出后租约过期 | 重发同一提交只保存一份 Artifact。过期租约可被接管，旧租约的不同提交无法覆盖新结果 |
 | 生成超时或产物 Schema 校验失败 | 本项跳过 Evaluate，保留错误或无效 Artifact 原文，其他快照正常继续 |
 | 一条规则不通过或出错，或者 Artifact 保存后 worker 中断 | 保留逐项理由、预期和实际值或错误，其他规则继续。接管只恢复未完成的检查 |
