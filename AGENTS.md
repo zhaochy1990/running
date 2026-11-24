@@ -24,6 +24,10 @@ Use the canonical labels `needs-triage`, `needs-info`, `ready-for-agent`, `ready
 
 This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 
+### Design changes
+
+设计变更确认后，在同一任务内同步更新受影响的设计文档，包括正文、架构图、ER 图、接口示例和验收标准。已有设计在工单中维护时，同步更新对应工单。完成前核对各处的术语、字段、关系与行为一致。
+
 ---
 
 ## Go HTTP 服务（HARD）

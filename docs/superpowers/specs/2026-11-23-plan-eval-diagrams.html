@@ -2,4 +2,259 @@
 :root{color-scheme:light;--paper:#f5f5f5;--ink:#2d3142;--muted:#4f5d75;--accent:#bf4520;--blue:#2e5aa8}
 *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:Geist,-apple-system,"PingFang SC",sans-serif}main{max-width:1256px;margin:auto;padding:48px clamp(16px,4vw,64px) 80px}header{border-bottom:2px solid var(--ink);padding-bottom:22px}h1,h2{font-family:"Instrument Serif","Songti SC","STSong",serif;font-weight:650;letter-spacing:-.025em;margin:0}h1{font-size:clamp(30px,3.6vw,54px)}h2{font-size:32px}nav{margin-top:16px;display:flex;gap:24px}a{color:var(--muted);text-decoration:underline;text-underline-offset:4px}section{padding-top:38px}section+section{border-top:1px solid #bfc0c0;margin-top:32px}p{font-size:16px;color:var(--muted);line-height:1.65;margin:8px 0 16px}.diagram-container{width:100%;overflow-x:auto}svg{width:100%;min-width:1088px;display:block}svg text{font-family:Geist,-apple-system,"PingFang SC",sans-serif;fill:var(--ink)}.name,.zone{font-weight:650}.sub,.field,.tag{fill:var(--muted)}.tag,.count{font-weight:600}.emph{fill:var(--accent)}.count{font-family:"Geist Mono",Menlo,monospace;fill:var(--ink)}.blue{fill:var(--blue)}.boundary{fill:#efeff0;stroke:#9197a4;stroke-dasharray:6 5}.node{fill:#fff;stroke:#89919e;stroke-width:1.2}.focal{fill:#fbefea;stroke:var(--accent);stroke-width:2}.divider{stroke:#c4c7cd;fill:none}.flow,.return,.network,.relation{stroke:var(--muted);stroke-width:1.6;fill:none}.return{stroke-dasharray:5 4}.network{stroke:var(--blue);stroke-width:1.8;stroke-dasharray:6 4}.relation{stroke-width:1.25}@media print{main{max-width:none;padding:0}.diagram-container{overflow:visible}svg{min-width:0}section+section{break-before:page}nav{display:none}}
 
-#entities svg{min-width:1280px}@media print{#entities svg{min-width:0}}.exceptions{display:grid;grid-template-columns:minmax(7em,max-content) 1fr;gap:10px 22px;font-size:15px;line-height:1.65}.exceptions dt{font-weight:600}.exceptions dd{margin:0;color:var(--muted)}@media(max-width:560px){.exceptions{display:block}.exceptions dd{margin-bottom:12px}nav{gap:12px;flex-wrap:wrap}}</style></head><body><main><header><h1>训练计划分布式测评平台</h1><nav aria-label="图表导航"><a href="#architecture">系统架构</a><a href="#execution">运行器详图</a><a href="#entities">实体与属性</a></nav></header><section id="architecture"><h2>系统架构</h2><p>选择一个 Agent 版本，勾选多个场景或全选场景库，一次运行所选场景的全部跑者快照。每份快照独立生成 Artifact，再评分。</p><div class="diagram-container"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1088 652" role="img" aria-labelledby="architecture-title architecture-desc"><title id="architecture-title">分布式测评平台架构</title><desc id="architecture-desc">任务锁定 Agent 版本、场景清单和各场景的配置与快照。Execute 调用生成模型，Evaluate 读取已保存的 Artifact。</desc><defs><marker id="head-gray" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0 0 L8 4 L0 8 z" fill="#4f5d75"/></marker><marker id="head-blue" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0 0 L8 4 L0 8 z" fill="#2e5aa8"/></marker></defs><rect x="270" y="34" width="792" height="446" rx="10" class="boundary"/><text x="290" y="65" font-size="16" class="zone" text-anchor="start">分布式测评平台</text><path class="flow" d="M228 161 L296 161" marker-end="url(#head-gray)" marker-start="url(#head-gray)"/><path class="flow" d="M520 161 L664 161" marker-end="url(#head-gray)"/><text x="592" y="148" font-size="14" class="sub" text-anchor="middle">启动 worker</text><path class="flow" d="M410 222 L410 308" marker-end="url(#head-gray)" marker-start="url(#head-gray)"/><path class="flow" d="M788 222 L788 308" marker-end="url(#head-gray)"/><path class="flow" d="M518 367 L664 367" marker-end="url(#head-gray)" marker-start="url(#head-gray)"/><path class="flow" d="M520 543 L585 543 Q593 543 593 535 L593 210 Q593 202 601 202 L664 202" marker-end="url(#head-gray)"/><path class="return" d="M702 220 L702 241 Q702 249 694 249 L480 249 Q472 249 472 257 L472 308" marker-end="url(#head-gray)"/><text x="539" y="273" font-size="14" class="sub" text-anchor="start">提交 Artifact</text><g><rect x="16" y="104" width="212" height="116" rx="6" class="node"/><text x="30" y="124" font-size="11" class="tag" text-anchor="start">浏览器</text><text x="30" y="153" font-size="21" class="name" text-anchor="start">测评工作台</text><text x="30" y="183" font-size="14" class="sub" text-anchor="start">场景查看、新建、导入、修改</text><text x="30" y="205" font-size="14" class="sub" text-anchor="start">选版本，多选或全选场景</text></g><g><rect x="296" y="104" width="224" height="116" rx="6" class="node"/><text x="310" y="124" font-size="11" class="tag" text-anchor="start">提交与调度</text><text x="310" y="153" font-size="21" class="name" text-anchor="start">测评 API</text><text x="310" y="183" font-size="14" class="sub" text-anchor="start">保存场景列表与快照执行项</text><text x="310" y="205" font-size="14" class="sub" text-anchor="start">建任务，请求集群启动 worker</text></g><g><rect x="664" y="104" width="340" height="116" rx="6" class="node focal"/><text x="678" y="124" font-size="11" class="tag" text-anchor="start">执行阶段 · worker</text><text x="678" y="153" font-size="21" class="name" text-anchor="start">Execute</text><text x="678" y="183" font-size="14" class="sub" text-anchor="start">按所选版本拉取并运行 Coach Agent</text><text x="678" y="205" font-size="14" class="sub" text-anchor="start">调用生成模型 API，产出 Artifact</text></g><g><rect x="296" y="308" width="224" height="116" rx="6" class="node"/><text x="310" y="328" font-size="11" class="tag" text-anchor="start">平台共享存储</text><text x="310" y="357" font-size="21" class="name" text-anchor="start">测评库</text><text x="310" y="387" font-size="14" class="sub" text-anchor="start">任务、跑者快照与 Artifact</text><text x="310" y="409" font-size="14" class="sub" text-anchor="start">执行状态、分数与理由</text></g><g><rect x="664" y="308" width="340" height="116" rx="6" class="node"/><text x="678" y="328" font-size="11" class="tag" text-anchor="start">评分阶段 · worker</text><text x="678" y="357" font-size="21" class="name" text-anchor="start">Evaluate</text><text x="678" y="387" font-size="14" class="sub" text-anchor="start">规则 judge 按 artifact_id 读取并打分</text><text x="678" y="409" font-size="14" class="sub" text-anchor="start">LLM judge 调用评审模型 API</text></g><g><rect x="296" y="486" width="224" height="116" rx="6" class="node"/><text x="310" y="506" font-size="11" class="tag" text-anchor="start">版本分发</text><text x="310" y="535" font-size="21" class="name" text-anchor="start">Agent 制品仓库</text><text x="310" y="565" font-size="14" class="sub" text-anchor="start">提供已发布的 Agent 版本</text><text x="310" y="587" font-size="14" class="sub" text-anchor="start">worker 按版本取制品</text></g><text x="802" y="276" font-size="14" class="sub" text-anchor="start">Artifact 保存成功后评分</text></svg></div></section><section id="execution"><h2>运行器详图</h2><p>各 worker 分别处理快照执行项。Execute 调用生成模型 API；Evaluate 的两路 judge 读取同一份 Artifact。</p><div class="diagram-container"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1088 398" role="img" aria-labelledby="execution-title execution-desc"><title id="execution-title">Execute 与 Evaluate 的交接</title><desc id="execution-desc">逐快照调用生成模型并保存 Artifact，随后规则和 LLM judge 独立评分。</desc><path class="flow" d="M316 104 L393 104" marker-end="url(#head-gray)"/><path class="flow" d="M695 104 L772 104" marker-end="url(#head-gray)"/><path class="flow" d="M915 167 L915 247" marker-end="url(#head-gray)"/><path class="flow" d="M772 310 L695 310" marker-end="url(#head-gray)"/><path class="flow" d="M393 310 L316 310" marker-end="url(#head-gray)"/><g><rect x="16" y="48" width="300" height="116" rx="6" class="node"/><text x="30" y="68" font-size="11" class="tag" text-anchor="start">工作台 → API</text><text x="30" y="97" font-size="21" class="name" text-anchor="start">创建测评任务</text><text x="30" y="127" font-size="14" class="sub" text-anchor="start">选择一个版本和多个场景</text><text x="30" y="149" font-size="14" class="sub" text-anchor="start">逐场景为每份快照建一条执行项</text></g><g><rect x="394" y="48" width="300" height="116" rx="6" class="node"/><text x="408" y="68" font-size="11" class="tag" text-anchor="start">Execute · 加载</text><text x="408" y="97" font-size="21" class="name" text-anchor="start">拉取目标 Agent</text><text x="408" y="127" font-size="14" class="sub" text-anchor="start">worker 领取执行项，按所选版本拉取</text><text x="408" y="149" font-size="14" class="sub" text-anchor="start">核对版本，载入本项跑者数据</text></g><g><rect x="772" y="48" width="300" height="116" rx="6" class="node"/><text x="786" y="68" font-size="11" class="tag" text-anchor="start">Execute · 执行</text><text x="786" y="97" font-size="21" class="name" text-anchor="start">调用生成模型 API</text><text x="786" y="127" font-size="14" class="sub" text-anchor="start">执行真实 Agent，生成本项内容</text><text x="786" y="149" font-size="14" class="sub" text-anchor="start">记录执行输出或错误</text></g><g><rect x="772" y="248" width="300" height="116" rx="6" class="node focal"/><text x="786" y="268" font-size="11" class="tag" text-anchor="start">Execute → Evaluate</text><text x="786" y="297" font-size="21" class="name" text-anchor="start">保存 Artifact</text><text x="786" y="327" font-size="14" class="sub" text-anchor="start">按类型校验，保存内容、摘要与来源</text><text x="786" y="349" font-size="14" class="sub" text-anchor="start">成功提交后开放 Evaluate</text></g><g><rect x="394" y="248" width="300" height="116" rx="6" class="node"/><text x="408" y="268" font-size="11" class="tag" text-anchor="start">Evaluate · 双路</text><text x="408" y="297" font-size="21" class="name" text-anchor="start">对同一 Artifact 评分</text><text x="408" y="327" font-size="14" class="sub" text-anchor="start">规则检查约束；LLM 调用评审模型 API</text><text x="408" y="349" font-size="14" class="sub" text-anchor="start">逐项记录分数、评分理由</text></g><g><rect x="16" y="248" width="300" height="116" rx="6" class="node"/><text x="30" y="268" font-size="11" class="tag" text-anchor="start">测评 API → 工作台</text><text x="30" y="297" font-size="21" class="name" text-anchor="start">汇总结果</text><text x="30" y="327" font-size="14" class="sub" text-anchor="start">逐快照展示生成、评分状态</text><text x="30" y="349" font-size="14" class="sub" text-anchor="start">按场景分组，汇总任务结果</text></g></svg></div><p>某位跑者的生成模型调用失败时，只跳过该快照的评分。Artifact 已保存后中断，接管者恢复尚未完成的检查。</p></section><section id="entities"><h2>实体与主要属性</h2><p>EvaluationTask.scenarios 保存选中的场景及其提交时的配置。每份跑者快照对应一个 SnapshotExecution。</p><div class="diagram-container"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 774" role="img" aria-labelledby="entities-title entities-desc"><title id="entities-title">测评平台的六个实体</title><desc id="entities-desc">任务内嵌选中场景的 ID、生成请求、类型和评分标准。执行项记录实际跑者快照。</desc><path class="relation" stroke-dasharray="5 4" d="M798 125 L940 125"/><text x="808" y="116" font-size="13" class="count" text-anchor="start">0..*</text><text x="930" y="116" font-size="13" class="count" text-anchor="end">1..*</text><text x="869" y="150" font-size="13" class="sub" text-anchor="middle">选入场景列表</text><path class="relation" d="M640 252 L640 382"/><text x="649" y="271" font-size="13" class="count" text-anchor="start">1</text><text x="649" y="372" font-size="13" class="count" text-anchor="start">1..*</text><text x="685" y="323" font-size="13" class="sub" text-anchor="middle">包含执行项</text><path class="relation" d="M1098 198 L1098 382"/><text x="1107" y="217" font-size="13" class="count" text-anchor="start">1</text><text x="1107" y="372" font-size="13" class="count" text-anchor="start">1..*</text><text x="1143" y="296" font-size="13" class="sub" text-anchor="middle">包含快照</text><path class="relation" d="M340 478 L482 478"/><text x="350" y="469" font-size="13" class="count" text-anchor="start">0..1</text><text x="472" y="469" font-size="13" class="count" text-anchor="end">1</text><text x="411" y="503" font-size="13" class="sub" text-anchor="middle">生成</text><path class="relation" d="M798 478 L940 478"/><text x="808" y="469" font-size="13" class="count" text-anchor="start">0..*</text><text x="930" y="469" font-size="13" class="count" text-anchor="end">1</text><text x="869" y="503" font-size="13" class="sub" text-anchor="middle">使用快照</text><path class="relation" d="M182 252 L182 382"/><text x="191" y="271" font-size="13" class="count" text-anchor="start">0..*</text><text x="191" y="372" font-size="13" class="count" text-anchor="start">1</text><text x="227" y="323" font-size="13" class="sub" text-anchor="middle">接受评分</text><g><rect x="940" y="32" width="316" height="166" rx="6" class="node"/><text x="954" y="64" font-size="21" class="name" text-anchor="start">Scenario</text><path class="divider" d="M940 78 h316"/><text x="952" y="100" font-size="11" class="count" text-anchor="start">PK</text><text x="997" y="100" font-size="13" class="count" text-anchor="start">scenario_id</text><text x="1247" y="100" font-size="12" class="sub" text-anchor="end">场景标识</text><text x="952" y="127" font-size="11" class="count" text-anchor="start"></text><text x="997" y="127" font-size="13" class="count" text-anchor="start">request</text><text x="1247" y="127" font-size="12" class="sub" text-anchor="end">生成请求</text><text x="952" y="154" font-size="11" class="count" text-anchor="start"></text><text x="997" y="154" font-size="13" class="count" text-anchor="start">artifact_type</text><text x="1247" y="154" font-size="12" class="sub" text-anchor="end">预期输出类型</text><text x="952" y="181" font-size="11" class="count" text-anchor="start"></text><text x="997" y="181" font-size="13" class="count" text-anchor="start">checks</text><text x="1247" y="181" font-size="12" class="sub" text-anchor="end">规则、量表和门槛</text></g><g><rect x="940" y="382" width="316" height="301" rx="6" class="node"/><text x="954" y="414" font-size="21" class="name" text-anchor="start">RunnerSnapshot</text><path class="divider" d="M940 428 h316"/><text x="952" y="450" font-size="11" class="count" text-anchor="start">PK</text><text x="997" y="450" font-size="13" class="count" text-anchor="start">snapshot_id</text><text x="1247" y="450" font-size="12" class="sub" text-anchor="end">不可变输入标识</text><text x="952" y="477" font-size="11" class="count" text-anchor="start">FK</text><text x="997" y="477" font-size="13" class="count" text-anchor="start">scenario_id</text><text x="1247" y="477" font-size="12" class="sub" text-anchor="end">所属场景</text><text x="952" y="504" font-size="11" class="count" text-anchor="start"></text><text x="997" y="504" font-size="13" class="count" text-anchor="start">active</text><text x="1247" y="504" font-size="12" class="sub" text-anchor="end">纳入当前数据集</text><text x="952" y="531" font-size="11" class="count" text-anchor="start"></text><text x="997" y="531" font-size="13" class="count" text-anchor="start">athlete_ref</text><text x="1247" y="531" font-size="12" class="sub" text-anchor="end">脱敏跑者标识</text><text x="952" y="558" font-size="11" class="count" text-anchor="start"></text><text x="997" y="558" font-size="13" class="count" text-anchor="start">as_of</text><text x="1247" y="558" font-size="12" class="sub" text-anchor="end">数据截止日</text><text x="952" y="585" font-size="11" class="count" text-anchor="start"></text><text x="997" y="585" font-size="13" class="count" text-anchor="start">goal</text><text x="1247" y="585" font-size="12" class="sub" text-anchor="end">目标</text><text x="952" y="612" font-size="11" class="count" text-anchor="start"></text><text x="997" y="612" font-size="13" class="count" text-anchor="start">constraints</text><text x="1247" y="612" font-size="12" class="sub" text-anchor="end">训练约束</text><text x="952" y="639" font-size="11" class="count" text-anchor="start"></text><text x="997" y="639" font-size="13" class="count" text-anchor="start">history</text><text x="1247" y="639" font-size="12" class="sub" text-anchor="end">训练事实</text><text x="952" y="666" font-size="11" class="count" text-anchor="start"></text><text x="997" y="666" font-size="13" class="count" text-anchor="start">sha256</text><text x="1247" y="666" font-size="12" class="sub" text-anchor="end">快照内容摘要</text></g><g><rect x="24" y="382" width="316" height="220" rx="6" class="node"/><text x="38" y="414" font-size="21" class="name" text-anchor="start">Artifact</text><path class="divider" d="M24 428 h316"/><text x="36" y="450" font-size="11" class="count" text-anchor="start">PK</text><text x="81" y="450" font-size="13" class="count" text-anchor="start">artifact_id</text><text x="331" y="450" font-size="12" class="sub" text-anchor="end">生成内容标识</text><text x="36" y="477" font-size="11" class="count" text-anchor="start">FK</text><text x="81" y="477" font-size="13" class="count" text-anchor="start">input_id</text><text x="331" y="477" font-size="12" class="sub" text-anchor="end">唯一所属执行项</text><text x="36" y="504" font-size="11" class="count" text-anchor="start"></text><text x="81" y="504" font-size="13" class="count" text-anchor="start">artifact_type</text><text x="331" y="504" font-size="12" class="sub" text-anchor="end">内容类型</text><text x="36" y="531" font-size="11" class="count" text-anchor="start"></text><text x="81" y="531" font-size="13" class="count" text-anchor="start">content</text><text x="331" y="531" font-size="12" class="sub" text-anchor="end">Agent 输出原文</text><text x="36" y="558" font-size="11" class="count" text-anchor="start"></text><text x="81" y="558" font-size="13" class="count" text-anchor="start">sha256</text><text x="331" y="558" font-size="12" class="sub" text-anchor="end">内容摘要</text><text x="36" y="585" font-size="11" class="count" text-anchor="start"></text><text x="81" y="585" font-size="13" class="count" text-anchor="start">validation</text><text x="331" y="585" font-size="12" class="sub" text-anchor="end">契约校验结果</text></g><g><rect x="482" y="382" width="316" height="247" rx="6" class="node"/><text x="496" y="414" font-size="21" class="name" text-anchor="start">SnapshotExecution</text><path class="divider" d="M482 428 h316"/><text x="494" y="450" font-size="11" class="count" text-anchor="start">PK</text><text x="539" y="450" font-size="13" class="count" text-anchor="start">id</text><text x="789" y="450" font-size="12" class="sub" text-anchor="end">执行项标识</text><text x="494" y="477" font-size="11" class="count" text-anchor="start">FK</text><text x="539" y="477" font-size="13" class="count" text-anchor="start">task_id</text><text x="789" y="477" font-size="12" class="sub" text-anchor="end">所属任务</text><text x="494" y="504" font-size="11" class="count" text-anchor="start">FK</text><text x="539" y="504" font-size="13" class="count" text-anchor="start">snapshot_id</text><text x="789" y="504" font-size="12" class="sub" text-anchor="end">本项跑者快照</text><text x="494" y="531" font-size="11" class="count" text-anchor="start"></text><text x="539" y="531" font-size="13" class="count" text-anchor="start">execute_status</text><text x="789" y="531" font-size="12" class="sub" text-anchor="end">生成状态</text><text x="494" y="558" font-size="11" class="count" text-anchor="start"></text><text x="539" y="558" font-size="13" class="count" text-anchor="start">evaluate_status</text><text x="789" y="558" font-size="12" class="sub" text-anchor="end">评分状态</text><text x="494" y="585" font-size="11" class="count" text-anchor="start"></text><text x="539" y="585" font-size="13" class="count" text-anchor="start">error</text><text x="789" y="585" font-size="12" class="sub" text-anchor="end">阶段错误，可空</text><text x="494" y="612" font-size="11" class="count" text-anchor="start"></text><text x="539" y="612" font-size="13" class="count" text-anchor="start">lease</text><text x="789" y="612" font-size="12" class="sub" text-anchor="end">租约代次与期限</text></g><g><rect x="482" y="32" width="316" height="220" rx="6" class="node focal"/><text x="496" y="64" font-size="21" class="name" text-anchor="start">EvaluationTask</text><path class="divider" d="M482 78 h316"/><text x="494" y="100" font-size="11" class="count" text-anchor="start">PK</text><text x="539" y="100" font-size="13" class="count" text-anchor="start">task_id</text><text x="789" y="100" font-size="12" class="sub" text-anchor="end">任务标识</text><text x="494" y="127" font-size="11" class="count" text-anchor="start"></text><text x="539" y="127" font-size="13" class="count" text-anchor="start">agent_version</text><text x="789" y="127" font-size="12" class="sub" text-anchor="end">所选 Agent 版本</text><text x="494" y="154" font-size="11" class="count" text-anchor="start"></text><text x="539" y="154" font-size="13" class="count" text-anchor="start">generation_model</text><text x="789" y="154" font-size="12" class="sub" text-anchor="end">生成模型配置</text><text x="494" y="181" font-size="11" class="count" text-anchor="start"></text><text x="539" y="181" font-size="13" class="count" text-anchor="start">judge_model</text><text x="789" y="181" font-size="12" class="sub" text-anchor="end">评审模型配置</text><text x="494" y="208" font-size="11" class="count" text-anchor="start"></text><text x="539" y="208" font-size="13" class="count" text-anchor="start">state</text><text x="789" y="208" font-size="12" class="sub" text-anchor="end">任务状态</text><text x="494" y="235" font-size="11" class="count" text-anchor="start"></text><text x="539" y="235" font-size="13" class="count" text-anchor="start">scenarios</text><text x="789" y="235" font-size="12" class="sub" text-anchor="end">所选场景及其配置</text></g><g><rect x="24" y="32" width="316" height="220" rx="6" class="node"/><text x="38" y="64" font-size="21" class="name" text-anchor="start">CheckResult</text><path class="divider" d="M24 78 h316"/><text x="36" y="100" font-size="11" class="count" text-anchor="start">PK</text><text x="81" y="100" font-size="13" class="count" text-anchor="start">result_id</text><text x="331" y="100" font-size="12" class="sub" text-anchor="end">检查结果标识</text><text x="36" y="127" font-size="11" class="count" text-anchor="start">FK</text><text x="81" y="127" font-size="13" class="count" text-anchor="start">artifact_id</text><text x="331" y="127" font-size="12" class="sub" text-anchor="end">被评 Artifact</text><text x="36" y="154" font-size="11" class="count" text-anchor="start"></text><text x="81" y="154" font-size="13" class="count" text-anchor="start">check_id</text><text x="331" y="154" font-size="12" class="sub" text-anchor="end">冻结配置内的检查</text><text x="36" y="181" font-size="11" class="count" text-anchor="start"></text><text x="81" y="181" font-size="13" class="count" text-anchor="start">status</text><text x="331" y="181" font-size="12" class="sub" text-anchor="end">评分状态</text><text x="36" y="208" font-size="11" class="count" text-anchor="start"></text><text x="81" y="208" font-size="13" class="count" text-anchor="start">score</text><text x="331" y="208" font-size="12" class="sub" text-anchor="end">分数，可空</text><text x="36" y="235" font-size="11" class="count" text-anchor="start"></text><text x="81" y="235" font-size="13" class="count" text-anchor="start">detail</text><text x="331" y="235" font-size="12" class="sub" text-anchor="end">门槛、理由或错误</text></g><text x="24" y="738" font-size="14" class="sub" text-anchor="start">PK 主键     FK 关联键     虚线表示任务内嵌的场景列表</text><text x="600" y="738" font-size="14" class="sub" text-anchor="start">1 恰好一个     0..1 零或一个     0..* 零个或多个     1..* 一个或多个</text></svg></div><p>场景库中的评分标准可以继续编辑。排队中的 worker 和历史报告均读取本次任务保存的标准。</p></section></main></body></html>
+#entities svg{min-width:1280px}#entities .label-mask{fill:var(--paper)}@media print{#entities svg{min-width:0}}.exceptions{display:grid;grid-template-columns:minmax(7em,max-content) 1fr;gap:10px 22px;font-size:15px;line-height:1.65}.exceptions dt{font-weight:600}.exceptions dd{margin:0;color:var(--muted)}@media(max-width:560px){.exceptions{display:block}.exceptions dd{margin-bottom:12px}nav{gap:12px;flex-wrap:wrap}}</style></head><body><main><header><h1>训练计划分布式测评平台</h1><nav aria-label="图表导航"><a href="#architecture">系统架构</a><a href="#execution">运行器详图</a><a href="#entities">实体与属性</a></nav></header><section id="architecture"><h2>系统架构</h2><p>选择一个 Agent 版本，勾选多个场景或全选场景库，一次运行所选场景的全部跑者快照。每份快照独立生成 Artifact，再评分。</p><div class="diagram-container"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1088 652" role="img" aria-labelledby="architecture-title architecture-desc"><title id="architecture-title">分布式测评平台架构</title><desc id="architecture-desc">任务锁定 Agent 版本、场景清单和各场景的配置与快照。Generate 调用生成模型，Evaluate 使用已保存的 Artifact 和冻结规则。</desc><defs><marker id="head-gray" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0 0 L8 4 L0 8 z" fill="#4f5d75"/></marker><marker id="head-blue" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0 0 L8 4 L0 8 z" fill="#2e5aa8"/></marker></defs><rect x="270" y="34" width="792" height="446" rx="10" class="boundary"/><text x="290" y="65" font-size="16" class="zone" text-anchor="start">分布式测评平台</text><path class="flow" d="M228 161 L296 161" marker-end="url(#head-gray)" marker-start="url(#head-gray)"/><path class="flow" d="M520 161 L664 161" marker-end="url(#head-gray)"/><text x="592" y="148" font-size="14" class="sub" text-anchor="middle">启动 worker</text><path class="flow" d="M410 222 L410 308" marker-end="url(#head-gray)" marker-start="url(#head-gray)"/><path class="flow" d="M788 222 L788 308" marker-end="url(#head-gray)"/><path class="flow" d="M518 367 L664 367" marker-end="url(#head-gray)" marker-start="url(#head-gray)"/><path class="flow" d="M520 543 L585 543 Q593 543 593 535 L593 210 Q593 202 601 202 L664 202" marker-end="url(#head-gray)"/><path class="return" d="M702 220 L702 241 Q702 249 694 249 L480 249 Q472 249 472 257 L472 308" marker-end="url(#head-gray)"/><text x="539" y="273" font-size="14" class="sub" text-anchor="start">提交 Artifact</text><g><rect x="16" y="104" width="212" height="116" rx="6" class="node"/><text x="30" y="124" font-size="11" class="tag" text-anchor="start">Admin Dashboard · 内部管理员</text><text x="30" y="153" font-size="21" class="name" text-anchor="start">测评工作台</text><text x="30" y="183" font-size="14" class="sub" text-anchor="start">管理场景、测试数据与测评规则</text><text x="30" y="205" font-size="14" class="sub" text-anchor="start">选版本，多选或全选场景</text></g><g><rect x="296" y="104" width="224" height="116" rx="6" class="node"/><text x="310" y="124" font-size="11" class="tag" text-anchor="start">提交与调度</text><text x="310" y="153" font-size="21" class="name" text-anchor="start">测评 API</text><text x="310" y="183" font-size="14" class="sub" text-anchor="start">冻结规则版本与逐快照输入</text><text x="310" y="205" font-size="14" class="sub" text-anchor="start">建任务，请求集群启动 worker</text></g><g><rect x="664" y="104" width="340" height="116" rx="6" class="node focal"/><text x="678" y="124" font-size="11" class="tag" text-anchor="start">执行阶段 · worker</text><text x="678" y="153" font-size="21" class="name" text-anchor="start">Generate</text><text x="678" y="183" font-size="14" class="sub" text-anchor="start">按所选版本拉取并运行 Coach Agent</text><text x="678" y="205" font-size="14" class="sub" text-anchor="start">调用生成模型 API，产出 Artifact</text></g><g><rect x="296" y="308" width="224" height="116" rx="6" class="node"/><text x="310" y="328" font-size="11" class="tag" text-anchor="start">平台共享存储</text><text x="310" y="357" font-size="21" class="name" text-anchor="start">测评库</text><text x="310" y="387" font-size="14" class="sub" text-anchor="start">规则、测试数据与任务明细</text><text x="310" y="409" font-size="14" class="sub" text-anchor="start">Artifact、执行状态与判定</text></g><g><rect x="664" y="308" width="340" height="116" rx="6" class="node"/><text x="678" y="328" font-size="11" class="tag" text-anchor="start">评分阶段 · worker</text><text x="678" y="357" font-size="21" class="name" text-anchor="start">Evaluate</text><text x="678" y="387" font-size="14" class="sub" text-anchor="start">读取 Artifact，逐条执行冻结的 Check</text><text x="678" y="409" font-size="14" class="sub" text-anchor="start">后续 LLM as Judge 复用 Check 接口</text></g><g><rect x="296" y="486" width="224" height="116" rx="6" class="node"/><text x="310" y="506" font-size="11" class="tag" text-anchor="start">版本分发</text><text x="310" y="535" font-size="21" class="name" text-anchor="start">Agent 制品仓库</text><text x="310" y="565" font-size="14" class="sub" text-anchor="start">提供已发布的 Agent 版本</text><text x="310" y="587" font-size="14" class="sub" text-anchor="start">worker 按版本取制品</text></g><text x="802" y="276" font-size="14" class="sub" text-anchor="start">Artifact 保存成功后评分</text></svg></div></section><section id="execution"><h2>运行器详图</h2><p>各 worker 分别处理快照执行项。Generate 调用生成模型 API；Evaluate 对已保存的 Artifact 运行固定规则。</p><div class="diagram-container"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1088 398" role="img" aria-labelledby="execution-title execution-desc"><title id="execution-title">Generate 与 Evaluate 的交接</title><desc id="execution-desc">逐快照调用生成模型并保存 Artifact，随后运行冻结的固定规则。</desc><path class="flow" d="M316 104 L393 104" marker-end="url(#head-gray)"/><path class="flow" d="M695 104 L772 104" marker-end="url(#head-gray)"/><path class="flow" d="M915 167 L915 247" marker-end="url(#head-gray)"/><path class="flow" d="M772 310 L695 310" marker-end="url(#head-gray)"/><path class="flow" d="M393 310 L316 310" marker-end="url(#head-gray)"/><g><rect x="16" y="48" width="300" height="116" rx="6" class="node"/><text x="30" y="68" font-size="11" class="tag" text-anchor="start">管理员工作台 → 测评 API</text><text x="30" y="97" font-size="21" class="name" text-anchor="start">创建测评任务</text><text x="30" y="127" font-size="14" class="sub" text-anchor="start">选择一个版本和多个场景</text><text x="30" y="149" font-size="14" class="sub" text-anchor="start">冻结输入，向版本队列投递 ID</text></g><g><rect x="394" y="48" width="300" height="116" rx="6" class="node"/><text x="408" y="68" font-size="11" class="tag" text-anchor="start">Generate · 加载</text><text x="408" y="97" font-size="21" class="name" text-anchor="start">拉取目标 Agent</text><text x="408" y="127" font-size="14" class="sub" text-anchor="start">按所选版本拉取并启动 worker</text><text x="408" y="149" font-size="14" class="sub" text-anchor="start">按 ID 领取完整冻结数据包</text></g><g><rect x="772" y="48" width="300" height="116" rx="6" class="node"/><text x="786" y="68" font-size="11" class="tag" text-anchor="start">Generate · 执行</text><text x="786" y="97" font-size="21" class="name" text-anchor="start">调用生成模型 API</text><text x="786" y="127" font-size="14" class="sub" text-anchor="start">执行真实 Agent，生成本项内容</text><text x="786" y="149" font-size="14" class="sub" text-anchor="start">记录执行输出或错误</text></g><g><rect x="772" y="248" width="300" height="116" rx="6" class="node focal"/><text x="786" y="268" font-size="11" class="tag" text-anchor="start">Generate → Evaluate</text><text x="786" y="297" font-size="21" class="name" text-anchor="start">保存 Artifact</text><text x="786" y="327" font-size="14" class="sub" text-anchor="start">按类型校验，保存内容、摘要与来源</text><text x="786" y="349" font-size="14" class="sub" text-anchor="start">成功提交后开放 Evaluate</text></g><g><rect x="394" y="248" width="300" height="116" rx="6" class="node"/><text x="408" y="268" font-size="11" class="tag" text-anchor="start">Evaluate · 固定规则</text><text x="408" y="297" font-size="21" class="name" text-anchor="start">逐条执行 Check</text><text x="408" y="327" font-size="14" class="sub" text-anchor="start">隔离运行冻结的 JavaScript 规则</text><text x="408" y="349" font-size="14" class="sub" text-anchor="start">逐条记录判定和违反项</text></g><g><rect x="16" y="248" width="300" height="116" rx="6" class="node"/><text x="30" y="268" font-size="11" class="tag" text-anchor="start">测评 API → 工作台</text><text x="30" y="297" font-size="21" class="name" text-anchor="start">汇总结果</text><text x="30" y="327" font-size="14" class="sub" text-anchor="start">逐快照展示生成、评分状态</text><text x="30" y="349" font-size="14" class="sub" text-anchor="start">按场景分组，汇总任务结果</text></g></svg></div><p>某位跑者的生成模型调用失败时，只跳过该快照的评分。Artifact 已保存后中断，接管者恢复尚未完成的检查。</p></section><section id="entities">
+<h2>实体与主要属性</h2>
+<p>场景引用已发布的测评规则版本和测试数据。提交任务时分别固定规则实现、跑者快照和生成请求。</p>
+<div class="diagram-container" tabindex="0" role="region" aria-label="实体关系图，可横向滚动">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 984" role="img" aria-labelledby="entities-title entities-desc">
+<title id="entities-title">测评规则版本、场景、测试数据与任务</title>
+<desc id="entities-desc">场景引用已发布的测评规则版本和测试数据。提交任务时分别固定规则实现、跑者快照和生成请求。每条快照执行项独立生成 Artifact，检查结果记录实际规则版本。</desc>
+<g class="er-relationship">
+<path class="relation return" d="M344 104 H480"/>
+<text x="356" y="96" font-size="12" class="count" text-anchor="start">1..*</text>
+<text x="468" y="96" font-size="12" class="count" text-anchor="end">0..*</text>
+<rect class="label-mask" x="364" y="110" width="96" height="19"/>
+<text x="412" y="124" font-size="13" class="sub" text-anchor="middle">引用规则版本</text>
+</g>
+<g class="er-relationship">
+<path class="relation return" d="M800 104 H936"/>
+<text x="812" y="96" font-size="12" class="count" text-anchor="start">0..*</text>
+<text x="924" y="96" font-size="12" class="count" text-anchor="end">1..*</text>
+<rect class="label-mask" x="820" y="110" width="96" height="19"/>
+<text x="868" y="124" font-size="13" class="sub" text-anchor="middle">引用测试数据</text>
+</g>
+<g class="er-relationship">
+<path class="relation return" d="M640 200 V312 Q640 320 632 320 H192 Q184 320 184 328 V384"/>
+<text x="652" y="218" font-size="12" class="count" text-anchor="start">1..*</text>
+<text x="196" y="374" font-size="12" class="count" text-anchor="start">0..*</text>
+<rect class="label-mask" x="364" y="326" width="96" height="19"/>
+<text x="412" y="340" font-size="13" class="sub" text-anchor="middle">冻结所选场景</text>
+</g>
+<g class="er-relationship">
+<path class="relation" d="M344 460 H480"/>
+<text x="356" y="452" font-size="12" class="count" text-anchor="start">1</text>
+<text x="468" y="452" font-size="12" class="count" text-anchor="end">1..*</text>
+<rect class="label-mask" x="371" y="466" width="82" height="19"/>
+<text x="412" y="480" font-size="13" class="sub" text-anchor="middle">包含执行项</text>
+</g>
+<g class="er-relationship">
+<path class="relation" d="M1096 320 V336 Q1096 344 1088 344 H728 Q720 344 720 352 V384"/>
+<text x="1108" y="337" font-size="12" class="count" text-anchor="start">1</text>
+<text x="708" y="374" font-size="12" class="count" text-anchor="end">0..*</text>
+<rect class="label-mask" x="856" y="350" width="96" height="19"/>
+<text x="904" y="364" font-size="13" class="sub" text-anchor="middle">提供冻结输入</text>
+</g>
+<g class="er-relationship">
+<path class="relation" d="M800 460 H936"/>
+<text x="812" y="452" font-size="12" class="count" text-anchor="start">1</text>
+<text x="924" y="452" font-size="12" class="count" text-anchor="end">0..1</text>
+<rect class="label-mask" x="847" y="466" width="42" height="19"/>
+<text x="868" y="480" font-size="13" class="sub" text-anchor="middle">生成</text>
+</g>
+<g class="er-relationship">
+<path class="relation" d="M1096 584 V700"/>
+<text x="1108" y="604" font-size="12" class="count" text-anchor="start">1</text>
+<text x="1108" y="690" font-size="12" class="count" text-anchor="start">0..*</text>
+<rect class="label-mask" x="1122" y="664" width="68" height="19"/>
+<text x="1156" y="678" font-size="13" class="sub" text-anchor="middle">接受检查</text>
+</g>
+<g data-entity="EvaluationRule">
+<rect class="node focal" x="24" y="24" width="320" height="224" rx="6"/>
+<line class="divider" x1="24" y1="68" x2="344" y2="68"/>
+<text x="40" y="52" font-size="20" class="name" text-anchor="start">EvaluationRule</text>
+<text x="40" y="87" font-size="12" class="count" text-anchor="start">PK</text>
+<text x="78" y="87" font-size="14" class="count" text-anchor="start">check_id</text>
+<text x="328" y="87" font-size="13" class="sub" text-anchor="end">规则标识</text>
+<text x="40" y="111" font-size="12" class="count" text-anchor="start">PK</text>
+<text x="78" y="111" font-size="14" class="count" text-anchor="start">version</text>
+<text x="328" y="111" font-size="13" class="sub" text-anchor="end">规则版本</text>
+<text x="40" y="135" font-size="12" class="count" text-anchor="start"></text>
+<text x="78" y="135" font-size="14" class="count" text-anchor="start">name</text>
+<text x="328" y="135" font-size="13" class="sub" text-anchor="end">规则名称</text>
+<text x="40" y="159" font-size="12" class="count" text-anchor="start"></text>
+<text x="78" y="159" font-size="14" class="count" text-anchor="start">description</text>
+<text x="328" y="159" font-size="13" class="sub" text-anchor="end">多行说明，可选</text>
+<text x="40" y="183" font-size="12" class="count" text-anchor="start"></text>
+<text x="78" y="183" font-size="14" class="count" text-anchor="start">kind</text>
+<text x="328" y="183" font-size="13" class="sub" text-anchor="end">规则类型</text>
+<text x="40" y="207" font-size="12" class="count" text-anchor="start"></text>
+<text x="78" y="207" font-size="14" class="count" text-anchor="start">artifact_types</text>
+<text x="328" y="207" font-size="13" class="sub" text-anchor="end">适用产物类型</text>
+<text x="40" y="231" font-size="12" class="count" text-anchor="start"></text>
+<text x="78" y="231" font-size="14" class="count" text-anchor="start">implementation</text>
+<text x="328" y="231" font-size="13" class="sub" text-anchor="end">语言、源码与配置</text>
+</g>
+<g data-entity="Scenario">
+<rect class="node" x="480" y="24" width="320" height="176" rx="6"/>
+<line class="divider" x1="480" y1="68" x2="800" y2="68"/>
+<text x="496" y="52" font-size="20" class="name" text-anchor="start">Scenario</text>
+<text x="496" y="87" font-size="12" class="count" text-anchor="start">PK</text>
+<text x="534" y="87" font-size="14" class="count" text-anchor="start">scenario_id</text>
+<text x="784" y="87" font-size="13" class="sub" text-anchor="end">场景标识</text>
+<text x="496" y="111" font-size="12" class="count" text-anchor="start"></text>
+<text x="534" y="111" font-size="14" class="count" text-anchor="start">name</text>
+<text x="784" y="111" font-size="13" class="sub" text-anchor="end">场景名称</text>
+<text x="496" y="135" font-size="12" class="count" text-anchor="start"></text>
+<text x="534" y="135" font-size="14" class="count" text-anchor="start">artifact_type</text>
+<text x="784" y="135" font-size="13" class="sub" text-anchor="end">预期产物类型</text>
+<text x="496" y="159" font-size="12" class="count" text-anchor="start"></text>
+<text x="534" y="159" font-size="14" class="count" text-anchor="start">snapshot_ids</text>
+<text x="784" y="159" font-size="13" class="sub" text-anchor="end">测试数据 ID 列表</text>
+<text x="496" y="183" font-size="12" class="count" text-anchor="start"></text>
+<text x="534" y="183" font-size="14" class="count" text-anchor="start">check_refs</text>
+<text x="784" y="183" font-size="13" class="sub" text-anchor="end">规则 ID 与版本</text>
+</g>
+<g data-entity="RunnerSnapshot">
+<rect class="node" x="936" y="24" width="320" height="296" rx="6"/>
+<line class="divider" x1="936" y1="68" x2="1256" y2="68"/>
+<text x="952" y="52" font-size="20" class="name" text-anchor="start">RunnerSnapshot</text>
+<text x="952" y="87" font-size="12" class="count" text-anchor="start">PK</text>
+<text x="990" y="87" font-size="14" class="count" text-anchor="start">snapshot_id</text>
+<text x="1240" y="87" font-size="13" class="sub" text-anchor="end">随机 UUID</text>
+<text x="952" y="111" font-size="12" class="count" text-anchor="start"></text>
+<text x="990" y="111" font-size="14" class="count" text-anchor="start">schema_version</text>
+<text x="1240" y="111" font-size="13" class="sub" text-anchor="end">快照格式版本</text>
+<text x="952" y="135" font-size="12" class="count" text-anchor="start"></text>
+<text x="990" y="135" font-size="14" class="count" text-anchor="start">name</text>
+<text x="1240" y="135" font-size="13" class="sub" text-anchor="end">脱敏用户名</text>
+<text x="952" y="159" font-size="12" class="count" text-anchor="start"></text>
+<text x="990" y="159" font-size="14" class="count" text-anchor="start">athlete_ref</text>
+<text x="1240" y="159" font-size="13" class="sub" text-anchor="end">脱敏跑者标识</text>
+<text x="952" y="183" font-size="12" class="count" text-anchor="start"></text>
+<text x="990" y="183" font-size="14" class="count" text-anchor="start">as_of</text>
+<text x="1240" y="183" font-size="13" class="sub" text-anchor="end">数据截止日</text>
+<text x="952" y="207" font-size="12" class="count" text-anchor="start"></text>
+<text x="990" y="207" font-size="14" class="count" text-anchor="start">goal</text>
+<text x="1240" y="207" font-size="13" class="sub" text-anchor="end">项目与目标成绩</text>
+<text x="952" y="231" font-size="12" class="count" text-anchor="start"></text>
+<text x="990" y="231" font-size="14" class="count" text-anchor="start">generation_type</text>
+<text x="1240" y="231" font-size="13" class="sub" text-anchor="end">生成类型，可选</text>
+<text x="952" y="255" font-size="12" class="count" text-anchor="start"></text>
+<text x="990" y="255" font-size="14" class="count" text-anchor="start">constraints</text>
+<text x="1240" y="255" font-size="13" class="sub" text-anchor="end">训练约束</text>
+<text x="952" y="279" font-size="12" class="count" text-anchor="start"></text>
+<text x="990" y="279" font-size="14" class="count" text-anchor="start">history</text>
+<text x="1240" y="279" font-size="13" class="sub" text-anchor="end">训练事实与既有计划</text>
+<text x="952" y="303" font-size="12" class="count" text-anchor="start"></text>
+<text x="990" y="303" font-size="14" class="count" text-anchor="start">sha256</text>
+<text x="1240" y="303" font-size="13" class="sub" text-anchor="end">快照摘要</text>
+</g>
+<g data-entity="EvaluationTask">
+<rect class="node" x="24" y="384" width="320" height="176" rx="6"/>
+<line class="divider" x1="24" y1="428" x2="344" y2="428"/>
+<text x="40" y="412" font-size="20" class="name" text-anchor="start">EvaluationTask</text>
+<text x="40" y="447" font-size="12" class="count" text-anchor="start">PK</text>
+<text x="78" y="447" font-size="14" class="count" text-anchor="start">task_id</text>
+<text x="328" y="447" font-size="13" class="sub" text-anchor="end">任务标识</text>
+<text x="40" y="471" font-size="12" class="count" text-anchor="start"></text>
+<text x="78" y="471" font-size="14" class="count" text-anchor="start">agent_version</text>
+<text x="328" y="471" font-size="13" class="sub" text-anchor="end">所选 Agent 版本</text>
+<text x="40" y="495" font-size="12" class="count" text-anchor="start"></text>
+<text x="78" y="495" font-size="14" class="count" text-anchor="start">generation_model</text>
+<text x="328" y="495" font-size="13" class="sub" text-anchor="end">生成模型配置</text>
+<text x="40" y="519" font-size="12" class="count" text-anchor="start"></text>
+<text x="78" y="519" font-size="14" class="count" text-anchor="start">state</text>
+<text x="328" y="519" font-size="13" class="sub" text-anchor="end">任务状态</text>
+<text x="40" y="543" font-size="12" class="count" text-anchor="start"></text>
+<text x="78" y="543" font-size="14" class="count" text-anchor="start">scenarios</text>
+<text x="328" y="543" font-size="13" class="sub" text-anchor="end">场景与冻结规则实现</text>
+</g>
+<g data-entity="SnapshotExecution">
+<rect class="node" x="480" y="384" width="320" height="368" rx="6"/>
+<line class="divider" x1="480" y1="428" x2="800" y2="428"/>
+<text x="496" y="412" font-size="20" class="name" text-anchor="start">SnapshotExecution</text>
+<text x="496" y="447" font-size="12" class="count" text-anchor="start">PK</text>
+<text x="534" y="447" font-size="14" class="count" text-anchor="start">id</text>
+<text x="784" y="447" font-size="13" class="sub" text-anchor="end">执行项标识</text>
+<text x="496" y="471" font-size="12" class="count" text-anchor="start">FK</text>
+<text x="534" y="471" font-size="14" class="count" text-anchor="start">task_id</text>
+<text x="784" y="471" font-size="13" class="sub" text-anchor="end">所属任务</text>
+<text x="496" y="495" font-size="12" class="count" text-anchor="start"></text>
+<text x="534" y="495" font-size="14" class="count" text-anchor="start">scenario_id</text>
+<text x="784" y="495" font-size="13" class="sub" text-anchor="end">任务内的场景</text>
+<text x="496" y="519" font-size="12" class="count" text-anchor="start">FK</text>
+<text x="534" y="519" font-size="14" class="count" text-anchor="start">snapshot_id</text>
+<text x="784" y="519" font-size="13" class="sub" text-anchor="end">来源测试数据</text>
+<text x="496" y="543" font-size="12" class="count" text-anchor="start"></text>
+<text x="534" y="543" font-size="14" class="count" text-anchor="start">snapshot</text>
+<text x="784" y="543" font-size="13" class="sub" text-anchor="end">冻结快照内容</text>
+<text x="496" y="567" font-size="12" class="count" text-anchor="start"></text>
+<text x="534" y="567" font-size="14" class="count" text-anchor="start">request</text>
+<text x="784" y="567" font-size="13" class="sub" text-anchor="end">冻结的生成请求</text>
+<text x="496" y="591" font-size="12" class="count" text-anchor="start"></text>
+<text x="534" y="591" font-size="14" class="count" text-anchor="start">as_of</text>
+<text x="784" y="591" font-size="13" class="sub" text-anchor="end">冻结执行时点</text>
+<text x="496" y="615" font-size="12" class="count" text-anchor="start"></text>
+<text x="534" y="615" font-size="14" class="count" text-anchor="start">dispatch_status</text>
+<text x="784" y="615" font-size="13" class="sub" text-anchor="end">投递状态</text>
+<text x="496" y="639" font-size="12" class="count" text-anchor="start"></text>
+<text x="534" y="639" font-size="14" class="count" text-anchor="start">execute_status</text>
+<text x="784" y="639" font-size="13" class="sub" text-anchor="end">Generate 状态</text>
+<text x="496" y="663" font-size="12" class="count" text-anchor="start"></text>
+<text x="534" y="663" font-size="14" class="count" text-anchor="start">evaluate_status</text>
+<text x="784" y="663" font-size="13" class="sub" text-anchor="end">Evaluate 状态</text>
+<text x="496" y="687" font-size="12" class="count" text-anchor="start"></text>
+<text x="534" y="687" font-size="14" class="count" text-anchor="start">error</text>
+<text x="784" y="687" font-size="13" class="sub" text-anchor="end">阶段错误，可选</text>
+<text x="496" y="711" font-size="12" class="count" text-anchor="start"></text>
+<text x="534" y="711" font-size="14" class="count" text-anchor="start">lease</text>
+<text x="784" y="711" font-size="13" class="sub" text-anchor="end">持有者、请求、代次、期限</text>
+<text x="496" y="735" font-size="12" class="count" text-anchor="start"></text>
+<text x="534" y="735" font-size="14" class="count" text-anchor="start">result_receipt</text>
+<text x="784" y="735" font-size="13" class="sub" text-anchor="end">终态提交与原确认</text>
+</g>
+<g data-entity="Artifact">
+<rect class="node" x="936" y="384" width="320" height="200" rx="6"/>
+<line class="divider" x1="936" y1="428" x2="1256" y2="428"/>
+<text x="952" y="412" font-size="20" class="name" text-anchor="start">Artifact</text>
+<text x="952" y="447" font-size="12" class="count" text-anchor="start">PK</text>
+<text x="990" y="447" font-size="14" class="count" text-anchor="start">artifact_id</text>
+<text x="1240" y="447" font-size="13" class="sub" text-anchor="end">生成内容标识</text>
+<text x="952" y="471" font-size="12" class="count" text-anchor="start">FK</text>
+<text x="990" y="471" font-size="14" class="count" text-anchor="start">input_id</text>
+<text x="1240" y="471" font-size="13" class="sub" text-anchor="end">唯一所属执行项</text>
+<text x="952" y="495" font-size="12" class="count" text-anchor="start"></text>
+<text x="990" y="495" font-size="14" class="count" text-anchor="start">artifact_type</text>
+<text x="1240" y="495" font-size="13" class="sub" text-anchor="end">内容类型</text>
+<text x="952" y="519" font-size="12" class="count" text-anchor="start"></text>
+<text x="990" y="519" font-size="14" class="count" text-anchor="start">content</text>
+<text x="1240" y="519" font-size="13" class="sub" text-anchor="end">Agent 输出原文</text>
+<text x="952" y="543" font-size="12" class="count" text-anchor="start"></text>
+<text x="990" y="543" font-size="14" class="count" text-anchor="start">sha256</text>
+<text x="1240" y="543" font-size="13" class="sub" text-anchor="end">产物摘要</text>
+<text x="952" y="567" font-size="12" class="count" text-anchor="start"></text>
+<text x="990" y="567" font-size="14" class="count" text-anchor="start">validation</text>
+<text x="1240" y="567" font-size="13" class="sub" text-anchor="end">Schema 校验结果</text>
+</g>
+<g data-entity="CheckResult">
+<rect class="node" x="936" y="700" width="320" height="200" rx="6"/>
+<line class="divider" x1="936" y1="744" x2="1256" y2="744"/>
+<text x="952" y="728" font-size="20" class="name" text-anchor="start">CheckResult</text>
+<text x="952" y="763" font-size="12" class="count" text-anchor="start">PK</text>
+<text x="990" y="763" font-size="14" class="count" text-anchor="start">result_id</text>
+<text x="1240" y="763" font-size="13" class="sub" text-anchor="end">检查结果标识</text>
+<text x="952" y="787" font-size="12" class="count" text-anchor="start">FK</text>
+<text x="990" y="787" font-size="14" class="count" text-anchor="start">artifact_id</text>
+<text x="1240" y="787" font-size="13" class="sub" text-anchor="end">被评 Artifact</text>
+<text x="952" y="811" font-size="12" class="count" text-anchor="start"></text>
+<text x="990" y="811" font-size="14" class="count" text-anchor="start">check_id</text>
+<text x="1240" y="811" font-size="13" class="sub" text-anchor="end">实际执行的规则</text>
+<text x="952" y="835" font-size="12" class="count" text-anchor="start"></text>
+<text x="990" y="835" font-size="14" class="count" text-anchor="start">check_version</text>
+<text x="1240" y="835" font-size="13" class="sub" text-anchor="end">实际执行的版本</text>
+<text x="952" y="859" font-size="12" class="count" text-anchor="start"></text>
+<text x="990" y="859" font-size="14" class="count" text-anchor="start">status</text>
+<text x="1240" y="859" font-size="13" class="sub" text-anchor="end">通过、不通过、错误</text>
+<text x="952" y="883" font-size="12" class="count" text-anchor="start"></text>
+<text x="990" y="883" font-size="14" class="count" text-anchor="start">detail</text>
+<text x="1240" y="883" font-size="13" class="sub" text-anchor="end">理由、违反项或错误</text>
+</g>
+<line class="relation" x1="24" y1="950" x2="64" y2="950"/>
+<text x="76" y="955" font-size="14" class="sub" text-anchor="start">执行记录关联</text>
+<line class="relation return" x1="224" y1="950" x2="264" y2="950"/>
+<text x="276" y="955" font-size="14" class="sub" text-anchor="start">JSON 中的引用</text>
+<text x="484" y="955" font-size="14" class="sub" text-anchor="start">PK 主键    FK 关联键</text>
+<text x="716" y="955" font-size="14" class="sub" text-anchor="start">1 恰好一个    0..1 零或一个    0..* 零个或多个    1..* 一个或多个</text>
+</svg>
+</div>
+</section></main></body></html>
