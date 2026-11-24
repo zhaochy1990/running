@@ -137,20 +137,20 @@
 
 <view wx:if="{{showCard}}" class="shade">
   <view class="card-dialog">
-    <view class="card-header"><text class="section-title">配速卡</text><button class="text-action" bindtap="onCloseCard" disabled="{{cardBusy}}">关闭</button></view>
+    <view class="card-header"><text class="section-title">配速卡</text><button class="text-action" bindtap="onCloseCard">关闭</button></view>
     <scroll-view scroll-y class="card-scroll">
       <view class="card-content">
         <image wx:if="{{cardImage}}" class="card-preview" src="{{cardImage}}" mode="widthFix" />
         <view wx:elif="{{cardBusy}}" class="hint">正在生成配速卡…</view>
         <view class="field-label">标题（选填）</view>
-        <input class="field" value="{{cardTitle}}" maxlength="24" data-field="cardTitle" bindinput="onCardInput" disabled="{{cardBusy}}" />
+        <input class="field" value="{{cardTitle}}" maxlength="24" data-field="cardTitle" bindinput="onCardInput" />
         <view class="field-label">寄语（选填）</view>
-        <input class="field" value="{{cardMessage}}" maxlength="80" data-field="cardMessage" bindinput="onCardInput" disabled="{{cardBusy}}" />
+        <input class="field" value="{{cardMessage}}" maxlength="80" data-field="cardMessage" bindinput="onCardInput" />
       </view>
     </scroll-view>
     <view class="actions card-actions">
-      <button class="secondary" bindtap="onGenerateCard" disabled="{{cardBusy}}">生成预览</button>
-      <button class="primary" bindtap="onSaveCard" disabled="{{!cardImage || cardBusy}}">保存到相册</button>
+      <text wx:if="{{cardFailed}}" class="card-error">预览更新失败，保存时会重试</text>
+      <button class="primary" bindtap="onSaveCard" loading="{{cardBusy}}" disabled="{{cardBusy}}">保存到相册</button>
     </view>
   </view>
 </view>

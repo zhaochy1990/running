@@ -11,6 +11,7 @@ import { saveImageToAlbum } from '../../utils/saveImage';
 const PAGE = '/pages/pace-calculator/pace-calculator';
 const FAVORITES_KEY = 'stride.pace-calculator.favorites.v1';
 const MAX_FAVORITES = 20;
+const CARD_REFRESH_DELAY_MS = 250;
 
 function toast(title: string) {
   wx.showToast({ title, icon: 'none' });
@@ -92,7 +93,12 @@ Page({
     cardMessage: '',
     cardImage: '',
     cardBusy: false,
+    cardFailed: false,
   },
+
+  cardRefreshTimer: undefined as ReturnType<typeof setTimeout> | undefined,
+  cardRendering: false,
+  cardRevision: 0 as number | null,
 
   onLoad(options) {
     try {
@@ -112,6 +118,11 @@ Page({
 
   onReady() {
     if (this.data.result) this.scrollToResult();
+  },
+
+  onUnload() {
+    this.clearCardRefresh();
+    this.cardRevision = null;
   },
 
   scrollToResult() {
@@ -317,35 +328,63 @@ Page({
   },
 
   onOpenCard() {
-    this.setData({ showCard: true, cardImage: '', cardTitle: '', cardMessage: '' });
-    void this.onGenerateCard();
+    if (this.cardRevision === null || !this.data.result) return;
+    this.cardRevision++;
+    this.setData({ showCard: true, cardImage: '', cardTitle: '', cardMessage: '', cardBusy: true, cardFailed: false });
+    void this.refreshCard();
   },
 
   onCloseCard() {
-    if (!this.data.cardBusy) this.setData({ showCard: false });
+    this.clearCardRefresh();
+    this.setData({ showCard: false });
   },
 
   onCardInput(e: InputEvent) {
     const field = e.currentTarget.dataset.field as 'cardTitle' | 'cardMessage';
-    this.setData({ [field]: e.detail.value, cardImage: '' });
+    if (this.cardRevision === null || !this.data.showCard || e.detail.value === this.data[field]) return;
+    this.cardRevision++;
+    this.setData({ [field]: e.detail.value, cardBusy: true, cardFailed: false });
+    this.clearCardRefresh();
+    this.cardRefreshTimer = setTimeout(() => {
+      this.cardRefreshTimer = undefined;
+      void this.refreshCard();
+    }, CARD_REFRESH_DELAY_MS);
   },
 
-  async onGenerateCard() {
-    const { result, cardBusy, cardTitle, cardMessage } = this.data;
-    if (!result || cardBusy) return;
-    this.setData({ cardBusy: true, cardImage: '' });
+  clearCardRefresh() {
+    clearTimeout(this.cardRefreshTimer);
+    this.cardRefreshTimer = undefined;
+  },
+
+  async refreshCard() {
+    const { result, showCard, cardTitle, cardMessage } = this.data;
+    const revision = this.cardRevision;
+    if (!result || !showCard || revision === null || this.cardRendering) return;
+    this.cardRendering = true;
+    this.setData({ cardBusy: true, cardFailed: false });
+    let image = '';
     try {
-      this.setData({ cardImage: await renderPaceCard(result, cardTitle.trim(), cardMessage.trim()) });
+      image = await renderPaceCard(result, cardTitle.trim(), cardMessage.trim());
     } catch {
-      toast('配速卡生成失败，请重试');
+      // Keep the previous preview visible. Saving can retry the current text.
     } finally {
-      this.setData({ cardBusy: false });
+      this.cardRendering = false;
     }
+    if (this.cardRevision === null || !this.data.showCard) return;
+    // All renders share one canvas. Drop stale results and service the latest edit.
+    if (revision !== this.cardRevision) {
+      if (this.cardRefreshTimer === undefined) void this.refreshCard();
+      return;
+    }
+    this.setData({ cardBusy: false, cardFailed: !image, cardImage: image || this.data.cardImage });
   },
 
   async onSaveCard() {
-    if (!this.data.cardImage) return;
-    const status = await saveImageToAlbum(this.data.cardImage);
+    if (this.data.cardBusy) return;
+    if (this.data.cardFailed) await this.refreshCard();
+    const { showCard, cardBusy, cardFailed, cardImage } = this.data;
+    if (this.cardRevision === null || !showCard || cardBusy || cardFailed || !cardImage) return;
+    const status = await saveImageToAlbum(cardImage);
     if (status === 'saved') toast('已保存到相册');
     if (status === 'failed') toast('保存失败，请重试');
   },
