@@ -382,7 +382,7 @@ function buildMetrics(calibration: ReturnType<typeof projectCalibration>): Metri
       sub: 'STRIDE Threshold Pace',
       value: calibration.pace.value,
       unit: '/km',
-      baseline: threshold?.speed_confidence ? `置信 ${threshold.speed_confidence}` : '',
+      baseline: threshold?.speed_confidence ? `置信度 ${threshold.speed_confidence}` : '',
       color: '#00a85a',
     },
     {
@@ -390,7 +390,7 @@ function buildMetrics(calibration: ReturnType<typeof projectCalibration>): Metri
       sub: calibration.hr.label === '阈值心率' ? 'STRIDE Threshold HR' : '',
       value: calibration.hr.value,
       unit: 'bpm',
-      baseline: threshold?.hr_confidence ? `置信 ${threshold.hr_confidence}` : '',
+      baseline: threshold?.hr_confidence ? `置信度 ${threshold.hr_confidence}` : '',
       color: '#d97706',
     },
   ];
