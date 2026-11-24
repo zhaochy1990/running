@@ -3,7 +3,7 @@ import { allocateRaceWeek } from "../allocate.js";
 import { hasQualitySegment } from "../derive.js";
 import type { ContentRaceContext, ContentWeekRow } from "../doctrine.js";
 import { type ContentValidation, E_DURATION_INTERVAL_BAND, E_DURATION_NORMAL_BAND, LR_EVE_MAX_KM, sessionKm, weekdayOf } from "../validators.js";
-import { type AvailabilityConstraints, doubleSessionAllowed, effectiveDaysMaxOf, isAvailableDay, sessionLimitLabelOf, sessionLimitOf } from "./availability.js";
+import { type AvailabilityConstraints, doubleSessionAllowed, effectiveDaysMaxOf, isAvailableDay, windowLimitOf } from "./availability.js";
 import {
   boundaryPrefix,
   compareCandidates,
@@ -38,8 +38,8 @@ import { DOUBLE_ADMISSION_KM, RATIO_CAP, RATIO_CAP_EPS, type ScheduleCheck, sche
  * （后一遍带前一遍的下一周），整批分布指标不变差才采纳、到不动点为止。后续周
  * 因负荷排不出时优先调整可变周（devops#1054：回到最近的常规周改选下一个候选、
  * 重排其后各周），回溯预算用尽仍无解而贪心日历可行时才回退贪心。排课同时受
- * 用户可用度硬约束：可跑日、单课时长上限与日内时窗（P9，按含休息的墙钟时长）、
- * 双练许可——与课包/位型冲突时带具体冲突上浮（ScheduleResult.conflicts）。
+ * 用户可用度硬约束：可跑日、日内时窗（P9，按含休息的墙钟时长）、双练许可——与
+ * 课包/位型冲突时带具体冲突上浮（ScheduleResult.conflicts）。
  * 固定课包守恒（devops#1054）：排不下的课不静默剪除，最终课表逐项对账
  * （bagDeviationOf）。
  *
@@ -133,7 +133,7 @@ export interface ScheduleResult {
   /**
    * failures 中属于用户可用度与课包/位型硬冲突的部分（devops#1043「返回受冲突的
    * 日期和约束」；空=无）：长跑周日不可跑、可跑日装不下课包、课包装不进训练日容量
-   * （又不能靠一天两练）、结构课超出可训练时段（单课时长上限/日内时窗）、普通
+   * （又不能靠一天两练）、结构课超出可训练时段（日内时窗）、普通
    * 轻松课下限容不下、赛周激活窗无可跑日或激活课超时窗。编排层据此归类结构性无解。
    */
   conflicts: string[];
@@ -211,7 +211,7 @@ export interface ScheduleContext {
   /** 生产 PMC 当日快照（fitness_state.atl/ctl）。 */
   pmcSeed: PmcState;
   coefficients?: DoseCoefficients;
-  /** 用户可用度（devops#1043 可跑日、双练许可；devops#1054 单课时长上限与日内时窗）；缺省=未声明。 */
+  /** 用户可用度（devops#1043 可跑日、双练许可；devops#1054 日内时窗）；缺省=未声明。 */
   availability?: AvailabilityConstraints;
   /**
    * 首周周一之前的已知相邻日历（devops#1043：实绩或生效安排；任意长度，缺的
@@ -292,7 +292,7 @@ const LR_EVE_MIN_MINUTES = 30;
 
 /** 落位时长带（分钟）：间隔日/再生周=短带；LR 前日=km 帽（下限 0，有效性由
  * 置休摊量仲裁保证）；赛周激活窗=短帽。limitMin=该日 E 课可用的分钟上限
- * （devops#1054：单课时长上限与当日时窗取小，双练日再扣掉同日结构课）：上下限
+ * （devops#1054：当日时窗，双练日再扣掉同日结构课）：上下限
  * 都只往下钳、不超过它（上限不够时整带并到上限，再由 C9/P9 判合法性）。 */
 function eBandOf(flavor: EFlavor, row: ContentWeekRow, limitMin: number | null = null): [number, number] {
   const eMid = easyMidOf(row);
@@ -691,16 +691,14 @@ export function instantiateWeek(input: {
   const available = ctx.availability?.availableWeekdays ?? null;
   const isAvailable = (di: number) => isAvailableDay(available, di);
   const eMid = easyMidOf(row);
-  // E 课可用的分钟上限（devops#1054）钳 E 槽位实例化带：单课上限；声明了时窗时再受
-  // 「当日最长一段时窗 − 同日结构课的墙钟时长」限制——双练日的轻松课只占用结构课剩下
-  // 的时段。结构课时长由课包决定、本段不裁剪——超限由 P9 门拦下，无解原因由
-  // availabilityConflictOf 归位
+  // E 课可用的分钟上限（devops#1054）：声明了时窗时受「当日最长一段时窗 − 同日结构课
+  // 的墙钟时长」限制——双练日的轻松课只占用结构课剩下的时段；没声明=不受限。结构课
+  // 时长由课包决定、本段不裁剪——超限由 P9 门拦下，无解原因由 availabilityConflictOf 归位
   const eLimitOf = (di: number): number | null => {
-    const cap = ctx.availability?.maxSessionDurationMin ?? null;
     const window = ctx.availability?.windowMinutes?.[di];
-    if (window == null) return cap;
+    if (window == null) return null;
     const taken = structuredAt.filter((x) => x.di === di).reduce((sum, x) => sum + (elapsedMinutes(x.workout, eMid) ?? 0), 0);
-    return Math.max(0, Math.min(...[cap, window - taken].filter((limit): limit is number => limit != null)));
+    return Math.max(0, window - taken);
   };
   const bandOf = (flavor: EFlavor, di: number): [number, number] => eBandOf(flavor, row, eLimitOf(di));
 
@@ -1055,19 +1053,16 @@ function availabilityConflictOf(bag: WeekBag, row: ContentWeekRow, ctx: SingleWe
     if (longRunConflict != null) return longRunConflict;
   }
   if (row.role !== "race") {
-    // 普通轻松课（≥60min）在许可时长内排不出：单课上限或可跑平日最长的一段时窗
-    // 都容不下它的下限（减量/恢复周的 E 走短带，不受此限）
-    const cap = availability?.maxSessionDurationMin ?? null;
-    if (row.role !== "taper" && row.phase !== "recovery" && cap != null && cap < E_DURATION_NORMAL_BAND[0])
-      return `W${row.week} 单课时长上限 ${cap}min 低于普通轻松课下限 ${E_DURATION_NORMAL_BAND[0]}min——普通 E 日无法在许可时长内排课`;
+    // 普通轻松课（≥60min）在可跑平日的时窗里排不出：可跑平日最长的一段时窗容不下
+    // 它的下限（减量/恢复周的 E 走短带，不受此限）
     const weekdays = [0, 1, 2, 3, 4].filter((di) => isAvailableDay(available, di));
     const longestWindow = Math.max(0, ...weekdays.map((di) => availability?.windowMinutes?.[di] ?? 0));
     if (row.role !== "taper" && row.phase !== "recovery" && longestWindow > 0 && longestWindow < E_DURATION_NORMAL_BAND[0])
       return `W${row.week} 可跑平日的可训练时段最长 ${longestWindow}min，低于普通轻松课下限 ${E_DURATION_NORMAL_BAND[0]}min——普通 E 日无法在许可时长内排课`;
   }
-  // 结构课装不进可训练时段（devops#1054）：单课时长上限与日内时窗对结构课同样是硬
-  // 约束——长跑固定周日，带日期报；其余结构课在可跑平日里找不到一天容得下。赛周
-  // 只看比赛课以外的课（比赛日是固定事件，不受限）
+  // 结构课装不进可训练时段（devops#1054）：日内时窗对结构课同样是硬约束——长跑
+  // 固定周日，带日期报；其余结构课在可跑平日里找不到一天容得下。赛周只看比赛课
+  // 以外的课（比赛日是固定事件，不受限）
   const coefficients = ctx.coefficients ?? DEFAULT_DOSE_COEFFICIENTS;
   const raceCourse = row.role === "race" ? raceCourseOf(structured, row, coefficients) : null;
   const eMid = easyMidOf(row);
@@ -1076,13 +1071,16 @@ function availabilityConflictOf(bag: WeekBag, row: ContentWeekRow, ctx: SingleWe
     const minutes = elapsedMinutes(materializeCourse(course, "2000-01-03"), eMid);
     if (minutes == null) continue;
     if (course.type === "LR") {
-      if ((sessionLimitOf(availability, 6) ?? Infinity) < minutes)
-        return `W${row.week} ${course.name}≈${Math.round(minutes)}min 超出周日（${dateOf(mondayOf(ctx.weekMonday), 6)}）的可训练时段（${sessionLimitLabelOf(availability, 6)}）`;
+      const window = windowLimitOf(availability, 6);
+      if (window != null && window < minutes)
+        return `W${row.week} ${course.name}≈${Math.round(minutes)}min 超出周日（${dateOf(mondayOf(ctx.weekMonday), 6)}）的可训练时段（时窗 ${window}min）`;
       continue;
     }
     const days = [0, 1, 2, 3, 4].filter((di) => isAvailableDay(available, di));
-    if (days.length === 0 || days.some((di) => (sessionLimitOf(availability, di) ?? Infinity) >= minutes)) continue;
-    return `W${row.week} ${course.name}≈${Math.round(minutes)}min 超出可跑日（${weekdaysLabel(days)}）的可训练时段（最长 ${Math.max(...days.map((di) => sessionLimitOf(availability, di) ?? Infinity))}min）`;
+    // 没声明时窗的日子按不限（Infinity）算
+    const windows = days.map((di) => windowLimitOf(availability, di) ?? Infinity);
+    if (windows.length === 0 || windows.some((window) => window >= minutes)) continue;
+    return `W${row.week} ${course.name}≈${Math.round(minutes)}min 超出可跑日（${weekdaysLabel(days)}）的可训练时段（最长 ${Math.max(...windows)}min）`;
   }
   return null;
 }

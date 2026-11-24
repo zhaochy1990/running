@@ -84,7 +84,7 @@ export function fromStoredContent(args: { content: Record<string, unknown>; mast
   // 提示补选）；半残段同按未设置处理（宁可少排不排脏课）。
   const strength = parseStoredStrength(availability as Record<string, unknown>);
 
-  // devops#1043：约束排课的可用度明细（禁跑日/日内窗口/单课时长上限/双练许可）；
+  // devops#1043：约束排课的可用度明细（禁跑日/日内窗口/双练许可）；
   // 存量行只有天数上限时 detail 缺省——续排沿用可确认的约束，具体日期按未知处理
   const detail = masterPlanAvailabilityDetail(availability);
   const totalWeeks = content.total_weeks;
@@ -127,15 +127,9 @@ function weekdayList(value: unknown): Weekday[] | null {
  * 力量日可为空——表单关闭时清空）。
  */
 function parseStoredStrength(availability: Record<string, unknown>): RollingStrengthAvailability | null {
-  const {
-    strength_sessions_per_week: sessions,
-    strength_available_days: days,
-    allows_double_sessions: doubles,
-    max_session_duration_min: maxDuration,
-  } = availability;
+  const { strength_sessions_per_week: sessions, strength_available_days: days, allows_double_sessions: doubles } = availability;
   if (typeof sessions !== "number" || !Number.isInteger(sessions) || sessions < 0) return null;
   if (typeof doubles !== "boolean") return null;
-  if (typeof maxDuration !== "number" || !Number.isInteger(maxDuration) || maxDuration <= 0) return null;
   const availableDays = weekdayList(days);
   if (availableDays === null) return null;
   return {
@@ -143,6 +137,5 @@ function parseStoredStrength(availability: Record<string, unknown>): RollingStre
     availableDays,
     allowsDoubleSessions: doubles,
     unavailableDays: weekdayList(availability.unavailable_days) ?? [],
-    maxSessionDurationMin: maxDuration,
   };
 }

@@ -160,12 +160,8 @@ test("周五追赶出课（devops#1054）：周文档、重点课、剂量与审
 
 test("滚动续排：存量 content 回读可用度 → 真实内核排出的周课避开禁跑日；批首周接实绩 + 仍生效的存量课表", async () => {
   const master = storedPlan();
-  assert.deepEqual(master.availability.detail, {
-    available_training_windows: [],
-    unavailable_days: ["thursday"],
-    max_session_duration_min: 150,
-    allows_double_sessions: false,
-  });
+  // 存量行里的 max_session_duration_min 不进明细（devops#1054：跑课上限按能力派生）
+  assert.deepEqual(master.availability.detail, { available_training_windows: [], unavailable_days: ["thursday"], allows_double_sessions: false });
   // 生成时点=第 12 周周三：该周周一~周三按实绩、周四~周日按存量周安排
   const asOf = addDays(START_DATE, (START_WEEK - 2) * 7 + 2);
   const previousMonday = addDays(START_DATE, (START_WEEK - 2) * 7);

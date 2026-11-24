@@ -10,7 +10,8 @@ import { createAssessmentSnapshot, createTestCompletedOutcomeV3, createTestReque
 
 /**
  * 内核内容节点的排课可用度接线（devops#1043）：用真实形态的确认请求（availability
- * 带日内窗口/禁跑日/单课时长上限/双练许可 + 首选长跑日/力量项）跑 content 节点，
+ * 带日内窗口/禁跑日/双练许可 + 首选长跑日/力量项，另带已弃用的单课时长上限）跑
+ * content 节点，
  * 可用度与历史边界确实进入排位段；周日与长跑位型冲突时具体原因随失败上浮。
  */
 
@@ -78,12 +79,8 @@ test("content 节点：真实形态请求的可用度与历史边界进入排位
   const scheduled = update.scheduled!;
   assert.ok(scheduled.weeks.length > 0);
   assert.equal(scheduled.distribution.length, update.contentInput!.rows.filter((row) => row.role !== "race").length, "每个常规周一份分布留痕");
-  assert.deepEqual(update.contentInput!.availability, {
-    availableWeekdays: [0, 1, 2, 3, 4, 5, 6],
-    windowMinutes: null,
-    maxSessionDurationMin: 180,
-    allowsDoubleSessions: false,
-  });
+  // 请求里的 max_session_duration_min=180 不进排位（devops#1054：跑课上限按能力派生）
+  assert.deepEqual(update.contentInput!.availability, { availableWeekdays: [0, 1, 2, 3, 4, 5, 6], windowMinutes: null, allowsDoubleSessions: false });
   // 首周接已知历史：上周一~周六有实绩（跑步）；生成当天（上周日）还没跑≠休息，记未知
   const boundary = update.contentInput!.boundary!;
   assert.equal(boundary.length, 7);

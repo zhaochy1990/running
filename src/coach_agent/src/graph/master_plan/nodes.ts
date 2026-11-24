@@ -66,6 +66,7 @@ import { generatePhaseDivisionIntent, type PhasingModel } from "./phasing/genera
 import { buildWeeklySeries, habitualBaseline } from "./phasing/load/baseline.js";
 import { buildLoadPlan } from "./phasing/load/expand.js";
 import { halfMarathonTrainingPace, runwayWeeks as raceRunwayWeeks } from "./phasing/racePolicy.js";
+import { longRunMaxKmOfZone } from "./phasing/sessionCaps.js";
 import { buildV2Snapshot } from "./v2Snapshot.js";
 
 export interface MasterPlanGraphDependencies {
@@ -305,12 +306,8 @@ export class MasterPlanNodes {
     const goal = aGoalOf(request);
     const runwayWeeks = raceRunwayWeeks(monday, goal.race_date, goal.distance);
     try {
-      const raceEasyBand = projectZones(
-        state.evidence!.current_capability.vdot!,
-        parseHms(goal.target_time!)!,
-        RACE_DISTANCES_M[goal.distance],
-        runwayWeeks,
-      ).weeks.at(-1)!.zones.easy!;
+      const projection = projectZones(state.evidence!.current_capability.vdot!, parseHms(goal.target_time!)!, RACE_DISTANCES_M[goal.distance], runwayWeeks);
+      const raceEasyBand = projection.weeks.at(-1)!.zones.easy!;
       const raceEasyPaceSKm = (raceEasyBand[0]! + raceEasyBand[1]!) / 2;
       const series = buildWeeklySeries(activities, asOfOf(request));
       const skeleton = buildLoadPlan({
@@ -318,6 +315,8 @@ export class MasterPlanNodes {
         distance: goal.distance,
         raceDate: goal.race_date,
         raceEasyPaceSKm,
+        // 长跑上限按能力换算（devops#1054）：取能力投影第 1 周（计划起点能力）的 E 带
+        longRunMaxKm: longRunMaxKmOfZone(projection.weeks[0]!.zones.easy),
         weeklyRunDaysMax: request.availability.weekly_run_days_max,
         runwayWeeks,
         baseline: habitualBaseline(series),
@@ -382,7 +381,7 @@ export class MasterPlanNodes {
         },
         planStartMonday: monday,
         provenSessions,
-        // devops#1043：确认请求的具体可用度（禁跑日/日内窗口/单课时长上限/双练许可）
+        // devops#1043：确认请求的具体可用度（禁跑日/日内窗口/双练许可）
         // 带到排位段；首周接上已知历史实绩
         availability: schedulingAvailabilityOf(masterPlanAvailabilityDetail(request.availability)),
         boundary: boundaryBefore({ startMonday: monday, asOfDay, activities: state.activities ?? [] }),
@@ -600,7 +599,6 @@ export class MasterPlanNodes {
           availableDays: request.availability.strength_available_days,
           allowsDoubleSessions: request.availability.allows_double_sessions,
           unavailableDays: request.availability.unavailable_days,
-          maxSessionDurationMin: request.availability.max_session_duration_min,
         },
       });
       return { plan: MasterPlanSchema.parse(plan), weeklyDocs };

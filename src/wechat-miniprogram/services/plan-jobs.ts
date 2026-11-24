@@ -94,7 +94,6 @@ export interface MasterPlanJobRequest {
     weekly_run_days_max: number;
     available_training_windows: Array<Record<string, string>>;
     unavailable_days: string[];
-    max_session_duration_min: number;
     allows_double_sessions: boolean;
     preferred_long_run_day: string | null;
     strength_sessions_per_week: number;

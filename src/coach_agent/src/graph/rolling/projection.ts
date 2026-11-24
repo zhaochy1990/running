@@ -39,6 +39,7 @@ import { buildPhaseEvidence, type PhaseEvidence, type PhasingActivityInput } fro
 import { buildWeeklySeries, habitualBaseline, type WeeklySeries } from "../master_plan/phasing/load/baseline.js";
 import { buildLoadPlan } from "../master_plan/phasing/load/expand.js";
 import { halfMarathonTrainingPace, runwayWeeks as raceRunwayWeeks } from "../master_plan/phasing/racePolicy.js";
+import { longRunMaxKmOfZone } from "../master_plan/phasing/sessionCaps.js";
 import type { AdjustRecipe } from "./adjust/recipes.js";
 import { type ExistingWeekRef, evaluateAdjustWindow } from "./adjust/window.js";
 import { buildWeeklyDocs, freezePastSessions, mergeAdjustedWeekDocs } from "./weeklyDocs.js";
@@ -243,11 +244,16 @@ export async function runProjectionCore(deps: RollingDeps, input: RollingProject
   // ③ L3 重展开（存量 policy + 新鲜基线 + 历史实际周）→ 全跑道新骨架；六门挂 = infeasible。
   const raceEasyBand = projectZones(vdot, targetSec, RACE_DISTANCES_M[master.race.distance ?? "FM"], master.totalWeeks).weeks.at(-1)!.zones.easy!;
   const raceEasyPaceSKm = (raceEasyBand[0]! + raceEasyBand[1]!) / 2;
+  // 能力投影带（批行与长跑上限同源）：调整投影按 recipe.vdotShift 偏移——配速放缓一档
+  // =VDOT −1；长跑上限取投影第 1 周（计划起点能力）的 E 带（devops#1054）
+  const vdotShift = adjust?.recipe.vdotShift ?? 0;
+  const projection = projectZones(vdot + vdotShift, targetSec, RACE_DISTANCES_M[master.race.distance ?? "FM"], master.totalWeeks);
   const skeletonNew = buildLoadPlan({
     intent: master.policy,
     distance: master.race.distance ?? "FM",
     raceDate: master.race.date,
     raceEasyPaceSKm,
+    longRunMaxKm: longRunMaxKmOfZone(projection.weeks[0]!.zones.easy),
     weeklyRunDaysMax: master.availability.weeklyRunDaysMax,
     runwayWeeks: master.totalWeeks,
     baseline,
@@ -288,11 +294,8 @@ export async function runProjectionCore(deps: RollingDeps, input: RollingProject
   }
 
   try {
-    // ⑤ 批行构造（master content 节点同款）：新鲜 VDOT 重算投影带（调整投影
-    // 按 recipe.vdotShift 偏移——配速放缓一档=VDOT −1）；kmDerateFirstWeek
-    // 在骨架源头上降载窗口首周（行、偏差、周文档 target km 三处同源生效）。
-    const vdotShift = adjust?.recipe.vdotShift ?? 0;
-    const projection = projectZones(vdot + vdotShift, targetSec, RACE_DISTANCES_M[master.race.distance ?? "FM"], master.totalWeeks);
+    // ⑤ 批行构造（master content 节点同款）：kmDerateFirstWeek 在骨架源头上降载
+    // 窗口首周（行、偏差、周文档 target km 三处同源生效）。
     const derate = adjust?.recipe.kmDerateFirstWeek;
     const skeletonForBatch: LoadPlan =
       derate != null

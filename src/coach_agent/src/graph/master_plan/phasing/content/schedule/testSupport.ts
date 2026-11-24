@@ -173,7 +173,6 @@ export const failuresOfPlacement = (result: ReturnType<typeof instantiateWeek>):
 export const availabilityOf = (availableWeekdays: number[], extra: Partial<AvailabilityConstraints> = {}): AvailabilityConstraints => ({
   availableWeekdays,
   windowMinutes: null,
-  maxSessionDurationMin: null,
   allowsDoubleSessions: null,
   ...extra,
 });

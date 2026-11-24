@@ -187,7 +187,7 @@ export interface ContentGeneratorInput {
    * 须参照已证水平（低于它=浪费训练日），由调用方从 L1 activities 构造。 */
   provenSessions?: ProvenSession[];
   /**
-   * 排课可用度（devops#1043：可跑日/单课时长上限/双练许可）；缺省=仅天数上限。
+   * 排课可用度（devops#1043：可跑日/双练许可；devops#1054 日内时窗）；缺省=仅天数上限。
    * 只进排位段，不进 L4a payload。
    */
   availability?: AvailabilityConstraints;

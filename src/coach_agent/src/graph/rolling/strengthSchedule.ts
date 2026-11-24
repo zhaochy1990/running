@@ -217,14 +217,6 @@ function estimateDurationS(exercises: ExerciseSpec[]): number {
   );
 }
 
-/** 单课时长上限裁剪：从模板尾部裁动作直至放得下（至少保留 1 个动作，确定性）。 */
-function fitTemplate(template: StrengthTemplate, maxSessionDurationMin: number): ExerciseSpec[] {
-  const cap = maxSessionDurationMin * 60;
-  const exercises = [...template.exercises];
-  while (exercises.length > 1 && estimateDurationS(exercises) > cap) exercises.pop();
-  return exercises;
-}
-
 /**
  * 本周是否排一节下肢负重课（确定性）：基础/早期质量/过渡期——两节=下肢+核心、
  * 单节按周奇偶；专项/恢复期不排（只给维持激活——阶段策略原文：力量减量维持
@@ -429,7 +421,7 @@ function findRelocationTarget(
 /** 力量会话（plan-session/v1 kind=strength + 完整 strength-workout/v1 spec；session_index 由调用方回填）。 */
 export function toStrengthSession(placement: StrengthPlacement, prefs: RollingStrengthAvailability): WeeklyPlan["sessions"][number] {
   const template = TEMPLATES[placement.templateId];
-  const exercises = fitTemplate(template, prefs.maxSessionDurationMin);
+  const exercises: ExerciseSpec[] = [...template.exercises];
   const spec: StrengthWorkout = {
     schema: "strength-workout/v1",
     name: template.name,

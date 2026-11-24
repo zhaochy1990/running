@@ -192,9 +192,9 @@ export type DanielsAudit = z.infer<typeof DanielsAuditSchema>;
 // ── availability：训练可用度（devops#1043）──────────────────────────────────
 //
 // 请求契约的 AvailabilitySchema 与落库 availability 共用下面两个 schema（单源）。
-// 落库只存约束排课的四项明细 + 天数上限：首次生成据此排课，滚动续排从存量
-// 还原同一份约束。有明确可用窗口时候选日同时满足窗口与禁跑日；窗口为空数组
-// =未指定日内时段，候选日=一周七天扣除禁跑日。
+// 落库只存约束排课的明细 + 天数上限：首次生成据此排课，滚动续排从存量还原同一
+// 份约束（devops#1054 起跑课的单课上限按能力派生，不再从中读取）。有明确可用窗口
+// 时候选日同时满足窗口与禁跑日；窗口为空数组=未指定日内时段，候选日=一周七天扣除禁跑日。
 
 /** 星期枚举（序=周一..周日；与表单卡的 WEEKDAY_VALUES 同源）。 */
 export const AVAILABILITY_WEEKDAY = z.enum(WEEKDAY_VALUES);
@@ -210,13 +210,14 @@ export const TRAINING_WINDOW_SCHEMA = z.strictObject({
 
 /**
  * 落库 availability：天数上限必填 + 明细（全可选——#1043 之前的存量行只有天数上限）。
- * #1043 四项约束跑课排位（首次生成直带、滚动续排读回）；#222 力量两项供滚动/
+ * #1043 明细三项约束跑课排位（首次生成直带、滚动续排读回）；#222 力量两项供滚动/
  * 调整/伤病维持排力量课（读回侧缺省视为「未设置」，继续只出跑课并提示补选）。
  */
 export const MasterPlanAvailabilitySchema = z.strictObject({
   weekly_run_days_max: z.int().min(1).max(7),
   available_training_windows: z.array(TRAINING_WINDOW_SCHEMA).optional(),
   unavailable_days: z.array(AVAILABILITY_WEEKDAY).optional(),
+  /** 已弃用（devops#1054）：跑课上限按能力派生，服务端不读；仅为兼容存量行保留。 */
   max_session_duration_min: z.int().positive().optional(),
   allows_double_sessions: z.boolean().optional(),
   strength_sessions_per_week: z.int().nonnegative().optional(),
@@ -231,12 +232,13 @@ export const AvailabilityDetailSchema = MasterPlanAvailabilitySchema.omit({
 });
 export type AvailabilityDetail = z.infer<typeof AvailabilityDetailSchema>;
 
-const AVAILABILITY_DETAIL_KEYS = ["available_training_windows", "unavailable_days", "max_session_duration_min", "allows_double_sessions"] as const;
+const AVAILABILITY_DETAIL_KEYS = ["available_training_windows", "unavailable_days", "allows_double_sessions"] as const;
 
 /**
- * availability 里约束排课的明细（校验后取出）；四项都没有=undefined（仅天数
+ * availability 里约束排课的明细（校验后取出）；三项都没有=undefined（仅天数
  * 上限已知，具体日期未知）。生成入口、落库、存量读取三处共用，避免各自挑字段漂移。
- * 请求的 availability 还带首选长跑日与力量项（不进排位段）——先挑四项再过严格 schema。
+ * 请求的 availability 还带首选长跑日与力量项（不进排位段）——先挑三项再过严格 schema；
+ * 已弃用的 max_session_duration_min 不在其中，只剩它=未声明。
  */
 export function masterPlanAvailabilityDetail(value: unknown): AvailabilityDetail | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;

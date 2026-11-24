@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { addDays, shanghaiDay, type WeeklyPlan } from "@stride/contract";
+import { addDays, normalizeRunWorkout, type RunWorkout, shanghaiDay, type WeeklyPlan } from "@stride/contract";
 import { danielsAudit } from "../danielsAudit.js";
+import type { PaceZones } from "../derive.js";
 import { buildContentPayload } from "../doctrine.js";
 import { templateFallback } from "../fallback.js";
 import { generateWeekContent, type ScheduledOutcome } from "../generate.js";
 import { schedulingAvailabilityOf } from "./availability.js";
 import { boundaryBefore, publishedWeekFacts } from "./boundary.js";
 import { type DayFact, factsOfDays } from "./distribution.js";
-import { type PlannedCourse, type StructuredCourse, scheduleWeeks, type WeekBag } from "./scheduler.js";
+import { DEFAULT_DOSE_COEFFICIENTS } from "./dose.js";
+import { scheduleGates } from "./gates.js";
+import { type CalendarDay, DAY_LABELS, type LoadSeriesPoint, type PlannedCourse, type StructuredCourse, scheduleWeeks, type WeekBag } from "./scheduler.js";
 import {
   availabilityOf,
   draftOf,
@@ -27,10 +30,11 @@ import {
   raceRow,
   scheduleCtxOf,
   tCourse,
+  ZONES,
 } from "./testSupport.js";
 
 /**
- * 排课可用度与跨周边界验收（devops#1043）：禁跑日/日内窗口/单课时长上限/双练
+ * 排课可用度与跨周边界验收（devops#1043）：禁跑日/日内窗口/双练
  * 许可进入排位；首次生成、滚动续排、模板兜底带同一份已知相邻日历与负荷种子；
  * 跨周/跨批次/未知边界/已锁定日期/赛周；硬约束无解返回具体冲突。
  */
@@ -266,16 +270,16 @@ const windowsWith = (sunday: Array<[string, string]> = [["06:00", "10:00"]], wee
   ...sunday.map(([start_time, end_time]) => ({ day: "sunday" as const, start_time, end_time })),
 ];
 
-test("日内时窗与单课上限进最终硬校验：周日 30min 时窗 + 上限 70min 拒绝 104min 长跑，带日期与冲突上浮", () => {
-  const availability = schedulingAvailabilityOf({ available_training_windows: windowsWith([["06:00", "06:30"]]), max_session_duration_min: 70 });
+test("日内时窗进最终硬校验：周日 30min 时窗拒绝 104min 长跑，带日期与冲突上浮", () => {
+  const availability = schedulingAvailabilityOf({ available_training_windows: windowsWith([["06:00", "06:30"]]) });
   const result = scheduleWeeks([fourRunBag(1)], scheduleCtxOf([normalRow(1)], { availability }));
   assert.equal(result.ok, false);
-  assert.match(result.failures[0]!, /^W1 长跑 20km≈104min 超出周日（2026-12-06）的可训练时段（单课上限 70min、时窗 30min）/);
+  assert.match(result.failures[0]!, /^W1 长跑 20km≈104min 超出周日（2026-12-06）的可训练时段（时窗 30min）/);
   assert.deepEqual(result.conflicts, [result.failures[0]], "编排层据 conflicts 归类结构性无解");
 });
 
-test("单课上限进硬校验：上限 70min 装不下 104min 长跑——重试清单与最终上浮都指向这条冲突，不再只告警放行", async () => {
-  const input = generatorInput([normalRow(1)], { availability: schedulingAvailabilityOf({ max_session_duration_min: 70 }) });
+test("时窗装不下模板的长跑：重试清单与最终上浮都指向这条冲突，不归成实现缺陷", async () => {
+  const input = generatorInput([normalRow(1)], { availability: schedulingAvailabilityOf({ available_training_windows: windowsWith([["06:00", "06:30"]]) }) });
   const retries: string[][] = [];
   const model = {
     invoke: async (_input: unknown, retry?: { violations: string[] }) => {
@@ -285,13 +289,100 @@ test("单课上限进硬校验：上限 70min 装不下 104min 长跑——重�
   };
   await assert.rejects(
     () => generateWeekContent(input, model, { pmcSeed: PMC_SEED }),
-    /L4 结构性无解（用户可用度与课包冲突）：W1 长跑 20km≈104min 超出周日（2026-12-06）的可训练时段（单课上限 70min）/,
-    "模板的长跑同样超限——按用户可用度冲突上浮，不归成实现缺陷",
+    /L4 结构性无解（用户可用度与课包冲突）：W1 长跑 20km≈104min 超出周日（2026-12-06）的可训练时段（时窗 30min）/,
+    "模板的长跑同样装不下——按用户可用度冲突上浮",
   );
   assert.ok(
     retries.some((violations) => violations.some((violation) => violation.includes("超出周日"))),
     "重试清单带上冲突",
   );
+});
+
+test("用户选的单课上限不再进排课（devops#1054）：明细里带着 max_session_duration_min=70，104 分钟的长跑照常排出", () => {
+  const availability = schedulingAvailabilityOf({
+    available_training_windows: [],
+    unavailable_days: [],
+    max_session_duration_min: 70,
+    allows_double_sessions: false,
+  });
+  assert.deepEqual(availability, { availableWeekdays: [0, 1, 2, 3, 4, 5, 6], windowMinutes: null, allowsDoubleSessions: false });
+  const result = scheduleWeeks([fourRunBag(1)], scheduleCtxOf([normalRow(1)], { availability }));
+  assert.ok(result.ok, result.failures.join(";"));
+});
+
+/** 一周七天日历：只在周二放指定的那节课，其余日休息（配一条负荷序列，供直接过门）。 */
+function weekCalendarWith(workout: RunWorkout): { calendar: CalendarDay[]; loadSeries: LoadSeriesPoint[] } {
+  return {
+    calendar: Array.from({ length: 7 }, (_, di) => ({
+      week: 1,
+      date: addDays(PLAN_START_MONDAY, di),
+      day: DAY_LABELS[di as 0 | 1 | 2 | 3 | 4 | 5 | 6],
+      sessions: di === 1 ? [workout] : [],
+    })),
+    loadSeries: Array.from({ length: 7 }, (_, di) => {
+      const acute = 38 + di * 0.5;
+      return {
+        date: addDays(PLAN_START_MONDAY, di),
+        week: 1,
+        loadPt: di === 1 ? 56 : 0,
+        atl: acute,
+        ctl: 38,
+        ratio: Math.round((acute / 38) * 100) / 100,
+        sessions: di === 1 ? [workout.name] : [],
+      };
+    }),
+  };
+}
+
+test("长跑上限按能力派生并进最终硬校验（devops#1054）：180 分钟 @ 当周 E 配速中点、至多 40km", () => {
+  // E 带中点 312s/km：180×60÷312 = 34.615 → 向下取整到 0.1 = 34.6
+  // 跑进 4'10"/km 的 E 带中点 250s/km：180 分钟 = 43.2km → 封在 40km（六带整体上移，E 配速才不会落进 M/T 带）
+  const FAST = { easy: [240, 260], m: [215, 240], t: [205, 215], i: [195, 205], r: [null, 195] } as const;
+  // totalKm 跟着长跑走：有氧份额门（P7）要求轻松课占够比例，周量定死会让它先挂
+  const overCapFailures = (zones: PaceZones, longRunKm: number, totalKm: number) =>
+    failuresOfPlacement(
+      instantiatePlacement({
+        byWeekday: { 0: [eSlot("normal")], 3: [eSlot("normal")], 6: [lrCourse(longRunKm)] },
+        row: normalRow(1, { totalKm, longRunKm, zones }),
+        bagCourses: [lrCourse(longRunKm), eSlot("normal"), eSlot("normal")],
+      }),
+    );
+  assert.deepEqual(overCapFailures(ZONES, 34.6, 60), []);
+  assert.match(overCapFailures(ZONES, 34.7, 60)[0]!, /长跑 34\.7km 超出长跑上限 34\.6km（180 分钟 @ E 配速，至多 40km）$/);
+  assert.deepEqual(overCapFailures(FAST, 40, 70), []);
+  assert.match(overCapFailures(FAST, 40.1, 70)[0]!, /长跑 40\.1km 超出长跑上限 40km（180 分钟 @ E 配速，至多 40km）$/);
+});
+
+test("日常有氧上限 = 普通日时长带上限 90 分钟（devops#1054）：终检拦下超过 90 分钟的轻松课", () => {
+  const easyOf = (minutes: number): RunWorkout =>
+    normalizeRunWorkout({
+      name: `E ${minutes}min`,
+      date: addDays(PLAN_START_MONDAY, 1),
+      type: "E",
+      purpose: "有氧轻松课。",
+      blocks: [
+        {
+          repeat: 1,
+          steps: [
+            {
+              step_kind: "work",
+              duration: { kind: "time_s", value: minutes * 60 },
+              target: { kind: "pace_s_km", low: 288, high: 336 },
+              note: null,
+              hr_cap_bpm: null,
+            },
+          ],
+        },
+      ],
+    });
+  const p9Of = (minutes: number) => {
+    const { calendar, loadSeries } = weekCalendarWith(easyOf(minutes));
+    return scheduleGates({ calendar, loadSeries, row: normalRow(1), daysMax: 4, raceDate: null, coefficients: DEFAULT_DOSE_COEFFICIENTS }).find(
+      (check) => check.id === "P9 单课时长",
+    )!;
+  };
+  assert.deepEqual(p9Of(90), { id: "P9 单课时长", pass: true, detail: "全过" });
+  assert.deepEqual(p9Of(95), { id: "P9 单课时长", pass: false, detail: "2026-12-01 有氧课 95min 超出日常有氧上限 90min" });
 });
 
 test("同日多个时窗：单课须装进连续的一段——两段各 60min 装不下 104min 长跑，相交并成一段 210min 就装得下；空时窗=不限", () => {
@@ -318,18 +409,15 @@ test("同日多个时窗：单课须装进连续的一段——两段各 60min �
   assert.ok(scheduleWeeks([fourRunBag(1)], scheduleCtxOf([normalRow(1)], { availability: schedulingAvailabilityOf({ available_training_windows: [] }) })).ok);
 });
 
-test("赛日本身豁免：比赛课不受单课上限与时窗约束，赛周其余课照常受限", () => {
+test("赛日本身豁免：比赛课不受日内时窗约束，赛周其余课照常受限", () => {
   const race = { ...RACE, date: addDays(PLAN_START_MONDAY, 6) }; // 第 1 周周日
-  const ctxOf = (weekdayEnd: string, maxSessionDurationMin?: number) =>
+  const ctxOf = (weekdayEnd: string) =>
     scheduleCtxOf([raceRow(1)], {
       race,
-      availability: schedulingAvailabilityOf({
-        available_training_windows: windowsWith([["06:00", "06:30"]], weekdayEnd),
-        ...(maxSessionDurationMin != null ? { max_session_duration_min: maxSessionDurationMin } : {}),
-      }),
+      availability: schedulingAvailabilityOf({ available_training_windows: windowsWith([["06:00", "06:30"]], weekdayEnd) }),
     });
-  // 42.2km 比赛课（≈3 小时）落在 30min 时窗、上限 70min 之下照常通过
-  const raceWeek = scheduleWeeks([raceBag(1)], ctxOf("10:00", 70));
+  // 42.2km 比赛课（≈3 小时）落在 30min 时窗之下照常通过——比赛日是目标事件不是训练课
+  const raceWeek = scheduleWeeks([raceBag(1)], ctxOf("10:00"));
   assert.ok(raceWeek.ok, raceWeek.failures.join(";"));
   assert.ok(raceWeek.weeks[0]!.checks.every((check) => check.pass));
   // 赛前激活课（热身 15min + 4km ≈31min）不是目标事件：周一至周六只剩 30min 时窗时被拦下并点名
@@ -442,6 +530,17 @@ test("P9 按含休息的墙钟时长判：间歇课的组间休息同样占用�
     availability: windowsOf("07:00"),
   });
   assert.deepEqual(failuresOfPlacement(unknown), ["W1 P9 单课时长：2026-12-01 I 5×1km 休息时长不可知——须写成 time_s 的 rest 步"]);
+  // 没声明时窗=时长不受限，不必知道休息多久：同一条心率型休息的课照常通过
+  //（小程序总会声明禁跑日/双练许可，但多数人不填日内时段——不能因此拒掉心率型间歇课）
+  const hrRest = byWeekday(intervalCourse([{ ...work, rest: { kind: "hr_bpm" as const, value: 120 } }]));
+  assert.deepEqual(
+    failuresOfPlacement(
+      instantiatePlacement({ byWeekday: hrRest, row, availability: schedulingAvailabilityOf({ unavailable_days: ["friday"], allows_double_sessions: false }) }),
+    ),
+    [],
+    "声明了可用度但没声明时窗",
+  );
+  assert.deepEqual(failuresOfPlacement(instantiatePlacement({ byWeekday: hrRest, row })), [], "完全没声明可用度");
 });
 
 test("双练日：声明了时窗时，轻松课只占用结构课剩下的时段", () => {
@@ -515,14 +614,6 @@ test("结构课装不进可训练时段：阈值课在可跑平日里找不到�
     unavailable_days: ["tuesday"],
   });
   assert.deepEqual(scheduleWeeks([fourRunBag(1)], scheduleCtxOf([normalRow(1)], { availability: tuesdayOff })).conflicts, [shortEasy]);
-});
-
-test("单课时长上限低于普通轻松课下限（60min）：无解原因落在上限上", () => {
-  const availability = availabilityOf([1, 2, 3, 4, 5, 6], { maxSessionDurationMin: 45 });
-  const result = scheduleWeeks([fourRunBag(1)], scheduleCtxOf([normalRow(1)], { availability }));
-  assert.equal(result.ok, false);
-  assert.match(result.failures[0]!, /^W1 单课时长上限 45min 低于普通轻松课下限 60min——普通 E 日无法在许可时长内排课/);
-  assert.deepEqual(result.conflicts, [result.failures[0]]);
 });
 
 test("双练准入=周量门槛 ∧ 用户许可：未声明/许可照旧出双练；明确不允许则带具体冲突无解，重试文案与上浮都指向双练", async () => {

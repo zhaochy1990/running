@@ -1,9 +1,11 @@
 import { AVAILABILITY_WEEKDAY, type AvailabilityDetail } from "@stride/contract";
 
 /**
- * 排课可用度（devops#1043）：调度器消费的归一形态。请求契约、落库 availability、
- * 存量读取三处都经 `schedulingAvailabilityOf` 归一；明细缺省=未声明，沿用既有
- * 行为（七天皆可、E 时长带不受限、双练按周量 >110km 准入）。
+ * 排课可用度（devops#1043）：调度器消费的归一形态——用户的**时间可用性**（哪天能跑、
+ * 每天能跑多久、能否一天两练）。请求契约、落库 availability、存量读取三处都经
+ * `schedulingAvailabilityOf` 归一；明细缺省=未声明，沿用既有行为（七天皆可、不受
+ * 时窗限制、双练按周量 >110km 准入）。单课时长上限不在这里：跑课上限按能力派生
+ * （devops#1054，sessionCaps），不让用户选——明细里的 max_session_duration_min 不读。
  */
 export interface AvailabilityConstraints {
   /** 可跑日（周内位 0=周一…6=周日，升序）；null=具体日期未知（存量只有天数上限）。 */
@@ -13,8 +15,6 @@ export interface AvailabilityConstraints {
    * 连续的一段）；没有时窗的日子=0；null=未指定日内时段（单课时长不受时窗限制）。
    */
   windowMinutes: number[] | null;
-  /** 单课时长上限（分钟）；null=未声明。 */
-  maxSessionDurationMin: number | null;
   /** 双练许可；null=未声明（既有周量准入独立生效）。 */
   allowsDoubleSessions: boolean | null;
 }
@@ -52,7 +52,7 @@ function longestWindowMinutes(windows: NonNullable<AvailabilityDetail["available
  * 未知（availableWeekdays=null，七天皆可）。
  */
 export function schedulingAvailabilityOf(detail?: AvailabilityDetail): AvailabilityConstraints {
-  if (detail == null) return { availableWeekdays: null, windowMinutes: null, maxSessionDurationMin: null, allowsDoubleSessions: null };
+  if (detail == null) return { availableWeekdays: null, windowMinutes: null, allowsDoubleSessions: null };
   const unavailable = new Set((detail.unavailable_days ?? []).map((day) => WEEKDAY_INDEX.get(day)));
   const windows = detail.available_training_windows ?? [];
   const windowMinutes =
@@ -64,7 +64,6 @@ export function schedulingAvailabilityOf(detail?: AvailabilityDetail): Availabil
       (weekday) => !unavailable.has(weekday) && (windowMinutes == null || windowMinutes[weekday]! > 0),
     ),
     windowMinutes,
-    maxSessionDurationMin: detail.max_session_duration_min ?? null,
     allowsDoubleSessions: detail.allows_double_sessions ?? null,
   };
 }
@@ -77,18 +76,10 @@ export const isAvailableDay = (availableWeekdays: readonly number[] | null, week
 export const effectiveDaysMaxOf = (weeklyRunDaysMax: number, availability?: AvailabilityConstraints): number =>
   Math.min(weeklyRunDaysMax, availability?.availableWeekdays?.length ?? 7);
 
-/** 某个周内位单课可用的最长分钟数：单课上限与最长的一段时窗取小；都不限=null。 */
-export function sessionLimitOf(availability: AvailabilityConstraints | undefined, weekday: number): number | null {
-  const limits = [availability?.maxSessionDurationMin, availability?.windowMinutes?.[weekday]].filter((limit): limit is number => limit != null);
-  return limits.length === 0 ? null : Math.min(...limits);
-}
-
-/** 单课可用上限的说明（冲突文案用），如「单课上限 70min、时窗 30min」；不限=空串。 */
-export function sessionLimitLabelOf(availability: AvailabilityConstraints | undefined, weekday: number): string {
+/** 某个周内位最长的一段时窗（分钟）：未指定日内时段、或该日没有时窗=null（不受时窗限制）。 */
+export function windowLimitOf(availability: AvailabilityConstraints | undefined, weekday: number): number | null {
   const window = availability?.windowMinutes?.[weekday] ?? 0;
-  return [availability?.maxSessionDurationMin != null ? `单课上限 ${availability.maxSessionDurationMin}min` : null, window > 0 ? `时窗 ${window}min` : null]
-    .filter((part): part is string => part != null)
-    .join("、");
+  return window > 0 ? window : null;
 }
 
 /** 双练准入 = 既有周量门槛 ∧ 用户许可（未声明=不额外限制）。 */

@@ -311,21 +311,25 @@ test("availability rejects strength sessions without strength days; explicit off
 test("availability detail: request and stored v3 share the schema; one helper picks what constrains scheduling (#1043)", () => {
   const request = MasterPlanGraphRequest.parse(createTestRequest());
   const detail = masterPlanAvailabilityDetail(request.availability);
+  // 约束排课的是三项；请求里的 max_session_duration_min 已弃用（devops#1054：跑课上限按
+  // 能力派生）——旧客户端照带仍被接受，但不进明细
+  assert.equal(request.availability.max_session_duration_min, 180);
   assert.deepEqual(detail, {
     available_training_windows: request.availability.available_training_windows,
     unavailable_days: ["sunday"],
-    max_session_duration_min: 180,
     allows_double_sessions: false,
   });
-  // 四项都没有（或根本不是对象）= 只有天数上限已知
+  // 三项都没有（或根本不是对象）= 只有天数上限已知；只剩弃用字段同理
   assert.equal(masterPlanAvailabilityDetail({ weekly_run_days_max: 5 }), undefined);
+  assert.equal(masterPlanAvailabilityDetail({ weekly_run_days_max: 5, max_session_duration_min: 150 }), undefined);
   assert.equal(masterPlanAvailabilityDetail("junk"), undefined);
   assert.throws(() => masterPlanAvailabilityDetail({ weekly_run_days_max: 4, unavailable_days: ["funday"] }), /availability 明细非法/);
 
-  // 落库 availability：天数上限必填、明细可选、存量行（只有上限）照常合法、多余键拒绝
+  // 落库 availability：天数上限必填、明细可选、存量行（只有上限 / 带弃用字段）照常合法、多余键拒绝
   const stored = MasterPlanV3Schema.shape.availability;
   assert.equal(stored.safeParse({ weekly_run_days_max: 4 }).success, true);
   assert.equal(stored.safeParse({ weekly_run_days_max: 4, ...detail }).success, true);
+  assert.equal(stored.safeParse({ weekly_run_days_max: 4, ...detail, max_session_duration_min: 150 }).success, true);
   assert.equal(stored.safeParse({ weekly_run_days_max: 4, preferred_long_run_day: "sunday" }).success, false);
   assert.equal(stored.safeParse({ weekly_run_days_max: 4, available_training_windows: [] }).success, true);
 });

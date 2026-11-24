@@ -1,5 +1,7 @@
 import type { LoadCheck, LoadWeek } from "@stride/contract";
 import type { PhaseDivisionIntent } from "../intent.js";
+import { HM_LONG_RUN_MAX_KM } from "../racePolicy.js";
+import { LONG_RUN_MAX_KM } from "../sessionCaps.js";
 import { ACTIVATION_MAX_KM, ACTIVATION_MIN_KM, bandOf, RACE_KM } from "./reachability.js";
 
 /**
@@ -30,6 +32,8 @@ export function validateLoad(
   recentWeeksKm: number[],
   historyWeeks = 0,
   distance: "FM" | "HM" = "FM",
+  /** 按能力换算的长跑公里上限（devops#1054）；缺省=只受距离封顶。 */
+  longRunMaxKm?: number,
 ): LoadCheck[] {
   const hm = distance === "HM";
   const checks: LoadCheck[] = [];
@@ -122,7 +126,10 @@ export function validateLoad(
   const shareOk = lrs.every((w) => (w.lr ?? 0) <= w.km * (w.km < 60 ? 0.42 : 0.36) + TOLERANCE_KM);
   // 短跑道（≤4 周，2026-11-10 用户拍板）：跳过 LR 递进下限——不是在建长跑能力，
   // 而是在维持状态去比赛；构造器的 LR 天花板（TAPER_LR_MAX_KM=25）已兜住上限
-  const lrFloor = hm ? 0 : weeks.length <= 4 ? 0 : peak >= LR_LOW_VOLUME_PEAK_KM ? 22 : peak * LR_LOW_VOLUME_FLOOR_RATIO;
+  let lrFloor = hm ? 0 : weeks.length <= 4 ? 0 : peak >= LR_LOW_VOLUME_PEAK_KM ? 22 : peak * LR_LOW_VOLUME_FLOOR_RATIO;
+  // 封顶低于常规下限时下限随之下调（devops#1054）：那是能力的硬边界，不是构造缺陷
+  const lrCeiling = Math.min(hm ? HM_LONG_RUN_MAX_KM : LONG_RUN_MAX_KM, longRunMaxKm ?? Infinity);
+  lrFloor = Math.min(lrFloor, lrCeiling);
   const monoOk = (() => {
     let seg: number[] = [];
     let prevCanonical = "";
@@ -139,8 +146,8 @@ export function validateLoad(
   })();
   checks.push({
     id: "L3 LR曲线",
-    pass: lrMax >= lrFloor - TOLERANCE_KM && lrMax <= (hm ? 24 : 34) && shareOk && weeks.at(-1)?.lr == null && monoOk,
-    detail: `峰${lrMax}/下限${r1(lrFloor)} 份额${shareOk ? "✓" : "✗"} 单调${monoOk ? "✓" : "✗"}${factNote}`,
+    pass: lrMax >= lrFloor - TOLERANCE_KM && lrMax <= lrCeiling + TOLERANCE_KM && shareOk && weeks.at(-1)?.lr == null && monoOk,
+    detail: `峰${lrMax}/下限${r1(lrFloor)}-上限${r1(lrCeiling)} 份额${shareOk ? "✓" : "✗"} 单调${monoOk ? "✓" : "✗"}${factNote}`,
   });
 
   // 门 5：taper——赛周物理下限（≥比赛里程）+ 赛周 0.35-0.72×峰 OR 激活量合规、

@@ -18,7 +18,6 @@ const STRENGTH_OFF: RollingStrengthAvailability = {
   availableDays: [],
   allowsDoubleSessions: false,
   unavailableDays: [],
-  maxSessionDurationMin: 90,
 };
 const ZONES = { easy: [288, 336], m: [249, 288], t: [235, 249], i: [218, 235], r: [null, 218] } as const;
 

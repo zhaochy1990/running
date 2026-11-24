@@ -109,8 +109,6 @@ export interface RollingStrengthAvailability {
   allowsDoubleSessions: boolean;
   /** 每周不可训练日（适用于所有训练；力量选日与 E 换日均避开）。 */
   unavailableDays: Weekday[];
-  /** 单课时长上限（分钟；力量课超限从模板尾部裁剪动作）。 */
-  maxSessionDurationMin: number;
 }
 
 /**

@@ -133,11 +133,11 @@
         />
       </view>
 
-      <!-- 更多选项（#1030）：单课上限/力量频次/双练会实际约束排课，默认按代生成口径预填 -->
+      <!-- 更多选项（#1030）：力量频次/双练会实际约束排课，默认按代生成口径预填 -->
       <view class="mpf-more">
         <view class="mpf-more__head" bindtap="onToggleOptions">
           <text class="mpf-more__title">更多选项</text>
-          <text class="mpf-more__summary">{{maxSessionOptions[maxSessionIndex]}} 分钟 · 力量 {{strengthIndex}} 次/周 · {{allowsDoubleSessions ? '允许一天两练' : '不安排双练'}}</text>
+          <text class="mpf-more__summary">力量 {{strengthIndex}} 次/周 · {{allowsDoubleSessions ? '允许一天两练' : '不安排双练'}}</text>
           <image
             class="mpf-caret {{optionsExpanded ? 'mpf-caret--up' : ''}}"
             src="/assets/icons/chevron_down_round.svg"
@@ -145,16 +145,6 @@
           />
         </view>
         <view wx:if="{{optionsExpanded}}" class="mpf-more__body">
-          <view class="mpf-field">
-            <view class="mpf-label">单次训练时长上限</view>
-            <picker mode="selector" range="{{maxSessionOptions}}" value="{{maxSessionIndex}}" bindchange="onMaxSessionChange">
-              <view class="mpf-input mpf-input--picker">
-                <text>{{maxSessionOptions[maxSessionIndex]}} 分钟</text>
-                <image class="mpf-caret" src="/assets/icons/chevron_down_round.svg" mode="aspectFit" />
-              </view>
-            </picker>
-          </view>
-
           <view class="mpf-field">
             <view class="mpf-label">每周力量训练</view>
             <picker mode="selector" range="{{strengthOptions}}" value="{{strengthIndex}}" bindchange="onStrengthChange">

@@ -15,7 +15,13 @@ test("38 案例 fixture 回放：六门全绿 + golden 精确一致", async () =
   const perAthlete = new Map<string, number>();
   for (const c of cases) {
     const ctx = await buildCaseContext(c.athlete, c.injury);
-    const plan = buildLoadPlan({ intent: c.intent, runwayWeeks: c.runwayWeeks, baseline: ctx.baseline, recentWeeksKm: ctx.recentWeeksKm });
+    const plan = buildLoadPlan({
+      intent: c.intent,
+      runwayWeeks: c.runwayWeeks,
+      baseline: ctx.baseline,
+      recentWeeksKm: ctx.recentWeeksKm,
+      longRunMaxKm: ctx.longRunMaxKm,
+    });
     const failed = plan.checks.filter((x) => !x.pass).map((x) => `${x.id}:${x.detail}`);
     assert.deepEqual(failed, [], `${c.athlete}/${c.scenario} 门挂`);
     assert.deepEqual(plan.weeks, c.expected, `${c.athlete}/${c.scenario} golden 漂移`);
@@ -34,7 +40,13 @@ test("政策面产出物常量在位：回补三场景 + 力量/强度家族五�
   const cases = await listLoadCases();
   const c = cases.find((x) => x.athlete === "chaoyi" && x.scenario === "24")!;
   const ctx = await buildCaseContext(c.athlete, c.injury);
-  const plan = buildLoadPlan({ intent: c.intent, runwayWeeks: c.runwayWeeks, baseline: ctx.baseline, recentWeeksKm: ctx.recentWeeksKm });
+  const plan = buildLoadPlan({
+    intent: c.intent,
+    runwayWeeks: c.runwayWeeks,
+    baseline: ctx.baseline,
+    recentWeeksKm: ctx.recentWeeksKm,
+    longRunMaxKm: ctx.longRunMaxKm,
+  });
   assert.deepEqual(
     plan.recovery_policy.map((s) => s.id),
     ["normal", "fatigue", "overshoot"],

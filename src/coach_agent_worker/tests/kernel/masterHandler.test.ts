@@ -58,12 +58,13 @@ test("completed master run reports the full v2 content in result_json (#585, no 
   assert.ok(content.weeks[0]?.phase_id);
   assert.ok(content.start_date.length > 0 && content.total_weeks >= 1);
   // #1043：约束排课的可用度明细随 content 落库，滚动续排据此还原同一份约束
-  //（#222 力量排期项一并落库；preferred_long_run_day 不进排位段，不落库）
+  //（#222 力量排期项一并落库；preferred_long_run_day 不进排位段，不落库；请求里
+  // 已弃用的 max_session_duration_min 不落库——devops#1054：跑课上限按能力派生）
+  assert.equal(request.availability.max_session_duration_min, 180);
   assert.deepEqual(content.availability, {
     weekly_run_days_max: 6,
     available_training_windows: request.availability.available_training_windows,
     unavailable_days: ["sunday"],
-    max_session_duration_min: 180,
     allows_double_sessions: false,
     strength_sessions_per_week: 2,
     strength_available_days: ["monday", "thursday"],

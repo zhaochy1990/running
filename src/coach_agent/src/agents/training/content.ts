@@ -17,10 +17,11 @@ import type { MasterPlan, MasterPlanAvailability } from "@stride/contract";
  * DB 读 content 构造 RollingMasterInput 时需要；Go 读路径按 map 透传未知字段。
  *
  * #222: 力量偏好（strength_sessions_per_week / strength_available_days /
- * allows_double_sessions / max_session_duration_min / unavailable_days）随
- * availability 一起落库——滚动/调整/伤病维持读回排力量课用。
- * #1043: 跑课排位的可用度明细（禁跑日/日内窗口/单课时长上限/双练许可）一并
- * 落库，滚动续排据此还原同一份排课约束（明细由 masterPlanAvailabilityDetail 挑出并校验）。
+ * allows_double_sessions / unavailable_days）随 availability 一起落库——滚动/
+ * 调整/伤病维持读回排力量课用。
+ * #1043: 跑课排位的可用度明细（禁跑日/日内窗口/双练许可）一并落库，滚动续排据此
+ * 还原同一份排课约束（明细由 masterPlanAvailabilityDetail 挑出并校验）。跑课的
+ * 单课时长上限按能力派生（devops#1054），不再落库。
  */
 /** 落库 availability 的类型=契约 schema 推导（不另抄一份接口）。 */
 export type MasterPlanContentAvailability = MasterPlanAvailability;
@@ -74,7 +75,6 @@ export function masterPlanToContent(plan: MasterPlan, goalId: string, availabili
             ...(availability.strength_available_days != null ? { strength_available_days: availability.strength_available_days } : {}),
             ...(availability.available_training_windows != null ? { available_training_windows: availability.available_training_windows } : {}),
             ...(availability.allows_double_sessions != null ? { allows_double_sessions: availability.allows_double_sessions } : {}),
-            ...(availability.max_session_duration_min != null ? { max_session_duration_min: availability.max_session_duration_min } : {}),
             ...(availability.unavailable_days != null ? { unavailable_days: availability.unavailable_days } : {}),
           },
         }

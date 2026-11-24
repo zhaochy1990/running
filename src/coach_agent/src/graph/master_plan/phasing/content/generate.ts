@@ -229,7 +229,7 @@ function scheduleContextOf(input: ContentGeneratorInput, coefficients: DoseCoeff
     pmcSeed: pmcSeed ?? ({ acute: input.athlete.fitness.atl, chronic: input.athlete.fitness.ctl } satisfies PmcState),
     coefficients,
     // 日期分布候选逐个复算排位后课程校验（devops#1043）：按落位判定的 C 门（如 E
-    // 时长分层 C9——单课时长上限低于 60min 时普通 E 日排不出合法时长）只有过完
+    // 时长分层 C9——当日时窗不足 60min 时普通 E 日排不出合法时长）只有过完
     // 实例化后的真实课表才判得出
     validateWeek: weekValidatorOf(input, templatePath),
     ...(input.availability != null ? { availability: input.availability } : {}),
