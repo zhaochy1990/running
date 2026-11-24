@@ -176,16 +176,12 @@ const firstVector = displayVectors.cases[0];
 const firstDisplay = projectCalibration(firstVector.response as StrideZonesResponse);
 eq(firstDisplay.pace.value, firstVector.expected.pace, 'shared two-sided center');
 eq(firstDisplay.pace.range, firstVector.expected.pace_range, 'shared fast-to-slow range');
-eq(firstDisplay.pace.confidenceLabel, '置信度 high', 'compact pace confidence copy');
-eq(firstDisplay.hr.confidenceLabel, '置信度 medium', 'compact HR confidence copy');
 eq(firstDisplay.hr.subtitle, '', 'field reference omits the threshold subtitle');
 for (const vector of displayVectors.cases) {
   const display = projectCalibration(vector.response as StrideZonesResponse);
   eq(display.pace.value, vector.expected.pace, `${vector.name} center`);
   eq(display.pace.range, vector.expected.pace_range, `${vector.name} directional range`);
   eq(display.hr.value, vector.expected.hr, `${vector.name} HR`);
-  if (vector.expected.pace === '—') eq(display.pace.confidenceLabel, '', `${vector.name} no pace confidence without an estimate`);
-  if (vector.expected.hr === '—') eq(display.hr.confidenceLabel, '', `${vector.name} no HR confidence without an estimate`);
   if (vector.expected.rejected_evidence_day) {
     const staleDay = vector.expected.stale_evidence_day;
     if (staleDay) eq(display.hr.lines.includes(`最近陈旧协议日 ${staleDay}`), true, `${vector.name} stale date`);

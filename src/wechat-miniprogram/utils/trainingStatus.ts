@@ -459,7 +459,6 @@ export interface CalibrationMetricDisplay {
   evidenceDay: string | null;
   label: string;
   subtitle: string;
-  confidenceLabel: string;
   support: string;
   lines: string[];
   help: string[];
@@ -688,14 +687,12 @@ export function projectCalibration(zones: import('../types/health').StrideZonesR
       : available && positive(low) ? `心率 ≥ ${Math.round(low)} bpm（仅单侧约束）`
       : available && positive(high) ? `心率 ≤ ${Math.round(high)} bpm（仅单侧约束）` : null;
     const fieldReference = detail?.target_type === 'field_HR_proxy_not_physiological_LTHR';
-    const confidence = kind === 'speed' ? threshold?.speed_confidence : threshold?.hr_confidence;
     return {
       value,
       range: kind === 'speed' ? paceRange : hrRange,
       evidenceDay,
       label: kind === 'speed' ? '阈值配速' : fieldReference ? '现场心率参考' : '阈值心率',
       subtitle: kind === 'speed' ? 'STRIDE Threshold Pace' : fieldReference ? '' : 'STRIDE Threshold HR',
-      confidenceLabel: value !== '—' && confidence ? `置信度 ${confidence}` : '',
       support,
       lines,
       help,

@@ -380,7 +380,7 @@ function buildMetrics(calibration: ReturnType<typeof projectCalibration>): Metri
       sub: calibration.pace.subtitle,
       value: calibration.pace.value,
       unit: '/km',
-      baseline: calibration.pace.confidenceLabel,
+      baseline: '',
       color: '#00a85a',
     },
     {
@@ -388,7 +388,7 @@ function buildMetrics(calibration: ReturnType<typeof projectCalibration>): Metri
       sub: calibration.hr.subtitle,
       value: calibration.hr.value,
       unit: 'bpm',
-      baseline: calibration.hr.confidenceLabel,
+      baseline: '',
       color: '#d97706',
     },
   ];
