@@ -10,7 +10,7 @@
 |---|---|
 | 测评任务 | 点击任务 ID 进入详情，按场景查看每份快照的 Generate、Artifact 和 Evaluate，打开详情或导出报告 |
 | 场景库 | 新建、导入和编辑场景。选择预期 Artifact 类型、测试数据和规则版本，切换快照查看对应的只读生成请求 JSON |
-| 测试数据 | 新建、导入和编辑脱敏的 RunnerSnapshot。点击名称进入详情，同一份数据可供多个场景使用 |
+| 测试数据 | 新建、导入和编辑脱敏的 RunnerSnapshot。列表按数据 ID、用户名、项目、目标成绩、生成类型、数据截止日展示，点击数据 ID 进入详情。同一份数据可供多个场景使用 |
 | 测评规则 | 新建、试跑和发布规则版本。点击名称打开指定版本，编辑规则实现或多行说明后保存为新版本 |
 
 ### 提交、Generate、Evaluate
@@ -56,12 +56,16 @@ flowchart LR
   "scenario_id": "new-season",
   "name": "新建赛季",
   "artifact_type": "master_plan",
-  "snapshot_ids": ["snapshot-a", "snapshot-b"],
+  "snapshot_ids": ["297eea13-0966-4bab-9960-837919452738", "42c1b52b-c092-40a7-b659-c4f927fe3cf3"],
   "check_refs": [{"check_id": "weekly-run-days", "version": 1}]
 }
 ```
 
-RunnerSnapshot 在「测试数据」独立维护。每份快照包含脱敏标识、数据截止日、目标、训练约束和历史事实。滚动快照还包含当时的赛季计划与已排课表。历史数据截止日按上海日历日记录。生成请求按所选产物类型和快照构造，场景页提供只读请求 JSON，切换快照可核对各份生成输入。新建赛季使用 `MasterPlanGraphRequest`，滚动排课使用 `RollingJobRequest`。每条 SnapshotExecution 保存本次实际使用的请求与快照内容。
+RunnerSnapshot 在「测试数据」独立维护。每份快照包含脱敏标识、数据截止日、目标、训练约束和历史事实。滚动快照还包含当时的赛季计划与已排课表。历史数据截止日按上海日历日记录。
+
+新建和导入快照时由平台生成随机 UUID 作为 `snapshot_id`，编辑时保留原 ID。 列表空间不足时缩略显示，详情页展示完整 UUID。列表的用户名使用脱敏显示名，项目和目标成绩分别读取 `goal.distance` 和 `goal.target_time`。生成类型通过可选的 `generation_type` 声明，`new_season` 对应新建赛季，`rolling_continuation` 对应到期接续，`rolling_catch_up` 对应漏排追赶。缺少该字段的历史数据用「—」展示。
+
+生成请求按所选产物类型和快照构造，场景页提供只读请求 JSON，切换快照可核对各份生成输入。新建赛季使用 `MasterPlanGraphRequest`，滚动排课使用 `RollingJobRequest`。每条 SnapshotExecution 保存本次实际使用的请求与快照内容。
 
 产物统一保存为 **Artifact**。v1 的 `master_plan` 包含赛季计划和首批周课表，`weekly_plan_batch` 包含起止周与该批周课表。Evaluate 对两类产物都通过 `artifact.weekly_docs` 访问周课。
 
@@ -146,7 +150,7 @@ type CheckResult =
     "inputs": [
       {
         "id": "input-a",
-        "snapshot_id": "snapshot-a",
+        "snapshot_id": "297eea13-0966-4bab-9960-837919452738",
         "status": "fail",
         "generate": {"status": "pass", "artifact_id": "art-a", "artifact_type": "master_plan"},
         "evaluate": {
@@ -165,7 +169,7 @@ type CheckResult =
       },
       {
         "id": "input-b",
-        "snapshot_id": "snapshot-b",
+        "snapshot_id": "42c1b52b-c092-40a7-b659-c4f927fe3cf3",
         "status": "error",
         "generate": {
           "status": "error",
@@ -206,11 +210,12 @@ erDiagram
         json check_refs "规则 ID 与版本"
     }
     RunnerSnapshot {
-        string snapshot_id PK "测试数据 ID"
-        string name "数据名称"
+        string snapshot_id PK "随机 UUID"
+        string name "脱敏用户名"
         string athlete_ref "脱敏跑者标识"
         date as_of "数据截止日"
-        json goal "比赛目标"
+        json goal "项目与目标成绩"
+        enum generation_type "生成类型，可选"
         json constraints "训练约束"
         json history "训练事实与既有计划"
         string sha256 "快照摘要"
@@ -270,6 +275,7 @@ SnapshotExecution 以 `(task_id, scenario_id, snapshot_id)` 去重。每个执�
 | 新建并试跑带多行说明的测评规则，从两个场景引用 v1 | 保存一份可复用的版本配置，两个场景均可选中该版本，打开版本详情可回读说明和实现 |
 | 修改规则并将其中一个场景切换到 v2 | 新任务分别读取两个场景选定的版本。在版本切换前已提交、尚未被 worker 领取的任务仍执行 v1 的冻结实现 |
 | 两个场景共用一份跑者快照 | 创建一个任务和分别归入两个场景的执行项。每项使用实际产物类型对应的请求及所属场景的检查 |
+| 新建和导入测试数据 | 每份数据自动获得一个随机 UUID。列表首列显示 ID 并可进入详情，随后独立展示用户名、项目、目标成绩、生成类型和数据截止日 |
 | 导入快照并加入场景，或编辑已引用数据 | 新任务使用当前快照和请求。历史任务的快照内容、请求和执行项数量可原样回读 |
 | 全选跨页场景后提交，再新增场景 | 已提交任务保留原场景清单。下次全选包含新增场景 |
 | 提交空清单、重复 ID、不适用的规则版本或无效引用 | API 返回具体配置错误，测评库无部分任务，worker 未启动 |

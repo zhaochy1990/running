@@ -38,8 +38,8 @@
 <text x="412" y="480" font-size="13" class="sub" text-anchor="middle">包含执行项</text>
 </g>
 <g class="er-relationship">
-<path class="relation" d="M1096 272 V312 Q1096 320 1088 320 H728 Q720 320 720 328 V384"/>
-<text x="1108" y="290" font-size="12" class="count" text-anchor="start">1</text>
+<path class="relation" d="M1096 296 V312 Q1096 320 1088 320 H728 Q720 320 720 328 V384"/>
+<text x="1108" y="313" font-size="12" class="count" text-anchor="start">1</text>
 <text x="708" y="374" font-size="12" class="count" text-anchor="end">0..*</text>
 <rect class="label-mask" x="856" y="326" width="96" height="19"/>
 <text x="904" y="340" font-size="13" class="sub" text-anchor="middle">提供冻结输入</text>
@@ -105,15 +105,15 @@
 <text x="784" y="183" font-size="13" class="sub" text-anchor="end">规则 ID 与版本</text>
 </g>
 <g data-entity="RunnerSnapshot">
-<rect class="node" x="936" y="24" width="320" height="248" rx="6"/>
+<rect class="node" x="936" y="24" width="320" height="272" rx="6"/>
 <line class="divider" x1="936" y1="68" x2="1256" y2="68"/>
 <text x="952" y="52" font-size="20" class="name" text-anchor="start">RunnerSnapshot</text>
 <text x="952" y="87" font-size="12" class="count" text-anchor="start">PK</text>
 <text x="990" y="87" font-size="14" class="count" text-anchor="start">snapshot_id</text>
-<text x="1240" y="87" font-size="13" class="sub" text-anchor="end">测试数据 ID</text>
+<text x="1240" y="87" font-size="13" class="sub" text-anchor="end">随机 UUID</text>
 <text x="952" y="111" font-size="12" class="count" text-anchor="start"></text>
 <text x="990" y="111" font-size="14" class="count" text-anchor="start">name</text>
-<text x="1240" y="111" font-size="13" class="sub" text-anchor="end">数据名称</text>
+<text x="1240" y="111" font-size="13" class="sub" text-anchor="end">脱敏用户名</text>
 <text x="952" y="135" font-size="12" class="count" text-anchor="start"></text>
 <text x="990" y="135" font-size="14" class="count" text-anchor="start">athlete_ref</text>
 <text x="1240" y="135" font-size="13" class="sub" text-anchor="end">脱敏跑者标识</text>
@@ -122,16 +122,19 @@
 <text x="1240" y="159" font-size="13" class="sub" text-anchor="end">数据截止日</text>
 <text x="952" y="183" font-size="12" class="count" text-anchor="start"></text>
 <text x="990" y="183" font-size="14" class="count" text-anchor="start">goal</text>
-<text x="1240" y="183" font-size="13" class="sub" text-anchor="end">比赛目标</text>
+<text x="1240" y="183" font-size="13" class="sub" text-anchor="end">项目与目标成绩</text>
 <text x="952" y="207" font-size="12" class="count" text-anchor="start"></text>
-<text x="990" y="207" font-size="14" class="count" text-anchor="start">constraints</text>
-<text x="1240" y="207" font-size="13" class="sub" text-anchor="end">训练约束</text>
+<text x="990" y="207" font-size="14" class="count" text-anchor="start">generation_type</text>
+<text x="1240" y="207" font-size="13" class="sub" text-anchor="end">生成类型，可选</text>
 <text x="952" y="231" font-size="12" class="count" text-anchor="start"></text>
-<text x="990" y="231" font-size="14" class="count" text-anchor="start">history</text>
-<text x="1240" y="231" font-size="13" class="sub" text-anchor="end">训练事实与既有计划</text>
+<text x="990" y="231" font-size="14" class="count" text-anchor="start">constraints</text>
+<text x="1240" y="231" font-size="13" class="sub" text-anchor="end">训练约束</text>
 <text x="952" y="255" font-size="12" class="count" text-anchor="start"></text>
-<text x="990" y="255" font-size="14" class="count" text-anchor="start">sha256</text>
-<text x="1240" y="255" font-size="13" class="sub" text-anchor="end">快照摘要</text>
+<text x="990" y="255" font-size="14" class="count" text-anchor="start">history</text>
+<text x="1240" y="255" font-size="13" class="sub" text-anchor="end">训练事实与既有计划</text>
+<text x="952" y="279" font-size="12" class="count" text-anchor="start"></text>
+<text x="990" y="279" font-size="14" class="count" text-anchor="start">sha256</text>
+<text x="1240" y="279" font-size="13" class="sub" text-anchor="end">快照摘要</text>
 </g>
 <g data-entity="EvaluationTask">
 <rect class="node" x="24" y="384" width="320" height="176" rx="6"/>
