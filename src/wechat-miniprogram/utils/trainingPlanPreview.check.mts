@@ -29,7 +29,23 @@ const active = new Map([
   [dates.weekFolderName(raceWeek), { sessions: [session(raceDay, oldLongRun, 24800)] }],
 ]);
 const reads: string[] = [];
+let applied = false;
+let currentReads = 0;
+const publishedRace = '上马比赛（生效周文档）';
 const modules: Record<string, unknown> = {
+  '../../services/master-plan': {
+    getCurrentMasterPlan: async () => {
+      currentReads += 1;
+      return { content_version: 2, plan_id: 'active-id', revision: 3, plan: candidate };
+    },
+    applyMasterPlanFromContent: async (token: string, plan: typeof candidate) => {
+      assert.equal(token, 'candidate-id');
+      assert.equal(plan, candidate);
+      applied = true;
+      active.set(dates.weekFolderName(raceWeek), { sessions: [session(raceDay, publishedRace, 42195)] });
+    },
+    markMasterPlanApplied: () => {},
+  },
   '../../services/plan': {
     getWeeklyPlan: async (_uid: string, week: string) => {
       reads.push(week);
@@ -37,6 +53,7 @@ const modules: Record<string, unknown> = {
     },
   },
   '../../utils/date': dates,
+  '../../store/index': { userStore: { getState: () => ({ user: { id: 'test-user' } }) } },
 };
 
 type PageUnderTest = {
@@ -45,8 +62,10 @@ type PageUnderTest = {
     isPreview: boolean;
     calendarGroups: Array<{ weeks: Array<{ key: string; days: Array<{ summary: string; distLabel: string }>; hasDoc: boolean }> }>;
   };
+  _previewPayload: { apply_token: string; content: typeof candidate } | null;
   setData(patch: object): void;
   applyPlan(plan: unknown): void;
+  onApplyTap(): Promise<void>;
   onWeekExpand(event: { currentTarget: { dataset: { key: string; week: number } } }): void;
 };
 let page: PageUnderTest | undefined;
@@ -59,6 +78,12 @@ runInNewContext(js, {
   console,
   require: (path: string) => modules[path] ?? {},
   Page: (definition: PageUnderTest) => { page = definition; },
+  wx: {
+    showModal: (options: { success(result: { confirm: boolean }): void }) => options.success({ confirm: true }),
+    showLoading: () => {},
+    hideLoading: () => {},
+    showToast: () => {},
+  },
 });
 assert.ok(page);
 const view = page;
@@ -90,4 +115,18 @@ expandRaceWeek();
 await settle();
 assert.deepEqual(reads, [dates.weekFolderName(firstWeek), dates.weekFolderName(raceWeek)]);
 assert.equal(week(2).days[0].summary, oldLongRun, '生效页面使用周文档投影');
+
+reads.length = 0;
+view.setData({ isPreview: true });
+view._previewPayload = { apply_token: 'candidate-id', content: candidate };
+view.applyPlan(candidate);
+await view.onApplyTap();
+await settle();
+assert.equal(applied, true);
+assert.equal(currentReads, 2, '启用前预检并在启用后重拉生效计划');
+assert.equal(view.data.isPreview, false);
+expandRaceWeek();
+await settle();
+assert.deepEqual(reads, [dates.weekFolderName(firstWeek), dates.weekFolderName(raceWeek)]);
+assert.equal(week(2).days[0].summary, publishedRace, '启用后读取持久化周课表');
 console.log('training plan preview checks passed');
