@@ -91,7 +91,7 @@ RunnerSnapshot 在「测试数据」独立维护，导入文件用 `schema_versi
 
 [测评 API 与冻结输入契约实施工单](https://github.com/zhaochy1990/stride-devops/issues/1055)负责快照导入、冻结和这组内部接口。
 
-API 在提交事务成功后确保对应版本队列存在、发布待投递项并启动或复用 Deployment。RabbitMQ 消息只携带协议版本和执行项 ID。
+提交事务成功后，API 按版本协调启动流程。先冻结有效启动配置，再确保版本队列存在、发布待投递项并启动或复用 Deployment。该版本有正在运行或尚待启动的配置时，留空沿用已冻结的环境变量。配置冲突在投递前返回，工作台展示冲突原因。RabbitMQ 消息只携带协议版本和执行项 ID。
 
 ```json
 {"schema_version": 1, "snapshot_execution_id": "input-a"}
@@ -105,7 +105,7 @@ API 在提交事务成功后确保对应版本队列存在、发布待投递项�
 
 worker 领取后一次获得完整冻结数据包，使用本条执行项的只读 Provider 响应多次工具调用。必需数据缺测的错误记录工具名和缺少的数据。目标版本的半马生成错误沿用相同回传接口。同批其他执行项可继续运行。
 
-生成结果持久化成功或 API 确认 Generate 已终结后，worker ACK 消息。有效 Artifact 和 Evaluate 待执行状态同事务提交，Schema 校验失败留存原文并跳过 Evaluate。Evaluate 接管时读取已保存的 Artifact，使用本任务冻结的检查定义。
+领取返回租约占用时，worker 保持当前消息未确认，按服务端可重试时间有界退避后再次领取。连接中断时由 RabbitMQ 重投。生成结果持久化成功或 API 确认 Generate 已终结后，worker ACK 消息。租约记录持有者与领取请求 ID，终态收据记录提交 ID、内容指纹及原确认，跨 API 副本复用。有效 Artifact 和 Evaluate 待执行状态同事务提交，Schema 校验失败留存原文并跳过 Evaluate。Evaluate 接管时读取已保存的 Artifact，使用本任务冻结的检查定义。
 
 API 按 RabbitMQ 发布确认更新执行项的投递状态。发布或启动失败时展示失败阶段，用户在原任务上重试，沿用原任务和执行项 ID。确认丢失可再次投递，Generate 已终结的执行项由领取接口返回原结果。浏览器网络重发沿用提交幂等键，主动重测使用新键。首批八份数据固化后，用实测包体和耗时决定是否拆出大数据拉取。 [调度与接管决议](https://github.com/zhaochy1990/stride-devops/issues/1046#issuecomment-7095462890) · [worker 执行契约](https://github.com/zhaochy1990/stride-devops/issues/1047#issuecomment-7095113843)
 
@@ -280,7 +280,8 @@ erDiagram
         string execute_status "Generate 状态"
         string evaluate_status "Evaluate 状态"
         json error "阶段错误，可选"
-        json lease "租约代次与期限"
+        json lease "持有者、请求、代次、期限"
+        json result_receipt "终态提交与原确认"
     }
     Artifact {
         string artifact_id PK "生成内容标识"
@@ -327,6 +328,8 @@ SnapshotExecution 以 `(task_id, scenario_id, snapshot_id)` 去重。每个执�
 | 同一场景选择两个 Agent 版本分别测评 | 两个任务分别保存所选版本，worker 使用对应 Agent，报告可分别打开 |
 | 一份真实脱敏全马快照，生产数据服务不可达 | 从工作台发起任务，目标版本 worker 领取完整冻结数据包，多次取数来自同一快照，保存 Artifact 后开放固定规则检查 |
 | 发布确认丢失或版本 Deployment 启动失败 | 原任务可重试启动，任务与执行项 ID 稳定，重复消息复用已终结结果 |
+| 同版本已有运行或待启动的配置，提交不同环境变量 | 在投递前返回冲突。留空时复用冻结配置，已有 worker 使用同一配置读取该版本的消息 |
+| 消息重投时上一份租约仍有效 | 投递保持未确认，worker 有界等待后再领取。只有接管成功后才继续生成，读取终态后确认消息 |
 | 保存成功但响应丢失，或 worker 退出后租约过期 | 重发同一提交只保存一份 Artifact。过期租约可被接管，旧租约的不同提交无法覆盖新结果 |
 | 生成超时或产物 Schema 校验失败 | 本项跳过 Evaluate，保留错误或无效 Artifact 原文，其他快照正常继续 |
 | 一条规则不通过或出错，或者 Artifact 保存后 worker 中断 | 保留逐项理由、预期和实际值或错误，其他规则继续。接管只恢复未完成的检查 |
