@@ -18,6 +18,7 @@ import (
 	"math"
 	"net/http"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -89,10 +90,15 @@ func (sr *strideRoutes) zones(c *gin.Context) {
 	if !authorizeUser(c, user) {
 		return
 	}
-	days, includeHistory, err := queryInt(c, "history_days")
-	if includeHistory && (err != nil || days < 1 || days > 365) {
-		c.JSON(http.StatusBadRequest, errorResponse{Error: "history_days must be an integer between 1 and 365"})
-		return
+	historyDays, includeHistory := c.GetQuery("history_days")
+	var days int
+	if includeHistory {
+		parsed, err := strconv.Atoi(historyDays)
+		if err != nil || parsed < 1 || parsed > 365 {
+			c.JSON(http.StatusBadRequest, errorResponse{Error: "history_days must be an integer between 1 and 365"})
+			return
+		}
+		days = parsed
 	}
 
 	ctx := c.Request.Context()
@@ -100,6 +106,7 @@ func (sr *strideRoutes) zones(c *gin.Context) {
 	cutoff := today.Format(time.DateOnly)
 	var bundle storage.CalibrationBundle
 	var history []storage.CalibrationThresholdPoint
+	var err error
 	if includeHistory {
 		from := today.AddDate(0, 0, 1-days).Format(time.DateOnly)
 		bundle, history, err = sr.store.ReadEffectiveRunningCalibrationWithHistory(ctx, user, from, cutoff)

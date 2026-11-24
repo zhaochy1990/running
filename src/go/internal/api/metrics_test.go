@@ -218,7 +218,7 @@ func TestStrideZones_ThresholdHistory(t *testing.T) {
 	if w := h.do(http.MethodGet, path+"?history_days=14", h.bearer(t, metricsUserB)); w.Code != http.StatusForbidden || ss.gotFrom != "" {
 		t.Fatalf("cross-user history reached storage: %d %q", w.Code, ss.gotFrom)
 	}
-	for _, invalid := range []string{"0", "366", "invalid"} {
+	for _, invalid := range []string{"", "0", "366", "invalid"} {
 		if w := h.do(http.MethodGet, path+"?history_days="+invalid, internalHdr()); w.Code != http.StatusBadRequest || ss.gotFrom != "" {
 			t.Fatalf("invalid window reached storage: %q %d %q", invalid, w.Code, ss.gotFrom)
 		}
