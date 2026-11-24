@@ -105,7 +105,7 @@ API 按版本协调任务提交与启动。若该版本已有正在运行或尚�
 
 worker 领取后一次获得完整冻结数据包，使用本条执行项的只读 Provider 响应多次工具调用。必需数据缺测的错误记录工具名和缺少的数据。目标版本的半马生成错误沿用相同回传接口。同批其他执行项可继续运行。
 
-领取返回租约占用时，worker 保持当前消息未确认，按服务端可重试时间有界退避后再次领取。连接中断时由 RabbitMQ 重投。生成结果持久化成功或 API 确认 Generate 已终结后，worker ACK 消息。租约记录持有者与领取请求 ID，终态收据记录提交 ID、内容指纹及原确认，跨 API 副本复用。有效 Artifact 和 Evaluate 待执行状态同事务提交，Schema 校验失败留存原文并跳过 Evaluate。Evaluate 接管时读取已保存的 Artifact，使用本任务冻结的检查定义。
+领取返回租约占用时，worker 保持当前消息未确认，按服务端可重试时间有界退避后再次领取。连接中断时由 RabbitMQ 重投。生成结果持久化成功或 API 确认 Generate 已终结后，worker ACK 消息。租约记录持有者与领取请求 ID。终态收据记录提交 ID、内容指纹及原确认，与 Generate 终态、Artifact（如有）和下一步 Evaluate 状态同事务提交，跨 API 副本复用。Schema 校验失败留存原文并跳过 Evaluate。Evaluate 接管时读取已保存的 Artifact，使用本任务冻结的检查定义。
 
 API 按 RabbitMQ 发布确认更新执行项的投递状态。发布或启动失败时展示失败阶段，用户在原任务上重试，沿用原任务和执行项 ID。确认丢失可再次投递，Generate 已终结的执行项由领取接口返回原结果。浏览器网络重发沿用提交幂等键，主动重测使用新键。首批八份数据固化后，用实测包体和耗时决定是否拆出大数据拉取。 [调度与接管决议](https://github.com/zhaochy1990/stride-devops/issues/1046#issuecomment-7095462890) · [worker 执行契约](https://github.com/zhaochy1990/stride-devops/issues/1047#issuecomment-7095113843)
 
