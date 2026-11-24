@@ -8,7 +8,7 @@
 
 v1 测评工作台实现在现有 [Admin Dashboard](https://github.com/zhaochy1990/stride-devops/tree/master/admin-dashboard) 内，供内部管理员使用。侧栏的「训练计划」下进入「训练计划测评」，复用现有布局、导航和登录。工作台默认打开测评任务列表。 [工作台接入工单](https://github.com/zhaochy1990/stride-devops/issues/1056)
 
-Dashboard 使用现有管理员 Bearer，经同源 `/api/admin/plan-eval/*` 路由访问独立测评 API。测评 API 在服务端复用 Admin JWT 验证口径，要求管理员 audience 和 `admin` 角色。Dashboard 的 Vite、本地 nginx 和生产 Caddy 路由将该路径指向测评 API。worker 的领取、续租和回传走独立的内部身份与路由。存储仍使用专属测评库。
+Dashboard 使用现有管理员 Bearer，经同源 `/api/admin/plan-eval/*` 路由访问独立测评 API。测评 API 在服务端复用 Admin JWT 验证口径，要求管理员 audience 和 `admin` 角色。Dashboard 的 Vite、本地 nginx 和生产 Caddy 配置对该路径使用专用转发，优先于 Dashboard 站点的 `/api` 默认转发。worker 的领取、续租和回传走独立的内部身份与路由。存储仍使用专属测评库。
 
 | 工作台入口 | 用户操作 |
 |---|---|
@@ -115,7 +115,7 @@ API 按 RabbitMQ 发布确认更新执行项的投递状态。发布或启动失
 
 ## 3. 测评规则存储与 Check 接口
 
-**EvaluationRule** 独立存储规则版本，以 `(check_id, version)` 为主键。每版保存名称、可选多行说明、适用产物类型、规则类型和实现配置。v1 的固定测评规则使用 JavaScript 的 `run(input)`，版本记录保存 JavaScript 源码及配置。规则试跑与批量 Evaluate 调用同一个服务端隔离运行器。运行器读取只读的冻结输入。规则以 `input.as_of` 为时点，运行器约束默认时钟与随机性，使试跑和批量执行使用等价环境。限制执行时间与内存，并校验返回的 `CheckResult`。规则执行权限限于输入数据和计算。原型使用 QuickJS，正式隔离引擎由实施验证选定。 [JavaScript 规则实施工单](https://github.com/zhaochy1990/stride-devops/issues/1057)
+**EvaluationRule** 独立存储规则版本，以 `(check_id, version)` 为主键。每版保存名称、可选多行说明、适用产物类型、规则类型和实现配置。v1 的固定测评规则使用 JavaScript 的 `run(input)`，版本记录保存 JavaScript 源码及配置。规则试跑与批量 Evaluate 调用同一个服务端隔离运行器。运行器读取只读的冻结输入。规则以 `input.as_of` 为时点，运行器固定默认时钟并禁用未冻结的随机源，使试跑和批量执行使用等价环境。限制执行时间与内存，并校验返回的 `CheckResult`。规则执行权限限于输入数据和计算。原型使用 QuickJS，正式隔离引擎由实施验证选定。 [JavaScript 规则实施工单](https://github.com/zhaochy1990/stride-devops/issues/1057)
 
 ```json
 {
