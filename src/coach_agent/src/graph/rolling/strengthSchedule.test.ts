@@ -172,7 +172,6 @@ const PREFS_2: RollingStrengthAvailability = {
   availableDays: ["monday", "thursday"],
   allowsDoubleSessions: false,
   unavailableDays: [],
-  maxSessionDurationMin: 90,
 };
 
 const OFF_PREFS: RollingStrengthAvailability = {
@@ -180,7 +179,6 @@ const OFF_PREFS: RollingStrengthAvailability = {
   availableDays: [],
   allowsDoubleSessions: false,
   unavailableDays: [],
-  maxSessionDurationMin: 90,
 };
 
 const LR_SUN = () => workout("周末长跑 20km", "2026-11-01", "LR", 20000);
@@ -551,13 +549,6 @@ test("专项/恢复期只排维持激活（阶段策略：力量减量维持神�
     ["light"],
   );
   assert.equal(outcome.note, null);
-});
-
-test("时长上限：maxSessionDurationMin 极小 → 模板从尾部裁剪动作至放得下", () => {
-  const session = toStrengthSession({ date: mon(26), templateId: "lower_body", stacked: false }, { ...PREFS_2, maxSessionDurationMin: 5 });
-  const spec = session.spec as { exercises: unknown[] };
-  assert.ok(spec.exercises.length < 6 && spec.exercises.length >= 1);
-  assert.ok((session.total_duration_s ?? 0) <= 5 * 60);
 });
 
 test("力量会话契约：spec 非空、date 对齐、T-code 合法、距离与剂量为空", () => {

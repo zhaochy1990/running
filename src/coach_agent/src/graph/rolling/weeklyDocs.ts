@@ -91,6 +91,9 @@ function emptyNutrition(weekStart: string): WeeklyPlan["nutrition"] {
  * 首次追赶出课冻结（不含「已有课表」的调整）：删除 date < 明天（asOf+1）的会话
  * ——已过日期排课无意义；文档头部 notes 注明。整周没有未来 run 时**移除该周**
  * （不发布新课），绝不退回未冻结的新文档把过去日期当新课写回。
+ *
+ * devops#1054：冻结后的文档以最终安排为准——重点课只留还会发布的，周剂量按留下的
+ * 跑步课重算；终稿过一遍契约校验——校验不过会抛错，整批按生成失败处理，不发半成品。
  */
 export function freezePastSessions(docs: WeeklyPlan[], asOf: string): WeeklyPlan[] {
   const asOfDay = shanghaiDay(asOf);
@@ -102,7 +105,22 @@ export function freezePastSessions(docs: WeeklyPlan[], asOf: string): WeeklyPlan
     if (!kept.some((session) => session.kind === "run")) return [];
     const firstKept = kept[0]!.date;
     const note = `本周已过日期未排课（截至 ${asOfDay}），课表自 ${firstKept} 起生效`;
-    return [{ ...doc, sessions: kept, notes_md: [doc.notes_md, note].filter((text) => text != null).join("；") }];
+    const publishedRuns = new Set(kept.filter((session) => session.kind === "run").map((session) => session.date));
+    return [
+      WeeklyPlanSchema.parse({
+        ...doc,
+        sessions: kept,
+        ...(doc.key_sessions !== undefined
+          ? { key_sessions: (doc.key_sessions ?? []).filter((key) => keySessionDay(key) !== null && publishedRuns.has(keySessionDay(key)!)) }
+          : {}),
+        planned_dose: mergedPlannedDose(
+          [],
+          kept.filter((session) => session.kind === "run"),
+          doc.planned_dose,
+        ),
+        notes_md: [doc.notes_md, note].filter((text) => text != null).join("；"),
+      }),
+    ];
   });
 }
 
@@ -191,15 +209,16 @@ export function mergeAdjustedWeekDocs(newDocs: WeeklyPlan[], existingDocs: Weekl
       strengthTrimmed > 0 ? `力量课按本周剩余配额排入（截至 ${cutoff} 已练 ${pastStrength} 节，截留 ${strengthTrimmed} 节）` : null,
     ].filter((text) => text != null);
     const note = notes.length > 0 ? notes.join("；") : null;
+    // 终稿过契约校验（devops#1054：以最终可发布日历为准）——校验不过会抛错，整批按生成失败处理
     return [
-      {
+      WeeklyPlanSchema.parse({
         ...doc,
         sessions,
         nutrition,
         ...(keySessions !== undefined ? { key_sessions: keySessions } : {}),
         ...(past.length > 0 ? { planned_dose: mergedPlannedDose(past, future, doc.planned_dose) } : {}),
         notes_md: note === null ? doc.notes_md : [doc.notes_md, note].filter((text) => text != null).join("；"),
-      },
+      }),
     ];
   });
 }

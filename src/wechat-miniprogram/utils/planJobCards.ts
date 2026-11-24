@@ -18,14 +18,12 @@ import { WEEKDAY_VALUES } from './weekday';
 // ── 表单 → kernel request ────────────────────────────────────────────────────
 
 /**
- * 「更多选项」（#1030）：kernel request 里会**实际约束排课**的三项。表单卡
- * 本身不带这三项（服务端 MasterPlanFormCardSchema 没有），由表单「更多选项」
- * 折叠区预填并可改。默认值对齐现有代生成口径（150 分钟 / 不允许一天两练 /
- * 力量 2 次·周一+周四），不是无来源常量。
+ * 「更多选项」（#1030）：kernel request 里会**实际约束排课**的两项。表单卡
+ * 本身不带这两项（服务端 MasterPlanFormCardSchema 没有），由表单「更多选项」
+ * 折叠区预填并可改。默认值对齐现有代生成口径（不允许一天两练 / 力量
+ * 2 次·周一+周四），不是无来源常量。
  */
 export interface MasterPlanFormOptions {
-  /** 单节课时长上限（分钟）。 */
-  max_session_duration_min: number;
   /** 是否允许一天两练。 */
   allows_double_sessions: boolean;
   /** 每周力量训练次数（0 = 不安排）。 */
@@ -36,7 +34,6 @@ export interface MasterPlanFormOptions {
 
 /** 与 kernel 代生成既有口径一致的默认值（#1030 方案 B）。 */
 export const DEFAULT_MASTER_PLAN_FORM_OPTIONS: MasterPlanFormOptions = {
-  max_session_duration_min: 150,
   allows_double_sessions: false,
   strength_sessions_per_week: 2,
   strength_available_days: ['monday', 'thursday'],
@@ -55,7 +52,7 @@ const RESTRICTION_PREFIX = '伤病或其他限制：';
  * 表单提交即确认：user_confirmations 全真。目标成绩空 = 顺利完赛
  * （finish_only=true 且 target_time=null，二选一 XOR）。表单的自由文本
  * （训练基础 / 限制）进 preferences，不臆造结构化 injury 声明。
- * 「更多选项」三项必须由调用方传入（组件预填 + 用户可改），不在这里兜底。
+ * 「更多选项」两项必须由调用方传入（组件预填 + 用户可改），不在这里兜底。
  */
 export function buildMasterPlanJobRequest(
   form: MasterPlanFormCard,
@@ -67,9 +64,6 @@ export function buildMasterPlanJobRequest(
   const trainingDays = form.availability.weekly_days;
   // 组件已拦空选；这里 fail-fast，绝不投递 weekly_run_days_max=1 却 7 天全不可用的请求。
   if (trainingDays.length === 0) throw new Error('weekly_days is empty');
-  if (!Number.isInteger(options.max_session_duration_min) || options.max_session_duration_min <= 0) {
-    throw new Error('invalid max_session_duration_min');
-  }
   const strengthPerWeek = options.strength_sessions_per_week;
   if (!Number.isInteger(strengthPerWeek) || strengthPerWeek < 0) throw new Error('invalid strength_sessions_per_week');
   if (strengthPerWeek > 0 && options.strength_available_days.length === 0) {
@@ -99,7 +93,6 @@ export function buildMasterPlanJobRequest(
       weekly_run_days_max: trainingDays.length,
       available_training_windows: [],
       unavailable_days: [...unavailableDays],
-      max_session_duration_min: options.max_session_duration_min,
       allows_double_sessions: options.allows_double_sessions,
       preferred_long_run_day: form.availability.preferred_long_run_day,
       strength_sessions_per_week: strengthPerWeek,
@@ -145,7 +138,6 @@ export function planJobFormValues(request: MasterPlanJobRequest): MasterPlanForm
       restriction: preference(RESTRICTION_PREFIX),
     },
     options: {
-      max_session_duration_min: availability.max_session_duration_min ?? defaults.max_session_duration_min,
       allows_double_sessions: availability.allows_double_sessions ?? defaults.allows_double_sessions,
       strength_sessions_per_week: availability.strength_sessions_per_week ?? defaults.strength_sessions_per_week,
       strength_available_days: WEEKDAY_VALUES.filter((day) =>

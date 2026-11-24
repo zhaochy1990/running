@@ -19,8 +19,8 @@ const TOTAL_WEEKS = 18;
 const START_WEEK = 13;
 const WEEKDAY_OF = (date: string): number => (new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7;
 
-/** 存量计划：18 周、专项期自第 13 周起；可用度=禁跑周四、单课 ≤150min、不允许双练。 */
-function storedPlan(): ReturnType<typeof fromStoredContent> {
+/** 存量计划：18 周、专项期自第 13 周起；可用度=禁跑日（缺省周四）、单课 ≤150min、不允许双练。 */
+function storedPlan(unavailableDays: Array<"thursday" | "saturday"> = ["thursday"]): ReturnType<typeof fromStoredContent> {
   const { artifact } = createTestCompletedOutcomeV3({ totalWeeks: TOTAL_WEEKS });
   const foundation = artifact.policy.phases[0]!;
   const policy = {
@@ -49,7 +49,7 @@ function storedPlan(): ReturnType<typeof fromStoredContent> {
     {
       weekly_run_days_max: 6,
       available_training_windows: [],
-      unavailable_days: ["thursday"],
+      unavailable_days: unavailableDays,
       max_session_duration_min: 150,
       allows_double_sessions: false,
     },
@@ -84,17 +84,9 @@ function previousWeekDoc(): WeeklyPlan {
   return { ...doc, sessions: [rest(0), rest(1), rest(2), rest(3), run(4), rest(5), run(6)] };
 }
 
-test("滚动续排：存量 content 回读可用度 → 真实内核排出的周课避开禁跑日；批首周接实绩 + 仍生效的存量课表", async () => {
-  const master = storedPlan();
-  assert.deepEqual(master.availability.detail, {
-    available_training_windows: [],
-    unavailable_days: ["thursday"],
-    max_session_duration_min: 150,
-    allows_double_sessions: false,
-  });
-  // 生成时点=第 12 周周三：该周周一~周三按实绩、周四~周日按存量周安排
-  const asOf = addDays(START_DATE, (START_WEEK - 2) * 7 + 2);
-  const activities = Array.from({ length: 28 + TOTAL_WEEKS }, (_, index) =>
+/** 近 28 周起每周一至周六各一次稳定有氧跑（28 周前至计划第 17 周）。 */
+function stableActivities() {
+  return Array.from({ length: 28 + TOTAL_WEEKS }, (_, index) =>
     Array.from({ length: 6 }, (_, day) => ({
       shanghaiDay: addDays(START_DATE, (index - 28) * 7 + day),
       name: "稳定有氧训练",
@@ -104,23 +96,79 @@ test("滚动续排：存量 content 回读可用度 → 真实内核排出的周
       durationS: 4000,
     })),
   ).flat();
+}
+
+/** 确定性依赖：上下文走冻结 provider + 稳定活动；内容模型恒抛错 → 走模板兜底（零 LLM）。 */
+function deterministicDeps() {
+  return {
+    contextProvider: new FrozenMasterPlanContextProvider(createAssessmentSnapshot(), stableActivities()),
+    models: {
+      phasingModel: {
+        invoke: async () => {
+          throw new Error("滚动不重跑 L2");
+        },
+      },
+      contentModel: {
+        invoke: async () => {
+          throw new Error("使用既有确定性模板兜底");
+        },
+      },
+    },
+  };
+}
+
+test("周五追赶出课（devops#1054）：周文档、重点课、剂量与审计都以最终可发布日历为准", async () => {
+  const master = storedPlan(["thursday", "saturday"]); // 周六也不可跑：周五冻结后本周只剩周日长跑
+  const friday = addDays(START_DATE, (START_WEEK - 1) * 7 + 4); // 第 13 周周五——掉队追赶，从本周起出课
+  const outcome = await runRollingProjection(
+    { ...deterministicDeps(), existingWeeklyDoc: async () => null },
+    { userId: "athlete-test", master, asOf: `${friday}T18:00:00+08:00` },
+  );
+  assert.equal(outcome.decision, "completed", JSON.stringify(outcome));
+  if (outcome.decision !== "completed") return;
+  assert.equal(outcome.window.mode, "catch_up");
+  const sunday = addDays(friday, 2);
+  const [first] = outcome.weeklyDocs;
+  assert.ok(first);
+  const runs = first.sessions.filter((session) => session.kind === "run");
+  assert.deepEqual(
+    runs.map((session) => session.date),
+    [sunday],
+    "只剩周日长跑",
+  );
+  // 周课程、重点课、剂量说的是同一份安排
+  assert.deepEqual(
+    first.key_sessions?.map((key) => key.workout_structure?.date),
+    [sunday],
+    "重点课只指向还会发布的课",
+  );
+  assert.equal(first.planned_dose, Math.round(runs.reduce((total, session) => total + (session.estimated_dose ?? 0), 0) * 10) / 10);
+  // 审计审的是最终可发布日历：排位时排在周一至周五、已被冻结的质量课不计入
+  const quota = outcome.audit.items.find((item) => item.item === `W${START_WEEK} Q 配额`);
+  assert.ok(quota, "质量课配额项在场");
+  assert.equal(quota.actual, "0 节：");
+  // 分布留痕也按最终日历算：周一至周五是实绩（跑了 5 天）、周六休息、周日长跑——排位时按
+  // 整周计划算则是「连跑 3 天/连休 2 天」（周一至周三连跑、周四与周六休）
+  const distribution = outcome.audit.items.find((item) => item.item === `W${START_WEEK} 日期分布`);
+  assert.match(distribution?.actual ?? "", /：连跑 5 天\/连休 1 天\/三日峰 [\d.]+；/);
+  assert.equal(
+    outcome.audit.items.some((item) => item.verdict === "fail"),
+    false,
+    "按最终日历审不出硬失败",
+  );
+});
+
+test("滚动续排：存量 content 回读可用度 → 真实内核排出的周课避开禁跑日；批首周接实绩 + 仍生效的存量课表", async () => {
+  const master = storedPlan();
+  // 存量行里的 max_session_duration_min 不进明细（devops#1054：跑课上限按能力派生）
+  assert.deepEqual(master.availability.detail, { available_training_windows: [], unavailable_days: ["thursday"], allows_double_sessions: false });
+  // 生成时点=第 12 周周三：该周周一~周三按实绩、周四~周日按存量周安排
+  const asOf = addDays(START_DATE, (START_WEEK - 2) * 7 + 2);
   const previousMonday = addDays(START_DATE, (START_WEEK - 2) * 7);
   const askedWeeks: string[] = [];
   const outcome = await runRollingProjection(
     {
-      contextProvider: new FrozenMasterPlanContextProvider(createAssessmentSnapshot(), activities),
-      models: {
-        phasingModel: {
-          invoke: async () => {
-            throw new Error("滚动不重跑 L2");
-          },
-        },
-        contentModel: {
-          invoke: async () => {
-            throw new Error("使用既有确定性模板兜底");
-          },
-        },
-      },
+      ...deterministicDeps(),
       existingWeeklyDoc: async (weekStart) => {
         askedWeeks.push(weekStart);
         return weekStart === previousMonday ? previousWeekDoc() : null;

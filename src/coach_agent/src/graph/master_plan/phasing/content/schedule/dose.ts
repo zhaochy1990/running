@@ -66,8 +66,9 @@ function stepMinutes(step: WorkoutStep): number | null {
 }
 
 /**
- * 课时长估计（分钟；repeat 展开，rest 不计）：可估步求和，不可估步（open 距离
- * 步如 strides）跳过；没有可估步=null。单课时长上限核对用（devops#1043）。
+ * 课的跑步时长估计（分钟；repeat 展开，rest 不计）：可估步求和，不可估步（open 距离
+ * 步如 strides）跳过；没有可估步=null。分布指标与边界日历的「当日跑步时长」用；
+ * 对可训练时段的比较另用 elapsedMinutes（墙钟，含休息）。
  */
 export function courseMinutes(workout: RunWorkout): number | null {
   let minutes: number | null = null;
@@ -79,6 +80,31 @@ export function courseMinutes(workout: RunWorkout): number | null {
         if (stepMin != null) minutes = (minutes ?? 0) + stepMin;
       }
   return minutes;
+}
+
+/**
+ * 课的墙钟时长（分钟；repeat 展开；devops#1054）：跑步步同 courseMinutes，另把不在
+ * 跑的时间照计——rest 步与步后休息（间歇课的组间休息同样占用用户的可训练时段）。
+ * open 配速的距离步（strides、走动恢复）按 E 带中点估；时长不可知的休息（open 的
+ * rest 步、心率/手动型步后休息）=null——给不出时长的休息不能当作不占时间。
+ */
+export function elapsedMinutes(workout: RunWorkout, easyPaceSPerKm: number | null | undefined): number | null {
+  const openDistanceMinutes = (step: WorkoutStep): number | null =>
+    step.duration.kind === "distance_m" && step.target.kind === "open" && easyPaceSPerKm != null ? ((step.duration.value / 1000) * easyPaceSPerKm) / 60 : null;
+  let minutes = 0;
+  let unknownRest = false;
+  for (const block of workout.blocks)
+    for (let rep = 0; rep < block.repeat; rep++)
+      for (const step of block.steps) {
+        const measured = stepMinutes(step) ?? openDistanceMinutes(step);
+        if (measured != null) minutes += measured;
+        else if (step.step_kind === "rest") unknownRest = true;
+        if (step.rest != null) {
+          if (step.rest.kind === "time_s") minutes += step.rest.value / 60;
+          else unknownRest = true;
+        }
+      }
+  return unknownRest ? null : minutes;
 }
 
 /** 课的分段核算：剂量点数 + 有氧/强度里程（判定表口径：质量步=强度、其余=有氧）。 */

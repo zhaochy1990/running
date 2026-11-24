@@ -3,6 +3,7 @@ import { RACE_DISTANCES_M } from "@stride/contract";
 import type { PhaseDivisionIntent } from "../intent.js";
 import { phaseRefMatches } from "../intent.js";
 import { HM_LONG_RUN_MAX_KM, HM_TAPER_LONG_RUN_MAX_KM, halfMarathonDailyKm } from "../racePolicy.js";
+import { LONG_RUN_MAX_KM } from "../sessionCaps.js";
 import type { HabitualBaseline } from "./baseline.js";
 import { validateLoad } from "./gates.js";
 import { ACTIVATION_MAX_KM, ACTIVATION_MIN_KM, BUILD_CAP, bandOf, RACE_KM, RECOVERY_FACTOR, RECOVERY_FLOOR_KM } from "./reachability.js";
@@ -42,8 +43,7 @@ import { RACE_DAILY_SHARE } from "./reachability.js";
 const SHORT_ABSORB_MAX_WEEKS = 8;
 /** 块内微阶梯（质感项）：三周 0.97/1/1.03 微递进而非平台直排。 */
 const STAIR: readonly number[] = [0.97, 1, 1.03];
-/** LR 曲线：峰值 ≤32；份额 ≤36%（周量 <60km 放宽 42%）；低量档下限随峰下调。 */
-const LR_MAX_KM = 32;
+/** LR 曲线：峰值 ≤ 长跑上限（sessionCaps，devops#1054）；份额 ≤36%（周量 <60km 放宽 42%）；低量档下限随峰下调。 */
 const LR_SHARE = 0.36;
 const LR_SHARE_LOW_VOLUME = 0.42;
 const LR_LOW_VOLUME_WEEK_KM = 60;
@@ -79,6 +79,12 @@ export interface LoadInput {
   distance?: "FM" | "HM";
   raceDate?: string;
   raceEasyPaceSKm?: number;
+  /**
+   * 按能力换算的长跑公里上限（devops#1054，见 sessionCaps：计划起点 E 配速下 180 分钟
+   * 的距离，受 40km 封顶）——长跑里程在这里就封顶，排课阶段（P9）再用同一公式按当周
+   * E 配速复核。缺省=只受距离封顶。
+   */
+  longRunMaxKm?: number;
   weeklyRunDaysMax?: number;
   intent: PhaseDivisionIntent;
   runwayWeeks: number;
@@ -251,7 +257,8 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
 
     const lrCap = km < LR_LOW_VOLUME_WEEK_KM ? LR_SHARE_LOW_VOLUME : LR_SHARE;
     const lrFloor = hm ? Math.min(HM_LONG_RUN_MAX_KM, Math.max(16, lr8)) : Math.max(LR_FLOOR_KM, lr8 * 1.2);
-    const lrTarget = Math.min(hm ? HM_LONG_RUN_MAX_KM : LR_MAX_KM, lrFloor, km * lrCap);
+    const lrCeiling = Math.min(hm ? HM_LONG_RUN_MAX_KM : LONG_RUN_MAX_KM, input.longRunMaxKm ?? Infinity);
+    const lrTarget = Math.min(lrCeiling, lrFloor, km * lrCap);
     // 下限 min(12, km×cap)：低量周（km≲27）份额优先，运行下限不再硬顶破份额门。
     // taper 周独立削减（#809）：常规目标再被随深度递减的带上限修剪（首 taper 周 25、
     // 每深一周 −5；taperW≤3 不变量保证结果恒落 20-25 带，无需下限钳制）；
@@ -363,7 +370,14 @@ export function expandLoad(input: LoadInput): { weeks: LoadWeek[]; blocks: LoadB
 /** 生成入口：展开 + 六条验收门，产出完整五件套（门用与展开器同源的滚动种子）。 */
 export function buildLoadPlan(input: LoadInput): LoadPlan {
   const { weeks, blocks, milestones } = expandLoad(input);
-  const checks = validateLoad(input.intent, weeks, rollingSeed(input.baseline, input.recentWeeksKm), input.historyKm?.length ?? 0, input.distance);
+  const checks = validateLoad(
+    input.intent,
+    weeks,
+    rollingSeed(input.baseline, input.recentWeeksKm),
+    input.historyKm?.length ?? 0,
+    input.distance,
+    input.longRunMaxKm,
+  );
   return {
     weeks,
     blocks,

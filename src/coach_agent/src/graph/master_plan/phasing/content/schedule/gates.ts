@@ -1,13 +1,15 @@
 import type { RunWorkout } from "@stride/contract";
+import { LONG_RUN_MAX_KM, LONG_RUN_MAX_MIN, longRunMaxKm } from "../../sessionCaps.js";
 import { easyMidOfZones, hasQualitySegment, type PaceZones } from "../derive.js";
 import type { ContentWeekRow } from "../doctrine.js";
-import { LR_EVE_MAX_KM, sessionKm, weekdayOf } from "../validators.js";
-import { courseDose, type DoseCoefficients } from "./dose.js";
+import { E_DURATION_NORMAL_BAND, LR_EVE_MAX_KM, sessionKm, weekdayOf } from "../validators.js";
+import { type AvailabilityConstraints, doubleSessionAllowed, windowLimitOf } from "./availability.js";
+import { courseDose, courseMinutes, type DoseCoefficients, elapsedMinutes } from "./dose.js";
 import type { CalendarDay, LoadSeriesPoint } from "./scheduler.js";
 
 /**
- * L4b 排位门 P1-P8（devops#799 校验节 + #1043 P8；contract.md §6.3）：对排位后
- * 的日历判定，输入=L4b 构造产物（calendar/load_series/sessions）。门挂=排位
+ * L4b 排位门 P1-P9（devops#799 校验节 + #1043 P8 + #1054 P9；contract.md §6.3）：对
+ * 排位后的日历判定，输入=L4b 构造产物（calendar/load_series/sessions）。门挂=排位
  * 无解上浮（调度器已先行确定性修复；到这里仍挂=课包问题，带原因重生成 L4a）。
  */
 
@@ -28,8 +30,11 @@ export interface GateInput {
   weeksToRace?: number | null;
   /** 上周日（批界前的已知边界日）是否含质量课——P2 跨周判定（devops#1043）。 */
   previousDayQuality?: boolean;
-  /** 用户可跑日（周内位）；null/缺省=具体日期未知，P8 不判（devops#1043）。 */
-  availableWeekdays?: number[] | null;
+  /**
+   * 用户可用度（devops#1043 可跑日 → P8；devops#1054 双练许可 → P5、日内时窗 →
+   * P9）；缺省=未声明（可跑日未知时 P8 不判、不受时窗限制）。
+   */
+  availability?: AvailabilityConstraints;
 }
 
 /**
@@ -64,6 +69,9 @@ export const RATIO_CAP = 1.3;
 export const RATIO_CAP_EPS = 0.01;
 /** P5 双练准入：周量 >110km 才允许双练日（判定归本段）。 */
 export const DOUBLE_ADMISSION_KM = 110;
+
+/** 长跑里程比较容差（km）：上限向下取整到 0.1km，恰好压线的时长处方折算后可能略高。 */
+const LR_KM_TOLERANCE = 0.05;
 
 export function scheduleGates(input: GateInput): ScheduleCheck[] {
   const { calendar, loadSeries, row, daysMax, raceDate, coefficients } = input;
@@ -125,13 +133,19 @@ export function scheduleGates(input: GateInput): ScheduleCheck[] {
     });
   }
 
-  // P5 双练准入（>1 节/日 仅当周量 >110km；判定归本段）。
+  // P5 双练准入：>1 节/日 仅当周量 >110km 且用户许可（devops#1054 把许可补进门里——
+  // 此前只在排位阶段查，换日等修复路径造出的双练日会漏过）；判定归本段。
   const doubles = calendar.filter((d) => d.sessions.length > 1);
-  const p5Ok = doubles.length === 0 || row.totalKm > DOUBLE_ADMISSION_KM;
+  const doublesAllowed = doubleSessionAllowed(row.totalKm, DOUBLE_ADMISSION_KM, input.availability);
   checks.push({
     id: "P5 双练准入",
-    pass: p5Ok,
-    detail: doubles.length === 0 ? "无双练日" : `${doubles.length} 个双练日，周量 ${row.totalKm}km${p5Ok ? ">" : "≤"}${DOUBLE_ADMISSION_KM}`,
+    pass: doubles.length === 0 || doublesAllowed,
+    detail:
+      doubles.length === 0
+        ? "无双练日"
+        : `${doubles.length} 个双练日，周量 ${row.totalKm}km${row.totalKm > DOUBLE_ADMISSION_KM ? ">" : "≤"}${DOUBLE_ADMISSION_KM}${
+            input.availability?.allowsDoubleSessions === false ? "，一天两练未获许可" : ""
+          }`,
   });
 
   // P6 比值 cap 1.3（本周逐点；越界=调度无解——调度器修复后仍挂才到这）。
@@ -189,11 +203,41 @@ export function scheduleGates(input: GateInput): ScheduleCheck[] {
   // P8 可跑日（devops#1043）：全部课落在用户可跑日（禁跑日/可用窗口之外的
   // 日子无课）；具体日期未知（存量只有天数上限）时不判。比赛日是固定事件，
   // 不受周内可跑日约束。
-  if (input.availableWeekdays != null) {
-    const allowed = new Set(input.availableWeekdays);
+  const availableWeekdays = input.availability?.availableWeekdays ?? null;
+  if (availableWeekdays != null) {
+    const allowed = new Set(availableWeekdays);
     const offDays = [...new Set(sessions.filter((s) => s.date !== raceDate && !allowed.has(weekdayOf(s.date))).map((s) => s.date))].sort();
     checks.push({ id: "P8 可跑日", pass: offDays.length === 0, detail: offDays.length === 0 ? "全过" : `课落在不可跑日：${offDays.join(",")}` });
   }
 
+  // P9 单课时长（devops#1054）：① 日内时窗——每节课的墙钟时长（含休息）装得进所在日
+  // 最长的一段连续时窗（未声明=不限；休息时长不可知的课保证不了装得下，同样挂）；
+  // ② 最终硬校验复核按能力派生的两个上限（sessionCaps）——长跑 ≤ 180 分钟 @ 当周
+  // E 配速（至多 40km），日常有氧 ≤ 90min（跑步时间步，与 C9 同口径）。比赛日是目标
+  // 事件不是训练课，不受限（同 P6/P8 的豁免）。
+  const over: string[] = [];
+  for (const { date, sessions } of calendar) {
+    if (date === raceDate) continue;
+    const window = windowLimitOf(input.availability, weekdayOf(date));
+    for (const workout of sessions) {
+      if (window != null) {
+        const minutes = elapsedMinutes(workout, eMid);
+        if (minutes == null) over.push(`${date} ${workout.name} 休息时长不可知——须写成 time_s 的 rest 步`);
+        else if (minutes > window) over.push(`${date} ${workout.name}≈${Math.round(minutes)}min 超出可训练时段（时窗 ${window}min）`);
+      }
+      if (workout.type === "LR") {
+        const km = sessionKm(workout, eMid);
+        const capKm = eMid == null ? LONG_RUN_MAX_KM : longRunMaxKm(eMid);
+        // 文案用课型+实测值，不带课名：课名常自带里程（「长跑 34.7km」）会重复
+        if (km != null && km > capKm + LR_KM_TOLERANCE)
+          over.push(`${date} 长跑 ${Math.round(km * 10) / 10}km 超出长跑上限 ${capKm}km（${LONG_RUN_MAX_MIN} 分钟 @ E 配速，至多 ${LONG_RUN_MAX_KM}km）`);
+      } else if (workout.type === "E") {
+        const eMinutes = courseMinutes(workout);
+        if (eMinutes != null && eMinutes > E_DURATION_NORMAL_BAND[1])
+          over.push(`${date} 有氧课 ${Math.round(eMinutes)}min 超出日常有氧上限 ${E_DURATION_NORMAL_BAND[1]}min`);
+      }
+    }
+  }
+  checks.push({ id: "P9 单课时长", pass: over.length === 0, detail: over.length === 0 ? "全过" : over.join("; ") });
   return checks;
 }

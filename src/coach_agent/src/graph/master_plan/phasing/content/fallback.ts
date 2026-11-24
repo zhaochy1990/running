@@ -1,6 +1,7 @@
 import { halfMarathonQualityType } from "../racePolicy.js";
 import { allocateRaceWeek, allocateWeek } from "./allocate.js";
 import { type ContentGeneratorInput, type ContentWeekRow, fmtPace } from "./doctrine.js";
+import { effectiveDaysMaxOf } from "./schedule/availability.js";
 import type { ESlotCourse, StructuredCourse, WeekBag } from "./schedule/scheduler.js";
 import { M_GOAL_TOL_S } from "./validators.js";
 
@@ -117,7 +118,9 @@ function raceWeekCourses(row: ContentWeekRow, input: ContentGeneratorInput): Wee
 /** 常规周课包：LR + q 节 M 课 + E 槽位（分配器出可行解：槽数与带型，分钟归 L4b）。 */
 function normalWeekCourses(row: ContentWeekRow, input: ContentGeneratorInput, regeneration: boolean): WeekBag["courses"] {
   const eBand = easyBand(row);
-  const alloc = allocateWeek(row, input.athlete.weeklyRunDaysMax, regeneration);
+  // 按有效训练日构造（devops#1054）：声明上限与可跑日数取小——模板课包装不进可跑日
+  // 时排位段不再剪课（固定课包守恒），槽数得在这里就给对
+  const alloc = allocateWeek(row, effectiveDaysMaxOf(input.athlete.weeklyRunDaysMax, input.availability), regeneration);
   // #837+C14：final_quality 进展周长跑须含 goal_pace 段（专项化周期原则）——
   // 模板简版=前 70% E + 后 30% goal_pace±5s（渐加速形态；P7 遗留实现 2026-11-01 补齐）
   const goalSeg = input.race.distance !== "HM" && row.phase === "final_quality" && row.role === "progress";

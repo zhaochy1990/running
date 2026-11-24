@@ -46,8 +46,9 @@ const form: MasterPlanFormCard = {
   assert.equal(request.availability.weekly_run_days_max, 4);
   assert.deepEqual(request.availability.unavailable_days, ['monday', 'wednesday', 'friday']);
   assert.equal(request.availability.preferred_long_run_day, 'sunday');
-  // #1030：三项来自「更多选项」（默认值=代生成口径），不是硬编码臆造
-  assert.equal(request.availability.max_session_duration_min, 150);
+  // #1030：两项来自「更多选项」（默认值=代生成口径），不是硬编码臆造；已弃用的
+  // 单课时长上限不再携带（服务端按能力派生，devops#1054）
+  assert.equal('max_session_duration_min' in request.availability, false);
   assert.equal(request.availability.allows_double_sessions, false);
   assert.equal(request.availability.strength_sessions_per_week, 2);
   assert.deepEqual(request.availability.strength_available_days, ['monday', 'thursday']);
@@ -73,12 +74,10 @@ assert.throws(
 // #1030：更多选项原样进 request（用户改过的值不丢）
 {
   const request = buildMasterPlanJobRequest(form, 'req-3', {
-    max_session_duration_min: 180,
     allows_double_sessions: true,
     strength_sessions_per_week: 1,
     strength_available_days: ['wednesday'],
   });
-  assert.equal(request.availability.max_session_duration_min, 180);
   assert.equal(request.availability.allows_double_sessions, true);
   assert.equal(request.availability.strength_sessions_per_week, 1);
   assert.deepEqual(request.availability.strength_available_days, ['wednesday']);
@@ -272,7 +271,7 @@ type TestMessage = {
   page.loadSession = async () => {};
   const tap = (id: string | number): Tap => ({ currentTarget: { dataset: { id } } });
   const sourceMessage = { id: 8, shareIndex: 3, card: { type: 'master-plan-form', data: form }, selectable: true };
-  const options = { max_session_duration_min: 180, allows_double_sessions: true, strength_sessions_per_week: 1, strength_available_days: ['wednesday'] } satisfies FormValues['options'];
+  const options = { allows_double_sessions: true, strength_sessions_per_week: 1, strength_available_days: ['wednesday'] } satisfies FormValues['options'];
   page.onLoad();
   page.onSelectSession(tap('source'));
   page.data.messages = [sourceMessage];
@@ -315,7 +314,6 @@ type TestMessage = {
   renderCallbacks.shift()?.();
   assert.equal(component.data.targetHour, 2);
   assert.equal(component.data.targetMinute, 50);
-  assert.equal(component.data.maxSessionIndex, 3);
   assert.equal(component.data.allowsDoubleSessions, true);
   assert.equal(component.data.strengthIndex, 1);
   assert.deepEqual(planJobFormValues(record.request), { form: { ...form, goal: { ...form.goal, race_name: form.goal.race_name.trim() } }, options });

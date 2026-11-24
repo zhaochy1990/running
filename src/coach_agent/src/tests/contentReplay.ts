@@ -91,7 +91,13 @@ async function fallbackRows(athlete: AthleteName, runwayWeeks: number): Promise<
   const c = cases.find((x) => x.athlete === athlete && x.scenario === String(runwayWeeks));
   if (c == null) throw new Error(`load fixture 无 ${athlete}/${runwayWeeks} 案例`);
   const ctx = await buildCaseContext(athlete, c.injury);
-  const plan = buildLoadPlan({ intent: c.intent, runwayWeeks, baseline: ctx.baseline, recentWeeksKm: ctx.recentWeeksKm });
+  const plan = buildLoadPlan({
+    intent: c.intent,
+    runwayWeeks,
+    baseline: ctx.baseline,
+    recentWeeksKm: ctx.recentWeeksKm,
+    longRunMaxKm: ctx.longRunMaxKm,
+  });
   const failed = plan.checks.filter((x) => !x.pass);
   if (failed.length > 0) throw new Error(`L3 门挂：${failed.map((x) => `${x.id}:${x.detail}`).join(";")}`);
   return plan.weeks.map((w) => ({

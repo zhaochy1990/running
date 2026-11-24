@@ -24,7 +24,6 @@ const DISTANCE_OPTIONS = ['全程马拉松（全马）', '半程马拉松（半�
 const LONG_RUN_NO_PREFERENCE = '不指定';
 const HOUR_RANGE = [1, 2, 3, 4, 5, 6];
 const ZERO_TO_59 = Array.from({ length: 60 }, (_, i) => i);
-const MAX_SESSION_OPTIONS = [90, 120, 150, 180, 210];
 const STRENGTH_OPTIONS = ['不安排', '1 次', '2 次', '3 次'];
 
 interface DayChip {
@@ -67,10 +66,8 @@ interface FormCardData {
   errorDays: boolean;
   /** 长跑日必须落在已选训练日里。 */
   longRunError: string;
-  // —— 更多选项（#1030：kernel request 里会实际约束排课的三项）——
+  // —— 更多选项（#1030：kernel request 里会实际约束排课的两项）——
   optionsExpanded: boolean;
-  maxSessionOptions: number[];
-  maxSessionIndex: number;
   allowsDoubleSessions: boolean;
   strengthOptions: string[];
   strengthIndex: number;
@@ -108,7 +105,6 @@ type FormCardMethods = {
   onRestrictionInput(e: WechatMiniprogram.CustomEvent): void;
   // 更多选项（#1030）
   onToggleOptions(): void;
-  onMaxSessionChange(e: WechatMiniprogram.PickerChange): void;
   onStrengthChange(e: WechatMiniprogram.PickerChange): void;
   onStrengthDayTap(e: WechatMiniprogram.TouchEvent): void;
   onDoubleToggle(): void;
@@ -163,8 +159,6 @@ Component<FormCardData, FormCardProps, FormCardMethods, [], FormCardInstance>({
     secondRange: ZERO_TO_59,
     dayChips: WEEKDAY_VALUES.map((value, index) => ({ value, label: WEEKDAY_LABELS[index], selected: false })),
     optionsExpanded: false,
-    maxSessionOptions: MAX_SESSION_OPTIONS,
-    maxSessionIndex: Math.max(0, MAX_SESSION_OPTIONS.indexOf(DEFAULT_MASTER_PLAN_FORM_OPTIONS.max_session_duration_min)),
     allowsDoubleSessions: DEFAULT_MASTER_PLAN_FORM_OPTIONS.allows_double_sessions,
     strengthOptions: STRENGTH_OPTIONS,
     strengthIndex: DEFAULT_MASTER_PLAN_FORM_OPTIONS.strength_sessions_per_week,
@@ -295,10 +289,6 @@ Component<FormCardData, FormCardProps, FormCardMethods, [], FormCardInstance>({
       this.setData({ optionsExpanded: !this.data.optionsExpanded });
     },
 
-    onMaxSessionChange(e: WechatMiniprogram.PickerChange) {
-      this.setData({ maxSessionIndex: Number(e.detail.value) || 0 });
-    },
-
     onStrengthChange(e: WechatMiniprogram.PickerChange) {
       this.setData({ strengthIndex: Number(e.detail.value) || 0, strengthDaysError: '' });
     },
@@ -384,7 +374,6 @@ Component<FormCardData, FormCardProps, FormCardMethods, [], FormCardInstance>({
         restriction: this.data.restriction.trim(),
       };
       const options: MasterPlanFormOptions = {
-        max_session_duration_min: this.data.maxSessionOptions[this.data.maxSessionIndex] ?? DEFAULT_MASTER_PLAN_FORM_OPTIONS.max_session_duration_min,
         allows_double_sessions: this.data.allowsDoubleSessions,
         strength_sessions_per_week: this.data.strengthIndex,
         strength_available_days: this.data.strengthIndex > 0 ? strengthDays : [],
@@ -401,9 +390,7 @@ Component<FormCardData, FormCardProps, FormCardMethods, [], FormCardInstance>({
       if (values) {
         this.hydrate(values.form, false);
         const { options } = values;
-        const maxSessionIndex = MAX_SESSION_OPTIONS.indexOf(options.max_session_duration_min);
         this.setData({
-          maxSessionIndex: maxSessionIndex < 0 ? this.data.maxSessionIndex : maxSessionIndex,
           allowsDoubleSessions: options.allows_double_sessions,
           strengthIndex: options.strength_sessions_per_week,
           strengthDayChips: this.data.strengthDayChips.map((chip) => ({

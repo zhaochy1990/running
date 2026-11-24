@@ -41,7 +41,8 @@ const AvailabilitySchema = z
     weekly_run_days_max: z.int().min(1).max(7),
     available_training_windows: z.array(TRAINING_WINDOW_SCHEMA),
     unavailable_days: z.array(AVAILABILITY_WEEKDAY),
-    max_session_duration_min: z.int().positive(),
+    /** 已弃用（devops#1054）：跑课的单课上限按能力派生，服务端不读；保留为可选只为兼容旧客户端。 */
+    max_session_duration_min: z.int().positive().optional(),
     allows_double_sessions: z.boolean(),
     preferred_long_run_day: AVAILABILITY_WEEKDAY.nullable(),
     strength_sessions_per_week: z.int().nonnegative(),

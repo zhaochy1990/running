@@ -242,6 +242,25 @@ test("ACWR 不适用（断练/零史）：滚动均值以起点构造位播种�
   );
 });
 
+test("长跑上限按能力封顶（devops#1054）：longRunMaxKm 封住每一周的长跑，长跑门的下限随封顶下调、六门照过", () => {
+  const strong: HabitualBaseline = { ...baseline, pre_peak_km: 110, week_km: 90, avg4_km: 92 };
+  const weeksOf = (extra: Partial<Parameters<typeof expandLoad>[0]>) =>
+    expandLoad({ intent: makeIntent(), runwayWeeks: 16, baseline: strong, recentWeeksKm: [88, 92, 90, 92], ...extra }).weeks;
+  const uncapped = Math.max(...weeksOf({}).map((w) => w.lr ?? 0));
+  // 不带时长封顶：只受距离封顶 40km 约束（原定值上限 32km 已并入）
+  assert.ok(uncapped > 28 && uncapped <= 40, `不封顶的峰值 ${uncapped}`);
+  const capped = weeksOf({ longRunMaxKm: 28 });
+  assert.equal(Math.max(...capped.map((w) => w.lr ?? 0)), 28, "按能力换算的上限封住峰值");
+  // 六门：封顶后的骨架仍全过——长跑门的下限随封顶下调（否则 20 的峰会撞上原下限 22）
+  const plan = buildLoadPlan({ intent: makeIntent(), runwayWeeks: 16, baseline, recentWeeksKm: [58, 62, 55, 60], longRunMaxKm: 20 });
+  assert.deepEqual(
+    plan.checks.filter((check) => !check.pass),
+    [],
+    plan.checks.map((check) => `${check.id}:${check.detail}`).join("; "),
+  );
+  assert.equal(Math.max(...plan.weeks.map((w) => w.lr ?? 0)), 20);
+});
+
 test("LR 份额：低量周放宽 42%，常规 36%；LR ≥12 下限", () => {
   const { weeks } = run();
   for (const w of weeks) {

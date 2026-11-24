@@ -57,7 +57,7 @@ export function createMasterPlanJobHandler(deps: MasterPlanHandlerDeps): Handler
     // #859（2026-11-10 用户拍板 breaking change）：policy/skeleton/anchor/audit
     // 直接放进 content——不加版本号、不维护兼容层（没有真实用户在用 v1/v2）
     const masterPlanId = randomUUID();
-    // devops#1043：约束跑课的可用度明细（禁跑日/日内窗口/单课时长上限/双练许可）随
+    // devops#1043：约束跑课的可用度明细（禁跑日/日内窗口/双练许可）随
     // content 落库，滚动续排据此还原同一份约束；#222：力量偏好随 content 落库——
     // 滚动续排/调整/伤病维持读回排力量课。
     const content = masterPlanToContent(kernelResult.plan, goalId, {

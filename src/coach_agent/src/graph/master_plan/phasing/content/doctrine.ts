@@ -2,7 +2,7 @@ import type { PromptMessage } from "@stride/common";
 import { allocateRaceWeek, allocateWeek } from "./allocate.js";
 import type { PaceZones } from "./derive.js";
 import { goalMPaceBand } from "./project.js";
-import type { AvailabilityConstraints } from "./schedule/availability.js";
+import { type AvailabilityConstraints, effectiveDaysMaxOf } from "./schedule/availability.js";
 import type { DayFact } from "./schedule/distribution.js";
 
 /**
@@ -187,7 +187,7 @@ export interface ContentGeneratorInput {
    * 须参照已证水平（低于它=浪费训练日），由调用方从 L1 activities 构造。 */
   provenSessions?: ProvenSession[];
   /**
-   * 排课可用度（devops#1043：可跑日/单课时长上限/双练许可）；缺省=仅天数上限。
+   * 排课可用度（devops#1043：可跑日/双练许可；devops#1054 日内时窗）；缺省=仅天数上限。
    * 只进排位段，不进 L4a payload。
    */
   availability?: AvailabilityConstraints;
@@ -273,7 +273,9 @@ export function buildContentPayload(input: ContentGeneratorInput): Record<string
         specific_pace_s_per_km: row.specificPaceSKm,
         ...(row.guidance != null && row.guidance.length > 0 ? { adjust_guidance: row.guidance } : {}),
         ...(eMid != null ? { e_pace_mid_s_per_km: Math.round(eMid), e_km_per_60min: Math.round((3600 / eMid) * 10) / 10 } : {}),
-        budget_hint: budgetHint(row, athlete.weeklyRunDaysMax, race),
+        // 量纲按有效训练日给（devops#1054）：声明上限与可跑日数取小——多给的槽位排不进
+        // 可跑日，固定课包装不下=结构性无解，不再是排位阶段悄悄剪掉
+        budget_hint: budgetHint(row, effectiveDaysMaxOf(athlete.weeklyRunDaysMax, input.availability), race),
       };
     }),
     athlete,
