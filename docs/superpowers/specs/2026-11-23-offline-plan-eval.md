@@ -9,7 +9,7 @@
 | 工作台入口 | 用户操作 |
 |---|---|
 | 测评任务 | 点击任务 ID 进入详情，按场景查看每份快照的 Generate、Artifact 和 Evaluate，打开详情或导出报告 |
-| 场景库 | 新建、导入和编辑场景。选择预期 Artifact 类型、测试数据和规则版本，切换快照预览对应的生成请求 JSON |
+| 场景库 | 新建、导入和编辑场景。选择预期 Artifact 类型、测试数据和规则版本，切换快照查看对应的只读生成请求 JSON |
 | 测试数据 | 新建、导入和编辑脱敏的 RunnerSnapshot。点击名称进入详情，同一份数据可供多个场景使用 |
 | 测评规则 | 新建、试跑和发布规则版本。点击名称打开指定版本，编辑规则实现或多行说明后保存为新版本 |
 
@@ -61,7 +61,7 @@ flowchart LR
 }
 ```
 
-RunnerSnapshot 在「测试数据」独立维护。每份快照包含脱敏标识、数据截止日、目标、训练约束和历史事实。滚动快照还包含当时的赛季计划与已排课表。历史数据截止日按上海日历日记录。生成请求按所选产物类型和快照构造，场景页可切换快照核对请求 JSON。新建赛季使用 `MasterPlanGraphRequest`，滚动排课使用 `RollingJobRequest`。每条 SnapshotExecution 保存本次实际使用的请求与快照内容。
+RunnerSnapshot 在「测试数据」独立维护。每份快照包含脱敏标识、数据截止日、目标、训练约束和历史事实。滚动快照还包含当时的赛季计划与已排课表。历史数据截止日按上海日历日记录。生成请求按所选产物类型和快照构造，场景页提供只读请求 JSON，切换快照可核对各份生成输入。新建赛季使用 `MasterPlanGraphRequest`，滚动排课使用 `RollingJobRequest`。每条 SnapshotExecution 保存本次实际使用的请求与快照内容。
 
 产物统一保存为 **Artifact**。v1 的 `master_plan` 包含赛季计划和首批周课表，`weekly_plan_batch` 包含起止周与该批周课表。Evaluate 对两类产物都通过 `artifact.weekly_docs` 访问周课。
 
@@ -87,9 +87,24 @@ RunnerSnapshot 在「测试数据」独立维护。每份快照包含脱敏标�
 场景通过 `check_refs` 选择具体版本，同一场景内每个规则 ID 只选一次。多个场景可以引用同一版本。修改规则时保存新版本，场景选中该版本后，新任务使用新定义。提交测评时，API 校验版本存在且适用于场景产物，将完整的实现、配置和版本写入任务的 `scenarios[].checks`。
 
 ```ts
-interface Check {
-  run(input: Readonly<CheckInput>): Promise<CheckResult>;
+interface Check<A = CheckedArtifact> {
+  run(input: CheckInput<A>): Promise<CheckResult>;
 }
+
+type RawArtifact = Readonly<{
+  type: "master_plan" | "weekly_plan_batch";
+  content: Uint8Array;
+}>;
+
+type CheckedArtifact =
+  | {type: "master_plan"; plan: MasterPlan; weekly_docs: readonly WeeklyPlan[]}
+  | {
+      type: "weekly_plan_batch";
+      window: {start_week: number; end_week: number};
+      weekly_docs: readonly WeeklyPlan[];
+    };
+
+type FrozenGenerationRequest = MasterPlanGraphRequest | RollingJobRequest;
 
 type CheckInput<A = CheckedArtifact> = Readonly<{
   artifact: A;
@@ -108,7 +123,7 @@ type CheckResult =
 ```
 
 - **StaticRuleCheck** 从每份冻结的规则配置构造实例。新增规则通过配置生效，共用运行时。每周跑步日上限规则按上海日期去重，超限时返回具体周、预期上限和实际天数。
-- **SchemaCheck** 作为 Generate 的产物门槛，使用现有契约检查原文。Evaluate 的业务检查接收已通过 Schema 校验的结构化产物。业务检查使用与 Generate 一致的冻结执行时点。
+- **SchemaCheck** 实现 `Check<RawArtifact>`，在 Generate 阶段使用现有契约检查原文。Evaluate 的业务检查使用 `Check<CheckedArtifact>`，接收已通过 Schema 校验的结构化产物。业务检查使用与 Generate 一致的冻结执行时点。
 - **LlmJudgeCheck** 预留给后续版本，使用提示词与评审模型配置，沿用统一输入和结果接口。v1 的固定规则结果展示通过、不通过或执行错误。
 
 运行器逐条调用 Check。单条规则不通过时记录原因和违反项，执行异常时记录错误码与消息，其余规则继续执行。 API 保存结果时关联 Artifact，并记录实际执行的规则 ID 和版本。首批规则与正反例见 [固定规则检查决策](https://github.com/zhaochy1990/stride-devops/issues/1049)。
