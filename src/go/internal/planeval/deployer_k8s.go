@@ -33,7 +33,7 @@ type KubernetesOptions struct {
 	WorkerAPIURL  string
 	WorkerAMQPURL string
 	WorkerToken   string
-	// Namespace overrides the ServiceAccount's namespace (out-of-cluster runs).
+	// Namespace overrides the namespace used by the current Kubernetes identity.
 	Namespace string
 }
 

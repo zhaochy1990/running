@@ -114,9 +114,12 @@ type PlanEvalTask struct {
 	ParamsFingerprint string `gorm:"column:params_fingerprint;size:64;not null"`
 	// LaunchConfigID is the effective launch configuration the task ran with.
 	LaunchConfigID string `gorm:"column:launch_config_id;type:char(36)"`
+	LaunchReplicas int    `gorm:"column:launch_replicas;not null;default:1"`
+	LaunchEnvNames string `gorm:"column:launch_env_names;type:json"`
 	// LaunchError records a failed publish/start after the task row was
 	// committed (the task and its queued executions stay).
 	LaunchError string     `gorm:"column:launch_error;type:text"`
+	LaunchedAt  *time.Time `gorm:"column:launched_at"`
 	CreatedAt   time.Time  `gorm:"column:created_at"`
 	UpdatedAt   time.Time  `gorm:"column:updated_at"`
 	CompletedAt *time.Time `gorm:"column:completed_at"`
@@ -133,10 +136,11 @@ type PlanEvalLaunchConfig struct {
 	AgentVersion string `gorm:"column:agent_version;size:64;not null;uniqueIndex"`
 	Replicas     int    `gorm:"column:replicas;not null"`
 	// EnvNames is a JSON array of variable names, sorted.
-	EnvNames  string    `gorm:"column:env_names;type:json;not null"`
-	EnvCipher []byte    `gorm:"column:env_cipher;type:blob"`
-	CreatedAt time.Time `gorm:"column:created_at"`
-	UpdatedAt time.Time `gorm:"column:updated_at"`
+	EnvNames       string    `gorm:"column:env_names;type:json;not null"`
+	EnvCipher      []byte    `gorm:"column:env_cipher;type:blob"`
+	EnvFingerprint string    `gorm:"column:env_fingerprint;size:64"`
+	CreatedAt      time.Time `gorm:"column:created_at"`
+	UpdatedAt      time.Time `gorm:"column:updated_at"`
 }
 
 func (PlanEvalLaunchConfig) TableName() string { return "plan_eval_launch_configs" }

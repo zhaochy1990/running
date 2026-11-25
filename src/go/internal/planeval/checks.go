@@ -6,6 +6,7 @@ package planeval
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"runtime"
 	"strings"
@@ -91,6 +92,9 @@ func (c SchemaCheck) Run(_ context.Context, input CheckInput) CheckResult {
 	if err := api.ValidateMasterPlanSnapshot(plan); err != nil {
 		return schemaFail(result, "plan", schemaMessage(err))
 	}
+	if len(envelope.WeeklyDocs) == 0 {
+		return schemaFail(result, "weekly_docs", "首批周课表必须至少包含一周。")
+	}
 	for i, raw := range envelope.WeeklyDocs {
 		var doc map[string]any
 		if err := json.Unmarshal(raw, &doc); err != nil {
@@ -114,7 +118,7 @@ func schemaFail(result CheckResult, path, message string) CheckResult {
 // schemaMessage flattens a JSON Schema validation error into "path: reason".
 func schemaMessage(err error) string {
 	var validation *jsonschema.ValidationError
-	if !asValidationError(err, &validation) {
+	if !errors.As(err, &validation) {
 		return err.Error()
 	}
 	leaf := validation
@@ -123,21 +127,6 @@ func schemaMessage(err error) string {
 	}
 	// A leaf's Error() is "jsonschema validation … at '/instance/path'".
 	return leaf.Error()
-}
-
-func asValidationError(err error, target **jsonschema.ValidationError) bool {
-	for err != nil {
-		if v, ok := err.(*jsonschema.ValidationError); ok {
-			*target = v
-			return true
-		}
-		unwrapper, ok := err.(interface{ Unwrap() error })
-		if !ok {
-			return false
-		}
-		err = unwrapper.Unwrap()
-	}
-	return false
 }
 
 // StaticRuleCheck runs one frozen JavaScript rule (`run(input)`) in an
@@ -214,25 +203,10 @@ func (e *ruleRunError) Error() string { return e.code }
 
 func ruleErrorCode(err error) string {
 	var re *ruleRunError
-	if asRuleError(err, &re) {
+	if errors.As(err, &re) {
 		return re.code
 	}
 	return errRuleThrew
-}
-
-func asRuleError(err error, target **ruleRunError) bool {
-	for err != nil {
-		if v, ok := err.(*ruleRunError); ok {
-			*target = v
-			return true
-		}
-		unwrapper, ok := err.(interface{ Unwrap() error })
-		if !ok {
-			return false
-		}
-		err = unwrapper.Unwrap()
-	}
-	return false
 }
 
 // bootstrap runs before every rule in a fresh interpreter: it pins the clock

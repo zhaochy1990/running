@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -41,6 +42,7 @@ type QueueDepth struct {
 // management API — AMQP passive declares report ready messages but not the
 // unacknowledged ones the cleanup gate also needs.
 type Broker struct {
+	mu             sync.Mutex
 	amqpURL        string
 	vhostPath      string
 	managementURL  string
@@ -102,10 +104,20 @@ func (b *Broker) connect() error {
 }
 
 // Healthy reports whether the publishing connection is up.
-func (b *Broker) Healthy() bool { return b.conn != nil && !b.conn.IsClosed() }
+func (b *Broker) Healthy() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.conn != nil && !b.conn.IsClosed()
+}
 
 // Close releases the connection.
 func (b *Broker) Close() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.closeConnection()
+}
+
+func (b *Broker) closeConnection() {
 	if b.conn != nil {
 		_ = b.conn.Close()
 	}
@@ -114,8 +126,10 @@ func (b *Broker) Close() {
 
 // session returns a confirm channel, redialing if the previous one died.
 func (b *Broker) session() (*amqp.Channel, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	if b.conn == nil || b.conn.IsClosed() || b.channel.IsClosed() {
-		b.Close()
+		b.closeConnection()
 		if err := b.connect(); err != nil {
 			return nil, err
 		}
@@ -157,17 +171,16 @@ func (b *Broker) Publish(ctx context.Context, queue string, message ExecuteMessa
 	if err != nil {
 		return fmt.Errorf("plan-eval publish to %s: %w", queue, err)
 	}
-	confirmed := make(chan bool, 1)
-	go func() { confirmed <- confirm.Wait() }()
-	select {
-	case ok := <-confirmed:
-		if !ok {
-			return fmt.Errorf("plan-eval publish to %s: broker nacked the message", queue)
-		}
-		return nil
-	case <-time.After(b.publishTimeout):
-		return fmt.Errorf("plan-eval publish to %s: no broker confirmation within %s", queue, b.publishTimeout)
+	confirmationContext, cancel := context.WithTimeout(ctx, b.publishTimeout)
+	defer cancel()
+	confirmed, err := confirm.WaitContext(confirmationContext)
+	if err != nil {
+		return fmt.Errorf("plan-eval publish to %s: wait for broker confirmation: %w", queue, err)
 	}
+	if !confirmed {
+		return fmt.Errorf("plan-eval publish to %s: broker nacked the message", queue)
+	}
+	return nil
 }
 
 // QueueDepth reads the queue from the management API. A queue that does not

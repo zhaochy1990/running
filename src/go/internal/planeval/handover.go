@@ -289,6 +289,9 @@ func (s *Service) RunEvaluator(ctx context.Context) {
 // every Generate of the version is terminal and the queue holds neither ready
 // nor unacknowledged messages. The queue itself and every artifact stay.
 func (s *Service) Cleanup(ctx context.Context, agentVersion string) *Error {
+	s.runtimeMu.Lock()
+	defer s.runtimeMu.Unlock()
+
 	if !s.knownVersion(agentVersion) || !validAgentVersion(agentVersion) {
 		return fail(422, "invalid_request", "未登记的 Agent 版本："+agentVersion)
 	}
@@ -309,6 +312,9 @@ func (s *Service) Cleanup(ctx context.Context, agentVersion string) *Error {
 	if err := s.deployer.Delete(ctx, agentVersion); err != nil {
 		s.log.Error("plan-eval: delete worker deployment", zap.String("agent_version", agentVersion), zap.Error(err))
 		return fail(502, "cleanup_failed", "删除 Deployment 失败")
+	}
+	if err := s.store.ReleasePlanEvalLaunchConfig(ctx, agentVersion); err != nil {
+		return s.internal(err)
 	}
 	s.log.Info("plan-eval worker deployment removed", zap.String("agent_version", agentVersion))
 	return nil

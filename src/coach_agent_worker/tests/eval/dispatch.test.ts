@@ -79,11 +79,11 @@ test("a valid lease held elsewhere keeps the message unacknowledged and retries 
   assert.ok(clock.now >= 1_000);
 });
 
-test("a stale lease or a vanished execution makes this delivery irrelevant (acknowledge, do not retry)", async () => {
-  for (const error of [new StaleLeaseError(EXECUTION_ID, "submit"), new MissingExecutionError(EXECUTION_ID)]) {
-    const { dispatcher } = build({ submit: async () => Promise.reject(error) }, generateOk);
-    await dispatcher.process(executionMessage());
-  }
+test("a stale lease must redeliver, but a vanished execution can be acknowledged", async () => {
+  const { dispatcher: stale } = build({ submit: async () => Promise.reject(new StaleLeaseError(EXECUTION_ID, "submit")) }, generateOk);
+  await assert.rejects(stale.process(executionMessage()), StaleLeaseError);
+  const { dispatcher: missing } = build({ submit: async () => Promise.reject(new MissingExecutionError(EXECUTION_ID)) }, generateOk);
+  await missing.process(executionMessage());
 });
 
 test("an infrastructure fault while submitting rejects, so the broker redelivers", async () => {
@@ -102,7 +102,7 @@ test("losing the lease mid-generation discards the result instead of submitting 
         poll();
       }),
   );
-  await dispatcher.process(executionMessage());
+  await assert.rejects(dispatcher.process(executionMessage()), StaleLeaseError);
   assert.deepEqual(calls, [`claim:${EXECUTION_ID}:2026.11.30:worker-1`, `renew:${EXECUTION_ID}:1`]);
 });
 

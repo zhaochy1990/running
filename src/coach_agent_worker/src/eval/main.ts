@@ -2,7 +2,7 @@ import { createMasterPlanGraph, loadConfig, type MasterPlanContextProvider } fro
 import { getLogger } from "@stride/common";
 import { masterLlmModels } from "../app/dependencies.js";
 import { coachAgentConfigFiles } from "../configPaths.js";
-import { type MasterPlanGraphShim, toMasterPlanGraphShim } from "../kernel/master/kernel.js";
+import { toMasterPlanGraphShim } from "../kernel/master/kernel.js";
 import { PlanJobQueue } from "../queue/rabbit.js";
 import { EvalApiClient } from "./client.js";
 import { loadEvalWorkerConfig } from "./config.js";

@@ -47,6 +47,9 @@ type Service struct {
 	secrets  *SecretKey
 	cfg      Config
 	log      *zap.Logger
+	// The scheduler API has one replica. Serialize launches and cleanup so
+	// a Deployment cannot be removed between another task's checks and start.
+	runtimeMu sync.Mutex
 	// evaluateMu keeps this replica's sweeps from overlapping; cross-replica
 	// safety comes from the compare-and-set claim in storage.
 	evaluateMu sync.Mutex
@@ -291,6 +294,9 @@ type taskParams struct {
 // that the idempotency key matched an existing task, which is then returned
 // without publishing again.
 func (s *Service) CreateTask(ctx context.Context, submitter, idempotencyKey string, req CreateTaskRequest) (view *TaskDetailView, replayed bool, err *Error) {
+	s.runtimeMu.Lock()
+	defer s.runtimeMu.Unlock()
+
 	if idempotencyKey == "" || len(idempotencyKey) > 128 {
 		return nil, false, fail(400, "invalid_request", "Idempotency-Key 请求头必填，且不超过 128 字符")
 	}
@@ -318,7 +324,8 @@ func (s *Service) CreateTask(ctx context.Context, submitter, idempotencyKey stri
 		return nil, false, serr
 	}
 
-	params := taskParams{AgentVersion: req.AgentVersion, ScenarioID: scenario.ID, Replicas: replicas, Env: digestEnv(env)}
+	envDigests := digestEnv(env)
+	params := taskParams{AgentVersion: req.AgentVersion, ScenarioID: scenario.ID, Replicas: replicas, Env: envDigests}
 	encoded, _ := json.Marshal(params)
 	sum := sha256.Sum256(encoded)
 	cipher, cerr := s.secrets.Seal(env)
@@ -327,6 +334,8 @@ func (s *Service) CreateTask(ctx context.Context, submitter, idempotencyKey stri
 	}
 	launch := &storage.PlanEvalLaunchConfig{ID: uuid.NewString(), AgentVersion: req.AgentVersion, Replicas: replicas}
 	launch.EnvNames = string(mustJSON(names))
+	envFingerprint := sha256.Sum256(mustJSON(envDigests))
+	launch.EnvFingerprint = hex.EncodeToString(envFingerprint[:])
 	task := &storage.PlanEvalTask{
 		ID: uuid.NewString(), AgentVersion: req.AgentVersion, ScenarioID: scenario.ID,
 		Submitter: submitter, IdempotencyKey: idempotencyKey, ParamsFingerprint: hex.EncodeToString(sum[:]),
@@ -341,19 +350,28 @@ func (s *Service) CreateTask(ctx context.Context, submitter, idempotencyKey stri
 	if verr != nil {
 		return nil, false, verr
 	}
-	if replayed {
+	if replayed && (created.LaunchedAt != nil || created.CompletedAt != nil) {
 		return view, true, nil
 	}
-	if lerr := s.launch(ctx, created); lerr != nil {
-		// The task and its queued executions stay; the detail page shows why
-		// nothing started.
-		if uerr := s.store.SetPlanEvalTaskLaunchError(ctx, created.ID, lerr.Error()); uerr != nil {
+	// Once frozen, finish the launch attempt even if the browser disconnects.
+	// Any unconfirmed publish can be retried with the original task key.
+	launchCtx, cancelLaunch := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	lerr := s.launch(launchCtx, created)
+	cancelLaunch()
+	resultCtx, cancelResult := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancelResult()
+	if lerr != nil {
+		if uerr := s.store.RecordPlanEvalLaunch(resultCtx, created.ID, lerr.Error()); uerr != nil {
 			s.log.Error("plan-eval: record launch error", zap.Error(uerr))
 		}
 		view.LaunchError = lerr.Error()
-		return view, false, &Error{Status: 502, Code: "launch_failed", Detail: lerr.Error(), Extra: map[string]any{"task_id": created.ID}}
+		return view, replayed, &Error{Status: 502, Code: "launch_failed", Detail: lerr.Error(), Extra: map[string]any{"task_id": created.ID}}
 	}
-	return view, false, nil
+	if uerr := s.store.RecordPlanEvalLaunch(resultCtx, created.ID, ""); uerr != nil {
+		s.log.Error("plan-eval: record successful start", zap.Error(uerr))
+	}
+	view.LaunchError = ""
+	return view, replayed, nil
 }
 
 func (s *Service) internal(err error) *Error {
@@ -551,7 +569,12 @@ func (s *Service) taskViews(ctx context.Context, tasks []storage.PlanEvalTask) (
 			EnvNames: []string{}, LaunchError: task.LaunchError,
 			CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt, CompletedAt: task.CompletedAt,
 		}
-		if launch := launchByID[task.LaunchConfigID]; launch != nil {
+		if task.LaunchEnvNames != "" {
+			view.Replicas = task.LaunchReplicas
+			if err := json.Unmarshal([]byte(task.LaunchEnvNames), &view.EnvNames); err != nil {
+				return nil, s.internal(err)
+			}
+		} else if launch := launchByID[task.LaunchConfigID]; launch != nil {
 			view.Replicas = launch.Replicas
 			if err := json.Unmarshal([]byte(launch.EnvNames), &view.EnvNames); err != nil {
 				return nil, s.internal(err)

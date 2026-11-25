@@ -213,8 +213,9 @@ func TestSchemaCheck(t *testing.T) {
 	}
 
 	cases := map[string]func(artifact map[string]any){
-		"type": func(a map[string]any) { a["type"] = "weekly_plan" },
-		"plan": func(a map[string]any) { delete(a["plan"].(map[string]any), "goal") },
+		"type":        func(a map[string]any) { a["type"] = "weekly_plan" },
+		"plan":        func(a map[string]any) { delete(a["plan"].(map[string]any), "goal") },
+		"weekly_docs": func(a map[string]any) { delete(a, "weekly_docs") },
 		"weekly_docs[1]": func(a map[string]any) {
 			doc := a["weekly_docs"].([]any)[1].(map[string]any)
 			doc["nutrition"] = doc["nutrition"].([]any)[:6] // schema: exactly 7 days

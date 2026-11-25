@@ -331,6 +331,9 @@ func TestHTTP_CreateTask_FreezesLaunchesAndReplays(t *testing.T) {
 	if res := h.admin(http.MethodPost, path, h.createBody([2]string{"OTHER", "x"}), map[string]string{"Idempotency-Key": uuid.NewString()}); res.status != http.StatusConflict || h.json(res)["error"] != "launch_config_conflict" {
 		t.Fatalf("launch conflict: %d %s", res.status, res.body)
 	}
+	if res := h.admin(http.MethodPost, path, h.createBody([2]string{"DEEPSEEK_API_KEY", "changed"}), map[string]string{"Idempotency-Key": uuid.NewString()}); res.status != http.StatusConflict || h.json(res)["error"] != "launch_config_conflict" {
+		t.Fatalf("same-name launch value conflict: %d %s", res.status, res.body)
+	}
 	// Left blank: the running configuration is reused.
 	reusedConfig := h.admin(http.MethodPost, path, h.createBody(), map[string]string{"Idempotency-Key": uuid.NewString()})
 	if reusedConfig.status != http.StatusCreated {
@@ -501,6 +504,26 @@ func TestHTTP_WorkerHandoverAndEvaluation(t *testing.T) {
 	}
 }
 
+func TestHTTP_ConcurrentCreateReplaysOneLaunch(t *testing.T) {
+	h := openHarness(t)
+	const path = "/api/admin/plan-eval/tasks"
+	key := map[string]string{"Idempotency-Key": uuid.NewString()}
+	responses := make(chan response, 2)
+	for range 2 {
+		go func() { responses <- h.admin(http.MethodPost, path, h.createBody(), key) }()
+	}
+	first, second := <-responses, <-responses
+	if first.status == http.StatusOK {
+		first, second = second, first
+	}
+	if first.status != http.StatusCreated || second.status != http.StatusOK {
+		t.Fatalf("concurrent submissions: %d and %d", first.status, second.status)
+	}
+	if h.json(first)["id"] != h.json(second)["id"] || len(h.broker.queues[QueueName(h.version)]) != 1 || len(h.deployer.ensured) != 1 {
+		t.Fatal("concurrent replay created another task, message, or Deployment")
+	}
+}
+
 func TestHTTP_CleanupRequiresAnIdleVersion(t *testing.T) {
 	h := openHarness(t)
 	path := "/api/admin/plan-eval/agent-versions/" + h.version + "/cleanup"
@@ -512,7 +535,7 @@ func TestHTTP_CleanupRequiresAnIdleVersion(t *testing.T) {
 	}
 
 	// A queued execution blocks the cleanup.
-	created := h.json(h.admin(http.MethodPost, "/api/admin/plan-eval/tasks", h.createBody(), map[string]string{"Idempotency-Key": uuid.NewString()}))
+	created := h.json(h.admin(http.MethodPost, "/api/admin/plan-eval/tasks", h.createBody([2]string{"DEEPSEEK_API_KEY", "test-before-cleanup"}), map[string]string{"Idempotency-Key": uuid.NewString()}))
 	executionID := created["executions"].([]any)[0].(map[string]any)["id"].(string)
 	blocked := h.admin(http.MethodPost, path, nil, nil)
 	if blocked.status != http.StatusConflict || h.json(blocked)["error"] != "cleanup_blocked" || !strings.Contains(h.json(blocked)["detail"].(string), "执行项") {
@@ -540,12 +563,21 @@ func TestHTTP_CleanupRequiresAnIdleVersion(t *testing.T) {
 	if _, kept := h.broker.queues[QueueName(h.version)]; !kept {
 		t.Fatalf("cleanup removed the version queue")
 	}
+	next := h.admin(http.MethodPost, "/api/admin/plan-eval/tasks", h.createBody([2]string{"OTHER", "test-after-cleanup"}), map[string]string{"Idempotency-Key": uuid.NewString()})
+	if next.status != http.StatusCreated {
+		t.Fatalf("launch new configuration after cleanup: %d %s", next.status, next.body)
+	}
+	previous := h.json(h.admin(http.MethodGet, "/api/admin/plan-eval/tasks/"+created["id"].(string), nil, nil))
+	if string(mustJSON(previous["env_names"])) != `["DEEPSEEK_API_KEY"]` {
+		t.Fatalf("historical launch names changed: %v", previous["env_names"])
+	}
 }
 
 func TestHTTP_LaunchFailureKeepsTheTaskAndReportsIt(t *testing.T) {
 	h := openHarness(t)
 	h.broker.publish = func(string) error { return errors.New("broker nacked") }
-	res := h.admin(http.MethodPost, "/api/admin/plan-eval/tasks", h.createBody(), map[string]string{"Idempotency-Key": uuid.NewString()})
+	key := map[string]string{"Idempotency-Key": uuid.NewString()}
+	res := h.admin(http.MethodPost, "/api/admin/plan-eval/tasks", h.createBody(), key)
 	body := h.json(res)
 	if res.status != http.StatusBadGateway || body["error"] != "launch_failed" || !strings.Contains(body["detail"].(string), "broker nacked") || body["task_id"] == "" {
 		t.Fatalf("launch failure: %d %s", res.status, res.body)
@@ -557,6 +589,15 @@ func TestHTTP_LaunchFailureKeepsTheTaskAndReportsIt(t *testing.T) {
 	detail := h.json(h.admin(http.MethodGet, "/api/admin/plan-eval/tasks/"+body["task_id"].(string), nil, nil))
 	if !strings.Contains(detail["launch_error"].(string), "broker nacked") || detail["progress"].(map[string]any)["total"].(float64) != 1 {
 		t.Fatalf("detail after a failed launch: %s", mustJSON(detail))
+	}
+	h.broker.publish = nil
+	retry := h.admin(http.MethodPost, "/api/admin/plan-eval/tasks", h.createBody(), key)
+	if retry.status != http.StatusOK {
+		t.Fatalf("retry launch: %d %s", retry.status, retry.body)
+	}
+	retried := h.json(retry)
+	if retried["id"] != body["task_id"] || retried["launch_error"] != "" || len(h.broker.queues[QueueName(h.version)]) != 1 {
+		t.Fatalf("retry must start the original task: %s", retry.body)
 	}
 }
 

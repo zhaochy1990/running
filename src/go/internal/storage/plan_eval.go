@@ -154,7 +154,7 @@ type PlanEvalTaskCreate struct {
 //     returned with replayed=true and nothing is written.
 //   - Same key, different parameters → PlanEvalIdempotencyConflictError.
 //   - A launch configuration already exists for the version: it is reused when
-//     it names the same variables (values are kept, replicas follow the new
+//     it has the same variables and values (replicas follow the new
 //     request); otherwise PlanEvalLaunchConfigConflictError and nothing is
 //     written.
 func (s *Store) CreatePlanEvalTask(ctx context.Context, in *PlanEvalTaskCreate) (task *PlanEvalTask, replayed bool, err error) {
@@ -176,8 +176,8 @@ func (s *Store) CreatePlanEvalTask(ctx context.Context, in *PlanEvalTaskCreate) 
 		switch err := tx.Where("agent_version = ?", in.Task.AgentVersion).First(&current).Error; {
 		case err == nil:
 			// An empty variable set means "keep what this version already runs
-			// with"; any other set must name exactly the same variables.
-			if in.LaunchConfig.EnvNames != "[]" && current.EnvNames != in.LaunchConfig.EnvNames {
+			// with"; any other set must match the active values as well.
+			if in.LaunchConfig.EnvNames != "[]" && (current.EnvNames != in.LaunchConfig.EnvNames || current.EnvFingerprint != in.LaunchConfig.EnvFingerprint) {
 				return &PlanEvalLaunchConfigConflictError{}
 			}
 			if err := tx.Model(&PlanEvalLaunchConfig{}).Where("id = ?", current.ID).
@@ -185,6 +185,7 @@ func (s *Store) CreatePlanEvalTask(ctx context.Context, in *PlanEvalTaskCreate) 
 				return fmt.Errorf("storage: update plan_eval_launch_configs: %w", err)
 			}
 			in.Task.LaunchConfigID = current.ID
+			in.Task.LaunchEnvNames = current.EnvNames
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			launch := *in.LaunchConfig
 			launch.EnvCipher = in.EnvCipher
@@ -197,10 +198,12 @@ func (s *Store) CreatePlanEvalTask(ctx context.Context, in *PlanEvalTaskCreate) 
 				return fmt.Errorf("storage: create plan_eval_launch_configs: %w", err)
 			}
 			in.Task.LaunchConfigID = launch.ID
+			in.Task.LaunchEnvNames = launch.EnvNames
 		default:
 			return fmt.Errorf("storage: find plan_eval_launch_configs: %w", err)
 		}
 
+		in.Task.LaunchReplicas = in.LaunchConfig.Replicas
 		in.Task.Status, in.Task.CreatedAt, in.Task.UpdatedAt = PlanEvalTaskRunning, now, now
 		if err := tx.Create(in.Task).Error; err != nil {
 			return fmt.Errorf("storage: create plan_eval_tasks: %w", err)
@@ -222,20 +225,39 @@ func (s *Store) CreatePlanEvalTask(ctx context.Context, in *PlanEvalTaskCreate) 
 		return nil
 	})
 	if err != nil {
+		// A concurrent insertion can win either unique key before our insert.
+		var persisted PlanEvalTask
+		lookup := s.db.WithContext(ctx).Where("submitter = ? AND idempotency_key = ?", in.Task.Submitter, in.Task.IdempotencyKey).First(&persisted)
+		if lookup.Error == nil {
+			if persisted.ParamsFingerprint != in.Task.ParamsFingerprint {
+				return nil, false, &PlanEvalIdempotencyConflictError{ExistingTaskID: persisted.ID}
+			}
+			return &persisted, true, nil
+		}
 		return nil, false, err
 	}
 	return task, replayed, nil
 }
 
-// SetPlanEvalTaskLaunchError records that publishing or starting failed after
-// the task row was committed.
-func (s *Store) SetPlanEvalTaskLaunchError(ctx context.Context, taskID, message string) error {
+// RecordPlanEvalLaunch records the outcome of publishing and starting a task.
+func (s *Store) RecordPlanEvalLaunch(ctx context.Context, taskID, message string) error {
+	now := time.Now().UTC()
+	changes := map[string]any{"launch_error": message, "updated_at": now}
+	if message == "" {
+		changes["launched_at"] = now
+	}
 	err := s.db.WithContext(ctx).Model(&PlanEvalTask{}).Where("id = ?", taskID).
-		Updates(map[string]any{"launch_error": message, "updated_at": time.Now().UTC()}).Error
+		Updates(changes).Error
 	if err != nil {
 		return fmt.Errorf("storage: set plan_eval_tasks launch error: %w", err)
 	}
 	return nil
+}
+
+// ReleasePlanEvalLaunchConfig removes even its encrypted values after cleanup.
+// The task rows retain the effective replica count and variable names.
+func (s *Store) ReleasePlanEvalLaunchConfig(ctx context.Context, agentVersion string) error {
+	return s.db.WithContext(ctx).Where("agent_version = ?", agentVersion).Delete(&PlanEvalLaunchConfig{}).Error
 }
 
 // ---- reads ----
@@ -669,6 +691,10 @@ func (s *Store) SavePlanEvalCheckResults(ctx context.Context, executionID string
 // planEvalRefreshTaskStatus moves the task to done once every execution has
 // reached terminal Generate and Evaluate states.
 func planEvalRefreshTaskStatus(tx *gorm.DB, taskID string, now time.Time) error {
+	var task PlanEvalTask
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&task, "id = ?", taskID).Error; err != nil {
+		return fmt.Errorf("storage: lock plan_eval_tasks for settlement: %w", err)
+	}
 	var open int64
 	if err := tx.Model(&PlanEvalExecution{}).Where("task_id = ? AND NOT (generate_status IN ('done','failed') AND evaluate_status IN ('done','failed','skipped'))", taskID).Count(&open).Error; err != nil {
 		return fmt.Errorf("storage: count open plan_eval_executions: %w", err)
