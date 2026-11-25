@@ -37,6 +37,7 @@ const symbols = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   minus: '<path d="M5 12h14"/>',
   cross: '<path d="m6 6 12 12M18 6 6 18"/>',
+  copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
   check: '<path d="m5 12 4 4L19 6"/>',
   timer: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6M18 5l2-2"/>',
   lift: '<path d="M6 6v12M3 9v6M21 9v6M18 6v12M6 12h12"/>',

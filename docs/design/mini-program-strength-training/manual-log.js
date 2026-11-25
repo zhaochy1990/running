@@ -1,8 +1,8 @@
 'use strict';
 
 const manualLog = (() => {
-  const loads = { none: '未填重量', kg: 'kg', bar: '空杠', body: '自重' };
-  const units = { reps: '次', seconds: '秒' };
+  const loadUnits = { '': '无', kg: 'kg', lb: 'lb' };
+  const units = { reps: '个', seconds: '秒' };
   const dates = new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
   });
@@ -18,8 +18,8 @@ const manualLog = (() => {
     return `${parts.year}-${parts.month}-${parts.day}`;
   }
 
-  function newRow() {
-    return { id: nextId++, load: 'none', weight: '', amount: '', sets: '1', unit: 'reps' };
+  function newRow(source) {
+    return { load: '', loadUnit: '', amount: '', unit: 'reps', ...source, id: nextId++ };
   }
 
   function newExercise() {
@@ -73,19 +73,19 @@ const manualLog = (() => {
   }
 
   function rowView(row, index) {
-    return `<div class="log-set" data-log-row="${row.id}" role="group" aria-label="第 ${index + 1} 条组记录">
-      <div class="log-load">
-        <select data-log-field="load" aria-label="负重方式">${options(loads, row.load)}</select>
-        ${row.load === 'kg' ? `<input data-log-field="weight" aria-label="重量（kg）" inputmode="decimal" placeholder="kg" value="${escape(row.weight)}">` : ''}
-      </div>
+    const number = index + 1;
+    return `<div class="log-set" data-log-row="${row.id}" role="group" aria-label="第 ${number} 组">
+      <span class="log-set-number" aria-hidden="true">${number}</span>
+      <input data-log-field="load" aria-label="负重" placeholder="—" value="${escape(row.load)}">
+      <select data-log-field="loadUnit" aria-label="负重单位">${options(loadUnits, row.loadUnit)}</select>
       <div class="log-amount">
-        <input data-log-field="amount" aria-label="每组次数或时长" inputmode="numeric" placeholder="—" value="${escape(row.amount)}">
-        <select data-log-field="unit" aria-label="计量单位">${options(units, row.unit)}</select>
+        <input data-log-field="amount" aria-label="数量" inputmode="numeric" placeholder="—" value="${escape(row.amount)}">
+        <select data-log-field="unit" aria-label="数量单位">${options(units, row.unit)}</select>
       </div>
-      <div class="log-sets">
-        <input data-log-field="sets" aria-label="组数" inputmode="numeric" value="${escape(row.sets)}"><span>组</span>
+      <div class="log-set-actions">
+        ${logButton('remove-row', app.icon('cross', 16), 'icon-button log-remove', `aria-label="删除第 ${number} 组"`)}
+        ${logButton('copy-row', app.icon('copy', 17), 'icon-button log-copy', `aria-label="复制第 ${number} 组" title="复制到下一组"`)}
       </div>
-      ${logButton('remove-row', app.icon('cross', 16), 'icon-button log-remove', `aria-label="删除第 ${index + 1} 条组记录"`)}
     </div>`;
   }
 
@@ -95,10 +95,10 @@ const manualLog = (() => {
         <input data-log-field="name" aria-label="动作 ${index + 1} 名称" placeholder="动作名称，如深蹲" value="${escape(exercise.name)}">
         ${logButton('remove-exercise', app.icon('cross', 18), 'icon-button log-remove', `aria-label="删除动作 ${index + 1}"`)}
       </div>
-      ${exercise.rows.length ? '<div class="log-set log-set-labels" aria-hidden="true"><span>负重</span><span>每组</span><span>组数</span></div>' : ''}
+      ${exercise.rows.length ? '<div class="log-set log-set-labels" aria-hidden="true"><span>组数</span><span>负重</span><span>单位</span><span>数量</span></div>' : ''}
       ${exercise.rows.map(rowView).join('')}
       <div class="log-exercise-footer">
-        ${logButton('add-row', `${app.icon('plus', 16)}记一行`, 'text-button log-add-row')}
+        ${logButton('add-row', `${app.icon('plus', 16)}添加一组`, 'text-button log-add-row')}
         <div class="log-field">
           <textarea aria-label="动作 ${index + 1} 备注" data-log-field="note" rows="1" placeholder="动作备注（选填）">
 ${escape(exercise.note)}</textarea>
@@ -125,7 +125,7 @@ ${escape(exercise.note)}</textarea>
 
   function totals(entry) {
     return entry.exercises.reduce((sum, exercise) =>
-      sum + exercise.rows.reduce((count, row) => count + Number(row.sets), 0), 0);
+      sum + exercise.rows.length, 0);
   }
 
   function recordTitle(record) {
@@ -133,8 +133,9 @@ ${escape(exercise.note)}</textarea>
   }
 
   function line(row) {
-    const load = row.load === 'kg' ? `${Number(row.weight)} kg` : loads[row.load];
-    return `${row.load === 'none' ? '' : `${load} · `}${Number(row.amount)} ${units[row.unit]} × ${Number(row.sets)} 组`;
+    const load = row.load.trim();
+    const unit = row.loadUnit ? ` ${row.loadUnit}` : '';
+    return `${load ? `${escape(load)}${unit} · ` : ''}${Number(row.amount)} ${units[row.unit]}`;
   }
 
   function activityRows() {
@@ -150,7 +151,7 @@ ${escape(exercise.note)}</textarea>
     if (!activeDraft) return false;
     return Boolean(activeDraft.title.trim() || activeDraft.exercises.length !== 1 ||
       activeDraft.exercises.some(exercise => exercise.name.trim() || exercise.note.trim() || exercise.rows.length !== 1 ||
-        exercise.rows.some(row => row.load !== 'none' || row.weight || row.amount || row.sets !== '1' || row.unit !== 'reps')));
+        exercise.rows.some(row => row.load.trim() || row.loadUnit || row.amount || row.unit !== 'reps')));
   }
 
   function savedView() {
@@ -164,7 +165,7 @@ ${escape(exercise.note)}</textarea>
       </div>
       ${entry.exercises.map(exercise => `<section class="log-saved-exercise">
         <h3>${escape(exercise.name.trim())}</h3>
-        <ul>${exercise.rows.map(row => `<li>${line(row)}</li>`).join('')}</ul>
+        <ol>${exercise.rows.map((row, index) => `<li><span class="log-saved-index">第 ${index + 1} 组</span><span>${line(row)}</span></li>`).join('')}</ol>
         ${exercise.note.trim() ? `<p class="log-record-note">${escape(exercise.note)}</p>` : ''}
       </section>`).join('')}`,
       footer: logButton('records', '返回活动记录', 'secondary') + logButton('edit', '编辑记录', 'primary'),
@@ -181,10 +182,6 @@ ${escape(exercise.note)}</textarea>
     return /^\d+$/.test(value.trim()) && Number.isSafeInteger(Number(value)) && Number(value) > 0;
   }
 
-  function positiveWeight(value) {
-    return /^(?:\d+(?:\.\d+)?|\.\d+)$/.test(value.trim()) && Number.isFinite(Number(value)) && Number(value) > 0;
-  }
-
   function validate(entry) {
     if (!entry.exercises.length) return { action: 'add-exercise', message: '请添加至少一个动作。' };
 
@@ -194,9 +191,8 @@ ${escape(exercise.note)}</textarea>
       if (!exercise.rows.length) return { location, action: 'add-row', message: '请记录至少一组。' };
       for (const row of exercise.rows) {
         const location = `[data-log-row="${row.id}"]`;
-        if (row.load === 'kg' && !positiveWeight(row.weight)) return { location, field: 'weight', message: '请输入大于 0 的重量，例如 12.5。' };
-        if (!positiveInteger(row.amount)) return { location, field: 'amount', message: '请输入大于 0 的整数作为次数或秒数。' };
-        if (!positiveInteger(row.sets)) return { location, field: 'sets', message: '请输入大于 0 的整数作为组数。' };
+        if (row.loadUnit && !row.load.trim()) return { location, field: 'load', message: '请填写负重，或将负重单位设为无。' };
+        if (!positiveInteger(row.amount)) return { location, field: 'amount', message: '请输入大于 0 的数量。' };
       }
     }
     return null;
@@ -259,12 +255,6 @@ ${escape(exercise.note)}</textarea>
     const entry = row || exercise || draft();
     entry[key] = field.value;
     clearError();
-
-    if (key === 'load') {
-      app.render();
-      const rendered = app.screen.querySelector(`[data-log-row="${row.id}"]`);
-      rendered.querySelector(row.load === 'kg' ? '[data-log-field="weight"]' : '[data-log-field="load"]').focus();
-    }
   }
 
   function click(event) {
@@ -305,12 +295,16 @@ ${escape(exercise.note)}</textarea>
         app.screen.querySelector('[data-log-action="add-exercise"]').focus();
         break;
       }
-      case 'add-row': {
+      case 'add-row':
+      case 'copy-row': {
         const exercise = exerciseOf(control);
-        const row = newRow();
-        exercise.rows.push(row);
+        const source = rowOf(control, exercise);
+        const row = newRow(source);
+        if (source) exercise.rows.splice(exercise.rows.indexOf(source) + 1, 0, row);
+        else exercise.rows.push(row);
         app.render();
-        app.screen.querySelector(`[data-log-row="${row.id}"] [data-log-field="amount"]`).focus();
+        const rendered = app.screen.querySelector(`[data-log-row="${row.id}"]`);
+        rendered.querySelector(source ? '[data-log-action="copy-row"]' : '[data-log-field="amount"]').focus();
         break;
       }
       case 'remove-row': {
