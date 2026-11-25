@@ -877,9 +877,10 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
       const weekValues = wt.data.filter((v): v is number => v != null);
       const weekMax = weekValues.length ? Math.max(...weekValues) : 0;
       draw('#week-chart', (w, h) =>
-        buildLineChartOptions({
+        buildColumnChartOptions({
           categories: wt.categories,
-          series: [{ name: '周剂量', data: wt.data, color: '#e68a00' }],
+          data: wt.data,
+          color: '#e68a00',
           bounds: { min: 0, max: Math.max(10, weekMax * 1.1) },
           width: w,
           height: h,
