@@ -1,7 +1,6 @@
 # ADR 0047: Explicit historical-metrics recompute — staged publication and consistent vintage
 
-Status: accepted for engineering implementation; execution stays default-off
-and production backfills remain unauthorized (extends ADR 0045/0046, epic
+Status: accepted for engineering implementation; execution stays default-off (extends ADR 0045/0046, epic
 devops#1004 T08 / devops#1012).
 
 ## What is implemented
@@ -14,10 +13,10 @@ the 365-day target window, the binding revision, the calibration policy
 version + revision, a full-history input-data digest (the PB stage reads
 beyond the window), and — the vintage marker — the **frozen calibration
 bundle** it consumes: the run id and bundle fingerprint of the newest
-completed `historical_calibration_recompute` run (ADR 0046). The trigger is
-the same explicit internal jobs-API dispatch as T07 — never a GET, a sync
-pipeline step or a listener; a user without a completed calibration run gets
-a permanent `calibration_bundle_missing`, not a retry.
+completed `historical_calibration_recompute` run (ADR 0046). Dispatch comes from the internal jobs API or the opt-in first-sync sweep
+(devops#1060), which waits for the frozen calibration bundle. Manual requests
+without a frozen bundle return `calibration_bundle_missing`. See the
+[deployment runbook](../deployment.md#首次同步后的历史重算).
 
 The rebuild follows the ADR 0045 order through five phases, each yielding
 between bounded chunks (chained jobs under stable idempotency keys, no
@@ -108,8 +107,8 @@ series' inputs — the same rows publication promotes.
 
 - Production execution. `runtime.historical-metrics-recompute.enabled` is
   DEFAULT OFF; a stray job on a flag-off worker fails permanently
-  (`historical_metrics_disabled`). Turning it on authorizes execution of
-  operator-dispatched runs, not a fleet-wide backfill.
+  (`historical_metrics_disabled`). It gates execution. The separate onboarding dispatch flag admits eligible
+  first-sync sessions with a frozen calibration bundle.
 - Scope beyond V1: load/zones/L1/PMC target the 365-day window only; no
   multi-year daily ability or L1 backfill (the PB stage is the only
   full-history consumer). Missing day baselines stay honest gaps.

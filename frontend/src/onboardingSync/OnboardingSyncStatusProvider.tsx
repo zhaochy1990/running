@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { getOnboardingSyncSession, postOnboardingSyncSession, type OnboardingSyncView } from "../api";
 import { OnboardingSyncStatusContext } from "./OnboardingSyncStatusContext";
-import { SESSION_POLL_MS, isSessionTerminal } from "./sessionModel";
+import { SESSION_POLL_MS, shouldPollSession } from "./sessionModel";
 
 // Global first-sync session status (devops#1014): one read-only GET poller
 // shared by every page. It never creates a session (creation happens once at
@@ -35,7 +35,7 @@ export function OnboardingSyncStatusProvider({ children }: { children: ReactNode
       const next = await getOnboardingSyncSession();
       if (!mountedRef.current) return;
       setView(next);
-      if (isSessionTerminal(next.state)) setPolling(false);
+      if (!shouldPollSession(next)) setPolling(false);
     } catch (err) {
       if (!mountedRef.current) return;
       // Duck-typed status (ApiError and transport failures alike): 404 = no
@@ -71,7 +71,7 @@ export function OnboardingSyncStatusProvider({ children }: { children: ReactNode
       if (next.ok) {
         setView(next.data);
         setDismissed(false);
-        if (!isSessionTerminal(next.data.state)) setPolling(true);
+        if (shouldPollSession(next.data)) setPolling(true);
       } else {
         setRetryError("重试失败，请稍后再试。");
       }

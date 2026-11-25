@@ -92,6 +92,9 @@ func runAPI() error {
 	if err := store.AutoMigrateHistoricalRecompute(ctx); err != nil {
 		return err
 	}
+	if err := store.AutoMigrateHistoricalMetrics(ctx); err != nil {
+		return err
+	}
 	if err := store.AutoMigrateInjuries(ctx); err != nil {
 		return err
 	}

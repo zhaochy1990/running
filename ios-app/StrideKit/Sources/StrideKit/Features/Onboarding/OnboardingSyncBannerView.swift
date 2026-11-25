@@ -59,14 +59,16 @@ public struct OnboardingSyncBannerView: View {
                     .font(theme.font(.fs13, weight: .medium))
                     .foregroundStyle(theme.foreground)
                 Spacer()
-                actions(theme: theme, failed: failed, gapsTerminal: gapsTerminal)
+                actions(theme: theme, failed: failed)
             }
-            if let readiness = view?.readiness {
+            if let view {
+                let readiness = view.readiness
                 // 原始/派生/辅助分开；shell_ready 是 bool 不做 chip（spec 决议）
                 FlowLayout(spacing: 4) {
                     ForEach(OnboardingSessionDisplay.ReadinessKey.allCases, id: \.self) { key in
                         readinessChip(label: key.label,
                                       level: OnboardingSessionDisplay.readinessLevel(key, of: readiness),
+                                      text: key == .historicalAnalysis ? OnboardingSessionDisplay.historicalAnalysisLabel(view) : nil,
                                       theme: theme)
                     }
                 }
@@ -74,11 +76,11 @@ public struct OnboardingSyncBannerView: View {
         }
     }
 
-    private func readinessChip(label: String, level: OnboardingSyncReadiness, theme: any Theme) -> some View {
+    private func readinessChip(label: String, level: OnboardingSyncReadiness, text: String?, theme: any Theme) -> some View {
         let color = toneColor(OnboardingSessionDisplay.readinessTone(level), theme: theme)
         return HStack(spacing: 3) {
             Text(label).foregroundStyle(theme.muted)
-            Text(OnboardingSessionDisplay.readinessLabel(level)).foregroundStyle(color)
+            Text(text ?? OnboardingSessionDisplay.readinessLabel(level)).foregroundStyle(color)
         }
         .font(theme.font(.fs11))
         .padding(.horizontal, 5)
@@ -87,7 +89,7 @@ public struct OnboardingSyncBannerView: View {
     }
 
     @ViewBuilder
-    private func actions(theme: any Theme, failed: Bool, gapsTerminal: Bool) -> some View {
+    private func actions(theme: any Theme, failed: Bool) -> some View {
         HStack(spacing: theme.space(.md)) {
             if recentReady {
                 // 后台失败不收回近期数据：recent_data 就绪即保持入口（spec/Web 同口径）
@@ -105,7 +107,7 @@ public struct OnboardingSyncBannerView: View {
                 .foregroundStyle(theme.danger)
                 .disabled(model.retrying)
             }
-            if failed || gapsTerminal {
+            if let view = model.view, OnboardingSessionDisplay.isTerminal(view.state) {
                 Button("忽略") { model.dismiss() }
                     .font(theme.font(.fs12))
                     .foregroundStyle(theme.muted)
@@ -131,6 +133,11 @@ public struct OnboardingSyncBannerView: View {
     private func detail(theme: any Theme, failed: Bool) -> some View {
         let view = model.view
         VStack(alignment: .leading, spacing: theme.space(.xs)) {
+            if let reason = view?.historicalAnalysisReason {
+                Text(reason == "interruption_limit" ? "历史分析多次被新数据打断，等待人工处理。" : "历史分析重算失败，等待人工处理。")
+                    .font(theme.font(.fs11))
+                    .foregroundStyle(theme.warning)
+            }
             if failed || view?.error != nil {
                 Text(view?.error ?? "部分同步任务失败，已完成的范围不会丢失。")
                     .font(theme.font(.fs11))

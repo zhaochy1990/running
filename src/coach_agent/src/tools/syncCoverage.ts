@@ -66,7 +66,7 @@ export function createSyncCoverageTools(store: Pick<DataProvider, "getSyncCovera
       name: "get_sync_coverage",
       description:
         "获取运动员首次手表同步的覆盖状态（devops#1013）：近期数据/分析的已获得证据窗口、分析 as-of 与可用域、历史补齐进度、缺口与失败原因。" +
-        "回答「我最近的训练怎么样」前先看近期证据窗口；回答长期趋势、历史 PB、多年负荷、训练画像前必须先查本工具——历史未补齐或历史指标待显式重算（pending_explicit_recompute）时，长期结论要明确说明受限。" +
+        "回答「我最近的训练怎么样」前先看近期证据窗口；回答长期趋势、历史 PB、多年负荷、训练画像前必须先查本工具——历史未补齐、分析未发布或有缺项时，长期结论要明确说明受限。" +
         "用户问「数据什么时候好/为什么还没有」时也用本工具：失败要给具体原因，不要说成「整理中」。无输入参数。",
       schema: getSyncCoverageSchema,
       handler: (input, runtime) => impl.getSyncCoverage(input, runtime),

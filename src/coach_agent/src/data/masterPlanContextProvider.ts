@@ -351,7 +351,7 @@ function coverage(
     },
   ] as Array<{ domain: string; status: "complete" | "partial" | "missing"; detail: string | null }>;
   // devops#1013：有 session 的用户，长期依据的覆盖按同步真实进度声明——
-  // 活动可查不等于历史完整；历史指标在显式重算交付前一律 missing。
+  // 历史指标使用已发布的重算结果和缺项状态。
   if (syncCoverage) {
     const { readiness } = syncCoverage;
     domains.push({
@@ -366,10 +366,11 @@ function coverage(
               : "partial",
       detail: `historical sync ${readiness.historicalData}`,
     });
+    const analysis = readiness.historicalAnalysis;
     domains.push({
       domain: "historical_analysis",
-      status: "missing",
-      detail: "pending_explicit_recompute",
+      status: analysis === "ready" ? "complete" : analysis === "ready_with_gaps" || analysis === "partial" ? "partial" : "missing",
+      detail: syncCoverage.historicalAnalysisReason ?? (analysis === "not_started" ? "pending_explicit_recompute" : analysis),
     });
   }
   return domains;
@@ -398,9 +399,10 @@ function syncCoverageShape(coverage: SyncCoverage, today: string) {
         }
       : null,
     historical_data: coverage.readiness.historicalData,
-    historical_analysis:
-      coverage.readiness.historicalAnalysis === "not_started" ? ("pending_explicit_recompute" as const) : coverage.readiness.historicalAnalysis,
-    gaps: coverage.stages.flatMap((stage) => stage.gaps.map((gap) => ({ stage: stage.stage, from: gap.from, to: gap.to, ...(gap.reason ? { reason: gap.reason } : {}) }))),
+    historical_analysis: explanation.historicalAnalysisStatus,
+    gaps: coverage.stages.flatMap((stage) =>
+      stage.gaps.map((gap) => ({ stage: stage.stage, from: gap.from, to: gap.to, ...(gap.reason ? { reason: gap.reason } : {}) })),
+    ),
     long_term_complete: explanation.longTermComplete,
     notes: explanation.notes,
   };

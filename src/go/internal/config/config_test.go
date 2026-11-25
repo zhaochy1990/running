@@ -296,6 +296,19 @@ func TestMustLoadFrom_ShippedConfigYAML_WriteIsolationEnvActivation(t *testing.T
 	}
 }
 
+func TestMustLoadFrom_OnboardingHistoricalAutoEnvActivation(t *testing.T) {
+	t.Setenv("STRIDE_WORKER_MYSQL_DSN", "env-dsn@tcp(h:3306)/db")
+	t.Setenv("STRIDE_WORKER_AMQP_URL", "amqp://guest:guest@h:5672/")
+	t.Setenv("STRIDE_WORKER_RACE_DETECTION_API_KEY", "env-key")
+	if MustLoadFrom("../../config.yml").Runtime.OnboardingHistoricalAuto {
+		t.Fatal("automatic historical dispatch must default to disabled")
+	}
+	t.Setenv("STRIDE_WORKER_RUNTIME_ONBOARDING_HISTORICAL_AUTO", "true")
+	if !MustLoadFrom("../../config.yml").Runtime.OnboardingHistoricalAuto {
+		t.Fatal("automatic historical dispatch env override was ignored")
+	}
+}
+
 func TestMustLoadFrom_MissingFilePanics(t *testing.T) {
 	defer func() {
 		if recover() == nil {

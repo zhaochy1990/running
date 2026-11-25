@@ -162,6 +162,7 @@ type HistoricalRecomputeClaimSpec struct {
 	DaysTotal        int
 	CreatedBy        string
 	Now              time.Time
+	JobID            string
 }
 
 // HistoricalRecomputeClaimResult is the claim outcome: the run to execute and
@@ -237,6 +238,9 @@ func (s *Store) ClaimOrCreateHistoricalRecomputeRun(ctx context.Context, spec Hi
 			PolicyRevision: spec.PolicyRevision, InputFingerprint: spec.InputFingerprint,
 			State: HistoricalRecomputeStatePending, DaysTotal: spec.DaysTotal,
 			CreatedBy: spec.CreatedBy, CreatedAt: now, UpdatedAt: now,
+		}
+		if spec.JobID != "" {
+			row.LastJobID = &spec.JobID
 		}
 		if err := tx.Create(&row).Error; err != nil {
 			return err
@@ -371,7 +375,7 @@ func (s *Store) AdvanceHistoricalRecomputeCheckpoint(ctx context.Context, runID,
 			return fmt.Errorf("storage: historical recompute run %s not found", runID)
 		}
 		run := rows[0]
-		if run.Terminal() {
+		if run.Terminal() || chunkSeq < run.ChunkSeq {
 			return nil // superseded between the fence check and here: drop the write
 		}
 		updates := map[string]any{"updated_at": time.Now().UTC()}

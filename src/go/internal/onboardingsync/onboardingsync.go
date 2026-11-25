@@ -190,22 +190,27 @@ type Config struct {
 	// AnalysisRefreshHorizon overrides DefaultAnalysisRefreshHorizon (tests).
 	AnalysisRefreshHorizon time.Duration
 	Logger                 *zap.Logger
+	HistoricalAuto         bool
+	HistoricalPublisher    job.Publisher
 }
 
 // Service is the first-sync session orchestrator. All mutating entry points
 // are idempotent; the sweep makes every path recoverable.
 type Service struct {
-	store           Store
-	enq             job.Enqueuer
-	jobs            JobGetter
-	runs            RunLister
-	jobType         string
-	analysisJobType string
-	legacyPpl       string
-	grace           time.Duration
-	limit           int
-	refreshHorizon  time.Duration
-	log             *zap.Logger
+	store               Store
+	enq                 job.Enqueuer
+	jobs                JobGetter
+	runs                RunLister
+	jobType             string
+	analysisJobType     string
+	legacyPpl           string
+	grace               time.Duration
+	limit               int
+	refreshHorizon      time.Duration
+	log                 *zap.Logger
+	historical          historicalStore
+	historicalAuto      bool
+	historicalPublisher job.Publisher
 }
 
 // New validates the wiring and returns a Service.
@@ -234,7 +239,8 @@ func New(cfg Config) (*Service, error) {
 	if log == nil {
 		log = logging.Default()
 	}
-	return &Service{store: cfg.Store, enq: cfg.Enqueuer, jobs: cfg.Jobs, runs: cfg.Runs,
+	historical, _ := cfg.Store.(historicalStore)
+	return &Service{historical: historical, historicalAuto: cfg.HistoricalAuto, historicalPublisher: cfg.HistoricalPublisher, store: cfg.Store, enq: cfg.Enqueuer, jobs: cfg.Jobs, runs: cfg.Runs,
 		jobType: cfg.JobType, analysisJobType: cfg.AnalysisJobType,
 		legacyPpl: cfg.LegacyFullPipeline, grace: grace, limit: limit,
 		refreshHorizon: horizon, log: log}, nil
@@ -598,6 +604,7 @@ func (s *Service) Sweep(ctx context.Context) {
 	s.advanceBackfillStages(ctx) // chunk continuation + background stage chain (devops#1010)
 	s.finalizeSessions(ctx)
 	s.sweepAnalysisRefresh(ctx)
+	s.sweepHistoricalAnalysis(ctx)
 }
 
 // reconcileLegacy moves waiting_legacy sessions forward once their legacy full
@@ -1250,20 +1257,22 @@ type StageView struct {
 // not_started until their owning tickets (T06+) land executors; an
 // executor-less stage is never reported ready (不假报近期数据ready).
 type View struct {
-	SessionID       string              `json:"session_id"`
-	State           string              `json:"state"`
-	ShellReady      bool                `json:"shell_ready"`
-	Provider        string              `json:"provider"`
-	BindingRevision int64               `json:"binding_revision"`
-	AnchorDay       string              `json:"anchor_day"`
-	LegacyRunID     *string             `json:"legacy_run_id,omitempty"`
-	RetryCount      int                 `json:"retry_count"`
-	Error           *string             `json:"error,omitempty"`
-	Stages          []StageView         `json:"stages"`
-	Readiness       ViewReadiness       `json:"readiness"`
-	RecentAnalysis  *RecentAnalysisView `json:"recent_analysis_detail,omitempty"`
-	CreatedAt       time.Time           `json:"created_at"`
-	UpdatedAt       time.Time           `json:"updated_at"`
+	SessionID                string              `json:"session_id"`
+	State                    string              `json:"state"`
+	ShellReady               bool                `json:"shell_ready"`
+	Provider                 string              `json:"provider"`
+	BindingRevision          int64               `json:"binding_revision"`
+	AnchorDay                string              `json:"anchor_day"`
+	LegacyRunID              *string             `json:"legacy_run_id,omitempty"`
+	RetryCount               int                 `json:"retry_count"`
+	Error                    *string             `json:"error,omitempty"`
+	Stages                   []StageView         `json:"stages"`
+	Readiness                ViewReadiness       `json:"readiness"`
+	HistoricalAnalysisPoll   bool                `json:"historical_analysis_poll,omitempty"`
+	HistoricalAnalysisReason *string             `json:"historical_analysis_reason,omitempty"`
+	RecentAnalysis           *RecentAnalysisView `json:"recent_analysis_detail,omitempty"`
+	CreatedAt                time.Time           `json:"created_at"`
+	UpdatedAt                time.Time           `json:"updated_at"`
 }
 
 // AnalysisDomainView is one analysis domain's explicit outcome.
@@ -1335,7 +1344,7 @@ func (s *Service) View(ctx context.Context, userID string) (*View, error) {
 		RetryCount: sess.RetryCount, Error: sess.LastError,
 		CreatedAt: sess.CreatedAt, UpdatedAt: sess.UpdatedAt,
 		Readiness: ViewReadiness{ShellReady: sess.ShellReady,
-			RecentData: ReadinessPending, RecentAnalysis: ReadinessNotStarted,
+			RecentData: ReadinessPending, RecentAnalysis: ReadinessNotStarted, ExtendedData: ReadinessNotStarted,
 			HistoricalData: ReadinessNotStarted, HistoricalAnalysis: ReadinessNotStarted,
 			Auxiliary: ReadinessNotStarted},
 	}
@@ -1402,6 +1411,9 @@ func (s *Service) View(ctx context.Context, userID string) (*View, error) {
 	}
 	if sess.State == storage.OnboardingSyncStateWaitingLegacy {
 		v.Readiness.RecentData = ReadinessPending
+	}
+	if err := s.projectHistoricalAnalysis(ctx, sess, covs, v); err != nil {
+		return nil, err
 	}
 	return v, nil
 }

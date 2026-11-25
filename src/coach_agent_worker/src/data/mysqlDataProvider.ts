@@ -27,6 +27,7 @@ import type {
   RunningCalibration,
   SyncCoverage,
   SyncDispatchRow,
+  SyncReadiness,
   SyncRecentAnalysisRow,
   SyncSessionRow,
   SyncStageCoverageRow,
@@ -869,14 +870,14 @@ export class MySqlDataProvider implements DataProvider {
    */
   async getSyncCoverage(userId: string): Promise<SyncCoverage | null> {
     const [sessionRows] = await this.pool.query<RowDataPacket[]>(
-      `SELECT session_id, provider, binding_revision, anchor_day, state, shell_ready, last_error, updated_at
+      `SELECT session_id, provider, binding_revision, anchor_day, state, shell_ready, last_error, updated_at, created_at, historical_analysis_reason
          FROM onboarding_sync_sessions
         WHERE user_id = ? AND state <> 'superseded'
         ORDER BY created_at DESC
         LIMIT 1`,
       [userId],
     );
-    const sessionRow = sessionRows[0] as SyncSessionRow | undefined;
+    const sessionRow = sessionRows[0] as (SyncSessionRow & { created_at: Date }) | undefined;
     if (!sessionRow) return null;
     const sessionId = sessionRow.session_id;
     const [coverageRows, dispatchRows, analysisRows] = await Promise.all([
@@ -898,12 +899,80 @@ export class MySqlDataProvider implements DataProvider {
       ),
     ]);
     const analysisRow = analysisRows[0][0] as SyncRecentAnalysisRow | undefined;
-    return deriveSyncCoverage(
-      sessionRow,
-      coverageRows[0] as unknown as SyncStageCoverageRow[],
-      dispatchRows[0] as unknown as SyncDispatchRow[],
-      analysisRow ?? null,
+    const coverage = coverageRows[0] as unknown as SyncStageCoverageRow[];
+    const historical = await this.readHistoricalSyncAnalysis(userId, sessionRow, coverage, analysisRow);
+    return deriveSyncCoverage(sessionRow, coverage, dispatchRows[0] as unknown as SyncDispatchRow[], analysisRow ?? null, historical);
+  }
+
+  // Mirror Go's read-only projection from frozen and published runs. The old
+  // recent snapshot remains intact, including its own as-of day and gaps.
+  private async readHistoricalSyncAnalysis(
+    userId: string,
+    session: SyncSessionRow & { created_at: Date },
+    coverage: SyncStageCoverageRow[],
+    analysis: SyncRecentAnalysisRow | undefined,
+  ): Promise<Parameters<typeof deriveSyncCoverage>[4]> {
+    const terminal = (stage: string) => coverage.some((row) => row.stage === stage && (row.status === "completed" || row.status === "completed_with_gaps"));
+    if (!terminal("historical_raw")) return undefined;
+    const [runs] = await this.pool.query<RowDataPacket[]>(
+      `SELECT m.state, m.published_at, m.analysis_as_of_day, m.target_from_day, m.target_to_day
+         FROM historical_metrics_recompute_runs AS m
+         JOIN historical_recompute_runs AS c
+           ON c.run_id = m.calibration_run_id AND c.user_id = m.user_id
+          AND c.binding_revision = m.binding_revision
+          AND c.bundle_fingerprint = m.calibration_bundle_fingerprint
+          AND c.state IN ('completed', 'completed_with_gaps')
+        WHERE m.state IN ('completed', 'completed_with_gaps')
+          AND m.published_at IS NOT NULL AND m.output_fingerprint IS NOT NULL
+          AND m.user_id = ? AND m.binding_revision = ? AND m.created_at >= ?
+        ORDER BY m.published_at DESC, m.run_id DESC LIMIT 1`,
+      [userId, session.binding_revision, session.created_at],
     );
+    const run = runs[0];
+    if (run) {
+      const readiness: SyncReadiness = run.state === "completed_with_gaps" ? "ready_with_gaps" : "ready";
+      if (
+        !analysis?.domains_json?.includes("historical_calibration_missing") ||
+        new Date(analysis.computed_at) > new Date(run.published_at) ||
+        analysis.as_of_day < run.target_from_day ||
+        analysis.as_of_day > run.target_to_day
+      )
+        return { readiness };
+
+      const withinWindow =
+        analysis.coverage_from && analysis.coverage_to && analysis.coverage_from >= run.target_from_day && analysis.coverage_to <= run.target_to_day;
+      const from = withinWindow ? analysis.coverage_from : "";
+      const to = withinWindow ? analysis.coverage_to : "";
+      const [rows] = await this.pool.query<RowDataPacket[]>(
+        `SELECT EXISTS (SELECT 1 FROM activity_training_load l
+                  WHERE l.user_id = ? AND l.activity_date BETWEEN ? AND ?
+                    AND l.training_dose IS NOT NULL AND l.excluded_from_pmc = 0) AS load,
+                EXISTS (SELECT 1 FROM activity_training_load l JOIN activity_zones z
+                  ON z.user_id = l.user_id AND z.label_id = l.label_id
+                  WHERE l.user_id = ? AND l.activity_date BETWEEN ? AND ? AND z.zone_type = 'heartRate') AS zones,
+                EXISTS (SELECT 1 FROM ability_snapshot a WHERE a.user_id = ?
+                  AND a.date = ? AND a.level = 'L4' AND a.value IS NOT NULL AND a.computed_at >= ?) AS ability`,
+        [userId, from, to, userId, from, to, userId, run.analysis_as_of_day, run.published_at],
+      );
+      const evidence = rows[0];
+      return {
+        readiness,
+        recentEvidence: {
+          load: Boolean(evidence?.load),
+          zones: Boolean(evidence?.zones),
+          ability: Boolean(evidence?.ability),
+        },
+      };
+    }
+    if (!terminal("auxiliary") || session.historical_analysis_reason) return undefined;
+    const [jobs] = await this.pool.query<RowDataPacket[]>(
+      `SELECT 1 FROM jobs
+        WHERE user_id = ? AND created_at >= ? AND status IN ('queued', 'running')
+          AND job_type IN ('historical_calibration_recompute', 'historical_metrics_recompute')
+        LIMIT 1`,
+      [userId, session.created_at],
+    );
+    return { readiness: jobs.length > 0 ? "running" : "pending" };
   }
 
   /** Release the pool — only if this provider opened it via `create()`. */

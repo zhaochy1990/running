@@ -4,6 +4,7 @@
  */
 import {
   READINESS_SUMMARY,
+  historicalAnalysisLabel,
   isSessionTerminal,
   rangeLabel,
   readinessLabel,
@@ -68,8 +69,8 @@ eq(rangeLabel('2026-08-19', null), '2026-08-19 ~ …', 'open to');
 eq(rangeLabel(null, null), '—', 'no bounds');
 
 // —— 摘要 chips：五项固定，顺序即展示顺序，shell_ready 不在其中 ——
-eq(READINESS_SUMMARY.map((c) => c.key), ['recent_data', 'recent_analysis', 'extended_data', 'historical_data', 'auxiliary'], 'chip keys');
-eq(READINESS_SUMMARY.map((c) => c.label), ['近期数据', '近期分析', '历史扩展', '历史补齐', '辅助任务'], 'chip labels');
+eq(READINESS_SUMMARY.map((c) => c.key), ['recent_data', 'recent_analysis', 'extended_data', 'historical_data', 'historical_analysis', 'auxiliary'], 'chip keys');
+eq(READINESS_SUMMARY.map((c) => c.label), ['近期数据', '近期分析', '历史扩展', '历史补齐', '历史分析', '辅助任务'], 'chip labels');
 
 // —— 视图模型整形 ——
 const view: OnboardingSyncView = {
@@ -120,7 +121,7 @@ eq(vm.tone, 'bad', 'vm failed tone');
 eq(vm.failed, true, 'vm failed flag');
 eq(vm.recentReady, true, 'recent ready_with_gaps counts as ready');
 eq(vm.errorText, 'garmin 5xx', 'vm top error');
-eq(vm.chips.length, 5, 'vm five chips');
+eq(vm.chips.length, 6, 'vm six chips');
 eq(vm.chips[0], { key: 'recent_data', label: '近期数据', text: '已就绪（有缺项）', tone: 'warn' }, 'vm chip 0');
 eq(vm.chips[3], { key: 'historical_data', label: '历史补齐', text: '失败', tone: 'bad' }, 'vm chip 3');
 eq(vm.stages.length, 2, 'vm two stage rows');
@@ -228,3 +229,8 @@ eq(syncFailed.retryLabel, '重试失败项', 'sync-failed retry label');
 eq(sessionStepTexts('creating', 'create', false).retryLabel, '', 'no retry label while working');
 
 console.log('onboardingSession.check: OK');
+
+eq(historicalAnalysisLabel({ readiness: { historical_analysis: 'ready_with_gaps' } } as OnboardingSyncView),
+  '已就绪（有缺项）', 'published historical result preserves gaps');
+eq(historicalAnalysisLabel({ historical_analysis_reason: 'interruption_limit', readiness: { historical_analysis: 'pending' } } as OnboardingSyncView),
+  '待人工处理', 'paused historical work');

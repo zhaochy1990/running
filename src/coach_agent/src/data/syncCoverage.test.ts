@@ -113,7 +113,7 @@ test("explanation: long-term conclusions stay bounded until history and explicit
   assert.equal(explanation.historicalAnalysisStatus, "pending_explicit_recompute");
   assert.equal(explanation.longTermComplete, false);
   assert.ok(explanation.notes.some((n) => n.includes("后台补齐")));
-  assert.ok(explanation.notes.some((n) => n.includes("pending_explicit_recompute")));
+  assert.ok(explanation.notes.some((n) => n.includes("仍待历史补齐及重算")));
   assert.ok(
     explanation.notes.some((n) => n.includes("已获得证据窗口")),
     "recent evidence window is stated",

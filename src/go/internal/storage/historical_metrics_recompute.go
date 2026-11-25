@@ -187,6 +187,7 @@ type HistoricalMetricsClaimSpec struct {
 	DaysTotal                    int
 	CreatedBy                    string
 	Now                          time.Time
+	JobID                        string
 }
 
 // HistoricalMetricsClaimResult is the claim outcome.
@@ -269,6 +270,9 @@ func (s *Store) ClaimOrCreateHistoricalMetricsRun(ctx context.Context, spec Hist
 			ActivitiesTotal: spec.ActivitiesTotal, DaysTotal: spec.DaysTotal,
 			CreatedBy: spec.CreatedBy, CreatedAt: now, UpdatedAt: now,
 		}
+		if spec.JobID != "" {
+			row.LastJobID = &spec.JobID
+		}
 		if err := tx.Create(&row).Error; err != nil {
 			return err
 		}
@@ -346,7 +350,7 @@ func (s *Store) AdvanceHistoricalMetricsCheckpoint(ctx context.Context, runID, p
 			return fmt.Errorf("storage: historical metrics run %s not found", runID)
 		}
 		run := rows[0]
-		if run.Terminal() {
+		if run.Terminal() || chunkSeq < run.ChunkSeq {
 			return nil // superseded between fence and here: drop the write
 		}
 		updates := map[string]any{"updated_at": time.Now().UTC()}

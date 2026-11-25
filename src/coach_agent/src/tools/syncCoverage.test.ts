@@ -62,7 +62,7 @@ test("get_sync_coverage surfaces coverage, revision and explainable notes to the
   assert.equal(explanation.historicalAnalysisStatus, "pending_explicit_recompute");
   assert.equal(explanation.longTermComplete, false);
   assert.ok(explanation.notes.some((n) => n.includes("永久缺口")));
-  assert.ok(explanation.notes.some((n) => n.includes("pending_explicit_recompute")));
+  assert.ok(explanation.notes.some((n) => n.includes("仍待历史补齐及重算")));
 });
 
 test("get_sync_coverage without a session explains legacy semantics instead of claiming missing data", async () => {

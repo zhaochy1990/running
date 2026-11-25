@@ -116,10 +116,11 @@ type Config struct {
 // Request=true and optionally pin the analysis as-of day; continuation jobs
 // chained by a finished chunk carry the run id they advance.
 type chunkInput struct {
-	Request  bool   `json:"request,omitempty"`
-	AsOfDay  string `json:"as_of_day,omitempty"`
-	RunID    string `json:"run_id,omitempty"`
-	ChunkSeq int    `json:"chunk_seq,omitempty"`
+	Request         bool   `json:"request,omitempty"`
+	AsOfDay         string `json:"as_of_day,omitempty"`
+	BindingRevision int64  `json:"binding_revision,omitempty"`
+	RunID           string `json:"run_id,omitempty"`
+	ChunkSeq        int    `json:"chunk_seq,omitempty"`
 }
 
 // runResult is the executor's ResultJSON: the run's explicit outcome echo for
@@ -186,14 +187,14 @@ func New(cfg Config) job.Handler {
 			if err != nil {
 				return "", err
 			}
-			if r == nil {
+			if r == nil || r.UserID != user {
 				return "", job.NewPermanentError("run_gone",
 					fmt.Errorf("historicalcalibration: run %s not found", in.RunID))
 			}
 			run = r
 		default:
 			// Explicit request: resolve current revisions, create-or-merge.
-			r, c, m, sup, err := e.claim(ctx, in.AsOfDay, j.CreatedBy)
+			r, c, m, sup, err := e.claim(ctx, in.AsOfDay, in.BindingRevision, j.CreatedBy)
 			if err != nil {
 				return "", err
 			}
@@ -238,7 +239,7 @@ type executor struct {
 // the user's active run (AC5 合并派发): same identity → merge (and if a chunk
 // is still live, this request only observes), different identity → the old
 // run is superseded and a fresh run starts under the new revision.
-func (e *executor) claim(ctx context.Context, asOfDay, createdBy string) (*storage.HistoricalRecomputeRun, bool, bool, *string, error) {
+func (e *executor) claim(ctx context.Context, asOfDay string, bindingRevision int64, createdBy string) (*storage.HistoricalRecomputeRun, bool, bool, *string, error) {
 	store := e.cfg.Store
 	binding, err := store.GetWatchBinding(ctx, e.user)
 	if err != nil {
@@ -247,6 +248,9 @@ func (e *executor) claim(ctx context.Context, asOfDay, createdBy string) (*stora
 	if binding == nil {
 		return nil, false, false, nil, job.NewPermanentError("no_watch_binding",
 			errors.New("historicalcalibration: user has no watch binding to pin a revision"))
+	}
+	if bindingRevision != 0 && binding.Revision != bindingRevision {
+		return nil, false, false, nil, job.NewPermanentError("binding_revision_changed", errors.New("historicalcalibration: watch binding changed before automatic dispatch"))
 	}
 	if asOfDay == "" {
 		asOfDay = timefmt.ShanghaiToday().Format("2006-01-02")
@@ -282,7 +286,7 @@ func (e *executor) claim(ctx context.Context, asOfDay, createdBy string) (*stora
 		AnalysisAsOfDay: asOfDay, TargetFromDay: targetFrom, TargetToDay: targetTo,
 		BindingRevision: binding.Revision, PolicyVersion: policy.ActiveVersion,
 		PolicyRevision: policy.Revision, InputFingerprint: fp,
-		DaysTotal: TargetDays, CreatedBy: createdBy,
+		DaysTotal: TargetDays, CreatedBy: createdBy, JobID: e.job.ID,
 	})
 	if err != nil {
 		return nil, false, false, nil, err
@@ -290,7 +294,7 @@ func (e *executor) claim(ctx context.Context, asOfDay, createdBy string) (*stora
 	if !claim.Created {
 		// Merged into a live run: if its latest chunk job is still queued or
 		// running, this request observes instead of executing beside it.
-		if claim.Run.LastJobID != nil {
+		if claim.Run.LastJobID != nil && *claim.Run.LastJobID != e.job.ID {
 			if j, err := e.cfg.Store.JobByID(ctx, *claim.Run.LastJobID); err == nil && j != nil && !j.Status.Terminal() {
 				return claim.Run, false, true, claim.SupersededFrom, nil
 			}
@@ -299,18 +303,24 @@ func (e *executor) claim(ctx context.Context, asOfDay, createdBy string) (*stora
 	return claim.Run, claim.Created, false, claim.SupersededFrom, nil
 }
 
-// fence re-verifies the run's pinned revisions against CURRENT reality
+type pinnedInputStore interface {
+	GetWatchBinding(context.Context, string) (*storage.WatchBindingState, error)
+	CalibrationPolicy(context.Context) (storage.RunningCalibrationPolicy, error)
+	OnboardingAnalysisDigest(context.Context, string, string, string) (storage.OnboardingAnalysisDigest, error)
+}
+
+// CheckPinnedInputs re-verifies the run's pinned revisions against CURRENT reality
 // (AC5: revision 变化后旧块拒绝发布). Returns the supersede reason, or "" when
 // the pinned revision still holds.
-func (e *executor) fence(ctx context.Context, run *storage.HistoricalRecomputeRun) (string, error) {
-	binding, err := e.cfg.Store.GetWatchBinding(ctx, run.UserID)
+func CheckPinnedInputs(ctx context.Context, store pinnedInputStore, run *storage.HistoricalRecomputeRun) (string, error) {
+	binding, err := store.GetWatchBinding(ctx, run.UserID)
 	if err != nil {
 		return "", err
 	}
 	if binding == nil || binding.Revision != run.BindingRevision {
 		return "binding_revision_changed", nil
 	}
-	policy, err := e.cfg.Store.CalibrationPolicy(ctx)
+	policy, err := store.CalibrationPolicy(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -322,7 +332,7 @@ func (e *executor) fence(ctx context.Context, run *storage.HistoricalRecomputeRu
 		return "", fmt.Errorf("historicalcalibration: bad run as-of day %q: %w", run.AnalysisAsOfDay, err)
 	}
 	evidenceFrom := asOf.AddDate(0, 0, -(TargetDays-1)-(EvidenceActivityDays-1)).Format("2006-01-02")
-	digest, err := e.cfg.Store.OnboardingAnalysisDigest(ctx, run.UserID, evidenceFrom, run.TargetToDay)
+	digest, err := store.OnboardingAnalysisDigest(ctx, run.UserID, evidenceFrom, run.TargetToDay)
 	if err != nil {
 		return "", err
 	}
@@ -338,7 +348,7 @@ func (e *executor) fence(ctx context.Context, run *storage.HistoricalRecomputeRu
 func (e *executor) advanceRun(ctx context.Context, run *storage.HistoricalRecomputeRun) (string, error) {
 	store := e.cfg.Store
 	// Publish fence BEFORE any chunk write (旧块拒绝发布).
-	reason, err := e.fence(ctx, run)
+	reason, err := CheckPinnedInputs(ctx, store, run)
 	if err != nil {
 		return "", err
 	}
@@ -435,7 +445,7 @@ func (e *executor) advanceRun(ctx context.Context, run *storage.HistoricalRecomp
 
 	// Final publication: re-verify the pinned revisions one last time, then
 	// freeze the whole ledger into the bundle fingerprint (AC4/AC5).
-	reason, err = e.fence(ctx, run)
+	reason, err = CheckPinnedInputs(ctx, store, run)
 	if err != nil {
 		return "", err
 	}

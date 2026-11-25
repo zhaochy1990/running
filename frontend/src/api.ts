@@ -287,6 +287,8 @@ export interface OnboardingSyncView {
   anchor_day: string;
   legacy_run_id?: string | null;
   retry_count: number;
+  historical_analysis_reason?: string;
+  historical_analysis_poll?: boolean;
   error?: string | null;
   stages: OnboardingSyncStageView[];
   readiness: {

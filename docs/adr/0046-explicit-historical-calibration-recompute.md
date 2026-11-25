@@ -1,7 +1,6 @@
 # ADR 0046: Explicit historical calibration recompute — capability boundary
 
-Status: accepted for engineering implementation; execution stays default-off
-and production backfills remain unauthorized (extends ADR 0045, epic
+Status: accepted for engineering implementation; execution stays default-off (extends ADR 0045, epic
 devops#1004 T07 / devops#1011).
 
 ## What is implemented
@@ -13,9 +12,8 @@ explicitly declares its `analysis_as_of_day`, the 365-day target window
 (asOf-364 .. asOf) and its PINNED input revisions: watch binding revision,
 calibration policy version + revision, and an input fingerprint hashed over
 the run's whole evidence window (the earliest target day's 180-day activity
-reach) via the same digest the onboarding analysis uses. The trigger is an
-explicit internal jobs-API dispatch — never a GET, an ordinary calibration
-step, a sync pipeline step or a listener.
+reach) via the same digest the onboarding analysis uses. Dispatch comes from the internal jobs API or the opt-in first-sync sweep
+(devops#1060). See the [deployment runbook](../deployment.md#首次同步后的历史重算).
 
 Per target day D, the canonical seam `compute.RunCalibrationAsOfDay` loads the
 activities of [D-179, D] and the daily-health rows of [D-89, D] (the
@@ -68,9 +66,8 @@ request rebuilds the window under the new one.
 
 - Production execution. `runtime.historical-recompute.enabled` is DEFAULT
   OFF; a stray job on a flag-off worker fails permanently
-  (`historical_recompute_disabled`). Turning it on authorizes execution of
-  operator-dispatched runs, not a fleet-wide backfill; each run is an explicit
-  per-user dispatch decision.
+  (`historical_recompute_disabled`). It gates execution. The separate onboarding dispatch flag admits eligible
+  first-sync sessions after historical and auxiliary sync complete.
 - Policy changes. The run never touches active/candidate selection: it writes
   v3-model per-day rows only. An active policy whose version is not the v3
   model is refused (`policy_active_version_not_supported`) — candidate and

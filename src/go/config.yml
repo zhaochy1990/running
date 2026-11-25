@@ -73,6 +73,8 @@ runtime:
   # still require an explicit internal jobs-API dispatch per user.
   historical-metrics-recompute:
     enabled: false
+  # #1060: automatic onboarding dispatch requires this and both executors.
+  onboarding-historical-auto: false
 
 # Independent race detector (not Coach Agent). The DeepSeek key is secret and
 # must be supplied via STRIDE_WORKER_RACE_DETECTION_API_KEY.

@@ -105,6 +105,7 @@ export interface SyncCoverage {
   error: string | null;
   stages: SyncStageCoverage[];
   readiness: SyncCoverageReadiness;
+  historicalAnalysisReason?: string;
   recentAnalysisDetail: SyncRecentAnalysis | null;
   updatedAt: Date;
 }

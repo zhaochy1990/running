@@ -148,13 +148,31 @@ import Testing
         #expect(OnboardingSessionDisplay.rangeLabel(from: "2026-08-19", to: nil) == "2026-08-19 ~ …")
     }
 
-    @Test func summaryChipsAreTheFiveServerReadinessFaces() throws {
+    @Test func historicalAnalysisCanOutliveRawSync() throws {
+        var object = try #require(try JSONSerialization.jsonObject(with: jsonData(Self.viewJSON)) as? [String: Any])
+        object["state"] = "completed"
+        object["historical_analysis_poll"] = true
+        var flags = try #require(object["readiness"] as? [String: Any])
+        flags["historical_analysis"] = "pending"
+        object["readiness"] = flags
+        let decoder = JSONDecoder()
+        let pending = try decoder.decode(OnboardingSyncSessionView.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(OnboardingSessionDisplay.shouldPoll(pending))
+        #expect(OnboardingSessionDisplay.historicalAnalysisLabel(pending) == "待处理")
+        object["historical_analysis_poll"] = false
+        object["historical_analysis_reason"] = "interruption_limit"
+        let paused = try decoder.decode(OnboardingSyncSessionView.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(!OnboardingSessionDisplay.shouldPoll(paused))
+        #expect(OnboardingSessionDisplay.historicalAnalysisLabel(paused) == "待人工处理")
+    }
+
+    @Test func summaryChipsIncludeHistoricalAnalysis() throws {
         // 原始/派生/辅助分开，shell_ready 不是 chip（spec 决议）
         let keys = OnboardingSessionDisplay.ReadinessKey.allCases
-        #expect(keys.map(\.label) == ["近期数据", "近期分析", "历史扩展", "历史补齐", "辅助任务"])
+        #expect(keys.map(\.label) == ["近期数据", "近期分析", "历史扩展", "历史补齐", "历史分析", "辅助任务"])
         let flags = try #require(try JSONDecoder().decode(OnboardingSyncSessionView.self, from: jsonData(Self.viewJSON)).readiness)
         let levels = keys.map { OnboardingSessionDisplay.readinessLevel($0, of: flags) }
-        #expect(levels == [.running, .pending, .notStarted, .notStarted, .notStarted])
+        #expect(levels == [.running, .pending, .notStarted, .notStarted, .notStarted, .notStarted])
     }
 }
 

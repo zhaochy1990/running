@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { OnboardingSyncView } from "../../api";
-import { isSessionTerminal, rangeLabel, readinessLabel, sessionStateLabel, shouldHideBanner } from "../sessionModel";
+import { historicalAnalysisLabel, shouldPollSession, isSessionTerminal, rangeLabel, readinessLabel, sessionStateLabel, shouldHideBanner } from "../sessionModel";
 
 function view(overrides: Partial<OnboardingSyncView>): OnboardingSyncView {
   return {
@@ -63,4 +63,16 @@ describe("sessionModel", () => {
     expect(rangeLabel(null, null)).toBe("—");
     expect(rangeLabel("2026-08-19", null)).toBe("2026-08-19 ~ …");
   });
+});
+
+it("keeps historical analysis visible after raw sync and stops polling when it needs intervention", () => {
+  const base = view({ state: "completed" });
+  const pending = { ...base, historical_analysis_poll: true, readiness: { ...base.readiness, historical_analysis: "pending" as const } };
+  expect(shouldHideBanner(pending, false)).toBe(false);
+  expect(shouldPollSession(pending)).toBe(true);
+  expect(historicalAnalysisLabel(pending)).toBe("待处理");
+  const paused = { ...pending, historical_analysis_poll: false, historical_analysis_reason: "interruption_limit" };
+  expect(shouldPollSession(paused)).toBe(false);
+  expect(historicalAnalysisLabel(paused)).toBe("待人工处理");
+  expect(historicalAnalysisLabel({ ...base, readiness: { ...base.readiness, historical_analysis: "ready_with_gaps" } })).toBe("已就绪（有缺项）");
 });
