@@ -95,6 +95,8 @@ type fakeStrideStore struct {
 	seriesErr    error
 	latestUsable *storage.DailyTrainingLoad
 	latestErr    error
+	history      []storage.CalibrationThresholdPoint
+	gotFrom      string
 
 	gotUser string
 	gotDays int
@@ -106,6 +108,12 @@ func (f *fakeStrideStore) ReadEffectiveRunningCalibration(_ context.Context, use
 		return *f.bundle, f.snapErr
 	}
 	return storage.CalibrationBundle{Snapshot: f.snap, PaceZones: f.pace, HRZones: f.hr, Source: calibration.SourceSummary{State: "legacy_source_missing"}}, errors.Join(f.snapErr, f.zonesErr)
+}
+
+func (f *fakeStrideStore) ReadEffectiveRunningCalibrationWithHistory(ctx context.Context, user, from, cutoff string) (storage.CalibrationBundle, []storage.CalibrationThresholdPoint, error) {
+	f.gotFrom = from
+	bundle, err := f.ReadEffectiveRunningCalibration(ctx, user, cutoff, storage.CalibrationActive)
+	return bundle, f.history, err
 }
 
 func (f *fakeStrideStore) DailyTrainingLoadSeries(_ context.Context, _ string, days int) ([]storage.DailyTrainingLoad, error) {
@@ -192,6 +200,54 @@ func TestMetrics_AuthTiers(t *testing.T) {
 
 func sprintfPath(tmpl, user string) string {
 	return strings.ReplaceAll(tmpl, "%s", user)
+}
+
+func TestStrideZones_ThresholdHistory(t *testing.T) {
+	today := timefmt.ShanghaiToday()
+	cutoff := today.Format(time.DateOnly)
+	start := today.AddDate(0, 0, -13).Format(time.DateOnly)
+	ss := &fakeStrideStore{
+		snap: &storage.RunningCalibrationSnapshot{ID: 7, AsOfDate: cutoff},
+		history: []storage.CalibrationThresholdPoint{
+			{AsOfDate: start, ThresholdSpeedMps: fptr(1000.0 / 212.5), ThresholdHR: fptr(166.5)},
+			{AsOfDate: cutoff},
+		},
+	}
+	h := newMetricsHarness(t, &fakeHealthStore{}, ss)
+	path := "/api/" + metricsUserA + "/stride/zones"
+	if w := h.do(http.MethodGet, path+"?history_days=14", h.bearer(t, metricsUserB)); w.Code != http.StatusForbidden || ss.gotFrom != "" {
+		t.Fatalf("cross-user history reached storage: %d %q", w.Code, ss.gotFrom)
+	}
+	for _, invalid := range []string{"", "0", "366", "invalid"} {
+		if w := h.do(http.MethodGet, path+"?history_days="+invalid, internalHdr()); w.Code != http.StatusBadRequest || ss.gotFrom != "" {
+			t.Fatalf("invalid window reached storage: %q %d %q", invalid, w.Code, ss.gotFrom)
+		}
+	}
+	if w := h.do(http.MethodGet, path, internalHdr()); w.Code != http.StatusOK || strings.Contains(w.Body.String(), "threshold_history") || ss.gotFrom != "" {
+		t.Fatalf("changed legacy response: %d %s", w.Code, w.Body.String())
+	}
+	w := h.do(http.MethodGet, path+"?history_days=14", h.bearer(t, metricsUserA))
+	var response strideZonesResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || w.Code != http.StatusOK {
+		t.Fatalf("history response: %d %v %s", w.Code, err, w.Body.String())
+	}
+	if ss.gotFrom != start || ss.gotAsOf != cutoff || ss.gotMode != storage.CalibrationActive || ss.gotUser != metricsUserA {
+		t.Fatalf("unexpected history query: %s–%s, mode %s", ss.gotFrom, ss.gotAsOf, ss.gotMode)
+	}
+	if response.Threshold == nil || response.Threshold.CalibrationID != 7 || response.ThresholdHistory == nil || len(*response.ThresholdHistory) != 2 {
+		t.Fatalf("missing current threshold or history: %s", w.Body.String())
+	}
+	points := *response.ThresholdHistory
+	if points[0].AsOfDate != start || points[0].PacePerKmSec == nil || *points[0].PacePerKmSec != 212 || points[0].HRBpm == nil || *points[0].HRBpm != 166.5 {
+		t.Fatalf("unexpected historical values: %s", w.Body.String())
+	}
+	if points[1].AsOfDate != cutoff || points[1].PacePerKmSec != nil || points[1].HRBpm != nil {
+		t.Fatalf("unavailable estimates must stay null: %s", w.Body.String())
+	}
+	ss.history, ss.snap = nil, nil
+	if w := h.do(http.MethodGet, path+"?history_days=1", internalHdr()); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"threshold_history":[]`) || ss.gotFrom != cutoff {
+		t.Fatalf("explicit empty single-day history: %d %s", w.Code, w.Body.String())
+	}
 }
 
 // ── days clamping ────────────────────────────────────────────────────────────

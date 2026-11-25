@@ -3476,6 +3476,18 @@ definitions:
       speed_mps:
         type: number
     type: object
+  api.strideThresholdHistoryPoint:
+    properties:
+      as_of_date:
+        format: date
+        type: string
+      hr_bpm:
+        type: number
+        x-nullable: true
+      pace_per_km_sec:
+        type: integer
+        x-nullable: true
+    type: object
   api.strideTrainingLoadDTO:
     properties:
       activity_date:
@@ -3569,6 +3581,10 @@ definitions:
         type: array
       threshold:
         $ref: '#/definitions/api.strideThresholdDTO'
+      threshold_history:
+        items:
+          $ref: '#/definitions/api.strideThresholdHistoryPoint'
+        type: array
     type: object
   api.structuredWeekResponse:
     properties:
@@ -5420,6 +5436,11 @@ paths:
         name: user
         required: true
         type: string
+      - description: Include saved thresholds for the current algorithm identity for
+          the last 1–365 Shanghai days, including today
+        in: query
+        name: history_days
+        type: integer
       produces:
       - application/json
       responses:
@@ -5427,6 +5448,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/api.strideZonesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
         "401":
           description: Unauthorized
           schema:

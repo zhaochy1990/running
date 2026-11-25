@@ -3,7 +3,7 @@
 // 数据来自 5 个 STRIDE 数据面接口（经 Go API）：
 //   GET /api/{user}/health?days=90         健康 + HRV 快照 + RHR 基线
 //   GET /api/{user}/hrv?days=90            逐日 HRV
-//   GET /api/{user}/stride/zones           阈值 + 配速/心率区间
+//   GET /api/{user}/stride/zones           阈值历史 + 配速/心率区间
 //   GET /api/{user}/stride/training-load   负荷 current + series（覆盖 16 周热力图）
 //   GET /api/{user}/activities?date_from=  活动列表（热力图日详情用，分页拉全）
 //
@@ -31,6 +31,7 @@ import {
   buildHeatCells,
   buildHeatWeeks,
   buildLineChartOptions,
+  buildThresholdPaceTrend,
   buildColumnChartOptions,
   type ChartBounds,
   type ChartSeries,
@@ -38,7 +39,7 @@ import {
   type HeatCell,
 } from '../../utils/trainingStatus';
 import { fmtPace } from '../../utils/format';
-import { epochToShanghaiYmd, shanghaiWeekdayLabel } from '../../utils/date';
+import { epochToShanghaiYmd, shanghaiToday, shanghaiWeekdayLabel } from '../../utils/date';
 import { toUChartsTouchEvent } from '../../utils/ucharts';
 import { friendlyApiError } from '../../utils/friendlyError';
 import { getHealth, getHrv, getStrideTrainingLoad, getStrideZones } from '../../services/health';
@@ -65,9 +66,6 @@ interface MetricCard {
   unit: string;
   baseline: string;
   color: string;
-  range?: string | null;
-  lines?: string[];
-  help?: string[];
 }
 
 interface LoadStat {
@@ -107,7 +105,6 @@ interface TrainingStatusPageData {
   loading: boolean;
   error: string;
   metrics: MetricCard[];
-  expandedMetric: string;
   loadStats: LoadStat[];
   readinessLabel: string;
   readinessColor: string;
@@ -119,6 +116,8 @@ interface TrainingStatusPageData {
   hrZones: ZoneRow[];
   trendWindow: number;
   trendOptions: TrendOption[];
+  hasThresholdPaceHistory: boolean;
+  hasThresholdPaceChart: boolean;
   hasRhrChart: boolean;
   hasHrvChart: boolean;
   hasDoseChart: boolean;
@@ -138,9 +137,9 @@ interface TrainingStatusPageHandlers {
   onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
   onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onBack(): void;
-  onMetricHelp(e: WechatMiniprogram.TouchEvent): void;
   onRetry(): void;
   onWindowChange(e: WechatMiniprogram.TouchEvent): void;
+  onThresholdPaceTouch(e: WechatMiniprogram.TouchEvent): void;
   onHeatTap(e: WechatMiniprogram.TouchEvent): void;
   onRhrTouch(e: WechatMiniprogram.TouchEvent): void;
   onHrvTouch(e: WechatMiniprogram.TouchEvent): void;
@@ -151,7 +150,7 @@ interface TrainingStatusPageHandlers {
   fetch(): Promise<void>;
   fetchAllActivities(): Promise<Activity[]>;
   render(): void;
-  drawCharts(): void;
+  drawCharts(pace: ReturnType<typeof buildThresholdPaceTrend>): void;
 }
 
 // —— 模块级原始数据（页面只读，渲染时聚合成 view model；与 health 页同模式）——
@@ -167,6 +166,7 @@ let trendDays = 30;
 
 // —— uCharts 实例与工具提示 spec（canvas 重建时同步替换）——
 
+let thresholdPaceChart: Chart | null = null;
 let rhrChart: Chart | null = null;
 let hrvChart: Chart | null = null;
 let doseChart: Chart | null = null;
@@ -349,7 +349,7 @@ function weekTrend(): {
 // 视图模型
 // ---------------------------------------------------------------------------
 
-function buildMetrics(): MetricCard[] {
+function buildMetrics(calibration: ReturnType<typeof projectCalibration>): MetricCard[] {
   const latestRhrRow = (healthData?.health ?? []).find((r) => r.rhr != null) ?? null;
   const latestRhr = latestRhrRow?.rhr ?? null;
   const latestRhrDate = latestRhrRow ? formatDateShort(normalizeYmd(latestRhrRow.date)) : null;
@@ -362,8 +362,6 @@ function buildMetrics(): MetricCard[] {
   const hrvLow = healthData?.hrv?.hrv_normal_low ?? null;
   const hrvHigh = healthData?.hrv?.hrv_normal_high ?? null;
   const hrvBaseline = hrvLow != null && hrvHigh != null ? `正常 ${hrvLow}-${hrvHigh} ms` : '';
-
-  const calibration = projectCalibration(zonesData);
 
   return [
     {
@@ -383,25 +381,19 @@ function buildMetrics(): MetricCard[] {
       color: '#7a4dd4',
     },
     {
-      label: '阈值配速',
-      sub: '约一小时全力能力',
+      label: calibration.pace.label,
+      sub: calibration.pace.subtitle,
       value: calibration.pace.value,
       unit: '/km',
       baseline: '',
-      range: calibration.pace.range,
-      lines: calibration.pace.lines,
-      help: calibration.pace.help,
       color: '#00a85a',
     },
     {
       label: calibration.hr.label,
-      sub: '按来源解释的心率参考',
+      sub: calibration.hr.subtitle,
       value: calibration.hr.value,
       unit: 'bpm',
       baseline: '',
-      range: calibration.hr.range,
-      lines: calibration.hr.lines,
-      help: calibration.hr.help,
       color: '#d97706',
     },
   ];
@@ -476,7 +468,6 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
     loading: true,
     error: '',
     metrics: [],
-    expandedMetric: '',
     loadStats: [],
     readinessLabel: '',
     readinessColor: '#8888a0',
@@ -493,6 +484,8 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
       { value: 60, label: '60d', active: false },
       { value: 90, label: '90d', active: false },
     ],
+    hasThresholdPaceHistory: false,
+    hasThresholdPaceChart: false,
     hasRhrChart: false,
     hasHrvChart: false,
     hasDoseChart: false,
@@ -535,17 +528,12 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
   },
 
   onUnload() {
-    rhrChart = hrvChart = doseChart = loadChart = formChart = weekChart = null;
+    thresholdPaceChart = rhrChart = hrvChart = doseChart = loadChart = formChart = weekChart = null;
     rhrSpec = hrvSpec = doseSpec = formSpec = weekSpec = null;
   },
 
   onBack() {
     wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/coach/coach' }) });
-  },
-
-  onMetricHelp(e) {
-    const label = String(e.currentTarget.dataset.label ?? '');
-    this.setData({ expandedMetric: this.data.expandedMetric === label ? '' : label });
   },
 
   onRetry() {
@@ -562,7 +550,7 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
       const [h, hv, z, ld, acts] = await Promise.all([
         getHealth(userId, 90),
         getHrv(userId, 90),
-        getStrideZones(userId),
+        getStrideZones(userId, 90),
         getStrideTrainingLoad(userId, 112),
         this.fetchAllActivities(),
       ]);
@@ -606,9 +594,11 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
   render() {
     const cur = loadData?.current ?? null;
     const hasLoad = loaded && !!cur;
+    const calibration = projectCalibration(zonesData);
     const { paceZones, hrZones, hasZones } = projectTrainingZones(zonesData);
     const readiness = buildReadiness(cur);
 
+    const pace = buildThresholdPaceTrend(zonesData?.threshold_history ?? [], trendDays, shanghaiToday());
     const rhr = rhrTrend(trendDays);
     const hv = hrvTrend(trendDays);
     const dd = dailyDose(trendDays);
@@ -622,7 +612,7 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
       {
         loading: false,
         error: '',
-        metrics: buildMetrics(),
+        metrics: buildMetrics(calibration),
         loadStats: buildLoadStats(cur),
         readinessLabel: readiness.label,
         readinessColor: readiness.color,
@@ -639,6 +629,8 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
           { value: 60, label: '60d', active: trendDays === 60 },
           { value: 90, label: '90d', active: trendDays === 90 },
         ],
+        hasThresholdPaceHistory: zonesData?.threshold_history != null,
+        hasThresholdPaceChart: pace.series.some((value) => value != null),
         hasRhrChart: rhr.series.length >= 2,
         hasHrvChart: hv.series.length >= 2,
         hasDoseChart: hasLoad && dd.data.some((v) => v != null),
@@ -651,11 +643,11 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
           ctl != null && ctl > 0
             ? `当前 CTL ≈ ${ctl.toFixed(0)} · 对应阈值 ±${(ctl * 0.1).toFixed(0)} / ±${(ctl * 0.25).toFixed(0)}`
             : '',
-        calibrationLine: `数据截止：${projectCalibration(zonesData).cutoffDay ?? '未知'} · 校准执行：${projectCalibration(zonesData).computedShanghai ?? '未知'}（上海时间）`,
+        calibrationLine: `数据截止：${calibration.cutoffDay ?? '未知'} · 校准执行：${calibration.computedShanghai ?? '未知'}（上海时间）`,
         loadDateLine: `Training load latest: ${cur?.date ?? '—'}`,
       },
       // canvas 节点要等 view 层渲染出来才拿得到
-      () => wx.nextTick(() => this.drawCharts()),
+      () => wx.nextTick(() => this.drawCharts(pace)),
     );
   },
 
@@ -683,6 +675,13 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
 
   // —— uCharts 触摸工具提示 ——
 
+  onThresholdPaceTouch(e) {
+    if (!e.touches.length && !e.changedTouches.length) return;
+    thresholdPaceChart?.showToolTip(toUChartsTouchEvent(e), {
+      formatter: (item, time) => `${time} · ${fmtPace(-itemNumber(item))}`,
+    });
+  },
+
   onRhrTouch(e: WechatMiniprogram.TouchEvent) {
     if (rhrChart && rhrSpec) rhrChart.showToolTip(toUChartsTouchEvent(e), { formatter: (item, time) => rhrSpec!.tooltip(itemNumber(item), time) });
   },
@@ -703,7 +702,7 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
     if (weekChart && weekSpec) weekChart.showToolTip(toUChartsTouchEvent(e), { formatter: (item, time) => weekSpec!.tooltip(itemNumber(item), time) });
   },
 
-  drawCharts() {
+  drawCharts(pace) {
     const instance = this;
     const dpr = pixelRatio();
 
@@ -724,6 +723,26 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
         })
         .exec();
     };
+
+    if (this.data.hasThresholdPaceChart) {
+      draw('#threshold-pace-chart', (w, h) =>
+        buildLineChartOptions({
+          categories: pace.categories,
+          series: [{ name: '阈值配速', data: pace.series, color: '#00a85a' }],
+          bounds: pace.bounds,
+          width: w,
+          height: h,
+          dpr,
+          yAxisFormatter: (value) => fmtPace(-value).replace('/km', ''),
+          showDataPoints: pace.series.includes(null),
+        }),
+        (chart) => {
+          thresholdPaceChart = chart;
+        },
+      );
+    } else {
+      thresholdPaceChart = null;
+    }
 
     // RHR 趋势
     const rhr = rhrTrend(trendDays);

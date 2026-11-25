@@ -127,6 +127,22 @@
   color: var(--color-text-secondary);
 }
 
+.retry-button {
+  width: 88rpx;
+  box-sizing: border-box;
+  margin: 0 0 0 auto;
+  padding: 12rpx 4rpx;
+  min-height: 88rpx;
+  font-size: 24rpx;
+  line-height: 64rpx;
+  color: var(--color-text-primary);
+  background: var(--color-bg);
+  border: 1rpx solid var(--color-text-secondary);
+  border-radius: 12rpx;
+}
+
+.retry-button::after { border: none; }
+
 /* ---------- 核心指标（2×2） ---------- */
 
 .metric-grid {
@@ -508,12 +524,3 @@
   color: var(--color-text-tertiary);
   line-height: 1.8;
 }
-
-/* Threshold explanations retain the existing two-column cards and wrap at narrow widths. */
-.metric-card { min-width: 0; }
-.metric-card__heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8rpx; }
-.metric-help { width: 88rpx; min-width: 88rpx; max-width: 88rpx; flex: 0 0 88rpx; box-sizing: border-box; margin: 0 0 0 auto; padding: 12rpx 4rpx; min-height: 88rpx; font-size: 24rpx; line-height: 64rpx; color: var(--color-text-primary); background: var(--color-bg); border: 1rpx solid var(--color-text-secondary); border-radius: 12rpx; }
-.metric-help::after { border: none; }
-.metric-card__detail { margin-top: 12rpx; font-size: 22rpx; line-height: 1.55; color: var(--color-text-secondary); overflow-wrap: anywhere; word-break: break-word; }
-.metric-card__range { color: var(--color-text-primary); }
-.calibration-help { margin-top: -24rpx; margin-bottom: 48rpx; }

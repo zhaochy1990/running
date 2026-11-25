@@ -6,6 +6,14 @@ Go API 是此 DTO 的 owner，workout / weekly-plan schema 不承担校准元数
 
 `threshold` 保留原有 speed、pace、HR、confidence、日期和 ID 字段，新增 `algorithm_version`、UTC `computed_at`、`selection`、`source`、`fingerprint` 和 `speed_range_pace_per_km_sec`。`/health` 新增 `calibration`，包含同一选择和来源元数据，不改变 `rhr_baseline` 规则。
 
+## 阈值历史
+
+`GET /api/{user}/stride/zones?history_days=90` 在当前阈值和区间之外返回 `threshold_history`。`history_days` 接受 1 至 365，窗口按上海日计算，包含今天。省略参数时沿用原响应。指定窗口但无快照时返回 `[]`。
+
+历史记录按日期升序排列。每条包含 `as_of_date`（上海 `YYYY-MM-DD`）、`pace_per_km_sec`（整数秒/公里或 `null`）和 `hr_bpm`（数值或 `null`）。服务端在同一个只读事务内读取当前 bundle 和其确切算法版本、修订对应的已保存快照。没有快照的日期不会生成记录，已有快照缺失的中心值保持 `null`。
+
+小程序一次请求 90 天历史，按 14、30、60、90 个上海日切换配速趋势。横轴保留缺失日期的位置，触摸已有记录时显示当天配速。
+
 ## v4 原地演进的修订标记与估计状态（#995，2026-11-16 冻结）
 
 v4 不开新顶层身份：演进后的 v4 输出在 `source.algorithm_revision`（可选字符串，如 `v4-rev2-2026-11`）区分于历史 v4 行（缺省为空）；`algorithm_version` 仍为 4，policy `supported_versions=[3,4]` 不变。快照存储层以 `(user, as_of_date, algorithm_version, algorithm_revision)` 为自然键，历史 v4 行不被覆写（ADR 0045）。
@@ -24,6 +32,8 @@ v4 不开新顶层身份：演进后的 v4 输出在 `source.algorithm_revision`
 
 ## 客户端数值与协议显示
 
+微信小程序训练状态采用紧凑阈值卡片，显示指标名、短标签、数值和单位。场地心率代理显示为「现场心率参考」。支持范围、具体实验室方法、证据日期和原因等详细说明由 Web 和 iOS 展示。
+
 配速中心与快／慢边界仍由 Go API 用 half-even 生成整秒，三端只拼分钟秒。心率 wire 保留正数小数，中心与有效支持范围端点显示为最接近整数，恰好半点向上（166.5→167、168.5→169）；这与 JavaScript `Math.round`／Swift 正数 `.rounded(.toNearestOrAwayFromZero)` 一致，不采用配速的 half-even。此项仅显示，不改持久化值或算法。
 
 HR `method=field_30min_last20_v1` 表示30分钟现场测试的后20分钟，不等于实验室生理LTHR；`lab_lthr_report_v1` 表示实验室乳酸阈值报告，仍保留具体 `lab_method`。努力等级 canonical 为 `probable_maximal`（可能全力），不能把它当未知，也不因测量质量通过就提高能力估计支持。共享 producer-field-half / producer-lab-half 向量由真实 Go候选计算与 SummarizeSource 产出；其中HR范围端点专用于显示舍入边界，不是算法输出的不确定性。
@@ -36,7 +46,7 @@ HR `method=field_30min_last20_v1` 表示30分钟现场测试的后20分钟，不
 
 `source.hr.latest_rejected_evidence_date` 是最近未采用协议的上海日期，与实际支持的
 `evidence_date` 分开。具体 stale / rejected / quality 原因沿用有界 categorical reasons；
-三端显示“最近未采用证据日”和陈旧原因。该字段不恢复中心、范围或支持计数，也不刷新
+Web 和 iOS 显示“最近未采用证据日”和陈旧原因。该字段不恢复中心、范围或支持计数，也不刷新
 有效证据日期；不暴露原始 HR、私密备注或完整诊断。共享 `producer-stale-hr` 来自实际
 Go evidence producer → typed summary → 持久化解析；真实隔离 MySQL 另有回读验证。
 
@@ -54,6 +64,6 @@ stale日期。两日相同只显示一次日期；不同则分别显示“最近
 新的可选 `source.hr.rejected_reasons` 单独保存未选中协议的有界原因，沿用最多16条、每条
 256字符的限制；它不参与当前中心/支持/有效证据日期。`latest_*_evidence_date` 仍只记录
 未采用协议的日期。当前有有效selected协议时，旧stale或较新的质量拒绝不能被解释为
-“当前心率支持已过期”；三端与Coach工具明确称其为“未采用历史协议（不参与当前估计）”。
+“当前心率支持已过期”；Web、iOS 与 Coach 工具明确称其为“未采用历史协议（不参与当前估计）”。
 当前没有有效支持时仍显示缺少独立协议/无法估计，并另列历史协议过期/质量拒绝原因，
 不删除历史解释、不恢复旧值或借v3支持。

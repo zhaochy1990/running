@@ -8692,6 +8692,12 @@ const docTemplate = `{
                         "name": "user",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Include saved thresholds for the current algorithm identity for the last 1–365 Shanghai days, including today",
+                        "name": "history_days",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -8699,6 +8705,12 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/api.strideZonesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
                         }
                     },
                     "401": {
@@ -14399,6 +14411,23 @@ const docTemplate = `{
                 }
             }
         },
+        "api.strideThresholdHistoryPoint": {
+            "type": "object",
+            "properties": {
+                "as_of_date": {
+                    "type": "string",
+                    "format": "date"
+                },
+                "hr_bpm": {
+                    "type": "number",
+                    "x-nullable": true
+                },
+                "pace_per_km_sec": {
+                    "type": "integer",
+                    "x-nullable": true
+                }
+            }
+        },
         "api.strideTrainingLoadDTO": {
             "type": "object",
             "properties": {
@@ -14539,6 +14568,12 @@ const docTemplate = `{
                 },
                 "threshold": {
                     "$ref": "#/definitions/api.strideThresholdDTO"
+                },
+                "threshold_history": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.strideThresholdHistoryPoint"
+                    }
                 }
             }
         },

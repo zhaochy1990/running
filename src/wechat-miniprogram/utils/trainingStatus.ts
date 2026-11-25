@@ -8,11 +8,12 @@
  */
 import {
   epochToShanghaiYmd,
+  shanghaiShiftDays,
   shanghaiToday,
   shanghaiWeekStart,
   shanghaiYmdToEpoch,
 } from './date';
-import type { StrideTrainingLoadRecord } from '../types/health';
+import type { StrideThresholdHistoryPoint, StrideTrainingLoadRecord } from '../types/health';
 import { theme } from './theme';
 import { fmtShanghaiMdHm } from './format';
 
@@ -338,6 +339,24 @@ export function padBounds(min: number, max: number, pad: number): ChartBounds {
   return { min: min - pad, max: max + pad };
 }
 
+export function buildThresholdPaceTrend(
+  history: StrideThresholdHistoryPoint[], days: number, today: string,
+): { categories: string[]; series: Array<number | null>; bounds: ChartBounds } {
+  const paceByDay = new Map(history.map((point) => [point.as_of_date, point.pace_per_km_sec]));
+  const dates = Array.from({ length: days }, (_, index) => shanghaiShiftDays(today, index + 1 - days));
+  // 配速越快，秒数越小。取负值让更快的配速显示在图的上方。
+  const series = dates.map((day) => {
+    const pace = paceByDay.get(day);
+    return pace != null && Number.isFinite(pace) && pace > 0 ? -pace : null;
+  });
+  const values = series.filter((pace): pace is number => pace != null);
+  return {
+    categories: dates.map(formatDateShort),
+    series,
+    bounds: padBounds(Math.min(...values), Math.max(...values), 4),
+  };
+}
+
 function baseChartOptions(params: {
   type: 'line' | 'column';
   width: number;
@@ -384,9 +403,12 @@ export function buildLineChartOptions(params: {
   width: number;
   height: number;
   dpr: number;
+  yAxisFormatter?: (value: number) => string;
+  showDataPoints?: boolean;
 }): Record<string, unknown> {
   return {
     ...baseChartOptions({ type: 'line', width: params.width, height: params.height, dpr: params.dpr, categories: params.categories }),
+    dataPointShape: params.showDataPoints ?? false,
     yAxis: {
       gridType: 'dash',
       dashLength: 4,
@@ -394,7 +416,12 @@ export function buildLineChartOptions(params: {
       splitNumber: 4,
       fontSize: CHART_FONT_SIZE,
       fontColor: CHART_FONT_COLOR,
-      data: [{ min: params.bounds.min, max: params.bounds.max, axisLine: false }],
+      data: [{
+        min: params.bounds.min,
+        max: params.bounds.max,
+        axisLine: false,
+        ...(params.yAxisFormatter ? { formatter: params.yAxisFormatter } : {}),
+      }],
     },
     extra: {
       line: { type: 'straight', width: 2 },
@@ -458,6 +485,7 @@ export interface CalibrationMetricDisplay {
   range: string | null;
   evidenceDay: string | null;
   label: string;
+  subtitle: string;
   support: string;
   lines: string[];
   help: string[];
@@ -685,8 +713,17 @@ export function projectCalibration(zones: import('../types/health').StrideZonesR
       ? `支持范围 ${Math.round(low)}–${Math.round(high)} bpm`
       : available && positive(low) ? `心率 ≥ ${Math.round(low)} bpm（仅单侧约束）`
       : available && positive(high) ? `心率 ≤ ${Math.round(high)} bpm（仅单侧约束）` : null;
-    return { value, range: kind === 'speed' ? paceRange : hrRange, evidenceDay,
-      label: kind === 'hr' && detail?.target_type === 'field_HR_proxy_not_physiological_LTHR' ? '现场心率参考' : kind === 'hr' ? '阈值心率' : '阈值配速', support, lines, help };
+    const fieldReference = detail?.target_type === 'field_HR_proxy_not_physiological_LTHR';
+    return {
+      value,
+      range: kind === 'speed' ? paceRange : hrRange,
+      evidenceDay,
+      label: kind === 'speed' ? '阈值配速' : fieldReference ? '现场心率参考' : '阈值心率',
+      subtitle: kind === 'speed' ? 'STRIDE Threshold Pace' : fieldReference ? '' : 'STRIDE Threshold HR',
+      support,
+      lines,
+      help,
+    };
   }
   return { pace: metric('speed'), hr: metric('hr'), cutoffDay, computedShanghai };
 }

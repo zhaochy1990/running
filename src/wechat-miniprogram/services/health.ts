@@ -33,8 +33,8 @@ export function getHrv(userId: string, days = 90): Promise<HrvResponse> {
 }
 
 /** 拉取 STRIDE 自研阈值 + 配速/心率区间（/api/{user}/stride/zones）。 */
-export function getStrideZones(userId: string): Promise<StrideZonesResponse> {
+export function getStrideZones(userId: string, historyDays: number): Promise<StrideZonesResponse> {
   return http.get<StrideZonesResponse>(
-    `/api/${encodeURIComponent(userId)}/stride/zones`,
+    `/api/${encodeURIComponent(userId)}/stride/zones?history_days=${historyDays}`,
   );
 }
