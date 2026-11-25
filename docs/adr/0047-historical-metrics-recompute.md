@@ -56,8 +56,8 @@ transaction the cheap fence invariants are re-verified (run still active,
 pinned binding revision, pinned policy revision, calibration run still
 terminal with the pinned bundle fingerprint); the full data digest is
 re-verified immediately before it. For automatic onboarding, the raw and
-calibration digests are checked again under the binding row lock that fences
-watch sync, before any staged rows are promoted. Publication
+calibration digests are checked again before promotion. The serializable
+transaction holds the input reads until the derived rows commit. Publication
 is idempotent (upserts / per-key replaces / whole-set PB replace), so a crash
 between promotion and finalize re-runs cleanly. At finalize the whole staged
 ledger is frozen into one output fingerprint with honest gap accounting:

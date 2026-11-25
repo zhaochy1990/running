@@ -142,10 +142,17 @@ func (s *Store) ClaimOnboardingHistoricalReplay(ctx context.Context, id string, 
 func (s *Store) OnboardingHistoricalRunActive(ctx context.Context, sess *OnboardingSyncSession) (bool, error) {
 	var active bool
 	err := s.db.WithContext(ctx).Raw(`
-		SELECT EXISTS (SELECT 1 FROM historical_recompute_runs
-		 WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running'))
-		 OR EXISTS (SELECT 1 FROM historical_metrics_recompute_runs
-		 WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running'))
+		SELECT EXISTS (
+			SELECT 1 FROM historical_recompute_runs r LEFT JOIN jobs j ON j.id = r.last_job_id
+			WHERE r.user_id = ? AND r.binding_revision = ? AND r.created_at >= ? AND r.state IN ('pending', 'running')
+			  AND (r.updated_at >= UTC_TIMESTAMP(6) - INTERVAL 15 MINUTE OR
+			    (j.status = 'running' AND COALESCE(j.heartbeat_at, j.updated_at) >= UTC_TIMESTAMP(6) - INTERVAL 15 MINUTE))
+		) OR EXISTS (
+			SELECT 1 FROM historical_metrics_recompute_runs r LEFT JOIN jobs j ON j.id = r.last_job_id
+			WHERE r.user_id = ? AND r.binding_revision = ? AND r.created_at >= ? AND r.state IN ('pending', 'running')
+			  AND (r.updated_at >= UTC_TIMESTAMP(6) - INTERVAL 15 MINUTE OR
+			    (j.status = 'running' AND COALESCE(j.heartbeat_at, j.updated_at) >= UTC_TIMESTAMP(6) - INTERVAL 15 MINUTE))
+		)
 	`, sess.UserID, sess.BindingRevision, sess.CreatedAt, sess.UserID, sess.BindingRevision, sess.CreatedAt).Scan(&active).Error
 	return active, err
 }
@@ -156,7 +163,8 @@ func (s *Store) OnboardingHistoricalRequestQueued(ctx context.Context, sess *Onb
 	var found bool
 	err := s.db.WithContext(ctx).Raw(`
 		SELECT EXISTS (SELECT 1 FROM jobs
-		 WHERE user_id = ? AND idempotency_key LIKE ? AND status IN ('queued', 'running'))
+		 WHERE user_id = ? AND idempotency_key LIKE ? AND status IN ('queued', 'running')
+			 AND COALESCE(heartbeat_at, updated_at) >= UTC_TIMESTAMP(6) - INTERVAL 15 MINUTE)
 	`, sess.UserID, "onbhist:"+sess.SessionID+":%").Scan(&found).Error
 	return found, err
 }

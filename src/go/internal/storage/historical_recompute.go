@@ -198,7 +198,8 @@ func (s *Store) ClaimOrCreateHistoricalRecomputeRun(ctx context.Context, spec Hi
 		now = time.Now().UTC()
 	}
 	res := &HistoricalRecomputeClaimResult{}
-	txErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	claim := func(tx *gorm.DB) error {
+		*res = HistoricalRecomputeClaimResult{}
 		var active []HistoricalRecomputeRun
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("user_id = ? AND state IN ?", spec.UserID,
@@ -247,6 +248,9 @@ func (s *Store) ClaimOrCreateHistoricalRecomputeRun(ctx context.Context, spec Hi
 		}
 		res.Run, res.Created = &row, true
 		return nil
+	}
+	txErr := withDeadlockRetry(func() error {
+		return s.db.WithContext(ctx).Transaction(claim)
 	})
 	if txErr != nil {
 		return nil, txErr

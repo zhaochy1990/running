@@ -25,6 +25,7 @@ package storage
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -229,7 +230,8 @@ func (s *Store) ClaimOrCreateHistoricalMetricsRun(ctx context.Context, spec Hist
 		now = time.Now().UTC()
 	}
 	res := &HistoricalMetricsClaimResult{}
-	txErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	claim := func(tx *gorm.DB) error {
+		*res = HistoricalMetricsClaimResult{}
 		var active []HistoricalMetricsRun
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("user_id = ? AND state IN ?", spec.UserID,
@@ -279,6 +281,9 @@ func (s *Store) ClaimOrCreateHistoricalMetricsRun(ctx context.Context, spec Hist
 		}
 		res.Run, res.Created = &row, true
 		return nil
+	}
+	txErr := withDeadlockRetry(func() error {
+		return s.db.WithContext(ctx).Transaction(claim)
 	})
 	if txErr != nil {
 		return nil, txErr
@@ -587,9 +592,9 @@ func (s *Store) PublishHistoricalMetricsRun(ctx context.Context, runID string) (
 		}
 
 		if run.CreatedBy == OnboardingHistoricalActor {
-			// Fenced watch sync acquires the binding row before publishing
-			// raw inputs. Recheck under that same lock, after the ledger
-			// has been loaded and immediately before promoting any rows.
+			// Check live inputs after loading the ledger. Serializable
+			// reads hold the observed rows and insertion ranges until the
+			// promotion commits, including sources without the binding lock.
 			from, to := OnboardingHistoricalDigestBounds(run.CreatedBy, "0000-01-01", run.TargetToDay)
 			raw, err := onboardingAnalysisDigest(tx, run.UserID, from, to)
 			if err != nil {
@@ -649,7 +654,7 @@ func (s *Store) PublishHistoricalMetricsRun(ctx context.Context, runID string) (
 		}
 		return tx.Model(&HistoricalMetricsRun{}).Where("run_id = ?", runID).
 			Updates(map[string]any{"published_at": now, "updated_at": now}).Error
-	})
+	}, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if txErr != nil {
 		return counts, txErr
 	}

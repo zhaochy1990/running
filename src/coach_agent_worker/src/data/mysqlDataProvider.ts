@@ -870,14 +870,14 @@ export class MySqlDataProvider implements DataProvider {
    */
   async getSyncCoverage(userId: string): Promise<SyncCoverage | null> {
     const [sessionRows] = await this.pool.query<RowDataPacket[]>(
-      `SELECT session_id, provider, binding_revision, anchor_day, state, shell_ready, last_error, updated_at, created_at, historical_analysis_reason
+      `SELECT session_id, provider, binding_revision, anchor_day, state, shell_ready, last_error, updated_at, created_at, historical_analysis_reason, historical_analysis_checked_at
          FROM onboarding_sync_sessions
         WHERE user_id = ? AND state <> 'superseded'
         ORDER BY created_at DESC
         LIMIT 1`,
       [userId],
     );
-    const sessionRow = sessionRows[0] as (SyncSessionRow & { created_at: Date }) | undefined;
+    const sessionRow = sessionRows[0] as (SyncSessionRow & { created_at: Date; historical_analysis_checked_at?: Date | null }) | undefined;
     if (!sessionRow) return null;
     const sessionId = sessionRow.session_id;
     const [coverageRows, dispatchRows, analysisRows] = await Promise.all([
@@ -908,7 +908,7 @@ export class MySqlDataProvider implements DataProvider {
   // recent snapshot remains intact, including its own as-of day and gaps.
   private async readHistoricalSyncAnalysis(
     userId: string,
-    session: SyncSessionRow & { created_at: Date },
+    session: SyncSessionRow & { created_at: Date; historical_analysis_checked_at?: Date | null },
     coverage: SyncStageCoverageRow[],
     analysis: SyncRecentAnalysisRow | undefined,
   ): Promise<Parameters<typeof deriveSyncCoverage>[4]> {
@@ -979,10 +979,21 @@ export class MySqlDataProvider implements DataProvider {
     if (!terminal("auxiliary") || session.historical_analysis_reason) return undefined;
     const [runsInProgress] = await this.pool.query<RowDataPacket[]>(
       `SELECT EXISTS (SELECT 1 FROM historical_recompute_runs
-        WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running'))
+        WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running')
+          AND GREATEST(updated_at, COALESCE(?, updated_at)) >= UTC_TIMESTAMP(6) - INTERVAL 15 MINUTE)
         OR EXISTS (SELECT 1 FROM historical_metrics_recompute_runs
-        WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running')) AS active`,
-      [userId, session.binding_revision, session.created_at, userId, session.binding_revision, session.created_at],
+        WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running')
+          AND GREATEST(updated_at, COALESCE(?, updated_at)) >= UTC_TIMESTAMP(6) - INTERVAL 15 MINUTE) AS active`,
+      [
+        userId,
+        session.binding_revision,
+        session.created_at,
+        session.historical_analysis_checked_at ?? null,
+        userId,
+        session.binding_revision,
+        session.created_at,
+        session.historical_analysis_checked_at ?? null,
+      ],
     );
     return { readiness: runsInProgress[0]?.active ? "running" : "pending" };
   }
