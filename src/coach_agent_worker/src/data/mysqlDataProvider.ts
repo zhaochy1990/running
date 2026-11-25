@@ -915,7 +915,7 @@ export class MySqlDataProvider implements DataProvider {
     const terminal = (stage: string) => coverage.some((row) => row.stage === stage && (row.status === "completed" || row.status === "completed_with_gaps"));
     if (!terminal("historical_raw")) return undefined;
     const [runs] = await this.pool.query<RowDataPacket[]>(
-      `SELECT m.run_id, m.state, m.published_at, m.target_from_day, m.target_to_day
+      `SELECT m.run_id, m.state, m.published_at, m.analysis_as_of_day, m.target_from_day, m.target_to_day
          FROM historical_metrics_recompute_runs AS m
          JOIN historical_recompute_runs AS c
            ON c.run_id = m.calibration_run_id AND c.user_id = m.user_id
@@ -946,7 +946,8 @@ export class MySqlDataProvider implements DataProvider {
       const [rows] = await this.pool.query<RowDataPacket[]>(
         `SELECT COUNT(*) AS activities,
                 COALESCE(SUM(artifact.kind = 'activity_load' AND l.training_dose IS NOT NULL
-                  AND l.excluded_from_pmc = 0), 0) AS loads,
+                  AND JSON_TYPE(JSON_EXTRACT(artifact.payload, '$.TrainingDose')) IN ('INTEGER', 'DOUBLE', 'DECIMAL')
+                  AND JSON_UNQUOTE(JSON_EXTRACT(artifact.payload, '$.ExcludedFromPMC')) = 'false'), 0) AS loads,
                 COALESCE(SUM(EXISTS (
                   SELECT 1 FROM historical_metrics_recompute_staged z
                   JOIN activity_zones az ON az.user_id = a.user_id AND az.label_id = a.label_id
@@ -955,14 +956,14 @@ export class MySqlDataProvider implements DataProvider {
                     AND az.zone_type = 'heartRate'
                 )), 0) AS zones,
                 EXISTS (SELECT 1 FROM ability_snapshot ability
-                  WHERE ability.user_id = ? AND ability.date = ? AND ability.level = 'L4'
+                  WHERE ability.user_id = ? AND ability.date = ? AND ? AND ability.level = 'L4'
                     AND ability.value IS NOT NULL AND ability.computed_at >= ?) AS has_ability
            FROM historical_metrics_recompute_staged artifact
            JOIN activities a ON a.user_id = ? AND a.label_id = artifact.item_key
            LEFT JOIN activity_training_load l ON l.user_id = a.user_id AND l.label_id = a.label_id
           WHERE artifact.run_id = ? AND artifact.kind IN ('activity_load', 'activity_skip')
             AND DATE(a.date + INTERVAL 8 HOUR) BETWEEN ? AND ?`,
-        [userId, analysis.as_of_day, run.published_at, userId, run.run_id, from, to],
+        [userId, analysis.as_of_day, analysis.as_of_day === run.analysis_as_of_day, run.published_at, userId, run.run_id, from, to],
       );
       const evidence = rows[0];
       return {
@@ -978,11 +979,9 @@ export class MySqlDataProvider implements DataProvider {
     if (!terminal("auxiliary") || session.historical_analysis_reason) return undefined;
     const [runsInProgress] = await this.pool.query<RowDataPacket[]>(
       `SELECT EXISTS (SELECT 1 FROM historical_recompute_runs
-        WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running')
-          AND updated_at >= UTC_TIMESTAMP(6) - INTERVAL 15 MINUTE)
+        WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running'))
         OR EXISTS (SELECT 1 FROM historical_metrics_recompute_runs
-        WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running')
-          AND updated_at >= UTC_TIMESTAMP(6) - INTERVAL 15 MINUTE) AS active`,
+        WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running')) AS active`,
       [userId, session.binding_revision, session.created_at, userId, session.binding_revision, session.created_at],
     );
     return { readiness: runsInProgress[0]?.active ? "running" : "pending" };

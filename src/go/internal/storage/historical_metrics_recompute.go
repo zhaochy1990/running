@@ -27,6 +27,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -432,6 +433,10 @@ func (d HistoricalCalibrationDigest) SameAs(o HistoricalCalibrationDigest) bool 
 }
 
 func (s *Store) HistoricalCalibrationDigest(ctx context.Context, userID, fromDay, toDay string) (HistoricalCalibrationDigest, error) {
+	return historicalCalibrationDigest(s.db.WithContext(ctx), userID, fromDay, toDay)
+}
+
+func historicalCalibrationDigest(db *gorm.DB, userID, fromDay, toDay string) (HistoricalCalibrationDigest, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
 		return HistoricalCalibrationDigest{}, err
@@ -441,7 +446,7 @@ func (s *Store) HistoricalCalibrationDigest(ctx context.Context, userID, fromDay
 		MaxUp *time.Time
 		Crc   *int64
 	}
-	err = s.db.WithContext(ctx).Table("running_calibration_snapshot").
+	err = db.Table("running_calibration_snapshot").
 		Select("COUNT(*) AS n, MAX(computed_at) AS max_up, COALESCE(SUM(CRC32(source_json)), 0) AS crc").
 		Where("user_id = ? AND algorithm_version = ?", uid, calibration.ModelVersion).
 		Where("as_of_date >= ? AND as_of_date <= ?", fromDay, toDay).
@@ -471,6 +476,10 @@ func HistoricalMetricsFingerprint(asOf, from, to string, bindingRevision int64, 
 	return hex.EncodeToString(sum[:])
 }
 
+// ErrOnboardingHistoricalInputsChanged indicates that the publication fence
+// found a changed input after the chunk's last revision check.
+var ErrOnboardingHistoricalInputsChanged = errors.New("onboarding historical metrics inputs changed before publication")
+
 // PublishHistoricalMetricsRun promotes the run's whole staged ledger into the
 // production derived tables in ONE transaction: per-activity load rows and
 // daily PMC rows upsert, per-activity zone rows replace per activity, the PB
@@ -479,8 +488,8 @@ func HistoricalMetricsFingerprint(asOf, from, to string, bindingRevision int64, 
 // staged keys are touched. Inside the transaction the cheap invariants are
 // re-verified (run still active, pinned binding revision, pinned policy
 // revision, calibration run still terminal with the pinned bundle
-// fingerprint); the data digest fence runs immediately before, mirroring the
-// T07 calibration run's publish gate. Returns the promoted row counts.
+// fingerprint). Automatic onboarding also checks the input digest under the
+// binding row lock before touching derived rows. Returns promoted row counts.
 func (s *Store) PublishHistoricalMetricsRun(ctx context.Context, runID string) (HistoricalMetricsStagedCounts, error) {
 	var counts HistoricalMetricsStagedCounts
 	staged, err := s.ListHistoricalMetricsStaged(ctx, runID, "")
@@ -575,6 +584,26 @@ func (s *Store) PublishHistoricalMetricsRun(ctx context.Context, runID string) (
 			(calRun.State != HistoricalRecomputeStateCompleted && calRun.State != HistoricalRecomputeStateCompletedWithGaps) ||
 			calRun.BundleFingerprint == nil || *calRun.BundleFingerprint != run.CalibrationBundleFingerprint {
 			return fmt.Errorf("storage: historical metrics publish fence: calibration_bundle_changed")
+		}
+
+		if run.CreatedBy == OnboardingHistoricalActor {
+			// Fenced watch sync acquires the binding row before publishing
+			// raw inputs. Recheck under that same lock, after the ledger
+			// has been loaded and immediately before promoting any rows.
+			from, to := OnboardingHistoricalDigestBounds(run.CreatedBy, "0000-01-01", run.TargetToDay)
+			raw, err := onboardingAnalysisDigest(tx, run.UserID, from, to)
+			if err != nil {
+				return err
+			}
+			cal, err := historicalCalibrationDigest(tx, run.UserID, run.TargetFromDay, run.TargetToDay)
+			if err != nil {
+				return err
+			}
+			fingerprint := HistoricalMetricsFingerprint(run.AnalysisAsOfDay, run.TargetFromDay, run.TargetToDay,
+				run.BindingRevision, policy, raw, cal, run.CalibrationRunID, run.CalibrationBundleFingerprint)
+			if fingerprint != run.InputFingerprint {
+				return ErrOnboardingHistoricalInputsChanged
+			}
 		}
 
 		// Promote, in the ADR 0045 order: activity load → zones → daily PMC

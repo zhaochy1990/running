@@ -155,11 +155,18 @@ func TestOnboardingSyncHistoricalSweepRecoversInterruptedMultiYearHistory(t *tes
 	drainHistoricalJobs(t, h, sess, historicalcalibration.JobType, cal)
 
 	h.svc.Sweep(ctx)
-	firstMetrics := assertHistoricalJob(t, h, sess, historicalmetrics.JobType, true)
-	finishHistoricalJob(t, h, firstMetrics, metrics)
-	// The imported activity is dated after the frozen Shanghai cutoff.
-	seedHistoryActivity(t, h, user, "sync-while-deriving", today.AddDate(0, 0, 1))
-	finishHistoricalJob(t, h, assertHistoricalJob(t, h, sess, historicalmetrics.JobType, true), metrics)
+	// Simulate a fenced sync committing after the handler's last digest
+	// read but just before the storage publication transaction begins.
+	midPublish := false
+	store := metricsPublishBoundary{Store: h.store, beforePublish: func() {
+		midPublish = true
+		seedHistoryActivity(t, h, user, "sync-while-deriving", today.AddDate(0, 0, 1))
+	}}
+	interrupted := historicalmetrics.New(historicalmetrics.Config{Store: store, Enq: h.svc.enq, Enabled: true})
+	drainHistoricalJobs(t, h, sess, historicalmetrics.JobType, interrupted)
+	if !midPublish {
+		t.Fatal("the interrupted metrics attempt never reached publication")
+	}
 	runs, err := h.store.ReadOnboardingHistoricalRuns(ctx, sess)
 	if err != nil || runs.Metrics == nil || runs.Metrics.State != storage.HistoricalMetricsStateSuperseded || runs.Metrics.PublishedAt != nil {
 		t.Fatalf("interrupted metrics published rows: %+v, %v", runs.Metrics, err)
@@ -275,6 +282,16 @@ func TestOnboardingSyncHistoricalOldBindingFailureDoesNotBlockNewSession(t *test
 	if err != nil || view.HistoricalAnalysisReason != nil {
 		t.Fatalf("new session inherited an obsolete job failure: %+v, %v", view, err)
 	}
+}
+
+type metricsPublishBoundary struct {
+	*storage.Store
+	beforePublish func()
+}
+
+func (s metricsPublishBoundary) PublishHistoricalMetricsRun(ctx context.Context, runID string) (storage.HistoricalMetricsStagedCounts, error) {
+	s.beforePublish()
+	return s.Store.PublishHistoricalMetricsRun(ctx, runID)
 }
 
 func seedHistoryActivity(t *testing.T, h *harness, user, label string, day time.Time) {

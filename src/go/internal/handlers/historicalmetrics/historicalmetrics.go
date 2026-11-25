@@ -996,6 +996,9 @@ func (e *executor) phaseL1(ctx context.Context, run *storage.HistoricalMetricsRu
 func (e *executor) phasePublish(ctx context.Context, run *storage.HistoricalMetricsRun) (string, error) {
 	store := e.cfg.Store
 	counts, err := store.PublishHistoricalMetricsRun(ctx, run.RunID)
+	if errors.Is(err, storage.ErrOnboardingHistoricalInputsChanged) {
+		return e.supersede(ctx, run, "data_revision_changed")
+	}
 	if err != nil {
 		return "", err
 	}

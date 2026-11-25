@@ -25,6 +25,7 @@ type historicalStore interface {
 	ReadOnboardingHistoricalRuns(context.Context, *storage.OnboardingSyncSession) (storage.OnboardingHistoricalRuns, error)
 	ClaimOnboardingHistoricalReplay(context.Context, string, time.Time, time.Time) (bool, error)
 	OnboardingHistoricalRunActive(context.Context, *storage.OnboardingSyncSession) (bool, error)
+	OnboardingHistoricalRequestQueued(context.Context, *storage.OnboardingSyncSession) (bool, error)
 	OnboardingHistoricalContinuation(context.Context, string, string, string, *string, time.Time) (*job.Job, error)
 	SupersedeHistoricalRecomputeRun(context.Context, string, string) error
 	SupersedeHistoricalMetricsRun(context.Context, string, string) error
@@ -104,13 +105,19 @@ func (s *Service) reconcileHistoricalAnalysis(ctx context.Context, sess *storage
 	// A checkpoint with no live job can be resumed in-place. Keep the
 	// continuation tied to the run and to the most recent terminal job.
 	if cal := runs.ActiveCalibration; cal != nil {
-		if cal.BindingRevision != sess.BindingRevision {
+		if cal.BindingRevision > sess.BindingRevision {
+			return nil // an older sweep observed work begun after the rebind
+		}
+		if cal.BindingRevision < sess.BindingRevision {
 			return s.historical.SupersedeHistoricalRecomputeRun(ctx, cal.RunID, "binding_revision_changed")
 		}
 		return s.recoverHistoricalRun(ctx, sess, calType, cal.RunID, cal.LastJobID, cal.ChunkSeq, cal.CreatedAt)
 	}
 	if metrics := runs.ActiveMetrics; metrics != nil {
-		if metrics.BindingRevision != sess.BindingRevision {
+		if metrics.BindingRevision > sess.BindingRevision {
+			return nil // an older sweep observed work begun after the rebind
+		}
+		if metrics.BindingRevision < sess.BindingRevision {
 			return s.historical.SupersedeHistoricalMetricsRun(ctx, metrics.RunID, "binding_revision_changed")
 		}
 		return s.recoverHistoricalRun(ctx, sess, metricsType, metrics.RunID, metrics.LastJobID, metrics.ChunkSeq, metrics.CreatedAt)
@@ -248,9 +255,16 @@ func (s *Service) projectHistoricalAnalysis(ctx context.Context, sess *storage.O
 	v.HistoricalAnalysisPoll = time.Since(sess.UpdatedAt) < 2*time.Minute ||
 		(sess.HistoricalAnalysisCheckedAt != nil && time.Since(*sess.HistoricalAnalysisCheckedAt) < 2*time.Minute)
 	active, err := s.historical.OnboardingHistoricalRunActive(ctx, sess)
+	if err != nil {
+		return err
+	}
 	if active {
 		v.HistoricalAnalysisPoll = true
 		v.Readiness.HistoricalAnalysis = ReadinessRunning
+		return nil
+	}
+	if !v.HistoricalAnalysisPoll {
+		v.HistoricalAnalysisPoll, err = s.historical.OnboardingHistoricalRequestQueued(ctx, sess)
 	}
 	return err
 }

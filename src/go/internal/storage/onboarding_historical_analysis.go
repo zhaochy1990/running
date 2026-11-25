@@ -143,13 +143,22 @@ func (s *Store) OnboardingHistoricalRunActive(ctx context.Context, sess *Onboard
 	var active bool
 	err := s.db.WithContext(ctx).Raw(`
 		SELECT EXISTS (SELECT 1 FROM historical_recompute_runs
-		 WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running')
-          AND updated_at >= UTC_TIMESTAMP(6) - INTERVAL 15 MINUTE)
+		 WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running'))
 		 OR EXISTS (SELECT 1 FROM historical_metrics_recompute_runs
-		 WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running')
-          AND updated_at >= UTC_TIMESTAMP(6) - INTERVAL 15 MINUTE)
+		 WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running'))
 	`, sess.UserID, sess.BindingRevision, sess.CreatedAt, sess.UserID, sess.BindingRevision, sess.CreatedAt).Scan(&active).Error
 	return active, err
+}
+
+// OnboardingHistoricalRequestQueued lets status polling follow a durable
+// dispatch even before its worker claims a run.
+func (s *Store) OnboardingHistoricalRequestQueued(ctx context.Context, sess *OnboardingSyncSession) (bool, error) {
+	var found bool
+	err := s.db.WithContext(ctx).Raw(`
+		SELECT EXISTS (SELECT 1 FROM jobs
+		 WHERE user_id = ? AND idempotency_key LIKE ? AND status IN ('queued', 'running'))
+	`, sess.UserID, "onbhist:"+sess.SessionID+":%").Scan(&found).Error
+	return found, err
 }
 
 func (s *Store) LatestOnboardingHistoricalJob(ctx context.Context, userID, jobType string, since time.Time, activeOnly bool) (*job.Job, error) {
@@ -210,7 +219,8 @@ func (s *Store) ReadOnboardingHistoricalRecentEvidence(ctx context.Context, run 
 	err := s.db.WithContext(ctx).Raw(`
 		SELECT COUNT(*) AS activities,
 		       COALESCE(SUM(artifact.kind = 'activity_load' AND l.training_dose IS NOT NULL
-		         AND l.excluded_from_pmc = 0), 0) AS loads,
+		         AND JSON_TYPE(JSON_EXTRACT(artifact.payload, '$.TrainingDose')) IN ('INTEGER', 'DOUBLE', 'DECIMAL')
+		         AND JSON_UNQUOTE(JSON_EXTRACT(artifact.payload, '$.ExcludedFromPMC')) = 'false'), 0) AS loads,
 		       COALESCE(SUM(EXISTS (
 		         SELECT 1 FROM historical_metrics_recompute_staged z
 		         JOIN activity_zones az ON az.user_id = a.user_id AND az.label_id = a.label_id
@@ -219,13 +229,13 @@ func (s *Store) ReadOnboardingHistoricalRecentEvidence(ctx context.Context, run 
 		           AND az.zone_type = 'heartRate'
 		       )), 0) AS zones,
 		       EXISTS (SELECT 1 FROM ability_snapshot ability
-		         WHERE ability.user_id = ? AND ability.date = ? AND ability.level = 'L4'
+		         WHERE ability.user_id = ? AND ability.date = ? AND ? AND ability.level = 'L4'
 		           AND ability.value IS NOT NULL AND ability.computed_at >= ?) AS has_ability
 		FROM historical_metrics_recompute_staged artifact
 		JOIN activities a ON a.user_id = ? AND a.label_id = artifact.item_key
 		LEFT JOIN activity_training_load l ON l.user_id = a.user_id AND l.label_id = a.label_id
 		WHERE artifact.run_id = ? AND artifact.kind IN ('activity_load', 'activity_skip')
 		  AND DATE(a.date + INTERVAL 8 HOUR) BETWEEN ? AND ?
-	`, run.UserID, asOf, run.PublishedAt, run.UserID, run.RunID, from, to).Scan(&evidence).Error
+	`, run.UserID, asOf, asOf == run.AnalysisAsOfDay, run.PublishedAt, run.UserID, run.RunID, from, to).Scan(&evidence).Error
 	return evidence, err
 }
