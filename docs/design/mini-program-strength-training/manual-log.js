@@ -99,7 +99,7 @@ const manualLog = (() => {
       ${exercise.rows.map(rowView).join('')}
       <div class="log-exercise-footer">
         ${logButton('add-row', `${app.icon('plus', 16)}添加一组`, 'text-button log-add-row')}
-        <div class="log-field">
+        <div class="log-field log-note-field">
           <textarea aria-label="动作 ${index + 1} 备注" data-log-field="note" rows="1" placeholder="动作备注（选填）">
 ${escape(exercise.note)}</textarea>
         </div>
@@ -113,7 +113,7 @@ ${escape(exercise.note)}</textarea>
       title: editing ? '编辑记录' : '自由力量训练',
       content: `<h2 class="page-heading log-heading" tabindex="-1">${editing ? '编辑力量训练' : '记录力量训练'}</h2>
       <form id="manual-form" class="manual-form" novalidate>
-        <label class="log-field"><span>训练名称</span><input data-log-field="title" placeholder="力量训练" value="${escape(entry.title)}"></label>
+        <label class="log-field log-title-field"><span>训练名称</span><input data-log-field="title" placeholder="力量训练" value="${escape(entry.title)}"></label>
         <h3 class="log-section-head">动作明细</h3>
         ${entry.exercises.map(exerciseView).join('')}
         ${logButton('add-exercise', `${app.icon('plus', 18)}添加动作`, 'secondary log-add-exercise')}
