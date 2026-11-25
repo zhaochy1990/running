@@ -126,17 +126,18 @@ type TaskProgress struct {
 }
 
 type TaskView struct {
-	ID           string       `json:"id"`
-	AgentVersion string       `json:"agent_version"`
-	Status       string       `json:"status"`
-	ScenarioID   string       `json:"scenario_id"`
-	Progress     TaskProgress `json:"progress"`
-	Replicas     int          `json:"replicas"`
-	EnvNames     []string     `json:"env_names"`
-	LaunchError  string       `json:"launch_error"`
-	CreatedAt    time.Time    `json:"created_at"`
-	UpdatedAt    time.Time    `json:"updated_at"`
-	CompletedAt  *time.Time   `json:"completed_at"`
+	ID            string       `json:"id"`
+	AgentVersion  string       `json:"agent_version"`
+	Status        string       `json:"status"`
+	ScenarioID    string       `json:"scenario_id"`
+	Progress      TaskProgress `json:"progress"`
+	Replicas      int          `json:"replicas"`
+	EnvNames      []string     `json:"env_names"`
+	LaunchError   string       `json:"launch_error"`
+	LaunchPending bool         `json:"launch_pending"`
+	CreatedAt     time.Time    `json:"created_at"`
+	UpdatedAt     time.Time    `json:"updated_at"`
+	CompletedAt   *time.Time   `json:"completed_at"`
 }
 
 type ScenarioView struct {
@@ -346,32 +347,52 @@ func (s *Service) CreateTask(ctx context.Context, submitter, idempotencyKey stri
 	if derr != nil {
 		return nil, false, s.mapStorageError(derr)
 	}
-	view, verr := s.TaskDetail(ctx, created.ID)
-	if verr != nil {
-		return nil, false, verr
+	if launchErr := s.launchAndRecord(ctx, created); launchErr != nil {
+		return nil, replayed, launchErr
 	}
-	if replayed && (created.LaunchedAt != nil || created.CompletedAt != nil) {
-		return view, true, nil
+	view, viewErr := s.TaskDetail(ctx, created.ID)
+	return view, replayed, viewErr
+}
+
+// RetryLaunch restarts a frozen task without requiring the original browser to
+// retain the idempotency key or the model credentials.
+func (s *Service) RetryLaunch(ctx context.Context, id string) (*TaskDetailView, *Error) {
+	s.runtimeMu.Lock()
+	defer s.runtimeMu.Unlock()
+	task, err := s.store.GetPlanEvalTask(ctx, id)
+	if err != nil {
+		return nil, s.mapStorageError(err)
+	}
+	if launchErr := s.launchAndRecord(ctx, task); launchErr != nil {
+		return nil, launchErr
+	}
+	return s.TaskDetail(ctx, task.ID)
+}
+
+func (s *Service) launchAndRecord(ctx context.Context, task *storage.PlanEvalTask) *Error {
+	if task.LaunchedAt != nil || task.CompletedAt != nil {
+		return nil
+	}
+	if !s.knownVersion(task.AgentVersion) {
+		return fail(422, "invalid_request", "该任务的 Agent 版本已停用。")
 	}
 	// Once frozen, finish the launch attempt even if the browser disconnects.
 	// Any unconfirmed publish can be retried with the original task key.
 	launchCtx, cancelLaunch := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-	lerr := s.launch(launchCtx, created)
+	lerr := s.launch(launchCtx, task)
 	cancelLaunch()
 	resultCtx, cancelResult := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancelResult()
 	if lerr != nil {
-		if uerr := s.store.RecordPlanEvalLaunch(resultCtx, created.ID, lerr.Error()); uerr != nil {
+		if uerr := s.store.RecordPlanEvalLaunch(resultCtx, task.ID, lerr.Error()); uerr != nil {
 			s.log.Error("plan-eval: record launch error", zap.Error(uerr))
 		}
-		view.LaunchError = lerr.Error()
-		return view, replayed, &Error{Status: 502, Code: "launch_failed", Detail: lerr.Error(), Extra: map[string]any{"task_id": created.ID}}
+		return &Error{Status: 502, Code: "launch_failed", Detail: lerr.Error(), Extra: map[string]any{"task_id": task.ID}}
 	}
-	if uerr := s.store.RecordPlanEvalLaunch(resultCtx, created.ID, ""); uerr != nil {
-		s.log.Error("plan-eval: record successful start", zap.Error(uerr))
+	if uerr := s.store.RecordPlanEvalLaunch(resultCtx, task.ID, ""); uerr != nil {
+		return s.internal(uerr)
 	}
-	view.LaunchError = ""
-	return view, replayed, nil
+	return nil
 }
 
 func (s *Service) internal(err error) *Error {
@@ -567,7 +588,8 @@ func (s *Service) taskViews(ctx context.Context, tasks []storage.PlanEvalTask) (
 			ID: task.ID, AgentVersion: task.AgentVersion, Status: task.Status, ScenarioID: task.ScenarioID,
 			Progress: TaskProgress{Total: int(count.Total), Finished: int(count.Finished), GenerateFailed: int(count.GenerateFailed), RuleFailed: int(count.RuleFailed)},
 			EnvNames: []string{}, LaunchError: task.LaunchError,
-			CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt, CompletedAt: task.CompletedAt,
+			LaunchPending: task.LaunchedAt == nil && task.CompletedAt == nil && s.knownVersion(task.AgentVersion),
+			CreatedAt:     task.CreatedAt, UpdatedAt: task.UpdatedAt, CompletedAt: task.CompletedAt,
 		}
 		if task.LaunchEnvNames != "" {
 			view.Replicas = task.LaunchReplicas

@@ -524,6 +524,18 @@ func TestHTTP_ConcurrentCreateReplaysOneLaunch(t *testing.T) {
 	}
 }
 
+func TestHTTP_ExplicitConfigCanBeReusedWithMultipleVariables(t *testing.T) {
+	h := openHarness(t)
+	path := "/api/admin/plan-eval/tasks"
+	request := h.createBody([2]string{"DEEPSEEK_API_KEY", "test-key"}, [2]string{"ANOTHER_KEY", "test-value"})
+	for range 2 {
+		res := h.admin(http.MethodPost, path, request, map[string]string{"Idempotency-Key": uuid.NewString()})
+		if res.status != http.StatusCreated {
+			t.Fatalf("reuse explicit configuration: %d %s", res.status, res.body)
+		}
+	}
+}
+
 func TestHTTP_CleanupRequiresAnIdleVersion(t *testing.T) {
 	h := openHarness(t)
 	path := "/api/admin/plan-eval/agent-versions/" + h.version + "/cleanup"
@@ -591,13 +603,17 @@ func TestHTTP_LaunchFailureKeepsTheTaskAndReportsIt(t *testing.T) {
 		t.Fatalf("detail after a failed launch: %s", mustJSON(detail))
 	}
 	h.broker.publish = nil
-	retry := h.admin(http.MethodPost, "/api/admin/plan-eval/tasks", h.createBody(), key)
+	retry := h.admin(http.MethodPost, "/api/admin/plan-eval/tasks/"+body["task_id"].(string)+"/retry-launch", nil, nil)
 	if retry.status != http.StatusOK {
 		t.Fatalf("retry launch: %d %s", retry.status, retry.body)
 	}
 	retried := h.json(retry)
 	if retried["id"] != body["task_id"] || retried["launch_error"] != "" || len(h.broker.queues[QueueName(h.version)]) != 1 {
 		t.Fatalf("retry must start the original task: %s", retry.body)
+	}
+	replay := h.admin(http.MethodPost, "/api/admin/plan-eval/tasks", h.createBody(), key)
+	if replay.status != http.StatusOK || len(h.broker.queues[QueueName(h.version)]) != 1 {
+		t.Fatalf("retrying original request after a successful launch must be idempotent: %d %s", replay.status, replay.body)
 	}
 }
 

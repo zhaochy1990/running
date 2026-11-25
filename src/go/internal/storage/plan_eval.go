@@ -177,7 +177,7 @@ func (s *Store) CreatePlanEvalTask(ctx context.Context, in *PlanEvalTaskCreate) 
 		case err == nil:
 			// An empty variable set means "keep what this version already runs
 			// with"; any other set must match the active values as well.
-			if in.LaunchConfig.EnvNames != "[]" && (current.EnvNames != in.LaunchConfig.EnvNames || current.EnvFingerprint != in.LaunchConfig.EnvFingerprint) {
+			if in.LaunchConfig.EnvNames != "[]" && current.EnvFingerprint != in.LaunchConfig.EnvFingerprint {
 				return &PlanEvalLaunchConfigConflictError{}
 			}
 			if err := tx.Model(&PlanEvalLaunchConfig{}).Where("id = ?", current.ID).

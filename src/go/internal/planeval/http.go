@@ -32,6 +32,7 @@ func (s *Service) Router(adminAuth gin.HandlerFunc, adminID func(*gin.Context) s
 	admin.POST("/tasks", func(c *gin.Context) { s.handleCreateTask(c, adminID(c)) })
 	admin.GET("/tasks", s.handleListTasks)
 	admin.GET("/tasks/:id", s.handleTaskDetail)
+	admin.POST("/tasks/:id/retry-launch", s.handleRetryLaunch)
 	admin.GET("/artifacts/:id", s.handleArtifact)
 
 	worker := r.Group(internalPrefix, workerAuth(workerToken))
@@ -110,6 +111,15 @@ func (s *Service) handleListTasks(c *gin.Context) {
 
 func (s *Service) handleTaskDetail(c *gin.Context) {
 	view, err := s.TaskDetail(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, view)
+}
+
+func (s *Service) handleRetryLaunch(c *gin.Context) {
+	view, err := s.RetryLaunch(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		writeError(c, err)
 		return

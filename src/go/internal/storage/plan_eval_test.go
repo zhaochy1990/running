@@ -32,7 +32,7 @@ func openPlanEvalStore(t *testing.T) *Store {
 func newPlanEvalTaskCreate(version, envNames string, executions int) *PlanEvalTaskCreate {
 	in := &PlanEvalTaskCreate{
 		Task:         &PlanEvalTask{ID: uuid.NewString(), AgentVersion: version, Submitter: "admin-" + uuid.NewString(), IdempotencyKey: uuid.NewString(), ParamsFingerprint: "f"},
-		LaunchConfig: &PlanEvalLaunchConfig{ID: uuid.NewString(), AgentVersion: version, Replicas: 1, EnvNames: envNames},
+		LaunchConfig: &PlanEvalLaunchConfig{ID: uuid.NewString(), AgentVersion: version, Replicas: 1, EnvNames: envNames, EnvFingerprint: envNames},
 		EnvCipher:    []byte("cipher"),
 	}
 	for range executions {
