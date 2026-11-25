@@ -252,6 +252,12 @@ func TestOnboardingSyncHistoricalOldBindingFailureDoesNotBlockNewSession(t *test
 	if err := h.store.DeleteCredential(ctx, old.UserID, old.Provider); err != nil {
 		t.Fatal(err)
 	}
+	accountID := "garmin-onboarding-test"
+	if err := h.store.SaveCredential(ctx, &storage.ProviderCredential{
+		UserID: old.UserID, Provider: "garmin", ProviderUserID: &accountID, UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
 	current := claimHistoricalSession(t, h, old.UserID, "garmin")
 	if current.BindingRevision <= old.BindingRevision {
 		t.Fatal("the rebind must have a fresh revision")
