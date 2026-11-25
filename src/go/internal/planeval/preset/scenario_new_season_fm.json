@@ -1,0 +1,86 @@
+{
+  "id": "preset-new-season-fm",
+  "name": "新建赛季 · 脱敏全马样本 3:10",
+  "artifact_type": "master_plan",
+  "as_of": "2026-10-23T23:59:59+08:00",
+  "rules": [
+    {
+      "id": "weekly_run_days",
+      "version": 1
+    }
+  ],
+  "request": {
+    "request_id": "plan-eval-preset",
+    "requested_mode": "new_season",
+    "requested_modifiers": [],
+    "goals": [
+      {
+        "race_name": "全马目标赛",
+        "distance": "FM",
+        "race_date": "2027-03-21",
+        "target_time": "3:10:00",
+        "finish_only": false,
+        "priority": "A"
+      }
+    ],
+    "availability": {
+      "weekly_run_days_max": 5,
+      "available_training_windows": [
+        {
+          "day": "monday",
+          "start_time": "00:00",
+          "end_time": "23:59"
+        },
+        {
+          "day": "tuesday",
+          "start_time": "00:00",
+          "end_time": "23:59"
+        },
+        {
+          "day": "wednesday",
+          "start_time": "00:00",
+          "end_time": "23:59"
+        },
+        {
+          "day": "thursday",
+          "start_time": "00:00",
+          "end_time": "23:59"
+        },
+        {
+          "day": "friday",
+          "start_time": "00:00",
+          "end_time": "23:59"
+        },
+        {
+          "day": "saturday",
+          "start_time": "00:00",
+          "end_time": "23:59"
+        },
+        {
+          "day": "sunday",
+          "start_time": "00:00",
+          "end_time": "23:59"
+        }
+      ],
+      "unavailable_days": [],
+      "max_session_duration_min": 180,
+      "allows_double_sessions": false,
+      "preferred_long_run_day": "sunday",
+      "strength_sessions_per_week": 0,
+      "strength_available_days": []
+    },
+    "injury_declarations": [],
+    "environment_constraints": [],
+    "travel_constraints": [],
+    "preferences": [],
+    "prohibited_arrangements": [],
+    "active_plan_action": "none",
+    "user_confirmations": {
+      "intake_complete": true,
+      "goals_confirmed": true,
+      "availability_confirmed": true,
+      "injury_history_confirmed": true,
+      "constraints_confirmed": true
+    }
+  }
+}

@@ -7,6 +7,8 @@ import { loadWorkerConfig } from "./config.js";
 import { coachAgentConfigFiles, workerConfigFiles } from "./configPaths.js";
 import { MySqlDataProvider } from "./data/mysqlDataProvider.js";
 import { createStridePool } from "./db/mysql.js";
+import { resolveWorkerMode } from "./eval/config.js";
+import { runEvalWorker } from "./eval/main.js";
 import { GoJobClient } from "./goClient/jobClient.js";
 import { GoWeeklyPlanClient } from "./goClient/weeklyPlanClient.js";
 import { PlanJobDispatcher } from "./job/dispatch.js";
@@ -20,6 +22,12 @@ const logger = getLogger("plan-job/main");
  * logic lives in `kernel/`, `app/`, and the domain modules.
  */
 async function main(): Promise<void> {
+  // 启动模式先于一切依赖初始化生效（devops#1047）：测评模式不碰运动员库与 Go internal
+  // API，未知模式直接报错退出。
+  if (resolveWorkerMode() === "eval") {
+    await runEvalWorker();
+    return;
+  }
   const workerConfig = loadWorkerConfig({ configFiles: workerConfigFiles(import.meta.url) });
   const coachConfig = loadConfig({ configFiles: coachAgentConfigFiles(import.meta.url) });
 

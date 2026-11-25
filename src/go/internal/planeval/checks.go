@@ -1,0 +1,400 @@
+// Package planeval is the training-plan evaluation service (devops#1055): it
+// freezes inputs for a published Coach Agent version, hands them to that
+// version's worker over RabbitMQ, and judges the artifacts it returns.
+package planeval
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"runtime"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/dop251/goja"
+	"github.com/santhosh-tekuri/jsonschema/v6"
+	"github.com/zhaochy1990/stride/internal/api"
+)
+
+// CheckInput is the read-only packet one check receives for one snapshot
+// execution (devops#1049): the artifact, the runner snapshot, the frozen
+// scenario request and the frozen execution instant.
+type CheckInput struct {
+	Artifact json.RawMessage `json:"artifact"`
+	Snapshot json.RawMessage `json:"snapshot"`
+	Scenario ScenarioInput   `json:"scenario"`
+	AsOf     string          `json:"as_of"`
+}
+
+// ScenarioInput names the scenario and carries its frozen generation request.
+type ScenarioInput struct {
+	ScenarioID string          `json:"scenario_id"`
+	Request    json.RawMessage `json:"request"`
+}
+
+// CheckResult is the unified verdict: pass, fail or error.
+type CheckResult struct {
+	CheckID string          `json:"check_id"`
+	Version int             `json:"version"`
+	Status  string          `json:"status"`
+	Reason  string          `json:"reason"`
+	Detail  json.RawMessage `json:"detail,omitempty"`
+	Error   *CheckError     `json:"error,omitempty"`
+}
+
+// CheckError is a structured execution error (not a "did not pass").
+type CheckError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// Check is the seam every judge implements. The SchemaCheck is the gate an
+// artifact must pass before business rules (StaticRuleCheck, and later LLM
+// judges) see it. Implementations never mutate their input and never touch
+// anything outside it.
+type Check interface {
+	ID() string
+	Run(ctx context.Context, input CheckInput) CheckResult
+}
+
+// DefaultRuleMemoryLimit is the heap growth one rule run may cause before it
+// is interrupted (best-effort guard on a shared heap).
+const DefaultRuleMemoryLimit int64 = 64 << 20
+
+// SchemaCheckID is the check_id the schema gate is recorded under.
+const SchemaCheckID = "schema"
+
+// SchemaCheck validates an artifact's raw content against the existing
+// contracts: the season plan snapshot and every weekly plan in it.
+type SchemaCheck struct{}
+
+func (SchemaCheck) ID() string { return SchemaCheckID }
+
+func (c SchemaCheck) Run(_ context.Context, input CheckInput) CheckResult {
+	result := CheckResult{CheckID: SchemaCheckID, Status: "pass"}
+	var envelope struct {
+		Type       string            `json:"type"`
+		Plan       json.RawMessage   `json:"plan"`
+		WeeklyDocs []json.RawMessage `json:"weekly_docs"`
+	}
+	if err := json.Unmarshal(input.Artifact, &envelope); err != nil {
+		return schemaFail(result, "artifact", "产物不是合法的 JSON 对象："+err.Error())
+	}
+	if envelope.Type != "master_plan" {
+		return schemaFail(result, "type", "产物类型应为 master_plan，实际为 "+fmt.Sprintf("%q", envelope.Type))
+	}
+	var plan any
+	if err := json.Unmarshal(envelope.Plan, &plan); err != nil {
+		return schemaFail(result, "plan", "赛季计划不是合法 JSON："+err.Error())
+	}
+	if err := api.ValidateMasterPlanSnapshot(plan); err != nil {
+		return schemaFail(result, "plan", schemaMessage(err))
+	}
+	for i, raw := range envelope.WeeklyDocs {
+		var doc map[string]any
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			return schemaFail(result, fmt.Sprintf("weekly_docs[%d]", i), "周课表不是合法 JSON 对象："+err.Error())
+		}
+		if err := api.ValidateWeeklyPlanContract(doc); err != nil {
+			return schemaFail(result, fmt.Sprintf("weekly_docs[%d]", i), err.Error())
+		}
+	}
+	result.Reason = fmt.Sprintf("赛季计划与 %d 份首批周课表均符合契约", len(envelope.WeeklyDocs))
+	return result
+}
+
+func schemaFail(result CheckResult, path, message string) CheckResult {
+	result.Status = "fail"
+	result.Reason = "产物不符合现有契约。"
+	result.Detail, _ = json.Marshal(map[string]any{"errors": []map[string]string{{"path": path, "message": message}}})
+	return result
+}
+
+// schemaMessage flattens a JSON Schema validation error into "path: reason".
+func schemaMessage(err error) string {
+	var validation *jsonschema.ValidationError
+	if !asValidationError(err, &validation) {
+		return err.Error()
+	}
+	leaf := validation
+	for len(leaf.Causes) > 0 {
+		leaf = leaf.Causes[0]
+	}
+	// A leaf's Error() is "jsonschema validation … at '/instance/path'".
+	return leaf.Error()
+}
+
+func asValidationError(err error, target **jsonschema.ValidationError) bool {
+	for err != nil {
+		if v, ok := err.(*jsonschema.ValidationError); ok {
+			*target = v
+			return true
+		}
+		unwrapper, ok := err.(interface{ Unwrap() error })
+		if !ok {
+			return false
+		}
+		err = unwrapper.Unwrap()
+	}
+	return false
+}
+
+// StaticRuleCheck runs one frozen JavaScript rule (`run(input)`) in an
+// isolated interpreter: no host capabilities, a frozen clock and seeded
+// randomness, a read-only input and hard time/memory budgets.
+type StaticRuleCheck struct {
+	CheckID     string
+	Version     int
+	Source      string
+	Timeout     time.Duration
+	MemoryLimit int64 // bytes of heap growth this rule may cause; <= 0 disables the guard
+}
+
+func (c StaticRuleCheck) ID() string { return c.CheckID }
+
+func (c StaticRuleCheck) Run(ctx context.Context, input CheckInput) CheckResult {
+	result := CheckResult{CheckID: c.CheckID, Version: c.Version}
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		return ruleError(result, "rule_input_unserializable", err.Error())
+	}
+	value, err := runJavaScript(ctx, c.Source, inputJSON, input.AsOf, c.Timeout, c.MemoryLimit)
+	if err != nil {
+		return ruleError(result, ruleErrorCode(err), err.Error())
+	}
+	var verdict struct {
+		Status     string          `json:"status"`
+		Reason     string          `json:"reason"`
+		Violations json.RawMessage `json:"violations"`
+		Error      *CheckError     `json:"error"`
+	}
+	if err := json.Unmarshal(value, &verdict); err != nil {
+		return ruleError(result, "rule_result_invalid", "run(input) 的返回值不是合法的 JSON 对象")
+	}
+	switch verdict.Status {
+	case "pass", "fail":
+		if len(verdict.Violations) > 0 {
+			result.Detail = verdict.Violations
+		}
+		result.Status, result.Reason = verdict.Status, verdict.Reason
+		return result
+	case "error":
+		if verdict.Error == nil || verdict.Error.Code == "" {
+			return ruleError(result, "rule_result_invalid", "error 结果必须带 error.code 与 error.message")
+		}
+		result.Status, result.Reason, result.Error = "error", verdict.Reason, verdict.Error
+		return result
+	}
+	return ruleError(result, "rule_result_invalid", fmt.Sprintf("status 应为 pass / fail / error，实际为 %q", verdict.Status))
+}
+
+func ruleError(result CheckResult, code, message string) CheckResult {
+	result.Status = "error"
+	result.Error = &CheckError{Code: code, Message: message}
+	return result
+}
+
+// Error codes a failed rule run is reported under.
+const (
+	errRuleTimeout       = "rule_timeout"
+	errRuleMemory        = "rule_memory_exceeded"
+	errRuleSyntax        = "rule_source_invalid"
+	errRuleThrew         = "rule_runtime_error"
+	errRuleNoEntry       = "rule_entry_missing"
+	errRuleBusy          = "rule_busy"
+	errRuleResultInvalid = "rule_result_invalid"
+)
+
+// ruleError is the sentinel family runJavaScript fails with; the code tells a
+// broken rule (author's fault) from an overload (ours).
+type ruleRunError struct{ code string }
+
+func (e *ruleRunError) Error() string { return e.code }
+
+func ruleErrorCode(err error) string {
+	var re *ruleRunError
+	if asRuleError(err, &re) {
+		return re.code
+	}
+	return errRuleThrew
+}
+
+func asRuleError(err error, target **ruleRunError) bool {
+	for err != nil {
+		if v, ok := err.(*ruleRunError); ok {
+			*target = v
+			return true
+		}
+		unwrapper, ok := err.(interface{ Unwrap() error })
+		if !ok {
+			return false
+		}
+		err = unwrapper.Unwrap()
+	}
+	return false
+}
+
+// bootstrap runs before every rule in a fresh interpreter: it pins the clock
+// to the frozen instant, seeds Math.random and returns the input deep-frozen
+// and bound to nothing global — it reaches the rule as run()'s argument.
+const ruleBootstrap = `
+(function () {
+  var AS_OF = __asOf;
+  var inputJSON = __inputJSON;
+  var RealDate = Date;
+  function FrozenDate() {
+    var args = Array.prototype.slice.call(arguments);
+    if (!(this instanceof FrozenDate)) { return new RealDate(AS_OF).toString(); }
+    return args.length === 0 ? new RealDate(AS_OF) : new (RealDate.bind.apply(RealDate, [null].concat(args)))();
+  }
+  FrozenDate.prototype = RealDate.prototype;
+  FrozenDate.now = function () { return AS_OF; };
+  FrozenDate.parse = RealDate.parse;
+  FrozenDate.UTC = RealDate.UTC;
+  Object.defineProperty(globalThis, "Date", { value: FrozenDate, writable: false, configurable: false });
+
+  var seed = 0x9e3779b9 >>> 0;
+  function seededRandom() {
+    seed = (seed + 0x6d2b79f5) >>> 0;
+    var t = seed;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+  Object.defineProperty(Math, "random", { value: seededRandom, writable: false, configurable: false });
+  Object.freeze(Math);
+
+  function deepFreeze(node) {
+    if (node && typeof node === "object" && !Object.isFrozen(node)) {
+      Object.freeze(node);
+      Object.keys(node).forEach(function (key) { deepFreeze(node[key]); });
+    }
+    return node;
+  }
+  delete globalThis.__inputJSON;
+  delete globalThis.__asOf;
+  return deepFreeze(JSON.parse(inputJSON));
+})();
+`
+
+// runJavaScript evaluates the rule program and calls its `run` with the frozen
+// input, returning run's result as JSON.
+func runJavaScript(ctx context.Context, source string, inputJSON []byte, asOf string, timeout time.Duration, memoryLimit int64) ([]byte, error) {
+	asOfMs, err := instantMillis(asOf)
+	if err != nil {
+		return nil, &ruleRunError{code: errRuleInputInvalid}
+	}
+	type outcome struct {
+		value json.RawMessage
+		err   error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		value, err := runJavaScriptSync(source, inputJSON, asOfMs, timeout, memoryLimit)
+		done <- outcome{value: value, err: err}
+	}()
+	select {
+	case out := <-done:
+		return out.value, out.err
+	case <-ctx.Done():
+		return nil, &ruleRunError{code: errRuleBusy}
+	}
+}
+
+func runJavaScriptSync(source string, inputJSON []byte, asOfMs int64, timeout time.Duration, memoryLimit int64) (json.RawMessage, error) {
+	vm := goja.New()
+	// Stop conditions: the deadline always; heap growth when a budget is set.
+	var memStats runtime.MemStats
+	if memoryLimit > 0 {
+		runtime.ReadMemStats(&memStats)
+	}
+	baseline := memStats.HeapAlloc
+	stop := make(chan struct{})
+	var once atomic.Bool
+	interrupt := func(reason string) {
+		if once.CompareAndSwap(false, true) {
+			vm.Interrupt(reason)
+		}
+	}
+	timer := time.AfterFunc(timeout, func() { interrupt(errRuleTimeout) })
+	if memoryLimit > 0 {
+		go func() {
+			ticker := time.NewTicker(10 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-stop:
+					return
+				case <-ticker.C:
+					var current runtime.MemStats
+					runtime.ReadMemStats(&current)
+					if int64(current.HeapAlloc) > int64(baseline)+memoryLimit {
+						interrupt(errRuleMemory)
+						return
+					}
+				}
+			}
+		}()
+	}
+	defer func() {
+		close(stop)
+		timer.Stop()
+		vm.ClearInterrupt()
+	}()
+
+	if err := vm.Set("__inputJSON", string(inputJSON)); err != nil {
+		return nil, fmt.Errorf("rule runtime: %w", err)
+	}
+	if err := vm.Set("__asOf", asOfMs); err != nil {
+		return nil, fmt.Errorf("rule runtime: %w", err)
+	}
+	frozenInput, err := vm.RunString(ruleBootstrap)
+	if err != nil {
+		return nil, fmt.Errorf("rule runtime bootstrap: %w", err)
+	}
+	program, err := goja.Compile("rule", source, false)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", &ruleRunError{code: errRuleSyntax}, err)
+	}
+	if _, err := vm.RunProgram(program); err != nil {
+		return nil, ruleFailure(err)
+	}
+	entry, ok := goja.AssertFunction(vm.Get("run"))
+	if !ok {
+		return nil, &ruleRunError{code: errRuleNoEntry}
+	}
+	value, err := entry(goja.Undefined(), frozenInput)
+	if err != nil {
+		return nil, ruleFailure(err)
+	}
+	exported := value.Export()
+	encoded, err := json.Marshal(exported)
+	if err != nil {
+		return nil, &ruleRunError{code: errRuleResultInvalid}
+	}
+	return encoded, nil
+}
+
+// ruleFailure maps an interpreter failure to a code: our interrupts are
+// budget outcomes, anything else is the rule throwing.
+func ruleFailure(err error) error {
+	if strings.Contains(err.Error(), errRuleTimeout) {
+		return fmt.Errorf("%w: exceeded %s", &ruleRunError{code: errRuleTimeout}, "the time budget")
+	}
+	if strings.Contains(err.Error(), errRuleMemory) {
+		return fmt.Errorf("%w: exceeded the memory budget", &ruleRunError{code: errRuleMemory})
+	}
+	return fmt.Errorf("%w: %v", &ruleRunError{code: errRuleThrew}, err)
+}
+
+func instantMillis(asOf string) (int64, error) {
+	instant, err := time.Parse(time.RFC3339Nano, asOf)
+	if err != nil {
+		return 0, fmt.Errorf("%w: as_of %q is not an ISO 8601 instant", &ruleRunError{code: errRuleInputInvalid}, asOf)
+	}
+	return instant.UnixMilli(), nil
+}
+
+// errRuleInputInvalid marks a frozen input the rule runtime cannot present.
+const errRuleInputInvalid = "rule_input_invalid"

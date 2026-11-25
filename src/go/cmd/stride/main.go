@@ -12,6 +12,7 @@
 //	stride homecity          detect each user's resident city (read-only; --write persists via the weekly pipeline's recompute)
 //	stride tsblob backfill   migrate stock activities to timeseries blobs (devops#785, resumable)
 //	stride tsblob audit      reconcile rows vs blob pointers vs bucket objects (read-only)
+//	stride plan-eval         training-plan evaluation API: frozen inputs, eval workers, checks
 //
 // Each subcommand stays thin: parse flags via cobra, wire dependencies, run.
 // All logic lives in internal/.
@@ -92,6 +93,7 @@ func newRootCmd() *cobra.Command {
 		newHomeCityCmd(),
 		newTSBlobCmd(),
 		newCalibrationCmd(),
+		newPlanEvalCmd(),
 	)
 	return root
 }

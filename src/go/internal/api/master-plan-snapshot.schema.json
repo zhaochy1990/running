@@ -1,0 +1,690 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stride-running.cn/schemas/master-plan-snapshot.json",
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "const": "draft"
+    },
+    "goal": {
+      "type": "object",
+      "properties": {
+        "race_name": {
+          "type": "string"
+        },
+        "distance": {
+          "type": "string",
+          "enum": [
+            "FM",
+            "HM"
+          ]
+        },
+        "race_date": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "target_time": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string",
+          "const": "Asia/Shanghai"
+        },
+        "location": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "race_name",
+        "distance",
+        "race_date",
+        "target_time",
+        "timezone"
+      ],
+      "additionalProperties": false
+    },
+    "start_date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "end_date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "total_weeks": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "phases": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "base",
+              "build",
+              "speed",
+              "marathon",
+              "taper",
+              "recovery"
+            ]
+          },
+          "start_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "end_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "focus": {
+            "type": "string"
+          },
+          "weekly_distance_km_low": {
+            "type": "number",
+            "minimum": 0
+          },
+          "weekly_distance_km_high": {
+            "type": "number",
+            "minimum": 0
+          },
+          "key_session_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "milestones": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "race",
+                    "test_run",
+                    "long_run",
+                    "strength_test",
+                    "body_composition"
+                  ]
+                },
+                "date": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                "target": {
+                  "type": "string"
+                },
+                "completed_actual": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "date",
+                "target",
+                "completed_actual"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "key_workouts": {
+            "type": "string"
+          },
+          "monitoring_triggers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "coach_note": {
+            "type": "string"
+          },
+          "strength": {
+            "type": "object",
+            "properties": {
+              "sessions_per_week": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "focus": {
+                "type": "string",
+                "minLength": 1
+              },
+              "timing": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "sessions_per_week",
+              "focus",
+              "timing"
+            ],
+            "additionalProperties": false
+          },
+          "recovery": {
+            "type": "object",
+            "properties": {
+              "focus": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sleep_target_hours": {
+                "type": "string",
+                "minLength": 1
+              },
+              "adjustment_trigger": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "focus",
+              "sleep_target_hours",
+              "adjustment_trigger"
+            ],
+            "additionalProperties": false
+          },
+          "is_completed": {
+            "type": "boolean"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "start_date",
+          "end_date",
+          "focus",
+          "weekly_distance_km_low",
+          "weekly_distance_km_high",
+          "key_session_types",
+          "milestones",
+          "key_workouts",
+          "monitoring_triggers",
+          "coach_note",
+          "strength",
+          "recovery",
+          "is_completed",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "weeks": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "week_index": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "week_start": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "phase_name": {
+            "type": "string",
+            "enum": [
+              "base",
+              "build",
+              "speed",
+              "marathon",
+              "taper",
+              "recovery"
+            ]
+          },
+          "target_weekly_km_low": {
+            "type": "number",
+            "minimum": 0
+          },
+          "target_weekly_km_high": {
+            "type": "number",
+            "minimum": 0
+          },
+          "key_sessions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "long_run",
+                    "threshold",
+                    "tempo",
+                    "interval",
+                    "vo2max",
+                    "hill",
+                    "race_pace",
+                    "time_trial",
+                    "tune_up_race",
+                    "race",
+                    "strength_key"
+                  ],
+                  "description": "Classify the complete standalone workout, not an interval or pace segment embedded inside another workout."
+                },
+                "distance_km": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Total distance of this complete workout. Do not put only the distance of its work intervals here."
+                },
+                "duration_min": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Total elapsed duration of this complete workout, including warm-up, recoveries, and cool-down; not only work-interval time."
+                },
+                "intensity": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Describe every component of this one workout here, including any race-pace blocks embedded in a long run."
+                },
+                "purpose": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "workout_structure": {
+                  "description": "Canonical running-workout blocks. Repeated interval work and recovery belong in the same block.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "schema": {
+                          "type": "string",
+                          "const": "run-workout/v1"
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "date": {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                        },
+                        "note": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "type": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "E",
+                                "M",
+                                "T",
+                                "I",
+                                "R",
+                                "LR"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "purpose": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "blocks": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "repeat": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "steps": {
+                                "minItems": 1,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "step_kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "warmup",
+                                        "work",
+                                        "recovery",
+                                        "cooldown",
+                                        "rest"
+                                      ]
+                                    },
+                                    "duration": {
+                                      "oneOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "distance_m",
+                                                "time_s"
+                                              ]
+                                            },
+                                            "value": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "const": "open"
+                                            },
+                                            "value": {
+                                              "type": "null"
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      ]
+                                    },
+                                    "target": {
+                                      "oneOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "pace_s_km",
+                                                "hr_bpm",
+                                                "power_w",
+                                                "cadence_spm"
+                                              ]
+                                            },
+                                            "low": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "high": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "low",
+                                            "high"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "const": "open"
+                                            },
+                                            "low": {
+                                              "type": "null"
+                                            },
+                                            "high": {
+                                              "type": "null"
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "low",
+                                            "high"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      ]
+                                    },
+                                    "note": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "hr_cap_bpm": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "rest": {
+                                      "oneOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "time_s",
+                                                "hr_bpm"
+                                              ]
+                                            },
+                                            "value": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "const": "manual"
+                                            },
+                                            "value": {
+                                              "type": "null"
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "step_kind",
+                                    "duration",
+                                    "target",
+                                    "note",
+                                    "hr_cap_bpm"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              }
+                            },
+                            "required": [
+                              "repeat",
+                              "steps"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "schema",
+                        "name",
+                        "date",
+                        "note",
+                        "blocks"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "distance_km",
+                "duration_min",
+                "intensity",
+                "purpose"
+              ],
+              "additionalProperties": false,
+              "description": "Exactly one independently performed workout. Embedded blocks are components of this object and must not be repeated as sibling key_sessions."
+            }
+          },
+          "is_recovery_week": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "week_index",
+          "week_start",
+          "phase_name",
+          "target_weekly_km_low",
+          "target_weekly_km_high",
+          "key_sessions",
+          "is_recovery_week"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "training_principles": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "generated_by": {
+      "type": "string",
+      "const": "coach_agent"
+    },
+    "version": {
+      "type": "number",
+      "const": 1
+    },
+    "created_at": {
+      "type": "string",
+      "pattern": "(?:Z|[+-]00:00)$"
+    },
+    "updated_at": {
+      "type": "string",
+      "pattern": "(?:Z|[+-]00:00)$"
+    }
+  },
+  "required": [
+    "status",
+    "goal",
+    "start_date",
+    "end_date",
+    "total_weeks",
+    "phases",
+    "weeks",
+    "training_principles",
+    "generated_by",
+    "version",
+    "created_at",
+    "updated_at"
+  ],
+  "additionalProperties": false
+}

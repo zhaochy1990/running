@@ -456,3 +456,95 @@ func MustLoadAPIFrom(path string) *APIConfig {
 	xviper.MustLoadConfig(EnvPrefix, path, &cfg)
 	return &cfg
 }
+
+// --- cmd/plan-eval configuration ----------------------------------------------
+//
+// The plan-evaluation API (devops#1055) is an internal administrator service in
+// the same binary: it freezes inputs, starts per-version eval workers and
+// evaluates artifacts. It owns a dedicated MySQL database and never touches the
+// production user database, so it loads its own struct with its own section.
+
+// PlanEvalConfig is the fully-resolved configuration for `stride plan-eval`.
+type PlanEvalConfig struct {
+	Logger   logger.LoggerConfig `mapstructure:"logger"`
+	PlanEval PlanEval            `mapstructure:"plan-eval"`
+}
+
+// PlanEval holds the plan-evaluation API knobs. Every secret (DSN, AMQP URL,
+// worker token, secret key) is supplied via STRIDE_WORKER_PLAN_EVAL_* and is
+// never committed.
+type PlanEval struct {
+	// Addr is the listen address, e.g. ":8080".
+	Addr string `mapstructure:"addr" validate:"required"`
+	// MySQLDSN points at the dedicated plan-eval database (separate from `stride`).
+	MySQLDSN string `mapstructure:"mysql-dsn" validate:"required"`
+	// AMQPURL is the broker the eval queues live on (same broker as production,
+	// separate per-version queues).
+	AMQPURL string `mapstructure:"amqp-url" validate:"required"`
+	// RabbitManagementURL is the broker's management API origin, used to read
+	// ready/unacknowledged counts before a worker Deployment may be deleted. It
+	// authenticates with the user embedded in amqp-url.
+	RabbitManagementURL string `mapstructure:"rabbit-management-url" validate:"required"`
+	// WorkerToken authenticates eval workers on the internal routes
+	// (X-Plan-Eval-Token). A separate identity from admins and from the Go API's
+	// X-Internal-Token.
+	WorkerToken string `mapstructure:"worker-token" validate:"required"`
+	// SecretKey encrypts launch environment values (model API keys) at rest:
+	// 32 random bytes, base64.
+	SecretKey string `mapstructure:"secret-key" validate:"required"`
+	// WorkerImageRepository is the stride-coach-worker image repository; an agent
+	// version is one of its tags.
+	WorkerImageRepository string `mapstructure:"worker-image-repository" validate:"required"`
+	// AgentVersions lists the published worker tags that carry the eval entry.
+	// Empty means the workbench offers nothing to run.
+	AgentVersions []string `mapstructure:"agent-versions"`
+	// Deployer selects how eval workers are started: "kubernetes" (in-cluster
+	// Deployments per agent version) or "none" (messages are published, workers
+	// are started by hand — local runs without a cluster).
+	Deployer string `mapstructure:"deployer" validate:"required"`
+	// WorkerAPIURL is how eval workers reach this service; WorkerAMQPURL is the
+	// broker URL handed to them. Both are injected into the worker Deployment.
+	WorkerAPIURL  string `mapstructure:"worker-api-url"`
+	WorkerAMQPURL string `mapstructure:"worker-amqp-url"`
+	// WorkerPullSecret names the imagePullSecrets entry for eval workers
+	// ("" pulls anonymously).
+	WorkerPullSecret string `mapstructure:"worker-pull-secret"`
+	// KubernetesNamespace overrides the namespace the eval worker Deployments
+	// live in. Empty = the namespace of this pod's ServiceAccount.
+	KubernetesNamespace string `mapstructure:"kubernetes-namespace"`
+	// PresetSnapshotPath is a private runner snapshot JSON or gzip file.
+	PresetSnapshotPath string `mapstructure:"preset-snapshot-path"`
+	// LeaseTTL is how long a generate lease stays valid without a renewal
+	// before another worker may take the execution over.
+	LeaseTTL time.Duration `mapstructure:"lease-ttl"`
+	// RuleTimeout bounds one JavaScript rule run.
+	RuleTimeout time.Duration `mapstructure:"rule-timeout"`
+	// EvaluateSweepInterval is how often pending evaluations left behind by a
+	// crash are picked back up.
+	EvaluateSweepInterval time.Duration `mapstructure:"evaluate-sweep-interval"`
+	Auth                  PlanEvalAuth  `mapstructure:"auth"`
+}
+
+// PlanEvalAuth configures RS256 verification of administrator JWTs. Only the
+// admin audience is admitted; there is no end-user tier on this service.
+type PlanEvalAuth struct {
+	Issuer        string `mapstructure:"issuer" validate:"required"`
+	AdminAudience string `mapstructure:"admin-audience" validate:"required"`
+	PublicKeyPath string `mapstructure:"public-key-path" validate:"required"`
+}
+
+// MustLoadPlanEval loads the plan-eval configuration, panicking on any error.
+func MustLoadPlanEval() *PlanEvalConfig {
+	path := os.Getenv("CONFIG_PATH")
+	if path == "" {
+		path = DefaultConfigFile
+	}
+	return MustLoadPlanEvalFrom(path)
+}
+
+// MustLoadPlanEvalFrom loads plan-eval configuration from an explicit YAML path.
+func MustLoadPlanEvalFrom(path string) *PlanEvalConfig {
+	var cfg PlanEvalConfig
+	xviper.MustLoadConfig(EnvPrefix, path, &cfg)
+	return &cfg
+}

@@ -1,0 +1,201 @@
+package planeval
+
+import (
+	"context"
+	"crypto/tls"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
+	amqp "github.com/rabbitmq/amqp091-go"
+	"go.uber.org/zap"
+)
+
+// QueueName is the execution queue of one agent version. One version, one
+// durable queue, reused by every task on that version.
+func QueueName(agentVersion string) string { return "plan.eval.execute." + agentVersion }
+
+// ExecuteMessageSchemaVersion is the only message format this service emits.
+const ExecuteMessageSchemaVersion = 1
+
+// ExecuteMessage is the pointer message on a version queue: the format
+// version and the execution ID, nothing else. The frozen inputs are fetched
+// from the internal API (mirrors the TS worker's codec).
+type ExecuteMessage struct {
+	SchemaVersion       int    `json:"schema_version"`
+	SnapshotExecutionID string `json:"snapshot_execution_id"`
+}
+
+// QueueDepth is a queue's ready and unacknowledged message counts.
+type QueueDepth struct {
+	Ready   int `json:"ready"`
+	Unacked int `json:"unacked"`
+}
+
+// Broker publishes to the version queues and reads their depth from the
+// management API — AMQP passive declares report ready messages but not the
+// unacknowledged ones the cleanup gate also needs.
+type Broker struct {
+	amqpURL        string
+	vhostPath      string
+	managementURL  string
+	basicAuth      string
+	log            *zap.Logger
+	client         *http.Client
+	conn           *amqp.Connection
+	channel        *amqp.Channel
+	publishTimeout time.Duration
+}
+
+// NewBroker connects to the broker. The management credentials are the user
+// embedded in the AMQP URL, and the vhost is the URL's path ("/" by default).
+func NewBroker(amqpURL, managementURL string, log *zap.Logger) (*Broker, error) {
+	parsed, err := url.Parse(amqpURL)
+	if err != nil {
+		return nil, fmt.Errorf("plan-eval amqp-url: %w", err)
+	}
+	if parsed.User == nil {
+		return nil, errors.New("plan-eval amqp-url must carry the broker user")
+	}
+	password, _ := parsed.User.Password()
+	vhost := "/"
+	if trimmed := strings.TrimPrefix(parsed.Path, "/"); trimmed != "" {
+		vhost = trimmed
+	}
+	b := &Broker{
+		amqpURL:        amqpURL,
+		vhostPath:      url.PathEscape(vhost),
+		managementURL:  strings.TrimRight(managementURL, "/"),
+		basicAuth:      "Basic " + base64.StdEncoding.EncodeToString([]byte(parsed.User.Username()+":"+password)),
+		log:            log,
+		client:         &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}}},
+		publishTimeout: 10 * time.Second,
+	}
+	if err := b.connect(); err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func (b *Broker) connect() error {
+	conn, err := amqp.DialConfig(b.amqpURL, amqp.Config{Heartbeat: 30 * time.Second})
+	if err != nil {
+		return fmt.Errorf("plan-eval broker dial: %w", err)
+	}
+	channel, err := conn.Channel()
+	if err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("plan-eval broker channel: %w", err)
+	}
+	if err := channel.Confirm(false); err != nil {
+		_ = channel.Close()
+		_ = conn.Close()
+		return fmt.Errorf("plan-eval broker confirm mode: %w", err)
+	}
+	b.conn, b.channel = conn, channel
+	return nil
+}
+
+// Healthy reports whether the publishing connection is up.
+func (b *Broker) Healthy() bool { return b.conn != nil && !b.conn.IsClosed() }
+
+// Close releases the connection.
+func (b *Broker) Close() {
+	if b.conn != nil {
+		_ = b.conn.Close()
+	}
+	b.conn, b.channel = nil, nil
+}
+
+// session returns a confirm channel, redialing if the previous one died.
+func (b *Broker) session() (*amqp.Channel, error) {
+	if b.conn == nil || b.conn.IsClosed() || b.channel.IsClosed() {
+		b.Close()
+		if err := b.connect(); err != nil {
+			return nil, err
+		}
+		b.log.Info("plan-eval broker reconnected")
+	}
+	return b.channel, nil
+}
+
+// EnsureQueue declares the version queue idempotently (durable, not
+// auto-delete: the queue outlives its Deployment).
+func (b *Broker) EnsureQueue(name string) error {
+	ch, err := b.session()
+	if err != nil {
+		return err
+	}
+	if _, err := ch.QueueDeclare(name, true, false, false, false, nil); err != nil {
+		return fmt.Errorf("plan-eval declare queue %s: %w", name, err)
+	}
+	return nil
+}
+
+// Publish sends one persistent pointer message and waits for the broker's
+// confirmation. Resolving means the broker owns the message.
+func (b *Broker) Publish(ctx context.Context, queue string, message ExecuteMessage) error {
+	ch, err := b.session()
+	if err != nil {
+		return err
+	}
+	body, err := json.Marshal(message)
+	if err != nil {
+		return err
+	}
+	confirm, err := ch.PublishWithDeferredConfirmWithContext(ctx, "", queue, false, false, amqp.Publishing{
+		ContentType:  "application/json",
+		DeliveryMode: amqp.Persistent,
+		Timestamp:    time.Now(),
+		Body:         body,
+	})
+	if err != nil {
+		return fmt.Errorf("plan-eval publish to %s: %w", queue, err)
+	}
+	confirmed := make(chan bool, 1)
+	go func() { confirmed <- confirm.Wait() }()
+	select {
+	case ok := <-confirmed:
+		if !ok {
+			return fmt.Errorf("plan-eval publish to %s: broker nacked the message", queue)
+		}
+		return nil
+	case <-time.After(b.publishTimeout):
+		return fmt.Errorf("plan-eval publish to %s: no broker confirmation within %s", queue, b.publishTimeout)
+	}
+}
+
+// QueueDepth reads the queue from the management API. A queue that does not
+// exist (never declared) has depth zero.
+func (b *Broker) QueueDepth(ctx context.Context, queue string) (QueueDepth, error) {
+	endpoint := fmt.Sprintf("%s/api/queues/%s/%s", b.managementURL, b.vhostPath, url.PathEscape(queue))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return QueueDepth{}, err
+	}
+	req.Header.Set("Authorization", b.basicAuth)
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return QueueDepth{}, fmt.Errorf("plan-eval rabbit management: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return QueueDepth{}, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return QueueDepth{}, fmt.Errorf("plan-eval rabbit management: %s for queue %s", resp.Status, queue)
+	}
+	var body struct {
+		MessagesReady          int `json:"messages_ready"`
+		MessagesUnacknowledged int `json:"messages_unacknowledged"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return QueueDepth{}, fmt.Errorf("plan-eval rabbit management: %w", err)
+	}
+	return QueueDepth{Ready: body.MessagesReady, Unacked: body.MessagesUnacknowledged}, nil
+}

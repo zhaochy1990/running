@@ -204,6 +204,35 @@ func (a *Authenticator) middleware() gin.HandlerFunc {
 	}
 }
 
+// RequireAdmin authenticates the request and admits only the administrator
+// tier (admin audience + role=admin); it aborts with 401/403 otherwise. It is
+// the entry point for services that have nothing but admin routes — such as the
+// plan-evaluation API — where the default-deny child groups below do not apply.
+func (a *Authenticator) RequireAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		caller, err := a.authenticate(c)
+		if err != nil {
+			c.AbortWithStatusJSON(401, errorResponse{Error: "unauthorized"})
+			return
+		}
+		if caller.Tier != TierAdmin {
+			c.AbortWithStatusJSON(403, errorResponse{Error: "forbidden"})
+			return
+		}
+		c.Set(callerContextKey, caller)
+		c.Next()
+	}
+}
+
+// AdminCallerID returns the subject of the administrator a RequireAdmin
+// middleware admitted for this request ("" when none did).
+func AdminCallerID(c *gin.Context) string {
+	if callerFrom(c).Tier != TierAdmin {
+		return ""
+	}
+	return callerFrom(c).UserID
+}
+
 // rejectAdminCaller keeps the admin-dashboard identity out of existing user and
 // internal routes. A route that supports TierAdmin must be mounted directly on
 // the parent authenticated group instead of the default-deny child group.

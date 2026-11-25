@@ -1,6 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { z } from "zod/v4";
 import { MasterPlanV3Schema } from "../dist/master_plan/policy.js";
+import { MasterPlanSchema } from "../dist/master_plan/schemas.js";
 import { WeeklyPlanSchema } from "../dist/weekly_plan/schema.js";
 import { RunWorkoutLenientSchema, RunWorkoutSchema, StrengthWorkoutSchema } from "../dist/workout/schema.js";
 
@@ -13,6 +14,8 @@ const outputs = [
   ["https://stride-running.cn/schemas/strength-workout-v1.json", StrengthWorkoutSchema, "strength-workout.schema.json"],
   // 政策包 v3（master_plan.content v3，#855）：落库格式对外可见面，防漂移。
   ["https://stride-running.cn/schemas/master-plan-v3.json", MasterPlanV3Schema, "master-plan-v3.schema.json"],
+  // 内核直出的赛季计划快照（落库前的 v2 形状）：测评 SchemaCheck 校验 Artifact 用（devops#1055）。
+  ["https://stride-running.cn/schemas/master-plan-snapshot.json", MasterPlanSchema, "master-plan-snapshot.schema.json"],
 ];
 
 for (const [$id, schema, file, opts] of outputs) {

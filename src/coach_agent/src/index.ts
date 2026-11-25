@@ -35,6 +35,8 @@ export { isQualityRunningActivity, isRunningActivity } from "./data/activityClas
 export type { CalibrationSelection, CalibrationSource } from "./data/calibrationMetadata.js";
 export { CalibrationSourceSchema } from "./data/calibrationMetadata.js";
 export type * from "./data/dataProvider.js";
+export { RUNNER_SNAPSHOT_SCHEMA_ID, RunnerSnapshotSchema } from "./data/runnerSnapshot.js";
+export type { RunnerSnapshot, RunnerSnapshotRecords } from "./data/runnerSnapshot.js";
 export { deriveSyncCoverage, explainSyncCoverage } from "./data/syncCoverage.js";
 export type {
   HistoricalAnalysisStatus,
