@@ -84,7 +84,7 @@ const manualLog = (() => {
       </div>
       <div class="log-set-actions">
         ${logButton('remove-row', app.icon('cross', 16), 'icon-button log-remove', `aria-label="删除第 ${number} 组"`)}
-        ${logButton('copy-row', app.icon('copy', 17), 'icon-button log-copy', `aria-label="复制第 ${number} 组" title="复制到下一组"`)}
+        ${logButton('copy-row', app.asset('copy'), 'icon-button log-copy', `aria-label="复制第 ${number} 组" title="复制到下一组"`)}
       </div>
     </div>`;
   }

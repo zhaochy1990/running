@@ -237,7 +237,7 @@ dialog::backdrop { background: #2227278a; }
 .log-set-number { text-align: center; font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .log-amount, .log-set-actions { display: flex; align-items: center; min-width: 0; gap: 3px; }
 .log-set-actions { gap: 0; }
-.log-set-actions .log-copy { color: var(--accent-dark); }
+.log-copy img { width: 17px; height: 17px; }
 .log-set-actions .icon-button:focus-visible { outline-offset: -2px; }
 .log-set input, .log-set select { padding-inline: 3px; text-align: center; font-size: 13px; }
 .log-amount select { flex: 0 0 32px; padding-inline: 1px; }
@@ -261,7 +261,9 @@ dialog::backdrop { background: #2227278a; }
 }
 @media (max-width: 360px) {
   .log-exercise { --log-actions-width: 80px; }
-  .log-set { grid-template-columns: 25px minmax(0, 1fr) 46px minmax(0, 1.23fr) var(--log-actions-width); gap: 4px; }
+  .log-set { grid-template-columns: 22px minmax(0, 1.16fr) 36px minmax(0, 1fr) var(--log-actions-width); gap: 3px; }
+  .log-amount { gap: 2px; }
+  .log-amount select { flex-basis: 29px; }
   .log-set-actions .log-remove { min-width: 36px; }
 }
 

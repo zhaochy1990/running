@@ -140,5 +140,5 @@ const miniProgramHome = (() => {
     expanded.add(date.slice(0, 7));
   }
 
-  return { tabBar, training, records, selectDay, toggleMonth, revealMonth };
+  return { asset, tabBar, training, records, selectDay, toggleMonth, revealMonth };
 })();
