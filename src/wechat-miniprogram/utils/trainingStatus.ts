@@ -8,11 +8,13 @@
  */
 import {
   epochToShanghaiYmd,
+  shanghaiDateFromIso,
   shanghaiShiftDays,
   shanghaiToday,
   shanghaiWeekStart,
   shanghaiYmdToEpoch,
 } from './date';
+import type { Activity } from '../types/activity';
 import type { StrideThresholdHistoryPoint, StrideTrainingLoadRecord } from '../types/health';
 import { theme } from './theme';
 import { fmtShanghaiMdHm } from './format';
@@ -258,6 +260,25 @@ export function aggregateWeeklyDose(
     const bucket = buckets.get(k)!;
     return unknownWeeks.has(k) ? { ...bucket, totalDose: null } : bucket;
   });
+}
+
+// 跑步项目使用 COROS 与 Garmin 的跑步类型码，运动名兼容没有类型码的旧记录。
+const RUN_SPORT_TYPES = new Set([100, 101, 102, 103, 104, 8001, 8002, 8003, 8004, 8005]);
+const RUN_SPORT_NAME = /^(?:(?:indoor|outdoor|trail|track|treadmill)[ _])?run(?:ning)?$|^treadmill$/i;
+
+export function aggregateWeeklyRunMeters(
+  activities: readonly (Pick<Activity, 'date' | 'sport_type' | 'sport_name'> & { distance_m: number | null })[],
+  today: string = shanghaiToday(),
+): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const activity of activities) {
+    const day = shanghaiDateFromIso(activity.date);
+    if (!day || day > today || !positive(activity.distance_m)) continue;
+    if (!RUN_SPORT_TYPES.has(activity.sport_type) && !RUN_SPORT_NAME.test(activity.sport_name ?? '')) continue;
+    const week = shanghaiWeekStart(day);
+    totals.set(week, (totals.get(week) ?? 0) + activity.distance_m);
+  }
+  return totals;
 }
 
 // ---------------------------------------------------------------------------

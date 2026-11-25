@@ -28,6 +28,7 @@ import {
   readinessGateLabel,
   readinessLabel,
   aggregateWeeklyDose,
+  aggregateWeeklyRunMeters,
   buildHeatCells,
   buildHeatWeeks,
   buildLineChartOptions,
@@ -160,6 +161,7 @@ let hrvData: HrvResponse | null = null;
 let zonesData: StrideZonesResponse | null = null;
 let loadData: StrideTrainingLoadResponse | null = null;
 let activitiesByDate = new Map<string, Activity[]>();
+let runMetersByWeek = new Map<string, number>();
 let userId = '';
 let loaded = false;
 let trendDays = 30;
@@ -181,7 +183,6 @@ let formSpec: ChartTooltipSpec | null = null;
 let weekSpec: ChartTooltipSpec | null = null;
 
 let formRows: Array<{ label: string; form: number | null; chronic: number | null }> = [];
-let weekRows: Array<{ label: string; totalDose: number | null; activeDays: number }> = [];
 
 // ---------------------------------------------------------------------------
 // 平台辅助
@@ -335,13 +336,13 @@ function formTrend(days: number): {
 function weekTrend(): {
   categories: string[];
   data: Array<number | null>;
-  rows: Array<{ label: string; totalDose: number | null; activeDays: number }>;
+  rows: Array<{ label: string; runMeters: number }>;
 } {
   const buckets = aggregateWeeklyDose(loadData?.series ?? []);
   return {
     categories: buckets.map((b) => b.weekLabel),
     data: buckets.map((b) => (b.totalDose == null ? null : Math.round(b.totalDose * 10) / 10)),
-    rows: buckets.map((b) => ({ label: b.weekLabel, totalDose: b.totalDose, activeDays: b.activeDays })),
+    rows: buckets.map((b) => ({ label: b.weekLabel, runMeters: runMetersByWeek.get(b.weekStart) ?? 0 })),
   };
 }
 
@@ -558,6 +559,7 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
       hrvData = hv;
       zonesData = z;
       loadData = ld;
+      runMetersByWeek = aggregateWeeklyRunMeters(acts);
       activitiesByDate = new Map();
       for (const a of acts) {
         const key = a.date;
@@ -871,12 +873,12 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
     }
 
     const wt = weekTrend();
-    weekRows = wt.rows;
     weekSpec = {
       tooltip: (v, time) => {
-        const row = weekRows.find((r) => r.label === time);
+        const row = wt.rows.find((r) => r.label === time);
         const doseText = Number.isFinite(v) ? v.toFixed(1) : '数据不完整';
-        return `周一 ${time} · ${doseText}（${row?.activeDays ?? 0} 天）`;
+        const runKm = ((row?.runMeters ?? 0) / 1000).toFixed(1);
+        return `周一 ${time} · 负荷 ${doseText} · 跑量 ${runKm} km`;
       },
     };
     if (wt.data.some((v) => v != null)) {
