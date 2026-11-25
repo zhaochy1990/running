@@ -53,14 +53,18 @@ const miniProgramHome = (() => {
       tab: 'today',
       content: `<div class="mp-calendar" aria-label="本周日历">${calendar}</div>
         <h2 class="mp-section-title" tabindex="-1">${selected === today ? '今日' : '当日'}安排 · ${selectedDate}</h2>
-        ${selected === today ? `<button type="button" class="mp-workout" data-action="plan">
-          <span class="mp-workout-title">${asset('fitness_center')}<strong>${lesson}</strong><small>教练</small>${asset('chevron_right', 'mp-card-arrow')}</span>
-          <span class="mp-workout-stats">
-            <span><strong>${exerciseCount}</strong><small>动作</small></span>
-            <span><strong>${setCount}</strong><small>组数</small></span>
-            <span><strong>25 分钟</strong><small>预计用时</small></span>
-          </span>
-        </button>` : `<div class="mp-empty"><strong>当日无训练安排</strong><small>好好休息，或查看本周计划</small></div>`}
+        ${selected === today ? `<article class="mp-workout">
+          <button type="button" class="mp-workout-open" data-action="plan" aria-label="查看${lesson}课表">
+            <span class="mp-workout-title"><span class="mp-workout-icon">${asset('fitness_center')}</span><strong>${lesson}</strong><small>教练</small></span>
+            <span class="mp-workout-stats">
+              <span><strong>${exerciseCount}</strong><small>动作</small></span>
+              <span><strong>${setCount}</strong><small>组数</small></span>
+              <span><strong>25 分钟</strong><small>预计用时</small></span>
+            </span>
+          </button>
+          <div class="mp-workout-actions" aria-hidden="true"><span>${asset('watch')}</span><span>${asset('more_horiz')}</span></div>
+          <div class="mp-coach-preview" aria-hidden="true">${asset('forum')}<span>和教练聊一聊</span></div>
+        </article>` : `<div class="mp-empty"><strong>当日无训练安排</strong><small>好好休息，或查看本周计划</small></div>`}
         <button type="button" class="manual-entry" data-action="manual">
           <span class="manual-entry-icon">${asset('fitness_center')}</span>
           <span><strong>${hasDraft ? '继续自由力量训练' : '自由力量训练'}</strong><small>边练边记录</small></span>

@@ -29,7 +29,7 @@ const manualLog = (() => {
   }
 
   function newDraft(kind) {
-    const common = { title: '', date: today() };
+    const common = { title: '', date: today(), dateTouched: false };
     return kind === 'structured' ? { ...common, exercises: [newExercise()] } : { ...common, note: '' };
   }
 
@@ -44,6 +44,9 @@ const manualLog = (() => {
 
   function open() {
     editing = null;
+    if (!hasDraftData(drafts[mode], mode)) {
+      mode = Object.keys(modeLabels).find(kind => hasDraftData(drafts[kind], kind)) ?? mode;
+    }
     app.navigate('manualEdit');
   }
 
@@ -121,6 +124,7 @@ ${escape(exercise.note)}</textarea>
 
   function editView() {
     const entry = draft();
+    const kind = editing?.mode ?? mode;
     const exampleButton = editing ? ''
       : logButton('example', '填入示例', 'text-button', hasContent(entry, mode) ? 'hidden' : '');
     return {
@@ -137,8 +141,8 @@ ${escape(exercise.note)}</textarea>
           <label class="log-field"><span>训练名称</span><input data-log-field="title" placeholder="力量训练" value="${escape(entry.title)}"></label>
           <label class="log-field"><span>训练日期</span><input class="log-date" data-log-field="date" type="date" max="${today()}" value="${escape(entry.date)}"></label>
         </div>
-        <div class="log-section-head"><h3>${mode === 'structured' ? '动作明细' : '训练笔记'}</h3>${exampleButton}</div>
-        ${mode === 'structured'
+        <div class="log-section-head"><h3>${kind === 'structured' ? '动作明细' : '训练笔记'}</h3>${exampleButton}</div>
+        ${kind === 'structured'
           ? `${entry.exercises.map(exerciseView).join('')}
             ${logButton('add-exercise', `${app.icon('plus', 18)}添加动作`, 'secondary log-add-exercise')}`
           : `<div class="log-field"><textarea class="log-notebook" aria-label="训练笔记" data-log-field="note" rows="12" placeholder="可以写下动作、各组重量和次数，或今天的训练感受。">
@@ -172,8 +176,12 @@ ${escape(entry.note)}</textarea></div>`}
     }));
   }
 
+  function hasDraftData(entry, kind) {
+    return Boolean(entry && (entry.title.trim() || entry.dateTouched || hasContent(entry, kind)));
+  }
+
   function hasDraft() {
-    return Object.entries(drafts).some(([kind, entry]) => entry.title.trim() || hasContent(entry, kind));
+    return Object.entries(drafts).some(([kind, entry]) => hasDraftData(entry, kind));
   }
 
   function savedView() {
@@ -233,7 +241,7 @@ ${escape(entry.note)}</textarea></div>`}
     if (entry.date.length > limit.length || entry.date > limit) {
       return { field: 'date', message: '请选择今天或更早的训练日期。' };
     }
-    if (mode === 'note') return entry.note.trim() ? null : { field: 'note', message: '请写下这次训练的内容。' };
+    if ((editing?.mode ?? mode) === 'note') return entry.note.trim() ? null : { field: 'note', message: '请写下这次训练的内容。' };
     if (!entry.exercises.length) return { action: 'add-exercise', message: '请添加至少一个动作。' };
 
     for (const exercise of entry.exercises) {
@@ -306,6 +314,7 @@ ${escape(entry.note)}</textarea></div>`}
     const row = rowOf(field, exercise);
     const entry = row || exercise || draft();
     entry[key === 'exercise-note' ? 'note' : key] = field.value;
+    if (key === 'date' && !editing) entry.dateTouched = true;
     clearError();
 
     const example = app.screen.querySelector('[data-log-action="example"]');
@@ -339,8 +348,7 @@ ${escape(entry.note)}</textarea></div>`}
       }
       case 'edit': {
         const saved = records.find(item => item.id === selected);
-        mode = saved.mode;
-        editing = { original: saved.data, draft: structuredClone(saved.data) };
+        editing = { mode: saved.mode, original: saved.data, draft: structuredClone(saved.data) };
         app.navigate('manualEdit');
         break;
       }
