@@ -249,3 +249,30 @@ api:
     coach-chat-max-message-chars: 8000
 # ci: no-op touch to republish with pinned BuildKit v0.31.2 and exercise the
 # Renovate version-bump flow after the Aliyun ACR compatibility failure.
+
+# Plan-evaluation API (`stride plan-eval`, devops#1055): an internal
+# administrator service that freezes inputs, starts per-version eval workers
+# and evaluates their artifacts. Owns a dedicated MySQL database; never touches
+# the production user database. Secrets arrive via STRIDE_WORKER_PLAN_EVAL_*.
+plan-eval:
+  addr: ":8080"
+  mysql-dsn: ""                    # STRIDE_WORKER_PLAN_EVAL_MYSQL_DSN (secret)
+  amqp-url: ""                     # STRIDE_WORKER_PLAN_EVAL_AMQP_URL (secret)
+  rabbit-management-url: ""        # e.g. http://rabbitmq.infra.svc.cluster.local:15672
+  worker-token: ""                 # STRIDE_WORKER_PLAN_EVAL_WORKER_TOKEN (secret): eval workers' identity
+  secret-key: ""                   # STRIDE_WORKER_PLAN_EVAL_SECRET_KEY (secret): 32 bytes base64, encrypts launch env values
+  worker-image-repository: ""      # stride-coach-worker image repository; a tag is an agent version
+  agent-versions: []               # published worker tags that carry the eval entry (PLAN_WORKER_MODE=eval)
+  deployer: "kubernetes"           # kubernetes | none (publish only; start workers by hand)
+  worker-api-url: ""               # how eval workers reach this service, e.g. http://plan-eval-api:8080
+  worker-amqp-url: ""              # broker URL injected into eval workers (in-cluster FQDN)
+  worker-pull-secret: "acr-regcred"
+  kubernetes-namespace: ""         # "" = this pod's ServiceAccount namespace
+  preset-snapshot-path: ""        # optional private runner snapshot JSON or JSON gzip
+  lease-ttl: 60s
+  rule-timeout: 10s
+  evaluate-sweep-interval: 30s
+  auth:                            # administrator JWT (same auth-service key as stride-api)
+    issuer: ""
+    admin-audience: ""
+    public-key-path: ""

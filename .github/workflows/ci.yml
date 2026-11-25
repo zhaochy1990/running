@@ -83,6 +83,7 @@ jobs:
               - 'pnpm-workspace.yaml'
               - 'src/go/internal/api/weekly_plan_schema.json'
               - 'src/go/internal/api/master-plan-v3.schema.json'
+              - 'src/go/internal/api/master-plan-snapshot.schema.json'
               - 'tests/fixtures/weekly_plan_contract.json'
 
   # Did any ARTIFACT change? Drives the docker dry run below via the manifest,
@@ -358,6 +359,18 @@ jobs:
         run: >-
           go test ./internal/storage/...
           -run 'TestListSyncableUserIDs|TestListOrphanSyncUsers'
+          -count=1 -v
+      # Plan evaluation (devops#1055): idempotent task creation with launch
+      # configuration reuse, lease takeover and the atomic generate terminal
+      # state are SQL transactions, and the service test drives the real gin
+      # router, the admin JWT and the worker handover end to end over the same
+      # MySQL. -p 1: both packages automigrate plan_eval_* into one database.
+      - name: Plan-evaluation tests (MySQL)
+        env:
+          STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
+        run: >
+          go test -p 1 ./internal/planeval/... ./internal/storage/...
+          -run 'TestPlanEval_|TestHTTP_|TestStaticRuleCheck|TestRuleRuntime|TestSchemaCheck|TestSecretKey|TestKubernetesDeployer|TestDeployer'
           -count=1 -v
       # The timeseries-blob dual-write, backfill, audit, and orphan GC
       # (devops#785) are SQL-level behaviours over activities/timeseries; the
