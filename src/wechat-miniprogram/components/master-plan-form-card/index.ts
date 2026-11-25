@@ -15,14 +15,15 @@
 //   bindsubmit  detail = { form, options }   校验通过后的完整表单
 
 import type { MasterPlanFormCard, Weekday } from '../../services/master-plan';
-import { DEFAULT_MASTER_PLAN_FORM_OPTIONS, type MasterPlanFormOptions, type MasterPlanFormValues } from '../../utils/planJobCards';
+import { DEFAULT_MASTER_PLAN_FORM_OPTIONS, isValidPlanTargetTime, type MasterPlanFormOptions, type MasterPlanFormValues } from '../../utils/planJobCards';
 import { WEEKDAY_VALUES } from '../../utils/weekday';
 import { pad2, shanghaiToday } from '../../utils/date';
 
 const WEEKDAY_LABELS = ['一', '二', '三', '四', '五', '六', '日'];
 const DISTANCE_OPTIONS = ['全程马拉松（全马）', '半程马拉松（半马）'];
 const LONG_RUN_NO_PREFERENCE = '不指定';
-const HOUR_RANGE = [1, 2, 3, 4, 5, 6];
+// 目标成绩契约允许一至两位小时数，0 小时也可输入半马成绩。
+const HOUR_OPTIONS = ['请选择', ...Array.from({ length: 100 }, (_, hour) => String(hour))];
 const ZERO_TO_59 = Array.from({ length: 60 }, (_, i) => i);
 const STRENGTH_OPTIONS = ['不安排', '1 次', '2 次', '3 次'];
 
@@ -45,14 +46,12 @@ interface FormCardData {
   distanceOptions: string[];
   raceDate: string;
   todayYmd: string;
-  /** 不设成绩目标（顺利完赛）：勾选后隐藏时分秒选择。 */
-  finishOnly: boolean;
-  /** 小时 picker 的选中下标（hours 区间可变，不能假设 targetHour-1）。 */
   targetHourIndex: number;
-  targetHour: number;
+  targetHour: number | null;
   targetMinute: number;
   targetSecond: number;
-  hourRange: number[];
+  hourOptions: string[];
+  targetTimeError: string;
   minuteRange: number[];
   secondRange: number[];
   dayChips: DayChip[];
@@ -98,7 +97,6 @@ type FormCardMethods = {
   onHourChange(e: WechatMiniprogram.PickerChange): void;
   onMinuteChange(e: WechatMiniprogram.PickerChange): void;
   onSecondChange(e: WechatMiniprogram.PickerChange): void;
-  onFinishOnlyToggle(): void;
   onDayTap(e: WechatMiniprogram.TouchEvent): void;
   onLongRunChange(e: WechatMiniprogram.PickerChange): void;
   onBaseInput(e: WechatMiniprogram.CustomEvent): void;
@@ -123,9 +121,10 @@ function toWeekdayArray(value: unknown): Weekday[] {
 }
 
 function parseTargetTime(value: string): TargetTimeParts | null {
-  const match = /^(\d{1,2}):(\d{2}):(\d{2})$/.exec(value.trim());
-  if (!match) return null;
-  return { hour: Number(match[1]), minute: Number(match[2]), second: Number(match[3]) };
+  const targetTime = value.trim();
+  if (!isValidPlanTargetTime(targetTime)) return null;
+  const [hour, minute, second] = targetTime.split(':').map(Number);
+  return { hour, minute, second };
 }
 
 /** 卡片 data 的稳定签名（observer 判断「真的换了卡片」）。 */
@@ -149,12 +148,12 @@ Component<FormCardData, FormCardProps, FormCardMethods, [], FormCardInstance>({
     distanceOptions: DISTANCE_OPTIONS,
     raceDate: '',
     todayYmd: '',
-    finishOnly: false,
-    targetHourIndex: 2,
-    targetHour: 3,
-    targetMinute: 30,
+    targetHourIndex: 0,
+    targetHour: null,
+    targetMinute: 0,
     targetSecond: 0,
-    hourRange: HOUR_RANGE,
+    hourOptions: HOUR_OPTIONS,
+    targetTimeError: '',
     minuteRange: ZERO_TO_59,
     secondRange: ZERO_TO_59,
     dayChips: WEEKDAY_VALUES.map((value, index) => ({ value, label: WEEKDAY_LABELS[index], selected: false })),
@@ -205,26 +204,23 @@ Component<FormCardData, FormCardProps, FormCardMethods, [], FormCardInstance>({
       const preferred = form.availability.preferred_long_run_day;
       const weeklyDays = toWeekdayArray(form.availability.weekly_days);
       const selected = new Set(weeklyDays);
-      // 服务端预填的成绩小时可能不在常用区间（1–6），并入下拉避免值越界。
-      const hour = time?.hour ?? 3;
-      const hourRange = HOUR_RANGE.includes(hour) ? HOUR_RANGE : [...HOUR_RANGE, hour].sort((a, b) => a - b);
+      const hour = time?.hour ?? null;
       this.setData({
         activeTab: 'goal',
         raceName: form.goal.race_name,
         distanceIndex: form.goal.distance === 'HM' ? 1 : 0,
         raceDate: form.goal.race_date,
-        finishOnly: time === null,
-        hourRange,
-        targetHourIndex: hourRange.indexOf(hour),
+        targetHourIndex: hour === null ? 0 : hour + 1,
         targetHour: hour,
-        targetMinute: time?.minute ?? 30,
+        targetMinute: time?.minute ?? 0,
         targetSecond: time?.second ?? 0,
+        targetTimeError: '',
         dayChips: WEEKDAY_VALUES.map((value, index) => ({
           value,
           label: WEEKDAY_LABELS[index],
           selected: selected.has(value),
         })),
-        longRunIndex: preferred ? WEEKDAY_VALUES.indexOf(preferred) + 1 : 0,
+        longRunIndex: preferred && selected.has(preferred) ? WEEKDAY_VALUES.indexOf(preferred) + 1 : 0,
         base: form.base,
         restriction: form.restriction,
         errorRaceName: false,
@@ -254,21 +250,17 @@ Component<FormCardData, FormCardProps, FormCardMethods, [], FormCardInstance>({
 
     onHourChange(e: WechatMiniprogram.PickerChange) {
       const index = Number(e.detail.value) || 0;
-      const hour = this.data.hourRange[index];
-      if (hour == null) return;
-      this.setData({ targetHour: hour, targetHourIndex: index });
+      const hour = this.data.hourOptions[index];
+      if (hour === undefined) return;
+      this.setData({ targetHour: index === 0 ? null : Number(hour), targetHourIndex: index, targetTimeError: '' });
     },
 
     onMinuteChange(e: WechatMiniprogram.PickerChange) {
-      this.setData({ targetMinute: Number(e.detail.value) || 0 });
+      this.setData({ targetMinute: Number(e.detail.value) || 0, targetTimeError: '' });
     },
 
     onSecondChange(e: WechatMiniprogram.PickerChange) {
-      this.setData({ targetSecond: Number(e.detail.value) || 0 });
-    },
-
-    onFinishOnlyToggle() {
-      this.setData({ finishOnly: !this.data.finishOnly });
+      this.setData({ targetSecond: Number(e.detail.value) || 0, targetTimeError: '' });
     },
 
     onDayTap(e: WechatMiniprogram.TouchEvent) {
@@ -316,7 +308,7 @@ Component<FormCardData, FormCardProps, FormCardMethods, [], FormCardInstance>({
       this.setData({ restriction: String(e.detail.value ?? '') });
     },
 
-    /** 提交：必填（赛事名 / 比赛日期 / 至少一个训练日）校验 → 抛 submit。 */
+    /** 提交：必填（赛事名 / 比赛日期 / 目标成绩 / 至少一个训练日）校验 → 抛 submit。 */
     onSubmitTap() {
       if (this.data.submitted) return;
       const raceName = this.data.raceName.trim();
@@ -331,6 +323,9 @@ Component<FormCardData, FormCardProps, FormCardMethods, [], FormCardInstance>({
             : raceDate < this.data.todayYmd
               ? '请选择今天之后的比赛日期'
               : '';
+      const { targetHour, targetMinute, targetSecond } = this.data;
+      const targetTime = targetHour === null ? '' : [targetHour, pad2(targetMinute), pad2(targetSecond)].join(':');
+      const targetTimeError = isValidPlanTargetTime(targetTime) ? '' : '请选择有效的目标成绩';
       const errorDays = trainingDays.length === 0;
       // 长跑日必须落在已选训练日里，否则请求会自相矛盾（unavailable_days 含它）。
       const longRunDay = this.data.longRunIndex > 0 ? WEEKDAY_VALUES[this.data.longRunIndex - 1] : null;
@@ -344,15 +339,16 @@ Component<FormCardData, FormCardProps, FormCardMethods, [], FormCardInstance>({
             : strengthDays.length < this.data.strengthIndex
               ? '力量训练日数量不少于每周次数'
               : '';
-      if (errorRaceName || raceDateError || errorDays || longRunError || strengthDaysError) {
+      if (errorRaceName || raceDateError || targetTimeError || errorDays || longRunError || strengthDaysError) {
         this.setData({
           errorRaceName,
           raceDateError,
+          targetTimeError,
           errorDays,
           longRunError,
           strengthDaysError,
           optionsExpanded: strengthDaysError ? true : this.data.optionsExpanded,
-          activeTab: errorRaceName || raceDateError ? 'goal' : 'train',
+          activeTab: errorRaceName || raceDateError || targetTimeError ? 'goal' : 'train',
         });
         wx.showToast({ title: '请先补齐必填项', icon: 'none' });
         return;
@@ -362,9 +358,7 @@ Component<FormCardData, FormCardProps, FormCardMethods, [], FormCardInstance>({
           race_name: raceName,
           distance: this.data.distanceIndex === 1 ? 'HM' : 'FM',
           race_date: raceDate,
-          target_time: this.data.finishOnly
-            ? ''
-            : `${this.data.targetHour}:${pad2(this.data.targetMinute)}:${pad2(this.data.targetSecond)}`,
+          target_time: targetTime,
         },
         availability: {
           weekly_days: trainingDays,

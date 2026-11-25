@@ -1,7 +1,28 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
-import { MasterPlanGraphOutcome, MasterPlanGraphRequest } from "./contracts.js";
+import { MasterPlanGenerationRequest, MasterPlanGraphOutcome, MasterPlanGraphRequest } from "./contracts.js";
 import { MasterPlanV3Schema, masterPlanAvailabilityDetail } from "./policy.js";
+
+const targetTimes: { accepted: string[]; rejected: string[] } = JSON.parse(
+  readFileSync(new URL("../../src/master_plan/generation-target-time.fixture.json", import.meta.url), "utf8"),
+);
+
+test("new generation requires a positive target time on the primary goal", () => {
+  const request = createTestRequest();
+  const [goal] = request.goals;
+  assert.ok(goal);
+  for (const target_time of targetTimes.accepted) {
+    assert.equal(MasterPlanGenerationRequest.safeParse({ ...request, goals: [{ ...goal, target_time }] }).success, true, target_time);
+  }
+  for (const target_time of targetTimes.rejected) {
+    assert.equal(MasterPlanGenerationRequest.safeParse({ ...request, goals: [{ ...goal, target_time }] }).success, false, target_time);
+  }
+  const finishOnly = { ...request, goals: [{ ...goal, target_time: null, finish_only: true }] };
+  assert.equal(MasterPlanGenerationRequest.safeParse(finishOnly).success, false);
+  assert.equal(MasterPlanGraphRequest.safeParse(finishOnly).success, true);
+  assert.equal(MasterPlanGenerationRequest.safeParse({ ...request, goals: [goal, { ...finishOnly.goals[0], priority: "B" }] }).success, true);
+});
 
 function createTestRequest() {
   return {

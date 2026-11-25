@@ -50,7 +50,7 @@ export const MasterPlanFormCardSchema = z.object({
     distance: z.enum(["FM", "HM"]),
     /** 空串 = 待用户填写；否则 YYYY-MM-DD。 */
     race_date: z.string(),
-    /** h:mm:ss 目标成绩；空串 = 顺利完赛。 */
+    /** h:mm:ss 目标成绩；空串 = 待填写。 */
     target_time: z.string(),
   }),
   availability: z.object({

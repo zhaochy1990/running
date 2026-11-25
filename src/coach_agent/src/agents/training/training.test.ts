@@ -66,6 +66,16 @@ test("form envelope → master-plan-form card with normalized fields", async () 
   assert.match(String(reply.content), /生成我的训练计划/);
 });
 
+test("an unstated or unavailable long-run day does not conflict with the proposed training days", async () => {
+  for (const long_run_day of [undefined, "saturday"]) {
+    const node = makeTrainingNode({ llm: llmWith(JSON.stringify({ disposition: "form", form: { long_run_day } })) });
+    const card = cardOf(await replyOf(node)) as { data: unknown };
+    const form = MasterPlanFormCardSchema.parse(card.data);
+    assert.deepEqual(form.availability.weekly_days, ["monday", "tuesday", "wednesday", "thursday", "friday"]);
+    assert.equal(form.availability.preferred_long_run_day, null);
+  }
+});
+
 test("clarify disposition → plain text reply, no card", async () => {
   const node = makeTrainingNode({
     llm: llmWith(JSON.stringify({ disposition: "clarify", message: "说说你的目标比赛。" })),

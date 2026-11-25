@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { URL as NodeURL } from "node:url";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -39,11 +41,16 @@ function renderSetup(onDraftReady = vi.fn()) {
   return render(<TrainingPlanSetup onDraftReady={onDraftReady} />);
 }
 
-async function submitGoal() {
+function fillGoal(targetTime: string) {
   fireEvent.click(screen.getByRole("button", { name: "5K" }));
   fireEvent.change(screen.getByLabelText("目标赛事"), { target: { value: "测试比赛" } });
   fireEvent.change(screen.getByLabelText("比赛日期"), { target: { value: "2026-12-06" } });
   fireEvent.click(screen.getByRole("button", { name: /^5$/ }));
+  fireEvent.change(screen.getByLabelText("目标完赛时间"), { target: { value: targetTime } });
+}
+
+async function submitGoal() {
+  fillGoal(" 0:30:00 ");
   await vi.waitFor(() => {
     expect(screen.getByRole("button", { name: "5K" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: /^5$/ })).toHaveAttribute("aria-pressed", "true");
@@ -54,7 +61,7 @@ async function submitGoal() {
     await Promise.resolve();
     await Promise.resolve();
   });
-  expect(api.createTrainingGoal).toHaveBeenCalledTimes(1);
+  expect(api.createTrainingGoal).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ target_finish_time: "0:30:00" }));
   expect(api.triggerSync).toHaveBeenCalledTimes(1);
   await act(async () => {
     await Promise.resolve();
@@ -80,6 +87,28 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+const targetTimes: { accepted: string[]; rejected: string[] } = JSON.parse(
+  readFileSync(new NodeURL("../../../../src/coach_contract/src/master_plan/generation-target-time.fixture.json", import.meta.url), "utf8"),
+);
+
+it.each(targetTimes.rejected)("blocks an invalid target time %j before creating the training goal", (targetTime) => {
+  renderSetup();
+  fillGoal(targetTime);
+  fireEvent.submit(screen.getByRole("button", { name: "生成我的赛季计划" }).closest("form")!);
+
+  expect(screen.getByText("请输入有效的目标完赛时间（例如 3:30:00）")).toBeInTheDocument();
+  expect(api.createTrainingGoal).not.toHaveBeenCalled();
+  expect(api.triggerSync).not.toHaveBeenCalled();
+});
+
+it.each(targetTimes.accepted)("submits a valid target time %j", async (targetTime) => {
+  renderSetup();
+  fillGoal(targetTime);
+  await act(async () => fireEvent.submit(screen.getByRole("button", { name: "生成我的赛季计划" }).closest("form")!));
+
+  expect(api.createTrainingGoal).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ target_finish_time: targetTime }));
 });
 
 describe("TrainingPlanSetup polling", () => {

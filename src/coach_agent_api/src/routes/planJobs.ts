@@ -1,12 +1,5 @@
-import {
-  AdjustJobRequest,
-  MaintenanceJobRequest,
-  MasterPlanGraphRequest,
-  PLAN_JOB_TYPES,
-  type PlanJob,
-  type PlanJobType,
-  RollingJobRequest,
-} from "@stride/coach-agent-worker";
+import { AdjustJobRequest, MaintenanceJobRequest, PLAN_JOB_TYPES, type PlanJob, type PlanJobType, RollingJobRequest } from "@stride/coach-agent-worker";
+import { MASTER_PLAN_TARGET_TIME_REQUIRED, MasterPlanGenerationRequest } from "@stride/contract";
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import { type AuthEnv, createAdminMiddleware } from "../auth.js";
 
@@ -114,13 +107,13 @@ async function readEnqueueRequest(
   }
   // Server-side re-validation: never trust the client's kernel request. The
   // request schema depends on the job type (per-type gate — a `generate_master_plan`
-  // job is re-validated against `MasterPlanGraphRequest`, a `generate_rolling_block`
+  // job is re-validated against `MasterPlanGenerationRequest`, a `generate_rolling_block`
   // job against `RollingJobRequest` #858, a `generate_maintenance` job against
   // `MaintenanceJobRequest` #858 PR-D; the legacy `generate_weekly_plan` job type
   // is retired with its five-stage graph).
   const schema =
     jobType === "generate_master_plan"
-      ? MasterPlanGraphRequest
+      ? MasterPlanGenerationRequest
       : jobType === "generate_adjustment"
         ? AdjustJobRequest
         : jobType === "generate_maintenance"
@@ -128,7 +121,9 @@ async function readEnqueueRequest(
           : RollingJobRequest;
   const parsed = schema.safeParse(value.request);
   if (!parsed.success) {
-    return { ok: false, error: "invalid_request" };
+    const issues = parsed.error.issues;
+    const missingTarget = issues.length === 1 && issues[0]?.message === MASTER_PLAN_TARGET_TIME_REQUIRED;
+    return { ok: false, error: missingTarget ? MASTER_PLAN_TARGET_TIME_REQUIRED : "invalid_request" };
   }
   return {
     ok: true,

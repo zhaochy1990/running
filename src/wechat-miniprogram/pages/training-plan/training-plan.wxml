@@ -97,10 +97,10 @@
           </view>
         </view>
 
-        <!-- 15周训练节奏（周跑量/长距离切换；柱色=阶段色） -->
+        <!-- 训练节奏（周跑量/长距离切换；柱色=阶段色） -->
         <view class="card rhythm">
           <view class="rhythm__head">
-            <view class="rhythm__title">15周训练节奏</view>
+            <view class="rhythm__title">{{planTotalWeeks}}周训练节奏</view>
             <view class="metric-switch">
               <view
                 class="metric-switch__item {{chartMetric === 'km' ? 'metric-switch__item--on' : ''}}"

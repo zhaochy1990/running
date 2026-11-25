@@ -207,7 +207,8 @@ function milestonesFor(layout: PhaseWeeks[], evidence: PhaseEvidence): PhaseDivi
       push("foundation", "long_run_km", `长跑达到 ${Math.min(25, Math.max(20, Math.round(evidence.recent_volume.longest_run_8wk_km)))}km 连续两周完成无不适`);
     else if (canonical === "early_quality") push("early_quality", "质量课计数", "R 重复课连续 2 周完成且课后 24h 体感 ≤5");
     else if (canonical === "transition_quality") push("transition_quality", "T 配速课完成度", "2 节 T 课 48h 内恢复（体感 ≤5）");
-    else push("final_quality", "M 配速课", "M 配速 30km 长距离按计划完成（比赛彩排）");
+    else if (evidence.target.distance === "HM") push("final_quality", "半马专项或赛前激活", "按课表完成半马专项或赛前激活");
+    else push("final_quality", "马拉松专项或赛前激活", "按课表完成马拉松专项或赛前激活");
   }
   return out;
 }

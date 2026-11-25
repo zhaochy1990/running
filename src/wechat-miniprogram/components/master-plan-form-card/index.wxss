@@ -184,6 +184,11 @@
   font-variant-numeric: tabular-nums;
 }
 
+.mpf-time__value.mpf-placeholder {
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+}
+
 .mpf-time__unit {
   margin-left: 4rpx;
   font-size: 10px;

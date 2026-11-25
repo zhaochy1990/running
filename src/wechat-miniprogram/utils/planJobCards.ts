@@ -47,10 +47,13 @@ export interface MasterPlanFormValues {
 const TRAINING_BASE_PREFIX = '近期训练基础：';
 const RESTRICTION_PREFIX = '伤病或其他限制：';
 
+export function isValidPlanTargetTime(value: string | null | undefined): value is string {
+  return typeof value === 'string' && /^\d{1,2}:[0-5]\d:[0-5]\d$/.test(value) && !/^0{1,2}:00:00$/.test(value);
+}
+
 /**
  * 表单卡 → MasterPlanGraphRequest（服务端 zod 严格复验，多余键会被拒）。
- * 表单提交即确认：user_confirmations 全真。目标成绩空 = 顺利完赛
- * （finish_only=true 且 target_time=null，二选一 XOR）。表单的自由文本
+ * 表单提交即确认：user_confirmations 全真，且目标成绩必填。表单的自由文本
  * （训练基础 / 限制）进 preferences，不臆造结构化 injury 声明。
  * 「更多选项」两项必须由调用方传入（组件预填 + 用户可改），不在这里兜底。
  */
@@ -60,7 +63,7 @@ export function buildMasterPlanJobRequest(
   options: MasterPlanFormOptions,
 ): MasterPlanJobRequest {
   const targetTime = form.goal.target_time.trim();
-  const finishOnly = targetTime.length === 0;
+  if (!isValidPlanTargetTime(targetTime)) throw new Error('valid target_time is required');
   const trainingDays = form.availability.weekly_days;
   // 组件已拦空选；这里 fail-fast，绝不投递 weekly_run_days_max=1 却 7 天全不可用的请求。
   if (trainingDays.length === 0) throw new Error('weekly_days is empty');
@@ -84,8 +87,8 @@ export function buildMasterPlanJobRequest(
         race_name: form.goal.race_name.trim(),
         distance: form.goal.distance,
         race_date: form.goal.race_date,
-        target_time: finishOnly ? null : targetTime,
-        finish_only: finishOnly,
+        target_time: targetTime,
+        finish_only: false,
         priority: 'A',
       },
     ],
