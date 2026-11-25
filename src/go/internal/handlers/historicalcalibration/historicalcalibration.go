@@ -191,6 +191,17 @@ func New(cfg Config) job.Handler {
 				return "", job.NewPermanentError("run_gone",
 					fmt.Errorf("historicalcalibration: run %s not found", in.RunID))
 			}
+			if !r.Terminal() {
+				if in.ChunkSeq > 0 && in.ChunkSeq < r.ChunkSeq {
+					return e.resultJSON(r, "merged"), nil
+				}
+				// Track the executing continuation before its first checkpoint.
+				// A recovered chunk can run for minutes before it advances.
+				r.ChunkSeq = max(r.ChunkSeq, in.ChunkSeq)
+				if err := cfg.Store.AdvanceHistoricalRecomputeCheckpoint(ctx, r.RunID, "", r.ChunkSeq, j.ID); err != nil {
+					return "", err
+				}
+			}
 			run = r
 		default:
 			// Explicit request: resolve current revisions, create-or-merge.

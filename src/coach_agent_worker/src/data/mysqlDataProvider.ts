@@ -44,6 +44,7 @@ import type { Pool, RowDataPacket } from "mysql2/promise";
 import { z } from "zod";
 import type { MySqlConfig } from "../config.js";
 import { createStridePool } from "../db/mysql.js";
+import { GoJobClient } from "../goClient/jobClient.js";
 import policyContract from "./calibrationPolicyContract.json" with { type: "json" };
 
 const logger = getLogger("coach:activityDetails");
@@ -870,14 +871,14 @@ export class MySqlDataProvider implements DataProvider {
    */
   async getSyncCoverage(userId: string): Promise<SyncCoverage | null> {
     const [sessionRows] = await this.pool.query<RowDataPacket[]>(
-      `SELECT session_id, provider, binding_revision, anchor_day, state, shell_ready, last_error, updated_at, created_at, historical_analysis_reason, historical_analysis_checked_at
+      `SELECT session_id, provider, binding_revision, anchor_day, state, shell_ready, last_error, updated_at, created_at, historical_analysis_reason
          FROM onboarding_sync_sessions
         WHERE user_id = ? AND state <> 'superseded'
         ORDER BY created_at DESC
         LIMIT 1`,
       [userId],
     );
-    const sessionRow = sessionRows[0] as (SyncSessionRow & { created_at: Date; historical_analysis_checked_at?: Date | null }) | undefined;
+    const sessionRow = sessionRows[0] as (SyncSessionRow & { created_at: Date }) | undefined;
     if (!sessionRow) return null;
     const sessionId = sessionRow.session_id;
     const [coverageRows, dispatchRows, analysisRows] = await Promise.all([
@@ -908,7 +909,7 @@ export class MySqlDataProvider implements DataProvider {
   // recent snapshot remains intact, including its own as-of day and gaps.
   private async readHistoricalSyncAnalysis(
     userId: string,
-    session: SyncSessionRow & { created_at: Date; historical_analysis_checked_at?: Date | null },
+    session: SyncSessionRow & { created_at: Date },
     coverage: SyncStageCoverageRow[],
     analysis: SyncRecentAnalysisRow | undefined,
   ): Promise<Parameters<typeof deriveSyncCoverage>[4]> {
@@ -978,24 +979,26 @@ export class MySqlDataProvider implements DataProvider {
     }
     if (!terminal("auxiliary") || session.historical_analysis_reason) return undefined;
     const [runsInProgress] = await this.pool.query<RowDataPacket[]>(
-      `SELECT EXISTS (SELECT 1 FROM historical_recompute_runs
+      `SELECT last_job_id, updated_at FROM historical_recompute_runs
         WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running')
-          AND GREATEST(updated_at, COALESCE(?, updated_at)) >= UTC_TIMESTAMP(6) - INTERVAL 15 MINUTE)
-        OR EXISTS (SELECT 1 FROM historical_metrics_recompute_runs
-        WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running')
-          AND GREATEST(updated_at, COALESCE(?, updated_at)) >= UTC_TIMESTAMP(6) - INTERVAL 15 MINUTE) AS active`,
-      [
-        userId,
-        session.binding_revision,
-        session.created_at,
-        session.historical_analysis_checked_at ?? null,
-        userId,
-        session.binding_revision,
-        session.created_at,
-        session.historical_analysis_checked_at ?? null,
-      ],
+        UNION ALL
+        SELECT last_job_id, updated_at FROM historical_metrics_recompute_runs
+        WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running')`,
+      [userId, session.binding_revision, session.created_at, userId, session.binding_revision, session.created_at],
     );
-    return { readiness: runsInProgress[0]?.active ? "running" : "pending" };
+    const cutoff = Date.now() - 15 * 60 * 1000;
+    if (runsInProgress.some((candidate) => new Date(candidate.updated_at).getTime() >= cutoff)) return { readiness: "running" };
+    const jobIDs = runsInProgress.flatMap((candidate) => (typeof candidate.last_job_id === "string" ? [candidate.last_job_id] : []));
+    if (!this.goAPI?.internalToken || jobIDs.length === 0) return { readiness: "pending" };
+
+    // Go owns job state. Check its lease when a real chunk outlives the
+    // checkpoint freshness window (including manual runs with auto disabled).
+    const jobs = new GoJobClient(this.goAPI.baseUrl, this.goAPI.internalToken, (input, options) =>
+      fetch(input, { ...options, redirect: "error", signal: AbortSignal.timeout(3_000) }),
+    );
+    const observed = await Promise.all(jobIDs.map((id) => jobs.get(id).catch(() => null)));
+    const active = observed.some((job) => job?.userId === userId && job.status === "running" && (job.heartbeatAt ?? job.updatedAt).getTime() >= cutoff);
+    return { readiness: active ? "running" : "pending" };
   }
 
   /** Release the pool — only if this provider opened it via `create()`. */
