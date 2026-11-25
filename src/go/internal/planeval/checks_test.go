@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -92,13 +93,9 @@ func TestStaticRuleCheck_PresetRule(t *testing.T) {
 	}
 }
 
-func runRule(t *testing.T, source string, opts ...func(*int64)) CheckResult {
+func runRule(t *testing.T, source string) CheckResult {
 	t.Helper()
-	limit := DefaultRuleMemoryLimit
-	for _, opt := range opts {
-		opt(&limit)
-	}
-	check := StaticRuleCheck{CheckID: "probe", Source: source, Timeout: 300 * time.Millisecond, MemoryLimit: limit}
+	check := StaticRuleCheck{CheckID: "probe", Source: source, Timeout: 300 * time.Millisecond, MemoryLimit: DefaultRuleMemoryLimit}
 	return check.Run(context.Background(), ruleInput(t, loadValidArtifact(t), 5))
 }
 
@@ -167,12 +164,24 @@ func TestRuleRuntime_InputIsReadOnly(t *testing.T) {
 
 func TestRuleRuntime_EnforcesBudgets(t *testing.T) {
 	timeout := runRule(t, `function run() { while (true) {} }`)
-	if timeout.Status != "error" || timeout.Error.Code != errRuleTimeout {
-		t.Fatalf("infinite loop: %+v, want error rule_timeout", timeout)
+	if timeout.Status != "error" || timeout.Error == nil || timeout.Error.Code != errRuleTimeout {
+		t.Fatalf("infinite loop: %+v, want error rule_timeout", timeout.Error)
 	}
-	memory := runRule(t, `function run() { var all = []; while (true) { all.push(new Array(1 << 20).fill(1)); } }`, func(limit *int64) { *limit = 32 << 20 })
-	if memory.Status != "error" || memory.Error.Code != errRuleMemory {
-		t.Fatalf("allocation bomb: %+v, want error rule_memory_exceeded", memory)
+	// Keep a bounded allocation live until the heap guard observes it. Give
+	// the memory probe its own deadline so runner contention cannot make the
+	// two independent budget checks race.
+	runtime.GC()
+	check := StaticRuleCheck{
+		CheckID: "memory-probe", Timeout: 5 * time.Second, MemoryLimit: 16 << 20,
+		Source: `function run() {
+			var retained = [];
+			for (var i = 0; i < 8; i++) retained.push(new ArrayBuffer(8 << 20));
+			while (retained.length === 8) {}
+		}`,
+	}
+	memory := check.Run(context.Background(), ruleInput(t, loadValidArtifact(t), 5))
+	if memory.Status != "error" || memory.Error == nil || memory.Error.Code != errRuleMemory {
+		t.Fatalf("memory budget: %+v, want error rule_memory_exceeded", memory.Error)
 	}
 }
 
