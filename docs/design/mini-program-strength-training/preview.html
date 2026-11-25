@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>力量训练 · Stride 小程序原型</title>
+  <link rel="stylesheet" href="preview.css">
+  <script src="preview.js" defer></script>
+</head>
+<body>
+  <main class="studio">
+    <aside class="intro">
+      <div class="wordmark">STRIDE<span></span></div>
+      <h1>力量训练</h1>
+      <p>微信小程序交互原型</p>
+
+      <div class="variants" aria-label="训练界面方案">
+        <button type="button" data-action="variant" data-variant="A" aria-pressed="true">
+          <span class="variant-letter">A</span><span><strong>逐组跟练</strong><small>当前动作与组间倒计时</small></span>
+        </button>
+        <button type="button" data-action="variant" data-variant="B" aria-pressed="false">
+          <span class="variant-letter">B</span><span><strong>整页记录</strong><small>逐行对照目标与实际</small></span>
+        </button>
+        <button type="button" data-action="variant" data-variant="C" aria-pressed="false">
+          <span class="variant-letter">C</span><span><strong>动作面板</strong><small>切换动作，展开对应组</small></span>
+        </button>
+      </div>
+    </aside>
+
+    <section class="demo" aria-label="小程序预览">
+      <div class="device">
+        <div class="status-bar" aria-hidden="true">
+          <span>09:41</span>
+          <span class="status-icons">
+            <svg viewBox="0 0 53 14" fill="none" width="53" height="14">
+              <path d="M1 12V9M4 12V7M7 12V4M10 12V2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+              <path d="M17 5C21 1.4 25 1.4 29 5M19 8c2.6-2.2 5.4-2.2 8 0M22 11c.8-.7 1.2-.7 2 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              <rect x="34" y="3" width="16" height="9" rx="2" stroke="currentColor"/>
+              <rect x="36" y="5" width="12" height="5" rx="1" fill="currentColor"/>
+              <path d="M52 6v3" stroke="currentColor" stroke-linecap="round"/>
+            </svg>
+          </span>
+        </div>
+        <header class="app-bar">
+          <button type="button" class="icon-button app-back" aria-label="返回" data-action="back"></button>
+          <span id="app-title"></span>
+          <div class="wechat" aria-hidden="true"><span></span><i></i><b></b></div>
+        </header>
+        <div id="rest-banner" class="rest-banner"></div>
+        <div id="screen" class="screen"></div>
+        <footer id="actions" class="app-actions"></footer>
+        <div class="home-indicator" aria-hidden="true"></div>
+        <dialog id="sheet" aria-labelledby="sheet-title"></dialog>
+      </div>
+      <div class="switcher">
+        <button type="button" data-action="cycle" data-step="-1" aria-label="上一个方案"></button>
+        <span id="variant-name" aria-live="polite">A · 逐组跟练</span>
+        <button type="button" data-action="cycle" data-step="1" aria-label="下一个方案"></button>
+      </div>
+    </section>
+
+    <aside class="journey">
+      <h2>体验路径</h2>
+      <ol>
+        <li data-stage="plan" aria-current="step"><span></span><div><strong>查看课表</strong><small>动作、目标与组间休息</small></div></li>
+        <li data-stage="active"><span></span><div><strong>逐组记录</strong><small>修改实际完成量，勾选完成</small></div></li>
+        <li data-stage="rest"><span></span><div><strong>组间休息</strong><small>查看下一组，可跳过倒计时</small></div></li>
+        <li data-stage="summary"><span></span><div><strong>训练小结</strong><small>回顾本次完成情况</small></div></li>
+      </ol>
+      <p class="sample-note">演示数据 · 刷新后重置</p>
+    </aside>
+  </main>
+</body>
+</html>
