@@ -130,6 +130,28 @@ func (s *Store) ReadOnboardingHistoricalRuns(ctx context.Context, sess *Onboardi
 	return result, nil
 }
 
+// ClaimOnboardingHistoricalReplay throttles replay of a stale queued pointer
+// across replicas. Claim/terminal transitions still own the job status.
+func (s *Store) ClaimOnboardingHistoricalReplay(ctx context.Context, id string, before, now time.Time) (bool, error) {
+	result := s.db.WithContext(ctx).Model(&jobModel{}).
+		Where("id = ? AND status = ? AND updated_at <= ?", id, job.StatusQueued, before).
+		UpdateColumn("updated_at", now)
+	return result.RowsAffected > 0, result.Error
+}
+
+func (s *Store) OnboardingHistoricalRunActive(ctx context.Context, sess *OnboardingSyncSession) (bool, error) {
+	var active bool
+	err := s.db.WithContext(ctx).Raw(`
+		SELECT EXISTS (SELECT 1 FROM historical_recompute_runs
+		 WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running')
+          AND updated_at >= UTC_TIMESTAMP(6) - INTERVAL 15 MINUTE)
+		 OR EXISTS (SELECT 1 FROM historical_metrics_recompute_runs
+		 WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running')
+          AND updated_at >= UTC_TIMESTAMP(6) - INTERVAL 15 MINUTE)
+	`, sess.UserID, sess.BindingRevision, sess.CreatedAt, sess.UserID, sess.BindingRevision, sess.CreatedAt).Scan(&active).Error
+	return active, err
+}
+
 func (s *Store) LatestOnboardingHistoricalJob(ctx context.Context, userID, jobType string, since time.Time, activeOnly bool) (*job.Job, error) {
 	var rows []jobModel
 	query := s.db.WithContext(ctx).Where("user_id = ? AND job_type = ?", userID, jobType)
@@ -145,27 +167,65 @@ func (s *Store) LatestOnboardingHistoricalJob(ctx context.Context, userID, jobTy
 	return rows[0].toDomain(), nil
 }
 
-// OnboardingHistoricalRecentEvidence only examines published data in the
-// recent snapshot's original window. A skipped or empty derived row does not
-// make a domain ready. Ability is verified separately on the publication day.
-type OnboardingHistoricalRecentEvidence struct {
-	Load, Zones, Ability bool
+// OnboardingHistoricalContinuation reads only job pointers for this run.
+// The last pointer covers the initial claim (which has no run_id payload).
+func (s *Store) OnboardingHistoricalContinuation(ctx context.Context, userID, kind, runID string, lastJobID *string, since time.Time) (*job.Job, error) {
+	var rows []jobModel
+	knownID := ""
+	if lastJobID != nil {
+		knownID = *lastJobID
+	}
+	err := s.db.WithContext(ctx).Where("user_id = ? AND job_type = ?", userID, kind).
+		Where(`id = ? OR (created_at >= ? AND
+			JSON_UNQUOTE(JSON_EXTRACT(IF(JSON_VALID(input_json), input_json, '{}'), '$.run_id')) = ?)`, knownID, since, runID).
+		Order("created_at DESC, id DESC").Limit(1).Find(&rows).Error
+	if err != nil || len(rows) == 0 {
+		return nil, err
+	}
+	return rows[0].toDomain(), nil
 }
 
-func (s *Store) ReadOnboardingHistoricalRecentEvidence(ctx context.Context, run *HistoricalMetricsRun, from, to string) (OnboardingHistoricalRecentEvidence, error) {
+// OnboardingHistoricalDigestBounds pins all imported raw inputs for a
+// first-sync attempt, including newly imported activity days after midnight.
+// The calculation window remains unchanged. Manual runs keep their original
+// event-day input bound and fingerprint.
+func OnboardingHistoricalDigestBounds(actor, from, to string) (string, string) {
+	if actor == OnboardingHistoricalActor {
+		return "0000-01-01", "9999-12-31"
+	}
+	return from, to
+}
+
+// OnboardingHistoricalRecentEvidence describes published evidence from the
+// selected run that falls within the original snapshot's coverage.
+type OnboardingHistoricalRecentEvidence struct {
+	Activities int
+	Loads      int
+	Zones      int
+	Ability    bool `gorm:"column:has_ability"`
+}
+
+func (s *Store) ReadOnboardingHistoricalRecentEvidence(ctx context.Context, run *HistoricalMetricsRun, from, to, asOf string) (OnboardingHistoricalRecentEvidence, error) {
 	var evidence OnboardingHistoricalRecentEvidence
-	// The load date is a Shanghai natural day, not an activity timestamp.
 	err := s.db.WithContext(ctx).Raw(`
-		SELECT EXISTS (SELECT 1 FROM activity_training_load l
-			WHERE l.user_id = ? AND l.activity_date BETWEEN ? AND ?
-			  AND l.training_dose IS NOT NULL AND l.excluded_from_pmc = 0) AS load,
-		       EXISTS (SELECT 1 FROM activity_training_load l JOIN activity_zones z
-			ON z.user_id = l.user_id AND z.label_id = l.label_id
-			WHERE l.user_id = ? AND l.activity_date BETWEEN ? AND ? AND z.zone_type = 'heartRate') AS zones,
-		       EXISTS (SELECT 1 FROM ability_snapshot a WHERE a.user_id = ?
-			AND a.date = ? AND a.level = 'L4' AND a.value IS NOT NULL
-			AND a.computed_at >= ?) AS ability`,
-		run.UserID, from, to, run.UserID, from, to,
-		run.UserID, run.AnalysisAsOfDay, run.PublishedAt).Scan(&evidence).Error
+		SELECT COUNT(*) AS activities,
+		       COALESCE(SUM(artifact.kind = 'activity_load' AND l.training_dose IS NOT NULL
+		         AND l.excluded_from_pmc = 0), 0) AS loads,
+		       COALESCE(SUM(EXISTS (
+		         SELECT 1 FROM historical_metrics_recompute_staged z
+		         JOIN activity_zones az ON az.user_id = a.user_id AND az.label_id = a.label_id
+		         WHERE z.run_id = artifact.run_id AND z.kind = 'activity_zones' AND z.item_key = a.label_id
+		           AND JSON_CONTAINS(z.payload, '{"ZoneType":"heartRate"}')
+		           AND az.zone_type = 'heartRate'
+		       )), 0) AS zones,
+		       EXISTS (SELECT 1 FROM ability_snapshot ability
+		         WHERE ability.user_id = ? AND ability.date = ? AND ability.level = 'L4'
+		           AND ability.value IS NOT NULL AND ability.computed_at >= ?) AS has_ability
+		FROM historical_metrics_recompute_staged artifact
+		JOIN activities a ON a.user_id = ? AND a.label_id = artifact.item_key
+		LEFT JOIN activity_training_load l ON l.user_id = a.user_id AND l.label_id = a.label_id
+		WHERE artifact.run_id = ? AND artifact.kind IN ('activity_load', 'activity_skip')
+		  AND DATE(a.date + INTERVAL 8 HOUR) BETWEEN ? AND ?
+	`, run.UserID, asOf, run.PublishedAt, run.UserID, run.RunID, from, to).Scan(&evidence).Error
 	return evidence, err
 }

@@ -276,7 +276,8 @@ func (e *executor) claim(ctx context.Context, asOfDay string, bindingRevision in
 	// The data revision digest covers every input day the run may read: the
 	// earliest target day's 180-day activity evidence reaches targetFrom-179.
 	evidenceFrom := asOf.AddDate(0, 0, -(TargetDays-1)-(EvidenceActivityDays-1)).Format("2006-01-02")
-	digest, err := store.OnboardingAnalysisDigest(ctx, e.user, evidenceFrom, targetTo)
+	digestFrom, digestTo := storage.OnboardingHistoricalDigestBounds(createdBy, evidenceFrom, targetTo)
+	digest, err := store.OnboardingAnalysisDigest(ctx, e.user, digestFrom, digestTo)
 	if err != nil {
 		return nil, false, false, nil, err
 	}
@@ -332,7 +333,8 @@ func CheckPinnedInputs(ctx context.Context, store pinnedInputStore, run *storage
 		return "", fmt.Errorf("historicalcalibration: bad run as-of day %q: %w", run.AnalysisAsOfDay, err)
 	}
 	evidenceFrom := asOf.AddDate(0, 0, -(TargetDays-1)-(EvidenceActivityDays-1)).Format("2006-01-02")
-	digest, err := store.OnboardingAnalysisDigest(ctx, run.UserID, evidenceFrom, run.TargetToDay)
+	digestFrom, digestTo := storage.OnboardingHistoricalDigestBounds(run.CreatedBy, evidenceFrom, run.TargetToDay)
+	digest, err := store.OnboardingAnalysisDigest(ctx, run.UserID, digestFrom, digestTo)
 	if err != nil {
 		return "", err
 	}

@@ -915,7 +915,7 @@ export class MySqlDataProvider implements DataProvider {
     const terminal = (stage: string) => coverage.some((row) => row.stage === stage && (row.status === "completed" || row.status === "completed_with_gaps"));
     if (!terminal("historical_raw")) return undefined;
     const [runs] = await this.pool.query<RowDataPacket[]>(
-      `SELECT m.state, m.published_at, m.analysis_as_of_day, m.target_from_day, m.target_to_day
+      `SELECT m.run_id, m.state, m.published_at, m.target_from_day, m.target_to_day
          FROM historical_metrics_recompute_runs AS m
          JOIN historical_recompute_runs AS c
            ON c.run_id = m.calibration_run_id AND c.user_id = m.user_id
@@ -941,38 +941,51 @@ export class MySqlDataProvider implements DataProvider {
 
       const withinWindow =
         analysis.coverage_from && analysis.coverage_to && analysis.coverage_from >= run.target_from_day && analysis.coverage_to <= run.target_to_day;
-      const from = withinWindow ? analysis.coverage_from : "";
-      const to = withinWindow ? analysis.coverage_to : "";
+      const from = withinWindow ? analysis.coverage_from : run.target_to_day;
+      const to = withinWindow ? analysis.coverage_to : run.target_from_day;
       const [rows] = await this.pool.query<RowDataPacket[]>(
-        `SELECT EXISTS (SELECT 1 FROM activity_training_load l
-                  WHERE l.user_id = ? AND l.activity_date BETWEEN ? AND ?
-                    AND l.training_dose IS NOT NULL AND l.excluded_from_pmc = 0) AS load,
-                EXISTS (SELECT 1 FROM activity_training_load l JOIN activity_zones z
-                  ON z.user_id = l.user_id AND z.label_id = l.label_id
-                  WHERE l.user_id = ? AND l.activity_date BETWEEN ? AND ? AND z.zone_type = 'heartRate') AS zones,
-                EXISTS (SELECT 1 FROM ability_snapshot a WHERE a.user_id = ?
-                  AND a.date = ? AND a.level = 'L4' AND a.value IS NOT NULL AND a.computed_at >= ?) AS ability`,
-        [userId, from, to, userId, from, to, userId, run.analysis_as_of_day, run.published_at],
+        `SELECT COUNT(*) AS activities,
+                COALESCE(SUM(artifact.kind = 'activity_load' AND l.training_dose IS NOT NULL
+                  AND l.excluded_from_pmc = 0), 0) AS loads,
+                COALESCE(SUM(EXISTS (
+                  SELECT 1 FROM historical_metrics_recompute_staged z
+                  JOIN activity_zones az ON az.user_id = a.user_id AND az.label_id = a.label_id
+                  WHERE z.run_id = artifact.run_id AND z.kind = 'activity_zones' AND z.item_key = a.label_id
+                    AND JSON_CONTAINS(z.payload, '{"ZoneType":"heartRate"}')
+                    AND az.zone_type = 'heartRate'
+                )), 0) AS zones,
+                EXISTS (SELECT 1 FROM ability_snapshot ability
+                  WHERE ability.user_id = ? AND ability.date = ? AND ability.level = 'L4'
+                    AND ability.value IS NOT NULL AND ability.computed_at >= ?) AS has_ability
+           FROM historical_metrics_recompute_staged artifact
+           JOIN activities a ON a.user_id = ? AND a.label_id = artifact.item_key
+           LEFT JOIN activity_training_load l ON l.user_id = a.user_id AND l.label_id = a.label_id
+          WHERE artifact.run_id = ? AND artifact.kind IN ('activity_load', 'activity_skip')
+            AND DATE(a.date + INTERVAL 8 HOUR) BETWEEN ? AND ?`,
+        [userId, analysis.as_of_day, run.published_at, userId, run.run_id, from, to],
       );
       const evidence = rows[0];
       return {
         readiness,
         recentEvidence: {
-          load: Boolean(evidence?.load),
-          zones: Boolean(evidence?.zones),
-          ability: Boolean(evidence?.ability),
+          activities: Number(evidence?.activities ?? 0),
+          loads: Number(evidence?.loads ?? 0),
+          zones: Number(evidence?.zones ?? 0),
+          ability: Boolean(evidence?.has_ability),
         },
       };
     }
     if (!terminal("auxiliary") || session.historical_analysis_reason) return undefined;
-    const [jobs] = await this.pool.query<RowDataPacket[]>(
-      `SELECT 1 FROM jobs
-        WHERE user_id = ? AND created_at >= ? AND status IN ('queued', 'running')
-          AND job_type IN ('historical_calibration_recompute', 'historical_metrics_recompute')
-        LIMIT 1`,
-      [userId, session.created_at],
+    const [runsInProgress] = await this.pool.query<RowDataPacket[]>(
+      `SELECT EXISTS (SELECT 1 FROM historical_recompute_runs
+        WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running')
+          AND updated_at >= UTC_TIMESTAMP(6) - INTERVAL 15 MINUTE)
+        OR EXISTS (SELECT 1 FROM historical_metrics_recompute_runs
+        WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running')
+          AND updated_at >= UTC_TIMESTAMP(6) - INTERVAL 15 MINUTE) AS active`,
+      [userId, session.binding_revision, session.created_at, userId, session.binding_revision, session.created_at],
     );
-    return { readiness: jobs.length > 0 ? "running" : "pending" };
+    return { readiness: runsInProgress[0]?.active ? "running" : "pending" };
   }
 
   /** Release the pool — only if this provider opened it via `create()`. */

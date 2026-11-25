@@ -192,6 +192,7 @@ type Config struct {
 	Logger                 *zap.Logger
 	HistoricalAuto         bool
 	HistoricalPublisher    job.Publisher
+	HistoricalReplayAge    time.Duration
 }
 
 // Service is the first-sync session orchestrator. All mutating entry points
@@ -211,6 +212,7 @@ type Service struct {
 	historical          historicalStore
 	historicalAuto      bool
 	historicalPublisher job.Publisher
+	historicalReplayAge time.Duration
 }
 
 // New validates the wiring and returns a Service.
@@ -240,7 +242,7 @@ func New(cfg Config) (*Service, error) {
 		log = logging.Default()
 	}
 	historical, _ := cfg.Store.(historicalStore)
-	return &Service{historical: historical, historicalAuto: cfg.HistoricalAuto, historicalPublisher: cfg.HistoricalPublisher, store: cfg.Store, enq: cfg.Enqueuer, jobs: cfg.Jobs, runs: cfg.Runs,
+	return &Service{historical: historical, historicalAuto: cfg.HistoricalAuto, historicalPublisher: cfg.HistoricalPublisher, historicalReplayAge: max(5*time.Minute, cfg.HistoricalReplayAge), store: cfg.Store, enq: cfg.Enqueuer, jobs: cfg.Jobs, runs: cfg.Runs,
 		jobType: cfg.JobType, analysisJobType: cfg.AnalysisJobType,
 		legacyPpl: cfg.LegacyFullPipeline, grace: grace, limit: limit,
 		refreshHorizon: horizon, log: log}, nil
@@ -1277,7 +1279,7 @@ type View struct {
 
 // AnalysisDomainView is one analysis domain's explicit outcome.
 type AnalysisDomainView struct {
-	Status string `json:"status"` // ready | unavailable
+	Status string `json:"status"` // ready | partial | unavailable
 	Reason string `json:"reason,omitempty"`
 }
 

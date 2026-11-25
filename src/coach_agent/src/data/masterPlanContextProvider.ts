@@ -1,5 +1,5 @@
-import { addDays, mondayOnOrBefore as monday, planningStartDate, shanghaiDay } from "@stride/contract";
 import { getLogger } from "@stride/common";
+import { addDays, mondayOnOrBefore as monday, planningStartDate, shanghaiDay } from "@stride/contract";
 import { type ContextSnapshot, ContextSnapshotSchema, type MasterPlanContextProvider } from "../graph/master_plan/index.js";
 import type { PhasingActivityInput } from "../graph/master_plan/phasing/evidence.js";
 import { isQualityRunningActivity, isRunningActivity } from "./activityClassification.js";
@@ -369,8 +369,14 @@ function coverage(
     const analysis = readiness.historicalAnalysis;
     domains.push({
       domain: "historical_analysis",
-      status: analysis === "ready" ? "complete" : analysis === "ready_with_gaps" || analysis === "partial" ? "partial" : "missing",
-      detail: syncCoverage.historicalAnalysisReason ?? (analysis === "not_started" ? "pending_explicit_recompute" : analysis),
+      status: analysis === "ready" || analysis === "ready_with_gaps" || analysis === "partial" ? "partial" : "missing",
+      detail:
+        syncCoverage.historicalAnalysisReason ??
+        (analysis === "not_started"
+          ? "pending_explicit_recompute"
+          : analysis === "ready" || analysis === "ready_with_gaps"
+            ? `${analysis} (load/zones: 365 days; ability: as-of day; PB: imported history)`
+            : analysis),
     });
   }
   return domains;

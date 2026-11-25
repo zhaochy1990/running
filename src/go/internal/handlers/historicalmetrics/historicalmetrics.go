@@ -329,7 +329,8 @@ func (e *executor) claim(ctx context.Context, in chunkInput, createdBy string) (
 	// and the calibration-window digest pins the published baseline rows the
 	// derivation reads (a rewritten window day supersedes the run even when
 	// no raw input moved).
-	digest, err := store.OnboardingAnalysisDigest(ctx, e.user, "0000-01-01", targetTo)
+	digestFrom, digestTo := storage.OnboardingHistoricalDigestBounds(createdBy, "0000-01-01", targetTo)
+	digest, err := store.OnboardingAnalysisDigest(ctx, e.user, digestFrom, digestTo)
 	if err != nil {
 		return nil, false, false, nil, err
 	}
@@ -412,7 +413,8 @@ func (e *executor) fence(ctx context.Context, run *storage.HistoricalMetricsRun)
 	if policy.ActiveVersion != run.PolicyVersion || policy.Revision != run.PolicyRevision {
 		return "policy_revision_changed", nil
 	}
-	digest, err := store.OnboardingAnalysisDigest(ctx, run.UserID, "0000-01-01", run.TargetToDay)
+	digestFrom, digestTo := storage.OnboardingHistoricalDigestBounds(run.CreatedBy, "0000-01-01", run.TargetToDay)
+	digest, err := store.OnboardingAnalysisDigest(ctx, run.UserID, digestFrom, digestTo)
 	if err != nil {
 		return "", err
 	}

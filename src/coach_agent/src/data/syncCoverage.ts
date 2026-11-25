@@ -162,7 +162,7 @@ export function deriveSyncCoverage(
   coverageRows: SyncStageCoverageRow[],
   dispatchRows: SyncDispatchRow[],
   analysisRow: SyncRecentAnalysisRow | null,
-  historical?: { readiness: SyncReadiness; recentEvidence?: { load: boolean; zones: boolean; ability: boolean } },
+  historical?: { readiness: SyncReadiness; recentEvidence?: { activities: number; loads: number; zones: number; ability: boolean } },
 ): SyncCoverage {
   const dispatchByStage = new Map(dispatchRows.map((d) => [d.stage, d]));
   const stages: SyncStageCoverage[] = [];
@@ -237,15 +237,25 @@ export function deriveSyncCoverage(
   const terminal = (stage: string) => coverageRows.some((row) => row.stage === stage && (row.status === "completed" || row.status === "completed_with_gaps"));
   readiness.historicalAnalysis = historical?.readiness ?? (terminal("historical_raw") && terminal("auxiliary") ? "pending" : "not_started");
   if (historical?.recentEvidence && recentAnalysisDetail) {
-    for (const domain of ["load", "zones", "ability"] as const) {
+    const evidence = historical.recentEvidence;
+    const counts = [
+      ["load", evidence.loads, evidence.activities],
+      ["zones", evidence.zones, evidence.activities],
+      ["ability", Number(evidence.ability), 1],
+    ] as const;
+    for (const [domain, available, total] of counts) {
       if (recentAnalysisDetail.domains[domain]?.reason !== "historical_calibration_missing") continue;
-      recentAnalysisDetail.domains[domain] = historical.recentEvidence[domain]
-        ? { status: "ready" }
-        : { status: "unavailable", reason: "no_published_evidence" };
+      recentAnalysisDetail.domains[domain] =
+        available === 0
+          ? { status: "unavailable", reason: "no_published_evidence" }
+          : available < total
+            ? { status: "partial", reason: "historical_recompute_coverage_gap" }
+            : { status: "ready" };
     }
     const domains = Object.values(recentAnalysisDetail.domains);
-    const ready = domains.filter((domain) => domain.status === "ready").length;
-    recentAnalysisDetail.status = ready === domains.length ? "ready" : ready > 0 ? "partial" : "unavailable";
+    const allReady = domains.every((domain) => domain.status === "ready");
+    const anyUsable = domains.some((domain) => domain.status === "ready" || domain.status === "partial");
+    recentAnalysisDetail.status = allReady ? "ready" : anyUsable ? "partial" : "unavailable";
     if (readiness.recentAnalysis !== "failed" && readiness.recentAnalysis !== "not_started") {
       readiness.recentAnalysis = recentAnalysisDetail.status as SyncReadiness;
       const stage = stages.find((stage) => stage.stage === "recent_analysis");
@@ -305,7 +315,7 @@ export interface SyncCoverageExplanation {
   };
   historicalDataReadiness: SyncReadiness;
   historicalAnalysisStatus: HistoricalAnalysisStatus;
-  /** 是否可以下长期结论（历史补齐 + 历史指标都已就绪）。 */
+  /** Whether broad multi-year conclusions have complete evidence. */
   longTermComplete: boolean;
   /** 面向运动员的中文说明（教练原样可引用）。 */
   notes: string[];
@@ -340,8 +350,6 @@ export function explainSyncCoverage(coverage: SyncCoverage, today: string): Sync
 
   const historicalAnalysisStatus: HistoricalAnalysisStatus =
     coverage.readiness.historicalAnalysis === "not_started" ? "pending_explicit_recompute" : coverage.readiness.historicalAnalysis;
-
-  const longTermComplete = coverage.readiness.historicalData === "ready" && historicalAnalysisStatus === "ready";
 
   const notes: string[] = [];
   if (recentRaw?.observedFrom != null && recentRaw.observedTo != null) {
@@ -428,7 +436,8 @@ export function explainSyncCoverage(coverage: SyncCoverage, today: string): Sync
     },
     historicalDataReadiness: historical,
     historicalAnalysisStatus,
-    longTermComplete,
+    // The recompute covers 365 days for load/zones and one day for ability.
+    longTermComplete: false,
     notes,
   };
 }

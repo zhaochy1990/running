@@ -389,6 +389,10 @@ docker run -p 8080:8080 -v ./data:/app/data stride
 
 自动派发由 worker 的 `STRIDE_WORKER_RUNTIME_ONBOARDING_HISTORICAL_AUTO` 控制，默认关闭。放量时，先确认全部 worker 副本已运行支持此功能的版本，并开启 `STRIDE_WORKER_RUNTIME_HISTORICAL_RECOMPUTE_ENABLED` 和 `STRIDE_WORKER_RUNTIME_HISTORICAL_METRICS_RECOMPUTE_ENABLED`。三个开关齐备后，巡检在历史数据和辅助任务均完成时派发历史校准，再用冻结的校准结果派发历史指标。缺项完成也允许接力。
 
-每次新的校准尝试使用派发当天的上海日期。指标接力沿用该校准的日期，以覆盖同一批自然日，跨午夜也保持两个窗口一致。数据变化导致任务作废后，巡检从校准恢复。每个首次同步会话最多自动接受 20 次作废，随后状态显示「待人工处理」。运维可按结构化日志 `onboardingsync: historical analysis requires operator intervention` 定位会话，查看 `reason`、`interruptions` 和两个重算运行表中的 `supersede_reason`。执行失败耗尽作业重试时也会进入待人工处理。
+每次新的校准尝试使用派发当天的上海日期。指标接力沿用该校准的日期，以覆盖同一批自然日，跨午夜也保持两个窗口一致。自动批次的输入检查覆盖已导入的全部原始数据，跨午夜同步进窗口外的新活动也会使当前尝试作废。数据变化导致任务作废后，巡检从校准恢复。每个首次同步会话最多自动接受 20 次作废，随后状态显示「待人工处理」。运维可按结构化日志 `onboardingsync: historical analysis requires operator intervention` 定位会话，查看 `reason`、`interruptions` 和两个重算运行表中的 `supersede_reason`。执行失败耗尽作业重试时也会进入待人工处理。启用自动派发时，可在 Grafana 的 Loki 数据源配置告警并绑定运维通知渠道。下面的规则在最近 10 分钟出现需要人工处理的事件时触发。
+
+```logql
+sum(count_over_time({namespace="stride", pod=~"stride-worker-.*"} |= "onboardingsync: historical analysis requires operator intervention" [10m])) > 0
+```
 
 手动恢复沿用内部任务 API。确认用户当前绑定和数据稳定后，按 [首跑操作手册](https://github.com/zhaochy1990/stride-devops/blob/master/docs/runbooks/onboarding-staged-sync.md) 先发 `historical_calibration_recompute`，回读已完成运行的 `bundle_fingerprint`，再用同一天发 `historical_metrics_recompute`。在 `historical_metrics_recompute_runs` 核对 `published_at`、`output_fingerprint` 和终态，之后读取 `GET /api/users/me/onboarding/sync` 验证 `readiness.historical_analysis`。同一绑定已发布的结果会被复用，超过 72 小时的旧会话也能读取，已发布的缺项会显示为「已就绪（有缺项）」。

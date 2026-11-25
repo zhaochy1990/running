@@ -243,6 +243,7 @@ func runWorker() error {
 		AnalysisJobType:     catalog.JobTypeOnboardingRecentAnalysis,
 		HistoricalAuto:      cfg.Runtime.OnboardingHistoricalAuto && cfg.Runtime.HistoricalRecompute.Enabled && cfg.Runtime.HistoricalMetrics.Enabled,
 		HistoricalPublisher: pub,
+		HistoricalReplayAge: cfg.Retry.MaxBackoff + onboardingSweepInterval,
 		LegacyFullPipeline:  catalog.PipelineOnboarding,
 		Logger:              log,
 	})

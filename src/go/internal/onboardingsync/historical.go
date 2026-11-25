@@ -23,8 +23,13 @@ type historicalStore interface {
 	BlockOnboardingHistoricalAnalysis(context.Context, string, string) (bool, error)
 	OnboardingHistoricalPublication(context.Context, *storage.OnboardingSyncSession) (*storage.HistoricalMetricsRun, error)
 	ReadOnboardingHistoricalRuns(context.Context, *storage.OnboardingSyncSession) (storage.OnboardingHistoricalRuns, error)
+	ClaimOnboardingHistoricalReplay(context.Context, string, time.Time, time.Time) (bool, error)
+	OnboardingHistoricalRunActive(context.Context, *storage.OnboardingSyncSession) (bool, error)
+	OnboardingHistoricalContinuation(context.Context, string, string, string, *string, time.Time) (*job.Job, error)
+	SupersedeHistoricalRecomputeRun(context.Context, string, string) error
+	SupersedeHistoricalMetricsRun(context.Context, string, string) error
 	LatestOnboardingHistoricalJob(context.Context, string, string, time.Time, bool) (*job.Job, error)
-	ReadOnboardingHistoricalRecentEvidence(context.Context, *storage.HistoricalMetricsRun, string, string) (storage.OnboardingHistoricalRecentEvidence, error)
+	ReadOnboardingHistoricalRecentEvidence(context.Context, *storage.HistoricalMetricsRun, string, string, string) (storage.OnboardingHistoricalRecentEvidence, error)
 	GetWatchBinding(context.Context, string) (*storage.WatchBindingState, error)
 }
 
@@ -81,8 +86,16 @@ func (s *Service) reconcileHistoricalAnalysis(ctx context.Context, sess *storage
 			return err
 		}
 		if live != nil {
-			if live.Status == job.StatusQueued && s.historicalPublisher != nil && time.Since(live.UpdatedAt) >= 5*time.Minute {
-				return s.historicalPublisher.PublishWork(ctx, job.Message{JobID: live.ID, UserID: live.UserID})
+			if live.Status == job.StatusQueued && s.historicalPublisher != nil {
+				now := time.Now().UTC()
+				before := now.Add(-s.historicalReplayAge)
+				if !live.UpdatedAt.After(before) {
+					claimed, err := s.historical.ClaimOnboardingHistoricalReplay(ctx, live.ID, before, now)
+					if err != nil || !claimed {
+						return err
+					}
+					return s.historicalPublisher.PublishWork(ctx, job.Message{JobID: live.ID, UserID: live.UserID})
+				}
 			}
 			return nil
 		}
@@ -91,10 +104,16 @@ func (s *Service) reconcileHistoricalAnalysis(ctx context.Context, sess *storage
 	// A checkpoint with no live job can be resumed in-place. Keep the
 	// continuation tied to the run and to the most recent terminal job.
 	if cal := runs.ActiveCalibration; cal != nil {
-		return s.recoverHistoricalRun(ctx, sess, calType, cal.RunID, cal.ChunkSeq, cal.CreatedAt)
+		if cal.BindingRevision != sess.BindingRevision {
+			return s.historical.SupersedeHistoricalRecomputeRun(ctx, cal.RunID, "binding_revision_changed")
+		}
+		return s.recoverHistoricalRun(ctx, sess, calType, cal.RunID, cal.LastJobID, cal.ChunkSeq, cal.CreatedAt)
 	}
 	if metrics := runs.ActiveMetrics; metrics != nil {
-		return s.recoverHistoricalRun(ctx, sess, metricsType, metrics.RunID, metrics.ChunkSeq, metrics.CreatedAt)
+		if metrics.BindingRevision != sess.BindingRevision {
+			return s.historical.SupersedeHistoricalMetricsRun(ctx, metrics.RunID, "binding_revision_changed")
+		}
+		return s.recoverHistoricalRun(ctx, sess, metricsType, metrics.RunID, metrics.LastJobID, metrics.ChunkSeq, metrics.CreatedAt)
 	}
 	if runs.Interruptions >= historicalInterruptionLimit {
 		return s.blockHistoricalAnalysis(ctx, sess, storage.OnboardingHistoricalRetryLimit, runs.Interruptions)
@@ -126,8 +145,8 @@ func (s *Service) reconcileHistoricalAnalysis(ctx context.Context, sess *storage
 	return s.enqueueHistoricalAnalysis(ctx, sess, kind, key, in)
 }
 
-func (s *Service) recoverHistoricalRun(ctx context.Context, sess *storage.OnboardingSyncSession, kind, runID string, seq int, since time.Time) error {
-	last, err := s.historical.LatestOnboardingHistoricalJob(ctx, sess.UserID, kind, since, false)
+func (s *Service) recoverHistoricalRun(ctx context.Context, sess *storage.OnboardingSyncSession, kind, runID string, lastJobID *string, seq int, since time.Time) error {
+	last, err := s.historical.OnboardingHistoricalContinuation(ctx, sess.UserID, kind, runID, lastJobID, since)
 	if err != nil {
 		return err
 	}
@@ -159,10 +178,12 @@ func (s *Service) enqueueHistoricalAnalysis(ctx context.Context, sess *storage.O
 		if prior.Status != job.StatusFailed {
 			return nil
 		}
-		if prior.ErrorCode != "publish_failed" {
+		switch prior.ErrorCode {
+		case "publish_failed", "calibration_run_active", "calibration_bundle_changed":
+			key = fmt.Sprintf("onbhist:%s:retry:%s", sess.SessionID, prior.ID)
+		default:
 			return s.blockHistoricalAnalysis(ctx, sess, storage.OnboardingHistoricalJobFailed, 0)
 		}
-		key = fmt.Sprintf("onbhist:%s:publish:%s", sess.SessionID, prior.ID)
 	}
 	raw, err := json.Marshal(input)
 	if err != nil {
@@ -181,7 +202,7 @@ func (s *Service) enqueueHistoricalAnalysis(ctx context.Context, sess *storage.O
 func (s *Service) blockHistoricalAnalysis(ctx context.Context, sess *storage.OnboardingSyncSession, reason string, interruptions int64) error {
 	first, err := s.historical.BlockOnboardingHistoricalAnalysis(ctx, sess.SessionID, reason)
 	if first {
-		s.log.Warn("onboardingsync: historical analysis requires operator intervention",
+		s.log.Error("onboardingsync: historical analysis requires operator intervention",
 			zap.String("session_id", sess.SessionID), zap.String("user_id", sess.UserID),
 			zap.String("reason", reason), zap.Int64("interruptions", interruptions))
 	}
@@ -226,18 +247,12 @@ func (s *Service) projectHistoricalAnalysis(ctx context.Context, sess *storage.O
 	// polling indefinitely when the automatic dispatcher is switched off.
 	v.HistoricalAnalysisPoll = time.Since(sess.UpdatedAt) < 2*time.Minute ||
 		(sess.HistoricalAnalysisCheckedAt != nil && time.Since(*sess.HistoricalAnalysisCheckedAt) < 2*time.Minute)
-	for _, kind := range []string{catalog.JobTypeHistoricalCalibrationRecompute, catalog.JobTypeHistoricalMetricsRecompute} {
-		live, err := s.historical.LatestOnboardingHistoricalJob(ctx, sess.UserID, kind, sess.CreatedAt, true)
-		if err != nil {
-			return err
-		}
-		if live != nil {
-			v.HistoricalAnalysisPoll = true
-			v.Readiness.HistoricalAnalysis = ReadinessRunning
-			break
-		}
+	active, err := s.historical.OnboardingHistoricalRunActive(ctx, sess)
+	if active {
+		v.HistoricalAnalysisPoll = true
+		v.Readiness.HistoricalAnalysis = ReadinessRunning
 	}
-	return nil
+	return err
 }
 
 func (s *Service) projectPublishedRecentEvidence(ctx context.Context, published *storage.HistoricalMetricsRun, v *View) error {
@@ -253,34 +268,51 @@ func (s *Service) projectPublishedRecentEvidence(ctx context.Context, published 
 	if !hasGap {
 		return nil
 	}
-	from, to := "", ""
+	from, to := published.TargetToDay, published.TargetFromDay
 	if recent.CoverageFrom != nil && recent.CoverageTo != nil && *recent.CoverageFrom >= published.TargetFromDay && *recent.CoverageTo <= published.TargetToDay {
 		from, to = *recent.CoverageFrom, *recent.CoverageTo
 	}
-	evidence, err := s.historical.ReadOnboardingHistoricalRecentEvidence(ctx, published, from, to)
+	evidence, err := s.historical.ReadOnboardingHistoricalRecentEvidence(ctx, published, from, to, recent.AsOfDay)
 	if err != nil {
 		return err
 	}
-	for name, available := range map[string]bool{"load": evidence.Load, "zones": evidence.Zones, "ability": evidence.Ability} {
-		if recent.Domains[name].Reason != "historical_calibration_missing" {
+	ability := 0
+	if evidence.Ability {
+		ability = 1
+	}
+	for _, domain := range []struct {
+		name             string
+		available, total int
+	}{
+		{"load", evidence.Loads, evidence.Activities},
+		{"zones", evidence.Zones, evidence.Activities},
+		{"ability", ability, 1},
+	} {
+		if recent.Domains[domain.name].Reason != "historical_calibration_missing" {
 			continue
 		}
-		if available {
-			recent.Domains[name] = AnalysisDomainView{Status: "ready"}
-		} else {
-			recent.Domains[name] = AnalysisDomainView{Status: "unavailable", Reason: "no_published_evidence"}
+		switch {
+		case domain.available == 0:
+			recent.Domains[domain.name] = AnalysisDomainView{Status: "unavailable", Reason: "no_published_evidence"}
+		case domain.available < domain.total:
+			recent.Domains[domain.name] = AnalysisDomainView{Status: "partial", Reason: "historical_recompute_coverage_gap"}
+		default:
+			recent.Domains[domain.name] = AnalysisDomainView{Status: "ready"}
 		}
 	}
-	ready := 0
+	ready, usable := 0, 0
 	for _, domain := range recent.Domains {
 		if domain.Status == "ready" {
 			ready++
+		}
+		if domain.Status == "ready" || domain.Status == "partial" {
+			usable++
 		}
 	}
 	switch {
 	case ready == len(recent.Domains):
 		recent.Status = storage.OnboardingAnalysisStatusReady
-	case ready > 0:
+	case usable > 0:
 		recent.Status = storage.OnboardingAnalysisStatusPartial
 	default:
 		recent.Status = storage.OnboardingAnalysisStatusUnavailable

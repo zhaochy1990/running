@@ -187,3 +187,33 @@ test("long term completes only when history and its analysis are both ready", ()
   );
   assert.equal(explainSyncCoverage(base, TODAY).longTermComplete, false, "historical analysis is still pending_explicit_recompute");
 });
+
+test("published history repairs a stale diagnosis while keeping actual gaps and the original cutoff", () => {
+  const analysisDay = "2026-11-16";
+  const cov = deriveSyncCoverage(
+    session({ state: "completed" }),
+    [coverageRow({ stage: "recent_analysis" }), coverageRow({ stage: "historical_raw" }), coverageRow({ stage: "auxiliary" })],
+    [],
+    {
+      as_of_day: analysisDay,
+      status: "unavailable",
+      stale: 1,
+      domains_json:
+        '{"load":{"status":"unavailable","reason":"historical_calibration_missing"},"zones":{"status":"unavailable","reason":"historical_calibration_missing"},"ability":{"status":"unavailable","reason":"vendor_gap"}}',
+      coverage_from: "2026-08-12",
+      coverage_to: analysisDay,
+      input_fingerprint: "original",
+      computed_at: `${analysisDay}T13:00:00Z`,
+    },
+    { readiness: "ready_with_gaps", recentEvidence: { activities: 4, loads: 4, zones: 2, ability: false } },
+  );
+  assert.equal(cov.readiness.historicalAnalysis, "ready_with_gaps");
+  assert.equal(cov.readiness.recentAnalysis, "partial");
+  assert.equal(cov.recentAnalysisDetail?.asOfDay, analysisDay);
+  assert.deepEqual(cov.recentAnalysisDetail?.domains, {
+    load: { status: "ready" },
+    zones: { status: "partial", reason: "historical_recompute_coverage_gap" },
+    ability: { status: "unavailable", reason: "vendor_gap" },
+  });
+  assert.equal(explainSyncCoverage(cov, TODAY).longTermComplete, false);
+});
