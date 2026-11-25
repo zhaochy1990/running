@@ -39,11 +39,16 @@ function renderSetup(onDraftReady = vi.fn()) {
   return render(<TrainingPlanSetup onDraftReady={onDraftReady} />);
 }
 
-async function submitGoal() {
+function fillGoal(targetTime: string) {
   fireEvent.click(screen.getByRole("button", { name: "5K" }));
   fireEvent.change(screen.getByLabelText("目标赛事"), { target: { value: "测试比赛" } });
   fireEvent.change(screen.getByLabelText("比赛日期"), { target: { value: "2026-12-06" } });
   fireEvent.click(screen.getByRole("button", { name: /^5$/ }));
+  fireEvent.change(screen.getByLabelText("目标完赛时间"), { target: { value: targetTime } });
+}
+
+async function submitGoal() {
+  fillGoal(" 0:30:00 ");
   await vi.waitFor(() => {
     expect(screen.getByRole("button", { name: "5K" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: /^5$/ })).toHaveAttribute("aria-pressed", "true");
@@ -54,7 +59,7 @@ async function submitGoal() {
     await Promise.resolve();
     await Promise.resolve();
   });
-  expect(api.createTrainingGoal).toHaveBeenCalledTimes(1);
+  expect(api.createTrainingGoal).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ target_finish_time: "0:30:00" }));
   expect(api.triggerSync).toHaveBeenCalledTimes(1);
   await act(async () => {
     await Promise.resolve();
@@ -80,6 +85,16 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+it.each(["", "3:60:00", "0:00:00"])("blocks an invalid target time %j before creating the training goal", (targetTime) => {
+  renderSetup();
+  fillGoal(targetTime);
+  fireEvent.submit(screen.getByRole("button", { name: "生成我的赛季计划" }).closest("form")!);
+
+  expect(screen.getByText("请输入有效的目标完赛时间（例如 3:30:00）")).toBeInTheDocument();
+  expect(api.createTrainingGoal).not.toHaveBeenCalled();
+  expect(api.triggerSync).not.toHaveBeenCalled();
 });
 
 describe("TrainingPlanSetup polling", () => {

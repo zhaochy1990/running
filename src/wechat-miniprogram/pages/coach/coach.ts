@@ -30,6 +30,7 @@ import { initialWeeksNotice } from '../../utils/masterPlanApplyResult';
 import {
   buildMasterPlanJobRequest,
   decideRetryAction,
+  isValidPlanTargetTime,
   listPlanJobs,
   planJobPollBackoffMs,
   planJobPollFailureAction,
@@ -1824,6 +1825,10 @@ Page<CoachPageData, CoachPageHandlers>({
           resultTitle: view?.title ?? record.resultTitle,
           resultSubtitle: view?.subtitle ?? record.resultSubtitle,
         });
+        return;
+      }
+      if (!isValidPlanTargetTime(record.request.goals?.[0]?.target_time)) {
+        wx.showToast({ title: '请先修改目标并填写目标成绩', icon: 'none' });
         return;
       }
       if (probe?.status === 'failed') {

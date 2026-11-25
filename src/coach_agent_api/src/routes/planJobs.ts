@@ -130,6 +130,12 @@ async function readEnqueueRequest(
   if (!parsed.success) {
     return { ok: false, error: "invalid_request" };
   }
+  if (jobType === "generate_master_plan" && "goals" in parsed.data) {
+    const targetTime = parsed.data.goals.find((goal) => goal.priority === "A")?.target_time;
+    if (!targetTime || /^0{1,2}:00:00$/.test(targetTime)) {
+      return { ok: false, error: "target_time_required" };
+    }
+  }
   return {
     ok: true,
     value: {

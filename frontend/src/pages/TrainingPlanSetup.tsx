@@ -51,7 +51,6 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
   const [raceName, setRaceName] = useState("");
   const [raceDate, setRaceDate] = useState("");
   const [weeklyDays, setWeeklyDays] = useState<WeeklyTrainingDays | "">("");
-  const [finishOnly, setFinishOnly] = useState(false);
   const [targetTime, setTargetTime] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -186,6 +185,12 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
       return;
     }
 
+    const targetFinishTime = targetTime.trim();
+    if (!/^\d{1,2}:[0-5]\d:[0-5]\d$/.test(targetFinishTime) || /^0{1,2}:00:00$/.test(targetFinishTime)) {
+      setError("请输入有效的目标完赛时间（例如 3:30:00）");
+      return;
+    }
+
     setSaving(true);
     try {
       const goal = await createTrainingGoal({
@@ -193,7 +198,7 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
         race_distance: raceDistance,
         race_name: raceName,
         race_date: raceDate,
-        target_finish_time: finishOnly ? null : targetTime.trim() || null,
+        target_finish_time: targetFinishTime,
         weekly_training_days: weeklyDays,
       });
       if (!goal.ok) {
@@ -460,29 +465,16 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
             </div>
           </div>
 
-          {/* 目标完赛时间 + 仅完赛即可 toggle */}
           <div>
-            <div className="flex items-end justify-between mb-2">
-              <label className="text-xs font-mono text-text-muted uppercase tracking-wider">目标完赛时间</label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={finishOnly}
-                  onChange={(e) => setFinishOnly(e.target.checked)}
-                  className="w-4 h-4 rounded border-border-subtle accent-accent-green"
-                />
-                <span className="text-xs text-text-muted">仅完赛即可</span>
-              </label>
-            </div>
+            <label className={labelCls} htmlFor="master-plan-target-time">目标完赛时间</label>
             <input
               id="master-plan-target-time"
-              aria-label="目标完赛时间"
               type="text"
+              required
               placeholder="例：3:30:00"
-              value={finishOnly ? "" : targetTime}
-              disabled={finishOnly}
+              value={targetTime}
               onChange={(e) => setTargetTime(e.target.value)}
-              className={`${inputCls} font-mono tracking-wider disabled:opacity-40 disabled:cursor-not-allowed`}
+              className={`${inputCls} font-mono tracking-wider`}
             />
           </div>
 

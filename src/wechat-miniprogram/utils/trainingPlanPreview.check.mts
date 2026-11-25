@@ -16,7 +16,7 @@ const candidate = {
   start_date: firstWeek,
   end_date: raceDay,
   total_weeks: 2,
-  goal: { race_name: '2026上海马拉松' },
+  goal: { race_name: '2026上海马拉松', distance: 'FM' },
   phases: [{ id: 'taper', name: 'taper', start_date: firstWeek, end_date: raceDay }],
   weeks: [firstWeek, raceWeek].map((week_start, index) => ({ week_start, week_index: index + 1, phase_id: 'taper' })),
   weekly_docs: [
@@ -60,6 +60,10 @@ type PageUnderTest = {
   data: {
     uid: string;
     isPreview: boolean;
+    planSubtitle: string;
+    planTotalWeeks: number;
+    rhythmBars: Array<{ heightPct: number }>;
+    chartPeakLabel: string;
     calendarGroups: Array<{ weeks: Array<{ key: string; days: Array<{ summary: string; distLabel: string }>; hasDoc: boolean }> }>;
   };
   _previewPayload: { apply_token: string; content: typeof candidate } | null;
@@ -94,6 +98,12 @@ const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 view.setData({ uid: 'test-user', isPreview: true });
 view.applyPlan(candidate);
+assert.equal(view.data.planTotalWeeks, 2);
+assert.equal(view.data.rhythmBars.length, 2);
+assert.equal(view.data.chartPeakLabel, '0 km');
+assert.match(view.data.planSubtitle, /^全程马拉松/);
+const template = readFileSync(new URL('../pages/training-plan/training-plan.wxml', import.meta.url), 'utf8');
+assert.match(template, /\{\{planTotalWeeks\}\}周训练节奏/);
 expandRaceWeek();
 await settle();
 assert.deepEqual(reads, [], '预览的首周和展开周都不能读取生效课表');
@@ -101,6 +111,16 @@ assert.equal(week(1).days[0].summary, '预览轻松跑');
 assert.equal(week(2).days.length, 1);
 assert.equal(week(2).days[0].summary, raceName);
 assert.match(week(2).days[0].distLabel, /^42\./);
+
+view.applyPlan({
+  ...candidate,
+  goal: { race_name: '半程测试赛', distance: 'HM' },
+  total_weeks: 1,
+  weeks: candidate.weeks.slice(0, 1),
+});
+assert.equal(view.data.planTotalWeeks, 1);
+assert.equal(view.data.rhythmBars.length, 1);
+assert.match(view.data.planSubtitle, /^半程马拉松/);
 
 view.applyPlan({ ...candidate, weekly_docs: candidate.weekly_docs.slice(0, 1) });
 expandRaceWeek();

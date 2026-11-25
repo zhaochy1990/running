@@ -56,10 +56,10 @@
       </view>
 
       <view class="mpf-field">
-        <view class="mpf-label">目标成绩<text class="mpf-label__hint">也可以选择顺利完赛</text></view>
-        <view wx:if="{{!finishOnly}}" class="mpf-time">
+        <view class="mpf-label">目标成绩<text class="mpf-label__hint">必填</text></view>
+        <view class="mpf-time">
           <picker class="mpf-time__col" mode="selector" range="{{hourRange}}" value="{{targetHourIndex}}" bindchange="onHourChange">
-            <view class="mpf-time__value">{{targetHour}}</view>
+            <view class="mpf-time__value {{targetHourIndex === 0 ? 'mpf-placeholder' : ''}}">{{hourRange[targetHourIndex]}}</view>
             <text class="mpf-time__unit">时</text>
           </picker>
           <text class="mpf-time__colon">:</text>
@@ -73,10 +73,7 @@
             <text class="mpf-time__unit">秒</text>
           </picker>
         </view>
-        <view class="mpf-finish" bindtap="onFinishOnlyToggle">
-          <view class="mpf-check {{finishOnly ? 'mpf-check--on' : ''}}"></view>
-          <text>不设成绩目标，顺利完赛就好</text>
-        </view>
+        <text wx:if="{{targetTimeError}}" class="mpf-error">{{targetTimeError}}</text>
       </view>
     </view>
 

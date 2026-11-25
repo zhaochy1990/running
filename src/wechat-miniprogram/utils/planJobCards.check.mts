@@ -31,7 +31,7 @@ const form: MasterPlanFormCard = {
   restriction: '膝盖偶尔不适',
 };
 
-// 表单 → kernel request：目标成绩/完赛 XOR、训练日补集、自由文本进 preferences
+// 表单 → kernel request：目标成绩、训练日补集、自由文本进 preferences
 {
   const request = buildMasterPlanJobRequest(form, 'req-1', DEFAULT_MASTER_PLAN_FORM_OPTIONS);
   assert.equal(request.request_id, 'req-1');
@@ -94,15 +94,11 @@ assert.throws(
   /strength days required/,
 );
 
-// 目标成绩空 = 顺利完赛（target_time null + finish_only true）
-{
-  const request = buildMasterPlanJobRequest(
-    { ...form, goal: { ...form.goal, target_time: '' } },
-    'req-2',
-    DEFAULT_MASTER_PLAN_FORM_OPTIONS,
+for (const target_time of ['', ' ', '3:67:00', '0:00:00', '00:00:00']) {
+  assert.throws(
+    () => buildMasterPlanJobRequest({ ...form, goal: { ...form.goal, target_time } }, 'req-2', DEFAULT_MASTER_PLAN_FORM_OPTIONS),
+    /valid target_time is required/,
   );
-  assert.equal(request.goals[0].target_time, null);
-  assert.equal(request.goals[0].finish_only, true);
 }
 
 // 突破口径：小时×100 + 分
@@ -215,7 +211,14 @@ type TestMessage = {
   type Tap = { currentTarget: { dataset: { id: number | string } } };
   type FormComponent = {
     data: Record<string, unknown>;
-    methods: { hydrate(form: MasterPlanFormCard, rememberSource?: boolean): void; reopenForm(values?: FormValues): void };
+    methods: {
+      hydrate(form: MasterPlanFormCard, rememberSource?: boolean): void;
+      onHourChange(event: { detail: { value: string } }): void;
+      onMinuteChange(event: { detail: { value: string } }): void;
+      onSubmitTap(): void;
+      reopenForm(values?: FormValues): void;
+      submitFailed(): void;
+    };
     observers: { form(form: MasterPlanFormCard): void };
   };
   type CoachPage = {
@@ -298,8 +301,27 @@ type TestMessage = {
     '../../utils/planJobCards': planJobCards,
     '../../utils/weekday': { WEEKDAY_VALUES },
     '../../utils/date': date,
+  }, {
+    showToast: ({ title }: { title: string }) => { toasts.push(title); },
   });
-  const instance = { ...component.methods, data: component.data, setData: (patch: object) => Object.assign(component.data, patch) };
+  const submittedForms: FormValues[] = [];
+  const instance = {
+    ...component.methods,
+    data: component.data,
+    setData: (patch: object) => Object.assign(component.data, patch),
+    triggerEvent: (_event: string, values: FormValues) => submittedForms.push(values),
+  };
+  // 旧表单和只提到完赛的对话都可能没有可预填成绩。
+  instance.hydrate({ ...form, goal: { ...form.goal, target_time: '' } });
+  instance.onSubmitTap();
+  assert.equal(component.data.targetHour, null);
+  assert.equal(component.data.targetTimeError, '请选择有效的目标成绩');
+  assert.equal(submittedForms.length, 0);
+  instance.onHourChange({ detail: { value: '3' } });
+  instance.onMinuteChange({ detail: { value: '25' } });
+  instance.onSubmitTap();
+  assert.equal(submittedForms[0]?.form.goal.target_time, '3:25:00');
+  instance.submitFailed();
   const originalForm = { ...form, goal: { ...form.goal, target_time: '3:30:00' } };
   instance.hydrate(originalForm);
   page.selectComponent = (selector) => {

@@ -76,8 +76,7 @@ export function enqueueGenerateAdjustment(input: {
 // ---------------------------------------------------------------------------
 
 /** 表单卡提交的 kernel request 形状（MasterPlanGraphRequest 的 mp 侧最小镜像）。
- * 目标成绩二选一：`target_time` 为 null 时 `finish_only` 必须 true（zod
- * superRefine 的 XOR 口径），反之亦然。 */
+ * 新请求必填目标成绩。本地历史任务仍可能包含 finish_only 和空成绩。 */
 export interface MasterPlanJobRequest {
   request_id: string;
   requested_mode: 'new_season';
