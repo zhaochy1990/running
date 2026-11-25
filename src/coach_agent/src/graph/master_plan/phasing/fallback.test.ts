@@ -71,6 +71,18 @@ test("N=1..26 × 全场景：兜底意图全部通过 IntentSchema 与 11 条结
   assert.deepEqual(failures, []);
 });
 
+test("一周备赛的全马和半马兜底里程碑使用对应专项或赛前激活", () => {
+  const full = makeEvidence();
+  for (const distance of ["FM", "HM"] as const) {
+    const intent = tableFallback(makeEvidence({ target: { ...full.target, distance } }), 1);
+    const milestone = intent.milestones.find((entry) => entry.phase === "final_quality");
+    assert.ok(milestone);
+    assert.match(milestone.criterion, distance === "HM" ? /半马专项/ : /马拉松专项/);
+    assert.match(milestone.criterion, /赛前激活/);
+    assert.doesNotMatch(milestone.criterion, /30\s*km/i);
+  }
+});
+
 test("赛后 14 天内 → 首阶段 recovery；常态无 recovery 前置", () => {
   const raced = scenarios.raced();
   assert.equal(tableFallback(raced, 22).phases[0]?.canonical, "recovery");

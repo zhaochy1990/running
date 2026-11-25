@@ -18,6 +18,10 @@ const candidate = {
   total_weeks: 2,
   goal: { race_name: '2026上海马拉松', distance: 'FM' },
   phases: [{ id: 'taper', name: 'taper', start_date: firstWeek, end_date: raceDay }],
+  policy: {
+    phases: [{ name: '第四阶段·最终质量期', canonical: 'final_quality', start_week: 1, end_week: 2 }],
+    milestones: [{ phase: 'final_quality', signal: '比赛激活', criterion: '按计划完成赛前激活' }],
+  },
   weeks: [firstWeek, raceWeek].map((week_start, index) => ({ week_start, week_index: index + 1, phase_id: 'taper' })),
   weekly_docs: [
     { week_index: 1, sessions: [session(firstWeek, '预览轻松跑', 5000)] },
@@ -62,8 +66,9 @@ type PageUnderTest = {
     isPreview: boolean;
     planSubtitle: string;
     planTotalWeeks: number;
-    rhythmBars: Array<{ heightPct: number }>;
+    rhythmBars: Array<{ value: number | string; heightPct: number }>;
     chartPeakLabel: string;
+    stage: { milestones: Array<{ criterion: string }> };
     calendarGroups: Array<{ weeks: Array<{ key: string; days: Array<{ summary: string; distLabel: string }>; hasDoc: boolean }> }>;
   };
   _previewPayload: { apply_token: string; content: typeof candidate } | null;
@@ -100,7 +105,9 @@ view.setData({ uid: 'test-user', isPreview: true });
 view.applyPlan(candidate);
 assert.equal(view.data.planTotalWeeks, 2);
 assert.equal(view.data.rhythmBars.length, 2);
-assert.equal(view.data.chartPeakLabel, '0 km');
+assert.equal(view.data.chartPeakLabel, '—');
+assert.equal(view.data.rhythmBars[0]?.value, '—');
+assert.equal(view.data.stage.milestones[0]?.criterion, '按计划完成赛前激活');
 assert.match(view.data.planSubtitle, /^全程马拉松/);
 const template = readFileSync(new URL('../pages/training-plan/training-plan.wxml', import.meta.url), 'utf8');
 assert.match(template, /\{\{planTotalWeeks\}\}周训练节奏/);
@@ -116,10 +123,12 @@ view.applyPlan({
   ...candidate,
   goal: { race_name: '半程测试赛', distance: 'HM' },
   total_weeks: 1,
-  weeks: candidate.weeks.slice(0, 1),
+  weeks: [{ ...candidate.weeks[0], target_weekly_km_high: 0 }],
 });
 assert.equal(view.data.planTotalWeeks, 1);
 assert.equal(view.data.rhythmBars.length, 1);
+assert.equal(view.data.chartPeakLabel, '0 km');
+assert.equal(view.data.rhythmBars[0]?.value, 0);
 assert.match(view.data.planSubtitle, /^半程马拉松/);
 
 view.applyPlan({ ...candidate, weekly_docs: candidate.weekly_docs.slice(0, 1) });

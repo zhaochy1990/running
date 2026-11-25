@@ -58,8 +58,8 @@
       <view class="mpf-field">
         <view class="mpf-label">目标成绩<text class="mpf-label__hint">必填</text></view>
         <view class="mpf-time">
-          <picker class="mpf-time__col" mode="selector" range="{{hourRange}}" value="{{targetHourIndex}}" bindchange="onHourChange">
-            <view class="mpf-time__value {{targetHourIndex === 0 ? 'mpf-placeholder' : ''}}">{{hourRange[targetHourIndex]}}</view>
+          <picker class="mpf-time__col" mode="selector" range="{{hourOptions}}" value="{{targetHourIndex}}" bindchange="onHourChange">
+            <view class="mpf-time__value {{targetHourIndex === 0 ? 'mpf-placeholder' : ''}}">{{hourOptions[targetHourIndex]}}</view>
             <text class="mpf-time__unit">时</text>
           </picker>
           <text class="mpf-time__colon">:</text>

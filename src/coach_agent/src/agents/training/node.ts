@@ -181,7 +181,7 @@ function normalizeDate(input: string | undefined): string {
   return `${m[1]}-${String(m[2]).padStart(2, "0")}-${String(m[3]).padStart(2, "0")}`;
 }
 
-/** 目标宽松归一：h:mm:ss / hh:mm / 带引号皆收；空串=完赛。 */
+/** 将 hh:mm 扩展为 h:mm:ss，空串留给运动员填写。 */
 function normalizeTarget(input: string | undefined): string {
   if (!input) return "";
   const raw = input.trim();
@@ -191,7 +191,9 @@ function normalizeTarget(input: string | undefined): string {
 
 /** 宽松槽位 → 严格表单卡（schema 校验兜底；失败抛错由调用方按文本透传）。 */
 function normalizeForm(form: NonNullable<MasterPlanFormEnvelope["form"]>): MasterPlanFormCard {
-  const weeklyDays = normalizeWeekdays(form.weekly_days ?? []);
+  const statedDays = normalizeWeekdays(form.weekly_days ?? []);
+  const weeklyDays = statedDays.length > 0 ? statedDays : WEEKDAY_VALUES.slice(0, 5);
+  const longRunDay = normalizeLongDay(form.long_run_day);
   const candidate = {
     goal: {
       race_name: (form.race_name ?? "").trim().slice(0, 60),
@@ -200,8 +202,8 @@ function normalizeForm(form: NonNullable<MasterPlanFormEnvelope["form"]>): Maste
       target_time: normalizeTarget(form.target_time),
     },
     availability: {
-      weekly_days: weeklyDays.length > 0 ? weeklyDays : (["monday", "tuesday", "wednesday", "thursday", "friday"] as const).slice(),
-      preferred_long_run_day: normalizeLongDay(form.long_run_day) ?? weeklyDays.at(-1) ?? "saturday",
+      weekly_days: weeklyDays,
+      preferred_long_run_day: longRunDay !== null && weeklyDays.includes(longRunDay) ? longRunDay : null,
     },
     base: (form.base ?? "").trim().slice(0, 200),
     restriction: (form.restriction ?? "").trim().slice(0, 200),

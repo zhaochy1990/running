@@ -29,9 +29,9 @@ export const TRAINING_FORM_PROMPT = `你是 STRIDE 跑步教练的训练计划�
 - race_name：比赛名，没提到就空串 ""；
 - distance："FM"（全程）或 "HM"（半马），没提到按 "FM"；
 - race_date：YYYY-MM-DD，必须把年份补全（用户说「明年3月」按最近一个未来 3 月推）；没提到就空串；
-- target_time："h:mm:ss" 目标成绩；没提到或只说「完赛」就空串；
+- target_time："h:mm:ss" 目标成绩；没提到具体成绩或只说「完赛」就留空，由运动员在表单中填写；
 - weekly_days：每周可训练的日子，英文小写（"monday"…"sunday"），从对话里的习惯提取（如「一周跑四次」取合理分布）；完全没提就默认 ["monday","tuesday","wednesday","thursday","friday"]；
-- long_run_day：长距离习惯日（英文小写），没提默认 "saturday"；
+- long_run_day：长距离习惯日（英文小写），必须属于 weekly_days，没提到则省略；
 - base / restriction：近期训练基础、伤病限制的原文摘要，没提就空串。
 `;
 

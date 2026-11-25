@@ -128,6 +128,17 @@ export const MasterPlanGraphRequest = z
   });
 export type MasterPlanGraphRequest = z.infer<typeof MasterPlanGraphRequest>;
 
+export const MASTER_PLAN_TARGET_TIME_REQUIRED = "target_time_required";
+
+/** Submission contract for new generation jobs. Historical requests use MasterPlanGraphRequest. */
+export const MasterPlanGenerationRequest = MasterPlanGraphRequest.refine(
+  (request) => {
+    const targetTime = request.goals.find((goal) => goal.priority === "A")?.target_time;
+    return targetTime != null && !/^0{1,2}:00:00$/.test(targetTime);
+  },
+  { path: ["goals"], message: MASTER_PLAN_TARGET_TIME_REQUIRED },
+);
+
 export const MasterPlanGraphContext = z
   .object({
     userId: identifier,

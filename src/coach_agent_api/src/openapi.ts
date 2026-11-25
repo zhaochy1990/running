@@ -1179,7 +1179,7 @@ export const OPENAPI_DOCUMENT = {
           request: {
             type: "object",
             description:
-              "The kernel request, re-validated server-side. generate_master_plan uses MasterPlanGraphRequest and requires a positive target_time for the primary goal. generate_rolling_block uses RollingJobRequest. generate_adjustment uses AdjustJobRequest.",
+              "The kernel request, re-validated server-side. generate_master_plan uses MasterPlanGenerationRequest and requires a positive target_time for the primary goal. generate_rolling_block uses RollingJobRequest. generate_adjustment uses AdjustJobRequest.",
             additionalProperties: true,
           },
           idempotency_key: {

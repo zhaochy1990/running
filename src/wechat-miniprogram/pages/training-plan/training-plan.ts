@@ -87,7 +87,7 @@ interface AssessmentVM {
 interface RhythmBarVM {
   key: string;
   week: number;
-  value: number;
+  value: number | string;
   heightPct: number;
   color: string;
   selected: boolean;
@@ -595,19 +595,20 @@ function buildVMs(plan: SeasonPlanContent, chartMetric: 'km' | 'lr', chosenPhase
     return sk != null && sk.lr != null;
   });
   const values = plan.weeks.map((w) => {
-    if (chartMetric === 'lr') return skeletonByWeek.get(w.week_index)?.lr ?? 0;
-    return w.target_weekly_km_high ?? w.planned_distance_km ?? 0;
+    if (chartMetric === 'lr') return skeletonByWeek.get(w.week_index)?.lr ?? null;
+    return w.target_weekly_km_high ?? w.planned_distance_km ?? null;
   });
-  const peak = Math.max(0, ...values);
-  const axis = Math.max(20, Math.ceil(peak / 20) * 20);
+  const knownValues = values.filter((value): value is number => value !== null);
+  const peak = knownValues.length > 0 ? Math.max(...knownValues) : null;
+  const axis = Math.max(20, Math.ceil((peak ?? 0) / 20) * 20);
   const rhythmBars: RhythmBarVM[] = plan.weeks.map((w, i) => {
     const phaseIdx = phaseIndexOfWeek(plan, w, phaseById, phaseByName);
     const value = values[i];
     return {
       key: `b${w.week_index}`,
       week: w.week_index,
-      value: Number(fmtNum(value)),
-      heightPct: Math.round((value / axis) * 1000) / 10,
+      value: value == null ? '—' : Number(fmtNum(value)),
+      heightPct: Math.round(((value ?? 0) / axis) * 1000) / 10,
       color: PHASE_COLORS[phaseIdx % PHASE_COLORS.length],
       selected: w.week_index === selectedWeek,
       label: w.week_index === 1 || w.week_index % 4 === 0 || w.week_index === plan.total_weeks ? String(w.week_index) : '',
@@ -636,7 +637,9 @@ function buildVMs(plan: SeasonPlanContent, chartMetric: 'km' | 'lr', chosenPhase
     const policyPhase =
       policyPhases.find((pp) => firstWeek != null && pp.start_week <= firstWeek && firstWeek <= pp.end_week) || null;
     const milestones = policyPhase
-      ? (plan.policy?.milestones ?? []).filter((m) => policyPhase.name.startsWith(m.phase))
+      ? (plan.policy?.milestones ?? []).filter((m) =>
+          policyPhase.name.includes(m.phase) || (policyPhase.canonical && m.phase.includes(policyPhase.canonical))
+        )
       : [];
     stage = {
       key: `stage${chosenPhase}`,
@@ -692,7 +695,7 @@ function buildVMs(plan: SeasonPlanContent, chartMetric: 'km' | 'lr', chosenPhase
     };
   });
 
-  return { planTitle, planSubtitle, planTotalWeeks: plan.total_weeks, assessment, chartHasLr, chartAxis: axis, chartPeakLabel: `${fmtNum(peak)} km`, rhythmBars, phaseTabs, stage, principles, calendarGroups };
+  return { planTitle, planSubtitle, planTotalWeeks: plan.total_weeks, assessment, chartHasLr, chartAxis: axis, chartPeakLabel: peak == null ? '—' : `${fmtNum(peak)} km`, rhythmBars, phaseTabs, stage, principles, calendarGroups };
 }
 
 Page<TrainingPlanPageData, TrainingPlanPageHandlers>({

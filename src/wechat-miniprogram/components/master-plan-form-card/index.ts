@@ -22,9 +22,8 @@ import { pad2, shanghaiToday } from '../../utils/date';
 const WEEKDAY_LABELS = ['一', '二', '三', '四', '五', '六', '日'];
 const DISTANCE_OPTIONS = ['全程马拉松（全马）', '半程马拉松（半马）'];
 const LONG_RUN_NO_PREFERENCE = '不指定';
-const HOUR_RANGE = [1, 2, 3, 4, 5, 6];
-const HOUR_PLACEHOLDER = '请选择';
-const HOUR_OPTIONS = [HOUR_PLACEHOLDER, ...HOUR_RANGE.map(String)];
+// 目标成绩契约允许一至两位小时数，0 小时也可输入半马成绩。
+const HOUR_OPTIONS = ['请选择', ...Array.from({ length: 100 }, (_, hour) => String(hour))];
 const ZERO_TO_59 = Array.from({ length: 60 }, (_, i) => i);
 const STRENGTH_OPTIONS = ['不安排', '1 次', '2 次', '3 次'];
 
@@ -51,7 +50,7 @@ interface FormCardData {
   targetHour: number | null;
   targetMinute: number;
   targetSecond: number;
-  hourRange: string[];
+  hourOptions: string[];
   targetTimeError: string;
   minuteRange: number[];
   secondRange: number[];
@@ -153,7 +152,7 @@ Component<FormCardData, FormCardProps, FormCardMethods, [], FormCardInstance>({
     targetHour: null,
     targetMinute: 0,
     targetSecond: 0,
-    hourRange: HOUR_OPTIONS,
+    hourOptions: HOUR_OPTIONS,
     targetTimeError: '',
     minuteRange: ZERO_TO_59,
     secondRange: ZERO_TO_59,
@@ -205,18 +204,13 @@ Component<FormCardData, FormCardProps, FormCardMethods, [], FormCardInstance>({
       const preferred = form.availability.preferred_long_run_day;
       const weeklyDays = toWeekdayArray(form.availability.weekly_days);
       const selected = new Set(weeklyDays);
-      // 服务端预填的成绩小时可能不在常用区间（1–6），并入下拉避免值越界。
       const hour = time?.hour ?? null;
-      const hourRange = hour !== null && !HOUR_RANGE.includes(hour)
-        ? [HOUR_PLACEHOLDER, ...[...HOUR_RANGE, hour].sort((a, b) => a - b).map(String)]
-        : HOUR_OPTIONS;
       this.setData({
         activeTab: 'goal',
         raceName: form.goal.race_name,
         distanceIndex: form.goal.distance === 'HM' ? 1 : 0,
         raceDate: form.goal.race_date,
-        hourRange,
-        targetHourIndex: hour === null ? 0 : hourRange.indexOf(String(hour)),
+        targetHourIndex: hour === null ? 0 : hour + 1,
         targetHour: hour,
         targetMinute: time?.minute ?? 0,
         targetSecond: time?.second ?? 0,
@@ -226,7 +220,7 @@ Component<FormCardData, FormCardProps, FormCardMethods, [], FormCardInstance>({
           label: WEEKDAY_LABELS[index],
           selected: selected.has(value),
         })),
-        longRunIndex: preferred ? WEEKDAY_VALUES.indexOf(preferred) + 1 : 0,
+        longRunIndex: preferred && selected.has(preferred) ? WEEKDAY_VALUES.indexOf(preferred) + 1 : 0,
         base: form.base,
         restriction: form.restriction,
         errorRaceName: false,
@@ -256,7 +250,7 @@ Component<FormCardData, FormCardProps, FormCardMethods, [], FormCardInstance>({
 
     onHourChange(e: WechatMiniprogram.PickerChange) {
       const index = Number(e.detail.value) || 0;
-      const hour = this.data.hourRange[index];
+      const hour = this.data.hourOptions[index];
       if (hour === undefined) return;
       this.setData({ targetHour: index === 0 ? null : Number(hour), targetHourIndex: index, targetTimeError: '' });
     },

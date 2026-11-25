@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import targetTimes from "../../../../src/coach_contract/src/master_plan/generation-target-time.fixture.json";
 
 const api = vi.hoisted(() => ({
   createTrainingGoal: vi.fn(),
@@ -87,7 +88,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it.each(["", "3:60:00", "0:00:00"])("blocks an invalid target time %j before creating the training goal", (targetTime) => {
+it.each(targetTimes.rejected)("blocks an invalid target time %j before creating the training goal", (targetTime) => {
   renderSetup();
   fillGoal(targetTime);
   fireEvent.submit(screen.getByRole("button", { name: "生成我的赛季计划" }).closest("form")!);
@@ -95,6 +96,14 @@ it.each(["", "3:60:00", "0:00:00"])("blocks an invalid target time %j before cre
   expect(screen.getByText("请输入有效的目标完赛时间（例如 3:30:00）")).toBeInTheDocument();
   expect(api.createTrainingGoal).not.toHaveBeenCalled();
   expect(api.triggerSync).not.toHaveBeenCalled();
+});
+
+it.each(targetTimes.accepted)("submits a valid target time %j", async (targetTime) => {
+  renderSetup();
+  fillGoal(targetTime);
+  await act(async () => fireEvent.submit(screen.getByRole("button", { name: "生成我的赛季计划" }).closest("form")!));
+
+  expect(api.createTrainingGoal).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ target_finish_time: targetTime }));
 });
 
 describe("TrainingPlanSetup polling", () => {
