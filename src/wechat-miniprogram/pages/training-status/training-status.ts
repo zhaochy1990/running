@@ -27,6 +27,7 @@ import {
   readinessColor,
   readinessGateLabel,
   readinessLabel,
+  runningDistanceMeters,
   aggregateWeeklyDose,
   aggregateWeeklyRunMeters,
   buildHeatCells,
@@ -40,7 +41,7 @@ import {
   type HeatCell,
 } from '../../utils/trainingStatus';
 import { fmtPace } from '../../utils/format';
-import { epochToShanghaiYmd, shanghaiToday, shanghaiWeekdayLabel } from '../../utils/date';
+import { epochToShanghaiYmd, shanghaiDateFromIso, shanghaiToday, shanghaiWeekdayLabel } from '../../utils/date';
 import { toUChartsTouchEvent } from '../../utils/ucharts';
 import { friendlyApiError } from '../../utils/friendlyError';
 import { getHealth, getHrv, getStrideTrainingLoad, getStrideZones } from '../../services/health';
@@ -85,6 +86,7 @@ interface HeatDayDetail {
   date: string;
   title: string;
   dose: string;
+  runDistance: string;
   lines: string[];
 }
 
@@ -180,9 +182,10 @@ let rhrSpec: ChartTooltipSpec | null = null;
 let hrvSpec: ChartTooltipSpec | null = null;
 let doseSpec: ChartTooltipSpec | null = null;
 let formSpec: ChartTooltipSpec | null = null;
-let weekSpec: ChartTooltipSpec | null = null;
 
 let formRows: Array<{ label: string; form: number | null; chronic: number | null }> = [];
+let weekRows: ReturnType<typeof weekTrend>['rows'] = [];
+const WEEK_LOAD_COLOR = '#e68a00';
 
 // ---------------------------------------------------------------------------
 // 平台辅助
@@ -333,17 +336,21 @@ function formTrend(days: number): {
   };
 }
 
-function weekTrend(): {
-  categories: string[];
-  data: Array<number | null>;
-  rows: Array<{ label: string; runMeters: number }>;
-} {
-  const buckets = aggregateWeeklyDose(loadData?.series ?? []);
+function weekTrend() {
+  const rows = aggregateWeeklyDose(loadData?.series ?? []).map((bucket) => ({
+    label: bucket.weekLabel,
+    dose: bucket.totalDose == null ? null : Math.round(bucket.totalDose * 10) / 10,
+    runMeters: runMetersByWeek.get(bucket.weekStart) ?? 0,
+  }));
   return {
-    categories: buckets.map((b) => b.weekLabel),
-    data: buckets.map((b) => (b.totalDose == null ? null : Math.round(b.totalDose * 10) / 10)),
-    rows: buckets.map((b) => ({ label: b.weekLabel, runMeters: runMetersByWeek.get(b.weekStart) ?? 0 })),
+    categories: rows.map((row) => row.label),
+    data: rows.map((row) => row.dose),
+    rows,
   };
+}
+
+function runDistanceLabel(meters: number): string {
+  return `跑量 ${(meters / 1000).toFixed(1)} km`;
 }
 
 // ---------------------------------------------------------------------------
@@ -442,7 +449,9 @@ function heatDetail(date: string, state: string, dose: number | null): HeatDayDe
   else doseText = dose != null ? `训练负荷 ${dose.toFixed(0)}` : '训练负荷 —';
 
   const lines: string[] = [];
+  let runMeters = 0;
   for (const a of activitiesByDate.get(date) ?? []) {
+    runMeters += runningDistanceMeters(a);
     const sport = chineseSportName(a.sport_name);
     const hr = a.avg_hr ?? '—';
     if (isDistanceSport(a.sport_name)) {
@@ -452,7 +461,7 @@ function heatDetail(date: string, state: string, dose: number | null): HeatDayDe
     }
   }
   if (lines.length === 0 && state === 'rest') lines.push('休息日');
-  return { date, title, dose: doseText, lines };
+  return { date, title, dose: doseText, runDistance: runDistanceLabel(runMeters), lines };
 }
 
 // ---------------------------------------------------------------------------
@@ -530,7 +539,7 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
 
   onUnload() {
     thresholdPaceChart = rhrChart = hrvChart = doseChart = loadChart = formChart = weekChart = null;
-    rhrSpec = hrvSpec = doseSpec = formSpec = weekSpec = null;
+    rhrSpec = hrvSpec = doseSpec = formSpec = null;
   },
 
   onBack() {
@@ -562,7 +571,8 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
       runMetersByWeek = aggregateWeeklyRunMeters(acts);
       activitiesByDate = new Map();
       for (const a of acts) {
-        const key = a.date;
+        const key = shanghaiDateFromIso(a.date);
+        if (!key) continue;
         const arr = activitiesByDate.get(key);
         if (arr) arr.push(a);
         else activitiesByDate.set(key, [a]);
@@ -706,7 +716,21 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
     if (formChart && formSpec) formChart.showToolTip(toUChartsTouchEvent(e), { formatter: (item, time) => formSpec!.tooltip(itemNumber(item), time) });
   },
   onWeekTouch(e: WechatMiniprogram.TouchEvent) {
-    if (weekChart && weekSpec) weekChart.showToolTip(toUChartsTouchEvent(e), { formatter: (item, time) => weekSpec!.tooltip(itemNumber(item), time) });
+    if (!weekChart || (!e.touches.length && !e.changedTouches.length)) return;
+    const touch = toUChartsTouchEvent(e);
+    const hit = weekChart.getCurrentDataIndex(touch);
+    const index = typeof hit === 'number' ? hit : hit.index;
+    const row = typeof index === 'number' ? weekRows[index] : undefined;
+    if (!row || row.dose == null) {
+      weekChart.showToolTip(touch);
+      return;
+    }
+    weekChart.showToolTip(touch, {
+      textList: [
+        { text: `周一 ${row.label} · 负荷 ${row.dose.toFixed(1)}`, color: WEEK_LOAD_COLOR, legendShape: 'rect' },
+        { text: runDistanceLabel(row.runMeters), color: null },
+      ],
+    });
   },
 
   drawCharts(pace) {
@@ -873,14 +897,6 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
     }
 
     const wt = weekTrend();
-    weekSpec = {
-      tooltip: (v, time) => {
-        const row = wt.rows.find((r) => r.label === time);
-        const doseText = Number.isFinite(v) ? v.toFixed(1) : '数据不完整';
-        const runKm = ((row?.runMeters ?? 0) / 1000).toFixed(1);
-        return `周一 ${time} · 负荷 ${doseText} · 跑量 ${runKm} km`;
-      },
-    };
     if (wt.data.some((v) => v != null)) {
       const weekValues = wt.data.filter((v): v is number => v != null);
       const weekMax = weekValues.length ? Math.max(...weekValues) : 0;
@@ -888,7 +904,7 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
         buildColumnChartOptions({
           categories: wt.categories,
           data: wt.data,
-          color: '#e68a00',
+          color: WEEK_LOAD_COLOR,
           bounds: { min: 0, max: Math.max(10, weekMax * 1.1) },
           width: w,
           height: h,
@@ -896,6 +912,7 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
         }),
         (c) => {
           weekChart = c;
+          weekRows = wt.rows;
         },
       );
     } else {

@@ -265,18 +265,27 @@ export function aggregateWeeklyDose(
 // 跑步项目使用 COROS 与 Garmin 的跑步类型码，运动名兼容没有类型码的旧记录。
 const RUN_SPORT_TYPES = new Set([100, 101, 102, 103, 104, 8001, 8002, 8003, 8004, 8005]);
 const RUN_SPORT_NAME = /^(?:(?:indoor|outdoor|trail|track|treadmill)[ _])?run(?:ning)?$|^treadmill$/i;
+type RunningDistanceActivity = Pick<Activity, 'sport_type' | 'sport_name'> & { distance_m: number | null };
+
+export function runningDistanceMeters(activity: RunningDistanceActivity): number {
+  if (!positive(activity.distance_m)) return 0;
+  return RUN_SPORT_TYPES.has(activity.sport_type) || RUN_SPORT_NAME.test(activity.sport_name ?? '')
+    ? activity.distance_m
+    : 0;
+}
 
 export function aggregateWeeklyRunMeters(
-  activities: readonly (Pick<Activity, 'date' | 'sport_type' | 'sport_name'> & { distance_m: number | null })[],
+  activities: readonly (RunningDistanceActivity & Pick<Activity, 'date'>)[],
   today: string = shanghaiToday(),
 ): Map<string, number> {
   const totals = new Map<string, number>();
   for (const activity of activities) {
     const day = shanghaiDateFromIso(activity.date);
-    if (!day || day > today || !positive(activity.distance_m)) continue;
-    if (!RUN_SPORT_TYPES.has(activity.sport_type) && !RUN_SPORT_NAME.test(activity.sport_name ?? '')) continue;
+    if (!day || day > today) continue;
+    const meters = runningDistanceMeters(activity);
+    if (meters === 0) continue;
     const week = shanghaiWeekStart(day);
-    totals.set(week, (totals.get(week) ?? 0) + activity.distance_m);
+    totals.set(week, (totals.get(week) ?? 0) + meters);
   }
   return totals;
 }

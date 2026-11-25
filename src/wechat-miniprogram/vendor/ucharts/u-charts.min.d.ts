@@ -3,11 +3,14 @@
  * 只声明本项目用到的构造 + 触摸读数方法，其余走宽松类型。
  */
 interface UChartsInstance {
+  /** 查询触点所在分类，柱状图的分类索引为 number。 */
+  getCurrentDataIndex(e: unknown): number | { index: number | number[]; group: number[] };
   /** 画布坐标（设备 px）相对位置，用于显示 tooltip / 十字线。 */
   showToolTip(
     e: unknown,
     option?: {
       index?: number;
+      textList?: Array<{ text: string; color: string | null; legendShape?: string }>;
       formatter?: (item: { name: string; data: number }, category: string, index: number, opts: unknown) => string;
     },
   ): void;

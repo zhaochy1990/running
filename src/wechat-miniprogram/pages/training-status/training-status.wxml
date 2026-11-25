@@ -149,6 +149,7 @@
           <view wx:if="{{heatSelected}}" class="heat-detail">
             <view class="heat-detail__title">{{heatSelected.title}}</view>
             <view class="heat-detail__dose">{{heatSelected.dose}}</view>
+            <view class="heat-detail__line">{{heatSelected.runDistance}}</view>
             <view class="heat-detail__line" wx:for="{{heatSelected.lines}}" wx:key="index">{{item}}</view>
           </view>
         </view>
