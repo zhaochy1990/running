@@ -10,6 +10,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/zhaochy1990/stride/internal/apifmt"
 	"github.com/zhaochy1990/stride/internal/compute/calibration"
 	"gorm.io/gorm"
 )
@@ -198,14 +199,8 @@ func (s *Store) readEffectiveRunningCalibration(ctx context.Context, user, cutof
 					Order("as_of_date ASC").Find(&history.Points).Error; err != nil {
 					return err
 				}
-				var prior []float64
-				if err := q.Where("as_of_date < ? AND threshold_speed_mps > 0", historyStart).
-					Order("as_of_date DESC").Limit(1).Pluck("threshold_speed_mps", &prior).Error; err != nil {
-					return err
-				}
-				if len(prior) > 0 {
-					history.PriorSpeedMps = &prior[0]
-				}
+				history.PriorSpeedMps, err = readPriorThresholdSpeed(q, historyStart)
+				return err
 			}
 			return nil
 		}
@@ -218,6 +213,25 @@ func (s *Store) readEffectiveRunningCalibration(ctx context.Context, user, cutof
 		return nil
 	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	return out, history, err
+}
+
+func readPriorThresholdSpeed(q *gorm.DB, before string) (*float64, error) {
+	for {
+		var points []CalibrationThresholdPoint
+		if err := q.Select("as_of_date", "threshold_speed_mps").Where("as_of_date < ? AND threshold_speed_mps > 0", before).
+			Order("as_of_date DESC").Limit(1).Find(&points).Error; err != nil {
+			return nil, err
+		}
+		if len(points) == 0 {
+			return nil, nil
+		}
+		point := points[0]
+		if apifmt.PacePerKmSec(point.ThresholdSpeedMps) != nil {
+			return point.ThresholdSpeedMps, nil
+		}
+		// A stored positive speed may still be outside the range of a valid pace.
+		before = point.AsOfDate
+	}
 }
 
 // PublishRunningCalibration preserves the natural key (user_id, as_of_date,

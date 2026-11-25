@@ -84,12 +84,13 @@ func TestCalibrationUserOverrideSelectionPrecedence(t *testing.T) {
 	if history.Points[0].AsOfDate != "2026-11-12" || history.Points[0].ThresholdSpeedMps == nil || *history.Points[0].ThresholdSpeedMps != 3.4 || history.Points[1].AsOfDate != "2026-11-13" || history.Points[1].ThresholdSpeedMps != nil || history.Points[2].AsOfDate != "2026-11-16" || history.Points[2].ThresholdSpeedMps == nil || *history.Points[2].ThresholdSpeedMps != 3.5 {
 		t.Fatalf("history must be chronological and scoped to the user and revision: %+v", history)
 	}
-	_, history, err = st.ReadEffectiveRunningCalibrationWithHistory(ctx, userA, "2026-11-14", "2026-11-16")
+	seed(userA, "2026-11-14", 4, "v4-rev2-2026-11", 3000)
+	_, history, err = st.ReadEffectiveRunningCalibrationWithHistory(ctx, userA, "2026-11-15", "2026-11-16")
 	if err != nil || len(history.Points) != 1 || history.Points[0].AsOfDate != "2026-11-16" {
 		t.Fatalf("history must respect its lower date bound: %+v %v", history, err)
 	}
 	if history.PriorSpeedMps == nil || *history.PriorSpeedMps != 3.4 {
-		t.Fatalf("prior pace must skip missing values and other revisions: %+v", history.PriorSpeedMps)
+		t.Fatalf("prior pace must skip missing or unrepresentable values and other revisions: %+v", history.PriorSpeedMps)
 	}
 
 	// B is untouched by A's override, and the global policy row is unchanged.
