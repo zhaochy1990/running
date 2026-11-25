@@ -571,5 +571,11 @@ setInterval(() => {
 back.innerHTML = icon('left', 23);
 document.querySelector('[data-step="-1"][data-action="cycle"]').innerHTML = icon('left', 19);
 document.querySelector('[data-step="1"][data-action="cycle"]').innerHTML = icon('right', 19);
-manualLog.setup({ screen, render, navigate, icon });
+manualLog.setup({
+  screen, render, navigate, icon, openSheet,
+  closeSheet: () => {
+    sheetReturnFocus = null;
+    sheet.close();
+  },
+});
 render();

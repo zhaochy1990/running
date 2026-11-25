@@ -55,8 +55,14 @@ const manualLog = (() => {
     } else if (page === 'manualList') {
       app.navigate('manualEdit');
     } else if (editing) {
-      editing = null;
-      app.navigate('manualSaved');
+      if (JSON.stringify(editing.draft) === JSON.stringify(editing.original)) {
+        editing = null;
+        app.navigate('manualSaved');
+      } else {
+        app.openSheet('放弃本次修改？', '<p class="sheet-copy">已保存的训练记录会保留。</p>',
+          '<button type="button" class="primary" data-action="close" autofocus>继续编辑</button>' +
+          logButton('discard-edit', '放弃修改', 'secondary'));
+      }
     } else {
       app.navigate(origin);
     }
@@ -135,7 +141,7 @@ ${escape(exercise.note)}</textarea>
       <form id="manual-form" class="manual-form" novalidate>
         <div class="log-meta">
           <label class="log-field"><span>训练名称</span><input data-log-field="title" placeholder="力量训练" value="${escape(entry.title)}"></label>
-          <label class="log-field"><span>训练日期</span><input class="log-date" data-log-field="date" type="date" value="${escape(entry.date)}"></label>
+          <label class="log-field"><span>训练日期</span><input class="log-date" data-log-field="date" type="date" max="${today()}" value="${escape(entry.date)}"></label>
         </div>
         <div class="log-section-head"><h3>${mode === 'structured' ? '动作明细' : '训练笔记'}</h3>${exampleButton}</div>
         ${mode === 'structured'
@@ -229,6 +235,10 @@ ${escape(entry.note)}</textarea></div>`}
 
   function validate(entry) {
     if (!entry.date) return { field: 'date', message: '请选择训练日期。' };
+    const limit = today();
+    if (entry.date.length > limit.length || entry.date > limit) {
+      return { field: 'date', message: '请选择今天或更早的训练日期。' };
+    }
     if (mode === 'note') return entry.note.trim() ? null : { field: 'note', message: '请写下这次训练的内容。' };
     if (!entry.exercises.length) return { action: 'add-exercise', message: '请添加至少一个动作。' };
 
@@ -248,7 +258,9 @@ ${escape(entry.note)}</textarea></div>`}
 
   function clearError() {
     app.screen.querySelector('#manual-error').textContent = '';
-    app.screen.querySelector('[aria-invalid="true"]')?.removeAttribute('aria-invalid');
+    const annotated = app.screen.querySelector('[aria-describedby="manual-error"]');
+    annotated?.removeAttribute('aria-invalid');
+    annotated?.removeAttribute('aria-describedby');
   }
 
   function save() {
@@ -260,10 +272,13 @@ ${escape(entry.note)}</textarea></div>`}
       const field = error.field ? area.querySelector(`[data-log-field="${error.field}"]`)
         : area.querySelector(`[data-log-action="${error.action}"]`);
       const feedback = app.screen.querySelector('#manual-error');
-      field.closest('.log-set, .log-meta, .log-exercise-head, .log-field')?.after(feedback);
+      const anchor = field.closest('.log-set, .log-meta, .log-exercise-head, .log-exercise-footer, .log-field') ?? field;
+      anchor.after(feedback);
       feedback.textContent = error.message;
+      field.setAttribute('aria-describedby', 'manual-error');
       if (error.field) field.setAttribute('aria-invalid', 'true');
       field.focus();
+      feedback.scrollIntoView({ block: 'nearest' });
       return;
     }
 
@@ -328,10 +343,15 @@ ${escape(entry.note)}</textarea></div>`}
       case 'edit': {
         const saved = records.find(item => item.id === selected);
         mode = saved.mode;
-        editing = { draft: structuredClone(saved.data) };
+        editing = { original: saved.data, draft: structuredClone(saved.data) };
         app.navigate('manualEdit');
         break;
       }
+      case 'discard-edit':
+        app.closeSheet();
+        editing = null;
+        app.navigate('manualSaved');
+        break;
       case 'add-exercise': {
         const exercise = newExercise();
         draft().exercises.push(exercise);
