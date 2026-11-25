@@ -192,7 +192,7 @@ ${escape(exercise.note)}</textarea>
       for (const row of exercise.rows) {
         const location = `[data-log-row="${row.id}"]`;
         if (row.loadUnit && !row.load.trim()) return { location, field: 'load', message: '请填写负重，或将负重单位设为无。' };
-        if (!positiveInteger(row.amount)) return { location, field: 'amount', message: '请输入大于 0 的数量。' };
+        if (!positiveInteger(row.amount)) return { location, field: 'amount', message: '请输入大于 0 的整数作为数量。' };
       }
     }
     return null;
