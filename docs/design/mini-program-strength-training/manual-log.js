@@ -11,7 +11,6 @@ const manualLog = (() => {
   const drafts = {};
   let nextId = 1;
   let mode = 'structured';
-  let origin = 'plan';
   let selected = 0;
   let editing = null;
   let app;
@@ -43,17 +42,14 @@ const manualLog = (() => {
     return Object.hasOwn(views, page);
   }
 
-  function open(from) {
-    origin = from;
+  function open() {
     editing = null;
     app.navigate('manualEdit');
   }
 
   function back(page) {
     if (page === 'manualSaved') {
-      app.navigate('manualList');
-    } else if (page === 'manualList') {
-      app.navigate('manualEdit');
+      app.navigate('records');
     } else if (editing) {
       if (JSON.stringify(editing.draft) === JSON.stringify(editing.original)) {
         editing = null;
@@ -64,7 +60,7 @@ const manualLog = (() => {
           logButton('discard-edit', '放弃修改', 'secondary'));
       }
     } else {
-      app.navigate(origin);
+      app.navigate('schedule');
     }
   }
 
@@ -125,14 +121,12 @@ ${escape(exercise.note)}</textarea>
 
   function editView() {
     const entry = draft();
-    const listLink = logButton('list', '已存记录', 'text-button');
     const exampleButton = editing ? ''
       : logButton('example', '填入示例', 'text-button', hasContent(entry, mode) ? 'hidden' : '');
     return {
-      title: editing ? '编辑记录' : '手动记录',
+      title: editing ? '编辑记录' : '自由力量训练',
       content: `<div class="log-heading">
         <h2 class="page-heading" tabindex="-1">${editing ? '编辑力量训练' : '记录力量训练'}</h2>
-        ${editing ? '' : listLink}
       </div>
       ${editing ? '' : `<div class="log-modes" role="group" aria-label="录入方式">
         ${Object.entries(modeLabels).map(([key, label]) =>
@@ -169,17 +163,17 @@ ${escape(entry.note)}</textarea></div>`}
     return `${row.load === 'none' ? '' : `${load} · `}${Number(row.amount)} ${units[row.unit]} × ${Number(row.sets)} 组`;
   }
 
-  function listView() {
-    return {
-      title: '力量训练记录',
-      content: `<h2 class="page-heading" tabindex="-1">已存记录</h2>
-        ${records.length
-          ? `<ul class="log-history">${[...records].reverse().map(record => `<li>
-            ${logButton('show', `<span><strong>${recordTitle(record)}</strong><small>${record.data.date} · ${modeLabels[record.mode]}</small></span>${app.icon('right', 17)}`, 'log-history-link', `data-record="${record.id}"`)}
-          </li>`).join('')}</ul>`
-          : '<p class="log-empty eyeline">还没有手动记录</p>'}`,
-      footer: logButton('new', '记一条训练', 'primary'),
-    };
+  function activityRows() {
+    return records.map(record => ({
+      id: record.id,
+      title: recordTitle(record),
+      date: record.data.date,
+      details: record.mode === 'structured' ? `${record.data.exercises.length} 个动作 · ${totals(record.data)} 组` : '训练笔记',
+    }));
+  }
+
+  function hasDraft() {
+    return Object.entries(drafts).some(([kind, entry]) => entry.title.trim() || hasContent(entry, kind));
   }
 
   function savedView() {
@@ -199,11 +193,11 @@ ${escape(entry.note)}</textarea></div>`}
             ${exercise.note.trim() ? `<p class="log-record-note">${escape(exercise.note)}</p>` : ''}
           </section>`).join('')
         : `<div class="log-saved-note">${escape(entry.note)}</div>`}`,
-      footer: logButton('list', '查看全部记录', 'secondary') + logButton('edit', '编辑记录', 'primary'),
+      footer: logButton('records', '返回活动记录', 'secondary') + logButton('edit', '编辑记录', 'primary'),
     };
   }
 
-  const views = { manualEdit: editView, manualList: listView, manualSaved: savedView };
+  const views = { manualEdit: editView, manualSaved: savedView };
 
   function view(page) {
     return views[page]();
@@ -290,6 +284,7 @@ ${escape(entry.note)}</textarea></div>`}
       records.push({ id: selected, mode, data: entry });
       delete drafts[mode];
     }
+    app.revealActivity(selected, entry.date);
     app.navigate('manualSaved');
   }
 
@@ -334,12 +329,14 @@ ${escape(entry.note)}</textarea></div>`}
         app.screen.querySelector(`[data-mode="${mode}"]`)?.focus({ preventScroll: true });
         break;
       case 'example': fillExample(); break;
-      case 'list': app.navigate('manualList'); break;
-      case 'new': app.navigate('manualEdit'); break;
-      case 'show':
-        selected = Number(record);
+      case 'records': app.navigate('records'); break;
+      case 'show': {
+        const saved = records.find(item => item.id === Number(record));
+        selected = saved.id;
+        app.revealActivity(selected, saved.data.date);
         app.navigate('manualSaved');
         break;
+      }
       case 'edit': {
         const saved = records.find(item => item.id === selected);
         mode = saved.mode;
@@ -401,5 +398,5 @@ ${escape(entry.note)}</textarea></div>`}
     });
   }
 
-  return { setup, isPage, view, open, back };
+  return { setup, isPage, view, open, back, activityRows, hasDraft };
 })();
