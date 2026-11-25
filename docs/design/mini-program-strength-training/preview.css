@@ -34,7 +34,7 @@ button { border: 0; background: transparent; }
   min-height: 100svh;
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(200px, 252px) minmax(0, 406px) minmax(174px, 220px);
+  grid-template-columns: minmax(200px, 252px) minmax(332px, 406px) minmax(174px, 220px);
   justify-content: center;
   align-items: center;
   gap: clamp(25px, 5vw, 88px);
@@ -69,6 +69,7 @@ button { border: 0; background: transparent; }
   color: var(--ink);
   position: relative;
   isolation: isolate;
+  container: prototype-device / inline-size;
 }
 .status-bar { height: 34px; flex: none; display: flex; align-items: end; justify-content: space-between; padding: 0 24px 4px; font-size: 12px; font-weight: 700; }
 .status-icons { margin-bottom: 1px; }
@@ -187,7 +188,7 @@ dialog::backdrop { background: #2227278a; }
 .sheet-actions { display: grid; gap: 8px; }
 [hidden] { display: none !important; }
 @media (max-width: 940px) {
-  .studio { grid-template-columns: minmax(190px, 235px) minmax(0, 406px); }
+  .studio { grid-template-columns: minmax(190px, 235px) minmax(332px, 406px); }
   .journey { display: none; }
 }
 @media (max-width: 670px) {
@@ -213,7 +214,7 @@ dialog::backdrop { background: #2227278a; }
   width: 100%;
   min-width: 0;
   min-height: 40px;
-  border: 1px solid var(--line);
+  border: 1px solid #858f9e;
   border-radius: 9px;
   background: var(--page);
   color: var(--ink);
@@ -227,7 +228,7 @@ dialog::backdrop { background: #2227278a; }
 .manual-form ::placeholder { color: var(--muted); opacity: 1; }
 .log-title-field {
   padding: 10px 12px 8px;
-  border: 1px solid var(--line);
+  border: 1px solid #858f9e;
   border-radius: 13px;
   background: var(--white);
 }
@@ -304,10 +305,8 @@ dialog::backdrop { background: #2227278a; }
 .log-saved-exercise li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; padding: 3px 0; font-size: 14px; line-height: 1.5; font-variant-numeric: tabular-nums; }
 .log-saved-index { color: var(--muted); font-size: 12px; }
 .log-record-note { margin-top: 5px; color: var(--muted); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; }
-@media (max-width: 670px) {
+@container prototype-device (max-width: 380px) {
   .log-set input, .log-set select { font-size: 12px; }
-}
-@media (max-width: 360px) {
   #screen:has(.manual-form) { padding-inline: 14px; }
   .log-exercise { --log-actions-width: 80px; margin-inline: -6px; padding-inline: 6px; }
   .log-set { grid-template-columns: 22px minmax(0, 1.16fr) 36px minmax(0, 1fr) var(--log-actions-width); gap: 3px; }
