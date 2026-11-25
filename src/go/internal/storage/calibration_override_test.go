@@ -38,6 +38,10 @@ func TestCalibrationUserOverrideSelectionPrecedence(t *testing.T) {
 	seed(userA, "2026-11-01", 3, "", 4.0)
 	seed(userB, "2026-11-01", 3, "", 4.2)
 	seed(userA, "2026-11-12", 4, "v4-rev2-2026-11", 3.4)
+	seed(userA, "2026-11-13", 4, "", 4.9)
+	if _, err := st.PublishRunningCalibration(ctx, &RunningCalibrationSnapshot{UserID: userA, AsOfDate: "2026-11-13", AlgorithmVersion: 4, AlgorithmRevision: "v4-rev2-2026-11"}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
 	// Both v4 identities exist on the same day for A: the historical v4 row is
 	// written second (higher id), so the unpinned tiebreak would pick it — the
 	// override must read the pinned revision instead.
@@ -74,15 +78,19 @@ func TestCalibrationUserOverrideSelectionPrecedence(t *testing.T) {
 		t.Fatalf("override selection: %+v", a.Selection)
 	}
 	bundle, history, err := st.ReadEffectiveRunningCalibrationWithHistory(ctx, userA, "2026-11-01", "2026-11-16")
-	if err != nil || bundle.Snapshot == nil || bundle.Snapshot.ID != a.Snapshot.ID || len(history) != 2 {
+	if err != nil || bundle.Snapshot == nil || bundle.Snapshot.ID != a.Snapshot.ID || len(history.Points) != 3 || history.PriorSpeedMps != nil {
 		t.Fatalf("history must share the active bundle identity: %+v, %+v, %v", bundle.Selection, history, err)
 	}
-	if history[0].AsOfDate != "2026-11-12" || history[0].ThresholdSpeedMps == nil || *history[0].ThresholdSpeedMps != 3.4 || history[1].AsOfDate != "2026-11-16" || history[1].ThresholdSpeedMps == nil || *history[1].ThresholdSpeedMps != 3.5 {
+	if history.Points[0].AsOfDate != "2026-11-12" || history.Points[0].ThresholdSpeedMps == nil || *history.Points[0].ThresholdSpeedMps != 3.4 || history.Points[1].AsOfDate != "2026-11-13" || history.Points[1].ThresholdSpeedMps != nil || history.Points[2].AsOfDate != "2026-11-16" || history.Points[2].ThresholdSpeedMps == nil || *history.Points[2].ThresholdSpeedMps != 3.5 {
 		t.Fatalf("history must be chronological and scoped to the user and revision: %+v", history)
 	}
-	_, history, err = st.ReadEffectiveRunningCalibrationWithHistory(ctx, userA, "2026-11-13", "2026-11-16")
-	if err != nil || len(history) != 1 || history[0].AsOfDate != "2026-11-16" {
+	seed(userA, "2026-11-14", 4, "v4-rev2-2026-11", 3000)
+	_, history, err = st.ReadEffectiveRunningCalibrationWithHistory(ctx, userA, "2026-11-15", "2026-11-16")
+	if err != nil || len(history.Points) != 1 || history.Points[0].AsOfDate != "2026-11-16" {
 		t.Fatalf("history must respect its lower date bound: %+v %v", history, err)
+	}
+	if history.PriorSpeedMps == nil || *history.PriorSpeedMps != 3.4 {
+		t.Fatalf("prior pace must skip missing or unrepresentable values and other revisions: %+v", history.PriorSpeedMps)
 	}
 
 	// B is untouched by A's override, and the global policy row is unchanged.

@@ -95,7 +95,7 @@ type fakeStrideStore struct {
 	seriesErr    error
 	latestUsable *storage.DailyTrainingLoad
 	latestErr    error
-	history      []storage.CalibrationThresholdPoint
+	history      storage.CalibrationThresholdHistory
 	gotFrom      string
 
 	gotUser string
@@ -110,7 +110,7 @@ func (f *fakeStrideStore) ReadEffectiveRunningCalibration(_ context.Context, use
 	return storage.CalibrationBundle{Snapshot: f.snap, PaceZones: f.pace, HRZones: f.hr, Source: calibration.SourceSummary{State: "legacy_source_missing"}}, errors.Join(f.snapErr, f.zonesErr)
 }
 
-func (f *fakeStrideStore) ReadEffectiveRunningCalibrationWithHistory(ctx context.Context, user, from, cutoff string) (storage.CalibrationBundle, []storage.CalibrationThresholdPoint, error) {
+func (f *fakeStrideStore) ReadEffectiveRunningCalibrationWithHistory(ctx context.Context, user, from, cutoff string) (storage.CalibrationBundle, storage.CalibrationThresholdHistory, error) {
 	f.gotFrom = from
 	bundle, err := f.ReadEffectiveRunningCalibration(ctx, user, cutoff, storage.CalibrationActive)
 	return bundle, f.history, err
@@ -208,9 +208,12 @@ func TestStrideZones_ThresholdHistory(t *testing.T) {
 	start := today.AddDate(0, 0, -13).Format(time.DateOnly)
 	ss := &fakeStrideStore{
 		snap: &storage.RunningCalibrationSnapshot{ID: 7, AsOfDate: cutoff},
-		history: []storage.CalibrationThresholdPoint{
-			{AsOfDate: start, ThresholdSpeedMps: fptr(1000.0 / 212.5), ThresholdHR: fptr(166.5)},
-			{AsOfDate: cutoff},
+		history: storage.CalibrationThresholdHistory{
+			Points: []storage.CalibrationThresholdPoint{
+				{AsOfDate: start, ThresholdSpeedMps: fptr(1000.0 / 212.5), ThresholdHR: fptr(166.5)},
+				{AsOfDate: cutoff},
+			},
+			PriorSpeedMps: fptr(4),
 		},
 	}
 	h := newMetricsHarness(t, &fakeHealthStore{}, ss)
@@ -244,8 +247,11 @@ func TestStrideZones_ThresholdHistory(t *testing.T) {
 	if points[1].AsOfDate != cutoff || points[1].PacePerKmSec != nil || points[1].HRBpm != nil {
 		t.Fatalf("unavailable estimates must stay null: %s", w.Body.String())
 	}
-	ss.history, ss.snap = nil, nil
-	if w := h.do(http.MethodGet, path+"?history_days=1", internalHdr()); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"threshold_history":[]`) || ss.gotFrom != cutoff {
+	if response.ThresholdHistoryPriorPace == nil || *response.ThresholdHistoryPriorPace != 250 {
+		t.Fatalf("missing pace before window: %s", w.Body.String())
+	}
+	ss.history, ss.snap = storage.CalibrationThresholdHistory{}, nil
+	if w := h.do(http.MethodGet, path+"?history_days=1", internalHdr()); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"threshold_history":[]`) || strings.Contains(w.Body.String(), "threshold_history_prior_pace_per_km_sec") || ss.gotFrom != cutoff {
 		t.Fatalf("explicit empty single-day history: %d %s", w.Code, w.Body.String())
 	}
 }

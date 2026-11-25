@@ -10,6 +10,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/zhaochy1990/stride/internal/apifmt"
 	"github.com/zhaochy1990/stride/internal/compute/calibration"
 	"gorm.io/gorm"
 )
@@ -40,6 +41,12 @@ type CalibrationThresholdPoint struct {
 	AsOfDate          string
 	ThresholdSpeedMps *float64
 	ThresholdHR       *float64
+}
+
+// CalibrationThresholdHistory pairs saved points with the last valid speed before the window.
+type CalibrationThresholdHistory struct {
+	Points        []CalibrationThresholdPoint
+	PriorSpeedMps *float64
 }
 
 func validCalibrationDay(day string) bool {
@@ -83,26 +90,26 @@ func (s *Store) ReadEffectiveRunningCalibration(ctx context.Context, user, cutof
 
 // ReadEffectiveRunningCalibrationWithHistory reads the active bundle and the
 // saved thresholds for its exact algorithm identity, oldest first. The
-// inclusive history range shares the bundle's read-only transaction.
-func (s *Store) ReadEffectiveRunningCalibrationWithHistory(ctx context.Context, user, from, cutoff string) (CalibrationBundle, []CalibrationThresholdPoint, error) {
+// inclusive history range and prior speed share the bundle's read-only transaction.
+func (s *Store) ReadEffectiveRunningCalibrationWithHistory(ctx context.Context, user, from, cutoff string) (CalibrationBundle, CalibrationThresholdHistory, error) {
 	if !validCalibrationDay(from) || from > cutoff {
-		return CalibrationBundle{}, nil, fmt.Errorf("invalid calibration history start day")
+		return CalibrationBundle{}, CalibrationThresholdHistory{}, fmt.Errorf("invalid calibration history start day")
 	}
 	return s.readEffectiveRunningCalibration(ctx, user, cutoff, CalibrationActive, from)
 }
 
-func (s *Store) readEffectiveRunningCalibration(ctx context.Context, user, cutoff string, mode CalibrationMode, historyStart string) (CalibrationBundle, []CalibrationThresholdPoint, error) {
+func (s *Store) readEffectiveRunningCalibration(ctx context.Context, user, cutoff string, mode CalibrationMode, historyStart string) (CalibrationBundle, CalibrationThresholdHistory, error) {
 	out := CalibrationBundle{PaceZones: []RunningCalibrationPaceZone{}, HRZones: []RunningCalibrationHRZone{}}
-	var history []CalibrationThresholdPoint
+	var history CalibrationThresholdHistory
 	uid, err := canonicalUserID(user)
 	if err != nil {
-		return out, nil, err
+		return out, history, err
 	}
 	if !validCalibrationDay(cutoff) {
-		return out, nil, fmt.Errorf("invalid calibration cutoff day")
+		return out, history, fmt.Errorf("invalid calibration cutoff day")
 	}
 	if mode != CalibrationActive && mode != CalibrationCandidate {
-		return out, nil, fmt.Errorf("invalid calibration selection mode")
+		return out, history, fmt.Errorf("invalid calibration selection mode")
 	}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		policy, err := readCalibrationPolicy(tx)
@@ -184,11 +191,16 @@ func (s *Store) readEffectiveRunningCalibration(ctx context.Context, user, cutof
 			out.Source = calibration.ParseSource(snap.SourceJSON)
 			out.Fingerprint = out.Source.Fingerprint
 			if historyStart != "" {
-				return tx.Model(&RunningCalibrationSnapshot{}).
-					Select("as_of_date", "threshold_speed_mps", "threshold_hr").
+				q := tx.Model(&RunningCalibrationSnapshot{}).
 					Where("user_id = ? AND algorithm_version = ? AND algorithm_revision = ?", uid, snap.AlgorithmVersion, snap.AlgorithmRevision).
+					Session(&gorm.Session{})
+				if err := q.Select("as_of_date", "threshold_speed_mps", "threshold_hr").
 					Where("as_of_date BETWEEN ? AND ?", historyStart, cutoff).
-					Order("as_of_date ASC").Find(&history).Error
+					Order("as_of_date ASC").Find(&history.Points).Error; err != nil {
+					return err
+				}
+				history.PriorSpeedMps, err = readPriorThresholdSpeed(q, historyStart)
+				return err
 			}
 			return nil
 		}
@@ -201,6 +213,25 @@ func (s *Store) readEffectiveRunningCalibration(ctx context.Context, user, cutof
 		return nil
 	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	return out, history, err
+}
+
+func readPriorThresholdSpeed(q *gorm.DB, before string) (*float64, error) {
+	for {
+		var points []CalibrationThresholdPoint
+		if err := q.Select("as_of_date", "threshold_speed_mps").Where("as_of_date < ? AND threshold_speed_mps > 0", before).
+			Order("as_of_date DESC").Limit(1).Find(&points).Error; err != nil {
+			return nil, err
+		}
+		if len(points) == 0 {
+			return nil, nil
+		}
+		point := points[0]
+		if apifmt.PacePerKmSec(point.ThresholdSpeedMps) != nil {
+			return point.ThresholdSpeedMps, nil
+		}
+		// A stored positive speed may still be outside the range of a valid pace.
+		before = point.AsOfDate
+	}
 }
 
 // PublishRunningCalibration preserves the natural key (user_id, as_of_date,

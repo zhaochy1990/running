@@ -598,7 +598,12 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
     const { paceZones, hrZones, hasZones } = projectTrainingZones(zonesData);
     const readiness = buildReadiness(cur);
 
-    const pace = buildThresholdPaceTrend(zonesData?.threshold_history ?? [], trendDays, shanghaiToday());
+    const pace = buildThresholdPaceTrend(
+      zonesData?.threshold_history ?? [],
+      trendDays,
+      shanghaiToday(),
+      zonesData?.threshold_history_prior_pace_per_km_sec,
+    );
     const rhr = rhrTrend(trendDays);
     const hv = hrvTrend(trendDays);
     const dd = dailyDose(trendDays);
@@ -734,7 +739,8 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
           height: h,
           dpr,
           yAxisFormatter: (value) => fmtPace(-value).replace('/km', ''),
-          showDataPoints: pace.series.includes(null),
+          showDataPoints: countNonNull(pace.series) === 1,
+          lineType: 'step',
         }),
         (chart) => {
           thresholdPaceChart = chart;
@@ -877,9 +883,10 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
       const weekValues = wt.data.filter((v): v is number => v != null);
       const weekMax = weekValues.length ? Math.max(...weekValues) : 0;
       draw('#week-chart', (w, h) =>
-        buildLineChartOptions({
+        buildColumnChartOptions({
           categories: wt.categories,
-          series: [{ name: '周剂量', data: wt.data, color: '#e68a00' }],
+          data: wt.data,
+          color: '#e68a00',
           bounds: { min: 0, max: Math.max(10, weekMax * 1.1) },
           width: w,
           height: h,
