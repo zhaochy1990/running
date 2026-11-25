@@ -118,6 +118,8 @@ const unknownWeek = weekly.find((b) => b.weekStart === '2026-09-07');
 eq(unknownWeek?.totalDose, null, 'unknown week exposes null dose, not invented 0');
 
 const runMeters = aggregateWeeklyRunMeters([
+  { date: '2026-09-03', sport_type: 100, sport_name: 'Run', distance_m: null },
+  { date: '2026-09-04', sport_type: 200, sport_name: 'Bike', distance_m: 24000 },
   { date: '2026-09-13T23:50:00+08:00', sport_type: 102, sport_name: null, distance_m: 4120 },
   { date: '2026-09-14T00:10:00+08:00', sport_type: 8003, sport_name: null, distance_m: 5234 },
   { date: '2026-09-14', sport_type: 0, sport_name: 'Trail Run', distance_m: 3719 },
@@ -126,6 +128,7 @@ const runMeters = aggregateWeeklyRunMeters([
   { date: '2026-09-14', sport_type: 100, sport_name: 'Run', distance_m: null },
   { date: '2026-09-15', sport_type: 100, sport_name: 'Run', distance_m: 6800 },
 ], '2026-09-14');
+eq(runMeters.get('2026-08-31'), null, 'a run with no usable distance does not become zero mileage');
 eq(runMeters.get('2026-09-07'), 4120, 'Sunday Shanghai run belongs to the previous week');
 eq(runMeters.get('2026-09-14'), 8953, 'current week sums raw running metres through today only');
 

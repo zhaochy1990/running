@@ -267,25 +267,28 @@ const RUN_SPORT_TYPES = new Set([100, 101, 102, 103, 104, 8001, 8002, 8003, 8004
 const RUN_SPORT_NAME = /^(?:(?:indoor|outdoor|trail|track|treadmill)[ _])?run(?:ning)?$|^treadmill$/i;
 type RunningDistanceActivity = Pick<Activity, 'sport_type' | 'sport_name'> & { distance_m: number | null };
 
-export function runningDistanceMeters(activity: RunningDistanceActivity): number {
-  if (!positive(activity.distance_m)) return 0;
-  return RUN_SPORT_TYPES.has(activity.sport_type) || RUN_SPORT_NAME.test(activity.sport_name ?? '')
-    ? activity.distance_m
-    : 0;
+export function runningDistanceMeters(activity: RunningDistanceActivity): number | null {
+  if (!RUN_SPORT_TYPES.has(activity.sport_type) && !RUN_SPORT_NAME.test(activity.sport_name ?? '')) return 0;
+  const meters = activity.distance_m;
+  return meters != null && Number.isFinite(meters) && meters >= 0 ? meters : null;
 }
 
 export function aggregateWeeklyRunMeters(
   activities: readonly (RunningDistanceActivity & Pick<Activity, 'date'>)[],
   today: string = shanghaiToday(),
-): Map<string, number> {
-  const totals = new Map<string, number>();
+): Map<string, number | null> {
+  const totals = new Map<string, number | null>();
   for (const activity of activities) {
     const day = shanghaiDateFromIso(activity.date);
     if (!day || day > today) continue;
     const meters = runningDistanceMeters(activity);
     if (meters === 0) continue;
     const week = shanghaiWeekStart(day);
-    totals.set(week, (totals.get(week) ?? 0) + meters);
+    if (meters == null) {
+      if (!totals.has(week)) totals.set(week, null);
+    } else {
+      totals.set(week, (totals.get(week) ?? 0) + meters);
+    }
   }
   return totals;
 }

@@ -163,7 +163,7 @@ let hrvData: HrvResponse | null = null;
 let zonesData: StrideZonesResponse | null = null;
 let loadData: StrideTrainingLoadResponse | null = null;
 let activitiesByDate = new Map<string, Activity[]>();
-let runMetersByWeek = new Map<string, number>();
+let runMetersByWeek = new Map<string, number | null>();
 let userId = '';
 let loaded = false;
 let trendDays = 30;
@@ -337,11 +337,15 @@ function formTrend(days: number): {
 }
 
 function weekTrend() {
-  const rows = aggregateWeeklyDose(loadData?.series ?? []).map((bucket) => ({
-    label: bucket.weekLabel,
-    dose: bucket.totalDose == null ? null : Math.round(bucket.totalDose * 10) / 10,
-    runMeters: runMetersByWeek.get(bucket.weekStart) ?? 0,
-  }));
+  const rows = aggregateWeeklyDose(loadData?.series ?? []).map((bucket) => {
+    const runMeters = runMetersByWeek.get(bucket.weekStart);
+    return {
+      label: bucket.weekLabel,
+      dose: bucket.totalDose == null ? null : Math.round(bucket.totalDose * 10) / 10,
+      activeDays: bucket.activeDays,
+      runMeters: runMeters === undefined ? 0 : runMeters,
+    };
+  });
   return {
     categories: rows.map((row) => row.label),
     data: rows.map((row) => row.dose),
@@ -349,8 +353,8 @@ function weekTrend() {
   };
 }
 
-function runDistanceLabel(meters: number): string {
-  return `跑量 ${(meters / 1000).toFixed(1)} km`;
+function runDistanceLabel(meters: number | null): string {
+  return meters == null ? '跑量 —' : `跑量 ${(meters / 1000).toFixed(1)} km`;
 }
 
 // ---------------------------------------------------------------------------
@@ -449,9 +453,13 @@ function heatDetail(date: string, state: string, dose: number | null): HeatDayDe
   else doseText = dose != null ? `训练负荷 ${dose.toFixed(0)}` : '训练负荷 —';
 
   const lines: string[] = [];
+  const activities = activitiesByDate.get(date) ?? [];
   let runMeters = 0;
-  for (const a of activitiesByDate.get(date) ?? []) {
-    runMeters += runningDistanceMeters(a);
+  let missingRunDistance = false;
+  for (const a of activities) {
+    const meters = runningDistanceMeters(a);
+    if (meters == null) missingRunDistance = true;
+    else runMeters += meters;
     const sport = chineseSportName(a.sport_name);
     const hr = a.avg_hr ?? '—';
     if (isDistanceSport(a.sport_name)) {
@@ -461,7 +469,9 @@ function heatDetail(date: string, state: string, dose: number | null): HeatDayDe
     }
   }
   if (lines.length === 0 && state === 'rest') lines.push('休息日');
-  return { date, title, dose: doseText, runDistance: runDistanceLabel(runMeters), lines };
+  const noActivityData = activities.length === 0 && (state === 'unknown' || state === 'absent');
+  const mileage = runMeters === 0 && (missingRunDistance || noActivityData) ? null : runMeters;
+  return { date, title, dose: doseText, runDistance: runDistanceLabel(mileage), lines };
 }
 
 // ---------------------------------------------------------------------------
@@ -727,7 +737,11 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
     }
     weekChart.showToolTip(touch, {
       textList: [
-        { text: `周一 ${row.label} · 负荷 ${row.dose.toFixed(1)}`, color: WEEK_LOAD_COLOR, legendShape: 'rect' },
+        {
+          text: `周一 ${row.label} · 负荷 ${row.dose.toFixed(1)}（${row.activeDays} 天）`,
+          color: WEEK_LOAD_COLOR,
+          legendShape: 'rect',
+        },
         { text: runDistanceLabel(row.runMeters), color: null },
       ],
     });
