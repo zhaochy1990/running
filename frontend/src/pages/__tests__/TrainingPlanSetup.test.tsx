@@ -1,6 +1,7 @@
+import { readFileSync } from "node:fs";
+import { URL as NodeURL } from "node:url";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import targetTimes from "../../../../src/coach_contract/src/master_plan/generation-target-time.fixture.json";
 
 const api = vi.hoisted(() => ({
   createTrainingGoal: vi.fn(),
@@ -87,6 +88,10 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
 });
+
+const targetTimes: { accepted: string[]; rejected: string[] } = JSON.parse(
+  readFileSync(new NodeURL("../../../../src/coach_contract/src/master_plan/generation-target-time.fixture.json", import.meta.url), "utf8"),
+);
 
 it.each(targetTimes.rejected)("blocks an invalid target time %j before creating the training goal", (targetTime) => {
   renderSetup();

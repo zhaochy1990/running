@@ -121,7 +121,8 @@ async function readEnqueueRequest(
           : RollingJobRequest;
   const parsed = schema.safeParse(value.request);
   if (!parsed.success) {
-    const missingTarget = parsed.error.issues.some((issue) => issue.message === MASTER_PLAN_TARGET_TIME_REQUIRED);
+    const issues = parsed.error.issues;
+    const missingTarget = issues.length === 1 && issues[0]?.message === MASTER_PLAN_TARGET_TIME_REQUIRED;
     return { ok: false, error: missingTarget ? MASTER_PLAN_TARGET_TIME_REQUIRED : "invalid_request" };
   }
   return {

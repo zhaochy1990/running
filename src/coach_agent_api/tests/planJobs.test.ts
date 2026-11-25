@@ -157,6 +157,22 @@ test("a finish-only or zero-time primary goal is rejected before enqueue", async
   assert.equal(enqueued.length, 0);
 });
 
+test("an invalid primary goal count keeps the generic validation error", async () => {
+  const { service, enqueued } = fakePlanJobs();
+  const app = appFor(service);
+  const [goal] = REQUEST.goals;
+  for (const goals of [[{ ...goal, priority: "B" }], [{ ...goal, target_time: "0:00:00" }, goal]]) {
+    const response = await app.request("/api/users/me/coach/plan-jobs", {
+      method: "POST",
+      headers: { authorization: "Bearer x", "content-type": "application/json" },
+      body: JSON.stringify({ job_type: "generate_master_plan", request: { ...REQUEST, goals } }),
+    });
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: "invalid_request" });
+  }
+  assert.equal(enqueued.length, 0);
+});
+
 test("an unknown job_type is rejected", async () => {
   const { service, enqueued } = fakePlanJobs();
   const app = appFor(service);
