@@ -14574,6 +14574,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/api.strideThresholdHistoryPoint"
                     }
+                },
+                "threshold_history_prior_pace_per_km_sec": {
+                    "type": "integer"
                 }
             }
         },

@@ -39,7 +39,7 @@ import (
 // StrideStore is the read surface the stride zones / training-load endpoints need.
 type StrideStore interface {
 	ReadEffectiveRunningCalibration(ctx context.Context, userID, cutoff string, mode storage.CalibrationMode) (storage.CalibrationBundle, error)
-	ReadEffectiveRunningCalibrationWithHistory(ctx context.Context, userID, from, cutoff string) (storage.CalibrationBundle, []storage.CalibrationThresholdPoint, error)
+	ReadEffectiveRunningCalibrationWithHistory(ctx context.Context, userID, from, cutoff string) (storage.CalibrationBundle, storage.CalibrationThresholdHistory, error)
 	DailyTrainingLoadSeries(ctx context.Context, userID string, days int) ([]storage.DailyTrainingLoad, error)
 	LatestUsableDailyTrainingLoad(ctx context.Context, userID string) (*storage.DailyTrainingLoad, error)
 }
@@ -105,7 +105,7 @@ func (sr *strideRoutes) zones(c *gin.Context) {
 	today := timefmt.ShanghaiToday()
 	cutoff := today.Format(time.DateOnly)
 	var bundle storage.CalibrationBundle
-	var history []storage.CalibrationThresholdPoint
+	var history storage.CalibrationThresholdHistory
 	var err error
 	if includeHistory {
 		from := today.AddDate(0, 0, 1-days).Format(time.DateOnly)
@@ -120,8 +120,8 @@ func (sr *strideRoutes) zones(c *gin.Context) {
 	}
 	response := toStrideBundleResponse(bundle)
 	if includeHistory {
-		points := make([]strideThresholdHistoryPoint, len(history))
-		for i, point := range history {
+		points := make([]strideThresholdHistoryPoint, len(history.Points))
+		for i, point := range history.Points {
 			points[i] = strideThresholdHistoryPoint{
 				AsOfDate:     point.AsOfDate,
 				PacePerKmSec: apifmt.PacePerKmSec(point.ThresholdSpeedMps),
@@ -129,6 +129,7 @@ func (sr *strideRoutes) zones(c *gin.Context) {
 			}
 		}
 		response.ThresholdHistory = &points
+		response.ThresholdHistoryPriorPace = apifmt.PacePerKmSec(history.PriorSpeedMps)
 	}
 	c.JSON(http.StatusOK, response)
 }
@@ -259,12 +260,13 @@ type stridePaceRangeDTO struct {
 
 // strideZonesResponse is the GET /api/{user}/stride/zones body.
 type strideZonesResponse struct {
-	Selection        *storage.CalibrationSelection  `json:"selection,omitempty"`
-	Source           *calibration.SourceSummary     `json:"source,omitempty"`
-	Threshold        *strideThresholdDTO            `json:"threshold"`
-	PaceZones        []stridePaceZoneDTO            `json:"pace_zones"`
-	HRZones          []strideHRZoneDTO              `json:"hr_zones"`
-	ThresholdHistory *[]strideThresholdHistoryPoint `json:"threshold_history,omitempty"`
+	Selection                 *storage.CalibrationSelection  `json:"selection,omitempty"`
+	Source                    *calibration.SourceSummary     `json:"source,omitempty"`
+	Threshold                 *strideThresholdDTO            `json:"threshold"`
+	PaceZones                 []stridePaceZoneDTO            `json:"pace_zones"`
+	HRZones                   []strideHRZoneDTO              `json:"hr_zones"`
+	ThresholdHistory          *[]strideThresholdHistoryPoint `json:"threshold_history,omitempty"`
+	ThresholdHistoryPriorPace *int                           `json:"threshold_history_prior_pace_per_km_sec,omitempty"`
 }
 
 type strideThresholdHistoryPoint struct {

@@ -340,14 +340,25 @@ export function padBounds(min: number, max: number, pad: number): ChartBounds {
 }
 
 export function buildThresholdPaceTrend(
-  history: StrideThresholdHistoryPoint[], days: number, today: string,
+  history: StrideThresholdHistoryPoint[], days: number, today: string, priorPace?: number,
 ): { categories: string[]; series: Array<number | null>; bounds: ChartBounds } {
-  const paceByDay = new Map(history.map((point) => [point.as_of_date, point.pace_per_km_sec]));
-  const dates = Array.from({ length: days }, (_, index) => shanghaiShiftDays(today, index + 1 - days));
+  const firstDay = shanghaiShiftDays(today, 1 - days);
+  const dates = Array.from({ length: days }, (_, index) => shanghaiShiftDays(firstDay, index));
+  const paceByDay = new Map<string, number>();
+  let pace = positive(priorPace) ? priorPace : null;
+  let previousDay = '';
+  for (const point of history) {
+    if (!positive(point.pace_per_km_sec)) continue;
+    paceByDay.set(point.as_of_date, point.pace_per_km_sec);
+    if (point.as_of_date < firstDay && point.as_of_date > previousDay) {
+      previousDay = point.as_of_date;
+      pace = point.pace_per_km_sec;
+    }
+  }
   // 配速越快，秒数越小。取负值让更快的配速显示在图的上方。
   const series = dates.map((day) => {
-    const pace = paceByDay.get(day);
-    return pace != null && Number.isFinite(pace) && pace > 0 ? -pace : null;
+    pace = paceByDay.get(day) ?? pace;
+    return pace == null ? null : -pace;
   });
   const values = series.filter((pace): pace is number => pace != null);
   return {
@@ -405,6 +416,7 @@ export function buildLineChartOptions(params: {
   dpr: number;
   yAxisFormatter?: (value: number) => string;
   showDataPoints?: boolean;
+  lineType?: 'straight' | 'step';
 }): Record<string, unknown> {
   return {
     ...baseChartOptions({ type: 'line', width: params.width, height: params.height, dpr: params.dpr, categories: params.categories }),
@@ -424,7 +436,7 @@ export function buildLineChartOptions(params: {
       }],
     },
     extra: {
-      line: { type: 'straight', width: 2 },
+      line: { type: params.lineType ?? 'straight', width: 2 },
       tooltip: CHART_TOOLTIP,
     },
     series: params.series.map((s) => ({ name: s.name, data: s.data, color: s.color })),
