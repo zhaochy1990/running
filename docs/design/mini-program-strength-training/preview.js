@@ -15,7 +15,7 @@ const variantKeys = Object.keys(variants);
 const params = new URLSearchParams(location.search);
 const requestedVariant = params.get('variant');
 let variant = variantKeys.includes(requestedVariant) ? requestedVariant : 'A';
-let page = 'plan';
+let page = params.get('view') === 'manual' ? 'manualEdit' : 'plan';
 let session = null;
 let saved = null;
 let renderedPage = '';
@@ -99,6 +99,14 @@ function exerciseRow(exercise, exerciseId) {
   </button>`;
 }
 
+function manualEntry() {
+  return `<button type="button" class="manual-entry" data-action="manual">
+    <span class="manual-entry-icon">${icon('plus', 19)}</span>
+    <span><strong>手动记录</strong><small>补记自己完成的力量训练</small></span>
+    ${icon('right', 16)}
+  </button>`;
+}
+
 function planView() {
   return {
     title: '课表详情',
@@ -111,7 +119,8 @@ function planView() {
       ${picture(plan[0], 'hero-art')}
     </article>
     <div class="section-heading"><h3>动作清单</h3><span>${plan.length} 个动作 · ${totalSets} 组</span></div>
-    <ul class="exercise-list">${plan.map((exercise, id) => `<li>${exerciseRow(exercise, id)}</li>`).join('')}</ul>`,
+    <ul class="exercise-list">${plan.map((exercise, id) => `<li>${exerciseRow(exercise, id)}</li>`).join('')}</ul>
+    ${manualEntry()}`,
     footer: primary('start', session ? '继续训练' : saved ? '再次训练' : '开始训练', icon('lift', 19)) +
       (saved && !session ? '<button type="button" class="secondary" data-action="summary">查看训练小结</button>' : ''),
   };
@@ -128,7 +137,8 @@ function scheduleView() {
           <span><span class="exercise-name">${lesson}</span><span class="exercise-subtitle">周一 · 约 25 分钟</span></span>
           ${icon('right', 15)}
         </button>
-      </div>`,
+      </div>
+      ${manualEntry()}`,
     footer: '',
   };
 }
@@ -275,7 +285,9 @@ function summaryView() {
 
 const views = { plan: planView, schedule: scheduleView, active: activeView, summary: summaryView };
 function render() {
-  const view = views[page]();
+  const manual = manualLog.isPage(page);
+  const view = manual ? manualLog.view(page) : views[page]();
+  document.body.classList.toggle('manual-mode', manual);
   const keepScroll = renderedPage === page && renderedVariant === variant;
   const scroll = keepScroll ? screen.scrollTop : 0;
   const focus = document.activeElement;
@@ -321,6 +333,10 @@ function updateJourney() {
   const stage = page === 'active' && session.rest ? 'rest' : page === 'schedule' ? 'plan' : page;
   document.querySelectorAll('[data-stage]').forEach(item => {
     if (item.dataset.stage === stage) item.setAttribute('aria-current', 'step');
+    else item.removeAttribute('aria-current');
+  });
+  document.querySelectorAll('[data-log-stage]').forEach(item => {
+    if (item.dataset.logStage === page) item.setAttribute('aria-current', 'step');
     else item.removeAttribute('aria-current');
   });
 }
@@ -492,7 +508,11 @@ document.addEventListener('click', event => {
   switch (action) {
     case 'variant': setVariant(next); break;
     case 'cycle': cycle(Number(step)); break;
-    case 'back': navigate(page === 'plan' ? 'schedule' : 'plan'); break;
+    case 'back':
+      if (manualLog.isPage(page)) manualLog.back(page);
+      else navigate(page === 'plan' ? 'schedule' : 'plan');
+      break;
+    case 'manual': manualLog.open(page); break;
     case 'plan': navigate('plan'); break;
     case 'summary': navigate('summary'); break;
     case 'start':
@@ -529,7 +549,7 @@ screen.addEventListener('input', event => {
 });
 
 document.addEventListener('keydown', event => {
-  if (sheet.open || event.altKey || event.ctrlKey || event.metaKey || event.target.closest('input, textarea, [contenteditable]')) return;
+  if (manualLog.isPage(page) || sheet.open || event.altKey || event.ctrlKey || event.metaKey || event.target.closest('input, textarea, [contenteditable]')) return;
   if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
     event.preventDefault();
     cycle(event.key === 'ArrowLeft' ? -1 : 1);
@@ -551,4 +571,5 @@ setInterval(() => {
 back.innerHTML = icon('left', 23);
 document.querySelector('[data-step="-1"][data-action="cycle"]').innerHTML = icon('left', 19);
 document.querySelector('[data-step="1"][data-action="cycle"]').innerHTML = icon('right', 19);
+manualLog.setup({ screen, render, navigate, icon });
 render();
