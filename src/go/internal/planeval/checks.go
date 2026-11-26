@@ -60,8 +60,13 @@ type Check interface {
 }
 
 // DefaultRuleMemoryLimit is the heap growth one rule run may cause before it
-// is interrupted (best-effort guard on a shared heap).
+// is interrupted, excluding bounded trusted input preparation (best-effort
+// guard on a shared heap).
 const DefaultRuleMemoryLimit int64 = 64 << 20
+
+// Allow a 16 MiB imported snapshot plus room for the artifact and request.
+// Bound trusted parsing/freezing even without a rule heap budget.
+const maxRuleInputBytes = 3 * (16 << 20)
 
 // SchemaCheckID is the check_id the schema gate is recorded under.
 const SchemaCheckID = "schema"
@@ -178,11 +183,7 @@ func (c StaticRuleCheck) ID() string { return c.CheckID }
 
 func (c StaticRuleCheck) Run(ctx context.Context, input CheckInput) CheckResult {
 	result := CheckResult{CheckID: c.CheckID, Version: c.Version}
-	inputJSON, err := json.Marshal(input)
-	if err != nil {
-		return ruleError(result, "rule_input_unserializable", err.Error())
-	}
-	value, err := runJavaScript(ctx, c.Source, inputJSON, input.AsOf, c.Timeout, c.MemoryLimit)
+	value, err := runJavaScript(ctx, c.Source, input, c.Timeout, c.MemoryLimit)
 	if err != nil {
 		return ruleError(result, ruleErrorCode(err), err.Error())
 	}
@@ -220,13 +221,14 @@ func ruleError(result CheckResult, code, message string) CheckResult {
 
 // Error codes a failed rule run is reported under.
 const (
-	errRuleTimeout       = "rule_timeout"
-	errRuleMemory        = "rule_memory_exceeded"
-	errRuleSyntax        = "rule_source_invalid"
-	errRuleThrew         = "rule_runtime_error"
-	errRuleNoEntry       = "rule_entry_missing"
-	errRuleBusy          = "rule_busy"
-	errRuleResultInvalid = "rule_result_invalid"
+	errRuleTimeout             = "rule_timeout"
+	errRuleMemory              = "rule_memory_exceeded"
+	errRuleSyntax              = "rule_source_invalid"
+	errRuleThrew               = "rule_runtime_error"
+	errRuleNoEntry             = "rule_entry_missing"
+	errRuleBusy                = "rule_busy"
+	errRuleResultInvalid       = "rule_result_invalid"
+	errRuleInputUnserializable = "rule_input_unserializable"
 )
 
 // ruleError is the sentinel family runJavaScript fails with; the code tells a
@@ -286,12 +288,30 @@ const ruleBootstrap = `
 })();
 `
 
+// Only one rule may prepare input or measure shared heap growth at a time.
+// The worker owns the slot until it exits, even when native work outlasts the
+// caller's deadline.
+var ruleRuntimeSlot = make(chan struct{}, 1)
+
 // runJavaScript evaluates the rule program and calls its `run` with the frozen
 // input, returning run's result as JSON.
-func runJavaScript(ctx context.Context, source string, inputJSON []byte, asOf string, timeout time.Duration, memoryLimit int64) ([]byte, error) {
-	asOfMs, err := instantMillis(asOf)
+func runJavaScript(ctx context.Context, source string, input CheckInput, timeout time.Duration, memoryLimit int64) ([]byte, error) {
+	if ctx.Err() != nil {
+		return nil, &ruleRunError{code: errRuleBusy}
+	}
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	if len(input.Artifact)+len(input.Snapshot)+len(input.Scenario.Request)+len(input.Scenario.ScenarioID)+len(input.AsOf) > maxRuleInputBytes {
+		return nil, &ruleRunError{code: errRuleInputInvalid}
+	}
+	asOfMs, err := instantMillis(input.AsOf)
 	if err != nil {
 		return nil, &ruleRunError{code: errRuleInputInvalid}
+	}
+	select {
+	case ruleRuntimeSlot <- struct{}{}:
+	case <-runCtx.Done():
+		return nil, ruleContextError(ctx, runCtx)
 	}
 	type outcome struct {
 		value json.RawMessage
@@ -299,25 +319,58 @@ func runJavaScript(ctx context.Context, source string, inputJSON []byte, asOf st
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		value, err := runJavaScriptSync(source, inputJSON, asOfMs, timeout, memoryLimit)
+		defer func() { <-ruleRuntimeSlot }()
+		if err := ruleContextError(ctx, runCtx); err != nil {
+			done <- outcome{err: err}
+			return
+		}
+		inputJSON, err := json.Marshal(input)
+		if err != nil {
+			done <- outcome{err: fmt.Errorf("%w: %v", &ruleRunError{code: errRuleInputUnserializable}, err)}
+			return
+		}
+		if len(inputJSON) > maxRuleInputBytes {
+			done <- outcome{err: &ruleRunError{code: errRuleInputInvalid}}
+			return
+		}
+		value, err := runJavaScriptSync(runCtx, source, inputJSON, asOfMs, memoryLimit)
 		done <- outcome{value: value, err: err}
 	}()
 	select {
 	case out := <-done:
+		if err := ruleContextError(ctx, runCtx); err != nil {
+			return nil, err
+		}
 		return out.value, out.err
-	case <-ctx.Done():
-		return nil, &ruleRunError{code: errRuleBusy}
+	case <-runCtx.Done():
+		return nil, ruleContextError(ctx, runCtx)
 	}
 }
 
-func runJavaScriptSync(source string, inputJSON []byte, asOfMs int64, timeout time.Duration, memoryLimit int64) (json.RawMessage, error) {
-	vm := goja.New()
-	// Stop conditions: the deadline always; heap growth when a budget is set.
-	var memStats runtime.MemStats
-	if memoryLimit > 0 {
-		runtime.ReadMemStats(&memStats)
+func ruleContextError(parent, runCtx context.Context) error {
+	if parent.Err() != nil {
+		return &ruleRunError{code: errRuleBusy}
 	}
-	baseline := memStats.HeapAlloc
+	return ruleRunContextError(runCtx)
+}
+
+func ruleRunContextError(ctx context.Context) error {
+	switch ctx.Err() {
+	case nil:
+		return nil
+	case context.DeadlineExceeded:
+		return &ruleRunError{code: errRuleTimeout}
+	default:
+		return &ruleRunError{code: errRuleBusy}
+	}
+}
+
+func runJavaScriptSync(ctx context.Context, source string, inputJSON []byte, asOfMs int64, memoryLimit int64) (json.RawMessage, error) {
+	if err := ruleRunContextError(ctx); err != nil {
+		return nil, err
+	}
+	vm := goja.New()
+	// One deadline covers both trusted preparation and rule execution.
 	stop := make(chan struct{})
 	var once atomic.Bool
 	interrupt := func(reason string) {
@@ -325,7 +378,39 @@ func runJavaScriptSync(source string, inputJSON []byte, asOfMs int64, timeout ti
 			vm.Interrupt(reason)
 		}
 	}
-	timer := time.AfterFunc(timeout, func() { interrupt(errRuleTimeout) })
+	stopInterrupt := context.AfterFunc(ctx, func() { interrupt(errRuleTimeout) })
+
+	defer func() {
+		close(stop)
+		stopInterrupt()
+	}()
+
+	if err := vm.Set("__inputJSON", string(inputJSON)); err != nil {
+		return nil, fmt.Errorf("rule runtime: %w", err)
+	}
+	if err := vm.Set("__asOf", asOfMs); err != nil {
+		return nil, fmt.Errorf("rule runtime: %w", err)
+	}
+	frozenInput, err := vm.RunString(ruleBootstrap)
+	if err != nil {
+		return nil, ruleFailure(err)
+	}
+	if err := ruleRunContextError(ctx); err != nil {
+		return nil, err
+	}
+	// Only trusted bootstrap has run. Collect its temporary objects before
+	// measuring rule growth, so their reclamation cannot credit the rule.
+	if memoryLimit > 0 {
+		runtime.GC()
+		if err := ruleRunContextError(ctx); err != nil {
+			return nil, err
+		}
+	}
+	var memStats runtime.MemStats
+	if memoryLimit > 0 {
+		runtime.ReadMemStats(&memStats)
+	}
+	baseline := memStats.HeapAlloc
 	if memoryLimit > 0 {
 		go func() {
 			ticker := time.NewTicker(10 * time.Millisecond)
@@ -345,22 +430,6 @@ func runJavaScriptSync(source string, inputJSON []byte, asOfMs int64, timeout ti
 			}
 		}()
 	}
-	defer func() {
-		close(stop)
-		timer.Stop()
-		vm.ClearInterrupt()
-	}()
-
-	if err := vm.Set("__inputJSON", string(inputJSON)); err != nil {
-		return nil, fmt.Errorf("rule runtime: %w", err)
-	}
-	if err := vm.Set("__asOf", asOfMs); err != nil {
-		return nil, fmt.Errorf("rule runtime: %w", err)
-	}
-	frozenInput, err := vm.RunString(ruleBootstrap)
-	if err != nil {
-		return nil, fmt.Errorf("rule runtime bootstrap: %w", err)
-	}
 	program, err := goja.Compile("rule", source, false)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", &ruleRunError{code: errRuleSyntax}, err)
@@ -375,6 +444,9 @@ func runJavaScriptSync(source string, inputJSON []byte, asOfMs int64, timeout ti
 	value, err := entry(goja.Undefined(), frozenInput)
 	if err != nil {
 		return nil, ruleFailure(err)
+	}
+	if err := ruleRunContextError(ctx); err != nil {
+		return nil, err
 	}
 	exported := value.Export()
 	encoded, err := json.Marshal(exported)

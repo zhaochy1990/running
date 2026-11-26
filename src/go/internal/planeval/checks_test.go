@@ -185,6 +185,174 @@ func TestRuleRuntime_EnforcesBudgets(t *testing.T) {
 	}
 }
 
+// Dense synthetic history exercises JSON object allocation and deepFreeze, not
+// just a large string; no private snapshot data is used.
+func largeRuleInput(t *testing.T) CheckInput {
+	t.Helper()
+	input := ruleInput(t, loadValidArtifact(t), 5)
+	const snapshotBytes = 6147264
+	const row = `{"date":"2026-01-01T00:00:00Z","metrics":{"distance":10,"duration":3600,"hr":140}},`
+	prefix := `{"constraints":{"max_run_days_per_week":5},"records":{"activities":[`
+	rows := strings.Repeat(row, (snapshotBytes-len(prefix)-32)/len(row))
+	raw := prefix + rows + `{}]},"padding":"`
+	input.Snapshot = json.RawMessage(raw + strings.Repeat("x", snapshotBytes-len(raw)-2) + `"}`)
+	if len(input.Snapshot) != snapshotBytes || !json.Valid(input.Snapshot) {
+		t.Fatal("synthetic snapshot must be valid JSON at the reproduction size")
+	}
+	return input
+}
+
+func TestStaticRuleCheck_LargeSnapshot(t *testing.T) {
+	input := largeRuleInput(t)
+	if result := (SchemaCheck{}).Run(context.Background(), input); result.Status != "pass" {
+		t.Fatalf("schema gate: %+v", result)
+	}
+	check := StaticRuleCheck{CheckID: PresetRuleID, Version: PresetRuleVersion, Source: presetRuleSource,
+		Timeout: 30 * time.Second, MemoryLimit: DefaultRuleMemoryLimit}
+	if result := check.Run(context.Background(), input); result.Status != "pass" {
+		t.Fatalf("large snapshot with the unchanged rule budget: status=%s error=%+v", result.Status, result.Error)
+	}
+}
+
+func TestRuleRuntime_LargeSnapshotStillEnforcesRuleMemory(t *testing.T) {
+	input := largeRuleInput(t)
+	allocation := `var retained = [];
+		for (var i = 0; i < 8; i++) retained.push(new ArrayBuffer(16 << 20));
+		while (retained.length === 8) {}`
+	for _, phase := range []string{"load", "run"} {
+		t.Run(phase, func(t *testing.T) {
+			source := allocation + ` function run() { return {status: "pass"}; }`
+			if phase == "run" {
+				source = `function run() {` + allocation + `}`
+			}
+			check := StaticRuleCheck{CheckID: "memory-probe", Source: source,
+				Timeout: 30 * time.Second, MemoryLimit: DefaultRuleMemoryLimit}
+			result := check.Run(context.Background(), input)
+			if result.Error == nil || result.Error.Code != errRuleMemory {
+				t.Fatalf("%s allocation: status=%s error=%+v", phase, result.Status, result.Error)
+			}
+		})
+	}
+}
+
+func TestRuleRuntime_DeepInputIsReadOnly(t *testing.T) {
+	input := ruleInput(t, loadValidArtifact(t), 5)
+	input.Snapshot = json.RawMessage(`{"constraints":{"max_run_days_per_week":5},"records":{"activities":[{"metrics":{"hr":140}}]}}`)
+	input.Scenario.Request = json.RawMessage(`{"nested":{"days":[1,2]}}`)
+	source := `function run(input) {
+		"use strict";
+		var nodes = [input, input.artifact.weekly_docs, input.artifact.weekly_docs[0].sessions,
+			input.artifact.weekly_docs[0].sessions[0], input.snapshot.records.activities,
+			input.snapshot.records.activities[0].metrics, input.scenario.request.nested.days];
+		var blocked = 0;
+		for (var node of nodes) {
+			if (!Object.isFrozen(node)) throw new Error("not deeply frozen");
+			try { node.tampered = true; } catch (e) { blocked++; }
+		}
+		try { input.snapshot.records.activities[0].metrics.hr = 999; } catch (e) { blocked++; }
+		try { input.scenario.request.nested.days.push(3); } catch (e) { blocked++; }
+		return {status: "pass", reason: blocked + ":" + input.snapshot.records.activities[0].metrics.hr + ":" + input.scenario.request.nested.days.length};
+	}`
+	check := StaticRuleCheck{CheckID: "freeze-probe", Source: source, Timeout: time.Second, MemoryLimit: DefaultRuleMemoryLimit}
+	if result := check.Run(context.Background(), input); result.Status != "pass" || result.Reason != "9:140:2" {
+		t.Fatalf("deep mutation: %+v error=%+v", result, result.Error)
+	}
+}
+
+func TestRuleRuntime_PreparationSizeBound(t *testing.T) {
+	oversized := json.RawMessage(strings.Repeat(" ", maxRuleInputBytes+1))
+	for _, field := range []string{"snapshot", "artifact", "request"} {
+		t.Run(field, func(t *testing.T) {
+			input := ruleInput(t, nil, 5)
+			switch field {
+			case "snapshot":
+				input.Snapshot = oversized
+			case "artifact":
+				input.Artifact = oversized
+			case "request":
+				input.Scenario.Request = oversized
+			}
+			// Preparation remains bounded even when the rule heap guard is disabled.
+			check := StaticRuleCheck{Source: `function run() { return {status:"pass"}; }`, Timeout: time.Second}
+			result := check.Run(context.Background(), input)
+			if result.Error == nil || result.Error.Code != errRuleInputInvalid {
+				t.Fatalf("%s size bound: status=%s error=%+v", field, result.Status, result.Error)
+			}
+		})
+	}
+	input := ruleInput(t, nil, 5)
+	input.Artifact = json.RawMessage(`{not json`)
+	check := StaticRuleCheck{Timeout: time.Second}
+	if result := check.Run(context.Background(), input); result.Error == nil || result.Error.Code != errRuleInputUnserializable {
+		t.Fatalf("invalid JSON: %+v error=%+v", result, result.Error)
+	}
+}
+
+func TestRuleRuntime_PreparationTimeout(t *testing.T) {
+	input := largeRuleInput(t)
+	encoded, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	asOf, err := instantMillis(input.AsOf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Test the interpreter seam so the interrupted bootstrap has exited before
+	// the next shared-heap probe, and verify its structured budget error.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	_, err = runJavaScriptSync(ctx, presetRuleSource, encoded, asOf, DefaultRuleMemoryLimit)
+	if ruleErrorCode(err) != errRuleTimeout {
+		t.Fatalf("bootstrap timeout: %v", err)
+	}
+	check := StaticRuleCheck{Source: presetRuleSource, Timeout: time.Nanosecond, MemoryLimit: DefaultRuleMemoryLimit}
+	start := time.Now()
+	if result := check.Run(context.Background(), input); result.Error == nil || result.Error.Code != errRuleTimeout {
+		t.Fatalf("end-to-end preparation timeout: %+v error=%+v", result, result.Error)
+	}
+	if time.Since(start) > time.Second {
+		t.Fatal("caller waited for native preparation after its deadline")
+	}
+}
+
+func TestRuleRuntime_WaitingForRunningRuleHonorsBudget(t *testing.T) {
+	input := ruleInput(t, nil, 5)
+	check := StaticRuleCheck{
+		Source:  `function run() { return {status:"pass"}; }`,
+		Timeout: 20 * time.Millisecond,
+	}
+	select {
+	case ruleRuntimeSlot <- struct{}{}:
+	case <-time.After(time.Second):
+		t.Fatal("previous rule did not release the runtime slot")
+	}
+	func() {
+		defer func() { <-ruleRuntimeSlot }()
+		blocked := check.Run(context.Background(), input)
+		if blocked.Error == nil || blocked.Error.Code != errRuleTimeout {
+			t.Fatalf("waiting rule: status=%s error=%+v", blocked.Status, blocked.Error)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+		defer cancel()
+		cancelled := check.Run(ctx, input)
+		if cancelled.Error == nil || cancelled.Error.Code != errRuleBusy {
+			t.Fatalf("cancelled caller: status=%s error=%+v", cancelled.Status, cancelled.Error)
+		}
+	}()
+	check.Timeout = time.Second
+	if result := check.Run(context.Background(), input); result.Status != "pass" {
+		t.Fatalf("runtime did not recover: status=%s error=%+v", result.Status, result.Error)
+	}
+}
+
+func TestRuleRuntime_RuleLoadTimeout(t *testing.T) {
+	result := runRule(t, `while (true) {} function run() { return {status: "pass"}; }`)
+	if result.Error == nil || result.Error.Code != errRuleTimeout {
+		t.Fatalf("rule load timeout: status=%s error=%+v", result.Status, result.Error)
+	}
+}
+
 func TestRuleRuntime_ReportsBrokenRules(t *testing.T) {
 	cases := map[string]struct {
 		source string
