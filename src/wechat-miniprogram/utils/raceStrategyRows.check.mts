@@ -109,7 +109,7 @@ eq(saved.fueling_plan.length, 2, '空补给行被过滤');
     { time_point: '起跑后 2:20（约 9:46，约 19 km）', content: '抗酸片' },
     { time_point: '赛前 30 分钟', content: '能量胶' },
     { time_point: '起跑前 1 小时 15 分钟', content: '能量饮' },
-    { time_point: '约 20 km', content: '能量胶' },
+    { time_point: '约 20 km 处', content: '能量胶' },
     { time_point: '过桥前', content: '盐丸' },
     { time_point: '酌情', content: '能量胶' },
   ];
@@ -129,6 +129,19 @@ eq(saved.fueling_plan.length, 2, '空补给行被过滤');
     { time_point: '起跑后 0:45:00', content: '新增盐丸' },
     ...expected.slice(4),
   ], '新增补给保存时进入对应的时间位置');
+}
+
+{
+  const timePoints = [
+    '起跑后 ５ 分钟', '赛前 45 分钟', '起跑后 ０：００', '赛前 0.5–1 小时',
+    '赛后 30 分钟', '起跑后 1:30', '12 km 处',
+  ];
+  const view = toStrategyView({
+    ...strategy,
+    fueling_plan: timePoints.map((time_point) => ({ time_point, content: '补给' })),
+  });
+  eq(view.fuelingRows.map((row) => row.timePoint), [3, 1, 2, 0, 6, 5, 4].map((i) => timePoints[i]),
+    '时间窗、全角标注、零时刻、里程点和赛后事项按时间排序');
 }
 
 // 打包清单：视图映射（note 兜底空串）+ 保存体原样带回（清单只读，不随编辑变）
