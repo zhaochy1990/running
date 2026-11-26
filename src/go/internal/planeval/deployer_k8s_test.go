@@ -44,7 +44,7 @@ func TestKubernetesDeployer_EnsureCreatesSecretThenDeployment(t *testing.T) {
 	}
 	// The administrator's variables and the two runtime secrets; the pod
 	// template never carries a value.
-	for key, want := range map[string]string{"DEEPSEEK_API_KEY": "sk-live", "PLAN_WORKER_EVAL_API_TOKEN": "worker-secret", "PLAN_WORKER_AMQP_URL": "amqp://guest:guest@rabbitmq:5672/"} {
+	for key, want := range map[string]string{"DEEPSEEK_API_KEY": "sk-live", "PLAN_WORKER_EVAL_API_TOKEN": versionWorkerToken("worker-secret", spec.AgentVersion), "PLAN_WORKER_AMQP_URL": "amqp://guest:guest@rabbitmq:5672/"} {
 		if got := string(secret.Data[key]); got != want {
 			t.Errorf("secret[%s] = %q, want %q", key, got, want)
 		}
@@ -160,5 +160,26 @@ func TestDeployer_RejectsUnusableVersionsAndUnknownKinds(t *testing.T) {
 	}
 	if _, err := NewDeployer("none", KubernetesOptions{}); err != nil {
 		t.Errorf("none deployer: %v", err)
+	}
+}
+
+func TestKubernetesDeployer_RefusesTerminatingDeployment(t *testing.T) {
+	d := newFakeDeployer()
+	ctx := context.Background()
+	spec := WorkerSpec{AgentVersion: "2026.11.30", Replicas: 1, Env: map[string]string{}}
+	if err := d.Ensure(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	deployment, err := d.client.AppsV1().Deployments("stride").Get(ctx, WorkerName(spec.AgentVersion), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := metav1.Now()
+	deployment.DeletionTimestamp = &now
+	if _, err := d.client.AppsV1().Deployments("stride").Update(ctx, deployment, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Ensure(ctx, spec); err == nil || !strings.Contains(err.Error(), "still being deleted") {
+		t.Fatalf("terminating deployment accepted: %v", err)
 	}
 }

@@ -43,6 +43,8 @@ type QueueDepth struct {
 // unacknowledged ones the cleanup gate also needs.
 type Broker struct {
 	mu             sync.Mutex
+	publishMu      sync.Mutex
+	returns        <-chan amqp.Return
 	amqpURL        string
 	vhostPath      string
 	managementURL  string
@@ -100,6 +102,7 @@ func (b *Broker) connect() error {
 		return fmt.Errorf("plan-eval broker confirm mode: %w", err)
 	}
 	b.conn, b.channel = conn, channel
+	b.returns = channel.NotifyReturn(make(chan amqp.Return, 1))
 	return nil
 }
 
@@ -125,27 +128,27 @@ func (b *Broker) closeConnection() {
 }
 
 // session returns a confirm channel, redialing if the previous one died.
-func (b *Broker) session() (*amqp.Channel, error) {
+func (b *Broker) session() (*amqp.Channel, <-chan amqp.Return, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.conn == nil || b.conn.IsClosed() || b.channel.IsClosed() {
 		b.closeConnection()
 		if err := b.connect(); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		b.log.Info("plan-eval broker reconnected")
 	}
-	return b.channel, nil
+	return b.channel, b.returns, nil
 }
 
 // EnsureQueue declares the version queue idempotently (durable, not
 // auto-delete: the queue outlives its Deployment).
 func (b *Broker) EnsureQueue(name string) error {
-	ch, err := b.session()
+	ch, _, err := b.session()
 	if err != nil {
 		return err
 	}
-	if _, err := ch.QueueDeclare(name, true, false, false, false, nil); err != nil {
+	if _, err := ch.QueueDeclare(name, true, false, false, false, amqp.Table{"x-queue-type": "classic"}); err != nil {
 		return fmt.Errorf("plan-eval declare queue %s: %w", name, err)
 	}
 	return nil
@@ -154,7 +157,9 @@ func (b *Broker) EnsureQueue(name string) error {
 // Publish sends one persistent pointer message and waits for the broker's
 // confirmation. Resolving means the broker owns the message.
 func (b *Broker) Publish(ctx context.Context, queue string, message ExecuteMessage) error {
-	ch, err := b.session()
+	b.publishMu.Lock()
+	defer b.publishMu.Unlock()
+	ch, returns, err := b.session()
 	if err != nil {
 		return err
 	}
@@ -162,7 +167,7 @@ func (b *Broker) Publish(ctx context.Context, queue string, message ExecuteMessa
 	if err != nil {
 		return err
 	}
-	confirm, err := ch.PublishWithDeferredConfirmWithContext(ctx, "", queue, false, false, amqp.Publishing{
+	confirm, err := ch.PublishWithDeferredConfirmWithContext(ctx, "", queue, true, false, amqp.Publishing{
 		ContentType:  "application/json",
 		DeliveryMode: amqp.Persistent,
 		Timestamp:    time.Now(),
@@ -177,6 +182,14 @@ func (b *Broker) Publish(ctx context.Context, queue string, message ExecuteMessa
 	if err != nil {
 		return fmt.Errorf("plan-eval publish to %s: wait for broker confirmation: %w", queue, err)
 	}
+	select {
+	case returned, ok := <-returns:
+		if !ok {
+			return fmt.Errorf("plan-eval publish to %s: channel closed", queue)
+		}
+		return fmt.Errorf("plan-eval publish to %s: unroutable (%s)", queue, returned.ReplyText)
+	default:
+	}
 	if !confirmed {
 		return fmt.Errorf("plan-eval publish to %s: broker nacked the message", queue)
 	}
@@ -186,7 +199,7 @@ func (b *Broker) Publish(ctx context.Context, queue string, message ExecuteMessa
 // QueueDepth reads the queue from the management API. A queue that does not
 // exist (never declared) has depth zero.
 func (b *Broker) QueueDepth(ctx context.Context, queue string) (QueueDepth, error) {
-	endpoint := fmt.Sprintf("%s/api/queues/%s/%s", b.managementURL, b.vhostPath, url.PathEscape(queue))
+	endpoint := fmt.Sprintf("%s/api/queues/%s/%s", b.managementURL, b.vhostPath, url.PathEscape(queue)) + "?disable_stats=true&enable_queue_totals=true"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return QueueDepth{}, err
@@ -204,11 +217,15 @@ func (b *Broker) QueueDepth(ctx context.Context, queue string) (QueueDepth, erro
 		return QueueDepth{}, fmt.Errorf("plan-eval rabbit management: %s for queue %s", resp.Status, queue)
 	}
 	var body struct {
-		MessagesReady          int `json:"messages_ready"`
-		MessagesUnacknowledged int `json:"messages_unacknowledged"`
+		Type                   string `json:"type"`
+		MessagesReady          *int   `json:"messages_ready"`
+		MessagesUnacknowledged *int   `json:"messages_unacknowledged"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return QueueDepth{}, fmt.Errorf("plan-eval rabbit management: %w", err)
 	}
-	return QueueDepth{Ready: body.MessagesReady, Unacked: body.MessagesUnacknowledged}, nil
+	if body.Type != "classic" || body.MessagesReady == nil || body.MessagesUnacknowledged == nil || *body.MessagesReady < 0 || *body.MessagesUnacknowledged < 0 {
+		return QueueDepth{}, fmt.Errorf("plan-eval rabbit management: queue %s has unsupported type or unavailable totals", queue)
+	}
+	return QueueDepth{Ready: *body.MessagesReady, Unacked: *body.MessagesUnacknowledged}, nil
 }

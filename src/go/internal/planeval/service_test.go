@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,6 +34,7 @@ const (
 // ---- in-memory stand-ins for the broker and the cluster ----
 
 type fakeBroker struct {
+	mu       sync.Mutex
 	queues   map[string][]ExecuteMessage
 	depth    map[string]QueueDepth
 	publish  func(queue string) error
@@ -40,6 +42,8 @@ type fakeBroker struct {
 }
 
 func (b *fakeBroker) EnsureQueue(name string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	if _, ok := b.queues[name]; !ok {
 		b.queues[name] = nil
 	}
@@ -53,11 +57,15 @@ func (b *fakeBroker) Publish(_ context.Context, queue string, message ExecuteMes
 			return err
 		}
 	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.queues[queue] = append(b.queues[queue], message)
 	return nil
 }
 
 func (b *fakeBroker) QueueDepth(_ context.Context, queue string) (QueueDepth, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	if depth, ok := b.depth[queue]; ok {
 		return depth, nil
 	}
@@ -65,21 +73,40 @@ func (b *fakeBroker) QueueDepth(_ context.Context, queue string) (QueueDepth, er
 }
 
 type fakeDeployer struct {
+	mu      sync.Mutex
+	ensure  func(WorkerSpec) error
+	delete  func(string) error
 	ensured []WorkerSpec
 	deleted []string
 }
 
 func (d *fakeDeployer) Ensure(_ context.Context, spec WorkerSpec) error {
+	if d.ensure != nil {
+		if err := d.ensure(spec); err != nil {
+			return err
+		}
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.ensured = append(d.ensured, spec)
 	return nil
 }
 
 func (d *fakeDeployer) Delete(_ context.Context, version string) error {
+	if d.delete != nil {
+		if err := d.delete(version); err != nil {
+			return err
+		}
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.deleted = append(d.deleted, version)
 	return nil
 }
 
 func (d *fakeDeployer) Status(_ context.Context, version string) (DeploymentStatus, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	for _, spec := range d.ensured {
 		if spec.AgentVersion == version {
 			return DeploymentStatus{Present: true, Replicas: int32(spec.Replicas), ReadyReplicas: int32(spec.Replicas)}, nil
@@ -205,7 +232,7 @@ func (h *harness) admin(method, path string, body any, extra map[string]string) 
 }
 
 func (h *harness) worker(method, path string, body any) response {
-	return h.call(method, path, body, map[string]string{workerTokenHeader: testWorkerToken})
+	return h.call(method, path, body, map[string]string{workerTokenHeader: versionWorkerToken(testWorkerToken, h.version)})
 }
 
 // json decodes a response body or fails the test.
@@ -257,7 +284,7 @@ func TestHTTP_AdminSurfaceAdmitsOnlyAdministrators(t *testing.T) {
 func TestHTTP_WorkerSurfaceRequiresTheWorkerIdentity(t *testing.T) {
 	h := openHarness(t)
 	const path = "/api/internal/plan-eval/executions/claim"
-	body := map[string]any{"snapshot_execution_id": uuid.NewString(), "agent_version": h.version, "worker_id": "w"}
+	body := map[string]any{"snapshot_execution_id": uuid.NewString(), "agent_version": h.version, "worker_id": "w", "claim_request_id": "claim-1"}
 	for name, headers := range map[string]map[string]string{
 		"anonymous":      {},
 		"wrong token":    {workerTokenHeader: "nope"},
@@ -380,10 +407,10 @@ func TestHTTP_WorkerHandoverAndEvaluation(t *testing.T) {
 	detailPath := "/api/admin/plan-eval/tasks/" + task["id"].(string)
 
 	// A worker of another version is refused before it sees any input.
-	if res := h.worker(http.MethodPost, "/api/internal/plan-eval/executions/claim", map[string]any{"snapshot_execution_id": executionID, "agent_version": "2026.11.29", "worker_id": "w"}); res.status != http.StatusConflict {
+	if res := h.worker(http.MethodPost, "/api/internal/plan-eval/executions/claim", map[string]any{"snapshot_execution_id": executionID, "agent_version": "2026.11.29", "worker_id": "w", "claim_request_id": "claim-1"}); res.status != http.StatusConflict {
 		t.Fatalf("wrong version claim: %d %s", res.status, res.body)
 	}
-	claim := h.worker(http.MethodPost, "/api/internal/plan-eval/executions/claim", map[string]any{"snapshot_execution_id": executionID, "agent_version": h.version, "worker_id": "worker-1"})
+	claim := h.worker(http.MethodPost, "/api/internal/plan-eval/executions/claim", map[string]any{"snapshot_execution_id": executionID, "agent_version": h.version, "worker_id": "worker-1", "claim_request_id": "claim-1"})
 	if claim.status != http.StatusOK {
 		t.Fatalf("claim: %d %s", claim.status, claim.body)
 	}
@@ -403,19 +430,19 @@ func TestHTTP_WorkerHandoverAndEvaluation(t *testing.T) {
 		t.Fatalf("the frozen request is not stamped: %v", request)
 	}
 	// While the lease is valid another delivery is told to wait.
-	if busy := h.worker(http.MethodPost, "/api/internal/plan-eval/executions/claim", map[string]any{"snapshot_execution_id": executionID, "agent_version": h.version, "worker_id": "worker-2"}); h.json(busy)["status"] != "busy" || h.json(busy)["retry_after_ms"].(float64) <= 0 || h.json(busy)["retry_after_ms"].(float64) > 5000 {
+	if busy := h.worker(http.MethodPost, "/api/internal/plan-eval/executions/claim", map[string]any{"snapshot_execution_id": executionID, "agent_version": h.version, "worker_id": "worker-2", "claim_request_id": "claim-1"}); h.json(busy)["status"] != "busy" || h.json(busy)["retry_after_ms"].(float64) <= 0 || h.json(busy)["retry_after_ms"].(float64) > 5000 {
 		t.Fatalf("busy: %s", busy.body)
 	}
-	if res := h.worker(http.MethodPost, "/api/internal/plan-eval/executions/"+executionID+"/renew", map[string]any{"lease_epoch": 1}); res.status != http.StatusOK {
+	if res := h.worker(http.MethodPost, "/api/internal/plan-eval/executions/"+executionID+"/renew", map[string]any{"agent_version": h.version, "worker_id": "worker-1", "submit_id": "submit-1", "lease_epoch": 1}); res.status != http.StatusOK {
 		t.Fatalf("renew: %d %s", res.status, res.body)
 	}
-	if res := h.worker(http.MethodPost, "/api/internal/plan-eval/executions/"+executionID+"/renew", map[string]any{"lease_epoch": 0}); res.status != http.StatusConflict || h.json(res)["error"] != "stale_lease" {
+	if res := h.worker(http.MethodPost, "/api/internal/plan-eval/executions/"+executionID+"/renew", map[string]any{"agent_version": h.version, "worker_id": "worker-2", "lease_epoch": 1}); res.status != http.StatusConflict || h.json(res)["error"] != "stale_lease" {
 		t.Fatalf("stale renew: %d %s", res.status, res.body)
 	}
 
 	// An artifact that is not valid JSON is kept verbatim, the schema verdict
 	// says why, and business rules are skipped.
-	bad := map[string]any{"lease_epoch": 1, "result": map[string]any{"kind": "artifact", "artifact_type": "master_plan", "content": "{\"not json"}}
+	bad := map[string]any{"agent_version": h.version, "worker_id": "worker-1", "submit_id": "submit-1", "lease_epoch": 1, "result": map[string]any{"kind": "artifact", "artifact_type": "master_plan", "content": "{\"not json"}}
 	settled := h.worker(http.MethodPost, "/api/internal/plan-eval/executions/"+executionID+"/result", bad)
 	if settled.status != http.StatusOK {
 		t.Fatalf("submit: %d %s", settled.status, settled.body)
@@ -428,7 +455,7 @@ func TestHTTP_WorkerHandoverAndEvaluation(t *testing.T) {
 	if replayed["receipt_id"] != ack["receipt_id"] {
 		t.Fatalf("a replayed submit must return the original receipt: %s", settled.body)
 	}
-	if terminal := h.json(h.worker(http.MethodPost, "/api/internal/plan-eval/executions/claim", map[string]any{"snapshot_execution_id": executionID, "agent_version": h.version, "worker_id": "worker-3"})); terminal["status"] != "terminal" {
+	if terminal := h.json(h.worker(http.MethodPost, "/api/internal/plan-eval/executions/claim", map[string]any{"snapshot_execution_id": executionID, "agent_version": h.version, "worker_id": "worker-3", "claim_request_id": "claim-1"})); terminal["status"] != "terminal" {
 		t.Fatalf("settled execution: %v", terminal)
 	}
 	execution := h.json(h.admin(http.MethodGet, detailPath, nil, nil))["executions"].([]any)[0].(map[string]any)
@@ -450,12 +477,13 @@ func TestHTTP_WorkerHandoverAndEvaluation(t *testing.T) {
 	res = h.admin(http.MethodPost, "/api/admin/plan-eval/tasks", h.createBody(), map[string]string{"Idempotency-Key": uuid.NewString()})
 	validTask := h.json(res)
 	validID := validTask["executions"].([]any)[0].(map[string]any)["id"].(string)
-	leased = h.json(h.worker(http.MethodPost, "/api/internal/plan-eval/executions/claim", map[string]any{"snapshot_execution_id": validID, "agent_version": h.version, "worker_id": "worker-1"}))
+	leased = h.json(h.worker(http.MethodPost, "/api/internal/plan-eval/executions/claim", map[string]any{"snapshot_execution_id": validID, "agent_version": h.version, "worker_id": "worker-1", "claim_request_id": "claim-1"}))
 	validArtifact, err := os.ReadFile("testdata/valid_master_plan_artifact.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	ack = h.json(h.worker(http.MethodPost, "/api/internal/plan-eval/executions/"+validID+"/result", map[string]any{
+		"agent_version": h.version, "worker_id": "worker-1", "submit_id": "submit-1",
 		"lease_epoch": int(leased["lease_epoch"].(float64)),
 		"result":      map[string]any{"kind": "artifact", "artifact_type": "master_plan", "content": string(validArtifact)},
 	}))
@@ -490,8 +518,9 @@ func TestHTTP_WorkerHandoverAndEvaluation(t *testing.T) {
 	// A failed generate records its reason and skips Evaluate.
 	res = h.admin(http.MethodPost, "/api/admin/plan-eval/tasks", h.createBody(), map[string]string{"Idempotency-Key": uuid.NewString()})
 	failedID := h.json(res)["executions"].([]any)[0].(map[string]any)["id"].(string)
-	h.worker(http.MethodPost, "/api/internal/plan-eval/executions/claim", map[string]any{"snapshot_execution_id": failedID, "agent_version": h.version, "worker_id": "worker-1"})
+	h.worker(http.MethodPost, "/api/internal/plan-eval/executions/claim", map[string]any{"snapshot_execution_id": failedID, "agent_version": h.version, "worker_id": "worker-1", "claim_request_id": "claim-1"})
 	ack = h.json(h.worker(http.MethodPost, "/api/internal/plan-eval/executions/"+failedID+"/result", map[string]any{
+		"agent_version": h.version, "worker_id": "worker-1", "submit_id": "submit-1",
 		"lease_epoch": 1,
 		"result":      map[string]any{"kind": "failed", "error": map[string]string{"code": "model_timeout", "message": "生成模型调用超时。"}},
 	}))
@@ -555,8 +584,9 @@ func TestHTTP_CleanupRequiresAnIdleVersion(t *testing.T) {
 	}
 
 	// Every generate settled, but an unacknowledged message is still in flight.
-	h.worker(http.MethodPost, "/api/internal/plan-eval/executions/claim", map[string]any{"snapshot_execution_id": executionID, "agent_version": h.version, "worker_id": "worker-1"})
+	h.worker(http.MethodPost, "/api/internal/plan-eval/executions/claim", map[string]any{"snapshot_execution_id": executionID, "agent_version": h.version, "worker_id": "worker-1", "claim_request_id": "claim-1"})
 	settled := h.worker(http.MethodPost, "/api/internal/plan-eval/executions/"+executionID+"/result", map[string]any{
+		"agent_version": h.version, "worker_id": "worker-1", "submit_id": "submit-1",
 		"lease_epoch": 1,
 		"result":      map[string]any{"kind": "failed", "error": map[string]string{"code": "model_timeout", "message": "生成模型调用超时。"}},
 	})
@@ -620,4 +650,141 @@ func TestHTTP_LaunchFailureKeepsTheTaskAndReportsIt(t *testing.T) {
 func sha256Hex(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])
+}
+
+func TestHTTP_TwoVersionsScaleAndCleanupRace(t *testing.T) {
+	h := openHarness(t)
+	ctx := context.Background()
+	otherVersion := h.version + "b"
+	h.svc.cfg.AgentVersions = append(h.svc.cfg.AgentVersions, otherVersion)
+	create := func(version string) *TaskDetailView {
+		view, _, err := h.svc.CreateTask(ctx, "admin-1", uuid.NewString(), CreateTaskRequest{AgentVersion: version, Replicas: 2, Env: []EnvVar{{Name: "MODEL_KEY", Value: "not-a-real-secret"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return view
+	}
+	first, second := create(h.version), create(otherVersion)
+	if QueueName(first.AgentVersion) == QueueName(second.AgentVersion) || WorkerName(first.AgentVersion) == WorkerName(second.AgentVersion) {
+		t.Fatal("versions share runtime")
+	}
+	path := "/api/admin/plan-eval/agent-versions/" + h.version + "/scale"
+	if res := h.admin(http.MethodPost, path, map[string]int{"replicas": 3}, nil); res.status != http.StatusOK {
+		t.Fatalf("scale: %d %s", res.status, res.body)
+	}
+	if res := h.admin(http.MethodPost, path, map[string]int{"replicas": 0}, nil); res.status != http.StatusUnprocessableEntity {
+		t.Fatalf("invalid scale: %d", res.status)
+	}
+	configs, err := h.svc.store.ListPlanEvalLaunchConfigs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, config := range configs {
+		if config.AgentVersion == h.version && config.Replicas != 3 {
+			t.Fatal("scaled count not persisted")
+		}
+		if config.AgentVersion == otherVersion && config.Replicas != 2 {
+			t.Fatal("another version was scaled")
+		}
+	}
+	// An omitted count and variables keep the version's effective configuration.
+	shared, _, serr := h.svc.CreateTask(ctx, "admin-1", uuid.NewString(), CreateTaskRequest{AgentVersion: h.version})
+	if serr != nil || shared.Replicas != 3 {
+		t.Fatalf("blank launch config: %+v %v", shared, serr)
+	}
+	for _, view := range []*TaskDetailView{first, shared} {
+		id := view.Executions[0].ID
+		if _, err := h.svc.Claim(ctx, claimRequest{SnapshotExecutionID: id, AgentVersion: h.version, WorkerID: "w", ClaimRequestID: "claim-1"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.svc.Submit(ctx, id, submitRequest{PlanEvalWorkerLease: storage.PlanEvalWorkerLease{AgentVersion: h.version, WorkerID: "w", LeaseEpoch: 1}, SubmitID: "submit-1", Result: reportedResult{Kind: "failed", Error: &reportedError{Code: "timeout"}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.broker.depth[QueueName(h.version)] = QueueDepth{}
+	deleting := make(chan struct{})
+	release := make(chan struct{})
+	h.deployer.delete = func(version string) error {
+		if version == h.version {
+			close(deleting)
+			<-release
+		}
+		return nil
+	}
+	cleaned := make(chan *Error, 1)
+	go func() { cleaned <- h.svc.Cleanup(ctx, h.version) }()
+	<-deleting
+	// A second API replica runs the same code, not the same process mutex.
+	replica := NewService(h.svc.store, h.broker, h.deployer, h.svc.secrets, h.svc.cfg, zap.NewNop())
+	created := make(chan *Error, 1)
+	go func() {
+		_, _, err := replica.CreateTask(ctx, "admin-1", uuid.NewString(), CreateTaskRequest{AgentVersion: h.version})
+		created <- err
+	}()
+	if err := replica.Scale(ctx, otherVersion, 4); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-created:
+		t.Fatalf("submit passed an unfinished cleanup: %v", err)
+	case <-time.After(30 * time.Millisecond):
+	}
+	close(release)
+	if err := <-cleaned; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-created; err != nil {
+		t.Fatal(err)
+	}
+	if len(h.deployer.deleted) != 1 || h.deployer.deleted[0] != h.version || h.deployer.ensured[len(h.deployer.ensured)-1].AgentVersion != h.version {
+		t.Fatal("new task did not recreate the cleaned version")
+	}
+}
+
+func TestHTTP_DeploymentFailureRetriesOriginalDispatch(t *testing.T) {
+	h := openHarness(t)
+	h.deployer.ensure = func(WorkerSpec) error { return errors.New("injected deployment fault") }
+	key := map[string]string{"Idempotency-Key": uuid.NewString()}
+	failed := h.admin(http.MethodPost, "/api/admin/plan-eval/tasks", h.createBody(), key)
+	if failed.status != http.StatusBadGateway {
+		t.Fatalf("launch: %d %s", failed.status, failed.body)
+	}
+	taskID := h.json(failed)["task_id"].(string)
+	before := h.json(h.admin(http.MethodGet, "/api/admin/plan-eval/tasks/"+taskID, nil, nil))
+	if !strings.Contains(before["launch_error"].(string), "deployment") {
+		t.Fatal("failure phase missing")
+	}
+	h.deployer.ensure = nil
+	retried := h.admin(http.MethodPost, "/api/admin/plan-eval/tasks/"+taskID+"/retry-launch", nil, nil)
+	if retried.status != http.StatusOK {
+		t.Fatalf("retry: %d %s", retried.status, retried.body)
+	}
+	after := h.json(retried)
+	if after["id"] != before["id"] || len(h.broker.queues[QueueName(h.version)]) != 1 {
+		t.Fatal("retry recreated or republished confirmed execution")
+	}
+	beforeID := before["executions"].([]any)[0].(map[string]any)["id"]
+	afterID := after["executions"].([]any)[0].(map[string]any)["id"]
+	if beforeID != afterID {
+		t.Fatal("retry changed execution ID")
+	}
+}
+
+func TestHTTP_WorkerCannotImpersonateAnotherVersion(t *testing.T) {
+	h := openHarness(t)
+	other := h.version + "b"
+	h.svc.cfg.AgentVersions = append(h.svc.cfg.AgentVersions, other)
+	view, _, err := h.svc.CreateTask(context.Background(), "admin-1", uuid.NewString(), CreateTaskRequest{AgentVersion: other})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An authentic version-A credential cannot self-report version B.
+	res := h.worker(http.MethodPost, "/api/internal/plan-eval/executions/claim", map[string]any{"snapshot_execution_id": view.Executions[0].ID, "agent_version": other, "worker_id": "w", "claim_request_id": "claim-1"})
+	if res.status != http.StatusConflict || h.json(res)["error"] != "agent_version_mismatch" {
+		t.Fatalf("cross-version credential: %d %s", res.status, res.body)
+	}
+	row, err2 := h.svc.store.PlanEvalExecutionInput(context.Background(), view.Executions[0].ID)
+	if err2 != nil || row.LeaseEpoch != 0 {
+		t.Fatalf("unauthorized claim touched lease: %+v %v", row, err2)
+	}
 }

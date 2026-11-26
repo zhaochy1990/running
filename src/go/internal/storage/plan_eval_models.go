@@ -161,17 +161,19 @@ func (PlanEvalFrozenRule) TableName() string { return "plan_eval_frozen_rules" }
 // PlanEvalExecution is one scenario × snapshot: its frozen inputs, the
 // generate lease and the pointer to the artifact it produced.
 type PlanEvalExecution struct {
-	ID             string `gorm:"column:id;type:char(36);primaryKey"`
-	TaskID         string `gorm:"column:task_id;type:char(36);not null;index"`
-	ScenarioID     string `gorm:"column:scenario_id;type:char(36);not null"`
-	SnapshotID     string `gorm:"column:snapshot_id;type:char(36);not null"`
-	GenerateStatus string `gorm:"column:generate_status;size:16;not null"`
-	Attempts       int    `gorm:"column:attempts;not null;default:0"`
+	ID             string     `gorm:"column:id;type:char(36);primaryKey"`
+	TaskID         string     `gorm:"column:task_id;type:char(36);not null;index"`
+	ScenarioID     string     `gorm:"column:scenario_id;type:char(36);not null"`
+	SnapshotID     string     `gorm:"column:snapshot_id;type:char(36);not null"`
+	GenerateStatus string     `gorm:"column:generate_status;size:16;not null"`
+	Attempts       int        `gorm:"column:attempts;not null;default:0"`
+	DispatchedAt   *time.Time `gorm:"column:dispatched_at"`
 	// LeaseEpoch counts takeovers: a result or renewal carrying an older
 	// epoch is refused. LeaseExpiresAt is server time.
 	LeaseEpoch     int        `gorm:"column:lease_epoch;not null;default:0"`
 	LeaseExpiresAt *time.Time `gorm:"column:lease_expires_at"`
 	LeaseWorker    string     `gorm:"column:lease_worker;size:191"`
+	ClaimRequestID string     `gorm:"column:claim_request_id;size:64"`
 	// ArtifactID points at the artifact a done execution produced ("" = none).
 	ArtifactID           string `gorm:"column:artifact_id;type:char(36)"`
 	GenerateErrorCode    string `gorm:"column:generate_error_code;size:64"`
@@ -216,6 +218,10 @@ func (PlanEvalArtifact) TableName() string { return "plan_eval_artifacts" }
 type PlanEvalReceipt struct {
 	ID          string `gorm:"column:id;type:char(36);primaryKey"`
 	ExecutionID string `gorm:"column:execution_id;type:char(36);not null;uniqueIndex"`
+	SubmitID    string `gorm:"column:submit_id;size:64"`
+	Fingerprint string `gorm:"column:fingerprint;size:64"`
+	WorkerID    string `gorm:"column:worker_id;size:191"`
+	LeaseEpoch  int    `gorm:"column:lease_epoch"`
 	// ResponseJSON is the exact acknowledgment body.
 	ResponseJSON string    `gorm:"column:response_json;type:json;not null"`
 	CreatedAt    time.Time `gorm:"column:created_at"`

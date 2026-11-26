@@ -42,6 +42,12 @@ const receiptSchema = z.object({
   received_at: identifier,
 });
 
+export interface EvalLease {
+  agent_version: string;
+  worker_id: string;
+  lease_epoch: number;
+}
+
 export class EvalApiClient {
   private readonly baseUrl: string;
 
@@ -53,11 +59,12 @@ export class EvalApiClient {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
   }
 
-  async claim(snapshotExecutionId: string, agentVersion: string, workerId: string): Promise<ClaimResponse> {
+  async claim(snapshotExecutionId: string, agentVersion: string, workerId: string, claimRequestId: string): Promise<ClaimResponse> {
     const response = await this.call("POST", "/api/internal/plan-eval/executions/claim", {
       snapshot_execution_id: snapshotExecutionId,
       agent_version: agentVersion,
       worker_id: workerId,
+      claim_request_id: claimRequestId,
     });
     if (response.status === 404) return { status: "missing" };
     if (response.status === 409) throw new EvalApiError(409, await errorCode(response), "claim rejected");
@@ -65,18 +72,19 @@ export class EvalApiClient {
     return claimSchema.parse(await response.json());
   }
 
-  async renew(snapshotExecutionId: string, leaseEpoch: number): Promise<void> {
+  async renew(snapshotExecutionId: string, lease: EvalLease): Promise<void> {
     const response = await this.call("POST", `/api/internal/plan-eval/executions/${encodeURIComponent(snapshotExecutionId)}/renew`, {
-      lease_epoch: leaseEpoch,
+      ...lease,
     });
     if (response.status === 409) throw new StaleLeaseError(snapshotExecutionId, "renew");
     if (response.status !== 200) throw new EvalApiError(response.status, await errorCode(response), "renew failed");
   }
 
   /** 返回持久化收据；拿到即代表 Generate 终态已落库，调用方可以 ACK。 */
-  async submit(snapshotExecutionId: string, leaseEpoch: number, result: GenerateResult): Promise<GenerateReceipt> {
+  async submit(snapshotExecutionId: string, lease: EvalLease, result: GenerateResult, submitId: string): Promise<GenerateReceipt> {
     const response = await this.call("POST", `/api/internal/plan-eval/executions/${encodeURIComponent(snapshotExecutionId)}/result`, {
-      lease_epoch: leaseEpoch,
+      ...lease,
+      submit_id: submitId,
       result,
     });
     if (response.status === 404) throw new MissingExecutionError(snapshotExecutionId);
@@ -85,12 +93,20 @@ export class EvalApiClient {
     return receiptSchema.parse(await response.json());
   }
 
-  private call(method: string, path: string, body: unknown): Promise<Response> {
-    return this.fetchImpl(`${this.baseUrl}${path}`, {
-      method,
-      headers: { "content-type": "application/json", "x-plan-eval-token": this.token },
-      body: JSON.stringify(body),
-    });
+  private async call(method: string, path: string, body: unknown): Promise<Response> {
+    // Retry one transport failure with the same claim/submit IDs and bytes.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.fetchImpl(`${this.baseUrl}${path}`, {
+          method,
+          signal: AbortSignal.timeout(30_000),
+          headers: { "content-type": "application/json", "x-plan-eval-token": this.token },
+          body: JSON.stringify(body),
+        });
+      } catch (error) {
+        if (attempt > 0 || !(error instanceof TypeError || (error instanceof Error && error.name === "TimeoutError"))) throw error;
+      }
+    }
   }
 }
 

@@ -5,9 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"k8s.io/utils/ptr"
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -112,7 +114,7 @@ func (d *kubernetesDeployer) Ensure(ctx context.Context, spec WorkerSpec) error 
 		launch[key] = value
 	}
 	launch["PLAN_WORKER_AMQP_URL"] = d.options.WorkerAMQPURL
-	launch["PLAN_WORKER_EVAL_API_TOKEN"] = d.options.WorkerToken
+	launch["PLAN_WORKER_EVAL_API_TOKEN"] = versionWorkerToken(d.options.WorkerToken, spec.AgentVersion)
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: d.namespace, Labels: workerLabels(spec.AgentVersion)},
 		Type:       corev1.SecretTypeOpaque,
@@ -134,6 +136,9 @@ func (d *kubernetesDeployer) Ensure(ctx context.Context, spec WorkerSpec) error 
 	current, err := deployments.Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("plan-eval: get deployment %s: %w", name, err)
+	}
+	if current.DeletionTimestamp != nil {
+		return fmt.Errorf("plan-eval: deployment %s is still being deleted; retry launch after deletion", name)
 	}
 	current.Spec.Replicas = deployment.Spec.Replicas
 	current.Spec.Template = deployment.Spec.Template
@@ -197,8 +202,23 @@ func (d *kubernetesDeployer) Delete(ctx context.Context, agentVersion string) er
 		return fmt.Errorf("plan-eval: agent version %q is not usable as an object name", agentVersion)
 	}
 	name := WorkerName(agentVersion)
-	if err := d.client.AppsV1().Deployments(d.namespace).Delete(ctx, name, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
+	if err := d.client.AppsV1().Deployments(d.namespace).Delete(ctx, name, metav1.DeleteOptions{PropagationPolicy: ptr.To(metav1.DeletePropagationForeground)}); err != nil && !k8serrors.IsNotFound(err) {
 		return fmt.Errorf("plan-eval: delete deployment %s: %w", name, err)
+	}
+	// Wait for foreground deletion before releasing the version coordination lock.
+	for {
+		_, err := d.client.AppsV1().Deployments(d.namespace).Get(ctx, name, metav1.GetOptions{})
+		if k8serrors.IsNotFound(err) {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("plan-eval: wait for deletion %s: %w", name, err)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
 	}
 	if err := d.client.CoreV1().Secrets(d.namespace).Delete(ctx, name, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
 		return fmt.Errorf("plan-eval: delete launch secret %s: %w", name, err)

@@ -56,15 +56,15 @@ test("claim maps the API's answers onto leased / busy / terminal / missing and s
     ],
     captured,
   );
-  assert.deepEqual(await client.claim("exec-1", "2026.11.30", "worker-1"), leased);
-  assert.deepEqual(await client.claim("exec-1", "2026.11.30", "worker-1"), { status: "busy", retry_after_ms: 1500 });
-  assert.deepEqual(await client.claim("exec-1", "2026.11.30", "worker-1"), { status: "terminal", generate_status: "failed", artifact_id: null });
-  assert.deepEqual(await client.claim("exec-1", "2026.11.30", "worker-1"), { status: "missing" });
-  await assert.rejects(client.claim("exec-1", "2026.11.29", "worker-1"), /plan-eval api 409 agent_version_mismatch/);
+  assert.deepEqual(await client.claim("exec-1", "2026.11.30", "worker-1", "claim-1"), leased);
+  assert.deepEqual(await client.claim("exec-1", "2026.11.30", "worker-1", "claim-1"), { status: "busy", retry_after_ms: 1500 });
+  assert.deepEqual(await client.claim("exec-1", "2026.11.30", "worker-1", "claim-1"), { status: "terminal", generate_status: "failed", artifact_id: null });
+  assert.deepEqual(await client.claim("exec-1", "2026.11.30", "worker-1", "claim-1"), { status: "missing" });
+  await assert.rejects(client.claim("exec-1", "2026.11.29", "worker-1", "claim-1"), /plan-eval api 409 agent_version_mismatch/);
   assert.deepEqual(captured[0], {
     method: "POST",
     path: "/api/internal/plan-eval/executions/claim",
-    body: { snapshot_execution_id: "exec-1", agent_version: "2026.11.30", worker_id: "worker-1" },
+    body: { snapshot_execution_id: "exec-1", agent_version: "2026.11.30", worker_id: "worker-1", claim_request_id: "claim-1" },
     token: "worker-secret",
   });
 });
@@ -83,13 +83,40 @@ test("submit returns the persisted receipt; renew/submit 409 is a stale lease, s
     ],
     captured,
   );
-  await client.renew("exec-1", 1);
-  await assert.rejects(client.renew("exec-1", 1), { name: "StaleLeaseError" });
-  assert.deepEqual(await client.submit("exec-1", 1, result), receipt);
-  assert.deepEqual(captured[2]?.body, { lease_epoch: 1, result });
-  await assert.rejects(client.submit("exec-1", 1, result), { name: "StaleLeaseError" });
-  await assert.rejects(client.submit("exec-1", 1, result), { name: "MissingExecutionError" });
-  await assert.rejects(client.submit("exec-1", 1, result), /plan-eval api 503 down/);
+  await client.renew("exec-1", { agent_version: "2026.11.30", worker_id: "worker-1", lease_epoch: 1 });
+  await assert.rejects(client.renew("exec-1", { agent_version: "2026.11.30", worker_id: "worker-1", lease_epoch: 1 }), { name: "StaleLeaseError" });
+  assert.deepEqual(await client.submit("exec-1", { agent_version: "2026.11.30", worker_id: "worker-1", lease_epoch: 1 }, result, "submit-1"), receipt);
+  assert.deepEqual(captured[2]?.body, { agent_version: "2026.11.30", worker_id: "worker-1", lease_epoch: 1, result, submit_id: "submit-1" });
+  await assert.rejects(client.submit("exec-1", { agent_version: "2026.11.30", worker_id: "worker-1", lease_epoch: 1 }, result, "submit-1"), {
+    name: "StaleLeaseError",
+  });
+  await assert.rejects(client.submit("exec-1", { agent_version: "2026.11.30", worker_id: "worker-1", lease_epoch: 1 }, result, "submit-1"), {
+    name: "MissingExecutionError",
+  });
+  await assert.rejects(
+    client.submit("exec-1", { agent_version: "2026.11.30", worker_id: "worker-1", lease_epoch: 1 }, result, "submit-1"),
+    /plan-eval api 503 down/,
+  );
+});
+
+test("lost transport responses retry identical claim and submit IDs", async () => {
+  const calls: string[] = [];
+  let attempts = 0;
+  const client = new EvalApiClient("http://plan-eval-api:8080", "version-token", (async (_url, init) => {
+    calls.push(String(init?.body));
+    attempts++;
+    if (attempts % 2 === 1) throw new TypeError("response lost");
+    return new Response(JSON.stringify(attempts === 2 ? { status: "terminal", generate_status: "failed", artifact_id: null } : receipt), { status: 200 });
+  }) as typeof fetch);
+  await client.claim("exec-1", "2026.11.30", "worker-1", "claim-1");
+  await client.submit(
+    "exec-1",
+    { agent_version: "2026.11.30", worker_id: "worker-1", lease_epoch: 1 },
+    { kind: "failed", error: { code: "timeout", message: "model timed out" } },
+    "submit-1",
+  );
+  assert.equal(calls[0], calls[1]);
+  assert.equal(calls[2], calls[3]);
 });
 
 test("claim accepts a frozen rolling execution without turning it into a broker retry", async () => {

@@ -47,9 +47,6 @@ type Service struct {
 	secrets  *SecretKey
 	cfg      Config
 	log      *zap.Logger
-	// The scheduler API has one replica. Serialize launches and cleanup so
-	// a Deployment cannot be removed between another task's checks and start.
-	runtimeMu sync.Mutex
 	// evaluateMu keeps this replica's sweeps from overlapping; cross-replica
 	// safety comes from the compare-and-set claim in storage.
 	evaluateMu sync.Mutex
@@ -295,9 +292,26 @@ type taskParams struct {
 // that the idempotency key matched an existing task, which is then returned
 // without publishing again.
 func (s *Service) CreateTask(ctx context.Context, submitter, idempotencyKey string, req CreateTaskRequest) (view *TaskDetailView, replayed bool, err *Error) {
-	s.runtimeMu.Lock()
-	defer s.runtimeMu.Unlock()
+	lockErr := s.withVersion(ctx, req.AgentVersion, func(ctx context.Context) *Error {
+		view, replayed, err = s.createTask(ctx, submitter, idempotencyKey, req)
+		return err
+	})
+	return view, replayed, lockErr
+}
 
+func (s *Service) withVersion(ctx context.Context, version string, run func(context.Context) *Error) *Error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 45*time.Second)
+	defer cancel()
+	err := s.store.WithPlanEvalVersionLock(ctx, version, func() error {
+		if err := run(ctx); err != nil {
+			return err
+		}
+		return nil
+	})
+	return s.mapStorageError(err)
+}
+
+func (s *Service) createTask(ctx context.Context, submitter, idempotencyKey string, req CreateTaskRequest) (*TaskDetailView, bool, *Error) {
 	if idempotencyKey == "" || len(idempotencyKey) > 128 {
 		return nil, false, fail(400, "invalid_request", "Idempotency-Key 请求头必填，且不超过 128 字符")
 	}
@@ -305,10 +319,7 @@ func (s *Service) CreateTask(ctx context.Context, submitter, idempotencyKey stri
 		return nil, false, fail(422, "invalid_request", "未登记的 Agent 版本："+req.AgentVersion)
 	}
 	replicas := req.Replicas
-	if replicas == 0 {
-		replicas = 1
-	}
-	if replicas < 1 || replicas > s.cfg.MaxReplicas {
+	if replicas < 0 || replicas > s.cfg.MaxReplicas {
 		return nil, false, fail(422, "invalid_request", fmt.Sprintf("副本数须在 1–%d 之间", s.cfg.MaxReplicas))
 	}
 	env, names, err := s.validateEnv(req.Env)
@@ -326,7 +337,11 @@ func (s *Service) CreateTask(ctx context.Context, submitter, idempotencyKey stri
 	}
 
 	envDigests := digestEnv(env)
-	params := taskParams{AgentVersion: req.AgentVersion, ScenarioID: scenario.ID, Replicas: replicas, Env: envDigests}
+	fingerprintReplicas := replicas
+	if fingerprintReplicas == 0 {
+		fingerprintReplicas = 1
+	} // Preserve historical idempotency fingerprints.
+	params := taskParams{AgentVersion: req.AgentVersion, ScenarioID: scenario.ID, Replicas: fingerprintReplicas, Env: envDigests}
 	encoded, _ := json.Marshal(params)
 	sum := sha256.Sum256(encoded)
 	cipher, cerr := s.secrets.Seal(env)
@@ -357,16 +372,24 @@ func (s *Service) CreateTask(ctx context.Context, submitter, idempotencyKey stri
 // RetryLaunch restarts a frozen task without requiring the original browser to
 // retain the idempotency key or the model credentials.
 func (s *Service) RetryLaunch(ctx context.Context, id string) (*TaskDetailView, *Error) {
-	s.runtimeMu.Lock()
-	defer s.runtimeMu.Unlock()
 	task, err := s.store.GetPlanEvalTask(ctx, id)
 	if err != nil {
 		return nil, s.mapStorageError(err)
 	}
-	if launchErr := s.launchAndRecord(ctx, task); launchErr != nil {
-		return nil, launchErr
-	}
-	return s.TaskDetail(ctx, task.ID)
+	var view *TaskDetailView
+	lockErr := s.withVersion(ctx, task.AgentVersion, func(ctx context.Context) *Error {
+		task, err := s.store.GetPlanEvalTask(ctx, id)
+		if err != nil {
+			return s.mapStorageError(err)
+		}
+		if launchErr := s.launchAndRecord(ctx, task); launchErr != nil {
+			return launchErr
+		}
+		var viewErr *Error
+		view, viewErr = s.TaskDetail(ctx, task.ID)
+		return viewErr
+	})
+	return view, lockErr
 }
 
 func (s *Service) launchAndRecord(ctx context.Context, task *storage.PlanEvalTask) *Error {
@@ -402,12 +425,17 @@ func (s *Service) internal(err error) *Error {
 
 func (s *Service) mapStorageError(err error) *Error {
 	switch e := err.(type) {
+	case *Error:
+		return e
 	case *storage.PlanEvalIdempotencyConflictError:
 		return &Error{Status: 409, Code: "idempotency_conflict", Detail: "同一幂等键已用于参数不同的任务。", Extra: map[string]any{"task_id": e.ExistingTaskID}}
 	case *storage.PlanEvalLaunchConfigConflictError:
 		return &Error{Status: 409, Code: "launch_config_conflict", Detail: "该 Agent 版本已有一份启动配置。环境变量留空则沿用；要更换请先清理该版本的 Deployment。"}
 	case nil:
 		return nil
+	}
+	if errors.Is(err, storage.ErrPlanEvalVersionBusy) {
+		return fail(409, "version_busy", "该版本正在启动、扩缩容或清理，请稍后重试。")
 	}
 	if errors.Is(err, storage.ErrPlanEvalNotFound) {
 		return fail(404, "not_found", "对象不存在")
@@ -523,10 +551,13 @@ func (s *Service) launch(ctx context.Context, task *storage.PlanEvalTask) error 
 		return err
 	}
 	for _, execution := range executions {
-		if execution.GenerateStatus != storage.PlanEvalGenerateQueued {
+		if storage.PlanEvalGenerateTerminal(execution.GenerateStatus) || execution.DispatchedAt != nil {
 			continue
 		}
 		if err := s.broker.Publish(ctx, queue, ExecuteMessage{SchemaVersion: ExecuteMessageSchemaVersion, SnapshotExecutionID: execution.ID}); err != nil {
+			return fmt.Errorf("publish: %w", err)
+		}
+		if err := s.store.RecordPlanEvalDispatch(ctx, execution.ID); err != nil {
 			return err
 		}
 	}
@@ -534,11 +565,7 @@ func (s *Service) launch(ctx context.Context, task *storage.PlanEvalTask) error 
 	if err != nil {
 		return err
 	}
-	env, err := s.secrets.Open(config.EnvCipher)
-	if err != nil {
-		return err
-	}
-	return s.deployer.Ensure(ctx, WorkerSpec{AgentVersion: task.AgentVersion, Replicas: config.Replicas, Env: env})
+	return s.applyLaunchConfig(ctx, config)
 }
 
 // ---- reads ----
@@ -694,4 +721,39 @@ func (s *Service) Artifact(ctx context.Context, id string) (*storage.PlanEvalArt
 		return nil, s.mapStorageError(err)
 	}
 	return artifact, nil
+}
+
+// Scale changes the shared concurrency of exactly one version.
+func (s *Service) Scale(ctx context.Context, version string, replicas int) *Error {
+	if !s.knownVersion(version) || replicas < 1 || replicas > s.cfg.MaxReplicas {
+		return fail(422, "invalid_request", fmt.Sprintf("已登记版本的副本数须在 1–%d 之间", s.cfg.MaxReplicas))
+	}
+	return s.withVersion(ctx, version, func(ctx context.Context) *Error {
+		config, err := s.store.PlanEvalLaunchConfigForVersion(ctx, version)
+		if err != nil {
+			return s.mapStorageError(err)
+		}
+
+		// Persist the desired count first: retry-launch restores it after a cluster fault.
+		if err := s.store.SetPlanEvalReplicas(ctx, version, replicas); err != nil {
+			return s.internal(err)
+		}
+		config.Replicas = replicas
+		if err := s.applyLaunchConfig(ctx, config); err != nil {
+			s.log.Error("plan-eval: scale", zap.Error(err))
+			return fail(502, "scale_failed", "调整 Deployment 副本失败，请重试。")
+		}
+		return nil
+	})
+}
+
+func (s *Service) applyLaunchConfig(ctx context.Context, config *storage.PlanEvalLaunchConfig) error {
+	env, err := s.secrets.Open(config.EnvCipher)
+	if err != nil {
+		return err
+	}
+	if err := s.deployer.Ensure(ctx, WorkerSpec{AgentVersion: config.AgentVersion, Replicas: config.Replicas, Env: env}); err != nil {
+		return fmt.Errorf("deployment: %w", err)
+	}
+	return nil
 }
