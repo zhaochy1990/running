@@ -98,6 +98,39 @@ eq(saved.pace_segments[0].segment_time, '56:40', '编辑后重算用时');
 eq(saved.pace_segments[0].cumulative_time, '56:40', '编辑后重算累计');
 eq(saved.fueling_plan.length, 2, '空补给行被过滤');
 
+// 历史策略可能按品类分组。同一时刻保留原顺序，无法定位的条目也应保留。
+{
+  const fuelingPlan = [
+    { time_point: '起跑后 30 分钟（约 7:56，约 4 km）', content: '普通胶' },
+    { time_point: '起跑后 1:00（约 8:26，约 8 km）', content: '普通胶' },
+    { time_point: '起跑后 2:00（约 9:26，约 16 km）', content: '普通胶' },
+    { time_point: '起跑后 0:40（约 8:06）', content: '盐丸' },
+    { time_point: '起跑后 2:00（约 9:26）', content: '盐丸' },
+    { time_point: '起跑后 2:20（约 9:46，约 19 km）', content: '抗酸片' },
+    { time_point: '赛前 30 分钟', content: '能量胶' },
+    { time_point: '起跑前 1 小时 15 分钟', content: '能量饮' },
+    { time_point: '约 20 km', content: '能量胶' },
+    { time_point: '过桥前', content: '盐丸' },
+    { time_point: '酌情', content: '能量胶' },
+  ];
+  const base = { ...strategy, fueling_plan: fuelingPlan };
+  const expected = [7, 6, 0, 3, 1, 8, 2, 4, 5, 9, 10].map((i) => fuelingPlan[i]);
+  const originalOrder = [...fuelingPlan];
+  const sortedView = toStrategyView(base);
+  eq(sortedView.fuelingRows, expected.map((row, index) => ({
+    index, timePoint: row.time_point, content: row.content,
+  })), '补给按时间交错显示，显示索引与行顺序一致');
+  eq(base.fueling_plan, originalOrder, '建立视图不改写原始顺序');
+
+  sortedView.fuelingRows.push({ index: fuelingPlan.length, timePoint: '起跑后 0:45:00', content: '新增盐丸' });
+  const savedPlan = fromStrategyView(sortedView, base).fueling_plan;
+  eq(savedPlan, [
+    ...expected.slice(0, 4),
+    { time_point: '起跑后 0:45:00', content: '新增盐丸' },
+    ...expected.slice(4),
+  ], '新增补给保存时进入对应的时间位置');
+}
+
 // 打包清单：视图映射（note 兜底空串）+ 保存体原样带回（清单只读，不随编辑变）
 eq(view.checklistRows.length, 3, 'checklist 行数');
 eq(view.checklistRows[1].item, '双倍胶', 'checklist item');

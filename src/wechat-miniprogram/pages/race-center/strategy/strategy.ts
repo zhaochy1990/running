@@ -22,6 +22,7 @@ import {
 import {
   fromStrategyView,
   raceDayLabel,
+  sortFuelingRows,
   strategyShareTitle,
   toStrategyView,
   type StrategyView,
@@ -355,7 +356,8 @@ Page<StrategyPageData, StrategyPageHandlers>({
     const view = this.data.view;
     const base = this._base;
     if (!view || !base || !this.data.dirty || this.data.saving) return;
-    this.setData({ saving: true });
+    // 编辑时保留当前行位置，点击保存后再按时间重排。
+    this.setData({ saving: true, 'view.fuelingRows': sortFuelingRows(view) });
     try {
       const res = await saveRaceStrategy(this._raceId, {
         item_type: view.itemType,
