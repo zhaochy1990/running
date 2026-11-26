@@ -3,6 +3,7 @@
 const manualLog = (() => {
   const loadUnits = { '': '无', kg: 'kg', lb: 'lb' };
   const units = { reps: '个', seconds: '秒' };
+  const initialSet = { load: '', loadUnit: '', amount: '0', unit: 'reps' };
   const dates = new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
   });
@@ -19,16 +20,16 @@ const manualLog = (() => {
   }
 
   function newRow(source) {
-    return { load: '', loadUnit: '', amount: '', unit: 'reps', ...source, id: nextId++ };
+    return { ...initialSet, ...source, id: nextId++ };
   }
 
   function newExercise() {
-    return { id: nextId++, name: '', rows: [newRow()], note: '' };
+    return { id: nextId++, name: '', rows: [newRow()] };
   }
 
   function draft() {
     if (editing) return editing.draft;
-    return (activeDraft ??= { title: '', date: today(), exercises: [newExercise()] });
+    return (activeDraft ??= { title: '', date: today(), exercises: [newExercise()], note: '' });
   }
 
   function isPage(page) {
@@ -76,12 +77,12 @@ const manualLog = (() => {
     const number = index + 1;
     return `<div class="log-set" data-log-row="${row.id}" role="group" aria-label="第 ${number} 组">
       <span class="log-set-number" aria-hidden="true">${number}</span>
-      <input data-log-field="load" aria-label="负重" placeholder="—" value="${escape(row.load)}">
+      <input data-log-field="load" aria-label="负重" value="${escape(row.load)}">
       <span class="log-unit">
         <select data-log-field="loadUnit" aria-label="负重单位">${options(loadUnits, row.loadUnit)}</select>
       </span>
       <div class="log-amount">
-        <input data-log-field="amount" aria-label="数量" inputmode="numeric" placeholder="—" value="${escape(row.amount)}">
+        <input data-log-field="amount" aria-label="数量" inputmode="numeric" value="${escape(row.amount)}">
         <span class="log-unit">
           <select data-log-field="unit" aria-label="数量单位">${options(units, row.unit)}</select>
         </span>
@@ -103,10 +104,6 @@ const manualLog = (() => {
       ${exercise.rows.map(rowView).join('')}
       <div class="log-exercise-footer">
         ${logButton('add-row', `${app.icon('plus', 16)}添加一组`, 'text-button log-add-row')}
-        <div class="log-field log-note-field">
-          <textarea aria-label="动作 ${index + 1} 备注" data-log-field="note" rows="1" placeholder="动作备注（选填）">
-${escape(exercise.note)}</textarea>
-        </div>
       </div>
     </section>`;
   }
@@ -121,6 +118,10 @@ ${escape(exercise.note)}</textarea>
         <h3 class="log-section-head">动作明细</h3>
         ${entry.exercises.map(exerciseView).join('')}
         ${logButton('add-exercise', `${app.icon('plus', 18)}添加动作`, 'secondary log-add-exercise')}
+        <div class="log-field log-note-field">
+          <textarea aria-label="训练备注" data-log-field="note" rows="1" placeholder="训练备注（选填）">
+${escape(entry.note)}</textarea>
+        </div>
         <p id="manual-error" class="log-error" role="alert"></p>
       </form>`,
       footer: '<button type="submit" class="primary" form="manual-form">保存记录</button>',
@@ -153,9 +154,9 @@ ${escape(exercise.note)}</textarea>
 
   function hasDraft() {
     if (!activeDraft) return false;
-    return Boolean(activeDraft.title.trim() || activeDraft.exercises.length !== 1 ||
-      activeDraft.exercises.some(exercise => exercise.name.trim() || exercise.note.trim() || exercise.rows.length !== 1 ||
-        exercise.rows.some(row => row.load.trim() || row.loadUnit || row.amount || row.unit !== 'reps')));
+    return Boolean(activeDraft.title.trim() || activeDraft.note.trim() || activeDraft.exercises.length !== 1 ||
+      activeDraft.exercises.some(exercise => exercise.name.trim() || exercise.rows.length !== 1 ||
+        exercise.rows.some(row => Object.keys(initialSet).some(key => row[key] !== initialSet[key]))));
   }
 
   function savedView() {
@@ -170,8 +171,11 @@ ${escape(exercise.note)}</textarea>
       ${entry.exercises.map(exercise => `<section class="log-saved-exercise">
         <h3>${escape(exercise.name.trim())}</h3>
         <ol>${exercise.rows.map((row, index) => `<li><span class="log-saved-index">第 ${index + 1} 组</span><span>${line(row)}</span></li>`).join('')}</ol>
-        ${exercise.note.trim() ? `<p class="log-record-note">${escape(exercise.note)}</p>` : ''}
-      </section>`).join('')}`,
+      </section>`).join('')}
+      ${entry.note.trim() ? `<section class="log-saved-note">
+        <h3>训练备注</h3>
+        <p class="log-record-note">${escape(entry.note)}</p>
+      </section>` : ''}`,
       footer: logButton('records', '返回活动记录', 'secondary') + logButton('edit', '编辑记录', 'primary'),
     };
   }
