@@ -58,6 +58,11 @@ export async function generateArtifact(input: ExecutionInput, deps: GenerateDeps
   try {
     const contextProvider = new DataProviderMasterPlanContextProvider(provider);
     const models = deps.buildModels();
+    if (input.artifact_type === "weekly_plan_batch") {
+      const result = await generateRolling(request as RollingJobRequest, provider, contextProvider, snapshot, deps, hb, models);
+      if (notCovered[0] !== undefined) return failed(notCovered[0].code, notCovered[0].message);
+      return result;
+    }
     const modelErrors: { content?: string; phasing?: string } = {};
     const modelViolations: { content?: string; phasing?: string } = {};
     const observedModels: MasterPlanLlmModels = {
@@ -88,11 +93,6 @@ export async function generateArtifact(input: ExecutionInput, deps: GenerateDeps
         },
       },
     };
-    if (input.artifact_type === "weekly_plan_batch") {
-      const result = await generateRolling(request as RollingJobRequest, provider, contextProvider, snapshot, deps, hb, observedModels);
-      if (notCovered[0] !== undefined) return failed(notCovered[0].code, notCovered[0].message);
-      return result;
-    }
     const result = await runMasterKernel(
       deps.buildGraph(contextProvider, observedModels),
       request as MasterPlanGraphRequest,
