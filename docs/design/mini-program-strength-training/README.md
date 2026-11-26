@@ -1,5 +1,7 @@
 # 微信小程序力量训练原型
 
+**设计已定稿（2026-11-26）**
+
 打开[原型](preview.html)进入小程序「训练」页。原型按现有[本周训练](../../../src/wechat-miniprogram/pages/index/index.wxml)、[活动记录](../../../src/wechat-miniprogram/pages/activities/activities.wxml)和[底部导航](../../../src/wechat-miniprogram/custom-tab-bar/index.wxml)绘制，复用项目图标与浅色主题。
 
 ## 设计决定
