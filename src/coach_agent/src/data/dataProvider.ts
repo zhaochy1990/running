@@ -13,6 +13,11 @@ export interface DataProvider {
   getActivitiesByDateRange(userId: string, startDay: string, endDay: string): Promise<Activity[]>;
   /** 单条运动的完整明细（含 `laps` 分段）；不存在返回 null。列表查询用 getActivitySummariesByDateRange。 */
   getActivityDetail(userId: string, labelId: string, options?: { includeKilometerSplits?: boolean }): Promise<Activity | null>;
+  /** Saved manual workouts in the inclusive Shanghai range, without their sets. */
+  getManualStrengthSummaries(userId: string, startDay: string, endDay: string): Promise<StrengthRecordSummary[]>;
+  getManualStrengthDetail(userId: string, recordId: string): Promise<ManualStrengthRecord | null>;
+  /** Watch strength identities only. Read measurements after choosing a specific record. */
+  getWatchStrengthSummaries(userId: string, startDay: string, endDay: string): Promise<WatchStrengthSummary[]>;
   getDailyTrainingLoadByDateRange(userId: string, startDay: string, endDay: string): Promise<DailyTrainingLoad[]>;
   /** 确认为比赛的跑步记录（races 表 ∪ session_class='race'，devops#790），最近在前；`minDistanceKm` 只是噪音地板（默认 4.5km），不做比赛判定。 */
   getRaceHistory(userId: string, options: { asOfDate: string; minDistanceKm?: number; limit?: number }): Promise<RaceEffort[]>;
@@ -110,6 +115,31 @@ export interface SyncCoverage {
   updatedAt: Date;
 }
 
+export interface StrengthRecordSummary {
+  id: string;
+  name: string | null;
+  startedAt: Date;
+}
+
+export interface ManualStrengthRecord extends StrengthRecordSummary {
+  name: string;
+  endedAt: Date;
+  note: string;
+  actions: {
+    name: string;
+    sets: {
+      load: string;
+      load_unit: "kg" | "lb" | "bodyweight";
+      quantity: number;
+      quantity_unit: "reps" | "seconds";
+    }[];
+  }[];
+}
+
+export interface WatchStrengthSummary extends StrengthRecordSummary {
+  provider: string;
+}
+
 /** One watch-synced activity. `date` is a UTC instant. */
 export interface Activity {
   userId: string;
@@ -144,6 +174,7 @@ export interface Activity {
   windSpeed: number | null;
   sportNote: string | null;
   sport: string | null;
+  isStrength?: true;
   /** 主观体感：厂商归一化 1–10 RPE（Garmin÷10 / COROS×2 后 clamp）；null = 厂商未评。 */
   feel: number | null;
   /** 运动员经教练对话补填的体感原话（自由文本，可分段，如「前面4组体感6，最后两组7-8」）；null = 没说过。 */

@@ -392,7 +392,7 @@ test("activity detail prefers type2 and falls back to autoKm only when it is a r
   assert.deepEqual((await none.provider.getActivityDetail("athlete", "run-1"))?.laps, []);
 
   // A strength session keeps its type2 exercise groups even with no distance.
-  const strength = detailProvider({ sport_type: 402 }, { type2: [{ label_id: "run-1", lap_index: 1, lap_type: "type2", distance_m: 0 }] });
+  const strength = detailProvider({ is_strength: 1 }, { type2: [{ label_id: "run-1", lap_index: 1, lap_type: "type2", distance_m: 0 }] });
   const groups = await strength.provider.getActivityDetail("athlete", "run-1");
   assert.equal(groups?.laps?.length, 1);
   assert.deepEqual(
@@ -717,4 +717,43 @@ test("legacy sparse source summaries match Go zero values without inventing evid
   assert.equal(bounded?.source?.speed?.reasons?.length, 16);
   assert.equal(bounded?.source?.speed?.limitations?.length, 16);
   assert.equal(bounded?.source?.speed?.reasons?.[0]?.length, 256);
+});
+
+test("strength review adapter scopes each source and decodes Go's saved sets", async () => {
+  const userId = "test-athlete";
+  const startedAt = new Date("2026-11-30T15:59:59Z");
+  const endedAt = new Date("2026-11-30T16:25:00Z");
+  const actions = [{ name: "单腿蹲", sets: [{ load: "蓝色弹力带", load_unit: "kg", quantity: 8, quantity_unit: "reps" }] }];
+  const calls: Array<{ sql: string; values: unknown[] }> = [];
+  const provider = new MySqlDataProvider({
+    async query(sql: string, values: unknown[]) {
+      calls.push({ sql, values });
+      if (sql.includes("FROM activities")) {
+        return [[{ label_id: "watch-1", date: startedAt, name: "腕表训练", provider: "coros" }]];
+      }
+      if (sql.includes("AND id = ?") && values[0] !== userId) return [[]];
+      return [[{ id: "manual-1", name: "月末力量", started_at: startedAt, ended_at: endedAt, note: "手录备注", actions }]];
+    },
+  } as never);
+  assert.deepEqual(await provider.getManualStrengthSummaries(userId, "2026-11-30", "2026-11-30"), [{ id: "manual-1", name: "月末力量", startedAt }]);
+  assert.deepEqual(await provider.getManualStrengthDetail(userId, "manual-1"), {
+    id: "manual-1",
+    name: "月末力量",
+    startedAt,
+    endedAt,
+    note: "手录备注",
+    actions,
+  });
+  assert.equal(await provider.getManualStrengthDetail("other-athlete", "manual-1"), null);
+  assert.deepEqual(await provider.getWatchStrengthSummaries(userId, "2026-11-30", "2026-11-30"), [
+    { id: "watch-1", name: "腕表训练", startedAt, provider: "coros" },
+  ]);
+  const expectedBounds = [userId, new Date("2026-11-29T16:00:00.000Z"), new Date("2026-11-30T16:00:00.000Z")];
+  assert.deepEqual(
+    calls.map((call) => call.values),
+    [expectedBounds, [userId, "manual-1"], ["other-athlete", "manual-1"], expectedBounds],
+  );
+  assert.match(calls[0]?.sql ?? "", /WHERE user_id = \? AND started_at >= \? AND started_at < \?/);
+  assert.match(calls[1]?.sql ?? "", /WHERE user_id = \? AND id = \?/);
+  assert.match(calls[3]?.sql ?? "", /WHERE a.user_id = \? AND a.date >= \? AND a.date < \? AND \(a.sport_type IN \(402, 800\)/);
 });

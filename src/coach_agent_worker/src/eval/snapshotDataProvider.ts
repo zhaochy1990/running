@@ -140,6 +140,18 @@ export class SnapshotDataProvider implements DataProvider {
     return this.activities(startDay, endDay).map((activity) => ({ ...activity, laps: [] }));
   }
 
+  async getManualStrengthSummaries() {
+    return this.notCovered("getManualStrengthSummaries", "manual strength reviews are not included in plan evaluation snapshots");
+  }
+
+  async getManualStrengthDetail() {
+    return this.notCovered("getManualStrengthDetail", "manual strength reviews are not included in plan evaluation snapshots");
+  }
+
+  async getWatchStrengthSummaries() {
+    return this.notCovered("getWatchStrengthSummaries", "watch strength reviews are not included in plan evaluation snapshots");
+  }
+
   async getActivitiesByDateRange(userId: string, startDay: string, endDay: string): Promise<Activity[]> {
     this.assertUser(userId, "getActivitiesByDateRange");
     this.assertRange("getActivitiesByDateRange", startDay, endDay);
