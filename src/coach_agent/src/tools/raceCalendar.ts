@@ -71,14 +71,14 @@ export function createRaceCalendarSearchTools(store: Pick<DataProvider, "searchR
       name: "search_race_calendar",
       description:
         "检索已发布赛事日历：某场比赛的时间/城市/项目，或一段时间内有哪些比赛（如「杭州马拉松什么时候开跑」「11 月有什么全马」）。" +
-        "返回摘要列表（race_event_id/名称/日期/城市/项目）；查不到就是暂无该赛事，不要编造。要看赛道/爬升/补给/关门等细节，用返回的 race_event_id 调 get_race_calendar_detail。",
+        "返回摘要列表（race_event_id/名称/日期/城市/项目）；查不到就是暂无该赛事，不要编造。要看赛道/爬升/口碑/补给/关门等细节，用返回的 race_event_id 调 get_race_calendar_detail。",
       schema: searchSchema,
       handler: (input, runtime) => impl.search(input, runtime),
     },
     {
       name: "get_race_calendar_detail",
       description:
-        "按 race_event_id 获取一场赛事的完整内容聚合：基本信息、赛道文字、爬升、海拔剖面、难点、补给站、关门点与城市/气候背景。" +
+        "按 race_event_id 获取一场赛事的详情：基本信息、赛道文字、爬升、海拔剖面、难点、赛道口碑（reputation）、补给站、关门点与城市/气候背景。" +
         "race_event_id 必须来自 search_race_calendar 的返回。found=false 表示赛事不存在或未发布。",
       schema: detailSchema,
       handler: (input) => impl.detail(input),

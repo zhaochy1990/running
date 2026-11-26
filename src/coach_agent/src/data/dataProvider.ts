@@ -308,7 +308,14 @@ export interface RaceCutoff {
 /** storage.RaceClimate 镜像：赛期气候（JSON 原样透传，字段由 Go 侧定义）。 */
 export type RaceClimateJson = Record<string, unknown> | null;
 
-/** race_calendar_item 的内容投影（策略只读字段）。 */
+/** storage.RaceReputation 镜像：赛历维护的项目口碑。 */
+export interface RaceReputation {
+  summary: string;
+  pros: string[];
+  cons: string[];
+}
+
+/** 赛事问答和比赛策略共用的 race_calendar_item 只读字段。 */
 export interface RaceCalendarItemContent {
   item_type: string;
   name: string;
@@ -319,6 +326,7 @@ export interface RaceCalendarItemContent {
   total_ascent_m: number | null;
   elevation_points: RaceElevationPoint[];
   course_challenges: RaceCourseChallenge[];
+  reputation: RaceReputation | null;
   aid_stations: RaceAidStation[];
   cutoffs: RaceCutoff[];
   /** item 级内容 provenance（null=管理员录入，"WebSearch"=调研脚本）。 */
@@ -332,7 +340,7 @@ export interface RaceCityContentBrief {
   food: string | null;
 }
 
-/** 一场赛事的有界内容聚合：事件行 + 项目内容 + 城市内容，供 race_strategy 子代理。 */
+/** 一场已发布赛事的内容聚合，包含事件、项目与城市内容。 */
 export interface RaceCalendarContext {
   race_event_id: number;
   name: string;

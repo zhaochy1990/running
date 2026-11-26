@@ -24,6 +24,11 @@ function raceContextFixture(): RaceCalendarContext {
         total_ascent_m: 180,
         elevation_points: [],
         course_challenges: [{ distance_km: 32, description: "钱塘江大桥爬坡" }],
+        reputation: {
+          summary: "后半程桥坡影响配速节奏。",
+          pros: [],
+          cons: ["连续上下坡"],
+        },
         aid_stations: [{ distance_km: 5, supplies: ["水", "能量胶"] }],
         cutoffs: [{ point: "35K", distance_km: 35, cutoff_at: "12:30" }],
         content_source: "WebSearch",
@@ -56,6 +61,7 @@ test("get_race_calendar_context resolves the race from the turn-scope target", a
   assert.equal((result as { found: boolean }).found, true);
   assert.equal((result as { name: string }).name, "Hangzhou Marathon");
   assert.equal((result as { content_source: string | null }).content_source, "WebSearch");
+  assert.deepEqual((result as RaceCalendarContext).items, fixture.items);
 });
 
 test("get_race_calendar_context reports found=false for an unknown race", async () => {

@@ -52,6 +52,17 @@ type GoActivityAPI = { baseUrl: string; internalToken: string };
 const goActivityDetails = z.object({
   kilometer_splits: z.array(z.record(z.string(), z.unknown())).optional(),
 });
+const raceReputationJson = z.object({
+  summary: z.string().default(""),
+  pros: z
+    .array(z.string())
+    .nullish()
+    .transform((pros) => pros ?? []),
+  cons: z
+    .array(z.string())
+    .nullish()
+    .transform((cons) => cons ?? []),
+});
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -687,8 +698,8 @@ export class MySqlDataProvider implements DataProvider {
   }
 
   /**
-   * 一场赛事的内容聚合（比赛策略专用）：事件行 + 全部项目内容行 + 城市内容。
-   * 与 race_plan 一样按 published 过滤——未发布赛事对策略上下文等同不存在。
+   * 赛事问答和比赛策略共用的赛历详情，包含事件、项目与城市内容。
+   * 只返回已发布的赛事。
    */
   async getRaceCalendarContext(raceEventId: number): Promise<RaceCalendarContext | null> {
     const [eventRows, itemRows] = await Promise.all([
@@ -701,7 +712,7 @@ export class MySqlDataProvider implements DataProvider {
       ),
       this.pool.query<RowDataPacket[]>(
         `SELECT name, type, distance_km, start_point, finish_point, route_description,
-                total_ascent_m, elevation_points, course_challenges, aid_stations, cutoffs, content_source
+                total_ascent_m, elevation_points, course_challenges, reputation, aid_stations, cutoffs, content_source
            FROM race_calendar_item
           WHERE race_event_id = ?
           ORDER BY id ASC`,
@@ -1051,10 +1062,20 @@ function rowToRaceItemContent(row: RowDataPacket): RaceCalendarItemContent {
     total_ascent_m: (row.total_ascent_m ?? null) as number | null,
     elevation_points: parseJsonArray<RaceElevationPoint>(row.elevation_points, "elevation_points"),
     course_challenges: parseJsonArray<RaceCourseChallenge>(row.course_challenges, "course_challenges"),
+    reputation: parseRaceReputation(row.reputation),
     aid_stations: parseJsonArray<RaceAidStation>(row.aid_stations, "aid_stations"),
     cutoffs: parseJsonArray<RaceCutoff>(row.cutoffs, "cutoffs"),
     content_source: (row.content_source ?? null) as string | null,
   };
+}
+
+function parseRaceReputation(value: unknown): RaceCalendarItemContent["reputation"] {
+  try {
+    const result = raceReputationJson.safeParse(parseJsonObject(value, "race_calendar_item.reputation"));
+    return result.success ? result.data : null;
+  } catch {
+    return null;
+  }
 }
 
 /** RacePoint 列只取名称（策略只需要「从哪到哪」，坐标不进 LLM 上下文）。 */
