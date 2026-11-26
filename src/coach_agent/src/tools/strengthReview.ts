@@ -32,7 +32,7 @@ function manualEvidence(record: ManualStrengthRecord, scope: ReviewScope) {
   };
 }
 
-const TOOL_NAME = "get_strength_training_review";
+export const STRENGTH_REVIEW_TOOL_NAME = "get_strength_training_review";
 const LATEST_REQUEST = /(?:最近|最后|最新)(?:的|做的)?(?:一|这|那)次|上一次|most recent|latest|last (?:session|workout)/i;
 const ORDINAL = /第\s*([一二三四五六七八九十]|\d{1,2})\s*条/g;
 const CHANGE_RECORD = /另(?:外)?(?:一|那)(?:条|次|场)|换(?:一|另)?(?:条|次|场)|别的(?:一)?(?:条|次|场)|(?:other|another) (?:record|workout|session)/i;
@@ -112,12 +112,12 @@ function readConversation(state: unknown): { userText: string; priorEvidence?: P
   if (userIndex < 0) return { userText: "" };
   const previousTurn = messages.slice(0, userIndex);
   const previousUserIndex = previousTurn.findLastIndex(isHumanMessage);
-  const isStrengthReview = (message: unknown) => isToolMessage(message) && message.name === TOOL_NAME;
+  const isStrengthReview = (message: unknown) => isToolMessage(message) && message.name === STRENGTH_REVIEW_TOOL_NAME;
   const previousReview = previousTurn.slice(previousUserIndex + 1).findLast(isStrengthReview);
   const currentTurn = messages.slice(userIndex + 1);
   const currentToolCalls = currentTurn.findLast(isAIMessage)?.tool_calls;
   const activeStrengthReview =
-    currentToolCalls?.some((call: { name: string }) => call.name === TOOL_NAME) ||
+    currentToolCalls?.some((call: { name: string }) => call.name === STRENGTH_REVIEW_TOOL_NAME) ||
     currentTurn.some((message) => isStrengthReview(message) && readEvidence(message.content)?.source === "manual");
   let userText = messages[userIndex].text;
   try {
@@ -138,13 +138,7 @@ export function useDedicatedStrengthReview(state: unknown): boolean {
   return activeStrengthReview === true || /手录|自由力量|力量.*复盘|复盘.*力量|manual strength|review.*strength/i.test(userText);
 }
 
-function clearDay(userText: string, asof: string): string | undefined {
-  if (
-    /(?:从|自).{1,24}(?:到|至)|到.{1,12}为止|截至|截止|(?:过去|最近|近)[零一二三四五六七八九十两\d]+天|(?:本|这|上)周(?![一二三四五六日天])|\bbetween\b|\bthrough\b|\bthis week\b|\blast week\b/i.test(
-      userText,
-    )
-  )
-    return undefined;
+function mentionedDays(userText: string, asof: string): Set<string> {
   const days = new Set<string>();
   for (const match of userText.matchAll(/(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/g)) {
     if (z.iso.date().safeParse(match[0]).success) days.add(match[0]);
@@ -161,8 +155,19 @@ function clearDay(userText: string, asof: string): string | undefined {
     if (/day before yesterday/i.test(userText)) days.delete(addDays(asof, -1));
     days.add(addDays(asof, -2));
   }
-  if (days.size === 1) return [...days][0];
-  return undefined;
+  return days;
+}
+
+function clearDay(userText: string, asof: string): string | undefined {
+  if (
+    /(?:从|自).{1,24}(?:到|至)|到.{1,12}为止|截至|截止|(?:过去|最近|近)[零一二三四五六七八九十两\d]+天|(?:本|这|上)周(?![一二三四五六日天])|\bbetween\b|\bthrough\b|\bthis week\b|\blast week\b/i.test(
+      userText,
+    )
+  ) {
+    return undefined;
+  }
+  const days = mentionedDays(userText, asof);
+  return days.size === 1 ? [...days][0] : undefined;
 }
 
 function references(record: StrengthRecordSummary): string[] {
@@ -254,9 +259,13 @@ async function watchSupplement(
   // right to pick an overlapping watch record on the athlete's behalf.
   const clauses = affirmedWatchClauses(userText, reference);
   if (clauses.length === 0) return { watchSupplementStatus: "needs_explicit_reference" };
+  const affirmedText = clauses.join("\n");
+  if (anchoredAsOf && mentionedDays(affirmedText, anchoredAsOf).size > 1) {
+    return { watchSupplementStatus: "ambiguous" };
+  }
   // The manual record remains anchored. An explicitly dated watch request
   // can identify the user's device record outside that manual interval.
-  const namedDay = anchoredAsOf ? (clearDay(reference, anchoredAsOf) ?? clearDay(clauses.join("\n"), anchoredAsOf)) : undefined;
+  const namedDay = anchoredAsOf ? (clearDay(reference, anchoredAsOf) ?? clearDay(affirmedText, anchoredAsOf)) : undefined;
   const watches = await store.getWatchStrengthSummaries(userId, namedDay ?? scope.startDay, namedDay ?? scope.endDay);
   const matches = watches.filter((record) => references(record).includes(reference));
   const selected = matches.length === 1 ? matches[0] : undefined;
@@ -286,7 +295,7 @@ async function watchSupplement(
 
 export function createStrengthReviewTool(store: DataProvider) {
   return defineCoachTool({
-    name: TOOL_NAME,
+    name: STRENGTH_REVIEW_TOOL_NAME,
     description:
       "复盘已完成的力量训练。按用户提到的上海日期范围查找本人记录，优先手动记录。返回 ambiguous 时请用户选一条，不能猜；只有手录缺失才使用手表数据。缺失的次数、负重、心率保留未知。",
     schema: reviewSchema,

@@ -187,12 +187,26 @@ test("a full Shanghai date and time disambiguates repeated times in an anchored 
   const record = { ...manualRecord, id, startedAt: new Date("2026-11-26T15:50:00Z"), endedAt: new Date("2026-11-26T16:18:00Z") };
   const watch = { ...watchB, startedAt: new Date("2026-11-26T15:55:00Z") };
   const { store } = fixture([record], [watch]);
+  let lookups = 0;
   store.getWatchStrengthSummaries = async (_owner, start, end) => {
+    lookups += 1;
     assert.deepEqual([start, end], ["2026-11-26", "2026-11-26"]);
     return [watch];
   };
   const review = await execute(store, "补充手表 2026-11-26 23:55 的心率", { watchReference: "2026-11-26 23:55" }, "athlete-a", undefined, [], id);
   assert.equal(review.watchHeartRate.avgHr, 137);
+  const ambiguous = await execute(
+    store,
+    "补充手表 2026-11-26 23:55 或 2026-11-27 23:55 的心率",
+    { watchReference: "2026-11-26 23:55" },
+    "athlete-a",
+    undefined,
+    [],
+    id,
+  );
+  assert.equal(ambiguous.watchSupplementStatus, "ambiguous");
+  assert.equal(ambiguous.watchHeartRate, undefined);
+  assert.equal(lookups, 1);
 });
 
 test("two same-day manual candidates are listed without giving an undesignated record's sets", async () => {

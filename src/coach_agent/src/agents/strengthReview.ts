@@ -1,9 +1,9 @@
-import { isToolMessage } from "@langchain/core/messages";
+import { isAIMessage, isToolMessage } from "@langchain/core/messages";
 import { buildChatModel } from "@stride/common";
 import { createAgent, createMiddleware } from "langchain";
 import type { ModelConfig } from "../config/config.js";
 import type { DataProvider } from "../data/dataProvider.js";
-import { createStrengthReviewTool, isFoundManualStrengthEvidence } from "../tools/strengthReview.js";
+import { createStrengthReviewTool, isFoundManualStrengthEvidence, STRENGTH_REVIEW_TOOL_NAME } from "../tools/strengthReview.js";
 import { CoachContext } from "./context.js";
 
 const SYSTEM_PROMPT = `你是 STRIDE 教练，正在和运动员复盘已明确选择的一条本人手录力量训练。
@@ -14,9 +14,15 @@ const SYSTEM_PROMPT = `你是 STRIDE 教练，正在和运动员复盘已明确�
 
 const readCurrentRecord = createMiddleware({
   name: "ReadCurrentStrengthRecord",
-  wrapModelCall: (request, handler) => {
+  wrapModelCall: async (request, handler) => {
     const latest = request.messages.at(-1);
-    if (!isToolMessage(latest)) return handler({ ...request, toolChoice: "required" });
+    if (!isToolMessage(latest)) {
+      const response = await handler({ ...request, toolChoice: "required" });
+      if (!isAIMessage(response) || response.tool_calls?.length !== 1 || response.tool_calls[0]?.name !== STRENGTH_REVIEW_TOOL_NAME) {
+        throw new Error("当前训练记录读取失败，请重试");
+      }
+      return response;
+    }
     // A malformed tool call can produce a ToolMessage without reading the record.
     if (latest.status === "error" || !isFoundManualStrengthEvidence(latest.content)) {
       throw new Error("当前训练记录读取失败，请重试");
@@ -32,6 +38,9 @@ export function getStrengthReviewAgent(store: DataProvider, config: ModelConfig)
     tools: [createStrengthReviewTool(store)],
     systemPrompt: SYSTEM_PROMPT,
     contextSchema: CoachContext,
+    // The outer Coach graph owns durable history and retries. An interrupted
+    // read must restart this inner turn instead of restoring a failed tool result.
+    checkpointer: false,
     middleware: [readCurrentRecord],
   });
 }

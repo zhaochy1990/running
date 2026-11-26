@@ -15,6 +15,7 @@ test("the production graph reloads only the anchored record on each turn and res
   const modelChoices: string[] = [];
   let quantity = 7;
   let malformedArguments = false;
+  let omitToolCall = false;
   const store = {
     async getManualStrengthDetail(userId: string, recordId: string): Promise<ManualStrengthRecord | null> {
       assert.equal(userId, "athlete");
@@ -44,7 +45,7 @@ test("the production graph reloads only the anchored record on each turn and res
     for await (const chunk of request) chunks.push(chunk);
     const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
     modelChoices.push(body.tool_choice ?? "");
-    const toolTurn = body.tool_choice === "required";
+    const toolTurn = body.tool_choice === "required" && !omitToolCall;
     if (!toolTurn && body.messages.at(-1)?.role === "tool") evidence.push(JSON.parse(body.messages.at(-1).content));
     response.writeHead(200, { "content-type": "application/json" });
     response.end(
@@ -96,14 +97,11 @@ test("the production graph reloads only the anchored record on each turn and res
     observability: { langsmith_enabled: false, langsmith_project: "", langsmith_endpoint: "", langsmith_api_key_env: "" },
   };
   const graph = await createCoachAgent(store as unknown as DataProvider, config);
-  function turn(recordId: string, message: string) {
-    return graph.invoke(
-      { messages: [new HumanMessage(message)] },
-      {
-        context: { userId: "athlete", asof: "2026-11-26", strengthReviewRecordId: recordId },
-        configurable: { thread_id: `athlete:coach:manual-strength-${recordId}` },
-      },
-    );
+  function turn(recordId: string, message: string | null) {
+    return graph.invoke(message === null ? null : { messages: [new HumanMessage(message)] }, {
+      context: { userId: "athlete", asof: "2026-11-26", strengthReviewRecordId: recordId },
+      configurable: { thread_id: `athlete:coach:manual-strength-${recordId}` },
+    });
   }
   await turn(recordA, "早练做了什么？");
   await turn(recordB, "晚练做了什么？");
@@ -121,4 +119,13 @@ test("the production graph reloads only the anchored record on each turn and res
   await assert.rejects(turn(recordA, "这轮不能沿用旧数据"), /当前训练记录读取失败/);
   assert.deepEqual(reads, [recordA, recordB, recordA]);
   assert.equal(modelChoices.length, 7, "a malformed tool call must not reach the reply model");
+  malformedArguments = false;
+  const recovered = await turn(recordA, null);
+  assert.equal(recovered.messages.at(-1)?.text, "复盘完成");
+  assert.equal(recovered.messages.filter((message) => message.text === "这轮不能沿用旧数据").length, 1);
+  assert.deepEqual(reads, [recordA, recordB, recordA, recordA]);
+  omitToolCall = true;
+  await assert.rejects(turn(recordB, "不能在未调用工具时回答"), /当前训练记录读取失败/);
+  assert.deepEqual(reads, [recordA, recordB, recordA, recordA]);
+  assert.equal(modelChoices.at(-1), "required");
 });
