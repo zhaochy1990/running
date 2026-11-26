@@ -9,6 +9,7 @@ import type {
   DataProvider,
   DaySessionRow,
   HeartRateZone,
+  ManualStrengthRecord,
   MasterPlanDocument,
   PaceZone,
   PerformanceBaseline,
@@ -25,6 +26,7 @@ import type {
   RacePredictionRow,
   RaceTarget,
   RunningCalibration,
+  StrengthRecordSummary,
   SyncCoverage,
   SyncDispatchRow,
   SyncReadiness,
@@ -34,12 +36,13 @@ import type {
   UserInjury,
   UserProfile,
   VendorHrvBaseline,
+  WatchStrengthSummary,
   WeeklyFeedback,
   WeeklyPlanDocument,
 } from "@stride/coach-agent";
 import { CalibrationSourceSchema, deriveSyncCoverage } from "@stride/coach-agent";
 import { getLogger } from "@stride/common";
-import { shanghaiDay } from "@stride/contract";
+import { addDays, shanghaiDay } from "@stride/contract";
 import type { Pool, RowDataPacket } from "mysql2/promise";
 import { z } from "zod";
 import type { MySqlConfig } from "../config.js";
@@ -49,6 +52,21 @@ import policyContract from "./calibrationPolicyContract.json" with { type: "json
 
 const logger = getLogger("coach:activityDetails");
 type GoActivityAPI = { baseUrl: string; internalToken: string };
+// Mirrors Go's strength activity filter in storage/activity_read.go.
+const WATCH_STRENGTH_PREDICATE = "(a.sport_type IN (402, 800) OR a.sport = 'strength' OR lower(coalesce(a.sport_name, '')) LIKE '%strength%')";
+const manualStrengthActions = z.array(
+  z.object({
+    name: z.string(),
+    sets: z.array(
+      z.object({
+        load: z.string(),
+        load_unit: z.enum(["kg", "lb", "bodyweight"]),
+        quantity: z.number().int().positive(),
+        quantity_unit: z.enum(["reps", "seconds"]),
+      }),
+    ),
+  }),
+);
 const goActivityDetails = z.object({
   kilometer_splits: z.array(z.record(z.string(), z.unknown())).optional(),
 });
@@ -281,7 +299,7 @@ export class MySqlDataProvider implements DataProvider {
               t.session_class AS stride_session_class, a.temperature,
               a.humidity, a.feels_like, a.wind_speed, a.sport_note, a.sport,
               a.feel, a.feel_note, a.vertical_oscillation_mm, a.ground_contact_time_ms,
-              a.vertical_ratio_pct, a.pauses, a.provider
+              a.vertical_ratio_pct, a.pauses, a.provider, ${WATCH_STRENGTH_PREDICATE} AS is_strength
          FROM activities a
          LEFT JOIN activity_training_load t
            ON t.user_id = a.user_id AND t.label_id = a.label_id
@@ -290,6 +308,53 @@ export class MySqlDataProvider implements DataProvider {
       [userId, startDay, endDay],
     );
     return rows.map(rowToActivity);
+  }
+
+  async getManualStrengthSummaries(userId: string, startDay: string, endDay: string): Promise<StrengthRecordSummary[]> {
+    const [rows] = await this.pool.query<RowDataPacket[]>(
+      `SELECT id, name, started_at
+         FROM manual_strength_records
+        WHERE user_id = ? AND started_at >= ? AND started_at < ?
+        ORDER BY started_at, id`,
+      [userId, ...shanghaiDateBounds(startDay, endDay)],
+    );
+    return rows.map((row) => ({ id: row.id as string, name: row.name as string, startedAt: row.started_at as Date }));
+  }
+
+  async getManualStrengthDetail(userId: string, recordId: string): Promise<ManualStrengthRecord | null> {
+    const [rows] = await this.pool.query<RowDataPacket[]>(
+      `SELECT id, name, started_at, ended_at, note, actions
+         FROM manual_strength_records
+        WHERE user_id = ? AND id = ?
+        LIMIT 1`,
+      [userId, recordId],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      id: row.id as string,
+      name: row.name as string,
+      startedAt: row.started_at as Date,
+      endedAt: row.ended_at as Date,
+      note: row.note as string,
+      actions: manualStrengthActions.parse(row.actions),
+    };
+  }
+
+  async getWatchStrengthSummaries(userId: string, startDay: string, endDay: string): Promise<WatchStrengthSummary[]> {
+    const [rows] = await this.pool.query<RowDataPacket[]>(
+      `SELECT a.label_id, a.name, a.date, a.provider
+         FROM activities a
+        WHERE a.user_id = ? AND a.date >= ? AND a.date < ? AND ${WATCH_STRENGTH_PREDICATE}
+        ORDER BY a.date, a.label_id`,
+      [userId, ...shanghaiDateBounds(startDay, endDay)],
+    );
+    return rows.map((row) => ({
+      id: row.label_id as string,
+      name: (row.name ?? null) as string | null,
+      startedAt: row.date as Date,
+      provider: row.provider as string,
+    }));
   }
 
   /**
@@ -340,7 +405,7 @@ export class MySqlDataProvider implements DataProvider {
               t.session_class AS stride_session_class, a.temperature,
               a.humidity, a.feels_like, a.wind_speed, a.sport_note, a.sport,
               a.feel, a.feel_note, a.vertical_oscillation_mm, a.ground_contact_time_ms,
-              a.vertical_ratio_pct, a.pauses, a.provider, a.sport_type
+              a.vertical_ratio_pct, a.pauses, a.provider, ${WATCH_STRENGTH_PREDICATE} AS is_strength
          FROM activities a
          LEFT JOIN activity_training_load t
            ON t.user_id = a.user_id AND t.label_id = a.label_id
@@ -353,7 +418,7 @@ export class MySqlDataProvider implements DataProvider {
       return null;
     }
     const activity = rowToActivity(row);
-    const strength = isStrengthRow(row);
+    const strength = activity.isStrength === true;
     [activity.laps, activity.kilometerSplits] = await Promise.all([
       this.pickSegments(userId, labelId, strength),
       options?.includeKilometerSplits !== false && !strength ? this.readGoKilometerSplits(userId, labelId) : [],
@@ -1124,6 +1189,15 @@ function masterPlanContainsDay(content: MasterPlanDocument, day: string): boolea
   });
 }
 
+function shanghaiDateBounds(startDay: string, endDay: string): [Date, Date] {
+  assertDay(startDay);
+  assertDay(endDay);
+  if (startDay > endDay) throw new Error(`startDay (${startDay}) must not be after endDay (${endDay})`);
+  // The lower bound for all-history lookups cannot precede MySQL DATETIME.
+  const lower = startDay === "1000-01-01" ? new Date("1000-01-01T00:00:00Z") : new Date(`${startDay}T00:00:00+08:00`);
+  return [lower, new Date(`${addDays(endDay, 1)}T00:00:00+08:00`)];
+}
+
 function rowToActivity(row: RowDataPacket): Activity {
   // 时区换算唯一落点（devops#936）：上海日历日在此算好，下游只读 shanghaiDay。
   // 前提：注入的 pool 走 createStridePool（timezone:"Z"），row.date 是 UTC instant。
@@ -1157,6 +1231,7 @@ function rowToActivity(row: RowDataPacket): Activity {
     windSpeed: (row.wind_speed ?? null) as number | null,
     sportNote: (row.sport_note ?? null) as string | null,
     sport: (row.sport ?? null) as string | null,
+    ...(row.is_strength ? { isStrength: true } : {}),
     feel: (row.feel ?? null) as number | null,
     feelNote: (row.feel_note ?? null) as string | null,
     verticalOscillationMm: (row.vertical_oscillation_mm ?? null) as number | null,
@@ -1205,12 +1280,6 @@ function hasDistanceSplits(laps: ActivityLap[]): boolean {
     }
   }
   return false;
-}
-
-/** Mirrors the sport branch of Go's `strengthActivityPredicate` on a loaded row. */
-function isStrengthRow(row: RowDataPacket): boolean {
-  const sportType = (row.sport_type ?? null) as number | null;
-  return sportType === 402 || sportType === 800 || row.sport === "strength";
 }
 
 function rowToDailyTrainingLoad(row: RowDataPacket): DailyTrainingLoad {

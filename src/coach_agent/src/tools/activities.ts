@@ -53,36 +53,13 @@ type GetActivityDetailInput = z.infer<typeof getActivityDetailSchema>;
 /** 未显式传 `limit` 时的默认值：足以覆盖一次训练问答，又不会撑爆上下文/触发落盘。 */
 const DEFAULT_ACTIVITIES_LIMIT = 30;
 
-/** Domain interface — pure business logic, decoupled from LangChain. */
-interface ActivitiesTool {
-  getActivitiesByDateRange(
-    input: GetActivitiesByDateRangeInput,
-    runtime: CoachToolRuntime,
-  ): Promise<{
-    activities: Activity[];
-    provenance: { source: "stride"; vendor_derived: false };
-    truncated: boolean;
-  }>;
-  getActivityDetail(
-    input: GetActivityDetailInput,
-    runtime: CoachToolRuntime,
-  ): Promise<{
-    activity: Activity | null;
-    provenance: { source: "stride"; vendor_derived: false };
-  }>;
-}
+class ActivitiesToolImpl {
+  constructor(
+    private readonly store: DataProvider,
+    private readonly useStrengthReview: boolean,
+  ) {}
 
-class ActivitiesToolImpl implements ActivitiesTool {
-  constructor(private readonly store: DataProvider) {}
-
-  async getActivitiesByDateRange(
-    input: GetActivitiesByDateRangeInput,
-    runtime: CoachToolRuntime,
-  ): Promise<{
-    activities: Activity[];
-    provenance: { source: "stride"; vendor_derived: false };
-    truncated: boolean;
-  }> {
+  async getActivitiesByDateRange(input: GetActivitiesByDateRangeInput, runtime: CoachToolRuntime) {
     const userId = runtime.context?.userId;
     if (!userId) {
       throw new Error("get_activities_by_date_range: missing userId in runtime context");
@@ -98,8 +75,26 @@ class ActivitiesToolImpl implements ActivitiesTool {
     const truncated = all.length > limit;
     // date 升序，取末尾若干条 = 区间内最近的运动。
     const activities = truncated ? all.slice(-limit) : all;
+    const useStrengthReview = this.useStrengthReview && activities.some((activity) => activity.isStrength);
+    const hasManual = useStrengthReview && (await this.store.getManualStrengthSummaries(userId, input.startDay, endDay)).length > 0;
     return {
-      activities,
+      activities: useStrengthReview
+        ? activities.map((activity) =>
+            activity.isStrength
+              ? {
+                  labelId: activity.labelId,
+                  name: activity.name,
+                  date: activity.date,
+                  shanghaiDay: activity.shanghaiDay,
+                  sport: "strength",
+                  provider: activity.provider,
+                  ...(hasManual ? {} : { durationS: activity.durationS }),
+                  reviewTool: "get_strength_training_review",
+                  laps: [],
+                }
+              : activity,
+          )
+        : activities,
       provenance: { source: "stride", vendor_derived: false },
       truncated,
     };
@@ -110,6 +105,7 @@ class ActivitiesToolImpl implements ActivitiesTool {
     runtime: CoachToolRuntime,
   ): Promise<{
     activity: Activity | null;
+    reviewTool?: "get_strength_training_review";
     provenance: { source: "stride"; vendor_derived: false };
   }> {
     const userId = runtime.context?.userId;
@@ -117,6 +113,9 @@ class ActivitiesToolImpl implements ActivitiesTool {
       throw new Error("get_activity_details: missing userId in runtime context");
     }
     const activity = await this.store.getActivityDetail(userId, input.labelId);
+    if (activity && this.useStrengthReview && activity.isStrength) {
+      return { activity: null, reviewTool: "get_strength_training_review", provenance: { source: "stride", vendor_derived: false } };
+    }
     return {
       activity,
       provenance: { source: "stride", vendor_derived: false },
@@ -132,21 +131,24 @@ class ActivitiesToolImpl implements ActivitiesTool {
  * tools: [...createActivitiesTools(store)]
  * ```
  */
-export function createActivitiesTools(store: DataProvider): StructuredTool[] {
-  const impl = new ActivitiesToolImpl(store);
+export function createActivitiesTools(store: DataProvider, options: { useStrengthReview?: boolean } = {}): StructuredTool[] {
+  const impl = new ActivitiesToolImpl(store, options.useStrengthReview === true);
+  const strengthHint = options.useStrengthReview ? " 力量训练仅提供列表摘要，力量复盘与明细应调用 get_strength_training_review。" : "";
   return defineCoachTools([
     {
       name: "get_activities_by_date_range",
       description:
         "获取运动员在某个日期区间（Asia/Shanghai 日历日，含起止两端）的运动清单，按 date 升序返回。每条运动只含汇总字段、`laps` 为空 []；要看分段明细请用 get_activity_details(labelId)。" +
-        "默认最多返回最近 30 条（按 date 升序取末尾），超出则截断并置 truncated=true。startDay 必填；endDay 缺省为 runtime context 的 asof。",
+        "默认最多返回最近 30 条（按 date 升序取末尾），超出则截断并置 truncated=true。startDay 必填；endDay 缺省为 runtime context 的 asof。" +
+        strengthHint,
       schema: getActivitiesByDateRangeSchema,
       handler: (input, runtime) => impl.getActivitiesByDateRange(input, runtime),
     },
     {
       name: "get_activity_details",
       description:
-        "获取单条运动明细。`laps` 是手表圈或训练组，`kilometerSplits` 是整场活动的每公里数据（末段可能不足 1 公里）。逐公里分析使用 `kilometerSplits`，lapType=timeseriesKm 表示从采样估算，空数组表示没有可用数据。",
+        "获取单条运动明细。`laps` 是手表圈或训练组，`kilometerSplits` 是整场活动的每公里数据（末段可能不足 1 公里）。逐公里分析使用 `kilometerSplits`，lapType=timeseriesKm 表示从采样估算，空数组表示没有可用数据。" +
+        strengthHint,
       schema: getActivityDetailSchema,
       handler: (input, runtime) => impl.getActivityDetail(input, runtime),
     },
