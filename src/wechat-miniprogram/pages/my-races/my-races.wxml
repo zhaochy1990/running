@@ -50,7 +50,8 @@
                 <text class="plan-badge plan-badge--off">已下架</text>
               </view>
               <view class="plan__meta plan__meta--dim">
-                {{item.plan.dateLabel ? item.plan.dateLabel + ' · ' : ''}}{{item.plan.city ? item.plan.city + ' · ' : ''}}该赛事已被管理员下架，你的参赛记录保留
+                <text>{{item.plan.dateLabel ? item.plan.dateLabel + ' · ' : ''}}{{item.plan.city ? item.plan.city + ' · ' : ''}}该赛事已被管理员下架，你的参赛记录保留</text>
+                <text wx:if="{{item.plan.countdown}}" class="plan__countdown">{{item.plan.countdown}}</text>
               </view>
             </view>
 
@@ -177,7 +178,10 @@
             <view class="race__head">
               <view class="race__band race__band--{{item.bandClass}}">{{item.bandLabel}}</view>
               <view wx:if="{{item.isPb}}" class="race__pb">🏆 PB</view>
-              <view class="race__date">{{item.dateLabel}}</view>
+              <view class="race__date">
+                <text>{{item.dateLabel}}</text>
+                <text wx:if="{{item.elapsedLabel}}" class="race__elapsed"> · {{item.elapsedLabel}}</text>
+              </view>
             </view>
             <view class="race__name">{{item.name}}</view>
             <!-- 等级双徽章（#545）：仅官方识别行，名下一行，样式复刻 race-center -->

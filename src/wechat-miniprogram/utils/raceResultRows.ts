@@ -3,6 +3,19 @@
 // （`node --import ./utils/ts-resolve-hooks.mjs utils/raceResultRows.check.mts`）。
 
 import type { RaceItem } from '../services/races';
+import { shanghaiDateFromIso } from './date';
+import { daysUntil } from './raceDetailRows';
+import { countdownLabel } from './racePlanRows';
+
+/** 成绩行显示上海比赛日期及已过天数。 */
+export function raceResultDateLabels(date: string, today: string): { dateLabel: string; elapsedLabel: string } {
+  const raceDate = shanghaiDateFromIso(date);
+  const days = daysUntil(raceDate, today);
+  return {
+    dateLabel: raceDate || date,
+    elapsedLabel: days < 0 ? countdownLabel(days) : '',
+  };
+}
 
 /**
  * 成绩行显示名解析链（devops#545）：官方赛名 → 手输名 → 活动名。

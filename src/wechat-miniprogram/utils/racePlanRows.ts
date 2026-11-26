@@ -65,6 +65,7 @@ export interface PlanCardView {
 
 export function toPlanCard(plan: RacePlan): PlanCardView {
   const itemLabel = typeAbbr(plan.item_type);
+  const days = plan.race ? daysUntil(plan.race.race_date, shanghaiToday()) : null;
   return {
     raceId: plan.race_id,
     name: plan.race?.name_cn || plan.race?.name || '已下架赛事',
@@ -73,7 +74,7 @@ export function toPlanCard(plan: RacePlan): PlanCardView {
     ...statePatch(plan.state),
     dateLabel: plan.race ? planDateLabel(plan.race.race_date) : '',
     city: plan.race?.city || '',
-    countdown: countdownLabel(plan.race ? daysUntil(plan.race.race_date, shanghaiToday()) : null),
+    countdown: plan.offboarded && days != null && days >= 0 ? '' : countdownLabel(days),
     hotel: plan.hotel,
     transit: plan.transit,
     offboarded: plan.offboarded,

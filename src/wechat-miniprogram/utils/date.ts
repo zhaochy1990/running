@@ -43,7 +43,10 @@ export function epochToShanghaiDow(epochMs: number): number {
 export function shanghaiYmdToEpoch(ymd: string): number {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
   if (!m) return Number.NaN;
-  return Date.UTC(+m[1], +m[2] - 1, +m[3]) - SHANGHAI_OFFSET_MS;
+  // Date.UTC 会把 0–99 年解释为 1900–1999 年。
+  const date = new Date(0);
+  date.setUTCFullYear(+m[1], +m[2] - 1, +m[3]);
+  return date.getTime() - SHANGHAI_OFFSET_MS;
 }
 
 /** 今天（上海）YYYY-MM-DD。禁止用 `new Date().getFullYear()` 之类本地时间假设。 */

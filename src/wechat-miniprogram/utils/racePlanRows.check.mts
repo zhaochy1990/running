@@ -87,5 +87,8 @@ eq(toPlanCard(plan({ race: raceOn(today) })).countdown, '今天开赛', 'countdo
 eq(toPlanCard(plan({ race: raceOn(ymdShift(today, -1)) })).countdown, '已经 1 天', 'one day after race');
 eq(toPlanCard(plan({ race: null })).countdown, '', 'countdown hidden without race');
 eq(toPlanCard(plan({ race: raceOn('') })).countdown, '', 'countdown hidden with empty date');
+eq(toPlanCard(plan({ race: raceOn(ymdShift(today, -9)), offboarded: true })).countdown, '已经 9 天', 'past offboarded race');
+eq(toPlanCard(plan({ race: raceOn(ymdShift(today, 9)), offboarded: true })).countdown, '', 'future offboarded race');
+eq(gone.countdown, '', 'offboarded placeholder without race');
 
 console.log('racePlanRows check passed');
