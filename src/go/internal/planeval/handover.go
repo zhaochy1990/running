@@ -324,19 +324,6 @@ func (s *Service) cleanup(ctx context.Context, agentVersion string) *Error {
 	if !s.knownVersion(agentVersion) || !validAgentVersion(agentVersion) {
 		return fail(422, "invalid_request", "未登记的 Agent 版本："+agentVersion)
 	}
-	// Capture resource revisions before checking idle state: a start after the
-	// gate must invalidate deletion, even if the coordination session was lost.
-	expected, err := s.deployer.Status(ctx, agentVersion)
-	if err != nil {
-		return s.internal(err)
-	}
-	configID := ""
-	config, err := s.store.PlanEvalLaunchConfigForVersion(ctx, agentVersion)
-	if err == nil {
-		configID = config.ID
-	} else if !errors.Is(err, storage.ErrPlanEvalNotFound) {
-		return s.internal(err)
-	}
 	active, err := s.store.CountPlanEvalActiveGenerates(ctx, agentVersion)
 	if err != nil {
 		return s.internal(err)
@@ -344,6 +331,35 @@ func (s *Service) cleanup(ctx context.Context, agentVersion string) *Error {
 	if active > 0 {
 		return fail(409, "cleanup_blocked", fmt.Sprintf("该版本还有 %d 个执行项在等待或生成中", active))
 	}
+	if serr := s.requireIdleQueue(ctx, agentVersion); serr != nil {
+		return serr
+	}
+	config, err := s.store.BeginPlanEvalCleanup(ctx, agentVersion)
+	if err != nil {
+		return s.mapStorageError(err)
+	}
+	expected, err := s.deployer.Status(ctx, agentVersion)
+	if err != nil {
+		return s.internal(err)
+	}
+	if expected.DeploymentRevision > config.RuntimeRevision || expected.SecretRevision > config.RuntimeRevision {
+		return s.mapStorageError(storage.ErrPlanEvalVersionBusy)
+	}
+	if serr := s.requireIdleQueue(ctx, agentVersion); serr != nil {
+		return serr
+	}
+	if err := s.deployer.Delete(ctx, agentVersion, expected); err != nil {
+		s.log.Error("plan-eval: delete worker deployment", zap.String("agent_version", agentVersion), zap.Error(err))
+		return fail(502, "cleanup_failed", "删除 Deployment 失败")
+	}
+	if err := s.store.FinishPlanEvalCleanup(ctx, config); err != nil {
+		return s.mapStorageError(err)
+	}
+	s.log.Info("plan-eval worker deployment removed", zap.String("agent_version", agentVersion))
+	return nil
+}
+
+func (s *Service) requireIdleQueue(ctx context.Context, agentVersion string) *Error {
 	depth, err := s.broker.QueueDepth(ctx, QueueName(agentVersion))
 	if err != nil {
 		return s.internal(err)
@@ -351,14 +367,6 @@ func (s *Service) cleanup(ctx context.Context, agentVersion string) *Error {
 	if depth.Ready+depth.Unacked > 0 {
 		return fail(409, "cleanup_blocked", fmt.Sprintf("该版本的队列还有 %d 条待消费、%d 条未确认消息", depth.Ready, depth.Unacked))
 	}
-	if err := s.deployer.Delete(ctx, agentVersion, expected); err != nil {
-		s.log.Error("plan-eval: delete worker deployment", zap.String("agent_version", agentVersion), zap.Error(err))
-		return fail(502, "cleanup_failed", "删除 Deployment 失败")
-	}
-	if err := s.store.ReleasePlanEvalLaunchConfig(ctx, agentVersion, configID); err != nil {
-		return s.mapStorageError(err)
-	}
-	s.log.Info("plan-eval worker deployment removed", zap.String("agent_version", agentVersion))
 	return nil
 }
 

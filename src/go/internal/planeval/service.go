@@ -110,9 +110,10 @@ type DeploymentView struct {
 }
 
 type AgentVersionView struct {
-	AgentVersion string            `json:"agent_version"`
-	LaunchConfig *LaunchConfigView `json:"launch_config"`
-	Deployment   *DeploymentView   `json:"deployment"`
+	AgentVersion   string            `json:"agent_version"`
+	LaunchConfig   *LaunchConfigView `json:"launch_config"`
+	Deployment     *DeploymentView   `json:"deployment"`
+	CleanupPending bool              `json:"cleanup_pending,omitempty"`
 }
 
 type TaskProgress struct {
@@ -217,11 +218,14 @@ func (s *Service) AgentVersions(ctx context.Context) ([]AgentVersionView, error)
 	for _, version := range versions {
 		view := AgentVersionView{AgentVersion: version}
 		if config := byVersion[version]; config != nil {
-			var names []string
-			if err := json.Unmarshal([]byte(config.EnvNames), &names); err != nil {
-				return nil, err
+			view.CleanupPending = config.CleanupPending
+			if config.Replicas > 0 {
+				var names []string
+				if err := json.Unmarshal([]byte(config.EnvNames), &names); err != nil {
+					return nil, err
+				}
+				view.LaunchConfig = &LaunchConfigView{Replicas: config.Replicas, EnvNames: names}
 			}
-			view.LaunchConfig = &LaunchConfigView{Replicas: config.Replicas, EnvNames: names}
 		}
 		status, err := s.deployer.Status(ctx, version)
 		if err != nil {
@@ -549,12 +553,29 @@ func digestEnv(env map[string]string) map[string]string {
 
 // launch makes the version runnable: queue, pointer messages, Deployment.
 func (s *Service) launch(ctx context.Context, task *storage.PlanEvalTask) error {
-	queue := QueueName(task.AgentVersion)
-	if err := s.broker.EnsureQueue(ctx, queue); err != nil {
-		return err
-	}
 	executions, err := s.store.ListPlanEvalExecutions(ctx, task.ID)
 	if err != nil {
+		return err
+	}
+	hasActive := false
+	for _, execution := range executions {
+		if !storage.PlanEvalGenerateTerminal(execution.GenerateStatus) {
+			hasActive = true
+			break
+		}
+	}
+	if !hasActive {
+		return nil
+	}
+	config, err := s.store.GetPlanEvalLaunchConfig(ctx, task.LaunchConfigID)
+	if err != nil {
+		return err
+	}
+	if config.CleanupPending {
+		return storage.ErrPlanEvalVersionBusy
+	}
+	queue := QueueName(task.AgentVersion)
+	if err := s.broker.EnsureQueue(ctx, queue); err != nil {
 		return err
 	}
 	for _, execution := range executions {
@@ -567,10 +588,6 @@ func (s *Service) launch(ctx context.Context, task *storage.PlanEvalTask) error 
 		if err := s.store.RecordPlanEvalDispatch(ctx, execution.ID); err != nil {
 			return err
 		}
-	}
-	config, err := s.store.GetPlanEvalLaunchConfig(ctx, task.LaunchConfigID)
-	if err != nil {
-		return err
 	}
 	return s.applyLaunchConfig(ctx, config)
 }
@@ -612,7 +629,9 @@ func (s *Service) taskViews(ctx context.Context, tasks []storage.PlanEvalTask) (
 	}
 	launchByID := make(map[string]*storage.PlanEvalLaunchConfig, len(configs))
 	for i := range configs {
-		launchByID[configs[i].ID] = &configs[i]
+		if configs[i].Replicas > 0 {
+			launchByID[configs[i].ID] = &configs[i]
+		}
 	}
 	views := make([]TaskView, len(tasks))
 	for i := range tasks {
@@ -736,17 +755,12 @@ func (s *Service) Scale(ctx context.Context, version string, replicas int) *Erro
 		return fail(422, "invalid_request", fmt.Sprintf("已登记版本的副本数须在 1–%d 之间", s.cfg.MaxReplicas))
 	}
 	return s.withVersion(ctx, version, func(ctx context.Context) *Error {
-		config, err := s.store.PlanEvalLaunchConfigForVersion(ctx, version)
+		// Persist the desired count first: retry-launch restores it after a cluster fault.
+		revision, err := s.store.SetPlanEvalReplicas(ctx, version, replicas)
 		if err != nil {
 			return s.mapStorageError(err)
 		}
-
-		// Persist the desired count first: retry-launch restores it after a cluster fault.
-		if err := s.store.SetPlanEvalReplicas(ctx, version, replicas); err != nil {
-			return s.internal(err)
-		}
-		config.Replicas = replicas
-		if err := s.applyLaunchConfig(ctx, config); err != nil {
+		if err := s.deployer.Scale(ctx, version, replicas, revision); err != nil {
 			s.log.Error("plan-eval: scale", zap.Error(err))
 			return fail(502, "scale_failed", "调整 Deployment 副本失败，请重试。")
 		}
@@ -759,7 +773,9 @@ func (s *Service) applyLaunchConfig(ctx context.Context, config *storage.PlanEva
 	if err != nil {
 		return err
 	}
-	if err := s.deployer.Ensure(ctx, WorkerSpec{AgentVersion: config.AgentVersion, Replicas: config.Replicas, Env: env}); err != nil {
+	if err := s.deployer.Ensure(ctx, WorkerSpec{
+		AgentVersion: config.AgentVersion, Replicas: config.Replicas, RuntimeRevision: config.RuntimeRevision, Env: env,
+	}); err != nil {
 		return fmt.Errorf("deployment: %w", err)
 	}
 	return nil

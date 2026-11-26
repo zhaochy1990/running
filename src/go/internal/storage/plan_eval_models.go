@@ -135,6 +135,9 @@ type PlanEvalLaunchConfig struct {
 	ID           string `gorm:"column:id;type:char(36);primaryKey"`
 	AgentVersion string `gorm:"column:agent_version;size:64;not null;uniqueIndex"`
 	Replicas     int    `gorm:"column:replicas;not null"`
+	// After cleanup the row keeps its revision but has no replicas or credentials.
+	RuntimeRevision uint64 `gorm:"column:runtime_revision;not null;default:0"`
+	CleanupPending  bool   `gorm:"column:cleanup_pending;not null;default:false"`
 	// EnvNames is a JSON array of variable names, sorted.
 	EnvNames       string    `gorm:"column:env_names;type:json;not null"`
 	EnvCipher      []byte    `gorm:"column:env_cipher;type:blob"`

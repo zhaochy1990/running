@@ -39,22 +39,24 @@ type QueueDepth struct {
 	Unacked int `json:"unacked"`
 }
 
+const brokerOperationTimeout = 10 * time.Second
+
 // Broker publishes to the version queues and reads their depth from the
 // management API — AMQP passive declares report ready messages but not the
 // unacknowledged ones the cleanup gate also needs.
 type Broker struct {
-	mu             sync.Mutex
-	publishMu      sync.Mutex
-	returns        <-chan amqp.Return
-	amqpURL        string
-	vhostPath      string
-	managementURL  string
-	basicAuth      string
-	log            *zap.Logger
-	client         *http.Client
-	conn           *amqp.Connection
-	channel        *amqp.Channel
-	publishTimeout time.Duration
+	mu            sync.Mutex
+	operation     chan struct{}
+	returns       <-chan amqp.Return
+	amqpURL       string
+	vhostPath     string
+	managementURL string
+	basicAuth     string
+	log           *zap.Logger
+	client        *http.Client
+	transport     net.Conn
+	conn          *amqp.Connection
+	channel       *amqp.Channel
 }
 
 // NewBroker connects to the broker. The management credentials are the user
@@ -73,43 +75,55 @@ func NewBroker(amqpURL, managementURL string, log *zap.Logger) (*Broker, error) 
 		vhost = trimmed
 	}
 	b := &Broker{
-		amqpURL:        amqpURL,
-		vhostPath:      url.PathEscape(vhost),
-		managementURL:  strings.TrimRight(managementURL, "/"),
-		basicAuth:      "Basic " + base64.StdEncoding.EncodeToString([]byte(parsed.User.Username()+":"+password)),
-		log:            log,
-		client:         &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}}},
-		publishTimeout: 10 * time.Second,
+		operation:     make(chan struct{}, 1),
+		amqpURL:       amqpURL,
+		vhostPath:     url.PathEscape(vhost),
+		managementURL: strings.TrimRight(managementURL, "/"),
+		basicAuth:     "Basic " + base64.StdEncoding.EncodeToString([]byte(parsed.User.Username()+":"+password)),
+		log:           log,
+		client:        &http.Client{Timeout: brokerOperationTimeout, Transport: &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}}},
 	}
-	if err := b.connect(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), brokerOperationTimeout)
+	defer cancel()
+	if err := b.connect(ctx); err != nil {
 		return nil, err
 	}
 	return b, nil
 }
 
-func (b *Broker) connect() error {
+func (b *Broker) connect(ctx context.Context) error {
 	var transport net.Conn
+	stop := func() bool { return true }
+	defer func() {
+		stop()
+		if transport != nil && b.transport != transport {
+			_ = transport.Close()
+		}
+	}()
+	dialer := &net.Dialer{}
 	conn, err := amqp.DialConfig(b.amqpURL, amqp.Config{Heartbeat: 30 * time.Second, Dial: func(network, address string) (net.Conn, error) {
-		var err error
-		transport, err = amqp.DefaultDial(10*time.Second)(network, address)
-		return transport, err
+		raw, err := dialer.DialContext(ctx, network, address)
+		if err != nil {
+			return nil, err
+		}
+		transport = raw
+		stop = context.AfterFunc(ctx, func() { _ = raw.Close() })
+		return raw, nil
 	}})
 	if err != nil {
 		return fmt.Errorf("plan-eval broker dial: %w", err)
 	}
-	// Channel-open and confirm RPCs happen after AMQP clears its handshake deadline.
-	_ = transport.SetDeadline(time.Now().Add(10 * time.Second))
-	defer transport.SetDeadline(time.Time{})
 	channel, err := conn.Channel()
 	if err != nil {
-		_ = conn.CloseDeadline(time.Now().Add(time.Second))
 		return fmt.Errorf("plan-eval broker channel: %w", err)
 	}
 	if err := channel.Confirm(false); err != nil {
-		_ = conn.CloseDeadline(time.Now().Add(time.Second))
 		return fmt.Errorf("plan-eval broker confirm mode: %w", err)
 	}
-	b.conn, b.channel = conn, channel
+	if !stop() {
+		return ctx.Err()
+	}
+	b.transport, b.conn, b.channel = transport, conn, channel
 	b.returns = channel.NotifyReturn(make(chan amqp.Return, 1))
 	return nil
 }
@@ -129,50 +143,59 @@ func (b *Broker) Close() {
 }
 
 func (b *Broker) closeConnection() {
-	if b.conn != nil {
-		_ = b.conn.CloseDeadline(time.Now().Add(time.Second))
+	if b.transport != nil {
+		_ = b.transport.Close()
 	}
-	b.conn, b.channel = nil, nil
+	b.transport, b.conn, b.channel, b.returns = nil, nil, nil, nil
 }
 
-// session returns a confirm channel, redialing if the previous one died.
-func (b *Broker) session() (*amqp.Channel, <-chan amqp.Return, error) {
+// startOperation serializes access to the confirm channel so returns can be
+// matched to one publish. Closing its transport interrupts blocking AMQP RPCs
+// and writes, which do not honor Go contexts once they start.
+func (b *Broker) startOperation(ctx context.Context) (*amqp.Channel, <-chan amqp.Return, func(), error) {
+	select {
+	case b.operation <- struct{}{}:
+	case <-ctx.Done():
+		return nil, nil, nil, ctx.Err()
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		<-b.operation
+		return nil, nil, nil, err
+	}
 	if b.conn == nil || b.conn.IsClosed() || b.channel.IsClosed() {
 		b.closeConnection()
-		if err := b.connect(); err != nil {
-			return nil, nil, err
+		if err := b.connect(ctx); err != nil {
+			<-b.operation
+			return nil, nil, nil, err
 		}
 		b.log.Info("plan-eval broker reconnected")
 	}
-	return b.channel, b.returns, nil
+	channel, transport := b.channel, b.transport
+	stop := context.AfterFunc(ctx, func() { _ = transport.Close() })
+	finish := func() {
+		stop()
+		if ctx.Err() != nil {
+			b.invalidateSession(channel)
+		}
+		<-b.operation
+	}
+	return channel, b.returns, finish, nil
 }
 
 // EnsureQueue declares the version queue idempotently (durable, not
 // auto-delete: the queue outlives its Deployment).
 func (b *Broker) EnsureQueue(ctx context.Context, name string) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	ch, _, err := b.session()
+	ctx, cancel := context.WithTimeout(ctx, brokerOperationTimeout)
+	defer cancel()
+	ch, _, finish, err := b.startOperation(ctx)
 	if err != nil {
 		return err
 	}
-
-	declared := make(chan error, 1)
-	go func() {
-		_, err := ch.QueueDeclare(name, true, false, false, false, amqp.Table{"x-queue-type": "classic"})
-		declared <- err
-	}()
-	select {
-	case err := <-declared:
-		if err != nil {
-			return fmt.Errorf("plan-eval declare queue %s: %w", name, err)
-		}
-	case <-ctx.Done():
-		b.invalidateSession(ch)
-		return ctx.Err()
+	defer finish()
+	if _, err := ch.QueueDeclare(name, true, false, false, false, amqp.Table{"x-queue-type": "classic"}); err != nil {
+		return fmt.Errorf("plan-eval declare queue %s: %w", name, err)
 	}
 	return nil
 }
@@ -180,12 +203,13 @@ func (b *Broker) EnsureQueue(ctx context.Context, name string) error {
 // Publish sends one persistent pointer message and waits for the broker's
 // confirmation. Resolving means the broker owns the message.
 func (b *Broker) Publish(ctx context.Context, queue string, message ExecuteMessage) error {
-	b.publishMu.Lock()
-	defer b.publishMu.Unlock()
-	ch, returns, err := b.session()
+	ctx, cancel := context.WithTimeout(ctx, brokerOperationTimeout)
+	defer cancel()
+	ch, returns, finish, err := b.startOperation(ctx)
 	if err != nil {
 		return err
 	}
+	defer finish()
 	body, err := json.Marshal(message)
 	if err != nil {
 		return err
@@ -199,9 +223,7 @@ func (b *Broker) Publish(ctx context.Context, queue string, message ExecuteMessa
 	if err != nil {
 		return fmt.Errorf("plan-eval publish to %s: %w", queue, err)
 	}
-	confirmationContext, cancel := context.WithTimeout(ctx, b.publishTimeout)
-	defer cancel()
-	confirmed, err := confirm.WaitContext(confirmationContext)
+	confirmed, err := confirm.WaitContext(ctx)
 	if err != nil {
 		// An indeterminate confirmation can leave a late return; never reuse its channel.
 		b.invalidateSession(ch)

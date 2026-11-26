@@ -92,6 +92,10 @@ func (d *fakeDeployer) Ensure(_ context.Context, spec WorkerSpec) error {
 	return nil
 }
 
+func (d *fakeDeployer) Scale(ctx context.Context, version string, replicas int, revision uint64) error {
+	return d.Ensure(ctx, WorkerSpec{AgentVersion: version, Replicas: replicas, RuntimeRevision: revision})
+}
+
 func (d *fakeDeployer) Delete(_ context.Context, version string, _ DeploymentStatus) error {
 	if d.delete != nil {
 		if err := d.delete(version); err != nil {

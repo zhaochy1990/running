@@ -184,6 +184,22 @@ func (s *Store) CreatePlanEvalTask(ctx context.Context, in *PlanEvalTaskCreate) 
 		now := time.Now().UTC()
 		var current PlanEvalLaunchConfig
 		switch err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("agent_version = ?", in.Task.AgentVersion).First(&current).Error; {
+		case err == nil && current.CleanupPending:
+			return ErrPlanEvalVersionBusy
+		case err == nil && current.Replicas == 0:
+			launch := in.LaunchConfig
+			if launch.Replicas == 0 {
+				launch.Replicas = 1
+			}
+			if err := tx.Model(&current).Updates(map[string]any{
+				"id": launch.ID, "replicas": launch.Replicas, "env_names": launch.EnvNames,
+				"env_cipher": in.EnvCipher, "env_fingerprint": launch.EnvFingerprint,
+				"runtime_revision": current.RuntimeRevision + 1, "created_at": now,
+			}).Error; err != nil {
+				return fmt.Errorf("storage: reopen plan_eval_launch_configs: %w", err)
+			}
+			in.Task.LaunchConfigID = launch.ID
+			in.Task.LaunchEnvNames = launch.EnvNames
 		case err == nil:
 			// An empty variable set means "keep what this version already runs
 			// with"; any other set must match the active values as well.
@@ -194,13 +210,14 @@ func (s *Store) CreatePlanEvalTask(ctx context.Context, in *PlanEvalTaskCreate) 
 				in.LaunchConfig.Replicas = current.Replicas
 			}
 			if err := tx.Model(&PlanEvalLaunchConfig{}).Where("id = ?", current.ID).
-				Updates(map[string]any{"replicas": in.LaunchConfig.Replicas, "updated_at": now}).Error; err != nil {
+				Updates(map[string]any{"replicas": in.LaunchConfig.Replicas, "runtime_revision": current.RuntimeRevision + 1, "updated_at": now}).Error; err != nil {
 				return fmt.Errorf("storage: update plan_eval_launch_configs: %w", err)
 			}
 			in.Task.LaunchConfigID = current.ID
 			in.Task.LaunchEnvNames = current.EnvNames
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			launch := *in.LaunchConfig
+			launch.RuntimeRevision = 1
 			if launch.Replicas == 0 {
 				launch.Replicas = 1
 				in.LaunchConfig.Replicas = 1
@@ -345,13 +362,27 @@ func (s *Store) RecordPlanEvalDispatch(ctx context.Context, executionID string) 
 	return s.db.WithContext(ctx).Model(&PlanEvalExecution{}).Where("id = ?", executionID).Update("dispatched_at", time.Now().UTC()).Error
 }
 
-func (s *Store) SetPlanEvalReplicas(ctx context.Context, version string, replicas int) error {
-	return s.db.WithContext(ctx).Model(&PlanEvalLaunchConfig{}).Where("agent_version = ?", version).Update("replicas", replicas).Error
+func (s *Store) SetPlanEvalReplicas(ctx context.Context, version string, replicas int) (uint64, error) {
+	var config PlanEvalLaunchConfig
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("agent_version = ? AND replicas > 0", version).First(&config).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrPlanEvalNotFound
+			}
+			return err
+		}
+		if config.CleanupPending {
+			return ErrPlanEvalVersionBusy
+		}
+		config.RuntimeRevision++
+		return tx.Model(&config).Updates(map[string]any{"replicas": replicas, "runtime_revision": config.RuntimeRevision}).Error
+	})
+	return config.RuntimeRevision, err
 }
 
 func (s *Store) PlanEvalLaunchConfigForVersion(ctx context.Context, version string) (*PlanEvalLaunchConfig, error) {
 	var row PlanEvalLaunchConfig
-	if err := s.db.WithContext(ctx).Where("agent_version = ?", version).First(&row).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("agent_version = ? AND replicas > 0", version).First(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrPlanEvalNotFound
 		}
@@ -375,28 +406,44 @@ func (s *Store) RecordPlanEvalLaunch(ctx context.Context, taskID, message string
 	return nil
 }
 
-// ReleasePlanEvalLaunchConfig removes even its encrypted values after cleanup.
-// The task rows retain the effective replica count and variable names.
-func (s *Store) ReleasePlanEvalLaunchConfig(ctx context.Context, agentVersion, configID string) error {
-	if configID == "" {
-		return nil
-	}
-	res := s.db.WithContext(ctx).Where("id = ? AND agent_version = ?", configID, agentVersion).
-		Where("NOT EXISTS (SELECT 1 FROM plan_eval_executions e JOIN plan_eval_tasks t ON t.id = e.task_id WHERE t.agent_version = ? AND e.generate_status IN ('queued','leased'))", agentVersion).
-		Delete(&PlanEvalLaunchConfig{})
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		var remaining int64
-		if err := s.db.WithContext(ctx).Model(&PlanEvalLaunchConfig{}).Where("id = ?", configID).Count(&remaining).Error; err != nil {
+// BeginPlanEvalCleanup prevents new tasks from activating a version while
+// a Kubernetes delete is in flight, including after loss of the named lock.
+func (s *Store) BeginPlanEvalCleanup(ctx context.Context, version string) (*PlanEvalLaunchConfig, error) {
+	var config PlanEvalLaunchConfig
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("agent_version = ?", version).First(&config).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		if remaining != 0 {
+		active, countErr := countPlanEvalActiveGenerates(tx, version)
+		if countErr != nil {
+			return countErr
+		}
+		if active > 0 {
 			return ErrPlanEvalVersionBusy
 		}
-	}
-	return nil
+		if config.CleanupPending {
+			return nil
+		}
+		config.CleanupPending = true
+		config.RuntimeRevision++
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			config.ID, config.AgentVersion, config.EnvNames = uuid.NewString(), version, "[]"
+			return tx.Create(&config).Error
+		}
+		return tx.Model(&config).Updates(map[string]any{"cleanup_pending": true, "runtime_revision": config.RuntimeRevision}).Error
+	})
+	return &config, err
+}
+
+// FinishPlanEvalCleanup discards credentials and retains the version's last
+// revision. A late cleanup must not touch a newer version incarnation.
+func (s *Store) FinishPlanEvalCleanup(ctx context.Context, config *PlanEvalLaunchConfig) error {
+	return s.db.WithContext(ctx).Model(&PlanEvalLaunchConfig{}).
+		Where("id = ? AND runtime_revision = ? AND cleanup_pending = ?", config.ID, config.RuntimeRevision, true).
+		Updates(map[string]any{
+			"replicas": 0, "env_cipher": nil, "env_names": "[]", "env_fingerprint": "", "cleanup_pending": false,
+		}).Error
 }
 
 // ---- reads ----
@@ -520,7 +567,7 @@ func (s *Store) GetPlanEvalArtifact(ctx context.Context, id string) (*PlanEvalAr
 
 func (s *Store) GetPlanEvalLaunchConfig(ctx context.Context, id string) (*PlanEvalLaunchConfig, error) {
 	var row PlanEvalLaunchConfig
-	if err := s.db.WithContext(ctx).First(&row, "id = ?", id).Error; err != nil {
+	if err := s.db.WithContext(ctx).First(&row, "id = ? AND replicas > 0", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrPlanEvalNotFound
 		}
@@ -923,8 +970,12 @@ func planEvalRefreshTaskStatus(tx *gorm.DB, taskID string, now time.Time) error 
 // version are still waiting for, or under, a generate lease. Cleanup refuses
 // while this is non-zero.
 func (s *Store) CountPlanEvalActiveGenerates(ctx context.Context, agentVersion string) (int64, error) {
+	return countPlanEvalActiveGenerates(s.db.WithContext(ctx), agentVersion)
+}
+
+func countPlanEvalActiveGenerates(db *gorm.DB, agentVersion string) (int64, error) {
 	var n int64
-	err := s.db.WithContext(ctx).Model(&PlanEvalExecution{}).
+	err := db.Model(&PlanEvalExecution{}).
 		Where("generate_status IN ('queued','leased') AND task_id IN (SELECT id FROM plan_eval_tasks WHERE agent_version = ?)", agentVersion).
 		Count(&n).Error
 	if err != nil {

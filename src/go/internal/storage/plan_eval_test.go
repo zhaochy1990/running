@@ -633,7 +633,7 @@ func TestPlanEval_LostLockSessionCancelsRuntime(t *testing.T) {
 	}
 }
 
-func TestPlanEval_CleanupCannotReleaseAnActiveOrReplacementConfig(t *testing.T) {
+func TestPlanEval_CleanupIntentFencesNewWorkAndPreservesRevision(t *testing.T) {
 	st := openPlanEvalStore(t)
 	ctx := context.Background()
 	version := "v" + uuid.NewString()[:8]
@@ -641,13 +641,43 @@ func TestPlanEval_CleanupCannotReleaseAnActiveOrReplacementConfig(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.ReleasePlanEvalLaunchConfig(ctx, version, task.LaunchConfigID); err != ErrPlanEvalVersionBusy {
-		t.Fatalf("active config released: %v", err)
+	if _, err := st.BeginPlanEvalCleanup(ctx, version); !errors.Is(err, ErrPlanEvalVersionBusy) {
+		t.Fatalf("active version accepted cleanup: %v", err)
 	}
-	if err := st.ReleasePlanEvalLaunchConfig(ctx, version, uuid.NewString()); err != nil {
+	if err := st.db.Model(&PlanEvalExecution{}).Where("task_id = ?", task.ID).Update("generate_status", PlanEvalGenerateFailed).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.PlanEvalLaunchConfigForVersion(ctx, version); err != nil {
-		t.Fatalf("replacement config released: %v", err)
+	intent, err := st.BeginPlanEvalCleanup(ctx, version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retry, err := st.BeginPlanEvalCleanup(ctx, version)
+	if err != nil || retry.ID != intent.ID || retry.RuntimeRevision != intent.RuntimeRevision {
+		t.Fatalf("cleanup retry created a different intent: %+v, %v", retry, err)
+	}
+	input := newPlanEvalTaskCreate(version, `[]`, 2)
+	input.LaunchConfig.Replicas = 2
+	if _, _, err := st.CreatePlanEvalTask(ctx, input); !errors.Is(err, ErrPlanEvalVersionBusy) {
+		t.Fatalf("new work entered during cleanup: %v", err)
+	}
+	if _, err := st.SetPlanEvalReplicas(ctx, version, 3); !errors.Is(err, ErrPlanEvalVersionBusy) {
+		t.Fatalf("scale entered during cleanup: %v", err)
+	}
+	if err := st.FinishPlanEvalCleanup(ctx, intent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetPlanEvalLaunchConfig(ctx, intent.ID); !errors.Is(err, ErrPlanEvalNotFound) {
+		t.Fatalf("retired configuration remains active: %v", err)
+	}
+	newTask, _, err := st.CreatePlanEvalTask(ctx, input)
+	if err != nil || newTask.LaunchConfigID == intent.ID {
+		t.Fatalf("new runtime did not replace config identity: %+v, %v", newTask, err)
+	}
+	if err := st.FinishPlanEvalCleanup(ctx, intent); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := st.GetPlanEvalLaunchConfig(ctx, newTask.LaunchConfigID)
+	if err != nil || updated.RuntimeRevision <= intent.RuntimeRevision || updated.Replicas != 2 {
+		t.Fatalf("late cleanup affected the new runtime: %+v, %v", updated, err)
 	}
 }

@@ -235,10 +235,10 @@ func TestKubernetesDeployer_CleanupUsesPreGateResourceRevision(t *testing.T) {
 	}
 }
 
-func TestKubernetesDeployer_SameConfigStartChangesRuntimeRevision(t *testing.T) {
+func TestKubernetesDeployer_RuntimeRevisionRejectsStaleEnsureAndScale(t *testing.T) {
 	d := newFakeDeployer()
 	ctx := context.Background()
-	spec := WorkerSpec{AgentVersion: "2026.11.30", Replicas: 1, Env: map[string]string{}}
+	spec := WorkerSpec{AgentVersion: "2026.11.30", Replicas: 1, RuntimeRevision: 1, Env: map[string]string{}}
 	if err := d.Ensure(ctx, spec); err != nil {
 		t.Fatal(err)
 	}
@@ -246,18 +246,32 @@ func TestKubernetesDeployer_SameConfigStartChangesRuntimeRevision(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := d.Ensure(ctx, spec); err != nil {
+	next := spec
+	next.RuntimeRevision++
+	if err := d.Ensure(ctx, next); err != nil {
 		t.Fatal(err)
 	}
 	second, err := d.client.AppsV1().Deployments("stride").Get(ctx, WorkerName(spec.AgentVersion), metav1.GetOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	key := "stride-running.cn/runtime-command"
-	if first.Annotations[key] == "" || first.Annotations[key] == second.Annotations[key] {
+	if first.Annotations[runtimeRevisionAnnotation] != "1" || second.Annotations[runtimeRevisionAnnotation] != "2" {
 		t.Fatal("same-config start was an empty update, allowing stale cleanup")
 	}
 	if !reflect.DeepEqual(first.Spec.Template, second.Spec.Template) {
 		t.Fatal("runtime fence unnecessarily rolled pods")
+	}
+	if err := d.Scale(ctx, spec.AgentVersion, 4, 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Scale(ctx, spec.AgentVersion, 8, 2); err == nil {
+		t.Fatal("stale scale changed the Deployment")
+	}
+	if err := d.Ensure(ctx, spec); err == nil {
+		t.Fatal("stale launch changed the Deployment")
+	}
+	status, err := d.Status(ctx, spec.AgentVersion)
+	if err != nil || status.Replicas != 4 || status.DeploymentRevision != 3 || status.SecretRevision != 2 {
+		t.Fatalf("new runtime lost: %+v, %v", status, err)
 	}
 }
