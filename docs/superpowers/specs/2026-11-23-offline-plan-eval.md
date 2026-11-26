@@ -104,7 +104,7 @@ RunnerSnapshot 在「测试数据」独立维护，运行时 JSON 使用 `schema
 
 [测评 API 与冻结输入契约实施工单](https://github.com/zhaochy1990/stride-devops/issues/1055)负责快照导入、冻结和这组内部接口。
 
-API 使用测评 MySQL 中按数据库和 Agent 版本命名的连接级锁，协调同版本的提交、启动、扩缩容与清理。多个 API 副本遵守同一锁，锁连接失效时取消运行操作。测评库为每个版本记录递增的运行代次，Deployment 和启动 Secret 保存代次，已有对象拒绝更旧的命令。扩缩容只更新已有 Deployment。清理确认队列空闲后，在测评库同一事务内再次检查活跃 Generate 并保存清理意图。有待完成的清理时，提交和扩缩容返回可重试的冲突。清理复查队列，按 Kubernetes UID 和 resourceVersion 删除资源，等前台删除结束后清除启动凭据并保留代次。清理中断后可以重试同一意图。新提交随后以新启动配置重建 Deployment。环境变量留空时沿用有效配置。副本数省略或为 0 时沿用有效副本数，首次默认 1。管理员通过 `POST /api/admin/plan-eval/agent-versions/{version}/scale` 提交 `{"replicas": 3}` 调整版本的共享并发。副本数为 1–配置上限，期望副本数先保存，集群故障后可重试。
+API 使用测评 MySQL 中按数据库和 Agent 版本命名的连接级锁，协调同版本的提交、启动、扩缩容与清理。多个 API 副本遵守同一锁，锁连接失效时取消运行操作。测评库为每个版本记录递增的运行代次，Deployment 和启动 Secret 保存代次，已有对象拒绝更旧的命令。扩缩容只更新已有 Deployment。清理确认队列空闲后，在测评库同一事务内再次检查活跃 Generate 并保存清理意图。有待完成的清理时，提交和扩缩容返回可重试的冲突。清理复查队列，按 Kubernetes UID 和 resourceVersion 删除资源，等前台删除结束后清除启动凭据并保留代次。清理中断后可以重试同一意图。新提交随后以新启动配置重建 Deployment。环境变量留空时沿用有效配置。副本数省略或为 0 时沿用有效副本数，首次默认 1。已有有效配置时，新任务显式传入的副本数必须相同，否则返回 409 `launch_config_conflict`，说明有效与请求副本数，不新增任务、冻结规则或执行项，也不改动有效配置；同幂等键的历史任务仍优先重放。管理员通过 `POST /api/admin/plan-eval/agent-versions/{version}/scale` 提交 `{"replicas": 3}` 调整版本的共享并发。副本数为 1–配置上限，期望副本数先保存，集群故障后可重试。
 
 ```mermaid
 flowchart LR

@@ -38,14 +38,19 @@ func (e *PlanEvalIdempotencyConflictError) Error() string {
 }
 
 // PlanEvalLaunchConfigConflictError is raised when a task asks for a different
-// set of environment variables than the one a running version was started
-// with — the shared consumers would otherwise run under someone else's config.
+// replica count or environment than the version's effective configuration
+// — tasks on the same version share consumers.
 type PlanEvalLaunchConfigConflictError struct {
-	ExistingNames  []string
-	RequestedNames []string
+	ExistingNames     []string
+	RequestedNames    []string
+	ExistingReplicas  int
+	RequestedReplicas int
 }
 
 func (e *PlanEvalLaunchConfigConflictError) Error() string {
+	if e.RequestedReplicas != 0 {
+		return fmt.Sprintf("storage: requested replicas %d conflict with effective replicas %d", e.RequestedReplicas, e.ExistingReplicas)
+	}
 	return "storage: agent version already has a different launch configuration"
 }
 
@@ -173,9 +178,8 @@ func (in *PlanEvalTaskCreate) MatchesParamsFingerprint(persisted string) bool {
 //     returned with replayed=true and nothing is written.
 //   - Same key, different parameters → PlanEvalIdempotencyConflictError.
 //   - A launch configuration already exists for the version: it is reused when
-//     it has the same variables and values (replicas follow the new
-//     request); otherwise PlanEvalLaunchConfigConflictError and nothing is
-//     written.
+//     explicit replicas and environment match; omitted settings inherit it.
+//     Otherwise PlanEvalLaunchConfigConflictError and nothing is written.
 func (s *Store) CreatePlanEvalTask(ctx context.Context, in *PlanEvalTaskCreate) (task *PlanEvalTask, replayed bool, err error) {
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existing PlanEvalTask
@@ -214,6 +218,9 @@ func (s *Store) CreatePlanEvalTask(ctx context.Context, in *PlanEvalTaskCreate) 
 			// with"; any other set must match the active values as well.
 			if in.LaunchConfig.EnvNames != "[]" && current.EnvFingerprint != in.LaunchConfig.EnvFingerprint {
 				return &PlanEvalLaunchConfigConflictError{}
+			}
+			if in.LaunchConfig.Replicas != 0 && in.LaunchConfig.Replicas != current.Replicas {
+				return &PlanEvalLaunchConfigConflictError{ExistingReplicas: current.Replicas, RequestedReplicas: in.LaunchConfig.Replicas}
 			}
 			if in.LaunchConfig.Replicas == 0 {
 				in.LaunchConfig.Replicas = current.Replicas

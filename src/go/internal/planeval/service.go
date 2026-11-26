@@ -511,6 +511,9 @@ func (s *Service) mapStorageError(err error) *Error {
 	case *storage.PlanEvalIdempotencyConflictError:
 		return &Error{Status: 409, Code: "idempotency_conflict", Detail: "同一幂等键已用于参数不同的任务。", Extra: map[string]any{"task_id": e.ExistingTaskID}}
 	case *storage.PlanEvalLaunchConfigConflictError:
+		if e.RequestedReplicas != 0 {
+			return fail(409, "launch_config_conflict", fmt.Sprintf("该 Agent 版本的有效副本数为 %d，与请求的 %d 冲突。副本数留空则沿用；要调整请使用独立扩缩容入口。", e.ExistingReplicas, e.RequestedReplicas))
+		}
 		return &Error{Status: 409, Code: "launch_config_conflict", Detail: "该 Agent 版本已有一份启动配置。环境变量留空则沿用；要更换请先清理该版本的 Deployment。"}
 	case nil:
 		return nil
