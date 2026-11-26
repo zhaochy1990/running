@@ -76,7 +76,7 @@ eq(gone.name, '已下架赛事', 'deleted race falls back to placeholder name');
 eq(gone.dateLabel, '', 'deleted race has no date');
 eq(gone.city, '', 'deleted race has no city');
 
-// 开赛倒计时：未来 N 天 / 比赛日当天「今天开赛」/ 已结束隐藏 / 无日期隐藏
+// 相对比赛日：未来 N 天 / 比赛日当天「今天开赛」/ 已过 N 天 / 无日期隐藏
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ymdShift = (base: string, days: number): string =>
   epochToShanghaiYmd(shanghaiYmdToEpoch(base) + days * DAY_MS);
@@ -84,7 +84,8 @@ const today = shanghaiToday();
 const raceOn = (race_date: string): RacePlan['race'] => ({ ...DEF_RACE, race_date });
 eq(toPlanCard(plan({ race: raceOn(ymdShift(today, 29)) })).countdown, '距离比赛还有 29 天', 'countdown future');
 eq(toPlanCard(plan({ race: raceOn(today) })).countdown, '今天开赛', 'countdown race day');
-eq(toPlanCard(plan({ race: raceOn(ymdShift(today, -1)) })).countdown, '', 'countdown past hidden');
+eq(toPlanCard(plan({ race: raceOn(ymdShift(today, -1)) })).countdown, '已经 1 天', 'one day after race');
 eq(toPlanCard(plan({ race: null })).countdown, '', 'countdown hidden without race');
+eq(toPlanCard(plan({ race: raceOn('') })).countdown, '', 'countdown hidden with empty date');
 
 console.log('racePlanRows check passed');

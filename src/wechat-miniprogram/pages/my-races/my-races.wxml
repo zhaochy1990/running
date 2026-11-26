@@ -104,7 +104,7 @@
           </block>
 
           <!-- 自定义比赛卡（#475）：粉色「自定义」徽章 + 类型（距离）徽章；
-               名称不可点（无详情页，#456 补充决议）；已结束 = 灰化 + 隐藏倒计时/状态条 -->
+               名称不可点（无详情页，#456 补充决议）；已结束 = 灰化 + 显示已过天数 + 隐藏状态条 -->
           <view wx:else class="plan {{item.custom.done ? 'plan--past' : ''}}">
             <view class="plan__head">
               <view class="plan__name {{item.custom.done ? 'plan__name--dim' : ''}}">{{item.custom.name}}</view>

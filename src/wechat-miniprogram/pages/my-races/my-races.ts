@@ -8,10 +8,10 @@
 // 识别行「这不是这场比赛」二次确认后 DELETE 清除识别，行回落活动名。
 // 赛事数据走聚合端点 GET /api/users/me/my-races（services/custom-races，#474）：
 // official 项复用 toPlanCard 渲染官方计划卡（报名项目徽章 + 状态徽章 + 日期·城市 +
-// 开赛倒计时 + 状态条 chips 流转 + 行程布尔勾选；offboarded 灰卡占位不可交互），
+// 相对比赛日文案 + 状态条 chips 流转 + 行程布尔勾选；offboarded 灰卡占位不可交互），
 // custom 项渲染自定义卡（#475：粉色「自定义」徽章 + 类型（距离）徽章，名称不可点、
 // 无详情页，状态 chips 想跑↔已报名点击切换，···菜单 = 编辑/删除；已结束派生 =
-// 灰化 + 隐藏倒计时/状态条）。混排视图变换在 utils/myRaceRows，配套自检。
+// 灰化 + 「已经 N 天」+ 隐藏状态条）。混排视图变换在 utils/myRaceRows，配套自检。
 
 import {
   clearRaceCalendarMatch,

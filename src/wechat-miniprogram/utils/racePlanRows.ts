@@ -52,7 +52,7 @@ export interface PlanCardView {
   /** 2026/11/01 周日 */
   dateLabel: string;
   city: string;
-  /** 开赛倒计时文案（N>0「距离比赛还有 N 天」/ 当天「今天开赛」）；已结束或无日期为 ''，wxml 隐藏 */
+  /** 相对比赛日文案（「距离比赛还有 N 天」/「今天开赛」/「已经 N 天」）；无日期时隐藏 */
   countdown: string;
   /** 状态条 chips：想报名→已报名→已中签→确认参赛（短名） */
   steps: Array<{ state: RacePlanState; label: string; on: boolean }>;
@@ -85,8 +85,9 @@ export function planDateLabel(ymd: string): string {
   return `${ymd.slice(0, 4)}/${ymd.slice(5).replace('-', '/')} ${shanghaiWeekdayLabel(ymd)}`;
 }
 
-/** 开赛倒计时文案；null（无日期）/ 负数（已结束）不给文案。自定义卡同源复用。 */
+/** 官方计划卡与自定义卡共用的相对比赛日文案。 */
 export function countdownLabel(days: number | null): string {
-  if (days == null || days < 0) return '';
+  if (days == null || !Number.isFinite(days)) return '';
+  if (days < 0) return `已经 ${-days} 天`;
   return days > 0 ? `距离比赛还有 ${days} 天` : '今天开赛';
 }
