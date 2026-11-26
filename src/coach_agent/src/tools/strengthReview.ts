@@ -24,7 +24,11 @@ function candidate(record: StrengthRecordSummary) {
 }
 
 const TOOL_NAME = "get_strength_training_review";
-const LATEST_REQUEST = /最近.+次|最后.+次|上一次|最新.+次|most recent|latest|last (?:session|workout)/i;
+const LATEST_REQUEST = /(?:最近|最后|最新)(?:的|做的)?(?:一|这|那)次|上一次|most recent|latest|last (?:session|workout)/i;
+const ORDINAL = /第\s*([一二三四五六七八九十]|\d{1,2})\s*条/g;
+const CHANGE_RECORD = /另(?:外)?(?:一|那)(?:条|次|场)|换(?:一|另)?(?:条|次|场)|别的(?:一)?(?:条|次|场)|(?:other|another) (?:record|workout|session)/i;
+const NEGATED_SELECTION =
+  /不要|不用|无需|不需要|不想|别(?:看|查|用|选|复盘|补|加|提|参考)|忽略|不看|不查|不参考|不是|以外|之外|不复盘|don['’]t|do not|without|ignore|skip|except/i;
 const priorEvidenceSchema = z.object({
   status: z.enum(["found", "ambiguous"]),
   source: z.enum(["manual", "watch"]),
@@ -45,19 +49,25 @@ function choose<Record extends StrengthRecordSummary>(
   const recordId = input.recordId;
   if (recordId) {
     const selected = records.find((record) => record.id === recordId);
-    if (!selected || records.length === 1) return selected;
+    if (!selected) return undefined;
     // A candidate ID copied out of a tool result is not an athlete's choice.
     const sourceClauses = reviewClauses(userText).filter((clause) => (source === "manual" ? !WATCH_WORD.test(clause) : !/手录|手动记录|手工录入/.test(clause)));
-    const matches = records.filter((record) => sourceClauses.some((clause) => explicitlyMentions(record, clause)));
-    if (matches.length > 0) return matches.length === 1 && matches[0] === selected ? selected : undefined;
+    const affirmative = sourceClauses.filter((clause) => !NEGATED_SELECTION.test(clause));
+    const names = records.filter((record) => affirmative.some((clause) => explicitlyMentions(record, clause)));
+    if (names.length > 0) return names.length === 1 && names[0] === selected ? selected : undefined;
+    if (sourceClauses.some((clause) => NEGATED_SELECTION.test(clause) && explicitlyMentions(selected, clause))) return undefined;
+    if (priorEvidence?.record?.id === recordId && CHANGE_RECORD.test(userText)) return undefined;
+    if (records.length === 1) return selected;
     if (priorEvidence?.source !== source) return undefined;
-    if (priorEvidence.status === "found" && priorEvidence.record?.id === recordId) return selected;
-    const ordinal = /第\s*([一二三四五六七八九十]|\d{1,2})\s*条/.exec(userText)?.[1];
-    if (ordinal && priorEvidence.status === "ambiguous") {
+
+    const choices = new Set(affirmative.flatMap((clause) => [...clause.matchAll(ORDINAL)].map((match) => match[1] ?? "")));
+    if (choices.size === 1 && priorEvidence.status === "ambiguous") {
+      const ordinal = [...choices][0] ?? "";
       const index = /^\d+$/.test(ordinal) ? Number(ordinal) - 1 : "一二三四五六七八九十".indexOf(ordinal);
       if (priorEvidence.candidates?.[index]?.id === recordId) return selected;
     }
-    return undefined;
+    if (sourceClauses.some((clause) => clause.search(ORDINAL) >= 0)) return undefined;
+    return priorEvidence.status === "found" && priorEvidence.record?.id === recordId ? selected : undefined;
   }
   if (records.length === 1) return records[0];
   const last = records.at(-1);
@@ -99,7 +109,12 @@ function readConversation(state: unknown): { userText: string; priorEvidence?: P
 }
 
 function clearDay(userText: string, asof: string): string | undefined {
-  if (/(?:从|自).{1,24}(?:到|至)|到.{1,12}为止|\bbetween\b|\bthrough\b/i.test(userText)) return undefined;
+  if (
+    /(?:从|自).{1,24}(?:到|至)|到.{1,12}为止|截至|截止|(?:过去|最近|近)[零一二三四五六七八九十两\d]+天|(?:本|这|上)周(?![一二三四五六日天])|\bbetween\b|\bthrough\b|\bthis week\b|\blast week\b/i.test(
+      userText,
+    )
+  )
+    return undefined;
   const days = new Set<string>();
   for (const match of userText.matchAll(/(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/g)) {
     if (z.iso.date().safeParse(match[0]).success) days.add(match[0]);
@@ -109,6 +124,7 @@ function clearDay(userText: string, asof: string): string | undefined {
     if (z.iso.date().safeParse(date).success) days.add(match[1] === undefined && date > asof ? `${Number(date.slice(0, 4)) - 1}${date.slice(4)}` : date);
   }
   if (/今天|今日|今早|今晚|\btoday\b/i.test(userText)) days.add(asof);
+  if (/明天|明日|明早|明晚|\btomorrow\b/i.test(userText)) days.add(addDays(asof, 1));
   if (/昨天|昨日|昨早|昨晚|\byesterday\b/i.test(userText)) days.add(addDays(asof, -1));
   if (/前天|前日|day before yesterday/i.test(userText)) {
     // The English phrase includes "yesterday" but refers to the earlier day.
@@ -160,21 +176,18 @@ function explicitlyMentions(record: StrengthRecordSummary, text: string): boolea
 }
 
 const WATCH_WORD = /手表|高驰|佳明|garmin|coros|\bwatch\b/i;
-const DECLINES_WATCH = /不要|不用|无需|不需要|不想|别|忽略|不看|不查|不参考|don['’]t|do not|without|ignore|skip/i;
-const WATCH_REQUEST = /补|看|查|给|标|带|附|用|参考|结合|加上|提供|include|show|add|check|compare|using|with/i;
+const WATCH_REQUEST =
+  /补充|补上|参考|结合|加上|附上|提供|带上|也看|查看|查询|看看|查一下|给我|(?:看|查|用).{0,36}(?:心率|heart rate|\bHR\b)|include|show|\badd\b|check|compare|using|\bwith\b/i;
 
 function reviewClauses(text: string): string[] {
-  return text.split(/[，,。；;！!？?\n]|以及|或者|但是?|和|与|另外|同时|\band\b|\bbut\b/i);
+  return text.split(
+    /[，,。；;！!？?\n]|(?:以及|或者|但是?|和|与|另外|同时)\s*(?=手录|手动|手工|手表|高驰|佳明|COROS|GARMIN|不要|不用|请|先看|再看)|\b(?:and|but)\s+(?=watch|garmin|coros|manual|don't|include|show)/i,
+  );
 }
 
 function confirmsWatchReference(text: string, reference: string): boolean {
-  const clauses = reviewClauses(text);
-  const watchReferenceClauses = clauses.filter((clause) => WATCH_WORD.test(clause) && includesReference(clause, reference));
-  return (
-    watchReferenceClauses.length > 0 &&
-    !watchReferenceClauses.some((clause) => DECLINES_WATCH.test(clause)) &&
-    clauses.some((clause) => WATCH_WORD.test(clause) && WATCH_REQUEST.test(clause) && !DECLINES_WATCH.test(clause))
-  );
+  const referenceClauses = reviewClauses(text).filter((clause) => WATCH_WORD.test(clause) && includesReference(clause, reference));
+  return referenceClauses.some((clause) => WATCH_REQUEST.test(clause)) && !referenceClauses.some((clause) => NEGATED_SELECTION.test(clause));
 }
 
 async function watchSupplement(store: DataProvider, userId: string, startDay: string, endDay: string, reference: string | undefined, userText: string) {

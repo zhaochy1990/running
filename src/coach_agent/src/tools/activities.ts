@@ -75,10 +75,12 @@ class ActivitiesToolImpl {
     const truncated = all.length > limit;
     // date 升序，取末尾若干条 = 区间内最近的运动。
     const activities = truncated ? all.slice(-limit) : all;
-    const useStrengthReview = this.useStrengthReview && activities.some((activity) => activity.isStrength);
-    const hasManual = useStrengthReview && (await this.store.getManualStrengthSummaries(userId, input.startDay, endDay)).length > 0;
+    const hasManual =
+      this.useStrengthReview &&
+      activities.some((activity) => activity.isStrength) &&
+      (await this.store.getManualStrengthSummaries(userId, input.startDay, endDay)).length > 0;
     return {
-      activities: useStrengthReview
+      activities: hasManual
         ? activities.map((activity) =>
             activity.isStrength
               ? {
@@ -88,7 +90,6 @@ class ActivitiesToolImpl {
                   shanghaiDay: activity.shanghaiDay,
                   sport: "strength",
                   provider: activity.provider,
-                  ...(hasManual ? {} : { durationS: activity.durationS }),
                   reviewTool: "get_strength_training_review",
                   laps: [],
                 }
@@ -113,7 +114,11 @@ class ActivitiesToolImpl {
       throw new Error("get_activity_details: missing userId in runtime context");
     }
     const activity = await this.store.getActivityDetail(userId, input.labelId);
-    if (activity && this.useStrengthReview && activity.isStrength) {
+    if (
+      activity?.isStrength &&
+      this.useStrengthReview &&
+      (await this.store.getManualStrengthSummaries(userId, activity.shanghaiDay, activity.shanghaiDay)).length > 0
+    ) {
       return { activity: null, reviewTool: "get_strength_training_review", provenance: { source: "stride", vendor_derived: false } };
     }
     return {

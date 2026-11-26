@@ -91,6 +91,7 @@ function fixture(manualRecords: ManualStrengthRecord[], watches = [watchA, watch
         labelId: id,
         sport: "strength",
         isStrength: true,
+        shanghaiDay: day,
         name: "手表记录",
         avgHr: id === "watch-b" ? 137 : null,
         maxHr: null,
@@ -203,7 +204,9 @@ test("generic Coach activity reads withhold watch strength measurements", async 
 
   const watchOnly = await execute(fixture([]).store, "今天有哪些活跃记录", { startDay: day }, "athlete-a", "get_activities_by_date_range");
   assert.equal(watchOnly.activities[0].durationS, 1450);
-  assert.equal(watchOnly.activities[0].avgHr, undefined);
+  assert.equal(watchOnly.activities[0].avgHr, 128);
+  const watchOnlyDetail = await execute(fixture([]).store, "这条手表运动的心率", { labelId: watchB.id }, "athlete-a", "get_activity_details");
+  assert.equal(watchOnlyDetail.activity.avgHr, 137);
 });
 
 test("a substring of an explicitly named time cannot select a different watch record", async () => {
@@ -226,6 +229,26 @@ test("effective manual choice survives follow-up in the same scope and supports 
     new ToolMessage({ name: "get_strength_training_review", tool_call_id: "first", content: JSON.stringify(first) }),
     new AIMessage("你想复盘第几条？"),
   ];
+  const rejected = await execute(
+    store,
+    "不要第二条，先看第一条",
+    { startDay: day, recordId: "manual-b" },
+    "athlete-a",
+    "get_strength_training_review",
+    firstTurn,
+  );
+  assert.equal(rejected.status, "ambiguous");
+  const affirmed = await execute(
+    store,
+    "不要第二条，先看第一条",
+    { startDay: day, recordId: "manual-a" },
+    "athlete-a",
+    "get_strength_training_review",
+    firstTurn,
+  );
+  assert.equal(affirmed.record.id, "manual-a");
+  const rejectedName = await execute(store, "今天只复盘晚间力量以外的那条", { startDay: day, recordId: "manual-b" });
+  assert.equal(rejectedName.status, "ambiguous");
   const choice = await execute(store, "第二条", { startDay: day, recordId: "manual-b" }, "athlete-a", "get_strength_training_review", firstTurn);
   assert.equal(choice.record.id, "manual-b");
   const previousTurn = [
@@ -237,6 +260,15 @@ test("effective manual choice survives follow-up in the same scope and supports 
   ];
   const followUp = await execute(store, "第二组做了几次？", { recordId: "manual-b" }, "athlete-a", "get_strength_training_review", previousTurn);
   assert.equal(followUp.record.actions[0].sets[1].quantity, 11);
+  const differentWorkout = await execute(
+    store,
+    "今天还有另外一条力量训练，那条做了什么？",
+    { startDay: day, recordId: "manual-b" },
+    "athlete-a",
+    "get_strength_training_review",
+    previousTurn,
+  );
+  assert.equal(differentWorkout.status, "ambiguous");
   const newDay = await execute(store, "看看昨天", { startDay: day, recordId: "manual-b" }, "athlete-a", "get_strength_training_review", previousTurn);
   assert.deepEqual(newDay, { status: "scope_mismatch", expectedDay: "2026-11-25" });
 });
@@ -263,9 +295,19 @@ test("only a positive watch-local reference can authorize a supplement", async (
     "复盘18:30那条手录，手表心率不用看",
     "手表 8:05 和手录 18:30，补充手表的心率",
     "复盘手录，不要看 18:30 的手表心率",
+    "复盘手录，手表 18:30 记录错误，手表 8:05 请补充心率",
   ]) {
     const answer = await execute(store, question, { startDay: day, watchReference: "18:30" });
     assert.equal(answer.watchSupplementStatus, "needs_explicit_reference", question);
   }
-  assert.deepEqual(detailReads, ["manual-a", "manual-a", "manual-a", "manual-a"]);
+  assert.deepEqual(detailReads, ["manual-a", "manual-a", "manual-a", "manual-a", "manual-a"]);
+});
+
+test("a relative date used as a range endpoint does not narrow the review to one day", async () => {
+  const result = await execute(fixture([manualRecord]).store, "复盘截至昨天的本周力量训练", {
+    startDay: "2026-11-23",
+    endDay: "2026-11-25",
+  });
+  assert.equal(result.status, "found");
+  assert.deepEqual(result.scope, { startDay: "2026-11-23", endDay: "2026-11-25" });
 });
