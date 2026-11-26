@@ -316,6 +316,7 @@ Page<PageData, PageHandlers>({
       if (!this.closed) {
         wx.disableAlertBeforeUnload();
         this.setData({ draft, saving: false, saved: true });
+        wx.showToast({ title: '已保存', icon: 'none', duration: 1800 });
       }
     } catch (err) {
       if (this.closed) return;

@@ -1,6 +1,8 @@
 // 活动 wire 类型 —— 与后端 /api/{user}/activities 响应及 Web 端 frontend/src/api.ts
 // 的 Activity 契约保持一致（字段子集，今日页/活动页用到的部分）。
 
+import type { ManualStrengthSummary } from './manual-strength';
+
 /** 第二版路线形状（活动列表 `route_thumb` 的 `{"v":2,...}` 对象，devops#1037 下发）。
  * 坐标同在 [0,100]×[0,100] 视框。语义见 Go `internal/thumbnail/route_v2.go`（EncodeV2），
  * 解析与绘制见 utils/routeThumb.ts。 */
@@ -25,6 +27,7 @@ export type RouteThumb = number[][] | RouteShapeV2;
 
 export interface Activity {
   source?: 'manual_strength' | 'watch';
+  manual_strength_summary?: ManualStrengthSummary;
   label_id: string;
   name: string | null;
   sport_type: number;

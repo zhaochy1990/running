@@ -95,6 +95,18 @@ type ActivityPage struct {
 	// row. Unlike activities.training_load (watch-reported), this is STRIDE's
 	// own PMC dose. Absent key / nil value means "no STRIDE dose".
 	StrideDoses map[string]*float64
+	// ManualStrengthSummaries contains counts for the manual records on this page.
+	ManualStrengthSummaries map[string]ManualStrengthSummary
+}
+
+type ManualStrengthSummary struct {
+	ActionCount int
+	SetCount    int
+}
+
+type activityPageRow struct {
+	Activity
+	ManualStrengthActions []ManualStrengthAction `gorm:"column:manual_strength_actions;serializer:json"`
 }
 
 // ListActivities returns a filtered, paginated activity page (newest first) plus
@@ -108,17 +120,30 @@ func (s *Store) ListActivities(ctx context.Context, userID string, p ActivityLis
 	}
 
 	var total int64
-	if err := activityListScope(activityListSource(s.db.WithContext(ctx), uid, p), uid, p).
+	if err := activityListScope(activityListSource(s.db.WithContext(ctx), uid, p, false), uid, p).
 		Count(&total).Error; err != nil {
 		return nil, err
 	}
 
-	var rows []Activity
-	if err := activityListScope(activityListSource(s.db.WithContext(ctx), uid, p), uid, p).
+	var pageRows []activityPageRow
+	if err := activityListScope(activityListSource(s.db.WithContext(ctx), uid, p, true), uid, p).
+		Select("*").
 		Order("date DESC, label_id DESC").
 		Limit(p.Limit).Offset(p.Offset).
-		Find(&rows).Error; err != nil {
+		Find(&pageRows).Error; err != nil {
 		return nil, err
+	}
+	rows := make([]Activity, 0, len(pageRows))
+	manualSummaries := make(map[string]ManualStrengthSummary)
+	for _, row := range pageRows {
+		rows = append(rows, row.Activity)
+		if row.Provider == ManualStrengthProvider {
+			summary := ManualStrengthSummary{ActionCount: len(row.ManualStrengthActions)}
+			for _, action := range row.ManualStrengthActions {
+				summary.SetCount += len(action.Sets)
+			}
+			manualSummaries[row.LabelID] = summary
+		}
 	}
 
 	summaries, err := s.activityMonthlySummaries(ctx, uid, p, rows)
@@ -131,7 +156,10 @@ func (s *Store) ListActivities(ctx context.Context, userID string, p ActivityLis
 		return nil, err
 	}
 
-	return &ActivityPage{Total: total, Rows: rows, MonthlySummaries: summaries, StrideDoses: strideDoses}, nil
+	return &ActivityPage{
+		Total: total, Rows: rows, MonthlySummaries: summaries,
+		StrideDoses: strideDoses, ManualStrengthSummaries: manualSummaries,
+	}, nil
 }
 
 // strideActivityDoses returns the STRIDE-computed training_dose per label_id
@@ -164,7 +192,7 @@ func (s *Store) strideActivityDoses(ctx context.Context, uid string, rows []Acti
 // activityListSource adds manual rows only for callers opting into athlete-entered
 // activities. Both branches use the tenant key before the outer list filters,
 // pagination and aggregates are applied.
-func activityListSource(db *gorm.DB, uid string, p ActivityListParams) *gorm.DB {
+func activityListSource(db *gorm.DB, uid string, p ActivityListParams, includeActions bool) *gorm.DB {
 	if !p.IncludeManualStrength {
 		return db.Model(&Activity{})
 	}
@@ -187,6 +215,12 @@ func activityListSource(db *gorm.DB, uid string, p ActivityListParams) *gorm.DB 
 			value = "NULL"
 		}
 		projection[i] = value + " AS " + column
+	}
+	// Only the paginated row query needs the actions. Read them alongside each
+	// manual record's name and timestamps so they come from the same revision.
+	if includeActions {
+		columns = append(columns, "NULL AS manual_strength_actions")
+		projection = append(projection, "actions AS manual_strength_actions")
 	}
 
 	watch := db.Session(&gorm.Session{}).Model(&Activity{}).
@@ -247,7 +281,7 @@ func (s *Store) activityMonthlySummaries(ctx context.Context, uid string, p Acti
 		"coalesce(sum(coalesce(duration_s, 0)), 0) AS duration_s"
 
 	var aggs []monthAgg
-	if err := activityListScope(activityListSource(s.db.WithContext(ctx), uid, p), uid, p).
+	if err := activityListScope(activityListSource(s.db.WithContext(ctx), uid, p, false), uid, p).
 		Select(selectExpr).
 		Where(shanghaiMonthExpr+" IN ?", months).
 		Group(shanghaiMonthExpr).

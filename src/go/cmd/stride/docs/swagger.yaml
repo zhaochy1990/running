@@ -197,6 +197,8 @@ definitions:
         type: number
       label_id:
         type: string
+      manual_strength_summary:
+        $ref: '#/definitions/api.manualStrengthSummaryDTO'
       max_hr:
         type: integer
       name:
@@ -1772,6 +1774,13 @@ definitions:
         type: integer
       started_at:
         type: string
+    type: object
+  api.manualStrengthSummaryDTO:
+    properties:
+      action_count:
+        type: integer
+      set_count:
+        type: integer
     type: object
   api.monthlySummaryDTO:
     properties:
@@ -4501,8 +4510,8 @@ paths:
         in: query
         name: date_to
         type: string
-      - description: manual_strength adds the owning athlete's manual records and
-          source labels
+      - description: manual_strength adds the owning athlete's manual records with
+          action/set counts and source labels
         in: query
         name: include
         type: string

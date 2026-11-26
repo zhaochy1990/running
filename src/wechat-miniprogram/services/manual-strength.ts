@@ -1,13 +1,15 @@
-import type { ManualStrengthRecord, ManualStrengthWrite } from '../types/manual-strength';
+import type { ManualStrengthRecord, ManualStrengthSummary, ManualStrengthWrite } from '../types/manual-strength';
+import { summarizeStrengthActions } from '../utils/manual-strength';
 import { http } from './request';
 
 const liveVersions = new Map<string, number>();
-const editedNames = new Map<string, Map<string, string>>();
+type EditedStrengthSummary = { name: string; summary: ManualStrengthSummary };
+const editedSummaries = new Map<string, Map<string, EditedStrengthSummary>>();
 
-export function takeManualStrengthEditedNames(userId: string): Map<string, string> | undefined {
-  const names = editedNames.get(userId);
-  editedNames.delete(userId);
-  return names;
+export function takeManualStrengthEditedSummaries(userId: string): Map<string, EditedStrengthSummary> | undefined {
+  const summaries = editedSummaries.get(userId);
+  editedSummaries.delete(userId);
+  return summaries;
 }
 
 function recordPath(userId: string, recordId: string): string {
@@ -33,9 +35,9 @@ export async function saveManualStrengthRecord(
   if (write.started_at) {
     liveVersions.set(userId, manualStrengthLiveVersion(userId) + 1);
   } else {
-    const names = editedNames.get(userId) ?? new Map<string, string>();
-    names.set(record.id, record.name.trim());
-    editedNames.set(userId, names);
+    const summaries = editedSummaries.get(userId) ?? new Map<string, EditedStrengthSummary>();
+    summaries.set(record.id, { name: record.name.trim(), summary: summarizeStrengthActions(record.actions) });
+    editedSummaries.set(userId, summaries);
   }
   return record;
 }

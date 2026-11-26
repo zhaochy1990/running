@@ -140,7 +140,7 @@
     <button id="add-action" class="add-action" bindtap="onActionAdd" disabled="{{saving}}">
       <view class="control-mark" />添加动作
     </button>
-    <view wx:if="{{invalidField === 'add-action'}}" class="field-error add-error">{{error}}</view>
+    <view wx:if="{{invalidField === 'add-action'}}" class="field-error">{{error}}</view>
 
     <textarea
       class="note-input"
@@ -157,7 +157,7 @@
     <view class="strength-footer">
       <view wx:if="{{error && !invalidField}}" class="field-error strength-footer__message" role="alert">{{error}}</view>
       <button class="save-button" bindtap="onSave" loading="{{saving}}" disabled="{{saving || saved}}">
-        {{saving ? '保存中…' : (saved ? '已保存' : '保存记录')}}
+        {{saving ? '保存中…' : '保存记录'}}
       </button>
     </view>
   </block>

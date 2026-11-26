@@ -583,12 +583,12 @@
 button.strength-entry {
   display: flex;
   align-items: center;
-  gap: 20rpx;
+  gap: var(--spacing-sm);
   box-sizing: border-box;
   width: 100%;
   min-height: 124rpx;
   margin: 0 0 var(--spacing-md);
-  padding: 20rpx var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
   border: 2rpx solid rgba(var(--color-accent-rgb), 0.28);
   border-radius: var(--radius-lg);
   background: rgba(var(--color-accent-rgb), 0.06);
@@ -627,7 +627,7 @@ button.strength-entry {
 }
 
 .strength-entry__subtitle {
-  margin-top: 4rpx;
+  margin-top: var(--spacing-xs);
   color: var(--color-text-bright);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-regular);

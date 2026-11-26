@@ -65,11 +65,13 @@ func TestManualStrengthSaveRetriesAndPreservesTrainingWindow(t *testing.T) {
 	}, nil, nil, nil)
 	page, err := store.ListActivities(ctx, owner, ActivityListParams{Limit: 1, Offset: 1, IncludeManualStrength: true})
 	if err != nil || page.Total != 2 || len(page.Rows) != 1 || page.Rows[0].LabelID != id ||
-		page.Rows[0].Provider != ManualStrengthProvider || page.MonthlySummaries["2026-03"].ActivityCount != 2 {
+		page.Rows[0].Provider != ManualStrengthProvider || page.MonthlySummaries["2026-03"].ActivityCount != 2 ||
+		page.ManualStrengthSummaries[id] != (ManualStrengthSummary{ActionCount: 1, SetCount: 1}) {
 		t.Fatalf("mixed strength page: %+v, %v", page, err)
 	}
 	watchOnly, err := store.ListActivities(ctx, owner, ActivityListParams{Limit: 50})
-	if err != nil || watchOnly.Total != 1 || len(watchOnly.Rows) != 1 || watchOnly.Rows[0].LabelID != "watch-strength" {
+	if err != nil || watchOnly.Total != 1 || len(watchOnly.Rows) != 1 || watchOnly.Rows[0].LabelID != "watch-strength" ||
+		len(watchOnly.ManualStrengthSummaries) != 0 {
 		t.Fatalf("existing watch page: %+v, %v", watchOnly, err)
 	}
 }

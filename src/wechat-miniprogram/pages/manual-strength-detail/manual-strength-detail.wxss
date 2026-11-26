@@ -76,7 +76,7 @@ page {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: baseline;
   gap: var(--spacing-md);
-  padding: 6rpx 0;
+  padding: var(--spacing-xs) 0;
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
 }

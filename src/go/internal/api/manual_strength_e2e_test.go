@@ -130,6 +130,13 @@ func TestE2E_ManualStrengthActivity(t *testing.T) {
 	if !reflect.DeepEqual(first, replayed) {
 		t.Fatalf("retry changed saved version: first=%+v retry=%+v", first, replayed)
 	}
+	var initialList activitiesListResponse
+	if err := json.Unmarshal(send(http.MethodGet, ownerList+"?include=manual_strength", ownerAuth, nil, http.StatusOK), &initialList); err != nil {
+		t.Fatal(err)
+	}
+	if len(initialList.Activities) != 1 || !reflect.DeepEqual(initialList.Activities[0].ManualStrengthSummary, &manualStrengthSummaryDTO{ActionCount: 2, SetCount: 3}) {
+		t.Fatalf("initial list counts: %+v", initialList.Activities)
+	}
 
 	edit := write
 	edit.MutationID = uuid.NewString()
@@ -159,6 +166,7 @@ func TestE2E_ManualStrengthActivity(t *testing.T) {
 	}
 	if list.Total != 1 || len(list.Activities) != 1 || list.Activities[0].LabelID != recordID ||
 		list.Activities[0].Date[:10] != "2026-03-31" || list.Activities[0].Source != "manual_strength" ||
+		!reflect.DeepEqual(list.Activities[0].ManualStrengthSummary, &manualStrengthSummaryDTO{ActionCount: 1, SetCount: 1}) ||
 		list.MonthlySummaries["2026-03"].ActivityCount != 1 {
 		t.Fatalf("activity list after history edit: %+v", list)
 	}

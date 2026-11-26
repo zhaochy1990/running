@@ -104,7 +104,7 @@ func authorizeUser(c *gin.Context, userID string) bool {
 //	@Param			min_distance_km	query		number	false	"Minimum distance in km"
 //	@Param			date_from		query		string	false	"Shanghai YYYY-MM-DD lower bound"
 //	@Param			date_to			query		string	false	"Shanghai YYYY-MM-DD upper bound"
-//	@Param	include	query	string	false	"manual_strength adds the owning athlete's manual records and source labels"
+//	@Param	include	query	string	false	"manual_strength adds the owning athlete's manual records with action/set counts and source labels"
 //	@Success		200				{object}	activitiesListResponse
 //	@Failure		400				{object}	errorResponse
 //	@Failure		401				{object}	errorResponse
@@ -567,6 +567,13 @@ type activityListItem struct {
 	// route_thumb themselves. Null for indoor activities and rows that never
 	// got a PNG. Full removal waits for the next contract-cleanup ticket.
 	ThumbURL *string `json:"thumb_url"`
+
+	ManualStrengthSummary *manualStrengthSummaryDTO `json:"manual_strength_summary,omitempty"`
+}
+
+type manualStrengthSummaryDTO struct {
+	ActionCount int `json:"action_count"`
+	SetCount    int `json:"set_count"`
 }
 
 // monthlySummaryDTO is one Shanghai-month aggregate. total_run_km is rounded to
@@ -752,6 +759,9 @@ func toActivitiesListResponse(page *storage.ActivityPage, params storage.Activit
 			items[i].Source = "watch"
 			if row.Provider == storage.ManualStrengthProvider {
 				items[i].Source = storage.ManualStrengthProvider
+				if summary, ok := page.ManualStrengthSummaries[row.LabelID]; ok {
+					items[i].ManualStrengthSummary = &manualStrengthSummaryDTO{ActionCount: summary.ActionCount, SetCount: summary.SetCount}
+				}
 			}
 		}
 	}

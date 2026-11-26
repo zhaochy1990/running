@@ -13,6 +13,11 @@ export interface ManualStrengthAction {
   sets: ManualStrengthSet[];
 }
 
+export interface ManualStrengthSummary {
+  action_count: number;
+  set_count: number;
+}
+
 export interface ManualStrengthContent {
   name: string;
   note: string;

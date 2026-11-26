@@ -3,7 +3,7 @@ import { ApiError } from '../../services/request';
 import { userStore } from '../../store/index';
 import type { ManualStrengthRecord } from '../../types/manual-strength';
 import { epochToShanghaiHm, epochToShanghaiYmd } from '../../utils/date';
-import { strengthSetLabel } from '../../utils/manual-strength';
+import { strengthSetLabel, summarizeStrengthActions } from '../../utils/manual-strength';
 
 interface PageData {
   record: ManualStrengthRecord | null;
@@ -79,11 +79,11 @@ Page<PageData, PageHandlers>({
     try {
       const record = await getManualStrengthRecord(user.id, this.recordId);
       if (this.closed) return;
-      const setCount = record.actions.reduce((total, action) => total + action.sets.length, 0);
+      const { action_count, set_count } = summarizeStrengthActions(record.actions);
       this.setData({
         record,
         timeLabel: trainingTimeLabel(record),
-        summaryLabel: `手动记录 · ${record.actions.length} 个动作 / ${setCount} 组`,
+        summaryLabel: `手动记录 · ${action_count} 个动作 / ${set_count} 组`,
         actionRows: record.actions.map((action, index) => ({
           key: index,
           name: action.name,
