@@ -37,6 +37,8 @@ export interface CoachCardView {
   secondaryButtonText: string;
   /** CTA 目标页面（含 query）；空则卡片不可跳转。 */
   url: string;
+  /** 报告页与策略草稿使用同一个赛事 ID。 */
+  raceId?: number;
   /** 产物本体：tap 时经 storage 交接给目标页（如报告页草稿模式）。 */
   data: unknown;
   /**
@@ -50,7 +52,7 @@ export interface CoachCardView {
 /** 策略内容的形状校验（RaceStrategySchema 的鸭子类型版；数值口径由后端 zod 把关）。
  * 注意与 services/race-strategy.ts 的 storage 守卫刻意各自独立：那边不能
  * runtime import utils（会把 enum 链拖进 node 自检的 strip-only 运行时）。 */
-function isRaceStrategyLike(value: unknown): value is RaceStrategy {
+function isRaceStrategyLike(value: unknown): value is RaceStrategy & { race_event_id?: unknown } {
   if (value == null || typeof value !== 'object') return false;
   const v = value as Record<string, unknown>;
   return (
@@ -132,7 +134,7 @@ export function shanghaiMonthDayLabel(ymd: string): string {
   return `${Number(m)}月${Number(d)}日`;
 }
 
-/** done.card → 卡片视图；信封不认识/形状不对/缺 race target 时返回 null（降级走 markdown）。 */
+/** done.card → 卡片视图；无法渲染的信封降级走 markdown。 */
 export function buildCoachCard(card: unknown, target: CoachSessionTarget | undefined): CoachCardView | null {
   if (card == null || typeof card !== 'object') return null;
   const wire = card as Partial<CoachCardWire>;
@@ -140,9 +142,10 @@ export function buildCoachCard(card: unknown, target: CoachSessionTarget | undef
   if (wire.$type === 'race-strategy') {
     if (!isRaceStrategyLike(wire.data)) return null;
     const strategy = wire.data;
-    const raceId = target?.kind === 'race' ? target.race_event_id : undefined;
-    // 无 race target 时无法定位赛事（策略生成本就依赖 race target，这里只是防御）：
-    // 仍出卡片展示，CTA 指向赛事中心。
+    const eventId = strategy.race_event_id;
+    const raceId = typeof eventId === 'number' && Number.isSafeInteger(eventId) && eventId > 0
+      ? eventId
+      : target?.kind === 'race' ? target.race_event_id ?? undefined : undefined;
     return {
       type: wire.$type,
       icon: '/assets/icons/flag.svg',
@@ -150,13 +153,26 @@ export function buildCoachCard(card: unknown, target: CoachSessionTarget | undef
       subtitle: `${strategy.race_name} · 目标 ${strategy.target_finish_time}，含 ${strategy.pace_segments.length} 段配速与补给计划`,
       badge: '初稿',
       // 「查看并应用」会让用户以为点击即应用——实际是进报告页查看，应用在报告页内确认
-      buttonText: '查看详情',
+      buttonText: raceId ? '查看详情' : '',
       secondaryButtonText: '',
-      url: raceId
-        ? `/pages/race-center/strategy/strategy?id=${raceId}`
-        : '/pages/race-center/race-center',
+      url: raceId ? `/pages/race-center/strategy/strategy?id=${raceId}` : '',
+      raceId,
       data: strategy,
-      inlineBody: false,
+      inlineBody: !raceId,
+    };
+  }
+  if (wire.$type === 'race-strategy-offer') {
+    return {
+      type: wire.$type,
+      icon: '/assets/icons/flag.svg',
+      title: '比赛策略',
+      subtitle: '',
+      badge: '',
+      buttonText: '生成比赛策略',
+      secondaryButtonText: '',
+      url: '',
+      data: wire.data,
+      inlineBody: true,
     };
   }
   if (wire.$type === 'master-plan-form') {

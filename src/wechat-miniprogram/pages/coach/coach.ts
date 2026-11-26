@@ -1109,11 +1109,8 @@ Page<CoachPageData, CoachPageHandlers>({
     if (!message?.card) return;
     const card = message.card;
     if (!card.url) return;
-    if (card.type === 'race-strategy' && card.data && typeof card.data === 'object') {
-      const target = this.currentSessionTarget();
-      if (target?.kind === 'race' && target.race_event_id) {
-        setPendingStrategyDraft({ raceId: target.race_event_id, strategy: card.data as RaceStrategy });
-      }
+    if (card.type === 'race-strategy' && card.raceId) {
+      setPendingStrategyDraft({ raceId: card.raceId, strategy: card.data as RaceStrategy });
     }
     wx.navigateTo({ url: card.url });
   },
@@ -1124,6 +1121,13 @@ Page<CoachPageData, CoachPageHandlers>({
     const id = e.currentTarget.dataset.id as number;
     const message = this.data.messages.find((m) => m.id === id);
     if (!message?.card) return;
+    if (message.card.type === 'race-strategy-offer') {
+      const messages = this.data.messages;
+      if (!this.data.selectMode && messages[messages.length - 1]?.id === id) {
+        void this.sendText(message.card.buttonText);
+      }
+      return;
+    }
     if (message.card.type === 'master-plan') {
       void this.applyMasterPlanCard(id);
       return;

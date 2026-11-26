@@ -60,6 +60,8 @@ export interface CoachToolSpec<Schema extends z.ZodObject<any> = z.ZodObject<any
   description: string;
   /** Zod input schema. Do NOT put `userId` here; it comes from context. */
   schema: Schema;
+  /** End the inner agent turn with the tool result. */
+  returnDirect?: boolean;
   /** Domain logic that produces the tool's result. */
   handler: CoachToolHandler<Schema, Output>;
 }
@@ -80,6 +82,7 @@ export function defineCoachTool<Schema extends z.ZodObject<any>, Output>(spec: C
     name: spec.name,
     description: spec.description,
     schema: spec.schema,
+    returnDirect: spec.returnDirect ?? false,
   });
 }
 

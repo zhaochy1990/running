@@ -3,6 +3,7 @@ import { Command, END, type GraphNode } from "@langchain/langgraph";
 import { buildChatModel, getLogger } from "@stride/common";
 import type { ModelConfig } from "../config/config.js";
 import { normalizeMessageContent } from "./messages.js";
+import { RACE_STRATEGY_REQUEST } from "./qa/raceStrategyHandoff.js";
 import { type AgentsState, IntentClassificationSchema, type IntentLabel } from "./state.js";
 
 const logger = getLogger("orchestrator");
@@ -31,12 +32,14 @@ export const ORCHESTRATOR_INTENT_PROMPT = `Analyze the user's utterance and clas
 - "杭州马拉松什么时候开跑？" → training_question（查赛事信息，不是制定策略）
 - "11 月有哪些马拉松？" → training_question
 - "杭马的赛道难不难？" → training_question（问赛道事实；要配速/补给方案才是 race_strategy）
+- "刚才聊的杭马策略在哪里看？" → training_question（问在哪里查看）
 - "帮我看下这周的训练计划" → weekly_plan
 - "下周计划调整一下，周三改成休息" → weekly_plan
 - "帮我看下赛季计划" → training_question
 - "帮我制定一份下赛季的全马训练计划" → master_plan
 - "赛季计划重新规划一下" → master_plan
 - "帮我制定杭马的分段配速和补给策略" → race_strategy
+- "把刚才聊的配速方案生成比赛策略" → race_strategy
 - "我想和你聊聊这场比赛的比赛策略" → race_strategy
 - "比赛时前半程该跑多快？" → race_strategy
 - "2:55" → race_strategy（比赛策略对话中回答目标完赛时间，继续生成策略）
@@ -65,6 +68,13 @@ export function getOrchestratorNode(modelConfig: ModelConfig, routes: Partial<Re
   const prompt = ORCHESTRATOR_INTENT_PROMPT;
 
   const node: GraphNode<typeof AgentsState> = async (state) => {
+    const latest = state.messages.at(-1);
+    if (latest?.getType() === "human" && isRaceStrategyRequest(latest.content)) {
+      return new Command({
+        update: { intent: { intent: "race_strategy" }, raceStrategy: null },
+        goto: routes.race_strategy ?? routes.other ?? END,
+      });
+    }
     // The structured decode is best-effort: a local model may return an
     // off-schema / empty object. Degrade to the previous turn's intent
     // (追问延续的先验：上一轮已进入某任务的对话，本轮更可能是延续而非换题；
@@ -119,4 +129,14 @@ export function getOrchestratorNode(modelConfig: ModelConfig, routes: Partial<Re
   };
 
   return node;
+}
+
+function isRaceStrategyRequest(content: unknown): boolean {
+  if (typeof content !== "string") return false;
+  if (content.trim() === RACE_STRATEGY_REQUEST) return true;
+  try {
+    return JSON.parse(content)?.message === RACE_STRATEGY_REQUEST;
+  } catch {
+    return false;
+  }
 }

@@ -134,6 +134,35 @@ test("race-strategy node behaves like a plain business node without structured o
   assert.equal(update.raceStrategy, null);
 });
 
+test("race-strategy card carries the trusted race ID even when the agent binds during this turn", async () => {
+  const userMessage = new HumanMessage("帮我生成杭马的策略，目标三小时五十九分五十九秒");
+  const raceTarget = { kind: "race", race_event_id: 76, item_type: "Marathon" } as const;
+  let binding: typeof raceTarget | null = null;
+  const node = makeRaceStrategyNode(
+    {
+      async invoke() {
+        binding = raceTarget;
+        return { messages: [userMessage], structuredResponse: { disposition: "return_direct", content: strategy } };
+      },
+    },
+    {
+      async get(threadId) {
+        assert.equal(threadId, "regular-chat");
+        return binding;
+      },
+      async bind() {},
+      async rememberCandidates() {},
+      async candidates() {
+        return null;
+      },
+    },
+  );
+  const update = (await node({ messages: [userMessage] } as never, { context: { threadId: "regular-chat" } } as never)) as {
+    messages: BaseMessage[];
+  };
+  assert.deepEqual(update.messages[0]?.additional_kwargs.card, { $type: "race-strategy", data: { ...strategy, race_event_id: 76 } });
+});
+
 test("race-strategy node normalizes array-content delta before writing back (devops#833)", async () => {
   // responses API 的回复 content 是 content-parts 数组（含空数组）；原样入会话
   // 历史会击穿下游 chat-completions 分类器。写回的增量必须是纯字符串 content，

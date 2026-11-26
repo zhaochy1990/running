@@ -5,13 +5,14 @@ import { easyMidOfPaceZones } from "@stride/contract";
 import { type CoachAgentConfig, getAgentConfig } from "../config/config.js";
 import type { DataProvider } from "../data/dataProvider.js";
 import type { ActivityFeelWriter } from "../tools/feel.js";
+import type { RaceTargetBindingGateway } from "../tools/raceStrategyContext.js";
 import { getCustomWorkoutAgent } from "./custom_workout/agent.js";
 import { type CalibrationResolver, type ListCustomSessionsResolver, makeCustomWorkoutNode } from "./custom_workout/node.js";
 import { normalizeMessageContent } from "./messages.js";
 import { getOrchestratorNode } from "./orchestrator.js";
 import { getOtherAgent } from "./other/agent.js";
 import { getQaAgent } from "./qa/agent.js";
-import { type RaceTargetBindingGateway } from "../tools/raceStrategyContext.js";
+import { makeQaNode } from "./qa/raceStrategyHandoff.js";
 import { getRaceStrategyAgent } from "./race_strategy/agent.js";
 import { makeRaceStrategyNode } from "./race_strategy/node.js";
 import type { AgentsState } from "./state.js";
@@ -66,13 +67,13 @@ export function getAgentNode(
   if (agentName === "qa") {
     const agentConfig = getAgentConfig(config, "qa");
     const qaAgent = getQaAgent(dataProvider, agentConfig, feelWriter) as unknown as InnerAgent;
-    return makeAgentNode(qaAgent);
+    return makeQaNode(qaAgent);
   }
 
   if (agentName === "race_strategy") {
     const agentConfig = getAgentConfig(config, "race_strategy");
     const raceAgent = getRaceStrategyAgent(dataProvider, agentConfig, raceTargetGateway);
-    return makeRaceStrategyNode(raceAgent);
+    return makeRaceStrategyNode(raceAgent, raceTargetGateway);
   }
 
   if (agentName === "custom_workout") {

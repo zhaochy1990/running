@@ -3,9 +3,11 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
 import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
-import { Command } from "@langchain/langgraph";
+import { Command, END, START, StateGraph } from "@langchain/langgraph";
 import type { ModelConfig } from "../config/config.js";
 import { getOrchestratorNode } from "./orchestrator.js";
+import { makeQaNode, RACE_STRATEGY_REQUEST, raceStrategyHandoffTool } from "./qa/raceStrategyHandoff.js";
+import { AgentsState } from "./state.js";
 
 /**
  * 本地 chat-completions spy server：抓请求 body（bodies），回固定 intent 的合法
@@ -53,6 +55,58 @@ async function startCompletionSpy(cannedIntent: string) {
     },
   };
 }
+
+test("QA can hand off a misrouted strategy request or offer the action in the same conversation", async () => {
+  const spy = await startCompletionSpy("training_question");
+  try {
+    const graph = new StateGraph(AgentsState)
+      .addNode("orchestrator", getOrchestratorNode(spy.modelConfig, { training_question: "qa", race_strategy: "race_strategy" }), {
+        ends: ["qa", "race_strategy", END],
+      })
+      .addNode(
+        "qa",
+        makeQaNode({
+          async invoke(input) {
+            const { messages } = input as { messages: HumanMessage[] };
+            const latest = messages.at(-1)?.content;
+            if (latest === "杭马什么时候开始？") return { messages: [...messages, new AIMessage("已查到起跑时间。")] };
+            const args = latest === "刚才的杭马策略在哪看？" ? { action: "offer", answer: "刚才的配速建议可以在这段对话里看。" } : { action: "generate" };
+            const call = { name: raceStrategyHandoffTool.name, id: "handoff", args, type: "tool_call" as const };
+            const toolResult = await raceStrategyHandoffTool.invoke(call);
+            return { messages: [...messages, new AIMessage({ content: "", tool_calls: [call] }), toolResult] };
+          },
+        }),
+        { ends: ["race_strategy", END] },
+      )
+      .addNode("race_strategy", (state) => {
+        assert.equal(state.messages.some(ToolMessage.isInstance), false, "QA handoff stays out of strategy context");
+        assert.match(state.messages[0]?.text ?? "", /杭马.*3小时/);
+        return { messages: [new AIMessage("策略节点已收到请求")] };
+      })
+      .addEdge(START, "orchestrator")
+      .addEdge("race_strategy", END)
+      .compile();
+
+    const kickoff = new HumanMessage("我跑杭马，目标3小时");
+    const result = await graph.invoke({ messages: [kickoff, new HumanMessage("把刚才的方案生成正式策略")] });
+    assert.equal(result.intent?.intent, "race_strategy");
+    assert.equal(result.messages.at(-1)?.text, "策略节点已收到请求");
+
+    const offer = await graph.invoke({ messages: [kickoff, new HumanMessage("刚才的杭马策略在哪看？")] });
+    assert.deepEqual(offer.messages.at(-1)?.additional_kwargs.card, { $type: "race-strategy-offer", data: {} });
+    assert.match(offer.messages.at(-1)?.text ?? "", /刚才的配速建议/);
+    const click = new HumanMessage(JSON.stringify({ timestamp: "2026-11-26T08:30:00+08:00", message: RACE_STRATEGY_REQUEST }));
+    const accepted = await graph.invoke({ messages: [...offer.messages, click] });
+    assert.equal(accepted.messages.at(-1)?.text, "策略节点已收到请求");
+    assert.equal(spy.bodies.length, 2, "the button bypasses the initial classifier");
+
+    const fact = await graph.invoke({ messages: [new HumanMessage("杭马什么时候开始？")] });
+    assert.equal(fact.messages.at(-1)?.text, "已查到起跑时间。");
+    assert.equal(fact.messages.at(-1)?.additional_kwargs.card, undefined);
+  } finally {
+    await spy.close();
+  }
+});
 
 /**
  * devops#832：分类模型抛错时 `intent decode failed` 的 `error` 字段必须带出

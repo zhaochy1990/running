@@ -3,8 +3,8 @@ import type { BaseCheckpointSaver, BaseStore } from "@langchain/langgraph-checkp
 import { getLogger } from "@stride/common";
 import { type CoachAgentConfig, getAgentConfig } from "../config/config.js";
 import type { DataProvider } from "../data/dataProvider.js";
-import type { RaceTargetBindingGateway } from "../tools/raceStrategyContext.js";
 import type { ActivityFeelWriter } from "../tools/feel.js";
+import type { RaceTargetBindingGateway } from "../tools/raceStrategyContext.js";
 import { getAgentNode } from "./agents.js";
 import { withLangfuseInvokeTracing } from "./langfuse.js";
 import { AgentsState } from "./state.js";
@@ -45,13 +45,12 @@ export async function createCoachAgent(dataProvider: DataProvider, config: Coach
     .addNode("orchestrator", getAgentNode("orchestrator", config, dataProvider), {
       ends: ["qa", "training", "race_strategy", "custom_workout", "workout_manage"],
     })
-    .addNode("qa", getAgentNode("qa", config, dataProvider, options.activityFeelWriter))
+    .addNode("qa", getAgentNode("qa", config, dataProvider, options.activityFeelWriter), { ends: ["race_strategy", END] })
     .addNode("training", trainingNode)
     .addNode("race_strategy", getAgentNode("race_strategy", config, dataProvider, undefined, options.raceTargetGateway))
     .addNode("custom_workout", getAgentNode("custom_workout", config, dataProvider))
     .addNode("workout_manage", getAgentNode("workout_manage", config, dataProvider))
     .addEdge(START, "orchestrator")
-    .addEdge("qa", END)
     .addEdge("training", END)
     .addEdge("race_strategy", END)
     .addEdge("custom_workout", END)
