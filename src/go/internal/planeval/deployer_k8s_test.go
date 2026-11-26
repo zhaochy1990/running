@@ -274,4 +274,15 @@ func TestKubernetesDeployer_RuntimeRevisionRejectsStaleEnsureAndScale(t *testing
 	if err != nil || status.Replicas != 4 || status.DeploymentRevision != 3 || status.SecretRevision != 2 {
 		t.Fatalf("new runtime lost: %+v, %v", status, err)
 	}
+	if err := d.Delete(ctx, spec.AgentVersion, status); err != nil {
+		t.Fatal(err)
+	}
+	spec.checkCreate = func(context.Context) error { return fmt.Errorf("configuration retired") }
+	if err := d.Ensure(ctx, spec); err == nil {
+		t.Fatal("retired launch recreated an absent runtime")
+	}
+	status, err = d.Status(ctx, spec.AgentVersion)
+	if err != nil || status.Present || status.SecretPresent {
+		t.Fatalf("retired credentials or worker recreated: %+v, %v", status, err)
+	}
 }

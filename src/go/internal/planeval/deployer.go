@@ -13,11 +13,15 @@ type WorkerSpec struct {
 	RuntimeRevision uint64
 	// Env holds the administrator-supplied variables (model API keys).
 	Env map[string]string
+
+	// A missing Kubernetes object has no revision to compare. Confirm that
+	// its launch is still current before creating it.
+	checkCreate func(context.Context) error
 }
 
 // DeploymentStatus is the evaluated worker Deployment of one version.
 type DeploymentStatus struct {
-	// Cleanup identities are captured before the database/queue idle gate.
+	// Cleanup uses these identities after reserving the version for deletion.
 	DeploymentUID             string
 	DeploymentResourceVersion string
 	DeploymentRevision        uint64

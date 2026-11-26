@@ -775,6 +775,16 @@ func (s *Service) applyLaunchConfig(ctx context.Context, config *storage.PlanEva
 	}
 	if err := s.deployer.Ensure(ctx, WorkerSpec{
 		AgentVersion: config.AgentVersion, Replicas: config.Replicas, RuntimeRevision: config.RuntimeRevision, Env: env,
+		checkCreate: func(ctx context.Context) error {
+			current, err := s.store.GetPlanEvalLaunchConfig(ctx, config.ID)
+			if err != nil {
+				return err
+			}
+			if current.CleanupPending || current.RuntimeRevision != config.RuntimeRevision {
+				return storage.ErrPlanEvalVersionBusy
+			}
+			return nil
+		},
 	}); err != nil {
 		return fmt.Errorf("deployment: %w", err)
 	}

@@ -142,6 +142,20 @@ func (d *kubernetesDeployer) Ensure(ctx context.Context, spec WorkerSpec) error 
 		return fmt.Errorf("plan-eval: agent version %q is not usable as an object name", spec.AgentVersion)
 	}
 	name := WorkerName(spec.AgentVersion)
+	deployments := d.client.AppsV1().Deployments(d.namespace)
+	current, err := deployments.Get(ctx, name, metav1.GetOptions{})
+	create := k8serrors.IsNotFound(err)
+	if err != nil && !create {
+		return fmt.Errorf("plan-eval: get deployment %s: %w", name, err)
+	}
+	if !create {
+		if current.DeletionTimestamp != nil {
+			return fmt.Errorf("plan-eval: deployment %s is still being deleted; retry launch after deletion", name)
+		}
+		if err := setRuntimeRevision(current, spec.RuntimeRevision); err != nil {
+			return err
+		}
+	}
 	launch := make(map[string]string, len(spec.Env)+2)
 	for key, value := range spec.Env {
 		launch[key] = value
@@ -154,28 +168,19 @@ func (d *kubernetesDeployer) Ensure(ctx context.Context, spec WorkerSpec) error 
 		Type: corev1.SecretTypeOpaque,
 		Data: secretData(launch),
 	}
-	if err := upsertSecret(ctx, d.client, d.namespace, secret, spec.RuntimeRevision); err != nil {
+	if err := upsertSecret(ctx, d.client, d.namespace, secret, spec); err != nil {
 		return fmt.Errorf("plan-eval: ensure launch secret %s: %w", name, err)
 	}
 
 	deployment := d.deployment(spec, launchChecksum(launch))
-	deployments := d.client.AppsV1().Deployments(d.namespace)
-	_, err := deployments.Create(ctx, deployment, metav1.CreateOptions{})
-	switch {
-	case err == nil:
+	if create {
+		if err := confirmRuntimeCreate(ctx, spec); err != nil {
+			return err
+		}
+		if _, err := deployments.Create(ctx, deployment, metav1.CreateOptions{}); err != nil {
+			return fmt.Errorf("plan-eval: create deployment %s: %w", name, err)
+		}
 		return nil
-	case !k8serrors.IsAlreadyExists(err):
-		return fmt.Errorf("plan-eval: create deployment %s: %w", name, err)
-	}
-	current, err := deployments.Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("plan-eval: get deployment %s: %w", name, err)
-	}
-	if current.DeletionTimestamp != nil {
-		return fmt.Errorf("plan-eval: deployment %s is still being deleted; retry launch after deletion", name)
-	}
-	if err := setRuntimeRevision(current, spec.RuntimeRevision); err != nil {
-		return err
 	}
 	current.Spec.Replicas = deployment.Spec.Replicas
 	current.Spec.Template = deployment.Spec.Template
@@ -274,12 +279,15 @@ func (d *kubernetesDeployer) Delete(ctx context.Context, agentVersion string, ex
 		}
 		// Wait for foreground deletion before releasing the version coordination lock.
 		for {
-			_, err := deployments.Get(ctx, name, metav1.GetOptions{})
+			remaining, err := deployments.Get(ctx, name, metav1.GetOptions{})
 			if k8serrors.IsNotFound(err) {
 				break
 			}
 			if err != nil {
 				return fmt.Errorf("plan-eval: wait for deletion %s: %w", name, err)
+			}
+			if remaining.UID != uid {
+				break
 			}
 			select {
 			case <-ctx.Done():
@@ -336,20 +344,20 @@ func (d *kubernetesDeployer) Status(ctx context.Context, agentVersion string) (D
 	return status, nil
 }
 
-func upsertSecret(ctx context.Context, client k8sClientset, namespace string, secret *corev1.Secret, revision uint64) error {
+func upsertSecret(ctx context.Context, client k8sClientset, namespace string, secret *corev1.Secret, spec WorkerSpec) error {
 	secrets := client.CoreV1().Secrets(namespace)
-	_, err := secrets.Create(ctx, secret, metav1.CreateOptions{})
-	if err == nil {
-		return nil
-	}
-	if !k8serrors.IsAlreadyExists(err) {
+	current, err := secrets.Get(ctx, secret.Name, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		if err := confirmRuntimeCreate(ctx, spec); err != nil {
+			return err
+		}
+		_, err := secrets.Create(ctx, secret, metav1.CreateOptions{})
 		return err
 	}
-	current, err := secrets.Get(ctx, secret.Name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
-	if err := setRuntimeRevision(current, revision); err != nil {
+	if err := setRuntimeRevision(current, spec.RuntimeRevision); err != nil {
 		return err
 	}
 	// StringData is write-only; the server merges it into Data. Clearing Data
@@ -360,6 +368,16 @@ func upsertSecret(ctx context.Context, client k8sClientset, namespace string, se
 	current.Labels = secret.Labels
 	_, err = secrets.Update(ctx, current, metav1.UpdateOptions{})
 	return err
+}
+
+func confirmRuntimeCreate(ctx context.Context, spec WorkerSpec) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if spec.checkCreate != nil {
+		return spec.checkCreate(ctx)
+	}
+	return nil
 }
 
 // secretData is the explicit Data form, so nothing depends on the server's
