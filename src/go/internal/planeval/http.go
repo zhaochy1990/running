@@ -143,6 +143,14 @@ func (s *Service) Router(adminAuth gin.HandlerFunc, adminID func(*gin.Context) s
 	admin.POST("/tasks", func(c *gin.Context) { s.handleCreateTask(c, adminID(c)) })
 	admin.GET("/tasks", s.handleListTasks)
 	admin.GET("/tasks/:id", s.handleTaskDetail)
+	admin.GET("/tasks/:id/executions/:execution_id/input", func(c *gin.Context) {
+		input, e := s.ExecutionInput(c.Request.Context(), c.Param("id"), c.Param("execution_id"))
+		if e != nil {
+			writeError(c, e)
+			return
+		}
+		c.JSON(200, input)
+	})
 	admin.POST("/tasks/:id/retry-launch", s.handleRetryLaunch)
 	admin.GET("/artifacts/:id", s.handleArtifact)
 

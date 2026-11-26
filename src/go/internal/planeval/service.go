@@ -171,14 +171,18 @@ type ExecutionView struct {
 	ID           string            `json:"id"`
 	ScenarioID   string            `json:"scenario_id"`
 	AsOf         string            `json:"as_of"`
-	Request      json.RawMessage   `json:"request"`
-	Snapshot     json.RawMessage   `json:"snapshot"`
 	SnapshotID   string            `json:"snapshot_id"`
 	SnapshotName string            `json:"snapshot_name"`
 	Generate     StageView         `json:"generate"`
 	Artifact     *ArtifactView     `json:"artifact"`
 	Evaluate     StageView         `json:"evaluate"`
 	Checks       []CheckResultView `json:"checks"`
+}
+
+type ExecutionInputView struct {
+	AsOf     string          `json:"as_of"`
+	Request  json.RawMessage `json:"request"`
+	Snapshot json.RawMessage `json:"snapshot"`
 }
 
 type CheckResultView struct {
@@ -405,6 +409,7 @@ func (s *Service) createTask(ctx context.Context, submitter, idempotencyKey stri
 	}
 	var executions []*storage.PlanEvalExecution
 	var frozenRules []*storage.PlanEvalFrozenRule
+	snapshots := make(map[string]*storage.PlanEvalRunnerSnapshot)
 	scenarios := make([]ScenarioView, 0, len(scenarioIDs))
 	for _, id := range scenarioIDs {
 		scenario, e := s.loadScenario(ctx, id)
@@ -414,7 +419,7 @@ func (s *Service) createTask(ctx context.Context, submitter, idempotencyKey stri
 			}
 			return nil, false, e
 		}
-		items, rules, e := s.freeze(ctx, scenario)
+		items, rules, e := s.freeze(ctx, scenario, snapshots)
 		if e != nil {
 			return nil, false, e
 		}
@@ -542,19 +547,19 @@ func (s *Service) loadScenario(ctx context.Context, id string) (*scenarioDocumen
 // (stamped with the execution's own id and the frozen instant), the snapshot
 // document and the rule implementations. An invalid reference refuses the
 // whole batch before anything is written.
-func (s *Service) freeze(ctx context.Context, scenario *scenarioDocument) ([]*storage.PlanEvalExecution, []*storage.PlanEvalFrozenRule, *Error) {
+func (s *Service) freeze(ctx context.Context, scenario *scenarioDocument, snapshots map[string]*storage.PlanEvalRunnerSnapshot) ([]*storage.PlanEvalExecution, []*storage.PlanEvalFrozenRule, *Error) {
 	if e := validateScenario(scenario); e != nil {
 		return nil, nil, e
 	}
 
 	rules := make([]*storage.PlanEvalFrozenRule, 0, len(scenario.Rules))
-	for _, ref := range scenario.Rules {
+	for i, ref := range scenario.Rules {
 		rule, err := s.store.GetPlanEvalRule(ctx, ref.ID, ref.Version)
-		if err != nil {
-			if errors.Is(err, storage.ErrPlanEvalNotFound) {
-				return nil, nil, fail(422, "invalid_request", fmt.Sprintf("场景 %s 引用的规则 %s v%d 不存在", scenario.ID, ref.ID, ref.Version))
-			}
+		if err != nil && !errors.Is(err, storage.ErrPlanEvalNotFound) {
 			return nil, nil, s.internal(err)
+		}
+		if rule == nil || rule.ID != ref.ID {
+			return nil, nil, fail(422, "invalid_reference", fmt.Sprintf("场景 %s rules[%d]: 规则 %s v%d 不存在，须使用原始 ID", scenario.ID, i, ref.ID, ref.Version))
 		}
 		if rule.ArtifactType != scenario.ArtifactType {
 			return nil, nil, fail(422, "invalid_request", fmt.Sprintf("规则 %s v%d 适用于 %s，场景 %s 需要 %s", ref.ID, ref.Version, rule.ArtifactType, scenario.ID, scenario.ArtifactType))
@@ -562,20 +567,23 @@ func (s *Service) freeze(ctx context.Context, scenario *scenarioDocument) ([]*st
 		rules = append(rules, &storage.PlanEvalFrozenRule{ScenarioID: scenario.ID, CheckID: rule.ID, Version: rule.Version, ArtifactType: rule.ArtifactType, Source: rule.Source})
 	}
 	executions := make([]*storage.PlanEvalExecution, 0, len(scenario.SnapshotIDs))
-	for _, snapshotID := range scenario.SnapshotIDs {
-		snapshot, err := s.store.GetPlanEvalRunnerSnapshot(ctx, snapshotID)
-		if err != nil {
-			if errors.Is(err, storage.ErrPlanEvalNotFound) {
-				return nil, nil, fail(422, "invalid_request", fmt.Sprintf("场景 %s 引用的测试数据 %s 不存在", scenario.ID, snapshotID))
+	for i, snapshotID := range scenario.SnapshotIDs {
+		snapshot := snapshots[snapshotID]
+		if snapshot == nil {
+			var err error
+			snapshot, err = s.store.GetPlanEvalRunnerSnapshot(ctx, snapshotID)
+			if err != nil {
+				if errors.Is(err, storage.ErrPlanEvalNotFound) {
+					return nil, nil, fail(422, "invalid_reference", fmt.Sprintf("场景 %s snapshot_ids[%d]: 测试数据 %q 不存在，须使用原始 ID", scenario.ID, i, snapshotID))
+				}
+				return nil, nil, s.internal(err)
 			}
-			return nil, nil, s.internal(err)
+			// Lookup requires the canonical stored ID. Reuse the same snapshot
+			// even if someone edits it while another scenario is being frozen.
+			snapshots[snapshot.ID] = snapshot
 		}
 		executionID := uuid.NewString()
-		template := scenario.RequestJSON
-		asOf := scenario.AsOf
-
-		var e *Error
-		template, asOf, e = generationRequest(scenario.ArtifactType, snapshot.SnapshotJSON, scenario.RequestJSON)
+		template, asOf, e := generationRequest(scenario.ArtifactType, snapshot.SnapshotJSON, scenario.RequestJSON)
 		if e != nil {
 			e.Detail = "场景 " + scenario.ID + " 数据 " + snapshotID + ": " + e.Detail
 			return nil, nil, e
@@ -586,7 +594,7 @@ func (s *Service) freeze(ctx context.Context, scenario *scenarioDocument) ([]*st
 			return nil, nil, s.internal(rerr)
 		}
 		executions = append(executions, &storage.PlanEvalExecution{
-			ID: executionID, ScenarioID: scenario.ID, SnapshotID: snapshotID,
+			ID: executionID, ScenarioID: scenario.ID, SnapshotID: snapshot.ID, SnapshotName: snapshot.Username,
 			GenerateStatus: storage.PlanEvalGenerateQueued, EvaluateStatus: storage.PlanEvalEvaluatePending,
 			AsOf: asOf, RequestJSON: request, SnapshotJSON: snapshot.SnapshotJSON,
 		})
@@ -753,7 +761,7 @@ func (s *Service) TaskDetail(ctx context.Context, id string) (*TaskDetailView, *
 	if serr != nil {
 		return nil, serr
 	}
-	executions, err := s.store.ListPlanEvalExecutionInputs(ctx, task.ID)
+	executions, err := s.store.ListPlanEvalExecutionSummaries(ctx, task.ID)
 	if err != nil {
 		return nil, s.internal(err)
 	}
@@ -787,16 +795,11 @@ func (s *Service) TaskDetail(ctx context.Context, id string) (*TaskDetailView, *
 	for _, execution := range executions {
 		view := ExecutionView{
 			ID: execution.ID, ScenarioID: execution.ScenarioID, SnapshotID: execution.SnapshotID,
-			AsOf: execution.AsOf, Request: json.RawMessage(execution.RequestJSON), Snapshot: json.RawMessage(execution.SnapshotJSON),
+			AsOf: execution.AsOf, SnapshotName: execution.SnapshotName,
 			Generate: StageView{Status: execution.GenerateStatus, Attempts: execution.Attempts},
 			Evaluate: StageView{Status: execution.EvaluateStatus},
 			Checks:   []CheckResultView{},
 		}
-		var snapshot struct {
-			Username string `json:"username"`
-		}
-		_ = json.Unmarshal([]byte(execution.SnapshotJSON), &snapshot)
-		view.SnapshotName = snapshot.Username
 		if execution.GenerateErrorCode != "" || execution.GenerateErrorMessage != "" {
 			view.Generate.Error = &StageError{Code: execution.GenerateErrorCode, Message: execution.GenerateErrorMessage}
 		}
@@ -810,6 +813,20 @@ func (s *Service) TaskDetail(ctx context.Context, id string) (*TaskDetailView, *
 		detail.Executions = append(detail.Executions, view)
 	}
 	return detail, nil
+}
+
+// ExecutionInput reads one execution's immutable input for the admin report.
+func (s *Service) ExecutionInput(ctx context.Context, taskID, executionID string) (*ExecutionInputView, *Error) {
+	execution, err := s.store.PlanEvalExecutionInput(ctx, executionID)
+	if err != nil {
+		return nil, s.mapStorageError(err)
+	}
+	if execution.TaskID != taskID || execution.ID != executionID {
+		return nil, s.mapStorageError(storage.ErrPlanEvalNotFound)
+	}
+	return &ExecutionInputView{
+		AsOf: execution.AsOf, Request: json.RawMessage(execution.RequestJSON), Snapshot: json.RawMessage(execution.SnapshotJSON),
+	}, nil
 }
 
 func checkResultView(result storage.PlanEvalCheckResult) CheckResultView {
@@ -888,7 +905,7 @@ func (s *Service) taskScenarios(ctx context.Context, task *storage.PlanEvalTask)
 	}
 	// Legacy tasks have no frozen scene metadata, but their request/input already
 	// fixes the generation path; never infer it from an editable source scene.
-	executions, err := s.store.ListPlanEvalExecutionInputs(ctx, task.ID)
+	executions, err := s.store.ListPlanEvalExecutionRequests(ctx, task.ID)
 	if err != nil {
 		return nil, s.internal(err)
 	}

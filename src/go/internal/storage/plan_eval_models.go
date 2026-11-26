@@ -167,10 +167,12 @@ func (PlanEvalFrozenRule) TableName() string { return "plan_eval_frozen_rules" }
 // PlanEvalExecution is one scenario × snapshot: its frozen inputs, the
 // generate lease and the pointer to the artifact it produced.
 type PlanEvalExecution struct {
-	ID             string     `gorm:"column:id;type:char(36);primaryKey"`
-	TaskID         string     `gorm:"column:task_id;type:char(36);not null;index"`
-	ScenarioID     string     `gorm:"column:scenario_id;type:char(36);not null"`
-	SnapshotID     string     `gorm:"column:snapshot_id;type:char(36);not null"`
+	ID         string `gorm:"column:id;type:char(36);primaryKey"`
+	TaskID     string `gorm:"column:task_id;type:char(36);not null;index"`
+	ScenarioID string `gorm:"column:scenario_id;type:char(36);not null"`
+	SnapshotID string `gorm:"column:snapshot_id;type:char(36);not null"`
+	// The frozen display name lets admin polling skip the snapshot body.
+	SnapshotName   string     `gorm:"column:snapshot_name;size:64;not null;default:''"`
 	GenerateStatus string     `gorm:"column:generate_status;size:16;not null"`
 	Attempts       int        `gorm:"column:attempts;not null;default:0"`
 	DispatchedAt   *time.Time `gorm:"column:dispatched_at"`

@@ -863,13 +863,56 @@ func TestHTTP_BatchFreezesSharedSnapshotAndScenarioRules(t *testing.T) {
 	if len(task["scenarios"].([]any)) != 2 || len(task["executions"].([]any)) != 2 {
 		t.Fatalf("batch not expanded: %s", created.body)
 	}
-	execution := task["executions"].([]any)[0].(map[string]any)
+	executions := task["executions"].([]any)
+	execution := executions[0].(map[string]any)
+	if execution["snapshot"] != nil || execution["request"] != nil || execution["snapshot_name"] != "runner" {
+		t.Fatalf("execution summary: %+v", execution)
+	}
+	firstScenario, e := h.svc.loadScenario(context.Background(), ids[0])
+	if e != nil {
+		t.Fatal(e)
+	}
+	cache := make(map[string]*storage.PlanEvalRunnerSnapshot)
+	firstFreeze, _, e := h.svc.freeze(context.Background(), firstScenario, cache)
+	if e != nil {
+		t.Fatal(e)
+	}
 	// Edit the reusable source, preserving UUID; old reports and claims stay frozen.
 	snapshot["username"] = "updated-runner"
 	snapshot["target_time"] = "1:50:00"
 	updated := h.admin("PUT", adminPrefix+"/snapshots/"+snapshotID, snapshot, nil)
 	if updated.status != 200 || h.json(updated)["snapshot_id"] != snapshotID {
 		t.Fatalf("update: %s", updated.body)
+	}
+	secondScenario, e := h.svc.loadScenario(context.Background(), ids[1])
+	if e != nil {
+		t.Fatal(e)
+	}
+	secondFreeze, _, e := h.svc.freeze(context.Background(), secondScenario, cache)
+	if e != nil || secondFreeze[0].SnapshotJSON != firstFreeze[0].SnapshotJSON {
+		t.Fatalf("source update changed the in-flight batch: %+v", e)
+	}
+	var frozenSnapshot []byte
+	for _, raw := range executions {
+		executionID := raw.(map[string]any)["id"].(string)
+		path := "/executions/" + executionID + "/input"
+		frozen := h.admin("GET", adminPrefix+"/tasks/"+taskID+path, nil, nil)
+		if frozen.status != 200 {
+			t.Fatalf("frozen input: %d %s", frozen.status, frozen.body)
+		}
+		input := h.json(frozen)
+		frozenDoc := input["snapshot"].(map[string]any)
+		if frozenDoc["username"] != "runner" || input["request"].(map[string]any)["request_id"] != "plan-eval-"+executionID {
+			t.Fatalf("report read from mutable source or wrong execution: %s", frozen.body)
+		}
+		document := mustJSON(frozenDoc)
+		if frozenSnapshot != nil && !bytes.Equal(frozenSnapshot, document) {
+			t.Fatalf("shared source diverged: %s", frozen.body)
+		}
+		frozenSnapshot = document
+		if wrong := h.admin("GET", adminPrefix+"/tasks/"+uuid.NewString()+path, nil, nil); wrong.status != 404 {
+			t.Fatalf("wrong task was accepted: %d %s", wrong.status, wrong.body)
+		}
 	}
 	scene := h.admin("GET", adminPrefix+"/scenarios/"+ids[0], nil, nil)
 	changed := h.json(scene)
@@ -915,11 +958,19 @@ func TestHTTP_BatchFreezesSharedSnapshotAndScenarioRules(t *testing.T) {
 		t.Fatalf("submit accepted incomplete strength: %s", rejected.body)
 	}
 	before := len(h.broker.queues[QueueName(h.version)])
-	for _, selection := range [][]string{{}, {ids[0], ids[0]}, {ids[0], "does-not-exist"}} {
+	for _, selection := range [][]string{{}, {ids[0], ids[0]}, {ids[1], "does-not-exist"}, {ids[1], strings.ToUpper(ids[1])}, {ids[1], ids[1] + " "}} {
 		body["scenario_ids"] = selection
 		res := h.admin("POST", adminPrefix+"/tasks", body, map[string]string{"Idempotency-Key": uuid.NewString()})
 		if res.status != 422 {
 			t.Fatalf("invalid selection accepted: %d %s", res.status, res.body)
+		}
+	}
+	for _, alias := range []string{strings.ToUpper(snapshotID), snapshotID + " "} {
+		res := h.admin("POST", adminPrefix+"/scenarios", map[string]any{
+			"name": "duplicate", "artifact_type": "master_plan", "snapshot_ids": []string{snapshotID, alias},
+		}, nil)
+		if res.status != 422 || !bytes.Contains(res.body, []byte("snapshot_ids[1]")) {
+			t.Fatalf("snapshot alias %q accepted: %d %s", alias, res.status, res.body)
 		}
 	}
 	if len(h.broker.queues[QueueName(h.version)]) != before {
@@ -929,5 +980,79 @@ func TestHTTP_BatchFreezesSharedSnapshotAndScenarioRules(t *testing.T) {
 	bad["schema"] = "v999"
 	if res := h.admin("POST", adminPrefix+"/snapshots", bad, nil); res.status != 422 {
 		t.Fatalf("invalid schema accepted: %s", res.body)
+	}
+}
+
+func TestHTTP_RejectsBatchWhenRollingPlanNoLongerCoversCutoff(t *testing.T) {
+	h := openHarness(t)
+	doc, content := testRollingSnapshot(t)
+	res := h.admin("POST", adminPrefix+"/snapshots", doc, nil)
+	if res.status != 200 {
+		t.Fatalf("import rolling: %d %s", res.status, res.body)
+	}
+	snapshotID := h.json(res)["snapshot_id"].(string)
+	scene := h.admin("POST", adminPrefix+"/scenarios", map[string]any{
+		"name": "rolling", "artifact_type": "weekly_plan_batch", "snapshot_ids": []string{snapshotID},
+	}, nil)
+	if scene.status != 200 {
+		t.Fatalf("save scenario: %d %s", scene.status, scene.body)
+	}
+	sceneID := h.json(scene)["id"].(string)
+	content["end_date"] = "2026-10-22"
+	if res := h.admin("PUT", adminPrefix+"/snapshots/"+snapshotID, doc, nil); res.status != 200 {
+		t.Fatalf("edit source snapshot: %d %s", res.status, res.body)
+	}
+	const path = "records.active_master_plan.content.start_date/end_date/phases"
+	preview := h.admin("POST", adminPrefix+"/request-preview", map[string]any{
+		"artifact_type": "weekly_plan_batch", "snapshot_id": snapshotID,
+	}, nil)
+	if preview.status != 422 || !bytes.Contains(preview.body, []byte(path)) {
+		t.Fatalf("preview accepted expired plan: %d %s", preview.status, preview.body)
+	}
+	body := h.createBody()
+	body["scenario_ids"] = []string{PresetScenarioID, sceneID}
+	submit := h.admin("POST", adminPrefix+"/tasks", body, map[string]string{"Idempotency-Key": uuid.NewString()})
+	for _, want := range []string{sceneID, snapshotID, path} {
+		if submit.status != 422 || !bytes.Contains(submit.body, []byte(want)) {
+			t.Fatalf("submit must identify invalid reference at %q: %d %s", want, submit.status, submit.body)
+		}
+	}
+	if len(h.broker.queues[QueueName(h.version)]) != 0 {
+		t.Fatal("invalid batch was dispatched")
+	}
+}
+
+func TestHTTP_LegacyTaskRetainsItsFrozenInput(t *testing.T) {
+	h := openHarness(t)
+	ctx := context.Background()
+	taskID, executionID := uuid.NewString(), uuid.NewString()
+	const asOf = "2026-10-23T23:59:59+08:00"
+	const request = `{"requested_mode":"new_season"}`
+	const snapshot = `{"username":"旧跑者"}`
+	_, _, err := h.svc.store.CreatePlanEvalTask(ctx, &storage.PlanEvalTaskCreate{
+		Task: &storage.PlanEvalTask{
+			ID: taskID, AgentVersion: h.version, ScenarioID: PresetScenarioID,
+			Submitter: "admin", IdempotencyKey: uuid.NewString(), ParamsFingerprint: "legacy",
+		},
+		LaunchConfig: &storage.PlanEvalLaunchConfig{
+			ID: uuid.NewString(), AgentVersion: h.version, Replicas: 1, EnvNames: "[]",
+		},
+		Executions: []*storage.PlanEvalExecution{{
+			ID: executionID, ScenarioID: PresetScenarioID, SnapshotID: "old-source-id",
+			GenerateStatus: storage.PlanEvalGenerateQueued, EvaluateStatus: storage.PlanEvalEvaluatePending,
+			AsOf: asOf, RequestJSON: request, SnapshotJSON: snapshot,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskPath := adminPrefix + "/tasks/" + taskID
+	detail := h.admin("GET", taskPath, nil, nil)
+	if detail.status != 200 || h.json(detail)["executions"].([]any)[0].(map[string]any)["snapshot_name"] != "旧跑者" {
+		t.Fatalf("legacy task detail: %d %s", detail.status, detail.body)
+	}
+	frozen := h.admin("GET", taskPath+"/executions/"+executionID+"/input", nil, nil)
+	if frozen.status != 200 || !bytes.Contains(frozen.body, []byte(snapshot)) || !bytes.Contains(frozen.body, []byte(request)) {
+		t.Fatalf("legacy execution input: %d %s", frozen.status, frozen.body)
 	}
 }

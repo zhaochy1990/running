@@ -12,6 +12,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/zhaochy1990/stride/internal/api"
 	"github.com/zhaochy1990/stride/internal/storage"
+	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 )
 
 //go:embed runner-snapshot.schema.json
@@ -77,7 +78,7 @@ func validateSnapshotInput(document string) *Error {
 	_ = json.Unmarshal([]byte(document), &doc)
 	if doc.AsOf != "" {
 		instant, err := time.Parse(time.RFC3339, doc.AsOf)
-		if err != nil || instant.In(time.FixedZone("Asia/Shanghai", 8*3600)).Format("2006-01-02") != doc.Day {
+		if err != nil || timefmt.ShanghaiDayStr(instant) != doc.Day {
 			return fail(422, "invalid_input", "as_of: 须与 as_of_day 上海日相同")
 		}
 	}
@@ -96,8 +97,8 @@ func validateSnapshotInput(document string) *Error {
 func uniqueIDs(field string, ids []string) *Error {
 	seen := map[string]bool{}
 	for i, id := range ids {
-		if strings.TrimSpace(id) == "" || seen[id] {
-			return fail(422, "invalid_reference", fmt.Sprintf("%s[%d]: 空或重复 ID %q", field, i, id))
+		if id == "" || strings.TrimSpace(id) != id || seen[id] {
+			return fail(422, "invalid_reference", fmt.Sprintf("%s[%d]: ID 为空、含首尾空白或重复 %q", field, i, id))
 		}
 		seen[id] = true
 	}
@@ -119,12 +120,30 @@ func validateScenario(doc *scenarioDocument) *Error {
 	}
 	seen := map[string]bool{}
 	for i, ref := range doc.Rules {
-		if ref.ID == "" || ref.Version < 1 || seen[ref.ID] {
+		if ref.ID == "" || strings.TrimSpace(ref.ID) != ref.ID || ref.Version < 1 || seen[ref.ID] {
 			return fail(422, "invalid_reference", fmt.Sprintf("场景 %s rules[%d]: 无效或重复规则 %s", doc.ID, i, ref.ID))
 		}
 		seen[ref.ID] = true
 	}
 	return nil
+}
+
+// Match the worker snapshot provider: prefer the plan's inclusive dates, then
+// fall back to the dates of individual phases for older stored content.
+func rollingPlanCoversDay(content map[string]any, day string) bool {
+	start, hasStart := content["start_date"].(string)
+	end, hasEnd := content["end_date"].(string)
+	if hasStart && hasEnd {
+		return start <= day && day <= end
+	}
+	phases, _ := content["phases"].([]any)
+	for _, raw := range phases {
+		phase, _ := raw.(map[string]any)
+		if _, hasStart := phase["start_date"].(string); hasStart && rollingPlanCoversDay(phase, day) {
+			return true
+		}
+	}
+	return false
 }
 
 // generationRequest derives runner-specific goals and constraints from the selected
@@ -168,10 +187,6 @@ func generationRequest(artifactType, document, template string) (string, string,
 	asOf := snapshot.Day + "T23:59:59+08:00"
 	if snapshot.AsOf != "" {
 		asOf = snapshot.AsOf
-	}
-	instant, err := time.Parse(time.RFC3339, asOf)
-	if err != nil || instant.In(time.FixedZone("Asia/Shanghai", 8*3600)).Format("2006-01-02") != snapshot.Day {
-		return "", "", fail(422, "invalid_input", "as_of: 须与 as_of_day 上海日相同")
 	}
 	var request map[string]any
 	if artifactType == "master_plan" {
@@ -226,6 +241,9 @@ func generationRequest(artifactType, document, template string) (string, string,
 		if e := validateInput(rollingMasterInputSchema, string(mustJSON(content))); e != nil {
 			e.Detail = "records.active_master_plan.content: " + e.Detail
 			return "", "", e
+		}
+		if !rollingPlanCoversDay(content, snapshot.Day) {
+			return "", "", fail(422, "invalid_input", "records.active_master_plan.content.start_date/end_date/phases: 赛季须覆盖上海数据截止日 "+snapshot.Day)
 		}
 		goal := content["goal"].(map[string]any)
 		if goal["target_time"] == "finish_only" {
@@ -335,7 +353,7 @@ func (s *Service) saveScenario(ctx context.Context, id string, view ScenarioView
 	}
 	doc := &scenarioDocument{PlanEvalScenario: storage.PlanEvalScenario{ID: id, Name: view.Name, ArtifactType: view.ArtifactType, AsOf: view.AsOf, RequestJSON: request}, SnapshotIDs: view.SnapshotIDs, Rules: view.Rules}
 	// Reuse submission validation for references and each selected request.
-	if _, _, e := s.freeze(ctx, doc); e != nil {
+	if _, _, e := s.freeze(ctx, doc, make(map[string]*storage.PlanEvalRunnerSnapshot)); e != nil {
 		return nil, e
 	}
 	if _, err := time.Parse(time.RFC3339, view.AsOf); view.AsOf != "" && err != nil {

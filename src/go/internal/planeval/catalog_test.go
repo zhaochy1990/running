@@ -79,3 +79,56 @@ func TestGenerationRequestRejectsIncompleteStrengthAvailability(t *testing.T) {
 		t.Fatalf("incomplete strength accepted: %v", e)
 	}
 }
+
+func testRollingSnapshot(t *testing.T) (map[string]any, map[string]any) {
+	t.Helper()
+	doc := testSnapshot(t)
+	doc["generation_kind"] = "rolling_continue"
+	doc["as_of"] = "2026-10-22T16:30:00Z" // Oct 23 in Shanghai.
+	records := doc["records"].(map[string]any)
+	var content map[string]any
+	if err := json.Unmarshal([]byte(`{
+		"start_date":"2026-10-05","end_date":"2026-11-29","total_weeks":8,
+		"goal":{"race_name":"Half Marathon","race_date":"2026-11-29","distance":"HM","target_time":"1:59:59"},
+		"availability":{"weekly_run_days_max":3,"unavailable_days":["monday"]},
+		"policy":{
+			"phases":[{"canonical":"foundation","name":"Base","start_week":1,"end_week":8,
+				"primary_goal":"aerobic_base","training_goal":"Build base","block_mode":"progressive","rationale":"Build endurance"}],
+			"taper_weeks":1,"milestones":[{"phase":"Base","signal":"Volume","criterion":"Stable for three weeks"}],
+			"gates":[{"phase":"Base","signal":"RHR","criterion":"Stable","action_if_missed":"Reduce mileage"},
+				{"phase":"Base","signal":"Fatigue","criterion":"Low","action_if_missed":"Rest"}],
+			"volume_bands":[{"phase":"Base","weekly_km_min":30,"weekly_km_max":45}]
+		},
+		"skeleton":{"weeks":[],"blocks":[],"recovery_policy":[],"strength_policy":[],"checks":[],"milestones":[]},
+		"anchor":{"as_of":"2026-10-05","vdot":40,"vdot_source":"calibration@2026-10-01",
+			"seed":{"ctl":30,"atl":30},"coefficient_version":"test","projection":{"capped":false,"residual":0}}
+	}`), &content); err != nil {
+		t.Fatal(err)
+	}
+	records["active_master_plan"] = map[string]any{"planId": "plan", "status": "active", "revision": 1, "content": content}
+	records["weekly_plan_weeks"] = []any{}
+	records["weekly_plans"] = []any{}
+	return doc, content
+}
+
+func TestGenerationRequestValidatesRollingCoverageAndAvailability(t *testing.T) {
+	t.Run("inclusive Shanghai day and legacy phases", func(t *testing.T) {
+		doc, content := testRollingSnapshot(t)
+		content["end_date"] = doc["as_of_day"]
+		if _, _, e := generationRequest("weekly_plan_batch", string(mustJSON(doc)), "{}"); e != nil {
+			t.Fatal(e)
+		}
+		delete(content, "end_date")
+		content["phases"] = []any{map[string]any{"start_date": "2026-10-05", "end_date": doc["as_of_day"]}}
+		if _, _, e := generationRequest("weekly_plan_batch", string(mustJSON(doc)), "{}"); e != nil {
+			t.Fatal(e)
+		}
+	})
+	t.Run("unknown weekday", func(t *testing.T) {
+		doc, content := testRollingSnapshot(t)
+		content["availability"].(map[string]any)["unavailable_days"] = []string{"funday"}
+		if _, _, e := generationRequest("weekly_plan_batch", string(mustJSON(doc)), "{}"); e == nil || !strings.Contains(e.Detail, "availability/unavailable_days/0") {
+			t.Fatalf("expected exact availability path, got %+v", e)
+		}
+	})
+}

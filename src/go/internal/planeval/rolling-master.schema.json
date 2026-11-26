@@ -56,6 +56,58 @@
     "availability": {
       "type": "object",
       "properties": {
+        "available_training_windows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "day": {
+                "type": "string",
+                "enum": [
+                  "monday",
+                  "tuesday",
+                  "wednesday",
+                  "thursday",
+                  "friday",
+                  "saturday",
+                  "sunday"
+                ]
+              },
+              "start_time": {
+                "type": "string",
+                "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+              },
+              "end_time": {
+                "type": "string",
+                "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+              }
+            },
+            "required": [
+              "day",
+              "start_time",
+              "end_time"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "unavailable_days": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday",
+              "saturday",
+              "sunday"
+            ]
+          }
+        },
+        "allows_double_sessions": {
+          "type": "boolean"
+        },
         "weekly_run_days_max": {
           "type": "integer",
           "minimum": 1,

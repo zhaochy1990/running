@@ -114,6 +114,9 @@ func (s *Store) GetPlanEvalScenario(ctx context.Context, id string) (*PlanEvalSc
 		}
 		return nil, fmt.Errorf("storage: get plan_eval_scenarios: %w", err)
 	}
+	if row.ID != id {
+		return nil, ErrPlanEvalNotFound
+	}
 	return &row, nil
 }
 
@@ -124,6 +127,11 @@ func (s *Store) GetPlanEvalRunnerSnapshot(ctx context.Context, id string) (*Plan
 			return nil, ErrPlanEvalNotFound
 		}
 		return nil, fmt.Errorf("storage: get plan_eval_runner_snapshots: %w", err)
+	}
+	// MySQL may match aliases under a case-insensitive or space-padded collation.
+	// Accept only the stored ID while keeping legacy non-UUID IDs usable.
+	if row.ID != id {
+		return nil, ErrPlanEvalNotFound
 	}
 	return &row, nil
 }
@@ -1076,9 +1084,21 @@ func (s *Store) FindPlanEvalTaskByKey(ctx context.Context, submitter, key string
 	return &row, err
 }
 
-// Used only by the administrator's frozen report, not launch/queue scans.
-func (s *Store) ListPlanEvalExecutionInputs(ctx context.Context, taskID string) ([]PlanEvalExecution, error) {
+// ListPlanEvalExecutionSummaries reads progress and display metadata. Older
+// rows without a stored display name derive it from their own frozen snapshot.
+func (s *Store) ListPlanEvalExecutionSummaries(ctx context.Context, taskID string) ([]PlanEvalExecution, error) {
 	rows := []PlanEvalExecution{}
-	err := s.db.WithContext(ctx).Where("task_id = ?", taskID).Order("created_at ASC, id ASC").Find(&rows).Error
+	err := s.db.WithContext(ctx).
+		Select("id", "scenario_id", "snapshot_id", "as_of", "generate_status", "attempts", "generate_error_code", "generate_error_message", "evaluate_status",
+			"COALESCE(NULLIF(snapshot_name, ''), JSON_UNQUOTE(JSON_EXTRACT(snapshot_json, '$.username')), '') AS snapshot_name").
+		Where("task_id = ?", taskID).Order("created_at ASC, id ASC").Find(&rows).Error
+	return rows, err
+}
+
+// ListPlanEvalExecutionRequests recovers scenario metadata for legacy tasks.
+func (s *Store) ListPlanEvalExecutionRequests(ctx context.Context, taskID string) ([]PlanEvalExecution, error) {
+	rows := []PlanEvalExecution{}
+	err := s.db.WithContext(ctx).Select("snapshot_id", "as_of", "request_json").
+		Where("task_id = ?", taskID).Order("created_at ASC, id ASC").Find(&rows).Error
 	return rows, err
 }
