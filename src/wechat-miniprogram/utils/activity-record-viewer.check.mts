@@ -10,10 +10,11 @@ import type { ManualStrengthSummary } from '../types/manual-strength.ts';
 
 type ActivityResponse = { total: number; activities: Array<{ label_id: string; name: string; date: string; source: string; duration_s: number; manual_strength_summary?: ManualStrengthSummary }> };
 type PageUnderTest = {
-  data: { guest: boolean; total: number; monthGroups: Array<{ summary: { count: number }; duration: string; rows: Array<{ name: string; strengthSummary: string }> }> };
+  data: { guest: boolean; total: number; summaryStale: boolean; monthGroups: Array<{ summary: { count: number }; duration: string; rows: Array<{ name: string; strengthSummary: string }> }> };
   setData(patch: object): void;
   onLoad(): Promise<void>;
   onShow(): void;
+  onLoadMore(): Promise<void>;
   fetch(): Promise<void>;
 };
 
@@ -124,6 +125,20 @@ await beforeDelete;
 assert.equal(view.data.monthGroups[0].rows[0].name, '手表力量训练');
 assert.equal(view.data.monthGroups[0].summary.count, 1);
 
+listVersion++;
+strengthDeleted?.('user-b', '未缓存的较早训练');
+assert.equal(view.data.summaryStale, true);
+const failedSummaryRefresh = requests.shift();
+assert.equal(failedSummaryRefresh?.viewer, 'user-b');
+failedSummaryRefresh?.reject(new Error('network'));
+await new Promise<void>((resolve) => setImmediate(resolve));
+assert.equal(view.data.summaryStale, true);
+const retrySummary = view.onLoadMore();
+await respond('user-b', '重新验证的活动');
+await retrySummary;
+assert.equal(view.data.summaryStale, false);
+assert.equal(view.data.monthGroups[0].summary.count, 1);
+
 const savedRecord = {
   id: 'saved', name: '账号 A 的历史训练', note: '账号 A 的备注', actions: [{
     name: '深蹲', sets: [
@@ -134,13 +149,14 @@ const savedRecord = {
   revision: 1, started_at: '2026-11-26T07:00:00Z', ended_at: '2026-11-26T07:30:00Z',
 };
 type TrainingPage = {
-  data: { draft?: strength.StrengthDraft | null; record?: unknown; summaryLabel?: string; actionRows?: Array<{ sets: Array<{ number: number }> }>; error?: string };
+  data: { draft?: strength.StrengthDraft | null; record?: unknown; summaryLabel?: string; actionRows?: Array<{ sets: Array<{ number: number }> }>; error?: string; canDiscardDraft?: boolean };
   setData(patch: object): void;
   onLoad(params: { edit?: string; recordId?: string }): Promise<void> | void;
   onShow?(): void;
   onCoachReview?(): void;
   onDelete?(): Promise<void>;
   onSave?(): Promise<void>;
+  onDiscardDraft?(): Promise<void>;
 };
 class TestApiError extends Error {
   readonly statusCode: number;
@@ -176,6 +192,7 @@ async function loadTrainingPage(
       showModal: () => confirmDelete(),
       showToast: ({ title }: { title: string }) => toasts.push(title),
       navigateBack: () => { navigatedBack++; },
+      pageScrollTo: () => undefined,
     },
     require: (path: string) => ({
       '../../services/manual-strength': {
@@ -294,10 +311,18 @@ assert.equal(staleDraft.data.draft?.id, 'deleted-draft');
 assert.equal(staleDraft.data.draft?.form.note, '尚未保存');
 assert.equal(staleDraft.data.error, '原训练记录已不存在，无法保存。');
 assert.equal(activeDraft.id, 'deleted-draft');
+assert.equal(staleDraft.data.canDiscardDraft, true);
+await staleDraft.onDiscardDraft?.();
+assert.equal(activeDraft.id, 'deleted-draft');
 
+activeDraft.form.actions[0].sets[0].quantity = '0';
+const incomplete = await loadTrainingPage('../pages/manual-strength/manual-strength.ts', {});
+await incomplete.onSave?.();
+assert.deepEqual(saves, ['deleted-draft']);
+assert.equal(incomplete.data.canDiscardDraft, true);
 confirmDelete = async () => ({ confirm: true });
-await staleDraft.onSave?.();
-assert.deepEqual(saves, ['deleted-draft', 'deleted-draft']);
-assert.equal(staleDraft.data.draft?.id, 'fresh');
+await incomplete.onDiscardDraft?.();
+assert.equal(incomplete.data.draft?.id, 'fresh');
+assert.equal(incomplete.data.canDiscardDraft, false);
 assert.equal(activeDraft, undefined);
 console.log('activity-record-viewer.check: all assertions passed');

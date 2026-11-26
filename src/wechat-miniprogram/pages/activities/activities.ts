@@ -56,6 +56,7 @@ interface ActivitiesPageData {
   currentMonth: string;
   /** 按月份折叠的分组列表（月份倒序） */
   monthGroups: MonthGroup[];
+  summaryStale: boolean;
   /** 完全没有活动记录时的空态标题 */
   emptyTitle: string;
   /** 后端总记录数 */
@@ -290,6 +291,7 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
     loading: true,
     currentMonth: '',
     monthGroups: [],
+    summaryStale: false,
     emptyTitle: '暂无活动记录',
     total: 0,
     loadedCount: 0,
@@ -344,6 +346,7 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
         loading: Boolean(userId),
         loadingMore: false,
         monthGroups: [],
+        summaryStale: false,
         total: 0,
         loadedCount: 0,
         hasMore: false,
@@ -391,6 +394,8 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
       const total = this.data.total - 1;
       const loadedCount = this.data.loadedCount - 1;
       this.setData({ monthGroups, total, loadedCount, hasMore: loadedCount < total });
+    } else {
+      this.setData({ summaryStale: true });
     }
     void this.fetch();
   },
@@ -417,6 +422,7 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
       }));
       this.setData({
         monthGroups,
+        summaryStale: false,
         total: res.total,
         loadedCount: res.activities.length,
         hasMore: res.activities.length < res.total,
@@ -456,7 +462,12 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
 
   async onLoadMore() {
     const userId = this.viewerId;
-    if (!userId || userId !== currentViewerId() || this.data.loading || this.data.loadingMore || !this.data.hasMore) return;
+    if (!userId || userId !== currentViewerId() || this.data.loading || this.data.loadingMore) return;
+    if (this.data.summaryStale) {
+      await this.fetch();
+      return;
+    }
+    if (!this.data.hasMore) return;
     const generation = this.fetchGeneration;
     const offset = this.data.loadedCount;
     this.setData({ loadingMore: true });

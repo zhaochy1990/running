@@ -298,7 +298,25 @@ page {
   margin: 0 0 var(--spacing-xs);
 }
 
+.strength-footer__actions {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
+.strength-page .discard-button {
+  flex-shrink: 0;
+  width: auto;
+  min-height: 96rpx;
+  border: 2rpx solid var(--color-hairline);
+  border-radius: var(--radius-lg);
+  background: var(--color-card);
+  color: var(--color-danger);
+  font-size: var(--font-size-md);
+}
+
 .strength-page .save-button {
+  flex: 1;
+  min-width: 0;
   width: 100%;
   min-height: 96rpx;
   border-radius: var(--radius-lg);
