@@ -49,6 +49,28 @@ function eventsFrom(chunks: Array<[string, unknown]>): AsyncIterable<readonly [s
   })();
 }
 
+test("a failed stream after the latest question does not reuse the previous reply", async () => {
+  const failure = new Error("model failed");
+  const events = (async function* () {
+    yield valuesChunk({ messages: [ai("旧回复"), { type: "human", content: "新问题" }] });
+    throw failure;
+  })();
+  await assert.rejects(collectCoachStream(source(events), async () => {}), (error) => error === failure);
+});
+
+test("only the strength review model subnode streams review text", async () => {
+  const events = eventsFrom([
+    msgChunk(ai("内部结构化内容"), { langgraph_node: "model_request", langgraph_checkpoint_ns: "training:first|model_request:second" }),
+    msgChunk(ai("本次复盘"), { langgraph_node: "model_request", langgraph_checkpoint_ns: "strength_review:first|model_request:second" }),
+    valuesChunk({ messages: [ai("本次复盘")] }),
+  ]);
+  const deltas: string[] = [];
+  await collectCoachStream(source(events), async (event) => {
+    if (event.kind === "text_delta") deltas.push(event.delta);
+  });
+  assert.deepEqual(deltas, ["本次复盘"]);
+});
+
 interface SseEvent {
   event: string;
   data: Record<string, unknown>;

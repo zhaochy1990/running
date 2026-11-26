@@ -23,6 +23,7 @@
     </view>
     <view class="detail-footer">
       <button class="detail-edit" bindtap="onEdit">编辑记录</button>
+      <button class="detail-coach" bindtap="onCoachReview">和教练聊一聊</button>
     </view>
   </block>
 </view>

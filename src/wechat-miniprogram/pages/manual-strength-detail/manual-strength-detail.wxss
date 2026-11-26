@@ -28,7 +28,8 @@ page {
 }
 
 .detail-retry::after,
-.detail-edit::after {
+.detail-edit::after,
+.detail-coach::after {
   border: 0;
 }
 
@@ -102,14 +103,31 @@ page {
   padding: var(--spacing-sm) var(--spacing-lg) calc(var(--spacing-sm) + env(safe-area-inset-bottom));
   border-top: 2rpx solid var(--color-hairline);
   background: var(--color-card);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: var(--spacing-xs);
 }
 
-.strength-detail .detail-edit {
+.strength-detail button.detail-edit,
+.strength-detail button.detail-coach {
   display: flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  margin: 0;
   min-height: 92rpx;
+  font-size: var(--font-size-md);
   font-weight: var(--font-weight-bold);
   line-height: 1.4;
+}
+
+.detail-coach {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border: 2rpx solid transparent;
+  border-radius: var(--radius-lg);
 }

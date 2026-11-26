@@ -1,6 +1,7 @@
 import type { CheckpointTuple } from "@stride/coach-agent";
 import type { Hono } from "hono";
 import type { AuthEnv } from "../auth.js";
+import { findStrengthReviewRecord, isStrengthReviewSession, type StrengthReviewRecords } from "../coach/strengthReviewSession.js";
 import { toPublicHistory } from "../publicResponse.js";
 
 /** Shared shape of a coach session id (history routes + share routes #715). */
@@ -27,11 +28,13 @@ export function registerSessionListRoutes(app: Hono<AuthEnv>, dependencies: { ch
     const userId = context.get("userId");
     const threads = await dependencies.checkpointer.listThreadsForUser(userId);
     return context.json({
-      sessions: threads.map((thread) => ({
-        session_id: thread.sessionId,
-        updated_at: thread.updatedAt,
-        preview: thread.preview,
-      })),
+      sessions: threads
+        .filter((thread) => !isStrengthReviewSession(thread.sessionId))
+        .map((thread) => ({
+          session_id: thread.sessionId,
+          updated_at: thread.updatedAt,
+          preview: thread.preview,
+        })),
     });
   });
 }
@@ -41,12 +44,21 @@ export function registerSessionListRoutes(app: Hono<AuthEnv>, dependencies: { ch
  * The client passes only `session_id`; the thread is derived from the JWT as
  * `{sub}:coach:{session_id}` so a client can't reach another user's thread.
  */
-export function registerHistoryRoutes(app: Hono<AuthEnv>, dependencies: { checkpointer: ThreadHistoryReader }): void {
+export function registerHistoryRoutes(
+  app: Hono<AuthEnv>,
+  dependencies: { checkpointer: ThreadHistoryReader; strengthReviewRecords?: StrengthReviewRecords },
+): void {
   app.get("/api/users/me/coach/sessions/:sessionId/messages", async (context) => {
     const userId = context.get("userId");
     const sessionId = context.req.param("sessionId");
     if (!SESSION_ID_RE.test(sessionId)) {
       return context.json({ error: "invalid_session_id" }, 400);
+    }
+    let strengthReview: { record_id: string; name: string; started_at: string } | undefined;
+    if (isStrengthReviewSession(sessionId)) {
+      const record = await findStrengthReviewRecord(dependencies.strengthReviewRecords, userId, sessionId);
+      if (!record) return context.json({ error: "strength_review_record_not_found" }, 404);
+      strengthReview = { record_id: record.id, name: record.name, started_at: record.startedAt.toISOString() };
     }
     const threadId = `${userId}:coach:${sessionId}`;
     const tuple = await dependencies.checkpointer.getTuple({ configurable: { thread_id: threadId } });
@@ -56,6 +68,7 @@ export function registerHistoryRoutes(app: Hono<AuthEnv>, dependencies: { checkp
       session_id: sessionId,
       thread_id: threadId,
       messages: toPublicHistory(messages),
+      ...(strengthReview ? { strength_review: strengthReview } : {}),
     });
   });
 }

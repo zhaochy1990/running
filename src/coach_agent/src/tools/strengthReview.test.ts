@@ -124,10 +124,11 @@ async function execute(
   userId = "athlete-a",
   name = "get_strength_training_review",
   history: BaseMessage[] = [],
+  strengthReviewRecordId?: string,
 ) {
   const tools: StructuredTool[] = getQaTools(store);
   const node = new ToolNode(tools, { handleToolErrors: false });
-  const config = { tags: [], context: { userId, asof: day } };
+  const config = { tags: [], context: { userId, asof: day, strengthReviewRecordId } };
   const output = await node.invoke(
     {
       messages: [
@@ -141,6 +142,26 @@ async function execute(
   assert.equal(typeof output.messages[0]?.content, "string");
   return JSON.parse(output.messages[0].content);
 }
+
+test("a review anchored across Shanghai midnight can include the explicitly named next-day watch heart rate", async () => {
+  const record = {
+    ...manualRecord,
+    id: "4bc80c96-0415-4bdc-bf17-83a919154594",
+    startedAt: new Date("2026-11-26T15:59:00Z"),
+    endedAt: new Date("2026-11-26T16:18:00Z"),
+  };
+  const watch = { ...watchB, startedAt: new Date("2026-11-26T16:01:00Z") };
+  const { store, detailReads } = fixture([record], [watch]);
+  store.getWatchStrengthSummaries = async (owner, start, end) => {
+    assert.deepEqual([owner, start, end], ["athlete-a", "2026-11-26", "2026-11-27"]);
+    return [watch];
+  };
+  const review = await execute(store, "补充手表 watch-b 的心率", { watchReference: "watch-b" }, "athlete-a", undefined, [], record.id);
+  assert.equal(review.record.id, record.id);
+  assert.deepEqual(detailReads, [record.id, watch.id]);
+  assert.equal(review.watchHeartRate.avgHr, 137);
+  assert.equal(review.watchHeartRate.source, "watch");
+});
 
 test("two same-day manual candidates are listed without giving an undesignated record's sets", async () => {
   const { store, detailReads } = fixture([manualRecord, secondManual]);

@@ -1,4 +1,4 @@
-import { sendCoachChatStream, fetchCoachHistory, fetchCoachSessions, takePendingCoachContext, createCoachShare } from '../../services/coach';
+import { sendCoachChatStream, fetchCoachHistory, fetchCoachSessions, takePendingCoachContext, createCoachShare, isStrengthReviewSession, strengthReviewSessionId, takePendingStrengthReview } from '../../services/coach';
 import type { CoachHistoryMessage, CoachSessionTarget, PendingCoachContext, CoachStreamEvent, CoachDone, CoachStreamHandle } from '../../services/coach';
 import {
   applyMasterPlanFromContent,
@@ -48,7 +48,7 @@ import {
   type PlanJobRecord,
 } from '../../utils/planJobCards';
 import { PLAN_JOB_POLL_MS } from '../../utils/planJobProgress';
-import { epochToShanghaiHm, shanghaiToday } from '../../utils/date';
+import { epochToShanghaiHm, epochToShanghaiYmd, shanghaiToday } from '../../utils/date';
 import { friendlyMessage } from '../../utils/friendlyError';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 import { theme } from '../../utils/theme';
@@ -224,6 +224,7 @@ const COACH_SHARE_PAGE = '/pages/coach-share/coach-share';
 // 之后每条确认落库的新消息（finishStream）递增。本地新气泡按它领投影序号。
 let projectionLength = 0;
 let activeHistoryLoad: { sessionId: string } | undefined;
+let unsubscribeStrengthReviewer: (() => void) | undefined;
 // 最近一次历史加载是否失败。失败时本地投影序号不可信（欢迎语兜底视图缺服务端
 // 前缀），多选入口 toast 拦截，onShow 静默重拉直到同步成功。
 let historySyncFailed = false;
@@ -354,6 +355,8 @@ interface CoachPageData {
   currentSessionId: string;
   // 顶部上下文提示条：存在时表示当前会话锚定了一项计划训练。
   contextHint: string;
+  strengthReviewRecordId: string;
+  strengthReviewReady: boolean;
   // mp-html 样式：容器兜底颜色/字重 + 结构化 tag 样式（浅色主题）。
   containerStyle: string;
   tagStyle: Record<string, string>;
@@ -401,6 +404,10 @@ interface CoachPageHandlers {
   sendText(text: string): Promise<void>;
   doSend(text: string, clientTurnId: string, userMsgId: number): Promise<void>;
   startContextSession(pending: PendingCoachContext): void;
+  startStrengthReview(recordId: string, userId: string): void;
+  leaveStrengthReview(reload: boolean): void;
+  onStrengthReviewBack(): void;
+  onCoachTabReselect(): void;
   currentSessionTarget(): CoachSessionTarget | undefined;
   contextHintOf(session: CoachSession | undefined): string;
   // master-plan 卡片动作（#429）：启用（含替换确认）/放弃 + 卡片状态回写。
@@ -609,7 +616,7 @@ function readSessions(): CoachSession[] {
   try {
     const raw = wx.getStorageSync(SESSIONS_KEY);
     if (Array.isArray(raw)) {
-      const list = raw.filter((s) => s && typeof s.id === 'string' && typeof s.title === 'string');
+      const list = raw.filter((s) => s && typeof s.id === 'string' && !isStrengthReviewSession(s.id) && typeof s.title === 'string');
       if (list.length > 0) return list as CoachSession[];
     }
   } catch {
@@ -629,7 +636,7 @@ function writeSessions(list: CoachSession[]): void {
 function readCurrentSessionId(): string {
   try {
     const id = wx.getStorageSync(CURRENT_SESSION_KEY);
-    if (typeof id === 'string' && id) return id;
+    if (typeof id === 'string' && id && !isStrengthReviewSession(id)) return id;
   } catch {
     /* ignore */
   }
@@ -657,7 +664,7 @@ Page<CoachPageData, CoachPageHandlers>({
    * 里调创建端点换真 sid。封面用预生成图，生成失败回落默认截图。
    */
   onShareAppMessage() {
-    if (this.data.selectMode && this.data.selectCount > 0 && !historySyncFailed) {
+    if (!this.data.strengthReviewRecordId && this.data.selectMode && this.data.selectCount > 0 && !historySyncFailed) {
       return {
         ...defaultShareAppMessage(),
         ...(shareCoverPath ? { imageUrl: shareCoverPath } : {}),
@@ -687,6 +694,8 @@ Page<CoachPageData, CoachPageHandlers>({
     sessions: [],
     currentSessionId: DEFAULT_SESSION_ID,
     contextHint: '',
+    strengthReviewRecordId: '',
+    strengthReviewReady: false,
     // mp-html 样式：容器兜底 + 结构化 tag 样式，与 declaration / roadmap-detail
     // 页同源（theme 常量插值，深色视觉零变化；勿随手改色）。
     containerStyle: `color:${theme.textPrimary};font-size:13px;line-height:20px;`,
@@ -741,7 +750,7 @@ Page<CoachPageData, CoachPageHandlers>({
         return;
       }
       void this.loadSessions();
-      void this.loadSession(currentSessionId);
+      if (!this.data.strengthReviewRecordId) void this.loadSession(currentSessionId);
     });
   },
 
@@ -766,7 +775,7 @@ Page<CoachPageData, CoachPageHandlers>({
             ...(local?.contextLabel ? { contextLabel: local.contextLabel } : {}),
           };
         })
-        .filter((s, i, arr) => s.id && arr.findIndex((x) => x.id === s.id) === i);
+        .filter((s, i, arr) => s.id && !isStrengthReviewSession(s.id) && arr.findIndex((x) => x.id === s.id) === i);
       // 后端尚未落库的新会话（本地刚新建、还没发过消息）不在列表里，
       // 保持它的条目标记在当前会话，避免抽屉里“当前”徽标失效。
       const currentId = readCurrentSessionId();
@@ -788,6 +797,13 @@ Page<CoachPageData, CoachPageHandlers>({
     if (tabBar) {
       tabBar.setData({ selected: 0 });
     }
+    const { user, isAuthenticated } = userStore.getState();
+    const review = takePendingStrengthReview(isAuthenticated ? user?.id : undefined);
+    if (review && user) {
+      takePendingCoachContext();
+      this.startStrengthReview(review, user.id);
+      return;
+    }
     // 游客态期间用户去登录页完成登录，switchTab 回来：退出游客态并补拉会话/消息。
     if (this.data.guest && userStore.getState().isAuthenticated) {
       this.setData({ guest: false });
@@ -800,7 +816,7 @@ Page<CoachPageData, CoachPageHandlers>({
       this.startContextSession(pending);
     }
     // 上次历史加载失败的静默重拉：同步成功前多选转发保持拦截（投影序号不可信）。
-    if (historySyncFailed) {
+    if (historySyncFailed && !this.data.guest) {
       void this.loadSession(this.data.currentSessionId);
     }
     // 赛季计划 job 卡（#1024）：补回本会话的本地卡、回写预览页启用后的
@@ -809,12 +825,15 @@ Page<CoachPageData, CoachPageHandlers>({
   },
 
   onHide() {
+    if (this.data.strengthReviewRecordId) this.leaveStrengthReview(false);
     // tabBar 页切走只触发 onHide（不卸载）：停掉轮询，避免隐藏页持续请求；
     // 服务端继续推进，回来 onShow 的 refreshPlanJobCards 会立即拉齐。
     clearPlanJobTimers();
   },
 
   onUnload() {
+    unsubscribeStrengthReviewer?.();
+    unsubscribeStrengthReviewer = undefined;
     coachPageActive = false;
     activeHistoryLoad = undefined;
     clearPlanJobTimers();
@@ -825,6 +844,73 @@ Page<CoachPageData, CoachPageHandlers>({
       clearTimeout(shareCoverTimer);
       shareCoverTimer = null;
     }
+  },
+
+  startStrengthReview(recordId: string, userId: string) {
+    this.resetStream();
+    wx.hideShareMenu({ menus: ['shareAppMessage', 'shareTimeline'] });
+    unsubscribeStrengthReviewer?.();
+    unsubscribeStrengthReviewer = userStore.subscribe((current) => {
+      if (current.isAuthenticated && current.user?.id === userId) return;
+      this.setData({ guest: !current.isAuthenticated });
+      this.leaveStrengthReview(false);
+    });
+    seq = 0;
+    projectionLength = 0;
+    activeHistoryLoad = undefined;
+    historySyncFailed = false;
+    resetPlanFormBindings();
+    const sessionId = strengthReviewSessionId(recordId);
+    this.setData({
+      strengthReviewRecordId: recordId,
+      strengthReviewReady: false,
+      currentSessionId: sessionId,
+      messages: [],
+      scrollIntoId: '',
+      input: '',
+      guest: false,
+      drawerOpen: false,
+      contextHint: '正在加载训练记录…',
+      selectMode: false,
+      selectCount: 0,
+      allSelected: false,
+    });
+    void this.loadSession(sessionId);
+  },
+
+  leaveStrengthReview(reload: boolean) {
+    this.resetStream();
+    wx.showShareMenu({ menus: ['shareAppMessage', 'shareTimeline'] });
+    unsubscribeStrengthReviewer?.();
+    unsubscribeStrengthReviewer = undefined;
+    seq = 0;
+    projectionLength = 0;
+    activeHistoryLoad = undefined;
+    historySyncFailed = true;
+    resetPlanFormBindings();
+    const sessionId = readCurrentSessionId();
+    const session = this.data.sessions.find((item) => item.id === sessionId);
+    this.setData({
+      strengthReviewRecordId: '',
+      strengthReviewReady: false,
+      currentSessionId: sessionId,
+      contextHint: this.contextHintOf(session),
+      messages: this.data.guest ? guestWelcomeMessages() : welcomeMessages(),
+      input: '',
+      scrollIntoId: '',
+    });
+    if (reload) void this.loadSession(sessionId);
+  },
+
+  onStrengthReviewBack() {
+    const recordId = this.data.strengthReviewRecordId;
+    if (recordId) {
+      wx.navigateTo({ url: `/pages/manual-strength-detail/manual-strength-detail?recordId=${encodeURIComponent(recordId)}` });
+    }
+  },
+
+  onCoachTabReselect() {
+    if (this.data.strengthReviewRecordId) this.leaveStrengthReview(true);
   },
 
   /** 入口「和教练聊一聊」：新建会话并挂 target，展示上下文提示条；带 kickoff 时自动发出首条消息。 */
@@ -877,6 +963,10 @@ Page<CoachPageData, CoachPageHandlers>({
 
   /** 清空当前会话的 target：不再围绕该训练对话，后续消息不带 target。 */
   onClearContext() {
+    if (this.data.strengthReviewRecordId) {
+      this.leaveStrengthReview(true);
+      return;
+    }
     const id = this.data.currentSessionId;
     const sessions = this.data.sessions.map((s) =>
       s.id === id ? { ...s, target: undefined, contextLabel: undefined } : s,
@@ -899,6 +989,26 @@ Page<CoachPageData, CoachPageHandlers>({
       const history = await fetchCoachHistory(sessionId);
       // 等待网络期间用户可能已切换会话（或首页移交新建了会话），丢弃过期结果。
       if (!isCurrent()) return;
+      const reviewId = this.data.strengthReviewRecordId;
+      if (reviewId) {
+        const review = history.strength_review;
+        if (review?.record_id !== reviewId) {
+          this.setData({ contextHint: '暂时无法打开训练复盘' });
+          return;
+        }
+        seq = 0;
+        const messages = history.messages.map((message, index) => toCoachMessage(message, index));
+        const startedAt = Date.parse(review.started_at);
+        projectionLength = messages.length;
+        historySyncFailed = false;
+        this.setData({
+          strengthReviewReady: true,
+          contextHint: `正在复盘「${review.name}」 · ${epochToShanghaiYmd(startedAt)} ${epochToShanghaiHm(startedAt)}`,
+          messages,
+          scrollIntoId: messages.length ? `msg-${messages[messages.length - 1].id}` : '',
+        });
+        return;
+      }
       let msgs = this.data.messages;
       if (history && Array.isArray(history.messages) && history.messages.length) {
         seq = 0;
@@ -930,8 +1040,13 @@ Page<CoachPageData, CoachPageHandlers>({
         messages: msgs,
         scrollIntoId: `msg-${msgs[msgs.length - 1].id}`,
       });
-    } catch {
+    } catch (error) {
       if (!isCurrent()) return;
+      if (this.data.strengthReviewRecordId) {
+        const unavailable = error instanceof ApiError && error.statusCode === 404;
+        this.setData({ contextHint: unavailable ? '未找到这条训练记录' : '暂时无法加载复盘，请重新打开', strengthReviewReady: false });
+        return;
+      }
       historySyncFailed = true;
       this.refreshPlanJobCards();
     } finally {
@@ -966,6 +1081,7 @@ Page<CoachPageData, CoachPageHandlers>({
    * 选择模式中长按 = 切换勾选（微信范式）；不可选消息 toast 原因。
    */
   onMessageLongPress(e: WechatMiniprogram.TouchEvent) {
+    if (this.data.strengthReviewRecordId) return;
     const { id } = e.currentTarget.dataset as { id?: number };
     if (typeof id !== 'number') return;
     if (this.data.selectMode) {
@@ -1976,6 +2092,7 @@ Page<CoachPageData, CoachPageHandlers>({
   /** 发送一条用户消息（输入框发送与入口 kickoff 共用）：刷会话标题、落用户气泡、发起本轮。 */
   async sendText(text: string) {
     if (this.data.sending) return;
+    if (this.data.strengthReviewRecordId && !this.data.strengthReviewReady) return;
     if (activeHistoryLoad?.sessionId === this.data.currentSessionId) {
       wx.showToast({ title: '对话加载中，请稍候', icon: 'none' });
       return;

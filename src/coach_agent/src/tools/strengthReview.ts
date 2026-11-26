@@ -1,8 +1,8 @@
 import { isAIMessage, isHumanMessage, isToolMessage } from "@langchain/core/messages";
-import { addDays, shanghaiIso } from "@stride/contract";
+import { addDays, shanghaiDay, shanghaiIso } from "@stride/contract";
 import * as z from "zod";
 import type { CoachToolRuntime } from "../agents/coachAgent.js";
-import type { DataProvider, StrengthRecordSummary } from "../data/dataProvider.js";
+import type { DataProvider, ManualStrengthRecord, StrengthRecordSummary } from "../data/dataProvider.js";
 import { defineCoachTool } from "./common.js";
 
 const reviewSchema = z.object({
@@ -21,6 +21,15 @@ const reviewSchema = z.object({
 
 function candidate(record: StrengthRecordSummary) {
   return { id: record.id, name: record.name, startedAt: shanghaiIso(record.startedAt) };
+}
+
+function manualEvidence(record: ManualStrengthRecord, scope: ReviewScope) {
+  return {
+    status: "found",
+    source: "manual",
+    scope,
+    record: { ...candidate(record), endedAt: shanghaiIso(record.endedAt), note: record.note, actions: record.actions },
+  };
 }
 
 const TOOL_NAME = "get_strength_training_review";
@@ -249,6 +258,16 @@ export function createStrengthReviewTool(store: DataProvider) {
       const asof = runtime.context.asof;
       if (!asof) throw new Error("get_strength_training_review: missing asof in runtime context");
       const { userText, priorEvidence } = readConversation(runtime.state);
+      if (runtime.context.strengthReviewRecordId) {
+        const record = await store.getManualStrengthDetail(userId, runtime.context.strengthReviewRecordId);
+        if (!record) return { status: "missing", source: "manual" };
+        const startDay = shanghaiDay(record.startedAt);
+        const endDay = shanghaiDay(record.endedAt);
+        return {
+          ...manualEvidence(record, { startDay, endDay }),
+          ...(await watchSupplement(store, userId, startDay, endDay, input.watchReference, userText)),
+        };
+      }
       const namedDay = clearDay(userText, asof);
       if (input.latest && !LATEST_REQUEST.test(userText)) return { status: "scope_mismatch", ...(namedDay ? { expectedDay: namedDay } : {}) };
       const inheritedScope = !namedDay && input.recordId && priorEvidence?.record?.id === input.recordId ? priorEvidence.scope : undefined;
@@ -265,10 +284,7 @@ export function createStrengthReviewTool(store: DataProvider) {
         const detail = await store.getManualStrengthDetail(userId, selected.id);
         if (!detail) return { status: "missing", source: "manual" };
         return {
-          status: "found",
-          source: "manual",
-          scope,
-          record: { ...candidate(detail), endedAt: shanghaiIso(detail.endedAt), note: detail.note, actions: detail.actions },
+          ...manualEvidence(detail, scope),
           ...(await watchSupplement(store, userId, startDay, endDay, input.watchReference, userText)),
         };
       }

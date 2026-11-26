@@ -5,10 +5,10 @@ import type { Hono } from "hono";
 import { type SSEStreamingApi, streamSSE } from "hono/streaming";
 import type { AuthEnv } from "../auth.js";
 import type { CoachInvoker } from "../coach/coachInvoker.js";
+import { findStrengthReviewRecord, isStrengthReviewSession, type StrengthReviewRecords } from "../coach/strengthReviewSession.js";
 import type { ChatRequest } from "../dto/chat.js";
 import type { TurnRequest } from "../dto/turn.js";
 import { toPublicResponse } from "../publicResponse.js";
-
 import type { TurnCoordinator } from "../turn/coordinator.js";
 import { ThreadBusyError, TurnConflictError } from "../turn/errors.js";
 import { type CoachStreamEmitter, collectCoachStream } from "./stream.js";
@@ -22,6 +22,7 @@ interface ChatDependencies {
   turnCoordinator: TurnCoordinator;
   /** #891 聊天内绑赛：请求未带 target 时回填线程持久层的 race target。 */
   raceTargets?: RaceTargetBindingGateway;
+  strengthReviewRecords?: StrengthReviewRecords;
 }
 
 export function registerChatRoutes(app: Hono<AuthEnv>, dependencies: ChatDependencies): void {
@@ -32,10 +33,19 @@ export function registerChatRoutes(app: Hono<AuthEnv>, dependencies: ChatDepende
 
     if (!body.ok) return context.json({ error: body.error }, 400);
 
+    let strengthReviewRecordId: string | undefined;
+    if (isStrengthReviewSession(body.value.sessionId)) {
+      const record = await findStrengthReviewRecord(dependencies.strengthReviewRecords, userId, body.value.sessionId);
+      if (!record) return context.json({ error: "strength_review_record_not_found" }, 404);
+      if (body.value.target || body.value.reviewContext || body.value.resume !== undefined) {
+        return context.json({ error: "invalid_strength_review_scope" }, 400);
+      }
+      strengthReviewRecordId = record.id;
+    }
     const threadId = `${userId}:coach:${body.value.sessionId}`;
     if (acceptsStream(context.req.raw)) {
       return streamSSE(context, async (stream) => {
-        await streamChat(dependencies, stream, body.value, userId, threadId);
+        await streamChat(dependencies, stream, body.value, userId, threadId, strengthReviewRecordId);
       });
     }
 
@@ -43,7 +53,7 @@ export function registerChatRoutes(app: Hono<AuthEnv>, dependencies: ChatDepende
       const response = await runTurn(dependencies, body.value, threadId, async (resumeFromCheckpoint, turn) => {
         const input = buildInput(body.value, resumeFromCheckpoint);
         const target = await resolveTarget(dependencies, body.value, threadId);
-        const config = buildConfig(body.value, userId, threadId, turn.fingerprint, target);
+        const config = buildConfig(body.value, userId, threadId, turn.fingerprint, target, strengthReviewRecordId);
         const result = await dependencies.coach.invoke(input, config);
         return toPublicResponse(result);
       });
@@ -94,7 +104,14 @@ async function runTurn(
 const SSE_KEEPALIVE_INTERVAL_MS = 15_000;
 
 /** SSE variant: emit status events during the run, then a single `done` event. */
-async function streamChat(dependencies: ChatDependencies, stream: SSEStreamingApi, body: ChatRequest, userId: string, threadId: string): Promise<void> {
+async function streamChat(
+  dependencies: ChatDependencies,
+  stream: SSEStreamingApi,
+  body: ChatRequest,
+  userId: string,
+  threadId: string,
+  strengthReviewRecordId?: string,
+): Promise<void> {
   const turnId = body.clientTurnId;
   const emit = async (event: "status" | "text_delta" | "narration" | "done" | "error", data: Record<string, unknown>) => {
     await stream.writeSSE({ event, data: JSON.stringify(data) });
@@ -124,7 +141,7 @@ async function streamChat(dependencies: ChatDependencies, stream: SSEStreamingAp
     const response = await runTurn(dependencies, body, threadId, async (resumeFromCheckpoint, turn) => {
       const input = buildInput(body, resumeFromCheckpoint);
       const target = await resolveTarget(dependencies, body, threadId);
-      const config = buildConfig(body, userId, threadId, turn.fingerprint, target);
+      const config = buildConfig(body, userId, threadId, turn.fingerprint, target, strengthReviewRecordId);
       const run = await dependencies.coach.streamEvents(input, config);
       return await collectCoachStream(run, emitStreamEvent);
     });
@@ -150,6 +167,7 @@ async function resolveTarget(
   body: ChatRequest,
   threadId: string,
 ): Promise<Record<string, unknown> | CoachRaceTargetRef | undefined> {
+  if (isStrengthReviewSession(body.sessionId)) return undefined;
   if (body.target !== undefined) return body.target;
   const persisted = (await dependencies.raceTargets?.get(threadId)) ?? undefined;
   return persisted;
@@ -178,12 +196,14 @@ function buildConfig(
   threadId: string,
   fingerprint: string,
   target: Record<string, unknown> | CoachRaceTargetRef | undefined,
+  strengthReviewRecordId?: string,
 ): Record<string, unknown> {
   return {
     context: {
       userId,
       asof: shanghaiDay(new Date().toISOString()),
       threadId,
+      ...(strengthReviewRecordId ? { strengthReviewRecordId } : {}),
       ...(target !== undefined ? { target } : {}),
       ...(body.target === undefined && target?.kind === "race" ? { raceTargetFromThread: true } : {}),
       ...(body.reviewContext ? { reviewContext: body.reviewContext } : {}),

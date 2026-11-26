@@ -36,7 +36,14 @@ Component({
   methods: {
     switchTab(e: WechatMiniprogram.TouchEvent) {
       const { path, index } = e.currentTarget.dataset as { path?: string; index?: number };
-      if (path === undefined || index === undefined || index === this.data.selected) return;
+      if (path === undefined || index === undefined) return;
+      if (index === this.data.selected) {
+        if (index === 0) {
+          const pages = getCurrentPages();
+          pages[pages.length - 1]?.onCoachTabReselect?.();
+        }
+        return;
+      }
       wx.switchTab({ url: path });
     },
   },

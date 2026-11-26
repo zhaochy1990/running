@@ -113,6 +113,7 @@ export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: C
         turnCoordinator: persistence.turnCoordinator,
         coachInvoker: coachInvoker,
         checkpointer: persistence.checkpointer,
+        strengthReviewRecords: dataProvider,
         // #891 聊天内绑赛：续轮从线程持久层回填 race target。
         threadRaceTargets: persistence.threadRaceTargets,
         planJobs,

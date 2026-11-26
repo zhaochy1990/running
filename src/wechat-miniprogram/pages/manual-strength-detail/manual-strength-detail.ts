@@ -1,4 +1,5 @@
 import { getManualStrengthRecord } from '../../services/manual-strength';
+import { openStrengthReview } from '../../services/coach';
 import { ApiError } from '../../services/request';
 import { userStore } from '../../store/index';
 import type { ManualStrengthRecord } from '../../types/manual-strength';
@@ -21,6 +22,7 @@ interface PageHandlers {
   closed: boolean;
   load(): Promise<void>;
   onEdit(): void;
+  onCoachReview(): void;
 }
 
 function trainingTimeLabel(record: ManualStrengthRecord): string {
@@ -103,5 +105,12 @@ Page<PageData, PageHandlers>({
   onEdit() {
     if (!this.data.record) return;
     wx.navigateTo({ url: `/pages/manual-strength/manual-strength?edit=${encodeURIComponent(this.data.record.id)}` });
+  },
+
+  onCoachReview() {
+    const { user, isAuthenticated } = userStore.getState();
+    if (!this.closed && isAuthenticated && user && this.data.record) {
+      openStrengthReview(this.data.record.id, user.id);
+    }
   },
 });

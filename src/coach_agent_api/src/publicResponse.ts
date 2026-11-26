@@ -59,6 +59,7 @@ function lastReplyMessage(messages: unknown): Record<string, unknown> | undefine
   if (!Array.isArray(messages)) return undefined;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
+    if (isHumanMessage(message)) return undefined;
     if (!isAssistantMessage(message)) continue;
     // An AI tool-call message is an intermediate graph step, not a reply.
     if (hasToolCalls(message)) return undefined;

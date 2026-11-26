@@ -31,6 +31,34 @@ let turnCounter = 0;
 // switchTab 不能携带 query，因此把待挂载的 target + 展示标签暂存到本地，
 // 教练页 onShow 消费后清除。
 const PENDING_CONTEXT_KEY = 'coach.pendingContext';
+const STRENGTH_REVIEW_PREFIX = 'manual-strength-';
+let pendingStrengthReview: { recordId: string; userId: string } | undefined;
+
+export function strengthReviewSessionId(recordId: string): string {
+  return STRENGTH_REVIEW_PREFIX + recordId;
+}
+
+export function isStrengthReviewSession(sessionId: string): boolean {
+  return sessionId.toLowerCase().startsWith(STRENGTH_REVIEW_PREFIX);
+}
+
+export function openStrengthReview(recordId: string, userId: string): void {
+  const handoff = { recordId, userId };
+  pendingStrengthReview = handoff;
+  wx.switchTab({
+    url: '/pages/coach/coach',
+    fail: () => {
+      if (pendingStrengthReview === handoff) pendingStrengthReview = undefined;
+      wx.showToast({ title: '暂时无法打开复盘', icon: 'none' });
+    },
+  });
+}
+
+export function takePendingStrengthReview(userId: string | undefined): string | undefined {
+  const handoff = pendingStrengthReview;
+  pendingStrengthReview = undefined;
+  return handoff?.userId === userId ? handoff?.recordId : undefined;
+}
 
 /** 入口页交给教练页的上下文：机器可读 target + 展示标签。 */
 export interface PendingCoachContext {
@@ -313,6 +341,7 @@ export interface CoachHistoryResponse {
   session_id: string;
   thread_id: string;
   messages: CoachHistoryMessage[];
+  strength_review?: { record_id: string; name: string; started_at: string };
 }
 
 /**

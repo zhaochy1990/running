@@ -17,6 +17,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { getLogger } from "@stride/common";
 import type { Hono } from "hono";
 import type { AuthEnv } from "../auth.js";
+import { isStrengthReviewSession } from "../coach/strengthReviewSession.js";
 import type { CoachShareStore } from "../persistence/shares.js";
 import { type SessionHistoryMessage, toPublicHistory } from "../publicResponse.js";
 import { SESSION_ID_RE, type ThreadHistoryReader } from "./history.js";
@@ -167,6 +168,9 @@ export function registerShareCreateRoute(app: Hono<AuthEnv>, dependencies: Coach
     const sessionId = context.req.param("sessionId");
     if (!SESSION_ID_RE.test(sessionId)) {
       return context.json({ error: "invalid_session_id" }, 400);
+    }
+    if (isStrengthReviewSession(sessionId)) {
+      return context.json({ error: "session_not_found" }, 404);
     }
 
     let body: unknown;

@@ -66,7 +66,7 @@ export const OPENAPI_DOCUMENT = {
         operationId: "createCoachTurn",
         summary: "Run or resume a Coach turn",
         description:
-          "The authenticated JWT subject determines the user. client_turn_id is an idempotency key within the session. Send exactly one of message or resume.",
+          "The authenticated JWT subject determines the user. client_turn_id is an idempotency key within the session. Send exactly one of message or resume. A manual-strength-{record_id} session accepts only a message about the caller's saved record.",
         security: [{ bearerAuth: [] }],
         requestBody: {
           required: true,
@@ -87,6 +87,7 @@ export const OPENAPI_DOCUMENT = {
           },
           "400": errorResponse("The request body is invalid."),
           "401": errorResponse("The bearer token is missing or invalid."),
+          "404": errorResponse("The manual strength record is absent or unavailable to the caller."),
           "409": errorResponse("The client_turn_id was already used with different input."),
           "429": {
             ...errorResponse("The thread is busy; retry after the indicated delay."),
@@ -229,8 +230,7 @@ export const OPENAPI_DOCUMENT = {
         tags: ["Coach"],
         operationId: "listCoachSessions",
         summary: "List the caller's Coach sessions (chat history)",
-        description:
-          "Returns one entry per Coach conversation, newest first, with a preview derived from the session's first user message. Pairs with the per-session messages endpoint.",
+        description: "Returns the caller's regular conversations, newest first. Private manual strength reviews are reopened from their activity details.",
         security: [{ bearerAuth: [] }],
         responses: {
           "200": {
@@ -250,7 +250,8 @@ export const OPENAPI_DOCUMENT = {
         tags: ["Coach"],
         operationId: "getCoachSessionMessages",
         summary: "Load the conversation history for a Coach session",
-        description: "The authenticated JWT subject determines the user; only session_id is passed, the thread is derived server-side.",
+        description:
+          "The thread is derived from the JWT subject and session_id. A manual-strength-{record_id} session also checks record ownership and returns its current displayed name. Loading history does not create a turn.",
         security: [{ bearerAuth: [] }],
         parameters: [
           {
@@ -271,6 +272,7 @@ export const OPENAPI_DOCUMENT = {
           },
           "400": errorResponse("The session_id is invalid."),
           "401": errorResponse("The bearer token is missing or invalid."),
+          "404": errorResponse("The manual strength record is absent or unavailable to the caller."),
         },
       },
     },
@@ -1040,6 +1042,16 @@ export const OPENAPI_DOCUMENT = {
         properties: {
           session_id: { $ref: "#/components/schemas/TurnIdentifier" },
           thread_id: { type: "string" },
+          strength_review: {
+            type: "object",
+            required: ["record_id", "name", "started_at"],
+            properties: {
+              record_id: { type: "string", format: "uuid" },
+              name: { type: "string" },
+              started_at: { type: "string", format: "date-time" },
+            },
+            additionalProperties: false,
+          },
           messages: {
             type: "array",
             items: { $ref: "#/components/schemas/SessionHistoryMessage" },
