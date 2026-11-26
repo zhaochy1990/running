@@ -61,6 +61,7 @@ interface StrategyPageHandlers {
   onVersionTap(e: WechatMiniprogram.TouchEvent): void;
   patchPaceRow(index: number, patch: Partial<StrategyView['paceRows'][number]>): void;
   patchFuelingRow(index: number, patch: Partial<StrategyView['fuelingRows'][number]>): void;
+  onDraftShareTap(): void;
   onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
   onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onBack(): void;
@@ -244,6 +245,10 @@ Page<StrategyPageData, StrategyPageHandlers>({
     });
   },
 
+  onDraftShareTap() {
+    wx.showToast({ title: '应用并保存后即可分享', icon: 'none' });
+  },
+
   onShareAppMessage() {
     const view = this.data.view;
     const name = view?.raceName || '比赛策略';
@@ -251,8 +256,7 @@ Page<StrategyPageData, StrategyPageHandlers>({
       return { title: name, path: '/pages/race-center/race-center' };
     }
     // #506：已落库的版本把 owner+race+version 三个 id 带进只读落地页——好友
-    // （含未登录）点开看到的是分享者的这一版，不是自己的；草稿/无版本行 id
-    // 时保持旧回落（赛事详情页）。
+    // （含未登录）点开看到分享者的这一版。
     const ownerId = userStore.getState().user?.id;
     if (this._activeVersionId && ownerId) {
       return {
@@ -261,8 +265,8 @@ Page<StrategyPageData, StrategyPageHandlers>({
       };
     }
     return {
-      title: strategyShareTitle(view),
-      // 分享落到赛事详情页（报告页是私有产物，接收方看自己是否已生成）
+      // 右上角菜单在初稿或旧数据缺版本 ID 时仍可转发赛事详情。
+      title: name,
       path: `/pages/race-center/detail?id=${this._raceId}`,
     };
   },

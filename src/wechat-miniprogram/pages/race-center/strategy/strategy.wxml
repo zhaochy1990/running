@@ -46,7 +46,8 @@
         <view class="hero__summary">{{view.summary}}</view>
         <view class="hero__actions">
           <button class="hero__btn hero__btn--lead" bindtap="onCoachTap">和教练聊一聊比赛策略</button>
-          <button class="hero__btn hero__btn--minor" open-type="share">分享</button>
+          <button wx:if="{{draft}}" class="hero__btn hero__btn--minor" bindtap="onDraftShareTap">分享</button>
+          <button wx:else class="hero__btn hero__btn--minor" open-type="share">分享</button>
           <button class="hero__btn hero__btn--minor" bindtap="onPosterTap">配速卡</button>
         </view>
       </view>
