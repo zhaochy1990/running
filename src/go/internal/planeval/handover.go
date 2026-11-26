@@ -170,7 +170,7 @@ func (s *Service) Submit(ctx context.Context, executionID string, req submitRequ
 			return nil, fail(422, "invalid_request", fmt.Sprintf("artifact_type 应为 %s", scenario.ArtifactType))
 		}
 		input.Artifact = json.RawMessage(req.Result.Content)
-		verdict := (SchemaCheck{}).Run(ctx, *input)
+		verdict := (SchemaCheck{ArtifactType: scenario.ArtifactType}).Run(ctx, *input)
 		outcome.SchemaResult = checkResultRow(verdict, "")
 		sum := sha256.Sum256([]byte(req.Result.Content))
 		outcome.Artifact.Content = req.Result.Content

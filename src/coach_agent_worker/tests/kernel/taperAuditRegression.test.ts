@@ -83,17 +83,6 @@ for (const [totalWeeks, startWeek] of [
           applied = docs.map((doc) => WeeklyPlanSchema.parse(doc));
           return [];
         },
-        getPendingAdjustment: async () => null,
-        getInjuryState: async () => null,
-        completeAdjustmentPayload: async () => {
-          throw new Error("滚动不应写调整方案");
-        },
-        upsertAdjustment: async () => {
-          throw new Error("滚动不应写调整方案");
-        },
-        updateInjuryMaintenance: async () => {
-          throw new Error("滚动不应写伤病状态");
-        },
       },
       projection: async (deps, input) => {
         const outcome = await runRollingProjection(deps, input);

@@ -37,7 +37,7 @@ export interface RollingHandlerDeps {
   /** createMasterPlanLlmModels 的 Pick：滚动不重跑 L2，phasingModel 仅为装配兼容保留。 */
   models: Pick<MasterPlanLlmModels, "phasingModel" | "contentModel">;
   masterPlans: RollingMasterPlanSource;
-  weeklyPlans: RollingWeeklyChannel;
+  weeklyPlans: Pick<RollingWeeklyChannel, "listWeeklyPlanWeeks" | "batchApplyWeeklyPlans">;
   /** devops#1043：批首周之前一周的存量周文档——边界日历里仍生效的相邻课程。 */
   weeklyDocs: RollingWeeklyDocSource;
   /** 测试缝：缺省=runRollingProjection（生产装配不传）。 */
@@ -91,107 +91,117 @@ export function createRollingJobHandler(deps: RollingHandlerDeps): Handler {
     } catch (error) {
       throw newPermanentError(ERROR_CODES.CONTRACT_VIOLATION, error);
     }
-    const stages = new StageHeartbeats(hb);
-    const asOfDay = shanghaiDay(request.as_of ?? new Date().toISOString());
+    return runRollingJob(deps, request, job.userId, hb);
+  };
+}
 
-    // ① 读档：active master plan content + 已落库 weekly 周行。
-    await stages.report(STAGE_READING);
-    const active = await deps.masterPlans.getMasterPlanMetadataForDate(job.userId, asOfDay);
-    if (active === null) {
-      throw newPermanentError("kernel_rolling_no_master_plan", new Error(`user ${job.userId} has no master plan covering ${asOfDay}`));
-    }
-    if (active.status !== "active") {
-      throw newPermanentError(
-        "kernel_rolling_master_plan_not_active",
-        new Error(`master plan ${active.planId} is ${active.status}, rolling needs the active plan`),
-      );
-    }
-    // 启用事务保证 content、赛季行和首批周课归链 id 对齐；旧内容缺字段时
-    // 回退行 id。
-    const rollingMasterId = rollingMasterIdOf(active.content, active.planId);
-    if (request.master_plan_id !== undefined && request.master_plan_id !== active.planId && request.master_plan_id !== rollingMasterId) {
-      throw newPermanentError(
-        "kernel_rolling_master_plan_mismatch",
-        new Error(`request expects master plan ${request.master_plan_id} but the active plan is ${active.planId}`),
-      );
-    }
-    const weekRows = await deps.weeklyPlans.listWeeklyPlanWeeks(job.userId, rollingMasterId);
+/** 生产与离线测评共用读档、周窗推导和投影；输出通道由调用方装配。 */
+export async function runRollingJob(deps: RollingHandlerDeps, request: RollingJobRequest, userId: string, hb: Heartbeat) {
+  const stages = new StageHeartbeats(hb);
+  const asOfDay = shanghaiDay(request.as_of ?? new Date().toISOString());
 
-    // ② 组装存量输入：lastGeneratedWeek = 快照有课周 ∪ 已落库 weekly 行的最大周号。
-    let master: RollingMasterInput;
-    try {
-      master = fromStoredContent({
-        content: active.content,
-        masterPlanId: rollingMasterId,
-        lastGeneratedWeek: Math.max(
-          snapshotLastGeneratedWeek(active.content),
-          weeklyMaxWeek(
-            active.content,
-            weekRows.map((row) => row.week_start),
-          ),
-        ),
-      });
-    } catch (error) {
-      throw newPermanentError("kernel_rolling_content_invalid", error);
-    }
-
-    // ③ 滚动投影：provider 包一层观测 L1（开始=evaluating、就绪=进 L3 planning），
-    // contentModel 包一层观测 L4；内核逻辑零改动。
-    const observedProvider: MasterPlanContextProvider = {
-      loadSnapshot: async (userId, asOf) => {
-        await stages.report(STAGE_L1_START);
-        const snapshot = await deps.contextProvider.loadSnapshot(userId, asOf);
-        await stages.report(STAGE_L3);
-        return snapshot;
-      },
-      loadActivities: async (userId, startDay, endDay) => {
-        await stages.report(STAGE_L1_START);
-        const activities = await deps.contextProvider.loadActivities(userId, startDay, endDay);
-        await stages.report(STAGE_L3);
-        return activities;
-      },
-    };
-    const observedModels: Pick<MasterPlanLlmModels, "phasingModel" | "contentModel"> = {
-      phasingModel: deps.models.phasingModel,
-      contentModel: {
-        invoke: async (input, retry) => {
-          await stages.report(STAGE_L4);
-          return deps.models.contentModel.invoke(input, retry);
-        },
-      },
-    };
-    const outcome = await (deps.projection ?? runRollingProjection)(
-      { contextProvider: observedProvider, models: observedModels, existingWeeklyDoc: (weekStart) => boundaryDocOf(deps.weeklyDocs, job.userId, weekStart) },
-      { userId: job.userId, master, asOf: request.as_of ?? new Date().toISOString() },
+  // ① 读档：active master plan content + 已落库 weekly 周行。
+  await stages.report(STAGE_READING);
+  const active = await deps.masterPlans.getMasterPlanMetadataForDate(userId, asOfDay);
+  if (active === null) {
+    throw newPermanentError("kernel_rolling_no_master_plan", new Error(`user ${userId} has no master plan covering ${asOfDay}`));
+  }
+  if (active.status !== "active") {
+    throw newPermanentError(
+      "kernel_rolling_master_plan_not_active",
+      new Error(`master plan ${active.planId} is ${active.status}, rolling needs the active plan`),
     );
+  }
+  // 启用事务保证 content、赛季行和首批周课归链 id 对齐；旧内容缺字段时
+  // 回退行 id。
+  const rollingMasterId = rollingMasterIdOf(active.content, active.planId);
+  if (request.master_plan_id !== undefined && request.master_plan_id !== active.planId && request.master_plan_id !== rollingMasterId) {
+    throw newPermanentError(
+      "kernel_rolling_master_plan_mismatch",
+      new Error(`request expects master plan ${request.master_plan_id} but the active plan is ${active.planId}`),
+    );
+  }
+  const weekRows = await deps.weeklyPlans.listWeeklyPlanWeeks(userId, rollingMasterId);
 
-    if (outcome.decision === "infeasible") {
-      throw newPermanentError("kernel_rolling_infeasible", new Error(`${outcome.reason}；failedChecks=${JSON.stringify(outcome.failedChecks)}`));
-    }
-    if (outcome.decision === "no_op") {
-      return { result: JSON.stringify({ decision: "no_op", reason: outcome.reason, master_plan_id: rollingMasterId }) };
-    }
+  // ② 组装存量输入：lastGeneratedWeek = 快照有课周 ∪ 已落库 weekly 行的最大周号。
+  let master: RollingMasterInput;
+  try {
+    master = fromStoredContent({
+      content: active.content,
+      masterPlanId: rollingMasterId,
+      lastGeneratedWeek: Math.max(
+        snapshotLastGeneratedWeek(active.content),
+        weeklyMaxWeek(
+          active.content,
+          weekRows.map((row) => row.week_start),
+        ),
+      ),
+    });
+  } catch (error) {
+    throw newPermanentError("kernel_rolling_content_invalid", error);
+  }
 
-    // ④ 落库：weeklyDocs 批量进 Go（同 master_plan 周期望替换 revision+1）。
-    await stages.report(STAGE_OUTPUT);
-    const applied = await applyWeeklyDocs(deps.weeklyPlans, job.userId, rollingMasterId, outcome.weeklyDocs);
-    return {
-      result: JSON.stringify({
-        decision: "completed",
-        master_plan_id: rollingMasterId,
-        window: { start_week: outcome.window.startWeek, end_week: outcome.window.endWeek, mode: outcome.window.mode },
-        reason: outcome.window.reason,
-        weekly_weeks: applied.map((row) => ({ week_start: row.week_start, revision: row.revision, replaced: row.replaced })),
-        audit_summary: outcome.audit.summary,
-        source: outcome.scheduled.source,
-        generated_by: "plan-job",
-      }),
-    };
+  // ③ 滚动投影：provider 包一层观测 L1（开始=evaluating、就绪=进 L3 planning），
+  // contentModel 包一层观测 L4；内核逻辑零改动。
+  const observedProvider: MasterPlanContextProvider = {
+    loadSnapshot: async (userId, asOf) => {
+      await stages.report(STAGE_L1_START);
+      const snapshot = await deps.contextProvider.loadSnapshot(userId, asOf);
+      await stages.report(STAGE_L3);
+      return snapshot;
+    },
+    loadActivities: async (userId, startDay, endDay) => {
+      await stages.report(STAGE_L1_START);
+      const activities = await deps.contextProvider.loadActivities(userId, startDay, endDay);
+      await stages.report(STAGE_L3);
+      return activities;
+    },
+  };
+  const observedModels: Pick<MasterPlanLlmModels, "phasingModel" | "contentModel"> = {
+    phasingModel: deps.models.phasingModel,
+    contentModel: {
+      invoke: async (input, retry) => {
+        await stages.report(STAGE_L4);
+        return deps.models.contentModel.invoke(input, retry);
+      },
+    },
+  };
+  const outcome = await (deps.projection ?? runRollingProjection)(
+    { contextProvider: observedProvider, models: observedModels, existingWeeklyDoc: (weekStart) => boundaryDocOf(deps.weeklyDocs, userId, weekStart) },
+    { userId: userId, master, asOf: request.as_of ?? new Date().toISOString() },
+  );
+
+  if (outcome.decision === "infeasible") {
+    throw newPermanentError("kernel_rolling_infeasible", new Error(`${outcome.reason}；failedChecks=${JSON.stringify(outcome.failedChecks)}`));
+  }
+  if (outcome.decision === "no_op") {
+    return { result: JSON.stringify({ decision: "no_op", reason: outcome.reason, master_plan_id: rollingMasterId }) };
+  }
+
+  // ④ 落库：weeklyDocs 批量进 Go（同 master_plan 周期望替换 revision+1）。
+  await stages.report(STAGE_OUTPUT);
+  const applied = await applyWeeklyDocs(deps.weeklyPlans, userId, rollingMasterId, outcome.weeklyDocs);
+  return {
+    result: JSON.stringify({
+      decision: "completed",
+      master_plan_id: rollingMasterId,
+      window: { start_week: outcome.window.startWeek, end_week: outcome.window.endWeek, mode: outcome.window.mode },
+      reason: outcome.window.reason,
+      weekly_weeks: applied.map((row) => ({ week_start: row.week_start, revision: row.revision, replaced: row.replaced })),
+      audit_summary: outcome.audit.summary,
+      source: outcome.scheduled.source,
+      generated_by: "plan-job",
+    }),
   };
 }
 
 /** 同 master_plan 幂等重投：空批直接跳过（Go 端 400 拒空批）。 */
-async function applyWeeklyDocs(channel: RollingWeeklyChannel, userId: string, masterPlanId: string, docs: WeeklyPlan[]): Promise<WeeklyPlanAppliedWeek[]> {
+async function applyWeeklyDocs(
+  channel: Pick<RollingWeeklyChannel, "batchApplyWeeklyPlans">,
+  userId: string,
+  masterPlanId: string,
+  docs: WeeklyPlan[],
+): Promise<WeeklyPlanAppliedWeek[]> {
   if (docs.length === 0) return [];
   return channel.batchApplyWeeklyPlans(userId, masterPlanId, docs);
 }

@@ -6,7 +6,7 @@ import { createSnapshot, createSnapshotRecords, RUNNER_ID } from "./fixtures.js"
 
 function setup() {
   const notCovered: SnapshotNotCoveredError[] = [];
-  const provider = new SnapshotDataProvider(createSnapshot(), RUNNER_ID, (error) => notCovered.push(error));
+  const provider = new SnapshotDataProvider(createSnapshot(), RUNNER_ID, "2026-10-23T23:59:59+08:00", (error) => notCovered.push(error));
   return { provider, notCovered };
 }
 
@@ -56,7 +56,8 @@ test("requests beyond the data cutoff are 'not covered', never an empty answer, 
   assert.equal(await provider.getMasterPlanMetadataForDate(RUNNER_ID, "2026-11-01"), null);
   await assert.rejects(provider.getActivitiesByDateRange("someone-else", "2026-10-01", "2026-10-23"), SnapshotNotCoveredError);
   assert.equal(notCovered.length, 3);
-  assert.match(notCovered[0]!.message, /2026-10-01\.\.2026-10-24 is beyond the snapshot cutoff 2026-10-23/);
+  assert.ok(notCovered[0]);
+  assert.match(notCovered[0].message, /2026-10-01\.\.2026-10-24 is beyond the snapshot cutoff 2026-10-23/);
   // v1 快照不含的读面同样显式拒绝。
   for (const call of [
     () => provider.getWeeklyPlan(RUNNER_ID, "2026-10-26_11-01"),
@@ -89,9 +90,59 @@ test("the snapshot contract rejects structural drift at the import boundary", ()
   assert.ok(RunnerSnapshotSchema.safeParse(valid).success);
   const records = createSnapshotRecords();
   assert.equal(
-    RunnerSnapshotSchema.safeParse({ ...valid, records: { ...records, activities: [{ ...records.activities[0]!, shanghaiDay: "2026-13-40" }] } }).success,
+    RunnerSnapshotSchema.safeParse({ ...valid, records: { ...records, activities: [{ ...records.activities[0], shanghaiDay: "2026-13-40" }] } }).success,
     false,
   );
   assert.equal(RunnerSnapshotSchema.safeParse({ ...valid, constraints: { max_run_days_per_week: 9, no_run_days: [] } }).success, false);
   assert.equal(RunnerSnapshotSchema.safeParse({ ...valid, surprise: true }).success, false);
+});
+
+test("intraday execution never sees a later activity from the same Shanghai cutoff day", async () => {
+  const snapshot = createSnapshot();
+  const morning = snapshot.records.activities.at(-1);
+  assert.ok(morning);
+  snapshot.records.activities.push(
+    { ...morning, labelId: "future-evening", date: "2026-10-23T19:00:00+08:00", durationS: null },
+    { ...morning, labelId: "unfinished", date: "2026-10-23T09:50:00+08:00", durationS: 1200 },
+  );
+  const provider = new SnapshotDataProvider(snapshot, RUNNER_ID, "2026-10-23T10:00:00+08:00");
+  for (let read = 0; read < 2; read++) {
+    const activities = await provider.getActivitiesByDateRange(RUNNER_ID, "2026-10-23", "2026-10-23");
+    assert.deepEqual(
+      activities.map((activity) => activity.labelId),
+      [morning.labelId],
+    );
+  }
+  assert.equal(await provider.getActivityDetail(RUNNER_ID, "future-evening"), null);
+  assert.equal(await provider.getActivityDetail(RUNNER_ID, "unfinished"), null);
+});
+
+test("intraday day-level aggregates report a gap unless their snapshot explicitly freezes that instant", async () => {
+  const snapshot = createSnapshot();
+  const instant = "2026-10-23T10:00:00+08:00";
+  const provider = new SnapshotDataProvider(snapshot, RUNNER_ID, instant);
+  await assert.rejects(provider.getDailyTrainingLoadByDateRange(RUNNER_ID, "2026-10-23", "2026-10-23"), /snapshot.as_of is required/);
+  await assert.rejects(provider.getDailyRecoveryByDateRange(RUNNER_ID, "2026-10-23", "2026-10-23"), /snapshot.as_of is required/);
+  const race = snapshot.records.race_history[0];
+  assert.ok(race);
+  snapshot.records.race_history.push({ ...race, date: "2026-10-23" });
+  await assert.rejects(provider.getRaceHistory(RUNNER_ID, { asOfDate: "2026-10-23" }), /snapshot.as_of is required/);
+  snapshot.as_of = instant;
+  const frozen = new SnapshotDataProvider(snapshot, RUNNER_ID, instant);
+  assert.equal((await frozen.getDailyTrainingLoadByDateRange(RUNNER_ID, "2026-10-23", "2026-10-23")).length, 1);
+});
+
+test("missing activity duration is retained when known frozen, otherwise reported as a gap", async () => {
+  const snapshot = createSnapshot();
+  const row = snapshot.records.activities[0];
+  assert.ok(row);
+  row.durationS = null;
+  const historical = new SnapshotDataProvider(snapshot, RUNNER_ID, "2026-10-23T10:00:00+08:00");
+  assert.equal((await historical.getActivitiesByDateRange(RUNNER_ID, row.shanghaiDay, row.shanghaiDay))[0]?.distanceM, row.distanceM);
+  const today = snapshot.records.activities.at(-1);
+  assert.ok(today);
+  today.durationS = null;
+  await assert.rejects(historical.getActivitiesByDateRange(RUNNER_ID, "2026-10-23", "2026-10-23"), /snapshot.as_of is required/);
+  snapshot.as_of = "2026-10-23T10:00:00+08:00";
+  assert.equal((await historical.getActivitiesByDateRange(RUNNER_ID, "2026-10-23", "2026-10-23")).length, 1);
 });

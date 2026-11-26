@@ -80,6 +80,7 @@ export class SnapshotDataProvider implements DataProvider {
   constructor(
     private readonly snapshot: RunnerSnapshot,
     private readonly userId: string,
+    private readonly asOf: string,
     private readonly onNotCovered: (error: SnapshotNotCoveredError) => void = () => undefined,
   ) {}
 
@@ -128,7 +129,9 @@ export class SnapshotDataProvider implements DataProvider {
   async getDailyRecoveryByDateRange(userId: string, startDay: string, endDay: string): Promise<DailyRecovery[]> {
     this.assertUser(userId, "getDailyRecoveryByDateRange");
     this.assertRange("getDailyRecoveryByDateRange", startDay, endDay);
-    return this.snapshot.records.daily_recovery.filter((row) => row.date >= startDay && row.date <= endDay);
+    const rows = this.snapshot.records.daily_recovery.filter((row) => row.date >= startDay && row.date <= endDay);
+    for (const row of rows) this.assertKnownDay("getDailyRecoveryByDateRange", row.date);
+    return rows;
   }
 
   async getActivitySummariesByDateRange(userId: string, startDay: string, endDay: string): Promise<Activity[]> {
@@ -146,7 +149,9 @@ export class SnapshotDataProvider implements DataProvider {
   async getDailyTrainingLoadByDateRange(userId: string, startDay: string, endDay: string): Promise<DailyTrainingLoad[]> {
     this.assertUser(userId, "getDailyTrainingLoadByDateRange");
     this.assertRange("getDailyTrainingLoadByDateRange", startDay, endDay);
-    return this.snapshot.records.daily_training_load.filter((row) => row.date >= startDay && row.date <= endDay);
+    const rows = this.snapshot.records.daily_training_load.filter((row) => row.date >= startDay && row.date <= endDay);
+    for (const row of rows) this.assertKnownDay("getDailyTrainingLoadByDateRange", row.date);
+    return rows;
   }
 
   async getRaceHistory(userId: string, options: { asOfDate: string; minDistanceKm?: number; limit?: number }): Promise<RaceEffort[]> {
@@ -154,15 +159,19 @@ export class SnapshotDataProvider implements DataProvider {
     this.assertAsOf("getRaceHistory", options.asOfDate);
     const minDistanceM = Math.round((options.minDistanceKm ?? 4.5) * 1000);
     const limit = Math.min(Math.max(options.limit ?? 15, 1), 100);
-    return this.snapshot.records.race_history
+    const rows = this.snapshot.records.race_history
       .filter((effort) => effort.date <= options.asOfDate && (effort.distanceKm ?? 0) * 1000 >= minDistanceM)
       .slice(0, limit);
+    for (const row of rows) this.assertKnownDay("getRaceHistory", row.date);
+    return rows;
   }
 
   async getPersonalBests(userId: string, asOfDate: string): Promise<PersonalBest[]> {
     this.assertUser(userId, "getPersonalBests");
     this.assertAsOf("getPersonalBests", asOfDate);
-    return this.snapshot.records.personal_bests.filter((best) => (best.achievedAt ?? "") <= asOfDate);
+    const rows = this.snapshot.records.personal_bests.filter((best) => (best.achievedAt ?? "") <= asOfDate);
+    for (const row of rows) if (row.achievedAt !== null) this.assertKnownDay("getPersonalBests", row.achievedAt);
+    return rows;
   }
 
   /** 快照只冻结了截止日那一次读取得到的校准；问更早的截止日时它若尚未生效则为 null。 */
@@ -171,7 +180,11 @@ export class SnapshotDataProvider implements DataProvider {
     const day = DAY.test(asOfDate) ? asOfDate : shanghaiDay(asOfDate);
     this.assertAsOf("getLatestRunningCalibration", day);
     const calibration = this.snapshot.records.running_calibration;
-    return calibration !== null && calibration.asOfDate <= day ? (compact(calibration) as RunningCalibration) : null;
+    if (calibration !== null && calibration.asOfDate <= day) {
+      this.assertKnownDay("getLatestRunningCalibration", calibration.asOfDate);
+      return compact(calibration) as RunningCalibration;
+    }
+    return null;
   }
 
   /**
@@ -214,8 +227,18 @@ export class SnapshotDataProvider implements DataProvider {
     this.assertUser(userId, "getActivityDetail");
     return this.activities("1900-01-01", this.snapshot.as_of_day).find((activity) => activity.labelId === labelId) ?? null;
   }
-  async getWeeklyPlan(_userId: string, weekName: string): Promise<never> {
-    this.notCovered("getWeeklyPlan", weekName);
+  async getWeeklyPlan(userId: string, weekName: string): Promise<Record<string, unknown> | null> {
+    this.assertUser(userId, "getWeeklyPlan");
+    const docs = this.snapshot.records.weekly_plans;
+    if (docs === undefined) this.notCovered("getWeeklyPlan", "records.weekly_plans is missing");
+    return docs.find((row) => row.week_start === weekName || row.content.week_name === weekName)?.content ?? null;
+  }
+
+  async listWeeklyPlanWeeks(userId: string, masterPlanId: string) {
+    this.assertUser(userId, "listWeeklyPlanWeeks");
+    const rows = this.snapshot.records.weekly_plan_weeks;
+    if (rows === undefined) this.notCovered("listWeeklyPlanWeeks", "records.weekly_plan_weeks is missing");
+    return rows.filter((row) => row.master_plan_id === masterPlanId);
   }
   async getPlanSessions(_userId: string, dateFrom: string, dateTo: string): Promise<never> {
     this.notCovered("getPlanSessions", `${dateFrom}..${dateTo}`);
@@ -230,9 +253,23 @@ export class SnapshotDataProvider implements DataProvider {
     this.notCovered("getPerformanceBaseline", `as of ${asOfDate}`);
   }
 
+  private assertKnownDay(method: string, day: string): void {
+    if (day === shanghaiDay(this.asOf) && this.snapshot.as_of === undefined && Date.parse(this.asOf) < Date.parse(`${day}T23:59:59+08:00`)) {
+      this.notCovered(method, `${day} has day-level data only; snapshot.as_of is required for an intraday execution`);
+    }
+  }
+
   private activities(startDay: string, endDay: string): Activity[] {
     return this.snapshot.records.activities
       .filter((row) => row.shanghaiDay >= startDay && row.shanghaiDay <= endDay)
+      .filter((row) => {
+        if (Date.parse(row.date) > Date.parse(this.asOf)) return false;
+        if (row.durationS === null) {
+          this.assertKnownDay("getActivitiesByDateRange", row.shanghaiDay);
+          return Date.parse(row.date) <= Date.parse(this.asOf);
+        }
+        return Date.parse(row.date) + row.durationS * 1000 <= Date.parse(this.asOf);
+      })
       .map((row) => ({ ...row, userId: this.userId, date: new Date(row.date) }));
   }
 }

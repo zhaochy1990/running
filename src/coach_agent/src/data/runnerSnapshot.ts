@@ -1,4 +1,4 @@
-import { AVAILABILITY_WEEKDAY } from "@stride/contract";
+import { AVAILABILITY_WEEKDAY, WeeklyPlanSchema } from "@stride/contract";
 import { z } from "zod/v4";
 import { CalibrationSelectionSchema, CalibrationSourceSchema } from "./calibrationMetadata.js";
 
@@ -148,8 +148,7 @@ const RecordsJsonSchema = z
       })
       .strict()
       .nullable(),
-    injuries: z
-      .array(z.object({ description: z.string(), recoveryStatus: z.string(), runningRestriction: z.string() }).strict()),
+    injuries: z.array(z.object({ description: z.string(), recoveryStatus: z.string(), runningRestriction: z.string() }).strict()),
     race_target: z
       .object({
         goal_id: z.string(),
@@ -233,6 +232,29 @@ const RecordsJsonSchema = z
       })
       .strict()
       .nullable(),
+    /** 已排周行与完整课表是两份独立冻结输入，不能从检查预期推导。 */
+    weekly_plan_weeks: z
+      .array(
+        z
+          .object({
+            week_start: day,
+            master_plan_id: z.string().nullable(),
+            revision: z.number().int().positive(),
+          })
+          .strict(),
+      )
+      .optional(),
+    weekly_plans: z
+      .array(
+        z
+          .object({ week_start: day, content: WeeklyPlanSchema })
+          .strict()
+          .refine((row) => row.content.week_name.slice(0, 10) === row.week_start, {
+            path: ["week_start"],
+            message: "week_start must match the complete weekly document",
+          }),
+      )
+      .optional(),
     sync_coverage: SyncCoverageJsonSchema.nullable(),
   })
   .strict();
@@ -253,6 +275,8 @@ export const RunnerSnapshotSchema = z
     target_time: z.string().regex(RACE_TIME).nullable(),
     /** 上海数据截止日（含当日）：快照只含这一天结束时已知的记录。 */
     as_of_day: day,
+    /** 可选精确冻结时点；缺省仅声明截止日末的日级数据覆盖。 */
+    as_of: INSTANT.optional(),
     /** 规则直接读取的训练约束（每周跑步日上限与禁跑日）。 */
     constraints: z
       .object({
@@ -260,6 +284,8 @@ export const RunnerSnapshotSchema = z
         no_run_days: z.array(AVAILABILITY_WEEKDAY),
       })
       .strict(),
+    /** 仅供 Evaluate 验收，Generate 不读取。 */
+    expected_start_week: z.number().int().positive().optional(),
     records: RecordsJsonSchema,
     provenance: z
       .object({
