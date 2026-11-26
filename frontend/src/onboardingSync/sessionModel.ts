@@ -4,7 +4,7 @@
 // polling/banner visibility, they never infer readiness beyond what the
 // server reports (completed_with_gaps is NOT full coverage and must not be
 // presented as such).
-import type { OnboardingSyncReadiness, OnboardingSyncStageView, OnboardingSyncView } from "../api";
+import type { OnboardingSyncReadiness, OnboardingSyncStageGap, OnboardingSyncStageView, OnboardingSyncView } from "../api";
 
 // Session states (server-owned, see internal/storage/onboardingsync.go).
 export type OnboardingSyncState =
@@ -48,7 +48,8 @@ export function isSessionTerminal(state: string): boolean {
 
 export function shouldHideBanner(view: OnboardingSyncView | null, dismissed: boolean): boolean {
   if (!view || dismissed) return true;
-  return view.state === "superseded" || (view.state === "completed" && view.readiness.historical_analysis === "not_started");
+  return view.state === "superseded" || (view.state === "completed" && view.readiness.historical_analysis === "not_started" &&
+    !view.stages.some((stage) => stage.gaps?.some((gap) => gap.health_history_days)));
 }
 
 export function shouldPollSession(view: OnboardingSyncView): boolean {
@@ -129,4 +130,43 @@ export function stageLabel(stage: OnboardingSyncStageView): string {
 export function rangeLabel(from?: string | null, to?: string | null): string {
   if (!from && !to) return "—";
   return `${from ?? "…"} ~ ${to ?? "…"}`;
+}
+
+export function expectedEmptyScan(stage: OnboardingSyncStageView | undefined): boolean {
+  return stage?.status === "completed" && Boolean(stage.gaps?.length) && stage.gaps?.every((gap) => gap.kind === "empty") === true;
+}
+
+const RAW_STAGES = {
+  recent_data: "recent_raw",
+  extended_data: "extended_raw",
+  historical_data: "historical_raw",
+} as const;
+
+export function summaryStage(view: OnboardingSyncView, key: ReadinessKey): OnboardingSyncStageView | undefined {
+  if (key === "historical_data") {
+    return view.stages.find((stage) => stage.stage === "historical_raw") ?? view.stages.find((stage) => stage.stage === "extended_raw");
+  }
+  if (key === "recent_data" || key === "extended_data") {
+    return view.stages.find((stage) => stage.stage === RAW_STAGES[key]);
+  }
+  return undefined;
+}
+
+export function gapText(gap: OnboardingSyncStageGap): string {
+  const range = gap.from === gap.to ? gap.from : rangeLabel(gap.from, gap.to);
+  const reason = gap.reason ? `（${gap.reason}）` : "";
+  if (gap.kind === "empty") {
+    if (gap.health_history_days) return `手表只提供近 ${gap.health_history_days} 天健康数据 · ${range}`;
+    const item = gap.channel === "health" ? "健康记录" : gap.channel === "dashboard" ? "手表摘要" : "训练记录";
+    return `这段时间没有${item} · ${range}`;
+  }
+  if (gap.kind === "transient") {
+    const days = Math.round((Date.parse(gap.to) - Date.parse(gap.from)) / 86_400_000) + 1;
+    return `${days > 0 && !gap.range_estimated ? `有 ${days} 天数据暂时拿不到` : "数据暂时拿不到"} · ${range}`;
+  }
+  if (gap.kind === "unavailable") {
+    const label = gap.reason?.startsWith("activity ") ? "有 1 条记录无法获取" : "这段时间的数据无法获取";
+    return `${label} · ${range}${reason}`;
+  }
+  return `缺项：${rangeLabel(gap.from, gap.to)}${reason}`;
 }

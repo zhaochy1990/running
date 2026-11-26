@@ -25,9 +25,15 @@ public struct OnboardingSyncStageGap: Decodable, Sendable, Equatable {
     public let from: String
     public let to: String
     public let reason: String?
+    public let kind: String?
+    public let channel: String?
+    public let healthHistoryDays: Int?
+    public let rangeEstimated: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case from, to, reason
+        case from, to, reason, kind, channel
+        case healthHistoryDays = "health_history_days"
+        case rangeEstimated = "range_estimated"
     }
 }
 
@@ -144,6 +150,49 @@ extension APIClient {
 /// session 视图的展示整形：状态/级别文案、tone 映射、阶段名与范围标签。
 /// 文案三端（Web/小程序/iOS）同表，改这里须同步另两端。
 public enum OnboardingSessionDisplay {
+
+    public static func expectedEmptyScan(_ stage: OnboardingSyncStageView?) -> Bool {
+        guard let stage, stage.status == "completed", let gaps = stage.gaps, !gaps.isEmpty else { return false }
+        return gaps.allSatisfy { $0.kind == "empty" }
+    }
+
+    public static func summaryStage(_ key: ReadinessKey, of view: OnboardingSyncSessionView) -> OnboardingSyncStageView? {
+        switch key {
+        case .recentData: view.stages.first { $0.stage == "recent_raw" }
+        case .extendedData: view.stages.first { $0.stage == "extended_raw" }
+        case .historicalData: view.stages.first { $0.stage == "historical_raw" } ?? view.stages.first { $0.stage == "extended_raw" }
+        default: nil
+        }
+    }
+
+    public static func gapText(_ gap: OnboardingSyncStageGap) -> String {
+        let range = gap.from == gap.to ? gap.from : rangeLabel(from: gap.from, to: gap.to)
+        let reason = gap.reason.map { "（\($0)）" } ?? ""
+        switch gap.kind {
+        case "empty":
+            if let days = gap.healthHistoryDays, days > 0 {
+                return "手表只提供近 \(days) 天健康数据 · \(range)"
+            }
+            let item = switch gap.channel {
+            case "health": "健康记录"
+            case "dashboard": "手表摘要"
+            default: "训练记录"
+            }
+            return "这段时间没有\(item) · \(range)"
+        case "transient":
+            let format = Date.ISO8601FormatStyle().year().month().day().dateSeparator(.dash)
+            if gap.rangeEstimated != true, let from = try? format.parse(gap.from), let to = try? format.parse(gap.to), to >= from {
+                let days = Int(to.timeIntervalSince(from) / 86_400) + 1
+                return "有 \(days) 天数据暂时拿不到 · \(range)"
+            }
+            return "数据暂时拿不到 · \(range)"
+        case "unavailable":
+            let label = gap.reason?.hasPrefix("activity ") == true ? "有 1 条记录无法获取" : "这段时间的数据无法获取"
+            return "\(label) · \(range)\(reason)"
+        default:
+            return "缺项：\(rangeLabel(from: gap.from, to: gap.to))\(reason)"
+        }
+    }
 
     /// 汇总 chip 的语气色（good=绿 / warn=琥珀 / bad=红 / muted=灰）。
     public enum Tone: Sendable, Equatable { case good, warn, bad, muted }

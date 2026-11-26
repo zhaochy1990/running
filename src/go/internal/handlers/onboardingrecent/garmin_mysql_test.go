@@ -242,9 +242,9 @@ func TestOnboardingRecent_GarminEndToEndWithSweep(t *testing.T) {
 	// day), so the activities channel records the empty stretches as gaps;
 	// the health channel answered with signal through the anchor day, so the
 	// stage-level observed window merges to 2026-10-20..2026-11-16 and the
-	// stage is completed_with_gaps, never silently read as fully covered.
-	if sr.Status != storage.OnboardingSyncCoverageCompletedWithGaps || len(sr.Gaps) == 0 {
-		t.Errorf("status = %q gaps = %+v, want completed_with_gaps with the empty stretches", sr.Status, sr.Gaps)
+	// stage completes, with empties recorded separately from observed data.
+	if sr.Status != storage.OnboardingSyncCoverageCompleted || len(sr.Gaps) == 0 {
+		t.Errorf("status = %q gaps = %+v, want completed with the empty stretches", sr.Status, sr.Gaps)
 	}
 	fmtObs := func(p *string) string {
 		if p == nil {
@@ -270,14 +270,14 @@ func TestOnboardingRecent_GarminEndToEndWithSweep(t *testing.T) {
 
 	// devops#1010: the analysis completing chains the background backfill
 	// stages, so the SESSION stays non-terminal; the recent coverage row
-	// itself must read completed_with_gaps.
+	// itself must read completed.
 	got, err := st.GetOnboardingSyncSessionByID(ctx, sess.SessionID)
 	if err != nil || got.Terminal() || got.State == storage.OnboardingSyncStateFailed {
 		t.Fatalf("session state = %s err=%v, want non-terminal (chain continues)", got.State, err)
 	}
 	recentCov, err := st.GetOnboardingSyncStageCoverage(ctx, sess.SessionID, storage.OnboardingSyncStageRecentRaw)
-	if err != nil || recentCov.Status != storage.OnboardingSyncCoverageCompletedWithGaps {
-		t.Fatalf("recent coverage = %+v err=%v, want completed_with_gaps", recentCov, err)
+	if err != nil || recentCov.Status != storage.OnboardingSyncCoverageCompleted {
+		t.Fatalf("recent coverage = %+v err=%v, want completed", recentCov, err)
 	}
 
 	// Work items carry their complete-fetch credentials; the activities item
@@ -332,7 +332,7 @@ func TestOnboardingRecent_GarminEndToEndWithSweep(t *testing.T) {
 	}
 	var sr2 onboardingsync.StageResult
 	_ = json.Unmarshal([]byte(again), &sr2)
-	if sr2.Status != storage.OnboardingSyncCoverageCompletedWithGaps || api.listCount() != before {
+	if sr2.Status != storage.OnboardingSyncCoverageCompleted || api.listCount() != before {
 		t.Errorf("re-delivery status=%q listCalls delta=%d, want the recorded outcome with no provider traffic",
 			sr2.Status, api.listCount()-before)
 	}

@@ -66,9 +66,11 @@ public struct OnboardingSyncBannerView: View {
                 // 原始/派生/辅助分开；shell_ready 是 bool 不做 chip（spec 决议）
                 FlowLayout(spacing: 4) {
                     ForEach(OnboardingSessionDisplay.ReadinessKey.allCases, id: \.self) { key in
+                        let emptyScan = OnboardingSessionDisplay.expectedEmptyScan(OnboardingSessionDisplay.summaryStage(key, of: view))
+                        let text = key == .historicalAnalysis ? OnboardingSessionDisplay.historicalAnalysisLabel(view) : (emptyScan ? "已完成" : nil)
                         readinessChip(label: key.label,
-                                      level: OnboardingSessionDisplay.readinessLevel(key, of: readiness),
-                                      text: key == .historicalAnalysis ? OnboardingSessionDisplay.historicalAnalysisLabel(view) : nil,
+                                      level: emptyScan ? .ready : OnboardingSessionDisplay.readinessLevel(key, of: readiness),
+                                      text: text,
                                       theme: theme)
                     }
                 }
@@ -161,14 +163,15 @@ public struct OnboardingSyncBannerView: View {
 
     @ViewBuilder
     private func stageRow(_ stage: OnboardingSyncStageView, theme: any Theme) -> some View {
-        let color = toneColor(OnboardingSessionDisplay.readinessTone(stage.readiness), theme: theme)
+        let emptyScan = OnboardingSessionDisplay.expectedEmptyScan(stage)
+        let color = toneColor(emptyScan ? .good : OnboardingSessionDisplay.readinessTone(stage.readiness), theme: theme)
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text(OnboardingSessionDisplay.stageLabel(stage.stage))
                     .font(theme.font(.fs12, weight: .medium))
                     .foregroundStyle(theme.foreground)
                 Spacer()
-                Text(OnboardingSessionDisplay.readinessLabel(stage.readiness))
+                Text(emptyScan ? "已完成" : OnboardingSessionDisplay.readinessLabel(stage.readiness))
                     .font(theme.font(.fs11))
                     .foregroundStyle(color)
             }
@@ -176,14 +179,10 @@ public struct OnboardingSyncBannerView: View {
                  + " · 实际覆盖 \(OnboardingSessionDisplay.rangeLabel(from: stage.observedFrom, to: stage.observedTo))")
                 .font(theme.font(.fs11))
                 .foregroundStyle(theme.muted)
-            if let gaps = stage.gaps, !gaps.isEmpty {
-                // 缺项如实列出（合法缺测/失败原因），不冒充完整覆盖
-                Text("缺项：" + gaps.map { gap in
-                    OnboardingSessionDisplay.rangeLabel(from: gap.from, to: gap.to)
-                        + (gap.reason.map { "（\($0)）" } ?? "")
-                }.joined(separator: "、"))
+            ForEach(Array((stage.gaps ?? []).enumerated()), id: \.offset) { _, gap in
+                Text(OnboardingSessionDisplay.gapText(gap))
                     .font(theme.font(.fs11))
-                    .foregroundStyle(theme.warning)
+                    .foregroundStyle(gap.kind == "empty" ? theme.muted : theme.warning)
             }
             if let error = stage.error {
                 Text(error)

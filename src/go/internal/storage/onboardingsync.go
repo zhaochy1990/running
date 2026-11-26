@@ -227,8 +227,8 @@ type OnboardingSyncWorkItem struct {
 	// observed/gap accounting). It is advisory state on a pending item — a
 	// lost checkpoint costs a conservative re-scan (existence probes skip
 	// already-stored rows), never correctness.
-	Checkpoint *string   `gorm:"column:checkpoint;type:text"`
-	Error      *string   `gorm:"column:error;type:text"`
+	Checkpoint *string   `gorm:"column:checkpoint;type:mediumtext"`
+	Error      *string   `gorm:"column:error;type:mediumtext"`
 	CreatedAt  time.Time `gorm:"column:created_at;type:datetime(6);not null"`
 	UpdatedAt  time.Time `gorm:"column:updated_at;type:datetime(6);not null"`
 }
@@ -253,8 +253,8 @@ type OnboardingSyncStageCoverage struct {
 	ScannedTo    *string `gorm:"column:scanned_to;type:char(10)"`
 	ObservedFrom *string `gorm:"column:observed_from;type:char(10)"`
 	ObservedTo   *string `gorm:"column:observed_to;type:char(10)"`
-	// GapsJSON lists recorded gaps as [{"from":..,"to":..,"reason":..}].
-	GapsJSON  *string   `gorm:"column:gaps_json;type:text"`
+	// GapsJSON lists recorded gaps as [{"from":..,"to":..,"kind":..,"reason":..}].
+	GapsJSON  *string   `gorm:"column:gaps_json;type:mediumtext"`
 	JobID     *string   `gorm:"column:job_id;type:varchar(64)"`
 	LastError *string   `gorm:"column:last_error;type:text"`
 	CreatedAt time.Time `gorm:"column:created_at;type:datetime(6);not null"`
@@ -1011,9 +1011,7 @@ func (s *Store) MarkOnboardingSyncWorkItem(ctx context.Context, id int64, status
 	if credential != "" {
 		updates["fetch_credential"] = credential
 	}
-	if errMsg != nil {
-		updates["error"] = *errMsg
-	}
+	updates["error"] = errMsg
 	res := s.db.WithContext(ctx).Model(&OnboardingSyncWorkItem{}).
 		Where("id = ? AND status = ?", id, OnboardingSyncItemPending).
 		Updates(updates)
@@ -1038,9 +1036,9 @@ func (s *Store) SaveOnboardingSyncWorkItemCheckpoint(ctx context.Context, id int
 }
 
 // ResetFailedOnboardingSyncWorkItems arms one stage's failed items for the
-// retry generation: failed → pending (error cleared). Done items keep their
-// credentials — a retry reuses them, never re-fetches; gap items stay gaps
-// (permanently unobtainable).
+// retry generation: failed → pending. Keep the latest error visible during
+// the retry until the next attempt records its outcome. Done/gap items are
+// reused.
 func (s *Store) ResetFailedOnboardingSyncWorkItems(ctx context.Context, sessionID, stage string) (int64, error) {
 	return resetFailedOnboardingSyncWorkItems(s.db.WithContext(ctx), sessionID, stage)
 }
@@ -1049,7 +1047,7 @@ func resetFailedOnboardingSyncWorkItems(db *gorm.DB, sessionID, stage string) (i
 	res := db.Model(&OnboardingSyncWorkItem{}).
 		Where("session_id = ? AND stage = ? AND status = ?", sessionID, stage, OnboardingSyncItemFailed).
 		Updates(map[string]any{
-			"status": OnboardingSyncItemPending, "error": nil, "updated_at": time.Now().UTC(),
+			"status": OnboardingSyncItemPending, "updated_at": time.Now().UTC(),
 		})
 	if res.Error != nil {
 		return 0, fmt.Errorf("storage: reset failed onboarding sync work items: %w", res.Error)

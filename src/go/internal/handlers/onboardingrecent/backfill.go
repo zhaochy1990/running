@@ -21,8 +21,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
-	"strings"
 	"time"
 
 	"github.com/zhaochy1990/stride/internal/job"
@@ -130,6 +128,8 @@ func runBackfill(ctx context.Context, cfg Config, in stageJobInput, sess *storag
 		case kindActivities:
 			opts.Activities = &w
 			opts.ActivitiesCheckpoint = cp.Cursor
+			opts.RejectedActivityIDs = make(map[string]bool)
+			provider.RememberRejectedActivities(opts.RejectedActivityIDs, cp.Gaps)
 		case kindHealth:
 			opts.Health = &w
 			opts.HealthCheckpoint = cp.Cursor
@@ -176,20 +176,25 @@ func runBackfill(ctx context.Context, cfg Config, in stageJobInput, sess *storag
 	progressed := false
 	for _, out := range outcomes {
 		cp := parseChannelCheckpoint(out.item.Checkpoint)
-		cp.Gaps = mergeRangeGaps(cp.Gaps, out.rep.GapEvents)
+		cp.Gaps = provider.MergeRangeGaps(cp.Gaps, out.rep.GapEvents)
 		cp.Fetches += out.rep.Fetches
 		if out.rep.Done {
 			// The channel's window is fully walked and reconciled: derive the
 			// terminal outcome from the store's actual content.
-			cred, gapText, isGap, err := deriveBackfillChannelTerminal(ctx, store, sess.UserID, prov.Info().Name, out.kind, provider.DayWindow{From: out.item.RangeFrom, To: out.item.RangeTo}, cp)
-			if err != nil {
-				return "", fmt.Errorf("onboardingrecent: derive %s terminal coverage: %w", out.kind, err)
+			var cred string
+			gaps := cp.Gaps
+			if !out.rep.Rejected {
+				var err error
+				cred, gaps, err = deriveBackfillChannelTerminal(ctx, store, sess.UserID, prov.Info().Name, out.kind, provider.DayWindow{From: out.item.RangeFrom, To: out.item.RangeTo}, cp)
+				if err != nil {
+					return "", fmt.Errorf("onboardingrecent: derive %s terminal coverage: %w", out.kind, err)
+				}
 			}
 			status := storage.OnboardingSyncItemDone
 			var msg *string
-			if isGap {
+			if len(gaps) > 0 {
 				status = storage.OnboardingSyncItemGap
-				msg = &gapText
+				msg = encodeWorkItemGaps(gaps)
 			}
 			if err := store.MarkOnboardingSyncWorkItem(ctx, out.item.ID, status, cred, msg); err != nil {
 				return "", fmt.Errorf("onboardingrecent: record %s terminal outcome: %w", out.kind, err)
@@ -211,13 +216,20 @@ func runBackfill(ctx context.Context, cfg Config, in stageJobInput, sess *storag
 	}
 
 	if syncErr != nil {
-		msg := syncErr.Error()
-		for kind := range unfinished {
-			if it := byKind[kind]; it != nil {
-				_ = store.MarkOnboardingSyncWorkItem(ctx, it.ID, storage.OnboardingSyncItemFailed, "", &msg)
+		classified := classifySyncError(syncErr)
+		first := true
+		for _, kind := range []string{kindActivities, kindHealth} {
+			if unfinished[kind] {
+				it := byKind[kind]
+				msg := it.Error
+				if first && ((kind == kindActivities && (rep.Activities == nil || !rep.Activities.Advanced)) || (kind == kindHealth && (rep.Health == nil || !rep.Health.Advanced))) {
+					msg = workItemFailure(it, classified)
+					first = false
+				}
+				_ = store.MarkOnboardingSyncWorkItem(ctx, it.ID, storage.OnboardingSyncItemFailed, "", msg)
 			}
 		}
-		return "", classifySyncError(syncErr)
+		return "", classified
 	}
 	if !progressed && len(unfinished) > 0 {
 		// A chunk that neither advanced any channel nor completed one cannot
@@ -237,32 +249,13 @@ func runBackfill(ctx context.Context, cfg Config, in stageJobInput, sess *storag
 	return stageResultFromItems(in.Stage, items), nil
 }
 
-// mergeRangeGaps dedupes gap events by identity (a retried chunk can legally
-// re-observe the same permanent rejection; the running record must not stack
-// duplicates).
-func mergeRangeGaps(running, chunk []provider.RangeGap) []provider.RangeGap {
-	seen := map[string]bool{}
-	for _, g := range running {
-		seen[g.From+".."+g.To+"|"+g.Reason] = true
-	}
-	for _, g := range chunk {
-		k := g.From + ".." + g.To + "|" + g.Reason
-		if seen[k] {
-			continue
-		}
-		seen[k] = true
-		running = append(running, g)
-	}
-	return running
-}
-
 // deriveBackfillChannelTerminal reads the store for what the channel's window
 // actually holds and derives the terminal credential + gap record: the
 // observed window is the min/max stored day; target days without data are
 // honest gaps (the vendor served nothing / every candidate was rejected); the
 // checkpoint's accumulated per-item gap events are merged in. isGap reports
 // whether the item is recorded as gap (unobtainable content) rather than done.
-func deriveBackfillChannelTerminal(ctx context.Context, store backfillStore, userID, providerName, kind string, win provider.DayWindow, cp channelCheckpoint) (credential, gapText string, isGap bool, err error) {
+func deriveBackfillChannelTerminal(ctx context.Context, store backfillStore, userID, providerName, kind string, win provider.DayWindow, cp channelCheckpoint) (credential string, gaps []provider.RangeGap, err error) {
 	var days []string
 	if kind == kindActivities {
 		days, err = store.ActivityShanghaiDaysInRange(ctx, userID, win.From, win.To)
@@ -270,58 +263,55 @@ func deriveBackfillChannelTerminal(ctx context.Context, store backfillStore, use
 		days, err = store.DailyHealthDaysInRange(ctx, userID, win.From, win.To)
 	}
 	if err != nil {
-		return "", "", false, err
+		return "", nil, err
 	}
 	// The credential keeps the uniform range shape so stage aggregation can
-	// read the observed window back out of it (observedFromCredential).
+	// read the observed window back out of it (RangeCredentialObservedWindow).
 	obs := "-..-"
 	if len(days) > 0 {
 		obs = days[0] + ".." + days[len(days)-1]
 	}
 	credential = fmt.Sprintf("%s:v1:range:%s:%s..%s:obs=%s:n=%d", providerName, kind, win.From, win.To, obs, len(days))
 
-	gaps := append([]provider.RangeGap{}, cp.Gaps...)
+	// Terminal ranges are based on stored days. Provider-reported empty
+	// ranges may overlap rows already imported by another sync; carry only
+	// the COROS batch lookback over to the matching storage-derived range.
+	var healthHistoryDays int
+	for _, g := range cp.Gaps {
+		if g.Classified().Kind != provider.RangeGapEmpty {
+			gaps = append(gaps, g)
+		} else if g.From == win.From {
+			healthHistoryDays = g.HealthHistoryDays
+		}
+	}
 	emptyReason := "no activities at provider in range"
 	if kind != kindActivities {
 		emptyReason = "provider returned no health rows for range"
 	}
-	gaps = append(gaps, complementDayGaps(win, days, emptyReason)...)
-	if len(gaps) == 0 {
-		return credential, "", false, nil
+	empty := complementDayGaps(win, days, emptyReason)
+	if len(empty) > 0 && empty[0].From == win.From {
+		empty[0].HealthHistoryDays = healthHistoryDays
 	}
-	sort.Slice(gaps, func(i, j int) bool { return gaps[i].From < gaps[j].From })
-	var reasons []string
-	seen := map[string]bool{}
-	for _, g := range gaps {
-		if g.Reason == "" || seen[g.Reason] {
-			continue
-		}
-		seen[g.Reason] = true
-		reasons = append(reasons, g.Reason)
-	}
-	if len(reasons) == 0 {
-		reasons = append(reasons, "unobtainable at provider")
-	}
-	return credential, strings.Join(reasons, "; "), true, nil
+	return credential, append(gaps, empty...), nil
 }
 
 // complementDayGaps returns the coalesced complement of `days` inside the
 // window — the honestly-empty day ranges (the vendor served nothing there).
 func complementDayGaps(win provider.DayWindow, days []string, reason string) []provider.RangeGap {
 	if len(days) == 0 {
-		return []provider.RangeGap{{From: win.From, To: win.To, Reason: reason}}
+		return []provider.RangeGap{{From: win.From, To: win.To, Kind: provider.RangeGapEmpty, Reason: reason}}
 	}
 	var out []provider.RangeGap
 	if days[0] > win.From {
-		out = append(out, provider.RangeGap{From: win.From, To: prevDayLabel(days[0]), Reason: reason})
+		out = append(out, provider.RangeGap{From: win.From, To: prevDayLabel(days[0]), Kind: provider.RangeGapEmpty, Reason: reason})
 	}
 	for i := 1; i < len(days); i++ {
 		if days[i] > nextDayLabel(days[i-1]) {
-			out = append(out, provider.RangeGap{From: nextDayLabel(days[i-1]), To: prevDayLabel(days[i]), Reason: reason})
+			out = append(out, provider.RangeGap{From: nextDayLabel(days[i-1]), To: prevDayLabel(days[i]), Kind: provider.RangeGapEmpty, Reason: reason})
 		}
 	}
 	if days[len(days)-1] < win.To {
-		out = append(out, provider.RangeGap{From: nextDayLabel(days[len(days)-1]), To: win.To, Reason: reason})
+		out = append(out, provider.RangeGap{From: nextDayLabel(days[len(days)-1]), To: win.To, Kind: provider.RangeGapEmpty, Reason: reason})
 	}
 	return out
 }
@@ -386,9 +376,7 @@ func backfillStageProgress(ctx context.Context, store backfillStore, stage, user
 				res.ObservedTo = &s
 			}
 		}
-		for _, g := range cp.Gaps {
-			res.Gaps = append(res.Gaps, onboardingsync.StageGap{From: g.From, To: g.To, Reason: kind + ": " + g.Reason})
-		}
+		res.Gaps = appendChannelGaps(res.Gaps, kind, cp.Gaps)
 	}
 	out, err := json.Marshal(res)
 	if err != nil {

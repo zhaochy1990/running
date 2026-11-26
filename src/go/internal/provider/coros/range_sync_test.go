@@ -441,17 +441,13 @@ func TestSyncRecentRange_PermanentDetailRejectionRecordsGap(t *testing.T) {
 	if a.Status != provider.RangeChannelGap {
 		t.Errorf("status = %q, want gap", a.Status)
 	}
-	// The rejection day falls inside the window's empty prefix (nothing older
-	// than OK1 exists), so the coalesced gaps are prefix + suffix with the
-	// rejection's reason folded in.
-	if len(a.Gaps) != 2 {
-		t.Fatalf("gaps = %+v, want coalesced prefix+suffix", a.Gaps)
-	}
-	if a.Gaps[0].From != actWin.From || a.Gaps[0].To != "2026-10-31" {
-		t.Errorf("prefix gap = %s..%s, want %s..2026-10-31", a.Gaps[0].From, a.Gaps[0].To, actWin.From)
-	}
 	if !containsReason(a.Gaps, "REJ") {
-		t.Errorf("gaps = %+v, want the rejection reason folded in", a.Gaps)
+		t.Errorf("gaps = %+v, want the permanent rejection reason", a.Gaps)
+	}
+	for _, gap := range a.Gaps {
+		if strings.Contains(gap.Reason, "REJ") && (gap.Kind != provider.RangeGapUnavailable || gap.From != "2026-10-01" || gap.To != "2026-10-01") {
+			t.Errorf("rejection = %+v, want a distinct unavailable gap for the rejected record", gap)
+		}
 	}
 	if a.Count != 1 {
 		t.Errorf("count = %d, want 1", a.Count)

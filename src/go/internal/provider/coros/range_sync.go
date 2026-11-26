@@ -18,7 +18,9 @@ package coros
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -46,27 +48,43 @@ func (p *Provider) SyncRecentRange(ctx context.Context, user string, opts provid
 
 	var rep provider.RecentRangeReport
 	if opts.Activities != nil {
-		r, err := p.rangeActivities(ctx, client, user, *opts.Activities, opts.Jobs, progress)
+		r, err := p.rangeActivities(ctx, client, user, *opts.Activities, opts.Jobs, opts.RejectedActivityIDs, progress)
 		if err != nil {
-			return rep, err
+			if !isRangeRejection(err) {
+				rep.Activities = r
+				return rep, err
+			}
+			r = &provider.RangeChannelReport{Status: provider.RangeChannelGap, Gaps: []provider.RangeGap{provider.RejectedRange(*opts.Activities, err)}}
 		}
 		rep.Activities = r
 	}
 	if opts.Health != nil {
 		r, err := p.rangeHealth(ctx, client, user, *opts.Health)
 		if err != nil {
-			return rep, err
+			if !isRangeRejection(err) {
+				return rep, err
+			}
+			r = &provider.RangeChannelReport{Status: provider.RangeChannelGap, Gaps: []provider.RangeGap{provider.RejectedRange(*opts.Health, err)}}
 		}
 		rep.Health = r
 	}
 	if opts.Dashboard != nil {
 		r, err := p.rangeDashboard(ctx, client, user, *opts.Dashboard)
 		if err != nil {
-			return rep, err
+			if !isRangeRejection(err) {
+				return rep, err
+			}
+			r = &provider.RangeChannelReport{Status: provider.RangeChannelGap, Gaps: []provider.RangeGap{provider.RejectedRange(*opts.Dashboard, err)}}
 		}
 		rep.Dashboard = r
 	}
 	return rep, nil
+}
+
+// isRangeRejection recognizes explicit refusals of a range endpoint.
+func isRangeRejection(err error) bool {
+	var rejection *dataEndpointRejection
+	return errors.As(err, &rejection) || provider.IsRangeRejection(err)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -224,7 +242,7 @@ func (p *Provider) reconcileBackfill(ctx context.Context, client *Client, win pr
 // rest of the window still commits (合法无曲线 vs 抓取失败 are already distinct
 // one layer down: a parseable detail with no curves commits fine, only a
 // rejected/failed fetch is an error).
-func (p *Provider) rangeActivities(ctx context.Context, client *Client, user string, win provider.DayWindow, jobs int, progress provider.ProgressCallback) (*provider.RangeChannelReport, error) {
+func (p *Provider) rangeActivities(ctx context.Context, client *Client, user string, win provider.DayWindow, jobs int, rejectedIDs map[string]bool, progress provider.ProgressCallback) (*provider.RangeChannelReport, error) {
 	scan, err := p.collectActivitiesInRange(ctx, client, win)
 	if err != nil {
 		return nil, err
@@ -252,7 +270,7 @@ func (p *Provider) rangeActivities(ctx context.Context, client *Client, user str
 		}
 		return scan.items[i].LabelID < scan.items[j].LabelID
 	})
-	ordered := scan.items
+	ordered := slices.DeleteFunc(scan.items, func(item listItem) bool { return rejectedIDs[item.LabelID] })
 	res := &provider.SyncResult{}
 	gaps := []provider.RangeGap{}
 	skip := func(item listItem, err error) {
@@ -262,7 +280,7 @@ func (p *Provider) rangeActivities(ctx context.Context, client *Client, user str
 		}
 		gaps = append(gaps, provider.RangeGap{
 			From: day, To: day,
-			Reason: fmt.Sprintf("activity %s permanently rejected by provider: %v", item.LabelID, err),
+			Kind: provider.RangeGapUnavailable, ActivityID: item.LabelID, Reason: fmt.Sprintf("activity %s permanently rejected by provider: %v", item.LabelID, err),
 		})
 		logging.Default().Warn("coros: range sync records permanent activity gap",
 			zap.String("user", user), zap.String("label_id", item.LabelID), zap.Error(err))
@@ -291,19 +309,19 @@ func (p *Provider) rangeActivities(ctx context.Context, client *Client, user str
 		// channel's short answer, never silently read as covered.
 		if days[0] > win.From {
 			rep.Gaps = append(rep.Gaps, provider.RangeGap{
-				From: win.From, To: prevDay(days[0]), Reason: "no activities at provider in range",
+				From: win.From, To: prevDay(days[0]), Kind: provider.RangeGapEmpty, Reason: "no activities at provider in range",
 			})
 		}
 		if days[len(days)-1] < win.To {
 			rep.Gaps = append(rep.Gaps, provider.RangeGap{
-				From: nextDay(days[len(days)-1]), To: win.To, Reason: "no activities at provider in range",
+				From: nextDay(days[len(days)-1]), To: win.To, Kind: provider.RangeGapEmpty, Reason: "no activities at provider in range",
 			})
 		}
 	} else if len(gaps) == 0 {
 		// A fully-walked window with no activities and no per-item gap is the
 		// "user has nothing in range" truth — recorded as a window-wide gap so
 		// the stage never reads as covered (observed ≠ scanned; 不伪造覆盖).
-		rep.Gaps = append(gaps, provider.RangeGap{From: win.From, To: win.To, Reason: "no activities in window"})
+		rep.Gaps = append(gaps, provider.RangeGap{From: win.From, To: win.To, Kind: provider.RangeGapEmpty, Reason: "no activities in window"})
 	}
 	if len(rep.Gaps) > 0 {
 		rep.Gaps = coalesceGaps(rep.Gaps)
@@ -314,6 +332,9 @@ func (p *Provider) rangeActivities(ctx context.Context, client *Client, user str
 		// complete fetch did NOT succeed — no report, so the executor never
 		// records a complete-fetch credential for a partial window. The retry
 		// re-scans and re-fetches; upserts are idempotent.
+		if len(gaps) != 0 {
+			return &provider.RangeChannelReport{Gaps: gaps}, commitErr
+		}
 		return nil, commitErr
 	}
 	return rep, nil
@@ -369,18 +390,19 @@ func (p *Provider) rangeHealth(ctx context.Context, client *Client, user string,
 		// covered and an honest window never blocks on a vendor cap.
 		if days[0] > win.From {
 			rep.Gaps = append(rep.Gaps, provider.RangeGap{
-				From: win.From, To: prevDay(days[0]), Reason: "provider returned no health rows for range",
+				From: win.From, To: prevDay(days[0]), Kind: provider.RangeGapEmpty, Reason: "provider returned no health rows for range",
+				HealthHistoryDays: provider.HealthLookbackDays(days[0], days[len(days)-1], win.To),
 			})
 		}
 		if days[len(days)-1] < win.To {
 			rep.Gaps = append(rep.Gaps, provider.RangeGap{
-				From: nextDay(days[len(days)-1]), To: win.To, Reason: "provider returned no health rows for range",
+				From: nextDay(days[len(days)-1]), To: win.To, Kind: provider.RangeGapEmpty, Reason: "provider returned no health rows for range",
 			})
 		}
 	} else {
 		rep.Credential = fmt.Sprintf("coros:v1:range:health:%s..%s:obs=-..-:n=0", win.From, win.To)
 		rep.Gaps = append(rep.Gaps, provider.RangeGap{
-			From: win.From, To: win.To, Reason: "provider returned no health rows",
+			From: win.From, To: win.To, Kind: provider.RangeGapEmpty, Reason: "provider returned no health rows",
 		})
 	}
 	rep.Gaps = coalesceGaps(rep.Gaps)
@@ -390,9 +412,7 @@ func (p *Provider) rangeHealth(ctx context.Context, client *Client, user string,
 	return rep, nil
 }
 
-// coalesceGaps sorts and merges overlapping/adjacent gap ranges (reasons
-// concatenated in first-seen order), so per-item rejections inside an
-// already-empty prefix do not stack contradictory rows.
+// coalesceGaps combines adjacent or overlapping ranges with the same meaning.
 func coalesceGaps(gaps []provider.RangeGap) []provider.RangeGap {
 	if len(gaps) <= 1 {
 		return gaps
@@ -401,12 +421,9 @@ func coalesceGaps(gaps []provider.RangeGap) []provider.RangeGap {
 	out := make([]provider.RangeGap, 0, len(gaps))
 	cur := gaps[0]
 	for _, g := range gaps[1:] {
-		if g.From <= nextDay(cur.To) { // overlapping or adjacent
+		if g.Kind == cur.Kind && g.Reason == cur.Reason && g.HealthHistoryDays == cur.HealthHistoryDays && g.From <= nextDay(cur.To) {
 			if g.To > cur.To {
 				cur.To = g.To
-			}
-			if g.Reason != "" && g.Reason != cur.Reason {
-				cur.Reason = cur.Reason + "; " + g.Reason
 			}
 			continue
 		}
@@ -472,7 +489,7 @@ func (p *Provider) rangeDashboard(ctx context.Context, client *Client, user stri
 			Status: provider.RangeChannelGap, ScannedFrom: win.From, ScannedTo: win.To,
 			Credential: fmt.Sprintf("coros:v1:range:dashboard:%s..%s:obs=-..-:n=0", win.From, win.To),
 			Gaps: []provider.RangeGap{{
-				From: win.From, To: win.To, Reason: "provider returned no dashboard summary",
+				From: win.From, To: win.To, Kind: provider.RangeGapEmpty, Reason: "provider returned no dashboard summary",
 			}},
 		}, nil
 	}

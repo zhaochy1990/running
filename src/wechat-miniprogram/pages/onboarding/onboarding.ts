@@ -30,7 +30,7 @@ import {
 import { postMyProfile, updateProfile, uploadAvatar } from '../../services/profile';
 import { watchLogin, type WatchProvider } from '../../services/watch';
 import { pollPipeline, type PollPipelineHandle } from '../../services/sync';
-import { SESSION_POLL_MS, recentProgressText, sessionStepTexts } from '../../utils/onboardingSession';
+import { SESSION_POLL_MS, gapText, recentProgressText, sessionStepTexts } from '../../utils/onboardingSession';
 import { getActivities } from '../../services/activities';
 import { describeRun } from '../../utils/onboardingSteps';
 import {
@@ -612,8 +612,10 @@ Page<OnboardingPageData, OnboardingPageHandlers>({
         // 进度文案显示同步前锋的具体活动名。提交为新→旧（11-17 拍板）：最新的
         // 先落库，移动边是最旧已落库日（observed_from）；取该日一条活动展示。
         const recentStage = view.stages.find((s) => s.stage === 'recent_raw');
+        const attemptGap = recentStage?.gaps?.find((gap) => gap.kind === 'transient' || gap.kind === 'unavailable');
+        if (attemptGap) this.setData({ sessionProgressText: gapText(attemptGap) });
         const frontierDay = recentStage?.observed_from || recentStage?.target_from;
-        if (frontierDay) {
+        if (frontierDay && !attemptGap) {
           const userId = this.currentUserId();
           if (userId) {
             getActivities(userId, { limit: 1, dateFrom: frontierDay, dateTo: frontierDay })
@@ -631,7 +633,7 @@ Page<OnboardingPageData, OnboardingPageHandlers>({
           // 近期链路判了失败：如实展示并允许重试（只恢复失败项）。
           console.error('[onboarding] 等 recent_data 期间链路失败:', view.error);
           this.applySessionStepTexts('preparing', 'sync', true);
-          this.setData({ syncError: friendlyMessage(view.error, '同步失败，请重试') });
+          this.setData({ syncError: attemptGap ? gapText(attemptGap) : friendlyMessage(view.error, '同步失败，请重试') });
           return;
         }
       }

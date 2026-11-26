@@ -15,6 +15,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -301,6 +302,9 @@ func (c *Client) relogin(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if env.code() == resultTokenExpired {
+		return &APIError{Code: resultTokenExpired, Message: "token renewal is temporarily unavailable"}
+	}
 	if env.code() != resultSuccess {
 		return &AuthError{msg: "auto re-login failed; run login"}
 	}
@@ -374,7 +378,7 @@ func (c *Client) request(ctx context.Context, method, path string, params url.Va
 	}
 	env, err := c.doParams(ctx, method, c.base(region)+path, params, token, yf, true)
 	if err != nil {
-		return nil, err
+		return nil, authenticatedRequestError(err)
 	}
 	if isTokenCode(env.code()) {
 		if err := c.refresh(ctx, token); err != nil {
@@ -383,13 +387,33 @@ func (c *Client) request(ctx context.Context, method, path string, params url.Va
 		token, region = c.currentToken()
 		env, err = c.doParams(ctx, method, c.base(region)+path, params, token, yf, true)
 		if err != nil {
-			return nil, err
+			return nil, authenticatedRequestError(err)
 		}
 	}
 	if code := env.code(); code != "" && code != resultSuccess {
 		return nil, &APIError{Code: code, Message: string(env.Message)}
 	}
 	return env.Data, nil
+}
+
+// An HTTP refusal from a data endpoint is distinct from the same status
+// returned by token renewal. Keep the vendor response body out of gap copies.
+type dataEndpointRejection struct{ status *httpx.StatusError }
+
+func (e *dataEndpointRejection) Error() string {
+	return fmt.Sprintf("coros: data request rejected (HTTP %d)", e.status.Code)
+}
+func (e *dataEndpointRejection) Unwrap() error { return e.status }
+
+func authenticatedRequestError(err error) error {
+	var status *httpx.StatusError
+	if errors.As(err, &status) {
+		switch status.Code {
+		case http.StatusBadRequest, http.StatusNotFound, http.StatusGone, http.StatusNotImplemented:
+			return &dataEndpointRejection{status: status}
+		}
+	}
+	return err
 }
 
 func (c *Client) doParams(ctx context.Context, method, rawURL string, params url.Values, token string, yf, classifyCodes bool) (apiEnvelope, error) {

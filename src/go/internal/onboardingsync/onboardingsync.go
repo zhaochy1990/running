@@ -95,7 +95,7 @@ const (
 // StageResult is the executor contract a stage job's ResultJSON carries
 // (defined here in T02; the T03/T04 executors report it, and the sweep
 // persists it into the stage coverage row). Observed/Scanned are Shanghai
-// natural days; gaps are permanent unobtainable ranges with reasons.
+// natural days; gaps carry a category and reason.
 type StageResult struct {
 	Stage        string     `json:"stage"`
 	Status       string     `json:"status"` // completed | completed_with_gaps
@@ -106,12 +106,8 @@ type StageResult struct {
 	Gaps         []StageGap `json:"gaps,omitempty"`
 }
 
-// StageGap is one recorded permanent gap range.
-type StageGap struct {
-	From   string `json:"from"`
-	To     string `json:"to"`
-	Reason string `json:"reason,omitempty"`
-}
+// StageGap is the provider's range evidence as projected by the sync API.
+type StageGap = provider.RangeGap
 
 // ErrNoProvider reports the user has no bound watch provider (the POST
 // capability gate's failure).
@@ -735,11 +731,7 @@ func ApplyStageResult(ctx context.Context, store StageCoverageStore, sessionID, 
 		cov.LastError = nil
 		cov.ScannedFrom, cov.ScannedTo = res.ScannedFrom, res.ScannedTo
 		cov.ObservedFrom, cov.ObservedTo = res.ObservedFrom, res.ObservedTo
-		var gaps []StageGap
-		if cov.GapsJSON != nil {
-			_ = json.Unmarshal([]byte(*cov.GapsJSON), &gaps)
-		}
-		gaps = mergeStageGaps(gaps, res.Gaps)
+		gaps := provider.MergeRangeGaps(CoverageGaps(cov), res.Gaps)
 		if len(gaps) > 0 {
 			if b, err := json.Marshal(gaps); err == nil {
 				str := string(b)
@@ -755,7 +747,7 @@ func ApplyStageResult(ctx context.Context, store StageCoverageStore, sessionID, 
 	cov.LastError = nil
 	cov.GapsJSON = nil
 	if parsed {
-		if res.Status == storage.OnboardingSyncCoverageCompletedWithGaps {
+		if terminalCoverageStatus(res.Status, res.Gaps) == storage.OnboardingSyncCoverageCompletedWithGaps {
 			cov.Status = storage.OnboardingSyncCoverageCompletedWithGaps
 		}
 		cov.ScannedFrom, cov.ScannedTo = res.ScannedFrom, res.ScannedTo
@@ -770,25 +762,6 @@ func ApplyStageResult(ctx context.Context, store StageCoverageStore, sessionID, 
 	if err := store.UpdateOnboardingSyncStageCoverage(ctx, cov); err != nil {
 		log.Warn("onboardingsync: coverage update failed", zap.String("session", sessionID), zap.Error(err))
 	}
-}
-
-// mergeStageGaps merges a chunk's gap events into the running set (dedup by
-// from/to/reason identity; chunk retries can legitimately re-observe the same
-// permanent gap, and the running record must not stack duplicates).
-func mergeStageGaps(running, chunk []StageGap) []StageGap {
-	seen := map[string]bool{}
-	for _, g := range running {
-		seen[g.From+".."+g.To+"|"+g.Reason] = true
-	}
-	for _, g := range chunk {
-		k := g.From + ".." + g.To + "|" + g.Reason
-		if seen[k] {
-			continue
-		}
-		seen[k] = true
-		running = append(running, g)
-	}
-	return running
 }
 
 // failStage records an exhausted chunk continuation on coverage and the session.
@@ -859,6 +832,7 @@ func (s *Service) finalizeSessions(ctx context.Context) {
 			continue
 		}
 		state := storage.OnboardingSyncStateCompleted
+		statuses := effectiveCoverageStatuses(covs)
 		for _, cov := range covs {
 			if cov.Status != storage.OnboardingSyncCoverageCompleted &&
 				cov.Status != storage.OnboardingSyncCoverageCompletedWithGaps {
@@ -870,7 +844,7 @@ func (s *Service) finalizeSessions(ctx context.Context) {
 				state = ""
 				break
 			}
-			if cov.Status == storage.OnboardingSyncCoverageCompletedWithGaps {
+			if statuses[cov.Stage] == storage.OnboardingSyncCoverageCompletedWithGaps {
 				state = storage.OnboardingSyncStateCompletedWithGaps
 			}
 		}
@@ -1324,17 +1298,33 @@ func (s *Service) View(ctx context.Context, userID string) (*View, error) {
 		}
 		v.RecentAnalysis = detail
 	}
+	statuses := effectiveCoverageStatuses(covs)
+	var items []*storage.OnboardingSyncWorkItem
+	if sess.Provider == "coros" || !sess.Terminal() || sess.State == storage.OnboardingSyncStateFailed {
+		items, err = s.store.ListOnboardingSyncWorkItems(ctx, sess.SessionID, "")
+		if err != nil {
+			return nil, err
+		}
+	}
+	attemptGaps := rawAttemptGaps(items)
+	allStagesCompleted := len(covs) > 0
 	for _, cov := range covs {
 		sv := StageView{
-			Stage: cov.Stage, Status: cov.Status,
+			Stage: cov.Stage, Status: statuses[cov.Stage],
 			TargetFrom: cov.TargetFrom, TargetTo: cov.TargetTo,
 			ScannedFrom: cov.ScannedFrom, ScannedTo: cov.ScannedTo,
 			ObservedFrom: cov.ObservedFrom, ObservedTo: cov.ObservedTo,
 			JobID: cov.JobID, Error: cov.LastError,
 		}
-		if cov.GapsJSON != nil {
-			_ = json.Unmarshal([]byte(*cov.GapsJSON), &sv.Gaps)
+		gaps := CoverageGaps(cov)
+		if sess.Provider == "coros" {
+			for i, gap := range gaps {
+				if gap.HealthHistoryDays == 0 {
+					gaps[i].HealthHistoryDays = legacyHealthLookback(gap, cov.Stage, sess.AnchorDay, items)
+				}
+			}
 		}
+		sv.Gaps = append(gaps, attemptGaps[cov.Stage]...)
 		dispatchFailed := false
 		refreshing := false
 		if d, ok := dispByStage[cov.Stage]; ok {
@@ -1344,9 +1334,10 @@ func (s *Service) View(ctx context.Context, userID string) (*View, error) {
 			}
 			refreshing = d.Status == storage.OnboardingSyncDispatchDispatched
 		}
+		allStagesCompleted = allStagesCompleted && sv.Status == storage.OnboardingSyncCoverageCompleted
 		switch cov.Stage {
 		case storage.OnboardingSyncStageRecentRaw:
-			sv.Readiness = stageReadiness(cov)
+			sv.Readiness = stageReadiness(cov, sv.Status, gaps)
 			v.Readiness.RecentData = sv.Readiness
 		case storage.OnboardingSyncStageRecentAnalysis:
 			sv.Readiness = analysisReadiness(cov, dispatchFailed, analysisRow)
@@ -1355,23 +1346,26 @@ func (s *Service) View(ctx context.Context, userID string) (*View, error) {
 				v.RecentAnalysis.Refreshing = refreshing || cov.Status == storage.OnboardingSyncCoverageRunning
 			}
 		case storage.OnboardingSyncStageHistoricalRaw:
-			sv.Readiness = stageReadiness(cov)
+			sv.Readiness = stageReadiness(cov, sv.Status, gaps)
 			v.Readiness.HistoricalData = sv.Readiness
 		case storage.OnboardingSyncStageExtendedRaw:
 			// The extended window is historical coverage too; once the
 			// historical stage exists it supersedes this level.
-			sv.Readiness = stageReadiness(cov)
+			sv.Readiness = stageReadiness(cov, sv.Status, gaps)
 			v.Readiness.ExtendedData = sv.Readiness
 			if v.Readiness.HistoricalData == ReadinessNotStarted {
 				v.Readiness.HistoricalData = sv.Readiness
 			}
 		case storage.OnboardingSyncStageAuxiliary:
-			sv.Readiness = stageReadiness(cov)
+			sv.Readiness = stageReadiness(cov, sv.Status, gaps)
 			v.Readiness.Auxiliary = sv.Readiness
 		default:
-			sv.Readiness = stageReadiness(cov)
+			sv.Readiness = stageReadiness(cov, sv.Status, gaps)
 		}
 		v.Stages = append(v.Stages, sv)
+	}
+	if v.State == storage.OnboardingSyncStateCompletedWithGaps && allStagesCompleted {
+		v.State = storage.OnboardingSyncStateCompleted
 	}
 	if sess.State == storage.OnboardingSyncStateWaitingLegacy {
 		v.Readiness.RecentData = ReadinessPending
@@ -1434,17 +1428,19 @@ func analysisRowLevel(row *storage.OnboardingRecentAnalysis) Readiness {
 // stageReadiness derives one stage's readiness from its coverage row:
 // ready requires a COMPLETED scan whose observed window actually covers the
 // target and no recorded gaps; ready_with_gaps is terminal but not coverage.
-func stageReadiness(cov *storage.OnboardingSyncStageCoverage) Readiness {
-	switch cov.Status {
+func stageReadiness(cov *storage.OnboardingSyncStageCoverage, status string, gaps []StageGap) Readiness {
+	switch status {
 	case storage.OnboardingSyncCoverageCompleted:
+		if len(gaps) > 0 {
+			// Keep the coverage signal for existing clients. The stage status
+			// is completed, while these dates still lack evidence.
+			return ReadinessReadyWithGaps
+		}
 		if cov.ObservedFrom == nil || cov.ObservedTo == nil {
 			return ReadinessRunning // done scan, no observation yet: not ready
 		}
 		if *cov.ObservedFrom > cov.TargetFrom || *cov.ObservedTo < cov.TargetTo {
 			return ReadinessRunning // observation does not cover the target
-		}
-		if cov.GapsJSON != nil && *cov.GapsJSON != "" && *cov.GapsJSON != "[]" {
-			return ReadinessReadyWithGaps
 		}
 		return ReadinessReady
 	case storage.OnboardingSyncCoverageCompletedWithGaps:

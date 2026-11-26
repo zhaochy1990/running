@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { OnboardingSyncReadiness } from "../api";
 import { useOnboardingSyncStatus } from "../onboardingSync/OnboardingSyncStatusContext";
-import { READINESS_SUMMARY, historicalAnalysisLabel, isSessionTerminal, rangeLabel, readinessLabel, readinessTone, sessionStateLabel, shouldHideBanner, stageLabel } from "../onboardingSync/sessionModel";
+import { READINESS_SUMMARY, expectedEmptyScan, gapText, summaryStage, historicalAnalysisLabel, isSessionTerminal, rangeLabel, readinessLabel, readinessTone, sessionStateLabel, shouldHideBanner, stageLabel } from "../onboardingSync/sessionModel";
 
 // Global, collapsible first-sync banner (devops#1014 T10): rendered once in
 // the app layout so the home / training / activities pages all show the same
@@ -68,9 +68,11 @@ export default function OnboardingSyncBanner() {
           首次数据同步 <span className="text-text-muted">· {sessionStateLabel(v.state)}</span>
         </p>
         <div className="flex flex-wrap items-center gap-1.5">
-          {READINESS_SUMMARY.map(({ key, label }) => (
-            <ReadinessChip key={key} label={label} level={v.readiness[key]} text={key === "historical_analysis" ? historicalAnalysisLabel(v) : undefined} />
-          ))}
+          {READINESS_SUMMARY.map(({ key, label }) => {
+            const emptyScan = expectedEmptyScan(summaryStage(v, key));
+            const text = key === "historical_analysis" ? historicalAnalysisLabel(v) : emptyScan ? "已完成" : undefined;
+            return <ReadinessChip key={key} label={label} level={emptyScan ? "ready" : v.readiness[key]} text={text} />;
+          })}
         </div>
         <div className="ml-auto flex items-center gap-2">
           {recentReady && (
@@ -123,24 +125,27 @@ export default function OnboardingSyncBanner() {
             </p>
           )}
           <ul className="space-y-1.5" aria-label="同步阶段详情">
-            {v.stages.map((stage) => (
-              <li key={stage.stage} className="rounded border border-border-subtle bg-bg-base px-2.5 py-1.5">
-                <div className="flex flex-wrap items-center justify-between gap-x-3">
-                  <p className="text-xs font-medium text-text-primary">{stageLabel(stage)}</p>
-                  <p className={`text-[11px] ${TONE_CLASSES[readinessTone(stage.readiness)]} rounded border px-1.5 py-0.5`}>{readinessLabel(stage.readiness)}</p>
-                </div>
-                <p className="mt-1 text-[11px] text-text-muted">
-                  目标范围 {rangeLabel(stage.target_from, stage.target_to)}
-                  {stage.observed_from || stage.observed_to ? ` · 实际覆盖 ${rangeLabel(stage.observed_from, stage.observed_to)}` : " · 实际覆盖 —"}
-                </p>
-                {stage.gaps && stage.gaps.length > 0 && (
-                  <p className="mt-0.5 text-[11px] text-amber-400">
-                    缺项：{stage.gaps.map((gap) => `${rangeLabel(gap.from, gap.to)}${gap.reason ? `（${gap.reason}）` : ""}`).join("、")}
+            {v.stages.map((stage) => {
+              const emptyScan = expectedEmptyScan(stage);
+              return (
+                <li key={stage.stage} className="rounded border border-border-subtle bg-bg-base px-2.5 py-1.5">
+                  <div className="flex flex-wrap items-center justify-between gap-x-3">
+                    <p className="text-xs font-medium text-text-primary">{stageLabel(stage)}</p>
+                    <p className={`text-[11px] ${TONE_CLASSES[emptyScan ? "good" : readinessTone(stage.readiness)]} rounded border px-1.5 py-0.5`}>{emptyScan ? "已完成" : readinessLabel(stage.readiness)}</p>
+                  </div>
+                  <p className="mt-1 text-[11px] text-text-muted">
+                    目标范围 {rangeLabel(stage.target_from, stage.target_to)}
+                    {stage.observed_from || stage.observed_to ? ` · 实际覆盖 ${rangeLabel(stage.observed_from, stage.observed_to)}` : " · 实际覆盖 —"}
                   </p>
-                )}
-                {stage.error && <p className="mt-0.5 text-[11px] text-red-400">{stage.error}</p>}
-              </li>
-            ))}
+                  {stage.gaps?.map((gap, index) => (
+                    <p key={`${gap.from}-${gap.to}-${index}`} className={`mt-0.5 text-[11px] ${gap.kind === "empty" ? "text-text-muted" : "text-amber-400"}`}>
+                      {gapText(gap)}
+                    </p>
+                  ))}
+                  {stage.error && <p className="mt-0.5 text-[11px] text-red-400">{stage.error}</p>}
+                </li>
+              );
+            })}
           </ul>
           <p className="text-[11px] text-text-muted">
             退出页面或关闭浏览器不会中断同步；换设备登录后进度保持不变。近期训练详情在“近期数据”就绪后即可查看，历史补齐失败不影响近期数据。

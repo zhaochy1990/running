@@ -80,16 +80,23 @@ func (p *Provider) SyncBackfillRange(ctx context.Context, user string, opts prov
 
 	var rep provider.BackfillRangeReport
 	if opts.Activities != nil {
-		r, err := p.backfillActivities(ctx, client, user, *opts.Activities, opts.ActivitiesCheckpoint, opts.Budget, opts.Jobs, progress)
+		r, err := p.backfillActivities(ctx, client, user, *opts.Activities, opts.ActivitiesCheckpoint, opts.RejectedActivityIDs, opts.Budget, opts.Jobs, progress)
 		if err != nil {
-			return rep, err
+			if !isRangeRejection(err) {
+				rep.Activities = r
+				return rep, err
+			}
+			r = &provider.ChannelBackfillReport{Done: true, Rejected: true, GapEvents: []provider.RangeGap{provider.RejectedRange(*opts.Activities, err)}}
 		}
 		rep.Activities = r
 	}
 	if opts.Health != nil {
 		r, err := p.backfillHealth(ctx, client, user, *opts.Health)
 		if err != nil {
-			return rep, err
+			if !isRangeRejection(err) {
+				return rep, err
+			}
+			r = &provider.ChannelBackfillReport{Done: true, Rejected: true, GapEvents: []provider.RangeGap{provider.RejectedRange(*opts.Health, err)}}
 		}
 		rep.Health = r
 	}
@@ -104,7 +111,10 @@ type backfillCandidate struct {
 
 // backfillActivities runs one activities chunk: walk → process (skip existing
 // / fetch missing ≤ budget) → optional completion reconcile.
-func (p *Provider) backfillActivities(ctx context.Context, client *Client, user string, win provider.DayWindow, checkpoint string, budget provider.BackfillBudget, jobs int, progress provider.ProgressCallback) (*provider.ChannelBackfillReport, error) {
+func (p *Provider) backfillActivities(ctx context.Context, client *Client, user string, win provider.DayWindow, checkpoint string, rejectedIDs map[string]bool, budget provider.BackfillBudget, jobs int, progress provider.ProgressCallback) (*provider.ChannelBackfillReport, error) {
+	if rejectedIDs == nil {
+		rejectedIDs = make(map[string]bool)
+	}
 	maxFetches := budget.MaxActivityFetches
 	if maxFetches <= 0 {
 		maxFetches = provider.DefaultBackfillActivityFetches
@@ -172,6 +182,12 @@ func (p *Provider) backfillActivities(ctx context.Context, client *Client, user 
 				continue // a shifted/re-served page repeated an entry
 			}
 			seenLabels[item.LabelID] = true
+			if rejectedIDs[item.LabelID] {
+				if dated {
+					lastSeenDay = day
+				}
+				continue
+			}
 			exists, err := p.store.ActivityExists(ctx, user, item.LabelID)
 			if err != nil {
 				return nil, err
@@ -219,24 +235,26 @@ func (p *Provider) backfillActivities(ctx context.Context, client *Client, user 
 	fetched := 0
 	if len(candidates) > 0 {
 		committed, commitErr := fetchBackfillCandidates(ctx, p, client, user, candidates, jobs, progress, win, &gapEvents)
-		fetched = committed
+		fetched = committed + len(gapEvents)
 		if commitErr != nil {
 			// The committed prefix is durable in the store; the retry re-probes
 			// it as existing. No report on failure — the executor must not
 			// persist a checkpoint past an uncommitted gap.
-			return nil, commitErr
+			return &provider.ChannelBackfillReport{Checkpoint: checkpoint, GapEvents: gapEvents}, commitErr
 		}
 	}
 
-	advanced := fetched > 0 || lastSeenDay != doneThrough
+	provider.RememberRejectedActivities(rejectedIDs, gapEvents)
+
+	advanced := fetched > 0 || lastSeenDay != doneThrough || len(gapEvents) > 0
 
 	// Phase 3: completion reconciliation — only once the walk reached the
 	// list end / proven boundary. Re-walk for in-window items still missing
 	// from the store (mid-list backfills, webhook-written rows moving).
 	if scanEnded {
-		missing, err := p.reconcileBackfillRange(ctx, client, user, win)
+		missing, err := p.reconcileBackfillRange(ctx, client, user, win, rejectedIDs)
 		if err != nil {
-			return nil, err
+			return &provider.ChannelBackfillReport{Checkpoint: checkpoint, GapEvents: gapEvents}, err
 		}
 		overflow := len(missing) > maxFetches-fetched
 		if overflow {
@@ -247,10 +265,11 @@ func (p *Provider) backfillActivities(ctx context.Context, client *Client, user 
 			doneThrough = ""
 			advanced = true
 		} else if len(missing) > 0 {
+			priorGaps := len(gapEvents)
 			committed, commitErr := fetchBackfillCandidates(ctx, p, client, user, missing, jobs, progress, win, &gapEvents)
-			fetched += committed
+			fetched += committed + len(gapEvents) - priorGaps
 			if commitErr != nil {
-				return nil, commitErr
+				return &provider.ChannelBackfillReport{Checkpoint: checkpoint, GapEvents: gapEvents}, commitErr
 			}
 		}
 		if !overflow {
@@ -297,7 +316,7 @@ func fetchBackfillCandidates(ctx context.Context, p *Provider, client *Client, u
 		}
 		*gapEvents = append(*gapEvents, provider.RangeGap{
 			From: day, To: day,
-			Reason: fmt.Sprintf("activity %s permanently rejected by provider: %v", item.LabelID, err),
+			Kind: provider.RangeGapUnavailable, ActivityID: item.LabelID, Reason: fmt.Sprintf("activity %s permanently rejected by provider: %v", item.LabelID, err),
 		})
 		logging.Default().Warn("coros: backfill records permanent activity gap",
 			zap.String("user", user), zap.String("label_id", item.LabelID), zap.Error(err))
@@ -311,7 +330,7 @@ func fetchBackfillCandidates(ctx context.Context, p *Provider, client *Client, u
 // items still missing from the store. This is the completion honesty gate: a
 // mid-list backfill at any depth must be found before the channel may report
 // done (对账不漏深处分页补传).
-func (p *Provider) reconcileBackfillRange(ctx context.Context, client *Client, user string, win provider.DayWindow) ([]backfillCandidate, error) {
+func (p *Provider) reconcileBackfillRange(ctx context.Context, client *Client, user string, win provider.DayWindow, rejectedIDs map[string]bool) ([]backfillCandidate, error) {
 	var missing []backfillCandidate
 	seen := map[string]bool{}
 	prevDay := ""
@@ -348,7 +367,7 @@ func (p *Provider) reconcileBackfillRange(ctx context.Context, client *Client, u
 			if dated && (day < win.From || day > win.To) {
 				continue
 			}
-			if seen[item.LabelID] {
+			if seen[item.LabelID] || rejectedIDs[item.LabelID] {
 				continue
 			}
 			seen[item.LabelID] = true
@@ -382,6 +401,6 @@ func (p *Provider) backfillHealth(ctx context.Context, client *Client, user stri
 		return nil, err
 	}
 	return &provider.ChannelBackfillReport{
-		Done: true, Advanced: true, DaysWalked: rep.Count,
+		Done: true, Advanced: true, DaysWalked: rep.Count, GapEvents: rep.Gaps,
 	}, nil
 }

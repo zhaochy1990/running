@@ -173,6 +173,10 @@ func New(cfg Config) job.Handler {
 		if err != nil {
 			return "", err
 		}
+		if err := refreshActivityGaps(ctx, cfg.Store, sess, rawCov); err != nil {
+			return "", err
+		}
+
 		policy, err := cfg.Store.CalibrationPolicy(ctx)
 		if err != nil {
 			return "", err
@@ -432,7 +436,7 @@ func stageResult(rawCov *storage.OnboardingSyncStageCoverage, asOfDay string, co
 		ObservedFrom: covFrom,
 		ObservedTo:   covTo,
 	}
-	if rawCov != nil && rawCov.Status == storage.OnboardingSyncCoverageCompletedWithGaps {
+	if rawCov != nil && onboardingsync.CoverageStatus(rawCov) == storage.OnboardingSyncCoverageCompletedWithGaps {
 		res.Status = storage.OnboardingSyncCoverageCompletedWithGaps
 	}
 	return res

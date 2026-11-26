@@ -364,7 +364,7 @@ func (p *Provider) fetchDetailsOrdered(
 		}
 		r := results[i]
 		if r.err != nil {
-			if skip != nil && provider.IsInvalidRequest(r.err) {
+			if skip != nil && isRangeRejection(r.err) {
 				skip(ordered[i], r.err)
 				continue // permanently rejected: gap and keep committing
 			}

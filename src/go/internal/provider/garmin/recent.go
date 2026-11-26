@@ -40,8 +40,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -83,27 +83,71 @@ func (p *Provider) SyncRecentRange(ctx context.Context, user string, opts provid
 	client.EnableRateLimit(jobs)
 	var rep provider.RecentRangeReport
 	if opts.Activities != nil {
-		r, err := p.recentActivities(ctx, client, user, *opts.Activities, jobs, progress)
+		r, err := p.recentActivities(ctx, client, user, *opts.Activities, jobs, opts.RejectedActivityIDs, progress)
 		if err != nil {
-			return rep, err
+			if !isRangeRejection(err) {
+				rep.Activities = r
+				return rep, err
+			}
+			r = &provider.RangeChannelReport{Status: provider.RangeChannelGap, Gaps: []provider.RangeGap{provider.RejectedRange(*opts.Activities, err)}}
 		}
 		rep.Activities = r
 	}
 	if opts.Health != nil {
 		r, err := p.recentHealth(ctx, client, user, *opts.Health, jobs, progress)
 		if err != nil {
-			return rep, err
+			if !isRangeRejection(err) {
+				return rep, err
+			}
+			r = &provider.RangeChannelReport{Status: provider.RangeChannelGap, Gaps: []provider.RangeGap{provider.RejectedRange(*opts.Health, err)}}
 		}
 		rep.Health = r
 	}
 	if opts.Dashboard != nil {
 		r, err := p.recentDashboard(ctx, client, user, *opts.Dashboard)
 		if err != nil {
-			return rep, err
+			if !isRangeRejection(err) {
+				return rep, err
+			}
+			r = &provider.RangeChannelReport{Status: provider.RangeChannelGap, Gaps: []provider.RangeGap{provider.RejectedRange(*opts.Dashboard, err)}}
 		}
 		rep.Dashboard = r
 	}
 	return rep, nil
+}
+
+// isRangeRejection recognizes explicit refusals of a range endpoint.
+func isRangeRejection(err error) bool {
+	var status *APIError
+	if errors.As(err, &status) {
+		switch status.Status {
+		case http.StatusBadRequest, http.StatusNotFound, http.StatusGone, http.StatusNotImplemented:
+			return true
+		}
+	}
+	return provider.IsRangeRejection(err)
+}
+
+// healthRangeErrors keeps unsupported responses distinct from failures that
+// need retry or credential repair. fetchHealthDay joins independent endpoints.
+func healthRangeErrors(err error) (rejected, retry error) {
+	if err == nil {
+		return nil, nil
+	}
+	if grouped, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, cause := range grouped.Unwrap() {
+			if isRangeRejection(cause) {
+				rejected = errors.Join(rejected, cause)
+			} else {
+				retry = errors.Join(retry, cause)
+			}
+		}
+		return rejected, retry
+	}
+	if isRangeRejection(err) {
+		return err, nil
+	}
+	return nil, err
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -151,7 +195,7 @@ type walkOutcome struct {
 // backfill reconciliation), unclassifiable-date confirmation, then the
 // newest→oldest ordered commit (近期先落库), and derives the coverage report
 // from what actually landed in the window.
-func (p *Provider) recentActivities(ctx context.Context, client *Client, user string, win provider.DayWindow, jobs int, progress provider.ProgressCallback) (*provider.RangeChannelReport, error) {
+func (p *Provider) recentActivities(ctx context.Context, client *Client, user string, win provider.DayWindow, jobs int, rejectedIDs map[string]bool, progress provider.ProgressCallback) (*provider.RangeChannelReport, error) {
 	log := logging.Default().With(zap.String("user", user))
 	first, err := p.walkRecentWindow(ctx, client, win)
 	if err != nil {
@@ -196,10 +240,11 @@ func (p *Provider) recentActivities(ctx context.Context, client *Client, user st
 	// the channel explicitly (明确阻塞), never a silent skip.
 	var invalidSeen = map[string]bool{}
 	var blocked []string
+	var gaps []provider.RangeGap
 	for _, walk := range []*walkOutcome{first, second} {
 		for _, a := range walk.invalid {
 			id := a.labelID()
-			if invalidSeen[id] {
+			if invalidSeen[id] || rejectedIDs[id] {
 				continue
 			}
 			invalidSeen[id] = true
@@ -207,6 +252,7 @@ func (p *Provider) recentActivities(ctx context.Context, client *Client, user st
 			var apiErr *APIError
 			switch {
 			case errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound:
+				gaps = append(gaps, rejectedActivityGap(id, win.To, err))
 				log.Warn("garmin: range sync dropped a phantom undated list entry", zap.String("label_id", id))
 			case err != nil:
 				return nil, err // retryable or auth — same policy as the detail fetch
@@ -239,6 +285,7 @@ func (p *Provider) recentActivities(ctx context.Context, client *Client, user st
 	// 可见；下游分析在 recent_raw 终态后按日期从库读，提交顺序无计算语义）；
 	// ties (same instant, e.g. same-second uploads) order by label id for
 	// determinism.
+	collected = slices.DeleteFunc(collected, func(item scannedItem) bool { return rejectedIDs[item.a.labelID()] })
 	sort.Slice(collected, func(i, j int) bool {
 		if !collected[i].inst.Equal(collected[j].inst) {
 			return collected[i].inst.After(collected[j].inst)
@@ -250,12 +297,15 @@ func (p *Provider) recentActivities(ctx context.Context, client *Client, user st
 		zap.Int("malformed_entries", malformed))
 	provider.EmitProgress(progress, "activities", 0, len(collected), provider.PercentInBand(0, len(collected), 10, 80))
 
-	written, skipped, missing, days, commitErr := p.recentFetchOrdered(ctx, client, user, collected, jobs, progress)
+	written, skipped, missing, days, rejected, commitErr := p.recentFetchOrdered(ctx, client, user, collected, jobs, progress)
 	if commitErr != nil {
 		// The committed prefix stays durable in the store, but the window's
 		// complete fetch did NOT succeed — no report, so the executor never
 		// records a complete-fetch credential for a partial window. The retry
 		// re-scans; already-stored rows are skipped, not re-downloaded.
+		if gaps = append(gaps, rejected...); len(gaps) != 0 {
+			return &provider.RangeChannelReport{Gaps: gaps}, commitErr
+		}
 		return nil, commitErr
 	}
 
@@ -268,6 +318,7 @@ func (p *Provider) recentActivities(ctx context.Context, client *Client, user st
 		ScannedFrom: win.From,
 		ScannedTo:   win.To,
 		Count:       written,
+		Gaps:        append(gaps, rejected...),
 		Credential:  fmt.Sprintf("garmin:v1:range:activities:%s..%s:obs=-..-:n=%d", win.From, win.To, written),
 	}
 	if len(days) > 0 {
@@ -279,19 +330,19 @@ func (p *Provider) recentActivities(ctx context.Context, client *Client, user st
 		// channel, never silently read as covered.
 		if days[0] > win.From {
 			rep.Gaps = append(rep.Gaps, provider.RangeGap{
-				From: win.From, To: prevShanghaiDay(days[0]), Reason: "no activities at provider in range",
+				From: win.From, To: prevShanghaiDay(days[0]), Kind: provider.RangeGapEmpty, Reason: "no activities at provider in range",
 			})
 		}
 		if days[len(days)-1] < win.To {
 			rep.Gaps = append(rep.Gaps, provider.RangeGap{
-				From: nextShanghaiDay(days[len(days)-1]), To: win.To, Reason: "no activities at provider in range",
+				From: nextShanghaiDay(days[len(days)-1]), To: win.To, Kind: provider.RangeGapEmpty, Reason: "no activities at provider in range",
 			})
 		}
 	} else {
 		// A fully-walked window with no activities is the "user has nothing
 		// in range" truth — a window-wide gap so the stage never reads as
 		// covered (observed ≠ scanned; 不伪造覆盖).
-		rep.Gaps = append(rep.Gaps, provider.RangeGap{From: win.From, To: win.To, Reason: "no activities in window"})
+		rep.Gaps = append(rep.Gaps, provider.RangeGap{From: win.From, To: win.To, Kind: provider.RangeGapEmpty, Reason: "no activities in window"})
 	}
 	if missing > 0 {
 		// Provider-legitimately-missing detail sub-resources (404s) — an
@@ -441,14 +492,14 @@ func (p *Provider) fetchOneActivityRecent(ctx context.Context, client *Client, u
 // re-downloading anything (中断重试不重复下载成功详情). The first failure
 // stops the commit at the gap; the job retry resumes from it. It returns the
 // write/skip/missing accounting plus every in-window day the store now holds.
-func (p *Provider) recentFetchOrdered(ctx context.Context, client *Client, user string, ordered []scannedItem, jobs int, progress provider.ProgressCallback) (written, skipped, missing int, days []string, commitErr error) {
+func (p *Provider) recentFetchOrdered(ctx context.Context, client *Client, user string, ordered []scannedItem, jobs int, progress provider.ProgressCallback) (written, skipped, missing int, days []string, gaps []provider.RangeGap, commitErr error) {
 	started := time.Now()
 	fetchList := make([]scannedItem, 0, len(ordered))
 	days = make([]string, 0, len(ordered))
 	for _, it := range ordered {
 		exists, err := p.store.ActivityExists(ctx, user, it.a.labelID())
 		if err != nil {
-			return 0, 0, 0, nil, err
+			return 0, 0, 0, nil, nil, err
 		}
 		if exists {
 			// Resume reuse: a row inside this window was necessarily written
@@ -513,6 +564,10 @@ func (p *Provider) recentFetchOrdered(ctx context.Context, client *Client, user 
 		results[i] = activityResult{}
 		<-inFlight
 		if r.err != nil {
+			if isRangeRejection(r.err) {
+				gaps = append(gaps, rejectedActivityGap(fetchList[i].a.labelID(), fetchList[i].day, r.err))
+				continue
+			}
 			commitErr = r.err
 			break
 		}
@@ -543,7 +598,12 @@ func (p *Provider) recentFetchOrdered(ctx context.Context, client *Client, user 
 			zap.Int("skipped_existing", skipped), zap.Int("provider_missing_detail", missing),
 			zap.Duration("elapsed", time.Since(started)))
 	}
-	return written, skipped, missing, days, commitErr
+	return written, skipped, missing, days, gaps, commitErr
+}
+
+func rejectedActivityGap(id, day string, err error) provider.RangeGap {
+	return provider.RangeGap{From: day, To: day, Kind: provider.RangeGapUnavailable, ActivityID: id,
+		Reason: fmt.Sprintf("activity %s permanently rejected by provider: %v", id, err)}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -571,8 +631,13 @@ func (p *Provider) recentHealth(ctx context.Context, client *Client, user string
 	for n := 0; n < total; n++ {
 		date := from.AddDate(0, 0, n).Format("2006-01-02")
 		tsRaw, usRaw, sleepRaw, hrvRaw, err := fetchHealthDay(ctx, client, date, jobs)
-		if err != nil {
-			return nil, err
+		day := provider.DayWindow{From: date, To: date}
+		rejected, retry := healthRangeErrors(err)
+		if retry != nil {
+			return nil, &provider.RangeFetchError{Window: day, Err: retry}
+		}
+		if rejected != nil {
+			gaps = append(gaps, provider.RejectedRange(day, rejected))
 		}
 		wrote := false
 		if h := buildDailyHealth(user, date, tsRaw, usRaw, sleepRaw); hasSignal(h) {
@@ -589,9 +654,9 @@ func (p *Provider) recentHealth(ctx context.Context, client *Client, user string
 		}
 		if wrote {
 			signalDays = append(signalDays, date)
-		} else {
+		} else if rejected == nil {
 			gaps = append(gaps, provider.RangeGap{
-				From: date, To: date, Reason: "provider returned no health rows for day",
+				From: date, To: date, Kind: provider.RangeGapEmpty, Reason: "provider returned no health rows for day",
 			})
 		}
 		provider.EmitProgress(progress, "health", n+1, total, provider.PercentInBand(n+1, total, 80, 95))
@@ -640,7 +705,7 @@ func (p *Provider) recentDashboard(ctx context.Context, client *Client, user str
 			Status: provider.RangeChannelGap, ScannedFrom: win.From, ScannedTo: win.To,
 			Credential: fmt.Sprintf("garmin:v1:range:dashboard:%s..%s:obs=-..-:n=0", win.From, win.To),
 			Gaps: []provider.RangeGap{{
-				From: win.From, To: win.To, Reason: "provider returned no dashboard summary",
+				From: win.From, To: win.To, Kind: provider.RangeGapEmpty, Reason: "provider returned no dashboard summary",
 			}},
 		}, nil
 	}
@@ -657,9 +722,7 @@ func (p *Provider) recentDashboard(ctx context.Context, client *Client, user str
 // stay package-local per the adapter-boundary rule).
 // ─────────────────────────────────────────────────────────────────────────────
 
-// coalesceRecentGaps sorts and merges overlapping/adjacent gap ranges
-// (reasons concatenated in first-seen order), so per-day empties inside an
-// already-empty stretch do not stack rows.
+// coalesceRecentGaps combines adjacent or overlapping ranges with the same meaning.
 func coalesceRecentGaps(gaps []provider.RangeGap) []provider.RangeGap {
 	if len(gaps) <= 1 {
 		return gaps
@@ -668,12 +731,9 @@ func coalesceRecentGaps(gaps []provider.RangeGap) []provider.RangeGap {
 	out := make([]provider.RangeGap, 0, len(gaps))
 	cur := gaps[0]
 	for _, g := range gaps[1:] {
-		if g.From <= nextShanghaiDay(cur.To) { // overlapping or adjacent
+		if g.Kind == cur.Kind && g.Reason == cur.Reason && g.From <= nextShanghaiDay(cur.To) {
 			if g.To > cur.To {
 				cur.To = g.To
-			}
-			if g.Reason != "" && !strings.Contains(cur.Reason, g.Reason) {
-				cur.Reason = cur.Reason + "; " + g.Reason
 			}
 			continue
 		}
