@@ -22,6 +22,7 @@ import (
 // here; business rules (what to freeze, how to judge) live in internal/planeval.
 
 var (
+	ErrPlanEvalRuleConflict         = errors.New("storage: plan-eval rule version conflict")
 	ErrPlanEvalNotFound             = errors.New("storage: plan-eval row not found")
 	ErrPlanEvalResultConflict       = errors.New("storage: plan-eval result conflicts with persisted submission")
 	ErrPlanEvalVersionBusy          = errors.New("storage: plan-eval version operation in progress")
@@ -81,9 +82,7 @@ func (s *Store) AutoMigratePlanEval(ctx context.Context) error {
 
 // ---- presets ----
 
-// UpsertPlanEvalScenario / UpsertPlanEvalRunnerSnapshot / UpsertPlanEvalRule
-// make the embedded presets idempotent: the same key always ends up holding
-// what this binary ships.
+// Catalog saves update scenarios and snapshots; published rule versions are immutable.
 func (s *Store) UpsertPlanEvalScenario(ctx context.Context, row *PlanEvalScenario) error {
 	now := time.Now().UTC()
 	row.CreatedAt, row.UpdatedAt = now, now
@@ -104,8 +103,28 @@ func (s *Store) UpsertPlanEvalRunnerSnapshot(ctx context.Context, row *PlanEvalR
 
 func (s *Store) UpsertPlanEvalRule(ctx context.Context, row *PlanEvalRule) error {
 	row.CreatedAt = time.Now().UTC()
-	if err := s.db.WithContext(ctx).Clauses(clause.OnConflict{UpdateAll: true}).Create(row).Error; err != nil {
+	if err := s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(row).Error; err != nil {
 		return fmt.Errorf("storage: upsert plan_eval_rules: %w", err)
+	}
+	return nil
+}
+
+// PublishPlanEvalRule appends the next immutable version. A competing publish
+// is fenced by the (id, version) primary key; no existing row is ever updated.
+func (s *Store) PublishPlanEvalRule(ctx context.Context, row *PlanEvalRule) error {
+	var latest int
+	if err := s.db.WithContext(ctx).Model(&PlanEvalRule{}).Where("id = ?", row.ID).Select("COALESCE(MAX(version), 0)").Scan(&latest).Error; err != nil {
+		return err
+	}
+	if row.Version != latest+1 {
+		return ErrPlanEvalRuleConflict
+	}
+	row.CreatedAt = time.Now().UTC()
+	if err := s.db.WithContext(ctx).Create(row).Error; err != nil {
+		if isDuplicateKey(err) {
+			return ErrPlanEvalRuleConflict
+		}
+		return fmt.Errorf("storage: publish plan_eval_rules: %w", err)
 	}
 	return nil
 }

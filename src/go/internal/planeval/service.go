@@ -564,7 +564,7 @@ func (s *Service) freeze(ctx context.Context, scenario *scenarioDocument, snapsh
 		if rule == nil || rule.ID != ref.ID {
 			return nil, nil, fail(422, "invalid_reference", fmt.Sprintf("场景 %s rules[%d]: 规则 %s v%d 不存在，须使用原始 ID", scenario.ID, i, ref.ID, ref.Version))
 		}
-		if rule.ArtifactType != scenario.ArtifactType {
+		if !ruleAppliesTo(rule.ArtifactType, scenario.ArtifactType) {
 			return nil, nil, fail(422, "invalid_request", fmt.Sprintf("规则 %s v%d 适用于 %s，场景 %s 需要 %s", ref.ID, ref.Version, rule.ArtifactType, scenario.ID, scenario.ArtifactType))
 		}
 		rules = append(rules, &storage.PlanEvalFrozenRule{ScenarioID: scenario.ID, CheckID: rule.ID, Version: rule.Version, ArtifactType: rule.ArtifactType, Source: rule.Source})
