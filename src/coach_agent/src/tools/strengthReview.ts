@@ -1,4 +1,4 @@
-import { isHumanMessage, isToolMessage } from "@langchain/core/messages";
+import { isAIMessage, isHumanMessage, isToolMessage } from "@langchain/core/messages";
 import { addDays, shanghaiIso } from "@stride/contract";
 import * as z from "zod";
 import type { CoachToolRuntime } from "../agents/coachAgent.js";
@@ -91,7 +91,7 @@ function readEvidence(content: unknown): PriorEvidence | undefined {
   }
 }
 
-function readConversation(state: unknown): { userText: string; priorEvidence?: PriorEvidence; activeManualReview?: boolean } {
+function readConversation(state: unknown): { userText: string; priorEvidence?: PriorEvidence; activeStrengthReview?: boolean } {
   if (typeof state !== "object" || state === null || !("messages" in state) || !Array.isArray(state.messages)) return { userText: "" };
   const messages = state.messages;
   const userIndex = messages.findLastIndex(isHumanMessage);
@@ -100,7 +100,11 @@ function readConversation(state: unknown): { userText: string; priorEvidence?: P
   const previousUserIndex = previousTurn.findLastIndex(isHumanMessage);
   const isStrengthReview = (message: unknown) => isToolMessage(message) && message.name === TOOL_NAME;
   const previousReview = previousTurn.slice(previousUserIndex + 1).findLast(isStrengthReview);
-  const activeManualReview = messages.slice(userIndex + 1).some((message) => isStrengthReview(message) && readEvidence(message.content)?.source === "manual");
+  const currentTurn = messages.slice(userIndex + 1);
+  const currentToolCalls = currentTurn.findLast(isAIMessage)?.tool_calls;
+  const activeStrengthReview =
+    currentToolCalls?.some((call: { name: string }) => call.name === TOOL_NAME) ||
+    currentTurn.some((message) => isStrengthReview(message) && readEvidence(message.content)?.source === "manual");
   let userText = messages[userIndex].text;
   try {
     // The chat API wraps the message with a timestamp. The envelope itself
@@ -111,13 +115,13 @@ function readConversation(state: unknown): { userText: string; priorEvidence?: P
     // Graph callers can also supply plain user messages.
   }
   const priorEvidence = readEvidence(previousReview?.content);
-  return { userText, ...(priorEvidence ? { priorEvidence } : {}), activeManualReview };
+  return { userText, ...(priorEvidence ? { priorEvidence } : {}), activeStrengthReview };
 }
 
 /** Normal watch-only activity summaries can still answer general multi-sport questions. */
 export function useDedicatedStrengthReview(state: unknown): boolean {
-  const { userText, activeManualReview } = readConversation(state);
-  return activeManualReview === true || /手录|自由力量|力量.*复盘|复盘.*力量|manual strength|review.*strength/i.test(userText);
+  const { userText, activeStrengthReview } = readConversation(state);
+  return activeStrengthReview === true || /手录|自由力量|力量.*复盘|复盘.*力量|manual strength|review.*strength/i.test(userText);
 }
 
 function clearDay(userText: string, asof: string): string | undefined {

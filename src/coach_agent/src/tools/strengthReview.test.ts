@@ -325,3 +325,32 @@ test("a watch detail cannot bypass the manual policy during a multi-day strength
   assert.equal(detail.activity, null);
   assert.equal(detail.reviewTool, "get_strength_training_review");
 });
+
+test("parallel tool calls cannot expose broad-scope watch data before manual selection finishes", async () => {
+  const yesterday = "2026-11-25";
+  const { store } = fixture([manualRecord]);
+  const adapter: DataProvider = {
+    ...store,
+    getManualStrengthSummaries: async (_, start, end) => (start === yesterday && end === day ? [manualRecord] : []),
+  };
+  const tools: StructuredTool[] = getQaTools(adapter);
+  const node = new ToolNode(tools, { handleToolErrors: false });
+  const config = { tags: [], context: { userId: "athlete-a", asof: day } };
+  const output = await node.invoke(
+    {
+      messages: [
+        new HumanMessage("从昨天到今天的力量训练做了哪些组？平均心率呢？"),
+        new AIMessage({
+          content: "",
+          tool_calls: [
+            { name: "get_strength_training_review", args: { startDay: yesterday, endDay: day }, id: "manual" },
+            { name: "get_activity_details", args: { labelId: watchB.id }, id: "watch" },
+          ],
+        }),
+      ],
+    },
+    config,
+  );
+  assert.equal(JSON.parse(output.messages[0].content).source, "manual");
+  assert.equal(JSON.parse(output.messages[1].content).activity, null);
+});
