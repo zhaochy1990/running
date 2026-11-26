@@ -80,13 +80,14 @@ func legacyHealthLookback(gap StageGap, stage, anchor string, items []*storage.O
 	return provider.HealthLookbackDays(from, latest, anchor)
 }
 
-// rawAttemptGaps projects work-item failures during the existing retry loop.
+// workItemGapViews projects current attempts and preserves terminal refusal
+// evidence across finalization by an older worker.
 // The worker clears the failure when that item finishes, so a prior attempt
 // can never become a permanent entry in the stage coverage row.
-func rawAttemptGaps(items []*storage.OnboardingSyncWorkItem) map[string][]StageGap {
-	stages := make(map[string][]StageGap)
+func workItemGapViews(items []*storage.OnboardingSyncWorkItem) (attempts, terminal map[string][]StageGap) {
+	attempts, terminal = make(map[string][]StageGap), make(map[string][]StageGap)
 	for _, item := range items {
-		if item.Status != storage.OnboardingSyncItemPending && item.Status != storage.OnboardingSyncItemFailed {
+		if item.Status != storage.OnboardingSyncItemPending && item.Status != storage.OnboardingSyncItemFailed && item.Status != storage.OnboardingSyncItemGap {
 			continue
 		}
 		details := item.RecordedRangeGaps()
@@ -98,11 +99,15 @@ func rawAttemptGaps(items []*storage.OnboardingSyncWorkItem) map[string][]StageG
 			continue
 		}
 		for _, gap := range gaps {
-			if gap.Kind == provider.RangeGapTransient || gap.Kind == provider.RangeGapUnavailable {
-				gap.Channel = item.Kind
-				stages[item.Stage] = append(stages[item.Stage], gap)
+			gap.Channel = item.Kind
+			if item.Status == storage.OnboardingSyncItemGap {
+				if gap.Kind == provider.RangeGapUnavailable {
+					terminal[item.Stage] = append(terminal[item.Stage], gap)
+				}
+			} else if gap.Kind == provider.RangeGapTransient || gap.Kind == provider.RangeGapUnavailable {
+				attempts[item.Stage] = append(attempts[item.Stage], gap)
 			}
 		}
 	}
-	return stages
+	return attempts, terminal
 }

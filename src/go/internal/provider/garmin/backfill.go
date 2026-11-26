@@ -33,9 +33,7 @@ package garmin
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
@@ -154,9 +152,8 @@ func (p *Provider) backfillActivities(ctx context.Context, client *Client, user 
 	confirmUndated := func(a rawActivity) error {
 		id := a.labelID()
 		raw, err := client.GetActivityDetails(ctx, id, activityDetailsMaxChart, activityDetailsMaxPoly)
-		var apiErr *APIError
 		switch {
-		case errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound:
+		case isRangeRejection(err):
 			gapEvents = append(gapEvents, rejectedActivityGap(id, win.To, err))
 			log.Warn("garmin: backfill dropped a phantom undated list entry", zap.String("label_id", id))
 			return nil
@@ -179,7 +176,7 @@ func (p *Provider) backfillActivities(ctx context.Context, client *Client, user 
 			}
 			gapEvents = append(gapEvents, provider.RangeGap{
 				From: anchor, To: anchor,
-				Kind: provider.RangeGapUnavailable, Reason: fmt.Sprintf("activity %s has an unclassifiable start date even in its detail payload", id),
+				Kind: provider.RangeGapUnavailable, ActivityID: id, Reason: fmt.Sprintf("activity %s has an unclassifiable start date even in its detail payload", id),
 			})
 			return nil
 		}
@@ -211,7 +208,7 @@ func (p *Provider) backfillActivities(ctx context.Context, client *Client, user 
 				if id != "" && !rejectedIDs[id] && !seen[id] {
 					seen[id] = true
 					if err := confirmUndated(a); err != nil {
-						return nil, err
+						return &provider.ChannelBackfillReport{Checkpoint: checkpoint, GapEvents: gapEvents}, err
 					}
 				}
 				continue

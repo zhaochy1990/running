@@ -105,9 +105,17 @@ func (p *Provider) SyncRecentRange(ctx context.Context, user string, opts provid
 		rep.Health = r
 	}
 	if opts.Dashboard != nil {
-		r, err := p.recentDashboard(ctx, client, user, *opts.Dashboard)
+		known := opts.RejectedDashboardEndpoints
+		if known == nil {
+			known = make(map[string]map[string]bool)
+		}
+		if rep.Health != nil {
+			provider.RememberRejectedHealthEndpoints(known, rep.Health.Gaps)
+		}
+		r, err := p.recentDashboard(ctx, client, user, *opts.Dashboard, known)
 		if err != nil {
 			if !isRangeRejection(err) {
+				rep.Dashboard = r
 				return rep, err
 			}
 			r = &provider.RangeChannelReport{Status: provider.RangeChannelGap, Gaps: []provider.RangeGap{provider.RejectedRange(*opts.Dashboard, err)}}
@@ -236,13 +244,15 @@ func (p *Provider) recentActivities(ctx context.Context, client *Client, user st
 			}
 			invalidSeen[id] = true
 			raw, err := client.GetActivityDetails(ctx, id, activityDetailsMaxChart, activityDetailsMaxPoly)
-			var apiErr *APIError
 			switch {
-			case errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound:
+			case isRangeRejection(err):
 				gaps = append(gaps, rejectedActivityGap(id, win.To, err))
 				log.Warn("garmin: range sync dropped a phantom undated list entry", zap.String("label_id", id))
 			case err != nil:
-				return nil, err // retryable or auth — same policy as the detail fetch
+				if len(gaps) > 0 {
+					return &provider.RangeChannelReport{Gaps: gaps}, err
+				}
+				return nil, err
 			default:
 				var detail struct {
 					StartTimeGMT string `json:"startTimeGMT"`
@@ -660,30 +670,9 @@ func (p *Provider) recentHealth(ctx context.Context, client *Client, user string
 // endpoint on that day needs retry, so subsequent attempts can skip it.
 func (p *Provider) rangeHealthDay(ctx context.Context, client *Client, user, date string, jobs int, skip map[string]bool) (bool, []provider.RangeGap, error) {
 	tsRaw, usRaw, sleepRaw, hrvRaw, err := fetchHealthDay(ctx, client, date, jobs, skip)
-	window := provider.DayWindow{From: date, To: date}
-	var gaps []provider.RangeGap
-	if err != nil {
-		var retry error
-		// fetchHealthDay always returns errors.Join of healthEndpointError values.
-		var joined interface{ Unwrap() []error }
-		if !errors.As(err, &joined) {
-			return false, nil, &provider.RangeFetchError{Window: window, Err: err}
-		}
-		for _, cause := range joined.Unwrap() {
-			if !isRangeRejection(cause) {
-				retry = errors.Join(retry, cause)
-				continue
-			}
-			gap := provider.RejectedRange(window, cause)
-			var endpoint *healthEndpointError
-			if errors.As(cause, &endpoint) {
-				gap.Endpoint = endpoint.endpoint
-			}
-			gaps = append(gaps, gap)
-		}
-		if retry != nil {
-			return false, gaps, &provider.RangeFetchError{Window: window, Err: retry}
-		}
+	gaps, retry := classifyRangeHealthErrors(date, err)
+	if retry != nil {
+		return false, gaps, retry
 	}
 	observed := false
 	if h := buildDailyHealth(user, date, tsRaw, usRaw, sleepRaw); hasSignal(h) {
@@ -701,6 +690,36 @@ func (p *Provider) rangeHealthDay(ctx context.Context, client *Client, user, dat
 	return observed, gaps, nil
 }
 
+func classifyRangeHealthErrors(date string, err error) ([]provider.RangeGap, error) {
+	if err == nil {
+		return nil, nil
+	}
+	window := provider.DayWindow{From: date, To: date}
+	causes := []error{err}
+	var joined interface{ Unwrap() []error }
+	if errors.As(err, &joined) {
+		causes = joined.Unwrap()
+	}
+	var gaps []provider.RangeGap
+	var retry error
+	for _, cause := range causes {
+		if !isRangeRejection(cause) {
+			retry = errors.Join(retry, cause)
+			continue
+		}
+		gap := provider.RejectedRange(window, cause)
+		var endpoint *healthEndpointError
+		if errors.As(cause, &endpoint) {
+			gap.Endpoint = endpoint.endpoint
+		}
+		gaps = append(gaps, gap)
+	}
+	if retry != nil {
+		return gaps, &provider.RangeFetchError{Window: window, Err: retry}
+	}
+	return gaps, nil
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Dashboard channel
 // ─────────────────────────────────────────────────────────────────────────────
@@ -711,30 +730,35 @@ func (p *Provider) rangeHealthDay(ctx context.Context, client *Client, user, dat
 // channel, and an answer that stores nothing is an honest gap, not a done
 // dashboard — the onboarding stage's dashboard work item must not silently
 // read done with no snapshot behind it.
-func (p *Provider) recentDashboard(ctx context.Context, client *Client, user string, win provider.DayWindow) (*provider.RangeChannelReport, error) {
-	anchor, err := time.Parse("2006-01-02", win.From)
+func (p *Provider) recentDashboard(ctx context.Context, client *Client, user string, win provider.DayWindow, known map[string]map[string]bool) (*provider.RangeChannelReport, error) {
+	anchor, err := time.Parse(time.DateOnly, win.From)
 	if err != nil {
 		return nil, fmt.Errorf("garmin: recent dashboard day %q: %w", win.From, err)
 	}
 	var syncRes provider.SyncResult
-	if err := p.syncDashboard(ctx, client, user, anchor, &syncRes); err != nil {
+	var gaps []provider.RangeGap
+	err = p.syncDashboardRange(ctx, client, user, anchor, &syncRes, known, func(entries []provider.RangeGap) {
+		gaps = append(gaps, entries...)
+	})
+	if err != nil {
+		if len(gaps) > 0 {
+			return &provider.RangeChannelReport{Gaps: gaps}, err
+		}
 		return nil, err
 	}
-	if syncRes.Health == 0 {
-		return &provider.RangeChannelReport{
-			Status: provider.RangeChannelGap, ScannedFrom: win.From, ScannedTo: win.To,
-			Credential: fmt.Sprintf("garmin:v1:range:dashboard:%s..%s:obs=-..-:n=0", win.From, win.To),
-			Gaps: []provider.RangeGap{{
-				From: win.From, To: win.To, Kind: provider.RangeGapEmpty, Reason: "provider returned no dashboard summary",
-			}},
-		}, nil
+	report := &provider.RangeChannelReport{Status: provider.RangeChannelDone, ScannedFrom: win.From, ScannedTo: win.To, Count: syncRes.Health, Gaps: gaps}
+	obs := "-..-"
+	if syncRes.Health > 0 {
+		report.ObservedFrom, report.ObservedTo = &win.From, &win.To
+		obs = win.From + ".." + win.To
+	} else if len(gaps) == 0 && len(known[win.From]) == 0 {
+		report.Gaps = []provider.RangeGap{{From: win.From, To: win.To, Kind: provider.RangeGapEmpty, Reason: "provider returned no dashboard summary"}}
 	}
-	return &provider.RangeChannelReport{
-		Status: provider.RangeChannelDone, ScannedFrom: win.From, ScannedTo: win.To,
-		ObservedFrom: &win.From, ObservedTo: &win.To, Count: syncRes.Health,
-		Credential: fmt.Sprintf("garmin:v1:range:dashboard:%s..%s:obs=%s..%s:n=%d",
-			win.From, win.To, win.From, win.To, syncRes.Health),
-	}, nil
+	if len(report.Gaps) > 0 {
+		report.Status = provider.RangeChannelGap
+	}
+	report.Credential = fmt.Sprintf("garmin:v1:range:dashboard:%s..%s:obs=%s:n=%d", win.From, win.To, obs, syncRes.Health)
+	return report, nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

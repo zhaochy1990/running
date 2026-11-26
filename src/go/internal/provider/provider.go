@@ -326,6 +326,28 @@ func RememberRejectedActivities(ids map[string]bool, gaps []RangeGap) {
 	}
 }
 
+// RememberRejectedHealthEndpoints tracks the exact date and endpoint of a
+// vendor refusal so unrelated successful or retryable requests can continue.
+func RememberRejectedHealthEndpoints(byDay map[string]map[string]bool, gaps []RangeGap) {
+	for _, gap := range gaps {
+		if gap.Kind != RangeGapUnavailable || gap.Endpoint == "" {
+			continue
+		}
+		start, startErr := time.Parse(time.DateOnly, gap.From)
+		end, endErr := time.Parse(time.DateOnly, gap.To)
+		if startErr != nil || endErr != nil {
+			continue
+		}
+		for day := start; !day.After(end); day = day.AddDate(0, 0, 1) {
+			label := day.Format(time.DateOnly)
+			if byDay[label] == nil {
+				byDay[label] = make(map[string]bool)
+			}
+			byDay[label][gap.Endpoint] = true
+		}
+	}
+}
+
 // HasBlockingRangeGaps distinguishes a finished scan with expected blanks
 // from one with data that could not be obtained.
 func HasBlockingRangeGaps(gaps []RangeGap) bool {
@@ -403,12 +425,13 @@ type RangeChannelReport struct {
 // Jobs is the detail-fetch concurrency, an infra knob supplied by the caller
 // (CLI/worker) exactly like SyncOptions.Jobs — never client-controlled.
 type RecentRangeOptions struct {
-	Activities              *DayWindow
-	Health                  *DayWindow
-	Dashboard               *DayWindow
-	RejectedActivityIDs     map[string]bool            // terminal detail rejections from earlier attempts
-	RejectedHealthEndpoints map[string]map[string]bool // day → rejected endpoints
-	Jobs                    int
+	Activities                 *DayWindow
+	Health                     *DayWindow
+	Dashboard                  *DayWindow
+	RejectedActivityIDs        map[string]bool            // terminal detail rejections from earlier attempts
+	RejectedHealthEndpoints    map[string]map[string]bool // day → rejected endpoints
+	RejectedDashboardEndpoints map[string]map[string]bool // day → rejected endpoints
+	Jobs                       int
 }
 
 // RecentRangeReport carries the terminal outcomes of a recent-range sync.

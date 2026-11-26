@@ -1300,13 +1300,13 @@ func (s *Service) View(ctx context.Context, userID string) (*View, error) {
 	}
 	statuses := effectiveCoverageStatuses(covs)
 	var items []*storage.OnboardingSyncWorkItem
-	if sess.Provider == "coros" || !sess.Terminal() || sess.State == storage.OnboardingSyncStateFailed {
+	if sess.Provider == "coros" || !sess.Terminal() || sess.State == storage.OnboardingSyncStateFailed || sess.State == storage.OnboardingSyncStateCompletedWithGaps {
 		items, err = s.store.ListOnboardingSyncWorkItems(ctx, sess.SessionID, "")
 		if err != nil {
 			return nil, err
 		}
 	}
-	attemptGaps := rawAttemptGaps(items)
+	attemptGaps, terminalGaps := workItemGapViews(items)
 	allStagesCompleted := len(covs) > 0
 	for _, cov := range covs {
 		sv := StageView{
@@ -1323,6 +1323,13 @@ func (s *Service) View(ctx context.Context, userID string) (*View, error) {
 					gaps[i].HealthHistoryDays = legacyHealthLookback(gap, cov.Stage, sess.AnchorDay, items)
 				}
 			}
+		}
+		// A worker from before gap classification could finish the stage
+		// after a newer worker saved the terminal item. Its result may
+		// omit a refusal inside the observed bounds.
+		if cov.Status == storage.OnboardingSyncCoverageCompletedWithGaps && !provider.HasBlockingRangeGaps(gaps) && len(terminalGaps[cov.Stage]) > 0 {
+			gaps = append(gaps, terminalGaps[cov.Stage]...)
+			sv.Status = storage.OnboardingSyncCoverageCompletedWithGaps
 		}
 		sv.Gaps = append(gaps, attemptGaps[cov.Stage]...)
 		dispatchFailed := false

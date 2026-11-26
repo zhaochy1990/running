@@ -214,10 +214,13 @@ func New(cfg Config) job.Handler {
 		}
 
 		for {
-			opts := provider.RecentRangeOptions{Jobs: cfg.Jobs}
+			opts := provider.RecentRangeOptions{Jobs: cfg.Jobs, RejectedDashboardEndpoints: make(map[string]map[string]bool)}
 			byKind := map[string]*storage.OnboardingSyncWorkItem{}
 			for _, it := range items {
 				if it.Status == storage.OnboardingSyncItemDone || it.Status == storage.OnboardingSyncItemGap {
+					if it.Kind == kindHealth {
+						provider.RememberRejectedHealthEndpoints(opts.RejectedDashboardEndpoints, workItemGaps(it))
+					}
 					continue
 				}
 				byKind[it.Kind] = it
@@ -236,6 +239,7 @@ func New(cfg Config) job.Handler {
 					opts.RejectedHealthEndpoints = rejectedHealthEndpoints(cp.Gaps)
 				case kindDashboard:
 					opts.Dashboard = &w
+					provider.RememberRejectedHealthEndpoints(opts.RejectedDashboardEndpoints, parseChannelCheckpoint(it.Checkpoint).Gaps)
 				default:
 					return "", job.NewPermanentError("bad_work_item",
 						fmt.Errorf("onboardingrecent: unknown work item kind %q", it.Kind))
@@ -260,6 +264,10 @@ func New(cfg Config) job.Handler {
 				return "", err
 			}
 			rep.Health, err = resumeRecentChannel(ctx, cfg.Store, prov.Info().Name, byKind[kindHealth], rep.Health)
+			if err != nil {
+				return "", err
+			}
+			rep.Dashboard, err = resumeRecentChannel(ctx, cfg.Store, prov.Info().Name, byKind[kindDashboard], rep.Dashboard)
 			if err != nil {
 				return "", err
 			}
@@ -373,20 +381,7 @@ func mergeRecentObserved(cp *channelCheckpoint, report *provider.RangeChannelRep
 
 func rejectedHealthEndpoints(gaps []provider.RangeGap) map[string]map[string]bool {
 	byDay := make(map[string]map[string]bool)
-	for _, gap := range gaps {
-		if gap.Kind != provider.RangeGapUnavailable || gap.Endpoint == "" {
-			continue
-		}
-		for day := gap.From; day != "" && day <= gap.To; day = nextDayLabel(day) {
-			if byDay[day] == nil {
-				byDay[day] = make(map[string]bool)
-			}
-			byDay[day][gap.Endpoint] = true
-			if nextDayLabel(day) <= day {
-				break
-			}
-		}
-	}
+	provider.RememberRejectedHealthEndpoints(byDay, gaps)
 	return byDay
 }
 

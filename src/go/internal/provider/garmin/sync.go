@@ -553,24 +553,45 @@ func requiredHealthError(err error) error {
 
 // syncDashboard pulls the most-recent metrics into the singleton dashboard row.
 func (p *Provider) syncDashboard(ctx context.Context, client *Client, user string, today time.Time, res *provider.SyncResult) error {
-	todayISO := today.Format("2006-01-02")
-	yesterdayISO := today.AddDate(0, 0, -1).Format("2006-01-02")
+	return p.syncDashboardRange(ctx, client, user, today, res, nil, nil)
+}
 
-	tsRaw, usRaw, _, hrvRaw, err := fetchHealthDay(ctx, client, todayISO, provider.DetailJobs(0), nil)
-	if err != nil {
+func (p *Provider) syncDashboardRange(ctx context.Context, client *Client, user string, today time.Time, res *provider.SyncResult, known map[string]map[string]bool, record func([]provider.RangeGap)) error {
+	todayISO := today.Format(time.DateOnly)
+	yesterdayISO := today.AddDate(0, 0, -1).Format(time.DateOnly)
+	classify := func(date string, err error) error {
+		if record == nil {
+			return err
+		}
+		gaps, retry := classifyRangeHealthErrors(date, err)
+		record(gaps)
+		return retry
+	}
+	get := func(day, endpoint string, call func() (json.RawMessage, error)) (json.RawMessage, error) {
+		if known[day][endpoint] {
+			return nil, nil
+		}
+		raw, err := call()
+		if err := requiredHealthError(err); err != nil {
+			return raw, classify(day, &healthEndpointError{endpoint: endpoint, err: err})
+		}
+		return raw, nil
+	}
+	tsRaw, usRaw, _, _, err := fetchHealthDay(ctx, client, todayISO, provider.DetailJobs(0), known[todayISO])
+	if err = classify(todayISO, err); err != nil {
 		return err
 	}
 	// Dashboard uses yesterday's HRV rather than today's daily row.
-	hrvRaw, err = client.GetHRV(ctx, yesterdayISO)
-	if err = requiredHealthError(err); err != nil {
+	hrvRaw, err := get(yesterdayISO, "hrv", func() (json.RawMessage, error) { return client.GetHRV(ctx, yesterdayISO) })
+	if err != nil {
 		return err
 	}
-	ltRaw, err := client.GetLactateThreshold(ctx)
-	if err = requiredHealthError(err); err != nil {
+	ltRaw, err := get(todayISO, "lactate_threshold", func() (json.RawMessage, error) { return client.GetLactateThreshold(ctx) })
+	if err != nil {
 		return err
 	}
-	rpRaw, err := client.GetRacePredictions(ctx)
-	if err = requiredHealthError(err); err != nil {
+	rpRaw, err := get(todayISO, "race_predictions", func() (json.RawMessage, error) { return client.GetRacePredictions(ctx) })
+	if err != nil {
 		return err
 	}
 

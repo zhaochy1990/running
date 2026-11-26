@@ -436,6 +436,53 @@ func TestOnboardingRecent_GapReportIsCompletedWithGaps(t *testing.T) {
 
 // A provider without the recent-range contract (Garmin until T03) is a
 // permanent failure the moment the resolver reports it — no poisoning retries.
+func TestOnboardingRecent_ViewRecoversPermanentGapFromLegacyFinalization(t *testing.T) {
+	st := openStore(t)
+	ctx := context.Background()
+	uid := uuid.NewString()
+	sess := seedSession(t, st, uid)
+	fp := newFakeProvider()
+	fp.actBehaviour = make(chan behaviour, 1)
+	fp.actBehaviour <- behaviour{status: provider.RangeChannelGap}
+	if _, err := runHandler(t, handlerWith(t, st, fp), stageJob(sess)); err != nil {
+		t.Fatal(err)
+	}
+	// Older workers inferred gaps from the two observed edges, omitting an
+	// unavailable record inside that range even when its work item was saved.
+	cov, err := st.GetOnboardingSyncStageCoverage(ctx, sess.SessionID, storage.OnboardingSyncStageRecentRaw)
+	if err != nil || cov == nil {
+		t.Fatalf("raw coverage: %+v, %v", cov, err)
+	}
+	cov.Status, cov.GapsJSON = storage.OnboardingSyncCoverageCompletedWithGaps, nil
+	if err := st.UpdateOnboardingSyncStageCoverage(ctx, cov); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetOnboardingSyncSessionState(ctx, sess.SessionID, storage.OnboardingSyncStateCompletedWithGaps, nil); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := onboardingsync.New(onboardingsync.Config{
+		Store: st, Enqueuer: &fakeEnqueuer{}, Jobs: st, Runs: st,
+		JobType: JobType, AnalysisJobType: "onboarding_recent_analysis", LegacyFullPipeline: "onboarding", Logger: zap.NewNop(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := svc.View(ctx, uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stage := range view.Stages {
+		if stage.Stage != storage.OnboardingSyncStageRecentRaw {
+			continue
+		}
+		if len(stage.Gaps) != 1 || stage.Gaps[0].Kind != provider.RangeGapUnavailable || stage.Gaps[0].Reason != "permanently unobtainable" {
+			t.Fatalf("raw gaps = %+v, want the precise terminal reason", stage.Gaps)
+		}
+		return
+	}
+	t.Fatal("recent raw stage is missing")
+}
+
 func TestOnboardingRecent_ProviderNotCapableIsPermanent(t *testing.T) {
 	st := openStore(t)
 	uid := uuid.NewString()
