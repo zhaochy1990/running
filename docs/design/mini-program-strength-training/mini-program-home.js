@@ -3,7 +3,7 @@
 const miniProgramHome = (() => {
   const icons = '../../../src/wechat-miniprogram/assets/icons/';
   const tabs = [
-    { key: 'coach', label: '教练' },
+    { key: 'coach', label: '教练', page: 'coach' },
     { key: 'record', label: '记录', page: 'records' },
     { key: 'today', label: '训练', page: 'schedule' },
     { key: 'me', label: '我' },
@@ -16,7 +16,7 @@ const miniProgramHome = (() => {
   const exampleMonths = [
     { month: '2026-11', km: '22.0', duration: '2小时42分', rows: [
       { date: '2026-11-24', title: '晨跑', details: '8.03 km · 45分 · 5′36″ · 143 bpm', load: '62', sport: 'directions_run' },
-      { date: '2026-11-23', title: '力量训练', details: '32分', load: '22', sport: 'fitness_center' },
+      { date: '2026-11-23', title: '力量训练', details: '32分', source: '手表同步', load: '22', sport: 'fitness_center' },
       { date: '2026-11-21', title: '轻松跑', details: '13.97 km · 1小时25分 · 6′05″ · 138 bpm', load: '89', sport: 'directions_run' },
     ] },
     { month: '2026-10', km: '10.0', duration: '1小时', rows: [
@@ -26,6 +26,11 @@ const miniProgramHome = (() => {
 
   function asset(name, className = '') {
     return `<img class="${className}" src="${icons}${name}.svg" alt="" draggable="false">`;
+  }
+
+  function escapeHTML(value) {
+    const entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    return String(value).replace(/[&<>"']/g, char => entities[char]);
   }
 
   function tabBar(active) {
@@ -89,7 +94,7 @@ const miniProgramHome = (() => {
     const contents = `<span class="mp-activity-icon">${asset(row.sport)}</span>
       <span class="mp-activity-info">
         <strong>${row.title}</strong><small>${dateLabel(row.date)}</small>
-        <small class="mp-activity-meta">${row.id ? '手动记录' : row.details}${row.id && row.details ? ` · ${row.details}` : ''}</small>
+        <small class="mp-activity-meta">${row.source ? `${row.source} · ` : ''}${row.details}</small>
       </span>
       ${row.load ? `<span class="mp-activity-load"><strong>${row.load}</strong><small>负荷</small></span>` : ''}`;
     return `<li>${row.id
@@ -140,5 +145,9 @@ const miniProgramHome = (() => {
     expanded.add(date.slice(0, 7));
   }
 
-  return { asset, tabBar, training, records, selectDay, toggleMonth, revealMonth };
+  function watchStrength() {
+    return exampleMonths.flatMap(month => month.rows).filter(row => row.sport === 'fitness_center');
+  }
+
+  return { asset, escapeHTML, tabBar, training, records, selectDay, toggleMonth, revealMonth, watchStrength };
 })();

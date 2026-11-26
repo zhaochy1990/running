@@ -349,6 +349,7 @@ dialog::backdrop { background: #2227278a; }
 .log-add-exercise:hover { background: var(--tint); }
 .log-error:not(:empty) { margin: 6px 0; color: var(--accent-dark); font-size: 13px; line-height: 1.45; }
 .log-saved-header { padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.log-saved-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 8px; }
 .log-saved-header h2 { overflow-wrap: anywhere; }
 .log-saved-header p { margin-top: 6px; }
 .log-saved-exercise { padding: 15px 0 13px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
@@ -393,6 +394,40 @@ dialog::backdrop { background: #2227278a; }
 .mp-tab img { width: 27px; height: 27px; }
 .mp-tab[aria-current] { color: var(--mp-accent-text); font-weight: 700; }
 .mp-home { padding: 13px 5.33% 20px; }
+.coach-context {
+  margin-bottom: 14px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: var(--tint);
+  color: var(--accent-dark);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.coach-messages { display: grid; gap: 12px; }
+.coach-message {
+  width: fit-content;
+  max-width: 90%;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--white);
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.coach-message.is-user { justify-self: end; background: var(--tint); border-color: transparent; }
+.coach-preview-composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.coach-preview-composer input {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--white);
+  color: var(--ink);
+  font-size: 16px;
+}
 .mp-calendar, .mp-workout, .mp-empty {
   border: 1px solid var(--mp-divider);
   border-radius: 13px;

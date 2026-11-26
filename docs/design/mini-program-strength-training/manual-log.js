@@ -1,6 +1,7 @@
 'use strict';
 
 const manualLog = (() => {
+  const { escapeHTML: escape } = miniProgramHome;
   const loadUnits = { kg: 'kg', lb: 'lb', bodyweight: '自重' };
   const units = { reps: '个', seconds: '秒' };
   const initialSet = { load: '', loadUnit: 'kg', amount: '0', unit: 'reps' };
@@ -17,8 +18,8 @@ const manualLog = (() => {
   let saveFeedbackTimer;
   let app;
 
-  function today() {
-    const parts = Object.fromEntries(dates.formatToParts().map(part => [part.type, part.value]));
+  function today(time = new Date()) {
+    const parts = Object.fromEntries(dates.formatToParts(time).map(part => [part.type, part.value]));
     return `${parts.year}-${parts.month}-${parts.day}`;
   }
 
@@ -37,8 +38,9 @@ const manualLog = (() => {
   function draft() {
     if (editing) return editing.draft;
     if (!activeDraft) {
-      const date = today();
-      activeDraft = { title: defaultTitle(date), date, exercises: [newExercise()], note: '' };
+      const startedAt = new Date();
+      const date = today(startedAt);
+      activeDraft = { title: defaultTitle(date), date, startedAt: startedAt.toISOString(), exercises: [newExercise()], note: '' };
     }
     return activeDraft;
   }
@@ -71,11 +73,6 @@ const manualLog = (() => {
       }
       app.navigate('schedule');
     }
-  }
-
-  function escape(value) {
-    const entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
-    return String(value).replace(/[&<>"']/g, char => entities[char]);
   }
 
   function options(values, selectedValue) {
@@ -170,21 +167,22 @@ ${escape(entry.note)}</textarea>
   }
 
   function recordTitle(record) {
-    return escape(record.data.title.trim() || defaultTitle(record.data.date));
+    return record.data.title.trim() || defaultTitle(record.data.date);
   }
 
   function line(row) {
     const load = row.load.trim();
     const amount = `${Number(row.amount)} ${units[row.unit]}`;
     if (row.loadUnit === 'bodyweight') return `${loadUnits.bodyweight} · ${amount}`;
-    return load ? `${escape(load)} ${loadUnits[row.loadUnit]} · ${amount}` : amount;
+    return load ? `${load} ${loadUnits[row.loadUnit]} · ${amount}` : amount;
   }
 
   function activityRows() {
     return records.map(record => ({
       id: record.id,
-      title: recordTitle(record),
+      title: escape(recordTitle(record)),
       date: record.data.date,
+      source: '手动记录',
       details: `${record.data.exercises.length} 个动作 · ${totals(record.data)} 组`,
     }));
   }
@@ -205,18 +203,21 @@ ${escape(entry.note)}</textarea>
     return {
       title: '力量训练记录',
       content: `<div class="log-saved-header">
-        <h2 class="page-heading" tabindex="-1">${recordTitle(record)}</h2>
+        <h2 class="page-heading" tabindex="-1">${escape(recordTitle(record))}</h2>
         <p class="eyeline">${entry.date} · 手动记录 · ${entry.exercises.length} 个动作 / ${totals(entry)} 组</p>
       </div>
       ${entry.exercises.map(exercise => `<section class="log-saved-exercise">
         <h3>${escape(exercise.name.trim())}</h3>
-        <ol>${exercise.rows.map((row, index) => `<li><span class="log-saved-index">第 ${index + 1} 组</span><span>${line(row)}</span></li>`).join('')}</ol>
+        <ol>${exercise.rows.map((row, index) => `<li><span class="log-saved-index">第 ${index + 1} 组</span><span>${escape(line(row))}</span></li>`).join('')}</ol>
       </section>`).join('')}
       ${entry.note.trim() ? `<section class="log-saved-note">
         <h3>训练备注</h3>
         <p class="log-record-note">${escape(entry.note)}</p>
       </section>` : ''}`,
-      footer: logButton('records', '返回活动记录', 'secondary') + logButton('edit', '编辑记录', 'primary'),
+      footer: `<div class="log-saved-actions">
+        ${logButton('edit', '编辑记录', 'secondary')}
+        ${logButton('coach', '和教练聊一聊', 'primary')}
+      </div>`,
     };
   }
 
@@ -273,6 +274,7 @@ ${escape(entry.note)}</textarea>
       return;
     }
 
+    if (!editing) entry.endedAt = new Date().toISOString();
     const snapshot = structuredClone(entry);
     let record;
     if (editing) {
@@ -325,7 +327,7 @@ ${escape(entry.note)}</textarea>
     if (!control) return;
     const { logAction, record } = control.dataset;
     switch (logAction) {
-      case 'records': app.navigate('records'); break;
+      case 'coach': app.openCoach(selected); break;
       case 'show': {
         const saved = records.find(item => item.id === Number(record));
         selected = saved.id;
@@ -429,5 +431,19 @@ ${escape(entry.note)}</textarea>
     });
   }
 
-  return { setup, isPage, view, open, back, activityRows, hasDraft };
+  function coachRecords() {
+    return records.map(record => ({
+      id: record.id,
+      title: recordTitle(record),
+      date: record.data.date,
+      endedAt: record.data.endedAt,
+      note: record.data.note,
+      exercises: record.data.exercises.map(exercise => ({
+        name: exercise.name.trim(),
+        sets: exercise.rows.map(line),
+      })),
+    }));
+  }
+
+  return { setup, isPage, view, open, back, activityRows, hasDraft, coachRecords, today };
 })();

@@ -11,7 +11,7 @@ const setsPerExercise = 3;
 const totalSets = plan.length * setsPerExercise;
 const lesson = '跑者下肢力量';
 const params = new URLSearchParams(location.search);
-const entryViews = { manual: 'manualEdit', plan: 'plan', records: 'records' };
+const entryViews = { manual: 'manualEdit', plan: 'plan', records: 'records', coach: 'coach' };
 const entryView = params.get('view');
 let page = Object.hasOwn(entryViews, entryView) ? entryViews[entryView] : 'schedule';
 let session = null;
@@ -202,6 +202,7 @@ function summaryView() {
 const views = {
   schedule: () => miniProgramHome.training(lesson, plan.length, totalSets, manualLog.hasDraft()),
   records: () => miniProgramHome.records(manualLog.activityRows(), params.get('state') === 'empty'),
+  coach: coachPreview.view,
   plan: planView,
   active: activeView,
   summary: summaryView,
@@ -366,6 +367,13 @@ function revealActivity(id, date) {
   pendingActivity = id;
 }
 
+function openCoach(recordId) {
+  coachPreview.open(recordId);
+  if (page === 'coach') render();
+  else navigate('coach');
+  screen.scrollTop = screen.scrollHeight;
+}
+
 function navigate(next) {
   if (page === next) return;
   page = next;
@@ -387,6 +395,7 @@ document.addEventListener('click', event => {
   if (!control) return;
   const { action, index, step, id } = control.dataset;
   switch (action) {
+    case 'coach': openCoach(); break;
     case 'schedule': navigate('schedule'); break;
     case 'records': navigate('records'); break;
     case 'select-day': miniProgramHome.selectDay(Number(id)); render(); break;
@@ -419,6 +428,17 @@ document.addEventListener('click', event => {
   }
 });
 
+actions.addEventListener('submit', event => {
+  if (event.target.id !== 'coach-preview-form') return;
+  event.preventDefault();
+  const message = new FormData(event.target).get('message').trim();
+  if (!message) return;
+  coachPreview.send(message, params.get('state') !== 'empty');
+  render();
+  screen.scrollTop = screen.scrollHeight;
+  actions.querySelector('#coach-preview-form input').focus();
+});
+
 screen.addEventListener('input', event => {
   const input = event.target.closest('input[data-value]');
   if (!input) return;
@@ -440,7 +460,7 @@ setInterval(() => {
 
 back.innerHTML = icon('left', 23);
 manualLog.setup({
-  screen, actions, render, navigate, icon, asset: miniProgramHome.asset, openSheet, revealActivity,
+  screen, actions, render, navigate, icon, asset: miniProgramHome.asset, openSheet, revealActivity, openCoach,
   closeSheet: () => {
     sheetReturnFocus = null;
     sheet.close();
