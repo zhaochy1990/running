@@ -33,7 +33,7 @@ type Config struct {
 // queueBroker is the slice of the broker the service uses; *Broker is the
 // real one, tests substitute an in-memory queue.
 type queueBroker interface {
-	EnsureQueue(name string) error
+	EnsureQueue(ctx context.Context, name string) error
 	Publish(ctx context.Context, queue string, message ExecuteMessage) error
 	QueueDepth(ctx context.Context, queue string) (QueueDepth, error)
 }
@@ -550,7 +550,7 @@ func digestEnv(env map[string]string) map[string]string {
 // launch makes the version runnable: queue, pointer messages, Deployment.
 func (s *Service) launch(ctx context.Context, task *storage.PlanEvalTask) error {
 	queue := QueueName(task.AgentVersion)
-	if err := s.broker.EnsureQueue(queue); err != nil {
+	if err := s.broker.EnsureQueue(ctx, queue); err != nil {
 		return err
 	}
 	executions, err := s.store.ListPlanEvalExecutions(ctx, task.ID)

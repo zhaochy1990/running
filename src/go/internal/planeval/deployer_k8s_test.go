@@ -7,6 +7,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8stesting "k8s.io/client-go/testing"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -231,5 +232,32 @@ func TestKubernetesDeployer_CleanupUsesPreGateResourceRevision(t *testing.T) {
 	}
 	if _, err := deployments.Get(ctx, name, metav1.GetOptions{}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestKubernetesDeployer_SameConfigStartChangesRuntimeRevision(t *testing.T) {
+	d := newFakeDeployer()
+	ctx := context.Background()
+	spec := WorkerSpec{AgentVersion: "2026.11.30", Replicas: 1, Env: map[string]string{}}
+	if err := d.Ensure(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	first, err := d.client.AppsV1().Deployments("stride").Get(ctx, WorkerName(spec.AgentVersion), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Ensure(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	second, err := d.client.AppsV1().Deployments("stride").Get(ctx, WorkerName(spec.AgentVersion), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := "stride-running.cn/runtime-command"
+	if first.Annotations[key] == "" || first.Annotations[key] == second.Annotations[key] {
+		t.Fatal("same-config start was an empty update, allowing stale cleanup")
+	}
+	if !reflect.DeepEqual(first.Spec.Template, second.Spec.Template) {
+		t.Fatal("runtime fence unnecessarily rolled pods")
 	}
 }

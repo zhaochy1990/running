@@ -30,6 +30,11 @@ func TestPlanEval_RealQueueCleanupAndDuplicateDelivery(t *testing.T) {
 	if err := broker.Publish(context.Background(), "missing-"+uuid.NewString(), ExecuteMessage{SchemaVersion: 1, SnapshotExecutionID: uuid.NewString()}); err == nil {
 		t.Fatal("unroutable publish was confirmed")
 	}
+	expired, cancelExpired := context.WithCancel(context.Background())
+	cancelExpired()
+	if err := broker.EnsureQueue(expired, "canceled-"+uuid.NewString()); err == nil {
+		t.Fatal("canceled declaration ignored context")
+	}
 	h.svc.broker = broker
 	ctx := context.Background()
 	view, _, serr := h.svc.CreateTask(ctx, "admin-1", uuid.NewString(), CreateTaskRequest{AgentVersion: h.version})

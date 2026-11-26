@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/google/uuid"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"os"
@@ -126,6 +127,7 @@ func (d *kubernetesDeployer) Ensure(ctx context.Context, spec WorkerSpec) error 
 	}
 
 	deployment := d.deployment(spec, launchChecksum(launch))
+	deployment.Annotations = map[string]string{"stride-running.cn/runtime-command": uuid.NewString()}
 	deployments := d.client.AppsV1().Deployments(d.namespace)
 	_, err := deployments.Create(ctx, deployment, metav1.CreateOptions{})
 	switch {
@@ -141,6 +143,10 @@ func (d *kubernetesDeployer) Ensure(ctx context.Context, spec WorkerSpec) error 
 	if current.DeletionTimestamp != nil {
 		return fmt.Errorf("plan-eval: deployment %s is still being deleted; retry launch after deletion", name)
 	}
+	if current.Annotations == nil {
+		current.Annotations = map[string]string{}
+	}
+	current.Annotations["stride-running.cn/runtime-command"] = deployment.Annotations["stride-running.cn/runtime-command"]
 	current.Spec.Replicas = deployment.Spec.Replicas
 	current.Spec.Template = deployment.Spec.Template
 	if _, err := deployments.Update(ctx, current, metav1.UpdateOptions{}); err != nil {

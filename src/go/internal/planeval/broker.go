@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -87,18 +88,25 @@ func NewBroker(amqpURL, managementURL string, log *zap.Logger) (*Broker, error) 
 }
 
 func (b *Broker) connect() error {
-	conn, err := amqp.DialConfig(b.amqpURL, amqp.Config{Heartbeat: 30 * time.Second})
+	var transport net.Conn
+	conn, err := amqp.DialConfig(b.amqpURL, amqp.Config{Heartbeat: 30 * time.Second, Dial: func(network, address string) (net.Conn, error) {
+		var err error
+		transport, err = amqp.DefaultDial(10*time.Second)(network, address)
+		return transport, err
+	}})
 	if err != nil {
 		return fmt.Errorf("plan-eval broker dial: %w", err)
 	}
+	// Channel-open and confirm RPCs happen after AMQP clears its handshake deadline.
+	_ = transport.SetDeadline(time.Now().Add(10 * time.Second))
+	defer transport.SetDeadline(time.Time{})
 	channel, err := conn.Channel()
 	if err != nil {
-		_ = conn.Close()
+		_ = conn.CloseDeadline(time.Now().Add(time.Second))
 		return fmt.Errorf("plan-eval broker channel: %w", err)
 	}
 	if err := channel.Confirm(false); err != nil {
-		_ = channel.Close()
-		_ = conn.Close()
+		_ = conn.CloseDeadline(time.Now().Add(time.Second))
 		return fmt.Errorf("plan-eval broker confirm mode: %w", err)
 	}
 	b.conn, b.channel = conn, channel
@@ -143,13 +151,28 @@ func (b *Broker) session() (*amqp.Channel, <-chan amqp.Return, error) {
 
 // EnsureQueue declares the version queue idempotently (durable, not
 // auto-delete: the queue outlives its Deployment).
-func (b *Broker) EnsureQueue(name string) error {
+func (b *Broker) EnsureQueue(ctx context.Context, name string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	ch, _, err := b.session()
 	if err != nil {
 		return err
 	}
-	if _, err := ch.QueueDeclare(name, true, false, false, false, amqp.Table{"x-queue-type": "classic"}); err != nil {
-		return fmt.Errorf("plan-eval declare queue %s: %w", name, err)
+
+	declared := make(chan error, 1)
+	go func() {
+		_, err := ch.QueueDeclare(name, true, false, false, false, amqp.Table{"x-queue-type": "classic"})
+		declared <- err
+	}()
+	select {
+	case err := <-declared:
+		if err != nil {
+			return fmt.Errorf("plan-eval declare queue %s: %w", name, err)
+		}
+	case <-ctx.Done():
+		b.invalidateSession(ch)
+		return ctx.Err()
 	}
 	return nil
 }
@@ -181,9 +204,7 @@ func (b *Broker) Publish(ctx context.Context, queue string, message ExecuteMessa
 	confirmed, err := confirm.WaitContext(confirmationContext)
 	if err != nil {
 		// An indeterminate confirmation can leave a late return; never reuse its channel.
-		b.mu.Lock()
-		b.closeConnection()
-		b.mu.Unlock()
+		b.invalidateSession(ch)
 		return fmt.Errorf("plan-eval publish to %s: wait for broker confirmation: %w", queue, err)
 	}
 	select {
@@ -232,4 +253,12 @@ func (b *Broker) QueueDepth(ctx context.Context, queue string) (QueueDepth, erro
 		return QueueDepth{}, fmt.Errorf("plan-eval rabbit management: queue %s has unsupported type or unavailable totals", queue)
 	}
 	return QueueDepth{Ready: *body.MessagesReady, Unacked: *body.MessagesUnacknowledged}, nil
+}
+
+func (b *Broker) invalidateSession(channel *amqp.Channel) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.channel == channel {
+		b.closeConnection()
+	}
 }

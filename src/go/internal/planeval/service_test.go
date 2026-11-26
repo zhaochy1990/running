@@ -41,7 +41,7 @@ type fakeBroker struct {
 	declared []string
 }
 
-func (b *fakeBroker) EnsureQueue(name string) error {
+func (b *fakeBroker) EnsureQueue(_ context.Context, name string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if _, ok := b.queues[name]; !ok {

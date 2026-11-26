@@ -104,7 +104,7 @@ RunnerSnapshot 在「测试数据」独立维护，运行时 JSON 使用 `schema
 
 [测评 API 与冻结输入契约实施工单](https://github.com/zhaochy1990/stride-devops/issues/1055)负责快照导入、冻结和这组内部接口。
 
-API 按版本协调任务提交、启动、扩缩容与清理。协调使用测评 MySQL 按数据库和 Agent 版本命名的连接级锁，多个 API 副本遵守同一锁；不同版本互不阻塞。锁连接失效会取消运行操作，清理先捕获 Deployment/Secret 的 UID 和 resourceVersion，再检查数据库/队列门禁，按捕获的资源身份前置条件删除，防止旧清理覆盖新启动；清理等待 Kubernetes 前台删除完成后释放锁，新提交随后重建 Deployment。环境变量留空沿用有效配置，副本数省略或为 0 时沿用该版本有效副本数（首次默认 1）。管理员通过 `POST /api/admin/plan-eval/agent-versions/{version}/scale`，请求 `{"replicas": 3}` 调整版本的共享并发；副本数为 1–配置上限，期望副本数先保存，集群故障后可重试扩缩容或未启动任务。
+API 按版本协调任务提交、启动、扩缩容与清理。协调使用测评 MySQL 按数据库和 Agent 版本命名的连接级锁，多个 API 副本遵守同一锁；不同版本互不阻塞。锁连接失效会取消运行操作，每个启动/扩缩容命令更新 Deployment 元数据命令标记（不触发 pod rollout），确保相同配置重启也推进资源版本。清理先捕获 Deployment/Secret 的 UID 和 resourceVersion，再检查数据库/队列门禁，按捕获的资源身份前置条件删除，防止旧清理覆盖新启动；清理等待 Kubernetes 前台删除完成后释放锁，新提交随后重建 Deployment。环境变量留空沿用有效配置，副本数省略或为 0 时沿用该版本有效副本数（首次默认 1）。管理员通过 `POST /api/admin/plan-eval/agent-versions/{version}/scale`，请求 `{"replicas": 3}` 调整版本的共享并发；副本数为 1–配置上限，期望副本数先保存，集群故障后可重试扩缩容或未启动任务。
 
 ```mermaid
 flowchart LR
