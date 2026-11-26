@@ -74,7 +74,7 @@ RunnerSnapshot 在「测试数据」独立维护，运行时 JSON 使用 `schema
 | 跑者历史 | Provider 读取的结构化档案、逐条活动、比赛成绩、校准及覆盖信息，区分未覆盖、缺测和已覆盖但无记录 |
 | 滚动输入 | 已启用的赛季计划及其政策包、已排周记录和已有完整周课表 |
 
-新建和导入快照时由平台生成随机 UUID 作为 `snapshot_id`，编辑时保留原 ID。 列表空间不足时缩略显示，详情页展示完整 UUID。列表的用户名使用脱敏显示名，项目和目标成绩分别读取 `goal.distance` 和 `goal.target_time`。生成类型通过可选的 `generation_type` 声明，`new_season` 对应新建赛季，`rolling_continuation` 对应到期接续，`rolling_catch_up` 对应漏排追赶。缺少该字段的历史数据用「—」展示。
+新建和导入快照时由平台生成随机 UUID 作为 `snapshot_id`，编辑时保留原 ID。列表空间不足时缩略显示，详情页展示完整 UUID。用户名读取 `username`，项目和目标成绩读取 `event` 与 `target_time`。`generation_kind` 的 `new_season` 对应新建赛季，`rolling_continue` 对应到期接续，`rolling_catch_up` 对应漏排追赶。
 
 生成请求按所选产物类型和快照构造，场景页提供只读请求 JSON，切换快照可核对各份生成输入。新建赛季使用 `MasterPlanGraphRequest`，滚动排课使用 `RollingJobRequest`。每条 SnapshotExecution 保存本次实际使用的请求、快照内容和冻结执行时点。`request_id` 随执行项固定，重试和接管沿用。滚动的实际起始周由 Agent 根据已排周记录和执行时点推导，规则预期起始周由 Evaluate 读取。
 
@@ -265,14 +265,16 @@ erDiagram
     }
     RunnerSnapshot {
         string snapshot_id PK "随机 UUID"
-        int schema_version "快照格式版本"
-        string name "脱敏用户名"
-        string athlete_ref "脱敏跑者标识"
-        date as_of "数据截止日"
-        json goal "项目与目标成绩"
-        enum generation_type "生成类型，可选"
+        string schema "快照格式版本"
+        string username "脱敏用户名"
+        enum generation_kind "新建或滚动"
+        date as_of_day "上海截止日"
+        string as_of "精确冻结时点，可选"
+        enum event "FM 或 HM"
+        string target_time "目标成绩"
+        int expected_start_week "仅验收，可选"
         json constraints "训练约束"
-        json history "训练事实与既有计划"
+        json records "训练事实、赛季、已排周与完整课表"
         string sha256 "快照摘要"
     }
     EvaluationTask {
