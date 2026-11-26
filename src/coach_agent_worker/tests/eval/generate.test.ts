@@ -7,6 +7,23 @@ import type { MasterPlanGraphShim } from "../../src/kernel/master/kernel.js";
 import { createSnapshot } from "./fixtures.js";
 
 const as_of = "2026-10-23T23:59:59+08:00";
+const buildModels = () => ({
+  goalAssessmentModel: {
+    invoke: async () => {
+      throw new Error("not used by test graph");
+    },
+  },
+  phasingModel: {
+    invoke: async () => {
+      throw new Error("master test must not call rolling models");
+    },
+  },
+  contentModel: {
+    invoke: async () => {
+      throw new Error("master test must not call rolling models");
+    },
+  },
+});
 const request = MasterPlanGraphRequest.parse({ ...createTestRequest(), requested_as_of: as_of });
 
 function completedGraph(seen: unknown[]) {
@@ -26,7 +43,7 @@ test("a completed kernel run becomes one master_plan artifact holding the season
   const seen: unknown[] = [];
   const result = await generateArtifact(
     { artifact_type: "master_plan", request, snapshot: createSnapshot(), as_of },
-    { buildGraph: () => completedGraph(seen) },
+    { buildModels, buildGraph: () => completedGraph(seen) },
     async () => {},
   );
   assert.equal(result.kind, "artifact");
@@ -45,6 +62,7 @@ test("a snapshot or request that does not match the contract is reported as an i
   const bad = await generateArtifact(
     { artifact_type: "master_plan", request, snapshot: { schema: "nope" }, as_of },
     {
+      buildModels,
       buildGraph: () => {
         throw new Error("must not build");
       },
@@ -55,6 +73,7 @@ test("a snapshot or request that does not match the contract is reported as an i
   const badRequest = await generateArtifact(
     { artifact_type: "master_plan", request: { request_id: "x" }, snapshot: createSnapshot(), as_of },
     {
+      buildModels,
       buildGraph: () => {
         throw new Error("must not build");
       },
@@ -80,7 +99,7 @@ test("kernel terminal decisions keep their stable error codes", async () => {
   } as unknown as MasterPlanGraphShim;
   const result = await generateArtifact(
     { artifact_type: "master_plan", request, snapshot: createSnapshot(), as_of },
-    { buildGraph: () => graph },
+    { buildModels, buildGraph: () => graph },
     async () => {},
   );
   assert.equal(result.kind === "failed" ? result.error.code : "", "kernel_goal_conflict");
@@ -108,6 +127,7 @@ test("data the snapshot does not carry surfaces as the specific gap instead of a
   const result = await generateArtifact(
     { artifact_type: "master_plan", request, snapshot: createSnapshot(), as_of },
     {
+      buildModels,
       buildGraph: (contextProvider: MasterPlanContextProvider) => {
         // 模拟 kernel initialize 的取数：窗口越过截止日。
         void contextProvider.loadActivities("11111111-2222-4333-8333-333333333333", "2026-10-01", "2026-11-01").catch(() => undefined);
@@ -117,6 +137,99 @@ test("data the snapshot does not carry surfaces as the specific gap instead of a
     async () => {},
   );
   assert.ok(result.kind === "failed");
-  assert.equal(result.error.code, "infrastructure_failure");
+  assert.equal(result.error.code, "snapshot_not_covered");
   assert.match(result.error.message, /context_snapshot_unavailable.*getActivitiesByDateRange: .* is beyond the snapshot cutoff 2026-10-23/);
+});
+
+test("half-marathon new-season requests reach the target version unchanged and failures stay per-execution", async () => {
+  const snapshot = createSnapshot();
+  snapshot.event = "HM";
+  snapshot.target_time = "1:20:00";
+  const hmRequest = { ...request, goals: request.goals.map((goal) => ({ ...goal, distance: "HM", target_time: "1:20:00" })) };
+  let captured: unknown;
+  const graph = completedGraph([]);
+  const result = await generateArtifact(
+    { artifact_type: "master_plan", request: hmRequest, snapshot, as_of },
+    {
+      buildModels,
+      buildGraph: () => ({
+        ...graph,
+        stream: async (input, options) => {
+          captured = (input as { request: { goals: unknown } }).request.goals;
+          return graph.stream(input, options);
+        },
+      }),
+    },
+    async () => {},
+  );
+  assert.equal(result.kind, "artifact");
+  assert.deepEqual(captured, hmRequest.goals);
+  const failure = await generateArtifact(
+    { artifact_type: "master_plan", request: hmRequest, snapshot, as_of },
+    {
+      buildModels,
+      buildGraph: () => {
+        throw new Error("target version cannot generate half marathon");
+      },
+    },
+    async () => {},
+  );
+  assert.ok(failure.kind === "failed");
+  assert.match(failure.error.message, /cannot generate half marathon/);
+  assert.equal(
+    (
+      await generateArtifact(
+        { artifact_type: "master_plan", request, snapshot: createSnapshot(), as_of },
+        { buildModels, buildGraph: () => completedGraph([]) },
+        async () => {},
+      )
+    ).kind,
+    "artifact",
+  );
+});
+
+test("a master model fallback is reported as Generate failure instead of a successful model artifact", async () => {
+  const outcome = createTestCompletedOutcomeV3({ totalWeeks: 2, weeklyDocs: 2 });
+  (outcome.artifact.warnings as string[]).push("content_template_fallback");
+  const graph = {
+    stream: async () =>
+      (async function* () {
+        yield { finalize: { outcome } };
+      })(),
+  };
+  const result = await generateArtifact(
+    { artifact_type: "master_plan", request, snapshot: createSnapshot(), as_of },
+    {
+      buildGraph: () => graph,
+      buildModels,
+    },
+    async () => {},
+  );
+  assert.ok(result.kind === "failed");
+  assert.equal(result.error.code, "model_generation_failed");
+  assert.match(result.error.message, /content: model output failed validation/);
+});
+
+test("master fallback reports the corresponding stage's retry violations, not a stale error from another stage", async () => {
+  const outcome = createTestCompletedOutcomeV3({ totalWeeks: 2, weeklyDocs: 2 });
+  (outcome.artifact.warnings as string[]).push("content_template_fallback");
+  const result = await generateArtifact(
+    { artifact_type: "master_plan", request, snapshot: createSnapshot(), as_of },
+    {
+      buildModels: () => ({ ...buildModels(), contentModel: { invoke: async () => ({ weeks: [] }) } }),
+      buildGraph: (_context, models) => ({
+        stream: async () => {
+          await models.phasingModel.invoke({} as never).catch(() => {});
+          await models.contentModel.invoke({} as never, { previous: null, violations: ["C1: invalid dose"] });
+          return (async function* () {
+            yield { finalize: { outcome } };
+          })();
+        },
+      }),
+    },
+    async () => {},
+  );
+  assert.ok(result.kind === "failed");
+  assert.match(result.error.message, /content: C1: invalid dose/);
+  assert.doesNotMatch(result.error.message, /master test must not call rolling/);
 });

@@ -95,7 +95,7 @@ export class EvalApiClient {
 }
 
 const inputSchema = z.object({
-  artifact_type: z.literal("master_plan"),
+  artifact_type: z.enum(["master_plan", "weekly_plan_batch"]),
   request: z.unknown(),
   snapshot: z.unknown(),
   as_of: z.string().datetime({ offset: true }),

@@ -91,3 +91,18 @@ test("submit returns the persisted receipt; renew/submit 409 is a stale lease, s
   await assert.rejects(client.submit("exec-1", 1, result), { name: "MissingExecutionError" });
   await assert.rejects(client.submit("exec-1", 1, result), /plan-eval api 503 down/);
 });
+
+test("claim accepts a frozen rolling execution without turning it into a broker retry", async () => {
+  const leased = {
+    status: "leased",
+    lease_epoch: 1,
+    lease_expires_at: "2026-11-24T00:01:00Z",
+    input: {
+      artifact_type: "weekly_plan_batch",
+      request: { request_id: "rolling", as_of: "2026-10-26T08:00:00+08:00" },
+      snapshot: {},
+      as_of: "2026-10-26T08:00:00+08:00",
+    },
+  };
+  assert.deepEqual(await stubClient([[200, leased]], []).claim("exec-rolling", "2026.11.30", "worker"), leased);
+});

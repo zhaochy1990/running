@@ -32,8 +32,8 @@ export async function runEvalWorker(): Promise<void> {
       generateArtifact(
         input,
         {
-          buildGraph: (contextProvider: MasterPlanContextProvider) =>
-            toMasterPlanGraphShim(createMasterPlanGraph({ contextProvider, ...masterLlmModels(coachConfig) })),
+          buildModels: () => masterLlmModels(coachConfig),
+          buildGraph: (contextProvider: MasterPlanContextProvider, models) => toMasterPlanGraphShim(createMasterPlanGraph({ contextProvider, ...models })),
         },
         async (stage, progressPct) => logger.info({ stage, progressPct }, "plan-eval generate progress"),
       ),

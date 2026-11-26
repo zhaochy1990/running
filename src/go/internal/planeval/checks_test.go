@@ -249,3 +249,57 @@ func TestSchemaCheck(t *testing.T) {
 		}
 	}
 }
+
+func TestSchemaCheck_RollingBatch(t *testing.T) {
+	valid := func() map[string]any {
+		original := loadValidArtifact(t)
+		docs := original["weekly_docs"].([]any)
+		for i, doc := range docs {
+			doc.(map[string]any)["week_index"] = float64(i + 5)
+		}
+		return map[string]any{"type": "weekly_plan_batch", "master_plan_id": "season-1", "window": map[string]any{"start_week": 5, "end_week": 5 + len(docs) - 1, "mode": "boundary"}, "weekly_docs": docs}
+	}
+	if result := (SchemaCheck{}).Run(context.Background(), ruleInput(t, valid(), 5)); result.Status != "pass" {
+		t.Fatalf("valid rolling batch: %+v", result)
+	}
+	cases := map[string]func(map[string]any){
+		"missing plan identity":   func(a map[string]any) { delete(a, "master_plan_id") },
+		"missing range":           func(a map[string]any) { delete(a, "window") },
+		"inverted range":          func(a map[string]any) { a["window"].(map[string]any)["end_week"] = 4 },
+		"missing complete week":   func(a map[string]any) { a["weekly_docs"] = []any{} },
+		"wrong week index":        func(a map[string]any) { a["weekly_docs"].([]any)[0].(map[string]any)["week_index"] = 99 },
+		"invalid weekly contract": func(a map[string]any) { a["weekly_docs"].([]any)[0].(map[string]any)["sessions"] = "not sessions" },
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			a := valid()
+			mutate(a)
+			if result := (SchemaCheck{}).Run(context.Background(), ruleInput(t, a, 5)); result.Status != "fail" {
+				t.Fatalf("invalid rolling batch: %+v", result)
+			}
+		})
+	}
+}
+
+func TestSchemaCheck_ExecutionArtifactIdentity(t *testing.T) {
+	result := (SchemaCheck{ArtifactType: "weekly_plan_batch"}).Run(context.Background(), ruleInput(t, loadValidArtifact(t), 5))
+	if result.Status != "fail" {
+		t.Fatalf("master content cannot pass a rolling execution: %+v", result)
+	}
+}
+
+func TestSchemaCheck_RollingDuplicateCalendarWeek(t *testing.T) {
+	original := loadValidArtifact(t)
+	first := original["weekly_docs"].([]any)[0].(map[string]any)
+	first["week_index"] = 5
+	clone := map[string]any{}
+	for key, value := range first {
+		clone[key] = value
+	}
+	clone["week_index"] = 6
+	artifact := map[string]any{"type": "weekly_plan_batch", "master_plan_id": "season-1", "window": map[string]any{"start_week": 5, "end_week": 6, "mode": "boundary"}, "weekly_docs": []any{first, clone}}
+	result := (SchemaCheck{}).Run(context.Background(), ruleInput(t, artifact, 5))
+	if result.Status != "fail" || !strings.Contains(string(result.Detail), "week_name") {
+		t.Fatalf("duplicate dates with sequential indices must fail: %+v", result)
+	}
+}

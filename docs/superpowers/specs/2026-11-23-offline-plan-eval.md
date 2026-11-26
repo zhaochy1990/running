@@ -65,7 +65,7 @@ flowchart LR
 }
 ```
 
-RunnerSnapshot 在「测试数据」独立维护，导入文件用 `schema_version` 标识格式。导入时校验快照结构，任务提交时再按所选场景和产物类型校验必要输入。配置错误定位到场景、快照和字段。校验通过后，在同一事务写入任务的冻结规则与各条执行项的数据包。
+RunnerSnapshot 在「测试数据」独立维护，运行时 JSON 使用 `schema: "plan-eval-runner-snapshot/v1"` 标识格式。导入时校验快照结构，任务提交时再按所选场景和产物类型校验必要输入。配置错误定位到场景、快照和字段。校验通过后，在同一事务写入任务的冻结规则与各条执行项的数据包。
 
 | 快照部分 | 内容 |
 |---|---|
@@ -78,7 +78,16 @@ RunnerSnapshot 在「测试数据」独立维护，导入文件用 `schema_versi
 
 生成请求按所选产物类型和快照构造，场景页提供只读请求 JSON，切换快照可核对各份生成输入。新建赛季使用 `MasterPlanGraphRequest`，滚动排课使用 `RollingJobRequest`。每条 SnapshotExecution 保存本次实际使用的请求、快照内容和冻结执行时点。`request_id` 随执行项固定，重试和接管沿用。滚动的实际起始周由 Agent 根据已排周记录和执行时点推导，规则预期起始周由 Evaluate 读取。
 
-产物统一保存为 **Artifact**。v1 的 `master_plan` 包含赛季计划和首批周课表，`weekly_plan_batch` 包含起止周与该批周课表。Evaluate 对两类产物都通过 `artifact.weekly_docs` 访问周课。
+产物统一保存为 **Artifact**。v1 的 `master_plan` 包含赛季计划和首批周课表，`weekly_plan_batch` 包含赛季 ID、实际生成起止周与该批完整周课表。Evaluate 对两类产物都通过 `artifact.weekly_docs` 访问周课。
+
+#### Worker 冻结读面与产物线上契约（#1053）
+
+- 滚动读取 `records.active_master_plan`（沿用 `planId/revision/status/content`）、`records.weekly_plan_weeks`（`{week_start, master_plan_id, revision}` 数组）与 `records.weekly_plans`（`{week_start, content}` 数组，content 为完整 `weekly-plan/v1`）。后两字段可在新建快照中省略；滚动必需，空集合须显式 `[]`，已排周记录缺对应完整周课表时 Generate 记录具体周缺口，不连接生产服务。
+- `as_of` 固定为同一上海截止日内的执行时点。快照可选 `as_of` 声明所有 records 已在该精确时点冻结；缺省只声明日末覆盖，日内读取当日无时间戳的负荷、恢复、比赛、PB 或校准时必须报告覆盖缺口，不把整日数据当作早间已知数据。新建请求的 `requested_as_of` 和滚动请求的 `as_of` 必须与该时点一致；省略时由 Worker 注入。工具的活动、赛季和课表读面始终来自同一跑者快照；同日活动还按原始时间戳截到 `as_of`，不可读到执行时点后开始或尚未结束的活动。
+- 新建按 `MasterPlanGraphRequest` 运行本镜像 master kernel；滚动按 `RollingJobRequest` 复用生产 handler 的读档、`fromStoredContent`、周界推导和 `runRollingProjection`，仅将生产写入通道换为执行项内的产物捕获。`expected_start_week` 是可选验收值，Generate 不读取。全马 C、D 使用 2026-10-05 起算的同一赛季与 2026-10-26 时点，已排末周分别 4/2，实际起始周分别 5/4；追赶不生成截至执行日的课。
+- 滚动 Artifact 形状为 `{type:"weekly_plan_batch", master_plan_id, window:{start_week,end_week,mode}, weekly_docs}`，`mode` 为 `boundary` 或 `catch_up`。范围描述最终可发布周（剔除过去日期后），SchemaCheck 检查完整周契约、周号连续性和范围内周数。新建仍为 `{type:"master_plan",plan,weekly_docs}`，赛季及周课契约不另建副本。
+- 半马不在测评入口做版本能力预筛。半马新建与 1:20 滚动交给本镜像真实内核；版本不支持、必要输入缺口、非完成终态及模型故障均回传结构化 Generate 错误；真实内核模型重试耗尽后采用模板兜底的输出在测评中记为 `model_generation_failed` 并保留最近的模型调用错误或输出校验失败原因，不冒充模型成功 Artifact（生产兜底行为不改），由 API 保留 Evaluate 跳过状态，不阻断其他执行项。滚动无可发布新课时回传 `kernel_rolling_no_op`，不伪造空 Artifact。
+- 本票以 Worker 公开交接及现有真实滚动内核的离线测试验收；已发布镜像、八份真实样本和隔离网络 E2E 由波后统一派发，不以模型测试桩替代镜像验收。
 
 ### 测试数据详情
 
@@ -148,7 +157,8 @@ type CheckedArtifact =
   | {type: "master_plan"; plan: MasterPlan; weekly_docs: readonly WeeklyPlan[]}
   | {
       type: "weekly_plan_batch";
-      window: {start_week: number; end_week: number};
+      master_plan_id: string;
+      window: {start_week: number; end_week: number; mode: "boundary" | "catch_up"};
       weekly_docs: readonly WeeklyPlan[];
     };
 

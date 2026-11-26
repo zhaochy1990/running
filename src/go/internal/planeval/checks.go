@@ -68,33 +68,56 @@ const SchemaCheckID = "schema"
 
 // SchemaCheck validates an artifact's raw content against the existing
 // contracts: the season plan snapshot and every weekly plan in it.
-type SchemaCheck struct{}
+type SchemaCheck struct{ ArtifactType string }
 
 func (SchemaCheck) ID() string { return SchemaCheckID }
 
 func (c SchemaCheck) Run(_ context.Context, input CheckInput) CheckResult {
 	result := CheckResult{CheckID: SchemaCheckID, Status: "pass"}
 	var envelope struct {
-		Type       string            `json:"type"`
-		Plan       json.RawMessage   `json:"plan"`
-		WeeklyDocs []json.RawMessage `json:"weekly_docs"`
+		Type         string            `json:"type"`
+		Plan         json.RawMessage   `json:"plan"`
+		WeeklyDocs   []json.RawMessage `json:"weekly_docs"`
+		MasterPlanID string            `json:"master_plan_id"`
+		Window       *struct {
+			StartWeek int    `json:"start_week"`
+			EndWeek   int    `json:"end_week"`
+			Mode      string `json:"mode"`
+		} `json:"window"`
 	}
 	if err := json.Unmarshal(input.Artifact, &envelope); err != nil {
 		return schemaFail(result, "artifact", "产物不是合法的 JSON 对象："+err.Error())
 	}
-	if envelope.Type != "master_plan" {
-		return schemaFail(result, "type", "产物类型应为 master_plan，实际为 "+fmt.Sprintf("%q", envelope.Type))
+	if c.ArtifactType != "" && envelope.Type != c.ArtifactType {
+		return schemaFail(result, "type", "产物类型与执行项预期不一致。")
 	}
-	var plan any
-	if err := json.Unmarshal(envelope.Plan, &plan); err != nil {
-		return schemaFail(result, "plan", "赛季计划不是合法 JSON："+err.Error())
-	}
-	if err := api.ValidateMasterPlanSnapshot(plan); err != nil {
-		return schemaFail(result, "plan", schemaMessage(err))
+	switch envelope.Type {
+	case "master_plan":
+		var plan any
+		if err := json.Unmarshal(envelope.Plan, &plan); err != nil {
+			return schemaFail(result, "plan", "赛季计划不是合法 JSON："+err.Error())
+		}
+		if err := api.ValidateMasterPlanSnapshot(plan); err != nil {
+			return schemaFail(result, "plan", schemaMessage(err))
+		}
+	case "weekly_plan_batch":
+		if envelope.MasterPlanID == "" {
+			return schemaFail(result, "master_plan_id", "滚动产物必须标明赛季计划 ID。")
+		}
+		w := envelope.Window
+		if w == nil || w.StartWeek < 1 || w.EndWeek < w.StartWeek || (w.Mode != "boundary" && w.Mode != "catch_up") {
+			return schemaFail(result, "window", "滚动产物必须包含合法的生成周范围和模式。")
+		}
+		if len(envelope.WeeklyDocs) != w.EndWeek-w.StartWeek+1 {
+			return schemaFail(result, "weekly_docs", "滚动产物必须包含生成周范围内的全部周课表。")
+		}
+	default:
+		return schemaFail(result, "type", "产物类型应为 master_plan 或 weekly_plan_batch，实际为 "+fmt.Sprintf("%q", envelope.Type))
 	}
 	if len(envelope.WeeklyDocs) == 0 {
-		return schemaFail(result, "weekly_docs", "首批周课表必须至少包含一周。")
+		return schemaFail(result, "weekly_docs", "产物必须至少包含一份完整周课表。")
 	}
+	var previousWeek time.Time
 	for i, raw := range envelope.WeeklyDocs {
 		var doc map[string]any
 		if err := json.Unmarshal(raw, &doc); err != nil {
@@ -103,8 +126,19 @@ func (c SchemaCheck) Run(_ context.Context, input CheckInput) CheckResult {
 		if err := api.ValidateWeeklyPlanContract(doc); err != nil {
 			return schemaFail(result, fmt.Sprintf("weekly_docs[%d]", i), err.Error())
 		}
+		if envelope.Type == "weekly_plan_batch" && doc["week_index"] != float64(envelope.Window.StartWeek+i) {
+			return schemaFail(result, fmt.Sprintf("weekly_docs[%d].week_index", i), "周课表周号必须与生成范围连续对应。")
+		}
+		if envelope.Type == "weekly_plan_batch" {
+			weekName, _ := doc["week_name"].(string)
+			weekStart, err := time.Parse("2006-01-02", strings.SplitN(weekName, "_", 2)[0])
+			if err != nil || (i > 0 && !weekStart.Equal(previousWeek.AddDate(0, 0, 7))) {
+				return schemaFail(result, fmt.Sprintf("weekly_docs[%d].week_name", i), "滚动周课表日期必须按周连续，不能重复。")
+			}
+			previousWeek = weekStart
+		}
 	}
-	result.Reason = fmt.Sprintf("赛季计划与 %d 份首批周课表均符合契约", len(envelope.WeeklyDocs))
+	result.Reason = fmt.Sprintf("%s 产物与 %d 份完整周课表均符合契约", envelope.Type, len(envelope.WeeklyDocs))
 	return result
 }
 

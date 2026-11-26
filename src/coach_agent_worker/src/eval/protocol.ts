@@ -12,8 +12,8 @@ export interface EvalExecutionMessage {
 export const EVAL_MESSAGE_SCHEMA_VERSION = 1;
 
 export interface ExecutionInput {
-  artifact_type: "master_plan";
-  /** 冻结的生成请求（MasterPlanGraphRequest 的 JSON）。 */
+  artifact_type: "master_plan" | "weekly_plan_batch";
+  /** 冻结的生成请求（MasterPlanGraphRequest / RollingJobRequest 的 JSON）。 */
   request: unknown;
   /** 冻结的 RunnerSnapshot（plan-eval-runner-snapshot/v1）。 */
   snapshot: unknown;
@@ -22,7 +22,9 @@ export interface ExecutionInput {
 }
 
 /** Generate 终态：一份产物原文，或一个结构化错误（二者必居其一）。 */
-export type GenerateResult = { kind: "artifact"; artifact_type: "master_plan"; content: string } | { kind: "failed"; error: { code: string; message: string } };
+export type GenerateResult =
+  | { kind: "artifact"; artifact_type: "master_plan" | "weekly_plan_batch"; content: string }
+  | { kind: "failed"; error: { code: string; message: string } };
 
 export type ClaimResponse =
   | { status: "leased"; lease_epoch: number; lease_expires_at: string; input: ExecutionInput }
