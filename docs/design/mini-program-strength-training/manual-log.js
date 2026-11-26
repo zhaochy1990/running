@@ -1,9 +1,9 @@
 'use strict';
 
 const manualLog = (() => {
-  const loadUnits = { '': '无', kg: 'kg', lb: 'lb' };
+  const loadUnits = { kg: 'kg', lb: 'lb', bodyweight: '自重' };
   const units = { reps: '个', seconds: '秒' };
-  const initialSet = { load: '', loadUnit: '', amount: '0', unit: 'reps' };
+  const initialSet = { load: '', loadUnit: 'kg', amount: '0', unit: 'reps' };
   const dates = new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
   });
@@ -77,7 +77,7 @@ const manualLog = (() => {
     const number = index + 1;
     return `<div class="log-set" data-log-row="${row.id}" role="group" aria-label="第 ${number} 组">
       <span class="log-set-number" aria-hidden="true">${number}</span>
-      <input data-log-field="load" aria-label="负重" value="${escape(row.load)}">
+      <input data-log-field="load" aria-label="负重" value="${row.loadUnit === 'bodyweight' ? '' : escape(row.load)}"${row.loadUnit === 'bodyweight' ? ' disabled' : ''}>
       <span class="log-unit">
         <select data-log-field="loadUnit" aria-label="负重单位">${options(loadUnits, row.loadUnit)}</select>
       </span>
@@ -98,7 +98,7 @@ const manualLog = (() => {
     return `<section class="log-exercise" data-log-exercise="${exercise.id}" aria-label="动作 ${index + 1}">
       <div class="log-exercise-head">
         <input data-log-field="name" aria-label="动作 ${index + 1} 名称" placeholder="动作名称，如深蹲" value="${escape(exercise.name)}">
-        ${logButton('remove-exercise', app.icon('cross', 18), 'icon-button log-remove', `aria-label="删除动作 ${index + 1}"`)}
+        ${logButton('remove-exercise', app.icon('cross', 14), 'icon-button log-remove', `aria-label="删除动作 ${index + 1}"`)}
       </div>
       ${exercise.rows.length ? '<div class="log-set log-set-labels" aria-hidden="true"><span>组数</span><span>负重</span><span>单位</span><span>数量</span></div>' : ''}
       ${exercise.rows.map(rowView).join('')}
@@ -112,14 +112,13 @@ const manualLog = (() => {
     const entry = draft();
     return {
       title: editing ? '编辑记录' : '自由力量训练',
-      content: `<h2 class="page-heading log-heading" tabindex="-1">${editing ? '编辑力量训练' : '记录力量训练'}</h2>
-      <form id="manual-form" class="manual-form" novalidate>
+      content: `<form id="manual-form" class="manual-form" novalidate>
         <label class="log-field log-title-field"><span>训练名称</span><input data-log-field="title" placeholder="力量训练" value="${escape(entry.title)}"></label>
         <h3 class="log-section-head">动作明细</h3>
         ${entry.exercises.map(exerciseView).join('')}
         ${logButton('add-exercise', `${app.icon('plus', 18)}添加动作`, 'secondary log-add-exercise')}
         <div class="log-field log-note-field">
-          <textarea aria-label="训练备注" data-log-field="note" rows="1" placeholder="训练备注（选填）">
+          <textarea aria-label="训练备注" data-log-field="note" rows="4" placeholder="训练备注（选填）">
 ${escape(entry.note)}</textarea>
         </div>
         <p id="manual-error" class="log-error" role="alert"></p>
@@ -139,8 +138,9 @@ ${escape(entry.note)}</textarea>
 
   function line(row) {
     const load = row.load.trim();
-    const unit = row.loadUnit ? ` ${row.loadUnit}` : '';
-    return `${load ? `${escape(load)}${unit} · ` : ''}${Number(row.amount)} ${units[row.unit]}`;
+    const amount = `${Number(row.amount)} ${units[row.unit]}`;
+    if (row.loadUnit === 'bodyweight') return `${loadUnits.bodyweight} · ${amount}`;
+    return load ? `${escape(load)} ${loadUnits[row.loadUnit]} · ${amount}` : amount;
   }
 
   function activityRows() {
@@ -199,7 +199,6 @@ ${escape(entry.note)}</textarea>
       if (!exercise.rows.length) return { location, action: 'add-row', message: '请记录至少一组。' };
       for (const row of exercise.rows) {
         const location = `[data-log-row="${row.id}"]`;
-        if (row.loadUnit && !row.load.trim()) return { location, field: 'load', message: '请填写负重，或将负重单位设为无。' };
         if (!positiveInteger(row.amount)) return { location, field: 'amount', message: '请输入大于 0 的整数作为数量。' };
       }
     }
@@ -208,12 +207,7 @@ ${escape(entry.note)}</textarea>
 
   function clearError(field) {
     const annotated = app.screen.querySelector('[aria-describedby="manual-error"]');
-    if (field && field !== annotated) {
-      const removesUnit = field.dataset.logField === 'loadUnit' && field.value === '';
-      const sameRowLoad = annotated?.dataset.logField === 'load' &&
-        annotated.closest('[data-log-row]') === field.closest('[data-log-row]');
-      if (!removesUnit || !sameRowLoad) return;
-    }
+    if (field && field !== annotated) return;
     app.screen.querySelector('#manual-error').textContent = '';
     annotated?.removeAttribute('aria-invalid');
     annotated?.removeAttribute('aria-describedby');
@@ -268,6 +262,11 @@ ${escape(entry.note)}</textarea>
     const row = rowOf(field, exercise);
     const entry = row || exercise || draft();
     entry[key] = field.value;
+    if (key === 'loadUnit') {
+      const load = field.closest('[data-log-row]').querySelector('[data-log-field="load"]');
+      load.disabled = row.loadUnit === 'bodyweight';
+      load.value = load.disabled ? '' : row.load;
+    }
     clearError(field);
   }
 

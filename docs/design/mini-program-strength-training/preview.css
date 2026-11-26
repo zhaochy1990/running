@@ -207,7 +207,6 @@ dialog::backdrop { background: #2227278a; }
 .device:has(.manual-form) .app-actions { border-color: var(--line); background: var(--white); }
 .device:has(.manual-form) .device-bottom { background: var(--white); }
 .app-actions > [form="manual-form"] { min-height: 48px; }
-.log-heading { margin-bottom: 16px; font-size: 27px; }
 .log-field { display: block; min-width: 0; }
 .manual-form { --log-control-line: #858f9e; }
 .log-field > span { display: block; margin-bottom: 5px; font-size: 12px; color: var(--muted); font-weight: 650; }
@@ -227,16 +226,12 @@ dialog::backdrop { background: #2227278a; }
 .manual-form :is(input,select,textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .manual-form [aria-invalid="true"] { border-color: var(--accent); }
 .manual-form ::placeholder { color: var(--muted); opacity: 1; }
-.log-title-field {
-  padding: 10px 12px 8px;
-  border: 1px solid var(--log-control-line);
-  border-radius: 13px;
-  background: var(--white);
-}
 .log-title-field > span { margin-bottom: 0; }
 .manual-form .log-title-field input {
-  min-height: 36px;
-  border-color: transparent;
+  min-height: 40px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
   background: transparent;
   padding: 3px 0;
   font-size: 16px;
@@ -253,6 +248,13 @@ dialog::backdrop { background: #2227278a; }
 .log-exercise + .log-exercise { margin-top: 13px; }
 .log-exercise-head { display: flex; align-items: center; gap: 4px; }
 .log-exercise-head input { min-height: 44px; font-size: 15px; font-weight: 680; }
+.log-exercise-head .log-remove {
+  align-self: flex-start;
+  flex: 0 0 36px;
+  min-width: 36px;
+  min-height: 36px;
+  margin: -4px -4px 0 0;
+}
 .log-set {
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr) 50px minmax(0, 1.12fr) calc(2 * var(--log-action-width));
@@ -300,12 +302,12 @@ dialog::backdrop { background: #2227278a; }
   transform: rotate(45deg);
   pointer-events: none;
 }
-.manual-form .log-unit select { appearance: none; padding-inline: 3px 12px; }
-.log-amount .log-unit { flex: 0 0 32px; }
+.manual-form .log-unit select { appearance: none; padding-inline: 3px 16px; }
+.log-amount .log-unit { flex: 0 0 38px; }
 .log-remove { color: var(--muted); }
 .log-exercise-footer { margin-top: 8px; }
 .log-note-field { margin-top: 14px; }
-.log-note-field textarea { min-height: 44px; line-height: 1.55; }
+.log-note-field textarea { min-height: 104px; line-height: 1.55; }
 @supports (field-sizing: content) {
   .log-note-field textarea { resize: none; field-sizing: content; max-height: 136px; }
 }
@@ -335,9 +337,9 @@ dialog::backdrop { background: #2227278a; }
   .manual-form .log-set :is(input, select) { font-size: 12px; }
   #screen:has(.manual-form) { padding-inline: 14px; }
   .log-exercise { margin-inline: -6px; padding-inline: 6px; }
-  .log-set { grid-template-columns: 22px minmax(0, 1.16fr) 36px minmax(0, 1fr) calc(2 * var(--log-action-width)); gap: 3px; }
+  .log-set { grid-template-columns: 22px minmax(0, 1.16fr) 44px minmax(0, 1fr) calc(2 * var(--log-action-width)); gap: 3px; }
   .log-amount { gap: 2px; }
-  .log-amount .log-unit { flex-basis: 29px; }
+  .log-amount .log-unit { flex-basis: 35px; }
 }
 
 .has-mp-tabs {
