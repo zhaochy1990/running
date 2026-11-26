@@ -1,7 +1,7 @@
 {
-  "stride-api": "2026.11.46",
-  "stride-coach-api": "2026.11.37",
-  "stride-coach-worker": "2026.11.32",
-  "stride-web": "2026.11.4",
-  "stride-worker": "2026.11.46"
+  "stride-api": "2026.11.47",
+  "stride-coach-api": "2026.11.38",
+  "stride-coach-worker": "2026.11.33",
+  "stride-web": "2026.11.5",
+  "stride-worker": "2026.11.47"
 }
