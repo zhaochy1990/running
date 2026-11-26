@@ -5,10 +5,11 @@ import ts from 'typescript';
 import * as dates from './date.ts';
 import * as format from './format.ts';
 import * as strength from './manual-strength.ts';
+import type { ManualStrengthSummary } from '../types/manual-strength.ts';
 
-type ActivityResponse = { total: number; activities: Array<{ label_id: string; name: string; date: string; source: string }> };
+type ActivityResponse = { total: number; activities: Array<{ label_id: string; name: string; date: string; source: string; manual_strength_summary?: ManualStrengthSummary }> };
 type PageUnderTest = {
-  data: { guest: boolean; monthGroups: Array<{ rows: Array<{ name: string }> }> };
+  data: { guest: boolean; monthGroups: Array<{ rows: Array<{ name: string; strengthSummary: string }> }> };
   setData(patch: object): void;
   onLoad(): Promise<void>;
   onShow(): void;
@@ -18,6 +19,7 @@ type PageUnderTest = {
 let page: PageUnderTest | undefined;
 let viewerId = 'user-a';
 let viewerChanged: (() => void) | undefined;
+let editedSummaries: Map<string, { name: string; summary: ManualStrengthSummary }> | undefined;
 const requests: Array<{ viewer: string; resolve(response: ActivityResponse): void }> = [];
 const source = readFileSync(new URL('../pages/activities/activities.ts', import.meta.url), 'utf8');
 const script = ts.transpileModule(source, {
@@ -33,7 +35,11 @@ runInNewContext(script, {
     },
     '../../services/manual-strength': {
       manualStrengthLiveVersion: () => 0,
-      takeManualStrengthEditedNames: () => undefined,
+      takeManualStrengthEditedSummaries: () => {
+        const result = editedSummaries;
+        editedSummaries = undefined;
+        return result;
+      },
     },
     '../../utils/date': dates,
     '../../utils/format': format,
@@ -59,7 +65,7 @@ async function respond(viewer: string, name: string) {
   assert.equal(request?.viewer, viewer);
   request?.resolve({
     total: 1,
-    activities: [{ label_id: name, name, date: '2026-11-26T15:00:00+08:00', source: 'manual_strength' }],
+    activities: [{ label_id: name, name, date: '2026-11-26T15:00:00+08:00', source: 'manual_strength', manual_strength_summary: { action_count: 2, set_count: 3 } }],
   });
   await new Promise<void>((resolve) => setImmediate(resolve));
 }
@@ -67,6 +73,11 @@ async function respond(viewer: string, name: string) {
 await view.onLoad();
 await respond('user-a', '账号 A 私人训练');
 assert.equal(view.data.monthGroups[0].rows[0].name, '账号 A 私人训练');
+assert.equal(view.data.monthGroups[0].rows[0].strengthSummary, '2 个动作 · 3 组');
+editedSummaries = new Map([['账号 A 私人训练', { name: '编辑后的历史训练', summary: { action_count: 2, set_count: 4 } }]]);
+view.onShow();
+assert.equal(view.data.monthGroups[0].rows[0].name, '编辑后的历史训练');
+assert.equal(view.data.monthGroups[0].rows[0].strengthSummary, '2 个动作 · 4 组');
 const refreshing = view.fetch();
 viewerId = '';
 viewerChanged?.();
@@ -84,11 +95,16 @@ assert.equal(view.data.guest, false);
 assert.equal(view.data.monthGroups[0].rows[0].name, '账号 B 私人训练');
 assert.equal(requests.length, 0);
 const savedRecord = {
-  id: 'saved', name: '账号 A 的历史训练', note: '账号 A 的备注', actions: [],
+  id: 'saved', name: '账号 A 的历史训练', note: '账号 A 的备注', actions: [{
+    name: '深蹲', sets: [
+      { load: '20', load_unit: 'kg', quantity: 10, quantity_unit: 'reps' },
+      { load: '25', load_unit: 'kg', quantity: 8, quantity_unit: 'reps' },
+    ],
+  }],
   revision: 1, started_at: '2026-11-26T07:00:00Z', ended_at: '2026-11-26T07:30:00Z',
 };
 type TrainingPage = {
-  data: { draft?: unknown; record?: unknown; actionRows?: unknown[] };
+  data: { draft?: unknown; record?: unknown; summaryLabel?: string; actionRows?: Array<{ sets: Array<{ number: number }> }> };
   setData(patch: object): void;
   onLoad(params: { edit?: string; recordId?: string }): Promise<void> | void;
   onShow?(): void;
@@ -138,10 +154,14 @@ assert.equal(edit.data.draft, null);
 
 const detail = await loadTrainingPage('../pages/manual-strength-detail/manual-strength-detail.ts');
 assert.ok(detail.data.record);
+assert.equal(detail.data.summaryLabel, '手动记录 · 1 个动作 / 2 组');
+assert.equal(detail.data.actionRows?.[0].sets[0].number, 1);
+assert.equal(detail.data.actionRows?.[0].sets[1].number, 2);
 viewerId = 'user-b';
 viewerChanged?.();
 detail.onShow?.();
 await new Promise<void>((resolve) => setImmediate(resolve));
 assert.equal(detail.data.record, null);
 assert.equal(detail.data.actionRows?.length, 0);
+assert.equal(detail.data.summaryLabel, '');
 console.log('activity-record-viewer.check: all assertions passed');

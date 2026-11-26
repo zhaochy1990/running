@@ -5,22 +5,19 @@
     <button wx:if="{{canRetry}}" class="detail-retry" bindtap="load">重新加载</button>
   </view>
   <block wx:elif="{{record}}">
-    <view class="card detail-summary">
-      <view class="detail-source">手动记录</view>
+    <view class="detail-summary">
       <view class="detail-title">{{record.name}}</view>
       <view class="detail-time">{{timeLabel}}</view>
+      <view class="detail-meta">{{summaryLabel}}</view>
     </view>
-    <view class="card">
-      <view class="detail-heading">训练动作</view>
-      <view wx:for="{{actionRows}}" wx:for-item="action" wx:key="key" class="detail-action">
-        <view class="detail-action-name">{{action.name}}</view>
-        <view wx:for="{{action.sets}}" wx:for-item="set" wx:for-index="setIndex" wx:key="key" class="detail-set">
-          <text class="detail-set-number">第 {{setIndex + 1}} 组</text>
-          <text class="detail-set-value">{{set.label}}</text>
-        </view>
+    <view wx:for="{{actionRows}}" wx:for-item="action" wx:key="key" class="detail-action">
+      <view class="detail-heading">{{action.name}}</view>
+      <view wx:for="{{action.sets}}" wx:for-item="set" wx:key="number" class="detail-set">
+        <text class="detail-set-number">第 {{set.number}} 组</text>
+        <text class="detail-set-value">{{set.label}}</text>
       </view>
     </view>
-    <view wx:if="{{record.note}}" class="card">
+    <view wx:if="{{record.note}}" class="detail-note-section">
       <view class="detail-heading">训练备注</view>
       <view class="detail-note">{{record.note}}</view>
     </view>

@@ -55,7 +55,11 @@
             <view class="activity__info">
               <view class="activity__name">{{row.name}}</view>
               <view class="activity__date">{{row.date}}<text wx:if="{{row.source}}" class="activity__source {{row.source === 'manual_strength' ? 'activity__source--manual' : ''}}">{{row.source === 'manual_strength' ? '手动记录' : '手表同步'}}</text></view>
-              <view class="activity__meta">
+              <view wx:if="{{row.source === 'manual_strength'}}" class="activity__meta">
+                <text wx:if="{{row.strengthSummary}}">{{row.strengthSummary}}</text>
+                <text wx:elif="{{row.duration !== '—'}}">{{row.duration}}</text>
+              </view>
+              <view wx:else class="activity__meta">
                 <text wx:if="{{row.distanceKm !== '—'}}">{{row.distanceKm}} km</text>
                 <text wx:if="{{row.duration !== '—'}}"> · {{row.duration}}</text>
                 <text wx:if="{{row.pace !== '—'}}"> · {{row.pace}}</text>

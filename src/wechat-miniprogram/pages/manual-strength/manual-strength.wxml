@@ -2,7 +2,7 @@
   <view wx:if="{{loading}}" class="strength-state">加载中…</view>
   <view wx:elif="{{loadError}}" class="strength-state">{{loadError}}</view>
   <block wx:elif="{{draft}}">
-    <view class="card">
+    <view class="name-field">
       <view class="field-label">训练名称</view>
       <input
         id="training-name"
@@ -22,75 +22,71 @@
       <view wx:if="{{invalidField === 'training-name'}}" class="field-error">{{error}}</view>
     </view>
 
-    <view wx:for="{{draft.form.actions}}" wx:for-item="action" wx:key="key" class="card action-card">
-      <view class="action-header">
-        <button class="action-toggle" data-action="{{action.key}}" bindtap="onActionToggle" aria-expanded="{{expanded === action.key}}">
-          <image class="chevron {{expanded === action.key ? 'chevron--expanded' : ''}}" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
-          <text class="action-title">{{action.name || '未命名动作'}}</text>
-          <text class="action-count">{{action.sets.length}} 组</text>
-        </button>
-        <button class="icon-button" data-action="{{action.key}}" bindtap="onActionRemove" aria-label="删除动作" disabled="{{saving}}">
-          <image src="/assets/icons/delete.svg" mode="aspectFit" />
-        </button>
-      </view>
-      <view wx:if="{{expanded === action.key}}" class="action-body">
-        <view class="field-label">动作名称</view>
-        <input
-          id="action-{{action.key}}"
-          class="field-input {{invalidField === 'action-' + action.key ? 'field-input--invalid' : ''}}"
-          aria-label="动作名称"
-          data-field="actionName"
-          data-action="{{action.key}}"
-          value="{{action.name}}"
-          placeholder="{{focusField === 'action-' + action.key ? '' : '输入动作名称'}}"
-          placeholder-class="field-placeholder"
-          focus="{{focusField === 'action-' + action.key}}"
-          maxlength="120"
-          disabled="{{saving}}"
-          bindinput="onTextInput"
-          bindfocus="onFieldFocus"
-          bindblur="onFieldBlur"
-        />
-        <view wx:if="{{invalidField === 'action-' + action.key}}" class="field-error">{{error}}</view>
+    <view class="action-heading">动作明细</view>
+    <view wx:for="{{draft.form.actions}}" wx:for-item="action" wx:for-index="actionIndex" wx:key="key" class="action-card {{expanded === action.key ? '' : 'action-card--collapsed'}}">
+      <block wx:if="{{expanded === action.key}}">
+        <view class="action-header">
+          <view class="name-field">
+            <view class="field-label">动作名称</view>
+            <input
+              id="action-{{action.key}}"
+              class="field-input {{invalidField === 'action-' + action.key ? 'field-input--invalid' : ''}}"
+              aria-label="动作名称"
+              data-field="actionName"
+              data-action="{{action.key}}"
+              value="{{action.name}}"
+              placeholder="{{focusField === 'action-' + action.key ? '' : '如深蹲'}}"
+              placeholder-class="field-placeholder"
+              focus="{{focusField === 'action-' + action.key}}"
+              maxlength="120"
+              disabled="{{saving}}"
+              bindinput="onTextInput"
+              bindfocus="onFieldFocus"
+              bindblur="onFieldBlur"
+            />
+            <view wx:if="{{invalidField === 'action-' + action.key}}" class="field-error">{{error}}</view>
+          </view>
+          <button class="icon-button remove-action" data-action="{{action.key}}" bindtap="onActionRemove" aria-label="删除动作" disabled="{{saving}}">
+            <view class="control-mark control-mark--cross" />
+          </button>
+        </view>
 
         <view wx:if="{{action.sets.length}}" class="set-labels">
-          <text>组</text><text>负重</text><text>数量</text><text></text>
+          <text>组数</text><text>负重</text><text>单位</text><text>数量</text>
         </view>
         <block wx:for="{{action.sets}}" wx:for-item="set" wx:for-index="setIndex" wx:key="key">
           <view class="set-row">
             <text class="set-number">{{setIndex + 1}}</text>
-            <view class="set-cell">
-              <input
-                class="set-input"
-                aria-label="第 {{setIndex + 1}} 组负重"
-                data-field="load"
-                data-action="{{action.key}}"
-                data-set="{{set.key}}"
-                value="{{set.load_unit === 'bodyweight' ? '' : set.load}}"
-                maxlength="120"
-                disabled="{{saving || set.load_unit === 'bodyweight'}}"
-                bindinput="onTextInput"
-              />
-              <picker
-                mode="selector"
-                aria-label="负重单位"
-                range="{{loadLabels}}"
-                value="{{set.load_unit === 'kg' ? 0 : (set.load_unit === 'lb' ? 1 : 2)}}"
-                disabled="{{saving}}"
-                data-field="load_unit"
-                data-action="{{action.key}}"
-                data-set="{{set.key}}"
-                bindchange="onUnitChange"
-              >
-                <view class="unit">{{set.load_unit === 'bodyweight' ? '自重' : set.load_unit}}<image src="/assets/icons/chevron_right.svg" mode="aspectFit" /></view>
-              </picker>
-            </view>
+            <input
+              class="set-input"
+              aria-label="第 {{(setIndex + 1)}} 组负重"
+              data-field="load"
+              data-action="{{action.key}}"
+              data-set="{{set.key}}"
+              value="{{set.load_unit === 'bodyweight' ? '' : set.load}}"
+              maxlength="120"
+              disabled="{{saving || set.load_unit === 'bodyweight'}}"
+              bindinput="onTextInput"
+            />
+            <picker
+              mode="selector"
+              aria-label="负重单位"
+              range="{{loadLabels}}"
+              value="{{set.load_unit === 'kg' ? 0 : (set.load_unit === 'lb' ? 1 : 2)}}"
+              disabled="{{saving}}"
+              data-field="load_unit"
+              data-action="{{action.key}}"
+              data-set="{{set.key}}"
+              bindchange="onUnitChange"
+            >
+              <view class="unit">{{set.load_unit === 'bodyweight' ? '自重' : set.load_unit}}<image src="/assets/icons/chevron_right.svg" mode="aspectFit" /></view>
+            </picker>
             <view class="set-cell {{invalidField === 'quantity-' + set.key ? 'set-cell--invalid' : ''}}">
               <input
                 id="quantity-{{set.key}}"
                 class="set-input"
                 type="number"
-                aria-label="第 {{setIndex + 1}} 组数量"
+                aria-label="第 {{(setIndex + 1)}} 组数量"
                 data-field="quantity"
                 data-action="{{action.key}}"
                 data-set="{{set.key}}"
@@ -119,43 +115,49 @@
               </picker>
             </view>
             <view class="set-actions">
-              <button class="icon-button set-button" data-action="{{action.key}}" data-set="{{set.key}}" data-operation="remove" bindtap="onSetChange" aria-label="删除第 {{setIndex + 1}} 组" disabled="{{saving}}">
-                <text>×</text>
+              <button class="icon-button" data-action="{{action.key}}" data-set="{{set.key}}" data-operation="remove" bindtap="onSetChange" aria-label="删除第 {{(setIndex + 1)}} 组" disabled="{{saving}}">
+                <view class="control-mark control-mark--cross" />
               </button>
-              <button class="icon-button set-button" data-action="{{action.key}}" data-set="{{set.key}}" data-operation="copy" bindtap="onSetChange" aria-label="复制第 {{setIndex + 1}} 组到下一行" disabled="{{saving}}">
+              <button class="icon-button" data-action="{{action.key}}" data-set="{{set.key}}" data-operation="copy" bindtap="onSetChange" aria-label="复制第 {{(setIndex + 1)}} 组到下一行" disabled="{{saving}}">
                 <image src="/assets/icons/copy.svg" mode="aspectFit" />
               </button>
             </view>
           </view>
           <view wx:if="{{invalidField === 'quantity-' + set.key}}" class="field-error">{{error}}</view>
         </block>
-        <button id="add-set-{{action.key}}" class="add-set" data-action="{{action.key}}" data-operation="add" bindtap="onSetChange" disabled="{{saving}}">＋ 添加一组</button>
+        <button id="add-set-{{action.key}}" class="add-set" data-action="{{action.key}}" data-operation="add" bindtap="onSetChange" disabled="{{saving}}">
+          <view class="control-mark" />添加一组
+        </button>
         <view wx:if="{{invalidField === 'add-set-' + action.key}}" class="field-error">{{error}}</view>
-      </view>
+      </block>
+      <button wx:else class="action-toggle" data-action="{{action.key}}" bindtap="onActionToggle" aria-expanded="{{false}}" disabled="{{saving}}">
+        <text class="action-title">{{action.name || '动作 ' + (actionIndex + 1)}}</text>
+        <text class="action-count">{{action.sets.length}} 组</text>
+        <image class="chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+      </button>
     </view>
 
-    <button id="add-action" class="add-action" bindtap="onActionAdd" disabled="{{saving}}">＋ 添加动作</button>
-    <view wx:if="{{invalidField === 'add-action'}}" class="field-error add-error">{{error}}</view>
+    <button id="add-action" class="add-action" bindtap="onActionAdd" disabled="{{saving}}">
+      <view class="control-mark" />添加动作
+    </button>
+    <view wx:if="{{invalidField === 'add-action'}}" class="field-error">{{error}}</view>
 
-    <view class="card note-card">
-      <view class="field-label">训练备注（选填）</view>
-      <textarea
-        class="note-input"
-        aria-label="训练备注"
-        data-field="note"
-        value="{{draft.form.note}}"
-        placeholder="记录这次训练的体感或要点"
-        placeholder-class="field-placeholder"
-        maxlength="2000"
-        disabled="{{saving}}"
-        bindinput="onTextInput"
-      />
-    </view>
+    <textarea
+      class="note-input"
+      aria-label="训练备注（选填）"
+      data-field="note"
+      value="{{draft.form.note}}"
+      placeholder="训练备注（选填）"
+      placeholder-class="field-placeholder"
+      maxlength="2000"
+      disabled="{{saving}}"
+      bindinput="onTextInput"
+    />
 
     <view class="strength-footer">
       <view wx:if="{{error && !invalidField}}" class="field-error strength-footer__message" role="alert">{{error}}</view>
-      <button class="save-button" bindtap="onSave" loading="{{saving}}" disabled="{{saving || saved}}">
-        {{saving ? '保存中…' : (saved ? '已保存' : '保存记录')}}
+      <button class="save-button" bindtap="onSave" loading="{{saving}}" disabled="{{saving}}">
+        {{saving ? '保存中…' : '保存记录'}}
       </button>
     </view>
   </block>

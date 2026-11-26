@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,11 +66,51 @@ func TestManualStrengthSaveRetriesAndPreservesTrainingWindow(t *testing.T) {
 	}, nil, nil, nil)
 	page, err := store.ListActivities(ctx, owner, ActivityListParams{Limit: 1, Offset: 1, IncludeManualStrength: true})
 	if err != nil || page.Total != 2 || len(page.Rows) != 1 || page.Rows[0].LabelID != id ||
-		page.Rows[0].Provider != ManualStrengthProvider || page.MonthlySummaries["2026-03"].ActivityCount != 2 {
+		page.Rows[0].Provider != ManualStrengthProvider || page.MonthlySummaries["2026-03"].ActivityCount != 2 ||
+		page.ManualStrengthSummaries[id] != (ManualStrengthSummary{ActionCount: 1, SetCount: 1}) {
 		t.Fatalf("mixed strength page: %+v, %v", page, err)
 	}
 	watchOnly, err := store.ListActivities(ctx, owner, ActivityListParams{Limit: 50})
-	if err != nil || watchOnly.Total != 1 || len(watchOnly.Rows) != 1 || watchOnly.Rows[0].LabelID != "watch-strength" {
+	if err != nil || watchOnly.Total != 1 || len(watchOnly.Rows) != 1 || watchOnly.Rows[0].LabelID != "watch-strength" ||
+		len(watchOnly.ManualStrengthSummaries) != 0 {
 		t.Fatalf("existing watch page: %+v, %v", watchOnly, err)
+	}
+}
+
+func TestListActivities_LargeManualStrengthSummaries(t *testing.T) {
+	store := openWatchTestStore(t)
+	ctx := t.Context()
+	if err := store.AutoMigrateUserDeletionAudit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	owner := uuid.NewString()
+	started := time.Date(2026, 3, 31, 2, 0, 0, 0, time.UTC)
+	sets := make([]ManualStrengthSet, 1000)
+	set := ManualStrengthSet{Load: strings.Repeat("负", 120), LoadUnit: "kg", Quantity: 1, QuantityUnit: "reps"}
+	for i := range sets {
+		sets[i] = set
+	}
+	for i := range 3 {
+		id := uuid.NewString()
+		start := started.Add(time.Duration(i) * time.Hour)
+		_, err := store.SaveManualStrength(ctx, owner, id, ManualStrengthWrite{
+			MutationID: uuid.NewString(), Name: "力量训练", StartedAt: start,
+			Actions: []ManualStrengthAction{{Name: "深蹲", Sets: sets}},
+		}, start.Add(time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	page, err := store.ListActivities(ctx, owner, ActivityListParams{Limit: 50, IncludeManualStrength: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Rows) != 3 {
+		t.Fatalf("rows: %d, want 3", len(page.Rows))
+	}
+	for _, row := range page.Rows {
+		if summary := page.ManualStrengthSummaries[row.LabelID]; summary != (ManualStrengthSummary{ActionCount: 1, SetCount: 1000}) {
+			t.Fatalf("list counts: %+v", summary)
+		}
 	}
 }

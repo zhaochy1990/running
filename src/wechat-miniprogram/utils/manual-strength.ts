@@ -1,7 +1,9 @@
 import type {
+  ManualStrengthAction,
   ManualStrengthContent,
   ManualStrengthRecord,
   ManualStrengthSet,
+  ManualStrengthSummary,
   ManualStrengthWrite,
 } from '../types/manual-strength';
 import { epochToShanghaiYmd } from './date';
@@ -62,6 +64,13 @@ export function copySet(set: SetForm): SetForm {
 
 export function newAction(): ActionForm {
   return { key: newKey(), name: '', sets: [newSet()] };
+}
+
+export function summarizeStrengthActions(actions: ManualStrengthAction[]): ManualStrengthSummary {
+  return {
+    action_count: actions.length,
+    set_count: actions.reduce((total, action) => total + action.sets.length, 0),
+  };
 }
 
 export async function newStrengthDraft(startedAt: Date): Promise<StrengthDraft> {

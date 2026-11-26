@@ -28,7 +28,6 @@ interface PageData {
   loading: boolean;
   loadError: string;
   saving: boolean;
-  saved: boolean;
   draft: StrengthDraft | null;
   expanded: string;
   focusField: string;
@@ -75,7 +74,6 @@ Page<PageData, PageHandlers>({
     loading: true,
     loadError: '',
     saving: false,
-    saved: false,
     draft: null,
     expanded: '',
     focusField: '',
@@ -103,7 +101,7 @@ Page<PageData, PageHandlers>({
       this.unsubscribeViewer = null;
       wx.disableAlertBeforeUnload();
       this.setData({
-        draft: null, loading: false, saving: false, saved: false,
+        draft: null, loading: false, saving: false,
         expanded: '', focusField: '', invalidField: '', error: '',
         loadError: '当前账号已退出或切换，请重新打开训练记录',
       });
@@ -130,7 +128,7 @@ Page<PageData, PageHandlers>({
         } else {
           draft = editStrengthDraft(await getManualStrengthRecord(user.id, editId));
           this.editing = true;
-          wx.setNavigationBarTitle({ title: '编辑力量训练' });
+          wx.setNavigationBarTitle({ title: '编辑记录' });
         }
       }
       if (this.closed) return;
@@ -162,7 +160,7 @@ Page<PageData, PageHandlers>({
     const draft = this.data.draft;
     if (!draft || this.data.saving) return;
     const updated = { ...draft, form };
-    this.setData({ draft: updated, expanded: expanded ?? this.data.expanded, saved: false, error: '', invalidField: '' });
+    this.setData({ draft: updated, expanded: expanded ?? this.data.expanded, error: '', invalidField: '' });
     if (this.editing) {
       wx.enableAlertBeforeUnload({ message: '本次修改尚未保存，确定离开吗？' });
     } else {
@@ -201,7 +199,7 @@ Page<PageData, PageHandlers>({
 
   onActionToggle(e) {
     const key = e.currentTarget.dataset.action as string;
-    this.setData({ expanded: key === this.data.expanded ? '' : key, focusField: '', error: '', invalidField: '' });
+    this.setData({ expanded: key, focusField: '', error: '', invalidField: '' });
   },
 
   onActionAdd() {
@@ -274,7 +272,7 @@ Page<PageData, PageHandlers>({
 
   async onSave() {
     const original = this.data.draft;
-    if (!original || this.data.saving || this.data.saved || userStore.getState().user?.id !== this.userId) return;
+    if (!original || this.data.saving || userStore.getState().user?.id !== this.userId) return;
     const validation = validateStrengthForm(original.form);
     if ('field' in validation) {
       this.setData({
@@ -315,7 +313,8 @@ Page<PageData, PageHandlers>({
       }
       if (!this.closed) {
         wx.disableAlertBeforeUnload();
-        this.setData({ draft, saving: false, saved: true });
+        this.setData({ draft, saving: false });
+        wx.showToast({ title: '已保存', icon: 'none', duration: 1800 });
       }
     } catch (err) {
       if (this.closed) return;

@@ -1,14 +1,16 @@
 import { getActivities } from '../../services/activities';
-import { manualStrengthLiveVersion, takeManualStrengthEditedNames } from '../../services/manual-strength';
+import { manualStrengthLiveVersion, takeManualStrengthEditedSummaries } from '../../services/manual-strength';
 import { fmtDurationShort, fmtKm, fmtPace, fmtDose } from '../../utils/format';
 import { shanghaiToday, shanghaiWeekdayLabel } from '../../utils/date';
 import { userStore } from '../../store/index';
 import type { Activity, ActivitiesListResponse, RouteThumb } from '../../types/activity';
+import type { ManualStrengthSummary } from '../../types/manual-strength';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 interface ActivityRow {
   labelId: string;
   source: Activity['source'];
+  strengthSummary: string;
   name: string;
   date: string; // 用于显示的日期（已转上海）
   iconPath: string;
@@ -144,6 +146,7 @@ function toRow(a: Activity): ActivityRow {
   return {
     labelId: a.label_id,
     source: a.source,
+    strengthSummary: a.manual_strength_summary ? strengthSummaryLabel(a.manual_strength_summary) : '',
     name: displayName(a),
     date: formatDateLabel(a.date),
     iconPath: iconPathForSport(a.sport_name),
@@ -155,6 +158,10 @@ function toRow(a: Activity): ActivityRow {
     // 优先展示 STRIDE 自身计算的负荷（training_dose）；缺失时回退到手表上报值。
     load: fmtDose(a.stride_training_dose ?? a.training_load),
   };
+}
+
+function strengthSummaryLabel(summary: ManualStrengthSummary): string {
+  return `${summary.action_count} 个动作 · ${summary.set_count} 组`;
 }
 
 function summarizeActivities(activities: Activity[]): Summary {
@@ -345,13 +352,13 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
       return;
     }
     if (!userId) return;
-    const editedNames = takeManualStrengthEditedNames(userId);
-    if (editedNames?.size) {
+    const editedSummaries = takeManualStrengthEditedSummaries(userId);
+    if (editedSummaries?.size) {
       const monthGroups = this.data.monthGroups.map((group) => ({
         ...group,
         rows: group.rows.map((row) => {
-          const name = row.source === 'manual_strength' ? editedNames.get(row.labelId) : undefined;
-          return name ? { ...row, name } : row;
+          const edit = row.source === 'manual_strength' ? editedSummaries.get(row.labelId) : undefined;
+          return edit ? { ...row, name: edit.name, strengthSummary: strengthSummaryLabel(edit.summary) } : row;
         }),
       }));
       this.setData({ monthGroups });

@@ -7212,7 +7212,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "manual_strength adds the owning athlete's manual records and source labels",
+                        "description": "manual_strength adds the owning athlete's manual records with action/set counts and source labels",
                         "name": "include",
                         "in": "query"
                     }
@@ -9744,6 +9744,9 @@ const docTemplate = `{
                 "label_id": {
                     "type": "string"
                 },
+                "manual_strength_summary": {
+                    "$ref": "#/definitions/api.manualStrengthSummaryDTO"
+                },
                 "max_hr": {
                     "type": "integer"
                 },
@@ -12084,6 +12087,17 @@ const docTemplate = `{
                 },
                 "started_at": {
                     "type": "string"
+                }
+            }
+        },
+        "api.manualStrengthSummaryDTO": {
+            "type": "object",
+            "properties": {
+                "action_count": {
+                    "type": "integer"
+                },
+                "set_count": {
+                    "type": "integer"
                 }
             }
         },
