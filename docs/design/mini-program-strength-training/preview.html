@@ -6,6 +6,9 @@
   <meta name="color-scheme" content="light">
   <title>力量训练 · Stride 小程序原型</title>
   <link rel="stylesheet" href="preview.css">
+  <script src="mini-program-home.js" defer></script>
+  <script src="manual-log.js" defer></script>
+  <script src="coach-preview.js" defer></script>
   <script src="preview.js" defer></script>
 </head>
 <body>
@@ -15,17 +18,6 @@
       <h1>力量训练</h1>
       <p>微信小程序交互原型</p>
 
-      <div class="variants" aria-label="训练界面方案">
-        <button type="button" data-action="variant" data-variant="A" aria-pressed="true">
-          <span class="variant-letter">A</span><span><strong>逐组跟练</strong><small>当前动作与组间倒计时</small></span>
-        </button>
-        <button type="button" data-action="variant" data-variant="B" aria-pressed="false">
-          <span class="variant-letter">B</span><span><strong>整页记录</strong><small>逐行对照目标与实际</small></span>
-        </button>
-        <button type="button" data-action="variant" data-variant="C" aria-pressed="false">
-          <span class="variant-letter">C</span><span><strong>动作面板</strong><small>切换动作，展开对应组</small></span>
-        </button>
-      </div>
     </aside>
 
     <section class="demo" aria-label="小程序预览">
@@ -44,29 +36,33 @@
         </div>
         <header class="app-bar">
           <button type="button" class="icon-button app-back" aria-label="返回" data-action="back"></button>
-          <span id="app-title"></span>
+          <div class="app-heading"><span id="app-title" tabindex="-1"></span><span id="app-subtitle" hidden></span></div>
           <div class="wechat" aria-hidden="true"><span></span><i></i><b></b></div>
         </header>
-        <div id="rest-banner" class="rest-banner"></div>
         <div id="screen" class="screen"></div>
         <footer id="actions" class="app-actions"></footer>
-        <div class="home-indicator" aria-hidden="true"></div>
+        <div class="device-bottom">
+          <nav id="mp-tabs" class="mp-tabs" aria-label="小程序底部导航" hidden></nav>
+          <div class="home-indicator" aria-hidden="true"></div>
+        </div>
         <dialog id="sheet" aria-labelledby="sheet-title"></dialog>
-      </div>
-      <div class="switcher">
-        <button type="button" data-action="cycle" data-step="-1" aria-label="上一个方案"></button>
-        <span id="variant-name" aria-live="polite">A · 逐组跟练</span>
-        <button type="button" data-action="cycle" data-step="1" aria-label="下一个方案"></button>
       </div>
     </section>
 
     <aside class="journey">
       <h2>体验路径</h2>
-      <ol>
+      <ol class="guided-journey" hidden>
         <li data-stage="plan" aria-current="step"><span></span><div><strong>查看课表</strong><small>动作、目标与组间休息</small></div></li>
         <li data-stage="active"><span></span><div><strong>逐组记录</strong><small>修改实际完成量，勾选完成</small></div></li>
         <li data-stage="rest"><span></span><div><strong>组间休息</strong><small>查看下一组，可跳过倒计时</small></div></li>
         <li data-stage="summary"><span></span><div><strong>训练小结</strong><small>回顾本次完成情况</small></div></li>
+      </ol>
+      <ol class="manual-journey">
+        <li data-stage="schedule"><span></span><div><strong>训练</strong><small>打开自由力量训练</small></div></li>
+        <li data-stage="manualEdit"><span></span><div><strong>边练边记</strong><small>逐组填写，保存后可继续录入</small></div></li>
+        <li data-stage="manualSaved"><span></span><div><strong>训练记录</strong><small>完成后可查看明细</small></div></li>
+        <li data-stage="records"><span></span><div><strong>记录</strong><small>从活动列表回看或编辑</small></div></li>
+        <li data-stage="coach"><span></span><div><strong>教练</strong><small>提问或接着聊本次训练</small></div></li>
       </ol>
       <p class="sample-note">演示数据 · 刷新后重置</p>
     </aside>
