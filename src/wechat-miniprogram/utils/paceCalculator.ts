@@ -1,5 +1,5 @@
 import type { PaceRaceTemplate } from '../services/pace-calculator';
-import { formatDuration, formatPace, parseDuration, parsePaceSPerKm } from './raceStrategyRows';
+import { formatDuration, formatPace, parseHourMinuteDuration, parsePaceSPerKm } from './raceStrategyRows';
 
 export const MAX_SEGMENTS = 10;
 export const MARATHON_KM = 42.195;
@@ -142,7 +142,7 @@ export function calculate(calc: Calculation): Result {
   }
 
   const distance = parseDistance(calc.distance);
-  const time = parseCalculatorTime(calc.time);
+  const time = parseHourMinuteDuration(calc.time);
   const pace = parsePaceSPerKm(calc.pace);
   if (calc.mode !== 'distance' && distance === null) return { error: `请输入 0.001 至 ${MAX_QUICK_KM} km 的距离` };
   if (calc.mode !== 'time' && time === null) return { error: '请输入有效用时，例如 3:30:00' };
@@ -169,7 +169,7 @@ const TERRAIN_LABELS: Record<string, string> = {
 };
 
 export function applyRaceTemplate(template: PaceRaceTemplate, target: string): PaceSegment[] | null {
-  const seconds = parseCalculatorTime(target);
+  const seconds = parseHourMinuteDuration(target);
   if (seconds === null || seconds < 7200 || seconds > 28800) return null;
   const weightedDelta = template.segments.reduce(
     (sum, segment) => sum + (segment.end_km - segment.start_km) * segment.pace_delta_seconds,
@@ -212,7 +212,7 @@ export function encodeCalculation(calc: Calculation): string {
     ? calc.segments.flatMap(({ end, pace }) => [Number(end), parsePaceSPerKm(pace)])
     : [
       calc.mode === 'distance' ? '' : Number(calc.distance),
-      calc.mode === 'time' ? '' : parseCalculatorTime(calc.time),
+      calc.mode === 'time' ? '' : parseHourMinuteDuration(calc.time),
       calc.mode === 'pace' ? '' : parsePaceSPerKm(calc.pace),
     ];
   return ['1', calc.mode, ...fields].join('~');
@@ -235,11 +235,6 @@ export function decodeCalculation(input: string): Calculation | null {
   const [distance, seconds, pace] = fields;
   const time = /^\d{1,6}$/.test(seconds) ? inputDuration(Number(seconds)) : '';
   return { mode, distance, time, pace: sharedPace(pace) };
-}
-
-function parseCalculatorTime(value: string): number | null {
-  const time = value.trim();
-  return parseDuration(time.split(':').length === 2 ? `${time}:00` : time);
 }
 
 function inputDuration(seconds: number): string {
