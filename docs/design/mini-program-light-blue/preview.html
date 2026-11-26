@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>STRIDE 小程序浅蓝主题设计稿</title>
+  <title>STRIDE 小程序深蓝主题设计稿</title>
   <style>
     :root {
       color-scheme: light;
@@ -13,12 +13,11 @@
       --line: #ebeef3;
       --ink: #2c3340;
       --muted: #6b7280;
-      --accent: #94c9f3;
-      --tint: #eaf5ff;
-      --deep: #205a88;
-      --on-accent: #143b58;
+      --accent: #286eae;
+      --tint: #e8f1fa;
+      --deep: #174b78;
+      --on-accent: #ffffff;
       --tab-active: var(--deep);
-      --day-outline: var(--deep);
       --running: #00a85a;
       --training-bar: #4c8dff;
       --training-bar-muted: rgba(76, 141, 255, .6);
@@ -29,16 +28,14 @@
       --accent: #ff6363;
       --tint: #ffecec;
       --deep: #d04545;
-      --on-accent: #ffffff;
       --tab-active: var(--accent);
-      --day-outline: transparent;
     }
 
     *, *::before, *::after { box-sizing: border-box; }
     body { margin: 0; color: var(--ink); background: #edf1f5; }
     button { font: inherit; }
-    button:focus-visible { outline: 2px solid #205a88; outline-offset: 3px; }
-    ::selection { color: #143b58; background: #c4e4fb; }
+    button:focus-visible { outline: 2px solid #286eae; outline-offset: 3px; }
+    ::selection { color: #174b78; background: #e8f1fa; }
 
     .board {
       max-width: 1552px;
@@ -72,7 +69,7 @@
 
     .theme-control button[aria-pressed="true"] {
       background: var(--surface);
-      color: #143b58;
+      color: #174b78;
       font-weight: 650;
       box-shadow: 0 1px 3px #142b4214;
     }
@@ -133,7 +130,7 @@
     .day { display: grid; justify-items: center; gap: 5px; border-radius: 9px; padding: 7px 0; }
     .day small { font-size: 11px; color: var(--muted); }
     .day b { font-size: 14px; }
-    .day.today { background: var(--accent); color: var(--on-accent); box-shadow: inset 0 0 0 1px var(--day-outline); }
+    .day.today { background: var(--accent); color: var(--on-accent); }
     .day.today small { color: inherit; font-weight: 700; }
     .section-label { margin: 19px 0 8px 2px; font-size: 12px; font-weight: 650; color: #4a5260; }
     .workout { padding: 13px; }
@@ -329,12 +326,12 @@
   <main class="board">
     <header class="board-header">
       <div>
-        <h1>STRIDE 小程序浅蓝主题</h1>
-        <p class="intro">用浅蓝标记操作和选中态，标题与小字用深蓝。四个页面均为静态示例。</p>
+        <h1>STRIDE 小程序深蓝主题</h1>
+        <p class="intro">按钮、聊天气泡与选中日期用深蓝底和白字。四个页面均为静态示例。</p>
       </div>
       <div class="theme-control" role="group" aria-label="主题对照">
         <button type="button" data-preview-theme="current" aria-pressed="false">现款藕粉</button>
-        <button type="button" data-preview-theme="blue" aria-pressed="true">浅蓝提案</button>
+        <button type="button" data-preview-theme="blue" aria-pressed="true">深蓝提案</button>
       </div>
     </header>
 
@@ -464,10 +461,10 @@
     </div>
 
     <dl class="palette" aria-label="主题色板">
-      <div class="swatch" data-token="accent" style="--sample:var(--accent)"><dt>主色 · 按钮与选中底</dt><dd>#94C9F3</dd></div>
-      <div class="swatch" data-token="tint" style="--sample:var(--tint)"><dt>浅衬底 · 标签</dt><dd>#EAF5FF</dd></div>
-      <div class="swatch" data-token="deep" style="--sample:var(--deep)"><dt>强调文字 · 标题与选中图标</dt><dd>#205A88</dd></div>
-      <div class="swatch" data-token="on-accent" style="--sample:var(--on-accent)"><dt>主色上的文字</dt><dd>#143B58</dd></div>
+      <div class="swatch" data-token="accent" style="--sample:var(--accent)"><dt>主色 · 按钮与选中底</dt><dd>#286EAE</dd></div>
+      <div class="swatch" data-token="tint" style="--sample:var(--tint)"><dt>浅衬底 · 标签</dt><dd>#E8F1FA</dd></div>
+      <div class="swatch" data-token="deep" style="--sample:var(--deep)"><dt>强调文字 · 标题与选中图标</dt><dd>#174B78</dd></div>
+      <div class="swatch" data-token="on-accent" style="--sample:var(--on-accent)"><dt>主色上的文字</dt><dd>#FFFFFF</dd></div>
     </dl>
   </main>
 
