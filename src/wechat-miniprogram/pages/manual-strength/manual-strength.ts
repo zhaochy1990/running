@@ -130,7 +130,7 @@ Page<PageData, PageHandlers>({
         } else {
           draft = editStrengthDraft(await getManualStrengthRecord(user.id, editId));
           this.editing = true;
-          wx.setNavigationBarTitle({ title: '编辑力量训练' });
+          wx.setNavigationBarTitle({ title: '编辑记录' });
         }
       }
       if (this.closed) return;
@@ -201,7 +201,7 @@ Page<PageData, PageHandlers>({
 
   onActionToggle(e) {
     const key = e.currentTarget.dataset.action as string;
-    this.setData({ expanded: key === this.data.expanded ? '' : key, focusField: '', error: '', invalidField: '' });
+    this.setData({ expanded: key, focusField: '', error: '', invalidField: '' });
   },
 
   onActionAdd() {

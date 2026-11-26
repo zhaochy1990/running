@@ -84,11 +84,16 @@ assert.equal(view.data.guest, false);
 assert.equal(view.data.monthGroups[0].rows[0].name, '账号 B 私人训练');
 assert.equal(requests.length, 0);
 const savedRecord = {
-  id: 'saved', name: '账号 A 的历史训练', note: '账号 A 的备注', actions: [],
+  id: 'saved', name: '账号 A 的历史训练', note: '账号 A 的备注', actions: [{
+    name: '深蹲', sets: [
+      { load: '20', load_unit: 'kg', quantity: 10, quantity_unit: 'reps' },
+      { load: '25', load_unit: 'kg', quantity: 8, quantity_unit: 'reps' },
+    ],
+  }],
   revision: 1, started_at: '2026-11-26T07:00:00Z', ended_at: '2026-11-26T07:30:00Z',
 };
 type TrainingPage = {
-  data: { draft?: unknown; record?: unknown; actionRows?: unknown[] };
+  data: { draft?: unknown; record?: unknown; summaryLabel?: string; actionRows?: Array<{ sets: Array<{ number: number }> }> };
   setData(patch: object): void;
   onLoad(params: { edit?: string; recordId?: string }): Promise<void> | void;
   onShow?(): void;
@@ -138,10 +143,14 @@ assert.equal(edit.data.draft, null);
 
 const detail = await loadTrainingPage('../pages/manual-strength-detail/manual-strength-detail.ts');
 assert.ok(detail.data.record);
+assert.equal(detail.data.summaryLabel, '手动记录 · 1 个动作 / 2 组');
+assert.equal(detail.data.actionRows?.[0].sets[0].number, 1);
+assert.equal(detail.data.actionRows?.[0].sets[1].number, 2);
 viewerId = 'user-b';
 viewerChanged?.();
 detail.onShow?.();
 await new Promise<void>((resolve) => setImmediate(resolve));
 assert.equal(detail.data.record, null);
 assert.equal(detail.data.actionRows?.length, 0);
+assert.equal(detail.data.summaryLabel, '');
 console.log('activity-record-viewer.check: all assertions passed');

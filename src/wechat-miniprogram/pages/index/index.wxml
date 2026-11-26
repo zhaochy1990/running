@@ -155,7 +155,10 @@
 
     <button wx:if="{{strengthAvailable}}" class="strength-entry" bindtap="onManualStrengthTap">
       <view class="strength-entry__icon"><image src="/assets/icons/fitness_center.svg" mode="aspectFit" /></view>
-      <text class="strength-entry__title">{{hasStrengthDraft ? '继续自由力量训练' : '自由力量训练'}}</text>
+      <view class="strength-entry__body">
+        <view class="strength-entry__title">{{hasStrengthDraft ? '继续自由力量训练' : '自由力量训练'}}</view>
+        <view class="strength-entry__subtitle">边练边记录</view>
+      </view>
       <image class="strength-entry__arrow" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
     </button>
 
