@@ -122,7 +122,7 @@ func (b *Broker) Close() {
 
 func (b *Broker) closeConnection() {
 	if b.conn != nil {
-		_ = b.conn.Close()
+		_ = b.conn.CloseDeadline(time.Now().Add(time.Second))
 	}
 	b.conn, b.channel = nil, nil
 }

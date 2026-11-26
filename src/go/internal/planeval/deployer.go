@@ -16,9 +16,15 @@ type WorkerSpec struct {
 
 // DeploymentStatus is the evaluated worker Deployment of one version.
 type DeploymentStatus struct {
-	Present       bool
-	Replicas      int32
-	ReadyReplicas int32
+	// Cleanup identities are captured before the database/queue idle gate.
+	DeploymentUID             string
+	DeploymentResourceVersion string
+	SecretUID                 string
+	SecretResourceVersion     string
+	SecretPresent             bool
+	Present                   bool
+	Replicas                  int32
+	ReadyReplicas             int32
 }
 
 // Deployer starts, scales and removes the eval worker Deployment of an agent
@@ -26,7 +32,7 @@ type DeploymentStatus struct {
 // that talks to the cluster.
 type Deployer interface {
 	Ensure(ctx context.Context, spec WorkerSpec) error
-	Delete(ctx context.Context, agentVersion string) error
+	Delete(ctx context.Context, agentVersion string, expected DeploymentStatus) error
 	Status(ctx context.Context, agentVersion string) (DeploymentStatus, error)
 }
 
@@ -45,8 +51,8 @@ func validAgentVersion(v string) bool { return agentVersionPattern.MatchString(v
 // started by hand. It keeps local runs and tests free of a cluster.
 type noopDeployer struct{}
 
-func (noopDeployer) Ensure(context.Context, WorkerSpec) error { return nil }
-func (noopDeployer) Delete(context.Context, string) error     { return nil }
+func (noopDeployer) Ensure(context.Context, WorkerSpec) error               { return nil }
+func (noopDeployer) Delete(context.Context, string, DeploymentStatus) error { return nil }
 func (noopDeployer) Status(context.Context, string) (DeploymentStatus, error) {
 	return DeploymentStatus{}, nil
 }

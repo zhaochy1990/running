@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"os"
 	"sort"
@@ -197,7 +198,7 @@ func (d *kubernetesDeployer) deployment(spec WorkerSpec, checksum string) *appsv
 
 // Delete removes the version's worker Deployment and launch Secret. The queue
 // is deliberately kept: it is reused the next time this version is evaluated.
-func (d *kubernetesDeployer) Delete(ctx context.Context, agentVersion string) error {
+func (d *kubernetesDeployer) Delete(ctx context.Context, agentVersion string, expected DeploymentStatus) error {
 	if !validAgentVersion(agentVersion) {
 		return fmt.Errorf("plan-eval: agent version %q is not usable as an object name", agentVersion)
 	}
@@ -205,16 +206,10 @@ func (d *kubernetesDeployer) Delete(ctx context.Context, agentVersion string) er
 	name := WorkerName(agentVersion)
 	deployments := d.client.AppsV1().Deployments(d.namespace)
 	secrets := d.client.CoreV1().Secrets(d.namespace)
-	deployment, err := deployments.Get(ctx, name, metav1.GetOptions{})
-	if err != nil && !k8serrors.IsNotFound(err) {
-		return err
-	}
-	secret, secretErr := secrets.Get(ctx, name, metav1.GetOptions{})
-	if secretErr != nil && !k8serrors.IsNotFound(secretErr) {
-		return secretErr
-	}
-	if err == nil {
-		options := metav1.DeleteOptions{PropagationPolicy: ptr.To(metav1.DeletePropagationForeground), Preconditions: &metav1.Preconditions{UID: &deployment.UID, ResourceVersion: &deployment.ResourceVersion}}
+
+	if expected.Present {
+		uid := types.UID(expected.DeploymentUID)
+		options := metav1.DeleteOptions{PropagationPolicy: ptr.To(metav1.DeletePropagationForeground), Preconditions: &metav1.Preconditions{UID: &uid, ResourceVersion: &expected.DeploymentResourceVersion}}
 		if err := deployments.Delete(ctx, name, options); err != nil && !k8serrors.IsNotFound(err) {
 			return fmt.Errorf("plan-eval: delete deployment %s: %w", name, err)
 		}
@@ -234,8 +229,9 @@ func (d *kubernetesDeployer) Delete(ctx context.Context, agentVersion string) er
 			}
 		}
 	}
-	if secretErr == nil {
-		options := metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &secret.UID, ResourceVersion: &secret.ResourceVersion}}
+	if expected.SecretPresent {
+		uid := types.UID(expected.SecretUID)
+		options := metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid, ResourceVersion: &expected.SecretResourceVersion}}
 		if err := secrets.Delete(ctx, name, options); err != nil && !k8serrors.IsNotFound(err) {
 			return fmt.Errorf("plan-eval: delete launch secret %s: %w", name, err)
 		}
@@ -247,17 +243,29 @@ func (d *kubernetesDeployer) Status(ctx context.Context, agentVersion string) (D
 	if !validAgentVersion(agentVersion) {
 		return DeploymentStatus{}, fmt.Errorf("plan-eval: agent version %q is not usable as an object name", agentVersion)
 	}
+
+	status := DeploymentStatus{}
 	deployment, err := d.client.AppsV1().Deployments(d.namespace).Get(ctx, WorkerName(agentVersion), metav1.GetOptions{})
-	if k8serrors.IsNotFound(err) {
-		return DeploymentStatus{}, nil
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return status, fmt.Errorf("plan-eval: get deployment: %w", err)
 	}
-	if err != nil {
-		return DeploymentStatus{}, fmt.Errorf("plan-eval: get deployment: %w", err)
+	if err == nil {
+		status.Present = true
+		status.DeploymentUID, status.DeploymentResourceVersion = string(deployment.UID), deployment.ResourceVersion
+		status.Replicas, status.ReadyReplicas = deployment.Status.Replicas, deployment.Status.ReadyReplicas
+		if deployment.Spec.Replicas != nil {
+			status.Replicas = *deployment.Spec.Replicas
+		}
 	}
-	status := DeploymentStatus{Present: true, Replicas: deployment.Status.Replicas, ReadyReplicas: deployment.Status.ReadyReplicas}
-	if deployment.Spec.Replicas != nil {
-		status.Replicas = *deployment.Spec.Replicas
+	secret, err := d.client.CoreV1().Secrets(d.namespace).Get(ctx, WorkerName(agentVersion), metav1.GetOptions{})
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return status, fmt.Errorf("plan-eval: get launch secret: %w", err)
 	}
+	if err == nil {
+		status.SecretPresent = true
+		status.SecretUID, status.SecretResourceVersion = string(secret.UID), secret.ResourceVersion
+	}
+
 	return status, nil
 }
 

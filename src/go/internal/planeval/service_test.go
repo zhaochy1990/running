@@ -92,7 +92,7 @@ func (d *fakeDeployer) Ensure(_ context.Context, spec WorkerSpec) error {
 	return nil
 }
 
-func (d *fakeDeployer) Delete(_ context.Context, version string) error {
+func (d *fakeDeployer) Delete(_ context.Context, version string, _ DeploymentStatus) error {
 	if d.delete != nil {
 		if err := d.delete(version); err != nil {
 			return err

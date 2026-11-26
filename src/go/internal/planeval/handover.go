@@ -324,6 +324,12 @@ func (s *Service) cleanup(ctx context.Context, agentVersion string) *Error {
 	if !s.knownVersion(agentVersion) || !validAgentVersion(agentVersion) {
 		return fail(422, "invalid_request", "未登记的 Agent 版本："+agentVersion)
 	}
+	// Capture resource revisions before checking idle state: a start after the
+	// gate must invalidate deletion, even if the coordination session was lost.
+	expected, err := s.deployer.Status(ctx, agentVersion)
+	if err != nil {
+		return s.internal(err)
+	}
 	configID := ""
 	config, err := s.store.PlanEvalLaunchConfigForVersion(ctx, agentVersion)
 	if err == nil {
@@ -345,7 +351,7 @@ func (s *Service) cleanup(ctx context.Context, agentVersion string) *Error {
 	if depth.Ready+depth.Unacked > 0 {
 		return fail(409, "cleanup_blocked", fmt.Sprintf("该版本的队列还有 %d 条待消费、%d 条未确认消息", depth.Ready, depth.Unacked))
 	}
-	if err := s.deployer.Delete(ctx, agentVersion); err != nil {
+	if err := s.deployer.Delete(ctx, agentVersion, expected); err != nil {
 		s.log.Error("plan-eval: delete worker deployment", zap.String("agent_version", agentVersion), zap.Error(err))
 		return fail(502, "cleanup_failed", "删除 Deployment 失败")
 	}

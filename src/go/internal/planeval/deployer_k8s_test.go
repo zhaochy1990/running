@@ -2,6 +2,11 @@ package planeval
 
 import (
 	"context"
+	"fmt"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	k8stesting "k8s.io/client-go/testing"
 	"strings"
 	"testing"
 
@@ -128,10 +133,14 @@ func TestKubernetesDeployer_DeleteRemovesDeploymentAndSecretIdempotently(t *test
 	if err := d.Ensure(ctx, WorkerSpec{AgentVersion: "2026.11.30", Replicas: 1, Env: map[string]string{}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.Delete(ctx, "2026.11.30"); err != nil {
+	expected, err := d.Status(ctx, "2026.11.30")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Delete(ctx, "2026.11.30", expected); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if err := d.Delete(ctx, "2026.11.30"); err != nil {
+	if err := d.Delete(ctx, "2026.11.30", expected); err != nil {
 		t.Fatalf("delete again: %v", err)
 	}
 	if status, err := d.Status(ctx, "2026.11.30"); err != nil || status.Present {
@@ -181,5 +190,46 @@ func TestKubernetesDeployer_RefusesTerminatingDeployment(t *testing.T) {
 	}
 	if err := d.Ensure(ctx, spec); err == nil || !strings.Contains(err.Error(), "still being deleted") {
 		t.Fatalf("terminating deployment accepted: %v", err)
+	}
+}
+
+func TestKubernetesDeployer_CleanupUsesPreGateResourceRevision(t *testing.T) {
+	d := newFakeDeployer()
+	ctx := context.Background()
+	spec := WorkerSpec{AgentVersion: "2026.11.30", Replicas: 1, Env: map[string]string{}}
+	if err := d.Ensure(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	deployments := d.client.AppsV1().Deployments("stride")
+	name := WorkerName(spec.AgentVersion)
+	current, err := deployments.Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	current.UID, current.ResourceVersion = "original-worker", "1"
+	if _, err := deployments.Update(ctx, current, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	expected, err := d.Status(ctx, spec.AgentVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A new start after the idle gate updates the same Deployment (same UID).
+	current.ResourceVersion = "2"
+	if _, err := deployments.Update(ctx, current, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	d.client.(*fake.Clientset).PrependReactor("delete", "deployments", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		preconditions := action.(k8stesting.DeleteAction).GetDeleteOptions().Preconditions
+		if preconditions == nil || preconditions.UID == nil || string(*preconditions.UID) != "original-worker" || preconditions.ResourceVersion == nil || *preconditions.ResourceVersion != "1" {
+			t.Fatal("cleanup re-read new identity instead of using its pre-gate revision")
+		}
+		return true, nil, apierrors.NewConflict(schema.GroupResource{Group: "apps", Resource: "deployments"}, name, fmt.Errorf("resourceVersion changed"))
+	})
+	if err := d.Delete(ctx, spec.AgentVersion, expected); err == nil {
+		t.Fatal("stale cleanup deleted new worker")
+	}
+	if _, err := deployments.Get(ctx, name, metav1.GetOptions{}); err != nil {
+		t.Fatal(err)
 	}
 }
