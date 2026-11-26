@@ -22,6 +22,7 @@ import * as z from "zod";
 import type { CoachToolRuntime } from "../agents/coachAgent.js";
 import type { Activity, DataProvider } from "../data/dataProvider.js";
 import { defineCoachTools } from "./common.js";
+import { useDedicatedStrengthReview } from "./strengthReview.js";
 
 const getActivitiesByDateRangeSchema = z.object({
   startDay: z
@@ -75,12 +76,12 @@ class ActivitiesToolImpl {
     const truncated = all.length > limit;
     // date 升序，取末尾若干条 = 区间内最近的运动。
     const activities = truncated ? all.slice(-limit) : all;
-    const hasManual =
+    const maskWatchStrength =
       this.useStrengthReview &&
       activities.some((activity) => activity.isStrength) &&
-      (await this.store.getManualStrengthSummaries(userId, input.startDay, endDay)).length > 0;
+      (useDedicatedStrengthReview(runtime.state) || (await this.store.getManualStrengthSummaries(userId, input.startDay, endDay)).length > 0);
     return {
-      activities: hasManual
+      activities: maskWatchStrength
         ? activities.map((activity) =>
             activity.isStrength
               ? {
@@ -117,7 +118,8 @@ class ActivitiesToolImpl {
     if (
       activity?.isStrength &&
       this.useStrengthReview &&
-      (await this.store.getManualStrengthSummaries(userId, activity.shanghaiDay, activity.shanghaiDay)).length > 0
+      (useDedicatedStrengthReview(runtime.state) ||
+        (await this.store.getManualStrengthSummaries(userId, activity.shanghaiDay, activity.shanghaiDay)).length > 0)
     ) {
       return { activity: null, reviewTool: "get_strength_training_review", provenance: { source: "stride", vendor_derived: false } };
     }

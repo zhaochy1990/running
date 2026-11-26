@@ -311,3 +311,17 @@ test("a relative date used as a range endpoint does not narrow the review to one
   assert.equal(result.status, "found");
   assert.deepEqual(result.scope, { startDay: "2026-11-23", endDay: "2026-11-25" });
 });
+
+test("a second watch record in the same affirmative clause stops heart rate attribution", async () => {
+  const { store, detailReads } = fixture([manualRecord]);
+  const result = await execute(store, "补充手表 watch-a 的心率（手表 watch-b 记录错误）", { startDay: day, watchReference: watchB.id });
+  assert.equal(result.watchSupplementStatus, "ambiguous");
+  assert.deepEqual(detailReads, ["manual-a"]);
+});
+
+test("a watch detail cannot bypass the manual policy during a multi-day strength review", async () => {
+  const base = fixture([]).store;
+  const detail = await execute(base, "复盘 11 月 25 日到 26 日的力量训练", { labelId: watchB.id }, "athlete-a", "get_activity_details");
+  assert.equal(detail.activity, null);
+  assert.equal(detail.reviewTool, "get_strength_training_review");
+});

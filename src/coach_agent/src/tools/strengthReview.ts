@@ -81,14 +81,26 @@ function unresolved(records: StrengthRecordSummary[], source: PriorEvidence["sou
   return { status: "ambiguous", source, scope, candidates: records.slice(-limit).map(candidate), truncated: records.length > limit };
 }
 
-function readConversation(state: unknown): { userText: string; priorEvidence?: PriorEvidence } {
+function readEvidence(content: unknown): PriorEvidence | undefined {
+  if (typeof content !== "string") return undefined;
+  try {
+    const result = priorEvidenceSchema.safeParse(JSON.parse(content));
+    return result.success ? result.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function readConversation(state: unknown): { userText: string; priorEvidence?: PriorEvidence; activeManualReview?: boolean } {
   if (typeof state !== "object" || state === null || !("messages" in state) || !Array.isArray(state.messages)) return { userText: "" };
   const messages = state.messages;
   const userIndex = messages.findLastIndex(isHumanMessage);
   if (userIndex < 0) return { userText: "" };
   const previousTurn = messages.slice(0, userIndex);
   const previousUserIndex = previousTurn.findLastIndex(isHumanMessage);
-  const previousReview = previousTurn.slice(previousUserIndex + 1).findLast((message) => isToolMessage(message) && message.name === TOOL_NAME);
+  const isStrengthReview = (message: unknown) => isToolMessage(message) && message.name === TOOL_NAME;
+  const previousReview = previousTurn.slice(previousUserIndex + 1).findLast(isStrengthReview);
+  const activeManualReview = messages.slice(userIndex + 1).some((message) => isStrengthReview(message) && readEvidence(message.content)?.source === "manual");
   let userText = messages[userIndex].text;
   try {
     // The chat API wraps the message with a timestamp. The envelope itself
@@ -98,14 +110,14 @@ function readConversation(state: unknown): { userText: string; priorEvidence?: P
   } catch {
     // Graph callers can also supply plain user messages.
   }
-  if (typeof previousReview?.content !== "string") return { userText };
-  try {
-    const result = priorEvidenceSchema.safeParse(JSON.parse(previousReview.content));
-    if (result.success) return { userText, priorEvidence: result.data };
-  } catch {
-    // Earlier failed tool calls carry plain error text.
-  }
-  return { userText };
+  const priorEvidence = readEvidence(previousReview?.content);
+  return { userText, ...(priorEvidence ? { priorEvidence } : {}), activeManualReview };
+}
+
+/** Normal watch-only activity summaries can still answer general multi-sport questions. */
+export function useDedicatedStrengthReview(state: unknown): boolean {
+  const { userText, activeManualReview } = readConversation(state);
+  return activeManualReview === true || /手录|自由力量|力量.*复盘|复盘.*力量|manual strength|review.*strength/i.test(userText);
 }
 
 function clearDay(userText: string, asof: string): string | undefined {
@@ -185,22 +197,28 @@ function reviewClauses(text: string): string[] {
   );
 }
 
-function confirmsWatchReference(text: string, reference: string): boolean {
+function affirmedWatchClauses(text: string, reference: string): string[] {
   const referenceClauses = reviewClauses(text).filter((clause) => WATCH_WORD.test(clause) && includesReference(clause, reference));
-  return referenceClauses.some((clause) => WATCH_REQUEST.test(clause)) && !referenceClauses.some((clause) => NEGATED_SELECTION.test(clause));
+  if (referenceClauses.some((clause) => NEGATED_SELECTION.test(clause))) return [];
+  return referenceClauses.filter((clause) => WATCH_REQUEST.test(clause));
 }
 
 async function watchSupplement(store: DataProvider, userId: string, startDay: string, endDay: string, reference: string | undefined, userText: string) {
   if (reference === undefined) return {};
   // The model may choose its next tool call, but it cannot grant itself the
   // right to pick an overlapping watch record on the athlete's behalf.
-  if (!confirmsWatchReference(userText, reference)) {
-    return { watchSupplementStatus: "needs_explicit_reference" };
-  }
+  const clauses = affirmedWatchClauses(userText, reference);
+  if (clauses.length === 0) return { watchSupplementStatus: "needs_explicit_reference" };
   const watches = await store.getWatchStrengthSummaries(userId, startDay, endDay);
   const matches = watches.filter((record) => references(record).includes(reference));
   const selected = matches.length === 1 ? matches[0] : undefined;
   if (!selected) return { watchSupplementStatus: matches.length === 0 ? "missing" : "ambiguous" };
+  // Requiring a single reference in the affirmative clause prevents a model
+  // from substituting another activity mentioned parenthetically in that clause.
+  const competingReference = watches.some(
+    (record) => record !== selected && references(record).some((value) => clauses.some((clause) => includesReference(clause, value))),
+  );
+  if (competingReference) return { watchSupplementStatus: "ambiguous" };
   const detail = await store.getActivityDetail(userId, selected.id, { includeKilometerSplits: false });
   if (!detail) return { watchSupplementStatus: "missing" };
   return {
