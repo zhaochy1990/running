@@ -120,6 +120,19 @@ assert.deepEqual(streamErrors, ['session_changed', 'session_changed']);
 assert.equal(storage.get(STORAGE_KEYS.TOKEN), 'new account');
 assert.equal(pending.length, 0);
 
+login();
+const completedMessages: string[] = [];
+sendCoachChatStream('旧账号 JSON 回包', 'old-dialogue', 'old-turn-3', undefined, {
+  onComplete: (result) => completedMessages.push(result.message),
+  onError: (error) => streamErrors.push(error.code),
+});
+await new Promise<void>((resolve) => setImmediate(resolve));
+login('new account');
+await respond(/coach\/chat/, 200, { status: 'completed', message: '旧账号私密回复' });
+assert.deepEqual(completedMessages, []);
+assert.deepEqual(streamErrors, ['session_changed', 'session_changed', 'session_changed']);
+assert.equal(storage.get(STORAGE_KEYS.TOKEN), 'new account');
+
 function compiled(relative: string): string {
   const source = readFileSync(new URL(relative, import.meta.url), 'utf8');
   return ts.transpileModule(source, {

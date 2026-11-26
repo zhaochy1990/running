@@ -227,7 +227,7 @@ export function sendCoachChatStream(
       },
       enableChunked: true,
       success: (res) => {
-        if (cancelled || disposed) return;
+        if (cancelled || disposed || !checkSession()) return;
         if (res.statusCode === 401) {
           handle401();
           return;
@@ -244,7 +244,7 @@ export function sendCoachChatStream(
             for (const ev of events) dispatch(ev);
           }
           // 纯 JSON（非流式同步响应）：直接用其 message。
-          if (!terminalReached) {
+          if (!terminalReached && checkSession()) {
             terminalReached = true;
             callbacks.onComplete?.(
               (typeof res.data === 'string' ? (safeParse(res.data) as unknown as CoachDone) : res.data) as CoachDone,
@@ -260,7 +260,7 @@ export function sendCoachChatStream(
         if (!terminalReached) failOnce('empty', '未收到回复');
       },
       fail: (err) => {
-        if (cancelled || disposed) return;
+        if (cancelled || disposed || !checkSession()) return;
         failOnce('network', err.errMsg || 'network error');
       },
     });
@@ -274,7 +274,7 @@ export function sendCoachChatStream(
     }
     if (reqTask.onChunkReceived) {
       reqTask.onChunkReceived((res) => {
-        if (cancelled || disposed || statusCode === 401) return;
+        if (cancelled || disposed || statusCode === 401 || !checkSession()) return;
         sawChunk = true;
         const events = parser.feed(res.data);
         for (const ev of events) dispatch(ev);
