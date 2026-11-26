@@ -77,10 +77,14 @@ const manualLog = (() => {
     return `<div class="log-set" data-log-row="${row.id}" role="group" aria-label="第 ${number} 组">
       <span class="log-set-number" aria-hidden="true">${number}</span>
       <input data-log-field="load" aria-label="负重" placeholder="—" value="${escape(row.load)}">
-      <select data-log-field="loadUnit" aria-label="负重单位">${options(loadUnits, row.loadUnit)}</select>
+      <span class="log-unit">
+        <select data-log-field="loadUnit" aria-label="负重单位">${options(loadUnits, row.loadUnit)}</select>
+      </span>
       <div class="log-amount">
         <input data-log-field="amount" aria-label="数量" inputmode="numeric" placeholder="—" value="${escape(row.amount)}">
-        <select data-log-field="unit" aria-label="数量单位">${options(units, row.unit)}</select>
+        <span class="log-unit">
+          <select data-log-field="unit" aria-label="数量单位">${options(units, row.unit)}</select>
+        </span>
       </div>
       <div class="log-set-actions">
         ${logButton('remove-row', app.icon('cross', 16), 'icon-button log-remove', `aria-label="删除第 ${number} 组"`)}
