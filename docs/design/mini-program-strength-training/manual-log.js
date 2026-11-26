@@ -156,7 +156,7 @@ ${escape(entry.note)}</textarea>
     if (!activeDraft) return false;
     return Boolean(activeDraft.title.trim() || activeDraft.note.trim() || activeDraft.exercises.length !== 1 ||
       activeDraft.exercises.some(exercise => exercise.name.trim() || exercise.rows.length !== 1 ||
-        exercise.rows.some(row => Object.keys(initialSet).some(key => row[key] !== initialSet[key]))));
+        exercise.rows.some(row => Object.keys(initialSet).some(key => row[key].trim() !== initialSet[key]))));
   }
 
   function savedView() {
@@ -332,9 +332,16 @@ ${escape(entry.note)}</textarea>
     }
   }
 
+  function selectInitialAmount(event) {
+    const field = event.target;
+    if (field.matches('[data-log-field="amount"]') && field.value === initialSet.amount) field.select();
+  }
+
   function setup(dependencies) {
     app = dependencies;
     document.addEventListener('click', click);
+    app.screen.addEventListener('focusin', selectInitialAmount);
+    app.screen.addEventListener('click', selectInitialAmount);
     app.screen.addEventListener('input', event => {
       if (!event.target.matches('select')) updateField(event);
     });
