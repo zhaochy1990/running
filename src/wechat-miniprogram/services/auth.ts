@@ -1,4 +1,4 @@
-import { http, ApiError } from './request';
+import { ApiError, beginRequestSession, clearSessionCredentials, http, requestSessionVersion, sessionChangedError } from './request';
 import { AUTH_BASE_URL, CLIENT_ID, STORAGE_KEYS } from '../constants/config';
 import { ApiErrorCode } from '../types/api';
 import type {
@@ -112,7 +112,9 @@ export function validateSession(redirectOnSessionExpiry = true): Promise<UserPro
 // 登录成功后的收尾：存 token + 拉用户信息并缓存。
 async function persistSession(tokens: AuthTokenResponse, redirectOnSessionExpiry = true): Promise<UserProfile> {
   persistTokens(tokens.access_token, tokens.refresh_token, tokens.expires_in);
+  const sessionVersion = requestSessionVersion;
   const user = await fetchMe(redirectOnSessionExpiry);
+  if (sessionVersion !== requestSessionVersion) throw sessionChangedError();
   persistUser(user);
   return user;
 }
@@ -124,7 +126,9 @@ async function persistSession(tokens: AuthTokenResponse, redirectOnSessionExpiry
 export async function wechatLogin(redirectOnSessionExpiry = true): Promise<WechatLoginResult> {
   console.log('[auth] 免密登录（token_exchange）…');
   try {
+    const sessionVersion = requestSessionVersion;
     const tokens = await exchangeWechatCode('token_exchange');
+    if (sessionVersion !== requestSessionVersion) throw sessionChangedError();
     const user = await persistSession(tokens, redirectOnSessionExpiry);
     console.log('[auth] 免密登录成功，用户已缓存');
     return { ok: true, user };
@@ -210,15 +214,13 @@ export function getStoredUser(): UserProfile | null {
 
 // 退出登录
 export function logout(): void {
-  wx.removeStorageSync(STORAGE_KEYS.TOKEN);
-  wx.removeStorageSync(STORAGE_KEYS.REFRESH_TOKEN);
-  wx.removeStorageSync(STORAGE_KEYS.TOKEN_EXPIRES_AT);
-  wx.removeStorageSync(STORAGE_KEYS.USER_INFO);
+  clearSessionCredentials();
 }
 
 // --- 内部 ---
 
 function persistTokens(accessToken: string, refreshToken: string, expiresIn: number): void {
+  beginRequestSession();
   const expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
   wx.setStorageSync(STORAGE_KEYS.TOKEN, accessToken);
   wx.setStorageSync(STORAGE_KEYS.REFRESH_TOKEN, refreshToken);

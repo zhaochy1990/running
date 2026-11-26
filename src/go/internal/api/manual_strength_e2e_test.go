@@ -31,6 +31,9 @@ func TestE2E_ManualStrengthActivity(t *testing.T) {
 	if err := store.AutoMigrateWatch(t.Context()); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.AutoMigrateUserDeletionAudit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
@@ -103,6 +106,16 @@ func TestE2E_ManualStrengthActivity(t *testing.T) {
 			}},
 		},
 	}
+	deletedID := uuid.NewString()
+	now := time.Now().UTC()
+	if err := store.StartUserDeletionAudit(t.Context(), &storage.UserDeletionAudit{
+		ID: uuid.NewString(), UserID: deletedID, ActorID: deletedID,
+		Status: storage.DeletionStatusCompleted, StrideDeletedAt: &now, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	deletedRecord := "/api/" + deletedID + "/activities/manual-strength/" + uuid.NewString()
+	send(http.MethodPut, deletedRecord, harness.bearer(t, deletedID), write, http.StatusNotFound)
 	send(http.MethodGet, ownerRecord, nil, nil, http.StatusUnauthorized)
 	send(http.MethodPut, ownerRecord, otherAuth, write, http.StatusForbidden)
 	first := decodeRecord(send(http.MethodPut, ownerRecord, ownerAuth, write, http.StatusOK))

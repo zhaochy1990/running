@@ -116,6 +116,16 @@ func (s *Store) SaveManualStrength(ctx context.Context, userID, id string, write
 		if fence.Erased {
 			return ErrManualStrengthNotFound
 		}
+		// Also cover identities removed before the fence was deployed.
+		var priorDeletion UserDeletionAudit
+		err := tx.Select("id").Where("user_id = ? AND (auth_deleted_at IS NOT NULL OR stride_deleted_at IS NOT NULL OR status = ?)",
+			uid, DeletionStatusCompleted).Take(&priorDeletion).Error
+		if err == nil {
+			return ErrManualStrengthNotFound
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
 
 		if write.Revision == 0 && !startedAt.IsZero() {
 			first := ManualStrengthRecord{
@@ -130,7 +140,7 @@ func (s *Store) SaveManualStrength(ctx context.Context, userID, id string, write
 			}
 		}
 
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("user_id = ? AND id = ?", uid, id).Take(&record).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrManualStrengthNotFound

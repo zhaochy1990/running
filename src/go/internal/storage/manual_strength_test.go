@@ -12,6 +12,9 @@ import (
 func TestManualStrengthSaveRetriesAndPreservesTrainingWindow(t *testing.T) {
 	store := openWatchTestStore(t)
 	ctx := context.Background()
+	if err := store.AutoMigrateUserDeletionAudit(ctx); err != nil {
+		t.Fatal(err)
+	}
 	owner, other, id := uuid.NewString(), uuid.NewString(), uuid.NewString()
 	started := time.Date(2026, 3, 31, 15, 54, 0, 0, time.UTC)
 	initialEnd := started.Add(8 * time.Minute)
