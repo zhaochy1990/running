@@ -42,12 +42,19 @@
       <!-- 混排卡（#474/#475：官方计划 + 自定义比赛按比赛日合并，已结束沉底；后端排序，前端保序） -->
       <block wx:if="{{mixRows.length}}">
         <block wx:for="{{mixRows}}" wx:key="key">
-          <!-- 官方计划卡：已下架占位灰卡不可交互，常规卡可交互 -->
+          <!-- 官方计划卡：普通与已下架卡片都可从菜单停止追踪 -->
           <block wx:if="{{item.kind === 'official'}}">
             <view wx:if="{{item.plan.offboarded}}" class="plan plan--off">
               <view class="plan__head">
                 <view class="plan__name plan__name--dim">{{item.plan.name}}</view>
                 <text class="plan-badge plan-badge--off">已下架</text>
+                <view
+                  class="more-btn"
+                  aria-role="button"
+                  aria-label="{{item.plan.name}}的更多操作"
+                  data-key="{{item.key}}"
+                  catchtap="onMoreTap"
+                >⋯</view>
               </view>
               <view class="plan__meta plan__meta--dim">
                 <text>{{item.plan.dateLabel ? item.plan.dateLabel + ' · ' : ''}}{{item.plan.city ? item.plan.city + ' · ' : ''}}该赛事已被管理员下架，你的参赛记录保留</text>
@@ -60,6 +67,13 @@
                 <view class="plan__name" data-race-id="{{item.plan.raceId}}" bindtap="onRaceNameTap">{{item.plan.name}}</view>
                 <text class="plan-badge plan-badge--item">{{item.plan.itemLabel}}</text>
                 <text class="plan-badge plan-badge--state plan-badge--state--{{item.plan.state}}">{{item.plan.stateLabel}}</text>
+                <view
+                  class="more-btn"
+                  aria-role="button"
+                  aria-label="{{item.plan.name}}的更多操作"
+                  data-key="{{item.key}}"
+                  catchtap="onMoreTap"
+                >⋯</view>
               </view>
               <view class="plan__meta">
                 <text>{{item.plan.dateLabel}}{{item.plan.city ? ' · ' + item.plan.city : ''}}</text>
@@ -112,7 +126,13 @@
               <text class="plan-badge plan-badge--custom">自定义</text>
               <text class="plan-badge plan-badge--item">{{item.custom.badgeLabel}}</text>
               <text class="plan-badge plan-badge--state plan-badge--state--{{item.custom.done ? 'done' : item.custom.state}}">{{item.custom.stateLabel}}</text>
-              <view class="more-btn" data-key="{{item.key}}" catchtap="onMoreTap">⋯</view>
+              <view
+                class="more-btn"
+                aria-role="button"
+                aria-label="{{item.custom.name}}的更多操作"
+                data-key="{{item.key}}"
+                catchtap="onMoreTap"
+              >⋯</view>
             </view>
             <view class="plan__meta {{item.custom.done ? 'plan__meta--dim' : ''}}">
               <text>{{item.custom.metaLabel}}</text>
@@ -142,7 +162,7 @@
       </block>
 
       <!-- 空态 -->
-      <view wx:elif="{{!plansError}}" class="empty">
+      <view wx:elif="{{plansLoaded}}" class="empty">
         <view class="empty__icon">🗓</view>
         <view class="empty__title">还没有参赛计划</view>
         <view class="empty__hint">去赛事中心收藏心仪赛事，报名后在这里追踪进度</view>

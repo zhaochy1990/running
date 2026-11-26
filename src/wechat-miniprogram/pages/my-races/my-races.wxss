@@ -592,13 +592,15 @@
   background: rgba(var(--color-overlay-rgb), 0.06);
 }
 
-/* ··· 菜单：编辑 / 删除唯一入口（自定义名称不可点） */
+/* 卡片菜单：官方赛事停止追踪，自定义比赛编辑或删除 */
 .more-btn {
   flex-shrink: 0;
+  box-sizing: border-box;
+  min-width: 44rpx;
   padding: 0 8rpx;
   font-size: 30rpx;
-  line-height: 36rpx;
-  color: var(--color-text-muted);
+  line-height: 44rpx;
+  color: var(--color-text-bright);
   text-align: center;
 }
 

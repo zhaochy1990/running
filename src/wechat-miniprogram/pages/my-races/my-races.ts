@@ -8,7 +8,7 @@
 // 识别行「这不是这场比赛」二次确认后 DELETE 清除识别，行回落活动名。
 // 赛事数据走聚合端点 GET /api/users/me/my-races（services/custom-races，#474）：
 // official 项复用 toPlanCard 渲染官方计划卡（报名项目徽章 + 状态徽章 + 日期·城市 +
-// 相对比赛日文案 + 状态条 chips 流转 + 行程布尔勾选；offboarded 灰卡占位不可交互），
+// 相对比赛日文案 + 状态条 chips 流转 + 行程布尔勾选；普通卡与已下架灰卡均可停止追踪），
 // custom 项渲染自定义卡（#475：粉色「自定义」徽章 + 类型（距离）徽章，名称不可点、
 // 无详情页，状态 chips 想跑↔已报名点击切换，···菜单 = 编辑/删除；已结束派生 =
 // 灰化 + 「已经 N 天」+ 隐藏状态条）。混排视图变换在 utils/myRaceRows，配套自检。
@@ -29,7 +29,8 @@ import {
   type CustomRace,
   type CustomRaceState,
 } from '../../services/custom-races';
-import { upsertRacePlan, type RacePlanState } from '../../services/race-plans';
+import { deleteRacePlan, upsertRacePlan, type RacePlanState } from '../../services/race-plans';
+import { ApiError } from '../../services/request';
 import {
   customStatePatch,
   toMyRaceRows,
@@ -92,6 +93,7 @@ interface MyRacesPageData {
   summary: string;
   /** 我的赛事 tab */
   plansLoading: boolean;
+  plansLoaded: boolean;
   plansError: string;
   mixRows: MyRaceRow[];
 }
@@ -114,6 +116,7 @@ interface MyRacesPageHandlers {
   onMoreTap(e: WechatMiniprogram.TouchEvent): void;
   onGoListTap(): void;
   onBack(): void;
+  stopTrackingRace(key: string): Promise<void>;
   /** 物理删除一条自定义比赛（确认弹窗 → DELETE → 就地移除该行）。 */
   deleteCustom(key: string, id: number, name: string): Promise<void>;
   /** 成绩行长按菜单：未识别行手动命名/恢复活动名，自动识别行清除识别（#545）。 */
@@ -126,14 +129,16 @@ interface MyRacesPageHandlers {
   clearRaceMatch(labelId: string, raceName: string): Promise<void>;
   /** 就地更新一行成绩行（长按命名 / 清除识别后的本地同步）。 */
   patchResultRow(labelId: string, patch: Partial<RaceRow>): void;
-  /** 在飞的写请求（键=行 key → 乐观补丁）：防连点，并让并发读不打回乐观态 */
-  _inflight: Map<string, CardPatch>;
+  /** 正在操作的行。状态和行程更新带乐观补丁，停止追踪用 null 锁住同卡写入。 */
+  _inflight: Map<string, CardPatch | null>;
   /** 自定义比赛全字段（id → 聚合下发原行）：状态切换的 PUT 全量更新与编辑回显用 */
   _customById: Map<number, CustomRace>;
   /** 成绩行原始数据（label_id → 列表下发原行）：长按菜单的回显与本地回落名用 */
   _raceByLabel: Map<string, RaceItem>;
   /** 赛事请求序号，慢响应回来时发现自己已过期则丢弃（同 race-center._fetchSeq） */
   _fetchSeq: number;
+  /** 当前列表请求发出后已移除的计划，防止旧快照把卡片加回来。 */
+  _removedDuringRefresh: Set<string>;
   /** 成绩请求序号：onShow 与下拉刷新并发时丢弃慢的旧响应 */
   _resultsSeq: number;
 }
@@ -232,6 +237,7 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
   _customById: new Map(),
   _raceByLabel: new Map(),
   _fetchSeq: 0,
+  _removedDuringRefresh: new Set(),
   _resultsSeq: 0,
 
   data: {
@@ -244,6 +250,7 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
     rows: [],
     summary: '',
     plansLoading: true,
+    plansLoaded: false,
     plansError: '',
     mixRows: [],
   },
@@ -301,10 +308,11 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
 
   async refreshPlans() {
     if (!userStore.getState().user?.id) {
-      this.setData({ plansLoading: false, plansError: '请先登录' });
+      this.setData({ plansLoading: false, plansLoaded: false, plansError: '请先登录' });
       return;
     }
     const seq = (this._fetchSeq += 1);
+    this._removedDuringRefresh.clear();
     this.setData({ plansLoading: true, plansError: '' });
     try {
       const res = await fetchMyRaces();
@@ -314,11 +322,13 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
         if (item.source === 'custom' && item.race) this._customById.set(item.race.id, item.race);
       }
       // GET 若赶在 PUT 落库前返回，快照还是旧态：叠加在飞乐观补丁，不打回 UI
-      const rows = toMyRaceRows(res.items).map((row) => {
-        const patch = this._inflight.get(row.key);
-        return patch ? mergeRow(row, patch) : row;
-      });
-      this.setData({ plansLoading: false, mixRows: rows });
+      const rows = toMyRaceRows(res.items)
+        .filter((row) => !this._removedDuringRefresh.has(row.key))
+        .map((row) => {
+          const patch = this._inflight.get(row.key);
+          return patch ? mergeRow(row, patch) : row;
+        });
+      this.setData({ plansLoading: false, plansLoaded: true, mixRows: rows });
     } catch (err: unknown) {
       if (seq !== this._fetchSeq) return;
       const msg = friendlyApiError(err, '加载失败，请稍后重试');
@@ -418,11 +428,21 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
     wx.navigateTo({ url: '/pages/custom-race-form/custom-race-form' });
   },
 
-  /** 自定义卡「···」菜单：编辑（eventChannel 带全字段回显）/ 删除（确认后物理删除）。 */
+  /** 卡片「⋯」菜单：官方赛事停止追踪，自定义比赛编辑或删除。 */
   onMoreTap(e: WechatMiniprogram.TouchEvent) {
     const key = String(e.currentTarget.dataset.key);
     const row = this.data.mixRows.find((r) => r.key === key);
-    if (row?.kind !== 'custom') return;
+    if (!row) return;
+    if (row.kind === 'official') {
+      if (this._inflight.has(key)) return;
+      wx.showActionSheet({
+        itemList: ['不再追踪'],
+        success: ({ tapIndex }) => {
+          if (tapIndex === 0) void this.stopTrackingRace(key);
+        },
+      });
+      return;
+    }
     const card = row.custom;
     wx.showActionSheet({
       itemList: ['编辑', '删除'],
@@ -441,6 +461,37 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
         void this.deleteCustom(key, card.id, card.name);
       },
     });
+  },
+
+  async stopTrackingRace(key: string): Promise<void> {
+    const row = this.data.mixRows.find((item) => item.key === key);
+    if (row?.kind !== 'official' || this._inflight.has(key)) return;
+    const { name, raceId } = row.plan;
+    this._inflight.set(key, null);
+    try {
+      const res = await wx.showModal({
+        title: `不再追踪「${name}」？`,
+        content: '这会从「我的赛事」移除参赛计划，包括报名状态和行程勾选。',
+        cancelText: '保留追踪',
+        confirmText: '不再追踪',
+        confirmColor: theme.accentDeep,
+      });
+      if (!res.confirm) return;
+
+      await deleteRacePlan(raceId).catch((err: unknown) => {
+        if (!(err instanceof ApiError && err.statusCode === 404)) throw err;
+      });
+      if (this.data.plansLoading) this._removedDuringRefresh.add(key);
+      this.setData({
+        mixRows: this.data.mixRows.filter((row) => row.key !== key),
+        plansError: '',
+      });
+      wx.showToast({ title: '已取消追踪', icon: 'none' });
+    } catch {
+      wx.showToast({ title: '取消追踪失败，请重试', icon: 'none' });
+    } finally {
+      this._inflight.delete(key);
+    }
   },
 
   async deleteCustom(key: string, id: number, name: string): Promise<void> {
