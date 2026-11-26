@@ -200,169 +200,54 @@ type CheckResult =
 
 ## 4. 报告格式与界面状态
 
-报告是任务的只读汇总视图。页面和 JSON 导出读取同一份任务、冻结输入、Artifact 和 CheckResult。快照与产物可通过 SHA-256 核对完整性。报告记录实际运行的规则 ID 与版本。下例中，一位跑者产物通过 Schema 校验但规则不通过，另一位跑者生成超时。
+报告是任务的只读汇总视图。`GET /api/admin/plan-eval/tasks/{id}/report` 与详情读取同一份任务、冻结输入、Artifact 和 CheckResult，不读取当前场景、快照或 Deployment。Dashboard 使用管理员 Bearer/刷新流程下载 JSON Blob；下载失败可重试，不产生空文件。完整报告含脱敏训练历史，仅保存在授权的本机环境，不提交公开仓库。[首批导入与验收手册](../../plan-eval-first-batch.md)
+
+- `schema = plan-eval-report/v1`，`task_id` 与详情 `id` 相同；`agent_version` 固定为本次任务选择的版本。`status` 保留任务生命周期 `running/done`，`result` 单独表示 `running/pass/fail/error`，避免“已完成”等同“通过”。
+- 任务及 `scenarios[]` 的 `summary` 逐执行项计数 `pass/fail/error/running`。生成失败、Evaluate 阶段故障或任一规则执行错误记 error；Schema 或业务规则不通过记 fail；全部完成且通过记 pass。规则 error 优先于 fail；未结束的项记 running。多个失败规则只计一项。`executions[].result` 与页面/导出采用同一分类函数。
+- `executions[]` 记录执行项 ID、`scenario_id`、`snapshot_id`、`as_of`、Generate、Artifact、Evaluate 和 checks。`artifact.id` 关联原文；`checks[].check_id/version` 关联 `frozen_rules[]` 的 `TaskID/ScenarioID/CheckID/Version/Source`。Schema check 的 version=0 表示内建 SchemaCheck，非 JavaScript 发布版本；其结果亦留存。
+- `execution_inputs` 按执行项 ID 保存 `as_of`、`request_json`、`snapshot_json` 及两者的 SHA-256。JSON 正文存字符串，保证从下载文件解析后可按 UTF-8 原始字节复核摘要，而非依赖再次序列化对象的键序或转义方式。
+- `artifact_contents` 按 Artifact ID 保存原始字符串，即使不是合法 JSON 也保留；摘要和大小在 `executions[].artifact`。生成失败无产物；Schema 不通过仍有产物与 Schema 检查结果，两者均跳过业务 Evaluate。`evaluate.error` 保留跳过的生成错因或 `schema_invalid`。
+- `replicas/env_names` 取任务冻结的启动配置，报告不含环境变量值、加密凭据、提交者 token 或 worker 身份凭据。清理 Worker 仅释放该版本生成环境，不修改冻结输入与结果；终结任务在清理前后再次导出应为同一字节内容，报告不附每次导出的变化时钟。
+
+下例为报告的关联字段节选（完整文件另含冻结正文和规则源码）。一项 Schema 不通过，另一项必需历史缺测：
 
 ```json
 {
   "schema": "plan-eval-report/v1",
   "task_id": "task-001",
+  "id": "task-001",
   "agent_version": "example-v2",
-  "status": "error",
-  "summary": {"pass": 0, "fail": 1, "error": 1},
+  "status": "done",
+  "result": "error",
+  "summary": {"pass": 0, "fail": 1, "error": 1, "running": 0},
   "scenarios": [{
-    "scenario_id": "new-season",
-    "status": "error",
-    "summary": {"pass": 0, "fail": 1, "error": 1},
-    "inputs": [
-      {
-        "id": "input-a",
-        "snapshot_id": "297eea13-0966-4bab-9960-837919452738",
-        "status": "fail",
-        "generate": {"status": "pass", "artifact_id": "art-a", "artifact_type": "master_plan"},
-        "evaluate": {
-          "status": "fail",
-          "artifact_id": "art-a",
-          "checks": [{
-            "check_id": "weekly-run-days",
-            "check_version": 1,
-            "status": "fail",
-            "detail": {
-              "reason": "安排了 5 个跑步日，上限为 4 天。",
-              "violations": [{"week_name": "第 1 周", "expected": 4, "actual": 5}]
-            }
-          }]
-        }
-      },
-      {
-        "id": "input-b",
-        "snapshot_id": "42c1b52b-c092-40a7-b659-c4f927fe3cf3",
-        "status": "error",
-        "generate": {
-          "status": "error",
-          "artifact_id": null,
-          "error": {"code": "generation_model_timeout", "message": "生成模型调用超时。"}
-        },
-        "evaluate": {"status": "skipped", "artifact_id": null, "checks": []}
-      }
-    ]
-  }]
+    "id": "new-season",
+    "name": "新建赛季",
+    "artifact_type": "master_plan",
+    "snapshot_ids": ["snapshot-a", "snapshot-b"],
+    "rules": [{"id": "weekly_run_days", "version": 2}],
+    "result": "error",
+    "summary": {"pass": 0, "fail": 1, "error": 1, "running": 0}
+  }],
+  "executions": [
+    {
+      "id": "input-a", "scenario_id": "new-season", "snapshot_id": "snapshot-a", "result": "fail",
+      "generate": {"status": "done", "attempts": 1, "error": null},
+      "artifact": {"id": "art-a", "artifact_type": "master_plan", "schema_valid": false},
+      "evaluate": {"status": "skipped", "attempts": 0, "error": {"code": "schema_invalid", "message": "Artifact 未通过 Schema，跳过业务规则。"}},
+      "checks": [{"check_id": "schema", "version": 0, "status": "fail", "reason": "产物不是合法的 JSON 对象"}]
+    },
+    {
+      "id": "input-b", "scenario_id": "new-season", "snapshot_id": "snapshot-b", "result": "error",
+      "generate": {"status": "failed", "attempts": 1, "error": {"code": "snapshot_not_covered", "message": "必需历史未覆盖"}},
+      "artifact": null,
+      "evaluate": {"status": "skipped", "attempts": 0, "error": {"code": "snapshot_not_covered", "message": "必需历史未覆盖"}},
+      "checks": []
+    }
+  ],
+  "artifact_contents": {"art-a": "not valid JSON"}
 }
 ```
-
-`queued` 与 `running` 表示进行中。Generate 的无效产物记 `fail`，基础设施或模型故障记 `error`，两种情况的 Evaluate 均为 `skipped`。有效产物评分时，Evaluate 与 Generate 引用同一个 Artifact。执行项结束后，按 `error > fail > pass` 汇总，`skipped` 保留前序失败。场景按执行项计数，任务累加各场景计数。
-
-## 5. 场景引用与任务冻结
-
-提交任务时，API 将所选场景直接写入 `EvaluationTask.scenarios`。每项包含场景 ID、名称、产物类型和完整的规则版本配置。每份快照则创建独立的 SnapshotExecution，保存所属场景 ID、来源快照 ID、冻结快照内容、生成请求、执行时点和投递状态。Generate 读取该执行项的输入，Evaluate 通过 `task_id` 和 `scenario_id` 定位任务内的冻结规则。
-
-例如，一个场景绑定规则 v1 和快照 A。场景后来切换到 v2，测试数据也更新了快照 A。已提交的任务继续用 v1 的源码和旧快照，新提交的任务才读取更新后的引用和数据。两个场景同时引用快照 A 时，各创建一条执行项，分别使用所属场景的规则。
-
-```mermaid
-erDiagram
-    EvaluationRule {
-        string check_id PK "规则标识"
-        int version PK "规则版本"
-        string name "规则名称"
-        string description "多行说明，可选"
-        enum kind "规则类型"
-        json artifact_types "适用产物类型"
-        json implementation "语言、源码与配置"
-    }
-    Scenario {
-        string scenario_id PK "场景标识"
-        string name "场景名称"
-        string artifact_type "预期产物类型"
-        json snapshot_ids "测试数据 ID 列表"
-        json check_refs "规则 ID 与版本"
-    }
-    RunnerSnapshot {
-        string snapshot_id PK "随机 UUID"
-        string schema "快照格式版本"
-        string username "脱敏用户名"
-        enum generation_kind "新建或滚动"
-        date as_of_day "上海截止日"
-        string as_of "精确冻结时点，可选"
-        enum event "FM 或 HM"
-        string target_time "目标成绩"
-        int expected_start_week "仅验收，可选"
-        json constraints "训练约束"
-        json records "训练事实、赛季、已排周与完整课表"
-        string sha256 "快照摘要"
-    }
-    EvaluationTask {
-        string task_id PK "任务标识"
-        string agent_version "所选 Agent 版本"
-        json generation_model "生成模型配置"
-        enum state "任务状态"
-        json scenarios "场景与冻结规则实现"
-    }
-    SnapshotExecution {
-        string id PK "执行项标识"
-        string task_id FK "所属任务"
-        string scenario_id "任务内的场景"
-        string snapshot_id FK "来源测试数据"
-        json snapshot "冻结快照内容"
-        json request "冻结的生成请求"
-        datetime as_of "冻结执行时点"
-        enum dispatch_status "投递状态"
-        string execute_status "Generate 状态"
-        string evaluate_status "Evaluate 状态"
-        json error "阶段错误，可选"
-        json lease "持有者、claim_request_id、代次、期限"
-        json result_receipt "submit_id、内容指纹、持有者、代次与原确认"
-    }
-    Artifact {
-        string artifact_id PK "生成内容标识"
-        string input_id FK "唯一所属执行项"
-        string artifact_type "内容类型"
-        bytes content "Agent 输出原文"
-        string sha256 "产物摘要"
-        json validation "Schema 校验结果"
-    }
-    CheckResult {
-        string result_id PK "检查结果标识"
-        string artifact_id FK "被评 Artifact"
-        string check_id "实际执行的规则"
-        int check_version "实际执行的版本"
-        enum status "通过、不通过、错误"
-        json detail "理由、违反项或错误"
-    }
-    EvaluationRule }|..o{ Scenario : "引用规则版本"
-    Scenario }o..|{ RunnerSnapshot : "引用测试数据"
-    EvaluationTask }o..|{ Scenario : "冻结所选场景"
-    EvaluationTask ||--|{ SnapshotExecution : "包含执行项"
-    RunnerSnapshot ||--o{ SnapshotExecution : "提供冻结输入"
-    SnapshotExecution ||--o| Artifact : "生成"
-    Artifact ||--o{ CheckResult : "接受检查"
-```
-
-虚线表示保存在 JSON 中的引用。Scenario 的场景库配置引用规则版本和测试数据 ID。EvaluationTask 的场景列表保存提交时展开的规则，因此 CheckResult 的规则版本可从该任务回查。
-
-SnapshotExecution 以 `(task_id, scenario_id, snapshot_id)` 去重。每个执行项至多生成一份 Artifact，`Artifact.input_id` 唯一。CheckResult 按 `(artifact_id, check_id)` 去重，`check_version` 记录实际执行的版本。
-
-## 6. 实现验收
-
-| 场景 | 可验证结果 |
-|---|---|
-| 内部管理员通过现有 Admin Dashboard 登录 | 可通过「训练计划测评」进入任务、场景、测试数据和测评规则。测评 API 对普通用户和匿名请求拒绝访问 |
-| 用相同冻结输入试跑并批量运行同一条 JavaScript 规则 | 两个入口使用同一个隔离运行器与同一份 Check 接口，含时间判断的规则也基于同一冻结时点得到一致判定。超时或返回值不合法的规则记录执行错误，其余规则继续 |
-| 新建并试跑带多行说明的测评规则，从两个场景引用 v1 | 保存一份可复用的版本配置，两个场景均可选中该版本，打开版本详情可回读说明和实现 |
-| 修改规则并将其中一个场景切换到 v2 | 新任务分别读取两个场景选定的版本。在版本切换前已提交、尚未被 worker 领取的任务仍执行 v1 的冻结实现 |
-| 两个场景共用一份跑者快照 | 创建一个任务和分别归入两个场景的执行项。每项使用实际产物类型对应的请求及所属场景的检查 |
-| 新建和导入测试数据 | 每份数据自动获得一个随机 UUID。列表首列显示 ID 并可进入详情，随后独立展示用户名、项目、目标成绩、生成类型和数据截止日 |
-| 打开新建和滚动两类测试数据详情 | 两类都能查看目标、约束、数据截止日与历史覆盖。滚动额外展示 Provider 提供的计划、已排周记录和完整周课表，并独立标明规则预期起始周。可展开原始 JSON、编辑并通过原 ID 回读 |
-| 导入快照并加入场景，或编辑已引用数据 | 新任务使用当前快照和请求。历史任务的快照内容、请求和执行项数量可原样回读 |
-| 全选跨页场景后提交，再新增场景 | 已提交任务保留原场景清单。下次全选包含新增场景 |
-| 提交空清单、重复 ID、不适用的规则版本或无效引用 | API 返回具体配置错误，测评库无部分任务，worker 未启动 |
-| 网络重试和主动重测 | 相同幂等键及参数取回原任务。相同键、不同参数返回 409。主动重测创建新任务 |
-| 同一场景选择两个 Agent 版本分别测评 | 两个任务分别保存所选版本，worker 使用对应 Agent，报告可分别打开 |
-| 一份真实脱敏全马快照，生产数据服务不可达 | 从工作台发起任务，目标版本 worker 领取完整冻结数据包，多次取数来自同一快照，保存 Artifact 后开放固定规则检查 |
-| 发布确认丢失或版本 Deployment 启动失败 | 原任务可重试启动，任务与执行项 ID 稳定，确认完成的消息不再发布，确认丢失允许重投并复用已终结结果 |
-| 同版本已有运行或待启动的配置，提交不同环境变量 | 返回冲突，版本下的待投递执行项数量保持原值。留空时复用冻结配置，已有 worker 使用同一配置读取该版本的消息 |
-| 消息重投时上一份租约仍有效 | 投递保持未确认，worker 有界等待后再领取。只有接管成功后才继续生成，读取终态后确认消息 |
-| 保存成功但响应丢失，或 worker 退出后租约过期 | 重发同一提交只保存一份 Artifact。过期租约可被接管，旧租约的不同提交无法覆盖新结果 |
-| 生成超时或产物 Schema 校验失败 | 本项跳过 Evaluate，保留错误或无效 Artifact 原文，其他快照正常继续 |
-| 一条规则不通过或出错，或者 Artifact 保存后 worker 中断 | 保留逐项理由、预期和实际值或错误，其他规则继续。接管只恢复未完成的检查 |
 
 ### 调度/恢复上线与隔离验证（devops#1061）
 
@@ -381,6 +266,7 @@ SnapshotExecution 以 `(task_id, scenario_id, snapshot_id)` 去重。每个执�
 | 接口 | 行为 |
 | --- | --- |
 | `GET/POST /scenarios`、`GET/PUT /scenarios/{id}` | 场景名称、`artifact_type`、`snapshot_ids`、`rules: [{id, version}]`；新建分配 UUID，保存/提交验证所有引用 |
+| `GET /tasks/{id}/report` | `plan-eval-report/v1`；任务/场景汇总、冻结请求与快照原文及 SHA-256、Artifact 原文、规则版本与结果；仅管理员可下载，生成环境清理后仍可读 |
 | `GET/POST /snapshots`、`GET/PUT /snapshots/{id}` | RunnerSnapshot/v1 完整 JSON；新建/导入忽略文件 ID 并分配 UUID，编辑保留路径 ID；列表只读摘要列 |
 | `POST /request-preview` | `{artifact_type, snapshot_id, request}` → 只读 `{request, as_of}`，与提交共用校验与组装，不写入任务 |
 | `GET /rules` | 已发布规则只读列表；规则发布/试跑归 #1057 |

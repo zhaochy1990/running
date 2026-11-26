@@ -188,6 +188,16 @@ func (s *Service) Router(adminAuth gin.HandlerFunc, adminID func(*gin.Context) s
 	admin.POST("/tasks", func(c *gin.Context) { s.handleCreateTask(c, adminID(c)) })
 	admin.GET("/tasks", s.handleListTasks)
 	admin.GET("/tasks/:id", s.handleTaskDetail)
+	admin.GET("/tasks/:id/report", func(c *gin.Context) {
+		report, err := s.TaskReport(c.Request.Context(), c.Param("id"))
+		if err != nil {
+			writeError(c, err)
+			return
+		}
+		c.Header("Cache-Control", "no-store")
+		c.Header("Content-Disposition", `attachment; filename="plan-eval-`+report.TaskID+`.json"`)
+		c.JSON(http.StatusOK, report)
+	})
 	admin.GET("/tasks/:id/executions/:execution_id/input", func(c *gin.Context) {
 		input, e := s.ExecutionInput(c.Request.Context(), c.Param("id"), c.Param("execution_id"))
 		if e != nil {

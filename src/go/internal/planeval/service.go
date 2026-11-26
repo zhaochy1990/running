@@ -168,6 +168,7 @@ type ArtifactView struct {
 }
 
 type ExecutionView struct {
+	Result       string            `json:"result"`
 	ID           string            `json:"id"`
 	ScenarioID   string            `json:"scenario_id"`
 	AsOf         string            `json:"as_of"`
@@ -180,9 +181,11 @@ type ExecutionView struct {
 }
 
 type ExecutionInputView struct {
-	AsOf     string          `json:"as_of"`
-	Request  json.RawMessage `json:"request"`
-	Snapshot json.RawMessage `json:"snapshot"`
+	AsOf           string          `json:"as_of"`
+	Request        json.RawMessage `json:"request"`
+	Snapshot       json.RawMessage `json:"snapshot"`
+	RequestSHA256  string          `json:"request_sha256"`
+	SnapshotSHA256 string          `json:"snapshot_sha256"`
 }
 
 type CheckResultView struct {
@@ -196,8 +199,10 @@ type CheckResultView struct {
 
 type TaskDetailView struct {
 	TaskView
+	Result      string                       `json:"result"`
+	Summary     ResultSummary                `json:"summary"`
 	Scenario    ScenarioView                 `json:"scenario"`
-	Scenarios   []ScenarioView               `json:"scenarios"`
+	Scenarios   []ScenarioResultView         `json:"scenarios"`
 	FrozenRules []storage.PlanEvalFrozenRule `json:"frozen_rules"`
 	Executions  []ExecutionView              `json:"executions"`
 }
@@ -794,7 +799,7 @@ func (s *Service) TaskDetail(ctx context.Context, id string) (*TaskDetailView, *
 	if err != nil {
 		return nil, s.internal(err)
 	}
-	detail := &TaskDetailView{TaskView: summary[0], Scenario: scenarios[0], Scenarios: scenarios, FrozenRules: rules, Executions: make([]ExecutionView, 0, len(executions))}
+	detail := &TaskDetailView{TaskView: summary[0], Scenario: scenarios[0], FrozenRules: rules, Executions: make([]ExecutionView, 0, len(executions))}
 	for _, execution := range executions {
 		view := ExecutionView{
 			ID: execution.ID, ScenarioID: execution.ScenarioID, SnapshotID: execution.SnapshotID,
@@ -813,8 +818,17 @@ func (s *Service) TaskDetail(ctx context.Context, id string) (*TaskDetailView, *
 				view.Checks = []CheckResultView{}
 			}
 		}
+		if view.Evaluate.Status == storage.PlanEvalEvaluateSkipped {
+			if view.Generate.Error != nil {
+				view.Evaluate.Error = view.Generate.Error
+			} else {
+				view.Evaluate.Error = &StageError{Code: "schema_invalid", Message: "Artifact 未通过 Schema，跳过业务规则。"}
+			}
+		}
+		view.Result = executionResult(view)
 		detail.Executions = append(detail.Executions, view)
 	}
+	detail.summarize(scenarios)
 	return detail, nil
 }
 
@@ -829,6 +843,7 @@ func (s *Service) ExecutionInput(ctx context.Context, taskID, executionID string
 	}
 	return &ExecutionInputView{
 		AsOf: execution.AsOf, Request: json.RawMessage(execution.RequestJSON), Snapshot: json.RawMessage(execution.SnapshotJSON),
+		RequestSHA256: documentSHA256(execution.RequestJSON), SnapshotSHA256: documentSHA256(execution.SnapshotJSON),
 	}, nil
 }
 

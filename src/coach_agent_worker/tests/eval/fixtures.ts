@@ -1,4 +1,6 @@
-import { type RunnerSnapshot, RunnerSnapshotSchema } from "@stride/coach-agent";
+import { masterPlanToContent, type RunnerSnapshot, RunnerSnapshotSchema } from "@stride/coach-agent";
+import { createTestCompletedOutcomeV3, createTestWeeklyPlanDoc } from "@stride/coach-agent/test-fixtures";
+import { addDays, type WeeklyPlan, WeeklyPlanSchema, weekFolder } from "@stride/contract";
 import { encodeExecutionMessage } from "../../src/eval/codec.js";
 import type { ClaimResponse, ExecutionInput, GenerateReceipt } from "../../src/eval/protocol.js";
 
@@ -136,3 +138,50 @@ export const receipt: GenerateReceipt = {
   received_at: "2026-11-24T00:00:00.000Z",
 };
 export const leased = (epoch = 1): ClaimResponse => ({ status: "leased", lease_epoch: epoch, lease_expires_at: "2026-11-24T00:01:00.000Z", input });
+
+export function weekDoc(week: number): WeeklyPlan {
+  const old = createTestWeeklyPlanDoc(week);
+  const dateFrom = addDays("2026-10-05", (week - 1) * 7);
+  const shifted = JSON.stringify(old).replace(/2026-\d{2}-\d{2}/g, (day) => addDays(day, 56));
+  return WeeklyPlanSchema.parse({ ...JSON.parse(shifted), week_name: weekFolder(dateFrom) });
+}
+
+export function rollingSnapshot(lastWeek: number, event: "FM" | "HM" = "FM") {
+  const { artifact } = createTestCompletedOutcomeV3({ totalWeeks: 10 });
+  const content = masterPlanToContent(
+    {
+      ...artifact.plan,
+      start_date: "2026-10-05",
+      end_date: "2026-12-13",
+      goal: { ...artifact.plan.goal, distance: event, target_time: event === "HM" ? "1:20:00" : "2:55:00", race_date: "2026-12-13" },
+    },
+    "plan-eval-season",
+    { weekly_run_days_max: 6 },
+  );
+  Object.assign(content, {
+    master_plan_id: "plan-eval-season",
+    policy: artifact.policy,
+    skeleton: artifact.skeleton,
+    anchor: artifact.anchor,
+    weekly_docs: [],
+  });
+  const snapshot = createSnapshot();
+  return RunnerSnapshotSchema.parse({
+    ...snapshot,
+    generation_kind: lastWeek === 2 ? "rolling_catch_up" : "rolling_continue",
+    event,
+    as_of_day: "2026-10-26",
+    as_of: "2026-10-26T08:00:00+08:00",
+    expected_start_week: 99,
+    records: {
+      ...snapshot.records,
+      active_master_plan: { planId: "plan-eval-season", revision: 1, status: "active", content },
+      weekly_plan_weeks: Array.from({ length: lastWeek }, (_, i) => ({
+        week_start: addDays("2026-10-05", i * 7),
+        master_plan_id: "plan-eval-season",
+        revision: 1,
+      })),
+      weekly_plans: Array.from({ length: lastWeek }, (_, i) => ({ week_start: addDays("2026-10-05", i * 7), content: weekDoc(i + 1) })),
+    },
+  });
+}
