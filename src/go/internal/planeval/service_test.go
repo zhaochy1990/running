@@ -813,40 +813,75 @@ func TestPlanEval_StampRequestUsesArtifactClock(t *testing.T) {
 	}
 }
 
-func TestHTTP_OmittedReplicasDifferFromExplicitOne(t *testing.T) {
+func TestHTTP_ReplicaConflictPreservesEffectiveConfigAndReplay(t *testing.T) {
 	h := openHarness(t)
 	ctx := context.Background()
-	if _, _, err := h.svc.CreateTask(ctx, "admin-1", uuid.NewString(), CreateTaskRequest{AgentVersion: h.version, Replicas: 3}); err != nil {
+	const path = adminPrefix + "/tasks"
+	const secret = "sk-replica-conflict-test"
+	body := h.createBody([2]string{"MODEL_KEY", secret})
+	body["replicas"] = 3
+	key := map[string]string{"Idempotency-Key": uuid.NewString()}
+	created := h.admin("POST", path, body, key)
+	if created.status != http.StatusCreated || h.json(created)["replicas"] != float64(3) {
+		t.Fatalf("initial explicit config: %d %s", created.status, created.body)
+	}
+	taskID := h.json(created)["id"].(string)
+	scalePath := adminPrefix + "/agent-versions/" + h.version + "/scale"
+	if scaled := h.admin("POST", scalePath, map[string]int{"replicas": 1}, nil); scaled.status != http.StatusOK {
+		t.Fatalf("scale: %d %s", scaled.status, scaled.body)
+	}
+	before, err := h.svc.store.PlanEvalLaunchConfigForVersion(ctx, h.version)
+	if err != nil {
 		t.Fatal(err)
 	}
-	key := uuid.NewString()
-	view, _, err := h.svc.CreateTask(ctx, "admin-1", key, CreateTaskRequest{AgentVersion: h.version})
-	if err != nil || view.Replicas != 3 {
-		t.Fatalf("omitted replicas: %+v %v", view, err)
+	const otherSecret = "sk-other-replica-conflict-test"
+	for _, conflicting := range []map[string]any{h.createBody(), h.createBody([2]string{"MODEL_KEY", otherSecret})} {
+		conflictKey := map[string]string{"Idempotency-Key": uuid.NewString()}
+		conflicting["replicas"] = 2
+		res := h.admin("POST", path, conflicting, conflictKey)
+		if res.status != http.StatusConflict || h.json(res)["error"] != "launch_config_conflict" {
+			t.Fatalf("explicit replicas conflict: %d %s", res.status, res.body)
+		}
+		detail := h.json(res)["detail"].(string)
+		if !strings.Contains(detail, "1") || !strings.Contains(detail, "2") || !strings.Contains(detail, "副本") ||
+			bytes.Contains(res.body, []byte(secret)) || bytes.Contains(res.body, []byte(otherSecret)) {
+			t.Fatalf("unsafe or unreadable numeric conflict: %s", res.body)
+		}
+		if _, err := h.svc.store.FindPlanEvalTaskByKey(ctx, "admin-1", conflictKey["Idempotency-Key"]); !errors.Is(err, storage.ErrPlanEvalNotFound) {
+			t.Fatalf("conflict persisted a task: %v", err)
+		}
 	}
-	if _, _, err := h.svc.CreateTask(ctx, "admin-1", key, CreateTaskRequest{AgentVersion: h.version, Replicas: 1}); err == nil || err.Code != "idempotency_conflict" {
-		t.Fatalf("changed params replayed: %v", err)
+	after, err := h.svc.store.PlanEvalLaunchConfigForVersion(ctx, h.version)
+	if err != nil || after.Replicas != 1 || after.RuntimeRevision != before.RuntimeRevision || !after.UpdatedAt.Equal(before.UpdatedAt) || len(h.broker.queues[QueueName(h.version)]) != 1 || len(h.deployer.ensured) != 2 {
+		t.Fatalf("conflict changed config or launched work: %+v (%v)", after, err)
+	}
+	// The original explicit count replays its frozen task after scale.
+	replay := h.admin("POST", path, body, key)
+	if replay.status != http.StatusOK || h.json(replay)["id"] != taskID || h.json(replay)["replicas"] != float64(3) || len(h.broker.queues[QueueName(h.version)]) != 1 || len(h.deployer.ensured) != 2 {
+		t.Fatalf("same-key replay after scale: %d %s", replay.status, replay.body)
+	}
+	// Both omission and zero inherit; an explicit matching count is accepted.
+	for _, replicas := range []any{nil, 0, 1} {
+		body := h.createBody()
+		if replicas != nil {
+			body["replicas"] = replicas
+		}
+		key := map[string]string{"Idempotency-Key": uuid.NewString()}
+		accepted := h.admin("POST", path, body, key)
+		if accepted.status != http.StatusCreated || h.json(accepted)["replicas"] != float64(1) || h.json(accepted)["env_names"].([]any)[0] != "MODEL_KEY" {
+			t.Fatalf("inherited or matching config: %d %s", accepted.status, accepted.body)
+		}
+		if replicas == nil {
+			body["replicas"] = 1
+			conflict := h.admin("POST", path, body, key)
+			if conflict.status != http.StatusConflict || h.json(conflict)["error"] != "idempotency_conflict" {
+				t.Fatalf("changed omitted replicas replayed: %d %s", conflict.status, conflict.body)
+			}
+		}
 	}
 }
 
 func TestHTTP_ReplaysHistoricalSingleScenarioFingerprintsBeforeReadingSource(t *testing.T) {
-	h := openHarness(t)
-	ctx := context.Background()
-	const path = adminPrefix + "/tasks"
-	preset, err := h.svc.store.GetPlanEvalScenario(ctx, PresetScenarioID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	invalid := *preset
-	invalid.SnapshotIDs = `["unavailable-source"]`
-	if err := h.svc.store.UpsertPlanEvalScenario(ctx, &invalid); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := h.svc.store.UpsertPlanEvalScenario(ctx, preset); err != nil {
-			t.Error(err)
-		}
-	})
 	for _, tc := range []struct {
 		name, prefix                string
 		hashedReplicas, launchCount int
@@ -856,6 +891,24 @@ func TestHTTP_ReplaysHistoricalSingleScenarioFingerprintsBeforeReadingSource(t *
 		{"v2", "v2:", 0, 3, http.StatusConflict},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			h := openHarness(t)
+			ctx := context.Background()
+			const path = adminPrefix + "/tasks"
+			preset, err := h.svc.store.GetPlanEvalScenario(ctx, PresetScenarioID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			invalid := *preset
+			invalid.SnapshotIDs = `["unavailable-source"]`
+			if err := h.svc.store.UpsertPlanEvalScenario(ctx, &invalid); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := h.svc.store.UpsertPlanEvalScenario(ctx, preset); err != nil {
+					t.Error(err)
+				}
+			})
+
 			// Use the exact wire layout of each historical writer.
 			payload := fmt.Sprintf(`{"agent_version":%q,"scenario_id":%q,"replicas":%d,"env":{}}`, h.version, PresetScenarioID, tc.hashedReplicas)
 			key := uuid.NewString()

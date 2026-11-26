@@ -83,8 +83,7 @@ func TestPlanEval_CreateTask_IdempotencyAndLaunchConfig(t *testing.T) {
 		t.Fatalf("unexpected error type %T", err)
 	}
 
-	// Same version and variable names: the launch configuration is shared and
-	// its replicas follow the latest request.
+	// Same version and launch parameters: the configuration is shared.
 	shared, _, err := st.CreatePlanEvalTask(ctx, newPlanEvalTaskCreate(version, `["A"]`, 1))
 	if err != nil {
 		t.Fatalf("shared launch: %v", err)
@@ -92,26 +91,61 @@ func TestPlanEval_CreateTask_IdempotencyAndLaunchConfig(t *testing.T) {
 	if shared.LaunchConfigID != first.LaunchConfigID {
 		t.Fatal("the same version created a second launch configuration")
 	}
-	scaled := newPlanEvalTaskCreate(version, `["A"]`, 1)
-	scaled.LaunchConfig.Replicas = 4
-	if _, _, err := st.CreatePlanEvalTask(ctx, scaled); err != nil {
+	// Only the independent scale entry changes the shared replica count.
+	if _, err := st.SetPlanEvalReplicas(ctx, version, 4); err != nil {
 		t.Fatal(err)
 	}
-	if launch, err := st.GetPlanEvalLaunchConfig(ctx, first.LaunchConfigID); err != nil || launch.Replicas != 4 {
-		t.Fatalf("launch config = %+v (%v), want replicas 4", launch, err)
+	before, err := st.GetPlanEvalLaunchConfig(ctx, first.LaunchConfigID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, replicas := range []int{1, 2, 5} {
+		conflicting := newPlanEvalTaskCreate(version, `[]`, 2)
+		conflicting.LaunchConfig.Replicas = replicas
+		conflicting.FrozenRules = []*PlanEvalFrozenRule{{CheckID: "rule", Version: 1}}
+		_, _, err := st.CreatePlanEvalTask(ctx, conflicting)
+		var conflict *PlanEvalLaunchConfigConflictError
+		if !errors.As(err, &conflict) || conflict.ExistingReplicas != 4 || conflict.RequestedReplicas != replicas {
+			t.Fatalf("replicas %d: want conflict with effective 4, got %v", replicas, err)
+		}
+		for _, model := range []any{&PlanEvalTask{}, &PlanEvalExecution{}, &PlanEvalFrozenRule{}} {
+			var leaked int64
+			column := "task_id"
+			if _, ok := model.(*PlanEvalTask); ok {
+				column = "id"
+			}
+			if err := st.db.Model(model).Where(column+" = ?", conflicting.Task.ID).Count(&leaked).Error; err != nil || leaked != 0 {
+				t.Fatalf("refused task leaked %T rows: %d (%v)", model, leaked, err)
+			}
+		}
+	}
+	after, err := st.GetPlanEvalLaunchConfig(ctx, first.LaunchConfigID)
+	if err != nil || after.Replicas != before.Replicas || after.RuntimeRevision != before.RuntimeRevision || !after.UpdatedAt.Equal(before.UpdatedAt) {
+		t.Fatalf("conflict changed the effective config: %+v (%v)", after, err)
+	}
+	// Original parameters still replay after an independent scale.
+	again, replayed, err = st.CreatePlanEvalTask(ctx, sameKey)
+	if err != nil || !replayed || again.ID != first.ID || again.LaunchReplicas != 1 {
+		t.Fatalf("replay after scale: %+v replayed=%v (%v)", again, replayed, err)
+	}
+	inherited := newPlanEvalTaskCreate(version, `[]`, 1)
+	inherited.LaunchConfig.Replicas = 0
+	blank, _, err := st.CreatePlanEvalTask(ctx, inherited)
+	if err != nil || blank.LaunchReplicas != 4 || blank.LaunchConfigID != first.LaunchConfigID || blank.LaunchEnvNames != `["A"]` {
+		t.Fatalf("blank config did not inherit: %+v (%v)", blank, err)
 	}
 
-	// Same version, different variable names: the whole batch is refused and
-	// nothing is left behind.
-	if _, _, err := st.CreatePlanEvalTask(ctx, newPlanEvalTaskCreate(version, `["A","B"]`, 1)); err == nil {
+	// Explicit environment conflicts still refuse the whole batch.
+	conflictingEnv := newPlanEvalTaskCreate(version, `["A","B"]`, 1)
+	conflictingEnv.LaunchConfig.Replicas = 4
+	if _, _, err := st.CreatePlanEvalTask(ctx, conflictingEnv); err == nil {
 		t.Fatal("a conflicting launch configuration was accepted")
 	} else if conflict, ok := err.(*PlanEvalLaunchConfigConflictError); !ok || conflict.Error() == "" {
 		t.Fatalf("unexpected error %T %v", err, err)
 	}
-	var leaked int64
-	st.db.Model(&PlanEvalTask{}).Where("agent_version = ?", version).Count(&leaked)
-	if leaked != 3 {
-		t.Fatalf("tasks on the version = %d, want 3 (two created + the scaled one)", leaked)
+	var tasks int64
+	if err := st.db.Model(&PlanEvalTask{}).Where("agent_version = ?", version).Count(&tasks).Error; err != nil || tasks != 3 {
+		t.Fatalf("tasks on the version = %d, want 3 (%v)", tasks, err)
 	}
 }
 
