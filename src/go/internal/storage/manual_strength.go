@@ -2,6 +2,8 @@ package storage
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"time"
 
@@ -44,6 +46,25 @@ type ManualStrengthRecord struct {
 
 func (ManualStrengthRecord) TableName() string { return "manual_strength_records" }
 
+// The fence serializes saves with account erasure even for athletes without a
+// saved record yet. After erasure only the digest and denial bit are retained.
+type manualStrengthWriteFence struct {
+	SubjectDigest string `gorm:"column:subject_digest;type:char(64);primaryKey"`
+	Erased        bool   `gorm:"column:erased;not null"`
+}
+
+func (manualStrengthWriteFence) TableName() string { return "manual_strength_write_fences" }
+
+func manualStrengthOwnerDigest(userID string) string {
+	digest := sha256.Sum256([]byte("manual-strength:" + userID))
+	return hex.EncodeToString(digest[:])
+}
+
+func revokeManualStrengthWrites(tx *gorm.DB, userID string) error {
+	fence := manualStrengthWriteFence{SubjectDigest: manualStrengthOwnerDigest(userID), Erased: true}
+	return tx.Clauses(clause.OnConflict{DoUpdates: clause.AssignmentColumns([]string{"erased"})}).Create(&fence).Error
+}
+
 type ManualStrengthWrite struct {
 	MutationID string
 	Revision   int
@@ -84,6 +105,18 @@ func (s *Store) SaveManualStrength(ctx context.Context, userID, id string, write
 		endedAt = startedAt
 	}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		fence := manualStrengthWriteFence{SubjectDigest: manualStrengthOwnerDigest(uid)}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&fence).Error; err != nil {
+			return err
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("erased").Where("subject_digest = ?", fence.SubjectDigest).Take(&fence).Error; err != nil {
+			return err
+		}
+		if fence.Erased {
+			return ErrManualStrengthNotFound
+		}
+
 		if write.Revision == 0 && !startedAt.IsZero() {
 			first := ManualStrengthRecord{
 				ID: id, UserID: uid, StartedAt: startedAt, EndedAt: endedAt,
