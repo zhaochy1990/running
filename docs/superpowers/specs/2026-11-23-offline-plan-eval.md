@@ -384,7 +384,7 @@ SnapshotExecution 以 `(task_id, scenario_id, snapshot_id)` 去重。每个执�
 | `GET/POST /snapshots`、`GET/PUT /snapshots/{id}` | RunnerSnapshot/v1 完整 JSON；新建/导入忽略文件 ID 并分配 UUID，编辑保留路径 ID；列表只读摘要列 |
 | `POST /request-preview` | `{artifact_type, snapshot_id, request}` → 只读 `{request, as_of}`，与提交共用校验与组装，不写入任务 |
 | `GET /rules` | 已发布规则只读列表；规则发布/试跑归 #1057 |
-| `POST /tasks` | 新增 `scenario_ids` 明确清单；`[]` 拒绝，省略兼容旧 preset 单样本客户端；幂等键在读取可变引用前查重 |
+| `POST /tasks` | 新增 `scenario_ids` 明确清单；`[]` 拒绝，省略兼容旧 preset 单样本客户端。幂等键在读取可变引用前查重 |
 | `GET /tasks/{id}` | `scenarios`、按 `scenario_id` 归属的执行状态、冻结时点与 `frozen_rules`；保留旧 `scenario` 首项字段 |
 | `GET /tasks/{id}/executions/{execution_id}/input` | 读取该任务执行项的冻结 `snapshot`、`request` 与 `as_of`，由详情展开时按需请求 |
 
@@ -393,5 +393,7 @@ SnapshotExecution 以 `(task_id, scenario_id, snapshot_id)` 去重。每个执�
 滚动输入另要求 `records.active_master_plan`、`records.weekly_plan_weeks` 和 `records.weekly_plans`。赛季计划须覆盖上海截止日，跑步可用度明细须符合滚动生成契约。已排周记录须有同日起始的完整周课表。两个集合的空数组表示已记录但无数据。`expected_start_week` 仅供详情及检查使用。
 
 独立测评库启动时由 AutoMigrate 增加 `plan_eval_tasks.scenarios_json`、`plan_eval_frozen_rules.scenario_id` 与 `plan_eval_executions.snapshot_name`。新任务在原事务中冻结场景清单、快照、请求、场景规则和脱敏跑者名。同一任务内各场景共用同一份快照内容。已有单样本任务兼容空规则归属和历史幂等参数指纹，并从原始冻结快照展示跑者名。preset 仅首次初始化。
+
+新任务的 v3 指纹按排序后的场景清单计算。省略副本数的请求沿用版本配置，重放时仍以原请求的省略值计算指纹。旧单场景 v1 指纹按默认副本数 1 匹配，v2 指纹保留省略值。
 
 验收：本地原生依赖（独立 MySQL + API HTTP 契约、Dashboard 组件）覆盖复用快照、编辑后冻结回读、领取、错误引用整批拒绝、跨分页全选。真实 RabbitMQ/目标镜像/模型的两场景批次及首批八份由 master 在第一波全部合并后统一 E2E；本票不操作共享栈或生产 pin 审批。
