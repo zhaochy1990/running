@@ -271,7 +271,7 @@ dialog::backdrop { background: #2227278a; }
 .log-amount, .log-set-actions { display: flex; align-items: center; min-width: 0; }
 .log-amount { gap: 3px; }
 .log-copy img { width: 17px; height: 17px; }
-.log-set-actions .icon-button:hover { background: transparent; color: var(--accent-dark); }
+.log-set-actions .icon-button:is(:hover, :active) { background: var(--sunken); color: var(--accent-dark); }
 .log-set-actions .icon-button:focus-visible { outline-offset: -2px; }
 .manual-form .log-set :is(input, select) {
   min-height: 44px;

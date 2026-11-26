@@ -202,9 +202,15 @@ ${escape(exercise.note)}</textarea>
     return null;
   }
 
-  function clearError() {
-    app.screen.querySelector('#manual-error').textContent = '';
+  function clearError(field) {
     const annotated = app.screen.querySelector('[aria-describedby="manual-error"]');
+    if (field && field !== annotated) {
+      const removesUnit = field.dataset.logField === 'loadUnit' && field.value === '';
+      const sameRowLoad = annotated?.dataset.logField === 'load' &&
+        annotated.closest('[data-log-row]') === field.closest('[data-log-row]');
+      if (!removesUnit || !sameRowLoad) return;
+    }
+    app.screen.querySelector('#manual-error').textContent = '';
     annotated?.removeAttribute('aria-invalid');
     annotated?.removeAttribute('aria-describedby');
   }
@@ -258,7 +264,7 @@ ${escape(exercise.note)}</textarea>
     const row = rowOf(field, exercise);
     const entry = row || exercise || draft();
     entry[key] = field.value;
-    clearError();
+    clearError(field);
   }
 
   function click(event) {
