@@ -245,11 +245,6 @@ func generationRequest(artifactType, document, template string) (string, string,
 		if !rollingPlanCoversDay(content, snapshot.Day) {
 			return "", "", fail(422, "invalid_input", "records.active_master_plan.content.start_date/end_date/phases: 赛季须覆盖上海数据截止日 "+snapshot.Day)
 		}
-		goal := content["goal"].(map[string]any)
-		if goal["target_time"] == "finish_only" {
-			return "", "", fail(422, "invalid_input", "records.active_master_plan.content.goal.target_time: 滚动需要目标成绩")
-		}
-
 		rollingID := snapshot.Records.Active.ID
 		if id, ok := content["master_plan_id"].(string); ok && id != "" {
 			rollingID = id

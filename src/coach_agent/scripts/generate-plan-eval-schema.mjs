@@ -17,7 +17,10 @@ const rollingMaster = z
   .object({
     start_date: z.iso.date(),
     total_weeks: z.int().positive(),
-    goal: MasterPlanLenientSchema.shape.goal.omit({ timezone: true }).extend({ race_name: z.string().min(1), target_time: z.string().min(1) }),
+    goal: MasterPlanLenientSchema.shape.goal.omit({ timezone: true }).extend({
+      race_name: z.string().min(1),
+      target_time: RunnerSnapshotSchema.shape.target_time.unwrap(),
+    }),
     availability: AvailabilityDetailSchema.omit({ max_session_duration_min: true })
       .extend({ weekly_run_days_max: MasterPlanAvailabilitySchema.shape.weekly_run_days_max })
       .loose(),

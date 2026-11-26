@@ -983,7 +983,7 @@ func TestHTTP_BatchFreezesSharedSnapshotAndScenarioRules(t *testing.T) {
 	}
 }
 
-func TestHTTP_RejectsBatchWhenRollingPlanNoLongerCoversCutoff(t *testing.T) {
+func TestHTTP_RejectsBatchWithInvalidRollingInputs(t *testing.T) {
 	h := openHarness(t)
 	doc, content := testRollingSnapshot(t)
 	res := h.admin("POST", adminPrefix+"/snapshots", doc, nil)
@@ -998,27 +998,41 @@ func TestHTTP_RejectsBatchWhenRollingPlanNoLongerCoversCutoff(t *testing.T) {
 		t.Fatalf("save scenario: %d %s", scene.status, scene.body)
 	}
 	sceneID := h.json(scene)["id"].(string)
-	content["end_date"] = "2026-10-22"
-	if res := h.admin("PUT", adminPrefix+"/snapshots/"+snapshotID, doc, nil); res.status != 200 {
-		t.Fatalf("edit source snapshot: %d %s", res.status, res.body)
-	}
-	const path = "records.active_master_plan.content.start_date/end_date/phases"
-	preview := h.admin("POST", adminPrefix+"/request-preview", map[string]any{
-		"artifact_type": "weekly_plan_batch", "snapshot_id": snapshotID,
-	}, nil)
-	if preview.status != 422 || !bytes.Contains(preview.body, []byte(path)) {
-		t.Fatalf("preview accepted expired plan: %d %s", preview.status, preview.body)
-	}
-	body := h.createBody()
-	body["scenario_ids"] = []string{PresetScenarioID, sceneID}
-	submit := h.admin("POST", adminPrefix+"/tasks", body, map[string]string{"Idempotency-Key": uuid.NewString()})
-	for _, want := range []string{sceneID, snapshotID, path} {
-		if submit.status != 422 || !bytes.Contains(submit.body, []byte(want)) {
-			t.Fatalf("submit must identify invalid reference at %q: %d %s", want, submit.status, submit.body)
-		}
-	}
-	if len(h.broker.queues[QueueName(h.version)]) != 0 {
-		t.Fatal("invalid batch was dispatched")
+	for _, tc := range []struct {
+		name, endDate, targetTime, path string
+	}{
+		{"expired plan", "2026-10-22", "1:59:59", "records.active_master_plan.content.start_date/end_date/phases"},
+		{"unparseable goal", "2026-11-29", "abc", "at '/goal/target_time'"},
+		{"finish-only goal", "2026-11-29", "finish_only", "at '/goal/target_time'"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			content["end_date"] = tc.endDate
+			content["goal"].(map[string]any)["target_time"] = tc.targetTime
+			if res := h.admin("PUT", adminPrefix+"/snapshots/"+snapshotID, doc, nil); res.status != 200 {
+				t.Fatalf("edit source snapshot: %d %s", res.status, res.body)
+			}
+			preview := h.admin("POST", adminPrefix+"/request-preview", map[string]any{
+				"artifact_type": "weekly_plan_batch", "snapshot_id": snapshotID,
+			}, nil)
+			if preview.status != 422 || !bytes.Contains(preview.body, []byte(tc.path)) {
+				t.Fatalf("preview did not identify %q: %d %s", tc.path, preview.status, preview.body)
+			}
+			body := h.createBody()
+			body["scenario_ids"] = []string{PresetScenarioID, sceneID}
+			key := uuid.NewString()
+			submit := h.admin("POST", adminPrefix+"/tasks", body, map[string]string{"Idempotency-Key": key})
+			for _, want := range []string{sceneID, snapshotID, tc.path} {
+				if submit.status != 422 || !bytes.Contains(submit.body, []byte(want)) {
+					t.Fatalf("submit must identify invalid reference at %q: %d %s", want, submit.status, submit.body)
+				}
+			}
+			if _, err := h.svc.store.FindPlanEvalTaskByKey(context.Background(), "admin-1", key); !errors.Is(err, storage.ErrPlanEvalNotFound) {
+				t.Fatalf("invalid submission must leave no task, lookup error: %v", err)
+			}
+			if len(h.broker.queues[QueueName(h.version)]) != 0 {
+				t.Fatal("invalid batch was dispatched")
+			}
+		})
 	}
 }
 
