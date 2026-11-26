@@ -23,7 +23,7 @@ export interface DataProvider {
   /** 统一训练安排投影（devops#586 三源：weekly/custom/watch active 行），供教练查询某天该练什么。 */
   getPlanSessions(userId: string, dateFrom: string, dateTo: string): Promise<DaySessionRow[]>;
   getRaceTarget(userId: string): Promise<RaceTarget | null>;
-  /** 一场赛事的内容聚合（race_calendar + items + race_city_content），供比赛策略；赛事不存在返回 null。 */
+  /** 赛事问答和比赛策略共用的赛历详情，赛事不存在或未发布时返回 null。 */
   getRaceCalendarContext(raceEventId: number): Promise<RaceCalendarContext | null>;
   /** 已发布赛历检索（devops#812，QA 只读列表）；日期窗缺省 = asofDate 起 90 天。 */
   searchRaceCalendar(options: RaceCalendarSearchQuery): Promise<RaceCalendarSummary[]>;
@@ -282,7 +282,7 @@ export interface ActiveMasterPlanMetadata {
 export type MasterPlanDocument = Record<string, unknown>;
 export type WeeklyPlanDocument = Record<string, unknown>;
 
-/** ── 比赛策略上下文（race_calendar / race_calendar_item / race_city_content 镜像）── */
+/** ── 赛事问答与比赛策略的赛历上下文 ── */
 
 /** storage.RaceElevationPoint 镜像：赛道剖面采样点。 */
 export interface RaceElevationPoint {
