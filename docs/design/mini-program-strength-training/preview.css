@@ -232,10 +232,11 @@ dialog::backdrop { background: #2227278a; }
   padding: 7px 9px;
 }
 .manual-form textarea { display: block; resize: vertical; }
-.manual-form :is(input,select,textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.manual-form [aria-invalid="true"] { border-color: var(--accent); }
+.manual-form :is(input, select, textarea):focus { outline: none; }
 .manual-form ::placeholder { color: var(--muted); opacity: 1; }
+.manual-form :focus::placeholder { opacity: 0; }
 .log-title-field > span { margin-bottom: 0; }
+.log-title-field:focus-within > span { opacity: 0; }
 .manual-form .log-title-field input {
   min-height: 40px;
   border: 0;
@@ -294,10 +295,6 @@ dialog::backdrop { background: #2227278a; }
   text-align: center;
   font-size: 13px;
 }
-.manual-form .log-set :is(input, select):focus-visible { outline-offset: -2px; border-radius: 5px; }
-.manual-form .log-set > input:is(:focus, [aria-invalid="true"]),
-.log-set > .log-unit:focus-within,
-.log-amount:is(:focus-within, :has([aria-invalid="true"])) { box-shadow: inset 0 -1px var(--accent); }
 .log-unit { display: block; position: relative; min-width: 0; }
 .log-unit::after {
   content: "";
@@ -312,6 +309,7 @@ dialog::backdrop { background: #2227278a; }
   pointer-events: none;
 }
 .manual-form .log-unit select { appearance: none; padding-inline: 3px 16px; }
+.manual-form .log-unit select:focus-visible { box-shadow: inset 0 -1px var(--muted); }
 .log-amount .log-unit { flex: 0 0 38px; }
 .log-remove { color: var(--muted); }
 .log-exercise-footer { margin-top: 8px; }
