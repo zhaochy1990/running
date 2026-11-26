@@ -5,9 +5,10 @@ import { type CoachAgentConfig, getAgentConfig } from "../config/config.js";
 import type { DataProvider } from "../data/dataProvider.js";
 import type { ActivityFeelWriter } from "../tools/feel.js";
 import type { RaceTargetBindingGateway } from "../tools/raceStrategyContext.js";
-import { getAgentNode } from "./agents.js";
+import { getAgentNode, makeAgentNode } from "./agents.js";
 import { withLangfuseInvokeTracing } from "./langfuse.js";
 import { AgentsState } from "./state.js";
+import { getStrengthReviewAgent } from "./strengthReview.js";
 import { createTrainingNode } from "./training/agent.js";
 
 export { CoachContext, type CoachToolRuntime } from "./context.js";
@@ -40,6 +41,7 @@ export async function createCoachAgent(dataProvider: DataProvider, config: Coach
   logger.info(`creating orchestrator with model ${orchestratorConfig.name} (${orchestratorConfig.model})`);
   // training 节点在 turn 内同步跑 deepagent 版 generate-master-plan agent。
   const trainingNode = createTrainingNode(dataProvider, config);
+  const strengthReview = getStrengthReviewAgent(dataProvider, getAgentConfig(config, "qa"));
 
   const graph = new StateGraph(AgentsState)
     .addNode("orchestrator", getAgentNode("orchestrator", config, dataProvider), {
@@ -50,11 +52,16 @@ export async function createCoachAgent(dataProvider: DataProvider, config: Coach
     .addNode("race_strategy", getAgentNode("race_strategy", config, dataProvider, undefined, options.raceTargetGateway))
     .addNode("custom_workout", getAgentNode("custom_workout", config, dataProvider))
     .addNode("workout_manage", getAgentNode("workout_manage", config, dataProvider))
-    .addEdge(START, "orchestrator")
+    .addNode("strength_review", makeAgentNode(strengthReview))
+    .addConditionalEdges(START, (_state, invocation) => (invocation?.context?.strengthReviewRecordId ? "strength_review" : "orchestrator"), [
+      "strength_review",
+      "orchestrator",
+    ])
     .addEdge("training", END)
     .addEdge("race_strategy", END)
     .addEdge("custom_workout", END)
     .addEdge("workout_manage", END)
+    .addEdge("strength_review", END)
     .compile({
       checkpointer: options.checkpointer ?? new MemorySaver(),
       store: options.store ?? new InMemoryStore(),

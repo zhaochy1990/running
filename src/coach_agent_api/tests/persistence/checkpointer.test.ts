@@ -170,23 +170,26 @@ test("an interrupt checkpoint recovers the needs-input response", async () => {
 });
 
 test("listThreadsForUser groups by thread prefix and returns first-user-message previews", async () => {
+  const previewReads: string[] = [];
   const latest = checkpoint([
     { type: "human", content: '{"message":"最近状态怎么样？"}' },
     { type: "ai", content: "训练状态稳定。" },
   ]);
   const pool = {
-    async query(sql: string) {
+    async query(sql: string, args: string[]) {
       // Group-by listing query (has GROUP BY / MAX(created_at)).
       if (sql.includes("GROUP BY thread_id")) {
         return [
           [
             { thread_id: "athlete-1:coach:session-2", updated_at: "2026-05-10T09:00:00+08:00" },
+            { thread_id: "athlete-1:coach:Manual-strength-4bc80c96-0415-4bdc-bf17-83a919154594", updated_at: "2026-05-10T08:00:00+08:00" },
             { thread_id: "athlete-1:coach:session-1", updated_at: "2026-05-09T09:00:00+08:00" },
           ],
         ];
       }
       // Per-thread getTuple: return the latest checkpoint row.
       if (sql.includes("ORDER BY checkpoint_id DESC LIMIT 1")) {
+        previewReads.push(args[0] ?? "");
         return [
           [
             {
@@ -207,4 +210,5 @@ test("listThreadsForUser groups by thread prefix and returns first-user-message 
     { sessionId: "session-2", updatedAt: "2026-05-10T09:00:00+08:00", preview: "最近状态怎么样？" },
     { sessionId: "session-1", updatedAt: "2026-05-09T09:00:00+08:00", preview: "最近状态怎么样？" },
   ]);
+  assert.deepEqual(previewReads, ["athlete-1:coach:session-2", "athlete-1:coach:session-1"]);
 });

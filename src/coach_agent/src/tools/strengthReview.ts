@@ -1,8 +1,8 @@
 import { isAIMessage, isHumanMessage, isToolMessage } from "@langchain/core/messages";
-import { addDays, shanghaiIso } from "@stride/contract";
+import { addDays, shanghaiDay, shanghaiIso } from "@stride/contract";
 import * as z from "zod";
 import type { CoachToolRuntime } from "../agents/coachAgent.js";
-import type { DataProvider, StrengthRecordSummary } from "../data/dataProvider.js";
+import type { Activity, DataProvider, ManualStrengthRecord, StrengthRecordSummary, WatchStrengthSummary } from "../data/dataProvider.js";
 import { defineCoachTool } from "./common.js";
 
 const reviewSchema = z.object({
@@ -23,7 +23,16 @@ function candidate(record: StrengthRecordSummary) {
   return { id: record.id, name: record.name, startedAt: shanghaiIso(record.startedAt) };
 }
 
-const TOOL_NAME = "get_strength_training_review";
+function manualEvidence(record: ManualStrengthRecord, scope: ReviewScope) {
+  return {
+    status: "found",
+    source: "manual",
+    scope,
+    record: { ...candidate(record), endedAt: shanghaiIso(record.endedAt), note: record.note, actions: record.actions },
+  };
+}
+
+export const STRENGTH_REVIEW_TOOL_NAME = "get_strength_training_review";
 const LATEST_REQUEST = /(?:最近|最后|最新)(?:的|做的)?(?:一|这|那)次|上一次|most recent|latest|last (?:session|workout)/i;
 const ORDINAL = /第\s*([一二三四五六七八九十]|\d{1,2})\s*条/g;
 const CHANGE_RECORD = /另(?:外)?(?:一|那)(?:条|次|场)|换(?:一|另)?(?:条|次|场)|别的(?:一)?(?:条|次|场)|(?:other|another) (?:record|workout|session)/i;
@@ -91,6 +100,11 @@ function readEvidence(content: unknown): PriorEvidence | undefined {
   }
 }
 
+export function isFoundManualStrengthEvidence(content: unknown): boolean {
+  const evidence = readEvidence(content);
+  return evidence?.status === "found" && evidence.source === "manual" && evidence.record !== undefined;
+}
+
 function readConversation(state: unknown): { userText: string; priorEvidence?: PriorEvidence; activeStrengthReview?: boolean } {
   if (typeof state !== "object" || state === null || !("messages" in state) || !Array.isArray(state.messages)) return { userText: "" };
   const messages = state.messages;
@@ -98,12 +112,12 @@ function readConversation(state: unknown): { userText: string; priorEvidence?: P
   if (userIndex < 0) return { userText: "" };
   const previousTurn = messages.slice(0, userIndex);
   const previousUserIndex = previousTurn.findLastIndex(isHumanMessage);
-  const isStrengthReview = (message: unknown) => isToolMessage(message) && message.name === TOOL_NAME;
+  const isStrengthReview = (message: unknown) => isToolMessage(message) && message.name === STRENGTH_REVIEW_TOOL_NAME;
   const previousReview = previousTurn.slice(previousUserIndex + 1).findLast(isStrengthReview);
   const currentTurn = messages.slice(userIndex + 1);
   const currentToolCalls = currentTurn.findLast(isAIMessage)?.tool_calls;
   const activeStrengthReview =
-    currentToolCalls?.some((call: { name: string }) => call.name === TOOL_NAME) ||
+    currentToolCalls?.some((call: { name: string }) => call.name === STRENGTH_REVIEW_TOOL_NAME) ||
     currentTurn.some((message) => isStrengthReview(message) && readEvidence(message.content)?.source === "manual");
   let userText = messages[userIndex].text;
   try {
@@ -124,13 +138,7 @@ export function useDedicatedStrengthReview(state: unknown): boolean {
   return activeStrengthReview === true || /手录|自由力量|力量.*复盘|复盘.*力量|manual strength|review.*strength/i.test(userText);
 }
 
-function clearDay(userText: string, asof: string): string | undefined {
-  if (
-    /(?:从|自).{1,24}(?:到|至)|到.{1,12}为止|截至|截止|(?:过去|最近|近)[零一二三四五六七八九十两\d]+天|(?:本|这|上)周(?![一二三四五六日天])|\bbetween\b|\bthrough\b|\bthis week\b|\blast week\b/i.test(
-      userText,
-    )
-  )
-    return undefined;
+function mentionedDays(userText: string, asof: string): Set<string> {
   const days = new Set<string>();
   for (const match of userText.matchAll(/(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/g)) {
     if (z.iso.date().safeParse(match[0]).success) days.add(match[0]);
@@ -147,8 +155,19 @@ function clearDay(userText: string, asof: string): string | undefined {
     if (/day before yesterday/i.test(userText)) days.delete(addDays(asof, -1));
     days.add(addDays(asof, -2));
   }
-  if (days.size === 1) return [...days][0];
-  return undefined;
+  return days;
+}
+
+function clearDay(userText: string, asof: string): string | undefined {
+  if (
+    /(?:从|自).{1,24}(?:到|至)|到.{1,12}为止|截至|截止|(?:过去|最近|近)[零一二三四五六七八九十两\d]+天|(?:本|这|上)周(?![一二三四五六日天])|\bbetween\b|\bthrough\b|\bthis week\b|\blast week\b/i.test(
+      userText,
+    )
+  ) {
+    return undefined;
+  }
+  const days = mentionedDays(userText, asof);
+  return days.size === 1 ? [...days][0] : undefined;
 }
 
 function references(record: StrengthRecordSummary): string[] {
@@ -182,6 +201,14 @@ function includesReference(text: string, reference: string): boolean {
   return false;
 }
 
+function includesWatchId(text: string, id: string): boolean {
+  const labelCharacter = /[A-Za-z0-9_:-]/;
+  for (let index = text.indexOf(id); index !== -1; index = text.indexOf(id, index + id.length)) {
+    if (!labelCharacter.test(text.charAt(index - 1)) && !labelCharacter.test(text.charAt(index + id.length))) return true;
+  }
+  return false;
+}
+
 function explicitlyMentions(record: StrengthRecordSummary, text: string): boolean {
   return references(record).some((reference) => {
     if (reference === record.name?.trim() && /^(?:\d{4}-\d{2}-\d{2}\s*)?(?:自由)?力量训练$/.test(reference)) {
@@ -207,38 +234,68 @@ function affirmedWatchClauses(text: string, reference: string): string[] {
   return referenceClauses.filter((clause) => WATCH_REQUEST.test(clause));
 }
 
-async function watchSupplement(store: DataProvider, userId: string, startDay: string, endDay: string, reference: string | undefined, userText: string) {
-  if (reference === undefined) return {};
-  // The model may choose its next tool call, but it cannot grant itself the
-  // right to pick an overlapping watch record on the athlete's behalf.
-  const clauses = affirmedWatchClauses(userText, reference);
-  if (clauses.length === 0) return { watchSupplementStatus: "needs_explicit_reference" };
-  const watches = await store.getWatchStrengthSummaries(userId, startDay, endDay);
-  const matches = watches.filter((record) => references(record).includes(reference));
-  const selected = matches.length === 1 ? matches[0] : undefined;
-  if (!selected) return { watchSupplementStatus: matches.length === 0 ? "missing" : "ambiguous" };
-  // Requiring a single reference in the affirmative clause prevents a model
-  // from substituting another activity mentioned parenthetically in that clause.
-  const competingReference = watches.some(
-    (record) => record !== selected && references(record).some((value) => clauses.some((clause) => includesReference(clause, value))),
-  );
-  if (competingReference) return { watchSupplementStatus: "ambiguous" };
-  const detail = await store.getActivityDetail(userId, selected.id, { includeKilometerSplits: false });
-  if (!detail) return { watchSupplementStatus: "missing" };
+function watchEvidence(record: WatchStrengthSummary, detail: Activity) {
   return {
     watchHeartRate: {
-      ...candidate(selected),
+      ...candidate(record),
       source: "watch",
-      provider: selected.provider,
+      provider: record.provider,
       avgHr: detail.avgHr,
       maxHr: detail.maxHr,
     },
   };
 }
 
+async function watchSupplement(
+  store: DataProvider,
+  userId: string,
+  scope: ReviewScope,
+  reference: string | undefined,
+  userText: string,
+  anchoredAsOf?: string,
+) {
+  if (reference === undefined) return {};
+  // The model may choose its next tool call, but it cannot grant itself the
+  // right to pick an overlapping watch record on the athlete's behalf.
+  const clauses = affirmedWatchClauses(userText, reference);
+  if (clauses.length === 0) return { watchSupplementStatus: "needs_explicit_reference" };
+  const affirmedText = clauses.join("\n");
+  if (anchoredAsOf && mentionedDays(affirmedText, anchoredAsOf).size > 1) {
+    return { watchSupplementStatus: "ambiguous" };
+  }
+  // The manual record remains anchored. An explicitly dated watch request
+  // can identify the user's device record outside that manual interval.
+  const namedDay = anchoredAsOf ? (clearDay(reference, anchoredAsOf) ?? clearDay(affirmedText, anchoredAsOf)) : undefined;
+  const watches = await store.getWatchStrengthSummaries(userId, namedDay ?? scope.startDay, namedDay ?? scope.endDay);
+  const matches = watches.filter((record) => references(record).includes(reference));
+  const selected = matches.length === 1 ? matches[0] : undefined;
+  if (matches.length > 1) return { watchSupplementStatus: "ambiguous" };
+  // A short time embedded in the selected full timestamp is not a second
+  // reference. A separately mentioned alias still identifies another record.
+  const remainingClauses = clauses.map((clause) => clause.replaceAll(reference, " "));
+  const competingReference = watches.some(
+    (record) => record !== selected && references(record).some((value) => remainingClauses.some((clause) => includesReference(clause, value))),
+  );
+  if (competingReference) return { watchSupplementStatus: "ambiguous" };
+  if (selected) {
+    if (selected.id === reference && !clauses.some((clause) => includesWatchId(clause, reference))) {
+      return { watchSupplementStatus: "needs_explicit_reference" };
+    }
+    const detail = await store.getActivityDetail(userId, selected.id, { includeKilometerSplits: false });
+    return detail ? watchEvidence(selected, detail) : { watchSupplementStatus: "missing" };
+  }
+  if (anchoredAsOf && clauses.some((clause) => includesWatchId(clause, reference))) {
+    const detail = await store.getActivityDetail(userId, reference, { includeKilometerSplits: false });
+    if (detail?.isStrength && detail.labelId === reference && (!namedDay || detail.shanghaiDay === namedDay)) {
+      return watchEvidence({ id: detail.labelId, name: detail.name, startedAt: detail.date, provider: detail.provider }, detail);
+    }
+  }
+  return { watchSupplementStatus: "missing" };
+}
+
 export function createStrengthReviewTool(store: DataProvider) {
   return defineCoachTool({
-    name: TOOL_NAME,
+    name: STRENGTH_REVIEW_TOOL_NAME,
     description:
       "复盘已完成的力量训练。按用户提到的上海日期范围查找本人记录，优先手动记录。返回 ambiguous 时请用户选一条，不能猜；只有手录缺失才使用手表数据。缺失的次数、负重、心率保留未知。",
     schema: reviewSchema,
@@ -249,6 +306,16 @@ export function createStrengthReviewTool(store: DataProvider) {
       const asof = runtime.context.asof;
       if (!asof) throw new Error("get_strength_training_review: missing asof in runtime context");
       const { userText, priorEvidence } = readConversation(runtime.state);
+      if (runtime.context.strengthReviewRecordId) {
+        const record = await store.getManualStrengthDetail(userId, runtime.context.strengthReviewRecordId);
+        if (!record) return { status: "missing", source: "manual" };
+        const startDay = shanghaiDay(record.startedAt);
+        const endDay = shanghaiDay(record.endedAt);
+        return {
+          ...manualEvidence(record, { startDay, endDay }),
+          ...(await watchSupplement(store, userId, { startDay, endDay }, input.watchReference, userText, asof)),
+        };
+      }
       const namedDay = clearDay(userText, asof);
       if (input.latest && !LATEST_REQUEST.test(userText)) return { status: "scope_mismatch", ...(namedDay ? { expectedDay: namedDay } : {}) };
       const inheritedScope = !namedDay && input.recordId && priorEvidence?.record?.id === input.recordId ? priorEvidence.scope : undefined;
@@ -265,11 +332,8 @@ export function createStrengthReviewTool(store: DataProvider) {
         const detail = await store.getManualStrengthDetail(userId, selected.id);
         if (!detail) return { status: "missing", source: "manual" };
         return {
-          status: "found",
-          source: "manual",
-          scope,
-          record: { ...candidate(detail), endedAt: shanghaiIso(detail.endedAt), note: detail.note, actions: detail.actions },
-          ...(await watchSupplement(store, userId, startDay, endDay, input.watchReference, userText)),
+          ...manualEvidence(detail, scope),
+          ...(await watchSupplement(store, userId, scope, input.watchReference, userText)),
         };
       }
 

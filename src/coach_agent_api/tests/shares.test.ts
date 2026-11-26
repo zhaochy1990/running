@@ -105,6 +105,16 @@ async function postShare(app: ReturnType<typeof createApp>, body: unknown, sessi
 
 const wxacodeUrl = "https://cos.example.com/wxacode/abc.png";
 
+test("a private manual strength review cannot create a public share", async () => {
+  const store = new FakeShareStore();
+  const app = shareApp({ store });
+  for (const prefix of ["manual-strength-", "Manual-strength-"]) {
+    const response = await postShare(app, { indices: [0] }, prefix + "4bc80c96-0415-4bdc-bf17-83a919154594");
+    assert.equal(response.status, 404);
+  }
+  assert.equal(store.rows.size, 0);
+});
+
 function wxacodeClient(counter: { calls: number }, url: string | null = wxacodeUrl): WxacodeClient {
   return {
     async generate() {

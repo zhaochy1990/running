@@ -5,6 +5,7 @@ import { requestId } from "hono/request-id";
 import { type AuthEnv, createAuthMiddleware, createInternalTokenMiddleware, createOptionalAuthMiddleware, type JwtVerifier } from "./auth.js";
 import type { CoachInvoker } from "./coach/coachInvoker.js";
 import type { RollingScanRunner } from "./coach/rollingScan.js";
+import type { StrengthReviewRecords } from "./coach/strengthReviewSession.js";
 import type { CoachDataDeleter } from "./persistence/deletion.js";
 import type { LotteryFunnelStore } from "./persistence/lotteryFunnel.js";
 import type { LotteryStaffStore } from "./persistence/lotteryStaff.js";
@@ -36,6 +37,7 @@ export interface AppDependencies {
   turnCoordinator?: TurnCoordinator;
   /** When provided, chat turns fall back to the thread-persisted race target (#891). */
   threadRaceTargets?: RaceTargetBindingGateway;
+  strengthReviewRecords?: StrengthReviewRecords;
   /** When provided, exposes per-session conversation history (GET .../sessions/{id}/messages). */
   checkpointer?: ThreadHistoryReader;
   /** When provided, exposes the deterministic plan-job enqueue/poll endpoints. */
@@ -86,6 +88,7 @@ export function createApp(dependencies: AppDependencies): Hono<AuthEnv> {
   });
 
   const turnCoordinator = dependencies.turnCoordinator ?? createInMemoryTurnCoordinator();
+  const strengthReview = dependencies.strengthReviewRecords ? { strengthReviewRecords: dependencies.strengthReviewRecords } : {};
 
   registerHealthRoutes(app);
   registerSwaggerRoutes(app);
@@ -105,6 +108,7 @@ export function createApp(dependencies: AppDependencies): Hono<AuthEnv> {
   registerChatRoutes(app, {
     coach: dependencies.coachInvoker,
     turnCoordinator,
+    ...strengthReview,
     ...(dependencies.threadRaceTargets ? { raceTargets: dependencies.threadRaceTargets } : {}),
   });
 
@@ -127,7 +131,7 @@ export function createApp(dependencies: AppDependencies): Hono<AuthEnv> {
     app.use("/api/users/me/coach/sessions/*", createAuthMiddleware(dependencies.jwtVerifier));
     app.use("/api/users/me/coach/sessions", createAuthMiddleware(dependencies.jwtVerifier));
     registerSessionListRoutes(app, { checkpointer: dependencies.checkpointer as unknown as ThreadSessionReader });
-    registerHistoryRoutes(app, { checkpointer: dependencies.checkpointer });
+    registerHistoryRoutes(app, { checkpointer: dependencies.checkpointer, ...strengthReview });
     // 分享创建落在同一 auth 前缀内（#715）：投影需要 checkpointer，二者同源。
     if (dependencies.coachShares) {
       registerShareCreateRoute(app, {

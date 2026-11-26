@@ -3,11 +3,14 @@
        选择模式下标题切「已选 N 条」（#717，退出走底栏取消） -->
   <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
     <view class="top-bar__inner">
-      <view class="top-bar__btn" bindtap="onMenuTap">
+      <view wx:if="{{strengthReviewRecordId}}" class="top-bar__btn" bindtap="onStrengthReviewBack" aria-label="返回训练记录">
+        <image class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+      </view>
+      <view wx:else class="top-bar__btn" bindtap="onMenuTap">
         <image class="top-bar__icon" src="/assets/icons/menu.svg" mode="aspectFit" />
       </view>
       <view class="top-bar__title-wrap">
-        <view class="top-bar__title">{{selectMode ? '已选 ' + selectCount + ' 条' : '教练'}}</view>
+        <view class="top-bar__title">{{selectMode ? '已选 ' + selectCount + ' 条' : (strengthReviewRecordId ? '训练复盘' : '教练')}}</view>
         <!-- AI 生成内容标识（微信审核要求：AI 生成页面需显著说明） -->
         <view class="top-bar__subtitle">内容由 AI 生成，仅供参考</view>
       </view>
@@ -21,7 +24,7 @@
     <!-- 上下文提示条：首页「和教练聊一聊」移交训练上下文时显示；右侧 × 清除 target -->
     <view wx:if="{{contextHint}}" class="coach-context-hint">
       <text class="coach-context-hint__text">{{contextHint}}</text>
-      <view class="coach-context-hint__close" bindtap="onClearContext" aria-label="不再围绕该训练对话">
+      <view class="coach-context-hint__close" bindtap="onClearContext" aria-label="{{strengthReviewRecordId ? '退出训练复盘' : '不再围绕该训练对话'}}">
         <text class="coach-context-hint__close-icon">×</text>
       </view>
     </view>
@@ -173,6 +176,7 @@
         class="coach-input__field"
         value="{{input}}"
         maxlength="5000"
+        disabled="{{!!strengthReviewRecordId && !strengthReviewReady}}"
         placeholder="问问教练…"
         placeholder-class="coach-input__placeholder"
         auto-height="{{true}}"
@@ -185,7 +189,7 @@
         bindinput="onInput"
       />
       <view
-        class="coach-input__send {{sending ? 'coach-input__send--disabled' : ''}}"
+        class="coach-input__send {{sending || (strengthReviewRecordId && !strengthReviewReady) ? 'coach-input__send--disabled' : ''}}"
         bindtap="onSend"
       >发送</view>
     </view>

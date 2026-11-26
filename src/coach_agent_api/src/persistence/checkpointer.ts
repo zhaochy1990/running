@@ -21,6 +21,7 @@ import type {
 } from "@stride/coach-agent";
 import { BaseCheckpointSaver, copyCheckpoint, getCheckpointId, WRITES_IDX_MAP } from "@stride/coach-agent";
 import type { Pool, RowDataPacket } from "mysql2/promise";
+import { isStrengthReviewSession } from "../coach/strengthReviewSession.js";
 import { toPublicHistory, tryToPublicResponse } from "../publicResponse.js";
 import type { TurnRecovery } from "../turn/receiptStore.js";
 
@@ -60,7 +61,7 @@ export class MySqlSaver extends BaseCheckpointSaver {
   }
 
   /**
-   * List every coach thread belonging to a user, newest first, with a preview
+   * List a user's regular coach threads, newest first, with a preview
    * derived from the thread's first user message and the latest checkpoint time.
    *
    * Threads are stored as `{user}:coach:{session_id}`. Grouping on that prefix
@@ -82,7 +83,7 @@ export class MySqlSaver extends BaseCheckpointSaver {
     for (const row of rows) {
       const threadId = row.thread_id as string;
       const sessionId = threadId.slice(prefix.length);
-      if (!sessionId) continue;
+      if (!sessionId || isStrengthReviewSession(sessionId)) continue;
       let preview = "";
       const tuple = await this.getTuple({ configurable: { thread_id: threadId } });
       const messages = tuple?.checkpoint?.channel_values?.messages;

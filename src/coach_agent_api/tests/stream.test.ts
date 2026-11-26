@@ -49,6 +49,35 @@ function eventsFrom(chunks: Array<[string, unknown]>): AsyncIterable<readonly [s
   })();
 }
 
+test("a failed stream after the latest question does not reuse the previous reply", async () => {
+  const failure = new Error("model failed");
+  const events = (async function* () {
+    yield valuesChunk({ messages: [ai("旧回复"), { type: "human", content: "新问题" }] });
+    throw failure;
+  })();
+  await assert.rejects(collectCoachStream(source(events), async () => {}), (error) => error === failure);
+});
+
+test("only the strength review model subnode streams review text", async () => {
+  const reviewModel = { langgraph_node: "model_request", langgraph_checkpoint_ns: "strength_review:first|model_request:second" };
+  const reviewTool = { langgraph_node: "tools", langgraph_checkpoint_ns: "strength_review:first|tools:second" };
+  const evidence = JSON.stringify({ status: "found", source: "manual", scope: { startDay: "2026-11-26", endDay: "2026-11-26" }, record: { id: "record" } });
+  const events = eventsFrom([
+    msgChunk(ai("内部结构化内容"), { langgraph_node: "model_request", langgraph_checkpoint_ns: "training:first|model_request:second" }),
+    msgChunk(ai("旧数据猜测"), reviewModel),
+    msgChunk({ ...toolResult("malformed"), content: "Tool argument invalid" }, reviewTool),
+    msgChunk(ai("错误工具调用后猜测"), reviewModel),
+    msgChunk({ ...toolResult("valid"), content: evidence }, reviewTool),
+    msgChunk(ai("本次复盘"), reviewModel),
+    valuesChunk({ messages: [ai("本次复盘")] }),
+  ]);
+  const deltas: string[] = [];
+  await collectCoachStream(source(events), async (event) => {
+    if (event.kind === "text_delta") deltas.push(event.delta);
+  });
+  assert.deepEqual(deltas, ["本次复盘"]);
+});
+
 interface SseEvent {
   event: string;
   data: Record<string, unknown>;

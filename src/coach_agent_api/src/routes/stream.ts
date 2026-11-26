@@ -23,9 +23,10 @@
  * a `values` chunk on the same stream, so the run must be drained to completion
  * before `done` is built — a partial snapshot has no reply message.
  */
+import { isFoundManualStrengthEvidence } from "@stride/coach-agent";
 import { getLogger } from "@stride/common";
 import type { CoachStreamSource } from "../coach/coachInvoker.js";
-import { toPublicResponse } from "../publicResponse.js";
+import { toPublicResponse, tryToPublicResponse } from "../publicResponse.js";
 
 const logger = getLogger("routes/stream");
 
@@ -63,18 +64,19 @@ interface StatusPhases {
  * stream is authoritative: the last `values` chunk is the final state, so we
  * drain until it ends rather than bounding the wait — bounding it yields a
  * partial state with no reply and turns a slow-but-successful turn into an
- * error. A rejecting iterable is non-fatal only if a state was already seen.
+ * error. A rejecting iterable is non-fatal only if the current turn already has a public response.
  */
 export async function collectCoachStream(run: CoachStreamSource, emit: CoachStreamEmitter): Promise<Record<string, unknown>> {
   const phases = toolPhases(emit);
   const pendingTools = new Map<string, string>();
+  const strengthReview = { evidenceReady: false };
   let output: unknown;
 
   try {
     for await (const chunk of run.events) {
       const [mode, payload] = chunk;
       if (mode === "messages") {
-        await handleMessage(payload, emit, phases, pendingTools);
+        await handleMessage(payload, emit, phases, pendingTools, strengthReview);
       } else if (mode === "values") {
         output = payload;
       }
@@ -84,13 +86,13 @@ export async function collectCoachStream(run: CoachStreamSource, emit: CoachStre
     // early model/tool error — nothing usable to return) from "failed mid-stream
     // after a snapshot was seen" (a later node blew up, last snapshot is kept).
     logger.warn({ err: error, sawState: output !== undefined }, "coach stream iteration failed");
-    if (output === undefined) throw error;
+    if (!tryToPublicResponse(output)) throw error;
   }
 
   return withUsage(toPublicResponse(output), output);
 }
 
-/** 回复正文只可能来自这三个业务节点；orchestrator 的分类输出与
+/** 回复正文只来自白名单中的业务节点；orchestrator 的分类输出与
  * training / custom_workout 节点内层 agent 的结构化信封都不是正文——后者会把
  * 整段计划/课表 JSON 打进客户端打字机（分片是 token 级的，整块前缀的 echo
  * 过滤拦不住），它们的回复由节点渲染、只随最终 state 到达。 */
@@ -102,9 +104,16 @@ const REPLY_TEXT_NODES = new Set(["qa", "race_strategy", "custom_workout"]);
 const STRUCTURED_OUTPUT_TOOL_NAME = /^extract(-\d+)?$/;
 
 /** Emit running_tool / analyzing / text_delta for one `messages` chunk. */
-async function handleMessage(payload: unknown, emit: CoachStreamEmitter, phases: StatusPhases, pendingTools: Map<string, string>): Promise<void> {
-  const [message, meta] = payload as [MessageLike, { langgraph_node?: string } | undefined, ...unknown[]];
+async function handleMessage(
+  payload: unknown,
+  emit: CoachStreamEmitter,
+  phases: StatusPhases,
+  pendingTools: Map<string, string>,
+  strengthReview: { evidenceReady: boolean },
+): Promise<void> {
+  const [message, meta] = payload as [MessageLike, { langgraph_node?: string; langgraph_checkpoint_ns?: string } | undefined, ...unknown[]];
   const type = message?._getType?.();
+  const inStrengthReview = meta?.langgraph_checkpoint_ns?.startsWith("strength_review:");
 
   // Tool-call lifecycle is extracted for EVERY node: running_tool status is
   // progress, not reply text, and the training node's in-turn context reads
@@ -119,6 +128,9 @@ async function handleMessage(payload: unknown, emit: CoachStreamEmitter, phases:
 
   // Tool result end: a Tool message carrying `tool_call_id`.
   if (type === "tool") {
+    if (inStrengthReview && message?.status !== "error" && isFoundManualStrengthEvidence(message?.content)) {
+      strengthReview.evidenceReady = true;
+    }
     const toolCallId = message?.tool_call_id;
     if (toolCallId !== undefined) {
       const name = pendingTools.get(toolCallId);
@@ -135,7 +147,8 @@ async function handleMessage(payload: unknown, emit: CoachStreamEmitter, phases:
   // JSON 打进客户端打字机。与工具调用同条的进度说明句除外：作为 narration
   // 事件转发（是进度不是答案，与工具状态同理）。没有 langgraph_node 的分片
   // 保持放行：历史消息回放与部分适配路径不携带该字段。
-  if (type === "ai" && meta?.langgraph_node !== undefined && !REPLY_TEXT_NODES.has(meta.langgraph_node)) {
+  const strengthReviewReply = inStrengthReview && meta?.langgraph_node === "model_request" && strengthReview.evidenceReady;
+  if (type === "ai" && meta?.langgraph_node !== undefined && !REPLY_TEXT_NODES.has(meta.langgraph_node) && !strengthReviewReply) {
     if (toolCalls.length > 0) {
       const narration = textContent(message?.content);
       if (narration.length > 0 && !isStructuredResponseEcho(narration)) await emit({ kind: "narration", delta: narration });

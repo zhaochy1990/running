@@ -47,6 +47,10 @@
   height: 48rpx;
 }
 
+.top-bar__icon--back {
+  transform: rotate(180deg);
+}
+
 .top-bar__title-wrap {
   flex: 1;
   display: flex;

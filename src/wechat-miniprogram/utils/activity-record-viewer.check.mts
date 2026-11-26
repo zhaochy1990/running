@@ -108,7 +108,9 @@ type TrainingPage = {
   setData(patch: object): void;
   onLoad(params: { edit?: string; recordId?: string }): Promise<void> | void;
   onShow?(): void;
+  onCoachReview?(): void;
 };
+const coachHandoffs: Array<{ recordId: string; userId: string }> = [];
 async function loadTrainingPage(relative: string): Promise<TrainingPage> {
   let definition: TrainingPage | undefined;
   viewerId = 'user-a';
@@ -122,6 +124,7 @@ async function loadTrainingPage(relative: string): Promise<TrainingPage> {
     wx: { setNavigationBarTitle: () => undefined, disableAlertBeforeUnload: () => undefined },
     require: (path: string) => ({
       '../../services/manual-strength': { getManualStrengthRecord: async () => savedRecord },
+      '../../services/coach': { openStrengthReview: (recordId: string, userId: string) => coachHandoffs.push({ recordId, userId }) },
       '../../services/request': {},
       '../../utils/date': dates,
       '../../utils/manual-strength': { ...strength, getStrengthDraft: () => undefined },
@@ -157,6 +160,8 @@ assert.ok(detail.data.record);
 assert.equal(detail.data.summaryLabel, '手动记录 · 1 个动作 / 2 组');
 assert.equal(detail.data.actionRows?.[0].sets[0].number, 1);
 assert.equal(detail.data.actionRows?.[0].sets[1].number, 2);
+detail.onCoachReview?.();
+assert.deepEqual(coachHandoffs, [{ recordId: 'saved', userId: 'user-a' }]);
 viewerId = 'user-b';
 viewerChanged?.();
 detail.onShow?.();
@@ -164,4 +169,6 @@ await new Promise<void>((resolve) => setImmediate(resolve));
 assert.equal(detail.data.record, null);
 assert.equal(detail.data.actionRows?.length, 0);
 assert.equal(detail.data.summaryLabel, '');
+detail.onCoachReview?.();
+assert.equal(coachHandoffs.length, 1);
 console.log('activity-record-viewer.check: all assertions passed');
