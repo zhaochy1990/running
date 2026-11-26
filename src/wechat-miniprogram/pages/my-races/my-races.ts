@@ -8,10 +8,10 @@
 // 识别行「这不是这场比赛」二次确认后 DELETE 清除识别，行回落活动名。
 // 赛事数据走聚合端点 GET /api/users/me/my-races（services/custom-races，#474）：
 // official 项复用 toPlanCard 渲染官方计划卡（报名项目徽章 + 状态徽章 + 日期·城市 +
-// 开赛倒计时 + 状态条 chips 流转 + 行程布尔勾选；offboarded 灰卡占位不可交互），
+// 相对比赛日文案 + 状态条 chips 流转 + 行程布尔勾选；offboarded 灰卡占位不可交互），
 // custom 项渲染自定义卡（#475：粉色「自定义」徽章 + 类型（距离）徽章，名称不可点、
 // 无详情页，状态 chips 想跑↔已报名点击切换，···菜单 = 编辑/删除；已结束派生 =
-// 灰化 + 隐藏倒计时/状态条）。混排视图变换在 utils/myRaceRows，配套自检。
+// 灰化 + 「已经 N 天」+ 隐藏状态条）。混排视图变换在 utils/myRaceRows，配套自检。
 
 import {
   clearRaceCalendarMatch,
@@ -20,7 +20,7 @@ import {
   type RaceItem,
 } from '../../services/races';
 import { cnBadgeOf, waBadgeOf } from '../../utils/raceCenterRows';
-import { applyRaceRename, raceDisplayName } from '../../utils/raceResultRows';
+import { applyRaceRename, raceDisplayName, raceResultDateLabels } from '../../utils/raceResultRows';
 import {
   customRaceBody,
   deleteCustomRace,
@@ -37,7 +37,7 @@ import {
   type MyRaceRow,
 } from '../../utils/myRaceRows';
 import { statePatch, type PlanCardView } from '../../utils/racePlanRows';
-import { shanghaiDateFromIso } from '../../utils/date';
+import { shanghaiToday } from '../../utils/date';
 import { friendlyApiError } from '../../utils/friendlyError';
 import { userStore } from '../../store/index';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
@@ -55,6 +55,7 @@ interface RaceRow {
   bandClass: string;
   /** 上海 YYYY-MM-DD */
   dateLabel: string;
+  elapsedLabel: string;
   /** 一位小数公里，如 42.2 */
   distanceKm: string;
   /** 预格式化成绩（后端 duration_fmt） */
@@ -173,7 +174,7 @@ function bandClass(band: RaceItem['distance_band']): string {
   return 'other';
 }
 
-function toRow(race: RaceItem, isPb: boolean): RaceRow {
+function toRow(race: RaceItem, isPb: boolean, today: string): RaceRow {
   const isAuto = !!race.race_name;
   return {
     labelId: race.label_id,
@@ -181,7 +182,7 @@ function toRow(race: RaceItem, isPb: boolean): RaceRow {
     name: raceDisplayName(race) || bandLabel(race.distance_band),
     bandLabel: bandLabel(race.distance_band),
     bandClass: bandClass(race.distance_band),
-    dateLabel: shanghaiDateFromIso(race.date) || race.date,
+    ...raceResultDateLabels(race.date, today),
     distanceKm: race.distance_km.toFixed(1),
     duration: race.duration_fmt,
     pace: race.pace_fmt && race.pace_fmt !== '—' ? race.pace_fmt : '',
@@ -288,7 +289,8 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
       this._raceByLabel.clear();
       for (const race of res.races) this._raceByLabel.set(race.label_id, race);
       const pbIds = pbLabelIds(res.races);
-      const rows = res.races.map((race) => toRow(race, pbIds.has(race.label_id)));
+      const today = shanghaiToday();
+      const rows = res.races.map((race) => toRow(race, pbIds.has(race.label_id), today));
       this.setData({ loading: false, rows, summary: buildSummary(rows) });
     } catch (err: unknown) {
       if (seq !== this._resultsSeq) return;

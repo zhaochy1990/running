@@ -227,12 +227,17 @@
   color: var(--color-text-secondary);
 }
 
-/* 开赛倒计时：主题藕粉文字（与全马徽章同色族），不加底色避免卡上徽章过密 */
+/* 相对比赛日文案：普通卡用强调色，灰卡用深灰文字 */
 .plan__countdown {
   margin-left: auto;
   flex-shrink: 0;
   font-weight: 600;
   color: var(--color-accent-light);
+}
+
+.plan--off .plan__countdown,
+.plan--past .plan__countdown {
+  color: var(--color-text-bright);
 }
 
 .plan__meta--dim {

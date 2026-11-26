@@ -10,6 +10,7 @@ import type {
   RaceDetail,
   RaceItem,
 } from '../services/race-center.ts';
+import { shanghaiShiftDays } from './date.ts';
 import {
   daysUntil,
   firstStartTime,
@@ -89,6 +90,8 @@ eq(daysUntil('2026-11-01', TODAY), 33, 'days across month');
 eq(daysUntil('2027-01-01', TODAY), 94, 'days across year');
 eq(daysUntil(TODAY, TODAY), 0, 'days today');
 eq(daysUntil('2026-09-28', TODAY), -1, 'days past');
+eq(daysUntil('0099-12-31', '0100-01-01'), -1, 'days across year 0099');
+eq(shanghaiShiftDays('0099-01-01', 1), '0099-01-02', 'early year retains four digits');
 
 // 最早发枪时间：字典序即 HH:MM 时间序；空 = ''
 eq(firstStartTime(detail({}).items), '07:30', 'earliest start time');

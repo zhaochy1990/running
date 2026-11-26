@@ -3,7 +3,7 @@
  * 覆盖成绩行显示名解析链（race_name → display_name → name → 空串兜底）。
  */
 import type { RaceItem } from '../services/races.ts';
-import { applyRaceRename, raceDisplayName } from './raceResultRows.ts';
+import { applyRaceRename, raceDisplayName, raceResultDateLabels } from './raceResultRows.ts';
 
 function eq(actual: unknown, expected: unknown, what: string): void {
   const a = JSON.stringify(actual);
@@ -19,6 +19,13 @@ eq(raceDisplayName({ ...blank, name: '下午跑步' }), '下午跑步', 'activit
 eq(raceDisplayName(blank), '', 'all empty → caller falls back to band label');
 eq(raceDisplayName({ race_name: 'A', display_name: 'B', name: 'C' }), 'A', 'chain order');
 eq(raceDisplayName({ race_name: '', display_name: 'B', name: 'C' }), 'B', 'empty string skipped');
+
+const today = '2026-11-26';
+eq(raceResultDateLabels('2026-11-25T23:59:00+08:00', today),
+  { dateLabel: '2026-11-25', elapsedLabel: '已经 1 天' }, 'past result uses Shanghai calendar date');
+eq(raceResultDateLabels(today, today), { dateLabel: today, elapsedLabel: '' }, 'same-day result');
+eq(raceResultDateLabels('2026-11-27', today).elapsedLabel, '', 'future result');
+eq(raceResultDateLabels('', today).elapsedLabel, '', 'result without date');
 
 // rename 成功后就地刷新内存行（devops#561）：下次长按 modal 回显新名；空串清除为 null
 const rawRace = {

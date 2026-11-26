@@ -1,7 +1,7 @@
 /**
  * myRaceRows.ts 自检：`node --import ./utils/ts-resolve-hooks.mjs utils/myRaceRows.check.mts`。
  * 覆盖 类型（距离）徽章（无距离降级 / 小数距离）/ 两态状态 chips 与切换补丁 /
- * 已结束派生（灰态标签、隐藏 chips 与倒计时）/ meta 行缺项省略 / 混排保序与 key 前缀，
+ * 已结束派生（灰态标签、隐藏 chips、显示已过天数）/ meta 行缺项省略 / 混排保序与 key 前缀，
  * 不依赖小程序运行时（services 只做 type-only 导入，剥离后无副作用）。
  */
 import type { CustomRace, MyRaceItem } from '../services/custom-races.ts';
@@ -66,11 +66,11 @@ eq(
   'patch chips want',
 );
 
-// 已结束派生（后端下发的 done 标志，race_date 已过）：灰态标签、chips 与倒计时清空
-const past = toCustomCard(race({ race_date: ymdOffset(-1), done: true }));
+// 已结束派生（后端下发的 done 标志，race_date 已过）：灰态标签、隐藏 chips、显示已过天数
+const past = toCustomCard(race({ race_date: ymdOffset(-12), done: true }));
 eq(past.stateLabel, '已结束', 'past label');
 eq(past.steps, [], 'past chips hidden');
-eq(past.countdown, '', 'past countdown hidden');
+eq(past.countdown, '已经 12 天', 'twelve days after race');
 
 // 倒计时：未来 N 天 / 当天开赛
 eq(toCustomCard(race({ race_date: ymdOffset(10) })).countdown, '距离比赛还有 10 天', 'countdown 10d');

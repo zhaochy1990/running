@@ -62,7 +62,7 @@ export interface CustomCardView {
   steps: Array<{ state: CustomRaceState; label: string; on: boolean }>;
   /** 日期 · 城市 · 爬升 D+，缺项自动省略 */
   metaLabel: string;
-  /** 倒计时文案；done 时为 ''，wxml 隐藏 */
+  /** 相对比赛日文案；已过比赛日显示「已经 N 天」 */
   countdown: string;
   done: boolean;
   /** 备注；空串隐藏。已结束卡保留备注（双评审拍板：记录完整呈现） */
@@ -97,7 +97,7 @@ export function toCustomCard(race: CustomRace): CustomCardView {
     ]
       .filter(Boolean)
       .join(' · '),
-    countdown: race.done ? '' : countdownLabel(daysUntil(race.race_date, shanghaiToday())),
+    countdown: countdownLabel(daysUntil(race.race_date, shanghaiToday())),
     done: race.done,
     note: race.note || '',
   };
