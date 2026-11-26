@@ -337,13 +337,13 @@ func (s *Service) createTask(ctx context.Context, submitter, idempotencyKey stri
 	}
 
 	envDigests := digestEnv(env)
-	fingerprintReplicas := replicas
-	if fingerprintReplicas == 0 {
-		fingerprintReplicas = 1
-	} // Preserve historical idempotency fingerprints.
-	params := taskParams{AgentVersion: req.AgentVersion, ScenarioID: scenario.ID, Replicas: fingerprintReplicas, Env: envDigests}
+	params := taskParams{AgentVersion: req.AgentVersion, ScenarioID: scenario.ID, Replicas: replicas, Env: envDigests}
 	encoded, _ := json.Marshal(params)
 	sum := sha256.Sum256(encoded)
+	if params.Replicas == 0 {
+		params.Replicas = 1
+	}
+	legacySum := sha256.Sum256(mustJSON(params))
 	cipher, cerr := s.secrets.Seal(env)
 	if cerr != nil {
 		return nil, false, s.internal(cerr)
@@ -354,10 +354,10 @@ func (s *Service) createTask(ctx context.Context, submitter, idempotencyKey stri
 	launch.EnvFingerprint = hex.EncodeToString(envFingerprint[:])
 	task := &storage.PlanEvalTask{
 		ID: uuid.NewString(), AgentVersion: req.AgentVersion, ScenarioID: scenario.ID,
-		Submitter: submitter, IdempotencyKey: idempotencyKey, ParamsFingerprint: hex.EncodeToString(sum[:]),
+		Submitter: submitter, IdempotencyKey: idempotencyKey, ParamsFingerprint: "v2:" + hex.EncodeToString(sum[:]),
 	}
 	created, replayed, derr := s.store.CreatePlanEvalTask(ctx, &storage.PlanEvalTaskCreate{
-		Task: task, LaunchConfig: launch, EnvCipher: cipher, Executions: executions, FrozenRules: frozenRules,
+		Task: task, LegacyParamsFingerprint: hex.EncodeToString(legacySum[:]), LaunchConfig: launch, EnvCipher: cipher, Executions: executions, FrozenRules: frozenRules,
 	})
 	if derr != nil {
 		return nil, false, s.mapStorageError(derr)
@@ -497,7 +497,7 @@ func (s *Service) freeze(ctx context.Context, scenario *scenarioDocument) ([]*st
 			return nil, nil, s.internal(err)
 		}
 		executionID := uuid.NewString()
-		request, rerr := stampRequest(scenario.RequestJSON, executionID, scenario.AsOf)
+		request, rerr := stampRequest(scenario.RequestJSON, executionID, scenario.AsOf, scenario.ArtifactType)
 		if rerr != nil {
 			return nil, nil, s.internal(rerr)
 		}
@@ -512,14 +512,21 @@ func (s *Service) freeze(ctx context.Context, scenario *scenarioDocument) ([]*st
 
 // stampRequest writes the two fields that are per-execution into the request
 // template: its id and the frozen instant the kernel reads the clock from.
-func stampRequest(template string, executionID, asOf string) (string, error) {
+func stampRequest(template string, executionID, asOf, artifactType string) (string, error) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(template), &fields); err != nil {
 		return "", fmt.Errorf("scenario request template: %w", err)
 	}
+	if fields == nil {
+		return "", fmt.Errorf("scenario request template must be an object")
+	}
 	id, _ := json.Marshal("plan-eval-" + executionID)
 	instant, _ := json.Marshal(asOf)
-	fields["request_id"], fields["requested_as_of"] = id, instant
+	timeField := "requested_as_of"
+	if artifactType == "weekly_plan_batch" {
+		timeField = "as_of"
+	}
+	fields["request_id"], fields[timeField] = id, instant
 	return string(mustJSON(fields)), nil
 }
 

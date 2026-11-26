@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm/clause"
 )
 
 // openPlanEvalStore connects to the real MySQL the other storage tests use and
@@ -509,5 +510,91 @@ func TestPlanEval_ConcurrentFinalGeneratesSettleTask(t *testing.T) {
 		if err != nil || final.Status != PlanEvalTaskDone {
 			t.Fatalf("settlement: %+v %v", final, err)
 		}
+	}
+}
+
+func TestPlanEval_LockWaitCannotReviveExpiredLease(t *testing.T) {
+	st := openPlanEvalStore(t)
+	ctx := context.Background()
+	for _, action := range []string{"renew", "submit", "evaluate"} {
+		t.Run(action, func(t *testing.T) {
+			version := "v" + uuid.NewString()[:8]
+			task, _, err := st.CreatePlanEvalTask(ctx, newPlanEvalTaskCreate(version, `[]`, 1))
+			if err != nil {
+				t.Fatal(err)
+			}
+			id := onlyExecution(t, st, task.ID).ID
+			holder := PlanEvalWorkerLease{AgentVersion: version, WorkerID: "w", LeaseEpoch: 1}
+			if _, err := st.ClaimPlanEvalExecution(ctx, id, version, "w", "claim-1", time.Now().UTC(), time.Second); err != nil {
+				t.Fatal(err)
+			}
+			var evalUntil time.Time
+			if action == "evaluate" {
+				artifact := &PlanEvalArtifact{ID: uuid.NewString(), ArtifactType: "master_plan", Content: `{}`, Sha256: "fp"}
+				if _, _, err := st.SubmitPlanEvalGenerate(ctx, id, holder, "submit-1", "fp", time.Now().UTC(), &PlanEvalGenerateOutcome{Artifact: artifact, SchemaResult: &PlanEvalCheckResult{ID: uuid.NewString(), CheckID: "schema", Status: PlanEvalCheckPass}}); err != nil {
+					t.Fatal(err)
+				}
+				work, err := st.ClaimPlanEvalEvaluations(ctx, time.Now().UTC(), time.Minute, 1000)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, row := range work {
+					if row.ExecutionID == id {
+						evalUntil = row.LeaseUntil
+					}
+				}
+				if evalUntil.IsZero() {
+					t.Fatal("evaluation not claimed")
+				}
+			}
+			lock := st.db.Begin()
+			defer lock.Rollback()
+			var row PlanEvalExecution
+			if err := lock.Clauses(clause.Locking{Strength: "UPDATE"}).First(&row, "id = ?", id).Error; err != nil {
+				t.Fatal(err)
+			}
+			// Give the blocked operation a still-valid reference clock, then expire it
+			// while it waits for the row lock.
+			until := time.Now().UTC().Add(30 * time.Millisecond).Truncate(time.Millisecond)
+			column := "lease_expires_at"
+			if action == "evaluate" {
+				column = "evaluate_lease_until"
+				evalUntil = until
+			}
+			if err := lock.Model(&PlanEvalExecution{}).Where("id = ?", id).Update(column, until).Error; err != nil {
+				t.Fatal(err)
+			}
+			result := make(chan error, 1)
+			now := time.Now().UTC()
+			go func() {
+				switch action {
+				case "renew":
+					_, err := st.RenewPlanEvalLease(ctx, id, holder, now, time.Minute)
+					result <- err
+				case "submit":
+					_, _, err := st.SubmitPlanEvalGenerate(ctx, id, holder, "submit-1", "fp", now, &PlanEvalGenerateOutcome{ErrorCode: "timeout"})
+					result <- err
+				case "evaluate":
+					result <- st.SavePlanEvalCheckResults(ctx, id, evalUntil, nil, PlanEvalEvaluateDone, now)
+				}
+			}()
+			time.Sleep(60 * time.Millisecond)
+			if err := lock.Commit().Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := <-result; err != ErrPlanEvalStaleLease {
+				t.Fatalf("expired %s accepted after lock wait: %v", action, err)
+			}
+		})
+	}
+}
+
+func TestPlanEval_LegacyFingerprintDoesNotWeakenNewIdempotency(t *testing.T) {
+	in := &PlanEvalTaskCreate{Task: &PlanEvalTask{ParamsFingerprint: "v2:omitted"}, LegacyParamsFingerprint: "legacy-default-one"}
+	if !planEvalParamsMatch("legacy-default-one", in) {
+		t.Fatal("legacy default request cannot replay")
+	}
+	if planEvalParamsMatch("v2:explicit-one", in) {
+		t.Fatal("new explicit replicas confused with omission")
 	}
 }

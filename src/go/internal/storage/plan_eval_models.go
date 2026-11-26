@@ -111,7 +111,7 @@ type PlanEvalTask struct {
 	// keys are scoped to it.
 	Submitter         string `gorm:"column:submitter;size:64;not null;uniqueIndex:idx_plan_eval_tasks_idem,priority:1"`
 	IdempotencyKey    string `gorm:"column:idempotency_key;size:128;not null;uniqueIndex:idx_plan_eval_tasks_idem,priority:2"`
-	ParamsFingerprint string `gorm:"column:params_fingerprint;size:64;not null"`
+	ParamsFingerprint string `gorm:"column:params_fingerprint;size:128;not null"`
 	// LaunchConfigID is the effective launch configuration the task ran with.
 	LaunchConfigID string `gorm:"column:launch_config_id;type:char(36)"`
 	LaunchReplicas int    `gorm:"column:launch_replicas;not null;default:1"`

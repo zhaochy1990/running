@@ -788,3 +788,42 @@ func TestHTTP_WorkerCannotImpersonateAnotherVersion(t *testing.T) {
 		t.Fatalf("unauthorized claim touched lease: %+v %v", row, err2)
 	}
 }
+
+func TestPlanEval_StampRequestUsesArtifactClock(t *testing.T) {
+	for _, artifact := range []string{"master_plan", "weekly_plan_batch"} {
+		stamped, err := stampRequest(`{"request_id":"old"}`, "execution", "2026-11-26T08:00:00+08:00", artifact)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var request map[string]string
+		if err := json.Unmarshal([]byte(stamped), &request); err != nil {
+			t.Fatal(err)
+		}
+		clock := "requested_as_of"
+		if artifact == "weekly_plan_batch" {
+			clock = "as_of"
+		}
+		if len(request) != 2 || request["request_id"] != "plan-eval-execution" || request[clock] != "2026-11-26T08:00:00+08:00" {
+			t.Fatalf("%s request: %s", artifact, stamped)
+		}
+	}
+	if _, err := stampRequest(`null`, "execution", "instant", "master_plan"); err == nil {
+		t.Fatal("null template accepted")
+	}
+}
+
+func TestHTTP_OmittedReplicasDifferFromExplicitOne(t *testing.T) {
+	h := openHarness(t)
+	ctx := context.Background()
+	if _, _, err := h.svc.CreateTask(ctx, "admin-1", uuid.NewString(), CreateTaskRequest{AgentVersion: h.version, Replicas: 3}); err != nil {
+		t.Fatal(err)
+	}
+	key := uuid.NewString()
+	view, _, err := h.svc.CreateTask(ctx, "admin-1", key, CreateTaskRequest{AgentVersion: h.version})
+	if err != nil || view.Replicas != 3 {
+		t.Fatalf("omitted replicas: %+v %v", view, err)
+	}
+	if _, _, err := h.svc.CreateTask(ctx, "admin-1", key, CreateTaskRequest{AgentVersion: h.version, Replicas: 1}); err == nil || err.Code != "idempotency_conflict" {
+		t.Fatalf("changed params replayed: %v", err)
+	}
+}

@@ -131,5 +131,25 @@ test("claim accepts a frozen rolling execution without turning it into a broker 
       as_of: "2026-10-26T08:00:00+08:00",
     },
   };
-  assert.deepEqual(await stubClient([[200, leased]], []).claim("exec-rolling", "2026.11.30", "worker"), leased);
+  assert.deepEqual(await stubClient([[200, leased]], []).claim("exec-rolling", "2026.11.30", "worker", "claim-rolling"), leased);
+});
+
+test("a disconnect after response headers also retries the same claim ID", async () => {
+  let attempts = 0;
+  const bodies: string[] = [];
+  const client = new EvalApiClient("http://plan-eval-api:8080", "version-token", (async (_url, init) => {
+    bodies.push(String(init?.body));
+    if (++attempts === 1)
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(new TypeError("body disconnected"));
+          },
+        }),
+        { status: 200 },
+      );
+    return new Response(JSON.stringify({ status: "terminal", generate_status: "failed", artifact_id: null }), { status: 200 });
+  }) as typeof fetch);
+  assert.equal((await client.claim("exec-1", "version", "worker", "claim-1")).status, "terminal");
+  assert.equal(bodies[0], bodies[1]);
 });

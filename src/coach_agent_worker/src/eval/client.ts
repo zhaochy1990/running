@@ -94,15 +94,17 @@ export class EvalApiClient {
   }
 
   private async call(method: string, path: string, body: unknown): Promise<Response> {
-    // Retry one transport failure with the same claim/submit IDs and bytes.
+    // Read the body inside the retry boundary: a disconnect can follow the headers.
     for (let attempt = 0; ; attempt++) {
       try {
-        return await this.fetchImpl(`${this.baseUrl}${path}`, {
+        const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
           method,
           signal: AbortSignal.timeout(30_000),
           headers: { "content-type": "application/json", "x-plan-eval-token": this.token },
           body: JSON.stringify(body),
         });
+        await response.clone().text();
+        return response;
       } catch (error) {
         if (attempt > 0 || !(error instanceof TypeError || (error instanceof Error && error.name === "TimeoutError"))) throw error;
       }
