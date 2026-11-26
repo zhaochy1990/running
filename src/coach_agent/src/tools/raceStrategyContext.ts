@@ -3,6 +3,7 @@
 import type { StructuredTool } from "@langchain/core/tools";
 import * as z from "zod";
 import type { CoachToolRuntime } from "../agents/coachAgent.js";
+import { CoachTargetRef } from "../agents/turnScope.js";
 import type { DataProvider } from "../data/dataProvider.js";
 import { defineCoachTools } from "./common.js";
 
@@ -34,16 +35,26 @@ export interface RaceTargetBindingGateway {
   candidates(threadId: string): Promise<RaceTargetCandidate[] | null>;
 }
 
-/** race target 从服务端校验过的 turn scope（<coach_turn_scope>）读取，不由模型传参。 */
-function raceEventIdFromTarget(runtime: CoachToolRuntime): number | null {
-  const target = runtime.context?.target;
-  const raceEventId = target?.kind === "race" ? target.race_event_id : undefined;
-  if (typeof raceEventId !== "number" || !Number.isInteger(raceEventId) || raceEventId <= 0) return null;
-  return raceEventId;
+type RaceTargetContext = { target?: unknown; threadId?: unknown; raceTargetFromThread?: unknown };
+
+/** 从赛事入口取显式目标，普通聊天取线程里的最新绑定（含本轮重新选赛）。 */
+export async function resolveRaceStrategyTarget(
+  context: RaceTargetContext | undefined,
+  raceTargets?: Pick<RaceTargetBindingGateway, "get"> | null,
+): Promise<CoachRaceTargetRef | null> {
+  if (context?.raceTargetFromThread !== true) {
+    const parsed = CoachTargetRef.safeParse(context?.target);
+    if (parsed.success) {
+      const { kind, race_event_id, item_type } = parsed.data;
+      if (kind === "race" && race_event_id != null && item_type != null) return { kind, race_event_id, item_type };
+    }
+  }
+  const threadId = threadIdOf(context);
+  return (threadId === null ? null : await raceTargets?.get(threadId)) ?? null;
 }
 
-function threadIdOf(runtime: CoachToolRuntime): string | null {
-  const threadId = runtime.context?.threadId;
+function threadIdOf(context: RaceTargetContext | undefined): string | null {
+  const threadId = context?.threadId;
   return typeof threadId === "string" && threadId.length > 0 ? threadId : null;
 }
 
@@ -61,17 +72,9 @@ class RaceStrategyContextTool {
   ) {}
 
   async getRaceCalendarContext(_input: z.infer<typeof getRaceCalendarContextSchema>, runtime: CoachToolRuntime) {
-    let raceEventId = raceEventIdFromTarget(runtime);
-    // 聊天入口（无 target）不再 entry-gate 抛错（#891）：先回退读本线程已绑定的
-    // race target——bind_race_target 写库后 runtime.context 不会回写，同轮「绑定→
-    // 取赛事内容」必须能接上；仍无绑定才返回 bound=false，由 prompt 指引走
-    // search_race_targets → bind_race_target 的会话内绑赛流程。
-    if (raceEventId === null) {
-      const threadId = threadIdOf(runtime);
-      const persisted = threadId !== null ? await this.raceTargets?.get(threadId) : undefined;
-      raceEventId = persisted?.race_event_id ?? null;
-      if (raceEventId === null) return { bound: false as const };
-    }
+    const target = await resolveRaceStrategyTarget(runtime.context, this.raceTargets);
+    if (target === null) return { bound: false as const };
+    const raceEventId = target.race_event_id;
     const context = await this.store.getRaceCalendarContext(raceEventId);
     if (context === null) {
       return { race_event_id: raceEventId, found: false, reason: "race not found or unpublished" };
@@ -95,6 +98,7 @@ class RaceStrategyContextTool {
     const candidates: RaceTargetCandidate[] = [];
     for (const row of rows) {
       for (const item of row.items) {
+        if (input.item_type !== undefined && item.item_type !== input.item_type) continue;
         candidates.push({
           race_event_id: row.race_event_id,
           item_type: item.item_type,
@@ -104,15 +108,15 @@ class RaceStrategyContextTool {
         });
       }
     }
-    const threadId = threadIdOf(runtime);
-    if (threadId !== null && candidates.length > 0) {
+    const threadId = threadIdOf(runtime.context);
+    if (threadId !== null) {
       await this.raceTargets?.rememberCandidates(threadId, candidates);
     }
     return { candidates };
   }
 
   async bindRaceTarget(input: z.infer<typeof bindRaceTargetSchema>, runtime: CoachToolRuntime) {
-    const threadId = threadIdOf(runtime);
+    const threadId = threadIdOf(runtime.context);
     if (threadId === null) throw new Error("bind_race_target: missing thread context");
     const gateway = this.raceTargets;
     if (!gateway) throw new Error("bind_race_target: binding is not available");

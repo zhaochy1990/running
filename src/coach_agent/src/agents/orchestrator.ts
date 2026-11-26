@@ -3,7 +3,7 @@ import { Command, END, type GraphNode } from "@langchain/langgraph";
 import { buildChatModel, getLogger } from "@stride/common";
 import type { ModelConfig } from "../config/config.js";
 import { normalizeMessageContent } from "./messages.js";
-import { RACE_STRATEGY_REQUEST } from "./qa/raceStrategyHandoff.js";
+import { RACE_STRATEGY_REQUEST } from "./race_strategy/handoff.js";
 import { type AgentsState, IntentClassificationSchema, type IntentLabel } from "./state.js";
 
 const logger = getLogger("orchestrator");

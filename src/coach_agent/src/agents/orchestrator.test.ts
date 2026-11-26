@@ -5,8 +5,9 @@ import test from "node:test";
 import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import { Command, END, START, StateGraph } from "@langchain/langgraph";
 import type { ModelConfig } from "../config/config.js";
+import { makeAgentNode, projectQaReply } from "./agents.js";
 import { getOrchestratorNode } from "./orchestrator.js";
-import { makeQaNode, RACE_STRATEGY_REQUEST, raceStrategyHandoffTool } from "./qa/raceStrategyHandoff.js";
+import { RACE_STRATEGY_REQUEST, raceStrategyHandoffTool } from "./race_strategy/handoff.js";
 import { AgentsState } from "./state.js";
 
 /**
@@ -65,17 +66,23 @@ test("QA can hand off a misrouted strategy request or offer the action in the sa
       })
       .addNode(
         "qa",
-        makeQaNode({
-          async invoke(input) {
-            const { messages } = input as { messages: HumanMessage[] };
-            const latest = messages.at(-1)?.content;
-            if (latest === "杭马什么时候开始？") return { messages: [...messages, new AIMessage("已查到起跑时间。")] };
-            const args = latest === "刚才的杭马策略在哪看？" ? { action: "offer", answer: "刚才的配速建议可以在这段对话里看。" } : { action: "generate" };
-            const call = { name: raceStrategyHandoffTool.name, id: "handoff", args, type: "tool_call" as const };
-            const toolResult = await raceStrategyHandoffTool.invoke(call);
-            return { messages: [...messages, new AIMessage({ content: "", tool_calls: [call] }), toolResult] };
+        makeAgentNode(
+          {
+            async invoke(input) {
+              const { messages } = input as { messages: HumanMessage[] };
+              const latest = messages.at(-1)?.content;
+              if (latest === "杭马什么时候开始？") return { messages: [...messages, new AIMessage("已查到起跑时间。")] };
+              const args =
+                latest === "刚才的杭马策略在哪看？"
+                  ? { action: "offer", answer: "刚才的配速建议可以在这段对话里看。", refersToPreviousReply: true }
+                  : { action: "generate" };
+              const call = { name: raceStrategyHandoffTool.name, id: "handoff", args, type: "tool_call" as const };
+              const toolResult = await raceStrategyHandoffTool.invoke(call);
+              return { messages: [...messages, new AIMessage({ content: "", tool_calls: [call] }), toolResult] };
+            },
           },
-        }),
+          projectQaReply,
+        ),
         { ends: ["race_strategy", END] },
       )
       .addNode("race_strategy", (state) => {
@@ -103,6 +110,14 @@ test("QA can hand off a misrouted strategy request or offer the action in the sa
     const fact = await graph.invoke({ messages: [new HumanMessage("杭马什么时候开始？")] });
     assert.equal(fact.messages.at(-1)?.text, "已查到起跑时间。");
     assert.equal(fact.messages.at(-1)?.additional_kwargs.card, undefined);
+
+    const existing = new AIMessage({
+      content: "刚才的配速建议可以在这段对话里看。",
+      additional_kwargs: { card: { $type: "race-strategy", data: { race_event_id: 30 } } },
+    });
+    const viewed = await graph.invoke({ messages: [kickoff, existing, new HumanMessage("刚才的杭马策略在哪看？")] });
+    assert.equal(viewed.messages.at(-1)?.text, "刚才的策略在上方，可以直接查看策略卡。");
+    assert.equal(viewed.messages.at(-1)?.additional_kwargs.card, undefined);
   } finally {
     await spy.close();
   }

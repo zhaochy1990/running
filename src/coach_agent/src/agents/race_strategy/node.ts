@@ -2,9 +2,10 @@ import { AIMessage, type BaseMessage } from "@langchain/core/messages";
 import type { GraphNode } from "@langchain/langgraph";
 import { getLogger } from "@stride/common";
 import type { RaceStrategy } from "@stride/contract";
-import type { RaceTargetBindingGateway } from "../../tools/raceStrategyContext.js";
+import { type RaceTargetBindingGateway, resolveRaceStrategyTarget } from "../../tools/raceStrategyContext.js";
 import { normalizeMessageContent } from "../messages.js";
 import type { AgentsState } from "../state.js";
+import { raceStrategyViewReply, readRaceStrategyHandoff } from "./handoff.js";
 import { extractRaceStrategyResult, parseRaceStrategyFromText, raceStrategyMessage } from "./render.js";
 
 const logger = getLogger("race_strategy_node");
@@ -32,39 +33,27 @@ interface InnerRaceAgent {
 export function makeRaceStrategyNode(agent: InnerRaceAgent, raceTargets?: RaceTargetBindingGateway): GraphNode<typeof AgentsState> {
   return async (state, config) => {
     const result = await agent.invoke({ messages: state.messages }, config);
-    const strategy = extractRaceStrategyResult(result) ?? leakedStrategyFromText(result, state);
+    const messages = result.messages.slice(state.messages.length);
+    const handoff = readRaceStrategyHandoff(messages);
+    if (handoff) return { messages: [raceStrategyViewReply(handoff, state.messages)], raceStrategy: null };
+    const strategy = extractRaceStrategyResult(result) ?? leakedStrategyFromText(messages);
     if (strategy !== undefined) {
-      const raceEventId = await resolveRaceEventId(config, raceTargets);
-      if (raceTargets && raceEventId === undefined) {
+      const target = await resolveRaceStrategyTarget(config.context, raceTargets);
+      if (raceTargets && target === null) {
         return { messages: [new AIMessage("请告诉我具体的比赛名称和参赛组别，我会在这里继续生成策略。")], raceStrategy: null };
       }
-      return { messages: [raceStrategyMessage(strategy, raceEventId)], raceStrategy: strategy };
+      return { messages: [raceStrategyMessage(strategy, target?.race_event_id)], raceStrategy: strategy };
     }
     return {
       // 数组 content 归一化为字符串再入会话历史（devops#833）。
-      messages: result.messages.slice(state.messages.length).map(normalizeMessageContent),
+      messages: messages.map(normalizeMessageContent),
       raceStrategy: null,
     };
   };
 }
 
-/**
- * 赛事页入口的 target 已在调用上下文中。聊天入口可能在本轮生成策略前
- * 才绑定赛事，调用上下文不会随之改变，需回读同一线程的可信绑定。
- */
-async function resolveRaceEventId(config: unknown, raceTargets?: RaceTargetBindingGateway): Promise<number | undefined> {
-  const context = (config as { context?: { threadId?: unknown; target?: { kind?: unknown; race_event_id?: unknown } } } | undefined)?.context;
-  const target = context?.target;
-  if (target?.kind === "race" && typeof target.race_event_id === "number" && Number.isInteger(target.race_event_id) && target.race_event_id > 0) {
-    return target.race_event_id;
-  }
-  if (typeof context?.threadId !== "string") return undefined;
-  return (await raceTargets?.get(context.threadId))?.race_event_id;
-}
-
 /** 扫描本轮新增的 AI 文本，命中防御性信封解析则告警并捞回（见 render.ts）。 */
-function leakedStrategyFromText(result: { messages: BaseMessage[] }, state: { messages: BaseMessage[] }): RaceStrategy | undefined {
-  const delta = result.messages.slice(state.messages.length);
+function leakedStrategyFromText(delta: BaseMessage[]): RaceStrategy | undefined {
   for (let index = delta.length - 1; index >= 0; index -= 1) {
     const message = delta[index];
     if (message === undefined || message.getType() !== "ai" || typeof message.content !== "string") continue;

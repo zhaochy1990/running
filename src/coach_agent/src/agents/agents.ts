@@ -1,5 +1,5 @@
 import type { BaseMessage } from "@langchain/core/messages";
-import type { GraphNode } from "@langchain/langgraph";
+import { Command, END, type GraphNode } from "@langchain/langgraph";
 import { buildChatModel } from "@stride/common";
 import { easyMidOfPaceZones } from "@stride/contract";
 import { type CoachAgentConfig, getAgentConfig } from "../config/config.js";
@@ -12,8 +12,8 @@ import { normalizeMessageContent } from "./messages.js";
 import { getOrchestratorNode } from "./orchestrator.js";
 import { getOtherAgent } from "./other/agent.js";
 import { getQaAgent } from "./qa/agent.js";
-import { makeQaNode } from "./qa/raceStrategyHandoff.js";
 import { getRaceStrategyAgent } from "./race_strategy/agent.js";
+import { raceStrategyViewReply, readRaceStrategyHandoff } from "./race_strategy/handoff.js";
 import { makeRaceStrategyNode } from "./race_strategy/node.js";
 import type { AgentsState } from "./state.js";
 import { makeWorkoutManageNode } from "./workout_manage/node.js";
@@ -33,11 +33,23 @@ interface InnerAgent {
  * emit content-parts arrays that poison chat-completions consumers downstream
  * (devops#833).
  */
-function makeAgentNode(agent: InnerAgent): GraphNode<typeof AgentsState> {
+export function makeAgentNode(
+  agent: InnerAgent,
+  project: (messages: BaseMessage[], history: BaseMessage[]) => ReturnType<GraphNode<typeof AgentsState>> = (messages) => ({ messages }),
+): GraphNode<typeof AgentsState> {
   return async (state, config) => {
     const result = await agent.invoke({ messages: state.messages }, config);
-    return { messages: result.messages.slice(state.messages.length).map(normalizeMessageContent) };
+    return project(result.messages.slice(state.messages.length).map(normalizeMessageContent), state.messages);
   };
+}
+
+export function projectQaReply(messages: BaseMessage[], history: BaseMessage[]): ReturnType<GraphNode<typeof AgentsState>> {
+  const handoff = readRaceStrategyHandoff(messages);
+  if (handoff?.action === "generate") {
+    return new Command({ goto: "race_strategy", update: { intent: { intent: "race_strategy" } } });
+  }
+  const replies = handoff ? [raceStrategyViewReply(handoff, history)] : messages;
+  return new Command({ goto: END, update: { messages: replies } });
 }
 
 export function getAgentNode(
@@ -67,7 +79,7 @@ export function getAgentNode(
   if (agentName === "qa") {
     const agentConfig = getAgentConfig(config, "qa");
     const qaAgent = getQaAgent(dataProvider, agentConfig, feelWriter) as unknown as InnerAgent;
-    return makeQaNode(qaAgent);
+    return makeAgentNode(qaAgent, projectQaReply);
   }
 
   if (agentName === "race_strategy") {

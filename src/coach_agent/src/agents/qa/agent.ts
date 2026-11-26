@@ -14,9 +14,9 @@ import { createSyncCoverageTools } from "../../tools/syncCoverage.js";
 import { createTrainingLoadTools } from "../../tools/trainingLoad.js";
 import { CoachContext } from "../context.js";
 import { createLoggingMiddleware } from "../middleware.js";
+import { raceStrategyHandoffMiddleware, raceStrategyHandoffTool } from "../race_strategy/handoff.js";
 import { SKILLS_DIR } from "../skillLoader.js";
 import { createTurnScopeMiddleware } from "../turnScope.js";
-import { raceStrategyHandoffTool } from "./raceStrategyHandoff.js";
 
 const logger = getLogger("coachAgent:qa");
 
@@ -29,7 +29,7 @@ const QA_SUBAGENT_PROMPT = `你是 STRIDE 跑步教练的训练问答专家，�
 4. 查看当前赛季计划、或某一周训练计划的内容
 5. 查看/核对某天的训练安排（有没有课、课是什么、是否已保存/已推送到手表）——必须用工具 "get_day_plan_sessions" 查证后回答，不要把对话里生成过但未保存的课当成已存在的训练
 6. 赛事日历信息（某场比赛的时间/城市/项目，或一段时间内有哪些比赛）——先用 "search_race_calendar" 检索，查不到就是暂无该赛事、如实告知，不要编造；要看赛道/爬升/补给/关门等细节，用检索结果里的 race_event_id 调 "get_race_calendar_detail"。
-7. 用户明确要为一场比赛生成或调整执行策略（例如「这场比赛怎么跑」「把刚才的分段配速做成策略」），或正在回答策略流程追问的赛事、组别或目标完赛时间时，调用 "handoff_race_strategy" 的 generate 在原会话转交。用户只问之前的配速建议在哪里查看、为何赛事详情没有这份策略时，调用 offer，简短回答问题并提供当前会话内的生成入口。如果此前这段对话已经生成策略卡，直接告知用户可查看该卡片。只问赛道、比赛时间等事实时正常回答。
+7. 用户明确要为一场比赛生成或调整执行策略（例如「这场比赛怎么跑」「把刚才的分段配速做成策略」），或正在回答策略流程追问的赛事、组别或目标完赛时间时，调用 "handoff_race_strategy" 的 generate 在原会话转交。用户只问之前的配速建议在哪里查看、为何赛事详情没有这份策略时，调用 offer。简短回答问题，提到的赛事明确时在回答里带上赛事或组别。不要猜测是否已生成策略卡或已保存。只问赛道、比赛时间等事实时正常回答。
 
 你有下面的几个skill，
 1. 当用户询问某个训练跑得怎么样的时候，先使用工具"get_activities_by_date_range"查找到对应的运动记录，然后使用skill "analyze-activity" 进行分析。
@@ -81,7 +81,7 @@ export function getQaAgent(store: DataProvider, config: ModelConfig, feelWriter?
     tools: getQaTools(store, feelWriter),
     systemPrompt: QA_SUBAGENT_PROMPT,
     contextSchema: CoachContext,
-    middleware: [createTurnScopeMiddleware(), createLoggingMiddleware("agent:qa")],
+    middleware: [raceStrategyHandoffMiddleware, createTurnScopeMiddleware(), createLoggingMiddleware("agent:qa")],
     backend: new FilesystemBackend({ rootDir: SKILLS_DIR, virtualMode: true }),
     skills: ["/analyze-activity/", "/analyze-race/", "/analyze-body-status/"],
   });

@@ -103,6 +103,7 @@ export function createTurnScopeMiddleware() {
       }
       const scopeBlock = JSON.stringify({
         authoritative_target: scope.target ?? null,
+        ...(runtimeContext?.raceTargetFromThread === true ? { race_target_from_thread: true } : {}),
         review_context: scope.reviewContext ?? null,
       });
       const messages = [...request.messages];

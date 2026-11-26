@@ -10,6 +10,8 @@ export const CoachContext = z
     /** API 层按 thread_id 计算后注入（#891 聊天内绑赛的线程定位），非客户端输入。 */
     threadId: z.string().min(1).optional(),
     target: CoachTurnScope.shape.target,
+    /** API 按请求来源标注，聊天内可用明确的新赛事替换此前绑定。 */
+    raceTargetFromThread: z.boolean().optional(),
     reviewContext: CoachTurnScope.shape.reviewContext,
   })
   .strict()
