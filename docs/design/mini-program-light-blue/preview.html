@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>STRIDE 小程序深蓝主题设计稿</title>
+  <title>STRIDE 小程序亮蓝主题设计稿</title>
   <style>
     :root {
       color-scheme: light;
@@ -13,9 +13,9 @@
       --line: #ebeef3;
       --ink: #2c3340;
       --muted: #6b7280;
-      --accent: #286eae;
-      --tint: #e8f1fa;
-      --deep: #174b78;
+      --accent: #1674dd;
+      --tint: #eaf3ff;
+      --deep: #185aa9;
       --on-accent: #ffffff;
       --tab-active: var(--deep);
       --running: #00a85a;
@@ -34,8 +34,8 @@
     *, *::before, *::after { box-sizing: border-box; }
     body { margin: 0; color: var(--ink); background: #edf1f5; }
     button { font: inherit; }
-    button:focus-visible { outline: 2px solid #286eae; outline-offset: 3px; }
-    ::selection { color: #174b78; background: #e8f1fa; }
+    button:focus-visible { outline: 2px solid #1674dd; outline-offset: 3px; }
+    ::selection { color: #185aa9; background: #eaf3ff; }
 
     .board {
       max-width: 1552px;
@@ -69,7 +69,7 @@
 
     .theme-control button[aria-pressed="true"] {
       background: var(--surface);
-      color: #174b78;
+      color: #185aa9;
       font-weight: 650;
       box-shadow: 0 1px 3px #142b4214;
     }
@@ -326,12 +326,12 @@
   <main class="board">
     <header class="board-header">
       <div>
-        <h1>STRIDE 小程序深蓝主题</h1>
-        <p class="intro">按钮、聊天气泡与选中日期用深蓝底和白字。四个页面均为静态示例。</p>
+        <h1>STRIDE 小程序亮蓝主题</h1>
+        <p class="intro">按钮、聊天气泡与选中日期用亮蓝底和白字。四个页面均为静态示例。</p>
       </div>
       <div class="theme-control" role="group" aria-label="主题对照">
         <button type="button" data-preview-theme="current" aria-pressed="false">现款藕粉</button>
-        <button type="button" data-preview-theme="blue" aria-pressed="true">深蓝提案</button>
+        <button type="button" data-preview-theme="blue" aria-pressed="true">亮蓝提案</button>
       </div>
     </header>
 
@@ -461,9 +461,9 @@
     </div>
 
     <dl class="palette" aria-label="主题色板">
-      <div class="swatch" data-token="accent" style="--sample:var(--accent)"><dt>主色 · 按钮与选中底</dt><dd>#286EAE</dd></div>
-      <div class="swatch" data-token="tint" style="--sample:var(--tint)"><dt>浅衬底 · 标签</dt><dd>#E8F1FA</dd></div>
-      <div class="swatch" data-token="deep" style="--sample:var(--deep)"><dt>强调文字 · 标题与选中图标</dt><dd>#174B78</dd></div>
+      <div class="swatch" data-token="accent" style="--sample:var(--accent)"><dt>主色 · 按钮与选中底</dt><dd>#1674DD</dd></div>
+      <div class="swatch" data-token="tint" style="--sample:var(--tint)"><dt>浅衬底 · 标签</dt><dd>#EAF3FF</dd></div>
+      <div class="swatch" data-token="deep" style="--sample:var(--deep)"><dt>强调文字 · 标题与选中图标</dt><dd>#185AA9</dd></div>
       <div class="swatch" data-token="on-accent" style="--sample:var(--on-accent)"><dt>主色上的文字</dt><dd>#FFFFFF</dd></div>
     </dl>
   </main>
