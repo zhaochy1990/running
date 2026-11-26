@@ -440,7 +440,7 @@ setInterval(() => {
 
 back.innerHTML = icon('left', 23);
 manualLog.setup({
-  screen, render, navigate, icon, asset: miniProgramHome.asset, openSheet, revealActivity,
+  screen, actions, render, navigate, icon, asset: miniProgramHome.asset, openSheet, revealActivity,
   closeSheet: () => {
     sheetReturnFocus = null;
     sheet.close();

@@ -9,9 +9,11 @@ const manualLog = (() => {
   });
   const records = [];
   let activeDraft = null;
+  let activeRecord = null;
   let nextId = 1;
   let selected = 0;
   let editing = null;
+  let saveFeedbackTimer;
   let app;
 
   function today() {
@@ -54,7 +56,10 @@ const manualLog = (() => {
           logButton('discard-edit', '放弃修改', 'secondary'));
       }
     } else {
-      if (!hasDraft()) activeDraft = null;
+      if (!hasDraft()) {
+        activeDraft = null;
+        activeRecord = null;
+      }
       app.navigate('schedule');
     }
   }
@@ -123,7 +128,8 @@ ${escape(entry.note)}</textarea>
         </div>
         <p id="manual-error" class="log-error" role="alert"></p>
       </form>`,
-      footer: '<button type="submit" class="primary" form="manual-form">保存记录</button>',
+      footer: '<button type="submit" class="primary" form="manual-form">保存记录</button>' +
+        '<p class="log-save-status" role="status"></p>',
     };
   }
 
@@ -154,6 +160,7 @@ ${escape(entry.note)}</textarea>
 
   function hasDraft() {
     if (!activeDraft) return false;
+    if (activeRecord) return JSON.stringify(activeDraft) !== JSON.stringify(activeRecord.data);
     return Boolean(activeDraft.title.trim() || activeDraft.note.trim() || activeDraft.exercises.length !== 1 ||
       activeDraft.exercises.some(exercise => exercise.name.trim() || exercise.rows.length !== 1 ||
         exercise.rows.some(row => Object.keys(initialSet).some(key => row[key].trim() !== initialSet[key]))));
@@ -232,16 +239,28 @@ ${escape(entry.note)}</textarea>
       return;
     }
 
+    const snapshot = structuredClone(entry);
+    let record;
     if (editing) {
-      records.find(record => record.id === selected).data = entry;
-      editing = null;
+      record = records.find(item => item.id === selected);
+      editing.original = snapshot;
+      if (record === activeRecord) {
+        activeRecord = null;
+        activeDraft = null;
+      }
     } else {
-      selected = nextId++;
-      records.push({ id: selected, data: entry });
-      activeDraft = null;
+      if (!activeRecord) {
+        activeRecord = { id: nextId++, data: snapshot };
+        records.push(activeRecord);
+      }
+      record = activeRecord;
     }
-    app.revealActivity(selected, entry.date);
-    app.navigate('manualSaved');
+    record.data = snapshot;
+    app.revealActivity(record.id, snapshot.date);
+    const status = app.actions.querySelector('.log-save-status');
+    clearTimeout(saveFeedbackTimer);
+    status.textContent = '已保存';
+    saveFeedbackTimer = setTimeout(() => { status.textContent = ''; }, 1800);
   }
 
   function exerciseOf(control) {
@@ -267,6 +286,7 @@ ${escape(entry.note)}</textarea>
       load.disabled = row.loadUnit === 'bodyweight';
       load.value = load.disabled ? '' : row.load;
     }
+    app.actions.querySelector('.log-save-status').textContent = '';
     clearError(field);
   }
 
@@ -285,7 +305,8 @@ ${escape(entry.note)}</textarea>
       }
       case 'edit': {
         const saved = records.find(item => item.id === selected);
-        editing = { original: saved.data, draft: structuredClone(saved.data) };
+        const original = saved === activeRecord ? activeDraft : saved.data;
+        editing = { original, draft: structuredClone(original) };
         app.navigate('manualEdit');
         break;
       }

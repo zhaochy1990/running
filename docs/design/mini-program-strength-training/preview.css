@@ -204,9 +204,18 @@ dialog::backdrop { background: #2227278a; }
 }
 
 #screen:has(.manual-form) { padding-top: 20px; padding-bottom: 20px; }
-.device:has(.manual-form) .app-actions { border-color: var(--line); background: var(--white); }
+.device:has(.manual-form) .app-actions { position: relative; border-color: var(--line); background: var(--white); }
 .device:has(.manual-form) .device-bottom { background: var(--white); }
 .app-actions > [form="manual-form"] { min-height: 48px; }
+.log-save-status {
+  position: absolute;
+  inset: auto auto calc(100% + 8px) 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.log-save-status:not(:empty) { padding: 7px 14px; border-radius: 8px; background: var(--ink); color: var(--white); }
 .log-field { display: block; min-width: 0; }
 .manual-form { --log-control-line: #858f9e; }
 .log-field > span { display: block; margin-bottom: 5px; font-size: 12px; color: var(--muted); font-weight: 650; }
