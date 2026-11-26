@@ -55,6 +55,7 @@ interface PageHandlers {
   onSave(): Promise<void>;
   commitDraft(draft: StrengthDraft, write: ManualStrengthWrite): Promise<StrengthDraft>;
   resolveConflict(draft: StrengthDraft): Promise<StrengthDraft>;
+  restartMissingDraft(draft: StrengthDraft): Promise<StrengthDraft | null>;
 }
 
 function editSets(
@@ -133,8 +134,13 @@ Page<PageData, PageHandlers>({
       }
       if (this.closed) return;
       this.setData({ draft, expanded: draft.form.actions[0]?.key ?? '', loading: false });
-    } catch {
-      if (!this.closed) this.setData({ loading: false, loadError: '暂时无法打开记录，请返回后重试' });
+    } catch (err) {
+      if (!this.closed) {
+        const loadError = err instanceof ApiError && err.statusCode === 404
+          ? '这条训练记录已不存在'
+          : '暂时无法打开记录，请返回后重试';
+        this.setData({ loading: false, loadError });
+      }
     }
   },
 
@@ -270,6 +276,20 @@ Page<PageData, PageHandlers>({
     return updated;
   },
 
+  async restartMissingDraft(draft) {
+    const choice = await wx.showModal({
+      title: '原训练记录已不存在',
+      content: '放弃这份草稿后，可以开始新的训练。',
+      confirmText: '放弃草稿',
+      cancelText: '保留草稿',
+    });
+    if (!choice.confirm || this.closed) return null;
+    const fresh = await newStrengthDraft(new Date());
+    if (this.closed || userStore.getState().user?.id !== this.userId) return null;
+    clearStrengthDraft(this.userId, draft.id);
+    return fresh;
+  },
+
   async onSave() {
     const original = this.data.draft;
     if (!original || this.data.saving || userStore.getState().user?.id !== this.userId) return;
@@ -324,8 +344,26 @@ Page<PageData, PageHandlers>({
           const updated = await this.resolveConflict(draft);
           error = updated === draft ? '这条记录已更新，请处理冲突后重试。' : '确认内容后可再次保存。';
           draft = updated;
-        } catch {
+        } catch (conflictError) {
+          err = conflictError;
           error = '暂时无法获取最新记录，请重试。';
+        }
+      }
+      if (err instanceof ApiError && err.statusCode === 404) {
+        error = '原训练记录已不存在，无法保存。';
+        if (!this.editing && !this.closed) {
+          try {
+            const fresh = await this.restartMissingDraft(draft);
+            if (fresh && !this.closed) {
+              this.setData({
+                draft: fresh, expanded: fresh.form.actions[0]?.key ?? '', focusField: '',
+                invalidField: '', saving: false, error: '',
+              });
+              return;
+            }
+          } catch {
+            error = '暂时无法放弃草稿，请重试。';
+          }
         }
       } else if (err instanceof ApiError && err.statusCode === 400) {
         draft = { ...draft, pending: undefined };

@@ -3,6 +3,8 @@ import { clearStrengthDraft, summarizeStrengthActions } from '../utils/manual-st
 import { http } from './request';
 
 const listVersions = new Map<string, number>();
+type DeletionListener = (userId: string, recordId: string) => void;
+const deletionListeners = new Set<DeletionListener>();
 type EditedStrengthSummary = { name: string; summary: ManualStrengthSummary };
 const editedSummaries = new Map<string, Map<string, EditedStrengthSummary>>();
 
@@ -20,6 +22,11 @@ export function manualStrengthListVersion(userId: string): number {
   return listVersions.get(userId) ?? 0;
 }
 
+export function subscribeManualStrengthDeletion(listener: DeletionListener): () => void {
+  deletionListeners.add(listener);
+  return () => { deletionListeners.delete(listener); };
+}
+
 export function getManualStrengthRecord(userId: string, recordId: string): Promise<ManualStrengthRecord> {
   return http.get<ManualStrengthRecord>(recordPath(userId, recordId));
 }
@@ -33,6 +40,7 @@ export async function deleteManualStrengthRecord(userId: string, recordId: strin
   } catch {
     console.warn('Could not clear the local draft for a deleted strength record');
   }
+  for (const listener of deletionListeners) listener(userId, recordId);
 }
 
 export async function saveManualStrengthRecord(

@@ -48,6 +48,8 @@ page {
 
 .strength-detail button.detail-delete {
   margin: 0;
+  width: auto;
+  min-width: 0;
   padding: var(--spacing-xs) var(--spacing-sm);
   min-height: 88rpx;
   background: transparent;

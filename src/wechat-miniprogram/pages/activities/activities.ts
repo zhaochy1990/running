@@ -1,5 +1,9 @@
 import { getActivities } from '../../services/activities';
-import { manualStrengthListVersion, takeManualStrengthEditedSummaries } from '../../services/manual-strength';
+import {
+  manualStrengthListVersion,
+  subscribeManualStrengthDeletion,
+  takeManualStrengthEditedSummaries,
+} from '../../services/manual-strength';
 import { fmtDurationShort, fmtKm, fmtPace, fmtDose } from '../../utils/format';
 import { shanghaiToday, shanghaiWeekdayLabel } from '../../utils/date';
 import { userStore } from '../../store/index';
@@ -20,6 +24,7 @@ interface ActivityRow {
   routeThumb: RouteThumb | null;
   distanceKm: string;
   duration: string;
+  durationSeconds: number;
   pace: string;
   avgHr: string;
   load: string;
@@ -30,8 +35,7 @@ interface MonthGroup {
   monthKey: string; // YYYY-MM
   label: string; // 如「2026年3月」
   expanded: boolean;
-  count: string;
-  km: string;
+  summary: Summary;
   duration: string;
   rows: ActivityRow[];
 }
@@ -39,7 +43,7 @@ interface MonthGroup {
 interface Summary {
   count: number;
   km: string;
-  duration: string;
+  durationSeconds: number;
 }
 
 interface ActivitiesPageData {
@@ -69,8 +73,10 @@ interface ActivitiesPageHandlers {
   viewerId: string | null;
   loadedManualStrengthVersion: number;
   unsubscribeViewer: (() => void) | null;
+  unsubscribeStrengthDeletion: (() => void) | null;
   closed: boolean;
   syncViewer(): void;
+  onManualStrengthDeleted(userId: string, recordId: string): void;
   onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
   onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   fetch(): Promise<void>;
@@ -153,6 +159,7 @@ function toRow(a: Activity): ActivityRow {
     routeThumb: a.route_thumb ?? null,
     distanceKm: a.distance_km != null && a.distance_km > 0 ? fmtKm(a.distance_m) : '—',
     duration: fmtDurationShort(a.duration_s),
+    durationSeconds: a.duration_s ?? 0,
     pace: fmtPace(a.avg_pace_s_km),
     avgHr: a.avg_hr != null ? `${Math.round(a.avg_hr)}` : '—',
     // 优先展示 STRIDE 自身计算的负荷（training_dose）；缺失时回退到手表上报值。
@@ -175,7 +182,7 @@ function summarizeActivities(activities: Activity[]): Summary {
   return {
     count: activities.length,
     km: total.km > 0 ? total.km.toFixed(1) : '—',
-    duration: total.dur > 0 ? fmtDurationShort(total.dur) : '—',
+    durationSeconds: total.dur,
   };
 }
 
@@ -186,7 +193,7 @@ function summaryFrom(res: ActivitiesListResponse, monthKey: string): Summary {
     return {
       count: monthSummary.activity_count,
       km: monthSummary.total_run_km > 0 ? monthSummary.total_run_km.toFixed(1) : '—',
-      duration: monthSummary.duration_s > 0 ? fmtDurationShort(monthSummary.duration_s) : '—',
+      durationSeconds: monthSummary.duration_s,
     };
   }
   const monthActivities = res.activities.filter((a) => (a.date || '').slice(0, 7) === monthKey);
@@ -224,9 +231,8 @@ function buildMonthGroups(res: ActivitiesListResponse, currentMonth: string): Mo
         monthKey,
         label: monthLabel(monthKey),
         expanded: monthKey === currentMonth,
-        count: String(s.count),
-        km: s.km,
-        duration: s.duration,
+        summary: s,
+        duration: fmtDurationShort(s.durationSeconds),
         rows: acts.map(toRow),
       };
     });
@@ -248,8 +254,7 @@ function mergeMonthGroups(existing: MonthGroup[], res: ActivitiesListResponse): 
         monthKey,
         label: monthLabel(monthKey),
         expanded: false,
-        count: '0',
-        km: '—',
+        summary: { count: 0, km: '—', durationSeconds: 0 },
         duration: '—',
         rows: [],
       };
@@ -261,20 +266,9 @@ function mergeMonthGroups(existing: MonthGroup[], res: ActivitiesListResponse): 
 
   const summaries = res.monthly_summaries ?? {};
   for (const g of groups) {
-    const ms = summaries[g.monthKey];
-    if (ms) {
-      g.count = String(ms.activity_count);
-      g.km = ms.total_run_km > 0 ? ms.total_run_km.toFixed(1) : '—';
-      g.duration = ms.duration_s > 0 ? fmtDurationShort(ms.duration_s) : '—';
-    } else {
-      const acts = res.activities.filter((a) => (a.date || '').slice(0, 7) === g.monthKey);
-      if (acts.length) {
-        const s = summarizeActivities(acts);
-        g.count = String(s.count);
-        g.km = s.km;
-        g.duration = s.duration;
-      }
-    }
+    if (!summaries[g.monthKey] && !res.activities.some((a) => (a.date || '').slice(0, 7) === g.monthKey)) continue;
+    g.summary = summaryFrom(res, g.monthKey);
+    g.duration = fmtDurationShort(g.summary.durationSeconds);
   }
   return groups;
 }
@@ -284,6 +278,7 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
   viewerId: null,
   loadedManualStrengthVersion: 0,
   unsubscribeViewer: null,
+  unsubscribeStrengthDeletion: null,
   closed: false,
   onShareAppMessage: defaultShareAppMessage,
   onShareTimeline: defaultShareTimeline,
@@ -313,6 +308,9 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
     this.unsubscribeViewer = userStore.subscribe(() => {
       if (currentViewerId() !== this.viewerId) this.syncViewer();
     });
+    this.unsubscribeStrengthDeletion = subscribeManualStrengthDeletion((userId, recordId) => {
+      this.onManualStrengthDeleted(userId, recordId);
+    });
     this.syncViewer();
   },
 
@@ -329,6 +327,8 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
     this.fetchGeneration++;
     this.unsubscribeViewer?.();
     this.unsubscribeViewer = null;
+    this.unsubscribeStrengthDeletion?.();
+    this.unsubscribeStrengthDeletion = null;
   },
 
   syncViewer() {
@@ -366,6 +366,33 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
     if (!this.data.loading && manualStrengthListVersion(userId) !== this.loadedManualStrengthVersion) {
       void this.fetch();
     }
+  },
+
+  onManualStrengthDeleted(userId, recordId) {
+    if (this.closed || userId !== this.viewerId || userId !== currentViewerId()) return;
+    let removed = false;
+    const monthGroups = this.data.monthGroups.flatMap((group) => {
+      const deleted = group.rows.find((row) => row.source === 'manual_strength' && row.labelId === recordId);
+      if (!deleted) return [group];
+      removed = true;
+      const rows = group.rows.filter((row) => row !== deleted);
+      const count = Math.max(rows.length, group.summary.count - 1);
+      if (count <= 0) return [];
+      const loadedDuration = rows.reduce((duration, row) => duration + row.durationSeconds, 0);
+      const durationSeconds = Math.max(loadedDuration, group.summary.durationSeconds - deleted.durationSeconds);
+      return [{
+        ...group,
+        summary: { ...group.summary, count, durationSeconds },
+        duration: fmtDurationShort(durationSeconds),
+        rows,
+      }];
+    });
+    if (removed) {
+      const total = this.data.total - 1;
+      const loadedCount = this.data.loadedCount - 1;
+      this.setData({ monthGroups, total, loadedCount, hasMore: loadedCount < total });
+    }
+    void this.fetch();
   },
 
   async fetch() {

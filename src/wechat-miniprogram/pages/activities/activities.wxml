@@ -23,7 +23,7 @@
         >
           <view class="month-group__title-wrap">
             <view class="month-group__title">{{item.label}}</view>
-            <view class="month-group__summary">{{item.count}} 次 · {{item.km}} km · {{item.duration}}</view>
+            <view class="month-group__summary">{{item.summary.count}} 次 · {{item.summary.km}} km · {{item.duration}}</view>
           </view>
           <image
             class="month-group__chevron {{item.expanded ? 'is-expanded' : ''}}"
