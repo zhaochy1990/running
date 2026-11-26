@@ -316,11 +316,12 @@ func TestRuleRuntime_PreparationTimeout(t *testing.T) {
 	}
 }
 
-func TestRuleRuntime_WaitingForRunningRuleHonorsBudget(t *testing.T) {
+func TestRuleRuntime_TrialCapacityWaitIsBounded(t *testing.T) {
 	input := ruleInput(t, nil, 5)
 	check := StaticRuleCheck{
-		Source:  `function run() { return {status:"pass"}; }`,
-		Timeout: 20 * time.Millisecond,
+		Source:      `function run() { return {status:"pass"}; }`,
+		Timeout:     20 * time.Millisecond,
+		WaitTimeout: 20 * time.Millisecond,
 	}
 	select {
 	case ruleRuntimeSlot <- struct{}{}:
@@ -330,7 +331,7 @@ func TestRuleRuntime_WaitingForRunningRuleHonorsBudget(t *testing.T) {
 	func() {
 		defer func() { <-ruleRuntimeSlot }()
 		blocked := check.Run(context.Background(), input)
-		if blocked.Error == nil || blocked.Error.Code != errRuleTimeout {
+		if blocked.Error == nil || blocked.Error.Code != errRuleBusy {
 			t.Fatalf("waiting rule: status=%s error=%+v", blocked.Status, blocked.Error)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
@@ -469,5 +470,32 @@ func TestSchemaCheck_RollingDuplicateCalendarWeek(t *testing.T) {
 	result := (SchemaCheck{}).Run(context.Background(), ruleInput(t, artifact, 5))
 	if result.Status != "fail" || !strings.Contains(string(result.Detail), "week_name") {
 		t.Fatalf("duplicate dates with sequential indices must fail: %+v", result)
+	}
+}
+
+func TestRuleRuntime_BatchWaitDoesNotConsumeRuleBudget(t *testing.T) {
+	input := ruleInput(t, nil, 5)
+	check := StaticRuleCheck{Source: `function run(){return {status:"pass"};}`, Timeout: 50 * time.Millisecond}
+	select {
+	case ruleRuntimeSlot <- struct{}{}:
+	case <-time.After(time.Second):
+		t.Fatal("runtime still occupied")
+	}
+	done := make(chan CheckResult, 1)
+	go func() { done <- check.Run(context.Background(), input) }()
+	select {
+	case r := <-done:
+		<-ruleRuntimeSlot
+		t.Fatalf("capacity wait consumed rule budget: %+v", r)
+	case <-time.After(150 * time.Millisecond):
+	}
+	<-ruleRuntimeSlot
+	select {
+	case r := <-done:
+		if r.Status != "pass" {
+			t.Fatalf("did not get full rule budget: %+v", r)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("batch did not resume")
 	}
 }

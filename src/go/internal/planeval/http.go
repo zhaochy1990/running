@@ -4,12 +4,14 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/zhaochy1990/stride/internal/httplog"
+	"github.com/zhaochy1990/stride/internal/storage"
 	"go.uber.org/zap"
 )
 
@@ -30,7 +32,12 @@ func (s *Service) Router(adminAuth gin.HandlerFunc, adminID func(*gin.Context) s
 	r.GET("/health", health)
 
 	admin := r.Group(adminPrefix, adminAuth, func(c *gin.Context) {
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16<<20)
+		limit := int64(16 << 20)
+		if c.Request.Method == http.MethodPost && c.FullPath() == adminPrefix+"/rules/trial" {
+			// 48 MiB CheckInput plus bounded JSON-escaped rule source and metadata.
+			limit = maxRuleInputBytes + (2 << 20)
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
 		c.Next()
 	})
 	admin.GET("/agent-versions", s.handleAgentVersions)
@@ -138,6 +145,44 @@ func (s *Service) Router(adminAuth gin.HandlerFunc, adminID func(*gin.Context) s
 		c.JSON(200, gin.H{"rules": rows})
 	})
 
+	admin.GET("/rules/:id/:version", func(c *gin.Context) {
+		version, err := strconv.Atoi(c.Param("version"))
+		if err != nil || version < 1 {
+			writeError(c, fail(422, "invalid_rule", "version: 须为正整数"))
+			return
+		}
+		rule, err := s.store.GetPlanEvalRule(c.Request.Context(), c.Param("id"), version)
+		if err != nil {
+			writeError(c, s.mapStorageError(err))
+			return
+		}
+		c.JSON(200, rule)
+	})
+	admin.POST("/rules", func(c *gin.Context) {
+		var req storage.PlanEvalRule
+		if !decode(c, &req) {
+			return
+		}
+		rule, e := s.publishRule(c.Request.Context(), req)
+		if e != nil {
+			writeError(c, e)
+			return
+		}
+		c.JSON(201, rule)
+	})
+	admin.POST("/rules/trial", func(c *gin.Context) {
+		var req ruleTrialRequest
+		if !decode(c, &req) {
+			return
+		}
+		result, e := s.trialRule(c.Request.Context(), req)
+		if e != nil {
+			writeError(c, e)
+			return
+		}
+		c.JSON(200, result)
+	})
+
 	admin.POST("/agent-versions/:version/cleanup", s.handleCleanup)
 	admin.POST("/agent-versions/:version/scale", s.handleScale)
 	admin.POST("/tasks", func(c *gin.Context) { s.handleCreateTask(c, adminID(c)) })
@@ -187,6 +232,11 @@ func writeError(c *gin.Context, err *Error) {
 
 func decode(c *gin.Context, body any) bool {
 	if err := c.ShouldBindJSON(body); err != nil {
+		var tooLarge *http.MaxBytesError
+		if c.FullPath() == adminPrefix+"/rules/trial" && errors.As(err, &tooLarge) {
+			writeError(c, fail(http.StatusRequestEntityTooLarge, "request_too_large", "试跑请求须 ≤50 MiB"))
+			return false
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json", "detail": err.Error()})
 		return false
 	}

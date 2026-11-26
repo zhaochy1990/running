@@ -176,14 +176,15 @@ type StaticRuleCheck struct {
 	Version     int
 	Source      string
 	Timeout     time.Duration
-	MemoryLimit int64 // bytes of heap growth this rule may cause; <= 0 disables the guard
+	WaitTimeout time.Duration // trial capacity wait; zero waits under the caller/lease context
+	MemoryLimit int64         // bytes of heap growth this rule may cause; <= 0 disables the guard
 }
 
 func (c StaticRuleCheck) ID() string { return c.CheckID }
 
 func (c StaticRuleCheck) Run(ctx context.Context, input CheckInput) CheckResult {
 	result := CheckResult{CheckID: c.CheckID, Version: c.Version}
-	value, err := runJavaScript(ctx, c.Source, input, c.Timeout, c.MemoryLimit)
+	value, err := runJavaScript(ctx, c.Source, input, c.Timeout, c.WaitTimeout, c.MemoryLimit)
 	if err != nil {
 		return ruleError(result, ruleErrorCode(err), err.Error())
 	}
@@ -196,21 +197,56 @@ func (c StaticRuleCheck) Run(ctx context.Context, input CheckInput) CheckResult 
 	if err := json.Unmarshal(value, &verdict); err != nil {
 		return ruleError(result, "rule_result_invalid", "run(input) 的返回值不是合法的 JSON 对象")
 	}
+	if len(verdict.Reason) > maxMySQLTextBytes {
+		return ruleError(result, "rule_result_invalid", "reason 须 ≤65535 UTF-8 字节（MySQL TEXT 上限）")
+	}
 	switch verdict.Status {
 	case "pass", "fail":
+		if verdict.Status == "fail" && strings.TrimSpace(verdict.Reason) == "" {
+			return ruleError(result, "rule_result_invalid", "fail 结果必须带 reason 与非空 violations 数组")
+		}
+		if len(verdict.Violations) > 0 {
+			var violations []map[string]json.RawMessage
+			if json.Unmarshal(verdict.Violations, &violations) != nil || violations == nil {
+				return ruleError(result, "rule_result_invalid", "violations 须为对象数组")
+			}
+			if verdict.Status == "fail" {
+				if len(violations) == 0 {
+					return ruleError(result, "rule_result_invalid", "fail 结果必须带非空 violations 数组")
+				}
+				for _, violation := range violations {
+					if violation["expected"] == nil || violation["actual"] == nil || !violationLocation(violation) {
+						return ruleError(result, "rule_result_invalid", "每项 violation 须有 expected、actual 及位置（date、week_name、week_index、field 或 path）")
+					}
+				}
+			}
+		} else if verdict.Status == "fail" {
+			return ruleError(result, "rule_result_invalid", "fail 结果必须带非空 violations 数组")
+		}
 		if len(verdict.Violations) > 0 {
 			result.Detail = verdict.Violations
 		}
 		result.Status, result.Reason = verdict.Status, verdict.Reason
 		return result
 	case "error":
-		if verdict.Error == nil || verdict.Error.Code == "" {
+		if verdict.Error == nil || strings.TrimSpace(verdict.Error.Code) == "" || strings.TrimSpace(verdict.Error.Message) == "" {
 			return ruleError(result, "rule_result_invalid", "error 结果必须带 error.code 与 error.message")
 		}
 		result.Status, result.Reason, result.Error = "error", verdict.Reason, verdict.Error
 		return result
 	}
 	return ruleError(result, "rule_result_invalid", fmt.Sprintf("status 应为 pass / fail / error，实际为 %q", verdict.Status))
+}
+
+func violationLocation(violation map[string]json.RawMessage) bool {
+	for _, key := range []string{"date", "week_name", "field", "path"} {
+		var value string
+		if json.Unmarshal(violation[key], &value) == nil && strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	var week int
+	return json.Unmarshal(violation["week_index"], &week) == nil && week > 0
 }
 
 func ruleError(result CheckResult, code, message string) CheckResult {
@@ -245,25 +281,12 @@ func ruleErrorCode(err error) string {
 	return errRuleThrew
 }
 
-// bootstrap runs before every rule in a fresh interpreter: it pins the clock
-// to the frozen instant, seeds Math.random and returns the input deep-frozen
+// bootstrap runs before every rule in a fresh interpreter: it seeds Math.random
+// and returns the input deep-frozen (the runtime owns the frozen clock)
 // and bound to nothing global — it reaches the rule as run()'s argument.
 const ruleBootstrap = `
 (function () {
-  var AS_OF = __asOf;
   var inputJSON = __inputJSON;
-  var RealDate = Date;
-  function FrozenDate() {
-    var args = Array.prototype.slice.call(arguments);
-    if (!(this instanceof FrozenDate)) { return new RealDate(AS_OF).toString(); }
-    return args.length === 0 ? new RealDate(AS_OF) : new (RealDate.bind.apply(RealDate, [null].concat(args)))();
-  }
-  FrozenDate.prototype = RealDate.prototype;
-  FrozenDate.now = function () { return AS_OF; };
-  FrozenDate.parse = RealDate.parse;
-  FrozenDate.UTC = RealDate.UTC;
-  Object.defineProperty(globalThis, "Date", { value: FrozenDate, writable: false, configurable: false });
-
   var seed = 0x9e3779b9 >>> 0;
   function seededRandom() {
     seed = (seed + 0x6d2b79f5) >>> 0;
@@ -283,7 +306,6 @@ const ruleBootstrap = `
     return node;
   }
   delete globalThis.__inputJSON;
-  delete globalThis.__asOf;
   return deepFreeze(JSON.parse(inputJSON));
 })();
 `
@@ -295,12 +317,10 @@ var ruleRuntimeSlot = make(chan struct{}, 1)
 
 // runJavaScript evaluates the rule program and calls its `run` with the frozen
 // input, returning run's result as JSON.
-func runJavaScript(ctx context.Context, source string, input CheckInput, timeout time.Duration, memoryLimit int64) ([]byte, error) {
+func runJavaScript(ctx context.Context, source string, input CheckInput, timeout, waitTimeout time.Duration, memoryLimit int64) ([]byte, error) {
 	if ctx.Err() != nil {
 		return nil, &ruleRunError{code: errRuleBusy}
 	}
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 	if len(input.Artifact)+len(input.Snapshot)+len(input.Scenario.Request)+len(input.Scenario.ScenarioID)+len(input.AsOf) > maxRuleInputBytes {
 		return nil, &ruleRunError{code: errRuleInputInvalid}
 	}
@@ -308,11 +328,20 @@ func runJavaScript(ctx context.Context, source string, input CheckInput, timeout
 	if err != nil {
 		return nil, &ruleRunError{code: errRuleInputInvalid}
 	}
+	waitCtx := ctx
+	if waitTimeout > 0 {
+		var cancel context.CancelFunc
+		waitCtx, cancel = context.WithTimeout(ctx, waitTimeout)
+		defer cancel()
+	}
 	select {
 	case ruleRuntimeSlot <- struct{}{}:
-	case <-runCtx.Done():
-		return nil, ruleContextError(ctx, runCtx)
+	case <-waitCtx.Done():
+		return nil, &ruleRunError{code: errRuleBusy}
 	}
+	// Capacity wait never consumes the rule's preparation/execution budget.
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	type outcome struct {
 		value json.RawMessage
 		err   error
@@ -370,6 +399,9 @@ func runJavaScriptSync(ctx context.Context, source string, inputJSON []byte, asO
 		return nil, err
 	}
 	vm := goja.New()
+	vm.SetTimeSource(func() time.Time { return time.UnixMilli(asOfMs).UTC() })
+	stringify, _ := goja.AssertFunction(vm.Get("JSON").ToObject(vm).Get("stringify"))
+	vm.SetMaxCallStackSize(1024)
 	// One deadline covers both trusted preparation and rule execution.
 	stop := make(chan struct{})
 	var once atomic.Bool
@@ -386,9 +418,6 @@ func runJavaScriptSync(ctx context.Context, source string, inputJSON []byte, asO
 	}()
 
 	if err := vm.Set("__inputJSON", string(inputJSON)); err != nil {
-		return nil, fmt.Errorf("rule runtime: %w", err)
-	}
-	if err := vm.Set("__asOf", asOfMs); err != nil {
 		return nil, fmt.Errorf("rule runtime: %w", err)
 	}
 	frozenInput, err := vm.RunString(ruleBootstrap)
@@ -448,22 +477,37 @@ func runJavaScriptSync(ctx context.Context, source string, inputJSON []byte, asO
 	if err := ruleRunContextError(ctx); err != nil {
 		return nil, err
 	}
-	exported := value.Export()
-	encoded, err := json.Marshal(exported)
+	// Serialize inside the interpreter budget: getters/toJSON and cycles must
+	// not escape into an unbounded Go export after the rule returns.
+	encoded, err := stringify(goja.Undefined(), value)
 	if err != nil {
+		var interrupted *goja.InterruptedError
+		if errors.As(err, &interrupted) {
+			return nil, ruleFailure(err)
+		}
 		return nil, &ruleRunError{code: errRuleResultInvalid}
 	}
-	return encoded, nil
+	if err := ruleRunContextError(ctx); err != nil {
+		return nil, err
+	}
+	raw := []byte(encoded.String())
+	if len(raw) > 1<<20 || !json.Valid(raw) {
+		return nil, &ruleRunError{code: errRuleResultInvalid}
+	}
+	return raw, nil
 }
 
 // ruleFailure maps an interpreter failure to a code: our interrupts are
 // budget outcomes, anything else is the rule throwing.
 func ruleFailure(err error) error {
-	if strings.Contains(err.Error(), errRuleTimeout) {
-		return fmt.Errorf("%w: exceeded %s", &ruleRunError{code: errRuleTimeout}, "the time budget")
-	}
-	if strings.Contains(err.Error(), errRuleMemory) {
-		return fmt.Errorf("%w: exceeded the memory budget", &ruleRunError{code: errRuleMemory})
+	var interrupted *goja.InterruptedError
+	if errors.As(err, &interrupted) {
+		switch interrupted.Value() {
+		case errRuleTimeout:
+			return fmt.Errorf("%w: exceeded the time budget", &ruleRunError{code: errRuleTimeout})
+		case errRuleMemory:
+			return fmt.Errorf("%w: exceeded the memory budget", &ruleRunError{code: errRuleMemory})
+		}
 	}
 	return fmt.Errorf("%w: %v", &ruleRunError{code: errRuleThrew}, err)
 }

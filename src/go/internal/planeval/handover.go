@@ -266,6 +266,8 @@ func (s *Service) EvaluatePending(ctx context.Context) {
 }
 
 func (s *Service) evaluate(ctx context.Context, work storage.PlanEvalEvaluationWork) {
+	ctx, cancel := context.WithDeadline(ctx, work.LeaseUntil)
+	defer cancel()
 	input := CheckInput{
 		Artifact: json.RawMessage(work.ArtifactContent), Snapshot: json.RawMessage(work.SnapshotJSON),
 		Scenario: ScenarioInput{ScenarioID: work.ScenarioID, Request: json.RawMessage(work.RequestJSON)},
@@ -273,12 +275,17 @@ func (s *Service) evaluate(ctx context.Context, work storage.PlanEvalEvaluationW
 	}
 
 	for _, rule := range work.Rules {
-		if rule.ArtifactType != work.ArtifactType {
+		if !ruleAppliesTo(rule.ArtifactType, work.ArtifactType) {
 			continue
 		}
-		check := StaticRuleCheck{CheckID: rule.CheckID, Version: rule.Version, Source: rule.Source, Timeout: s.cfg.RuleTimeout, MemoryLimit: s.cfg.RuleMemoryLimit}
+		check := s.staticRule(rule.CheckID, rule.Version, rule.Source)
 		// One failing check never stops the rest.
-		result := *checkResultRow(check.Run(ctx, input), work.ArtifactID)
+		verdict := check.Run(ctx, input)
+		if ctx.Err() != nil {
+			// Capacity/caller/lease expiry is retryable, not a permanent rule verdict.
+			return
+		}
+		result := *checkResultRow(verdict, work.ArtifactID)
 		if err := s.store.SavePlanEvalCheckResults(ctx, work.ExecutionID, work.LeaseUntil, []storage.PlanEvalCheckResult{result}, storage.PlanEvalEvaluateRunning, time.Now().UTC()); err != nil {
 			s.log.Error("plan-eval: save check result", zap.String("execution", work.ExecutionID), zap.Error(err))
 			return

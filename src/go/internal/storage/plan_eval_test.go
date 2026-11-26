@@ -730,3 +730,52 @@ func TestPlanEvalScenarioRulesKeepLegacyAndExcludeOtherScenarios(t *testing.T) {
 		t.Fatalf("wrong scenario rules: %v", got)
 	}
 }
+
+func TestPlanEval_PublishRuleIsImmutableAndConcurrent(t *testing.T) {
+	st := openPlanEvalStore(t)
+	ctx := context.Background()
+	id := "publish-" + uuid.NewString()
+	first := PlanEvalRule{ID: id, Version: 1, Name: "v1", ArtifactType: "*", Source: "function run(){}"}
+	if err := st.PublishPlanEvalRule(ctx, &first); err != nil {
+		t.Fatal(err)
+	}
+	changed := first
+	changed.Source = "overwritten"
+	if err := st.UpsertPlanEvalRule(ctx, &changed); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := st.GetPlanEvalRule(ctx, id, 1)
+	if err != nil || saved.Source != first.Source {
+		t.Fatalf("seed overwrote version: %+v %v", saved, err)
+	}
+	var wg sync.WaitGroup
+	results := make(chan error, 2)
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			next := first
+			next.Version = 2
+			results <- st.PublishPlanEvalRule(ctx, &next)
+		}()
+	}
+	wg.Wait()
+	close(results)
+	success, conflict := 0, 0
+	for err := range results {
+		if err == nil {
+			success++
+		} else if errors.Is(err, ErrPlanEvalRuleConflict) {
+			conflict++
+		} else {
+			t.Fatal(err)
+		}
+	}
+	if success != 1 || conflict != 1 {
+		t.Fatalf("concurrent publish: success=%d conflict=%d", success, conflict)
+	}
+	first.Version = 4
+	if err := st.PublishPlanEvalRule(ctx, &first); !errors.Is(err, ErrPlanEvalRuleConflict) {
+		t.Fatalf("skipped version: %v", err)
+	}
+}
