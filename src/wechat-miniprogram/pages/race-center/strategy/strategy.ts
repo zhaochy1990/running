@@ -45,6 +45,8 @@ interface StrategyPageData {
   versions: Array<{ target: string; active: boolean }>;
   /** 草稿模式：教练聊天卡片交接的初稿，未落库（底部「应用并保存」）。 */
   draft: boolean;
+  /** 当前可分享的已保存版本行 ID，无法生成策略链接时为 0。 */
+  shareVersionId: number;
   dirty: boolean;
   saving: boolean;
   applying: boolean;
@@ -87,8 +89,6 @@ interface StrategyPageHandlers {
   /** 已保存版本全量（服务端目标升序）；_activeTarget 是当前选中的版本键。 */
   _versions: RaceStrategyVersion[];
   _activeTarget: string;
-  /** 当前选中版本的行 id（分享链接的版本标识；草稿/未选中态为 0）。 */
-  _activeVersionId: number;
   /** 指定初始选中的目标（?target= 或草稿应用后的落点）。 */
   _initialTarget: string;
 }
@@ -121,6 +121,7 @@ Page<StrategyPageData, StrategyPageHandlers>({
     raceDayText: '',
     versions: [],
     draft: false,
+    shareVersionId: 0,
     dirty: false,
     saving: false,
     applying: false,
@@ -135,7 +136,6 @@ Page<StrategyPageData, StrategyPageHandlers>({
   _draftStrategy: null,
   _versions: [],
   _activeTarget: '',
-  _activeVersionId: 0,
   _initialTarget: '',
 
   onLoad(options) {
@@ -207,7 +207,6 @@ Page<StrategyPageData, StrategyPageHandlers>({
   applyVersion(version: RaceStrategyVersion, versions: RaceStrategyVersion[], detail: RaceDetail) {
     this._versions = versions;
     this._activeTarget = version.target_finish_time;
-    this._activeVersionId = version.id || 0;
     this._base = version.content;
     const view = toStrategyView(version.content);
     this.setData({
@@ -215,6 +214,7 @@ Page<StrategyPageData, StrategyPageHandlers>({
       error: '',
       view,
       draft: false,
+      shareVersionId: userStore.getState().user?.id ? version.id || 0 : 0,
       versions: versions.map((v) => ({ target: v.target_finish_time, active: v.target_finish_time === version.target_finish_time })),
       raceDayText: raceDayLabel(detail.race_date),
       dirty: false,
@@ -251,22 +251,21 @@ Page<StrategyPageData, StrategyPageHandlers>({
 
   onShareAppMessage() {
     const view = this.data.view;
-    const name = view?.raceName || '比赛策略';
     if (!view || !this._raceId) {
-      return { title: name, path: '/pages/race-center/race-center' };
+      return { title: '赛事中心 · 全年路跑日历', path: '/pages/race-center/race-center' };
     }
     // #506：已落库的版本把 owner+race+version 三个 id 带进只读落地页——好友
     // （含未登录）点开看到分享者的这一版。
     const ownerId = userStore.getState().user?.id;
-    if (this._activeVersionId && ownerId) {
+    if (this.data.shareVersionId && ownerId) {
       return {
         title: strategyShareTitle(view),
-        path: `/pages/race-center/strategy-share/strategy-share?user=${ownerId}&id=${this._raceId}&version=${this._activeVersionId}`,
+        path: `/pages/race-center/strategy-share/strategy-share?user=${ownerId}&id=${this._raceId}&version=${this.data.shareVersionId}`,
       };
     }
     return {
       // 右上角菜单在初稿或旧数据缺版本 ID 时仍可转发赛事详情。
-      title: name,
+      title: this._detail?.name_cn || this._detail?.name || '赛事详情',
       path: `/pages/race-center/detail?id=${this._raceId}`,
     };
   },
@@ -427,10 +426,10 @@ Page<StrategyPageData, StrategyPageHandlers>({
       if (remaining.length === 0) {
         this._versions = [];
         this._activeTarget = '';
-        this._activeVersionId = 0;
         this.setData({
           versions: [],
           view: null,
+          shareVersionId: 0,
           updatedAtText: '',
           error: '策略尚未生成：回到赛事详情，和教练聊一聊生成初稿',
         });
