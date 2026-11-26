@@ -114,7 +114,7 @@ const manualLog = (() => {
       <div class="log-exercise-head">
         <label class="log-field log-name-field">
           <span>动作名称</span>
-          <input data-log-field="name" aria-label="${label} 名称" placeholder="如深蹲" value="${escape(exercise.name)}">
+          <input data-log-field="name" placeholder="如深蹲" value="${escape(exercise.name)}">
         </label>
         ${logButton('remove-exercise', app.icon('cross', 14), 'icon-button log-remove', `aria-label="删除${label}"`)}
       </div>
