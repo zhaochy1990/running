@@ -112,7 +112,10 @@ const manualLog = (() => {
     const label = `动作 ${index + 1}`;
     const body = expanded ? `
       <div class="log-exercise-head">
-        <input data-log-field="name" aria-label="${label} 名称" placeholder="动作名称，如深蹲" value="${escape(exercise.name)}">
+        <label class="log-field log-name-field">
+          <span>动作名称</span>
+          <input data-log-field="name" aria-label="${label} 名称" placeholder="如深蹲" value="${escape(exercise.name)}">
+        </label>
         ${logButton('remove-exercise', app.icon('cross', 14), 'icon-button log-remove', `aria-label="删除${label}"`)}
       </div>
       ${exercise.rows.length ? '<div class="log-set log-set-labels" aria-hidden="true"><span>组数</span><span>负重</span><span>单位</span><span>数量</span></div>' : ''}
@@ -146,7 +149,7 @@ const manualLog = (() => {
     return {
       title: editing ? '编辑记录' : '自由力量训练',
       content: `<form id="manual-form" class="manual-form" novalidate>
-        <label class="log-field log-title-field"><span>训练名称</span><input data-log-field="title" placeholder="${defaultTitle(entry.date)}" value="${escape(entry.title)}"></label>
+        <label class="log-field log-name-field"><span>训练名称</span><input data-log-field="title" placeholder="${defaultTitle(entry.date)}" value="${escape(entry.title)}"></label>
         <h3 class="log-section-head">动作明细</h3>
         ${entry.exercises.map((exercise, index) => exerciseView(exercise, index, exercise === expanded)).join('')}
         ${logButton('add-exercise', `${app.icon('plus', 18)}添加动作`, 'secondary log-add-exercise')}
@@ -260,7 +263,7 @@ ${escape(entry.note)}</textarea>
       const field = error.field ? area.querySelector(`[data-log-field="${error.field}"]`)
         : area.querySelector(`[data-log-action="${error.action}"]`);
       const feedback = app.screen.querySelector('#manual-error');
-      const anchor = field.closest('.log-set, .log-exercise-head, .log-exercise-footer, .log-field') ?? field;
+      const anchor = field.closest('.log-set, .log-exercise-head, .log-exercise-footer') ?? field.closest('.log-field') ?? field;
       anchor.after(feedback);
       feedback.textContent = error.message;
       field.setAttribute('aria-describedby', 'manual-error');

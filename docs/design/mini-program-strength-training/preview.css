@@ -235,9 +235,9 @@ dialog::backdrop { background: #2227278a; }
 .manual-form :is(input, select, textarea):focus { outline: none; }
 .manual-form ::placeholder { color: var(--muted); opacity: 1; }
 .manual-form :focus::placeholder { opacity: 0; }
-.log-title-field > span { margin-bottom: 0; }
-.log-title-field:focus-within > span { opacity: 0; }
-.manual-form .log-title-field input {
+.log-name-field > span { margin-bottom: 0; }
+.log-name-field:focus-within > span { opacity: 0; }
+.manual-form .log-name-field input {
   min-height: 40px;
   border: 0;
   border-bottom: 1px solid var(--line);
@@ -273,7 +273,7 @@ dialog::backdrop { background: #2227278a; }
 .log-exercise-count, .log-exercise-summary svg { color: var(--muted); }
 .log-exercise-count { font-size: 12px; white-space: nowrap; }
 .log-exercise-head { display: flex; align-items: center; gap: 4px; }
-.log-exercise-head input { min-height: 44px; font-size: 15px; font-weight: 680; }
+.log-exercise-head .log-name-field { flex: 1; }
 .log-exercise-head .log-remove {
   align-self: flex-start;
   flex: 0 0 36px;
