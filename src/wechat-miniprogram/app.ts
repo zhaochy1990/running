@@ -31,9 +31,6 @@ async function silentLogin(redirectOnSessionExpiry = true): Promise<boolean> {
     userStore.setUser(result.user);
     return true;
   } catch (err) {
-    if (!redirectOnSessionExpiry && err instanceof ApiError && err.statusCode === 401 && err.code !== 'session_changed') {
-      userStore.clear();
-    }
     console.error(
       '[auth] silent login failed:',
       err instanceof Error ? err.message : err,

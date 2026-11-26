@@ -85,14 +85,16 @@ function wxRequest(options: RequestOptions): Promise<WxRequestResponse> {
 // 正在进行中的 token 刷新 promise（防止并发刷新）
 let refreshPromise: Promise<string> | null = null;
 export let requestSessionVersion = 0;
+let pendingRecovery: symbol | undefined;
 
 export function beginRequestSession(): void {
   requestSessionVersion++;
   refreshPromise = null;
 }
 
-export function clearSessionCredentials(): void {
+export function clearSessionCredentials(preserveRecovery = false): void {
   beginRequestSession();
+  if (!preserveRecovery) pendingRecovery = undefined;
   wx.removeStorageSync(STORAGE_KEYS.TOKEN);
   wx.removeStorageSync(STORAGE_KEYS.REFRESH_TOKEN);
   wx.removeStorageSync(STORAGE_KEYS.TOKEN_EXPIRES_AT);
@@ -106,55 +108,43 @@ export function sessionChangedError(): ApiError {
 // 会话失效兜底：清本地 token，先试一次微信免密登录（token 失效/refresh 失败
 // 不等于微信解绑——用户多半还绑着，重走 wx.login() 就能无感换回 JWT，不该把人
 // 甩到登录页重做一遍手机号验证码），恢复不了才 reLaunch 登录页。
-// 模块级 guard 避免多个并发 401 触发重复处理。
 // 请求一旦跨过退出或切号边界，晚到的 401 不得启动会话恢复。
-let redirectingToLogin = false;
 // ponytail: 每个 app 生命周期只免密恢复一次。若新换来的 token 又被拒（时钟偏移 /
 // audience 配错一类），无上限重试会变成 reLaunch 死循环；一次失败就退回登录页。
 let recoveredOnce = false;
 
 export function handleSessionExpired(): void {
-  if (redirectingToLogin || !wx.getStorageSync(STORAGE_KEYS.TOKEN)) return;
-  redirectingToLogin = true;
-
+  // Clearing synchronously means the other 401s for this session see no token.
+  if (!wx.getStorageSync(STORAGE_KEYS.TOKEN)) return;
   console.warn('[auth] 会话失效：清掉本地会话');
   const app = getApp<IAppOption>();
   if (app?.clearUserSession) app.clearUserSession();
   else clearSessionCredentials();
-  const recoveryVersion = requestSessionVersion;
   const recover = app?.recoverSession;
   if (!recover || recoveredOnce) {
-    console.log(
-      `[auth] 不尝试免密恢复（recoverSession=${recover ? '有' : '无'}, 本次启动已恢复过=${recoveredOnce}）→ 登录页`,
-    );
     redirectToLogin();
     return;
   }
+
+  const recovery = Symbol();
+  pendingRecovery = recovery;
+  const recoveryVersion = requestSessionVersion;
   recoveredOnce = true;
   console.log('[auth] 会话失效 → 尝试微信免密恢复');
-  recover()
-    .then((ok) => {
-      if (!ok && requestSessionVersion !== recoveryVersion && wx.getStorageSync(STORAGE_KEYS.TOKEN)) {
-        redirectingToLogin = false;
-        return;
-      }
-      if (!ok || !wx.getStorageSync(STORAGE_KEYS.TOKEN)) {
-        console.log('[auth] 免密恢复失败（未绑定 / 网络）→ 登录页');
-        redirectToLogin();
-        return;
-      }
+  const finish = (ok: boolean): void => {
+    if (pendingRecovery !== recovery) return;
+    pendingRecovery = undefined;
+    const hasToken = Boolean(wx.getStorageSync(STORAGE_KEYS.TOKEN));
+    if (!ok && requestSessionVersion !== recoveryVersion && hasToken) return;
+    if (ok && hasToken) {
       console.log('[auth] 免密恢复成功 → 重进首页');
-      // 新 token 已落好：重进首页，让页面按正常冷启动流程重新拉数据。
-      wx.reLaunch({
-        url: '/pages/index/index',
-        complete: () => {
-          redirectingToLogin = false;
-        },
-      });
-    })
-    // recoverSession 自己吞异常返回 false；这里兜的是它之外的意外，避免用户卡死
-    // 在 redirectingToLogin=true 的僵局里再也回不去登录页。
-    .catch(redirectToLogin);
+      wx.reLaunch({ url: '/pages/index/index' });
+    } else {
+      console.log('[auth] 免密恢复失败（未绑定 / 网络）→ 登录页');
+      redirectToLogin();
+    }
+  };
+  recover().then(finish, () => finish(false));
 }
 
 function redirectToLogin(): void {
@@ -176,9 +166,6 @@ function redirectToLogin(): void {
   wx.navigateTo({
     url,
     fail: () => wx.reLaunch({ url }),
-    complete: () => {
-      redirectingToLogin = false;
-    },
   });
 }
 

@@ -11,10 +11,12 @@ interface PageData {
   actionRows: Array<{ key: number; name: string; sets: Array<{ key: number; label: string }> }>;
   error: string;
   loading: boolean;
+  canRetry: boolean;
 }
 
 interface PageHandlers {
   recordId: string;
+  unsubscribeViewer: (() => void) | null;
   closed: boolean;
   load(): Promise<void>;
   onEdit(): void;
@@ -30,6 +32,7 @@ function trainingTimeLabel(record: ManualStrengthRecord): string {
 
 Page<PageData, PageHandlers>({
   recordId: '',
+  unsubscribeViewer: null,
   closed: false,
   data: {
     record: null,
@@ -37,6 +40,7 @@ Page<PageData, PageHandlers>({
     actionRows: [],
     error: '',
     loading: true,
+    canRetry: false,
   },
 
   onLoad(options) {
@@ -49,6 +53,8 @@ Page<PageData, PageHandlers>({
 
   onUnload() {
     this.closed = true;
+    this.unsubscribeViewer?.();
+    this.unsubscribeViewer = null;
   },
 
   async load() {
@@ -58,6 +64,15 @@ Page<PageData, PageHandlers>({
     if (!isAuthenticated || !user || !this.recordId) {
       this.setData({ error: '无法查看这条训练记录', loading: false, record: null });
       return;
+    }
+    if (!this.unsubscribeViewer) {
+      this.unsubscribeViewer = userStore.subscribe((current) => {
+        if (current.isAuthenticated && current.user?.id === user.id) return;
+        this.closed = true;
+        this.unsubscribeViewer?.();
+        this.unsubscribeViewer = null;
+        this.setData({ record: null, actionRows: [], timeLabel: '', loading: false, canRetry: false, error: '当前账号已退出或切换' });
+      });
     }
     try {
       const record = await getManualStrengthRecord(user.id, this.recordId);
@@ -72,11 +87,12 @@ Page<PageData, PageHandlers>({
         })),
         error: '',
         loading: false,
+        canRetry: false,
       });
     } catch (err) {
       if (this.closed) return;
       const unavailable = err instanceof ApiError && [400, 403, 404].includes(err.statusCode);
-      this.setData({ error: unavailable ? '未找到这条训练记录' : '暂时无法加载记录', loading: false, record: null });
+      this.setData({ error: unavailable ? '未找到这条训练记录' : '暂时无法加载记录', loading: false, record: null, canRetry: !unavailable });
     }
   },
 

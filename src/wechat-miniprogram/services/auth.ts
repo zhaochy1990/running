@@ -113,10 +113,17 @@ export function validateSession(redirectOnSessionExpiry = true): Promise<UserPro
 async function persistSession(tokens: AuthTokenResponse, redirectOnSessionExpiry = true): Promise<UserProfile> {
   persistTokens(tokens.access_token, tokens.refresh_token, tokens.expires_in);
   const sessionVersion = requestSessionVersion;
-  const user = await fetchMe(redirectOnSessionExpiry);
-  if (sessionVersion !== requestSessionVersion) throw sessionChangedError();
-  persistUser(user);
-  return user;
+  try {
+    const user = await fetchMe(redirectOnSessionExpiry);
+    if (sessionVersion !== requestSessionVersion) throw sessionChangedError();
+    persistUser(user);
+    return user;
+  } catch (err) {
+    // These credentials are provisional until the account profile is loaded.
+    // Leave a newer login's credentials alone if it replaced this attempt.
+    if (sessionVersion === requestSessionVersion) clearSessionCredentials(true);
+    throw err;
+  }
 }
 
 // 微信登录：

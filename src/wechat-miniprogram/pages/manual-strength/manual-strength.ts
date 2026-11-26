@@ -40,6 +40,7 @@ interface PageData {
 
 interface PageHandlers {
   userId: string;
+  unsubscribeViewer: (() => void) | null;
   editing: boolean;
   closed: boolean;
   replaceForm(form: StrengthForm, expanded?: string): void;
@@ -67,6 +68,7 @@ function editSets(
 
 Page<PageData, PageHandlers>({
   userId: '',
+  unsubscribeViewer: null,
   editing: false,
   closed: false,
   data: {
@@ -94,6 +96,18 @@ Page<PageData, PageHandlers>({
       return;
     }
     this.userId = user.id;
+    this.unsubscribeViewer = userStore.subscribe((current) => {
+      if (current.isAuthenticated && current.user?.id === this.userId) return;
+      this.closed = true;
+      this.unsubscribeViewer?.();
+      this.unsubscribeViewer = null;
+      wx.disableAlertBeforeUnload();
+      this.setData({
+        draft: null, loading: false, saving: false, saved: false,
+        expanded: '', focusField: '', invalidField: '', error: '',
+        loadError: '当前账号已退出或切换，请重新打开训练记录',
+      });
+    });
     try {
       const active = getStrengthDraft(user.id);
       let draft: StrengthDraft;
@@ -128,6 +142,8 @@ Page<PageData, PageHandlers>({
 
   onUnload() {
     this.closed = true;
+    this.unsubscribeViewer?.();
+    this.unsubscribeViewer = null;
   },
 
   persistDraft(draft) {

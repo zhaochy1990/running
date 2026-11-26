@@ -2,7 +2,7 @@
   <view wx:if="{{loading}}" class="detail-status">加载中…</view>
   <view wx:elif="{{error}}" class="detail-status">
     <view>{{error}}</view>
-    <button class="detail-retry" bindtap="load">重新加载</button>
+    <button wx:if="{{canRetry}}" class="detail-retry" bindtap="load">重新加载</button>
   </view>
   <block wx:elif="{{record}}">
     <view class="card detail-summary">

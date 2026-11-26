@@ -4,6 +4,7 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import * as dates from './date.ts';
 import * as format from './format.ts';
+import * as strength from './manual-strength.ts';
 
 type ActivityResponse = { total: number; activities: Array<{ label_id: string; name: string; date: string; source: string }> };
 type PageUnderTest = {
@@ -82,4 +83,65 @@ await respond('user-b', '账号 B 私人训练');
 assert.equal(view.data.guest, false);
 assert.equal(view.data.monthGroups[0].rows[0].name, '账号 B 私人训练');
 assert.equal(requests.length, 0);
+const savedRecord = {
+  id: 'saved', name: '账号 A 的历史训练', note: '账号 A 的备注', actions: [],
+  revision: 1, started_at: '2026-11-26T07:00:00Z', ended_at: '2026-11-26T07:30:00Z',
+};
+type TrainingPage = {
+  data: { draft?: unknown; record?: unknown; actionRows?: unknown[] };
+  setData(patch: object): void;
+  onLoad(params: { edit?: string; recordId?: string }): Promise<void> | void;
+  onShow?(): void;
+};
+async function loadTrainingPage(relative: string): Promise<TrainingPage> {
+  let definition: TrainingPage | undefined;
+  viewerId = 'user-a';
+  const source = readFileSync(new URL(relative, import.meta.url), 'utf8');
+  const script = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+  }).outputText;
+  runInNewContext(script, {
+    exports: {},
+    Page: (page: TrainingPage) => { definition = page; },
+    wx: { setNavigationBarTitle: () => undefined, disableAlertBeforeUnload: () => undefined },
+    require: (path: string) => ({
+      '../../services/manual-strength': { getManualStrengthRecord: async () => savedRecord },
+      '../../services/request': {},
+      '../../utils/date': dates,
+      '../../utils/manual-strength': { ...strength, getStrengthDraft: () => undefined },
+      '../../store/index': {
+        userStore: {
+          waitForAuth: async () => undefined,
+          getState: () => ({ isAuthenticated: Boolean(viewerId), user: viewerId ? { id: viewerId } : null }),
+          subscribe: (listener: (state: { isAuthenticated: boolean; user: { id: string } | null }) => void) => {
+            viewerChanged = () => listener({ isAuthenticated: Boolean(viewerId), user: viewerId ? { id: viewerId } : null });
+            return () => { viewerChanged = undefined; };
+          },
+        },
+      },
+    })[path],
+  });
+  assert.ok(definition);
+  const page = definition;
+  page.setData = (patch) => { Object.assign(page.data, patch); };
+  await page.onLoad({ edit: 'saved', recordId: 'saved' });
+  page.onShow?.();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  return page;
+}
+
+const edit = await loadTrainingPage('../pages/manual-strength/manual-strength.ts');
+assert.ok(edit.data.draft);
+viewerId = '';
+viewerChanged?.();
+assert.equal(edit.data.draft, null);
+
+const detail = await loadTrainingPage('../pages/manual-strength-detail/manual-strength-detail.ts');
+assert.ok(detail.data.record);
+viewerId = 'user-b';
+viewerChanged?.();
+detail.onShow?.();
+await new Promise<void>((resolve) => setImmediate(resolve));
+assert.equal(detail.data.record, null);
+assert.equal(detail.data.actionRows?.length, 0);
 console.log('activity-record-viewer.check: all assertions passed');
