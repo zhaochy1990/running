@@ -80,12 +80,39 @@ func legacyHealthLookback(gap StageGap, stage, anchor string, items []*storage.O
 	return provider.HealthLookbackDays(from, latest, anchor)
 }
 
+type terminalGapEvidence struct {
+	item *storage.OnboardingSyncWorkItem
+	gaps []StageGap
+}
+
+// restoreTerminalGaps replaces a legacy item's flattened edge approximations
+// with the precise unavailable records. Empty ranges can change when actual
+// data arrives, so only confirmed terminal failures are restored here.
+func restoreTerminalGaps(gaps []StageGap, evidence []terminalGapEvidence) []StageGap {
+	for _, entry := range evidence {
+		item := entry.item
+		reason := *item.Error // RecordedRangeGaps matched the legacy reason
+		kept := gaps[:0]
+		for _, gap := range gaps {
+			legacyReason := gap.Reason == reason || gap.Reason == item.Kind+": "+reason
+			withinItem := gap.From >= item.RangeFrom && gap.To <= item.RangeTo
+			if gap.Kind == provider.RangeGapUnavailable && gap.ActivityID == "" && gap.Endpoint == "" && legacyReason && withinItem {
+				continue
+			}
+			kept = append(kept, gap)
+		}
+		gaps = provider.MergeRangeGaps(kept, entry.gaps)
+	}
+	return gaps
+}
+
 // workItemGapViews projects current attempts and preserves terminal refusal
 // evidence across finalization by an older worker.
 // The worker clears the failure when that item finishes, so a prior attempt
 // can never become a permanent entry in the stage coverage row.
-func workItemGapViews(items []*storage.OnboardingSyncWorkItem) (attempts, terminal map[string][]StageGap) {
-	attempts, terminal = make(map[string][]StageGap), make(map[string][]StageGap)
+func workItemGapViews(items []*storage.OnboardingSyncWorkItem) (map[string][]StageGap, map[string][]terminalGapEvidence) {
+	attempts := make(map[string][]StageGap)
+	terminal := make(map[string][]terminalGapEvidence)
 	for _, item := range items {
 		if item.Status != storage.OnboardingSyncItemPending && item.Status != storage.OnboardingSyncItemFailed && item.Status != storage.OnboardingSyncItemGap {
 			continue
@@ -98,15 +125,19 @@ func workItemGapViews(items []*storage.OnboardingSyncWorkItem) (attempts, termin
 		if json.Unmarshal([]byte(*details), &gaps) != nil {
 			continue
 		}
+		var settled []StageGap
 		for _, gap := range gaps {
 			gap.Channel = item.Kind
 			if item.Status == storage.OnboardingSyncItemGap {
 				if gap.Kind == provider.RangeGapUnavailable {
-					terminal[item.Stage] = append(terminal[item.Stage], gap)
+					settled = append(settled, gap)
 				}
 			} else if gap.Kind == provider.RangeGapTransient || gap.Kind == provider.RangeGapUnavailable {
 				attempts[item.Stage] = append(attempts[item.Stage], gap)
 			}
+		}
+		if len(settled) > 0 {
+			terminal[item.Stage] = append(terminal[item.Stage], terminalGapEvidence{item: item, gaps: settled})
 		}
 	}
 	return attempts, terminal

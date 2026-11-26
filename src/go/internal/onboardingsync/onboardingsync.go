@@ -1327,8 +1327,8 @@ func (s *Service) View(ctx context.Context, userID string) (*View, error) {
 		// A worker from before gap classification could finish the stage
 		// after a newer worker saved the terminal item. Its result may
 		// omit a refusal inside the observed bounds.
-		if cov.Status == storage.OnboardingSyncCoverageCompletedWithGaps && !provider.HasBlockingRangeGaps(gaps) && len(terminalGaps[cov.Stage]) > 0 {
-			gaps = append(gaps, terminalGaps[cov.Stage]...)
+		if cov.Status == storage.OnboardingSyncCoverageCompletedWithGaps && len(terminalGaps[cov.Stage]) > 0 {
+			gaps = restoreTerminalGaps(gaps, terminalGaps[cov.Stage])
 			sv.Status = storage.OnboardingSyncCoverageCompletedWithGaps
 		}
 		sv.Gaps = append(gaps, attemptGaps[cov.Stage]...)

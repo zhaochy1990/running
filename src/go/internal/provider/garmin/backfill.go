@@ -182,17 +182,24 @@ func (p *Provider) backfillActivities(ctx context.Context, client *Client, user 
 		}
 	}
 
+	interrupted := func(err error) (*provider.ChannelBackfillReport, error) {
+		if len(gapEvents) == 0 {
+			return nil, err
+		}
+		return &provider.ChannelBackfillReport{Checkpoint: checkpoint, GapEvents: gapEvents}, err
+	}
+
 	for page := 0; page < recentMaxListPages; page++ {
 		if !deadline.IsZero() && time.Now().After(deadline) {
 			break // soft budget: checkpoint what the walk collected
 		}
 		raw, err := client.ListActivities(ctx, page*recentListPage, recentListPage)
 		if err != nil {
-			return nil, err
+			return interrupted(err)
 		}
 		acts, err := parseActivityList(raw)
 		if err != nil {
-			return nil, err
+			return interrupted(err)
 		}
 		if len(acts) == 0 {
 			scanEnded = true // list exhausted
@@ -208,7 +215,7 @@ func (p *Provider) backfillActivities(ctx context.Context, client *Client, user 
 				if id != "" && !rejectedIDs[id] && !seen[id] {
 					seen[id] = true
 					if err := confirmUndated(a); err != nil {
-						return &provider.ChannelBackfillReport{Checkpoint: checkpoint, GapEvents: gapEvents}, err
+						return interrupted(err)
 					}
 				}
 				continue
@@ -235,7 +242,7 @@ func (p *Provider) backfillActivities(ctx context.Context, client *Client, user 
 					continue
 				}
 				if err := p.collectBackfillCandidate(ctx, user, a, day, inst, &candidates, &lastSeenDay, &fetchesNeeded, maxFetches); err != nil {
-					return nil, err
+					return interrupted(err)
 				}
 			}
 		}
@@ -260,7 +267,7 @@ func (p *Provider) backfillActivities(ctx context.Context, client *Client, user 
 		gapEvents = append(gapEvents, rejected...)
 		fetched = written + len(rejected)
 		if commitErr != nil {
-			return &provider.ChannelBackfillReport{Checkpoint: checkpoint, GapEvents: gapEvents}, commitErr
+			return interrupted(commitErr)
 		}
 	}
 
@@ -273,7 +280,7 @@ func (p *Provider) backfillActivities(ctx context.Context, client *Client, user 
 	if scanEnded {
 		missing, err := p.reconcileBackfillRange(ctx, client, user, win, rejectedIDs)
 		if err != nil {
-			return &provider.ChannelBackfillReport{Checkpoint: checkpoint, GapEvents: gapEvents}, err
+			return interrupted(err)
 		}
 		overflow := len(missing) > maxFetches-fetched
 		if overflow {
@@ -288,7 +295,7 @@ func (p *Provider) backfillActivities(ctx context.Context, client *Client, user 
 			gapEvents = append(gapEvents, rejected...)
 			fetched += written + len(rejected)
 			if commitErr != nil {
-				return &provider.ChannelBackfillReport{Checkpoint: checkpoint, GapEvents: gapEvents}, commitErr
+				return interrupted(commitErr)
 			}
 		}
 		if !overflow {

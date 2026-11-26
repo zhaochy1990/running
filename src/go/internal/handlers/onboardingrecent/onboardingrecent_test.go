@@ -453,7 +453,8 @@ func TestOnboardingRecent_ViewRecoversPermanentGapFromLegacyFinalization(t *test
 	if err != nil || cov == nil {
 		t.Fatalf("raw coverage: %+v, %v", cov, err)
 	}
-	cov.Status, cov.GapsJSON = storage.OnboardingSyncCoverageCompletedWithGaps, nil
+	legacy := fmt.Sprintf(`[{"from":%q,"to":%q,"reason":"permanently unobtainable"}]`, cov.TargetTo, cov.TargetTo)
+	cov.Status, cov.GapsJSON = storage.OnboardingSyncCoverageCompletedWithGaps, &legacy
 	if err := st.UpdateOnboardingSyncStageCoverage(ctx, cov); err != nil {
 		t.Fatal(err)
 	}
@@ -475,7 +476,7 @@ func TestOnboardingRecent_ViewRecoversPermanentGapFromLegacyFinalization(t *test
 		if stage.Stage != storage.OnboardingSyncStageRecentRaw {
 			continue
 		}
-		if len(stage.Gaps) != 1 || stage.Gaps[0].Kind != provider.RangeGapUnavailable || stage.Gaps[0].Reason != "permanently unobtainable" {
+		if len(stage.Gaps) != 1 || stage.Gaps[0].Kind != provider.RangeGapUnavailable || stage.Gaps[0].Reason != "permanently unobtainable" || stage.Gaps[0].From != cov.TargetFrom {
 			t.Fatalf("raw gaps = %+v, want the precise terminal reason", stage.Gaps)
 		}
 		return
