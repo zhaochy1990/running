@@ -269,6 +269,12 @@ func generationRequest(artifactType, document, template string) (string, string,
 	if e := validateInput(schema, stamped); e != nil {
 		return "", "", e
 	}
+	if artifactType == "master_plan" {
+		availability := request["availability"].(map[string]any)
+		if availability["strength_sessions_per_week"].(float64) > 0 && len(availability["strength_available_days"].([]any)) == 0 {
+			return "", "", fail(422, "invalid_input", "request.availability.strength_available_days: strength_sessions_per_week > 0 时必填")
+		}
+	}
 	return stamped, asOf, nil
 }
 

@@ -67,3 +67,15 @@ func TestImportAndPathValidationPreserveMissingVsEmpty(t *testing.T) {
 		t.Fatal("invalid calendar date accepted")
 	}
 }
+
+func TestGenerationRequestRejectsIncompleteStrengthAvailability(t *testing.T) {
+	var preset presetScenarioFile
+	_ = json.Unmarshal(presetScenarioDocument, &preset)
+	var request map[string]any
+	_ = json.Unmarshal(preset.Request, &request)
+	request["availability"].(map[string]any)["strength_sessions_per_week"] = 1
+	_, _, e := generationRequest("master_plan", string(mustJSON(testSnapshot(t))), string(mustJSON(request)))
+	if e == nil || !strings.Contains(e.Detail, "strength_available_days") {
+		t.Fatalf("incomplete strength accepted: %v", e)
+	}
+}

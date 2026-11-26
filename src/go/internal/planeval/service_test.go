@@ -893,6 +893,27 @@ func TestHTTP_BatchFreezesSharedSnapshotAndScenarioRules(t *testing.T) {
 	if err != nil || len(rules) != 2 || rules[0].ScenarioID == rules[1].ScenarioID {
 		t.Fatalf("rules not scoped: %v %v", rules, err)
 	}
+	var preset presetScenarioFile
+	_ = json.Unmarshal(presetScenarioDocument, &preset)
+	var badRequest map[string]any
+	_ = json.Unmarshal(preset.Request, &badRequest)
+	badRequest["availability"].(map[string]any)["strength_sessions_per_week"] = 1
+	preview := h.admin("POST", adminPrefix+"/request-preview", map[string]any{"artifact_type": "master_plan", "snapshot_id": snapshotID, "request": badRequest}, nil)
+	if preview.status != 422 || !bytes.Contains(preview.body, []byte("strength_available_days")) {
+		t.Fatalf("preview accepted incomplete strength: %s", preview.body)
+	}
+	row, err := h.svc.store.GetPlanEvalScenario(context.Background(), ids[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	row.RequestJSON = string(mustJSON(badRequest))
+	if err := h.svc.store.UpsertPlanEvalScenario(context.Background(), row); err != nil {
+		t.Fatal(err)
+	}
+	rejected := h.admin("POST", adminPrefix+"/tasks", body, map[string]string{"Idempotency-Key": uuid.NewString()})
+	if rejected.status != 422 || !bytes.Contains(rejected.body, []byte("strength_available_days")) {
+		t.Fatalf("submit accepted incomplete strength: %s", rejected.body)
+	}
 	before := len(h.broker.queues[QueueName(h.version)])
 	for _, selection := range [][]string{{}, {ids[0], ids[0]}, {ids[0], "does-not-exist"}} {
 		body["scenario_ids"] = selection

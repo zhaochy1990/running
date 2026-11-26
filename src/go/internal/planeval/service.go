@@ -546,9 +546,7 @@ func (s *Service) freeze(ctx context.Context, scenario *scenarioDocument) ([]*st
 	if e := validateScenario(scenario); e != nil {
 		return nil, nil, e
 	}
-	if len(scenario.SnapshotIDs) == 0 {
-		return nil, nil, fail(422, "invalid_request", "场景 "+scenario.ID+" 没有引用任何测试数据")
-	}
+
 	rules := make([]*storage.PlanEvalFrozenRule, 0, len(scenario.Rules))
 	for _, ref := range scenario.Rules {
 		rule, err := s.store.GetPlanEvalRule(ctx, ref.ID, ref.Version)
