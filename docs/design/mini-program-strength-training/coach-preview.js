@@ -41,19 +41,25 @@ const coachPreview = (() => {
     return `我先看这条手动记录「${record.title}」。\n${actions.join('\n')}${note}`;
   }
 
-  function requestedDay(message) {
-    const explicit = message.match(/\d{4}-\d{2}-\d{2}/)?.[0];
-    if (explicit) return explicit;
-    const offset = [/今天|今日/, /昨天|昨日/, /前天/].findIndex(pattern => pattern.test(message));
-    return offset < 0 ? undefined : manualLog.today(new Date(Date.now() - offset * 86_400_000));
+  function requestedDays(message) {
+    const days = new Set(message.match(/\d{4}-\d{2}-\d{2}/g) ?? []);
+    const relativeDays = [/今天|今日/, /昨天|昨日/, /前天/];
+    relativeDays.forEach((pattern, offset) => {
+      if (pattern.test(message)) days.add(manualLog.today(new Date(Date.now() - offset * 86_400_000)));
+    });
+    return [...days];
   }
 
   function reply(message, includeWatch) {
     const manual = manualLog.coachRecords();
     if (recordId !== null) return summarize(manual.find(record => record.id === recordId));
 
-    const day = requestedDay(message);
-    if (!day && !message.includes('最近')) return '试试问今天、昨天或最近一次的力量训练，也可以直接写日期。';
+    const days = requestedDays(message);
+    const range = /最近(?!一次)|过去|上周|本周|这周|上个月|本月|这个月|上月|天内/.test(message);
+    if (range || days.length > 1 || (!days.length && !message.includes('最近一次'))) {
+      return '试试问最近一次的力量训练，也可以直接写一个日期。';
+    }
+    const [day] = days;
     const relevant = record => !day || record.date === day;
     const matching = manual.filter(relevant).sort((a, b) => b.endedAt.localeCompare(a.endedAt));
     if (matching.length > 1 && day && !message.includes('最近一次')) {
