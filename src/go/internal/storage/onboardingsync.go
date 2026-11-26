@@ -318,7 +318,15 @@ func onboardingSyncModels() []any {
 // (devops#1006). Called by both `stride api` and `stride worker` so either
 // process can run against a fresh database.
 func (s *Store) AutoMigrateOnboardingSync(ctx context.Context) error {
-	if err := s.db.WithContext(ctx).AutoMigrate(onboardingSyncModels()...); err != nil {
+	db := s.db.WithContext(ctx)
+	err := db.AutoMigrate(onboardingSyncModels()...)
+	var mysqlErr *gomysql.MySQLError
+	if errors.As(err, &mysqlErr) && mysqlErr.Number == 1060 {
+		// An API or worker replica can add the column between this
+		// replica's schema inspection and ALTER. Re-read the schema once.
+		err = db.AutoMigrate(onboardingSyncModels()...)
+	}
+	if err != nil {
 		return fmt.Errorf("storage: automigrate onboarding sync: %w", err)
 	}
 	return nil

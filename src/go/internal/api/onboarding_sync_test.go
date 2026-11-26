@@ -210,6 +210,8 @@ func TestOnboardingSync_RetryRouting(t *testing.T) {
 // pin the JSON shape the clients (T10-T12) will code against.
 func TestOnboardingSync_ViewJSONShape(t *testing.T) {
 	h := newOnboardingSyncHarness(t, FeatureConfig{SyncDataAtOnboarding: true, OnboardingSyncSession: true}, "coros")
+	h.sessions.view.DispatchGeneration = 16
+	h.sessions.view.RetryCount = 16
 	w := h.do(http.MethodGet, "/api/users/me/onboarding/sync", "", h.bearer(t, testSub))
 	if w.Code != http.StatusOK {
 		t.Fatalf("code = %d", w.Code)
@@ -221,6 +223,11 @@ func TestOnboardingSync_ViewJSONShape(t *testing.T) {
 	for _, key := range []string{"session_id", "state", "shell_ready", "provider", "anchor_day", "stages", "readiness"} {
 		if _, ok := raw[key]; !ok {
 			t.Errorf("view JSON missing %q: %s", key, w.Body.String())
+		}
+	}
+	for key, want := range map[string]float64{"dispatch_generation": 16, "retry_count": 16, "fail_retry_count": 0} {
+		if raw[key] != want {
+			t.Errorf("%s = %v, want %g", key, raw[key], want)
 		}
 	}
 	rd := raw["readiness"].(map[string]any)
