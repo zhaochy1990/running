@@ -55,7 +55,7 @@ const coachPreview = (() => {
     if (recordId !== null) return summarize(manual.find(record => record.id === recordId));
 
     const days = requestedDays(message);
-    const range = /最近(?!一次)|过去|上周|本周|这周|上个月|本月|这个月|上月|天内/.test(message);
+    const range = /最近(?!一次)|过去|上周|本周|这周|上个月|本月|这个月|上月|天内|以来|至今|截至/.test(message);
     if (range || days.length > 1 || (!days.length && !message.includes('最近一次'))) {
       return '试试问最近一次的力量训练，也可以直接写一个日期。';
     }
