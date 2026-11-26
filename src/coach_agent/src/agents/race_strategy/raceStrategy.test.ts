@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
-import { AIMessage, type BaseMessage, HumanMessage } from "@langchain/core/messages";
+import { AIMessage, type BaseMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import type { RaceStrategy } from "@stride/contract";
 import { RACE_STRATEGY_PROMPT } from "../prompts.js";
 import { loadSkillMarkdown, loadSkillReference } from "../skillLoader.js";
 import { CoachTargetRef } from "../turnScope.js";
 import { getRaceStrategyAgent } from "./agent.js";
-import { raceStrategyHandoffTool } from "./handoff.js";
+import { raceStrategyViewTool } from "./handoff.js";
 import { makeRaceStrategyNode } from "./node.js";
 import { extractRaceStrategyResult, parseRaceStrategyFromText, raceStrategyMessage, renderRaceStrategyMarkdown } from "./render.js";
 
@@ -142,11 +142,17 @@ test("race-strategy card carries the trusted race ID even when the agent binds d
   const userMessage = new HumanMessage("帮我生成杭马的策略，目标三小时五十九分五十九秒");
   const raceTarget = { kind: "race", race_event_id: 76, item_type: "Marathon" } as const;
   let binding: typeof raceTarget | null = null;
+  let courseRaceId = 76;
   const node = makeRaceStrategyNode(
     {
       async invoke() {
         binding = raceTarget;
-        return { messages: [userMessage], structuredResponse: { disposition: "return_direct", content: strategy } };
+        const course = new ToolMessage({
+          name: "get_race_calendar_context",
+          tool_call_id: "course",
+          content: JSON.stringify({ found: true, race_event_id: courseRaceId, target_item_type: "Marathon" }),
+        });
+        return { messages: [userMessage, course], structuredResponse: { disposition: "return_direct", content: strategy } };
       },
     },
     {
@@ -163,6 +169,7 @@ test("race-strategy card carries the trusted race ID even when the agent binds d
   );
   const update = (await node({ messages: [userMessage] } as never, { context: { threadId: "regular-chat" } } as never)) as {
     messages: BaseMessage[];
+    raceStrategy: RaceStrategy | null;
   };
   assert.deepEqual(update.messages[0]?.additional_kwargs.card, { $type: "race-strategy", data: { ...strategy, race_event_id: 76 } });
 
@@ -172,6 +179,14 @@ test("race-strategy card carries the trusted race ID even when the agent binds d
     { context: { threadId: "regular-chat", target: previousTarget, raceTargetFromThread: true } } as never,
   )) as typeof update;
   assert.deepEqual(followUp.messages[0]?.additional_kwargs.card, { $type: "race-strategy", data: { ...strategy, race_event_id: 76 } });
+
+  courseRaceId = 32;
+  const staleCourse = (await node(
+    { messages: [userMessage] } as never,
+    { context: { threadId: "regular-chat", target: previousTarget, raceTargetFromThread: true } } as never,
+  )) as typeof update;
+  assert.equal(staleCourse.raceStrategy, null);
+  assert.equal(staleCourse.messages[0]?.additional_kwargs.card, undefined);
 
   const fromCalendar = (await node(
     { messages: [userMessage] } as never,
@@ -206,8 +221,8 @@ test("a view-only request routed to the real strategy agent exits after the offe
                   id: "offer",
                   type: "function",
                   function: {
-                    name: raceStrategyHandoffTool.name,
-                    arguments: JSON.stringify({ action: "offer", answer: "刚才的配速建议在上方。" }),
+                    name: raceStrategyViewTool.name,
+                    arguments: JSON.stringify({ answer: "刚才的配速建议在上方。" }),
                   },
                 },
               ],

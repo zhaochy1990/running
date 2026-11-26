@@ -1,5 +1,6 @@
 /** Bounded race-strategy context tools over the read-only DataProvider (devops#891). */
 
+import { type BaseMessage, ToolMessage } from "@langchain/core/messages";
 import type { StructuredTool } from "@langchain/core/tools";
 import * as z from "zod";
 import type { CoachToolRuntime } from "../agents/coachAgent.js";
@@ -36,6 +37,20 @@ export interface RaceTargetBindingGateway {
 }
 
 type RaceTargetContext = { target?: unknown; threadId?: unknown; raceTargetFromThread?: unknown };
+const RACE_CONTEXT_TOOL_NAME = "get_race_calendar_context";
+const raceContextAnchor = z.object({ found: z.literal(true), race_event_id: z.number(), target_item_type: z.string() });
+
+/** Verify that the strategy used course data for the race and group being attached to the card. */
+export function raceStrategyMatchesCourse(messages: BaseMessage[], target: CoachRaceTargetRef): boolean {
+  const lookup = messages.findLast((message): message is ToolMessage => ToolMessage.isInstance(message) && message.name === RACE_CONTEXT_TOOL_NAME);
+  if (!lookup || lookup.status === "error" || typeof lookup.content !== "string") return false;
+  try {
+    const result = raceContextAnchor.safeParse(JSON.parse(lookup.content));
+    return result.success && result.data.race_event_id === target.race_event_id && result.data.target_item_type === target.item_type;
+  } catch {
+    return false;
+  }
+}
 
 /** 从赛事入口取显式目标，普通聊天取线程里的最新绑定（含本轮重新选赛）。 */
 export async function resolveRaceStrategyTarget(
@@ -79,7 +94,7 @@ class RaceStrategyContextTool {
     if (context === null) {
       return { race_event_id: raceEventId, found: false, reason: "race not found or unpublished" };
     }
-    return { ...context, found: true };
+    return { ...context, race_event_id: raceEventId, target_item_type: target.item_type, found: true };
   }
 
   async searchRaceTargets(input: z.infer<typeof searchRaceTargetsSchema>, runtime: CoachToolRuntime) {
@@ -143,7 +158,7 @@ export function createRaceStrategyContextTools(
   const impl = new RaceStrategyContextTool(store, raceTargets);
   return defineCoachTools([
     {
-      name: "get_race_calendar_context",
+      name: RACE_CONTEXT_TOOL_NAME,
       description:
         "获取当前会话目标赛事的内容聚合：基本信息、赛道文字、爬升、海拔剖面、难点、补给站、关门点与城市/气候背景（无输入参数，赛事取自会话 target）。" +
         "返回 bound=false 表示本会话尚未绑定赛事（聊天入口），此时改用 search_race_targets + bind_race_target 流程；" +

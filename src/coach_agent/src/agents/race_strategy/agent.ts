@@ -10,7 +10,7 @@ import { createLoggingMiddleware } from "../middleware.js";
 import { RACE_STRATEGY_PROMPT } from "../prompts.js";
 import { loadSkillMarkdown, loadSkillReference } from "../skillLoader.js";
 import { createTurnScopeMiddleware } from "../turnScope.js";
-import { raceStrategyHandoffMiddleware, raceStrategyHandoffTool } from "./handoff.js";
+import { raceStrategyHandoffMiddleware, raceStrategyViewTool } from "./handoff.js";
 import { createRaceStrategyValidationMiddleware } from "./validationMiddleware.js";
 
 const logger = getLogger("coachAgent:race_strategy");
@@ -33,7 +33,7 @@ export function getRaceStrategyAgent(
 ) {
   logger.info(`creating race_strategy agent with model ${config.name} (${config.model})`);
 
-  const tools: StructuredTool[] = [...createRaceStrategyContextTools(store, raceTargets ?? null), raceStrategyHandoffTool];
+  const tools: StructuredTool[] = [...createRaceStrategyContextTools(store, raceTargets ?? null), raceStrategyViewTool];
 
   // 补给领域口径与补给品规格台账以内联技能文档附在系统提示末尾（与
   // generate-master-plan 同模式）：prompt 保留流程与输出契约，领域细节归 skill。

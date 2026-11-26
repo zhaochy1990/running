@@ -5,11 +5,11 @@ import { defineCoachTool } from "../../tools/common.js";
 
 export const RACE_STRATEGY_REQUEST = "生成比赛策略";
 
-const handoffSchema = z.object({
-  action: z.enum(["generate", "offer"]),
+const viewSchema = z.object({
   answer: z.string().trim().min(1).max(2000).optional().describe("offer 时对用户问题的简短中文回答"),
   refersToPreviousReply: z.boolean().optional().describe("用户问如何查看上一条教练回复里的策略，且没有在问另一场比赛时为 true"),
 });
+const handoffSchema = viewSchema.extend({ action: z.enum(["generate", "offer"]) });
 
 type StrategyHandoff = z.infer<typeof handoffSchema> | { action: "clarify" };
 
@@ -20,8 +20,15 @@ export const raceStrategyHandoffTool = defineCoachTool({
   handler: (input) => JSON.stringify(input),
 });
 
+export const raceStrategyViewTool = defineCoachTool({
+  name: "offer_race_strategy",
+  description: "只在用户询问之前的建议或策略在哪里查看时调用，并填写简短回答。",
+  schema: viewSchema,
+  handler: (input) => JSON.stringify({ action: "offer", ...input }),
+});
+
 function isHandoffResult(message: BaseMessage): message is ToolMessage {
-  return ToolMessage.isInstance(message) && message.name === raceStrategyHandoffTool.name;
+  return ToolMessage.isInstance(message) && (message.name === raceStrategyHandoffTool.name || message.name === raceStrategyViewTool.name);
 }
 
 /** End the inner turn after the tool batch so the outer graph can route or reply. */
