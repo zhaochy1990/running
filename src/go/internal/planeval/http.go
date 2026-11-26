@@ -1,6 +1,7 @@
 package planeval
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/zhaochy1990/stride/internal/httplog"
@@ -189,14 +191,40 @@ func (s *Service) Router(adminAuth gin.HandlerFunc, adminID func(*gin.Context) s
 	admin.GET("/tasks", s.handleListTasks)
 	admin.GET("/tasks/:id", s.handleTaskDetail)
 	admin.GET("/tasks/:id/report", func(c *gin.Context) {
-		report, err := s.TaskReport(c.Request.Context(), c.Param("id"))
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Minute)
+		defer cancel()
+		controller := http.NewResponseController(c.Writer)
+		if e := controller.SetWriteDeadline(time.Now().Add(5 * time.Minute)); e != nil && !errors.Is(e, http.ErrNotSupported) {
+			writeError(c, s.internal(e))
+			return
+		}
+		defer controller.SetWriteDeadline(time.Time{})
+		report, cleanup, err := s.TaskReport(ctx, c.Param("id"))
 		if err != nil {
 			writeError(c, err)
 			return
 		}
+		defer cleanup()
+		// Cancellation must also interrupt a blocked socket write, not just SQL.
+		cancelled := make(chan struct{})
+		stop := context.AfterFunc(ctx, func() {
+			defer close(cancelled)
+			controller.SetWriteDeadline(time.Now())
+			report.Close()
+		})
+		defer func() {
+			if !stop() {
+				<-cancelled
+			}
+		}()
+		info, e := report.Stat()
+		if e != nil {
+			writeError(c, s.internal(e))
+			return
+		}
 		c.Header("Cache-Control", "no-store")
-		c.Header("Content-Disposition", `attachment; filename="plan-eval-`+report.TaskID+`.json"`)
-		c.JSON(http.StatusOK, report)
+		c.Header("Content-Disposition", `attachment; filename="plan-eval-`+c.Param("id")+`.json"`)
+		c.DataFromReader(http.StatusOK, info.Size(), "application/json; charset=utf-8", report, nil)
 	})
 	admin.GET("/tasks/:id/executions/:execution_id/input", func(c *gin.Context) {
 		input, e := s.ExecutionInput(c.Request.Context(), c.Param("id"), c.Param("execution_id"))

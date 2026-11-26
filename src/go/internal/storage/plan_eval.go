@@ -563,7 +563,7 @@ func (s *Store) ListPlanEvalExecutions(ctx context.Context, taskID string) ([]Pl
 // ListPlanEvalArtifactMetas lists a task's artifacts without their content.
 func (s *Store) ListPlanEvalArtifactMetas(ctx context.Context, taskID string) ([]PlanEvalArtifact, error) {
 	var rows []PlanEvalArtifact
-	if err := s.db.WithContext(ctx).Select("plan_eval_artifacts.*, OCTET_LENGTH(content) AS size_bytes").
+	if err := s.db.WithContext(ctx).Select("id, execution_id, task_id, artifact_type, sha256, schema_valid, schema_errors, created_at, OCTET_LENGTH(content) AS size_bytes").
 		Where("task_id = ?", taskID).Order("created_at ASC, id ASC").Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("storage: list plan_eval_artifacts: %w", err)
 	}

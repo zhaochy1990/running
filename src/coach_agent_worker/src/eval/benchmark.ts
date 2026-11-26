@@ -53,6 +53,10 @@ export function validateFirstBatch(snapshots: Snapshots): void {
     if (spec.kind === "new_season") {
       assert.ok(s.records.race_target && s.records.race_target.race_date > s.as_of_day, `${spec.key}: required future race target is missing`);
     }
+    assert.ok(
+      s.as_of === undefined || (z.iso.datetime({ offset: true }).safeParse(s.as_of).success && shanghaiDay(s.as_of) === s.as_of_day),
+      `${spec.key}: exact as_of must match the frozen Shanghai day`,
+    );
     const cutoff = Date.parse(s.as_of ?? `${s.as_of_day}T23:59:59+08:00`);
     assert.ok(
       s.records.activities.every(
@@ -163,6 +167,8 @@ export function validateFirstBatch(snapshots: Snapshots): void {
       c.records.active_master_plan.revision === d.records.active_master_plan.revision,
     "C/D clock or active season identity differs",
   );
+  same(c.constraints, d.constraints, "C/D constraints must be identical");
+  same(c.records.race_target, d.records.race_target, "C/D records.race_target must be identical");
   same(c.records.weekly_plans?.slice(0, 2), d.records.weekly_plans, "D weeks must be the first two real C documents");
   same(c.records.weekly_plan_weeks?.slice(0, 2), d.records.weekly_plan_weeks, "D scheduled rows must be the first two C rows");
 }
@@ -215,6 +221,16 @@ const rules = {
 type ImportedRef = { id: string; stored_sha256: string; source_sha256: string };
 type ImportState = { schema: string; origin: string; snapshots: Record<string, ImportedRef>; scenarios: Record<string, ImportedRef>; pending?: string };
 
+// These catalog POSTs validate before storage; storage failures return 500.
+class CatalogRejection extends Error {
+  constructor(
+    message: string,
+    readonly noWrite: boolean,
+  ) {
+    super(message);
+  }
+}
+
 /** Catalog import only: task creation and real model runs remain normal Dashboard actions. */
 export async function importFirstBatch(manifestPath: string, origin: string, token: string, statePath: string) {
   const url = new URL(origin);
@@ -248,9 +264,19 @@ export async function importFirstBatch(manifestPath: string, origin: string, tok
         signal: AbortSignal.timeout(60_000),
         redirect: "error",
       });
-      assert.ok(response.ok, `${method} ${path}: HTTP ${response.status}`);
+      // A cut body or malformed JSON is still unknown, even on a 4xx.
       const text = await response.text();
-      return { text, doc: JSON.parse(text) };
+      const doc = text.trim() === "" && !response.ok ? null : JSON.parse(text);
+      if (!response.ok) {
+        const code = doc?.error;
+        const noWrite =
+          (response.status === 401 && (doc === null || code === "unauthorized")) ||
+          (response.status === 403 && (doc === null || code === "forbidden")) ||
+          (response.status === 422 && (doc === null || ["invalid_input", "invalid_reference", "invalid_request"].includes(code))) ||
+          (response.status === 400 && code === "invalid_json");
+        throw new CatalogRejection(`${method} ${path}: HTTP ${response.status}`, noWrite);
+      }
+      return { text, doc };
     }
     // Validate rule references before the first catalog write.
     for (const ref of [...rules.new_season, ...rules.rolling]) await request("GET", `/rules/${ref.id}/${ref.version}`);
@@ -264,7 +290,16 @@ export async function importFirstBatch(manifestPath: string, origin: string, tok
       }
       state.pending = `${kind}/${key}`;
       await save();
-      const created = await request("POST", `/${kind}`, body);
+      let created: Awaited<ReturnType<typeof request>>;
+      try {
+        created = await request("POST", `/${kind}`, body);
+      } catch (error) {
+        if (error instanceof CatalogRejection && error.noWrite) {
+          delete state.pending;
+          await save();
+        }
+        throw error;
+      }
       const id = kind === "snapshots" ? created.doc.snapshot_id : created.doc.id;
       assert.ok(typeof id === "string" && id.length > 0, `${key}: server did not return an ID`);
       state[kind][key] = { id, source_sha256: sourceSHA, stored_sha256: hash(created.text) };

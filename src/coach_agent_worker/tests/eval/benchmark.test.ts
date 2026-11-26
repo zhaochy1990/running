@@ -282,3 +282,89 @@ test("repeat import reuses eight assigned IDs and two scenarios; changed catalog
   assert.equal(posts, beforeRetry);
   await assert.rejects(importFirstBatch(path, "https://admin.stride-running.cn", "local-admin-test", statePath), /loopback isolated/);
 });
+
+test("C/D reject changed constraints and provider race target", () => {
+  for (const field of ["constraints", "race_target"] as const) {
+    const snapshots = batch();
+    const d = snapshots["rolling-d"];
+    assert.ok(d);
+    if (field === "constraints") d.constraints.max_run_days_per_week = 3;
+    else {
+      assert.ok(d.records.race_target);
+      d.records.race_target.race_name = "another race";
+    }
+    assert.throws(() => validateFirstBatch(snapshots), field === "constraints" ? /C\/D constraints/ : /C\/D records.race_target/);
+  }
+});
+
+test("optional new-season exact as_of must be valid and share the Shanghai day", () => {
+  const snapshots = batch();
+  const s = snapshots.chaoyi;
+  assert.ok(s);
+  delete s.as_of;
+  validateFirstBatch(snapshots);
+  s.as_of = "2026-10-25T16:00:00Z";
+  validateFirstBatch(snapshots);
+  for (const instant of ["2026-10-27T00:00:00+08:00", "not-an-instant", "2026-10-26"]) {
+    s.as_of = instant;
+    assert.throws(() => validateFirstBatch(snapshots));
+  }
+});
+
+test("catalog definitive no-write rejection clears pending; ambiguous status/body/network retains it", async (t) => {
+  const { path, root } = await privateManifest(t);
+  let status = 422;
+  let response = '{"error":"invalid_input","detail":"synthetic validation"}';
+  let cut = false;
+  let posts = 0;
+  const server = createServer(async (req, res) => {
+    if (req.method === "GET") {
+      res.end("{}");
+      return;
+    }
+    for await (const _ of req) {
+      /* consume request before rejecting */
+    }
+    posts++;
+    res.statusCode = status;
+    if (cut) {
+      res.setHeader("Content-Length", response.length + 100);
+      res.write(response);
+      res.destroy();
+    } else res.end(response);
+  });
+  server.listen(0, "127.0.0.1");
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const origin = `http://127.0.0.1:${address.port}`;
+  for (const [code, body, truncated, noWrite] of [
+    [422, response, false, true],
+    [422, "", false, true],
+    [401, '{"error":"unauthorized"}', false, true],
+    [401, "", false, true],
+    [403, '{"error":"forbidden"}', false, true],
+    [400, '{"error":"invalid_json"}', false, true],
+    [409, "", false, false],
+    [404, '{"error":"not_found"}', false, false],
+    [429, "", false, false],
+    [500, '{"error":"internal_error"}', false, false],
+    [422, '{"error":"unexpected"}', false, false],
+    [422, "malformed", false, false],
+    [422, '{"error":"invalid_input"}', true, false],
+    [200, '{"snapshot_id":', false, false],
+    [200, "{}", false, false],
+  ] as const) {
+    status = code;
+    response = body;
+    cut = truncated;
+    const statePath = join(root, `rejected-${posts}.json`);
+    await assert.rejects(importFirstBatch(path, origin, "test-admin", statePath));
+    const state = JSON.parse(await readFile(statePath, "utf8"));
+    assert.equal(Boolean(state.pending), !noWrite, `status ${code}, cut ${truncated}`);
+    const before = posts;
+    await assert.rejects(importFirstBatch(path, origin, "test-admin", statePath));
+    assert.equal(posts, before + (noWrite ? 1 : 0), "only proven no-write may POST again");
+  }
+});

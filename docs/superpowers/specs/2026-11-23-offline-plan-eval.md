@@ -200,54 +200,56 @@ type CheckResult =
 
 ## 4. 报告格式与界面状态
 
-报告是任务的只读汇总视图。`GET /api/admin/plan-eval/tasks/{id}/report` 与详情读取同一份任务、冻结输入、Artifact 和 CheckResult，不读取当前场景、快照或 Deployment。Dashboard 使用管理员 Bearer/刷新流程下载 JSON Blob；下载失败可重试，不产生空文件。完整报告含脱敏训练历史，仅保存在授权的本机环境，不提交公开仓库。[首批导入与验收手册](../../plan-eval-first-batch.md)
-
-- `schema = plan-eval-report/v1`，`task_id` 与详情 `id` 相同；`agent_version` 固定为本次任务选择的版本。`status` 保留任务生命周期 `running/done`，`result` 单独表示 `running/pass/fail/error`，避免“已完成”等同“通过”。
-- 任务及 `scenarios[]` 的 `summary` 逐执行项计数 `pass/fail/error/running`。生成失败、Evaluate 阶段故障或任一规则执行错误记 error；Schema 或业务规则不通过记 fail；全部完成且通过记 pass。规则 error 优先于 fail；未结束的项记 running。多个失败规则只计一项。`executions[].result` 与页面/导出采用同一分类函数。
-- `executions[]` 记录执行项 ID、`scenario_id`、`snapshot_id`、`as_of`、Generate、Artifact、Evaluate 和 checks。`artifact.id` 关联原文；`checks[].check_id/version` 关联 `frozen_rules[]` 的 `TaskID/ScenarioID/CheckID/Version/Source`。Schema check 的 version=0 表示内建 SchemaCheck，非 JavaScript 发布版本；其结果亦留存。
-- `execution_inputs` 按执行项 ID 保存 `as_of`、`request_json`、`snapshot_json` 及两者的 SHA-256。JSON 正文存字符串，保证从下载文件解析后可按 UTF-8 原始字节复核摘要，而非依赖再次序列化对象的键序或转义方式。
-- `artifact_contents` 按 Artifact ID 保存原始字符串，即使不是合法 JSON 也保留；摘要和大小在 `executions[].artifact`。生成失败无产物；Schema 不通过仍有产物与 Schema 检查结果，两者均跳过业务 Evaluate。`evaluate.error` 保留跳过的生成错因或 `schema_invalid`。
-- `replicas/env_names` 取任务冻结的启动配置，报告不含环境变量值、加密凭据、提交者 token 或 worker 身份凭据。清理 Worker 仅释放该版本生成环境，不修改冻结输入与结果；终结任务在清理前后再次导出应为同一字节内容，报告不附每次导出的变化时钟。
-
-下例为报告的关联字段节选（完整文件另含冻结正文和规则源码）。一项 Schema 不通过，另一项必需历史缺测：
+报告是任务的只读汇总视图。页面和 JSON 导出读取同一份任务、冻结输入、Artifact 和 CheckResult。快照与产物可通过 SHA-256 核对完整性。报告记录实际运行的规则 ID 与版本。下例中，一位跑者产物通过 Schema 校验但规则不通过，另一位跑者生成超时。
 
 ```json
 {
   "schema": "plan-eval-report/v1",
   "task_id": "task-001",
-  "id": "task-001",
   "agent_version": "example-v2",
-  "status": "done",
-  "result": "error",
-  "summary": {"pass": 0, "fail": 1, "error": 1, "running": 0},
+  "status": "error",
+  "summary": {"pass": 0, "fail": 1, "error": 1},
   "scenarios": [{
-    "id": "new-season",
-    "name": "新建赛季",
-    "artifact_type": "master_plan",
-    "snapshot_ids": ["snapshot-a", "snapshot-b"],
-    "rules": [{"id": "weekly_run_days", "version": 2}],
-    "result": "error",
-    "summary": {"pass": 0, "fail": 1, "error": 1, "running": 0}
-  }],
-  "executions": [
-    {
-      "id": "input-a", "scenario_id": "new-season", "snapshot_id": "snapshot-a", "result": "fail",
-      "generate": {"status": "done", "attempts": 1, "error": null},
-      "artifact": {"id": "art-a", "artifact_type": "master_plan", "schema_valid": false},
-      "evaluate": {"status": "skipped", "attempts": 0, "error": {"code": "schema_invalid", "message": "Artifact 未通过 Schema，跳过业务规则。"}},
-      "checks": [{"check_id": "schema", "version": 0, "status": "fail", "reason": "产物不是合法的 JSON 对象"}]
-    },
-    {
-      "id": "input-b", "scenario_id": "new-season", "snapshot_id": "snapshot-b", "result": "error",
-      "generate": {"status": "failed", "attempts": 1, "error": {"code": "snapshot_not_covered", "message": "必需历史未覆盖"}},
-      "artifact": null,
-      "evaluate": {"status": "skipped", "attempts": 0, "error": {"code": "snapshot_not_covered", "message": "必需历史未覆盖"}},
-      "checks": []
-    }
-  ],
-  "artifact_contents": {"art-a": "not valid JSON"}
+    "scenario_id": "new-season",
+    "status": "error",
+    "summary": {"pass": 0, "fail": 1, "error": 1},
+    "inputs": [
+      {
+        "id": "input-a",
+        "snapshot_id": "297eea13-0966-4bab-9960-837919452738",
+        "status": "fail",
+        "generate": {"status": "pass", "artifact_id": "art-a", "artifact_type": "master_plan"},
+        "evaluate": {
+          "status": "fail",
+          "artifact_id": "art-a",
+          "checks": [{
+            "check_id": "weekly-run-days",
+            "check_version": 1,
+            "status": "fail",
+            "detail": {
+              "reason": "安排了 5 个跑步日，上限为 4 天。",
+              "violations": [{"week_name": "第 1 周", "expected": 4, "actual": 5}]
+            }
+          }]
+        }
+      },
+      {
+        "id": "input-b",
+        "snapshot_id": "42c1b52b-c092-40a7-b659-c4f927fe3cf3",
+        "status": "error",
+        "generate": {
+          "status": "error",
+          "artifact_id": null,
+          "error": {"code": "generation_model_timeout", "message": "生成模型调用超时。"}
+        },
+        "evaluate": {"status": "skipped", "artifact_id": null, "checks": []}
+      }
+    ]
+  }]
 }
 ```
+
+`queued` 与 `running` 表示进行中。Generate 的无效产物记 `fail`，基础设施或模型故障记 `error`，两种情况的 Evaluate 均为 `skipped`。有效产物评分时，Evaluate 与 Generate 引用同一个 Artifact。执行项结束后，按 `error > fail > pass` 汇总，`skipped` 保留前序失败。场景按执行项计数，任务累加各场景计数。
 
 ## 5. 场景引用与任务冻结
 
@@ -362,9 +364,6 @@ SnapshotExecution 以 `(task_id, scenario_id, snapshot_id)` 去重。每个执�
 | 生成超时或产物 Schema 校验失败 | 本项跳过 Evaluate，保留错误或无效 Artifact 原文，其他快照正常继续 |
 | 一条规则不通过或出错，或者 Artifact 保存后 worker 中断 | 保留逐项理由、预期和实际值或错误，其他规则继续。接管只恢复未完成的检查 |
 
-| 首批八份私有清单重复导入 | 四位跑者、五份新建和三份滚动；保存随机 UUID 与文件/保存正文哈希，再次导入只核对原引用。C/D 共用固定赛季和前缀；HM 根据自身精确截止日和实际末周接续；所有周文档从逐份验哈希的原 Candidate 或 Artifact 回溯 |
-| 从任务详情导出后清理 Worker，再导出同一终态任务 | 报告包含任务、Agent、场景、执行项、冻结输入原文/哈希、Artifact 原文及规则版本/结果；前后文件字节一致，任务及场景计数与执行项一致 |
-
 ### 调度/恢复上线与隔离验证（devops#1061）
 
 - 新增列由测评 API 的 `AutoMigratePlanEval` 创建：`plan_eval_executions.dispatched_at/claim_request_id` 及 `plan_eval_receipts.submit_id/fingerprint/worker_id/lease_epoch`；任务 `params_fingerprint` 扩为 128 字符容纳 v2 标记，旧任务默认副本指纹仍可重放、新任务区分省略与显式副本数；不迁移或访问生产运动数据。历史报告和已终结执行项保留，老收据仍可通过终态领取 ACK。
@@ -382,7 +381,6 @@ SnapshotExecution 以 `(task_id, scenario_id, snapshot_id)` 去重。每个执�
 | 接口 | 行为 |
 | --- | --- |
 | `GET/POST /scenarios`、`GET/PUT /scenarios/{id}` | 场景名称、`artifact_type`、`snapshot_ids`、`rules: [{id, version}]`；新建分配 UUID，保存/提交验证所有引用 |
-| `GET /tasks/{id}/report` | `plan-eval-report/v1`；任务/场景汇总、冻结请求与快照原文及 SHA-256、Artifact 原文、规则版本与结果；仅管理员可下载，生成环境清理后仍可读 |
 | `GET/POST /snapshots`、`GET/PUT /snapshots/{id}` | RunnerSnapshot/v1 完整 JSON；新建/导入忽略文件 ID 并分配 UUID，编辑保留路径 ID；列表只读摘要列 |
 | `POST /request-preview` | `{artifact_type, snapshot_id, request}` → 只读 `{request, as_of}`，与提交共用校验与组装，不写入任务 |
 | `GET /rules` | 已发布规则只读列表；规则发布/试跑归 #1057 |

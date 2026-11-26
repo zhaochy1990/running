@@ -779,3 +779,32 @@ func TestPlanEval_PublishRuleIsImmutableAndConcurrent(t *testing.T) {
 		t.Fatalf("skipped version: %v", err)
 	}
 }
+
+func TestPlanEvalArtifactMetasOmitContentAndVirtualSize(t *testing.T) {
+	st := openPlanEvalStore(t)
+	ctx := context.Background()
+	task, _, err := st.CreatePlanEvalTask(ctx, newPlanEvalTaskCreate("metadata-"+uuid.NewString()[:8], "[]", 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	execution := onlyExecution(t, st, task.ID)
+	artifact := &PlanEvalArtifact{ID: uuid.NewString(), ExecutionID: execution.ID, TaskID: task.ID, ArtifactType: "master_plan", Content: "原始 <content>\n", Sha256: "hash", SchemaValid: false, CreatedAt: time.Now()}
+	if err := st.db.Create(artifact).Error; err != nil {
+		t.Fatal(err)
+	}
+	// Migration must never materialize this read-only expression as a column.
+	if st.db.Migrator().HasColumn(&PlanEvalArtifact{}, "size_bytes") {
+		t.Fatal("virtual size_bytes was migrated")
+	}
+	metas, err := st.ListPlanEvalArtifactMetas(ctx, task.ID)
+	if err != nil || len(metas) != 1 {
+		t.Fatalf("metas: %v, %d", err, len(metas))
+	}
+	if metas[0].Content != "" || metas[0].SizeBytes != len(artifact.Content) || metas[0].Sha256 != artifact.Sha256 {
+		t.Fatalf("metadata includes content or wrong UTF-8 size: %+v", metas[0])
+	}
+	raw, err := st.GetPlanEvalArtifact(ctx, artifact.ID)
+	if err != nil || raw.Content != artifact.Content {
+		t.Fatalf("normal Get queried virtual column or changed content: %v", err)
+	}
+}

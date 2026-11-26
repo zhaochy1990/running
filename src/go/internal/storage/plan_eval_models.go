@@ -211,7 +211,7 @@ type PlanEvalArtifact struct {
 	Sha256       string `gorm:"column:sha256;size:64;not null"`
 	// SizeBytes is filled by the metadata listing (OCTET_LENGTH(content)); it
 	// is not a column.
-	SizeBytes int `gorm:"-"`
+	SizeBytes int `gorm:"column:size_bytes;->;-:migration"`
 	// SchemaValid / SchemaErrors hold the SchemaCheck verdict written in the
 	// same transaction as the generate terminal state.
 	SchemaValid  bool      `gorm:"column:schema_valid;not null"`
