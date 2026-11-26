@@ -42,6 +42,11 @@ export function shouldHideStatusCard(view: OnboardingSyncView | null, dismissed:
   return view.state === 'completed' || view.state === 'superseded';
 }
 
+export function historicalAnalysisLabel(view: OnboardingSyncView): string {
+  if (view.historical_analysis_reason) return '待人工处理';
+  return view.readiness.historical_analysis === 'pending' ? '待处理' : readinessLabel(view.readiness.historical_analysis);
+}
+
 export function readinessLabel(level: OnboardingSyncReadiness): string {
   switch (level) {
     case 'ready':
@@ -87,6 +92,7 @@ export const READINESS_SUMMARY: Array<{ key: ReadinessKey; label: string }> = [
   { key: 'recent_analysis', label: '近期分析' },
   { key: 'extended_data', label: '历史扩展' },
   { key: 'historical_data', label: '历史补齐' },
+  { key: 'historical_analysis', label: '历史分析' },
   { key: 'auxiliary', label: '辅助任务' },
 ];
 

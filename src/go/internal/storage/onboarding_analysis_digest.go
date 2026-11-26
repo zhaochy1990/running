@@ -18,6 +18,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // OnboardingAnalysisDigest is the aggregate change marker of one user's
@@ -48,6 +50,10 @@ type OnboardingAnalysisDigest struct {
 // are filtered by their Shanghai civil day exactly like ActivitiesInWindow;
 // health/HRV rows key on their date column directly.
 func (s *Store) OnboardingAnalysisDigest(ctx context.Context, userID, fromDay, toDay string) (OnboardingAnalysisDigest, error) {
+	return onboardingAnalysisDigest(s.db.WithContext(ctx), userID, fromDay, toDay)
+}
+
+func onboardingAnalysisDigest(db *gorm.DB, userID, fromDay, toDay string) (OnboardingAnalysisDigest, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
 		return OnboardingAnalysisDigest{}, err
@@ -60,7 +66,7 @@ func (s *Store) OnboardingAnalysisDigest(ctx context.Context, userID, fromDay, t
 		DistSum *float64
 		DurSum  *float64
 	}
-	err = s.db.WithContext(ctx).Table("activities").
+	err = db.Table("activities").
 		Select(`COUNT(*) AS count, MAX(synced_at) AS max_sync,
 			COALESCE(SUM(distance_m), 0) AS dist_sum, COALESCE(SUM(duration_s), 0) AS dur_sum`).
 		Where("user_id = ?", uid).
@@ -81,7 +87,7 @@ func (s *Store) OnboardingAnalysisDigest(ctx context.Context, userID, fromDay, t
 		SleepSum *int64
 		ScoreSum *int64
 	}
-	err = s.db.WithContext(ctx).Table("daily_health").
+	err = db.Table("daily_health").
 		Select(`COUNT(*) AS count, MAX(date) AS max_date,
 			COALESCE(SUM(rhr), 0) AS rhr_sum, COALESCE(SUM(sleep_total_s), 0) AS sleep_sum,
 			COALESCE(SUM(sleep_score), 0) AS score_sum`).
@@ -101,7 +107,7 @@ func (s *Store) OnboardingAnalysisDigest(ctx context.Context, userID, fromDay, t
 		MaxDate *string
 		AvgSum  *int64
 	}
-	err = s.db.WithContext(ctx).Table("daily_hrv").
+	err = db.Table("daily_hrv").
 		Select(`COUNT(*) AS count, MAX(date) AS max_date, COALESCE(SUM(last_night_avg), 0) AS avg_sum`).
 		Where("user_id = ? AND date >= ? AND date <= ?", uid, fromDay, toDay).
 		Scan(&hrv).Error

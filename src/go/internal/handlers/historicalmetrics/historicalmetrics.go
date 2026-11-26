@@ -64,6 +64,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/compute/trainingload"
 	"github.com/zhaochy1990/stride/internal/compute/trainingloadsource"
 	handlerscompute "github.com/zhaochy1990/stride/internal/handlers/compute"
+	"github.com/zhaochy1990/stride/internal/handlers/historicalcalibration"
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/storage"
 	"github.com/zhaochy1990/stride/internal/utils/timefmt"
@@ -146,10 +147,12 @@ type Config struct {
 
 // chunkInput is the job's InputJSON (T07 shape).
 type chunkInput struct {
-	Request  bool   `json:"request,omitempty"`
-	AsOfDay  string `json:"as_of_day,omitempty"`
-	RunID    string `json:"run_id,omitempty"`
-	ChunkSeq int    `json:"chunk_seq,omitempty"`
+	Request          bool   `json:"request,omitempty"`
+	AsOfDay          string `json:"as_of_day,omitempty"`
+	BindingRevision  int64  `json:"binding_revision,omitempty"`
+	CalibrationRunID string `json:"calibration_run_id,omitempty"`
+	RunID            string `json:"run_id,omitempty"`
+	ChunkSeq         int    `json:"chunk_seq,omitempty"`
 }
 
 // runResult is the executor's ResultJSON.
@@ -218,13 +221,24 @@ func New(cfg Config) job.Handler {
 			if err != nil {
 				return "", err
 			}
-			if r == nil {
+			if r == nil || r.UserID != user {
 				return "", job.NewPermanentError("run_gone",
 					fmt.Errorf("historicalmetrics: run %s not found", in.RunID))
 			}
+			if !r.Terminal() {
+				if in.ChunkSeq > 0 && in.ChunkSeq < r.ChunkSeq {
+					return e.resultJSON(r, "merged"), nil
+				}
+				// Track the executing continuation before its first checkpoint.
+				// A recovered chunk can run for minutes before it advances.
+				r.ChunkSeq = max(r.ChunkSeq, in.ChunkSeq)
+				if err := cfg.Store.AdvanceHistoricalMetricsCheckpoint(ctx, r.RunID, "", r.ChunkSeq, j.ID); err != nil {
+					return "", err
+				}
+			}
 			run = r
 		default:
-			r, c, m, sup, err := e.claim(ctx, in.AsOfDay, j.CreatedBy)
+			r, c, m, sup, err := e.claim(ctx, in, j.CreatedBy)
 			if err != nil {
 				return "", err
 			}
@@ -267,7 +281,7 @@ type executor struct {
 
 // claim resolves the CURRENT pinned revisions plus the newest frozen
 // calibration bundle and atomically create-or-merges the user's active run.
-func (e *executor) claim(ctx context.Context, asOfDay, createdBy string) (*storage.HistoricalMetricsRun, bool, bool, *string, error) {
+func (e *executor) claim(ctx context.Context, in chunkInput, createdBy string) (*storage.HistoricalMetricsRun, bool, bool, *string, error) {
 	store := e.cfg.Store
 	binding, err := store.GetWatchBinding(ctx, e.user)
 	if err != nil {
@@ -277,6 +291,10 @@ func (e *executor) claim(ctx context.Context, asOfDay, createdBy string) (*stora
 		return nil, false, false, nil, job.NewPermanentError("no_watch_binding",
 			errors.New("historicalmetrics: user has no watch binding to pin a revision"))
 	}
+	if in.BindingRevision != 0 && binding.Revision != in.BindingRevision {
+		return nil, false, false, nil, job.NewPermanentError("binding_revision_changed", errors.New("historicalmetrics: watch binding changed before automatic dispatch"))
+	}
+	asOfDay := in.AsOfDay
 	if asOfDay == "" {
 		asOfDay = timefmt.ShanghaiToday().Format("2006-01-02")
 	}
@@ -297,6 +315,9 @@ func (e *executor) claim(ctx context.Context, asOfDay, createdBy string) (*stora
 	if calRun == nil {
 		return nil, false, false, nil, job.NewPermanentError("calibration_bundle_missing",
 			errors.New("historicalmetrics: no completed historical-calibration recompute run to consume (dispatch historical_calibration_recompute first)"))
+	}
+	if in.CalibrationRunID != "" && in.CalibrationRunID != calRun.RunID {
+		return nil, false, false, nil, job.NewPermanentError("calibration_bundle_changed", errors.New("historicalmetrics: automatic dispatch was pinned to a different calibration bundle"))
 	}
 	if active, err := store.ActiveHistoricalRecomputeRunByUser(ctx, e.user); err != nil {
 		return nil, false, false, nil, err
@@ -319,7 +340,8 @@ func (e *executor) claim(ctx context.Context, asOfDay, createdBy string) (*stora
 	// and the calibration-window digest pins the published baseline rows the
 	// derivation reads (a rewritten window day supersedes the run even when
 	// no raw input moved).
-	digest, err := store.OnboardingAnalysisDigest(ctx, e.user, "0000-01-01", targetTo)
+	digestFrom, digestTo := storage.OnboardingHistoricalDigestBounds(createdBy, "0000-01-01", targetTo)
+	digest, err := store.OnboardingAnalysisDigest(ctx, e.user, digestFrom, digestTo)
 	if err != nil {
 		return nil, false, false, nil, err
 	}
@@ -353,7 +375,7 @@ func (e *executor) claim(ctx context.Context, asOfDay, createdBy string) (*stora
 		CalibrationRunID:             calRun.RunID,
 		CalibrationBundleFingerprint: *calRun.BundleFingerprint,
 		ActivitiesTotal:              len(windowActs), DaysTotal: TargetDays,
-		CreatedBy: createdBy,
+		CreatedBy: createdBy, JobID: e.job.ID,
 	})
 	if err != nil {
 		return nil, false, false, nil, err
@@ -361,10 +383,25 @@ func (e *executor) claim(ctx context.Context, asOfDay, createdBy string) (*stora
 	if !claim.Created {
 		// Merged into a live run: if its latest chunk job is still live, this
 		// request observes instead of executing beside it.
-		if claim.Run.LastJobID != nil {
+		if claim.Run.LastJobID != nil && *claim.Run.LastJobID != e.job.ID {
 			if j, err := e.cfg.Store.JobByID(ctx, *claim.Run.LastJobID); err == nil && j != nil && !j.Status.Terminal() {
 				return claim.Run, false, true, claim.SupersededFrom, nil
 			}
+		}
+	}
+	// The calibration run may have frozen just before a new activity landed.
+	// Recheck its original raw inputs after pinning the metrics inputs so an
+	// automatic hand-off can never publish against that older baseline.
+	if in.CalibrationRunID != "" {
+		reason, err := historicalcalibration.CheckPinnedInputs(ctx, store, calRun)
+		if err != nil {
+			return nil, false, false, nil, err
+		}
+		if reason != "" {
+			if err := store.SupersedeHistoricalMetricsRun(ctx, claim.Run.RunID, reason); err != nil {
+				return nil, false, false, nil, err
+			}
+			claim.Run.State, claim.Run.SupersedeReason = storage.HistoricalMetricsStateSuperseded, &reason
 		}
 	}
 	return claim.Run, claim.Created, false, claim.SupersededFrom, nil
@@ -387,7 +424,8 @@ func (e *executor) fence(ctx context.Context, run *storage.HistoricalMetricsRun)
 	if policy.ActiveVersion != run.PolicyVersion || policy.Revision != run.PolicyRevision {
 		return "policy_revision_changed", nil
 	}
-	digest, err := store.OnboardingAnalysisDigest(ctx, run.UserID, "0000-01-01", run.TargetToDay)
+	digestFrom, digestTo := storage.OnboardingHistoricalDigestBounds(run.CreatedBy, "0000-01-01", run.TargetToDay)
+	digest, err := store.OnboardingAnalysisDigest(ctx, run.UserID, digestFrom, digestTo)
 	if err != nil {
 		return "", err
 	}
@@ -969,6 +1007,9 @@ func (e *executor) phaseL1(ctx context.Context, run *storage.HistoricalMetricsRu
 func (e *executor) phasePublish(ctx context.Context, run *storage.HistoricalMetricsRun) (string, error) {
 	store := e.cfg.Store
 	counts, err := store.PublishHistoricalMetricsRun(ctx, run.RunID)
+	if errors.Is(err, storage.ErrOnboardingHistoricalInputsChanged) {
+		return e.supersede(ctx, run, "data_revision_changed")
+	}
 	if err != nil {
 		return "", err
 	}

@@ -27,6 +27,7 @@ import type {
   RunningCalibration,
   SyncCoverage,
   SyncDispatchRow,
+  SyncReadiness,
   SyncRecentAnalysisRow,
   SyncSessionRow,
   SyncStageCoverageRow,
@@ -43,6 +44,7 @@ import type { Pool, RowDataPacket } from "mysql2/promise";
 import { z } from "zod";
 import type { MySqlConfig } from "../config.js";
 import { createStridePool } from "../db/mysql.js";
+import { GoJobClient } from "../goClient/jobClient.js";
 import policyContract from "./calibrationPolicyContract.json" with { type: "json" };
 
 const logger = getLogger("coach:activityDetails");
@@ -869,14 +871,14 @@ export class MySqlDataProvider implements DataProvider {
    */
   async getSyncCoverage(userId: string): Promise<SyncCoverage | null> {
     const [sessionRows] = await this.pool.query<RowDataPacket[]>(
-      `SELECT session_id, provider, binding_revision, anchor_day, state, shell_ready, last_error, updated_at
+      `SELECT session_id, provider, binding_revision, anchor_day, state, shell_ready, last_error, updated_at, created_at, historical_analysis_reason
          FROM onboarding_sync_sessions
         WHERE user_id = ? AND state <> 'superseded'
         ORDER BY created_at DESC
         LIMIT 1`,
       [userId],
     );
-    const sessionRow = sessionRows[0] as SyncSessionRow | undefined;
+    const sessionRow = sessionRows[0] as (SyncSessionRow & { created_at: Date }) | undefined;
     if (!sessionRow) return null;
     const sessionId = sessionRow.session_id;
     const [coverageRows, dispatchRows, analysisRows] = await Promise.all([
@@ -898,12 +900,105 @@ export class MySqlDataProvider implements DataProvider {
       ),
     ]);
     const analysisRow = analysisRows[0][0] as SyncRecentAnalysisRow | undefined;
-    return deriveSyncCoverage(
-      sessionRow,
-      coverageRows[0] as unknown as SyncStageCoverageRow[],
-      dispatchRows[0] as unknown as SyncDispatchRow[],
-      analysisRow ?? null,
+    const coverage = coverageRows[0] as unknown as SyncStageCoverageRow[];
+    const historical = await this.readHistoricalSyncAnalysis(userId, sessionRow, coverage, analysisRow);
+    return deriveSyncCoverage(sessionRow, coverage, dispatchRows[0] as unknown as SyncDispatchRow[], analysisRow ?? null, historical);
+  }
+
+  // Mirror Go's read-only projection from frozen and published runs. The old
+  // recent snapshot remains intact, including its own as-of day and gaps.
+  private async readHistoricalSyncAnalysis(
+    userId: string,
+    session: SyncSessionRow & { created_at: Date },
+    coverage: SyncStageCoverageRow[],
+    analysis: SyncRecentAnalysisRow | undefined,
+  ): Promise<Parameters<typeof deriveSyncCoverage>[4]> {
+    const terminal = (stage: string) => coverage.some((row) => row.stage === stage && (row.status === "completed" || row.status === "completed_with_gaps"));
+    if (!terminal("historical_raw")) return undefined;
+    const [runs] = await this.pool.query<RowDataPacket[]>(
+      `SELECT m.run_id, m.state, m.published_at, m.analysis_as_of_day, m.target_from_day, m.target_to_day
+         FROM historical_metrics_recompute_runs AS m
+         JOIN historical_recompute_runs AS c
+           ON c.run_id = m.calibration_run_id AND c.user_id = m.user_id
+          AND c.binding_revision = m.binding_revision
+          AND c.bundle_fingerprint = m.calibration_bundle_fingerprint
+          AND c.state IN ('completed', 'completed_with_gaps')
+        WHERE m.state IN ('completed', 'completed_with_gaps')
+          AND m.published_at IS NOT NULL AND m.output_fingerprint IS NOT NULL
+          AND m.user_id = ? AND m.binding_revision = ? AND m.created_at >= ?
+        ORDER BY m.published_at DESC, m.run_id DESC LIMIT 1`,
+      [userId, session.binding_revision, session.created_at],
     );
+    const run = runs[0];
+    if (run) {
+      const readiness: SyncReadiness = run.state === "completed_with_gaps" ? "ready_with_gaps" : "ready";
+      if (
+        !analysis?.domains_json?.includes("historical_calibration_missing") ||
+        new Date(analysis.computed_at) > new Date(run.published_at) ||
+        analysis.as_of_day < run.target_from_day ||
+        analysis.as_of_day > run.target_to_day
+      )
+        return { readiness };
+
+      const withinWindow =
+        analysis.coverage_from && analysis.coverage_to && analysis.coverage_from >= run.target_from_day && analysis.coverage_to <= run.target_to_day;
+      const from = withinWindow ? analysis.coverage_from : run.target_to_day;
+      const to = withinWindow ? analysis.coverage_to : run.target_from_day;
+      const [rows] = await this.pool.query<RowDataPacket[]>(
+        `SELECT COUNT(*) AS activities,
+                COALESCE(SUM(artifact.kind = 'activity_load' AND l.training_dose IS NOT NULL
+                  AND JSON_TYPE(JSON_EXTRACT(artifact.payload, '$.TrainingDose')) IN ('INTEGER', 'DOUBLE', 'DECIMAL')
+                  AND JSON_UNQUOTE(JSON_EXTRACT(artifact.payload, '$.ExcludedFromPMC')) = 'false'), 0) AS loads,
+                COALESCE(SUM(EXISTS (
+                  SELECT 1 FROM historical_metrics_recompute_staged z
+                  JOIN activity_zones az ON az.user_id = a.user_id AND az.label_id = a.label_id
+                  WHERE z.run_id = artifact.run_id AND z.kind = 'activity_zones' AND z.item_key = a.label_id
+                    AND JSON_CONTAINS(z.payload, '{"ZoneType":"heartRate"}')
+                    AND az.zone_type = 'heartRate'
+                )), 0) AS zones,
+                EXISTS (SELECT 1 FROM ability_snapshot ability
+                  WHERE ability.user_id = ? AND ability.date = ? AND ? AND ability.level = 'L4'
+                    AND ability.value IS NOT NULL AND ability.computed_at >= ?) AS has_ability
+           FROM historical_metrics_recompute_staged artifact
+           JOIN activities a ON a.user_id = ? AND a.label_id = artifact.item_key
+           LEFT JOIN activity_training_load l ON l.user_id = a.user_id AND l.label_id = a.label_id
+          WHERE artifact.run_id = ? AND artifact.kind IN ('activity_load', 'activity_skip')
+            AND DATE(a.date + INTERVAL 8 HOUR) BETWEEN ? AND ?`,
+        [userId, analysis.as_of_day, analysis.as_of_day === run.analysis_as_of_day, run.published_at, userId, run.run_id, from, to],
+      );
+      const evidence = rows[0];
+      return {
+        readiness,
+        recentEvidence: {
+          activities: Number(evidence?.activities ?? 0),
+          loads: Number(evidence?.loads ?? 0),
+          zones: Number(evidence?.zones ?? 0),
+          ability: Boolean(evidence?.has_ability),
+        },
+      };
+    }
+    if (!terminal("auxiliary") || session.historical_analysis_reason) return undefined;
+    const [runsInProgress] = await this.pool.query<RowDataPacket[]>(
+      `SELECT last_job_id, updated_at FROM historical_recompute_runs
+        WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running')
+        UNION ALL
+        SELECT last_job_id, updated_at FROM historical_metrics_recompute_runs
+        WHERE user_id = ? AND binding_revision = ? AND created_at >= ? AND state IN ('pending', 'running')`,
+      [userId, session.binding_revision, session.created_at, userId, session.binding_revision, session.created_at],
+    );
+    const cutoff = Date.now() - 15 * 60 * 1000;
+    if (runsInProgress.some((candidate) => new Date(candidate.updated_at).getTime() >= cutoff)) return { readiness: "running" };
+    const jobIDs = runsInProgress.flatMap((candidate) => (typeof candidate.last_job_id === "string" ? [candidate.last_job_id] : []));
+    if (!this.goAPI?.internalToken || jobIDs.length === 0) return { readiness: "pending" };
+
+    // Go owns job state. Check its lease when a real chunk outlives the
+    // checkpoint freshness window (including manual runs with auto disabled).
+    const jobs = new GoJobClient(this.goAPI.baseUrl, this.goAPI.internalToken, (input, options) =>
+      fetch(input, { ...options, redirect: "error", signal: AbortSignal.timeout(3_000) }),
+    );
+    const observed = await Promise.all(jobIDs.map((id) => jobs.get(id).catch(() => null)));
+    const active = observed.some((job) => job?.userId === userId && job.status === "running" && (job.heartbeatAt ?? job.updatedAt).getTime() >= cutoff);
+    return { readiness: active ? "running" : "pending" };
   }
 
   /** Release the pool — only if this provider opened it via `create()`. */

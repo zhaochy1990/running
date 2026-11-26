@@ -239,10 +239,13 @@ func runWorker() error {
 	// turning the creation switch off must never strand in-flight sessions.
 	onboardingSyncSvc, err := onboardingsync.New(onboardingsync.Config{
 		Store: store, Enqueuer: enq, Jobs: store, Runs: store,
-		JobType:            catalog.JobTypeOnboardingRecentSync,
-		AnalysisJobType:    catalog.JobTypeOnboardingRecentAnalysis,
-		LegacyFullPipeline: catalog.PipelineOnboarding,
-		Logger:             log,
+		JobType:             catalog.JobTypeOnboardingRecentSync,
+		AnalysisJobType:     catalog.JobTypeOnboardingRecentAnalysis,
+		HistoricalAuto:      cfg.Runtime.OnboardingHistoricalAuto && cfg.Runtime.HistoricalRecompute.Enabled && cfg.Runtime.HistoricalMetrics.Enabled,
+		HistoricalPublisher: pub,
+		HistoricalReplayAge: cfg.Retry.MaxBackoff + onboardingSweepInterval,
+		LegacyFullPipeline:  catalog.PipelineOnboarding,
+		Logger:              log,
 	})
 	if err != nil {
 		return err
@@ -547,9 +550,7 @@ func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *stor
 	// registered like the onboarding executors, but the rollout flag
 	// (runtime.historical-recompute.enabled, DEFAULT OFF) keeps it inert — a
 	// stray job on a flag-off worker fails permanently instead of running an
-	// unauthorized production backfill. Operator-dispatched via the internal
-	// jobs API only; never a pipeline step, ordinary-calibration path or
-	// listener.
+	// unauthorized production backfill. Dispatched via the internal jobs API or the onboarding sweep.
 	reg.MustRegister(historicalcalibration.JobType, historicalcalibration.New(historicalcalibration.Config{
 		Store:   store,
 		Enq:     enq,
@@ -562,8 +563,8 @@ func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *stor
 	// like the calibration executor; the rollout flag
 	// (runtime.historical-metrics-recompute.enabled, DEFAULT OFF) keeps it
 	// inert — a stray job on a flag-off worker fails permanently instead of
-	// running an unauthorized production rebuild. Operator-dispatched via the
-	// internal jobs API only; never a pipeline step or listener.
+	// running an unauthorized production rebuild. Dispatched via the internal
+	// jobs API or the onboarding sweep.
 	reg.MustRegister(historicalmetrics.JobType, historicalmetrics.New(historicalmetrics.Config{
 		Store:   store,
 		Enq:     enq,

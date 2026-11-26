@@ -162,6 +162,7 @@ type HistoricalRecomputeClaimSpec struct {
 	DaysTotal        int
 	CreatedBy        string
 	Now              time.Time
+	JobID            string
 }
 
 // HistoricalRecomputeClaimResult is the claim outcome: the run to execute and
@@ -197,7 +198,8 @@ func (s *Store) ClaimOrCreateHistoricalRecomputeRun(ctx context.Context, spec Hi
 		now = time.Now().UTC()
 	}
 	res := &HistoricalRecomputeClaimResult{}
-	txErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	claim := func(tx *gorm.DB) error {
+		*res = HistoricalRecomputeClaimResult{}
 		var active []HistoricalRecomputeRun
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("user_id = ? AND state IN ?", spec.UserID,
@@ -238,11 +240,17 @@ func (s *Store) ClaimOrCreateHistoricalRecomputeRun(ctx context.Context, spec Hi
 			State: HistoricalRecomputeStatePending, DaysTotal: spec.DaysTotal,
 			CreatedBy: spec.CreatedBy, CreatedAt: now, UpdatedAt: now,
 		}
+		if spec.JobID != "" {
+			row.LastJobID = &spec.JobID
+		}
 		if err := tx.Create(&row).Error; err != nil {
 			return err
 		}
 		res.Run, res.Created = &row, true
 		return nil
+	}
+	txErr := withDeadlockRetry(func() error {
+		return s.db.WithContext(ctx).Transaction(claim)
 	})
 	if txErr != nil {
 		return nil, txErr
@@ -371,7 +379,7 @@ func (s *Store) AdvanceHistoricalRecomputeCheckpoint(ctx context.Context, runID,
 			return fmt.Errorf("storage: historical recompute run %s not found", runID)
 		}
 		run := rows[0]
-		if run.Terminal() {
+		if run.Terminal() || chunkSeq < run.ChunkSeq {
 			return nil // superseded between the fence check and here: drop the write
 		}
 		updates := map[string]any{"updated_at": time.Now().UTC()}

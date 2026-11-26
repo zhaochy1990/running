@@ -91,6 +91,8 @@ public struct OnboardingSyncSessionView: Decodable, Sendable, Equatable {
     public let anchorDay: String
     public let legacyRunId: String?
     public let retryCount: Int
+    public let historicalAnalysisReason: String?
+    public let historicalAnalysisPoll: Bool?
     public let error: String?
     public let stages: [OnboardingSyncStageView]
     public let readiness: OnboardingSyncReadinessFlags
@@ -104,6 +106,8 @@ public struct OnboardingSyncSessionView: Decodable, Sendable, Equatable {
         case anchorDay = "anchor_day"
         case legacyRunId = "legacy_run_id"
         case retryCount = "retry_count"
+        case historicalAnalysisReason = "historical_analysis_reason"
+        case historicalAnalysisPoll = "historical_analysis_poll"
         case error, stages, readiness
     }
 }
@@ -193,6 +197,7 @@ public enum OnboardingSessionDisplay {
         case recentAnalysis = "recent_analysis"
         case extendedData = "extended_data"
         case historicalData = "historical_data"
+        case historicalAnalysis = "historical_analysis"
         case auxiliary
 
         public var label: String {
@@ -201,6 +206,7 @@ public enum OnboardingSessionDisplay {
             case .recentAnalysis: "近期分析"
             case .extendedData: "历史扩展"
             case .historicalData: "历史补齐"
+            case .historicalAnalysis: "历史分析"
             case .auxiliary: "辅助任务"
             }
         }
@@ -213,8 +219,19 @@ public enum OnboardingSessionDisplay {
         case .recentAnalysis: flags.recentAnalysis
         case .extendedData: flags.extendedData
         case .historicalData: flags.historicalData
+        case .historicalAnalysis: flags.historicalAnalysis
         case .auxiliary: flags.auxiliary
         }
+    }
+
+    public static func shouldPoll(_ view: OnboardingSyncSessionView) -> Bool {
+        !isTerminal(view.state) || view.historicalAnalysisPoll == true
+    }
+
+    public static func historicalAnalysisLabel(_ view: OnboardingSyncSessionView) -> String {
+        if view.historicalAnalysisReason != nil { return "待人工处理" }
+        let level = view.readiness.historicalAnalysis
+        return level == .pending ? "待处理" : readinessLabel(level)
     }
 
     static let stageLabels: [String: String] = [

@@ -85,6 +85,12 @@ func newHarnessWithHorizon(t *testing.T, horizon time.Duration) *harness {
 	if err := st.AutoMigrateOnboardingSync(ctx); err != nil {
 		t.Fatalf("automigrate onboarding sync: %v", err)
 	}
+	if err := st.AutoMigrateHistoricalRecompute(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AutoMigrateHistoricalMetrics(ctx); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { _ = st.Close() })
 	pub := &memPublisher{}
 	enq := job.NewStoreEnqueuer(st.Jobs(), pub)

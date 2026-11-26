@@ -6,6 +6,8 @@ import {
   type WatchInfo,
   type WatchProvider,
 } from '../../services/watch';
+import { getOnboardingSyncSession, isSessionEntryUnavailable } from '../../services/onboarding-sync';
+import { historicalAnalysisLabel, isSessionTerminal, SESSION_POLL_MS } from '../../utils/onboardingSession';
 import { ApiError } from '../../services/request';
 import { triggerSyncAfterBind } from '../../services/onboarding';
 import { userStore } from '../../store/index';
@@ -22,6 +24,7 @@ interface WatchPageData {
   watch: WatchInfo;
   /** last_sync_at 的展示串（上海 MM-DD HH:mm）—— wxml 不直接渲染原始 ISO。 */
   lastSyncText: string;
+  historicalAnalysisText: string;
   connected: boolean;
   error: string;
   success: string;
@@ -42,6 +45,12 @@ interface WatchPageHandlers {
   /** query.provider 可选：由 onboarding 引导页带过来，直接进该品牌的登录表单。 */
   onLoad(query: Record<string, string | undefined>): void;
   onShow(): void;
+  onHide(): void;
+  onUnload(): void;
+  pollHistoricalAnalysis(generation: number): Promise<void>;
+  stopHistoricalAnalysisPoll(): void;
+  _historicalGeneration?: number;
+  _historicalTimer?: ReturnType<typeof setTimeout>;
   fetchWatch(): Promise<void>;
   onBack(): void;
   onSelectProvider(e: WechatMiniprogram.TouchEvent): void;
@@ -111,6 +120,7 @@ Page<WatchPageData, WatchPageHandlers>({
     loading: true,
     watch: EMPTY_WATCH,
     lastSyncText: '—',
+    historicalAnalysisText: '',
     connected: false,
     error: '',
     success: '',
@@ -145,6 +155,37 @@ Page<WatchPageData, WatchPageHandlers>({
 
   onShow() {
     void this.fetchWatch();
+    this.stopHistoricalAnalysisPoll();
+    void this.pollHistoricalAnalysis(this._historicalGeneration ?? 0);
+  },
+
+  onHide() {
+    this.stopHistoricalAnalysisPoll();
+  },
+
+  onUnload() {
+    this.stopHistoricalAnalysisPoll();
+  },
+
+  stopHistoricalAnalysisPoll() {
+    this._historicalGeneration = (this._historicalGeneration ?? 0) + 1;
+    if (this._historicalTimer !== undefined) clearTimeout(this._historicalTimer);
+  },
+
+  async pollHistoricalAnalysis(generation) {
+    try {
+      const view = await getOnboardingSyncSession();
+      if (generation !== this._historicalGeneration) return;
+      this.setData({ historicalAnalysisText: historicalAnalysisLabel(view) });
+      if (isSessionTerminal(view.state) && !view.historical_analysis_poll) return;
+    } catch (err) {
+      if (generation !== this._historicalGeneration) return;
+      if (isSessionEntryUnavailable(err)) {
+        this.setData({ historicalAnalysisText: '' });
+        return;
+      }
+    }
+    this._historicalTimer = setTimeout(() => void this.pollHistoricalAnalysis(generation), SESSION_POLL_MS);
   },
 
   async fetchWatch() {

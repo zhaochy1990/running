@@ -102,6 +102,8 @@ type Runtime struct {
 	// calibration bundle. DEFAULT OFF; a stray job on a flag-off worker fails
 	// permanently (historical_metrics_disabled) instead of executing.
 	HistoricalMetrics HistoricalMetrics `mapstructure:"historical-metrics-recompute"`
+	// OnboardingHistoricalAuto gates automatic dispatch separately from manual execution.
+	OnboardingHistoricalAuto bool `mapstructure:"onboarding-historical-auto"`
 }
 
 // HistoricalMetrics configures the explicit historical-metrics recompute

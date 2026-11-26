@@ -54,6 +54,10 @@
             <text class="watch-meta-row__label">最后同步</text>
             <text class="watch-meta-row__value">{{lastSyncText}}</text>
           </view>
+          <view wx:if="{{historicalAnalysisText}}" class="watch-meta-row">
+            <text class="watch-meta-row__label">历史分析</text>
+            <text class="watch-meta-row__value">{{historicalAnalysisText}}</text>
+          </view>
           <view wx:if="{{watch.capabilities.length}}" class="watch-caps">
             <text class="watch-caps__label">支持功能</text>
             <view class="watch-caps__list">

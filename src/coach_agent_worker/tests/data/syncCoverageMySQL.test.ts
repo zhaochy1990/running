@@ -149,3 +149,53 @@ test("getSyncCoverage against real Go-seeded MySQL when the shared fixture is pr
     await pool.end();
   }
 });
+
+test("Coach sees a live manual recompute after the last checkpoint goes stale", async () => {
+  const { createServer } = await import("node:http");
+  const { once } = await import("node:events");
+  const now = new Date();
+  const old = new Date(now.getTime() - 60 * 60 * 1000);
+  const userId = "fixture-athlete";
+  const jobID = "current-historical-chunk";
+  let gotRequest = false;
+  const server = createServer((req, res) => {
+    gotRequest = req.url === `/api/internal/jobs/${jobID}` && req.headers["x-internal-token"] === "fixture-internal";
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ job_id: jobID, user_id: userId, status: "running", heartbeat_at: now.toISOString() }));
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const pool = fakePool(
+      {
+        onboarding_sync_sessions: [
+          {
+            session_id: "session",
+            binding_revision: 1,
+            provider: "coros",
+            anchor_day: "2026-11-21",
+            state: "completed",
+            shell_ready: 1,
+            last_error: null,
+            created_at: old,
+            updated_at: old,
+          },
+        ],
+        onboarding_sync_stage_coverage: [
+          { stage: "historical_raw", status: "completed_with_gaps" },
+          { stage: "auxiliary", status: "completed" },
+        ],
+        historical_recompute_runs: [{ last_job_id: jobID, updated_at: old }],
+      },
+      [],
+    );
+    const provider = new MySqlDataProvider(pool, { goAPI: { baseUrl: `http://127.0.0.1:${address.port}`, internalToken: "fixture-internal" } });
+    const view = await provider.getSyncCoverage(userId);
+    assert.equal(gotRequest, true);
+    assert.equal(view?.readiness.historicalAnalysis, "running");
+  } finally {
+    server.close();
+  }
+});

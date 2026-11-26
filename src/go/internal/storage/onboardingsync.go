@@ -148,8 +148,11 @@ type OnboardingSyncSession struct {
 	// were durably persisted — the only condition under which a client may be
 	// told the shell is ready (进入首页). Set in the claim transaction.
 	ShellReady bool `gorm:"column:shell_ready;not null;default:false"`
-	// LegacyRunID links an in-flight old full `onboarding` pipeline run the
-	// session waits on and reconciles against (nullable).
+	// Recompute reconciliation uses a separate cursor so it cannot perturb
+	// session freshness or the recent-analysis refresh horizon.
+	HistoricalAnalysisReason    *string    `gorm:"column:historical_analysis_reason;type:varchar(32)"`
+	HistoricalAnalysisCheckedAt *time.Time `gorm:"column:historical_analysis_checked_at;type:datetime(6)"`
+	// LegacyRunID links an in-flight old full onboarding pipeline run.
 	LegacyRunID *string   `gorm:"column:legacy_run_id;type:varchar(64)"`
 	RetryCount  int       `gorm:"column:retry_count;type:int;not null;default:0"`
 	LastError   *string   `gorm:"column:last_error;type:text"`

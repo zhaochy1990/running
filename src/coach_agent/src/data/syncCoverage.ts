@@ -25,6 +25,7 @@ export interface SyncSessionRow {
   shell_ready: number | boolean;
   last_error: string | null;
   updated_at: Date | string;
+  historical_analysis_reason?: string | null;
 }
 
 /** onboarding_sync_stage_coverage 一行。 */
@@ -161,6 +162,7 @@ export function deriveSyncCoverage(
   coverageRows: SyncStageCoverageRow[],
   dispatchRows: SyncDispatchRow[],
   analysisRow: SyncRecentAnalysisRow | null,
+  historical?: { readiness: SyncReadiness; recentEvidence?: { activities: number; loads: number; zones: number; ability: boolean } },
 ): SyncCoverage {
   const dispatchByStage = new Map(dispatchRows.map((d) => [d.stage, d]));
   const stages: SyncStageCoverage[] = [];
@@ -232,6 +234,34 @@ export function deriveSyncCoverage(
     }
     stages.push(stage);
   }
+  const terminal = (stage: string) => coverageRows.some((row) => row.stage === stage && (row.status === "completed" || row.status === "completed_with_gaps"));
+  readiness.historicalAnalysis = historical?.readiness ?? (terminal("historical_raw") && terminal("auxiliary") ? "pending" : "not_started");
+  if (historical?.recentEvidence && recentAnalysisDetail) {
+    const evidence = historical.recentEvidence;
+    const counts = [
+      ["load", evidence.loads, evidence.activities],
+      ["zones", evidence.zones, evidence.activities],
+      ["ability", Number(evidence.ability), 1],
+    ] as const;
+    for (const [domain, available, total] of counts) {
+      if (recentAnalysisDetail.domains[domain]?.reason !== "historical_calibration_missing") continue;
+      recentAnalysisDetail.domains[domain] =
+        available === 0
+          ? { status: "unavailable", reason: "no_published_evidence" }
+          : available < total
+            ? { status: "partial", reason: "historical_recompute_coverage_gap" }
+            : { status: "ready" };
+    }
+    const domains = Object.values(recentAnalysisDetail.domains);
+    const allReady = domains.every((domain) => domain.status === "ready");
+    const anyUsable = domains.some((domain) => domain.status === "ready" || domain.status === "partial");
+    recentAnalysisDetail.status = allReady ? "ready" : anyUsable ? "partial" : "unavailable";
+    if (readiness.recentAnalysis !== "failed" && readiness.recentAnalysis !== "not_started") {
+      readiness.recentAnalysis = recentAnalysisDetail.status as SyncReadiness;
+      const stage = stages.find((stage) => stage.stage === "recent_analysis");
+      if (stage) stage.readiness = readiness.recentAnalysis;
+    }
+  }
   if (session.state === "waiting_legacy") readiness.recentData = "pending";
   return {
     sessionId: session.session_id,
@@ -242,6 +272,9 @@ export function deriveSyncCoverage(
     error: session.last_error,
     stages,
     readiness,
+    ...(readiness.historicalAnalysis === "pending" && session.historical_analysis_reason
+      ? { historicalAnalysisReason: session.historical_analysis_reason }
+      : {}),
     recentAnalysisDetail,
     updatedAt: new Date(session.updated_at),
   };
@@ -282,7 +315,7 @@ export interface SyncCoverageExplanation {
   };
   historicalDataReadiness: SyncReadiness;
   historicalAnalysisStatus: HistoricalAnalysisStatus;
-  /** 是否可以下长期结论（历史补齐 + 历史指标都已就绪）。 */
+  /** Whether broad multi-year conclusions have complete evidence. */
   longTermComplete: boolean;
   /** 面向运动员的中文说明（教练原样可引用）。 */
   notes: string[];
@@ -317,10 +350,6 @@ export function explainSyncCoverage(coverage: SyncCoverage, today: string): Sync
 
   const historicalAnalysisStatus: HistoricalAnalysisStatus =
     coverage.readiness.historicalAnalysis === "not_started" ? "pending_explicit_recompute" : coverage.readiness.historicalAnalysis;
-
-  const longTermComplete =
-    (coverage.readiness.historicalData === "ready" || coverage.readiness.historicalData === "ready_with_gaps") &&
-    (historicalAnalysisStatus === "ready" || historicalAnalysisStatus === "ready_with_gaps" || historicalAnalysisStatus === "partial");
 
   const notes: string[] = [];
   if (recentRaw?.observedFrom != null && recentRaw.observedTo != null) {
@@ -369,7 +398,25 @@ export function explainSyncCoverage(coverage: SyncCoverage, today: string): Sync
     notes.push("历史活动已导入但存在永久缺口（见上方缺口说明），长期结论按已导入区间口径给出。");
   }
   if (historicalAnalysisStatus === "pending_explicit_recompute") {
-    notes.push("历史指标（多年负荷链、历史 PB、历史能力）需要显式历史重算，该能力尚未交付（pending_explicit_recompute）：不得声称长期分析或训练画像完整。");
+    notes.push("历史指标（多年负荷链、历史 PB、历史能力）仍待历史补齐及重算：长期结论以已获得的证据为限。");
+  }
+  if (historicalAnalysisStatus === "pending") {
+    const reason = coverage.historicalAnalysisReason;
+    notes.push(
+      reason === "interruption_limit"
+        ? "历史重算多次被数据更新打断，等待人工处理。"
+        : reason === "recompute_failed"
+          ? "历史重算失败，等待人工处理。"
+          : "历史分析待处理，长期结论以已获得的证据为限。",
+    );
+  } else if (historicalAnalysisStatus === "running") {
+    notes.push("历史分析正在重算，长期结论以已发布的证据为限。");
+  } else if (historicalAnalysisStatus === "ready" || historicalAnalysisStatus === "ready_with_gaps") {
+    notes.push(
+      historicalAnalysisStatus === "ready"
+        ? "历史分析已发布（负荷/心率区间覆盖重算的 365 天窗口，PB 按已导入历史计算）。"
+        : "历史分析已发布但有证据缺项（负荷/心率区间最多覆盖重算的 365 天窗口）。",
+    );
   }
   if (coverage.state === "failed") {
     notes.push(`同步 session 已失败${coverage.error ? `（原因：${coverage.error}）` : ""}：如实说明失败，不要描述成整理中。`);
@@ -389,7 +436,8 @@ export function explainSyncCoverage(coverage: SyncCoverage, today: string): Sync
     },
     historicalDataReadiness: historical,
     historicalAnalysisStatus,
-    longTermComplete,
+    // The recompute covers 365 days for load/zones and one day for ability.
+    longTermComplete: false,
     notes,
   };
 }

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { OnboardingSyncReadiness } from "../api";
 import { useOnboardingSyncStatus } from "../onboardingSync/OnboardingSyncStatusContext";
-import { READINESS_SUMMARY, rangeLabel, readinessLabel, readinessTone, sessionStateLabel, shouldHideBanner, stageLabel } from "../onboardingSync/sessionModel";
+import { READINESS_SUMMARY, historicalAnalysisLabel, isSessionTerminal, rangeLabel, readinessLabel, readinessTone, sessionStateLabel, shouldHideBanner, stageLabel } from "../onboardingSync/sessionModel";
 
 // Global, collapsible first-sync banner (devops#1014 T10): rendered once in
 // the app layout so the home / training / activities pages all show the same
@@ -17,11 +17,11 @@ const TONE_CLASSES: Record<ReturnType<typeof readinessTone>, string> = {
   muted: "border-border-subtle bg-bg-card text-text-muted",
 };
 
-function ReadinessChip({ label, level }: { label: string; level: OnboardingSyncReadiness }) {
+function ReadinessChip({ label, level, text }: { label: string; level: OnboardingSyncReadiness; text?: string }) {
   return (
     <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] leading-none ${TONE_CLASSES[readinessTone(level)]}`}>
       <span className="text-text-muted">{label}</span>
-      <span className="font-medium">{readinessLabel(level)}</span>
+      <span className="font-medium">{text ?? readinessLabel(level)}</span>
     </span>
   );
 }
@@ -62,14 +62,14 @@ export default function OnboardingSyncBanner() {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <span
           aria-hidden="true"
-          className={`h-2 w-2 shrink-0 rounded-full ${failed ? "bg-red-400" : gapsTerminal ? "bg-amber-400" : "animate-pulse bg-accent-green"}`}
+          className={`h-2 w-2 shrink-0 rounded-full ${failed ? "bg-red-400" : gapsTerminal ? "bg-amber-400" : isSessionTerminal(v.state) && !v.historical_analysis_poll ? "bg-accent-green" : "animate-pulse bg-accent-green"}`}
         />
         <p className="font-medium text-text-primary">
           首次数据同步 <span className="text-text-muted">· {sessionStateLabel(v.state)}</span>
         </p>
         <div className="flex flex-wrap items-center gap-1.5">
           {READINESS_SUMMARY.map(({ key, label }) => (
-            <ReadinessChip key={key} label={label} level={v.readiness[key]} />
+            <ReadinessChip key={key} label={label} level={v.readiness[key]} text={key === "historical_analysis" ? historicalAnalysisLabel(v) : undefined} />
           ))}
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -88,7 +88,7 @@ export default function OnboardingSyncBanner() {
               {retrying ? "重试中..." : "重试失败项"}
             </button>
           )}
-          {(failed || gapsTerminal) && (
+          {isSessionTerminal(v.state) && (
             <button type="button" onClick={dismiss} className="text-xs text-text-muted underline underline-offset-2 hover:text-text-primary">
               忽略
             </button>
@@ -110,6 +110,11 @@ export default function OnboardingSyncBanner() {
           {(failed || v.error) && (
             <p role="alert" className="text-xs text-red-400">
               {v.error || "部分同步任务失败，已完成的范围不会丢失。"}
+            </p>
+          )}
+          {v.historical_analysis_reason && (
+            <p className="text-xs text-amber-400">
+              {v.historical_analysis_reason === "interruption_limit" ? "历史分析多次被新数据打断，等待人工处理。" : "历史分析重算失败，等待人工处理。"}
             </p>
           )}
           {retryError && (

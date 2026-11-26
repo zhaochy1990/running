@@ -26,7 +26,7 @@ public final class OnboardingSyncStatusModel {
     /// completed / superseded 隐藏；failed 与 completed_with_gaps 保留。
     public var shouldShowBanner: Bool {
         guard let view, !dismissed else { return false }
-        return view.state != "completed" && view.state != "superseded"
+        return view.state != "superseded" && (view.state != "completed" || view.readiness.historicalAnalysis != .notStarted)
     }
 
     private var api: APIClient?
@@ -96,7 +96,7 @@ public final class OnboardingSyncStatusModel {
             let next = try await api.createOnboardingSyncSession(retry: true)
             view = next
             dismissed = false
-            if !OnboardingSessionDisplay.isTerminal(next.state) {
+            if OnboardingSessionDisplay.shouldPoll(next) {
                 startPolling()
             }
         } catch {
@@ -114,7 +114,7 @@ public final class OnboardingSyncStatusModel {
         do {
             let next = try await api.onboardingSyncSession()
             view = next
-            return !OnboardingSessionDisplay.isTerminal(next.state)
+            return OnboardingSessionDisplay.shouldPoll(next)
         } catch let error as ApiError {
             // 404 = 尚无 session（session 前老用户）；403 = 双开关关闭（入口
             // 不存在）。两者静默停轮，banner 永不出现，旧语义原样保留。
