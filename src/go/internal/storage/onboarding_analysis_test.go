@@ -39,14 +39,17 @@ func TestOnboardingSyncAnalysisStageRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list dispatches: %v", err)
 	}
-	analysis := 0
+	var analysis *OnboardingSyncDispatch
 	for _, d := range disp {
 		if d.Stage == OnboardingSyncStageRecentAnalysis {
-			analysis++
+			if analysis != nil {
+				t.Fatal("duplicate analysis dispatch")
+			}
+			analysis = d
 		}
 	}
-	if analysis != 1 {
-		t.Fatalf("want exactly 1 analysis dispatch, got %d", analysis)
+	if analysis == nil {
+		t.Fatal("missing analysis dispatch")
 	}
 	cov, err := st.GetOnboardingSyncStageCoverage(ctx, sid, OnboardingSyncStageRecentAnalysis)
 	if err != nil || cov == nil {
@@ -79,14 +82,19 @@ func TestOnboardingSyncAnalysisStageRows(t *testing.T) {
 	// The refresh requeue supersedes a DONE dispatch (devops#1009): done →
 	// pending under the new key, while the retry requeue keeps its
 	// "done is never re-armed" contract (see TestOnboardingSyncDispatchStateMachine).
-	if err := st.MarkOnboardingSyncDispatchDispatched(ctx, disp[0].ID, "job-x"); err != nil {
+	if _, err := st.MarkOnboardingSyncDispatchDispatched(ctx, analysis, "job-x"); err != nil {
 		t.Fatalf("dispatch mark: %v", err)
 	}
-	if err := st.MarkOnboardingSyncDispatchTerminal(ctx, disp[0].ID, OnboardingSyncDispatchDone); err != nil {
+	if _, err := st.MarkOnboardingSyncDispatchDone(ctx, analysis.ID, "job-x"); err != nil {
 		t.Fatalf("terminal mark: %v", err)
 	}
-	if err := st.RequeueOnboardingSyncDispatchForRefresh(ctx, disp[0].ID, "refresh-key"); err != nil {
-		t.Fatalf("refresh requeue: %v", err)
+	observed := analysis
+	keyFor := func(int) string { return "refresh-key" }
+	if err := st.SetOnboardingSyncSessionState(ctx, sid, OnboardingSyncStateCompleted, nil); err != nil {
+		t.Fatalf("completed session: %v", err)
+	}
+	if changed, err := st.RefreshOnboardingSyncAnalysis(ctx, observed, keyFor); err != nil || !changed {
+		t.Fatalf("refresh requeue: changed=%v err=%v", changed, err)
 	}
 	after, err := st.ListOnboardingSyncDispatches(ctx, sid)
 	if err != nil {
@@ -94,10 +102,26 @@ func TestOnboardingSyncAnalysisStageRows(t *testing.T) {
 	}
 	for _, d := range after {
 		if d.Stage == OnboardingSyncStageRecentAnalysis {
+			analysis = d
 			if d.Status != OnboardingSyncDispatchPending || d.IdempotencyKey != "refresh-key" {
 				t.Fatalf("refresh-requeued analysis dispatch = %+v, want pending/refresh-key", d)
 			}
 		}
+	}
+
+	// A delayed sweep of the old key loses even after the new job is done.
+	if marked, err := st.MarkOnboardingSyncDispatchDispatched(ctx, analysis, "job-refresh"); err != nil || !marked {
+		t.Fatalf("dispatch refresh: marked=%v err=%v", marked, err)
+	}
+	if changed, err := st.MarkOnboardingSyncDispatchDone(ctx, analysis.ID, "job-refresh"); err != nil || !changed {
+		t.Fatalf("complete refresh: changed=%v err=%v", changed, err)
+	}
+	if changed, err := st.RefreshOnboardingSyncAnalysis(ctx, observed, keyFor); err != nil || changed {
+		t.Fatalf("stale refresh observation: changed=%v err=%v", changed, err)
+	}
+	sess, err := st.GetOnboardingSyncSessionByID(ctx, sid)
+	if err != nil || sess.DispatchGeneration != 1 || sess.FailRetryCount != 0 {
+		t.Fatalf("refresh counters: %+v err=%v", sess, err)
 	}
 
 	// Target extension is forward-only.

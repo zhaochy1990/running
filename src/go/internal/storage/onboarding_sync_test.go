@@ -227,11 +227,11 @@ func TestOnboardingSyncDispatchStateMachine(t *testing.T) {
 	d := disp[0]
 
 	// pending → dispatched (guarded; second mark is a no-op).
-	if err := st.MarkOnboardingSyncDispatchDispatched(ctx, d.ID, "job-1"); err != nil {
+	if _, err := st.MarkOnboardingSyncDispatchDispatched(ctx, d, "job-1"); err != nil {
 		t.Fatalf("mark dispatched: %v", err)
 	}
-	if err := st.MarkOnboardingSyncDispatchDispatched(ctx, d.ID, "job-2"); err != nil {
-		t.Fatalf("double mark should be a silent no-op: %v", err)
+	if marked, err := st.MarkOnboardingSyncDispatchDispatched(ctx, d, "job-2"); err != nil || marked {
+		t.Fatalf("double mark: marked=%v err=%v", marked, err)
 	}
 	rows, _ := st.ListOnboardingSyncDispatches(ctx, res.Session.SessionID)
 	if rows[0].JobID == nil || *rows[0].JobID != "job-1" || rows[0].Attempts != 1 {
@@ -239,11 +239,14 @@ func TestOnboardingSyncDispatchStateMachine(t *testing.T) {
 	}
 
 	// dispatched → failed re-arms under a fresh key (the retry generation).
-	if err := st.MarkOnboardingSyncDispatchTerminal(ctx, d.ID, OnboardingSyncDispatchFailed); err != nil {
+	oldDispatch := rows[0]
+	if err := st.RecordOnboardingSyncDispatchFailure(ctx, oldDispatch, "provider failed"); err != nil {
 		t.Fatalf("mark failed: %v", err)
 	}
-	if err := st.RequeueOnboardingSyncDispatchForRetry(ctx, d.ID, "onbsync:new-key"); err != nil {
-		t.Fatalf("requeue: %v", err)
+	keyFor := func(string, int) string { return "onbsync:new-key" }
+	observed := []*OnboardingSyncDispatch{d}
+	if changed, err := st.RetryFailedOnboardingSyncDispatches(ctx, res.Session.SessionID, observed, keyFor); err != nil || !changed {
+		t.Fatalf("requeue: changed=%v err=%v", changed, err)
 	}
 	rows, _ = st.ListOnboardingSyncDispatches(ctx, res.Session.SessionID)
 	if rows[0].Status != OnboardingSyncDispatchPending || rows[0].IdempotencyKey != "onbsync:new-key" {
@@ -252,14 +255,24 @@ func TestOnboardingSyncDispatchStateMachine(t *testing.T) {
 
 	// Re-dispatch, then done. A done dispatch is never re-armed (successful
 	// work is reused, not re-fetched).
-	if err := st.MarkOnboardingSyncDispatchDispatched(ctx, d.ID, "job-2"); err != nil {
-		t.Fatalf("re-dispatch: %v", err)
+	if marked, err := st.MarkOnboardingSyncDispatchDispatched(ctx, oldDispatch, "job-1"); err != nil || marked {
+		t.Fatalf("stale enqueue: marked=%v err=%v", marked, err)
 	}
-	if err := st.MarkOnboardingSyncDispatchTerminal(ctx, d.ID, OnboardingSyncDispatchDone); err != nil {
-		t.Fatalf("mark done: %v", err)
+	if marked, err := st.MarkOnboardingSyncDispatchDispatched(ctx, rows[0], "job-2"); err != nil || !marked {
+		t.Fatalf("re-dispatch: marked=%v err=%v", marked, err)
 	}
-	if err := st.RequeueOnboardingSyncDispatchForRetry(ctx, d.ID, "onbsync:another"); err != nil {
-		t.Fatalf("requeue done should be a silent no-op: %v", err)
+	if err := st.RecordOnboardingSyncDispatchFailure(ctx, oldDispatch, "stale observation"); err != nil {
+		t.Fatalf("replay old failure: %v", err)
+	}
+	if changed, err := st.MarkOnboardingSyncDispatchDone(ctx, d.ID, "job-2"); err != nil || !changed {
+		t.Fatalf("new job was superseded by a stale failure: changed=%v err=%v", changed, err)
+	}
+	sess, err := st.GetOnboardingSyncSessionByID(ctx, res.Session.SessionID)
+	if err != nil || sess.State != OnboardingSyncStateDispatching || sess.FailRetryCount != 1 {
+		t.Fatalf("old failure changed the retried session: %+v, %v", sess, err)
+	}
+	if changed, err := st.RetryFailedOnboardingSyncDispatches(ctx, res.Session.SessionID, observed, keyFor); err != nil || changed {
+		t.Fatalf("requeue done should be a silent no-op: changed=%v err=%v", changed, err)
 	}
 	rows, _ = st.ListOnboardingSyncDispatches(ctx, res.Session.SessionID)
 	if rows[0].Status != OnboardingSyncDispatchDone {

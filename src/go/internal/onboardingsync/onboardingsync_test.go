@@ -12,6 +12,7 @@ package onboardingsync
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"sync"
 	"testing"
@@ -406,6 +407,46 @@ func TestOnboardingSyncSweep_RecordsCompletionWithCoverage(t *testing.T) {
 	}
 }
 
+func TestOnboardingSyncAutomaticFailureRetries(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	uid := uuid.NewString()
+	sess := createDispatched(t, h, uid)
+	rows, err := h.store.ListOnboardingSyncDispatches(ctx, sess.SessionID)
+	if err != nil || len(rows) != 1 || rows[0].JobID == nil {
+		t.Fatalf("initial dispatch: %v, %v", rows, err)
+	}
+	d := rows[0]
+	registry := job.NewRegistry()
+	registry.MustRegister("onboarding_recent_sync", func(_ context.Context, j *job.Job, _ job.Heartbeat) (string, error) {
+		if j.Attempts < 3 {
+			return "", errors.New("temporary provider error")
+		}
+		return "{}", nil
+	})
+	dispatcher := job.NewDispatcher(h.store.Jobs(), registry, h.pub, job.NopLifecycle{}, job.RetryPolicy{MaxAttempts: 3})
+	for range 4 { // includes a duplicate delivery after success
+		if err := dispatcher.Dispatch(ctx, job.Message{JobID: *d.JobID, UserID: uid}); err != nil {
+			t.Fatalf("dispatch: %v", err)
+		}
+	}
+	j, err := h.store.JobByID(ctx, *d.JobID)
+	if err != nil || j.Status != job.StatusDone || j.Attempts != 3 {
+		t.Fatalf("job after two failures and one success: %+v, %v", j, err)
+	}
+	view, err := h.svc.View(ctx, uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.DispatchGeneration != 0 || view.FailRetryCount != 2 {
+		t.Fatalf("view counters: generation=%d failure retries=%d, want 0 and 2",
+			view.DispatchGeneration, view.FailRetryCount)
+	}
+	if n := countJobsForKey(t, h.store, uid, d.IdempotencyKey); n != 1 {
+		t.Errorf("jobs for retry key = %d, want 1", n)
+	}
+}
+
 // TestSweep_FailedThenRetry walks a terminal stage failure and the explicit
 // retry: the session fails, the retry bumps the generation, re-enqueues a NEW
 // job under a new key, and re-arms failed work items while done items keep
@@ -447,8 +488,12 @@ func TestOnboardingSyncSweep_FailedThenRetry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retry: %v", err)
 	}
-	if sess2.RetryCount != 1 {
-		t.Errorf("retry count = %d, want 1", sess2.RetryCount)
+	if sess2.DispatchGeneration != 1 || sess2.FailRetryCount != 1 {
+		t.Errorf("generation=%d failure retries=%d, want 1 and 1", sess2.DispatchGeneration, sess2.FailRetryCount)
+	}
+	repeated, err := h.svc.Retry(ctx, uid)
+	if err != nil || repeated.DispatchGeneration != 1 || repeated.FailRetryCount != 1 {
+		t.Fatalf("repeat retry changed the counters: %+v, %v", repeated, err)
 	}
 	disp2, _ := h.store.ListOnboardingSyncDispatches(ctx, sess.SessionID)
 	if disp2[0].Status != storage.OnboardingSyncDispatchDispatched || disp2[0].IdempotencyKey == disp[0].IdempotencyKey {

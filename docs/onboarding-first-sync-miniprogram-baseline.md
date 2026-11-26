@@ -64,7 +64,7 @@ session、不重复拉取）；旧 run 已结束的老用户正常走 session �
       （服务端 session_id 相同），不出现第二个 full。
 - [ ] 中途换设备续看：GET-only 展示同一进度；折叠/展开偏好记忆生效。
 - [ ] 失败重试：断网/错凭据制造 failed → 卡片展示错误与缺项（文案区分）→「重试失败项」
-      只恢复失败项（服务端 retry_count +1，已成功范围不重拉）。
+      只重派失败阶段。每个重派阶段使 `fail_retry_count` 加一，已成功范围继续复用。
 - [ ] 合法缺测：厂商无心率/GPS 的活动在明细中记 gap（warn）而非 error（danger）。
 - [ ] 开关回退：关掉 rollout 开关后重进 onboarding → 走旧 full-run 流程（进度条文案、
       本地指针续跑语义与 devops#1015 之前一致）；状态卡静默隐藏。

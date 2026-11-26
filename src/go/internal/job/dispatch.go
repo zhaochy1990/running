@@ -11,6 +11,9 @@ import (
 	"github.com/zhaochy1990/stride/internal/logging"
 )
 
+// RetryableErrorCode marks a failed attempt that has been queued to run again.
+const RetryableErrorCode = "retryable"
+
 // RetryPolicy governs bounded retry + backoff before poisoning.
 type RetryPolicy struct {
 	MaxAttempts int
@@ -265,10 +268,13 @@ func (d *Dispatcher) handleFailure(ctx context.Context, j *Job, m Message, herr 
 	switch decision.Outcome {
 	case OutcomeRetry:
 		j.Status = StatusQueued
-		j.ErrorCode = "retryable"
+		j.ErrorCode = RetryableErrorCode
 		j.ErrorMessage = herr.Error()
 		j.UpdatedAt = d.now()
 		if err := d.store.Update(wctx, j); err != nil {
+			if errors.Is(err, ErrStateChanged) {
+				return nil
+			}
 			return err
 		}
 		if err := d.publisher.PublishRetry(wctx, m, decision.Delay); err != nil {
