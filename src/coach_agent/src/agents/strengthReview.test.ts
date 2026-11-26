@@ -14,6 +14,7 @@ test("the production graph reloads only the anchored record on each turn and res
   const evidence: unknown[] = [];
   const modelChoices: string[] = [];
   let quantity = 7;
+  let malformedArguments = false;
   const store = {
     async getManualStrengthDetail(userId: string, recordId: string): Promise<ManualStrengthRecord | null> {
       assert.equal(userId, "athlete");
@@ -63,7 +64,10 @@ test("the production graph reloads only the anchored record on each turn and res
                     {
                       id: `review-${modelChoices.length}`,
                       type: "function",
-                      function: { name: "get_strength_training_review", arguments: JSON.stringify({ recordId: recordB, startDay: "2025-09-01" }) },
+                      function: {
+                        name: "get_strength_training_review",
+                        arguments: JSON.stringify(malformedArguments ? { watchReference: 123 } : { recordId: recordB, startDay: "2025-09-01" }),
+                      },
                     },
                   ],
                 }
@@ -113,4 +117,8 @@ test("the production graph reloads only the anchored record on each turn and res
     ["早练做了什么？", "平板撑了多久？"],
   );
   assert.equal(resumed.messages.at(-1)?.text, "复盘完成");
+  malformedArguments = true;
+  await assert.rejects(turn(recordA, "这轮不能沿用旧数据"), /当前训练记录读取失败/);
+  assert.deepEqual(reads, [recordA, recordB, recordA]);
+  assert.equal(modelChoices.length, 7, "a malformed tool call must not reach the reply model");
 });

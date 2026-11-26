@@ -163,6 +163,38 @@ test("a review anchored across Shanghai midnight can include the explicitly name
   assert.equal(review.watchHeartRate.source, "watch");
 });
 
+test("anchored watch IDs are exact and may explicitly refer to a watch that started before midnight", async () => {
+  const id = "4bc80c96-0415-4bdc-bf17-83a919154594";
+  const record = { ...manualRecord, id, startedAt: new Date("2026-11-26T16:01:00Z"), endedAt: new Date("2026-11-26T16:18:00Z") };
+  const watch = { ...watchB, startedAt: new Date("2026-11-26T15:55:00Z") };
+  const { store, detailReads } = fixture([record], [watch]);
+  const readActivity = store.getActivityDetail.bind(store);
+  store.getActivityDetail = async (owner, activityId) => {
+    const detail = await readActivity(owner, activityId);
+    return detail ? { ...detail, date: watch.startedAt, provider: watch.provider, shanghaiDay: "2026-11-26" } : null;
+  };
+  store.getWatchStrengthSummaries = async () => [];
+  const review = await execute(store, "请补充手表 watch-b 的心率", { watchReference: "watch-b" }, "athlete-a", undefined, [], id);
+  assert.equal(review.watchHeartRate.id, "watch-b");
+  assert.equal(review.watchHeartRate.avgHr, 137);
+  const prefixOnly = await execute(store, "请补充手表 watch-b2 的心率", { watchReference: "watch-b" }, "athlete-a", undefined, [], id);
+  assert.equal(prefixOnly.watchHeartRate, undefined);
+  assert.deepEqual(detailReads, [id, "watch-b", id]);
+});
+
+test("a full Shanghai date and time disambiguates repeated times in an anchored watch request", async () => {
+  const id = "4bc80c96-0415-4bdc-bf17-83a919154594";
+  const record = { ...manualRecord, id, startedAt: new Date("2026-11-26T15:50:00Z"), endedAt: new Date("2026-11-26T16:18:00Z") };
+  const watch = { ...watchB, startedAt: new Date("2026-11-26T15:55:00Z") };
+  const { store } = fixture([record], [watch]);
+  store.getWatchStrengthSummaries = async (_owner, start, end) => {
+    assert.deepEqual([start, end], ["2026-11-26", "2026-11-26"]);
+    return [watch];
+  };
+  const review = await execute(store, "补充手表 2026-11-26 23:55 的心率", { watchReference: "2026-11-26 23:55" }, "athlete-a", undefined, [], id);
+  assert.equal(review.watchHeartRate.avgHr, 137);
+});
+
 test("two same-day manual candidates are listed without giving an undesignated record's sets", async () => {
   const { store, detailReads } = fixture([manualRecord, secondManual]);
   const ambiguous = await execute(store, "帮我复盘 11 月 26 日的力量训练", { startDay: day });

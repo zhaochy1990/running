@@ -2,7 +2,7 @@ import { isAIMessage, isHumanMessage, isToolMessage } from "@langchain/core/mess
 import { addDays, shanghaiDay, shanghaiIso } from "@stride/contract";
 import * as z from "zod";
 import type { CoachToolRuntime } from "../agents/coachAgent.js";
-import type { DataProvider, ManualStrengthRecord, StrengthRecordSummary } from "../data/dataProvider.js";
+import type { Activity, DataProvider, ManualStrengthRecord, StrengthRecordSummary, WatchStrengthSummary } from "../data/dataProvider.js";
 import { defineCoachTool } from "./common.js";
 
 const reviewSchema = z.object({
@@ -100,6 +100,11 @@ function readEvidence(content: unknown): PriorEvidence | undefined {
   }
 }
 
+export function isFoundManualStrengthEvidence(content: unknown): boolean {
+  const evidence = readEvidence(content);
+  return evidence?.status === "found" && evidence.source === "manual" && evidence.record !== undefined;
+}
+
 function readConversation(state: unknown): { userText: string; priorEvidence?: PriorEvidence; activeStrengthReview?: boolean } {
   if (typeof state !== "object" || state === null || !("messages" in state) || !Array.isArray(state.messages)) return { userText: "" };
   const messages = state.messages;
@@ -191,6 +196,14 @@ function includesReference(text: string, reference: string): boolean {
   return false;
 }
 
+function includesWatchId(text: string, id: string): boolean {
+  const labelCharacter = /[A-Za-z0-9_:-]/;
+  for (let index = text.indexOf(id); index !== -1; index = text.indexOf(id, index + id.length)) {
+    if (!labelCharacter.test(text.charAt(index - 1)) && !labelCharacter.test(text.charAt(index + id.length))) return true;
+  }
+  return false;
+}
+
 function explicitlyMentions(record: StrengthRecordSummary, text: string): boolean {
   return references(record).some((reference) => {
     if (reference === record.name?.trim() && /^(?:\d{4}-\d{2}-\d{2}\s*)?(?:自由)?力量训练$/.test(reference)) {
@@ -216,33 +229,59 @@ function affirmedWatchClauses(text: string, reference: string): string[] {
   return referenceClauses.filter((clause) => WATCH_REQUEST.test(clause));
 }
 
-async function watchSupplement(store: DataProvider, userId: string, startDay: string, endDay: string, reference: string | undefined, userText: string) {
+function watchEvidence(record: WatchStrengthSummary, detail: Activity) {
+  return {
+    watchHeartRate: {
+      ...candidate(record),
+      source: "watch",
+      provider: record.provider,
+      avgHr: detail.avgHr,
+      maxHr: detail.maxHr,
+    },
+  };
+}
+
+async function watchSupplement(
+  store: DataProvider,
+  userId: string,
+  scope: ReviewScope,
+  reference: string | undefined,
+  userText: string,
+  anchoredAsOf?: string,
+) {
   if (reference === undefined) return {};
   // The model may choose its next tool call, but it cannot grant itself the
   // right to pick an overlapping watch record on the athlete's behalf.
   const clauses = affirmedWatchClauses(userText, reference);
   if (clauses.length === 0) return { watchSupplementStatus: "needs_explicit_reference" };
-  const watches = await store.getWatchStrengthSummaries(userId, startDay, endDay);
+  // The manual record remains anchored. An explicitly dated watch request
+  // can identify the user's device record outside that manual interval.
+  const namedDay = anchoredAsOf ? (clearDay(reference, anchoredAsOf) ?? clearDay(clauses.join("\n"), anchoredAsOf)) : undefined;
+  const watches = await store.getWatchStrengthSummaries(userId, namedDay ?? scope.startDay, namedDay ?? scope.endDay);
   const matches = watches.filter((record) => references(record).includes(reference));
   const selected = matches.length === 1 ? matches[0] : undefined;
-  if (!selected) return { watchSupplementStatus: matches.length === 0 ? "missing" : "ambiguous" };
-  // Requiring a single reference in the affirmative clause prevents a model
-  // from substituting another activity mentioned parenthetically in that clause.
+  if (matches.length > 1) return { watchSupplementStatus: "ambiguous" };
+  // A short time embedded in the selected full timestamp is not a second
+  // reference. A separately mentioned alias still identifies another record.
+  const remainingClauses = clauses.map((clause) => clause.replaceAll(reference, " "));
   const competingReference = watches.some(
-    (record) => record !== selected && references(record).some((value) => clauses.some((clause) => includesReference(clause, value))),
+    (record) => record !== selected && references(record).some((value) => remainingClauses.some((clause) => includesReference(clause, value))),
   );
   if (competingReference) return { watchSupplementStatus: "ambiguous" };
-  const detail = await store.getActivityDetail(userId, selected.id, { includeKilometerSplits: false });
-  if (!detail) return { watchSupplementStatus: "missing" };
-  return {
-    watchHeartRate: {
-      ...candidate(selected),
-      source: "watch",
-      provider: selected.provider,
-      avgHr: detail.avgHr,
-      maxHr: detail.maxHr,
-    },
-  };
+  if (selected) {
+    if (selected.id === reference && !clauses.some((clause) => includesWatchId(clause, reference))) {
+      return { watchSupplementStatus: "needs_explicit_reference" };
+    }
+    const detail = await store.getActivityDetail(userId, selected.id, { includeKilometerSplits: false });
+    return detail ? watchEvidence(selected, detail) : { watchSupplementStatus: "missing" };
+  }
+  if (anchoredAsOf && clauses.some((clause) => includesWatchId(clause, reference))) {
+    const detail = await store.getActivityDetail(userId, reference, { includeKilometerSplits: false });
+    if (detail?.isStrength && detail.labelId === reference && (!namedDay || detail.shanghaiDay === namedDay)) {
+      return watchEvidence({ id: detail.labelId, name: detail.name, startedAt: detail.date, provider: detail.provider }, detail);
+    }
+  }
+  return { watchSupplementStatus: "missing" };
 }
 
 export function createStrengthReviewTool(store: DataProvider) {
@@ -265,7 +304,7 @@ export function createStrengthReviewTool(store: DataProvider) {
         const endDay = shanghaiDay(record.endedAt);
         return {
           ...manualEvidence(record, { startDay, endDay }),
-          ...(await watchSupplement(store, userId, startDay, endDay, input.watchReference, userText)),
+          ...(await watchSupplement(store, userId, { startDay, endDay }, input.watchReference, userText, asof)),
         };
       }
       const namedDay = clearDay(userText, asof);
@@ -285,7 +324,7 @@ export function createStrengthReviewTool(store: DataProvider) {
         if (!detail) return { status: "missing", source: "manual" };
         return {
           ...manualEvidence(detail, scope),
-          ...(await watchSupplement(store, userId, startDay, endDay, input.watchReference, userText)),
+          ...(await watchSupplement(store, userId, scope, input.watchReference, userText)),
         };
       }
 

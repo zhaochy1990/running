@@ -37,14 +37,13 @@ Component({
     switchTab(e: WechatMiniprogram.TouchEvent) {
       const { path, index } = e.currentTarget.dataset as { path?: string; index?: number };
       if (path === undefined || index === undefined) return;
+      const pages = getCurrentPages();
+      const page = pages[pages.length - 1];
       if (index === this.data.selected) {
-        if (index === 0) {
-          const pages = getCurrentPages();
-          pages[pages.length - 1]?.onCoachTabReselect?.();
-        }
+        if (index === 0) page?.onCoachTabReselect?.();
         return;
       }
-      wx.switchTab({ url: path });
+      wx.switchTab({ url: path, success: () => page?.onCoachTabLeave?.() });
     },
   },
 });

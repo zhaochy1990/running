@@ -408,6 +408,7 @@ interface CoachPageHandlers {
   leaveStrengthReview(reload: boolean): void;
   onStrengthReviewBack(): void;
   onCoachTabReselect(): void;
+  onCoachTabLeave(): void;
   currentSessionTarget(): CoachSessionTarget | undefined;
   contextHintOf(session: CoachSession | undefined): string;
   // master-plan 卡片动作（#429）：启用（含替换确认）/放弃 + 卡片状态回写。
@@ -804,6 +805,7 @@ Page<CoachPageData, CoachPageHandlers>({
       this.startStrengthReview(review, user.id);
       return;
     }
+    if (this.data.strengthReviewRecordId) return;
     // 游客态期间用户去登录页完成登录，switchTab 回来：退出游客态并补拉会话/消息。
     if (this.data.guest && userStore.getState().isAuthenticated) {
       this.setData({ guest: false });
@@ -825,7 +827,6 @@ Page<CoachPageData, CoachPageHandlers>({
   },
 
   onHide() {
-    if (this.data.strengthReviewRecordId) this.leaveStrengthReview(false);
     // tabBar 页切走只触发 onHide（不卸载）：停掉轮询，避免隐藏页持续请求；
     // 服务端继续推进，回来 onShow 的 refreshPlanJobCards 会立即拉齐。
     clearPlanJobTimers();
@@ -905,12 +906,19 @@ Page<CoachPageData, CoachPageHandlers>({
   onStrengthReviewBack() {
     const recordId = this.data.strengthReviewRecordId;
     if (recordId) {
-      wx.navigateTo({ url: `/pages/manual-strength-detail/manual-strength-detail?recordId=${encodeURIComponent(recordId)}` });
+      wx.navigateTo({
+        url: `/pages/manual-strength-detail/manual-strength-detail?recordId=${encodeURIComponent(recordId)}`,
+        success: () => this.onCoachTabLeave(),
+      });
     }
   },
 
   onCoachTabReselect() {
     if (this.data.strengthReviewRecordId) this.leaveStrengthReview(true);
+  },
+
+  onCoachTabLeave() {
+    if (this.data.strengthReviewRecordId) this.leaveStrengthReview(false);
   },
 
   /** 入口「和教练聊一聊」：新建会话并挂 target，展示上下文提示条；带 kickoff 时自动发出首条消息。 */

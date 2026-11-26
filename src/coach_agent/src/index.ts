@@ -35,9 +35,9 @@ export { isQualityRunningActivity, isRunningActivity } from "./data/activityClas
 export type { CalibrationSelection, CalibrationSource } from "./data/calibrationMetadata.js";
 export { CalibrationSourceSchema } from "./data/calibrationMetadata.js";
 export type * from "./data/dataProvider.js";
-export { RUNNER_SNAPSHOT_SCHEMA_ID, RunnerSnapshotSchema } from "./data/runnerSnapshot.js";
+export { DataProviderMasterPlanContextProvider } from "./data/masterPlanContextProvider.js";
 export type { RunnerSnapshot, RunnerSnapshotRecords } from "./data/runnerSnapshot.js";
-export { deriveSyncCoverage, explainSyncCoverage } from "./data/syncCoverage.js";
+export { RUNNER_SNAPSHOT_SCHEMA_ID, RunnerSnapshotSchema } from "./data/runnerSnapshot.js";
 export type {
   HistoricalAnalysisStatus,
   SyncCoverageExplanation,
@@ -46,7 +46,7 @@ export type {
   SyncSessionRow,
   SyncStageCoverageRow,
 } from "./data/syncCoverage.js";
-export { DataProviderMasterPlanContextProvider } from "./data/masterPlanContextProvider.js";
+export { deriveSyncCoverage, explainSyncCoverage } from "./data/syncCoverage.js";
 export type {
   WeeklyPlanContext,
   WeeklyPlanContextProvider,
@@ -109,6 +109,7 @@ export type { AskUserQuestionPayload } from "./tools/askUserQuestions.js";
 export { ASK_USER_QUESTION_KIND } from "./tools/askUserQuestions.js";
 export type { ActivityFeelWriter } from "./tools/feel.js";
 export type { CoachRaceTargetRef, RaceTargetBindingGateway, RaceTargetCandidate } from "./tools/raceStrategyContext.js";
+export { isFoundManualStrengthEvidence } from "./tools/strengthReview.js";
 export {
   formatTokenUsageReport,
   LlmTokenUsageTracker,

@@ -23,6 +23,7 @@
  * a `values` chunk on the same stream, so the run must be drained to completion
  * before `done` is built — a partial snapshot has no reply message.
  */
+import { isFoundManualStrengthEvidence } from "@stride/coach-agent";
 import { getLogger } from "@stride/common";
 import type { CoachStreamSource } from "../coach/coachInvoker.js";
 import { toPublicResponse, tryToPublicResponse } from "../publicResponse.js";
@@ -68,13 +69,14 @@ interface StatusPhases {
 export async function collectCoachStream(run: CoachStreamSource, emit: CoachStreamEmitter): Promise<Record<string, unknown>> {
   const phases = toolPhases(emit);
   const pendingTools = new Map<string, string>();
+  const strengthReview = { evidenceReady: false };
   let output: unknown;
 
   try {
     for await (const chunk of run.events) {
       const [mode, payload] = chunk;
       if (mode === "messages") {
-        await handleMessage(payload, emit, phases, pendingTools);
+        await handleMessage(payload, emit, phases, pendingTools, strengthReview);
       } else if (mode === "values") {
         output = payload;
       }
@@ -102,9 +104,16 @@ const REPLY_TEXT_NODES = new Set(["qa", "race_strategy", "custom_workout"]);
 const STRUCTURED_OUTPUT_TOOL_NAME = /^extract(-\d+)?$/;
 
 /** Emit running_tool / analyzing / text_delta for one `messages` chunk. */
-async function handleMessage(payload: unknown, emit: CoachStreamEmitter, phases: StatusPhases, pendingTools: Map<string, string>): Promise<void> {
+async function handleMessage(
+  payload: unknown,
+  emit: CoachStreamEmitter,
+  phases: StatusPhases,
+  pendingTools: Map<string, string>,
+  strengthReview: { evidenceReady: boolean },
+): Promise<void> {
   const [message, meta] = payload as [MessageLike, { langgraph_node?: string; langgraph_checkpoint_ns?: string } | undefined, ...unknown[]];
   const type = message?._getType?.();
+  const inStrengthReview = meta?.langgraph_checkpoint_ns?.startsWith("strength_review:");
 
   // Tool-call lifecycle is extracted for EVERY node: running_tool status is
   // progress, not reply text, and the training node's in-turn context reads
@@ -119,6 +128,9 @@ async function handleMessage(payload: unknown, emit: CoachStreamEmitter, phases:
 
   // Tool result end: a Tool message carrying `tool_call_id`.
   if (type === "tool") {
+    if (inStrengthReview && message?.status !== "error" && isFoundManualStrengthEvidence(message?.content)) {
+      strengthReview.evidenceReady = true;
+    }
     const toolCallId = message?.tool_call_id;
     if (toolCallId !== undefined) {
       const name = pendingTools.get(toolCallId);
@@ -135,7 +147,7 @@ async function handleMessage(payload: unknown, emit: CoachStreamEmitter, phases:
   // JSON 打进客户端打字机。与工具调用同条的进度说明句除外：作为 narration
   // 事件转发（是进度不是答案，与工具状态同理）。没有 langgraph_node 的分片
   // 保持放行：历史消息回放与部分适配路径不携带该字段。
-  const strengthReviewReply = meta?.langgraph_node === "model_request" && meta.langgraph_checkpoint_ns?.startsWith("strength_review:");
+  const strengthReviewReply = inStrengthReview && meta?.langgraph_node === "model_request" && strengthReview.evidenceReady;
   if (type === "ai" && meta?.langgraph_node !== undefined && !REPLY_TEXT_NODES.has(meta.langgraph_node) && !strengthReviewReply) {
     if (toolCalls.length > 0) {
       const narration = textContent(message?.content);

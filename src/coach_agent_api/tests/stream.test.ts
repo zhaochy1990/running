@@ -59,9 +59,16 @@ test("a failed stream after the latest question does not reuse the previous repl
 });
 
 test("only the strength review model subnode streams review text", async () => {
+  const reviewModel = { langgraph_node: "model_request", langgraph_checkpoint_ns: "strength_review:first|model_request:second" };
+  const reviewTool = { langgraph_node: "tools", langgraph_checkpoint_ns: "strength_review:first|tools:second" };
+  const evidence = JSON.stringify({ status: "found", source: "manual", scope: { startDay: "2026-11-26", endDay: "2026-11-26" }, record: { id: "record" } });
   const events = eventsFrom([
     msgChunk(ai("内部结构化内容"), { langgraph_node: "model_request", langgraph_checkpoint_ns: "training:first|model_request:second" }),
-    msgChunk(ai("本次复盘"), { langgraph_node: "model_request", langgraph_checkpoint_ns: "strength_review:first|model_request:second" }),
+    msgChunk(ai("旧数据猜测"), reviewModel),
+    msgChunk({ ...toolResult("malformed"), content: "Tool argument invalid" }, reviewTool),
+    msgChunk(ai("错误工具调用后猜测"), reviewModel),
+    msgChunk({ ...toolResult("valid"), content: evidence }, reviewTool),
+    msgChunk(ai("本次复盘"), reviewModel),
     valuesChunk({ messages: [ai("本次复盘")] }),
   ]);
   const deltas: string[] = [];

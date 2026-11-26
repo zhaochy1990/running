@@ -3,7 +3,7 @@ import { buildChatModel } from "@stride/common";
 import { createAgent, createMiddleware } from "langchain";
 import type { ModelConfig } from "../config/config.js";
 import type { DataProvider } from "../data/dataProvider.js";
-import { createStrengthReviewTool } from "../tools/strengthReview.js";
+import { createStrengthReviewTool, isFoundManualStrengthEvidence } from "../tools/strengthReview.js";
 import { CoachContext } from "./context.js";
 
 const SYSTEM_PROMPT = `你是 STRIDE 教练，正在和运动员复盘已明确选择的一条本人手录力量训练。
@@ -14,7 +14,15 @@ const SYSTEM_PROMPT = `你是 STRIDE 教练，正在和运动员复盘已明确�
 
 const readCurrentRecord = createMiddleware({
   name: "ReadCurrentStrengthRecord",
-  wrapModelCall: (request, handler) => handler({ ...request, toolChoice: isToolMessage(request.messages.at(-1)) ? "none" : "required" }),
+  wrapModelCall: (request, handler) => {
+    const latest = request.messages.at(-1);
+    if (!isToolMessage(latest)) return handler({ ...request, toolChoice: "required" });
+    // A malformed tool call can produce a ToolMessage without reading the record.
+    if (latest.status === "error" || !isFoundManualStrengthEvidence(latest.content)) {
+      throw new Error("当前训练记录读取失败，请重试");
+    }
+    return handler({ ...request, toolChoice: "none" });
+  },
 });
 
 export function getStrengthReviewAgent(store: DataProvider, config: ModelConfig) {
