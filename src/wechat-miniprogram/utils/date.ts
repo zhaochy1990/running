@@ -30,7 +30,9 @@ export function epochToShanghaiHm(epochMs: number): string {
 /** epoch（UTC ms）→ 上海 YYYY-MM-DD */
 export function epochToShanghaiYmd(epochMs: number): string {
   const d = new Date(epochMs + SHANGHAI_OFFSET_MS);
-  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+  const year = d.getUTCFullYear();
+  const yearLabel = year >= 0 ? String(year).padStart(4, '0') : String(year);
+  return `${yearLabel}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
 }
 
 /** epoch（UTC ms）→ 上海星期几（0=周日 … 6=周六） */
