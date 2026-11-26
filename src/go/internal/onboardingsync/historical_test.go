@@ -69,7 +69,7 @@ func finishHistoricalInput(t *testing.T, h *harness, sess *storage.OnboardingSyn
 	}
 	for _, dispatch := range dispatches {
 		if dispatch.Stage == stage {
-			if err := h.store.MarkOnboardingSyncDispatchTerminal(ctx, dispatch.ID, storage.OnboardingSyncDispatchDone); err != nil {
+			if _, err := h.store.MarkOnboardingSyncDispatchDone(ctx, dispatch.ID, *dispatch.JobID); err != nil {
 				t.Fatal(err)
 			}
 		}

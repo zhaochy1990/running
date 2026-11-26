@@ -315,7 +315,7 @@ func TestOnboardingSyncChunkContinuation_RescuesCrashBetweenTerminalMarkAndReque
 	}
 	// Crash: mark the dispatch done WITHOUT letting the sweep run its normal
 	// order (this is the write that would have happened before the requeue).
-	if err := h.store.MarkOnboardingSyncDispatchTerminal(ctx, d.ID, storage.OnboardingSyncDispatchDone); err != nil {
+	if _, err := h.store.MarkOnboardingSyncDispatchDone(ctx, d.ID, j.ID); err != nil {
 		t.Fatalf("terminal mark: %v", err)
 	}
 	// Coverage is still pending (applyStageResult never ran) — the advance

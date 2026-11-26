@@ -38,6 +38,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"github.com/zhaochy1990/stride/internal/job"
 )
 
 // Onboarding session lifecycle states. waiting_legacy means an old full
@@ -153,11 +155,13 @@ type OnboardingSyncSession struct {
 	HistoricalAnalysisReason    *string    `gorm:"column:historical_analysis_reason;type:varchar(32)"`
 	HistoricalAnalysisCheckedAt *time.Time `gorm:"column:historical_analysis_checked_at;type:datetime(6)"`
 	// LegacyRunID links an in-flight old full onboarding pipeline run.
-	LegacyRunID *string   `gorm:"column:legacy_run_id;type:varchar(64)"`
-	RetryCount  int       `gorm:"column:retry_count;type:int;not null;default:0"`
-	LastError   *string   `gorm:"column:last_error;type:text"`
-	CreatedAt   time.Time `gorm:"column:created_at;type:datetime(6);not null"`
-	UpdatedAt   time.Time `gorm:"column:updated_at;type:datetime(6);not null"`
+	LegacyRunID *string `gorm:"column:legacy_run_id;type:varchar(64)"`
+	// DispatchGeneration retains the legacy column and its idempotency-key values.
+	DispatchGeneration int       `gorm:"column:retry_count;type:int;not null;default:0"`
+	FailRetryCount     int       `gorm:"column:fail_retry_count;type:int;size:32;not null;default:0"`
+	LastError          *string   `gorm:"column:last_error;type:text"`
+	CreatedAt          time.Time `gorm:"column:created_at;type:datetime(6);not null"`
+	UpdatedAt          time.Time `gorm:"column:updated_at;type:datetime(6);not null"`
 }
 
 func (OnboardingSyncSession) TableName() string { return "onboarding_sync_sessions" }
@@ -173,9 +177,12 @@ func (s OnboardingSyncSession) Terminal() bool {
 	return false
 }
 
+// OnboardingSyncJobKeyPrefix identifies jobs backed by an onboarding dispatch.
+const OnboardingSyncJobKeyPrefix = "onbsync:"
+
 // OnboardingSyncDispatch is the durable intent to run one stage of a session.
 // One row per (session, stage); IdempotencyKey carries the generation's stable
-// key (session + stage + range + binding revision + retry generation + chunk
+// key (session + stage + range + binding revision + dispatch generation + chunk
 // sequence) so the crash-recovery re-enqueue dedupes against the original job.
 // ChunkSeq counts the chunked stages' continuations (devops#1010): a backfill
 // stage's executor finishes one bounded chunk per job and reports in_progress;
@@ -311,7 +318,15 @@ func onboardingSyncModels() []any {
 // (devops#1006). Called by both `stride api` and `stride worker` so either
 // process can run against a fresh database.
 func (s *Store) AutoMigrateOnboardingSync(ctx context.Context) error {
-	if err := s.db.WithContext(ctx).AutoMigrate(onboardingSyncModels()...); err != nil {
+	db := s.db.WithContext(ctx)
+	err := db.AutoMigrate(onboardingSyncModels()...)
+	var mysqlErr *gomysql.MySQLError
+	if errors.As(err, &mysqlErr) && mysqlErr.Number == 1060 {
+		// An API or worker replica can add the column between this
+		// replica's schema inspection and ALTER. Re-read the schema once.
+		err = db.AutoMigrate(onboardingSyncModels()...)
+	}
+	if err != nil {
 		return fmt.Errorf("storage: automigrate onboarding sync: %w", err)
 	}
 	return nil
@@ -654,20 +669,32 @@ func (s *Store) ListDispatchedOnboardingSyncDispatches(ctx context.Context, limi
 	return rows, nil
 }
 
-// MarkOnboardingSyncDispatchDispatched moves a dispatch to dispatched with its
-// job id, guarded on still-pending (a concurrent sweep or retry loses the race
-// silently — the winner's write stands).
-func (s *Store) MarkOnboardingSyncDispatchDispatched(ctx context.Context, id int64, jobID string) error {
-	res := s.db.WithContext(ctx).Model(&OnboardingSyncDispatch{}).
-		Where("id = ? AND status = ?", id, OnboardingSyncDispatchPending).
-		Updates(map[string]any{
-			"status": OnboardingSyncDispatchDispatched, "job_id": jobID,
-			"attempts": gorm.Expr("attempts + 1"), "updated_at": time.Now().UTC(),
+// MarkOnboardingSyncDispatchDispatched records the job against the observed
+// pending key and updates coverage before a sweep can record its outcome.
+func (s *Store) MarkOnboardingSyncDispatchDispatched(ctx context.Context, d *OnboardingSyncDispatch, jobID string) (bool, error) {
+	dispatched := false
+	err := withDeadlockRetry(func() error {
+		dispatched = false
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			now := time.Now().UTC()
+			res := tx.Model(&OnboardingSyncDispatch{}).
+				Where("id = ? AND status = ? AND idempotency_key = ?", d.ID, OnboardingSyncDispatchPending, d.IdempotencyKey).
+				Updates(map[string]any{
+					"status": OnboardingSyncDispatchDispatched, "job_id": jobID,
+					"attempts": gorm.Expr("attempts + 1"), "updated_at": now,
+				})
+			if res.Error != nil || res.RowsAffected == 0 {
+				return res.Error
+			}
+			dispatched = true
+			return tx.Model(&OnboardingSyncStageCoverage{}).Where("session_id = ? AND stage = ?", d.SessionID, d.Stage).
+				Updates(map[string]any{"status": OnboardingSyncCoverageRunning, "job_id": jobID, "updated_at": now}).Error
 		})
-	if res.Error != nil {
-		return fmt.Errorf("storage: mark onboarding sync dispatch dispatched: %w", res.Error)
+	})
+	if err != nil {
+		return false, fmt.Errorf("storage: mark onboarding sync dispatch dispatched: %w", err)
 	}
-	return nil
+	return dispatched, nil
 }
 
 // TouchOnboardingSyncDispatch bumps updated_at without changing state. The
@@ -683,52 +710,184 @@ func (s *Store) TouchOnboardingSyncDispatch(ctx context.Context, id int64) error
 	return nil
 }
 
-// MarkOnboardingSyncDispatchTerminal records the job's terminal outcome.
-func (s *Store) MarkOnboardingSyncDispatchTerminal(ctx context.Context, id int64, status string) error {
-	res := s.db.WithContext(ctx).Model(&OnboardingSyncDispatch{}).
-		Where("id = ? AND status = ?", id, OnboardingSyncDispatchDispatched).
-		Updates(map[string]any{"status": status, "updated_at": time.Now().UTC()})
+// MarkOnboardingSyncDispatchDone records a successful job while the dispatch
+// still points to that job. A concurrent observer of the same completed job
+// can also replay its coverage write.
+func (s *Store) MarkOnboardingSyncDispatchDone(ctx context.Context, id int64, jobID string) (bool, error) {
+	db := s.db.WithContext(ctx)
+	res := db.Model(&OnboardingSyncDispatch{}).Where("id = ? AND job_id = ? AND status = ?", id, jobID, OnboardingSyncDispatchDispatched).
+		Updates(map[string]any{"status": OnboardingSyncDispatchDone, "updated_at": time.Now().UTC()})
 	if res.Error != nil {
-		return fmt.Errorf("storage: mark onboarding sync dispatch terminal: %w", res.Error)
+		return false, fmt.Errorf("storage: mark onboarding sync dispatch done: %w", res.Error)
+	}
+	if res.RowsAffected > 0 {
+		return true, nil
+	}
+	var count int64
+	err := db.Model(&OnboardingSyncDispatch{}).Where("id = ? AND job_id = ? AND status = ?", id, jobID, OnboardingSyncDispatchDone).Count(&count).Error
+	return count > 0, err
+}
+
+// RecordOnboardingSyncDispatchFailure marks the observed job's dispatch,
+// coverage and session together. A manual retry sees the entire failure or
+// none of it, and a stale sweep cannot fail the new dispatch.
+func (s *Store) RecordOnboardingSyncDispatchFailure(ctx context.Context, d *OnboardingSyncDispatch, message string) error {
+	if message == "" {
+		message = "stage job failed"
+	}
+	return withDeadlockRetry(func() error {
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			now := time.Now().UTC()
+			res := tx.Model(&OnboardingSyncDispatch{}).
+				Where("id = ? AND status = ? AND job_id = ?", d.ID, OnboardingSyncDispatchDispatched, d.JobID).
+				Updates(map[string]any{"status": OnboardingSyncDispatchFailed, "updated_at": now})
+			if res.Error != nil || res.RowsAffected == 0 {
+				return res.Error
+			}
+			if err := tx.Model(&OnboardingSyncStageCoverage{}).Where("session_id = ? AND stage = ?", d.SessionID, d.Stage).
+				Updates(map[string]any{"status": OnboardingSyncCoverageFailed, "last_error": message, "updated_at": now}).Error; err != nil {
+				return err
+			}
+			return tx.Model(&OnboardingSyncSession{}).
+				Where("session_id = ? AND state <> ?", d.SessionID, OnboardingSyncStateSuperseded).
+				Updates(map[string]any{"state": OnboardingSyncStateFailed, "last_error": message, "updated_at": now}).Error
+		})
+	})
+}
+
+// RetryFailedOnboardingSyncDispatches re-arms the failed dispatches observed
+// by the caller. The generation, failed work items and retry count commit
+// together. An overlapping request cannot re-arm a newer dispatch.
+func (s *Store) RetryFailedOnboardingSyncDispatches(ctx context.Context, sessionID string, failed []*OnboardingSyncDispatch, keyFor func(stage string, generation int) string) (bool, error) {
+	requeued := 0
+	err := withDeadlockRetry(func() error {
+		requeued = 0
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var sess OnboardingSyncSession
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("session_id = ?", sessionID).First(&sess).Error; err != nil {
+				return err
+			}
+			if sess.Terminal() && sess.State != OnboardingSyncStateFailed {
+				return nil
+			}
+			now := time.Now().UTC()
+			generation := sess.DispatchGeneration + 1
+			for _, d := range failed {
+				res := tx.Model(&OnboardingSyncDispatch{}).
+					Where("id = ? AND session_id = ? AND status = ? AND idempotency_key = ?", d.ID, sessionID, OnboardingSyncDispatchFailed, d.IdempotencyKey).
+					Updates(map[string]any{
+						"status": OnboardingSyncDispatchPending, "idempotency_key": keyFor(d.Stage, generation),
+						"updated_at": now,
+					})
+				if res.Error != nil {
+					return res.Error
+				}
+				if res.RowsAffected == 0 {
+					continue
+				}
+				if _, err := resetFailedOnboardingSyncWorkItems(tx, sessionID, d.Stage); err != nil {
+					return err
+				}
+				requeued++
+			}
+			if requeued == 0 {
+				return nil
+			}
+			return tx.Model(&sess).Updates(map[string]any{
+				"state": OnboardingSyncStateDispatching, "last_error": nil, "updated_at": now,
+				"retry_count": generation, "fail_retry_count": gorm.Expr("fail_retry_count + ?", requeued),
+			}).Error
+		})
+	})
+	if err != nil {
+		return false, fmt.Errorf("storage: retry failed onboarding sync dispatches: %w", err)
+	}
+	return requeued > 0, nil
+}
+
+// requeueOnboardingJobAfterFailure records one automatic retry when the
+// worker durably requeues a failed attempt. Guard the attempt so a stale
+// worker cannot requeue a newer one or count the same retry twice.
+func (s *jobStore) requeueOnboardingJobAfterFailure(ctx context.Context, j *job.Job) error {
+	return withDeadlockRetry(func() error {
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			res := tx.Model(&jobModel{}).
+				Where("id = ? AND status = ? AND attempts = ?", j.ID, job.StatusRunning, j.Attempts).
+				Updates(map[string]any{
+					"status": j.Status, "error_code": j.ErrorCode, "error_message": j.ErrorMessage,
+					"updated_at": j.UpdatedAt,
+				})
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected == 0 {
+				return job.ErrStateChanged
+			}
+			// Match the durable dispatch key rather than job_id because a job
+			// can run before the enqueuer records its job_id on the dispatch.
+			dispatch := tx.Model(&OnboardingSyncDispatch{}).Select("1").
+				Where("onboarding_sync_dispatches.session_id = onboarding_sync_sessions.session_id AND idempotency_key = ?", j.IdempotencyKey)
+			return tx.Model(&OnboardingSyncSession{}).
+				Where("user_id = ? AND EXISTS (?)", j.UserID, dispatch).
+				UpdateColumn("fail_retry_count", gorm.Expr("fail_retry_count + 1")).Error
+		})
+	})
+}
+
+// RecoverMissingOnboardingSyncJob re-arms a dispatch whose job disappeared.
+// The key stays the same so reconcile can adopt an existing job on replay.
+func (s *Store) RecoverMissingOnboardingSyncJob(ctx context.Context, id int64, jobID string) error {
+	res := s.db.WithContext(ctx).Model(&OnboardingSyncDispatch{}).
+		Where("id = ? AND status = ? AND job_id = ?", id, OnboardingSyncDispatchDispatched, jobID).
+		Updates(map[string]any{"status": OnboardingSyncDispatchPending, "updated_at": time.Now().UTC()})
+	if res.Error != nil {
+		return fmt.Errorf("storage: recover missing onboarding sync job: %w", res.Error)
 	}
 	return nil
 }
 
-// RequeueOnboardingSyncDispatchForRetry arms a terminal dispatch for one more
-// generation: back to pending under a fresh idempotency key (the retry
-// generation is part of the key, so the re-enqueue creates a new job while
-// crash recovery within the generation still dedupes).
-func (s *Store) RequeueOnboardingSyncDispatchForRetry(ctx context.Context, id int64, idempotencyKey string) error {
-	res := s.db.WithContext(ctx).Model(&OnboardingSyncDispatch{}).
-		Where("id = ? AND status IN ?", id, []string{OnboardingSyncDispatchFailed, OnboardingSyncDispatchPending, OnboardingSyncDispatchDispatched}).
-		Updates(map[string]any{
-			"status": OnboardingSyncDispatchPending, "idempotency_key": idempotencyKey,
-			"updated_at": time.Now().UTC(),
+// RefreshOnboardingSyncAnalysis re-arms the observed completed analysis
+// dispatch after its inputs change. Only the winning sweep advances the
+// generation and marks the published analysis stale.
+func (s *Store) RefreshOnboardingSyncAnalysis(ctx context.Context, d *OnboardingSyncDispatch, keyFor func(generation int) string) (bool, error) {
+	requeued := false
+	err := withDeadlockRetry(func() error {
+		requeued = false
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var sess OnboardingSyncSession
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("session_id = ?", d.SessionID).First(&sess).Error; err != nil {
+				return err
+			}
+			switch sess.State {
+			case OnboardingSyncStateRunning, OnboardingSyncStateDispatching,
+				OnboardingSyncStateCompleted, OnboardingSyncStateCompletedWithGaps:
+			default:
+				return nil
+			}
+			now := time.Now().UTC()
+			generation := sess.DispatchGeneration + 1
+			res := tx.Model(&OnboardingSyncDispatch{}).
+				Where("id = ? AND status = ? AND idempotency_key = ?", d.ID, OnboardingSyncDispatchDone, d.IdempotencyKey).
+				Updates(map[string]any{
+					"status": OnboardingSyncDispatchPending, "idempotency_key": keyFor(generation), "updated_at": now,
+				})
+			if res.Error != nil || res.RowsAffected == 0 {
+				return res.Error
+			}
+			if err := tx.Model(&OnboardingRecentAnalysis{}).Where("session_id = ?", d.SessionID).
+				Updates(map[string]any{"stale": true, "updated_at": now}).Error; err != nil {
+				return err
+			}
+			requeued = true
+			return tx.Model(&sess).Updates(map[string]any{
+				"state": OnboardingSyncStateDispatching, "last_error": nil, "updated_at": now, "retry_count": generation,
+			}).Error
 		})
-	if res.Error != nil {
-		return fmt.Errorf("storage: requeue onboarding sync dispatch: %w", res.Error)
+	})
+	if err != nil {
+		return false, fmt.Errorf("storage: requeue onboarding sync analysis: %w", err)
 	}
-	return nil
-}
-
-// RequeueOnboardingSyncDispatchForRefresh supersedes a COMPLETED dispatch with
-// one more generation (devops#1009): the changed-input refresh re-arms a done
-// analysis run under a fresh idempotency key. Deliberately separate from
-// RequeueOnboardingSyncDispatchForRetry — the retry path's contract keeps "a
-// done dispatch is never re-armed" (successful raw work is reused through
-// item credentials, never re-fetched); only the analysis refresh supersedes a
-// done run.
-func (s *Store) RequeueOnboardingSyncDispatchForRefresh(ctx context.Context, id int64, idempotencyKey string) error {
-	res := s.db.WithContext(ctx).Model(&OnboardingSyncDispatch{}).
-		Where("id = ? AND status = ?", id, OnboardingSyncDispatchDone).
-		Updates(map[string]any{
-			"status": OnboardingSyncDispatchPending, "idempotency_key": idempotencyKey,
-			"updated_at": time.Now().UTC(),
-		})
-	if res.Error != nil {
-		return fmt.Errorf("storage: requeue onboarding sync dispatch for refresh: %w", res.Error)
-	}
-	return nil
+	return requeued, nil
 }
 
 // RequeueOnboardingSyncDispatchChunk arms a chunked stage's dispatch for its
@@ -824,25 +983,6 @@ func (s *Store) AddOnboardingSyncStage(ctx context.Context, sessionID, stage, id
 	return created, nil
 }
 
-// BumpOnboardingSyncRetryCount increments and returns the session's retry
-// generation (the retry-key input). Idempotent per explicit retry request that
-// actually requeues work.
-func (s *Store) BumpOnboardingSyncRetryCount(ctx context.Context, sessionID string) (int, error) {
-	res := s.db.WithContext(ctx).Model(&OnboardingSyncSession{}).
-		Where("session_id = ?", sessionID).
-		Updates(map[string]any{
-			"retry_count": gorm.Expr("retry_count + 1"), "updated_at": time.Now().UTC(),
-		})
-	if res.Error != nil {
-		return 0, fmt.Errorf("storage: bump onboarding sync retry: %w", res.Error)
-	}
-	var sess OnboardingSyncSession
-	if err := s.db.WithContext(ctx).Where("session_id = ?", sessionID).First(&sess).Error; err != nil {
-		return 0, fmt.Errorf("storage: reload onboarding sync retry: %w", err)
-	}
-	return sess.RetryCount, nil
-}
-
 // ListOnboardingSyncWorkItems returns the session's work items (optionally one
 // stage), ordered by kind then range — the set an explicit retry scans for
 // done items to reuse.
@@ -902,7 +1042,11 @@ func (s *Store) SaveOnboardingSyncWorkItemCheckpoint(ctx context.Context, id int
 // credentials — a retry reuses them, never re-fetches; gap items stay gaps
 // (permanently unobtainable).
 func (s *Store) ResetFailedOnboardingSyncWorkItems(ctx context.Context, sessionID, stage string) (int64, error) {
-	res := s.db.WithContext(ctx).Model(&OnboardingSyncWorkItem{}).
+	return resetFailedOnboardingSyncWorkItems(s.db.WithContext(ctx), sessionID, stage)
+}
+
+func resetFailedOnboardingSyncWorkItems(db *gorm.DB, sessionID, stage string) (int64, error) {
+	res := db.Model(&OnboardingSyncWorkItem{}).
 		Where("session_id = ? AND stage = ? AND status = ?", sessionID, stage, OnboardingSyncItemFailed).
 		Updates(map[string]any{
 			"status": OnboardingSyncItemPending, "error": nil, "updated_at": time.Now().UTC(),
@@ -1132,8 +1276,8 @@ func (s *Store) UpsertOnboardingRecentAnalysis(ctx context.Context, row *Onboard
 }
 
 // MarkOnboardingRecentAnalysisStale flags (or clears) the published result's
-// stale marker. A refresh start sets it while the OLD as-of stays readable;
-// the refresh that lands clears it via UpsertOnboardingRecentAnalysis.
+// stale marker. UpsertOnboardingRecentAnalysis publishes the new result and
+// clears the flag when a refresh lands.
 func (s *Store) MarkOnboardingRecentAnalysisStale(ctx context.Context, sessionID string, stale bool) error {
 	res := s.db.WithContext(ctx).Model(&OnboardingRecentAnalysis{}).
 		Where("session_id = ?", sessionID).

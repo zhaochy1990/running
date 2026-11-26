@@ -185,8 +185,8 @@ func TestOnboardingSyncAnalysisRefreshOnChangedInputs(t *testing.T) {
 		}
 	}
 	got, _ := h.store.GetOnboardingSyncSessionByID(ctx, sess.SessionID)
-	if got.RetryCount != sess.RetryCount {
-		t.Fatalf("retry generation = %d, want unchanged %d (no refresh)", got.RetryCount, sess.RetryCount)
+	if got.DispatchGeneration != sess.DispatchGeneration {
+		t.Fatalf("dispatch generation = %d, want unchanged %d (no refresh)", got.DispatchGeneration, sess.DispatchGeneration)
 	}
 	before := h.pub.count()
 
@@ -224,6 +224,10 @@ func TestOnboardingSyncAnalysisRefreshOnChangedInputs(t *testing.T) {
 	view, err := h.svc.View(ctx, uid)
 	if err != nil {
 		t.Fatalf("view: %v", err)
+	}
+	if view.DispatchGeneration != sess.DispatchGeneration+1 || view.FailRetryCount != 0 {
+		t.Errorf("refresh counters: generation=%d failure retries=%d, want %d and 0",
+			view.DispatchGeneration, view.FailRetryCount, sess.DispatchGeneration+1)
 	}
 	if view.Readiness.RecentAnalysis != ReadinessReady {
 		t.Errorf("recent_analysis = %s, want ready (published result stands while stale)", view.Readiness.RecentAnalysis)

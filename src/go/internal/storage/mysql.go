@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	gomysql "github.com/go-sql-driver/mysql"
@@ -338,6 +339,10 @@ func (s *jobStore) byIdempotencyKey(ctx context.Context, userID, key string) (*j
 }
 
 func (s *jobStore) Update(ctx context.Context, j *job.Job) error {
+	if j.Status == job.StatusQueued && j.ErrorCode == job.RetryableErrorCode &&
+		strings.HasPrefix(j.IdempotencyKey, OnboardingSyncJobKeyPrefix) {
+		return s.requeueOnboardingJobAfterFailure(ctx, j)
+	}
 	// Save writes all columns for the row identified by the primary key (id).
 	return s.db.WithContext(ctx).Save(toJobModel(j)).Error
 }

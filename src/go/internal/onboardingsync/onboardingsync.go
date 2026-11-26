@@ -8,7 +8,7 @@
 // T04's job handlers. It reuses the jobs/pipeline_runs machinery end to end:
 // every stage dispatch is a durable job row created through job.Enqueuer under
 // a stable idempotency key (session + stage + ranges + binding revision +
-// retry generation), and the sweep's re-enqueue dedupes against the original
+// dispatch generation), and the sweep's re-enqueue dedupes against the original
 // job, so no crash window can lose or double-run the work.
 package onboardingsync
 
@@ -132,14 +132,14 @@ type Store interface {
 	ListOnboardingSyncDispatches(ctx context.Context, sessionID string) ([]*storage.OnboardingSyncDispatch, error)
 	ListPendingOnboardingSyncDispatches(ctx context.Context, grace time.Duration, limit int) ([]*storage.OnboardingSyncDispatch, error)
 	ListDispatchedOnboardingSyncDispatches(ctx context.Context, limit int) ([]*storage.OnboardingSyncDispatch, error)
-	MarkOnboardingSyncDispatchDispatched(ctx context.Context, id int64, jobID string) error
-	MarkOnboardingSyncDispatchTerminal(ctx context.Context, id int64, status string) error
+	MarkOnboardingSyncDispatchDispatched(ctx context.Context, d *storage.OnboardingSyncDispatch, jobID string) (bool, error)
+	MarkOnboardingSyncDispatchDone(ctx context.Context, id int64, jobID string) (bool, error)
+	RecordOnboardingSyncDispatchFailure(ctx context.Context, d *storage.OnboardingSyncDispatch, message string) error
 	TouchOnboardingSyncDispatch(ctx context.Context, id int64) error
-	RequeueOnboardingSyncDispatchForRetry(ctx context.Context, id int64, idempotencyKey string) error
-	RequeueOnboardingSyncDispatchForRefresh(ctx context.Context, id int64, idempotencyKey string) error
-	BumpOnboardingSyncRetryCount(ctx context.Context, sessionID string) (int, error)
+	RetryFailedOnboardingSyncDispatches(ctx context.Context, sessionID string, failed []*storage.OnboardingSyncDispatch, keyFor func(stage string, generation int) string) (bool, error)
+	RecoverMissingOnboardingSyncJob(ctx context.Context, id int64, jobID string) error
+	RefreshOnboardingSyncAnalysis(ctx context.Context, d *storage.OnboardingSyncDispatch, keyFor func(generation int) string) (bool, error)
 	ListOnboardingSyncWorkItems(ctx context.Context, sessionID, stage string) ([]*storage.OnboardingSyncWorkItem, error)
-	ResetFailedOnboardingSyncWorkItems(ctx context.Context, sessionID, stage string) (int64, error)
 	GetOnboardingSyncStageCoverage(ctx context.Context, sessionID, stage string) (*storage.OnboardingSyncStageCoverage, error)
 	ListOnboardingSyncStageCoverage(ctx context.Context, sessionID string) ([]*storage.OnboardingSyncStageCoverage, error)
 	UpdateOnboardingSyncStageCoverage(ctx context.Context, cov *storage.OnboardingSyncStageCoverage) error
@@ -151,7 +151,6 @@ type Store interface {
 	RequeueOnboardingSyncDispatchChunk(ctx context.Context, id int64, idempotencyKey string) error
 	AddOnboardingSyncStage(ctx context.Context, sessionID, stage, idempotencyKey string, items []storage.OnboardingSyncWorkItemSpec) (bool, error)
 	GetOnboardingRecentAnalysis(ctx context.Context, sessionID string) (*storage.OnboardingRecentAnalysis, error)
-	MarkOnboardingRecentAnalysisStale(ctx context.Context, sessionID string, stale bool) error
 	OnboardingAnalysisDigest(ctx context.Context, userID, fromDay, toDay string) (storage.OnboardingAnalysisDigest, error)
 	CalibrationPolicy(ctx context.Context) (storage.RunningCalibrationPolicy, error)
 }
@@ -341,16 +340,16 @@ func sessionStageItems(providerName string, anchor time.Time) map[string][]stora
 }
 
 // stageKey builds the stable idempotency key: session, stage, every range,
-// and the input (binding) revision are all part of the key, plus the retry
+// and the input (binding) revision are all part of the key, plus the dispatch
 // generation so an explicit retry creates a new job while crash recovery
 // within a generation still dedupes to the same one.
-func stageKey(stage, sessionID string, bindingRevision int64, retryGen, chunk int, items []storage.OnboardingSyncWorkItemSpec) string {
+func stageKey(stage, sessionID string, bindingRevision int64, generation, chunk int, items []storage.OnboardingSyncWorkItemSpec) string {
 	ranges := make([]string, len(items))
 	for i, it := range items {
 		ranges[i] = it.Kind + ":" + it.RangeFrom + ".." + it.RangeTo
 	}
 	sort.Strings(ranges)
-	key := fmt.Sprintf("onbsync:%s:%s:%s:rev%d:try%d", sessionID, stage, strings.Join(ranges, "|"), bindingRevision, retryGen)
+	key := fmt.Sprintf("%s%s:%s:%s:rev%d:try%d", storage.OnboardingSyncJobKeyPrefix, sessionID, stage, strings.Join(ranges, "|"), bindingRevision, generation)
 	if chunk > 0 {
 		key += fmt.Sprintf(":c%d", chunk)
 	}
@@ -459,48 +458,30 @@ func (s *Service) Retry(ctx context.Context, userID string) (*storage.Onboarding
 	// Only terminally-failed stages re-arm here. Pending/dispatched rows are
 	// the sweep's crash-recovery domain — re-enqueueing a still-running
 	// stage would run a second executor beside the live one.
-	failed := false
+	var failed []*storage.OnboardingSyncDispatch
 	for _, d := range disp {
 		if d.Status == storage.OnboardingSyncDispatchFailed {
-			failed = true
-			break
+			failed = append(failed, d)
 		}
 	}
-	if failed {
+	if len(failed) > 0 {
 		anchor, err := time.Parse("2006-01-02", sess.AnchorDay)
 		if err != nil {
 			return nil, fmt.Errorf("onboardingsync: bad anchor day %q: %w", sess.AnchorDay, err)
 		}
-		gen, err := s.store.BumpOnboardingSyncRetryCount(ctx, sess.SessionID)
+		items := sessionStageItems(sess.Provider, anchor)
+		items[storage.OnboardingSyncStageRecentRaw] = recentWorkItems(anchor)[storage.OnboardingSyncStageRecentRaw]
+		requeued, err := s.store.RetryFailedOnboardingSyncDispatches(ctx, sess.SessionID, failed,
+			func(stage string, generation int) string {
+				return stageKey(stage, sess.SessionID, sess.BindingRevision, generation, 0, items[stage])
+			})
 		if err != nil {
 			return nil, err
 		}
-		sess.RetryCount = gen
-		// The failed stage may be any stage of the chain (a chunked backfill
-		// stage's dispatch fails terminally only after the job retry budget
-		// burns out) — rebuild every stage's items so the retry key carries
-		// the failed stage's real ranges. Stages without rows simply never
-		// match a dispatch.
-		items := sessionStageItems(sess.Provider, anchor)
-		items[storage.OnboardingSyncStageRecentRaw] = recentWorkItems(anchor)[storage.OnboardingSyncStageRecentRaw]
-		for _, d := range disp {
-			if d.Status != storage.OnboardingSyncDispatchFailed {
-				continue // successful work is reused; in-flight work is left alone
-			}
-			key := stageKey(d.Stage, sess.SessionID, sess.BindingRevision, gen, 0, items[d.Stage])
-			if err := s.store.RequeueOnboardingSyncDispatchForRetry(ctx, d.ID, key); err != nil {
+		if requeued {
+			if err := s.DispatchSession(ctx, sess.SessionID); err != nil {
 				return nil, err
 			}
-			if _, err := s.store.ResetFailedOnboardingSyncWorkItems(ctx, sess.SessionID, d.Stage); err != nil {
-				return nil, err
-			}
-		}
-		if err := s.store.SetOnboardingSyncSessionState(ctx, sess.SessionID,
-			storage.OnboardingSyncStateDispatching, nil); err != nil {
-			return nil, err
-		}
-		if err := s.DispatchSession(ctx, sess.SessionID); err != nil {
-			return nil, err
 		}
 	}
 	if sess, err = s.store.GetOnboardingSyncSessionByID(ctx, sess.SessionID); err != nil {
@@ -555,19 +536,11 @@ func (s *Service) DispatchSession(ctx context.Context, sessionID string) error {
 				zap.String("session", sess.SessionID), zap.String("stage", d.Stage), zap.Error(err))
 			continue
 		}
-		if err := s.store.MarkOnboardingSyncDispatchDispatched(ctx, d.ID, jobID); err != nil {
+		marked, err := s.store.MarkOnboardingSyncDispatchDispatched(ctx, d, jobID)
+		if err != nil {
 			return err
 		}
-		dispatched = true
-		if cov, err := s.store.GetOnboardingSyncStageCoverage(ctx, sess.SessionID, d.Stage); err != nil {
-			return err
-		} else if cov != nil {
-			cov.Status = storage.OnboardingSyncCoverageRunning
-			cov.JobID = &jobID
-			if err := s.store.UpdateOnboardingSyncStageCoverage(ctx, cov); err != nil {
-				return err
-			}
-		}
+		dispatched = dispatched || marked
 	}
 	if dispatched {
 		if err := s.store.SetOnboardingSyncSessionState(ctx, sess.SessionID,
@@ -682,7 +655,7 @@ func (s *Service) sweepDispatched(ctx context.Context) {
 		if job.IsNotFound(err) {
 			// The job vanished without a terminal record — re-arm as pending
 			// so the dispatch boundary heals under the same key.
-			if err := s.store.RequeueOnboardingSyncDispatchForRetry(ctx, d.ID, d.IdempotencyKey); err != nil {
+			if err := s.store.RecoverMissingOnboardingSyncJob(ctx, d.ID, *d.JobID); err != nil {
 				s.log.Warn("onboardingsync: vanished-job requeue failed", zap.Error(err))
 			}
 			continue
@@ -701,17 +674,16 @@ func (s *Service) sweepDispatched(ctx context.Context) {
 		}
 		switch j.Status {
 		case job.StatusDone:
-			if err := s.store.MarkOnboardingSyncDispatchTerminal(ctx, d.ID, storage.OnboardingSyncDispatchDone); err != nil {
+			current, err := s.store.MarkOnboardingSyncDispatchDone(ctx, d.ID, j.ID)
+			if err != nil {
 				s.log.Warn("onboardingsync: dispatch done mark failed", zap.Error(err))
-				continue
+			} else if current {
+				s.applyStageResult(ctx, d, j)
 			}
-			s.applyStageResult(ctx, d, j)
 		case job.StatusFailed:
-			if err := s.store.MarkOnboardingSyncDispatchTerminal(ctx, d.ID, storage.OnboardingSyncDispatchFailed); err != nil {
-				s.log.Warn("onboardingsync: dispatch failed mark failed", zap.Error(err))
-				continue
+			if err := s.store.RecordOnboardingSyncDispatchFailure(ctx, d, j.ErrorMessage); err != nil {
+				s.log.Warn("onboardingsync: record dispatch failure failed", zap.Error(err))
 			}
-			s.failStage(ctx, d, j.ErrorMessage)
 		}
 	}
 }
@@ -819,8 +791,7 @@ func mergeStageGaps(running, chunk []StageGap) []StageGap {
 	return running
 }
 
-// failStage records a stage's terminal failure on the coverage row and flags
-// the session failed (retryable through POST {"retry":true}).
+// failStage records an exhausted chunk continuation on coverage and the session.
 func (s *Service) failStage(ctx context.Context, d *storage.OnboardingSyncDispatch, msg string) {
 	if cov, err := s.store.GetOnboardingSyncStageCoverage(ctx, d.SessionID, d.Stage); err == nil && cov != nil {
 		m := msg
@@ -950,7 +921,7 @@ func (s *Service) advanceStages(ctx context.Context) {
 			continue
 		}
 		key := stageKey(storage.OnboardingSyncStageRecentAnalysis, sess.SessionID,
-			sess.BindingRevision, sess.RetryCount, 0, nil)
+			sess.BindingRevision, sess.DispatchGeneration, 0, nil)
 		if err := s.store.EnsureOnboardingSyncStage(ctx, sess.SessionID,
 			storage.OnboardingSyncStageRecentAnalysis, rawCov.TargetFrom, rawCov.TargetTo, key); err != nil {
 			s.log.Warn("onboardingsync: analysis stage arm failed",
@@ -1035,7 +1006,7 @@ func (s *Service) advanceBackfillStages(ctx context.Context) {
 			for i, it := range items {
 				specs[i] = storage.OnboardingSyncWorkItemSpec{Kind: it.Kind, RangeFrom: it.RangeFrom, RangeTo: it.RangeTo}
 			}
-			key := stageKey(d.Stage, sess.SessionID, sess.BindingRevision, sess.RetryCount, d.ChunkSeq+1, specs)
+			key := stageKey(d.Stage, sess.SessionID, sess.BindingRevision, sess.DispatchGeneration, d.ChunkSeq+1, specs)
 			if err := s.store.RequeueOnboardingSyncDispatchChunk(ctx, d.ID, key); err != nil {
 				s.log.Warn("onboardingsync: chunk requeue failed",
 					zap.String("session", sess.SessionID), zap.String("stage", d.Stage), zap.Error(err))
@@ -1063,7 +1034,7 @@ func (s *Service) advanceBackfillStages(ctx context.Context) {
 			continue
 		}
 		items := sessionStageItems(sess.Provider, anchor)[next]
-		key := stageKey(next, sess.SessionID, sess.BindingRevision, sess.RetryCount, 0, items)
+		key := stageKey(next, sess.SessionID, sess.BindingRevision, sess.DispatchGeneration, 0, items)
 		created, err := s.store.AddOnboardingSyncStage(ctx, sess.SessionID, next, key, items)
 		if err != nil {
 			s.log.Warn("onboardingsync: stage append failed",
@@ -1122,10 +1093,6 @@ func (s *Service) sweepAnalysisRefresh(ctx context.Context) {
 		if time.Since(sess.CreatedAt) > s.refreshHorizon {
 			continue
 		}
-		published, err := s.store.GetOnboardingRecentAnalysis(ctx, sess.SessionID)
-		if err != nil || published == nil {
-			continue
-		}
 		disp, err := s.store.ListOnboardingSyncDispatches(ctx, sess.SessionID)
 		if err != nil {
 			continue
@@ -1139,6 +1106,10 @@ func (s *Service) sweepAnalysisRefresh(ctx context.Context) {
 		}
 		if analysisDispatch == nil || analysisDispatch.Status != storage.OnboardingSyncDispatchDone {
 			continue // refresh already in flight / not yet armed — nothing to supersede
+		}
+		published, err := s.store.GetOnboardingRecentAnalysis(ctx, sess.SessionID)
+		if err != nil || published == nil {
+			continue
 		}
 		digest, err := s.store.OnboardingAnalysisDigest(ctx, sess.UserID, fromDay, asOfDay)
 		if err != nil {
@@ -1154,26 +1125,14 @@ func (s *Service) sweepAnalysisRefresh(ctx context.Context) {
 		if fp == published.InputFingerprint {
 			continue // inputs unchanged: the published result stays current
 		}
-		if err := s.store.MarkOnboardingRecentAnalysisStale(ctx, sess.SessionID, true); err != nil {
-			s.log.Warn("onboardingsync: analysis stale mark failed", zap.String("session", sess.SessionID), zap.Error(err))
-			continue
-		}
-		gen, err := s.store.BumpOnboardingSyncRetryCount(ctx, sess.SessionID)
+		requeued, err := s.store.RefreshOnboardingSyncAnalysis(ctx, analysisDispatch, func(generation int) string {
+			return stageKey(analysisDispatch.Stage, sess.SessionID, sess.BindingRevision, generation, 0, nil)
+		})
 		if err != nil {
-			s.log.Warn("onboardingsync: analysis refresh bump failed", zap.String("session", sess.SessionID), zap.Error(err))
-			continue
-		}
-		key := stageKey(storage.OnboardingSyncStageRecentAnalysis, sess.SessionID,
-			sess.BindingRevision, gen, 0, nil)
-		if err := s.store.RequeueOnboardingSyncDispatchForRefresh(ctx, analysisDispatch.ID, key); err != nil {
 			s.log.Warn("onboardingsync: analysis refresh requeue failed", zap.String("session", sess.SessionID), zap.Error(err))
 			continue
 		}
-		if err := s.store.SetOnboardingSyncSessionState(ctx, sess.SessionID,
-			storage.OnboardingSyncStateDispatching, nil,
-			storage.OnboardingSyncStateRunning, storage.OnboardingSyncStateDispatching,
-			storage.OnboardingSyncStateCompleted, storage.OnboardingSyncStateCompletedWithGaps); err != nil {
-			s.log.Warn("onboardingsync: analysis refresh state failed", zap.String("session", sess.SessionID), zap.Error(err))
+		if !requeued {
 			continue
 		}
 		if err := s.DispatchSession(ctx, sess.SessionID); err != nil {
@@ -1266,7 +1225,9 @@ type View struct {
 	BindingRevision          int64               `json:"binding_revision"`
 	AnchorDay                string              `json:"anchor_day"`
 	LegacyRunID              *string             `json:"legacy_run_id,omitempty"`
-	RetryCount               int                 `json:"retry_count"`
+	DispatchGeneration       int                 `json:"dispatch_generation"`
+	FailRetryCount           int                 `json:"fail_retry_count"`
+	RetryCount               int                 `json:"retry_count"` // compatibility alias for DispatchGeneration
 	Error                    *string             `json:"error,omitempty"`
 	Stages                   []StageView         `json:"stages"`
 	Readiness                ViewReadiness       `json:"readiness"`
@@ -1343,7 +1304,8 @@ func (s *Service) View(ctx context.Context, userID string) (*View, error) {
 		SessionID: sess.SessionID, State: sess.State, ShellReady: sess.ShellReady,
 		Provider: sess.Provider, BindingRevision: sess.BindingRevision,
 		AnchorDay: sess.AnchorDay, LegacyRunID: sess.LegacyRunID,
-		RetryCount: sess.RetryCount, Error: sess.LastError,
+		DispatchGeneration: sess.DispatchGeneration, FailRetryCount: sess.FailRetryCount,
+		RetryCount: sess.DispatchGeneration, Error: sess.LastError,
 		CreatedAt: sess.CreatedAt, UpdatedAt: sess.UpdatedAt,
 		Readiness: ViewReadiness{ShellReady: sess.ShellReady,
 			RecentData: ReadinessPending, RecentAnalysis: ReadinessNotStarted, ExtendedData: ReadinessNotStarted,
