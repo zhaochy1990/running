@@ -1,4 +1,5 @@
 import { getActivities } from '../../services/activities';
+import { manualStrengthLiveVersion, takeManualStrengthEditedNames } from '../../services/manual-strength';
 import { fmtDurationShort, fmtKm, fmtPace, fmtDose } from '../../utils/format';
 import { shanghaiToday, shanghaiWeekdayLabel } from '../../utils/date';
 import { userStore } from '../../store/index';
@@ -7,6 +8,7 @@ import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share'
 
 interface ActivityRow {
   labelId: string;
+  source: Activity['source'];
   name: string;
   date: string; // 用于显示的日期（已转上海）
   iconPath: string;
@@ -61,6 +63,12 @@ interface ActivitiesPageData {
 }
 
 interface ActivitiesPageHandlers {
+  fetchGeneration: number;
+  viewerId: string | null;
+  loadedManualStrengthVersion: number;
+  unsubscribeViewer: (() => void) | null;
+  closed: boolean;
+  syncViewer(): void;
   onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
   onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   fetch(): Promise<void>;
@@ -70,7 +78,10 @@ interface ActivitiesPageHandlers {
   onPullDownRefresh(): void;
 }
 
-let userId = '';
+function currentViewerId(): string {
+  const { user, isAuthenticated } = userStore.getState();
+  return isAuthenticated ? user?.id ?? '' : '';
+}
 
 // 每次拉取的活动条数（分页步长）。
 const PAGE_SIZE = 100;
@@ -132,6 +143,7 @@ function formatDateLabel(ymd: string | null | undefined): string {
 function toRow(a: Activity): ActivityRow {
   return {
     labelId: a.label_id,
+    source: a.source,
     name: displayName(a),
     date: formatDateLabel(a.date),
     iconPath: iconPathForSport(a.sport_name),
@@ -261,6 +273,11 @@ function mergeMonthGroups(existing: MonthGroup[], res: ActivitiesListResponse): 
 }
 
 Page<ActivitiesPageData, ActivitiesPageHandlers>({
+  fetchGeneration: 0,
+  viewerId: null,
+  loadedManualStrengthVersion: 0,
+  unsubscribeViewer: null,
+  closed: false,
   onShareAppMessage: defaultShareAppMessage,
   onShareTimeline: defaultShareTimeline,
   data: {
@@ -278,26 +295,18 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
     loadingMore: false,
   },
 
-  onLoad() {
-    const user = userStore.getState().user;
-    userId = user?.id ?? '';
+  async onLoad() {
     this.setData({
       statusBarHeight: statusBarHeight(),
       contentPaddingTop: contentPaddingTopRpx(),
       currentMonth: shanghaiToday().slice(0, 7),
     });
-
-    // 先等认证流程 settle 再拉真实活动，避免首屏请求在登录完成前发出被 401。
-    userStore.waitForAuth().then(() => {
-      const { user, isAuthenticated } = userStore.getState();
-      if (!isAuthenticated || !user) {
-        // 游客态：纯空态页面（无登录元素，审核要求先体验后自行登录）。
-        this.setData({ guest: true, loading: false });
-        return;
-      }
-      userId = user.id;
-      this.fetch();
+    await userStore.waitForAuth();
+    if (this.closed) return;
+    this.unsubscribeViewer = userStore.subscribe(() => {
+      if (currentViewerId() !== this.viewerId) this.syncViewer();
     });
+    this.syncViewer();
   },
 
   onShow() {
@@ -305,24 +314,72 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
     if (tabBar) {
       tabBar.setData({ selected: 1 });
     }
-    // 游客态期间完成登录，switchTab 回来：退出游客态补拉数据。
-    if (this.data.guest && userStore.getState().isAuthenticated) {
-      this.setData({ guest: false });
-      const user = userStore.getState().user;
-      userId = user?.id ?? '';
-      this.fetch();
+    if (this.unsubscribeViewer) this.syncViewer();
+  },
+
+  onUnload() {
+    this.closed = true;
+    this.fetchGeneration++;
+    this.unsubscribeViewer?.();
+    this.unsubscribeViewer = null;
+  },
+
+  syncViewer() {
+    const userId = currentViewerId();
+    if (userId !== this.viewerId) {
+      // Tab pages stay mounted through logout. Clear the previous viewer's
+      // records and invalidate every outstanding request before loading again.
+      this.viewerId = userId;
+      this.fetchGeneration++;
+      this.loadedManualStrengthVersion = 0;
+      this.setData({
+        guest: !userId,
+        loading: Boolean(userId),
+        loadingMore: false,
+        monthGroups: [],
+        total: 0,
+        loadedCount: 0,
+        hasMore: false,
+      });
+      if (userId) void this.fetch();
+      return;
+    }
+    if (!userId) return;
+    const editedNames = takeManualStrengthEditedNames(userId);
+    if (editedNames?.size) {
+      const monthGroups = this.data.monthGroups.map((group) => ({
+        ...group,
+        rows: group.rows.map((row) => {
+          const name = row.source === 'manual_strength' ? editedNames.get(row.labelId) : undefined;
+          return name ? { ...row, name } : row;
+        }),
+      }));
+      this.setData({ monthGroups });
+    }
+    if (!this.data.loading && manualStrengthLiveVersion(userId) !== this.loadedManualStrengthVersion) {
+      void this.fetch();
     }
   },
 
   async fetch() {
-    if (!userId) {
+    const requestedUser = this.viewerId;
+    if (!requestedUser || requestedUser !== currentViewerId()) {
       this.setData({ loading: false });
       return;
     }
+    const generation = ++this.fetchGeneration;
+    this.setData({ loading: true, loadingMore: false });
     try {
       // 拉最近一页活动，跨月份分组展示；月份汇总由后端整月统计给出。
-      const res = await getActivities(userId, { limit: PAGE_SIZE, offset: 0 });
-      const monthGroups = buildMonthGroups(res, this.data.currentMonth);
+      const requestedVersion = manualStrengthLiveVersion(requestedUser);
+      const res = await getActivities(requestedUser, { limit: PAGE_SIZE, offset: 0, includeManualStrength: true });
+      if (generation !== this.fetchGeneration || requestedUser !== currentViewerId()) return;
+      this.loadedManualStrengthVersion = requestedVersion;
+      const expansion = new Map(this.data.monthGroups.map((group) => [group.monthKey, group.expanded]));
+      const monthGroups = buildMonthGroups(res, this.data.currentMonth).map((group) => ({
+        ...group,
+        expanded: expansion.get(group.monthKey) ?? group.expanded,
+      }));
       this.setData({
         monthGroups,
         total: res.total,
@@ -333,8 +390,7 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
         loadingMore: false,
       });
     } catch {
-      // 拉取失败时保持空态，由界面展示空态卡片。
-      this.setData({ loading: false, loadingMore: false });
+      if (generation === this.fetchGeneration) this.setData({ loading: false, loadingMore: false });
     }
   },
 
@@ -344,7 +400,11 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
 
   onActivityTap(e: WechatMiniprogram.TouchEvent) {
     const labelId = e.currentTarget.dataset.id as string;
-    if (!labelId) return;
+    if (!labelId || !this.viewerId || this.viewerId !== currentViewerId()) return;
+    if (e.currentTarget.dataset.source === 'manual_strength') {
+      wx.navigateTo({ url: `/pages/manual-strength-detail/manual-strength-detail?recordId=${encodeURIComponent(labelId)}` });
+      return;
+    }
     wx.navigateTo({
       url: `/pages/activity-detail/activity-detail?labelId=${encodeURIComponent(labelId)}`,
     });
@@ -360,11 +420,15 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
   },
 
   async onLoadMore() {
-    if (!userId || this.data.loadingMore || !this.data.hasMore) return;
+    const userId = this.viewerId;
+    if (!userId || userId !== currentViewerId() || this.data.loading || this.data.loadingMore || !this.data.hasMore) return;
+    const generation = this.fetchGeneration;
+    const offset = this.data.loadedCount;
     this.setData({ loadingMore: true });
     try {
-      const res = await getActivities(userId, { limit: PAGE_SIZE, offset: this.data.loadedCount });
-      const loadedCount = this.data.loadedCount + res.activities.length;
+      const res = await getActivities(userId, { limit: PAGE_SIZE, offset, includeManualStrength: true });
+      if (generation !== this.fetchGeneration || userId !== currentViewerId()) return;
+      const loadedCount = offset + res.activities.length;
       this.setData({
         monthGroups: mergeMonthGroups(this.data.monthGroups, res),
         total: res.total,
@@ -374,7 +438,7 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
       });
     } catch {
       // 加载失败仅停止 loading 态，保留已加载内容。
-      this.setData({ loadingMore: false });
+      if (generation === this.fetchGeneration) this.setData({ loadingMore: false });
     }
   },
 });

@@ -518,7 +518,7 @@ func TestDeleteUserData_RemovesOwnedRowsAndPreservesOtherUsers(t *testing.T) {
 	deletedUID, keptUID := uuid.NewString(), uuid.NewString()
 	// keptUID's rows survive the sweep by design; remove them afterwards so a
 	// run against the shared local database leaves nothing behind (devops#563).
-	for _, table := range []string{"user_profile", "provider_credentials", "user_onboarding"} {
+	for _, table := range []string{"user_profile", "provider_credentials", "user_onboarding", "manual_strength_records"} {
 		addUserTableCleanup(t, st, table, deletedUID, keptUID)
 	}
 	t.Cleanup(func() {
@@ -527,6 +527,7 @@ func TestDeleteUserData_RemovesOwnedRowsAndPreservesOtherUsers(t *testing.T) {
 			t.Errorf("cleanup jobs: %v", err)
 		}
 	})
+	savedIDs := make(map[string]string)
 	for _, uid := range []string{deletedUID, keptUID} {
 		if err := st.UpsertUserProfile(ctx, &UserProfile{UserID: uid, DisplayName: uid}); err != nil {
 			t.Fatalf("seed profile: %v", err)
@@ -538,6 +539,14 @@ func TestDeleteUserData_RemovesOwnedRowsAndPreservesOtherUsers(t *testing.T) {
 			t.Fatalf("seed onboarding: %v", err)
 		}
 		now := time.Now().UTC()
+		savedIDs[uid] = uuid.NewString()
+		log := ManualStrengthWrite{
+			MutationID: uuid.NewString(), StartedAt: now.Add(-time.Minute), Name: "力量训练",
+			Actions: []ManualStrengthAction{{Name: "深蹲", Sets: []ManualStrengthSet{{LoadUnit: "kg", Quantity: 10, QuantityUnit: "reps"}}}},
+		}
+		if _, err := st.SaveManualStrength(ctx, uid, savedIDs[uid], log, now); err != nil {
+			t.Fatalf("seed manual strength record: %v", err)
+		}
 		if err := st.Jobs().Create(ctx, &job.Job{
 			ID: uuid.NewString(), UserID: uid, CreatedBy: uid, Type: "watch_sync",
 			Status: job.StatusQueued, CreatedAt: now, UpdatedAt: now,
@@ -548,6 +557,20 @@ func TestDeleteUserData_RemovesOwnedRowsAndPreservesOtherUsers(t *testing.T) {
 
 	if err := st.DeleteUserData(ctx, deletedUID); err != nil {
 		t.Fatalf("DeleteUserData: %v", err)
+	}
+	if record, err := st.ManualStrengthByID(ctx, deletedUID, savedIDs[deletedUID]); err != nil || record != nil {
+		t.Fatalf("manual strength record retained after deletion: %+v, %v", record, err)
+	}
+	now := time.Now().UTC()
+	replayed := ManualStrengthWrite{
+		MutationID: uuid.NewString(), StartedAt: now.Add(-time.Minute), Name: "试图重建记录",
+		Actions: []ManualStrengthAction{{Name: "深蹲", Sets: []ManualStrengthSet{{LoadUnit: "kg", Quantity: 10, QuantityUnit: "reps"}}}},
+	}
+	if _, err := st.SaveManualStrength(ctx, deletedUID, uuid.NewString(), replayed, now); !errors.Is(err, ErrManualStrengthNotFound) {
+		t.Fatalf("deleted account can recreate manual strength data: %v", err)
+	}
+	if record, err := st.ManualStrengthByID(ctx, keptUID, savedIDs[keptUID]); err != nil || record == nil {
+		t.Fatalf("other user's strength record was removed: %+v, %v", record, err)
 	}
 	if profile, err := st.GetUserProfile(ctx, deletedUID); err != nil || profile != nil {
 		t.Fatalf("deleted profile = %v, %v; want nil, nil", profile, err)

@@ -262,3 +262,17 @@
 }
 
 
+
+.activity__source {
+  display: inline-block;
+  margin-left: var(--spacing-xs);
+  background: var(--color-chip);
+  border-radius: var(--radius-full);
+  padding: 2rpx 10rpx;
+  color: var(--color-text-cool);
+}
+
+.activity__source--manual {
+  background: var(--color-accent-tint);
+  color: var(--color-accent-deep);
+}

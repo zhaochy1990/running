@@ -31,7 +31,6 @@ async function silentLogin(redirectOnSessionExpiry = true): Promise<boolean> {
     userStore.setUser(result.user);
     return true;
   } catch (err) {
-    if (!redirectOnSessionExpiry && err instanceof ApiError && err.statusCode === 401) userStore.clear();
     console.error(
       '[auth] silent login failed:',
       err instanceof Error ? err.message : err,
@@ -140,10 +139,10 @@ App<IAppOption>({
 
       // 走到这里只可能是「本地有 token 且校验抛错」：无 token 那条件分支的失败
       // 已由 silentLogin 自己吞掉并返回 false（不抛）。
-      if (authFailure) {
-        // 公开入口在原页面静默恢复。其他入口沿用 request.ts 的恢复与导航。
+      if (authFailure && publicEntry && err.code !== 'session_changed') {
+        // 公开入口在原页面静默恢复。其他入口由 request.ts 接管。
         userStore.clear();
-        if (publicEntry) await silentLogin(false);
+        await silentLogin(false);
       }
       // 本地有 token 且非认证失败（如纯网络错误）→ 保留本地会话，不误登出。
     } finally {
@@ -158,6 +157,10 @@ App<IAppOption>({
    * 返回 true 表示已恢复并落好新 token；false 表示确实未绑定或网络失败。
    */
   recoverSession(): Promise<boolean> {
-    return silentLogin();
+    return silentLogin(false);
+  },
+
+  clearUserSession(): void {
+    userStore.clear();
   },
 });

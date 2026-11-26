@@ -1,4 +1,4 @@
-import { ApiErrorResponse } from '../types/api';
+import type { ApiErrorResponse } from '../types/api';
 import { API_BASE_URL, AUTH_BASE_URL, CLIENT_ID, REQUEST_TIMEOUT, STORAGE_KEYS } from '../constants/config';
 
 interface RequestOptions<T = unknown> {
@@ -9,6 +9,7 @@ interface RequestOptions<T = unknown> {
   auth?: boolean;
   redirectOnSessionExpiry?: boolean;
   timeout?: number;
+  privateBody?: boolean;
 }
 
 interface RequestResult<T> {
@@ -54,7 +55,7 @@ function redact(data: unknown): unknown {
 function wxRequest(options: RequestOptions): Promise<WxRequestResponse> {
   const method = options.method || 'GET';
 
-  console.log(`[http] → ${method} ${options.url}`, redact(options.data));
+  console.log(`[http] → ${method} ${options.url}`, options.privateBody ? undefined : redact(options.data));
 
   return new Promise((resolve, reject) => {
     wx.request({
@@ -83,59 +84,67 @@ function wxRequest(options: RequestOptions): Promise<WxRequestResponse> {
 
 // 正在进行中的 token 刷新 promise（防止并发刷新）
 let refreshPromise: Promise<string> | null = null;
+export let requestSessionVersion = 0;
+let pendingRecovery: symbol | undefined;
+
+export function beginRequestSession(): void {
+  requestSessionVersion++;
+  refreshPromise = null;
+}
+
+export function clearSessionCredentials(preserveRecovery = false): void {
+  beginRequestSession();
+  if (!preserveRecovery) pendingRecovery = undefined;
+  wx.removeStorageSync(STORAGE_KEYS.TOKEN);
+  wx.removeStorageSync(STORAGE_KEYS.REFRESH_TOKEN);
+  wx.removeStorageSync(STORAGE_KEYS.TOKEN_EXPIRES_AT);
+  wx.removeStorageSync(STORAGE_KEYS.USER_INFO);
+}
+
+export function sessionChangedError(): ApiError {
+  return new ApiError(401, { detail: 'Session changed', code: 'session_changed' });
+}
 
 // 会话失效兜底：清本地 token，先试一次微信免密登录（token 失效/refresh 失败
 // 不等于微信解绑——用户多半还绑着，重走 wx.login() 就能无感换回 JWT，不该把人
 // 甩到登录页重做一遍手机号验证码），恢复不了才 reLaunch 登录页。
-// 模块级 guard 避免多个并发 401 触发重复处理。
-// 「退出登录」不经过这里：onLogout 是纯本地清理，不发请求也就没有 401，所以免密
-// 重试不会把刚退出的用户静默登回去。
-let redirectingToLogin = false;
+// 请求一旦跨过退出或切号边界，晚到的 401 不得启动会话恢复。
 // ponytail: 每个 app 生命周期只免密恢复一次。若新换来的 token 又被拒（时钟偏移 /
 // audience 配错一类），无上限重试会变成 reLaunch 死循环；一次失败就退回登录页。
 let recoveredOnce = false;
 
 export function handleSessionExpired(): void {
-  console.warn('[auth] 会话失效：清掉本地 token');
-  wx.removeStorageSync(STORAGE_KEYS.TOKEN);
-  wx.removeStorageSync(STORAGE_KEYS.REFRESH_TOKEN);
-  wx.removeStorageSync(STORAGE_KEYS.TOKEN_EXPIRES_AT);
-  wx.removeStorageSync(STORAGE_KEYS.USER_INFO);
-  if (redirectingToLogin) {
-    console.log('[auth] 已在处理会话失效，跳过重复触发');
-    return;
-  }
-  redirectingToLogin = true;
-
-  const recover = getApp<IAppOption>()?.recoverSession;
+  // Clearing synchronously means the other 401s for this session see no token.
+  if (!wx.getStorageSync(STORAGE_KEYS.TOKEN)) return;
+  console.warn('[auth] 会话失效：清掉本地会话');
+  const app = getApp<IAppOption>();
+  if (app?.clearUserSession) app.clearUserSession();
+  else clearSessionCredentials();
+  const recover = app?.recoverSession;
   if (!recover || recoveredOnce) {
-    console.log(
-      `[auth] 不尝试免密恢复（recoverSession=${recover ? '有' : '无'}, 本次启动已恢复过=${recoveredOnce}）→ 登录页`,
-    );
     redirectToLogin();
     return;
   }
+
+  const recovery = Symbol();
+  pendingRecovery = recovery;
+  const recoveryVersion = requestSessionVersion;
   recoveredOnce = true;
   console.log('[auth] 会话失效 → 尝试微信免密恢复');
-  recover()
-    .then((ok) => {
-      if (!ok) {
-        console.log('[auth] 免密恢复失败（未绑定 / 网络）→ 登录页');
-        redirectToLogin();
-        return;
-      }
+  const finish = (ok: boolean): void => {
+    if (pendingRecovery !== recovery) return;
+    pendingRecovery = undefined;
+    const hasToken = Boolean(wx.getStorageSync(STORAGE_KEYS.TOKEN));
+    if (!ok && requestSessionVersion !== recoveryVersion && hasToken) return;
+    if (ok && hasToken) {
       console.log('[auth] 免密恢复成功 → 重进首页');
-      // 新 token 已落好：重进首页，让页面按正常冷启动流程重新拉数据。
-      wx.reLaunch({
-        url: '/pages/index/index',
-        complete: () => {
-          redirectingToLogin = false;
-        },
-      });
-    })
-    // recoverSession 自己吞异常返回 false；这里兜的是它之外的意外，避免用户卡死
-    // 在 redirectingToLogin=true 的僵局里再也回不去登录页。
-    .catch(redirectToLogin);
+      wx.reLaunch({ url: '/pages/index/index' });
+    } else {
+      console.log('[auth] 免密恢复失败（未绑定 / 网络）→ 登录页');
+      redirectToLogin();
+    }
+  };
+  recover().then(finish, () => finish(false));
 }
 
 function redirectToLogin(): void {
@@ -157,9 +166,6 @@ function redirectToLogin(): void {
   wx.navigateTo({
     url,
     fail: () => wx.reLaunch({ url }),
-    complete: () => {
-      redirectingToLogin = false;
-    },
   });
 }
 
@@ -171,48 +177,39 @@ export async function getToken(): Promise<string | undefined> {
 export async function refreshToken(): Promise<string> {
   if (refreshPromise) return refreshPromise;
 
-  refreshPromise = (async () => {
-    try {
-      const refreshToken = wx.getStorageSync(STORAGE_KEYS.REFRESH_TOKEN);
-      if (!refreshToken) {
-        throw new Error('no_refresh_token');
-      }
+  const sessionVersion = requestSessionVersion;
+  const promise = (async () => {
+    const refreshToken = wx.getStorageSync(STORAGE_KEYS.REFRESH_TOKEN);
+    if (!refreshToken) throw new Error('no_refresh_token');
+    const res = await wxRequest({
+      url: `${AUTH_BASE_URL}/api/auth/refresh`,
+      method: 'POST',
+      data: { refresh_token: refreshToken },
+      header: {
+        'Content-Type': 'application/json',
+        'X-Client-Id': CLIENT_ID,
+      },
+      timeout: REQUEST_TIMEOUT,
+    });
+    if (sessionVersion !== requestSessionVersion) throw sessionChangedError();
+    if (res.statusCode !== 200) throw new Error('refresh_failed');
 
-      const res = await wxRequest({
-        url: `${AUTH_BASE_URL}/api/auth/refresh`,
-        method: 'POST',
-        data: { refresh_token: refreshToken },
-        header: {
-          'Content-Type': 'application/json',
-          'X-Client-Id': CLIENT_ID,
-        },
-        timeout: REQUEST_TIMEOUT,
-      });
-
-      if (res.statusCode !== 200) {
-        throw new Error('refresh_failed');
-      }
-
-      const { access_token, refresh_token, expires_in } = res.data as {
-        access_token: string;
-        refresh_token: string;
-        expires_in: number;
-      };
-
-      wx.setStorageSync(STORAGE_KEYS.TOKEN, access_token);
-      wx.setStorageSync(STORAGE_KEYS.REFRESH_TOKEN, refresh_token);
-      wx.setStorageSync(
-        STORAGE_KEYS.TOKEN_EXPIRES_AT,
-        Math.floor(Date.now() / 1000) + expires_in,
-      );
-
-      return access_token;
-    } finally {
-      refreshPromise = null;
-    }
+    const { access_token, refresh_token, expires_in } = res.data as {
+      access_token: string;
+      refresh_token: string;
+      expires_in: number;
+    };
+    wx.setStorageSync(STORAGE_KEYS.TOKEN, access_token);
+    wx.setStorageSync(STORAGE_KEYS.REFRESH_TOKEN, refresh_token);
+    wx.setStorageSync(STORAGE_KEYS.TOKEN_EXPIRES_AT, Math.floor(Date.now() / 1000) + expires_in);
+    return access_token;
   })();
-
-  return refreshPromise;
+  refreshPromise = promise;
+  try {
+    return await promise;
+  } finally {
+    if (refreshPromise === promise) refreshPromise = null;
+  }
 }
 
 export class ApiError extends Error {
@@ -245,8 +242,10 @@ export async function request<TResponse, TData = unknown>(
     auth = true,
     redirectOnSessionExpiry = true,
     timeout = REQUEST_TIMEOUT,
+    privateBody,
   } = options;
 
+  const sessionVersion = requestSessionVersion;
   const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -255,7 +254,8 @@ export async function request<TResponse, TData = unknown>(
   };
 
   if (auth) {
-    let token = await getToken();
+    const token = await getToken();
+    if (sessionVersion !== requestSessionVersion) throw sessionChangedError();
     if (token) {
       headers.Authorization = `Bearer ${token}`;
     }
@@ -268,8 +268,10 @@ export async function request<TResponse, TData = unknown>(
       data,
       header: headers,
       timeout,
+      privateBody,
     });
 
+    if (auth && sessionVersion !== requestSessionVersion) throw sessionChangedError();
     const result = res as unknown as RequestResult<TResponse | ApiErrorResponse>;
 
     // 成功（2xx）
@@ -281,6 +283,7 @@ export async function request<TResponse, TData = unknown>(
     if (result.statusCode === 401 && auth) {
       try {
         const newToken = await refreshToken();
+        if (sessionVersion !== requestSessionVersion) throw sessionChangedError();
         headers.Authorization = `Bearer ${newToken}`;
 
         const retryRes = await wxRequest({
@@ -289,13 +292,16 @@ export async function request<TResponse, TData = unknown>(
           data,
           header: headers,
           timeout,
+          privateBody,
         });
 
+        if (sessionVersion !== requestSessionVersion) throw sessionChangedError();
         const retryResult = retryRes as unknown as RequestResult<TResponse>;
         if (retryResult.statusCode >= 200 && retryResult.statusCode < 300) {
           return retryResult.data;
         }
 
+        if (retryResult.statusCode === 401 && redirectOnSessionExpiry) handleSessionExpired();
         throw new ApiError(
           retryResult.statusCode,
           (retryResult.data as ApiErrorResponse) || { detail: 'Unauthorized' },
@@ -303,6 +309,7 @@ export async function request<TResponse, TData = unknown>(
       } catch (err) {
         if (err instanceof ApiError) throw err;
         // 刷新失败 → 清 token 并回登录页（会话已失效），避免停留在业务页面的空态
+        if (sessionVersion !== requestSessionVersion) throw sessionChangedError();
         if (redirectOnSessionExpiry) handleSessionExpired();
         throw new ApiError(401, { detail: 'Session expired', code: 'session_expired' });
       }

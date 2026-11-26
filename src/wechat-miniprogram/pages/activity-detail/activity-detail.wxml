@@ -43,7 +43,7 @@
       </view>
       <view class="top-bar__title-wrap">
         <view class="top-bar__title">{{header.name || '活动详情'}}</view>
-        <view wx:if="{{header.dateLabel}}" class="top-bar__subtitle">{{header.dateLabel}}</view>
+        <view wx:if="{{header.dateLabel}}" class="top-bar__subtitle">{{header.dateLabel}}<text wx:if="{{isStrength}}"> · 手表同步</text></view>
       </view>
       <!-- 右侧仅保留对称占位，避开微信胶囊 -->
       <view class="top-bar__btn" aria-hidden="true"></view>

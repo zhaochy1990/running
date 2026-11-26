@@ -65,13 +65,14 @@ const shanghaiMonthExpr = `DATE_FORMAT(date + INTERVAL 8 HOUR, '%Y-%m')`
 // YYYY-MM-DD strings; empty string / nil means "no bound". Mirrors the
 // list_activities keyword args.
 type ActivityListParams struct {
-	Offset        int
-	Limit         int
-	Sport         string   // exact sport_name match; "" = no filter
-	SportCategory string   // "run" | "strength" | "" (no category filter)
-	MinDistanceKm *float64 // applied only when > 0; nil = no filter
-	DateFrom      string   // Shanghai YYYY-MM-DD lower bound; "" = none
-	DateTo        string   // Shanghai YYYY-MM-DD upper bound; "" = none
+	Offset                int
+	Limit                 int
+	Sport                 string   // exact sport_name match; "" = no filter
+	SportCategory         string   // "run" | "strength" | "" (no category filter)
+	MinDistanceKm         *float64 // applied only when > 0; nil = no filter
+	DateFrom              string   // Shanghai YYYY-MM-DD lower bound; "" = none
+	DateTo                string   // Shanghai YYYY-MM-DD upper bound; "" = none
+	IncludeManualStrength bool
 }
 
 // ActivityMonthly is one Shanghai-month aggregate. TotalRunKm is the raw
@@ -107,13 +108,13 @@ func (s *Store) ListActivities(ctx context.Context, userID string, p ActivityLis
 	}
 
 	var total int64
-	if err := activityListScope(s.db.WithContext(ctx), uid, p).
-		Model(&Activity{}).Count(&total).Error; err != nil {
+	if err := activityListScope(activityListSource(s.db.WithContext(ctx), uid, p), uid, p).
+		Count(&total).Error; err != nil {
 		return nil, err
 	}
 
 	var rows []Activity
-	if err := activityListScope(s.db.WithContext(ctx), uid, p).
+	if err := activityListScope(activityListSource(s.db.WithContext(ctx), uid, p), uid, p).
 		Order("date DESC, label_id DESC").
 		Limit(p.Limit).Offset(p.Offset).
 		Find(&rows).Error; err != nil {
@@ -138,12 +139,14 @@ func (s *Store) ListActivities(ctx context.Context, userID string, p ActivityLis
 // this is STRIDE's own PMC dose. Rows without a computed dose are absent from
 // the map.
 func (s *Store) strideActivityDoses(ctx context.Context, uid string, rows []Activity) (map[string]*float64, error) {
-	if len(rows) == 0 {
-		return map[string]*float64{}, nil
-	}
 	ids := make([]string, 0, len(rows))
 	for _, r := range rows {
-		ids = append(ids, r.LabelID)
+		if r.Provider != ManualStrengthProvider {
+			ids = append(ids, r.LabelID)
+		}
+	}
+	if len(ids) == 0 {
+		return map[string]*float64{}, nil
 	}
 	var loads []ActivityTrainingLoad
 	if err := s.db.WithContext(ctx).
@@ -156,6 +159,41 @@ func (s *Store) strideActivityDoses(ctx context.Context, uid string, rows []Acti
 		out[l.LabelID] = l.TrainingDose
 	}
 	return out, nil
+}
+
+// activityListSource adds manual rows only for callers opting into athlete-entered
+// activities. Both branches use the tenant key before the outer list filters,
+// pagination and aggregates are applied.
+func activityListSource(db *gorm.DB, uid string, p ActivityListParams) *gorm.DB {
+	if !p.IncludeManualStrength {
+		return db.Model(&Activity{})
+	}
+	columns := []string{
+		"user_id", "label_id", "name", "sport_type", "sport_name", "sport", "date", "provider",
+		"duration_s", "distance_m", "avg_pace_s_km", "avg_hr", "max_hr", "avg_cadence", "calories_kcal",
+		"training_load", "vo2max", "train_type", "ascent_m", "aerobic_effect", "anaerobic_effect",
+		"temperature", "humidity", "feels_like", "wind_speed", "route_thumb_json", "route_thumb_url",
+	}
+	manualValues := map[string]string{
+		"user_id": "user_id", "label_id": "id", "name": "name", "sport_type": "402",
+		"sport_name": "'Strength'", "sport": "'strength'", "date": "started_at",
+		"provider":   "'" + ManualStrengthProvider + "'",
+		"duration_s": "TIMESTAMPDIFF(MICROSECOND, started_at, ended_at) / 1000000",
+	}
+	projection := make([]string, len(columns))
+	for i, column := range columns {
+		value := manualValues[column]
+		if value == "" {
+			value = "NULL"
+		}
+		projection[i] = value + " AS " + column
+	}
+
+	watch := db.Session(&gorm.Session{}).Model(&Activity{}).
+		Select(strings.Join(columns, ", ")).Where("user_id = ?", uid)
+	manual := db.Session(&gorm.Session{}).Model(&ManualStrengthRecord{}).
+		Select(strings.Join(projection, ", ")).Where("user_id = ?", uid)
+	return db.Table("((?) UNION ALL (?)) AS activity_entries", watch, manual)
 }
 
 // activityListScope applies the tenant key plus the optional sport / category /
@@ -209,8 +247,7 @@ func (s *Store) activityMonthlySummaries(ctx context.Context, uid string, p Acti
 		"coalesce(sum(coalesce(duration_s, 0)), 0) AS duration_s"
 
 	var aggs []monthAgg
-	if err := activityListScope(s.db.WithContext(ctx), uid, p).
-		Model(&Activity{}).
+	if err := activityListScope(activityListSource(s.db.WithContext(ctx), uid, p), uid, p).
 		Select(selectExpr).
 		Where(shanghaiMonthExpr+" IN ?", months).
 		Group(shanghaiMonthExpr).

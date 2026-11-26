@@ -268,7 +268,7 @@ var userOwnedDeletionModels = []any{
 	// TimeseriesPoint is gone from this list with the Phase 4 table drop
 	// (devops#788): its points live in the blob store, swept by the
 	// deleteUserTSBlobs prefix cleanup below, not by a row delete.
-	&PersonalBest{}, &Race{}, &ActivityWatchZone{}, &ActivityZone{}, &Lap{}, &Activity{},
+	&PersonalBest{}, &Race{}, &ActivityWatchZone{}, &ActivityZone{}, &Lap{}, &Activity{}, &ManualStrengthRecord{},
 	&DailyHealth{}, &Dashboard{}, &DailyHRV{}, &RacePrediction{}, &SyncMeta{},
 	&ProviderCredential{}, &WeeklyPlan{}, &WeeklyFeedback{}, &MasterPlan{}, &RaceGoal{},
 	// workout rows (devops#586) — all three sources, archived included.
@@ -330,6 +330,10 @@ func (s *Store) DeleteUserData(ctx context.Context, userID string) error {
 	models := userOwnedDeletionModels
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := revokeManualStrengthWrites(tx, uid); err != nil {
+			return fmt.Errorf("storage: revoke manual strength writes: %w", err)
+		}
+
 		// The body-composition segment table has no user_id column, so it must be
 		// deleted through the scan it belongs to. Order matters: resolve the
 		// user's scan ids first, then delete the child segments, then the scans

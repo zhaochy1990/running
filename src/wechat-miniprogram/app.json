@@ -8,6 +8,8 @@
     "pages/coach-share/coach-share",
     "pages/activities/activities",
     "pages/activity-detail/activity-detail",
+    "pages/manual-strength/manual-strength",
+    "pages/manual-strength-detail/manual-strength-detail",
     "pages/profile/profile",
     "pages/pace-calculator/pace-calculator",
     "pages/checkin/checkin",

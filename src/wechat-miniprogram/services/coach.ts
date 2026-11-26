@@ -1,6 +1,6 @@
 // Coach 对话服务层。
 
-import { http, getToken, refreshToken, handleSessionExpired } from './request';
+import { http, getToken, refreshToken, handleSessionExpired, requestSessionVersion } from './request';
 import { SseParser, type SseEvent } from '../utils/sse';
 import { COACH_BASE_URL, CLIENT_ID } from '../constants/config';
 import type { CoachCardWire } from '../utils/coachCards';
@@ -129,13 +129,14 @@ export function sendCoachChatStream(
   target?: CoachSessionTarget,
   callbacks: CoachStreamCallbacks = {},
 ): CoachStreamHandle {
+  const sessionVersion = requestSessionVersion;
   let task: ReturnType<typeof wx.request> | null = null;
   let disposed = false;
   let retried = false;
   let terminalReached = false;
 
   const dispatch = (ev: SseEvent): void => {
-    if (disposed || terminalReached) return;
+    if (disposed || terminalReached || !checkSession()) return;
     if (ev.event === 'done') {
       terminalReached = true;
       callbacks.onComplete?.(safeParse(ev.data) as unknown as CoachDone);
@@ -167,8 +168,14 @@ export function sendCoachChatStream(
     callbacks.onError?.({ code, message });
   };
 
+  const checkSession = (): boolean => {
+    if (sessionVersion === requestSessionVersion) return true;
+    failOnce('session_changed', '当前账号已退出或切换');
+    return false;
+  };
+
   const attempt = (token: string): void => {
-    if (disposed) return;
+    if (disposed || !checkSession()) return;
     // parser 每次 attempt 新建：401 刷新重试后不残留上一轮未清空的字节缓冲。
     const parser = new SseParser();
     let cancelled = false;
@@ -177,7 +184,7 @@ export function sendCoachChatStream(
     let reqTask: ReturnType<typeof wx.request> | null = null;
 
     const handle401 = (): void => {
-      if (cancelled || disposed) return;
+      if (cancelled || disposed || !checkSession()) return;
       if (retried) {
         failOnce('unauthorized', '授权过期');
         return;
@@ -193,6 +200,7 @@ export function sendCoachChatStream(
       refreshToken()
         .then((newToken) => attempt(newToken))
         .catch(() => {
+          if (!checkSession()) return;
           handleSessionExpired();
           failOnce('session_expired', '登录已过期');
         });
@@ -219,7 +227,7 @@ export function sendCoachChatStream(
       },
       enableChunked: true,
       success: (res) => {
-        if (cancelled || disposed) return;
+        if (cancelled || disposed || !checkSession()) return;
         if (res.statusCode === 401) {
           handle401();
           return;
@@ -236,7 +244,7 @@ export function sendCoachChatStream(
             for (const ev of events) dispatch(ev);
           }
           // 纯 JSON（非流式同步响应）：直接用其 message。
-          if (!terminalReached) {
+          if (!terminalReached && checkSession()) {
             terminalReached = true;
             callbacks.onComplete?.(
               (typeof res.data === 'string' ? (safeParse(res.data) as unknown as CoachDone) : res.data) as CoachDone,
@@ -252,7 +260,7 @@ export function sendCoachChatStream(
         if (!terminalReached) failOnce('empty', '未收到回复');
       },
       fail: (err) => {
-        if (cancelled || disposed) return;
+        if (cancelled || disposed || !checkSession()) return;
         failOnce('network', err.errMsg || 'network error');
       },
     });
@@ -266,7 +274,7 @@ export function sendCoachChatStream(
     }
     if (reqTask.onChunkReceived) {
       reqTask.onChunkReceived((res) => {
-        if (cancelled || disposed || statusCode === 401) return;
+        if (cancelled || disposed || statusCode === 401 || !checkSession()) return;
         sawChunk = true;
         const events = parser.feed(res.data);
         for (const ev of events) dispatch(ev);

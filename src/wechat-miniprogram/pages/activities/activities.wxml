@@ -38,6 +38,7 @@
             wx:key="labelId"
             class="activity"
             data-id="{{row.labelId}}"
+            data-source="{{row.source}}"
             bindtap="onActivityTap"
           >
             <view class="activity__icon">
@@ -53,7 +54,7 @@
             </view>
             <view class="activity__info">
               <view class="activity__name">{{row.name}}</view>
-              <view class="activity__date">{{row.date}}</view>
+              <view class="activity__date">{{row.date}}<text wx:if="{{row.source}}" class="activity__source {{row.source === 'manual_strength' ? 'activity__source--manual' : ''}}">{{row.source === 'manual_strength' ? '手动记录' : '手表同步'}}</text></view>
               <view class="activity__meta">
                 <text wx:if="{{row.distanceKm !== '—'}}">{{row.distanceKm}} km</text>
                 <text wx:if="{{row.duration !== '—'}}"> · {{row.duration}}</text>
@@ -61,7 +62,7 @@
                 <text wx:if="{{row.avgHr !== '—'}}"> · {{row.avgHr}} bpm</text>
               </view>
             </view>
-            <view class="activity__right">
+            <view wx:if="{{row.source !== 'manual_strength'}}" class="activity__right">
               <view wx:if="{{row.load !== '—'}}" class="activity__load">{{row.load}}</view>
               <view class="activity__load-label">负荷</view>
             </view>
@@ -72,7 +73,7 @@
     </view>
     <view wx:elif="{{!loading}}" class="empty-card">
       <view class="empty-card__title">{{emptyTitle}}</view>
-      <view class="empty-card__sub">完成一次训练后同步展示</view>
+      <view class="empty-card__sub">完成一次训练后在这里查看</view>
     </view>
 
     <view wx:if="{{hasMore && monthGroups.length}}" class="load-more" bindtap="onLoadMore">
