@@ -162,7 +162,7 @@
       </block>
 
       <!-- 空态 -->
-      <view wx:elif="{{!plansError}}" class="empty">
+      <view wx:elif="{{plansLoaded}}" class="empty">
         <view class="empty__icon">🗓</view>
         <view class="empty__title">还没有参赛计划</view>
         <view class="empty__hint">去赛事中心收藏心仪赛事，报名后在这里追踪进度</view>

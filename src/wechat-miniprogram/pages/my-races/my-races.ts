@@ -93,6 +93,7 @@ interface MyRacesPageData {
   summary: string;
   /** 我的赛事 tab */
   plansLoading: boolean;
+  plansLoaded: boolean;
   plansError: string;
   mixRows: MyRaceRow[];
 }
@@ -249,6 +250,7 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
     rows: [],
     summary: '',
     plansLoading: true,
+    plansLoaded: false,
     plansError: '',
     mixRows: [],
   },
@@ -306,7 +308,7 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
 
   async refreshPlans() {
     if (!userStore.getState().user?.id) {
-      this.setData({ plansLoading: false, plansError: '请先登录' });
+      this.setData({ plansLoading: false, plansLoaded: false, plansError: '请先登录' });
       return;
     }
     const seq = (this._fetchSeq += 1);
@@ -326,7 +328,7 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
           const patch = this._inflight.get(row.key);
           return patch ? mergeRow(row, patch) : row;
         });
-      this.setData({ plansLoading: false, mixRows: rows });
+      this.setData({ plansLoading: false, plansLoaded: true, mixRows: rows });
     } catch (err: unknown) {
       if (seq !== this._fetchSeq) return;
       const msg = friendlyApiError(err, '加载失败，请稍后重试');
