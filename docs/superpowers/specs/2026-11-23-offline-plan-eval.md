@@ -249,6 +249,122 @@ type CheckResult =
 }
 ```
 
+## 5. 场景引用与任务冻结
+
+提交任务时，API 将所选场景直接写入 `EvaluationTask.scenarios`。每项包含场景 ID、名称、产物类型和完整的规则版本配置。每份快照则创建独立的 SnapshotExecution，保存所属场景 ID、来源快照 ID、冻结快照内容、生成请求、执行时点和投递状态。Generate 读取该执行项的输入，Evaluate 通过 `task_id` 和 `scenario_id` 定位任务内的冻结规则。
+
+例如，一个场景绑定规则 v1 和快照 A。场景后来切换到 v2，测试数据也更新了快照 A。已提交的任务继续用 v1 的源码和旧快照，新提交的任务才读取更新后的引用和数据。两个场景同时引用快照 A 时，各创建一条执行项，分别使用所属场景的规则。
+
+```mermaid
+erDiagram
+    EvaluationRule {
+        string check_id PK "规则标识"
+        int version PK "规则版本"
+        string name "规则名称"
+        string description "多行说明，可选"
+        enum kind "规则类型"
+        json artifact_types "适用产物类型"
+        json implementation "语言、源码与配置"
+    }
+    Scenario {
+        string scenario_id PK "场景标识"
+        string name "场景名称"
+        string artifact_type "预期产物类型"
+        json snapshot_ids "测试数据 ID 列表"
+        json check_refs "规则 ID 与版本"
+    }
+    RunnerSnapshot {
+        string snapshot_id PK "随机 UUID"
+        string schema "快照格式版本"
+        string username "脱敏用户名"
+        enum generation_kind "新建或滚动"
+        date as_of_day "上海截止日"
+        string as_of "精确冻结时点，可选"
+        enum event "FM 或 HM"
+        string target_time "目标成绩"
+        int expected_start_week "仅验收，可选"
+        json constraints "训练约束"
+        json records "训练事实、赛季、已排周与完整课表"
+        string sha256 "快照摘要"
+    }
+    EvaluationTask {
+        string task_id PK "任务标识"
+        string agent_version "所选 Agent 版本"
+        json generation_model "生成模型配置"
+        enum state "任务状态"
+        json scenarios "场景与冻结规则实现"
+    }
+    SnapshotExecution {
+        string id PK "执行项标识"
+        string task_id FK "所属任务"
+        string scenario_id "任务内的场景"
+        string snapshot_id FK "来源测试数据"
+        json snapshot "冻结快照内容"
+        json request "冻结的生成请求"
+        datetime as_of "冻结执行时点"
+        enum dispatch_status "投递状态"
+        string execute_status "Generate 状态"
+        string evaluate_status "Evaluate 状态"
+        json error "阶段错误，可选"
+        json lease "持有者、claim_request_id、代次、期限"
+        json result_receipt "submit_id、内容指纹、持有者、代次与原确认"
+    }
+    Artifact {
+        string artifact_id PK "生成内容标识"
+        string input_id FK "唯一所属执行项"
+        string artifact_type "内容类型"
+        bytes content "Agent 输出原文"
+        string sha256 "产物摘要"
+        json validation "Schema 校验结果"
+    }
+    CheckResult {
+        string result_id PK "检查结果标识"
+        string artifact_id FK "被评 Artifact"
+        string check_id "实际执行的规则"
+        int check_version "实际执行的版本"
+        enum status "通过、不通过、错误"
+        json detail "理由、违反项或错误"
+    }
+    EvaluationRule }|..o{ Scenario : "引用规则版本"
+    Scenario }o..|{ RunnerSnapshot : "引用测试数据"
+    EvaluationTask }o..|{ Scenario : "冻结所选场景"
+    EvaluationTask ||--|{ SnapshotExecution : "包含执行项"
+    RunnerSnapshot ||--o{ SnapshotExecution : "提供冻结输入"
+    SnapshotExecution ||--o| Artifact : "生成"
+    Artifact ||--o{ CheckResult : "接受检查"
+```
+
+虚线表示保存在 JSON 中的引用。Scenario 的场景库配置引用规则版本和测试数据 ID。EvaluationTask 的场景列表保存提交时展开的规则，因此 CheckResult 的规则版本可从该任务回查。
+
+SnapshotExecution 以 `(task_id, scenario_id, snapshot_id)` 去重。每个执行项至多生成一份 Artifact，`Artifact.input_id` 唯一。CheckResult 按 `(artifact_id, check_id)` 去重，`check_version` 记录实际执行的版本。
+
+## 6. 实现验收
+
+| 场景 | 可验证结果 |
+|---|---|
+| 内部管理员通过现有 Admin Dashboard 登录 | 可通过「训练计划测评」进入任务、场景、测试数据和测评规则。测评 API 对普通用户和匿名请求拒绝访问 |
+| 用相同冻结输入试跑并批量运行同一条 JavaScript 规则 | 两个入口使用同一个隔离运行器与同一份 Check 接口，含时间判断的规则也基于同一冻结时点得到一致判定。超时或返回值不合法的规则记录执行错误，其余规则继续 |
+| 新建并试跑带多行说明的测评规则，从两个场景引用 v1 | 保存一份可复用的版本配置，两个场景均可选中该版本，打开版本详情可回读说明和实现 |
+| 修改规则并将其中一个场景切换到 v2 | 新任务分别读取两个场景选定的版本。在版本切换前已提交、尚未被 worker 领取的任务仍执行 v1 的冻结实现 |
+| 两个场景共用一份跑者快照 | 创建一个任务和分别归入两个场景的执行项。每项使用实际产物类型对应的请求及所属场景的检查 |
+| 新建和导入测试数据 | 每份数据自动获得一个随机 UUID。列表首列显示 ID 并可进入详情，随后独立展示用户名、项目、目标成绩、生成类型和数据截止日 |
+| 打开新建和滚动两类测试数据详情 | 两类都能查看目标、约束、数据截止日与历史覆盖。滚动额外展示 Provider 提供的计划、已排周记录和完整周课表，并独立标明规则预期起始周。可展开原始 JSON、编辑并通过原 ID 回读 |
+| 导入快照并加入场景，或编辑已引用数据 | 新任务使用当前快照和请求。历史任务的快照内容、请求和执行项数量可原样回读 |
+| 全选跨页场景后提交，再新增场景 | 已提交任务保留原场景清单。下次全选包含新增场景 |
+| 提交空清单、重复 ID、不适用的规则版本或无效引用 | API 返回具体配置错误，测评库无部分任务，worker 未启动 |
+| 网络重试和主动重测 | 相同幂等键及参数取回原任务。相同键、不同参数返回 409。主动重测创建新任务 |
+| 同一场景选择两个 Agent 版本分别测评 | 两个任务分别保存所选版本，worker 使用对应 Agent，报告可分别打开 |
+| 一份真实脱敏全马快照，生产数据服务不可达 | 从工作台发起任务，目标版本 worker 领取完整冻结数据包，多次取数来自同一快照，保存 Artifact 后开放固定规则检查 |
+| 发布确认丢失或版本 Deployment 启动失败 | 原任务可重试启动，任务与执行项 ID 稳定，确认完成的消息不再发布，确认丢失允许重投并复用已终结结果 |
+| 同版本已有运行或待启动的配置，提交不同环境变量 | 返回冲突，版本下的待投递执行项数量保持原值。留空时复用冻结配置，已有 worker 使用同一配置读取该版本的消息 |
+| 消息重投时上一份租约仍有效 | 投递保持未确认，worker 有界等待后再领取。只有接管成功后才继续生成，读取终态后确认消息 |
+| 保存成功但响应丢失，或 worker 退出后租约过期 | 重发同一提交只保存一份 Artifact。过期租约可被接管，旧租约的不同提交无法覆盖新结果 |
+| 生成超时或产物 Schema 校验失败 | 本项跳过 Evaluate，保留错误或无效 Artifact 原文，其他快照正常继续 |
+| 一条规则不通过或出错，或者 Artifact 保存后 worker 中断 | 保留逐项理由、预期和实际值或错误，其他规则继续。接管只恢复未完成的检查 |
+
+| 首批八份私有清单重复导入 | 四位跑者、五份新建和三份滚动；保存随机 UUID 与文件/保存正文哈希，再次导入只核对原引用。C/D 共用固定赛季和前缀；HM 根据自身精确截止日和实际末周接续；所有周文档从逐份验哈希的原 Candidate 或 Artifact 回溯 |
+| 从任务详情导出后清理 Worker，再导出同一终态任务 | 报告包含任务、Agent、场景、执行项、冻结输入原文/哈希、Artifact 原文及规则版本/结果；前后文件字节一致，任务及场景计数与执行项一致 |
+
 ### 调度/恢复上线与隔离验证（devops#1061）
 
 - 新增列由测评 API 的 `AutoMigratePlanEval` 创建：`plan_eval_executions.dispatched_at/claim_request_id` 及 `plan_eval_receipts.submit_id/fingerprint/worker_id/lease_epoch`；任务 `params_fingerprint` 扩为 128 字符容纳 v2 标记，旧任务默认副本指纹仍可重放、新任务区分省略与显式副本数；不迁移或访问生产运动数据。历史报告和已终结执行项保留，老收据仍可通过终态领取 ACK。
