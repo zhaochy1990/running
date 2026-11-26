@@ -80,6 +80,13 @@ func (s *Service) SeedPresetFile(ctx context.Context, path string) error {
 }
 
 func (s *Service) seedPreset(ctx context.Context, document []byte) error {
+	// The preset is now editable through the catalog; boot must not undo edits.
+	if _, err := s.store.GetPlanEvalScenario(ctx, PresetScenarioID); err == nil {
+		return nil
+	} else if !errors.Is(err, storage.ErrPlanEvalNotFound) {
+		return err
+	}
+
 	var scenario presetScenarioFile
 	if err := json.Unmarshal(presetScenarioDocument, &scenario); err != nil {
 		return err

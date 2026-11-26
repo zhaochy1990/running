@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -144,17 +145,18 @@ func (s *Store) GetPlanEvalRule(ctx context.Context, id string, version int) (*P
 // has already resolved and frozen the inputs; EnvCipher is the encrypted
 // environment used only when the version has no launch configuration yet.
 type PlanEvalTaskCreate struct {
-	LegacyParamsFingerprint string
-	Task                    *PlanEvalTask
-	LaunchConfig            *PlanEvalLaunchConfig
-	EnvCipher               []byte
-	Executions              []*PlanEvalExecution
-	FrozenRules             []*PlanEvalFrozenRule
+	CompatibleParamsFingerprints []string
+	Task                         *PlanEvalTask
+	LaunchConfig                 *PlanEvalLaunchConfig
+	EnvCipher                    []byte
+	Executions                   []*PlanEvalExecution
+	FrozenRules                  []*PlanEvalFrozenRule
 }
 
-// Only pre-v2 tasks accept the legacy default-replica fingerprint.
-func planEvalParamsMatch(persisted string, in *PlanEvalTaskCreate) bool {
-	return persisted == in.Task.ParamsFingerprint || (!strings.HasPrefix(persisted, "v2:") && persisted == in.LegacyParamsFingerprint)
+// MatchesParamsFingerprint checks exact current and compatible historical
+// fingerprints for both early replays and transaction races.
+func (in *PlanEvalTaskCreate) MatchesParamsFingerprint(persisted string) bool {
+	return persisted == in.Task.ParamsFingerprint || slices.Contains(in.CompatibleParamsFingerprints, persisted)
 }
 
 // CreatePlanEvalTask persists the task, its pending executions, the frozen
@@ -172,7 +174,7 @@ func (s *Store) CreatePlanEvalTask(ctx context.Context, in *PlanEvalTaskCreate) 
 		var existing PlanEvalTask
 		switch err := tx.Where("submitter = ? AND idempotency_key = ?", in.Task.Submitter, in.Task.IdempotencyKey).First(&existing).Error; {
 		case err == nil:
-			if !planEvalParamsMatch(existing.ParamsFingerprint, in) {
+			if !in.MatchesParamsFingerprint(existing.ParamsFingerprint) {
 				return &PlanEvalIdempotencyConflictError{ExistingTaskID: existing.ID}
 			}
 			task, replayed = &existing, true
@@ -263,7 +265,7 @@ func (s *Store) CreatePlanEvalTask(ctx context.Context, in *PlanEvalTaskCreate) 
 		var persisted PlanEvalTask
 		lookup := s.db.WithContext(ctx).Where("submitter = ? AND idempotency_key = ?", in.Task.Submitter, in.Task.IdempotencyKey).First(&persisted)
 		if lookup.Error == nil {
-			if !planEvalParamsMatch(persisted.ParamsFingerprint, in) {
+			if !in.MatchesParamsFingerprint(persisted.ParamsFingerprint) {
 				return nil, false, &PlanEvalIdempotencyConflictError{ExistingTaskID: persisted.ID}
 			}
 			return &persisted, true, nil
@@ -883,6 +885,7 @@ func (s *Store) loadPlanEvalEvaluationWork(ctx context.Context, executionID stri
 	if err != nil {
 		return nil, err
 	}
+	rules = scenarioRules(rules, execution.ScenarioID)
 	var done []string
 	if err := s.db.WithContext(ctx).Model(&PlanEvalCheckResult{}).Where("artifact_id = ?", artifact.ID).Pluck("check_id", &done).Error; err != nil {
 		return nil, err
@@ -994,24 +997,6 @@ func sqlNullString(value string) any {
 
 // PlanEvalSnapshotUsernames returns the anonymized runner reference of each
 // snapshot without loading the (multi-megabyte) document.
-func (s *Store) PlanEvalSnapshotUsernames(ctx context.Context, ids []string) (map[string]string, error) {
-	out := make(map[string]string, len(ids))
-	if len(ids) == 0 {
-		return out, nil
-	}
-	var rows []struct {
-		ID       string
-		Username string
-	}
-	if err := s.db.WithContext(ctx).Model(&PlanEvalRunnerSnapshot{}).Select("id", "username").Where("id IN ?", ids).Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("storage: plan-eval snapshot usernames: %w", err)
-	}
-	for _, row := range rows {
-		out[row.ID] = row.Username
-	}
-	return out, nil
-}
-
 // EnsurePlanEvalDatabase creates the plan-eval database if it does not exist
 // yet. It is boot-time provisioning for the service's own database (the
 // storage layer owns its DDL), run once before Open; nothing here reads or
@@ -1051,4 +1036,49 @@ func planEvalIdentifier(name string) bool {
 		}
 	}
 	return true
+}
+
+// Empty scenario IDs belong to legacy single-scenario tasks.
+func scenarioRules(rules []PlanEvalFrozenRule, scenarioID string) []PlanEvalFrozenRule {
+	out := make([]PlanEvalFrozenRule, 0, len(rules))
+	for _, rule := range rules {
+		if rule.ScenarioID == "" || rule.ScenarioID == scenarioID {
+			out = append(out, rule)
+		}
+	}
+	return out
+}
+
+func (s *Store) ListPlanEvalScenarios(ctx context.Context) ([]PlanEvalScenario, error) {
+	rows := []PlanEvalScenario{}
+	err := s.db.WithContext(ctx).Order("created_at ASC, id ASC").Find(&rows).Error
+	return rows, err
+}
+
+func (s *Store) ListPlanEvalSnapshots(ctx context.Context) ([]PlanEvalRunnerSnapshot, error) {
+	rows := []PlanEvalRunnerSnapshot{}
+	err := s.db.WithContext(ctx).Omit("snapshot_json").Order("created_at ASC, id ASC").Find(&rows).Error
+	return rows, err
+}
+
+func (s *Store) ListPlanEvalRules(ctx context.Context) ([]PlanEvalRule, error) {
+	rows := []PlanEvalRule{}
+	err := s.db.WithContext(ctx).Order("id ASC, version ASC").Find(&rows).Error
+	return rows, err
+}
+
+func (s *Store) FindPlanEvalTaskByKey(ctx context.Context, submitter, key string) (*PlanEvalTask, error) {
+	var row PlanEvalTask
+	err := s.db.WithContext(ctx).Where("submitter = ? AND idempotency_key = ?", submitter, key).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrPlanEvalNotFound
+	}
+	return &row, err
+}
+
+// Used only by the administrator's frozen report, not launch/queue scans.
+func (s *Store) ListPlanEvalExecutionInputs(ctx context.Context, taskID string) ([]PlanEvalExecution, error) {
+	rows := []PlanEvalExecution{}
+	err := s.db.WithContext(ctx).Where("task_id = ?", taskID).Order("created_at ASC, id ASC").Find(&rows).Error
+	return rows, err
 }

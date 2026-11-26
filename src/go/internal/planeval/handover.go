@@ -85,7 +85,7 @@ func (s *Service) Claim(ctx context.Context, req claimRequest) (any, *Error) {
 		}
 		return claimBusy{Status: "busy", RetryAfterMs: wait}, nil
 	}
-	scenario, serr := s.loadScenario(ctx, claim.Execution.ScenarioID)
+	scenario, serr := s.executionScenario(ctx, claim.Execution)
 	if serr != nil {
 		return nil, serr
 	}
@@ -219,7 +219,7 @@ func (s *Service) executionInput(ctx context.Context, executionID string) (*scen
 	if err != nil {
 		return nil, nil, s.handoverError(err)
 	}
-	scenario, serr := s.loadScenario(ctx, execution.ScenarioID)
+	scenario, serr := s.executionScenario(ctx, execution)
 	if serr != nil {
 		return nil, nil, serr
 	}

@@ -107,6 +107,8 @@ type PlanEvalTask struct {
 	AgentVersion string `gorm:"column:agent_version;size:64;not null;index"`
 	Status       string `gorm:"column:status;size:16;not null"`
 	ScenarioID   string `gorm:"column:scenario_id;type:char(36);not null"`
+	// Nullable for pre-batch tasks; new tasks never read mutable source scenarios.
+	ScenariosJSON string `gorm:"column:scenarios_json;type:longtext"`
 	// Submitter is the admin JWT subject that created the task; idempotency
 	// keys are scoped to it.
 	Submitter         string `gorm:"column:submitter;size:64;not null;uniqueIndex:idx_plan_eval_tasks_idem,priority:1"`
@@ -153,6 +155,7 @@ func (PlanEvalLaunchConfig) TableName() string { return "plan_eval_launch_config
 type PlanEvalFrozenRule struct {
 	ID           uint64 `gorm:"column:id;primaryKey;autoIncrement"`
 	TaskID       string `gorm:"column:task_id;type:char(36);not null;index"`
+	ScenarioID   string `gorm:"column:scenario_id;type:char(36)"`
 	CheckID      string `gorm:"column:check_id;type:char(64);not null"`
 	Version      int    `gorm:"column:version;not null"`
 	ArtifactType string `gorm:"column:artifact_type;size:32;not null"`

@@ -373,3 +373,24 @@ SnapshotExecution 以 `(task_id, scenario_id, snapshot_id)` 去重。每个执�
 - 本票不占用共用本地 E2E 栈。独占容器验证 RabbitMQ 实际未确认投递、回传确认丢失、终态重投 ACK 与保留队列/报告；真实目标镜像、工作台浏览器及 Kubernetes 波后 E2E 由 master 派发。
 
 测评 MQ 继续使用 devops 原生测评服务账号，worker 属于受信任的内部服务；HTTP 版本凭据隔离不等价于 RabbitMQ 账号级隔离。本票不新增 RabbitMQ 用户/权限管理，账号级恶意消费者隔离需要单独的部署授权与账号管理变更。
+
+## #1056 批量控制面（实施接口）
+
+管理员同源前缀 `/api/admin/plan-eval` 新增：
+
+| 接口 | 行为 |
+| --- | --- |
+| `GET/POST /scenarios`、`GET/PUT /scenarios/{id}` | 场景名称、`artifact_type`、`snapshot_ids`、`rules: [{id, version}]`；新建分配 UUID，保存/提交验证所有引用 |
+| `GET/POST /snapshots`、`GET/PUT /snapshots/{id}` | RunnerSnapshot/v1 完整 JSON；新建/导入忽略文件 ID 并分配 UUID，编辑保留路径 ID；列表只读摘要列 |
+| `POST /request-preview` | `{artifact_type, snapshot_id, request}` → 只读 `{request, as_of}`，与提交共用校验与组装，不写入任务 |
+| `GET /rules` | 已发布规则只读列表；规则发布/试跑归 #1057 |
+| `POST /tasks` | 新增 `scenario_ids` 明确清单；`[]` 拒绝，省略兼容旧 preset 单样本客户端；幂等键在读取可变引用前查重 |
+| `GET /tasks/{id}` | `scenarios`、按 `scenario_id` 归属的执行项及其冻结 `snapshot`、`request`、`as_of`、`frozen_rules`；保留旧 `scenario` 首项字段 |
+
+新建赛季请求以所选快照的 `records.race_target`、`event`、`target_time`、`constraints` 填充目标、跑步日上限与禁训日；其余 intake 沿用场景 request 模板，空模板复用已发布 preset 的全日窗口、无力量课与空约束数组，不伪造运动历史。生成时点优先使用快照 `as_of`（必须归属同一上海截止日），缺省固定为上海数据截止日末 `23:59:59+08:00`。滚动请求仅含 `request_id`、active 行 `master_plan_id` 与 **`as_of`**；不含 `requested_as_of` 或规则预期起始周。
+
+滚动输入另要求 `records.active_master_plan`、`records.weekly_plan_weeks` 和 `records.weekly_plans`，已排周记录须有同日起始的完整周课表；两个集合的空数组表示已记录但无数据，不等价于省略。`expected_start_week` 仅详情/检查使用，不进入 Generate。
+
+独立测评库启动 AutoMigrate 仅增加 nullable `plan_eval_tasks.scenarios_json` 与 `plan_eval_frozen_rules.scenario_id`，不修改生产用户库。新任务在原事务中冻结场景清单/快照/请求/场景规则；空规则归属仅兼容既有单样本任务。preset 仅首次初始化，不在重启时覆盖管理员编辑。旧任务已保存的执行项与规则不重写，历史幂等参数指纹仍兼容。
+
+验收：本地原生依赖（独立 MySQL + API HTTP 契约、Dashboard 组件）覆盖复用快照、编辑后冻结回读、领取、错误引用整批拒绝、跨分页全选。真实 RabbitMQ/目标镜像/模型的两场景批次及首批八份由 master 在第一波全部合并后统一 E2E；本票不操作共享栈或生产 pin 审批。

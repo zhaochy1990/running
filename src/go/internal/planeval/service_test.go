@@ -831,3 +831,82 @@ func TestHTTP_OmittedReplicasDifferFromExplicitOne(t *testing.T) {
 		t.Fatalf("changed params replayed: %v", err)
 	}
 }
+
+func TestHTTP_BatchFreezesSharedSnapshotAndScenarioRules(t *testing.T) {
+	h := openHarness(t)
+	imported := h.admin("POST", adminPrefix+"/snapshots", testSnapshot(t), nil)
+	if imported.status != 200 {
+		t.Fatalf("import: %d %s", imported.status, imported.body)
+	}
+	snapshot := h.json(imported)
+	snapshotID := snapshot["snapshot_id"].(string)
+	if _, err := uuid.Parse(snapshotID); err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{}
+	for _, name := range []string{"场景 A", "场景 B"} {
+		res := h.admin("POST", adminPrefix+"/scenarios", map[string]any{"name": name, "artifact_type": "master_plan", "snapshot_ids": []string{snapshotID}, "rules": []RuleRef{{ID: PresetRuleID, Version: 1}}, "request": map[string]any{}}, nil)
+		if res.status != 200 {
+			t.Fatalf("scenario: %d %s", res.status, res.body)
+		}
+		ids = append(ids, h.json(res)["id"].(string))
+	}
+	body := h.createBody()
+	body["scenario_ids"] = ids
+	key := map[string]string{"Idempotency-Key": uuid.NewString()}
+	created := h.admin("POST", adminPrefix+"/tasks", body, key)
+	if created.status != 201 {
+		t.Fatalf("batch: %d %s", created.status, created.body)
+	}
+	task := h.json(created)
+	taskID := task["id"].(string)
+	if len(task["scenarios"].([]any)) != 2 || len(task["executions"].([]any)) != 2 {
+		t.Fatalf("batch not expanded: %s", created.body)
+	}
+	execution := task["executions"].([]any)[0].(map[string]any)
+	// Edit the reusable source, preserving UUID; old reports and claims stay frozen.
+	snapshot["username"] = "updated-runner"
+	snapshot["target_time"] = "1:50:00"
+	updated := h.admin("PUT", adminPrefix+"/snapshots/"+snapshotID, snapshot, nil)
+	if updated.status != 200 || h.json(updated)["snapshot_id"] != snapshotID {
+		t.Fatalf("update: %s", updated.body)
+	}
+	scene := h.admin("GET", adminPrefix+"/scenarios/"+ids[0], nil, nil)
+	changed := h.json(scene)
+	changed["name"] = "edited"
+	if res := h.admin("PUT", adminPrefix+"/scenarios/"+ids[0], changed, nil); res.status != 200 {
+		t.Fatalf("edit: %s", res.body)
+	}
+	replay := h.admin("POST", adminPrefix+"/tasks", body, key)
+	if replay.status != 200 || h.json(replay)["id"] != taskID || !bytes.Equal(created.body, replay.body) {
+		t.Fatalf("frozen replay changed: %s", replay.body)
+	}
+	claim := h.worker("POST", internalPrefix+"/executions/claim", map[string]any{"snapshot_execution_id": execution["id"], "agent_version": h.version, "worker_id": "worker", "claim_request_id": "claim"})
+	if claim.status != 200 {
+		t.Fatalf("claim: %s", claim.body)
+	}
+	input := h.json(claim)["input"].(map[string]any)
+	if input["snapshot"].(map[string]any)["username"] != "runner" {
+		t.Fatal("claim read mutable source")
+	}
+	rules, err := h.svc.store.ListPlanEvalFrozenRules(context.Background(), taskID)
+	if err != nil || len(rules) != 2 || rules[0].ScenarioID == rules[1].ScenarioID {
+		t.Fatalf("rules not scoped: %v %v", rules, err)
+	}
+	before := len(h.broker.queues[QueueName(h.version)])
+	for _, selection := range [][]string{{}, {ids[0], ids[0]}, {ids[0], "does-not-exist"}} {
+		body["scenario_ids"] = selection
+		res := h.admin("POST", adminPrefix+"/tasks", body, map[string]string{"Idempotency-Key": uuid.NewString()})
+		if res.status != 422 {
+			t.Fatalf("invalid selection accepted: %d %s", res.status, res.body)
+		}
+	}
+	if len(h.broker.queues[QueueName(h.version)]) != before {
+		t.Fatal("partial batch dispatched")
+	}
+	bad := testSnapshot(t)
+	bad["schema"] = "v999"
+	if res := h.admin("POST", adminPrefix+"/snapshots", bad, nil); res.status != 422 {
+		t.Fatalf("invalid schema accepted: %s", res.body)
+	}
+}
