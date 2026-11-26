@@ -115,10 +115,10 @@
               </picker>
             </view>
             <view class="set-actions">
-              <button class="icon-button set-button" data-action="{{action.key}}" data-set="{{set.key}}" data-operation="remove" bindtap="onSetChange" aria-label="删除第 {{(setIndex + 1)}} 组" disabled="{{saving}}">
+              <button class="icon-button" data-action="{{action.key}}" data-set="{{set.key}}" data-operation="remove" bindtap="onSetChange" aria-label="删除第 {{(setIndex + 1)}} 组" disabled="{{saving}}">
                 <view class="control-mark control-mark--cross" />
               </button>
-              <button class="icon-button set-button" data-action="{{action.key}}" data-set="{{set.key}}" data-operation="copy" bindtap="onSetChange" aria-label="复制第 {{(setIndex + 1)}} 组到下一行" disabled="{{saving}}">
+              <button class="icon-button" data-action="{{action.key}}" data-set="{{set.key}}" data-operation="copy" bindtap="onSetChange" aria-label="复制第 {{(setIndex + 1)}} 组到下一行" disabled="{{saving}}">
                 <image src="/assets/icons/copy.svg" mode="aspectFit" />
               </button>
             </view>
@@ -156,7 +156,7 @@
 
     <view class="strength-footer">
       <view wx:if="{{error && !invalidField}}" class="field-error strength-footer__message" role="alert">{{error}}</view>
-      <button class="save-button" bindtap="onSave" loading="{{saving}}" disabled="{{saving || saved}}">
+      <button class="save-button" bindtap="onSave" loading="{{saving}}" disabled="{{saving}}">
         {{saving ? '保存中…' : '保存记录'}}
       </button>
     </view>

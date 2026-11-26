@@ -106,7 +106,7 @@ type ManualStrengthSummary struct {
 
 type activityPageRow struct {
 	Activity
-	ManualStrengthActions []ManualStrengthAction `gorm:"column:manual_strength_actions;serializer:json"`
+	StrengthSummary ManualStrengthSummary `gorm:"embedded;embeddedPrefix:manual_strength_"`
 }
 
 // ListActivities returns a filtered, paginated activity page (newest first) plus
@@ -138,11 +138,7 @@ func (s *Store) ListActivities(ctx context.Context, userID string, p ActivityLis
 	for _, row := range pageRows {
 		rows = append(rows, row.Activity)
 		if row.Provider == ManualStrengthProvider {
-			summary := ManualStrengthSummary{ActionCount: len(row.ManualStrengthActions)}
-			for _, action := range row.ManualStrengthActions {
-				summary.SetCount += len(action.Sets)
-			}
-			manualSummaries[row.LabelID] = summary
+			manualSummaries[row.LabelID] = row.StrengthSummary
 		}
 	}
 
@@ -192,7 +188,7 @@ func (s *Store) strideActivityDoses(ctx context.Context, uid string, rows []Acti
 // activityListSource adds manual rows only for callers opting into athlete-entered
 // activities. Both branches use the tenant key before the outer list filters,
 // pagination and aggregates are applied.
-func activityListSource(db *gorm.DB, uid string, p ActivityListParams, includeActions bool) *gorm.DB {
+func activityListSource(db *gorm.DB, uid string, p ActivityListParams, includeStrengthSummaries bool) *gorm.DB {
 	if !p.IncludeManualStrength {
 		return db.Model(&Activity{})
 	}
@@ -216,11 +212,16 @@ func activityListSource(db *gorm.DB, uid string, p ActivityListParams, includeAc
 		}
 		projection[i] = value + " AS " + column
 	}
-	// Only the paginated row query needs the actions. Read them alongside each
-	// manual record's name and timestamps so they come from the same revision.
-	if includeActions {
-		columns = append(columns, "NULL AS manual_strength_actions")
-		projection = append(projection, "actions AS manual_strength_actions")
+	// Project scalar counts from the same revision as the name and timestamps.
+	// Keeping the action JSON out of the UNION prevents large strength logs from
+	// exhausting MySQL's sort buffer. JSON_EXTRACT flattens matching sets into
+	// an array, even when the wildcard path matches only one set.
+	if includeStrengthSummaries {
+		columns = append(columns, "NULL AS manual_strength_action_count", "NULL AS manual_strength_set_count")
+		projection = append(projection,
+			"JSON_LENGTH(actions) AS manual_strength_action_count",
+			"COALESCE(JSON_LENGTH(JSON_EXTRACT(actions, '$[*].sets[*]')), 0) AS manual_strength_set_count",
+		)
 	}
 
 	watch := db.Session(&gorm.Session{}).Model(&Activity{}).
