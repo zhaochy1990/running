@@ -834,19 +834,22 @@ func TestHTTP_ReplicaConflictPreservesEffectiveConfigAndReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conflictKey := map[string]string{"Idempotency-Key": uuid.NewString()}
-	conflicting := h.createBody()
-	conflicting["replicas"] = 2
-	res := h.admin("POST", path, conflicting, conflictKey)
-	if res.status != http.StatusConflict || h.json(res)["error"] != "launch_config_conflict" {
-		t.Fatalf("explicit replicas conflict: %d %s", res.status, res.body)
-	}
-	detail := h.json(res)["detail"].(string)
-	if !strings.Contains(detail, "1") || !strings.Contains(detail, "2") || !strings.Contains(detail, "副本") || bytes.Contains(res.body, []byte(secret)) {
-		t.Fatalf("unsafe or unreadable numeric conflict: %s", res.body)
-	}
-	if _, err := h.svc.store.FindPlanEvalTaskByKey(ctx, "admin-1", conflictKey["Idempotency-Key"]); !errors.Is(err, storage.ErrPlanEvalNotFound) {
-		t.Fatalf("conflict persisted a task: %v", err)
+	const otherSecret = "sk-other-replica-conflict-test"
+	for _, conflicting := range []map[string]any{h.createBody(), h.createBody([2]string{"MODEL_KEY", otherSecret})} {
+		conflictKey := map[string]string{"Idempotency-Key": uuid.NewString()}
+		conflicting["replicas"] = 2
+		res := h.admin("POST", path, conflicting, conflictKey)
+		if res.status != http.StatusConflict || h.json(res)["error"] != "launch_config_conflict" {
+			t.Fatalf("explicit replicas conflict: %d %s", res.status, res.body)
+		}
+		detail := h.json(res)["detail"].(string)
+		if !strings.Contains(detail, "1") || !strings.Contains(detail, "2") || !strings.Contains(detail, "副本") ||
+			bytes.Contains(res.body, []byte(secret)) || bytes.Contains(res.body, []byte(otherSecret)) {
+			t.Fatalf("unsafe or unreadable numeric conflict: %s", res.body)
+		}
+		if _, err := h.svc.store.FindPlanEvalTaskByKey(ctx, "admin-1", conflictKey["Idempotency-Key"]); !errors.Is(err, storage.ErrPlanEvalNotFound) {
+			t.Fatalf("conflict persisted a task: %v", err)
+		}
 	}
 	after, err := h.svc.store.PlanEvalLaunchConfigForVersion(ctx, h.version)
 	if err != nil || after.Replicas != 1 || after.RuntimeRevision != before.RuntimeRevision || !after.UpdatedAt.Equal(before.UpdatedAt) || len(h.broker.queues[QueueName(h.version)]) != 1 || len(h.deployer.ensured) != 2 {

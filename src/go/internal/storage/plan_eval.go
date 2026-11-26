@@ -214,13 +214,13 @@ func (s *Store) CreatePlanEvalTask(ctx context.Context, in *PlanEvalTaskCreate) 
 			in.Task.LaunchConfigID = launch.ID
 			in.Task.LaunchEnvNames = launch.EnvNames
 		case err == nil:
+			if in.LaunchConfig.Replicas != 0 && in.LaunchConfig.Replicas != current.Replicas {
+				return &PlanEvalLaunchConfigConflictError{ExistingReplicas: current.Replicas, RequestedReplicas: in.LaunchConfig.Replicas}
+			}
 			// An empty variable set means "keep what this version already runs
 			// with"; any other set must match the active values as well.
 			if in.LaunchConfig.EnvNames != "[]" && current.EnvFingerprint != in.LaunchConfig.EnvFingerprint {
 				return &PlanEvalLaunchConfigConflictError{}
-			}
-			if in.LaunchConfig.Replicas != 0 && in.LaunchConfig.Replicas != current.Replicas {
-				return &PlanEvalLaunchConfigConflictError{ExistingReplicas: current.Replicas, RequestedReplicas: in.LaunchConfig.Replicas}
 			}
 			if in.LaunchConfig.Replicas == 0 {
 				in.LaunchConfig.Replicas = current.Replicas
