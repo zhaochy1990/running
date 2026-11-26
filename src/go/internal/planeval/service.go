@@ -144,6 +144,8 @@ type ScenarioView struct {
 	ArtifactType string          `json:"artifact_type"`
 	AsOf         string          `json:"as_of"`
 	Request      json.RawMessage `json:"request"`
+	SnapshotIDs  []string        `json:"snapshot_ids"`
+	Rules        []RuleRef       `json:"rules"`
 }
 
 type StageError struct {
@@ -167,12 +169,20 @@ type ArtifactView struct {
 
 type ExecutionView struct {
 	ID           string            `json:"id"`
+	ScenarioID   string            `json:"scenario_id"`
+	AsOf         string            `json:"as_of"`
 	SnapshotID   string            `json:"snapshot_id"`
 	SnapshotName string            `json:"snapshot_name"`
 	Generate     StageView         `json:"generate"`
 	Artifact     *ArtifactView     `json:"artifact"`
 	Evaluate     StageView         `json:"evaluate"`
 	Checks       []CheckResultView `json:"checks"`
+}
+
+type ExecutionInputView struct {
+	AsOf     string          `json:"as_of"`
+	Request  json.RawMessage `json:"request"`
+	Snapshot json.RawMessage `json:"snapshot"`
 }
 
 type CheckResultView struct {
@@ -186,8 +196,10 @@ type CheckResultView struct {
 
 type TaskDetailView struct {
 	TaskView
-	Scenario   ScenarioView    `json:"scenario"`
-	Executions []ExecutionView `json:"executions"`
+	Scenario    ScenarioView                 `json:"scenario"`
+	Scenarios   []ScenarioView               `json:"scenarios"`
+	FrozenRules []storage.PlanEvalFrozenRule `json:"frozen_rules"`
+	Executions  []ExecutionView              `json:"executions"`
 }
 
 // ---- agent versions ----
@@ -247,6 +259,7 @@ type EnvVar struct {
 }
 
 type CreateTaskRequest struct {
+	ScenarioIDs  []string `json:"scenario_ids"`
 	AgentVersion string   `json:"agent_version"`
 	Replicas     int      `json:"replicas"`
 	Env          []EnvVar `json:"env"`
@@ -287,9 +300,34 @@ func (s *Service) validateEnv(vars []EnvVar) (map[string]string, []string, *Erro
 // difference is a conflict.
 type taskParams struct {
 	AgentVersion string            `json:"agent_version"`
-	ScenarioID   string            `json:"scenario_id"`
+	ScenarioIDs  []string          `json:"scenario_ids"`
 	Replicas     int               `json:"replicas"`
 	Env          map[string]string `json:"env"` // name → sha256(value)
+}
+
+// taskFingerprints distinguishes omitted replicas on current requests and v2
+// replays. Older submissions normalized the omitted count to one.
+func taskFingerprints(params taskParams) (string, []string) {
+	current := sha256.Sum256(mustJSON(params))
+	legacy := params
+	if legacy.Replicas == 0 {
+		legacy.Replicas = 1
+	}
+	previousBatch := sha256.Sum256(mustJSON(legacy))
+	compatible := []string{hex.EncodeToString(previousBatch[:])}
+	if len(params.ScenarioIDs) == 1 {
+		single := struct {
+			AgentVersion string            `json:"agent_version"`
+			ScenarioID   string            `json:"scenario_id"`
+			Replicas     int               `json:"replicas"`
+			Env          map[string]string `json:"env"`
+		}{params.AgentVersion, params.ScenarioIDs[0], params.Replicas, params.Env}
+		v2 := sha256.Sum256(mustJSON(single))
+		single.Replicas = legacy.Replicas
+		v1 := sha256.Sum256(mustJSON(single))
+		compatible = append(compatible, "v2:"+hex.EncodeToString(v2[:]), hex.EncodeToString(v1[:]))
+	}
+	return "v3:" + hex.EncodeToString(current[:]), compatible
 }
 
 // CreateTask freezes the inputs and starts the evaluation. replayed reports
@@ -331,23 +369,64 @@ func (s *Service) createTask(ctx context.Context, submitter, idempotencyKey stri
 		return nil, false, err
 	}
 
-	scenario, serr := s.loadScenario(ctx, PresetScenarioID)
-	if serr != nil {
-		return nil, false, serr
+	scenarioIDs := req.ScenarioIDs
+	// Omitted selection preserves the original single-sample client; [] is invalid.
+	if scenarioIDs == nil {
+		scenarioIDs = []string{PresetScenarioID}
 	}
-	executions, frozenRules, serr := s.freeze(ctx, scenario)
-	if serr != nil {
-		return nil, false, serr
+	if len(scenarioIDs) == 0 {
+		return nil, false, fail(422, "invalid_request", "scenario_ids: 至少选择一个场景")
 	}
-
+	if e := uniqueIDs("scenario_ids", scenarioIDs); e != nil {
+		return nil, false, e
+	}
+	scenarioIDs = append([]string(nil), scenarioIDs...)
+	sort.Strings(scenarioIDs)
 	envDigests := digestEnv(env)
-	params := taskParams{AgentVersion: req.AgentVersion, ScenarioID: scenario.ID, Replicas: replicas, Env: envDigests}
-	encoded, _ := json.Marshal(params)
-	sum := sha256.Sum256(encoded)
-	if params.Replicas == 0 {
-		params.Replicas = 1
+	params := taskParams{AgentVersion: req.AgentVersion, ScenarioIDs: scenarioIDs, Replicas: replicas, Env: envDigests}
+	fingerprint, compatible := taskFingerprints(params)
+	create := &storage.PlanEvalTaskCreate{
+		Task: &storage.PlanEvalTask{
+			AgentVersion: req.AgentVersion, ScenarioID: scenarioIDs[0],
+			Submitter: submitter, IdempotencyKey: idempotencyKey, ParamsFingerprint: fingerprint,
+		},
+		CompatibleParamsFingerprints: compatible,
 	}
-	legacySum := sha256.Sum256(mustJSON(params))
+	// Replay before resolving live references: source edits cannot invalidate retries.
+	existing, lookupErr := s.store.FindPlanEvalTaskByKey(ctx, submitter, idempotencyKey)
+	if lookupErr == nil {
+		if !create.MatchesParamsFingerprint(existing.ParamsFingerprint) {
+			return nil, false, s.mapStorageError(&storage.PlanEvalIdempotencyConflictError{ExistingTaskID: existing.ID})
+		}
+		if e := s.launchAndRecord(ctx, existing); e != nil {
+			return nil, true, e
+		}
+		detail, e := s.TaskDetail(ctx, existing.ID)
+		return detail, true, e
+	}
+	if !errors.Is(lookupErr, storage.ErrPlanEvalNotFound) {
+		return nil, false, s.internal(lookupErr)
+	}
+	var executions []*storage.PlanEvalExecution
+	var frozenRules []*storage.PlanEvalFrozenRule
+	snapshots := make(map[string]*storage.PlanEvalRunnerSnapshot)
+	scenarios := make([]ScenarioView, 0, len(scenarioIDs))
+	for _, id := range scenarioIDs {
+		scenario, e := s.loadScenario(ctx, id)
+		if e != nil {
+			if e.Status == 404 {
+				e = fail(422, "invalid_request", "场景 "+id+" 不存在")
+			}
+			return nil, false, e
+		}
+		items, rules, e := s.freeze(ctx, scenario, snapshots)
+		if e != nil {
+			return nil, false, e
+		}
+		executions = append(executions, items...)
+		frozenRules = append(frozenRules, rules...)
+		scenarios = append(scenarios, scenarioView(scenario))
+	}
 	cipher, cerr := s.secrets.Seal(env)
 	if cerr != nil {
 		return nil, false, s.internal(cerr)
@@ -356,13 +435,11 @@ func (s *Service) createTask(ctx context.Context, submitter, idempotencyKey stri
 	launch.EnvNames = string(mustJSON(names))
 	envFingerprint := sha256.Sum256(mustJSON(envDigests))
 	launch.EnvFingerprint = hex.EncodeToString(envFingerprint[:])
-	task := &storage.PlanEvalTask{
-		ID: uuid.NewString(), AgentVersion: req.AgentVersion, ScenarioID: scenario.ID,
-		Submitter: submitter, IdempotencyKey: idempotencyKey, ParamsFingerprint: "v2:" + hex.EncodeToString(sum[:]),
-	}
-	created, replayed, derr := s.store.CreatePlanEvalTask(ctx, &storage.PlanEvalTaskCreate{
-		Task: task, LegacyParamsFingerprint: hex.EncodeToString(legacySum[:]), LaunchConfig: launch, EnvCipher: cipher, Executions: executions, FrozenRules: frozenRules,
-	})
+	create.Task.ID = uuid.NewString()
+	create.Task.ScenariosJSON = string(mustJSON(scenarios))
+	create.LaunchConfig, create.EnvCipher = launch, cipher
+	create.Executions, create.FrozenRules = executions, frozenRules
+	created, replayed, derr := s.store.CreatePlanEvalTask(ctx, create)
 	if derr != nil {
 		return nil, false, s.mapStorageError(derr)
 	}
@@ -459,12 +536,9 @@ func (s *Service) loadScenario(ctx context.Context, id string) (*scenarioDocumen
 	if err != nil {
 		return nil, s.mapStorageError(err)
 	}
-	doc := &scenarioDocument{PlanEvalScenario: *row}
-	if err := json.Unmarshal([]byte(row.SnapshotIDs), &doc.SnapshotIDs); err != nil {
-		return nil, s.internal(err)
-	}
-	if err := json.Unmarshal([]byte(row.RuleRefs), &doc.Rules); err != nil {
-		return nil, s.internal(err)
+	doc, decodeErr := decodeScenario(row)
+	if decodeErr != nil {
+		return nil, s.internal(decodeErr)
 	}
 	return doc, nil
 }
@@ -473,42 +547,56 @@ func (s *Service) loadScenario(ctx context.Context, id string) (*scenarioDocumen
 // (stamped with the execution's own id and the frozen instant), the snapshot
 // document and the rule implementations. An invalid reference refuses the
 // whole batch before anything is written.
-func (s *Service) freeze(ctx context.Context, scenario *scenarioDocument) ([]*storage.PlanEvalExecution, []*storage.PlanEvalFrozenRule, *Error) {
-	if len(scenario.SnapshotIDs) == 0 {
-		return nil, nil, fail(422, "invalid_request", "场景 "+scenario.ID+" 没有引用任何测试数据")
+func (s *Service) freeze(ctx context.Context, scenario *scenarioDocument, snapshots map[string]*storage.PlanEvalRunnerSnapshot) ([]*storage.PlanEvalExecution, []*storage.PlanEvalFrozenRule, *Error) {
+	if e := validateScenario(scenario); e != nil {
+		return nil, nil, e
 	}
+
 	rules := make([]*storage.PlanEvalFrozenRule, 0, len(scenario.Rules))
-	for _, ref := range scenario.Rules {
+	for i, ref := range scenario.Rules {
 		rule, err := s.store.GetPlanEvalRule(ctx, ref.ID, ref.Version)
-		if err != nil {
-			if errors.Is(err, storage.ErrPlanEvalNotFound) {
-				return nil, nil, fail(422, "invalid_request", fmt.Sprintf("场景 %s 引用的规则 %s v%d 不存在", scenario.ID, ref.ID, ref.Version))
-			}
+		if err != nil && !errors.Is(err, storage.ErrPlanEvalNotFound) {
 			return nil, nil, s.internal(err)
+		}
+		if rule == nil || rule.ID != ref.ID {
+			return nil, nil, fail(422, "invalid_reference", fmt.Sprintf("场景 %s rules[%d]: 规则 %s v%d 不存在，须使用原始 ID", scenario.ID, i, ref.ID, ref.Version))
 		}
 		if rule.ArtifactType != scenario.ArtifactType {
 			return nil, nil, fail(422, "invalid_request", fmt.Sprintf("规则 %s v%d 适用于 %s，场景 %s 需要 %s", ref.ID, ref.Version, rule.ArtifactType, scenario.ID, scenario.ArtifactType))
 		}
-		rules = append(rules, &storage.PlanEvalFrozenRule{CheckID: rule.ID, Version: rule.Version, ArtifactType: rule.ArtifactType, Source: rule.Source})
+		rules = append(rules, &storage.PlanEvalFrozenRule{ScenarioID: scenario.ID, CheckID: rule.ID, Version: rule.Version, ArtifactType: rule.ArtifactType, Source: rule.Source})
 	}
 	executions := make([]*storage.PlanEvalExecution, 0, len(scenario.SnapshotIDs))
-	for _, snapshotID := range scenario.SnapshotIDs {
-		snapshot, err := s.store.GetPlanEvalRunnerSnapshot(ctx, snapshotID)
-		if err != nil {
-			if errors.Is(err, storage.ErrPlanEvalNotFound) {
-				return nil, nil, fail(422, "invalid_request", fmt.Sprintf("场景 %s 引用的测试数据 %s 不存在", scenario.ID, snapshotID))
+	for i, snapshotID := range scenario.SnapshotIDs {
+		snapshot := snapshots[snapshotID]
+		if snapshot == nil {
+			var err error
+			snapshot, err = s.store.GetPlanEvalRunnerSnapshot(ctx, snapshotID)
+			if err != nil {
+				if errors.Is(err, storage.ErrPlanEvalNotFound) {
+					return nil, nil, fail(422, "invalid_reference", fmt.Sprintf("场景 %s snapshot_ids[%d]: 测试数据 %q 不存在，须使用原始 ID", scenario.ID, i, snapshotID))
+				}
+				return nil, nil, s.internal(err)
 			}
-			return nil, nil, s.internal(err)
+			// Lookup requires the canonical stored ID. Reuse the same snapshot
+			// even if someone edits it while another scenario is being frozen.
+			snapshots[snapshot.ID] = snapshot
 		}
 		executionID := uuid.NewString()
-		request, rerr := stampRequest(scenario.RequestJSON, executionID, scenario.AsOf, scenario.ArtifactType)
+		template, asOf, e := generationRequest(scenario.ArtifactType, snapshot.SnapshotJSON, scenario.RequestJSON)
+		if e != nil {
+			e.Detail = "场景 " + scenario.ID + " 数据 " + snapshotID + ": " + e.Detail
+			return nil, nil, e
+		}
+
+		request, rerr := stampRequest(template, executionID, asOf, scenario.ArtifactType)
 		if rerr != nil {
 			return nil, nil, s.internal(rerr)
 		}
 		executions = append(executions, &storage.PlanEvalExecution{
-			ID: executionID, ScenarioID: scenario.ID, SnapshotID: snapshotID,
+			ID: executionID, ScenarioID: scenario.ID, SnapshotID: snapshot.ID, SnapshotName: snapshot.Username,
 			GenerateStatus: storage.PlanEvalGenerateQueued, EvaluateStatus: storage.PlanEvalEvaluatePending,
-			AsOf: scenario.AsOf, RequestJSON: request, SnapshotJSON: snapshot.SnapshotJSON,
+			AsOf: asOf, RequestJSON: request, SnapshotJSON: snapshot.SnapshotJSON,
 		})
 	}
 	return executions, rules, nil
@@ -529,6 +617,9 @@ func stampRequest(template string, executionID, asOf, artifactType string) (stri
 	timeField := "requested_as_of"
 	if artifactType == "weekly_plan_batch" {
 		timeField = "as_of"
+		delete(fields, "requested_as_of")
+	} else {
+		delete(fields, "as_of")
 	}
 	fields["request_id"], fields[timeField] = id, instant
 	return string(mustJSON(fields)), nil
@@ -666,11 +757,11 @@ func (s *Service) TaskDetail(ctx context.Context, id string) (*TaskDetailView, *
 	if err != nil {
 		return nil, s.mapStorageError(err)
 	}
-	scenario, serr := s.loadScenario(ctx, task.ScenarioID)
+	scenarios, serr := s.taskScenarios(ctx, task)
 	if serr != nil {
 		return nil, serr
 	}
-	executions, err := s.store.ListPlanEvalExecutions(ctx, task.ID)
+	executions, err := s.store.ListPlanEvalExecutionSummaries(ctx, task.ID)
 	if err != nil {
 		return nil, s.internal(err)
 	}
@@ -692,24 +783,19 @@ func (s *Service) TaskDetail(ctx context.Context, id string) (*TaskDetailView, *
 	for _, result := range results {
 		checksByArtifact[result.ArtifactID] = append(checksByArtifact[result.ArtifactID], checkResultView(result))
 	}
-	snapshotIDs := make([]string, len(executions))
-	for i := range executions {
-		snapshotIDs[i] = executions[i].SnapshotID
-	}
-	usernames, err := s.store.PlanEvalSnapshotUsernames(ctx, snapshotIDs)
-	if err != nil {
-		return nil, s.internal(err)
-	}
 	summary, verr := s.taskViews(ctx, []storage.PlanEvalTask{*task})
 	if verr != nil {
 		return nil, verr
 	}
-	detail := &TaskDetailView{TaskView: summary[0], Scenario: ScenarioView{
-		ID: scenario.ID, Name: scenario.Name, ArtifactType: scenario.ArtifactType, AsOf: scenario.AsOf, Request: json.RawMessage(scenario.RequestJSON),
-	}, Executions: make([]ExecutionView, 0, len(executions))}
+	rules, err := s.store.ListPlanEvalFrozenRules(ctx, task.ID)
+	if err != nil {
+		return nil, s.internal(err)
+	}
+	detail := &TaskDetailView{TaskView: summary[0], Scenario: scenarios[0], Scenarios: scenarios, FrozenRules: rules, Executions: make([]ExecutionView, 0, len(executions))}
 	for _, execution := range executions {
 		view := ExecutionView{
-			ID: execution.ID, SnapshotID: execution.SnapshotID, SnapshotName: usernames[execution.SnapshotID],
+			ID: execution.ID, ScenarioID: execution.ScenarioID, SnapshotID: execution.SnapshotID,
+			AsOf: execution.AsOf, SnapshotName: execution.SnapshotName,
 			Generate: StageView{Status: execution.GenerateStatus, Attempts: execution.Attempts},
 			Evaluate: StageView{Status: execution.EvaluateStatus},
 			Checks:   []CheckResultView{},
@@ -718,7 +804,7 @@ func (s *Service) TaskDetail(ctx context.Context, id string) (*TaskDetailView, *
 			view.Generate.Error = &StageError{Code: execution.GenerateErrorCode, Message: execution.GenerateErrorMessage}
 		}
 		if artifact := artifactByExecution[execution.ID]; artifact != nil {
-			view.Artifact = &ArtifactView{ID: artifact.ID, ArtifactType: artifact.ArtifactType, Sha256: artifact.Sha256, SizeBytes: len(artifact.Content), SchemaValid: artifact.SchemaValid}
+			view.Artifact = &ArtifactView{ID: artifact.ID, ArtifactType: artifact.ArtifactType, Sha256: artifact.Sha256, SizeBytes: artifact.SizeBytes, SchemaValid: artifact.SchemaValid}
 			view.Checks = checksByArtifact[artifact.ID]
 			if view.Checks == nil {
 				view.Checks = []CheckResultView{}
@@ -727,6 +813,20 @@ func (s *Service) TaskDetail(ctx context.Context, id string) (*TaskDetailView, *
 		detail.Executions = append(detail.Executions, view)
 	}
 	return detail, nil
+}
+
+// ExecutionInput reads one execution's immutable input for the admin report.
+func (s *Service) ExecutionInput(ctx context.Context, taskID, executionID string) (*ExecutionInputView, *Error) {
+	execution, err := s.store.PlanEvalExecutionInput(ctx, executionID)
+	if err != nil {
+		return nil, s.mapStorageError(err)
+	}
+	if execution.TaskID != taskID || execution.ID != executionID {
+		return nil, s.mapStorageError(storage.ErrPlanEvalNotFound)
+	}
+	return &ExecutionInputView{
+		AsOf: execution.AsOf, Request: json.RawMessage(execution.RequestJSON), Snapshot: json.RawMessage(execution.SnapshotJSON),
+	}, nil
 }
 
 func checkResultView(result storage.PlanEvalCheckResult) CheckResultView {
@@ -789,4 +889,76 @@ func (s *Service) applyLaunchConfig(ctx context.Context, config *storage.PlanEva
 		return fmt.Errorf("deployment: %w", err)
 	}
 	return nil
+}
+
+func scenarioView(scenario *scenarioDocument) ScenarioView {
+	return ScenarioView{ID: scenario.ID, Name: scenario.Name, ArtifactType: scenario.ArtifactType, AsOf: scenario.AsOf, Request: json.RawMessage(scenario.RequestJSON), SnapshotIDs: scenario.SnapshotIDs, Rules: scenario.Rules}
+}
+
+func (s *Service) taskScenarios(ctx context.Context, task *storage.PlanEvalTask) ([]ScenarioView, *Error) {
+	if task.ScenariosJSON != "" {
+		var scenarios []ScenarioView
+		if err := json.Unmarshal([]byte(task.ScenariosJSON), &scenarios); err != nil || len(scenarios) == 0 {
+			return nil, s.internal(fmt.Errorf("invalid frozen scenarios"))
+		}
+		return scenarios, nil
+	}
+	// Legacy tasks have no frozen scene metadata, but their request/input already
+	// fixes the generation path; never infer it from an editable source scene.
+	executions, err := s.store.ListPlanEvalExecutionRequests(ctx, task.ID)
+	if err != nil {
+		return nil, s.internal(err)
+	}
+	if len(executions) == 0 {
+		return nil, s.internal(fmt.Errorf("task has no frozen executions"))
+	}
+	first := executions[0]
+	var request map[string]any
+	if err := json.Unmarshal([]byte(first.RequestJSON), &request); err != nil {
+		return nil, s.internal(err)
+	}
+	artifactType := "weekly_plan_batch"
+	if _, master := request["requested_mode"]; master {
+		artifactType = "master_plan"
+	}
+	name := task.ScenarioID
+	if task.ScenarioID == PresetScenarioID {
+		var preset presetScenarioFile
+		_ = json.Unmarshal(presetScenarioDocument, &preset)
+		name = preset.Name
+	}
+	ids := make([]string, 0, len(executions))
+	for _, execution := range executions {
+		ids = append(ids, execution.SnapshotID)
+	}
+	return []ScenarioView{{ID: task.ScenarioID, Name: name, ArtifactType: artifactType, AsOf: first.AsOf, Request: json.RawMessage(first.RequestJSON), SnapshotIDs: ids, Rules: []RuleRef{}}}, nil
+
+}
+
+func (s *Service) executionScenario(ctx context.Context, execution *storage.PlanEvalExecution) (*scenarioDocument, *Error) {
+	task, err := s.store.GetPlanEvalTask(ctx, execution.TaskID)
+	if err != nil {
+		return nil, s.mapStorageError(err)
+	}
+	scenarios, e := s.taskScenarios(ctx, task)
+	if e != nil {
+		return nil, e
+	}
+	for _, scenario := range scenarios {
+		if scenario.ID == execution.ScenarioID {
+			return &scenarioDocument{PlanEvalScenario: storage.PlanEvalScenario{ID: scenario.ID, Name: scenario.Name, ArtifactType: scenario.ArtifactType}}, nil
+		}
+	}
+	return nil, s.internal(fmt.Errorf("execution scenario not frozen"))
+}
+
+func decodeScenario(row *storage.PlanEvalScenario) (*scenarioDocument, error) {
+	doc := &scenarioDocument{PlanEvalScenario: *row}
+	if err := json.Unmarshal([]byte(row.SnapshotIDs), &doc.SnapshotIDs); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal([]byte(row.RuleRefs), &doc.Rules); err != nil {
+		return nil, err
+	}
+	return doc, nil
 }

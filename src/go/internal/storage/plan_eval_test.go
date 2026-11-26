@@ -590,12 +590,19 @@ func TestPlanEval_LockWaitCannotReviveExpiredLease(t *testing.T) {
 }
 
 func TestPlanEval_LegacyFingerprintDoesNotWeakenNewIdempotency(t *testing.T) {
-	in := &PlanEvalTaskCreate{Task: &PlanEvalTask{ParamsFingerprint: "v2:omitted"}, LegacyParamsFingerprint: "legacy-default-one"}
-	if !planEvalParamsMatch("legacy-default-one", in) {
-		t.Fatal("legacy default request cannot replay")
+	in := &PlanEvalTaskCreate{
+		Task:                         &PlanEvalTask{ParamsFingerprint: "v3:omitted"},
+		CompatibleParamsFingerprints: []string{"legacy-default-one", "v2:omitted"},
 	}
-	if planEvalParamsMatch("v2:explicit-one", in) {
-		t.Fatal("new explicit replicas confused with omission")
+	for _, compatible := range []string{"legacy-default-one", "v2:omitted", "v3:omitted"} {
+		if !in.MatchesParamsFingerprint(compatible) {
+			t.Fatalf("compatible request cannot replay: %s", compatible)
+		}
+	}
+	for _, incompatible := range []string{"v2:explicit-one", "v3:explicit-one"} {
+		if in.MatchesParamsFingerprint(incompatible) {
+			t.Fatalf("explicit replicas confused with omission: %s", incompatible)
+		}
 	}
 }
 
@@ -679,5 +686,13 @@ func TestPlanEval_CleanupIntentFencesNewWorkAndPreservesRevision(t *testing.T) {
 	updated, err := st.GetPlanEvalLaunchConfig(ctx, newTask.LaunchConfigID)
 	if err != nil || updated.RuntimeRevision <= intent.RuntimeRevision || updated.Replicas != 2 {
 		t.Fatalf("late cleanup affected the new runtime: %+v, %v", updated, err)
+	}
+}
+
+func TestPlanEvalScenarioRulesKeepLegacyAndExcludeOtherScenarios(t *testing.T) {
+	rules := []PlanEvalFrozenRule{{CheckID: "legacy"}, {ScenarioID: "a", CheckID: "rule", Version: 1}, {ScenarioID: "b", CheckID: "rule", Version: 2}}
+	got := scenarioRules(rules, "a")
+	if len(got) != 2 || got[1].Version != 1 {
+		t.Fatalf("wrong scenario rules: %v", got)
 	}
 }

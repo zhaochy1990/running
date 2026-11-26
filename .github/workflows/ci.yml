@@ -461,6 +461,8 @@ jobs:
         run: pnpm -r test
       - name: Verify generated Weekly Plan JSON Schema
         run: pnpm run verify:weekly-plan-schema
+      - name: Verify plan-evaluation input JSON Schemas
+        run: pnpm --filter @stride/coach-agent run verify:plan-eval-schema
       - name: Verify Weekly Plan contract parity
         run: node --test dist/weekly_plan/schemaParity.test.js
 

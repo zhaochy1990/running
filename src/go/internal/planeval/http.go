@@ -3,6 +3,7 @@ package planeval
 import (
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -28,13 +29,128 @@ func (s *Service) Router(adminAuth gin.HandlerFunc, adminID func(*gin.Context) s
 	r.Use(httplog.Middleware(log), gin.Recovery())
 	r.GET("/health", health)
 
-	admin := r.Group(adminPrefix, adminAuth)
+	admin := r.Group(adminPrefix, adminAuth, func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16<<20)
+		c.Next()
+	})
 	admin.GET("/agent-versions", s.handleAgentVersions)
+	admin.GET("/scenarios", func(c *gin.Context) {
+		rows, err := s.store.ListPlanEvalScenarios(c.Request.Context())
+		if err != nil {
+			writeError(c, s.internal(err))
+			return
+		}
+		views := make([]ScenarioView, 0, len(rows))
+		for _, row := range rows {
+			doc, e := decodeScenario(&row)
+			if e != nil {
+				writeError(c, s.internal(e))
+				return
+			}
+			views = append(views, scenarioView(doc))
+		}
+		c.JSON(200, gin.H{"scenarios": views})
+	})
+	admin.GET("/scenarios/:id", func(c *gin.Context) {
+		doc, e := s.loadScenario(c.Request.Context(), c.Param("id"))
+		if e != nil {
+			writeError(c, e)
+			return
+		}
+		c.JSON(200, scenarioView(doc))
+	})
+	saveScenario := func(c *gin.Context) {
+		var req ScenarioView
+		if !decode(c, &req) {
+			return
+		}
+		view, e := s.saveScenario(c.Request.Context(), c.Param("id"), req)
+		if e != nil {
+			writeError(c, e)
+			return
+		}
+		c.JSON(200, view)
+	}
+	admin.POST("/scenarios", saveScenario)
+	admin.PUT("/scenarios/:id", saveScenario)
+	admin.POST("/request-preview", func(c *gin.Context) {
+		var req struct {
+			ArtifactType string          `json:"artifact_type"`
+			SnapshotID   string          `json:"snapshot_id"`
+			Request      json.RawMessage `json:"request"`
+		}
+		if !decode(c, &req) {
+			return
+		}
+		snapshot, err := s.store.GetPlanEvalRunnerSnapshot(c.Request.Context(), req.SnapshotID)
+		if err != nil {
+			writeError(c, s.mapStorageError(err))
+			return
+		}
+		request, asOf, e := generationRequest(req.ArtifactType, snapshot.SnapshotJSON, string(req.Request))
+		if e != nil {
+			e.Detail = "数据 " + req.SnapshotID + ": " + e.Detail
+			writeError(c, e)
+			return
+		}
+		c.JSON(200, gin.H{"request": json.RawMessage(request), "as_of": asOf})
+	})
+	admin.GET("/snapshots", func(c *gin.Context) {
+		rows, err := s.store.ListPlanEvalSnapshots(c.Request.Context())
+		if err != nil {
+			writeError(c, s.internal(err))
+			return
+		}
+		views := make([]SnapshotView, 0, len(rows))
+		for _, row := range rows {
+			views = append(views, snapshotView(row))
+		}
+		c.JSON(200, gin.H{"snapshots": views})
+	})
+	admin.GET("/snapshots/:id", func(c *gin.Context) {
+		row, err := s.store.GetPlanEvalRunnerSnapshot(c.Request.Context(), c.Param("id"))
+		if err != nil {
+			writeError(c, s.mapStorageError(err))
+			return
+		}
+		c.Data(200, "application/json", []byte(row.SnapshotJSON))
+	})
+	saveSnapshot := func(c *gin.Context) {
+		var raw json.RawMessage
+		if !decode(c, &raw) {
+			return
+		}
+		row, e := s.saveSnapshot(c.Request.Context(), c.Param("id"), raw)
+		if e != nil {
+			writeError(c, e)
+			return
+		}
+		c.Data(200, "application/json", []byte(row.SnapshotJSON))
+	}
+	admin.POST("/snapshots", saveSnapshot)
+	admin.PUT("/snapshots/:id", saveSnapshot)
+	admin.GET("/rules", func(c *gin.Context) {
+		rows, err := s.store.ListPlanEvalRules(c.Request.Context())
+		if err != nil {
+			writeError(c, s.internal(err))
+			return
+		}
+		c.JSON(200, gin.H{"rules": rows})
+	})
+
 	admin.POST("/agent-versions/:version/cleanup", s.handleCleanup)
 	admin.POST("/agent-versions/:version/scale", s.handleScale)
 	admin.POST("/tasks", func(c *gin.Context) { s.handleCreateTask(c, adminID(c)) })
 	admin.GET("/tasks", s.handleListTasks)
 	admin.GET("/tasks/:id", s.handleTaskDetail)
+	admin.GET("/tasks/:id/executions/:execution_id/input", func(c *gin.Context) {
+		input, e := s.ExecutionInput(c.Request.Context(), c.Param("id"), c.Param("execution_id"))
+		if e != nil {
+			writeError(c, e)
+			return
+		}
+		c.JSON(200, input)
+	})
 	admin.POST("/tasks/:id/retry-launch", s.handleRetryLaunch)
 	admin.GET("/artifacts/:id", s.handleArtifact)
 

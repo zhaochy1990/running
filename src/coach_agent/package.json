@@ -19,6 +19,8 @@
     "clean": "node scripts/clean.mjs",
     "copy-assets": "node scripts/copy-assets.mjs",
     "build": "npm run clean && npm run tsc && npm run copy-assets",
+    "generate:plan-eval-schema": "node scripts/generate-plan-eval-schema.mjs",
+    "verify:plan-eval-schema": "npm run generate:plan-eval-schema && git diff --exit-code -- ../go/internal/planeval/*.schema.json",
     "generate:weekly-plan-schema": "node scripts/generate-weekly-plan-schema.mjs",
     "verify:weekly-plan-schema": "pnpm run generate:weekly-plan-schema && git diff --exit-code -- ../go/internal/api/weekly_plan_schema.json ../go/internal/api/master-plan-snapshot.schema.json",
     "test": "npm run build && node --test dist/config/*.test.js dist/tools/*.test.js dist/agents/*.test.js dist/agents/master_plan/*.test.js dist/agents/race_strategy/*.test.js dist/agents/training/*.test.js dist/agents/custom_workout/*.test.js dist/agents/workout_manage/*.test.js dist/graph/master_plan/*.test.js dist/graph/master_plan/phasing/*.test.js dist/graph/master_plan/phasing/load/*.test.js dist/graph/master_plan/phasing/content/*.test.js dist/graph/master_plan/phasing/content/schedule/*.test.js dist/graph/rolling/*.test.js dist/graph/rolling/detect/*.test.js dist/graph/rolling/adjust/*.test.js dist/data/*.test.js dist/utils/*.test.js",
