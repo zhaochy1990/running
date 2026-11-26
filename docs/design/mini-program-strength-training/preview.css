@@ -256,6 +256,22 @@ dialog::backdrop { background: #2227278a; }
   background: var(--white);
 }
 .log-exercise + .log-exercise { margin-top: 13px; }
+.log-exercise.is-collapsed { padding-block: 4px; }
+.log-exercise-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 2px;
+  border-radius: 7px;
+  text-align: left;
+}
+.log-exercise-summary:hover { background: var(--sunken); }
+.log-exercise-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 680; }
+.log-exercise-count, .log-exercise-summary svg { color: var(--muted); }
+.log-exercise-count { font-size: 12px; white-space: nowrap; }
 .log-exercise-head { display: flex; align-items: center; gap: 4px; }
 .log-exercise-head input { min-height: 44px; font-size: 15px; font-weight: 680; }
 .log-exercise-head .log-remove {

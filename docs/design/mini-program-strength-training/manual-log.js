@@ -10,6 +10,7 @@ const manualLog = (() => {
   const records = [];
   let activeDraft = null;
   let activeRecord = null;
+  let activeExerciseId = null;
   let nextId = 1;
   let selected = 0;
   let editing = null;
@@ -19,6 +20,10 @@ const manualLog = (() => {
   function today() {
     const parts = Object.fromEntries(dates.formatToParts().map(part => [part.type, part.value]));
     return `${parts.year}-${parts.month}-${parts.day}`;
+  }
+
+  function defaultTitle(date) {
+    return `${date} 力量训练`;
   }
 
   function newRow(source) {
@@ -31,7 +36,11 @@ const manualLog = (() => {
 
   function draft() {
     if (editing) return editing.draft;
-    return (activeDraft ??= { title: '', date: today(), exercises: [newExercise()], note: '' });
+    if (!activeDraft) {
+      const date = today();
+      activeDraft = { title: defaultTitle(date), date, exercises: [newExercise()], note: '' };
+    }
+    return activeDraft;
   }
 
   function isPage(page) {
@@ -99,28 +108,47 @@ const manualLog = (() => {
     </div>`;
   }
 
-  function exerciseView(exercise, index) {
-    return `<section class="log-exercise" data-log-exercise="${exercise.id}" aria-label="动作 ${index + 1}">
+  function exerciseView(exercise, index, expanded) {
+    const label = `动作 ${index + 1}`;
+    const body = expanded ? `
       <div class="log-exercise-head">
-        <input data-log-field="name" aria-label="动作 ${index + 1} 名称" placeholder="动作名称，如深蹲" value="${escape(exercise.name)}">
-        ${logButton('remove-exercise', app.icon('cross', 14), 'icon-button log-remove', `aria-label="删除动作 ${index + 1}"`)}
+        <input data-log-field="name" aria-label="${label} 名称" placeholder="动作名称，如深蹲" value="${escape(exercise.name)}">
+        ${logButton('remove-exercise', app.icon('cross', 14), 'icon-button log-remove', `aria-label="删除${label}"`)}
       </div>
       ${exercise.rows.length ? '<div class="log-set log-set-labels" aria-hidden="true"><span>组数</span><span>负重</span><span>单位</span><span>数量</span></div>' : ''}
       ${exercise.rows.map(rowView).join('')}
       <div class="log-exercise-footer">
         ${logButton('add-row', `${app.icon('plus', 16)}添加一组`, 'text-button log-add-row')}
-      </div>
+      </div>` : logButton('open-exercise',
+        `<span class="log-exercise-name">${escape(exercise.name.trim() || label)}</span>
+         <span class="log-exercise-count">${exercise.rows.length} 组</span>${app.icon('right', 15)}`,
+        'log-exercise-summary', 'aria-expanded="false"');
+    return `<section class="log-exercise${expanded ? '' : ' is-collapsed'}" data-log-exercise="${exercise.id}" aria-label="${label}" tabindex="-1">
+      ${body}
     </section>`;
+  }
+
+  function expandedExercise(entry) {
+    const id = editing ? editing.exerciseId : activeExerciseId;
+    return entry.exercises.find(exercise => exercise.id === id) ?? entry.exercises[0];
+  }
+
+  function showExercise(id) {
+    if (editing) editing.exerciseId = id;
+    else activeExerciseId = id;
+    app.render();
+    return app.screen.querySelector(`[data-log-exercise="${id}"]`);
   }
 
   function editView() {
     const entry = draft();
+    const expanded = expandedExercise(entry);
     return {
       title: editing ? '编辑记录' : '自由力量训练',
       content: `<form id="manual-form" class="manual-form" novalidate>
-        <label class="log-field log-title-field"><span>训练名称</span><input data-log-field="title" placeholder="力量训练" value="${escape(entry.title)}"></label>
+        <label class="log-field log-title-field"><span>训练名称</span><input data-log-field="title" placeholder="${defaultTitle(entry.date)}" value="${escape(entry.title)}"></label>
         <h3 class="log-section-head">动作明细</h3>
-        ${entry.exercises.map(exerciseView).join('')}
+        ${entry.exercises.map((exercise, index) => exerciseView(exercise, index, exercise === expanded)).join('')}
         ${logButton('add-exercise', `${app.icon('plus', 18)}添加动作`, 'secondary log-add-exercise')}
         <div class="log-field log-note-field">
           <textarea aria-label="训练备注" data-log-field="note" rows="4" placeholder="训练备注（选填）">
@@ -139,7 +167,7 @@ ${escape(entry.note)}</textarea>
   }
 
   function recordTitle(record) {
-    return escape(record.data.title.trim() || '力量训练');
+    return escape(record.data.title.trim() || defaultTitle(record.data.date));
   }
 
   function line(row) {
@@ -161,7 +189,9 @@ ${escape(entry.note)}</textarea>
   function hasDraft() {
     if (!activeDraft) return false;
     if (activeRecord) return JSON.stringify(activeDraft) !== JSON.stringify(activeRecord.data);
-    return Boolean(activeDraft.title.trim() || activeDraft.note.trim() || activeDraft.exercises.length !== 1 ||
+    const title = activeDraft.title.trim();
+    const customTitle = title && title !== defaultTitle(activeDraft.date);
+    return Boolean(customTitle || activeDraft.note.trim() || activeDraft.exercises.length !== 1 ||
       activeDraft.exercises.some(exercise => exercise.name.trim() || exercise.rows.length !== 1 ||
         exercise.rows.some(row => Object.keys(initialSet).some(key => row[key].trim() !== initialSet[key]))));
   }
@@ -202,11 +232,11 @@ ${escape(entry.note)}</textarea>
 
     for (const exercise of entry.exercises) {
       const location = `[data-log-exercise="${exercise.id}"]`;
-      if (!exercise.name.trim()) return { location, field: 'name', message: '请填写动作名称。' };
-      if (!exercise.rows.length) return { location, action: 'add-row', message: '请记录至少一组。' };
+      if (!exercise.name.trim()) return { location, exerciseId: exercise.id, field: 'name', message: '请填写动作名称。' };
+      if (!exercise.rows.length) return { location, exerciseId: exercise.id, action: 'add-row', message: '请记录至少一组。' };
       for (const row of exercise.rows) {
         const location = `[data-log-row="${row.id}"]`;
-        if (!positiveInteger(row.amount)) return { location, field: 'amount', message: '请输入大于 0 的整数作为数量。' };
+        if (!positiveInteger(row.amount)) return { location, exerciseId: exercise.id, field: 'amount', message: '请输入大于 0 的整数作为数量。' };
       }
     }
     return null;
@@ -225,6 +255,7 @@ ${escape(entry.note)}</textarea>
     clearError();
     const error = validate(entry);
     if (error) {
+      if (error.exerciseId && error.exerciseId !== expandedExercise(entry)?.id) showExercise(error.exerciseId);
       const area = error.location ? app.screen.querySelector(error.location) : app.screen;
       const field = error.field ? area.querySelector(`[data-log-field="${error.field}"]`)
         : area.querySelector(`[data-log-action="${error.action}"]`);
@@ -330,15 +361,23 @@ ${escape(entry.note)}</textarea>
       case 'add-exercise': {
         const exercise = newExercise();
         draft().exercises.push(exercise);
-        app.render();
-        app.screen.querySelector(`[data-log-exercise="${exercise.id}"] input`).focus();
+        showExercise(exercise.id).querySelector('input').focus();
+        break;
+      }
+      case 'open-exercise': {
+        const panel = showExercise(exerciseOf(control).id);
+        panel.focus({ preventScroll: true });
+        panel.firstElementChild.scrollIntoView({ block: 'nearest' });
         break;
       }
       case 'remove-exercise': {
         const exercise = exerciseOf(control);
-        draft().exercises = draft().exercises.filter(item => item !== exercise);
-        app.render();
-        app.screen.querySelector('[data-log-action="add-exercise"]').focus();
+        const exercises = draft().exercises;
+        const index = exercises.indexOf(exercise);
+        exercises.splice(index, 1);
+        const next = exercises[Math.min(index, exercises.length - 1)];
+        const panel = showExercise(next?.id);
+        (panel ?? app.screen.querySelector('[data-log-action="add-exercise"]')).focus();
         break;
       }
       case 'add-row':
