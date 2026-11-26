@@ -50,6 +50,7 @@ type Service struct {
 	// evaluateMu keeps this replica's sweeps from overlapping; cross-replica
 	// safety comes from the compare-and-set claim in storage.
 	evaluateMu sync.Mutex
+	reportSlot chan struct{}
 }
 
 func NewService(store *storage.Store, broker queueBroker, deployer Deployer, secrets *SecretKey, cfg Config, log *zap.Logger) *Service {
@@ -59,7 +60,7 @@ func NewService(store *storage.Store, broker queueBroker, deployer Deployer, sec
 	// The list arrives from YAML or from one environment variable written
 	// either comma- or space-separated.
 	cfg.AgentVersions = normalizeAgentVersions(cfg.AgentVersions)
-	return &Service{store: store, broker: broker, deployer: deployer, secrets: secrets, cfg: cfg, log: log}
+	return &Service{store: store, broker: broker, deployer: deployer, secrets: secrets, cfg: cfg, log: log, reportSlot: make(chan struct{}, 1)}
 }
 
 // normalizeAgentVersions splits, trims and de-duplicates the configured tags,
@@ -168,6 +169,7 @@ type ArtifactView struct {
 }
 
 type ExecutionView struct {
+	Result       string            `json:"result"`
 	ID           string            `json:"id"`
 	ScenarioID   string            `json:"scenario_id"`
 	AsOf         string            `json:"as_of"`
@@ -180,9 +182,11 @@ type ExecutionView struct {
 }
 
 type ExecutionInputView struct {
-	AsOf     string          `json:"as_of"`
-	Request  json.RawMessage `json:"request"`
-	Snapshot json.RawMessage `json:"snapshot"`
+	AsOf           string          `json:"as_of"`
+	Request        json.RawMessage `json:"request"`
+	Snapshot       json.RawMessage `json:"snapshot"`
+	RequestSHA256  string          `json:"request_sha256"`
+	SnapshotSHA256 string          `json:"snapshot_sha256"`
 }
 
 type CheckResultView struct {
@@ -196,8 +200,10 @@ type CheckResultView struct {
 
 type TaskDetailView struct {
 	TaskView
+	Result      string                       `json:"result"`
+	Summary     ResultSummary                `json:"summary"`
 	Scenario    ScenarioView                 `json:"scenario"`
-	Scenarios   []ScenarioView               `json:"scenarios"`
+	Scenarios   []ScenarioResultView         `json:"scenarios"`
 	FrozenRules []storage.PlanEvalFrozenRule `json:"frozen_rules"`
 	Executions  []ExecutionView              `json:"executions"`
 }
@@ -709,6 +715,10 @@ func (s *Service) ListTasks(ctx context.Context, limit, offset int) ([]TaskView,
 // taskViews attaches each task's progress and its launch configuration's
 // replicas and variable names (never the values).
 func (s *Service) taskViews(ctx context.Context, tasks []storage.PlanEvalTask) ([]TaskView, *Error) {
+	return s.taskViewsWithLaunch(ctx, tasks, true)
+}
+
+func (s *Service) taskViewsWithLaunch(ctx context.Context, tasks []storage.PlanEvalTask, liveFallback bool) ([]TaskView, *Error) {
 	ids := make([]string, len(tasks))
 	for i := range tasks {
 		ids[i] = tasks[i].ID
@@ -717,9 +727,12 @@ func (s *Service) taskViews(ctx context.Context, tasks []storage.PlanEvalTask) (
 	if err != nil {
 		return nil, s.internal(err)
 	}
-	configs, err := s.store.ListPlanEvalLaunchConfigs(ctx)
-	if err != nil {
-		return nil, s.internal(err)
+	var configs []storage.PlanEvalLaunchConfig
+	if liveFallback {
+		configs, err = s.store.ListPlanEvalLaunchConfigs(ctx)
+		if err != nil {
+			return nil, s.internal(err)
+		}
 	}
 	launchByID := make(map[string]*storage.PlanEvalLaunchConfig, len(configs))
 	for i := range configs {
@@ -756,6 +769,10 @@ func (s *Service) taskViews(ctx context.Context, tasks []storage.PlanEvalTask) (
 
 // TaskDetail assembles Generate, Artifact and Evaluate per snapshot execution.
 func (s *Service) TaskDetail(ctx context.Context, id string) (*TaskDetailView, *Error) {
+	return s.taskDetail(ctx, id, true)
+}
+
+func (s *Service) taskDetail(ctx context.Context, id string, liveLaunchFallback bool) (*TaskDetailView, *Error) {
 	task, err := s.store.GetPlanEvalTask(ctx, id)
 	if err != nil {
 		return nil, s.mapStorageError(err)
@@ -786,7 +803,7 @@ func (s *Service) TaskDetail(ctx context.Context, id string) (*TaskDetailView, *
 	for _, result := range results {
 		checksByArtifact[result.ArtifactID] = append(checksByArtifact[result.ArtifactID], checkResultView(result))
 	}
-	summary, verr := s.taskViews(ctx, []storage.PlanEvalTask{*task})
+	summary, verr := s.taskViewsWithLaunch(ctx, []storage.PlanEvalTask{*task}, liveLaunchFallback)
 	if verr != nil {
 		return nil, verr
 	}
@@ -794,7 +811,7 @@ func (s *Service) TaskDetail(ctx context.Context, id string) (*TaskDetailView, *
 	if err != nil {
 		return nil, s.internal(err)
 	}
-	detail := &TaskDetailView{TaskView: summary[0], Scenario: scenarios[0], Scenarios: scenarios, FrozenRules: rules, Executions: make([]ExecutionView, 0, len(executions))}
+	detail := &TaskDetailView{TaskView: summary[0], Scenario: scenarios[0], FrozenRules: rules, Executions: make([]ExecutionView, 0, len(executions))}
 	for _, execution := range executions {
 		view := ExecutionView{
 			ID: execution.ID, ScenarioID: execution.ScenarioID, SnapshotID: execution.SnapshotID,
@@ -813,8 +830,17 @@ func (s *Service) TaskDetail(ctx context.Context, id string) (*TaskDetailView, *
 				view.Checks = []CheckResultView{}
 			}
 		}
+		if view.Evaluate.Status == storage.PlanEvalEvaluateSkipped {
+			if view.Generate.Error != nil {
+				view.Evaluate.Error = view.Generate.Error
+			} else {
+				view.Evaluate.Error = &StageError{Code: "schema_invalid", Message: "Artifact 未通过 Schema，跳过业务规则。"}
+			}
+		}
+		view.Result = executionResult(view)
 		detail.Executions = append(detail.Executions, view)
 	}
+	detail.summarize(scenarios)
 	return detail, nil
 }
 
@@ -829,6 +855,7 @@ func (s *Service) ExecutionInput(ctx context.Context, taskID, executionID string
 	}
 	return &ExecutionInputView{
 		AsOf: execution.AsOf, Request: json.RawMessage(execution.RequestJSON), Snapshot: json.RawMessage(execution.SnapshotJSON),
+		RequestSHA256: documentSHA256(execution.RequestJSON), SnapshotSHA256: documentSHA256(execution.SnapshotJSON),
 	}, nil
 }
 

@@ -433,7 +433,7 @@ func (s *Store) RecordPlanEvalLaunch(ctx context.Context, taskID, message string
 	if message == "" {
 		changes["launched_at"] = now
 	}
-	err := s.db.WithContext(ctx).Model(&PlanEvalTask{}).Where("id = ?", taskID).
+	err := s.db.WithContext(ctx).Model(&PlanEvalTask{}).Where("id = ? AND status = ?", taskID, PlanEvalTaskRunning).
 		Updates(changes).Error
 	if err != nil {
 		return fmt.Errorf("storage: set plan_eval_tasks launch error: %w", err)
@@ -563,7 +563,7 @@ func (s *Store) ListPlanEvalExecutions(ctx context.Context, taskID string) ([]Pl
 // ListPlanEvalArtifactMetas lists a task's artifacts without their content.
 func (s *Store) ListPlanEvalArtifactMetas(ctx context.Context, taskID string) ([]PlanEvalArtifact, error) {
 	var rows []PlanEvalArtifact
-	if err := s.db.WithContext(ctx).Select("plan_eval_artifacts.*, OCTET_LENGTH(content) AS size_bytes").
+	if err := s.db.WithContext(ctx).Select("id, execution_id, task_id, artifact_type, sha256, schema_valid, schema_errors, created_at, OCTET_LENGTH(content) AS size_bytes").
 		Where("task_id = ?", taskID).Order("created_at ASC, id ASC").Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("storage: list plan_eval_artifacts: %w", err)
 	}
@@ -1126,4 +1126,43 @@ func (s *Store) ListPlanEvalExecutionRequests(ctx context.Context, taskID string
 	err := s.db.WithContext(ctx).Select("snapshot_id", "as_of", "request_json").
 		Where("task_id = ?", taskID).Order("created_at ASC, id ASC").Find(&rows).Error
 	return rows, err
+}
+
+// PlanEvalReportMetadata bounds detail reads without transferring their blobs.
+// Text may expand sixfold when JSON-escaped; fixed overhead covers row keys,
+// stage views and summaries. Scenario data appears twice in the v1 report.
+type PlanEvalReportMetadata struct {
+	ID        string
+	Status    string
+	SizeBytes int64
+}
+
+func (s *Store) PlanEvalReportMetadata(ctx context.Context, taskID string) (*PlanEvalReportMetadata, error) {
+	var row PlanEvalReportMetadata
+	result := s.db.WithContext(ctx).Raw(`
+ SELECT t.id, t.status, 6 * (
+   2048 + 2 * OCTET_LENGTH(COALESCE(t.scenarios_json, ''))
+   + OCTET_LENGTH(COALESCE(t.launch_env_names, '')) + OCTET_LENGTH(COALESCE(t.launch_error, ''))
+   + COALESCE((SELECT SUM(2048 + OCTET_LENGTH(source) + OCTET_LENGTH(check_id)
+       + OCTET_LENGTH(COALESCE(scenario_id, '')) + OCTET_LENGTH(artifact_type))
+       FROM plan_eval_frozen_rules WHERE task_id = t.id), 0)
+   + COALESCE((SELECT SUM(4096 + OCTET_LENGTH(COALESCE(generate_error_code, ''))
+       + OCTET_LENGTH(COALESCE(generate_error_message, ''))
+       + OCTET_LENGTH(COALESCE(NULLIF(snapshot_name, ''), JSON_UNQUOTE(JSON_EXTRACT(snapshot_json, '$.username')), ''))
+       + CASE WHEN COALESCE(t.scenarios_json, '') = '' THEN 2 * OCTET_LENGTH(request_json) ELSE 0 END)
+       FROM plan_eval_executions WHERE task_id = t.id), 0)
+   + COALESCE((SELECT SUM(2048 + OCTET_LENGTH(COALESCE(schema_errors, '')))
+       FROM plan_eval_artifacts WHERE task_id = t.id), 0)
+   + COALESCE((SELECT SUM(4096 + OCTET_LENGTH(c.check_id) + OCTET_LENGTH(COALESCE(c.reason, ''))
+       + OCTET_LENGTH(COALESCE(c.detail_json, '')) + OCTET_LENGTH(COALESCE(c.error_json, '')))
+       FROM plan_eval_check_results c JOIN plan_eval_artifacts a ON a.id = c.artifact_id
+       WHERE a.task_id = t.id), 0)
+ ) AS size_bytes FROM plan_eval_tasks t WHERE t.id = ?`, taskID).Scan(&row)
+	if result.Error != nil {
+		return nil, fmt.Errorf("storage: plan_eval report metadata: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return nil, ErrPlanEvalNotFound
+	}
+	return &row, nil
 }

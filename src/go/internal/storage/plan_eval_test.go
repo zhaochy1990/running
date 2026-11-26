@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -777,5 +778,70 @@ func TestPlanEval_PublishRuleIsImmutableAndConcurrent(t *testing.T) {
 	first.Version = 4
 	if err := st.PublishPlanEvalRule(ctx, &first); !errors.Is(err, ErrPlanEvalRuleConflict) {
 		t.Fatalf("skipped version: %v", err)
+	}
+}
+
+func TestPlanEvalArtifactMetasOmitContentAndVirtualSize(t *testing.T) {
+	st := openPlanEvalStore(t)
+	ctx := context.Background()
+	task, _, err := st.CreatePlanEvalTask(ctx, newPlanEvalTaskCreate("metadata-"+uuid.NewString()[:8], "[]", 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	execution := onlyExecution(t, st, task.ID)
+	artifact := &PlanEvalArtifact{ID: uuid.NewString(), ExecutionID: execution.ID, TaskID: task.ID, ArtifactType: "master_plan", Content: "原始 <content>\n", Sha256: "hash", SchemaValid: false, CreatedAt: time.Now()}
+	if err := st.db.Create(artifact).Error; err != nil {
+		t.Fatal(err)
+	}
+	// Migration must never materialize this read-only expression as a column.
+	if st.db.Migrator().HasColumn(&PlanEvalArtifact{}, "size_bytes") {
+		t.Fatal("virtual size_bytes was migrated")
+	}
+	metas, err := st.ListPlanEvalArtifactMetas(ctx, task.ID)
+	if err != nil || len(metas) != 1 {
+		t.Fatalf("metas: %v, %d", err, len(metas))
+	}
+	if metas[0].Content != "" || metas[0].SizeBytes != len(artifact.Content) || metas[0].Sha256 != artifact.Sha256 {
+		t.Fatalf("metadata includes content or wrong UTF-8 size: %+v", metas[0])
+	}
+	raw, err := st.GetPlanEvalArtifact(ctx, artifact.ID)
+	if err != nil || raw.Content != artifact.Content {
+		t.Fatalf("normal Get queried virtual column or changed content: %v", err)
+	}
+}
+
+func TestPlanEvalReportMetadataCountsTextNotArtifactContent(t *testing.T) {
+	st := openPlanEvalStore(t)
+	ctx := context.Background()
+	in := newPlanEvalTaskCreate("budget-"+uuid.NewString()[:8], "[]", 1)
+	source := strings.Repeat("x", 1<<15)
+	in.FrozenRules = []*PlanEvalFrozenRule{{ScenarioID: "scenario", CheckID: "rule", Version: 1, ArtifactType: "master_plan", Source: source}}
+	task, _, err := st.CreatePlanEvalTask(ctx, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact := &PlanEvalArtifact{ID: uuid.NewString(), TaskID: task.ID, ExecutionID: in.Executions[0].ID, Content: "small", ArtifactType: "master_plan", Sha256: "hash", CreatedAt: time.Now()}
+	if err := st.db.Create(artifact).Error; err != nil {
+		t.Fatal(err)
+	}
+	detail := `{"detail":"` + strings.Repeat("d", 1<<19) + `"}`
+	reason := strings.Repeat("r", 1<<15)
+	check := &PlanEvalCheckResult{ID: uuid.NewString(), ArtifactID: artifact.ID, CheckID: "rule", Status: "fail", Reason: reason, DetailJSON: &detail, ErrorJSON: nil}
+	if err := st.db.Create(check).Error; err != nil {
+		t.Fatal(err)
+	}
+	before, err := st.PlanEvalReportMetadata(ctx, task.ID)
+	if err != nil || before.ID != task.ID || before.Status != PlanEvalTaskRunning || before.SizeBytes < 6*int64(len(source)+len(reason)+len(detail)) {
+		t.Fatalf("text budget: %+v %v", before, err)
+	}
+	if err := st.db.Model(artifact).Update("content", strings.Repeat("c", 4<<20)).Error; err != nil {
+		t.Fatal(err)
+	}
+	after, err := st.PlanEvalReportMetadata(ctx, task.ID)
+	if err != nil || before.SizeBytes != after.SizeBytes {
+		t.Fatal("report metadata loaded/counts artifact content")
+	}
+	if _, err := st.PlanEvalReportMetadata(ctx, uuid.NewString()); !errors.Is(err, ErrPlanEvalNotFound) {
+		t.Fatalf("missing metadata: %v", err)
 	}
 }
