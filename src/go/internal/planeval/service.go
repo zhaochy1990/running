@@ -302,7 +302,7 @@ func (s *Service) CreateTask(ctx context.Context, submitter, idempotencyKey stri
 func (s *Service) withVersion(ctx context.Context, version string, run func(context.Context) *Error) *Error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 45*time.Second)
 	defer cancel()
-	err := s.store.WithPlanEvalVersionLock(ctx, version, func() error {
+	err := s.store.WithPlanEvalVersionLock(ctx, version, func(ctx context.Context) error {
 		if err := run(ctx); err != nil {
 			return err
 		}
@@ -401,10 +401,10 @@ func (s *Service) launchAndRecord(ctx context.Context, task *storage.PlanEvalTas
 	}
 	// Once frozen, finish the launch attempt even if the browser disconnects.
 	// Any unconfirmed publish can be retried with the original task key.
-	launchCtx, cancelLaunch := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	launchCtx, cancelLaunch := context.WithTimeout(ctx, 30*time.Second)
 	lerr := s.launch(launchCtx, task)
 	cancelLaunch()
-	resultCtx, cancelResult := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	resultCtx, cancelResult := context.WithTimeout(ctx, 5*time.Second)
 	defer cancelResult()
 	if lerr != nil {
 		if uerr := s.store.RecordPlanEvalLaunch(resultCtx, task.ID, lerr.Error()); uerr != nil {

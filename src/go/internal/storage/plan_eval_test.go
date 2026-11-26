@@ -448,15 +448,15 @@ func TestPlanEval_VersionLockAcrossConnections(t *testing.T) {
 	release := make(chan struct{})
 	first := make(chan error, 1)
 	go func() {
-		first <- st.WithPlanEvalVersionLock(ctx, version, func() error { close(entered); <-release; return errors.New("injected failure") })
+		first <- st.WithPlanEvalVersionLock(ctx, version, func(ctx context.Context) error { close(entered); <-release; return errors.New("injected failure") })
 	}()
 	<-entered
 	// Another version is independent, even while the first runtime command blocks.
-	if err := other.WithPlanEvalVersionLock(ctx, version+"-other", func() error { return nil }); err != nil {
+	if err := other.WithPlanEvalVersionLock(ctx, version+"-other", func(ctx context.Context) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	deadline, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
-	err := other.WithPlanEvalVersionLock(deadline, version, func() error { t.Error("same version entered concurrently"); return nil })
+	err := other.WithPlanEvalVersionLock(deadline, version, func(ctx context.Context) error { t.Error("same version entered concurrently"); return nil })
 	cancel()
 	close(release)
 	if err == nil {
@@ -465,7 +465,7 @@ func TestPlanEval_VersionLockAcrossConnections(t *testing.T) {
 	if err := <-first; err == nil {
 		t.Fatal("callback failure swallowed")
 	}
-	if err := other.WithPlanEvalVersionLock(ctx, version, func() error { return nil }); err != nil {
+	if err := other.WithPlanEvalVersionLock(ctx, version, func(ctx context.Context) error { return nil }); err != nil {
 		t.Fatalf("lock leaked on failure: %v", err)
 	}
 }
@@ -596,5 +596,58 @@ func TestPlanEval_LegacyFingerprintDoesNotWeakenNewIdempotency(t *testing.T) {
 	}
 	if planEvalParamsMatch("v2:explicit-one", in) {
 		t.Fatal("new explicit replicas confused with omission")
+	}
+}
+
+func TestPlanEval_LostLockSessionCancelsRuntime(t *testing.T) {
+	st := openPlanEvalStore(t)
+	other := openPlanEvalStore(t)
+	ctx := context.Background()
+	version := uuid.NewString()
+	entered := make(chan struct{})
+	result := make(chan error, 1)
+	go func() {
+		result <- st.WithPlanEvalVersionLock(ctx, version, func(runtimeCtx context.Context) error {
+			close(entered)
+			select {
+			case <-runtimeCtx.Done():
+				return runtimeCtx.Err()
+			case <-time.After(3 * time.Second):
+				return errors.New("lock loss not detected")
+			}
+		})
+	}()
+	<-entered
+	var connectionID int64
+	if err := other.db.Raw("SELECT IS_USED_LOCK(SHA2(CONCAT(DATABASE(), ':plan-eval:', ?), 256))", version).Scan(&connectionID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := other.db.Exec("KILL ?", connectionID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-result; !errors.Is(err, context.Canceled) {
+		t.Fatalf("lock-session loss did not cancel runtime: %v", err)
+	}
+	if err := other.WithPlanEvalVersionLock(ctx, version, func(context.Context) error { return nil }); err != nil {
+		t.Fatalf("takeover: %v", err)
+	}
+}
+
+func TestPlanEval_CleanupCannotReleaseAnActiveOrReplacementConfig(t *testing.T) {
+	st := openPlanEvalStore(t)
+	ctx := context.Background()
+	version := "v" + uuid.NewString()[:8]
+	task, _, err := st.CreatePlanEvalTask(ctx, newPlanEvalTaskCreate(version, `[]`, 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ReleasePlanEvalLaunchConfig(ctx, version, task.LaunchConfigID); err != ErrPlanEvalVersionBusy {
+		t.Fatalf("active config released: %v", err)
+	}
+	if err := st.ReleasePlanEvalLaunchConfig(ctx, version, uuid.NewString()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.PlanEvalLaunchConfigForVersion(ctx, version); err != nil {
+		t.Fatalf("replacement config released: %v", err)
 	}
 }

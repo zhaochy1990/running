@@ -104,7 +104,7 @@ RunnerSnapshot 在「测试数据」独立维护，运行时 JSON 使用 `schema
 
 [测评 API 与冻结输入契约实施工单](https://github.com/zhaochy1990/stride-devops/issues/1055)负责快照导入、冻结和这组内部接口。
 
-API 按版本协调任务提交、启动、扩缩容与清理。协调使用测评 MySQL 按数据库和 Agent 版本命名的连接级锁，多个 API 副本遵守同一锁；不同版本互不阻塞。清理等待 Kubernetes 前台删除完成后释放锁，新提交随后重建 Deployment。环境变量留空沿用有效配置，副本数省略或为 0 时沿用该版本有效副本数（首次默认 1）。管理员通过 `POST /api/admin/plan-eval/agent-versions/{version}/scale`，请求 `{"replicas": 3}` 调整版本的共享并发；副本数为 1–配置上限，期望副本数先保存，集群故障后可重试扩缩容或未启动任务。
+API 按版本协调任务提交、启动、扩缩容与清理。协调使用测评 MySQL 按数据库和 Agent 版本命名的连接级锁，多个 API 副本遵守同一锁；不同版本互不阻塞。锁连接失效会取消运行操作，清理按 Deployment/Secret 的 UID 和 resourceVersion 前置条件删除，防止旧清理覆盖新启动；清理等待 Kubernetes 前台删除完成后释放锁，新提交随后重建 Deployment。环境变量留空沿用有效配置，副本数省略或为 0 时沿用该版本有效副本数（首次默认 1）。管理员通过 `POST /api/admin/plan-eval/agent-versions/{version}/scale`，请求 `{"replicas": 3}` 调整版本的共享并发；副本数为 1–配置上限，期望副本数先保存，集群故障后可重试扩缩容或未启动任务。
 
 ```mermaid
 flowchart LR
@@ -371,3 +371,5 @@ SnapshotExecution 以 `(task_id, scenario_id, snapshot_id)` 去重。每个执�
 - 测评 API 需要 MySQL `GET_LOCK`/`RELEASE_LOCK`，锁在专用连接上持有并按数据库隔离；连接池至少需要两个连接（锁连接及业务连接）。生成队列显式使用 classic 类型；不可路由发布不会标记为已投递，未知队列类型或缺少总数时清理失败关闭。队列状态通过 RabbitMQ management 的无统计详情、启用实时总数查询，不能用采样统计代替清理门禁。
 - CI 的既有 MySQL 测评步骤覆盖原任务重试、双版本扩缩容/清理竞争、领取响应丢失、身份/过期续租、终态指纹冲突和逐规则恢复；真实 RabbitMQ 门禁测试通过 `PLAN_EVAL_TEST_AMQP_URL` / `PLAN_EVAL_TEST_MANAGEMENT_URL` 启用，沿用 `STRIDE_WORKER_TEST_MYSQL_DSN` 的隔离数据库。
 - 本票不占用共用本地 E2E 栈。独占容器验证 RabbitMQ 实际未确认投递、回传确认丢失、终态重投 ACK 与保留队列/报告；真实目标镜像、工作台浏览器及 Kubernetes 波后 E2E 由 master 派发。
+
+测评 MQ 继续使用 devops 原生测评服务账号，worker 属于受信任的内部服务；HTTP 版本凭据隔离不等价于 RabbitMQ 账号级隔离。本票不新增 RabbitMQ 用户/权限管理，账号级恶意消费者隔离需要单独的部署授权与账号管理变更。

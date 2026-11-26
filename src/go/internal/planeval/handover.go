@@ -324,6 +324,13 @@ func (s *Service) cleanup(ctx context.Context, agentVersion string) *Error {
 	if !s.knownVersion(agentVersion) || !validAgentVersion(agentVersion) {
 		return fail(422, "invalid_request", "未登记的 Agent 版本："+agentVersion)
 	}
+	configID := ""
+	config, err := s.store.PlanEvalLaunchConfigForVersion(ctx, agentVersion)
+	if err == nil {
+		configID = config.ID
+	} else if !errors.Is(err, storage.ErrPlanEvalNotFound) {
+		return s.internal(err)
+	}
 	active, err := s.store.CountPlanEvalActiveGenerates(ctx, agentVersion)
 	if err != nil {
 		return s.internal(err)
@@ -342,8 +349,8 @@ func (s *Service) cleanup(ctx context.Context, agentVersion string) *Error {
 		s.log.Error("plan-eval: delete worker deployment", zap.String("agent_version", agentVersion), zap.Error(err))
 		return fail(502, "cleanup_failed", "删除 Deployment 失败")
 	}
-	if err := s.store.ReleasePlanEvalLaunchConfig(ctx, agentVersion); err != nil {
-		return s.internal(err)
+	if err := s.store.ReleasePlanEvalLaunchConfig(ctx, agentVersion, configID); err != nil {
+		return s.mapStorageError(err)
 	}
 	s.log.Info("plan-eval worker deployment removed", zap.String("agent_version", agentVersion))
 	return nil

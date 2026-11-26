@@ -183,7 +183,7 @@ func (s *Store) CreatePlanEvalTask(ctx context.Context, in *PlanEvalTaskCreate) 
 
 		now := time.Now().UTC()
 		var current PlanEvalLaunchConfig
-		switch err := tx.Where("agent_version = ?", in.Task.AgentVersion).First(&current).Error; {
+		switch err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("agent_version = ?", in.Task.AgentVersion).First(&current).Error; {
 		case err == nil:
 			// An empty variable set means "keep what this version already runs
 			// with"; any other set must match the active values as well.
@@ -258,7 +258,7 @@ func (s *Store) CreatePlanEvalTask(ctx context.Context, in *PlanEvalTaskCreate) 
 
 // WithPlanEvalVersionLock coordinates runtime operations across API replicas.
 // A dedicated connection owns the database-scoped MySQL lock until completion.
-func (s *Store) WithPlanEvalVersionLock(ctx context.Context, version string, run func() error) error {
+func (s *Store) WithPlanEvalVersionLock(ctx context.Context, version string, run func(context.Context) error) error {
 	db, err := s.db.DB()
 	if err != nil {
 		return err
@@ -308,7 +308,37 @@ func (s *Store) WithPlanEvalVersionLock(ctx context.Context, version string, run
 			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
 		}
 	}()
-	return run()
+	// Losing the lock session must cancel in-flight cluster operations.
+	runtimeCtx, cancelRuntime := context.WithCancel(ctx)
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		ticker := time.NewTicker(200 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-runtimeCtx.Done():
+				return
+			case <-ticker.C:
+				probeCtx, cancelProbe := context.WithTimeout(runtimeCtx, time.Second)
+				var held bool
+				err := conn.QueryRowContext(probeCtx, "SELECT IS_USED_LOCK(?) = CONNECTION_ID()", key).Scan(&held)
+				cancelProbe()
+				if err != nil || !held {
+					cancelRuntime()
+					return
+				}
+			}
+		}
+	}()
+	err = run(runtimeCtx)
+	runtimeErr := runtimeCtx.Err()
+	cancelRuntime()
+	<-stopped
+	if runtimeErr != nil {
+		return runtimeErr
+	}
+	return err
 }
 
 func (s *Store) RecordPlanEvalDispatch(ctx context.Context, executionID string) error {
@@ -347,8 +377,26 @@ func (s *Store) RecordPlanEvalLaunch(ctx context.Context, taskID, message string
 
 // ReleasePlanEvalLaunchConfig removes even its encrypted values after cleanup.
 // The task rows retain the effective replica count and variable names.
-func (s *Store) ReleasePlanEvalLaunchConfig(ctx context.Context, agentVersion string) error {
-	return s.db.WithContext(ctx).Where("agent_version = ?", agentVersion).Delete(&PlanEvalLaunchConfig{}).Error
+func (s *Store) ReleasePlanEvalLaunchConfig(ctx context.Context, agentVersion, configID string) error {
+	if configID == "" {
+		return nil
+	}
+	res := s.db.WithContext(ctx).Where("id = ? AND agent_version = ?", configID, agentVersion).
+		Where("NOT EXISTS (SELECT 1 FROM plan_eval_executions e JOIN plan_eval_tasks t ON t.id = e.task_id WHERE t.agent_version = ? AND e.generate_status IN ('queued','leased'))", agentVersion).
+		Delete(&PlanEvalLaunchConfig{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		var remaining int64
+		if err := s.db.WithContext(ctx).Model(&PlanEvalLaunchConfig{}).Where("id = ?", configID).Count(&remaining).Error; err != nil {
+			return err
+		}
+		if remaining != 0 {
+			return ErrPlanEvalVersionBusy
+		}
+	}
+	return nil
 }
 
 // ---- reads ----

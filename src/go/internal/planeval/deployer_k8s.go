@@ -201,27 +201,44 @@ func (d *kubernetesDeployer) Delete(ctx context.Context, agentVersion string) er
 	if !validAgentVersion(agentVersion) {
 		return fmt.Errorf("plan-eval: agent version %q is not usable as an object name", agentVersion)
 	}
+
 	name := WorkerName(agentVersion)
-	if err := d.client.AppsV1().Deployments(d.namespace).Delete(ctx, name, metav1.DeleteOptions{PropagationPolicy: ptr.To(metav1.DeletePropagationForeground)}); err != nil && !k8serrors.IsNotFound(err) {
-		return fmt.Errorf("plan-eval: delete deployment %s: %w", name, err)
+	deployments := d.client.AppsV1().Deployments(d.namespace)
+	secrets := d.client.CoreV1().Secrets(d.namespace)
+	deployment, err := deployments.Get(ctx, name, metav1.GetOptions{})
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return err
 	}
-	// Wait for foreground deletion before releasing the version coordination lock.
-	for {
-		_, err := d.client.AppsV1().Deployments(d.namespace).Get(ctx, name, metav1.GetOptions{})
-		if k8serrors.IsNotFound(err) {
-			break
+	secret, secretErr := secrets.Get(ctx, name, metav1.GetOptions{})
+	if secretErr != nil && !k8serrors.IsNotFound(secretErr) {
+		return secretErr
+	}
+	if err == nil {
+		options := metav1.DeleteOptions{PropagationPolicy: ptr.To(metav1.DeletePropagationForeground), Preconditions: &metav1.Preconditions{UID: &deployment.UID, ResourceVersion: &deployment.ResourceVersion}}
+		if err := deployments.Delete(ctx, name, options); err != nil && !k8serrors.IsNotFound(err) {
+			return fmt.Errorf("plan-eval: delete deployment %s: %w", name, err)
 		}
-		if err != nil {
-			return fmt.Errorf("plan-eval: wait for deletion %s: %w", name, err)
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(200 * time.Millisecond):
+		// Wait for foreground deletion before releasing the version coordination lock.
+		for {
+			_, err := deployments.Get(ctx, name, metav1.GetOptions{})
+			if k8serrors.IsNotFound(err) {
+				break
+			}
+			if err != nil {
+				return fmt.Errorf("plan-eval: wait for deletion %s: %w", name, err)
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(200 * time.Millisecond):
+			}
 		}
 	}
-	if err := d.client.CoreV1().Secrets(d.namespace).Delete(ctx, name, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
-		return fmt.Errorf("plan-eval: delete launch secret %s: %w", name, err)
+	if secretErr == nil {
+		options := metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &secret.UID, ResourceVersion: &secret.ResourceVersion}}
+		if err := secrets.Delete(ctx, name, options); err != nil && !k8serrors.IsNotFound(err) {
+			return fmt.Errorf("plan-eval: delete launch secret %s: %w", name, err)
+		}
 	}
 	return nil
 }

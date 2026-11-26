@@ -180,6 +180,10 @@ func (b *Broker) Publish(ctx context.Context, queue string, message ExecuteMessa
 	defer cancel()
 	confirmed, err := confirm.WaitContext(confirmationContext)
 	if err != nil {
+		// An indeterminate confirmation can leave a late return; never reuse its channel.
+		b.mu.Lock()
+		b.closeConnection()
+		b.mu.Unlock()
 		return fmt.Errorf("plan-eval publish to %s: wait for broker confirmation: %w", queue, err)
 	}
 	select {
