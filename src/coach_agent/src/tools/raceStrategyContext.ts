@@ -160,7 +160,7 @@ export function createRaceStrategyContextTools(
     {
       name: RACE_CONTEXT_TOOL_NAME,
       description:
-        "获取当前会话目标赛事的内容聚合：基本信息、赛道文字、爬升、海拔剖面、难点、补给站、关门点与城市/气候背景（无输入参数，赛事取自会话 target）。" +
+        "获取当前会话目标赛事的内容聚合：基本信息、赛道文字、爬升、海拔剖面、难点、赛道口碑（reputation）、补给站、关门点与城市/气候背景（无输入参数，赛事取自会话 target）。" +
         "返回 bound=false 表示本会话尚未绑定赛事（聊天入口），此时改用 search_race_targets + bind_race_target 流程；" +
         "found=false 表示赛事不存在或未发布。",
       schema: getRaceCalendarContextSchema,

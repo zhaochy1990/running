@@ -23,7 +23,7 @@ export interface DataProvider {
   /** 统一训练安排投影（devops#586 三源：weekly/custom/watch active 行），供教练查询某天该练什么。 */
   getPlanSessions(userId: string, dateFrom: string, dateTo: string): Promise<DaySessionRow[]>;
   getRaceTarget(userId: string): Promise<RaceTarget | null>;
-  /** 一场赛事的内容聚合（race_calendar + items + race_city_content），供比赛策略；赛事不存在返回 null。 */
+  /** 赛事问答和比赛策略共用的赛历详情，赛事不存在或未发布时返回 null。 */
   getRaceCalendarContext(raceEventId: number): Promise<RaceCalendarContext | null>;
   /** 已发布赛历检索（devops#812，QA 只读列表）；日期窗缺省 = asofDate 起 90 天。 */
   searchRaceCalendar(options: RaceCalendarSearchQuery): Promise<RaceCalendarSummary[]>;
@@ -282,7 +282,7 @@ export interface ActiveMasterPlanMetadata {
 export type MasterPlanDocument = Record<string, unknown>;
 export type WeeklyPlanDocument = Record<string, unknown>;
 
-/** ── 比赛策略上下文（race_calendar / race_calendar_item / race_city_content 镜像）── */
+/** ── 赛事问答与比赛策略的赛历上下文 ── */
 
 /** storage.RaceElevationPoint 镜像：赛道剖面采样点。 */
 export interface RaceElevationPoint {
@@ -308,7 +308,14 @@ export interface RaceCutoff {
 /** storage.RaceClimate 镜像：赛期气候（JSON 原样透传，字段由 Go 侧定义）。 */
 export type RaceClimateJson = Record<string, unknown> | null;
 
-/** race_calendar_item 的内容投影（策略只读字段）。 */
+/** storage.RaceReputation 镜像：赛历维护的项目口碑。 */
+export interface RaceReputation {
+  summary: string;
+  pros: string[];
+  cons: string[];
+}
+
+/** 赛事问答和比赛策略共用的 race_calendar_item 只读字段。 */
 export interface RaceCalendarItemContent {
   item_type: string;
   name: string;
@@ -319,6 +326,7 @@ export interface RaceCalendarItemContent {
   total_ascent_m: number | null;
   elevation_points: RaceElevationPoint[];
   course_challenges: RaceCourseChallenge[];
+  reputation: RaceReputation | null;
   aid_stations: RaceAidStation[];
   cutoffs: RaceCutoff[];
   /** item 级内容 provenance（null=管理员录入，"WebSearch"=调研脚本）。 */
@@ -332,7 +340,7 @@ export interface RaceCityContentBrief {
   food: string | null;
 }
 
-/** 一场赛事的有界内容聚合：事件行 + 项目内容 + 城市内容，供 race_strategy 子代理。 */
+/** 一场已发布赛事的内容聚合，包含事件、项目与城市内容。 */
 export interface RaceCalendarContext {
   race_event_id: number;
   name: string;
