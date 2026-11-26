@@ -199,6 +199,7 @@ interface ActivityDetailPageData {
   mapFitPoints: Array<{ latitude: number; longitude: number }>;
   mapColoring: MapColoring;
   // —— 海报弹层（devops#947 九色系选择器）——
+  showSharePoster: boolean;
   /** 弹层可见 */
   posterSheetVisible: boolean;
   /** 当前主题 key（utils/posterThemes.ts 九色系之一） */
@@ -1023,6 +1024,7 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
     mapMarkers: [],
     mapFitPoints: [],
     mapColoring: 'pace',
+    showSharePoster: false,
     posterSheetVisible: false,
     posterThemeKey: 'sunrise',
     posterThemeLabel: '晨光',
@@ -1139,7 +1141,7 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
    * + 预览大图 / 保存相册。首渲用持久化主题；地图层走腾讯静态图代理，
    * 缺 key / 网络失败自动降级矢量占位，其余节正常出图。 */
   onSharePoster() {
-    if (this.data.loading || this.data.notFound) return;
+    if (!this.data.showSharePoster || this.data.loading || this.data.notFound) return;
     const themeKey = loadPosterThemeKey();
     this.setData({
       posterSheetVisible: true,
