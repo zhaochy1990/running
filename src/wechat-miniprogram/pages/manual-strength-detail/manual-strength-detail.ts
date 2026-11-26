@@ -1,10 +1,11 @@
-import { getManualStrengthRecord } from '../../services/manual-strength';
+import { deleteManualStrengthRecord, getManualStrengthRecord } from '../../services/manual-strength';
 import { openStrengthReview } from '../../services/coach';
 import { ApiError } from '../../services/request';
 import { userStore } from '../../store/index';
 import type { ManualStrengthRecord } from '../../types/manual-strength';
 import { epochToShanghaiHm, epochToShanghaiYmd } from '../../utils/date';
 import { strengthSetLabel, summarizeStrengthActions } from '../../utils/manual-strength';
+import { theme } from '../../utils/theme';
 
 interface PageData {
   record: ManualStrengthRecord | null;
@@ -14,6 +15,7 @@ interface PageData {
   error: string;
   loading: boolean;
   canRetry: boolean;
+  deleting: boolean;
 }
 
 interface PageHandlers {
@@ -22,6 +24,7 @@ interface PageHandlers {
   closed: boolean;
   load(): Promise<void>;
   onEdit(): void;
+  onDelete(): Promise<void>;
   onCoachReview(): void;
 }
 
@@ -45,6 +48,7 @@ Page<PageData, PageHandlers>({
     error: '',
     loading: true,
     canRetry: false,
+    deleting: false,
   },
 
   onLoad(options) {
@@ -52,7 +56,7 @@ Page<PageData, PageHandlers>({
   },
 
   onShow() {
-    void this.load();
+    if (!this.data.deleting) void this.load();
   },
 
   onUnload() {
@@ -80,7 +84,7 @@ Page<PageData, PageHandlers>({
     }
     try {
       const record = await getManualStrengthRecord(user.id, this.recordId);
-      if (this.closed) return;
+      if (this.closed || this.data.deleting || !this.recordId) return;
       const { action_count, set_count } = summarizeStrengthActions(record.actions);
       this.setData({
         record,
@@ -96,20 +100,50 @@ Page<PageData, PageHandlers>({
         canRetry: false,
       });
     } catch (err) {
-      if (this.closed) return;
+      if (this.closed || this.data.deleting || !this.recordId) return;
       const unavailable = err instanceof ApiError && [400, 403, 404].includes(err.statusCode);
       this.setData({ error: unavailable ? '未找到这条训练记录' : '暂时无法加载记录', loading: false, record: null, canRetry: !unavailable });
     }
   },
 
   onEdit() {
-    if (!this.data.record) return;
+    if (!this.data.record || this.data.deleting) return;
     wx.navigateTo({ url: `/pages/manual-strength/manual-strength?edit=${encodeURIComponent(this.data.record.id)}` });
+  },
+
+  async onDelete() {
+    const { record, deleting } = this.data;
+    const { user, isAuthenticated } = userStore.getState();
+    if (this.closed || deleting || !record || !isAuthenticated || !user) return;
+
+    this.setData({ deleting: true });
+    try {
+      const choice = await wx.showModal({
+        title: '删除这条训练记录？',
+        content: '删除后无法恢复。',
+        confirmText: '删除',
+        confirmColor: theme.danger,
+      });
+      if (!choice.confirm || this.closed || userStore.getState().user?.id !== user.id) return;
+
+      await deleteManualStrengthRecord(user.id, record.id);
+      if (this.closed) return;
+      this.recordId = '';
+      this.setData({ record: null, actionRows: [], summaryLabel: '', timeLabel: '', error: '这条训练记录已删除' });
+      wx.showToast({ title: '已删除', icon: 'success' });
+      wx.navigateBack({
+        fail: () => wx.switchTab({ url: '/pages/activities/activities' }),
+      });
+    } catch {
+      if (!this.closed) wx.showToast({ title: '删除失败，请重试', icon: 'none' });
+    } finally {
+      if (!this.closed) this.setData({ deleting: false });
+    }
   },
 
   onCoachReview() {
     const { user, isAuthenticated } = userStore.getState();
-    if (!this.closed && isAuthenticated && user && this.data.record) {
+    if (!this.closed && isAuthenticated && user && this.data.record && !this.data.deleting) {
       openStrengthReview(this.data.record.id, user.id);
     }
   },

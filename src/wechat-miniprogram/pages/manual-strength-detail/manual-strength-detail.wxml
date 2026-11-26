@@ -6,7 +6,10 @@
   </view>
   <block wx:elif="{{record}}">
     <view class="detail-summary">
-      <view class="detail-title">{{record.name}}</view>
+      <view class="detail-summary-header">
+        <view class="detail-title">{{record.name}}</view>
+        <button class="detail-delete" bindtap="onDelete" disabled="{{deleting}}">删除记录</button>
+      </view>
       <view class="detail-time">{{timeLabel}}</view>
       <view class="detail-meta">{{summaryLabel}}</view>
     </view>
@@ -22,8 +25,8 @@
       <view class="detail-note">{{record.note}}</view>
     </view>
     <view class="detail-footer">
-      <button class="detail-edit" bindtap="onEdit">编辑记录</button>
-      <button class="detail-coach" bindtap="onCoachReview">和教练聊一聊</button>
+      <button class="detail-edit" bindtap="onEdit" disabled="{{deleting}}">编辑记录</button>
+      <button class="detail-coach" bindtap="onCoachReview" disabled="{{deleting}}">和教练聊一聊</button>
     </view>
   </block>
 </view>

@@ -75,6 +75,24 @@ func TestManualStrengthSaveRetriesAndPreservesTrainingWindow(t *testing.T) {
 		len(watchOnly.ManualStrengthSummaries) != 0 {
 		t.Fatalf("existing watch page: %+v, %v", watchOnly, err)
 	}
+
+	retry := make(chan error, 1)
+	go func() {
+		_, err := store.SaveManualStrength(ctx, owner, id, write, end)
+		retry <- err
+	}()
+	deleteErr := store.DeleteManualStrength(ctx, owner, id)
+	if err := <-retry; !errors.Is(err, ErrManualStrengthConflict) && !errors.Is(err, ErrManualStrengthNotFound) {
+		t.Fatalf("stale save racing with deletion: %v", err)
+	}
+	if deleteErr != nil {
+		t.Fatal(deleteErr)
+	}
+	page, err = store.ListActivities(ctx, owner, ActivityListParams{Limit: 50, IncludeManualStrength: true})
+	if err != nil || page.Total != 1 || len(page.Rows) != 1 || page.Rows[0].LabelID != "watch-strength" ||
+		page.MonthlySummaries["2026-03"].ActivityCount != 1 || len(page.ManualStrengthSummaries) != 0 {
+		t.Fatalf("mixed page after deletion: %+v, %v", page, err)
+	}
 }
 
 func TestListActivities_LargeManualStrengthSummaries(t *testing.T) {

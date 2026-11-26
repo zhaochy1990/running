@@ -18,6 +18,7 @@ import (
 type ManualStrengthStore interface {
 	ManualStrengthByID(ctx context.Context, userID, id string) (*storage.ManualStrengthRecord, error)
 	SaveManualStrength(ctx context.Context, userID, id string, write storage.ManualStrengthWrite, now time.Time) (*storage.ManualStrengthRecord, error)
+	DeleteManualStrength(ctx context.Context, userID, id string) error
 }
 
 type manualStrengthRoutes struct {
@@ -31,6 +32,7 @@ func (m *manualStrengthRoutes) register(rg *gin.RouterGroup) {
 	}
 	rg.GET("/api/:user/activities/manual-strength/:recordId", m.detail)
 	rg.PUT("/api/:user/activities/manual-strength/:recordId", m.save)
+	rg.DELETE("/api/:user/activities/manual-strength/:recordId", m.delete)
 }
 
 type manualStrengthPayload struct {
@@ -112,6 +114,34 @@ func (m *manualStrengthRoutes) detail(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, manualStrengthResponse(record))
+}
+
+// delete removes the owning user's manual strength record.
+//
+//	@Summary		Delete a manual strength record
+//	@Description	Returns 204 even when no record with this ID belongs to the caller.
+//	@Tags			activities
+//	@Produce		json
+//	@Param			user		path		string	true	"User ID (JWT sub)"
+//	@Param			recordId	path		string	true	"Manual strength record UUID"
+//	@Success		204
+//	@Failure		400			{object}	errorResponse
+//	@Failure		401			{object}	errorResponse
+//	@Failure		403			{object}	errorResponse
+//	@Failure		500			{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/{user}/activities/manual-strength/{recordId} [delete]
+func (m *manualStrengthRoutes) delete(c *gin.Context) {
+	user, id, ok := manualStrengthIdentity(c)
+	if !ok {
+		return
+	}
+	if err := m.store.DeleteManualStrength(c.Request.Context(), user, id); err != nil {
+		m.log.Error("delete manual strength record failed", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 // save creates, continues, or edits the owning user's strength record.

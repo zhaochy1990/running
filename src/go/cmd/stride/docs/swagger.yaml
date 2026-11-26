@@ -4545,6 +4545,45 @@ paths:
       tags:
       - activities
   /api/{user}/activities/manual-strength/{recordId}:
+    delete:
+      description: Returns 204 even when no record with this ID belongs to the caller.
+      parameters:
+      - description: User ID (JWT sub)
+        in: path
+        name: user
+        required: true
+        type: string
+      - description: Manual strength record UUID
+        in: path
+        name: recordId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a manual strength record
+      tags:
+      - activities
     get:
       parameters:
       - description: User ID (JWT sub)

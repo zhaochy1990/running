@@ -1,5 +1,5 @@
 import { getActivities } from '../../services/activities';
-import { manualStrengthLiveVersion, takeManualStrengthEditedSummaries } from '../../services/manual-strength';
+import { manualStrengthListVersion, takeManualStrengthEditedSummaries } from '../../services/manual-strength';
 import { fmtDurationShort, fmtKm, fmtPace, fmtDose } from '../../utils/format';
 import { shanghaiToday, shanghaiWeekdayLabel } from '../../utils/date';
 import { userStore } from '../../store/index';
@@ -363,7 +363,7 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
       }));
       this.setData({ monthGroups });
     }
-    if (!this.data.loading && manualStrengthLiveVersion(userId) !== this.loadedManualStrengthVersion) {
+    if (!this.data.loading && manualStrengthListVersion(userId) !== this.loadedManualStrengthVersion) {
       void this.fetch();
     }
   },
@@ -378,9 +378,10 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
     this.setData({ loading: true, loadingMore: false });
     try {
       // 拉最近一页活动，跨月份分组展示；月份汇总由后端整月统计给出。
-      const requestedVersion = manualStrengthLiveVersion(requestedUser);
+      const requestedVersion = manualStrengthListVersion(requestedUser);
       const res = await getActivities(requestedUser, { limit: PAGE_SIZE, offset: 0, includeManualStrength: true });
       if (generation !== this.fetchGeneration || requestedUser !== currentViewerId()) return;
+      if (requestedVersion !== manualStrengthListVersion(requestedUser)) return this.fetch();
       this.loadedManualStrengthVersion = requestedVersion;
       const expansion = new Map(this.data.monthGroups.map((group) => [group.monthKey, group.expanded]));
       const monthGroups = buildMonthGroups(res, this.data.currentMonth).map((group) => ({

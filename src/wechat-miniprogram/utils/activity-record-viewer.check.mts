@@ -5,6 +5,7 @@ import ts from 'typescript';
 import * as dates from './date.ts';
 import * as format from './format.ts';
 import * as strength from './manual-strength.ts';
+import { theme } from './theme.ts';
 import type { ManualStrengthSummary } from '../types/manual-strength.ts';
 
 type ActivityResponse = { total: number; activities: Array<{ label_id: string; name: string; date: string; source: string; manual_strength_summary?: ManualStrengthSummary }> };
@@ -19,6 +20,7 @@ type PageUnderTest = {
 let page: PageUnderTest | undefined;
 let viewerId = 'user-a';
 let viewerChanged: (() => void) | undefined;
+let listVersion = 0;
 let editedSummaries: Map<string, { name: string; summary: ManualStrengthSummary }> | undefined;
 const requests: Array<{ viewer: string; resolve(response: ActivityResponse): void }> = [];
 const source = readFileSync(new URL('../pages/activities/activities.ts', import.meta.url), 'utf8');
@@ -34,7 +36,7 @@ runInNewContext(script, {
       getActivities: (viewer: string) => new Promise<ActivityResponse>((resolve) => requests.push({ viewer, resolve })),
     },
     '../../services/manual-strength': {
-      manualStrengthLiveVersion: () => 0,
+      manualStrengthListVersion: () => listVersion,
       takeManualStrengthEditedSummaries: () => {
         const result = editedSummaries;
         editedSummaries = undefined;
@@ -94,6 +96,18 @@ await respond('user-b', '账号 B 私人训练');
 assert.equal(view.data.guest, false);
 assert.equal(view.data.monthGroups[0].rows[0].name, '账号 B 私人训练');
 assert.equal(requests.length, 0);
+
+const beforeDelete = view.fetch();
+listVersion++;
+view.onShow();
+await respond('user-b', '晚到的已删除记录');
+assert.equal(view.data.monthGroups[0].rows[0].name, '账号 B 私人训练');
+const afterDelete = requests.shift();
+assert.equal(afterDelete?.viewer, 'user-b');
+afterDelete?.resolve({ total: 0, activities: [] });
+await beforeDelete;
+assert.equal(view.data.monthGroups.length, 0);
+
 const savedRecord = {
   id: 'saved', name: '账号 A 的历史训练', note: '账号 A 的备注', actions: [{
     name: '深蹲', sets: [
@@ -109,8 +123,14 @@ type TrainingPage = {
   onLoad(params: { edit?: string; recordId?: string }): Promise<void> | void;
   onShow?(): void;
   onCoachReview?(): void;
+  onDelete?(): Promise<void>;
 };
 const coachHandoffs: Array<{ recordId: string; userId: string }> = [];
+const deletions: Array<{ recordId: string; userId: string }> = [];
+const toasts: string[] = [];
+let confirmDelete = async () => ({ confirm: false });
+let failDeletion = false;
+let navigatedBack = 0;
 async function loadTrainingPage(relative: string): Promise<TrainingPage> {
   let definition: TrainingPage | undefined;
   viewerId = 'user-a';
@@ -121,13 +141,26 @@ async function loadTrainingPage(relative: string): Promise<TrainingPage> {
   runInNewContext(script, {
     exports: {},
     Page: (page: TrainingPage) => { definition = page; },
-    wx: { setNavigationBarTitle: () => undefined, disableAlertBeforeUnload: () => undefined },
+    wx: {
+      setNavigationBarTitle: () => undefined,
+      disableAlertBeforeUnload: () => undefined,
+      showModal: () => confirmDelete(),
+      showToast: ({ title }: { title: string }) => toasts.push(title),
+      navigateBack: () => { navigatedBack++; },
+    },
     require: (path: string) => ({
-      '../../services/manual-strength': { getManualStrengthRecord: async () => savedRecord },
+      '../../services/manual-strength': {
+        getManualStrengthRecord: async () => savedRecord,
+        deleteManualStrengthRecord: async (userId: string, recordId: string) => {
+          deletions.push({ userId, recordId });
+          if (failDeletion) throw new Error('network');
+        },
+      },
       '../../services/coach': { openStrengthReview: (recordId: string, userId: string) => coachHandoffs.push({ recordId, userId }) },
       '../../services/request': {},
       '../../utils/date': dates,
       '../../utils/manual-strength': { ...strength, getStrengthDraft: () => undefined },
+      '../../utils/theme': { theme },
       '../../store/index': {
         userStore: {
           waitForAuth: async () => undefined,
@@ -171,4 +204,35 @@ assert.equal(detail.data.actionRows?.length, 0);
 assert.equal(detail.data.summaryLabel, '');
 detail.onCoachReview?.();
 assert.equal(coachHandoffs.length, 1);
+
+const deletable = await loadTrainingPage('../pages/manual-strength-detail/manual-strength-detail.ts');
+await deletable.onDelete?.();
+assert.equal(deletions.length, 0);
+assert.ok(deletable.data.record);
+
+confirmDelete = async () => ({ confirm: true });
+failDeletion = true;
+await deletable.onDelete?.();
+assert.ok(deletable.data.record);
+assert.equal(navigatedBack, 0);
+assert.deepEqual(toasts, ['删除失败，请重试']);
+
+failDeletion = false;
+await Promise.all([deletable.onDelete?.(), deletable.onDelete?.()]);
+assert.deepEqual(deletions, [
+  { recordId: 'saved', userId: 'user-a' },
+  { recordId: 'saved', userId: 'user-a' },
+]);
+assert.equal(deletable.data.record, null);
+assert.equal(navigatedBack, 1);
+assert.deepEqual(toasts, ['删除失败，请重试', '已删除']);
+
+const switched = await loadTrainingPage('../pages/manual-strength-detail/manual-strength-detail.ts');
+confirmDelete = async () => {
+  viewerId = 'user-b';
+  viewerChanged?.();
+  return { confirm: true };
+};
+await switched.onDelete?.();
+assert.equal(deletions.length, 2);
 console.log('activity-record-viewer.check: all assertions passed');
