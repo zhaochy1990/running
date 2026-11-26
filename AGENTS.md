@@ -25,7 +25,7 @@ Issues and PRDs are tracked in the shared tracker repo `zhaochy1990/stride-devop
 | 微信小程序 | 本机开发，用本机微信开发者工具模拟器验收。 |
 | iOS App | 本机开发，用本机 Xcode 的 iOS Simulator 验收。 |
 
-云端任务按所需仓库选择 Codex Cloud 中的 `running` 或 `Coach Agent` 环境。
+云端任务可使用 Codex Cloud 中的 `running` 或 `Coach Agent` 环境。
 
 - `to-spec` 在规格工单的实施与测试决策里，逐项写明开发范围、执行环境、所需依赖和验收方式。涉及云端与本机时，写清各自交付范围和共用的 API 契约。
 - `to-tickets` 在每张实现票正文写明 **开发与测试环境**（云端或本机），并在验收标准里列明对应的测试入口（API 测试、Chromium 或本机模拟器）。跨环境功能按环境拆票，纵向切片以单一环境为边界，每张票都能在指定环境独立交付和验收。只为实际前置依赖建立工单阻塞关系，例如客户端交付依赖尚未可用的 API。
