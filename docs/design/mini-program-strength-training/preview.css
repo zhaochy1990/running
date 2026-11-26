@@ -236,7 +236,6 @@ dialog::backdrop { background: #2227278a; }
 .manual-form ::placeholder { color: var(--muted); opacity: 1; }
 .manual-form :focus::placeholder { opacity: 0; }
 .log-name-field > span { margin-bottom: 0; }
-.log-name-field:focus-within > span { opacity: 0; }
 .manual-form .log-name-field input {
   min-height: 40px;
   border: 0;
