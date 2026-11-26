@@ -31,7 +31,8 @@ markdown 渲染）；旧后端 + 新客户端 → 没有 `card`，同样走 mark
 
 | `$type` | 后端挂载（业务节点 `*Message` 工厂） | 前端注册表（小程序 `utils/coachCards.ts`） |
 |---|---|---|
-| `race-strategy` | `raceStrategyMessage` 挂 `additional_kwargs.card` | 图标/文案/路由 → 报告页 |
+| `race-strategy` | `raceStrategyMessage` 挂 `additional_kwargs.card`，`data.race_event_id` 取自赛事页显式目标或聊天线程的最新赛事绑定 | 点「查看详情」直达对应赛事的策略报告页 |
+| `race-strategy-offer` | 普通问答或策略节点处理策略查看问题时，按会话中的真实卡片和工具结果决定是否带入口卡 | 当前最新一条回复提供「生成比赛策略」，点击在原会话发送同名指令 |
 | `master-plan` | `masterPlanCardMessage`（training 节点，#428/#429） | 图标/标题/角标「初稿」；摘要即卡片——markdown 摘要同泡渲染，无独立详情页；data 带 `plan_id` 时出「启用/放弃」双 CTA（#429） |
 | `custom-workout`（devops#587） | `customWorkoutCardMessage`（custom_workout 节点） | 图标/「训练课已创建」/角标「待保存」；摘要即卡片（课表压缩文案 inlineBody）；双 CTA「保存到X月X日」（save_token 幂等 upsert）+「推送到手表」（未保存先保存再推）。时间制课 `total_distance_m` 由节点按契约⑨估算补齐（#838：easy 带中点、无校准 330s/km 兜底） |
 | `master-plan-form`（#1024） | `training` 节点槽位补全（`agents/training/node.ts`）挂 `additional_kwargs.card` | 「你的下一程」**交互表单卡**（`components/master-plan-form-card`）预填比赛目标和训练安排。组件提交后，Coach 页组装请求并投递 plan-jobs。客户端生成进度、结果和失败卡，「修改目标」用已提交的请求回填表单。 |
@@ -50,7 +51,9 @@ messages）也自动带出卡片。
 生成**不落库**；落库由用户显式「应用」触发：
 
 1. 教练生成 → `done.card = { $type: "race-strategy", data }` → 聊天气泡出
-   通知卡片（标题/副标题/角标「初稿」/CTA「查看并应用」）。
+   通知卡片（标题/副标题/角标「初稿」/CTA「查看详情」）。普通问答误接到明确的生成
+   请求时可在同一轮转交策略节点。普通聊天可重新选赛，已明确组别时搜索候选按组别筛选。
+   缺少赛事、组别或目标成绩时，在当前会话追问。
 2. 卡片 tap → 产物经 storage 交接（`setPendingStrategyDraft`，navigateTo
    query 带不动大 JSON，沿用 `setPendingCoachContext` 模式）→ 目标页进
    **草稿模式**：本地渲染（编辑可用），底部「应用并保存」。

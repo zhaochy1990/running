@@ -50,7 +50,7 @@ export function buildCoachShareMessages(messages: CoachShareMessage[]): CoachSha
       // 注册表不认识/形状不符 → null 走 markdown；动作卡（待保存/待确认类）
       // 对只读接收者无意义，也一并降级，只保留静态摘要两类。
       if (view && (view.type === 'race-strategy' || view.type === 'master-plan')) {
-        card = { icon: view.icon, title: view.title, subtitle: view.subtitle, inlineBody: view.inlineBody };
+        card = { icon: view.icon, title: view.title, subtitle: view.subtitle, inlineBody: view.type === 'master-plan' && view.inlineBody };
       }
     }
 

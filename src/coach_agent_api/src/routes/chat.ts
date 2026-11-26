@@ -185,6 +185,7 @@ function buildConfig(
       asof: shanghaiDay(new Date().toISOString()),
       threadId,
       ...(target !== undefined ? { target } : {}),
+      ...(body.target === undefined && target?.kind === "race" ? { raceTargetFromThread: true } : {}),
       ...(body.reviewContext ? { reviewContext: body.reviewContext } : {}),
     },
     configurable: {

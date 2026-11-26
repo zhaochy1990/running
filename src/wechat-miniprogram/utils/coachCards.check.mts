@@ -43,10 +43,23 @@ const raceTarget = { kind: 'race', race_event_id: 30, item_type: 'Marathon' } as
   eq(view.icon, '/assets/icons/flag.svg', 'card icon');
 }
 
-// 无 race target：仍出卡片，CTA 兜底到赛事中心
+// 普通会话使用产物所属赛事，即使当前会话目标开在另一场。
 {
-  const view = buildCoachCard({ $type: 'race-strategy', data: strategy }, undefined);
-  eq(view?.url, '/pages/race-center/race-center', 'card url without target');
+  const card = { $type: 'race-strategy', data: { ...strategy, race_event_id: 99 } };
+  const view = buildCoachCard(card, undefined);
+  eq(view?.url, '/pages/race-center/strategy/strategy?id=99', 'card url without target');
+  eq(view?.raceId, 99, 'draft uses the same race id as the report');
+  eq(buildCoachCard(card, raceTarget)?.raceId, 99, 'card event takes priority over session target');
+  const legacy = buildCoachCard({ $type: 'race-strategy', data: strategy }, undefined);
+  eq(legacy?.url, '', 'legacy strategy without race id does not jump to the calendar');
+  eq(legacy?.inlineBody, true, 'legacy strategy without race id displays the full reply in chat');
+}
+
+{
+  const view = buildCoachCard({ $type: 'race-strategy-offer', data: {} }, undefined);
+  eq(view?.buttonText, '生成比赛策略', 'offer starts generation');
+  eq(view?.inlineBody, true, 'offer preserves the QA answer');
+  eq(view?.url, '', 'offer stays in chat');
 }
 
 // 形状不对 / 未知类型 / 非 信封 → null（降级走 markdown 渲染器）

@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import test from "node:test";
-import { AIMessage, type BaseMessage, HumanMessage } from "@langchain/core/messages";
+import { AIMessage, type BaseMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import type { RaceStrategy } from "@stride/contract";
 import { RACE_STRATEGY_PROMPT } from "../prompts.js";
 import { loadSkillMarkdown, loadSkillReference } from "../skillLoader.js";
 import { CoachTargetRef } from "../turnScope.js";
+import { getRaceStrategyAgent } from "./agent.js";
+import { raceStrategyViewTool } from "./handoff.js";
 import { makeRaceStrategyNode } from "./node.js";
 import { extractRaceStrategyResult, parseRaceStrategyFromText, raceStrategyMessage, renderRaceStrategyMarkdown } from "./render.js";
 
@@ -132,6 +136,135 @@ test("race-strategy node behaves like a plain business node without structured o
   };
   assert.deepEqual(update.messages, [reply]);
   assert.equal(update.raceStrategy, null);
+});
+
+test("race-strategy card carries the trusted race ID even when the agent binds during this turn", async () => {
+  const userMessage = new HumanMessage("帮我生成杭马的策略，目标三小时五十九分五十九秒");
+  const raceTarget = { kind: "race", race_event_id: 76, item_type: "Marathon" } as const;
+  let binding: typeof raceTarget | null = null;
+  let courseRaceId = 76;
+  const node = makeRaceStrategyNode(
+    {
+      async invoke() {
+        binding = raceTarget;
+        const course = new ToolMessage({
+          name: "get_race_calendar_context",
+          tool_call_id: "course",
+          content: JSON.stringify({ found: true, race_event_id: courseRaceId, target_item_type: "Marathon" }),
+        });
+        return { messages: [userMessage, course], structuredResponse: { disposition: "return_direct", content: strategy } };
+      },
+    },
+    {
+      async get(threadId) {
+        assert.equal(threadId, "regular-chat");
+        return binding;
+      },
+      async bind() {},
+      async rememberCandidates() {},
+      async candidates() {
+        return null;
+      },
+    },
+  );
+  const update = (await node({ messages: [userMessage] } as never, { context: { threadId: "regular-chat" } } as never)) as {
+    messages: BaseMessage[];
+    raceStrategy: RaceStrategy | null;
+  };
+  assert.deepEqual(update.messages[0]?.additional_kwargs.card, { $type: "race-strategy", data: { ...strategy, race_event_id: 76 } });
+
+  const previousTarget = { kind: "race", race_event_id: 32, item_type: "Marathon" };
+  const followUp = (await node(
+    { messages: [userMessage] } as never,
+    { context: { threadId: "regular-chat", target: previousTarget, raceTargetFromThread: true } } as never,
+  )) as typeof update;
+  assert.deepEqual(followUp.messages[0]?.additional_kwargs.card, { $type: "race-strategy", data: { ...strategy, race_event_id: 76 } });
+
+  courseRaceId = 32;
+  const staleCourse = (await node(
+    { messages: [userMessage] } as never,
+    { context: { threadId: "regular-chat", target: previousTarget, raceTargetFromThread: true } } as never,
+  )) as typeof update;
+  assert.equal(staleCourse.raceStrategy, null);
+  assert.equal(staleCourse.messages[0]?.additional_kwargs.card, undefined);
+
+  const fromCalendar = (await node(
+    { messages: [userMessage] } as never,
+    { context: { threadId: "regular-chat", target: previousTarget } } as never,
+  )) as typeof update;
+  assert.deepEqual(fromCalendar.messages[0]?.additional_kwargs.card, { $type: "race-strategy", data: { ...strategy, race_event_id: 32 } });
+});
+
+test("a view-only request routed to the real strategy agent exits after the offer tool", async () => {
+  const userMessage = new HumanMessage("刚才的策略在哪里看？");
+  const key = "STRIDE_TEST_STRATEGY_OFFER_KEY";
+  process.env[key] = "local-test";
+  let modelCalls = 0;
+  const server = createServer((request, response) => {
+    request.resume();
+    modelCalls++;
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(
+      JSON.stringify({
+        id: "strategy-offer-test",
+        object: "chat.completion",
+        model: "test-model",
+        choices: [
+          {
+            index: 0,
+            finish_reason: "tool_calls",
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "offer",
+                  type: "function",
+                  function: {
+                    name: raceStrategyViewTool.name,
+                    arguments: JSON.stringify({ answer: "刚才的配速建议在上方。" }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    );
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const agent = getRaceStrategyAgent(
+      {
+        async getRaceCalendarContext() {
+          throw new Error("viewing should not read the course");
+        },
+        async searchRaceCalendar() {
+          throw new Error("viewing should not search the calendar");
+        },
+      },
+      {
+        name: "strategy-offer-test",
+        model: "test-model",
+        endpoint: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+        api_key_env: key,
+        api_kind: "chat-completions",
+        max_tokens: 256,
+        timeout_s: 5,
+      },
+    );
+    const node = makeRaceStrategyNode(agent);
+    const update = (await node({ messages: [userMessage] } as never, { context: { userId: "athlete-1", asof: "2026-11-26" } })) as {
+      messages: BaseMessage[];
+      raceStrategy: unknown;
+    };
+    assert.equal(modelCalls, 1);
+    assert.equal(update.raceStrategy, null);
+    assert.deepEqual(update.messages[0]?.additional_kwargs.card, { $type: "race-strategy-offer", data: {} });
+  } finally {
+    delete process.env[key];
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
 });
 
 test("race-strategy node normalizes array-content delta before writing back (devops#833)", async () => {

@@ -457,6 +457,7 @@ test("chat without target falls back to the thread-persisted race binding (#891)
   assert.equal(response.status, 200);
   const runtimeContext = invocation?.config.context as Record<string, unknown>;
   assert.deepEqual(runtimeContext.target, persisted);
+  assert.equal(runtimeContext.raceTargetFromThread, true);
 });
 
 test("chat carries validated target and review context into request identity and runtime", async () => {

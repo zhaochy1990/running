@@ -1,9 +1,11 @@
-import type { BaseMessage } from "@langchain/core/messages";
+import { AIMessage, type BaseMessage } from "@langchain/core/messages";
 import type { GraphNode } from "@langchain/langgraph";
 import { getLogger } from "@stride/common";
 import type { RaceStrategy } from "@stride/contract";
+import { type RaceTargetBindingGateway, raceStrategyMatchesCourse, resolveRaceStrategyTarget } from "../../tools/raceStrategyContext.js";
 import { normalizeMessageContent } from "../messages.js";
 import type { AgentsState } from "../state.js";
+import { RACE_STRATEGY_REQUEST, raceStrategyViewReply, readRaceStrategyHandoff } from "./handoff.js";
 import { extractRaceStrategyResult, parseRaceStrategyFromText, raceStrategyMessage } from "./render.js";
 
 const logger = getLogger("race_strategy_node");
@@ -28,36 +30,36 @@ interface InnerRaceAgent {
  *   that skipped the ToolStrategy call and emitted the envelope as plain text
  *   is recovered here instead of leaking raw JSON to the athlete.
  */
-export function makeRaceStrategyNode(agent: InnerRaceAgent): GraphNode<typeof AgentsState> {
+export function makeRaceStrategyNode(agent: InnerRaceAgent, raceTargets?: RaceTargetBindingGateway): GraphNode<typeof AgentsState> {
   return async (state, config) => {
     const result = await agent.invoke({ messages: state.messages }, config);
-    const strategy = extractRaceStrategyResult(result) ?? leakedStrategyFromText(result, state);
+    const messages = result.messages.slice(state.messages.length);
+    const handoff = readRaceStrategyHandoff(messages);
+    if (handoff) return { messages: [raceStrategyViewReply(handoff, state.messages)], raceStrategy: null };
+    const strategy = extractRaceStrategyResult(result) ?? leakedStrategyFromText(messages);
     if (strategy !== undefined) {
-      return { messages: [raceStrategyMessage(strategy, raceEventIdFromContext(config))], raceStrategy: strategy };
+      const target = await resolveRaceStrategyTarget(config.context, raceTargets);
+      if (raceTargets && target === null) {
+        return { messages: [new AIMessage("请告诉我具体的比赛名称和参赛组别，我会在这里继续生成策略。")], raceStrategy: null };
+      }
+      if (target && (strategy.item_type !== target.item_type || !raceStrategyMatchesCourse(messages, target))) {
+        return {
+          messages: [new AIMessage(`这轮没有核对上当前赛事和组别的赛道资料。回复「${RACE_STRATEGY_REQUEST}」，我会按当前赛事重新查询。`)],
+          raceStrategy: null,
+        };
+      }
+      return { messages: [raceStrategyMessage(strategy, target?.race_event_id)], raceStrategy: strategy };
     }
     return {
       // 数组 content 归一化为字符串再入会话历史（devops#833）。
-      messages: result.messages.slice(state.messages.length).map(normalizeMessageContent),
+      messages: messages.map(normalizeMessageContent),
       raceStrategy: null,
     };
   };
 }
 
-/**
- * 会话 target 的 race_event_id（#715）：随卡片 data 持久化，分享创建端据此
- * 提取 strategy_refs.race_id。context 经 invoke config 顶层透传（chat.ts
- * buildConfig），形状不对一律返回 undefined——只为溯源，绝不能挡生成。
- */
-function raceEventIdFromContext(config: unknown): number | undefined {
-  const target = (config as { context?: { target?: { kind?: unknown; race_event_id?: unknown } } } | undefined)?.context?.target;
-  return target?.kind === "race" && typeof target.race_event_id === "number" && Number.isInteger(target.race_event_id) && target.race_event_id > 0
-    ? target.race_event_id
-    : undefined;
-}
-
 /** 扫描本轮新增的 AI 文本，命中防御性信封解析则告警并捞回（见 render.ts）。 */
-function leakedStrategyFromText(result: { messages: BaseMessage[] }, state: { messages: BaseMessage[] }): RaceStrategy | undefined {
-  const delta = result.messages.slice(state.messages.length);
+function leakedStrategyFromText(delta: BaseMessage[]): RaceStrategy | undefined {
   for (let index = delta.length - 1; index >= 0; index -= 1) {
     const message = delta[index];
     if (message === undefined || message.getType() !== "ai" || typeof message.content !== "string") continue;

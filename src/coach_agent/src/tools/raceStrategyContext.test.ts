@@ -69,7 +69,10 @@ test("get_race_calendar_context reports found=false for an unknown race", async 
   });
   const tool = tools.find((candidate) => candidate.name === "get_race_calendar_context");
   assert.ok(tool);
-  const result = await tool.invoke({}, { context: { userId: "athlete-1", asof: "2026-10-01", target: { kind: "race", race_event_id: 999 } } });
+  const result = await tool.invoke(
+    {},
+    { context: { userId: "athlete-1", asof: "2026-10-01", target: { kind: "race", race_event_id: 999, item_type: "Marathon" } } },
+  );
   assert.deepEqual(result, { race_event_id: 999, found: false, reason: "race not found or unpublished" });
 });
 
@@ -148,6 +151,16 @@ test("search_race_targets flattens calendar rows into candidates and remembers t
     ],
   );
   assert.deepEqual(remembered, ["u:coach:s1", "2"]);
+
+  const explicitGroup = (await tool.invoke(
+    { keyword: "南通", item_type: "HalfMarathon" },
+    { context: { userId: "athlete-1", asof: "2026-11-03", threadId: "u:coach:s1" } },
+  )) as typeof result;
+  assert.deepEqual(
+    explicitGroup.candidates.map((candidate) => candidate.item_type),
+    ["HalfMarathon"],
+  );
+  assert.deepEqual(remembered.slice(-2), ["u:coach:s1", "1"]);
 });
 
 test("bind_race_target binds an in-candidate pair and persists it (#891)", async () => {
