@@ -141,6 +141,16 @@ func TestTaskReportFrozenInputAndCleanupRoundTrip(t *testing.T) {
 	if report.Executions[0].Evaluate.Error.Code != "snapshot_not_covered" || report.Executions[1].Evaluate.Error.Code != "schema_invalid" {
 		t.Fatal("skipped reasons missing")
 	}
+	// A delayed successful or failed launch completion cannot mutate a settled report.
+	for _, message := range []string{"late launch failed", ""} {
+		if err := h.svc.store.RecordPlanEvalLaunch(ctx, created.ID, message); err != nil {
+			t.Fatal(err)
+		}
+		after := h.admin(http.MethodGet, path, nil, nil)
+		if after.status != 200 || !bytes.Equal(after.body, r.body) {
+			t.Fatal("late launch changed terminal report")
+		}
+	}
 	// Editing both live sources must not change a historical export.
 	doc := testSnapshot(t)
 	doc["username"] = "changed"
@@ -467,5 +477,40 @@ func TestCatalogValidationAndAuthRejectBeforeWrites(t *testing.T) {
 	afterScenarios, err := h.svc.store.ListPlanEvalScenarios(ctx)
 	if err != nil || len(afterScenarios) != len(beforeScenarios) {
 		t.Fatal("definitive scenario rejection wrote data")
+	}
+}
+
+func TestTaskReportRejectsMetadataBudgetBeforeDetail(t *testing.T) {
+	h := openHarness(t)
+	ctx := context.Background()
+	id := uuid.NewString()
+	task, _, err := h.svc.store.CreatePlanEvalTask(ctx, &storage.PlanEvalTaskCreate{
+		Task:         &storage.PlanEvalTask{ID: uuid.NewString(), AgentVersion: h.version, ScenarioID: "budget", Submitter: "budget", IdempotencyKey: uuid.NewString(), ParamsFingerprint: "budget"},
+		LaunchConfig: &storage.PlanEvalLaunchConfig{ID: uuid.NewString(), AgentVersion: h.version, Replicas: 1, EnvNames: "[]", EnvFingerprint: "budget"}, EnvCipher: []byte("budget"),
+		Executions:  []*storage.PlanEvalExecution{{ID: id, ScenarioID: "budget", SnapshotID: "budget", RequestJSON: `{"requested_mode":"new_season"}`, SnapshotJSON: string(mustJSON(testSnapshot(t))), GenerateStatus: "queued", EvaluateStatus: "pending"}},
+		FrozenRules: []*storage.PlanEvalFrozenRule{{ScenarioID: "budget", CheckID: "large-rule", Version: 1, ArtifactType: "master_plan", Source: strings.Repeat("x", 12<<20)}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.Claim(ctx, claimRequest{SnapshotExecutionID: id, AgentVersion: h.version, WorkerID: "budget-worker", ClaimRequestID: uuid.NewString()}); err != nil {
+		t.Fatal(err)
+	}
+	result := h.worker(http.MethodPost, internalPrefix+"/executions/"+id+"/result", submitRequest{PlanEvalWorkerLease: storage.PlanEvalWorkerLease{AgentVersion: h.version, WorkerID: "budget-worker", LeaseEpoch: 1}, SubmitID: uuid.NewString(), Result: reportedResult{Kind: "failed", Error: &reportedError{Code: "failed", Message: "retained"}}})
+	if result.status != 200 {
+		t.Fatalf("submit: %d", result.status)
+	}
+	meta, err := h.svc.store.PlanEvalReportMetadata(ctx, task.ID)
+	if err != nil || meta.SizeBytes <= maxReportMetadataBytes {
+		t.Fatalf("metadata estimate: %+v %v", meta, err)
+	}
+	// A missing temp directory must not matter: reject before loading/spooling detail.
+	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "missing"))
+	response := h.admin(http.MethodGet, adminPrefix+"/tasks/"+task.ID+"/report", nil, nil)
+	if response.status != 413 || !bytes.Contains(response.body, []byte("report_too_large")) || response.header.Get("Content-Disposition") != "" {
+		t.Fatalf("budget rejection: %d", response.status)
+	}
+	if len(h.svc.reportSlot) != 0 {
+		t.Fatal("budget failure leaked download slot")
 	}
 }

@@ -136,6 +136,7 @@ func documentSHA256(document string) string {
 }
 
 const maxReportBytes int64 = 4 << 30
+const maxReportMetadataBytes int64 = 64 << 20
 
 var errReportTooLarge = errors.New("report exceeds 4 GiB")
 
@@ -168,7 +169,7 @@ func (s *Service) TaskReport(ctx context.Context, id string) (*os.File, func(), 
 			release()
 		}
 	}()
-	task, readErr := s.store.GetPlanEvalTask(ctx, id)
+	task, readErr := s.store.PlanEvalReportMetadata(ctx, id)
 	if readErr != nil {
 		return nil, nil, s.mapStorageError(readErr)
 	}
@@ -176,6 +177,9 @@ func (s *Service) TaskReport(ctx context.Context, id string) (*os.File, func(), 
 	// neither worker leases nor cleanup can change these frozen records.
 	if task.Status != storage.PlanEvalTaskDone {
 		return nil, nil, &Error{Status: 409, Code: "task_not_final", Detail: "任务尚未终结，请等待全部执行项完成后导出。", Extra: map[string]any{"task_id": task.ID, "status": task.Status}}
+	}
+	if task.SizeBytes > maxReportMetadataBytes {
+		return nil, nil, fail(413, "report_too_large", "报告元数据超过 64 MiB 保守预算，请拆分任务后重试。")
 	}
 	detail, err := s.taskDetail(ctx, task.ID, false)
 	if err != nil {

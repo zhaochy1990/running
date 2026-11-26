@@ -30,6 +30,11 @@ const manifestSchema = z
   })
   .strict();
 
+const maxCatalogBodyBytes = 16 << 20;
+function assertCatalogBodySize(body: unknown, label: string): void {
+  assert.ok(Buffer.byteLength(JSON.stringify(body), "utf8") <= maxCatalogBodyBytes, `${label}: serialized request exceeds 16 MiB`);
+}
+
 type Snapshots = Record<string, RunnerSnapshot>;
 const hash = (bytes: string | Buffer) => createHash("sha256").update(bytes).digest("hex");
 
@@ -43,6 +48,7 @@ export function validateFirstBatch(snapshots: Snapshots): void {
   for (const spec of FIRST_BATCH) {
     const s = snapshots[spec.key];
     assert.ok(s, `${spec.key}: missing snapshot`);
+    assertCatalogBodySize(s, spec.key);
     const parsed = RunnerSnapshotSchema.safeParse(s);
     assert.ok(parsed.success, `${spec.key}: invalid RunnerSnapshot contract`);
     assert.ok(
@@ -281,6 +287,7 @@ export async function importFirstBatch(manifestPath: string, origin: string, tok
     // Validate rule references before the first catalog write.
     for (const ref of [...rules.new_season, ...rules.rolling]) await request("GET", `/rules/${ref.id}/${ref.version}`);
     async function put(kind: "snapshots" | "scenarios", key: string, body: unknown, sourceSHA: string) {
+      assertCatalogBodySize(body, `${kind}/${key}`);
       const prior = state[kind][key];
       if (prior) {
         assert.ok(prior.source_sha256 === sourceSHA, `${key}: input changed; use a new private import state`);

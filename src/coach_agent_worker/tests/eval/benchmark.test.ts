@@ -368,3 +368,46 @@ test("catalog definitive no-write rejection clears pending; ambiguous status/bod
     assert.equal(posts, before + (noWrite ? 1 : 0), "only proven no-write may POST again");
   }
 });
+
+test("oversized UTF-8 snapshot fails check/import before pending; corrected retry succeeds", async (t) => {
+  const { path, root, manifest } = await privateManifest(t);
+  const snapshots = batch();
+  const s = snapshots.pan;
+  assert.ok(s);
+  s.provenance.source = "私".repeat(Math.ceil((16 << 20) / 3));
+  assert.ok(JSON.stringify(s).length < 16 << 20, "size is UTF-8 bytes, not JS characters");
+  assert.throws(() => validateFirstBatch(snapshots), /serialized request exceeds 16 MiB/);
+  const original = await readFile(join(root, "pan.json"), "utf8");
+  const raw = JSON.stringify(s);
+  await writeFile(join(root, "pan.json"), raw);
+  manifest.snapshots.pan = { file: "pan.json", sha256: createHash("sha256").update(raw).digest("hex") };
+  await writeFile(path, JSON.stringify(manifest));
+  await assert.rejects(loadFirstBatch(path), /serialized request exceeds 16 MiB/);
+  const server = createServer(async (req, res) => {
+    if (req.method === "GET" || req.url?.endsWith("request-preview")) {
+      res.end("{}");
+      return;
+    }
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    const doc = JSON.parse(body);
+    if (req.url?.endsWith("snapshots")) doc.snapshot_id = randomUUID();
+    else doc.id = randomUUID();
+    res.end(JSON.stringify(doc));
+  });
+  server.listen(0, "127.0.0.1");
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const origin = `http://127.0.0.1:${address.port}`;
+  const statePath = join(root, "size-state.json");
+  await assert.rejects(importFirstBatch(path, origin, "test-admin", statePath), /serialized request exceeds 16 MiB/);
+  await assert.rejects(readFile(statePath), { code: "ENOENT" });
+  await writeFile(join(root, "pan.json"), original);
+  manifest.snapshots.pan.sha256 = createHash("sha256").update(original).digest("hex");
+  await writeFile(path, JSON.stringify(manifest));
+  const imported = await importFirstBatch(path, origin, "test-admin", statePath);
+  assert.equal(imported.pending, undefined);
+  assert.equal(Object.keys(imported.snapshots).length, 8);
+});
