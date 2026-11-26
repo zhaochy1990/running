@@ -417,6 +417,14 @@ dialog::backdrop { background: #2227278a; }
   overflow-wrap: anywhere;
 }
 .coach-message.is-user { justify-self: end; background: var(--tint); border-color: transparent; }
+.coach-speaker {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .coach-preview-composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .coach-preview-composer input {
   width: 100%;

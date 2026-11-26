@@ -6,7 +6,13 @@ const coachPreview = (() => {
   let recordId = null;
 
   function open(id = null) {
+    const changed = recordId !== id;
     recordId = id;
+    return changed;
+  }
+
+  function messageView({ text, fromUser }) {
+    return `<p class="coach-message${fromUser ? ' is-user' : ''}"><span class="coach-speaker">${fromUser ? '你：' : '教练：'}</span>${escapeHTML(text)}</p>`;
   }
 
   function view() {
@@ -18,8 +24,8 @@ const coachPreview = (() => {
       content: `
         ${record ? `<p class="coach-context">正在围绕「${escapeHTML(record.title)}」对话</p>` : ''}
         <div class="coach-messages" role="log" aria-label="教练对话">
-          <p class="coach-message">${record ? '想聊这次训练的哪一部分？' : '可以问我「最近一次力量训练练得怎么样？」'}</p>
-          ${messages.map(({ text, fromUser }) => `<p class="coach-message${fromUser ? ' is-user' : ''}">${escapeHTML(text)}</p>`).join('')}
+          ${messageView({ text: record ? '想聊这次训练的哪一部分？' : '可以问我「最近一次力量训练练得怎么样？」' })}
+          ${messages.map(messageView).join('')}
         </div>`,
       footer: `
         <form id="coach-preview-form" class="coach-preview-composer">
@@ -35,11 +41,19 @@ const coachPreview = (() => {
     return `我先看这条手动记录「${record.title}」。\n${actions.join('\n')}${note}`;
   }
 
+  function requestedDay(message) {
+    const explicit = message.match(/\d{4}-\d{2}-\d{2}/)?.[0];
+    if (explicit) return explicit;
+    const offset = [/今天|今日/, /昨天|昨日/, /前天/].findIndex(pattern => pattern.test(message));
+    return offset < 0 ? undefined : manualLog.today(new Date(Date.now() - offset * 86_400_000));
+  }
+
   function reply(message, includeWatch) {
     const manual = manualLog.coachRecords();
     if (recordId !== null) return summarize(manual.find(record => record.id === recordId));
 
-    const day = message.includes('今天') ? manualLog.today() : message.match(/\d{4}-\d{2}-\d{2}/)?.[0];
+    const day = requestedDay(message);
+    if (!day && !message.includes('最近')) return '试试问今天、昨天或最近一次的力量训练，也可以直接写日期。';
     const relevant = record => !day || record.date === day;
     const matching = manual.filter(relevant).sort((a, b) => b.endedAt.localeCompare(a.endedAt));
     if (matching.length > 1 && day && !message.includes('最近一次')) {
@@ -54,8 +68,10 @@ const coachPreview = (() => {
 
   function send(message, includeWatch) {
     const messages = sessions.get(recordId) ?? [];
-    messages.push({ text: message, fromUser: true }, { text: reply(message, includeWatch), fromUser: false });
+    const exchange = [{ text: message, fromUser: true }, { text: reply(message, includeWatch), fromUser: false }];
+    messages.push(...exchange);
     sessions.set(recordId, messages);
+    return exchange.map(messageView).join('');
   }
 
   return { open, view, send };

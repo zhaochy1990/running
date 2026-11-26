@@ -368,9 +368,13 @@ function revealActivity(id, date) {
 }
 
 function openCoach(recordId) {
-  coachPreview.open(recordId);
-  if (page === 'coach') render();
-  else navigate('coach');
+  const changed = coachPreview.open(recordId);
+  if (page !== 'coach') {
+    navigate('coach');
+  } else if (changed) {
+    render();
+    tabBar.querySelector('[aria-current="page"]').focus({ preventScroll: true });
+  }
   screen.scrollTop = screen.scrollHeight;
 }
 
@@ -433,10 +437,11 @@ actions.addEventListener('submit', event => {
   event.preventDefault();
   const message = new FormData(event.target).get('message').trim();
   if (!message) return;
-  coachPreview.send(message, params.get('state') !== 'empty');
-  render();
+  const exchange = coachPreview.send(message, params.get('state') !== 'empty');
+  screen.querySelector('.coach-messages').insertAdjacentHTML('beforeend', exchange);
+  event.target.reset();
   screen.scrollTop = screen.scrollHeight;
-  actions.querySelector('#coach-preview-form input').focus();
+  event.target.elements.message.focus();
 });
 
 screen.addEventListener('input', event => {
