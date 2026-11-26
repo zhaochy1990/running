@@ -244,10 +244,6 @@ ${escape(entry.note)}</textarea>
     if (editing) {
       record = records.find(item => item.id === selected);
       editing.original = snapshot;
-      if (record === activeRecord) {
-        activeRecord = null;
-        activeDraft = null;
-      }
     } else {
       if (!activeRecord) {
         activeRecord = { id: nextId++, data: snapshot };
@@ -303,10 +299,26 @@ ${escape(entry.note)}</textarea>
         app.navigate('manualSaved');
         break;
       }
-      case 'edit': {
+      case 'resume-active':
+        app.closeSheet();
+        open();
+        break;
+      case 'edit':
+      case 'edit-saved-only': {
         const saved = records.find(item => item.id === selected);
-        const original = saved === activeRecord ? activeDraft : saved.data;
-        editing = { original, draft: structuredClone(original) };
+        if (saved === activeRecord && hasDraft()) {
+          if (logAction === 'edit') {
+            app.openSheet('这次训练还有草稿',
+              '<p class="sheet-copy">可以继续填写，也可以放弃未保存的内容，编辑已保存的记录。</p>',
+              logButton('resume-active', '继续记录', 'primary', 'autofocus') +
+              logButton('edit-saved-only', '放弃草稿并编辑', 'secondary'));
+            break;
+          }
+          app.closeSheet();
+          activeDraft = null;
+          activeRecord = null;
+        }
+        editing = { original: saved.data, draft: structuredClone(saved.data) };
         app.navigate('manualEdit');
         break;
       }
