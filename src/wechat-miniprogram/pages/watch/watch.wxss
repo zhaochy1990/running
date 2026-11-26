@@ -189,6 +189,23 @@
   background: var(--color-success);
 }
 
+.watch-sync-details {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  font-size: 24rpx;
+  line-height: 1.5;
+}
+
+.watch-sync-stage {
+  padding: 12rpx 0;
+}
+
+.watch-sync-gaps {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
 .watch-meta-row {
   display: flex;
   justify-content: space-between;

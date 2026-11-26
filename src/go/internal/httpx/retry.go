@@ -44,9 +44,9 @@ func (e *StatusError) Retryable() bool {
 	return RetryableStatus(e.Code)
 }
 
-// RetryableStatus reports whether an HTTP status code is transient (429 or 5xx).
+// RetryableStatus treats 501 as an explicit unsupported operation.
 func RetryableStatus(code int) bool {
-	return code == http.StatusTooManyRequests || code >= 500
+	return code == http.StatusTooManyRequests || (code >= 500 && code != http.StatusNotImplemented)
 }
 
 // Retryable classifies an error as a transient HTTP/transport failure worth

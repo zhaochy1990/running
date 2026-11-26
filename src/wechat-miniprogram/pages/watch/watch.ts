@@ -7,7 +7,7 @@ import {
   type WatchProvider,
 } from '../../services/watch';
 import { getOnboardingSyncSession, isSessionEntryUnavailable } from '../../services/onboarding-sync';
-import { historicalAnalysisLabel, isSessionTerminal, SESSION_POLL_MS } from '../../utils/onboardingSession';
+import { historicalAnalysisLabel, isSessionTerminal, SESSION_POLL_MS, toSyncStatusViewModel, type SyncStageRow } from '../../utils/onboardingSession';
 import { ApiError } from '../../services/request';
 import { triggerSyncAfterBind } from '../../services/onboarding';
 import { userStore } from '../../store/index';
@@ -25,6 +25,9 @@ interface WatchPageData {
   /** last_sync_at 的展示串（上海 MM-DD HH:mm）—— wxml 不直接渲染原始 ISO。 */
   lastSyncText: string;
   historicalAnalysisText: string;
+  syncStatusText: string;
+  syncStages: SyncStageRow[];
+  syncDetailsOpen: boolean;
   connected: boolean;
   error: string;
   success: string;
@@ -52,6 +55,7 @@ interface WatchPageHandlers {
   _historicalGeneration?: number;
   _historicalTimer?: ReturnType<typeof setTimeout>;
   fetchWatch(): Promise<void>;
+  toggleSyncDetails(): void;
   onBack(): void;
   onSelectProvider(e: WechatMiniprogram.TouchEvent): void;
   onBackToProviders(): void;
@@ -121,6 +125,9 @@ Page<WatchPageData, WatchPageHandlers>({
     watch: EMPTY_WATCH,
     lastSyncText: '—',
     historicalAnalysisText: '',
+    syncStatusText: '',
+    syncStages: [],
+    syncDetailsOpen: false,
     connected: false,
     error: '',
     success: '',
@@ -176,16 +183,25 @@ Page<WatchPageData, WatchPageHandlers>({
     try {
       const view = await getOnboardingSyncSession();
       if (generation !== this._historicalGeneration) return;
-      this.setData({ historicalAnalysisText: historicalAnalysisLabel(view) });
+      const sync = view.state === 'superseded' ? null : toSyncStatusViewModel(view);
+      this.setData({
+        historicalAnalysisText: historicalAnalysisLabel(view),
+        syncStatusText: sync?.stateText ?? '',
+        syncStages: sync?.stages ?? [],
+      });
       if (isSessionTerminal(view.state) && !view.historical_analysis_poll) return;
     } catch (err) {
       if (generation !== this._historicalGeneration) return;
       if (isSessionEntryUnavailable(err)) {
-        this.setData({ historicalAnalysisText: '' });
+        this.setData({ historicalAnalysisText: '', syncStatusText: '', syncStages: [] });
         return;
       }
     }
     this._historicalTimer = setTimeout(() => void this.pollHistoricalAnalysis(generation), SESSION_POLL_MS);
+  },
+
+  toggleSyncDetails() {
+    this.setData({ syncDetailsOpen: !this.data.syncDetailsOpen });
   },
 
   async fetchWatch() {

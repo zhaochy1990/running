@@ -140,6 +140,20 @@ import Testing
         #expect(OnboardingSessionDisplay.stageLabel("unknown_stage") == "unknown_stage")
     }
 
+    @Test func typedGapsShowHistoryLimitsRetryableDatesAndRejectedRecords() throws {
+        let data = Data(#"""
+        [{"from":"2026-09-01","to":"2026-09-01","kind":"empty","health_history_days":72},
+         {"from":"2026-11-15","to":"2026-11-16","kind":"transient"},
+         {"from":"2026-11-16","to":"2026-11-16","kind":"unavailable","reason":"activity 42 was deleted"}]
+        """#.utf8)
+        let gaps = try JSONDecoder().decode([OnboardingSyncStageGap].self, from: data)
+        #expect(gaps.map(OnboardingSessionDisplay.gapText) == [
+            "手表只提供近 72 天健康数据 · 2026-09-01",
+            "有 2 天数据暂时拿不到 · 2026-11-15 ~ 2026-11-16",
+            "有 1 条记录无法获取 · 2026-11-16（activity 42 was deleted）",
+        ])
+    }
+
     @Test func rangeLabelKeepsOpenEndsInsteadOfFakeCoverage() {
         #expect(OnboardingSessionDisplay.rangeLabel(from: nil, to: nil) == "—")
         #expect(OnboardingSessionDisplay.rangeLabel(from: "2026-11-10", to: "2026-11-16") == "2026-11-10 ~ 2026-11-16")

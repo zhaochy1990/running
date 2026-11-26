@@ -4,6 +4,7 @@
  */
 import {
   READINESS_SUMMARY,
+  gapText,
   historicalAnalysisLabel,
   isSessionTerminal,
   rangeLabel,
@@ -234,3 +235,7 @@ eq(historicalAnalysisLabel({ readiness: { historical_analysis: 'ready_with_gaps'
   '已就绪（有缺项）', 'published historical result preserves gaps');
 eq(historicalAnalysisLabel({ historical_analysis_reason: 'interruption_limit', readiness: { historical_analysis: 'pending' } } as OnboardingSyncView),
   '待人工处理', 'paused historical work');
+
+eq(gapText({ from: '2026-11-25', to: '2026-11-26', kind: 'transient' }), '有 2 天数据暂时拿不到 · 2026-11-25 ~ 2026-11-26', 'transient range');
+eq(gapText({ from: '2026-10-01', to: '2026-10-01', kind: 'empty', channel: 'health', health_history_days: 30 }), '手表只提供近 30 天健康数据 · 2026-10-01', 'COROS health lookback');
+eq(gapText({ from: '2026-11-26', to: '2026-11-26', kind: 'unavailable', reason: 'activity 123 removed' }), '有 1 条记录无法获取 · 2026-11-26（activity 123 removed）', 'permanent rejection preserves reason');

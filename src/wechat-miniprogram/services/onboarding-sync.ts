@@ -34,6 +34,10 @@ export type OnboardingSyncReadiness =
 export interface OnboardingSyncStageGap {
   from: string;
   to: string;
+  kind?: 'empty' | 'transient' | 'unavailable';
+  channel?: string;
+  health_history_days?: number;
+  range_estimated?: boolean;
   reason?: string;
 }
 

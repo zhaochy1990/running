@@ -54,6 +54,19 @@
             <text class="watch-meta-row__label">最后同步</text>
             <text class="watch-meta-row__value">{{lastSyncText}}</text>
           </view>
+          <view wx:if="{{syncStatusText}}" class="watch-meta-row" bindtap="toggleSyncDetails" aria-role="button" aria-expanded="{{syncDetailsOpen}}">
+            <text class="watch-meta-row__label">首次数据同步</text>
+            <text class="watch-meta-row__value">{{syncStatusText}} · {{syncDetailsOpen ? '收起' : '详情'}}</text>
+          </view>
+          <view wx:if="{{syncStatusText && syncDetailsOpen}}" class="watch-sync-details">
+            <view wx:for="{{syncStages}}" wx:key="key" class="watch-sync-stage">
+              <view class="watch-meta-row__value">{{item.label}} · {{item.readinessText}}</view>
+              <view>{{item.targetText}}</view>
+              <view>{{item.observedText || '实际覆盖 —'}}</view>
+              <view wx:if="{{item.gapsText}}" class="watch-sync-gaps">{{item.gapsText}}</view>
+              <view wx:if="{{item.error}}">{{item.error}}</view>
+            </view>
+          </view>
           <view wx:if="{{historicalAnalysisText}}" class="watch-meta-row">
             <text class="watch-meta-row__label">历史分析</text>
             <text class="watch-meta-row__value">{{historicalAnalysisText}}</text>

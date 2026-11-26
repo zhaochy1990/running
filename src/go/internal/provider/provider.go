@@ -213,23 +213,187 @@ type DayWindow struct {
 	To   string
 }
 
-// Recent-range channel outcome statuses. A channel that reached no terminal
-// outcome is simply absent from the report — the executor treats absence as
-// "still failed/unfinished", never as success.
+// Recent-range channel outcome statuses. A report with an empty status
+// carries partial evidence only. Its scan must resume before it can conclude.
 const (
 	// RangeChannelDone: the channel's complete fetch succeeded over its window.
 	RangeChannelDone = "done"
 	// RangeChannelGap: the fetch finished, but part of the window is
-	// permanently unobtainable at the provider — recorded, never faked as
-	// success (completed_with_gaps ≠ 完整覆盖).
+	// absent at the provider — either an honest empty period or an
+	// explicitly unavailable record. Neither supplies coverage evidence.
 	RangeChannelGap = "gap"
 )
 
-// RangeGap is one permanently-unobtainable day range with its reason.
+type RangeGapKind string
+
+const (
+	RangeGapEmpty       RangeGapKind = "empty"
+	RangeGapTransient   RangeGapKind = "transient"
+	RangeGapUnavailable RangeGapKind = "unavailable"
+)
+
+// RangeGap reports absent data within an inclusive Shanghai-day range.
+// HealthHistoryDays is the lookback supplied by a COROS health response,
+// when this gap precedes the oldest day in that response.
 type RangeGap struct {
-	From   string `json:"from"`
-	To     string `json:"to"`
-	Reason string `json:"reason,omitempty"`
+	From              string       `json:"from"`
+	To                string       `json:"to"`
+	Kind              RangeGapKind `json:"kind"`
+	Channel           string       `json:"channel,omitempty"`
+	ActivityID        string       `json:"activity_id,omitempty"`
+	Endpoint          string       `json:"endpoint,omitempty"`
+	Reason            string       `json:"reason,omitempty"`
+	HealthHistoryDays int          `json:"health_history_days,omitempty"`
+	RangeEstimated    bool         `json:"range_estimated,omitempty"`
+}
+
+// Classified fills the kind for pre-classification records. Only explicitly
+// known empty reasons qualify, including old flattened work-item reasons.
+func (g RangeGap) Classified() RangeGap {
+	if g.Channel == "" {
+		channel, _, _ := strings.Cut(g.Reason, ": ")
+		switch channel {
+		case "activities", "health", "dashboard":
+			g.Channel = channel
+		default:
+			switch {
+			case strings.HasPrefix(g.Reason, "no activities"):
+				g.Channel = "activities"
+			case strings.HasPrefix(g.Reason, "provider returned no health rows"):
+				g.Channel = "health"
+			case strings.HasPrefix(g.Reason, "provider returned no dashboard summary"):
+				g.Channel = "dashboard"
+			}
+		}
+	}
+	switch g.Kind {
+	case RangeGapEmpty, RangeGapTransient, RangeGapUnavailable:
+		return g
+	}
+	g.Kind = RangeGapEmpty
+	for _, reason := range strings.Split(g.Reason, "; ") {
+		_, detail, prefixed := strings.Cut(reason, ": ")
+		if prefixed {
+			reason = detail
+		}
+		switch reason {
+		case "no activities at provider in range", "no activities in window",
+			"provider returned no health rows for range", "provider returned no health rows for day",
+			"provider returned no health rows", "provider returned no dashboard summary":
+		default:
+			g.Kind = RangeGapUnavailable
+			return g
+		}
+	}
+	return g
+}
+
+// HealthLookbackDays measures the observed lookback only for a current batch.
+// Stale data supplying a few old dates cannot establish a recent history span.
+func HealthLookbackDays(from, latest, targetTo string) int {
+	start, startErr := time.Parse(time.DateOnly, from)
+	end, endErr := time.Parse(time.DateOnly, latest)
+	target, targetErr := time.Parse(time.DateOnly, targetTo)
+	if startErr != nil || endErr != nil || targetErr != nil || end.Before(target.AddDate(0, 0, -1)) {
+		return 0
+	}
+	return max(0, int(end.Sub(start).Hours()/24)+1)
+}
+
+// MergeRangeGaps combines previously recorded evidence with a new report.
+func MergeRangeGaps(running, chunk []RangeGap) []RangeGap {
+	seen := make(map[RangeGap]bool, len(running)+len(chunk))
+	for _, gap := range running {
+		seen[gap.Classified()] = true
+	}
+	for _, gap := range chunk {
+		gap = gap.Classified()
+		if !seen[gap] {
+			seen[gap] = true
+			running = append(running, gap)
+		}
+	}
+	return running
+}
+
+// RememberRejectedActivities excludes terminal detail rejections from repeat
+// list walks while leaving the records absent from observed coverage.
+func RememberRejectedActivities(ids map[string]bool, gaps []RangeGap) {
+	for _, gap := range gaps {
+		if gap.Kind == RangeGapUnavailable && gap.ActivityID != "" {
+			ids[gap.ActivityID] = true
+		}
+	}
+}
+
+// RememberRejectedHealthEndpoints tracks the exact date and endpoint of a
+// vendor refusal so unrelated successful or retryable requests can continue.
+func RememberRejectedHealthEndpoints(byDay map[string]map[string]bool, gaps []RangeGap) {
+	for _, gap := range gaps {
+		if gap.Kind != RangeGapUnavailable || gap.Endpoint == "" {
+			continue
+		}
+		start, startErr := time.Parse(time.DateOnly, gap.From)
+		end, endErr := time.Parse(time.DateOnly, gap.To)
+		if startErr != nil || endErr != nil {
+			continue
+		}
+		for day := start; !day.After(end); day = day.AddDate(0, 0, 1) {
+			label := day.Format(time.DateOnly)
+			if byDay[label] == nil {
+				byDay[label] = make(map[string]bool)
+			}
+			byDay[label][gap.Endpoint] = true
+		}
+	}
+}
+
+// HasBlockingRangeGaps distinguishes a finished scan with expected blanks
+// from one with data that could not be obtained.
+func HasBlockingRangeGaps(gaps []RangeGap) bool {
+	for _, g := range gaps {
+		if g.Classified().Kind != RangeGapEmpty {
+			return true
+		}
+	}
+	return false
+}
+
+// IsRangeRejection reports an explicit provider refusal for a requested
+// record or window. Auth and transport errors follow their separate paths.
+func IsRangeRejection(err error) bool {
+	var unsupported *FeatureNotSupported
+	return IsInvalidRequest(err) || errors.As(err, &unsupported)
+}
+
+// RangeFetchError narrows an unsuccessful request to the window it failed on.
+type RangeFetchError struct {
+	Window DayWindow
+	Err    error
+}
+
+func (e *RangeFetchError) Error() string { return e.Err.Error() }
+func (e *RangeFetchError) Unwrap() error { return e.Err }
+
+// RejectedRange records an explicit rejection without claiming the window
+// was scanned. A caller must check IsRangeRejection before using it.
+func RejectedRange(win DayWindow, err error) RangeGap {
+	return RangeGap{From: win.From, To: win.To, Kind: RangeGapUnavailable, Reason: err.Error()}
+}
+
+// RangeCredentialObservedWindow reads the shared v1 proof format used by
+// Garmin and COROS. A credential may have optional accounting suffixes.
+func RangeCredentialObservedWindow(credential string) (from, to string, ok bool) {
+	parts := strings.Split(credential, ":")
+	if len(parts) < 7 || parts[1] != "v1" || parts[2] != "range" {
+		return "", "", false
+	}
+	rangeLabel, ok := strings.CutPrefix(parts[5], "obs=")
+	if !ok {
+		return "", "", false
+	}
+	from, to, ok = strings.Cut(rangeLabel, "..")
+	return from, to, ok && len(from) == len(time.DateOnly) && len(to) == len(time.DateOnly)
 }
 
 // RangeChannelReport is one data channel's terminal outcome. Scanned* is what
@@ -261,15 +425,18 @@ type RangeChannelReport struct {
 // Jobs is the detail-fetch concurrency, an infra knob supplied by the caller
 // (CLI/worker) exactly like SyncOptions.Jobs — never client-controlled.
 type RecentRangeOptions struct {
-	Activities *DayWindow
-	Health     *DayWindow
-	Dashboard  *DayWindow
-	Jobs       int
+	Activities                 *DayWindow
+	Health                     *DayWindow
+	Dashboard                  *DayWindow
+	RejectedActivityIDs        map[string]bool            // terminal detail rejections from earlier attempts
+	RejectedHealthEndpoints    map[string]map[string]bool // day → rejected endpoints
+	RejectedDashboardEndpoints map[string]map[string]bool // day → rejected endpoints
+	Jobs                       int
 }
 
 // RecentRangeReport carries the terminal outcomes of a recent-range sync.
-// Only channels that reached a terminal outcome appear; the returned error
-// (if any) explains the first channel that failed non-permanently-skipping.
+// Finished channels carry credentials or terminal gaps. A failed channel
+// may include partial evidence without a credential so a retry can reuse it.
 type RecentRangeReport struct {
 	Activities *RangeChannelReport
 	Health     *RangeChannelReport
@@ -331,12 +498,14 @@ type BackfillBudget struct {
 // blobs; only the owning adapter interprets them. A nil window skips the
 // channel.
 type BackfillRangeOptions struct {
-	Activities           *DayWindow
-	Health               *DayWindow
-	ActivitiesCheckpoint string
-	HealthCheckpoint     string
-	Budget               BackfillBudget
-	Jobs                 int
+	Activities              *DayWindow
+	Health                  *DayWindow
+	ActivitiesCheckpoint    string
+	RejectedActivityIDs     map[string]bool            // terminal detail rejections recorded by previous attempts or chunks
+	RejectedHealthEndpoints map[string]map[string]bool // day → rejected endpoints
+	HealthCheckpoint        string
+	Budget                  BackfillBudget
+	Jobs                    int
 }
 
 // ChannelBackfillReport is one channel's chunk outcome. Done=true means the
@@ -348,6 +517,7 @@ type BackfillRangeOptions struct {
 // can fail instead of spinning (AC4 不无限空转).
 type ChannelBackfillReport struct {
 	Done       bool
+	Rejected   bool // requested window was refused before the scan could complete
 	Checkpoint string
 	// ScannedThrough is the newest-to-oldest walk's current depth (Shanghai
 	// day, YYYY-MM-DD): everything in (ScannedThrough, window.To] is walked.
@@ -359,7 +529,7 @@ type ChannelBackfillReport struct {
 	Fetches    int
 	DaysWalked int
 	Advanced   bool
-	// GapEvents are per-item/per-day permanently-unobtainable notes observed
+	// GapEvents are per-item/per-day missing-data notes observed
 	// this chunk (rejected activities, undatable entries, honestly-empty
 	// health days) the executor merges into the channel's running gap record.
 	GapEvents []RangeGap

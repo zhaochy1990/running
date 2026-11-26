@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/zhaochy1990/stride/internal/provider"
@@ -471,6 +472,103 @@ func TestSyncRecentRange_HealthFailureFailsRun(t *testing.T) {
 	}
 	if rep.Health != nil {
 		t.Error("a failed channel must carry no report")
+	}
+}
+
+func TestSyncRecentRange_DashboardMixedErrorsRemainRetryable(t *testing.T) {
+	base := garminMux()
+	mux := http.NewServeMux()
+	var unsupportedCalls atomic.Int64
+	var outage atomic.Bool
+	outage.Store(true)
+	mux.HandleFunc("/metrics-service/metrics/trainingstatus/aggregated/", func(w http.ResponseWriter, _ *http.Request) {
+		unsupportedCalls.Add(1)
+		w.WriteHeader(http.StatusNotImplemented)
+	})
+	mux.HandleFunc("/hrv-service/hrv/", func(w http.ResponseWriter, r *http.Request) {
+		if outage.Load() {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		base.ServeHTTP(w, r)
+	})
+	mux.Handle("/", base)
+	p, fw := newTestProvider(t, mux, loggedInCreds())
+	day := provider.DayWindow{From: "2026-10-01", To: "2026-10-01"}
+	opts := provider.RecentRangeOptions{Dashboard: &day}
+	first, err := p.SyncRecentRange(context.Background(), testUID, opts, nil)
+	if err == nil || provider.IsAuthError(err) || isRangeRejection(err) || first.Dashboard == nil || first.Dashboard.Credential != "" || len(first.Dashboard.Gaps) != 1 {
+		t.Fatalf("dashboard = %+v, error = %v, want retryable mixed error with rejection evidence", first.Dashboard, err)
+	}
+	opts.RejectedDashboardEndpoints = make(map[string]map[string]bool)
+	provider.RememberRejectedHealthEndpoints(opts.RejectedDashboardEndpoints, first.Dashboard.Gaps)
+	outage.Store(false)
+	second, err := p.SyncRecentRange(context.Background(), testUID, opts, nil)
+	if err != nil || second.Dashboard == nil || second.Dashboard.ObservedTo == nil || fw.dashboards != 1 || unsupportedCalls.Load() != 1 {
+		t.Fatalf("dashboard = %+v, stored = %d, rejected calls = %d, error = %v", second.Dashboard, fw.dashboards, unsupportedCalls.Load(), err)
+	}
+}
+
+func TestSyncRecentRange_UndatedDeletedActivityKeepsOtherActivities(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/activitylist-service/activities/search/activities", recentListHandler(map[string]string{
+		"0": "[" + recentActivityJSON(9001, "invalid") + "," + recentActivityJSON(9002, "2026-10-01 08:00:00") + "]",
+	}))
+	base := garminMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/9001/details") {
+			w.WriteHeader(http.StatusGone)
+			return
+		}
+		base.ServeHTTP(w, r)
+	})
+	p, _ := newTestProvider(t, mux, loggedInCreds())
+	report, err := p.SyncRecentRange(context.Background(), testUID, recentOpts("2026-10-01", "2026-10-02"), nil)
+	if err != nil || report.Activities == nil || report.Activities.Count != 1 || report.Activities.Credential == "" {
+		t.Fatalf("activities = %+v, error = %v, want the surviving activity and scan evidence", report.Activities, err)
+	}
+	for _, gap := range report.Activities.Gaps {
+		if gap.Kind == provider.RangeGapUnavailable && gap.ActivityID == "9001" {
+			return
+		}
+	}
+	t.Fatalf("gaps = %+v, want the deleted activity", report.Activities.Gaps)
+}
+
+func TestSyncRecentRange_HealthRetainsRejectionBesideRetryableError(t *testing.T) {
+	base := garminMux()
+	mux := http.NewServeMux()
+	var unsupportedCalls atomic.Int64
+	var outage atomic.Bool
+	outage.Store(true)
+	mux.HandleFunc("/metrics-service/metrics/trainingstatus/aggregated/", func(w http.ResponseWriter, _ *http.Request) {
+		unsupportedCalls.Add(1)
+		w.WriteHeader(http.StatusNotImplemented)
+	})
+	mux.HandleFunc("/hrv-service/hrv/", func(w http.ResponseWriter, r *http.Request) {
+		if outage.Load() {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		base.ServeHTTP(w, r)
+	})
+	mux.Handle("/", base)
+	p, _ := newTestProvider(t, mux, loggedInCreds())
+	day := provider.DayWindow{From: "2026-10-01", To: "2026-10-01"}
+	first, err := p.SyncRecentRange(context.Background(), testUID, provider.RecentRangeOptions{Health: &day}, nil)
+	if err == nil || first.Health == nil || first.Health.Credential != "" || len(first.Health.Gaps) != 1 {
+		t.Fatalf("health = %+v, error = %v, want partial rejection and retryable error", first.Health, err)
+	}
+	gap := first.Health.Gaps[0]
+	if gap.Kind != provider.RangeGapUnavailable || gap.Endpoint != "training_status" || unsupportedCalls.Load() != 1 {
+		t.Fatalf("gap = %+v, calls = %d, want one terminal request", gap, unsupportedCalls.Load())
+	}
+	outage.Store(false)
+	second, err := p.SyncRecentRange(context.Background(), testUID, provider.RecentRangeOptions{
+		Health: &day, RejectedHealthEndpoints: map[string]map[string]bool{gap.From: {gap.Endpoint: true}},
+	}, nil)
+	if err != nil || second.Health == nil || second.Health.ObservedTo == nil || unsupportedCalls.Load() != 1 {
+		t.Fatalf("health = %+v, error = %v, calls = %d, want successful retry without rejected endpoint", second.Health, err, unsupportedCalls.Load())
 	}
 }
 

@@ -338,6 +338,27 @@ func TestOnboardingRecent_MidRunTransientFailureMarksUnfinishedOnly(t *testing.T
 		t.Errorf("dashboard item = %s, want failed (never reached)", states["dashboard"])
 	}
 
+	svc, err := onboardingsync.New(onboardingsync.Config{
+		Store: st, Enqueuer: &fakeEnqueuer{}, Jobs: st, Runs: st,
+		JobType: JobType, AnalysisJobType: "onboarding_recent_analysis", LegacyFullPipeline: "onboarding", Logger: zap.NewNop(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewBeforeRetry, err := svc.View(ctx, uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var transient []onboardingsync.StageGap
+	for _, stage := range viewBeforeRetry.Stages {
+		if stage.Stage == storage.OnboardingSyncStageRecentRaw {
+			transient = stage.Gaps
+		}
+	}
+	if len(transient) != 1 || transient[0].Kind != provider.RangeGapTransient || transient[0].Channel != kindHealth {
+		t.Fatalf("gaps before auto-retry = %+v, want the failed health range only", transient)
+	}
+
 	// The job-level auto-retry re-runs the handler: failed items re-armed, the
 	// stage completes, and activities is NOT re-requested.
 	ok := newFakeProvider()
@@ -357,8 +378,8 @@ func TestOnboardingRecent_MidRunTransientFailureMarksUnfinishedOnly(t *testing.T
 	}
 	var sr onboardingsync.StageResult
 	_ = json.Unmarshal([]byte(res), &sr)
-	if sr.Status != storage.OnboardingSyncCoverageCompleted {
-		t.Errorf("status = %s, want completed", sr.Status)
+	if sr.Status != storage.OnboardingSyncCoverageCompleted || len(sr.Gaps) != 0 {
+		t.Errorf("result = %+v, want completed with the transient failure resolved", sr)
 	}
 }
 
@@ -415,6 +436,54 @@ func TestOnboardingRecent_GapReportIsCompletedWithGaps(t *testing.T) {
 
 // A provider without the recent-range contract (Garmin until T03) is a
 // permanent failure the moment the resolver reports it — no poisoning retries.
+func TestOnboardingRecent_ViewRecoversPermanentGapFromLegacyFinalization(t *testing.T) {
+	st := openStore(t)
+	ctx := context.Background()
+	uid := uuid.NewString()
+	sess := seedSession(t, st, uid)
+	fp := newFakeProvider()
+	fp.actBehaviour = make(chan behaviour, 1)
+	fp.actBehaviour <- behaviour{status: provider.RangeChannelGap}
+	if _, err := runHandler(t, handlerWith(t, st, fp), stageJob(sess)); err != nil {
+		t.Fatal(err)
+	}
+	// Older workers inferred gaps from the two observed edges, omitting an
+	// unavailable record inside that range even when its work item was saved.
+	cov, err := st.GetOnboardingSyncStageCoverage(ctx, sess.SessionID, storage.OnboardingSyncStageRecentRaw)
+	if err != nil || cov == nil {
+		t.Fatalf("raw coverage: %+v, %v", cov, err)
+	}
+	legacy := fmt.Sprintf(`[{"from":%q,"to":%q,"reason":"permanently unobtainable"}]`, cov.TargetTo, cov.TargetTo)
+	cov.Status, cov.GapsJSON = storage.OnboardingSyncCoverageCompletedWithGaps, &legacy
+	if err := st.UpdateOnboardingSyncStageCoverage(ctx, cov); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetOnboardingSyncSessionState(ctx, sess.SessionID, storage.OnboardingSyncStateCompletedWithGaps, nil); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := onboardingsync.New(onboardingsync.Config{
+		Store: st, Enqueuer: &fakeEnqueuer{}, Jobs: st, Runs: st,
+		JobType: JobType, AnalysisJobType: "onboarding_recent_analysis", LegacyFullPipeline: "onboarding", Logger: zap.NewNop(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := svc.View(ctx, uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stage := range view.Stages {
+		if stage.Stage != storage.OnboardingSyncStageRecentRaw {
+			continue
+		}
+		if len(stage.Gaps) != 1 || stage.Gaps[0].Kind != provider.RangeGapUnavailable || stage.Gaps[0].Reason != "permanently unobtainable" || stage.Gaps[0].From != cov.TargetFrom {
+			t.Fatalf("raw gaps = %+v, want the precise terminal reason", stage.Gaps)
+		}
+		return
+	}
+	t.Fatal("recent raw stage is missing")
+}
+
 func TestOnboardingRecent_ProviderNotCapableIsPermanent(t *testing.T) {
 	st := openStore(t)
 	uid := uuid.NewString()
@@ -711,8 +780,8 @@ func TestStageResultFromItems_GapItemsKeepObservedWindowAndComplementGaps(t *tes
 	if err := json.Unmarshal([]byte(stageResultFromItems(storage.OnboardingSyncStageExtendedRaw, items)), &res); err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if res.Status != storage.OnboardingSyncCoverageCompletedWithGaps {
-		t.Errorf("status = %s, want completed_with_gaps", res.Status)
+	if res.Status != storage.OnboardingSyncCoverageCompleted {
+		t.Errorf("status = %s, want completed", res.Status)
 	}
 	if res.ScannedFrom == nil || *res.ScannedFrom != "2026-05-22" || res.ScannedTo == nil || *res.ScannedTo != "2026-10-20" {
 		t.Errorf("scanned = %v..%v, want 2026-05-22..2026-10-20", res.ScannedFrom, res.ScannedTo)
@@ -721,10 +790,10 @@ func TestStageResultFromItems_GapItemsKeepObservedWindowAndComplementGaps(t *tes
 		t.Errorf("observed = %v..%v, want the credential-derived union 2026-06-10..2026-10-01", res.ObservedFrom, res.ObservedTo)
 	}
 	wantGaps := []onboardingsync.StageGap{
-		{From: "2026-05-22", To: "2026-06-09", Reason: "no activities at provider in range"},
-		{From: "2026-08-17", To: "2026-08-19", Reason: "no activities at provider in range"},
-		{From: "2026-08-20", To: "2026-08-25", Reason: "provider returned no health rows for range"},
-		{From: "2026-10-02", To: "2026-10-20", Reason: "provider returned no health rows for range"},
+		{From: "2026-05-22", To: "2026-06-09", Kind: provider.RangeGapEmpty, Channel: kindActivities, Reason: "no activities at provider in range"},
+		{From: "2026-08-17", To: "2026-08-19", Kind: provider.RangeGapEmpty, Channel: kindActivities, Reason: "no activities at provider in range"},
+		{From: "2026-08-20", To: "2026-08-25", Kind: provider.RangeGapEmpty, Channel: kindHealth, Reason: "provider returned no health rows for range"},
+		{From: "2026-10-02", To: "2026-10-20", Kind: provider.RangeGapEmpty, Channel: kindHealth, Reason: "provider returned no health rows for range"},
 	}
 	if len(res.Gaps) != len(wantGaps) {
 		t.Fatalf("gaps = %+v, want exactly the complements %+v", res.Gaps, wantGaps)

@@ -53,6 +53,25 @@ func runBackfill(t *testing.T, m http.Handler, fw storage.Writer, opts provider.
 	return p.SyncBackfillRange(context.Background(), testUID, opts, nil)
 }
 
+func TestSyncBackfillRange_DoesNotRequestRejectedDetailsDuringReconciliation(t *testing.T) {
+	m := &countingMux{rangeMux: newRangeMux(manyItems("rejected", []string{"2026-08-18", "2026-08-17"}))}
+	m.detailFor["rejected0"], m.detailFor["rejected1"] = "", ""
+	writer := newFakeWriter()
+	opts := provider.BackfillRangeOptions{Activities: &backfillWin, Budget: provider.BackfillBudget{MaxActivityFetches: 1}}
+
+	first, err := runBackfill(t, m, writer, opts)
+	if err != nil || first.Activities == nil || first.Activities.Done || len(first.Activities.GapEvents) != 1 || m.details.Load() != 1 {
+		t.Fatalf("first chunk = %+v, requests = %d, err = %v", first.Activities, m.details.Load(), err)
+	}
+	opts.ActivitiesCheckpoint = first.Activities.Checkpoint
+	opts.RejectedActivityIDs = make(map[string]bool)
+	provider.RememberRejectedActivities(opts.RejectedActivityIDs, first.Activities.GapEvents)
+	second, err := runBackfill(t, m, writer, opts)
+	if err != nil || second.Activities == nil || !second.Activities.Done || len(second.Activities.GapEvents) != 1 || m.details.Load() != 2 {
+		t.Fatalf("second chunk = %+v, requests = %d, err = %v", second.Activities, m.details.Load(), err)
+	}
+}
+
 // AC2: one chunk fetches at most the budget, checkpoints at the last
 // processed day, and the next chunk resumes behind it without re-fetching
 // what the first chunk committed.

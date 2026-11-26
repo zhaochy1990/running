@@ -26,6 +26,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/compute/calibration"
 	handlerscompute "github.com/zhaochy1990/stride/internal/handlers/compute"
 	"github.com/zhaochy1990/stride/internal/job"
+	"github.com/zhaochy1990/stride/internal/onboardingsync"
 	"github.com/zhaochy1990/stride/internal/storage"
 	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 )
@@ -577,6 +578,17 @@ func TestOnboardingAnalysisInputChangeSupersedes(t *testing.T) {
 	sess := seedSession(t, st, uid, today)
 	seedRunningActivity(t, st, uid, "act-1", timefmt.ShanghaiToday().AddDate(0, 0, -2))
 
+	cov, err := st.GetOnboardingSyncStageCoverage(ctx, sess.SessionID, storage.OnboardingSyncStageRecentRaw)
+	if err != nil || cov == nil {
+		t.Fatalf("recent raw coverage: %+v %v", cov, err)
+	}
+	yesterday := timefmt.ShanghaiToday().AddDate(0, 0, -1).Format(time.DateOnly)
+	gaps := fmt.Sprintf(`[{"from":%q,"to":%q,"kind":"empty","channel":"activities","reason":"no activities at provider in range"}]`, yesterday, today)
+	cov.ObservedTo, cov.GapsJSON = &yesterday, &gaps
+	if err := st.UpdateOnboardingSyncStageCoverage(ctx, cov); err != nil {
+		t.Fatal(err)
+	}
+
 	cal := &countingHandler{inner: scriptedHandler(`{"status":"ok"}`)}
 	h := New(Config{
 		Store: st,
@@ -597,11 +609,24 @@ func TestOnboardingAnalysisInputChangeSupersedes(t *testing.T) {
 	}
 
 	// Same-day change: another activity lands (no snapshot id moved).
-	seedRunningActivity(t, st, uid, "act-2", timefmt.ShanghaiToday().AddDate(0, 0, -1))
+	anchorUTC, err := time.Parse(time.DateOnly, today)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedRunningActivity(t, st, uid, "act-2", anchorUTC.Add(10*time.Hour)) // 18:00 Shanghai
 	res2, err := h(ctx, analysisJob(t, sess), noopHeartbeat)
 	if err != nil {
 		t.Fatalf("handler 2: %v", err)
 	}
+	rawAfter, err := st.GetOnboardingSyncStageCoverage(ctx, sess.SessionID, storage.OnboardingSyncStageRecentRaw)
+	if err != nil || rawAfter == nil {
+		t.Fatalf("recent raw coverage after activity: %+v %v", rawAfter, err)
+	}
+	remaining := onboardingsync.CoverageGaps(rawAfter)
+	if len(remaining) != 1 || remaining[0].To != yesterday || rawAfter.ObservedTo == nil || *rawAfter.ObservedTo != today {
+		t.Fatalf("late activity should remove today's empty day only: coverage=%+v gaps=%+v", rawAfter, remaining)
+	}
+
 	second, _ := st.GetOnboardingRecentAnalysis(ctx, sess.SessionID)
 	if second.InputFingerprint == first.InputFingerprint {
 		t.Fatal("changed inputs must change the fingerprint")

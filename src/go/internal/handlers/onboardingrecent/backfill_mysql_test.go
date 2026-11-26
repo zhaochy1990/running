@@ -181,8 +181,8 @@ func TestOnboardingRecentBackfillExecutor_ChunksToCompletion(t *testing.T) {
 	if err := json.Unmarshal([]byte(out2), &res); err != nil {
 		t.Fatalf("chunk 2 result: %v", err)
 	}
-	if res.Status != storage.OnboardingSyncCoverageCompletedWithGaps {
-		t.Fatalf("chunk 2 status = %s, want completed_with_gaps (window has empty days)", res.Status)
+	if res.Status != storage.OnboardingSyncCoverageCompleted {
+		t.Fatalf("chunk 2 status = %s, want completed (empty days are expected)", res.Status)
 	}
 	// Observed window derives from storage via the TERMINAL items'
 	// credentials — the gap item keeps its credential too (devops#1010): the
@@ -194,8 +194,12 @@ func TestOnboardingRecentBackfillExecutor_ChunksToCompletion(t *testing.T) {
 	// The gap item's recorded gap is the COMPLEMENT of its observed window —
 	// the leading/trailing vendor-empty days, never the days the store holds.
 	wantGaps := []onboardingsync.StageGap{
-		{From: "2026-05-20", To: "2026-06-14", Reason: "no activities at provider in range"},
-		{From: "2026-08-11", To: "2026-08-18", Reason: "no activities at provider in range"},
+		{From: "2026-05-20", To: "2026-06-14", Kind: provider.RangeGapEmpty, Channel: kindActivities, Reason: "no activities at provider in range"},
+		{From: "2026-06-16", To: "2026-06-19", Kind: provider.RangeGapEmpty, Channel: kindActivities, Reason: "no activities at provider in range"},
+		{From: "2026-06-21", To: "2026-06-24", Kind: provider.RangeGapEmpty, Channel: kindActivities, Reason: "no activities at provider in range"},
+		{From: "2026-06-26", To: "2026-06-30", Kind: provider.RangeGapEmpty, Channel: kindActivities, Reason: "no activities at provider in range"},
+		{From: "2026-07-02", To: "2026-08-09", Kind: provider.RangeGapEmpty, Channel: kindActivities, Reason: "no activities at provider in range"},
+		{From: "2026-08-11", To: "2026-08-18", Kind: provider.RangeGapEmpty, Channel: kindActivities, Reason: "no activities at provider in range"},
 	}
 	if len(res.Gaps) != len(wantGaps) {
 		t.Fatalf("gaps = %+v, want exactly the observed-window complements %+v", res.Gaps, wantGaps)
@@ -399,8 +403,8 @@ func assertTerminalCoverageMatchesStorage(t *testing.T, st *storage.Store, sess 
 	if err := json.Unmarshal([]byte(out), &res); err != nil {
 		t.Fatalf("result parse: %v", err)
 	}
-	if res.Status != storage.OnboardingSyncCoverageCompletedWithGaps {
-		t.Errorf("status = %s, want completed_with_gaps (vendor-empty days exist)", res.Status)
+	if res.Status != storage.OnboardingSyncCoverageCompleted {
+		t.Errorf("status = %s, want completed (vendor-empty days are expected)", res.Status)
 	}
 	actDays, err := st.ActivityShanghaiDaysInRange(ctx, sess.UserID, actWin.From, actWin.To)
 	if err != nil {
@@ -420,10 +424,14 @@ func assertTerminalCoverageMatchesStorage(t *testing.T, st *storage.Store, sess 
 			fmtPtr(res.ObservedFrom), fmtPtr(res.ObservedTo), union[0], union[len(union)-1])
 	}
 	wantGaps := []onboardingsync.StageGap{
-		{From: actWin.From, To: prevDayLabel(actDays[0]), Reason: "no activities at provider in range"},
-		{From: nextDayLabel(actDays[len(actDays)-1]), To: actWin.To, Reason: "no activities at provider in range"},
-		{From: healthWin.From, To: prevDayLabel(healthDays[0]), Reason: "provider returned no health rows for range"},
-		{From: nextDayLabel(healthDays[len(healthDays)-1]), To: healthWin.To, Reason: "provider returned no health rows for range"},
+		{From: actWin.From, To: prevDayLabel(actDays[0]), Kind: provider.RangeGapEmpty, Channel: kindActivities, Reason: "no activities at provider in range"},
+		{From: "2026-06-16", To: "2026-06-30", Kind: provider.RangeGapEmpty, Channel: kindActivities, Reason: "no activities at provider in range"},
+		{From: "2026-07-02", To: "2026-08-09", Kind: provider.RangeGapEmpty, Channel: kindActivities, Reason: "no activities at provider in range"},
+		{From: nextDayLabel(actDays[len(actDays)-1]), To: actWin.To, Kind: provider.RangeGapEmpty, Channel: kindActivities, Reason: "no activities at provider in range"},
+		{From: healthWin.From, To: prevDayLabel(healthDays[0]), Kind: provider.RangeGapEmpty, Channel: kindHealth, Reason: "provider returned no health rows for range"},
+		{From: "2026-08-27", To: "2026-09-14", Kind: provider.RangeGapEmpty, Channel: kindHealth, Reason: "provider returned no health rows for range"},
+		{From: "2026-09-16", To: "2026-09-30", Kind: provider.RangeGapEmpty, Channel: kindHealth, Reason: "provider returned no health rows for range"},
+		{From: nextDayLabel(healthDays[len(healthDays)-1]), To: healthWin.To, Kind: provider.RangeGapEmpty, Channel: kindHealth, Reason: "provider returned no health rows for range"},
 	}
 	if len(res.Gaps) != len(wantGaps) {
 		t.Fatalf("gaps = %+v, want the observed-window complements %+v", res.Gaps, wantGaps)

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { OnboardingSyncView } from "../../api";
-import { historicalAnalysisLabel, shouldPollSession, isSessionTerminal, rangeLabel, readinessLabel, sessionStateLabel, shouldHideBanner } from "../sessionModel";
+import { expectedEmptyScan, gapText, historicalAnalysisLabel, shouldPollSession, isSessionTerminal, rangeLabel, readinessLabel, sessionStateLabel, shouldHideBanner } from "../sessionModel";
 
 function view(overrides: Partial<OnboardingSyncView>): OnboardingSyncView {
   return {
@@ -75,4 +75,17 @@ it("keeps historical analysis visible after raw sync and stops polling when it n
   expect(shouldPollSession(paused)).toBe(false);
   expect(historicalAnalysisLabel(paused)).toBe("待人工处理");
   expect(historicalAnalysisLabel({ ...base, readiness: { ...base.readiness, historical_analysis: "ready_with_gaps" } })).toBe("已就绪（有缺项）");
+});
+
+it("shows COROS history limits as a finished scan and distinguishes retryable dates from rejected records", () => {
+  const history = { from: "2026-09-01", to: "2026-09-05", kind: "empty" as const, channel: "health", health_history_days: 72 };
+  const session = view({ state: "completed", stages: [{
+    stage: "extended_raw", status: "completed", readiness: "ready_with_gaps",
+    target_from: "2026-09-01", target_to: "2026-11-16", gaps: [history],
+  }] });
+  expect(shouldHideBanner(session, false)).toBe(false);
+  expect(expectedEmptyScan(session.stages[0])).toBe(true);
+  expect(gapText(history)).toBe("手表只提供近 72 天健康数据 · 2026-09-01 ~ 2026-09-05");
+  expect(gapText({ from: "2026-11-15", to: "2026-11-16", kind: "transient" })).toContain("有 2 天数据暂时拿不到");
+  expect(gapText({ from: "2026-11-16", to: "2026-11-16", kind: "unavailable", reason: "activity 42 was deleted" })).toContain("有 1 条记录无法获取 · 2026-11-16（activity 42 was deleted）");
 });

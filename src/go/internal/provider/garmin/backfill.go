@@ -33,9 +33,7 @@ package garmin
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
@@ -95,16 +93,24 @@ func (p *Provider) SyncBackfillRange(ctx context.Context, user string, opts prov
 
 	var rep provider.BackfillRangeReport
 	if opts.Activities != nil {
-		r, err := p.backfillActivities(ctx, client, user, *opts.Activities, opts.ActivitiesCheckpoint, opts.Budget, jobs, progress)
+		r, err := p.backfillActivities(ctx, client, user, *opts.Activities, opts.ActivitiesCheckpoint, opts.RejectedActivityIDs, opts.Budget, jobs, progress)
 		if err != nil {
-			return rep, err
+			if !isRangeRejection(err) {
+				rep.Activities = r
+				return rep, err
+			}
+			r = &provider.ChannelBackfillReport{Done: true, Rejected: true, GapEvents: []provider.RangeGap{provider.RejectedRange(*opts.Activities, err)}}
 		}
 		rep.Activities = r
 	}
 	if opts.Health != nil {
-		r, err := p.backfillHealth(ctx, client, user, *opts.Health, opts.HealthCheckpoint, opts.Budget, jobs, progress)
+		r, err := p.backfillHealth(ctx, client, user, *opts.Health, opts.HealthCheckpoint, opts.Budget, jobs, opts.RejectedHealthEndpoints, progress)
 		if err != nil {
-			return rep, err
+			if !isRangeRejection(err) {
+				rep.Health = r
+				return rep, err
+			}
+			r = &provider.ChannelBackfillReport{Done: true, Rejected: true, GapEvents: []provider.RangeGap{provider.RejectedRange(*opts.Health, err)}}
 		}
 		rep.Health = r
 	}
@@ -112,8 +118,11 @@ func (p *Provider) SyncBackfillRange(ctx context.Context, user string, opts prov
 }
 
 // backfillActivities runs one activities chunk.
-func (p *Provider) backfillActivities(ctx context.Context, client *Client, user string, win provider.DayWindow, checkpoint string, budget provider.BackfillBudget, jobs int, progress provider.ProgressCallback) (*provider.ChannelBackfillReport, error) {
+func (p *Provider) backfillActivities(ctx context.Context, client *Client, user string, win provider.DayWindow, checkpoint string, rejectedIDs map[string]bool, budget provider.BackfillBudget, jobs int, progress provider.ProgressCallback) (*provider.ChannelBackfillReport, error) {
 	log := logging.Default().With(zap.String("user", user))
+	if rejectedIDs == nil {
+		rejectedIDs = make(map[string]bool)
+	}
 	maxFetches := budget.MaxActivityFetches
 	if maxFetches <= 0 {
 		maxFetches = provider.DefaultBackfillActivityFetches
@@ -143,9 +152,9 @@ func (p *Provider) backfillActivities(ctx context.Context, client *Client, user 
 	confirmUndated := func(a rawActivity) error {
 		id := a.labelID()
 		raw, err := client.GetActivityDetails(ctx, id, activityDetailsMaxChart, activityDetailsMaxPoly)
-		var apiErr *APIError
 		switch {
-		case errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound:
+		case isRangeRejection(err):
+			gapEvents = append(gapEvents, rejectedActivityGap(id, win.To, err))
 			log.Warn("garmin: backfill dropped a phantom undated list entry", zap.String("label_id", id))
 			return nil
 		case err != nil:
@@ -167,10 +176,17 @@ func (p *Provider) backfillActivities(ctx context.Context, client *Client, user 
 			}
 			gapEvents = append(gapEvents, provider.RangeGap{
 				From: anchor, To: anchor,
-				Reason: fmt.Sprintf("activity %s has an unclassifiable start date even in its detail payload", id),
+				Kind: provider.RangeGapUnavailable, ActivityID: id, Reason: fmt.Sprintf("activity %s has an unclassifiable start date even in its detail payload", id),
 			})
 			return nil
 		}
+	}
+
+	interrupted := func(err error) (*provider.ChannelBackfillReport, error) {
+		if len(gapEvents) == 0 {
+			return nil, err
+		}
+		return &provider.ChannelBackfillReport{Checkpoint: checkpoint, GapEvents: gapEvents}, err
 	}
 
 	for page := 0; page < recentMaxListPages; page++ {
@@ -179,11 +195,11 @@ func (p *Provider) backfillActivities(ctx context.Context, client *Client, user 
 		}
 		raw, err := client.ListActivities(ctx, page*recentListPage, recentListPage)
 		if err != nil {
-			return nil, err
+			return interrupted(err)
 		}
 		acts, err := parseActivityList(raw)
 		if err != nil {
-			return nil, err
+			return interrupted(err)
 		}
 		if len(acts) == 0 {
 			scanEnded = true // list exhausted
@@ -196,9 +212,10 @@ func (p *Provider) backfillActivities(ctx context.Context, client *Client, user 
 			if !ok || id == "" {
 				pageAllBelowFrom = false // unclassifiable/identityless: no proof
 				ordered = false
-				if id != "" {
+				if id != "" && !rejectedIDs[id] && !seen[id] {
+					seen[id] = true
 					if err := confirmUndated(a); err != nil {
-						return nil, err
+						return interrupted(err)
 					}
 				}
 				continue
@@ -220,8 +237,12 @@ func (p *Provider) backfillActivities(ctx context.Context, client *Client, user 
 					continue // a shifted/re-served page repeated an entry
 				}
 				seen[id] = true
+				if rejectedIDs[id] {
+					lastSeenDay = day
+					continue
+				}
 				if err := p.collectBackfillCandidate(ctx, user, a, day, inst, &candidates, &lastSeenDay, &fetchesNeeded, maxFetches); err != nil {
-					return nil, err
+					return interrupted(err)
 				}
 			}
 		}
@@ -242,21 +263,24 @@ func (p *Provider) backfillActivities(ctx context.Context, client *Client, user 
 	// resume path (existence re-probed inside; committed rows never re-fetch).
 	fetched := 0
 	if len(candidates) > 0 {
-		written, _, _, _, commitErr := p.recentFetchOrdered(ctx, client, user, candidates, jobs, progress)
-		fetched = written
+		written, _, _, _, rejected, commitErr := p.recentFetchOrdered(ctx, client, user, candidates, jobs, progress)
+		gapEvents = append(gapEvents, rejected...)
+		fetched = written + len(rejected)
 		if commitErr != nil {
-			return nil, commitErr
+			return interrupted(commitErr)
 		}
 	}
+
+	provider.RememberRejectedActivities(rejectedIDs, gapEvents)
 
 	advanced := fetched > 0 || lastSeenDay != doneThrough || len(gapEvents) > 0
 
 	// Completion reconciliation: the full-list re-walk for in-window items
 	// still missing (mid-list backfills, webhook races).
 	if scanEnded {
-		missing, err := p.reconcileBackfillRange(ctx, client, user, win)
+		missing, err := p.reconcileBackfillRange(ctx, client, user, win, rejectedIDs)
 		if err != nil {
-			return nil, err
+			return interrupted(err)
 		}
 		overflow := len(missing) > maxFetches-fetched
 		if overflow {
@@ -267,10 +291,11 @@ func (p *Provider) backfillActivities(ctx context.Context, client *Client, user 
 			doneThrough = ""
 			advanced = true
 		} else if len(missing) > 0 {
-			written, _, _, _, commitErr := p.recentFetchOrdered(ctx, client, user, missing, jobs, progress)
-			fetched += written
+			written, _, _, _, rejected, commitErr := p.recentFetchOrdered(ctx, client, user, missing, jobs, progress)
+			gapEvents = append(gapEvents, rejected...)
+			fetched += written + len(rejected)
 			if commitErr != nil {
-				return nil, commitErr
+				return interrupted(commitErr)
 			}
 		}
 		if !overflow {
@@ -335,7 +360,7 @@ func (p *Provider) collectBackfillCandidate(ctx context.Context, user string, a 
 // items still missing from the store. This is the completion honesty gate: a
 // mid-list backfill at any depth must be found before the channel may report
 // done.
-func (p *Provider) reconcileBackfillRange(ctx context.Context, client *Client, user string, win provider.DayWindow) ([]scannedItem, error) {
+func (p *Provider) reconcileBackfillRange(ctx context.Context, client *Client, user string, win provider.DayWindow, rejectedIDs map[string]bool) ([]scannedItem, error) {
 	var missing []scannedItem
 	seen := map[string]bool{}
 	prevDay := ""
@@ -369,7 +394,7 @@ func (p *Provider) reconcileBackfillRange(ctx context.Context, client *Client, u
 				continue
 			}
 			pageAllBelowFrom = false
-			if day > win.To || seen[id] {
+			if day > win.To || seen[id] || rejectedIDs[id] {
 				continue
 			}
 			seen[id] = true
@@ -395,7 +420,7 @@ func (p *Provider) reconcileBackfillRange(ctx context.Context, client *Client, u
 // checkpoint's next un-walked day. Every day is queried (no now(), no
 // consecutive-empty cutoff); signal days are written, empty days stay absent
 // and are derived as gaps from storage by the executor.
-func (p *Provider) backfillHealth(ctx context.Context, client *Client, user string, win provider.DayWindow, checkpoint string, budget provider.BackfillBudget, jobs int, progress provider.ProgressCallback) (*provider.ChannelBackfillReport, error) {
+func (p *Provider) backfillHealth(ctx context.Context, client *Client, user string, win provider.DayWindow, checkpoint string, budget provider.BackfillBudget, jobs int, rejectedEndpoints map[string]map[string]bool, progress provider.ProgressCallback) (*provider.ChannelBackfillReport, error) {
 	if _, err := time.Parse("2006-01-02", win.From); err != nil {
 		return nil, fmt.Errorf("garmin: backfill health window start %q: %w", win.From, err)
 	}
@@ -423,24 +448,16 @@ func (p *Provider) backfillHealth(ctx context.Context, client *Client, user stri
 		deadline = time.Now().Add(budget.Soft)
 	}
 	walked := 0
+	var gaps []provider.RangeGap
 	for d := start; !d.After(to) && walked < maxDays; d = d.AddDate(0, 0, 1) {
 		if !deadline.IsZero() && time.Now().After(deadline) {
 			break
 		}
 		date := d.Format("2006-01-02")
-		tsRaw, usRaw, sleepRaw, hrvRaw, err := fetchHealthDay(ctx, client, date, jobs)
+		_, dayGaps, err := p.rangeHealthDay(ctx, client, user, date, jobs, rejectedEndpoints[date])
+		gaps = append(gaps, dayGaps...)
 		if err != nil {
-			return nil, err
-		}
-		if h := buildDailyHealth(user, date, tsRaw, usRaw, sleepRaw); hasSignal(h) {
-			if err := p.store.UpsertDailyHealth(ctx, h); err != nil {
-				return nil, err
-			}
-		}
-		if hrvRow := buildDailyHRV(user, date, hrvRaw); hrvHasSignal(hrvRow) {
-			if err := p.store.UpsertDailyHRV(ctx, hrvRow); err != nil {
-				return nil, err
-			}
+			return &provider.ChannelBackfillReport{Checkpoint: encodeHealthCheckpoint(date), DaysWalked: walked, GapEvents: gaps}, err
 		}
 		walked++
 		provider.EmitProgress(progress, "health", walked, maxDays, provider.PercentInBand(walked, maxDays, 80, 95))
@@ -454,9 +471,9 @@ func (p *Provider) backfillHealth(ctx context.Context, client *Client, user stri
 	}
 	nextLabel := start.AddDate(0, 0, walked).Format("2006-01-02")
 	if nextLabel > win.To {
-		return &provider.ChannelBackfillReport{Done: true, Advanced: true, DaysWalked: walked}, nil
+		return &provider.ChannelBackfillReport{Done: true, Advanced: true, DaysWalked: walked, GapEvents: gaps}, nil
 	}
 	return &provider.ChannelBackfillReport{
-		Checkpoint: encodeHealthCheckpoint(nextLabel), Advanced: true, DaysWalked: walked,
+		Checkpoint: encodeHealthCheckpoint(nextLabel), Advanced: true, DaysWalked: walked, GapEvents: gaps,
 	}, nil
 }

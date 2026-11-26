@@ -363,8 +363,9 @@ func (p *Provider) fetchDetailsOrdered(
 			break
 		}
 		r := results[i]
+		results[i] = detailResult{}
 		if r.err != nil {
-			if skip != nil && provider.IsInvalidRequest(r.err) {
+			if skip != nil && isRangeRejection(r.err) {
 				skip(ordered[i], r.err)
 				continue // permanently rejected: gap and keep committing
 			}
@@ -387,6 +388,13 @@ func (p *Provider) fetchDetailsOrdered(
 
 	cancelFetch()
 	wg.Wait()
+	if commitErr != nil && skip != nil {
+		for i, result := range results {
+			if isRangeRejection(result.err) {
+				skip(ordered[i], result.err)
+			}
+		}
+	}
 	return committed, commitErr
 }
 

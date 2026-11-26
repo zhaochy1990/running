@@ -4,7 +4,7 @@
 // 可见性判断，绝不推断超出服务端上报的就绪状态（completed_with_gaps 不是完整
 // 覆盖，不能当完整展示）。自检见 utils/onboardingSession.check.mts。
 
-import type { OnboardingSyncReadiness, OnboardingSyncStageView, OnboardingSyncView } from '../services/onboarding-sync';
+import type { OnboardingSyncReadiness, OnboardingSyncStageGap, OnboardingSyncStageView, OnboardingSyncView } from '../services/onboarding-sync';
 
 /** 状态卡轮询间隔（与 Web SESSION_POLL_MS 一致）。 */
 export const SESSION_POLL_MS = 5000;
@@ -234,23 +234,21 @@ export function toSyncStatusViewModel(view: OnboardingSyncView): SyncStatusViewM
 
   const chips: SyncChipRow[] = READINESS_SUMMARY.map(({ key, label }) => {
     const level = view.readiness[key];
+    if (expectedEmptyScan(summaryStage(view, key))) return { key, label, text: '已完成', tone: 'good' };
     return { key, label, text: readinessLabel(level), tone: readinessTone(level) };
   });
 
   const stages: SyncStageRow[] = view.stages.map((stage) => ({
     key: stage.stage,
     label: stageLabel(stage),
-    readinessText: readinessLabel(stage.readiness),
-    readinessTone: readinessTone(stage.readiness),
+    readinessText: expectedEmptyScan(stage) ? '已完成' : readinessLabel(stage.readiness),
+    readinessTone: expectedEmptyScan(stage) ? 'good' : readinessTone(stage.readiness),
     targetText: `目标范围 ${rangeLabel(stage.target_from, stage.target_to)}`,
     observedText:
       stage.observed_from || stage.observed_to
         ? `实际覆盖 ${rangeLabel(stage.observed_from, stage.observed_to)}`
         : '',
-    gapsText:
-      stage.gaps && stage.gaps.length > 0
-        ? `缺项：${stage.gaps.map((gap) => `${rangeLabel(gap.from, gap.to)}${gap.reason ? `（${gap.reason}）` : ''}`).join('、')}`
-        : '',
+    gapsText: stage.gaps?.map(gapText).join('\n') || '',
     error: stage.error || '',
   }));
 
@@ -264,4 +262,43 @@ export function toSyncStatusViewModel(view: OnboardingSyncView): SyncStatusViewM
     chips,
     stages,
   };
+}
+
+export function expectedEmptyScan(stage: OnboardingSyncStageView | undefined): boolean {
+  return stage?.status === 'completed' && Boolean(stage.gaps?.length) && stage.gaps?.every((gap) => gap.kind === 'empty') === true;
+}
+
+const RAW_STAGES = {
+  recent_data: 'recent_raw',
+  extended_data: 'extended_raw',
+  historical_data: 'historical_raw',
+} as const;
+
+export function summaryStage(view: OnboardingSyncView, key: ReadinessKey): OnboardingSyncStageView | undefined {
+  if (key === 'historical_data') {
+    return view.stages.find((stage) => stage.stage === 'historical_raw') ?? view.stages.find((stage) => stage.stage === 'extended_raw');
+  }
+  if (key === 'recent_data' || key === 'extended_data') {
+    return view.stages.find((stage) => stage.stage === RAW_STAGES[key]);
+  }
+  return undefined;
+}
+
+export function gapText(gap: OnboardingSyncStageGap): string {
+  const range = gap.from === gap.to ? gap.from : rangeLabel(gap.from, gap.to);
+  const reason = gap.reason ? `（${gap.reason}）` : '';
+  if (gap.kind === 'empty') {
+    if (gap.health_history_days) return `手表只提供近 ${gap.health_history_days} 天健康数据 · ${range}`;
+    const item = gap.channel === 'health' ? '健康记录' : gap.channel === 'dashboard' ? '手表摘要' : '训练记录';
+    return `这段时间没有${item} · ${range}`;
+  }
+  if (gap.kind === 'transient') {
+    const days = Math.round((Date.parse(gap.to) - Date.parse(gap.from)) / 86_400_000) + 1;
+    return `${days > 0 && !gap.range_estimated ? `有 ${days} 天数据暂时拿不到` : '数据暂时拿不到'} · ${range}`;
+  }
+  if (gap.kind === 'unavailable') {
+    const label = gap.reason?.startsWith('activity ') ? '有 1 条记录无法获取' : '这段时间的数据无法获取';
+    return `${label} · ${range}${reason}`;
+  }
+  return `缺项：${rangeLabel(gap.from, gap.to)}${reason}`;
 }

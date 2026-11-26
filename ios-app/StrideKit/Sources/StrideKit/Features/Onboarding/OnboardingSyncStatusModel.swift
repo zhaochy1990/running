@@ -26,7 +26,8 @@ public final class OnboardingSyncStatusModel {
     /// completed / superseded 隐藏；failed 与 completed_with_gaps 保留。
     public var shouldShowBanner: Bool {
         guard let view, !dismissed else { return false }
-        return view.state != "superseded" && (view.state != "completed" || view.readiness.historicalAnalysis != .notStarted)
+        return view.state != "superseded" && (view.state != "completed" || view.readiness.historicalAnalysis != .notStarted
+            || view.stages.contains { $0.gaps?.contains { ($0.healthHistoryDays ?? 0) > 0 } == true })
     }
 
     private var api: APIClient?
