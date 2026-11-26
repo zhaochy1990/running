@@ -92,7 +92,7 @@
               <view class="map-toggle__btn {{mapColoring === 'none' ? 'map-toggle__btn--on' : ''}}" data-coloring="none" bindtap="onColoringChange">无色</view>
             </view>
           </view>
-          <button class="map-share" bindtap="onSharePoster" aria-label="分享图片" hover-class="map-share--pressed">
+          <button wx:if="{{showSharePoster}}" class="map-share" bindtap="onSharePoster" aria-label="分享图片" hover-class="map-share--pressed">
             <view class="map-share__surface">
               <image class="map-share__icon" src="/assets/icons/share-poster-white.svg" mode="aspectFit" />
             </view>
@@ -100,7 +100,7 @@
         </view>
       </view>
       <!-- 室内等无轨迹的活动也可以生成分享图片 -->
-      <view wx:else class="poster-entry">
+      <view wx:elif="{{showSharePoster}}" class="poster-entry">
         <button class="poster-entry__button" bindtap="onSharePoster" aria-label="分享图片" hover-class="poster-entry__button--pressed">
           <image class="poster-entry__icon" src="/assets/icons/share.svg" mode="aspectFit" />
           <text>分享图片</text>

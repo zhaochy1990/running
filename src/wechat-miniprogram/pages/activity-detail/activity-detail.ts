@@ -199,6 +199,7 @@ interface ActivityDetailPageData {
   mapFitPoints: Array<{ latitude: number; longitude: number }>;
   mapColoring: MapColoring;
   // —— 海报弹层（devops#947 九色系选择器）——
+  showSharePoster: boolean;
   /** 弹层可见 */
   posterSheetVisible: boolean;
   /** 当前主题 key（utils/posterThemes.ts 九色系之一） */
@@ -1023,6 +1024,7 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
     mapMarkers: [],
     mapFitPoints: [],
     mapColoring: 'pace',
+    showSharePoster: false,
     posterSheetVisible: false,
     posterThemeKey: 'sunrise',
     posterThemeLabel: '晨光',

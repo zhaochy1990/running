@@ -3,6 +3,8 @@
 > 固化于 2026-11-10（master `a169ae83`，P1–P6 全合并）。代码侧已完成并有四波 E2E 留痕
 > （`docs/e2e/poster-epic601/`）；**三项用户侧前置未完成**，各自带补验口径如下。
 > 标注【用户】的步骤属管理后台 / 生产部署 / secrets 操作，须由用户执行，agent 不代办。
+>
+> 运动详情的海报入口默认关闭。以下发布和出图验收步骤适用于入口重新开放时。
 
 ## 当前状态快照
 
@@ -22,7 +24,7 @@
 - 位置：mp.weixin.qq.com → 设置 → 服务内容声明 → 用户隐私保护指引 → 新增「保存到相册」
   （`scope.writePhotosAlbum`）对应的信息收集声明，提交审核通过。
 - **补验（声明生效后，实机或 DevTools 均可）**：
-  - S3 直接保存：活动详情 → 顶栏分享海报 → 保存到相册 → 首次弹隐私授权 → 同意 → 相册出现
+  - S3 直接保存：活动详情 → 分享图片 → 保存到相册 → 首次弹隐私授权 → 同意 → 相册出现
     1080 宽 PNG（口径同 wave4 A9，当前阻断证据 `saveImageToPhotosAlbum:fail api scope is not
     declared in the privacy agreement` 应消失）。
   - S4 权限拒绝引导：设置中关闭相册权限 → 保存 → 应弹「去设置」引导（openSetting）→ 打开开关
@@ -63,6 +65,7 @@
 
 - DevTools 上传（版本号递增，备注含「分享海报」）→ mp 后台提交审核 → 发布。
 - 发布前自查：
+  - 重新开放海报时，在 `pages/activity-detail/activity-detail.ts` 将 `showSharePoster` 设为 `true`，分别确认有轨迹和无轨迹活动的入口可见；
   - `constants/config.ts` `CURRENT_ENV = ENV.PROD`（已满足，master 现值）；
   - request 合法域名已含 `https://api.stride-running.cn`（线上既有能力，无需新增）；
   - 依赖顺序：**①隐私声明必须已通过审核**（否则正式版保存路径仍被平台阻断）；
