@@ -65,6 +65,7 @@
 
 - DevTools 上传（版本号递增，备注含「分享海报」）→ mp 后台提交审核 → 发布。
 - 发布前自查：
+  - 重新开放海报时，在 `pages/activity-detail/activity-detail.ts` 将 `showSharePoster` 设为 `true`，分别确认有轨迹和无轨迹活动的入口可见；
   - `constants/config.ts` `CURRENT_ENV = ENV.PROD`（已满足，master 现值）；
   - request 合法域名已含 `https://api.stride-running.cn`（线上既有能力，无需新增）；
   - 依赖顺序：**①隐私声明必须已通过审核**（否则正式版保存路径仍被平台阻断）；

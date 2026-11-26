@@ -1141,7 +1141,7 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
    * + 预览大图 / 保存相册。首渲用持久化主题；地图层走腾讯静态图代理，
    * 缺 key / 网络失败自动降级矢量占位，其余节正常出图。 */
   onSharePoster() {
-    if (!this.data.showSharePoster || this.data.loading || this.data.notFound) return;
+    if (this.data.loading || this.data.notFound) return;
     const themeKey = loadPosterThemeKey();
     this.setData({
       posterSheetVisible: true,
