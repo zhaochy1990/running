@@ -94,9 +94,10 @@ func (p *Provider) SyncRecentRange(ctx context.Context, user string, opts provid
 		rep.Activities = r
 	}
 	if opts.Health != nil {
-		r, err := p.recentHealth(ctx, client, user, *opts.Health, jobs, progress)
+		r, err := p.recentHealth(ctx, client, user, *opts.Health, jobs, opts.RejectedHealthEndpoints, progress)
 		if err != nil {
 			if !isRangeRejection(err) {
+				rep.Health = r
 				return rep, err
 			}
 			r = &provider.RangeChannelReport{Status: provider.RangeChannelGap, Gaps: []provider.RangeGap{provider.RejectedRange(*opts.Health, err)}}
@@ -118,6 +119,14 @@ func (p *Provider) SyncRecentRange(ctx context.Context, user string, opts provid
 
 // isRangeRejection recognizes explicit refusals of a range endpoint.
 func isRangeRejection(err error) bool {
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, cause := range joined.Unwrap() {
+			if !isRangeRejection(cause) {
+				return false
+			}
+		}
+		return true
+	}
 	var status *APIError
 	if errors.As(err, &status) {
 		switch status.Status {
@@ -126,28 +135,6 @@ func isRangeRejection(err error) bool {
 		}
 	}
 	return provider.IsRangeRejection(err)
-}
-
-// healthRangeErrors keeps unsupported responses distinct from failures that
-// need retry or credential repair. fetchHealthDay joins independent endpoints.
-func healthRangeErrors(err error) (rejected, retry error) {
-	if err == nil {
-		return nil, nil
-	}
-	if grouped, ok := err.(interface{ Unwrap() []error }); ok {
-		for _, cause := range grouped.Unwrap() {
-			if isRangeRejection(cause) {
-				rejected = errors.Join(rejected, cause)
-			} else {
-				retry = errors.Join(retry, cause)
-			}
-		}
-		return rejected, retry
-	}
-	if isRangeRejection(err) {
-		return err, nil
-	}
-	return nil, err
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -589,6 +576,11 @@ func (p *Provider) recentFetchOrdered(ctx context.Context, client *Client, user 
 	wg.Wait()
 	log := logging.Default()
 	if commitErr != nil {
+		for i, result := range results {
+			if isRangeRejection(result.err) {
+				gaps = append(gaps, rejectedActivityGap(fetchList[i].a.labelID(), fetchList[i].day, result.err))
+			}
+		}
 		log.Warn("garmin recent activity pipeline failed",
 			zap.String("user", user), zap.Int("written", written),
 			zap.Int("skipped_existing", skipped), zap.Error(commitErr))
@@ -616,69 +608,97 @@ func rejectedActivityGap(id, day string, err error) provider.RangeGap {
 // answered empty is the vendor's honest "no rows for this date" — recorded
 // as a gap day exactly like the COROS channel's short batch answer, never a
 // fabricated measurement (合法无数据不伪造).
-func (p *Provider) recentHealth(ctx context.Context, client *Client, user string, win provider.DayWindow, jobs int, progress provider.ProgressCallback) (*provider.RangeChannelReport, error) {
-	from, err := time.Parse("2006-01-02", win.From)
+func (p *Provider) recentHealth(ctx context.Context, client *Client, user string, win provider.DayWindow, jobs int, rejectedEndpoints map[string]map[string]bool, progress provider.ProgressCallback) (*provider.RangeChannelReport, error) {
+	from, err := time.Parse(time.DateOnly, win.From)
 	if err != nil {
 		return nil, fmt.Errorf("garmin: recent health window start %q: %w", win.From, err)
 	}
-	to, err := time.Parse("2006-01-02", win.To)
+	to, err := time.Parse(time.DateOnly, win.To)
 	if err != nil {
 		return nil, fmt.Errorf("garmin: recent health window end %q: %w", win.To, err)
 	}
 	total := int(to.Sub(from).Hours()/24) + 1
-	signalDays := make([]string, 0, total)
-	gaps := []provider.RangeGap{}
+	rep := &provider.RangeChannelReport{ScannedFrom: win.From}
 	for n := 0; n < total; n++ {
-		date := from.AddDate(0, 0, n).Format("2006-01-02")
-		tsRaw, usRaw, sleepRaw, hrvRaw, err := fetchHealthDay(ctx, client, date, jobs)
-		day := provider.DayWindow{From: date, To: date}
-		rejected, retry := healthRangeErrors(err)
-		if retry != nil {
-			return nil, &provider.RangeFetchError{Window: day, Err: retry}
-		}
-		if rejected != nil {
-			gaps = append(gaps, provider.RejectedRange(day, rejected))
-		}
-		wrote := false
-		if h := buildDailyHealth(user, date, tsRaw, usRaw, sleepRaw); hasSignal(h) {
-			if err := p.store.UpsertDailyHealth(ctx, h); err != nil {
+		date := from.AddDate(0, 0, n).Format(time.DateOnly)
+		wrote, gaps, err := p.rangeHealthDay(ctx, client, user, date, jobs, rejectedEndpoints[date])
+		rep.Gaps = append(rep.Gaps, gaps...)
+		if err != nil {
+			if rep.ScannedTo == "" && len(rep.Gaps) == 0 {
 				return nil, err
 			}
-			wrote = true
+			return rep, err
 		}
-		if hrvRow := buildDailyHRV(user, date, hrvRaw); hrvHasSignal(hrvRow) {
-			if err := p.store.UpsertDailyHRV(ctx, hrvRow); err != nil {
-				return nil, err
-			}
-			wrote = true
-		}
+		rep.ScannedTo = date
 		if wrote {
-			signalDays = append(signalDays, date)
-		} else if rejected == nil {
-			gaps = append(gaps, provider.RangeGap{
+			if rep.ObservedFrom == nil {
+				rep.ObservedFrom = &date
+			}
+			rep.ObservedTo = &date
+			rep.Count++
+		} else if len(gaps) == 0 && len(rejectedEndpoints[date]) == 0 {
+			rep.Gaps = append(rep.Gaps, provider.RangeGap{
 				From: date, To: date, Kind: provider.RangeGapEmpty, Reason: "provider returned no health rows for day",
 			})
 		}
 		provider.EmitProgress(progress, "health", n+1, total, provider.PercentInBand(n+1, total, 80, 95))
 	}
-	rep := &provider.RangeChannelReport{
-		Status:      provider.RangeChannelDone,
-		ScannedFrom: win.From,
-		ScannedTo:   win.To,
-		Count:       len(signalDays),
-		Credential:  fmt.Sprintf("garmin:v1:range:health:%s..%s:obs=-..-:n=%d", win.From, win.To, len(signalDays)),
-		Gaps:        gaps,
-	}
-	if len(signalDays) > 0 {
-		rep.ObservedFrom, rep.ObservedTo = &signalDays[0], &signalDays[len(signalDays)-1]
-		rep.Credential = fmt.Sprintf("garmin:v1:range:health:%s..%s:obs=%s..%s:n=%d",
-			win.From, win.To, signalDays[0], signalDays[len(signalDays)-1], len(signalDays))
-	}
+	rep.Status = provider.RangeChannelDone
 	if len(rep.Gaps) > 0 {
-		rep.Gaps = coalesceRecentGaps(rep.Gaps)
 		rep.Status = provider.RangeChannelGap
+		rep.Gaps = coalesceRecentGaps(rep.Gaps)
 	}
+	obs := "-..-"
+	if rep.ObservedFrom != nil {
+		obs = *rep.ObservedFrom + ".." + *rep.ObservedTo
+	}
+	rep.Credential = fmt.Sprintf("garmin:v1:range:health:%s..%s:obs=%s:n=%d", win.From, win.To, obs, rep.Count)
 	return rep, nil
+}
+
+// rangeHealthDay records per-endpoint rejection evidence even when another
+// endpoint on that day needs retry, so subsequent attempts can skip it.
+func (p *Provider) rangeHealthDay(ctx context.Context, client *Client, user, date string, jobs int, skip map[string]bool) (bool, []provider.RangeGap, error) {
+	tsRaw, usRaw, sleepRaw, hrvRaw, err := fetchHealthDay(ctx, client, date, jobs, skip)
+	window := provider.DayWindow{From: date, To: date}
+	var gaps []provider.RangeGap
+	if err != nil {
+		var retry error
+		// fetchHealthDay always returns errors.Join of healthEndpointError values.
+		var joined interface{ Unwrap() []error }
+		if !errors.As(err, &joined) {
+			return false, nil, &provider.RangeFetchError{Window: window, Err: err}
+		}
+		for _, cause := range joined.Unwrap() {
+			if !isRangeRejection(cause) {
+				retry = errors.Join(retry, cause)
+				continue
+			}
+			gap := provider.RejectedRange(window, cause)
+			var endpoint *healthEndpointError
+			if errors.As(cause, &endpoint) {
+				gap.Endpoint = endpoint.endpoint
+			}
+			gaps = append(gaps, gap)
+		}
+		if retry != nil {
+			return false, gaps, &provider.RangeFetchError{Window: window, Err: retry}
+		}
+	}
+	observed := false
+	if h := buildDailyHealth(user, date, tsRaw, usRaw, sleepRaw); hasSignal(h) {
+		if err := p.store.UpsertDailyHealth(ctx, h); err != nil {
+			return false, gaps, err
+		}
+		observed = true
+	}
+	if hrv := buildDailyHRV(user, date, hrvRaw); hrvHasSignal(hrv) {
+		if err := p.store.UpsertDailyHRV(ctx, hrv); err != nil {
+			return false, gaps, err
+		}
+		observed = true
+	}
+	return observed, gaps, nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -731,7 +751,7 @@ func coalesceRecentGaps(gaps []provider.RangeGap) []provider.RangeGap {
 	out := make([]provider.RangeGap, 0, len(gaps))
 	cur := gaps[0]
 	for _, g := range gaps[1:] {
-		if g.Kind == cur.Kind && g.Reason == cur.Reason && g.From <= nextShanghaiDay(cur.To) {
+		if g.Kind == cur.Kind && g.Reason == cur.Reason && g.Endpoint == cur.Endpoint && g.From <= nextShanghaiDay(cur.To) {
 			if g.To > cur.To {
 				cur.To = g.To
 			}

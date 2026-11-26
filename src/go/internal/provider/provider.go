@@ -213,9 +213,8 @@ type DayWindow struct {
 	To   string
 }
 
-// Recent-range channel outcome statuses. A channel that reached no terminal
-// outcome is simply absent from the report — the executor treats absence as
-// "still failed/unfinished", never as success.
+// Recent-range channel outcome statuses. A report with an empty status
+// carries partial evidence only. Its scan must resume before it can conclude.
 const (
 	// RangeChannelDone: the channel's complete fetch succeeded over its window.
 	RangeChannelDone = "done"
@@ -242,6 +241,7 @@ type RangeGap struct {
 	Kind              RangeGapKind `json:"kind"`
 	Channel           string       `json:"channel,omitempty"`
 	ActivityID        string       `json:"activity_id,omitempty"`
+	Endpoint          string       `json:"endpoint,omitempty"`
 	Reason            string       `json:"reason,omitempty"`
 	HealthHistoryDays int          `json:"health_history_days,omitempty"`
 	RangeEstimated    bool         `json:"range_estimated,omitempty"`
@@ -403,16 +403,17 @@ type RangeChannelReport struct {
 // Jobs is the detail-fetch concurrency, an infra knob supplied by the caller
 // (CLI/worker) exactly like SyncOptions.Jobs — never client-controlled.
 type RecentRangeOptions struct {
-	Activities          *DayWindow
-	Health              *DayWindow
-	Dashboard           *DayWindow
-	RejectedActivityIDs map[string]bool // terminal detail rejections from earlier attempts
-	Jobs                int
+	Activities              *DayWindow
+	Health                  *DayWindow
+	Dashboard               *DayWindow
+	RejectedActivityIDs     map[string]bool            // terminal detail rejections from earlier attempts
+	RejectedHealthEndpoints map[string]map[string]bool // day → rejected endpoints
+	Jobs                    int
 }
 
 // RecentRangeReport carries the terminal outcomes of a recent-range sync.
-// Only channels that reached a terminal outcome appear; the returned error
-// (if any) explains the first channel that failed non-permanently-skipping.
+// Finished channels carry credentials or terminal gaps. A failed channel
+// may include partial evidence without a credential so a retry can reuse it.
 type RecentRangeReport struct {
 	Activities *RangeChannelReport
 	Health     *RangeChannelReport
@@ -474,13 +475,14 @@ type BackfillBudget struct {
 // blobs; only the owning adapter interprets them. A nil window skips the
 // channel.
 type BackfillRangeOptions struct {
-	Activities           *DayWindow
-	Health               *DayWindow
-	ActivitiesCheckpoint string
-	RejectedActivityIDs  map[string]bool // terminal detail rejections recorded by previous attempts or chunks
-	HealthCheckpoint     string
-	Budget               BackfillBudget
-	Jobs                 int
+	Activities              *DayWindow
+	Health                  *DayWindow
+	ActivitiesCheckpoint    string
+	RejectedActivityIDs     map[string]bool            // terminal detail rejections recorded by previous attempts or chunks
+	RejectedHealthEndpoints map[string]map[string]bool // day → rejected endpoints
+	HealthCheckpoint        string
+	Budget                  BackfillBudget
+	Jobs                    int
 }
 
 // ChannelBackfillReport is one channel's chunk outcome. Done=true means the

@@ -53,6 +53,8 @@ type backfillStore interface {
 type channelCheckpoint struct {
 	Cursor         string              `json:"cursor,omitempty"`
 	ScannedThrough string              `json:"scanned_through,omitempty"`
+	ObservedFrom   string              `json:"observed_from,omitempty"`
+	ObservedTo     string              `json:"observed_to,omitempty"`
 	Gaps           []provider.RangeGap `json:"gaps,omitempty"`
 	Fetches        int                 `json:"fetches"`
 }
@@ -133,6 +135,7 @@ func runBackfill(ctx context.Context, cfg Config, in stageJobInput, sess *storag
 		case kindHealth:
 			opts.Health = &w
 			opts.HealthCheckpoint = cp.Cursor
+			opts.RejectedHealthEndpoints = rejectedHealthEndpoints(cp.Gaps)
 		default:
 			return "", job.NewPermanentError("bad_work_item",
 				fmt.Errorf("onboardingrecent: unknown backfill work item kind %q", it.Kind))
@@ -191,12 +194,12 @@ func runBackfill(ctx context.Context, cfg Config, in stageJobInput, sess *storag
 				}
 			}
 			status := storage.OnboardingSyncItemDone
-			var msg *string
+			var reason, details *string
 			if len(gaps) > 0 {
 				status = storage.OnboardingSyncItemGap
-				msg = encodeWorkItemGaps(gaps)
+				reason, details = encodeWorkItemGaps(gaps)
 			}
-			if err := store.MarkOnboardingSyncWorkItem(ctx, out.item.ID, status, cred, msg); err != nil {
+			if err := store.MarkOnboardingSyncWorkItemWithGaps(ctx, out.item.ID, status, cred, reason, details); err != nil {
 				return "", fmt.Errorf("onboardingrecent: record %s terminal outcome: %w", out.kind, err)
 			}
 			delete(unfinished, out.kind)
@@ -221,12 +224,12 @@ func runBackfill(ctx context.Context, cfg Config, in stageJobInput, sess *storag
 		for _, kind := range []string{kindActivities, kindHealth} {
 			if unfinished[kind] {
 				it := byKind[kind]
-				msg := it.Error
+				reason, details := it.Error, it.RecordedRangeGaps()
 				if first && ((kind == kindActivities && (rep.Activities == nil || !rep.Activities.Advanced)) || (kind == kindHealth && (rep.Health == nil || !rep.Health.Advanced))) {
-					msg = workItemFailure(it, classified)
+					reason, details = workItemFailure(it, classified)
 					first = false
 				}
-				_ = store.MarkOnboardingSyncWorkItem(ctx, it.ID, storage.OnboardingSyncItemFailed, "", msg)
+				_ = store.MarkOnboardingSyncWorkItemWithGaps(ctx, it.ID, storage.OnboardingSyncItemFailed, "", reason, details)
 			}
 		}
 		return "", classified

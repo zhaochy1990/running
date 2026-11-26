@@ -86,11 +86,15 @@ func legacyHealthLookback(gap StageGap, stage, anchor string, items []*storage.O
 func rawAttemptGaps(items []*storage.OnboardingSyncWorkItem) map[string][]StageGap {
 	stages := make(map[string][]StageGap)
 	for _, item := range items {
-		if item.Error == nil || (item.Status != storage.OnboardingSyncItemPending && item.Status != storage.OnboardingSyncItemFailed) {
+		if item.Status != storage.OnboardingSyncItemPending && item.Status != storage.OnboardingSyncItemFailed {
+			continue
+		}
+		details := item.RecordedRangeGaps()
+		if details == nil {
 			continue
 		}
 		var gaps []StageGap
-		if json.Unmarshal([]byte(*item.Error), &gaps) != nil {
+		if json.Unmarshal([]byte(*details), &gaps) != nil {
 			continue
 		}
 		for _, gap := range gaps {

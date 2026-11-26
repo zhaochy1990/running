@@ -7,6 +7,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -327,6 +328,57 @@ func TestOnboardingSyncWorkItemTransitions(t *testing.T) {
 	}
 	if rows[1].FetchCredential == nil || *rows[1].FetchCredential != gapCred {
 		t.Errorf("gap item credential = %v, want the derived credential persisted", rows[1].FetchCredential)
+	}
+}
+
+func TestOnboardingSyncLargeGapDetailsKeepLegacyColumnsCompatible(t *testing.T) {
+	st := openOnboardingSyncStore(t)
+	ctx := context.Background()
+	claimed, err := st.ClaimOrCreateOnboardingSyncSession(ctx, claimSpec(uuid.NewString()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionID := claimed.Session.SessionID
+	items, err := st.ListOnboardingSyncWorkItems(ctx, sessionID, OnboardingSyncStageRecentRaw)
+	if err != nil || len(items) == 0 {
+		t.Fatalf("work items: %v, %v", items, err)
+	}
+	large := `[{"from":"2026-11-01","to":"2026-11-01","reason":"` + strings.Repeat("vendor detail ", 6_000) + `"}]`
+	if err := st.SaveOnboardingSyncWorkItemCheckpoint(ctx, items[0].ID, large); err != nil {
+		t.Fatal(err)
+	}
+	reason := "provider refused one record"
+	if err := st.MarkOnboardingSyncWorkItemWithGaps(ctx, items[0].ID, OnboardingSyncItemGap, "", &reason, &large); err != nil {
+		t.Fatal(err)
+	}
+	items, err = st.ListOnboardingSyncWorkItems(ctx, sessionID, OnboardingSyncStageRecentRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item := items[0]; item.Error == nil || *item.Error != reason || item.Checkpoint == nil || *item.Checkpoint != large || item.RecordedRangeGaps() == nil || *item.RecordedRangeGaps() != large {
+		t.Fatal("large checkpoint/gaps should round-trip while error stays readable to legacy workers")
+	}
+	cov, err := st.GetOnboardingSyncStageCoverage(ctx, sessionID, OnboardingSyncStageRecentRaw)
+	if err != nil || cov == nil {
+		t.Fatalf("coverage: %+v, %v", cov, err)
+	}
+	cov.GapsJSON = &large
+	if err := st.UpdateOnboardingSyncStageCoverage(ctx, cov); err != nil {
+		t.Fatal(err)
+	}
+	// An old writer's normal JSON replaces the overflow marker. The new
+	// reader must ignore the previous long payload after that write.
+	var legacyValue []string
+	if err := st.db.Model(&OnboardingSyncStageCoverage{}).Where("id = ?", cov.ID).Pluck("gaps_json", &legacyValue).Error; err != nil || len(legacyValue) != 1 || legacyValue[0] != "null" {
+		t.Fatalf("legacy coverage = %q, err = %v", legacyValue, err)
+	}
+	legacyGap := `[{"from":"2026-11-02","to":"2026-11-02"}]`
+	if err := st.db.Model(&OnboardingSyncStageCoverage{}).Where("id = ?", cov.ID).Update("gaps_json", legacyGap).Error; err != nil {
+		t.Fatal(err)
+	}
+	cov, err = st.GetOnboardingSyncStageCoverage(ctx, sessionID, OnboardingSyncStageRecentRaw)
+	if err != nil || cov == nil || cov.GapsJSON == nil || *cov.GapsJSON != legacyGap {
+		t.Fatal("legacy write should supersede the old overflow snapshot")
 	}
 }
 

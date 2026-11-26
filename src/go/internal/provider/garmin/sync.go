@@ -459,7 +459,7 @@ func (p *Provider) syncHealth(ctx context.Context, client *Client, user string, 
 	consecEmpty := 0
 	for offset := 0; offset < windowDays; offset++ {
 		date := today.AddDate(0, 0, -offset).Format("2006-01-02")
-		tsRaw, usRaw, sleepRaw, hrvRaw, err := fetchHealthDay(ctx, client, date, provider.DetailJobs(opts.Jobs))
+		tsRaw, usRaw, sleepRaw, hrvRaw, err := fetchHealthDay(ctx, client, date, provider.DetailJobs(opts.Jobs), nil)
 		if err != nil {
 			return err
 		}
@@ -496,13 +496,23 @@ func (p *Provider) syncHealth(ctx context.Context, client *Client, user string, 
 // fetchHealthDay overlaps the four independent Garmin endpoints for one date.
 // Dates remain sequential so the seven-empty-days cutoff does not speculatively
 // fetch or write older history.
-func fetchHealthDay(ctx context.Context, client *Client, date string, jobs int) (tsRaw, usRaw, sleepRaw, hrvRaw json.RawMessage, err error) {
+func fetchHealthDay(ctx context.Context, client *Client, date string, jobs int, skip map[string]bool) (tsRaw, usRaw, sleepRaw, hrvRaw json.RawMessage, err error) {
 	var tsErr, usErr, sleepErr, hrvErr error
+	fetch := func(endpoint string, call func(context.Context, string) (json.RawMessage, error)) (json.RawMessage, error) {
+		if skip[endpoint] {
+			return nil, nil
+		}
+		raw, err := call(ctx, date)
+		if err := requiredHealthError(err); err != nil {
+			return raw, &healthEndpointError{endpoint: endpoint, err: err}
+		}
+		return raw, nil
+	}
 	tasks := []func(){
-		func() { tsRaw, tsErr = client.GetTrainingStatus(ctx, date) },
-		func() { usRaw, usErr = client.GetUserSummary(ctx, date) },
-		func() { sleepRaw, sleepErr = client.GetSleepData(ctx, date) },
-		func() { hrvRaw, hrvErr = client.GetHRV(ctx, date) },
+		func() { tsRaw, tsErr = fetch("training_status", client.GetTrainingStatus) },
+		func() { usRaw, usErr = fetch("daily_summary", client.GetUserSummary) },
+		func() { sleepRaw, sleepErr = fetch("sleep", client.GetSleepData) },
+		func() { hrvRaw, hrvErr = fetch("hrv", client.GetHRV) },
 	}
 	indices := make(chan int)
 	var wg sync.WaitGroup
@@ -521,9 +531,17 @@ func fetchHealthDay(ctx context.Context, client *Client, date string, jobs int) 
 	}
 	close(indices)
 	wg.Wait()
-	err = errors.Join(requiredHealthError(tsErr), requiredHealthError(usErr), requiredHealthError(sleepErr), requiredHealthError(hrvErr))
+	err = errors.Join(tsErr, usErr, sleepErr, hrvErr)
 	return
 }
+
+type healthEndpointError struct {
+	endpoint string
+	err      error
+}
+
+func (e *healthEndpointError) Error() string { return e.endpoint + ": " + e.err.Error() }
+func (e *healthEndpointError) Unwrap() error { return e.err }
 
 func requiredHealthError(err error) error {
 	var apiErr *APIError
@@ -538,7 +556,7 @@ func (p *Provider) syncDashboard(ctx context.Context, client *Client, user strin
 	todayISO := today.Format("2006-01-02")
 	yesterdayISO := today.AddDate(0, 0, -1).Format("2006-01-02")
 
-	tsRaw, usRaw, _, hrvRaw, err := fetchHealthDay(ctx, client, todayISO, provider.DetailJobs(0))
+	tsRaw, usRaw, _, hrvRaw, err := fetchHealthDay(ctx, client, todayISO, provider.DetailJobs(0), nil)
 	if err != nil {
 		return err
 	}

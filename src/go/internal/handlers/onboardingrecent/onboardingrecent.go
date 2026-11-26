@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/zhaochy1990/stride/internal/job"
@@ -68,6 +69,7 @@ type Store interface {
 	GetOnboardingSyncSessionByID(ctx context.Context, sessionID string) (*storage.OnboardingSyncSession, error)
 	ListOnboardingSyncWorkItems(ctx context.Context, sessionID, stage string) ([]*storage.OnboardingSyncWorkItem, error)
 	MarkOnboardingSyncWorkItem(ctx context.Context, id int64, status string, credential string, errMsg *string) error
+	MarkOnboardingSyncWorkItemWithGaps(ctx context.Context, id int64, status, credential string, reason, gaps *string) error
 	SaveOnboardingSyncWorkItemCheckpoint(ctx context.Context, id int64, checkpoint string) error
 	// ResetFailedOnboardingSyncWorkItems re-arms failed items to pending so a
 	// job-level auto-retry can mark them terminal (item marks only transition
@@ -226,7 +228,12 @@ func New(cfg Config) job.Handler {
 					opts.RejectedActivityIDs = make(map[string]bool)
 					provider.RememberRejectedActivities(opts.RejectedActivityIDs, parseChannelCheckpoint(it.Checkpoint).Gaps)
 				case kindHealth:
+					cp := parseChannelCheckpoint(it.Checkpoint)
+					if cp.ScannedThrough != "" {
+						w.From = nextDayLabel(cp.ScannedThrough)
+					}
 					opts.Health = &w
+					opts.RejectedHealthEndpoints = rejectedHealthEndpoints(cp.Gaps)
 				case kindDashboard:
 					opts.Dashboard = &w
 				default:
@@ -248,23 +255,13 @@ func New(cfg Config) job.Handler {
 			}
 			rep, syncErr := prov.SyncRecentRange(ctx, sess.UserID, opts, progress)
 
-			if it := byKind[kindActivities]; it != nil && rep.Activities != nil {
-				cp := parseChannelCheckpoint(it.Checkpoint)
-				gaps := provider.MergeRangeGaps(cp.Gaps, rep.Activities.Gaps)
-				if rep.Activities.Status == "" {
-					// The channel failed later in the walk. Keep only durable
-					// rejection evidence, and let the job retry the remaining work.
-					if len(gaps) != 0 {
-						cp.Gaps = gaps
-						if err := cfg.Store.SaveOnboardingSyncWorkItemCheckpoint(ctx, it.ID, cp.marshal()); err != nil {
-							return "", err
-						}
-					}
-					rep.Activities = nil
-				} else if len(gaps) != 0 {
-					rep.Activities.Gaps = gaps
-					rep.Activities.Status = provider.RangeChannelGap
-				}
+			rep.Activities, err = resumeRecentChannel(ctx, cfg.Store, prov.Info().Name, byKind[kindActivities], rep.Activities)
+			if err != nil {
+				return "", err
+			}
+			rep.Health, err = resumeRecentChannel(ctx, cfg.Store, prov.Info().Name, byKind[kindHealth], rep.Health)
+			if err != nil {
+				return "", err
 			}
 
 			// Record every channel that reached a terminal outcome; an absent
@@ -289,12 +286,12 @@ func New(cfg Config) job.Handler {
 					continue
 				}
 				status, credential := storage.OnboardingSyncItemDone, ch.rep.Credential
-				var msg *string
+				var reason, details *string
 				if ch.rep.Status == provider.RangeChannelGap {
 					status = storage.OnboardingSyncItemGap
-					msg = encodeWorkItemGaps(ch.rep.Gaps)
+					reason, details = encodeWorkItemGaps(ch.rep.Gaps)
 				}
-				if err := cfg.Store.MarkOnboardingSyncWorkItem(ctx, it.ID, status, credential, msg); err != nil {
+				if err := cfg.Store.MarkOnboardingSyncWorkItemWithGaps(ctx, it.ID, status, credential, reason, details); err != nil {
 					return "", fmt.Errorf("onboardingrecent: record %s outcome: %w", ch.kind, err)
 				}
 			}
@@ -310,12 +307,12 @@ func New(cfg Config) job.Handler {
 					if ch.rep != nil || it == nil || it.Status != storage.OnboardingSyncItemPending {
 						continue
 					}
-					msg := it.Error
+					reason, details := it.Error, it.RecordedRangeGaps()
 					if first {
-						msg = workItemFailure(it, classified)
+						reason, details = workItemFailure(it, classified)
 						first = false
 					}
-					_ = cfg.Store.MarkOnboardingSyncWorkItem(ctx, it.ID, storage.OnboardingSyncItemFailed, "", msg)
+					_ = cfg.Store.MarkOnboardingSyncWorkItemWithGaps(ctx, it.ID, storage.OnboardingSyncItemFailed, "", reason, details)
 				}
 				return "", classified
 			}
@@ -328,6 +325,69 @@ func New(cfg Config) job.Handler {
 			}
 		}
 	}
+}
+
+// resumeRecentChannel preserves settled evidence from a partial attempt. For
+// day-based health, both the scanned prefix and exact endpoint rejections are
+// reused when the job resumes. Activities already reuse stored detail rows.
+func resumeRecentChannel(ctx context.Context, store Store, providerName string, item *storage.OnboardingSyncWorkItem, report *provider.RangeChannelReport) (*provider.RangeChannelReport, error) {
+	if item == nil || report == nil {
+		return report, nil
+	}
+	cp := parseChannelCheckpoint(item.Checkpoint)
+	cp.Gaps = provider.MergeRangeGaps(cp.Gaps, report.Gaps)
+	if report.Status == "" {
+		if report.ScannedTo != "" {
+			cp.ScannedThrough = report.ScannedTo
+			mergeRecentObserved(&cp, report)
+		}
+		if cp.ScannedThrough != "" || len(cp.Gaps) != 0 {
+			return nil, store.SaveOnboardingSyncWorkItemCheckpoint(ctx, item.ID, cp.marshal())
+		}
+		return nil, nil
+	}
+	if len(cp.Gaps) > 0 {
+		report.Gaps = cp.Gaps
+		report.Status = provider.RangeChannelGap
+	}
+	if cp.ScannedThrough != "" && report.Credential != "" {
+		mergeRecentObserved(&cp, report)
+		obs := "-..-"
+		if cp.ObservedFrom != "" {
+			obs = cp.ObservedFrom + ".." + cp.ObservedTo
+		}
+		report.Credential = fmt.Sprintf("%s:v1:range:%s:%s..%s:obs=%s:n=%d", providerName, item.Kind, item.RangeFrom, item.RangeTo, obs, cp.Fetches)
+	}
+	return report, nil
+}
+
+func mergeRecentObserved(cp *channelCheckpoint, report *provider.RangeChannelReport) {
+	if report.ObservedFrom != nil && (cp.ObservedFrom == "" || *report.ObservedFrom < cp.ObservedFrom) {
+		cp.ObservedFrom = *report.ObservedFrom
+	}
+	if report.ObservedTo != nil && *report.ObservedTo > cp.ObservedTo {
+		cp.ObservedTo = *report.ObservedTo
+	}
+	cp.Fetches += report.Count
+}
+
+func rejectedHealthEndpoints(gaps []provider.RangeGap) map[string]map[string]bool {
+	byDay := make(map[string]map[string]bool)
+	for _, gap := range gaps {
+		if gap.Kind != provider.RangeGapUnavailable || gap.Endpoint == "" {
+			continue
+		}
+		for day := gap.From; day != "" && day <= gap.To; day = nextDayLabel(day) {
+			if byDay[day] == nil {
+				byDay[day] = make(map[string]bool)
+			}
+			byDay[day][gap.Endpoint] = true
+			if nextDayLabel(day) <= day {
+				break
+			}
+		}
+	}
+	return byDay
 }
 
 // stageJobInput is the stage-executor job's InputJSON (shared by every stage).
@@ -358,15 +418,26 @@ func classifySyncError(syncErr error) error {
 	}
 }
 
-// Work items keep the precise gap ranges between retries. The existing text
-// column also accepts legacy flattened reasons (see workItemGaps).
-func encodeWorkItemGaps(gaps []provider.RangeGap) *string {
+// Keep both precise gap ranges and the reason older workers use.
+func encodeWorkItemGaps(gaps []provider.RangeGap) (reason, details *string) {
+	var reasons []string
+	seen := make(map[string]bool)
+	for _, gap := range gaps {
+		if gap.Reason != "" && !seen[gap.Reason] {
+			seen[gap.Reason] = true
+			reasons = append(reasons, gap.Reason)
+		}
+	}
+	legacy := strings.Join(reasons, "; ")
+	if legacy == "" || len(legacy) > 65_535 {
+		legacy = "provider reported gaps"
+	}
 	data, _ := json.Marshal(gaps)
 	encoded := string(data)
-	return &encoded
+	return &legacy, &encoded
 }
 
-func workItemFailure(it *storage.OnboardingSyncWorkItem, err error) *string {
+func workItemFailure(it *storage.OnboardingSyncWorkItem, err error) (reason, details *string) {
 	kind := provider.RangeGapTransient
 	if _, permanent := job.AsPermanent(err); permanent {
 		kind = provider.RangeGapUnavailable
@@ -384,11 +455,13 @@ func workItemGaps(it *storage.OnboardingSyncWorkItem) []provider.RangeGap {
 		return nil
 	}
 	reason := "unobtainable at provider"
-	if it.Error != nil && *it.Error != "" {
+	if details := it.RecordedRangeGaps(); details != nil {
 		var gaps []provider.RangeGap
-		if json.Unmarshal([]byte(*it.Error), &gaps) == nil && len(gaps) != 0 {
+		if json.Unmarshal([]byte(*details), &gaps) == nil && len(gaps) != 0 {
 			return gaps
 		}
+	}
+	if it.Error != nil && *it.Error != "" {
 		reason = *it.Error
 	}
 	gap := (provider.RangeGap{From: it.RangeFrom, To: it.RangeTo, Reason: reason}).Classified()

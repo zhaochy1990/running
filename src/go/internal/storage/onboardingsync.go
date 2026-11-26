@@ -30,6 +30,7 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -227,13 +228,54 @@ type OnboardingSyncWorkItem struct {
 	// observed/gap accounting). It is advisory state on a pending item — a
 	// lost checkpoint costs a conservative re-scan (existence probes skip
 	// already-stored rows), never correctness.
-	Checkpoint *string   `gorm:"column:checkpoint;type:mediumtext"`
-	Error      *string   `gorm:"column:error;type:mediumtext"`
-	CreatedAt  time.Time `gorm:"column:created_at;type:datetime(6);not null"`
-	UpdatedAt  time.Time `gorm:"column:updated_at;type:datetime(6);not null"`
+	Checkpoint         *string   `gorm:"column:checkpoint;type:text"`
+	CheckpointOverflow *string   `gorm:"column:checkpoint_overflow;type:mediumtext"`
+	Error              *string   `gorm:"column:error;type:text"`
+	RangeGapDetails    *string   `gorm:"column:range_gap_details;type:mediumtext"`
+	CreatedAt          time.Time `gorm:"column:created_at;type:datetime(6);not null"`
+	UpdatedAt          time.Time `gorm:"column:updated_at;type:datetime(6);not null"`
 }
 
 func (OnboardingSyncWorkItem) TableName() string { return "onboarding_sync_work_items" }
+
+// The typed note is bound to the flattened legacy error. An old worker
+// only updates error, so a different error invalidates its predecessor's note.
+type onboardingRangeGapNote struct {
+	Reason string          `json:"reason"`
+	Gaps   json.RawMessage `json:"gaps"`
+}
+
+func (item *OnboardingSyncWorkItem) RecordedRangeGaps() *string {
+	if item.Error == nil || item.RangeGapDetails == nil {
+		return nil
+	}
+	var note onboardingRangeGapNote
+	if json.Unmarshal([]byte(*item.RangeGapDetails), &note) != nil || note.Reason != *item.Error || len(note.Gaps) == 0 {
+		return nil
+	}
+	gaps := string(note.Gaps)
+	return &gaps
+}
+
+// Preserve the legacy TEXT types across rolling restarts. A NULL JSON marker
+// stands in for oversized snapshots; older writers replace it with normal
+// output, at which point the old overflow is ignored.
+const onboardingSyncOverflowMarker = "null"
+
+func splitOnboardingSyncText(value *string) (primary, overflow *string) {
+	if value != nil && len(*value) > 65_535 {
+		marker := onboardingSyncOverflowMarker
+		return &marker, value
+	}
+	return value, nil
+}
+
+func readOnboardingSyncText(primary, overflow *string) *string {
+	if primary != nil && *primary == onboardingSyncOverflowMarker && overflow != nil {
+		return overflow
+	}
+	return primary
+}
 
 // OnboardingSyncStageCoverage separates, per stage, the target window (what the
 // server aims to cover), the scanned window (what has been walked) and the
@@ -254,11 +296,12 @@ type OnboardingSyncStageCoverage struct {
 	ObservedFrom *string `gorm:"column:observed_from;type:char(10)"`
 	ObservedTo   *string `gorm:"column:observed_to;type:char(10)"`
 	// GapsJSON lists recorded gaps as [{"from":..,"to":..,"kind":..,"reason":..}].
-	GapsJSON  *string   `gorm:"column:gaps_json;type:mediumtext"`
-	JobID     *string   `gorm:"column:job_id;type:varchar(64)"`
-	LastError *string   `gorm:"column:last_error;type:text"`
-	CreatedAt time.Time `gorm:"column:created_at;type:datetime(6);not null"`
-	UpdatedAt time.Time `gorm:"column:updated_at;type:datetime(6);not null"`
+	GapsJSON         *string   `gorm:"column:gaps_json;type:text"`
+	GapsJSONOverflow *string   `gorm:"column:gaps_json_overflow;type:mediumtext"`
+	JobID            *string   `gorm:"column:job_id;type:varchar(64)"`
+	LastError        *string   `gorm:"column:last_error;type:text"`
+	CreatedAt        time.Time `gorm:"column:created_at;type:datetime(6);not null"`
+	UpdatedAt        time.Time `gorm:"column:updated_at;type:datetime(6);not null"`
 }
 
 func (OnboardingSyncStageCoverage) TableName() string { return "onboarding_sync_stage_coverage" }
@@ -319,13 +362,16 @@ func onboardingSyncModels() []any {
 // process can run against a fresh database.
 func (s *Store) AutoMigrateOnboardingSync(ctx context.Context) error {
 	db := s.db.WithContext(ctx)
-	err := db.AutoMigrate(onboardingSyncModels()...)
-	var mysqlErr *gomysql.MySQLError
-	if errors.As(err, &mysqlErr) && mysqlErr.Number == 1060 {
-		// An API or worker replica can add the column between this
-		// replica's schema inspection and ALTER. Re-read the schema once.
+	var err error
+	for range 6 {
 		err = db.AutoMigrate(onboardingSyncModels()...)
+		var mysqlErr *gomysql.MySQLError
+		if !errors.As(err, &mysqlErr) || mysqlErr.Number != 1060 {
+			break
+		}
+		// A concurrent API or worker added a column after schema inspection.
 	}
+
 	if err != nil {
 		return fmt.Errorf("storage: automigrate onboarding sync: %w", err)
 	}
@@ -996,6 +1042,9 @@ func (s *Store) ListOnboardingSyncWorkItems(ctx context.Context, sessionID, stag
 	if err != nil {
 		return nil, fmt.Errorf("storage: list onboarding sync work items: %w", err)
 	}
+	for _, row := range rows {
+		row.Checkpoint = readOnboardingSyncText(row.Checkpoint, row.CheckpointOverflow)
+	}
 	return rows, nil
 }
 
@@ -1007,11 +1056,31 @@ func (s *Store) ListOnboardingSyncWorkItems(ctx context.Context, sessionID, stag
 // one-way out of pending (a done item is never re-fetched by a retry — the
 // credential is reused; a gap item is never re-run at all).
 func (s *Store) MarkOnboardingSyncWorkItem(ctx context.Context, id int64, status string, credential string, errMsg *string) error {
+	return s.markOnboardingSyncWorkItem(ctx, id, status, credential, errMsg, nil)
+}
+
+// MarkOnboardingSyncWorkItemWithGaps preserves both the legacy reason and
+// the new precise ranges in the same pending-to-terminal update.
+func (s *Store) MarkOnboardingSyncWorkItemWithGaps(ctx context.Context, id int64, status, credential string, reason, gaps *string) error {
+	var detail *string
+	if reason != nil && gaps != nil {
+		payload, err := json.Marshal(onboardingRangeGapNote{Reason: *reason, Gaps: json.RawMessage(*gaps)})
+		if err != nil {
+			return fmt.Errorf("storage: encode onboarding gap details: %w", err)
+		}
+		encoded := string(payload)
+		detail = &encoded
+	}
+	return s.markOnboardingSyncWorkItem(ctx, id, status, credential, reason, detail)
+}
+
+func (s *Store) markOnboardingSyncWorkItem(ctx context.Context, id int64, status, credential string, errMsg, detail *string) error {
 	updates := map[string]any{"status": status, "updated_at": time.Now().UTC()}
 	if credential != "" {
 		updates["fetch_credential"] = credential
 	}
 	updates["error"] = errMsg
+	updates["range_gap_details"] = detail
 	res := s.db.WithContext(ctx).Model(&OnboardingSyncWorkItem{}).
 		Where("id = ? AND status = ?", id, OnboardingSyncItemPending).
 		Updates(updates)
@@ -1026,9 +1095,10 @@ func (s *Store) MarkOnboardingSyncWorkItem(ctx context.Context, id int64, status
 // item — once an item is terminal its credential is the record, and a racing
 // chunk continuation must not resurrect it.
 func (s *Store) SaveOnboardingSyncWorkItemCheckpoint(ctx context.Context, id int64, checkpoint string) error {
+	primary, overflow := splitOnboardingSyncText(&checkpoint)
 	res := s.db.WithContext(ctx).Model(&OnboardingSyncWorkItem{}).
 		Where("id = ? AND status = ?", id, OnboardingSyncItemPending).
-		Updates(map[string]any{"checkpoint": checkpoint, "updated_at": time.Now().UTC()})
+		Updates(map[string]any{"checkpoint": primary, "checkpoint_overflow": overflow, "updated_at": time.Now().UTC()})
 	if res.Error != nil {
 		return fmt.Errorf("storage: save onboarding sync work item checkpoint: %w", res.Error)
 	}
@@ -1067,6 +1137,7 @@ func (s *Store) GetOnboardingSyncStageCoverage(ctx context.Context, sessionID, s
 	if err != nil {
 		return nil, fmt.Errorf("storage: get onboarding sync stage coverage: %w", err)
 	}
+	cov.GapsJSON = readOnboardingSyncText(cov.GapsJSON, cov.GapsJSONOverflow)
 	return &cov, nil
 }
 
@@ -1077,6 +1148,9 @@ func (s *Store) ListOnboardingSyncStageCoverage(ctx context.Context, sessionID s
 	if err != nil {
 		return nil, fmt.Errorf("storage: list onboarding sync stage coverage: %w", err)
 	}
+	for _, row := range rows {
+		row.GapsJSON = readOnboardingSyncText(row.GapsJSON, row.GapsJSONOverflow)
+	}
 	return rows, nil
 }
 
@@ -1086,11 +1160,12 @@ func (s *Store) ListOnboardingSyncStageCoverage(ctx context.Context, sessionID s
 // consistency.
 func (s *Store) UpdateOnboardingSyncStageCoverage(ctx context.Context, cov *OnboardingSyncStageCoverage) error {
 	cov.UpdatedAt = time.Now().UTC()
+	primary, overflow := splitOnboardingSyncText(cov.GapsJSON)
 	if err := s.db.WithContext(ctx).Model(&OnboardingSyncStageCoverage{}).
 		Where("id = ?", cov.ID).Updates(map[string]any{
 		"status": cov.Status, "scanned_from": cov.ScannedFrom, "scanned_to": cov.ScannedTo,
 		"observed_from": cov.ObservedFrom, "observed_to": cov.ObservedTo,
-		"gaps_json": cov.GapsJSON, "job_id": cov.JobID, "last_error": cov.LastError,
+		"gaps_json": primary, "gaps_json_overflow": overflow, "job_id": cov.JobID, "last_error": cov.LastError,
 		"updated_at": cov.UpdatedAt,
 	}).Error; err != nil {
 		return fmt.Errorf("storage: update onboarding sync stage coverage: %w", err)

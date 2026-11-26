@@ -27,6 +27,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/zhaochy1990/stride/internal/httpx"
 )
 
 const (
@@ -345,6 +347,9 @@ func (c *Client) exchange(ctx context.Context, oauth1 OAuth1Token, login bool) (
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
+	if !login && httpx.RetryableStatus(resp.StatusCode) {
+		return OAuth2Token{}, fmt.Errorf("garmin: oauth2 exchange: %w", &httpx.StatusError{Code: resp.StatusCode})
+	}
 	if resp.StatusCode >= 400 {
 		return OAuth2Token{}, &AuthError{msg: fmt.Sprintf("oauth2 exchange -> HTTP %d", resp.StatusCode)}
 	}

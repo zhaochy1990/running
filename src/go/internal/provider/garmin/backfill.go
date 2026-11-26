@@ -106,7 +106,7 @@ func (p *Provider) SyncBackfillRange(ctx context.Context, user string, opts prov
 		rep.Activities = r
 	}
 	if opts.Health != nil {
-		r, err := p.backfillHealth(ctx, client, user, *opts.Health, opts.HealthCheckpoint, opts.Budget, jobs, progress)
+		r, err := p.backfillHealth(ctx, client, user, *opts.Health, opts.HealthCheckpoint, opts.Budget, jobs, opts.RejectedHealthEndpoints, progress)
 		if err != nil {
 			if !isRangeRejection(err) {
 				rep.Health = r
@@ -416,7 +416,7 @@ func (p *Provider) reconcileBackfillRange(ctx context.Context, client *Client, u
 // checkpoint's next un-walked day. Every day is queried (no now(), no
 // consecutive-empty cutoff); signal days are written, empty days stay absent
 // and are derived as gaps from storage by the executor.
-func (p *Provider) backfillHealth(ctx context.Context, client *Client, user string, win provider.DayWindow, checkpoint string, budget provider.BackfillBudget, jobs int, progress provider.ProgressCallback) (*provider.ChannelBackfillReport, error) {
+func (p *Provider) backfillHealth(ctx context.Context, client *Client, user string, win provider.DayWindow, checkpoint string, budget provider.BackfillBudget, jobs int, rejectedEndpoints map[string]map[string]bool, progress provider.ProgressCallback) (*provider.ChannelBackfillReport, error) {
 	if _, err := time.Parse("2006-01-02", win.From); err != nil {
 		return nil, fmt.Errorf("garmin: backfill health window start %q: %w", win.From, err)
 	}
@@ -450,25 +450,10 @@ func (p *Provider) backfillHealth(ctx context.Context, client *Client, user stri
 			break
 		}
 		date := d.Format("2006-01-02")
-		tsRaw, usRaw, sleepRaw, hrvRaw, err := fetchHealthDay(ctx, client, date, jobs)
-		day := provider.DayWindow{From: date, To: date}
-		rejected, retry := healthRangeErrors(err)
-		if retry != nil {
-			return &provider.ChannelBackfillReport{Checkpoint: encodeHealthCheckpoint(date), DaysWalked: walked, GapEvents: gaps},
-				&provider.RangeFetchError{Window: day, Err: retry}
-		}
-		if rejected != nil {
-			gaps = append(gaps, provider.RejectedRange(day, rejected))
-		}
-		if h := buildDailyHealth(user, date, tsRaw, usRaw, sleepRaw); hasSignal(h) {
-			if err := p.store.UpsertDailyHealth(ctx, h); err != nil {
-				return nil, err
-			}
-		}
-		if hrvRow := buildDailyHRV(user, date, hrvRaw); hrvHasSignal(hrvRow) {
-			if err := p.store.UpsertDailyHRV(ctx, hrvRow); err != nil {
-				return nil, err
-			}
+		_, dayGaps, err := p.rangeHealthDay(ctx, client, user, date, jobs, rejectedEndpoints[date])
+		gaps = append(gaps, dayGaps...)
+		if err != nil {
+			return &provider.ChannelBackfillReport{Checkpoint: encodeHealthCheckpoint(date), DaysWalked: walked, GapEvents: gaps}, err
 		}
 		walked++
 		provider.EmitProgress(progress, "health", walked, maxDays, provider.PercentInBand(walked, maxDays, 80, 95))
