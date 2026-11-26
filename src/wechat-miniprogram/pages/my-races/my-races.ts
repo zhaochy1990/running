@@ -136,6 +136,8 @@ interface MyRacesPageHandlers {
   _raceByLabel: Map<string, RaceItem>;
   /** 赛事请求序号，慢响应回来时发现自己已过期则丢弃（同 race-center._fetchSeq） */
   _fetchSeq: number;
+  /** 当前列表请求发出后已移除的计划，防止旧快照把卡片加回来。 */
+  _removedDuringRefresh: Set<string>;
   /** 成绩请求序号：onShow 与下拉刷新并发时丢弃慢的旧响应 */
   _resultsSeq: number;
 }
@@ -234,6 +236,7 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
   _customById: new Map(),
   _raceByLabel: new Map(),
   _fetchSeq: 0,
+  _removedDuringRefresh: new Set(),
   _resultsSeq: 0,
 
   data: {
@@ -307,6 +310,7 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
       return;
     }
     const seq = (this._fetchSeq += 1);
+    this._removedDuringRefresh.clear();
     this.setData({ plansLoading: true, plansError: '' });
     try {
       const res = await fetchMyRaces();
@@ -316,10 +320,12 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
         if (item.source === 'custom' && item.race) this._customById.set(item.race.id, item.race);
       }
       // GET 若赶在 PUT 落库前返回，快照还是旧态：叠加在飞乐观补丁，不打回 UI
-      const rows = toMyRaceRows(res.items).map((row) => {
-        const patch = this._inflight.get(row.key);
-        return patch ? mergeRow(row, patch) : row;
-      });
+      const rows = toMyRaceRows(res.items)
+        .filter((row) => !this._removedDuringRefresh.has(row.key))
+        .map((row) => {
+          const patch = this._inflight.get(row.key);
+          return patch ? mergeRow(row, patch) : row;
+        });
       this.setData({ plansLoading: false, mixRows: rows });
     } catch (err: unknown) {
       if (seq !== this._fetchSeq) return;
@@ -473,11 +479,10 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
       await deleteRacePlan(raceId).catch((err: unknown) => {
         if (!(err instanceof ApiError && err.statusCode === 404)) throw err;
       });
-      // 忽略删除前发出的列表刷新，否则旧响应可能把卡片加回来。
-      this._fetchSeq += 1;
+      if (this.data.plansLoading) this._removedDuringRefresh.add(key);
       this.setData({
         mixRows: this.data.mixRows.filter((row) => row.key !== key),
-        plansLoading: false,
+        plansError: '',
       });
       wx.showToast({ title: '已取消追踪', icon: 'none' });
     } catch {
