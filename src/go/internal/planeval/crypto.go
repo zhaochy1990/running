@@ -3,7 +3,9 @@ package planeval
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -58,4 +60,15 @@ func (k *SecretKey) Open(blob []byte) (map[string]string, error) {
 		return nil, err
 	}
 	return values, nil
+}
+
+// versionWorkerToken lets a version authenticate without revealing the API's root secret.
+func versionWorkerToken(root, version string) string {
+	if root == "" {
+		return ""
+	}
+	encoded := base64.RawURLEncoding.EncodeToString([]byte(version))
+	mac := hmac.New(sha256.New, []byte(root))
+	mac.Write([]byte("plan-eval-worker:" + encoded))
+	return encoded + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }

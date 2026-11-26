@@ -104,6 +104,18 @@ RunnerSnapshot 在「测试数据」独立维护，运行时 JSON 使用 `schema
 
 [测评 API 与冻结输入契约实施工单](https://github.com/zhaochy1990/stride-devops/issues/1055)负责快照导入、冻结和这组内部接口。
 
+API 使用测评 MySQL 中按数据库和 Agent 版本命名的连接级锁，协调同版本的提交、启动、扩缩容与清理。多个 API 副本遵守同一锁，锁连接失效时取消运行操作。测评库为每个版本记录递增的运行代次，Deployment 和启动 Secret 保存代次，已有对象拒绝更旧的命令。扩缩容只更新已有 Deployment。清理确认队列空闲后，在测评库同一事务内再次检查活跃 Generate 并保存清理意图。有待完成的清理时，提交和扩缩容返回可重试的冲突。清理复查队列，按 Kubernetes UID 和 resourceVersion 删除资源，等前台删除结束后清除启动凭据并保留代次。清理中断后可以重试同一意图。新提交随后以新启动配置重建 Deployment。环境变量留空时沿用有效配置。副本数省略或为 0 时沿用有效副本数，首次默认 1。管理员通过 `POST /api/admin/plan-eval/agent-versions/{version}/scale` 提交 `{"replicas": 3}` 调整版本的共享并发。副本数为 1–配置上限，期望副本数先保存，集群故障后可重试。
+
+```mermaid
+flowchart LR
+    A["API 副本 A"] --> L["MySQL 版本级锁"]
+    B["API 副本 B"] --> L
+    L --> V1["版本 1 · 队列 + Deployment"]
+    L --> V2["版本 2 · 队列 + Deployment"]
+    V1 --> R["Generate 收据 + Artifact + Evaluate"]
+    V2 --> R
+```
+
 API 按版本协调任务提交与启动。若该版本已有正在运行或尚待启动的配置，留空沿用已冻结的环境变量，配置冲突在创建任务前返回。有效启动配置、任务和待投递执行项在同一提交事务中持久化。事务成功后，API 确保版本队列存在、发布待投递项并启动或复用 Deployment。RabbitMQ 消息只携带协议版本和执行项 ID。
 
 ```json
@@ -112,15 +124,15 @@ API 按版本协调任务提交与启动。若该版本已有正在运行或尚�
 
 | 操作 | 请求与行为 |
 |---|---|
-| 领取 Generate | worker 发送执行项 ID 和领取请求 ID。API 鉴别 worker 身份并校验版本，在有效租约内，同一领取请求可取回原租约。新领取返回租约代次、期限、预期产物类型、冻结执行时点、完整快照和生成请求。已有其他有效租约时返回可重试时间，Generate 已终结时返回持久化结果摘要 |
-| 续租 | worker 提交执行项 ID 与租约代次。API 按服务端时间检查身份与期限，再延长有效租约。接管仅在原租约失效后发生，服务端递增代次 |
-| 提交 Generate 结果 | worker 提交执行项 ID、租约代次和提交 ID，回传 Artifact 原文字节及 Schema 校验结果，或结构化生成错误。相同提交重发时返回原确认。不同内容冲突或旧租约试图提交新结果时，API 保留已持久化结果 |
+| 领取 Generate | worker 发送 `snapshot_execution_id`、`agent_version`、`worker_id` 和 `claim_request_id`（每条处理流程生成，网络重试沿用）。API 鉴别 worker 身份并校验版本，在有效租约内，同一领取请求可取回原租约。新领取返回租约代次、期限、预期产物类型、冻结执行时点、完整快照和生成请求。已有其他有效租约时返回可重试时间，Generate 已终结时返回持久化结果摘要 |
+| 续租 | worker 提交执行项 ID，JSON 包含 `agent_version`、`worker_id`、`lease_epoch`。API 按服务端时间检查版本、持有者、代次与期限，再延长有效租约；已到期租约不能通过续租复活。接管仅在原租约失效后发生，服务端递增代次 |
+| 提交 Generate 结果 | worker 提交执行项 ID，JSON 包含 `agent_version`、`worker_id`、`lease_epoch`、`submit_id`（本次生成固定）和 `result`，回传 Artifact 原文字节及 Schema 校验结果，或结构化生成错误。相同持有者和代次、提交 ID 及内容指纹重发时返回原确认（即使租约随后到期）。新提交 ID 或不同内容返回 `result_conflict`，旧持有者/代次返回 `stale_lease`。不同内容冲突或旧租约试图提交新结果时，API 保留已持久化结果 |
 
 worker 领取后一次获得完整冻结数据包，使用本条执行项的只读 Provider 响应多次工具调用。必需数据缺测的错误记录工具名和缺少的数据。目标版本的半马生成错误沿用相同回传接口。同批其他执行项可继续运行。
 
-领取返回租约占用时，worker 保持当前消息未确认，按服务端可重试时间有界退避后再次领取。连接中断时由 RabbitMQ 重投。生成结果持久化成功或 API 确认 Generate 已终结后，worker ACK 消息。租约记录持有者与领取请求 ID。终态收据记录提交 ID、内容指纹及原确认，与 Generate 终态、Artifact（如有）和下一步 Evaluate 状态同事务提交，跨 API 副本复用。Schema 校验失败留存原文并跳过 Evaluate。Evaluate 接管时读取已保存的 Artifact，使用本任务冻结的检查定义。
+领取返回租约占用时，worker 保持当前消息未确认，按服务端可重试时间有界退避后再次领取。连接中断时由 RabbitMQ 重投。生成结果持久化成功或 API 确认 Generate 已终结后，worker ACK 消息。租约记录持有者与领取请求 ID。终态收据记录提交 ID、内容指纹及原确认，与 Generate 终态、Artifact（如有）和下一步 Evaluate 状态同事务提交，跨 API 副本复用。Schema 校验失败留存原文并跳过 Evaluate。Evaluate 每完成一条规则就持久化该结果，接管时读取已保存的 Artifact，仅运行本任务尚无结果的冻结规则。保存时校验本轮 Evaluate 租约期限，过期或被接管的运行器不能提交或结束新一轮 Evaluate。
 
-API 按 RabbitMQ 发布确认更新执行项的投递状态。发布或启动失败时展示失败阶段，用户在原任务上重试，沿用原任务和执行项 ID。确认丢失可再次投递，Generate 已终结的执行项由领取接口返回原结果。浏览器网络重发沿用提交幂等键，主动重测使用新键。首批八份数据固化后，用实测包体和耗时决定是否拆出大数据拉取。 [调度与接管决议](https://github.com/zhaochy1990/stride-devops/issues/1046#issuecomment-7095462890) · [worker 执行契约](https://github.com/zhaochy1990/stride-devops/issues/1047#issuecomment-7095113843)
+API 按 RabbitMQ 发布确认保存执行项的 `dispatched_at`。重试只投递尚未确认且 Generate 未终结的执行项；确认丢失时可再次投递。发布或启动失败时展示失败阶段，用户在原任务上重试，沿用原任务和执行项 ID。确认丢失可再次投递，Generate 已终结的执行项由领取接口返回原结果。浏览器网络重发沿用提交幂等键，主动重测使用新键。首批八份数据固化后，用实测包体和耗时决定是否拆出大数据拉取。 [调度与接管决议](https://github.com/zhaochy1990/stride-devops/issues/1046#issuecomment-7095462890) · [worker 执行契约](https://github.com/zhaochy1990/stride-devops/issues/1047#issuecomment-7095113843)
 
 ## 3. 测评规则存储与 Check 接口
 
@@ -296,8 +308,8 @@ erDiagram
         string execute_status "Generate 状态"
         string evaluate_status "Evaluate 状态"
         json error "阶段错误，可选"
-        json lease "持有者、请求、代次、期限"
-        json result_receipt "终态提交与原确认"
+        json lease "持有者、claim_request_id、代次、期限"
+        json result_receipt "submit_id、内容指纹、持有者、代次与原确认"
     }
     Artifact {
         string artifact_id PK "生成内容标识"
@@ -345,9 +357,19 @@ SnapshotExecution 以 `(task_id, scenario_id, snapshot_id)` 去重。每个执�
 | 网络重试和主动重测 | 相同幂等键及参数取回原任务。相同键、不同参数返回 409。主动重测创建新任务 |
 | 同一场景选择两个 Agent 版本分别测评 | 两个任务分别保存所选版本，worker 使用对应 Agent，报告可分别打开 |
 | 一份真实脱敏全马快照，生产数据服务不可达 | 从工作台发起任务，目标版本 worker 领取完整冻结数据包，多次取数来自同一快照，保存 Artifact 后开放固定规则检查 |
-| 发布确认丢失或版本 Deployment 启动失败 | 原任务可重试启动，任务与执行项 ID 稳定，重复消息复用已终结结果 |
+| 发布确认丢失或版本 Deployment 启动失败 | 原任务可重试启动，任务与执行项 ID 稳定，确认完成的消息不再发布，确认丢失允许重投并复用已终结结果 |
 | 同版本已有运行或待启动的配置，提交不同环境变量 | 返回冲突，版本下的待投递执行项数量保持原值。留空时复用冻结配置，已有 worker 使用同一配置读取该版本的消息 |
 | 消息重投时上一份租约仍有效 | 投递保持未确认，worker 有界等待后再领取。只有接管成功后才继续生成，读取终态后确认消息 |
 | 保存成功但响应丢失，或 worker 退出后租约过期 | 重发同一提交只保存一份 Artifact。过期租约可被接管，旧租约的不同提交无法覆盖新结果 |
 | 生成超时或产物 Schema 校验失败 | 本项跳过 Evaluate，保留错误或无效 Artifact 原文，其他快照正常继续 |
 | 一条规则不通过或出错，或者 Artifact 保存后 worker 中断 | 保留逐项理由、预期和实际值或错误，其他规则继续。接管只恢复未完成的检查 |
+
+### 调度/恢复上线与隔离验证（devops#1061）
+
+- 新增列由测评 API 的 `AutoMigratePlanEval` 创建：`plan_eval_executions.dispatched_at/claim_request_id` 及 `plan_eval_receipts.submit_id/fingerprint/worker_id/lease_epoch`；任务 `params_fingerprint` 扩为 128 字符容纳 v2 标记，旧任务默认副本指纹仍可重放、新任务区分省略与显式副本数；不迁移或访问生产运动数据。历史报告和已终结执行项保留，老收据仍可通过终态领取 ACK。
+- Deployment 注入的内部 worker token 由测评 API 根密钥按 Agent 版本签名派生，API 校验凭据版本与请求版本一致；根密钥不下发 worker。内部 worker 契约新增持有者、领取 ID 与提交 ID，须使用包含本契约的 worker 镜像。升级前先让旧版 Generate 排空并清理 Deployment，再升级 API/worker；旧镜像不支持新增必填字段，不应作为本版可运行版本登记。部署 pin PR 仍由用户审批。
+- 测评 API 需要 MySQL `GET_LOCK`/`RELEASE_LOCK`，锁在专用连接上持有并按数据库隔离，连接池至少需要锁连接和业务连接。已有 K8s 对象通过运行代次和 resourceVersion 拦截旧请求。创建缺失对象前重新确认启动配置身份、运行代次和清理状态。生成队列使用 classic 类型。不可路由发布不会标记为已投递。未知队列类型或缺少实时总数时拒绝清理。
+- CI 的既有 MySQL 测评步骤覆盖原任务重试、双版本扩缩容/清理竞争、领取响应丢失、身份/过期续租、终态指纹冲突和逐规则恢复；真实 RabbitMQ 门禁测试通过 `PLAN_EVAL_TEST_AMQP_URL` / `PLAN_EVAL_TEST_MANAGEMENT_URL` 启用，沿用 `STRIDE_WORKER_TEST_MYSQL_DSN` 的隔离数据库。
+- 本票不占用共用本地 E2E 栈。独占容器验证 RabbitMQ 实际未确认投递、回传确认丢失、终态重投 ACK 与保留队列/报告；真实目标镜像、工作台浏览器及 Kubernetes 波后 E2E 由 master 派发。
+
+测评 MQ 继续使用 devops 原生测评服务账号，worker 属于受信任的内部服务；HTTP 版本凭据隔离不等价于 RabbitMQ 账号级隔离。本票不新增 RabbitMQ 用户/权限管理，账号级恶意消费者隔离需要单独的部署授权与账号管理变更。

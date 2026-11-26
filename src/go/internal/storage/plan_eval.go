@@ -3,9 +3,11 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
@@ -21,6 +23,8 @@ import (
 
 var (
 	ErrPlanEvalNotFound             = errors.New("storage: plan-eval row not found")
+	ErrPlanEvalResultConflict       = errors.New("storage: plan-eval result conflicts with persisted submission")
+	ErrPlanEvalVersionBusy          = errors.New("storage: plan-eval version operation in progress")
 	ErrPlanEvalStaleLease           = errors.New("storage: plan-eval lease is stale")
 	ErrPlanEvalAgentVersionMismatch = errors.New("storage: plan-eval agent version mismatch")
 )
@@ -140,11 +144,17 @@ func (s *Store) GetPlanEvalRule(ctx context.Context, id string, version int) (*P
 // has already resolved and frozen the inputs; EnvCipher is the encrypted
 // environment used only when the version has no launch configuration yet.
 type PlanEvalTaskCreate struct {
-	Task         *PlanEvalTask
-	LaunchConfig *PlanEvalLaunchConfig
-	EnvCipher    []byte
-	Executions   []*PlanEvalExecution
-	FrozenRules  []*PlanEvalFrozenRule
+	LegacyParamsFingerprint string
+	Task                    *PlanEvalTask
+	LaunchConfig            *PlanEvalLaunchConfig
+	EnvCipher               []byte
+	Executions              []*PlanEvalExecution
+	FrozenRules             []*PlanEvalFrozenRule
+}
+
+// Only pre-v2 tasks accept the legacy default-replica fingerprint.
+func planEvalParamsMatch(persisted string, in *PlanEvalTaskCreate) bool {
+	return persisted == in.Task.ParamsFingerprint || (!strings.HasPrefix(persisted, "v2:") && persisted == in.LegacyParamsFingerprint)
 }
 
 // CreatePlanEvalTask persists the task, its pending executions, the frozen
@@ -162,7 +172,7 @@ func (s *Store) CreatePlanEvalTask(ctx context.Context, in *PlanEvalTaskCreate) 
 		var existing PlanEvalTask
 		switch err := tx.Where("submitter = ? AND idempotency_key = ?", in.Task.Submitter, in.Task.IdempotencyKey).First(&existing).Error; {
 		case err == nil:
-			if existing.ParamsFingerprint != in.Task.ParamsFingerprint {
+			if !planEvalParamsMatch(existing.ParamsFingerprint, in) {
 				return &PlanEvalIdempotencyConflictError{ExistingTaskID: existing.ID}
 			}
 			task, replayed = &existing, true
@@ -173,21 +183,45 @@ func (s *Store) CreatePlanEvalTask(ctx context.Context, in *PlanEvalTaskCreate) 
 
 		now := time.Now().UTC()
 		var current PlanEvalLaunchConfig
-		switch err := tx.Where("agent_version = ?", in.Task.AgentVersion).First(&current).Error; {
+		switch err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("agent_version = ?", in.Task.AgentVersion).First(&current).Error; {
+		case err == nil && current.CleanupPending:
+			return ErrPlanEvalVersionBusy
+		case err == nil && current.Replicas == 0:
+			launch := in.LaunchConfig
+			if launch.Replicas == 0 {
+				launch.Replicas = 1
+			}
+			if err := tx.Model(&current).Updates(map[string]any{
+				"id": launch.ID, "replicas": launch.Replicas, "env_names": launch.EnvNames,
+				"env_cipher": in.EnvCipher, "env_fingerprint": launch.EnvFingerprint,
+				"runtime_revision": current.RuntimeRevision + 1, "created_at": now,
+			}).Error; err != nil {
+				return fmt.Errorf("storage: reopen plan_eval_launch_configs: %w", err)
+			}
+			in.Task.LaunchConfigID = launch.ID
+			in.Task.LaunchEnvNames = launch.EnvNames
 		case err == nil:
 			// An empty variable set means "keep what this version already runs
 			// with"; any other set must match the active values as well.
 			if in.LaunchConfig.EnvNames != "[]" && current.EnvFingerprint != in.LaunchConfig.EnvFingerprint {
 				return &PlanEvalLaunchConfigConflictError{}
 			}
+			if in.LaunchConfig.Replicas == 0 {
+				in.LaunchConfig.Replicas = current.Replicas
+			}
 			if err := tx.Model(&PlanEvalLaunchConfig{}).Where("id = ?", current.ID).
-				Updates(map[string]any{"replicas": in.LaunchConfig.Replicas, "updated_at": now}).Error; err != nil {
+				Updates(map[string]any{"replicas": in.LaunchConfig.Replicas, "runtime_revision": current.RuntimeRevision + 1, "updated_at": now}).Error; err != nil {
 				return fmt.Errorf("storage: update plan_eval_launch_configs: %w", err)
 			}
 			in.Task.LaunchConfigID = current.ID
 			in.Task.LaunchEnvNames = current.EnvNames
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			launch := *in.LaunchConfig
+			launch.RuntimeRevision = 1
+			if launch.Replicas == 0 {
+				launch.Replicas = 1
+				in.LaunchConfig.Replicas = 1
+			}
 			launch.EnvCipher = in.EnvCipher
 			launch.CreatedAt, launch.UpdatedAt = now, now
 			if err := tx.Create(&launch).Error; err != nil {
@@ -229,7 +263,7 @@ func (s *Store) CreatePlanEvalTask(ctx context.Context, in *PlanEvalTaskCreate) 
 		var persisted PlanEvalTask
 		lookup := s.db.WithContext(ctx).Where("submitter = ? AND idempotency_key = ?", in.Task.Submitter, in.Task.IdempotencyKey).First(&persisted)
 		if lookup.Error == nil {
-			if persisted.ParamsFingerprint != in.Task.ParamsFingerprint {
+			if !planEvalParamsMatch(persisted.ParamsFingerprint, in) {
 				return nil, false, &PlanEvalIdempotencyConflictError{ExistingTaskID: persisted.ID}
 			}
 			return &persisted, true, nil
@@ -237,6 +271,124 @@ func (s *Store) CreatePlanEvalTask(ctx context.Context, in *PlanEvalTaskCreate) 
 		return nil, false, err
 	}
 	return task, replayed, nil
+}
+
+// WithPlanEvalVersionLock coordinates runtime operations across API replicas.
+// A dedicated connection owns the database-scoped MySQL lock until completion.
+func (s *Store) WithPlanEvalVersionLock(ctx context.Context, version string, run func(context.Context) error) error {
+	db, err := s.db.DB()
+	if err != nil {
+		return err
+	}
+
+	var key string
+	if err := db.QueryRowContext(ctx, "SELECT SHA2(CONCAT(DATABASE(), ':plan-eval:', ?), 256)", version).Scan(&key); err != nil {
+		return err
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	var conn *sql.Conn
+	for {
+		conn, err = db.Conn(waitCtx)
+		if err != nil {
+			return err
+		}
+		var acquired sql.NullInt64
+		err = conn.QueryRowContext(waitCtx, "SELECT GET_LOCK(?, 0)", key).Scan(&acquired)
+		if err != nil || !acquired.Valid {
+			// A failed response may hide an acquired lock; discard the session.
+			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+			_ = conn.Close()
+			if err != nil {
+				return err
+			}
+			return ErrPlanEvalVersionBusy
+		}
+		if acquired.Int64 == 1 {
+			break
+		}
+		_ = conn.Close()
+		// Waiting requests must not exhaust the pool needed by the lock holder.
+		select {
+		case <-waitCtx.Done():
+			return ErrPlanEvalVersionBusy
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	defer conn.Close()
+	defer func() {
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		var released sql.NullInt64
+		if err := conn.QueryRowContext(releaseCtx, "SELECT RELEASE_LOCK(?)", key).Scan(&released); err != nil || !released.Valid || released.Int64 != 1 {
+			// Never return a session that may still own the lock to the pool.
+			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		}
+	}()
+	// Losing the lock session must cancel in-flight cluster operations.
+	runtimeCtx, cancelRuntime := context.WithCancel(ctx)
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		ticker := time.NewTicker(200 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-runtimeCtx.Done():
+				return
+			case <-ticker.C:
+				probeCtx, cancelProbe := context.WithTimeout(runtimeCtx, time.Second)
+				var held bool
+				err := conn.QueryRowContext(probeCtx, "SELECT IS_USED_LOCK(?) = CONNECTION_ID()", key).Scan(&held)
+				cancelProbe()
+				if err != nil || !held {
+					cancelRuntime()
+					return
+				}
+			}
+		}
+	}()
+	err = run(runtimeCtx)
+	runtimeErr := runtimeCtx.Err()
+	cancelRuntime()
+	<-stopped
+	if runtimeErr != nil {
+		return runtimeErr
+	}
+	return err
+}
+
+func (s *Store) RecordPlanEvalDispatch(ctx context.Context, executionID string) error {
+	return s.db.WithContext(ctx).Model(&PlanEvalExecution{}).Where("id = ?", executionID).Update("dispatched_at", time.Now().UTC()).Error
+}
+
+func (s *Store) SetPlanEvalReplicas(ctx context.Context, version string, replicas int) (uint64, error) {
+	var config PlanEvalLaunchConfig
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("agent_version = ? AND replicas > 0", version).First(&config).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrPlanEvalNotFound
+			}
+			return err
+		}
+		if config.CleanupPending {
+			return ErrPlanEvalVersionBusy
+		}
+		config.RuntimeRevision++
+		return tx.Model(&config).Updates(map[string]any{"replicas": replicas, "runtime_revision": config.RuntimeRevision}).Error
+	})
+	return config.RuntimeRevision, err
+}
+
+func (s *Store) PlanEvalLaunchConfigForVersion(ctx context.Context, version string) (*PlanEvalLaunchConfig, error) {
+	var row PlanEvalLaunchConfig
+	if err := s.db.WithContext(ctx).Where("agent_version = ? AND replicas > 0", version).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrPlanEvalNotFound
+		}
+		return nil, err
+	}
+	return &row, nil
 }
 
 // RecordPlanEvalLaunch records the outcome of publishing and starting a task.
@@ -254,10 +406,44 @@ func (s *Store) RecordPlanEvalLaunch(ctx context.Context, taskID, message string
 	return nil
 }
 
-// ReleasePlanEvalLaunchConfig removes even its encrypted values after cleanup.
-// The task rows retain the effective replica count and variable names.
-func (s *Store) ReleasePlanEvalLaunchConfig(ctx context.Context, agentVersion string) error {
-	return s.db.WithContext(ctx).Where("agent_version = ?", agentVersion).Delete(&PlanEvalLaunchConfig{}).Error
+// BeginPlanEvalCleanup prevents new tasks from activating a version while
+// a Kubernetes delete is in flight, including after loss of the named lock.
+func (s *Store) BeginPlanEvalCleanup(ctx context.Context, version string) (*PlanEvalLaunchConfig, error) {
+	var config PlanEvalLaunchConfig
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("agent_version = ?", version).First(&config).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		active, countErr := countPlanEvalActiveGenerates(tx, version)
+		if countErr != nil {
+			return countErr
+		}
+		if active > 0 {
+			return ErrPlanEvalVersionBusy
+		}
+		if config.CleanupPending {
+			return nil
+		}
+		config.CleanupPending = true
+		config.RuntimeRevision++
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			config.ID, config.AgentVersion, config.EnvNames = uuid.NewString(), version, "[]"
+			return tx.Create(&config).Error
+		}
+		return tx.Model(&config).Updates(map[string]any{"cleanup_pending": true, "runtime_revision": config.RuntimeRevision}).Error
+	})
+	return &config, err
+}
+
+// FinishPlanEvalCleanup discards credentials and retains the version's last
+// revision. A late cleanup must not touch a newer version incarnation.
+func (s *Store) FinishPlanEvalCleanup(ctx context.Context, config *PlanEvalLaunchConfig) error {
+	return s.db.WithContext(ctx).Model(&PlanEvalLaunchConfig{}).
+		Where("id = ? AND runtime_revision = ? AND cleanup_pending = ?", config.ID, config.RuntimeRevision, true).
+		Updates(map[string]any{
+			"replicas": 0, "env_cipher": nil, "env_names": "[]", "env_fingerprint": "", "cleanup_pending": false,
+		}).Error
 }
 
 // ---- reads ----
@@ -381,7 +567,7 @@ func (s *Store) GetPlanEvalArtifact(ctx context.Context, id string) (*PlanEvalAr
 
 func (s *Store) GetPlanEvalLaunchConfig(ctx context.Context, id string) (*PlanEvalLaunchConfig, error) {
 	var row PlanEvalLaunchConfig
-	if err := s.db.WithContext(ctx).First(&row, "id = ?", id).Error; err != nil {
+	if err := s.db.WithContext(ctx).First(&row, "id = ? AND replicas > 0", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrPlanEvalNotFound
 		}
@@ -414,7 +600,8 @@ type PlanEvalClaim struct {
 // valid lease or a terminal state says otherwise. A lease that has expired may
 // be taken over (epoch + 1), which is what makes an older holder's later
 // renewals and results fall on stale ground.
-func (s *Store) ClaimPlanEvalExecution(ctx context.Context, id, agentVersion, workerID string, now time.Time, ttl time.Duration) (*PlanEvalClaim, error) {
+func (s *Store) ClaimPlanEvalExecution(ctx context.Context, id, agentVersion, workerID, claimRequestID string, now time.Time, ttl time.Duration) (*PlanEvalClaim, error) {
+	started := time.Now()
 	claim := &PlanEvalClaim{}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Lock the execution first; the task is only read.
@@ -432,20 +619,25 @@ func (s *Store) ClaimPlanEvalExecution(ctx context.Context, id, agentVersion, wo
 		if task.AgentVersion != agentVersion {
 			return ErrPlanEvalAgentVersionMismatch
 		}
+		now = now.Add(time.Since(started))
 		claim.Execution = &execution
 		if PlanEvalGenerateTerminal(execution.GenerateStatus) {
 			claim.Status = "terminal"
 			return nil
 		}
 		if execution.LeaseExpiresAt != nil && execution.LeaseExpiresAt.After(now) {
-			claim.Status = "busy"
+			if execution.LeaseWorker == workerID && execution.ClaimRequestID == claimRequestID {
+				claim.Status, claim.LeaseEpoch, claim.LeaseExpiresAt = "leased", execution.LeaseEpoch, *execution.LeaseExpiresAt
+			} else {
+				claim.Status = "busy"
+			}
 			return nil
 		}
-		expires := now.Add(ttl)
+		expires := now.Add(ttl).Truncate(time.Millisecond)
 		epoch := execution.LeaseEpoch + 1
 		res := tx.Model(&PlanEvalExecution{}).Where("id = ?", id).Updates(map[string]any{
 			"generate_status": PlanEvalGenerateLeased, "attempts": gorm.Expr("attempts + 1"),
-			"lease_epoch": epoch, "lease_expires_at": expires, "lease_worker": workerID, "updated_at": now,
+			"lease_epoch": epoch, "lease_expires_at": expires, "lease_worker": workerID, "claim_request_id": claimRequestID, "updated_at": now,
 		})
 		if res.Error != nil {
 			return fmt.Errorf("storage: lease plan_eval_executions: %w", res.Error)
@@ -466,18 +658,36 @@ func (s *Store) ClaimPlanEvalExecution(ctx context.Context, id, agentVersion, wo
 
 // RenewPlanEvalLease extends the lease held under `epoch`; the server clock is
 // the only clock. ErrPlanEvalStaleLease means the lease changed hands.
-func (s *Store) RenewPlanEvalLease(ctx context.Context, id string, epoch int, now time.Time, ttl time.Duration) (time.Time, error) {
-	expires := now.Add(ttl)
-	res := s.db.WithContext(ctx).Model(&PlanEvalExecution{}).
-		Where("id = ? AND lease_epoch = ? AND generate_status = ?", id, epoch, PlanEvalGenerateLeased).
-		Updates(map[string]any{"lease_expires_at": expires, "updated_at": now})
-	if res.Error != nil {
-		return time.Time{}, fmt.Errorf("storage: renew plan_eval_executions lease: %w", res.Error)
-	}
-	if res.RowsAffected == 0 {
-		return time.Time{}, ErrPlanEvalStaleLease
-	}
-	return expires, nil
+type PlanEvalWorkerLease struct {
+	AgentVersion string `json:"agent_version"`
+	WorkerID     string `json:"worker_id"`
+	LeaseEpoch   int    `json:"lease_epoch"`
+}
+
+func (s *Store) RenewPlanEvalLease(ctx context.Context, id string, lease PlanEvalWorkerLease, now time.Time, ttl time.Duration) (time.Time, error) {
+
+	started := time.Now()
+	var expires time.Time
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var execution PlanEvalExecution
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&execution, "id = ?", id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrPlanEvalNotFound
+			}
+			return err
+		}
+		var task PlanEvalTask
+		if err := tx.Select("agent_version").First(&task, "id = ?", execution.TaskID).Error; err != nil {
+			return err
+		}
+		now = now.Add(time.Since(started))
+		if task.AgentVersion != lease.AgentVersion || execution.LeaseWorker != lease.WorkerID || execution.LeaseEpoch != lease.LeaseEpoch || execution.GenerateStatus != PlanEvalGenerateLeased || execution.LeaseExpiresAt == nil || !execution.LeaseExpiresAt.After(now) {
+			return ErrPlanEvalStaleLease
+		}
+		expires = now.Add(ttl).Truncate(time.Millisecond)
+		return tx.Model(&PlanEvalExecution{}).Where("id = ?", id).Updates(map[string]any{"lease_expires_at": expires, "updated_at": now}).Error
+	})
+	return expires, err
 }
 
 // PlanEvalGenerateOutcome is what a worker reports: an artifact (with the
@@ -496,7 +706,8 @@ type PlanEvalGenerateOutcome struct {
 // acknowledgment. A replay against an already-terminal execution returns the
 // original acknowledgment; a result from a lease that is not current is refused
 // with ErrPlanEvalStaleLease.
-func (s *Store) SubmitPlanEvalGenerate(ctx context.Context, id string, epoch int, now time.Time, out *PlanEvalGenerateOutcome) (ack *PlanEvalGenerateAck, replayed bool, err error) {
+func (s *Store) SubmitPlanEvalGenerate(ctx context.Context, id string, lease PlanEvalWorkerLease, submitID, fingerprint string, now time.Time, out *PlanEvalGenerateOutcome) (ack *PlanEvalGenerateAck, replayed bool, err error) {
+	started := time.Now()
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var execution PlanEvalExecution
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&execution, "id = ?", id).Error; err != nil {
@@ -505,10 +716,23 @@ func (s *Store) SubmitPlanEvalGenerate(ctx context.Context, id string, epoch int
 			}
 			return fmt.Errorf("storage: lock plan_eval_executions: %w", err)
 		}
+		var task PlanEvalTask
+		if err := tx.Select("agent_version").First(&task, "id = ?", execution.TaskID).Error; err != nil {
+			return err
+		}
+		if task.AgentVersion != lease.AgentVersion {
+			return ErrPlanEvalAgentVersionMismatch
+		}
 		if PlanEvalGenerateTerminal(execution.GenerateStatus) {
 			var receipt PlanEvalReceipt
 			if err := tx.First(&receipt, "execution_id = ?", id).Error; err != nil {
 				return fmt.Errorf("storage: get plan_eval_receipts: %w", err)
+			}
+			if receipt.LeaseEpoch != lease.LeaseEpoch || receipt.WorkerID != lease.WorkerID {
+				return ErrPlanEvalStaleLease
+			}
+			if receipt.SubmitID != submitID || receipt.Fingerprint != fingerprint {
+				return ErrPlanEvalResultConflict
 			}
 			var stored PlanEvalGenerateAck
 			if err := json.Unmarshal([]byte(receipt.ResponseJSON), &stored); err != nil {
@@ -517,7 +741,8 @@ func (s *Store) SubmitPlanEvalGenerate(ctx context.Context, id string, epoch int
 			ack, replayed = &stored, true
 			return nil
 		}
-		if execution.LeaseEpoch != epoch || execution.LeaseExpiresAt == nil || !execution.LeaseExpiresAt.After(now) {
+		now = now.Add(time.Since(started))
+		if execution.LeaseWorker != lease.WorkerID || execution.LeaseEpoch != lease.LeaseEpoch || execution.LeaseExpiresAt == nil || !execution.LeaseExpiresAt.After(now) {
 			return ErrPlanEvalStaleLease
 		}
 
@@ -569,11 +794,11 @@ func (s *Store) SubmitPlanEvalGenerate(ctx context.Context, id string, epoch int
 		if err != nil {
 			return err
 		}
-		if err := tx.Create(&PlanEvalReceipt{ID: ack.ReceiptID, ExecutionID: id, ResponseJSON: string(body), CreatedAt: now}).Error; err != nil {
+		if err := tx.Create(&PlanEvalReceipt{ID: ack.ReceiptID, ExecutionID: id, ResponseJSON: string(body), SubmitID: submitID, Fingerprint: fingerprint, WorkerID: lease.WorkerID, LeaseEpoch: lease.LeaseEpoch, CreatedAt: now}).Error; err != nil {
 			return fmt.Errorf("storage: create plan_eval_receipts: %w", err)
 		}
 		return planEvalRefreshTaskStatus(tx, execution.TaskID, now)
-	})
+	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return nil, false, err
 	}
@@ -586,6 +811,7 @@ func (s *Store) SubmitPlanEvalGenerate(ctx context.Context, id string, epoch int
 // artifact itself, the frozen inputs and the frozen rule implementations.
 type PlanEvalEvaluationWork struct {
 	ExecutionID     string
+	LeaseUntil      time.Time
 	ScenarioID      string
 	ArtifactID      string
 	ArtifactType    string
@@ -618,15 +844,16 @@ func (s *Store) ClaimPlanEvalEvaluations(ctx context.Context, now time.Time, lea
 	}
 	var ids []string
 	if err := s.db.WithContext(ctx).Model(&PlanEvalExecution{}).
-		Where("generate_status = ? AND (evaluate_status = ? OR (evaluate_status = ? AND evaluate_lease_until < ?))", PlanEvalGenerateDone, PlanEvalEvaluatePending, PlanEvalEvaluateRunning, now).
+		Where("generate_status = ? AND (evaluate_status = ? OR (evaluate_status = ? AND evaluate_lease_until <= ?))", PlanEvalGenerateDone, PlanEvalEvaluatePending, PlanEvalEvaluateRunning, now).
 		Order("created_at ASC, id ASC").Limit(limit).Pluck("id", &ids).Error; err != nil {
 		return nil, fmt.Errorf("storage: list eligible evaluations: %w", err)
 	}
 	work := make([]PlanEvalEvaluationWork, 0, len(ids))
 	for _, id := range ids {
+		leaseUntil := now.Add(leaseFor).Truncate(time.Millisecond)
 		res := s.db.WithContext(ctx).Model(&PlanEvalExecution{}).
-			Where("id = ? AND generate_status = ? AND (evaluate_status = ? OR (evaluate_status = ? AND evaluate_lease_until < ?))", id, PlanEvalGenerateDone, PlanEvalEvaluatePending, PlanEvalEvaluateRunning, now).
-			Updates(map[string]any{"evaluate_status": PlanEvalEvaluateRunning, "evaluate_lease_until": now.Add(leaseFor), "updated_at": now})
+			Where("id = ? AND generate_status = ? AND (evaluate_status = ? OR (evaluate_status = ? AND evaluate_lease_until <= ?))", id, PlanEvalGenerateDone, PlanEvalEvaluatePending, PlanEvalEvaluateRunning, now).
+			Updates(map[string]any{"evaluate_status": PlanEvalEvaluateRunning, "evaluate_lease_until": leaseUntil, "updated_at": now})
 		if res.Error != nil {
 			return nil, fmt.Errorf("storage: claim plan_eval_executions evaluation: %w", res.Error)
 		}
@@ -637,6 +864,7 @@ func (s *Store) ClaimPlanEvalEvaluations(ctx context.Context, now time.Time, lea
 		if err != nil {
 			return nil, err
 		}
+		one.LeaseUntil = leaseUntil
 		work = append(work, *one)
 	}
 	return work, nil
@@ -655,10 +883,27 @@ func (s *Store) loadPlanEvalEvaluationWork(ctx context.Context, executionID stri
 	if err != nil {
 		return nil, err
 	}
+	var done []string
+	if err := s.db.WithContext(ctx).Model(&PlanEvalCheckResult{}).Where("artifact_id = ?", artifact.ID).Pluck("check_id", &done).Error; err != nil {
+		return nil, err
+	}
+	pending := rules[:0]
+	for _, rule := range rules {
+		found := false
+		for _, checkID := range done {
+			if rule.CheckID == checkID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			pending = append(pending, rule)
+		}
+	}
 	return &PlanEvalEvaluationWork{
 		ExecutionID: executionID, ScenarioID: execution.ScenarioID, ArtifactID: artifact.ID, ArtifactType: artifact.ArtifactType,
 		ArtifactContent: artifact.Content, AsOf: execution.AsOf, RequestJSON: execution.RequestJSON,
-		SnapshotJSON: execution.SnapshotJSON, Rules: rules,
+		SnapshotJSON: execution.SnapshotJSON, Rules: pending,
 	}, nil
 }
 
@@ -666,26 +911,39 @@ func (s *Store) loadPlanEvalEvaluationWork(ctx context.Context, executionID stri
 // check_id) — a verdict that already exists is kept, so a takeover after a
 // crash never overwrites a finished check — then closes the evaluation with
 // `evaluateStatus`.
-func (s *Store) SavePlanEvalCheckResults(ctx context.Context, executionID string, results []PlanEvalCheckResult, evaluateStatus string, now time.Time) error {
+func (s *Store) SavePlanEvalCheckResults(ctx context.Context, executionID string, leaseUntil time.Time, results []PlanEvalCheckResult, evaluateStatus string, now time.Time) error {
+	started := time.Now()
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var execution PlanEvalExecution
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&execution, "id = ?", executionID).Error; err != nil {
 			return fmt.Errorf("storage: lock plan_eval_executions for evaluation: %w", err)
 		}
+		now = now.Add(time.Since(started))
+		if execution.EvaluateStatus != PlanEvalEvaluateRunning || execution.EvaluateLeaseUntil == nil || !execution.EvaluateLeaseUntil.Equal(leaseUntil) || !execution.EvaluateLeaseUntil.After(now) {
+			return ErrPlanEvalStaleLease
+		}
 		for i := range results {
+			if results[i].ArtifactID != execution.ArtifactID {
+				return errors.New("storage: evaluation artifact mismatch")
+			}
 			results[i].ID = uuid.NewString()
 			results[i].CreatedAt = now
 			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&results[i]).Error; err != nil {
 				return fmt.Errorf("storage: create plan_eval_check_results: %w", err)
 			}
 		}
-		if err := tx.Model(&PlanEvalExecution{}).Where("id = ?", executionID).Updates(map[string]any{
-			"evaluate_status": evaluateStatus, "evaluate_lease_until": nil, "updated_at": now,
-		}).Error; err != nil {
+		changes := map[string]any{"evaluate_status": evaluateStatus, "updated_at": now}
+		if evaluateStatus != PlanEvalEvaluateRunning {
+			changes["evaluate_lease_until"] = nil
+		}
+		if err := tx.Model(&PlanEvalExecution{}).Where("id = ?", executionID).Updates(changes).Error; err != nil {
 			return fmt.Errorf("storage: finish plan_eval_executions evaluation: %w", err)
 		}
+		if evaluateStatus == PlanEvalEvaluateRunning {
+			return nil
+		}
 		return planEvalRefreshTaskStatus(tx, execution.TaskID, now)
-	})
+	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 }
 
 // planEvalRefreshTaskStatus moves the task to done once every execution has
@@ -712,8 +970,12 @@ func planEvalRefreshTaskStatus(tx *gorm.DB, taskID string, now time.Time) error 
 // version are still waiting for, or under, a generate lease. Cleanup refuses
 // while this is non-zero.
 func (s *Store) CountPlanEvalActiveGenerates(ctx context.Context, agentVersion string) (int64, error) {
+	return countPlanEvalActiveGenerates(s.db.WithContext(ctx), agentVersion)
+}
+
+func countPlanEvalActiveGenerates(db *gorm.DB, agentVersion string) (int64, error) {
 	var n int64
-	err := s.db.WithContext(ctx).Model(&PlanEvalExecution{}).
+	err := db.Model(&PlanEvalExecution{}).
 		Where("generate_status IN ('queued','leased') AND task_id IN (SELECT id FROM plan_eval_tasks WHERE agent_version = ?)", agentVersion).
 		Count(&n).Error
 	if err != nil {

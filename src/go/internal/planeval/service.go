@@ -33,7 +33,7 @@ type Config struct {
 // queueBroker is the slice of the broker the service uses; *Broker is the
 // real one, tests substitute an in-memory queue.
 type queueBroker interface {
-	EnsureQueue(name string) error
+	EnsureQueue(ctx context.Context, name string) error
 	Publish(ctx context.Context, queue string, message ExecuteMessage) error
 	QueueDepth(ctx context.Context, queue string) (QueueDepth, error)
 }
@@ -47,9 +47,6 @@ type Service struct {
 	secrets  *SecretKey
 	cfg      Config
 	log      *zap.Logger
-	// The scheduler API has one replica. Serialize launches and cleanup so
-	// a Deployment cannot be removed between another task's checks and start.
-	runtimeMu sync.Mutex
 	// evaluateMu keeps this replica's sweeps from overlapping; cross-replica
 	// safety comes from the compare-and-set claim in storage.
 	evaluateMu sync.Mutex
@@ -113,9 +110,10 @@ type DeploymentView struct {
 }
 
 type AgentVersionView struct {
-	AgentVersion string            `json:"agent_version"`
-	LaunchConfig *LaunchConfigView `json:"launch_config"`
-	Deployment   *DeploymentView   `json:"deployment"`
+	AgentVersion   string            `json:"agent_version"`
+	LaunchConfig   *LaunchConfigView `json:"launch_config"`
+	Deployment     *DeploymentView   `json:"deployment"`
+	CleanupPending bool              `json:"cleanup_pending,omitempty"`
 }
 
 type TaskProgress struct {
@@ -220,11 +218,14 @@ func (s *Service) AgentVersions(ctx context.Context) ([]AgentVersionView, error)
 	for _, version := range versions {
 		view := AgentVersionView{AgentVersion: version}
 		if config := byVersion[version]; config != nil {
-			var names []string
-			if err := json.Unmarshal([]byte(config.EnvNames), &names); err != nil {
-				return nil, err
+			view.CleanupPending = config.CleanupPending
+			if config.Replicas > 0 {
+				var names []string
+				if err := json.Unmarshal([]byte(config.EnvNames), &names); err != nil {
+					return nil, err
+				}
+				view.LaunchConfig = &LaunchConfigView{Replicas: config.Replicas, EnvNames: names}
 			}
-			view.LaunchConfig = &LaunchConfigView{Replicas: config.Replicas, EnvNames: names}
 		}
 		status, err := s.deployer.Status(ctx, version)
 		if err != nil {
@@ -295,9 +296,26 @@ type taskParams struct {
 // that the idempotency key matched an existing task, which is then returned
 // without publishing again.
 func (s *Service) CreateTask(ctx context.Context, submitter, idempotencyKey string, req CreateTaskRequest) (view *TaskDetailView, replayed bool, err *Error) {
-	s.runtimeMu.Lock()
-	defer s.runtimeMu.Unlock()
+	lockErr := s.withVersion(ctx, req.AgentVersion, func(ctx context.Context) *Error {
+		view, replayed, err = s.createTask(ctx, submitter, idempotencyKey, req)
+		return err
+	})
+	return view, replayed, lockErr
+}
 
+func (s *Service) withVersion(ctx context.Context, version string, run func(context.Context) *Error) *Error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 45*time.Second)
+	defer cancel()
+	err := s.store.WithPlanEvalVersionLock(ctx, version, func(ctx context.Context) error {
+		if err := run(ctx); err != nil {
+			return err
+		}
+		return nil
+	})
+	return s.mapStorageError(err)
+}
+
+func (s *Service) createTask(ctx context.Context, submitter, idempotencyKey string, req CreateTaskRequest) (*TaskDetailView, bool, *Error) {
 	if idempotencyKey == "" || len(idempotencyKey) > 128 {
 		return nil, false, fail(400, "invalid_request", "Idempotency-Key 请求头必填，且不超过 128 字符")
 	}
@@ -305,10 +323,7 @@ func (s *Service) CreateTask(ctx context.Context, submitter, idempotencyKey stri
 		return nil, false, fail(422, "invalid_request", "未登记的 Agent 版本："+req.AgentVersion)
 	}
 	replicas := req.Replicas
-	if replicas == 0 {
-		replicas = 1
-	}
-	if replicas < 1 || replicas > s.cfg.MaxReplicas {
+	if replicas < 0 || replicas > s.cfg.MaxReplicas {
 		return nil, false, fail(422, "invalid_request", fmt.Sprintf("副本数须在 1–%d 之间", s.cfg.MaxReplicas))
 	}
 	env, names, err := s.validateEnv(req.Env)
@@ -329,6 +344,10 @@ func (s *Service) CreateTask(ctx context.Context, submitter, idempotencyKey stri
 	params := taskParams{AgentVersion: req.AgentVersion, ScenarioID: scenario.ID, Replicas: replicas, Env: envDigests}
 	encoded, _ := json.Marshal(params)
 	sum := sha256.Sum256(encoded)
+	if params.Replicas == 0 {
+		params.Replicas = 1
+	}
+	legacySum := sha256.Sum256(mustJSON(params))
 	cipher, cerr := s.secrets.Seal(env)
 	if cerr != nil {
 		return nil, false, s.internal(cerr)
@@ -339,10 +358,10 @@ func (s *Service) CreateTask(ctx context.Context, submitter, idempotencyKey stri
 	launch.EnvFingerprint = hex.EncodeToString(envFingerprint[:])
 	task := &storage.PlanEvalTask{
 		ID: uuid.NewString(), AgentVersion: req.AgentVersion, ScenarioID: scenario.ID,
-		Submitter: submitter, IdempotencyKey: idempotencyKey, ParamsFingerprint: hex.EncodeToString(sum[:]),
+		Submitter: submitter, IdempotencyKey: idempotencyKey, ParamsFingerprint: "v2:" + hex.EncodeToString(sum[:]),
 	}
 	created, replayed, derr := s.store.CreatePlanEvalTask(ctx, &storage.PlanEvalTaskCreate{
-		Task: task, LaunchConfig: launch, EnvCipher: cipher, Executions: executions, FrozenRules: frozenRules,
+		Task: task, LegacyParamsFingerprint: hex.EncodeToString(legacySum[:]), LaunchConfig: launch, EnvCipher: cipher, Executions: executions, FrozenRules: frozenRules,
 	})
 	if derr != nil {
 		return nil, false, s.mapStorageError(derr)
@@ -357,16 +376,24 @@ func (s *Service) CreateTask(ctx context.Context, submitter, idempotencyKey stri
 // RetryLaunch restarts a frozen task without requiring the original browser to
 // retain the idempotency key or the model credentials.
 func (s *Service) RetryLaunch(ctx context.Context, id string) (*TaskDetailView, *Error) {
-	s.runtimeMu.Lock()
-	defer s.runtimeMu.Unlock()
 	task, err := s.store.GetPlanEvalTask(ctx, id)
 	if err != nil {
 		return nil, s.mapStorageError(err)
 	}
-	if launchErr := s.launchAndRecord(ctx, task); launchErr != nil {
-		return nil, launchErr
-	}
-	return s.TaskDetail(ctx, task.ID)
+	var view *TaskDetailView
+	lockErr := s.withVersion(ctx, task.AgentVersion, func(ctx context.Context) *Error {
+		task, err := s.store.GetPlanEvalTask(ctx, id)
+		if err != nil {
+			return s.mapStorageError(err)
+		}
+		if launchErr := s.launchAndRecord(ctx, task); launchErr != nil {
+			return launchErr
+		}
+		var viewErr *Error
+		view, viewErr = s.TaskDetail(ctx, task.ID)
+		return viewErr
+	})
+	return view, lockErr
 }
 
 func (s *Service) launchAndRecord(ctx context.Context, task *storage.PlanEvalTask) *Error {
@@ -378,10 +405,10 @@ func (s *Service) launchAndRecord(ctx context.Context, task *storage.PlanEvalTas
 	}
 	// Once frozen, finish the launch attempt even if the browser disconnects.
 	// Any unconfirmed publish can be retried with the original task key.
-	launchCtx, cancelLaunch := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	launchCtx, cancelLaunch := context.WithTimeout(ctx, 30*time.Second)
 	lerr := s.launch(launchCtx, task)
 	cancelLaunch()
-	resultCtx, cancelResult := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	resultCtx, cancelResult := context.WithTimeout(ctx, 5*time.Second)
 	defer cancelResult()
 	if lerr != nil {
 		if uerr := s.store.RecordPlanEvalLaunch(resultCtx, task.ID, lerr.Error()); uerr != nil {
@@ -402,12 +429,17 @@ func (s *Service) internal(err error) *Error {
 
 func (s *Service) mapStorageError(err error) *Error {
 	switch e := err.(type) {
+	case *Error:
+		return e
 	case *storage.PlanEvalIdempotencyConflictError:
 		return &Error{Status: 409, Code: "idempotency_conflict", Detail: "同一幂等键已用于参数不同的任务。", Extra: map[string]any{"task_id": e.ExistingTaskID}}
 	case *storage.PlanEvalLaunchConfigConflictError:
 		return &Error{Status: 409, Code: "launch_config_conflict", Detail: "该 Agent 版本已有一份启动配置。环境变量留空则沿用；要更换请先清理该版本的 Deployment。"}
 	case nil:
 		return nil
+	}
+	if errors.Is(err, storage.ErrPlanEvalVersionBusy) {
+		return fail(409, "version_busy", "该版本正在启动、扩缩容或清理，请稍后重试。")
 	}
 	if errors.Is(err, storage.ErrPlanEvalNotFound) {
 		return fail(404, "not_found", "对象不存在")
@@ -469,7 +501,7 @@ func (s *Service) freeze(ctx context.Context, scenario *scenarioDocument) ([]*st
 			return nil, nil, s.internal(err)
 		}
 		executionID := uuid.NewString()
-		request, rerr := stampRequest(scenario.RequestJSON, executionID, scenario.AsOf)
+		request, rerr := stampRequest(scenario.RequestJSON, executionID, scenario.AsOf, scenario.ArtifactType)
 		if rerr != nil {
 			return nil, nil, s.internal(rerr)
 		}
@@ -484,14 +516,21 @@ func (s *Service) freeze(ctx context.Context, scenario *scenarioDocument) ([]*st
 
 // stampRequest writes the two fields that are per-execution into the request
 // template: its id and the frozen instant the kernel reads the clock from.
-func stampRequest(template string, executionID, asOf string) (string, error) {
+func stampRequest(template string, executionID, asOf, artifactType string) (string, error) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(template), &fields); err != nil {
 		return "", fmt.Errorf("scenario request template: %w", err)
 	}
+	if fields == nil {
+		return "", fmt.Errorf("scenario request template must be an object")
+	}
 	id, _ := json.Marshal("plan-eval-" + executionID)
 	instant, _ := json.Marshal(asOf)
-	fields["request_id"], fields["requested_as_of"] = id, instant
+	timeField := "requested_as_of"
+	if artifactType == "weekly_plan_batch" {
+		timeField = "as_of"
+	}
+	fields["request_id"], fields[timeField] = id, instant
 	return string(mustJSON(fields)), nil
 }
 
@@ -514,31 +553,43 @@ func digestEnv(env map[string]string) map[string]string {
 
 // launch makes the version runnable: queue, pointer messages, Deployment.
 func (s *Service) launch(ctx context.Context, task *storage.PlanEvalTask) error {
-	queue := QueueName(task.AgentVersion)
-	if err := s.broker.EnsureQueue(queue); err != nil {
-		return err
-	}
 	executions, err := s.store.ListPlanEvalExecutions(ctx, task.ID)
 	if err != nil {
 		return err
 	}
+	hasActive := false
 	for _, execution := range executions {
-		if execution.GenerateStatus != storage.PlanEvalGenerateQueued {
-			continue
+		if !storage.PlanEvalGenerateTerminal(execution.GenerateStatus) {
+			hasActive = true
+			break
 		}
-		if err := s.broker.Publish(ctx, queue, ExecuteMessage{SchemaVersion: ExecuteMessageSchemaVersion, SnapshotExecutionID: execution.ID}); err != nil {
-			return err
-		}
+	}
+	if !hasActive {
+		return nil
 	}
 	config, err := s.store.GetPlanEvalLaunchConfig(ctx, task.LaunchConfigID)
 	if err != nil {
 		return err
 	}
-	env, err := s.secrets.Open(config.EnvCipher)
-	if err != nil {
+	if config.CleanupPending {
+		return storage.ErrPlanEvalVersionBusy
+	}
+	queue := QueueName(task.AgentVersion)
+	if err := s.broker.EnsureQueue(ctx, queue); err != nil {
 		return err
 	}
-	return s.deployer.Ensure(ctx, WorkerSpec{AgentVersion: task.AgentVersion, Replicas: config.Replicas, Env: env})
+	for _, execution := range executions {
+		if storage.PlanEvalGenerateTerminal(execution.GenerateStatus) || execution.DispatchedAt != nil {
+			continue
+		}
+		if err := s.broker.Publish(ctx, queue, ExecuteMessage{SchemaVersion: ExecuteMessageSchemaVersion, SnapshotExecutionID: execution.ID}); err != nil {
+			return fmt.Errorf("publish: %w", err)
+		}
+		if err := s.store.RecordPlanEvalDispatch(ctx, execution.ID); err != nil {
+			return err
+		}
+	}
+	return s.applyLaunchConfig(ctx, config)
 }
 
 // ---- reads ----
@@ -578,7 +629,9 @@ func (s *Service) taskViews(ctx context.Context, tasks []storage.PlanEvalTask) (
 	}
 	launchByID := make(map[string]*storage.PlanEvalLaunchConfig, len(configs))
 	for i := range configs {
-		launchByID[configs[i].ID] = &configs[i]
+		if configs[i].Replicas > 0 {
+			launchByID[configs[i].ID] = &configs[i]
+		}
 	}
 	views := make([]TaskView, len(tasks))
 	for i := range tasks {
@@ -694,4 +747,46 @@ func (s *Service) Artifact(ctx context.Context, id string) (*storage.PlanEvalArt
 		return nil, s.mapStorageError(err)
 	}
 	return artifact, nil
+}
+
+// Scale changes the shared concurrency of exactly one version.
+func (s *Service) Scale(ctx context.Context, version string, replicas int) *Error {
+	if !s.knownVersion(version) || replicas < 1 || replicas > s.cfg.MaxReplicas {
+		return fail(422, "invalid_request", fmt.Sprintf("已登记版本的副本数须在 1–%d 之间", s.cfg.MaxReplicas))
+	}
+	return s.withVersion(ctx, version, func(ctx context.Context) *Error {
+		// Persist the desired count first: retry-launch restores it after a cluster fault.
+		revision, err := s.store.SetPlanEvalReplicas(ctx, version, replicas)
+		if err != nil {
+			return s.mapStorageError(err)
+		}
+		if err := s.deployer.Scale(ctx, version, replicas, revision); err != nil {
+			s.log.Error("plan-eval: scale", zap.Error(err))
+			return fail(502, "scale_failed", "调整 Deployment 副本失败，请重试。")
+		}
+		return nil
+	})
+}
+
+func (s *Service) applyLaunchConfig(ctx context.Context, config *storage.PlanEvalLaunchConfig) error {
+	env, err := s.secrets.Open(config.EnvCipher)
+	if err != nil {
+		return err
+	}
+	if err := s.deployer.Ensure(ctx, WorkerSpec{
+		AgentVersion: config.AgentVersion, Replicas: config.Replicas, RuntimeRevision: config.RuntimeRevision, Env: env,
+		checkCreate: func(ctx context.Context) error {
+			current, err := s.store.GetPlanEvalLaunchConfig(ctx, config.ID)
+			if err != nil {
+				return err
+			}
+			if current.CleanupPending || current.RuntimeRevision != config.RuntimeRevision {
+				return storage.ErrPlanEvalVersionBusy
+			}
+			return nil
+		},
+	}); err != nil {
+		return fmt.Errorf("deployment: %w", err)
+	}
+	return nil
 }

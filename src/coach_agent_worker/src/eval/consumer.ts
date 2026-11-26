@@ -55,7 +55,7 @@ export class EvalConsumer {
     const ch = await this.queue.openChannel(false);
     await ch.prefetch(prefetch);
     // 测评 API 负责建队；这里幂等重申，本地单跑 worker 时不必先建拓扑。
-    await ch.assertQueue(this.queueName, { durable: true });
+    await ch.assertQueue(this.queueName, { durable: true, arguments: { "x-queue-type": "classic" } });
     await ch.consume(
       this.queueName,
       (message) => {

@@ -43,3 +43,13 @@ func TestSecretKey_RejectsBadKeyMaterial(t *testing.T) {
 		}
 	}
 }
+
+func TestSecretKey_WorkerTokensAreVersionBound(t *testing.T) {
+	first := versionWorkerToken("root-secret", "2026.11.30")
+	if first == "root-secret" || first == versionWorkerToken("root-secret", "2026.11.31") || first == versionWorkerToken("another-root", "2026.11.30") {
+		t.Fatal("worker token not isolated")
+	}
+	if first != versionWorkerToken("root-secret", "2026.11.30") || versionWorkerToken("", "2026.11.30") != "" {
+		t.Fatal("worker token derivation unstable")
+	}
+}

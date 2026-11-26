@@ -2,8 +2,10 @@ package planeval
 
 import (
 	"crypto/subtle"
+	"encoding/base64"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/zhaochy1990/stride/internal/httplog"
@@ -29,6 +31,7 @@ func (s *Service) Router(adminAuth gin.HandlerFunc, adminID func(*gin.Context) s
 	admin := r.Group(adminPrefix, adminAuth)
 	admin.GET("/agent-versions", s.handleAgentVersions)
 	admin.POST("/agent-versions/:version/cleanup", s.handleCleanup)
+	admin.POST("/agent-versions/:version/scale", s.handleScale)
 	admin.POST("/tasks", func(c *gin.Context) { s.handleCreateTask(c, adminID(c)) })
 	admin.GET("/tasks", s.handleListTasks)
 	admin.GET("/tasks/:id", s.handleTaskDetail)
@@ -47,10 +50,13 @@ func (s *Service) Router(adminAuth gin.HandlerFunc, adminID func(*gin.Context) s
 func workerAuth(token string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		presented := c.GetHeader(workerTokenHeader)
-		if token == "" || subtle.ConstantTimeCompare([]byte(presented), []byte(token)) != 1 {
+		encoded, _, _ := strings.Cut(presented, ".")
+		version, err := base64.RawURLEncoding.DecodeString(encoded)
+		if token == "" || err != nil || !validAgentVersion(string(version)) || subtle.ConstantTimeCompare([]byte(presented), []byte(versionWorkerToken(token, string(version)))) != 1 {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
 		}
+		c.Set("worker_agent_version", string(version))
 		c.Next()
 	}
 }
@@ -151,6 +157,11 @@ func (s *Service) handleClaim(c *gin.Context) {
 	if !decode(c, &req) {
 		return
 	}
+	if req.AgentVersion != c.GetString("worker_agent_version") {
+		writeError(c, fail(409, "agent_version_mismatch", "凭据不属于请求的 Agent 版本"))
+		return
+	}
+
 	body, err := s.Claim(c.Request.Context(), req)
 	if err != nil {
 		writeError(c, err)
@@ -164,6 +175,11 @@ func (s *Service) handleRenew(c *gin.Context) {
 	if !decode(c, &req) {
 		return
 	}
+	if req.AgentVersion != c.GetString("worker_agent_version") {
+		writeError(c, fail(409, "agent_version_mismatch", "凭据不属于请求的 Agent 版本"))
+		return
+	}
+
 	body, err := s.Renew(c.Request.Context(), c.Param("id"), req)
 	if err != nil {
 		writeError(c, err)
@@ -177,10 +193,29 @@ func (s *Service) handleSubmit(c *gin.Context) {
 	if !decode(c, &req) {
 		return
 	}
+	if req.AgentVersion != c.GetString("worker_agent_version") {
+		writeError(c, fail(409, "agent_version_mismatch", "凭据不属于请求的 Agent 版本"))
+		return
+	}
+
 	body, err := s.Submit(c.Request.Context(), c.Param("id"), req)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, body)
+}
+
+func (s *Service) handleScale(c *gin.Context) {
+	var req struct {
+		Replicas int `json:"replicas"`
+	}
+	if !decode(c, &req) {
+		return
+	}
+	if err := s.Scale(c.Request.Context(), c.Param("version"), req.Replicas); err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"agent_version": c.Param("version"), "replicas": req.Replicas})
 }

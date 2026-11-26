@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { type EvalApiClient, MissingExecutionError, StaleLeaseError } from "../../src/eval/client.js";
+import { type EvalApiClient, type EvalLease, MissingExecutionError, StaleLeaseError } from "../../src/eval/client.js";
 import { EvalDispatcher } from "../../src/eval/dispatch.js";
 import type { ClaimResponse, ExecutionInput, GenerateReceipt, GenerateResult } from "../../src/eval/protocol.js";
 import { EXECUTION_ID, input, leased, receipt } from "./fixtures.js";
@@ -13,17 +13,17 @@ type Script = Partial<Pick<EvalApiClient, "claim" | "renew" | "submit">>;
 function build(script: Script, generate: (input: ExecutionInput, signal: { lost: boolean }) => Promise<GenerateResult>, clock = { now: 0 }) {
   const calls: string[] = [];
   const client = {
-    claim: async (id: string, version: string, worker: string) => {
+    claim: async (id: string, version: string, worker: string, claimRequestId: string) => {
       calls.push(`claim:${id}:${version}:${worker}`);
-      return script.claim ? script.claim(id, version, worker) : leased();
+      return script.claim ? script.claim(id, version, worker, claimRequestId) : leased();
     },
-    renew: async (id: string, epoch: number) => {
-      calls.push(`renew:${id}:${epoch}`);
-      return script.renew ? script.renew(id, epoch) : undefined;
+    renew: async (id: string, lease: EvalLease) => {
+      calls.push(`renew:${id}:${lease.lease_epoch}`);
+      return script.renew ? script.renew(id, lease) : undefined;
     },
-    submit: async (id: string, epoch: number, result: GenerateResult) => {
-      calls.push(`submit:${id}:${epoch}:${result.kind}`);
-      return script.submit ? script.submit(id, epoch, result) : receipt;
+    submit: async (id: string, lease: EvalLease, result: GenerateResult, submitId: string) => {
+      calls.push(`submit:${id}:${lease.lease_epoch}:${result.kind}`);
+      return script.submit ? script.submit(id, lease, result, submitId) : receipt;
     },
   } as unknown as EvalApiClient;
   const dispatcher = new EvalDispatcher({
@@ -126,4 +126,29 @@ test("input flows from the claim into generate untouched", async () => {
     return artifact;
   }).dispatcher.process(executionMessage());
   assert.deepEqual(seen, [input]);
+});
+
+test("claim retries retain their request ID and zero busy hints cannot spin", async () => {
+  const requestIds: string[] = [];
+  const identities: EvalLease[] = [];
+  const clock = { now: 0 };
+  const { dispatcher } = build(
+    {
+      claim: async (_id, _version, _worker, requestId) => {
+        requestIds.push(requestId);
+        return requestIds.length === 1 ? { status: "busy", retry_after_ms: 0 } : leased();
+      },
+      submit: async (_id, identity, _result, submitId) => {
+        identities.push(identity);
+        assert.ok(submitId.length > 0);
+        return receipt;
+      },
+    },
+    generateOk,
+    clock,
+  );
+  await dispatcher.process(executionMessage());
+  assert.equal(clock.now, 1);
+  assert.equal(requestIds[0], requestIds[1]);
+  assert.deepEqual(identities, [{ agent_version: "2026.11.30", worker_id: "worker-1", lease_epoch: 1 }]);
 });

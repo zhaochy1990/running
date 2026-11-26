@@ -2,6 +2,12 @@ package planeval
 
 import (
 	"context"
+	"fmt"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	k8stesting "k8s.io/client-go/testing"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -44,7 +50,7 @@ func TestKubernetesDeployer_EnsureCreatesSecretThenDeployment(t *testing.T) {
 	}
 	// The administrator's variables and the two runtime secrets; the pod
 	// template never carries a value.
-	for key, want := range map[string]string{"DEEPSEEK_API_KEY": "sk-live", "PLAN_WORKER_EVAL_API_TOKEN": "worker-secret", "PLAN_WORKER_AMQP_URL": "amqp://guest:guest@rabbitmq:5672/"} {
+	for key, want := range map[string]string{"DEEPSEEK_API_KEY": "sk-live", "PLAN_WORKER_EVAL_API_TOKEN": versionWorkerToken("worker-secret", spec.AgentVersion), "PLAN_WORKER_AMQP_URL": "amqp://guest:guest@rabbitmq:5672/"} {
 		if got := string(secret.Data[key]); got != want {
 			t.Errorf("secret[%s] = %q, want %q", key, got, want)
 		}
@@ -128,10 +134,14 @@ func TestKubernetesDeployer_DeleteRemovesDeploymentAndSecretIdempotently(t *test
 	if err := d.Ensure(ctx, WorkerSpec{AgentVersion: "2026.11.30", Replicas: 1, Env: map[string]string{}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.Delete(ctx, "2026.11.30"); err != nil {
+	expected, err := d.Status(ctx, "2026.11.30")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Delete(ctx, "2026.11.30", expected); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if err := d.Delete(ctx, "2026.11.30"); err != nil {
+	if err := d.Delete(ctx, "2026.11.30", expected); err != nil {
 		t.Fatalf("delete again: %v", err)
 	}
 	if status, err := d.Status(ctx, "2026.11.30"); err != nil || status.Present {
@@ -160,5 +170,119 @@ func TestDeployer_RejectsUnusableVersionsAndUnknownKinds(t *testing.T) {
 	}
 	if _, err := NewDeployer("none", KubernetesOptions{}); err != nil {
 		t.Errorf("none deployer: %v", err)
+	}
+}
+
+func TestKubernetesDeployer_RefusesTerminatingDeployment(t *testing.T) {
+	d := newFakeDeployer()
+	ctx := context.Background()
+	spec := WorkerSpec{AgentVersion: "2026.11.30", Replicas: 1, Env: map[string]string{}}
+	if err := d.Ensure(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	deployment, err := d.client.AppsV1().Deployments("stride").Get(ctx, WorkerName(spec.AgentVersion), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := metav1.Now()
+	deployment.DeletionTimestamp = &now
+	if _, err := d.client.AppsV1().Deployments("stride").Update(ctx, deployment, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Ensure(ctx, spec); err == nil || !strings.Contains(err.Error(), "still being deleted") {
+		t.Fatalf("terminating deployment accepted: %v", err)
+	}
+}
+
+func TestKubernetesDeployer_CleanupUsesPreGateResourceRevision(t *testing.T) {
+	d := newFakeDeployer()
+	ctx := context.Background()
+	spec := WorkerSpec{AgentVersion: "2026.11.30", Replicas: 1, Env: map[string]string{}}
+	if err := d.Ensure(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	deployments := d.client.AppsV1().Deployments("stride")
+	name := WorkerName(spec.AgentVersion)
+	current, err := deployments.Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	current.UID, current.ResourceVersion = "original-worker", "1"
+	if _, err := deployments.Update(ctx, current, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	expected, err := d.Status(ctx, spec.AgentVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A new start after the idle gate updates the same Deployment (same UID).
+	current.ResourceVersion = "2"
+	if _, err := deployments.Update(ctx, current, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	d.client.(*fake.Clientset).PrependReactor("delete", "deployments", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		preconditions := action.(k8stesting.DeleteAction).GetDeleteOptions().Preconditions
+		if preconditions == nil || preconditions.UID == nil || string(*preconditions.UID) != "original-worker" || preconditions.ResourceVersion == nil || *preconditions.ResourceVersion != "1" {
+			t.Fatal("cleanup re-read new identity instead of using its pre-gate revision")
+		}
+		return true, nil, apierrors.NewConflict(schema.GroupResource{Group: "apps", Resource: "deployments"}, name, fmt.Errorf("resourceVersion changed"))
+	})
+	if err := d.Delete(ctx, spec.AgentVersion, expected); err == nil {
+		t.Fatal("stale cleanup deleted new worker")
+	}
+	if _, err := deployments.Get(ctx, name, metav1.GetOptions{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestKubernetesDeployer_RuntimeRevisionRejectsStaleEnsureAndScale(t *testing.T) {
+	d := newFakeDeployer()
+	ctx := context.Background()
+	spec := WorkerSpec{AgentVersion: "2026.11.30", Replicas: 1, RuntimeRevision: 1, Env: map[string]string{}}
+	if err := d.Ensure(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	first, err := d.client.AppsV1().Deployments("stride").Get(ctx, WorkerName(spec.AgentVersion), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := spec
+	next.RuntimeRevision++
+	if err := d.Ensure(ctx, next); err != nil {
+		t.Fatal(err)
+	}
+	second, err := d.client.AppsV1().Deployments("stride").Get(ctx, WorkerName(spec.AgentVersion), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Annotations[runtimeRevisionAnnotation] != "1" || second.Annotations[runtimeRevisionAnnotation] != "2" {
+		t.Fatal("same-config start was an empty update, allowing stale cleanup")
+	}
+	if !reflect.DeepEqual(first.Spec.Template, second.Spec.Template) {
+		t.Fatal("runtime fence unnecessarily rolled pods")
+	}
+	if err := d.Scale(ctx, spec.AgentVersion, 4, 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Scale(ctx, spec.AgentVersion, 8, 2); err == nil {
+		t.Fatal("stale scale changed the Deployment")
+	}
+	if err := d.Ensure(ctx, spec); err == nil {
+		t.Fatal("stale launch changed the Deployment")
+	}
+	status, err := d.Status(ctx, spec.AgentVersion)
+	if err != nil || status.Replicas != 4 || status.DeploymentRevision != 3 || status.SecretRevision != 2 {
+		t.Fatalf("new runtime lost: %+v, %v", status, err)
+	}
+	if err := d.Delete(ctx, spec.AgentVersion, status); err != nil {
+		t.Fatal(err)
+	}
+	spec.checkCreate = func(context.Context) error { return fmt.Errorf("configuration retired") }
+	if err := d.Ensure(ctx, spec); err == nil {
+		t.Fatal("retired launch recreated an absent runtime")
+	}
+	status, err = d.Status(ctx, spec.AgentVersion)
+	if err != nil || status.Present || status.SecretPresent {
+		t.Fatalf("retired credentials or worker recreated: %+v, %v", status, err)
 	}
 }

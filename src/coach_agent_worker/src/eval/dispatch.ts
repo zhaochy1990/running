@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { getLogger } from "@stride/common";
 import { type EvalApiClient, MissingExecutionError, StaleLeaseError } from "./client.js";
 import type { EvalExecutionMessage, ExecutionInput, GenerateResult } from "./protocol.js";
@@ -40,9 +41,10 @@ export class EvalDispatcher {
 
   async process(message: EvalExecutionMessage): Promise<void> {
     const id = message.snapshot_execution_id;
+    const claimRequestId = randomUUID();
     const waitDeadline = this.now() + this.deps.lease.busyMaxWaitMs;
     for (;;) {
-      const claim = await this.deps.client.claim(id, this.deps.agentVersion, this.deps.workerId);
+      const claim = await this.deps.client.claim(id, this.deps.agentVersion, this.deps.workerId, claimRequestId);
       if (claim.status === "terminal" || claim.status === "missing") {
         logger.info({ snapshotExecutionId: id, status: claim.status }, "snapshot execution already settled, acknowledging duplicate delivery");
         return;
@@ -50,7 +52,7 @@ export class EvalDispatcher {
       if (claim.status === "busy") {
         const remaining = waitDeadline - this.now();
         if (remaining <= 0) throw new Error(`lease of snapshot execution ${id} stayed busy for ${this.deps.lease.busyMaxWaitMs}ms`);
-        await this.sleep(Math.min(claim.retry_after_ms, remaining));
+        await this.sleep(Math.max(1, Math.min(claim.retry_after_ms, 5_000, remaining)));
         continue;
       }
       await this.runLeased(id, claim.lease_epoch, claim.input);
@@ -59,9 +61,11 @@ export class EvalDispatcher {
   }
 
   private async runLeased(id: string, epoch: number, input: ExecutionInput): Promise<void> {
+    const identity = { agent_version: this.deps.agentVersion, worker_id: this.deps.workerId, lease_epoch: epoch };
+    const submitId = randomUUID();
     const lease = { lost: false };
     const renewTimer = setInterval(() => {
-      void this.deps.client.renew(id, epoch).catch((error: unknown) => {
+      void this.deps.client.renew(id, identity).catch((error: unknown) => {
         if (error instanceof StaleLeaseError) {
           lease.lost = true;
           logger.warn({ snapshotExecutionId: id, epoch }, "lease taken over by another worker; dropping this attempt");
@@ -75,7 +79,7 @@ export class EvalDispatcher {
     try {
       const result = await this.deps.generate(input, lease);
       if (lease.lost) throw new StaleLeaseError(id, "renew");
-      const receipt = await this.deps.client.submit(id, epoch, result);
+      const receipt = await this.deps.client.submit(id, identity, result, submitId);
       logger.info({ snapshotExecutionId: id, receipt }, "generate result persisted, acknowledging");
     } catch (error) {
       if (error instanceof MissingExecutionError) {

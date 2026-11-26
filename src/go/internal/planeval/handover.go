@@ -25,6 +25,7 @@ type claimRequest struct {
 	SnapshotExecutionID string `json:"snapshot_execution_id"`
 	AgentVersion        string `json:"agent_version"`
 	WorkerID            string `json:"worker_id"`
+	ClaimRequestID      string `json:"claim_request_id"`
 }
 
 type executionInput struct {
@@ -47,19 +48,20 @@ type claimBusy struct {
 }
 
 type claimTerminal struct {
-	Status         string `json:"status"`
-	GenerateStatus string `json:"generate_status"`
+	Status         string  `json:"status"`
+	GenerateStatus string  `json:"generate_status"`
+	ArtifactID     *string `json:"artifact_id"`
 }
 
 // Claim hands an execution to a worker: the full frozen input under a fresh
 // lease, a wait hint while another lease is valid, or the terminal state so a
 // redelivered pointer is acknowledged without generating again.
 func (s *Service) Claim(ctx context.Context, req claimRequest) (any, *Error) {
-	if req.SnapshotExecutionID == "" || req.WorkerID == "" || !validAgentVersion(req.AgentVersion) {
+	if req.SnapshotExecutionID == "" || req.WorkerID == "" || len(req.WorkerID) > 191 || req.ClaimRequestID == "" || len(req.ClaimRequestID) > 64 || !validAgentVersion(req.AgentVersion) {
 		return nil, fail(422, "invalid_request", "snapshot_execution_id、agent_version、worker_id 必填")
 	}
 	now := time.Now().UTC()
-	claim, err := s.store.ClaimPlanEvalExecution(ctx, req.SnapshotExecutionID, req.AgentVersion, req.WorkerID, now, s.cfg.LeaseTTL)
+	claim, err := s.store.ClaimPlanEvalExecution(ctx, req.SnapshotExecutionID, req.AgentVersion, req.WorkerID, req.ClaimRequestID, now, s.cfg.LeaseTTL)
 	if err != nil {
 		switch {
 		case errors.Is(err, storage.ErrPlanEvalNotFound):
@@ -71,7 +73,11 @@ func (s *Service) Claim(ctx context.Context, req claimRequest) (any, *Error) {
 	}
 	switch claim.Status {
 	case "terminal":
-		return claimTerminal{Status: "terminal", GenerateStatus: claim.Execution.GenerateStatus}, nil
+		var artifactID *string
+		if claim.Execution.ArtifactID != "" {
+			artifactID = &claim.Execution.ArtifactID
+		}
+		return claimTerminal{Status: "terminal", GenerateStatus: claim.Execution.GenerateStatus, ArtifactID: artifactID}, nil
 	case "busy":
 		wait := busyRetryMs
 		if remaining := time.Until(*claim.Execution.LeaseExpiresAt); remaining < time.Duration(wait)*time.Millisecond {
@@ -98,12 +104,15 @@ func (s *Service) Claim(ctx context.Context, req claimRequest) (any, *Error) {
 }
 
 type renewRequest struct {
-	LeaseEpoch int `json:"lease_epoch"`
+	storage.PlanEvalWorkerLease
 }
 
 // Renew extends the calling worker's lease using the server clock.
 func (s *Service) Renew(ctx context.Context, executionID string, req renewRequest) (any, *Error) {
-	expires, err := s.store.RenewPlanEvalLease(ctx, executionID, req.LeaseEpoch, time.Now().UTC(), s.cfg.LeaseTTL)
+	if err := validateWorkerLease(req.PlanEvalWorkerLease); err != nil {
+		return nil, err
+	}
+	expires, err := s.store.RenewPlanEvalLease(ctx, executionID, req.PlanEvalWorkerLease, time.Now().UTC(), s.cfg.LeaseTTL)
 	if err != nil {
 		return nil, s.handoverError(err)
 	}
@@ -114,6 +123,10 @@ func (s *Service) handoverError(err error) *Error {
 	switch {
 	case errors.Is(err, storage.ErrPlanEvalNotFound):
 		return fail(404, "execution_not_found", "执行项不存在")
+	case errors.Is(err, storage.ErrPlanEvalResultConflict):
+		return fail(409, "result_conflict", "提交内容或提交 ID 与已保存结果不同")
+	case errors.Is(err, storage.ErrPlanEvalAgentVersionMismatch):
+		return fail(409, "agent_version_mismatch", "该执行项不属于本 worker 的 Agent 版本")
 	case errors.Is(err, storage.ErrPlanEvalStaleLease):
 		return fail(409, "stale_lease", "租约已失效：执行项已被其他 worker 接管")
 	}
@@ -133,8 +146,9 @@ type reportedResult struct {
 }
 
 type submitRequest struct {
-	LeaseEpoch int            `json:"lease_epoch"`
-	Result     reportedResult `json:"result"`
+	storage.PlanEvalWorkerLease
+	SubmitID string         `json:"submit_id"`
+	Result   reportedResult `json:"result"`
 }
 
 // Submit records a generate terminal state and returns the persisted
@@ -143,6 +157,13 @@ type submitRequest struct {
 // is only sent once the whole terminal state is durable — the worker
 // acknowledges its message on receipt.
 func (s *Service) Submit(ctx context.Context, executionID string, req submitRequest) (any, *Error) {
+	if err := validateWorkerLease(req.PlanEvalWorkerLease); err != nil {
+		return nil, err
+	}
+	if req.SubmitID == "" || len(req.SubmitID) > 64 {
+		return nil, fail(422, "invalid_request", "submit_id 必填且不超过 64 字符")
+	}
+	fingerprint := sha256.Sum256(mustJSON(req.Result))
 	outcome := &storage.PlanEvalGenerateOutcome{}
 	switch req.Result.Kind {
 	case "artifact":
@@ -177,7 +198,7 @@ func (s *Service) Submit(ctx context.Context, executionID string, req submitRequ
 		outcome.Artifact.Sha256 = hex.EncodeToString(sum[:])
 	}
 
-	ack, replayed, err := s.store.SubmitPlanEvalGenerate(ctx, executionID, req.LeaseEpoch, time.Now().UTC(), outcome)
+	ack, replayed, err := s.store.SubmitPlanEvalGenerate(ctx, executionID, req.PlanEvalWorkerLease, req.SubmitID, hex.EncodeToString(fingerprint[:]), time.Now().UTC(), outcome)
 	if err != nil {
 		if errors.Is(err, storage.ErrPlanEvalStaleLease) {
 			return nil, fail(409, "stale_lease", "租约已失效：结果未被接受")
@@ -230,38 +251,45 @@ func checkResultRow(result CheckResult, artifactID string) *storage.PlanEvalChec
 func (s *Service) EvaluatePending(ctx context.Context) {
 	s.evaluateMu.Lock()
 	defer s.evaluateMu.Unlock()
-	now := time.Now().UTC()
-	work, err := s.store.ClaimPlanEvalEvaluations(ctx, now, s.cfg.LeaseTTL, 16)
-	if err != nil {
-		s.log.Error("plan-eval: claim evaluations", zap.Error(err))
-		return
-	}
-	for i := range work {
-		s.evaluate(ctx, work[i], now)
+
+	for range 16 {
+		work, err := s.store.ClaimPlanEvalEvaluations(ctx, time.Now().UTC(), s.cfg.LeaseTTL, 1)
+		if err != nil {
+			s.log.Error("plan-eval: claim evaluations", zap.Error(err))
+			return
+		}
+		if len(work) == 0 {
+			return
+		}
+		s.evaluate(ctx, work[0])
 	}
 }
 
-func (s *Service) evaluate(ctx context.Context, work storage.PlanEvalEvaluationWork, now time.Time) {
+func (s *Service) evaluate(ctx context.Context, work storage.PlanEvalEvaluationWork) {
 	input := CheckInput{
 		Artifact: json.RawMessage(work.ArtifactContent), Snapshot: json.RawMessage(work.SnapshotJSON),
 		Scenario: ScenarioInput{ScenarioID: work.ScenarioID, Request: json.RawMessage(work.RequestJSON)},
 		AsOf:     work.AsOf,
 	}
-	results := make([]storage.PlanEvalCheckResult, 0, len(work.Rules))
+
 	for _, rule := range work.Rules {
 		if rule.ArtifactType != work.ArtifactType {
 			continue
 		}
 		check := StaticRuleCheck{CheckID: rule.CheckID, Version: rule.Version, Source: rule.Source, Timeout: s.cfg.RuleTimeout, MemoryLimit: s.cfg.RuleMemoryLimit}
 		// One failing check never stops the rest.
-		results = append(results, *checkResultRow(check.Run(ctx, input), work.ArtifactID))
+		result := *checkResultRow(check.Run(ctx, input), work.ArtifactID)
+		if err := s.store.SavePlanEvalCheckResults(ctx, work.ExecutionID, work.LeaseUntil, []storage.PlanEvalCheckResult{result}, storage.PlanEvalEvaluateRunning, time.Now().UTC()); err != nil {
+			s.log.Error("plan-eval: save check result", zap.String("execution", work.ExecutionID), zap.Error(err))
+			return
+		}
 	}
 	status := storage.PlanEvalEvaluateDone
-	if err := s.store.SavePlanEvalCheckResults(ctx, work.ExecutionID, results, status, now); err != nil {
+	if err := s.store.SavePlanEvalCheckResults(ctx, work.ExecutionID, work.LeaseUntil, nil, status, time.Now().UTC()); err != nil {
 		s.log.Error("plan-eval: save check results", zap.String("execution", work.ExecutionID), zap.Error(err))
 		return
 	}
-	s.log.Info("plan-eval evaluation finished", zap.String("execution", work.ExecutionID), zap.Int("checks", len(results)))
+	s.log.Info("plan-eval evaluation finished", zap.String("execution", work.ExecutionID), zap.Int("checks", len(work.Rules)))
 }
 
 // RunEvaluator judges artifacts until the context ends: right away, after
@@ -289,9 +317,10 @@ func (s *Service) RunEvaluator(ctx context.Context) {
 // every Generate of the version is terminal and the queue holds neither ready
 // nor unacknowledged messages. The queue itself and every artifact stay.
 func (s *Service) Cleanup(ctx context.Context, agentVersion string) *Error {
-	s.runtimeMu.Lock()
-	defer s.runtimeMu.Unlock()
+	return s.withVersion(ctx, agentVersion, func(ctx context.Context) *Error { return s.cleanup(ctx, agentVersion) })
+}
 
+func (s *Service) cleanup(ctx context.Context, agentVersion string) *Error {
 	if !s.knownVersion(agentVersion) || !validAgentVersion(agentVersion) {
 		return fail(422, "invalid_request", "未登记的 Agent 版本："+agentVersion)
 	}
@@ -302,6 +331,35 @@ func (s *Service) Cleanup(ctx context.Context, agentVersion string) *Error {
 	if active > 0 {
 		return fail(409, "cleanup_blocked", fmt.Sprintf("该版本还有 %d 个执行项在等待或生成中", active))
 	}
+	if serr := s.requireIdleQueue(ctx, agentVersion); serr != nil {
+		return serr
+	}
+	config, err := s.store.BeginPlanEvalCleanup(ctx, agentVersion)
+	if err != nil {
+		return s.mapStorageError(err)
+	}
+	expected, err := s.deployer.Status(ctx, agentVersion)
+	if err != nil {
+		return s.internal(err)
+	}
+	if expected.DeploymentRevision > config.RuntimeRevision || expected.SecretRevision > config.RuntimeRevision {
+		return s.mapStorageError(storage.ErrPlanEvalVersionBusy)
+	}
+	if serr := s.requireIdleQueue(ctx, agentVersion); serr != nil {
+		return serr
+	}
+	if err := s.deployer.Delete(ctx, agentVersion, expected); err != nil {
+		s.log.Error("plan-eval: delete worker deployment", zap.String("agent_version", agentVersion), zap.Error(err))
+		return fail(502, "cleanup_failed", "删除 Deployment 失败")
+	}
+	if err := s.store.FinishPlanEvalCleanup(ctx, config); err != nil {
+		return s.mapStorageError(err)
+	}
+	s.log.Info("plan-eval worker deployment removed", zap.String("agent_version", agentVersion))
+	return nil
+}
+
+func (s *Service) requireIdleQueue(ctx context.Context, agentVersion string) *Error {
 	depth, err := s.broker.QueueDepth(ctx, QueueName(agentVersion))
 	if err != nil {
 		return s.internal(err)
@@ -309,13 +367,12 @@ func (s *Service) Cleanup(ctx context.Context, agentVersion string) *Error {
 	if depth.Ready+depth.Unacked > 0 {
 		return fail(409, "cleanup_blocked", fmt.Sprintf("该版本的队列还有 %d 条待消费、%d 条未确认消息", depth.Ready, depth.Unacked))
 	}
-	if err := s.deployer.Delete(ctx, agentVersion); err != nil {
-		s.log.Error("plan-eval: delete worker deployment", zap.String("agent_version", agentVersion), zap.Error(err))
-		return fail(502, "cleanup_failed", "删除 Deployment 失败")
+	return nil
+}
+
+func validateWorkerLease(lease storage.PlanEvalWorkerLease) *Error {
+	if lease.WorkerID == "" || len(lease.WorkerID) > 191 || !validAgentVersion(lease.AgentVersion) || lease.LeaseEpoch <= 0 {
+		return fail(422, "invalid_request", "agent_version、worker_id 和正整数 lease_epoch 必填")
 	}
-	if err := s.store.ReleasePlanEvalLaunchConfig(ctx, agentVersion); err != nil {
-		return s.internal(err)
-	}
-	s.log.Info("plan-eval worker deployment removed", zap.String("agent_version", agentVersion))
 	return nil
 }

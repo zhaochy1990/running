@@ -8,17 +8,30 @@ import (
 
 // WorkerSpec is what one agent version's eval workers run with.
 type WorkerSpec struct {
-	AgentVersion string
-	Replicas     int
+	AgentVersion    string
+	Replicas        int
+	RuntimeRevision uint64
 	// Env holds the administrator-supplied variables (model API keys).
 	Env map[string]string
+
+	// A missing Kubernetes object has no revision to compare. Confirm that
+	// its launch is still current before creating it.
+	checkCreate func(context.Context) error
 }
 
 // DeploymentStatus is the evaluated worker Deployment of one version.
 type DeploymentStatus struct {
-	Present       bool
-	Replicas      int32
-	ReadyReplicas int32
+	// Cleanup uses these identities after reserving the version for deletion.
+	DeploymentUID             string
+	DeploymentResourceVersion string
+	DeploymentRevision        uint64
+	SecretUID                 string
+	SecretResourceVersion     string
+	SecretRevision            uint64
+	SecretPresent             bool
+	Present                   bool
+	Replicas                  int32
+	ReadyReplicas             int32
 }
 
 // Deployer starts, scales and removes the eval worker Deployment of an agent
@@ -26,7 +39,8 @@ type DeploymentStatus struct {
 // that talks to the cluster.
 type Deployer interface {
 	Ensure(ctx context.Context, spec WorkerSpec) error
-	Delete(ctx context.Context, agentVersion string) error
+	Scale(ctx context.Context, agentVersion string, replicas int, runtimeRevision uint64) error
+	Delete(ctx context.Context, agentVersion string, expected DeploymentStatus) error
 	Status(ctx context.Context, agentVersion string) (DeploymentStatus, error)
 }
 
@@ -45,8 +59,9 @@ func validAgentVersion(v string) bool { return agentVersionPattern.MatchString(v
 // started by hand. It keeps local runs and tests free of a cluster.
 type noopDeployer struct{}
 
-func (noopDeployer) Ensure(context.Context, WorkerSpec) error { return nil }
-func (noopDeployer) Delete(context.Context, string) error     { return nil }
+func (noopDeployer) Ensure(context.Context, WorkerSpec) error               { return nil }
+func (noopDeployer) Scale(context.Context, string, int, uint64) error       { return nil }
+func (noopDeployer) Delete(context.Context, string, DeploymentStatus) error { return nil }
 func (noopDeployer) Status(context.Context, string) (DeploymentStatus, error) {
 	return DeploymentStatus{}, nil
 }

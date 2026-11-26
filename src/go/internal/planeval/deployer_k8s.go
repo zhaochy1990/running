@@ -7,19 +7,23 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	appsv1client "k8s.io/client-go/kubernetes/typed/apps/v1"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	"k8s.io/utils/ptr"
 )
 
 // KubernetesOptions configures the in-cluster deployer.
@@ -48,6 +52,37 @@ type kubernetesDeployer struct {
 	client    k8sClientset
 	namespace string
 	options   KubernetesOptions
+}
+
+const runtimeRevisionAnnotation = "stride-running.cn/runtime-revision"
+
+func runtimeRevision(object metav1.Object) (uint64, error) {
+	value := object.GetAnnotations()[runtimeRevisionAnnotation]
+	if value == "" {
+		return 0, nil
+	}
+	revision, err := strconv.ParseUint(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("plan-eval: invalid runtime revision for %s: %w", object.GetName(), err)
+	}
+	return revision, nil
+}
+
+func setRuntimeRevision(object metav1.Object, revision uint64) error {
+	current, err := runtimeRevision(object)
+	if err != nil {
+		return err
+	}
+	if current > revision {
+		return fmt.Errorf("plan-eval: runtime revision %d for %s was superseded by %d", revision, object.GetName(), current)
+	}
+	annotations := object.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string, 1)
+	}
+	annotations[runtimeRevisionAnnotation] = strconv.FormatUint(revision, 10)
+	object.SetAnnotations(annotations)
+	return nil
 }
 
 func newKubernetesDeployer(options KubernetesOptions) (Deployer, error) {
@@ -107,33 +142,45 @@ func (d *kubernetesDeployer) Ensure(ctx context.Context, spec WorkerSpec) error 
 		return fmt.Errorf("plan-eval: agent version %q is not usable as an object name", spec.AgentVersion)
 	}
 	name := WorkerName(spec.AgentVersion)
+	deployments := d.client.AppsV1().Deployments(d.namespace)
+	current, err := deployments.Get(ctx, name, metav1.GetOptions{})
+	create := k8serrors.IsNotFound(err)
+	if err != nil && !create {
+		return fmt.Errorf("plan-eval: get deployment %s: %w", name, err)
+	}
+	if !create {
+		if current.DeletionTimestamp != nil {
+			return fmt.Errorf("plan-eval: deployment %s is still being deleted; retry launch after deletion", name)
+		}
+		if err := setRuntimeRevision(current, spec.RuntimeRevision); err != nil {
+			return err
+		}
+	}
 	launch := make(map[string]string, len(spec.Env)+2)
 	for key, value := range spec.Env {
 		launch[key] = value
 	}
 	launch["PLAN_WORKER_AMQP_URL"] = d.options.WorkerAMQPURL
-	launch["PLAN_WORKER_EVAL_API_TOKEN"] = d.options.WorkerToken
+	launch["PLAN_WORKER_EVAL_API_TOKEN"] = versionWorkerToken(d.options.WorkerToken, spec.AgentVersion)
 	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: d.namespace, Labels: workerLabels(spec.AgentVersion)},
-		Type:       corev1.SecretTypeOpaque,
-		Data:       secretData(launch),
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: d.namespace, Labels: workerLabels(spec.AgentVersion),
+			Annotations: map[string]string{runtimeRevisionAnnotation: strconv.FormatUint(spec.RuntimeRevision, 10)}},
+		Type: corev1.SecretTypeOpaque,
+		Data: secretData(launch),
 	}
-	if err := upsertSecret(ctx, d.client, d.namespace, secret); err != nil {
+	if err := upsertSecret(ctx, d.client, d.namespace, secret, spec); err != nil {
 		return fmt.Errorf("plan-eval: ensure launch secret %s: %w", name, err)
 	}
 
 	deployment := d.deployment(spec, launchChecksum(launch))
-	deployments := d.client.AppsV1().Deployments(d.namespace)
-	_, err := deployments.Create(ctx, deployment, metav1.CreateOptions{})
-	switch {
-	case err == nil:
+	if create {
+		if err := confirmRuntimeCreate(ctx, spec); err != nil {
+			return err
+		}
+		if _, err := deployments.Create(ctx, deployment, metav1.CreateOptions{}); err != nil {
+			return fmt.Errorf("plan-eval: create deployment %s: %w", name, err)
+		}
 		return nil
-	case !k8serrors.IsAlreadyExists(err):
-		return fmt.Errorf("plan-eval: create deployment %s: %w", name, err)
-	}
-	current, err := deployments.Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("plan-eval: get deployment %s: %w", name, err)
 	}
 	current.Spec.Replicas = deployment.Spec.Replicas
 	current.Spec.Template = deployment.Spec.Template
@@ -141,6 +188,28 @@ func (d *kubernetesDeployer) Ensure(ctx context.Context, spec WorkerSpec) error 
 		return fmt.Errorf("plan-eval: update deployment %s: %w", name, err)
 	}
 	return nil
+}
+
+// Scale only updates an existing Deployment. It cannot recreate a Deployment
+// or change the launch Secret after cleanup has started.
+func (d *kubernetesDeployer) Scale(ctx context.Context, agentVersion string, replicas int, revision uint64) error {
+	if !validAgentVersion(agentVersion) {
+		return fmt.Errorf("plan-eval: agent version %q is not usable as an object name", agentVersion)
+	}
+	deployments := d.client.AppsV1().Deployments(d.namespace)
+	current, err := deployments.Get(ctx, WorkerName(agentVersion), metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if current.DeletionTimestamp != nil {
+		return fmt.Errorf("plan-eval: deployment %s is still being deleted", current.Name)
+	}
+	if err := setRuntimeRevision(current, revision); err != nil {
+		return err
+	}
+	current.Spec.Replicas = ptr.To(int32(replicas))
+	_, err = deployments.Update(ctx, current, metav1.UpdateOptions{})
+	return err
 }
 
 func (d *kubernetesDeployer) deployment(spec WorkerSpec, checksum string) *appsv1.Deployment {
@@ -175,7 +244,8 @@ func (d *kubernetesDeployer) deployment(spec WorkerSpec, checksum string) *appsv
 		podSpec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: d.options.PullSecret}}
 	}
 	return &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: WorkerName(version), Namespace: d.namespace, Labels: workerLabels(version)},
+		ObjectMeta: metav1.ObjectMeta{Name: WorkerName(version), Namespace: d.namespace, Labels: workerLabels(version),
+			Annotations: map[string]string{runtimeRevisionAnnotation: strconv.FormatUint(spec.RuntimeRevision, 10)}},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": WorkerName(version)}},
@@ -192,16 +262,46 @@ func (d *kubernetesDeployer) deployment(spec WorkerSpec, checksum string) *appsv
 
 // Delete removes the version's worker Deployment and launch Secret. The queue
 // is deliberately kept: it is reused the next time this version is evaluated.
-func (d *kubernetesDeployer) Delete(ctx context.Context, agentVersion string) error {
+func (d *kubernetesDeployer) Delete(ctx context.Context, agentVersion string, expected DeploymentStatus) error {
 	if !validAgentVersion(agentVersion) {
 		return fmt.Errorf("plan-eval: agent version %q is not usable as an object name", agentVersion)
 	}
+
 	name := WorkerName(agentVersion)
-	if err := d.client.AppsV1().Deployments(d.namespace).Delete(ctx, name, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
-		return fmt.Errorf("plan-eval: delete deployment %s: %w", name, err)
+	deployments := d.client.AppsV1().Deployments(d.namespace)
+	secrets := d.client.CoreV1().Secrets(d.namespace)
+
+	if expected.Present {
+		uid := types.UID(expected.DeploymentUID)
+		options := metav1.DeleteOptions{PropagationPolicy: ptr.To(metav1.DeletePropagationForeground), Preconditions: &metav1.Preconditions{UID: &uid, ResourceVersion: &expected.DeploymentResourceVersion}}
+		if err := deployments.Delete(ctx, name, options); err != nil && !k8serrors.IsNotFound(err) {
+			return fmt.Errorf("plan-eval: delete deployment %s: %w", name, err)
+		}
+		// Wait for foreground deletion before releasing the version coordination lock.
+		for {
+			remaining, err := deployments.Get(ctx, name, metav1.GetOptions{})
+			if k8serrors.IsNotFound(err) {
+				break
+			}
+			if err != nil {
+				return fmt.Errorf("plan-eval: wait for deletion %s: %w", name, err)
+			}
+			if remaining.UID != uid {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(200 * time.Millisecond):
+			}
+		}
 	}
-	if err := d.client.CoreV1().Secrets(d.namespace).Delete(ctx, name, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
-		return fmt.Errorf("plan-eval: delete launch secret %s: %w", name, err)
+	if expected.SecretPresent {
+		uid := types.UID(expected.SecretUID)
+		options := metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid, ResourceVersion: &expected.SecretResourceVersion}}
+		if err := secrets.Delete(ctx, name, options); err != nil && !k8serrors.IsNotFound(err) {
+			return fmt.Errorf("plan-eval: delete launch secret %s: %w", name, err)
+		}
 	}
 	return nil
 }
@@ -210,31 +310,54 @@ func (d *kubernetesDeployer) Status(ctx context.Context, agentVersion string) (D
 	if !validAgentVersion(agentVersion) {
 		return DeploymentStatus{}, fmt.Errorf("plan-eval: agent version %q is not usable as an object name", agentVersion)
 	}
+
+	status := DeploymentStatus{}
 	deployment, err := d.client.AppsV1().Deployments(d.namespace).Get(ctx, WorkerName(agentVersion), metav1.GetOptions{})
-	if k8serrors.IsNotFound(err) {
-		return DeploymentStatus{}, nil
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return status, fmt.Errorf("plan-eval: get deployment: %w", err)
 	}
-	if err != nil {
-		return DeploymentStatus{}, fmt.Errorf("plan-eval: get deployment: %w", err)
+	if err == nil {
+		status.Present = true
+		status.DeploymentUID, status.DeploymentResourceVersion = string(deployment.UID), deployment.ResourceVersion
+		status.DeploymentRevision, err = runtimeRevision(deployment)
+		if err != nil {
+			return status, err
+		}
+		status.Replicas, status.ReadyReplicas = deployment.Status.Replicas, deployment.Status.ReadyReplicas
+		if deployment.Spec.Replicas != nil {
+			status.Replicas = *deployment.Spec.Replicas
+		}
 	}
-	status := DeploymentStatus{Present: true, Replicas: deployment.Status.Replicas, ReadyReplicas: deployment.Status.ReadyReplicas}
-	if deployment.Spec.Replicas != nil {
-		status.Replicas = *deployment.Spec.Replicas
+	secret, err := d.client.CoreV1().Secrets(d.namespace).Get(ctx, WorkerName(agentVersion), metav1.GetOptions{})
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return status, fmt.Errorf("plan-eval: get launch secret: %w", err)
 	}
+	if err == nil {
+		status.SecretPresent = true
+		status.SecretUID, status.SecretResourceVersion = string(secret.UID), secret.ResourceVersion
+		status.SecretRevision, err = runtimeRevision(secret)
+		if err != nil {
+			return status, err
+		}
+	}
+
 	return status, nil
 }
 
-func upsertSecret(ctx context.Context, client k8sClientset, namespace string, secret *corev1.Secret) error {
+func upsertSecret(ctx context.Context, client k8sClientset, namespace string, secret *corev1.Secret, spec WorkerSpec) error {
 	secrets := client.CoreV1().Secrets(namespace)
-	_, err := secrets.Create(ctx, secret, metav1.CreateOptions{})
-	if err == nil {
-		return nil
-	}
-	if !k8serrors.IsAlreadyExists(err) {
+	current, err := secrets.Get(ctx, secret.Name, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		if err := confirmRuntimeCreate(ctx, spec); err != nil {
+			return err
+		}
+		_, err := secrets.Create(ctx, secret, metav1.CreateOptions{})
 		return err
 	}
-	current, err := secrets.Get(ctx, secret.Name, metav1.GetOptions{})
 	if err != nil {
+		return err
+	}
+	if err := setRuntimeRevision(current, spec.RuntimeRevision); err != nil {
 		return err
 	}
 	// StringData is write-only; the server merges it into Data. Clearing Data
@@ -245,6 +368,16 @@ func upsertSecret(ctx context.Context, client k8sClientset, namespace string, se
 	current.Labels = secret.Labels
 	_, err = secrets.Update(ctx, current, metav1.UpdateOptions{})
 	return err
+}
+
+func confirmRuntimeCreate(ctx context.Context, spec WorkerSpec) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if spec.checkCreate != nil {
+		return spec.checkCreate(ctx)
+	}
+	return nil
 }
 
 // secretData is the explicit Data form, so nothing depends on the server's
