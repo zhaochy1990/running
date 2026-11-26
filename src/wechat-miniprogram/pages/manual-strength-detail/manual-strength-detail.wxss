@@ -1,0 +1,115 @@
+.strength-detail {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: var(--spacing-md) var(--spacing-sm) calc(160rpx + env(safe-area-inset-bottom));
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+}
+
+.detail-status {
+  display: grid;
+  justify-items: center;
+  gap: var(--spacing-sm);
+  padding: 60rpx var(--spacing-md);
+  color: var(--color-text-secondary);
+}
+
+.detail-retry,
+.detail-edit {
+  margin: 0;
+  background: var(--color-card);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+  border: 2rpx solid var(--color-hairline);
+  border-radius: var(--radius-lg);
+}
+
+.detail-retry::after,
+.detail-edit::after {
+  border: 0;
+}
+
+.detail-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-xs);
+}
+
+.detail-source {
+  padding: 4rpx 12rpx;
+  border-radius: var(--radius-full);
+  background: var(--color-accent-tint);
+  color: var(--color-accent-deep);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.detail-title {
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+}
+
+.detail-time,
+.detail-set-number {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.detail-heading,
+.detail-action-name {
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+}
+
+.detail-heading {
+  margin-bottom: var(--spacing-sm);
+}
+
+.detail-action + .detail-action {
+  margin-top: var(--spacing-md);
+}
+
+.detail-set {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) 0;
+  border-bottom: 2rpx solid var(--color-border-soft);
+}
+
+.detail-set-number {
+  flex: none;
+}
+
+.detail-set-value {
+  overflow-wrap: anywhere;
+  text-align: right;
+  font-size: var(--font-size-md);
+}
+
+.detail-note {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+  font-size: var(--font-size-md);
+}
+
+.detail-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: var(--spacing-sm) var(--spacing-md) calc(var(--spacing-sm) + env(safe-area-inset-bottom));
+  border-top: 2rpx solid var(--color-border-soft);
+  background: var(--color-bg);
+}
+
+.detail-edit {
+  min-height: 88rpx;
+  line-height: 88rpx;
+  font-weight: var(--font-weight-bold);
+}

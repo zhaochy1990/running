@@ -183,7 +183,8 @@ type Config struct {
 	// ActivityStore backs the activity read surface (ADR 0019) — a sibling
 	// registrar sharing the auth path. Leave zero to run without the activity
 	// endpoints (e.g. in tests that never hit them).
-	ActivityStore ActivityStore
+	ActivityStore       ActivityStore
+	ManualStrengthStore ManualStrengthStore
 
 	// PosterMapFetcher backs the share-poster static-map proxy
 	// (POST /api/users/me/poster/map, devops#944): satisfied by
@@ -373,8 +374,9 @@ type Service struct {
 
 	adminUsers *adminUserRoutes
 
-	activities *activityRoutes
-	teams      *teamRoutes
+	activities     *activityRoutes
+	manualStrength manualStrengthRoutes
+	teams          *teamRoutes
 
 	healthMetrics   *healthRoutes
 	strideMetrics   *strideRoutes
@@ -459,6 +461,7 @@ func NewService(cfg Config) *Service {
 		goals:                   newGoalRoutes(cfg.GoalStore, log),
 		adminUsers:              newAdminUserRoutes(eraser, log),
 		activities:              newActivityRoutes(cfg.ActivityStore, log),
+		manualStrength:          manualStrengthRoutes{store: cfg.ManualStrengthStore, log: log},
 		teams:                   newTeamRoutes(cfg.TeamAuth, cfg.TeamStore, cfg.ActivityStore, log),
 		healthMetrics:           newHealthRoutes(cfg.HealthStore, log),
 		strideMetrics:           newStrideRoutes(cfg.StrideStore, log),
@@ -625,6 +628,7 @@ func (s *Service) Router() *gin.Engine {
 	s.wxpay.registerUser(authed)
 	s.addresses.register(authed)
 	s.activities.register(authed)
+	s.manualStrength.register(authed)
 	// Share-poster static-map proxy (devops#944): user tier, always mounted —
 	// an unconfigured key answers 503 so the miniprogram can degrade cleanly.
 	s.posterMap.register(authed)

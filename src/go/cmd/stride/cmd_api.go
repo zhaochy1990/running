@@ -361,6 +361,7 @@ func runAPI() error {
 		DeletionAuditStore:      store,
 		Features:                features,
 		ActivityStore:           store,
+		ManualStrengthStore:     store,
 		TeamAuth:                authClient,
 		TeamStore:               store,
 		GoalStore:               store,

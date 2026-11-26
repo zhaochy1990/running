@@ -153,6 +153,12 @@
       <view class="workout-skeleton__line workout-skeleton__line--text"></view>
     </view>
 
+    <button wx:if="{{uid}}" class="strength-entry" bindtap="onManualStrengthTap">
+      <view class="strength-entry__icon"><image src="/assets/icons/fitness_center.svg" mode="aspectFit" /></view>
+      <text class="strength-entry__title">{{hasStrengthDraft ? '继续自由力量训练' : '自由力量训练'}}</text>
+      <image class="strength-entry__arrow" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+    </button>
+
     <!-- 今日营养：无饮食安排时整块隐藏 -->
     <view wx:if="{{nutrition}}" class="section-title">今日饮食营养</view>
     <view wx:if="{{nutrition}}" class="card nutrition-card">

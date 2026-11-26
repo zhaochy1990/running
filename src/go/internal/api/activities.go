@@ -104,6 +104,7 @@ func authorizeUser(c *gin.Context, userID string) bool {
 //	@Param			min_distance_km	query		number	false	"Minimum distance in km"
 //	@Param			date_from		query		string	false	"Shanghai YYYY-MM-DD lower bound"
 //	@Param			date_to			query		string	false	"Shanghai YYYY-MM-DD upper bound"
+//	@Param	include	query	string	false	"manual_strength adds the owning athlete's manual records and source labels"
 //	@Success		200				{object}	activitiesListResponse
 //	@Failure		400				{object}	errorResponse
 //	@Failure		401				{object}	errorResponse
@@ -128,7 +129,7 @@ func (a *activityRoutes) list(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
-	c.JSON(http.StatusOK, toActivitiesListResponse(page, params.Offset, params.Limit))
+	c.JSON(http.StatusOK, toActivitiesListResponse(page, params))
 }
 
 // detail returns one activity's full detail payload. The heavy timeseries array
@@ -464,6 +465,7 @@ func parseActivityListParams(c *gin.Context) (storage.ActivityListParams, bool) 
 	}
 
 	p.Sport = c.Query("sport")
+	p.IncludeManualStrength = callerFrom(c).Tier == TierUser && includeHas(c.Query("include"), storage.ManualStrengthProvider)
 
 	if v := c.Query("sport_category"); v != "" {
 		if v != "run" && v != "strength" {
@@ -522,6 +524,7 @@ func includeHas(include, token string) bool {
 // always present. Commentary and route decoding differ from detail: the list
 // carries route_thumb but not feel_type/sport_note/pauses/commentary.
 type activityListItem struct {
+	Source          string   `json:"source,omitempty"`
 	LabelID         string   `json:"label_id"`
 	Name            *string  `json:"name"`
 	SportType       int      `json:"sport_type"`
@@ -740,10 +743,17 @@ type activityDetailResponse struct {
 // Mappers
 // ─────────────────────────────────────────────────────────────────────────────
 
-func toActivitiesListResponse(page *storage.ActivityPage, offset, limit int) activitiesListResponse {
+func toActivitiesListResponse(page *storage.ActivityPage, params storage.ActivityListParams) activitiesListResponse {
 	items := make([]activityListItem, len(page.Rows))
 	for i := range page.Rows {
-		items[i] = toActivityListItem(&page.Rows[i], page.StrideDoses)
+		row := &page.Rows[i]
+		items[i] = toActivityListItem(row, page.StrideDoses)
+		if params.IncludeManualStrength {
+			items[i].Source = "watch"
+			if row.Provider == storage.ManualStrengthProvider {
+				items[i].Source = storage.ManualStrengthProvider
+			}
+		}
 	}
 	summaries := make(map[string]monthlySummaryDTO, len(page.MonthlySummaries))
 	for month, m := range page.MonthlySummaries {
@@ -756,14 +766,18 @@ func toActivitiesListResponse(page *storage.ActivityPage, offset, limit int) act
 	}
 	return activitiesListResponse{
 		Total:            page.Total,
-		Offset:           offset,
-		Limit:            limit,
+		Offset:           params.Offset,
+		Limit:            params.Limit,
 		Activities:       items,
 		MonthlySummaries: summaries,
 	}
 }
 
 func toActivityListItem(a *storage.Activity, strides map[string]*float64) activityListItem {
+	var dose *float64
+	if a.Provider != storage.ManualStrengthProvider {
+		dose = strides[a.LabelID]
+	}
 	return activityListItem{
 		LabelID:         a.LabelID,
 		Name:            a.Name,
@@ -778,7 +792,7 @@ func toActivityListItem(a *storage.Activity, strides map[string]*float64) activi
 		AvgCadence:      a.AvgCadence,
 		CaloriesKcal:    a.CaloriesKcal,
 		TrainingLoad:    a.TrainingLoad,
-		StrideDose:      strides[a.LabelID],
+		StrideDose:      dose,
 		VO2Max:          a.VO2Max,
 		TrainType:       a.TrainType,
 		AscentM:         a.AscentM,

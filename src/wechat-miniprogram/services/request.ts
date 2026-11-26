@@ -9,6 +9,7 @@ interface RequestOptions<T = unknown> {
   auth?: boolean;
   redirectOnSessionExpiry?: boolean;
   timeout?: number;
+  privateBody?: boolean;
 }
 
 interface RequestResult<T> {
@@ -54,7 +55,7 @@ function redact(data: unknown): unknown {
 function wxRequest(options: RequestOptions): Promise<WxRequestResponse> {
   const method = options.method || 'GET';
 
-  console.log(`[http] → ${method} ${options.url}`, redact(options.data));
+  console.log(`[http] → ${method} ${options.url}`, options.privateBody ? undefined : redact(options.data));
 
   return new Promise((resolve, reject) => {
     wx.request({
@@ -245,6 +246,7 @@ export async function request<TResponse, TData = unknown>(
     auth = true,
     redirectOnSessionExpiry = true,
     timeout = REQUEST_TIMEOUT,
+    privateBody,
   } = options;
 
   const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
@@ -268,6 +270,7 @@ export async function request<TResponse, TData = unknown>(
       data,
       header: headers,
       timeout,
+      privateBody,
     });
 
     const result = res as unknown as RequestResult<TResponse | ApiErrorResponse>;
@@ -289,6 +292,7 @@ export async function request<TResponse, TData = unknown>(
           data,
           header: headers,
           timeout,
+          privateBody,
         });
 
         const retryResult = retryRes as unknown as RequestResult<TResponse>;

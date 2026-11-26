@@ -205,6 +205,8 @@ definitions:
         type: string
       route_thumb:
         type: object
+      source:
+        type: string
       sport_name:
         type: string
       sport_type:
@@ -1732,6 +1734,44 @@ definitions:
         type: string
       id:
         type: integer
+    type: object
+  api.manualStrengthDTO:
+    properties:
+      actions:
+        items:
+          $ref: '#/definitions/storage.ManualStrengthAction'
+        type: array
+      ended_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      note:
+        type: string
+      revision:
+        type: integer
+      source:
+        type: string
+      started_at:
+        type: string
+    type: object
+  api.manualStrengthPayload:
+    properties:
+      actions:
+        items:
+          $ref: '#/definitions/storage.ManualStrengthAction'
+        type: array
+      mutation_id:
+        type: string
+      name:
+        type: string
+      note:
+        type: string
+      revision:
+        type: integer
+      started_at:
+        type: string
     type: object
   api.monthlySummaryDTO:
     properties:
@@ -4108,6 +4148,26 @@ definitions:
       overview:
         type: string
     type: object
+  storage.ManualStrengthAction:
+    properties:
+      name:
+        type: string
+      sets:
+        items:
+          $ref: '#/definitions/storage.ManualStrengthSet'
+        type: array
+    type: object
+  storage.ManualStrengthSet:
+    properties:
+      load:
+        type: string
+      load_unit:
+        type: string
+      quantity:
+        type: integer
+      quantity_unit:
+        type: string
+    type: object
   storage.RaceAidStation:
     properties:
       distance_km:
@@ -4441,6 +4501,11 @@ paths:
         in: query
         name: date_to
         type: string
+      - description: manual_strength adds the owning athlete's manual records and
+          source labels
+        in: query
+        name: include
+        type: string
       produces:
       - application/json
       responses:
@@ -4468,6 +4533,110 @@ paths:
       - InternalToken: []
       - BearerAuth: []
       summary: List a user's activities
+      tags:
+      - activities
+  /api/{user}/activities/manual-strength/{recordId}:
+    get:
+      parameters:
+      - description: User ID (JWT sub)
+        in: path
+        name: user
+        required: true
+        type: string
+      - description: Manual strength record UUID
+        in: path
+        name: recordId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.manualStrengthDTO'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get a manual strength record
+      tags:
+      - activities
+    put:
+      consumes:
+      - application/json
+      description: Send started_at for a live session and omit it for a historical
+        edit. Retries reuse mutation_id and revision. A concurrent revision returns
+        409.
+      parameters:
+      - description: User ID (JWT sub)
+        in: path
+        name: user
+        required: true
+        type: string
+      - description: Client-generated UUID of the record
+        in: path
+        name: recordId
+        required: true
+        type: string
+      - description: Record, base revision and mutation UUID
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.manualStrengthPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.manualStrengthDTO'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Save a manual strength record
       tags:
       - activities
   /api/{user}/activities/{label_id}/ability:

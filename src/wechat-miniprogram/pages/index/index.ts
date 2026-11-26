@@ -8,6 +8,7 @@ import {
   pushPlannedSession,
 } from '../../services/plan';
 import { getActivities } from '../../services/activities';
+import { getStrengthDraft } from '../../utils/manual-strength';
 import { setPendingCoachContext } from '../../services/coach';
 import {
   dismissAdjustment,
@@ -116,6 +117,7 @@ interface IndexPageData {
   contentPaddingTop: number;
   /** 当前用户 uid（模块级 userId 的渲染镜像，供弹层组件 property 绑定）。 */
   uid: string;
+  hasStrengthDraft: boolean;
   /** 游客态（未登录）：周历可浏览，训练数据区换登录引导 */
   guest: boolean;
   weekDays: TodayWeekDay[];
@@ -172,6 +174,7 @@ interface IndexPageHandlers {
   loadRaceClosing(userId: string): Promise<boolean>;
   refreshInjuryState(): Promise<void>;
   onWorkoutCardTap(): void;
+  onManualStrengthTap(): void;
   /** open-type=share 按钮的 catchtap：转发由 open-type 触发，这里只拦向卡片的冒泡 */
   onShareTap(): void;
   onDayTap(e: WechatMiniprogram.TouchEvent): void;
@@ -269,6 +272,7 @@ Page<IndexPageData, IndexPageHandlers>({
     statusBarHeight: 0,
     contentPaddingTop: 232,
     uid: '',
+    hasStrengthDraft: false,
     // 游客态（未登录）：周历可浏览，训练数据区换登录引导
     guest: false,
     weekDays: [],
@@ -315,7 +319,7 @@ Page<IndexPageData, IndexPageHandlers>({
         return;
       }
       userId = user.id;
-      this.setData({ uid: userId });
+      this.setData({ uid: userId, hasStrengthDraft: Boolean(getStrengthDraft(userId)) });
       this.fetchPlan();
     });
   },
@@ -330,9 +334,10 @@ Page<IndexPageData, IndexPageHandlers>({
       this.setData({ guest: false });
       const user = userStore.getState().user;
       userId = user?.id ?? '';
-      this.setData({ uid: userId });
+      this.setData({ uid: userId, hasStrengthDraft: Boolean(getStrengthDraft(userId)) });
       this.fetchPlan();
     }
+    this.setData({ hasStrengthDraft: Boolean(getStrengthDraft(userStore.getState().user?.id ?? '')) });
     // 静默刷新（devops#698）：教练在对话里删除/改期/保存自建课后切回本 tab，
     // 课表即时反映，无需手动下拉刷新。跳过首帧（onLoad 已拉）与未加载态。
     if (planLoaded && userId) {
@@ -513,6 +518,10 @@ Page<IndexPageData, IndexPageHandlers>({
 
   // 卡片整体点击 → 课表详情（分段结构/配速要求）。内层手表/更多/教练按钮
   // 已 catchtap，不会冒泡到这里。
+  onManualStrengthTap() {
+    if (this.data.uid) wx.navigateTo({ url: '/pages/manual-strength/manual-strength' });
+  },
+
   onWorkoutCardTap() {
     const { workout } = this.data;
     if (!workout || !workout.hasStructure) return;

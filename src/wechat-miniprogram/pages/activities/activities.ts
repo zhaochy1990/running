@@ -1,4 +1,5 @@
 import { getActivities } from '../../services/activities';
+import { manualStrengthLiveVersion, takeManualStrengthEditedNames } from '../../services/manual-strength';
 import { fmtDurationShort, fmtKm, fmtPace, fmtDose } from '../../utils/format';
 import { shanghaiToday, shanghaiWeekdayLabel } from '../../utils/date';
 import { userStore } from '../../store/index';
@@ -7,6 +8,7 @@ import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share'
 
 interface ActivityRow {
   labelId: string;
+  source: Activity['source'];
   name: string;
   date: string; // 用于显示的日期（已转上海）
   iconPath: string;
@@ -61,6 +63,7 @@ interface ActivitiesPageData {
 }
 
 interface ActivitiesPageHandlers {
+  fetchGeneration: number;
   onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
   onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   fetch(): Promise<void>;
@@ -71,6 +74,7 @@ interface ActivitiesPageHandlers {
 }
 
 let userId = '';
+let loadedManualStrengthVersion = 0;
 
 // 每次拉取的活动条数（分页步长）。
 const PAGE_SIZE = 100;
@@ -132,6 +136,7 @@ function formatDateLabel(ymd: string | null | undefined): string {
 function toRow(a: Activity): ActivityRow {
   return {
     labelId: a.label_id,
+    source: a.source,
     name: displayName(a),
     date: formatDateLabel(a.date),
     iconPath: iconPathForSport(a.sport_name),
@@ -261,6 +266,7 @@ function mergeMonthGroups(existing: MonthGroup[], res: ActivitiesListResponse): 
 }
 
 Page<ActivitiesPageData, ActivitiesPageHandlers>({
+  fetchGeneration: 0,
   onShareAppMessage: defaultShareAppMessage,
   onShareTimeline: defaultShareTimeline,
   data: {
@@ -311,7 +317,21 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
       const user = userStore.getState().user;
       userId = user?.id ?? '';
       this.fetch();
+      return;
     }
+    if (!userId || userStore.getState().user?.id !== userId) return;
+    const editedNames = takeManualStrengthEditedNames(userId);
+    if (editedNames?.size) {
+      const monthGroups = this.data.monthGroups.map((group) => ({
+        ...group,
+        rows: group.rows.map((row) => {
+          const name = row.source === 'manual_strength' ? editedNames.get(row.labelId) : undefined;
+          return name ? { ...row, name } : row;
+        }),
+      }));
+      this.setData({ monthGroups });
+    }
+    if (manualStrengthLiveVersion(userId) !== loadedManualStrengthVersion) void this.fetch();
   },
 
   async fetch() {
@@ -319,10 +339,20 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
       this.setData({ loading: false });
       return;
     }
+    const generation = ++this.fetchGeneration;
+    const requestedUser = userId;
+    this.setData({ loading: true, loadingMore: false });
     try {
       // 拉最近一页活动，跨月份分组展示；月份汇总由后端整月统计给出。
-      const res = await getActivities(userId, { limit: PAGE_SIZE, offset: 0 });
-      const monthGroups = buildMonthGroups(res, this.data.currentMonth);
+      const requestedVersion = manualStrengthLiveVersion(requestedUser);
+      const res = await getActivities(requestedUser, { limit: PAGE_SIZE, offset: 0, includeManualStrength: true });
+      if (generation !== this.fetchGeneration || requestedUser !== userId) return;
+      loadedManualStrengthVersion = requestedVersion;
+      const expansion = new Map(this.data.monthGroups.map((group) => [group.monthKey, group.expanded]));
+      const monthGroups = buildMonthGroups(res, this.data.currentMonth).map((group) => ({
+        ...group,
+        expanded: expansion.get(group.monthKey) ?? group.expanded,
+      }));
       this.setData({
         monthGroups,
         total: res.total,
@@ -333,8 +363,7 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
         loadingMore: false,
       });
     } catch {
-      // 拉取失败时保持空态，由界面展示空态卡片。
-      this.setData({ loading: false, loadingMore: false });
+      if (generation === this.fetchGeneration) this.setData({ loading: false, loadingMore: false });
     }
   },
 
@@ -345,6 +374,10 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
   onActivityTap(e: WechatMiniprogram.TouchEvent) {
     const labelId = e.currentTarget.dataset.id as string;
     if (!labelId) return;
+    if (e.currentTarget.dataset.source === 'manual_strength') {
+      wx.navigateTo({ url: `/pages/manual-strength-detail/manual-strength-detail?recordId=${encodeURIComponent(labelId)}` });
+      return;
+    }
     wx.navigateTo({
       url: `/pages/activity-detail/activity-detail?labelId=${encodeURIComponent(labelId)}`,
     });
@@ -360,11 +393,14 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
   },
 
   async onLoadMore() {
-    if (!userId || this.data.loadingMore || !this.data.hasMore) return;
+    if (!userId || this.data.loading || this.data.loadingMore || !this.data.hasMore) return;
+    const generation = this.fetchGeneration;
+    const offset = this.data.loadedCount;
     this.setData({ loadingMore: true });
     try {
-      const res = await getActivities(userId, { limit: PAGE_SIZE, offset: this.data.loadedCount });
-      const loadedCount = this.data.loadedCount + res.activities.length;
+      const res = await getActivities(userId, { limit: PAGE_SIZE, offset, includeManualStrength: true });
+      if (generation !== this.fetchGeneration) return;
+      const loadedCount = offset + res.activities.length;
       this.setData({
         monthGroups: mergeMonthGroups(this.data.monthGroups, res),
         total: res.total,
@@ -374,7 +410,7 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
       });
     } catch {
       // 加载失败仅停止 loading 态，保留已加载内容。
-      this.setData({ loadingMore: false });
+      if (generation === this.fetchGeneration) this.setData({ loadingMore: false });
     }
   },
 });

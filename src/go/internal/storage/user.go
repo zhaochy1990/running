@@ -268,7 +268,7 @@ var userOwnedDeletionModels = []any{
 	// TimeseriesPoint is gone from this list with the Phase 4 table drop
 	// (devops#788): its points live in the blob store, swept by the
 	// deleteUserTSBlobs prefix cleanup below, not by a row delete.
-	&PersonalBest{}, &Race{}, &ActivityWatchZone{}, &ActivityZone{}, &Lap{}, &Activity{},
+	&PersonalBest{}, &Race{}, &ActivityWatchZone{}, &ActivityZone{}, &Lap{}, &Activity{}, &ManualStrengthRecord{},
 	&DailyHealth{}, &Dashboard{}, &DailyHRV{}, &RacePrediction{}, &SyncMeta{},
 	&ProviderCredential{}, &WeeklyPlan{}, &WeeklyFeedback{}, &MasterPlan{}, &RaceGoal{},
 	// workout rows (devops#586) — all three sources, archived included.

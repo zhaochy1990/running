@@ -24,6 +24,7 @@ export interface RouteShapeV2 {
 export type RouteThumb = number[][] | RouteShapeV2;
 
 export interface Activity {
+  source?: 'manual_strength' | 'watch';
   label_id: string;
   name: string | null;
   sport_type: number;
