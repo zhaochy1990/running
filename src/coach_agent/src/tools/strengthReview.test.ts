@@ -99,6 +99,7 @@ const manualRecord: ManualStrengthRecord = {
 const secondManual = { ...manualRecord, id: "manual-b", name: "晚间力量", startedAt: new Date("2026-11-26T11:30:00Z") };
 const watchA = { id: "watch-a", name: "手表早晨力量", startedAt: new Date("2026-11-26T00:05:00Z"), provider: "coros" };
 const watchB = { id: "watch-b", name: "手表晚上力量", startedAt: new Date("2026-11-26T10:30:00Z"), provider: "garmin" };
+const run = { labelId: "morning-run", sport: "running", shanghaiDay: day, avgHr: 145, durationS: 1800 } as Activity;
 
 function fixture(manualRecords: ManualStrengthRecord[], watches = [watchA, watchB]) {
   const detailReads: string[] = [];
@@ -125,7 +126,12 @@ function fixture(manualRecords: ManualStrengthRecord[], watches = [watchA, watch
     async getPlanSessions() {
       return [];
     },
-    async getActivityDetail(owner: string, id: string) {
+    async getActivityDetail(owner: string, id: string, options?: { excludeStrength?: boolean }) {
+      if (owner === "athlete-a" && id === run.labelId) {
+        detailReads.push(id);
+        return run;
+      }
+      if (options?.excludeStrength) return null;
       detailReads.push(id);
       if (owner !== "athlete-a" || !watches.some((watch) => watch.id === id)) return null;
       return {
@@ -146,8 +152,9 @@ function fixture(manualRecords: ManualStrengthRecord[], watches = [watchA, watch
         ],
       } as Activity;
     },
-    async getActivitySummariesByDateRange(owner: string) {
+    async getActivitySummariesByDateRange(owner: string, _start: string, _end: string, options?: { excludeStrength?: boolean }) {
       if (owner !== "athlete-a") return [];
+      if (options?.excludeStrength) return [run];
       return [
         { labelId: watchA.id, isStrength: true, date: watchA.startedAt, shanghaiDay: day, avgHr: 128, durationS: 1450, sportNote: "手表备注" } as Activity,
       ];
@@ -247,9 +254,11 @@ test("a follow-up after missing manual evidence cannot fall back to watch heart 
     new ToolMessage({ name: "get_strength_training_review", tool_call_id: "manual", content: JSON.stringify({ status: "missing", source: "manual" }) }),
     new AIMessage("今天没有手动记录"),
   ];
-  const followUp = await execute(store, "那平均心率呢？", { labelId: watchB.id }, "athlete-a", "get_activity_details", history);
-  assert.equal(followUp.activity, null);
-  assert.equal(followUp.reviewTool, "get_strength_training_review");
+  for (const question of ["那平均心率呢？", "那一共练了多久？"]) {
+    const followUp = await execute(store, question, { labelId: watchB.id }, "athlete-a", "get_activity_details", history);
+    assert.equal(followUp.activity, null);
+    assert.equal(followUp.reviewTool, "get_strength_training_review");
+  }
   assert.deepEqual(detailReads, []);
   const list = await execute(store, "那平均心率呢？", { startDay: day }, "athlete-a", "get_activities_by_date_range", history);
   assert.deepEqual(list.activities, []);
@@ -259,6 +268,25 @@ test("a follow-up after missing manual evidence cannot fall back to watch heart 
   assert.deepEqual(detailReads, []);
   const newTopic = await execute(store, "换个话题，这条手表力量训练的平均心率是多少？", { labelId: watchB.id }, "athlete-a", "get_activity_details", history);
   assert.equal(newTopic.activity.avgHr, 137);
+  const syncDetail = await execute(store, "高驰上同步的那次力量训练平均心率是多少？", { labelId: watchB.id }, "athlete-a", "get_activity_details", history);
+  assert.equal(syncDetail.activity.avgHr, 137);
+  const runDetail = await execute(store, "今天晨跑平均心率是多少？", { labelId: run.labelId }, "athlete-a", "get_activity_details", history);
+  assert.equal(runDetail.activity.avgHr, 145);
+});
+
+test("a combined run and strength question can read the run, excluding watch strength", async () => {
+  const { store, detailReads } = fixture([manualRecord]);
+  const question = "今天的跑步和力量训练各用了多久？";
+  const list = await execute(store, question, { startDay: day }, "athlete-a", "get_activities_by_date_range");
+  assert.deepEqual(
+    list.activities.map((activity: Activity) => activity.labelId),
+    [run.labelId],
+  );
+  const strength = await execute(store, question, { labelId: watchB.id }, "athlete-a", "get_activity_details");
+  assert.equal(strength.activity, null);
+  const running = await execute(store, question, { labelId: run.labelId }, "athlete-a", "get_activity_details");
+  assert.equal(running.activity.durationS, 1800);
+  assert.deepEqual(detailReads, [run.labelId]);
 });
 test("effective manual choice survives follow-up in the same scope and supports numbered clarification", async () => {
   const { store } = fixture([manualRecord, secondManual]);

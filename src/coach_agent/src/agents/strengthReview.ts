@@ -15,8 +15,10 @@ ${STRENGTH_REVIEW_GUIDANCE}
 
 const legacyReviewResult = z.object({
   source: z.string().optional(),
+  status: z.string().optional(),
+  scope: z.object({ startDay: z.iso.date(), endDay: z.iso.date() }).optional(),
   record: z.object({ startedAt: z.string().optional() }).optional(),
-  candidates: z.array(z.object({ startedAt: z.string().optional() })).optional(),
+  candidates: z.array(z.object({ id: z.string(), name: z.string().nullable(), startedAt: z.string().optional() })).optional(),
   watchHeartRate: z.unknown().optional(),
 });
 
@@ -30,11 +32,20 @@ export const refreshLegacyStrengthEvidence = createMiddleware({
       try {
         const { data } = legacyReviewResult.safeParse(JSON.parse(message.content));
         if (data?.source === "watch" || data?.record?.startedAt || data?.candidates?.some((item) => item.startedAt) || data?.watchHeartRate !== undefined) {
+          const result =
+            data.source === "manual" && data.status === "ambiguous" && data.candidates
+              ? {
+                  source: "manual",
+                  status: "ambiguous",
+                  scope: data.scope,
+                  candidates: data.candidates.map(({ id, name, startedAt }) => ({ id, name, recordingStartedAt: startedAt })),
+                }
+              : { status: "stale", message: "请重新读取已保存的手录力量训练记录" };
           return new ToolMessage({
             ...(message.id ? { id: message.id } : {}),
             name: message.name,
             tool_call_id: message.tool_call_id,
-            content: JSON.stringify({ status: "stale", message: "请重新读取已保存的手录力量训练记录" }),
+            content: JSON.stringify(result),
           });
         }
       } catch {

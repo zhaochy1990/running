@@ -162,24 +162,29 @@ function readConversation(state: unknown): {
   return { userText, ...(priorEvidence ? { priorEvidence } : {}), activeStrengthReview, previousStrengthReview: previousReview !== undefined };
 }
 
-/** Normal watch-only activity summaries can still answer general multi-sport questions. */
-export function useDedicatedStrengthReview(state: unknown): boolean {
-  const { userText, activeStrengthReview, previousStrengthReview } = readConversation(state);
+const RUNNING_WORD = /跑步|晨跑|夜跑|长跑|慢跑|轻松跑|间歇跑|节奏跑|\brun(?:ning)?\b/i;
+const DEVICE_RECORD =
+  /(?:这|那|另|另外一)[条次场].{0,10}(?:手表|佳明|高驰)|(?:手表|佳明|高驰).*?(?:这|那|另|另外一)[条次场]|(?:this|that|another) watch (?:activity|record|workout)/i;
+
+/** A mixed request can review actual runs while still excluding watch strength evidence. */
+export function strengthReviewActivityScope(state: unknown): "all" | "non-strength" | "none" {
+  const conversation = readConversation(state);
+  if (!isStrengthReviewTurn(conversation)) return "all";
+  return RUNNING_WORD.test(conversation.userText) ? "non-strength" : "none";
+}
+
+function isStrengthReviewTurn({ userText, activeStrengthReview, previousStrengthReview }: ReturnType<typeof readConversation>): boolean {
   if (activeStrengthReview || /手录|自由力量|力量.*复盘|复盘.*力量|manual strength|review.*strength/i.test(userText)) return true;
   const changesTopic = /换个话题|另一个问题|\bnew topic\b/i.test(userText);
   if (WATCH_WORD.test(userText)) {
-    return (
-      previousStrengthReview === true &&
-      !changesTopic &&
-      !/(?:这|那|另|另外一)[条次场].{0,10}(?:手表|佳明|高驰)|(?:this|that|another) watch (?:activity|record|workout)/i.test(userText)
-    );
+    return previousStrengthReview === true && !changesTopic && !DEVICE_RECORD.test(userText);
   }
   if (/力量训练|strength training/i.test(userText)) return true;
   return (
     previousStrengthReview === true &&
     !changesTopic &&
-    !/跑步|\brunning\b/i.test(userText) &&
-    /心率|负重|重量|组数|几组|几次|几秒|休息|用时|时长|第[一二三四五六七八九十\d]+组|heart rate|duration|rest time/i.test(userText)
+    !RUNNING_WORD.test(userText) &&
+    /心率|负重|重量|组数|几组|几次|几秒|几分钟|多久|休息|用时|时长|第[一二三四五六七八九十\d]+组|heart rate|duration|how long|rest time/i.test(userText)
   );
 }
 

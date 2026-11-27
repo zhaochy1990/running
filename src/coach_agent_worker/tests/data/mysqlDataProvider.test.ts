@@ -428,6 +428,30 @@ test("activity summaries never touch the laps table", async () => {
   assert.doesNotMatch(calls[0] ?? "", / FROM laps /);
 });
 
+test("activity reads can exclude watch strength before fetching evidence", async () => {
+  const calls: Array<{ query: string; args: unknown[] }> = [];
+  const provider = new MySqlDataProvider({
+    async query(query: string, args: unknown[]) {
+      calls.push({ query, args });
+      return [[], []];
+    },
+  } as never);
+  const options = { excludeStrength: true };
+  await provider.getActivitySummariesByDateRange("athlete", "2026-08-01", "2026-08-01", options);
+  assert.equal(await provider.getActivityDetail("athlete", "watch-strength", options), null);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(
+    calls.map(({ args }) => args),
+    [
+      ["athlete", "2026-08-01", "2026-08-01"],
+      ["athlete", "watch-strength"],
+    ],
+  );
+  for (const { query } of calls) {
+    assert.match(query, /WHERE a\.user_id = \?[^\n]*\n\s*AND NOT COALESCE\(\(a\.sport_type IN \(402, 800\)/);
+  }
+});
+
 test("a replaced season plan resolves to the active row, not the archived overlap", async () => {
   const plan = (planId: string, status: string) => ({
     plan_id: planId,

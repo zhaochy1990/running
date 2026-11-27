@@ -133,6 +133,17 @@ test("the production graph reloads only the anchored record on each turn and res
     { configurable: { thread_id: `athlete:coach:manual-strength-${recordA}` } },
     {
       messages: [
+        new AIMessage({ content: "", tool_calls: [{ name: "get_strength_training_review", args: {}, id: "legacy-candidates" }] }),
+        new ToolMessage({
+          name: "get_strength_training_review",
+          tool_call_id: "legacy-candidates",
+          content: JSON.stringify({
+            status: "ambiguous",
+            source: "manual",
+            scope: { startDay: "2026-11-26", endDay: "2026-11-26" },
+            candidates: [{ id: recordA, name: "早练", startedAt: "2026-11-26T08:00:00+08:00" }],
+          }),
+        }),
         new AIMessage({ content: "", tool_calls: [{ name: "get_strength_training_review", args: {}, id: "legacy" }] }),
         new ToolMessage({ name: "get_strength_training_review", tool_call_id: "legacy", content: JSON.stringify(legacyResult) }),
         new AIMessage("旧版复盘回复"),
@@ -150,6 +161,8 @@ test("the production graph reloads only the anchored record on each turn and res
   for (const input of modelEvidence.slice(-2)) {
     assert.match(input, /stale/);
     assert.doesNotMatch(input, /old-start|old-end|watchHeartRate/);
+    assert.match(input, /recordingStartedAt/);
+    assert.match(input, /legacy-candidates/);
   }
   assert.ok(resumed.messages.some((message) => message.text === "旧版复盘回复"));
   assert.deepEqual(

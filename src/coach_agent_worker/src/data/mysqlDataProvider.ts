@@ -283,7 +283,7 @@ export class MySqlDataProvider implements DataProvider {
   /**
    * 区间内活动按 date 升序，`laps` 恒为空（列表查询用，不碰 laps 表）。
    */
-  async getActivitySummariesByDateRange(userId: string, startDay: string, endDay: string): Promise<Activity[]> {
+  async getActivitySummariesByDateRange(userId: string, startDay: string, endDay: string, options?: { excludeStrength?: boolean }): Promise<Activity[]> {
     assertDay(startDay);
     assertDay(endDay);
     if (startDay > endDay) {
@@ -303,6 +303,7 @@ export class MySqlDataProvider implements DataProvider {
          LEFT JOIN activity_training_load t
            ON t.user_id = a.user_id AND t.label_id = a.label_id
         WHERE a.user_id = ? AND DATE(a.date + INTERVAL 8 HOUR) BETWEEN ? AND ?
+          ${options?.excludeStrength ? `AND NOT COALESCE(${WATCH_STRENGTH_PREDICATE}, FALSE)` : ""}
         ORDER BY a.date ASC`,
       [userId, startDay, endDay],
     );
@@ -378,7 +379,11 @@ export class MySqlDataProvider implements DataProvider {
    * 单条运动的完整明细（含 `laps` 分段），按 `label_id` 精确取。列表查询请用
    * `getActivitySummariesByDateRange`；这里只处理一条，避免把整个日期区间的大段数据拉进上下文。
    */
-  async getActivityDetail(userId: string, labelId: string, options?: { includeKilometerSplits?: boolean }): Promise<Activity | null> {
+  async getActivityDetail(
+    userId: string,
+    labelId: string,
+    options?: { includeKilometerSplits?: boolean; excludeStrength?: boolean },
+  ): Promise<Activity | null> {
     const [rows] = await this.pool.query<RowDataPacket[]>(
       `SELECT a.user_id, a.label_id, a.name, a.sport_name, a.date,
               a.distance_m, a.duration_s, a.avg_pace_s_km, a.best_km_pace,
@@ -393,6 +398,7 @@ export class MySqlDataProvider implements DataProvider {
          LEFT JOIN activity_training_load t
            ON t.user_id = a.user_id AND t.label_id = a.label_id
         WHERE a.user_id = ? AND a.label_id = ?
+          ${options?.excludeStrength ? `AND NOT COALESCE(${WATCH_STRENGTH_PREDICATE}, FALSE)` : ""}
         LIMIT 1`,
       [userId, labelId],
     );
