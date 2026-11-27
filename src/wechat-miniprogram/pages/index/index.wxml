@@ -39,7 +39,7 @@
       <view
         wx:for="{{todayActivities}}"
         wx:key="labelId"
-        class="activity"
+        class="activity {{item.manualStrengthLabel ? 'activity--manual-strength' : ''}}"
         data-id="{{item.labelId}}"
         bindtap="onTodayActivityTap"
       >
@@ -56,7 +56,16 @@
         </view>
         <view class="activity__info">
           <view class="activity__name">{{item.name}}</view>
-          <view wx:if="{{item.manualStrengthLabel}}" class="activity__meta">{{item.manualStrengthLabel}}</view>
+          <view wx:if="{{item.manualStrengthLabel}}" class="activity__strength-meta">
+            <text class="activity__meta">{{item.manualStrengthLabel}}</text>
+            <button
+              wx:if="{{canContinueStrength}}"
+              class="activity__continue"
+              size="mini"
+              data-id="{{item.labelId}}"
+              catchtap="onContinueStrengthTap"
+            >继续训练</button>
+          </view>
           <view wx:else class="activity__meta">
             <text wx:if="{{item.distanceKm !== '—'}}">{{item.distanceKm}} km</text>
             <text wx:if="{{item.duration !== '—'}}"> · {{item.duration}}</text>
@@ -64,12 +73,6 @@
             <text wx:if="{{item.avgHr !== '—'}}"> · {{item.avgHr}} bpm</text>
           </view>
         </view>
-        <button
-          wx:if="{{item.manualStrengthLabel && canContinueStrength}}"
-          class="activity__continue"
-          data-id="{{item.labelId}}"
-          catchtap="onContinueStrengthTap"
-        >继续训练</button>
         <view wx:if="{{!item.manualStrengthLabel}}" class="activity__right">
           <view wx:if="{{item.load !== '—'}}" class="activity__load">{{item.load}}</view>
           <view class="activity__load-label">负荷</view>

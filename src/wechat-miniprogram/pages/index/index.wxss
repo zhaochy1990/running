@@ -627,11 +627,37 @@ button.rest-card__coach {
   align-items: flex-end;
 }
 
+.activity--manual-strength {
+  padding: 16rpx 0;
+}
+
+.activity--manual-strength .activity__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity__strength-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  margin-top: 4rpx;
+}
+
+.activity__strength-meta .activity__meta {
+  margin-top: 0;
+}
+
 .activity__continue {
   flex-shrink: 0;
+  width: 136rpx;
+  min-width: 0;
+  max-width: 136rpx;
   margin: 0;
-  padding: 0 18rpx;
-  line-height: 80rpx;
+  padding: 0;
+  line-height: 84rpx;
+  white-space: nowrap;
   color: var(--color-accent-pale);
   background: transparent;
   font-size: 24rpx;
