@@ -7,15 +7,14 @@ import "time"
 // balance_after column — the balance truth lives in user_points, and a
 // reconciliation script can be added later without a schema change.
 type PointTransaction struct {
-	ID string `gorm:"column:id;type:char(36);primaryKey;index:idx_user_points_order,priority:2,sort:desc"`
-	// UserID + id DESC is the ledger page index: cursor pagination walks one
-	// user's newest-first stream on a single secondary index.
-	UserID    string    `gorm:"column:user_id;type:char(36);not null;index:idx_user_points_order,priority:1"`
+	ID string `gorm:"column:id;type:char(36);primaryKey;index:idx_user_points_time,priority:3,sort:desc"`
+	// The ledger index supports chronological keyset pagination for each user.
+	UserID    string    `gorm:"column:user_id;type:char(36);not null;index:idx_user_points_time,priority:1"`
 	Type      string    `gorm:"column:type;type:varchar(16);not null"`
 	Amount    int       `gorm:"column:amount;not null"` // positive earn, negative redeem
 	Ref       string    `gorm:"column:ref;type:varchar(64);not null"`
 	Remark    *string   `gorm:"column:remark;type:varchar(255)"`
-	CreatedAt time.Time `gorm:"column:created_at;type:datetime(6);autoCreateTime:false"`
+	CreatedAt time.Time `gorm:"column:created_at;type:datetime(6);autoCreateTime:false;index:idx_user_points_time,priority:2,sort:desc"`
 }
 
 func (PointTransaction) TableName() string { return "point_transactions" }

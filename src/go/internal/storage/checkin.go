@@ -389,7 +389,8 @@ type PointPage struct {
 }
 
 type pointCursor struct {
-	ID string `json:"id"`
+	ID        string     `json:"id"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
 }
 
 func encodePointCursor(c pointCursor) (string, error) {
@@ -413,7 +414,7 @@ func decodePointCursor(raw string) (pointCursor, error) {
 }
 
 // ListPointTransactions returns one user's ledger newest-first on the
-// (user_id, id DESC) index, with injuries-style keyset cursor pagination.
+// (created_at DESC, id DESC) order, with keyset cursor pagination.
 func (s *Store) ListPointTransactions(ctx context.Context, userID, cursor string, limit int) (*PointPage, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
@@ -432,11 +433,23 @@ func (s *Store) ListPointTransactions(ctx context.Context, userID, cursor string
 		if err != nil {
 			return nil, err
 		}
-		query = query.Where("id < ?", c.ID)
+		// Cursors issued before chronological ordering contain only an ID.
+		// Resolve their timestamp so clients can finish an in-flight request.
+		if c.CreatedAt == nil {
+			var row PointTransaction
+			if err := s.db.WithContext(ctx).Where("user_id = ? AND id = ?", uid, c.ID).First(&row).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil, &PointCursorError{Message: "invalid points cursor"}
+				}
+				return nil, err
+			}
+			c.CreatedAt = &row.CreatedAt
+		}
+		query = query.Where("(created_at < ? OR (created_at = ? AND id < ?))", *c.CreatedAt, *c.CreatedAt, c.ID)
 	}
 
 	var rows []*PointTransaction
-	if err := query.Order("id DESC").Limit(limit + 1).Find(&rows).Error; err != nil {
+	if err := query.Order("created_at DESC").Order("id DESC").Limit(limit + 1).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	balance, err := readBalance(s.db.WithContext(ctx), uid)
@@ -445,7 +458,7 @@ func (s *Store) ListPointTransactions(ctx context.Context, userID, cursor string
 	}
 	page := &PointPage{Items: rows, Balance: balance}
 	if len(rows) > limit {
-		encoded, err := encodePointCursor(pointCursor{ID: rows[limit-1].ID})
+		encoded, err := encodePointCursor(pointCursor{ID: rows[limit-1].ID, CreatedAt: &rows[limit-1].CreatedAt})
 		if err != nil {
 			return nil, err
 		}

@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -437,5 +438,49 @@ func TestListPointTransactions_Pagination(t *testing.T) {
 	}
 	if _, err := st.ListPointTransactions(ctx, uid, "", 51); err == nil {
 		t.Fatal("limit over the max unexpectedly accepted")
+	}
+}
+
+func TestListPointTransactions_ChronologicalPagination(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	migrateCheckInTables(t, st)
+	uid := checkInUser(t)
+	base := time.Date(2026, 11, 1, 0, 0, 0, 123456000, time.UTC)
+	// UUID order deliberately disagrees with time order; two rows share a
+	// timestamp across a page boundary and must use ID as a stable tie-breaker.
+	rows := []PointTransaction{
+		{ID: "ffffffff-ffff-4fff-8fff-ffffffffffff", UserID: uid, Type: PointTypeEarnCheckin, Amount: 1, Ref: "old", CreatedAt: base},
+		{ID: "11111111-1111-4111-8111-111111111111", UserID: uid, Type: PointTypeEarnCheckin, Amount: 1, Ref: "new-a", CreatedAt: base.Add(time.Hour)},
+		{ID: "22222222-2222-4222-8222-222222222222", UserID: uid, Type: PointTypeEarnCheckin, Amount: 1, Ref: "new-b", CreatedAt: base.Add(time.Hour)},
+	}
+	// IDs are primary keys, so clean up even when using a shared test database.
+	ids := []string{uuid.NewString(), uuid.NewString(), uuid.NewString()}
+	sort.Strings(ids)
+	rows[0].ID, rows[1].ID, rows[2].ID = ids[2], ids[0], ids[1]
+	for i := range rows {
+		if err := st.db.Create(&rows[i]).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { st.db.Where("user_id = ?", uid).Delete(&PointTransaction{}) })
+	cursor := ""
+	for _, want := range []string{rows[2].ID, rows[1].ID, rows[0].ID} {
+		page, err := st.ListPointTransactions(ctx, uid, cursor, 1)
+		if err != nil || len(page.Items) != 1 || page.Items[0].ID != want {
+			t.Fatalf("page = %+v, %v; want %s", page, err, want)
+		}
+		cursor = page.NextCursor
+	}
+	if cursor != "" {
+		t.Fatal("last page has a cursor")
+	}
+	legacy, err := encodePointCursor(pointCursor{ID: rows[2].ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := st.ListPointTransactions(ctx, uid, legacy, 1)
+	if err != nil || len(page.Items) != 1 || page.Items[0].ID != rows[1].ID {
+		t.Fatalf("legacy cursor page = %+v, %v", page, err)
 	}
 }
