@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
-import { HumanMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import type { CoachAgentConfig } from "../config/config.js";
 import type { DataProvider, ManualStrengthRecord } from "../data/dataProvider.js";
 import { createCoachAgent } from "./coachAgent.js";
@@ -12,6 +12,7 @@ test("the production graph reloads only the anchored record on each turn and res
   const recordB = "4bc80c96-0415-4bdc-bf17-83a919154593";
   const reads: string[] = [];
   const evidence: unknown[] = [];
+  const modelEvidence: string[] = [];
   const modelChoices: string[] = [];
   let quantity = 7;
   let malformedArguments = false;
@@ -32,8 +33,24 @@ test("the production graph reloads only the anchored record on each turn and res
     async getManualStrengthSummaries() {
       throw new Error("an anchored turn must not search by date");
     },
-    async getWatchStrengthSummaries() {
-      throw new Error("an unrequested watch must not be read");
+    async getActivityDetail() {
+      assert.fail("an anchored strength review must not read watch activities");
+    },
+    async getUserProfile() {
+      return null;
+    },
+    async getUserInjuries(userId: string) {
+      assert.equal(userId, "athlete");
+      return [{ description: "旧踝伤", recoveryStatus: "恢复中", runningRestriction: "避免跳跃" }];
+    },
+    async getMasterPlanMetadataForDate() {
+      return null;
+    },
+    async getRaceTarget() {
+      return null;
+    },
+    async getPlanSessions() {
+      return [];
     },
   } satisfies Partial<DataProvider>;
   process.env.STRIDE_STRENGTH_REVIEW_TEST_KEY = "test-key";
@@ -44,6 +61,7 @@ test("the production graph reloads only the anchored record on each turn and res
     const chunks: Uint8Array[] = [];
     for await (const chunk of request) chunks.push(chunk);
     const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    modelEvidence.push(JSON.stringify(body.messages.filter((message: { role: string }) => message.role === "tool")));
     modelChoices.push(body.tool_choice ?? "");
     const toolTurn = body.tool_choice === "required" && !omitToolCall;
     if (!toolTurn && body.messages.at(-1)?.role === "tool") evidence.push(JSON.parse(body.messages.at(-1).content));
@@ -67,7 +85,7 @@ test("the production graph reloads only the anchored record on each turn and res
                       type: "function",
                       function: {
                         name: "get_strength_training_review",
-                        arguments: JSON.stringify(malformedArguments ? { watchReference: 123 } : { recordId: recordB, startDay: "2025-09-01" }),
+                        arguments: JSON.stringify(malformedArguments ? { startDay: 123 } : { recordId: recordB, startDay: "2025-09-01" }),
                       },
                     },
                   ],
@@ -105,11 +123,48 @@ test("the production graph reloads only the anchored record on each turn and res
   }
   await turn(recordA, "早练做了什么？");
   await turn(recordB, "晚练做了什么？");
+  const legacyResult = {
+    status: "found",
+    source: "manual",
+    record: { id: recordA, startedAt: "old-start", endedAt: "old-end" },
+    watchHeartRate: { avgHr: 199 },
+  };
+  await graph.updateState(
+    { configurable: { thread_id: `athlete:coach:manual-strength-${recordA}` } },
+    {
+      messages: [
+        new AIMessage({ content: "", tool_calls: [{ name: "get_strength_training_review", args: {}, id: "legacy-candidates" }] }),
+        new ToolMessage({
+          name: "get_strength_training_review",
+          tool_call_id: "legacy-candidates",
+          content: JSON.stringify({
+            status: "ambiguous",
+            source: "manual",
+            scope: { startDay: "2026-11-26", endDay: "2026-11-26" },
+            candidates: [{ id: recordA, name: "早练", startedAt: "2026-11-26T08:00:00+08:00" }],
+          }),
+        }),
+        new AIMessage({ content: "", tool_calls: [{ name: "get_strength_training_review", args: {}, id: "legacy" }] }),
+        new ToolMessage({ name: "get_strength_training_review", tool_call_id: "legacy", content: JSON.stringify(legacyResult) }),
+        new AIMessage("旧版复盘回复"),
+      ],
+    },
+    "strength_review",
+  );
   quantity = 42;
   const resumed = await turn(recordA, "平板撑了多久？");
   assert.deepEqual(reads, [recordA, recordB, recordA]);
   assert.deepEqual(modelChoices, ["required", "none", "required", "none", "required", "none"]);
   assert.match(JSON.stringify(evidence.at(-1)), /"quantity":42/);
+  assert.match(JSON.stringify(evidence.at(-1)), /旧踝伤/);
+  assert.doesNotMatch(JSON.stringify(evidence.at(-1)), /endedAt|watchHeartRate/);
+  for (const input of modelEvidence.slice(-2)) {
+    assert.match(input, /stale/);
+    assert.doesNotMatch(input, /old-start|old-end|watchHeartRate/);
+    assert.match(input, /recordingStartedAt/);
+    assert.match(input, /legacy-candidates/);
+  }
+  assert.ok(resumed.messages.some((message) => message.text === "旧版复盘回复"));
   assert.deepEqual(
     resumed.messages.filter((message) => message.getType() === "human").map((message) => message.text),
     ["早练做了什么？", "平板撑了多久？"],

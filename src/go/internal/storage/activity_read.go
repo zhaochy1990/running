@@ -198,11 +198,11 @@ func activityListSource(db *gorm.DB, uid string, p ActivityListParams, includeSt
 		"training_load", "vo2max", "train_type", "ascent_m", "aerobic_effect", "anaerobic_effect",
 		"temperature", "humidity", "feels_like", "wind_speed", "route_thumb_json", "route_thumb_url",
 	}
+	// Manual timestamps measure the recording window; the actual exercise duration is unknown.
 	manualValues := map[string]string{
 		"user_id": "user_id", "label_id": "id", "name": "name", "sport_type": "402",
 		"sport_name": "'Strength'", "sport": "'strength'", "date": "started_at",
-		"provider":   "'" + ManualStrengthProvider + "'",
-		"duration_s": "TIMESTAMPDIFF(MICROSECOND, started_at, ended_at) / 1000000",
+		"provider": "'" + ManualStrengthProvider + "'",
 	}
 	projection := make([]string, len(columns))
 	for i, column := range columns {

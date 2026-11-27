@@ -28,12 +28,9 @@ interface PageHandlers {
   onCoachReview(): void;
 }
 
-function trainingTimeLabel(record: ManualStrengthRecord): string {
+function recordingTimeLabel(record: ManualStrengthRecord): string {
   const start = Date.parse(record.started_at);
-  const end = Date.parse(record.ended_at);
-  const day = epochToShanghaiYmd(start);
-  const endDay = epochToShanghaiYmd(end);
-  return `${day} ${epochToShanghaiHm(start)} – ${endDay === day ? '' : `${endDay} `}${epochToShanghaiHm(end)}`;
+  return `开始录入 ${epochToShanghaiYmd(start)} ${epochToShanghaiHm(start)}`;
 }
 
 Page<PageData, PageHandlers>({
@@ -88,7 +85,7 @@ Page<PageData, PageHandlers>({
       const { action_count, set_count } = summarizeStrengthActions(record.actions);
       this.setData({
         record,
-        timeLabel: trainingTimeLabel(record),
+        timeLabel: recordingTimeLabel(record),
         summaryLabel: `手动记录 · ${action_count} 个动作 / ${set_count} 组`,
         actionRows: record.actions.map((action, index) => ({
           key: index,

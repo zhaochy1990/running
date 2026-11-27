@@ -428,6 +428,30 @@ test("activity summaries never touch the laps table", async () => {
   assert.doesNotMatch(calls[0] ?? "", / FROM laps /);
 });
 
+test("activity reads can exclude watch strength before fetching evidence", async () => {
+  const calls: Array<{ query: string; args: unknown[] }> = [];
+  const provider = new MySqlDataProvider({
+    async query(query: string, args: unknown[]) {
+      calls.push({ query, args });
+      return [[], []];
+    },
+  } as never);
+  const options = { excludeStrength: true };
+  await provider.getActivitySummariesByDateRange("athlete", "2026-08-01", "2026-08-01", options);
+  assert.equal(await provider.getActivityDetail("athlete", "watch-strength", options), null);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(
+    calls.map(({ args }) => args),
+    [
+      ["athlete", "2026-08-01", "2026-08-01"],
+      ["athlete", "watch-strength"],
+    ],
+  );
+  for (const { query } of calls) {
+    assert.match(query, /WHERE a\.user_id = \?[^\n]*\n\s*AND NOT COALESCE\(\(a\.sport_type IN \(402, 800\)/);
+  }
+});
+
 test("a replaced season plan resolves to the active row, not the archived overlap", async () => {
   const plan = (planId: string, status: string) => ({
     plan_id: planId,
@@ -719,7 +743,7 @@ test("legacy sparse source summaries match Go zero values without inventing evid
   assert.equal(bounded?.source?.speed?.reasons?.[0]?.length, 256);
 });
 
-test("strength review adapter scopes each source and decodes Go's saved sets", async () => {
+test("strength review adapter scopes manual records and decodes Go's saved sets", async () => {
   const userId = "test-athlete";
   const startedAt = new Date("2026-11-30T15:59:59Z");
   const endedAt = new Date("2026-11-30T16:25:00Z");
@@ -728,9 +752,6 @@ test("strength review adapter scopes each source and decodes Go's saved sets", a
   const provider = new MySqlDataProvider({
     async query(sql: string, values: unknown[]) {
       calls.push({ sql, values });
-      if (sql.includes("FROM activities")) {
-        return [[{ label_id: "watch-1", date: startedAt, name: "腕表训练", provider: "coros" }]];
-      }
       if (sql.includes("AND id = ?") && values[0] !== userId) return [[]];
       return [[{ id: "manual-1", name: "月末力量", started_at: startedAt, ended_at: endedAt, note: "手录备注", actions }]];
     },
@@ -745,15 +766,11 @@ test("strength review adapter scopes each source and decodes Go's saved sets", a
     actions,
   });
   assert.equal(await provider.getManualStrengthDetail("other-athlete", "manual-1"), null);
-  assert.deepEqual(await provider.getWatchStrengthSummaries(userId, "2026-11-30", "2026-11-30"), [
-    { id: "watch-1", name: "腕表训练", startedAt, provider: "coros" },
-  ]);
   const expectedBounds = [userId, new Date("2026-11-29T16:00:00.000Z"), new Date("2026-11-30T16:00:00.000Z")];
   assert.deepEqual(
     calls.map((call) => call.values),
-    [expectedBounds, [userId, "manual-1"], ["other-athlete", "manual-1"], expectedBounds],
+    [expectedBounds, [userId, "manual-1"], ["other-athlete", "manual-1"]],
   );
   assert.match(calls[0]?.sql ?? "", /WHERE user_id = \? AND started_at >= \? AND started_at < \?/);
   assert.match(calls[1]?.sql ?? "", /WHERE user_id = \? AND id = \?/);
-  assert.match(calls[3]?.sql ?? "", /WHERE a.user_id = \? AND a.date >= \? AND a.date < \? AND \(a.sport_type IN \(402, 800\)/);
 });

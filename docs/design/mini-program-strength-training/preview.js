@@ -437,7 +437,7 @@ actions.addEventListener('submit', event => {
   event.preventDefault();
   const message = new FormData(event.target).get('message').trim();
   if (!message) return;
-  const exchange = coachPreview.send(message, params.get('state') !== 'empty');
+  const exchange = coachPreview.send(message);
   screen.querySelector('.coach-messages').insertAdjacentHTML('beforeend', exchange);
   event.target.reset();
   screen.scrollTop = screen.scrollHeight;

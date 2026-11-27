@@ -134,10 +134,12 @@ export class SnapshotDataProvider implements DataProvider {
     return rows;
   }
 
-  async getActivitySummariesByDateRange(userId: string, startDay: string, endDay: string): Promise<Activity[]> {
+  async getActivitySummariesByDateRange(userId: string, startDay: string, endDay: string, options?: { excludeStrength?: boolean }): Promise<Activity[]> {
     this.assertUser(userId, "getActivitySummariesByDateRange");
     this.assertRange("getActivitySummariesByDateRange", startDay, endDay);
-    return this.activities(startDay, endDay).map((activity) => ({ ...activity, laps: [] }));
+    return this.activities(startDay, endDay)
+      .filter((activity) => !options?.excludeStrength || !activity.isStrength)
+      .map((activity) => ({ ...activity, laps: [] }));
   }
 
   async getManualStrengthSummaries() {
@@ -146,10 +148,6 @@ export class SnapshotDataProvider implements DataProvider {
 
   async getManualStrengthDetail() {
     return this.notCovered("getManualStrengthDetail", "manual strength reviews are not included in plan evaluation snapshots");
-  }
-
-  async getWatchStrengthSummaries() {
-    return this.notCovered("getWatchStrengthSummaries", "watch strength reviews are not included in plan evaluation snapshots");
   }
 
   async getActivitiesByDateRange(userId: string, startDay: string, endDay: string): Promise<Activity[]> {
@@ -235,9 +233,13 @@ export class SnapshotDataProvider implements DataProvider {
     this.notCovered("getWeeklyFeedbackByDateRange", `${startDay}..${endDay}`);
   }
   /** 快照冻结的是区间读面（含 laps）；公里分段来自 Go API，快照未覆盖。 */
-  async getActivityDetail(userId: string, labelId: string): Promise<Activity | null> {
+  async getActivityDetail(userId: string, labelId: string, options?: { excludeStrength?: boolean }): Promise<Activity | null> {
     this.assertUser(userId, "getActivityDetail");
-    return this.activities("1900-01-01", this.snapshot.as_of_day).find((activity) => activity.labelId === labelId) ?? null;
+    return (
+      this.activities("1900-01-01", this.snapshot.as_of_day).find(
+        (activity) => activity.labelId === labelId && (!options?.excludeStrength || !activity.isStrength),
+      ) ?? null
+    );
   }
   async getWeeklyPlan(userId: string, weekName: string): Promise<Record<string, unknown> | null> {
     this.assertUser(userId, "getWeeklyPlan");

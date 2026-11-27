@@ -8,16 +8,14 @@ export interface DataProvider {
   getWeeklyFeedbackByDateRange(userId: string, startDay: string, endDay: string): Promise<WeeklyFeedback[]>;
   getMasterPlanMetadataForDate(userId: string, day: string): Promise<ActiveMasterPlanMetadata | null>;
   /** 区间内活动按 date 升序，不含 `laps`（列表/问答用；避免拉整段分段数据）。 */
-  getActivitySummariesByDateRange(userId: string, startDay: string, endDay: string): Promise<Activity[]>;
+  getActivitySummariesByDateRange(userId: string, startDay: string, endDay: string, options?: { excludeStrength?: boolean }): Promise<Activity[]>;
   /** 全量活动（含 `laps` 分段），供 master/weekly context 等需要完整数据的调用方。 */
   getActivitiesByDateRange(userId: string, startDay: string, endDay: string): Promise<Activity[]>;
   /** 单条运动的完整明细（含 `laps` 分段）；不存在返回 null。列表查询用 getActivitySummariesByDateRange。 */
-  getActivityDetail(userId: string, labelId: string, options?: { includeKilometerSplits?: boolean }): Promise<Activity | null>;
+  getActivityDetail(userId: string, labelId: string, options?: { includeKilometerSplits?: boolean; excludeStrength?: boolean }): Promise<Activity | null>;
   /** Saved manual workouts in the inclusive Shanghai range, without their sets. */
   getManualStrengthSummaries(userId: string, startDay: string, endDay: string): Promise<StrengthRecordSummary[]>;
   getManualStrengthDetail(userId: string, recordId: string): Promise<ManualStrengthRecord | null>;
-  /** Watch strength identities only. Read measurements after choosing a specific record. */
-  getWatchStrengthSummaries(userId: string, startDay: string, endDay: string): Promise<WatchStrengthSummary[]>;
   getDailyTrainingLoadByDateRange(userId: string, startDay: string, endDay: string): Promise<DailyTrainingLoad[]>;
   /** 确认为比赛的跑步记录（races 表 ∪ session_class='race'，devops#790），最近在前；`minDistanceKm` 只是噪音地板（默认 4.5km），不做比赛判定。 */
   getRaceHistory(userId: string, options: { asOfDate: string; minDistanceKm?: number; limit?: number }): Promise<RaceEffort[]>;
@@ -134,10 +132,6 @@ export interface ManualStrengthRecord extends StrengthRecordSummary {
       quantity_unit: "reps" | "seconds";
     }[];
   }[];
-}
-
-export interface WatchStrengthSummary extends StrengthRecordSummary {
-  provider: string;
 }
 
 /** One watch-synced activity. `date` is a UTC instant. */

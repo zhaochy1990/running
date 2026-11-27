@@ -22,7 +22,7 @@ import * as z from "zod";
 import type { CoachToolRuntime } from "../agents/coachAgent.js";
 import type { Activity, DataProvider } from "../data/dataProvider.js";
 import { defineCoachTools } from "./common.js";
-import { useDedicatedStrengthReview } from "./strengthReview.js";
+import { strengthReviewActivityScope } from "./strengthReview.js";
 
 const getActivitiesByDateRangeSchema = z.object({
   startDay: z
@@ -53,6 +53,8 @@ type GetActivityDetailInput = z.infer<typeof getActivityDetailSchema>;
 
 /** 未显式传 `limit` 时的默认值：足以覆盖一次训练问答，又不会撑爆上下文/触发落盘。 */
 const DEFAULT_ACTIVITIES_LIMIT = 30;
+const ACTIVITY_PROVENANCE = { source: "stride", vendor_derived: false } as const;
+const STRENGTH_REVIEW_ONLY = { reviewTool: "get_strength_training_review", provenance: ACTIVITY_PROVENANCE } as const;
 
 class ActivitiesToolImpl {
   constructor(
@@ -69,35 +71,22 @@ class ActivitiesToolImpl {
     if (!asof) {
       throw new Error("get_activities_by_date_range: missing asof in runtime context");
     }
+    const scope = this.useStrengthReview ? strengthReviewActivityScope(runtime.state) : "all";
+    if (scope === "none") {
+      return { activities: [], truncated: false, ...STRENGTH_REVIEW_ONLY };
+    }
     const endDay = input.endDay ?? asof;
     const limit = input.limit ?? DEFAULT_ACTIVITIES_LIMIT;
     // 列表走 summaries：SQL 层面就不碰 laps 表。要分段明细再去 get_activity_details。
-    const all = await this.store.getActivitySummariesByDateRange(userId, input.startDay, endDay);
+    const all = await (scope === "non-strength"
+      ? this.store.getActivitySummariesByDateRange(userId, input.startDay, endDay, { excludeStrength: true })
+      : this.store.getActivitySummariesByDateRange(userId, input.startDay, endDay));
     const truncated = all.length > limit;
     // date 升序，取末尾若干条 = 区间内最近的运动。
     const activities = truncated ? all.slice(-limit) : all;
-    const maskWatchStrength =
-      this.useStrengthReview &&
-      activities.some((activity) => activity.isStrength) &&
-      (useDedicatedStrengthReview(runtime.state) || (await this.store.getManualStrengthSummaries(userId, input.startDay, endDay)).length > 0);
     return {
-      activities: maskWatchStrength
-        ? activities.map((activity) =>
-            activity.isStrength
-              ? {
-                  labelId: activity.labelId,
-                  name: activity.name,
-                  date: activity.date,
-                  shanghaiDay: activity.shanghaiDay,
-                  sport: "strength",
-                  provider: activity.provider,
-                  reviewTool: "get_strength_training_review",
-                  laps: [],
-                }
-              : activity,
-          )
-        : activities,
-      provenance: { source: "stride", vendor_derived: false },
+      activities,
+      provenance: ACTIVITY_PROVENANCE,
       truncated,
     };
   }
@@ -114,18 +103,16 @@ class ActivitiesToolImpl {
     if (!userId) {
       throw new Error("get_activity_details: missing userId in runtime context");
     }
-    const activity = await this.store.getActivityDetail(userId, input.labelId);
-    if (
-      activity?.isStrength &&
-      this.useStrengthReview &&
-      (useDedicatedStrengthReview(runtime.state) ||
-        (await this.store.getManualStrengthSummaries(userId, activity.shanghaiDay, activity.shanghaiDay)).length > 0)
-    ) {
-      return { activity: null, reviewTool: "get_strength_training_review", provenance: { source: "stride", vendor_derived: false } };
+    const scope = this.useStrengthReview ? strengthReviewActivityScope(runtime.state) : "all";
+    if (scope === "none") {
+      return { activity: null, ...STRENGTH_REVIEW_ONLY };
     }
+    const activity = await (scope === "non-strength"
+      ? this.store.getActivityDetail(userId, input.labelId, { excludeStrength: true })
+      : this.store.getActivityDetail(userId, input.labelId));
     return {
       activity,
-      provenance: { source: "stride", vendor_derived: false },
+      provenance: ACTIVITY_PROVENANCE,
     };
   }
 }
@@ -140,7 +127,7 @@ class ActivitiesToolImpl {
  */
 export function createActivitiesTools(store: DataProvider, options: { useStrengthReview?: boolean } = {}): StructuredTool[] {
   const impl = new ActivitiesToolImpl(store, options.useStrengthReview === true);
-  const strengthHint = options.useStrengthReview ? " 力量训练仅提供列表摘要，力量复盘与明细应调用 get_strength_training_review。" : "";
+  const strengthHint = options.useStrengthReview ? " 复盘已完成的力量训练请使用 get_strength_training_review。" : "";
   return defineCoachTools([
     {
       name: "get_activities_by_date_range",

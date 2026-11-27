@@ -50,7 +50,7 @@ const coachPreview = (() => {
     return [...days];
   }
 
-  function reply(message, includeWatch) {
+  function reply(message) {
     const manual = manualLog.coachRecords();
     if (recordId !== null) return summarize(manual.find(record => record.id === recordId));
 
@@ -67,14 +67,12 @@ const coachPreview = (() => {
     }
     if (matching.length) return summarize(matching[0]);
 
-    const watch = includeWatch && miniProgramHome.watchStrength().find(relevant);
-    if (watch) return `这段时间可以参考 ${watch.date} 的手表同步记录「${watch.title}」（${watch.details}）。`;
-    return '这段时间还没有可供复盘的力量训练记录。';
+    return '这段时间还没有可供复盘的手动力量训练记录。';
   }
 
-  function send(message, includeWatch) {
+  function send(message) {
     const messages = sessions.get(recordId) ?? [];
-    const exchange = [{ text: message, fromUser: true }, { text: reply(message, includeWatch), fromUser: false }];
+    const exchange = [{ text: message, fromUser: true }, { text: reply(message), fromUser: false }];
     messages.push(...exchange);
     sessions.set(recordId, messages);
     return exchange.map(messageView).join('');

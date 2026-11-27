@@ -2,7 +2,7 @@ import { isAIMessage, isHumanMessage, isToolMessage } from "@langchain/core/mess
 import { addDays, shanghaiDay, shanghaiIso } from "@stride/contract";
 import * as z from "zod";
 import type { CoachToolRuntime } from "../agents/coachAgent.js";
-import type { Activity, DataProvider, ManualStrengthRecord, StrengthRecordSummary, WatchStrengthSummary } from "../data/dataProvider.js";
+import type { DataProvider, ManualStrengthRecord, StrengthRecordSummary } from "../data/dataProvider.js";
 import { defineCoachTool } from "./common.js";
 
 const reviewSchema = z.object({
@@ -10,27 +10,54 @@ const reviewSchema = z.object({
   endDay: z.iso.date().optional().describe("问题范围的上海结束日（含），单日时省略"),
   recordId: z.string().trim().min(1).max(191).optional().describe("用户选中记录后传候选返回的 ID，保持原问题的日期范围"),
   latest: z.boolean().optional().describe("仅用户明确要求最近一次时传 true"),
-  watchReference: z
-    .string()
-    .trim()
-    .min(1)
-    .max(191)
-    .optional()
-    .describe("用户本轮明确指定的手表记录 ID、完整名称或精确上海开始时间，必须照抄原话，不得自己选择候选"),
 });
 
 function candidate(record: StrengthRecordSummary) {
-  return { id: record.id, name: record.name, startedAt: shanghaiIso(record.startedAt) };
+  return { id: record.id, name: record.name, recordingStartedAt: shanghaiIso(record.startedAt) };
 }
 
-function manualEvidence(record: ManualStrengthRecord, scope: ReviewScope) {
+const phaseContext = z.array(z.object({ name: z.string(), start_date: z.iso.date(), end_date: z.iso.date(), focus: z.string() }));
+
+async function manualEvidence(store: DataProvider, userId: string, record: ManualStrengthRecord, scope: ReviewScope, asof: string) {
+  const day = shanghaiDay(record.startedAt);
+  const [profile, injuries, plan, race, sessions] = await Promise.allSettled([
+    store.getUserProfile(userId),
+    store.getUserInjuries(userId),
+    store.getMasterPlanMetadataForDate(userId, day),
+    store.getRaceTarget(userId),
+    store.getPlanSessions(userId, addDays(day, -3), addDays(day, 3)),
+  ]);
+  const phases = phaseContext.safeParse(plan.status === "fulfilled" ? plan.value?.content.phases : undefined);
+  const phase = phases.data?.find((item) => item.start_date <= day && day <= item.end_date);
+  const goal = race.status === "fulfilled" ? race.value : null;
   return {
     status: "found",
     source: "manual",
     scope,
-    record: { ...candidate(record), endedAt: shanghaiIso(record.endedAt), note: record.note, actions: record.actions },
+    record: { ...candidate(record), note: record.note, actions: record.actions },
+    athleteContext: {
+      asOfDay: asof,
+      runningAgeRange: profile.status === "fulfilled" ? (profile.value?.runningAgeRange ?? null) : null,
+      injuries: injuries.status === "fulfilled" ? injuries.value : null,
+      phase: phase ?? null,
+      currentRaceGoal:
+        goal && goal.race_date >= asof
+          ? {
+              name: goal.race_name,
+              date: goal.race_date,
+              distance: goal.race_distance,
+              targetFinishTime: goal.target_finish_time,
+            }
+          : null,
+      plannedRuns:
+        sessions.status === "fulfilled"
+          ? sessions.value.filter((item) => item.source !== "watch" && item.kind === "run").map(({ date, name, summary }) => ({ date, name, summary }))
+          : null,
+    },
   };
 }
+
+export const STRENGTH_REVIEW_GUIDANCE = `以手录的动作、负重、组数、次数或单组秒数、备注为本次训练依据。结合工具返回的跑步经历、跑步安排、备赛目标、该日训练阶段和已记录伤病限制，点评动作选择与训练量对跑步的适配。计划安排不能当成实际已跑，背景缺失时不要猜测，伤病信息只用于说明训练限制。录入开始时间用于定位记录，训练总用时和组间休息未测量，不能从录入时间、单组秒数或历史回复推断。手表和心率不参与力量训练复盘，也不向用户索取。`;
 
 export const STRENGTH_REVIEW_TOOL_NAME = "get_strength_training_review";
 const LATEST_REQUEST = /(?:最近|最后|最新)(?:的|做的)?(?:一|这|那)次|上一次|most recent|latest|last (?:session|workout)/i;
@@ -40,7 +67,7 @@ const NEGATED_SELECTION =
   /不要|不用|无需|不需要|不想|别(?:看|查|用|选|复盘|补|加|提|参考)|忽略|不看|不查|不参考|不是|以外|之外|不复盘|don['’]t|do not|without|ignore|skip|except/i;
 const priorEvidenceSchema = z.object({
   status: z.enum(["found", "ambiguous"]),
-  source: z.enum(["manual", "watch"]),
+  source: z.literal("manual"),
   scope: z.object({ startDay: z.iso.date(), endDay: z.iso.date() }),
   record: z.object({ id: z.string() }).optional(),
   candidates: z.array(z.object({ id: z.string() })).optional(),
@@ -50,7 +77,6 @@ type ReviewScope = PriorEvidence["scope"];
 
 function choose<Record extends StrengthRecordSummary>(
   records: Record[],
-  source: PriorEvidence["source"],
   input: z.infer<typeof reviewSchema>,
   userText: string,
   priorEvidence: PriorEvidence | undefined,
@@ -60,14 +86,14 @@ function choose<Record extends StrengthRecordSummary>(
     const selected = records.find((record) => record.id === recordId);
     if (!selected) return undefined;
     // A candidate ID copied out of a tool result is not an athlete's choice.
-    const sourceClauses = reviewClauses(userText).filter((clause) => (source === "manual" ? !WATCH_WORD.test(clause) : !/手录|手动记录|手工录入/.test(clause)));
+    const sourceClauses = reviewClauses(userText).filter((clause) => !WATCH_WORD.test(clause));
     const affirmative = sourceClauses.filter((clause) => !NEGATED_SELECTION.test(clause));
     const names = records.filter((record) => affirmative.some((clause) => explicitlyMentions(record, clause)));
     if (names.length > 0) return names.length === 1 && names[0] === selected ? selected : undefined;
     if (sourceClauses.some((clause) => NEGATED_SELECTION.test(clause) && explicitlyMentions(selected, clause))) return undefined;
     if (priorEvidence?.record?.id === recordId && CHANGE_RECORD.test(userText)) return undefined;
     if (records.length === 1) return selected;
-    if (priorEvidence?.source !== source) return undefined;
+    if (!priorEvidence) return undefined;
 
     const choices = new Set(affirmative.flatMap((clause) => [...clause.matchAll(ORDINAL)].map((match) => match[1] ?? "")));
     if (choices.size === 1 && priorEvidence.status === "ambiguous") {
@@ -84,10 +110,10 @@ function choose<Record extends StrengthRecordSummary>(
   return undefined;
 }
 
-function unresolved(records: StrengthRecordSummary[], source: PriorEvidence["source"], scope: ReviewScope, recordId?: string) {
-  if (records.length === 0 || (recordId && !records.some((record) => record.id === recordId))) return { status: "missing", source };
+function unresolved(records: StrengthRecordSummary[], scope: ReviewScope, recordId?: string) {
+  if (records.length === 0 || (recordId && !records.some((record) => record.id === recordId))) return { status: "missing", source: "manual" };
   const limit = 10;
-  return { status: "ambiguous", source, scope, candidates: records.slice(-limit).map(candidate), truncated: records.length > limit };
+  return { status: "ambiguous", source: "manual", scope, candidates: records.slice(-limit).map(candidate), truncated: records.length > limit };
 }
 
 function readEvidence(content: unknown): PriorEvidence | undefined {
@@ -105,7 +131,12 @@ export function isFoundManualStrengthEvidence(content: unknown): boolean {
   return evidence?.status === "found" && evidence.source === "manual" && evidence.record !== undefined;
 }
 
-function readConversation(state: unknown): { userText: string; priorEvidence?: PriorEvidence; activeStrengthReview?: boolean } {
+function readConversation(state: unknown): {
+  userText: string;
+  priorEvidence?: PriorEvidence;
+  activeStrengthReview?: boolean;
+  previousStrengthReview?: boolean;
+} {
   if (typeof state !== "object" || state === null || !("messages" in state) || !Array.isArray(state.messages)) return { userText: "" };
   const messages = state.messages;
   const userIndex = messages.findLastIndex(isHumanMessage);
@@ -117,8 +148,7 @@ function readConversation(state: unknown): { userText: string; priorEvidence?: P
   const currentTurn = messages.slice(userIndex + 1);
   const currentToolCalls = currentTurn.findLast(isAIMessage)?.tool_calls;
   const activeStrengthReview =
-    currentToolCalls?.some((call: { name: string }) => call.name === STRENGTH_REVIEW_TOOL_NAME) ||
-    currentTurn.some((message) => isStrengthReview(message) && readEvidence(message.content)?.source === "manual");
+    currentToolCalls?.some((call: { name: string }) => call.name === STRENGTH_REVIEW_TOOL_NAME) || currentTurn.some(isStrengthReview);
   let userText = messages[userIndex].text;
   try {
     // The chat API wraps the message with a timestamp. The envelope itself
@@ -129,13 +159,33 @@ function readConversation(state: unknown): { userText: string; priorEvidence?: P
     // Graph callers can also supply plain user messages.
   }
   const priorEvidence = readEvidence(previousReview?.content);
-  return { userText, ...(priorEvidence ? { priorEvidence } : {}), activeStrengthReview };
+  return { userText, ...(priorEvidence ? { priorEvidence } : {}), activeStrengthReview, previousStrengthReview: previousReview !== undefined };
 }
 
-/** Normal watch-only activity summaries can still answer general multi-sport questions. */
-export function useDedicatedStrengthReview(state: unknown): boolean {
-  const { userText, activeStrengthReview } = readConversation(state);
-  return activeStrengthReview === true || /手录|自由力量|力量.*复盘|复盘.*力量|manual strength|review.*strength/i.test(userText);
+const RUNNING_WORD = /跑步|晨跑|夜跑|长跑|慢跑|轻松跑|间歇跑|节奏跑|\brun(?:ning)?\b/i;
+const DEVICE_RECORD =
+  /(?:这|那|另|另外一)[条次场].{0,10}(?:手表|佳明|高驰)|(?:手表|佳明|高驰).*?(?:这|那|另|另外一)[条次场]|(?:this|that|another) watch (?:activity|record|workout)/i;
+
+/** A mixed request can review actual runs while still excluding watch strength evidence. */
+export function strengthReviewActivityScope(state: unknown): "all" | "non-strength" | "none" {
+  const conversation = readConversation(state);
+  if (!isStrengthReviewTurn(conversation)) return "all";
+  return RUNNING_WORD.test(conversation.userText) ? "non-strength" : "none";
+}
+
+function isStrengthReviewTurn({ userText, activeStrengthReview, previousStrengthReview }: ReturnType<typeof readConversation>): boolean {
+  if (activeStrengthReview || /手录|自由力量|力量.*复盘|复盘.*力量|manual strength|review.*strength/i.test(userText)) return true;
+  const changesTopic = /换个话题|另一个问题|\bnew topic\b/i.test(userText);
+  if (WATCH_WORD.test(userText)) {
+    return previousStrengthReview === true && !changesTopic && !DEVICE_RECORD.test(userText);
+  }
+  if (/力量训练|strength training/i.test(userText)) return true;
+  return (
+    previousStrengthReview === true &&
+    !changesTopic &&
+    !RUNNING_WORD.test(userText) &&
+    /心率|负重|重量|组数|几组|几次|几秒|几分钟|多久|休息|用时|时长|第[一二三四五六七八九十\d]+组|heart rate|duration|how long|rest time/i.test(userText)
+  );
 }
 
 function mentionedDays(userText: string, asof: string): Set<string> {
@@ -201,14 +251,6 @@ function includesReference(text: string, reference: string): boolean {
   return false;
 }
 
-function includesWatchId(text: string, id: string): boolean {
-  const labelCharacter = /[A-Za-z0-9_:-]/;
-  for (let index = text.indexOf(id); index !== -1; index = text.indexOf(id, index + id.length)) {
-    if (!labelCharacter.test(text.charAt(index - 1)) && !labelCharacter.test(text.charAt(index + id.length))) return true;
-  }
-  return false;
-}
-
 function explicitlyMentions(record: StrengthRecordSummary, text: string): boolean {
   return references(record).some((reference) => {
     if (reference === record.name?.trim() && /^(?:\d{4}-\d{2}-\d{2}\s*)?(?:自由)?力量训练$/.test(reference)) {
@@ -219,85 +261,16 @@ function explicitlyMentions(record: StrengthRecordSummary, text: string): boolea
 }
 
 const WATCH_WORD = /手表|高驰|佳明|garmin|coros|\bwatch\b/i;
-const WATCH_REQUEST =
-  /补充|补上|参考|结合|加上|附上|提供|带上|也看|查看|查询|看看|查一下|给我|(?:看|查|用).{0,36}(?:心率|heart rate|\bHR\b)|include|show|\badd\b|check|compare|using|\bwith\b/i;
-
 function reviewClauses(text: string): string[] {
   return text.split(
     /[，,。；;！!？?\n]|(?:以及|或者|但是?|和|与|另外|同时)\s*(?=手录|手动|手工|手表|高驰|佳明|COROS|GARMIN|不要|不用|请|先看|再看)|\b(?:and|but)\s+(?=watch|garmin|coros|manual|don't|include|show)/i,
   );
 }
 
-function affirmedWatchClauses(text: string, reference: string): string[] {
-  const referenceClauses = reviewClauses(text).filter((clause) => WATCH_WORD.test(clause) && includesReference(clause, reference));
-  if (referenceClauses.some((clause) => NEGATED_SELECTION.test(clause))) return [];
-  return referenceClauses.filter((clause) => WATCH_REQUEST.test(clause));
-}
-
-function watchEvidence(record: WatchStrengthSummary, detail: Activity) {
-  return {
-    watchHeartRate: {
-      ...candidate(record),
-      source: "watch",
-      provider: record.provider,
-      avgHr: detail.avgHr,
-      maxHr: detail.maxHr,
-    },
-  };
-}
-
-async function watchSupplement(
-  store: DataProvider,
-  userId: string,
-  scope: ReviewScope,
-  reference: string | undefined,
-  userText: string,
-  anchoredAsOf?: string,
-) {
-  if (reference === undefined) return {};
-  // The model may choose its next tool call, but it cannot grant itself the
-  // right to pick an overlapping watch record on the athlete's behalf.
-  const clauses = affirmedWatchClauses(userText, reference);
-  if (clauses.length === 0) return { watchSupplementStatus: "needs_explicit_reference" };
-  const affirmedText = clauses.join("\n");
-  if (anchoredAsOf && mentionedDays(affirmedText, anchoredAsOf).size > 1) {
-    return { watchSupplementStatus: "ambiguous" };
-  }
-  // The manual record remains anchored. An explicitly dated watch request
-  // can identify the user's device record outside that manual interval.
-  const namedDay = anchoredAsOf ? (clearDay(reference, anchoredAsOf) ?? clearDay(affirmedText, anchoredAsOf)) : undefined;
-  const watches = await store.getWatchStrengthSummaries(userId, namedDay ?? scope.startDay, namedDay ?? scope.endDay);
-  const matches = watches.filter((record) => references(record).includes(reference));
-  const selected = matches.length === 1 ? matches[0] : undefined;
-  if (matches.length > 1) return { watchSupplementStatus: "ambiguous" };
-  // A short time embedded in the selected full timestamp is not a second
-  // reference. A separately mentioned alias still identifies another record.
-  const remainingClauses = clauses.map((clause) => clause.replaceAll(reference, " "));
-  const competingReference = watches.some(
-    (record) => record !== selected && references(record).some((value) => remainingClauses.some((clause) => includesReference(clause, value))),
-  );
-  if (competingReference) return { watchSupplementStatus: "ambiguous" };
-  if (selected) {
-    if (selected.id === reference && !clauses.some((clause) => includesWatchId(clause, reference))) {
-      return { watchSupplementStatus: "needs_explicit_reference" };
-    }
-    const detail = await store.getActivityDetail(userId, selected.id, { includeKilometerSplits: false });
-    return detail ? watchEvidence(selected, detail) : { watchSupplementStatus: "missing" };
-  }
-  if (anchoredAsOf && clauses.some((clause) => includesWatchId(clause, reference))) {
-    const detail = await store.getActivityDetail(userId, reference, { includeKilometerSplits: false });
-    if (detail?.isStrength && detail.labelId === reference && (!namedDay || detail.shanghaiDay === namedDay)) {
-      return watchEvidence({ id: detail.labelId, name: detail.name, startedAt: detail.date, provider: detail.provider }, detail);
-    }
-  }
-  return { watchSupplementStatus: "missing" };
-}
-
 export function createStrengthReviewTool(store: DataProvider) {
   return defineCoachTool({
     name: STRENGTH_REVIEW_TOOL_NAME,
-    description:
-      "复盘已完成的力量训练。按用户提到的上海日期范围查找本人记录，优先手动记录。返回 ambiguous 时请用户选一条，不能猜；只有手录缺失才使用手表数据。缺失的次数、负重、心率保留未知。",
+    description: "按上海日期范围读取本人已保存的手录力量训练、跑步计划、备赛目标、对应训练阶段与伤病背景。返回 ambiguous 时请用户选一条，不能猜。",
     schema: reviewSchema,
     handler: async (input, runtime: CoachToolRuntime) => {
       const userId = runtime.context?.userId;
@@ -309,12 +282,8 @@ export function createStrengthReviewTool(store: DataProvider) {
       if (runtime.context.strengthReviewRecordId) {
         const record = await store.getManualStrengthDetail(userId, runtime.context.strengthReviewRecordId);
         if (!record) return { status: "missing", source: "manual" };
-        const startDay = shanghaiDay(record.startedAt);
-        const endDay = shanghaiDay(record.endedAt);
-        return {
-          ...manualEvidence(record, { startDay, endDay }),
-          ...(await watchSupplement(store, userId, { startDay, endDay }, input.watchReference, userText, asof)),
-        };
+        const day = shanghaiDay(record.startedAt);
+        return manualEvidence(store, userId, record, { startDay: day, endDay: day }, asof);
       }
       const namedDay = clearDay(userText, asof);
       if (input.latest && !LATEST_REQUEST.test(userText)) return { status: "scope_mismatch", ...(namedDay ? { expectedDay: namedDay } : {}) };
@@ -326,53 +295,10 @@ export function createStrengthReviewTool(store: DataProvider) {
       const scope = { startDay, endDay };
       const inScopePrior = priorEvidence?.scope.startDay === startDay && priorEvidence.scope.endDay === endDay ? priorEvidence : undefined;
       const manual = await store.getManualStrengthSummaries(userId, startDay, endDay);
-      if (manual.length > 0) {
-        const selected = choose(manual, "manual", input, userText, inScopePrior);
-        if (!selected) return unresolved(manual, "manual", scope, input.recordId);
-        const detail = await store.getManualStrengthDetail(userId, selected.id);
-        if (!detail) return { status: "missing", source: "manual" };
-        return {
-          ...manualEvidence(detail, scope),
-          ...(await watchSupplement(store, userId, scope, input.watchReference, userText)),
-        };
-      }
-
-      const watches = await store.getWatchStrengthSummaries(userId, startDay, endDay);
-      const selected = choose(watches, "watch", input, userText, inScopePrior);
-      if (!selected) return watches.length === 0 ? { status: "missing" } : unresolved(watches, "watch", scope, input.recordId);
-      const detail = await store.getActivityDetail(userId, selected.id, { includeKilometerSplits: false });
-      if (!detail) return { status: "missing", source: "watch" };
-      return {
-        status: "found",
-        source: "watch",
-        scope,
-        record: {
-          ...candidate(selected),
-          provider: selected.provider,
-          durationS: detail.durationS,
-          avgHr: detail.avgHr,
-          maxHr: detail.maxHr,
-          sets: detail.laps
-            .filter(
-              (lap) =>
-                lap.lapType === "type2" &&
-                lap.mode !== 15 &&
-                lap.mode !== 16 &&
-                lap.mode !== 17 &&
-                lap.exerciseNameKey !== "T1123" &&
-                lap.exerciseNameKey !== "S3618",
-            )
-            .map((lap) => ({
-              lapIndex: lap.lapIndex,
-              exerciseNameKey: lap.exerciseNameKey,
-              durationS: lap.durationS,
-              avgHr: lap.avgHr,
-              maxHr: lap.maxHr,
-              reps: null,
-              load: null,
-            })),
-        },
-      };
+      const selected = choose(manual, input, userText, inScopePrior);
+      if (!selected) return unresolved(manual, scope, input.recordId);
+      const detail = await store.getManualStrengthDetail(userId, selected.id);
+      return detail ? manualEvidence(store, userId, detail, scope, asof) : { status: "missing", source: "manual" };
     },
   });
 }
