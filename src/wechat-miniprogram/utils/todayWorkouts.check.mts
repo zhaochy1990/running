@@ -6,6 +6,7 @@ import ts from 'typescript';
 import * as plan from '../services/plan.ts';
 import type { PlanSessionRow, TodayWorkoutView } from '../types/plan.ts';
 import * as dates from './date.ts';
+import * as format from './format.ts';
 
 const day = '2026-11-27';
 const restDay = '2026-11-28';
@@ -48,9 +49,12 @@ const rows = [
 ];
 
 type CardEvent = { currentTarget: { dataset: { workoutId: string; foldControl: boolean } } };
+type ActivityEvent = { currentTarget: { dataset: { id: string } } };
 type PageUnderTest = {
   data: {
     workouts: TodayWorkoutView[];
+    todayActivities: Array<{ labelId: string; manualStrengthLabel: string }>;
+    canContinueStrength: boolean;
     expandedWorkouts: Record<string, boolean>;
     pushOptions: { value: string }[];
     pushWorkout: TodayWorkoutView | null;
@@ -60,6 +64,8 @@ type PageUnderTest = {
   fetchWeekSessions(date: string): Promise<void>;
   onDayTap(event: { currentTarget: { dataset: { date: string } } }): void;
   onWorkoutCardTap(event: CardEvent): void;
+  onTodayActivityTap(event: ActivityEvent): void;
+  onContinueStrengthTap(event: ActivityEvent): void;
   onCoachTap(event: CardEvent): void;
   onWatchTap(event: CardEvent): void;
   onMoreTap(event: CardEvent): void;
@@ -73,6 +79,11 @@ const coachTargets: unknown[] = [];
 const pushes: unknown[][] = [];
 const customPushes: unknown[][] = [];
 const deletes: unknown[][] = [];
+const activityRequests: Array<{ dateFrom: string; dateTo: string; includeManualStrength: boolean }> = [];
+const manualActivity = (labelId: string) => ({
+  label_id: labelId, name: labelId, source: 'manual_strength', sport_name: 'Strength', duration_s: null,
+  manual_strength_summary: { action_count: 2, set_count: 3 },
+});
 let availableRows = rows;
 let chooseDelete: (() => void) | undefined;
 
@@ -94,9 +105,19 @@ const modules: Record<string, unknown> = {
     pushCustomWorkout: async (...args: unknown[]) => { customPushes.push(args); },
     deleteCustomWorkout: async (...args: unknown[]) => { deletes.push(args); },
   },
-  '../../services/activities': { getActivities: async () => ({ activities: [] }) },
+  '../../services/activities': {
+    getActivities: async (_uid: string, params: (typeof activityRequests)[number]) => {
+      activityRequests.push(params);
+      return {
+        activities: params.dateFrom === day
+          ? [manualActivity('manual-a'), manualActivity('manual-b'), { label_id: 'watch', name: '手表力量训练', source: 'watch' }]
+          : [manualActivity('older-manual')],
+      };
+    },
+  },
   '../../services/coach': { setPendingCoachContext: (context: unknown) => coachTargets.push(context) },
   '../../utils/date': { ...dates, shanghaiToday: () => day },
+  '../../utils/format': format,
   '../../utils/theme': { theme: {} },
   '../../utils/manual-strength': { getStrengthDraft: () => null },
   '../../store/index': { userStore: { getState: () => ({ user, isAuthenticated: true }), waitForAuth: async () => {} } },
@@ -211,6 +232,31 @@ await settle();
 assert.deepEqual(workoutIds(), ['expired-custom']);
 view.onWatchTap(tapCard('expired-custom'));
 assert.equal(view.data.pushWorkout, null);
+
+const tapActivity = (id: string): ActivityEvent => ({ currentTarget: { dataset: { id } } });
+assert.equal(view.data.todayActivities[0].manualStrengthLabel, '手动记录 · 2 个动作 · 3 组');
+assert.equal(view.data.canContinueStrength, false);
+const beforeExpiredTap = detailUrls.length;
+view.onContinueStrengthTap(tapActivity('older-manual'));
+assert.equal(detailUrls.length, beforeExpiredTap);
+view.onTodayActivityTap(tapActivity('older-manual'));
+assert.equal(detailUrls.at(-1), '/pages/manual-strength-detail/manual-strength-detail?recordId=older-manual');
+
+tapDay(previousDay);
+await settle();
+assert.equal(view.data.canContinueStrength, true);
+view.onContinueStrengthTap(tapActivity('older-manual'));
+assert.equal(detailUrls.at(-1), '/pages/manual-strength/manual-strength?resume=older-manual');
+
+tapDay(day);
+await settle();
+assert.equal(view.data.canContinueStrength, true);
+assert.ok(activityRequests.some((params) => params.dateFrom === day && params.dateTo === day && params.includeManualStrength));
+assert.deepEqual(Array.from(view.data.todayActivities, ({ labelId }) => labelId), ['manual-a', 'manual-b', 'watch']);
+view.onContinueStrengthTap(tapActivity('manual-b'));
+assert.equal(detailUrls.at(-1), '/pages/manual-strength/manual-strength?resume=manual-b');
+view.onTodayActivityTap(tapActivity('watch'));
+assert.equal(detailUrls.at(-1), '/pages/activity-detail/activity-detail?labelId=watch');
 
 mock.timers.reset();
 console.log('todayWorkouts.check: all assertions passed');

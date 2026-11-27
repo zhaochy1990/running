@@ -92,6 +92,7 @@ Page<PageData, PageHandlers>({
   async onLoad(options) {
     const startedAt = new Date();
     const editId = options.edit || '';
+    const resumeId = options.resume || '';
     await userStore.waitForAuth();
     const { user, isAuthenticated } = userStore.getState();
     if (this.closed) return;
@@ -115,7 +116,14 @@ Page<PageData, PageHandlers>({
     try {
       const active = getStrengthDraft(user.id);
       let draft: StrengthDraft;
-      if (!editId) {
+      if (resumeId) {
+        if (active && active.id !== resumeId) {
+          this.setData({ loading: false, loadError: '有另一条训练尚未保存，请先从训练页继续那份草稿。' });
+          return;
+        }
+        draft = active ?? editStrengthDraft(await getManualStrengthRecord(user.id, resumeId));
+        if (!this.closed) wx.setNavigationBarTitle({ title: '继续训练' });
+      } else if (!editId) {
         draft = active ?? await newStrengthDraft(startedAt);
       } else {
         let resume = false;
@@ -138,7 +146,9 @@ Page<PageData, PageHandlers>({
         }
       }
       if (this.closed) return;
-      this.setData({ draft, expanded: draft.form.actions[0]?.key ?? '', loading: false, canDiscardDraft: draft === active });
+      const actions = draft.form.actions;
+      const expanded = actions[resumeId ? actions.length - 1 : 0]?.key ?? '';
+      this.setData({ draft, expanded, loading: false, canDiscardDraft: draft === active });
     } catch (err) {
       if (!this.closed) {
         const loadError = err instanceof ApiError && err.statusCode === 404

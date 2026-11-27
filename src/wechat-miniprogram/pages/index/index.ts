@@ -60,6 +60,7 @@ import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share'
 interface TodayActivityRow {
   labelId: string;
   name: string;
+  manualStrengthLabel: string;
   iconPath: string;
   /** 路线形状 route_thumb（旧单折线或第二版多段，原样透传给 route-thumb 组件，由它
    * 解析绘制，devops#827 / devops#1038）；null 表示回退 iconPath（室内活动、尚未生成、
@@ -89,9 +90,13 @@ function displayName(a: Activity): string {
 }
 
 function toTodayActivityRow(a: Activity): TodayActivityRow {
+  const summary = a.manual_strength_summary;
   return {
     labelId: a.label_id,
     name: displayName(a),
+    manualStrengthLabel: a.source === 'manual_strength'
+      ? (summary ? `手动记录 · ${summary.action_count} 个动作 · ${summary.set_count} 组` : '手动记录')
+      : '',
     iconPath: iconPathForSport(a.sport_name),
     routeThumb: a.route_thumb ?? null,
     distanceKm: a.distance_km != null && a.distance_km > 0 ? fmtKm(a.distance_m) : '—',
@@ -101,6 +106,10 @@ function toTodayActivityRow(a: Activity): TodayActivityRow {
     // 优先展示 STRIDE 自身计算的负荷（training_dose）；缺失时回退到手表上报值。
     load: fmtDose(a.stride_training_dose ?? a.training_load),
   };
+}
+
+function canContinueStrengthOnDate(date: string, today = shanghaiToday()): boolean {
+  return date === today || date === shanghaiShiftDays(today, -1);
 }
 
 // ---------------------------------------------------------------------------
@@ -118,6 +127,7 @@ interface IndexPageData {
   uid: string;
   strengthAvailable: boolean;
   hasStrengthDraft: boolean;
+  canContinueStrength: boolean;
   /** 游客态（未登录）：周历可浏览，训练数据区换登录引导 */
   guest: boolean;
   weekDays: TodayWeekDay[];
@@ -165,6 +175,7 @@ interface InjuryDoctoredEvent {
 }
 
 interface IndexPageHandlers {
+  dayActivityRequest: number;
   onShareAppMessage(res: WechatMiniprogram.Page.IShareAppMessageOption): WechatMiniprogram.Page.ICustomShareContent;
   onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   fetchPlan(): Promise<void>;
@@ -177,6 +188,7 @@ interface IndexPageHandlers {
   findWorkout(workoutId: unknown): TodayWorkoutView | undefined;
   onWorkoutCardTap(e: WechatMiniprogram.TouchEvent): void;
   onManualStrengthTap(): void;
+  onContinueStrengthTap(e: WechatMiniprogram.TouchEvent): void;
   /** open-type=share 按钮的 catchtap：转发由 open-type 触发，这里只拦向卡片的冒泡 */
   onShareTap(): void;
   onDayTap(e: WechatMiniprogram.TouchEvent): void;
@@ -249,6 +261,7 @@ function contentPaddingTopRpx(): number {
 }
 
 Page<IndexPageData, IndexPageHandlers>({
+  dayActivityRequest: 0,
   // 今日卡分享按钮（data-share="today"）：仅自建课发免登录落地页卡（#689 仅自建课
   // 可分享），path 同 workout-detail 的分享链路；封面暂回落页面截图（canvas 封面
   // 目前只在详情页生成）。其余入口（胶囊菜单转发等）维持品牌默认卡。
@@ -270,6 +283,7 @@ Page<IndexPageData, IndexPageHandlers>({
     uid: '',
     strengthAvailable: false,
     hasStrengthDraft: false,
+    canContinueStrength: false,
     // 游客态（未登录）：周历可浏览，训练数据区换登录引导
     guest: false,
     weekDays: [],
@@ -337,7 +351,13 @@ Page<IndexPageData, IndexPageHandlers>({
     }
     const viewer = userStore.getState();
     const strengthUserId = viewer.isAuthenticated ? viewer.user?.id ?? '' : '';
-    this.setData({ strengthAvailable: Boolean(strengthUserId), hasStrengthDraft: Boolean(getStrengthDraft(strengthUserId)) });
+    const today = shanghaiToday();
+    this.setData({
+      strengthAvailable: Boolean(strengthUserId),
+      hasStrengthDraft: Boolean(getStrengthDraft(strengthUserId)),
+      todayYmd: today,
+      canContinueStrength: canContinueStrengthOnDate(this.data.selectedDate, today),
+    });
     // 静默刷新（devops#698）：教练在对话里删除/改期/保存自建课后切回本 tab，
     // 课表即时反映，无需手动下拉刷新。跳过首帧（onLoad 已拉）与未加载态。
     if (planLoaded && userId) {
@@ -482,6 +502,7 @@ Page<IndexPageData, IndexPageHandlers>({
     this.setData({
       ...view,
       selectedDate: dateYmd,
+      canContinueStrength: canContinueStrengthOnDate(dateYmd),
       ...(dateYmd !== this.data.selectedDate ? { expandedWorkouts: {} } : {}),
       todayActivities: [],
     });
@@ -494,15 +515,20 @@ Page<IndexPageData, IndexPageHandlers>({
 
   // 拉取指定日（上海 YYYY-MM-DD）的实际活动记录；无记录则空数组（卡片不展示）。
   async fetchDayActivities(dateYmd: string) {
-    if (!userId) return;
+    const viewerId = userId;
+    if (!viewerId) return;
+    const request = ++this.dayActivityRequest;
+    const stillSelected = () => (
+      request === this.dayActivityRequest && this.data.selectedDate === dateYmd && userStore.getState().user?.id === viewerId
+    );
     try {
-      const res = await getActivities(userId, { dateFrom: dateYmd, dateTo: dateYmd, limit: 20 });
+      const res = await getActivities(viewerId, { dateFrom: dateYmd, dateTo: dateYmd, limit: 200, includeManualStrength: true });
       // 防止用户快速切换日期后写入过期数据。
-      if (this.data.selectedDate !== dateYmd) return;
+      if (!stillSelected()) return;
       this.setData({ todayActivities: res.activities.map(toTodayActivityRow) });
     } catch {
       // 拉取失败时保持空态，由页面不展示「今日活动」卡片。
-      if (this.data.selectedDate === dateYmd) this.setData({ todayActivities: [] });
+      if (stillSelected()) this.setData({ todayActivities: [] });
     }
   },
 
@@ -510,6 +536,13 @@ Page<IndexPageData, IndexPageHandlers>({
 
   onManualStrengthTap() {
     if (userStore.getState().isAuthenticated) wx.navigateTo({ url: '/pages/manual-strength/manual-strength' });
+  },
+
+  onContinueStrengthTap(e) {
+    const id = e.currentTarget.dataset.id;
+    const record = this.data.todayActivities.find((activity) => activity.labelId === id && activity.manualStrengthLabel);
+    if (!record || !userStore.getState().isAuthenticated || !canContinueStrengthOnDate(this.data.selectedDate)) return;
+    wx.navigateTo({ url: `/pages/manual-strength/manual-strength?resume=${encodeURIComponent(record.labelId)}` });
   },
 
   findWorkout(workoutId) {
@@ -628,8 +661,12 @@ Page<IndexPageData, IndexPageHandlers>({
   onTodayActivityTap(e: WechatMiniprogram.TouchEvent) {
     const labelId = e.currentTarget.dataset.id as string;
     if (!labelId) return;
+    const record = this.data.todayActivities.find((activity) => activity.labelId === labelId);
+    if (!record) return;
     wx.navigateTo({
-      url: `/pages/activity-detail/activity-detail?labelId=${encodeURIComponent(labelId)}`,
+      url: record.manualStrengthLabel
+        ? `/pages/manual-strength-detail/manual-strength-detail?recordId=${encodeURIComponent(labelId)}`
+        : `/pages/activity-detail/activity-detail?labelId=${encodeURIComponent(labelId)}`,
     });
   },
 

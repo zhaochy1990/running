@@ -6,7 +6,7 @@ import * as dates from './date.ts';
 import * as format from './format.ts';
 import * as strength from './manual-strength.ts';
 import { theme } from './theme.ts';
-import type { ManualStrengthSummary } from '../types/manual-strength.ts';
+import type { ManualStrengthSummary, ManualStrengthWrite } from '../types/manual-strength.ts';
 
 type ActivityResponse = { total: number; activities: Array<{ label_id: string; name: string; date: string; source: string; duration_s: number | null; manual_strength_summary?: ManualStrengthSummary }> };
 type PageUnderTest = {
@@ -151,9 +151,9 @@ const savedRecord = {
   revision: 1, started_at: '2026-11-26T07:00:00Z', ended_at: '2026-11-26T07:30:00Z',
 };
 type TrainingPage = {
-  data: { draft?: strength.StrengthDraft | null; record?: unknown; summaryLabel?: string; timeLabel?: string; actionRows?: Array<{ sets: Array<{ number: number }> }>; error?: string; canDiscardDraft?: boolean };
+  data: { draft?: strength.StrengthDraft | null; record?: unknown; summaryLabel?: string; timeLabel?: string; actionRows?: Array<{ sets: Array<{ number: number }> }>; error?: string; loadError?: string; canDiscardDraft?: boolean };
   setData(patch: object): void;
-  onLoad(params: { edit?: string; recordId?: string }): Promise<void> | void;
+  onLoad(params: { edit?: string; resume?: string; recordId?: string }): Promise<void> | void;
   onShow?(): void;
   onCoachReview?(): void;
   onDelete?(): Promise<void>;
@@ -170,14 +170,17 @@ class TestApiError extends Error {
 const coachHandoffs: Array<{ recordId: string; userId: string }> = [];
 const deletions: Array<{ recordId: string; userId: string }> = [];
 const saves: string[] = [];
+const writes: ManualStrengthWrite[] = [];
+const recordReads: string[] = [];
 const toasts: string[] = [];
 let confirmDelete = async () => ({ confirm: false });
 let failDeletion = false;
 let navigatedBack = 0;
 let activeDraft: strength.StrengthDraft | undefined;
+let failSave = true;
 async function loadTrainingPage(
   relative: string,
-  options: { edit?: string; recordId?: string } = { edit: 'saved', recordId: 'saved' },
+  options: { edit?: string; resume?: string; recordId?: string } = { edit: 'saved', recordId: 'saved' },
 ): Promise<TrainingPage> {
   let definition: TrainingPage | undefined;
   viewerId = 'user-a';
@@ -198,10 +201,15 @@ async function loadTrainingPage(
     },
     require: (path: string) => ({
       '../../services/manual-strength': {
-        getManualStrengthRecord: async () => savedRecord,
-        saveManualStrengthRecord: async (_userId: string, recordId: string) => {
+        getManualStrengthRecord: async (_userId: string, recordId: string) => {
+          recordReads.push(recordId);
+          return savedRecord;
+        },
+        saveManualStrengthRecord: async (_userId: string, recordId: string, write: ManualStrengthWrite) => {
           saves.push(recordId);
-          throw new TestApiError(404);
+          writes.push(write);
+          if (failSave) throw new TestApiError(404);
+          return { ...savedRecord, revision: write.revision + 1 };
         },
         deleteManualStrengthRecord: async (userId: string, recordId: string) => {
           deletions.push({ userId, recordId });
@@ -328,4 +336,34 @@ await incomplete.onDiscardDraft?.();
 assert.equal(incomplete.data.draft?.id, 'fresh');
 assert.equal(incomplete.data.canDiscardDraft, false);
 assert.equal(activeDraft, undefined);
+
+failSave = false;
+const resumed = await loadTrainingPage('../pages/manual-strength/manual-strength.ts', { resume: 'saved' });
+assert.equal(resumed.data.draft?.id, 'saved');
+assert.equal(resumed.data.draft?.startedAt, savedRecord.started_at);
+assert.equal(resumed.data.draft?.form.actions[0].sets.length, 2);
+await resumed.onSave?.();
+assert.equal(saves.at(-1), 'saved');
+assert.equal(writes.at(-1)?.started_at, savedRecord.started_at);
+assert.equal(writes.at(-1)?.revision, savedRecord.revision);
+
+activeDraft = undefined;
+const correction = await loadTrainingPage('../pages/manual-strength/manual-strength.ts', { edit: 'saved' });
+await correction.onSave?.();
+assert.equal(saves.at(-1), 'saved');
+assert.equal(Object.hasOwn(writes.at(-1) ?? {}, 'started_at'), false);
+
+const localDraft = strength.editStrengthDraft({ ...savedRecord, source: 'manual_strength', actions: [{
+  name: '深蹲', sets: [{ load: '25', load_unit: 'kg', quantity: 8, quantity_unit: 'reps' }],
+}] });
+localDraft.form.note = '切到其他 App 前尚未保存';
+activeDraft = localDraft;
+const readsBeforeResume = recordReads.length;
+const reopened = await loadTrainingPage('../pages/manual-strength/manual-strength.ts', { resume: 'saved' });
+assert.equal(reopened.data.draft?.form.note, '切到其他 App 前尚未保存');
+assert.equal(recordReads.length, readsBeforeResume);
+const blocked = await loadTrainingPage('../pages/manual-strength/manual-strength.ts', { resume: 'another-record' });
+assert.equal(blocked.data.draft, null);
+assert.match(blocked.data.loadError ?? '', /另一条训练尚未保存/);
+assert.equal(activeDraft, localDraft);
 console.log('activity-record-viewer.check: all assertions passed');

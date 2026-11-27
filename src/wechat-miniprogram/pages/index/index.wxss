@@ -579,6 +579,21 @@
   align-items: flex-end;
 }
 
+.activity__continue {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0 18rpx;
+  line-height: 80rpx;
+  color: var(--color-accent-pale);
+  background: transparent;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.activity__continue::after {
+  border: 0;
+}
+
 .activity__load {
   font-size: 27rpx;
   font-weight: 700;
