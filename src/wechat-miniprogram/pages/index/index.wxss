@@ -650,18 +650,25 @@ button.rest-card__coach {
 }
 
 .activity__continue {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   width: 136rpx;
   min-width: 0;
   max-width: 136rpx;
+  min-height: 84rpx;
   margin: 0;
   padding: 0;
-  line-height: 84rpx;
-  white-space: nowrap;
-  color: var(--color-accent-pale);
   background: transparent;
+}
+
+.activity__continue-label {
+  color: var(--color-accent-pale);
   font-size: 24rpx;
+  line-height: 1.4;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .activity__continue::after {

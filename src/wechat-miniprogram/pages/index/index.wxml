@@ -64,7 +64,9 @@
               size="mini"
               data-id="{{item.labelId}}"
               catchtap="onContinueStrengthTap"
-            >继续训练</button>
+            >
+              <text class="activity__continue-label">继续训练</text>
+            </button>
           </view>
           <view wx:else class="activity__meta">
             <text wx:if="{{item.distanceKm !== '—'}}">{{item.distanceKm}} km</text>
