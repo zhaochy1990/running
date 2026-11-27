@@ -1,3 +1,7 @@
+## HARD 规则：禁止代码注释
+
+禁止编写或新增任何代码注释；通过清晰命名和结构表达代码意图。
+
 # zhaochaoyi — Athlete Profile
 
 Loaded on demand when Claude touches any file under `data/f10bc353-01ab-4db1-af9f-d9305ea9a532/` (slug: `zhaochaoyi`).

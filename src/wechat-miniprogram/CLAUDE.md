@@ -1,3 +1,7 @@
+## HARD 规则：禁止代码注释
+
+禁止编写或新增任何代码注释；通过清晰命名和结构表达代码意图。
+
 # WeChat Mini Program (STRIDE 微信小程序)
 
 本目录是 STRIDE 微信小程序的独立前端工程，使用原生小程序框架 + TypeScript 开发。

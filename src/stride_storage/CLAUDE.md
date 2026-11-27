@@ -1,3 +1,7 @@
+## HARD 规则：禁止代码注释
+
+禁止编写或新增任何代码注释；通过清晰命名和结构表达代码意图。
+
 # CLAUDE.md — `stride_storage`
 
 在本包内写 / 改代码前必读。这是 STRIDE 的统一数据访问层；总览见同目录 `README.md`，全局规则见仓库根 `AGENTS.md` 的 *Storage scope rule* 段。
