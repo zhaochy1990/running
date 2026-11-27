@@ -80,11 +80,36 @@
     <!-- 今日训练 -->
     <view class="section-title">今日安排 · {{todayLabel}}</view>
     <block wx:if="{{workouts.length}}">
-      <view
-        wx:for="{{workouts}}"
-        wx:for-item="workout"
-        wx:for-index="workoutIndex"
-        wx:key="workoutId"
+      <block wx:for="{{workouts}}" wx:for-item="workout" wx:for-index="workoutIndex" wx:key="workoutId">
+      <view wx:if="{{workout.sessionKind === 'rest'}}"
+        class="card rest-card {{workoutIndex < workouts.length - 1 ? 'workout-card--stacked' : ''}}"
+      >
+        <view class="rest-card__head" data-workout-id="{{workout.workoutId}}" data-fold-control="{{true}}"
+          catchtap="onWorkoutCardTap" aria-role="{{workouts.length > 1 ? 'button' : null}}"
+          aria-expanded="{{workouts.length > 1 ? !!expandedWorkouts[workout.workoutId] : null}}">
+          <view class="rest-card__heading">
+            <view class="rest-card__title">{{workout.title}}</view>
+            <view wx:if="{{workout.sourceLabel}}" class="workout__source">{{workout.sourceLabel}}</view>
+          </view>
+          <view class="rest-card__controls">
+            <view wx:if="{{workout.deletable && (workouts.length === 1 || expandedWorkouts[workout.workoutId])}}"
+              class="workout__action" data-workout-id="{{workout.workoutId}}" catchtap="onMoreTap" aria-label="更多操作">
+              <image class="workout__action-icon" src="/assets/icons/more_horiz.svg" mode="aspectFit" />
+            </view>
+            <image wx:if="{{workouts.length > 1}}" class="workout__chevron {{expandedWorkouts[workout.workoutId] ? 'workout__chevron--expanded' : ''}}"
+              src="/assets/icons/chevron_down_round.svg" mode="aspectFit" aria-hidden="{{true}}" />
+          </view>
+        </view>
+        <block wx:if="{{workouts.length === 1 || expandedWorkouts[workout.workoutId]}}">
+          <view class="rest-card__message">给身体一点时间，恢复也是训练的一部分。</view>
+          <view wx:if="{{workout.note}}" class="note-box">
+            <view class="note-box__title">课表备注</view>
+            <view class="note-box__text">{{workout.note}}</view>
+          </view>
+          <button class="rest-card__coach" data-workout-id="{{workout.workoutId}}" catchtap="onCoachTap">和教练聊一聊 <text aria-hidden="{{true}}">→</text></button>
+        </block>
+      </view>
+      <view wx:else
         class="card workout-card {{workoutIndex < workouts.length - 1 ? 'workout-card--stacked' : ''}} {{workouts.length > 1 && !expandedWorkouts[workout.workoutId] ? 'workout-card--collapsed' : ''}}"
         data-workout-id="{{workout.workoutId}}"
         bindtap="onWorkoutCardTap"
@@ -174,6 +199,7 @@
           </button>
         </block>
       </view>
+      </block>
     </block>
     <!-- 空态必须 !loading 门控（devops#929）：加载中渲染骨架，避免慢网先闪「今日无训练安排」假空态 -->
     <view wx:elif="{{!loading}}" class="empty-card">
