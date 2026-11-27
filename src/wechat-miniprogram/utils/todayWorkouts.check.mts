@@ -45,11 +45,17 @@ const rows = [
   session('expired-custom', { date: expiredDay, source: 'custom', spec: { name: '过期跑课', date: expiredDay, note: null, blocks: [] } }),
 ];
 
-type CardEvent = { currentTarget: { dataset: { workoutId: string } } };
+type CardEvent = { currentTarget: { dataset: { workoutId: string; foldControl: boolean } } };
 type PageUnderTest = {
-  data: { workouts: TodayWorkoutView[]; pushOptions: { value: string }[]; pushWorkout: TodayWorkoutView | null };
+  data: {
+    workouts: TodayWorkoutView[];
+    expandedWorkouts: Record<string, boolean>;
+    pushOptions: { value: string }[];
+    pushWorkout: TodayWorkoutView | null;
+  };
   setData(patch: object): void;
   onLoad(): void;
+  fetchWeekSessions(date: string): Promise<void>;
   onDayTap(event: { currentTarget: { dataset: { date: string } } }): void;
   onWorkoutCardTap(event: CardEvent): void;
   onCoachTap(event: CardEvent): void;
@@ -114,7 +120,9 @@ assert.ok(page);
 const view = page;
 view.setData = (patch) => { Object.assign(view.data, patch); };
 const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
-const tapCard = (workoutId: string): CardEvent => ({ currentTarget: { dataset: { workoutId } } });
+const tapCard = (workoutId: string, foldControl = false): CardEvent => ({
+  currentTarget: { dataset: { workoutId, foldControl } },
+});
 const tapDay = (date: string) => view.onDayTap({ currentTarget: { dataset: { date } } });
 
 view.onLoad();
@@ -122,15 +130,27 @@ await settle();
 const workoutIds = () => Array.from(view.data.workouts ?? [], (w) => w.workoutId);
 assert.deepEqual(workoutIds(), ['easy-run', 'legacy-run', 'strength', 'custom-a', 'custom-b', 'watch']);
 assert.equal(view.data.workouts[1].hasStructure, false);
+assert.deepEqual(Object.keys(view.data.expandedWorkouts), []);
 
 const template = readFileSync(new URL('../pages/index/index.wxml', import.meta.url), 'utf8');
-const cardBindings = template.match(/<(?:view|button)\b[^>]*data-workout-id="\{\{workout\.workoutId\}\}"[^>]*>/g) ?? [];
+const cardBindings = (template.match(/<(?:view|button)\b(?:[^>"']|"[^"]*"|'[^']*')*>/g) ?? [])
+  .filter((tag) => tag.includes('data-workout-id="{{workout.workoutId}}"'));
 const card = cardBindings.find((tag) => tag.includes('bindtap="onWorkoutCardTap"'));
 assert.ok(card?.includes('wx:for="{{workouts}}"') && card.includes('wx:for-item="workout"'));
+assert.ok(cardBindings.some((tag) => tag.includes('catchtap="onWorkoutCardTap"') && tag.includes('data-fold-control="{{true}}"')));
 for (const handler of ['onWatchTap', 'onMoreTap', 'onCoachTap', 'onShareTap']) {
   assert.ok(cardBindings.some((tag) => tag.includes(`catchtap="${handler}"`)), `${handler} needs its card's workout ID`);
 }
 
+view.onWorkoutCardTap(tapCard('strength'));
+assert.equal(view.data.expandedWorkouts.strength, true);
+assert.deepEqual(detailUrls, []);
+view.onWorkoutCardTap(tapCard('easy-run', true));
+assert.equal(view.data.expandedWorkouts['easy-run'], true);
+view.onWorkoutCardTap(tapCard('easy-run', true));
+assert.equal(view.data.expandedWorkouts['easy-run'], false);
+await view.fetchWeekSessions(day);
+assert.equal(view.data.expandedWorkouts.strength, true);
 view.onWorkoutCardTap(tapCard('strength'));
 assert.equal(detailUrls[0], `/pages/workout-detail/workout-detail?date=${day}&workoutId=strength&title=strength`);
 view.onCoachTap(tapCard('strength'));
@@ -144,10 +164,12 @@ view.onWatchTap(tapCard('strength'));
 assert.ok(view.data.pushOptions.some(({ value }) => value === restDay));
 tapDay(restDay);
 assert.deepEqual(workoutIds(), ['rest']);
+assert.equal(view.data.expandedWorkouts.strength, undefined);
 await view.onPushDateSelect({ detail: { value: restDay } });
 assert.deepEqual(pushes, [[user.id, day, 1, restDay]]);
 
 tapDay(day);
+assert.equal(view.data.expandedWorkouts.strength, undefined);
 view.onWatchTap(tapCard('custom-b'));
 await view.onPushDateSelect({ detail: { value: restDay } });
 assert.deepEqual(customPushes, [['custom-b', restDay]]);
@@ -167,6 +189,8 @@ await view.onPushDateSelect({ detail: { value: restDay } });
 assert.deepEqual(pushes, [[user.id, day, 1, restDay]], 'a replaced session must not be pushed');
 
 tapDay(previousDay);
+view.onWorkoutCardTap(tapCard('past-custom', true));
+assert.equal(detailUrls.at(-1), `/pages/workout-detail/workout-detail?date=${previousDay}&workoutId=past-custom&title=past-custom`);
 view.onWatchTap(tapCard('past-custom'));
 assert.equal(view.data.pushWorkout?.workoutId, 'past-custom');
 assert.equal(view.data.pushOptions.at(-1)?.value, '2026-12-03');

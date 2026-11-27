@@ -35,7 +35,6 @@ import {
   shanghaiShiftDays,
   shanghaiToday,
   shanghaiWeekStart,
-  weekSubtitle,
 } from '../../utils/date';
 import { fmtDose, fmtDurationShort, fmtKm, fmtPace } from '../../utils/format';
 import { theme } from '../../utils/theme';
@@ -127,6 +126,7 @@ interface IndexPageData {
   selectedDate: string;
   todayLabel: string;
   workouts: TodayWorkoutView[];
+  expandedWorkouts: Record<string, boolean>;
   nutrition: TodayNutritionView | null;
   /** 选中日的实际活动记录（无记录时为空数组，卡片不展示） */
   todayActivities: TodayActivityRow[];
@@ -222,10 +222,6 @@ let dailyPopupChecking = false;
 // 调整弹窗「受伤了」路径：伤病登记成功后要 dismiss 的调整行 id（受伤接管）。
 let pendingInjuryAdjustmentId = '';
 
-function todayLabelOf(ymd: string): string {
-  return `${Number(ymd.slice(5, 7))}月${Number(ymd.slice(8))}日`;
-}
-
 function statusBarHeight(): number {
   try {
     const win = wx.getWindowInfo();
@@ -282,6 +278,7 @@ Page<IndexPageData, IndexPageHandlers>({
     selectedDate: '',
     todayLabel: '',
     workouts: [],
+    expandedWorkouts: {},
     nutrition: null,
     todayActivities: [],
     loading: true,
@@ -480,26 +477,18 @@ Page<IndexPageData, IndexPageHandlers>({
 
   // 渲染指定日期（上海 YYYY-MM-DD），并拉取当天的实际活动记录。
   renderDay(dateYmd: string, isToday: boolean) {
-    const base = {
+    const hasWeekSessions = shanghaiWeekStart(dateYmd) === sessionsWeekStart;
+    const view = buildDayView(fetchedPlan, hasWeekSessions ? weekSessions : [], dateYmd);
+    this.setData({
+      ...view,
       selectedDate: dateYmd,
-      weekDays: buildWeekDays(dateYmd),
-      weekSubtitle: weekSubtitle(shanghaiWeekStart(dateYmd)),
-      todayLabel: todayLabelOf(dateYmd),
-    };
-    if (shanghaiWeekStart(dateYmd) !== sessionsWeekStart) {
-      // 切到了尚未拉取的周：先用空行渲染，拉回后 fetchWeekSessions 会重渲染。
-      const view = buildDayView(fetchedPlan, [], dateYmd);
-      this.setData({ ...base, workouts: view.workouts, nutrition: view.nutrition, todayActivities: [] });
+      ...(dateYmd !== this.data.selectedDate ? { expandedWorkouts: {} } : {}),
+      todayActivities: [],
+    });
+    if (!hasWeekSessions) {
       this.fetchWeekSessions(dateYmd);
       return;
     }
-    const view = buildDayView(fetchedPlan, weekSessions, dateYmd);
-    this.setData({
-      ...base,
-      workouts: view.workouts,
-      nutrition: view.nutrition,
-      todayActivities: [],
-    });
     this.fetchDayActivities(dateYmd);
   },
 
@@ -519,8 +508,6 @@ Page<IndexPageData, IndexPageHandlers>({
 
   // --- 交互 ---
 
-  // 卡片整体点击 → 课表详情（分段结构/配速要求）。内层手表/更多/教练按钮
-  // 已 catchtap，不会冒泡到这里。
   onManualStrengthTap() {
     if (userStore.getState().isAuthenticated) wx.navigateTo({ url: '/pages/manual-strength/manual-strength' });
   },
@@ -530,8 +517,17 @@ Page<IndexPageData, IndexPageHandlers>({
   },
 
   onWorkoutCardTap(e) {
-    const workout = this.findWorkout(e.currentTarget.dataset.workoutId);
-    if (!workout || !workout.hasStructure) return;
+    const { workoutId, foldControl } = e.currentTarget.dataset;
+    const workout = this.findWorkout(workoutId);
+    if (!workout) return;
+    const { workouts, expandedWorkouts } = this.data;
+    const expanded = expandedWorkouts[workout.workoutId];
+    // 多课时，点卡头切换状态，点已展开的卡片内容仍可进入详情。
+    if (workouts.length > 1 && (foldControl || !expanded)) {
+      this.setData({ expandedWorkouts: { ...expandedWorkouts, [workout.workoutId]: !expanded } });
+      return;
+    }
+    if (!workout.hasStructure) return;
     wx.navigateTo({
       url: `/pages/workout-detail/workout-detail?date=${workout.date}&workoutId=${encodeURIComponent(workout.workoutId)}&title=${encodeURIComponent(workout.title)}`,
     });
