@@ -719,7 +719,7 @@ test("legacy sparse source summaries match Go zero values without inventing evid
   assert.equal(bounded?.source?.speed?.reasons?.[0]?.length, 256);
 });
 
-test("strength review adapter scopes each source and decodes Go's saved sets", async () => {
+test("strength review adapter scopes manual records and decodes Go's saved sets", async () => {
   const userId = "test-athlete";
   const startedAt = new Date("2026-11-30T15:59:59Z");
   const endedAt = new Date("2026-11-30T16:25:00Z");
@@ -728,9 +728,6 @@ test("strength review adapter scopes each source and decodes Go's saved sets", a
   const provider = new MySqlDataProvider({
     async query(sql: string, values: unknown[]) {
       calls.push({ sql, values });
-      if (sql.includes("FROM activities")) {
-        return [[{ label_id: "watch-1", date: startedAt, name: "腕表训练", provider: "coros" }]];
-      }
       if (sql.includes("AND id = ?") && values[0] !== userId) return [[]];
       return [[{ id: "manual-1", name: "月末力量", started_at: startedAt, ended_at: endedAt, note: "手录备注", actions }]];
     },
@@ -745,15 +742,11 @@ test("strength review adapter scopes each source and decodes Go's saved sets", a
     actions,
   });
   assert.equal(await provider.getManualStrengthDetail("other-athlete", "manual-1"), null);
-  assert.deepEqual(await provider.getWatchStrengthSummaries(userId, "2026-11-30", "2026-11-30"), [
-    { id: "watch-1", name: "腕表训练", startedAt, provider: "coros" },
-  ]);
   const expectedBounds = [userId, new Date("2026-11-29T16:00:00.000Z"), new Date("2026-11-30T16:00:00.000Z")];
   assert.deepEqual(
     calls.map((call) => call.values),
-    [expectedBounds, [userId, "manual-1"], ["other-athlete", "manual-1"], expectedBounds],
+    [expectedBounds, [userId, "manual-1"], ["other-athlete", "manual-1"]],
   );
   assert.match(calls[0]?.sql ?? "", /WHERE user_id = \? AND started_at >= \? AND started_at < \?/);
   assert.match(calls[1]?.sql ?? "", /WHERE user_id = \? AND id = \?/);
-  assert.match(calls[3]?.sql ?? "", /WHERE a.user_id = \? AND a.date >= \? AND a.date < \? AND \(a.sport_type IN \(402, 800\)/);
 });

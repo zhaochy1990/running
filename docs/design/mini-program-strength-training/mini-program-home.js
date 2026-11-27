@@ -145,9 +145,5 @@ const miniProgramHome = (() => {
     expanded.add(date.slice(0, 7));
   }
 
-  function watchStrength() {
-    return exampleMonths.flatMap(month => month.rows).filter(row => row.sport === 'fitness_center');
-  }
-
-  return { asset, escapeHTML, tabBar, training, records, selectDay, toggleMonth, revealMonth, watchStrength };
+  return { asset, escapeHTML, tabBar, training, records, selectDay, toggleMonth, revealMonth };
 })();

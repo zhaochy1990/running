@@ -32,8 +32,24 @@ test("the production graph reloads only the anchored record on each turn and res
     async getManualStrengthSummaries() {
       throw new Error("an anchored turn must not search by date");
     },
-    async getWatchStrengthSummaries() {
-      throw new Error("an unrequested watch must not be read");
+    async getActivityDetail() {
+      assert.fail("an anchored strength review must not read watch activities");
+    },
+    async getUserProfile() {
+      return null;
+    },
+    async getUserInjuries(userId: string) {
+      assert.equal(userId, "athlete");
+      return [{ description: "旧踝伤", recoveryStatus: "恢复中", runningRestriction: "避免跳跃" }];
+    },
+    async getMasterPlanMetadataForDate() {
+      return null;
+    },
+    async getRaceTarget() {
+      return null;
+    },
+    async getPlanSessions() {
+      return [];
     },
   } satisfies Partial<DataProvider>;
   process.env.STRIDE_STRENGTH_REVIEW_TEST_KEY = "test-key";
@@ -67,7 +83,7 @@ test("the production graph reloads only the anchored record on each turn and res
                       type: "function",
                       function: {
                         name: "get_strength_training_review",
-                        arguments: JSON.stringify(malformedArguments ? { watchReference: 123 } : { recordId: recordB, startDay: "2025-09-01" }),
+                        arguments: JSON.stringify(malformedArguments ? { startDay: 123 } : { recordId: recordB, startDay: "2025-09-01" }),
                       },
                     },
                   ],
@@ -110,6 +126,8 @@ test("the production graph reloads only the anchored record on each turn and res
   assert.deepEqual(reads, [recordA, recordB, recordA]);
   assert.deepEqual(modelChoices, ["required", "none", "required", "none", "required", "none"]);
   assert.match(JSON.stringify(evidence.at(-1)), /"quantity":42/);
+  assert.match(JSON.stringify(evidence.at(-1)), /旧踝伤/);
+  assert.doesNotMatch(JSON.stringify(evidence.at(-1)), /endedAt|watchHeartRate/);
   assert.deepEqual(
     resumed.messages.filter((message) => message.getType() === "human").map((message) => message.text),
     ["早练做了什么？", "平板撑了多久？"],

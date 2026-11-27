@@ -36,7 +36,6 @@ import type {
   UserInjury,
   UserProfile,
   VendorHrvBaseline,
-  WatchStrengthSummary,
   WeeklyFeedback,
   WeeklyPlanDocument,
 } from "@stride/coach-agent";
@@ -339,22 +338,6 @@ export class MySqlDataProvider implements DataProvider {
       note: row.note as string,
       actions: manualStrengthActions.parse(row.actions),
     };
-  }
-
-  async getWatchStrengthSummaries(userId: string, startDay: string, endDay: string): Promise<WatchStrengthSummary[]> {
-    const [rows] = await this.pool.query<RowDataPacket[]>(
-      `SELECT a.label_id, a.name, a.date, a.provider
-         FROM activities a
-        WHERE a.user_id = ? AND a.date >= ? AND a.date < ? AND ${WATCH_STRENGTH_PREDICATE}
-        ORDER BY a.date, a.label_id`,
-      [userId, ...shanghaiDateBounds(startDay, endDay)],
-    );
-    return rows.map((row) => ({
-      id: row.label_id as string,
-      name: (row.name ?? null) as string | null,
-      startedAt: row.date as Date,
-      provider: row.provider as string,
-    }));
   }
 
   /**

@@ -25,8 +25,31 @@ test("ordinary Coach uses hand-entered sets without reading overlapping watch da
       assert.deepEqual([userId, recordId], ["athlete-a", "manual-1"]);
       return record;
     },
-    async getWatchStrengthSummaries() {
-      throw new Error("watch data was not requested");
+    async getUserProfile(userId: string) {
+      assert.equal(userId, "athlete-a");
+      return { runningAgeRange: "3-5年" };
+    },
+    async getUserInjuries(userId: string) {
+      assert.equal(userId, "athlete-a");
+      return [{ description: "旧踝伤", recoveryStatus: "恢复中", runningRestriction: "避免跳跃" }];
+    },
+    async getMasterPlanMetadataForDate(userId: string, recordDay: string) {
+      assert.deepEqual([userId, recordDay], ["athlete-a", "2026-11-26"]);
+      return { content: { phases: [{ name: "专项期", start_date: "2026-11-20", end_date: "2026-12-10", focus: "跑步专项" }] } };
+    },
+    async getRaceTarget(userId: string) {
+      assert.equal(userId, "athlete-a");
+      return { race_date: "2026-12-20", race_name: "冬季半马", race_distance: "HM", target_finish_time: "01:50:00" };
+    },
+    async getPlanSessions(userId: string, from: string, to: string) {
+      assert.deepEqual([userId, from, to], ["athlete-a", "2026-11-23", "2026-11-29"]);
+      return [
+        { date: "2026-11-27", name: "轻松跑", source: "weekly", kind: "run", summary: "8 km" },
+        { date: "2026-11-27", name: "手表课表", source: "watch", kind: "run" },
+      ];
+    },
+    async getActivityDetail() {
+      assert.fail("a manual review must not query watch activities");
     },
   } as unknown as DataProvider;
   const tools: StructuredTool[] = getQaTools(store);
@@ -41,10 +64,17 @@ test("ordinary Coach uses hand-entered sets without reading overlapping watch da
     record: {
       id: "manual-1",
       name: "夜间力量",
-      startedAt: "2026-11-26T00:05:00.000+08:00",
-      endedAt: "2026-11-26T00:30:00.000+08:00",
+      recordingStartedAt: "2026-11-26T00:05:00.000+08:00",
       note: "左侧发力更稳",
       actions: [{ name: "单腿蹲", sets: [{ load: "12", load_unit: "kg", quantity: 8, quantity_unit: "reps" }] }],
+    },
+    athleteContext: {
+      asOfDay: "2026-11-26",
+      runningAgeRange: "3-5年",
+      injuries: [{ description: "旧踝伤", recoveryStatus: "恢复中", runningRestriction: "避免跳跃" }],
+      phase: { name: "专项期", start_date: "2026-11-20", end_date: "2026-12-10", focus: "跑步专项" },
+      currentRaceGoal: { name: "冬季半马", date: "2026-12-20", distance: "HM", targetFinishTime: "01:50:00" },
+      plannedRuns: [{ date: "2026-11-27", name: "轻松跑", summary: "8 km" }],
     },
   });
 });
@@ -80,8 +110,20 @@ function fixture(manualRecords: ManualStrengthRecord[], watches = [watchA, watch
       detailReads.push(id);
       return owner === "athlete-a" ? (manualRecords.find((record) => record.id === id) ?? null) : null;
     },
-    async getWatchStrengthSummaries(owner: string) {
-      return owner === "athlete-a" ? watches : [];
+    async getUserProfile() {
+      return null;
+    },
+    async getUserInjuries() {
+      return [];
+    },
+    async getMasterPlanMetadataForDate() {
+      return null;
+    },
+    async getRaceTarget() {
+      return null;
+    },
+    async getPlanSessions() {
+      return [];
     },
     async getActivityDetail(owner: string, id: string) {
       detailReads.push(id);
@@ -112,7 +154,15 @@ function fixture(manualRecords: ManualStrengthRecord[], watches = [watchA, watch
     },
   } satisfies Pick<
     DataProvider,
-    "getManualStrengthSummaries" | "getManualStrengthDetail" | "getWatchStrengthSummaries" | "getActivityDetail" | "getActivitySummariesByDateRange"
+    | "getManualStrengthSummaries"
+    | "getManualStrengthDetail"
+    | "getActivityDetail"
+    | "getActivitySummariesByDateRange"
+    | "getUserProfile"
+    | "getUserInjuries"
+    | "getMasterPlanMetadataForDate"
+    | "getRaceTarget"
+    | "getPlanSessions"
   >;
   return { store: store as unknown as DataProvider, detailReads };
 }
@@ -143,72 +193,6 @@ async function execute(
   return JSON.parse(output.messages[0].content);
 }
 
-test("a review anchored across Shanghai midnight can include the explicitly named next-day watch heart rate", async () => {
-  const record = {
-    ...manualRecord,
-    id: "4bc80c96-0415-4bdc-bf17-83a919154594",
-    startedAt: new Date("2026-11-26T15:59:00Z"),
-    endedAt: new Date("2026-11-26T16:18:00Z"),
-  };
-  const watch = { ...watchB, startedAt: new Date("2026-11-26T16:01:00Z") };
-  const { store, detailReads } = fixture([record], [watch]);
-  store.getWatchStrengthSummaries = async (owner, start, end) => {
-    assert.deepEqual([owner, start, end], ["athlete-a", "2026-11-26", "2026-11-27"]);
-    return [watch];
-  };
-  const review = await execute(store, "补充手表 watch-b 的心率", { watchReference: "watch-b" }, "athlete-a", undefined, [], record.id);
-  assert.equal(review.record.id, record.id);
-  assert.deepEqual(detailReads, [record.id, watch.id]);
-  assert.equal(review.watchHeartRate.avgHr, 137);
-  assert.equal(review.watchHeartRate.source, "watch");
-});
-
-test("anchored watch IDs are exact and may explicitly refer to a watch that started before midnight", async () => {
-  const id = "4bc80c96-0415-4bdc-bf17-83a919154594";
-  const record = { ...manualRecord, id, startedAt: new Date("2026-11-26T16:01:00Z"), endedAt: new Date("2026-11-26T16:18:00Z") };
-  const watch = { ...watchB, startedAt: new Date("2026-11-26T15:55:00Z") };
-  const { store, detailReads } = fixture([record], [watch]);
-  const readActivity = store.getActivityDetail.bind(store);
-  store.getActivityDetail = async (owner, activityId) => {
-    const detail = await readActivity(owner, activityId);
-    return detail ? { ...detail, date: watch.startedAt, provider: watch.provider, shanghaiDay: "2026-11-26" } : null;
-  };
-  store.getWatchStrengthSummaries = async () => [];
-  const review = await execute(store, "请补充手表 watch-b 的心率", { watchReference: "watch-b" }, "athlete-a", undefined, [], id);
-  assert.equal(review.watchHeartRate.id, "watch-b");
-  assert.equal(review.watchHeartRate.avgHr, 137);
-  const prefixOnly = await execute(store, "请补充手表 watch-b2 的心率", { watchReference: "watch-b" }, "athlete-a", undefined, [], id);
-  assert.equal(prefixOnly.watchHeartRate, undefined);
-  assert.deepEqual(detailReads, [id, "watch-b", id]);
-});
-
-test("a full Shanghai date and time disambiguates repeated times in an anchored watch request", async () => {
-  const id = "4bc80c96-0415-4bdc-bf17-83a919154594";
-  const record = { ...manualRecord, id, startedAt: new Date("2026-11-26T15:50:00Z"), endedAt: new Date("2026-11-26T16:18:00Z") };
-  const watch = { ...watchB, startedAt: new Date("2026-11-26T15:55:00Z") };
-  const { store } = fixture([record], [watch]);
-  let lookups = 0;
-  store.getWatchStrengthSummaries = async (_owner, start, end) => {
-    lookups += 1;
-    assert.deepEqual([start, end], ["2026-11-26", "2026-11-26"]);
-    return [watch];
-  };
-  const review = await execute(store, "补充手表 2026-11-26 23:55 的心率", { watchReference: "2026-11-26 23:55" }, "athlete-a", undefined, [], id);
-  assert.equal(review.watchHeartRate.avgHr, 137);
-  const ambiguous = await execute(
-    store,
-    "补充手表 2026-11-26 23:55 或 2026-11-27 23:55 的心率",
-    { watchReference: "2026-11-26 23:55" },
-    "athlete-a",
-    undefined,
-    [],
-    id,
-  );
-  assert.equal(ambiguous.watchSupplementStatus, "ambiguous");
-  assert.equal(ambiguous.watchHeartRate, undefined);
-  assert.equal(lookups, 1);
-});
-
 test("two same-day manual candidates are listed without giving an undesignated record's sets", async () => {
   const { store, detailReads } = fixture([manualRecord, secondManual]);
   const ambiguous = await execute(store, "帮我复盘 11 月 26 日的力量训练", { startDay: day });
@@ -230,34 +214,18 @@ test("two same-day manual candidates are listed without giving an undesignated r
   assert.deepEqual(detailReads, ["manual-a"]);
 });
 
-test("an explicit watch selection permits only the chosen watch's heart rate", async () => {
-  const { store, detailReads } = fixture([manualRecord]);
-  const unrequested = await execute(store, "只复盘手录，看看平板支撑多少秒", { startDay: day, watchReference: "18:30" });
-  assert.equal(unrequested.watchSupplementStatus, "needs_explicit_reference");
-  const inferred = await execute(store, "也看看手表的心率", { startDay: day, watchReference: watchB.id });
-  assert.equal(inferred.watchSupplementStatus, "needs_explicit_reference");
-  const result = await execute(store, "复盘手录，补充 18:30 那条手表的心率", { startDay: day, watchReference: "18:30" });
-  assert.deepEqual(result.watchHeartRate, {
-    id: "watch-b",
-    source: "watch",
-    name: "手表晚上力量",
-    provider: "garmin",
-    startedAt: "2026-11-26T18:30:00.000+08:00",
-    avgHr: 137,
-    maxHr: null,
-  });
-  assert.deepEqual(result.record.actions, manualRecord.actions);
-  assert.deepEqual(detailReads, ["manual-a", "manual-a", "manual-a", "watch-b"]);
-});
-
-test("watch-only fallback preserves unknown measurements and other users cannot select the record", async () => {
-  const { store, detailReads } = fixture([], [watchA]);
-  const result = await execute(store, "今天力量训练做了哪些组", { startDay: day });
-  assert.equal(result.source, "watch");
-  assert.deepEqual(result.record.sets, [{ lapIndex: 1, exerciseNameKey: "PLANK", durationS: 43, avgHr: null, maxHr: null, reps: null, load: null }]);
-  assert.equal(result.record.avgHr, null);
-  assert.deepEqual(await execute(store, "查 watch-a", { startDay: day, recordId: watchA.id, userId: "athlete-a" }, "athlete-b"), { status: "missing" });
-  assert.deepEqual(detailReads, ["watch-a"]);
+test("old watch references are ignored, with or without a saved manual strength record", async () => {
+  const manual = fixture([manualRecord]);
+  const args = { startDay: day, watchReference: watchA.id };
+  const review = await execute(manual.store, "复盘力量训练，也查手表 watch-a 心率", args);
+  assert.equal(review.source, "manual");
+  assert.deepEqual(manual.detailReads, [manualRecord.id]);
+  assert.equal("watchHeartRate" in review, false);
+  assert.equal("endedAt" in review.record, false);
+  const missing = fixture([]);
+  assert.deepEqual(await execute(missing.store, "今天力量训练做了哪些组", args), { status: "missing", source: "manual" });
+  assert.deepEqual(await execute(manual.store, "复盘力量训练", args, "athlete-b"), { status: "missing", source: "manual" });
+  assert.deepEqual(missing.detailReads, []);
 });
 
 test("generic Coach activity reads withhold watch strength measurements", async () => {
@@ -274,16 +242,6 @@ test("generic Coach activity reads withhold watch strength measurements", async 
   assert.equal(watchOnly.activities[0].avgHr, 128);
   const watchOnlyDetail = await execute(fixture([]).store, "这条手表运动的心率", { labelId: watchB.id }, "athlete-a", "get_activity_details");
   assert.equal(watchOnlyDetail.activity.avgHr, 137);
-});
-
-test("a substring of an explicitly named time cannot select a different watch record", async () => {
-  const earlier = { ...watchA, startedAt: new Date("2026-11-26T00:30:00Z") };
-  const { store, detailReads } = fixture([manualRecord], [earlier, watchB]);
-  const rejected = await execute(store, "补充 18:30 那条手表记录的心率", { startDay: day, watchReference: "8:30" });
-  assert.equal(rejected.watchSupplementStatus, "needs_explicit_reference");
-  assert.deepEqual(detailReads, ["manual-a"]);
-  const result = await execute(store, "补充 18点30分 那条手表记录的心率", { startDay: day, watchReference: "18点30分" });
-  assert.equal(result.watchHeartRate.id, "watch-b");
 });
 
 test("effective manual choice survives follow-up in the same scope and supports numbered clarification", async () => {
@@ -355,21 +313,6 @@ test("the default date-based name does not select an ambiguous session", async (
   assert.equal(answer.status, "ambiguous");
 });
 
-test("only a positive watch-local reference can authorize a supplement", async () => {
-  const { store, detailReads } = fixture([manualRecord]);
-  for (const question of [
-    "不要看手表，复盘 18:30 的手录",
-    "复盘18:30那条手录，手表心率不用看",
-    "手表 8:05 和手录 18:30，补充手表的心率",
-    "复盘手录，不要看 18:30 的手表心率",
-    "复盘手录，手表 18:30 记录错误，手表 8:05 请补充心率",
-  ]) {
-    const answer = await execute(store, question, { startDay: day, watchReference: "18:30" });
-    assert.equal(answer.watchSupplementStatus, "needs_explicit_reference", question);
-  }
-  assert.deepEqual(detailReads, ["manual-a", "manual-a", "manual-a", "manual-a", "manual-a"]);
-});
-
 test("a relative date used as a range endpoint does not narrow the review to one day", async () => {
   const result = await execute(fixture([manualRecord]).store, "复盘截至昨天的本周力量训练", {
     startDay: "2026-11-23",
@@ -377,13 +320,6 @@ test("a relative date used as a range endpoint does not narrow the review to one
   });
   assert.equal(result.status, "found");
   assert.deepEqual(result.scope, { startDay: "2026-11-23", endDay: "2026-11-25" });
-});
-
-test("a second watch record in the same affirmative clause stops heart rate attribution", async () => {
-  const { store, detailReads } = fixture([manualRecord]);
-  const result = await execute(store, "补充手表 watch-a 的心率（手表 watch-b 记录错误）", { startDay: day, watchReference: watchB.id });
-  assert.equal(result.watchSupplementStatus, "ambiguous");
-  assert.deepEqual(detailReads, ["manual-a"]);
 });
 
 test("a watch detail cannot bypass the manual policy during a multi-day strength review", async () => {

@@ -16,8 +16,6 @@ export interface DataProvider {
   /** Saved manual workouts in the inclusive Shanghai range, without their sets. */
   getManualStrengthSummaries(userId: string, startDay: string, endDay: string): Promise<StrengthRecordSummary[]>;
   getManualStrengthDetail(userId: string, recordId: string): Promise<ManualStrengthRecord | null>;
-  /** Watch strength identities only. Read measurements after choosing a specific record. */
-  getWatchStrengthSummaries(userId: string, startDay: string, endDay: string): Promise<WatchStrengthSummary[]>;
   getDailyTrainingLoadByDateRange(userId: string, startDay: string, endDay: string): Promise<DailyTrainingLoad[]>;
   /** 确认为比赛的跑步记录（races 表 ∪ session_class='race'，devops#790），最近在前；`minDistanceKm` 只是噪音地板（默认 4.5km），不做比赛判定。 */
   getRaceHistory(userId: string, options: { asOfDate: string; minDistanceKm?: number; limit?: number }): Promise<RaceEffort[]>;
@@ -134,10 +132,6 @@ export interface ManualStrengthRecord extends StrengthRecordSummary {
       quantity_unit: "reps" | "seconds";
     }[];
   }[];
-}
-
-export interface WatchStrengthSummary extends StrengthRecordSummary {
-  provider: string;
 }
 
 /** One watch-synced activity. `date` is a UTC instant. */

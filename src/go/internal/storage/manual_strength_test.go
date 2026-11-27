@@ -66,7 +66,8 @@ func TestManualStrengthSaveRetriesAndPreservesTrainingWindow(t *testing.T) {
 	}, nil, nil, nil)
 	page, err := store.ListActivities(ctx, owner, ActivityListParams{Limit: 1, Offset: 1, IncludeManualStrength: true})
 	if err != nil || page.Total != 2 || len(page.Rows) != 1 || page.Rows[0].LabelID != id ||
-		page.Rows[0].Provider != ManualStrengthProvider || page.MonthlySummaries["2026-03"].ActivityCount != 2 ||
+		page.Rows[0].Provider != ManualStrengthProvider || page.Rows[0].DurationS != nil ||
+		page.MonthlySummaries["2026-03"].ActivityCount != 2 || page.MonthlySummaries["2026-03"].DurationS != 60 ||
 		page.ManualStrengthSummaries[id] != (ManualStrengthSummary{ActionCount: 1, SetCount: 1}) {
 		t.Fatalf("mixed strength page: %+v, %v", page, err)
 	}

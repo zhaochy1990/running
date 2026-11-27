@@ -8,9 +8,9 @@ import * as strength from './manual-strength.ts';
 import { theme } from './theme.ts';
 import type { ManualStrengthSummary } from '../types/manual-strength.ts';
 
-type ActivityResponse = { total: number; activities: Array<{ label_id: string; name: string; date: string; source: string; duration_s: number; manual_strength_summary?: ManualStrengthSummary }> };
+type ActivityResponse = { total: number; activities: Array<{ label_id: string; name: string; date: string; source: string; duration_s: number | null; manual_strength_summary?: ManualStrengthSummary }> };
 type PageUnderTest = {
-  data: { guest: boolean; total: number; summaryStale: boolean; monthGroups: Array<{ summary: { count: number }; duration: string; rows: Array<{ name: string; strengthSummary: string }> }> };
+  data: { guest: boolean; total: number; summaryStale: boolean; monthGroups: Array<{ summary: { count: number }; duration: string; rows: Array<{ name: string; strengthSummary: string; duration: string }> }> };
   setData(patch: object): void;
   onLoad(): Promise<void>;
   onShow(): void;
@@ -72,7 +72,7 @@ async function respond(viewer: string, name: string, includeWatch = false) {
   const request = requests.shift();
   assert.equal(request?.viewer, viewer);
   const activities: ActivityResponse['activities'] = [{
-    label_id: name, name, date: '2026-11-26T15:00:00+08:00', source: 'manual_strength', duration_s: 300,
+    label_id: name, name, date: '2026-11-26T15:00:00+08:00', source: 'manual_strength', duration_s: null,
     manual_strength_summary: { action_count: 2, set_count: 3 },
   }];
   if (includeWatch) activities.push({
@@ -86,6 +86,7 @@ await view.onLoad();
 await respond('user-a', '账号 A 私人训练');
 assert.equal(view.data.monthGroups[0].rows[0].name, '账号 A 私人训练');
 assert.equal(view.data.monthGroups[0].rows[0].strengthSummary, '2 个动作 · 3 组');
+assert.equal(view.data.monthGroups[0].rows[0].duration, '—');
 editedSummaries = new Map([['账号 A 私人训练', { name: '编辑后的历史训练', summary: { action_count: 2, set_count: 4 } }]]);
 view.onShow();
 assert.equal(view.data.monthGroups[0].rows[0].name, '编辑后的历史训练');
@@ -105,6 +106,7 @@ viewerChanged?.();
 await respond('user-b', '账号 B 私人训练', true);
 assert.equal(view.data.guest, false);
 assert.equal(view.data.monthGroups[0].rows[0].name, '账号 B 私人训练');
+assert.equal(view.data.monthGroups[0].duration, '10:00');
 assert.equal(requests.length, 0);
 
 const beforeDelete = view.fetch();
@@ -149,7 +151,7 @@ const savedRecord = {
   revision: 1, started_at: '2026-11-26T07:00:00Z', ended_at: '2026-11-26T07:30:00Z',
 };
 type TrainingPage = {
-  data: { draft?: strength.StrengthDraft | null; record?: unknown; summaryLabel?: string; actionRows?: Array<{ sets: Array<{ number: number }> }>; error?: string; canDiscardDraft?: boolean };
+  data: { draft?: strength.StrengthDraft | null; record?: unknown; summaryLabel?: string; timeLabel?: string; actionRows?: Array<{ sets: Array<{ number: number }> }>; error?: string; canDiscardDraft?: boolean };
   setData(patch: object): void;
   onLoad(params: { edit?: string; recordId?: string }): Promise<void> | void;
   onShow?(): void;
@@ -253,6 +255,7 @@ assert.equal(edit.data.draft, null);
 const detail = await loadTrainingPage('../pages/manual-strength-detail/manual-strength-detail.ts');
 assert.ok(detail.data.record);
 assert.equal(detail.data.summaryLabel, '手动记录 · 1 个动作 / 2 组');
+assert.equal(detail.data.timeLabel, '开始录入 2026-11-26 15:00');
 assert.equal(detail.data.actionRows?.[0].sets[0].number, 1);
 assert.equal(detail.data.actionRows?.[0].sets[1].number, 2);
 detail.onCoachReview?.();
