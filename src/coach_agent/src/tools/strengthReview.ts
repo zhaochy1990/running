@@ -13,7 +13,7 @@ const reviewSchema = z.object({
 });
 
 function candidate(record: StrengthRecordSummary) {
-  return { id: record.id, name: record.name, startedAt: shanghaiIso(record.startedAt) };
+  return { id: record.id, name: record.name, recordingStartedAt: shanghaiIso(record.startedAt) };
 }
 
 const phaseContext = z.array(z.object({ name: z.string(), start_date: z.iso.date(), end_date: z.iso.date(), focus: z.string() }));
@@ -34,7 +34,7 @@ async function manualEvidence(store: DataProvider, userId: string, record: Manua
     status: "found",
     source: "manual",
     scope,
-    record: { id: record.id, name: record.name, recordingStartedAt: shanghaiIso(record.startedAt), note: record.note, actions: record.actions },
+    record: { ...candidate(record), note: record.note, actions: record.actions },
     athleteContext: {
       asOfDay: asof,
       runningAgeRange: profile.status === "fulfilled" ? (profile.value?.runningAgeRange ?? null) : null,
@@ -131,7 +131,12 @@ export function isFoundManualStrengthEvidence(content: unknown): boolean {
   return evidence?.status === "found" && evidence.source === "manual" && evidence.record !== undefined;
 }
 
-function readConversation(state: unknown): { userText: string; priorEvidence?: PriorEvidence; activeStrengthReview?: boolean } {
+function readConversation(state: unknown): {
+  userText: string;
+  priorEvidence?: PriorEvidence;
+  activeStrengthReview?: boolean;
+  previousStrengthReview?: boolean;
+} {
   if (typeof state !== "object" || state === null || !("messages" in state) || !Array.isArray(state.messages)) return { userText: "" };
   const messages = state.messages;
   const userIndex = messages.findLastIndex(isHumanMessage);
@@ -143,8 +148,7 @@ function readConversation(state: unknown): { userText: string; priorEvidence?: P
   const currentTurn = messages.slice(userIndex + 1);
   const currentToolCalls = currentTurn.findLast(isAIMessage)?.tool_calls;
   const activeStrengthReview =
-    currentToolCalls?.some((call: { name: string }) => call.name === STRENGTH_REVIEW_TOOL_NAME) ||
-    currentTurn.some((message) => isStrengthReview(message) && readEvidence(message.content)?.source === "manual");
+    currentToolCalls?.some((call: { name: string }) => call.name === STRENGTH_REVIEW_TOOL_NAME) || currentTurn.some(isStrengthReview);
   let userText = messages[userIndex].text;
   try {
     // The chat API wraps the message with a timestamp. The envelope itself
@@ -155,13 +159,28 @@ function readConversation(state: unknown): { userText: string; priorEvidence?: P
     // Graph callers can also supply plain user messages.
   }
   const priorEvidence = readEvidence(previousReview?.content);
-  return { userText, ...(priorEvidence ? { priorEvidence } : {}), activeStrengthReview };
+  return { userText, ...(priorEvidence ? { priorEvidence } : {}), activeStrengthReview, previousStrengthReview: previousReview !== undefined };
 }
 
 /** Normal watch-only activity summaries can still answer general multi-sport questions. */
 export function useDedicatedStrengthReview(state: unknown): boolean {
-  const { userText, activeStrengthReview } = readConversation(state);
-  return activeStrengthReview === true || /手录|自由力量|力量训练|力量.*复盘|复盘.*力量|manual strength|strength training|review.*strength/i.test(userText);
+  const { userText, activeStrengthReview, previousStrengthReview } = readConversation(state);
+  if (activeStrengthReview || /手录|自由力量|力量.*复盘|复盘.*力量|manual strength|review.*strength/i.test(userText)) return true;
+  const changesTopic = /换个话题|另一个问题|\bnew topic\b/i.test(userText);
+  if (WATCH_WORD.test(userText)) {
+    return (
+      previousStrengthReview === true &&
+      !changesTopic &&
+      !/(?:这|那|另|另外一)[条次场].{0,10}(?:手表|佳明|高驰)|(?:this|that|another) watch (?:activity|record|workout)/i.test(userText)
+    );
+  }
+  if (/力量训练|strength training/i.test(userText)) return true;
+  return (
+    previousStrengthReview === true &&
+    !changesTopic &&
+    !/跑步|\brunning\b/i.test(userText) &&
+    /心率|负重|重量|组数|几组|几次|几秒|休息|用时|时长|第[一二三四五六七八九十\d]+组|heart rate|duration|rest time/i.test(userText)
+  );
 }
 
 function mentionedDays(userText: string, asof: string): Set<string> {

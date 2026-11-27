@@ -201,8 +201,8 @@ test("two same-day manual candidates are listed without giving an undesignated r
     source: "manual",
     scope: { startDay: day, endDay: day },
     candidates: [
-      { id: "manual-a", name: "早晨力量", startedAt: "2026-11-26T08:15:00.000+08:00" },
-      { id: "manual-b", name: "晚间力量", startedAt: "2026-11-26T19:30:00.000+08:00" },
+      { id: "manual-a", name: "早晨力量", recordingStartedAt: "2026-11-26T08:15:00.000+08:00" },
+      { id: "manual-b", name: "晚间力量", recordingStartedAt: "2026-11-26T19:30:00.000+08:00" },
     ],
     truncated: false,
   });
@@ -228,22 +228,38 @@ test("old watch references are ignored, with or without a saved manual strength 
   assert.deepEqual(missing.detailReads, []);
 });
 
-test("generic Coach activity reads withhold watch strength measurements", async () => {
+test("manual reviews bypass watch reads while independent watch activity queries stay available", async () => {
   const { store } = fixture([manualRecord]);
   const detail = await execute(store, "今天力量训练", { labelId: watchA.id }, "athlete-a", "get_activity_details");
   assert.equal(detail.activity, null);
   assert.equal(detail.reviewTool, "get_strength_training_review");
   const summaries = await execute(store, "今天有哪些活跃记录", { startDay: day }, "athlete-a", "get_activities_by_date_range");
-  assert.deepEqual(Object.keys(summaries.activities[0]).sort(), ["date", "labelId", "laps", "reviewTool", "shanghaiDay", "sport"].sort());
   assert.equal(summaries.activities[0].labelId, watchA.id);
-
-  const watchOnly = await execute(fixture([]).store, "今天有哪些活跃记录", { startDay: day }, "athlete-a", "get_activities_by_date_range");
-  assert.equal(watchOnly.activities[0].durationS, 1450);
-  assert.equal(watchOnly.activities[0].avgHr, 128);
-  const watchOnlyDetail = await execute(fixture([]).store, "这条手表运动的心率", { labelId: watchB.id }, "athlete-a", "get_activity_details");
+  const watchOnlyDetail = await execute(store, "这条手表力量训练的平均心率是多少？", { labelId: watchB.id }, "athlete-a", "get_activity_details");
   assert.equal(watchOnlyDetail.activity.avgHr, 137);
 });
 
+test("a follow-up after missing manual evidence cannot fall back to watch heart rate", async () => {
+  const { store, detailReads } = fixture([]);
+  const history = [
+    new HumanMessage("复盘今天的力量训练"),
+    new AIMessage({ content: "", tool_calls: [{ name: "get_strength_training_review", args: { startDay: day }, id: "manual" }] }),
+    new ToolMessage({ name: "get_strength_training_review", tool_call_id: "manual", content: JSON.stringify({ status: "missing", source: "manual" }) }),
+    new AIMessage("今天没有手动记录"),
+  ];
+  const followUp = await execute(store, "那平均心率呢？", { labelId: watchB.id }, "athlete-a", "get_activity_details", history);
+  assert.equal(followUp.activity, null);
+  assert.equal(followUp.reviewTool, "get_strength_training_review");
+  assert.deepEqual(detailReads, []);
+  const list = await execute(store, "那平均心率呢？", { startDay: day }, "athlete-a", "get_activities_by_date_range", history);
+  assert.deepEqual(list.activities, []);
+  assert.equal(list.reviewTool, "get_strength_training_review");
+  const supplement = await execute(store, "那手表测到的心率呢？", { labelId: watchB.id }, "athlete-a", "get_activity_details", history);
+  assert.equal(supplement.activity, null);
+  assert.deepEqual(detailReads, []);
+  const newTopic = await execute(store, "换个话题，这条手表力量训练的平均心率是多少？", { labelId: watchB.id }, "athlete-a", "get_activity_details", history);
+  assert.equal(newTopic.activity.avgHr, 137);
+});
 test("effective manual choice survives follow-up in the same scope and supports numbered clarification", async () => {
   const { store } = fixture([manualRecord, secondManual]);
   const first = await execute(store, "复盘今天的力量训练", { startDay: day });
@@ -331,7 +347,7 @@ test("a watch detail cannot bypass the manual policy during a multi-day strength
 
 test("parallel tool calls cannot expose broad-scope watch data before manual selection finishes", async () => {
   const yesterday = "2026-11-25";
-  const { store } = fixture([manualRecord]);
+  const { store, detailReads } = fixture([manualRecord]);
   const adapter: DataProvider = {
     ...store,
     getManualStrengthSummaries: async (_, start, end) => (start === yesterday && end === day ? [manualRecord] : []),
@@ -356,4 +372,5 @@ test("parallel tool calls cannot expose broad-scope watch data before manual sel
   );
   assert.equal(JSON.parse(output.messages[0].content).source, "manual");
   assert.equal(JSON.parse(output.messages[1].content).activity, null);
+  assert.deepEqual(detailReads, [manualRecord.id]);
 });

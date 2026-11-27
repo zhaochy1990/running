@@ -8,6 +8,9 @@ const manualLog = (() => {
   const dates = new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
   });
+  const times = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  });
   const records = [];
   let activeDraft = null;
   let activeRecord = null;
@@ -204,7 +207,7 @@ ${escape(entry.note)}</textarea>
       title: '力量训练记录',
       content: `<div class="log-saved-header">
         <h2 class="page-heading" tabindex="-1">${escape(recordTitle(record))}</h2>
-        <p class="eyeline">${entry.date} · 手动记录 · ${entry.exercises.length} 个动作 / ${totals(entry)} 组</p>
+        <p class="eyeline">开始录入 ${entry.date} ${times.format(new Date(entry.startedAt))} · 手动记录 · ${entry.exercises.length} 个动作 / ${totals(entry)} 组</p>
       </div>
       ${entry.exercises.map(exercise => `<section class="log-saved-exercise">
         <h3>${escape(exercise.name.trim())}</h3>

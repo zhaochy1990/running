@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
-import { HumanMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import type { CoachAgentConfig } from "../config/config.js";
 import type { DataProvider, ManualStrengthRecord } from "../data/dataProvider.js";
 import { createCoachAgent } from "./coachAgent.js";
@@ -12,6 +12,7 @@ test("the production graph reloads only the anchored record on each turn and res
   const recordB = "4bc80c96-0415-4bdc-bf17-83a919154593";
   const reads: string[] = [];
   const evidence: unknown[] = [];
+  const modelEvidence: string[] = [];
   const modelChoices: string[] = [];
   let quantity = 7;
   let malformedArguments = false;
@@ -60,6 +61,7 @@ test("the production graph reloads only the anchored record on each turn and res
     const chunks: Uint8Array[] = [];
     for await (const chunk of request) chunks.push(chunk);
     const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    modelEvidence.push(JSON.stringify(body.messages.filter((message: { role: string }) => message.role === "tool")));
     modelChoices.push(body.tool_choice ?? "");
     const toolTurn = body.tool_choice === "required" && !omitToolCall;
     if (!toolTurn && body.messages.at(-1)?.role === "tool") evidence.push(JSON.parse(body.messages.at(-1).content));
@@ -121,6 +123,23 @@ test("the production graph reloads only the anchored record on each turn and res
   }
   await turn(recordA, "早练做了什么？");
   await turn(recordB, "晚练做了什么？");
+  const legacyResult = {
+    status: "found",
+    source: "manual",
+    record: { id: recordA, startedAt: "old-start", endedAt: "old-end" },
+    watchHeartRate: { avgHr: 199 },
+  };
+  await graph.updateState(
+    { configurable: { thread_id: `athlete:coach:manual-strength-${recordA}` } },
+    {
+      messages: [
+        new AIMessage({ content: "", tool_calls: [{ name: "get_strength_training_review", args: {}, id: "legacy" }] }),
+        new ToolMessage({ name: "get_strength_training_review", tool_call_id: "legacy", content: JSON.stringify(legacyResult) }),
+        new AIMessage("旧版复盘回复"),
+      ],
+    },
+    "strength_review",
+  );
   quantity = 42;
   const resumed = await turn(recordA, "平板撑了多久？");
   assert.deepEqual(reads, [recordA, recordB, recordA]);
@@ -128,6 +147,11 @@ test("the production graph reloads only the anchored record on each turn and res
   assert.match(JSON.stringify(evidence.at(-1)), /"quantity":42/);
   assert.match(JSON.stringify(evidence.at(-1)), /旧踝伤/);
   assert.doesNotMatch(JSON.stringify(evidence.at(-1)), /endedAt|watchHeartRate/);
+  for (const input of modelEvidence.slice(-2)) {
+    assert.match(input, /stale/);
+    assert.doesNotMatch(input, /old-start|old-end|watchHeartRate/);
+  }
+  assert.ok(resumed.messages.some((message) => message.text === "旧版复盘回复"));
   assert.deepEqual(
     resumed.messages.filter((message) => message.getType() === "human").map((message) => message.text),
     ["早练做了什么？", "平板撑了多久？"],
