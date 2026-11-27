@@ -78,12 +78,9 @@ class ActivitiesToolImpl {
     const endDay = input.endDay ?? asof;
     const limit = input.limit ?? DEFAULT_ACTIVITIES_LIMIT;
     // 列表走 summaries：SQL 层面就不碰 laps 表。要分段明细再去 get_activity_details。
-    const all = await this.store.getActivitySummariesByDateRange(
-      userId,
-      input.startDay,
-      endDay,
-      scope === "non-strength" ? { excludeStrength: true } : undefined,
-    );
+    const all = await (scope === "non-strength"
+      ? this.store.getActivitySummariesByDateRange(userId, input.startDay, endDay, { excludeStrength: true })
+      : this.store.getActivitySummariesByDateRange(userId, input.startDay, endDay));
     const truncated = all.length > limit;
     // date 升序，取末尾若干条 = 区间内最近的运动。
     const activities = truncated ? all.slice(-limit) : all;
@@ -110,7 +107,9 @@ class ActivitiesToolImpl {
     if (scope === "none") {
       return { activity: null, ...STRENGTH_REVIEW_ONLY };
     }
-    const activity = await this.store.getActivityDetail(userId, input.labelId, scope === "non-strength" ? { excludeStrength: true } : undefined);
+    const activity = await (scope === "non-strength"
+      ? this.store.getActivityDetail(userId, input.labelId, { excludeStrength: true })
+      : this.store.getActivityDetail(userId, input.labelId));
     return {
       activity,
       provenance: ACTIVITY_PROVENANCE,
