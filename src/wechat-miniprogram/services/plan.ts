@@ -175,7 +175,7 @@ export function getSharedWorkout(userId: string, workoutId: string): Promise<Sha
 // ---------------------------------------------------------------------------
 
 function firstLine(text: string | null | undefined): string {
-  if (!text) return '';
+  if (typeof text !== 'string' || !text) return '';
   const line = text.split('\n').map((s) => s.trim()).find((s) => s.length > 0) ?? '';
   return line.length > 200 ? `${line.slice(0, 200)}…` : line;
 }
@@ -188,14 +188,19 @@ function sourceLabelOf(source: WorkoutSource): string {
 
 /** 由统一 workout 行提取今日训练卡片所需字段（devops#586 三源）。 */
 function buildWorkoutViewFromRow(
-  row: PlanSessionRow | null,
+  row: PlanSessionRow,
   plan: WeeklyPlanContentStructured | null,
-): TodayWorkoutView | null {
-  if (!row) return null;
-
-  // Stored spec may lack the discriminator (pre-#584 rows), so dispatch on
-  // kind + spec presence instead of the discriminator.
-  const isRunning = row.kind === 'run' && row.spec != null;
+): TodayWorkoutView {
+  // 旧课可能没有 schema 或训练结构，仍可显示摘要。
+  const spec = row.spec && typeof row.spec === 'object' ? row.spec : null;
+  const blocks = row.kind === 'run' && spec && 'blocks' in spec && Array.isArray(spec.blocks)
+    ? spec.blocks
+    : null;
+  const specBlocks = blocks?.every((block) => Array.isArray(block?.steps)
+    && block.steps.every((step) => typeof step?.duration?.kind === 'string'))
+    ? blocks
+    : null;
+  const isRunning = specBlocks !== null;
   // 统一行不携带 session notes；weekly 源回联周计划内容补齐 coach 备注。
   const weeklySession =
     row.source === 'weekly' && row.session_index != null
@@ -206,30 +211,20 @@ function buildWorkoutViewFromRow(
   const coachNote =
     firstLine(weeklySession?.notes_md) || firstLine(plan?.coach_notes) || firstLine(plan?.notes_md);
 
-  const intensityBars = isRunning
-    ? deriveIntensityBars(
-        (row.spec as { blocks: Array<{ steps: WorkoutStep[]; repeat: number }> }).blocks,
-      )
-    : [];
+  const intensityBars = specBlocks ? deriveIntensityBars(specBlocks) : [];
 
   // 可推送：weekly 源走 planned-session 端点（需 session_index 定位），
   // custom 源走 custom-workouts/:id/push（devops#587）；watch 源本就来自
   // 手表，不回推。
-  const hasSpec =
-    row.spec != null &&
-    (row.kind === 'run' || row.kind === 'strength') &&
-    (row.source === 'custom' ||
-      (row.source === 'weekly' && row.session_index != null));
-  // 可渲染结构：任意源的 run/strength 只要带 spec 就能看分段详情（watch 源
-  // 不可推送但课表本身可看）。
-  const hasStructure =
-    row.spec != null && (row.kind === 'run' || row.kind === 'strength');
+  const hasStructure = isRunning || (
+    row.kind === 'strength' && spec !== null && 'exercises' in spec && Array.isArray(spec.exercises)
+    && spec.exercises.every((exercise) => exercise && typeof exercise === 'object')
+  );
+  const hasSpec = hasStructure &&
+    (row.source === 'custom' || (row.source === 'weekly' && row.session_index != null));
 
   // 总时长：落库值优先；custom 课常缺 total_duration_s，用配速中值估时兜底
   // （与柱状图同一套估时口径，10-20 用户拍板；不加约等号）。
-  const specBlocks = isRunning
-    ? (row.spec as { blocks: Array<{ steps: WorkoutStep[]; repeat: number }> }).blocks
-    : null;
   const totalDurationText =
     row.total_duration_s != null
       ? fmtHms(row.total_duration_s)
@@ -484,7 +479,7 @@ function sampleEvenly<T>(arr: T[], count: number): T[] {
   return out;
 }
 
-/** 组装指定日期（上海 YYYY-MM-DD）的视图模型。无训练/营养时对应字段为 null。 */
+/** 组装指定日期（上海 YYYY-MM-DD）的视图模型。无训练时返回空列表，无营养时返回 null。 */
 export function buildDayView(
   plan: WeeklyPlanDetail | null,
   rows: PlanSessionRow[],
@@ -502,10 +497,10 @@ export function buildDayView(
       ? (plan.content as WeeklyPlanContentStructured)
       : null;
 
-  // 服务端已按 weekly→custom→watch 排序；优先展示可训练的课，否则落到休息行。
+  // 保留服务端顺序；仅当天没有训练课时，展示第一条休息或备注。
   const dayRows = rows.filter((r) => r.date === dateYmd);
-  const meaningful = dayRows.find((r) => r.kind !== 'rest' && r.kind !== 'note');
-  const workoutRow = meaningful ?? dayRows[0] ?? null;
+  const workouts = dayRows.filter((r) => r.kind !== 'rest' && r.kind !== 'note');
+  const visibleRows = workouts.length ? workouts : dayRows.slice(0, 1);
 
   const nutrition = content?.nutrition?.find((n) => n.date === dateYmd) ?? null;
 
@@ -513,7 +508,7 @@ export function buildDayView(
     weekDays,
     weekSubtitle: subtitle,
     todayLabel,
-    workout: buildWorkoutViewFromRow(workoutRow, content),
+    workouts: visibleRows.map((row) => buildWorkoutViewFromRow(row, content)),
     nutrition: buildNutritionView(nutrition),
   };
 }
