@@ -167,7 +167,11 @@ const template = readFileSync(new URL('../pages/index/index.wxml', import.meta.u
 const cardBindings = (template.match(/<(?:view|button)\b(?:[^>"']|"[^"]*"|'[^']*')*>/g) ?? [])
   .filter((tag) => tag.includes('data-workout-id="{{workout.workoutId}}"'));
 const card = cardBindings.find((tag) => tag.includes('bindtap="onWorkoutCardTap"'));
-assert.ok(card?.includes('wx:for="{{workouts}}"') && card.includes('wx:for-item="workout"'));
+assert.ok(card);
+assert.match(template, /<block wx:for="\{\{workouts\}\}" wx:for-item="workout"/);
+const restCard = template.split('wx:if="{{workout.sessionKind === \'rest\'}}"')[1]?.split('<view wx:else')[0];
+assert.ok(restCard?.includes('catchtap="onCoachTap"'));
+assert.ok(!restCard?.includes('onWatchTap') && !restCard?.includes('workout.stats'));
 assert.ok(cardBindings.some((tag) => tag.includes('catchtap="onWorkoutCardTap"') && tag.includes('data-fold-control="{{true}}"')));
 for (const handler of ['onWatchTap', 'onMoreTap', 'onCoachTap', 'onShareTap']) {
   assert.ok(cardBindings.some((tag) => tag.includes(`catchtap="${handler}"`)), `${handler} needs its card's workout ID`);
