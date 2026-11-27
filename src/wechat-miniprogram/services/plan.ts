@@ -188,11 +188,9 @@ function sourceLabelOf(source: WorkoutSource): string {
 
 /** 由统一 workout 行提取今日训练卡片所需字段（devops#586 三源）。 */
 function buildWorkoutViewFromRow(
-  row: PlanSessionRow | null,
+  row: PlanSessionRow,
   plan: WeeklyPlanContentStructured | null,
-): TodayWorkoutView | null {
-  if (!row) return null;
-
+): TodayWorkoutView {
   // Stored spec may lack the discriminator (pre-#584 rows), so dispatch on
   // kind + spec presence instead of the discriminator.
   const isRunning = row.kind === 'run' && row.spec != null;
@@ -484,7 +482,7 @@ function sampleEvenly<T>(arr: T[], count: number): T[] {
   return out;
 }
 
-/** 组装指定日期（上海 YYYY-MM-DD）的视图模型。无训练/营养时对应字段为 null。 */
+/** 组装指定日期（上海 YYYY-MM-DD）的视图模型。无训练时返回空列表，无营养时返回 null。 */
 export function buildDayView(
   plan: WeeklyPlanDetail | null,
   rows: PlanSessionRow[],
@@ -502,10 +500,10 @@ export function buildDayView(
       ? (plan.content as WeeklyPlanContentStructured)
       : null;
 
-  // 服务端已按 weekly→custom→watch 排序；优先展示可训练的课，否则落到休息行。
+  // 保留服务端顺序；仅当天没有训练课时，展示第一条休息或备注。
   const dayRows = rows.filter((r) => r.date === dateYmd);
-  const meaningful = dayRows.find((r) => r.kind !== 'rest' && r.kind !== 'note');
-  const workoutRow = meaningful ?? dayRows[0] ?? null;
+  const workouts = dayRows.filter((r) => r.kind !== 'rest' && r.kind !== 'note');
+  const visibleRows = workouts.length ? workouts : dayRows.slice(0, 1);
 
   const nutrition = content?.nutrition?.find((n) => n.date === dateYmd) ?? null;
 
@@ -513,7 +511,7 @@ export function buildDayView(
     weekDays,
     weekSubtitle: subtitle,
     todayLabel,
-    workout: buildWorkoutViewFromRow(workoutRow, content),
+    workouts: visibleRows.map((row) => buildWorkoutViewFromRow(row, content)),
     nutrition: buildNutritionView(nutrition),
   };
 }

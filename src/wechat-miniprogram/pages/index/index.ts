@@ -126,13 +126,13 @@ interface IndexPageData {
   todayYmd: string;
   selectedDate: string;
   todayLabel: string;
-  workout: TodayWorkoutView | null;
+  workouts: TodayWorkoutView[];
   nutrition: TodayNutritionView | null;
   /** 选中日的实际活动记录（无记录时为空数组，卡片不展示） */
   todayActivities: TodayActivityRow[];
   loading: boolean;
-  /** 推送日期弹层可见性（±7 天共 15 个选项，需滚动列表承载） */
-  pushSheetVisible: boolean;
+  /** 打开推送日期弹层时选中的课，切换日期或刷新课表后仍使用这节课。 */
+  pushWorkout: TodayWorkoutView | null;
   pushOptions: Array<{ label: string; value: string }>;
   // —— #858 PR-E：调整追问弹窗 / 伤病弹层 ——
   /** 调整追问弹窗可见性（每天首次 onShow 且有 pending 时弹一次）。 */
@@ -174,7 +174,8 @@ interface IndexPageHandlers {
   checkDailyPopups(): Promise<void>;
   loadRaceClosing(userId: string): Promise<boolean>;
   refreshInjuryState(): Promise<void>;
-  onWorkoutCardTap(): void;
+  findWorkout(workoutId: unknown): TodayWorkoutView | undefined;
+  onWorkoutCardTap(e: WechatMiniprogram.TouchEvent): void;
   onManualStrengthTap(): void;
   /** open-type=share 按钮的 catchtap：转发由 open-type 触发，这里只拦向卡片的冒泡 */
   onShareTap(): void;
@@ -182,13 +183,13 @@ interface IndexPageHandlers {
   onContentTouchStart(e: WechatMiniprogram.TouchEvent): void;
   onContentTouchEnd(e: WechatMiniprogram.TouchEvent): void;
   shiftSelectedDay(delta: number): void;
-  onCoachTap(): void;
-  onWatchTap(): void;
-  onMoreTap(): void;
+  onCoachTap(e: WechatMiniprogram.TouchEvent): void;
+  onWatchTap(e: WechatMiniprogram.TouchEvent): void;
+  onMoreTap(e: WechatMiniprogram.TouchEvent): void;
   onTodayActivityTap(e: WechatMiniprogram.TouchEvent): void;
   onPushDateSelect(e: PushDateSelectEvent): void;
   onPushDateClose(): void;
-  onDeleteWorkout(): void;
+  onDeleteWorkout(workout: TodayWorkoutView): void;
   // —— #858 PR-E：调整弹窗 / 伤病弹层事件 ——
   onAdjustClosed(): void;
   onAdjustAccepted(): void;
@@ -256,14 +257,12 @@ Page<IndexPageData, IndexPageHandlers>({
   // 可分享），path 同 workout-detail 的分享链路；封面暂回落页面截图（canvas 封面
   // 目前只在详情页生成）。其余入口（胶囊菜单转发等）维持品牌默认卡。
   onShareAppMessage(res) {
-    const w = this.data.workout;
-    if (
-      res.target?.dataset?.share === 'today' &&
-      userId && w && w.source === 'custom' && w.workoutId
-    ) {
+    const dataset = res.target?.dataset;
+    const workout = this.findWorkout(dataset?.workoutId);
+    if (dataset?.share === 'today' && userId && workout?.source === 'custom' && workout.workoutId) {
       return {
-        title: w.title || '训练课表',
-        path: `/pages/workout-share/workout-share?user=${userId}&workout=${w.workoutId}`,
+        title: workout.title || '训练课表',
+        path: `/pages/workout-share/workout-share?user=${userId}&workout=${workout.workoutId}`,
       };
     }
     return defaultShareAppMessage();
@@ -282,11 +281,11 @@ Page<IndexPageData, IndexPageHandlers>({
     todayYmd: '',
     selectedDate: '',
     todayLabel: '',
-    workout: null,
+    workouts: [],
     nutrition: null,
     todayActivities: [],
     loading: true,
-    pushSheetVisible: false,
+    pushWorkout: null,
     pushOptions: [],
     adjustDialogVisible: false,
     pendingAdjustment: null,
@@ -490,14 +489,14 @@ Page<IndexPageData, IndexPageHandlers>({
     if (shanghaiWeekStart(dateYmd) !== sessionsWeekStart) {
       // 切到了尚未拉取的周：先用空行渲染，拉回后 fetchWeekSessions 会重渲染。
       const view = buildDayView(fetchedPlan, [], dateYmd);
-      this.setData({ ...base, workout: view.workout, nutrition: view.nutrition, todayActivities: [] });
+      this.setData({ ...base, workouts: view.workouts, nutrition: view.nutrition, todayActivities: [] });
       this.fetchWeekSessions(dateYmd);
       return;
     }
     const view = buildDayView(fetchedPlan, weekSessions, dateYmd);
     this.setData({
       ...base,
-      workout: view.workout,
+      workouts: view.workouts,
       nutrition: view.nutrition,
       todayActivities: [],
     });
@@ -526,8 +525,12 @@ Page<IndexPageData, IndexPageHandlers>({
     if (userStore.getState().isAuthenticated) wx.navigateTo({ url: '/pages/manual-strength/manual-strength' });
   },
 
-  onWorkoutCardTap() {
-    const { workout } = this.data;
+  findWorkout(workoutId) {
+    return this.data.workouts.find((workout) => workout.workoutId === workoutId);
+  },
+
+  onWorkoutCardTap(e) {
+    const workout = this.findWorkout(e.currentTarget.dataset.workoutId);
     if (!workout || !workout.hasStructure) return;
     wx.navigateTo({
       url: `/pages/workout-detail/workout-detail?date=${workout.date}&workoutId=${encodeURIComponent(workout.workoutId)}&title=${encodeURIComponent(workout.title)}`,
@@ -564,8 +567,8 @@ Page<IndexPageData, IndexPageHandlers>({
     this.renderDay(next, next === this.data.todayYmd);
   },
 
-  onCoachTap() {
-    const { workout } = this.data;
+  onCoachTap(e) {
+    const workout = this.findWorkout(e.currentTarget.dataset.workoutId);
     if (!workout || !workout.date) {
       wx.showToast({ title: '今日暂无训练安排', icon: 'none' });
       return;
@@ -587,8 +590,8 @@ Page<IndexPageData, IndexPageHandlers>({
   // 拦住向 workout-card bindtap 的冒泡（否则分享的同时会跳去课表详情）。
   onShareTap() {},
 
-  onWatchTap() {
-    const { workout } = this.data;
+  onWatchTap(e) {
+    const workout = this.findWorkout(e.currentTarget.dataset.workoutId);
     if (!workout || !workout.hasSpec) {
       // weekly / custom 源可推送；watch 源本就来自手表，不回推。
       wx.showToast({ title: workout?.source === 'custom' ? '自建课暂不支持推送' : '该训练暂不支持推送', icon: 'none' });
@@ -602,18 +605,18 @@ Page<IndexPageData, IndexPageHandlers>({
     // 打开推送日期选择弹层（±7 天共 15 个选项，用组件承载，见 components/push-date-sheet）
     this.setData({
       pushOptions: buildPushDateOptions(workout.date),
-      pushSheetVisible: true,
+      pushWorkout: workout,
     });
   },
 
-  onMoreTap() {
-    const { workout } = this.data;
+  onMoreTap(e) {
+    const workout = this.findWorkout(e.currentTarget.dataset.workoutId);
     if (workout?.deletable && workout.workoutId) {
       wx.showActionSheet({
         itemList: ['删除'],
         itemColor: theme.danger,
         success: (res) => {
-          if (res.tapIndex === 0) this.onDeleteWorkout();
+          if (res.tapIndex === 0) this.onDeleteWorkout(workout);
         },
       });
       return;
@@ -631,8 +634,8 @@ Page<IndexPageData, IndexPageHandlers>({
 
   async onPushDateSelect(e: PushDateSelectEvent) {
     const targetDate = e.detail.value;
-    const { workout } = this.data;
-    this.setData({ pushSheetVisible: false });
+    const { pushWorkout: workout } = this.data;
+    this.setData({ pushWorkout: null });
     if (!workout || !targetDate) return;
     if (workout.source !== 'custom' && workout.sessionIndex == null) return;
 
@@ -656,13 +659,12 @@ Page<IndexPageData, IndexPageHandlers>({
   },
 
   onPushDateClose() {
-    this.setData({ pushSheetVisible: false });
+    this.setData({ pushWorkout: null });
   },
 
   // 删除自建课：确认后软删（服务端归档），再重拉本周统一课表。
-  onDeleteWorkout() {
-    const { workout } = this.data;
-    if (!workout || !workout.deletable || !workout.workoutId) return;
+  onDeleteWorkout(workout) {
+    if (!workout.deletable || !workout.workoutId) return;
     wx.showModal({
       title: '删除自建课',
       content: `确定删除「${workout.title}」吗？`,

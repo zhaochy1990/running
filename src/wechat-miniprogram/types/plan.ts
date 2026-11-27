@@ -291,7 +291,7 @@ export interface TodayView {
   weekDays: TodayWeekDay[];
   weekSubtitle: string;
   todayLabel: string;
-  workout: TodayWorkoutView | null;
+  workouts: TodayWorkoutView[];
   nutrition: TodayNutritionView | null;
 }
 

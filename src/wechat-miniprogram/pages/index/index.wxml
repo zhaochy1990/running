@@ -72,76 +72,86 @@
 
     <!-- 今日训练 -->
     <view class="section-title">今日安排 · {{todayLabel}}</view>
-    <view wx:if="{{workout}}" class="card workout-card" bindtap="onWorkoutCardTap">
-      <!-- 头部：图标 + 来源标记 + 标题 + 操作（操作按钮 catchtap，不触发卡片跳详情） -->
-      <view class="workout__head">
-        <view class="workout__title-wrap">
-          <view class="workout__icon">
-            <image class="workout__icon-img" src="{{workout.iconPath}}" mode="aspectFit" />
+    <block wx:if="{{workouts.length}}">
+      <view
+        wx:for="{{workouts}}"
+        wx:for-item="workout"
+        wx:key="workoutId"
+        class="card workout-card"
+        data-workout-id="{{workout.workoutId}}"
+        bindtap="onWorkoutCardTap"
+      >
+        <!-- 头部：图标 + 来源标记 + 标题 + 操作（操作按钮 catchtap，不触发卡片跳详情） -->
+        <view class="workout__head">
+          <view class="workout__title-wrap">
+            <view class="workout__icon">
+              <image class="workout__icon-img" src="{{workout.iconPath}}" mode="aspectFit" />
+            </view>
+            <view class="workout__title">{{workout.title}}</view>
+            <view wx:if="{{workout.sourceLabel}}" class="workout__source">{{workout.sourceLabel}}</view>
           </view>
-          <view class="workout__title">{{workout.title}}</view>
-          <view wx:if="{{workout.sourceLabel}}" class="workout__source">{{workout.sourceLabel}}</view>
-        </view>
-        <view class="workout__actions">
-          <view class="workout__action" catchtap="onWatchTap">
-            <image class="workout__action-icon" src="/assets/icons/watch.svg" mode="aspectFit" />
+          <view class="workout__actions">
+            <view class="workout__action" data-workout-id="{{workout.workoutId}}" catchtap="onWatchTap">
+              <image class="workout__action-icon" src="/assets/icons/watch.svg" mode="aspectFit" />
+            </view>
+            <!-- 分享（仅自建课，#689）：open-type=share 触发 onShareAppMessage 今日卡分支；
+                 裸图标无背景（10-22 拍板），size=mini 抹原生 button 固定宽，catchtap 拦冒泡防误跳详情 -->
+            <button
+              wx:if="{{workout.source === 'custom'}}"
+              class="workout__share"
+              size="mini"
+              open-type="share"
+              data-share="today"
+              data-workout-id="{{workout.workoutId}}"
+              catchtap="onShareTap"
+              aria-label="分享"
+            >
+              <image class="workout__share-icon" src="/assets/icons/share.svg" mode="aspectFit" />
+            </button>
+            <view class="workout__action" data-workout-id="{{workout.workoutId}}" catchtap="onMoreTap">
+              <image class="workout__action-icon" src="/assets/icons/more_horiz.svg" mode="aspectFit" />
+            </view>
           </view>
-          <!-- 分享（仅自建课，#689）：open-type=share 触发 onShareAppMessage 今日卡分支；
-               裸图标无背景（10-22 拍板），size=mini 抹原生 button 固定宽，catchtap 拦冒泡防误跳详情 -->
-          <button
-            wx:if="{{workout.source === 'custom'}}"
-            class="workout__share"
-            size="mini"
-            open-type="share"
-            data-share="today"
-            catchtap="onShareTap"
-            aria-label="分享"
-          >
-            <image class="workout__share-icon" src="/assets/icons/share.svg" mode="aspectFit" />
-          </button>
-          <view class="workout__action" catchtap="onMoreTap">
-            <image class="workout__action-icon" src="/assets/icons/more_horiz.svg" mode="aspectFit" />
+        </view>
+
+        <!-- 强度柱状图 -->
+        <view wx:if="{{workout.isRunning}}" class="workout__chart-block">
+          <view class="workout__label-row">
+            <view class="workout__label">课表内容</view>
+            <view wx:if="{{workout.hasStructure}}" class="workout__label-hint">点击卡片看分段详情 ›</view>
+          </view>
+          <view class="workout__chart">
+            <view
+              wx:for="{{workout.intensityBars}}"
+              wx:key="index"
+              class="workout__bar {{item.dim ? 'workout__bar--dim' : ''}}"
+              style="height: {{item.pct}}%; flex-grow: {{item.weight}};"
+            ></view>
+          </view>
+          <view class="workout__chart-baseline"></view>
+        </view>
+
+        <!-- 指标 -->
+        <view class="stat-row">
+          <view wx:for="{{workout.stats}}" wx:key="label" class="stat">
+            <view class="stat__value">{{item.value}}</view>
+            <view class="stat__label">{{item.label}}</view>
           </view>
         </view>
-      </view>
 
-      <!-- 强度柱状图 -->
-      <view wx:if="{{workout.isRunning}}" class="workout__chart-block">
-        <view class="workout__label-row">
-          <view class="workout__label">课表内容</view>
-          <view wx:if="{{workout.hasStructure}}" class="workout__label-hint">点击卡片看分段详情 ›</view>
+        <!-- 教练备注 -->
+        <view wx:if="{{workout.coachNote}}" class="note-box">
+          <view class="note-box__title">教练备注</view>
+          <view class="note-box__text">{{workout.coachNote}}</view>
         </view>
-        <view class="workout__chart">
-          <view
-            wx:for="{{workout.intensityBars}}"
-            wx:key="index"
-            class="workout__bar {{item.dim ? 'workout__bar--dim' : ''}}"
-            style="height: {{item.pct}}%; flex-grow: {{item.weight}};"
-          ></view>
-        </view>
-        <view class="workout__chart-baseline"></view>
-      </view>
 
-      <!-- 指标 -->
-      <view class="stat-row">
-        <view wx:for="{{workout.stats}}" wx:key="label" class="stat">
-          <view class="stat__value">{{item.value}}</view>
-          <view class="stat__label">{{item.label}}</view>
-        </view>
+        <!-- 和教练聊一聊（catchtap：不触发卡片跳详情） -->
+        <button class="workout__cta" data-workout-id="{{workout.workoutId}}" catchtap="onCoachTap">
+          <image class="workout__cta-icon" src="/assets/icons/forum.svg" mode="aspectFit" />
+          <text class="workout__cta-text">和教练聊一聊</text>
+        </button>
       </view>
-
-      <!-- 教练备注 -->
-      <view wx:if="{{workout.coachNote}}" class="note-box">
-        <view class="note-box__title">教练备注</view>
-        <view class="note-box__text">{{workout.coachNote}}</view>
-      </view>
-
-      <!-- 和教练聊一聊（catchtap：不触发卡片跳详情） -->
-      <button class="workout__cta" catchtap="onCoachTap">
-        <image class="workout__cta-icon" src="/assets/icons/forum.svg" mode="aspectFit" />
-        <text class="workout__cta-text">和教练聊一聊</text>
-      </button>
-    </view>
+    </block>
     <!-- 空态必须 !loading 门控（devops#929）：加载中渲染骨架，避免慢网先闪「今日无训练安排」假空态 -->
     <view wx:elif="{{!loading}}" class="empty-card">
       <view class="empty-card__title">今日无训练安排</view>
@@ -205,8 +215,8 @@
 
   <!-- 推送日期选择弹层 -->
   <push-date-sheet
-    wx:if="{{pushSheetVisible}}"
-    show="{{pushSheetVisible}}"
+    wx:if="{{pushWorkout}}"
+    show="{{true}}"
     options="{{pushOptions}}"
     bindselect="onPushDateSelect"
     bindclose="onPushDateClose"
