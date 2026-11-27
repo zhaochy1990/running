@@ -1,10 +1,13 @@
+## HARD 规则：禁止代码注释
+
+禁止编写或新增任何代码注释；通过清晰命名和结构表达代码意图。
+
 # AGENTS.md
 
-This file is the **single source of agent instructions** for this repository. It
+This file is the primary source of agent instructions for this repository. It
 provides guidance to coding agents (Claude Code, Codex, OpenCode, and any other
-agent) when working with code here. `CLAUDE.md` (and any other agent-specific
-instruction file) references this file instead of duplicating rules, so there is
-exactly **one** set of instructions to follow.
+agent) when working with code here. `CLAUDE.md` repeats the hard rule above and
+references this file for the remaining repository-wide instructions.
 
 除非特别说明，否则一律用中文回复用户，不管用户发送的是中文还是英文
 

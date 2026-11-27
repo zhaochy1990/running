@@ -1,3 +1,7 @@
+## HARD 规则：禁止代码注释
+
+禁止编写或新增任何代码注释；通过清晰命名和结构表达代码意图。
+
 # 规则
 
 1. 在使用langchain/langgraph/deepagent框架的时候，不要通过prompt来维护context或者state

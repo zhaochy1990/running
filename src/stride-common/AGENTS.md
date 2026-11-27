@@ -1,3 +1,7 @@
+## HARD 规则：禁止代码注释
+
+禁止编写或新增任何代码注释；通过清晰命名和结构表达代码意图。
+
 # 规则
 
 1. 不要在本包之外重建 LLM client。`src/llm/models.ts` 是唯一一处把 `ModelConfig` 变成 LangChain 模型的地方 —— endpoint、鉴权、思考开关、Responses / Chat Completions 的分发都只在这里。在别处再写一份 `new ChatOpenAI(...)` 就是这个包存在的理由被绕过了。
