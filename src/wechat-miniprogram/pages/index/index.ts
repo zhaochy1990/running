@@ -602,11 +602,16 @@ Page<IndexPageData, IndexPageHandlers>({
       return;
     }
 
-    // 打开推送日期选择弹层（±7 天共 15 个选项，用组件承载，见 components/push-date-sheet）
-    this.setData({
-      pushOptions: buildPushDateOptions(workout.date),
-      pushWorkout: workout,
-    });
+    // 从今天起可选的日期还必须在课次排期的 ±7 天内。
+    const earliest = shanghaiShiftDays(workout.date, -7);
+    const latest = shanghaiShiftDays(workout.date, 7);
+    const pushOptions = buildPushDateOptions(workout.date).filter(({ value }) => value >= earliest && value <= latest);
+    if (!pushOptions.length) {
+      wx.showToast({ title: '该训练不在可推送日期范围内', icon: 'none' });
+      return;
+    }
+    if (!pushOptions.some((option) => option.selected)) pushOptions[0].selected = true;
+    this.setData({ pushOptions, pushWorkout: workout });
   },
 
   onMoreTap(e) {

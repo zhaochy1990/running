@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { mock } from 'node:test';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import * as plan from '../services/plan.ts';
@@ -9,6 +10,9 @@ import * as dates from './date.ts';
 const day = '2026-11-27';
 const restDay = '2026-11-28';
 const emptyDay = '2026-11-29';
+const previousDay = '2026-11-26';
+const expiredDay = '2026-11-19';
+mock.timers.enable({ apis: ['Date'], now: Date.parse(`${day}T08:00:00+08:00`) });
 const session = (workoutId: string, patch: Partial<PlanSessionRow> = {}): PlanSessionRow => ({
   workout_id: workoutId,
   date: day,
@@ -37,11 +41,13 @@ const rows = [
   session('custom-b', { source: 'custom', spec: { name: '自建跑课', date: day, note: null, blocks: [] } }),
   session('watch', { source: 'watch' }),
   session('rest', { date: restDay, kind: 'rest' }),
+  session('past-custom', { date: previousDay, source: 'custom', spec: { name: '昨天的跑课', date: previousDay, note: null, blocks: [] } }),
+  session('expired-custom', { date: expiredDay, source: 'custom', spec: { name: '过期跑课', date: expiredDay, note: null, blocks: [] } }),
 ];
 
 type CardEvent = { currentTarget: { dataset: { workoutId: string } } };
 type PageUnderTest = {
-  data: { workouts: TodayWorkoutView[]; pushOptions: { value: string }[] };
+  data: { workouts: TodayWorkoutView[]; pushOptions: { value: string }[]; pushWorkout: TodayWorkoutView | null };
   setData(patch: object): void;
   onLoad(): void;
   onDayTap(event: { currentTarget: { dataset: { date: string } } }): void;
@@ -49,6 +55,7 @@ type PageUnderTest = {
   onCoachTap(event: CardEvent): void;
   onWatchTap(event: CardEvent): void;
   onMoreTap(event: CardEvent): void;
+  onPushDateClose(): void;
   onPushDateSelect(event: { detail: { value: string } }): Promise<void>;
   onShareAppMessage(event: { target: { dataset: { share: string; workoutId: string } } }): { path: string };
 };
@@ -159,4 +166,17 @@ availableRows = rows.map((row) => row.workout_id === 'strength' ? { ...row, work
 await view.onPushDateSelect({ detail: { value: restDay } });
 assert.deepEqual(pushes, [[user.id, day, 1, restDay]], 'a replaced session must not be pushed');
 
+tapDay(previousDay);
+view.onWatchTap(tapCard('past-custom'));
+assert.equal(view.data.pushWorkout?.workoutId, 'past-custom');
+assert.equal(view.data.pushOptions.at(-1)?.value, '2026-12-03');
+view.onPushDateClose();
+
+tapDay(expiredDay);
+await settle();
+assert.deepEqual(workoutIds(), ['expired-custom']);
+view.onWatchTap(tapCard('expired-custom'));
+assert.equal(view.data.pushWorkout, null);
+
+mock.timers.reset();
 console.log('todayWorkouts.check: all assertions passed');
