@@ -46,7 +46,20 @@ type ManualStrengthRecord struct {
 
 func (ManualStrengthRecord) TableName() string { return "manual_strength_records" }
 
-// The fence serializes saves with account erasure even for athletes without a
+// An owner-scoped digest keeps old create retries from restoring a deleted
+// record without retaining the log or its identifiers.
+type manualStrengthDeletion struct {
+	RecordDigest string `gorm:"column:record_digest;type:char(64);primaryKey"`
+}
+
+func (manualStrengthDeletion) TableName() string { return "manual_strength_deletions" }
+
+func manualStrengthRecordDigest(userID, id string) string {
+	digest := sha256.Sum256([]byte("manual-strength-deletion:" + userID + ":" + id))
+	return hex.EncodeToString(digest[:])
+}
+
+// The fence serializes record writes with account erasure even for athletes without a
 // saved record yet. After erasure only the digest and denial bit are retained.
 type manualStrengthWriteFence struct {
 	SubjectDigest string `gorm:"column:subject_digest;type:char(64);primaryKey"`
@@ -63,6 +76,16 @@ func manualStrengthOwnerDigest(userID string) string {
 func revokeManualStrengthWrites(tx *gorm.DB, userID string) error {
 	fence := manualStrengthWriteFence{SubjectDigest: manualStrengthOwnerDigest(userID), Erased: true}
 	return tx.Clauses(clause.OnConflict{DoUpdates: clause.AssignmentColumns([]string{"erased"})}).Create(&fence).Error
+}
+
+func lockManualStrengthWrites(tx *gorm.DB, userID string) (manualStrengthWriteFence, error) {
+	fence := manualStrengthWriteFence{SubjectDigest: manualStrengthOwnerDigest(userID)}
+	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&fence).Error; err != nil {
+		return fence, err
+	}
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("erased").Where("subject_digest = ?", fence.SubjectDigest).Take(&fence).Error
+	return fence, err
 }
 
 type ManualStrengthWrite struct {
@@ -90,6 +113,26 @@ func (s *Store) ManualStrengthByID(ctx context.Context, userID, id string) (*Man
 	return &record, nil
 }
 
+// DeleteManualStrength removes the owner's log and prevents a stale save from
+// recreating it. Repeating the deletion after a lost response is safe.
+func (s *Store) DeleteManualStrength(ctx context.Context, userID, id string) error {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return err
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		fence, err := lockManualStrengthWrites(tx, uid)
+		if err != nil || fence.Erased {
+			return err
+		}
+		result := tx.Where("user_id = ? AND id = ?", uid, id).Delete(&ManualStrengthRecord{})
+		if result.Error != nil || result.RowsAffected == 0 {
+			return result.Error
+		}
+		return tx.Create(&manualStrengthDeletion{RecordDigest: manualStrengthRecordDigest(uid, id)}).Error
+	})
+}
+
 // SaveManualStrength commits the entire log in one row transaction. A replay
 // of the active mutation returns the committed result without changing its
 // clock or revision. An older revision cannot overwrite later work.
@@ -105,12 +148,8 @@ func (s *Store) SaveManualStrength(ctx context.Context, userID, id string, write
 		endedAt = startedAt
 	}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		fence := manualStrengthWriteFence{SubjectDigest: manualStrengthOwnerDigest(uid)}
-		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&fence).Error; err != nil {
-			return err
-		}
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Select("erased").Where("subject_digest = ?", fence.SubjectDigest).Take(&fence).Error; err != nil {
+		fence, err := lockManualStrengthWrites(tx, uid)
+		if err != nil {
 			return err
 		}
 		if fence.Erased {
@@ -118,7 +157,7 @@ func (s *Store) SaveManualStrength(ctx context.Context, userID, id string, write
 		}
 		// Also cover identities removed before the fence was deployed.
 		var priorDeletion UserDeletionAudit
-		err := tx.Select("id").Where("user_id = ? AND (auth_deleted_at IS NOT NULL OR stride_deleted_at IS NOT NULL OR status = ?)",
+		err = tx.Select("id").Where("user_id = ? AND (auth_deleted_at IS NOT NULL OR stride_deleted_at IS NOT NULL OR status = ?)",
 			uid, DeletionStatusCompleted).Take(&priorDeletion).Error
 		if err == nil {
 			return ErrManualStrengthNotFound
@@ -128,6 +167,14 @@ func (s *Store) SaveManualStrength(ctx context.Context, userID, id string, write
 		}
 
 		if write.Revision == 0 && !startedAt.IsZero() {
+			var deletion manualStrengthDeletion
+			err := tx.Where("record_digest = ?", manualStrengthRecordDigest(uid, id)).Take(&deletion).Error
+			if err == nil {
+				return ErrManualStrengthNotFound
+			}
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
 			first := ManualStrengthRecord{
 				ID: id, UserID: uid, StartedAt: startedAt, EndedAt: endedAt,
 				Name: write.Name, Note: write.Note, Actions: write.Actions,

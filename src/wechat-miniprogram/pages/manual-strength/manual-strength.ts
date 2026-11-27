@@ -2,6 +2,7 @@ import { getManualStrengthRecord, saveManualStrengthRecord } from '../../service
 import { ApiError } from '../../services/request';
 import { userStore } from '../../store/index';
 import type { ManualStrengthWrite } from '../../types/manual-strength';
+import { theme } from '../../utils/theme';
 import {
   clearStrengthDraft,
   copySet,
@@ -28,6 +29,7 @@ interface PageData {
   loading: boolean;
   loadError: string;
   saving: boolean;
+  canDiscardDraft: boolean;
   draft: StrengthDraft | null;
   expanded: string;
   focusField: string;
@@ -41,6 +43,7 @@ interface PageHandlers {
   userId: string;
   unsubscribeViewer: (() => void) | null;
   editing: boolean;
+  discardingDraft: boolean;
   closed: boolean;
   replaceForm(form: StrengthForm, expanded?: string): void;
   persistDraft(draft: StrengthDraft): void;
@@ -53,6 +56,7 @@ interface PageHandlers {
   onSetChange(e: WechatMiniprogram.TouchEvent): void;
   onUnitChange(e: WechatMiniprogram.CustomEvent<{ value: string | number }>): void;
   onSave(): Promise<void>;
+  onDiscardDraft(): Promise<void>;
   commitDraft(draft: StrengthDraft, write: ManualStrengthWrite): Promise<StrengthDraft>;
   resolveConflict(draft: StrengthDraft): Promise<StrengthDraft>;
 }
@@ -69,11 +73,13 @@ Page<PageData, PageHandlers>({
   userId: '',
   unsubscribeViewer: null,
   editing: false,
+  discardingDraft: false,
   closed: false,
   data: {
     loading: true,
     loadError: '',
     saving: false,
+    canDiscardDraft: false,
     draft: null,
     expanded: '',
     focusField: '',
@@ -101,7 +107,7 @@ Page<PageData, PageHandlers>({
       this.unsubscribeViewer = null;
       wx.disableAlertBeforeUnload();
       this.setData({
-        draft: null, loading: false, saving: false,
+        draft: null, loading: false, saving: false, canDiscardDraft: false,
         expanded: '', focusField: '', invalidField: '', error: '',
         loadError: '当前账号已退出或切换，请重新打开训练记录',
       });
@@ -132,9 +138,14 @@ Page<PageData, PageHandlers>({
         }
       }
       if (this.closed) return;
-      this.setData({ draft, expanded: draft.form.actions[0]?.key ?? '', loading: false });
-    } catch {
-      if (!this.closed) this.setData({ loading: false, loadError: '暂时无法打开记录，请返回后重试' });
+      this.setData({ draft, expanded: draft.form.actions[0]?.key ?? '', loading: false, canDiscardDraft: draft === active });
+    } catch (err) {
+      if (!this.closed) {
+        const loadError = err instanceof ApiError && err.statusCode === 404
+          ? '这条训练记录已不存在'
+          : '暂时无法打开记录，请返回后重试';
+        this.setData({ loading: false, loadError });
+      }
     }
   },
 
@@ -158,9 +169,12 @@ Page<PageData, PageHandlers>({
 
   replaceForm(form, expanded) {
     const draft = this.data.draft;
-    if (!draft || this.data.saving) return;
+    if (!draft || this.data.saving || this.discardingDraft) return;
     const updated = { ...draft, form };
-    this.setData({ draft: updated, expanded: expanded ?? this.data.expanded, error: '', invalidField: '' });
+    this.setData({
+      draft: updated, expanded: expanded ?? this.data.expanded, error: '', invalidField: '',
+      canDiscardDraft: !this.editing,
+    });
     if (this.editing) {
       wx.enableAlertBeforeUnload({ message: '本次修改尚未保存，确定离开吗？' });
     } else {
@@ -270,9 +284,36 @@ Page<PageData, PageHandlers>({
     return updated;
   },
 
+  async onDiscardDraft() {
+    const { draft, saving, canDiscardDraft } = this.data;
+    if (this.closed || this.discardingDraft || saving || !draft || !canDiscardDraft) return;
+    this.discardingDraft = true;
+    try {
+      const choice = await wx.showModal({
+        title: '放弃这份草稿？',
+        content: '未保存的内容将清除，你可以开始新的训练。',
+        confirmText: '放弃草稿',
+        cancelText: '保留草稿',
+        confirmColor: theme.danger,
+      });
+      if (!choice.confirm || this.closed) return;
+      const fresh = await newStrengthDraft(new Date());
+      if (this.closed || userStore.getState().user?.id !== this.userId) return;
+      clearStrengthDraft(this.userId, draft.id);
+      this.setData({
+        draft: fresh, expanded: fresh.form.actions[0]?.key ?? '', focusField: '',
+        invalidField: '', error: '', canDiscardDraft: false,
+      });
+    } catch {
+      if (!this.closed) this.setData({ error: '暂时无法放弃草稿，请重试。', invalidField: '' });
+    } finally {
+      this.discardingDraft = false;
+    }
+  },
+
   async onSave() {
     const original = this.data.draft;
-    if (!original || this.data.saving || userStore.getState().user?.id !== this.userId) return;
+    if (!original || this.data.saving || this.discardingDraft || userStore.getState().user?.id !== this.userId) return;
     const validation = validateStrengthForm(original.form);
     if ('field' in validation) {
       this.setData({
@@ -313,7 +354,7 @@ Page<PageData, PageHandlers>({
       }
       if (!this.closed) {
         wx.disableAlertBeforeUnload();
-        this.setData({ draft, saving: false });
+        this.setData({ draft, saving: false, canDiscardDraft: false });
         wx.showToast({ title: '已保存', icon: 'none', duration: 1800 });
       }
     } catch (err) {
@@ -324,9 +365,16 @@ Page<PageData, PageHandlers>({
           const updated = await this.resolveConflict(draft);
           error = updated === draft ? '这条记录已更新，请处理冲突后重试。' : '确认内容后可再次保存。';
           draft = updated;
-        } catch {
+        } catch (conflictError) {
+          err = conflictError;
           error = '暂时无法获取最新记录，请重试。';
         }
+      }
+      if (err instanceof ApiError && err.statusCode === 404) {
+        if (!this.closed) this.setData({
+          draft, saving: false, canDiscardDraft: !this.editing, error: '原训练记录已不存在，无法保存。',
+        });
+        return;
       } else if (err instanceof ApiError && err.statusCode === 400) {
         draft = { ...draft, pending: undefined };
         this.persistDraft(draft);

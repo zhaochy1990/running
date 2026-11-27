@@ -170,4 +170,24 @@ func TestE2E_ManualStrengthActivity(t *testing.T) {
 		list.MonthlySummaries["2026-03"].ActivityCount != 1 {
 		t.Fatalf("activity list after history edit: %+v", list)
 	}
+
+	send(http.MethodDelete, ownerRecord, nil, nil, http.StatusUnauthorized)
+	send(http.MethodDelete, ownerRecord, otherAuth, nil, http.StatusForbidden)
+	send(http.MethodDelete, ownerList+"/manual-strength/not-a-uuid", ownerAuth, nil, http.StatusBadRequest)
+	send(http.MethodDelete, otherRecord, otherAuth, nil, http.StatusNoContent)
+	send(http.MethodGet, ownerRecord, ownerAuth, nil, http.StatusOK)
+
+	send(http.MethodDelete, ownerRecord, ownerAuth, nil, http.StatusNoContent)
+	send(http.MethodDelete, ownerRecord, ownerAuth, nil, http.StatusNoContent)
+	send(http.MethodGet, ownerRecord, ownerAuth, nil, http.StatusNotFound)
+	send(http.MethodPut, ownerRecord, ownerAuth, write, http.StatusNotFound)
+	send(http.MethodPut, ownerRecord, ownerAuth, edit, http.StatusNotFound)
+
+	var afterDelete activitiesListResponse
+	if err := json.Unmarshal(send(http.MethodGet, ownerList+"?include=manual_strength", ownerAuth, nil, http.StatusOK), &afterDelete); err != nil {
+		t.Fatal(err)
+	}
+	if afterDelete.Total != 0 || len(afterDelete.Activities) != 0 || len(afterDelete.MonthlySummaries) != 0 {
+		t.Fatalf("deleted record appears in activity list or totals: %+v", afterDelete)
+	}
 }

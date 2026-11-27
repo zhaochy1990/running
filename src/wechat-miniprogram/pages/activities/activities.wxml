@@ -23,7 +23,8 @@
         >
           <view class="month-group__title-wrap">
             <view class="month-group__title">{{item.label}}</view>
-            <view class="month-group__summary">{{item.count}} 次 · {{item.km}} km · {{item.duration}}</view>
+            <view wx:if="{{summaryStale}}" class="month-group__summary">统计待刷新</view>
+            <view wx:else class="month-group__summary">{{item.summary.count}} 次 · {{item.summary.km}} km · {{item.duration}}</view>
           </view>
           <image
             class="month-group__chevron {{item.expanded ? 'is-expanded' : ''}}"
@@ -80,8 +81,8 @@
       <view class="empty-card__sub">完成一次训练后在这里查看</view>
     </view>
 
-    <view wx:if="{{hasMore && monthGroups.length}}" class="load-more" bindtap="onLoadMore">
-      {{loadingMore ? '加载中...' : '加载更早的记录'}}
+    <view wx:if="{{(hasMore || summaryStale) && monthGroups.length}}" class="load-more" bindtap="onLoadMore">
+      {{loadingMore || (summaryStale && loading) ? '加载中...' : (summaryStale ? '刷新活动记录' : '加载更早的记录')}}
     </view>
   </view>
 </view>

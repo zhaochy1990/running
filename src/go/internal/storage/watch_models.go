@@ -338,7 +338,7 @@ func watchModels() []any {
 		// TimeseriesPoint is deliberately absent: Phase 4 (devops#788) dropped
 		// the timeseries table and the model is a plain DTO — re-adding it here
 		// would resurrect the table on the next boot's AutoMigrate.
-		&Activity{}, &Lap{}, &ActivityWatchZone{}, &ManualStrengthRecord{}, &manualStrengthWriteFence{},
+		&Activity{}, &Lap{}, &ActivityWatchZone{}, &ManualStrengthRecord{}, &manualStrengthWriteFence{}, &manualStrengthDeletion{},
 		&DailyHealth{}, &Dashboard{}, &DailyHRV{}, &RacePrediction{},
 		&SyncMeta{}, &ProviderCredential{}, &WatchSchedule{},
 		// Activity write-isolation state (devops#1005): per-user binding

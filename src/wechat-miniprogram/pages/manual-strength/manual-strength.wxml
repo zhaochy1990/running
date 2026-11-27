@@ -156,9 +156,12 @@
 
     <view class="strength-footer">
       <view wx:if="{{error && !invalidField}}" class="field-error strength-footer__message" role="alert">{{error}}</view>
-      <button class="save-button" bindtap="onSave" loading="{{saving}}" disabled="{{saving}}">
-        {{saving ? '保存中…' : '保存记录'}}
-      </button>
+      <view class="strength-footer__actions">
+        <button wx:if="{{canDiscardDraft}}" class="discard-button" bindtap="onDiscardDraft" disabled="{{saving}}">放弃草稿</button>
+        <button class="save-button" bindtap="onSave" loading="{{saving}}" disabled="{{saving}}">
+          {{saving ? '保存中…' : '保存记录'}}
+        </button>
+      </view>
     </view>
   </block>
 </view>
