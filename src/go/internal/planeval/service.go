@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,8 +21,8 @@ import (
 
 // Config is what the service needs beyond its dependencies.
 type Config struct {
-	// AgentVersions lists the published worker tags that carry the eval entry.
-	AgentVersions []string
+	// MinimumAgentVersion is an exclusive CalVer threshold for new tasks.
+	MinimumAgentVersion string
 	// MaxReplicas bounds the worker replicas one task may ask for.
 	MaxReplicas        int
 	LeaseTTL           time.Duration
@@ -57,28 +58,27 @@ func NewService(store *storage.Store, broker queueBroker, deployer Deployer, sec
 	if cfg.MaxReplicas <= 0 {
 		cfg.MaxReplicas = 8
 	}
-	// The list arrives from YAML or from one environment variable written
-	// either comma- or space-separated.
-	cfg.AgentVersions = normalizeAgentVersions(cfg.AgentVersions)
 	return &Service{store: store, broker: broker, deployer: deployer, secrets: secrets, cfg: cfg, log: log, reportSlot: make(chan struct{}, 1)}
 }
 
-// normalizeAgentVersions splits, trims and de-duplicates the configured tags,
-// dropping blanks and anything unusable as a queue/object name.
-func normalizeAgentVersions(raw []string) []string {
-	seen := make(map[string]bool, len(raw))
-	out := make([]string, 0, len(raw))
-	for _, entry := range raw {
-		for _, tag := range strings.FieldsFunc(entry, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' || r == '\n' }) {
-			tag = strings.TrimSpace(tag)
-			if tag == "" || seen[tag] || !validAgentVersion(tag) {
-				continue
-			}
-			seen[tag] = true
-			out = append(out, tag)
+var calVerPattern = regexp.MustCompile(`^[0-9]{4}\.(1[0-2]|[1-9])\.([1-9][0-9]{0,9})$`)
+
+// ValidCalVer accepts the release tag format used by the deployment pipeline.
+func ValidCalVer(version string) bool { return calVerPattern.MatchString(version) }
+
+func newerCalVer(version, minimum string) bool {
+	if !ValidCalVer(version) || !ValidCalVer(minimum) {
+		return false
+	}
+	left, right := strings.Split(version, "."), strings.Split(minimum, ".")
+	for i := range left {
+		a, _ := strconv.ParseUint(left[i], 10, 64)
+		b, _ := strconv.ParseUint(right[i], 10, 64)
+		if a != b {
+			return a > b
 		}
 	}
-	return out
+	return false
 }
 
 // Error is a request-level failure carrying the HTTP status and a stable code.
@@ -200,24 +200,16 @@ type CheckResultView struct {
 
 type TaskDetailView struct {
 	TaskView
-	Result      string                       `json:"result"`
-	Summary     ResultSummary                `json:"summary"`
-	Scenario    ScenarioView                 `json:"scenario"`
-	Scenarios   []ScenarioResultView         `json:"scenarios"`
-	FrozenRules []storage.PlanEvalFrozenRule `json:"frozen_rules"`
-	Executions  []ExecutionView              `json:"executions"`
+	WorkerStartupError string                       `json:"worker_startup_error,omitempty"`
+	Result             string                       `json:"result"`
+	Summary            ResultSummary                `json:"summary"`
+	Scenario           ScenarioView                 `json:"scenario"`
+	Scenarios          []ScenarioResultView         `json:"scenarios"`
+	FrozenRules        []storage.PlanEvalFrozenRule `json:"frozen_rules"`
+	Executions         []ExecutionView              `json:"executions"`
 }
 
 // ---- agent versions ----
-
-func (s *Service) knownVersion(version string) bool {
-	for _, candidate := range s.cfg.AgentVersions {
-		if candidate == version {
-			return true
-		}
-	}
-	return false
-}
 
 // AgentVersions lists every registered agent version with its effective launch
 // configuration (names only) and Deployment state.
@@ -230,7 +222,10 @@ func (s *Service) AgentVersions(ctx context.Context) ([]AgentVersionView, error)
 	for i := range configs {
 		byVersion[configs[i].AgentVersion] = &configs[i]
 	}
-	versions := append([]string(nil), s.cfg.AgentVersions...)
+	versions := make([]string, 0, len(configs))
+	for _, config := range configs {
+		versions = append(versions, config.AgentVersion)
+	}
 	sort.Strings(versions)
 	views := make([]AgentVersionView, 0, len(versions))
 	for _, version := range versions {
@@ -340,6 +335,9 @@ func taskFingerprints(params taskParams) (string, []string) {
 // that the idempotency key matched an existing task, which is then returned
 // without publishing again.
 func (s *Service) CreateTask(ctx context.Context, submitter, idempotencyKey string, req CreateTaskRequest) (view *TaskDetailView, replayed bool, err *Error) {
+	if !validAgentVersion(req.AgentVersion) {
+		return nil, false, fail(422, "invalid_request", "Agent 版本须为完整的 CalVer 标签，例如 2026.11.40")
+	}
 	lockErr := s.withVersion(ctx, req.AgentVersion, func(ctx context.Context) *Error {
 		view, replayed, err = s.createTask(ctx, submitter, idempotencyKey, req)
 		return err
@@ -362,9 +360,6 @@ func (s *Service) withVersion(ctx context.Context, version string, run func(cont
 func (s *Service) createTask(ctx context.Context, submitter, idempotencyKey string, req CreateTaskRequest) (*TaskDetailView, bool, *Error) {
 	if idempotencyKey == "" || len(idempotencyKey) > 128 {
 		return nil, false, fail(400, "invalid_request", "Idempotency-Key 请求头必填，且不超过 128 字符")
-	}
-	if !s.knownVersion(req.AgentVersion) || !validAgentVersion(req.AgentVersion) {
-		return nil, false, fail(422, "invalid_request", "未登记的 Agent 版本："+req.AgentVersion)
 	}
 	replicas := req.Replicas
 	if replicas < 0 || replicas > s.cfg.MaxReplicas {
@@ -412,6 +407,12 @@ func (s *Service) createTask(ctx context.Context, submitter, idempotencyKey stri
 	}
 	if !errors.Is(lookupErr, storage.ErrPlanEvalNotFound) {
 		return nil, false, s.internal(lookupErr)
+	}
+	if !ValidCalVer(req.AgentVersion) {
+		return nil, false, fail(422, "invalid_request", "Agent 版本须为完整的 CalVer 标签，例如 2026.11.40")
+	}
+	if !newerCalVer(req.AgentVersion, s.cfg.MinimumAgentVersion) {
+		return nil, false, fail(422, "invalid_request", "Agent 版本必须严格高于 "+s.cfg.MinimumAgentVersion)
 	}
 	var executions []*storage.PlanEvalExecution
 	var frozenRules []*storage.PlanEvalFrozenRule
@@ -482,9 +483,6 @@ func (s *Service) RetryLaunch(ctx context.Context, id string) (*TaskDetailView, 
 func (s *Service) launchAndRecord(ctx context.Context, task *storage.PlanEvalTask) *Error {
 	if task.LaunchedAt != nil || task.CompletedAt != nil {
 		return nil
-	}
-	if !s.knownVersion(task.AgentVersion) {
-		return fail(422, "invalid_request", "该任务的 Agent 版本已停用。")
 	}
 	// Once frozen, finish the launch attempt even if the browser disconnects.
 	// Any unconfirmed publish can be retried with the original task key.
@@ -748,7 +746,7 @@ func (s *Service) taskViewsWithLaunch(ctx context.Context, tasks []storage.PlanE
 			ID: task.ID, AgentVersion: task.AgentVersion, Status: task.Status, ScenarioID: task.ScenarioID,
 			Progress: TaskProgress{Total: int(count.Total), Finished: int(count.Finished), GenerateFailed: int(count.GenerateFailed), RuleFailed: int(count.RuleFailed)},
 			EnvNames: []string{}, LaunchError: task.LaunchError,
-			LaunchPending: task.LaunchedAt == nil && task.CompletedAt == nil && s.knownVersion(task.AgentVersion),
+			LaunchPending: task.LaunchedAt == nil && task.CompletedAt == nil,
 			CreatedAt:     task.CreatedAt, UpdatedAt: task.UpdatedAt, CompletedAt: task.CompletedAt,
 		}
 		if task.LaunchEnvNames != "" {
@@ -812,6 +810,18 @@ func (s *Service) taskDetail(ctx context.Context, id string, liveLaunchFallback 
 		return nil, s.internal(err)
 	}
 	detail := &TaskDetailView{TaskView: summary[0], Scenario: scenarios[0], FrozenRules: rules, Executions: make([]ExecutionView, 0, len(executions))}
+	if liveLaunchFallback && task.CompletedAt == nil {
+		if inspector, ok := s.deployer.(interface {
+			StartupError(context.Context, string) (string, error)
+		}); ok {
+			reason, err := inspector.StartupError(ctx, task.AgentVersion)
+			if err != nil {
+				s.log.Warn("plan-eval: inspect worker startup", zap.Error(err))
+			} else {
+				detail.WorkerStartupError = reason
+			}
+		}
+	}
 	for _, execution := range executions {
 		view := ExecutionView{
 			ID: execution.ID, ScenarioID: execution.ScenarioID, SnapshotID: execution.SnapshotID,
@@ -881,7 +891,7 @@ func (s *Service) Artifact(ctx context.Context, id string) (*storage.PlanEvalArt
 
 // Scale changes the shared concurrency of exactly one version.
 func (s *Service) Scale(ctx context.Context, version string, replicas int) *Error {
-	if !s.knownVersion(version) || replicas < 1 || replicas > s.cfg.MaxReplicas {
+	if !validAgentVersion(version) || replicas < 1 || replicas > s.cfg.MaxReplicas {
 		return fail(422, "invalid_request", fmt.Sprintf("已登记版本的副本数须在 1–%d 之间", s.cfg.MaxReplicas))
 	}
 	return s.withVersion(ctx, version, func(ctx context.Context) *Error {
