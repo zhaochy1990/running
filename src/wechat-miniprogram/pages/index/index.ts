@@ -643,8 +643,18 @@ Page<IndexPageData, IndexPageHandlers>({
     try {
       if (workout.source === 'custom') {
         // 自建课：卡片同款推送端点（±7 天窗口由服务端校验）。
-        await pushCustomWorkout(workout.workoutId);
+        await pushCustomWorkout(workout.workoutId, targetDate);
       } else if (workout.sessionIndex != null) {
+        // 周课表可能在弹层打开期间被替换，同一序号现在可能指向另一节课。
+        const res = await getPlanSessions(userId, workout.date, workout.date);
+        const stillScheduled = res.sessions?.some((row) =>
+          row.workout_id === workout.workoutId && row.session_index === workout.sessionIndex,
+        );
+        if (!stillScheduled) {
+          await this.fetchWeekSessions(this.data.selectedDate);
+          wx.showToast({ title: '课表已更新，请重新选择', icon: 'none' });
+          return;
+        }
         await pushPlannedSession(userId, workout.date, workout.sessionIndex, targetDate);
       }
       // 重新拉取本周统一课表并重渲染当前日期。

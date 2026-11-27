@@ -9,12 +9,12 @@ import * as dates from './date.ts';
 const day = '2026-11-27';
 const restDay = '2026-11-28';
 const emptyDay = '2026-11-29';
-const session = (workout_id: string, patch: Partial<PlanSessionRow> = {}): PlanSessionRow => ({
-  workout_id,
+const session = (workoutId: string, patch: Partial<PlanSessionRow> = {}): PlanSessionRow => ({
+  workout_id: workoutId,
   date: day,
   source: 'weekly',
   kind: 'run',
-  name: workout_id,
+  name: workoutId,
   summary: null,
   spec: null,
   total_distance_m: null,
@@ -31,6 +31,7 @@ const session = (workout_id: string, patch: Partial<PlanSessionRow> = {}): PlanS
 const rows = [
   session('note', { kind: 'note' }),
   session('easy-run', { session_index: 0 }),
+  session('legacy-run', { spec: JSON.parse('{"name":"旧版跑课"}') }),
   session('strength', { kind: 'strength', session_index: 1, spec: { name: '力量', date: day, note: null, exercises: [] } }),
   session('custom-a', { source: 'custom' }),
   session('custom-b', { source: 'custom', spec: { name: '自建跑课', date: day, note: null, blocks: [] } }),
@@ -55,17 +56,20 @@ const user = { id: 'test-user' };
 const detailUrls: string[] = [];
 const coachTargets: unknown[] = [];
 const pushes: unknown[][] = [];
-const customPushes: string[] = [];
+const customPushes: unknown[][] = [];
 const deletes: unknown[][] = [];
+let availableRows = rows;
 let chooseDelete: (() => void) | undefined;
 
 const modules: Record<string, unknown> = {
   '../../services/plan': {
     ...plan,
     getWeeklyPlan: async () => null,
-    getPlanSessions: async () => ({ sessions: rows }),
+    getPlanSessions: async (_uid: string, from: string, to: string) => ({
+      sessions: availableRows.filter(({ date }) => date >= from && date <= to),
+    }),
     pushPlannedSession: async (...args: unknown[]) => { pushes.push(args); },
-    pushCustomWorkout: async (workoutId: string) => { customPushes.push(workoutId); },
+    pushCustomWorkout: async (...args: unknown[]) => { customPushes.push(args); },
     deleteCustomWorkout: async (...args: unknown[]) => { deletes.push(args); },
   },
   '../../services/activities': { getActivities: async () => ({ activities: [] }) },
@@ -109,7 +113,16 @@ const tapDay = (date: string) => view.onDayTap({ currentTarget: { dataset: { dat
 view.onLoad();
 await settle();
 const workoutIds = () => Array.from(view.data.workouts ?? [], (w) => w.workoutId);
-assert.deepEqual(workoutIds(), ['easy-run', 'strength', 'custom-a', 'custom-b', 'watch']);
+assert.deepEqual(workoutIds(), ['easy-run', 'legacy-run', 'strength', 'custom-a', 'custom-b', 'watch']);
+assert.equal(view.data.workouts[1].hasStructure, false);
+
+const template = readFileSync(new URL('../pages/index/index.wxml', import.meta.url), 'utf8');
+const cardBindings = template.match(/<(?:view|button)\b[^>]*data-workout-id="\{\{workout\.workoutId\}\}"[^>]*>/g) ?? [];
+const card = cardBindings.find((tag) => tag.includes('bindtap="onWorkoutCardTap"'));
+assert.ok(card?.includes('wx:for="{{workouts}}"') && card.includes('wx:for-item="workout"'));
+for (const handler of ['onWatchTap', 'onMoreTap', 'onCoachTap', 'onShareTap']) {
+  assert.ok(cardBindings.some((tag) => tag.includes(`catchtap="${handler}"`)), `${handler} needs its card's workout ID`);
+}
 
 view.onWorkoutCardTap(tapCard('strength'));
 assert.equal(detailUrls[0], `/pages/workout-detail/workout-detail?date=${day}&workoutId=strength&title=strength`);
@@ -129,8 +142,8 @@ assert.deepEqual(pushes, [[user.id, day, 1, restDay]]);
 
 tapDay(day);
 view.onWatchTap(tapCard('custom-b'));
-await view.onPushDateSelect({ detail: { value: day } });
-assert.deepEqual(customPushes, ['custom-b']);
+await view.onPushDateSelect({ detail: { value: restDay } });
+assert.deepEqual(customPushes, [['custom-b', restDay]]);
 
 view.onMoreTap(tapCard('custom-b'));
 tapDay(emptyDay);
@@ -139,5 +152,11 @@ assert.ok(chooseDelete);
 chooseDelete();
 await settle();
 assert.deepEqual(deletes, [[user.id, 'custom-b']]);
+
+tapDay(day);
+view.onWatchTap(tapCard('strength'));
+availableRows = rows.map((row) => row.workout_id === 'strength' ? { ...row, workout_id: 'new-strength' } : row);
+await view.onPushDateSelect({ detail: { value: restDay } });
+assert.deepEqual(pushes, [[user.id, day, 1, restDay]], 'a replaced session must not be pushed');
 
 console.log('todayWorkouts.check: all assertions passed');
