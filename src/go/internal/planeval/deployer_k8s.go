@@ -344,6 +344,25 @@ func (d *kubernetesDeployer) Status(ctx context.Context, agentVersion string) (D
 	return status, nil
 }
 
+// StartupError reports image pull failures for an active version's worker pods.
+func (d *kubernetesDeployer) StartupError(ctx context.Context, version string) (string, error) {
+	if !validAgentVersion(version) {
+		return "", nil
+	}
+	pods, err := d.client.CoreV1().Pods(d.namespace).List(ctx, metav1.ListOptions{LabelSelector: "app=" + WorkerName(version)})
+	if err != nil {
+		return "", err
+	}
+	for _, pod := range pods.Items {
+		for _, container := range pod.Status.ContainerStatuses {
+			if w := container.State.Waiting; w != nil && (w.Reason == "ErrImagePull" || w.Reason == "ImagePullBackOff" || w.Reason == "InvalidImageName") {
+				return w.Reason + ": " + w.Message, nil
+			}
+		}
+	}
+	return "", nil
+}
+
 func upsertSecret(ctx context.Context, client k8sClientset, namespace string, secret *corev1.Secret, spec WorkerSpec) error {
 	secrets := client.CoreV1().Secrets(namespace)
 	current, err := secrets.Get(ctx, secret.Name, metav1.GetOptions{})

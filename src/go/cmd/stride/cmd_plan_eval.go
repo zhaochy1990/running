@@ -9,6 +9,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -42,6 +43,9 @@ func newPlanEvalCmd() *cobra.Command {
 func runPlanEval() error {
 	cfg := config.MustLoadPlanEval()
 	eval := cfg.PlanEval
+	if !planeval.ValidCalVer(eval.MinimumAgentVersion) {
+		return fmt.Errorf("plan-eval: invalid minimum-agent-version %q", eval.MinimumAgentVersion)
+	}
 
 	log := logger.MustGetLogger(&cfg.Logger)
 	defer func() { _ = log.Sync() }()
@@ -85,11 +89,11 @@ func runPlanEval() error {
 	}
 
 	svc := planeval.NewService(store, broker, deployer, secrets, planeval.Config{
-		AgentVersions:      eval.AgentVersions,
-		LeaseTTL:           eval.LeaseTTL,
-		RuleTimeout:        eval.RuleTimeout,
-		RuleMemoryLimit:    planeval.DefaultRuleMemoryLimit,
-		EvaluateSweepEvery: eval.EvaluateSweepInterval,
+		MinimumAgentVersion: eval.MinimumAgentVersion,
+		LeaseTTL:            eval.LeaseTTL,
+		RuleTimeout:         eval.RuleTimeout,
+		RuleMemoryLimit:     planeval.DefaultRuleMemoryLimit,
+		EvaluateSweepEvery:  eval.EvaluateSweepInterval,
 	}, log)
 	if err := svc.SeedPresetFile(ctx, eval.PresetSnapshotPath); err != nil {
 		return err
@@ -123,7 +127,7 @@ func runPlanEval() error {
 		zap.String("version", appVersion()),
 		zap.String("addr", eval.Addr),
 		zap.String("url", "http://"+net.JoinHostPort(host, port)),
-		zap.Strings("agent_versions", eval.AgentVersions),
+		zap.String("minimum_agent_version", eval.MinimumAgentVersion),
 		zap.String("deployer", eval.Deployer),
 	)
 

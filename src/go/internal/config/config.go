@@ -497,9 +497,8 @@ type PlanEval struct {
 	// WorkerImageRepository is the stride-coach-worker image repository; an agent
 	// version is one of its tags.
 	WorkerImageRepository string `mapstructure:"worker-image-repository" validate:"required"`
-	// AgentVersions lists the published worker tags that carry the eval entry.
-	// Empty means the workbench offers nothing to run.
-	AgentVersions []string `mapstructure:"agent-versions"`
+	// MinimumAgentVersion is an exclusive CalVer threshold for new tasks.
+	MinimumAgentVersion string `mapstructure:"minimum-agent-version" validate:"required"`
 	// Deployer selects how eval workers are started: "kubernetes" (in-cluster
 	// Deployments per agent version) or "none" (messages are published, workers
 	// are started by hand — local runs without a cluster).

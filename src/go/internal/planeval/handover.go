@@ -328,7 +328,7 @@ func (s *Service) Cleanup(ctx context.Context, agentVersion string) *Error {
 }
 
 func (s *Service) cleanup(ctx context.Context, agentVersion string) *Error {
-	if !s.knownVersion(agentVersion) || !validAgentVersion(agentVersion) {
+	if !validAgentVersion(agentVersion) {
 		return fail(422, "invalid_request", "未登记的 Agent 版本："+agentVersion)
 	}
 	active, err := s.store.CountPlanEvalActiveGenerates(ctx, agentVersion)

@@ -74,11 +74,12 @@ func (b *fakeBroker) QueueDepth(_ context.Context, queue string) (QueueDepth, er
 }
 
 type fakeDeployer struct {
-	mu      sync.Mutex
-	ensure  func(WorkerSpec) error
-	delete  func(string) error
-	ensured []WorkerSpec
-	deleted []string
+	mu           sync.Mutex
+	ensure       func(WorkerSpec) error
+	delete       func(string) error
+	startupError string
+	ensured      []WorkerSpec
+	deleted      []string
 }
 
 func (d *fakeDeployer) Ensure(_ context.Context, spec WorkerSpec) error {
@@ -107,6 +108,10 @@ func (d *fakeDeployer) Delete(_ context.Context, version string, _ DeploymentSta
 	defer d.mu.Unlock()
 	d.deleted = append(d.deleted, version)
 	return nil
+}
+
+func (d *fakeDeployer) StartupError(_ context.Context, _ string) (string, error) {
+	return d.startupError, nil
 }
 
 func (d *fakeDeployer) Status(_ context.Context, version string) (DeploymentStatus, error) {
@@ -157,7 +162,7 @@ func openHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	h := &harness{
-		t: t, key: key, version: testVersion + "-" + uuid.NewString()[:8],
+		t: t, key: key, version: fmt.Sprintf("2026.11.%d", 100000000+time.Now().UnixNano()%800000000),
 		broker:   &fakeBroker{queues: map[string][]ExecuteMessage{}, depth: map[string]QueueDepth{}},
 		deployer: &fakeDeployer{},
 	}
@@ -165,7 +170,7 @@ func openHarness(t *testing.T) *harness {
 	// Each run gets its own versions so repeated runs against a persistent
 	// database never collide; the HTTP-facing version stays readable.
 	h.svc = NewService(store, h.broker, h.deployer, secrets, Config{
-		AgentVersions: []string{h.version}, LeaseTTL: time.Minute, RuleTimeout: 5 * time.Second,
+		MinimumAgentVersion: "2026.11.1", LeaseTTL: time.Minute, RuleTimeout: 5 * time.Second,
 		RuleMemoryLimit: DefaultRuleMemoryLimit, EvaluateSweepEvery: time.Hour,
 	}, zap.NewNop())
 	snapshotDoc := testSnapshot(t)
@@ -300,6 +305,77 @@ func TestHTTP_WorkerSurfaceRequiresTheWorkerIdentity(t *testing.T) {
 	}
 }
 
+func TestHTTP_RejectsInvalidAgentVersionsBeforeCreatingTasks(t *testing.T) {
+	h := openHarness(t)
+	h.svc.cfg.MinimumAgentVersion = "2026.11.39"
+	for _, version := range []string{"", "garbage", "2026.11.39", "2026.10.100", "2026.11.9", "2026.13.1"} {
+		body := h.createBody()
+		body["agent_version"] = version
+		res := h.admin(http.MethodPost, "/api/admin/plan-eval/tasks", body, map[string]string{"Idempotency-Key": uuid.NewString()})
+		if res.status != http.StatusUnprocessableEntity {
+			t.Fatalf("version %q: %d %s", version, res.status, res.body)
+		}
+	}
+	if len(h.broker.queues) != 0 || len(h.deployer.ensured) != 0 {
+		t.Fatal("rejected version started a queue or worker")
+	}
+}
+
+func TestHTTP_AcceptsNumericallyNewerAgentVersions(t *testing.T) {
+	h := openHarness(t)
+	for _, tc := range []struct{ minimum, version string }{
+		{"2026.11.39", "2026.11.40"},
+		{"2026.11.9", "2026.11.10"},
+		{"2026.11.999", "2026.12.1"},
+	} {
+		h.svc.cfg.MinimumAgentVersion = tc.minimum
+		body := h.createBody()
+		body["agent_version"] = tc.version
+		res := h.admin(http.MethodPost, "/api/admin/plan-eval/tasks", body, map[string]string{"Idempotency-Key": uuid.NewString()})
+		if res.status != http.StatusCreated {
+			t.Fatalf("%s > %s: %d %s", tc.version, tc.minimum, res.status, res.body)
+		}
+		if got := h.json(res)["agent_version"]; got != tc.version {
+			t.Fatalf("saved version: %v", got)
+		}
+		if _, ok := h.broker.queues[QueueName(tc.version)]; !ok {
+			t.Fatalf("missing version queue %s", tc.version)
+		}
+	}
+}
+
+func TestHTTP_ReplaysExistingTaskAfterMinimumChanges(t *testing.T) {
+	h := openHarness(t)
+	key := uuid.NewString()
+	body := h.createBody()
+	first := h.admin(http.MethodPost, "/api/admin/plan-eval/tasks", body, map[string]string{"Idempotency-Key": key})
+	if first.status != http.StatusCreated {
+		t.Fatalf("create: %d %s", first.status, first.body)
+	}
+	h.svc.cfg.MinimumAgentVersion = h.version
+	replay := h.admin(http.MethodPost, "/api/admin/plan-eval/tasks", body, map[string]string{"Idempotency-Key": key})
+	if replay.status != http.StatusOK || h.json(replay)["id"] != h.json(first)["id"] {
+		t.Fatalf("replay: %d %s", replay.status, replay.body)
+	}
+	rejected := h.admin(http.MethodPost, "/api/admin/plan-eval/tasks", body, map[string]string{"Idempotency-Key": uuid.NewString()})
+	if rejected.status != http.StatusUnprocessableEntity {
+		t.Fatalf("new task: %d %s", rejected.status, rejected.body)
+	}
+}
+
+func TestHTTP_TaskDetailShowsWorkerStartupFailure(t *testing.T) {
+	h := openHarness(t)
+	h.deployer.startupError = "ErrImagePull: image not found"
+	res := h.admin(http.MethodPost, "/api/admin/plan-eval/tasks", h.createBody(), map[string]string{"Idempotency-Key": uuid.NewString()})
+	if res.status != http.StatusCreated {
+		t.Fatalf("create: %d %s", res.status, res.body)
+	}
+	detail := h.admin(http.MethodGet, "/api/admin/plan-eval/tasks/"+h.json(res)["id"].(string), nil, nil)
+	if got := h.json(detail)["worker_startup_error"]; got != h.deployer.startupError {
+		t.Fatalf("startup error: %v", got)
+	}
+}
+
 func TestHTTP_CreateTask_FreezesLaunchesAndReplays(t *testing.T) {
 	h := openHarness(t)
 	const path = "/api/admin/plan-eval/tasks"
@@ -373,7 +449,17 @@ func TestHTTP_CreateTask_FreezesLaunchesAndReplays(t *testing.T) {
 	}
 
 	versions := h.json(h.admin(http.MethodGet, "/api/admin/plan-eval/agent-versions", nil, nil))["versions"].([]any)
-	version := versions[0].(map[string]any)
+	var version map[string]any
+	for _, entry := range versions {
+		candidate := entry.(map[string]any)
+		if candidate["agent_version"] == h.version {
+			version = candidate
+			break
+		}
+	}
+	if version == nil {
+		t.Fatal("created version not listed")
+	}
 	launch := version["launch_config"].(map[string]any)
 	deployment := version["deployment"].(map[string]any)
 	if version["agent_version"] != h.version || launch["replicas"].(float64) != 1 || deployment["ready_replicas"].(float64) != 1 {
@@ -572,7 +658,7 @@ func TestHTTP_CleanupRequiresAnIdleVersion(t *testing.T) {
 	if res := h.admin(http.MethodPost, path, nil, nil); res.status != http.StatusOK || h.json(res)["deleted"] != true {
 		t.Fatalf("an idle version cleans up: %d %s", res.status, res.body)
 	}
-	if res := h.admin(http.MethodPost, "/api/admin/plan-eval/agent-versions/9.9.9/cleanup", nil, nil); res.status != http.StatusUnprocessableEntity {
+	if res := h.admin(http.MethodPost, "/api/admin/plan-eval/agent-versions/.bad/cleanup", nil, nil); res.status != http.StatusUnprocessableEntity {
 		t.Fatalf("unknown version: %d", res.status)
 	}
 
@@ -656,8 +742,7 @@ func sha256Hex(value string) string {
 func TestHTTP_TwoVersionsScaleAndCleanupRace(t *testing.T) {
 	h := openHarness(t)
 	ctx := context.Background()
-	otherVersion := h.version + "b"
-	h.svc.cfg.AgentVersions = append(h.svc.cfg.AgentVersions, otherVersion)
+	otherVersion := h.version + "1"
 	create := func(version string) *TaskDetailView {
 		view, _, err := h.svc.CreateTask(ctx, "admin-1", uuid.NewString(), CreateTaskRequest{AgentVersion: version, Replicas: 2, Env: []EnvVar{{Name: "MODEL_KEY", Value: "not-a-real-secret"}}})
 		if err != nil {
@@ -773,8 +858,7 @@ func TestHTTP_DeploymentFailureRetriesOriginalDispatch(t *testing.T) {
 
 func TestHTTP_WorkerCannotImpersonateAnotherVersion(t *testing.T) {
 	h := openHarness(t)
-	other := h.version + "b"
-	h.svc.cfg.AgentVersions = append(h.svc.cfg.AgentVersions, other)
+	other := h.version + "1"
 	view, _, err := h.svc.CreateTask(context.Background(), "admin-1", uuid.NewString(), CreateTaskRequest{AgentVersion: other})
 	if err != nil {
 		t.Fatal(err)

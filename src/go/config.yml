@@ -264,7 +264,7 @@ plan-eval:
   worker-token: ""                 # STRIDE_WORKER_PLAN_EVAL_WORKER_TOKEN (secret): eval workers' identity
   secret-key: ""                   # STRIDE_WORKER_PLAN_EVAL_SECRET_KEY (secret): 32 bytes base64, encrypts launch env values
   worker-image-repository: ""      # stride-coach-worker image repository; a tag is an agent version
-  agent-versions: []               # published worker tags that carry the eval entry (PLAN_WORKER_MODE=eval)
+  minimum-agent-version: "2026.11.39" # exclusive CalVer threshold; 2026.11.40 is accepted
   deployer: "kubernetes"           # kubernetes | none (publish only; start workers by hand)
   worker-api-url: ""               # how eval workers reach this service, e.g. http://plan-eval-api:8080
   worker-amqp-url: ""              # broker URL injected into eval workers (in-cluster FQDN)
