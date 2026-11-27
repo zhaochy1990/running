@@ -12,6 +12,8 @@ const restDay = '2026-11-28';
 const emptyDay = '2026-11-29';
 const previousDay = '2026-11-26';
 const expiredDay = '2026-11-19';
+const customNote = '先补给，再进入主课。\n结束后慢跑放松。';
+const strengthNote = '动作稳定后再加负重。';
 mock.timers.enable({ apis: ['Date'], now: Date.parse(`${day}T08:00:00+08:00`) });
 const session = (workoutId: string, patch: Partial<PlanSessionRow> = {}): PlanSessionRow => ({
   workout_id: workoutId,
@@ -36,9 +38,9 @@ const rows = [
   session('note', { kind: 'note' }),
   session('easy-run', { session_index: 0 }),
   session('legacy-run', { spec: JSON.parse('{"name":"旧版跑课"}') }),
-  session('strength', { kind: 'strength', session_index: 1, spec: { name: '力量', date: day, note: null, exercises: [] } }),
+  session('strength', { kind: 'strength', session_index: 1, spec: { name: '力量', date: day, note: strengthNote, exercises: [] } }),
   session('custom-a', { source: 'custom' }),
-  session('custom-b', { source: 'custom', spec: { name: '自建跑课', date: day, note: null, blocks: [] } }),
+  session('custom-b', { source: 'custom', spec: { name: '自建跑课', date: day, note: customNote, blocks: [] } }),
   session('watch', { source: 'watch' }),
   session('rest', { date: restDay, kind: 'rest' }),
   session('past-custom', { date: previousDay, source: 'custom', spec: { name: '昨天的跑课', date: previousDay, note: null, blocks: [] } }),
@@ -77,7 +79,14 @@ let chooseDelete: (() => void) | undefined;
 const modules: Record<string, unknown> = {
   '../../services/plan': {
     ...plan,
-    getWeeklyPlan: async () => null,
+    getWeeklyPlan: async () => ({
+      content: {
+        coach_notes: '整周排课依据',
+        notes_md: '本周训练逻辑',
+        sessions: [{ date: day, session_index: 0, notes_md: '周文档里的课次备注' }],
+        nutrition: [],
+      },
+    }),
     getPlanSessions: async (_uid: string, from: string, to: string) => ({
       sessions: availableRows.filter(({ date }) => date >= from && date <= to),
     }),
@@ -130,6 +139,7 @@ await settle();
 const workoutIds = () => Array.from(view.data.workouts ?? [], (w) => w.workoutId);
 assert.deepEqual(workoutIds(), ['easy-run', 'legacy-run', 'strength', 'custom-a', 'custom-b', 'watch']);
 assert.equal(view.data.workouts[1].hasStructure, false);
+assert.deepEqual(Array.from(view.data.workouts, (workout) => workout.note), ['', '', strengthNote, '', customNote, '']);
 assert.deepEqual(Object.keys(view.data.expandedWorkouts), []);
 
 const template = readFileSync(new URL('../pages/index/index.wxml', import.meta.url), 'utf8');

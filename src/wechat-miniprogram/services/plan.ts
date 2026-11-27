@@ -180,6 +180,11 @@ function firstLine(text: string | null | undefined): string {
   return line.length > 200 ? `${line.slice(0, 200)}…` : line;
 }
 
+export function workoutNote(spec: PlanSessionRow['spec']): string {
+  const note = spec?.note;
+  return typeof note === 'string' ? note.trim() : '';
+}
+
 /** 来源标记文案：仅 watch「手表」；weekly/custom 不标。 */
 function sourceLabelOf(source: WorkoutSource): string {
   if (source === 'watch') return '手表';
@@ -187,10 +192,7 @@ function sourceLabelOf(source: WorkoutSource): string {
 }
 
 /** 由统一 workout 行提取今日训练卡片所需字段（devops#586 三源）。 */
-function buildWorkoutViewFromRow(
-  row: PlanSessionRow,
-  plan: WeeklyPlanContentStructured | null,
-): TodayWorkoutView {
+function buildWorkoutViewFromRow(row: PlanSessionRow): TodayWorkoutView {
   // 旧课可能没有 schema 或训练结构，仍可显示摘要。
   const spec = row.spec && typeof row.spec === 'object' ? row.spec : null;
   const blocks = row.kind === 'run' && spec && 'blocks' in spec && Array.isArray(spec.blocks)
@@ -201,16 +203,6 @@ function buildWorkoutViewFromRow(
     ? blocks
     : null;
   const isRunning = specBlocks !== null;
-  // 统一行不携带 session notes；weekly 源回联周计划内容补齐 coach 备注。
-  const weeklySession =
-    row.source === 'weekly' && row.session_index != null
-      ? plan?.sessions?.find(
-          (s) => s.date === row.date && s.session_index === row.session_index,
-        )
-      : null;
-  const coachNote =
-    firstLine(weeklySession?.notes_md) || firstLine(plan?.coach_notes) || firstLine(plan?.notes_md);
-
   const intensityBars = specBlocks ? deriveIntensityBars(specBlocks) : [];
 
   // 可推送：weekly 源走 planned-session 端点（需 session_index 定位），
@@ -250,8 +242,7 @@ function buildWorkoutViewFromRow(
     pushed: row.pushed,
     intensityBars,
     stats,
-    coachNote,
-    note: firstLine(weeklySession?.notes_md),
+    note: workoutNote(spec),
     sessionIndex: row.session_index,
     date: row.date,
     deletable: row.source === 'custom',
@@ -508,7 +499,7 @@ export function buildDayView(
     weekDays,
     weekSubtitle: subtitle,
     todayLabel,
-    workouts: visibleRows.map((row) => buildWorkoutViewFromRow(row, content)),
+    workouts: visibleRows.map(buildWorkoutViewFromRow),
     nutrition: buildNutritionView(nutrition),
   };
 }

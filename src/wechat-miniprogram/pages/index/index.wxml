@@ -155,10 +155,9 @@
             </view>
           </view>
 
-          <!-- 教练备注 -->
-          <view wx:if="{{workout.coachNote}}" class="note-box">
-            <view class="note-box__title">教练备注</view>
-            <view class="note-box__text">{{workout.coachNote}}</view>
+          <view wx:if="{{workout.note}}" class="note-box">
+            <view class="note-box__title">课表备注</view>
+            <view class="note-box__text">{{workout.note}}</view>
           </view>
 
           <!-- 和教练聊一聊（catchtap：不触发卡片跳详情） -->

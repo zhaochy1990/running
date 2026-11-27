@@ -1,11 +1,11 @@
 // 课表详情页 —— 训练 tab「今日安排」卡片点入后的分段详情（run-workout/v1 的
 // blocks/steps 与 strength-workout/v1 的 exercises）。数据从统一课表投影
 // `GET /api/users/me/plan/sessions`（三源：weekly/custom/watch）按 workout_id
-// 取当日行；weekly 源回联周计划补教练备注（与今日卡片同一口径）。
-import { estimateWorkoutSeconds, getPlanSessions, getWeeklyPlan } from '../../services/plan';
+// 取当日行，备注来自课次自身的 spec.note。
+import { estimateWorkoutSeconds, getPlanSessions, workoutNote } from '../../services/plan';
 import { userStore } from '../../store/index';
 import { currentRouteForRedirect, openLogin } from '../../utils/authGate';
-import { shanghaiWeekStart, shanghaiWeekdayLabel, weekFolderName } from '../../utils/date';
+import { shanghaiWeekdayLabel } from '../../utils/date';
 import { fmtDose, fmtDurationShort, fmtKm } from '../../utils/format';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 import { theme } from '../../utils/theme';
@@ -13,7 +13,6 @@ import type {
   NormalizedRunWorkout,
   NormalizedStrengthWorkout,
   PlanSessionRow,
-  WeeklyPlanDetail,
 } from '../../types/plan';
 import {
   buildExerciseRows,
@@ -51,8 +50,6 @@ interface WorkoutDetailPageData {
   exercises: ExerciseRowVM[];
   /** 课表内容自带备注（spec.note） */
   specNote: string;
-  /** 教练备注（weekly 源回联周计划，custom/watch 源为空） */
-  coachNote: string;
   /** 自建课才出分享 pill（weekly/watch 保持品牌默认分享卡，#704） */
   canShare: boolean;
 }
@@ -64,7 +61,7 @@ interface WorkoutDetailPageHandlers {
   onRetryTap(): void;
   load(): Promise<void>;
   /** 拉到统一课表行后构建视图模型（render 是 Page 实例保留名，故用 applyRow）。 */
-  applyRow(row: PlanSessionRow): Promise<void>;
+  applyRow(row: PlanSessionRow): void;
   /** 分享卡封面：canvas 深色卡预生成 → 临时文件缓存（onShareAppMessage 同步取）。 */
   renderShareCover(): void;
 
@@ -98,12 +95,6 @@ function contentPaddingTopRpx(): number {
     width = sys.windowWidth || 375;
   }
   return Math.round((statusPx * 750) / width) + 128 + 24;
-}
-
-function firstLine(text: string | null | undefined): string {
-  if (!text) return '';
-  const line = text.split('\n').map((s) => s.trim()).find((s) => s.length > 0) ?? '';
-  return line.length > 200 ? `${line.slice(0, 200)}…` : line;
 }
 
 // ---------------------------------------------------------------------------
@@ -200,7 +191,6 @@ Page<WorkoutDetailPageData, WorkoutDetailPageHandlers>({
     runGroups: [],
     exercises: [],
     specNote: '',
-    coachNote: '',
     canShare: false,
   },
 
@@ -247,14 +237,14 @@ Page<WorkoutDetailPageData, WorkoutDetailPageHandlers>({
         this.setData({ loadState: 'notfound' });
         return;
       }
-      await this.applyRow(row);
+      this.applyRow(row);
       this.setData({ loadState: 'ready' });
     } catch {
       this.setData({ loadState: 'error' });
     }
   },
 
-  async applyRow(row: PlanSessionRow) {
+  applyRow(row: PlanSessionRow) {
     const isRun = row.kind === 'run' && row.spec != null && 'blocks' in row.spec;
     const isStrength = row.kind === 'strength' && row.spec != null && 'exercises' in row.spec;
     const dateLabel = `${Number(row.date.slice(5, 7))}月${Number(row.date.slice(8))}日 ${shanghaiWeekdayLabel(row.date)}`;
@@ -302,36 +292,11 @@ Page<WorkoutDetailPageData, WorkoutDetailPageHandlers>({
       stats,
       runGroups: isRun ? buildRunGroups(row.spec as NormalizedRunWorkout) : [],
       exercises,
-      specNote: isRun ? (row.spec as NormalizedRunWorkout).note || '' : '',
+      specNote: workoutNote(row.spec),
     });
 
     // 封面异步预生成（onLoad 后拿到行数据即绘，分享时同步取缓存，不挤分享 3 秒预算）。
     if (row.source === 'custom') this.renderShareCover();
-
-    // 教练备注：weekly 源回联周计划（session notes_md 优先，退回计划级备注）。
-    if (row.source === 'weekly') {
-      try {
-        const plan: WeeklyPlanDetail = await getWeeklyPlan(
-          userId,
-          weekFolderName(shanghaiWeekStart(row.date)),
-        );
-        const content =
-          typeof plan.content === 'object' && plan.content !== null
-            ? (plan.content as { sessions?: Array<{ date: string; session_index: number; notes_md: string | null }>; coach_notes?: string | null; notes_md?: string | null })
-            : null;
-        const sessionNote =
-          row.session_index != null
-            ? content?.sessions?.find(
-                (s) => s.date === row.date && s.session_index === row.session_index,
-              )?.notes_md
-            : null;
-        this.setData({
-          coachNote: firstLine(sessionNote) || firstLine(content?.coach_notes) || firstLine(content?.notes_md),
-        });
-      } catch {
-        // 周计划拉取失败不挡详情渲染，备注留空。
-      }
-    }
   },
 
   /** 分享卡封面（#704，站④定稿）：浅色底 + 课名 + 前两项指标色块，绘制同

@@ -121,14 +121,9 @@
         </view>
       </view>
 
-      <!-- 备注：课表自带 + 教练备注 -->
       <view wx:if="{{specNote}}" class="card note-card">
         <view class="note-card__title">课表备注</view>
         <view class="note-card__text">{{specNote}}</view>
-      </view>
-      <view wx:if="{{coachNote}}" class="card note-card">
-        <view class="note-card__title">教练备注</view>
-        <view class="note-card__text">{{coachNote}}</view>
       </view>
     </block>
   </view>

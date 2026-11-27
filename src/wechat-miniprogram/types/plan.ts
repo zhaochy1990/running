@@ -250,7 +250,6 @@ export interface TodayWorkoutView {
   pushed: boolean;
   intensityBars: ViewIntensityBar[];
   stats: ViewStat[];
-  coachNote: string;
   note: string;
   /** session 在当天的索引，用于推送 API；仅 weekly 源有值 */
   sessionIndex: number | null;
