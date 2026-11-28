@@ -74,7 +74,12 @@ const raceTarget = { kind: 'race', race_event_id: 30, item_type: 'Marathon' } as
 {
   const legacy = { ...strategy, race_event_id: 30, fueling_checklist: [{ item: '能量胶', count: 2, note: '配水' }] };
   const envelope = JSON.stringify({ disposition: 'return_direct', content: legacy });
-  for (const content of [JSON.stringify(legacy), envelope, '```json\n' + envelope + '\n```']) {
+  for (const content of [
+    JSON.stringify(legacy),
+    envelope,
+    '```json\n' + envelope + '\n```',
+    'Returning structured response: ' + envelope,
+  ]) {
     const restored = restoreCoachCard({ content });
     eq(restored?.card.inlineBody, true, 'legacy JSON is rendered inline');
     eq(restored?.card.url, '', 'an ID in old raw JSON cannot open a report');
@@ -84,8 +89,18 @@ const raceTarget = { kind: 'race', race_event_id: 30, item_type: 'Marathon' } as
     }
     eq(restored?.content.includes('race_event_id'), false, 'legacy markdown hides wire fields');
   }
-  const sparse = { race_name: '旧赛事', item_type: 'Marathon', target_finish_time: '3:59:59', pace_segments: [null, { pace: '5:41/km' }] };
-  eq(restoreCoachCard({ content: JSON.stringify(sparse) })?.content.includes('5:41/km'), true, 'legacy markdown skips incomplete fields');
+  const invalid = { toString: null };
+  const sparse = {
+    race_name: '旧赛事',
+    item_type: 'Marathon',
+    target_finish_time: '3:59:59',
+    pace_segments: [null, { pace: '5:41/km', segment_time: invalid, cumulative_time: invalid }],
+    fueling_checklist: [{ item: invalid, count: 2, note: '配水' }],
+  };
+  const sparseBody = restoreCoachCard({ content: JSON.stringify(sparse) })?.content;
+  eq(sparseBody?.includes('5:41/km'), true, 'legacy markdown keeps valid fields in a malformed row');
+  eq(sparseBody?.includes('配水'), true, 'legacy markdown keeps checklist notes with malformed names');
+  eq(sparseBody?.includes('本段'), false, 'legacy markdown omits malformed time fields');
   const withCard = restoreCoachCard({ content: envelope, card: { $type: 'race-strategy', data: strategy } });
   eq(withCard?.content.includes('分段配速'), true, 'a structured legacy card also formats leaked JSON');
   eq(restoreCoachCard({ content: '{"unrelated":true}' }), null, 'unrelated JSON falls back to the original message');

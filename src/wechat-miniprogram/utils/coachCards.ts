@@ -320,16 +320,15 @@ function masterPlanFormSubtitle(form: MasterPlanFormCard): string {
   return parts.join(' · ');
 }
 
-/**
- * 历史消息自愈：正文若是泄漏的**比赛策略**信封 JSON（裸 `{` 开头），捞回成
- * 卡片信封。与后端 parseRaceStrategyFromText 同口径（信封/裸对象双形状），
- * 只做形状校验、不做数值复验——历史数据原样展示。其他产物类型泄漏时在此
- * 按注册表扩展判定。
- */
+const STRUCTURED_RESPONSE_PREFIX = 'Returning structured response:';
+
 export function parseLeakedRaceStrategyEnvelope(content: string): CoachCardWire | null {
-  // 与后端同口径：先剥整段 ```json 围栏（泄漏的另一形态），再要求裸 `{` 开头。
-  const fence = /^```(?:json)?\s*\n([\s\S]*?)\n?```\s*$/.exec(content.trim());
-  const text = (fence?.[1] ?? content).trim();
+  const trimmed = content.trim();
+  const json = trimmed.startsWith(STRUCTURED_RESPONSE_PREFIX)
+    ? trimmed.slice(STRUCTURED_RESPONSE_PREFIX.length).trimStart()
+    : trimmed;
+  const fence = /^```(?:json)?\s*\n([\s\S]*?)\n?```\s*$/.exec(json);
+  const text = (fence?.[1] ?? json).trim();
   if (!text.startsWith('{')) return null;
   try {
     const parsed = JSON.parse(text) as Record<string, unknown>;
@@ -356,15 +355,21 @@ function strategySection(title: string, items: readonly string[]): string {
 
 function legacyStrategyMarkdown(strategy: RaceStrategy): string {
   const pace = strategy.pace_segments.map(row => strategyLine(
-    row?.segment, row?.pace, row?.segment_time && `本段 ${row.segment_time}`,
-    row?.cumulative_time && `累计 ${row.cumulative_time}`, row?.note,
+    row?.segment,
+    row?.pace,
+    typeof row?.segment_time === 'string' && row.segment_time.trim() ? `本段 ${row.segment_time}` : '',
+    typeof row?.cumulative_time === 'string' && row.cumulative_time.trim() ? `累计 ${row.cumulative_time}` : '',
+    row?.note,
   ));
   const fueling = Array.isArray(strategy.fueling_plan)
     ? strategy.fueling_plan.map(item => strategyLine(item?.time_point, item?.content))
     : [];
   const checklist = Array.isArray(strategy.fueling_checklist)
     ? strategy.fueling_checklist.map(item => strategyLine(
-      item?.item && Number.isFinite(item.count) ? `${item.item} ×${item.count}` : item?.item, item?.note,
+      typeof item?.item === 'string' && item.item.trim() && Number.isFinite(item.count)
+        ? `${item.item} ×${item.count}`
+        : item?.item,
+      item?.note,
     ))
     : [];
   return [
@@ -400,6 +405,6 @@ export function restoreCoachCard(message: Pick<CoachHistoryMessage, 'card' | 'co
 export function looksLikeJsonText(text: string): boolean {
   const trimmed = text.trimStart();
   if (trimmed.startsWith('{')) return true;
-  if (trimmed.startsWith('Returning structured response:')) return true;
+  if (trimmed.startsWith(STRUCTURED_RESPONSE_PREFIX)) return true;
   return trimmed.slice(0, 120).includes('"disposition"');
 }
