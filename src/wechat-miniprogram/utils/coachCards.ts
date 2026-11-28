@@ -10,7 +10,7 @@
 // 历史自愈：后端防御解析上线前，弱模型曾把信封 JSON 当正文写进会话历史；
 // parseLeakedEnvelope 用同一套形状校验把这类历史文本捞回成卡片信封。
 
-import type { CoachSessionTarget } from '../services/coach';
+import type { CoachHistoryMessage, CoachSessionTarget } from '../services/coach';
 import type { MasterPlanCard, MasterPlanFormCard } from '../services/master-plan';
 import type { RaceStrategy } from '../services/race-strategy';
 import type { CustomWorkoutCard, WorkoutOpCard } from '../types/plan';
@@ -134,6 +134,22 @@ export function shanghaiMonthDayLabel(ymd: string): string {
   return `${Number(m)}月${Number(d)}日`;
 }
 
+function raceStrategyCard(strategy: RaceStrategy, raceId?: number): CoachCardView {
+  return {
+    type: 'race-strategy',
+    icon: '/assets/icons/flag.svg',
+    title: '比赛策略已生成',
+    subtitle: `${strategy.race_name} · 目标 ${strategy.target_finish_time}，含 ${strategy.pace_segments.length} 段配速与补给计划`,
+    badge: '初稿',
+    buttonText: raceId ? '查看详情' : '',
+    secondaryButtonText: '',
+    url: raceId ? `/pages/race-center/strategy/strategy?id=${raceId}` : '',
+    raceId,
+    data: strategy,
+    inlineBody: !raceId,
+  };
+}
+
 /** done.card → 卡片视图；无法渲染的信封降级走 markdown。 */
 export function buildCoachCard(card: unknown, target: CoachSessionTarget | undefined): CoachCardView | null {
   if (card == null || typeof card !== 'object') return null;
@@ -146,20 +162,7 @@ export function buildCoachCard(card: unknown, target: CoachSessionTarget | undef
     const raceId = typeof eventId === 'number' && Number.isSafeInteger(eventId) && eventId > 0
       ? eventId
       : target?.kind === 'race' ? target.race_event_id ?? undefined : undefined;
-    return {
-      type: wire.$type,
-      icon: '/assets/icons/flag.svg',
-      title: '比赛策略已生成',
-      subtitle: `${strategy.race_name} · 目标 ${strategy.target_finish_time}，含 ${strategy.pace_segments.length} 段配速与补给计划`,
-      badge: '初稿',
-      // 「查看并应用」会让用户以为点击即应用——实际是进报告页查看，应用在报告页内确认
-      buttonText: raceId ? '查看详情' : '',
-      secondaryButtonText: '',
-      url: raceId ? `/pages/race-center/strategy/strategy?id=${raceId}` : '',
-      raceId,
-      data: strategy,
-      inlineBody: !raceId,
-    };
+    return raceStrategyCard(strategy, raceId);
   }
   if (wire.$type === 'race-strategy-offer') {
     return {
@@ -317,16 +320,15 @@ function masterPlanFormSubtitle(form: MasterPlanFormCard): string {
   return parts.join(' · ');
 }
 
-/**
- * 历史消息自愈：正文若是泄漏的**比赛策略**信封 JSON（裸 `{` 开头），捞回成
- * 卡片信封。与后端 parseRaceStrategyFromText 同口径（信封/裸对象双形状），
- * 只做形状校验、不做数值复验——历史数据原样展示。其他产物类型泄漏时在此
- * 按注册表扩展判定。
- */
+const STRUCTURED_RESPONSE_PREFIX = 'Returning structured response:';
+
 export function parseLeakedRaceStrategyEnvelope(content: string): CoachCardWire | null {
-  // 与后端同口径：先剥整段 ```json 围栏（泄漏的另一形态），再要求裸 `{` 开头。
-  const fence = /^```(?:json)?\s*\n([\s\S]*?)\n?```\s*$/.exec(content.trim());
-  const text = (fence?.[1] ?? content).trim();
+  const trimmed = content.trim();
+  const json = trimmed.startsWith(STRUCTURED_RESPONSE_PREFIX)
+    ? trimmed.slice(STRUCTURED_RESPONSE_PREFIX.length).trimStart()
+    : trimmed;
+  const fence = /^```(?:json)?\s*\n([\s\S]*?)\n?```\s*$/.exec(json);
+  const text = (fence?.[1] ?? json).trim();
   if (!text.startsWith('{')) return null;
   try {
     const parsed = JSON.parse(text) as Record<string, unknown>;
@@ -342,10 +344,67 @@ export function parseLeakedRaceStrategyEnvelope(content: string): CoachCardWire 
   return null;
 }
 
+function strategyLine(...fields: unknown[]): string {
+  return fields.filter((value): value is string => typeof value === 'string' && value.trim().length > 0).join('｜');
+}
+
+function strategySection(title: string, items: readonly string[]): string {
+  const lines = items.filter(item => typeof item === 'string' && item.trim()).map(item => `- ${item}`);
+  return lines.length ? [`**${title}**`, ...lines].join('\n') : '';
+}
+
+function legacyStrategyMarkdown(strategy: RaceStrategy): string {
+  const pace = strategy.pace_segments.map(row => strategyLine(
+    row?.segment,
+    row?.pace,
+    typeof row?.segment_time === 'string' && row.segment_time.trim() ? `本段 ${row.segment_time}` : '',
+    typeof row?.cumulative_time === 'string' && row.cumulative_time.trim() ? `累计 ${row.cumulative_time}` : '',
+    row?.note,
+  ));
+  const fueling = Array.isArray(strategy.fueling_plan)
+    ? strategy.fueling_plan.map(item => strategyLine(item?.time_point, item?.content))
+    : [];
+  const checklist = Array.isArray(strategy.fueling_checklist)
+    ? strategy.fueling_checklist.map(item => strategyLine(
+      typeof item?.item === 'string' && item.item.trim() && Number.isFinite(item.count)
+        ? `${item.item} ×${item.count}`
+        : item?.item,
+      item?.note,
+    ))
+    : [];
+  return [
+    strategyLine(strategy.summary),
+    strategySection('分段配速', pace),
+    strategySection('补给计划', fueling),
+    strategySection('补给打包清单', checklist),
+    strategySection('赛道提示', Array.isArray(strategy.course_tips) ? strategy.course_tips : []),
+    strategySection('天气提示', Array.isArray(strategy.weather_tips) ? strategy.weather_tips : []),
+    strategyLine(strategy.basis_note),
+  ].filter(Boolean).join('\n\n');
+}
+
+export function restoreCoachCard(message: Pick<CoachHistoryMessage, 'card' | 'content'>): {
+  card: CoachCardView;
+  content: string;
+} | null {
+  const { content } = message;
+  const card = buildCoachCard(message.card, undefined);
+  if (card) {
+    if (card.type === 'race-strategy' && card.inlineBody && isRaceStrategyLike(card.data)
+      && (!content.trim() || isRaceStrategyLike(parseLeakedRaceStrategyEnvelope(content)?.data))) {
+      return { card, content: legacyStrategyMarkdown(card.data) };
+    }
+    return { card, content };
+  }
+  const strategy = parseLeakedRaceStrategyEnvelope(content)?.data;
+  if (!isRaceStrategyLike(strategy)) return null;
+  return { card: raceStrategyCard(strategy), content: legacyStrategyMarkdown(strategy) };
+}
+
 /** 流式正文是否「形似 JSON 泄漏」（旧后端防御）：呈现层换成占位文案。 */
 export function looksLikeJsonText(text: string): boolean {
   const trimmed = text.trimStart();
   if (trimmed.startsWith('{')) return true;
-  if (trimmed.startsWith('Returning structured response:')) return true;
+  if (trimmed.startsWith(STRUCTURED_RESPONSE_PREFIX)) return true;
   return trimmed.slice(0, 120).includes('"disposition"');
 }

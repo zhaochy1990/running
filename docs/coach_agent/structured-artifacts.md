@@ -31,7 +31,7 @@ markdown 渲染）；旧后端 + 新客户端 → 没有 `card`，同样走 mark
 
 | `$type` | 后端挂载（业务节点 `*Message` 工厂） | 前端注册表（小程序 `utils/coachCards.ts`） |
 |---|---|---|
-| `race-strategy` | `raceStrategyMessage` 挂 `additional_kwargs.card`，`data.race_event_id` 取自赛事页显式目标或聊天线程的最新赛事绑定 | 点「查看详情」直达对应赛事的策略报告页 |
+| `race-strategy` | `raceStrategyMessage` 挂 `additional_kwargs.card`，`data.race_event_id` 取自赛事页显式目标或聊天线程的最新赛事绑定 | 历史卡用消息信封中的赛事 ID 打开对应报告页。缺少有效 ID 时，在会话内保留可读策略并隐藏「查看详情」 |
 | `race-strategy-offer` | 普通问答或策略节点处理策略查看问题时，按会话中的真实卡片和工具结果决定是否带入口卡 | 当前最新一条回复提供「生成比赛策略」，点击在原会话发送同名指令 |
 | `master-plan` | `masterPlanCardMessage`（training 节点，#428/#429） | 图标/标题/角标「初稿」；摘要即卡片——markdown 摘要同泡渲染，无独立详情页；data 带 `plan_id` 时出「启用/放弃」双 CTA（#429） |
 | `custom-workout`（devops#587） | `customWorkoutCardMessage`（custom_workout 节点） | 图标/「训练课已创建」/角标「待保存」；摘要即卡片（课表压缩文案 inlineBody）；双 CTA「保存到X月X日」（save_token 幂等 upsert）+「推送到手表」（未保存先保存再推）。时间制课 `total_distance_m` 由节点按契约⑨估算补齐（#838：easy 带中点、无校准 330s/km 兜底） |
@@ -83,9 +83,9 @@ content: {...} }` 信封 JSON 当正文文本输出（2026-09 在 deepseekv4flas
   信号：模型没守格式）。
 - **前端流式占位**（`pages/coach/coach.ts`）：旧后端流出 JSON 正文时，
   呈现层换成「正在整理比赛策略…」（原始累积与呈现分离）。
-- **历史自愈**（`utils/coachCards.ts` `parseLeakedEnvelope`）：防御上线前
-  已写进会话历史的泄漏文本，重开会话时捞回成卡片（需会话带 race target
-  才能定位报告页）。
+- **历史自愈**（`utils/coachCards.ts` `restoreCoachCard`）：重开会话时把历史 JSON
+  渲染为可读策略，不提供报告页入口。历史卡的赛事绑定只取自消息信封，
+  切换当前会话赛事后仍沿用原消息绑定（devops#1096）。
 
 master-plan 卡片（#428）与此同标准：卡片轮正文由 training 节点确定性渲染
 （kernel 结构化输出 → markdown，不经任何模型改写），信封不存在「模型把
