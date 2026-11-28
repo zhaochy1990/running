@@ -5,7 +5,7 @@
  * JSON/普通文本）、流式 JSON 探测。
  */
 import type { RaceStrategy } from '../services/race-strategy.ts';
-import { buildCoachCard, looksLikeJsonText, parseLeakedRaceStrategyEnvelope } from './coachCards.ts';
+import { buildCoachCard, restoreCoachCard, looksLikeJsonText, parseLeakedRaceStrategyEnvelope } from './coachCards.ts';
 
 function eq(actual: unknown, expected: unknown, what: string): void {
   const a = JSON.stringify(actual);
@@ -53,6 +53,42 @@ const raceTarget = { kind: 'race', race_event_id: 30, item_type: 'Marathon' } as
   const legacy = buildCoachCard({ $type: 'race-strategy', data: strategy }, undefined);
   eq(legacy?.url, '', 'legacy strategy without race id does not jump to the calendar');
   eq(legacy?.inlineBody, true, 'legacy strategy without race id displays the full reply in chat');
+}
+
+{
+  const content = '前稳后渐进。';
+  for (const race_event_id of [undefined, 0, -1, 1.5, '99', Number.MAX_SAFE_INTEGER + 1]) {
+    const restored = restoreCoachCard({ content, card: { $type: 'race-strategy', data: { ...strategy, race_event_id } } });
+    eq(restored?.content, content, 'history keeps the strategy markdown');
+    eq(restored?.card.inlineBody, true, 'history renders the strategy markdown inline');
+    eq(restored?.card.buttonText, '', 'history without a valid event ID has no CTA');
+    eq(restored?.card.url, '', 'history without a valid event ID cannot open a report');
+    eq(restored?.card.raceId, undefined, 'history without a valid event ID cannot hand over a draft');
+  }
+  const identified = restoreCoachCard({ content, card: { $type: 'race-strategy', data: { ...strategy, race_event_id: 99 } } });
+  eq(identified?.card.raceId, 99, 'history hands the draft to the card event');
+  eq(identified?.card.url, '/pages/race-center/strategy/strategy?id=99', 'history opens the card event');
+  eq(identified?.card.buttonText, '查看详情', 'history with an event ID has a CTA');
+}
+
+{
+  const legacy = { ...strategy, race_event_id: 30, fueling_checklist: [{ item: '能量胶', count: 2, note: '配水' }] };
+  const envelope = JSON.stringify({ disposition: 'return_direct', content: legacy });
+  for (const content of [JSON.stringify(legacy), envelope, '```json\n' + envelope + '\n```']) {
+    const restored = restoreCoachCard({ content });
+    eq(restored?.card.inlineBody, true, 'legacy JSON is rendered inline');
+    eq(restored?.card.url, '', 'an ID in old raw JSON cannot open a report');
+    eq(restored?.card.buttonText, '', 'recovered JSON has no CTA');
+    for (const text of ['前稳后渐进', '分段配速', '5:41/km', '能量胶 1 支', '能量胶 ×2', '32km 爬坡提前降档', '穿背心+臂套', '近 90 天 L4 估计']) {
+      eq(restored?.content.includes(text), true, 'legacy markdown contains ' + text);
+    }
+    eq(restored?.content.includes('race_event_id'), false, 'legacy markdown hides wire fields');
+  }
+  const sparse = { race_name: '旧赛事', item_type: 'Marathon', target_finish_time: '3:59:59', pace_segments: [null, { pace: '5:41/km' }] };
+  eq(restoreCoachCard({ content: JSON.stringify(sparse) })?.content.includes('5:41/km'), true, 'legacy markdown skips incomplete fields');
+  const withCard = restoreCoachCard({ content: envelope, card: { $type: 'race-strategy', data: strategy } });
+  eq(withCard?.content.includes('分段配速'), true, 'a structured legacy card also formats leaked JSON');
+  eq(restoreCoachCard({ content: '{"unrelated":true}' }), null, 'unrelated JSON falls back to the original message');
 }
 
 {

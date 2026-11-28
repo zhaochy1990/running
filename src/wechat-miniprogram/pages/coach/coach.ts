@@ -24,7 +24,7 @@ import type { CustomWorkoutCard, PlanSessionRow, WorkoutOpCard } from '../../typ
 import { setPendingStrategyDraft, type RaceStrategy } from '../../services/race-strategy';
 import { userStore } from '../../store/index';
 import { openLogin } from '../../utils/authGate';
-import { buildCoachCard, looksLikeJsonText, parseLeakedRaceStrategyEnvelope, shanghaiMonthDayLabel, type CoachCardView } from '../../utils/coachCards';
+import { buildCoachCard, looksLikeJsonText, restoreCoachCard, shanghaiMonthDayLabel, type CoachCardView } from '../../utils/coachCards';
 import { markdownToHtml } from '../../utils/markdown';
 import { initialWeeksNotice } from '../../utils/masterPlanApplyResult';
 import {
@@ -581,23 +581,11 @@ function cardCoachMessage(card: CoachCardView, content: string, shareIndex?: num
   return { id: ++seq, role: 'assistant', content, card, shareIndex, selectable: true, html: markdownToHtml(content) };
 }
 
-function toCoachMessage(m: CoachHistoryMessage, index: number, target?: CoachSessionTarget): CoachMessage {
+function toCoachMessage(m: CoachHistoryMessage, index: number): CoachMessage {
   if (m.role === 'assistant') {
-    // 首选：服务端信封（挂在产生它的消息上随 checkpoint 持久化，与 done.card
-    // 同形），重开会话按行恢复通知卡片，多策略会话每张卡片各自保真。
-    const fromServer = buildCoachCard(m.card, target);
-    if (fromServer) {
-      return cardCoachMessage(fromServer, m.content, index);
-    }
-    // 兜底（历史自愈）：防御解析上线前，弱模型曾把策略信封 JSON 当正文写进
-    // 会话历史；形似信封的 assistant 文本捞回成通知卡片（无 race target 定位
-    // 不了赛事时保持原文）。仅覆盖卡片信封上线前的旧历史。
-    const leaked = parseLeakedRaceStrategyEnvelope(m.content);
-    if (leaked) {
-      const card = buildCoachCard(leaked, target);
-      if (card) {
-        return cardCoachMessage(card, m.content, index);
-      }
+    const restored = restoreCoachCard(m);
+    if (restored) {
+      return cardCoachMessage(restored.card, restored.content, index);
     }
   }
   const msg: CoachMessage = {
@@ -764,8 +752,6 @@ Page<CoachPageData, CoachPageHandlers>({
       const res = await fetchCoachSessions();
       const locals = readSessions();
       const localOf = (id: string): CoachSession | undefined => locals.find((l) => l.id === id);
-      // 服务端行只有 id/标题：会话 target（race 卡片定位、草稿交接依赖）存在
-      // 本地，覆盖时须带回来，否则刷新/重启后卡片 tap 静默退化。
       const list: CoachSession[] = (res.sessions ?? [])
         .map((s) => {
           const local = localOf(s.session_id);
@@ -1005,7 +991,7 @@ Page<CoachPageData, CoachPageHandlers>({
           return;
         }
         seq = 0;
-        const messages = history.messages.map((message, index) => toCoachMessage(message, index));
+        const messages = history.messages.map(toCoachMessage);
         const startedAt = Date.parse(review.started_at);
         projectionLength = messages.length;
         historySyncFailed = false;
@@ -1022,9 +1008,7 @@ Page<CoachPageData, CoachPageHandlers>({
         seq = 0;
         // 消息 id 重排：进程内按 id 记的「临时展开表单」全部失效。
         resetPlanFormBindings();
-        // 带上会话 target：历史自愈出的策略卡片需要 race_event_id 定位报告页。
-        const target = this.data.sessions.find((s) => s.id === sessionId)?.target;
-        msgs = history.messages.map((m, index) => toCoachMessage(m, index, target));
+        msgs = history.messages.map(toCoachMessage);
         // 消息序号映射（devops#717）：历史行序即服务端投影序，作为分享 indices 基准。
         projectionLength = history.messages.length;
       } else {
